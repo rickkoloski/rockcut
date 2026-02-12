@@ -45,7 +45,14 @@ defmodule RockcutApiWeb.Endpoint do
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 
-  plug CORSPlug, origin: ["http://localhost:5173", "http://localhost:5174"]
+  plug CORSPlug, origin: &RockcutApiWeb.Endpoint.cors_origins/0
+
+  def cors_origins do
+    Application.get_env(:rockcut_api, :cors_origins, [
+      "http://localhost:5173",
+      "http://localhost:5174"
+    ])
+  end
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options

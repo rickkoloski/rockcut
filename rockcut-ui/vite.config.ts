@@ -2,7 +2,13 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
 
-const datagridExtendedPath = path.resolve(__dirname, '../../ui-components/datagrid-extended')
+const isDocker = !!process.env.DOCKER_BUILD
+
+// In Docker, datagrid-extended source is copied to .datagrid-extended-src/
+// In dev, it's resolved from the linked package outside the project
+const datagridExtendedPath = isDocker
+  ? path.resolve(__dirname, '.datagrid-extended-src')
+  : path.resolve(__dirname, '../../ui-components/datagrid-extended/src/lib')
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -19,8 +25,7 @@ export default defineConfig({
       '@emotion/styled',
     ],
     alias: {
-      // Resolve the linked package directly to its source
-      'datagrid-extended': path.join(datagridExtendedPath, 'src/lib'),
+      'datagrid-extended': datagridExtendedPath,
     },
   },
   server: {
@@ -30,7 +35,7 @@ export default defineConfig({
     fs: {
       allow: [
         path.resolve(__dirname),
-        datagridExtendedPath,
+        ...(!isDocker ? [path.resolve(__dirname, '../../ui-components/datagrid-extended')] : []),
       ],
     },
     proxy: {

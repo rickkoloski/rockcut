@@ -25,7 +25,7 @@ if config_env() == :prod do
     System.get_env("DATABASE_PATH") ||
       raise """
       environment variable DATABASE_PATH is missing.
-      For example: /etc/rockcut_api/rockcut_api.db
+      For example: /data/rockcut_api.db
       """
 
   config :rockcut_api, RockcutApi.Repo,
@@ -59,7 +59,17 @@ if config_env() == :prod do
       ip: {0, 0, 0, 0, 0, 0, 0, 0},
       port: port
     ],
-    secret_key_base: secret_key_base
+    secret_key_base: secret_key_base,
+    check_origin: false
+
+  # CORS origins — default permissive for demo, override via CORS_ORIGINS env var
+  cors_origins =
+    case System.get_env("CORS_ORIGINS") do
+      nil -> ["*"]
+      origins -> String.split(origins, ",", trim: true)
+    end
+
+  config :rockcut_api, :cors_origins, cors_origins
 
   # ## SSL Support
   #

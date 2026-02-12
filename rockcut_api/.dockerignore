@@ -1,0 +1,29 @@
+# Git
+.git/
+
+# Elixir build artifacts
+_build/
+deps/
+*.ez
+erl_crash.dump
+
+# Development databases
+*.db
+*.db-*
+
+# Test and docs
+cover/
+doc/
+test/
+tmp/
+
+# Editor
+.elixir_ls/
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Node (Phoenix assets)
+node_modules/
