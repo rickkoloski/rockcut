@@ -34,12 +34,25 @@ CC (or human) executes the work:
 - Create/modify code
 - Run tests
 
+### 5b. UAT Handoff
+Before marking a deliverable complete, prepare for human verification:
+- Ensure all required servers are running and healthy
+- Run programmatic health checks (e.g., `curl /api/health`)
+- Include a **UAT Ready** section in the result document with:
+  - URLs to visit
+  - What to look for (key visual/functional checks)
+  - Login credentials reminder
+- Keep the team alive until CD signs off
+
+**Why this matters:** CD should be able to open a browser and verify immediately — no friction, no "start the server first." The handoff should be seamless.
+
 ### 6. Result
 Create `docs/current_work/stepwise_results/dNN_name_COMPLETE.md`
 - What was implemented
 - Files changed
 - Test outcomes
 - Any deviations
+- UAT Ready section (URLs, what to verify, credentials)
 
 ### 7. Chronicle
 Periodically move completed work to archives:
@@ -193,6 +206,8 @@ See `process/sdlc_changelog.md` for the change history.
 5. **Archives preserve memory** — Chronicles are long-term project memory
 6. **Process accommodates reality** — Ad hoc work is legitimate; reconcile periodically
 7. **Capture testing knowledge** — Tester navigation paths and learnings compound across runs
+8. **Visual correctness ≠ DOM correctness** — Accessibility tree checks verify structure; computed style checks verify rendering. Both are required for UI deliverables.
+9. **Frictionless UAT** — CD should never need to start servers or set up environment to verify work
 
 ---
 

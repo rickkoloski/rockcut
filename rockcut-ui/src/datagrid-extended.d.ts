@@ -29,11 +29,50 @@ declare module 'datagrid-extended' {
     | { type: 'binary'; op: string; left: Expression; right: Expression }
     | { type: 'conditional'; condition: Expression; then: Expression; else: Expression }
 
+  // --- D8: Formula Editing UX types ---
+
+  export interface FunctionArgDef {
+    name: string
+    description?: string
+  }
+
+  export interface FunctionCatalogEntry {
+    name: string
+    description: string
+    signature: string
+    args: FunctionArgDef[]
+  }
+
+  export interface FormulaValidation {
+    valid: boolean
+    error?: string
+    errorPosition?: number
+    fields?: string[]
+    functions?: string[]
+  }
+
+  export interface FormulaEditorState {
+    field: string
+    headerName: string
+    formula: string
+    anchorEl: HTMLElement | null
+  }
+
+  export interface FieldAutocompleteEntry {
+    field: string
+    headerName?: string
+  }
+
+  // --- Component Props ---
+
   export interface DataGridExtendedProps extends Omit<DataGridProps, 'columns'> {
     columns: ExtendedGridColDef[]
     remoteFunctions?: RemoteFunctions
     cacheStrategy?: CacheStrategy
     computedCellStyle?: CSSProperties
+    formulaEditable?: boolean
+    onFormulaChange?: (field: string, formula: string | null) => void
+    functionCatalog?: FunctionCatalogEntry[]
   }
 
   export function DataGridExtended(props: DataGridExtendedProps): JSX.Element
@@ -47,4 +86,10 @@ declare module 'datagrid-extended' {
     allRows: any[],
     remoteFunctions?: RemoteFunctions,
   ): Promise<any>
+
+  // --- D8: Formula editing exports ---
+
+  export function extractFields(expr: Expression): string[]
+  export function extractFunctions(expr: Expression): string[]
+  export function defaultFunctionCatalog(): FunctionCatalogEntry[]
 }

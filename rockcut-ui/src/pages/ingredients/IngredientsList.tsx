@@ -78,6 +78,10 @@ export default function IngredientsList() {
           rows={ingredients}
           columns={columns}
           remoteFunctions={remoteFunctions}
+          formulaEditable
+          onFormulaChange={(field, formula) => {
+            console.log(`[IngredientsList] formula change: ${field} = ${formula ?? '(cleared)'}`)
+          }}
           autoHeight
           disableRowSelectionOnClick
           onRowClick={(params) => navigate(`/ingredients/${params.id}`)}

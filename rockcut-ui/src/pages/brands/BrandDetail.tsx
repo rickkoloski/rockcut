@@ -8,22 +8,25 @@ import {
   Paper,
   Typography,
 } from '@mui/material';
-import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
+import type { ExtendedGridColDef } from 'datagrid-extended';
 import PageHeader from '../../components/PageHeader';
 import StatusChip from '../../components/StatusChip';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useApiDelete } from '../../hooks/useApiMutation';
+import { useFormulaFunctions } from '../../hooks/useFormulaFunctions';
 import BrandFormDialog from './BrandFormDialog';
 import RecipeFormDialog from '../recipes/RecipeFormDialog';
 import type { Brand, Recipe } from '../../lib/types';
 
-const recipeColumns: GridColDef<Recipe>[] = [
-  { field: 'version', headerName: 'Version', width: 100, valueGetter: (_value, row) => `${row.version_major}.${row.version_minor}` },
+const recipeColumns: ExtendedGridColDef[] = [
+  { field: 'version', headerName: 'Version', width: 100, valueGetter: (_value: unknown, row: Recipe) => `${row.version_major}.${row.version_minor}` },
   { field: 'batch_size', headerName: 'Batch Size', flex: 1 },
   { field: 'boil_time', headerName: 'Boil Time', flex: 1 },
   { field: 'efficiency_target', headerName: 'Efficiency', flex: 1 },
+  { field: 'est_ibu', headerName: 'Est. IBU', width: 110, formula: '=EST_IBU(id)' },
+  { field: 'est_og', headerName: 'Est. OG', width: 110, formula: '=EST_OG(id)' },
   {
     field: 'status',
     headerName: 'Status',
@@ -52,6 +55,8 @@ export default function BrandDetail() {
     (delId) => `/api/brands/${delId}`,
     { invalidateKeys: [['brands']] },
   );
+
+  const { remoteFunctions } = useFormulaFunctions();
 
   const [editOpen, setEditOpen] = useState(false);
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
@@ -122,6 +127,7 @@ export default function BrandDetail() {
         <DataGridExtended
           rows={recipes}
           columns={recipeColumns}
+          remoteFunctions={remoteFunctions}
           loading={recipesLoading}
           autoHeight
           disableRowSelectionOnClick

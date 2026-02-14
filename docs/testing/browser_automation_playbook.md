@@ -5,7 +5,7 @@
 > makes the next one faster and more thorough.
 >
 > **First authored:** D7 (DataGrid Formula Engine)
-> **Last updated:** 2026-02-14
+> **Last updated:** 2026-02-14 (D7 post-mortem)
 
 ---
 
@@ -58,15 +58,17 @@ _How to reliably find elements in MUI DataGrid and rockcut UI._
 | Error icons | SVG with class `MuiSvgIcon-root MuiSvgIcon-fontSizeSmall` | MUI error icon in cells |
 | Error tooltips | `aria-label` on error SVG elements | Contains the error message text |
 
-### Best approach: use `read_page` tool
+### Best approach: use `read_page` + `javascript_tool`
 
-The `read_page` tool returns an accessibility tree that is the most reliable way to verify DataGrid content. It captures:
+The `read_page` tool returns an accessibility tree that is the most reliable way to verify DataGrid **structure and content**. It captures:
 - All column header text (including "fx" indicators)
 - All cell values in reading order
 - Aria labels (critical for error states)
 - Visual state indicators
 
 **Tip:** `read_page` is more reliable than trying to use CSS selectors or XPath with MUI DataGrid because MUI uses complex nested DOM with generated class names.
+
+**Critical limitation:** `read_page` verifies DOM correctness, not visual correctness. An element can have the right text content but be invisible due to styling (e.g., foreground color matching background color, opacity near zero, element clipped or hidden). Always pair `read_page` checks with computed style assertions for visual indicators. See the **Computed Style Verification** recipe below.
 
 ### Computed cell visual indicators (D7)
 
@@ -133,11 +135,72 @@ _Lessons learned about the chrome MCP tools specifically._
 
 5. **Accessibility labels are gold.** Error states, computed column indicators, and tooltips all surface via aria-labels in the read_page output. This is the most reliable way to verify error handling.
 
+6. **DOM correctness ≠ visual correctness.** D7 taught us this the hard way: the FxBadge had correct "fx" text in the accessibility tree, but was invisible because `color` and `bgcolor` were identical with `opacity: 0.15`. The `read_page` tool reported PASS, but a human saw a blank gray box. **Always verify visual indicators with computed style checks**, not just DOM content.
+
+7. **Verify servers before testing.** If the backend is down, the Vite proxy returns 500/502 errors. Formula cells will show error indicators that look like bugs but are just "server not running." Always run the prerequisites health check (see recipe below) as step 0.
+
 ---
 
 ## Reusable Verification Patterns
 
 _Step-by-step recipes for common verification tasks._
+
+### Recipe: Prerequisites health check (ALWAYS RUN FIRST)
+
+```
+1. Check API server: curl -s -o /dev/null -w "%{http_code}" http://localhost:4002/api/health
+   - Expected: 200
+   - If not running: cd rockcut_api && mix phx.server &
+   - Wait 5 seconds, retry
+2. Check frontend server: curl -s -o /dev/null -w "%{http_code}" http://localhost:5174/
+   - Expected: 200
+   - If not running: cd rockcut-ui && pnpm dev &
+   - Wait 3 seconds, retry
+3. Check Vite proxy: curl -s -o /dev/null -w "%{http_code}" http://localhost:5174/api/health
+   - Expected: 200 (confirms proxy forwarding works)
+   - If this fails but steps 1+2 pass: Vite proxy misconfiguration
+4. Only proceed to browser tests after all three return 200
+```
+
+**Why this matters:** D7 showed that formula cells display error indicators when the backend is down. These look like bugs but are just infrastructure. This check takes 5 seconds and prevents false-negative test runs.
+
+### Recipe: Computed style verification (visual correctness)
+
+```
+1. After verifying an element exists via read_page, use javascript_tool to check
+   its computed visual properties
+2. For text visibility, verify:
+   - opacity > 0.3 (element is not effectively invisible)
+   - color !== backgroundColor (text is distinguishable from background)
+   - fontSize > 0 and display !== "none"
+3. For visual indicators (badges, icons, styled text):
+   - Verify fontStyle, fontWeight, color match expectations
+   - Verify the element has non-zero dimensions (offsetWidth > 0, offsetHeight > 0)
+```
+
+**Example: Verify FxBadge is visible**
+```javascript
+// Run via javascript_tool after identifying the badge element
+const badge = document.querySelector('[aria-label="Computed column"] span')
+  || [...document.querySelectorAll('span')].find(el => el.textContent.trim() === 'fx');
+if (badge) {
+  const s = getComputedStyle(badge);
+  const result = {
+    text: badge.textContent,
+    color: s.color,
+    backgroundColor: s.backgroundColor,
+    opacity: s.opacity,
+    visible: parseFloat(s.opacity) > 0.3 && s.color !== s.backgroundColor,
+    width: badge.offsetWidth,
+    height: badge.offsetHeight,
+  };
+  JSON.stringify(result);
+}
+```
+
+**Rule of thumb:** If a test asserts a visual indicator is present, it must include both:
+1. A `read_page` check (content exists in DOM)
+2. A computed style check (content is actually visible to a human)
 
 ### Recipe: Verify DataGrid formula column values
 
@@ -194,6 +257,21 @@ _Step-by-step recipes for common verification tasks._
 6. Verify redirect to / by checking for nav sidebar or page heading
 ```
 
+### Recipe: UAT handoff
+
+```
+1. Run prerequisites health check (above) — start any servers that aren't running
+2. Verify the key page(s) load in browser (navigate + wait + screenshot)
+3. Add a "UAT Ready" section to the stepwise result document:
+   - URLs to visit: http://localhost:5174/<page> (list each relevant page)
+   - What to look for: (brief checklist of visual/functional items)
+   - Login: matt@rockcut.com / rockcut2026
+4. Notify lead/CD that UAT is ready
+5. Team stays alive until CD signs off or requests changes
+```
+
+**Why this matters:** CD should open a browser and verify immediately — no friction, no "start the server first." The handoff should be seamless. Servers must be confirmed running at handoff time, not just during automated tests.
+
 ---
 
 ## D7 Test Results Summary
@@ -243,3 +321,4 @@ _Step-by-step recipes for common verification tasks._
 | Deliverable | What was added |
 |-------------|---------------|
 | D7 | Initial version: element discovery patterns for MUI DataGrid, timing guidelines, tool quirks, 5 reusable recipes, dev harness + rockcut e2e test results |
+| D7 post-mortem | Added: prerequisites health check recipe, computed style verification recipe, UAT handoff recipe. Updated key lessons with DOM≠visual and server-check lessons. Root cause: FxBadge invisible (color==bgcolor+low opacity), formula 500s (API server not running at UAT time). |
