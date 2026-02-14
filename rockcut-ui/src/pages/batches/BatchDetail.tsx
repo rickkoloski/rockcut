@@ -8,7 +8,11 @@ import {
   Button,
   Chip,
   CircularProgress,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
 import type { Batch, BatchLogEntry, BrewTurn } from '../../lib/types';
@@ -103,7 +107,12 @@ export default function BatchDetail() {
           { label: batch.batch_number },
         ]}
         title={batch.batch_number}
-        action={{ label: 'Edit Batch', onClick: () => setEditOpen(true) }}
+        toolbar={
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Tooltip title="Edit Batch"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Batch"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+          </Box>
+        }
       />
 
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -141,11 +150,6 @@ export default function BatchDetail() {
           <Field label="Tasting Notes" value={batch.tasting_notes} />
         </Grid>
 
-        <Box sx={{ mt: 2 }}>
-          <Button color="error" onClick={() => setDeleteOpen(true)}>
-            Delete Batch
-          </Button>
-        </Box>
       </Paper>
 
       {/* Brew Turns */}

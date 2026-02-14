@@ -11,9 +11,11 @@ interface PageHeaderProps {
   breadcrumbs: Crumb[]
   title: string
   action?: { label: string; onClick: () => void }
+  /** Custom toolbar content (icon buttons, etc.) — replaces action when provided */
+  toolbar?: React.ReactNode
 }
 
-export default function PageHeader({ breadcrumbs, title, action }: PageHeaderProps) {
+export default function PageHeader({ breadcrumbs, title, action, toolbar }: PageHeaderProps) {
   return (
     <Box sx={{ mb: 3 }}>
       <Breadcrumbs sx={{ mb: 1 }}>
@@ -29,11 +31,11 @@ export default function PageHeader({ breadcrumbs, title, action }: PageHeaderPro
       </Breadcrumbs>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Typography variant="h4">{title}</Typography>
-        {action && (
+        {toolbar ?? (action && (
           <Button variant="contained" startIcon={<AddIcon />} onClick={action.onClick}>
             {action.label}
           </Button>
-        )}
+        ))}
       </Box>
     </Box>
   )

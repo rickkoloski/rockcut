@@ -8,7 +8,9 @@ import {
   Button,
   IconButton,
   CircularProgress,
+  Tooltip,
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
@@ -103,7 +105,12 @@ export default function CategoryDetail() {
           { label: category.name },
         ]}
         title={category.name}
-        action={{ label: 'Edit Category', onClick: () => setEditOpen(true) }}
+        toolbar={
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Tooltip title="Edit Category"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Category"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+          </Box>
+        }
       />
 
       <Paper sx={{ p: 3, mb: 3 }}>
@@ -117,11 +124,6 @@ export default function CategoryDetail() {
             <Typography variant="body2">{category.sort_order ?? '—'}</Typography>
           </Grid>
         </Grid>
-        <Box sx={{ mt: 2 }}>
-          <Button color="error" onClick={() => setDeleteOpen(true)}>
-            Delete Category
-          </Button>
-        </Box>
       </Paper>
 
       {/* Field Definitions */}

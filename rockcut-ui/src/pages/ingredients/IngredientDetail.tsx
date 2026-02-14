@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Paper, Typography, Grid, Button, Box } from '@mui/material'
+import { Paper, Typography, Grid, Box, Button, IconButton, Tooltip } from '@mui/material'
+import EditIcon from '@mui/icons-material/Edit'
+import DeleteIcon from '@mui/icons-material/Delete'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
 import type { Ingredient, IngredientLotSummary } from '../../lib/types'
@@ -73,7 +75,12 @@ export default function IngredientDetail() {
           { label: ingredient.name },
         ]}
         title={ingredient.name}
-        action={{ label: 'Edit Ingredient', onClick: () => setEditOpen(true) }}
+        toolbar={
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Tooltip title="Edit Ingredient"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Ingredient"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+          </Box>
+        }
       />
 
       <Paper variant="outlined" sx={{ p: 3, mb: 3 }}>
@@ -116,10 +123,6 @@ export default function IngredientDetail() {
           sx={{ '& .MuiDataGrid-row': { cursor: 'pointer' } }}
         />
       </Paper>
-
-      <Button color="error" variant="outlined" onClick={() => setDeleteOpen(true)}>
-        Delete Ingredient
-      </Button>
 
       <IngredientFormDialog
         open={editOpen}

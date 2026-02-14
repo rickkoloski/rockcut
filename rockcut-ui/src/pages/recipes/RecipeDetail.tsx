@@ -2,13 +2,16 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
-  Button,
   CircularProgress,
+  IconButton,
   Paper,
   Tab,
   Tabs,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import PageHeader from '../../components/PageHeader';
 import StatusChip from '../../components/StatusChip';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -62,7 +65,12 @@ export default function RecipeDetail() {
           { label: `Recipe ${versionLabel}` },
         ]}
         title={`Recipe ${versionLabel}`}
-        action={{ label: 'Edit Recipe', onClick: () => setEditOpen(true) }}
+        toolbar={
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Tooltip title="Edit Recipe"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Recipe"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+          </Box>
+        }
       />
 
       <Paper sx={{ p: 2, mb: 3, border: '1px solid', borderColor: 'divider' }}>
@@ -80,11 +88,6 @@ export default function RecipeDetail() {
             <strong>Efficiency:</strong> {recipe.efficiency_target ?? '—'}%
           </Typography>
           <StatusChip status={recipe.status} domain="recipe" />
-        </Box>
-        <Box sx={{ mt: 2 }}>
-          <Button color="error" variant="outlined" onClick={() => setDeleteOpen(true)}>
-            Delete Recipe
-          </Button>
         </Box>
       </Paper>
 

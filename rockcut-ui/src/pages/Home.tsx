@@ -30,10 +30,10 @@ export default function Home() {
   ]
 
   const stats = [
-    { label: 'Brands', value: brands?.length ?? 0 },
-    { label: 'Recipes', value: recipes?.length ?? 0 },
-    { label: 'Active Batches', value: activeBatches.length },
-    { label: 'Completed', value: batches?.filter(b => b.status === 'completed').length ?? 0 },
+    { label: 'Brands', value: brands?.length ?? 0, path: '/brands' },
+    { label: 'Recipes', value: recipes?.length ?? 0, path: '/brands' },
+    { label: 'Active Batches', value: activeBatches.length, path: '/batches' },
+    { label: 'Completed', value: batches?.filter(b => b.status === 'completed').length ?? 0, path: '/batches' },
   ]
 
   return (
@@ -43,7 +43,10 @@ export default function Home() {
       <Grid container spacing={2} sx={{ mb: 4 }}>
         {stats.map(s => (
           <Grid key={s.label} size={{ xs: 6, sm: 3 }}>
-            <Card>
+            <Card
+              onClick={() => navigate(s.path)}
+              sx={{ cursor: 'pointer', '&:hover': { boxShadow: 3 }, transition: 'box-shadow 0.2s' }}
+            >
               <CardContent sx={{ textAlign: 'center', py: 2 }}>
                 <Typography variant="h3" color="primary">{s.value}</Typography>
                 <Typography variant="body2" color="text.secondary">{s.label}</Typography>

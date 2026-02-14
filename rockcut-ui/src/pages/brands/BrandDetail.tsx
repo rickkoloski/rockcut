@@ -5,9 +5,13 @@ import {
   Button,
   CircularProgress,
   Grid,
+  IconButton,
   Paper,
+  Tooltip,
   Typography,
 } from '@mui/material';
+import EditIcon from '@mui/icons-material/Edit';
+import DeleteIcon from '@mui/icons-material/Delete';
 import { DataGridExtended } from 'datagrid-extended';
 import type { ExtendedGridColDef } from 'datagrid-extended';
 import PageHeader from '../../components/PageHeader';
@@ -90,7 +94,12 @@ export default function BrandDetail() {
           { label: brand.name },
         ]}
         title={brand.name}
-        action={{ label: 'Edit Brand', onClick: () => setEditOpen(true) }}
+        toolbar={
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Tooltip title="Edit Brand"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Brand"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+          </Box>
+        }
       />
 
       <Paper sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider' }}>
@@ -109,11 +118,6 @@ export default function BrandDetail() {
           ))}
         </Grid>
 
-        <Box sx={{ mt: 2 }}>
-          <Button color="error" variant="outlined" onClick={() => setDeleteOpen(true)}>
-            Delete Brand
-          </Button>
-        </Box>
       </Paper>
 
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
