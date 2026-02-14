@@ -71,6 +71,15 @@ if config_env() == :prod do
 
   config :rockcut_api, :cors_origins, cors_origins
 
+  # Admin credentials for login gate
+  if admin_email = System.get_env("ADMIN_EMAIL") do
+    config :rockcut_api, :admin_email, admin_email
+  end
+
+  if admin_password_hash = System.get_env("ADMIN_PASSWORD_HASH") do
+    config :rockcut_api, :admin_password_hash, admin_password_hash
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key

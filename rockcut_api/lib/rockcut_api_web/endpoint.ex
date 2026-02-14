@@ -45,7 +45,10 @@ defmodule RockcutApiWeb.Endpoint do
     pass: ["*/*"],
     json_decoder: Phoenix.json_library()
 
-  plug CORSPlug, origin: &RockcutApiWeb.Endpoint.cors_origins/0
+  plug CORSPlug,
+    origin: &RockcutApiWeb.Endpoint.cors_origins/0,
+    credentials: true,
+    headers: ["Authorization", "Content-Type", "Accept"]
 
   def cors_origins do
     Application.get_env(:rockcut_api, :cors_origins, [

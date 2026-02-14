@@ -55,9 +55,9 @@ import GrainIcon from '@mui/icons-material/Grain'
 import SpaIcon from '@mui/icons-material/Spa'
 import BubbleChartIcon from '@mui/icons-material/BubbleChart'
 
-function Section({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
+function Section({ id, title, description, children }: { id: string; title: string; description: string; children: React.ReactNode }) {
   return (
-    <Paper elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider' }}>
+    <Paper id={id} elevation={0} sx={{ p: 3, mb: 3, border: '1px solid', borderColor: 'divider', scrollMarginTop: 16 }}>
       <Typography variant="h6" gutterBottom>{title}</Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>{description}</Typography>
       {children}
@@ -86,7 +86,7 @@ function DataGridSection() {
   ]
 
   return (
-    <Section title="Data Grid (Editable)" description="Excel-like editable grid via datagrid-extended. Click cells to edit. This is the core component for recipe building.">
+    <Section id="data-grid" title="Data Grid (Editable)" description="Excel-like editable grid via datagrid-extended. Click cells to edit. This is the core component for recipe building.">
       <DataGridExtended rows={rows} columns={columns} autoHeight disableRowSelectionOnClick />
     </Section>
   )
@@ -101,7 +101,7 @@ function TableSection() {
   ]
 
   return (
-    <Section title="Standard Table" description="Simple read-only tables for batch logs, summaries, and reports.">
+    <Section id="table" title="Standard Table" description="Simple read-only tables for batch logs, summaries, and reports.">
       <TableContainer>
         <Table size="small">
           <TableHead>
@@ -147,7 +147,7 @@ function FormsSection() {
   const [batchMethod, setBatchMethod] = useState('allgrain')
 
   return (
-    <Section title="Forms & Inputs" description="Text fields, selects, sliders, toggles — for recipe entry, brew day logging, and settings.">
+    <Section id="forms" title="Forms & Inputs" description="Text fields, selects, sliders, toggles — for recipe entry, brew day logging, and settings.">
       <Stack spacing={3}>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
           <TextField label="Recipe Name" defaultValue="Rockcut IPA" fullWidth />
@@ -214,7 +214,7 @@ function StepperSection() {
   const steps = ['Mash In', 'Mash Rest', 'Vorlauf', 'Sparge', 'Boil', 'Whirlpool', 'Chill', 'Pitch Yeast']
 
   return (
-    <Section title="Process Stepper" description="Step-by-step brew day workflow. Click steps to navigate.">
+    <Section id="stepper" title="Process Stepper" description="Step-by-step brew day workflow. Click steps to navigate.">
       <Stepper activeStep={activeStep} alternativeLabel>
         {steps.map((label, i) => (
           <Step key={label} completed={i < activeStep}>
@@ -260,7 +260,7 @@ function CardsSection() {
   ]
 
   return (
-    <Section title="Cards, Chips & Badges" description="Ingredient cards, status chips, category badges — for visual recipe building and dashboards.">
+    <Section id="cards" title="Cards, Chips & Badges" description="Ingredient cards, status chips, category badges — for visual recipe building and dashboards.">
       <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ mb: 2 }}>
         {ingredients.map((ing) => (
           <Chip
@@ -310,7 +310,7 @@ function CardsSection() {
 // --- Alerts, Progress, Breadcrumbs ---
 function FeedbackSection() {
   return (
-    <Section title="Feedback & Navigation" description="Alerts, progress bars, breadcrumbs, tabs — for brew day status, fermentation progress, and navigation.">
+    <Section id="feedback" title="Feedback & Navigation" description="Alerts, progress bars, breadcrumbs, tabs — for brew day status, fermentation progress, and navigation.">
       <Stack spacing={2}>
         <Alert severity="info">Batch B002 — Fermenting. Current gravity: 1.024. Estimated 3 days remaining.</Alert>
         <Alert severity="success">Batch B001 — Completed. Final ABV: 7.0%. Efficiency: 72%.</Alert>
@@ -335,7 +335,7 @@ function FeedbackSection() {
 // --- Accordion ---
 function AccordionSection() {
   return (
-    <Section title="Accordion / Collapsible" description="Expandable sections for recipe details, brew notes, and water chemistry panels.">
+    <Section id="accordion" title="Accordion / Collapsible" description="Expandable sections for recipe details, brew notes, and water chemistry panels.">
       <Accordion defaultExpanded>
         <AccordionSummary expandIcon={<ExpandMoreIcon />}>
           <Typography variant="subtitle1">Grain Bill</Typography>
@@ -369,7 +369,7 @@ function TabsSection() {
   const [tab, setTab] = useState(0)
 
   return (
-    <Section title="Tabs" description="Tab navigation for recipe views, batch history, and analytics panels.">
+    <Section id="tabs" title="Tabs" description="Tab navigation for recipe views, batch history, and analytics panels.">
       <Tabs value={tab} onChange={(_e, v) => setTab(v)}>
         <Tab label="Recipe" />
         <Tab label="Brew Log" />
@@ -389,7 +389,7 @@ function TabsSection() {
 // --- Buttons & Actions ---
 function ActionsSection() {
   return (
-    <Section title="Buttons & Actions" description="Action buttons, FABs, icon buttons, and button groups for common operations.">
+    <Section id="actions" title="Buttons & Actions" description="Action buttons, FABs, icon buttons, and button groups for common operations.">
       <Stack spacing={2}>
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
           <Button variant="contained">New Recipe</Button>
@@ -420,6 +420,19 @@ function ActionsSection() {
     </Section>
   )
 }
+
+// Section anchors for nav sub-items
+export const componentSections = [
+  { id: 'data-grid', label: 'Data Grid' },
+  { id: 'forms', label: 'Forms & Inputs' },
+  { id: 'stepper', label: 'Process Stepper' },
+  { id: 'table', label: 'Standard Table' },
+  { id: 'cards', label: 'Cards & Chips' },
+  { id: 'tabs', label: 'Tabs' },
+  { id: 'accordion', label: 'Accordion' },
+  { id: 'feedback', label: 'Feedback & Nav' },
+  { id: 'actions', label: 'Buttons & Actions' },
+]
 
 // --- Main Showcase ---
 export default function ComponentShowcase() {

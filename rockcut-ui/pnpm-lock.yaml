@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  datagrid-extended: link:../../ui-components/datagrid-extended
+  datagrid-extended: link:../../../shared/ui-components/datagrid-extended
 
 importers:
 
@@ -42,8 +42,8 @@ importers:
         specifier: ^1.13.5
         version: 1.13.5
       datagrid-extended:
-        specifier: link:../../ui-components/datagrid-extended
-        version: link:../../ui-components/datagrid-extended
+        specifier: link:../../../shared/ui-components/datagrid-extended
+        version: link:../../../shared/ui-components/datagrid-extended
       phoenix:
         specifier: ^1.8.3
         version: 1.8.3

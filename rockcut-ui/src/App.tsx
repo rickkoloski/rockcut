@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom'
 import {
   AppBar,
   Box,
+  Button,
   Drawer,
   IconButton,
   List,
@@ -11,24 +12,41 @@ import {
   ListItemText,
   Toolbar,
   Tooltip,
+  Typography,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import HomeIcon from '@mui/icons-material/Home'
-import WidgetsIcon from '@mui/icons-material/Widgets'
 import ScienceIcon from '@mui/icons-material/Science'
+import InventoryIcon from '@mui/icons-material/Inventory'
+import AssignmentIcon from '@mui/icons-material/Assignment'
+import SettingsIcon from '@mui/icons-material/Settings'
+import LogoutIcon from '@mui/icons-material/Logout'
 import { useNavigate, useLocation } from 'react-router-dom'
-import Splash from './pages/Splash'
-import ComponentShowcase from './pages/ComponentShowcase'
-import Recipes from './pages/Recipes'
+import Login from './pages/Login'
+import useAuth from './hooks/useAuth'
+
+// Lazy-ish imports for all pages
+import Home from './pages/Home'
+import BrandsList from './pages/brands/BrandsList'
+import BrandDetail from './pages/brands/BrandDetail'
+import RecipeDetail from './pages/recipes/RecipeDetail'
+import IngredientsList from './pages/ingredients/IngredientsList'
+import IngredientDetail from './pages/ingredients/IngredientDetail'
+import BatchesList from './pages/batches/BatchesList'
+import BatchDetail from './pages/batches/BatchDetail'
+import SettingsPage from './pages/settings/SettingsPage'
+import CategoryDetail from './pages/settings/CategoryDetail'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
 
 const navItems = [
   { label: 'Home', path: '/', icon: <HomeIcon /> },
-  { label: 'Recipes', path: '/recipes', icon: <ScienceIcon /> },
-  { label: 'UI Components', path: '/components', icon: <WidgetsIcon /> },
+  { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
+  { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
+  { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
+  { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
 ]
 
 function App() {
@@ -36,13 +54,19 @@ function App() {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
+  const { isAuthenticated, email, logout } = useAuth()
+
+  if (!isAuthenticated) {
+    return <Login />
+  }
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
+  const isSelected = (path: string) =>
+    path === '/' ? location.pathname === '/' : location.pathname.startsWith(path)
+
   const drawerContent = (isMobile: boolean) => (
     <Box sx={{ pt: 1, height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Logo + collapse toggle */}
-      {/* Logo area with absolutely positioned collapse toggle */}
       <Box
         sx={{
           position: 'relative',
@@ -77,13 +101,12 @@ function App() {
         </Box>
       </Box>
 
-      {/* Nav items */}
       <List sx={{ flexGrow: 1 }}>
         {navItems.map((item) => {
           const button = (
             <ListItemButton
               key={item.path}
-              selected={location.pathname === item.path}
+              selected={isSelected(item.path)}
               onClick={() => {
                 navigate(item.path)
                 if (isMobile) setMobileOpen(false)
@@ -121,7 +144,6 @@ function App() {
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-      {/* Persistent drawer for larger screens */}
       <Drawer
         variant="permanent"
         sx={{
@@ -139,7 +161,6 @@ function App() {
         {drawerContent(false)}
       </Drawer>
 
-      {/* Temporary drawer for mobile */}
       <Drawer
         variant="temporary"
         open={mobileOpen}
@@ -152,7 +173,6 @@ function App() {
         {drawerContent(true)}
       </Drawer>
 
-      {/* Main content */}
       <Box sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <AppBar
           position="static"
@@ -164,7 +184,6 @@ function App() {
           }}
         >
           <Toolbar variant="dense">
-            {/* Mobile: hamburger menu */}
             <IconButton
               edge="start"
               onClick={() => setMobileOpen(true)}
@@ -173,7 +192,6 @@ function App() {
               <MenuIcon />
             </IconButton>
 
-            {/* Desktop collapsed: expand button */}
             {collapsed && (
               <IconButton
                 edge="start"
@@ -184,18 +202,40 @@ function App() {
               </IconButton>
             )}
 
-            {/* Mobile: show logo in app bar */}
             <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
               <img src="/rockcut-logo.png" alt="Rockcut Brewing Co" style={{ height: 32 }} />
             </Box>
+
+            <Box sx={{ flexGrow: 1 }} />
+
+            <Typography variant="body2" color="text.secondary" sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
+              {email}
+            </Typography>
+            <Button
+              data-testid="logout-button"
+              size="small"
+              color="inherit"
+              onClick={logout}
+              startIcon={<LogoutIcon />}
+              sx={{ color: 'text.secondary' }}
+            >
+              Logout
+            </Button>
           </Toolbar>
         </AppBar>
 
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Routes>
-            <Route path="/" element={<Splash />} />
-            <Route path="/recipes" element={<Recipes />} />
-            <Route path="/components" element={<ComponentShowcase />} />
+            <Route path="/" element={<Home />} />
+            <Route path="/brands" element={<BrandsList />} />
+            <Route path="/brands/:id" element={<BrandDetail />} />
+            <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
+            <Route path="/ingredients" element={<IngredientsList />} />
+            <Route path="/ingredients/:id" element={<IngredientDetail />} />
+            <Route path="/batches" element={<BatchesList />} />
+            <Route path="/batches/:id" element={<BatchDetail />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/settings/categories/:id" element={<CategoryDetail />} />
           </Routes>
         </Box>
       </Box>

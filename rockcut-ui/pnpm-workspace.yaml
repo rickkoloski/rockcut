@@ -1,2 +1,2 @@
 overrides:
-  datagrid-extended: link:../../ui-components/datagrid-extended
+  datagrid-extended: link:../../../shared/ui-components/datagrid-extended

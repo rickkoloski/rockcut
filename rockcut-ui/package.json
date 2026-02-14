@@ -20,7 +20,7 @@
     "@tanstack/react-query": "^5.90.21",
     "autoprefixer": "^10.4.24",
     "axios": "^1.13.5",
-    "datagrid-extended": "link:../../ui-components/datagrid-extended",
+    "datagrid-extended": "link:../../../shared/ui-components/datagrid-extended",
     "phoenix": "^1.8.3",
     "postcss": "^8.5.6",
     "react": "^19.2.0",
