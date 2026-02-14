@@ -1,10 +1,17 @@
 # Dynamic Formula Execution — Analysis & Master Spec
 
-> **Status:** DRAFT — Analysis and architectural spec
+> **Status:** ACTIVE — D6 (backend) complete, D7 (frontend) in progress
 >
 > **Scope:** Adding dynamic formula evaluation to the datagrid-extended
 > component and safe server-side execution to rockcut's Phoenix layer.
 > Rockcut serves as the sandbox; datagrid-extended changes are reusable.
+>
+> **Product intent:** datagrid-extended is being developed as a
+> community-releasable component. The formula engine is a differentiating
+> feature — not just a developer API, but a user-facing capability where
+> end users (like Matt) can write and experiment with formulas. Rockcut
+> validates the component in a real domain; the component is designed
+> for reuse across domains and eventual open distribution.
 >
 > **Related codebases:**
 > - `~/src/shared/ui-components/datagrid-extended/` — shared grid widget
@@ -580,10 +587,40 @@ they meet.
 
 ## Future Considerations (v2+)
 
+### User-Facing Formula Experience (confirmed direction)
+
+Matt has expressed enthusiasm for writing formulas himself — this is
+not speculative, it's a confirmed product requirement. The incremental
+path:
+
+1. **D7:** Developer API + visual indicators for computed cells
+   (foundation — Matt sees formula results, knows they're computed)
+2. **D8+:** User-facing formula editing UX — Matt writes/edits
+   formulas in the grid, with catalog-driven autocomplete
+3. **Future:** Formula persistence (user-defined formulas saved to
+   backend), formula sharing, formula templates
+
+The editing surface (formula bar, column settings dialog, inline cell
+editor, or some combination) is a UX design question to explore with
+Matt. His input on what feels natural is critical — this is where
+domain delight lives.
+
+### Component Release Strategy
+
+datagrid-extended is being developed for community release. This
+imposes quality requirements beyond rockcut's immediate needs:
+
+- Clean, well-documented consumer API
+- Sensible defaults with full extensibility
+- No rockcut-specific coupling in the component itself
+- Examples and dev harness demonstrating all features
+- The formula engine is the differentiating feature — most grid
+  widgets don't offer this
+
+### Additional Future Items
+
 - **Write operations** — server functions that create/modify data,
   with expanded authorization model
-- **User-editable formula bar** — Matt types formulas directly in the
-  grid UI, with autocomplete powered by the catalog
 - **Cross-widget reuse** — report and chart components consuming the
   same remote function interface
 - **Shared Elixir library** — extract FormulaCatalog/FormulaRuntime

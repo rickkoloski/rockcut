@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Paper, FormControl, InputLabel, Select, MenuItem, Box } from '@mui/material'
-import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
+import type { ExtendedGridColDef } from 'datagrid-extended'
 import type { Ingredient, IngredientCategory } from '../../lib/types'
 import { useApiQuery } from '../../hooks/useApiQuery'
+import { useFormulaFunctions } from '../../hooks/useFormulaFunctions'
 import PageHeader from '../../components/PageHeader'
 import IngredientFormDialog from './IngredientFormDialog'
 
@@ -24,7 +25,9 @@ export default function IngredientsList() {
     categoryId ? { category_id: categoryId } : undefined
   )
 
-  const columns: GridColDef[] = [
+  const { remoteFunctions } = useFormulaFunctions()
+
+  const columns: ExtendedGridColDef[] = [
     { field: 'name', headerName: 'Name', flex: 1 },
     {
       field: 'category',
@@ -33,6 +36,12 @@ export default function IngredientsList() {
       valueGetter: (_value: unknown, row: Ingredient) => row.category?.name ?? '',
     },
     { field: 'notes', headerName: 'Notes', flex: 1 },
+    {
+      field: 'on_hand',
+      headerName: 'On Hand',
+      width: 120,
+      formula: '=INVENTORY_ON_HAND(id)',
+    },
   ]
 
   return (
@@ -68,6 +77,7 @@ export default function IngredientsList() {
         <DataGridExtended
           rows={ingredients}
           columns={columns}
+          remoteFunctions={remoteFunctions}
           autoHeight
           disableRowSelectionOnClick
           onRowClick={(params) => navigate(`/ingredients/${params.id}`)}

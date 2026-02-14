@@ -60,8 +60,9 @@ Items tagged "domain review needed" that should be batched for Matt's
 next review session. Grouped so Matt can answer domain questions without
 wading through technical plumbing.
 
-| Item | Domain Question |
-|------|----------------|
-| DR-1 | What does "inventory on hand" mean at Rockcut? Weight remaining per lot? Lot count? Something else? |
-| DR-2 | For your batch sizes, does a simplified 1.050 gravity assumption give close-enough IBU estimates? |
-| DR-3 | Can you provide a real recipe (grain bill + hop schedule) for seed data? |
+| Item | Domain Question | Status |
+|------|----------------|--------|
+| DR-1 | What does "inventory on hand" mean at Rockcut? Weight remaining per lot? Lot count? Something else? | Open |
+| DR-2 | For your batch sizes, does a simplified 1.050 gravity assumption give close-enough IBU estimates? | Open |
+| DR-3 | Can you provide a real recipe (grain bill + hop schedule) for seed data? | Open |
+| DR-5 | Matt wants to experiment with writing formulas himself — confirm: what kinds of calculations does he want to try? What would feel natural as an editing surface? | **Answered in part** — Matt is excited to write formulas; full UX preferences TBD |

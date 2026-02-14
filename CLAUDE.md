@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D7
+- **Next deliverable**: D8
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -107,6 +107,7 @@ If unsure about process, reference `~/src/ops/sdlc/process/overview.md`.
 | D4 | Auth — Login gate, bearer tokens, EnvAuth | 04_auth |
 | D5 | Scaffold UI — Full React SPA with CRUD forms | 02_scaffold_ui |
 | D6 | Formula Execution Service — FormulaCatalog, FormulaRuntime, 3 brewing formulas | 05_dynamic_formulas |
+| D7 | DataGrid Formula Engine — parser, evaluator, remote functions, visual indicators | 05_dynamic_formulas |
 
 ## References
 
