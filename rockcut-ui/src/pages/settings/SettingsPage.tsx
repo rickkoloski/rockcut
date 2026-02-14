@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Paper } from '@mui/material';
+import { Box, InputAdornment, Paper, TextField } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
 import type { IngredientCategory } from '../../lib/types';
@@ -16,11 +17,25 @@ const columns: GridColDef[] = [
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [formOpen, setFormOpen] = useState(false);
+  const [search, setSearch] = useState('');
 
   const { data: categories = [] } = useApiQuery<IngredientCategory[]>(
     ['ingredient_categories'],
     '/api/ingredient_categories',
   );
+
+  const filteredCategories = useMemo(() => {
+    if (!search) return categories;
+    const term = search.toLowerCase();
+    return categories.filter((c) =>
+      [c.name, c.sort_order]
+        .filter(Boolean)
+        .map(String)
+        .join(' ')
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [categories, search]);
 
   return (
     <>
@@ -30,9 +45,20 @@ export default function SettingsPage() {
         action={{ label: 'Add Category', onClick: () => setFormOpen(true) }}
       />
 
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          size="small"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+          sx={{ minWidth: 260 }}
+        />
+      </Box>
+
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
         <DataGridExtended
-          rows={categories}
+          rows={filteredCategories}
           columns={columns}
           autoHeight
           disableRowSelectionOnClick

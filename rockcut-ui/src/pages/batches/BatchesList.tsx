@@ -1,13 +1,16 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Paper,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
   Box,
+  FormControl,
+  InputAdornment,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  TextField,
 } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
 import type { Batch } from '../../lib/types';
@@ -42,12 +45,26 @@ export default function BatchesList() {
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [formOpen, setFormOpen] = useState(false);
+  const [search, setSearch] = useState('');
 
   const { data: batches = [] } = useApiQuery<Batch[]>(
     ['batches', { status: statusFilter }],
     '/api/batches',
     statusFilter ? { status: statusFilter } : undefined,
   );
+
+  const filteredBatches = useMemo(() => {
+    if (!search) return batches;
+    const term = search.toLowerCase();
+    return batches.filter((b) =>
+      [b.batch_number, b.brand?.name, b.status, b.actual_og, b.actual_fg, b.actual_abv, b.ferm_start_date]
+        .filter(Boolean)
+        .map(String)
+        .join(' ')
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [batches, search]);
 
   return (
     <>
@@ -57,8 +74,16 @@ export default function BatchesList() {
         action={{ label: 'Add Batch', onClick: () => setFormOpen(true) }}
       />
 
-      <Box sx={{ mb: 2, maxWidth: 240 }}>
-        <FormControl fullWidth size="small">
+      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <TextField
+          size="small"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+          sx={{ minWidth: 260 }}
+        />
+        <FormControl sx={{ minWidth: 240 }} size="small">
           <InputLabel>Status Filter</InputLabel>
           <Select
             value={statusFilter}
@@ -75,7 +100,7 @@ export default function BatchesList() {
 
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
         <DataGridExtended
-          rows={batches}
+          rows={filteredBatches}
           columns={columns}
           autoHeight
           disableRowSelectionOnClick

@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Paper } from '@mui/material';
+import { Box, InputAdornment, Paper, TextField } from '@mui/material';
+import SearchIcon from '@mui/icons-material/Search';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
 import PageHeader from '../../components/PageHeader';
@@ -26,6 +27,19 @@ export default function BrandsList() {
   const navigate = useNavigate();
   const { data: brands = [], isLoading } = useApiQuery<Brand[]>(['brands'], '/api/brands');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filteredBrands = useMemo(() => {
+    if (!search) return brands;
+    const term = search.toLowerCase();
+    return brands.filter((b) =>
+      [b.name, b.style, b.status, b.target_abv, b.target_ibu]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(term),
+    );
+  }, [brands, search]);
 
   return (
     <>
@@ -35,9 +49,20 @@ export default function BrandsList() {
         action={{ label: 'Add Brand', onClick: () => setDialogOpen(true) }}
       />
 
+      <Box sx={{ mb: 2 }}>
+        <TextField
+          size="small"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+          sx={{ minWidth: 260 }}
+        />
+      </Box>
+
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
         <DataGridExtended
-          rows={brands}
+          rows={filteredBrands}
           columns={columns}
           loading={isLoading}
           autoHeight

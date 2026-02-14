@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Paper, FormControl, InputLabel, Select, MenuItem, Box } from '@mui/material'
+import { Box, FormControl, InputAdornment, InputLabel, MenuItem, Paper, Select, TextField } from '@mui/material'
+import SearchIcon from '@mui/icons-material/Search'
 import { DataGridExtended } from 'datagrid-extended'
 import type { ExtendedGridColDef } from 'datagrid-extended'
 import type { Ingredient, IngredientCategory } from '../../lib/types'
@@ -13,6 +14,7 @@ export default function IngredientsList() {
   const navigate = useNavigate()
   const [categoryId, setCategoryId] = useState<number | ''>('')
   const [formOpen, setFormOpen] = useState(false)
+  const [search, setSearch] = useState('')
 
   const { data: categories = [] } = useApiQuery<IngredientCategory[]>(
     ['ingredient_categories'],
@@ -26,6 +28,18 @@ export default function IngredientsList() {
   )
 
   const { remoteFunctions } = useFormulaFunctions()
+
+  const filteredIngredients = useMemo(() => {
+    if (!search) return ingredients
+    const term = search.toLowerCase()
+    return ingredients.filter((i) =>
+      [i.name, i.category?.name, i.notes]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase()
+        .includes(term),
+    )
+  }, [ingredients, search])
 
   const columns: ExtendedGridColDef[] = [
     { field: 'name', headerName: 'Name', flex: 1 },
@@ -55,7 +69,15 @@ export default function IngredientsList() {
         action={{ label: 'Add Ingredient', onClick: () => setFormOpen(true) }}
       />
 
-      <Box sx={{ mb: 2 }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+        <TextField
+          size="small"
+          placeholder="Search..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+          sx={{ minWidth: 260 }}
+        />
         <FormControl sx={{ minWidth: 220 }} size="small">
           <InputLabel>Category</InputLabel>
           <Select
@@ -75,7 +97,7 @@ export default function IngredientsList() {
 
       <Paper variant="outlined">
         <DataGridExtended
-          rows={ingredients}
+          rows={filteredIngredients}
           columns={columns}
           remoteFunctions={remoteFunctions}
           formulaEditable
