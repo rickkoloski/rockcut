@@ -64,6 +64,7 @@ export default function BrandsList() {
         <DataGridExtended
           rows={filteredBrands}
           columns={columns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:brands:list' }}
           loading={isLoading}
           autoHeight
           disableRowSelectionOnClick

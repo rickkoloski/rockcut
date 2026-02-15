@@ -104,6 +104,7 @@ export default function IngredientsList() {
           onFormulaChange={(field, formula) => {
             console.log(`[IngredientsList] formula change: ${field} = ${formula ?? '(cleared)'}`)
           }}
+          columnVisibilityToggle={{ storageKey: 'rockcut:ingredients:list' }}
           autoHeight
           disableRowSelectionOnClick
           onRowClick={(params) => navigate(`/ingredients/${params.id}`)}
