@@ -10,7 +10,7 @@ Brewery management app for Matt at Rockcut Brewing Co, Estes Park, Colorado.
 | Database | SQLite (WAL mode) |
 | Frontend | React 19 SPA (Vite, MUI 7, pnpm) — port 5174 locally |
 | Hosting | Fly.io (rockcut-api.fly.dev, rockcut-ui.fly.dev) |
-| Auth | Bearer tokens, EnvAuth pattern |
+| Auth | Bearer tokens, DB-backed users (Accounts context, Argon2) |
 | Data Grid | datagrid-extended (linked from ~/src/shared/ui-components/) |
 
 ## Current Work
@@ -70,13 +70,17 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 
 ## Auth
 
-- Login: matt@rockcut.com / rockcut2026
-- Prod secrets: ADMIN_EMAIL, ADMIN_PASSWORD_HASH (Fly secrets)
+- DB-backed multi-user auth via `Accounts` context (replaces EnvAuth)
+- Two roles: `admin` (full access + user management), `user` (brewing CRUD only)
+- Login: matt@rockcut.com / rockcut2026 (admin)
+- Token encodes `user.id` (integer); AuthPlug rejects inactive users
+- Password reset flow: admin resets → temp password + `must_change_password` flag → user forced to change on next login
+- Frontend: `useAuth` store holds name, role, isAdmin, mustChangePassword; `ChangePasswordDialog` gates app when password change required
 
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D8
+- **Next deliverable**: D11
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -108,6 +112,15 @@ If unsure about process, reference `~/src/ops/sdlc/process/overview.md`.
 | D5 | Scaffold UI — Full React SPA with CRUD forms | 02_scaffold_ui |
 | D6 | Formula Execution Service — FormulaCatalog, FormulaRuntime, 3 brewing formulas | 05_dynamic_formulas |
 | D7 | DataGrid Formula Engine — parser, evaluator, remote functions, visual indicators | 05_dynamic_formulas |
+| D8 | List View Search — search bars on BrandsList, IngredientsList (with category filter) | 02_scaffold_ui |
+| D9 | Column Visibility Toggle — toolbar button, hide/show panel, column menu, localStorage persistence | 06_column_visibility |
+| D10 | User Management — DB-backed multi-user auth, admin/user roles, user CRUD, password reset flow | 07_user_management |
+
+### D9 Ad Hoc Fixes (same session)
+- **localStorage persistence bug**: React 19 StrictMode double-mount was overwriting saved state on initial render. Fixed with `useRef` gate on `useEffect` writes.
+- **Column menu fix**: MUI v8 `columnMenuColumnsItem` slot renders both Hide + Manage sub-items. Replaced entire slot with our wired `HideColumnMenuItem`.
+- **Column width persistence**: Extended `useColumnVisibility` hook to also persist column widths under `${storageKey}:widths`. Strips `flex` when applying saved widths.
+- **Consistency**: Enabled `columnVisibilityToggle` on all grids — BrandsList, IngredientsList, Home (Active Batches + Recent Recipes). Previously only BatchesList and detail pages had it.
 
 ## References
 

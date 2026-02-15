@@ -222,6 +222,19 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  def user(u) do
+    %{
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role,
+      active: u.active,
+      must_change_password: u.must_change_password,
+      inserted_at: u.inserted_at,
+      updated_at: u.updated_at
+    }
+  end
+
   # Compact renderers for nested associations
 
   defp ingredient_category_summary(cat) do

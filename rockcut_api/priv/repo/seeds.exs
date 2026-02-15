@@ -1,6 +1,19 @@
 alias RockcutApi.Repo
+alias RockcutApi.Accounts
 alias RockcutApi.Brewing.IngredientCategory
 alias RockcutApi.Brewing.CategoryFieldDefinition
+
+# ---------------------------------------------------------------------------
+# Seed admin user (idempotent)
+# ---------------------------------------------------------------------------
+unless Accounts.get_user_by_email("matt@rockcut.com") do
+  Accounts.create_user(%{
+    email: "matt@rockcut.com",
+    password: "rockcut2026",
+    name: "Matt",
+    role: "admin"
+  })
+end
 
 # Seed ingredient categories (idempotent — skips existing)
 categories =

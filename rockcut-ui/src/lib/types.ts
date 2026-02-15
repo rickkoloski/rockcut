@@ -203,6 +203,17 @@ export interface BatchLogEntry {
   updated_at: string
 }
 
+export interface User {
+  id: number
+  email: string
+  name: string
+  role: string
+  active: boolean
+  must_change_password: boolean
+  inserted_at: string
+  updated_at: string
+}
+
 export interface ApiResponse<T> {
   data: T
 }

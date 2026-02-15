@@ -6,7 +6,15 @@ defmodule RockcutApiWeb.FormulaControllerTest do
   # ── Auth helpers ───────────────────────────────────────────────────
 
   defp auth_conn(conn) do
-    token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", "test@example.com")
+    {:ok, user} =
+      RockcutApi.Accounts.create_user(%{
+        email: "test-#{System.unique_integer([:positive])}@example.com",
+        password: "password123",
+        name: "Test User",
+        role: "admin"
+      })
+
+    token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", user.id)
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 

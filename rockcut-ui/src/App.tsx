@@ -21,6 +21,7 @@ import ScienceIcon from '@mui/icons-material/Science'
 import InventoryIcon from '@mui/icons-material/Inventory'
 import AssignmentIcon from '@mui/icons-material/Assignment'
 import SettingsIcon from '@mui/icons-material/Settings'
+import PeopleIcon from '@mui/icons-material/People'
 import LogoutIcon from '@mui/icons-material/Logout'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
@@ -37,11 +38,13 @@ import BatchesList from './pages/batches/BatchesList'
 import BatchDetail from './pages/batches/BatchDetail'
 import SettingsPage from './pages/settings/SettingsPage'
 import CategoryDetail from './pages/settings/CategoryDetail'
+import UsersPage from './pages/settings/UsersPage'
+import ChangePasswordDialog from './components/ChangePasswordDialog'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
 
-const navItems = [
+const baseNavItems = [
   { label: 'Home', path: '/', icon: <HomeIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
@@ -54,11 +57,20 @@ function App() {
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAuthenticated, email, logout } = useAuth()
+  const { isAuthenticated, email, name, isAdmin, mustChangePassword, changePassword, logout } = useAuth()
 
   if (!isAuthenticated) {
     return <Login />
   }
+
+  if (mustChangePassword) {
+    return <ChangePasswordDialog onChangePassword={changePassword} />
+  }
+
+  const navItems = [
+    ...baseNavItems,
+    ...(isAdmin ? [{ label: 'Users', path: '/settings/users', icon: <PeopleIcon /> }] : []),
+  ]
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
@@ -209,7 +221,7 @@ function App() {
             <Box sx={{ flexGrow: 1 }} />
 
             <Typography variant="body2" color="text.secondary" sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
-              {email}
+              {name || email}
             </Typography>
             <Button
               data-testid="logout-button"
@@ -236,6 +248,7 @@ function App() {
             <Route path="/batches/:id" element={<BatchDetail />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/categories/:id" element={<CategoryDetail />} />
+            <Route path="/settings/users" element={<UsersPage />} />
           </Routes>
         </Box>
       </Box>

@@ -4,19 +4,28 @@ import api from '../lib/api'
 interface AuthState {
   token: string | null
   email: string | null
+  name: string | null
+  role: string | null
+  isAdmin: boolean
   isAuthenticated: boolean
   isLoading: boolean
+  mustChangePassword: boolean
   error: string | null
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   checkAuth: () => Promise<void>
+  changePassword: (password: string, passwordConfirmation: string) => Promise<void>
 }
 
 const useAuth = create<AuthState>((set, get) => ({
   token: localStorage.getItem('rockcut_token'),
   email: localStorage.getItem('rockcut_email'),
+  name: localStorage.getItem('rockcut_name'),
+  role: localStorage.getItem('rockcut_role'),
+  isAdmin: localStorage.getItem('rockcut_role') === 'admin',
   isAuthenticated: !!localStorage.getItem('rockcut_token'),
   isLoading: false,
+  mustChangePassword: false,
   error: null,
 
   login: async (email: string, password: string) => {
@@ -25,7 +34,18 @@ const useAuth = create<AuthState>((set, get) => ({
       const { data } = await api.post('/api/session', { email, password })
       localStorage.setItem('rockcut_token', data.token)
       localStorage.setItem('rockcut_email', data.email)
-      set({ token: data.token, email: data.email, isAuthenticated: true, isLoading: false })
+      localStorage.setItem('rockcut_name', data.name)
+      localStorage.setItem('rockcut_role', data.role)
+      set({
+        token: data.token,
+        email: data.email,
+        name: data.name,
+        role: data.role,
+        isAdmin: data.role === 'admin',
+        isAuthenticated: true,
+        isLoading: false,
+        mustChangePassword: data.must_change_password ?? false,
+      })
     } catch (err: unknown) {
       const message =
         err && typeof err === 'object' && 'response' in err
@@ -42,7 +62,9 @@ const useAuth = create<AuthState>((set, get) => ({
     }
     localStorage.removeItem('rockcut_token')
     localStorage.removeItem('rockcut_email')
-    set({ token: null, email: null, isAuthenticated: false })
+    localStorage.removeItem('rockcut_name')
+    localStorage.removeItem('rockcut_role')
+    set({ token: null, email: null, name: null, role: null, isAdmin: false, isAuthenticated: false, mustChangePassword: false })
   },
 
   checkAuth: async () => {
@@ -50,12 +72,28 @@ const useAuth = create<AuthState>((set, get) => ({
     if (!token) return
     try {
       const { data } = await api.get('/api/session')
-      set({ email: data.email, isAuthenticated: true })
+      localStorage.setItem('rockcut_name', data.name)
+      localStorage.setItem('rockcut_role', data.role)
+      set({
+        email: data.email,
+        name: data.name,
+        role: data.role,
+        isAdmin: data.role === 'admin',
+        isAuthenticated: true,
+        mustChangePassword: data.must_change_password ?? false,
+      })
     } catch {
       localStorage.removeItem('rockcut_token')
       localStorage.removeItem('rockcut_email')
-      set({ token: null, email: null, isAuthenticated: false })
+      localStorage.removeItem('rockcut_name')
+      localStorage.removeItem('rockcut_role')
+      set({ token: null, email: null, name: null, role: null, isAdmin: false, isAuthenticated: false, mustChangePassword: false })
     }
+  },
+
+  changePassword: async (password: string, passwordConfirmation: string) => {
+    await api.put('/api/session/password', { password, password_confirmation: passwordConfirmation })
+    set({ mustChangePassword: false })
   },
 }))
 

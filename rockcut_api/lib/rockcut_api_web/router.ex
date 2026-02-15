@@ -9,6 +9,10 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.AuthPlug
   end
 
+  pipeline :admin do
+    plug RockcutApiWeb.RequireAdminPlug
+  end
+
   # Public routes (no auth required)
   scope "/api", RockcutApiWeb do
     pipe_through :api
@@ -23,6 +27,7 @@ defmodule RockcutApiWeb.Router do
 
     get "/session", SessionController, :show
     delete "/session", SessionController, :delete
+    put "/session/password", SessionController, :change_password
 
     # Ingredient library
     resources "/ingredient_categories", IngredientCategoryController, except: [:new, :edit]
@@ -46,6 +51,14 @@ defmodule RockcutApiWeb.Router do
     # Formula execution
     get "/formulas/catalog", FormulaController, :catalog
     post "/formulas/execute", FormulaController, :execute
+  end
+
+  # Admin-only routes
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :admin]
+
+    resources "/users", UserController, except: [:new, :edit]
+    post "/users/:id/reset_password", UserController, :reset_password
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

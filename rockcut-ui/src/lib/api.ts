@@ -20,6 +20,8 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('rockcut_token')
       localStorage.removeItem('rockcut_email')
+      localStorage.removeItem('rockcut_name')
+      localStorage.removeItem('rockcut_role')
       window.location.reload()
     }
     return Promise.reject(error)
