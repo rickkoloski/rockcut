@@ -61,6 +61,7 @@ export default function Home() {
         <DataGridExtended
           rows={activeBatches}
           columns={batchColumns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:home:active-batches' }}
           autoHeight
           disableRowSelectionOnClick
           onRowClick={(params) => navigate(`/batches/${params.id}`)}
@@ -75,6 +76,7 @@ export default function Home() {
         <DataGridExtended
           rows={recipes?.slice(0, 10) ?? []}
           columns={recipeColumns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:home:recent-recipes' }}
           autoHeight
           disableRowSelectionOnClick
           onRowClick={(params) => {
