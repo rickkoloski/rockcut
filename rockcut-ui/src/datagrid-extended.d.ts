@@ -63,9 +63,14 @@ declare module 'datagrid-extended' {
     headerName?: string
   }
 
+  export interface ColumnVisibilityToggleConfig {
+    storageKey: string
+  }
+
   // --- Component Props ---
 
   export interface DataGridExtendedProps extends Omit<DataGridProps, 'columns'> {
+    columnVisibilityToggle?: ColumnVisibilityToggleConfig
     columns: ExtendedGridColDef[]
     remoteFunctions?: RemoteFunctions
     cacheStrategy?: CacheStrategy

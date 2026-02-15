@@ -167,6 +167,7 @@ export default function BatchDetail() {
         <DataGridExtended
           rows={batch.brew_turns ?? []}
           columns={turnColumns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:batch:turns' }}
           autoHeight
           disableRowSelectionOnClick
           sx={{ cursor: 'pointer' }}
@@ -192,6 +193,7 @@ export default function BatchDetail() {
         <DataGridExtended
           rows={logEntries}
           columns={logColumns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:batch:log' }}
           autoHeight
           disableRowSelectionOnClick
           sx={{ cursor: 'pointer' }}

@@ -117,6 +117,7 @@ export default function IngredientDetail() {
         <DataGridExtended
           rows={ingredient.lots ?? []}
           columns={lotColumns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:ingredient:lots' }}
           autoHeight
           disableRowSelectionOnClick
           onRowClick={(params) => handleEditLot(params.row as IngredientLotSummary)}

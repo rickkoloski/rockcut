@@ -94,6 +94,7 @@ export default function ProcessTab({ recipe }: ProcessTabProps) {
         <DataGridExtended
           rows={steps}
           columns={columns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:recipe:process' }}
           autoHeight
           disableRowSelectionOnClick
         />

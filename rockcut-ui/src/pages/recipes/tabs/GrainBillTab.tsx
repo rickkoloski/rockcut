@@ -105,6 +105,7 @@ export default function GrainBillTab({ recipe }: GrainBillTabProps) {
         <DataGridExtended
           rows={ingredients}
           columns={columns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:recipe:grain-bill' }}
           autoHeight
           disableRowSelectionOnClick
         />

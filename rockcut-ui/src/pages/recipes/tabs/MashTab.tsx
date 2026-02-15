@@ -98,6 +98,7 @@ export default function MashTab({ recipe }: MashTabProps) {
         <DataGridExtended
           rows={steps}
           columns={columns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:recipe:mash' }}
           autoHeight
           disableRowSelectionOnClick
         />

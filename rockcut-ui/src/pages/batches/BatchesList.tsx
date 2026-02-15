@@ -102,6 +102,7 @@ export default function BatchesList() {
         <DataGridExtended
           rows={filteredBatches}
           columns={columns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:batches:list' }}
           autoHeight
           disableRowSelectionOnClick
           sx={{ cursor: 'pointer' }}

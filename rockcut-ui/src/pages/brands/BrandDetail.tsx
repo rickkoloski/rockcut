@@ -131,6 +131,7 @@ export default function BrandDetail() {
         <DataGridExtended
           rows={recipes}
           columns={recipeColumns}
+          columnVisibilityToggle={{ storageKey: 'rockcut:brand:recipes' }}
           remoteFunctions={remoteFunctions}
           loading={recipesLoading}
           autoHeight
