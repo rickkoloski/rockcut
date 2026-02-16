@@ -123,3 +123,41 @@ fly volumes create rockcut_data --size 1 --region dfw -a rockcut-api --yes
 **Solution:** `VITE_API_URL` is set via `[build.args]` in `fly.toml`, not via `fly secrets`. To change it, update `fly.toml` and redeploy.
 
 **Key Insight:** For values that need to change without rebuilding, read them from a runtime config endpoint or `window.__CONFIG__` pattern instead.
+
+---
+
+## 7. Migrating Auth from Environment Variables to Database
+
+**Date:** 2026-02-15
+
+**Context:** D10 replaced `EnvAuth` (credentials in Fly secrets) with database-backed multi-user auth (`Accounts` context, `users` table, Argon2 hashing).
+
+**Deploy Sequence:**
+1. `fly deploy --remote-only` — deploys new code, migration creates `users` table on start
+2. `fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"` — creates admin account
+3. Verify login works at https://rockcut-ui.fly.dev
+4. `fly secrets unset ADMIN_EMAIL ADMIN_PASSWORD_HASH -a rockcut-api` — remove old secrets
+
+**Gotcha — Auto-Stop Machines:** After deploying, the machine may auto-stop before you can SSH in for seeding. If `fly ssh console` returns "no started VMs", run `fly machine start <machine-id> -a rockcut-api` first, then seed within a few seconds.
+
+**Gotcha — Existing Tokens:** Old tokens encode an email string; the new AuthPlug expects an integer user_id. Existing sessions will get a 401 on their next request. The frontend's 401 interceptor handles this by clearing localStorage and redirecting to login — no user action needed beyond re-logging in.
+
+**Key Insight:** For small apps with auto-stop enabled, plan your deploy + seed as a quick sequence. The machine will auto-stop again after idle timeout.
+
+---
+
+## 8. Docker Shim Loses Extended DataGrid Features
+
+**Date:** 2026-02-15
+
+**Symptom:** Production grids are missing features that work locally — no formula columns (`fx` icon, "Add Formula" in column menu), no column visibility toggle button, no custom "Hide Column" menu item. Column menu shows MUI's default "Manage columns" instead.
+
+**Root Cause:** The Dockerfile originally created a minimal shim for `datagrid-extended` that just re-exported MUI's plain `DataGrid`. This was fine when the component was a thin wrapper, but as features were added (D7 formulas, D9 column visibility), the shim fell further behind the real source.
+
+**Solution:** Replaced the inline shim with a vendored copy of the real source:
+
+1. Created `deploy.sh` that copies the real source from `~/src/shared/ui-components/datagrid-extended/src/lib/` into `.datagrid-extended-src/` (excluding test files), runs `fly deploy`, then cleans up.
+2. Updated Dockerfile to `COPY .datagrid-extended-src .datagrid-extended-src` instead of generating a shim.
+3. Added `.datagrid-extended-src/` to `.gitignore` (vendored copy is transient, only exists during deploy).
+
+**Key Insight:** When a linked package grows beyond a trivial wrapper, a static shim silently loses features. Use the real source in Docker builds. The deploy script pattern (`vendor → build → clean`) keeps it automated without polluting the repo.

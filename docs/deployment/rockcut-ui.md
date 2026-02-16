@@ -67,7 +67,7 @@ Two stages:
 1. **Builder** — `node:20-bookworm-slim`
    - Installs pnpm via corepack (this project uses pnpm, not npm)
    - Uses `package.docker.json` instead of `package.json` (see "Linked Package Handling" below)
-   - Creates datagrid-extended shim source files
+   - Copies vendored datagrid-extended source (placed by `deploy.sh`)
    - Builds with `pnpm run build` (`tsc -b && vite build`)
 2. **Server** — `nginx:alpine`
    - Custom `nginx.conf` for SPA routing
@@ -112,21 +112,28 @@ Key points:
 
 ## Linked Package Handling (datagrid-extended)
 
-The rockcut-ui project depends on `datagrid-extended`, a component library that lives outside the repo at `~/src/ui-components/datagrid-extended/`. In development, it's linked via `pnpm link`. In Docker, that path doesn't exist.
+The rockcut-ui project depends on `datagrid-extended`, a component library that lives outside the repo at `~/src/shared/ui-components/datagrid-extended/`. In development, it's linked via `pnpm link`. In Docker, that path doesn't exist.
 
-We solve this the same way vNext handles its `wf_ui_src` dependency — a Docker-specific build:
+**Solution: Vendored source via deploy script.**
 
-1. **`package.docker.json`** — Same as `package.json` but without the `datagrid-extended` link dependency
-2. **`DOCKER_BUILD=1` env var** — Tells `vite.config.ts` to use the Docker source path
-3. **Shim creation in Dockerfile** — The Dockerfile creates `.datagrid-extended-src/` with a minimal re-export of `@mui/x-data-grid`
-4. **`vite.config.ts`** — Conditionally resolves the alias:
-   - Dev: `../../ui-components/datagrid-extended/src/lib`
-   - Docker: `.datagrid-extended-src`
-5. **`src/datagrid-extended.d.ts`** — Type declaration so TypeScript can find the module
+The `deploy.sh` script handles this automatically:
 
-**When datagrid-extended grows**, you'll need to update the Dockerfile shim to match. Long-term, consider either:
-- Moving datagrid-extended into the rockcut monorepo
-- Publishing it to npm (even as a private package)
+1. Copies the real datagrid-extended source from `~/src/shared/ui-components/datagrid-extended/src/lib/` into `.datagrid-extended-src/` (excluding tests)
+2. Runs `fly deploy --remote-only` (Dockerfile `COPY`s the vendored source)
+3. Cleans up the vendored copy after deploy
+
+Supporting files:
+- **`package.docker.json`** — Same as `package.json` but without the `datagrid-extended` link dependency
+- **`DOCKER_BUILD=1` env var** — Tells `vite.config.ts` to use the Docker source path (`.datagrid-extended-src`)
+- **`vite.config.ts`** — Conditionally resolves the alias:
+  - Dev: `~/src/shared/ui-components/datagrid-extended/src/lib` (via pnpm link)
+  - Docker: `.datagrid-extended-src` (vendored copy)
+- **`src/datagrid-extended.d.ts`** — Type declaration so TypeScript can find the module
+- **`.gitignore`** — Excludes `.datagrid-extended-src/` from version control
+
+**Important:** Always use `./deploy.sh` to deploy the UI, not `fly deploy` directly. Running `fly deploy` without the deploy script will fail because `.datagrid-extended-src/` won't exist in the Docker context.
+
+**History:** The original approach used a minimal shim in the Dockerfile that re-exported plain `@mui/x-data-grid`. This worked initially but lost all extended features (formulas, column visibility, custom menus) in production. Switched to vendored source in D10.
 
 ## Build-Time Environment Variables
 
@@ -156,8 +163,10 @@ fly deploy --remote-only
 
 ```bash
 cd rockcut-ui
-fly deploy --remote-only
+./deploy.sh
 ```
+
+**Do not** run `fly deploy --remote-only` directly — the deploy script vendors datagrid-extended source first.
 
 ## Verification
 
@@ -181,6 +190,7 @@ fly status -a rockcut-ui
 | 403 Forbidden on assets | File permissions | Ensure Dockerfile has `chmod -R a+r` |
 | 404 on direct navigation to `/recipes` | Missing `try_files` | Check nginx.conf has `try_files $uri $uri/ /index.html` |
 | Build fails: lockfile mismatch | `package.json` used instead of `package.docker.json` | Dockerfile should `COPY package.docker.json ./package.json` |
-| Build fails: can't find `datagrid-extended` | Shim not created or vite.config not Docker-aware | Check `DOCKER_BUILD=1` is set and shim matches current source |
+| Build fails: can't find `datagrid-extended` | Deployed with `fly deploy` instead of `./deploy.sh` | Always use `./deploy.sh` — it vendors the source before building |
+| Grid features missing in production (no formulas, no column toggle) | Deployed with `fly deploy` instead of `./deploy.sh` | Redeploy using `./deploy.sh` |
 | Build fails: unused TypeScript imports | `noUnusedLocals: true` in tsconfig | Fix the unused import in the source file |
 | API calls fail in production | Wrong `VITE_API_URL` | Update `fly.toml [build.args]` and redeploy |

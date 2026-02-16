@@ -16,17 +16,8 @@ COPY package.docker.json ./package.json
 COPY .npmrc ./
 RUN pnpm install --no-frozen-lockfile
 
-# Create datagrid-extended shim (the linked package doesn't exist in Docker)
-RUN mkdir -p .datagrid-extended-src && \
-    echo "import { DataGrid, type DataGridProps } from '@mui/x-data-grid'" > .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "export interface DataGridExtendedProps extends DataGridProps {}" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "export function DataGridExtended(props: DataGridExtendedProps) {" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "  return <DataGrid {...props} />" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "}" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "export { DataGridExtended } from './DataGridExtended'" > .datagrid-extended-src/index.ts && \
-    echo "export type { DataGridExtendedProps } from './DataGridExtended'" >> .datagrid-extended-src/index.ts
+# Copy vendored datagrid-extended source (copied by deploy script before build)
+COPY .datagrid-extended-src .datagrid-extended-src
 
 # Copy source and build
 COPY . .

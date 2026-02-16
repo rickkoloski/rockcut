@@ -94,6 +94,21 @@ Two stages:
 | `CORS_ORIGINS` | No | `["*"]` | Comma-separated allowed origins. Default is permissive for demo |
 | `DNS_CLUSTER_QUERY` | No | — | DNS query for clustering (unused for now) |
 
+**Removed in D10:** `ADMIN_EMAIL` and `ADMIN_PASSWORD_HASH` were used by the original `EnvAuth` module. Auth is now database-backed via the `Accounts` context and `users` table. Admin credentials are seeded (see "Auth & User Seeding" below).
+
+## Auth & User Seeding
+
+Auth uses database-backed users (Argon2 password hashing, bearer tokens). The admin account is created by the seed script:
+
+```bash
+# Seed admin user (idempotent — skips if already exists)
+fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"
+```
+
+The seed creates `matthewheiser@gmail.com` as admin with password `rockcut2026`. After first login, the admin can create additional users and manage passwords via the Users page.
+
+**After deploying a new instance**, always run the seed command to create the initial admin account.
+
 ## Migrations
 
 Migrations run **automatically on app start** via `Ecto.Migrator` in `application.ex`. This is the recommended approach for SQLite on Fly.io because:
@@ -141,6 +156,9 @@ fly deploy --remote-only
 ```bash
 cd rockcut_api
 fly deploy --remote-only
+
+# If migrations added a new table that needs seeding:
+fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"
 ```
 
 ## Verification

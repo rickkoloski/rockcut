@@ -4,15 +4,26 @@ alias RockcutApi.Brewing.IngredientCategory
 alias RockcutApi.Brewing.CategoryFieldDefinition
 
 # ---------------------------------------------------------------------------
-# Seed admin user (idempotent)
+# Seed admin user (idempotent, handles email migration)
 # ---------------------------------------------------------------------------
-unless Accounts.get_user_by_email("matthewheiser@gmail.com") do
-  Accounts.create_user(%{
-    email: "matthewheiser@gmail.com",
-    password: "rockcut2026",
-    name: "Matt",
-    role: "admin"
-  })
+case {Accounts.get_user_by_email("matthewheiser@gmail.com"),
+      Accounts.get_user_by_email("matt@rockcut.com")} do
+  {%Accounts.User{}, _} ->
+    # Current admin exists, nothing to do
+    :ok
+
+  {nil, %Accounts.User{} = old_user} ->
+    # Old admin exists, update email to current
+    Accounts.update_user(old_user, %{email: "matthewheiser@gmail.com"})
+
+  {nil, nil} ->
+    # No admin exists, create fresh
+    Accounts.create_user(%{
+      email: "matthewheiser@gmail.com",
+      password: "rockcut2026",
+      name: "Matt",
+      role: "admin"
+    })
 end
 
 # Seed ingredient categories (idempotent — skips existing)

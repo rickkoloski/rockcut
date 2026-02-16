@@ -13,8 +13,8 @@ Two-app deployment on [Fly.io](https://fly.io), region `dfw` (Dallas-Fort Worth)
 # Deploy API
 cd rockcut_api && fly deploy --remote-only
 
-# Deploy UI
-cd rockcut-ui && fly deploy --remote-only
+# Deploy UI (vendors datagrid-extended source, then deploys)
+cd rockcut-ui && ./deploy.sh
 
 # Check status
 fly status -a rockcut-api
@@ -23,6 +23,9 @@ fly status -a rockcut-ui
 # View logs
 fly logs -a rockcut-api
 fly logs -a rockcut-ui
+
+# Seed admin user (run after first deploy or migration changes)
+fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"
 
 # Health checks
 curl https://rockcut-api.fly.dev/api/health
@@ -38,6 +41,6 @@ fly sftp get /data/rockcut_api.db ./rockcut_api_backup.db -a rockcut-api
 ## Detailed Documentation
 
 - [rockcut-api.md](rockcut-api.md) — Phoenix API deployment (SQLite, volumes, Elixir release)
-- [rockcut-ui.md](rockcut-ui.md) — React SPA deployment (nginx, pnpm, datagrid-extended shim)
+- [rockcut-ui.md](rockcut-ui.md) — React SPA deployment (nginx, pnpm, datagrid-extended vendoring)
 - [lessons-learned.md](lessons-learned.md) — Issues encountered and how we solved them
 - [differences-from-vnext.md](differences-from-vnext.md) — Key differences from the vNext deployment

@@ -53,7 +53,7 @@ cd rockcut-ui && pnpm dev           # http://localhost:5174
 
 # Deploy
 cd rockcut_api && fly deploy --remote-only
-cd rockcut-ui && fly deploy --remote-only
+cd rockcut-ui && ./deploy.sh    # vendors datagrid-extended source, then deploys
 
 # Seed prod
 fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"

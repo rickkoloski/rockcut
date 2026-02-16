@@ -13,16 +13,18 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// On 401, clear token so the UI shows the login page
+// On 401, clear token and redirect to login (once, to avoid reload loops)
+let redirecting = false
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !redirecting) {
+      redirecting = true
       localStorage.removeItem('rockcut_token')
       localStorage.removeItem('rockcut_email')
       localStorage.removeItem('rockcut_name')
       localStorage.removeItem('rockcut_role')
-      window.location.reload()
+      window.location.replace('/')
     }
     return Promise.reject(error)
   }
