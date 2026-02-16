@@ -67,6 +67,18 @@ declare module 'datagrid-extended' {
     storageKey: string
   }
 
+  // --- D11: Formula Help ---
+
+  export interface FormulaHelpExample {
+    formula: string
+    description: string
+  }
+
+  export interface FormulaHelpContent {
+    examples?: FormulaHelpExample[]
+    tips?: string[]
+  }
+
   // --- Component Props ---
 
   export interface DataGridExtendedProps extends Omit<DataGridProps, 'columns'> {
@@ -78,6 +90,7 @@ declare module 'datagrid-extended' {
     formulaEditable?: boolean
     onFormulaChange?: (field: string, formula: string | null) => void
     functionCatalog?: FunctionCatalogEntry[]
+    formulaHelp?: FormulaHelpContent
   }
 
   export function DataGridExtended(props: DataGridExtendedProps): JSX.Element
@@ -97,4 +110,5 @@ declare module 'datagrid-extended' {
   export function extractFields(expr: Expression): string[]
   export function extractFunctions(expr: Expression): string[]
   export function defaultFunctionCatalog(): FunctionCatalogEntry[]
+  export function defaultFormulaHelp(): FormulaHelpContent
 }

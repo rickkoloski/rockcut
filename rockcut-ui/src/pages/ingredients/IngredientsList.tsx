@@ -7,6 +7,7 @@ import type { ExtendedGridColDef } from 'datagrid-extended'
 import type { Ingredient, IngredientCategory } from '../../lib/types'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { useFormulaFunctions } from '../../hooks/useFormulaFunctions'
+import { brewingFormulaHelp } from '../../lib/formulaHelp'
 import PageHeader from '../../components/PageHeader'
 import IngredientFormDialog from './IngredientFormDialog'
 
@@ -101,6 +102,7 @@ export default function IngredientsList() {
           columns={columns}
           remoteFunctions={remoteFunctions}
           formulaEditable
+          formulaHelp={brewingFormulaHelp}
           onFormulaChange={(field, formula) => {
             console.log(`[IngredientsList] formula change: ${field} = ${formula ?? '(cleared)'}`)
           }}
