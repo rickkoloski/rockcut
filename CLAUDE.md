@@ -72,7 +72,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 
 - DB-backed multi-user auth via `Accounts` context (replaces EnvAuth)
 - Two roles: `admin` (full access + user management), `user` (brewing CRUD only)
-- Login: matt@rockcut.com / rockcut2026 (admin)
+- Login: matthewheiser@gmail.com / rockcut2026 (admin)
 - Token encodes `user.id` (integer); AuthPlug rejects inactive users
 - Password reset flow: admin resets → temp password + `must_change_password` flag → user forced to change on next login
 - Frontend: `useAuth` store holds name, role, isAdmin, mustChangePassword; `ChangePasswordDialog` gates app when password change required

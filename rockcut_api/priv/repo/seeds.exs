@@ -6,9 +6,9 @@ alias RockcutApi.Brewing.CategoryFieldDefinition
 # ---------------------------------------------------------------------------
 # Seed admin user (idempotent)
 # ---------------------------------------------------------------------------
-unless Accounts.get_user_by_email("matt@rockcut.com") do
+unless Accounts.get_user_by_email("matthewheiser@gmail.com") do
   Accounts.create_user(%{
-    email: "matt@rockcut.com",
+    email: "matthewheiser@gmail.com",
     password: "rockcut2026",
     name: "Matt",
     role: "admin"
