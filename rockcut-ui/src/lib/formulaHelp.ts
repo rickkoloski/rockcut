@@ -5,9 +5,8 @@ export const brewingFormulaHelp: FormulaHelpContent = {
     { formula: '=INVENTORY_ON_HAND(id)', description: 'Current stock level for this ingredient' },
     { formula: '=EST_IBU(recipe_id)', description: 'Estimated bitterness (IBU) for a recipe' },
     { formula: '=EST_OG(recipe_id)', description: 'Estimated original gravity for a recipe' },
-    { formula: '=SUM(quantity)', description: 'Total quantity across all rows' },
-    { formula: '=ROUND(amount * rate, 2)', description: 'Calculated cost rounded to 2 decimals' },
-    { formula: '=IF(active, "Yes", "No")', description: 'Display active status as text' },
+    { formula: '=ROUND(INVENTORY_ON_HAND(id), 1)', description: 'Stock level rounded to 1 decimal' },
+    { formula: '=IF(INVENTORY_ON_HAND(id) > 0, "In Stock", "Out")', description: 'Stock status as text' },
   ],
   tips: [
     'Formulas start with = (e.g. =SUM(quantity))',
