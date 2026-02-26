@@ -10,6 +10,7 @@ defmodule RockcutApi.Brewing.Recipe do
     field :boil_time, :integer, default: 60
     field :efficiency_target, :decimal
     field :status, :string, default: "draft"
+    field :is_default, :boolean, default: false
     field :notes, :string
 
     belongs_to :brand, RockcutApi.Brewing.Brand
@@ -29,7 +30,7 @@ defmodule RockcutApi.Brewing.Recipe do
     recipe
     |> cast(attrs, [
       :brand_id, :version_major, :version_minor, :batch_size, :batch_size_unit,
-      :boil_time, :efficiency_target, :status, :notes
+      :boil_time, :efficiency_target, :status, :is_default, :notes
     ])
     |> validate_required([:brand_id, :batch_size])
     |> validate_inclusion(:status, @valid_statuses)

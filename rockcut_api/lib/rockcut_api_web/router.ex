@@ -29,6 +29,10 @@ defmodule RockcutApiWeb.Router do
     delete "/session", SessionController, :delete
     put "/session/password", SessionController, :change_password
 
+    # Settings
+    resources "/brewhouses", BrewhouseController, except: [:new, :edit]
+    resources "/process_profiles", ProcessProfileController, except: [:new, :edit]
+
     # Ingredient library
     resources "/ingredient_categories", IngredientCategoryController, except: [:new, :edit]
     resources "/category_field_definitions", CategoryFieldDefinitionController, except: [:new, :edit]
@@ -37,7 +41,11 @@ defmodule RockcutApiWeb.Router do
 
     # Recipe management
     resources "/brands", BrandController, except: [:new, :edit]
+    post "/brands/:id/duplicate", BrandController, :duplicate
     resources "/recipes", RecipeController, except: [:new, :edit]
+    post "/recipes/:id/copy", RecipeController, :copy
+    post "/recipes/:id/move", RecipeController, :move
+    post "/recipes/:id/set_default", RecipeController, :set_default
     resources "/recipe_ingredients", RecipeIngredientController, except: [:new, :edit]
     resources "/mash_steps", MashStepController, except: [:new, :edit]
     resources "/recipe_process_steps", RecipeProcessStepController, except: [:new, :edit]

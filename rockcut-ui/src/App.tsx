@@ -38,6 +38,10 @@ import BatchesList from './pages/batches/BatchesList'
 import BatchDetail from './pages/batches/BatchDetail'
 import SettingsPage from './pages/settings/SettingsPage'
 import CategoryDetail from './pages/settings/CategoryDetail'
+import BrewhousesList from './pages/settings/BrewhousesList'
+import BrewhouseDetail from './pages/settings/BrewhouseDetail'
+import ProcessProfilesList from './pages/settings/ProcessProfilesList'
+import ProcessProfileDetail from './pages/settings/ProcessProfileDetail'
 import UsersPage from './pages/settings/UsersPage'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
 
@@ -248,6 +252,10 @@ function App() {
             <Route path="/batches/:id" element={<BatchDetail />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/categories/:id" element={<CategoryDetail />} />
+            <Route path="/settings/brewhouses" element={<BrewhousesList />} />
+            <Route path="/settings/brewhouses/:id" element={<BrewhouseDetail />} />
+            <Route path="/settings/process-profiles" element={<ProcessProfilesList />} />
+            <Route path="/settings/process-profiles/:id" element={<ProcessProfileDetail />} />
             <Route path="/settings/users" element={<UsersPage />} />
           </Routes>
         </Box>

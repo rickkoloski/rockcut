@@ -2,10 +2,13 @@ import Config
 
 # Configure your database
 config :rockcut_api, RockcutApi.Repo,
-  database: Path.expand("../rockcut_api_dev.db", __DIR__),
-  pool_size: 5,
+  username: "postgres",
+  password: "postgres",
+  hostname: "localhost",
+  database: "rockcut_api_dev",
   stacktrace: true,
-  show_sensitive_data_on_connection_error: true
+  show_sensitive_data_on_connection_error: true,
+  pool_size: 10
 
 # For development, we disable any cache and enable
 # debugging and code reloading.

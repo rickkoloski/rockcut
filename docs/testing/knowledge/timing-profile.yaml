@@ -1,0 +1,35 @@
+# Rockcut Timing Profile (Layer 4)
+# Empirically measured waits, overriding cross-project defaults where different.
+# Last updated: 2026-02-22 (initial — from playbook + CLI session)
+# TODO: Re-measure after next full test cycle for P50/P95 values.
+
+measurements:
+  login_redirect:
+    measured_ms: 2000
+    source: "CLI session 2026-02-22 — fill + click + wait for app shell"
+    notes: "POST /api/session + token save + React redirect"
+
+  brands_page_load:
+    measured_ms: 1500
+    source: "CLI session 2026-02-22 — nav click to full grid render"
+    notes: "Includes sidebar nav click + route change + API fetch + DataGrid init"
+
+  formula_remote_resolution:
+    measured_ms: 500
+    source: "D7 playbook — dev harness simulated delay"
+    notes: "INVENTORY_ON_HAND resolves in ~300-500ms. On real data, similar."
+
+  client_side_filter:
+    measured_ms: 100
+    source: "D8 implementation — useMemo, no debounce"
+    notes: "Nearly instant. No network request."
+
+  formula_editor_debounce:
+    validation_ms: 150
+    preview_ms: 300
+    source: "D8 spec"
+
+  playwright_cli_auto_wait:
+    description: "Playwright CLI auto-waits for element actionability"
+    implication: "Explicit waits rarely needed — CLI handles page load, element visibility"
+    exception: "Async data (formula results, API responses) may need explicit wait after navigation"

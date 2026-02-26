@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Box, FormControl, InputAdornment, InputLabel, MenuItem, Paper, Select, TextField } from '@mui/material'
 import SearchIcon from '@mui/icons-material/Search'
@@ -17,10 +17,20 @@ export default function IngredientsList() {
   const [formOpen, setFormOpen] = useState(false)
   const [search, setSearch] = useState('')
 
+  const defaultSet = useRef(false)
+
   const { data: categories = [] } = useApiQuery<IngredientCategory[]>(
     ['ingredient_categories'],
     '/api/ingredient_categories'
   )
+
+  // Default to first category (Grain, sort_order 0) on initial load
+  useEffect(() => {
+    if (categories.length > 0 && !defaultSet.current && categoryId === '') {
+      defaultSet.current = true
+      setCategoryId(categories[0].id)
+    }
+  }, [categories, categoryId])
 
   const { data: ingredients = [] } = useApiQuery<Ingredient[]>(
     ['ingredients', { category_id: categoryId }],

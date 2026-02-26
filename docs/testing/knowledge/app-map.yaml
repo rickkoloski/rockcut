@@ -1,0 +1,168 @@
+# Rockcut App Map (Layer 1)
+# Routes, pages, components, data relationships.
+# Last updated: 2026-02-22 (initial — from CLI exploration + codebase review)
+
+app:
+  name: "Rockcut Brewing Co"
+  api_url: "http://localhost:4002"
+  ui_url: "http://localhost:5174"
+  auth:
+    method: "bearer token"
+    login_route: "/login"
+    admin_user: "matthewheiser@gmail.com"
+    # Password in CLAUDE.md, not duplicated here
+
+routes:
+  - path: "/login"
+    component: "Login.tsx"
+    auth_required: false
+    has_datagrid: false
+    description: "Login form — email + password"
+    testability:
+      data_testids: ["login-email", "login-password", "login-submit"]
+
+  - path: "/"
+    component: "Home.tsx"
+    auth_required: true
+    has_datagrid: true
+    grids:
+      - name: "Active Batches"
+        storage_key: "rockcut:home:batches"
+      - name: "Recent Recipes"
+        storage_key: "rockcut:home:recipes"
+    description: "Dashboard — active batches grid + recent recipes grid"
+    testability:
+      data_testids: []
+
+  - path: "/brands"
+    component: "BrandsList.tsx"
+    auth_required: true
+    has_datagrid: true
+    grids:
+      - name: "Brands"
+        storage_key: "rockcut:brands:list"
+        columns: ["name", "style", "target_abv", "target_ibu", "status"]
+    actions: ["search", "add_brand", "row_click_to_detail", "column_visibility"]
+    api_endpoint: "GET /api/brands"
+    description: "Brands list with search, add, row click to detail"
+    testability:
+      data_testids: []
+      debt: "No testids on page, grid rows, or add button"
+
+  - path: "/brands/:id"
+    component: "BrandDetail.tsx"
+    auth_required: true
+    has_datagrid: true
+    actions: ["edit_brand", "delete_brand", "view_recipes"]
+    api_endpoint: "GET /api/brands/:id"
+    description: "Brand detail — edit/delete toolbar, recipes sub-grid"
+    drills_down_to: "/brands/:brandId/recipes/:id"
+    testability:
+      data_testids: []
+
+  - path: "/brands/:brandId/recipes/:id"
+    component: "RecipeDetail.tsx"
+    auth_required: true
+    has_datagrid: true
+    description: "Recipe detail — formula columns (Est. IBU, Est. OG)"
+    has_formula_columns: true
+    testability:
+      data_testids: []
+
+  - path: "/ingredients"
+    component: "IngredientsList.tsx"
+    auth_required: true
+    has_datagrid: true
+    grids:
+      - name: "Ingredients"
+        storage_key: "rockcut:ingredients:list"
+        columns: ["name", "category", "notes", "on_hand"]
+    actions: ["search", "category_filter", "row_click_to_detail", "column_visibility"]
+    api_endpoint: "GET /api/ingredients"
+    description: "Ingredients list — search, category filter, On Hand formula column"
+    has_formula_columns: true
+    testability:
+      data_testids: []
+
+  - path: "/ingredients/:id"
+    component: "IngredientDetail.tsx"
+    auth_required: true
+    has_datagrid: true
+    description: "Ingredient detail — edit form, lots sub-grid"
+    drills_down_to: null
+    testability:
+      data_testids: []
+
+  - path: "/batches"
+    component: "BatchesList.tsx"
+    auth_required: true
+    has_datagrid: true
+    grids:
+      - name: "Batches"
+        storage_key: "rockcut:batches:list"
+    actions: ["status_filter", "row_click_to_detail", "column_visibility"]
+    api_endpoint: "GET /api/batches"
+    description: "Batches list — status filter"
+    testability:
+      data_testids: []
+
+  - path: "/batches/:id"
+    component: "BatchDetail.tsx"
+    auth_required: true
+    description: "Batch detail — log timeline, log entry add form"
+    testability:
+      data_testids: []
+
+  - path: "/settings"
+    component: "Settings.tsx"
+    auth_required: true
+    description: "Settings home — ingredient categories list"
+    testability:
+      data_testids: []
+
+  - path: "/settings/categories/:id"
+    component: "CategoryDetail.tsx"
+    auth_required: true
+    description: "Category detail — edit form, field definitions"
+    testability:
+      data_testids: []
+
+  - path: "/settings/users"
+    component: "UsersList.tsx"
+    auth_required: true
+    admin_only: true
+    has_datagrid: true
+    actions: ["create_user", "edit_user", "deactivate_user", "reset_password"]
+    description: "User management — admin only"
+    known_bugs:
+      - "D10: Created users cannot authenticate (password hashing or token generation issue)"
+    testability:
+      data_testids: []
+
+nav_sidebar:
+  items:
+    - label: "Home"
+      path: "/"
+      icon: "DashboardIcon"
+    - label: "Brands & Recipes"
+      path: "/brands"
+      icon: "ScienceIcon"
+    - label: "Ingredient Library"
+      path: "/ingredients"
+      icon: "GrainIcon"
+    - label: "Batches"
+      path: "/batches"
+      icon: "LocalDrinkIcon"
+    - label: "Settings"
+      path: "/settings"
+      icon: "SettingsIcon"
+    - label: "Users"
+      path: "/settings/users"
+      icon: "PeopleIcon"
+      admin_only: true
+
+navigation_patterns:
+  list_to_detail: "Row click on list page → navigates to /{entity}/:id"
+  detail_to_sub: "Sub-grid row click → navigates deeper (e.g., Brand → Recipe)"
+  breadcrumb_back: "Breadcrumb link returns to parent list"
+  sidebar_nav: "Sidebar buttons for top-level navigation"

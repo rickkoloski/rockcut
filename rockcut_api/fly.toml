@@ -6,11 +6,6 @@ primary_region = 'dfw'
 [env]
   PHX_HOST = "rockcut-api.fly.dev"
   PORT = "4000"
-  DATABASE_PATH = "/data/rockcut_api.db"
-
-[mounts]
-  source = "rockcut_data"
-  destination = "/data"
 
 [http_service]
   internal_port = 4000

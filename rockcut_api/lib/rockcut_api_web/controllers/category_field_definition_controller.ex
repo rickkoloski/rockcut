@@ -35,8 +35,14 @@ defmodule RockcutApiWeb.CategoryFieldDefinitionController do
   def delete(conn, %{"id" => id}) do
     definition = Brewing.get_category_field_definition!(id)
 
-    with {:ok, _} <- Brewing.delete_category_field_definition(definition) do
-      send_resp(conn, :no_content, "")
+    if definition.system do
+      conn
+      |> put_status(:forbidden)
+      |> json(%{errors: %{detail: "System field definitions cannot be deleted"}})
+    else
+      with {:ok, _} <- Brewing.delete_category_field_definition(definition) do
+        send_resp(conn, :no_content, "")
+      end
     end
   end
 end

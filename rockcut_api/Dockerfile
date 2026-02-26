@@ -53,9 +53,6 @@ ENV LC_ALL en_US.UTF-8
 WORKDIR "/app"
 RUN chown nobody /app
 
-# Create data directory for SQLite volume mount
-RUN mkdir -p /data && chown nobody /data
-
 ENV MIX_ENV="prod"
 
 # Copy the compiled release from builder

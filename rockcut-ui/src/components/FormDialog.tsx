@@ -17,11 +17,13 @@ interface FormDialogProps {
   loading?: boolean
   error?: string | null
   children: ReactNode
+  submitLabel?: string
+  maxWidth?: 'xs' | 'sm' | 'md' | 'lg' | 'xl'
 }
 
-export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children }: FormDialogProps) {
+export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children, submitLabel = 'Save', maxWidth = 'sm' }: FormDialogProps) {
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth={maxWidth} fullWidth>
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); onSubmit() }}>
         <DialogTitle>{title}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
@@ -31,7 +33,7 @@ export default function FormDialog({ open, onClose, title, onSubmit, loading, er
         <DialogActions>
           <Button onClick={onClose} disabled={loading}>Cancel</Button>
           <Button type="submit" variant="contained" disabled={loading}>
-            {loading ? <CircularProgress size={20} /> : 'Save'}
+            {loading ? <CircularProgress size={20} /> : submitLabel}
           </Button>
         </DialogActions>
       </form>

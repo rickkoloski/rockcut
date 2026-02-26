@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, InputAdornment, Paper, TextField } from '@mui/material';
+import { Box, FormControlLabel, InputAdornment, Paper, Switch, TextField } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
@@ -25,9 +25,15 @@ const columns: GridColDef<Brand>[] = [
 
 export default function BrandsList() {
   const navigate = useNavigate();
-  const { data: brands = [], isLoading } = useApiQuery<Brand[]>(['brands'], '/api/brands');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
+
+  const { data: brands = [], isLoading } = useApiQuery<Brand[]>(
+    ['brands', { include_archived: showArchived }],
+    '/api/brands',
+    showArchived ? { include_archived: 'true' } : undefined,
+  );
 
   const filteredBrands = useMemo(() => {
     if (!search) return brands;
@@ -49,7 +55,7 @@ export default function BrandsList() {
         action={{ label: 'Add Brand', onClick: () => setDialogOpen(true) }}
       />
 
-      <Box sx={{ mb: 2 }}>
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, alignItems: 'center' }}>
         <TextField
           size="small"
           placeholder="Search..."
@@ -57,6 +63,10 @@ export default function BrandsList() {
           onChange={(e) => setSearch(e.target.value)}
           slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
           sx={{ minWidth: 260 }}
+        />
+        <FormControlLabel
+          control={<Switch size="small" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />}
+          label="Show Archived"
         />
       </Box>
 

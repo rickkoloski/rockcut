@@ -6,8 +6,8 @@ defmodule RockcutApiWeb.BrandController do
 
   action_fallback RockcutApiWeb.FallbackController
 
-  def index(conn, _params) do
-    brands = Brewing.list_brands()
+  def index(conn, params) do
+    brands = Brewing.list_brands(params)
     json(conn, %{data: Enum.map(brands, &brand/1)})
   end
 
@@ -37,6 +37,14 @@ defmodule RockcutApiWeb.BrandController do
 
     with {:ok, _} <- Brewing.delete_brand(b) do
       send_resp(conn, :no_content, "")
+    end
+  end
+
+  def duplicate(conn, %{"id" => id} = params) do
+    with {:ok, new_brand} <- Brewing.duplicate_brand(id, params) do
+      conn
+      |> put_status(:created)
+      |> json(%{data: brand(new_brand)})
     end
   end
 end

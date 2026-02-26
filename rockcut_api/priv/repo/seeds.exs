@@ -2,6 +2,9 @@ alias RockcutApi.Repo
 alias RockcutApi.Accounts
 alias RockcutApi.Brewing.IngredientCategory
 alias RockcutApi.Brewing.CategoryFieldDefinition
+alias RockcutApi.Brewing.Brewhouse
+alias RockcutApi.Brewing.ProcessProfile
+import Ecto.Query
 
 # ---------------------------------------------------------------------------
 # Seed admin user (idempotent, handles email migration)
@@ -30,7 +33,7 @@ end
 categories =
   [
     {"Grain", 0},
-    {"Extract", 1},
+    {"Other Consumables", 1},
     {"Hop", 2},
     {"Yeast", 3},
     {"Fruit", 4},
@@ -93,6 +96,67 @@ Repo.insert_all(CategoryFieldDefinition, field_defs,
   on_conflict: :nothing,
   conflict_target: [:category_id, :field_name]
 )
+
+# Rename "Extract" to "Other Consumables" for existing databases
+# Only rename if "Extract" exists AND "Other Consumables" doesn't yet
+case {Repo.get_by(IngredientCategory, name: "Extract"),
+      Repo.get_by(IngredientCategory, name: "Other Consumables")} do
+  {%IngredientCategory{} = old, nil} ->
+    Repo.update!(IngredientCategory.changeset(old, %{name: "Other Consumables"}))
+  {%IngredientCategory{} = old, %IngredientCategory{}} ->
+    # Both exist — delete the old Extract category (it was replaced)
+    Repo.delete!(old)
+  _ -> :ok
+end
+
+# Mark all seeded field definitions as system
+from(d in CategoryFieldDefinition)
+|> Repo.update_all(set: [system: true])
+
+# ---------------------------------------------------------------------------
+# Seed brewhouse + process profiles (idempotent)
+# ---------------------------------------------------------------------------
+case Repo.get_by(Brewhouse, name: "Production") do
+  nil ->
+    Repo.insert!(%Brewhouse{
+      name: "Production",
+      is_default: true,
+      temp_unit: "F",
+      liquid_vol_unit: "bbls",
+      density_unit: "sg",
+      alcohol_unit: "abv",
+      density_calc_method: "ppg",
+      ibu_calc_method: "tinseth",
+      ingredient_weight_unit: "lb",
+      ingredient_vol_unit: "gal"
+    })
+  _ -> :ok
+end
+
+profiles = [
+  %{name: "RC Ale", mash_type: "single_infusion", boil_duration: 60,
+    primary_temperature: Decimal.new("66"), primary_duration: Decimal.new("168"),
+    crash_type: "single", crash_temperature: Decimal.new("34"),
+    crash_duration: Decimal.new("48"), transfer_type: "none",
+    co2_volume: Decimal.new("2.4")},
+  %{name: "RC Hazy", mash_type: "single_infusion", boil_duration: 60,
+    primary_temperature: Decimal.new("67"), primary_duration: Decimal.new("168"),
+    crash_type: "single", crash_temperature: Decimal.new("34"),
+    crash_duration: Decimal.new("48"), transfer_type: "none",
+    co2_volume: Decimal.new("2.5")},
+  %{name: "RC Lager", mash_type: "step", boil_duration: 90,
+    lag_temperature: Decimal.new("10"), lag_duration: Decimal.new("48"),
+    primary_temperature: Decimal.new("10"), primary_duration: Decimal.new("336"),
+    d_rest_temperature: Decimal.new("18"), d_rest_duration: Decimal.new("48"),
+    crash_type: "step", transfer_type: "none", co2_volume: Decimal.new("2.6")}
+]
+
+Enum.each(profiles, fn attrs ->
+  case Repo.get_by(ProcessProfile, name: attrs.name) do
+    nil -> Repo.insert!(struct(ProcessProfile, attrs))
+    _ -> :ok
+  end
+end)
 
 # ---------------------------------------------------------------------------
 # Seed ingredients + lots (idempotent)

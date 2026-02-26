@@ -1,5 +1,70 @@
 // TypeScript interfaces matching API JSON shapes (json_helpers.ex)
 
+export interface Brewhouse {
+  id: number
+  name: string
+  is_default: boolean
+  notes: string | null
+  temp_unit: string
+  liquid_vol_unit: string
+  density_unit: string
+  alcohol_unit: string
+  density_calc_method: string
+  ibu_calc_method: string
+  ingredient_weight_unit: string
+  ingredient_vol_unit: string
+  kettle_turn_size: number | null
+  kettle_evaporation_rate: number | null
+  kettle_loss: number | null
+  ferm_loss: number | null
+  inserted_at: string
+  updated_at: string
+}
+
+export interface ProcessProfile {
+  id: number
+  name: string
+  description: string | null
+  mash_type: string | null
+  mash_foundation_water: number | null
+  strike_water_ratio: number | null
+  mash_ph: number | null
+  mash_schedule: Record<string, unknown> | null
+  vorlauf_duration: number | null
+  lauter_type: string | null
+  lauter_temperature: number | null
+  lauter_water: number | null
+  final_lauter_ph: number | null
+  lauter_duration: number | null
+  boil_duration: number | null
+  coolpool: boolean
+  coolpool_temperature: number | null
+  coolpool_duration: number | null
+  coolpool_rest_duration: number | null
+  whirlpool_duration: number | null
+  whirlpool_rest_duration: number | null
+  knockout_duration: number | null
+  knockout_temperature: number | null
+  lag_temperature: number | null
+  lag_duration: number | null
+  primary_temperature: number | null
+  primary_duration: number | null
+  secondary_temperature: number | null
+  secondary_duration: number | null
+  d_rest_temperature: number | null
+  d_rest_duration: number | null
+  crash_type: string | null
+  crash_temperature: number | null
+  crash_duration: number | null
+  crash_steps: Array<{ temperature: number; duration: number }> | null
+  transfer_type: string | null
+  bright_temperature: number | null
+  bright_duration: number | null
+  co2_volume: number | null
+  inserted_at: string
+  updated_at: string
+}
+
 export interface Brand {
   id: number
   name: string
@@ -9,6 +74,10 @@ export interface Brand {
   target_ibu: number | null
   target_srm: number | null
   status: string
+  brewhouse_id: number | null
+  process_profile_id: number | null
+  brewhouse: { id: number; name: string } | null
+  process_profile: { id: number; name: string } | null
   inserted_at: string
   updated_at: string
 }
@@ -25,6 +94,7 @@ export interface Recipe {
   boil_time: number
   efficiency_target: number | null
   status: string
+  is_default: boolean
   notes: string | null
   recipe_ingredients: RecipeIngredient[] | null
   mash_steps: MashStep[] | null
@@ -108,6 +178,7 @@ export interface CategoryFieldDefinition {
   options: string | null
   required: boolean
   sort_order: number
+  system: boolean
   inserted_at: string
   updated_at: string
 }
@@ -155,6 +226,7 @@ export interface IngredientLot {
 export interface Batch {
   id: number
   brand_id: number
+  brewhouse_id: number | null
   brand: Brand | null
   batch_number: string
   status: string

@@ -12,6 +12,8 @@ import {
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import StarIcon from '@mui/icons-material/Star';
 import { DataGridExtended } from 'datagrid-extended';
 import type { ExtendedGridColDef } from 'datagrid-extended';
 import PageHeader from '../../components/PageHeader';
@@ -21,11 +23,25 @@ import { useApiQuery } from '../../hooks/useApiQuery';
 import { useApiDelete } from '../../hooks/useApiMutation';
 import { useFormulaFunctions } from '../../hooks/useFormulaFunctions';
 import BrandFormDialog from './BrandFormDialog';
+import DuplicateBrandDialog from './DuplicateBrandDialog';
 import RecipeFormDialog from '../recipes/RecipeFormDialog';
 import type { Brand, Recipe } from '../../lib/types';
 
 const recipeColumns: ExtendedGridColDef[] = [
-  { field: 'version', headerName: 'Version', width: 100, valueGetter: (_value: unknown, row: Recipe) => `${row.version_major}.${row.version_minor}` },
+  {
+    field: 'version',
+    headerName: 'Version',
+    width: 120,
+    valueGetter: (_value: unknown, row: Recipe) => `${row.version_major}.${row.version_minor}`,
+    renderCell: (params) => (
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+        {params.value}
+        {(params.row as Recipe).is_default && (
+          <Tooltip title="Default Recipe"><StarIcon sx={{ fontSize: 16, color: 'warning.main' }} /></Tooltip>
+        )}
+      </Box>
+    ),
+  },
   { field: 'batch_size', headerName: 'Batch Size', flex: 1 },
   { field: 'boil_time', headerName: 'Boil Time', flex: 1 },
   { field: 'efficiency_target', headerName: 'Efficiency', flex: 1 },
@@ -65,6 +81,7 @@ export default function BrandDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [duplicateOpen, setDuplicateOpen] = useState(false);
 
   if (brandLoading || !brand) {
     return <CircularProgress />;
@@ -75,7 +92,7 @@ export default function BrandDetail() {
     navigate('/brands');
   };
 
-  const fields: { label: string; value: unknown }[] = [
+  const fields: { label: string; value: unknown; link?: string }[] = [
     { label: 'Name', value: brand.name },
     { label: 'Style', value: brand.style },
     { label: 'Description', value: brand.description },
@@ -83,6 +100,8 @@ export default function BrandDetail() {
     { label: 'Target IBU', value: brand.target_ibu },
     { label: 'Target SRM', value: brand.target_srm },
     { label: 'Status', value: brand.status },
+    { label: 'Brewhouse', value: brand.brewhouse?.name, link: brand.brewhouse_id ? `/settings/brewhouses/${brand.brewhouse_id}` : undefined },
+    { label: 'Process Profile', value: brand.process_profile?.name, link: brand.process_profile_id ? `/settings/process-profiles/${brand.process_profile_id}` : undefined },
   ];
 
   return (
@@ -96,6 +115,7 @@ export default function BrandDetail() {
         title={brand.name}
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Tooltip title="Duplicate Brand"><IconButton onClick={() => setDuplicateOpen(true)}><ContentCopyIcon /></IconButton></Tooltip>
             <Tooltip title="Edit Brand"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
             <Tooltip title="Delete Brand"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
           </Box>
@@ -111,6 +131,14 @@ export default function BrandDetail() {
               </Typography>
               {f.label === 'Status' ? (
                 <StatusChip status={String(f.value ?? '')} domain="brand" />
+              ) : f.link ? (
+                <Typography
+                  variant="body1"
+                  sx={{ cursor: 'pointer', color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}
+                  onClick={() => navigate(f.link!)}
+                >
+                  {String(f.value ?? '—')}
+                </Typography>
               ) : (
                 <Typography variant="body1">{String(f.value ?? '—')}</Typography>
               )}
@@ -142,6 +170,12 @@ export default function BrandDetail() {
       </Paper>
 
       <BrandFormDialog open={editOpen} onClose={() => setEditOpen(false)} brand={brand} />
+      <DuplicateBrandDialog
+        open={duplicateOpen}
+        onClose={() => setDuplicateOpen(false)}
+        brand={brand}
+        onSuccess={(newBrand) => navigate(`/brands/${newBrand.id}`)}
+      />
       <RecipeFormDialog
         open={recipeDialogOpen}
         onClose={() => setRecipeDialogOpen(false)}

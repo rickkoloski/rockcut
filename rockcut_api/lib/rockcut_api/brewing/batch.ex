@@ -27,6 +27,7 @@ defmodule RockcutApi.Brewing.Batch do
     field :notes, :string
 
     belongs_to :brand, RockcutApi.Brewing.Brand
+    belongs_to :brewhouse, RockcutApi.Brewing.Brewhouse
     has_many :brew_turns, RockcutApi.Brewing.BrewTurn
     has_many :log_entries, RockcutApi.Brewing.BatchLogEntry
 
@@ -39,7 +40,7 @@ defmodule RockcutApi.Brewing.Batch do
   def changeset(batch, attrs) do
     batch
     |> cast(attrs, [
-      :brand_id, :batch_number, :status,
+      :brand_id, :brewhouse_id, :batch_number, :status,
       :actual_og, :actual_fg, :actual_abv, :actual_volume,
       :ferm_start_date, :ferm_end_date, :ferm_temp,
       :package_date, :package_type,
@@ -51,5 +52,6 @@ defmodule RockcutApi.Brewing.Batch do
     |> validate_number(:rating, greater_than_or_equal_to: 1, less_than_or_equal_to: 5)
     |> unique_constraint(:batch_number)
     |> foreign_key_constraint(:brand_id)
+    |> foreign_key_constraint(:brewhouse_id)
   end
 end

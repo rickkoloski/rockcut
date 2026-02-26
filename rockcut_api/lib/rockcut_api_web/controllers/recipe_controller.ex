@@ -39,4 +39,26 @@ defmodule RockcutApiWeb.RecipeController do
       send_resp(conn, :no_content, "")
     end
   end
+
+  def copy(conn, %{"id" => id}) do
+    with {:ok, new_recipe} <- Brewing.copy_recipe(id) do
+      conn
+      |> put_status(:created)
+      |> json(%{data: recipe(new_recipe)})
+    end
+  end
+
+  def move(conn, %{"id" => id} = params) do
+    target_brand_id = Map.get(params, "target_brand_id")
+
+    with {:ok, r} <- Brewing.move_recipe(id, target_brand_id) do
+      json(conn, %{data: recipe(r)})
+    end
+  end
+
+  def set_default(conn, %{"id" => id}) do
+    with {:ok, r} <- Brewing.set_default_recipe(id) do
+      json(conn, %{data: recipe(r)})
+    end
+  end
 end

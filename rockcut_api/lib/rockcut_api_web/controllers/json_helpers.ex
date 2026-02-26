@@ -3,6 +3,75 @@ defmodule RockcutApiWeb.JSONHelpers do
   Shared functions for converting Ecto schemas to JSON-safe maps.
   """
 
+  def brewhouse(b) do
+    %{
+      id: b.id,
+      name: b.name,
+      is_default: b.is_default,
+      notes: b.notes,
+      temp_unit: b.temp_unit,
+      liquid_vol_unit: b.liquid_vol_unit,
+      density_unit: b.density_unit,
+      alcohol_unit: b.alcohol_unit,
+      density_calc_method: b.density_calc_method,
+      ibu_calc_method: b.ibu_calc_method,
+      ingredient_weight_unit: b.ingredient_weight_unit,
+      ingredient_vol_unit: b.ingredient_vol_unit,
+      kettle_turn_size: b.kettle_turn_size,
+      kettle_evaporation_rate: b.kettle_evaporation_rate,
+      kettle_loss: b.kettle_loss,
+      ferm_loss: b.ferm_loss,
+      inserted_at: b.inserted_at,
+      updated_at: b.updated_at
+    }
+  end
+
+  def process_profile(p) do
+    %{
+      id: p.id,
+      name: p.name,
+      description: p.description,
+      mash_type: p.mash_type,
+      mash_foundation_water: p.mash_foundation_water,
+      strike_water_ratio: p.strike_water_ratio,
+      mash_ph: p.mash_ph,
+      mash_schedule: p.mash_schedule,
+      vorlauf_duration: p.vorlauf_duration,
+      lauter_type: p.lauter_type,
+      lauter_temperature: p.lauter_temperature,
+      lauter_water: p.lauter_water,
+      final_lauter_ph: p.final_lauter_ph,
+      lauter_duration: p.lauter_duration,
+      boil_duration: p.boil_duration,
+      coolpool: p.coolpool,
+      coolpool_temperature: p.coolpool_temperature,
+      coolpool_duration: p.coolpool_duration,
+      coolpool_rest_duration: p.coolpool_rest_duration,
+      whirlpool_duration: p.whirlpool_duration,
+      whirlpool_rest_duration: p.whirlpool_rest_duration,
+      knockout_duration: p.knockout_duration,
+      knockout_temperature: p.knockout_temperature,
+      lag_temperature: p.lag_temperature,
+      lag_duration: p.lag_duration,
+      primary_temperature: p.primary_temperature,
+      primary_duration: p.primary_duration,
+      secondary_temperature: p.secondary_temperature,
+      secondary_duration: p.secondary_duration,
+      d_rest_temperature: p.d_rest_temperature,
+      d_rest_duration: p.d_rest_duration,
+      crash_type: p.crash_type,
+      crash_temperature: p.crash_temperature,
+      crash_duration: p.crash_duration,
+      crash_steps: p.crash_steps,
+      transfer_type: p.transfer_type,
+      bright_temperature: p.bright_temperature,
+      bright_duration: p.bright_duration,
+      co2_volume: p.co2_volume,
+      inserted_at: p.inserted_at,
+      updated_at: p.updated_at
+    }
+  end
+
   def ingredient_category(cat) do
     %{
       id: cat.id,
@@ -23,6 +92,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       options: d.options,
       required: d.required,
       sort_order: d.sort_order,
+      system: d.system,
       inserted_at: d.inserted_at,
       updated_at: d.updated_at
     }
@@ -71,6 +141,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       target_ibu: b.target_ibu,
       target_srm: b.target_srm,
       status: b.status,
+      brewhouse_id: b.brewhouse_id,
+      process_profile_id: b.process_profile_id,
+      brewhouse: maybe_render(b, :brewhouse, &brewhouse_summary/1),
+      process_profile: maybe_render(b, :process_profile, &process_profile_summary/1),
       inserted_at: b.inserted_at,
       updated_at: b.updated_at
     }
@@ -89,6 +163,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       boil_time: r.boil_time,
       efficiency_target: r.efficiency_target,
       status: r.status,
+      is_default: r.is_default,
       notes: r.notes,
       recipe_ingredients: maybe_render(r, :recipe_ingredients, &Enum.map(&1, fn ri -> recipe_ingredient(ri) end)),
       mash_steps: maybe_render(r, :mash_steps, &Enum.map(&1, fn ms -> mash_step(ms) end)),
@@ -169,6 +244,7 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{
       id: b.id,
       brand_id: b.brand_id,
+      brewhouse_id: b.brewhouse_id,
       brand: maybe_render(b, :brand, &brand/1),
       brew_turns: maybe_render(b, :brew_turns, &Enum.map(&1, fn t -> brew_turn(t) end)),
       batch_number: b.batch_number,
@@ -260,6 +336,14 @@ defmodule RockcutApiWeb.JSONHelpers do
       potential_gravity: lot.potential_gravity,
       attenuation: lot.attenuation
     }
+  end
+
+  defp brewhouse_summary(b) do
+    %{id: b.id, name: b.name}
+  end
+
+  defp process_profile_summary(p) do
+    %{id: p.id, name: p.name}
   end
 
   defp recipe_summary(r) do

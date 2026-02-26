@@ -8,6 +8,7 @@ defmodule RockcutApi.Brewing.CategoryFieldDefinition do
     field :options, :string
     field :required, :boolean, default: false
     field :sort_order, :integer, default: 0
+    field :system, :boolean, default: false
 
     belongs_to :category, RockcutApi.Brewing.IngredientCategory
 

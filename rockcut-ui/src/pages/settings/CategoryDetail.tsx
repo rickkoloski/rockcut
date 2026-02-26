@@ -12,6 +12,7 @@ import {
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import LockIcon from '@mui/icons-material/Lock';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
 import type { IngredientCategory, CategoryFieldDefinition } from '../../lib/types';
@@ -66,7 +67,19 @@ export default function CategoryDetail() {
   };
 
   const fieldColumns: GridColDef[] = [
-    { field: 'field_name', headerName: 'Field Name', flex: 1 },
+    {
+      field: 'field_name',
+      headerName: 'Field Name',
+      flex: 1,
+      renderCell: (params) => (
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {params.value}
+          {(params.row as CategoryFieldDefinition).system && (
+            <Tooltip title="System field"><LockIcon sx={{ fontSize: 14, color: 'text.disabled' }} /></Tooltip>
+          )}
+        </Box>
+      ),
+    },
     { field: 'field_type', headerName: 'Type', width: 120 },
     { field: 'options', headerName: 'Options', flex: 1 },
     {
@@ -81,18 +94,22 @@ export default function CategoryDetail() {
       headerName: '',
       width: 60,
       sortable: false,
-      renderCell: (params) => (
-        <IconButton
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation();
-            setFieldToDelete(params.row as CategoryFieldDefinition);
-            setDeleteFieldOpen(true);
-          }}
-        >
-          <DeleteIcon fontSize="small" />
-        </IconButton>
-      ),
+      renderCell: (params) => {
+        const row = params.row as CategoryFieldDefinition;
+        if (row.system) return null;
+        return (
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              setFieldToDelete(row);
+              setDeleteFieldOpen(true);
+            }}
+          >
+            <DeleteIcon fontSize="small" />
+          </IconButton>
+        );
+      },
     },
   ];
 

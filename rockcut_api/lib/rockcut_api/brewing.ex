@@ -2,6 +2,8 @@ defmodule RockcutApi.Brewing do
   import Ecto.Query
   alias RockcutApi.Repo
   alias RockcutApi.Brewing.{
+    Brewhouse,
+    ProcessProfile,
     IngredientCategory,
     CategoryFieldDefinition,
     Ingredient,
@@ -16,6 +18,54 @@ defmodule RockcutApi.Brewing do
     BrewTurn,
     BatchLogEntry
   }
+
+  # ── Brewhouses ───────────────────────────────────────────────────────
+
+  def list_brewhouses do
+    Brewhouse
+    |> order_by(:name)
+    |> Repo.all()
+  end
+
+  def get_brewhouse!(id), do: Repo.get!(Brewhouse, id)
+
+  def create_brewhouse(attrs) do
+    %Brewhouse{}
+    |> Brewhouse.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_brewhouse(%Brewhouse{} = brewhouse, attrs) do
+    brewhouse
+    |> Brewhouse.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def delete_brewhouse(%Brewhouse{} = brewhouse), do: Repo.delete(brewhouse)
+
+  # ── Process Profiles ────────────────────────────────────────────────
+
+  def list_process_profiles do
+    ProcessProfile
+    |> order_by(:name)
+    |> Repo.all()
+  end
+
+  def get_process_profile!(id), do: Repo.get!(ProcessProfile, id)
+
+  def create_process_profile(attrs) do
+    %ProcessProfile{}
+    |> ProcessProfile.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  def update_process_profile(%ProcessProfile{} = profile, attrs) do
+    profile
+    |> ProcessProfile.changeset(attrs)
+    |> Repo.update()
+  end
+
+  def delete_process_profile(%ProcessProfile{} = profile), do: Repo.delete(profile)
 
   # ── Ingredient Categories ──────────────────────────────────────────
 
@@ -147,14 +197,27 @@ defmodule RockcutApi.Brewing do
 
   # ── Brands ─────────────────────────────────────────────────────────
 
-  def list_brands do
+  def list_brands(params \\ %{}) do
     Brand
+    |> maybe_exclude_archived(params)
     |> order_by(:name)
     |> Repo.all()
   end
 
+  defp maybe_exclude_archived(query, params) do
+    include = Map.get(params, "include_archived") || Map.get(params, :include_archived)
+
+    if include in [true, "true"] do
+      query
+    else
+      where(query, [b], b.status != "archived")
+    end
+  end
+
   def get_brand!(id) do
-    Repo.get!(Brand, id)
+    Brand
+    |> Repo.get!(id)
+    |> Repo.preload([:brewhouse, :process_profile])
   end
 
   def create_brand(attrs) do
@@ -411,6 +474,213 @@ defmodule RockcutApi.Brewing do
   end
 
   def delete_batch_log_entry(%BatchLogEntry{} = entry), do: Repo.delete(entry)
+
+  # ── Recipe Operations ────────────────────────────────────────────────
+
+  def copy_recipe(recipe_id) do
+    recipe = get_recipe!(recipe_id)
+
+    # Find the next available version_minor for this brand
+    max_minor =
+      Recipe
+      |> where(brand_id: ^recipe.brand_id, version_major: ^recipe.version_major)
+      |> select([r], max(r.version_minor))
+      |> Repo.one() || 0
+
+    new_attrs = %{
+      brand_id: recipe.brand_id,
+      version_major: recipe.version_major,
+      version_minor: max_minor + 1,
+      batch_size: recipe.batch_size,
+      batch_size_unit: recipe.batch_size_unit,
+      boil_time: recipe.boil_time,
+      efficiency_target: recipe.efficiency_target,
+      status: "draft",
+      is_default: false,
+      notes: recipe.notes
+    }
+
+    Repo.transaction(fn ->
+      {:ok, new_recipe} = create_recipe(new_attrs)
+
+      # Clone recipe_ingredients
+      recipe.recipe_ingredients
+      |> Enum.each(fn ri ->
+        %RecipeIngredient{}
+        |> RecipeIngredient.changeset(%{
+          recipe_id: new_recipe.id,
+          lot_id: ri.lot_id,
+          amount: ri.amount,
+          unit: ri.unit,
+          use: ri.use,
+          time_minutes: ri.time_minutes,
+          sort_order: ri.sort_order,
+          notes: ri.notes
+        })
+        |> Repo.insert!()
+      end)
+
+      # Clone mash_steps
+      recipe.mash_steps
+      |> Enum.each(fn ms ->
+        %MashStep{}
+        |> MashStep.changeset(%{
+          recipe_id: new_recipe.id,
+          step_number: ms.step_number,
+          name: ms.name,
+          temperature: ms.temperature,
+          duration: ms.duration,
+          type: ms.type,
+          notes: ms.notes
+        })
+        |> Repo.insert!()
+      end)
+
+      # Clone process_steps
+      recipe.process_steps
+      |> Enum.each(fn ps ->
+        %RecipeProcessStep{}
+        |> RecipeProcessStep.changeset(%{
+          recipe_id: new_recipe.id,
+          step_number: ps.step_number,
+          name: ps.name,
+          day: ps.day,
+          temperature: ps.temperature,
+          duration: ps.duration,
+          duration_unit: ps.duration_unit,
+          notes: ps.notes
+        })
+        |> Repo.insert!()
+      end)
+
+      # Clone water_profile
+      if recipe.water_profile do
+        wp = recipe.water_profile
+        %WaterProfile{}
+        |> WaterProfile.changeset(%{
+          recipe_id: new_recipe.id,
+          calcium: wp.calcium,
+          magnesium: wp.magnesium,
+          sodium: wp.sodium,
+          sulfate: wp.sulfate,
+          chloride: wp.chloride,
+          bicarbonate: wp.bicarbonate,
+          ph_target: wp.ph_target,
+          notes: wp.notes
+        })
+        |> Repo.insert!()
+      end
+
+      # Return the fully-loaded new recipe
+      get_recipe!(new_recipe.id)
+    end)
+  end
+
+  def move_recipe(recipe_id, target_brand_id) do
+    recipe = Repo.get!(Recipe, recipe_id)
+
+    recipe
+    |> Recipe.changeset(%{brand_id: target_brand_id})
+    |> Repo.update()
+    |> preload_on_ok(:brand)
+  end
+
+  def set_default_recipe(recipe_id) do
+    recipe = Repo.get!(Recipe, recipe_id)
+
+    Repo.transaction(fn ->
+      # Clear is_default on all recipes in this brand
+      from(r in Recipe, where: r.brand_id == ^recipe.brand_id and r.is_default == true)
+      |> Repo.update_all(set: [is_default: false])
+
+      # Set this recipe as default
+      {:ok, updated} =
+        recipe
+        |> Recipe.changeset(%{is_default: true})
+        |> Repo.update()
+
+      Repo.preload(updated, :brand)
+    end)
+  end
+
+  def duplicate_brand(brand_id, params) do
+    brand = get_brand!(brand_id)
+    new_name = Map.get(params, "name") || Map.get(params, :name)
+    clone_all = Map.get(params, "clone_all_recipes") || Map.get(params, :clone_all_recipes)
+
+    Repo.transaction(fn ->
+      {:ok, new_brand} = create_brand(%{
+        name: new_name,
+        style: brand.style,
+        description: brand.description,
+        target_abv: brand.target_abv,
+        target_ibu: brand.target_ibu,
+        target_srm: brand.target_srm,
+        status: brand.status,
+        brewhouse_id: brand.brewhouse_id,
+        process_profile_id: brand.process_profile_id
+      })
+
+      # Get recipes to clone
+      recipes =
+        if clone_all in [true, "true"] do
+          list_recipes(%{brand_id: brand_id})
+        else
+          case Repo.one(from r in Recipe, where: r.brand_id == ^brand_id and r.is_default == true) do
+            nil -> []
+            recipe -> [recipe]
+          end
+        end
+
+      # Clone each recipe into the new brand
+      recipes
+      |> Enum.each(fn recipe ->
+        loaded = get_recipe!(recipe.id)
+        new_recipe_attrs = %{
+          brand_id: new_brand.id,
+          version_major: loaded.version_major,
+          version_minor: loaded.version_minor,
+          batch_size: loaded.batch_size,
+          batch_size_unit: loaded.batch_size_unit,
+          boil_time: loaded.boil_time,
+          efficiency_target: loaded.efficiency_target,
+          status: "draft",
+          is_default: loaded.is_default,
+          notes: loaded.notes
+        }
+
+        {:ok, new_recipe} = create_recipe(new_recipe_attrs)
+
+        # Clone child records
+        loaded.recipe_ingredients |> Enum.each(fn ri ->
+          %RecipeIngredient{}
+          |> RecipeIngredient.changeset(%{recipe_id: new_recipe.id, lot_id: ri.lot_id, amount: ri.amount, unit: ri.unit, use: ri.use, time_minutes: ri.time_minutes, sort_order: ri.sort_order, notes: ri.notes})
+          |> Repo.insert!()
+        end)
+
+        loaded.mash_steps |> Enum.each(fn ms ->
+          %MashStep{}
+          |> MashStep.changeset(%{recipe_id: new_recipe.id, step_number: ms.step_number, name: ms.name, temperature: ms.temperature, duration: ms.duration, type: ms.type, notes: ms.notes})
+          |> Repo.insert!()
+        end)
+
+        loaded.process_steps |> Enum.each(fn ps ->
+          %RecipeProcessStep{}
+          |> RecipeProcessStep.changeset(%{recipe_id: new_recipe.id, step_number: ps.step_number, name: ps.name, day: ps.day, temperature: ps.temperature, duration: ps.duration, duration_unit: ps.duration_unit, notes: ps.notes})
+          |> Repo.insert!()
+        end)
+
+        if loaded.water_profile do
+          wp = loaded.water_profile
+          %WaterProfile{}
+          |> WaterProfile.changeset(%{recipe_id: new_recipe.id, calcium: wp.calcium, magnesium: wp.magnesium, sodium: wp.sodium, sulfate: wp.sulfate, chloride: wp.chloride, bicarbonate: wp.bicarbonate, ph_target: wp.ph_target, notes: wp.notes})
+          |> Repo.insert!()
+        end
+      end)
+
+      new_brand
+    end)
+  end
 
   # ── Helpers ────────────────────────────────────────────────────────
 

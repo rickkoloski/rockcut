@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, InputAdornment, Paper, TextField } from '@mui/material';
+import { Box, Button, InputAdornment, Paper, TextField, Typography } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
@@ -42,8 +42,23 @@ export default function SettingsPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Settings' }]}
         title="Settings"
-        action={{ label: 'Add Category', onClick: () => setFormOpen(true) }}
       />
+
+      <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
+        <Button variant="outlined" onClick={() => navigate('/settings/brewhouses')}>
+          Brewhouses
+        </Button>
+        <Button variant="outlined" onClick={() => navigate('/settings/process-profiles')}>
+          Process Profiles
+        </Button>
+      </Box>
+
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+        <Typography variant="h6">Ingredient Categories</Typography>
+        <Button variant="contained" size="small" onClick={() => setFormOpen(true)}>
+          Add Category
+        </Button>
+      </Box>
 
       <Box sx={{ mb: 2 }}>
         <TextField

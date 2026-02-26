@@ -12,12 +12,20 @@ import {
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
+import ContentCopyIcon from '@mui/icons-material/ContentCopy';
+import MoveDownIcon from '@mui/icons-material/MoveDown';
+import StarIcon from '@mui/icons-material/Star';
+import { Chip } from '@mui/material';
 import PageHeader from '../../components/PageHeader';
 import StatusChip from '../../components/StatusChip';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useApiDelete } from '../../hooks/useApiMutation';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import api from '../../lib/api';
 import RecipeFormDialog from './RecipeFormDialog';
+import CopyRecipeDialog from './CopyRecipeDialog';
+import MoveRecipeDialog from './MoveRecipeDialog';
 import GrainBillTab from './tabs/GrainBillTab';
 import MashTab from './tabs/MashTab';
 import ProcessTab from './tabs/ProcessTab';
@@ -40,9 +48,22 @@ export default function RecipeDetail() {
     { invalidateKeys: [['recipes', { brand_id: brandId }]] },
   );
 
+  const qc = useQueryClient();
   const [tabIndex, setTabIndex] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+
+  const setDefaultMutation = useMutation({
+    mutationFn: async () => {
+      await api.post(`/api/recipes/${recipeId}/set_default`);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['recipe', recipeId] });
+      qc.invalidateQueries({ queryKey: ['recipes'] });
+    },
+  });
 
   if (isLoading || !recipe) {
     return <CircularProgress />;
@@ -66,7 +87,13 @@ export default function RecipeDetail() {
         ]}
         title={`Recipe ${versionLabel}`}
         toolbar={
-          <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+            {recipe.is_default && <Chip label="Default" size="small" color="warning" icon={<StarIcon />} />}
+            {!recipe.is_default && (
+              <Tooltip title="Set as Default"><IconButton onClick={() => setDefaultMutation.mutate()} disabled={setDefaultMutation.isPending}><StarIcon /></IconButton></Tooltip>
+            )}
+            <Tooltip title="Copy Recipe"><IconButton onClick={() => setCopyOpen(true)}><ContentCopyIcon /></IconButton></Tooltip>
+            <Tooltip title="Move to Brand"><IconButton onClick={() => setMoveOpen(true)}><MoveDownIcon /></IconButton></Tooltip>
             <Tooltip title="Edit Recipe"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
             <Tooltip title="Delete Recipe"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
           </Box>
@@ -110,6 +137,18 @@ export default function RecipeDetail() {
         onClose={() => setEditOpen(false)}
         brandId={numericBrandId}
         recipe={recipe}
+      />
+      <CopyRecipeDialog
+        open={copyOpen}
+        onClose={() => setCopyOpen(false)}
+        recipe={recipe}
+        onSuccess={(newRecipe) => navigate(`/brands/${brandId}/recipes/${newRecipe.id}`)}
+      />
+      <MoveRecipeDialog
+        open={moveOpen}
+        onClose={() => setMoveOpen(false)}
+        recipe={recipe}
+        onSuccess={(movedRecipe) => navigate(`/brands/${movedRecipe.brand_id}/recipes/${movedRecipe.id}`)}
       />
       <ConfirmDialog
         open={deleteOpen}

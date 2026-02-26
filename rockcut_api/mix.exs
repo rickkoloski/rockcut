@@ -42,7 +42,7 @@ defmodule RockcutApi.MixProject do
       {:phoenix, "~> 1.8.1"},
       {:phoenix_ecto, "~> 4.5"},
       {:ecto_sql, "~> 3.13"},
-      {:ecto_sqlite3, ">= 0.0.0"},
+      {:postgrex, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:swoosh, "~> 1.16"},
       {:req, "~> 0.5"},

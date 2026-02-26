@@ -1,0 +1,145 @@
+# Rockcut Layer 0 — Upstream SDLC Context
+# Risk areas, architect observations, known fragile patterns, integration points.
+# Sourced from deliverable specs, results, and code review.
+# Last updated: 2026-02-23 (cycle 1 — d9-strictmode-localstorage VERIFIED on /brands)
+
+blockers:
+  - id: d10-user-login-failure
+    severity: critical
+    source: "D10 TEST_RESULTS.md"
+    summary: "Users created via UI cannot authenticate"
+    details: |
+      Admin user (Matt, from seed) logs in fine. Users created through the
+      Users page cannot log in with original or reset passwords. Root cause
+      suspected in Accounts.create_user/1 password hashing or token generation.
+    affected_routes: ["/settings/users", "/login"]
+    blocks_testing: ["user role enforcement", "password change gate", "inactive user rejection"]
+    test_action: |
+      1. Check create_user/1 uses registration_changeset with Argon2 hashing
+      2. Compare seed user vs UI-created user records in DB
+      3. Test Accounts.authenticate/2 directly in iex
+      4. POST /api/session with created user credentials, expect 200
+
+fragile_patterns:
+  - id: d9-strictmode-localstorage
+    severity: high
+    source: "D9 ad hoc fix"
+    summary: "React 19 StrictMode double-mount can clobber localStorage"
+    details: |
+      useColumnVisibility hook writes to localStorage in useEffect.
+      StrictMode double-mount fires the effect twice, second write overwrites
+      saved state with defaults. Fixed with useRef gate.
+    fix_applied: "useRef guard prevents duplicate writes in same render cycle"
+    affected_components: ["useColumnVisibility (datagrid-extended)"]
+    affected_routes: ["/brands", "/ingredients", "/batches", "/"]
+    test_action: "Toggle column off → full refresh → verify hidden. All grids."
+    regression_trigger: "useRef gate removed, useEffect deps changed, or MUI upgrade"
+    test_status:
+      brands: "PASS — 2026-02-23 cycle 1 (hid Style, full goto reload, Style stayed hidden)"
+      ingredients: "NOT YET TESTED"
+      batches: "NOT YET TESTED"
+      home: "NOT YET TESTED"
+
+  - id: d9-column-menu-slot
+    severity: high
+    source: "D9 ad hoc fix"
+    summary: "MUI v8 column menu shows duplicate visibility controls"
+    details: |
+      MUI's columnMenuColumnsItem slot renders both 'Hide Column' and
+      'Manage columns'. Replaced entire slot with custom HideColumnMenuItem.
+    fix_applied: "Full slot replacement in DataGridExtended.tsx"
+    affected_components: ["DataGridExtended"]
+    test_action: "Open column menu → verify 'Hide Column' present, 'Manage columns' absent"
+    regression_trigger: "MUI DataGrid upgrade, slotProps structure change"
+
+  - id: d9-column-width-persistence
+    severity: medium
+    source: "D9 ad hoc fix"
+    summary: "Column widths persist separately from visibility"
+    details: |
+      Extended useColumnVisibility to persist widths under ${storageKey}:widths.
+      Strips 'flex' when applying saved widths to avoid override.
+    fix_applied: "Separate localStorage key, flex stripping on restore"
+    affected_components: ["useColumnVisibility (datagrid-extended)"]
+    test_action: "Resize column → refresh → verify width preserved. Verify flex columns not broken."
+    regression_trigger: "MUI width calculation changes, localStorage key collision"
+
+  - id: d8-formula-editor-anchor
+    severity: medium
+    source: "D8 implementation"
+    summary: "FormulaEditor popover anchors to column header via DOM query"
+    details: |
+      Popover positioned via document.querySelector('[data-field="${field}"][role="columnheader"]').
+      Fails if column not in DOM (loading), hidden (visibility toggled), or ambiguous (multiple grids).
+    affected_components: ["FormulaEditor (datagrid-extended)"]
+    test_action: "Open formula editor after toggling column visibility. Test on page with multiple grids."
+    regression_trigger: "Grid DOM structure change, data-field attribute removed"
+
+integration_points:
+  - id: formula-api
+    source: "D6/D7"
+    endpoints:
+      - "GET /api/formulas/catalog — list available server formulas"
+      - "POST /api/formulas/execute — batch formula execution"
+    requires_auth: true
+    proxy_path: "Vite forwards /api/* to localhost:4002"
+    failure_mode: "Backend down → formula cells show Error icons (looks like bug, is infrastructure)"
+    prereq_check: |
+      curl -s -o /dev/null -w "%{http_code}" http://localhost:4002/api/health  # expect 200
+      curl -s -o /dev/null -w "%{http_code}" http://localhost:5174/api/health  # expect 200 (proxy)
+
+  - id: token-format-migration
+    source: "D10"
+    summary: "Auth tokens changed from encoding email (string) to user_id (integer)"
+    impact: "All pre-D10 tokens are invalid. Users must re-login after deployment."
+    test_action: "Clear localStorage, login fresh, verify token works on protected routes"
+
+known_data_limitations:
+  - id: inventory-on-hand-is-lot-count
+    source: "D6 deferred_register.md"
+    summary: "INVENTORY_ON_HAND returns lot count, not quantity sum"
+    details: "No quantity field on IngredientLot. Counts available lots only."
+    affects: "Ingredients list 'On Hand' column"
+    test_note: "Values are small integers (0, 1, 2, 3) — not weight/volume"
+
+  - id: ibu-simplified-gravity
+    source: "D6 deferred_register.md"
+    summary: "EST_IBU uses hardcoded gravity of 1.050"
+    details: "Actual wort gravity would create circular dependency with EST_OG"
+    test_note: "Accept approximate values. Compare against online calculator for ballpark."
+
+  - id: seed-recipes-empty
+    source: "D6"
+    summary: "Seeded recipes have no recipe_ingredients"
+    details: "EST_IBU returns 0.0, EST_OG returns 1.0 for seeded recipes — not a bug"
+    test_note: "To test realistic formula values, add recipe_ingredients via UI first"
+
+acceptance_criteria_by_deliverable:
+  d9_column_visibility:
+    - "Toolbar button (ViewColumn icon) visible on all grids"
+    - "Panel opens with toggleable column list"
+    - "Show All resets visibility"
+    - "Cannot hide last visible column (disabled + tooltip)"
+    - "Visibility persists on full page refresh"
+    - "Width persistence works independently of visibility"
+    - "Column menu shows Hide Column, not Manage Columns"
+
+  d10_user_management:
+    - "Admin can create users with name, email, password, role"
+    - "Admin can edit user details"
+    - "Admin can deactivate users (not delete)"
+    - "Admin can reset user password (generates temp password)"
+    - "Created users can log in (CURRENTLY FAILING — see blocker)"
+    - "Password change gate forces temp-password users to change on first login"
+    - "Regular users see brewing CRUD only (no Settings/Users)"
+    - "Inactive users get 401 on all requests"
+
+  d8_formula_editing:
+    - "Column menu shows Add Formula / Edit Formula items"
+    - "FormulaEditor popover opens anchored to column header"
+    - "Autocomplete suggests available functions from catalog"
+    - "Live preview shows evaluated result for first row"
+    - "Validation shows green check (valid) or red error (invalid)"
+    - "Save persists formula, Clear removes it, Cancel discards changes"
+    - "FxBadge (italic 'fx') appears on computed column headers"
+    - "Computed cells render in italic"

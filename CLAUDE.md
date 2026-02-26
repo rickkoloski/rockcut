@@ -7,7 +7,7 @@ Brewery management app for Matt at Rockcut Brewing Co, Estes Park, Colorado.
 | Component | Technology |
 |-----------|-----------|
 | API | Phoenix 1.8 (Elixir) — port 4002 locally |
-| Database | SQLite (WAL mode) |
+| Database | PostgreSQL (Fly Postgres in prod, local in dev) |
 | Frontend | React 19 SPA (Vite, MUI 7, pnpm) — port 5174 locally |
 | Hosting | Fly.io (rockcut-api.fly.dev, rockcut-ui.fly.dev) |
 | Auth | Bearer tokens, DB-backed users (Accounts context, Argon2) |
