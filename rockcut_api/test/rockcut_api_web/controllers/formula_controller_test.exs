@@ -101,7 +101,7 @@ defmodule RockcutApiWeb.FormulaControllerTest do
 
       assert %{"functions" => functions} = json_response(conn, 200)
       assert is_list(functions)
-      assert length(functions) == 3
+      assert length(functions) == 7
     end
 
     test "each function has name, description, params, and returns", %{conn: conn} do
@@ -124,7 +124,7 @@ defmodule RockcutApiWeb.FormulaControllerTest do
       end
     end
 
-    test "includes inventory_on_hand, est_ibu, and est_og", %{conn: conn} do
+    test "includes all formula functions", %{conn: conn} do
       conn =
         conn
         |> auth_conn()
@@ -136,6 +136,10 @@ defmodule RockcutApiWeb.FormulaControllerTest do
       assert "inventory_on_hand" in names
       assert "est_ibu" in names
       assert "est_og" in names
+      assert "est_fg" in names
+      assert "est_abv" in names
+      assert "est_srm" in names
+      assert "est_calories" in names
     end
 
     test "does not expose handler or limits in the response", %{conn: conn} do
@@ -161,7 +165,9 @@ defmodule RockcutApiWeb.FormulaControllerTest do
     test "returns 401 without auth token", %{conn: conn, ingredient: ingredient} do
       conn =
         post(conn, ~p"/api/formulas/execute", %{
-          "calls" => [%{"function" => "inventory_on_hand", "args" => %{"ingredient_id" => ingredient.id}}]
+          "calls" => [
+            %{"function" => "inventory_on_hand", "args" => %{"ingredient_id" => ingredient.id}}
+          ]
         })
 
       assert json_response(conn, 401)
@@ -229,7 +235,11 @@ defmodule RockcutApiWeb.FormulaControllerTest do
       assert Map.has_key?(ok_result, "value")
     end
 
-    test "results are positionally matched to calls", %{conn: conn, ingredient: ingredient, recipe: recipe} do
+    test "results are positionally matched to calls", %{
+      conn: conn,
+      ingredient: ingredient,
+      recipe: recipe
+    } do
       conn =
         conn
         |> auth_conn()

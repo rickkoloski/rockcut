@@ -113,6 +113,95 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
     }
   end
 
+  defp create_recipe_with_color_data(_context) do
+    # Create categories
+    {:ok, grain_cat} = Brewing.create_ingredient_category(%{name: "Grain"})
+
+    # Create ingredients
+    {:ok, pale_malt} = Brewing.create_ingredient(%{name: "Pale Malt", category_id: grain_cat.id})
+
+    {:ok, crystal_malt} =
+      Brewing.create_ingredient(%{name: "Crystal 60", category_id: grain_cat.id})
+
+    # Lots with color_lovibond
+    {:ok, pale_lot} =
+      Brewing.create_ingredient_lot(%{
+        ingredient_id: pale_malt.id,
+        lot_number: "PALE-001",
+        status: "available",
+        potential_gravity: Decimal.new("1.037"),
+        color_lovibond: Decimal.new("1.8")
+      })
+
+    {:ok, crystal_lot} =
+      Brewing.create_ingredient_lot(%{
+        ingredient_id: crystal_malt.id,
+        lot_number: "CRYSTAL-001",
+        status: "available",
+        potential_gravity: Decimal.new("1.034"),
+        color_lovibond: Decimal.new("60.0")
+      })
+
+    # Lot without color data
+    {:ok, no_color_lot} =
+      Brewing.create_ingredient_lot(%{
+        ingredient_id: pale_malt.id,
+        lot_number: "PALE-002",
+        status: "available",
+        potential_gravity: Decimal.new("1.037")
+      })
+
+    # Brand and recipe with color data
+    {:ok, brand} = Brewing.create_brand(%{name: "Test Amber"})
+
+    {:ok, recipe} =
+      Brewing.create_recipe(%{
+        brand_id: brand.id,
+        batch_size: Decimal.new("5.0"),
+        batch_size_unit: "gallons",
+        boil_time: 60
+      })
+
+    {:ok, _} =
+      Brewing.create_recipe_ingredient(%{
+        recipe_id: recipe.id,
+        lot_id: pale_lot.id,
+        amount: Decimal.new("9.0"),
+        unit: "lb",
+        use: "mash"
+      })
+
+    {:ok, _} =
+      Brewing.create_recipe_ingredient(%{
+        recipe_id: recipe.id,
+        lot_id: crystal_lot.id,
+        amount: Decimal.new("1.0"),
+        unit: "lb",
+        use: "mash"
+      })
+
+    # Recipe with no color data (different version to avoid unique constraint)
+    {:ok, recipe_no_color} =
+      Brewing.create_recipe(%{
+        brand_id: brand.id,
+        version_minor: 1,
+        batch_size: Decimal.new("5.0"),
+        batch_size_unit: "gallons",
+        boil_time: 60
+      })
+
+    {:ok, _} =
+      Brewing.create_recipe_ingredient(%{
+        recipe_id: recipe_no_color.id,
+        lot_id: no_color_lot.id,
+        amount: Decimal.new("10.0"),
+        unit: "lb",
+        use: "mash"
+      })
+
+    %{recipe: recipe, recipe_no_color: recipe_no_color}
+  end
+
   # ── Execute unknown function ───────────────────────────────────────
 
   describe "execute/3 with unknown function" do
@@ -130,7 +219,8 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
     setup :create_ingredient_with_lots
 
     test "returns {:ok, ...} with value and duration_ms", %{ingredient: ingredient} do
-      result = FormulaRuntime.execute("inventory_on_hand", %{"ingredient_id" => ingredient.id}, @context)
+      result =
+        FormulaRuntime.execute("inventory_on_hand", %{"ingredient_id" => ingredient.id}, @context)
 
       assert {:ok, %{value: value, duration_ms: duration}} = result
       assert is_number(value) or is_struct(value, Decimal)
@@ -162,7 +252,8 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
       # IBU should be a positive number for a recipe with hops
       ibu_float = if is_struct(ibu, Decimal), do: Decimal.to_float(ibu), else: ibu
       assert ibu_float > 0
-      assert ibu_float < 200  # sanity check — no beer has 200+ IBU
+      # sanity check — no beer has 200+ IBU
+      assert ibu_float < 200
       assert is_integer(duration)
     end
   end
@@ -179,7 +270,101 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
       # OG should be in the 1.0XX range for a typical beer
       og_float = if is_struct(og, Decimal), do: Decimal.to_float(og), else: og
       assert og_float >= 1.0
-      assert og_float < 1.200  # sanity check
+      # sanity check
+      assert og_float < 1.200
+      assert is_integer(duration)
+    end
+  end
+
+  # ── Execute est_fg ─────────────────────────────────────────────────
+
+  describe "execute/3 with est_fg" do
+    setup :create_recipe_with_ingredients
+
+    test "returns {:ok, ...} with a plausible FG value", %{recipe: recipe} do
+      result = FormulaRuntime.execute("est_fg", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: fg, duration_ms: duration}} = result
+      fg_float = if is_struct(fg, Decimal), do: Decimal.to_float(fg), else: fg
+      # FG should be less than OG and >= 1.0
+      assert fg_float >= 1.0
+      assert fg_float < 1.100
+      assert is_integer(duration)
+    end
+
+    test "FG is less than OG", %{recipe: recipe} do
+      {:ok, %{value: og}} =
+        FormulaRuntime.execute("est_og", %{"recipe_id" => recipe.id}, @context)
+
+      {:ok, %{value: fg}} =
+        FormulaRuntime.execute("est_fg", %{"recipe_id" => recipe.id}, @context)
+
+      og_float = if is_struct(og, Decimal), do: Decimal.to_float(og), else: og
+      fg_float = if is_struct(fg, Decimal), do: Decimal.to_float(fg), else: fg
+
+      assert fg_float < og_float
+    end
+  end
+
+  # ── Execute est_abv ────────────────────────────────────────────────
+
+  describe "execute/3 with est_abv" do
+    setup :create_recipe_with_ingredients
+
+    test "returns {:ok, ...} with a plausible ABV value", %{recipe: recipe} do
+      result = FormulaRuntime.execute("est_abv", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: abv, duration_ms: duration}} = result
+      abv_float = if is_struct(abv, Decimal), do: Decimal.to_float(abv), else: abv
+      # ABV should be positive for a recipe with grains
+      assert abv_float >= 0
+      # sanity check
+      assert abv_float < 20
+      assert is_integer(duration)
+    end
+  end
+
+  # ── Execute est_srm ────────────────────────────────────────────────
+
+  describe "execute/3 with est_srm" do
+    setup :create_recipe_with_color_data
+
+    test "returns {:ok, ...} with a plausible SRM value", %{recipe: recipe} do
+      result = FormulaRuntime.execute("est_srm", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: srm, duration_ms: duration}} = result
+      srm_float = if is_struct(srm, Decimal), do: Decimal.to_float(srm), else: srm
+      # SRM should be positive for a recipe with colored grains
+      assert srm_float > 0
+      # sanity check
+      assert srm_float < 100
+      assert is_integer(duration)
+    end
+
+    test "returns 0 SRM for recipe with no color data", %{recipe_no_color: recipe} do
+      result = FormulaRuntime.execute("est_srm", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: srm}} = result
+      srm_float = if is_struct(srm, Decimal), do: Decimal.to_float(srm), else: srm
+      assert srm_float == 0.0
+    end
+  end
+
+  # ── Execute est_calories ───────────────────────────────────────────
+
+  describe "execute/3 with est_calories" do
+    setup :create_recipe_with_ingredients
+
+    test "returns {:ok, ...} with a plausible calorie count", %{recipe: recipe} do
+      result = FormulaRuntime.execute("est_calories", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: calories, duration_ms: duration}} = result
+      # Calories per 12oz should be a positive integer in the 50-400 range for typical beer
+      assert is_integer(calories) or is_float(calories)
+      cal_num = if is_integer(calories), do: calories * 1.0, else: calories
+      assert cal_num >= 0
+      # sanity check
+      assert cal_num < 500
       assert is_integer(duration)
     end
   end

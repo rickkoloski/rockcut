@@ -6,7 +6,8 @@ defmodule RockcutApi.Accounts do
   alias RockcutApi.Accounts.User
 
   def authenticate(email, password) do
-    user = Repo.one(from u in User, where: fragment("lower(?)", u.email) == ^String.downcase(email))
+    user =
+      Repo.one(from u in User, where: fragment("lower(?)", u.email) == ^String.downcase(email))
 
     if user && Argon2.verify_pass(password, user.password_hash) do
       {:ok, user}

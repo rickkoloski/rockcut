@@ -103,10 +103,13 @@ case {Repo.get_by(IngredientCategory, name: "Extract"),
       Repo.get_by(IngredientCategory, name: "Other Consumables")} do
   {%IngredientCategory{} = old, nil} ->
     Repo.update!(IngredientCategory.changeset(old, %{name: "Other Consumables"}))
+
   {%IngredientCategory{} = old, %IngredientCategory{}} ->
     # Both exist — delete the old Extract category (it was replaced)
     Repo.delete!(old)
-  _ -> :ok
+
+  _ ->
+    :ok
 end
 
 # Mark all seeded field definitions as system
@@ -130,25 +133,50 @@ case Repo.get_by(Brewhouse, name: "Production") do
       ingredient_weight_unit: "lb",
       ingredient_vol_unit: "gal"
     })
-  _ -> :ok
+
+  _ ->
+    :ok
 end
 
 profiles = [
-  %{name: "RC Ale", mash_type: "single_infusion", boil_duration: 60,
-    primary_temperature: Decimal.new("66"), primary_duration: Decimal.new("168"),
-    crash_type: "single", crash_temperature: Decimal.new("34"),
-    crash_duration: Decimal.new("48"), transfer_type: "none",
-    co2_volume: Decimal.new("2.4")},
-  %{name: "RC Hazy", mash_type: "single_infusion", boil_duration: 60,
-    primary_temperature: Decimal.new("67"), primary_duration: Decimal.new("168"),
-    crash_type: "single", crash_temperature: Decimal.new("34"),
-    crash_duration: Decimal.new("48"), transfer_type: "none",
-    co2_volume: Decimal.new("2.5")},
-  %{name: "RC Lager", mash_type: "step", boil_duration: 90,
-    lag_temperature: Decimal.new("10"), lag_duration: Decimal.new("48"),
-    primary_temperature: Decimal.new("10"), primary_duration: Decimal.new("336"),
-    d_rest_temperature: Decimal.new("18"), d_rest_duration: Decimal.new("48"),
-    crash_type: "step", transfer_type: "none", co2_volume: Decimal.new("2.6")}
+  %{
+    name: "RC Ale",
+    mash_type: "single_infusion",
+    boil_duration: 60,
+    primary_temperature: Decimal.new("66"),
+    primary_duration: Decimal.new("168"),
+    crash_type: "single",
+    crash_temperature: Decimal.new("34"),
+    crash_duration: Decimal.new("48"),
+    transfer_type: "none",
+    co2_volume: Decimal.new("2.4")
+  },
+  %{
+    name: "RC Hazy",
+    mash_type: "single_infusion",
+    boil_duration: 60,
+    primary_temperature: Decimal.new("67"),
+    primary_duration: Decimal.new("168"),
+    crash_type: "single",
+    crash_temperature: Decimal.new("34"),
+    crash_duration: Decimal.new("48"),
+    transfer_type: "none",
+    co2_volume: Decimal.new("2.5")
+  },
+  %{
+    name: "RC Lager",
+    mash_type: "step",
+    boil_duration: 90,
+    lag_temperature: Decimal.new("10"),
+    lag_duration: Decimal.new("48"),
+    primary_temperature: Decimal.new("10"),
+    primary_duration: Decimal.new("336"),
+    d_rest_temperature: Decimal.new("18"),
+    d_rest_duration: Decimal.new("48"),
+    crash_type: "step",
+    transfer_type: "none",
+    co2_volume: Decimal.new("2.6")
+  }
 ]
 
 Enum.each(profiles, fn attrs ->
@@ -189,7 +217,7 @@ ingredients =
     # Adjuncts / other
     {category_ids["Sugar"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
     {category_ids["Adjunct"], "Irish Moss", "Kettle fining agent"},
-    {category_ids["Adjunct"], "Whirlfloc", "Tablet fining, aids clarity"},
+    {category_ids["Adjunct"], "Whirlfloc", "Tablet fining, aids clarity"}
   ]
   |> Enum.map(fn {cat_id, name, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -209,20 +237,20 @@ ingredient_ids =
 lots =
   [
     # Grains (color_lovibond + potential_gravity)
-    {ingredient_ids["Pale 2-Row"], "G-2401", "Briess", "2026-01-15", "available",
-     nil, Decimal.new("1.8"), Decimal.new("1.037"), nil, nil},
-    {ingredient_ids["Munich 10L"], "G-2402", "Weyermann", "2026-01-15", "available",
-     nil, Decimal.new("10"), Decimal.new("1.035"), nil, nil},
-    {ingredient_ids["Crystal 40L"], "G-2403", "Briess", "2026-01-20", "available",
-     nil, Decimal.new("40"), Decimal.new("1.034"), nil, nil},
-    {ingredient_ids["Crystal 60L"], "G-2404", "Briess", "2026-01-20", "available",
-     nil, Decimal.new("60"), Decimal.new("1.034"), nil, nil},
-    {ingredient_ids["Wheat Malt"], "G-2405", "Rahr", "2026-01-10", "available",
-     nil, Decimal.new("2"), Decimal.new("1.037"), nil, nil},
-    {ingredient_ids["Flaked Oats"], "G-2406", "Bob's Red Mill", "2026-02-01", "available",
-     nil, Decimal.new("1"), Decimal.new("1.033"), nil, nil},
-    {ingredient_ids["Victory Malt"], "G-2407", "Briess", "2026-01-20", "available",
-     nil, Decimal.new("25"), Decimal.new("1.034"), nil, nil},
+    {ingredient_ids["Pale 2-Row"], "G-2401", "Briess", "2026-01-15", "available", nil,
+     Decimal.new("1.8"), Decimal.new("1.037"), nil, nil},
+    {ingredient_ids["Munich 10L"], "G-2402", "Weyermann", "2026-01-15", "available", nil,
+     Decimal.new("10"), Decimal.new("1.035"), nil, nil},
+    {ingredient_ids["Crystal 40L"], "G-2403", "Briess", "2026-01-20", "available", nil,
+     Decimal.new("40"), Decimal.new("1.034"), nil, nil},
+    {ingredient_ids["Crystal 60L"], "G-2404", "Briess", "2026-01-20", "available", nil,
+     Decimal.new("60"), Decimal.new("1.034"), nil, nil},
+    {ingredient_ids["Wheat Malt"], "G-2405", "Rahr", "2026-01-10", "available", nil,
+     Decimal.new("2"), Decimal.new("1.037"), nil, nil},
+    {ingredient_ids["Flaked Oats"], "G-2406", "Bob's Red Mill", "2026-02-01", "available", nil,
+     Decimal.new("1"), Decimal.new("1.033"), nil, nil},
+    {ingredient_ids["Victory Malt"], "G-2407", "Briess", "2026-01-20", "available", nil,
+     Decimal.new("25"), Decimal.new("1.034"), nil, nil},
     # Hops (alpha_acid)
     {ingredient_ids["Centennial"], "H-2401", "YCH Hops", "2025-12-10", "available",
      Decimal.new("10.5"), nil, nil, nil, nil},
@@ -237,21 +265,21 @@ lots =
     {ingredient_ids["Amarillo"], "H-2406", "Virgil Gamache Farms", "2026-01-15", "available",
      Decimal.new("9.2"), nil, nil, nil, nil},
     # Yeast (attenuation)
-    {ingredient_ids["US-05"], "Y-2401", "Fermentis", "2026-01-20", "available",
-     nil, nil, nil, Decimal.new("78"), nil},
-    {ingredient_ids["WLP001"], "Y-2402", "White Labs", "2026-02-01", "available",
-     nil, nil, nil, Decimal.new("76"), nil},
-    {ingredient_ids["Wyeast 1056"], "Y-2403", "Wyeast", "2026-02-01", "available",
-     nil, nil, nil, Decimal.new("75"), nil},
+    {ingredient_ids["US-05"], "Y-2401", "Fermentis", "2026-01-20", "available", nil, nil, nil,
+     Decimal.new("78"), nil},
+    {ingredient_ids["WLP001"], "Y-2402", "White Labs", "2026-02-01", "available", nil, nil, nil,
+     Decimal.new("76"), nil},
+    {ingredient_ids["Wyeast 1056"], "Y-2403", "Wyeast", "2026-02-01", "available", nil, nil, nil,
+     Decimal.new("75"), nil},
     # Sugar
     {ingredient_ids["Corn Sugar (Dextrose)"], "S-2401", "LD Carlson", "2026-01-10", "available",
      nil, nil, Decimal.new("1.046"), nil, nil},
     # Depleted lot for demo
     {ingredient_ids["Cascade"], "H-2301", "YCH Hops", "2025-06-15", "depleted",
-     Decimal.new("5.5"), nil, nil, nil, "2025 crop, used up"},
+     Decimal.new("5.5"), nil, nil, nil, "2025 crop, used up"}
   ]
-  |> Enum.map(fn {ing_id, lot_number, supplier, received_date, status,
-                  alpha_acid, color_lovibond, potential_gravity, attenuation, notes} ->
+  |> Enum.map(fn {ing_id, lot_number, supplier, received_date, status, alpha_acid, color_lovibond,
+                  potential_gravity, attenuation, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     %{
@@ -274,7 +302,12 @@ lots =
 # Lots have no unique constraint, so only insert if table is empty to stay idempotent
 if Repo.aggregate(IngredientLot, :count) == 0 do
   Repo.insert_all(IngredientLot, lots)
-  IO.puts("Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, #{length(ingredients)} ingredients, #{length(lots)} lots")
+
+  IO.puts(
+    "Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, #{length(ingredients)} ingredients, #{length(lots)} lots"
+  )
 else
-  IO.puts("Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, #{length(ingredients)} ingredients (lots already seeded)")
+  IO.puts(
+    "Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, #{length(ingredients)} ingredients (lots already seeded)"
+  )
 end

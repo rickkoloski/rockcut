@@ -1,0 +1,107 @@
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - generic [ref=e6]:
+      - generic [ref=e7]:
+        - button [ref=e8] [cursor=pointer]:
+          - img [ref=e9]
+        - img "Rockcut Brewing Co" [ref=e234] [cursor=pointer]
+      - list [ref=e13]:
+        - button "Home" [ref=e235] [cursor=pointer]:
+          - img [ref=e17]
+          - generic [ref=e20]: Home
+        - button "Brands & Recipes" [ref=e236] [cursor=pointer]:
+          - img [ref=e24]
+          - generic [ref=e27]: Brands & Recipes
+        - button "Ingredient Library" [ref=e237] [cursor=pointer]:
+          - img [ref=e31]
+          - generic [ref=e34]: Ingredient Library
+        - button "Batches" [ref=e238] [cursor=pointer]:
+          - img [ref=e38]
+          - generic [ref=e41]: Batches
+        - button "Settings" [ref=e239] [cursor=pointer]:
+          - img [ref=e45]
+          - generic [ref=e48]: Settings
+        - button "Users" [ref=e240] [cursor=pointer]:
+          - img [ref=e52]
+          - generic [ref=e55]: Users
+    - generic [ref=e56]:
+      - banner [ref=e57]:
+        - generic [ref=e58]:
+          - paragraph [ref=e59]: Matt
+          - button "Logout" [ref=e241] [cursor=pointer]:
+            - img [ref=e62]
+            - text: Logout
+      - main [ref=e64]:
+        - generic [ref=e65]:
+          - navigation [ref=e66]:
+            - list [ref=e67]:
+              - listitem [ref=e68]:
+                - link "Home" [ref=e242] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e70]: /
+              - listitem [ref=e71]:
+                - paragraph [ref=e72]: Brands & Recipes
+          - generic [ref=e73]:
+            - heading "Brands & Recipes" [level=4] [ref=e243]
+            - button "Add Brand" [ref=e244] [cursor=pointer]:
+              - img [ref=e77]
+              - text: Add Brand
+        - generic [ref=e81]:
+          - img [ref=e83]
+          - textbox "Search..." [ref=e245]
+          - group
+        - generic [ref=e86]:
+          - button "Toggle column visibility" [active] [ref=e246] [cursor=pointer]:
+            - img [ref=e89]
+          - generic [ref=e91] [cursor=pointer]:
+            - grid [ref=e92]:
+              - row "Name Style ABV IBU Status" [ref=e247]:
+                - columnheader "Name" [ref=e248]:
+                  - generic [ref=e96]: Name
+                  - generic [ref=e97]:
+                    - img
+                - columnheader "Style" [ref=e249]:
+                  - generic [ref=e218]: Style
+                  - generic [ref=e219]:
+                    - img
+                - columnheader "ABV" [ref=e250]:
+                  - generic [ref=e100]: ABV
+                  - generic [ref=e101]:
+                    - img
+                - columnheader "IBU" [ref=e251]:
+                  - generic [ref=e104]: IBU
+                  - generic [ref=e105]:
+                    - img
+                - columnheader "Status" [ref=e252]:
+                  - generic [ref=e222]: Status
+                  - generic [ref=e223]:
+                    - img
+              - rowgroup [ref=e158]:
+                - row "Altruism German Amber active" [ref=e253]:
+                  - gridcell "Altruism" [ref=e254]
+                  - gridcell "German Amber" [ref=e255]
+                  - gridcell [ref=e161]
+                  - gridcell [ref=e162]
+                  - gridcell "active" [ref=e256]:
+                    - generic [ref=e227]: active
+                - row "Rockcut IPA American IPA active" [ref=e257]:
+                  - gridcell "Rockcut IPA" [ref=e258]
+                  - gridcell "American IPA" [ref=e259]
+                  - gridcell [ref=e168]
+                  - gridcell [ref=e169]
+                  - gridcell "active" [ref=e260]:
+                    - generic [ref=e231]: active
+            - generic [ref=e134]:
+              - paragraph [ref=e135]: "Rows per page:"
+              - generic [ref=e136]:
+                - 'combobox "Rows per page: 100" [ref=e261]': "100"
+                - textbox: "100"
+                - img
+              - paragraph [ref=e138]: 1–2 of 2
+              - generic [ref=e139]:
+                - button "Go to previous page" [disabled]:
+                  - img
+                - button "Go to next page" [disabled]:
+                  - img
+  - tooltip "Toggle column visibility" [ref=e265]:
+    - generic [ref=e266]: Toggle column visibility

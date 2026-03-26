@@ -36,6 +36,42 @@ defmodule RockcutApi.Formulas.FormulaCatalog do
       handler: &Functions.BrewingCalcs.est_og/2,
       limits: %{timeout_ms: 5_000},
       exposed: true
+    },
+    %{
+      name: "est_fg",
+      description: "Estimated final gravity for a recipe based on OG and attenuation",
+      params: [%{name: "recipe_id", type: :integer, required: true}],
+      returns: :number,
+      handler: &Functions.BrewingCalcs.est_fg/2,
+      limits: %{timeout_ms: 5_000},
+      exposed: true
+    },
+    %{
+      name: "est_abv",
+      description: "Estimated alcohol by volume for a recipe",
+      params: [%{name: "recipe_id", type: :integer, required: true}],
+      returns: :number,
+      handler: &Functions.BrewingCalcs.est_abv/2,
+      limits: %{timeout_ms: 5_000},
+      exposed: true
+    },
+    %{
+      name: "est_srm",
+      description: "Estimated beer color (SRM) for a recipe using the Morey equation",
+      params: [%{name: "recipe_id", type: :integer, required: true}],
+      returns: :number,
+      handler: &Functions.BrewingCalcs.est_srm/2,
+      limits: %{timeout_ms: 5_000},
+      exposed: true
+    },
+    %{
+      name: "est_calories",
+      description: "Estimated calories per 12oz serving for a recipe",
+      params: [%{name: "recipe_id", type: :integer, required: true}],
+      returns: :number,
+      handler: &Functions.BrewingCalcs.est_calories/2,
+      limits: %{timeout_ms: 5_000},
+      exposed: true
     }
   ]
 

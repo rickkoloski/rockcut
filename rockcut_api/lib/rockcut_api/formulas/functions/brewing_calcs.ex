@@ -1,13 +1,23 @@
 defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   @moduledoc """
-  Brewing calculation formula functions (IBU, OG).
+  Brewing calculation formula functions (IBU, OG, FG, ABV, SRM, Calories).
   """
 
   import Ecto.Query
 
-  alias RockcutApi.Brewing.{Recipe, RecipeIngredient, IngredientLot, Ingredient, IngredientCategory}
+  alias RockcutApi.Brewing.{
+    Recipe,
+    RecipeIngredient,
+    IngredientLot,
+    Ingredient,
+    IngredientCategory,
+    Brand
+  }
+
+  alias RockcutApi.Formulas.Functions.BrewingConversions
 
   @default_efficiency 0.72
+  @default_attenuation 0.75
   @gallons_per_bbl 31.0
 
   @doc """
@@ -43,6 +53,107 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     recipe_id = params["recipe_id"] || params[:recipe_id]
     repo = context.repo
 
+    og = compute_og(repo, recipe_id)
+    {:ok, %{value: Float.round(og, 4)}}
+  end
+
+  @doc """
+  Estimated final gravity.
+
+  FG = OG - (OG - 1.0) * attenuation
+  Uses brand's apparent_attenuation if available, else default 0.75.
+  """
+  def est_fg(context, params) do
+    recipe_id = params["recipe_id"] || params[:recipe_id]
+    repo = context.repo
+
+    og = compute_og(repo, recipe_id)
+    attenuation = get_attenuation(repo, recipe_id)
+
+    fg = og - (og - 1.0) * attenuation
+    {:ok, %{value: Float.round(fg, 4)}}
+  end
+
+  @doc """
+  Estimated alcohol by volume.
+
+  ABV = (OG - FG) * 131.25
+  """
+  def est_abv(context, params) do
+    recipe_id = params["recipe_id"] || params[:recipe_id]
+    repo = context.repo
+
+    og = compute_og(repo, recipe_id)
+    attenuation = get_attenuation(repo, recipe_id)
+    fg = og - (og - 1.0) * attenuation
+
+    abv = (og - fg) * 131.25
+    {:ok, %{value: Float.round(abv + 0.0, 1)}}
+  end
+
+  @doc """
+  Estimated beer color in SRM using the Morey equation.
+
+  MCU = sum(weight_lbs * lovibond) / volume_gal
+  SRM = 1.4922 * MCU^0.6859
+  """
+  def est_srm(context, params) do
+    recipe_id = params["recipe_id"] || params[:recipe_id]
+    repo = context.repo
+
+    recipe = repo.get!(Recipe, recipe_id)
+    batch_volume_gallons = batch_volume_gallons(recipe)
+
+    color_additions = load_color_additions(repo, recipe_id)
+
+    total_mcu =
+      color_additions
+      |> Enum.map(fn ri -> mcu_contribution(ri) end)
+      |> Enum.sum()
+
+    srm =
+      if batch_volume_gallons > 0 and total_mcu > 0 do
+        mcu = total_mcu / batch_volume_gallons
+        1.4922 * :math.pow(mcu, 0.6859)
+      else
+        0.0
+      end
+
+    {:ok, %{value: Float.round(srm + 0.0, 1)}}
+  end
+
+  @doc """
+  Estimated calories per 12oz serving.
+
+  calories = 3621 * FG * ((0.8114 * og_plato + 0.1892 * fg_plato) / 100 + 0.568 * ABV / 100)
+  Scaled to 12oz from a full serving.
+  """
+  def est_calories(context, params) do
+    recipe_id = params["recipe_id"] || params[:recipe_id]
+    repo = context.repo
+
+    og = compute_og(repo, recipe_id)
+    attenuation = get_attenuation(repo, recipe_id)
+    fg = og - (og - 1.0) * attenuation
+    abv = (og - fg) * 131.25
+
+    og_plato = BrewingConversions.sg_to_plato(og)
+    fg_plato = BrewingConversions.sg_to_plato(fg)
+
+    # Calories per 12oz serving
+    # The formula gives calories per liter, scale to 12oz (354.882 mL)
+    cal_per_liter =
+      3621.0 * fg *
+        ((0.8114 * og_plato + 0.1892 * fg_plato) / 100.0 + 0.568 * abv / 100.0)
+
+    calories_12oz = cal_per_liter * 0.354882
+
+    {:ok, %{value: round(calories_12oz)}}
+  end
+
+  # -- Shared computation helpers (used by multiple public functions) --
+
+  defp compute_og(repo, recipe_id) do
     recipe = repo.get!(Recipe, recipe_id)
     batch_volume_gallons = batch_volume_gallons(recipe)
     efficiency = decimal_to_float(recipe.efficiency_target) || @default_efficiency
@@ -54,17 +165,48 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
       |> Enum.map(fn ri -> gravity_points(ri, efficiency) end)
       |> Enum.sum()
 
-    og =
-      if batch_volume_gallons > 0 do
-        1.0 + total_points / batch_volume_gallons / 1000.0
-      else
-        1.0
-      end
+    if batch_volume_gallons > 0 do
+      1.0 + total_points / batch_volume_gallons / 1000.0
+    else
+      1.0
+    end
+  end
 
-    {:ok, %{value: Float.round(og, 4)}}
+  defp get_attenuation(repo, recipe_id) do
+    # Try to get attenuation from the recipe's brand
+    recipe = repo.get!(Recipe, recipe_id)
+    brand = repo.get!(Brand, recipe.brand_id)
+
+    # Brand doesn't have an apparent_attenuation field in the schema,
+    # so we use the default
+    _ = brand
+    @default_attenuation
   end
 
   # -- Private helpers --
+
+  defp load_color_additions(repo, recipe_id) do
+    grain_category_ids = get_fermentable_category_ids(repo)
+
+    RecipeIngredient
+    |> where(recipe_id: ^recipe_id)
+    |> join(:inner, [ri], lot in IngredientLot, on: ri.lot_id == lot.id)
+    |> join(:inner, [ri, lot], ing in Ingredient, on: lot.ingredient_id == ing.id)
+    |> where([ri, lot, ing], ing.category_id in ^grain_category_ids)
+    |> select([ri, lot, _ing], %{
+      amount: ri.amount,
+      unit: ri.unit,
+      color_lovibond: lot.color_lovibond
+    })
+    |> repo.all()
+  end
+
+  defp mcu_contribution(addition) do
+    lovibond = decimal_to_float(addition.color_lovibond) || 0.0
+    weight_lbs = to_pounds(addition.amount, addition.unit)
+
+    weight_lbs * lovibond
+  end
 
   defp load_hop_additions(repo, recipe_id) do
     hop_category_id = get_category_id(repo, "Hop")
@@ -125,7 +267,8 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
       utilization = bigness * boil_factor
 
       # mg/L alpha acid
-      mg_per_l = (alpha_acid / 100.0) * (weight_oz * 28.3495) * 1000.0 / (batch_volume_gallons * 3.78541)
+      mg_per_l =
+        alpha_acid / 100.0 * (weight_oz * 28.3495) * 1000.0 / (batch_volume_gallons * 3.78541)
 
       mg_per_l * utilization
     else

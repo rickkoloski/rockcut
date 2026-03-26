@@ -1,0 +1,138 @@
+- generic [ref=e1]:
+  - generic [ref=e19]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - button [ref=e24] [cursor=pointer]:
+          - img [ref=e25]
+        - img [ref=e377] [cursor=pointer]
+      - list [ref=e29]:
+        - button [ref=e378] [cursor=pointer]:
+          - img [ref=e33]
+          - generic [ref=e36]: Home
+        - button [ref=e379] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e43]: Brands & Recipes
+        - button [ref=e380] [cursor=pointer]:
+          - img [ref=e47]
+          - generic [ref=e50]: Ingredient Library
+        - button [ref=e381] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e57]: Batches
+        - button [ref=e382] [cursor=pointer]:
+          - img [ref=e61]
+          - generic [ref=e64]: Settings
+        - button [ref=e383] [cursor=pointer]:
+          - img [ref=e68]
+          - generic [ref=e71]: Users
+    - generic [ref=e72]:
+      - banner [ref=e73]:
+        - generic [ref=e74]:
+          - paragraph [ref=e75]: Matt
+          - button [ref=e384] [cursor=pointer]:
+            - img [ref=e78]
+            - text: Logout
+      - main [ref=e80]:
+        - generic [ref=e287]:
+          - navigation [ref=e288]:
+            - list [ref=e289]:
+              - listitem [ref=e290]:
+                - link [ref=e385] [cursor=pointer]:
+                  - /url: /
+                  - text: Home
+              - listitem [ref=e292]: /
+              - listitem [ref=e293]:
+                - link [ref=e386] [cursor=pointer]:
+                  - /url: /brands
+                  - text: Brands
+              - listitem [ref=e295]: /
+              - listitem [ref=e296]:
+                - paragraph [ref=e297]: Test Stout
+          - generic [ref=e298]:
+            - heading [level=4] [ref=e387]: Test Stout
+            - generic [ref=e300]:
+              - button [ref=e388] [cursor=pointer]:
+                - img [ref=e302]
+              - button [ref=e389] [cursor=pointer]:
+                - img [ref=e305]
+        - generic [ref=e308]:
+          - generic [ref=e309]:
+            - text: Name
+            - paragraph [ref=e310]: Test Stout
+          - generic [ref=e311]:
+            - text: Style
+            - paragraph [ref=e312]: Oatmeal Stout
+          - generic [ref=e313]:
+            - text: Description
+            - paragraph [ref=e314]: —
+          - generic [ref=e315]:
+            - text: Target ABV
+            - paragraph [ref=e316]: —
+          - generic [ref=e317]:
+            - text: Target IBU
+            - paragraph [ref=e318]: —
+          - generic [ref=e319]:
+            - text: Target SRM
+            - paragraph [ref=e320]: —
+          - generic [ref=e321]:
+            - text: Status
+            - generic [ref=e323]: active
+        - generic [ref=e324]:
+          - heading [level=6] [ref=e390]: Recipes
+          - button [ref=e391] [cursor=pointer]: Add Recipe
+        - generic [ref=e327]:
+          - button [ref=e392] [cursor=pointer]:
+            - img [ref=e330]
+          - generic [ref=e332] [cursor=pointer]:
+            - grid [ref=e333]:
+              - row [ref=e393]:
+                - columnheader [ref=e394]:
+                  - generic [ref=e337]: Version
+                  - generic [ref=e338]:
+                    - img
+                - columnheader [ref=e395]:
+                  - generic [ref=e341]: Batch Size
+                  - generic [ref=e342]:
+                    - img
+                - columnheader [ref=e396]:
+                  - generic [ref=e345]: Boil Time
+                  - generic [ref=e346]:
+                    - img
+                - columnheader [ref=e397]:
+                  - generic [ref=e349]: Efficiency
+                  - generic [ref=e350]:
+                    - img
+                - columnheader [ref=e398]:
+                  - generic [ref=e353]:
+                    - generic [ref=e354]: Est. IBU
+                    - generic [ref=e399]: fx
+                  - generic [ref=e356]:
+                    - img
+                - columnheader [ref=e400]:
+                  - generic [ref=e359]:
+                    - generic [ref=e360]: Est. OG
+                    - generic [ref=e401]: fx
+                  - generic [ref=e362]:
+                    - img
+                - columnheader [ref=e402]:
+                  - generic [ref=e365]: Status
+                  - generic [ref=e366]:
+                    - img
+              - generic [ref=e368]: No rows
+            - generic [ref=e371]:
+              - paragraph [ref=e372]: "Rows per page:"
+              - generic [ref=e373]:
+                - combobox [ref=e403]: "100"
+                - textbox: "100"
+                - img
+              - paragraph [ref=e375]: 0–0 of 0
+              - generic [ref=e376]:
+                - button [disabled]:
+                  - img
+                - button [disabled]:
+                  - img
+  - dialog "Delete Brand" [ref=e406]:
+    - heading "Delete Brand" [level=2] [ref=e407]
+    - paragraph [ref=e409]: Are you sure you want to delete "Test Stout"? This action cannot be undone.
+    - generic [ref=e410]:
+      - button "Cancel" [ref=e411] [cursor=pointer]
+      - button "Delete" [ref=e412] [cursor=pointer]

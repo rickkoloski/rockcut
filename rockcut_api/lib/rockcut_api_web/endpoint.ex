@@ -56,6 +56,7 @@ defmodule RockcutApiWeb.Endpoint do
       "http://localhost:5174"
     ])
   end
+
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options

@@ -1,0 +1,26 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "http://localhost:5174",
+      "localStorage": [
+        {
+          "name": "rockcut_email",
+          "value": "matthewheiser@gmail.com"
+        },
+        {
+          "name": "rockcut_role",
+          "value": "admin"
+        },
+        {
+          "name": "rockcut_token",
+          "value": "SFMyNTY.g2gDYQFuBgDMIciFnAFiAAFRgA.8HmyjRpnAzAyJjIy-ZTnZ1NJ4cUHTZqG3vHHo6GzKWI"
+        },
+        {
+          "name": "rockcut_name",
+          "value": "Matt"
+        }
+      ]
+    }
+  ]
+}

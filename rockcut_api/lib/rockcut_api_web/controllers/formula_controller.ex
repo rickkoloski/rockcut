@@ -10,9 +10,10 @@ defmodule RockcutApiWeb.FormulaController do
         %{
           name: op.name,
           description: op.description,
-          params: Enum.map(op.params, fn p ->
-            %{name: p.name, type: to_string(p.type), required: p.required}
-          end),
+          params:
+            Enum.map(op.params, fn p ->
+              %{name: p.name, type: to_string(p.type), required: p.required}
+            end),
           returns: to_string(op.returns)
         }
       end)

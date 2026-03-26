@@ -1,0 +1,130 @@
+- generic [ref=e19]:
+  - generic [ref=e22]:
+    - generic [ref=e23]:
+      - button [ref=e24] [cursor=pointer]:
+        - img [ref=e25]
+      - img "Rockcut Brewing Co" [ref=e251] [cursor=pointer]
+    - list [ref=e29]:
+      - button "Home" [ref=e252] [cursor=pointer]:
+        - img [ref=e33]
+        - generic [ref=e36]: Home
+      - button "Brands & Recipes" [ref=e253] [cursor=pointer]:
+        - img [ref=e40]
+        - generic [ref=e43]: Brands & Recipes
+      - button "Ingredient Library" [ref=e254] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e50]: Ingredient Library
+      - button "Batches" [ref=e255] [cursor=pointer]:
+        - img [ref=e54]
+        - generic [ref=e57]: Batches
+      - button "Settings" [ref=e256] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e64]: Settings
+      - button "Users" [ref=e257] [cursor=pointer]:
+        - img [ref=e68]
+        - generic [ref=e71]: Users
+  - generic [ref=e72]:
+    - banner [ref=e73]:
+      - generic [ref=e74]:
+        - paragraph [ref=e75]: Matt
+        - button "Logout" [ref=e258] [cursor=pointer]:
+          - img [ref=e78]
+          - text: Logout
+    - main [ref=e80]:
+      - generic [ref=e287]:
+        - navigation [ref=e288]:
+          - list [ref=e289]:
+            - listitem [ref=e290]:
+              - link "Home" [ref=e291] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=e292]: /
+            - listitem [ref=e293]:
+              - link "Brands" [ref=e294] [cursor=pointer]:
+                - /url: /brands
+            - listitem [ref=e295]: /
+            - listitem [ref=e296]:
+              - paragraph [ref=e297]: Test Stout
+        - generic [ref=e298]:
+          - heading "Test Stout" [level=4] [ref=e299]
+          - generic [ref=e300]:
+            - button "Edit Brand" [ref=e301] [cursor=pointer]:
+              - img [ref=e302]
+            - button "Delete Brand" [ref=e304] [cursor=pointer]:
+              - img [ref=e305]
+      - generic [ref=e308]:
+        - generic [ref=e309]:
+          - text: Name
+          - paragraph [ref=e310]: Test Stout
+        - generic [ref=e311]:
+          - text: Style
+          - paragraph [ref=e312]: Oatmeal Stout
+        - generic [ref=e313]:
+          - text: Description
+          - paragraph [ref=e314]: —
+        - generic [ref=e315]:
+          - text: Target ABV
+          - paragraph [ref=e316]: —
+        - generic [ref=e317]:
+          - text: Target IBU
+          - paragraph [ref=e318]: —
+        - generic [ref=e319]:
+          - text: Target SRM
+          - paragraph [ref=e320]: —
+        - generic [ref=e321]:
+          - text: Status
+          - generic [ref=e323]: active
+      - generic [ref=e324]:
+        - heading "Recipes" [level=6] [ref=e325]
+        - button "Add Recipe" [ref=e326] [cursor=pointer]
+      - generic [ref=e327]:
+        - button "Toggle column visibility" [ref=e329] [cursor=pointer]:
+          - img [ref=e330]
+        - generic [ref=e332] [cursor=pointer]:
+          - grid [ref=e333]:
+            - row "Version Batch Size Boil Time Efficiency Est. IBU Computed column Est. OG Computed column Status" [ref=e334]:
+              - columnheader "Version" [ref=e335]:
+                - generic [ref=e337]: Version
+                - generic [ref=e338]:
+                  - img
+              - columnheader "Batch Size" [ref=e339]:
+                - generic [ref=e341]: Batch Size
+                - generic [ref=e342]:
+                  - img
+              - columnheader "Boil Time" [ref=e343]:
+                - generic [ref=e345]: Boil Time
+                - generic [ref=e346]:
+                  - img
+              - columnheader "Efficiency" [ref=e347]:
+                - generic [ref=e349]: Efficiency
+                - generic [ref=e350]:
+                  - img
+              - columnheader "Est. IBU Computed column" [ref=e351]:
+                - generic [ref=e353]:
+                  - generic [ref=e354]: Est. IBU
+                  - generic "Computed column" [ref=e355]: fx
+                - generic [ref=e356]:
+                  - img
+              - columnheader "Est. OG Computed column" [ref=e357]:
+                - generic [ref=e359]:
+                  - generic [ref=e360]: Est. OG
+                  - generic "Computed column" [ref=e361]: fx
+                - generic [ref=e362]:
+                  - img
+              - columnheader "Status" [ref=e363]:
+                - generic [ref=e365]: Status
+                - generic [ref=e366]:
+                  - img
+            - generic [ref=e368]: No rows
+            - rowgroup
+          - generic [ref=e371]:
+            - paragraph [ref=e372]: "Rows per page:"
+            - generic [ref=e373]:
+              - 'combobox "Rows per page: 100" [ref=e374]': "100"
+              - textbox: "100"
+              - img
+            - paragraph [ref=e375]: 0–0 of 0
+            - generic [ref=e376]:
+              - button "Go to previous page" [disabled]:
+                - img
+              - button "Go to next page" [disabled]:
+                - img

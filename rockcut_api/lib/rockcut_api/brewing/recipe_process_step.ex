@@ -20,7 +20,16 @@ defmodule RockcutApi.Brewing.RecipeProcessStep do
 
   def changeset(step, attrs) do
     step
-    |> cast(attrs, [:recipe_id, :step_number, :name, :day, :temperature, :duration, :duration_unit, :notes])
+    |> cast(attrs, [
+      :recipe_id,
+      :step_number,
+      :name,
+      :day,
+      :temperature,
+      :duration,
+      :duration_unit,
+      :notes
+    ])
     |> validate_required([:recipe_id, :step_number, :name])
     |> validate_inclusion(:duration_unit, @valid_duration_units)
     |> validate_number(:day, greater_than_or_equal_to: 0)

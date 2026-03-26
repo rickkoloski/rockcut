@@ -4,15 +4,19 @@ defmodule RockcutApi.Formulas.FormulaCatalogTest do
   alias RockcutApi.Formulas.FormulaCatalog
 
   describe "list_exposed/0" do
-    test "returns all three initial formula functions" do
+    test "returns all seven formula functions" do
       functions = FormulaCatalog.list_exposed()
 
-      assert length(functions) == 3
+      assert length(functions) == 7
 
       names = Enum.map(functions, & &1.name)
       assert "inventory_on_hand" in names
       assert "est_ibu" in names
       assert "est_og" in names
+      assert "est_fg" in names
+      assert "est_abv" in names
+      assert "est_srm" in names
+      assert "est_calories" in names
     end
 
     test "each function has required fields" do
@@ -56,6 +60,38 @@ defmodule RockcutApi.Formulas.FormulaCatalogTest do
 
       assert op != nil
       assert op.name == "est_og"
+      assert [%{name: "recipe_id", type: :integer, required: true}] = op.params
+    end
+
+    test "returns est_fg by name" do
+      op = FormulaCatalog.get("est_fg")
+
+      assert op != nil
+      assert op.name == "est_fg"
+      assert [%{name: "recipe_id", type: :integer, required: true}] = op.params
+    end
+
+    test "returns est_abv by name" do
+      op = FormulaCatalog.get("est_abv")
+
+      assert op != nil
+      assert op.name == "est_abv"
+      assert [%{name: "recipe_id", type: :integer, required: true}] = op.params
+    end
+
+    test "returns est_srm by name" do
+      op = FormulaCatalog.get("est_srm")
+
+      assert op != nil
+      assert op.name == "est_srm"
+      assert [%{name: "recipe_id", type: :integer, required: true}] = op.params
+    end
+
+    test "returns est_calories by name" do
+      op = FormulaCatalog.get("est_calories")
+
+      assert op != nil
+      assert op.name == "est_calories"
       assert [%{name: "recipe_id", type: :integer, required: true}] = op.params
     end
 

@@ -19,7 +19,17 @@ defmodule RockcutApi.Brewing.WaterProfile do
 
   def changeset(water_profile, attrs) do
     water_profile
-    |> cast(attrs, [:recipe_id, :calcium, :magnesium, :sodium, :sulfate, :chloride, :bicarbonate, :ph_target, :notes])
+    |> cast(attrs, [
+      :recipe_id,
+      :calcium,
+      :magnesium,
+      :sodium,
+      :sulfate,
+      :chloride,
+      :bicarbonate,
+      :ph_target,
+      :notes
+    ])
     |> validate_required([:recipe_id])
     |> unique_constraint(:recipe_id)
     |> foreign_key_constraint(:recipe_id)

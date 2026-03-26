@@ -3,7 +3,8 @@ defmodule RockcutApiWeb.SessionController do
 
   alias RockcutApi.Accounts
 
-  @token_max_age 30 * 24 * 60 * 60  # 30 days
+  # 30 days
+  @token_max_age 30 * 24 * 60 * 60
 
   def create(conn, %{"email" => email, "password" => password}) do
     case Accounts.authenticate(email, password) do

@@ -1,0 +1,101 @@
+- generic [ref=e1]:
+  - generic [ref=e19]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - button [ref=e24] [cursor=pointer]:
+          - img [ref=e25]
+        - img "Rockcut Brewing Co" [ref=e567] [cursor=pointer]
+      - list [ref=e29]:
+        - button "Home" [ref=e568] [cursor=pointer]:
+          - img [ref=e33]
+          - generic [ref=e36]: Home
+        - button "Brands & Recipes" [ref=e569] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e43]: Brands & Recipes
+        - button "Ingredient Library" [ref=e570] [cursor=pointer]:
+          - img [ref=e47]
+          - generic [ref=e50]: Ingredient Library
+        - button "Batches" [ref=e571] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e57]: Batches
+        - button "Settings" [ref=e572] [cursor=pointer]:
+          - img [ref=e61]
+          - generic [ref=e64]: Settings
+        - button "Users" [ref=e573] [cursor=pointer]:
+          - img [ref=e68]
+          - generic [ref=e71]: Users
+    - generic [ref=e72]:
+      - banner [ref=e73]:
+        - generic [ref=e74]:
+          - paragraph [ref=e75]: Matt
+          - button "Logout" [ref=e574] [cursor=pointer]:
+            - img [ref=e78]
+            - text: Logout
+      - main [ref=e80]:
+        - generic [ref=e421]:
+          - navigation [ref=e422]:
+            - list [ref=e423]:
+              - listitem [ref=e424]:
+                - link "Home" [ref=e575] [cursor=pointer]:
+                  - /url: /
+              - listitem [ref=e426]: /
+              - listitem [ref=e427]:
+                - paragraph [ref=e428]: Brands & Recipes
+          - generic [ref=e429]:
+            - heading "Brands & Recipes" [level=4] [ref=e576]
+            - button "Add Brand" [ref=e577] [cursor=pointer]:
+              - img [ref=e433]
+              - text: Add Brand
+        - generic [ref=e437]:
+          - img [ref=e439]
+          - textbox "Search..." [ref=e578]
+          - group
+        - generic [ref=e442]:
+          - button "Toggle column visibility" [active] [ref=e579] [cursor=pointer]:
+            - img [ref=e445]
+          - generic [ref=e447] [cursor=pointer]:
+            - grid [ref=e448]:
+              - row "Name ABV IBU Status" [ref=e580]:
+                - columnheader "Name" [ref=e581]:
+                  - generic [ref=e452]: Name
+                  - generic [ref=e453]:
+                    - img
+                - columnheader "ABV" [ref=e582]:
+                  - generic [ref=e460]: ABV
+                  - generic [ref=e461]:
+                    - img
+                - columnheader "IBU" [ref=e583]:
+                  - generic [ref=e464]: IBU
+                  - generic [ref=e465]:
+                    - img
+                - columnheader "Status" [ref=e584]:
+                  - generic [ref=e468]: Status
+                  - generic [ref=e469]:
+                    - img
+              - rowgroup [ref=e470]:
+                - row "Altruism active" [ref=e585]:
+                  - gridcell "Altruism" [ref=e586]
+                  - gridcell [ref=e474]
+                  - gridcell [ref=e475]
+                  - gridcell "active" [ref=e587]:
+                    - generic [ref=e478]: active
+                - row "Rockcut IPA active" [ref=e588]:
+                  - gridcell "Rockcut IPA" [ref=e589]
+                  - gridcell [ref=e482]
+                  - gridcell [ref=e483]
+                  - gridcell "active" [ref=e590]:
+                    - generic [ref=e486]: active
+            - generic [ref=e489]:
+              - paragraph [ref=e490]: "Rows per page:"
+              - generic [ref=e491]:
+                - 'combobox "Rows per page: 100" [ref=e591]': "100"
+                - textbox: "100"
+                - img
+              - paragraph [ref=e493]: 1–2 of 2
+              - generic [ref=e494]:
+                - button "Go to previous page" [disabled]:
+                  - img
+                - button "Go to next page" [disabled]:
+                  - img
+  - tooltip "Toggle column visibility" [ref=e595]:
+    - generic [ref=e596]: Toggle column visibility

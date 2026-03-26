@@ -35,7 +35,10 @@ defmodule RockcutApiWeb.Router do
 
     # Ingredient library
     resources "/ingredient_categories", IngredientCategoryController, except: [:new, :edit]
-    resources "/category_field_definitions", CategoryFieldDefinitionController, except: [:new, :edit]
+
+    resources "/category_field_definitions", CategoryFieldDefinitionController,
+      except: [:new, :edit]
+
     resources "/ingredients", IngredientController, except: [:new, :edit]
     resources "/ingredient_lots", IngredientLotController, except: [:new, :edit]
 

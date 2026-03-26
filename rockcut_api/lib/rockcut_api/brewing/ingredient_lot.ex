@@ -28,9 +28,17 @@ defmodule RockcutApi.Brewing.IngredientLot do
   def changeset(lot, attrs) do
     lot
     |> cast(attrs, [
-      :ingredient_id, :lot_number, :supplier, :received_date, :status,
-      :alpha_acid, :color_lovibond, :potential_gravity, :attenuation,
-      :properties, :notes
+      :ingredient_id,
+      :lot_number,
+      :supplier,
+      :received_date,
+      :status,
+      :alpha_acid,
+      :color_lovibond,
+      :potential_gravity,
+      :attenuation,
+      :properties,
+      :notes
     ])
     |> validate_required([:ingredient_id])
     |> validate_inclusion(:status, @valid_statuses)

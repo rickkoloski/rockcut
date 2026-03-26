@@ -1,0 +1,33 @@
+- generic [ref=e19]:
+  - generic [ref=e22]:
+    - generic [ref=e23]:
+      - button [ref=e24] [cursor=pointer]:
+        - img [ref=e25]
+      - img "Rockcut Brewing Co" [ref=e28] [cursor=pointer]
+    - list [ref=e29]:
+      - button "Home" [ref=e31] [cursor=pointer]:
+        - img [ref=e33]
+        - generic [ref=e36]: Home
+      - button "Brands & Recipes" [ref=e38] [cursor=pointer]:
+        - img [ref=e40]
+        - generic [ref=e43]: Brands & Recipes
+      - button "Ingredient Library" [ref=e45] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e50]: Ingredient Library
+      - button "Batches" [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - generic [ref=e57]: Batches
+      - button "Settings" [ref=e59] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e64]: Settings
+      - button "Users" [ref=e66] [cursor=pointer]:
+        - img [ref=e68]
+        - generic [ref=e71]: Users
+  - generic [ref=e72]:
+    - banner [ref=e73]:
+      - generic [ref=e74]:
+        - paragraph [ref=e75]: Matt
+        - button "Logout" [ref=e76] [cursor=pointer]:
+          - img [ref=e78]
+          - text: Logout
+    - main [ref=e80]

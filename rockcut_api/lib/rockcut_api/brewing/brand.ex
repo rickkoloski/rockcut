@@ -23,7 +23,17 @@ defmodule RockcutApi.Brewing.Brand do
 
   def changeset(brand, attrs) do
     brand
-    |> cast(attrs, [:name, :style, :description, :target_abv, :target_ibu, :target_srm, :status, :brewhouse_id, :process_profile_id])
+    |> cast(attrs, [
+      :name,
+      :style,
+      :description,
+      :target_abv,
+      :target_ibu,
+      :target_srm,
+      :status,
+      :brewhouse_id,
+      :process_profile_id
+    ])
     |> validate_required([:name])
     |> validate_inclusion(:status, @valid_statuses)
     |> unique_constraint(:name)

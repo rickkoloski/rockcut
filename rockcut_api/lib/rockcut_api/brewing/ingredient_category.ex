@@ -6,7 +6,9 @@ defmodule RockcutApi.Brewing.IngredientCategory do
     field :name, :string
     field :sort_order, :integer, default: 0
 
-    has_many :field_definitions, RockcutApi.Brewing.CategoryFieldDefinition, foreign_key: :category_id
+    has_many :field_definitions, RockcutApi.Brewing.CategoryFieldDefinition,
+      foreign_key: :category_id
+
     has_many :ingredients, RockcutApi.Brewing.Ingredient, foreign_key: :category_id
 
     timestamps(type: :utc_datetime)

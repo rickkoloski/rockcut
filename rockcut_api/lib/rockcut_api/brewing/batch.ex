@@ -40,11 +40,22 @@ defmodule RockcutApi.Brewing.Batch do
   def changeset(batch, attrs) do
     batch
     |> cast(attrs, [
-      :brand_id, :brewhouse_id, :batch_number, :status,
-      :actual_og, :actual_fg, :actual_abv, :actual_volume,
-      :ferm_start_date, :ferm_end_date, :ferm_temp,
-      :package_date, :package_type,
-      :rating, :tasting_notes, :notes
+      :brand_id,
+      :brewhouse_id,
+      :batch_number,
+      :status,
+      :actual_og,
+      :actual_fg,
+      :actual_abv,
+      :actual_volume,
+      :ferm_start_date,
+      :ferm_end_date,
+      :ferm_temp,
+      :package_date,
+      :package_type,
+      :rating,
+      :tasting_notes,
+      :notes
     ])
     |> validate_required([:brand_id, :batch_number])
     |> validate_inclusion(:status, @valid_statuses)

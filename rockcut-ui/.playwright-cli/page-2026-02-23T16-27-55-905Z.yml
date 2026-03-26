@@ -1,0 +1,104 @@
+- generic [ref=e19]:
+  - generic [ref=e22]:
+    - generic [ref=e23]:
+      - button [ref=e24] [cursor=pointer]:
+        - img [ref=e25]
+      - img "Rockcut Brewing Co" [ref=e28] [cursor=pointer]
+    - list [ref=e29]:
+      - button "Home" [ref=e31] [cursor=pointer]:
+        - img [ref=e33]
+        - generic [ref=e36]: Home
+      - button "Brands & Recipes" [ref=e38] [cursor=pointer]:
+        - img [ref=e40]
+        - generic [ref=e43]: Brands & Recipes
+      - button "Ingredient Library" [ref=e45] [cursor=pointer]:
+        - img [ref=e47]
+        - generic [ref=e50]: Ingredient Library
+      - button "Batches" [ref=e52] [cursor=pointer]:
+        - img [ref=e54]
+        - generic [ref=e57]: Batches
+      - button "Settings" [ref=e59] [cursor=pointer]:
+        - img [ref=e61]
+        - generic [ref=e64]: Settings
+      - button "Users" [ref=e66] [cursor=pointer]:
+        - img [ref=e68]
+        - generic [ref=e71]: Users
+  - generic [ref=e72]:
+    - banner [ref=e73]:
+      - generic [ref=e74]:
+        - paragraph [ref=e75]: Matt
+        - button "Logout" [ref=e76] [cursor=pointer]:
+          - img [ref=e78]
+          - text: Logout
+    - main [ref=e80]:
+      - generic [ref=e81]:
+        - navigation [ref=e82]:
+          - list [ref=e83]:
+            - listitem [ref=e84]:
+              - link "Home" [ref=e85] [cursor=pointer]:
+                - /url: /
+            - listitem [ref=e86]: /
+            - listitem [ref=e87]:
+              - paragraph [ref=e88]: Brands & Recipes
+        - generic [ref=e89]:
+          - heading "Brands & Recipes" [level=4] [ref=e90]
+          - button "Add Brand" [ref=e91] [cursor=pointer]:
+            - img [ref=e93]
+            - text: Add Brand
+      - generic [ref=e97]:
+        - img [ref=e99]
+        - textbox "Search..." [active] [ref=e101]: active
+        - group
+      - generic [ref=e102]:
+        - button "Toggle column visibility" [ref=e104] [cursor=pointer]:
+          - img [ref=e105]
+        - generic [ref=e107] [cursor=pointer]:
+          - grid [ref=e108]:
+            - row "Name Style ABV IBU Status" [ref=e109]:
+              - columnheader "Name" [ref=e110]:
+                - generic [ref=e112]: Name
+                - generic [ref=e113]:
+                  - img
+              - columnheader "Style" [ref=e114]:
+                - generic [ref=e116]: Style
+                - generic [ref=e117]:
+                  - img
+              - columnheader "ABV" [ref=e118]:
+                - generic [ref=e120]: ABV
+                - generic [ref=e121]:
+                  - img
+              - columnheader "IBU" [ref=e122]:
+                - generic [ref=e124]: IBU
+                - generic [ref=e125]:
+                  - img
+              - columnheader "Status" [ref=e126]:
+                - generic [ref=e128]: Status
+                - generic [ref=e129]:
+                  - img
+            - rowgroup [ref=e130]:
+              - row "Altruism German Amber active" [ref=e173]:
+                - gridcell "Altruism" [ref=e174]
+                - gridcell "German Amber" [ref=e175]
+                - gridcell [ref=e176]
+                - gridcell [ref=e177]
+                - gridcell "active" [ref=e178]:
+                  - generic [ref=e180]: active
+              - row "Rockcut IPA American IPA active" [ref=e181]:
+                - gridcell "Rockcut IPA" [ref=e182]
+                - gridcell "American IPA" [ref=e183]
+                - gridcell [ref=e184]
+                - gridcell [ref=e185]
+                - gridcell "active" [ref=e186]:
+                  - generic [ref=e188]: active
+          - generic [ref=e149]:
+            - paragraph [ref=e150]: "Rows per page:"
+            - generic [ref=e151]:
+              - 'combobox "Rows per page: 100" [ref=e152]': "100"
+              - textbox: "100"
+              - img
+            - paragraph [ref=e153]: 1–2 of 2
+            - generic [ref=e154]:
+              - button "Go to previous page" [disabled]:
+                - img
+              - button "Go to next page" [disabled]:
+                - img

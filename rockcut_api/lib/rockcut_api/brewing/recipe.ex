@@ -29,8 +29,16 @@ defmodule RockcutApi.Brewing.Recipe do
   def changeset(recipe, attrs) do
     recipe
     |> cast(attrs, [
-      :brand_id, :version_major, :version_minor, :batch_size, :batch_size_unit,
-      :boil_time, :efficiency_target, :status, :is_default, :notes
+      :brand_id,
+      :version_major,
+      :version_minor,
+      :batch_size,
+      :batch_size_unit,
+      :boil_time,
+      :efficiency_target,
+      :status,
+      :is_default,
+      :notes
     ])
     |> validate_required([:brand_id, :batch_size])
     |> validate_inclusion(:status, @valid_statuses)

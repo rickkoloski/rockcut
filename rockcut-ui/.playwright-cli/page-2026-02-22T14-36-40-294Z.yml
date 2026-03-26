@@ -1,0 +1,21 @@
+- generic [ref=e4]:
+  - img "Rockcut Brewing Co" [ref=e5]
+  - heading "Sign in to continue" [level=6] [ref=e6]
+  - generic [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e9]:
+        - text: Email
+        - generic [ref=e10]: "*"
+      - generic [ref=e11]:
+        - textbox "Email" [active] [ref=e12]
+        - group:
+          - generic: Email *
+    - generic [ref=e13]:
+      - generic:
+        - text: Password
+        - generic: "*"
+      - generic [ref=e14]:
+        - textbox "Password" [ref=e15]
+        - group:
+          - generic: Password *
+    - button "Sign In" [ref=e16] [cursor=pointer]

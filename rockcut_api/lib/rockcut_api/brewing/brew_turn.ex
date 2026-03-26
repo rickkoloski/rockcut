@@ -21,7 +21,16 @@ defmodule RockcutApi.Brewing.BrewTurn do
 
   def changeset(brew_turn, attrs) do
     brew_turn
-    |> cast(attrs, [:batch_id, :recipe_id, :turn_number, :brew_date, :actual_og, :actual_volume, :actual_efficiency, :notes])
+    |> cast(attrs, [
+      :batch_id,
+      :recipe_id,
+      :turn_number,
+      :brew_date,
+      :actual_og,
+      :actual_volume,
+      :actual_efficiency,
+      :notes
+    ])
     |> validate_required([:batch_id, :recipe_id, :turn_number])
     |> validate_number(:turn_number, greater_than: 0)
     |> unique_constraint([:batch_id, :turn_number])

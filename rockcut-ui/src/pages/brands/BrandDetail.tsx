@@ -47,6 +47,10 @@ const recipeColumns: ExtendedGridColDef[] = [
   { field: 'efficiency_target', headerName: 'Efficiency', flex: 1 },
   { field: 'est_ibu', headerName: 'Est. IBU', width: 110, formula: '=EST_IBU(id)' },
   { field: 'est_og', headerName: 'Est. OG', width: 110, formula: '=EST_OG(id)' },
+  { field: 'est_fg', headerName: 'Est. FG', width: 110, formula: '=EST_FG(id)' },
+  { field: 'est_abv', headerName: 'Est. ABV', width: 110, formula: '=EST_ABV(id)' },
+  { field: 'est_srm', headerName: 'Est. SRM', width: 110, formula: '=EST_SRM(id)' },
+  { field: 'est_calories', headerName: 'Est. Cal', width: 110, formula: '=EST_CALORIES(id)' },
   {
     field: 'status',
     headerName: 'Status',

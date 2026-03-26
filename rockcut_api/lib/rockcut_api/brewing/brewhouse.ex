@@ -41,10 +41,21 @@ defmodule RockcutApi.Brewing.Brewhouse do
   def changeset(brewhouse, attrs) do
     brewhouse
     |> cast(attrs, [
-      :name, :is_default, :notes,
-      :temp_unit, :liquid_vol_unit, :density_unit, :alcohol_unit,
-      :density_calc_method, :ibu_calc_method, :ingredient_weight_unit, :ingredient_vol_unit,
-      :kettle_turn_size, :kettle_evaporation_rate, :kettle_loss, :ferm_loss
+      :name,
+      :is_default,
+      :notes,
+      :temp_unit,
+      :liquid_vol_unit,
+      :density_unit,
+      :alcohol_unit,
+      :density_calc_method,
+      :ibu_calc_method,
+      :ingredient_weight_unit,
+      :ingredient_vol_unit,
+      :kettle_turn_size,
+      :kettle_evaporation_rate,
+      :kettle_loss,
+      :ferm_loss
     ])
     |> validate_required([:name])
     |> validate_inclusion(:temp_unit, @valid_temp_units)

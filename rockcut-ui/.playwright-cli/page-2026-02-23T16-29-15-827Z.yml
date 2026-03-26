@@ -1,0 +1,132 @@
+- generic [ref=e1]:
+  - generic [ref=e19]:
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - button [ref=e24] [cursor=pointer]:
+          - img [ref=e25]
+        - img [ref=e495] [cursor=pointer]
+      - list [ref=e29]:
+        - button [ref=e496] [cursor=pointer]:
+          - img [ref=e33]
+          - generic [ref=e36]: Home
+        - button [ref=e497] [cursor=pointer]:
+          - img [ref=e40]
+          - generic [ref=e43]: Brands & Recipes
+        - button [ref=e498] [cursor=pointer]:
+          - img [ref=e47]
+          - generic [ref=e50]: Ingredient Library
+        - button [ref=e499] [cursor=pointer]:
+          - img [ref=e54]
+          - generic [ref=e57]: Batches
+        - button [ref=e500] [cursor=pointer]:
+          - img [ref=e61]
+          - generic [ref=e64]: Settings
+        - button [ref=e501] [cursor=pointer]:
+          - img [ref=e68]
+          - generic [ref=e71]: Users
+    - generic [ref=e72]:
+      - banner [ref=e73]:
+        - generic [ref=e74]:
+          - paragraph [ref=e75]: Matt
+          - button [ref=e502] [cursor=pointer]:
+            - img [ref=e78]
+            - text: Logout
+      - main [ref=e80]:
+        - generic [ref=e421]:
+          - navigation [ref=e422]:
+            - list [ref=e423]:
+              - listitem [ref=e424]:
+                - link [ref=e503] [cursor=pointer]:
+                  - /url: /
+                  - text: Home
+              - listitem [ref=e426]: /
+              - listitem [ref=e427]:
+                - paragraph [ref=e428]: Brands & Recipes
+          - generic [ref=e429]:
+            - heading [level=4] [ref=e504]: Brands & Recipes
+            - button [ref=e505] [cursor=pointer]:
+              - img [ref=e433]
+              - text: Add Brand
+        - generic [ref=e437]:
+          - img [ref=e439]
+          - textbox [ref=e506]:
+            - /placeholder: Search...
+          - group
+        - generic [ref=e442]:
+          - button [ref=e507] [cursor=pointer]:
+            - img [ref=e445]
+          - generic [ref=e447] [cursor=pointer]:
+            - grid [ref=e448]:
+              - row [ref=e508]:
+                - columnheader [ref=e509]:
+                  - generic [ref=e452]: Name
+                  - generic [ref=e453]:
+                    - img
+                - columnheader [ref=e510]:
+                  - generic [ref=e456]: Style
+                  - generic [ref=e457]:
+                    - img
+                - columnheader [ref=e511]:
+                  - generic [ref=e460]: ABV
+                  - generic [ref=e461]:
+                    - img
+                - columnheader [ref=e512]:
+                  - generic [ref=e464]: IBU
+                  - generic [ref=e465]:
+                    - img
+                - columnheader [ref=e513]:
+                  - generic [ref=e468]: Status
+                  - generic [ref=e469]:
+                    - img
+              - rowgroup [ref=e470]:
+                - row [ref=e514]:
+                  - gridcell [ref=e515]: Altruism
+                  - gridcell [ref=e516]: German Amber
+                  - gridcell [ref=e474]
+                  - gridcell [ref=e475]
+                  - gridcell [ref=e517]:
+                    - generic [ref=e478]: active
+                - row [ref=e518]:
+                  - gridcell [ref=e519]: Rockcut IPA
+                  - gridcell [ref=e520]: American IPA
+                  - gridcell [ref=e482]
+                  - gridcell [ref=e483]
+                  - gridcell [ref=e521]:
+                    - generic [ref=e486]: active
+            - generic [ref=e489]:
+              - paragraph [ref=e490]: "Rows per page:"
+              - generic [ref=e491]:
+                - combobox [ref=e522]: "100"
+                - textbox: "100"
+                - img
+              - paragraph [ref=e493]: 1–2 of 2
+              - generic [ref=e494]:
+                - button [disabled]:
+                  - img
+                - button [disabled]:
+                  - img
+  - generic [ref=e525]:
+    - generic [ref=e526]:
+      - heading "Columns" [level=6] [ref=e527]
+      - button "Show All" [ref=e528] [cursor=pointer]
+    - list [ref=e529]:
+      - listitem [ref=e530]:
+        - generic [ref=e532]: Name
+        - button [ref=e534] [cursor=pointer]:
+          - img [ref=e535]
+      - listitem [ref=e537]:
+        - generic [ref=e539]: Style
+        - button [ref=e541] [cursor=pointer]:
+          - img [ref=e542]
+      - listitem [ref=e544]:
+        - generic [ref=e546]: ABV
+        - button [ref=e548] [cursor=pointer]:
+          - img [ref=e549]
+      - listitem [ref=e551]:
+        - generic [ref=e553]: IBU
+        - button [ref=e555] [cursor=pointer]:
+          - img [ref=e556]
+      - listitem [ref=e558]:
+        - generic [ref=e560]: Status
+        - button [ref=e562] [cursor=pointer]:
+          - img [ref=e563]

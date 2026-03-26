@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing do
   import Ecto.Query
   alias RockcutApi.Repo
+
   alias RockcutApi.Brewing.{
     Brewhouse,
     ProcessProfile,
@@ -139,7 +140,10 @@ defmodule RockcutApi.Brewing do
   def get_ingredient!(id) do
     Ingredient
     |> Repo.get!(id)
-    |> Repo.preload([:category, lots: from(l in IngredientLot, order_by: [desc: l.received_date])])
+    |> Repo.preload([
+      :category,
+      lots: from(l in IngredientLot, order_by: [desc: l.received_date])
+    ])
   end
 
   def create_ingredient(attrs) do
@@ -242,7 +246,7 @@ defmodule RockcutApi.Brewing do
     Recipe
     |> maybe_filter_by(:brand_id, params)
     |> maybe_filter_by(:status, params)
-    |> order_by([r], [desc: r.version_major, desc: r.version_minor])
+    |> order_by([r], desc: r.version_major, desc: r.version_minor)
     |> preload(:brand)
     |> Repo.all()
   end
@@ -253,7 +257,9 @@ defmodule RockcutApi.Brewing do
     |> Repo.preload([
       :brand,
       :water_profile,
-      recipe_ingredients: {from(ri in RecipeIngredient, order_by: ri.sort_order), lot: {from(l in IngredientLot), ingredient: :category}},
+      recipe_ingredients:
+        {from(ri in RecipeIngredient, order_by: ri.sort_order),
+         lot: {from(l in IngredientLot), ingredient: :category}},
       mash_steps: from(ms in MashStep, order_by: ms.step_number),
       process_steps: from(ps in RecipeProcessStep, order_by: ps.step_number)
     ])
@@ -385,7 +391,10 @@ defmodule RockcutApi.Brewing do
 
   # ── Batches ────────────────────────────────────────────────────────
 
-  @batch_preloads [:brand, brew_turns: {from(t in BrewTurn, order_by: t.turn_number), recipe: :brand}]
+  @batch_preloads [
+    :brand,
+    brew_turns: {from(t in BrewTurn, order_by: t.turn_number), recipe: :brand}
+  ]
 
   def list_batches(params \\ %{}) do
     Batch
@@ -556,6 +565,7 @@ defmodule RockcutApi.Brewing do
       # Clone water_profile
       if recipe.water_profile do
         wp = recipe.water_profile
+
         %WaterProfile{}
         |> WaterProfile.changeset(%{
           recipe_id: new_recipe.id,
@@ -609,17 +619,18 @@ defmodule RockcutApi.Brewing do
     clone_all = Map.get(params, "clone_all_recipes") || Map.get(params, :clone_all_recipes)
 
     Repo.transaction(fn ->
-      {:ok, new_brand} = create_brand(%{
-        name: new_name,
-        style: brand.style,
-        description: brand.description,
-        target_abv: brand.target_abv,
-        target_ibu: brand.target_ibu,
-        target_srm: brand.target_srm,
-        status: brand.status,
-        brewhouse_id: brand.brewhouse_id,
-        process_profile_id: brand.process_profile_id
-      })
+      {:ok, new_brand} =
+        create_brand(%{
+          name: new_name,
+          style: brand.style,
+          description: brand.description,
+          target_abv: brand.target_abv,
+          target_ibu: brand.target_ibu,
+          target_srm: brand.target_srm,
+          status: brand.status,
+          brewhouse_id: brand.brewhouse_id,
+          process_profile_id: brand.process_profile_id
+        })
 
       # Get recipes to clone
       recipes =
@@ -636,6 +647,7 @@ defmodule RockcutApi.Brewing do
       recipes
       |> Enum.each(fn recipe ->
         loaded = get_recipe!(recipe.id)
+
         new_recipe_attrs = %{
           brand_id: new_brand.id,
           version_major: loaded.version_major,
@@ -652,28 +664,68 @@ defmodule RockcutApi.Brewing do
         {:ok, new_recipe} = create_recipe(new_recipe_attrs)
 
         # Clone child records
-        loaded.recipe_ingredients |> Enum.each(fn ri ->
+        loaded.recipe_ingredients
+        |> Enum.each(fn ri ->
           %RecipeIngredient{}
-          |> RecipeIngredient.changeset(%{recipe_id: new_recipe.id, lot_id: ri.lot_id, amount: ri.amount, unit: ri.unit, use: ri.use, time_minutes: ri.time_minutes, sort_order: ri.sort_order, notes: ri.notes})
+          |> RecipeIngredient.changeset(%{
+            recipe_id: new_recipe.id,
+            lot_id: ri.lot_id,
+            amount: ri.amount,
+            unit: ri.unit,
+            use: ri.use,
+            time_minutes: ri.time_minutes,
+            sort_order: ri.sort_order,
+            notes: ri.notes
+          })
           |> Repo.insert!()
         end)
 
-        loaded.mash_steps |> Enum.each(fn ms ->
+        loaded.mash_steps
+        |> Enum.each(fn ms ->
           %MashStep{}
-          |> MashStep.changeset(%{recipe_id: new_recipe.id, step_number: ms.step_number, name: ms.name, temperature: ms.temperature, duration: ms.duration, type: ms.type, notes: ms.notes})
+          |> MashStep.changeset(%{
+            recipe_id: new_recipe.id,
+            step_number: ms.step_number,
+            name: ms.name,
+            temperature: ms.temperature,
+            duration: ms.duration,
+            type: ms.type,
+            notes: ms.notes
+          })
           |> Repo.insert!()
         end)
 
-        loaded.process_steps |> Enum.each(fn ps ->
+        loaded.process_steps
+        |> Enum.each(fn ps ->
           %RecipeProcessStep{}
-          |> RecipeProcessStep.changeset(%{recipe_id: new_recipe.id, step_number: ps.step_number, name: ps.name, day: ps.day, temperature: ps.temperature, duration: ps.duration, duration_unit: ps.duration_unit, notes: ps.notes})
+          |> RecipeProcessStep.changeset(%{
+            recipe_id: new_recipe.id,
+            step_number: ps.step_number,
+            name: ps.name,
+            day: ps.day,
+            temperature: ps.temperature,
+            duration: ps.duration,
+            duration_unit: ps.duration_unit,
+            notes: ps.notes
+          })
           |> Repo.insert!()
         end)
 
         if loaded.water_profile do
           wp = loaded.water_profile
+
           %WaterProfile{}
-          |> WaterProfile.changeset(%{recipe_id: new_recipe.id, calcium: wp.calcium, magnesium: wp.magnesium, sodium: wp.sodium, sulfate: wp.sulfate, chloride: wp.chloride, bicarbonate: wp.bicarbonate, ph_target: wp.ph_target, notes: wp.notes})
+          |> WaterProfile.changeset(%{
+            recipe_id: new_recipe.id,
+            calcium: wp.calcium,
+            magnesium: wp.magnesium,
+            sodium: wp.sodium,
+            sulfate: wp.sulfate,
+            chloride: wp.chloride,
+            bicarbonate: wp.bicarbonate,
+            ph_target: wp.ph_target,
+            notes: wp.notes
+          })
           |> Repo.insert!()
         end
       end)
