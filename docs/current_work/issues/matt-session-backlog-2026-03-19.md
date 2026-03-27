@@ -36,6 +36,16 @@ Feedback captured live during walkthrough with Matt.
 2. **Brewhouse-aware formulas:** Calculations should read IBU calc method, density calc method, equipment losses, and UOM preferences from the resolved brewhouse. Currently all hardcoded.
 **Priority:** High — this is foundational. Every calculation Matt reviewed today will need this.
 
+### 6. BUG: Efficiency stored as percentage (80) but formulas expect decimal (0.80)
+**Source:** D16 regression testing, 2026-03-26
+**Problem:** Recipe.efficiency_target is stored as `80` (the percentage Matt entered) but `compute_og` uses it directly as a multiplier. Result: gravity points are multiplied by 80 instead of 0.80, producing impossible values (OG=3.085 instead of ~1.052, ABV=205% instead of ~5%).
+**Impact:** Every formula that uses efficiency is wrong — est_og, est_fg, est_abv, est_ibu (via OG bigness factor), est_calories. All downstream values are garbage.
+**Root cause:** Same class of issue as the CGAI percentage question — user-facing percentage vs formula-expected decimal. The formula needs to normalize: if efficiency > 1, divide by 100.
+**Fix:** Normalize efficiency in `compute_og`: `efficiency = if efficiency > 1.0, do: efficiency / 100.0, else: efficiency`
+**Also check:** `get_attenuation/2` — brand.apparent_attenuation may have the same issue if Matt enters 75 instead of 0.75.
+**Priority:** Critical — blocks all demo credibility.
+**Status:** Fix in progress (D16 branch)
+
 ---
 
 ## Pending Items (add as walkthrough continues)

@@ -148,8 +148,13 @@ defmodule RockcutApiWeb.JSONHelpers do
       status: b.status,
       brewhouse_id: b.brewhouse_id,
       process_profile_id: b.process_profile_id,
+      apparent_attenuation: b.apparent_attenuation,
+      target_mash_efficiency: b.target_mash_efficiency,
+      target_batch_size: b.target_batch_size,
+      original_gravity: b.original_gravity,
       brewhouse: maybe_render(b, :brewhouse, &brewhouse_summary/1),
       process_profile: maybe_render(b, :process_profile, &process_profile_summary/1),
+      resolved_brewhouse: resolve_brand_brewhouse(b),
       inserted_at: b.inserted_at,
       updated_at: b.updated_at
     }
@@ -317,6 +322,24 @@ defmodule RockcutApiWeb.JSONHelpers do
       inserted_at: u.inserted_at,
       updated_at: u.updated_at
     }
+  end
+
+  # ── Brewhouse resolution for brand serialization ───────────────────
+
+  defp resolve_brand_brewhouse(brand) do
+    alias RockcutApi.Brewing.BrewhouseResolver
+
+    case BrewhouseResolver.resolve(brand) do
+      {nil, _} ->
+        nil
+
+      {brewhouse, is_inherited} ->
+        %{
+          id: brewhouse.id,
+          name: brewhouse.name,
+          is_inherited: is_inherited
+        }
+    end
   end
 
   # Compact renderers for nested associations

@@ -14,6 +14,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     Brand
   }
 
+  alias RockcutApi.Brewing.BrewhouseResolver
   alias RockcutApi.Formulas.Functions.BrewingConversions
 
   @default_efficiency 0.72
@@ -33,11 +34,18 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     recipe = repo.get!(Recipe, recipe_id)
     batch_volume_gallons = batch_volume_gallons(recipe)
 
+    # Resolve brewhouse for this recipe's brand.
+    # ibu_calc_method is available for future use (e.g., Tinseth-modified, Rager).
+    {_brewhouse, _is_inherited} = BrewhouseResolver.resolve_for_recipe(recipe_id)
+
+    # Use actual computed OG for the bigness factor instead of hardcoded 1.050
+    og = compute_og(repo, recipe_id)
+
     hop_additions = load_hop_additions(repo, recipe_id)
 
     total_ibu =
       hop_additions
-      |> Enum.map(fn ri -> ibu_contribution(ri, batch_volume_gallons) end)
+      |> Enum.map(fn ri -> ibu_contribution(ri, batch_volume_gallons, og) end)
       |> Enum.sum()
 
     {:ok, %{value: Float.round(total_ibu + 0.0, 1)}}
@@ -53,6 +61,10 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     recipe_id = params["recipe_id"] || params[:recipe_id]
     repo = context.repo
 
+    # Resolve brewhouse — equipment values (kettle_loss, evaporation_rate) will be
+    # wired into the volume chain once Matt defines the batch size semantics.
+    {_brewhouse, _is_inherited} = BrewhouseResolver.resolve_for_recipe(recipe_id)
+
     og = compute_og(repo, recipe_id)
     {:ok, %{value: Float.round(og, 4)}}
   end
@@ -66,6 +78,9 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   def est_fg(context, params) do
     recipe_id = params["recipe_id"] || params[:recipe_id]
     repo = context.repo
+
+    # Resolve brewhouse — infrastructure in place for volume chain wiring.
+    {_brewhouse, _is_inherited} = BrewhouseResolver.resolve_for_recipe(recipe_id)
 
     og = compute_og(repo, recipe_id)
     attenuation = get_attenuation(repo, recipe_id)
@@ -82,6 +97,9 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   def est_abv(context, params) do
     recipe_id = params["recipe_id"] || params[:recipe_id]
     repo = context.repo
+
+    # Resolve brewhouse — infrastructure in place for volume chain wiring.
+    {_brewhouse, _is_inherited} = BrewhouseResolver.resolve_for_recipe(recipe_id)
 
     og = compute_og(repo, recipe_id)
     attenuation = get_attenuation(repo, recipe_id)
@@ -100,6 +118,10 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   def est_srm(context, params) do
     recipe_id = params["recipe_id"] || params[:recipe_id]
     repo = context.repo
+
+    # Resolve brewhouse — volume chain (kettle_loss, evaporation_rate, ferm_loss)
+    # will be wired in once Matt defines the batch size semantics.
+    {_brewhouse, _is_inherited} = BrewhouseResolver.resolve_for_recipe(recipe_id)
 
     recipe = repo.get!(Recipe, recipe_id)
     batch_volume_gallons = batch_volume_gallons(recipe)
@@ -132,6 +154,9 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     recipe_id = params["recipe_id"] || params[:recipe_id]
     repo = context.repo
 
+    # Resolve brewhouse — infrastructure in place for volume chain wiring.
+    {_brewhouse, _is_inherited} = BrewhouseResolver.resolve_for_recipe(recipe_id)
+
     og = compute_og(repo, recipe_id)
     attenuation = get_attenuation(repo, recipe_id)
     fg = og - (og - 1.0) * attenuation
@@ -157,6 +182,8 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     recipe = repo.get!(Recipe, recipe_id)
     batch_volume_gallons = batch_volume_gallons(recipe)
     efficiency = decimal_to_float(recipe.efficiency_target) || @default_efficiency
+    # Normalize: if entered as percentage (e.g., 80), convert to decimal (0.80)
+    efficiency = if efficiency > 1.0, do: efficiency / 100.0, else: efficiency
 
     grain_additions = load_grain_additions(repo, recipe_id)
 
@@ -173,14 +200,18 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   end
 
   defp get_attenuation(repo, recipe_id) do
-    # Try to get attenuation from the recipe's brand
     recipe = repo.get!(Recipe, recipe_id)
     brand = repo.get!(Brand, recipe.brand_id)
 
-    # Brand doesn't have an apparent_attenuation field in the schema,
-    # so we use the default
-    _ = brand
-    @default_attenuation
+    attenuation =
+      case brand.apparent_attenuation do
+        %Decimal{} = d -> Decimal.to_float(d)
+        f when is_float(f) -> f
+        nil -> @default_attenuation
+      end
+
+    # Normalize: if entered as percentage (e.g., 75), convert to decimal (0.75)
+    if attenuation > 1.0, do: attenuation / 100.0, else: attenuation
   end
 
   # -- Private helpers --
@@ -255,14 +286,14 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     |> repo.all()
   end
 
-  defp ibu_contribution(addition, batch_volume_gallons) do
+  defp ibu_contribution(addition, batch_volume_gallons, og) do
     alpha_acid = decimal_to_float(addition.alpha_acid) || 0.0
     weight_oz = to_ounces(addition.amount, addition.unit)
     boil_time = addition.time_minutes || 0
 
     if alpha_acid > 0 and weight_oz > 0 and boil_time > 0 and batch_volume_gallons > 0 do
-      # Tinseth utilization (simplified — assumes ~1.050 average gravity)
-      bigness = 1.65 * :math.pow(0.000125, 1.050 - 1.0)
+      # Tinseth utilization — uses actual computed OG for the bigness factor
+      bigness = 1.65 * :math.pow(0.000125, og - 1.0)
       boil_factor = (1.0 - :math.exp(-0.04 * boil_time)) / 4.15
       utilization = bigness * boil_factor
 

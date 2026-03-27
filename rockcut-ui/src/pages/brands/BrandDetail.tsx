@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
+  Chip,
   CircularProgress,
   Grid,
   IconButton,
@@ -96,15 +97,28 @@ export default function BrandDetail() {
     navigate('/brands');
   };
 
-  const fields: { label: string; value: unknown; link?: string }[] = [
+  const fields: { label: string; value: unknown; link?: string; chip?: string }[] = [
     { label: 'Name', value: brand.name },
     { label: 'Style', value: brand.style },
     { label: 'Description', value: brand.description },
-    { label: 'Target ABV', value: brand.target_abv },
+    { label: 'Target ABV', value: brand.target_abv != null ? `${brand.target_abv}%` : null },
     { label: 'Target IBU', value: brand.target_ibu },
     { label: 'Target SRM', value: brand.target_srm },
+    { label: 'Apparent Attenuation', value: brand.apparent_attenuation != null ? `${brand.apparent_attenuation}%` : null },
+    { label: 'Target Mash Efficiency', value: brand.target_mash_efficiency != null ? `${brand.target_mash_efficiency}%` : null },
+    { label: 'Target Batch Size', value: brand.target_batch_size },
+    { label: 'Original Gravity', value: brand.original_gravity },
     { label: 'Status', value: brand.status },
-    { label: 'Brewhouse', value: brand.brewhouse?.name, link: brand.brewhouse_id ? `/settings/brewhouses/${brand.brewhouse_id}` : undefined },
+    {
+      label: 'Brewhouse',
+      value: brand.resolved_brewhouse?.name ?? brand.brewhouse?.name,
+      link: brand.resolved_brewhouse
+        ? `/settings/brewhouses/${brand.resolved_brewhouse.id}`
+        : brand.brewhouse_id
+          ? `/settings/brewhouses/${brand.brewhouse_id}`
+          : undefined,
+      chip: brand.resolved_brewhouse?.is_inherited ? 'default' : undefined,
+    },
     { label: 'Process Profile', value: brand.process_profile?.name, link: brand.process_profile_id ? `/settings/process-profiles/${brand.process_profile_id}` : undefined },
   ];
 
@@ -136,13 +150,18 @@ export default function BrandDetail() {
               {f.label === 'Status' ? (
                 <StatusChip status={String(f.value ?? '')} domain="brand" />
               ) : f.link ? (
-                <Typography
-                  variant="body1"
-                  sx={{ cursor: 'pointer', color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}
-                  onClick={() => navigate(f.link!)}
-                >
-                  {String(f.value ?? '—')}
-                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography
+                    variant="body1"
+                    sx={{ cursor: 'pointer', color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}
+                    onClick={() => navigate(f.link!)}
+                  >
+                    {String(f.value ?? '—')}
+                  </Typography>
+                  {f.chip && (
+                    <Chip label={f.chip} size="small" variant="outlined" />
+                  )}
+                </Box>
               ) : (
                 <Typography variant="body1">{String(f.value ?? '—')}</Typography>
               )}

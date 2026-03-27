@@ -10,6 +10,10 @@ defmodule RockcutApi.Brewing.Brand do
     field :target_ibu, :decimal
     field :target_srm, :decimal
     field :status, :string, default: "active"
+    field :apparent_attenuation, :decimal
+    field :target_mash_efficiency, :decimal
+    field :target_batch_size, :decimal
+    field :original_gravity, :decimal
 
     belongs_to :brewhouse, RockcutApi.Brewing.Brewhouse
     belongs_to :process_profile, RockcutApi.Brewing.ProcessProfile
@@ -32,7 +36,11 @@ defmodule RockcutApi.Brewing.Brand do
       :target_srm,
       :status,
       :brewhouse_id,
-      :process_profile_id
+      :process_profile_id,
+      :apparent_attenuation,
+      :target_mash_efficiency,
+      :target_batch_size,
+      :original_gravity
     ])
     |> validate_required([:name])
     |> validate_inclusion(:status, @valid_statuses)

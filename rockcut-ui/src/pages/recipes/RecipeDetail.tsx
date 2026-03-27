@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
+  Chip,
   CircularProgress,
   IconButton,
   Paper,
@@ -15,12 +16,12 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import MoveDownIcon from '@mui/icons-material/MoveDown';
 import StarIcon from '@mui/icons-material/Star';
-import { Chip } from '@mui/material';
 import PageHeader from '../../components/PageHeader';
 import StatusChip from '../../components/StatusChip';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useApiDelete } from '../../hooks/useApiMutation';
+import { useFormulaFunctions } from '../../hooks/useFormulaFunctions';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import api from '../../lib/api';
 import RecipeFormDialog from './RecipeFormDialog';
@@ -30,7 +31,7 @@ import GrainBillTab from './tabs/GrainBillTab';
 import MashTab from './tabs/MashTab';
 import ProcessTab from './tabs/ProcessTab';
 import WaterTab from './tabs/WaterTab';
-import type { Recipe } from '../../lib/types';
+import type { Brand, Recipe } from '../../lib/types';
 
 export default function RecipeDetail() {
   const { brandId, id } = useParams<{ brandId: string; id: string }>();
@@ -43,10 +44,17 @@ export default function RecipeDetail() {
     `/api/recipes/${id}`,
   );
 
+  const { data: brand } = useApiQuery<Brand>(
+    ['brand', numericBrandId],
+    `/api/brands/${brandId}`,
+  );
+
   const deleteMutation = useApiDelete(
     (delId) => `/api/recipes/${delId}`,
     { invalidateKeys: [['recipes', { brand_id: brandId }]] },
   );
+
+  const { remoteFunctions } = useFormulaFunctions();
 
   const qc = useQueryClient();
   const [tabIndex, setTabIndex] = useState(0);
@@ -54,6 +62,7 @@ export default function RecipeDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [copyOpen, setCopyOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [calcValues, setCalcValues] = useState<Record<string, number | null>>({});
 
   const setDefaultMutation = useMutation({
     mutationFn: async () => {
@@ -64,6 +73,32 @@ export default function RecipeDetail() {
       qc.invalidateQueries({ queryKey: ['recipes'] });
     },
   });
+
+  useEffect(() => {
+    if (!recipe?.id) return;
+
+    const loadCalcs = async () => {
+      const formulaMap: Record<string, (id: number) => Promise<number>> = {
+        og: remoteFunctions.EST_OG,
+        fg: remoteFunctions.EST_FG,
+        ibu: remoteFunctions.EST_IBU,
+        abv: remoteFunctions.EST_ABV,
+        srm: remoteFunctions.EST_SRM,
+        cal: remoteFunctions.EST_CALORIES,
+      };
+      const results: Record<string, number | null> = {};
+      for (const [key, fn] of Object.entries(formulaMap)) {
+        try {
+          results[key] = await fn(recipe.id);
+        } catch {
+          results[key] = null;
+        }
+      }
+      setCalcValues(results);
+    };
+
+    loadCalcs();
+  }, [recipe?.id, remoteFunctions]);
 
   if (isLoading || !recipe) {
     return <CircularProgress />;
@@ -114,7 +149,37 @@ export default function RecipeDetail() {
           <Typography variant="body2">
             <strong>Efficiency:</strong> {recipe.efficiency_target ?? '—'}%
           </Typography>
+          {brand?.resolved_brewhouse && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="body2">
+                <strong>Brewhouse:</strong> {brand.resolved_brewhouse.name}
+              </Typography>
+              {brand.resolved_brewhouse.is_inherited && (
+                <Chip label="default" size="small" variant="outlined" />
+              )}
+            </Box>
+          )}
           <StatusChip status={recipe.status} domain="recipe" />
+        </Box>
+        <Box sx={{ display: 'flex', gap: 3, alignItems: 'center', flexWrap: 'wrap', mt: 1 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            <strong>Est. OG:</strong> {calcValues.og != null ? calcValues.og.toFixed(4) : '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            <strong>Est. FG:</strong> {calcValues.fg != null ? calcValues.fg.toFixed(4) : '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            <strong>Est. IBU:</strong> {calcValues.ibu != null ? calcValues.ibu.toFixed(1) : '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            <strong>Est. ABV:</strong> {calcValues.abv != null ? `${calcValues.abv.toFixed(1)}%` : '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            <strong>Est. SRM:</strong> {calcValues.srm != null ? calcValues.srm.toFixed(1) : '—'}
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            <strong>Est. Cal:</strong> {calcValues.cal != null ? Math.round(calcValues.cal) : '—'}
+          </Typography>
         </Box>
       </Paper>
 

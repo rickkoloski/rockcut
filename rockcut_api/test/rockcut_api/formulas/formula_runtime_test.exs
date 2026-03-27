@@ -369,6 +369,108 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
     end
   end
 
+  # ── Percentage normalization (efficiency & attenuation) ────────
+
+  describe "percentage normalization" do
+    setup do
+      # Create categories
+      {:ok, hop_cat} = Brewing.create_ingredient_category(%{name: "Hop"})
+      {:ok, grain_cat} = Brewing.create_ingredient_category(%{name: "Grain"})
+
+      # Create ingredients
+      {:ok, cascade} = Brewing.create_ingredient(%{name: "Cascade", category_id: hop_cat.id})
+
+      {:ok, pale_malt} =
+        Brewing.create_ingredient(%{name: "Pale Malt", category_id: grain_cat.id})
+
+      # Create lots
+      {:ok, hop_lot} =
+        Brewing.create_ingredient_lot(%{
+          ingredient_id: cascade.id,
+          lot_number: "HOP-PCT-001",
+          status: "available",
+          alpha_acid: Decimal.new("5.5")
+        })
+
+      {:ok, grain_lot} =
+        Brewing.create_ingredient_lot(%{
+          ingredient_id: pale_malt.id,
+          lot_number: "GRAIN-PCT-001",
+          status: "available",
+          potential_gravity: Decimal.new("1.037")
+        })
+
+      # Brand with attenuation stored as percentage (75 instead of 0.75)
+      {:ok, brand_pct} =
+        Brewing.create_brand(%{
+          name: "Pct Test Brand",
+          apparent_attenuation: Decimal.new("75")
+        })
+
+      # Recipe with efficiency_target as percentage (80 instead of 0.80)
+      {:ok, recipe_pct} =
+        Brewing.create_recipe(%{
+          brand_id: brand_pct.id,
+          batch_size: Decimal.new("5.0"),
+          batch_size_unit: "gallons",
+          boil_time: 60,
+          efficiency_target: Decimal.new("80")
+        })
+
+      {:ok, _hop_ri} =
+        Brewing.create_recipe_ingredient(%{
+          recipe_id: recipe_pct.id,
+          lot_id: hop_lot.id,
+          amount: Decimal.new("2.0"),
+          unit: "oz",
+          use: "boil",
+          time_minutes: 60
+        })
+
+      {:ok, _grain_ri} =
+        Brewing.create_recipe_ingredient(%{
+          recipe_id: recipe_pct.id,
+          lot_id: grain_lot.id,
+          amount: Decimal.new("10.0"),
+          unit: "lb",
+          use: "mash"
+        })
+
+      %{recipe_pct: recipe_pct, brand_pct: brand_pct}
+    end
+
+    test "OG is in reasonable range when efficiency_target is stored as 80 (percentage)",
+         %{recipe_pct: recipe} do
+      result = FormulaRuntime.execute("est_og", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: og}} = result
+      og_float = if is_struct(og, Decimal), do: Decimal.to_float(og), else: og
+      # Must be a realistic beer OG, not inflated (e.g., 3.085)
+      assert og_float >= 1.01, "OG #{og_float} is below 1.01"
+      assert og_float <= 1.10, "OG #{og_float} exceeds 1.10 — percentage not normalized?"
+    end
+
+    test "FG is in reasonable range when attenuation is stored as 75 (percentage)",
+         %{recipe_pct: recipe} do
+      result = FormulaRuntime.execute("est_fg", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: fg}} = result
+      fg_float = if is_struct(fg, Decimal), do: Decimal.to_float(fg), else: fg
+      assert fg_float >= 1.000, "FG #{fg_float} is below 1.000"
+      assert fg_float <= 1.030, "FG #{fg_float} exceeds 1.030 — percentage not normalized?"
+    end
+
+    test "ABV is in reasonable range when both efficiency and attenuation are percentages",
+         %{recipe_pct: recipe} do
+      result = FormulaRuntime.execute("est_abv", %{"recipe_id" => recipe.id}, @context)
+
+      assert {:ok, %{value: abv}} = result
+      abv_float = if is_struct(abv, Decimal), do: Decimal.to_float(abv), else: abv
+      assert abv_float >= 0.5, "ABV #{abv_float}% is below 0.5"
+      assert abv_float <= 15.0, "ABV #{abv_float}% exceeds 15.0 — percentage not normalized?"
+    end
+  end
+
   # ── Timeout enforcement ────────────────────────────────────────────
 
   describe "timeout enforcement" do

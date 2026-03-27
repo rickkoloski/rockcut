@@ -11,6 +11,14 @@ export interface TestData {
   recipeIngredient: { id: number };
 }
 
+export interface D16TestData {
+  brand: { id: number; name: string };
+  recipe: { id: number };
+  ingredient: { id: number; name: string };
+  lot: { id: number; lot_number: string };
+  recipeIngredient: { id: number };
+}
+
 /**
  * Authenticate via API and return a bearer token.
  */
@@ -214,4 +222,149 @@ export async function teardownTestData(
   await deleteEntity('ingredient_lots', data.lot.id);
   await deleteEntity('ingredients', data.ingredient.id);
   await deleteEntity('brewhouses', data.brewhouse.id);
+}
+
+/**
+ * D16 test data: brand WITHOUT brewhouse_id (tests default resolution)
+ * and WITH new brand fields (apparent_attenuation, target_mash_efficiency,
+ * target_batch_size, original_gravity).
+ *
+ * Creates in dependency order:
+ * 1. Ingredient (Grain category)
+ * 2. Lot on that ingredient
+ * 3. Brand with NO brewhouse_id + new formula fields
+ * 4. Recipe on that brand
+ * 5. RecipeIngredient linking recipe to lot
+ */
+export async function setupD16TestData(request: APIRequestContext): Promise<D16TestData> {
+  const token = await getAuthToken(request);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const grainCategoryId = await getGrainCategoryId(request, headers);
+
+  // 1. Create test grain ingredient
+  const ingredientRes = await request.post(`${API_BASE}/ingredients`, {
+    headers,
+    data: {
+      name: 'PW Test D16 Grain',
+      category_id: grainCategoryId,
+      notes: 'D16 Playwright test grain',
+    },
+  });
+  if (!ingredientRes.ok()) {
+    throw new Error(`Failed to create ingredient: ${ingredientRes.status()} ${await ingredientRes.text()}`);
+  }
+  const ingredient = (await ingredientRes.json()).data;
+
+  // 2. Create lot with known gravity and color
+  const lotRes = await request.post(`${API_BASE}/ingredient_lots`, {
+    headers,
+    data: {
+      ingredient_id: ingredient.id,
+      lot_number: 'PW-D16-001',
+      supplier: 'PW Test Supplier',
+      received_date: '2026-01-15',
+      status: 'available',
+      potential_gravity: 1.037,
+      color_lovibond: 1.8,
+      alpha_acid: null,
+      attenuation: null,
+    },
+  });
+  if (!lotRes.ok()) {
+    throw new Error(`Failed to create lot: ${lotRes.status()} ${await lotRes.text()}`);
+  }
+  const lot = (await lotRes.json()).data;
+
+  // 3. Create brand WITHOUT brewhouse_id — tests default brewhouse resolution
+  //    Includes new D16 fields
+  const brandRes = await request.post(`${API_BASE}/brands`, {
+    headers,
+    data: {
+      name: 'PW Test D16 Brand',
+      style: 'Pale Ale',
+      description: 'D16 test brand — no explicit brewhouse',
+      target_abv: 5.5,
+      target_ibu: 40,
+      target_srm: 6,
+      status: 'active',
+      apparent_attenuation: 0.76,
+      target_mash_efficiency: 0.80,
+      target_batch_size: 7,
+      original_gravity: 1.055,
+      // brewhouse_id intentionally omitted — tests default resolution
+    },
+  });
+  if (!brandRes.ok()) {
+    throw new Error(`Failed to create brand: ${brandRes.status()} ${await brandRes.text()}`);
+  }
+  const brand = (await brandRes.json()).data;
+
+  // 4. Create recipe
+  const recipeRes = await request.post(`${API_BASE}/recipes`, {
+    headers,
+    data: {
+      brand_id: brand.id,
+      batch_size: 7,
+      batch_size_unit: 'bbls',
+      boil_time: 60,
+      efficiency_target: 80,
+      status: 'active',
+      is_default: true,
+    },
+  });
+  if (!recipeRes.ok()) {
+    throw new Error(`Failed to create recipe: ${recipeRes.status()} ${await recipeRes.text()}`);
+  }
+  const recipe = (await recipeRes.json()).data;
+
+  // 5. Add grain to recipe (200 lb of 2-Row equivalent)
+  const riRes = await request.post(`${API_BASE}/recipe_ingredients`, {
+    headers,
+    data: {
+      recipe_id: recipe.id,
+      lot_id: lot.id,
+      amount: 200,
+      unit: 'lb',
+      use: 'mash',
+      time_minutes: 60,
+      sort_order: 0,
+    },
+  });
+  if (!riRes.ok()) {
+    throw new Error(`Failed to create recipe_ingredient: ${riRes.status()} ${await riRes.text()}`);
+  }
+  const recipeIngredient = (await riRes.json()).data;
+
+  return {
+    brand: { id: brand.id, name: brand.name },
+    recipe: { id: recipe.id },
+    ingredient: { id: ingredient.id, name: ingredient.name },
+    lot: { id: lot.id, lot_number: lot.lot_number },
+    recipeIngredient: { id: recipeIngredient.id },
+  };
+}
+
+/**
+ * Teardown D16 test data in reverse dependency order.
+ */
+export async function teardownD16TestData(
+  request: APIRequestContext,
+  data: D16TestData,
+): Promise<void> {
+  const token = await getAuthToken(request);
+  const headers = { Authorization: `Bearer ${token}` };
+
+  const deleteEntity = async (endpoint: string, id: number) => {
+    const res = await request.delete(`${API_BASE}/${endpoint}/${id}`, { headers });
+    if (!res.ok() && res.status() !== 404) {
+      console.warn(`Warning: failed to delete ${endpoint}/${id}: ${res.status()}`);
+    }
+  };
+
+  await deleteEntity('recipe_ingredients', data.recipeIngredient.id);
+  await deleteEntity('recipes', data.recipe.id);
+  await deleteEntity('brands', data.brand.id);
+  await deleteEntity('ingredient_lots', data.lot.id);
+  await deleteEntity('ingredients', data.ingredient.id);
 }

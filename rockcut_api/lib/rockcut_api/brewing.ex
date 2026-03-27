@@ -629,7 +629,11 @@ defmodule RockcutApi.Brewing do
           target_srm: brand.target_srm,
           status: brand.status,
           brewhouse_id: brand.brewhouse_id,
-          process_profile_id: brand.process_profile_id
+          process_profile_id: brand.process_profile_id,
+          apparent_attenuation: brand.apparent_attenuation,
+          target_mash_efficiency: brand.target_mash_efficiency,
+          target_batch_size: brand.target_batch_size,
+          original_gravity: brand.original_gravity
         })
 
       # Get recipes to clone

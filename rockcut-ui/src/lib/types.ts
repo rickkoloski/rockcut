@@ -73,11 +73,20 @@ export interface Brand {
   target_abv: number | null
   target_ibu: number | null
   target_srm: number | null
+  apparent_attenuation: number | null
+  target_mash_efficiency: number | null
+  target_batch_size: number | null
+  original_gravity: number | null
   status: string
   brewhouse_id: number | null
   process_profile_id: number | null
   brewhouse: { id: number; name: string } | null
   process_profile: { id: number; name: string } | null
+  resolved_brewhouse: {
+    id: number
+    name: string
+    is_inherited: boolean
+  } | null
   inserted_at: string
   updated_at: string
 }
