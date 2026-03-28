@@ -1,11 +1,24 @@
 @import "tailwindcss";
 
 /* Scan shared component libraries for Tailwind utility classes.
- * Paths are relative to this file (rockcut-ui/src/index.css).
- * From here: src -> rockcut-ui -> rockcut -> apps -> ~/src (root)
- * so we need ../../../../ to reach ~/src/shared/
+ *
+ * Dev: paths relative to this file (rockcut-ui/src/index.css)
+ *   src -> rockcut-ui -> rockcut -> apps -> ~/src = 4 levels up
+ *
+ * Docker: vendored sources at /app/.gantt-widget-src/ etc.
+ *   src -> /app = 1 level up
+ *
+ * Both sets of @source are listed — Tailwind silently ignores paths that don't exist.
  */
+
+/* Dev paths (local linked libraries) */
 @source "../../../../shared/ui-components/gantt-widget/src/**/*.tsx";
 @source "../../../../shared/ui-components/gantt-widget/src/**/*.ts";
 @source "../../../../shared/wf/ui/src/**/*.tsx";
 @source "../../../../shared/wf/ui/src/**/*.ts";
+
+/* Docker paths (vendored sources) */
+@source "../.gantt-widget-src/**/*.tsx";
+@source "../.gantt-widget-src/**/*.ts";
+@source "../.workflow-editor-src/**/*.tsx";
+@source "../.workflow-editor-src/**/*.ts";

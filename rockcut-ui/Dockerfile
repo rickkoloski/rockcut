@@ -16,8 +16,10 @@ COPY package.docker.json ./package.json
 COPY .npmrc ./
 RUN pnpm install --no-frozen-lockfile
 
-# Copy vendored datagrid-extended source (copied by deploy script before build)
+# Copy vendored shared library sources (copied by deploy script before build)
 COPY .datagrid-extended-src .datagrid-extended-src
+COPY .gantt-widget-src .gantt-widget-src
+COPY .workflow-editor-src .workflow-editor-src
 
 # Copy source and build
 COPY . .
