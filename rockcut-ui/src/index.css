@@ -1,1 +1,11 @@
 @import "tailwindcss";
+
+/* Scan shared component libraries for Tailwind utility classes.
+ * Paths are relative to this file (rockcut-ui/src/index.css).
+ * From here: src -> rockcut-ui -> rockcut -> apps -> ~/src (root)
+ * so we need ../../../../ to reach ~/src/shared/
+ */
+@source "../../../../shared/ui-components/gantt-widget/src/**/*.tsx";
+@source "../../../../shared/ui-components/gantt-widget/src/**/*.ts";
+@source "../../../../shared/wf/ui/src/**/*.tsx";
+@source "../../../../shared/wf/ui/src/**/*.ts";

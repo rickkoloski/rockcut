@@ -22,6 +22,7 @@ import InventoryIcon from '@mui/icons-material/Inventory'
 import AssignmentIcon from '@mui/icons-material/Assignment'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PeopleIcon from '@mui/icons-material/People'
+import ViewTimelineIcon from '@mui/icons-material/ViewTimeline'
 import LogoutIcon from '@mui/icons-material/Logout'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
@@ -44,6 +45,14 @@ import ProcessProfilesList from './pages/settings/ProcessProfilesList'
 import ProcessProfileDetail from './pages/settings/ProcessProfileDetail'
 import UsersPage from './pages/settings/UsersPage'
 import ChangePasswordDialog from './components/ChangePasswordDialog'
+
+// Showcase pages
+import ShowcaseIndex from './pages/showcase/ShowcaseIndex'
+import GanttShowcase from './pages/showcase/GanttShowcase'
+import WorkflowShowcase from './pages/showcase/WorkflowShowcase'
+
+// SHOWCASE: Remove before production
+const SHOW_SHOWCASE = true // Set to false to hide showcase pages
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -74,6 +83,8 @@ function App() {
   const navItems = [
     ...baseNavItems,
     ...(isAdmin ? [{ label: 'Users', path: '/settings/users', icon: <PeopleIcon /> }] : []),
+    // SHOWCASE: Remove before production
+    ...(SHOW_SHOWCASE ? [{ label: 'Showcase', path: '/showcase', icon: <ViewTimelineIcon /> }] : []),
   ]
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
@@ -257,6 +268,14 @@ function App() {
             <Route path="/settings/process-profiles" element={<ProcessProfilesList />} />
             <Route path="/settings/process-profiles/:id" element={<ProcessProfileDetail />} />
             <Route path="/settings/users" element={<UsersPage />} />
+            {/* SHOWCASE: Remove before production */}
+            {SHOW_SHOWCASE && (
+              <>
+                <Route path="/showcase" element={<ShowcaseIndex />} />
+                <Route path="/showcase/gantt" element={<GanttShowcase />} />
+                <Route path="/showcase/workflow" element={<WorkflowShowcase />} />
+              </>
+            )}
           </Routes>
         </Box>
       </Box>

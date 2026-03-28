@@ -1,0 +1,159 @@
+/*
+ * Gantt widget CSS variables scoped to .gantt-scope container.
+ *
+ * The gantt-widget's index.css sets these on :root and also includes
+ * global body/html resets that conflict with MUI.  We import only the
+ * custom-property block and scope it so it doesn't leak.
+ *
+ * NOTE: We intentionally do NOT @import the gantt-widget index.css here
+ * because it contains `@import "tailwindcss"` (duplicate) and global
+ * element selectors that break MUI typography and layout.
+ */
+
+.gantt-scope {
+  /* Colors */
+  --color-primary: #3b82f6;
+  --color-primary-hover: #2563eb;
+  --color-secondary: #64748b;
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+
+  /* Background */
+  --color-background: #ffffff;
+  --color-surface: #f8fafc;
+  --color-surface-hover: #f1f5f9;
+
+  /* Text */
+  --color-text: #1e293b;
+  --color-text-muted: #64748b;
+  --color-text-inverted: #ffffff;
+
+  /* Borders */
+  --color-border: #e2e8f0;
+  --color-border-hover: #cbd5e1;
+
+  /* Gantt-specific - Task bars */
+  --gantt-task-bar: #93c5fd;
+  --gantt-task-bar-progress: #3b82f6;
+  --gantt-task-bar-hover: #60a5fa;
+  --gantt-task-text-color: #1e3a5f;
+  --gantt-milestone: #8b5cf6;
+  --gantt-milestone-text-color: #78350f;
+  --gantt-summary-bar: #4b5563;
+  --gantt-summary-text-color: #ffffff;
+  --gantt-critical-path: #dc2626;
+  --gantt-dependency-line: #94a3b8;
+  --gantt-dependency-line-selected: #3b82f6;
+  --gantt-dependency-line-hover: #64748b;
+
+  /* Dependency colors by type */
+  --gantt-dependency-fs-color: #6b7280;
+  --gantt-dependency-ss-color: #3b82f6;
+  --gantt-dependency-ff-color: #8b5cf6;
+  --gantt-dependency-sf-color: #f59e0b;
+  --gantt-dependency-hover-color: #1d4ed8;
+  --gantt-dependency-creating-color: #10b981;
+
+  /* Grid */
+  --gantt-grid-line: #e5e7eb;
+  --gantt-grid-header-bg: #f9fafb;
+  --gantt-row-hover-bg: #f3f4f6;
+  --gantt-row-selected-bg: #dbeafe;
+  --gantt-row-alt-bg: #fafafa;
+
+  /* Today line */
+  --gantt-today-line: #ef4444;
+  --gantt-today-marker-bg: #ef4444;
+
+  /* Non-working days */
+  --gantt-weekend-bg: #f8fafc;
+  --gantt-non-working-day-color: #94a3b8;
+  --gantt-holiday-color: #f59e0b;
+
+  /* Baseline */
+  --gantt-baseline-color: #9ca3af;
+  --gantt-baseline-ahead-color: #22c55e;
+  --gantt-baseline-behind-color: #ef4444;
+  --gantt-baseline-ontrack-color: #6b7280;
+
+  /* Progress */
+  --gantt-progress-color: rgba(59, 130, 246, 0.3);
+
+  /* Transitions */
+  --gantt-transition-fast: 100ms ease-out;
+  --gantt-transition-normal: 150ms ease-out;
+  --gantt-transition-slow: 200ms ease-out;
+
+  /* Status colors */
+  --gantt-status-not-started: #9ca3af;
+  --gantt-status-in-progress: #3b82f6;
+  --gantt-status-complete: #22c55e;
+  --gantt-status-overdue: #ef4444;
+
+  /* Spacing */
+  --radius-sm: 0.25rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+
+  /* Typography — scoped to the gantt container only */
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+/* Utility classes from the gantt-widget index.css — scoped */
+.gantt-scope .task-bar,
+.gantt-scope .task-row,
+.gantt-scope .grid-cell {
+  transition: all var(--gantt-transition-normal);
+}
+
+.gantt-scope .truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gantt-scope .cell-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.gantt-scope .resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 10;
+}
+
+.gantt-scope .resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  top: 25%;
+  bottom: 25%;
+  width: 1px;
+  background-color: transparent;
+  transition: background-color 0.15s;
+}
+
+.gantt-scope .resize-handle:hover::after,
+.gantt-scope .resize-handle:active::after {
+  background-color: var(--color-primary, #3b82f6);
+}
+
+.gantt-scope .column-header {
+  position: relative;
+}
+
+.gantt-scope .task-grid.resizing,
+.gantt-scope .task-grid.select-none {
+  user-select: none;
+  cursor: col-resize;
+}
