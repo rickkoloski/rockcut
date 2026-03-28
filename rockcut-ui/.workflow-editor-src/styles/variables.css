@@ -1,0 +1,58 @@
+/**
+ * workflow-editor-ui theme variables
+ *
+ * All variables use the 'wf-' prefix to avoid conflicts
+ * when this package is consumed by other applications.
+ *
+ * Consumers can override these by defining the same variables
+ * after importing this file.
+ */
+
+:root {
+  /* Base colors (HSL values without hsl() wrapper for Tailwind) */
+  --wf-background: 0 0% 100%;
+  --wf-foreground: 222.2 84% 4.9%;
+
+  /* Card/surface colors */
+  --wf-card: 0 0% 100%;
+  --wf-card-foreground: 222.2 84% 4.9%;
+  --wf-popover: 0 0% 100%;
+  --wf-popover-foreground: 222.2 84% 4.9%;
+
+  /* Primary accent */
+  --wf-primary: 222.2 47.4% 11.2%;
+  --wf-primary-foreground: 210 40% 98%;
+
+  /* Secondary accent */
+  --wf-secondary: 210 40% 96.1%;
+  --wf-secondary-foreground: 222.2 47.4% 11.2%;
+
+  /* Muted/disabled states */
+  --wf-muted: 210 40% 96.1%;
+  --wf-muted-foreground: 215.4 16.3% 46.9%;
+
+  /* Accent (hover states) */
+  --wf-accent: 210 40% 96.1%;
+  --wf-accent-foreground: 222.2 47.4% 11.2%;
+
+  /* Destructive/error */
+  --wf-destructive: 0 84.2% 60.2%;
+  --wf-destructive-foreground: 210 40% 98%;
+
+  /* Borders and inputs */
+  --wf-border: 214.3 31.8% 91.4%;
+  --wf-input: 214.3 31.8% 91.4%;
+  --wf-ring: 222.2 84% 4.9%;
+
+  /* Border radius */
+  --wf-radius: 0.5rem;
+
+  /* === Workflow Node Execution States === */
+  --wf-node-pending: 220 9% 46%;      /* Gray */
+  --wf-node-active: 217 91% 60%;      /* Blue */
+  --wf-node-in-progress: 48 96% 53%;  /* Yellow */
+  --wf-node-completed: 142 76% 36%;   /* Green */
+  --wf-node-failed: 0 84% 60%;        /* Red */
+  --wf-node-waiting: 32 95% 44%;      /* Orange */
+  --wf-node-blocked: 0 84% 60%;       /* Red */
+}

@@ -1,0 +1,9 @@
+/**
+ * workflow-editor-ui styles entry point
+ *
+ * Import this file in your application:
+ *   import 'workflow-editor-ui/styles'
+ */
+
+@import './variables.css';
+@import './react-flow.css';

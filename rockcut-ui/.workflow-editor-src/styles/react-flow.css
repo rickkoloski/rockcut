@@ -1,0 +1,87 @@
+/**
+ * React Flow customizations for workflow-editor-ui
+ */
+
+/* Cursor customizations */
+.react-flow__pane {
+  cursor: grab;
+}
+
+.react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+.react-flow__pane.selection {
+  cursor: crosshair;
+}
+
+/* Override node cursor: pointer for hover, grabbing when dragging */
+.xy-flow__node.draggable,
+.react-flow__node.draggable {
+  cursor: pointer;
+}
+
+.xy-flow__node.draggable.dragging,
+.react-flow__node.draggable.dragging {
+  cursor: grabbing;
+}
+
+/* Node selection styling */
+.react-flow__node.selected {
+  outline: 2px solid hsl(var(--wf-primary));
+  outline-offset: 2px;
+  border-radius: var(--wf-radius);
+}
+
+/* SVG-based nodes handle their own selection */
+.react-flow__node-action.selected,
+.react-flow__node-decision.selected,
+.react-flow__node-wait.selected,
+.react-flow__node-subprocess.selected,
+.react-flow__node-join.selected,
+.react-flow__node-terminal.selected {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Connection handles */
+.react-flow__handle {
+  background-color: hsl(var(--wf-primary));
+  width: 12px;
+  height: 12px;
+  border: 2px solid hsl(var(--wf-background));
+}
+
+.react-flow__handle:hover {
+  background-color: hsl(var(--wf-primary) / 0.8);
+}
+
+/* Edge styling */
+.react-flow__edge-path {
+  stroke: hsl(var(--wf-border));
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path {
+  stroke: hsl(var(--wf-primary));
+  stroke-width: 3;
+}
+
+/* Node state animations */
+@keyframes wf-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+@keyframes wf-subtle-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.85; }
+}
+
+.wf-node-active {
+  animation: wf-pulse 2s ease-in-out infinite;
+}
+
+.wf-node-waiting {
+  animation: wf-subtle-pulse 3s ease-in-out infinite;
+}
