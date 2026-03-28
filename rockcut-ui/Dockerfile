@@ -21,8 +21,10 @@ COPY .datagrid-extended-src .datagrid-extended-src
 COPY .gantt-widget-src .gantt-widget-src
 COPY .workflow-editor-src .workflow-editor-src
 
-# Copy source and build
+# Copy source
 COPY . .
+# Restore Docker-specific package.json (COPY . . overwrites it with the dev version)
+COPY package.docker.json ./package.json
 RUN pnpm run build
 
 # Production stage — serve with nginx
