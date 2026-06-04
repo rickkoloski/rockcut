@@ -22,7 +22,7 @@ const theme = createTheme({
     },
     background: {
       default: '#FAF6F0',
-      paper: '#FFFDE7',
+      paper: '#FFFFFF',
     },
   },
   typography: {
