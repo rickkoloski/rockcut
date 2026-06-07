@@ -147,6 +147,7 @@ export default function IngredientDetail() {
           setEditingLot(undefined)
         }}
         ingredientId={ingredientId}
+        categoryName={ingredient.category?.name}
         lot={editingLot as any}
       />
     </>

@@ -9,10 +9,12 @@ interface IngredientLotDialogProps {
   open: boolean
   onClose: () => void
   ingredientId: number
+  categoryName?: string
   lot?: IngredientLot
 }
 
-export default function IngredientLotDialog({ open, onClose, ingredientId, lot }: IngredientLotDialogProps) {
+export default function IngredientLotDialog({ open, onClose, ingredientId, categoryName, lot }: IngredientLotDialogProps) {
+  const isGrains = categoryName === 'Grains'
   const [lotNumber, setLotNumber] = useState('')
   const [supplier, setSupplier] = useState('')
   const [receivedDate, setReceivedDate] = useState('')
@@ -188,22 +190,26 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, lot }
         fullWidth
         margin="normal"
       />
-      <TextField
-        label="Alpha Acid (%)"
-        type="number"
-        value={alphaAcid}
-        onChange={(e) => setAlphaAcid(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Attenuation (%)"
-        type="number"
-        value={attenuation}
-        onChange={(e) => setAttenuation(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
+      {!isGrains && (
+        <TextField
+          label="Alpha Acid (%)"
+          type="number"
+          value={alphaAcid}
+          onChange={(e) => setAlphaAcid(e.target.value)}
+          fullWidth
+          margin="normal"
+        />
+      )}
+      {!isGrains && (
+        <TextField
+          label="Attenuation (%)"
+          type="number"
+          value={attenuation}
+          onChange={(e) => setAttenuation(e.target.value)}
+          fullWidth
+          margin="normal"
+        />
+      )}
       <TextField
         label="Notes"
         value={notes}
