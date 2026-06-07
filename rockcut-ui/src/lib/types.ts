@@ -149,6 +149,7 @@ export interface IngredientLot {
   maltster: string | null
   protein_perc: number | null
   moisture_perc: number | null
+  diastatic_power_linter: number | null
   order_name: string | null
   order_unit_size: string | null
   properties: Record<string, unknown> | null

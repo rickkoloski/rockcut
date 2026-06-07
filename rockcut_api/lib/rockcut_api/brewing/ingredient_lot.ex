@@ -18,6 +18,7 @@ defmodule RockcutApi.Brewing.IngredientLot do
     field :maltster, :string
     field :protein_perc, :decimal
     field :moisture_perc, :decimal
+    field :diastatic_power_linter, :decimal
     field :order_name, :string
     field :order_unit_size, :string
 
@@ -38,7 +39,7 @@ defmodule RockcutApi.Brewing.IngredientLot do
       :ingredient_id, :lot_number, :supplier, :received_date, :status,
       :alpha_acid, :color_lovibond, :attenuation,
       :extract_potential_fgdb, :maltster, :protein_perc, :moisture_perc,
-      :order_name, :order_unit_size,
+      :diastatic_power_linter, :order_name, :order_unit_size,
       :properties, :notes
     ])
     |> validate_required([:ingredient_id])

@@ -57,6 +57,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       maltster: lot.maltster,
       protein_perc: lot.protein_perc,
       moisture_perc: lot.moisture_perc,
+      diastatic_power_linter: lot.diastatic_power_linter,
       order_name: lot.order_name,
       order_unit_size: lot.order_unit_size,
       properties: decode_json(lot.properties),

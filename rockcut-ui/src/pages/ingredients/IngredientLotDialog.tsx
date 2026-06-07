@@ -26,6 +26,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
   const [maltster, setMaltster] = useState('')
   const [proteinPerc, setProteinPerc] = useState('')
   const [moisturePerc, setMoisturePerc] = useState('')
+  const [diastaticPower, setDiastaticPower] = useState('')
   const [orderName, setOrderName] = useState('')
   const [orderUnitSize, setOrderUnitSize] = useState('')
   const [notes, setNotes] = useState('')
@@ -54,6 +55,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
       setMaltster(lot?.maltster ?? '')
       setProteinPerc(lot?.protein_perc != null ? String(lot.protein_perc) : '')
       setMoisturePerc(lot?.moisture_perc != null ? String(lot.moisture_perc) : '')
+      setDiastaticPower(lot?.diastatic_power_linter != null ? String(lot.diastatic_power_linter) : '')
       setOrderName(lot?.order_name ?? '')
       setOrderUnitSize(lot?.order_unit_size ?? '')
       setNotes(lot?.notes ?? '')
@@ -75,6 +77,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
         maltster: maltster || null,
         protein_perc: proteinPerc ? Number(proteinPerc) : null,
         moisture_perc: moisturePerc ? Number(moisturePerc) : null,
+        diastatic_power_linter: diastaticPower ? Number(diastaticPower) : null,
         order_name: orderName || null,
         order_unit_size: orderUnitSize || null,
         notes: notes || null,
@@ -173,6 +176,14 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
         type="number"
         value={moisturePerc}
         onChange={(e) => setMoisturePerc(e.target.value)}
+        fullWidth
+        margin="normal"
+      />
+      <TextField
+        label="Diastatic Power (°Lintner)"
+        type="number"
+        value={diastaticPower}
+        onChange={(e) => setDiastaticPower(e.target.value)}
         fullWidth
         margin="normal"
       />
