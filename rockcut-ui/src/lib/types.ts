@@ -130,7 +130,7 @@ export interface IngredientLotSummary {
   status: string
   alpha_acid: number | null
   color_lovibond: number | null
-  potential_gravity: number | null
+  extract_potential_fgdb: number | null
   attenuation: number | null
 }
 
@@ -144,8 +144,13 @@ export interface IngredientLot {
   status: string
   alpha_acid: number | null
   color_lovibond: number | null
-  potential_gravity: number | null
   attenuation: number | null
+  extract_potential_fgdb: number | null
+  maltster: string | null
+  protein_perc: number | null
+  moisture_perc: number | null
+  order_name: string | null
+  order_unit_size: string | null
   properties: Record<string, unknown> | null
   notes: string | null
   inserted_at: string

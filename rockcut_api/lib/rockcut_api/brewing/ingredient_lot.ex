@@ -8,13 +8,20 @@ defmodule RockcutApi.Brewing.IngredientLot do
     field :received_date, :date
     field :status, :string, default: "available"
 
-    # Calc fields for recipe math
+    # Shared calc fields
     field :alpha_acid, :decimal
     field :color_lovibond, :decimal
-    field :potential_gravity, :decimal
     field :attenuation, :decimal
 
-    # Dynamic fields as JSON
+    # Grain-specific fields
+    field :extract_potential_fgdb, :decimal
+    field :maltster, :string
+    field :protein_perc, :decimal
+    field :moisture_perc, :decimal
+    field :order_name, :string
+    field :order_unit_size, :string
+
+    # Dynamic fields as JSON (reserved for future use)
     field :properties, :string
     field :notes, :string
 
@@ -29,7 +36,9 @@ defmodule RockcutApi.Brewing.IngredientLot do
     lot
     |> cast(attrs, [
       :ingredient_id, :lot_number, :supplier, :received_date, :status,
-      :alpha_acid, :color_lovibond, :potential_gravity, :attenuation,
+      :alpha_acid, :color_lovibond, :attenuation,
+      :extract_potential_fgdb, :maltster, :protein_perc, :moisture_perc,
+      :order_name, :order_unit_size,
       :properties, :notes
     ])
     |> validate_required([:ingredient_id])

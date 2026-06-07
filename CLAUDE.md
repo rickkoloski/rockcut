@@ -81,7 +81,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 
 ## SDLC Process Compliance
 
-This project follows the SDLC framework from `~/src/ops/sdlc/`.
+This project follows the SDLC framework from `~/src/pm-sdlc/`.
 
 **CC must:**
 - Follow the deliverable workflow (Spec → Planning → Implementation → Result)
@@ -95,7 +95,7 @@ This project follows the SDLC framework from `~/src/ops/sdlc/`.
 - Implement features without deliverable IDs
 - Deviate from the process without explicit approval
 
-If unsure about process, reference `~/src/ops/sdlc/process/overview.md`.
+If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 
 ## Completed Deliverables
 

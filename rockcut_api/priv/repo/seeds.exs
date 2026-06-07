@@ -5,14 +5,14 @@ alias RockcutApi.Brewing.CategoryFieldDefinition
 # Seed ingredient categories (idempotent — skips existing)
 categories =
   [
-    {"Grain", 0},
-    {"Extract", 1},
-    {"Hop", 2},
-    {"Yeast", 3},
-    {"Fruit", 4},
-    {"Spice", 5},
-    {"Sugar", 6},
-    {"Adjunct", 7}
+    {"Grains", 0},
+    {"Future Ingredients", 1},
+    {"Hops", 2},
+    {"Yeast Strains", 3},
+    {"Fruits", 4},
+    {"Spices & Flavorings", 5},
+    {"Sugars and Extracts", 6},
+    {"Other Consumables", 7}
   ]
   |> Enum.map(fn {name, sort_order} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -30,25 +30,25 @@ category_ids =
 # Seed category field definitions (idempotent)
 field_defs =
   [
-    # Grain
-    {category_ids["Grain"], "Origin", "text", nil, false, 0},
-    {category_ids["Grain"], "Maltster", "text", nil, false, 1},
-    # Hop
-    {category_ids["Hop"], "Form", "dropdown", "Pellet, Whole Leaf, Cryo, Extract", false, 0},
-    {category_ids["Hop"], "Origin", "text", nil, false, 1},
-    {category_ids["Hop"], "Crop Year", "text", nil, false, 2},
-    # Yeast
-    {category_ids["Yeast"], "Lab", "text", nil, false, 0},
-    {category_ids["Yeast"], "Product Code", "text", nil, false, 1},
-    {category_ids["Yeast"], "Temp Range Low (F)", "number", nil, false, 2},
-    {category_ids["Yeast"], "Temp Range High (F)", "number", nil, false, 3},
-    {category_ids["Yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
-    # Fruit
-    {category_ids["Fruit"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
-    # Spice
-    {category_ids["Spice"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
-    # Sugar
-    {category_ids["Sugar"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
+    # Grains
+    {category_ids["Grains"], "Origin", "text", nil, false, 0},
+    {category_ids["Grains"], "Maltster", "text", nil, false, 1},
+    # Hops
+    {category_ids["Hops"], "Form", "dropdown", "Pellet, Whole Leaf, Cryo, Extract", false, 0},
+    {category_ids["Hops"], "Origin", "text", nil, false, 1},
+    {category_ids["Hops"], "Crop Year", "text", nil, false, 2},
+    # Yeast Strains
+    {category_ids["Yeast Strains"], "Lab", "text", nil, false, 0},
+    {category_ids["Yeast Strains"], "Product Code", "text", nil, false, 1},
+    {category_ids["Yeast Strains"], "Temp Range Low (F)", "number", nil, false, 2},
+    {category_ids["Yeast Strains"], "Temp Range High (F)", "number", nil, false, 3},
+    {category_ids["Yeast Strains"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
+    # Fruits
+    {category_ids["Fruits"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
+    # Spices & Flavorings
+    {category_ids["Spices & Flavorings"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
+    # Sugars and Extracts
+    {category_ids["Sugars and Extracts"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
   ]
   |> Enum.map(fn {cat_id, field_name, field_type, options, required, sort_order} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -79,29 +79,29 @@ alias RockcutApi.Brewing.IngredientLot
 ingredients =
   [
     # Grains
-    {category_ids["Grain"], "Pale 2-Row", "Base malt, American-style"},
-    {category_ids["Grain"], "Munich 10L", "Adds bready, malty sweetness"},
-    {category_ids["Grain"], "Crystal 40L", "Medium caramel, toffee notes"},
-    {category_ids["Grain"], "Crystal 60L", "Deeper caramel, raisin notes"},
-    {category_ids["Grain"], "Wheat Malt", "Improves head retention and body"},
-    {category_ids["Grain"], "Flaked Oats", "Smooth mouthfeel, haze"},
-    {category_ids["Grain"], "Victory Malt", "Biscuity, toasty character"},
+    {category_ids["Grains"], "Pale 2-Row", "Base malt, American-style"},
+    {category_ids["Grains"], "Munich 10L", "Adds bready, malty sweetness"},
+    {category_ids["Grains"], "Crystal 40L", "Medium caramel, toffee notes"},
+    {category_ids["Grains"], "Crystal 60L", "Deeper caramel, raisin notes"},
+    {category_ids["Grains"], "Wheat Malt", "Improves head retention and body"},
+    {category_ids["Grains"], "Flaked Oats", "Smooth mouthfeel, haze"},
+    {category_ids["Grains"], "Victory Malt", "Biscuity, toasty character"},
     # Hops
-    {category_ids["Hop"], "Centennial", "Citrus and floral, dual-purpose"},
-    {category_ids["Hop"], "Cascade", "Classic American, grapefruit and floral"},
-    {category_ids["Hop"], "Citra", "Tropical, passion fruit, grapefruit"},
-    {category_ids["Hop"], "Mosaic", "Complex fruit: mango, blueberry, earthy"},
-    {category_ids["Hop"], "Simcoe", "Pine, earthy, passion fruit"},
-    {category_ids["Hop"], "Amarillo", "Orange citrus, floral"},
-    # Yeast
-    {category_ids["Yeast"], "US-05", "Clean American ale yeast (Fermentis)"},
-    {category_ids["Yeast"], "WLP001", "California Ale (White Labs)"},
-    {category_ids["Yeast"], "Wyeast 1056", "American Ale (Wyeast)"},
-    {category_ids["Yeast"], "WLP002", "English Ale (White Labs)"},
-    # Adjuncts / other
-    {category_ids["Sugar"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
-    {category_ids["Adjunct"], "Irish Moss", "Kettle fining agent"},
-    {category_ids["Adjunct"], "Whirlfloc", "Tablet fining, aids clarity"},
+    {category_ids["Hops"], "Centennial", "Citrus and floral, dual-purpose"},
+    {category_ids["Hops"], "Cascade", "Classic American, grapefruit and floral"},
+    {category_ids["Hops"], "Citra", "Tropical, passion fruit, grapefruit"},
+    {category_ids["Hops"], "Mosaic", "Complex fruit: mango, blueberry, earthy"},
+    {category_ids["Hops"], "Simcoe", "Pine, earthy, passion fruit"},
+    {category_ids["Hops"], "Amarillo", "Orange citrus, floral"},
+    # Yeast Strains
+    {category_ids["Yeast Strains"], "US-05", "Clean American ale yeast (Fermentis)"},
+    {category_ids["Yeast Strains"], "WLP001", "California Ale (White Labs)"},
+    {category_ids["Yeast Strains"], "Wyeast 1056", "American Ale (Wyeast)"},
+    {category_ids["Yeast Strains"], "WLP002", "English Ale (White Labs)"},
+    # Other
+    {category_ids["Sugars and Extracts"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
+    {category_ids["Other Consumables"], "Irish Moss", "Kettle fining agent"},
+    {category_ids["Other Consumables"], "Whirlfloc", "Tablet fining, aids clarity"},
   ]
   |> Enum.map(fn {cat_id, name, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -120,21 +120,21 @@ ingredient_ids =
 
 lots =
   [
-    # Grains (color_lovibond + potential_gravity)
+    # Grains (color_lovibond + extract_potential_fgdb)
     {ingredient_ids["Pale 2-Row"], "G-2401", "Briess", "2026-01-15", "available",
-     nil, Decimal.new("1.8"), Decimal.new("1.037"), nil, nil},
+     nil, Decimal.new("1.8"), Decimal.new("80.0"), nil, nil},
     {ingredient_ids["Munich 10L"], "G-2402", "Weyermann", "2026-01-15", "available",
-     nil, Decimal.new("10"), Decimal.new("1.035"), nil, nil},
+     nil, Decimal.new("10"), Decimal.new("80.0"), nil, nil},
     {ingredient_ids["Crystal 40L"], "G-2403", "Briess", "2026-01-20", "available",
-     nil, Decimal.new("40"), Decimal.new("1.034"), nil, nil},
+     nil, Decimal.new("40"), Decimal.new("75.0"), nil, nil},
     {ingredient_ids["Crystal 60L"], "G-2404", "Briess", "2026-01-20", "available",
-     nil, Decimal.new("60"), Decimal.new("1.034"), nil, nil},
+     nil, Decimal.new("60"), Decimal.new("74.0"), nil, nil},
     {ingredient_ids["Wheat Malt"], "G-2405", "Rahr", "2026-01-10", "available",
-     nil, Decimal.new("2"), Decimal.new("1.037"), nil, nil},
+     nil, Decimal.new("2"), Decimal.new("83.0"), nil, nil},
     {ingredient_ids["Flaked Oats"], "G-2406", "Bob's Red Mill", "2026-02-01", "available",
-     nil, Decimal.new("1"), Decimal.new("1.033"), nil, nil},
+     nil, Decimal.new("1"), Decimal.new("70.0"), nil, nil},
     {ingredient_ids["Victory Malt"], "G-2407", "Briess", "2026-01-20", "available",
-     nil, Decimal.new("25"), Decimal.new("1.034"), nil, nil},
+     nil, Decimal.new("25"), Decimal.new("75.0"), nil, nil},
     # Hops (alpha_acid)
     {ingredient_ids["Centennial"], "H-2401", "YCH Hops", "2025-12-10", "available",
      Decimal.new("10.5"), nil, nil, nil, nil},
@@ -163,7 +163,7 @@ lots =
      Decimal.new("5.5"), nil, nil, nil, "2025 crop, used up"},
   ]
   |> Enum.map(fn {ing_id, lot_number, supplier, received_date, status,
-                  alpha_acid, color_lovibond, potential_gravity, attenuation, notes} ->
+                  alpha_acid, color_lovibond, extract_potential_fgdb, attenuation, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     %{
@@ -174,7 +174,7 @@ lots =
       status: status,
       alpha_acid: alpha_acid,
       color_lovibond: color_lovibond,
-      potential_gravity: potential_gravity,
+      extract_potential_fgdb: extract_potential_fgdb,
       attenuation: attenuation,
       properties: nil,
       notes: notes,

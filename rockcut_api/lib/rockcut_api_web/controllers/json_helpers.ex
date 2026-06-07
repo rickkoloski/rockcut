@@ -52,8 +52,13 @@ defmodule RockcutApiWeb.JSONHelpers do
       status: lot.status,
       alpha_acid: lot.alpha_acid,
       color_lovibond: lot.color_lovibond,
-      potential_gravity: lot.potential_gravity,
       attenuation: lot.attenuation,
+      extract_potential_fgdb: lot.extract_potential_fgdb,
+      maltster: lot.maltster,
+      protein_perc: lot.protein_perc,
+      moisture_perc: lot.moisture_perc,
+      order_name: lot.order_name,
+      order_unit_size: lot.order_unit_size,
       properties: decode_json(lot.properties),
       notes: lot.notes,
       inserted_at: lot.inserted_at,
@@ -244,8 +249,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       status: lot.status,
       alpha_acid: lot.alpha_acid,
       color_lovibond: lot.color_lovibond,
-      potential_gravity: lot.potential_gravity,
-      attenuation: lot.attenuation
+      attenuation: lot.attenuation,
+      extract_potential_fgdb: lot.extract_potential_fgdb
     }
   end
 

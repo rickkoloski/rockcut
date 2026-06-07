@@ -94,7 +94,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     |> select([ri, lot, _ing], %{
       amount: ri.amount,
       unit: ri.unit,
-      potential_gravity: lot.potential_gravity
+      extract_potential_fgdb: lot.extract_potential_fgdb
     })
     |> repo.all()
   end
@@ -134,17 +134,14 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   end
 
   defp gravity_points(addition, efficiency) do
-    potential = decimal_to_float(addition.potential_gravity) || 0.0
+    fgdb = decimal_to_float(addition.extract_potential_fgdb) || 0.0
     weight_lbs = to_pounds(addition.amount, addition.unit)
 
-    if potential > 1.0 and weight_lbs > 0 do
-      # potential_gravity is stored as 1.037 format
-      # points = (potential - 1.0) * 1000
-      points_per_lb = (potential - 1.0) * 1000.0
-      weight_lbs * points_per_lb * efficiency
-    else
-      0.0
-    end
+    # TODO: rewrite gravity calc using FGDB (% extract, fine grind dry basis)
+    # PPG = fgdb * 0.46; points = PPG * weight_lbs * efficiency / volume
+    # For now returns 0 until formula rewrite
+    _ = {fgdb, weight_lbs, efficiency}
+    0.0
   end
 
   defp batch_volume_gallons(recipe) do

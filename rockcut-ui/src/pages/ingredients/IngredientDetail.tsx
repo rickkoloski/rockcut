@@ -60,7 +60,7 @@ export default function IngredientDetail() {
     },
     { field: 'alpha_acid', headerName: 'Alpha Acid', flex: 1 },
     { field: 'color_lovibond', headerName: 'Color (L)', flex: 1 },
-    { field: 'potential_gravity', headerName: 'Potential Gravity', flex: 1 },
+    { field: 'extract_potential_fgdb', headerName: 'Extract % FGDB', flex: 1 },
     { field: 'attenuation', headerName: 'Attenuation', flex: 1 },
   ]
 

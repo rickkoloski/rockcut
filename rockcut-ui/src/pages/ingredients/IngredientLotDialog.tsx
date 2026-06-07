@@ -19,9 +19,13 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, lot }
   const [status, setStatus] = useState('available')
   const [alphaAcid, setAlphaAcid] = useState('')
   const [colorLovibond, setColorLovibond] = useState('')
-  const [potentialGravity, setPotentialGravity] = useState('')
+  const [extractPotentialFgdb, setExtractPotentialFgdb] = useState('')
   const [attenuation, setAttenuation] = useState('')
-  const [properties, setProperties] = useState('')
+  const [maltster, setMaltster] = useState('')
+  const [proteinPerc, setProteinPerc] = useState('')
+  const [moisturePerc, setMoisturePerc] = useState('')
+  const [orderName, setOrderName] = useState('')
+  const [orderUnitSize, setOrderUnitSize] = useState('')
   const [notes, setNotes] = useState('')
   const [error, setError] = useState<string | null>(null)
 
@@ -43,9 +47,13 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, lot }
       setStatus(lot?.status ?? 'available')
       setAlphaAcid(lot?.alpha_acid != null ? String(lot.alpha_acid) : '')
       setColorLovibond(lot?.color_lovibond != null ? String(lot.color_lovibond) : '')
-      setPotentialGravity(lot?.potential_gravity != null ? String(lot.potential_gravity) : '')
+      setExtractPotentialFgdb(lot?.extract_potential_fgdb != null ? String(lot.extract_potential_fgdb) : '')
       setAttenuation(lot?.attenuation != null ? String(lot.attenuation) : '')
-      setProperties(lot?.properties != null ? (typeof lot.properties === 'string' ? lot.properties : JSON.stringify(lot.properties, null, 2)) : '')
+      setMaltster(lot?.maltster ?? '')
+      setProteinPerc(lot?.protein_perc != null ? String(lot.protein_perc) : '')
+      setMoisturePerc(lot?.moisture_perc != null ? String(lot.moisture_perc) : '')
+      setOrderName(lot?.order_name ?? '')
+      setOrderUnitSize(lot?.order_unit_size ?? '')
       setNotes(lot?.notes ?? '')
     }
   }, [open, lot])
@@ -60,9 +68,13 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, lot }
         status,
         alpha_acid: alphaAcid ? Number(alphaAcid) : null,
         color_lovibond: colorLovibond ? Number(colorLovibond) : null,
-        potential_gravity: potentialGravity ? Number(potentialGravity) : null,
+        extract_potential_fgdb: extractPotentialFgdb ? Number(extractPotentialFgdb) : null,
         attenuation: attenuation ? Number(attenuation) : null,
-        properties: properties ? JSON.parse(properties) : null,
+        maltster: maltster || null,
+        protein_perc: proteinPerc ? Number(proteinPerc) : null,
+        moisture_perc: moisturePerc ? Number(moisturePerc) : null,
+        order_name: orderName || null,
+        order_unit_size: orderUnitSize || null,
         notes: notes || null,
       }
 
@@ -124,14 +136,6 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, lot }
         </Select>
       </FormControl>
       <TextField
-        label="Alpha Acid (%)"
-        type="number"
-        value={alphaAcid}
-        onChange={(e) => setAlphaAcid(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
         label="Color (Lovibond)"
         type="number"
         value={colorLovibond}
@@ -140,10 +144,55 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, lot }
         margin="normal"
       />
       <TextField
-        label="Potential Gravity"
+        label="Extract % FGDB"
         type="number"
-        value={potentialGravity}
-        onChange={(e) => setPotentialGravity(e.target.value)}
+        value={extractPotentialFgdb}
+        onChange={(e) => setExtractPotentialFgdb(e.target.value)}
+        fullWidth
+        margin="normal"
+      />
+      <TextField
+        label="Maltster"
+        value={maltster}
+        onChange={(e) => setMaltster(e.target.value)}
+        fullWidth
+        margin="normal"
+      />
+      <TextField
+        label="Protein %"
+        type="number"
+        value={proteinPerc}
+        onChange={(e) => setProteinPerc(e.target.value)}
+        fullWidth
+        margin="normal"
+      />
+      <TextField
+        label="Moisture %"
+        type="number"
+        value={moisturePerc}
+        onChange={(e) => setMoisturePerc(e.target.value)}
+        fullWidth
+        margin="normal"
+      />
+      <TextField
+        label="Order Name"
+        value={orderName}
+        onChange={(e) => setOrderName(e.target.value)}
+        fullWidth
+        margin="normal"
+      />
+      <TextField
+        label="Order Unit Size"
+        value={orderUnitSize}
+        onChange={(e) => setOrderUnitSize(e.target.value)}
+        fullWidth
+        margin="normal"
+      />
+      <TextField
+        label="Alpha Acid (%)"
+        type="number"
+        value={alphaAcid}
+        onChange={(e) => setAlphaAcid(e.target.value)}
         fullWidth
         margin="normal"
       />
@@ -154,16 +203,6 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, lot }
         onChange={(e) => setAttenuation(e.target.value)}
         fullWidth
         margin="normal"
-      />
-      <TextField
-        label="Properties (JSON)"
-        value={properties}
-        onChange={(e) => setProperties(e.target.value)}
-        multiline
-        rows={3}
-        fullWidth
-        margin="normal"
-        placeholder='{"key": "value"}'
       />
       <TextField
         label="Notes"

@@ -35,7 +35,7 @@ defmodule RockcutApiWeb.FormulaControllerTest do
         ingredient_id: pale_malt.id,
         lot_number: "GRAIN-001",
         status: "available",
-        potential_gravity: Decimal.new("1.037")
+        extract_potential_fgdb: Decimal.new("80.0")
       })
 
     # Create brand and recipe

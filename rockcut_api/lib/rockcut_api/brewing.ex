@@ -82,7 +82,7 @@ defmodule RockcutApi.Brewing do
     Ingredient
     |> maybe_filter_by(:category_id, params)
     |> order_by(:name)
-    |> preload(:category)
+    |> preload([:category, lots: ^from(l in IngredientLot, order_by: [desc: l.received_date])])
     |> Repo.all()
   end
 
