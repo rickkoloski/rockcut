@@ -247,11 +247,19 @@ defmodule RockcutApiWeb.JSONHelpers do
       id: lot.id,
       lot_number: lot.lot_number,
       supplier: lot.supplier,
+      received_date: lot.received_date,
       status: lot.status,
       alpha_acid: lot.alpha_acid,
       color_lovibond: lot.color_lovibond,
       attenuation: lot.attenuation,
-      extract_potential_fgdb: lot.extract_potential_fgdb
+      extract_potential_fgdb: lot.extract_potential_fgdb,
+      maltster: lot.maltster,
+      moisture_perc: lot.moisture_perc,
+      protein_perc: lot.protein_perc,
+      diastatic_power_linter: lot.diastatic_power_linter,
+      order_name: lot.order_name,
+      order_unit_size: lot.order_unit_size,
+      notes: lot.notes
     }
   end
 

@@ -127,11 +127,19 @@ export interface IngredientLotSummary {
   id: number
   lot_number: string | null
   supplier: string | null
+  received_date: string | null
   status: string
   alpha_acid: number | null
   color_lovibond: number | null
-  extract_potential_fgdb: number | null
   attenuation: number | null
+  extract_potential_fgdb: number | null
+  maltster: string | null
+  moisture_perc: number | null
+  protein_perc: number | null
+  diastatic_power_linter: number | null
+  order_name: string | null
+  order_unit_size: string | null
+  notes: string | null
 }
 
 export interface IngredientLot {
