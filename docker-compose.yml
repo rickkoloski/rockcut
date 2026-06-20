@@ -1,0 +1,16 @@
+version: "3.8"
+
+services:
+  api:
+    build:
+      context: ./rockcut_api
+      dockerfile: Dockerfile.dev
+    network_mode: host
+    volumes:
+      - ./rockcut_api:/app
+      - api_deps:/app/deps
+      - api_build:/app/_build
+
+volumes:
+  api_deps:
+  api_build:
