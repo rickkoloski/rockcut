@@ -46,8 +46,8 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
 
   defp create_recipe_with_ingredients(_context) do
     # Create categories
-    {:ok, hop_cat} = Brewing.create_ingredient_category(%{name: "Hop"})
-    {:ok, grain_cat} = Brewing.create_ingredient_category(%{name: "Grain"})
+    {:ok, hop_cat} = Brewing.create_ingredient_category(%{name: "Hops"})
+    {:ok, grain_cat} = Brewing.create_ingredient_category(%{name: "Grains"})
 
     # Create ingredients
     {:ok, cascade} = Brewing.create_ingredient(%{name: "Cascade", category_id: hop_cat.id})

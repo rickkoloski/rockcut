@@ -67,7 +67,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   # -- Private helpers --
 
   defp load_hop_additions(repo, recipe_id) do
-    hop_category_id = get_category_id(repo, "Hop")
+    hop_category_id = get_category_id(repo, "Hops")
 
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
@@ -108,7 +108,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
 
   defp get_fermentable_category_ids(repo) do
     IngredientCategory
-    |> where([c], c.name in ["Grain", "Extract", "Sugar"])
+    |> where([c], c.name in ["Grains", "Sugars and Extracts"])
     |> select([c], c.id)
     |> repo.all()
   end
@@ -137,11 +137,13 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     fgdb = decimal_to_float(addition.extract_potential_fgdb) || 0.0
     weight_lbs = to_pounds(addition.amount, addition.unit)
 
-    # TODO: rewrite gravity calc using FGDB (% extract, fine grind dry basis)
-    # PPG = fgdb * 0.46; points = PPG * weight_lbs * efficiency / volume
-    # For now returns 0 until formula rewrite
-    _ = {fgdb, weight_lbs, efficiency}
-    0.0
+    # PPG (points per pound per gallon) from fine-grind dry-basis extract %.
+    # A pound of 100%-extract sugar in 1 gallon yields ~46 gravity points, so
+    # PPG = fgdb% * 0.46 (e.g. 80.3% -> ~36.9 PPG, typical for base malt).
+    # This returns weight * PPG * efficiency; est_og/2 divides by batch volume
+    # and by 1000 to produce the final OG.
+    ppg = fgdb * 0.46
+    ppg * weight_lbs * efficiency
   end
 
   defp batch_volume_gallons(recipe) do
