@@ -5,10 +5,10 @@ import path from 'path'
 const isDocker = !!process.env.DOCKER_BUILD
 
 // In Docker, datagrid-extended source is copied to .datagrid-extended-src/
-// In dev, it's resolved from the linked package outside the project
+// In dev, it's resolved from the shared/ checkout placed as a sibling of rockcut/
 const datagridExtendedPath = isDocker
   ? path.resolve(__dirname, '.datagrid-extended-src')
-  : path.resolve(__dirname, '../../../shared/ui-components/datagrid-extended/src/lib')
+  : path.resolve(__dirname, '../../shared/ui-components/datagrid-extended/src/lib')
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -35,7 +35,7 @@ export default defineConfig({
     fs: {
       allow: [
         path.resolve(__dirname),
-        ...(!isDocker ? [path.resolve(__dirname, '../../../shared/ui-components/datagrid-extended')] : []),
+        ...(!isDocker ? [path.resolve(__dirname, '../../shared/ui-components/datagrid-extended')] : []),
       ],
     },
     proxy: {
