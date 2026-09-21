@@ -108,6 +108,9 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D5 | Scaffold UI — Full React SPA with CRUD forms | 02_scaffold_ui |
 | D6 | Formula Execution Service — FormulaCatalog, FormulaRuntime, 3 brewing formulas | 05_dynamic_formulas |
 | D7 | DataGrid Formula Engine — parser, evaluator, remote functions, visual indicators | 05_dynamic_formulas |
+| D8 | Formula Editing UX | 05_dynamic_formulas |
+| D9 | Column Visibility Toggle — 8 grids | 02_scaffold_ui |
+| D10 | Users & Tiered Authorization — users/departments/memberships, Authz, module gating, user management (replaces EnvAuth) | 06_auth_roles |
 
 ## References
 
