@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Box, Stack, Typography } from '@mui/material'
+import { Box, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
+import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
+import MoreVertIcon from '@mui/icons-material/MoreVert'
 import { formatDayColumn, formatHoursShort, formatTime, localDayKey, shiftHours, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
 import type { Department, RosterEntry, Shift } from '../../lib/types'
@@ -12,26 +15,50 @@ interface Props {
   departments: Department[]
   currentUserId?: number
   canCreate: boolean // may the viewer add shifts (owner/manager)
+  canManageSchedule: boolean // may the viewer reorder / bulk-act on employees
   canManageShift: (s: Shift) => boolean
   canClaim: (s: Shift) => boolean
   onCreate: (cell: { userId: number | null; dateKey: string }) => void
   onEditShift: (s: Shift) => void
   onClaim: (s: Shift) => void
   onMoveShift: (s: Shift, targetUserId: number | null, targetDayKey: string) => void
+  onReorder: (userIds: number[]) => void
+  onPublishEmployee: (userId: number) => void
+  onDeleteEmployee: (userId: number) => void
 }
 
 const NAME_COL = 160
 const DAY_COL = 150
 
 export default function WeekGrid({
-  mondayKey, shifts, roster, departments, currentUserId, canCreate,
+  mondayKey, shifts, roster, departments, currentUserId, canCreate, canManageSchedule,
   canManageShift, canClaim, onCreate, onEditShift, onClaim, onMoveShift,
+  onReorder, onPublishEmployee, onDeleteEmployee,
 }: Props) {
   const days = weekDayKeys(mondayKey)
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
 
   const [dragShift, setDragShift] = useState<Shift | null>(null)
   const [hoverKey, setHoverKey] = useState<string | null>(null)
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [menuUserId, setMenuUserId] = useState<number | null>(null)
+
+  const moveEmployee = (rosterIndex: number, dir: -1 | 1) => {
+    const target = rosterIndex + dir
+    if (target < 0 || target >= roster.length) return
+    const next = [...roster]
+    ;[next[rosterIndex], next[target]] = [next[target], next[rosterIndex]]
+    onReorder(next.map((r) => r.id))
+  }
+
+  const openMenu = (e: React.MouseEvent<HTMLElement>, userId: number) => {
+    setMenuAnchor(e.currentTarget)
+    setMenuUserId(userId)
+  }
+  const closeMenu = () => {
+    setMenuAnchor(null)
+    setMenuUserId(null)
+  }
 
   const byCell = useMemo(() => {
     const m = new Map<string, Shift[]>()
@@ -144,7 +171,7 @@ export default function WeekGrid({
           ))}
         </Box>
 
-        {rows.map((row) => (
+        {rows.map((row, rowIndex) => (
           <Box key={row.id ?? 'open'} sx={{ display: 'table-row' }}>
             <Box sx={{ ...stickyCol, display: 'table-cell', p: 1, verticalAlign: 'top', borderTop: '1px solid', borderColor: 'divider' }}>
               <Typography variant="body2" sx={{ fontWeight: row.id === currentUserId ? 700 : 500, color: row.id === null ? 'text.secondary' : 'text.primary' }}>
@@ -154,6 +181,19 @@ export default function WeekGrid({
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   {hoursLabel(row.id)}
                 </Typography>
+              )}
+              {canManageSchedule && row.id !== null && (
+                <Stack direction="row" spacing={0} sx={{ mt: 0.25 }}>
+                  <IconButton size="small" disabled={rowIndex === 0} onClick={() => moveEmployee(rowIndex, -1)}>
+                    <ArrowUpwardIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                  <IconButton size="small" disabled={rowIndex >= roster.length - 1} onClick={() => moveEmployee(rowIndex, 1)}>
+                    <ArrowDownwardIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                  <IconButton size="small" onClick={(e) => openMenu(e, row.id!)}>
+                    <MoreVertIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </Stack>
               )}
             </Box>
             {days.map((dayKey) => {
@@ -199,6 +239,25 @@ export default function WeekGrid({
           </Box>
         ))}
       </Box>
+
+      <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={closeMenu}>
+        <MenuItem
+          onClick={() => {
+            if (menuUserId != null) onPublishEmployee(menuUserId)
+            closeMenu()
+          }}
+        >
+          Publish this week's shifts
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            if (menuUserId != null) onDeleteEmployee(menuUserId)
+            closeMenu()
+          }}
+        >
+          Delete this week's shifts
+        </MenuItem>
+      </Menu>
     </Box>
   )
 }

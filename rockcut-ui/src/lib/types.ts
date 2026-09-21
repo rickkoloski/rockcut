@@ -239,6 +239,7 @@ export interface User {
   active: boolean
   is_owner: boolean
   must_reset_password: boolean
+  schedulable?: boolean
   memberships: Membership[] | null
   inserted_at: string
   updated_at: string

@@ -72,6 +72,8 @@ export default function Schedule() {
   const [copyPreview, setCopyPreview] = useState<Shift[] | null>(null)
   const [copyBusy, setCopyBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [deleteState, setDeleteState] = useState<{ label: string; shifts: Shift[] } | null>(null)
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   const setViewPersist = (v: View) => {
     setView(v)
@@ -201,6 +203,59 @@ export default function Schedule() {
     }
   }
 
+  // Employee display order (up/down arrows → persist globally).
+  const reorderRoster = async (ids: number[]) => {
+    try {
+      await api.post('/api/roster/order', { user_ids: ids })
+      qc.invalidateQueries({ queryKey: ['roster'] })
+    } catch {
+      setNotice('Could not save order')
+    }
+  }
+
+  const publishForEmployee = async (userId: number) => {
+    const drafts = shifts.filter((s) => s.assignee_id === userId && s.status === 'draft' && canManageShift(s))
+    if (drafts.length === 0) {
+      setNotice('No draft shifts to publish this week')
+      return
+    }
+    await Promise.allSettled(drafts.map((s) => api.post(`/api/shifts/${s.id}/publish`, {})))
+    qc.invalidateQueries({ queryKey: ['shifts'] })
+    setNotice(`Published ${drafts.length} shift${drafts.length === 1 ? '' : 's'}`)
+  }
+
+  const requestDeleteWeek = () => {
+    const source = shifts.filter(canManageShift)
+    if (source.length === 0) {
+      setNotice('No shifts to delete this week')
+      return
+    }
+    setDeleteState({ label: 'this week', shifts: source })
+  }
+
+  const requestDeleteEmployee = (userId: number) => {
+    const source = shifts.filter((s) => s.assignee_id === userId && canManageShift(s))
+    if (source.length === 0) {
+      setNotice("No shifts to delete for this employee this week")
+      return
+    }
+    const who = roster.find((r) => r.id === userId)?.name ?? 'this employee'
+    setDeleteState({ label: `${who}'s shifts this week`, shifts: source })
+  }
+
+  const performDelete = async () => {
+    if (!deleteState) return
+    setDeleteBusy(true)
+    try {
+      await Promise.allSettled(deleteState.shifts.map((s) => api.delete(`/api/shifts/${s.id}`)))
+      qc.invalidateQueries({ queryKey: ['shifts'] })
+      setNotice(`Deleted ${deleteState.shifts.length} shift${deleteState.shifts.length === 1 ? '' : 's'}`)
+    } finally {
+      setDeleteBusy(false)
+      setDeleteState(null)
+    }
+  }
+
   const openCreate = () => {
     setEditShift(null)
     setPrefill(undefined)
@@ -252,6 +307,7 @@ export default function Schedule() {
                   <>
                     <Button startIcon={<PublishIcon />} disabled={publishing} onClick={publishWeek}>Publish week</Button>
                     <Button startIcon={<ContentCopyIcon />} onClick={startCopyPreviousWeek}>Copy last week</Button>
+                    <Button color="error" onClick={requestDeleteWeek}>Delete week</Button>
                   </>
                 )}
                 <Button startIcon={<LibraryBooksIcon />} onClick={() => setTemplatesOpen(true)}>Templates</Button>
@@ -311,12 +367,16 @@ export default function Schedule() {
           departments={departments}
           currentUserId={user?.id}
           canCreate={canManageSchedule}
+          canManageSchedule={canManageSchedule}
           canManageShift={canManageShift}
           canClaim={canClaim}
           onCreate={requestCellCreate}
           onEditShift={openEdit}
           onClaim={claim}
           onMoveShift={moveShift}
+          onReorder={reorderRoster}
+          onPublishEmployee={publishForEmployee}
+          onDeleteEmployee={requestDeleteEmployee}
         />
       ) : groups.length === 0 ? (
         <Typography color="text.secondary" sx={{ p: 2 }}>No shifts match these filters.</Typography>
@@ -388,6 +448,16 @@ export default function Schedule() {
         message={`Copy ${copyPreview?.length ?? 0} shift${copyPreview?.length === 1 ? '' : 's'} from last week into this week as drafts?`}
         confirmLabel="Copy"
         confirmColor="primary"
+      />
+      <ConfirmDialog
+        open={deleteState !== null}
+        onClose={() => setDeleteState(null)}
+        onConfirm={performDelete}
+        loading={deleteBusy}
+        title="Delete shifts?"
+        message={`Permanently delete ${deleteState?.shifts.length ?? 0} shift${deleteState?.shifts.length === 1 ? '' : 's'} (${deleteState?.label ?? ''})? This cannot be undone.`}
+        confirmLabel="Delete"
+        confirmColor="error"
       />
       <Snackbar
         open={!!notice}

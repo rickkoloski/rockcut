@@ -53,6 +53,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [name, setName] = useState('')
   const [active, setActive] = useState(true)
   const [isOwner, setIsOwner] = useState(false)
+  const [schedulable, setSchedulable] = useState(true)
   const [roles, setRoles] = useState<Record<string, RoleChoice>>({})
   const [tempPassword, setTempPassword] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -64,6 +65,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setName(editUser?.name ?? '')
     setActive(editUser?.active ?? true)
     setIsOwner(editUser?.is_owner ?? false)
+    setSchedulable(editUser?.schedulable ?? true)
 
     const initial: Record<string, RoleChoice> = {}
     for (const d of manageableDepts) {
@@ -88,7 +90,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setLoading(true)
     try {
       if (isEdit && editUser) {
-        const body: Record<string, unknown> = { name, active }
+        const body: Record<string, unknown> = { name, active, schedulable }
         if (isOwnerActor) body.is_owner = isOwner
         await api.patch(`/api/users/${editUser.id}`, body)
         await api.put(`/api/users/${editUser.id}/memberships`, { memberships: memberships() })
@@ -155,6 +157,12 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
               <FormControlLabel
                 control={<Switch checked={active} onChange={(e) => setActive(e.target.checked)} />}
                 label="Active"
+              />
+            )}
+            {isEdit && (
+              <FormControlLabel
+                control={<Switch checked={schedulable} onChange={(e) => setSchedulable(e.target.checked)} />}
+                label="Show on schedule"
               />
             )}
             {isOwnerActor && (
