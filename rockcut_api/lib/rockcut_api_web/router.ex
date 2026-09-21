@@ -19,6 +19,9 @@ defmodule RockcutApiWeb.Router do
 
     get "/health", HealthController, :index
     post "/session", SessionController, :create
+
+    # Public ICS calendar feed (token in the URL is the credential)
+    get "/calendar/:token", CalendarController, :feed
   end
 
   # Authenticated routes (any signed-in user)
@@ -66,6 +69,10 @@ defmodule RockcutApiWeb.Router do
     post "/time_off", TimeOffController, :create
     post "/time_off/:id/review", TimeOffController, :review
     post "/time_off/:id/cancel", TimeOffController, :cancel
+
+    # Calendar feed management (D17)
+    get "/calendar_feeds", CalendarFeedController, :index
+    post "/calendar_feeds/rotate", CalendarFeedController, :rotate
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)
