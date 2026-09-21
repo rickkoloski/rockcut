@@ -26,6 +26,7 @@ import SettingsIcon from '@mui/icons-material/Settings'
 import PeopleIcon from '@mui/icons-material/People'
 import NotificationsIcon from '@mui/icons-material/Notifications'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
+import EventBusyIcon from '@mui/icons-material/EventBusy'
 import LogoutIcon from '@mui/icons-material/Logout'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
@@ -46,6 +47,7 @@ import CategoryDetail from './pages/settings/CategoryDetail'
 import UserManagement from './pages/users/UserManagement'
 import OwnerActivity from './pages/activity/OwnerActivity'
 import Schedule from './pages/schedule/Schedule'
+import TimeOff from './pages/timeoff/TimeOff'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -111,6 +113,7 @@ function App() {
   const navItems: NavItem[] = [
     ...(hasBrewery ? breweryItems : []),
     ...(hasSchedule ? [{ label: 'Schedule', path: '/schedule', icon: <CalendarMonthIcon /> }] : []),
+    { label: 'Time off', path: '/time_off', icon: <EventBusyIcon /> },
     ...(canManageUsers ? [{ label: 'Users & Roles', path: '/users', icon: <PeopleIcon /> }] : []),
     ...(isOwner
       ? [
@@ -310,6 +313,7 @@ function App() {
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/categories/:id" element={<CategoryDetail />} />
             {hasSchedule && <Route path="/schedule" element={<Schedule />} />}
+            <Route path="/time_off" element={<TimeOff />} />
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}
             {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
           </Routes>

@@ -332,6 +332,26 @@ export interface ScheduleTemplate {
   updated_at: string
 }
 
+export type TimeOffType = 'pto' | 'sick' | 'unpaid' | 'personal'
+export type TimeOffStatus = 'pending' | 'approved' | 'denied' | 'cancelled'
+
+export interface TimeOffRequest {
+  id: number
+  user_id: number
+  user: ShiftUser | null
+  type: TimeOffType
+  starts_at: string
+  ends_at: string
+  all_day: boolean
+  note: string | null
+  status: TimeOffStatus
+  reviewer_note: string | null
+  reviewed_at: string | null
+  reviewed_by_id: number | null
+  reviewed_by: ShiftUser | null
+  inserted_at: string
+}
+
 export interface Shift {
   id: number
   department_id: number

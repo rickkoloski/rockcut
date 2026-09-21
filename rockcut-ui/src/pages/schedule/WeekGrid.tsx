@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Box, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material'
+import { Box, Chip, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
@@ -25,6 +25,7 @@ interface Props {
   onReorder: (userIds: number[]) => void
   onPublishEmployee: (userId: number) => void
   onDeleteEmployee: (userId: number) => void
+  offDays: Map<number, Set<string>> // userId -> Denver day keys with approved time off
 }
 
 const NAME_COL = 160
@@ -33,7 +34,7 @@ const DAY_COL = 150
 export default function WeekGrid({
   mondayKey, shifts, roster, departments, currentUserId, canCreate, canManageSchedule,
   canManageShift, canClaim, onCreate, onEditShift, onClaim, onMoveShift,
-  onReorder, onPublishEmployee, onDeleteEmployee,
+  onReorder, onPublishEmployee, onDeleteEmployee, offDays,
 }: Props) {
   const days = weekDayKeys(mondayKey)
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -228,6 +229,9 @@ export default function WeekGrid({
                   }}
                 >
                   <Stack spacing={0.5}>
+                    {row.id !== null && offDays.get(row.id)?.has(dayKey) && (
+                      <Chip label="Off" size="small" sx={{ bgcolor: 'action.selected', fontSize: 11, height: 20 }} />
+                    )}
                     {items.map(chip)}
                     {items.length === 0 && (
                       <AddIcon className="add-affordance" fontSize="small" sx={{ opacity: 0, color: 'text.disabled' }} />

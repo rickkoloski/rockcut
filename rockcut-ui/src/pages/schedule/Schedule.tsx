@@ -32,7 +32,7 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
-import type { Department, Position, RosterEntry, Shift, ShiftTemplate, ScheduleTemplate } from '../../lib/types'
+import type { Department, Position, RosterEntry, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
 import PositionsDialog from './PositionsDialog'
 import PaletteDialog from './PaletteDialog'
@@ -106,6 +106,27 @@ export default function Schedule() {
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
   const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates')
   const { data: scheduleTemplates = [] } = useApiQuery<ScheduleTemplate[]>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
+  const timeOffParams = useMemo(() => ({ status: 'approved', from: mondayKey, to: addDaysKey(mondayKey, 6) }), [mondayKey])
+  const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'approved', mondayKey], '/api/time_off', timeOffParams)
+
+  // userId -> set of Denver day keys with approved time off in the visible week.
+  const offDays = useMemo(() => {
+    const sunday = addDaysKey(mondayKey, 6)
+    const m = new Map<number, Set<string>>()
+    for (const r of timeOff) {
+      let d = localDayKey(r.starts_at)
+      if (d < mondayKey) d = mondayKey
+      const rawEnd = localDayKey(r.ends_at)
+      const end = rawEnd > sunday ? sunday : rawEnd
+      const set = m.get(r.user_id) ?? new Set<string>()
+      while (d <= end) {
+        set.add(d)
+        d = addDaysKey(d, 1)
+      }
+      m.set(r.user_id, set)
+    }
+    return m
+  }, [timeOff, mondayKey])
 
   const managedDepartments = isOwner ? departments : departments.filter((d) => managedKeys.includes(d.key))
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -377,6 +398,7 @@ export default function Schedule() {
           onReorder={reorderRoster}
           onPublishEmployee={publishForEmployee}
           onDeleteEmployee={requestDeleteEmployee}
+          offDays={offDays}
         />
       ) : groups.length === 0 ? (
         <Typography color="text.secondary" sx={{ p: 2 }}>No shifts match these filters.</Typography>
