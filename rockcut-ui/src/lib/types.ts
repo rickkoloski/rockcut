@@ -276,3 +276,36 @@ export interface AuditEntry {
   target: AuditActor | null
   inserted_at: string
 }
+
+// ── Scheduling (D11) ────────────────────────────────────────────────
+
+export interface Position {
+  id: number
+  name: string
+  group: string | null
+  active: boolean
+}
+
+export interface ShiftUser {
+  id: number
+  email: string
+  name: string | null
+}
+
+export type ShiftStatus = 'draft' | 'published'
+
+export interface Shift {
+  id: number
+  department_id: number
+  department: Department | null
+  position_id: number
+  position: Position | null
+  assignee_id: number | null
+  assignee: ShiftUser | null
+  starts_at: string
+  ends_at: string
+  status: ShiftStatus
+  notes: string | null
+  inserted_at: string
+  updated_at: string
+}

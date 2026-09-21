@@ -25,6 +25,7 @@ import AssignmentIcon from '@mui/icons-material/Assignment'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PeopleIcon from '@mui/icons-material/People'
 import NotificationsIcon from '@mui/icons-material/Notifications'
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import LogoutIcon from '@mui/icons-material/Logout'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
@@ -44,6 +45,7 @@ import SettingsPage from './pages/settings/SettingsPage'
 import CategoryDetail from './pages/settings/CategoryDetail'
 import UserManagement from './pages/users/UserManagement'
 import OwnerActivity from './pages/activity/OwnerActivity'
+import Schedule from './pages/schedule/Schedule'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -93,6 +95,7 @@ function App() {
 
   const modules = capabilities.modules
   const hasBrewery = modules.includes('brewery')
+  const hasSchedule = modules.includes('schedule')
   const canManageUsers = capabilities.can_manage_users
   const isOwner = user.is_owner
   const pending = capabilities.pending_owner_reviews ?? 0
@@ -107,6 +110,7 @@ function App() {
 
   const navItems: NavItem[] = [
     ...(hasBrewery ? breweryItems : []),
+    ...(hasSchedule ? [{ label: 'Schedule', path: '/schedule', icon: <CalendarMonthIcon /> }] : []),
     ...(canManageUsers ? [{ label: 'Users & Roles', path: '/users', icon: <PeopleIcon /> }] : []),
     ...(isOwner
       ? [
@@ -123,7 +127,7 @@ function App() {
       : []),
   ]
 
-  const landing = hasBrewery ? null : canManageUsers ? '/users' : isOwner ? '/activity' : null
+  const landing = hasBrewery ? null : hasSchedule ? '/schedule' : canManageUsers ? '/users' : isOwner ? '/activity' : null
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
@@ -305,6 +309,7 @@ function App() {
             <Route path="/batches/:id" element={<BatchDetail />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/categories/:id" element={<CategoryDetail />} />
+            {hasSchedule && <Route path="/schedule" element={<Schedule />} />}
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}
             {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
           </Routes>
