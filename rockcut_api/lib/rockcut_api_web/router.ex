@@ -60,6 +60,12 @@ defmodule RockcutApiWeb.Router do
       only: [:index, :create, :update, :delete]
 
     resources "/schedule_templates", ScheduleTemplateController, only: [:index, :create, :delete]
+
+    # Time off (D16)
+    get "/time_off", TimeOffController, :index
+    post "/time_off", TimeOffController, :create
+    post "/time_off/:id/review", TimeOffController, :review
+    post "/time_off/:id/cancel", TimeOffController, :cancel
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)

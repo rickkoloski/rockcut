@@ -78,6 +78,25 @@ defmodule RockcutApiWeb.JSONHelpers do
   defp shift_user(nil), do: nil
   defp shift_user(u), do: %{id: u.id, email: u.email, name: u.name}
 
+  def time_off_request(r) do
+    %{
+      id: r.id,
+      user_id: r.user_id,
+      user: maybe_render(r, :user, &shift_user/1),
+      type: r.type,
+      starts_at: r.starts_at,
+      ends_at: r.ends_at,
+      all_day: r.all_day,
+      note: r.note,
+      status: r.status,
+      reviewer_note: r.reviewer_note,
+      reviewed_at: r.reviewed_at,
+      reviewed_by_id: r.reviewed_by_id,
+      reviewed_by: maybe_render(r, :reviewed_by, &shift_user/1),
+      inserted_at: r.inserted_at
+    }
+  end
+
   def shift_template(t) do
     %{id: t.id, position_id: t.position_id, name: t.name, start_time: t.start_time, end_time: t.end_time}
   end
