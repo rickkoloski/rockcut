@@ -32,6 +32,8 @@ defmodule RockcutApiWeb.Router do
     # Current user + departments (drive UI nav)
     get "/me", MeController, :show
     get "/departments", DepartmentController, :index
+    patch "/departments/:id", DepartmentController, :update
+    get "/roster", RosterController, :index
 
     # User & role management (authorization enforced per-action in the controllers)
     resources "/users", UserController, only: [:index, :create, :update]
@@ -49,6 +51,7 @@ defmodule RockcutApiWeb.Router do
     patch "/shifts/:id", ShiftController, :update
     delete "/shifts/:id", ShiftController, :delete
     post "/shifts/:id/publish", ShiftController, :publish
+    post "/shifts/:id/unpublish", ShiftController, :unpublish
     post "/shifts/:id/claim", ShiftController, :claim
   end
 

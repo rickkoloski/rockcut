@@ -262,14 +262,21 @@ alias RockcutApi.Accounts.{Department, User}
 acct_now = DateTime.utc_now() |> DateTime.truncate(:second)
 
 [
-  {"Brewery", "brewery"},
-  {"Bar", "bar"},
-  {"Office", "office"},
-  {"Sales", "sales"}
+  {"Brewery", "brewery", "#B8742A"},
+  {"Bar", "bar", "#2E6DB4"},
+  {"Office", "office", "#3F8F5B"},
+  {"Sales", "sales", "#7A4FB0"}
 ]
-|> Enum.each(fn {name, key} ->
-  unless Repo.get_by(Department, key: key) do
-    Repo.insert!(%Department{name: name, key: key, inserted_at: acct_now, updated_at: acct_now})
+|> Enum.each(fn {name, key, color} ->
+  case Repo.get_by(Department, key: key) do
+    nil ->
+      Repo.insert!(%Department{name: name, key: key, color: color, inserted_at: acct_now, updated_at: acct_now})
+
+    %Department{color: nil} = dept ->
+      dept |> Ecto.Changeset.change(color: color) |> Repo.update!()
+
+    _ ->
+      :ok
   end
 end)
 

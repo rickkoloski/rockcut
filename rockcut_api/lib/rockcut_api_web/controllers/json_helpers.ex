@@ -29,7 +29,7 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   def department(d) do
-    %{id: d.id, name: d.name, key: d.key}
+    %{id: d.id, name: d.name, key: d.key, color: d.color}
   end
 
   def me(user, capabilities) do

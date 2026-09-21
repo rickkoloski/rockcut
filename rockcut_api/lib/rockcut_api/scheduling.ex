@@ -98,8 +98,12 @@ defmodule RockcutApi.Scheduling do
 
   def delete_shift(%Shift{} = shift), do: Repo.delete(shift)
 
-  def publish_shift(%Shift{} = shift) do
-    case shift |> Shift.changeset(%{"status" => "published"}) |> Repo.update() do
+  def publish_shift(%Shift{} = shift), do: set_status(shift, "published")
+
+  def unpublish_shift(%Shift{} = shift), do: set_status(shift, "draft")
+
+  defp set_status(%Shift{} = shift, status) do
+    case shift |> Shift.changeset(%{"status" => status}) |> Repo.update() do
       {:ok, updated} -> {:ok, get_shift!(updated.id)}
       other -> other
     end

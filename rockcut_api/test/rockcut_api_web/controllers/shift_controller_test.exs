@@ -87,6 +87,33 @@ defmodule RockcutApiWeb.ShiftControllerTest do
     end
   end
 
+  describe "POST /api/shifts/:id/unpublish" do
+    test "manager unpublishes a published shift back to draft", %{conn: conn} do
+      bar = department_fixture("bar")
+      manager = user_with_role("manager", "bar")
+      shift = shift_fixture(%{department: bar, status: "published"})
+
+      body =
+        conn
+        |> bearer(manager)
+        |> post(~p"/api/shifts/#{shift.id}/unpublish")
+        |> json_response(200)
+
+      assert body["data"]["status"] == "draft"
+    end
+
+    test "an employee cannot unpublish", %{conn: conn} do
+      bar = department_fixture("bar")
+      employee = user_with_role("employee", "bar")
+      shift = shift_fixture(%{department: bar, status: "published"})
+
+      assert conn
+             |> bearer(employee)
+             |> post(~p"/api/shifts/#{shift.id}/unpublish")
+             |> json_response(403)
+    end
+  end
+
   describe "POST /api/shifts/:id/claim" do
     test "a department employee claims an open published shift", %{conn: conn} do
       bar = department_fixture("bar")

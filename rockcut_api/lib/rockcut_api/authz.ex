@@ -87,7 +87,7 @@ defmodule RockcutApi.Authz do
       :read ->
         shift.status == "published" or manager?
 
-      a when a in [:create, :update, :assign, :delete, :publish] ->
+      a when a in [:create, :update, :assign, :delete, :publish, :unpublish] ->
         manager?
 
       :claim ->

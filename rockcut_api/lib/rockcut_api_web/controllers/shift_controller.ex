@@ -63,6 +63,14 @@ defmodule RockcutApiWeb.ShiftController do
     end)
   end
 
+  def unpublish(conn, %{"id" => id}) do
+    with_shift(conn, id, :unpublish, fn s ->
+      with {:ok, updated} <- Scheduling.unpublish_shift(s) do
+        json(conn, %{data: shift(updated)})
+      end
+    end)
+  end
+
   def claim(conn, %{"id" => id}) do
     actor = conn.assigns.current_user
 

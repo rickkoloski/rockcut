@@ -72,6 +72,28 @@ defmodule RockcutApi.Accounts do
     Repo.get_by(Department, key: key)
   end
 
+  def get_department!(id), do: Repo.get!(Department, id)
+
+  def update_department(%Department{} = department, attrs) do
+    department |> Department.changeset(attrs) |> Repo.update()
+  end
+
+  @doc "Minimal staff roster (active users) for schedule display — readable by anyone signed in."
+  def list_roster do
+    User
+    |> where([u], u.active == true)
+    |> order_by([u], asc: u.name, asc: u.email)
+    |> preload(^@preloads)
+    |> Repo.all()
+    |> Enum.map(fn u ->
+      %{
+        id: u.id,
+        name: u.name || u.email,
+        departments: u.memberships |> Enum.map(& &1.department.key) |> Enum.uniq()
+      }
+    end)
+  end
+
   ## Memberships
 
   @doc "List a user's memberships with departments preloaded."
