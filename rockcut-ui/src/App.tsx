@@ -1,9 +1,11 @@
-import { useState } from 'react'
-import { Routes, Route } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import {
   AppBar,
+  Badge,
   Box,
   Button,
+  CircularProgress,
   Drawer,
   IconButton,
   List,
@@ -21,12 +23,15 @@ import ScienceIcon from '@mui/icons-material/Science'
 import InventoryIcon from '@mui/icons-material/Inventory'
 import AssignmentIcon from '@mui/icons-material/Assignment'
 import SettingsIcon from '@mui/icons-material/Settings'
+import PeopleIcon from '@mui/icons-material/People'
+import NotificationsIcon from '@mui/icons-material/Notifications'
 import LogoutIcon from '@mui/icons-material/Logout'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
+import ForcePasswordReset from './pages/auth/ForcePasswordReset'
 import useAuth from './hooks/useAuth'
 
-// Lazy-ish imports for all pages
+// Pages
 import Home from './pages/Home'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
@@ -37,28 +42,88 @@ import BatchesList from './pages/batches/BatchesList'
 import BatchDetail from './pages/batches/BatchDetail'
 import SettingsPage from './pages/settings/SettingsPage'
 import CategoryDetail from './pages/settings/CategoryDetail'
+import UserManagement from './pages/users/UserManagement'
+import OwnerActivity from './pages/activity/OwnerActivity'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
 
-const navItems = [
-  { label: 'Home', path: '/', icon: <HomeIcon /> },
-  { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
-  { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
-  { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
-  { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
-]
+interface NavItem {
+  label: string
+  path: string
+  icon: ReactNode
+}
+
+function LoadingScreen() {
+  return (
+    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <CircularProgress />
+    </Box>
+  )
+}
+
+function NoModules() {
+  return (
+    <Box sx={{ p: 4 }}>
+      <Typography variant="h5" gutterBottom>
+        Welcome to Rockcut
+      </Typography>
+      <Typography color="text.secondary">
+        Your account doesn't have access to any modules yet. Ask an owner or your department manager
+        to assign you a role.
+      </Typography>
+    </Box>
+  )
+}
 
 function App() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAuthenticated, email, logout } = useAuth()
+  const { isAuthenticated, bootstrapped, user, capabilities, loadMe, logout } = useAuth()
 
-  if (!isAuthenticated) {
-    return <Login />
-  }
+  useEffect(() => {
+    if (isAuthenticated && !bootstrapped) loadMe()
+  }, [isAuthenticated, bootstrapped, loadMe])
+
+  if (!isAuthenticated) return <Login />
+  if (!bootstrapped || !user || !capabilities) return <LoadingScreen />
+  if (user.must_reset_password) return <ForcePasswordReset />
+
+  const modules = capabilities.modules
+  const hasBrewery = modules.includes('brewery')
+  const canManageUsers = capabilities.can_manage_users
+  const isOwner = user.is_owner
+  const pending = capabilities.pending_owner_reviews ?? 0
+
+  const breweryItems: NavItem[] = [
+    { label: 'Home', path: '/', icon: <HomeIcon /> },
+    { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
+    { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
+    { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
+    { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+  ]
+
+  const navItems: NavItem[] = [
+    ...(hasBrewery ? breweryItems : []),
+    ...(canManageUsers ? [{ label: 'Users & Roles', path: '/users', icon: <PeopleIcon /> }] : []),
+    ...(isOwner
+      ? [
+          {
+            label: 'Activity',
+            path: '/activity',
+            icon: (
+              <Badge badgeContent={pending} color="error">
+                <NotificationsIcon />
+              </Badge>
+            ),
+          },
+        ]
+      : []),
+  ]
+
+  const landing = hasBrewery ? null : canManageUsers ? '/users' : isOwner ? '/activity' : null
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
@@ -209,7 +274,8 @@ function App() {
             <Box sx={{ flexGrow: 1 }} />
 
             <Typography variant="body2" color="text.secondary" sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
-              {email}
+              {user.email}
+              {isOwner ? ' · Owner' : ''}
             </Typography>
             <Button
               data-testid="logout-button"
@@ -226,7 +292,10 @@ function App() {
 
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route
+              path="/"
+              element={hasBrewery ? <Home /> : landing ? <Navigate to={landing} replace /> : <NoModules />}
+            />
             <Route path="/brands" element={<BrandsList />} />
             <Route path="/brands/:id" element={<BrandDetail />} />
             <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
@@ -236,6 +305,8 @@ function App() {
             <Route path="/batches/:id" element={<BatchDetail />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/settings/categories/:id" element={<CategoryDetail />} />
+            {canManageUsers && <Route path="/users" element={<UserManagement />} />}
+            {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
           </Routes>
         </Box>
       </Box>

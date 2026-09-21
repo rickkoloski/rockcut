@@ -220,3 +220,59 @@ export interface BatchLogEntry {
 export interface ApiResponse<T> {
   data: T
 }
+
+// ── Accounts / roles (D10) ──────────────────────────────────────────
+
+export type Role = 'manager' | 'employee'
+
+export interface Membership {
+  department_id: number
+  department_key: string | null
+  department_name: string | null
+  role: Role
+}
+
+export interface User {
+  id: number
+  email: string
+  name: string | null
+  active: boolean
+  is_owner: boolean
+  must_reset_password: boolean
+  memberships: Membership[] | null
+  inserted_at: string
+  updated_at: string
+}
+
+export interface Department {
+  id: number
+  name: string
+  key: string
+}
+
+export interface Capabilities {
+  modules: string[]
+  manages_departments: string[]
+  can_manage_users: boolean
+  pending_owner_reviews: number
+}
+
+export interface Me {
+  user: User
+  capabilities: Capabilities
+}
+
+export interface AuditActor {
+  id: number
+  email: string
+  name: string | null
+}
+
+export interface AuditEntry {
+  id: number
+  action: string
+  detail: Record<string, unknown>
+  actor: AuditActor | null
+  target: AuditActor | null
+  inserted_at: string
+}

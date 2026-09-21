@@ -1,31 +1,37 @@
 import { create } from 'zustand'
 import api from '../lib/api'
+import type { Me, User, Capabilities } from '../lib/types'
 
 interface AuthState {
   token: string | null
-  email: string | null
+  user: User | null
+  capabilities: Capabilities | null
   isAuthenticated: boolean
+  bootstrapped: boolean
   isLoading: boolean
   error: string | null
   login: (email: string, password: string) => Promise<void>
   logout: () => void
-  checkAuth: () => Promise<void>
+  loadMe: () => Promise<void>
 }
 
 const useAuth = create<AuthState>((set, get) => ({
   token: localStorage.getItem('rockcut_token'),
-  email: localStorage.getItem('rockcut_email'),
+  user: null,
+  capabilities: null,
   isAuthenticated: !!localStorage.getItem('rockcut_token'),
+  bootstrapped: false,
   isLoading: false,
   error: null,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null })
     try {
-      const { data } = await api.post('/api/session', { email, password })
+      const { data } = await api.post<{ token: string }>('/api/session', { email, password })
       localStorage.setItem('rockcut_token', data.token)
-      localStorage.setItem('rockcut_email', data.email)
-      set({ token: data.token, email: data.email, isAuthenticated: true, isLoading: false })
+      set({ token: data.token, isAuthenticated: true })
+      await get().loadMe()
+      set({ isLoading: false, bootstrapped: true })
     } catch (err: unknown) {
       const message =
         err && typeof err === 'object' && 'response' in err
@@ -41,20 +47,22 @@ const useAuth = create<AuthState>((set, get) => ({
       api.delete('/api/session').catch(() => {})
     }
     localStorage.removeItem('rockcut_token')
-    localStorage.removeItem('rockcut_email')
-    set({ token: null, email: null, isAuthenticated: false })
+    set({ token: null, user: null, capabilities: null, isAuthenticated: false })
   },
 
-  checkAuth: async () => {
+  loadMe: async () => {
     const { token } = get()
-    if (!token) return
+    if (!token) {
+      set({ bootstrapped: true })
+      return
+    }
     try {
-      const { data } = await api.get('/api/session')
-      set({ email: data.email, isAuthenticated: true })
+      const { data } = await api.get<Me>('/api/me')
+      set({ user: data.user, capabilities: data.capabilities, isAuthenticated: true, bootstrapped: true })
     } catch {
+      // 401 is handled by the axios interceptor; clear local state for anything else.
       localStorage.removeItem('rockcut_token')
-      localStorage.removeItem('rockcut_email')
-      set({ token: null, email: null, isAuthenticated: false })
+      set({ token: null, user: null, capabilities: null, isAuthenticated: false, bootstrapped: true })
     }
   },
 }))
