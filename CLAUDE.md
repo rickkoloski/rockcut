@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D11 (D10 = Users & Tiered Authorization, in progress)
+- **Next deliverable**: D12 (weekly grid view for scheduling)
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -111,6 +111,7 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D8 | Formula Editing UX | 05_dynamic_formulas |
 | D9 | Column Visibility Toggle — 8 grids | 02_scaffold_ui |
 | D10 | Users & Tiered Authorization — users/departments/memberships, Authz, module gating, user management (replaces EnvAuth) | 06_auth_roles |
+| D11 | Staff Scheduling — company-wide positions, department shifts, draft→publish, open-shift claim, agenda UI | 07_scheduling |
 
 ## References
 
