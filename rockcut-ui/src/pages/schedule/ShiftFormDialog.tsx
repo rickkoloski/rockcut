@@ -17,7 +17,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import { localInputToUtc, utcToLocalInput } from '../../lib/datetime'
-import type { Department, Position, Shift, User } from '../../lib/types'
+import type { Department, Position, RosterEntry, Shift } from '../../lib/types'
 
 interface Prefill {
   departmentId?: number
@@ -31,7 +31,7 @@ interface Props {
   editShift: Shift | null
   departments: Department[] // already limited to what the actor manages
   positions: Position[]
-  users: User[]
+  roster: RosterEntry[] // all active staff — any employee can be scheduled in any department
   prefill?: Prefill
 }
 
@@ -46,7 +46,7 @@ function defaultStart(): string {
   return utcToLocalInput(d.toISOString())
 }
 
-export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, users, prefill }: Props) {
+export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, roster, prefill }: Props) {
   const qc = useQueryClient()
   const isEdit = !!editShift
 
@@ -83,14 +83,8 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editShift])
 
-  const selectedDeptKey = departments.find((d) => d.id === departmentId)?.key
-
-  // Assignees = users who belong to the selected department.
-  const deptUsers = useMemo(
-    () =>
-      users.filter((u) => (u.memberships ?? []).some((m) => m.department_key === selectedDeptKey)),
-    [users, selectedDeptKey],
-  )
+  // Any active employee can be scheduled for any department's shift.
+  const assignees = useMemo(() => [...roster].sort((a, b) => a.name.localeCompare(b.name)), [roster])
 
   const grouped = useMemo(() => {
     const map = new Map<string, Position[]>()
@@ -190,8 +184,8 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
           helperText="Leave open to let staff claim it"
         >
           <MenuItem value="">— Open (unassigned) —</MenuItem>
-          {deptUsers.map((u) => (
-            <MenuItem key={u.id} value={u.id}>{u.name || u.email}</MenuItem>
+          {assignees.map((u) => (
+            <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
           ))}
         </TextField>
 

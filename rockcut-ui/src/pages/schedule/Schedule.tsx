@@ -26,9 +26,9 @@ import PageHeader from '../../components/PageHeader'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
-import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, mondayKeyOf } from '../../lib/datetime'
+import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
-import type { Department, Position, RosterEntry, Shift, User } from '../../lib/types'
+import type { Department, Position, RosterEntry, Shift } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
 import PositionsDialog from './PositionsDialog'
 import PaletteDialog from './PaletteDialog'
@@ -92,7 +92,6 @@ export default function Schedule() {
   const { data: positions = [] } = useApiQuery<Position[]>(['positions'], '/api/positions')
   const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments')
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
-  const { data: users = [] } = useApiQuery<User[]>(['users'], '/api/users', undefined, { enabled: canManageSchedule })
 
   const managedDepartments = isOwner ? departments : departments.filter((d) => managedKeys.includes(d.key))
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -107,6 +106,29 @@ export default function Schedule() {
   const claim = async (s: Shift) => {
     try {
       await api.post(`/api/shifts/${s.id}/claim`, {})
+    } finally {
+      qc.invalidateQueries({ queryKey: ['shifts'] })
+    }
+  }
+
+  // Drag-move in the week grid: reassign (row) and/or reschedule (day); the move
+  // unpublishes the shift (back to draft). Department is unchanged.
+  const moveShift = async (s: Shift, targetUserId: number | null, targetDayKey: string) => {
+    const sameAssignee = (targetUserId ?? null) === (s.assignee_id ?? null)
+    if (sameAssignee && targetDayKey === localDayKey(s.starts_at)) return
+
+    const newStartLocal = targetDayKey + utcToLocalInput(s.starts_at).slice(10) // keep time-of-day
+    const newStartUtc = localInputToUtc(newStartLocal)
+    const durationMs = new Date(s.ends_at).getTime() - new Date(s.starts_at).getTime()
+    const newEndUtc = new Date(new Date(newStartUtc).getTime() + durationMs).toISOString()
+
+    try {
+      await api.patch(`/api/shifts/${s.id}`, {
+        assignee_id: targetUserId,
+        starts_at: newStartUtc,
+        ends_at: newEndUtc,
+        status: 'draft',
+      })
     } finally {
       qc.invalidateQueries({ queryKey: ['shifts'] })
     }
@@ -230,6 +252,7 @@ export default function Schedule() {
           onCreate={openCellCreate}
           onEditShift={openEdit}
           onClaim={claim}
+          onMoveShift={moveShift}
         />
       ) : groups.length === 0 ? (
         <Typography color="text.secondary" sx={{ p: 2 }}>No shifts match these filters.</Typography>
@@ -264,7 +287,7 @@ export default function Schedule() {
         ))
       )}
 
-      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} users={users} prefill={prefill} />
+      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} prefill={prefill} />
       <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} />
       <PaletteDialog open={paletteDialog} onClose={() => setPaletteDialog(false)} departments={departments} />
     </>

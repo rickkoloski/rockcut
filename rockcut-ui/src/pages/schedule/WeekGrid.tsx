@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import { formatDayColumn, formatTime, localDayKey, weekDayKeys } from '../../lib/datetime'
@@ -17,6 +17,7 @@ interface Props {
   onCreate: (cell: { userId: number | null; dateKey: string; departmentId: number }) => void
   onEditShift: (s: Shift) => void
   onClaim: (s: Shift) => void
+  onMoveShift: (s: Shift, targetUserId: number | null, targetDayKey: string) => void
 }
 
 const NAME_COL = 160
@@ -24,10 +25,13 @@ const DAY_COL = 150
 
 export default function WeekGrid({
   mondayKey, shifts, roster, departments, currentUserId, createDeptId,
-  canManageShift, canClaim, onCreate, onEditShift, onClaim,
+  canManageShift, canClaim, onCreate, onEditShift, onClaim, onMoveShift,
 }: Props) {
   const days = weekDayKeys(mondayKey)
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
+
+  const [dragShift, setDragShift] = useState<Shift | null>(null)
+  const [hoverKey, setHoverKey] = useState<string | null>(null)
 
   const byCell = useMemo(() => {
     const m = new Map<string, Shift[]>()
@@ -47,6 +51,8 @@ export default function WeekGrid({
   const cellShifts = (rowId: number | null, dayKey: string) =>
     byCell.get(`${rowId ?? 'open'}|${dayKey}`) ?? []
 
+  const cellKey = (rowId: number | null, dayKey: string) => `${rowId ?? 'open'}|${dayKey}`
+
   const stickyCol = {
     position: 'sticky' as const,
     left: 0,
@@ -62,21 +68,33 @@ export default function WeekGrid({
     const dep = deptById.get(s.department_id) ?? s.department ?? undefined
     const { bg, fg } = shiftColor(departmentColor(dep), s.position_id)
     const draft = s.status === 'draft'
+    const draggable = canManageShift(s)
     return (
       <Box
         key={s.id}
+        draggable={draggable}
+        onDragStart={(e) => {
+          setDragShift(s)
+          e.dataTransfer.effectAllowed = 'move'
+          e.dataTransfer.setData('text/plain', String(s.id))
+        }}
+        onDragEnd={() => {
+          setDragShift(null)
+          setHoverKey(null)
+        }}
         onClick={(e) => {
           e.stopPropagation()
           if (canManageShift(s)) onEditShift(s)
           else if (canClaim(s)) onClaim(s)
         }}
         sx={{
-          px: 0.75, py: 0.5, borderRadius: 1, cursor: 'pointer',
+          px: 0.75, py: 0.5, borderRadius: 1,
+          cursor: draggable ? 'grab' : 'pointer',
+          opacity: dragShift?.id === s.id ? 0.4 : draft ? 0.85 : 1,
           bgcolor: draft ? 'transparent' : bg,
           color: draft ? 'text.primary' : fg,
           border: draft ? '1px dashed' : '1px solid',
-          borderColor: draft ? bg : bg,
-          opacity: draft ? 0.85 : 1,
+          borderColor: bg,
           fontSize: 12, lineHeight: 1.3,
         }}
       >
@@ -109,15 +127,32 @@ export default function WeekGrid({
             {days.map((dayKey) => {
               const items = cellShifts(row.id, dayKey)
               const canCreateHere = !!createDeptId
+              const key = cellKey(row.id, dayKey)
+              const isHover = dragShift && hoverKey === key
               return (
                 <Box
                   key={dayKey}
-                  onClick={canCreateHere ? () => onCreate({ userId: row.id, dateKey: dayKey, departmentId: createDeptId! }) : undefined}
+                  onClick={canCreateHere && !dragShift ? () => onCreate({ userId: row.id, dateKey: dayKey, departmentId: createDeptId! }) : undefined}
+                  onDragOver={(e) => {
+                    if (dragShift) {
+                      e.preventDefault()
+                      if (hoverKey !== key) setHoverKey(key)
+                    }
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (dragShift) onMoveShift(dragShift, row.id, dayKey)
+                    setDragShift(null)
+                    setHoverKey(null)
+                  }}
                   sx={{
                     display: 'table-cell', p: 0.75, verticalAlign: 'top', minWidth: DAY_COL,
                     borderTop: '1px solid', borderLeft: '1px solid', borderColor: 'divider',
-                    cursor: canCreateHere ? 'pointer' : 'default',
-                    '&:hover .add-affordance': { opacity: canCreateHere ? 0.4 : 0 },
+                    bgcolor: isHover ? 'action.hover' : undefined,
+                    outline: isHover ? '2px dashed' : 'none',
+                    outlineColor: 'primary.main',
+                    cursor: canCreateHere && !dragShift ? 'pointer' : 'default',
+                    '&:hover .add-affordance': { opacity: canCreateHere && !dragShift ? 0.4 : 0 },
                   }}
                 >
                   <Stack spacing={0.5}>
