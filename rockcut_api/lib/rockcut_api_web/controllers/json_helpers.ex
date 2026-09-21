@@ -50,6 +50,33 @@ defmodule RockcutApiWeb.JSONHelpers do
   defp audit_actor(nil), do: nil
   defp audit_actor(u), do: %{id: u.id, email: u.email, name: u.name}
 
+  # ── Scheduling views ───────────────────────────────────────────────
+
+  def position(p) do
+    %{id: p.id, name: p.name, group: p.group, active: p.active}
+  end
+
+  def shift(s) do
+    %{
+      id: s.id,
+      department_id: s.department_id,
+      department: maybe_render(s, :department, &department/1),
+      position_id: s.position_id,
+      position: maybe_render(s, :position, &position/1),
+      assignee_id: s.assignee_id,
+      assignee: maybe_render(s, :assignee, &shift_user/1),
+      starts_at: s.starts_at,
+      ends_at: s.ends_at,
+      status: s.status,
+      notes: s.notes,
+      inserted_at: s.inserted_at,
+      updated_at: s.updated_at
+    }
+  end
+
+  defp shift_user(nil), do: nil
+  defp shift_user(u), do: %{id: u.id, email: u.email, name: u.name}
+
   def ingredient_category(cat) do
     %{
       id: cat.id,

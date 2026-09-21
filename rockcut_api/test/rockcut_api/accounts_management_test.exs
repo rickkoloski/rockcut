@@ -161,7 +161,8 @@ defmodule RockcutApi.AccountsManagementTest do
       owner = owner_fixture()
       for k <- ~w(brewery bar office sales), do: department_fixture(k)
       caps = Accounts.capabilities(owner)
-      assert Enum.sort(caps.modules) == ~w(bar brewery office sales)
+      # departments + the shared "schedule" module
+      assert Enum.sort(caps.modules) == ~w(bar brewery office sales schedule)
       assert caps.can_manage_users
     end
 
@@ -172,7 +173,7 @@ defmodule RockcutApi.AccountsManagementTest do
 
       employee = user_with_role("employee", "sales")
       caps = Accounts.capabilities(employee)
-      assert caps.modules == ["sales"]
+      assert caps.modules == ["sales", "schedule"]
       assert caps.manages_departments == []
       refute caps.can_manage_users
     end

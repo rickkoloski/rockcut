@@ -17,6 +17,7 @@ defmodule RockcutApi.Authz do
   preloaded with `:department` (as `Accounts.get_user!/1` does).
   """
   alias RockcutApi.Accounts.{User, Membership, Department}
+  alias RockcutApi.Scheduling.{Shift, Position}
 
   @doc "True if the user is a global owner."
   def owner?(%User{is_owner: owner}), do: owner == true
@@ -76,6 +77,36 @@ defmodule RockcutApi.Authz do
   member may act on them (fine-grained verb policy arrives with later modules).
   """
   def can?(%User{is_owner: true}, _action, _resource), do: true
+
+  # Scheduling — shifts: global read of published; department-scoped write;
+  # employees may claim open published shifts in their own department.
+  def can?(%User{} = user, action, %Shift{} = shift) do
+    manager? = role_in(user, shift.department_id) == :manager
+
+    case action do
+      :read ->
+        shift.status == "published" or manager?
+
+      a when a in [:create, :update, :assign, :delete, :publish] ->
+        manager?
+
+      :claim ->
+        shift.status == "published" and is_nil(shift.assignee_id) and
+          member_of?(user, shift.department_id)
+
+      _ ->
+        false
+    end
+  end
+
+  # Scheduling — positions are company-wide: anyone reads; any manager/owner writes.
+  def can?(%User{} = user, action, %Position{}) do
+    case action do
+      :read -> true
+      a when a in [:create, :update, :delete] -> can_manage_any?(user)
+      _ -> false
+    end
+  end
 
   def can?(%User{} = user, _action, %mod{} = _resource) do
     case Module.split(mod) do

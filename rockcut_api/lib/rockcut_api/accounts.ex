@@ -242,7 +242,7 @@ defmodule RockcutApi.Accounts do
     all_keys = list_departments() |> Enum.map(& &1.key)
 
     %{
-      modules: all_keys,
+      modules: all_keys ++ ["schedule"],
       manages_departments: all_keys,
       can_manage_users: true,
       pending_owner_reviews: pending_owner_reviews_count(user)
@@ -253,7 +253,7 @@ defmodule RockcutApi.Accounts do
     member_keys = user.memberships |> Enum.map(& &1.department.key) |> Enum.uniq()
 
     %{
-      modules: member_keys,
+      modules: member_keys ++ ["schedule"],
       manages_departments: Authz.managed_department_keys(user),
       can_manage_users: Authz.can_manage_any?(user),
       pending_owner_reviews: 0

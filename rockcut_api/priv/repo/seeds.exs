@@ -306,3 +306,60 @@ case Accounts.get_user_by_email(owner_email) do
 
     IO.puts("Owner already present: #{owner_email}")
 end
+
+# ── Scheduling: company-wide positions + sample shifts (idempotent) ──
+alias RockcutApi.Scheduling.{Position, Shift}
+
+[
+  {"Brewer", "Brewery"},
+  {"Bar-open", "Bar"},
+  {"Bar-mid", "Bar"},
+  {"Bar-close", "Bar"},
+  {"Event-bar", "Bar"},
+  {"Office", "Office"},
+  {"Sales", "Sales"},
+  {"Delivery", "Sales"},
+  {"Training", "Other"},
+  {"Event-offsite", "Other"}
+]
+|> Enum.each(fn {name, group} ->
+  unless Repo.get_by(Position, name: name) do
+    Repo.insert!(%Position{name: name, group: group, active: true, inserted_at: acct_now, updated_at: acct_now})
+  end
+end)
+
+if Repo.aggregate(Shift, :count) == 0 do
+  bar = Repo.get_by(Department, key: "bar")
+  brewery = Repo.get_by(Department, key: "brewery")
+  bar_open = Repo.get_by(Position, name: "Bar-open")
+  brewer = Repo.get_by(Position, name: "Brewer")
+  owner = Accounts.get_user_by_email(owner_email)
+
+  today = Date.utc_today()
+
+  mk = fn dept, pos, assignee_id, day_offset, start_h, end_h ->
+    d = Date.add(today, day_offset)
+    starts = DateTime.new!(d, Time.new!(start_h, 0, 0), "Etc/UTC") |> DateTime.truncate(:second)
+    ends = DateTime.new!(d, Time.new!(end_h, 0, 0), "Etc/UTC") |> DateTime.truncate(:second)
+
+    Repo.insert!(%Shift{
+      department_id: dept.id,
+      position_id: pos.id,
+      assignee_id: assignee_id,
+      created_by_id: owner.id,
+      starts_at: starts,
+      ends_at: ends,
+      status: "published",
+      inserted_at: acct_now,
+      updated_at: acct_now
+    })
+  end
+
+  mk.(bar, bar_open, owner.id, 1, 16, 22)
+  mk.(bar, bar_open, nil, 2, 16, 22)
+  mk.(brewery, brewer, owner.id, 1, 8, 16)
+
+  IO.puts("Seeded 10 positions + 3 sample shifts")
+else
+  IO.puts("Positions ensured; shifts already seeded")
+end

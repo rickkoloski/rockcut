@@ -40,6 +40,16 @@ defmodule RockcutApiWeb.Router do
 
     # Owner activity feed (in-app notification of manager actions)
     get "/owner/activity", OwnerActivityController, :index
+
+    # Scheduling (shared module — global read; writes authorized in controllers)
+    resources "/positions", PositionController, only: [:index, :create, :update, :delete]
+    get "/shifts", ShiftController, :index
+    get "/shifts/:id", ShiftController, :show
+    post "/shifts", ShiftController, :create
+    patch "/shifts/:id", ShiftController, :update
+    delete "/shifts/:id", ShiftController, :delete
+    post "/shifts/:id/publish", ShiftController, :publish
+    post "/shifts/:id/claim", ShiftController, :claim
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)

@@ -47,7 +47,7 @@ defmodule RockcutApiWeb.MembershipMeActivityTest do
       body = conn |> bearer(manager) |> get(~p"/api/me") |> json_response(200)
 
       assert body["user"]["id"] == manager.id
-      assert body["capabilities"]["modules"] == ["brewery"]
+      assert body["capabilities"]["modules"] == ["brewery", "schedule"]
       assert body["capabilities"]["manages_departments"] == ["brewery"]
       assert body["capabilities"]["can_manage_users"] == true
     end
