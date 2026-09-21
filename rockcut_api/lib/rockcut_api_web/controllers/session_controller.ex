@@ -39,6 +39,29 @@ defmodule RockcutApiWeb.SessionController do
     json(conn, %{ok: true})
   end
 
+  def password(conn, %{"current_password" => current, "new_password" => new}) do
+    case Accounts.change_password(conn.assigns.current_user, current, new) do
+      {:ok, updated} ->
+        json(conn, %{user: user(updated)})
+
+      {:error, :invalid_current} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Current password is incorrect"})
+
+      {:error, %Ecto.Changeset{}} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "New password is invalid (minimum 8 characters)"})
+    end
+  end
+
+  def password(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "current_password and new_password required"})
+  end
+
   @doc "Verifies a bearer token, returning `{:ok, user_id}` or an error."
   def verify_token(token) do
     Phoenix.Token.verify(RockcutApiWeb.Endpoint, "user auth", token, max_age: @token_max_age)

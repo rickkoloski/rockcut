@@ -32,6 +32,24 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{id: d.id, name: d.name, key: d.key}
   end
 
+  def me(user, capabilities) do
+    %{user: user(user), capabilities: capabilities}
+  end
+
+  def audit_entry(entry) do
+    %{
+      id: entry.id,
+      action: entry.action,
+      detail: entry.detail,
+      actor: maybe_render(entry, :actor, &audit_actor/1),
+      target: maybe_render(entry, :target, &audit_actor/1),
+      inserted_at: entry.inserted_at
+    }
+  end
+
+  defp audit_actor(nil), do: nil
+  defp audit_actor(u), do: %{id: u.id, email: u.email, name: u.name}
+
   def ingredient_category(cat) do
     %{
       id: cat.id,

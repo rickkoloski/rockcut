@@ -45,6 +45,30 @@ defmodule RockcutApi.Authz do
     role_in(user, department) in [:owner, :manager]
   end
 
+  @doc "Department keys the user manages (owner manages every department they belong to plus, notionally, all)."
+  def managed_department_keys(%User{} = user) do
+    user
+    |> memberships()
+    |> Enum.filter(&(&1.role == "manager"))
+    |> Enum.map(fn m -> m.department && m.department.key end)
+    |> Enum.reject(&is_nil/1)
+  end
+
+  @doc "Department ids the user manages (managers only; owners are handled separately by callers)."
+  def managed_department_ids(%User{} = user) do
+    user
+    |> memberships()
+    |> Enum.filter(&(&1.role == "manager"))
+    |> Enum.map(& &1.department_id)
+  end
+
+  @doc "True if the user may manage users somewhere (owner or a manager of any department)."
+  def can_manage_any?(%User{is_owner: true}), do: true
+
+  def can_manage_any?(%User{} = user) do
+    Enum.any?(memberships(user), &(&1.role == "manager"))
+  end
+
   @doc """
   Authorize `action` (a verb atom such as `:read`, `:create`, `:update`,
   `:delete`) on `resource`. Owners may do anything; otherwise the resource's

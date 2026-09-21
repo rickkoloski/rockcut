@@ -27,6 +27,19 @@ defmodule RockcutApiWeb.Router do
 
     get "/session", SessionController, :show
     delete "/session", SessionController, :delete
+    post "/session/password", SessionController, :password
+
+    # Current user + departments (drive UI nav)
+    get "/me", MeController, :show
+    get "/departments", DepartmentController, :index
+
+    # User & role management (authorization enforced per-action in the controllers)
+    resources "/users", UserController, only: [:index, :create, :update]
+    put "/users/:user_id/memberships", MembershipController, :update
+    post "/users/:id/reset_password", UserController, :reset_password
+
+    # Owner activity feed (in-app notification of manager actions)
+    get "/owner/activity", OwnerActivityController, :index
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)
@@ -35,7 +48,10 @@ defmodule RockcutApiWeb.Router do
 
     # Ingredient library
     resources "/ingredient_categories", IngredientCategoryController, except: [:new, :edit]
-    resources "/category_field_definitions", CategoryFieldDefinitionController, except: [:new, :edit]
+
+    resources "/category_field_definitions", CategoryFieldDefinitionController,
+      except: [:new, :edit]
+
     resources "/ingredients", IngredientController, except: [:new, :edit]
     resources "/ingredient_lots", IngredientLotController, except: [:new, :edit]
 
