@@ -11,6 +11,7 @@ defmodule RockcutApi.Accounts.User do
     field :must_reset_password, :boolean, default: false
     field :schedulable, :boolean, default: true
     field :schedule_order, :integer, default: 0
+    field :notification_prefs, :map, default: %{}
 
     field :password, :string, virtual: true, redact: true
 

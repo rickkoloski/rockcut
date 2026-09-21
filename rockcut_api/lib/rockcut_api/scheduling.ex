@@ -11,6 +11,7 @@ defmodule RockcutApi.Scheduling do
   alias RockcutApi.Authz
   alias RockcutApi.Accounts.User
   alias RockcutApi.Scheduling.{Position, Shift, ShiftTemplate, ScheduleTemplate}
+  alias RockcutApi.Notifications
 
   @shift_preloads [:department, :position, :assignee]
 
@@ -95,10 +96,21 @@ defmodule RockcutApi.Scheduling do
 
   def update_shift(%Shift{} = shift, attrs) do
     attrs = attrs |> stringify() |> put_department_from_position()
+    old_assignee_id = shift.assignee_id
 
     case shift |> Shift.changeset(attrs) |> Repo.update() do
-      {:ok, updated} -> {:ok, get_shift!(updated.id)}
-      other -> other
+      {:ok, updated} ->
+        full = get_shift!(updated.id)
+
+        if (full.status == "published" and full.assignee_id) &&
+             full.assignee_id != old_assignee_id do
+          Notifications.shift_assigned(full, full.assignee)
+        end
+
+        {:ok, full}
+
+      other ->
+        other
     end
   end
 
@@ -125,7 +137,12 @@ defmodule RockcutApi.Scheduling do
 
   def delete_shift(%Shift{} = shift), do: Repo.delete(shift)
 
-  def publish_shift(%Shift{} = shift), do: set_status(shift, "published")
+  def publish_shift(%Shift{} = shift) do
+    with {:ok, published} <- set_status(shift, "published") do
+      Notifications.shift_published(published)
+      {:ok, published}
+    end
+  end
 
   def unpublish_shift(%Shift{} = shift), do: set_status(shift, "draft")
 

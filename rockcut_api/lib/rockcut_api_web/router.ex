@@ -73,6 +73,14 @@ defmodule RockcutApiWeb.Router do
     # Calendar feed management (D17)
     get "/calendar_feeds", CalendarFeedController, :index
     post "/calendar_feeds/rotate", CalendarFeedController, :rotate
+
+    # Notifications (D18)
+    get "/notifications", NotificationController, :index
+    get "/notifications/unread_count", NotificationController, :unread_count
+    post "/notifications/read_all", NotificationController, :read_all
+    post "/notifications/:id/read", NotificationController, :read
+    get "/notification_preferences", NotificationPreferenceController, :show
+    put "/notification_preferences", NotificationPreferenceController, :update
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)

@@ -125,6 +125,18 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  def notification(n) do
+    %{
+      id: n.id,
+      event: n.event,
+      title: n.title,
+      body: n.body,
+      data: n.data,
+      read_at: n.read_at,
+      inserted_at: n.inserted_at
+    }
+  end
+
   def ingredient_category(cat) do
     %{
       id: cat.id,
