@@ -55,7 +55,6 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
   const qc = useQueryClient()
   const isEdit = !!editShift
 
-  const [departmentId, setDepartmentId] = useState<number | ''>('')
   const [positionId, setPositionId] = useState<number | ''>('')
   const [assigneeId, setAssigneeId] = useState<number | ''>('')
   const [startDay, setStartDay] = useState('')
@@ -72,7 +71,6 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
     if (editShift) {
       const [sd, st] = utcToLocalInput(editShift.starts_at).split('T')
       const [ed, et] = utcToLocalInput(editShift.ends_at).split('T')
-      setDepartmentId(editShift.department_id)
       setPositionId(editShift.position_id)
       setAssigneeId(editShift.assignee_id ?? '')
       setStartDay(sd)
@@ -83,7 +81,6 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
     } else {
       const today = utcToLocalInput(new Date().toISOString()).split('T')[0]
       const day = prefill?.dateKey ?? today
-      setDepartmentId(prefill?.departmentId ?? departments[0]?.id ?? '')
       setPositionId('')
       setAssigneeId(prefill?.assigneeId ?? '')
       setStartDay(day)
@@ -98,15 +95,25 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
   // Any active employee can be scheduled for any department's shift.
   const assignees = useMemo(() => [...roster].sort((a, b) => a.name.localeCompare(b.name)), [roster])
 
+  // Only positions in departments the actor manages (departments prop is already scoped).
+  const allowedDeptIds = useMemo(() => new Set(departments.map((d) => d.id)), [departments])
+
   const grouped = useMemo(() => {
     const map = new Map<string, Position[]>()
-    for (const p of positions.filter((p) => p.active || p.id === positionId)) {
+    const usable = positions.filter(
+      (p) => (p.active || p.id === positionId) && p.department_id != null && (allowedDeptIds.has(p.department_id) || p.id === positionId),
+    )
+    for (const p of usable) {
       const g = p.group ?? 'Other'
       if (!map.has(g)) map.set(g, [])
       map.get(g)!.push(p)
     }
     return [...map.entries()]
-  }, [positions, positionId])
+  }, [positions, positionId, allowedDeptIds])
+
+  // The shift's department follows the chosen position.
+  const selectedPosition = positions.find((p) => p.id === positionId)
+  const derivedDept = departments.find((d) => d.id === selectedPosition?.department_id)
 
   const startLocal = startDay && startTime ? `${startDay}T${startTime}` : ''
   const endLocal = endDay && endTime ? `${endDay}T${endTime}` : ''
@@ -116,8 +123,8 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
 
   const save = async () => {
     setError(null)
-    if (!departmentId || !positionId || !startLocal || !endLocal) {
-      setError('Department, position, start, and end are required')
+    if (!positionId || !startLocal || !endLocal) {
+      setError('Position, start, and end are required')
       return
     }
     if (hours <= 0) {
@@ -125,7 +132,6 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
       return
     }
     const payload = {
-      department_id: departmentId,
       position_id: positionId,
       assignee_id: assigneeId === '' ? null : assigneeId,
       starts_at: localInputToUtc(startLocal),
@@ -191,18 +197,6 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
         {error && <Alert severity="error">{error}</Alert>}
 
-        <TextField
-          select
-          label="Department"
-          value={departmentId}
-          onChange={(e) => setDepartmentId(Number(e.target.value))}
-          fullWidth
-        >
-          {departments.map((d) => (
-            <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
-          ))}
-        </TextField>
-
         <TextField select label="Position" value={positionId} onChange={(e) => setPositionId(Number(e.target.value))} fullWidth>
           {grouped.flatMap(([group, list]) => [
             <ListSubheader key={`h-${group}`}>{group}</ListSubheader>,
@@ -214,6 +208,11 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
             )),
           ])}
         </TextField>
+        {derivedDept && (
+          <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>
+            Department: {derivedDept.name}
+          </Typography>
+        )}
 
         <TextField
           select

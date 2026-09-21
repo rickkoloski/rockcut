@@ -81,7 +81,11 @@ defmodule RockcutApi.Scheduling do
 
   def create_shift(attrs, %User{} = actor) do
     attrs =
-      attrs |> stringify() |> Map.put("created_by_id", actor.id) |> Map.put_new("status", "draft")
+      attrs
+      |> stringify()
+      |> put_department_from_position()
+      |> Map.put("created_by_id", actor.id)
+      |> Map.put_new("status", "draft")
 
     case %Shift{} |> Shift.changeset(attrs) |> Repo.insert() do
       {:ok, shift} -> {:ok, get_shift!(shift.id)}
@@ -90,9 +94,32 @@ defmodule RockcutApi.Scheduling do
   end
 
   def update_shift(%Shift{} = shift, attrs) do
-    case shift |> Shift.changeset(stringify(attrs)) |> Repo.update() do
+    attrs = attrs |> stringify() |> put_department_from_position()
+
+    case shift |> Shift.changeset(attrs) |> Repo.update() do
       {:ok, updated} -> {:ok, get_shift!(updated.id)}
       other -> other
+    end
+  end
+
+  @doc "The department id a position belongs to (a shift inherits its position's department)."
+  def department_for_position(nil), do: nil
+
+  def department_for_position(id) when is_binary(id),
+    do: department_for_position(String.to_integer(id))
+
+  def department_for_position(id) when is_integer(id) do
+    case Repo.get(Position, id) do
+      %Position{department_id: dept_id} -> dept_id
+      _ -> nil
+    end
+  end
+
+  # A shift's department always follows its position (source of truth).
+  defp put_department_from_position(attrs) do
+    case department_for_position(attrs["position_id"]) do
+      nil -> attrs
+      dept_id -> Map.put(attrs, "department_id", dept_id)
     end
   end
 

@@ -109,6 +109,24 @@ defmodule RockcutApi.AccountsManagementTest do
                  manager
                )
     end
+
+    test "cannot assign a role in a non-assignable department (e.g. Other)" do
+      owner = owner_fixture()
+      user = user_fixture()
+
+      RockcutApi.Repo.insert!(%RockcutApi.Accounts.Department{
+        name: "Other",
+        key: "other",
+        assignable: false
+      })
+
+      assert {:error, {:invalid_membership, _}} =
+               Accounts.set_memberships(
+                 user,
+                 [%{"department" => "other", "role" => "employee"}],
+                 owner
+               )
+    end
   end
 
   describe "last-owner invariant" do

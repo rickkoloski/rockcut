@@ -295,7 +295,7 @@ export default function Schedule() {
       )}
 
       <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} prefill={prefill} />
-      <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} />
+      <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} />
       <PaletteDialog open={paletteDialog} onClose={() => setPaletteDialog(false)} departments={departments} />
       <ConfirmDialog
         open={pendingCell !== null}

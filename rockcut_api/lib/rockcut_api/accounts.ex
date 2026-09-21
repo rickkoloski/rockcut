@@ -261,11 +261,11 @@ defmodule RockcutApi.Accounts do
 
   @doc "Capabilities payload for the UI (modules, management scope, owner review count)."
   def capabilities(%User{is_owner: true} = user) do
-    all_keys = list_departments() |> Enum.map(& &1.key)
+    assignable_keys = list_departments() |> Enum.filter(& &1.assignable) |> Enum.map(& &1.key)
 
     %{
-      modules: all_keys ++ ["schedule"],
-      manages_departments: all_keys,
+      modules: assignable_keys ++ ["schedule"],
+      manages_departments: assignable_keys,
       can_manage_users: true,
       pending_owner_reviews: pending_owner_reviews_count(user)
     }
@@ -362,9 +362,17 @@ defmodule RockcutApi.Accounts do
       dept = resolve_department(entry["department"])
 
       cond do
-        is_nil(dept) -> {:halt, {:error, {:invalid_membership, "unknown department"}}}
-        role not in @roles -> {:halt, {:error, {:invalid_membership, "invalid role"}}}
-        true -> {:cont, {:ok, [{dept, role} | acc]}}
+        is_nil(dept) ->
+          {:halt, {:error, {:invalid_membership, "unknown department"}}}
+
+        not dept.assignable ->
+          {:halt, {:error, {:invalid_membership, "department is not assignable"}}}
+
+        role not in @roles ->
+          {:halt, {:error, {:invalid_membership, "invalid role"}}}
+
+        true ->
+          {:cont, {:ok, [{dept, role} | acc]}}
       end
     end)
   end

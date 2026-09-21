@@ -8,10 +8,15 @@ defmodule RockcutApi.SchedulingFixtures do
   def position_fixture(attrs \\ %{}) do
     attrs = Map.new(attrs)
 
+    dept_id =
+      attrs[:department_id] || (attrs[:department] && attrs[:department].id) ||
+        AccountsFixtures.department_fixture("bar").id
+
     Repo.insert!(%Position{
       name: Map.get(attrs, :name, "Pos#{System.unique_integer([:positive])}"),
       group: Map.get(attrs, :group),
-      active: Map.get(attrs, :active, true)
+      active: Map.get(attrs, :active, true),
+      department_id: dept_id
     })
   end
 
@@ -21,7 +26,7 @@ defmodule RockcutApi.SchedulingFixtures do
     dept =
       attrs[:department] || AccountsFixtures.department_fixture(Map.get(attrs, :dept_key, "bar"))
 
-    position = attrs[:position] || position_fixture()
+    position = attrs[:position] || position_fixture(%{department: dept})
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     Repo.insert!(%Shift{

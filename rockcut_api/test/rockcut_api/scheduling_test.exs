@@ -60,6 +60,24 @@ defmodule RockcutApi.SchedulingTest do
   end
 
   describe "create_shift/2" do
+    test "a shift's department follows its position (ignores a mismatched department_id)" do
+      owner = owner_fixture()
+      brewery = department_fixture("brewery")
+      bar = department_fixture("bar")
+      pos = position_fixture(%{department: brewery})
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      attrs = %{
+        "department_id" => bar.id,
+        "position_id" => pos.id,
+        "starts_at" => DateTime.add(now, 3600),
+        "ends_at" => DateTime.add(now, 7200)
+      }
+
+      assert {:ok, shift} = Scheduling.create_shift(attrs, owner)
+      assert shift.department_id == brewery.id
+    end
+
     test "rejects ends_at not after starts_at" do
       owner = owner_fixture()
       bar = department_fixture("bar")

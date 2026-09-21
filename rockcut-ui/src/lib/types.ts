@@ -249,6 +249,7 @@ export interface Department {
   name: string
   key: string
   color?: string | null
+  assignable?: boolean
 }
 
 export interface Capabilities {
@@ -285,6 +286,7 @@ export interface Position {
   name: string
   group: string | null
   active: boolean
+  department_id: number | null
 }
 
 export interface ShiftUser {

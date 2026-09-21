@@ -24,16 +24,18 @@ defmodule RockcutApiWeb.PositionControllerTest do
     assert "Barback" in names
   end
 
-  test "a manager can create a company-wide position", %{conn: conn} do
+  test "a manager can create a position", %{conn: conn} do
     manager = user_with_role("manager", "bar")
+    bar = department_fixture("bar")
 
     body =
       conn
       |> bearer(manager)
-      |> post(~p"/api/positions", %{name: "Sommelier", group: "Bar"})
+      |> post(~p"/api/positions", %{name: "Sommelier", group: "Bar", department_id: bar.id})
       |> json_response(201)
 
     assert body["data"]["name"] == "Sommelier"
+    assert body["data"]["department_id"] == bar.id
   end
 
   test "an employee cannot create a position", %{conn: conn} do

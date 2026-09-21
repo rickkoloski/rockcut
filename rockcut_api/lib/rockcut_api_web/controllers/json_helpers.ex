@@ -29,7 +29,7 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   def department(d) do
-    %{id: d.id, name: d.name, key: d.key, color: d.color}
+    %{id: d.id, name: d.name, key: d.key, color: d.color, assignable: d.assignable}
   end
 
   def me(user, capabilities) do
@@ -53,7 +53,7 @@ defmodule RockcutApiWeb.JSONHelpers do
   # ── Scheduling views ───────────────────────────────────────────────
 
   def position(p) do
-    %{id: p.id, name: p.name, group: p.group, active: p.active}
+    %{id: p.id, name: p.name, group: p.group, active: p.active, department_id: p.department_id}
   end
 
   def shift(s) do

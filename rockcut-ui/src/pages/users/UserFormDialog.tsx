@@ -42,10 +42,12 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const isOwnerActor = !!actor?.is_owner
   const isEdit = !!editUser
 
+  // Only assignable departments bear roles ("Other" is scheduling-only).
+  const assignableDepts = departments.filter((d) => d.assignable !== false)
   const managedKeys = isOwnerActor
-    ? departments.map((d) => d.key)
+    ? assignableDepts.map((d) => d.key)
     : capabilities?.manages_departments ?? []
-  const manageableDepts = departments.filter((d) => managedKeys.includes(d.key))
+  const manageableDepts = assignableDepts.filter((d) => managedKeys.includes(d.key))
 
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')

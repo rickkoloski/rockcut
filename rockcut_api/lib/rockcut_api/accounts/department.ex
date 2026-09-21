@@ -6,6 +6,7 @@ defmodule RockcutApi.Accounts.Department do
     field :name, :string
     field :key, :string
     field :color, :string
+    field :assignable, :boolean, default: true
 
     has_many :memberships, RockcutApi.Accounts.Membership
 
@@ -14,7 +15,7 @@ defmodule RockcutApi.Accounts.Department do
 
   def changeset(department, attrs) do
     department
-    |> cast(attrs, [:name, :key, :color])
+    |> cast(attrs, [:name, :key, :color, :assignable])
     |> validate_required([:name, :key])
     |> validate_color()
     |> unique_constraint(:key)

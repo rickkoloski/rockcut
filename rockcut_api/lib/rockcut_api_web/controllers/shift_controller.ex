@@ -26,11 +26,10 @@ defmodule RockcutApiWeb.ShiftController do
 
   def create(conn, params) do
     actor = conn.assigns.current_user
-    dept_id = params["department_id"]
+    # A shift's department follows its position; authorize against that department.
+    dept_id = Scheduling.department_for_position(params["position_id"])
 
-    # Authorize against the target department before insert.
-    if dept_id &&
-         Authz.can?(actor, :create, %Shift{department_id: to_int(dept_id), status: "draft"}) do
+    if dept_id && Authz.can?(actor, :create, %Shift{department_id: dept_id, status: "draft"}) do
       with {:ok, s} <- Scheduling.create_shift(params, actor) do
         conn |> put_status(:created) |> json(%{data: shift(s)})
       end
@@ -40,11 +39,26 @@ defmodule RockcutApiWeb.ShiftController do
   end
 
   def update(conn, %{"id" => id} = params) do
-    with_shift(conn, id, :update, fn s ->
-      with {:ok, updated} <- Scheduling.update_shift(s, Map.drop(params, ["id"])) do
-        json(conn, %{data: shift(updated)})
-      end
-    end)
+    actor = conn.assigns.current_user
+
+    case Scheduling.get_shift(id) do
+      nil ->
+        {:error, :not_found}
+
+      %Shift{} = s ->
+        # Managing the shift's current department, and (if the position changes
+        # departments) the destination department too.
+        new_dept = Scheduling.department_for_position(params["position_id"]) || s.department_id
+
+        if Authz.can?(actor, :update, s) and
+             Authz.can?(actor, :update, %Shift{department_id: new_dept, status: s.status}) do
+          with {:ok, updated} <- Scheduling.update_shift(s, Map.drop(params, ["id"])) do
+            json(conn, %{data: shift(updated)})
+          end
+        else
+          forbidden(conn)
+        end
+    end
   end
 
   def delete(conn, %{"id" => id}) do
@@ -112,7 +126,4 @@ defmodule RockcutApiWeb.ShiftController do
   defp forbidden(conn) do
     conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})
   end
-
-  defp to_int(v) when is_integer(v), do: v
-  defp to_int(v) when is_binary(v), do: String.to_integer(v)
 end

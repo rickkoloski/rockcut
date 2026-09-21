@@ -22,14 +22,13 @@ import DeleteIcon from '@mui/icons-material/Delete'
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import type { Position } from '../../lib/types'
-
-const GROUPS = ['Brewery', 'Bar', 'Office', 'Sales', 'Other']
+import type { Department, Position } from '../../lib/types'
 
 interface Props {
   open: boolean
   onClose: () => void
   positions: Position[]
+  departments: Department[]
 }
 
 function readError(err: unknown): string {
@@ -37,12 +36,14 @@ function readError(err: unknown): string {
   return e?.response?.data?.error || parseApiError(err)
 }
 
-export default function PositionsDialog({ open, onClose, positions }: Props) {
+export default function PositionsDialog({ open, onClose, positions, departments }: Props) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
-  const [group, setGroup] = useState('Other')
+  const [departmentId, setDepartmentId] = useState<number | ''>('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+
+  const deptId = departmentId || departments[0]?.id || ''
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['positions'] })
 
@@ -60,16 +61,17 @@ export default function PositionsDialog({ open, onClose, positions }: Props) {
   }
 
   const add = async () => {
-    if (!name.trim()) return
+    const dept = departments.find((d) => d.id === deptId)
+    if (!name.trim() || !dept) return
     await run(async () => {
-      await api.post('/api/positions', { name: name.trim(), group })
+      await api.post('/api/positions', { name: name.trim(), department_id: dept.id, group: dept.name })
       setName('')
     })
   }
 
-  const grouped = GROUPS.map((g) => [g, positions.filter((p) => (p.group ?? 'Other') === g)] as const).filter(
-    ([, list]) => list.length > 0,
-  )
+  const grouped = departments
+    .map((d) => [d.name, positions.filter((p) => p.department_id === d.id)] as const)
+    .filter(([, list]) => list.length > 0)
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -79,18 +81,25 @@ export default function PositionsDialog({ open, onClose, positions }: Props) {
 
         <Stack direction="row" spacing={1} alignItems="center">
           <TextField label="New position" size="small" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
-          <TextField select label="Group" size="small" value={group} onChange={(e) => setGroup(e.target.value)} sx={{ minWidth: 130 }}>
-            {GROUPS.map((g) => (
-              <MenuItem key={g} value={g}>{g}</MenuItem>
+          <TextField
+            select
+            label="Department"
+            size="small"
+            value={deptId}
+            onChange={(e) => setDepartmentId(Number(e.target.value))}
+            sx={{ minWidth: 140 }}
+          >
+            {departments.map((d) => (
+              <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
             ))}
           </TextField>
           <Button variant="contained" onClick={add} disabled={busy}>Add</Button>
         </Stack>
 
         <List dense>
-          {grouped.map(([g, list]) => (
-            <Box key={g}>
-              <ListSubheader disableSticky>{g}</ListSubheader>
+          {grouped.map(([label, list]) => (
+            <Box key={label}>
+              <ListSubheader disableSticky>{label}</ListSubheader>
               {list.map((p) => (
                 <ListItem
                   key={p.id}
@@ -111,10 +120,7 @@ export default function PositionsDialog({ open, onClose, positions }: Props) {
                     </Stack>
                   }
                 >
-                  <ListItemText
-                    primary={p.name}
-                    secondary={p.active ? undefined : 'inactive'}
-                  />
+                  <ListItemText primary={p.name} secondary={p.active ? undefined : 'inactive'} />
                   {!p.active && <Chip label="inactive" size="small" sx={{ ml: 1 }} />}
                 </ListItem>
               ))}

@@ -261,22 +261,27 @@ alias RockcutApi.Accounts.{Department, User}
 
 acct_now = DateTime.utc_now() |> DateTime.truncate(:second)
 
+# Real departments are assignable (roles); "Other" is a scheduling-only
+# placeholder for cross-department positions (Training, Event-offsite).
 [
-  {"Brewery", "brewery", "#B8742A"},
-  {"Bar", "bar", "#2E6DB4"},
-  {"Office", "office", "#3F8F5B"},
-  {"Sales", "sales", "#7A4FB0"}
+  {"Brewery", "brewery", "#B8742A", true},
+  {"Bar", "bar", "#2E6DB4", true},
+  {"Office", "office", "#3F8F5B", true},
+  {"Sales", "sales", "#7A4FB0", true},
+  {"Other", "other", "#6B7280", false}
 ]
-|> Enum.each(fn {name, key, color} ->
+|> Enum.each(fn {name, key, color, assignable} ->
   case Repo.get_by(Department, key: key) do
     nil ->
-      Repo.insert!(%Department{name: name, key: key, color: color, inserted_at: acct_now, updated_at: acct_now})
+      Repo.insert!(%Department{name: name, key: key, color: color, assignable: assignable, inserted_at: acct_now, updated_at: acct_now})
 
-    %Department{color: nil} = dept ->
-      dept |> Ecto.Changeset.change(color: color) |> Repo.update!()
+    %Department{} = dept ->
+      changes =
+        []
+        |> then(fn c -> if is_nil(dept.color), do: [{:color, color} | c], else: c end)
+        |> then(fn c -> if dept.assignable != assignable, do: [{:assignable, assignable} | c], else: c end)
 
-    _ ->
-      :ok
+      if changes != [], do: dept |> Ecto.Changeset.change(changes) |> Repo.update!()
   end
 end)
 
@@ -317,6 +322,9 @@ end
 # ── Scheduling: company-wide positions + sample shifts (idempotent) ──
 alias RockcutApi.Scheduling.{Position, Shift}
 
+dept_by_key = Repo.all(Department) |> Map.new(fn d -> {d.key, d} end)
+group_to_key = %{"Brewery" => "brewery", "Bar" => "bar", "Office" => "office", "Sales" => "sales", "Other" => "other"}
+
 [
   {"Brewer", "Brewery"},
   {"Bar-open", "Bar"},
@@ -330,8 +338,17 @@ alias RockcutApi.Scheduling.{Position, Shift}
   {"Event-offsite", "Other"}
 ]
 |> Enum.each(fn {name, group} ->
-  unless Repo.get_by(Position, name: name) do
-    Repo.insert!(%Position{name: name, group: group, active: true, inserted_at: acct_now, updated_at: acct_now})
+  dept = dept_by_key[group_to_key[group]]
+
+  case Repo.get_by(Position, name: name) do
+    nil ->
+      Repo.insert!(%Position{name: name, group: group, active: true, department_id: dept && dept.id, inserted_at: acct_now, updated_at: acct_now})
+
+    %Position{department_id: nil} = pos ->
+      pos |> Ecto.Changeset.change(department_id: dept && dept.id) |> Repo.update!()
+
+    _ ->
+      :ok
   end
 end)
 
