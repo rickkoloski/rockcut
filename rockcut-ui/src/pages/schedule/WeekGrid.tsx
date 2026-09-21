@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Box, Stack, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
-import { formatDayColumn, formatTime, localDayKey, weekDayKeys } from '../../lib/datetime'
+import { formatDayColumn, formatHoursShort, formatTime, localDayKey, shiftHours, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
 import type { Department, RosterEntry, Shift } from '../../lib/types'
 
@@ -42,6 +42,29 @@ export default function WeekGrid({
     }
     return m
   }, [shifts])
+
+  // Weekly hours per assignee (published vs including drafts).
+  const hoursByUser = useMemo(() => {
+    const m = new Map<number | 'open', { pub: number; draft: number }>()
+    for (const s of shifts) {
+      const key = s.assignee_id ?? 'open'
+      const cur = m.get(key) ?? { pub: 0, draft: 0 }
+      const h = shiftHours(s.starts_at, s.ends_at)
+      if (s.status === 'published') cur.pub += h
+      else cur.draft += h
+      m.set(key, cur)
+    }
+    return m
+  }, [shifts])
+
+  const round2 = (n: number) => Math.round(n * 100) / 100
+
+  const hoursLabel = (rowId: number | null): string => {
+    const h = hoursByUser.get(rowId ?? 'open')
+    if (!h) return ''
+    if (h.draft > 0) return `${round2(h.pub)} hr / ${round2(h.pub + h.draft)} hr draft`
+    return h.pub > 0 ? `${round2(h.pub)} hr` : ''
+  }
 
   const rows: Array<{ id: number | null; name: string }> = [
     ...roster.map((r) => ({ id: r.id as number | null, name: r.name })),
@@ -96,10 +119,14 @@ export default function WeekGrid({
           border: draft ? '1px dashed' : '1px solid',
           borderColor: bg,
           fontSize: 12, lineHeight: 1.3,
+          display: 'flex', justifyContent: 'space-between', gap: 0.5,
         }}
       >
-        <Box sx={{ fontWeight: 600 }}>{s.position?.name ?? '—'}</Box>
-        <Box>{formatTime(s.starts_at)}{draft ? ' · draft' : ''}</Box>
+        <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ fontWeight: 600 }}>{s.position?.name ?? '—'}</Box>
+          <Box>{formatTime(s.starts_at)}{draft ? ' · draft' : ''}</Box>
+        </Box>
+        <Box sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{formatHoursShort(shiftHours(s.starts_at, s.ends_at))}</Box>
       </Box>
     )
   }
@@ -123,6 +150,11 @@ export default function WeekGrid({
               <Typography variant="body2" sx={{ fontWeight: row.id === currentUserId ? 700 : 500, color: row.id === null ? 'text.secondary' : 'text.primary' }}>
                 {row.name}{row.id === currentUserId ? ' (you)' : ''}
               </Typography>
+              {hoursLabel(row.id) && (
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                  {hoursLabel(row.id)}
+                </Typography>
+              )}
             </Box>
             {days.map((dayKey) => {
               const items = cellShifts(row.id, dayKey)

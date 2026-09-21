@@ -120,6 +120,25 @@ export function formatWeekRange(mondayKey: string): string {
   return `${startLabel} – ${endLabel}`
 }
 
+// ── Durations ───────────────────────────────────────────────────────
+
+/** Hours between two UTC ISO timestamps (may be fractional). */
+export function shiftHours(startIso: string, endIso: string): number {
+  return (new Date(endIso).getTime() - new Date(startIso).getTime()) / 3_600_000
+}
+
+/** "8.5 hr" / "36 hr" (trims trailing zeros). */
+export function formatHours(hours: number): string {
+  const r = Math.round(hours * 100) / 100
+  return `${r} hr`
+}
+
+/** Compact "8.5h" for tight spaces. */
+export function formatHoursShort(hours: number): string {
+  const r = Math.round(hours * 100) / 100
+  return `${r}h`
+}
+
 /** "YYYY-MM-DDTHH:mm" (Denver wall time) → UTC ISO string. */
 export function localInputToUtc(local: string): string {
   const [datePart, timePart] = local.split('T')
