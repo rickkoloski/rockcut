@@ -34,6 +34,7 @@ defmodule RockcutApiWeb.Router do
     get "/departments", DepartmentController, :index
     patch "/departments/:id", DepartmentController, :update
     get "/roster", RosterController, :index
+    post "/roster/order", RosterController, :order
 
     # User & role management (authorization enforced per-action in the controllers)
     resources "/users", UserController, only: [:index, :create, :update]

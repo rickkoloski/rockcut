@@ -13,6 +13,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       active: user.active,
       is_owner: user.is_owner,
       must_reset_password: user.must_reset_password,
+      schedulable: user.schedulable,
       memberships: maybe_render(user, :memberships, &Enum.map(&1, fn m -> membership(m) end)),
       inserted_at: user.inserted_at,
       updated_at: user.updated_at

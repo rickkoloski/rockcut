@@ -9,6 +9,8 @@ defmodule RockcutApi.Accounts.User do
     field :active, :boolean, default: true
     field :is_owner, :boolean, default: false
     field :must_reset_password, :boolean, default: false
+    field :schedulable, :boolean, default: true
+    field :schedule_order, :integer, default: 0
 
     field :password, :string, virtual: true, redact: true
 
@@ -21,7 +23,7 @@ defmodule RockcutApi.Accounts.User do
   @doc "Changeset for profile / status fields (no password, no owner flag)."
   def changeset(user, attrs) do
     user
-    |> cast(attrs, [:email, :name, :active])
+    |> cast(attrs, [:email, :name, :active, :schedulable])
     |> validate_required([:email])
     |> validate_email()
   end

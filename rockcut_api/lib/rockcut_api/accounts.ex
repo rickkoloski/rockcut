@@ -81,8 +81,8 @@ defmodule RockcutApi.Accounts do
   @doc "Minimal staff roster (active users) for schedule display — readable by anyone signed in."
   def list_roster do
     User
-    |> where([u], u.active == true)
-    |> order_by([u], asc: u.name, asc: u.email)
+    |> where([u], u.active == true and u.schedulable == true)
+    |> order_by([u], asc: u.schedule_order, asc: u.name, asc: u.email)
     |> preload(^@preloads)
     |> Repo.all()
     |> Enum.map(fn u ->
@@ -92,6 +92,17 @@ defmodule RockcutApi.Accounts do
         departments: u.memberships |> Enum.map(& &1.department.key) |> Enum.uniq()
       }
     end)
+  end
+
+  @doc "Persist the schedule display order (a list of user ids in the desired order)."
+  def reorder_roster(user_ids) when is_list(user_ids) do
+    user_ids
+    |> Enum.with_index()
+    |> Enum.each(fn {id, index} ->
+      from(u in User, where: u.id == ^id) |> Repo.update_all(set: [schedule_order: index])
+    end)
+
+    :ok
   end
 
   ## Memberships
@@ -147,7 +158,7 @@ defmodule RockcutApi.Accounts do
   """
   def update_user(%User{} = target, attrs, %User{} = actor) do
     attrs = stringify(attrs)
-    base = Map.take(attrs, ["name", "email", "active"])
+    base = Map.take(attrs, ["name", "email", "active", "schedulable"])
     owner_change? = Map.has_key?(attrs, "is_owner") and Authz.owner?(actor)
 
     Repo.transaction(fn ->

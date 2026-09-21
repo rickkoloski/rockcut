@@ -31,7 +31,9 @@ defmodule RockcutApi.AccountsFixtures do
         name: Map.get(attrs, :name, "Test User"),
         password: password
       })
-      |> Ecto.Changeset.change(Map.take(attrs, [:is_owner, :active, :must_reset_password]))
+      |> Ecto.Changeset.change(
+        Map.take(attrs, [:is_owner, :active, :must_reset_password, :schedulable, :schedule_order])
+      )
       |> Repo.insert!()
 
     Accounts.get_user!(user.id)
