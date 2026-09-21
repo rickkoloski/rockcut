@@ -248,6 +248,7 @@ export interface Department {
   id: number
   name: string
   key: string
+  color?: string | null
 }
 
 export interface Capabilities {
@@ -293,6 +294,12 @@ export interface ShiftUser {
 }
 
 export type ShiftStatus = 'draft' | 'published'
+
+export interface RosterEntry {
+  id: number
+  name: string
+  departments: string[]
+}
 
 export interface Shift {
   id: number

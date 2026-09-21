@@ -78,6 +78,48 @@ export function utcToLocalInput(iso: string): string {
   return `${m.year}-${m.month}-${m.day}T${hour}:${m.minute}`
 }
 
+// ── Week helpers (Monday-start, operating on Denver date keys) ──────
+
+/** Add `n` days to a "YYYY-MM-DD" date key. */
+export function addDaysKey(key: string, n: number): string {
+  const d = new Date(`${key}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + n)
+  return d.toISOString().slice(0, 10)
+}
+
+/** The Monday (as a Denver date key) of the week containing `dateKey` (default: today). */
+export function mondayKeyOf(dateKey?: string): string {
+  const key = dateKey ?? localDayKey(new Date().toISOString())
+  const dow = new Date(`${key}T12:00:00Z`).getUTCDay() // 0=Sun..6=Sat
+  const sinceMonday = (dow + 6) % 7
+  return addDaysKey(key, -sinceMonday)
+}
+
+/** Seven day keys Monday→Sunday starting at `mondayKey`. */
+export function weekDayKeys(mondayKey: string): string[] {
+  return Array.from({ length: 7 }, (_, i) => addDaysKey(mondayKey, i))
+}
+
+/** Column label like "Mon 22" for a date key. */
+export function formatDayColumn(key: string): string {
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: 'UTC',
+    weekday: 'short',
+    day: 'numeric',
+  }).format(new Date(`${key}T12:00:00Z`))
+}
+
+/** Range label like "Sep 22 – 28" for the week starting at `mondayKey`. */
+export function formatWeekRange(mondayKey: string): string {
+  const start = new Date(`${mondayKey}T12:00:00Z`)
+  const end = new Date(`${addDaysKey(mondayKey, 6)}T12:00:00Z`)
+  const mo = (d: Date) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' }).format(d)
+  const day = (d: Date) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: 'numeric' }).format(d)
+  const startLabel = `${mo(start)} ${day(start)}`
+  const endLabel = mo(start) === mo(end) ? day(end) : `${mo(end)} ${day(end)}`
+  return `${startLabel} – ${endLabel}`
+}
+
 /** "YYYY-MM-DDTHH:mm" (Denver wall time) → UTC ISO string. */
 export function localInputToUtc(local: string): string {
   const [datePart, timePart] = local.split('T')

@@ -19,6 +19,12 @@ import parseApiError from '../../lib/parseApiError'
 import { localInputToUtc, utcToLocalInput } from '../../lib/datetime'
 import type { Department, Position, Shift, User } from '../../lib/types'
 
+interface Prefill {
+  departmentId?: number
+  assigneeId?: number | null
+  dateKey?: string // "YYYY-MM-DD" (Denver) to seed the start day
+}
+
 interface Props {
   open: boolean
   onClose: () => void
@@ -26,6 +32,7 @@ interface Props {
   departments: Department[] // already limited to what the actor manages
   positions: Position[]
   users: User[]
+  prefill?: Prefill
 }
 
 function readError(err: unknown): string {
@@ -39,7 +46,7 @@ function defaultStart(): string {
   return utcToLocalInput(d.toISOString())
 }
 
-export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, users }: Props) {
+export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, users, prefill }: Props) {
   const qc = useQueryClient()
   const isEdit = !!editShift
 
@@ -63,10 +70,10 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
       setEndsLocal(utcToLocalInput(editShift.ends_at))
       setNotes(editShift.notes ?? '')
     } else {
-      const start = defaultStart()
-      setDepartmentId(departments[0]?.id ?? '')
+      const start = prefill?.dateKey ? `${prefill.dateKey}T09:00` : defaultStart()
+      setDepartmentId(prefill?.departmentId ?? departments[0]?.id ?? '')
       setPositionId('')
-      setAssigneeId('')
+      setAssigneeId(prefill?.assigneeId ?? '')
       setStartsLocal(start)
       const end = new Date(localInputToUtc(start))
       end.setHours(end.getHours() + 6)
@@ -226,6 +233,15 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
               sx={{ ml: 1 }}
             >
               Publish
+            </Button>
+          )}
+          {isEdit && editShift?.status === 'published' && (
+            <Button
+              disabled={loading}
+              onClick={() => doAction(() => api.post(`/api/shifts/${editShift.id}/unpublish`, {}))}
+              sx={{ ml: 1 }}
+            >
+              Unpublish
             </Button>
           )}
           <Button onClick={save} variant="contained" disabled={loading} sx={{ ml: 1 }}>
