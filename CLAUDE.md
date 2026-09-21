@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D12 (weekly grid view for scheduling)
+- **Next deliverable**: D15
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -112,6 +112,9 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D9 | Column Visibility Toggle — 8 grids | 02_scaffold_ui |
 | D10 | Users & Tiered Authorization — users/departments/memberships, Authz, module gating, user management (replaces EnvAuth) | 06_auth_roles |
 | D11 | Staff Scheduling — company-wide positions, department shifts, draft→publish, open-shift claim, agenda UI | 07_scheduling |
+| D12 | Schedule Weekly Grid + Color Palette — Mon–Sun grid, department colors, unpublish, publish-week, roster | 07_scheduling |
+| D13 | Schedule Grid Drag-and-Drop — reschedule/reassign/unassign (auto-draft); any employee any department | 07_scheduling |
+| D14 | Scheduling Templates — position standard hours, copy previous week, named week/day templates | 07_scheduling |
 
 ## References
 
