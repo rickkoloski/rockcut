@@ -8,6 +8,7 @@ import {
   IconButton,
   MenuItem,
   Paper,
+  Snackbar,
   Stack,
   Switch,
   TextField,
@@ -21,18 +22,21 @@ import PaletteIcon from '@mui/icons-material/Palette'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import PublishIcon from '@mui/icons-material/Publish'
+import ContentCopyIcon from '@mui/icons-material/ContentCopy'
+import LibraryBooksIcon from '@mui/icons-material/LibraryBooks'
 import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
-import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput } from '../../lib/datetime'
+import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
-import type { Department, Position, RosterEntry, Shift } from '../../lib/types'
+import type { Department, Position, RosterEntry, Shift, ShiftTemplate, ScheduleTemplate } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
 import PositionsDialog from './PositionsDialog'
 import PaletteDialog from './PaletteDialog'
+import TemplatesDialog from './TemplatesDialog'
 import WeekGrid from './WeekGrid'
 
 type View = 'agenda' | 'week'
@@ -64,6 +68,10 @@ export default function Schedule() {
   const [positionsDialog, setPositionsDialog] = useState(false)
   const [paletteDialog, setPaletteDialog] = useState(false)
   const [publishing, setPublishing] = useState(false)
+  const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [copyPreview, setCopyPreview] = useState<Shift[] | null>(null)
+  const [copyBusy, setCopyBusy] = useState(false)
+  const [notice, setNotice] = useState<string | null>(null)
 
   const setViewPersist = (v: View) => {
     setView(v)
@@ -94,6 +102,8 @@ export default function Schedule() {
   const { data: positions = [] } = useApiQuery<Position[]>(['positions'], '/api/positions')
   const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments')
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
+  const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates')
+  const { data: scheduleTemplates = [] } = useApiQuery<ScheduleTemplate[]>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
 
   const managedDepartments = isOwner ? departments : departments.filter((d) => managedKeys.includes(d.key))
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -148,6 +158,49 @@ export default function Schedule() {
     }
   }
 
+  // B — copy previous week: load last week's manageable shifts, confirm, then create +7-day drafts.
+  const startCopyPreviousWeek = async () => {
+    const prevMonday = addDaysKey(mondayKey, -7)
+    const p: Record<string, string> = { from: prevMonday, to: addDaysKey(prevMonday, 6) }
+    if (filters.department_id) p.department_id = filters.department_id
+    try {
+      const { data } = await api.get<{ data: Shift[] }>('/api/shifts', { params: p })
+      const source = data.data.filter(canManageShift)
+      if (source.length === 0) {
+        setNotice('No shifts to copy from last week')
+        return
+      }
+      setCopyPreview(source)
+    } catch {
+      setNotice('Could not load last week')
+    }
+  }
+
+  const performCopy = async () => {
+    if (!copyPreview) return
+    setCopyBusy(true)
+    try {
+      await Promise.allSettled(
+        copyPreview.map((s) => {
+          const sLocal = utcToLocalInput(s.starts_at)
+          const eLocal = utcToLocalInput(s.ends_at)
+          return api.post('/api/shifts', {
+            position_id: s.position_id,
+            assignee_id: s.assignee_id,
+            starts_at: localInputToUtc(addDaysKey(sLocal.slice(0, 10), 7) + sLocal.slice(10)),
+            ends_at: localInputToUtc(addDaysKey(eLocal.slice(0, 10), 7) + eLocal.slice(10)),
+            notes: s.notes,
+          })
+        }),
+      )
+      qc.invalidateQueries({ queryKey: ['shifts'] })
+      setNotice(`Copied ${copyPreview.length} shift${copyPreview.length === 1 ? '' : 's'} as drafts`)
+    } finally {
+      setCopyBusy(false)
+      setCopyPreview(null)
+    }
+  }
+
   const openCreate = () => {
     setEditShift(null)
     setPrefill(undefined)
@@ -196,8 +249,12 @@ export default function Schedule() {
             {canManageSchedule && (
               <>
                 {view === 'week' && (
-                  <Button startIcon={<PublishIcon />} disabled={publishing} onClick={publishWeek}>Publish week</Button>
+                  <>
+                    <Button startIcon={<PublishIcon />} disabled={publishing} onClick={publishWeek}>Publish week</Button>
+                    <Button startIcon={<ContentCopyIcon />} onClick={startCopyPreviousWeek}>Copy last week</Button>
+                  </>
                 )}
+                <Button startIcon={<LibraryBooksIcon />} onClick={() => setTemplatesOpen(true)}>Templates</Button>
                 <Button startIcon={<SettingsIcon />} onClick={() => setPositionsDialog(true)}>Positions</Button>
                 <Button variant="contained" startIcon={<EventIcon />} onClick={openCreate}>Add shift</Button>
               </>
@@ -294,8 +351,8 @@ export default function Schedule() {
         ))
       )}
 
-      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} prefill={prefill} />
-      <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} />
+      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} />
+      <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} />
       <PaletteDialog open={paletteDialog} onClose={() => setPaletteDialog(false)} departments={departments} />
       <ConfirmDialog
         open={pendingCell !== null}
@@ -311,6 +368,33 @@ export default function Schedule() {
         }
         confirmLabel="Yes"
         confirmColor="primary"
+      />
+      <TemplatesDialog
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        templates={scheduleTemplates}
+        weekShifts={shifts}
+        mondayKey={mondayKey}
+        days={weekDayKeys(mondayKey)}
+        canManageShift={canManageShift}
+        onNotice={setNotice}
+      />
+      <ConfirmDialog
+        open={copyPreview !== null}
+        onClose={() => setCopyPreview(null)}
+        onConfirm={performCopy}
+        loading={copyBusy}
+        title="Copy last week?"
+        message={`Copy ${copyPreview?.length ?? 0} shift${copyPreview?.length === 1 ? '' : 's'} from last week into this week as drafts?`}
+        confirmLabel="Copy"
+        confirmColor="primary"
+      />
+      <Snackbar
+        open={!!notice}
+        autoHideDuration={4000}
+        onClose={() => setNotice(null)}
+        message={notice ?? ''}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />
     </>
   )

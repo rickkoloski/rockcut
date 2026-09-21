@@ -303,6 +303,34 @@ export interface RosterEntry {
   departments: string[]
 }
 
+export interface ShiftTemplate {
+  id: number
+  position_id: number
+  name: string
+  start_time: string // "HH:MM:SS" (Denver wall clock)
+  end_time: string
+}
+
+export interface ScheduleTemplateItem {
+  id: number
+  position_id: number
+  position: Position | null
+  assignee_id: number | null
+  day_index: number
+  start_time: string
+  end_time: string
+  notes: string | null
+}
+
+export interface ScheduleTemplate {
+  id: number
+  name: string
+  kind: 'week' | 'day'
+  items: ScheduleTemplateItem[]
+  inserted_at: string
+  updated_at: string
+}
+
 export interface Shift {
   id: number
   department_id: number

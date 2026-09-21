@@ -17,8 +17,8 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import { formatHours, localInputToUtc, shiftHours, utcToLocalInput } from '../../lib/datetime'
-import type { Department, Position, RosterEntry, Shift } from '../../lib/types'
+import { addDaysKey, formatHours, localInputToUtc, shiftHours, utcToLocalInput } from '../../lib/datetime'
+import type { Department, Position, RosterEntry, Shift, ShiftTemplate } from '../../lib/types'
 
 interface Prefill {
   departmentId?: number
@@ -33,6 +33,7 @@ interface Props {
   departments: Department[] // already limited to what the actor manages
   positions: Position[]
   roster: RosterEntry[] // all active staff — any employee can be scheduled in any department
+  shiftTemplates: ShiftTemplate[] // per-position standard hours
   prefill?: Prefill
 }
 
@@ -51,11 +52,12 @@ function roundTime15(t: string): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
-export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, roster, prefill }: Props) {
+export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, roster, shiftTemplates, prefill }: Props) {
   const qc = useQueryClient()
   const isEdit = !!editShift
 
   const [positionId, setPositionId] = useState<number | ''>('')
+  const [presetId, setPresetId] = useState<number | ''>('')
   const [assigneeId, setAssigneeId] = useState<number | ''>('')
   const [startDay, setStartDay] = useState('')
   const [startTime, setStartTime] = useState('')
@@ -68,6 +70,7 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
   useEffect(() => {
     if (!open) return
     setError(null)
+    setPresetId('')
     if (editShift) {
       const [sd, st] = utcToLocalInput(editShift.starts_at).split('T')
       const [ed, et] = utcToLocalInput(editShift.ends_at).split('T')
@@ -114,6 +117,15 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
   // The shift's department follows the chosen position.
   const selectedPosition = positions.find((p) => p.id === positionId)
   const derivedDept = departments.find((d) => d.id === selectedPosition?.department_id)
+
+  const positionTemplates = shiftTemplates.filter((t) => t.position_id === positionId)
+  const applyPreset = (tpl: ShiftTemplate) => {
+    setPresetId(tpl.id)
+    setStartTime(tpl.start_time.slice(0, 5))
+    setEndTime(tpl.end_time.slice(0, 5))
+    // Overnight preset (end ≤ start) rolls the end day forward.
+    setEndDay(tpl.end_time <= tpl.start_time ? addDaysKey(startDay, 1) : startDay)
+  }
 
   const startLocal = startDay && startTime ? `${startDay}T${startTime}` : ''
   const endLocal = endDay && endTime ? `${endDay}T${endTime}` : ''
@@ -205,7 +217,16 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
         {error && <Alert severity="error">{error}</Alert>}
 
-        <TextField select label="Position" value={positionId} onChange={(e) => setPositionId(Number(e.target.value))} fullWidth>
+        <TextField
+          select
+          label="Position"
+          value={positionId}
+          onChange={(e) => {
+            setPositionId(Number(e.target.value))
+            setPresetId('')
+          }}
+          fullWidth
+        >
           {grouped.flatMap(([group, list]) => [
             <ListSubheader key={`h-${group}`}>{group}</ListSubheader>,
             ...list.map((p) => (
@@ -235,6 +256,26 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
             <MenuItem key={u.id} value={u.id}>{u.name}</MenuItem>
           ))}
         </TextField>
+
+        {positionTemplates.length > 0 && (
+          <TextField
+            select
+            label="Standard hours"
+            value={presetId}
+            onChange={(e) => {
+              const t = positionTemplates.find((tp) => tp.id === Number(e.target.value))
+              if (t) applyPreset(t)
+            }}
+            fullWidth
+            helperText="Fills the times below — you can still edit"
+          >
+            {positionTemplates.map((t) => (
+              <MenuItem key={t.id} value={t.id}>
+                {t.name} ({t.start_time.slice(0, 5)}–{t.end_time.slice(0, 5)})
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
 
         {timeField('Start', startDay, setStartDay, startTime, setStartTime)}
         {timeField('End', endDay, setEndDay, endTime, setEndTime)}
