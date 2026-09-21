@@ -48,6 +48,7 @@ import UserManagement from './pages/users/UserManagement'
 import OwnerActivity from './pages/activity/OwnerActivity'
 import Schedule from './pages/schedule/Schedule'
 import TimeOff from './pages/timeoff/TimeOff'
+import NotificationBell from './components/NotificationBell'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -280,7 +281,9 @@ function App() {
 
             <Box sx={{ flexGrow: 1 }} />
 
-            <Typography variant="body2" color="text.secondary" sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
+            <NotificationBell />
+
+            <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
               {user.email}
               {isOwner ? ' · Owner' : ''}
             </Typography>

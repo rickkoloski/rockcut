@@ -332,6 +332,18 @@ export interface ScheduleTemplate {
   updated_at: string
 }
 
+export interface AppNotification {
+  id: number
+  event: string
+  title: string
+  body: string | null
+  data: Record<string, unknown>
+  read_at: string | null
+  inserted_at: string
+}
+
+export type NotificationPrefs = Record<string, Record<string, boolean>>
+
 export interface CalendarFeed {
   subject_type: 'user' | 'department' | 'all'
   subject_id: number | null
