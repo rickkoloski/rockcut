@@ -10,7 +10,7 @@ defmodule RockcutApi.Scheduling do
   alias RockcutApi.Repo
   alias RockcutApi.Authz
   alias RockcutApi.Accounts.User
-  alias RockcutApi.Scheduling.{Position, Shift}
+  alias RockcutApi.Scheduling.{Position, Shift, ShiftTemplate, ScheduleTemplate}
 
   @shift_preloads [:department, :position, :assignee]
 
@@ -144,6 +144,51 @@ defmodule RockcutApi.Scheduling do
       true -> update_shift(shift, %{"assignee_id" => user.id})
     end
   end
+
+  ## Shift templates (per-position standard hours)
+
+  def list_shift_templates(filters \\ %{}) do
+    ShiftTemplate
+    |> maybe(filters, "position_id", fn q, id -> where(q, [t], t.position_id == ^to_int(id)) end)
+    |> order_by([t], asc: t.position_id, asc: t.name)
+    |> Repo.all()
+  end
+
+  def get_shift_template!(id), do: Repo.get!(ShiftTemplate, id)
+
+  def create_shift_template(attrs) do
+    %ShiftTemplate{} |> ShiftTemplate.changeset(attrs) |> Repo.insert()
+  end
+
+  def update_shift_template(%ShiftTemplate{} = template, attrs) do
+    template |> ShiftTemplate.changeset(attrs) |> Repo.update()
+  end
+
+  def delete_shift_template(%ShiftTemplate{} = template), do: Repo.delete(template)
+
+  ## Schedule templates (named week/day)
+
+  def list_schedule_templates do
+    ScheduleTemplate
+    |> order_by([t], asc: t.name)
+    |> preload(items: :position)
+    |> Repo.all()
+  end
+
+  def get_schedule_template!(id) do
+    ScheduleTemplate |> Repo.get!(id) |> Repo.preload(items: :position)
+  end
+
+  def create_schedule_template(attrs, %User{} = actor) do
+    attrs = Map.put(stringify(attrs), "created_by_id", actor.id)
+
+    case %ScheduleTemplate{} |> ScheduleTemplate.changeset(attrs) |> Repo.insert() do
+      {:ok, template} -> {:ok, get_schedule_template!(template.id)}
+      other -> other
+    end
+  end
+
+  def delete_schedule_template(%ScheduleTemplate{} = template), do: Repo.delete(template)
 
   ## Query helpers
 

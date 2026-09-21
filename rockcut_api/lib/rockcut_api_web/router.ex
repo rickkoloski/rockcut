@@ -53,6 +53,12 @@ defmodule RockcutApiWeb.Router do
     post "/shifts/:id/publish", ShiftController, :publish
     post "/shifts/:id/unpublish", ShiftController, :unpublish
     post "/shifts/:id/claim", ShiftController, :claim
+
+    # Scheduling templates (D14)
+    resources "/shift_templates", ShiftTemplateController,
+      only: [:index, :create, :update, :delete]
+
+    resources "/schedule_templates", ScheduleTemplateController, only: [:index, :create, :delete]
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)

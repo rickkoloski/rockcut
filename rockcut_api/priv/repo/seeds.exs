@@ -352,6 +352,30 @@ group_to_key = %{"Brewery" => "brewery", "Bar" => "bar", "Office" => "office", "
   end
 end)
 
+# Standard-hours presets for a few positions (idempotent)
+position_by_name = Repo.all(Position) |> Map.new(fn p -> {p.name, p} end)
+
+[
+  {"Bar-open", "Open", ~T[08:00:00], ~T[16:00:00]},
+  {"Bar-mid", "Mid", ~T[12:00:00], ~T[20:00:00]},
+  {"Bar-close", "Close", ~T[17:00:00], ~T[01:00:00]},
+  {"Brewer", "Day", ~T[07:00:00], ~T[15:00:00]}
+]
+|> Enum.each(fn {pos_name, tname, s, e} ->
+  pos = position_by_name[pos_name]
+
+  if pos && is_nil(Repo.get_by(RockcutApi.Scheduling.ShiftTemplate, position_id: pos.id, name: tname)) do
+    Repo.insert!(%RockcutApi.Scheduling.ShiftTemplate{
+      position_id: pos.id,
+      name: tname,
+      start_time: s,
+      end_time: e,
+      inserted_at: acct_now,
+      updated_at: acct_now
+    })
+  end
+end)
+
 if Repo.aggregate(Shift, :count) == 0 do
   bar = Repo.get_by(Department, key: "bar")
   brewery = Repo.get_by(Department, key: "brewery")

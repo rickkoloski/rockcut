@@ -77,6 +77,34 @@ defmodule RockcutApiWeb.JSONHelpers do
   defp shift_user(nil), do: nil
   defp shift_user(u), do: %{id: u.id, email: u.email, name: u.name}
 
+  def shift_template(t) do
+    %{id: t.id, position_id: t.position_id, name: t.name, start_time: t.start_time, end_time: t.end_time}
+  end
+
+  def schedule_template(t) do
+    %{
+      id: t.id,
+      name: t.name,
+      kind: t.kind,
+      items: maybe_render(t, :items, &Enum.map(&1, fn i -> schedule_template_item(i) end)),
+      inserted_at: t.inserted_at,
+      updated_at: t.updated_at
+    }
+  end
+
+  def schedule_template_item(i) do
+    %{
+      id: i.id,
+      position_id: i.position_id,
+      position: maybe_render(i, :position, &position/1),
+      assignee_id: i.assignee_id,
+      day_index: i.day_index,
+      start_time: i.start_time,
+      end_time: i.end_time,
+      notes: i.notes
+    }
+  end
+
   def ingredient_category(cat) do
     %{
       id: cat.id,
