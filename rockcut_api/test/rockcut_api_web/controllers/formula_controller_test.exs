@@ -6,7 +6,9 @@ defmodule RockcutApiWeb.FormulaControllerTest do
   # ── Auth helpers ───────────────────────────────────────────────────
 
   defp auth_conn(conn) do
-    token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", "test@example.com")
+    # Owner bypasses the Brewery module gate that now guards the formula routes.
+    user = RockcutApi.AccountsFixtures.owner_fixture()
+    token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", user.id)
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 

@@ -9,6 +9,10 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.AuthPlug
   end
 
+  pipeline :brewery do
+    plug RockcutApiWeb.ModuleAccessPlug, module: :brewery
+  end
+
   # Public routes (no auth required)
   scope "/api", RockcutApiWeb do
     pipe_through :api
@@ -17,12 +21,17 @@ defmodule RockcutApiWeb.Router do
     post "/session", SessionController, :create
   end
 
-  # Protected routes (auth required)
+  # Authenticated routes (any signed-in user)
   scope "/api", RockcutApiWeb do
     pipe_through [:api, :authenticated]
 
     get "/session", SessionController, :show
     delete "/session", SessionController, :delete
+  end
+
+  # Brewery module — the existing brewing app (gated by Brewery membership)
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :brewery]
 
     # Ingredient library
     resources "/ingredient_categories", IngredientCategoryController, except: [:new, :edit]

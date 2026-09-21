@@ -1,22 +1,29 @@
 defmodule RockcutApiWeb.AuthPlug do
   @moduledoc """
-  Plug that verifies Bearer token in the Authorization header.
-  Assigns :current_user on success, halts with 401 on failure.
+  Verifies the Bearer token, loads the full user (memberships preloaded), and
+  assigns `:current_user`. Rejects missing, invalid, or deactivated users with
+  401. Checking `active` on every request gives immediate soft revocation when a
+  user is deactivated.
   """
   import Plug.Conn
+  alias RockcutApi.Accounts
 
   def init(opts), do: opts
 
   def call(conn, _opts) do
     with ["Bearer " <> token] <- get_req_header(conn, "authorization"),
-         {:ok, email} <- RockcutApiWeb.SessionController.verify_token(token) do
-      assign(conn, :current_user, email)
+         {:ok, user_id} <- RockcutApiWeb.SessionController.verify_token(token),
+         %{active: true} = user <- Accounts.get_user(user_id) do
+      assign(conn, :current_user, user)
     else
-      _ ->
-        conn
-        |> put_status(:unauthorized)
-        |> Phoenix.Controller.json(%{error: "Unauthorized"})
-        |> halt()
+      _ -> unauthorized(conn)
     end
+  end
+
+  defp unauthorized(conn) do
+    conn
+    |> put_status(:unauthorized)
+    |> Phoenix.Controller.json(%{error: "Unauthorized"})
+    |> halt()
   end
 end

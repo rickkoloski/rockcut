@@ -254,3 +254,55 @@ if Repo.aggregate(IngredientLot, :count) == 0 do
 else
   IO.puts("Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, #{length(grain_ingredients) + length(other_ingredients)} ingredients (lots already seeded — reset DB to reseed lots)")
 end
+
+# ── Accounts: departments + bootstrap owner (idempotent) ─────────────
+alias RockcutApi.Accounts
+alias RockcutApi.Accounts.{Department, User}
+
+acct_now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+[
+  {"Brewery", "brewery"},
+  {"Bar", "bar"},
+  {"Office", "office"},
+  {"Sales", "sales"}
+]
+|> Enum.each(fn {name, key} ->
+  unless Repo.get_by(Department, key: key) do
+    Repo.insert!(%Department{name: name, key: key, inserted_at: acct_now, updated_at: acct_now})
+  end
+end)
+
+# Bootstrap owner:
+#   - prod: seed from ADMIN_EMAIL + ADMIN_PASSWORD_HASH (hash is already Argon2 — copied as-is)
+#   - dev (no env): deterministic dev owner matt@rockcut.com / rockcut2026
+{owner_email, owner_hash} =
+  case {Application.get_env(:rockcut_api, :admin_email),
+        Application.get_env(:rockcut_api, :admin_password_hash)} do
+    {email, hash} when is_binary(email) and is_binary(hash) -> {email, hash}
+    _ -> {"matt@rockcut.com", Argon2.hash_pwd_salt("rockcut2026")}
+  end
+
+case Accounts.get_user_by_email(owner_email) do
+  nil ->
+    Repo.insert!(%User{
+      email: owner_email,
+      name: "Owner",
+      password_hash: owner_hash,
+      active: true,
+      is_owner: true,
+      must_reset_password: false,
+      inserted_at: acct_now,
+      updated_at: acct_now
+    })
+
+    IO.puts("Seeded owner: #{owner_email}")
+
+  %User{} = existing ->
+    # Never create a second owner; ensure the bootstrap account stays an active owner.
+    if not existing.is_owner or not existing.active do
+      existing |> Ecto.Changeset.change(is_owner: true, active: true) |> Repo.update!()
+    end
+
+    IO.puts("Owner already present: #{owner_email}")
+end

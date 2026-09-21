@@ -1,17 +1,24 @@
 defmodule RockcutApiWeb.SessionController do
   use RockcutApiWeb, :controller
 
-  alias RockcutApi.Auth.EnvAuth
+  import RockcutApiWeb.JSONHelpers, only: [user: 1]
+  alias RockcutApi.Accounts
 
-  @token_max_age 30 * 24 * 60 * 60  # 30 days
+  # 30 days
+  @token_max_age 30 * 24 * 60 * 60
 
   def create(conn, %{"email" => email, "password" => password}) do
-    case EnvAuth.validate_credentials(email, password) do
-      {:ok, email} ->
-        token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", email)
-        json(conn, %{token: token, email: email})
+    case Accounts.get_user_by_email_and_password(email, password) do
+      %{active: true} = user ->
+        token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", user.id)
+        json(conn, %{token: token, user: user(user)})
 
-      :error ->
+      %{active: false} ->
+        conn
+        |> put_status(:unauthorized)
+        |> json(%{error: "Account disabled"})
+
+      nil ->
         conn
         |> put_status(:unauthorized)
         |> json(%{error: "Invalid credentials"})
@@ -25,14 +32,14 @@ defmodule RockcutApiWeb.SessionController do
   end
 
   def show(conn, _params) do
-    email = conn.assigns[:current_user]
-    json(conn, %{email: email})
+    json(conn, %{user: user(conn.assigns.current_user)})
   end
 
   def delete(conn, _params) do
     json(conn, %{ok: true})
   end
 
+  @doc "Verifies a bearer token, returning `{:ok, user_id}` or an error."
   def verify_token(token) do
     Phoenix.Token.verify(RockcutApiWeb.Endpoint, "user auth", token, max_age: @token_max_age)
   end

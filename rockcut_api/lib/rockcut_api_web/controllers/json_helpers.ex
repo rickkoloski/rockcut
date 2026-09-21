@@ -3,6 +3,35 @@ defmodule RockcutApiWeb.JSONHelpers do
   Shared functions for converting Ecto schemas to JSON-safe maps.
   """
 
+  # ── Accounts / auth views ──────────────────────────────────────────
+
+  def user(user) do
+    %{
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      active: user.active,
+      is_owner: user.is_owner,
+      must_reset_password: user.must_reset_password,
+      memberships: maybe_render(user, :memberships, &Enum.map(&1, fn m -> membership(m) end)),
+      inserted_at: user.inserted_at,
+      updated_at: user.updated_at
+    }
+  end
+
+  def membership(m) do
+    %{
+      department_id: m.department_id,
+      department_key: maybe_render(m, :department, & &1.key),
+      department_name: maybe_render(m, :department, & &1.name),
+      role: m.role
+    }
+  end
+
+  def department(d) do
+    %{id: d.id, name: d.name, key: d.key}
+  end
+
   def ingredient_category(cat) do
     %{
       id: cat.id,
