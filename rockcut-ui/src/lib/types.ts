@@ -332,6 +332,14 @@ export interface ScheduleTemplate {
   updated_at: string
 }
 
+export interface CalendarFeed {
+  subject_type: 'user' | 'department' | 'all'
+  subject_id: number | null
+  label: string
+  token: string
+  path: string
+}
+
 export type TimeOffType = 'pto' | 'sick' | 'unpaid' | 'personal'
 export type TimeOffStatus = 'pending' | 'approved' | 'denied' | 'cancelled'
 

@@ -24,6 +24,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import PublishIcon from '@mui/icons-material/Publish'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks'
+import SyncIcon from '@mui/icons-material/Sync'
 import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
@@ -37,6 +38,7 @@ import ShiftFormDialog from './ShiftFormDialog'
 import PositionsDialog from './PositionsDialog'
 import PaletteDialog from './PaletteDialog'
 import TemplatesDialog from './TemplatesDialog'
+import CalendarSyncDialog from './CalendarSyncDialog'
 import WeekGrid from './WeekGrid'
 
 type View = 'agenda' | 'week'
@@ -69,6 +71,7 @@ export default function Schedule() {
   const [paletteDialog, setPaletteDialog] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
+  const [calendarSyncOpen, setCalendarSyncOpen] = useState(false)
   const [copyPreview, setCopyPreview] = useState<Shift[] | null>(null)
   const [copyBusy, setCopyBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -319,6 +322,7 @@ export default function Schedule() {
               <ToggleButton value="agenda">Agenda</ToggleButton>
               <ToggleButton value="week">Week</ToggleButton>
             </ToggleButtonGroup>
+            <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>
             {isOwner && (
               <Button startIcon={<PaletteIcon />} onClick={() => setPaletteDialog(true)}>Colors</Button>
             )}
@@ -436,6 +440,7 @@ export default function Schedule() {
       <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} />
       <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} />
       <PaletteDialog open={paletteDialog} onClose={() => setPaletteDialog(false)} departments={departments} />
+      <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />
       <ConfirmDialog
         open={pendingCell !== null}
         onClose={() => setPendingCell(null)}
