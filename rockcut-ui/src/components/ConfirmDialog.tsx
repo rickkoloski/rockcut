@@ -15,9 +15,14 @@ interface ConfirmDialogProps {
   title: string
   message: string
   loading?: boolean
+  confirmLabel?: string
+  confirmColor?: 'error' | 'primary'
 }
 
-export default function ConfirmDialog({ open, onClose, onConfirm, title, message, loading }: ConfirmDialogProps) {
+export default function ConfirmDialog({
+  open, onClose, onConfirm, title, message, loading,
+  confirmLabel = 'Delete', confirmColor = 'error',
+}: ConfirmDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>{title}</DialogTitle>
@@ -26,8 +31,8 @@ export default function ConfirmDialog({ open, onClose, onConfirm, title, message
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancel</Button>
-        <Button onClick={onConfirm} color="error" variant="contained" disabled={loading}>
-          {loading ? <CircularProgress size={20} /> : 'Delete'}
+        <Button onClick={onConfirm} color={confirmColor} variant="contained" disabled={loading}>
+          {loading ? <CircularProgress size={20} /> : confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

@@ -23,6 +23,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import PublishIcon from '@mui/icons-material/Publish'
 import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
@@ -59,6 +60,7 @@ export default function Schedule() {
   const [shiftDialog, setShiftDialog] = useState(false)
   const [editShift, setEditShift] = useState<Shift | null>(null)
   const [prefill, setPrefill] = useState<{ departmentId?: number; assigneeId?: number | null; dateKey?: string } | undefined>()
+  const [pendingCell, setPendingCell] = useState<{ userId: number | null; dateKey: string } | null>(null)
   const [positionsDialog, setPositionsDialog] = useState(false)
   const [paletteDialog, setPaletteDialog] = useState(false)
   const [publishing, setPublishing] = useState(false)
@@ -156,10 +158,15 @@ export default function Schedule() {
     setPrefill(undefined)
     setShiftDialog(true)
   }
-  const openCellCreate = (cell: { userId: number | null; dateKey: string; departmentId: number }) => {
+  // Cell click → confirm prompt; on Yes, open the add-shift dialog prefilled.
+  const requestCellCreate = (cell: { userId: number | null; dateKey: string }) => setPendingCell(cell)
+
+  const confirmCellCreate = () => {
+    if (!pendingCell) return
     setEditShift(null)
-    setPrefill({ departmentId: cell.departmentId, assigneeId: cell.userId, dateKey: cell.dateKey })
+    setPrefill({ departmentId: createDeptId, assigneeId: pendingCell.userId, dateKey: pendingCell.dateKey })
     setShiftDialog(true)
+    setPendingCell(null)
   }
 
   const groups = useMemo(() => {
@@ -246,10 +253,10 @@ export default function Schedule() {
           roster={roster}
           departments={departments}
           currentUserId={user?.id}
-          createDeptId={createDeptId}
+          canCreate={canManageSchedule}
           canManageShift={canManageShift}
           canClaim={canClaim}
-          onCreate={openCellCreate}
+          onCreate={requestCellCreate}
           onEditShift={openEdit}
           onClaim={claim}
           onMoveShift={moveShift}
@@ -290,6 +297,21 @@ export default function Schedule() {
       <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} prefill={prefill} />
       <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} />
       <PaletteDialog open={paletteDialog} onClose={() => setPaletteDialog(false)} departments={departments} />
+      <ConfirmDialog
+        open={pendingCell !== null}
+        onClose={() => setPendingCell(null)}
+        onConfirm={confirmCellCreate}
+        title="Add shift?"
+        message={
+          pendingCell
+            ? `Add a shift for ${
+                pendingCell.userId ? roster.find((r) => r.id === pendingCell.userId)?.name ?? 'this employee' : 'an open slot'
+              } on ${formatDayHeading(`${pendingCell.dateKey}T12:00:00Z`)}?`
+            : ''
+        }
+        confirmLabel="Yes"
+        confirmColor="primary"
+      />
     </>
   )
 }

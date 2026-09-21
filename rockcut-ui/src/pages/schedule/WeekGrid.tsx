@@ -11,10 +11,10 @@ interface Props {
   roster: RosterEntry[]
   departments: Department[]
   currentUserId?: number
-  createDeptId?: number // department to create into (set only when the filter picks one you manage)
+  canCreate: boolean // may the viewer add shifts (owner/manager)
   canManageShift: (s: Shift) => boolean
   canClaim: (s: Shift) => boolean
-  onCreate: (cell: { userId: number | null; dateKey: string; departmentId: number }) => void
+  onCreate: (cell: { userId: number | null; dateKey: string }) => void
   onEditShift: (s: Shift) => void
   onClaim: (s: Shift) => void
   onMoveShift: (s: Shift, targetUserId: number | null, targetDayKey: string) => void
@@ -24,7 +24,7 @@ const NAME_COL = 160
 const DAY_COL = 150
 
 export default function WeekGrid({
-  mondayKey, shifts, roster, departments, currentUserId, createDeptId,
+  mondayKey, shifts, roster, departments, currentUserId, canCreate,
   canManageShift, canClaim, onCreate, onEditShift, onClaim, onMoveShift,
 }: Props) {
   const days = weekDayKeys(mondayKey)
@@ -126,13 +126,13 @@ export default function WeekGrid({
             </Box>
             {days.map((dayKey) => {
               const items = cellShifts(row.id, dayKey)
-              const canCreateHere = !!createDeptId
+              const canCreateHere = canCreate
               const key = cellKey(row.id, dayKey)
               const isHover = dragShift && hoverKey === key
               return (
                 <Box
                   key={dayKey}
-                  onClick={canCreateHere && !dragShift ? () => onCreate({ userId: row.id, dateKey: dayKey, departmentId: createDeptId! }) : undefined}
+                  onClick={canCreateHere && !dragShift ? () => onCreate({ userId: row.id, dateKey: dayKey }) : undefined}
                   onDragOver={(e) => {
                     if (dragShift) {
                       e.preventDefault()
