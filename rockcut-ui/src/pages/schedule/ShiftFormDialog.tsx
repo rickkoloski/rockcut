@@ -121,30 +121,30 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['shifts'] })
 
-  const save = async () => {
+  const validate = (): string | null => {
+    if (!positionId || !startLocal || !endLocal) return 'Position, start, and end are required'
+    if (hours <= 0) return 'End must be after start'
+    return null
+  }
+
+  const payload = () => ({
+    position_id: positionId,
+    assignee_id: assigneeId === '' ? null : assigneeId,
+    starts_at: localInputToUtc(startLocal),
+    ends_at: localInputToUtc(endLocal),
+    notes,
+  })
+
+  const submit = async (request: () => Promise<unknown>) => {
+    const problem = validate()
+    if (problem) {
+      setError(problem)
+      return
+    }
     setError(null)
-    if (!positionId || !startLocal || !endLocal) {
-      setError('Position, start, and end are required')
-      return
-    }
-    if (hours <= 0) {
-      setError('End must be after start')
-      return
-    }
-    const payload = {
-      position_id: positionId,
-      assignee_id: assigneeId === '' ? null : assigneeId,
-      starts_at: localInputToUtc(startLocal),
-      ends_at: localInputToUtc(endLocal),
-      notes,
-    }
     setLoading(true)
     try {
-      if (isEdit && editShift) {
-        await api.patch(`/api/shifts/${editShift.id}`, payload)
-      } else {
-        await api.post('/api/shifts', payload)
-      }
+      await request()
       invalidate()
       onClose()
     } catch (err) {
@@ -153,6 +153,14 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
       setLoading(false)
     }
   }
+
+  const save = () =>
+    submit(() =>
+      isEdit && editShift ? api.patch(`/api/shifts/${editShift.id}`, payload()) : api.post('/api/shifts', payload()),
+    )
+
+  // Duplicate creates a new draft shift from the current form values (original untouched).
+  const duplicate = () => submit(() => api.post('/api/shifts', payload()))
 
   const doAction = async (fn: () => Promise<unknown>) => {
     setError(null)
@@ -239,9 +247,14 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
       <DialogActions sx={{ justifyContent: 'space-between' }}>
         <Box>
           {isEdit && editShift && (
-            <Button color="error" disabled={loading} onClick={() => doAction(() => api.delete(`/api/shifts/${editShift.id}`))}>
-              Delete
-            </Button>
+            <>
+              <Button color="error" disabled={loading} onClick={() => doAction(() => api.delete(`/api/shifts/${editShift.id}`))}>
+                Delete
+              </Button>
+              <Button disabled={loading} onClick={duplicate} sx={{ ml: 1 }}>
+                Duplicate
+              </Button>
+            </>
           )}
         </Box>
         <Box>
