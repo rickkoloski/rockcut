@@ -27,7 +27,6 @@ import InventoryIcon from '@mui/icons-material/Inventory'
 import AssignmentIcon from '@mui/icons-material/Assignment'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PeopleIcon from '@mui/icons-material/People'
-import NotificationsIcon from '@mui/icons-material/Notifications'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import EventBusyIcon from '@mui/icons-material/EventBusy'
 import ViewAgendaIcon from '@mui/icons-material/ViewAgenda'
@@ -38,7 +37,11 @@ import BusinessIcon from '@mui/icons-material/Business'
 import PointOfSaleIcon from '@mui/icons-material/PointOfSale'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import ForumIcon from '@mui/icons-material/Forum'
+import TagIcon from '@mui/icons-material/Tag'
+import CampaignIcon from '@mui/icons-material/Campaign'
 import LogoutIcon from '@mui/icons-material/Logout'
+import { useQuery } from '@tanstack/react-query'
+import api from './lib/api'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
@@ -59,6 +62,7 @@ import UserManagement from './pages/users/UserManagement'
 import OwnerActivity from './pages/activity/OwnerActivity'
 import Schedule from './pages/schedule/Schedule'
 import TimeOff from './pages/timeoff/TimeOff'
+import Messages from './pages/messages/Messages'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
 
@@ -132,6 +136,14 @@ function App() {
     if (isAuthenticated && !bootstrapped) loadMe()
   }, [isAuthenticated, bootstrapped, loadMe])
 
+  // Total unread messages, for the Messages nav badge.
+  const { data: messagesUnread = 0 } = useQuery({
+    queryKey: ['messages_unread'],
+    queryFn: async () => (await api.get<{ count: number }>('/api/messages/unread_count')).data.count,
+    enabled: isAuthenticated,
+    refetchInterval: 20000,
+  })
+
   if (!isAuthenticated) return <Login />
   if (!bootstrapped || !user || !capabilities) return <LoadingScreen />
   if (user.must_reset_password) return <ForcePasswordReset />
@@ -185,20 +197,30 @@ function App() {
       key: 'messages',
       label: 'Messages',
       icon: <ForumIcon />,
-      children: isOwner
-        ? [
-            {
-              label: 'Alerts',
-              path: '/activity',
-              icon: (
-                <Badge badgeContent={pending} color="error">
-                  <NotificationsIcon />
-                </Badge>
-              ),
-            },
-          ]
-        : [],
-      emptyLabel: 'Coming soon',
+      children: [
+        {
+          label: 'Channels',
+          path: '/messages',
+          icon: (
+            <Badge badgeContent={messagesUnread} color="error">
+              <TagIcon />
+            </Badge>
+          ),
+        },
+        ...(isOwner
+          ? [
+              {
+                label: 'Alerts',
+                path: '/activity',
+                icon: (
+                  <Badge badgeContent={pending} color="error">
+                    <CampaignIcon />
+                  </Badge>
+                ),
+              },
+            ]
+          : []),
+      ],
     },
   ]
 
@@ -427,6 +449,8 @@ function App() {
             <Route path="/schedule" element={<Schedule forceView="agenda" />} />
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />
+            <Route path="/messages" element={<Messages />} />
+            <Route path="/messages/:key" element={<Messages />} />
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}
             {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
           </Routes>

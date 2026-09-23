@@ -1,6 +1,6 @@
 # D23: Team Messaging (Channels) — Specification
 
-**Status:** Draft (2026-09-23)
+**Status:** Complete (2026-09-23) — see `stepwise_results/d23_messaging_COMPLETE.md`
 **Created:** 2026-09-23
 **Author:** Matt + CC
 **Depends On:** D10 (roles), D18 (notifications), D20 (Messages nav), D21 (push)

@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D23 (D19 PWA, D20 nav, D21 web push, D22 reminders complete)
+- **Next deliverable**: D24 (D19 PWA, D20 nav, D21 web push, D22 reminders, D23 messaging complete)
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -123,6 +123,7 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D20 | Department-Grouped Navigation — collapsible left nav (Schedule, per-department headings, Admin, Messages); /schedule agenda + /scheduler grid split | 06_auth_roles |
 | D21 | Web Push Notifications — web_push channel in the D18 dispatcher (VAPID/web_push_ex + Req), push_subscriptions, custom service worker push handlers, per-device enable UI | 08_notifications |
 | D22 | Shift Reminders — one reminder ~1h before a published shift (shift_reminder event); lightweight GenServer scanner + shift_reminders dedup ledger | 08_notifications |
+| D23 | Team Messaging — derived pre-defined channels (All-staff, Managers, per-department); full-history access from membership; message_posted email+push; /messages UI + unread badges | 08_notifications |
 
 ## References
 

@@ -33,7 +33,13 @@ const EVENTS = [
   { event: 'shift_changed', label: 'Your schedule has changed' },
   { event: 'shift_reminder', label: 'Shift reminder' },
   { event: 'open_shift', label: 'Open shift available' },
+  { event: 'message_posted', label: 'New message' },
 ]
+// Per-event default overrides (must match the backend). New messages skip the
+// in-app bell by default (unread badges cover it).
+const EVENT_DEFAULTS: Record<string, Record<string, boolean>> = {
+  message_posted: { in_app: false },
+}
 const CHANNELS = [
   { key: 'in_app', label: 'In-app', enabled: true, def: true },
   { key: 'email', label: 'Email', enabled: true, def: true },
@@ -56,7 +62,8 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
     if (open) currentPushState().then(setPushState)
   }, [open])
 
-  const isOn = (event: string, ch: (typeof CHANNELS)[number]) => prefs[event]?.[ch.key] ?? ch.def
+  const isOn = (event: string, ch: (typeof CHANNELS)[number]) =>
+    prefs[event]?.[ch.key] ?? EVENT_DEFAULTS[event]?.[ch.key] ?? ch.def
 
   const writePrefs = async (next: NotificationPrefs) => {
     qc.setQueryData(['notification_preferences'], next) // optimistic

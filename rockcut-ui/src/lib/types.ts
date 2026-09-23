@@ -344,6 +344,23 @@ export interface AppNotification {
 
 export type NotificationPrefs = Record<string, Record<string, boolean>>
 
+// ── Messaging (D23) ─────────────────────────────────────────────────
+
+export interface Channel {
+  key: string
+  name: string
+  kind: 'all' | 'managers' | 'department'
+  unread: number
+}
+
+export interface ChatMessage {
+  id: number
+  channel_key: string
+  body: string
+  user: { id: number; name: string | null; email: string } | null
+  inserted_at: string
+}
+
 export interface CalendarFeed {
   subject_type: 'user' | 'department' | 'all'
   subject_id: number | null
