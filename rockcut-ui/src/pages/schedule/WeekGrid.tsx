@@ -1,12 +1,15 @@
 import { useMemo, useState } from 'react'
-import { Box, Chip, IconButton, Menu, MenuItem, Stack, Typography } from '@mui/material'
+import { Box, Chip, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
-import { formatDayColumn, formatHoursShort, formatTime, localDayKey, shiftHours, weekDayKeys } from '../../lib/datetime'
+import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import { formatDayColumn, formatHoursShort, formatTime, formatWallTime, localDayKey, shiftHours, weekDayKeys, weekdayOf } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
-import type { Department, RosterEntry, Shift } from '../../lib/types'
+import type { ShiftConflict } from '../../lib/conflicts'
+import type { OffMarker } from '../../lib/timeoff'
+import type { AvailabilitySlot, Department, RosterEntry, Shift } from '../../lib/types'
 
 interface Props {
   mondayKey: string
@@ -25,7 +28,9 @@ interface Props {
   onReorder: (userIds: number[]) => void
   onPublishEmployee: (userId: number) => void
   onDeleteEmployee: (userId: number) => void
-  offDays: Map<number, Set<string>> // userId -> Denver day keys with approved time off
+  offMarkers: Map<number, Map<string, OffMarker[]>> // userId -> day key -> time-off markers (with times)
+  conflicts: Map<number, ShiftConflict[]> // shiftId -> conflict warnings (D24)
+  availability: AvailabilitySlot[] // recurring weekly availability, shown per day (D25)
 }
 
 const NAME_COL = 160
@@ -34,7 +39,7 @@ const DAY_COL = 150
 export default function WeekGrid({
   mondayKey, shifts, roster, departments, currentUserId, canCreate, canManageSchedule,
   canManageShift, canClaim, onCreate, onEditShift, onClaim, onMoveShift,
-  onReorder, onPublishEmployee, onDeleteEmployee, offDays,
+  onReorder, onPublishEmployee, onDeleteEmployee, offMarkers, conflicts, availability,
 }: Props) {
   const days = weekDayKeys(mondayKey)
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -85,6 +90,38 @@ export default function WeekGrid({
     return m
   }, [shifts])
 
+  // Availability slots indexed by `${userId}|${weekday}` for per-cell markers (D25).
+  const availByUserDay = useMemo(() => {
+    const m = new Map<string, AvailabilitySlot[]>()
+    for (const s of availability) {
+      const key = `${s.user_id}|${s.weekday}`
+      if (!m.has(key)) m.set(key, [])
+      m.get(key)!.push(s)
+    }
+    return m
+  }, [availability])
+
+  const availLabel = (s: AvailabilitySlot): string => {
+    const window = s.all_day ? 'all day' : `${formatWallTime(s.start_time ?? '')}–${formatWallTime(s.end_time ?? '')}`
+    return s.kind === 'unavailable' ? `Unavailable ${window}` : `Prefers ${window}`
+  }
+
+  const availChips = (userId: number, dayKey: string) => {
+    const slots = availByUserDay.get(`${userId}|${weekdayOf(dayKey)}`)
+    if (!slots?.length) return null
+    return slots.map((s) => (
+      <Chip
+        key={`av-${s.id}`}
+        size="small"
+        variant="outlined"
+        color={s.kind === 'unavailable' ? 'error' : 'success'}
+        label={availLabel(s)}
+        title={s.note ?? undefined}
+        sx={{ fontSize: 11, height: 20, maxWidth: '100%' }}
+      />
+    ))
+  }
+
   const round2 = (n: number) => Math.round(n * 100) / 100
 
   const hoursLabel = (rowId: number | null): string => {
@@ -120,7 +157,9 @@ export default function WeekGrid({
     const { bg, fg } = shiftColor(departmentColor(dep), s.position_id)
     const draft = s.status === 'draft'
     const draggable = canManageShift(s)
-    return (
+    const shiftConflicts = conflicts.get(s.id)
+    const conflicted = !!shiftConflicts?.length
+    const box = (
       <Box
         key={s.id}
         draggable={draggable}
@@ -144,18 +183,37 @@ export default function WeekGrid({
           opacity: dragShift?.id === s.id ? 0.4 : draft ? 0.85 : 1,
           bgcolor: draft ? 'transparent' : bg,
           color: draft ? 'text.primary' : fg,
-          border: draft ? '1px dashed' : '1px solid',
-          borderColor: bg,
+          border: conflicted ? '2px solid' : draft ? '1px dashed' : '1px solid',
+          borderColor: conflicted ? 'error.main' : bg,
           fontSize: 12, lineHeight: 1.3,
           display: 'flex', justifyContent: 'space-between', gap: 0.5,
         }}
       >
         <Box sx={{ minWidth: 0 }}>
-          <Box sx={{ fontWeight: 600 }}>{s.position?.name ?? '—'}</Box>
+          <Box sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.25 }}>
+            {conflicted && <WarningAmberIcon sx={{ fontSize: 14, color: draft ? 'error.main' : 'inherit' }} />}
+            {s.position?.name ?? '—'}
+          </Box>
           <Box>{formatTime(s.starts_at)}{draft ? ' · draft' : ''}</Box>
         </Box>
         <Box sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{formatHoursShort(shiftHours(s.starts_at, s.ends_at))}</Box>
       </Box>
+    )
+    if (!conflicted) return box
+    return (
+      <Tooltip
+        key={s.id}
+        arrow
+        title={
+          <Box>
+            {shiftConflicts!.map((c, i) => (
+              <Box key={i}>• {c.message}</Box>
+            ))}
+          </Box>
+        }
+      >
+        {box}
+      </Tooltip>
     )
   }
 
@@ -229,9 +287,28 @@ export default function WeekGrid({
                   }}
                 >
                   <Stack spacing={0.5}>
-                    {row.id !== null && offDays.get(row.id)?.has(dayKey) && (
-                      <Chip label="Off" size="small" sx={{ bgcolor: 'action.selected', fontSize: 11, height: 20 }} />
+                    {row.id !== null && offMarkers.get(row.id)?.get(dayKey)?.map((mk, i) =>
+                      mk.pending ? (
+                        <Chip
+                          key={`off-${i}`}
+                          label={`${mk.label} (pending)`}
+                          size="small"
+                          variant="outlined"
+                          color="warning"
+                          title={`Pending approval · ${mk.label} · ${mk.type}`}
+                          sx={{ fontSize: 11, height: 20, maxWidth: '100%', borderStyle: 'dashed' }}
+                        />
+                      ) : (
+                        <Chip
+                          key={`off-${i}`}
+                          label={mk.label}
+                          size="small"
+                          title={`${mk.label} · ${mk.type}`}
+                          sx={{ bgcolor: 'action.selected', fontSize: 11, height: 20, maxWidth: '100%' }}
+                        />
+                      ),
                     )}
+                    {row.id !== null && availChips(row.id, dayKey)}
                     {items.map(chip)}
                     {items.length === 0 && (
                       <AddIcon className="add-affordance" fontSize="small" sx={{ opacity: 0, color: 'text.disabled' }} />

@@ -22,6 +22,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ExpandLess from '@mui/icons-material/ExpandLess'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 import HomeIcon from '@mui/icons-material/Home'
+import DashboardIcon from '@mui/icons-material/Dashboard'
 import ScienceIcon from '@mui/icons-material/Science'
 import InventoryIcon from '@mui/icons-material/Inventory'
 import AssignmentIcon from '@mui/icons-material/Assignment'
@@ -29,6 +30,7 @@ import SettingsIcon from '@mui/icons-material/Settings'
 import PeopleIcon from '@mui/icons-material/People'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
 import EventBusyIcon from '@mui/icons-material/EventBusy'
+import EventAvailableIcon from '@mui/icons-material/EventAvailable'
 import ViewAgendaIcon from '@mui/icons-material/ViewAgenda'
 import GridViewIcon from '@mui/icons-material/GridView'
 import SportsBarIcon from '@mui/icons-material/SportsBar'
@@ -49,6 +51,7 @@ import type { Channel } from './lib/types'
 
 // Pages
 import Home from './pages/Home'
+import BreweryDashboard from './pages/brewery/BreweryDashboard'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
 import RecipeDetail from './pages/recipes/RecipeDetail'
@@ -62,6 +65,7 @@ import UserManagement from './pages/users/UserManagement'
 import OwnerActivity from './pages/activity/OwnerActivity'
 import Schedule from './pages/schedule/Schedule'
 import TimeOff from './pages/timeoff/TimeOff'
+import Availability from './pages/availability/Availability'
 import Messages from './pages/messages/Messages'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
@@ -89,7 +93,7 @@ interface NavSection {
 // Brewery is the only department with app pages today; the others (Bar, Office,
 // Sales) show as headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
-  { label: 'Home', path: '/', icon: <HomeIcon /> },
+  { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
   { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
@@ -108,20 +112,6 @@ function LoadingScreen() {
   return (
     <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
       <CircularProgress />
-    </Box>
-  )
-}
-
-function NoModules() {
-  return (
-    <Box sx={{ p: 4 }}>
-      <Typography variant="h5" gutterBottom>
-        Welcome to Rockcut
-      </Typography>
-      <Typography color="text.secondary">
-        Your account doesn't have access to any modules yet. Ask an owner or your department manager
-        to assign you a role.
-      </Typography>
     </Box>
   )
 }
@@ -180,6 +170,7 @@ function App() {
           ? [{ label: 'Scheduler', path: '/scheduler', icon: <GridViewIcon /> }]
           : []),
         { label: 'Time off', path: '/time_off', icon: <EventBusyIcon /> },
+        { label: 'Availability', path: '/availability', icon: <EventAvailableIcon /> },
       ],
     },
     ...deptSections,
@@ -227,7 +218,6 @@ function App() {
   ]
 
   // Non-brewery users land on the schedule (available to everyone signed in).
-  const landing = hasBrewery ? null : '/schedule'
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
@@ -299,6 +289,15 @@ function App() {
         {rail ? (
           // Collapsed rail: section icons only; a click reopens the drawer + section.
           <List sx={{ flexGrow: 1 }}>
+            <Tooltip title="Home" placement="right" arrow>
+              <ListItemButton
+                selected={isSelected('/')}
+                onClick={() => go('/', isMobile)}
+                sx={{ mx: 0.5, borderRadius: 1, justifyContent: 'center', px: 1.5 }}
+              >
+                <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}><HomeIcon /></ListItemIcon>
+              </ListItemButton>
+            </Tooltip>
             {sections.map((s) => (
               <Tooltip key={s.key} title={s.label} placement="right" arrow>
                 <ListItemButton
@@ -317,6 +316,14 @@ function App() {
           </List>
         ) : (
           <List sx={{ flexGrow: 1 }}>
+            <ListItemButton
+              selected={isSelected('/')}
+              onClick={() => go('/', isMobile)}
+              sx={{ mx: 1, borderRadius: 1 }}
+            >
+              <ListItemIcon sx={{ minWidth: 36 }}><HomeIcon /></ListItemIcon>
+              <ListItemText primary="Home" primaryTypographyProps={{ fontWeight: 600 }} />
+            </ListItemButton>
             {sections.map((s) => {
               const open = sectionOpen(s)
               return (
@@ -446,10 +453,8 @@ function App() {
 
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Routes>
-            <Route
-              path="/"
-              element={hasBrewery ? <Home /> : landing ? <Navigate to={landing} replace /> : <NoModules />}
-            />
+            <Route path="/" element={<Home />} />
+            {hasBrewery && <Route path="/brewery" element={<BreweryDashboard />} />}
             <Route path="/brands" element={<BrandsList />} />
             <Route path="/brands/:id" element={<BrandDetail />} />
             <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
@@ -462,10 +467,12 @@ function App() {
             <Route path="/schedule" element={<Schedule forceView="agenda" />} />
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />
+            <Route path="/availability" element={<Availability />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:key" element={<Messages />} />
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}
             {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Box>
       </Box>

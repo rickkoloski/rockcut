@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -33,7 +34,9 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
-import type { Department, Position, RosterEntry, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
+import { buildUnavailability, conflictMap } from '../../lib/conflicts'
+import { buildOffMarkers } from '../../lib/timeoff'
+import type { AvailabilitySlot, Department, Position, RosterEntry, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
 import PositionsDialog from './PositionsDialog'
 import PaletteDialog from './PaletteDialog'
@@ -114,27 +117,31 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
   const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates')
   const { data: scheduleTemplates = [] } = useApiQuery<ScheduleTemplate[]>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
-  const timeOffParams = useMemo(() => ({ status: 'approved', from: mondayKey, to: addDaysKey(mondayKey, 6) }), [mondayKey])
-  const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'approved', mondayKey], '/api/time_off', timeOffParams)
+  // Fetch all statuses in range; the grid shows approved + pending distinctly.
+  const timeOffParams = useMemo(() => ({ from: mondayKey, to: addDaysKey(mondayKey, 6) }), [mondayKey])
+  const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'schedule', mondayKey], '/api/time_off', timeOffParams)
+  // Recurring availability (D25) — used for conflict detection; managers/owner only.
+  const { data: availability = [] } = useApiQuery<AvailabilitySlot[]>(['availability'], '/api/availability', undefined, { enabled: canManageSchedule })
 
-  // userId -> set of Denver day keys with approved time off in the visible week.
+  // userId -> (Denver day key -> time-off markers with times), for the visible week.
+  const offMarkers = useMemo(() => buildOffMarkers(timeOff, mondayKey), [timeOff, mondayKey])
+
+  // Day-level set for conflict detection — approved time off only (pending is a
+  // heads-up, not a hard conflict).
   const offDays = useMemo(() => {
-    const sunday = addDaysKey(mondayKey, 6)
     const m = new Map<number, Set<string>>()
-    for (const r of timeOff) {
-      let d = localDayKey(r.starts_at)
-      if (d < mondayKey) d = mondayKey
-      const rawEnd = localDayKey(r.ends_at)
-      const end = rawEnd > sunday ? sunday : rawEnd
-      const set = m.get(r.user_id) ?? new Set<string>()
-      while (d <= end) {
-        set.add(d)
-        d = addDaysKey(d, 1)
-      }
-      m.set(r.user_id, set)
+    for (const [uid, dayMap] of offMarkers) {
+      const set = new Set<string>()
+      for (const [dayKey, marks] of dayMap) if (marks.some((mk) => !mk.pending)) set.add(dayKey)
+      if (set.size) m.set(uid, set)
     }
     return m
-  }, [timeOff, mondayKey])
+  }, [offMarkers])
+
+  // D24/D25 — non-blocking conflict warnings (time-off overlap + double-booking + availability).
+  const unavailability = useMemo(() => buildUnavailability(availability), [availability])
+  const conflicts = useMemo(() => conflictMap(shifts, offDays, unavailability), [shifts, offDays, unavailability])
+  const conflictCount = conflicts.size
 
   const managedDepartments = isOwner ? departments : departments.filter((d) => managedKeys.includes(d.key))
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -393,25 +400,35 @@ export default function Schedule({ forceView }: { forceView?: View }) {
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
       ) : view === 'week' ? (
-        <WeekGrid
-          mondayKey={mondayKey}
-          shifts={shifts}
-          roster={roster}
-          departments={departments}
-          currentUserId={user?.id}
-          canCreate={canManageSchedule}
-          canManageSchedule={canManageSchedule}
-          canManageShift={canManageShift}
-          canClaim={canClaim}
-          onCreate={requestCellCreate}
-          onEditShift={openEdit}
-          onClaim={claim}
-          onMoveShift={moveShift}
-          onReorder={reorderRoster}
-          onPublishEmployee={publishForEmployee}
-          onDeleteEmployee={requestDeleteEmployee}
-          offDays={offDays}
-        />
+        <>
+          {conflictCount > 0 && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {conflictCount} scheduling conflict{conflictCount === 1 ? '' : 's'} this week
+              {' '}(time off, unavailability, or overlapping shifts). Marked shifts are outlined in red.
+            </Alert>
+          )}
+          <WeekGrid
+            mondayKey={mondayKey}
+            shifts={shifts}
+            roster={roster}
+            departments={departments}
+            currentUserId={user?.id}
+            canCreate={canManageSchedule}
+            canManageSchedule={canManageSchedule}
+            canManageShift={canManageShift}
+            canClaim={canClaim}
+            onCreate={requestCellCreate}
+            onEditShift={openEdit}
+            onClaim={claim}
+            onMoveShift={moveShift}
+            onReorder={reorderRoster}
+            onPublishEmployee={publishForEmployee}
+            onDeleteEmployee={requestDeleteEmployee}
+            offMarkers={offMarkers}
+            conflicts={conflicts}
+            availability={availability}
+          />
+        </>
       ) : groups.length === 0 ? (
         <Typography color="text.secondary" sx={{ p: 2 }}>No shifts match these filters.</Typography>
       ) : (
@@ -445,7 +462,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
         ))
       )}
 
-      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} />
+      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} allShifts={shifts} offDays={offDays} unavailability={unavailability} />
       <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} />
       <PaletteDialog open={paletteDialog} onClose={() => setPaletteDialog(false)} departments={departments} />
       <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />

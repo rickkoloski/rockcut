@@ -55,12 +55,61 @@ defmodule RockcutApi.TimeOff do
 
   ## Writes
 
+  @doc """
+  Create a request. For oneself it is `pending` (normal request flow). A
+  manager/owner may pass a `user_id` for an employee they manage; that request
+  is created **approved** (they hold review authority), otherwise `:forbidden`.
+  """
   def create(attrs, %User{} = requester) do
-    attrs = attrs |> stringify() |> Map.put("user_id", requester.id)
+    attrs = stringify(attrs)
 
-    case %Request{} |> Request.create_changeset(attrs) |> Repo.insert() do
+    case resolve_target(requester, attrs["user_id"]) do
+      {:error, :forbidden} ->
+        {:error, :forbidden}
+
+      {:ok, target_id} ->
+        attrs = Map.put(attrs, "user_id", target_id)
+        reviewer = if target_id == requester.id, do: nil, else: requester
+        insert_request(attrs, reviewer)
+    end
+  end
+
+  defp insert_request(attrs, reviewer) do
+    changeset = Request.create_changeset(%Request{}, attrs)
+
+    changeset =
+      if reviewer do
+        Ecto.Changeset.change(changeset,
+          status: "approved",
+          reviewed_by_id: reviewer.id,
+          reviewed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+        )
+      else
+        changeset
+      end
+
+    case Repo.insert(changeset) do
       {:ok, req} -> {:ok, get(req.id)}
       other -> other
+    end
+  end
+
+  # nil / own id → self; a managed employee → their id; otherwise forbidden.
+  defp resolve_target(%User{} = requester, raw) do
+    case to_user_id(raw) do
+      nil -> {:ok, requester.id}
+      id when id == requester.id -> {:ok, requester.id}
+      id -> if Authz.can_manage_user?(requester, id), do: {:ok, id}, else: {:error, :forbidden}
+    end
+  end
+
+  defp to_user_id(nil), do: nil
+  defp to_user_id(id) when is_integer(id), do: id
+
+  defp to_user_id(id) when is_binary(id) do
+    case Integer.parse(id) do
+      {n, _} -> n
+      :error -> nil
     end
   end
 
@@ -86,11 +135,24 @@ defmodule RockcutApi.TimeOff do
 
   def review(_req, _reviewer, _status, _note), do: {:error, :invalid_status}
 
+  @doc """
+  The requester withdraws their own request. Works while it is `pending` or
+  already `approved` (so an approved day off can be given back); a
+  denied/cancelled request cannot be re-cancelled.
+  """
   def cancel(%Request{} = req, %User{} = user) do
     cond do
-      req.user_id != user.id -> {:error, :forbidden}
-      req.status != "pending" -> {:error, :not_pending}
-      true -> req |> Ecto.Changeset.change(status: "cancelled") |> Repo.update()
+      req.user_id != user.id ->
+        {:error, :forbidden}
+
+      req.status not in ["pending", "approved"] ->
+        {:error, :not_cancellable}
+
+      true ->
+        case req |> Ecto.Changeset.change(status: "cancelled") |> Repo.update() do
+          {:ok, updated} -> {:ok, get(updated.id)}
+          other -> other
+        end
     end
   end
 
@@ -101,7 +163,10 @@ defmodule RockcutApi.TimeOff do
   def can_view?(%User{} = user, %Request{} = req), do: manages_requester_dept?(user, req)
 
   def can_review?(%User{is_owner: true}, _req), do: true
-  def can_review?(%User{id: id}, %Request{user_id: uid}) when id == uid, do: false
+  # Managers/owners may approve/deny their OWN requests (they hold the authority).
+  def can_review?(%User{id: id} = user, %Request{user_id: uid}) when id == uid,
+    do: Authz.can_manage_any?(user)
+
   def can_review?(%User{} = user, %Request{} = req), do: manages_requester_dept?(user, req)
 
   defp manages_requester_dept?(%User{} = user, %Request{user: %{memberships: memberships}})

@@ -107,6 +107,21 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  def availability_slot(s) do
+    %{
+      id: s.id,
+      user_id: s.user_id,
+      user: maybe_render(s, :user, &shift_user/1),
+      weekday: s.weekday,
+      kind: s.kind,
+      all_day: s.all_day,
+      start_time: s.start_time,
+      end_time: s.end_time,
+      note: s.note,
+      inserted_at: s.inserted_at
+    }
+  end
+
   def shift_template(t) do
     %{
       id: t.id,

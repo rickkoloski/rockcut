@@ -39,6 +39,13 @@ export function formatTimeRange(startIso: string, endIso: string): string {
   return `${formatTime(startIso)} – ${formatTime(endIso)}`
 }
 
+/** Format a wall-clock time string "HH:MM" or "HH:MM:SS" as "9:00 AM" (no timezone shift). */
+export function formatWallTime(hhmm: string): string {
+  const [h, m] = hhmm.split(':').map(Number)
+  const d = new Date(Date.UTC(2000, 0, 1, Number.isNaN(h) ? 0 : h, Number.isNaN(m) ? 0 : m))
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
+}
+
 function partsMap(date: Date): Record<string, string> {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: TZ,
@@ -98,6 +105,11 @@ export function mondayKeyOf(dateKey?: string): string {
 /** Seven day keys Monday→Sunday starting at `mondayKey`. */
 export function weekDayKeys(mondayKey: string): string[] {
   return Array.from({ length: 7 }, (_, i) => addDaysKey(mondayKey, i))
+}
+
+/** The weekday (0=Sun..6=Sat) of a "YYYY-MM-DD" Denver date key. */
+export function weekdayOf(dayKey: string): number {
+  return new Date(`${dayKey}T12:00:00Z`).getUTCDay()
 }
 
 /** Column label like "Mon 22" for a date key. */

@@ -16,6 +16,8 @@ defmodule RockcutApi.Authz do
   key (e.g. "brewery"). Key matching requires the user's memberships to be
   preloaded with `:department` (as `Accounts.get_user!/1` does).
   """
+  import Ecto.Query, only: [from: 2]
+  alias RockcutApi.Repo
   alias RockcutApi.Accounts.{User, Membership, Department}
   alias RockcutApi.Scheduling.{Shift, Position}
 
@@ -61,6 +63,27 @@ defmodule RockcutApi.Authz do
     |> memberships()
     |> Enum.filter(&(&1.role == "manager"))
     |> Enum.map(& &1.department_id)
+  end
+
+  @doc """
+  True if `user` may act on behalf of `target_user_id`: an owner may manage
+  anyone; a manager may manage a user who is a member of a department they
+  manage. (Self is decided by callers.)
+  """
+  def can_manage_user?(%User{is_owner: true}, _target_user_id), do: true
+
+  def can_manage_user?(%User{} = user, target_user_id) do
+    case managed_department_ids(user) do
+      [] ->
+        false
+
+      dept_ids ->
+        Repo.exists?(
+          from(m in Membership,
+            where: m.user_id == ^target_user_id and m.department_id in ^dept_ids
+          )
+        )
+    end
   end
 
   @doc "True if the user may manage users somewhere (owner or a manager of any department)."

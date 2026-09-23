@@ -13,8 +13,10 @@ defmodule RockcutApiWeb.TimeOffController do
   end
 
   def create(conn, params) do
-    with {:ok, req} <- TimeOff.create(params, conn.assigns.current_user) do
-      conn |> put_status(:created) |> json(%{data: time_off_request(req)})
+    case TimeOff.create(params, conn.assigns.current_user) do
+      {:ok, req} -> conn |> put_status(:created) |> json(%{data: time_off_request(req)})
+      {:error, :forbidden} -> forbidden(conn)
+      other -> other
     end
   end
 
@@ -45,10 +47,17 @@ defmodule RockcutApiWeb.TimeOffController do
 
       %Request{} = req ->
         case TimeOff.cancel(req, conn.assigns.current_user) do
-          {:ok, updated} -> json(conn, %{data: time_off_request(updated)})
-          {:error, :forbidden} -> forbidden(conn)
-          {:error, :not_pending} -> unprocessable(conn, "only pending requests can be cancelled")
-          other -> other
+          {:ok, updated} ->
+            json(conn, %{data: time_off_request(updated)})
+
+          {:error, :forbidden} ->
+            forbidden(conn)
+
+          {:error, :not_cancellable} ->
+            unprocessable(conn, "this request can no longer be cancelled")
+
+          other ->
+            other
         end
     end
   end

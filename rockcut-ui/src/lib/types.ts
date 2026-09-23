@@ -389,6 +389,21 @@ export interface TimeOffRequest {
   inserted_at: string
 }
 
+export type AvailabilityKind = 'unavailable' | 'preferred'
+
+export interface AvailabilitySlot {
+  id: number
+  user_id: number
+  user: ShiftUser | null
+  weekday: number // 0=Sun..6=Sat (Denver)
+  kind: AvailabilityKind
+  all_day: boolean
+  start_time: string | null // "HH:MM:SS" (Denver wall clock)
+  end_time: string | null
+  note: string | null
+  inserted_at: string
+}
+
 export interface Shift {
   id: number
   department_id: number

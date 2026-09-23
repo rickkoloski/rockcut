@@ -71,14 +71,56 @@ defmodule RockcutApiWeb.TimeOffControllerTest do
     assert approved["data"]["reviewed_by"]["id"] == manager.id
   end
 
-  test "a manager cannot approve their own request", %{conn: conn} do
+  test "a manager's own request starts pending but they may approve it", %{conn: conn} do
     manager = user_with_role("manager", "bar")
     req = create_req(conn, manager)["data"]
+    assert req["status"] == "pending"
+
+    approved =
+      conn
+      |> bearer(manager)
+      |> post(~p"/api/time_off/#{req["id"]}/review", %{status: "approved"})
+      |> json_response(200)
+
+    assert approved["data"]["status"] == "approved"
+    assert approved["data"]["reviewed_by"]["id"] == manager.id
+  end
+
+  test "a plain employee still cannot approve their own request", %{conn: conn} do
+    emp = user_with_role("employee", "bar")
+    req = create_req(conn, emp)["data"]
 
     assert conn
-           |> bearer(manager)
+           |> bearer(emp)
            |> post(~p"/api/time_off/#{req["id"]}/review", %{status: "approved"})
            |> json_response(403)
+  end
+
+  test "the requester can cancel their own approved request", %{conn: conn} do
+    manager = user_with_role("manager", "bar")
+    emp = user_with_role("employee", "bar", %{email: "approved-emp@rockcut.com"})
+    req = create_req(conn, emp)["data"]
+    conn |> bearer(manager) |> post(~p"/api/time_off/#{req["id"]}/review", %{status: "approved"})
+
+    body =
+      conn |> bearer(emp) |> post(~p"/api/time_off/#{req["id"]}/cancel") |> json_response(200)
+
+    assert body["data"]["status"] == "cancelled"
+  end
+
+  test "a manager can deny an already-approved request", %{conn: conn} do
+    manager = user_with_role("manager", "bar")
+    emp = user_with_role("employee", "bar", %{email: "deny-emp@rockcut.com"})
+    req = create_req(conn, manager, %{user_id: emp.id})
+    assert req["data"]["status"] == "approved"
+
+    denied =
+      conn
+      |> bearer(manager)
+      |> post(~p"/api/time_off/#{req["data"]["id"]}/review", %{status: "denied"})
+      |> json_response(200)
+
+    assert denied["data"]["status"] == "denied"
   end
 
   test "an employee cannot review", %{conn: conn} do
@@ -100,5 +142,45 @@ defmodule RockcutApiWeb.TimeOffControllerTest do
       conn |> bearer(emp) |> post(~p"/api/time_off/#{req["id"]}/cancel") |> json_response(200)
 
     assert body["data"]["status"] == "cancelled"
+  end
+
+  test "a manager enters time off for a report — created approved", %{conn: conn} do
+    manager = user_with_role("manager", "bar")
+    emp = user_with_role("employee", "bar", %{email: "report@rockcut.com"})
+
+    body = create_req(conn, manager, %{user_id: emp.id})
+
+    assert body["data"]["user_id"] == emp.id
+    assert body["data"]["status"] == "approved"
+    assert body["data"]["reviewed_by_id"] == manager.id
+  end
+
+  test "an owner enters time off for anyone — created approved", %{conn: conn} do
+    owner = owner_fixture()
+    emp = user_with_role("employee", "office")
+
+    body = create_req(conn, owner, %{user_id: emp.id})
+
+    assert body["data"]["user_id"] == emp.id
+    assert body["data"]["status"] == "approved"
+  end
+
+  test "a manager cannot enter time off for someone they don't manage", %{conn: conn} do
+    manager = user_with_role("manager", "bar")
+    outsider = user_with_role("employee", "office", %{email: "outsider@rockcut.com"})
+
+    assert conn
+           |> bearer(manager)
+           |> post(
+             ~p"/api/time_off",
+             %{
+               type: "pto",
+               all_day: true,
+               starts_at: @start,
+               ends_at: @finish,
+               user_id: outsider.id
+             }
+           )
+           |> json_response(403)
   end
 end

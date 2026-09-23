@@ -18,6 +18,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import { addDaysKey, formatHours, localInputToUtc, shiftHours, utcToLocalInput } from '../../lib/datetime'
+import { conflictsFor, type UnavailabilityByUser } from '../../lib/conflicts'
 import type { Department, Position, RosterEntry, Shift, ShiftTemplate } from '../../lib/types'
 
 interface Prefill {
@@ -35,6 +36,9 @@ interface Props {
   roster: RosterEntry[] // all active staff — any employee can be scheduled in any department
   shiftTemplates: ShiftTemplate[] // per-position standard hours
   prefill?: Prefill
+  allShifts: Shift[] // loaded shifts, for live double-booking detection (D24)
+  offDays: Map<number, Set<string>> // userId -> approved time-off day keys (D24)
+  unavailability: UnavailabilityByUser // userId -> recurring unavailable windows (D25)
 }
 
 function readError(err: unknown): string {
@@ -52,7 +56,7 @@ function roundTime15(t: string): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
-export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, roster, shiftTemplates, prefill }: Props) {
+export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, roster, shiftTemplates, prefill, allShifts, offDays, unavailability }: Props) {
   const qc = useQueryClient()
   const isEdit = !!editShift
 
@@ -130,6 +134,17 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
   const startLocal = startDay && startTime ? `${startDay}T${startTime}` : ''
   const endLocal = endDay && endTime ? `${endDay}T${endTime}` : ''
   const hours = startLocal && endLocal ? shiftHours(localInputToUtc(startLocal), localInputToUtc(endLocal)) : 0
+
+  // D24 — live, non-blocking conflict warnings for the chosen assignee + times.
+  const liveConflicts = useMemo(() => {
+    if (assigneeId === '' || !startLocal || !endLocal || hours <= 0) return []
+    return conflictsFor(
+      { assigneeId, startsAt: localInputToUtc(startLocal), endsAt: localInputToUtc(endLocal), excludeId: editShift?.id },
+      allShifts,
+      offDays,
+      unavailability,
+    )
+  }, [assigneeId, startLocal, endLocal, hours, allShifts, offDays, unavailability, editShift])
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['shifts'] })
 
@@ -282,6 +297,14 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
         <Typography variant="body2" color={hours <= 0 ? 'error' : 'text.secondary'}>
           Total: {hours > 0 ? formatHours(hours) : '—'}
         </Typography>
+
+        {liveConflicts.length > 0 && (
+          <Alert severity="warning" sx={{ '& .MuiAlert-message': { py: 0.25 } }}>
+            {liveConflicts.map((c, i) => (
+              <Box key={i}>{c.message}</Box>
+            ))}
+          </Alert>
+        )}
 
         <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} fullWidth multiline minRows={2} />
       </DialogContent>

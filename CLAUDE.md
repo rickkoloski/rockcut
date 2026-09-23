@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D24 (D19 PWA, D20 nav, D21 web push, D22 reminders, D23 messaging complete)
+- **Next deliverable**: D27 (D19 PWA, D20 nav, D21 web push, D22 reminders, D23 messaging, D24 conflict warnings, D25 availability, D26 home restructure complete)
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -124,6 +124,9 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D21 | Web Push Notifications — web_push channel in the D18 dispatcher (VAPID/web_push_ex + Req), push_subscriptions, custom service worker push handlers, per-device enable UI | 08_notifications |
 | D22 | Shift Reminders — one reminder ~1h before a published shift (shift_reminder event); lightweight GenServer scanner + shift_reminders dedup ledger | 08_notifications |
 | D23 | Team Messaging — derived pre-defined channels (All-staff, Managers, per-department); full-history access from membership; message_posted email+push; /messages UI + unread badges | 08_notifications |
+| D24 | Scheduling Conflict Warnings — non-blocking, client-side detection (approved time-off overlap + double-booking); marked chips + tooltip + week banner in the grid, live warning in the shift dialog (src/lib/conflicts.ts) | 07_scheduling |
+| D25 | Employee Availability — recurring weekly self-declared slots (unavailable/preferred), availability_slots table + RockcutApi.Availability + /api/availability + /availability editor page; unavailable slots feed conflicts.ts as an `availability` conflict kind. **+ Time-off enhancements** (same push): cross-day timed requests; grid off-chips show times + pending (amber) distinctly; managers/owners enter time off & availability on-behalf of managed employees (Authz.can_manage_user?); approval workflow — approve own, cancel/deny an approved request (confirm step), date-sorted lists, "Approved by" | 07_scheduling |
+| D26 | Company-wide Home + Brewery Dashboard — new generic `/` landing (quick-link cards) for all employees; old brewers' dashboard moved to `/brewery` (brewery-only), reached via Brewery → Dashboard; top-level Home nav link; catch-all route → `/` | 02_scaffold_ui |
 
 ## References
 

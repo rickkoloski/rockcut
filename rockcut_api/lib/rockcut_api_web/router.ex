@@ -71,6 +71,11 @@ defmodule RockcutApiWeb.Router do
     post "/time_off/:id/review", TimeOffController, :review
     post "/time_off/:id/cancel", TimeOffController, :cancel
 
+    # Availability (D25) — recurring weekly, self-declared
+    get "/availability", AvailabilityController, :index
+    post "/availability", AvailabilityController, :create
+    delete "/availability/:id", AvailabilityController, :delete
+
     # Calendar feed management (D17)
     get "/calendar_feeds", CalendarFeedController, :index
     post "/calendar_feeds/rotate", CalendarFeedController, :rotate
