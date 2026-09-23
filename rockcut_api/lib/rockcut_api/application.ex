@@ -14,8 +14,8 @@ defmodule RockcutApi.Application do
        repos: Application.fetch_env!(:rockcut_api, :ecto_repos), skip: skip_migrations?()},
       {DNSCluster, query: Application.get_env(:rockcut_api, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: RockcutApi.PubSub},
-      # Start a worker by calling: RockcutApi.Worker.start_link(arg)
-      # {RockcutApi.Worker, arg},
+      # Periodic shift-reminder scanner (D22); no-ops in :test.
+      RockcutApi.Reminders.Scheduler,
       # Start to serve requests, typically the last entry
       RockcutApiWeb.Endpoint
     ]

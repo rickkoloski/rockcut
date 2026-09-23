@@ -20,6 +20,9 @@ config :rockcut_api, RockcutApiWeb.Endpoint,
 # In test we don't send emails
 config :rockcut_api, RockcutApi.Mailer, adapter: Swoosh.Adapters.Test
 
+# Don't run the reminder scanner in tests — they drive Reminders.run/1 directly.
+config :rockcut_api, RockcutApi.Reminders.Scheduler, enabled: false
+
 # Disable swoosh api client as it is only required for production adapters
 config :swoosh, :api_client, false
 

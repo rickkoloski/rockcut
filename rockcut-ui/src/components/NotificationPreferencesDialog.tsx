@@ -31,6 +31,7 @@ interface Props {
 const EVENTS = [
   { event: 'shift_scheduled', label: "You've been scheduled" },
   { event: 'shift_changed', label: 'Your schedule has changed' },
+  { event: 'shift_reminder', label: 'Shift reminder' },
   { event: 'open_shift', label: 'Open shift available' },
 ]
 const CHANNELS = [

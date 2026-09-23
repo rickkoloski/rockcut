@@ -177,6 +177,21 @@ defmodule RockcutApi.Notifications do
     end)
   end
 
+  @doc "Reminder to the assignee that a published shift is starting soon (D22)."
+  def shift_reminder(shift) do
+    safe(fn ->
+      shift = Repo.preload(shift, [:department, :position, :assignee])
+
+      if shift.assignee do
+        notify(shift.assignee, :shift_reminder, %{
+          title: "Shift reminder",
+          body: shift_body(shift),
+          data: shift_data(shift)
+        })
+      end
+    end)
+  end
+
   ## Internal
 
   defp department_members(dept_id) do
