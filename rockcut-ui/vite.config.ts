@@ -15,9 +15,13 @@ const datagridExtendedPath = isDocker
 export default defineConfig({
   plugins: [
     react(),
-    // D19 — installable PWA. App-shell precache + auto-update; NO API caching
-    // (schedule data is dynamic + authed, so stale is worse than a spinner).
+    // D19 — installable PWA; D21 — custom service worker (src/sw.ts) for web push.
+    // injectManifest lets us host push/notificationclick handlers alongside the
+    // Workbox app-shell precache. NO API caching (schedule data is dynamic + authed).
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.ts',
       registerType: 'autoUpdate',
       includeAssets: ['favicon-32x32.png', 'apple-touch-icon.png', 'rockcut-logo.png'],
       manifest: {
@@ -36,13 +40,8 @@ export default defineConfig({
           { src: 'maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
         ],
       },
-      workbox: {
+      injectManifest: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-        // SPA fallback for offline navigations; API/dev routes pass straight through.
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api/, /^\/dev/],
-        // No runtimeCaching: never cache API responses.
-        cleanupOutdatedCaches: true,
       },
       // Don't run the service worker during `pnpm dev` (avoids cache-trapping HMR).
       devOptions: { enabled: false },
