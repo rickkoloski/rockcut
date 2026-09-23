@@ -33,12 +33,12 @@ Fly.io. Shared dep `datagrid-extended` from `~/src/shared/`.
 **Branch:** `scheduler-pwa` (off `practice1`) — **pushed to `origin`
 (rickkoloski/rockcut).** No PR opened (by choice).
 
-**Tests:** `cd rockcut_api && MIX_ENV=test mix test` → **181 passing**.
-**Next deliverable: D27.**
+**Tests:** `cd rockcut_api && MIX_ENV=test mix test` → **183 passing**.
+**Next deliverable: D28.**
 
 ---
 
-## State: D10–D26 complete. This session added D24–D26.
+## State: D10–D27 complete. This session added D24–D27.
 
 Specs + completion records in `docs/current_work/{specs,stepwise_results}/`.
 D10–D23 recap is in the 2026-09-23 (a) handoff. This session:
@@ -72,6 +72,12 @@ D10–D23 recap is in the 2026-09-23 (a) handoff. This session:
   cards) for **all** employees; the old brewers' dashboard moved to **`/brewery`**
   (brewery-only, via **Brewery → Dashboard**). Top-level **Home** nav link;
   catch-all route → `/`. Intentionally a shell for future home **widgets**.
+- **D27 — Per-position color shades + scheduler polish.** `positions.color_shade`
+  (HSL lightness of the department hue, nullable) with a swatch picker; **color
+  controls moved into the "Manage positions" dialog** (standalone Colors dialog
+  removed); agenda chip shows **position only** (color conveys dept); week-grid
+  employee row = name + reorder arrows + ⋮ menu on **one line**. Edit shades:
+  Scheduler → **Positions** (owner only).
 
 - **Fix — change-log badge.** The Admin → "User change log" nav badge used a
   7-day "user.created" heuristic (always lit for a week, no read state). Now it's
@@ -80,8 +86,8 @@ D10–D23 recap is in the 2026-09-23 (a) handoff. This session:
   `pending_owner_reviews` counts audit entries newer than `activity_seen_at` that
   the owner didn't make. Opening the log clears the dot.
 
-**New DB tables since 2026-09-23 (a):** `availability_slots`
-(+ column `users.activity_seen_at`).
+**New DB tables/columns since 2026-09-23 (a):** `availability_slots`,
+`users.activity_seen_at`, `positions.color_shade`.
 **New key UI modules:** `lib/conflicts.ts`, `lib/timeoff.ts`,
 `pages/availability/Availability.tsx`, `pages/brewery/BreweryDashboard.tsx`.
 
@@ -125,7 +131,8 @@ Availability + hard conflict warnings are now **done** (D24/D25). Suggested next
   anyone; manager → members of departments they manage; else 403.
 - **Prod cutover caveat (D10):** deploying is a breaking auth change. **Not yet
   deployed.** New tables since D18: push_subscriptions, shift_reminders, messages,
-  channel_reads, **availability_slots**.
+  channel_reads, **availability_slots**; new columns `users.activity_seen_at`,
+  `positions.color_shade`.
 - **Dev DB has demo data** seeded this session for the new features (a conflict/
   overlap shift, availability slots, approved/pending/timed time-off for "Kate S").
   Run `mix ecto.reset` to clear.

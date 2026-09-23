@@ -288,6 +288,7 @@ export interface Position {
   group: string | null
   active: boolean
   department_id: number | null
+  color_shade: number | null // HSL lightness (0..1) of the dept hue; null = auto
 }
 
 export interface ShiftUser {

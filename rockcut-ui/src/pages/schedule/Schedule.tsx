@@ -19,7 +19,6 @@ import {
 } from '@mui/material'
 import EventIcon from '@mui/icons-material/Event'
 import SettingsIcon from '@mui/icons-material/Settings'
-import PaletteIcon from '@mui/icons-material/Palette'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import PublishIcon from '@mui/icons-material/Publish'
@@ -39,7 +38,6 @@ import { buildOffMarkers } from '../../lib/timeoff'
 import type { AvailabilitySlot, Department, Position, RosterEntry, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
 import PositionsDialog from './PositionsDialog'
-import PaletteDialog from './PaletteDialog'
 import TemplatesDialog from './TemplatesDialog'
 import CalendarSyncDialog from './CalendarSyncDialog'
 import WeekGrid from './WeekGrid'
@@ -71,7 +69,6 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const [prefill, setPrefill] = useState<{ departmentId?: number; assigneeId?: number | null; dateKey?: string } | undefined>()
   const [pendingCell, setPendingCell] = useState<{ userId: number | null; dateKey: string } | null>(null)
   const [positionsDialog, setPositionsDialog] = useState(false)
-  const [paletteDialog, setPaletteDialog] = useState(false)
   const [publishing, setPublishing] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [calendarSyncOpen, setCalendarSyncOpen] = useState(false)
@@ -338,9 +335,6 @@ export default function Schedule({ forceView }: { forceView?: View }) {
               </ToggleButtonGroup>
             )}
             <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>
-            {isOwner && (
-              <Button startIcon={<PaletteIcon />} onClick={() => setPaletteDialog(true)}>Colors</Button>
-            )}
             {canManageSchedule && (
               <>
                 {view === 'week' && (
@@ -438,7 +432,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
             <Stack spacing={1}>
               {dayShifts.map((s) => {
                 const mine = s.assignee_id && s.assignee_id === user?.id
-                const { bg, fg } = shiftColor(departmentColor(deptById.get(s.department_id) ?? s.department ?? undefined), s.position_id)
+                const { bg, fg } = shiftColor(departmentColor(deptById.get(s.department_id) ?? s.department ?? undefined), s.position_id, s.position?.color_shade)
                 return (
                   <Paper
                     key={s.id}
@@ -446,7 +440,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                     sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', borderColor: mine ? 'primary.main' : 'divider', cursor: canManageShift(s) ? 'pointer' : 'default' }}
                     onClick={canManageShift(s) ? () => openEdit(s) : undefined}
                   >
-                    <Chip label={`${s.department?.name ?? '—'} · ${s.position?.name ?? '—'}`} size="small" sx={{ bgcolor: bg, color: fg, fontWeight: 600 }} />
+                    <Chip label={s.position?.name ?? '—'} size="small" sx={{ bgcolor: bg, color: fg, fontWeight: 600 }} />
                     <Typography color="text.secondary" sx={{ minWidth: 150 }}>{formatTimeRange(s.starts_at, s.ends_at)}</Typography>
                     <Typography sx={{ flexGrow: 1 }}>{s.assignee ? (s.assignee.name || s.assignee.email) : <em>Open</em>}</Typography>
                     {s.status === 'draft' && <Chip label="Draft" size="small" color="warning" variant="outlined" />}
@@ -463,8 +457,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
       )}
 
       <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} allShifts={shifts} offDays={offDays} unavailability={unavailability} />
-      <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} />
-      <PaletteDialog open={paletteDialog} onClose={() => setPaletteDialog(false)} departments={departments} />
+      <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} canEditColors={isOwner} />
       <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />
       <ConfirmDialog
         open={pendingCell !== null}

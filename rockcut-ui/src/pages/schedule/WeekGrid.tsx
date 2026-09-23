@@ -154,7 +154,7 @@ export default function WeekGrid({
 
   const chip = (s: Shift) => {
     const dep = deptById.get(s.department_id) ?? s.department ?? undefined
-    const { bg, fg } = shiftColor(departmentColor(dep), s.position_id)
+    const { bg, fg } = shiftColor(departmentColor(dep), s.position_id, s.position?.color_shade)
     const draft = s.status === 'draft'
     const draggable = canManageShift(s)
     const shiftConflicts = conflicts.get(s.id)
@@ -233,26 +233,32 @@ export default function WeekGrid({
         {rows.map((row, rowIndex) => (
           <Box key={row.id ?? 'open'} sx={{ display: 'table-row' }}>
             <Box sx={{ ...stickyCol, display: 'table-cell', p: 1, verticalAlign: 'top', borderTop: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="body2" sx={{ fontWeight: row.id === currentUserId ? 700 : 500, color: row.id === null ? 'text.secondary' : 'text.primary' }}>
-                {row.name}{row.id === currentUserId ? ' (you)' : ''}
-              </Typography>
+              <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minWidth: 0 }}>
+                <Typography
+                  variant="body2"
+                  noWrap
+                  sx={{ flexGrow: 1, minWidth: 0, fontWeight: row.id === currentUserId ? 700 : 500, color: row.id === null ? 'text.secondary' : 'text.primary' }}
+                >
+                  {row.name}{row.id === currentUserId ? ' (you)' : ''}
+                </Typography>
+                {canManageSchedule && row.id !== null && (
+                  <>
+                    <IconButton size="small" sx={{ p: 0.25 }} disabled={rowIndex === 0} onClick={() => moveEmployee(rowIndex, -1)}>
+                      <ArrowUpwardIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                    <IconButton size="small" sx={{ p: 0.25 }} disabled={rowIndex >= roster.length - 1} onClick={() => moveEmployee(rowIndex, 1)}>
+                      <ArrowDownwardIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                    <IconButton size="small" sx={{ p: 0.25 }} onClick={(e) => openMenu(e, row.id!)}>
+                      <MoreVertIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </>
+                )}
+              </Stack>
               {hoursLabel(row.id) && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   {hoursLabel(row.id)}
                 </Typography>
-              )}
-              {canManageSchedule && row.id !== null && (
-                <Stack direction="row" spacing={0} sx={{ mt: 0.25 }}>
-                  <IconButton size="small" disabled={rowIndex === 0} onClick={() => moveEmployee(rowIndex, -1)}>
-                    <ArrowUpwardIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                  <IconButton size="small" disabled={rowIndex >= roster.length - 1} onClick={() => moveEmployee(rowIndex, 1)}>
-                    <ArrowDownwardIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                  <IconButton size="small" onClick={(e) => openMenu(e, row.id!)}>
-                    <MoreVertIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                </Stack>
               )}
             </Box>
             {days.map((dayKey) => {

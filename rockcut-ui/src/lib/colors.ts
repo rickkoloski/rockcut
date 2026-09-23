@@ -70,11 +70,32 @@ export function contrastText(hex: string): '#000000' | '#ffffff' {
 
 const STEPS = [0, 0.12, -0.12, 0.24, -0.24, 0.06, -0.06]
 
-/** Shade of a department base color for a given position. */
-export function shiftColor(baseHex: string, positionId: number): { bg: string; fg: string } {
+/** The selectable shade palette for a department: same hue/saturation, ramped
+ *  lightness (light → dark). Each `l` is what a position stores as color_shade. */
+export const SHADE_LEVELS = [0.84, 0.74, 0.64, 0.54, 0.45, 0.37, 0.29]
+
+export function departmentShades(baseHex: string): { l: number; hex: string; fg: string }[] {
+  const [h, s] = rgbToHsl(...hexToRgb(baseHex))
+  return SHADE_LEVELS.map((l) => {
+    const hex = rgbToHex(hslToRgb(h, s, l))
+    return { l, hex, fg: contrastText(hex) }
+  })
+}
+
+/**
+ * Fill for a shift. When `shade` (a 0..1 lightness) is given, use that shade of
+ * the department hue; otherwise derive a deterministic shade from the position.
+ */
+export function shiftColor(
+  baseHex: string,
+  positionId: number,
+  shade?: number | null,
+): { bg: string; fg: string } {
   const [h, s, l] = rgbToHsl(...hexToRgb(baseHex))
-  const off = STEPS[Math.abs(positionId) % STEPS.length]
-  const nl = Math.min(0.82, Math.max(0.24, l + off))
+  const nl =
+    typeof shade === 'number'
+      ? Math.min(0.92, Math.max(0.12, shade))
+      : Math.min(0.82, Math.max(0.24, l + STEPS[Math.abs(positionId) % STEPS.length]))
   const bg = rgbToHex(hslToRgb(h, s, nl))
   return { bg, fg: contrastText(bg) }
 }

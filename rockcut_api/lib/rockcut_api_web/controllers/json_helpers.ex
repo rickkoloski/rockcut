@@ -64,7 +64,14 @@ defmodule RockcutApiWeb.JSONHelpers do
   # ── Scheduling views ───────────────────────────────────────────────
 
   def position(p) do
-    %{id: p.id, name: p.name, group: p.group, active: p.active, department_id: p.department_id}
+    %{
+      id: p.id,
+      name: p.name,
+      group: p.group,
+      active: p.active,
+      department_id: p.department_id,
+      color_shade: p.color_shade
+    }
   end
 
   def shift(s) do
