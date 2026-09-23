@@ -39,6 +39,15 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Web Push (D21). This is a DEV/TEST keypair — safe to commit; prod overrides
+# public_key/private_key from Fly secrets in config/runtime.exs. Regenerate with
+# `mix web_push_ex.vapid`. The private key must never be a production secret.
+config :web_push_ex, :vapid,
+  public_key:
+    "BIson3HqmbBXrodsMY49xHuZ6lFASieRZp7LTLiiCR0VyOTwFDKeNNyNwcpblQCvgfHtdsp_JAOhFGDcPxtktg0",
+  private_key: "XJyQrbsKYhDAKNZzJFEKJ7VsoA78frxBm6Drrtmz1ys",
+  subject: "mailto:matt@rockcut.com"
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"

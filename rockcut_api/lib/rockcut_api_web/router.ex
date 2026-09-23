@@ -81,6 +81,11 @@ defmodule RockcutApiWeb.Router do
     post "/notifications/:id/read", NotificationController, :read
     get "/notification_preferences", NotificationPreferenceController, :show
     put "/notification_preferences", NotificationPreferenceController, :update
+
+    # Web push (D21)
+    get "/push/public_key", PushController, :public_key
+    post "/push/subscriptions", PushController, :subscribe
+    delete "/push/subscriptions", PushController, :unsubscribe
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)

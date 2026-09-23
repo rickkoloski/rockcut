@@ -80,6 +80,16 @@ if config_env() == :prod do
     config :rockcut_api, :admin_password_hash, admin_password_hash
   end
 
+  # Web Push (D21) — production VAPID keypair from Fly secrets. Generate with
+  # `mix web_push_ex.vapid` and set WEB_PUSH_EX_VAPID_{PUBLIC,PRIVATE}_KEY.
+  # Without these, the web_push channel simply no-ops (best-effort delivery).
+  if vapid_public = System.get_env("WEB_PUSH_EX_VAPID_PUBLIC_KEY") do
+    config :web_push_ex, :vapid,
+      public_key: vapid_public,
+      private_key: System.fetch_env!("WEB_PUSH_EX_VAPID_PRIVATE_KEY"),
+      subject: System.get_env("WEB_PUSH_EX_VAPID_SUBJECT") || "mailto:matt@rockcut.com"
+  end
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key

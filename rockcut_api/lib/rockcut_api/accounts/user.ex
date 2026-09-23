@@ -17,6 +17,7 @@ defmodule RockcutApi.Accounts.User do
 
     has_many :memberships, RockcutApi.Accounts.Membership
     has_many :departments, through: [:memberships, :department]
+    has_many :push_subscriptions, RockcutApi.Notifications.PushSubscription
 
     timestamps(type: :utc_datetime)
   end

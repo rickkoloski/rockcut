@@ -8,9 +8,10 @@ defmodule RockcutApi.Notifications do
   require Logger
   alias RockcutApi.{Repo, Mailer}
   alias RockcutApi.Accounts.{User, Membership}
-  alias RockcutApi.Notifications.{Notification, Email}
+  alias RockcutApi.Notifications.{Notification, Email, WebPush}
 
-  @channels [:in_app, :email]
+  @channels [:in_app, :email, :web_push]
+  # web_push is opt-in (default off) — it also needs a device subscription.
   @default_on %{in_app: true, email: true}
 
   ## Dispatch
@@ -53,6 +54,10 @@ defmodule RockcutApi.Notifications do
         e -> Logger.error("notification email failed: #{inspect(e)}")
       end
     end)
+  end
+
+  defp deliver(:web_push, user, _event, payload) do
+    Task.start(fn -> WebPush.deliver(user, payload) end)
   end
 
   ## Inbox
