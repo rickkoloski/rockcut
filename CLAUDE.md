@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D21 (D19 PWA + D20 nav complete)
+- **Next deliverable**: D22 (D19 PWA, D20 nav, D21 web push complete)
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -121,6 +121,7 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D18 | Notifications — core + in-app bell + email, per-user prefs; publish/assign/open events | 08_notifications |
 | D19 | PWA — installable app shell (vite-plugin-pwa/Workbox manifest + service worker + icons + install prompt); app-shell precache, no API caching | 02_scaffold_ui |
 | D20 | Department-Grouped Navigation — collapsible left nav (Schedule, per-department headings, Admin, Messages); /schedule agenda + /scheduler grid split | 06_auth_roles |
+| D21 | Web Push Notifications — web_push channel in the D18 dispatcher (VAPID/web_push_ex + Req), push_subscriptions, custom service worker push handlers, per-device enable UI | 08_notifications |
 
 ## References
 

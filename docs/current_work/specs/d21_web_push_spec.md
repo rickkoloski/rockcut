@@ -1,6 +1,6 @@
 # D21: Web Push Notifications — Specification
 
-**Status:** Draft (2026-09-22)
+**Status:** Complete (2026-09-22) — see `stepwise_results/d21_web_push_COMPLETE.md`
 **Created:** 2026-09-22
 **Author:** Matt + CC
 **Depends On:** D18 (Notifications core), D19 (PWA / service worker)
