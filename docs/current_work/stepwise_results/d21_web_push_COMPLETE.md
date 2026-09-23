@@ -88,6 +88,26 @@ worker — no app store. Built in two phases (backend, then frontend).
 
 ---
 
+## Refinements (post-merge, same session)
+
+- **Channel-key fix** (`46d1c58`): the dispatcher channel was `:web_push` but the
+  prefs UI stores the key `"push"`, so `enabled?/3` never matched and the
+  publish/assign path silently skipped push (in-app/email were fine). Renamed the
+  channel atom to `:push`. Server delivery/VAPID/FCM were already correct
+  (confirmed with a live 201 from FCM).
+- **Coalesced bulk publish** (`e5e2db0`): "Publish week" / "Publish for employee"
+  sent one notification per shift. Added `POST /api/shifts/publish` +
+  `Scheduling.publish_shifts/1` + `Notifications.shifts_published/1`, which group
+  assigned shifts by assignee and open shifts by department → **one** notification
+  per recipient across all channels ("N shifts scheduled" / "N open shifts").
+- **Merged + new events** (`a8a6e0d`): combined `shift_published` + `shift_assigned`
+  into a single **`shift_scheduled`** ("You've been scheduled") — the published-vs-
+  reassigned distinction doesn't matter to employees. Added **`shift_changed`**
+  ("Your schedule has changed"): editing a published shift's time/position now
+  notifies the assignee (previously silent). `update_shift/2` distinguishes
+  scheduled (new assignee / newly published) from changed (same assignee, edited).
+  Final events: `shift_scheduled`, `shift_changed`, `open_shift`. Suite at **152**.
+
 ## Follow-Up Items
 
 - [ ] Set prod VAPID Fly secrets before relying on push in production.
