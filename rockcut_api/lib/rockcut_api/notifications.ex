@@ -10,8 +10,9 @@ defmodule RockcutApi.Notifications do
   alias RockcutApi.Accounts.{User, Membership}
   alias RockcutApi.Notifications.{Notification, Email, WebPush}
 
-  @channels [:in_app, :email, :web_push]
-  # web_push is opt-in (default off) — it also needs a device subscription.
+  @channels [:in_app, :email, :push]
+  # push (web push) is opt-in (default off) — it also needs a device subscription.
+  # The channel key is "push" to match the frontend preferences UI.
   @default_on %{in_app: true, email: true}
 
   ## Dispatch
@@ -56,7 +57,7 @@ defmodule RockcutApi.Notifications do
     end)
   end
 
-  defp deliver(:web_push, user, _event, payload) do
+  defp deliver(:push, user, _event, payload) do
     Task.start(fn -> WebPush.deliver(user, payload) end)
   end
 
