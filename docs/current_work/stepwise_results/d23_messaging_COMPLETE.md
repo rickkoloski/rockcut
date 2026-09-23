@@ -37,9 +37,11 @@ manager status, so a user added to a department immediately sees that channel's
 - **`/messages`** page (`Messages.tsx`): channel list + thread + composer;
   two-pane on desktop, single-pane (list ↔ thread) on mobile; polls the open
   channel (8s) and channel list (15s); marks read on open; Enter to send.
-- **Nav**: Messages section now has **Channels** (`/messages`, total-unread badge,
-  polled 20s) + **Alerts** (owner → `/activity`). Routes `/messages` and
-  `/messages/:key` (push deep-links open a channel).
+- **Nav**: the Messages section lists **each channel individually** (fetched, with
+  a per-channel unread badge + a total badge on the section icon) plus **Alerts**
+  (owner → `/activity`); polled 20s. Routes `/messages` (redirects to the first
+  channel) and `/messages/:key`. The page is thread-only — channel selection lives
+  in the nav.
 - **Prefs**: added a **"New message"** row (`message_posted`) with the matching
   per-event default (in-app off).
 

@@ -40,12 +40,12 @@ import ForumIcon from '@mui/icons-material/Forum'
 import TagIcon from '@mui/icons-material/Tag'
 import CampaignIcon from '@mui/icons-material/Campaign'
 import LogoutIcon from '@mui/icons-material/Logout'
-import { useQuery } from '@tanstack/react-query'
-import api from './lib/api'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
 import useAuth from './hooks/useAuth'
+import { useApiQuery } from './hooks/useApiQuery'
+import type { Channel } from './lib/types'
 
 // Pages
 import Home from './pages/Home'
@@ -80,6 +80,8 @@ interface NavSection {
   label: string
   icon: ReactNode
   children: NavLeaf[]
+  // Optional count shown on the section's icon (e.g. total unread).
+  badge?: number
   // Shown (disabled) when the section has no children yet.
   emptyLabel?: string
 }
@@ -136,10 +138,8 @@ function App() {
     if (isAuthenticated && !bootstrapped) loadMe()
   }, [isAuthenticated, bootstrapped, loadMe])
 
-  // Total unread messages, for the Messages nav badge.
-  const { data: messagesUnread = 0 } = useQuery({
-    queryKey: ['messages_unread'],
-    queryFn: async () => (await api.get<{ count: number }>('/api/messages/unread_count')).data.count,
+  // Channels the user can see — listed individually under Messages in the nav.
+  const { data: channels = [] } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
     enabled: isAuthenticated,
     refetchInterval: 20000,
   })
@@ -197,16 +197,17 @@ function App() {
       key: 'messages',
       label: 'Messages',
       icon: <ForumIcon />,
+      badge: channels.reduce((n, c) => n + c.unread, 0),
       children: [
-        {
-          label: 'Channels',
-          path: '/messages',
+        ...channels.map((c) => ({
+          label: c.name,
+          path: `/messages/${c.key}`,
           icon: (
-            <Badge badgeContent={messagesUnread} color="error">
+            <Badge badgeContent={c.unread} color="error">
               <TagIcon />
             </Badge>
           ),
-        },
+        })),
         ...(isOwner
           ? [
               {
@@ -246,6 +247,15 @@ function App() {
     navigate(path)
     if (isMobile) setMobileOpen(false)
   }
+
+  const sectionIcon = (s: NavSection) =>
+    s.badge ? (
+      <Badge badgeContent={s.badge} color="error">
+        {s.icon}
+      </Badge>
+    ) : (
+      s.icon
+    )
 
   const drawerContent = (isMobile: boolean) => {
     const rail = collapsed && !isMobile
@@ -297,7 +307,9 @@ function App() {
                   }}
                   sx={{ mx: 0.5, borderRadius: 1, justifyContent: 'center', px: 1.5 }}
                 >
-                  <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}>{s.icon}</ListItemIcon>
+                  <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}>
+                    {sectionIcon(s)}
+                  </ListItemIcon>
                 </ListItemButton>
               </Tooltip>
             ))}
@@ -309,7 +321,7 @@ function App() {
               return (
                 <Box key={s.key}>
                   <ListItemButton onClick={() => toggleSection(s)} sx={{ mx: 1, borderRadius: 1 }}>
-                    <ListItemIcon sx={{ minWidth: 36 }}>{s.icon}</ListItemIcon>
+                    <ListItemIcon sx={{ minWidth: 36 }}>{sectionIcon(s)}</ListItemIcon>
                     <ListItemText primary={s.label} primaryTypographyProps={{ fontWeight: 600 }} />
                     {open ? <ExpandLess fontSize="small" /> : <ExpandMore fontSize="small" />}
                   </ListItemButton>
