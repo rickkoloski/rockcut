@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D19
+- **Next deliverable**: D19 (PWA — specced, in progress). D20 (nav) already done; next free ID is D21.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -119,6 +119,7 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D16 | Time-Off Requests — PTO/Sick/Unpaid/Personal, partial/full day, approve-deny, grid off-markers | 07_scheduling |
 | D17 | Calendar Feeds — ICS user/department/whole-schedule feeds (Google/Apple sync), rotatable tokens | 07_scheduling |
 | D18 | Notifications — core + in-app bell + email, per-user prefs; publish/assign/open events | 08_notifications |
+| D20 | Department-Grouped Navigation — collapsible left nav (Schedule, per-department headings, Admin, Messages); /schedule agenda + /scheduler grid split | 06_auth_roles |
 
 ## References
 
