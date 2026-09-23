@@ -1,6 +1,6 @@
 # D19: PWA — Installable App Shell + Mobile Baseline — Specification
 
-**Status:** Draft (2026-09-22)
+**Status:** Complete (2026-09-22) — see `stepwise_results/d19_pwa_installable_COMPLETE.md`
 **Created:** 2026-09-22
 **Author:** Matt + CC
 **Depends On:** D5 (Scaffold UI), D10–D18 (Scheduler feature set)
