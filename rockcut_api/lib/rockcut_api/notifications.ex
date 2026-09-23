@@ -14,6 +14,9 @@ defmodule RockcutApi.Notifications do
   # push (web push) is opt-in (default off) — it also needs a device subscription.
   # The channel key is "push" to match the frontend preferences UI.
   @default_on %{in_app: true, email: true}
+  # Per-event default overrides. message_posted (D23) skips the bell by default
+  # (unread badges cover in-app) but emails; push stays opt-in like everywhere.
+  @event_defaults %{"message_posted" => %{in_app: false, email: true, push: false}}
 
   ## Dispatch
 
@@ -30,8 +33,15 @@ defmodule RockcutApi.Notifications do
     prefs = user.notification_prefs || %{}
 
     case get_in(prefs, [to_string(event), to_string(channel)]) do
-      nil -> Map.get(@default_on, channel, false)
+      nil -> default_on(to_string(event), channel)
       value -> value == true
+    end
+  end
+
+  defp default_on(event, channel) do
+    case Map.get(@event_defaults, event) do
+      nil -> Map.get(@default_on, channel, false)
+      overrides -> Map.get(overrides, channel, false)
     end
   end
 

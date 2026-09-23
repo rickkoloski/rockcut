@@ -33,6 +33,16 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{id: d.id, name: d.name, key: d.key, color: d.color, assignable: d.assignable}
   end
 
+  def message(m) do
+    %{
+      id: m.id,
+      channel_key: m.channel_key,
+      body: m.body,
+      user: maybe_render(m, :user, fn u -> %{id: u.id, name: u.name, email: u.email} end),
+      inserted_at: m.inserted_at
+    }
+  end
+
   def me(user, capabilities) do
     %{user: user(user), capabilities: capabilities}
   end
@@ -98,7 +108,13 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   def shift_template(t) do
-    %{id: t.id, position_id: t.position_id, name: t.name, start_time: t.start_time, end_time: t.end_time}
+    %{
+      id: t.id,
+      position_id: t.position_id,
+      name: t.name,
+      start_time: t.start_time,
+      end_time: t.end_time
+    }
   end
 
   def schedule_template(t) do
@@ -142,7 +158,12 @@ defmodule RockcutApiWeb.JSONHelpers do
       id: cat.id,
       name: cat.name,
       sort_order: cat.sort_order,
-      field_definitions: maybe_render(cat, :field_definitions, &Enum.map(&1, fn d -> category_field_definition(d) end)),
+      field_definitions:
+        maybe_render(
+          cat,
+          :field_definitions,
+          &Enum.map(&1, fn d -> category_field_definition(d) end)
+        ),
       inserted_at: cat.inserted_at,
       updated_at: cat.updated_at
     }
@@ -230,9 +251,11 @@ defmodule RockcutApiWeb.JSONHelpers do
       efficiency_target: r.efficiency_target,
       status: r.status,
       notes: r.notes,
-      recipe_ingredients: maybe_render(r, :recipe_ingredients, &Enum.map(&1, fn ri -> recipe_ingredient(ri) end)),
+      recipe_ingredients:
+        maybe_render(r, :recipe_ingredients, &Enum.map(&1, fn ri -> recipe_ingredient(ri) end)),
       mash_steps: maybe_render(r, :mash_steps, &Enum.map(&1, fn ms -> mash_step(ms) end)),
-      process_steps: maybe_render(r, :process_steps, &Enum.map(&1, fn ps -> recipe_process_step(ps) end)),
+      process_steps:
+        maybe_render(r, :process_steps, &Enum.map(&1, fn ps -> recipe_process_step(ps) end)),
       water_profile: maybe_render(r, :water_profile, &water_profile/1),
       inserted_at: r.inserted_at,
       updated_at: r.updated_at
@@ -288,6 +311,7 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   def water_profile(nil), do: nil
+
   def water_profile(wp) do
     %{
       id: wp.id,
@@ -415,11 +439,13 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   defp decode_json(nil), do: nil
+
   defp decode_json(str) when is_binary(str) do
     case Jason.decode(str) do
       {:ok, decoded} -> decoded
       _ -> str
     end
   end
+
   defp decode_json(other), do: other
 end

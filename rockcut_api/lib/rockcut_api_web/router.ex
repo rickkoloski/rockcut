@@ -87,6 +87,13 @@ defmodule RockcutApiWeb.Router do
     get "/push/public_key", PushController, :public_key
     post "/push/subscriptions", PushController, :subscribe
     delete "/push/subscriptions", PushController, :unsubscribe
+
+    # Messaging (D23)
+    get "/channels", MessageController, :channels
+    get "/channels/:key/messages", MessageController, :index
+    post "/channels/:key/messages", MessageController, :create
+    post "/channels/:key/read", MessageController, :read
+    get "/messages/unread_count", MessageController, :unread_count
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)
