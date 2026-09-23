@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
 const isDocker = !!process.env.DOCKER_BUILD
@@ -12,7 +13,41 @@ const datagridExtendedPath = isDocker
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // D19 — installable PWA. App-shell precache + auto-update; NO API caching
+    // (schedule data is dynamic + authed, so stale is worse than a spinner).
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon-32x32.png', 'apple-touch-icon.png', 'rockcut-logo.png'],
+      manifest: {
+        name: 'Rockcut Scheduler',
+        short_name: 'Rockcut',
+        description: 'Rockcut Brewing Co — staff scheduling',
+        start_url: '/',
+        scope: '/',
+        display: 'standalone',
+        orientation: 'portrait',
+        theme_color: '#5C4033',
+        background_color: '#FAF6F0',
+        icons: [
+          { src: 'pwa-192x192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'maskable-512x512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+        ],
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+        // SPA fallback for offline navigations; API/dev routes pass straight through.
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api/, /^\/dev/],
+        // No runtimeCaching: never cache API responses.
+        cleanupOutdatedCaches: true,
+      },
+      // Don't run the service worker during `pnpm dev` (avoids cache-trapping HMR).
+      devOptions: { enabled: false },
+    }),
+  ],
   resolve: {
     preserveSymlinks: true,
     dedupe: [
@@ -38,6 +73,16 @@ export default defineConfig({
         ...(!isDocker ? [path.resolve(__dirname, '../../shared/ui-components/datagrid-extended')] : []),
       ],
     },
+    proxy: {
+      '/api': {
+        target: 'http://localhost:4002',
+        changeOrigin: true,
+      },
+    },
+  },
+  // `vite preview` (used to test the built PWA locally) doesn't inherit
+  // server.proxy, so mirror the /api proxy here for login + data to work.
+  preview: {
     proxy: {
       '/api': {
         target: 'http://localhost:4002',

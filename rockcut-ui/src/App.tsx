@@ -60,6 +60,7 @@ import OwnerActivity from './pages/activity/OwnerActivity'
 import Schedule from './pages/schedule/Schedule'
 import TimeOff from './pages/timeoff/TimeOff'
 import NotificationBell from './components/NotificationBell'
+import InstallPrompt from './components/InstallPrompt'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -431,6 +432,8 @@ function App() {
           </Routes>
         </Box>
       </Box>
+
+      <InstallPrompt />
     </Box>
   )
 }
