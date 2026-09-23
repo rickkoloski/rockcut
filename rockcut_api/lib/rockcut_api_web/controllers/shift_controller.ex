@@ -77,6 +77,25 @@ defmodule RockcutApiWeb.ShiftController do
     end)
   end
 
+  # Bulk publish (Publish week / Publish for employee): publishes every shift the
+  # actor may publish, then sends one coalesced notification per recipient.
+  def publish_batch(conn, %{"ids" => ids}) when is_list(ids) do
+    actor = conn.assigns.current_user
+
+    shifts =
+      ids
+      |> Enum.map(&Scheduling.get_shift/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.filter(&Authz.can?(actor, :publish, &1))
+
+    {:ok, published} = Scheduling.publish_shifts(shifts)
+    json(conn, %{data: Enum.map(published, &shift/1), count: length(published)})
+  end
+
+  def publish_batch(conn, _params) do
+    conn |> put_status(:bad_request) |> json(%{error: "ids (list) required"})
+  end
+
   def unpublish(conn, %{"id" => id}) do
     with_shift(conn, id, :unpublish, fn s ->
       with {:ok, updated} <- Scheduling.unpublish_shift(s) do

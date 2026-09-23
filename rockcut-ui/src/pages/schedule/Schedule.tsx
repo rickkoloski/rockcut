@@ -182,7 +182,8 @@ export default function Schedule({ forceView }: { forceView?: View }) {
     if (drafts.length === 0) return
     setPublishing(true)
     try {
-      await Promise.allSettled(drafts.map((s) => api.post(`/api/shifts/${s.id}/publish`, {})))
+      // One bulk call so each employee gets a single coalesced notification.
+      await api.post('/api/shifts/publish', { ids: drafts.map((s) => s.id) })
     } finally {
       setPublishing(false)
       qc.invalidateQueries({ queryKey: ['shifts'] })
@@ -248,7 +249,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
       setNotice('No draft shifts to publish this week')
       return
     }
-    await Promise.allSettled(drafts.map((s) => api.post(`/api/shifts/${s.id}/publish`, {})))
+    await api.post('/api/shifts/publish', { ids: drafts.map((s) => s.id) })
     qc.invalidateQueries({ queryKey: ['shifts'] })
     setNotice(`Published ${drafts.length} shift${drafts.length === 1 ? '' : 's'}`)
   }

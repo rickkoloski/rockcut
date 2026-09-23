@@ -144,6 +144,22 @@ defmodule RockcutApi.Scheduling do
     end
   end
 
+  @doc """
+  Publish many shifts at once, sending a single coalesced notification per
+  recipient. Only draft shifts transition (and are notified about).
+  """
+  def publish_shifts(shifts) when is_list(shifts) do
+    published =
+      shifts
+      |> Enum.filter(&(&1.status == "draft"))
+      |> Enum.map(&set_status(&1, "published"))
+      |> Enum.filter(&match?({:ok, _}, &1))
+      |> Enum.map(fn {:ok, s} -> s end)
+
+    Notifications.shifts_published(published)
+    {:ok, published}
+  end
+
   def unpublish_shift(%Shift{} = shift), do: set_status(shift, "draft")
 
   defp set_status(%Shift{} = shift, status) do

@@ -35,6 +35,24 @@ defmodule RockcutApi.NotificationsTest do
     assert "shift_assigned" in (Notifications.list(emp) |> Enum.map(& &1.event))
   end
 
+  test "bulk publish sends one coalesced notification per assignee" do
+    bar = department_fixture("bar")
+    emp = user_with_role("employee", "bar")
+
+    drafts =
+      for _ <- 1..3 do
+        shift_fixture(%{department: bar, status: "draft", assignee_id: emp.id})
+      end
+
+    {:ok, published} = Scheduling.publish_shifts(drafts)
+    assert length(published) == 3
+
+    # One notification, not three.
+    published_notes = Notifications.list(emp) |> Enum.filter(&(&1.event == "shift_published"))
+    assert length(published_notes) == 1
+    assert hd(published_notes).title == "3 shifts published"
+  end
+
   test "preferences suppress the in-app channel" do
     emp = user_with_role("employee", "bar")
     {:ok, _} = Notifications.update_prefs(emp, %{"shift_published" => %{"in_app" => false}})

@@ -101,25 +101,56 @@ defmodule RockcutApi.Notifications do
 
   ## Event helpers (called from Scheduling) — never raise.
 
-  def shift_published(shift) do
-    safe(fn ->
-      shift = Repo.preload(shift, [:department, :position, :assignee])
-      body = shift_body(shift)
-      data = shift_data(shift)
+  def shift_published(shift), do: shifts_published([shift])
 
-      if shift.assignee do
-        notify(shift.assignee, :shift_published, %{
-          title: "Shift published",
-          body: body,
-          data: data
-        })
-      else
-        for u <- department_members(shift.department_id) do
-          notify(u, :open_shift, %{title: "Open shift available", body: body, data: data})
-        end
-      end
+  @doc """
+  Publish notifications for a batch of shifts, coalesced so each recipient gets a
+  single notification (e.g. "Publish week" → one push per employee, not one per
+  shift). Assigned shifts group by assignee; open shifts group by department.
+  """
+  def shifts_published(shifts) when is_list(shifts) do
+    safe(fn ->
+      shifts = Repo.preload(shifts, [:department, :position, :assignee])
+      {assigned, open} = Enum.split_with(shifts, & &1.assignee_id)
+
+      # Assigned: one notification per assignee.
+      assigned
+      |> Enum.group_by(& &1.assignee_id)
+      |> Enum.each(fn {_assignee_id, group} ->
+        notify(hd(group).assignee, :shift_published, summarize(:shift_published, group))
+      end)
+
+      # Open: one notification per department, delivered to its members.
+      open
+      |> Enum.group_by(& &1.department_id)
+      |> Enum.each(fn {dept_id, group} ->
+        payload = summarize(:open_shift, group)
+        for u <- department_members(dept_id), do: notify(u, :open_shift, payload)
+      end)
     end)
   end
+
+  # One shift → the detailed single-shift payload (unchanged behavior);
+  # many → a coalesced summary.
+  defp summarize(:shift_published, [shift]),
+    do: %{title: "Shift published", body: shift_body(shift), data: shift_data(shift)}
+
+  defp summarize(:open_shift, [shift]),
+    do: %{title: "Open shift available", body: shift_body(shift), data: shift_data(shift)}
+
+  defp summarize(:shift_published, shifts),
+    do: %{
+      title: "#{length(shifts)} shifts published",
+      body: "Check your schedule",
+      data: %{"shift_ids" => Enum.map(shifts, & &1.id)}
+    }
+
+  defp summarize(:open_shift, shifts),
+    do: %{
+      title: "#{length(shifts)} open shifts available",
+      body: "Tap to view open shifts",
+      data: %{"shift_ids" => Enum.map(shifts, & &1.id)}
+    }
 
   def shift_assigned(shift, %User{} = assignee) do
     safe(fn ->

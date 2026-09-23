@@ -52,6 +52,7 @@ defmodule RockcutApiWeb.Router do
     get "/shifts", ShiftController, :index
     get "/shifts/:id", ShiftController, :show
     post "/shifts", ShiftController, :create
+    post "/shifts/publish", ShiftController, :publish_batch
     patch "/shifts/:id", ShiftController, :update
     delete "/shifts/:id", ShiftController, :delete
     post "/shifts/:id/publish", ShiftController, :publish
