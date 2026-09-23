@@ -38,7 +38,7 @@ import PointOfSaleIcon from '@mui/icons-material/PointOfSale'
 import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
 import ForumIcon from '@mui/icons-material/Forum'
 import TagIcon from '@mui/icons-material/Tag'
-import CampaignIcon from '@mui/icons-material/Campaign'
+import HistoryIcon from '@mui/icons-material/History'
 import LogoutIcon from '@mui/icons-material/Logout'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
@@ -189,7 +189,22 @@ function App() {
             key: 'admin',
             label: 'Admin',
             icon: <AdminPanelSettingsIcon />,
-            children: [{ label: 'Users & Roles', path: '/users', icon: <PeopleIcon /> }],
+            children: [
+              { label: 'Users & Roles', path: '/users', icon: <PeopleIcon /> },
+              ...(isOwner
+                ? [
+                    {
+                      label: 'User change log',
+                      path: '/activity',
+                      icon: (
+                        <Badge badgeContent={pending} color="error">
+                          <HistoryIcon />
+                        </Badge>
+                      ),
+                    },
+                  ]
+                : []),
+            ],
           },
         ]
       : []),
@@ -198,30 +213,16 @@ function App() {
       label: 'Messages',
       icon: <ForumIcon />,
       badge: channels.reduce((n, c) => n + c.unread, 0),
-      children: [
-        ...channels.map((c) => ({
-          label: c.name,
-          path: `/messages/${c.key}`,
-          icon: (
-            <Badge badgeContent={c.unread} color="error">
-              <TagIcon />
-            </Badge>
-          ),
-        })),
-        ...(isOwner
-          ? [
-              {
-                label: 'Alerts',
-                path: '/activity',
-                icon: (
-                  <Badge badgeContent={pending} color="error">
-                    <CampaignIcon />
-                  </Badge>
-                ),
-              },
-            ]
-          : []),
-      ],
+      children: channels.map((c) => ({
+        label: c.name,
+        path: `/messages/${c.key}`,
+        icon: (
+          <Badge badgeContent={c.unread} color="error">
+            <TagIcon />
+          </Badge>
+        ),
+      })),
+      emptyLabel: 'No channels',
     },
   ]
 
