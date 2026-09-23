@@ -97,14 +97,32 @@ defmodule RockcutApi.Scheduling do
   def update_shift(%Shift{} = shift, attrs) do
     attrs = attrs |> stringify() |> put_department_from_position()
     old_assignee_id = shift.assignee_id
+    old_status = shift.status
+    old_start = shift.starts_at
+    old_end = shift.ends_at
+    old_position_id = shift.position_id
 
     case shift |> Shift.changeset(attrs) |> Repo.update() do
       {:ok, updated} ->
         full = get_shift!(updated.id)
 
-        if (full.status == "published" and full.assignee_id) &&
-             full.assignee_id != old_assignee_id do
-          Notifications.shift_assigned(full, full.assignee)
+        cond do
+          # Only published, assigned shifts notify the assignee.
+          full.status != "published" or is_nil(full.assignee_id) ->
+            :ok
+
+          # Newly assigned to this person (or just published to them) → scheduled.
+          full.assignee_id != old_assignee_id or old_status != "published" ->
+            Notifications.shift_scheduled(full, full.assignee)
+
+          # Same assignee on an already-published shift, but the time/position
+          # changed → their schedule changed.
+          full.starts_at != old_start or full.ends_at != old_end or
+              full.position_id != old_position_id ->
+            Notifications.shift_changed(full, full.assignee)
+
+          true ->
+            :ok
         end
 
         {:ok, full}

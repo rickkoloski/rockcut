@@ -29,8 +29,8 @@ interface Props {
 }
 
 const EVENTS = [
-  { event: 'shift_published', label: 'Shift published' },
-  { event: 'shift_assigned', label: 'New assignment' },
+  { event: 'shift_scheduled', label: "You've been scheduled" },
+  { event: 'shift_changed', label: 'Your schedule has changed' },
   { event: 'open_shift', label: 'Open shift available' },
 ]
 const CHANNELS = [

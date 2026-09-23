@@ -12,7 +12,7 @@ defmodule RockcutApi.NotificationsTest do
 
     {:ok, _} = Scheduling.publish_shift(shift)
 
-    assert "shift_published" in (Notifications.list(emp) |> Enum.map(& &1.event))
+    assert "shift_scheduled" in (Notifications.list(emp) |> Enum.map(& &1.event))
   end
 
   test "publishing an open shift notifies department members" do
@@ -25,14 +25,27 @@ defmodule RockcutApi.NotificationsTest do
     assert "open_shift" in (Notifications.list(emp) |> Enum.map(& &1.event))
   end
 
-  test "reassigning a published shift notifies the new assignee" do
+  test "assigning a published shift notifies the new assignee (scheduled)" do
     bar = department_fixture("bar")
     emp = user_with_role("employee", "bar")
     shift = shift_fixture(%{department: bar, status: "published", assignee_id: nil})
 
     {:ok, _} = Scheduling.update_shift(shift, %{"assignee_id" => emp.id})
 
-    assert "shift_assigned" in (Notifications.list(emp) |> Enum.map(& &1.event))
+    assert "shift_scheduled" in (Notifications.list(emp) |> Enum.map(& &1.event))
+  end
+
+  test "changing the time of a published shift notifies the assignee (changed)" do
+    bar = department_fixture("bar")
+    emp = user_with_role("employee", "bar")
+    shift = shift_fixture(%{department: bar, status: "published", assignee_id: emp.id})
+
+    new_end = DateTime.add(shift.ends_at, 3600, :second) |> DateTime.to_iso8601()
+    {:ok, _} = Scheduling.update_shift(shift, %{"ends_at" => new_end})
+
+    events = Notifications.list(emp) |> Enum.map(& &1.event)
+    assert "shift_changed" in events
+    refute "shift_scheduled" in events
   end
 
   test "bulk publish sends one coalesced notification per assignee" do
@@ -48,9 +61,9 @@ defmodule RockcutApi.NotificationsTest do
     assert length(published) == 3
 
     # One notification, not three.
-    published_notes = Notifications.list(emp) |> Enum.filter(&(&1.event == "shift_published"))
-    assert length(published_notes) == 1
-    assert hd(published_notes).title == "3 shifts published"
+    scheduled_notes = Notifications.list(emp) |> Enum.filter(&(&1.event == "shift_scheduled"))
+    assert length(scheduled_notes) == 1
+    assert hd(scheduled_notes).title == "3 shifts scheduled"
   end
 
   test "preferences suppress the in-app channel" do

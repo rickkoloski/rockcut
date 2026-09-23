@@ -117,7 +117,7 @@ defmodule RockcutApi.Notifications do
       assigned
       |> Enum.group_by(& &1.assignee_id)
       |> Enum.each(fn {_assignee_id, group} ->
-        notify(hd(group).assignee, :shift_published, summarize(:shift_published, group))
+        notify(hd(group).assignee, :shift_scheduled, summarize(:shift_scheduled, group))
       end)
 
       # Open: one notification per department, delivered to its members.
@@ -130,17 +130,16 @@ defmodule RockcutApi.Notifications do
     end)
   end
 
-  # One shift → the detailed single-shift payload (unchanged behavior);
-  # many → a coalesced summary.
-  defp summarize(:shift_published, [shift]),
-    do: %{title: "Shift published", body: shift_body(shift), data: shift_data(shift)}
+  # One shift → the detailed single-shift payload; many → a coalesced summary.
+  defp summarize(:shift_scheduled, [shift]),
+    do: %{title: "You've been scheduled", body: shift_body(shift), data: shift_data(shift)}
 
   defp summarize(:open_shift, [shift]),
     do: %{title: "Open shift available", body: shift_body(shift), data: shift_data(shift)}
 
-  defp summarize(:shift_published, shifts),
+  defp summarize(:shift_scheduled, shifts),
     do: %{
-      title: "#{length(shifts)} shifts published",
+      title: "#{length(shifts)} shifts scheduled",
       body: "Check your schedule",
       data: %{"shift_ids" => Enum.map(shifts, & &1.id)}
     }
@@ -152,12 +151,26 @@ defmodule RockcutApi.Notifications do
       data: %{"shift_ids" => Enum.map(shifts, & &1.id)}
     }
 
-  def shift_assigned(shift, %User{} = assignee) do
+  @doc "A (published) shift was assigned to `assignee` — they've been scheduled."
+  def shift_scheduled(shift, %User{} = assignee) do
     safe(fn ->
       shift = Repo.preload(shift, [:department, :position])
 
-      notify(assignee, :shift_assigned, %{
+      notify(assignee, :shift_scheduled, %{
         title: "You've been scheduled",
+        body: shift_body(shift),
+        data: shift_data(shift)
+      })
+    end)
+  end
+
+  @doc "A published shift the `assignee` is on changed (e.g. its time)."
+  def shift_changed(shift, %User{} = assignee) do
+    safe(fn ->
+      shift = Repo.preload(shift, [:department, :position])
+
+      notify(assignee, :shift_changed, %{
+        title: "Your schedule has changed",
         body: shift_body(shift),
         data: shift_data(shift)
       })
