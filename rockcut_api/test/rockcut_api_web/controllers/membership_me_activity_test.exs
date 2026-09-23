@@ -83,4 +83,49 @@ defmodule RockcutApiWeb.MembershipMeActivityTest do
       assert conn |> bearer(manager) |> get(~p"/api/owner/activity") |> json_response(403)
     end
   end
+
+  describe "change-log unread badge (pending_owner_reviews)" do
+    test "counts unseen entries and clears after marking the log seen", %{conn: conn} do
+      owner = owner_fixture()
+      manager = user_with_role("manager", "brewery")
+
+      conn
+      |> bearer(manager)
+      |> post(~p"/api/users", %{
+        email: "hire2@rockcut.com",
+        memberships: [%{department: "brewery", role: "employee"}]
+      })
+      |> json_response(201)
+
+      before = conn |> bearer(owner) |> get(~p"/api/me") |> json_response(200)
+      assert before["capabilities"]["pending_owner_reviews"] > 0
+
+      assert conn |> bearer(owner) |> post(~p"/api/owner/activity/seen") |> response(204)
+
+      seen = conn |> bearer(owner) |> get(~p"/api/me") |> json_response(200)
+      assert seen["capabilities"]["pending_owner_reviews"] == 0
+    end
+
+    test "the owner's own actions don't count toward the badge", %{conn: conn} do
+      owner = owner_fixture()
+      department_fixture("brewery")
+
+      # Owner creates a user themselves -> audit entry by the owner.
+      conn
+      |> bearer(owner)
+      |> post(~p"/api/users", %{
+        email: "ownerhire@rockcut.com",
+        memberships: [%{department: "brewery", role: "employee"}]
+      })
+      |> json_response(201)
+
+      body = conn |> bearer(owner) |> get(~p"/api/me") |> json_response(200)
+      assert body["capabilities"]["pending_owner_reviews"] == 0
+    end
+
+    test "a non-owner cannot mark the log seen", %{conn: conn} do
+      manager = user_with_role("manager", "brewery")
+      assert conn |> bearer(manager) |> post(~p"/api/owner/activity/seen") |> json_response(403)
+    end
+  end
 end

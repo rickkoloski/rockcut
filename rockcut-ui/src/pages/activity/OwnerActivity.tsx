@@ -1,8 +1,11 @@
+import { useEffect } from 'react'
 import { Paper } from '@mui/material'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
 import PageHeader from '../../components/PageHeader'
 import { useApiQuery } from '../../hooks/useApiQuery'
+import useAuth from '../../hooks/useAuth'
+import api from '../../lib/api'
 import type { AuditEntry } from '../../lib/types'
 
 const ACTION_LABELS: Record<string, string> = {
@@ -46,10 +49,19 @@ const columns: GridColDef<AuditEntry>[] = [
 ]
 
 export default function OwnerActivity() {
+  const loadMe = useAuth((s) => s.loadMe)
   const { data: entries = [], isLoading } = useApiQuery<AuditEntry[]>(
     ['owner-activity'],
     '/api/owner/activity',
   )
+
+  // Opening the log marks it seen, then refresh capabilities so the nav badge clears.
+  useEffect(() => {
+    api
+      .post('/api/owner/activity/seen')
+      .then(() => loadMe())
+      .catch(() => {})
+  }, [loadMe])
 
   return (
     <>

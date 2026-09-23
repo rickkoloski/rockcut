@@ -33,7 +33,7 @@ Fly.io. Shared dep `datagrid-extended` from `~/src/shared/`.
 **Branch:** `scheduler-pwa` (off `practice1`) — **pushed to `origin`
 (rickkoloski/rockcut).** No PR opened (by choice).
 
-**Tests:** `cd rockcut_api && MIX_ENV=test mix test` → **178 passing**.
+**Tests:** `cd rockcut_api && MIX_ENV=test mix test` → **181 passing**.
 **Next deliverable: D27.**
 
 ---
@@ -73,7 +73,15 @@ D10–D23 recap is in the 2026-09-23 (a) handoff. This session:
   (brewery-only, via **Brewery → Dashboard**). Top-level **Home** nav link;
   catch-all route → `/`. Intentionally a shell for future home **widgets**.
 
-**New DB tables since 2026-09-23 (a):** `availability_slots`.
+- **Fix — change-log badge.** The Admin → "User change log" nav badge used a
+  7-day "user.created" heuristic (always lit for a week, no read state). Now it's
+  a real unread count: `users.activity_seen_at` + `POST /api/owner/activity/seen`
+  (called when the owner opens `/activity`, then `loadMe()` refreshes the badge);
+  `pending_owner_reviews` counts audit entries newer than `activity_seen_at` that
+  the owner didn't make. Opening the log clears the dot.
+
+**New DB tables since 2026-09-23 (a):** `availability_slots`
+(+ column `users.activity_seen_at`).
 **New key UI modules:** `lib/conflicts.ts`, `lib/timeoff.ts`,
 `pages/availability/Availability.tsx`, `pages/brewery/BreweryDashboard.tsx`.
 

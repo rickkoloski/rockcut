@@ -46,6 +46,7 @@ defmodule RockcutApiWeb.Router do
 
     # Owner activity feed (in-app notification of manager actions)
     get "/owner/activity", OwnerActivityController, :index
+    post "/owner/activity/seen", OwnerActivityController, :seen
 
     # Scheduling (shared module — global read; writes authorized in controllers)
     resources "/positions", PositionController, only: [:index, :create, :update, :delete]

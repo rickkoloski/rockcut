@@ -302,6 +302,12 @@ defmodule RockcutApi.Accounts do
     |> Repo.all()
   end
 
+  @doc "Mark the change log as seen for `user` (clears their unread badge)."
+  def mark_activity_seen(%User{} = user) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    user |> Ecto.Changeset.change(activity_seen_at: now) |> Repo.update()
+  end
+
   def active_owner_count do
     User |> where([u], u.is_owner == true and u.active == true) |> Repo.aggregate(:count)
   end
@@ -413,14 +419,13 @@ defmodule RockcutApi.Accounts do
   defp last_active_owner?(%User{is_owner: true, active: true}), do: active_owner_count() <= 1
   defp last_active_owner?(%User{}), do: false
 
+  # Unread change-log entries for the owner: anything logged since they last
+  # opened the log, excluding their own actions. Drives the nav badge.
   defp pending_owner_reviews_count(%User{} = owner) do
-    cutoff = DateTime.utc_now() |> DateTime.add(-7, :day) |> DateTime.truncate(:second)
+    since = owner.activity_seen_at || ~U[1970-01-01 00:00:00Z]
 
     AuditEntry
-    |> where(
-      [a],
-      a.action == "user.created" and a.inserted_at >= ^cutoff and a.actor_id != ^owner.id
-    )
+    |> where([a], a.inserted_at > ^since and (is_nil(a.actor_id) or a.actor_id != ^owner.id))
     |> Repo.aggregate(:count)
   end
 

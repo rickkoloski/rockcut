@@ -12,6 +12,7 @@ defmodule RockcutApi.Accounts.User do
     field :schedulable, :boolean, default: true
     field :schedule_order, :integer, default: 0
     field :notification_prefs, :map, default: %{}
+    field :activity_seen_at, :utc_datetime
 
     field :password, :string, virtual: true, redact: true
 
