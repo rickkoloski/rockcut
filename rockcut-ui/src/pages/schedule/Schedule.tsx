@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Box,
   Button,
@@ -51,7 +51,7 @@ function initialView(): View {
   }
 }
 
-export default function Schedule() {
+export default function Schedule({ forceView }: { forceView?: View }) {
   const qc = useQueryClient()
   const { user, capabilities } = useAuth()
 
@@ -60,7 +60,7 @@ export default function Schedule() {
   const canManageSchedule = isOwner || managedKeys.length > 0
   const myModules = capabilities?.modules ?? []
 
-  const [view, setView] = useState<View>(initialView)
+  const [view, setView] = useState<View>(forceView ?? initialView)
   const [mondayKey, setMondayKey] = useState<string>(mondayKeyOf())
   const [filters, setFilters] = useState({ department_id: '', position_id: '', from: '', to: '', mine: false, open: false })
   const [shiftDialog, setShiftDialog] = useState(false)
@@ -86,6 +86,11 @@ export default function Schedule() {
       /* ignore */
     }
   }
+
+  // When the route pins a view (View Schedule = agenda, Scheduler = week), follow it.
+  useEffect(() => {
+    if (forceView) setView(forceView)
+  }, [forceView])
 
   const params = useMemo(() => {
     const p: Record<string, string> = {}
@@ -314,14 +319,16 @@ export default function Schedule() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Schedule' }]}
-        title="Schedule"
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: forceView === 'week' ? 'Scheduler' : 'Schedule' }]}
+        title={forceView === 'week' ? 'Scheduler' : 'Schedule'}
         toolbar={
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
-            <ToggleButtonGroup size="small" exclusive value={view} onChange={(_e, v) => v && setViewPersist(v)}>
-              <ToggleButton value="agenda">Agenda</ToggleButton>
-              <ToggleButton value="week">Week</ToggleButton>
-            </ToggleButtonGroup>
+            {!forceView && (
+              <ToggleButtonGroup size="small" exclusive value={view} onChange={(_e, v) => v && setViewPersist(v)}>
+                <ToggleButton value="agenda">Agenda</ToggleButton>
+                <ToggleButton value="week">Week</ToggleButton>
+              </ToggleButtonGroup>
+            )}
             <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>
             {isOwner && (
               <Button startIcon={<PaletteIcon />} onClick={() => setPaletteDialog(true)}>Colors</Button>
