@@ -15,9 +15,15 @@ preview :4173) · installable PWA · Fly.io. See `CLAUDE.md` for run/login detai
 Local dev + gotchas: memories `rockcut-local-dev-native`, `rockcut-pwa-testing`,
 `rockcut-mix-format-churn`, `rockcut-deploy-plan`.
 
-**Branch:** `d28-production-deploy-readiness` (off `scheduler-pwa`). **3 commits
-ahead**, working tree **clean**, and **NOT yet pushed to origin** (origin has no
-such branch). `scheduler-pwa` itself is on origin (rickkoloski/rockcut).
+> **DEPLOYED & LIVE (2026-09-25).** A parallel session (`src-de`) took D28 all the
+> way to production tonight. Both apps run under the shared **`rockcut` Fly org**
+> (Matt ADMIN, Rick MEMBER): `rockcut-api` deployed + healthy (`/api/health` 200),
+> `rockcut-ui` up (200, auto-suspends when idle). Migrated + seeded (reference data
+> + owner, no lots). Details in memory `rockcut-deploy-plan`.
+
+**Branch:** `d28-production-deploy-readiness` (off `scheduler-pwa`). Working tree
+**clean**; the D28 + deploy work is committed. **NOT yet pushed to origin** (origin
+has no such branch). `scheduler-pwa` itself is on origin (rickkoloski/rockcut).
 
 **Tests:** `cd rockcut_api && MIX_ENV=test mix test` → **183 passing**.
 **Next deliverable after D28: D29** (see the RBAC spec that appeared this session).
@@ -46,12 +52,15 @@ such branch). `scheduler-pwa` itself is on origin (rickkoloski/rockcut).
   **Datagrid: ship the stub** (the real formula grid isn't implemented on this
   machine — see `rockcut-deploy-plan`).
 
-### Fly account set up
-- Matt's own Fly account is live: **`matthewheiser@gmail.com`**, org
-  **`matthewheiser` (personal)**, no apps yet. flyctl installed at
-  `~/.fly/bin/flyctl` (PATH added to `~/.bashrc`).
+### Fly account set up + apps moved
+- Matt's own Fly account is live: **`matthewheiser@gmail.com`**. flyctl installed
+  at `~/.fly/bin/flyctl` (PATH added to `~/.bashrc`).
 - **Interactive `fly auth login` must be run in a REAL terminal** — Claude Code's
   `!` prefix and headless Bash have no TTY. Token lives in `~/.fly/config.yml`.
+- Rick **moved `rockcut-api`/`rockcut-ui` into a shared `rockcut` org** (Matt
+  ADMIN, Rick MEMBER; billing on the `rockcut` org) via a team-org invite — an
+  app-move needs membership in both orgs. So the apps are NOT under Matt's personal
+  org; they're under `rockcut`.
 
 ### D28 implemented (committed by peer session in `1694c09`)
 All six fixes from `specs/d28_production_deploy_readiness_spec.md`:
@@ -89,18 +98,20 @@ in dev; prod uses `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH`, mapped in `runtime.exs:75
 
 ## Open items / blockers
 
-1. **Rick to transfer Fly apps** `rockcut-api` / `rockcut-ui` to org
-   `matthewheiser` (requested msg 80082) — **awaiting reply**. This is the one
-   true deploy blocker. Fallback: create fresh apps under new names (→ update
-   `PHX_HOST`/`CORS_ORIGINS`/`VITE_API_URL`).
-2. **Push `d28-production-deploy-readiness` to origin** — not yet done.
-3. **Two backlog tasks not yet created** (promised to Rick in msg 80081):
-   Postgres-revisit (trigger conditions + migration steps) and "instrument repo
-   telemetry + PRAGMA health logging." Product Backlog project = **254**.
-4. **Deploy-time (Fix 5):** set `SECRET_KEY_BASE`, `CORS_ORIGINS`,
-   `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH`, VAPID keys; `fly secrets unset DATABASE_URL`.
-5. **Peer session `src-de`** has been active on this same branch — coordinate to
-   avoid conflicts.
+1. **Push `d28-production-deploy-readiness` to origin** — still not done. This is
+   the main loose end: the deploy is live but the code/config that produced it
+   isn't on `rickkoloski/rockcut` yet.
+2. ~~Rick to transfer Fly apps~~ — **DONE** (moved into shared `rockcut` org).
+3. ~~Deploy-time secrets (Fix 5)~~ — **DONE** in prod: `SECRET_KEY_BASE` rotated;
+   `DATABASE_URL` + `ECTO_IPV6` unset; `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH`,
+   `CORS_ORIGINS=https://rockcut-ui.fly.dev`, fresh `WEB_PUSH_EX_VAPID_*` set.
+4. ~~Two backlog tasks~~ — **DONE**: Product Backlog (project **254**) now has
+   task **3843** (malt specs), **3855** (Postgres-revisit triggers + steps),
+   **3856** (repo telemetry + PRAGMA health logging).
+5. **D28 spec still `Status: Draft`** — flip to Complete and add
+   `stepwise_results/d28_..._COMPLETE.md` now that it's deployed.
+6. **Peer session `src-de`** did the deploy on this same branch — coordinate before
+   pushing/force-changing history.
 
 ---
 
@@ -112,8 +123,13 @@ in dev; prod uses `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH`, mapped in `runtime.exs:75
   (API + UI). They were down at end of session.
 - **Docker + nginx aren't installed locally** — Fixes 1 & 2 validate on Fly's
   remote builder at deploy, not here.
-- **D28 spec is still marked `Status: Draft`** — flip to Complete + add a
-  `stepwise_results/d28_..._COMPLETE.md` when the deploy is done.
+- **Prod API `auto_start_machines=false`** (fly.toml) — if the single API machine
+  stops, it will NOT auto-start on traffic; start it explicitly
+  (`fly machine start <id>`, currently `dawn-morning-549`). UI auto-suspends and
+  auto-starts fine.
+- **Shell gotcha when testing prod login:** `PW=x curl ...${PW}` sends an EMPTY
+  password (the shell expands `${PW}` before the command-scoped assignment). Set
+  the var on its own line first.
 - **Don't run repo-wide `mix format` / `mix precommit`** in `rockcut_api`
   (memory `rockcut-mix-format-churn`).
 
@@ -121,10 +137,14 @@ in dev; prod uses `ADMIN_EMAIL`/`ADMIN_PASSWORD_HASH`, mapped in `runtime.exs:75
 
 ## Resume instructions
 
-1. Restart API + UI if needed (`CLAUDE.md`). `MIX_ENV=test mix test` → 183.
-2. Check discussion 80 for Rick's app-ownership/transfer reply.
-3. If pushing: `git push -u origin d28-production-deploy-readiness`.
-4. Create the two backlog tasks (item 3 above) in Product Backlog project 254.
-5. When Rick has transferred the apps: follow
-   `docs/chronicle_by_concept/03_deployment/ref/production_deploy_runbook.md`
-   (secrets → API deploy → `Release.seed()` → UI deploy → smoke checks).
+1. **App is already live** — sanity-check: `curl https://rockcut-api.fly.dev/api/health`
+   (200) and open `https://rockcut-ui.fly.dev`. Log in as owner
+   (`matthewheiser@gmail.com`). If the API machine is stopped, `fly machine start`.
+2. **Push the branch** (main loose end): coordinate with `src-de` first, then
+   `git push -u origin d28-production-deploy-readiness`. Consider opening a PR into
+   `scheduler-pwa` / `practice1`.
+3. Close out **D28**: flip the spec to Complete, add the stepwise result.
+4. Redeploys use
+   `docs/chronicle_by_concept/03_deployment/ref/production_deploy_runbook.md`.
+5. Next feature work: review the peer session's **D29–D34 configurable RBAC spec**
+   before starting.
