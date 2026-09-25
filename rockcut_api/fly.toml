@@ -11,13 +11,18 @@ primary_region = 'dfw'
 [mounts]
   source = "rockcut_data"
   destination = "/data"
+  # Daily volume snapshots, retained 14 days (D28)
+  snapshot_retention = 14
 
 [http_service]
   internal_port = 4000
   force_https = true
-  auto_stop_machines = 'stop'
-  auto_start_machines = true
-  min_machines_running = 0
+  # Keep one machine always on (D28): the D22 reminder GenServer and the
+  # fire-and-forget push/email Tasks only run while the machine is up. SQLite on a
+  # single volume also requires exactly one machine (`fly scale count 1`).
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
   processes = ['app']
 
   [http_service.concurrency]

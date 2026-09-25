@@ -14,6 +14,10 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 # Install dependencies using Docker-specific package.json (no linked packages)
 COPY package.docker.json ./package.json
 COPY .npmrc ./
+# Docker-only pnpm settings — approves esbuild's build script (pnpm 10+ reads
+# build approval from pnpm-workspace.yaml, not package.json). The real workspace
+# file is .dockerignored so its datagrid-extended link override never enters here.
+COPY pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
 RUN pnpm install --no-frozen-lockfile
 
 # Create datagrid-extended shim (the linked package doesn't exist in Docker)
@@ -30,7 +34,10 @@ RUN mkdir -p .datagrid-extended-src && \
 
 # Copy source and build
 COPY . .
-RUN pnpm run build
+# Build with vite directly — the package.json `build` script runs `tsc -b`, which
+# is pre-broken by the linked datagrid-extended (D28). Type-checking is a local/CI
+# concern (`tsc --noEmit -p tsconfig.app.json`), not the deploy build.
+RUN pnpm exec vite build
 
 # Production stage — serve with nginx
 FROM nginx:alpine

@@ -1,0 +1,9 @@
+# Docker-only pnpm settings (mirrors package.docker.json's no-linked-packages approach).
+# The real pnpm-workspace.yaml is .dockerignored because its `overrides` link
+# datagrid-extended to a sibling checkout that doesn't exist in the image — in
+# Docker that import is resolved by a vite alias instead (see vite.config.ts,
+# DOCKER_BUILD). This file only needs to approve esbuild's install script so
+# pnpm 10+ doesn't hard-fail with ERR_PNPM_IGNORED_BUILDS.
+shamefullyHoist: true
+allowBuilds:
+  esbuild: true

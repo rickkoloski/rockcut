@@ -1,5 +1,8 @@
 node_modules
 dist
+# The real workspace file links datagrid-extended to a sibling checkout that
+# isn't in the image; Docker uses pnpm-workspace.docker.yaml instead.
+pnpm-workspace.yaml
 .git
 .gitignore
 *.md

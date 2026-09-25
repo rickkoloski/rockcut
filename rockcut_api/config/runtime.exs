@@ -90,6 +90,12 @@ if config_env() == :prod do
       subject: System.get_env("WEB_PUSH_EX_VAPID_SUBJECT") || "mailto:matt@rockcut.com"
   end
 
+  # Email (D28): no real provider this release. Use a no-op adapter that logs and
+  # never raises, so notification emails (D18/D21/D23) degrade cleanly to the
+  # in-app bell + web push. Swap in a real Swoosh adapter (Mailgun/Postmark/SMTP)
+  # here when a provider + sending domain are chosen.
+  config :rockcut_api, RockcutApi.Mailer, adapter: RockcutApi.MailerNoop
+
   # ## SSL Support
   #
   # To get SSL working, you will need to add the `https` key
