@@ -242,6 +242,6 @@ data — nothing to seed.
       apps into a shared **`rockcut`** org (Matt ADMIN, Rick MEMBER).
 - [x] Any data in the current live app worth exporting before cutover? → No;
       fresh DB, no user migration (Rick msg 80038).
-- [x] Snapshot retention: 14 days. *Follow-up:* the pre-existing volume is at
-      5 days — `fly.toml` only applies at volume creation; set it with
+- [x] Snapshot retention: 14 days. The pre-existing volume was at 5 days
+      (`fly.toml` only applies at volume creation); set to 14 on 2026-09-26 via
       `fly volumes update --snapshot-retention 14`.

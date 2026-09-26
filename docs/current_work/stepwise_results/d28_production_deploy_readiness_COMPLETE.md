@@ -67,9 +67,10 @@ picking up a redeploy. These need real usage; config for each is in place.
 
 ## Follow-ups
 
-- **Snapshot retention is 5 days, not 14.** `snapshot_retention` in `fly.toml`
-  only applies when `fly deploy` creates the volume; `rockcut_data` pre-existed.
-  Fix: `fly volumes update vol_rkgemljzzkozz3w4 --snapshot-retention 14`.
+- ~~Snapshot retention was 5 days, not 14~~ — **fixed 2026-09-26** with
+  `fly volumes update vol_rkgemljzzkozz3w4 --snapshot-retention 14`. Note:
+  `snapshot_retention` in `fly.toml` only applies when `fly deploy` creates the
+  volume; for an existing volume, use `fly volumes update`.
 - **API `auto_start_machines=false`** — if the machine stops it will not wake on
   traffic; `fly machine start d894670a535598 -a rockcut-api`.
 - Cosmetic: `/assets/*` sends two `Cache-Control` headers (`expires 1y` emits
