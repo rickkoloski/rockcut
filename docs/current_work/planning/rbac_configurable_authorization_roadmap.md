@@ -1,7 +1,8 @@
 # Configurable RBAC — Roadmap
 
-**Status:** Roadmap (not a deliverable). Only the first phase has an ID:
-**D29** (`specs/d29_rbac_capability_model_spec.md`). Later phases get a
+**Status:** Roadmap (not a deliverable). Phase 0 = **D29** (complete,
+`specs/d29_rbac_capability_model_spec.md`); Phase 1 = **D31** (D30 is the DEV
+server + synthetic test accounts, which the role work will test against). Later phases get a
 deliverable ID when each is actually specified — IDs are sequential and never
 reused, so none are reserved here.
 **Created:** 2026-09-25 (peer session `src-de`); **revised** 2026-09-26 after
@@ -55,8 +56,8 @@ limited to their own departments), which lands as its own reviewed step.
 
 | # | Phase | Deliverable | Backlog |
 |---|-------|-------------|---------|
-| 0 | **Capability model** — decision inventory, vocabulary (modules × levels × scope), today-as-matrix, owner-only actions, list-scoping and role-derived-behavior rules | **D29** | 3848 |
-| 1 | **Consolidate** — route every decision through `Authz` with parity tests; no behavior change | next ID | *new task needed* |
+| 0 | **Capability model** — decision inventory, vocabulary (modules × levels × scope), today-as-matrix, owner-only actions, list-scoping and role-derived-behavior rules | **D29** ✔ complete 2026-09-26 | 3848 |
+| 1 | **Consolidate** — route every decision through `Authz` with parity tests; no behavior change | **D31** | *new task needed* |
 | 2 | **Level resolver** — `Authz` internals evaluate the D29 matrix (hardcoded); additive `/api/me` field | later | 3849 |
 | 3 | **Roles as data** — `roles` + `role_capabilities`, system roles seeded from the matrix, hardcoded fallback | later | 3850 |
 | 4 | **Custom roles + assignment** — owner-gated role CRUD, `memberships.role_id`, guardrails | later | 3851 |

@@ -1,6 +1,6 @@
 # D29: RBAC Capability Model — Specification
 
-**Status:** Draft — all model and behavior decisions made by Matt 2026-09-26 (§6); Rick sign-off pending
+**Status:** Complete (2026-09-26) — signed off by Matt; Rick informed in discussion 80. See `stepwise_results/d29_rbac_capability_model_COMPLETE.md`
 **Created:** 2026-09-25 (as the D29–D34 plan); **rewritten** 2026-09-26 as D29 only;
 proposed model + inventory added 2026-09-26
 **Author:** Matt + CC
@@ -45,7 +45,7 @@ able to reproduce all of them. **No code changes.**
 - [x] **Role-derived behavior** — §3.7.
 - [x] **Today-as-matrix** — Appendix B, with the parity check.
 - [x] **Decisions** on §3 and the §6 policy questions (Matt, 2026-09-26).
-- [ ] **Sign-off** from Rick.
+- [x] **Sign-off** — Matt, 2026-09-26 (Rick informed, not blocking).
 
 ### Non-Functional
 
@@ -209,16 +209,15 @@ These live outside the module vocabulary, so no role can express them.
       difference (B2) is decided and specified in §6 C.
 - [x] Levels, scope and placement are defined in plain language (§3.3–3.4).
 - [x] Owner-only set and role-derived behavior are recorded (§3.6–3.7).
-- [ ] Matt + Rick sign off (discussion 80).
-- [ ] Roadmap updated with anything sign-off changes.
+- [x] Signed off by Matt, 2026-09-26; Rick informed in discussion 80.
+- [x] Roadmap updated (Phase 2 carries the §6 C change; D31 = consolidation).
 
 ---
 
 ## 5. Out of Scope
 
 - Any code, schema, or UI change (roadmap Phases 1–6).
-- Consolidating the scattered checks behind `Authz` (roadmap Phase 1 — next
-  deliverable).
+- Consolidating the scattered checks behind `Authz` (roadmap Phase 1 — D31).
 - Building the role editor or custom-role assignment.
 
 ---
