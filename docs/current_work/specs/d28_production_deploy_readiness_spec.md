@@ -1,6 +1,6 @@
 # D28: Production Deploy Readiness — Specification
 
-**Status:** Draft
+**Status:** Complete (2026-09-25) — see `stepwise_results/d28_production_deploy_readiness_COMPLETE.md`
 **Created:** 2026-09-24
 **Author:** Matt + CC
 **Depends On:** D10 (auth cutover / users), D19 (PWA), D21 (web push), D22 (shift reminders), D23 (messaging), D25 (availability)
@@ -31,27 +31,27 @@ Reference: full deploy plan in discussion 80 (msg 80036); decisions in msgs
 
 ### Functional
 
-- [ ] **UI Docker build succeeds** and produces the PWA (service worker +
+- [x] **UI Docker build succeeds** and produces the PWA (service worker +
       manifest). Today it fails: `package.docker.json` lacks the PWA/workbox deps
       and the build runs the pre-broken `tsc -b`.
-- [ ] **Installed PWA receives updates.** nginx must not cache the service worker
+- [x] **Installed PWA receives updates.** nginx must not cache the service worker
       and shell entry points for a year.
-- [ ] **Email is a clean no-op in prod** (no provider wired) — it must not raise,
+- [x] **Email is a clean no-op in prod** (no provider wired) — it must not raise,
       and in-app bell + web push continue to work.
-- [ ] **The reminder scanner runs continuously in prod** (the D22 GenServer needs
+- [x] **The reminder scanner runs continuously in prod** (the D22 GenServer needs
       an always-on machine).
-- [ ] **Prod boots with the right secrets** and a locked-down CORS origin.
-- [ ] **The seed produces reference data + a single root owner only** — no demo
+- [x] **Prod boots with the right secrets** and a locked-down CORS origin.
+- [x] **The seed produces reference data + a single root owner only** — no demo
       data, no lot inventory, no non-owner users.
 
 ### Non-Functional
 
-- [ ] **Data engine:** stay on SQLite (no Postgres port). Exactly **one** API
+- [x] **Data engine:** stay on SQLite (no Postgres port). Exactly **one** API
       machine (SQLite on a single volume).
-- [ ] **Cost:** one small always-on API machine + a ~1 GB volume with snapshots;
+- [x] **Cost:** one small always-on API machine + a ~1 GB volume with snapshots;
       UI stays auto-stopping (static).
-- [ ] **Tests:** the existing 183 tests still pass (SQLite sandbox unchanged).
-- [ ] **No custom domain** this release — stay on `*.fly.dev`.
+- [x] **Tests:** the existing 183 tests still pass (SQLite sandbox unchanged).
+- [x] **No custom domain** this release — stay on `*.fly.dev`.
 
 ---
 
@@ -182,20 +182,20 @@ data — nothing to seed.
 
 ## 4. Success Criteria
 
-- [ ] `docker build` of `rockcut-ui` succeeds and `dist/` contains `sw.js` +
+- [x] `docker build` of `rockcut-ui` succeeds and `dist/` contains `sw.js` +
       `manifest.webmanifest`.
-- [ ] Response headers: `GET /sw.js` → `Cache-Control: no-cache`;
+- [x] Response headers: `GET /sw.js` → `Cache-Control: no-cache`;
       `GET /assets/<hashed>.js` → `immutable`.
 - [ ] Redeploying the UI and reloading an installed PWA picks up the new version.
-- [ ] Prod boots with the always-on API machine at count 1; `/api/health` → 200.
+- [x] Prod boots with the always-on API machine at count 1; `/api/health` → 200.
 - [ ] A published shift/message triggers **no mailer crash** in logs (stub logs a
       line); the in-app bell increments and web push arrives on a subscribed device.
-- [ ] `mix ecto.reset` (dev) and `Release.seed()` (prod) create: categories, field
+- [x] `mix ecto.reset` (dev) and `Release.seed()` (prod) create: categories, field
       defs, 5 departments, 10 positions + 4 templates, ~51 ingredients, **1 owner**,
       **0 shifts, 0 lots, 0 other users**.
 - [ ] Reminder for a shift ~65 min out arrives within ~5 min of the 1-hour mark.
-- [ ] Volume snapshots accrue (`fly volumes snapshots list`).
-- [ ] `MIX_ENV=test mix test` → 183 passing (unchanged).
+- [x] Volume snapshots accrue (`fly volumes snapshots list`).
+- [x] `MIX_ENV=test mix test` → 183 passing (unchanged).
 
 ---
 
@@ -238,8 +238,10 @@ data — nothing to seed.
 
 ## 7. Open Questions
 
-- [ ] **Who owns `rockcut-api` / `rockcut-ui` on Fly today?** (Rick, needs
-      `fly auth login`) → transfer vs. recreate under Matt's account.
-- [ ] Any data in the current live app worth exporting before cutover? (Rick said
-      fresh DB / no user migration; confirm nothing brewing-side is needed.)
-- [ ] Snapshot retention: 14 days OK, or longer?
+- [x] **Who owns `rockcut-api` / `rockcut-ui` on Fly today?** → Rick moved both
+      apps into a shared **`rockcut`** org (Matt ADMIN, Rick MEMBER).
+- [x] Any data in the current live app worth exporting before cutover? → No;
+      fresh DB, no user migration (Rick msg 80038).
+- [x] Snapshot retention: 14 days. *Follow-up:* the pre-existing volume is at
+      5 days — `fly.toml` only applies at volume creation; set it with
+      `fly volumes update --snapshot-retention 14`.

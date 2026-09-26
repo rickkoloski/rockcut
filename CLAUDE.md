@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D28 (D19 PWA, D20 nav, D21 web push, D22 reminders, D23 messaging, D24 conflict warnings, D25 availability, D26 home restructure, D27 color/grid polish complete)
+- **Next deliverable**: D29 (D19 PWA, D20 nav, D21 web push, D22 reminders, D23 messaging, D24 conflict warnings, D25 availability, D26 home restructure, D27 color/grid polish, D28 production deploy complete — see `specs/d29_rbac_configurable_authorization_spec.md`)
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -128,6 +128,7 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D25 | Employee Availability — recurring weekly self-declared slots (unavailable/preferred), availability_slots table + RockcutApi.Availability + /api/availability + /availability editor page; unavailable slots feed conflicts.ts as an `availability` conflict kind. **+ Time-off enhancements** (same push): cross-day timed requests; grid off-chips show times + pending (amber) distinctly; managers/owners enter time off & availability on-behalf of managed employees (Authz.can_manage_user?); approval workflow — approve own, cancel/deny an approved request (confirm step), date-sorted lists, "Approved by" | 07_scheduling |
 | D26 | Company-wide Home + Brewery Dashboard — new generic `/` landing (quick-link cards) for all employees; old brewers' dashboard moved to `/brewery` (brewery-only), reached via Brewery → Dashboard; top-level Home nav link; catch-all route → `/` | 02_scaffold_ui |
 | D27 | Per-position color shades + scheduler polish — `positions.color_shade` (HSL lightness of the dept hue) with a swatch picker; color controls moved **into** the Manage-positions dialog (standalone Colors dialog removed); agenda chip shows position only; week-grid name row = name + reorder arrows + ⋮ menu on one line | 07_scheduling |
+| D28 | Production deploy readiness — first prod deploy of the scheduler-pwa line (fresh SQLite DB, shared `rockcut` Fly org): UI Docker build fixed (PWA deps, `vite build`, pnpm-workspace.docker.yaml), nginx `no-cache` for SW/shell, prod mail no-op stub, always-on single API machine + snapshots, reference-data + owner-only seed; runbook in `03_deployment/ref/production_deploy_runbook.md` | 03_deployment |
 
 ## References
 
