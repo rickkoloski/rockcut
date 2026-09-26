@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D30 — shared DEV server + synthetic test accounts (Rick's plan, PortableMind file #3944 / discussion 80 msg 80386). Then D31 — RBAC consolidation (roadmap Phase 1, `planning/rbac_configurable_authorization_roadmap.md`). D19–D29 complete.
+- **Next deliverable**: D30 — shared DEV server + synthetic test accounts, `specs/d30_dev_server_synthetic_accounts_spec.md` (from Rick's plan #3944). Then D31 — RBAC consolidation (roadmap Phase 1, `planning/rbac_configurable_authorization_roadmap.md`). D19–D29 complete.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
