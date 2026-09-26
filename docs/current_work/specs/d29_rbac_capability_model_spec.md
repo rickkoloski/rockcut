@@ -1,7 +1,8 @@
 # D29: RBAC Capability Model — Specification
 
-**Status:** Draft
-**Created:** 2026-09-25 (as the D29–D34 plan); **rewritten** 2026-09-26 as D29 only
+**Status:** Draft — proposed model ready for review (Matt + Rick sign-off pending)
+**Created:** 2026-09-25 (as the D29–D34 plan); **rewritten** 2026-09-26 as D29 only;
+proposed model + inventory added 2026-09-26
 **Author:** Matt + CC
 **Depends On:** D10 (users / tiered authz), D11–D16 (scheduling, time off), D17 (calendar feeds), D18 (notifications), D23 (messaging), D25 (availability)
 **Roadmap:** `planning/rbac_configurable_authorization_roadmap.md` (Phase 0)
@@ -15,13 +16,12 @@ Matt wants to **define roles** and grant each role **capabilities at a level
 across modules**, instead of the fixed owner / manager / employee scheme
 (requested in PortableMind discussion 80, 2026-09-25).
 
-Today that scheme is hardcoded, and — contrary to the original plan — not
-centralized. `Authz.can?/3` is called only by `shift_controller` and
-`position_controller`; about 50 other decisions across ~15 files read
-`is_owner` / `memberships.role` directly, several of them as **scoped list
-queries** or **self-service rules** that a simple read/edit/manage/full ladder
-cannot express, and some role-derived behavior (messaging recipients) isn't an
-access check at all.
+Today that scheme is hardcoded, and not centralized. `Authz.can?/3` is called
+only by `shift_controller` and `position_controller`; the other decisions
+(Appendix A) read `is_owner` / `memberships.role` directly, several of them as
+**scoped list queries** or **self-service rules** that a simple ladder cannot
+express, and some role-derived behavior (the Managers channel) isn't an access
+check at all.
 
 Building roles-as-data on that base would either silently change behavior or
 only cover shifts and positions. D29 produces the **model** every later phase
@@ -34,149 +34,182 @@ able to reproduce all of them. **No code changes.**
 
 ### Functional
 
-- [ ] **Decision inventory.** Every authorization decision in `rockcut_api` and
-      every permission-based gate in `rockcut-ui`, each with: file:line, what it
-      decides, who passes today, and whether it is a *yes/no check*, a *scoped
-      list query*, a *self-service rule*, or *role-derived behavior*. §3.1 is the
-      starting inventory; D29 completes and verifies it.
-- [ ] **Module set**, decoupled from department rows (departments are *where*
-      a capability applies, modules are *what*).
-- [ ] **Level definitions.** A ladder (starting proposal
-      `none ⊂ read ⊂ edit ⊂ manage ⊂ full`) with a one-sentence meaning per
-      level and the verbs each level unlocks — in particular what separates
-      `edit`/`manage`/`full`, or a decision to use fewer levels.
-- [ ] **Scope dimension.** Where a capability applies: `own` (records about the
-      actor), `department` (departments the role is held in), `all`. D29 decides
-      whether scope is part of each capability (level + scope) or implied by
-      where the role is held.
-- [ ] **Role placement.** Roles global, per-department (via memberships), or
-      both — and how `is_owner` fits.
-- [ ] **Verb mapping.** For every inventoried decision: `(module, level, scope)`
-      required, plus any **item conditions** that stay in code (e.g. a claim
-      requires the shift be published, unassigned, and in the actor's
-      department).
-- [ ] **List-scoping rule.** How list queries derive their filter from the model
-      (the set of departments / own-only / all where the actor holds ≥ level).
-- [ ] **Owner-only set.** Actions that stay tied to the owner flag and can
-      **never** be granted by a role (starting set in §3.4).
-- [ ] **Role-derived behavior.** A decision for each non-access use of roles —
-      Managers channel membership and recipients, time-off review notifications —
-      e.g. "holders of ≥ `manage` on scheduling in that department", or an
-      explicit role attribute.
-- [ ] **Today-as-matrix.** The owner / manager / employee roles expressed in the
-      new vocabulary, with a line-by-line check against the inventory showing it
-      reproduces today exactly (or listing each deliberate difference for
-      sign-off).
+- [x] **Decision inventory** — Appendix A (API + UI, verified against code).
+- [x] **Module set**, decoupled from department rows — §3.2.
+- [x] **Level definitions** — §3.3 (proposal: three levels; `full` optional).
+- [x] **Scope dimension** — §3.4.
+- [x] **Role placement** — §3.1.
+- [x] **Verb mapping** with item conditions — Appendix A, "Maps to" column.
+- [x] **List-scoping rule** — §3.5.
+- [x] **Owner-only set** — §3.6.
+- [x] **Role-derived behavior** — §3.7.
+- [x] **Today-as-matrix** — Appendix B, with the parity check.
+- [ ] **Sign-off** on §3 recommendations and the §6 policy questions.
 
 ### Non-Functional
 
-- [ ] **Security:** the model keeps the server (`Authz`) as the only
-      enforcement boundary; UI gating stays a convenience.
-- [ ] **Escalation-safe:** the model makes it impossible to express a role that
-      grants owner-only actions or lets an assigner grant beyond their own scope.
-- [ ] **Buildable incrementally:** each later roadmap phase can adopt the model
-      with no behavior change until custom roles exist.
+- [x] **Security:** the server (`Authz`) stays the only enforcement boundary;
+      UI gating is convenience (the UI reads the same model via `/api/me`).
+- [x] **Escalation-safe:** owner-only actions are outside the capability
+      vocabulary (§3.6); assignment is bounded by the assigner's own grants
+      (§3.8).
+- [x] **Buildable incrementally:** the system roles in Appendix B reproduce
+      today, so Phases 1–3 of the roadmap change no behavior.
 
 ---
 
-## 3. Design
+## 3. Design — proposed model
 
-### Approach
+> Everything in this section is a **recommendation for sign-off**. Alternatives
+> are noted where the choice is a real trade-off.
 
-1. Complete and verify the inventory (§3.1) by reading each site — start from
-   `grep -rnE 'is_owner|Authz\.|role_in|can_manage|managed_department|"manager"'`
-   over `rockcut_api/lib` and `is_owner|manages_departments|can_manage_users|modules`
-   over `rockcut-ui/src`.
-2. Classify each decision (check / list / self-service / role-derived).
-3. Choose modules, levels, scope, and role placement to cover every class.
-4. Express today's three roles as a matrix; diff against the inventory.
-5. Record decisions and the matrix in this spec (appendix) and get Matt + Rick
-   sign-off in discussion 80.
-
-### 3.1 Starting inventory (from the 2026-09-26 review — to verify)
-
-| Area | Where | Kind | Rule today |
-|------|-------|------|-----------|
-| Shifts | `authz.ex` `can?(_, _, %Shift{})`; `shift_controller` (7 calls) | check | read published = anyone; draft read + create/update/assign/delete/publish/unpublish = manager of shift's dept; claim = member of dept, published + unassigned |
-| Shift visibility | `scheduling.ex:246` `restrict_visibility` | list | owner all; others published + drafts in managed depts |
-| Positions | `authz.ex` `can?(_, _, %Position{})`; `position_controller` (3) | check | read anyone; write = any manager |
-| Shift / schedule templates | `shift_template_controller:47`, `schedule_template_controller:16,26` | check | any manager |
-| Roster | `roster_controller:14` | check | any manager |
-| Time off — list | `time_off.ex:26,34` `list_for` | list | owner all; others own + requests of **users who are members of** managed depts |
-| Time off — view / review | `time_off.ex:161-174` | check + self | owner; self; manager of requester's dept |
-| Time off — on behalf | `time_off.ex:102` | check | `can_manage_user?` of target |
-| Availability — list | `availability.ex:28,106` | list | owner all; others own + slots of users who are members of managed depts |
-| Availability — manage | `availability.ex:80-89` | check + self | owner; self; `can_manage_user?` |
-| Messaging — channels | `messaging.ex:20-45` | list + check | All-staff anyone; Managers = any manager; dept channel = member (owner all) |
-| Messaging — recipients | `messaging.ex:145-173` | role-derived | Managers = users with a manager membership + owners |
-| Calendar feeds | `calendar_feeds.ex:48-68` | check + self | user feed self/owner; dept feed owner/manager of dept; whole-schedule owner |
-| Users — list | `accounts.ex:240-245` `list_users_for` | list | owner all; manager users in managed depts |
-| Users — manage | `user_controller:12,22,49,76`; `accounts.ex:266` | check | any manager to list/create; `can_manage_user?` to edit |
-| Owner flag | `user_controller:89`; `accounts.ex:156-177,419` | owner-only | only owner sets `is_owner`; last-active-owner guard |
-| Memberships | `membership_controller:18`; `accounts.ex:413` | check | any manager; only within managed depts (owner all) |
-| Departments | `department_controller:15` | owner-only | owner |
-| Owner activity / audit | `owner_activity_controller:10,21` | owner-only | owner |
-| Brewing | `ModuleAccessPlug` (`module: :brewery`); `authz.ex` Brewing clause (**no callers**) | check | any brewery member (owner all) |
-| `/api/me` capabilities | `accounts.ex:274-292` | projection | modules, manages_departments, can_manage_users |
-| UI gates | `App.tsx`, `Home.tsx`, `Schedule.tsx`, `TimeOff.tsx`, `Availability.tsx`, `UserManagement.tsx`, `UserFormDialog.tsx`, `lib/types.ts` | UI | `is_owner` / `manages_departments` / `can_manage_users` |
-
-Note: time-off, availability and user lists scope by **person** (users who
-belong to a managed department), while shifts scope by the **record's**
-department — the list-scoping rule must handle both.
-
-Note: "any manager" (`can_manage_any?`) means a manager of **any** department
-acts company-wide for positions, templates, roster and user creation — the
-model must reproduce that or flag it as a deliberate change.
-
-### 3.2 Candidate modules
-
-scheduling (shifts), positions, templates, roster, time-off, availability,
-messaging, calendar-feeds, users, memberships, departments, brewing,
-owner-activity. D29 may merge or split these.
-
-### 3.3 Candidate capability shape
+### 3.1 Three layers, evaluated in order
 
 ```
-capability = { module, level: none|read|edit|manage|full, scope: own|department|all }
-role       = { name, system?, capabilities: [capability] }
-held via   = membership (per-department) and/or global assignment (D29 decides)
+1. Owner flag     users.is_owner       → every capability at every scope, plus the owner-only set
+2. Baseline       every active user    → self-service + company-wide reads (fixed, not editable)
+3. Roles          held per department  → capabilities (module, level, scope), via memberships
 ```
 
-Item conditions (published/unassigned/in-department for claims, last-owner
-guards) stay in code and are listed per verb in the matrix.
+- **Roles are held per department**, exactly as today (a membership =
+  user + department + role). No global roles in this release: "company-wide"
+  authority is expressed by a capability with scope `all` inside a
+  department-held role (that's how today's "any manager acts company-wide"
+  rules are reproduced).
+- **Owner stays a flag**, not a role. It can't be granted by a role, and the
+  last-active-owner guard stays. (Modelling it as a locked system role is a
+  cosmetic Phase-6 choice.)
+- **Baseline** captures what every signed-in user can do regardless of role
+  (Appendix B, first block). Today a user with **no memberships** still gets
+  all of it; keeping baseline separate preserves that and keeps custom roles
+  from accidentally removing self-service.
 
-### 3.4 Starting owner-only set
+A user's effective grant for a module = the **maximum** over owner, baseline,
+and every role they hold — each role's scope is resolved relative to the
+department the role is held in.
 
-Setting / clearing `is_owner`; department create/edit/delete; owner activity
-log; whole-schedule calendar feed; defining or editing roles. D29 confirms or
-amends; the rule "no role can grant these" is fixed.
+### 3.2 Modules
 
-### Key outputs
+| Module | Covers | Kind |
+|--------|--------|------|
+| `schedule` | shifts: view, draft, assign, publish, claim | record-scoped (shift's department) |
+| `schedule_setup` | positions, shift templates, schedule templates, roster order | company data (no department) |
+| `time_off` | time-off requests: view, request on behalf, review | person-scoped (requester's departments) |
+| `availability` | availability slots | person-scoped |
+| `calendar_feeds` | department feed tokens | record-scoped (feed's department) |
+| `people` | users, password reset, memberships | person-scoped |
+| `messaging` | department channels, Managers channel | record-scoped (channel's department) |
+| `brewing` | recipes, ingredients, lots, batches, brew turns, logs, formulas | company data, **bound to a department** |
 
-| Output | Purpose |
-|--------|---------|
-| Decision inventory (appendix A) | Parity checklist for the consolidation phase |
-| Vocabulary: modules, levels, scope, role placement | Schema + API contract for later phases |
-| Verb mapping + item conditions | What `Authz` evaluates |
-| List-scoping rule | Replaces `list_for` / `restrict_visibility` logic |
-| Owner-only set | Escalation guardrail |
-| Role-derived behavior decisions | Messaging / notifications with custom roles |
-| Today-as-matrix (appendix B) | Seed data for system roles; parity target |
+**Department-bound modules.** Brewing data has no department, but only Brewery
+members may use it (today's `ModuleAccessPlug module: :brewery`). Proposal: a
+module may be **bound** to departments (`brewing → brewery`); a role's grant on
+a bound module is effective **only when that role is held in a bound
+department**. So the same "Employee" role gives brewing access in Brewery and
+nothing in Taproom — today's behavior — and future modules (e.g. a taproom
+POS) bind the same way. This replaces the module/department conflation without
+losing it.
+
+Departments, owner activity, and role definitions are **not** modules — they
+are owner-only (§3.6).
+
+### 3.3 Levels
+
+Proposal: **`none < read < edit < manage`** — three granting levels.
+
+| Level | Meaning (plain language for the role editor) |
+|-------|---------------------------------------------|
+| `read` | See it. |
+| `edit` | Do your own work in it: add and change records that are yours or that you're taking on (claim a shift, log a batch). |
+| `manage` | Run it for others: create, change, assign, approve, publish and delete other people's records; set it up. |
+
+**Why not `full`?** No current rule separates "manage" from a higher level —
+managers who can edit a shift can also delete and publish it; brewery members
+who can edit a recipe can delete it. A `full` level would have nothing to be
+tested against for parity. It can be added later, without migration, as
+`manage + delete/irreversible` if Matt wants to withhold deletes from someone.
+*Alternative:* keep the requested four-level ladder now with
+`full = manage + delete`; system roles would then use `full` wherever they
+`manage` today, and `manage` vs `full` differ only for custom roles.
+
+### 3.4 Scope
+
+Each capability carries a scope (not implied by where the role is held):
+
+| Scope | Record-scoped module | Person-scoped module | Company / bound module |
+|-------|---------------------|----------------------|------------------------|
+| `own` | records assigned to / created by me | records about me | — |
+| `department` | records in the department the role is held in | records about people who are members of that department | — (n/a) |
+| `all` | every department | everyone | the whole module |
+
+For company and bound modules only `all` is meaningful; the editor offers level
+only.
+
+### 3.5 List scoping
+
+`Authz` exposes one query-scope function used by every list:
+
+```
+Authz.scope(user, module, level) ::
+  :all | {:departments, [dept_id]} | {:own, user_id} | {:union, [scope]} | :none
+```
+
+It unions, across the user's grants with ≥ `level`: `all` wins; `department`
+grants contribute the holding department ids; `own` contributes the user.
+Each context applies it by its module kind — record-scoped lists filter
+`record.department_id in ids`; person-scoped lists filter
+`record.user_id in (members of ids)` (today's `managed_member_ids` pattern) —
+plus baseline rules (e.g. published shifts visible to all). This replaces
+`restrict_visibility`, both `list_for`s, `list_users_for`, and
+`entitlements`.
+
+### 3.6 Owner-only set (never grantable)
+
+- Set / clear `is_owner`; the last-active-owner guard (deactivate or demote).
+- Department create / edit / delete (palette colour included).
+- Owner activity log (read + mark seen) and the pending-review badge.
+- Whole-schedule calendar feed.
+- Define, edit, delete roles; edit capability grants.
+
+These live outside the module vocabulary, so no role can express them.
+
+### 3.7 Role-derived behavior
+
+- **Managers channel** (view, post, recipients): members = owners + anyone
+  holding **`schedule: manage`** at any scope. Reproduces today (every manager
+  and only managers hold it) and gives custom roles a predictable rule: "if
+  you can run a schedule, you're in the managers' room." *Alternative:* an
+  explicit per-role "counts as manager" flag — more control, one more concept
+  in the editor.
+- **Open-shift notifications** go to department **members**, independent of
+  role — unchanged, not a capability.
+- **Audit logging** records every actor — unchanged.
+- **Time-off review notifications:** none exist today; if added, recipients =
+  holders of `time_off: manage` over the requester (via `Authz.scope`).
+
+### 3.8 Assignment guardrails (for roadmap Phase 4)
+
+- Only owners define roles (§3.6). An actor may assign a role in department D
+  only if, for every capability in that role, the actor holds ≥ the same level
+  at ≥ the same scope in D. Only capabilities **effective in D** are compared:
+  a grant on a module bound elsewhere (e.g. brewing, when D isn't Brewery) is
+  inert in D and ignored. (Today: managers assign manager/employee within
+  departments they manage — both system roles pass this rule.)
+- System roles (Owner-baseline, Manager, Employee) are immutable.
+- Validate module ∈ §3.2, level ∈ §3.3, scope ∈ §3.4.
 
 ---
 
 ## 4. Success Criteria
 
-- [ ] Every site found by the §3 Approach greps appears in appendix A, or is
-      noted as not an access decision.
-- [ ] Every appendix-A row maps to `(module, level, scope)` + item conditions.
-- [ ] The today-as-matrix reproduces every appendix-A rule; any deliberate
-      difference is listed and signed off.
-- [ ] Levels, scope, and role placement are defined in plain language a
-      non-developer (Matt, as the future role editor) can apply.
-- [ ] Owner-only set and role-derived behavior decisions are recorded.
+- [x] Every site found by the greps (`is_owner|Authz\.|role_in|can_manage|managed_department|"manager"|owner\?` over `rockcut_api/lib`; `is_owner|manages_departments|can_manage_users|capabilities|modules` over `rockcut-ui/src`) appears in Appendix A, or is noted as not an access decision.
+- [x] Every Appendix-A row maps to `(module, level, scope)` + item conditions.
+- [x] Appendix B reproduces every Appendix-A rule; deliberate-difference
+      candidates are listed in §6 for decision, and the proposal changes none.
+- [x] Levels, scope and placement are defined in plain language (§3.3–3.4).
+- [x] Owner-only set and role-derived behavior are recorded (§3.6–3.7).
 - [ ] Matt + Rick sign off (discussion 80).
-- [ ] Roadmap updated with anything D29 changes about later phases.
+- [ ] Roadmap updated with anything sign-off changes.
 
 ---
 
@@ -191,12 +224,159 @@ amends; the rule "no role can grant these" is fixed.
 
 ## 6. Open Questions
 
-- [ ] Global roles, per-department roles, or both?
-- [ ] Does "manager of any department acts company-wide" (positions, templates,
-      roster, user creation) stay, or become department-scoped?
-- [ ] Are four levels needed, or do fewer (e.g. read / edit / manage) plus scope
-      cover everything?
-- [ ] Should Brewing get per-action checks, or is module-level gating enough?
-- [ ] With custom roles, who counts as a "manager" for the Managers channel and
-      notification recipients?
-- [ ] Owner as a locked system role vs. keeping the `is_owner` flag.
+### Model decisions (recommendation in §3)
+
+- [ ] Roles held per department only (§3.1)? — *recommended: yes.*
+- [ ] Three levels, `full` deferred (§3.3)? — *or four now with `full = manage + delete`.*
+- [ ] Department-bound modules for brewing (§3.2)? — *recommended: yes.*
+- [ ] Managers channel = holders of `schedule: manage` (§3.7)? — *or an explicit role flag.*
+
+### Current behavior to confirm or change (found in review)
+
+The proposal reproduces all of these exactly. Each is a candidate for a
+deliberate change — decide now so the system-role seed data is right.
+
+1. **Self-approval of time off.** A manager of *any* department can approve
+   their *own* time-off request, including when they don't manage any
+   department they belong to (`time_off.ex:167`). Keep, or require a manager
+   of one of the requester's departments / an owner?
+2. **"Any manager" acts company-wide** for positions, shift/schedule templates,
+   roster display order, and **creating users** (`can_manage_any?`). Keep as
+   `schedule_setup: manage (all)` / `people` create, or scope to managed
+   departments?
+3. **Brewery employees have full brewing access** — including deleting
+   recipes, batches, and editing the ingredient catalog and category field
+   definitions. Keep, or split brewing into `edit` (batches, logs) vs `manage`
+   (recipes, catalog, deletes) for employees?
+4. **Everyone sees every department's published shifts.** Keep (baseline), or
+   limit to own departments?
+5. **Owners cannot cancel someone else's time off** (only the requester can
+   cancel; owners/managers can deny). Keep?
+6. **"Other" department** (non-assignable, scheduling-only) can have no
+   members, so only owners can create or publish its shifts. Keep?
+
+---
+
+## Appendix A — Decision inventory (verified 2026-09-26)
+
+Kinds: **check** (yes/no on an item) · **list** (filters rows) · **self**
+(about the actor's own records) · **derived** (role picks an audience, not
+access) · **owner** (owner-only) · **UI** (client gate).
+Maps-to uses §3 vocabulary; "baseline" = every active user; conditions in
+*italics* stay in code.
+
+| # | Area | Where | Kind | Rule today | Maps to |
+|---|------|-------|------|-----------|---------|
+| 1 | Shift read | `authz.ex` Shift clause; `shift_controller:23` | check | published: anyone; draft: manager of shift's dept | baseline read (*published*); draft: `schedule` read-draft = `manage`, department |
+| 2 | Shift list | `scheduling.ex:246` `restrict_visibility` | list | owner all; others published + drafts in managed depts | `Authz.scope(schedule, manage)` ∪ *published* |
+| 3 | Shift create | `shift_controller:32` | check | manager of target dept | `schedule` manage, department |
+| 4 | Shift update / move | `shift_controller:53-54` | check | manager of current **and** new dept | `schedule` manage, department — *both old and new dept* |
+| 5 | Shift assign / delete / publish / unpublish | `shift_controller:141` | check | manager of shift's dept | `schedule` manage, department |
+| 6 | Publish batch | `shift_controller:89` | check | filters to shifts the actor may publish | `schedule` manage, department (per shift) |
+| 7 | Claim open shift | `shift_controller:116`; `authz.ex` | self | member of shift's dept | `schedule` edit, department — *published, unassigned* |
+| 8 | Positions read | `authz.ex` Position clause | check | anyone | baseline read |
+| 9 | Positions write | `position_controller:17,29,43` | check | any manager | `schedule_setup` manage |
+| 10 | Shift templates read | `shift_template_controller:9` | check | anyone | baseline read |
+| 11 | Shift templates write | `shift_template_controller:14,24,36,47` | check | any manager | `schedule_setup` manage |
+| 12 | Schedule templates read | `schedule_template_controller:9` | check | anyone | baseline read |
+| 13 | Schedule templates write | `schedule_template_controller:16,26` | check | any manager | `schedule_setup` manage |
+| 14 | Roster read | `roster_controller:8` | check | anyone | baseline read |
+| 15 | Roster order | `roster_controller:14` | check | any manager | `schedule_setup` manage |
+| 16 | Time off list | `time_off.ex:26-49` | list | owner all; own + members of managed depts | baseline own ∪ `Authz.scope(time_off, manage)` (person) |
+| 17 | Time off view | `time_off.ex:161-163` | check | owner; self; manager of a requester dept | baseline own; `time_off` manage, department (person) |
+| 18 | Time off request (self) | `time_off.ex:63-102` | self | anyone, pending | baseline own |
+| 19 | Time off on behalf | `time_off.ex:102`, `:74` | check | `can_manage_user?` target; auto-approved | `time_off` manage, department (person) — *created approved* |
+| 20 | Time off review | `time_off.ex:116-118,165-170` | check | owner; manager of a requester dept | `time_off` manage, department (person) |
+| 21 | Time off self-review | `time_off.ex:167-168` | self | own request, if a manager anywhere | `time_off` manage, any scope — *own request* (see §6 Q1) |
+| 22 | Time off cancel | `time_off.ex:143-146` | self | requester only; pending/approved | baseline own — *pending or approved* |
+| 23 | Availability list | `availability.ex:28-40,106` | list | owner all; own + members of managed depts | baseline own ∪ `Authz.scope(availability, manage)` (person) |
+| 24 | Availability create / delete | `availability.ex:71,80-89` | check + self | owner; self; `can_manage_user?` | baseline own; `availability` manage, department (person) |
+| 25 | Calendar feeds list | `calendar_feeds.ex:46-60` `entitlements` | list | own feed; managed depts (owner: all); whole-schedule: owner | baseline own; `Authz.scope(calendar_feeds, manage)`; whole = owner |
+| 26 | Calendar feed rotate | `calendar_feeds.ex:38,63-69` | check + self | user: self/owner; dept: owner/manager of dept; all: owner | baseline own; `calendar_feeds` manage, department; owner |
+| 27 | Calendar feed fetch | `router.ex` public `/calendar/:token` | — | token is the credential | not an access decision |
+| 28 | Channels list | `messaging.ex:20-36` | list | All-staff; Managers if any manager; member depts (owner: all assignable) | baseline All-staff; §3.7; `Authz.scope(messaging, edit)` |
+| 29 | Channel view / post / read | `messaging.ex:37-45` | check | same as list | baseline (All-staff); §3.7; `messaging` edit, department |
+| 30 | Managers-channel recipients | `messaging.ex:147-160` | derived | manager memberships + owners | §3.7 |
+| 31 | Dept-channel recipients | `messaging.ex:161-170` | derived | department members | membership (unchanged) |
+| 32 | Open-shift notifications | `notifications.ex:138` | derived | department members | membership (unchanged) |
+| 33 | Users list | `user_controller:12`; `accounts.ex:240-245` | list | any manager; owner all, else members of managed depts | `Authz.scope(people, manage)` (person) |
+| 34 | User create | `user_controller:22`; `accounts.ex:126` | check | any manager; memberships limited to managed depts | `people` manage, any scope — memberships per #37 (see §6 Q2) |
+| 35 | User update / reset password | `user_controller:49,76`; `accounts.ex:266-270` | check | owner; manager of a dept the target is in | `people` manage, department (person) |
+| 36 | Owner flag + last-owner guard | `user_controller:89`; `accounts.ex:156-177,419` | owner | only owner sets; can't remove/deactivate last active owner | owner-only (§3.6) |
+| 37 | Set memberships | `membership_controller:18`; `accounts.ex:198,317-417` | check | any manager; add/remove only in managed depts; non-assignable depts rejected | `people` manage, department (per dept) + §3.8 — *dept assignable* |
+| 38 | Departments list | `department_controller:9` | check | anyone | baseline read |
+| 39 | Department update | `department_controller:15` | owner | owner | owner-only |
+| 40 | Owner activity | `owner_activity_controller:10,21` | owner | owner | owner-only |
+| 41 | Brewing routes | `router.ex` `:brewery` pipeline; `ModuleAccessPlug` | check | owner or any Brewery member: all CRUD + formulas | `brewing` manage (bound: brewery) (see §6 Q3) |
+| 42 | Brewing `can?` clause | `authz.ex` Brewing clause | — | **no callers** | superseded by #41 |
+| 43 | Notifications, push, prefs, session | `notification_*`, `push_controller`, `session_controller` | self | actor's own records only | baseline own |
+| 44 | `/api/me` capabilities | `accounts.ex:274-292` | projection | modules, manages_departments, can_manage_users, pending_owner_reviews | adds module → level/scope map (roadmap Phase 2) |
+| 45 | UI nav / home | `App.tsx:141-150`, `Home.tsx:24-28` | UI | brewery module; manage-schedule = owner or manages any dept; manage users | reads capability map |
+| 46 | UI schedule / time off / availability | `Schedule.tsx:59-62`, `TimeOff.tsx:68-69`, `Availability.tsx:57-58` | UI | owner / managed dept keys | reads capability map |
+| 47 | UI user admin | `UserFormDialog.tsx:42-94`, `UserManagement.tsx:11` | UI | owner sees owner toggle + all depts; manager sees managed depts | reads capability map; owner toggle stays owner-only |
+| 48 | UI types | `lib/types.ts:240-265` | UI | closed `Role` union + capabilities shape | opened in roadmap Phase 5 |
+
+Grep hits not listed: `user.ex:10,36,57-58` (schema field + guarded changeset
+for #36), `json_helpers.ex:14` (serializes `is_owner`), `accounts.ex:312`
+(owner count for #36), `authz.ex` helpers (implementation of the above).
+
+## Appendix B — Today as a matrix
+
+**Baseline — every active user** (fixed; not a role)
+
+| Module | Grant |
+|--------|-------|
+| schedule | read published shifts, all departments |
+| schedule_setup | read positions, templates, roster |
+| time_off | request, view, cancel **own** |
+| availability | create, delete **own** |
+| calendar_feeds | own "My shifts" feed |
+| messaging | All-staff channel: view + post |
+| departments | read |
+| notifications / push / prefs | own |
+
+**System role: Employee** (held in department D)
+
+| Module | Level | Scope |
+|--------|-------|-------|
+| schedule | edit | department — *claims only; no draft visibility* |
+| messaging | edit | department (D's channel) |
+| brewing | manage | all — *effective only if D is bound (Brewery)* |
+
+**System role: Manager** (held in department D)
+
+| Module | Level | Scope |
+|--------|-------|-------|
+| schedule | manage | department |
+| schedule_setup | manage | all |
+| time_off | manage | department (person) |
+| availability | manage | department (person) |
+| calendar_feeds | manage | department |
+| people | manage | department (person); create users: any |
+| messaging | edit | department — plus Managers channel via §3.7 |
+| brewing | manage | all — *effective only if D is bound (Brewery)* |
+
+**Owner** — flag: every module at `manage` / `all` (messaging: all assignable
+departments), plus §3.6.
+
+### Parity check
+
+Each Appendix-A row, evaluated against the matrix, gives today's result:
+
+- Shifts #1–7: drafts and writes need `schedule: manage` in the shift's dept —
+  managers only; claims need `schedule: edit` in the dept — every member
+  (employee `edit`, manager `manage ≥ edit`). ✔
+- `schedule_setup` #9–15: `manage/all` in the Manager role = "any manager". ✔
+- Person-scoped #16–24, #33–35: `department (person)` = members of managed
+  depts, matching `managed_member_ids` / `can_manage_user?`. ✔ Self-review #21
+  = `time_off: manage` at any scope, matching `can_manage_any?`. ✔
+- Feeds #25–26: manager `calendar_feeds: manage/department` + owner-only
+  whole feed. ✔
+- Messaging #28–31: dept channels via membership-held `messaging: edit`;
+  Managers channel via `schedule: manage` = exactly the users with a manager
+  membership, plus owners. ✔
+- Memberships #37: §3.8 — a manager holds every capability of both system
+  roles in departments they manage, so may assign either there, and nowhere
+  else. ✔
+- Brewing #41: bound module — any role held in Brewery grants `manage`. ✔
+- "Other" dept: non-assignable → no memberships → only owners act. ✔
