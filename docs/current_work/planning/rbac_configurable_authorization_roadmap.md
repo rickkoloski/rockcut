@@ -94,7 +94,7 @@ module → level/scope map to `/api/me` alongside existing fields.
 
 ### Phase 3 — Roles as data
 
-`roles` (name, `system`, description) + `role_capabilities` (role, module,
+`roles` (name, `system`, `counts_as_manager`, description) + `role_capabilities` (role, module,
 level, scope). Seed the system roles to exactly the D29 matrix; system roles
 are immutable. Resolver reads rows, falling back to the Phase-2 defaults if a
 row is missing.

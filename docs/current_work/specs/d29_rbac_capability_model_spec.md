@@ -1,6 +1,6 @@
 # D29: RBAC Capability Model — Specification
 
-**Status:** Draft — proposed model ready for review (Matt + Rick sign-off pending)
+**Status:** Draft — model decisions made by Matt 2026-09-26; one policy question (§6 B2) under discussion; Rick sign-off pending
 **Created:** 2026-09-25 (as the D29–D34 plan); **rewritten** 2026-09-26 as D29 only;
 proposed model + inventory added 2026-09-26
 **Author:** Matt + CC
@@ -36,7 +36,7 @@ able to reproduce all of them. **No code changes.**
 
 - [x] **Decision inventory** — Appendix A (API + UI, verified against code).
 - [x] **Module set**, decoupled from department rows — §3.2.
-- [x] **Level definitions** — §3.3 (proposal: three levels; `full` optional).
+- [x] **Level definitions** — §3.3 (decided: three levels).
 - [x] **Scope dimension** — §3.4.
 - [x] **Role placement** — §3.1.
 - [x] **Verb mapping** with item conditions — Appendix A, "Maps to" column.
@@ -60,8 +60,8 @@ able to reproduce all of them. **No code changes.**
 
 ## 3. Design — proposed model
 
-> Everything in this section is a **recommendation for sign-off**. Alternatives
-> are noted where the choice is a real trade-off.
+> Model choices in this section were **decided by Matt on 2026-09-26** (§6 A);
+> Rick's sign-off is pending.
 
 ### 3.1 Three layers, evaluated in order
 
@@ -128,9 +128,7 @@ managers who can edit a shift can also delete and publish it; brewery members
 who can edit a recipe can delete it. A `full` level would have nothing to be
 tested against for parity. It can be added later, without migration, as
 `manage + delete/irreversible` if Matt wants to withhold deletes from someone.
-*Alternative:* keep the requested four-level ladder now with
-`full = manage + delete`; system roles would then use `full` wherever they
-`manage` today, and `manage` vs `full` differ only for custom roles.
+**Decided (2026-09-26): three levels.**
 
 ### 3.4 Scope
 
@@ -176,11 +174,10 @@ These live outside the module vocabulary, so no role can express them.
 ### 3.7 Role-derived behavior
 
 - **Managers channel** (view, post, recipients): members = owners + anyone
-  holding **`schedule: manage`** at any scope. Reproduces today (every manager
-  and only managers hold it) and gives custom roles a predictable rule: "if
-  you can run a schedule, you're in the managers' room." *Alternative:* an
-  explicit per-role "counts as manager" flag — more control, one more concept
-  in the editor.
+  holding a role with **`counts_as_manager: true`** (decided 2026-09-26 — an
+  explicit per-role flag, not derived from capabilities). The Manager system
+  role has it; Employee doesn't — so today's audience is reproduced exactly,
+  and Matt decides per custom role who belongs in the managers' room.
 - **Open-shift notifications** go to department **members**, independent of
   role — unchanged, not a capability.
 - **Audit logging** records every actor — unchanged.
@@ -195,7 +192,9 @@ These live outside the module vocabulary, so no role can express them.
   a grant on a module bound elsewhere (e.g. brewing, when D isn't Brewery) is
   inert in D and ignored. (Today: managers assign manager/employee within
   departments they manage — both system roles pass this rule.)
-- System roles (Owner-baseline, Manager, Employee) are immutable.
+- Assigning a role with `counts_as_manager` requires the actor to count as a
+  manager too (or be an owner).
+- System roles (Manager, Employee) are immutable.
 - Validate module ∈ §3.2, level ∈ §3.3, scope ∈ §3.4.
 
 ---
@@ -222,38 +221,78 @@ These live outside the module vocabulary, so no role can express them.
 
 ---
 
-## 6. Open Questions
+## 6. Decisions and Open Questions
 
-### Model decisions (recommendation in §3)
+### A. Model decisions — decided by Matt, 2026-09-26
 
-- [ ] Roles held per department only (§3.1)? — *recommended: yes.*
-- [ ] Three levels, `full` deferred (§3.3)? — *or four now with `full = manage + delete`.*
-- [ ] Department-bound modules for brewing (§3.2)? — *recommended: yes.*
-- [ ] Managers channel = holders of `schedule: manage` (§3.7)? — *or an explicit role flag.*
+- [x] Roles held per department only (§3.1) — **yes**.
+- [x] Three levels, no `full` (§3.3) — **yes**.
+- [x] Brewing as a department-bound module (§3.2) — **yes**.
+- [x] Managers channel — **explicit `counts_as_manager` role flag** (§3.7).
 
-### Current behavior to confirm or change (found in review)
+### B. Current behaviors — decided by Matt, 2026-09-26
 
-The proposal reproduces all of these exactly. Each is a candidate for a
-deliberate change — decide now so the system-role seed data is right.
+1. [x] **Self-approval of time off** (a manager of any department approves
+   their own request, `time_off.ex:167`) — **keep**.
+2. [ ] **"Any manager" acts company-wide** (positions, templates, roster order,
+   user creation) — **change wanted**: managers create users and edit
+   positions **only in their own departments**. Design in §6 C; under
+   discussion.
+3. [x] **Brewery employees have full brewing access** — **keep** (to confirm:
+   recorded as "keep" from Matt's "yes").
+4. [x] **Everyone sees every department's published shifts** — **keep**.
+5. [x] **Owners can't cancel someone else's time off** — **change**: owners can
+   cancel. Details in §6 D.
+6. [x] **"Other" department is owner-only** — **keep for now**.
 
-1. **Self-approval of time off.** A manager of *any* department can approve
-   their *own* time-off request, including when they don't manage any
-   department they belong to (`time_off.ex:167`). Keep, or require a manager
-   of one of the requester's departments / an owner?
-2. **"Any manager" acts company-wide** for positions, shift/schedule templates,
-   roster display order, and **creating users** (`can_manage_any?`). Keep as
-   `schedule_setup: manage (all)` / `people` create, or scope to managed
-   departments?
-3. **Brewery employees have full brewing access** — including deleting
-   recipes, batches, and editing the ingredient catalog and category field
-   definitions. Keep, or split brewing into `edit` (batches, logs) vs `manage`
-   (recipes, catalog, deletes) for employees?
-4. **Everyone sees every department's published shifts.** Keep (baseline), or
-   limit to own departments?
-5. **Owners cannot cancel someone else's time off** (only the requester can
-   cancel; owners/managers can deny). Keep?
-6. **"Other" department** (non-assignable, scheduling-only) can have no
-   members, so only owners can create or publish its shifts. Keep?
+### C. Department-scoped managers (B2) — proposal
+
+In the model this is **a scope change on the Manager system role**, not a new
+mechanism: `schedule_setup` becomes a record-scoped module and the Manager
+role holds it at `department` instead of `all`. Custom roles can still be
+given `all` (e.g. an operations manager).
+
+| Thing | Department comes from | Rule for a department-scoped manager |
+|-------|----------------------|--------------------------------------|
+| Position | `positions.department_id` (already required) | create/edit/delete positions in managed departments; moving a position needs both old and new department (like shifts) |
+| Shift template | its position's department | follows the position |
+| Schedule template | the positions of its items (may span departments) | create/delete only if the actor manages **every** department its items touch; applying one still checks each resulting shift |
+| User create | the new user's memberships | must include **≥ 1** membership, all in managed departments (no creating users nobody manages) |
+| Roster order | none — one company-wide `users.schedule_order` | *open*: see below |
+
+Consequences: positions in "Other" become owner-only (managers can edit them
+today); the positions dialog and user form show managers only their
+departments. Everything else (reads) is unchanged.
+
+**Roster order is the open piece.** It's one list shared by every department's
+grid. Options: (a) keep reordering at any-manager (`schedule_setup: manage`
+kept at `all` for this one verb); (b) owner-only; (c) per-department order
+(move order onto memberships — a schema change and grid change). Recommend
+(a) for now, (c) if managers step on each other.
+
+### D. Owners cancel time off (B5)
+
+Why it isn't so today: D16 defined **cancel** as "the requester withdraws their
+own request"; D25 added undoing an **approved** request, and gave
+managers/owners **deny** (approved → denied) for that instead of cancel. So an
+owner can already remove approved time off, but it's recorded as *denied*,
+and a pending request can only be denied, not cancelled.
+
+Proposal: cancel is allowed for the requester **or anyone with
+`time_off: manage` over the requester** (owners always; managers of the
+requester's departments — they can already deny). Record who cancelled
+(`cancelled_by_id`, or reuse `reviewed_by_id`) so a cancel-by-other is
+distinguishable from a withdrawal. *Open:* owners only, or managers too?
+Notify the requester?
+
+### E. Sequencing of the changes
+
+B2 and B5 are deliberate behavior changes. Roadmap Phases 1–3 are
+behavior-preserving, so: **B5** is small and independent — ship it as its own
+fix before or alongside Phase 1. **B2** lands once the resolver exists
+(Phase 2): changing the Manager role's `schedule_setup` scope is then a data
+change plus the user-create rule, with the parity tests for those rows
+flipped deliberately.
 
 ---
 
@@ -353,7 +392,7 @@ for #36), `json_helpers.ex:14` (serializes `is_owner`), `accounts.ex:312`
 | availability | manage | department (person) |
 | calendar_feeds | manage | department |
 | people | manage | department (person); create users: any |
-| messaging | edit | department — plus Managers channel via §3.7 |
+| messaging | edit | department — role has `counts_as_manager` (§3.7) |
 | brewing | manage | all — *effective only if D is bound (Brewery)* |
 
 **Owner** — flag: every module at `manage` / `all` (messaging: all assignable
@@ -373,8 +412,8 @@ Each Appendix-A row, evaluated against the matrix, gives today's result:
 - Feeds #25–26: manager `calendar_feeds: manage/department` + owner-only
   whole feed. ✔
 - Messaging #28–31: dept channels via membership-held `messaging: edit`;
-  Managers channel via `schedule: manage` = exactly the users with a manager
-  membership, plus owners. ✔
+  Managers channel via `counts_as_manager` (Manager role only) = exactly the
+  users with a manager membership, plus owners. ✔
 - Memberships #37: §3.8 — a manager holds every capability of both system
   roles in departments they manage, so may assign either there, and nowhere
   else. ✔
