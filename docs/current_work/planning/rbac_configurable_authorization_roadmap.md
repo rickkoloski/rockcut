@@ -50,7 +50,8 @@ shape to keep; they just need to become the *only* path.
 ## Phases
 
 Each phase is independently shippable. Phases 1–3 change **no observable
-behavior**.
+behavior**, except the one decided change in Phase 2 (D29 §6 C: managers
+limited to their own departments), which lands as its own reviewed step.
 
 | # | Phase | Deliverable | Backlog |
 |---|-------|-------------|---------|
@@ -128,7 +129,8 @@ source of truth.
 - The server (`Authz`) stays the only security boundary; UI gating is
   convenience.
 - Phase 1 is the largest and riskiest step (≈15 files); its parity tests are
-  what make Phases 2–3 provably behavior-preserving.
+  what make Phases 2–3 provably behavior-preserving (apart from the
+  deliberate D29 §6 C change, whose tests are flipped explicitly).
 - Changes to permissions take effect per request (the user and memberships load
   on each authenticated request); the UI's cached `/api/me` may lag until
   refetch — acceptable, since the server enforces.

@@ -55,7 +55,8 @@ able to reproduce all of them. **No code changes.**
       vocabulary (§3.6); assignment is bounded by the assigner's own grants
       (§3.8).
 - [x] **Buildable incrementally:** the system roles in Appendix B reproduce
-      today, so Phases 1–3 of the roadmap change no behavior.
+      today, so Phases 1–3 of the roadmap change no behavior beyond the
+      one decided change (§6 C), which lands explicitly in Phase 2.
 
 ---
 
