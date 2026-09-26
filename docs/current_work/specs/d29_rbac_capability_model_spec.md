@@ -1,6 +1,6 @@
 # D29: RBAC Capability Model — Specification
 
-**Status:** Draft — model decisions made by Matt 2026-09-26; one policy question (§6 B2) under discussion; Rick sign-off pending
+**Status:** Draft — all model and behavior decisions made by Matt 2026-09-26 (§6); Rick sign-off pending
 **Created:** 2026-09-25 (as the D29–D34 plan); **rewritten** 2026-09-26 as D29 only;
 proposed model + inventory added 2026-09-26
 **Author:** Matt + CC
@@ -44,7 +44,8 @@ able to reproduce all of them. **No code changes.**
 - [x] **Owner-only set** — §3.6.
 - [x] **Role-derived behavior** — §3.7.
 - [x] **Today-as-matrix** — Appendix B, with the parity check.
-- [ ] **Sign-off** on §3 recommendations and the §6 policy questions.
+- [x] **Decisions** on §3 and the §6 policy questions (Matt, 2026-09-26).
+- [ ] **Sign-off** from Rick.
 
 ### Non-Functional
 
@@ -203,8 +204,8 @@ These live outside the module vocabulary, so no role can express them.
 
 - [x] Every site found by the greps (`is_owner|Authz\.|role_in|can_manage|managed_department|"manager"|owner\?` over `rockcut_api/lib`; `is_owner|manages_departments|can_manage_users|capabilities|modules` over `rockcut-ui/src`) appears in Appendix A, or is noted as not an access decision.
 - [x] Every Appendix-A row maps to `(module, level, scope)` + item conditions.
-- [x] Appendix B reproduces every Appendix-A rule; deliberate-difference
-      candidates are listed in §6 for decision, and the proposal changes none.
+- [x] Appendix B reproduces every Appendix-A rule; the one deliberate
+      difference (B2) is decided and specified in §6 C.
 - [x] Levels, scope and placement are defined in plain language (§3.3–3.4).
 - [x] Owner-only set and role-derived behavior are recorded (§3.6–3.7).
 - [ ] Matt + Rick sign off (discussion 80).
@@ -234,18 +235,18 @@ These live outside the module vocabulary, so no role can express them.
 
 1. [x] **Self-approval of time off** (a manager of any department approves
    their own request, `time_off.ex:167`) — **keep**.
-2. [ ] **"Any manager" acts company-wide** (positions, templates, roster order,
-   user creation) — **change wanted**: managers create users and edit
-   positions **only in their own departments**. Design in §6 C; under
-   discussion.
+2. [x] **"Any manager" acts company-wide** (positions, templates, roster order,
+   user creation) — **change**: managers create users and edit positions and
+   templates **only in their own departments**; roster order becomes
+   **owner-only** for system roles. Design in §6 C.
 3. [x] **Brewery employees have full brewing access** — **keep** (to confirm:
    recorded as "keep" from Matt's "yes").
 4. [x] **Everyone sees every department's published shifts** — **keep**.
-5. [x] **Owners can't cancel someone else's time off** — **change**: owners can
-   cancel. Details in §6 D.
+5. [x] **Only the requester can cancel time off** — **keep**. Owners/managers
+   remove a request by denying it (see §6 D).
 6. [x] **"Other" department is owner-only** — **keep for now**.
 
-### C. Department-scoped managers (B2) — proposal
+### C. Department-scoped managers (B2) — decided
 
 In the model this is **a scope change on the Manager system role**, not a new
 mechanism: `schedule_setup` becomes a record-scoped module and the Manager
@@ -258,41 +259,42 @@ given `all` (e.g. an operations manager).
 | Shift template | its position's department | follows the position |
 | Schedule template | the positions of its items (may span departments) | create/delete only if the actor manages **every** department its items touch; applying one still checks each resulting shift |
 | User create | the new user's memberships | must include **≥ 1** membership, all in managed departments (no creating users nobody manages) |
-| Roster order | none — one company-wide `users.schedule_order` | *open*: see below |
+| Roster order | none — one company-wide `users.schedule_order` | **not allowed** — owner-only for system roles (see below) |
 
 Consequences: positions in "Other" become owner-only (managers can edit them
 today); the positions dialog and user form show managers only their
 departments. Everything else (reads) is unchanged.
 
-**Roster order is the open piece.** It's one list shared by every department's
-grid. Options: (a) keep reordering at any-manager (`schedule_setup: manage`
-kept at `all` for this one verb); (b) owner-only; (c) per-department order
-(move order onto memberships — a schema change and grid change). Recommend
-(a) for now, (c) if managers step on each other.
+**Roster order — decided (b), owner-only.** It's one list shared by every
+department's grid, so it's a company-level verb: it requires
+`schedule_setup: manage` at scope **`all`**. The Manager role now holds
+`schedule_setup` at `department`, so managers lose it and owners keep it. It
+is deliberately *not* in the §3.6 owner-only set: a custom company-wide role
+(`schedule_setup: all`) could still be granted it later. Per-department
+ordering (option c) remains a future option if needed.
 
-### D. Owners cancel time off (B5)
+**Target Manager role after B2** (replaces the Appendix B row):
+`schedule_setup: manage, department` — positions / shift templates / schedule
+templates in managed departments; no roster reorder. `people: manage,
+department` — user create requires ≥ 1 membership, all in managed
+departments.
 
-Why it isn't so today: D16 defined **cancel** as "the requester withdraws their
-own request"; D25 added undoing an **approved** request, and gave
-managers/owners **deny** (approved → denied) for that instead of cancel. So an
-owner can already remove approved time off, but it's recorded as *denied*,
-and a pending request can only be denied, not cancelled.
+### D. Time-off cancel vs deny (B5) — decided: keep
 
-Proposal: cancel is allowed for the requester **or anyone with
-`time_off: manage` over the requester** (owners always; managers of the
-requester's departments — they can already deny). Record who cancelled
-(`cancelled_by_id`, or reuse `reviewed_by_id`) so a cancel-by-other is
-distinguishable from a withdrawal. *Open:* owners only, or managers too?
-Notify the requester?
+**Cancel** = the requester withdraws their own request (pending or approved).
+**Deny** = a reviewer rejects it; D25 lets managers/owners deny an *approved*
+request to remove it. The two stay distinct so the record shows whose
+decision it was. No change.
 
 ### E. Sequencing of the changes
 
-B2 and B5 are deliberate behavior changes. Roadmap Phases 1–3 are
-behavior-preserving, so: **B5** is small and independent — ship it as its own
-fix before or alongside Phase 1. **B2** lands once the resolver exists
-(Phase 2): changing the Manager role's `schedule_setup` scope is then a data
-change plus the user-create rule, with the parity tests for those rows
-flipped deliberately.
+B2 is the only deliberate behavior change. Roadmap Phase 1 (consolidation)
+stays behavior-preserving; **B2 lands in Phase 2** with the resolver: the
+Manager role's `schedule_setup` scope becomes `department`, roster reorder
+requires scope `all`, and user create requires ≥ 1 managed membership. The
+parity tests for Appendix-A rows #9, #11, #13, #15 and #34 are flipped
+deliberately in that change; UI (positions dialog, user form, roster reorder
+controls) follows.
 
 ---
 

@@ -89,7 +89,9 @@ role-derived behavior.
 ### Phase 2 — Level resolver (hardcoded)
 
 `Authz` internals evaluate (module, level, scope) against the D29 matrix,
-computed from today's roles. Public API unchanged. `capabilities/1` adds the
+computed from today's roles. Public API unchanged. **Includes the one deliberate
+behavior change (D29 §6 C):** managers limited to their own departments for
+positions, templates and user creation; roster reorder owner-only. `capabilities/1` adds the
 module → level/scope map to `/api/me` alongside existing fields.
 
 ### Phase 3 — Roles as data
