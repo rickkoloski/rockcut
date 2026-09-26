@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D29 (D19 PWA, D20 nav, D21 web push, D22 reminders, D23 messaging, D24 conflict warnings, D25 availability, D26 home restructure, D27 color/grid polish, D28 production deploy complete — see `specs/d29_rbac_configurable_authorization_spec.md`)
+- **Next deliverable**: D29 (D19 PWA, D20 nav, D21 web push, D22 reminders, D23 messaging, D24 conflict warnings, D25 availability, D26 home restructure, D27 color/grid polish, D28 production deploy complete — D29 = RBAC capability model, `specs/d29_rbac_capability_model_spec.md`; full plan in `planning/rbac_configurable_authorization_roadmap.md`)
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
