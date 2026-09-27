@@ -57,7 +57,7 @@ limited to their own departments), which lands as its own reviewed step.
 | # | Phase | Deliverable | Backlog |
 |---|-------|-------------|---------|
 | 0 | **Capability model** — decision inventory, vocabulary (modules × levels × scope), today-as-matrix, owner-only actions, list-scoping and role-derived-behavior rules | **D29** ✔ complete 2026-09-26 | 3848 |
-| 1 | **Consolidate** — route every decision through `Authz` with parity tests; no behavior change | **D31** | *new task needed* |
+| 1 | **Consolidate** — route every decision through `Authz` with parity tests; no behavior change | **D31** | 3887 |
 | 2 | **Level resolver** — `Authz` internals evaluate the D29 matrix (hardcoded); additive `/api/me` field | later | 3849 |
 | 3 | **Roles as data** — `roles` + `role_capabilities`, system roles seeded from the matrix, hardcoded fallback | later | 3850 |
 | 4 | **Custom roles + assignment** — owner-gated role CRUD, `memberships.role_id`, guardrails | later | 3851 |
