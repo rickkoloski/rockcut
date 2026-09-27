@@ -160,6 +160,9 @@ defmodule RockcutApi.Seeds.Synthetic do
   """
   def mint_token(key) do
     Guard.guard!()
+    # Plug.Crypto caches derived keys in an ETS table owned by :plug_crypto. A
+    # release `eval` (fly ssh … eval) starts only the repo, so start it here.
+    {:ok, _} = Application.ensure_all_started(:plug_crypto)
     persona = persona!(key)
 
     case Repo.get_by(User, email: persona.email) do
