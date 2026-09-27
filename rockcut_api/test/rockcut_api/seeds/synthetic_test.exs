@@ -185,6 +185,14 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       end)
     end
 
+    test "mint_tokens/0 covers every active persona" do
+      {:ok, _} = Synthetic.setup()
+      tokens = Synthetic.mint_tokens()
+      assert map_size(tokens) == 16
+      refute Map.has_key?(tokens, "inactive")
+      assert {:ok, _} = RockcutApiWeb.SessionController.verify_token(tokens["owner"].token)
+    end
+
     test "refuses unknown and inactive personas" do
       {:ok, _} = Synthetic.setup()
       assert_raise ArgumentError, fn -> Synthetic.mint_token("nobody") end

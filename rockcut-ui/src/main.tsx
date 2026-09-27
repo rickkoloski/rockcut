@@ -6,6 +6,7 @@ import { QueryClientProvider } from '@tanstack/react-query'
 import queryClient from './lib/queryClient'
 import './index.css'
 import App from './App.tsx'
+import EnvBanner from './components/EnvBanner.tsx'
 
 const theme = createTheme({
   palette: {
@@ -49,6 +50,7 @@ createRoot(document.getElementById('root')!).render(
         <ThemeProvider theme={theme}>
           <CssBaseline />
           <App />
+          <EnvBanner />
         </ThemeProvider>
       </QueryClientProvider>
     </BrowserRouter>

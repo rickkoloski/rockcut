@@ -27,3 +27,6 @@ tmp/
 
 # Node (Phoenix assets)
 node_modules/
+
+# D30: local secrets + test artifacts never enter the image
+.env.synthetic

@@ -199,6 +199,14 @@ PW='<owner-password>'                                       # set on its OWN lin
 curl -sS -X POST https://rockcut-api.fly.dev/api/session \
   -H 'Content-Type: application/json' \
   --data "{\"email\":\"<ADMIN_EMAIL>\",\"password\":\"$PW\"}"
+
+# D30: prod must have NO synthetic personas — expect 401
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST https://rockcut-api.fly.dev/api/session \
+  -H 'Content-Type: application/json' \
+  --data '{"email":"owner@rockcut-test.com","password":"anything"}'           # 401
+
+# D30: the synthetic seed must refuse to run on prod — expect a "Refusing synthetic" error
+fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed_synthetic()'"
 ```
 
 ## Gotchas (all hit during the first deploy)
@@ -251,3 +259,60 @@ The SQLite data lives on the `rockcut_data` volume (independent of image
 version) and has daily snapshots retained 14 days (`snapshot_retention` in
 `fly.toml [mounts]`); restore via `fly volumes snapshots list <vol-id>` →
 `fly volumes create ... --snapshot-id <id>`.
+
+---
+
+## DEV server (D30)
+
+A second environment in the `rockcut` org for testing with fictional
+personas — `rockcut-api-dev` / `rockcut-ui-dev`, configured by
+`fly.dev.toml` in each app. Policy: `docs/process/test-credentials-policy.md`.
+
+### One-time provisioning
+
+```bash
+fly apps create rockcut-api-dev --org rockcut
+fly apps create rockcut-ui-dev --org rockcut
+fly volumes create rockcut_dev_data -r dfw -s 1 -a rockcut-api-dev
+
+# Secrets (ROCKCUT_ENV, PHX_HOST, CORS_ORIGINS are in fly.dev.toml [env]).
+# SEED_PASSWORD: generate once; put the readable copy in the PortableMind file
+# shared by Matt + Rick BEFORE setting it here (Fly secrets can't be read back).
+fly secrets set -a rockcut-api-dev --stage \
+  SECRET_KEY_BASE="$(cd rockcut_api && mix phx.gen.secret)" \
+  SEED_PASSWORD='<generated>' \
+  WEB_PUSH_EX_VAPID_PUBLIC_KEY='<dev public>' \
+  WEB_PUSH_EX_VAPID_PRIVATE_KEY='<dev private>'      # mix web_push_ex.vapid — NOT the prod pair
+# No ADMIN_EMAIL / ADMIN_PASSWORD_HASH: the synthetic `owner` is DEV's owner.
+```
+
+### Deploy and seed
+
+```bash
+cd rockcut_api && fly deploy -c fly.dev.toml --remote-only
+fly machine list -a rockcut-api-dev          # start it if stopped (gotcha: auto_start is off)
+fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"
+#   (seed() also runs the synthetic setup on DEV when SEED_PASSWORD is set)
+fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.synthetic_status()'"
+cd ../rockcut-ui && fly deploy -c fly.dev.toml --remote-only
+```
+
+Smoke: `/api/health` 200; `synthetic_status` shows 16 personas authenticating
+(`inactive` rejected); the UI shows the orange **DEV** ribbon;
+`E2E_TARGET=dev npx playwright test` in `rockcut-ui` passes.
+
+### Routine DEV redeploy
+
+Same two `fly deploy -c fly.dev.toml --remote-only` commands. Migrations run at
+boot. Re-run `seed_synthetic()` if personas or scenario data changed.
+
+### Reset DEV
+
+```bash
+fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.reset_synthetic()'"
+```
+
+### Rotate the seed password
+
+See `docs/process/test-credentials-policy.md` → "Rotating the seed password".
+

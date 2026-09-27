@@ -11,6 +11,10 @@ defmodule RockcutApi.Seeds.Credentials do
 
   @env_file ".env.synthetic"
 
+  # The local file is skipped under test (config :rockcut_api, :seed_env_file, nil)
+  # so a developer's real value never leaks into the suite.
+  defp env_file, do: Application.get_env(:rockcut_api, :seed_env_file, @env_file)
+
   @doc "The seed password, or raises with setup instructions."
   def password do
     case fetch() do
@@ -36,7 +40,8 @@ defmodule RockcutApi.Seeds.Credentials do
   end
 
   defp from_env_file do
-    with {:ok, contents} <- File.read(@env_file) do
+    with path when is_binary(path) <- env_file(),
+         {:ok, contents} <- File.read(path) do
       contents
       |> String.split("\n")
       |> Enum.find_value(fn line ->

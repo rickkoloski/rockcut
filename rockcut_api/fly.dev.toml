@@ -1,0 +1,47 @@
+# D30 — shared DEV server. Deploy: fly deploy -c fly.dev.toml --remote-only
+# Fictional @rockcut-test.com personas only; never real data. Secrets (set once):
+# SECRET_KEY_BASE, SEED_PASSWORD, WEB_PUSH_EX_VAPID_{PUBLIC,PRIVATE}_KEY.
+# No ADMIN_EMAIL / ADMIN_PASSWORD_HASH — the synthetic `owner` is DEV's owner.
+app = 'rockcut-api-dev'
+primary_region = 'dfw'
+
+[build]
+
+[env]
+  ROCKCUT_ENV = "dev"
+  PHX_HOST = "rockcut-api-dev.fly.dev"
+  PORT = "4000"
+  DATABASE_PATH = "/data/rockcut_api.db"
+  CORS_ORIGINS = "https://rockcut-ui-dev.fly.dev,http://localhost:5174"
+
+[mounts]
+  source = "rockcut_dev_data"
+  destination = "/data"
+  snapshot_retention = 3
+
+[http_service]
+  internal_port = 4000
+  force_https = true
+  # Always on, like prod, so the D22 reminder scanner can be tested. SQLite on
+  # one volume: exactly one machine.
+  auto_stop_machines = 'off'
+  auto_start_machines = false
+  min_machines_running = 1
+  processes = ['app']
+
+  [http_service.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 1000
+
+[[http_service.checks]]
+  grace_period = "30s"
+  interval = "15s"
+  method = "GET"
+  timeout = "5s"
+  path = "/api/health"
+
+[[vm]]
+  memory = '512mb'
+  cpu_kind = 'shared'
+  cpus = 1

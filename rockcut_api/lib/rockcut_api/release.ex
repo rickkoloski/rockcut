@@ -57,6 +57,13 @@ defmodule RockcutApi.Release do
     |> IO.puts()
   end
 
+  @doc "Print tokens for every active persona as JSON (used by the Playwright auth setup)."
+  def mint_tokens_json do
+    with_repo(fn -> RockcutApi.Seeds.Synthetic.mint_tokens() end)
+    |> Jason.encode!()
+    |> IO.puts()
+  end
+
   defp with_repo(fun) do
     load_app()
     [repo | _] = repos()

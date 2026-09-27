@@ -13,11 +13,13 @@ api.interceptors.request.use((config) => {
   return config
 })
 
-// On 401, clear token so the UI shows the login page
+// On 401, clear token so the UI shows the login page. A failed sign-in is also a
+// 401 — skip the reload there so the login form can show the error message.
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLogin = error.config?.method === 'post' && error.config?.url === '/api/session'
+    if (error.response?.status === 401 && !isLogin) {
       localStorage.removeItem('rockcut_token')
       localStorage.removeItem('rockcut_email')
       window.location.reload()

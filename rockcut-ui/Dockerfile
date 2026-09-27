@@ -4,6 +4,9 @@ FROM node:20-bookworm-slim AS builder
 # Accept build args for API URL injection
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
+# D30: "DEV" on the DEV server shows the environment ribbon; empty on prod.
+ARG VITE_ENV_LABEL
+ENV VITE_ENV_LABEL=${VITE_ENV_LABEL}
 ENV DOCKER_BUILD=1
 
 WORKDIR /app

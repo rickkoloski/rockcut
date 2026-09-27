@@ -70,8 +70,8 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 
 ## Auth
 
-- Login: matt@rockcut.com / rockcut2026
-- Prod secrets: ADMIN_EMAIL, ADMIN_PASSWORD_HASH (Fly secrets)
+- **Local dev + DEV server:** fictional `@rockcut-test.com` personas only (D30). Agents log in with a minted token (`mix rockcut.synthetic.token <persona>`), not a password — see `docs/process/test-credentials-policy.md` and `rockcut-ui/tests/RUNNING.md`. The seed password is a secret (PortableMind file shared by Matt + Rick; locally in gitignored `rockcut_api/.env.synthetic`).
+- Prod secrets: ADMIN_EMAIL, ADMIN_PASSWORD_HASH (Fly secrets). Humans only.
 
 ## Conventions
 

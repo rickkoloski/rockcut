@@ -1,6 +1,6 @@
 # D30: Shared DEV Server + Synthetic Test Accounts — Specification
 
-**Status:** Draft
+**Status:** In progress — code steps 1–7 + docs done (2026-09-26); Fly steps 8–11 pending (need Matt's Fly account)
 **Created:** 2026-09-26
 **Author:** Matt + CC, from Rick's plan (PortableMind file **#3944**, discussion 80 msg 80386)
 **Depends On:** D28 (production deploy + runbook), D10 (users / auth)
@@ -27,24 +27,24 @@ short-lived tokens by default** instead of a password published in git (§3.4).
 
 ### Functional
 
-- [ ] `ROCKCUT_ENV` switch (`prod` default, fail-closed) drives the seed guard,
+- [x] `ROCKCUT_ENV` switch (`prod` default, fail-closed) drives the seed guard,
       DEV banner, and mailer.
 - [ ] DEV apps `rockcut-api-dev` / `rockcut-ui-dev` in the `rockcut` org, from
       the same Dockerfiles, with a visible **DEV** banner.
-- [ ] Synthetic seed: 17 fictional `@rockcut-test.com` personas (§3.3) +
+- [x] Synthetic seed: 17 fictional `@rockcut-test.com` personas (§3.3) +
       current-week scenario data; idempotent `setup` / `status` / `reset` /
       `cleanup_temp`.
-- [ ] Seed and token minting **refuse to run** outside DEV/local (double guard).
-- [ ] **Token minting** for a persona (DEV + local), short-lived, synthetic
+- [x] Seed and token minting **refuse to run** outside DEV/local (double guard).
+- [x] **Token minting** for a persona (DEV + local), short-lived, synthetic
       users only.
-- [ ] **Seed password is secret:** no default in git; supplied by env
+- [x] **Seed password is secret:** no default in git; supplied by env
       (`SEED_PASSWORD`).
-- [ ] UI test scaffold: `test-env.ts` identities, `e2e-targets.json` with a
+- [x] UI test scaffold: `test-env.ts` identities, `e2e-targets.json` with a
       fail-closed prod guard, Playwright auth setup using minted tokens,
       `RUNNING.md`, one smoke spec per role.
-- [ ] Local dev uses the same personas (retire `matt@rockcut.com` /
+- [x] Local dev uses the same personas (retire `matt@rockcut.com` /
       `rockcut2026`).
-- [ ] Credentials policy in the repo (`docs/process/test-credentials-policy.md`).
+- [x] Credentials policy in the repo (`docs/process/test-credentials-policy.md`).
 
 ### Non-Functional
 
@@ -230,21 +230,45 @@ token, how to reset), and one smoke spec per role.
 
 ---
 
+### 3.7 Implementation notes (deviations from the design above)
+
+- **DEV mailer = `RockcutApi.MailerNoop`, not `Swoosh.Adapters.Local`.**
+  `prod.exs` sets `config :swoosh, local: false`, so the Local adapter would
+  raise inside a release (the D28 problem). The no-op mailer still sends no
+  email. DEV is a prod-mode release, so it inherits the D28 wiring unchanged.
+- **`ROCKCUT_ENV` and `CORS_ORIGINS` are in `fly.dev.toml [env]`**, not
+  secrets — they aren't sensitive and are clearer versioned. Secrets on DEV:
+  `SECRET_KEY_BASE`, `SEED_PASSWORD`, dev VAPID pair.
+- **`mint_tokens/0` + `mix rockcut.synthetic.token --all`** (and
+  `Release.mint_tokens_json/0`): one call mints every active persona's token,
+  so the Playwright setup doesn't start `mix`/`fly ssh` 16 times.
+- **`seeds.exs` runs the synthetic setup** at the end when the guard allows
+  and `SEED_PASSWORD` is set, so `mix ecto.reset` locally and `Release.seed()`
+  on DEV produce the personas in one step. The old `matt@rockcut.com` /
+  `rockcut2026` fallback owner is removed — it would also have applied in a
+  prod release if `ADMIN_*` were ever unset.
+- **Tests never read a developer's `.env.synthetic`** (`config/test.exs`
+  sets `:seed_env_file` to nil).
+- **Bug fixed while testing:** the UI's API client reloaded the page on every
+  401, including a failed sign-in, so "Invalid credentials" / "Account
+  disabled" never showed. `src/lib/api.ts` now skips the reload for
+  `POST /api/session`.
+
 ## 4. Success Criteria
 
 - [ ] DEV UI and API are live on `*.fly.dev` with the DEV banner; `/api/health` 200.
 - [ ] `synthetic_status` on DEV: 16 personas authenticate, `inactive` rejected.
 - [ ] A minted token logs an agent in as any persona on DEV and locally, and
       expires after 8 hours.
-- [ ] No seed password in git (`git grep` for the value finds nothing); the
+- [x] No seed password in git (`git grep` for the value finds nothing); the
       seed refuses to run without `SEED_PASSWORD`.
 - [ ] Prod: synthetic login → 401; `seed_synthetic` / `mint_token` raise;
       prod `AuthPlug` rejects `"synthetic auth"` tokens.
-- [ ] Local dev seeds the same personas; `matt@rockcut.com` / `rockcut2026`
+- [x] Local dev seeds the same personas; `matt@rockcut.com` / `rockcut2026`
       are gone from seeds and `CLAUDE.md`.
 - [ ] Playwright auth setup produces all storageStates; one smoke spec per
       role passes against local and DEV.
-- [ ] `MIX_ENV=test mix test` passes (existing + new).
+- [x] `MIX_ENV=test mix test` passes (existing + new).
 - [ ] Runbook DEV section and credentials policy committed.
 
 ---

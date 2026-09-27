@@ -1,0 +1,18 @@
+{
+  "profiles": {
+    "local": {
+      "uiUrl": "http://localhost:5174",
+      "apiUrl": "http://localhost:4002",
+      "tokenSource": "mix"
+    },
+    "dev": {
+      "uiUrl": "https://rockcut-ui-dev.fly.dev",
+      "apiUrl": "https://rockcut-api-dev.fly.dev",
+      "tokenSource": "fly"
+    }
+  },
+  "prodGuard": {
+    "allowedHosts": ["localhost", "127.0.0.1", "rockcut-ui-dev.fly.dev", "rockcut-api-dev.fly.dev"],
+    "deniedPatterns": ["^rockcut-(ui|api)\\.fly\\.dev$"]
+  }
+}

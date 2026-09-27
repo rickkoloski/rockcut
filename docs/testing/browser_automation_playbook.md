@@ -22,14 +22,16 @@
 | Batches | `/batches` | Nav sidebar | |
 | Settings | `/settings` | Nav sidebar | |
 
-**Login flow:** POST matt@rockcut.com / rockcut2026
+**Login (D30 — read `docs/process/test-credentials-policy.md` first):** act only
+as a synthetic `@rockcut-test.com` persona, with a **minted token** — never type
+a password, never use a real account.
 
 **Login automation recipe:**
-1. Navigate to `http://localhost:5174/login`
-2. Use `form_input` tool to fill email field, then password field
-3. Click login button
-4. Wait 1-2 seconds for redirect to `/`
-5. Verify page loaded by checking for nav sidebar elements
+1. Mint a token: `cd rockcut_api && mix rockcut.synthetic.token <persona>`
+   (persona keys in `rockcut-ui/tests/config/test-env.ts`)
+2. On `http://localhost:5174`, run `localStorage.setItem('rockcut_token', '<token>')` and reload
+3. Verify page loaded by checking for nav sidebar elements
+4. Switch user = mint another persona's token and repeat
 
 ### DataGrid Extended Dev Harness
 
@@ -249,12 +251,8 @@ if (badge) {
 ### Recipe: Login to Rockcut UI
 
 ```
-1. Navigate to http://localhost:5174/login
-2. Use form_input to fill email: matt@rockcut.com
-3. Use form_input to fill password: rockcut2026
-4. Click login/submit button
-5. Wait 2 seconds
-6. Verify redirect to / by checking for nav sidebar or page heading
+Superseded by D30 — see the login recipe above and rockcut-ui/tests/RUNNING.md.
+Synthetic personas + minted tokens only; no passwords typed by agents.
 ```
 
 ### Recipe: UAT handoff
@@ -265,7 +263,7 @@ if (badge) {
 3. Add a "UAT Ready" section to the stepwise result document:
    - URLs to visit: http://localhost:5174/<page> (list each relevant page)
    - What to look for: (brief checklist of visual/functional items)
-   - Login: matt@rockcut.com / rockcut2026
+   - Login: a synthetic persona (e.g. `owner`) via a minted token — see rockcut-ui/tests/RUNNING.md
 4. Notify lead/CD that UAT is ready
 5. Team stays alive until CD signs off or requests changes
 ```

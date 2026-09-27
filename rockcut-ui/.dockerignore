@@ -9,3 +9,9 @@ pnpm-workspace.yaml
 .vite
 .eslintcache
 .DS_Store
+
+# D30: local secrets + test artifacts never enter the image
+.env*.local
+tests/.playwright-auth
+test-results
+playwright-report

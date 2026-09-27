@@ -12,7 +12,7 @@ Simple bearer token authentication. Single admin user (Matt), credentials stored
 
 ## Common Tasks
 - "How does auth work?" -> POST /api/session with email+password, get bearer token
-- "What are Matt's credentials?" -> matt@rockcut.com / rockcut2026
+- "What credentials do tests/agents use?" -> synthetic `@rockcut-test.com` personas + minted tokens (D30, `docs/process/test-credentials-policy.md`); the old dev login was retired
 - "Where are prod credentials?" -> Fly secrets: ADMIN_EMAIL, ADMIN_PASSWORD_HASH
 
 ## Key Decisions

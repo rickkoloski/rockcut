@@ -47,12 +47,18 @@ defmodule Mix.Tasks.Rockcut.Synthetic.Token do
   @shortdoc "Print a short-lived session token for a synthetic persona"
   @moduledoc """
   Usage: mix rockcut.synthetic.token barMgr
+         mix rockcut.synthetic.token --all   # JSON: {key: {email, token}} for every active persona
 
   Set it as localStorage.rockcut_token on the UI origin (see rockcut-ui/tests/RUNNING.md).
   """
   use Mix.Task
 
   @impl true
+  def run(["--all"]) do
+    Mix.Task.run("app.start")
+    Mix.shell().info(Jason.encode!(RockcutApi.Seeds.Synthetic.mint_tokens()))
+  end
+
   def run([key]) do
     Mix.Task.run("app.start")
     Mix.shell().info(RockcutApi.Seeds.Synthetic.mint_token(key))

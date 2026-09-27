@@ -175,6 +175,15 @@ defmodule RockcutApi.Seeds.Synthetic do
     end
   end
 
+  @doc "Tokens for every active persona: `%{key => %{email, token}}` (one call for test setup)."
+  def mint_tokens do
+    Guard.guard!()
+
+    for p <- personas(), p.flags.active, into: %{} do
+      {p.key, %{email: p.email, token: mint_token(p.key)}}
+    end
+  end
+
   defp secret_key_base do
     Application.fetch_env!(:rockcut_api, RockcutApiWeb.Endpoint)[:secret_key_base] ||
       raise "secret_key_base is not configured"
