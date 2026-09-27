@@ -20,6 +20,21 @@ if System.get_env("PHX_SERVER") do
   config :rockcut_api, RockcutApiWeb.Endpoint, server: true
 end
 
+# Deploy environment (D30). Releases read ROCKCUT_ENV — "prod" (default, fail
+# closed) or "dev" (the shared DEV server). Local Mix envs use their own name.
+# Gates synthetic personas + minted tokens (RockcutApi.Seeds.Guard).
+deploy_env =
+  if config_env() == :prod do
+    case System.get_env("ROCKCUT_ENV", "prod") do
+      env when env in ["prod", "dev"] -> env
+      other -> raise "ROCKCUT_ENV must be \"prod\" or \"dev\", got: #{inspect(other)}"
+    end
+  else
+    Atom.to_string(config_env())
+  end
+
+config :rockcut_api, :deploy_env, deploy_env
+
 if config_env() == :prod do
   database_path =
     System.get_env("DATABASE_PATH") ||

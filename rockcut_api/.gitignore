@@ -30,3 +30,6 @@ rockcut_api-*.tar
 *.db-*
 
 node_modules
+
+# D30: local synthetic seed password (never commit)
+.env.synthetic

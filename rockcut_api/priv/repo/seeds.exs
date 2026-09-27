@@ -163,38 +163,38 @@ acct_now = DateTime.utc_now() |> DateTime.truncate(:second)
   end
 end)
 
-# Bootstrap owner:
-#   - prod: seed from ADMIN_EMAIL + ADMIN_PASSWORD_HASH (hash is already Argon2 — copied as-is)
-#   - dev (no env): deterministic dev owner matt@rockcut.com / rockcut2026
-{owner_email, owner_hash} =
-  case {Application.get_env(:rockcut_api, :admin_email),
-        Application.get_env(:rockcut_api, :admin_password_hash)} do
-    {email, hash} when is_binary(email) and is_binary(hash) -> {email, hash}
-    _ -> {"matt@rockcut.com", Argon2.hash_pwd_salt("rockcut2026")}
-  end
+# Bootstrap owner (prod): seeded from ADMIN_EMAIL + ADMIN_PASSWORD_HASH (hash is
+# already Argon2 — copied as-is). There is deliberately NO fallback owner: local
+# dev and the DEV server get their owner from the synthetic personas (D30, below).
+case {Application.get_env(:rockcut_api, :admin_email),
+      Application.get_env(:rockcut_api, :admin_password_hash)} do
+  {owner_email, owner_hash} when is_binary(owner_email) and is_binary(owner_hash) ->
+    case Accounts.get_user_by_email(owner_email) do
+      nil ->
+        Repo.insert!(%User{
+          email: owner_email,
+          name: "Owner",
+          password_hash: owner_hash,
+          active: true,
+          is_owner: true,
+          must_reset_password: false,
+          inserted_at: acct_now,
+          updated_at: acct_now
+        })
 
-case Accounts.get_user_by_email(owner_email) do
-  nil ->
-    Repo.insert!(%User{
-      email: owner_email,
-      name: "Owner",
-      password_hash: owner_hash,
-      active: true,
-      is_owner: true,
-      must_reset_password: false,
-      inserted_at: acct_now,
-      updated_at: acct_now
-    })
+        IO.puts("Seeded owner: #{owner_email}")
 
-    IO.puts("Seeded owner: #{owner_email}")
+      %User{} = existing ->
+        # Never create a second owner; ensure the bootstrap account stays an active owner.
+        if not existing.is_owner or not existing.active do
+          existing |> Ecto.Changeset.change(is_owner: true, active: true) |> Repo.update!()
+        end
 
-  %User{} = existing ->
-    # Never create a second owner; ensure the bootstrap account stays an active owner.
-    if not existing.is_owner or not existing.active do
-      existing |> Ecto.Changeset.change(is_owner: true, active: true) |> Repo.update!()
+        IO.puts("Owner already present: #{owner_email}")
     end
 
-    IO.puts("Owner already present: #{owner_email}")
+  _ ->
+    IO.puts("No ADMIN_EMAIL/ADMIN_PASSWORD_HASH: bootstrap owner skipped.")
 end
 
 # ── Scheduling: company-wide positions (idempotent) ──
@@ -254,3 +254,18 @@ position_by_name = Repo.all(Position) |> Map.new(fn p -> {p.name, p} end)
   end
 end)
 
+# ── Synthetic personas (D30): local dev / DEV server only ──
+# Guarded (never prod) and needs SEED_PASSWORD; otherwise prints how to run it.
+alias RockcutApi.Seeds.{Credentials, Guard, Synthetic}
+
+cond do
+  not Guard.allowed?() ->
+    :ok
+
+  Credentials.fetch() == :error ->
+    IO.puts("Synthetic personas skipped: set SEED_PASSWORD (or rockcut_api/.env.synthetic), then run `mix rockcut.synthetic.setup`.")
+
+  true ->
+    {:ok, count} = Synthetic.setup()
+    IO.puts("Synthetic personas seeded: #{count}")
+end

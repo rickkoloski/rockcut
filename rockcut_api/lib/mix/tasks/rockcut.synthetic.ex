@@ -1,0 +1,62 @@
+defmodule Mix.Tasks.Rockcut.Synthetic.Setup do
+  @shortdoc "Seed/heal the synthetic @rockcut-test.com personas (local dev)"
+  @moduledoc "Idempotent. Needs SEED_PASSWORD (env or rockcut_api/.env.synthetic). See RockcutApi.Seeds.Synthetic."
+  use Mix.Task
+
+  @impl true
+  def run(_args) do
+    Mix.Task.run("app.start")
+    {:ok, count} = RockcutApi.Seeds.Synthetic.setup()
+    Mix.shell().info("Synthetic personas seeded: #{count}")
+  end
+end
+
+defmodule Mix.Tasks.Rockcut.Synthetic.Reset do
+  @shortdoc "Delete and re-create the synthetic personas and their data (local dev)"
+  @moduledoc "Removes every @rockcut-test.com user and what they own, then runs setup."
+  use Mix.Task
+
+  @impl true
+  def run(_args) do
+    Mix.Task.run("app.start")
+    {:ok, count} = RockcutApi.Seeds.Synthetic.reset()
+    Mix.shell().info("Synthetic personas reset: #{count}")
+  end
+end
+
+defmodule Mix.Tasks.Rockcut.Synthetic.Status do
+  @shortdoc "Show which synthetic personas exist and authenticate"
+  @moduledoc "Read-only."
+  use Mix.Task
+
+  @impl true
+  def run(_args) do
+    Mix.Task.run("app.start")
+
+    for s <- RockcutApi.Seeds.Synthetic.status() do
+      Mix.shell().info(
+        String.pad_trailing(s.key, 12) <>
+          String.pad_trailing(s.email, 36) <>
+          "exists=#{s.exists} active=#{s.active} authenticates=#{s.authenticates}"
+      )
+    end
+  end
+end
+
+defmodule Mix.Tasks.Rockcut.Synthetic.Token do
+  @shortdoc "Print a short-lived session token for a synthetic persona"
+  @moduledoc """
+  Usage: mix rockcut.synthetic.token barMgr
+
+  Set it as localStorage.rockcut_token on the UI origin (see rockcut-ui/tests/RUNNING.md).
+  """
+  use Mix.Task
+
+  @impl true
+  def run([key]) do
+    Mix.Task.run("app.start")
+    Mix.shell().info(RockcutApi.Seeds.Synthetic.mint_token(key))
+  end
+
+  def run(_), do: Mix.raise("usage: mix rockcut.synthetic.token <persona key>")
+end

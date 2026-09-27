@@ -62,8 +62,27 @@ defmodule RockcutApiWeb.SessionController do
     |> json(%{error: "current_password and new_password required"})
   end
 
-  @doc "Verifies a bearer token, returning `{:ok, user_id}` or an error."
+  @doc """
+  Verifies a bearer token, returning `{:ok, user_id}` or an error. On DEV/local
+  only, also accepts short-lived synthetic-persona tokens (D30); prod never does.
+  """
   def verify_token(token) do
-    Phoenix.Token.verify(RockcutApiWeb.Endpoint, "user auth", token, max_age: @token_max_age)
+    case Phoenix.Token.verify(RockcutApiWeb.Endpoint, "user auth", token, max_age: @token_max_age) do
+      {:ok, user_id} ->
+        {:ok, user_id}
+
+      error ->
+        if RockcutApi.Seeds.Guard.allowed?(),
+          do: verify_synthetic_token(token),
+          else: error
+    end
+  end
+
+  defp verify_synthetic_token(token) do
+    alias RockcutApi.Seeds.Synthetic
+
+    Phoenix.Token.verify(RockcutApiWeb.Endpoint, Synthetic.token_salt(), token,
+      max_age: Synthetic.token_max_age()
+    )
   end
 end
