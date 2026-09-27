@@ -291,6 +291,9 @@ fly secrets set -a rockcut-api-dev --stage \
 ```bash
 cd rockcut_api && fly deploy -c fly.dev.toml --remote-only
 fly machine list -a rockcut-api-dev          # start it if stopped (gotcha: auto_start is off)
+# Boot migrates once the machine runs; running it explicitly is harmless and
+# covers a machine that came up stopped.
+fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.migrate()'"
 fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"
 #   (seed() also runs the synthetic setup on DEV when SEED_PASSWORD is set)
 fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.synthetic_status()'"
