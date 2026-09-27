@@ -263,8 +263,8 @@ token, how to reset), and one smoke spec per role.
 - [x] No seed password in git (`git grep` for the value finds nothing); the
       seed refuses to run without `SEED_PASSWORD`.
 - [x] Prod: synthetic login → 401; a DEV-minted token → 401 on prod; 0 synthetic
-      users in prod. *Pending until D30 code reaches prod:* `seed_synthetic` /
-      `mint_token` raising there (prod still runs D28, which lacks them).
+      users in prod. `seed_synthetic` / `mint_token` refuse on prod (verified after the
+      2026-09-27 prod deploy, API v19).
 - [x] Local dev seeds the same personas; `matt@rockcut.com` / `rockcut2026`
       are gone from seeds and `CLAUDE.md`.
 - [x] Playwright auth setup produces all storageStates; one smoke spec per

@@ -52,14 +52,14 @@
   login form, inactive refused, DEV banner).
 - Prod: synthetic login → **401**; a DEV-minted token → **401**; **0**
   synthetic users in the prod DB.
-- Pending until this code reaches prod: `seed_synthetic` / `mint_token`
-  refusing there (prod still runs D28).
+- **Deployed to prod 2026-09-27** (API v19, UI v15; rollback points v18 / v14):
+  `deploy_env` = `"prod"`; `seed_synthetic` and `mint_token` both refuse
+  ("deploy env is not dev/test"); synthetic login → 401; 0 synthetic users;
+  UI bundle has no banner and includes the login-error fix.
 
 ## Follow-ups
 
 - Rick to confirm the secret-password + token change (spec §6).
-- Deploy D30 to prod when convenient (seed fallback removal, login-error fix,
-  guard), then run the runbook's new D30 prod checks.
 - The signed download URL for file #3958 appeared in a session log
   (2026-09-26, ~1 h expiry). Contents weren't opened; rotate the seed password
   if strictness is wanted.
