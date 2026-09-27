@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D30 — shared DEV server + synthetic test accounts, `specs/d30_dev_server_synthetic_accounts_spec.md` (from Rick's plan #3944). Then D31 — RBAC consolidation (roadmap Phase 1, `planning/rbac_configurable_authorization_roadmap.md`). D19–D29 complete.
+- **Next deliverable**: D31 — RBAC consolidation (roadmap Phase 1, `planning/rbac_configurable_authorization_roadmap.md`): route every authorization decision through `Authz`, parity tests first, no behavior change. D19–D30 complete.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -130,6 +130,7 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D27 | Per-position color shades + scheduler polish — `positions.color_shade` (HSL lightness of the dept hue) with a swatch picker; color controls moved **into** the Manage-positions dialog (standalone Colors dialog removed); agenda chip shows position only; week-grid name row = name + reorder arrows + ⋮ menu on one line | 07_scheduling |
 | D28 | Production deploy readiness — first prod deploy of the scheduler-pwa line (fresh SQLite DB, shared `rockcut` Fly org): UI Docker build fixed (PWA deps, `vite build`, pnpm-workspace.docker.yaml), nginx `no-cache` for SW/shell, prod mail no-op stub, always-on single API machine + snapshots, reference-data + owner-only seed; runbook in `03_deployment/ref/production_deploy_runbook.md` | 03_deployment |
 | D29 | RBAC capability model (design only) — inventory of all 48 authorization decisions; model = owner flag + fixed baseline + per-department roles; 8 modules (brewing department-bound); read/edit/manage × own/department/all; `Authz.scope` for lists; owner-only set; `counts_as_manager` role flag; decided change: managers limited to own departments for positions/templates/user create, roster order owner-only | 06_auth_roles |
+| D30 | Shared DEV server + synthetic test accounts — `rockcut-api-dev`/`rockcut-ui-dev` (fly.dev.toml, DEV ribbon); 17 fictional `@rockcut-test.com` personas + scenario data behind a fail-closed guard (`ROCKCUT_ENV` + host allowlist); secret seed password (private PortableMind file) and 8-hour minted tokens for agents; Playwright scaffold (`rockcut-ui/tests`); credentials policy in `docs/process/test-credentials-policy.md` | 03_deployment |
 
 ## References
 

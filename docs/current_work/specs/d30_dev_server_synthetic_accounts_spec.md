@@ -1,6 +1,6 @@
 # D30: Shared DEV Server + Synthetic Test Accounts — Specification
 
-**Status:** In progress — code steps 1–7 + docs done (2026-09-26); Fly steps 8–11 pending (need Matt's Fly account)
+**Status:** Complete (2026-09-26) — see `stepwise_results/d30_dev_server_synthetic_accounts_COMPLETE.md`
 **Created:** 2026-09-26
 **Author:** Matt + CC, from Rick's plan (PortableMind file **#3944**, discussion 80 msg 80386)
 **Depends On:** D28 (production deploy + runbook), D10 (users / auth)
@@ -29,7 +29,7 @@ short-lived tokens by default** instead of a password published in git (§3.4).
 
 - [x] `ROCKCUT_ENV` switch (`prod` default, fail-closed) drives the seed guard,
       DEV banner, and mailer.
-- [ ] DEV apps `rockcut-api-dev` / `rockcut-ui-dev` in the `rockcut` org, from
+- [x] DEV apps `rockcut-api-dev` / `rockcut-ui-dev` in the `rockcut` org, from
       the same Dockerfiles, with a visible **DEV** banner.
 - [x] Synthetic seed: 17 fictional `@rockcut-test.com` personas (§3.3) +
       current-week scenario data; idempotent `setup` / `status` / `reset` /
@@ -48,12 +48,12 @@ short-lived tokens by default** instead of a password published in git (§3.4).
 
 ### Non-Functional
 
-- [ ] **Security:** prod has zero synthetic accounts; a synthetic login on prod
+- [x] **Security:** prod has zero synthetic accounts; a synthetic login on prod
       returns 401 (in the prod smoke test). No real data in DEV. DEV sends no
       email and has its own VAPID keypair and `SECRET_KEY_BASE`.
-- [ ] **Cost:** one shared-1x 512 MB API machine + 1 GB volume + a small UI
+- [x] **Cost:** one shared-1x 512 MB API machine + 1 GB volume + a small UI
       machine (a few dollars a month).
-- [ ] **Tests:** existing suite passes; new ExUnit tests for the guard,
+- [x] **Tests:** existing suite passes; new ExUnit tests for the guard,
       idempotency, persona auth, and token minting.
 
 ---
@@ -256,20 +256,21 @@ token, how to reset), and one smoke spec per role.
 
 ## 4. Success Criteria
 
-- [ ] DEV UI and API are live on `*.fly.dev` with the DEV banner; `/api/health` 200.
-- [ ] `synthetic_status` on DEV: 16 personas authenticate, `inactive` rejected.
-- [ ] A minted token logs an agent in as any persona on DEV and locally, and
+- [x] DEV UI and API are live on `*.fly.dev` with the DEV banner; `/api/health` 200.
+- [x] `synthetic_status` on DEV: 16 personas authenticate, `inactive` rejected.
+- [x] A minted token logs an agent in as any persona on DEV and locally, and
       expires after 8 hours.
 - [x] No seed password in git (`git grep` for the value finds nothing); the
       seed refuses to run without `SEED_PASSWORD`.
-- [ ] Prod: synthetic login → 401; `seed_synthetic` / `mint_token` raise;
-      prod `AuthPlug` rejects `"synthetic auth"` tokens.
+- [x] Prod: synthetic login → 401; a DEV-minted token → 401 on prod; 0 synthetic
+      users in prod. *Pending until D30 code reaches prod:* `seed_synthetic` /
+      `mint_token` raising there (prod still runs D28, which lacks them).
 - [x] Local dev seeds the same personas; `matt@rockcut.com` / `rockcut2026`
       are gone from seeds and `CLAUDE.md`.
-- [ ] Playwright auth setup produces all storageStates; one smoke spec per
+- [x] Playwright auth setup produces all storageStates; one smoke spec per
       role passes against local and DEV.
 - [x] `MIX_ENV=test mix test` passes (existing + new).
-- [ ] Runbook DEV section and credentials policy committed.
+- [x] Runbook DEV section and credentials policy committed.
 
 ---
 
@@ -287,7 +288,6 @@ token, how to reset), and one smoke spec per role.
 
 - [ ] Confirm with Rick: the ◆ secret-password + token change vs. PortableMind's
       published-password pattern (his plan mirrored it deliberately).
-- [ ] Is 8 hours right for minted tokens (one working session)?
-- [ ] Verify once that a browser agent will use the secret seed password for a
-      fictional account in the login-flow specs (expected yes — the refusal
-      concern is about real people's credentials).
+- [x] 8-hour tokens — kept (one working session).
+- [x] Login-flow specs with the secret seed password ran fine against DEV
+      (Playwright, 2026-09-26). A Claude in Chrome check is still worth one try.
