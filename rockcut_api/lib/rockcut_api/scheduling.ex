@@ -10,7 +10,15 @@ defmodule RockcutApi.Scheduling do
   alias RockcutApi.Repo
   alias RockcutApi.Authz
   alias RockcutApi.Accounts.User
-  alias RockcutApi.Scheduling.{Position, Shift, ShiftTemplate, ScheduleTemplate}
+
+  alias RockcutApi.Scheduling.{
+    Position,
+    Shift,
+    ShiftTemplate,
+    ScheduleTemplate,
+    ScheduleTemplateItem
+  }
+
   alias RockcutApi.Notifications
 
   @shift_preloads [:department, :position, :assignee]
@@ -34,7 +42,7 @@ defmodule RockcutApi.Scheduling do
     position |> Position.changeset(attrs) |> Repo.update()
   end
 
-  @doc "Delete a position, or soft-deactivate it when shifts reference it."
+  @doc "Delete a position, or soft-deactivate it when shifts or schedule templates reference it."
   def deactivate_or_delete_position(%Position{} = position) do
     if referenced?(position) do
       update_position(position, %{"active" => false})
@@ -47,7 +55,8 @@ defmodule RockcutApi.Scheduling do
   end
 
   defp referenced?(%Position{id: id}) do
-    Repo.exists?(from s in Shift, where: s.position_id == ^id)
+    Repo.exists?(from s in Shift, where: s.position_id == ^id) or
+      Repo.exists?(from i in ScheduleTemplateItem, where: i.position_id == ^id)
   end
 
   defp filter_positions(query, filters) do

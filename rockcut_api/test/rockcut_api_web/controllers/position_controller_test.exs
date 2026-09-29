@@ -69,4 +69,31 @@ defmodule RockcutApiWeb.PositionControllerTest do
            |> patch(~p"/api/positions/#{pos.id}", %{color_shade: 1.5})
            |> json_response(422)
   end
+
+  test "deleting a position used by a schedule template deactivates it", %{conn: conn} do
+    manager = user_with_role("manager", "bar")
+    pos = position_fixture()
+
+    conn
+    |> bearer(manager)
+    |> post(~p"/api/schedule_templates", %{
+      name: "Week",
+      kind: "week",
+      items: [%{position_id: pos.id, day_index: 0, start_time: "09:00:00", end_time: "17:00:00"}]
+    })
+    |> json_response(201)
+
+    conn |> bearer(manager) |> delete(~p"/api/positions/#{pos.id}") |> json_response(200)
+
+    refute RockcutApi.Repo.get!(RockcutApi.Scheduling.Position, pos.id).active
+  end
+
+  test "deleting an unused position removes it", %{conn: conn} do
+    manager = user_with_role("manager", "bar")
+    pos = position_fixture()
+
+    conn |> bearer(manager) |> delete(~p"/api/positions/#{pos.id}") |> json_response(200)
+
+    assert is_nil(RockcutApi.Repo.get(RockcutApi.Scheduling.Position, pos.id))
+  end
 end

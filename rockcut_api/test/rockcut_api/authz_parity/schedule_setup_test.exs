@@ -18,8 +18,7 @@ defmodule RockcutApi.AuthzParity.ScheduleSetupTest do
     d = departments()
     brewery_pos = position_fixture(%{department: d["brewery"]})
     other_pos = position_fixture(%{department: d["other"]})
-    # Unreferenced, so delete is a real delete. (Deleting a position used by a
-    # schedule template 500s today — a separate bug, not an authz decision.)
+    # Unreferenced, so delete is a real delete rather than a deactivation.
     spare_pos = position_fixture(%{department: d["brewery"]})
 
     shift_template =
