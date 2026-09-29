@@ -11,7 +11,7 @@ defmodule RockcutApiWeb.RosterController do
 
   # Save the schedule display order (manager/owner). Body: {"user_ids": [...]}.
   def order(conn, %{"user_ids" => user_ids}) when is_list(user_ids) do
-    if Authz.can_manage_any?(conn.assigns.current_user) do
+    if Authz.can?(conn.assigns.current_user, :reorder, :roster) do
       Accounts.reorder_roster(user_ids)
       json(conn, %{data: Accounts.list_roster()})
     else

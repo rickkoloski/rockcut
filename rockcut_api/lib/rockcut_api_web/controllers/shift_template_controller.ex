@@ -3,6 +3,7 @@ defmodule RockcutApiWeb.ShiftTemplateController do
 
   import RockcutApiWeb.JSONHelpers, only: [shift_template: 1]
   alias RockcutApi.{Scheduling, Authz}
+  alias RockcutApi.Scheduling.ShiftTemplate
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -11,7 +12,7 @@ defmodule RockcutApiWeb.ShiftTemplateController do
   end
 
   def create(conn, params) do
-    if manager?(conn) do
+    if can?(conn, :create) do
       with {:ok, t} <- Scheduling.create_shift_template(params) do
         conn |> put_status(:created) |> json(%{data: shift_template(t)})
       end
@@ -21,7 +22,7 @@ defmodule RockcutApiWeb.ShiftTemplateController do
   end
 
   def update(conn, %{"id" => id} = params) do
-    if manager?(conn) do
+    if can?(conn, :update) do
       t = Scheduling.get_shift_template!(id)
 
       with {:ok, updated} <- Scheduling.update_shift_template(t, Map.drop(params, ["id"])) do
@@ -33,7 +34,7 @@ defmodule RockcutApiWeb.ShiftTemplateController do
   end
 
   def delete(conn, %{"id" => id}) do
-    if manager?(conn) do
+    if can?(conn, :delete) do
       t = Scheduling.get_shift_template!(id)
 
       with {:ok, _} <- Scheduling.delete_shift_template(t) do
@@ -44,7 +45,7 @@ defmodule RockcutApiWeb.ShiftTemplateController do
     end
   end
 
-  defp manager?(conn), do: Authz.can_manage_any?(conn.assigns.current_user)
+  defp can?(conn, action), do: Authz.can?(conn.assigns.current_user, action, %ShiftTemplate{})
 
   defp forbidden(conn), do: conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})
 end
