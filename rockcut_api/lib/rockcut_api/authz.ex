@@ -19,7 +19,9 @@ defmodule RockcutApi.Authz do
   import Ecto.Query, only: [from: 2]
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.{User, Membership, Department}
-  alias RockcutApi.Scheduling.{Shift, Position}
+  alias RockcutApi.Scheduling.{Shift, Position, ShiftTemplate, ScheduleTemplate}
+  alias RockcutApi.TimeOff.Request
+  alias RockcutApi.Availability.Slot
 
   @doc "True if the user is a global owner."
   def owner?(%User{is_owner: owner}), do: owner == true
@@ -70,7 +72,13 @@ defmodule RockcutApi.Authz do
   anyone; a manager may manage a user who is a member of a department they
   manage. (Self is decided by callers.)
   """
-  def can_manage_user?(%User{is_owner: true}, _target_user_id), do: true
+  def can_manage_user?(%User{is_owner: true}, _target), do: true
+
+  def can_manage_user?(%User{} = user, %User{memberships: target_memberships})
+      when is_list(target_memberships) do
+    managed = managed_department_ids(user)
+    Enum.any?(target_memberships, &(&1.department_id in managed))
+  end
 
   def can_manage_user?(%User{} = user, target_user_id) do
     case managed_department_ids(user) do
@@ -86,6 +94,51 @@ defmodule RockcutApi.Authz do
     end
   end
 
+  @doc """
+  True if the user counts as a manager: an owner, or a manager of any
+  department. Decides the Managers channel and every "any manager" rule
+  (D29 §3.7 `counts_as_manager`).
+  """
+  def counts_as_manager?(%User{} = user), do: can_manage_any?(user)
+
+  @doc "Active users in the Managers audience: manager memberships plus owners (D29 §3.7)."
+  def managers_audience_query do
+    from(u in User,
+      left_join: m in Membership,
+      on: m.user_id == u.id and m.role == "manager",
+      where: u.active == true and (u.is_owner == true or not is_nil(m.id)),
+      distinct: true
+    )
+  end
+
+  @doc """
+  The departments whose records `user` may act on at `level` in `module`
+  (D29 §3.5), for scoping list queries. `:all` = no department restriction
+  (owners); callers still apply baseline rows (own records, published
+  shifts) and data rules (assignable departments) themselves.
+
+    * `:manage` — managed departments (any module)
+    * `:edit` on `:messaging` — member departments
+  """
+  def scope(%User{is_owner: true}, _module, _level), do: :all
+
+  def scope(%User{} = user, _module, :manage),
+    do: departments_or_none(managed_department_ids(user))
+
+  def scope(%User{} = user, :messaging, :edit),
+    do: departments_or_none(member_department_ids(user))
+
+  def scope(_user, _module, _level), do: :none
+
+  @doc "User ids with a membership in `scope`'s departments: `:all`, or a list."
+  def member_ids_in(:all), do: :all
+  def member_ids_in(:none), do: []
+
+  def member_ids_in({:departments, ids}) do
+    from(m in Membership, where: m.department_id in ^ids, select: m.user_id, distinct: true)
+    |> Repo.all()
+  end
+
   @doc "True if the user may manage users somewhere (owner or a manager of any department)."
   def can_manage_any?(%User{is_owner: true}), do: true
 
@@ -95,10 +148,22 @@ defmodule RockcutApi.Authz do
 
   @doc """
   Authorize `action` (a verb atom such as `:read`, `:create`, `:update`,
-  `:delete`) on `resource`. Owners may do anything; otherwise the resource's
-  policy decides. Brewing resources belong to the Brewery module — any Brewery
-  member may act on them (fine-grained verb policy arrives with later modules).
+  `:delete`) on `resource`. Owners may do anything, except the few rules that
+  bind owners too (time-off cancel, non-assignable channels); otherwise the
+  resource's policy decides. `resource` is a struct for a record, a tagged
+  tuple when there is no record (`{:channel, key}`, `{:calendar_feed, type, id}`,
+  `{:memberships, dept_id}`, `{:user_for, user_id}`, `{:module, key}`), or an
+  atom for a company-level surface (`:roster`, `:owner_activity`, `:memberships`).
   """
+  # Rules that bind owners too come before the owner clause.
+
+  # Time off: only the requester may cancel, owners included (was time_off.ex:143-146).
+  def can?(%User{id: id}, :cancel, %Request{user_id: uid}), do: id == uid
+
+  # Channels exist only for assignable departments, owners included (was messaging.ex:37-45).
+  def can?(%User{} = user, action, {:channel, key}) when action in [:view, :post],
+    do: channel_access?(user, key)
+
   def can?(%User{is_owner: true}, _action, _resource), do: true
 
   # Scheduling — shifts: global read of published; department-scoped write;
@@ -131,16 +196,95 @@ defmodule RockcutApi.Authz do
     end
   end
 
-  def can?(%User{} = user, _action, %mod{} = _resource) do
-    case Module.split(mod) do
-      ["RockcutApi", "Brewing", _schema] -> member_of?(user, "brewery")
+  # Shift templates, schedule templates, roster order: anyone reads; any
+  # manager writes (was shift_template_controller:47, schedule_template_controller:16,26,
+  # roster_controller:14).
+  def can?(%User{} = user, action, resource)
+      when is_struct(resource, ShiftTemplate) or is_struct(resource, ScheduleTemplate) or
+             resource == :roster do
+    case action do
+      :read -> true
+      a when a in [:create, :update, :delete, :reorder] -> counts_as_manager?(user)
       _ -> false
     end
   end
 
+  # Time off review: a manager of one of the requester's departments; a manager
+  # (of anything) may review their own request (was time_off.ex:165-175). Needs
+  # `req.user.memberships` preloaded, as `TimeOff.get/1` does.
+  def can?(%User{id: id} = user, :review, %Request{user_id: uid}) when id == uid,
+    do: counts_as_manager?(user)
+
+  def can?(%User{} = user, :review, %Request{user: %{memberships: memberships}})
+      when is_list(memberships),
+      do: Enum.any?(memberships, &(role_in(user, &1.department_id) == :manager))
+
+  # Acting on behalf of a user by id: time off, availability (was time_off.ex:102,
+  # availability.ex:89).
+  def can?(%User{} = user, :manage, {:user_for, user_id}), do: can_manage_user?(user, user_id)
+
+  # Availability: own slots, or a managed user's (was availability.ex:80-82).
+  def can?(%User{id: id}, :delete, %Slot{user_id: uid}) when id == uid, do: true
+  def can?(%User{} = user, :delete, %Slot{user_id: uid}), do: can_manage_user?(user, uid)
+
+  # Calendar feed tokens (was calendar_feeds.ex:63-69).
+  def can?(%User{id: id}, :rotate, {:calendar_feed, "user", sid}), do: id == sid
+
+  def can?(%User{} = user, :rotate, {:calendar_feed, "department", sid}),
+    do: role_in(user, sid) == :manager
+
+  # People: listing and creating users is "any manager"; changing a user needs
+  # a department in common that the actor manages (was user_controller:12,22,49,76,89;
+  # accounts.ex:266-270).
+  def can?(%User{} = user, action, %User{}) when action in [:list, :create],
+    do: counts_as_manager?(user)
+
+  def can?(%User{} = user, action, %User{} = target) when action in [:update, :reset_password],
+    do: can_manage_user?(user, target)
+
+  # Memberships: set in a department only by its manager. Whether the department
+  # is assignable at all is a data rule left in Accounts (was membership_controller:18,
+  # accounts.ex:413-414).
+  def can?(%User{} = user, :set, :memberships), do: counts_as_manager?(user)
+
+  def can?(%User{} = user, :assign, {:memberships, dept_id}),
+    do: role_in(user, dept_id) == :manager
+
+  # Departments: anyone reads; only owners (handled above) change them.
+  def can?(%User{}, :read, %Department{}), do: true
+
+  # Modules gated by department membership, e.g. the Brewery routes
+  # (was module_access_plug.ex:26,40; replaces the unused Brewing struct clause).
+  def can?(%User{} = user, :access, {:module, key}) when is_atom(key),
+    do: member_of?(user, Atom.to_string(key))
+
   def can?(_user, _action, _resource), do: false
 
   ## Helpers
+
+  defp departments_or_none([]), do: :none
+  defp departments_or_none(ids), do: {:departments, ids}
+
+  defp member_department_ids(%User{id: id}) do
+    from(m in Membership, where: m.user_id == ^id, select: m.department_id) |> Repo.all()
+  end
+
+  defp channel_access?(%User{} = user, "all"), do: user.active
+  defp channel_access?(%User{} = user, "managers"), do: counts_as_manager?(user)
+
+  defp channel_access?(%User{} = user, "dept:" <> key) do
+    Repo.exists?(from(d in Department, where: d.key == ^key and d.assignable == true)) and
+      (owner?(user) or
+         Repo.exists?(
+           from(m in Membership,
+             join: d in Department,
+             on: d.id == m.department_id,
+             where: m.user_id == ^user.id and d.key == ^key
+           )
+         ))
+  end
+
+  defp channel_access?(_user, _key), do: false
 
   defp memberships(%User{memberships: m}) when is_list(m), do: m
   defp memberships(_), do: []
