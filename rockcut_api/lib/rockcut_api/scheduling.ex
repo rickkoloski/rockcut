@@ -252,11 +252,14 @@ defmodule RockcutApi.Scheduling do
 
   ## Query helpers
 
-  defp restrict_visibility(query, %User{is_owner: true}), do: query
-
+  # Published shifts are visible to everyone; drafts only where the user manages
+  # the schedule.
   defp restrict_visibility(query, %User{} = user) do
-    managed = Authz.managed_department_ids(user)
-    where(query, [s], s.status == "published" or s.department_id in ^managed)
+    case Authz.scope(user, :schedule, :manage) do
+      :all -> query
+      :none -> where(query, [s], s.status == "published")
+      {:departments, ids} -> where(query, [s], s.status == "published" or s.department_id in ^ids)
+    end
   end
 
   defp filter_shifts(query, user, filters) do
