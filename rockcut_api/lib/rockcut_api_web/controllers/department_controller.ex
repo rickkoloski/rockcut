@@ -2,6 +2,7 @@ defmodule RockcutApiWeb.DepartmentController do
   use RockcutApiWeb, :controller
 
   import RockcutApiWeb.JSONHelpers, only: [department: 1]
+  alias RockcutApi.Accounts.Department
   alias RockcutApi.{Accounts, Authz}
 
   action_fallback RockcutApiWeb.FallbackController
@@ -12,7 +13,7 @@ defmodule RockcutApiWeb.DepartmentController do
 
   # Owner-only: set a department's palette color (or other fields).
   def update(conn, %{"id" => id} = params) do
-    if Authz.owner?(conn.assigns.current_user) do
+    if Authz.can?(conn.assigns.current_user, :update, %Department{}) do
       department = Accounts.get_department!(id)
 
       with {:ok, updated} <- Accounts.update_department(department, Map.drop(params, ["id"])) do
