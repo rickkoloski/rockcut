@@ -273,7 +273,7 @@ the UI as the persona.
 | S5 | `splitRole` | Time off nav | own pending request | approves own request; status persists after reload |
 | S6 | `breweryMgr` | Time off nav | `floater` has a pending request | sees and approves it; `barMgr` also sees it |
 | S7 | `floater` | Messages nav | member of Bar and Brewery, not a manager | sees All-staff, Bar, Brewery; no Managers channel |
-| S8 | `dualMgr` | Admin → Users & Roles | manages Bar and Office | lists only Bar and Office members; cannot add a Brewery membership (visible error) |
+| S8 | `dualMgr` | Admin → Users & Roles, then Add user / edit `office1` | manages Bar and Office | lists only Bar and Office members; the role picker offers only Bar and Office; a role change persists after reload |
 
 ### 3.11 Limitations: what local can't tell us
 
