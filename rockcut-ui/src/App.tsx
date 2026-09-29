@@ -454,16 +454,22 @@ function App() {
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           <Routes>
             <Route path="/" element={<Home />} />
-            {hasBrewery && <Route path="/brewery" element={<BreweryDashboard />} />}
-            <Route path="/brands" element={<BrandsList />} />
-            <Route path="/brands/:id" element={<BrandDetail />} />
-            <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
-            <Route path="/ingredients" element={<IngredientsList />} />
-            <Route path="/ingredients/:id" element={<IngredientDetail />} />
-            <Route path="/batches" element={<BatchesList />} />
-            <Route path="/batches/:id" element={<BatchDetail />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/settings/categories/:id" element={<CategoryDetail />} />
+            {/* Brewery pages exist only for Brewery members (and owners); anyone
+                else falls through to the catch-all redirect to Home (D31). */}
+            {hasBrewery && (
+              <>
+                <Route path="/brewery" element={<BreweryDashboard />} />
+                <Route path="/brands" element={<BrandsList />} />
+                <Route path="/brands/:id" element={<BrandDetail />} />
+                <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
+                <Route path="/ingredients" element={<IngredientsList />} />
+                <Route path="/ingredients/:id" element={<IngredientDetail />} />
+                <Route path="/batches" element={<BatchesList />} />
+                <Route path="/batches/:id" element={<BatchDetail />} />
+                <Route path="/settings" element={<SettingsPage />} />
+                <Route path="/settings/categories/:id" element={<CategoryDetail />} />
+              </>
+            )}
             <Route path="/schedule" element={<Schedule forceView="agenda" />} />
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />

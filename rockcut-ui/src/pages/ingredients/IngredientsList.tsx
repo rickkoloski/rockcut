@@ -155,7 +155,7 @@ export default function IngredientsList() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library' }]}
         title="Ingredient Library"
-        action={{ label: 'Add Ingredient', onClick: () => setFormOpen(true) }}
+        action={{ label: 'Add Ingredient', onClick: () => setFormOpen(true), testId: 'ingredients-add-button' }}
       />
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>

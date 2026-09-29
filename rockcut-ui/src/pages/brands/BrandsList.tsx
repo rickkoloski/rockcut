@@ -46,7 +46,7 @@ export default function BrandsList() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Brands & Recipes' }]}
         title="Brands & Recipes"
-        action={{ label: 'Add Brand', onClick: () => setDialogOpen(true) }}
+        action={{ label: 'Add Brand', onClick: () => setDialogOpen(true), testId: 'brands-add-button' }}
       />
 
       <Box sx={{ mb: 2 }}>

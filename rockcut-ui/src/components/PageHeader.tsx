@@ -10,7 +10,7 @@ interface Crumb {
 interface PageHeaderProps {
   breadcrumbs: Crumb[]
   title: string
-  action?: { label: string; onClick: () => void }
+  action?: { label: string; onClick: () => void; testId?: string }
   /** Custom toolbar content (icon buttons, etc.) — replaces action when provided */
   toolbar?: React.ReactNode
 }
@@ -32,7 +32,12 @@ export default function PageHeader({ breadcrumbs, title, action, toolbar }: Page
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Typography variant="h4">{title}</Typography>
         {toolbar ?? (action && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={action.onClick}>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={action.onClick}
+            data-testid={action.testId}
+          >
             {action.label}
           </Button>
         ))}

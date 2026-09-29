@@ -42,7 +42,7 @@ export default function SettingsPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Settings' }]}
         title="Settings"
-        action={{ label: 'Add Category', onClick: () => setFormOpen(true) }}
+        action={{ label: 'Add Category', onClick: () => setFormOpen(true), testId: 'settings-add-button' }}
       />
 
       <Box sx={{ mb: 2 }}>
