@@ -4,8 +4,8 @@ defmodule RockcutApiWeb.ModuleAccessPlug do
   `conn.assigns.current_user`).
 
   Options:
-    * `module:` — a department key atom (e.g. `:brewery`); owner or any member
-      of that department passes.
+    * `module:` — a department key atom (e.g. `:brewery`); passes when
+      `Authz.can?(user, :access, {:module, key})` (owner or any member).
     * `shared: true` — any authenticated user passes (a global module such as
       the schedule).
 
@@ -23,7 +23,7 @@ defmodule RockcutApiWeb.ModuleAccessPlug do
       Keyword.get(opts, :shared, false) and not is_nil(user) ->
         conn
 
-      user && (Authz.owner?(user) or member_allowed?(user, opts)) ->
+      user && module_allowed?(user, opts) ->
         conn
 
       true ->
@@ -34,10 +34,10 @@ defmodule RockcutApiWeb.ModuleAccessPlug do
     end
   end
 
-  defp member_allowed?(user, opts) do
+  defp module_allowed?(user, opts) do
     case Keyword.get(opts, :module) do
       nil -> false
-      module -> Authz.member_of?(user, Atom.to_string(module))
+      module -> Authz.can?(user, :access, {:module, module})
     end
   end
 end
