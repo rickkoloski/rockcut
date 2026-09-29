@@ -247,14 +247,6 @@ defmodule RockcutApi.Accounts do
   defp only_ids(query, :all), do: query
   defp only_ids(query, ids), do: where(query, [u], u.id in ^ids)
 
-  @doc "True if the actor may manage the target (owner, or a manager of a department the target belongs to)."
-  def can_manage_user?(%User{is_owner: true}, %User{}), do: true
-
-  def can_manage_user?(%User{} = actor, %User{} = target) do
-    managed = Authz.managed_department_ids(actor)
-    Enum.any?(target.memberships, &(&1.department_id in managed))
-  end
-
   @doc "Capabilities payload for the UI (modules, management scope, owner review count)."
   def capabilities(%User{} = user) do
     assignable = list_departments() |> Enum.filter(& &1.assignable)
@@ -304,6 +296,7 @@ defmodule RockcutApi.Accounts do
   end
 
   def active_owner_count do
+    # authz-boundary: data invariant (last-owner guard)
     User |> where([u], u.is_owner == true and u.active == true) |> Repo.aggregate(:count)
   end
 
@@ -405,6 +398,7 @@ defmodule RockcutApi.Accounts do
     user |> list_memberships() |> Map.new(fn m -> {m.department_id, m} end)
   end
 
+  # authz-boundary: data invariant (last-owner guard)
   defp last_active_owner?(%User{is_owner: true, active: true}), do: active_owner_count() <= 1
   defp last_active_owner?(%User{}), do: false
 

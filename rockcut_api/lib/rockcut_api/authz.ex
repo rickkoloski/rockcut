@@ -50,15 +50,6 @@ defmodule RockcutApi.Authz do
     role_in(user, department) in [:owner, :manager]
   end
 
-  @doc "Department keys the user manages (owner manages every department they belong to plus, notionally, all)."
-  def managed_department_keys(%User{} = user) do
-    user
-    |> memberships()
-    |> Enum.filter(&(&1.role == "manager"))
-    |> Enum.map(fn m -> m.department && m.department.key end)
-    |> Enum.reject(&is_nil/1)
-  end
-
   @doc "Department ids the user manages (managers only; owners are handled separately by callers)."
   def managed_department_ids(%User{} = user) do
     user
@@ -99,7 +90,10 @@ defmodule RockcutApi.Authz do
   department. Decides the Managers channel and every "any manager" rule
   (D29 §3.7 `counts_as_manager`).
   """
-  def counts_as_manager?(%User{} = user), do: can_manage_any?(user)
+  def counts_as_manager?(%User{is_owner: true}), do: true
+
+  def counts_as_manager?(%User{} = user),
+    do: Enum.any?(memberships(user), &(&1.role == "manager"))
 
   @doc "Active users in the Managers audience: manager memberships plus owners (D29 §3.7)."
   def managers_audience_query do
@@ -137,13 +131,6 @@ defmodule RockcutApi.Authz do
   def member_ids_in({:departments, ids}) do
     from(m in Membership, where: m.department_id in ^ids, select: m.user_id, distinct: true)
     |> Repo.all()
-  end
-
-  @doc "True if the user may manage users somewhere (owner or a manager of any department)."
-  def can_manage_any?(%User{is_owner: true}), do: true
-
-  def can_manage_any?(%User{} = user) do
-    Enum.any?(memberships(user), &(&1.role == "manager"))
   end
 
   @doc """
@@ -196,7 +183,7 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, %Position{}) do
     case action do
       :read -> true
-      a when a in [:create, :update, :delete] -> can_manage_any?(user)
+      a when a in [:create, :update, :delete] -> counts_as_manager?(user)
       _ -> false
     end
   end
