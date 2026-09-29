@@ -256,25 +256,35 @@ defmodule RockcutApi.Accounts do
   end
 
   @doc "Capabilities payload for the UI (modules, management scope, owner review count)."
-  def capabilities(%User{is_owner: true} = user) do
-    assignable_keys = list_departments() |> Enum.filter(& &1.assignable) |> Enum.map(& &1.key)
-
-    %{
-      modules: assignable_keys ++ ["schedule"],
-      manages_departments: assignable_keys,
-      can_manage_users: true,
-      pending_owner_reviews: pending_owner_reviews_count(user)
-    }
-  end
-
   def capabilities(%User{} = user) do
-    member_keys = user.memberships |> Enum.map(& &1.department.key) |> Enum.uniq()
+    assignable = list_departments() |> Enum.filter(& &1.assignable)
+
+    modules =
+      if Authz.owner?(user),
+        do: Enum.map(assignable, & &1.key),
+        else: user.memberships |> Enum.map(& &1.department.key) |> Enum.uniq()
+
+    manages =
+      case Authz.scope(user, :schedule, :manage) do
+        :all ->
+          Enum.map(assignable, & &1.key)
+
+        :none ->
+          []
+
+        {:departments, ids} ->
+          for m <- user.memberships, m.department_id in ids, do: m.department.key
+      end
 
     %{
-      modules: member_keys ++ ["schedule"],
-      manages_departments: Authz.managed_department_keys(user),
-      can_manage_users: Authz.can_manage_any?(user),
-      pending_owner_reviews: 0
+      modules: modules ++ ["schedule"],
+      manages_departments: manages,
+      can_manage_users: Authz.can?(user, :list, %User{}),
+      pending_owner_reviews:
+        if(Authz.can?(user, :read, :owner_activity),
+          do: pending_owner_reviews_count(user),
+          else: 0
+        )
     }
   end
 
