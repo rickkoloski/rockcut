@@ -6,6 +6,7 @@
 **Depends On:** D29 (capability model, decision inventory), D30 (synthetic personas), D10–D25 (the code being consolidated)
 **Roadmap:** `planning/rbac_configurable_authorization_roadmap.md` (Phase 1)
 **Backlog:** PortableMind Product Backlog project 254 — epic 3847, task 3887
+**Process:** `docs/process/three_environment_workflow.md` (local gate → DEV gate → release). Added 2026-09-28 after Phases A–C; §3.9–3.11 and §4 follow it.
 
 ---
 
@@ -249,9 +250,43 @@ these URLs lands on Home (the existing catch-all), as with `/brewery`.
 
 Found in the 2026-09-28 DEV walkthrough: `barMgr` and `bartender1` saw empty
 tables with working-looking "Add" buttons while the API returned 403. The
-server already denies, so this changes presentation only. Add a Playwright
-check (`tests/smoke/roles.spec.ts`): as `bartender1`, `/brands` redirects to
-`/`.
+server already denies, so this changes presentation only.
+
+**Regression spec** (workflow §6): `rockcut-ui/tests/regression/brewery/route_gating.spec.ts`.
+It checks both an allowed and a disallowed persona for each of the four routes, using
+`data-testid` selectors (added to the pages in the same change) and waiting on URL
+or element signals, never `waitForTimeout`. Scenarios in §3.10 (S1–S3).
+
+### 3.10 Persona-goal scenarios
+
+Each scenario names the persona, entry point, mode and state (workflow §3.1).
+S1–S3 are new Playwright regression specs. S4–S8 are what the DEV run and the
+independent pass must exercise: behavior that must be *unchanged*, driven through
+the UI as the persona.
+
+| # | Persona | Entry point | Mode / state | Expected |
+|---|---------|-------------|--------------|----------|
+| S1 | `bartender1` | types `/brands`, `/ingredients`, `/batches`, `/settings` in the address bar | signed in, no Brewery membership | lands on Home (`/`); no "Add …" button ever renders |
+| S2 | `barMgr` | same four URLs | manager, but not in Brewery | lands on Home, as S1 |
+| S3 | `brewer1`, `floater`, `splitRole` | Brewery → Brands & Recipes in the nav, then each URL directly | Brewery employee (splitRole: Bar manager + Brewery employee) | each page renders its table and "Add …" button |
+| S4 | `dualMgr` | Scheduler nav | manages Bar and Office | sees Bar and Office drafts, not Brewery drafts; can publish a Bar draft; publish persists after reload |
+| S5 | `splitRole` | Time off nav | own pending request | approves own request; status persists after reload |
+| S6 | `breweryMgr` | Time off nav | `floater` has a pending request | sees and approves it; `barMgr` also sees it |
+| S7 | `floater` | Messages nav | member of Bar and Brewery, not a manager | sees All-staff, Bar, Brewery; no Managers channel |
+| S8 | `dualMgr` | Admin → Users & Roles | manages Bar and Office | lists only Bar and Office members; cannot add a Brewery membership (visible error) |
+
+### 3.11 Limitations: what local can't tell us
+
+For the PR's handoff note and the DEV run (workflow §3, §4):
+
+- **Release build.** Phases C–D change no routes or config, but the module plug
+  now calls `Authz`. Only a `MIX_ENV=prod` release on Fly proves nothing is
+  compile-env dependent.
+- **The full persona matrix through the UI.** The parity suite covers the API
+  for 16 personas. The UI was only walked as `owner`, `barMgr` and
+  `bartender1` (2026-09-28), so S4–S8 are its first UI run as the other personas.
+- **Real data volume.** List scopes now use a separate `member_ids_in` query.
+  DEV's seeded roster is the first run against more than fixture data.
 
 ---
 
@@ -265,10 +300,20 @@ check (`tests/smoke/roles.spec.ts`): as `bartender1`, `/brands` redirects to
 - [ ] `/api/me` capabilities snapshot identical for all 16 active personas.
 - [ ] Full API suite passes (`MIX_ENV=test mix test`; 197 today plus the new
       tests).
-- [ ] Playwright smoke passes locally and with `E2E_TARGET=dev`, including
-      the new Brewery-route check.
-- [ ] DEV walkthrough repeated as `owner`, `barMgr`, `bartender1`: same
-      menus and pages as 2026-09-28, and `/brands` now redirects for non-brewery users.
+- [ ] **Local gate** (workflow §3): `mix test`; `npx tsc --noEmit -p
+      tsconfig.app.json && pnpm exec vite build && pnpm lint`; local
+      Playwright green including `regression/brewery/route_gating.spec.ts`.
+- [ ] **Revert-and-rerun recorded in the PR** for both bug fixes: the
+      position-delete fix (`f0ecc07`) and the Brewery route gating (§3.9).
+- [ ] **PR handoff note:** SHA, scenarios S1–S8, migrations (none),
+      LIMITATIONS (§3.11). The PR targets the D30 branch, stacked like #2,
+      until Rick confirms the branch model (workflow §2 is on hold).
+- [ ] **DEV gate** (workflow §4): DEV claimed in discussion 80; SHA deployed;
+      `seed_synthetic()` run; `fly releases` confirm the image;
+      `E2E_TARGET=dev` full suite green; independent pass over S1–S8 with
+      every gap fixed (with a test) or accepted by Matt; verdict in the PR;
+      DEV released.
+- [ ] No prod deploy in D31 without Matt's go-ahead.
 - [ ] Stepwise result written; roadmap marks Phase 1 complete; backlog 3887
       closed.
 

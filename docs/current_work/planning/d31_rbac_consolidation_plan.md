@@ -3,7 +3,8 @@
 **Spec:** `d31_rbac_consolidation_spec.md`
 **Created:** 2026-09-28
 **Branch:** `d31-rbac-consolidation` (stacked on `d30-dev-server-synthetic-accounts`;
-retarget to `scheduler-pwa` once PRs #1 and #2 merge)
+retarget once Rick confirms the branch model, workflow §2)
+**Process:** `docs/process/three_environment_workflow.md`
 
 ---
 
@@ -217,12 +218,20 @@ Wrap the `/brands*`, `/ingredients*`, `/batches*`, `/settings*` routes in
 `hasBrewery &&`, as `/brewery` already is. Non-brewery users then fall
 through to the catch-all `Navigate to="/"`.
 
-**File:** `rockcut-ui/tests/smoke/roles.spec.ts`: add a test that, as
-`bartender1`, `page.goto('/brands')` ends at `/` and shows no "Add Brand"
-button. As `brewer1`, `/brands` renders.
+**Files:** the four pages get `data-testid`s on their table and "Add" button
+(e.g. `brands-add-button`), in the same commit.
 
-`pnpm build` (type check), `npx playwright test` locally, then
-`E2E_TARGET=dev` after deploying to DEV. Commit.
+**File:** `rockcut-ui/tests/regression/brewery/route_gating.spec.ts` (new;
+workflow §6 layout). Scenarios S1–S3 from the spec:
+- `test.use({ storageState: authFile('bartender1') })` and again for
+  `barMgr`: for each route, `page.goto(route)`, `await
+  expect(page).toHaveURL('/')`, and the `*-add-button` test id has count 0.
+- `brewer1`, `floater`, `splitRole`: each route renders its `*-add-button`.
+- No `waitForTimeout`; wait on the URL or the element.
+
+**Revert-and-rerun** (workflow §3 local gate): with the `App.tsx` change
+reverted, the S1/S2 tests fail; restored, they pass. Record both runs in the
+PR. Commit.
 
 ---
 
@@ -234,28 +243,47 @@ button. As `brewer1`, `/brands` renders.
       test/rockcut_api/authz_parity/` is empty).
 - [ ] Full API suite green; count = baseline + new tests.
 - [ ] Boundary test green, and shown to fail on a planted violation.
-- [ ] Playwright smoke green locally and on DEV.
+- [ ] Local gate (workflow §3): `mix test`; `npx tsc --noEmit -p
+      tsconfig.app.json && pnpm exec vite build && pnpm lint`; `npx
+      playwright test` green including the new regression spec.
+- [ ] Revert-and-rerun recorded for `f0ecc07` (position delete) and Phase E.
 
-### Manual (DEV, after deploying the branch to DEV only)
-1. Deploy API + UI to DEV (`fly deploy -c fly.dev.toml --remote-only` in each).
-2. Repeat the 2026-09-28 walkthrough ([[rockcut-browser-testing]]): Matt signs
-   in as `owner`, `barMgr`, `bartender1` in the Playwright window; the agent
-   clicks through.
-3. Expect the same menus, pages and data as before, and `/brands`,
-   `/ingredients`, `/batches`, `/settings` → Home for `barMgr` and `bartender1`.
+### PR (after Phase E)
+Push the branch and open a PR against `d30-dev-server-synthetic-accounts`
+(stacked, like #2; `develop` doesn't exist while workflow §2 is on hold).
+Body = the handoff note: SHA, what changed, scenarios S1–S8, migrations:
+none, **LIMITATIONS** from spec §3.11, and the revert-and-rerun runs.
+Update the body with `gh api -X PATCH repos/rickkoloski/rockcut/pulls/<n> -F body=@file`
+(`gh pr edit` fails on this repo).
 
-**No prod deploy in D31** without Matt's go-ahead. Prod still waits on PRs #1
-and #2.
+### DEV gate (workflow §4)
+1. Post "DEV: deploying `<sha>` (D31)" in discussion 80.
+2. Clean checkout of the SHA; `fly deploy -c fly.dev.toml --remote-only` in
+   `rockcut_api`, then `rockcut-ui`; start the API machine if `stopped`.
+3. Pre-flight: `synthetic_status()`, then `seed_synthetic()`.
+4. `fly releases -a rockcut-api-dev` / `-a rockcut-ui-dev` show the new images.
+5. `E2E_TARGET=dev npx playwright test` (full suite).
+6. **Independent pass:** a fresh agent gets only the persona keys, S1–S8, the
+   DEV URL + token recipe, and §3.11. It reports gaps as path → expected →
+   observed → repro. **Blocker:** agent token login is currently refused by
+   Claude Code's auto-mode check ([[rockcut-browser-testing]]). Until Matt adds
+   a permission rule, Matt signs in for each persona by hand.
+7. Verdict in the PR (SHA, pass/fail counts, gaps). Two fix cycles at most,
+   then post evidence in discussion 80.
+8. Post "DEV: free" in discussion 80.
+
+**No prod deploy in D31** without Matt's go-ahead. Prod still waits on the
+branch cleanup (workflow §2, on hold).
 
 ---
 
 ## Verification Checklist
 
 - [ ] Phases A–E committed in order
-- [ ] Parity files unchanged since commit A
+- [ ] Parity files unchanged since `f0ecc07` (one comment fixed there; see its commit)
 - [ ] `Accounts.can_manage_user?` and the Brewing struct clause removed
 - [ ] Boundary test in place and verified
-- [ ] DEV walkthrough repeated
+- [ ] PR open with the handoff note; DEV gate passed; verdict in the PR
 - [ ] `stepwise_results/d31_rbac_consolidation_COMPLETE.md` written
 - [ ] Roadmap: Phase 1 marked complete; CLAUDE.md "Next deliverable" + table updated
 - [ ] Backlog 3887 closed; Rick told in discussion 80 (incl. the Brewery-route fix)
