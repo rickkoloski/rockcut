@@ -6,7 +6,7 @@ defmodule RockcutApi.TimeOff do
   import Ecto.Query
   alias RockcutApi.Repo
   alias RockcutApi.Authz
-  alias RockcutApi.Accounts.{User, Membership}
+  alias RockcutApi.Accounts.User
   alias RockcutApi.TimeOff.Request
 
   @preloads [:user, :reviewed_by]
@@ -23,34 +23,21 @@ defmodule RockcutApi.TimeOff do
   @doc "Requests visible to `user`: own + (managers) their departments' people + (owner) all."
   def list_for(user, filters \\ %{})
 
-  def list_for(%User{is_owner: true}, filters) do
+  def list_for(%User{} = user, filters) do
     Request
+    |> visible_to(user)
     |> apply_filters(filters)
     |> order_by([r], desc: r.starts_at)
     |> preload(^@preloads)
     |> Repo.all()
   end
 
-  def list_for(%User{} = user, filters) do
-    member_ids =
-      case Authz.managed_department_ids(user) do
-        [] ->
-          []
-
-        dept_ids ->
-          Membership
-          |> where([m], m.department_id in ^dept_ids)
-          |> select([m], m.user_id)
-          |> distinct(true)
-          |> Repo.all()
-      end
-
-    Request
-    |> where([r], r.user_id == ^user.id or r.user_id in ^member_ids)
-    |> apply_filters(filters)
-    |> order_by([r], desc: r.starts_at)
-    |> preload(^@preloads)
-    |> Repo.all()
+  # Own requests plus those of members of departments the user manages.
+  defp visible_to(query, %User{} = user) do
+    case Authz.scope(user, :time_off, :manage) |> Authz.member_ids_in() do
+      :all -> query
+      member_ids -> where(query, [r], r.user_id == ^user.id or r.user_id in ^member_ids)
+    end
   end
 
   ## Writes
@@ -97,9 +84,16 @@ defmodule RockcutApi.TimeOff do
   # nil / own id → self; a managed employee → their id; otherwise forbidden.
   defp resolve_target(%User{} = requester, raw) do
     case to_user_id(raw) do
-      nil -> {:ok, requester.id}
-      id when id == requester.id -> {:ok, requester.id}
-      id -> if Authz.can_manage_user?(requester, id), do: {:ok, id}, else: {:error, :forbidden}
+      nil ->
+        {:ok, requester.id}
+
+      id when id == requester.id ->
+        {:ok, requester.id}
+
+      id ->
+        if Authz.can?(requester, :manage, {:user_for, id}),
+          do: {:ok, id},
+          else: {:error, :forbidden}
     end
   end
 
@@ -115,7 +109,7 @@ defmodule RockcutApi.TimeOff do
 
   def review(%Request{} = req, %User{} = reviewer, status, note)
       when status in ~w(approved denied) do
-    if can_review?(reviewer, req) do
+    if Authz.can?(reviewer, :review, req) do
       req
       |> Ecto.Changeset.change(%{
         status: status,
@@ -142,7 +136,7 @@ defmodule RockcutApi.TimeOff do
   """
   def cancel(%Request{} = req, %User{} = user) do
     cond do
-      req.user_id != user.id ->
+      not Authz.can?(user, :cancel, req) ->
         {:error, :forbidden}
 
       req.status not in ["pending", "approved"] ->
@@ -155,26 +149,6 @@ defmodule RockcutApi.TimeOff do
         end
     end
   end
-
-  ## Authorization
-
-  def can_view?(%User{is_owner: true}, _req), do: true
-  def can_view?(%User{} = user, %Request{user_id: uid}) when uid == user.id, do: true
-  def can_view?(%User{} = user, %Request{} = req), do: manages_requester_dept?(user, req)
-
-  def can_review?(%User{is_owner: true}, _req), do: true
-  # Managers/owners may approve/deny their OWN requests (they hold the authority).
-  def can_review?(%User{id: id} = user, %Request{user_id: uid}) when id == uid,
-    do: Authz.can_manage_any?(user)
-
-  def can_review?(%User{} = user, %Request{} = req), do: manages_requester_dept?(user, req)
-
-  defp manages_requester_dept?(%User{} = user, %Request{user: %{memberships: memberships}})
-       when is_list(memberships) do
-    Enum.any?(memberships, fn m -> Authz.role_in(user, m.department_id) == :manager end)
-  end
-
-  defp manages_requester_dept?(_user, _req), do: false
 
   ## Helpers
 
