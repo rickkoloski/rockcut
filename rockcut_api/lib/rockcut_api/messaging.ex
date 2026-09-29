@@ -19,30 +19,30 @@ defmodule RockcutApi.Messaging do
   @doc "Channels visible to `user`, as %{key, name, kind}, in display order."
   def channels_for(%User{} = user) do
     depts = assignable_departments()
-    my_keys = if user.is_owner, do: Enum.map(depts, & &1.key), else: member_dept_keys(user)
+
+    my_depts =
+      case Authz.scope(user, :messaging, :edit) do
+        :all -> depts
+        :none -> []
+        {:departments, ids} -> Enum.filter(depts, &(&1.id in ids))
+      end
 
     all = [%{key: "all", name: "All-staff", kind: "all"}]
 
     managers =
-      if manager?(user), do: [%{key: "managers", name: "Managers", kind: "managers"}], else: []
+      if Authz.counts_as_manager?(user),
+        do: [%{key: "managers", name: "Managers", kind: "managers"}],
+        else: []
 
     dept_channels =
-      for d <- depts,
-          d.key in my_keys,
-          do: %{key: "dept:" <> d.key, name: d.name, kind: "department"}
+      for d <- my_depts, do: %{key: "dept:" <> d.key, name: d.name, kind: "department"}
 
     all ++ managers ++ dept_channels
   end
 
-  def can_view?(%User{} = user, "all"), do: user.active
-  def can_view?(%User{} = user, "managers"), do: manager?(user)
+  def can_view?(%User{} = user, key), do: Authz.can?(user, :view, {:channel, key})
 
-  def can_view?(%User{} = user, "dept:" <> dkey),
-    do: dkey in assignable_keys() and (user.is_owner or dkey in member_dept_keys(user))
-
-  def can_view?(_user, _key), do: false
-
-  def can_post?(%User{} = user, key), do: can_view?(user, key)
+  def can_post?(%User{} = user, key), do: Authz.can?(user, :post, {:channel, key})
 
   @doc "Recent messages in a channel (oldest→newest), or {:error, :forbidden}."
   def list_messages(%User{} = user, key, opts \\ []) do
@@ -145,17 +145,7 @@ defmodule RockcutApi.Messaging do
   def recipients("all"), do: active_users_query() |> Repo.all()
 
   def recipients("managers") do
-    managers =
-      from(u in User,
-        join: m in Membership,
-        on: m.user_id == u.id,
-        where: u.active == true and m.role == "manager",
-        distinct: true
-      )
-      |> Repo.all()
-
-    owners = from(u in User, where: u.active == true and u.is_owner == true) |> Repo.all()
-    Enum.uniq_by(managers ++ owners, & &1.id)
+    Authz.managers_audience_query() |> Repo.all()
   end
 
   def recipients("dept:" <> dkey) do
@@ -202,20 +192,6 @@ defmodule RockcutApi.Messaging do
   defp assignable_departments do
     from(d in Department, where: d.assignable == true, order_by: [asc: d.name]) |> Repo.all()
   end
-
-  defp assignable_keys, do: assignable_departments() |> Enum.map(& &1.key)
-
-  defp member_dept_keys(%User{} = user) do
-    from(m in Membership,
-      join: d in Department,
-      on: d.id == m.department_id,
-      where: m.user_id == ^user.id,
-      select: d.key
-    )
-    |> Repo.all()
-  end
-
-  defp manager?(%User{} = user), do: Authz.can_manage_any?(user)
 
   defp active_users_query, do: from(u in User, where: u.active == true)
 end
