@@ -15,7 +15,7 @@ defmodule RockcutApiWeb.MembershipController do
         {:error, :not_found}
 
       target ->
-        if Authz.can_manage_any?(actor) do
+        if Authz.can?(actor, :set, :memberships) do
           desired = Map.get(params, "memberships", [])
 
           case Accounts.set_memberships(target, desired, actor) do

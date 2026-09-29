@@ -159,7 +159,7 @@ defmodule RockcutApi.Accounts do
   def update_user(%User{} = target, attrs, %User{} = actor) do
     attrs = stringify(attrs)
     base = Map.take(attrs, ["name", "email", "active", "schedulable"])
-    owner_change? = Map.has_key?(attrs, "is_owner") and Authz.owner?(actor)
+    owner_change? = Map.has_key?(attrs, "is_owner") and Authz.can?(actor, :set_owner, target)
 
     Repo.transaction(fn ->
       cond do
@@ -237,30 +237,15 @@ defmodule RockcutApi.Accounts do
   ## User queries & capabilities
 
   @doc "Users visible to the actor: all for an owner; a manager's departments' members otherwise."
-  def list_users_for(%User{is_owner: true}) do
-    User |> order_by(:email) |> Repo.all() |> Repo.preload(@preloads)
-  end
-
   def list_users_for(%User{} = actor) do
-    case Authz.managed_department_ids(actor) do
-      [] ->
-        []
-
-      dept_ids ->
-        user_ids =
-          Membership
-          |> where([m], m.department_id in ^dept_ids)
-          |> select([m], m.user_id)
-          |> distinct(true)
-          |> Repo.all()
-
-        User
-        |> where([u], u.id in ^user_ids)
-        |> order_by(:email)
-        |> Repo.all()
-        |> Repo.preload(@preloads)
+    case Authz.scope(actor, :people, :manage) |> Authz.member_ids_in() do
+      [] -> []
+      ids -> User |> only_ids(ids) |> order_by(:email) |> Repo.all() |> Repo.preload(@preloads)
     end
   end
+
+  defp only_ids(query, :all), do: query
+  defp only_ids(query, ids), do: where(query, [u], u.id in ^ids)
 
   @doc "True if the actor may manage the target (owner, or a manager of a department the target belongs to)."
   def can_manage_user?(%User{is_owner: true}, %User{}), do: true
@@ -316,9 +301,9 @@ defmodule RockcutApi.Accounts do
 
   defp apply_memberships(%User{} = user, desired_raw, %User{} = actor) do
     with {:ok, desired} <- resolve_desired(desired_raw) do
-      authority = authoritative_dept_ids(actor)
+      authorized? = fn dept_id -> Authz.can?(actor, :assign, {:memberships, dept_id}) end
 
-      case Enum.find(desired, fn {dept, _role} -> not authorized_dept?(authority, dept.id) end) do
+      case Enum.find(desired, fn {dept, _role} -> not authorized?.(dept.id) end) do
         {dept, _role} ->
           {:error, {:unauthorized_department, dept.key}}
 
@@ -329,7 +314,7 @@ defmodule RockcutApi.Accounts do
           # Remove memberships within the actor's authority that are absent from desired.
           current
           |> Enum.filter(fn {dept_id, _m} ->
-            authorized_dept?(authority, dept_id) and not Map.has_key?(desired_map, dept_id)
+            authorized?.(dept_id) and not Map.has_key?(desired_map, dept_id)
           end)
           |> Enum.each(fn {dept_id, m} ->
             Repo.delete!(m)
@@ -409,12 +394,6 @@ defmodule RockcutApi.Accounts do
   defp current_membership_map(user) do
     user |> list_memberships() |> Map.new(fn m -> {m.department_id, m} end)
   end
-
-  defp authoritative_dept_ids(%User{is_owner: true}), do: :all
-  defp authoritative_dept_ids(%User{} = actor), do: Authz.managed_department_ids(actor)
-
-  defp authorized_dept?(:all, _dept_id), do: true
-  defp authorized_dept?(ids, dept_id) when is_list(ids), do: dept_id in ids
 
   defp last_active_owner?(%User{is_owner: true, active: true}), do: active_owner_count() <= 1
   defp last_active_owner?(%User{}), do: false
