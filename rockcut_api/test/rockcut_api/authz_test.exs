@@ -132,6 +132,7 @@ defmodule RockcutApi.AuthzTest do
       refute Authz.can?(p["splitRole"], :rotate, {:calendar_feed, "department", d["brewery"].id})
       assert Authz.can?(p["owner"], :rotate, {:calendar_feed, "all", nil})
       refute Authz.can?(p["dualMgr"], :rotate, {:calendar_feed, "all", nil})
+      refute Authz.can?(p["owner"], :rotate, {:calendar_feed, "bogus", 1})
     end
 
     test "channels, including the owner exception for non-assignable departments", %{p: p} do

@@ -164,6 +164,11 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, {:channel, key}) when action in [:view, :post],
     do: channel_access?(user, key)
 
+  # Only the three feed kinds exist, owners included (was calendar_feeds.ex:69).
+  def can?(%User{}, :rotate, {:calendar_feed, type, _id})
+      when type not in ["user", "department", "all"],
+      do: false
+
   def can?(%User{is_owner: true}, _action, _resource), do: true
 
   # Scheduling — shifts: global read of published; department-scoped write;
