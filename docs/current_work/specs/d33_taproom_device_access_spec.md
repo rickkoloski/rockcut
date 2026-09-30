@@ -48,6 +48,10 @@ revocable token.
 | R3 | A **`device_tokens`** table of hashed, revocable, opaque tokens, plus rate-limited, single-use pairing codes. | Rick |
 | R4 | D32/D33 split. | Rick, accepted by Matt |
 | Q1 | A personal sign-in on a tablet returns to the device session after **5 idle minutes** ("for now"; keep it one constant so it's easy to change). | Matt, 2026-09-30 |
+| P1 | Blocked URLs on a device show a device-only "Not available on a shared device" page; people keep the redirect to Home. | Matt, 2026-09-30 |
+| P5 | Personal sign-in on a tablet: a "Sign in as me" button opens the normal email + password form. | Matt, 2026-09-30 |
+| P6 | A device's home department can be any assignable department, chosen by the owner. Any number of device accounts may exist. | Matt / lead, 2026-09-30 |
+| P9 | Server-side revocation of a person's token on tablet sign-out/idle is deferred (backlog); the tablet deletes it locally. | Matt, 2026-09-30 |
 | PIN | Edits made on the tablet are recorded with the device as the actor. A staff PIN for attribution is **deferred** to the first editable taproom component. | Matt |
 
 ---
@@ -157,8 +161,9 @@ revocable token.
       bell and no profile or password menu.
 - [ ] Nav: Home, View Schedule, Taproom, Messages (All-staff, Taproom).
 - [ ] In a channel, the message box is replaced by "Shared devices can read but not post."
-- [ ] A direct URL to anything else shows D31's "not available" page, never an
-      empty table with an "Add" button.
+- [ ] A direct URL to anything else shows a **device-only "Not available on a
+      shared device" page**, never an empty table with an "Add" button. People
+      keep D31's redirect to Home (lead decision 1, Matt, 2026-09-30).
 - [ ] **Channel URLs (backlog 3939, from the D31 DEV pass):** a channel key the
       user can't see (for example `/messages/managers` as `floater`, or any key
       for the device other than All-staff and Taproom) redirects to `/messages`.
@@ -227,7 +232,7 @@ revocable token.
 | S6 | `taproomDevice` | nav | signed in | Sees Home, View Schedule, Taproom and Messages (All-staff, Taproom). No Scheduler, Time off, Availability, Admin, Brewery, bell or profile. |
 | S7 | `taproomDevice` | View Schedule | published and draft shifts and events | Sees published items only. No claim control; claiming through the API returns 403. |
 | S8 | `taproomDevice` | Messages → All-staff, then Taproom | both have messages | Reads both. No message box. `POST /api/channels/all/messages` returns 403. Managers isn't listed, and its URL returns 403. |
-| S9 | `taproomDevice` | typed URLs `/scheduler`, `/time_off`, `/availability`, `/users`, `/brands` | signed in | The "not available" page each time. The matching API calls return 403. |
+| S9 | `taproomDevice` | typed URLs `/scheduler`, `/time_off`, `/availability`, `/users`, `/brands` | signed in | The device-only "Not available on a shared device" page each time. The matching API calls return 403. |
 | S10 | `bartender1` | Messages → All-staff | posts a message | Everyone is notified as today. The device account isn't among the recipients. |
 | S11 | `owner` | Shared devices | two tablets paired | Revokes "Taproom iPad 1". Its next request returns 401 and it goes back to setup. iPad 2 keeps working. |
 | S12 | `owner` | Shared devices | device account deactivated | Every tablet is signed out on its next request. |

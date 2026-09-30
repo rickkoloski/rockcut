@@ -1,7 +1,7 @@
 # D33: Taproom Device Access — Implementation Instructions
 
 **Spec:** `d33_taproom_device_access_spec.md` (approved 2026-09-30; Q1 idle timeout = 5 min)
-**Plan status:** Draft — waiting for the lead's review (questions at the end)
+**Plan status:** Approved — lead + Matt, 2026-09-30 (`prompts/d33_lead_decisions_1.md`; answers recorded at the end)
 **Created:** 2026-09-30
 **Branch:** `d33-taproom-device-access` (off `d32-schedule-events`; merge waits on the workflow §2 branch cleanup)
 **Process:** `docs/process/three_environment_workflow.md` — read it before starting.
@@ -89,7 +89,7 @@ never run repo-wide `mix format` or `mix precommit`.
 
 ---
 
-## Implementation decisions (proposed; the lead confirms)
+## Implementation decisions (approved 2026-09-30)
 
 1. **`kind` is set at creation and never changes.** It isn't in any cast list
    except the device-create changeset. A person can't become a device or vice versa.
@@ -415,7 +415,7 @@ pending_owner_reviews`. So people get **no new keys** in `capabilities`.
 - Nav: Home, View Schedule, the home department section (Taproom), Messages
   (All-staff, Taproom). No Scheduler, Time off, Availability, Admin, Brewery.
 - Routes for a device: `/`, `/schedule`, `/messages`, `/messages/:key`; any
-  other path renders the not-available page or redirect decided in Q1.
+  other path renders the device-only "Not available on a shared device" page (Q1).
 - Skip the `/api/channels` poll? No — it's allowed; keep it.
 - **Personal session on a tablet:** while a device token is set aside, a slim
   banner "Signed in as {name} on a shared tablet · returns to the shared
@@ -474,7 +474,7 @@ pending_owner_reviews`. So people get **no new keys** in `capabilities`.
 | `shared_devices_admin.spec.ts` | S1 owner creates a `[TEST-TEMP]` device, reload → listed; it's absent from Users & Roles, the scheduler roster and the Add-shift assignee picker; change log shows the create. Cleans up (delete). |
 | `pairing.spec.ts` | S2 barMgr pairs: a **second browser context** (no storage state) uses "Set up as a shared device" with the code + "[TEST-TEMP] iPad 1" → signed in with the device chip; barMgr reloads → the tablet is listed with last seen. S11: pair two, revoke one → its next navigation lands on the login screen; the other still loads. S4 (UI): wrong code → message. Cleanup revokes/deletes. |
 | `device_permissions.spec.ts` | S3 breweryMgr: no Shared devices nav; API pair on the taproom device → 403. S12 owner deactivates a `[TEST-TEMP]` device → its paired context is signed out on next request, then reactivate/delete. |
-| `device_session.spec.ts` (`taproomDevice`) | S6 nav contents + chip, no bell/profile; S7 agenda shows a published `[SEED]` shift, not a draft, no claim button (+ API claim → 403); S8 reads All-staff + Taproom, read-only notice, no Managers in nav (+ API post → 403); S9 typed URLs `/scheduler`, `/time_off`, `/availability`, `/users`, `/brands` → Q1 behavior, and the matching API GETs → 403. |
+| `device_session.spec.ts` (`taproomDevice`) | S6 nav contents + chip, no bell/profile; S7 agenda shows a published `[SEED]` shift, not a draft, no claim button (+ API claim → 403); S8 reads All-staff + Taproom, read-only notice, no Managers in nav (+ API post → 403); S9 typed URLs `/scheduler`, `/time_off`, `/availability`, `/users`, `/brands` → the "Not available on a shared device" page, and the matching API GETs → 403. |
 | `personal_signin.spec.ts` | S13 on a device context, "Sign in as me" as `bartender1` by **token injection** into the personal slot (never typing a password), create a `[TEST-TEMP]` time-off request, reload → it persists; then advance the idle timer with Playwright's `page.clock` (no `waitForTimeout`) past 5 min → device chip is back without re-pairing. Cleanup cancels the request. |
 
 - S5 (password login as the device) and the 6th-wrong-code rate limit are
@@ -581,38 +581,28 @@ pairing codes), both reversible; **no new dependency**; LIMITATIONS:
 
 ---
 
-## Questions for the lead
+## Questions for the lead — answered 2026-09-30
 
-1. **"Not available" page (S9, §3.5).** D31 has no such page: the catch-all
-   redirects to Home (`App.tsx`), and `route_gating.spec.ts` asserts that
-   redirect. Options: (a) the device also redirects to Home (consistent, no
-   new page); (b) a small "Not available on this device" page for devices
-   only; (c) one page for everyone, which changes people's behavior and the
-   D31 spec. I lean (b). Which?
-2. **Synthetic device token.** I plan for `mint_token("taproomDevice")` to create a
-   real `dev_` device-token row (`[SEED] Playwright tablet`, no expiry, revoked
-   at the next mint/setup) and for `AuthPlug` to refuse `Phoenix.Token`s for
-   device users. The alternative is an 8-hour synthetic `Phoenix.Token`, which
-   wouldn't exercise the `dev_` path or sign-out revocation. OK?
-3. **Boundary test and `kind`.** The spec says any `kind` check lives in
-   `Authz`. The boundary regex doesn't look for `kind` today. Should I extend
-   `authz_boundary_test.exs` (not a parity file) to flag `kind` checks, with
-   the three list filters and the changeset marked `# authz-boundary: data invariant`?
-4. **More than one device account?** M2 says one taproom device account. Should
-   the API allow any number (e.g. a future Brewery tablet) or refuse a second
-   device per home department? I'd allow any number and not enforce one.
-5. **Personal sign-in entry point (S13).** The spec doesn't name it. I plan a
-   "Sign in as me" button in the device app bar that opens the normal login
-   form. Is the regular email + password form right on a shared tablet, or
-   should that wait for the PIN work?
-6. **Home department choices.** Can an owner pick any assignable department as
-   a device's home, or only Taproom for now?
-7. **Several live pairing codes.** If a manager generates a second code, should
-   the first one be invalidated? I'd leave both valid until they expire (10 min).
-8. **Shared devices for managers.** Q2 lets home-department managers pair and
-   revoke. Should they also see the page in the Admin nav (showing only their
-   departments' devices), or reach it another way? I plan Admin → Shared devices for them.
-9. **Personal token on idle return.** Person tokens are 30-day `Phoenix.Token`s
-   and logout is client-side only. On idle return the UI drops the token, but
-   it stays valid server-side (as for every logout today). Acceptable for D33,
-   or should D33 add server-side revocation for people too? I'd defer that.
+Source: `docs/current_work/prompts/d33_lead_decisions_1.md` (Matt decided Q1, Q5, Q6, Q9).
+
+1. **Blocked URL:** a **device-only** "Not available on a shared device" page
+   (`data-testid="device-not-available"`) for every route a device can't use.
+   People keep today's redirect to Home; `route_gating.spec.ts` is unchanged.
+   Spec S9 and §3.5 updated. *(Matt)*
+2. **Synthetic device token:** yes. `mint_token("taproomDevice")` creates a real
+   `dev_` token row; `AuthPlug` refuses `Phoenix.Token`s for device users (decision 4).
+3. **Boundary test:** yes. `authz_boundary_test.exs` is extended to flag `kind`
+   checks outside `Authz`; the list filters and the changeset carry the
+   `# authz-boundary: data invariant` marker (or live in allowlisted files).
+   Parity files stay frozen.
+4. **Number of device accounts:** any number; nothing enforces one.
+5. **Personal sign-in:** a "Sign in as me" button opening the normal email and
+   password form; returns to the device session after 5 idle minutes. *(Matt)*
+6. **Home department:** any assignable department, picked by the owner. *(Matt)*
+7. **Pairing codes:** a new code doesn't invalidate earlier unused ones; each
+   expires on its own after 10 minutes.
+8. **Managers:** home-department managers see Admin → Shared devices, limited
+   to their own departments' devices.
+9. **Server-side revocation of personal tokens:** deferred *(Matt)*; the lead
+   files a backlog task. The tablet deletes the personal token locally. Listed in
+   the handoff LIMITATIONS.
