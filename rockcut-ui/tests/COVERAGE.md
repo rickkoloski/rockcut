@@ -32,7 +32,7 @@ Started with D32; earlier deliverables' scenarios are added as they're touched.
 | S16 | Delete this only / this and following | Playwright `events_recurring`; ExUnit |
 | S17 | Extend adds drafts past the old last date | Playwright `events_recurring`; ExUnit (idempotent, skips deleted dates) |
 | S18 | Other personas can't change or extend a series; employees read-only | Playwright `events_recurring`; ExUnit |
+| S19 | A Sunday-evening shift shows in its own week (Colorado day bounds) | Playwright `scheduler/sunday_shift` (revert-and-rerun recorded); ExUnit `shift_controller_test` |
 
 Known gaps:
 - **GAP:** the taproom device's view of events (D33).
-- **GAP:** Sunday-evening **shifts** after 6 pm MDT / 5 pm MST drop out of the week grid (UTC day bounds in `list_shifts`); predates D32, not yet filed.

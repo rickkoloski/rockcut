@@ -366,8 +366,9 @@ defmodule RockcutApi.Scheduling do
     |> maybe(filters, "position_id", fn q, id -> where(q, [s], s.position_id == ^to_int(id)) end)
     |> maybe(filters, "status", fn q, st -> where(q, [s], s.status == ^st) end)
     |> maybe(filters, "assignee_id", fn q, id -> where(q, [s], s.assignee_id == ^to_int(id)) end)
-    |> maybe(filters, "from", fn q, d -> where(q, [s], s.starts_at >= ^start_of_day(d)) end)
-    |> maybe(filters, "to", fn q, d -> where(q, [s], s.starts_at <= ^end_of_day(d)) end)
+    # A shift belongs to the Colorado day it starts on (D32 §3.8).
+    |> maybe(filters, "from", fn q, d -> where(q, [s], s.starts_at >= ^local_midnight(d, 0)) end)
+    |> maybe(filters, "to", fn q, d -> where(q, [s], s.starts_at < ^local_midnight(d, 1)) end)
     |> maybe(filters, "mine", fn q, v ->
       if truthy(v), do: where(q, [s], s.assignee_id == ^user.id), else: q
     end)
@@ -391,21 +392,12 @@ defmodule RockcutApi.Scheduling do
   defp to_int(v) when is_integer(v), do: v
   defp to_int(v) when is_binary(v), do: String.to_integer(v)
 
-  defp start_of_day(date) when is_binary(date), do: parse_day(date, ~T[00:00:00])
-  defp end_of_day(date) when is_binary(date), do: parse_day(date, ~T[23:59:59])
-
-  # Colorado midnight at the start of `date` + `days`, in UTC. Event day bounds
-  # are local days, so a Sunday 7 pm event (Monday in UTC) stays in its week.
+  # Colorado midnight at the start of `date` + `days`, in UTC. Shift and event
+  # day bounds are local days, so a Sunday-evening one (Monday in UTC) stays in
+  # its week.
   defp local_midnight(date, days) when is_binary(date) do
     case Date.from_iso8601(date) do
       {:ok, d} -> Recurrence.local_to_utc(Date.add(d, days), ~T[00:00:00])
-      _ -> DateTime.utc_now()
-    end
-  end
-
-  defp parse_day(date, time) do
-    case Date.from_iso8601(date) do
-      {:ok, d} -> DateTime.new!(d, time, "Etc/UTC")
       _ -> DateTime.utc_now()
     end
   end

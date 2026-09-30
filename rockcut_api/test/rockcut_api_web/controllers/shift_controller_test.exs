@@ -34,6 +34,49 @@ defmodule RockcutApiWeb.ShiftControllerTest do
       assert published.id in ids
       refute draft.id in ids
     end
+
+    # D32 §3.8 (S19): weeks are Colorado days. Sun Nov 8, 2026, 6 pm MST is
+    # 01:00 UTC on Monday the 9th; before D32 it dropped out of its week.
+    test "a week range holds the shifts that start on its Colorado days", %{conn: conn} do
+      bar = department_fixture("bar")
+      emp = user_with_role("employee", "bar")
+
+      at = fn date, time ->
+        DateTime.new!(Date.from_iso8601!(date), Time.from_iso8601!(time), "Etc/UTC")
+      end
+
+      sunday_close =
+        shift_fixture(%{
+          department: bar,
+          status: "published",
+          starts_at: at.("2026-11-09", "01:00:00"),
+          ends_at: at.("2026-11-09", "08:00:00")
+        })
+
+      # Sun Nov 1, 11 pm MST (06:00 UTC Monday the 2nd) belongs to the week before.
+      prior_sunday =
+        shift_fixture(%{
+          department: bar,
+          status: "published",
+          starts_at: at.("2026-11-02", "06:00:00"),
+          ends_at: at.("2026-11-02", "07:00:00")
+        })
+
+      ids = fn from, to ->
+        conn
+        |> bearer(emp)
+        |> get(~p"/api/shifts?from=#{from}&to=#{to}")
+        |> json_response(200)
+        |> Map.fetch!("data")
+        |> Enum.map(& &1["id"])
+      end
+
+      week = ids.("2026-11-02", "2026-11-08")
+      assert sunday_close.id in week
+      refute prior_sunday.id in week
+      refute sunday_close.id in ids.("2026-11-09", "2026-11-15")
+      assert prior_sunday.id in ids.("2026-10-26", "2026-11-01")
+    end
   end
 
   describe "POST /api/shifts" do

@@ -182,6 +182,7 @@ export default function WeekGrid({
     const box = (
       <Box
         key={s.id}
+        data-testid={`shift-chip-${s.id}`}
         draggable={draggable}
         onDragStart={(e) => {
           setDragShift(s)

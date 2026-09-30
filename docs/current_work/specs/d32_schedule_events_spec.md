@@ -53,6 +53,7 @@ security-sensitive device access follows as D33.
 | R5 | Edits and deletes apply to **this event only** or **this and all following**. |
 | P1 | **Copy last week** and **Delete week** leave events alone; they act on shifts only. |
 | P2 | In View Schedule, events are **hidden** when the "Mine", "Open" or position filter is on, and follow the department filter. |
+| A3 | **Sunday-evening shifts fix folded in** (Matt, 2026-09-29; found while testing D32): shift week queries use Colorado midnights, like events (§3.8). |
 
 ---
 
@@ -200,6 +201,16 @@ These mirror shifts:
     repeating events;
   - an **Extend** action with the series' last date shown.
 
+### 3.8 Shift week bounds in Colorado time (A3)
+
+- [ ] `GET /api/shifts` `from`/`to` are Colorado days bounded by local
+      midnight, not UTC midnight. Today a Sunday shift starting after 6 pm MDT
+      (5 pm MST) is dropped from its week in the Scheduler grid and shows in no
+      week at all. This predates D32.
+- [ ] A shift still belongs to the day it **starts** (unchanged).
+- [ ] The frozen D31 parity tests don't use date ranges, so they're unaffected.
+- [ ] Regression tests: ExUnit plus Playwright, with the revert-and-rerun check.
+
 ---
 
 ## 4. Persona scenarios
@@ -224,6 +235,7 @@ These mirror shifts:
 | S16 | `barMgr` | a trivia occurrence → Delete | series exists | *This event only* removes one date. *This and all following* removes the rest; earlier dates remain. |
 | S17 | `barMgr` | a bingo occurrence → Extend | series capped at 12 months | New draft occurrences are added past the old last date, still on 3rd Sundays. |
 | S18 | `breweryMgr`, `bartender1` | a taproom series | series exists | Can't edit, delete or extend it (403; a draft series' events are 404 for `bartender1`). `bartender1` sees published occurrences with the repeat icon, read-only. |
+| S19 | `barMgr` | Scheduler grid | a Sunday Bar-close shift, 6 pm–1 am | It shows in that Sunday's column. It's not missing from its week and not shown in the next one (A3). |
 
 ---
 
