@@ -51,7 +51,7 @@ Known gaps:
 | S1 | Owner creates a device; not in Users & Roles, roster or assignees; change log | Playwright `devices/shared_devices_admin`; ExUnit `device_controller_test`, `device_account_test` |
 | S2 | barMgr pairs a tablet in a second browser; listed with last seen | Playwright `devices/pairing`; ExUnit `device_controller_test`, `devices_test` |
 | S3 | breweryMgr can't pair or revoke taproom tablets (403) | Playwright `devices/device_permissions`; ExUnit `device_controller_test` |
-| S4 | Used, expired, wrong code refused; 6th wrong code rate-limited | ExUnit `devices_test`, `device_controller_test` (429); Playwright `pairing` (wrong-code message) |
+| S4 | Used, expired, wrong code refused; 6th wrong code rate-limited (IPv6 /64, global cap 50, atomic, header trusted only on Fly) | ExUnit `devices_test`, `devices/pairing_rate_limiter_test`, `device_controller_test` (429); Playwright `pairing` (wrong-code message); **DEV** header-spoof check |
 | S5 | Password login as the device refused | ExUnit `device_account_test`, `synthetic_test` |
 | S6 | Device nav and app bar | Playwright `devices/device_session`; ExUnit `device_session_api_test` |
 | S7 | Published shifts/events only; claim 403 | Playwright `device_session`; ExUnit `authz_device_test`, `device_session_api_test`, `device_route_matrix_test` |
@@ -60,7 +60,7 @@ Known gaps:
 | S10 | Device not among All-staff recipients | ExUnit `device_account_test`, `authz_device_test` |
 | S11 | Revoke one of two tablets | Playwright `pairing`; ExUnit `auth_plug_device_test`, `device_controller_test` |
 | S12 | Deactivate → every tablet signed out | Playwright `device_permissions`; ExUnit `auth_plug_device_test` |
-| S13 | Personal sign-in; 5-minute idle return without re-pairing | Playwright `devices/personal_signin` (mocked clock); **manual** on a real tablet (DEV) |
-| S14 | Device never member/owner/assignee; 422 | ExUnit `device_account_test`, `authz_device_test`; Playwright `shared_devices_admin` (API 422) |
+| S13 | Personal sign-in; 5-minute idle return without re-pairing, also across sleep (wake/tap/reload) | Playwright `devices/personal_signin` (mocked clock + `setSystemTime` sleep); **manual** on a real tablet (DEV) |
+| S14 | Device never member/owner/assignee; 422; nobody (owners included) acts on behalf of a device | ExUnit `device_account_test` (incl. membership changeset), `authz_device_test` (owner → device); Playwright `shared_devices_admin` (API 422) |
 | 3939 | Unknown channel URL redirects; no 403 polling; failed send shows an error (every user) | Playwright `messaging/channel_urls` (revert-and-rerun recorded) |
 

@@ -35,7 +35,9 @@ One device account can have any number of tablets paired to it.
    devices, the tablet is listed with who paired it and when it was last seen.
 
 Wrong codes: after 5 wrong codes in 10 minutes from the same network, pairing
-is paused for the rest of those 10 minutes.
+from that network is paused for the rest of those 10 minutes. After 50 wrong
+codes in 10 minutes from anywhere, all pairing is paused for the rest of the
+10 minutes (tablets already paired keep working).
 
 **Full screen (recommended): install first, then pair inside the app.** Add
 Rockcut to the home screen (Share → Add to Home Screen on iPad; Install app on
@@ -60,7 +62,8 @@ or open developer tools and copy the tablet's sign-in.
 Tap **Sign in as me** at the top and sign in with your own email and password,
 for example to request time off. A banner shows who is signed in. When you
 tap **Sign out**, or after **5 minutes** without anyone touching the screen,
-the tablet goes back to the shared screen by itself. It doesn't need pairing again.
+the tablet goes back to the shared screen by itself — also if the tablet went
+to sleep in between: it's back on the shared screen as soon as it wakes. It doesn't need pairing again.
 
 ## 5. Signing a tablet out, and a lost or stolen tablet
 
