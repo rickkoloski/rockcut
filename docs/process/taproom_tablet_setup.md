@@ -24,6 +24,8 @@ One device account can have any number of tablets paired to it.
 
 ## 2. Pair a tablet (owner or Taproom manager)
 
+(Read the "Full screen" note at the end of this step first.)
+
 1. On your own phone or computer: Admin → **Shared devices** → **Pair a tablet**.
    A code like `K7QM-4TRX` appears. It works **once** and expires after **10 minutes**.
 2. On the tablet: open Rockcut (rockcut-ui.fly.dev), tap **Set up as a
@@ -35,8 +37,11 @@ One device account can have any number of tablets paired to it.
 Wrong codes: after 5 wrong codes in 10 minutes from the same network, pairing
 is paused for the rest of those 10 minutes.
 
-Optional: add Rockcut to the tablet's home screen (Share → Add to Home Screen
-on iPad; Install app on Android) so it opens full screen.
+**Full screen (recommended): install first, then pair inside the app.** Add
+Rockcut to the home screen (Share → Add to Home Screen on iPad; Install app on
+Android), open it from the home-screen icon, and do step 2 there. On iPad the
+home-screen app keeps its own sign-in, separate from Safari: a tablet paired in
+Safari and then added to the home screen opens unpaired.
 
 ## 3. Lock the tablet to Rockcut
 
