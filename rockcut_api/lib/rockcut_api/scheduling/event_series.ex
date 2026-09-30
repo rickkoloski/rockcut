@@ -28,7 +28,7 @@ defmodule RockcutApi.Scheduling.EventSeries do
   repeat params. Returns `{:ok, first_event, count}`.
   """
   def create(attrs, created_by_id) do
-    Repo.transaction(fn ->
+    write_transaction(fn ->
       case insert_series(attrs, created_by_id) do
         {:ok, _series, [first | _] = events} -> {first, length(events)}
         {:error, changeset} -> Repo.rollback(changeset)
@@ -55,7 +55,7 @@ defmodule RockcutApi.Scheduling.EventSeries do
   def delete(%ScheduleEvent{series_id: nil} = event, _scope), do: Repo.delete(event)
 
   def delete(%ScheduleEvent{} = event, "following") do
-    Repo.transaction(fn ->
+    write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
       end_series_before(series, event)
       event
@@ -63,7 +63,7 @@ defmodule RockcutApi.Scheduling.EventSeries do
   end
 
   def delete(%ScheduleEvent{} = event, _this) do
-    Repo.transaction(fn ->
+    write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
       {date, _} = Recurrence.to_local(event.starts_at)
       skipped = Enum.uniq([date | series.skipped_dates || []])
@@ -83,7 +83,7 @@ defmodule RockcutApi.Scheduling.EventSeries do
     if from && Date.compare(through, from) != :gt do
       {:ok, 0}
     else
-      Repo.transaction(fn ->
+      write_transaction(fn ->
         dates =
           series
           |> Recurrence.dates(through)
@@ -126,7 +126,7 @@ defmodule RockcutApi.Scheduling.EventSeries do
   # The rule changes from this date on: the old series ends the day before, and
   # a new series (drafts) starts here with the merged content and new rule.
   defp split(event, attrs) do
-    Repo.transaction(fn ->
+    write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
       end_series_before(series, event)
 
@@ -169,7 +169,7 @@ defmodule RockcutApi.Scheduling.EventSeries do
   # Content and time changes apply to this occurrence and every later one,
   # overwriting ones changed individually. Each keeps its own status and date.
   defp update_following(event, attrs) do
-    Repo.transaction(fn ->
+    write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
       probe = ScheduleEvent.changeset(event, attrs)
 
@@ -214,6 +214,11 @@ defmodule RockcutApi.Scheduling.EventSeries do
   end
 
   ## Helpers
+
+  # These transactions read and then write. Starting them as write transactions
+  # (SQLite BEGIN IMMEDIATE) makes a concurrent writer wait for the busy timeout
+  # instead of failing the read-to-write upgrade with "Database busy".
+  defp write_transaction(fun), do: Repo.transaction(fun, mode: :immediate)
 
   defp series_attrs(%ScheduleEvent{} = e, attrs, created_by_id) do
     %{
