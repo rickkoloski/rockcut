@@ -1,7 +1,15 @@
 import { create } from 'zustand'
 import api from '../lib/api'
 import type { Me, User, Capabilities } from '../lib/types'
-import { TOKEN_KEY, asideDeviceToken, clearUnpaired, restoreDeviceToken, setDeviceTokenAside } from '../lib/device'
+import {
+  TOKEN_KEY,
+  asideDeviceToken,
+  clearUnpaired,
+  isDeviceToken,
+  markUnpaired,
+  restoreDeviceToken,
+  setDeviceTokenAside,
+} from '../lib/device'
 
 interface AuthState {
   token: string | null
@@ -58,6 +66,12 @@ const useAuth = create<AuthState>((set, get) => ({
       return
     }
     const { token } = get()
+    // DEV G4: a person's Logout never unpairs a tablet. If storage holds a
+    // tablet token (another tab already ended this person's session), re-sync.
+    if (isDeviceToken(localStorage.getItem(TOKEN_KEY)) || isDeviceToken(token)) {
+      window.location.assign('/')
+      return
+    }
     if (token) {
       api.delete('/api/session').catch(() => {})
     }
@@ -107,14 +121,13 @@ const useAuth = create<AuthState>((set, get) => ({
   },
 
   // Signing out a tablet revokes its token; it needs a new code afterwards.
+  // DEV G4: only once the server has revoked it. On any failure the error is
+  // rethrown and the tablet keeps its token, so the user can retry. (A 401
+  // means it was already revoked: the interceptor shows the setup screen.)
   signOutDevice: async () => {
-    try {
-      await api.delete('/api/session')
-    } catch {
-      // The token is dropped locally either way.
-    }
-    localStorage.removeItem(TOKEN_KEY)
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false })
+    await api.delete('/api/session')
+    markUnpaired()
+    window.location.assign('/')
   },
 
   // "Sign in as me" on a tablet: keep the device token aside and show the login form.

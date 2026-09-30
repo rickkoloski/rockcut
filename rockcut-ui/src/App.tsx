@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import {
+  Alert,
   AppBar,
   Badge,
   Box,
@@ -58,6 +59,7 @@ import useIdleReturn from './hooks/useIdleReturn'
 import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
 import useAuthStorageSync from './hooks/useAuthStorageSync'
 import { PERSONAL_IDLE_MS, asideDeviceToken } from './lib/device'
+import parseApiError from './lib/parseApiError'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
 
@@ -141,6 +143,8 @@ function App() {
   const { isAuthenticated, bootstrapped, user, capabilities, sharedDevices, loadMe, logout, signOutDevice, startPersonalSignIn, endPersonalSession } =
     useAuth()
   const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
+  const [deviceSignOutError, setDeviceSignOutError] = useState<string | null>(null)
+  const [deviceSigningOut, setDeviceSigningOut] = useState(false)
   // D33: a person signed in on a shared tablet (the tablet's token is set aside).
   const personalOnTablet = isAuthenticated && !!asideDeviceToken()
   useIdleReturn(personalOnTablet, PERSONAL_IDLE_MS, endPersonalSession)
@@ -496,7 +500,10 @@ function App() {
                   data-testid="device-signout"
                   size="small"
                   color="inherit"
-                  onClick={() => setConfirmDeviceSignOut(true)}
+                  onClick={() => {
+                    setDeviceSignOutError(null)
+                    setConfirmDeviceSignOut(true)
+                  }}
                   sx={{ color: 'text.secondary' }}
                 >
                   Sign out
@@ -586,19 +593,34 @@ function App() {
         <DialogTitle>Sign out this tablet?</DialogTitle>
         <DialogContent>
           <DialogContentText>A manager will need to pair this tablet again.</DialogContentText>
+          {deviceSignOutError && (
+            <Alert data-testid="device-signout-error" severity="error" sx={{ mt: 2 }}>
+              Couldn't sign this tablet out: {deviceSignOutError}. It's still paired; try again.
+            </Alert>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setConfirmDeviceSignOut(false)}>Cancel</Button>
+          <Button onClick={() => setConfirmDeviceSignOut(false)} disabled={deviceSigningOut}>
+            Cancel
+          </Button>
           <Button
             data-testid="device-signout-confirm"
             color="error"
             variant="contained"
-            onClick={() => {
-              setConfirmDeviceSignOut(false)
-              signOutDevice()
+            disabled={deviceSigningOut}
+            onClick={async () => {
+              setDeviceSigningOut(true)
+              setDeviceSignOutError(null)
+              try {
+                await signOutDevice()
+              } catch (err) {
+                setDeviceSignOutError(parseApiError(err))
+              } finally {
+                setDeviceSigningOut(false)
+              }
             }}
           >
-            Sign out
+            {deviceSignOutError ? 'Try again' : 'Sign out'}
           </Button>
         </DialogActions>
       </Dialog>
