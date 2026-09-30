@@ -57,6 +57,10 @@ export async function setUpTablet(page: Page, code: string, name: string) {
   await page.getByTestId('device-setup-link').click()
   await page.getByTestId('device-code').fill(code)
   await page.getByTestId('device-name').fill(name)
+  const paired = page.waitForResponse((r) => r.url().endsWith('/api/device_tokens') && r.request().method() === 'POST')
   await page.getByTestId('device-submit').click()
-  await expect(page.getByTestId('device-chip')).toBeVisible()
+  expect((await paired).status()).toBe(201)
+  // Then /api/me (twice in the dev build). The local API has one DB connection,
+  // so under the full parallel suite this can take several seconds.
+  await expect(page.getByTestId('device-chip')).toBeVisible({ timeout: 15_000 })
 }

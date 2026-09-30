@@ -1,5 +1,10 @@
 import { readFileSync } from 'node:fs'
-import { test, expect } from '@playwright/test'
+import { test, expect as baseExpect } from '@playwright/test'
+
+// Returning to the tablet session is a full page load (location.assign) plus
+// /api/me, and the local API has one DB connection: under the full parallel
+// suite that can take several seconds. Assertions wait for up to 15 s.
+const expect = baseExpect.configure({ timeout: 15_000 })
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, tempTag, weekMonday } from '../scheduler/helpers'
 
@@ -53,7 +58,9 @@ test('S13: personal sign-in on the tablet, time off persists, idle returns to th
   const created = page.waitForResponse((r) => r.url().endsWith('/api/time_off') && r.request().method() === 'POST')
   await page.getByRole('button', { name: 'Submit request' }).click()
   expect((await created).status()).toBe(201)
+  const reloaded = page.waitForResponse((r) => r.url().endsWith('/api/time_off') && r.request().method() === 'GET')
   await page.reload()
+  expect((await reloaded).status()).toBe(200)
   await expect(page.getByText(tag)).toBeVisible()
   await expect(page.getByTestId('personal-session-banner')).toBeVisible()
 

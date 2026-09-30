@@ -1,4 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { test, expect as baseExpect } from '@playwright/test'
+
+// Tablets sign in and out through full page loads (401 → reload → login) and
+// the local API has one DB connection: under the full parallel suite a chain
+// of loads can take several seconds. Assertions wait for up to 15 s.
+const expect = baseExpect.configure({ timeout: 15_000 })
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { blankTablet, createDevice, deleteDevices, pairingCode, setUpTablet } from './helpers'
@@ -58,7 +63,7 @@ test.describe('owner', () => {
 
     for (const t of [one, two]) {
       await t.page.reload()
-      await expect(t.page.getByTestId('device-setup-link')).toBeVisible({ timeout: 15_000 }) // 401 → reload → login: two page loads
+      await expect(t.page.getByTestId('device-setup-link')).toBeVisible()
       await t.context.close()
     }
   })
