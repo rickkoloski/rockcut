@@ -105,3 +105,22 @@ test('S9: typed URLs show "Not available on a shared device"; the API says 403',
     expect((await device.get(path)).status(), path).toBe(403)
   }
 })
+
+test('G6: no Calendar sync or other personal controls; device pages make no refused requests', async ({ page }) => {
+  const refused: string[] = []
+  page.on('response', (r) => {
+    if (r.url().includes('/api/') && r.status() === 403) refused.push(`${r.request().method()} ${r.url()}`)
+  })
+
+  await page.goto('/schedule')
+  await expect(page.getByRole('heading', { name: 'Schedule' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Calendar sync' })).toHaveCount(0)
+
+  for (const path of ['/', '/messages/all', '/messages/dept:bar', '/schedule']) {
+    const settled = page.waitForResponse((r) => r.url().includes('/api/channels'))
+    await page.goto(path)
+    await settled
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+  }
+  expect(refused).toEqual([])
+})

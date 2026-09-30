@@ -383,7 +383,8 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                 <ToggleButton value="week">Week</ToggleButton>
               </ToggleButtonGroup>
             )}
-            <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>
+            {/* DEV G6: calendar feeds are personal; not on a shared tablet. */}
+            {!isDevice && <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>}
             {canManageSchedule && (
               <>
                 {view === 'week' && (
@@ -540,7 +541,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
       />
       <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} allShifts={shifts} offDays={offDays} unavailability={unavailability} />
       <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} canEditColors={isOwner} />
-      <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />
+      {!isDevice && <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />}
       <ConfirmDialog
         open={pendingCell !== null}
         onClose={() => setPendingCell(null)}
