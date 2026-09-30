@@ -55,6 +55,7 @@ import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
 import useAuth from './hooks/useAuth'
 import useIdleReturn from './hooks/useIdleReturn'
+import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
 import { PERSONAL_IDLE_MS, asideDeviceToken } from './lib/device'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
@@ -142,6 +143,8 @@ function App() {
   // D33: a person signed in on a shared tablet (the tablet's token is set aside).
   const personalOnTablet = isAuthenticated && !!asideDeviceToken()
   useIdleReturn(personalOnTablet, PERSONAL_IDLE_MS, endPersonalSession)
+  // DEV G2: the tablet may be revoked or deactivated while a person is on it.
+  useDeviceTokenWatch(personalOnTablet)
 
   useEffect(() => {
     if (isAuthenticated && !bootstrapped) loadMe()

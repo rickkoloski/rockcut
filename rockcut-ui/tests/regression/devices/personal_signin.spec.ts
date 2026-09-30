@@ -7,6 +7,7 @@ import { test, expect as baseExpect } from '@playwright/test'
 const expect = baseExpect.configure({ timeout: 15_000 })
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, tempTag, weekMonday } from '../scheduler/helpers'
+import { blankTablet, createDevice, deleteDevices, getDevice, pairingCode, setUpTablet } from './helpers'
 
 // D33 S13: a staff member signs in as themself on a paired tablet, requests
 // time off, and the tablet returns to the shared session after 5 idle minutes
@@ -216,4 +217,49 @@ test.describe('S13: the idle return survives the tablet sleeping', () => {
     await expect(page.getByTestId('personal-session-banner')).toBeVisible()
     await expect(page.getByTestId('device-chip')).toHaveCount(0)
   })
+})
+
+// DEV G2: a personal session on a tablet whose pairing ended (revoked or
+// deactivated) must end too, on the next navigation, not at idle return.
+test.describe('S11/S12: a personal session ends with its tablet', () => {
+  test.use({ storageState: { cookies: [], origins: [] } })
+
+  let deviceTag = ''
+  test.afterEach(async () => {
+    if (deviceTag) await deleteDevices(await apiAs('owner'), deviceTag)
+    deviceTag = ''
+  })
+
+  for (const how of ['revoke', 'deactivate'] as const) {
+    test(`${how} while someone is signed in on the tablet → setup screen on the next navigation`, async ({ browser }) => {
+      deviceTag = tempTag(`G2 ${how}`)
+      const owner = await apiAs('owner')
+      const device = await createDevice(owner, deviceTag)
+      const tablet = await blankTablet(browser)
+      await setUpTablet(tablet.page, await pairingCode(owner, device.id), `${deviceTag} iPad`)
+
+      await tablet.page.getByTestId('personal-signin').click()
+      await expect(tablet.page.getByTestId('login-email')).toBeVisible()
+      await tablet.page.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+      await tablet.page.reload()
+      await expect(tablet.page.getByTestId('personal-session-banner')).toBeVisible()
+
+      if (how === 'revoke') {
+        const tokenId = (await getDevice(owner, device.id))!.tokens[0].id
+        expect((await owner.delete(`/api/device_tokens/${tokenId}`)).status()).toBe(204)
+      } else {
+        expect((await owner.patch(`/api/devices/${device.id}`, { data: { active: false } })).status()).toBe(200)
+      }
+
+      // An in-app navigation (no reload) — the person's own token still works.
+      await tablet.page.getByRole('button', { name: 'Time off', exact: true }).click()
+      await expect(tablet.page.getByTestId('device-unpaired-notice')).toContainText('This tablet was unpaired')
+      await expect(tablet.page.getByTestId('personal-session-banner')).toHaveCount(0)
+      expect(await tablet.page.evaluate(() => [localStorage.getItem('rockcut_token'), localStorage.getItem('rockcut_device_token')])).toEqual([
+        null,
+        null,
+      ])
+      await tablet.context.close()
+    })
+  }
 })
