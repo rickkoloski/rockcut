@@ -6,7 +6,7 @@ defmodule RockcutApiWeb.DeviceTokenController do
   """
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [user: 1]
+  import RockcutApiWeb.JSONHelpers, only: [user: 1, for_viewer: 2]
   alias RockcutApi.{Authz, Devices}
 
   action_fallback RockcutApiWeb.FallbackController
@@ -15,7 +15,10 @@ defmodule RockcutApiWeb.DeviceTokenController do
     case Devices.exchange_code(params["code"], params["name"] || "", client_ip(conn)) do
       {:ok, token, row} ->
         device = RockcutApi.Accounts.get_user!(row.user_id)
-        conn |> put_status(:created) |> json(%{token: token, user: user(device)})
+
+        conn
+        |> put_status(:created)
+        |> json(%{token: token, user: user(device) |> for_viewer(device)})
 
       {:error, :rate_limited} ->
         conn

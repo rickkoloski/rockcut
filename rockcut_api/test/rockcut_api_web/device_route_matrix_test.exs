@@ -236,6 +236,78 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     end
   end
 
+  describe "no staff email or other personal fields (DEV G8, Q6)" do
+    setup do
+      p = personas(~w(owner barMgr bartender1))
+      {device, token} = taproom_device()
+      bar = departments()["bar"]
+
+      shift =
+        shift_fixture(%{
+          status: "published",
+          department: bar,
+          assignee_id: p["bartender1"].id,
+          created_by_id: p["barMgr"].id
+        })
+
+      RockcutApi.SchedulingFixtures.event_fixture(%{
+        status: "published",
+        department: bar,
+        created_by_id: p["barMgr"].id
+      })
+
+      for key <- ["all", "dept:bar"],
+          do: call(p["bartender1"], :post, "/api/channels/#{key}/messages", %{body: "hi #{key}"})
+
+      %{device: device, token: token, shift: shift, p: p}
+    end
+
+    test "every allowlisted route answers without an email anywhere", %{
+      device: device,
+      shift: shift
+    } do
+      bodies =
+        for {verb, path} <- @device_ok, {verb, path} != {:delete, "/api/session"} do
+          token = RockcutApi.AccountsFixtures.device_token_fixture(device, "privacy")
+          conn = call_device(token, verb, fill(path, shift))
+          assert conn.status in 200..299, "#{verb} #{path}"
+          {path, if(conn.resp_body == "", do: nil, else: Jason.decode!(conn.resp_body))}
+        end
+
+      leaks =
+        for {path, body} <- bodies,
+            key_paths(body, "email") != [],
+            do: {path, key_paths(body, "email")}
+
+      assert leaks == []
+
+      # The data is there, just without emails: names still show.
+      shifts = Map.new(bodies)["/api/shifts"]["data"]
+      assert Enum.any?(shifts, &(&1["assignee"]["name"] == "Sam Pour"))
+      [msg | _] = Map.new(bodies)["/api/channels/:key/messages"]["data"]
+      assert msg["user"]["name"] == "Sam Pour"
+    end
+
+    test "people still get emails where they had them", %{shift: shift, p: p} do
+      body = call(p["barMgr"], :get, "/api/shifts/#{shift.id}").resp_body |> Jason.decode!()
+      assert body["data"]["assignee"]["email"] == "bartender1@rockcut-test.com"
+    end
+  end
+
+  defp key_paths(value, key, at \\ [])
+
+  defp key_paths(map, key, at) when is_map(map) do
+    Enum.flat_map(map, fn {k, v} ->
+      here = if k == key, do: [Enum.reverse([k | at])], else: []
+      here ++ key_paths(v, key, [k | at])
+    end)
+  end
+
+  defp key_paths(list, key, at) when is_list(list),
+    do: list |> Enum.with_index() |> Enum.flat_map(fn {v, i} -> key_paths(v, key, [i | at]) end)
+
+  defp key_paths(_, _, _), do: []
+
   test "the allowlisted routes still work for people", %{} do
     p = personas(~w(bartender1))["bartender1"]
     shift = shift_fixture(%{status: "published"})

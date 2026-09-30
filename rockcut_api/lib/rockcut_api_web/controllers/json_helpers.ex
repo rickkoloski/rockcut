@@ -51,6 +51,25 @@ defmodule RockcutApiWeb.JSONHelpers do
 
   # ── Shared devices (D33) ───────────────────────────────────────────
 
+  @doc """
+  What a shared device may see of a rendered response (DEV G8, decision Q6:
+  assume customers can read anything the device can fetch): no email
+  addresses anywhere. People get `data` unchanged. Used by every controller
+  action in the router's `:device_allowed` scope.
+  """
+  def for_viewer(data, viewer) do
+    if RockcutApi.Authz.device?(viewer), do: drop_emails(data), else: data
+  end
+
+  defp drop_emails(%{__struct__: _} = struct), do: struct
+
+  defp drop_emails(map) when is_map(map) do
+    for {k, v} <- map, k not in [:email, "email"], into: %{}, do: {k, drop_emails(v)}
+  end
+
+  defp drop_emails(list) when is_list(list), do: Enum.map(list, &drop_emails/1)
+  defp drop_emails(other), do: other
+
   def device(d) do
     %{
       id: d.id,

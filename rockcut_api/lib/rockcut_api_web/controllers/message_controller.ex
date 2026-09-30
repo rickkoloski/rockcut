@@ -1,7 +1,7 @@
 defmodule RockcutApiWeb.MessageController do
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [message: 1]
+  import RockcutApiWeb.JSONHelpers, only: [message: 1, for_viewer: 2]
   alias RockcutApi.Messaging
 
   action_fallback RockcutApiWeb.FallbackController
@@ -21,15 +21,18 @@ defmodule RockcutApiWeb.MessageController do
         |> Map.put(:can_post, Messaging.can_post?(user, c.key))
       end)
 
-    json(conn, %{data: channels})
+    json(conn, for_viewer(%{data: channels}, user))
   end
 
   def index(conn, %{"key" => key} = params) do
     opts = if b = params["before"], do: [before: String.to_integer(b)], else: []
 
     case Messaging.list_messages(conn.assigns.current_user, key, opts) do
-      {:ok, messages} -> json(conn, %{data: Enum.map(messages, &message/1)})
-      {:error, :forbidden} -> forbidden(conn)
+      {:ok, messages} ->
+        json(conn, for_viewer(%{data: Enum.map(messages, &message/1)}, conn.assigns.current_user))
+
+      {:error, :forbidden} ->
+        forbidden(conn)
     end
   end
 

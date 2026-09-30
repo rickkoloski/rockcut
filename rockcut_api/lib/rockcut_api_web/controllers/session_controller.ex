@@ -1,7 +1,7 @@
 defmodule RockcutApiWeb.SessionController do
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [user: 1]
+  import RockcutApiWeb.JSONHelpers, only: [user: 1, for_viewer: 2]
   alias RockcutApi.Accounts
 
   # 30 days
@@ -32,7 +32,8 @@ defmodule RockcutApiWeb.SessionController do
   end
 
   def show(conn, _params) do
-    json(conn, %{user: user(conn.assigns.current_user)})
+    viewer = conn.assigns.current_user
+    json(conn, for_viewer(%{user: user(viewer)}, viewer))
   end
 
   # A person's sign-out is client-side (the token is dropped). A tablet's
