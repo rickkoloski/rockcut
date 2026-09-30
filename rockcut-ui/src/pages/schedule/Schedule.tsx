@@ -509,6 +509,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                 return (
                   <Paper
                     key={s.id}
+                    data-testid={`agenda-shift-${s.id}`}
                     variant="outlined"
                     sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', borderColor: mine ? 'primary.main' : 'divider', cursor: canManageShift(s) ? 'pointer' : 'default' }}
                     onClick={canManageShift(s) ? () => openEdit(s) : undefined}
