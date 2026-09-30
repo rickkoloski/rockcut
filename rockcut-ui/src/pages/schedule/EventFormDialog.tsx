@@ -75,6 +75,8 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
   const [rule, setRule] = useState<RepeatRule>({ frequency: 'weekly', interval: 1, weekdays: [], weekOfMonth: 1, weekday: 1, until: '', count: '' })
   const [endsMode, setEndsMode] = useState<'never' | 'until' | 'count'>('never')
   const [ruleTouched, setRuleTouched] = useState(false)
+  // Until the user picks repeat days themselves, the pattern follows the start day.
+  const [daysPicked, setDaysPicked] = useState(false)
   const [scopeFor, setScopeFor] = useState<'save' | 'delete' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -84,6 +86,7 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
     setError(null)
     setScopeFor(null)
     setRuleTouched(false)
+    setDaysPicked(!!editEvent?.series)
     if (editEvent) {
       const [sd, st] = utcToLocalInput(editEvent.starts_at).split('T')
       const [ed, et] = utcToLocalInput(editEvent.ends_at).split('T')
@@ -126,20 +129,26 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
     setRuleTouched(true)
   }
 
+  // Seed the pattern from a start day: its weekday, and which one it is in the month.
+  const seedFromDay = (day: string, r: RepeatRule): RepeatRule => ({
+    ...r,
+    weekdays: daysPicked && r.weekdays.length ? r.weekdays : [isoWeekday(day)],
+    weekOfMonth: daysPicked ? r.weekOfMonth : weekOfMonth(day),
+    weekday: daysPicked ? r.weekday : isoWeekday(day),
+  })
+
   const chooseRepeat = (mode: RepeatMode) => {
     setRepeat(mode)
     setRuleTouched(true)
     if (mode !== 'none') {
-      // Seed the pattern from the start day: its weekday, and which one it is in the month.
-      setRule((r) => ({
-        ...r,
-        frequency: mode,
-        interval: mode === 'weekly' ? r.interval : 1,
-        weekdays: r.weekdays.length ? r.weekdays : [isoWeekday(startDay)],
-        weekOfMonth: weekOfMonth(startDay),
-        weekday: isoWeekday(startDay),
-      }))
+      setRule((r) => seedFromDay(startDay, { ...r, frequency: mode, interval: mode === 'weekly' ? r.interval : 1 }))
     }
+  }
+
+  const changeStartDay = (day: string) => {
+    setStartDay(day)
+    if (endDay < day) setEndDay(day)
+    if (repeat !== 'none' && !isEdit) setRule((r) => seedFromDay(day, r))
   }
 
   const effectiveRule: RepeatRule = {
@@ -280,7 +289,10 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
                   size="small"
                   color={on ? 'primary' : 'default'}
                   variant={on ? 'filled' : 'outlined'}
-                  onClick={() => updateRule({ weekdays: on ? rule.weekdays.filter((d) => d !== day) : [...rule.weekdays, day] })}
+                  onClick={() => {
+                    setDaysPicked(true)
+                    updateRule({ weekdays: on ? rule.weekdays.filter((d) => d !== day) : [...rule.weekdays, day] })
+                  }}
                   data-testid={`event-repeat-day-${day}`}
                 />
               )
@@ -295,14 +307,14 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
 
       {repeat === 'monthly_weekday' && (
         <Stack direction="row" spacing={1} sx={{ mt: 1.5 }}>
-          <TextField select size="small" label="Which" value={rule.weekOfMonth} onChange={(e) => updateRule({ weekOfMonth: Number(e.target.value) })} sx={{ minWidth: 110 }} slotProps={{ htmlInput: { 'data-testid': 'event-repeat-week' } }}>
+          <TextField select size="small" label="Which" value={rule.weekOfMonth} onChange={(e) => { setDaysPicked(true); updateRule({ weekOfMonth: Number(e.target.value) }) }} sx={{ minWidth: 110 }} slotProps={{ htmlInput: { 'data-testid': 'event-repeat-week' } }}>
             <MenuItem value={1}>1st</MenuItem>
             <MenuItem value={2}>2nd</MenuItem>
             <MenuItem value={3}>3rd</MenuItem>
             <MenuItem value={4}>4th</MenuItem>
             <MenuItem value={-1}>Last</MenuItem>
           </TextField>
-          <TextField select size="small" label="Day" value={rule.weekday} onChange={(e) => updateRule({ weekday: Number(e.target.value) })} fullWidth slotProps={{ htmlInput: { 'data-testid': 'event-repeat-weekday' } }}>
+          <TextField select size="small" label="Day" value={rule.weekday} onChange={(e) => { setDaysPicked(true); updateRule({ weekday: Number(e.target.value) }) }} fullWidth slotProps={{ htmlInput: { 'data-testid': 'event-repeat-weekday' } }}>
             {DAY_NAMES.map((n, i) => (
               <MenuItem key={n} value={i + 1}>{n}</MenuItem>
             ))}
@@ -365,7 +377,7 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
           label="All day"
         />
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-          <TextField label={allDay ? 'First day' : 'Start day'} type="date" value={startDay} onChange={(e) => { setStartDay(e.target.value); if (endDay < e.target.value) setEndDay(e.target.value) }} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'event-start-day' } }} />
+          <TextField label={allDay ? 'First day' : 'Start day'} type="date" value={startDay} onChange={(e) => changeStartDay(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'event-start-day' } }} />
           {!allDay && <TextField label="Start time" type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true }, htmlInput: { step: 900, 'data-testid': 'event-start-time' } }} />}
         </Stack>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
