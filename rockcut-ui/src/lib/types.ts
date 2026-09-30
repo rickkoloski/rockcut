@@ -405,6 +405,40 @@ export interface AvailabilitySlot {
   inserted_at: string
 }
 
+// D32 — schedule events: on the schedule with no assignee or position.
+export type EventFrequency = 'weekly' | 'monthly_weekday'
+
+export interface EventSeries {
+  id: number
+  frequency: EventFrequency
+  interval: number
+  weekdays: number[] | null // ISO 1 = Mon … 7 = Sun (weekly)
+  week_of_month: number | null // 1–4, or -1 = last (monthly)
+  weekday: number | null // ISO weekday (monthly)
+  start_date: string
+  until_date: string | null
+  count: number | null
+  generated_through: string | null
+}
+
+export interface ScheduleEvent {
+  id: number
+  department_id: number
+  department: Department | null
+  title: string
+  notes: string | null
+  all_day: boolean
+  starts_at: string
+  ends_at: string // exclusive; for all-day events, local midnight after the last day
+  status: ShiftStatus
+  created_by_id: number | null
+  series_id: number | null
+  series_exception: boolean
+  series: EventSeries | null
+  inserted_at: string
+  updated_at: string
+}
+
 export interface Shift {
   id: number
   department_id: number
