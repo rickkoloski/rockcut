@@ -1,6 +1,6 @@
 # D32: Schedule Events + Taproom Rename — Specification
 
-**Status:** Approved — Matt, 2026-09-29 (Rick reviewed the approach: discussion 80, msg 82384, file #4026)
+**Status:** Approved — Matt, 2026-09-29, including the recurring-events amendment (§3.7, decisions R1–R5). Rick reviewed the approach: discussion 80, msg 82384, file #4026.
 **Created:** 2026-09-29
 **Author:** Matt + CC
 **Depends On:** D31 (every authorization decision goes through `Authz`), D11–D15 (scheduling), D24 (conflict warnings)
@@ -19,7 +19,9 @@ shift** that anyone can claim and that sends notifications, or it can't be shown
 at all.
 
 D32 adds **schedule events**: items on the schedule with a title and notes and
-no assignee. Managers create them; everyone sees them.
+no assignee. Managers create them; everyone sees them. An event can be a
+one-off (a private party) or **repeat** weekly or monthly, for example trivia
+every Tuesday or bingo on the third Sunday of the month.
 
 It also renames the **Bar** department's display name to **Taproom**, which is
 what staff actually call it.
@@ -44,6 +46,13 @@ security-sensitive device access follows as D33.
 | R4 | D32/D33 split accepted (Rick's proposal). |
 | A1 | Draft events are visible only to managers of the event's department and owners, like draft shifts. An employee asking for a draft by id gets **404**, so a hidden draft's existence isn't revealed. |
 | A2 | Backlog **3940** is folded in: Add shift (and Add event) default to the week being viewed, not today. |
+| R1 | **Recurring events are in D32.** |
+| R2 | Repeat patterns: **weekly** (chosen weekdays, every week or every other week) and **monthly by weekday** (1st, 2nd, 3rd, 4th or last Mon–Sun). **No** fixed day of the month (e.g. "the 15th"). |
+| R3 | A series runs until an end date or for a set number of times, capped at **12 months** ahead. It can be extended later. |
+| R4 | New occurrences are created as **drafts** and published week by week with **Publish week**. There's no separate "publish series" action. |
+| R5 | Edits and deletes apply to **this event only** or **this and all following**. |
+| P1 | **Copy last week** and **Delete week** leave events alone; they act on shifts only. |
+| P2 | In View Schedule, events are **hidden** when the "Mine", "Open" or position filter is on, and follow the department filter. |
 
 ---
 
@@ -63,6 +72,8 @@ security-sensitive device access follows as D33.
 - [ ] **All day:** a start date and an end date (one or more whole days, no times shown).
 - [ ] **Timed:** a start and end time, with the end after the start.
 - [ ] Events never have an assignee or a position.
+- [ ] `schedule_events.series_id`: optional, set on every occurrence of a
+      repeating event (§3.7).
 
 ### 3.2 Permissions, in `Authz`
 
@@ -94,6 +105,10 @@ These mirror shifts:
 - [ ] `POST /api/schedule_events/:id/publish`
 - [ ] `POST /api/schedule_events/:id/unpublish`
 - [ ] Params are flat, following the project convention.
+- [ ] Repeating events (§3.7): `POST /api/schedule_events` accepts a repeat
+      rule. Update and delete take a `scope` of `this` (default) or
+      `following`. `POST /api/schedule_event_series/:id/extend` adds
+      occurrences up to 12 months ahead.
 
 ### 3.5 UI
 
@@ -132,6 +147,59 @@ These mirror shifts:
 - [ ] Tests and Playwright specs that look for "Bar" are updated.
 - [ ] Position names are **unchanged** (Q5).
 
+### 3.7 Recurring events (R1–R5)
+
+- [ ] **A series is a set of real events.** Saving a repeating event creates
+      one `schedule_events` row per date, all sharing a `series_id`. The series
+      row keeps:
+  - the rule;
+  - the department;
+  - the title, notes and time of day (or all day);
+  - the end condition.
+
+  Each occurrence is a normal event, so permissions, draft/published, Publish
+  week, the 404 rule, the Events row and View Schedule work unchanged.
+- [ ] **Patterns (R2):**
+  - **weekly:** one or more weekdays, every 1 or 2 weeks;
+  - **monthly by weekday:** the 1st, 2nd, 3rd, 4th or last of a weekday (e.g. third Sunday, last Friday).
+
+  No fixed day of the month.
+- [ ] **Ends (R3):** on a date, or after N occurrences. Nothing is generated
+      more than **12 months** past the series' start. If the end is further
+      out, the series stops at 12 months and can be **extended**.
+- [ ] **Extend:** a manager of the department can extend a series from any of
+      its events. That adds occurrences, as drafts, up to 12 months from today
+      or up to the series' own end, whichever comes first.
+- [ ] **Local time:** occurrences keep their **Colorado wall-clock time**
+      across daylight-saving changes. Trivia at 7 pm stays 7 pm in November.
+- [ ] **New occurrences are drafts** (R4). They're published by **Publish week**
+      like everything else.
+- [ ] **Edit (R5):**
+  - **This event only:** the change applies to that date. The event stays in
+    the series, marked as changed, so a later "this and following" edit
+    doesn't silently overwrite it. The dialog notes that it was changed.
+  - **This and all following:**
+    - title, notes, department and time changes apply to this date and every
+      later occurrence, including ones previously changed individually (the
+      confirm step says so);
+    - changing the **repeat rule** ends the old series the day before this
+      date and starts a new series from this date (drafts);
+    - each occurrence keeps its draft/published status.
+- [ ] **Delete (R5):** *this event only*, or *this and all following*. The
+      latter also ends the series there. Past occurrences are never touched.
+- [ ] **Permissions:** creating, editing, extending and deleting a series need
+      the same rights as its events (managers of its department, and owners).
+      Checked in `Authz`.
+- [ ] **UI:**
+  - the event dialog has a **Repeat** section: *Does not repeat* / *Weekly*
+    (weekday checkboxes, every 1 or 2 weeks) / *Monthly* (1st–4th or last,
+    plus a weekday), and **Ends** on a date or after N times;
+  - a short summary, such as "Every Tuesday until Mar 30, 2027";
+  - a repeat icon on the grid chip and the agenda card;
+  - "This event only / This and all following" choices on save and delete for
+    repeating events;
+  - an **Extend** action with the series' last date shown.
+
 ---
 
 ## 4. Persona scenarios
@@ -150,6 +218,12 @@ These mirror shifts:
 | S10 | any persona | nav, Messages, Manage positions | after the migration | The department shows as "Taproom". Position names are unchanged. |
 | S11 | `owner` | Settings → departments | renamed to something else before the migration | The migration leaves the owner's name alone. |
 | S12 | `dualMgr` | Scheduler grid → next week → Add shift, then Add event | viewing a week that isn't the current one | Both dialogs default to a date in the week on screen. After saving and reloading, the shift and the event are in that week (3940). |
+| S13 | `barMgr` | Add event → Repeat weekly | new series | Creates "Trivia night", every Tuesday 7–9 pm, for 8 weeks. After a reload, 8 draft events appear on Tuesdays, each with the repeat icon. Publish week publishes only that week's one. |
+| S14 | `barMgr` | Add event → Repeat monthly | new series | Creates "Bingo", 3rd Sunday, until an end date more than 12 months away. It's capped at 12 months. Occurrences crossing Nov 1 (the end of daylight saving) are still at the same local time. |
+| S15 | `barMgr` | a trivia occurrence → Edit | series exists | Moves one date to 8 pm with *this event only*; only that date changes. Then renames from a later date with *this and following*; earlier dates keep the old title, later ones get the new one. Both persist after reload. |
+| S16 | `barMgr` | a trivia occurrence → Delete | series exists | *This event only* removes one date. *This and all following* removes the rest; earlier dates remain. |
+| S17 | `barMgr` | a bingo occurrence → Extend | series capped at 12 months | New draft occurrences are added past the old last date, still on 3rd Sundays. |
+| S18 | `breweryMgr`, `bartender1` | a taproom series | series exists | Can't edit, delete or extend it (403; a draft series' events are 404 for `bartender1`). `bartender1` sees published occurrences with the repeat icon, read-only. |
 
 ---
 
@@ -157,7 +231,8 @@ These mirror shifts:
 
 - The taproom tablet (device account, pairing, allowlist) → **D33**.
 - Events in calendar feeds (Q3), and company-wide events (Q7). Both are deferred; revisit them when D32 closes out.
-- Recurring events.
+- Repeating on a fixed day of the month (e.g. "the 15th") (R2).
+- A "publish whole series" action (R4); Publish week covers it.
 - Notifications or reminders for events.
 
 ---
