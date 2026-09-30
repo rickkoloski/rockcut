@@ -1,6 +1,6 @@
 # D33: Taproom Device Access — Specification
 
-**Status:** Draft — Matt's decisions recorded (§2); built on Rick's review (discussion 80, msg 82384, file #4026)
+**Status:** Approved (2026-09-30, Q1 answered) — built on Rick's review (discussion 80, msg 82384, file #4026)
 **Created:** 2026-09-29
 **Author:** Matt + CC (design from Rick's review)
 **Depends On:** D31 (every authorization decision goes through `Authz`), D32 (schedule events, which the device views), D30 (synthetic personas, DEV), D23 (channels)
@@ -47,6 +47,7 @@ revocable token.
 | R2 | **Two gates that deny by default:** a router gate and a first clause in `Authz`. | Rick |
 | R3 | A **`device_tokens`** table of hashed, revocable, opaque tokens, plus rate-limited, single-use pairing codes. | Rick |
 | R4 | D32/D33 split. | Rick, accepted by Matt |
+| Q1 | A personal sign-in on a tablet returns to the device session after **5 idle minutes** ("for now"; keep it one constant so it's easy to change). | Matt, 2026-09-30 |
 | PIN | Edits made on the tablet are recorded with the device as the actor. A staff PIN for attribution is **deferred** to the first editable taproom component. | Matt |
 
 ---
@@ -167,7 +168,7 @@ revocable token.
       negative-persona spec and run the revert-and-rerun check.
 - [ ] **Personal sign-in on a tablet** (Rick §5): a staff member can sign into
       their own account on a paired tablet, for example to request time off.
-      After **N idle minutes** (§6 Q1), the tablet signs them out and returns
+      After **5 idle minutes** (§2 Q1), the tablet signs them out and returns
       to the device session. The device token is kept aside, not overwritten.
 
 ### 3.6 Tablet setup (operations, not code)
@@ -230,7 +231,7 @@ revocable token.
 | S10 | `bartender1` | Messages → All-staff | posts a message | Everyone is notified as today. The device account isn't among the recipients. |
 | S11 | `owner` | Shared devices | two tablets paired | Revokes "Taproom iPad 1". Its next request returns 401 and it goes back to setup. iPad 2 keeps working. |
 | S12 | `owner` | Shared devices | device account deactivated | Every tablet is signed out on its next request. |
-| S13 | `bartender1` | tablet → personal sign-in | device session active | Requests time off as themself. After N idle minutes the tablet returns to the device session without re-pairing. |
+| S13 | `bartender1` | tablet → personal sign-in | device session active | Requests time off as themself. After 5 idle minutes the tablet returns to the device session without re-pairing. |
 | S14 | `owner` | Users & Roles | editing a person | The device can't be picked as a member, owner or assignee anywhere. The API rejects a device id as an assignee (422). |
 
 ---
@@ -248,5 +249,4 @@ revocable token.
 
 ## 6. Open Questions
 
-- [ ] **Q1: the idle timeout** for a personal sign-in on a tablet before it
-      returns to the device session. Proposed: **5 minutes**.
+- [x] **Q1: the idle timeout** → **5 minutes** for now (Matt, 2026-09-30). See §2.
