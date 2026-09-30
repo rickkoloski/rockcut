@@ -44,7 +44,7 @@ defmodule RockcutApi.Release do
     with_repo(fn -> RockcutApi.Seeds.Synthetic.status() end)
     |> Enum.each(fn s ->
       IO.puts(
-        String.pad_trailing(s.key, 12) <>
+        String.pad_trailing(s.key, 14) <>
           String.pad_trailing(s.email, 36) <>
           "exists=#{s.exists} active=#{s.active} authenticates=#{s.authenticates}"
       )

@@ -35,7 +35,7 @@ defmodule Mix.Tasks.Rockcut.Synthetic.Status do
 
     for s <- RockcutApi.Seeds.Synthetic.status() do
       Mix.shell().info(
-        String.pad_trailing(s.key, 12) <>
+        String.pad_trailing(s.key, 14) <>
           String.pad_trailing(s.email, 36) <>
           "exists=#{s.exists} active=#{s.active} authenticates=#{s.authenticates}"
       )
