@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D31 — RBAC consolidation (roadmap Phase 1, `planning/rbac_configurable_authorization_roadmap.md`): route every authorization decision through `Authz`, parity tests first, no behavior change. D19–D30 complete.
+- **Next deliverable**: D32 — Schedule events + Taproom rename (`specs/d32_schedule_events_spec.md`), then D33 — Taproom device access (`specs/d33_taproom_device_access_spec.md`). D31 (RBAC consolidation) passed its DEV gate 2026-09-29 and waits on the §2 branch cleanup to merge and release. D19–D30 complete.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance

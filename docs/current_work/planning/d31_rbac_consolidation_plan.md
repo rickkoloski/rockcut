@@ -265,9 +265,9 @@ Update the body with `gh api -X PATCH repos/rickkoloski/rockcut/pulls/<n> -F bod
 5. `E2E_TARGET=dev npx playwright test` (full suite).
 6. **Independent pass:** a fresh agent gets only the persona keys, S1–S8, the
    DEV URL + token recipe, and §3.11. It reports gaps as path → expected →
-   observed → repro. **Blocker:** agent token login is currently refused by
-   Claude Code's auto-mode check ([[rockcut-browser-testing]]). Until Matt adds
-   a permission rule, Matt signs in for each persona by hand.
+   observed → repro. **Login (resolved 2026-09-29):** the agent passes the
+   harness's `tests/.playwright-auth/<persona>.json` paths as `storageState` in
+   throwaway scripts and never reads a token. See `stepwise_results/d31_rbac_consolidation_COMPLETE.md`.
 7. Verdict in the PR (SHA, pass/fail counts, gaps). Two fix cycles at most,
    then post evidence in discussion 80.
 8. Post "DEV: free" in discussion 80.
