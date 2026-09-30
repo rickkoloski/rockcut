@@ -107,10 +107,16 @@ defmodule RockcutApiWeb.DeviceControllerTest do
     end
 
     test "breweryMgr can't pair or revoke taproom tablets (S3)", %{p: p, device: d} do
-      assert call(p["breweryMgr"], :post, "/api/devices/#{d.id}/pairing_code").status == 404
+      assert call(p["breweryMgr"], :post, "/api/devices/#{d.id}/pairing_code").status == 403
       [row] = Repo.all(RockcutApi.Devices.DeviceToken)
-      assert call(p["breweryMgr"], :delete, "/api/device_tokens/#{row.id}").status == 404
-      assert call(p["bartender1"], :post, "/api/devices/#{d.id}/pairing_code").status == 404
+      assert call(p["breweryMgr"], :delete, "/api/device_tokens/#{row.id}").status == 403
+      assert call(p["bartender1"], :post, "/api/devices/#{d.id}/pairing_code").status == 403
+
+      assert call_device(
+               RockcutApi.AccountsFixtures.device_token_fixture(d, "x"),
+               :get,
+               "/api/me"
+             ).status == 200
     end
 
     test "used, expired and wrong codes get one message; 6th wrong is 429 (S4)", %{

@@ -38,8 +38,8 @@ defmodule RockcutApiWeb.DeviceTokenController do
     actor = conn.assigns.current_user
 
     with %{} = row <- Devices.get_token(id),
-         %{} = device <- Devices.get_device(row.user_id),
-         true <- Authz.can?(actor, :view_device, device) do
+         %{} = device <- Devices.get_device(row.user_id) do
+      # A tablet the actor may not revoke → 403 (spec S3).
       if Authz.can?(actor, :revoke_token, device) do
         {:ok, _} = Devices.revoke_token(row, actor)
         send_resp(conn, :no_content, "")

@@ -59,7 +59,7 @@ defmodule RockcutApiWeb.DeviceController do
     end)
   end
 
-  # Not a device, or one the actor can't see → 404; visible but not allowed → 403.
+  # Not a device → 404; a device the actor may not act on → 403 (spec S3).
   defp with_device(conn, id, action, fun) do
     actor = conn.assigns.current_user
 
@@ -68,11 +68,7 @@ defmodule RockcutApiWeb.DeviceController do
         {:error, :not_found}
 
       d ->
-        cond do
-          not Authz.can?(actor, :view_device, d) -> {:error, :not_found}
-          not Authz.can?(actor, action, d) -> forbidden(conn)
-          true -> fun.(actor, d)
-        end
+        if Authz.can?(actor, action, d), do: fun.(actor, d), else: forbidden(conn)
     end
   end
 
