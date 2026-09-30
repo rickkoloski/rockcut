@@ -76,6 +76,7 @@ defmodule RockcutApi.Authz do
   anyone; a manager may manage a user who is a member of a department they
   manage. (Self is decided by callers.)
   """
+  def can_manage_user?(%User{kind: "device"}, _target), do: false
   def can_manage_user?(%User{is_owner: true}, _target), do: true
 
   def can_manage_user?(%User{} = user, %User{memberships: target_memberships})
@@ -103,6 +104,7 @@ defmodule RockcutApi.Authz do
   department. Decides the Managers channel and every "any manager" rule
   (D29 §3.7 `counts_as_manager`).
   """
+  def counts_as_manager?(%User{kind: "device"}), do: false
   def counts_as_manager?(%User{is_owner: true}), do: true
 
   def counts_as_manager?(%User{} = user),
@@ -127,6 +129,13 @@ defmodule RockcutApi.Authz do
     * `:manage` — managed departments (any module)
     * `:edit` on `:messaging` — member departments
   """
+  # A device (D33): its home department's channel for messaging; nothing
+  # department-scoped anywhere else, so lists show published records only.
+  def scope(%User{kind: "device", home_department_id: home}, :messaging, _level),
+    do: {:departments, [home]}
+
+  def scope(%User{kind: "device"}, _module, _level), do: :none
+
   def scope(%User{is_owner: true}, _module, _level), do: :all
 
   def scope(%User{} = user, _module, :manage),
@@ -155,6 +164,12 @@ defmodule RockcutApi.Authz do
   `{:memberships, dept_id}`, `{:user_for, user_id}`, `{:module, key}`), or an
   atom for a company-level surface (`:roster`, `:owner_activity`, `:memberships`).
   """
+  # Shared devices (D33 §3.4) come first, above everything that binds owners:
+  # every decision about a device goes to its own allowlist, which denies by
+  # default.
+  def can?(%User{kind: "device"} = device, action, resource),
+    do: RockcutApi.Authz.Device.can?(device, action, resource)
+
   # Rules that bind owners too come before the owner clause.
 
   # Time off: only the requester may cancel, owners included (was time_off.ex:143-146).

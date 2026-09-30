@@ -19,6 +19,7 @@ defmodule RockcutApi.AuthzBoundaryTest do
   @allowlist [
     # The boundary itself.
     "lib/rockcut_api/authz.ex",
+    "lib/rockcut_api/authz/device.ex",
     # Schema field and its guarded changeset.
     "lib/rockcut_api/accounts/user.ex",
     # Serializes is_owner for the UI.

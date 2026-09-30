@@ -296,6 +296,12 @@ defmodule RockcutApi.Accounts do
 
   @doc "Capabilities payload for the UI (modules, management scope, owner review count)."
   def capabilities(%User{} = user) do
+    if Authz.device?(user),
+      do: RockcutApi.Authz.Device.capabilities(user),
+      else: person_capabilities(user)
+  end
+
+  defp person_capabilities(%User{} = user) do
     assignable = list_departments() |> Enum.filter(& &1.assignable)
 
     modules =
@@ -334,6 +340,25 @@ defmodule RockcutApi.Accounts do
     |> limit(^limit)
     |> preload([:actor, :target])
     |> Repo.all()
+  end
+
+  @doc """
+  True if `user` sees Admin → Shared devices (D33): an owner, or a manager of
+  some device's home department. Returned at the top level of `/api/me`, not
+  in `capabilities` (whose keys the D31 parity suite pins).
+  """
+  def shared_devices?(%User{} = user) do
+    case Authz.scope(user, :devices, :manage) do
+      :all ->
+        true
+
+      :none ->
+        false
+
+      {:departments, ids} ->
+        # authz-boundary: data invariant (which departments have a device)
+        Repo.exists?(from(u in User, where: u.kind == "device" and u.home_department_id in ^ids))
+    end
   end
 
   @doc "Mark the change log as seen for `user` (clears their unread badge)."

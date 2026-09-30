@@ -14,7 +14,12 @@ defmodule RockcutApiWeb.MessageController do
     channels =
       user
       |> Messaging.channels_for()
-      |> Enum.map(fn c -> Map.put(c, :unread, Map.get(unread, c.key, 0)) end)
+      |> Enum.map(fn c ->
+        c
+        |> Map.put(:unread, Map.get(unread, c.key, 0))
+        # D33: shared devices read but never post; the UI hides the composer.
+        |> Map.put(:can_post, Messaging.can_post?(user, c.key))
+      end)
 
     json(conn, %{data: channels})
   end

@@ -45,8 +45,8 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  def me(user, capabilities) do
-    %{user: user(user), capabilities: capabilities}
+  def me(user, capabilities, shared_devices \\ false) do
+    %{user: user(user), capabilities: capabilities, shared_devices: shared_devices}
   end
 
   # ── Shared devices (D33) ───────────────────────────────────────────
