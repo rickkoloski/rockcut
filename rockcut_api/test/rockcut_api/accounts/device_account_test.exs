@@ -99,6 +99,29 @@ defmodule RockcutApi.Accounts.DeviceAccountTest do
       assert Accounts.get_user!(d.id).memberships == []
     end
 
+    test "the membership changeset itself refuses a device (review item 7)", %{
+      device: d,
+      bar: bar
+    } do
+      cs =
+        RockcutApi.Accounts.Membership.changeset(%RockcutApi.Accounts.Membership{}, %{
+          user_id: d.id,
+          department_id: bar.id,
+          role: "employee"
+        })
+
+      refute cs.valid?
+      assert "can't be a shared device" in errors_on(cs).user_id
+
+      person = user_fixture()
+
+      assert RockcutApi.Accounts.Membership.changeset(%RockcutApi.Accounts.Membership{}, %{
+               user_id: person.id,
+               department_id: bar.id,
+               role: "employee"
+             }).valid?
+    end
+
     test "update_user and reset_password → :device_account", %{device: d, owner: o} do
       assert {:error, :device_account} = Accounts.update_user(d, %{"is_owner" => true}, o)
       assert {:error, :device_account} = Accounts.reset_password(d, o)
