@@ -33,6 +33,13 @@ Started with D32; earlier deliverables' scenarios are added as they're touched.
 | S17 | Extend adds drafts past the old last date | Playwright `events_recurring`; ExUnit (idempotent, skips deleted dates) |
 | S18 | Other personas can't change or extend a series; employees read-only | Playwright `events_recurring`; ExUnit |
 | S19 | A Sunday-evening shift shows in its own week (Colorado day bounds) | Playwright `scheduler/sunday_shift` (revert-and-rerun recorded); ExUnit `shift_controller_test` |
+| G2 | Saving an event someone else deleted shows a message and refreshes | Playwright `scheduler/events_dev_findings` |
+| G3 | Moving a repeating date to another day ("this and following") moves later dates; API refuses a day move without a rule (422); split keeps the total count | Playwright `events_dev_findings`; ExUnit `schedule_event_series_test` |
+| G4 | A long event title doesn't widen its day column | Playwright `events_dev_findings` |
+| G5 / A4 | Ends by 3 AM → start day only; longer → each day with continuation labels | Playwright `events_dev_findings` |
+| — | Extend with nothing to add says so | Playwright `events_dev_findings` |
+| — | Unknown repeat type → 422 | ExUnit `schedule_event_series_test` |
+| G1 | Concurrent series writes (SQLite single writer) | **GAP** (busy_timeout raised to 10 s; load test manual on DEV; tracked with backlog 3855) |
 
 Known gaps:
 - **GAP:** the taproom device's view of events (D33).

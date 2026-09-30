@@ -49,7 +49,7 @@ test.describe('barMgr in the Scheduler', () => {
       starts_at: denverUtc(addDays(week, 2), '10:00'),
       ends_at: denverUtc(addDays(week, 2), '11:00'),
     })
-    const unreadBefore = (await (await bartender.get('/api/notifications/unread_count')).json()).count
+    const since = new Date().toISOString()
 
     await openScheduler(page, 3)
     await expect(page.getByTestId(`event-chip-${event.id}`)).toContainText('draft')
@@ -62,7 +62,11 @@ test.describe('barMgr in the Scheduler', () => {
     await expect(page.getByTestId(`event-chip-${event.id}`)).not.toContainText('draft')
     const after = (await listEvents(api, week, addDays(week, 6))).find((e) => e.id === event.id)
     expect(after?.status).toBe('published')
-    expect((await (await bartender.get('/api/notifications/unread_count')).json()).count).toBe(unreadBefore)
+    // No notification about this event. (Other specs publish Taproom shifts in
+    // parallel, so a plain unread count would be racy.)
+    const notes = (await (await bartender.get('/api/notifications')).json()).data as { title: string; body: string | null; event: string; inserted_at: string }[]
+    const recent = notes.filter((n) => n.inserted_at >= since.slice(0, 19))
+    expect(recent.filter((n) => `${n.title} ${n.body ?? ''}`.includes(tag) || n.event.includes('schedule_event'))).toEqual([])
   })
 
   test('S2: Publish week publishes shifts and events together', async ({ page }) => {
