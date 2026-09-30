@@ -39,6 +39,9 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# D32: real time-zone rules (recurring events keep Colorado wall-clock time across DST).
+config :elixir, :time_zone_database, Tz.TimeZoneDatabase
+
 # Web Push (D21). This is a DEV/TEST keypair — safe to commit; prod overrides
 # public_key/private_key from Fly secrets in config/runtime.exs. Regenerate with
 # `mix web_push_ex.vapid`. The private key must never be a production secret.

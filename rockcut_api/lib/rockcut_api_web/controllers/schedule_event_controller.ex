@@ -8,7 +8,7 @@ defmodule RockcutApiWeb.ScheduleEventController do
 
   import RockcutApiWeb.JSONHelpers, only: [schedule_event: 1]
   alias RockcutApi.{Scheduling, Authz}
-  alias RockcutApi.Scheduling.ScheduleEvent
+  alias RockcutApi.Scheduling.{ScheduleEvent, ScheduleEventSeries}
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -27,8 +27,8 @@ defmodule RockcutApiWeb.ScheduleEventController do
 
     if dept_id &&
          Authz.can?(actor, :create, %ScheduleEvent{department_id: dept_id, status: "draft"}) do
-      with {:ok, e} <- Scheduling.create_event(params, actor) do
-        conn |> put_status(:created) |> json(%{data: schedule_event(e)})
+      with {:ok, e, count} <- Scheduling.create_event(params, actor) do
+        conn |> put_status(:created) |> json(%{data: schedule_event(e), count: count})
       end
     else
       forbidden(conn)
@@ -43,7 +43,8 @@ defmodule RockcutApiWeb.ScheduleEventController do
       new_dept = to_int(params["department_id"]) || e.department_id
 
       if Authz.can?(actor, :update, %ScheduleEvent{department_id: new_dept, status: e.status}) do
-        with {:ok, updated} <- Scheduling.update_event(e, Map.drop(params, ["id"])) do
+        with {:ok, updated} <-
+               Scheduling.update_event(e, Map.drop(params, ["id", "scope"]), scope(params)) do
           json(conn, %{data: schedule_event(updated)})
         end
       else
@@ -52,10 +53,27 @@ defmodule RockcutApiWeb.ScheduleEventController do
     end)
   end
 
-  def delete(conn, %{"id" => id}) do
+  def delete(conn, %{"id" => id} = params) do
     with_event(conn, id, :delete, fn e ->
-      with {:ok, _} <- Scheduling.delete_event(e), do: json(conn, %{ok: true})
+      with {:ok, _} <- Scheduling.delete_event(e, scope(params)), do: json(conn, %{ok: true})
     end)
+  end
+
+  # Generate more occurrences of a repeating event, up to 12 months ahead.
+  def extend_series(conn, %{"id" => id}) do
+    actor = conn.assigns.current_user
+
+    case Scheduling.get_series(id) do
+      nil ->
+        {:error, :not_found}
+
+      %ScheduleEventSeries{} = series ->
+        if Authz.can?(actor, :extend, series) do
+          with {:ok, added} <- Scheduling.extend_series(series), do: json(conn, %{count: added})
+        else
+          forbidden(conn)
+        end
+    end
   end
 
   def publish(conn, %{"id" => id}) do
@@ -104,6 +122,9 @@ defmodule RockcutApiWeb.ScheduleEventController do
       _ -> {:error, :not_found}
     end
   end
+
+  defp scope(%{"scope" => "following"}), do: "following"
+  defp scope(_params), do: "this"
 
   defp to_int(nil), do: nil
   defp to_int(v) when is_integer(v), do: v

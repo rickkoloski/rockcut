@@ -54,7 +54,8 @@ defmodule RockcutApi.MixProject do
       {:bandit, "~> 1.5"},
       {:cors_plug, "~> 3.0"},
       {:argon2_elixir, "~> 4.0"},
-      {:web_push_ex, "~> 0.2"}
+      {:web_push_ex, "~> 0.2"},
+      {:tz, "~> 0.28"}
     ]
   end
 

@@ -104,8 +104,28 @@ defmodule RockcutApiWeb.JSONHelpers do
       ends_at: e.ends_at,
       status: e.status,
       created_by_id: e.created_by_id,
+      series_id: e.series_id,
+      series_exception: e.series_exception,
+      series: maybe_render(e, :series, &event_series/1),
       inserted_at: e.inserted_at,
       updated_at: e.updated_at
+    }
+  end
+
+  def event_series(nil), do: nil
+
+  def event_series(s) do
+    %{
+      id: s.id,
+      frequency: s.frequency,
+      interval: s.interval,
+      weekdays: s.weekdays,
+      week_of_month: s.week_of_month,
+      weekday: s.weekday,
+      start_date: s.start_date,
+      until_date: s.until_date,
+      count: s.count,
+      generated_through: s.generated_through
     }
   end
 

@@ -19,7 +19,16 @@ defmodule RockcutApi.Authz do
   import Ecto.Query, only: [from: 2]
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.{User, Membership, Department}
-  alias RockcutApi.Scheduling.{Shift, ScheduleEvent, Position, ShiftTemplate, ScheduleTemplate}
+
+  alias RockcutApi.Scheduling.{
+    Shift,
+    ScheduleEvent,
+    ScheduleEventSeries,
+    Position,
+    ShiftTemplate,
+    ScheduleTemplate
+  }
+
   alias RockcutApi.TimeOff.Request
   alias RockcutApi.Availability.Slot
 
@@ -190,6 +199,11 @@ defmodule RockcutApi.Authz do
       _ -> false
     end
   end
+
+  # A repeating event's series: only the department's managers extend or change it.
+  def can?(%User{} = user, action, %ScheduleEventSeries{} = series)
+      when action in [:update, :delete, :extend],
+      do: role_in(user, series.department_id) == :manager
 
   # Scheduling — positions are company-wide: anyone reads; any manager/owner writes.
   def can?(%User{} = user, action, %Position{}) do

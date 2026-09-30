@@ -69,6 +69,7 @@ defmodule RockcutApiWeb.Router do
     delete "/schedule_events/:id", ScheduleEventController, :delete
     post "/schedule_events/:id/publish", ScheduleEventController, :publish
     post "/schedule_events/:id/unpublish", ScheduleEventController, :unpublish
+    post "/schedule_event_series/:id/extend", ScheduleEventController, :extend_series
 
     resources "/shift_templates", ShiftTemplateController,
       only: [:index, :create, :update, :delete]

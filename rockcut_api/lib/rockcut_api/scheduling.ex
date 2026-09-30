@@ -12,8 +12,10 @@ defmodule RockcutApi.Scheduling do
   alias RockcutApi.Accounts.User
 
   alias RockcutApi.Scheduling.{
+    EventSeries,
     Position,
     ScheduleEvent,
+    ScheduleEventSeries,
     Shift,
     ShiftTemplate,
     ScheduleTemplate,
@@ -254,9 +256,16 @@ defmodule RockcutApi.Scheduling do
   ## Schedule events (D32) — no assignee, no claiming, and never any
   ## notifications. Visibility and permissions mirror shifts.
 
-  def get_event(id), do: ScheduleEvent |> Repo.get(id) |> Repo.preload(:department)
+  @event_preloads [:department, :series]
 
-  def get_event!(id), do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(:department)
+  # Series links are set by the server only, never from request params.
+  @server_only ~w(series_id series_exception created_by_id)
+
+  def get_event(id), do: ScheduleEvent |> Repo.get(id) |> Repo.preload(@event_preloads)
+
+  def get_event!(id), do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(@event_preloads)
+
+  def get_series(id), do: Repo.get(ScheduleEventSeries, id)
 
   @doc """
   List events visible to `user` (published anywhere, plus drafts in the
@@ -272,37 +281,54 @@ defmodule RockcutApi.Scheduling do
     |> maybe(filters, "from", fn q, d -> where(q, [e], e.ends_at > ^start_of_day(d)) end)
     |> maybe(filters, "to", fn q, d -> where(q, [e], e.starts_at <= ^end_of_day(d)) end)
     |> order_by([e], asc: e.starts_at)
-    |> preload(:department)
+    |> preload(^@event_preloads)
     |> Repo.all()
   end
 
+  @doc """
+  Create an event. With repeat params (`EventSeries`) this creates a series of
+  draft occurrences and returns `{:ok, first_occurrence, count}`.
+  """
   def create_event(attrs, %User{} = actor) do
-    attrs =
-      attrs
-      |> stringify()
-      |> Map.put("created_by_id", actor.id)
-      |> Map.put_new("status", "draft")
+    attrs = attrs |> stringify() |> Map.drop(@server_only)
 
-    case %ScheduleEvent{} |> ScheduleEvent.changeset(attrs) |> Repo.insert() do
-      {:ok, event} -> {:ok, get_event!(event.id)}
-      other -> other
+    if EventSeries.repeat?(attrs) do
+      with {:ok, first, count} <- EventSeries.create(attrs, actor.id),
+           do: {:ok, get_event!(first.id), count}
+    else
+      attrs = attrs |> Map.put("created_by_id", actor.id) |> Map.put_new("status", "draft")
+
+      case %ScheduleEvent{} |> ScheduleEvent.changeset(attrs) |> Repo.insert() do
+        {:ok, event} -> {:ok, get_event!(event.id), 1}
+        other -> other
+      end
     end
   end
 
-  def update_event(%ScheduleEvent{} = event, attrs) do
-    attrs = attrs |> stringify() |> Map.drop(["created_by_id"])
+  @doc "Update an event; for a repeating one, `scope` is `\"this\"` (default) or `\"following\"`."
+  def update_event(%ScheduleEvent{} = event, attrs, scope \\ "this") do
+    attrs = attrs |> stringify() |> Map.drop(@server_only)
 
-    case event |> ScheduleEvent.changeset(attrs) |> Repo.update() do
+    with {:ok, updated} <- EventSeries.update(event, attrs, scope),
+         do: {:ok, get_event!(updated.id)}
+  end
+
+  def delete_event(%ScheduleEvent{} = event, scope \\ "this"),
+    do: EventSeries.delete(event, scope)
+
+  def publish_event(%ScheduleEvent{} = event), do: set_event_status(event, "published")
+
+  def unpublish_event(%ScheduleEvent{} = event), do: set_event_status(event, "draft")
+
+  def extend_series(%ScheduleEventSeries{} = series, today \\ Date.utc_today()),
+    do: EventSeries.extend(series, today)
+
+  defp set_event_status(event, status) do
+    case event |> ScheduleEvent.changeset(%{"status" => status}) |> Repo.update() do
       {:ok, updated} -> {:ok, get_event!(updated.id)}
       other -> other
     end
   end
-
-  def delete_event(%ScheduleEvent{} = event), do: Repo.delete(event)
-
-  def publish_event(%ScheduleEvent{} = event), do: update_event(event, %{status: "published"})
-
-  def unpublish_event(%ScheduleEvent{} = event), do: update_event(event, %{status: "draft"})
 
   @doc "Publish many events at once (Publish week). Only drafts transition."
   def publish_events(events) when is_list(events) do
