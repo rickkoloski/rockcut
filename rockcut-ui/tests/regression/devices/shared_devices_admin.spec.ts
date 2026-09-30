@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
-import { deleteDevices } from './helpers'
+import { createDevice, deleteDevices } from './helpers'
 
 // D33 S1: the owner creates a shared device. It isn't a person anywhere.
 
@@ -52,5 +52,26 @@ test.describe('owner', () => {
     // The owner's change log shows the create.
     await page.goto('/activity')
     await expect(page.getByRole('row').filter({ hasText: tag }).filter({ hasText: 'Shared device created' })).toBeVisible()
+  })
+})
+
+test.describe('owner, device controls (DEV G5, G9)', () => {
+  test.use({ storageState: authFile('owner') })
+
+  test('G9: a deactivated device offers no "Pair a tablet"; the API refuses a code (422)', async ({ page }) => {
+    tag = tempTag('G9 tablets')
+    const api = await apiAs('owner')
+    const device = await createDevice(api, tag)
+    expect((await api.patch(`/api/devices/${device.id}`, { data: { active: false } })).status()).toBe(200)
+
+    await page.goto('/devices')
+    const row = page.getByTestId(`device-row-${device.id}`)
+    await expect(row).toContainText('Deactivated')
+    await expect(page.getByTestId(`pair-tablet-${device.id}`)).toHaveCount(0)
+    expect((await api.post(`/api/devices/${device.id}/pairing_code`)).status()).toBe(422)
+
+    expect((await api.patch(`/api/devices/${device.id}`, { data: { active: true } })).status()).toBe(200)
+    await page.reload()
+    await expect(page.getByTestId(`pair-tablet-${device.id}`)).toBeVisible()
   })
 })

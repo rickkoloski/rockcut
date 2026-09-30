@@ -201,15 +201,18 @@ export default function SharedDevices() {
                 <Chip size="small" label={`Home: ${d.home_department?.name ?? '—'}`} />
                 {!d.active && <Chip size="small" color="default" variant="outlined" label="Deactivated" />}
                 <Box sx={{ flexGrow: 1 }} />
-                <Button
-                  data-testid={`pair-tablet-${d.id}`}
-                  variant="contained"
-                  size="small"
-                  disabled={!d.active || busy}
-                  onClick={() => pair(d)}
-                >
-                  Pair a tablet
-                </Button>
+                {/* DEV G9: a deactivated device can't get codes (the API says 422 too). */}
+                {d.active && (
+                  <Button
+                    data-testid={`pair-tablet-${d.id}`}
+                    variant="contained"
+                    size="small"
+                    disabled={busy}
+                    onClick={() => pair(d)}
+                  >
+                    Pair a tablet
+                  </Button>
+                )}
                 {isOwner && (
                   <>
                     <Button
