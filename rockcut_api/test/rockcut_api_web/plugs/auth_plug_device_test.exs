@@ -39,6 +39,16 @@ defmodule RockcutApiWeb.AuthPlugDeviceTest do
     assert call_device(t2, :get, "/api/me").status == 401
   end
 
+  test "reactivating the account doesn't bring old tablets back (DEV G1)", %{
+    device: d,
+    token: t1,
+    owner: o
+  } do
+    {:ok, _} = Devices.update_device(d, %{"active" => false}, o)
+    {:ok, _} = Devices.update_device(RockcutApi.Accounts.get_user!(d.id), %{"active" => true}, o)
+    assert call_device(t1, :get, "/api/me").status == 401
+  end
+
   test "a signed session token for a device user is refused (lead decision 2)", %{device: d} do
     token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", d.id)
     conn = build_conn() |> put_req_header("authorization", "Bearer #{token}") |> get("/api/me")

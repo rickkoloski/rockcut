@@ -3,6 +3,7 @@ defmodule RockcutApi.DevicesTest do
   use RockcutApi.DataCase, async: false
 
   import RockcutApi.AccountsFixtures
+  import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.{Devices, Repo}
   alias RockcutApi.Accounts.AuditEntry
@@ -206,6 +207,36 @@ defmodule RockcutApi.DevicesTest do
 
       {:ok, _} = Devices.update_device(d, %{"active" => false}, o)
       assert :error = Devices.authenticate_token(t2)
+    end
+
+    test "deactivating revokes every tablet; reactivating needs new pairings (DEV G1)", %{
+      device: d,
+      owner: o
+    } do
+      t1 = device_token_fixture(d, "iPad 1")
+      t2 = device_token_fixture(d, "iPad 2")
+      {:ok, _code, _} = Devices.create_pairing_code(d, o)
+
+      {:ok, _} = Devices.update_device(d, %{"active" => false}, o)
+      assert Repo.all(DeviceToken) |> Enum.all?(&(&1.revoked_at != nil))
+      assert Repo.all(from(pc in PairingCode, where: is_nil(pc.used_at))) == []
+
+      {:ok, _} =
+        Devices.update_device(Repo.get!(RockcutApi.Accounts.User, d.id), %{"active" => true}, o)
+
+      assert :error = Devices.authenticate_token(t1)
+      assert :error = Devices.authenticate_token(t2)
+
+      # A new pairing works after reactivation.
+      {:ok, code, _} = Devices.create_pairing_code(d, o)
+      assert {:ok, t3, _} = Devices.exchange_code(code, "iPad 3", ip())
+      assert {:ok, _, _} = Devices.authenticate_token(t3)
+    end
+
+    test "renaming leaves tablets alone", %{device: d, owner: o} do
+      t1 = device_token_fixture(d, "iPad 1")
+      {:ok, _} = Devices.update_device(d, %{"name" => "Front bar"}, o)
+      assert {:ok, _, _} = Devices.authenticate_token(t1)
     end
 
     test "unknown or non-dev tokens don't authenticate" do

@@ -72,13 +72,24 @@ defmodule RockcutApi.Devices do
     end)
   end
 
-  @doc "Rename, move or (de)activate a device. Deactivating signs out every tablet at its next request."
+  @doc """
+  Rename, move or (de)activate a device. Deactivating revokes every tablet's
+  token and deletes unused codes: each tablet is signed out at its next request
+  and needs a new pairing after reactivation.
+  """
   def update_device(%User{} = device, attrs, %User{} = actor) do
     changeset = User.device_update_changeset(device, stringify(attrs))
 
     Repo.transaction(fn ->
       case Repo.update(changeset) do
         {:ok, updated} ->
+          # Deactivating ends every pairing for good (DEV G1): revoke all tokens
+          # and drop unused codes, so reactivating needs new pairings.
+          revoked =
+            if Ecto.Changeset.get_change(changeset, :active) == false,
+              do: end_pairings(updated),
+              else: 0
+
           action =
             case Ecto.Changeset.get_change(changeset, :active) do
               false -> "device.deactivated"
@@ -88,7 +99,8 @@ defmodule RockcutApi.Devices do
 
           Accounts.record_audit(actor.id, updated.id, action, %{
             "name" => updated.name,
-            "fields" => changeset.changes |> Map.keys() |> Enum.map(&to_string/1)
+            "fields" => changeset.changes |> Map.keys() |> Enum.map(&to_string/1),
+            "tablets_revoked" => revoked
           })
 
           preload_device(updated)
@@ -97,6 +109,17 @@ defmodule RockcutApi.Devices do
           Repo.rollback(cs)
       end
     end)
+  end
+
+  defp end_pairings(%User{id: id}) do
+    now = now()
+
+    {revoked, _} =
+      from(t in DeviceToken, where: t.user_id == ^id and is_nil(t.revoked_at))
+      |> Repo.update_all(set: [revoked_at: now, updated_at: now])
+
+    from(pc in PairingCode, where: pc.user_id == ^id and is_nil(pc.used_at)) |> Repo.delete_all()
+    revoked
   end
 
   @doc "Delete a device account with its tokens, codes and channel reads."
