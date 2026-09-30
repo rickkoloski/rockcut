@@ -42,7 +42,7 @@ export function mondayOf(key: string): string {
 export async function openScheduler(page: Page, weeks = 0) {
   await page.goto('/scheduler')
   await expect(page.getByTestId('events-row')).toBeVisible({ timeout: 20_000 })
-  const next = page.getByRole('button').filter({ has: page.locator('[data-testid="ChevronRightIcon"]') }).first()
+  const next = page.getByRole('button', { name: 'Next week' })
   for (let i = 0; i < weeks; i++) await next.click()
   await expect(page.getByTestId(`events-cell-${weekMonday(weeks)}`)).toBeVisible()
 }

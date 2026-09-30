@@ -404,9 +404,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} flexWrap="wrap">
           {view === 'week' ? (
             <Stack direction="row" spacing={1} alignItems="center">
-              <IconButton size="small" onClick={() => setMondayKey((k) => addDaysKey(k, -7))}><ChevronLeftIcon /></IconButton>
+              <IconButton size="small" aria-label="Previous week" onClick={() => setMondayKey((k) => addDaysKey(k, -7))}><ChevronLeftIcon /></IconButton>
               <Typography sx={{ minWidth: 120, textAlign: 'center', fontWeight: 600 }}>{formatWeekRange(mondayKey)}</Typography>
-              <IconButton size="small" onClick={() => setMondayKey((k) => addDaysKey(k, 7))}><ChevronRightIcon /></IconButton>
+              <IconButton size="small" aria-label="Next week" onClick={() => setMondayKey((k) => addDaysKey(k, 7))}><ChevronRightIcon /></IconButton>
               <Button size="small" onClick={() => setMondayKey(mondayKeyOf())}>This week</Button>
             </Stack>
           ) : (

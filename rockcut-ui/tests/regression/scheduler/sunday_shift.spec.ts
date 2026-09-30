@@ -35,7 +35,7 @@ test.describe('barMgr', () => {
     await expect(page.getByTestId(`shift-chip-${id}`)).toContainText('6:00 PM')
 
     // Not in the following week.
-    await page.getByRole('button').filter({ has: page.locator('[data-testid="ChevronRightIcon"]') }).first().click()
+    await page.getByRole('button', { name: 'Next week' }).click()
     await expect(page.getByTestId(`events-cell-${addDays(week, 7)}`)).toBeVisible()
     await expect(page.getByTestId(`shift-chip-${id}`)).toHaveCount(0)
   })
