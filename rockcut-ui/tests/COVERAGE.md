@@ -39,7 +39,7 @@ Started with D32; earlier deliverables' scenarios are added as they're touched.
 | G5 / A4 | Ends by 3 AM → start day only; longer → each day with continuation labels | Playwright `events_dev_findings` |
 | — | Extend with nothing to add says so | Playwright `events_dev_findings` |
 | — | Unknown repeat type → 422 | ExUnit `schedule_event_series_test` |
-| G1 | Concurrent series writes (SQLite single writer) | **GAP** (busy_timeout raised to 10 s; load test manual on DEV; tracked with backlog 3855) |
+| G1 | Concurrent writes (SQLite single writer) | **Manual** burst scripts on DEV (6 series at once, 2×365-date series + shift saves): all 201 with pool size 1. No automated load test; tracked with backlog 3855 |
 
 Known gaps:
 - **GAP:** the taproom device's view of events (D33).

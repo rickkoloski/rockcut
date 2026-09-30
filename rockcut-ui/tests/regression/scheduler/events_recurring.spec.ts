@@ -63,7 +63,8 @@ test.describe('barMgr', () => {
 
     await page.reload()
     await openScheduler(page, 20)
-    await expect(page.getByTestId(`events-cell-${tuesday}`).getByRole('img', { name: 'Repeats' })).toBeVisible()
+    const firstChip = page.getByTestId(`events-cell-${tuesday}`).locator('[data-testid^="event-chip-"]', { hasText: tag })
+    await expect(firstChip.getByRole('img', { name: 'Repeats' })).toBeVisible()
     const published = page.waitForResponse((r) => r.url().endsWith('/api/schedule_events/publish'))
     await page.getByRole('button', { name: /publish week/i }).click()
     await published
