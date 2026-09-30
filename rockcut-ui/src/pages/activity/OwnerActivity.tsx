@@ -15,6 +15,29 @@ const ACTION_LABELS: Record<string, string> = {
   'membership.added': 'Role added',
   'membership.changed': 'Role changed',
   'membership.removed': 'Role removed',
+  // D33 shared devices
+  'device.created': 'Shared device created',
+  'device.updated': 'Shared device updated',
+  'device.deactivated': 'Shared device deactivated',
+  'device.reactivated': 'Shared device reactivated',
+  'device.deleted': 'Shared device deleted',
+  'device.pairing_code': 'Pairing code issued',
+  'device.paired': 'Tablet paired',
+  'device.revoked': 'Tablet revoked',
+  'device.signed_out': 'Tablet signed out',
+}
+
+// Device accounts have a generated, undeliverable email; show their name (D33).
+function who(u: AuditEntry['actor']): string {
+  if (!u) return '—'
+  return u.email.endsWith('@devices.rockcut.invalid') ? `${u.name ?? 'Shared device'} (shared device)` : u.email
+}
+
+// Device entries carry the device and tablet names in `detail`.
+function detailText(row: AuditEntry): string {
+  const d = (row.detail ?? {}) as Record<string, unknown>
+  if (!row.action.startsWith('device.')) return ''
+  return [d.name, d.tablet].filter(Boolean).join(' · ')
 }
 
 const columns: GridColDef<AuditEntry>[] = [
@@ -36,7 +59,7 @@ const columns: GridColDef<AuditEntry>[] = [
     flex: 1,
     minWidth: 180,
     sortable: false,
-    valueGetter: (_value, row) => row.actor?.email ?? '—',
+    valueGetter: (_value, row) => who(row.actor),
   },
   {
     field: 'target',
@@ -44,7 +67,15 @@ const columns: GridColDef<AuditEntry>[] = [
     flex: 1,
     minWidth: 180,
     sortable: false,
-    valueGetter: (_value, row) => row.target?.email ?? '—',
+    valueGetter: (_value, row) => who(row.target),
+  },
+  {
+    field: 'detail',
+    headerName: 'Detail',
+    flex: 1,
+    minWidth: 160,
+    sortable: false,
+    valueGetter: (_value, row) => detailText(row),
   },
 ]
 

@@ -28,6 +28,7 @@ export type PersonaKey =
   | 'noDept'
   | 'owner2'
   | 'sales1'
+  | 'taproomDevice'
 
 export interface Persona {
   email: string
@@ -37,6 +38,8 @@ export interface Persona {
   isOwner?: boolean
   active?: boolean
   mustResetPassword?: boolean
+  /** D33: a shared-device account (no password, no memberships; a `dev_` tablet token). */
+  device?: { home: string }
 }
 
 export const personas: Record<PersonaKey, Persona> = {
@@ -57,6 +60,7 @@ export const personas: Record<PersonaKey, Persona> = {
   noDept: { email: 'nodept@rockcut-test.com', name: 'Nico None', memberships: {} },
   owner2: { email: 'owner2@rockcut-test.com', name: 'Avery Owner', memberships: {}, isOwner: true },
   sales1: { email: 'sales1@rockcut-test.com', name: 'Robin Pitch', memberships: { sales: 'employee' } },
+  taproomDevice: { email: 'taproom.device@rockcut-test.com', name: 'Taproom tablets', memberships: {}, device: { home: 'bar' } },
 }
 
 export const personaKeys = Object.keys(personas) as PersonaKey[]

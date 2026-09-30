@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { restoreDeviceToken } from './device'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '',
@@ -20,8 +21,12 @@ api.interceptors.response.use(
   (error) => {
     const isLogin = error.config?.method === 'post' && error.config?.url === '/api/session'
     if (error.response?.status === 401 && !isLogin) {
-      localStorage.removeItem('rockcut_token')
-      localStorage.removeItem('rockcut_email')
+      // D33: a personal sign-in on a shared tablet falls back to the tablet's
+      // own session instead of the login screen.
+      if (!restoreDeviceToken()) {
+        localStorage.removeItem('rockcut_token')
+        localStorage.removeItem('rockcut_email')
+      }
       window.location.reload()
     }
     return Promise.reject(error)

@@ -105,6 +105,12 @@ export default function Messages() {
           </Box>
 
           <Divider />
+          {selected?.can_post === false ? (
+            // D33: shared devices read but never post.
+            <Typography data-testid="read-only-notice" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
+              Shared devices can read but not post.
+            </Typography>
+          ) : (
           <Stack direction="row" spacing={1} sx={{ p: 1.5 }}>
             <TextField
               fullWidth
@@ -125,6 +131,7 @@ export default function Messages() {
               <SendIcon />
             </IconButton>
           </Stack>
+          )}
         </Paper>
       ) : (
         <Typography color="text.secondary">Select a channel from the Messages menu.</Typography>

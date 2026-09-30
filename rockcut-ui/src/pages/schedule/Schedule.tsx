@@ -63,6 +63,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const isOwner = !!user?.is_owner
   const managedKeys = capabilities?.manages_departments ?? []
   const canManageSchedule = isOwner || managedKeys.length > 0
+  // D33: a shared tablet reads the published schedule only — no time off,
+  // templates or claiming (its API would refuse them anyway).
+  const isDevice = user?.kind === 'device'
   const myModules = capabilities?.modules ?? []
 
   const [view, setView] = useState<View>(forceView ?? initialView)
@@ -132,11 +135,11 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const { data: positions = [] } = useApiQuery<Position[]>(['positions'], '/api/positions')
   const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments')
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
-  const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates')
+  const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates', undefined, { enabled: !isDevice })
   const { data: scheduleTemplates = [] } = useApiQuery<ScheduleTemplate[]>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
   // Fetch all statuses in range; the grid shows approved + pending distinctly.
   const timeOffParams = useMemo(() => ({ from: mondayKey, to: addDaysKey(mondayKey, 6) }), [mondayKey])
-  const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'schedule', mondayKey], '/api/time_off', timeOffParams)
+  const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'schedule', mondayKey], '/api/time_off', timeOffParams, { enabled: !isDevice })
   // Recurring availability (D25) — used for conflict detection; managers/owner only.
   const { data: availability = [] } = useApiQuery<AvailabilitySlot[]>(['availability'], '/api/availability', undefined, { enabled: canManageSchedule })
 
@@ -165,7 +168,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
 
   const canManageShift = (s: Shift) => isOwner || (s.department?.key ? managedKeys.includes(s.department.key) : false)
   const canManageEvent = (e: ScheduleEvent) => isOwner || (e.department?.key ? managedKeys.includes(e.department.key) : false)
-  const canClaim = (s: Shift) => !s.assignee_id && s.status === 'published' && !!s.department?.key && myModules.includes(s.department.key)
+  const canClaim = (s: Shift) => !isDevice && !s.assignee_id && s.status === 'published' && !!s.department?.key && myModules.includes(s.department.key)
 
   // Empty week cells can create only when the filter picks one department you manage.
   const filterDept = departments.find((d) => String(d.id) === filters.department_id)
@@ -423,7 +426,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
             <MenuItem value="">All positions</MenuItem>
             {positions.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.name}</MenuItem>)}
           </TextField>
-          <FormControlLabel control={<Switch checked={filters.mine} onChange={(e) => setFilters((f) => ({ ...f, mine: e.target.checked }))} />} label="My shifts" />
+          {!isDevice && <FormControlLabel control={<Switch checked={filters.mine} onChange={(e) => setFilters((f) => ({ ...f, mine: e.target.checked }))} />} label="My shifts" />}
           <FormControlLabel control={<Switch checked={filters.open} onChange={(e) => setFilters((f) => ({ ...f, open: e.target.checked }))} />} label="Open only" />
         </Stack>
 

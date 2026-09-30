@@ -240,6 +240,9 @@ export interface User {
   is_owner: boolean
   must_reset_password: boolean
   schedulable?: boolean
+  // D33: 'device' for a shared tablet account; every human is 'person'.
+  kind?: 'person' | 'device'
+  home_department_id?: number | null
   memberships: Membership[] | null
   inserted_at: string
   updated_at: string
@@ -258,11 +261,37 @@ export interface Capabilities {
   manages_departments: string[]
   can_manage_users: boolean
   pending_owner_reviews: number
+  // D33: present for a shared device only.
+  kind?: 'device'
+  home_department?: string
 }
 
 export interface Me {
   user: User
   capabilities: Capabilities
+  // D33: sees Admin → Shared devices (owner, or manager of a device's home department).
+  shared_devices?: boolean
+}
+
+// ── Shared devices (D33) ────────────────────────────────────────────
+
+export interface DeviceTablet {
+  id: number
+  name: string
+  paired_by: AuditActor | null
+  paired_at: string
+  last_seen_at: string | null
+  revoked_at: string | null
+}
+
+export interface SharedDevice {
+  id: number
+  name: string
+  active: boolean
+  home_department_id: number
+  home_department: Department | null
+  tokens: DeviceTablet[] | null
+  inserted_at: string
 }
 
 export interface AuditActor {
@@ -352,6 +381,8 @@ export interface Channel {
   name: string
   kind: 'all' | 'managers' | 'department'
   unread: number
+  // D33: false for a shared device (read-only channels).
+  can_post?: boolean
 }
 
 export interface ChatMessage {
