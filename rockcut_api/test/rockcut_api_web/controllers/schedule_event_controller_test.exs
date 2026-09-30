@@ -112,6 +112,38 @@ defmodule RockcutApiWeb.ScheduleEventControllerTest do
       assert spanning.id in ids
       refute after_week.id in ids
     end
+
+    test "week bounds are Colorado days: a Sunday 7 pm event is in its week", %{p: p, d: d} do
+      # Sun Oct 18, 2026, 7–9 pm MDT is 01:00–03:00 UTC on Monday the 19th.
+      sunday_evening =
+        event_fixture(%{
+          department: d["bar"],
+          status: "published",
+          starts_at: at("2026-10-19", "01:00:00"),
+          ends_at: at("2026-10-19", "03:00:00")
+        })
+
+      # Mon Oct 12, 5 pm MDT (23:00 UTC) belongs to the week too; Sun Oct 11, 11 pm MDT doesn't.
+      sunday_before =
+        event_fixture(%{
+          department: d["bar"],
+          status: "published",
+          starts_at: at("2026-10-12", "05:00:00"),
+          ends_at: at("2026-10-12", "05:30:00")
+        })
+
+      week = %{"from" => "2026-10-12", "to" => "2026-10-18"}
+      ids = call(p["bartender1"], :get, "/api/schedule_events", week) |> data_ids()
+
+      assert sunday_evening.id in ids
+      refute sunday_before.id in ids
+
+      refute sunday_evening.id in (call(p["bartender1"], :get, "/api/schedule_events", %{
+                                     "from" => "2026-10-19",
+                                     "to" => "2026-10-25"
+                                   })
+                                   |> data_ids())
+    end
   end
 
   describe "update and delete" do

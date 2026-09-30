@@ -13,6 +13,7 @@ defmodule RockcutApi.Scheduling do
 
   alias RockcutApi.Scheduling.{
     EventSeries,
+    Recurrence,
     Position,
     ScheduleEvent,
     ScheduleEventSeries,
@@ -269,8 +270,9 @@ defmodule RockcutApi.Scheduling do
 
   @doc """
   List events visible to `user` (published anywhere, plus drafts in the
-  departments they manage). `from`/`to` (Denver date keys) match any event that
-  overlaps the range, so a multi-day event that began earlier is included.
+  departments they manage). `from`/`to` are Colorado date keys, bounded by
+  local midnights; any event overlapping the range matches, so a multi-day
+  event that began earlier is included.
   """
   def list_events(%User{} = user, filters \\ %{}) do
     ScheduleEvent
@@ -278,8 +280,8 @@ defmodule RockcutApi.Scheduling do
     |> maybe(filters, "department_id", fn q, id ->
       where(q, [e], e.department_id == ^to_int(id))
     end)
-    |> maybe(filters, "from", fn q, d -> where(q, [e], e.ends_at > ^start_of_day(d)) end)
-    |> maybe(filters, "to", fn q, d -> where(q, [e], e.starts_at <= ^end_of_day(d)) end)
+    |> maybe(filters, "from", fn q, d -> where(q, [e], e.ends_at > ^local_midnight(d, 0)) end)
+    |> maybe(filters, "to", fn q, d -> where(q, [e], e.starts_at < ^local_midnight(d, 1)) end)
     |> order_by([e], asc: e.starts_at)
     |> preload(^@event_preloads)
     |> Repo.all()
@@ -391,6 +393,15 @@ defmodule RockcutApi.Scheduling do
 
   defp start_of_day(date) when is_binary(date), do: parse_day(date, ~T[00:00:00])
   defp end_of_day(date) when is_binary(date), do: parse_day(date, ~T[23:59:59])
+
+  # Colorado midnight at the start of `date` + `days`, in UTC. Event day bounds
+  # are local days, so a Sunday 7 pm event (Monday in UTC) stays in its week.
+  defp local_midnight(date, days) when is_binary(date) do
+    case Date.from_iso8601(date) do
+      {:ok, d} -> Recurrence.local_to_utc(Date.add(d, days), ~T[00:00:00])
+      _ -> DateTime.utc_now()
+    end
+  end
 
   defp parse_day(date, time) do
     case Date.from_iso8601(date) do
