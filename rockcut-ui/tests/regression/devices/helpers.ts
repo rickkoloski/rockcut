@@ -40,18 +40,14 @@ export async function pairingCode(api: APIRequestContext, deviceId: number): Pro
 
 /**
  * A new browser context with no signed-in user — a tablet out of the box.
- * Locally its requests carry a random `fly-client-ip` so the wrong-code limiter
- * (per IP) doesn't bleed between parallel specs and reruns. Not on DEV: the
- * UI calls the API cross-origin there (a custom header would need CORS), and
- * Fly sets the real client IP anyway.
+ * No request header touches the wrong-code limiter (review item 5): locally the
+ * dev server's per-client limit is raised in config/dev.exs, because every
+ * local run pairs from 127.0.0.1.
  */
 export async function blankTablet(browser: Browser): Promise<{ context: BrowserContext; page: Page }> {
-  const profile = activeProfile()
-  const extraHTTPHeaders: Record<string, string> =
-    profile.name === 'local' ? { 'fly-client-ip': `10.${rand()}.${rand()}.${rand()}` } : {}
   // An explicit empty storageState: inside a test, browser.newContext() otherwise
   // inherits the describe block's `use({ storageState })` (a signed-in persona).
-  const context = await browser.newContext({ baseURL: profile.uiUrl, extraHTTPHeaders, storageState: { cookies: [], origins: [] } })
+  const context = await browser.newContext({ baseURL: activeProfile().uiUrl, storageState: { cookies: [], origins: [] } })
   return { context, page: await context.newPage() }
 }
 
@@ -63,8 +59,4 @@ export async function setUpTablet(page: Page, code: string, name: string) {
   await page.getByTestId('device-name').fill(name)
   await page.getByTestId('device-submit').click()
   await expect(page.getByTestId('device-chip')).toBeVisible()
-}
-
-function rand() {
-  return Math.floor(Math.random() * 250) + 1
 }

@@ -20,6 +20,11 @@ if System.get_env("PHX_SERVER") do
   config :rockcut_api, RockcutApiWeb.Endpoint, server: true
 end
 
+# D33: trust the `fly-client-ip` header (set by Fly's edge proxy) for the
+# pairing-code rate limiter only when actually running on Fly. Everywhere else
+# the header is client-controlled, so the limiter uses the socket address.
+config :rockcut_api, :trust_fly_client_ip, System.get_env("FLY_APP_NAME") not in [nil, ""]
+
 # Deploy environment (D30). Releases read ROCKCUT_ENV — "prod" (default, fail
 # closed) or "dev" (the shared DEV server). Local Mix envs use their own name.
 # Gates synthetic personas + minted tokens (RockcutApi.Seeds.Guard).

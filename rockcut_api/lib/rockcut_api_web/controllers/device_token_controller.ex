@@ -51,11 +51,17 @@ defmodule RockcutApiWeb.DeviceTokenController do
     end
   end
 
-  # Behind Fly's proxy `remote_ip` is the proxy; Fly sets `fly-client-ip`.
+  # The client address for the wrong-code limiter. `fly-client-ip` is set by
+  # Fly's edge proxy, so it's trusted only when running on Fly
+  # (`:trust_fly_client_ip`, from FLY_APP_NAME in runtime.exs). Anywhere else —
+  # locally, in tests — a client could send any value, so `remote_ip` is used
+  # and the header is ignored (review item 5).
   defp client_ip(conn) do
-    case get_req_header(conn, "fly-client-ip") do
-      [ip | _] when ip != "" -> ip
-      _ -> conn.remote_ip |> :inet.ntoa() |> to_string()
+    with true <- Application.get_env(:rockcut_api, :trust_fly_client_ip, false),
+         [ip | _] when ip != "" <- get_req_header(conn, "fly-client-ip") do
+      ip
+    else
+      _ -> conn.remote_ip
     end
   end
 end

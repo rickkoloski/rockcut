@@ -136,25 +136,28 @@ defmodule RockcutApi.Devices do
   Exchange a pairing code for a tablet token. Returns `{:ok, plain_token,
   %DeviceToken{}}`, `{:error, :rate_limited}`, `{:error, :invalid_name}` or
   `{:error, :invalid_code}` (one error for wrong, used, expired and inactive:
-  no oracle). Wrong codes count against `ip`.
+  no oracle). Wrong codes count against `ip` (an `:inet` tuple or string; IPv6
+  by /64) and against the global cap; see `PairingRateLimiter`.
   """
   def exchange_code(code, tablet_name, ip, now \\ now()) do
     name = tablet_name |> to_string() |> String.trim()
+    client = PairingRateLimiter.key(ip)
 
     cond do
-      PairingRateLimiter.limited?(ip) ->
-        {:error, :rate_limited}
-
       name == "" or String.length(name) > 60 ->
         {:error, :invalid_name}
+
+      # Counted before the code is checked (atomic), refunded on success.
+      PairingRateLimiter.count_attempt(client) == :rate_limited ->
+        {:error, :rate_limited}
 
       true ->
         case redeem(normalize_code(code), name, now) do
           {:ok, _token, _row} = ok ->
+            PairingRateLimiter.refund(client)
             ok
 
           {:error, :invalid_code} = error ->
-            PairingRateLimiter.record_failure(ip)
             error
         end
     end

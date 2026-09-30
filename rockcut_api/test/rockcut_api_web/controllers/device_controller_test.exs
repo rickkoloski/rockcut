@@ -16,9 +16,10 @@ defmodule RockcutApiWeb.DeviceControllerTest do
     %{p: p, device: device, token: token}
   end
 
-  defp exchange(code, name, ip \\ "10.9.9.9") do
-    build_conn()
-    |> put_req_header("fly-client-ip", ip)
+  # Every request comes from the test conn's 127.0.0.1.
+  defp exchange(code, name, headers \\ []) do
+    headers
+    |> Enum.reduce(build_conn(), fn {k, v}, c -> put_req_header(c, k, v) end)
     |> post("/api/device_tokens", %{code: code, name: name})
   end
 
@@ -130,16 +131,54 @@ defmodule RockcutApiWeb.DeviceControllerTest do
       used = exchange(code, "iPad B") |> json_response(422)
       assert used["error"] =~ "invalid or has expired"
 
-      ip = "10.1.2.3"
-      for _ <- 1..4, do: assert(exchange("WRONG-CODE", "x", ip).status == 422)
-      # 5 wrong now (the used-code attempt was another IP) → one more wrong, then limited.
-      assert exchange("WRONG-CODE", "x", ip).status == 422
-      assert exchange("WRONG-CODE", "x", ip) |> json_response(429)
+      # The used code was wrong code #1 for 127.0.0.1; four more make 5, the 6th is 429.
+      for _ <- 1..4, do: assert(exchange("WRONG-CODE", "x").status == 422)
+      assert exchange("WRONG-CODE", "x") |> json_response(429)
     end
 
     test "a deactivated device can't get a code", %{p: p, device: d} do
       {:ok, _} = Devices.update_device(d, %{"active" => false}, p["owner"])
       assert call(p["owner"], :post, "/api/devices/#{d.id}/pairing_code").status == 422
+    end
+  end
+
+  describe "client IP source (review item 5)" do
+    setup do
+      previous = Application.get_env(:rockcut_api, :trust_fly_client_ip)
+      on_exit(fn -> Application.put_env(:rockcut_api, :trust_fly_client_ip, previous) end)
+    end
+
+    test "off Fly, a client-supplied fly-client-ip is ignored" do
+      Application.put_env(:rockcut_api, :trust_fly_client_ip, false)
+
+      for n <- 1..5,
+          do:
+            assert(
+              exchange("WRONG-CODE", "x", [{"fly-client-ip", "203.0.113.#{n}"}]).status == 422
+            )
+
+      assert exchange("WRONG-CODE", "x", [{"fly-client-ip", "203.0.113.99"}]).status == 429
+    end
+
+    test "on Fly, fly-client-ip is the client (IPv6 by /64)" do
+      Application.put_env(:rockcut_api, :trust_fly_client_ip, true)
+
+      for n <- 1..5,
+          do:
+            assert(
+              exchange("WRONG-CODE", "x", [{"fly-client-ip", "203.0.113.#{n}"}]).status == 422
+            )
+
+      # Five different IPv4 clients, one wrong code each: none is limited.
+      assert exchange("WRONG-CODE", "x", [{"fly-client-ip", "203.0.113.6"}]).status == 422
+
+      for n <- 1..5,
+          do:
+            assert(
+              exchange("WRONG-CODE", "x", [{"fly-client-ip", "2001:db8:5::#{n}"}]).status == 422
+            )
+
+      assert exchange("WRONG-CODE", "x", [{"fly-client-ip", "2001:db8:5::ff"}]).status == 429
     end
   end
 

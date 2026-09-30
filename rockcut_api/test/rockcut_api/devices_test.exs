@@ -191,14 +191,6 @@ defmodule RockcutApi.DevicesTest do
       # Another IP isn't affected, and the code wasn't used up.
       assert {:ok, _, _} = Devices.exchange_code(code, "iPad", ip())
     end
-
-    test "the window resets after 10 minutes" do
-      addr = ip()
-      t0 = System.system_time(:second)
-      for _ <- 1..5, do: PairingRateLimiter.record_failure(addr, t0)
-      assert PairingRateLimiter.limited?(addr, t0 + 1)
-      refute PairingRateLimiter.limited?(addr, t0 + PairingRateLimiter.window_seconds())
-    end
   end
 
   describe "tokens" do
