@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { expect, request, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
 import { activeProfile } from '../../config/targets'
+import { localInputToUtc } from '../../../src/lib/datetime'
 
 // Shared helpers for the D32 scheduler specs.
 
@@ -40,12 +41,16 @@ export function mondayOf(key: string): string {
 /** Open the Scheduler and move `weeks` weeks ahead; resolves when the grid is showing. */
 export async function openScheduler(page: Page, weeks = 0) {
   await page.goto('/scheduler')
-  await expect(page.getByTestId('events-row')).toBeVisible()
-  for (let i = 0; i < weeks; i++) {
-    const monday = addDays(mondayOf(denverToday()), 7 * (i + 1))
-    await page.getByRole('button').filter({ has: page.locator('[data-testid="ChevronRightIcon"]') }).first().click()
-    await expect(page.getByTestId(`events-cell-${monday}`)).toBeVisible()
-  }
+  await expect(page.getByTestId('events-row')).toBeVisible({ timeout: 20_000 })
+  const next = page.getByRole('button').filter({ has: page.locator('[data-testid="ChevronRightIcon"]') }).first()
+  for (let i = 0; i < weeks; i++) await next.click()
+  await expect(page.getByTestId(`events-cell-${weekMonday(weeks)}`)).toBeVisible()
+}
+
+/** How many weeks ahead of this week the week containing `key` is. */
+export function weeksAhead(key: string): number {
+  const ms = new Date(`${mondayOf(key)}T12:00:00Z`).getTime() - new Date(`${weekMonday(0)}T12:00:00Z`).getTime()
+  return Math.round(ms / (7 * 86_400_000))
 }
 
 /**
@@ -63,4 +68,40 @@ export async function cleanupTemp(api: APIRequestContext, prefix: string, from: 
   for (const s of shifts.filter((x) => x.notes?.startsWith(prefix))) {
     await api.delete(`/api/shifts/${s.id}`)
   }
+}
+
+/** The Monday `n` weeks from this week. Each test uses its own week so parallel tests don't collide. */
+export function weekMonday(n: number): string {
+  return addDays(mondayOf(denverToday()), 7 * n)
+}
+
+/** Denver wall-clock "YYYY-MM-DD" + "HH:MM" as a UTC ISO string. */
+export function denverUtc(dayKey: string, hhmm: string): string {
+  return localInputToUtc(`${dayKey}T${hhmm}`)
+}
+
+export interface ApiEvent {
+  id: number
+  title: string
+  status: 'draft' | 'published'
+  series_id: number | null
+  starts_at: string
+  department: { key: string } | null
+  series: { generated_through: string | null } | null
+}
+
+/** Create an event through the API as the given client; returns it (and the count for a series). */
+export async function createEvent(api: APIRequestContext, deptKey: string, attrs: Record<string, unknown>) {
+  const depts = (await (await api.get('/api/departments')).json()).data as { id: number; key: string }[]
+  const res = await api.post('/api/schedule_events', {
+    data: { department_id: depts.find((d) => d.key === deptKey)!.id, ...attrs },
+  })
+  expect(res.status(), await res.text()).toBe(201)
+  const body = await res.json()
+  return { event: body.data as ApiEvent, count: body.count as number }
+}
+
+/** All events the client can see between two dates. */
+export async function listEvents(api: APIRequestContext, from: string, to: string): Promise<ApiEvent[]> {
+  return (await (await api.get('/api/schedule_events', { params: { from, to } })).json()).data
 }
