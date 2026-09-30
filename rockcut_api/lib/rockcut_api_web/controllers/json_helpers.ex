@@ -49,6 +49,31 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{user: user(user), capabilities: capabilities}
   end
 
+  # ── Shared devices (D33) ───────────────────────────────────────────
+
+  def device(d) do
+    %{
+      id: d.id,
+      name: d.name,
+      active: d.active,
+      home_department_id: d.home_department_id,
+      home_department: maybe_render(d, :home_department, &department/1),
+      tokens: maybe_render(d, :device_tokens, &Enum.map(&1, fn t -> device_token(t) end)),
+      inserted_at: d.inserted_at
+    }
+  end
+
+  def device_token(t) do
+    %{
+      id: t.id,
+      name: t.name,
+      paired_by: maybe_render(t, :paired_by, &audit_actor/1),
+      paired_at: t.inserted_at,
+      last_seen_at: t.last_seen_at,
+      revoked_at: t.revoked_at
+    }
+  end
+
   def audit_entry(entry) do
     %{
       id: entry.id,

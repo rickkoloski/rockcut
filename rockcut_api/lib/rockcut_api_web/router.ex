@@ -20,6 +20,9 @@ defmodule RockcutApiWeb.Router do
     get "/health", HealthController, :index
     post "/session", SessionController, :create
 
+    # A tablet exchanges a pairing code for its token (D33; rate-limited per IP)
+    post "/device_tokens", DeviceTokenController, :create
+
     # Public ICS calendar feed (token in the URL is the credential)
     get "/calendar/:token", CalendarController, :feed
   end
@@ -43,6 +46,14 @@ defmodule RockcutApiWeb.Router do
     resources "/users", UserController, only: [:index, :create, :update]
     put "/users/:user_id/memberships", MembershipController, :update
     post "/users/:id/reset_password", UserController, :reset_password
+
+    # Shared devices (D33): owners + managers of a device's home department
+    get "/devices", DeviceController, :index
+    post "/devices", DeviceController, :create
+    patch "/devices/:id", DeviceController, :update
+    delete "/devices/:id", DeviceController, :delete
+    post "/devices/:id/pairing_code", DeviceController, :pairing_code
+    delete "/device_tokens/:id", DeviceTokenController, :delete
 
     # Owner activity feed (in-app notification of manager actions)
     get "/owner/activity", OwnerActivityController, :index

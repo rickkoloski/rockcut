@@ -459,6 +459,10 @@ defmodule RockcutApi.Accounts do
     |> Repo.aggregate(:count)
   end
 
+  @doc "Write one audit-log entry (shows in the owner's User change log)."
+  def record_audit(actor_id, target_id, action, detail \\ %{}),
+    do: log_audit(actor_id, target_id, action, detail)
+
   defp log_audit(actor_id, target_id, action, detail) do
     %AuditEntry{}
     |> AuditEntry.changeset(%{

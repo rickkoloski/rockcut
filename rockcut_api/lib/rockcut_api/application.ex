@@ -16,6 +16,8 @@ defmodule RockcutApi.Application do
       {Phoenix.PubSub, name: RockcutApi.PubSub},
       # Periodic shift-reminder scanner (D22); no-ops in :test.
       RockcutApi.Reminders.Scheduler,
+      # Wrong pairing-code counter per IP (D33).
+      RockcutApi.Devices.PairingRateLimiter,
       # Start to serve requests, typically the last entry
       RockcutApiWeb.Endpoint
     ]

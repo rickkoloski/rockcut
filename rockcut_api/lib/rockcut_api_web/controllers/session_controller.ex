@@ -35,7 +35,17 @@ defmodule RockcutApiWeb.SessionController do
     json(conn, %{user: user(conn.assigns.current_user)})
   end
 
+  # A person's sign-out is client-side (the token is dropped). A tablet's
+  # sign-out revokes its device token, so it needs a new pairing code (D33).
   def delete(conn, _params) do
+    case conn.assigns[:device_token] do
+      %RockcutApi.Devices.DeviceToken{} = row ->
+        {:ok, _} = RockcutApi.Devices.revoke_token(row, conn.assigns.current_user)
+
+      _ ->
+        :ok
+    end
+
     json(conn, %{ok: true})
   end
 

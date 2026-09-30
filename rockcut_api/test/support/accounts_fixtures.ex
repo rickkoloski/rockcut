@@ -69,4 +69,10 @@ defmodule RockcutApi.AccountsFixtures do
 
     Accounts.get_user!(device.id)
   end
+
+  @doc "Pair a tablet to `device` directly; returns the plain `dev_` token."
+  def device_token_fixture(%User{} = device, name \\ "Taproom iPad 1", paired_by_id \\ nil) do
+    {token, _row} = RockcutApi.Devices.issue_token(device, name, paired_by_id)
+    token
+  end
 end

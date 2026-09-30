@@ -52,6 +52,26 @@ defmodule RockcutApi.PersonaFixtures do
     Phoenix.ConnTest.dispatch(as(user), @endpoint, method, path, params)
   end
 
+  @doc """
+  The D33 `taproomDevice` persona: a device account at home in `bar`, with one
+  paired tablet. Returns `{device, dev_token}`. A device can't use `as/1` (it
+  refuses session tokens); use `call_device/4`.
+  """
+  def taproom_device do
+    departments()
+    device = AccountsFixtures.device_fixture(%{name: "Taproom tablets", home: "bar"})
+    {device, AccountsFixtures.device_token_fixture(device, "Taproom iPad 1")}
+  end
+
+  @doc "A fresh conn with a tablet's `dev_` token."
+  def as_token(token) when is_binary(token),
+    do: build_conn() |> put_req_header("authorization", "Bearer #{token}")
+
+  @doc "Dispatch `method path` with a tablet token; returns the response conn."
+  def call_device(token, method, path, params \\ %{}) do
+    Phoenix.ConnTest.dispatch(as_token(token), @endpoint, method, path, params)
+  end
+
   @doc "HTTP status of `method path` as `user`."
   def status(%User{} = user, method, path, params \\ %{}),
     do: call(user, method, path, params).status
