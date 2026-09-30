@@ -54,6 +54,7 @@ security-sensitive device access follows as D33.
 | P1 | **Copy last week** and **Delete week** leave events alone; they act on shifts only. |
 | P2 | In View Schedule, events are **hidden** when the "Mine", "Open" or position filter is on, and follow the department filter. |
 | A3 | **Sunday-evening shifts fix folded in** (Matt, 2026-09-29; found while testing D32): shift week queries use Colorado midnights, like events (§3.8). |
+| A4 | **Events that cross midnight** (Matt, 2026-09-30; from DEV finding G5): a timed event ending by **3:00 AM** the next day shows on its start day only (e.g. 6 pm – 1 am). A longer timed event shows on every day it covers; continuation days are labeled ("→ until 12:00 PM", "all day (cont.)") and never repeat the start time. All-day events show on each of their days (unchanged). Shifts are unchanged: always on the day they start. |
 
 ---
 
@@ -186,6 +187,13 @@ These mirror shifts:
     - changing the **repeat rule** ends the old series the day before this
       date and starts a new series from this date (drafts);
     - each occurrence keeps its draft/published status.
+- [ ] **Counts across a split** (DEV finding, round 2): a series' "after N
+      times" is the total for the whole series. When "this and all following"
+      starts a new part (a new repeat rule, or moving the date to another day),
+      the new part gets whatever count is left.
+- [ ] **Moving a date to another day** with *this and all following* moves the
+      repeat days from that date on (G3). The API refuses a day move that comes
+      without a new repeat rule (422) instead of ignoring it.
 - [ ] **Delete (R5):** *this event only*, or *this and all following*. The
       latter also ends the series there. Past occurrences are never touched.
 - [ ] **Permissions:** creating, editing, extending and deleting a series need

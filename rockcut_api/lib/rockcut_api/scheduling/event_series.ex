@@ -20,8 +20,23 @@ defmodule RockcutApi.Scheduling.EventSeries do
   @content_fields ~w(title notes department_id)
   @timing_fields ~w(starts_at ends_at all_day)
 
+  @frequencies ["weekly", "monthly_weekday"]
+
   @doc "True when `attrs` ask for a repeating event."
-  def repeat?(attrs), do: Map.get(attrs, "repeat") in ["weekly", "monthly_weekday"]
+  def repeat?(attrs), do: Map.get(attrs, "repeat") in @frequencies
+
+  @doc "An error changeset when `repeat` is set to something that isn't a known pattern."
+  def invalid_repeat(attrs) do
+    case Map.get(attrs, "repeat") do
+      r when r in [nil, "", "none"] or r in @frequencies ->
+        nil
+
+      _ ->
+        %ScheduleEvent{}
+        |> Changeset.change()
+        |> Changeset.add_error(:repeat, "must be weekly or monthly_weekday")
+    end
+  end
 
   @doc """
   Create a series from event-shaped attrs (the first occurrence's times) plus
@@ -44,7 +59,11 @@ defmodule RockcutApi.Scheduling.EventSeries do
   def update(%ScheduleEvent{series_id: nil} = event, attrs, _scope), do: update_one(event, attrs)
 
   def update(%ScheduleEvent{} = event, attrs, "following") do
-    if repeat?(attrs), do: split(event, attrs), else: update_following(event, attrs)
+    cond do
+      repeat?(attrs) -> split(event, attrs)
+      moves_day?(event, attrs) -> {:error, day_move_error(event, attrs)}
+      true -> update_following(event, attrs)
+    end
   end
 
   def update(%ScheduleEvent{} = event, attrs, _this) do
@@ -125,22 +144,49 @@ defmodule RockcutApi.Scheduling.EventSeries do
 
   # The rule changes from this date on: the old series ends the day before, and
   # a new series (drafts) starts here with the merged content and new rule.
+  #
+  # A count is the whole series' total (it's what the dialog shows), so the new
+  # part gets what's left after the dates before the split.
   defp split(event, attrs) do
     write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
-      end_series_before(series, event)
+      {date, _} = Recurrence.to_local(event.starts_at)
+      used = length(Recurrence.dates(%{series | skipped_dates: []}, Date.add(date, -1)))
 
       merged =
         event
         |> Map.take([:title, :notes, :department_id, :all_day, :starts_at, :ends_at])
         |> Map.new(fn {k, v} -> {to_string(k), v} end)
         |> Map.merge(attrs)
+        |> remaining_count(used)
 
-      case insert_series(merged, series.created_by_id) do
-        {:ok, _new, [first | _]} -> first
+      with {:ok, merged} <- merged,
+           _ <- end_series_before(series, event),
+           {:ok, _new, [first | _]} <- insert_series(merged, series.created_by_id) do
+        first
+      else
         {:error, changeset} -> Repo.rollback(changeset)
       end
     end)
+  end
+
+  defp remaining_count(attrs, used) do
+    case int(attrs["repeat_count"]) do
+      nil ->
+        {:ok, attrs}
+
+      total when total > used ->
+        {:ok, Map.put(attrs, "repeat_count", total - used)}
+
+      _ ->
+        {:error,
+         %ScheduleEvent{}
+         |> Changeset.change()
+         |> Changeset.add_error(
+           :repeat_count,
+           "the series already has #{used} dates before this one; choose a larger number"
+         )}
+    end
   end
 
   defp end_series_before(series, event) do
@@ -161,6 +207,29 @@ defmodule RockcutApi.Scheduling.EventSeries do
   end
 
   ## Update
+
+  # A "following" edit keeps each date and changes content or time. Moving this
+  # date to another day needs a new repeat rule (the UI sends one); without it
+  # the move can't apply to later dates, so refuse instead of ignoring it.
+  defp moves_day?(event, attrs) do
+    case Changeset.apply_action(ScheduleEvent.changeset(event, attrs), :update) do
+      {:ok, edited} ->
+        elem(Recurrence.to_local(edited.starts_at), 0) !=
+          elem(Recurrence.to_local(event.starts_at), 0)
+
+      _ ->
+        false
+    end
+  end
+
+  defp day_move_error(event, attrs) do
+    event
+    |> ScheduleEvent.changeset(attrs)
+    |> Changeset.add_error(
+      :starts_at,
+      "to move this and later dates to another day, change the repeat days"
+    )
+  end
 
   defp update_one(event, attrs) do
     event |> ScheduleEvent.changeset(attrs) |> Repo.update()

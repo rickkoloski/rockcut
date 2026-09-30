@@ -120,6 +120,15 @@ defmodule RockcutApiWeb.ScheduleEventSeriesTest do
       assert Repo.aggregate(ScheduleEvent, :count) == 0
     end
 
+    test "an unknown repeat type is refused, not turned into a one-off", %{p: p, d: d} do
+      for bad <- ["monthly_day", "daily", "yearly"] do
+        conn = call(p["barMgr"], :post, "/api/schedule_events", trivia(d, %{"repeat" => bad}))
+        assert json_response(conn, 422)["errors"]["repeat"], bad
+      end
+
+      assert Repo.aggregate(ScheduleEvent, :count) == 0
+    end
+
     test "series links can't be set from request params", %{p: p, d: d} do
       {other, _} = create!(p["barMgr"], trivia(d))
       attrs = %{trivia(d) | "repeat" => nil} |> Map.put("series_id", other["series_id"])
@@ -198,6 +207,59 @@ defmodule RockcutApiWeb.ScheduleEventSeriesTest do
       assert Enum.at(after_, 5).status == "published"
     end
 
+    test "moving a date to another day with this and following needs a new repeat (G3)", %{
+      p: p,
+      d: d
+    } do
+      {first, _} = create!(p["barMgr"], trivia(d))
+      third = Enum.at(occurrences(first["series_id"]), 2)
+
+      # Tue Oct 20 → Wed Oct 21, 7 pm MDT, with no repeat params: refused, not ignored.
+      conn =
+        call(p["barMgr"], :patch, "/api/schedule_events/#{third.id}", %{
+          "starts_at" => "2026-10-22T01:00:00Z",
+          "ends_at" => "2026-10-22T03:00:00Z",
+          "scope" => "following"
+        })
+
+      assert json_response(conn, 422)["errors"]["starts_at"]
+
+      assert Enum.all?(
+               occurrences(first["series_id"]),
+               &(Date.day_of_week(elem(local(&1), 0)) == 2)
+             )
+
+      # The same move on this date only is fine.
+      conn =
+        call(p["barMgr"], :patch, "/api/schedule_events/#{third.id}", %{
+          "starts_at" => "2026-10-22T01:00:00Z",
+          "ends_at" => "2026-10-22T03:00:00Z",
+          "scope" => "this"
+        })
+
+      assert json_response(conn, 200)
+    end
+
+    test "a split keeps the series' total count: the new part gets what's left", %{p: p, d: d} do
+      {first, 8} = create!(p["barMgr"], trivia(d))
+      third = Enum.at(occurrences(first["series_id"]), 2)
+
+      # Move from the 3rd Tuesday (Oct 20) to Wednesdays, keeping "8 times".
+      conn =
+        call(p["barMgr"], :patch, "/api/schedule_events/#{third.id}", %{
+          "starts_at" => "2026-10-22T01:00:00Z",
+          "ends_at" => "2026-10-22T03:00:00Z",
+          "repeat" => "weekly",
+          "repeat_weekdays" => [3],
+          "repeat_count" => 8,
+          "scope" => "following"
+        })
+
+      new_id = json_response(conn, 200)["data"]["series_id"]
+      assert length(occurrences(first["series_id"])) == 2
+      assert length(occurrences(new_id)) == 6
+    end
+
     test "changing the rule with this and following splits the series", %{p: p, d: d} do
       {first, _} = create!(p["barMgr"], trivia(d))
       old_id = first["series_id"]
@@ -209,7 +271,8 @@ defmodule RockcutApiWeb.ScheduleEventSeriesTest do
           "ends_at" => "2026-11-06T04:00:00Z",
           "repeat" => "weekly",
           "repeat_weekdays" => [4],
-          "repeat_count" => 3,
+          # The count is the whole series' total: 4 dates were used before the split.
+          "repeat_count" => 7,
           "scope" => "following"
         })
 

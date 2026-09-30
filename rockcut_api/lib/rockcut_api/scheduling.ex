@@ -294,6 +294,14 @@ defmodule RockcutApi.Scheduling do
   def create_event(attrs, %User{} = actor) do
     attrs = attrs |> stringify() |> Map.drop(@server_only)
 
+    if bad = EventSeries.invalid_repeat(attrs) do
+      {:error, bad}
+    else
+      create_event_checked(attrs, actor)
+    end
+  end
+
+  defp create_event_checked(attrs, actor) do
     if EventSeries.repeat?(attrs) do
       with {:ok, first, count} <- EventSeries.create(attrs, actor.id),
            do: {:ok, get_event!(first.id), count}
