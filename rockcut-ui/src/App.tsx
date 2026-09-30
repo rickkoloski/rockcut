@@ -47,7 +47,7 @@ import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
 import useAuth from './hooks/useAuth'
 import { useApiQuery } from './hooks/useApiQuery'
-import type { Channel } from './lib/types'
+import type { Channel, Department } from './lib/types'
 
 // Pages
 import Home from './pages/Home'
@@ -90,7 +90,7 @@ interface NavSection {
   emptyLabel?: string
 }
 
-// Brewery is the only department with app pages today; the others (Bar, Office,
+// Brewery is the only department with app pages today; the others (Taproom, Office,
 // Sales) show as headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
@@ -101,8 +101,10 @@ const BREWERY_PAGES: NavLeaf[] = [
 ]
 
 // Per-department heading metadata, keyed by the department key from capabilities.modules.
+// The label shown is the department's name from /api/departments (D32: an owner's
+// rename, e.g. Bar → Taproom, needs no code change); `label` is only the fallback.
 const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavLeaf[] }> = {
-  bar: { label: 'Bar', icon: <LocalBarIcon />, children: [] },
+  bar: { label: 'Taproom', icon: <LocalBarIcon />, children: [] },
   brewery: { label: 'Brewery', icon: <SportsBarIcon />, children: BREWERY_PAGES },
   office: { label: 'Office', icon: <BusinessIcon />, children: [] },
   sales: { label: 'Sales', icon: <PointOfSaleIcon />, children: [] },
@@ -134,6 +136,10 @@ function App() {
     refetchInterval: 20000,
   })
 
+  const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, {
+    enabled: isAuthenticated,
+  })
+
   if (!isAuthenticated) return <Login />
   if (!bootstrapped || !user || !capabilities) return <LoadingScreen />
   if (user.must_reset_password) return <ForcePasswordReset />
@@ -146,14 +152,18 @@ function App() {
   const pending = capabilities.pending_owner_reviews ?? 0
 
   // Department headings the user may see: their department keys (owners get all),
-  // sorted alphabetically by label. Bar/Office/Sales appear even with no pages yet.
+  // sorted alphabetically by name. Taproom/Office/Sales appear even with no pages yet.
   const deptSections: NavSection[] = modules
     .filter((key) => key !== 'schedule' && DEPT_META[key])
-    .map((key) => ({ key, meta: DEPT_META[key] }))
-    .sort((a, b) => a.meta.label.localeCompare(b.meta.label))
-    .map(({ key, meta }) => ({
+    .map((key) => ({
+      key,
+      meta: DEPT_META[key],
+      label: departments.find((d) => d.key === key)?.name ?? DEPT_META[key].label,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .map(({ key, meta, label }) => ({
       key: `dept:${key}`,
-      label: meta.label,
+      label,
       icon: meta.icon,
       children: meta.children,
       emptyLabel: 'Coming soon',

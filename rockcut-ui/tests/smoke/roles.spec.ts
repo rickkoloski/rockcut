@@ -19,7 +19,7 @@ test.describe('owner', () => {
     await open(page)
     await expect(nav(page).getByText('Admin', { exact: true })).toBeVisible()
     await expect(nav(page).getByText('Scheduler', { exact: true })).toBeVisible()
-    for (const dept of ['Bar', 'Brewery', 'Office', 'Sales']) {
+    for (const dept of ['Taproom', 'Brewery', 'Office', 'Sales']) {
       await expect(nav(page).getByText(dept, { exact: true }).first()).toBeVisible()
     }
   })
@@ -56,7 +56,7 @@ test.describe('no department (noDept)', () => {
   test.use({ storageState: authFile('noDept') })
   test('gets only the baseline', async ({ page }) => {
     await open(page)
-    for (const hidden of ['Scheduler', 'Admin', 'Brewery', 'Bar']) {
+    for (const hidden of ['Scheduler', 'Admin', 'Brewery', 'Taproom']) {
       await expect(nav(page).getByText(hidden, { exact: true })).toHaveCount(0)
     }
   })
