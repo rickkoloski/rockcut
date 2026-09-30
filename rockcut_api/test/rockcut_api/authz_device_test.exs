@@ -10,6 +10,8 @@ defmodule RockcutApi.AuthzDeviceTest do
   """
   use RockcutApi.DataCase, async: false
 
+  import Ecto.Query, only: [from: 2]
+
   import RockcutApi.PersonaFixtures
   import RockcutApi.SchedulingFixtures
 
@@ -210,6 +212,63 @@ defmodule RockcutApi.AuthzDeviceTest do
     refute Authz.can?(d, :anything, :anything)
     refute Authz.can?(d, :read, %ShiftTemplate{})
     refute Authz.owner?(d)
+  end
+
+  describe "an owner acting on a device as the target (review item 2)" do
+    test "no one acts on behalf of a device, owners included", %{d: d, p: p} do
+      for who <- ["owner", "barMgr"] do
+        refute Authz.can?(p[who], :manage, {:user_for, d.id}), who
+      end
+
+      refute Authz.can_manage_user?(d, d.id)
+    end
+
+    test "owners still act on behalf of people", %{p: p} do
+      assert Authz.can?(p["owner"], :manage, {:user_for, p["bartender1"].id})
+      assert Authz.can?(p["barMgr"], :manage, {:user_for, p["bartender1"].id})
+    end
+
+    test "no personal calendar feed for a device, owners included", %{d: d, p: p} do
+      refute Authz.can?(p["owner"], :rotate, {:calendar_feed, "user", d.id})
+      assert Authz.can?(p["owner"], :rotate, {:calendar_feed, "user", p["bartender1"].id})
+      assert Authz.can?(p["bartender1"], :rotate, {:calendar_feed, "user", p["bartender1"].id})
+    end
+
+    test "time off, availability and a feed for a device are refused through the API", %{
+      d: d,
+      p: p
+    } do
+      owner = p["owner"]
+
+      time_off =
+        call(owner, :post, "/api/time_off", %{
+          user_id: d.id,
+          type: "pto",
+          all_day: true,
+          starts_at: "2030-01-07T07:00:00Z",
+          ends_at: "2030-01-08T07:00:00Z"
+        })
+
+      assert time_off.status == 403
+
+      slot =
+        call(owner, :post, "/api/availability", %{
+          user_id: d.id,
+          weekday: 1,
+          kind: "unavailable",
+          all_day: true
+        })
+
+      assert slot.status == 403
+
+      feed =
+        call(owner, :post, "/api/calendar_feeds/rotate", %{subject_type: "user", subject_id: d.id})
+
+      assert feed.status == 403
+
+      assert Repo.aggregate(from(r in Request, where: r.user_id == ^d.id), :count) == 0
+      assert Repo.aggregate(from(s in Slot, where: s.user_id == ^d.id), :count) == 0
+    end
   end
 
   test "an owner's powers don't reach a device: invariants hold through the owner", %{

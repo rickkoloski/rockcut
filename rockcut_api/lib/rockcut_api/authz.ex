@@ -184,6 +184,28 @@ defmodule RockcutApi.Authz do
       when type not in ["user", "department", "all"],
       do: false
 
+  # Acting on behalf of a user binds owners too (D33 review item 2): nobody acts
+  # on behalf of a shared device (time off, availability). People: owners may
+  # act for anyone, managers for their departments' members.
+  def can?(%User{} = user, action, {:user_for, target_id}) do
+    cond do
+      device_account?(target_id) -> false
+      owner?(user) -> true
+      action == :manage -> can_manage_user?(user, target_id)
+      true -> false
+    end
+  end
+
+  # A personal calendar feed: your own, or any person's for an owner; never a
+  # device's, owners included (D33 review item 2).
+  def can?(%User{} = user, :rotate, {:calendar_feed, "user", subject_id}) do
+    cond do
+      device_account?(subject_id) -> false
+      owner?(user) -> true
+      true -> user.id == subject_id
+    end
+  end
+
   def can?(%User{is_owner: true}, _action, _resource), do: true
 
   # Scheduling — shifts: global read of published; department-scoped write;
@@ -256,17 +278,15 @@ defmodule RockcutApi.Authz do
       when is_list(memberships),
       do: Enum.any?(memberships, &(role_in(user, &1.department_id) == :manager))
 
-  # Acting on behalf of a user by id: time off, availability (was time_off.ex:102,
-  # availability.ex:89).
-  def can?(%User{} = user, :manage, {:user_for, user_id}), do: can_manage_user?(user, user_id)
+  # Acting on behalf of a user by id (time off, availability; was time_off.ex:102,
+  # availability.ex:89) is decided above the owner clause.
 
   # Availability: own slots, or a managed user's (was availability.ex:80-82).
   def can?(%User{id: id}, :delete, %Slot{user_id: uid}) when id == uid, do: true
   def can?(%User{} = user, :delete, %Slot{user_id: uid}), do: can_manage_user?(user, uid)
 
-  # Calendar feed tokens (was calendar_feeds.ex:63-69).
-  def can?(%User{id: id}, :rotate, {:calendar_feed, "user", sid}), do: id == sid
-
+  # Calendar feed tokens (was calendar_feeds.ex:63-69). Personal feeds are
+  # decided above the owner clause.
   def can?(%User{} = user, :rotate, {:calendar_feed, "department", sid}),
     do: role_in(user, sid) == :manager
 
@@ -313,6 +333,12 @@ defmodule RockcutApi.Authz do
   defp member_department_ids(%User{id: id}) do
     from(m in Membership, where: m.user_id == ^id, select: m.department_id) |> Repo.all()
   end
+
+  # A shared-device account id (D33): used where owners are bound too.
+  defp device_account?(id) when is_integer(id),
+    do: Repo.exists?(from(u in User, where: u.id == ^id and u.kind == "device"))
+
+  defp device_account?(_), do: false
 
   defp channel_access?(%User{} = user, "all"), do: user.active
   defp channel_access?(%User{} = user, "managers"), do: counts_as_manager?(user)
