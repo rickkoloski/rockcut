@@ -6,7 +6,7 @@ import { test, expect as baseExpect } from '@playwright/test'
 const expect = baseExpect.configure({ timeout: 15_000 })
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
-import { blankTablet, createDevice, deleteDevices, getDevice, pairingCode, setUpTablet } from './helpers'
+import { blankTablet, createDevice, deleteDevices, expectUnpaired, getDevice, pairingCode, setUpTablet } from './helpers'
 
 // D33 S2, S4, S11: pairing tablets and revoking one.
 
@@ -71,7 +71,7 @@ test.describe('barMgr (manager of the home department)', () => {
 
     // iPad 1's next request is 401 → back to setup; iPad 2 keeps working.
     await one.page.reload()
-    await expect(one.page.getByTestId('device-setup-link')).toBeVisible()
+    await expectUnpaired(one.page)
     await two.page.reload()
     await expect(two.page.getByTestId('device-chip')).toBeVisible()
 

@@ -6,7 +6,7 @@ import { test, expect as baseExpect } from '@playwright/test'
 const expect = baseExpect.configure({ timeout: 15_000 })
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
-import { blankTablet, createDevice, deleteDevices, pairingCode, setUpTablet } from './helpers'
+import { blankTablet, createDevice, deleteDevices, expectUnpaired, pairingCode, setUpTablet } from './helpers'
 
 // D33 S3 (another department's manager) and S12 (deactivating the account).
 
@@ -64,7 +64,7 @@ test.describe('owner', () => {
 
     for (const t of [one, two]) {
       await t.page.reload()
-      await expect(t.page.getByTestId('device-setup-link')).toBeVisible()
+      await expectUnpaired(t.page)
       await t.context.close()
     }
   })

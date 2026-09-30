@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Box, Button, TextField, Typography, Paper, Alert, Link } from '@mui/material'
 import useAuth from '../hooks/useAuth'
-import { asideDeviceToken } from '../lib/device'
+import { UNPAIRED_KEY, asideDeviceToken, clearUnpaired, readStorage } from '../lib/device'
 
 // "abcd efgh" → "ABCD-EFGH" as it's typed (D33 pairing codes: 8 characters).
 function formatCode(raw: string): string {
@@ -12,7 +12,9 @@ function formatCode(raw: string): string {
 export default function Login() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [deviceSetup, setDeviceSetup] = useState(false)
+  // DEV G7: a tablet whose pairing ended opens straight on setup, saying why.
+  const [unpaired] = useState(() => readStorage(UNPAIRED_KEY) === '1')
+  const [deviceSetup, setDeviceSetup] = useState(unpaired)
   const [code, setCode] = useState('')
   const [tabletName, setTabletName] = useState('')
   const { login, pairDevice, endPersonalSession, isLoading, error } = useAuth()
@@ -63,6 +65,12 @@ export default function Login() {
           {deviceSetup ? 'Set up as a shared device' : onSharedTablet ? 'Sign in as yourself' : 'Sign in to continue'}
         </Typography>
 
+        {deviceSetup && unpaired && (
+          <Alert data-testid="device-unpaired-notice" severity="info" sx={{ width: '100%' }}>
+            This tablet was unpaired. Ask a manager for a new code.
+          </Alert>
+        )}
+
         {deviceSetup && (
           <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', mt: -2 }}>
             Ask a manager for a pairing code from Admin → Shared devices.
@@ -100,7 +108,15 @@ export default function Login() {
             <Button data-testid="device-submit" type="submit" variant="contained" size="large" disabled={isLoading} fullWidth sx={{ mt: 1 }}>
               {isLoading ? 'Setting up...' : 'Set up this tablet'}
             </Button>
-            <Link component="button" type="button" variant="body2" onClick={() => setDeviceSetup(false)}>
+            <Link
+              component="button"
+              type="button"
+              variant="body2"
+              onClick={() => {
+                clearUnpaired()
+                setDeviceSetup(false)
+              }}
+            >
               Back to sign in
             </Link>
           </Box>

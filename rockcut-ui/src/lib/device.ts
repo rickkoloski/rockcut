@@ -8,6 +8,9 @@ export const DEVICE_TOKEN_KEY = 'rockcut_device_token'
 /** Wall-clock time (ms) of the last activity during a personal sign-in on a tablet. */
 export const PERSONAL_ACTIVITY_KEY = 'rockcut_personal_last_activity'
 
+/** Set when a tablet's pairing ended (revoked, deactivated): the login screen opens on setup (DEV G7). */
+export const UNPAIRED_KEY = 'rockcut_device_unpaired'
+
 /** Idle time before a personal sign-in on a tablet returns to the device session (spec Q1: 5 minutes). */
 export const PERSONAL_IDLE_MS = 5 * 60 * 1000
 
@@ -47,3 +50,25 @@ export function restoreDeviceToken(): boolean {
   localStorage.removeItem('rockcut_email')
   return true
 }
+
+/** True for a shared tablet's token (D33 tokens start with `dev_`). */
+export function isDeviceToken(token: string | null | undefined): boolean {
+  return !!token && token.startsWith('dev_')
+}
+
+/**
+ * Forget a tablet whose pairing ended and remember why, so the login screen
+ * opens on "Set up as a shared device" with an explanation (DEV G7).
+ */
+export function markUnpaired(): void {
+  localStorage.removeItem(TOKEN_KEY)
+  localStorage.removeItem(DEVICE_TOKEN_KEY)
+  localStorage.removeItem(PERSONAL_ACTIVITY_KEY)
+  localStorage.removeItem('rockcut_email')
+  localStorage.setItem(UNPAIRED_KEY, '1')
+}
+
+export function clearUnpaired(): void {
+  localStorage.removeItem(UNPAIRED_KEY)
+}
+

@@ -64,3 +64,14 @@ export async function setUpTablet(page: Page, code: string, name: string) {
   // so under the full parallel suite this can take several seconds.
   await expect(page.getByTestId('device-chip')).toBeVisible({ timeout: 15_000 })
 }
+
+/**
+ * A tablet whose pairing ended (revoked, deactivated) lands on the setup form,
+ * not the password login, and says why (DEV G7).
+ */
+export async function expectUnpaired(page: Page) {
+  await expect(page.getByTestId('device-unpaired-notice')).toContainText('This tablet was unpaired')
+  await expect(page.getByTestId('device-code')).toBeVisible()
+  await expect(page.getByTestId('login-password')).toHaveCount(0)
+}
+

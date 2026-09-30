@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import api from '../lib/api'
 import type { Me, User, Capabilities } from '../lib/types'
-import { TOKEN_KEY, asideDeviceToken, restoreDeviceToken, setDeviceTokenAside } from '../lib/device'
+import { TOKEN_KEY, asideDeviceToken, clearUnpaired, restoreDeviceToken, setDeviceTokenAside } from '../lib/device'
 
 interface AuthState {
   token: string | null
@@ -97,6 +97,7 @@ const useAuth = create<AuthState>((set, get) => ({
     try {
       const { data } = await api.post<{ token: string }>('/api/device_tokens', { code, name })
       localStorage.setItem(TOKEN_KEY, data.token)
+      clearUnpaired()
       set({ token: data.token, isAuthenticated: true })
       await get().loadMe()
       set({ isLoading: false, bootstrapped: true })

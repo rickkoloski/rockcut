@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { restoreDeviceToken } from './device'
+import { isDeviceToken, markUnpaired, restoreDeviceToken } from './device'
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '',
@@ -29,7 +29,10 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !isLogin && forCurrentToken) {
       // D33: a personal sign-in on a shared tablet falls back to the tablet's
       // own session instead of the login screen.
-      if (!restoreDeviceToken()) {
+      if (isDeviceToken(current)) {
+        // The tablet's own token was refused: revoked or deactivated (DEV G7).
+        markUnpaired()
+      } else if (!restoreDeviceToken()) {
         localStorage.removeItem('rockcut_token')
         localStorage.removeItem('rockcut_email')
       }
