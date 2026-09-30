@@ -2,10 +2,13 @@
 
 **Branch:** `d33-taproom-device-access` (stacked on `d32-schedule-events`)
 **SHA for DEV:** the branch HEAD when the lead pushes. Code last changed at
-`22c1d66` (review round 2); later commits touch docs only.
+`bbd5195` (DEV fix cycle 1); later commits touch docs only.
+**History:** local gate → review round 2 → DEV pass 1 at `1aa70d5` (13/14
+scenarios; S12 failed; gaps G1–G9) → **fix cycle 1 of 2** (this version).
 **Spec:** `docs/current_work/specs/d33_taproom_device_access_spec.md` · **Plan:**
 `docs/current_work/planning/d33_taproom_device_access_plan.md` · **Review + decisions:**
-`docs/current_work/prompts/d33_lead_decisions_2.md` · **Backlog:** 3938, 3939
+`docs/current_work/prompts/d33_lead_decisions_2.md`, `d33_lead_decisions_3.md` · **DEV QA:**
+`docs/current_work/stepwise_results/d33_dev_pass_1_qa_report.md` · **Backlog:** 3938, 3939
 
 ## What changed
 
@@ -67,6 +70,20 @@
     print a real pairing code.
 - **Docs.** `docs/process/taproom_tablet_setup.md` and `tests/COVERAGE.md`.
 
+### DEV fix cycle 1 (gaps from DEV pass 1)
+
+| Gap | Fix | Commit |
+|---|---|---|
+| **G1** | Deactivating a device **revokes every tablet token** and deletes unused codes; reactivating needs new pairings (before: old tablets came back) | `8ace5b6` |
+| **G2** | During "Sign in as me" the set-aside tablet token is checked (on start, every navigation, wake/focus, every 20 s); if revoked or deactivated, the personal session ends and the setup screen shows | `4b3f15a` |
+| **G3** | Other tabs re-sync on `storage` events for the auth keys (reload from `/`), so a second tab doesn't keep the last person's UI; Availability shows a load error instead of "Available" every day | `96fac99` |
+| **G4** | A tablet is unpaired only by a confirmed sign-out that the server revoked: on failure the dialog shows the error and offers Try again; a person's Logout never unpairs a tablet (a stale tab re-syncs instead) | `ee7af39` |
+| **G5** | Deactivate asks first ("Every tablet paired to it is signed out now…") | `e20e16b` |
+| **G6** | No Calendar sync on a tablet; device pages make no refused requests | `7fb0270` |
+| **G7** | A revoked, deactivated or signed-out tablet lands on **setup** with "This tablet was unpaired. Ask a manager for a new code." | `3359201` |
+| **G8** | No `email` key in anything a device can read (shifts' assignee, messages' author, `/api/me`, `/api/session`, pairing response); names still show. People unchanged | `e8315eb` |
+| **G9** | No "Pair a tablet" on a deactivated device (API already 422, tested) | `94d2d0e` |
+
 ### Behavior changes for people (not only devices)
 
 - **401 handling (`api.ts`).** A 401 now signs a person out only if the
@@ -83,6 +100,11 @@
   "Request failed with status code …".
 - **3939 applies to everyone:** a channel URL you can't see redirects, and a
   failed send shows an error and keeps the draft.
+- **Tabs follow each other (G3).** Signing in or out, or starting or ending
+  "Sign in as me", in one tab reloads the app's other tabs from `/`. Before,
+  other tabs kept the old session's screen until their next 401.
+- **Availability shows a load error (G3).** If loading availability fails, the
+  page shows "Couldn't load availability: …" instead of "Available" every day.
 - **Users & Roles** refuses edit, reset and memberships for a device id (422).
   Devices aren't listed there, so people never meet this.
 
@@ -112,29 +134,32 @@ S1–S14 from the spec, plus 3939. Personas:
 - **S13** needs a real tablet: 5 idle minutes, **and lock the iPad for more
   than 5 minutes, then wake it.** It must be back on the shared screen
   straight away.
+- **Cycle 1 re-checks:**
+  - **S12 / G1:** deactivate, then reactivate. The old tablets must stay
+    signed out, and the list shows them as Revoked.
+  - **G2:** revoke *and* deactivate while a person is on the tablet. The
+    tablet goes to setup on the next tap, or within 20 s when idle.
+  - **G3/G4:** two tabs on one tablet. Signing out in one re-syncs the other,
+    and the other tab's Logout doesn't unpair the tablet.
+  - **G5:** the deactivate confirmation.
+  - **G6:** no Calendar sync on the tablet.
+  - **G7:** a revoked tablet shows the setup screen with the unpaired notice.
+  - **G8:** `GET /api/shifts`, `/api/channels/all/messages` and `/api/me` as
+    the device contain no `email`.
+  - **G9:** no Pair button on a deactivated device.
 
 ## ⚠ LIMITATIONS: what local could NOT tell us
 
-1. **The limiter's client IP on Fly. The DEV pass must check both of these:**
-   - **(a) It keys on the real client.** From one machine, POST
-     `/api/device_tokens` with a wrong code 6 times: the 6th must be **429**.
-     If 6 wrong codes never produce 429, or clients on different networks
-     limit each other, then the key is Fly's proxy address and
-     `trust_fly_client_ip` isn't taking effect (`FLY_APP_NAME` unset).
-   - **(b) A client-supplied `fly-client-ip` is overwritten by Fly's proxy.**
-     Send the 6 wrong codes with a *different made-up* `fly-client-ip` on each
-     request: the 6th must still be **429**. If it isn't, Fly passes the
-     header through and an attacker can rotate it. Even then, the global cap
-     still stops them after 50 wrong codes per 10 minutes.
-   - **Where the header is trusted:** only when `FLY_APP_NAME` is set, that is
-     on Fly. On Fly, a request that doesn't come through the public edge (the
-     private `.internal`/6PN address, Flycast, `fly proxy`, or `curl` from
-     `fly ssh console`) can still set the header. All of those need Fly org
-     access. Locally and in tests the header is ignored.
-   - **Order on DEV:** (a) and (b) use up the tester IP's 5 tries for 10
-     minutes, and 11 of the 50 global tries. Run the Playwright suite first,
-     or wait 10 minutes after the checks. The S4 wrong-code spec makes one
-     wrong attempt per run.
+1. **The limiter's client IP on Fly: VERIFIED on DEV** (lead, DEV pass 1 at
+   `1aa70d5`).
+   - (a) Six wrong codes → 422 ×5, then **429**, so the limiter keys on the
+     real client.
+   - (b) With that IP limited, six requests each with a different made-up
+     `fly-client-ip` → **429 ×6**, so Fly's edge overwrites a client-supplied
+     header.
+   - Still true: on Fly, a request that bypasses the public edge (6PN,
+     Flycast, `fly proxy`, `fly ssh`) can set the header. All of those need
+     Fly org access. Locally and in tests the header is ignored.
 2. **The global cap is also a way to block pairing.** Anyone who sends 50
    wrong codes stops **all** pairing for up to 10 minutes. Existing tablets
    are unaffected. This is the trade-off the lead accepted (decision 5); the
@@ -167,16 +192,63 @@ S1–S14 from the spec, plus 3939. Personas:
    inside the app; a real iPad on DEV should confirm this.
 9. **`last_seen_at` write load is unmeasured.** It's at most one write a minute
    per tablet, with one SQLite connection; tablets poll `/api/channels` every 20 s.
-10. **Local server timing.** The full local suite (76 tests, 4 workers)
-    saturates the local API's single DB connection; one `/api/me` took up to
-    5 s.
-    - The device specs wait on real signals, with a 15 s expect timeout where
-      they chain full page loads.
-    - An idle pairing round trip is about 70 ms.
-    - DEV timing may differ in either direction.
-11. **Seed tablet tokens pile up briefly.** The synthetic `[SEED] Playwright
+10. **Local timing.** The full local suite (93 tests, 4 workers) is slow on
+    the local stack:
+    - the API's single DB connection (one `/api/me` took up to 5 s);
+    - the **Vite dev server serving unbundled modules** to every fresh
+      browser context (up to 13 s before a page's first API call; API calls
+      themselves took about 300 ms).
+
+    The device specs wait on real signals, with 15 s expects and a 60 s test
+    timeout, and S9 is split per URL. DEV serves a production bundle, so
+    it's expected to be faster.
+11. **G2 detection delay.** While a person is on a tablet and nobody touches
+    it, a revoke or deactivation is noticed within 20 s (the check interval).
+    With a tap or navigation it's noticed at once. The check is one
+    `GET /api/session` with the tablet token every 20 s during personal
+    sessions only.
+12. **G3 relies on `storage` events.** A browser that doesn't deliver them
+    (none known) would leave a second tab stale until its next navigation or
+    401. The G4 guard still stops that tab's Logout from unpairing the tablet;
+    that case has a spec that simulates missing events.
+13. **Seed tablet tokens pile up briefly.** The synthetic `[SEED] Playwright
     tablet` tokens are pruned after 8 hours. A deleted device's audit rows keep
     its name in the detail, with no target.
+
+## Local gate evidence: DEV fix cycle 1 (2026-09-30)
+
+| Check | After round 2 | **After cycle 1** |
+|---|---|---|
+| `MIX_ENV=test mix test` | 799 | **804, 0 failures**; parity dir unchanged |
+| `tsc` errors | 3 | **3** (all in `shared/ui-components`) |
+| `vite build` | green | **green** |
+| `pnpm lint` problems | 27 | **27** (none in D33 files) |
+| `npx playwright test` (local) | 76 passed, 1 skipped | **93 passed, 1 skipped, two full runs in a row** (runs 12 and 13) |
+
+**Every gap: test first, then revert-and-rerun, one commit each.** Every
+new test failed on the pre-fix code before the fix was written:
+
+| Gap | Fix reverted | Fix restored |
+|---|---|---|
+| G1 (ExUnit) | 30 tests, 2 failures | 30, 0 |
+| G8 (ExUnit, walks every device-allowed route) | 6 tests, 1 failure | 6, 0 |
+| G9 + G5 (one file; committed separately) | 2 failed | all passed |
+| G6 | 1 failed | passed |
+| G7 | 1 failed | passed |
+| G2 (revoke and deactivate) | 2 failed | passed |
+| G3 (two tabs; Availability error) | 2 failed | passed |
+| G4 (failed revoke, confirmed sign-out, stale tab) | 3 failed | passed |
+
+- **G7 was rerun.** The first G7 run showed "fix restored: 2 failed": the
+  Vite dev server was still serving the reverted modules right after the
+  files were copied back. The helper now waits until Vite serves the restored
+  file, and the rerun gave reverted 1 failed, restored passed. S11 and S12
+  also passed on their own.
+- **Runs 10 and 11 failed on time, not logic** (S9, G6, S11, S12, S13; 3 and 5
+  failures). The persona's seed tablet tokens were checked on the server and
+  were all live. The trace shows up to 13 s of Vite module loading per page
+  load, so no logic changed. `bbd5195` splits S9 per URL and gives the device
+  specs 60 s test and 15 s expect timeouts. Runs 12 and 13 were fully green.
 
 ## Local gate evidence (2026-09-30, after review round 2)
 

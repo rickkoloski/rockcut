@@ -64,3 +64,17 @@ Known gaps:
 | S14 | Device never member/owner/assignee; 422; nobody (owners included) acts on behalf of a device | ExUnit `device_account_test` (incl. membership changeset), `authz_device_test` (owner → device); Playwright `shared_devices_admin` (API 422) |
 | 3939 | Unknown channel URL redirects; no 403 polling; failed send shows an error (every user) | Playwright `messaging/channel_urls` (revert-and-rerun recorded) |
 
+### D33 DEV fix cycle 1 (gaps from DEV pass 1)
+
+| Gap | Layer |
+|---|---|
+| G1 deactivate revokes tablets; reactivation needs new pairings | ExUnit `devices_test`, `auth_plug_device_test` |
+| G2 a personal session ends when its tablet is revoked/deactivated | Playwright `devices/personal_signin` (revoke + deactivate) |
+| G3 other tabs re-sync; Availability load error | Playwright `personal_signin` (two tabs), `devices/availability_errors` |
+| G4 sign-out only after a server revoke; stale tab can't unpair | Playwright `devices/device_signout` |
+| G5 Deactivate confirmation | Playwright `shared_devices_admin`, `device_permissions` (S12) |
+| G6 no Calendar sync; no refused requests on device pages | Playwright `device_session` |
+| G7 unpaired tablet lands on setup with a notice | Playwright `pairing` (S11), `device_permissions` (S12), `device_signout` |
+| G8 no email in any device-readable response | ExUnit `device_route_matrix_test` (walks every device-allowed route) |
+| G9 no Pair button on a deactivated device; API 422 | Playwright `shared_devices_admin`; ExUnit `device_controller_test` |
+
