@@ -26,6 +26,31 @@ defmodule RockcutApi.DevicesTest do
       end
     end
 
+    test "codes come from the OS CSPRNG, not :rand (review item 1)", %{device: d, owner: o} do
+      # With :rand, the same seed gives the same code; crypto randomness ignores it.
+      :rand.seed(:exsss, {1, 2, 3})
+      {:ok, first, _} = Devices.create_pairing_code(d, o)
+      :rand.seed(:exsss, {1, 2, 3})
+      {:ok, second, _} = Devices.create_pairing_code(d, o)
+      refute first == second
+    end
+
+    test "every alphabet character turns up (no truncated alphabet)", %{device: d, owner: o} do
+      chars =
+        for _ <- 1..60, reduce: MapSet.new() do
+          acc ->
+            {:ok, code, _} = Devices.create_pairing_code(d, o)
+
+            code
+            |> String.replace("-", "")
+            |> String.graphemes()
+            |> MapSet.new()
+            |> MapSet.union(acc)
+        end
+
+      assert MapSet.size(chars) == 31
+    end
+
     test "stored hashed, never in plain text", %{device: d, owner: o} do
       {:ok, code, _} = Devices.create_pairing_code(d, o)
       [row] = Repo.all(PairingCode)

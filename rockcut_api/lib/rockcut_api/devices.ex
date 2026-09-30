@@ -284,8 +284,22 @@ defmodule RockcutApi.Devices do
 
   def normalize_code(_), do: ""
 
-  defp random_code do
-    for _ <- 1..@code_length, into: "", do: <<Enum.random(@code_alphabet)>>
+  # OS CSPRNG with rejection sampling: bytes 0..247 map evenly onto the 31
+  # characters (248 = 31 × 8); 248..255 are thrown away, so there's no modulo bias.
+  @code_alphabet_size length(@code_alphabet)
+  @code_byte_limit div(256, @code_alphabet_size) * @code_alphabet_size
+
+  defp random_code, do: random_code(@code_length, "")
+
+  defp random_code(0, acc), do: acc
+
+  defp random_code(n, acc) do
+    acc =
+      for <<b <- :crypto.strong_rand_bytes(n)>>, b < @code_byte_limit, reduce: acc do
+        acc -> acc <> <<Enum.at(@code_alphabet, rem(b, @code_alphabet_size))>>
+      end
+
+    random_code(@code_length - byte_size(acc), acc)
   end
 
   defp format_code(<<a::binary-size(4), b::binary-size(4)>>), do: a <> "-" <> b
