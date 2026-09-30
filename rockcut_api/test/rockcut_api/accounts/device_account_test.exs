@@ -32,6 +32,27 @@ defmodule RockcutApi.Accounts.DeviceAccountTest do
       assert %{name: _, home_department_id: _} = errors_on(cs)
     end
 
+    test "the home department must be assignable (review item 6)", %{device: d} do
+      other =
+        Repo.insert!(%RockcutApi.Accounts.Department{
+          key: "other",
+          name: "Other",
+          assignable: false
+        })
+
+      cs =
+        User.device_create_changeset(%{name: "Back office tablet", home_department_id: other.id})
+
+      refute cs.valid?
+      assert "must be a department people can be assigned to" in errors_on(cs).home_department_id
+
+      cs = User.device_update_changeset(d, %{home_department_id: other.id})
+      refute cs.valid?
+      assert errors_on(cs).home_department_id
+
+      assert User.device_update_changeset(d, %{name: "Renamed"}).valid?
+    end
+
     test "a device can't be made an owner", %{device: d} do
       cs = User.owner_flag_changeset(d, true)
       refute cs.valid?

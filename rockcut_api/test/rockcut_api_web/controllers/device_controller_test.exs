@@ -63,6 +63,16 @@ defmodule RockcutApiWeb.DeviceControllerTest do
                201
     end
 
+    test "a non-assignable home department is refused (review item 6)", %{p: p, device: d} do
+      other = departments()["other"]
+
+      assert call(p["owner"], :post, "/api/devices", %{name: "x", home_department_id: other.id}).status ==
+               422
+
+      assert call(p["owner"], :patch, "/api/devices/#{d.id}", %{home_department_id: other.id}).status ==
+               422
+    end
+
     test "managers can't create, rename or delete devices", %{p: p, device: d} do
       bar = departments()["bar"]
 

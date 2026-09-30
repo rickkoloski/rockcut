@@ -97,9 +97,23 @@ defmodule RockcutApi.Accounts.User do
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name, :home_department_id])
     |> validate_length(:name, max: 100)
+    |> validate_change(:home_department_id, &assignable_home/2)
     |> foreign_key_constraint(:home_department_id)
     |> unique_constraint(:email)
     |> validate_device_invariants()
+  end
+
+  # D33 decision P6 (review item 6): a device's home is an assignable department,
+  # so its department channel and nav section exist. A missing id is left to
+  # the foreign-key constraint.
+  defp assignable_home(:home_department_id, id) do
+    case RockcutApi.Repo.get(RockcutApi.Accounts.Department, id) do
+      %{assignable: false} ->
+        [home_department_id: "must be a department people can be assigned to"]
+
+      _ ->
+        []
+    end
   end
 
   # D33: the invariants every changeset enforces. A device is never an owner,
