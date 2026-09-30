@@ -101,6 +101,81 @@ defmodule RockcutApi.DevicesTest do
     end
   end
 
+  describe "write lock (review item 4)" do
+    defp queries_during(fun) do
+      me = self()
+      id = "q-#{System.unique_integer([:positive])}"
+
+      :telemetry.attach(
+        id,
+        [:rockcut_api, :repo, :query],
+        fn _, _, meta, _ ->
+          send(me, {:query, meta.query})
+        end,
+        nil
+      )
+
+      try do
+        fun.()
+      after
+        :telemetry.detach(id)
+      end
+
+      collect([])
+    end
+
+    defp collect(acc) do
+      receive do
+        {:query, q} -> collect([q | acc])
+      after
+        0 -> Enum.reverse(acc)
+      end
+    end
+
+    test "a wrong code opens no transaction", %{device: d, owner: o} do
+      {:ok, _code, _} = Devices.create_pairing_code(d, o)
+
+      qs =
+        queries_during(fn ->
+          {:error, :invalid_code} = Devices.exchange_code("WRONGONE", "x", ip())
+        end)
+
+      refute "begin" in qs, inspect(qs)
+    end
+
+    test "a used code opens no transaction", %{device: d, owner: o} do
+      {:ok, code, _} = Devices.create_pairing_code(d, o)
+      {:ok, _, _} = Devices.exchange_code(code, "iPad 1", ip())
+
+      qs =
+        queries_during(fn ->
+          {:error, :invalid_code} = Devices.exchange_code(code, "iPad 2", ip())
+        end)
+
+      refute "begin" in qs, inspect(qs)
+    end
+
+    test "a live code still pairs inside a transaction", %{device: d, owner: o} do
+      {:ok, code, _} = Devices.create_pairing_code(d, o)
+      qs = queries_during(fn -> {:ok, _, _} = Devices.exchange_code(code, "iPad", ip()) end)
+      assert "begin" in qs
+    end
+
+    test "two tablets racing for one code: exactly one token", %{device: d, owner: o} do
+      {:ok, code, _} = Devices.create_pairing_code(d, o)
+
+      results =
+        1..4
+        |> Enum.map(fn n ->
+          Task.async(fn -> Devices.exchange_code(code, "iPad #{n}", ip()) end)
+        end)
+        |> Enum.map(&Task.await/1)
+
+      assert Enum.count(results, &match?({:ok, _, _}, &1)) == 1
+      assert Repo.aggregate(DeviceToken, :count) == 1
+    end
+  end
+
   describe "rate limit (S4)" do
     test "the 6th wrong code in the window is rate-limited, even a right one", %{
       device: d,

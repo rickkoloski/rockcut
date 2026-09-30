@@ -160,15 +160,31 @@ defmodule RockcutApi.Devices do
     end
   end
 
+  # A plain read first: wrong, used and expired codes never take SQLite's write
+  # lock (review item 4). Only a live candidate opens the :immediate transaction,
+  # which claims the code with a conditional update (used_at still nil, not
+  # expired) so a concurrent redeem of the same code can't also win.
   defp redeem(code, name, now) do
+    case find_live_code(code, now) do
+      nil -> {:error, :invalid_code}
+      %PairingCode{} = candidate -> claim(candidate, name, now)
+    end
+  end
+
+  defp claim(%PairingCode{} = candidate, name, now) do
     Repo.transaction(
       fn ->
-        with %PairingCode{} = pc <- find_live_code(code, now),
-             %User{active: true} = device <- get_device(pc.user_id) do
-          pc |> Ecto.Changeset.change(used_at: now) |> Repo.update!()
-          {token, row} = issue_token(device, name, pc.created_by_id, now)
+        {claimed, _} =
+          from(pc in PairingCode,
+            where: pc.id == ^candidate.id and is_nil(pc.used_at) and pc.expires_at > ^now
+          )
+          |> Repo.update_all(set: [used_at: now])
 
-          Accounts.record_audit(pc.created_by_id, device.id, "device.paired", %{
+        with 1 <- claimed,
+             %User{active: true} = device <- get_device(candidate.user_id) do
+          {token, row} = issue_token(device, name, candidate.created_by_id, now)
+
+          Accounts.record_audit(candidate.created_by_id, device.id, "device.paired", %{
             "name" => device.name,
             "tablet" => name
           })
