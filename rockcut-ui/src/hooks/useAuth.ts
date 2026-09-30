@@ -73,6 +73,9 @@ const useAuth = create<AuthState>((set, get) => ({
     }
     try {
       const { data } = await api.get<Me>('/api/me')
+      // The token changed while this was in flight (e.g. "Sign in as me" set a
+      // tablet's token aside): this answer is for a session that's gone (D33).
+      if (localStorage.getItem(TOKEN_KEY) !== token) return
       set({
         user: data.user,
         capabilities: data.capabilities,
@@ -81,6 +84,7 @@ const useAuth = create<AuthState>((set, get) => ({
         bootstrapped: true,
       })
     } catch {
+      if (localStorage.getItem(TOKEN_KEY) !== token) return
       // 401 is handled by the axios interceptor; clear local state for anything else.
       localStorage.removeItem(TOKEN_KEY)
       set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false, bootstrapped: true })
