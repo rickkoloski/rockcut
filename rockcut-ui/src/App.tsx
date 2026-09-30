@@ -56,6 +56,7 @@ import ForcePasswordReset from './pages/auth/ForcePasswordReset'
 import useAuth from './hooks/useAuth'
 import useIdleReturn from './hooks/useIdleReturn'
 import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
+import useAuthStorageSync from './hooks/useAuthStorageSync'
 import { PERSONAL_IDLE_MS, asideDeviceToken } from './lib/device'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
@@ -145,6 +146,8 @@ function App() {
   useIdleReturn(personalOnTablet, PERSONAL_IDLE_MS, endPersonalSession)
   // DEV G2: the tablet may be revoked or deactivated while a person is on it.
   useDeviceTokenWatch(personalOnTablet)
+  // DEV G3: another tab changed the session (sign-out, "Sign in as me", unpaired).
+  useAuthStorageSync()
 
   useEffect(() => {
     if (isAuthenticated && !bootstrapped) loadMe()

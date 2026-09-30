@@ -69,7 +69,11 @@ export default function Availability() {
   const targetName = forUserId === '' ? null : roster.find((r) => r.id === forUserId)?.name ?? 'employee'
 
   const params = useMemo(() => (targetId ? { user_id: String(targetId) } : undefined), [targetId])
-  const { data: slots = [] } = useApiQuery<AvailabilitySlot[]>(['availability', targetId], '/api/availability', params, {
+  const {
+    data: slots = [],
+    isError: loadFailed,
+    error: loadError,
+  } = useApiQuery<AvailabilitySlot[]>(['availability', targetId], '/api/availability', params, {
     enabled: !!targetId,
   })
 
@@ -189,6 +193,12 @@ export default function Availability() {
       </Paper>
 
       <Typography variant="h6" sx={{ mb: 1 }}>Weekly schedule</Typography>
+      {/* DEV G3: never show "Available" every day when the load was refused. */}
+      {loadFailed ? (
+        <Alert data-testid="availability-load-error" severity="error">
+          Couldn't load availability: {readError(loadError)}
+        </Alert>
+      ) : (
       <Stack spacing={1}>
         {WEEKDAYS.map((d) => {
           const daySlots = byWeekday.get(d.value) ?? []
@@ -216,6 +226,7 @@ export default function Availability() {
           )
         })}
       </Stack>
+      )}
 
       <Snackbar open={!!notice} autoHideDuration={3000} onClose={() => setNotice(null)} message={notice ?? ''} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} />
     </>

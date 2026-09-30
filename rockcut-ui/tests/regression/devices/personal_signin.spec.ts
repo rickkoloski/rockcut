@@ -263,3 +263,29 @@ test.describe('S11/S12: a personal session ends with its tablet', () => {
     })
   }
 })
+
+// DEV G3: two tabs on one tablet. Signing out in one must re-sync the other,
+// so the next person doesn't see the last person's name, nav or data.
+test('G3: a second tab follows a personal sign-out without a reload', async ({ context }) => {
+  const a = await context.newPage()
+  await a.goto('/')
+  await expect(a.getByTestId('device-chip')).toBeVisible()
+  await a.getByTestId('personal-signin').click()
+  await a.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+  await a.reload()
+  await expect(a.getByTestId('personal-session-banner')).toBeVisible()
+
+  const b = await context.newPage()
+  await b.goto('/time_off')
+  await expect(b.getByTestId('personal-session-banner')).toContainText('Sam Pour')
+  await expect(b.getByText('My requests')).toBeVisible()
+
+  await a.getByTestId('logout-button').click()
+  await expect(a.getByTestId('device-chip')).toBeVisible()
+
+  // Tab B, untouched: back to the shared screen, nothing personal left.
+  await expect(b.getByTestId('device-chip')).toBeVisible()
+  await expect(b.getByTestId('personal-session-banner')).toHaveCount(0)
+  await expect(b.getByText('My requests')).toHaveCount(0)
+  await expect(b.getByText('Sam Pour')).toHaveCount(0)
+})
