@@ -79,11 +79,14 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
   const [daysPicked, setDaysPicked] = useState(false)
   const [scopeFor, setScopeFor] = useState<'save' | 'delete' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [info, setInfo] = useState<string | null>(null)
+  const [origStartDay, setOrigStartDay] = useState('')
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!open) return
     setError(null)
+    setInfo(null)
     setScopeFor(null)
     setRuleTouched(false)
     setDaysPicked(!!editEvent?.series)
@@ -95,6 +98,7 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
       setNotes(editEvent.notes ?? '')
       setAllDay(editEvent.all_day)
       setStartDay(sd)
+      setOrigStartDay(sd)
       setStartTime(editEvent.all_day ? '19:00' : st)
       // An all-day end is local midnight after the last day.
       setEndDay(editEvent.all_day ? addDaysKey(ed, -1) : ed)
@@ -188,7 +192,13 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
       qc.invalidateQueries({ queryKey: ['schedule_events'] })
       onClose()
     } catch (err) {
-      setError(readError(err))
+      // Someone else deleted it (or it was hidden) since this dialog opened (G2).
+      if ((err as { response?: { status?: number } })?.response?.status === 404) {
+        setError('This event no longer exists; someone may have just deleted it. The schedule has been refreshed.')
+        qc.invalidateQueries({ queryKey: ['schedule_events'] })
+      } else {
+        setError(readError(err))
+      }
     } finally {
       setLoading(false)
       setScopeFor(null)
@@ -207,8 +217,22 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
     }
     const body: Record<string, unknown> = { ...payload(), scope }
     // A changed repeat rule applies from this date on (the series splits there).
-    if (inSeries && scope === 'following' && ruleTouched && repeat !== 'none') Object.assign(body, repeatParams(effectiveRule))
+    // Moving this date to another day does too: the repeat days move with it (G3).
+    if (inSeries && scope === 'following' && repeat !== 'none') {
+      if (ruleTouched) Object.assign(body, repeatParams(effectiveRule))
+      else if (dayMoved) Object.assign(body, repeatParams(movedRule()))
+    }
     return run(() => api.patch(`/api/schedule_events/${editEvent!.id}`, body))
+  }
+
+  // A repeating date moved to another day: shift the repeat pattern to match.
+  const dayMoved = inSeries && !!origStartDay && startDay !== origStartDay
+  const movedRule = (): RepeatRule => {
+    const from = isoWeekday(origStartDay)
+    const to = isoWeekday(startDay)
+    return rule.frequency === 'weekly'
+      ? { ...effectiveRule, weekdays: [...new Set(rule.weekdays.map((d) => (d === from ? to : d)))] }
+      : { ...effectiveRule, weekday: to, weekOfMonth: weekOfMonth(startDay) }
   }
 
   const onSaveClick = () => {
@@ -233,8 +257,21 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
   const canExtend =
     !!series?.generated_through && !series.count && (!series.until_date || series.until_date > series.generated_through)
 
-  const extend = () =>
-    run(() => api.post(`/api/schedule_event_series/${editEvent!.series_id}/extend`, {}))
+  const extend = async () => {
+    setError(null)
+    setInfo(null)
+    setLoading(true)
+    try {
+      const { data } = await api.post<{ count: number }>(`/api/schedule_event_series/${editEvent!.series_id}/extend`, {})
+      qc.invalidateQueries({ queryKey: ['schedule_events'] })
+      if (data.count === 0) setInfo(`Already scheduled as far ahead as possible (12 months from today).`)
+      else setInfo(`Added ${data.count} more date${data.count === 1 ? '' : 's'} as drafts.`)
+    } catch (err) {
+      setError(readError(err))
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // ── Read-only view (employees, other departments' managers, the taproom device) ──
   if (readOnly && editEvent) {
@@ -360,7 +397,13 @@ export default function EventFormDialog({ open, onClose, editEvent, departments,
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid="event-dialog">
       <DialogTitle>{isEdit ? 'Edit event' : 'Add event'}</DialogTitle>
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
-        {error && <Alert severity="error">{error}</Alert>}
+        {error && <Alert severity="error" data-testid="event-error">{error}</Alert>}
+        {info && <Alert severity="success" data-testid="event-info">{info}</Alert>}
+        {dayMoved && (
+          <Alert severity="info" sx={{ py: 0 }}>
+            Moved to another day. Choose “This and all following” to move the repeating days from here on, or “This event only” for just this date.
+          </Alert>
+        )}
         {editEvent?.series_exception && (
           <Alert severity="info" sx={{ py: 0 }}>This date was changed on its own; it differs from the rest of the series.</Alert>
         )}

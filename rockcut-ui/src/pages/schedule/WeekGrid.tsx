@@ -11,7 +11,7 @@ import { formatDayColumn, formatHoursShort, formatTime, formatWallTime, localDay
 import { departmentColor, shiftColor } from '../../lib/colors'
 import type { ShiftConflict } from '../../lib/conflicts'
 import type { OffMarker } from '../../lib/timeoff'
-import { eventDayKeys } from '../../lib/events'
+import { eventDayKeys, eventDayLabel } from '../../lib/events'
 import type { AvailabilitySlot, Department, RosterEntry, ScheduleEvent, Shift } from '../../lib/types'
 
 interface Props {
@@ -238,7 +238,7 @@ export default function WeekGrid({
     )
   }
 
-  const eventChip = (e: ScheduleEvent) => {
+  const eventChip = (e: ScheduleEvent, dayKey: string) => {
     const color = departmentColor(deptById.get(e.department_id) ?? e.department ?? undefined)
     const draft = e.status === 'draft'
     return (
@@ -251,6 +251,8 @@ export default function WeekGrid({
         }}
         sx={{
           px: 0.75, py: 0.5, borderRadius: 1, cursor: 'pointer',
+          // A long title truncates rather than widening the day column (G4).
+          maxWidth: DAY_COL - 12, boxSizing: 'border-box', overflow: 'hidden',
           border: `2px ${draft ? 'dashed' : 'solid'}`, borderColor: color,
           opacity: draft ? 0.85 : 1, fontSize: 12, lineHeight: 1.3,
         }}
@@ -260,7 +262,7 @@ export default function WeekGrid({
           <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</Box>
           {e.series_id && <RepeatIcon sx={{ fontSize: 12, color: 'text.secondary' }} titleAccess="Repeats" />}
         </Box>
-        <Box>{e.all_day ? 'All day' : formatTime(e.starts_at)}{draft ? ' · draft' : ''}</Box>
+        <Box>{eventDayLabel(e, dayKey)}{draft ? ' · draft' : ''}</Box>
       </Box>
     )
   }
@@ -299,7 +301,7 @@ export default function WeekGrid({
                 }}
               >
                 <Stack spacing={0.5}>
-                  {items.map(eventChip)}
+                  {items.map((e) => eventChip(e, dayKey))}
                   {items.length === 0 && (
                     <AddIcon className="add-affordance" fontSize="small" sx={{ opacity: 0, color: 'text.disabled' }} />
                   )}

@@ -37,7 +37,7 @@ import { addDaysKey, defaultDayKeyForWeek, formatDayHeading, formatTimeRange, fo
 import { departmentColor, shiftColor } from '../../lib/colors'
 import { buildUnavailability, conflictMap } from '../../lib/conflicts'
 import { buildOffMarkers } from '../../lib/timeoff'
-import { eventDayKeys, eventTimeLabel } from '../../lib/events'
+import { eventDayKeys, eventDayLabel } from '../../lib/events'
 import type { AvailabilitySlot, Department, Position, RosterEntry, ScheduleEvent, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
 import EventFormDialog from './EventFormDialog'
@@ -494,7 +494,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                     <EventNoteIcon sx={{ color }} />
                     <Typography sx={{ fontWeight: 600 }}>{e.title}</Typography>
                     {e.series_id && <RepeatIcon fontSize="small" sx={{ color: 'text.secondary' }} titleAccess="Repeats" />}
-                    <Typography color="text.secondary" sx={{ minWidth: 150, flexGrow: 1 }}>{eventTimeLabel(e)}</Typography>
+                    <Typography color="text.secondary" sx={{ minWidth: 150, flexGrow: 1 }}>{eventDayLabel(e, day, true)}</Typography>
                     <Typography variant="body2" color="text.secondary">{e.department?.name}</Typography>
                     {e.status === 'draft' && <Chip label="Draft" size="small" color="warning" variant="outlined" />}
                   </Paper>

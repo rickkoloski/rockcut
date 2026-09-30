@@ -1,5 +1,5 @@
 // D32 — helpers for schedule events (Denver date keys, like the rest of the schedule).
-import { addDaysKey, formatTimeRange, localDayKey, utcToLocalInput, weekdayOf } from './datetime'
+import { addDaysKey, formatTime, formatTimeRange, localDayKey, utcToLocalInput, weekdayOf } from './datetime'
 import type { EventSeries, ScheduleEvent } from './types'
 
 const DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -17,12 +17,24 @@ export function weekOfMonth(dayKey: string): number {
   return n > 4 ? -1 : n
 }
 
-/** The Denver day keys an event covers (an all-day `ends_at` is exclusive). */
+/** A timed event ending by this time the next morning belongs to its start day (D32 A4). */
+export const OVERNIGHT_CUTOFF = '03:00'
+
+/**
+ * The Denver day keys an event is shown on. All-day: each of its days (`ends_at`
+ * is exclusive). Timed: its start day only if it ends by 3:00 AM the next day
+ * (e.g. 6 pm – 1 am); otherwise every day it covers (D32 A4).
+ */
 export function eventDayKeys(e: ScheduleEvent): string[] {
   const first = localDayKey(e.starts_at)
-  const last = e.all_day
-    ? addDaysKey(utcToLocalInput(e.ends_at).slice(0, 10), -1)
-    : localDayKey(new Date(new Date(e.ends_at).getTime() - 1).toISOString())
+  let last: string
+  if (e.all_day) {
+    last = addDaysKey(utcToLocalInput(e.ends_at).slice(0, 10), -1)
+  } else {
+    const [endDay, endTime] = utcToLocalInput(e.ends_at).split('T')
+    if (endDay <= first || (endDay === addDaysKey(first, 1) && endTime <= OVERNIGHT_CUTOFF)) return [first]
+    last = endTime === '00:00' ? addDaysKey(endDay, -1) : endDay
+  }
   const keys: string[] = []
   for (let k = first; k <= last && keys.length < 62; k = addDaysKey(k, 1)) keys.push(k)
   return keys.length ? keys : [first]
@@ -31,6 +43,21 @@ export function eventDayKeys(e: ScheduleEvent): string[] {
 /** "All day" or "7:00 PM – 9:00 PM". */
 export function eventTimeLabel(e: ScheduleEvent): string {
   return e.all_day ? 'All day' : formatTimeRange(e.starts_at, e.ends_at)
+}
+
+/**
+ * The time label for one day of an event. A timed event over several days reads
+ * "6:00 PM →" on its first day, "All day (cont.)" in between and "→ until
+ * 12:00 PM" on its last, and never repeats the start time on a later day.
+ * `range` shows a single-day event's full range (agenda) instead of its start (grid).
+ */
+export function eventDayLabel(e: ScheduleEvent, dayKey: string, range = false): string {
+  if (e.all_day) return 'All day'
+  const days = eventDayKeys(e)
+  if (days.length === 1) return range ? formatTimeRange(e.starts_at, e.ends_at) : formatTime(e.starts_at)
+  if (dayKey === days[0]) return `${formatTime(e.starts_at)} →`
+  if (dayKey === days[days.length - 1]) return `→ until ${formatTime(e.ends_at)}`
+  return 'All day (cont.)'
 }
 
 export interface RepeatRule {
