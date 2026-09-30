@@ -33,7 +33,7 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
-import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
+import { addDaysKey, defaultDayKeyForWeek, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
 import { buildUnavailability, conflictMap } from '../../lib/conflicts'
 import { buildOffMarkers } from '../../lib/timeoff'
@@ -315,9 +315,12 @@ export default function Schedule({ forceView }: { forceView?: View }) {
     }
   }
 
+  // In the week view, new shifts and events start in the week on screen (3940).
+  const weekDefaultDay = () => (view === 'week' ? defaultDayKeyForWeek(mondayKey) : undefined)
+
   const openCreate = () => {
     setEditShift(null)
-    setPrefill(undefined)
+    setPrefill({ dateKey: weekDefaultDay() })
     setShiftDialog(true)
   }
   const openEdit = (s: Shift) => {
@@ -327,7 +330,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   }
   const openCreateEvent = (dateKey?: string) => {
     setEditEvent(null)
-    setEventPrefill({ departmentId: createDeptId, dateKey })
+    setEventPrefill({ departmentId: createDeptId, dateKey: dateKey ?? weekDefaultDay() })
     setEventDialog(true)
   }
   const openEvent = (e: ScheduleEvent) => {
