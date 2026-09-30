@@ -3,7 +3,8 @@ import Config
 # Configure your database
 config :rockcut_api, RockcutApi.Repo,
   database: Path.expand("../rockcut_api_dev.db", __DIR__),
-  pool_size: 5,
+  # One connection, as in prod (see runtime.exs, D32 G1).
+  pool_size: 1,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
