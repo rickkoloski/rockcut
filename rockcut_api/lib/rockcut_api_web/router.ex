@@ -61,6 +61,15 @@ defmodule RockcutApiWeb.Router do
     post "/shifts/:id/claim", ShiftController, :claim
 
     # Scheduling templates (D14)
+    get "/schedule_events", ScheduleEventController, :index
+    post "/schedule_events", ScheduleEventController, :create
+    post "/schedule_events/publish", ScheduleEventController, :publish_batch
+    get "/schedule_events/:id", ScheduleEventController, :show
+    patch "/schedule_events/:id", ScheduleEventController, :update
+    delete "/schedule_events/:id", ScheduleEventController, :delete
+    post "/schedule_events/:id/publish", ScheduleEventController, :publish
+    post "/schedule_events/:id/unpublish", ScheduleEventController, :unpublish
+
     resources "/shift_templates", ShiftTemplateController,
       only: [:index, :create, :update, :delete]
 

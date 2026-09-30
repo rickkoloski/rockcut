@@ -92,6 +92,23 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  def schedule_event(e) do
+    %{
+      id: e.id,
+      department_id: e.department_id,
+      department: maybe_render(e, :department, &department/1),
+      title: e.title,
+      notes: e.notes,
+      all_day: e.all_day,
+      starts_at: e.starts_at,
+      ends_at: e.ends_at,
+      status: e.status,
+      created_by_id: e.created_by_id,
+      inserted_at: e.inserted_at,
+      updated_at: e.updated_at
+    }
+  end
+
   defp shift_user(nil), do: nil
   defp shift_user(u), do: %{id: u.id, email: u.email, name: u.name}
 

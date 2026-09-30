@@ -13,6 +13,7 @@ defmodule RockcutApi.Scheduling do
 
   alias RockcutApi.Scheduling.{
     Position,
+    ScheduleEvent,
     Shift,
     ShiftTemplate,
     ScheduleTemplate,
@@ -250,10 +251,77 @@ defmodule RockcutApi.Scheduling do
 
   def delete_schedule_template(%ScheduleTemplate{} = template), do: Repo.delete(template)
 
+  ## Schedule events (D32) — no assignee, no claiming, and never any
+  ## notifications. Visibility and permissions mirror shifts.
+
+  def get_event(id), do: ScheduleEvent |> Repo.get(id) |> Repo.preload(:department)
+
+  def get_event!(id), do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(:department)
+
+  @doc """
+  List events visible to `user` (published anywhere, plus drafts in the
+  departments they manage). `from`/`to` (Denver date keys) match any event that
+  overlaps the range, so a multi-day event that began earlier is included.
+  """
+  def list_events(%User{} = user, filters \\ %{}) do
+    ScheduleEvent
+    |> restrict_visibility(user)
+    |> maybe(filters, "department_id", fn q, id ->
+      where(q, [e], e.department_id == ^to_int(id))
+    end)
+    |> maybe(filters, "from", fn q, d -> where(q, [e], e.ends_at > ^start_of_day(d)) end)
+    |> maybe(filters, "to", fn q, d -> where(q, [e], e.starts_at <= ^end_of_day(d)) end)
+    |> order_by([e], asc: e.starts_at)
+    |> preload(:department)
+    |> Repo.all()
+  end
+
+  def create_event(attrs, %User{} = actor) do
+    attrs =
+      attrs
+      |> stringify()
+      |> Map.put("created_by_id", actor.id)
+      |> Map.put_new("status", "draft")
+
+    case %ScheduleEvent{} |> ScheduleEvent.changeset(attrs) |> Repo.insert() do
+      {:ok, event} -> {:ok, get_event!(event.id)}
+      other -> other
+    end
+  end
+
+  def update_event(%ScheduleEvent{} = event, attrs) do
+    attrs = attrs |> stringify() |> Map.drop(["created_by_id"])
+
+    case event |> ScheduleEvent.changeset(attrs) |> Repo.update() do
+      {:ok, updated} -> {:ok, get_event!(updated.id)}
+      other -> other
+    end
+  end
+
+  def delete_event(%ScheduleEvent{} = event), do: Repo.delete(event)
+
+  def publish_event(%ScheduleEvent{} = event), do: update_event(event, %{status: "published"})
+
+  def unpublish_event(%ScheduleEvent{} = event), do: update_event(event, %{status: "draft"})
+
+  @doc "Publish many events at once (Publish week). Only drafts transition."
+  def publish_events(events) when is_list(events) do
+    published =
+      events
+      |> Enum.filter(&(&1.status == "draft"))
+      |> Enum.map(&publish_event/1)
+      |> Enum.flat_map(fn
+        {:ok, e} -> [e]
+        _ -> []
+      end)
+
+    {:ok, published}
+  end
+
   ## Query helpers
 
-  # Published shifts are visible to everyone; drafts only where the user manages
-  # the schedule.
+  # Published shifts and events are visible to everyone; drafts only where the
+  # user manages the schedule.
   defp restrict_visibility(query, %User{} = user) do
     case Authz.scope(user, :schedule, :manage) do
       :all -> query

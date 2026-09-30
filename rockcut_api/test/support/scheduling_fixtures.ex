@@ -1,8 +1,8 @@
 defmodule RockcutApi.SchedulingFixtures do
-  @moduledoc "Test fixtures for positions and shifts."
+  @moduledoc "Test fixtures for positions, shifts and schedule events."
 
   alias RockcutApi.Repo
-  alias RockcutApi.Scheduling.{Position, Shift}
+  alias RockcutApi.Scheduling.{Position, ScheduleEvent, Shift}
   alias RockcutApi.AccountsFixtures
 
   def position_fixture(attrs \\ %{}) do
@@ -38,6 +38,26 @@ defmodule RockcutApi.SchedulingFixtures do
       ends_at: attrs[:ends_at] || DateTime.add(now, 7200) |> DateTime.truncate(:second),
       status: Map.get(attrs, :status, "draft"),
       notes: attrs[:notes]
+    })
+  end
+
+  def event_fixture(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+
+    dept =
+      attrs[:department] || AccountsFixtures.department_fixture(Map.get(attrs, :dept_key, "bar"))
+
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    Repo.insert!(%ScheduleEvent{
+      department_id: dept.id,
+      created_by_id: attrs[:created_by_id],
+      title: Map.get(attrs, :title, "Event#{System.unique_integer([:positive])}"),
+      notes: attrs[:notes],
+      all_day: Map.get(attrs, :all_day, false),
+      starts_at: attrs[:starts_at] || DateTime.add(now, 3600),
+      ends_at: attrs[:ends_at] || DateTime.add(now, 7200),
+      status: Map.get(attrs, :status, "draft")
     })
   end
 end

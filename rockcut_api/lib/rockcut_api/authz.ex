@@ -19,7 +19,7 @@ defmodule RockcutApi.Authz do
   import Ecto.Query, only: [from: 2]
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.{User, Membership, Department}
-  alias RockcutApi.Scheduling.{Shift, Position, ShiftTemplate, ScheduleTemplate}
+  alias RockcutApi.Scheduling.{Shift, ScheduleEvent, Position, ShiftTemplate, ScheduleTemplate}
   alias RockcutApi.TimeOff.Request
   alias RockcutApi.Availability.Slot
 
@@ -176,6 +176,18 @@ defmodule RockcutApi.Authz do
 
       _ ->
         false
+    end
+  end
+
+  # Schedule events (D32): published events are readable by everyone; drafts and
+  # every write belong to the department's managers (owners pass above).
+  def can?(%User{} = user, action, %ScheduleEvent{} = event) do
+    manager? = role_in(user, event.department_id) == :manager
+
+    case action do
+      :read -> event.status == "published" or manager?
+      a when a in [:create, :update, :delete, :publish, :unpublish] -> manager?
+      _ -> false
     end
   end
 
