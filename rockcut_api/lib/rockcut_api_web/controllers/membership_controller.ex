@@ -22,6 +22,9 @@ defmodule RockcutApiWeb.MembershipController do
             {:ok, u} ->
               json(conn, %{data: user(u)})
 
+            {:error, :device_account} = error ->
+              error
+
             {:error, {:unauthorized_department, key}} ->
               conn |> put_status(:forbidden) |> json(%{error: "Cannot manage department: #{key}"})
 

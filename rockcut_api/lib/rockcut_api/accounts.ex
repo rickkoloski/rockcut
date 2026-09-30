@@ -50,6 +50,11 @@ defmodule RockcutApi.Accounts do
     user = get_user_by_email(email)
 
     cond do
+      # A shared device never signs in with a password (D33 §3.1).
+      user && Authz.device?(user) ->
+        Argon2.no_user_verify()
+        nil
+
       user && Argon2.verify_pass(password, user.password_hash) ->
         user
 
@@ -80,7 +85,7 @@ defmodule RockcutApi.Accounts do
 
   @doc "Minimal staff roster (active users) for schedule display — readable by anyone signed in."
   def list_roster do
-    User
+    persons_query()
     |> where([u], u.active == true and u.schedulable == true)
     |> order_by([u], asc: u.schedule_order, asc: u.name, asc: u.email)
     |> preload(^@preloads)
@@ -103,6 +108,23 @@ defmodule RockcutApi.Accounts do
     end)
 
     :ok
+  end
+
+  @doc """
+  People only: every `users` row except shared devices (D33). Listings of
+  staff (roster, Users & Roles, All-staff recipients) start from this.
+  """
+  def persons_query do
+    # authz-boundary: data invariant (devices are not staff)
+    from(u in User, where: u.kind == "person")
+  end
+
+  @doc "True if `user_id` is a shared-device account (D33): never an assignee."
+  def device_id?(nil), do: false
+
+  def device_id?(user_id) do
+    # authz-boundary: data invariant (a device is never an assignee)
+    Repo.exists?(from(u in User, where: u.id == ^user_id and u.kind == "device"))
   end
 
   ## Memberships
@@ -157,6 +179,12 @@ defmodule RockcutApi.Accounts do
   owner. Refuses to deactivate or demote the last active owner.
   """
   def update_user(%User{} = target, attrs, %User{} = actor) do
+    if Authz.device?(target),
+      do: {:error, :device_account},
+      else: do_update_user(target, attrs, actor)
+  end
+
+  defp do_update_user(target, attrs, actor) do
     attrs = stringify(attrs)
     base = Map.take(attrs, ["name", "email", "active", "schedulable"])
     owner_change? = Map.has_key?(attrs, "is_owner") and Authz.can?(actor, :set_owner, target)
@@ -196,6 +224,12 @@ defmodule RockcutApi.Accounts do
   `{:ok, user}` or `{:error, reason}`.
   """
   def set_memberships(%User{} = target, desired, %User{} = actor) do
+    if Authz.device?(target),
+      do: {:error, :device_account},
+      else: do_set_memberships(target, desired, actor)
+  end
+
+  defp do_set_memberships(target, desired, actor) do
     Repo.transaction(fn ->
       case apply_memberships(target, desired, actor) do
         {:ok, user} -> user
@@ -206,6 +240,12 @@ defmodule RockcutApi.Accounts do
 
   @doc "Reset a user's password to a fresh temp value with forced reset. Returns {:ok, user, temp}."
   def reset_password(%User{} = target, %User{} = actor) do
+    if Authz.device?(target),
+      do: {:error, :device_account},
+      else: do_reset_password(target, actor)
+  end
+
+  defp do_reset_password(target, actor) do
     temp = generate_temp_password()
 
     case target
@@ -222,7 +262,7 @@ defmodule RockcutApi.Accounts do
 
   @doc "Change a user's own password after verifying the current one."
   def change_password(%User{} = user, current, new) do
-    if Argon2.verify_pass(current, user.password_hash) do
+    if not Authz.device?(user) and Argon2.verify_pass(current, user.password_hash) do
       case user
            |> User.password_changeset(%{"password" => new, "must_reset_password" => false})
            |> Repo.update() do
@@ -239,8 +279,15 @@ defmodule RockcutApi.Accounts do
   @doc "Users visible to the actor: all for an owner; a manager's departments' members otherwise."
   def list_users_for(%User{} = actor) do
     case Authz.scope(actor, :people, :manage) |> Authz.member_ids_in() do
-      [] -> []
-      ids -> User |> only_ids(ids) |> order_by(:email) |> Repo.all() |> Repo.preload(@preloads)
+      [] ->
+        []
+
+      ids ->
+        persons_query()
+        |> only_ids(ids)
+        |> order_by(:email)
+        |> Repo.all()
+        |> Repo.preload(@preloads)
     end
   end
 

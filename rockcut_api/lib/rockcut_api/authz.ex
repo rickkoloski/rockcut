@@ -32,6 +32,10 @@ defmodule RockcutApi.Authz do
   alias RockcutApi.TimeOff.Request
   alias RockcutApi.Availability.Slot
 
+  @doc "True if the account is a shared device (D33), not a person."
+  def device?(%User{kind: "device"}), do: true
+  def device?(_), do: false
+
   @doc "True if the user is a global owner."
   def owner?(%User{is_owner: owner}), do: owner == true
 
