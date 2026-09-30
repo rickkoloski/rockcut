@@ -66,3 +66,20 @@ defmodule Mix.Tasks.Rockcut.Synthetic.Token do
 
   def run(_), do: Mix.raise("usage: mix rockcut.synthetic.token <persona key>")
 end
+
+defmodule Mix.Tasks.Rockcut.Synthetic.PairCode do
+  @shortdoc "Print a pairing code for a synthetic shared device (D33)"
+  @moduledoc """
+  Usage: mix rockcut.synthetic.pair_code [taproomDevice]
+
+  Enter the code on the login screen under "Set up as a shared device".
+  Single use; expires in 10 minutes.
+  """
+  use Mix.Task
+
+  @impl true
+  def run(args) do
+    Mix.Task.run("app.start")
+    Mix.shell().info(RockcutApi.Seeds.Synthetic.pairing_code(List.first(args) || "taproomDevice"))
+  end
+end

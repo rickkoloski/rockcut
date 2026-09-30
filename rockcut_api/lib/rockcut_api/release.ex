@@ -57,6 +57,12 @@ defmodule RockcutApi.Release do
     |> IO.puts()
   end
 
+  @doc "Print a 10-minute pairing code for a synthetic device persona (D33; DEV/local only)."
+  def pair_synthetic_device(persona_key \\ "taproomDevice") do
+    with_repo(fn -> RockcutApi.Seeds.Synthetic.pairing_code(persona_key) end)
+    |> IO.puts()
+  end
+
   @doc "Print tokens for every active persona as JSON (used by the Playwright auth setup)."
   def mint_tokens_json do
     with_repo(fn -> RockcutApi.Seeds.Synthetic.mint_tokens() end)
