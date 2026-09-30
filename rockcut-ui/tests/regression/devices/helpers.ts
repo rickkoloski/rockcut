@@ -70,7 +70,8 @@ export async function setUpTablet(page: Page, code: string, name: string) {
  * not the password login, and says why (DEV G7).
  */
 export async function expectUnpaired(page: Page) {
-  await expect(page.getByTestId('device-unpaired-notice')).toContainText('This tablet was unpaired')
+  // 401 → reload → setup: two full page loads, slow on the local dev server under load.
+  await expect(page.getByTestId('device-unpaired-notice')).toContainText('This tablet was unpaired', { timeout: 15_000 })
   await expect(page.getByTestId('device-code')).toBeVisible()
   await expect(page.getByTestId('login-password')).toHaveCount(0)
 }

@@ -4,6 +4,8 @@ import { test, expect as baseExpect } from '@playwright/test'
 // the local API has one DB connection: under the full parallel suite a chain
 // of loads can take several seconds. Assertions wait for up to 15 s.
 const expect = baseExpect.configure({ timeout: 15_000 })
+// Several full page loads per test on the local dev server (see device_session.spec.ts).
+test.describe.configure({ timeout: 60_000 })
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { blankTablet, createDevice, deleteDevices, expectUnpaired, pairingCode, setUpTablet } from './helpers'

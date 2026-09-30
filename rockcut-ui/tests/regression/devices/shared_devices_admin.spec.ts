@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test'
+
+// Several full page loads per test on the local dev server (see device_session.spec.ts).
+test.describe.configure({ timeout: 60_000 })
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { createDevice, deleteDevices } from './helpers'

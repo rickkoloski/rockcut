@@ -1,4 +1,10 @@
-import { test, expect } from '@playwright/test'
+import { test, expect as baseExpect } from '@playwright/test'
+
+// Every check here is a full page load. Locally the Vite dev server serves
+// unbundled modules to each fresh context, which under the full parallel
+// suite can take many seconds (DEV serves a production bundle).
+const expect = baseExpect.configure({ timeout: 15_000 })
+test.describe.configure({ timeout: 60_000 })
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, cleanupTemp, denverUtc, tempTag, weekMonday } from '../scheduler/helpers'
 
@@ -93,13 +99,15 @@ test('S8: reads All-staff and Taproom; can’t post; no Managers', async ({ page
   expect(keys).toEqual(['all', 'dept:bar'])
 })
 
-test('S9: typed URLs show "Not available on a shared device"; the API says 403', async ({ page }) => {
-  for (const path of ['/scheduler', '/time_off', '/availability', '/users', '/brands', '/devices', '/activity']) {
+for (const path of ['/scheduler', '/time_off', '/availability', '/users', '/brands', '/devices', '/activity']) {
+  test(`S9: ${path} shows "Not available on a shared device"`, async ({ page }) => {
     await page.goto(path)
-    await expect(page.getByTestId('device-not-available'), path).toBeVisible()
+    await expect(page.getByTestId('device-not-available')).toBeVisible()
     await expect(page).toHaveURL(new RegExp(`${path}$`))
-  }
+  })
+}
 
+test('S9: the API behind those pages says 403', async () => {
   const device = await apiAs('taproomDevice')
   for (const path of ['/api/time_off', '/api/availability', '/api/users', '/api/brands', '/api/shift_templates']) {
     expect((await device.get(path)).status(), path).toBe(403)

@@ -7,6 +7,8 @@ import { blankTablet, createDevice, deleteDevices, getDevice, pairingCode, setUp
 // DEV G4: signing a tablet out always asks first, and never drops the tablet's
 // token unless the server revoked it. Full page loads on a busy local API.
 const expect = baseExpect.configure({ timeout: 15_000 })
+// Several full page loads per test on the local dev server (see device_session.spec.ts).
+test.describe.configure({ timeout: 60_000 })
 
 function tokenOf(persona: 'bartender1'): string {
   const state = JSON.parse(readFileSync(authFile(persona), 'utf8'))
