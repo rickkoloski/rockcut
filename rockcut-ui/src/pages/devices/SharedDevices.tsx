@@ -104,6 +104,7 @@ export default function SharedDevices() {
   const [pairing, setPairing] = useState<{ device: string; code: string; expiresAt: string } | null>(null)
   const [revoking, setRevoking] = useState<{ device: SharedDevice; tablet: DeviceTablet } | null>(null)
   const [deleting, setDeleting] = useState<SharedDevice | null>(null)
+  const [deactivating, setDeactivating] = useState<SharedDevice | null>(null)
   const [pageError, setPageError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -219,7 +220,7 @@ export default function SharedDevices() {
                       data-testid={`toggle-device-${d.id}`}
                       size="small"
                       disabled={busy}
-                      onClick={() => setActive(d, !d.active)}
+                      onClick={() => (d.active ? setDeactivating(d) : setActive(d, true))}
                     >
                       {d.active ? 'Deactivate' : 'Reactivate'}
                     </Button>
@@ -329,6 +330,17 @@ export default function SharedDevices() {
         title="Revoke tablet"
         message={`Sign out “${revoking?.tablet.name}” now? It will need a new pairing code to use Rockcut again.`}
         confirmLabel="Revoke"
+        loading={busy}
+      />
+
+      {/* DEV G5: deactivating signs out every tablet, so it asks first. */}
+      <ConfirmDialog
+        open={!!deactivating}
+        onClose={() => setDeactivating(null)}
+        onConfirm={() => deactivating && setActive(deactivating, false).then(() => setDeactivating(null))}
+        title="Deactivate shared device"
+        message={`Deactivate “${deactivating?.name}”? Every tablet paired to it is signed out now, and each one needs a new pairing code after you reactivate it.`}
+        confirmLabel="Deactivate"
         loading={busy}
       />
 

@@ -57,6 +57,7 @@ test.describe('owner', () => {
     await page.goto('/devices')
     const saved = page.waitForResponse((r) => r.url().endsWith(`/api/devices/${device.id}`) && r.request().method() === 'PATCH')
     await page.getByTestId(`toggle-device-${device.id}`).click()
+    await page.getByRole('dialog').getByRole('button', { name: 'Deactivate' }).click()
     expect((await saved).status()).toBe(200)
     await page.reload()
     await expect(page.getByTestId(`device-row-${device.id}`)).toContainText('Deactivated')

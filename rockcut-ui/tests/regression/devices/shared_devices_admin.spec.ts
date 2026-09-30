@@ -74,4 +74,26 @@ test.describe('owner, device controls (DEV G5, G9)', () => {
     await page.reload()
     await expect(page.getByTestId(`pair-tablet-${device.id}`)).toBeVisible()
   })
+
+  test('G5: Deactivate asks first; Cancel changes nothing', async ({ page }) => {
+    tag = tempTag('G5 tablets')
+    const api = await apiAs('owner')
+    const device = await createDevice(api, tag)
+
+    await page.goto('/devices')
+    await page.getByTestId(`toggle-device-${device.id}`).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toContainText('Deactivate')
+    await expect(dialog).toContainText('signed out')
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
+    await page.reload()
+    await expect(page.getByTestId(`device-row-${device.id}`)).not.toContainText('Deactivated')
+
+    await page.getByTestId(`toggle-device-${device.id}`).click()
+    const saved = page.waitForResponse((r) => r.url().endsWith(`/api/devices/${device.id}`) && r.request().method() === 'PATCH')
+    await page.getByRole('dialog').getByRole('button', { name: 'Deactivate' }).click()
+    expect((await saved).status()).toBe(200)
+    await page.reload()
+    await expect(page.getByTestId(`device-row-${device.id}`)).toContainText('Deactivated')
+  })
 })
