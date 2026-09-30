@@ -161,3 +161,52 @@ test('S13: a late /api/me answer for the tablet doesn’t replace the login form
   await expect(page.getByTestId('login-email')).toBeVisible()
   await page.unrouteAll({ behavior: 'ignoreErrors' })
 })
+
+// Review item 3: an iPad that sleeps pauses timers. "Sleep" = move the wall
+// clock forward without running any timers (setSystemTime), then wake the page.
+test.describe('S13: the idle return survives the tablet sleeping', () => {
+  async function personalSession(page: import('@playwright/test').Page) {
+    await page.clock.install()
+    await page.goto('/')
+    await page.getByTestId('personal-signin').click()
+    await expect(page.getByTestId('login-email')).toBeVisible()
+    await page.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+    await page.reload()
+    await expect(page.getByTestId('personal-session-banner')).toBeVisible()
+  }
+
+  async function sleep(page: import('@playwright/test').Page, ms: number) {
+    const now = await page.evaluate(() => Date.now())
+    await page.clock.setSystemTime(now + ms)
+  }
+
+  test('woken by visibilitychange after 20 minutes asleep → back to the shared screen at once', async ({ page }) => {
+    await personalSession(page)
+    await sleep(page, 20 * 60 * 1000)
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+  })
+
+  test('a tap after sleeping doesn’t extend the personal session', async ({ page }) => {
+    await personalSession(page)
+    await sleep(page, 20 * 60 * 1000)
+    await page.mouse.click(5, 300)
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+  })
+
+  test('a reload after sleeping (the browser discarded the page) still returns', async ({ page }) => {
+    await personalSession(page)
+    await sleep(page, 20 * 60 * 1000)
+    await page.reload()
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+  })
+
+  test('a short sleep keeps the session', async ({ page }) => {
+    await personalSession(page)
+    await sleep(page, 60 * 1000)
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
+    await page.mouse.click(5, 300)
+    await expect(page.getByTestId('personal-session-banner')).toBeVisible()
+    await expect(page.getByTestId('device-chip')).toHaveCount(0)
+  })
+})
