@@ -3,13 +3,8 @@ import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
 import path from 'path'
 
-const isDocker = !!process.env.DOCKER_BUILD
-
-// In Docker, datagrid-extended source is copied to .datagrid-extended-src/
-// In dev, it's resolved from the shared/ checkout placed as a sibling of rockcut/
-const datagridExtendedPath = isDocker
-  ? path.resolve(__dirname, '.datagrid-extended-src')
-  : path.resolve(__dirname, '../../shared/ui-components/datagrid-extended/src/lib')
+// datagrid-extended is vendored (task 3999): the same source locally and in Docker.
+const datagridExtendedPath = path.resolve(__dirname, 'vendor/datagrid-extended')
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -63,15 +58,6 @@ export default defineConfig({
     },
   },
   server: {
-    watch: {
-      ignored: ['!**/node_modules/datagrid-extended/**'],
-    },
-    fs: {
-      allow: [
-        path.resolve(__dirname),
-        ...(!isDocker ? [path.resolve(__dirname, '../../shared/ui-components/datagrid-extended')] : []),
-      ],
-    },
     proxy: {
       '/api': {
         target: 'http://localhost:4002',
