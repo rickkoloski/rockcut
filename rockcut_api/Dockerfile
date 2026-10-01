@@ -1,6 +1,6 @@
 # Build stage — compile Elixir release
 # Uses same base images as vNext for consistency
-FROM hexpm/elixir:1.19.3-erlang-28.1.1-debian-bookworm-20260112-slim AS builder
+FROM hexpm/elixir:1.19.5-erlang-28.5.0.5-debian-bookworm-20260824-slim AS builder
 
 RUN apt-get update -y && apt-get install -y build-essential git \
     && apt-get clean && rm -f /var/lib/apt/lists/*_*
@@ -37,7 +37,7 @@ COPY rel rel
 RUN mix release
 
 # Runtime stage — minimal image
-FROM debian:bookworm-20260112-slim
+FROM debian:bookworm-20260824-slim
 
 RUN apt-get update -y && \
     apt-get install -y libstdc++6 openssl libncurses5 locales ca-certificates \
