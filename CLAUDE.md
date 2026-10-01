@@ -83,7 +83,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 
 This project follows the SDLC framework from `~/src/pm-sdlc/`.
 
-**Every deliverable follows `docs/process/three_environment_workflow.md`** (Rick, 2026-09-28): spec with persona scenarios → local gate → DEV gate (claim DEV in PortableMind discussion 80, full Playwright on DEV, independent agent pass) → prod release from a tag. Read it at the start of each deliverable. **The §2 one-time branch cleanup is on hold** until Rick confirms: don't merge PRs #1/#2, move `main`, create `develop` or delete branches.
+**Every deliverable follows `docs/process/three_environment_workflow.md`** (Rick, 2026-09-28): spec with persona scenarios → local gate → DEV gate (claim DEV in PortableMind discussion 80, full Playwright on DEV, independent agent pass) → prod release from a tag. Read it at the start of each deliverable. The §2 one-time branch cleanup is **done** (2026-09-30): `develop` is the default branch and every deliverable branches from it as one flat PR; `main` is what prod runs, and hotfixes branch from `main` and merge to both.
 
 **CC must:**
 - Follow the deliverable workflow (Spec → Planning → Implementation → Result)
