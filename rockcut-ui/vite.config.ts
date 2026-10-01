@@ -26,7 +26,9 @@ export default defineConfig({
         start_url: '/',
         scope: '/',
         display: 'standalone',
-        orientation: 'portrait',
+        // 'any': the taproom tablets (Samsung, Chrome) are mounted landscape, and Android
+        // enforces a manifest orientation on installed apps. Phones follow their own rotation.
+        orientation: 'any',
         theme_color: '#5C4033',
         background_color: '#FAF6F0',
         icons: [
