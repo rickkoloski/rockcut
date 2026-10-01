@@ -120,6 +120,7 @@ A human (Matt) decides *when*. The agent can prepare and run the commands on his
 4. **Record** the new `fly releases` versions (API vN, UI vN) and the **previous** ones (the rollback target) in the release PR.
 5. **Prod smoke** (the runbook's step 7):
    - health 200, UI 200, `sw.js` is `no-cache`;
+   - **dependency check (task 3999):** `pnpm audit --prod` (in `rockcut-ui`) and `mix hex.audit` (in `rockcut_api`) at the tag show nothing new beyond accepted advisories, and `node rockcut-ui/scripts/check-bundle-versions.mjs https://rockcut-ui.fly.dev` passes (the shipped bundle's axios and react-router match `pnpm-lock.yaml`). Run the same script against `https://rockcut-ui-dev.fly.dev` after each DEV deploy;
    - **synthetic login → 401** and **0 synthetic users**;
    - **Matt** logs in as himself. The agent never does.
 6. **Rollback** if the smoke fails: `fly deploy --image <previous ref>` for the affected app. Migrations are forward-only; a migration that has to be undone needs a new forward migration plus a volume-snapshot restore as the last resort. Say which you did in conv 80.

@@ -7,39 +7,22 @@ ENV VITE_API_URL=${VITE_API_URL}
 # D30: "DEV" on the DEV server shows the environment ribbon; empty on prod.
 ARG VITE_ENV_LABEL
 ENV VITE_ENV_LABEL=${VITE_ENV_LABEL}
-ENV DOCKER_BUILD=1
 
 WORKDIR /app
 
-# Install pnpm
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# pnpm version comes from package.json `packageManager` (task 3999), not @latest.
+RUN corepack enable
 
-# Install dependencies using Docker-specific package.json (no linked packages)
-COPY package.docker.json ./package.json
-COPY .npmrc ./
-# Docker-only pnpm settings — approves esbuild's build script (pnpm 10+ reads
-# build approval from pnpm-workspace.yaml, not package.json). The real workspace
-# file is .dockerignored so its datagrid-extended link override never enters here.
-COPY pnpm-workspace.docker.yaml ./pnpm-workspace.yaml
-RUN pnpm install --no-frozen-lockfile
-
-# Create datagrid-extended shim (the linked package doesn't exist in Docker)
-RUN mkdir -p .datagrid-extended-src && \
-    echo "import { DataGrid, type DataGridProps } from '@mui/x-data-grid'" > .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "export interface DataGridExtendedProps extends DataGridProps {}" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "export function DataGridExtended(props: DataGridExtendedProps) {" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "  return <DataGrid {...props} />" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "}" >> .datagrid-extended-src/DataGridExtended.tsx && \
-    echo "export { DataGridExtended } from './DataGridExtended'" > .datagrid-extended-src/index.ts && \
-    echo "export type { DataGridExtendedProps } from './DataGridExtended'" >> .datagrid-extended-src/index.ts
+# Install exactly what pnpm-lock.yaml pins (task 3999). datagrid-extended is
+# vendored under vendor/, so there are no linked packages and no Docker-only
+# package.json, workspace file or shim.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+RUN pnpm install --frozen-lockfile
 
 # Copy source and build
 COPY . .
-# Build with vite directly — the package.json `build` script runs `tsc -b`, which
-# is pre-broken by the linked datagrid-extended (D28). Type-checking is a local/CI
-# concern (`tsc --noEmit -p tsconfig.app.json`), not the deploy build.
+# Build with vite directly; type-checking and lint are part of the local gate
+# (`tsc --noEmit -p tsconfig.app.json`, `pnpm lint`), not the deploy build.
 RUN pnpm exec vite build
 
 # Production stage — serve with nginx

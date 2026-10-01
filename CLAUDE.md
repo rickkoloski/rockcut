@@ -11,7 +11,7 @@ Brewery management app for Matt at Rockcut Brewing Co, Estes Park, Colorado.
 | Frontend | React 19 SPA (Vite, MUI 7, pnpm) — port 5174 locally |
 | Hosting | Fly.io (rockcut-api.fly.dev, rockcut-ui.fly.dev) |
 | Auth | Bearer tokens, EnvAuth pattern |
-| Data Grid | datagrid-extended (linked from ~/src/shared/ui-components/) |
+| Data Grid | datagrid-extended (vendored stub in `rockcut-ui/vendor/`, task 3999) |
 
 ## Current Work
 
@@ -66,7 +66,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 - **FormDialog**: Handles preventDefault internally; child dialogs just pass `async () => {}`
 - **Error handling**: All form dialogs catch mutations, display via `parseApiError` + FormDialog `error` prop
 - **Batch size units**: LOV — `bbls`, `gallons`, `liters` (backend + frontend must stay in sync)
-- **datagrid-extended**: Linked package locally, Docker shim for deploy
+- **datagrid-extended**: a vendored stub (`rockcut-ui/vendor/datagrid-extended`, plain MUI `DataGrid`) imported through a Vite alias; types come from `src/datagrid-extended.d.ts`. The plain grid is intended (Rick, msg 83601). The UI Docker build installs from `pnpm-lock.yaml` with `--frozen-lockfile`, and pnpm is pinned via `packageManager` (task 3999).
 
 ## Auth
 

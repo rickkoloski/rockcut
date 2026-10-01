@@ -65,10 +65,9 @@ primary_region = 'dfw'
 
 Two stages:
 1. **Builder** — `node:20-bookworm-slim`
-   - Installs pnpm via corepack (this project uses pnpm, not npm)
-   - Uses `package.docker.json` instead of `package.json` (see "Linked Package Handling" below)
-   - Creates datagrid-extended shim source files
-   - Builds with `pnpm run build` (`tsc -b && vite build`)
+   - Enables corepack; pnpm's version comes from `packageManager` in `package.json`
+   - Copies `package.json`, `pnpm-lock.yaml`, `pnpm-workspace.yaml`, `.npmrc` and runs `pnpm install --frozen-lockfile`
+   - Builds with `pnpm exec vite build`
 2. **Server** — `nginx:alpine`
    - Custom `nginx.conf` for SPA routing
    - `chmod -R a+r` on assets (required — without this you get 403s on Fly.io)
@@ -110,23 +109,13 @@ Key points:
 - **`try_files` fallback** — Critical for SPA routing. Without this, direct navigation to `/recipes` returns 404
 - **Health endpoint** — Returns JSON at `/health`, no access log noise
 
-## Linked Package Handling (datagrid-extended)
+## datagrid-extended (vendored stub)
 
-The rockcut-ui project depends on `datagrid-extended`, a component library that lives outside the repo at `~/src/ui-components/datagrid-extended/`. In development, it's linked via `pnpm link`. In Docker, that path doesn't exist.
+`datagrid-extended` is a 10-line stub that renders MUI's `DataGrid`, vendored at `rockcut-ui/vendor/datagrid-extended/` (task 3999). It replaced the D28 setup (a `link:` to `~/src/shared/ui-components/`, a Docker-only `package.docker.json`, an inline shim and `--no-frozen-lockfile`).
 
-We solve this the same way vNext handles its `wf_ui_src` dependency — a Docker-specific build:
-
-1. **`package.docker.json`** — Same as `package.json` but without the `datagrid-extended` link dependency
-2. **`DOCKER_BUILD=1` env var** — Tells `vite.config.ts` to use the Docker source path
-3. **Shim creation in Dockerfile** — The Dockerfile creates `.datagrid-extended-src/` with a minimal re-export of `@mui/x-data-grid`
-4. **`vite.config.ts`** — Conditionally resolves the alias:
-   - Dev: `../../ui-components/datagrid-extended/src/lib`
-   - Docker: `.datagrid-extended-src`
-5. **`src/datagrid-extended.d.ts`** — Type declaration so TypeScript can find the module
-
-**When datagrid-extended grows**, you'll need to update the Dockerfile shim to match. Long-term, consider either:
-- Moving datagrid-extended into the rockcut monorepo
-- Publishing it to npm (even as a private package)
+- **Runtime:** `vite.config.ts` aliases `datagrid-extended` to the vendored folder, the same locally and in Docker.
+- **Types:** `src/datagrid-extended.d.ts` declares the module (including the formula and remote-value types from the D6–D9 experiment, unused today). TypeScript doesn't resolve the vendored folder, so the declared types apply.
+- **Intended behavior:** the plain grid (Rick, discussion 80, msg 83601). If the real package returns, it replaces `vendor/datagrid-extended/`.
 
 ## Build-Time Environment Variables
 
@@ -180,7 +169,6 @@ fly status -a rockcut-ui
 |---------|-------------|-----|
 | 403 Forbidden on assets | File permissions | Ensure Dockerfile has `chmod -R a+r` |
 | 404 on direct navigation to `/recipes` | Missing `try_files` | Check nginx.conf has `try_files $uri $uri/ /index.html` |
-| Build fails: lockfile mismatch | `package.json` used instead of `package.docker.json` | Dockerfile should `COPY package.docker.json ./package.json` |
-| Build fails: can't find `datagrid-extended` | Shim not created or vite.config not Docker-aware | Check `DOCKER_BUILD=1` is set and shim matches current source |
+| Build fails: `ERR_PNPM_OUTDATED_LOCKFILE` | `package.json` changed without updating `pnpm-lock.yaml` | Run `pnpm install` locally and commit the lockfile |
 | Build fails: unused TypeScript imports | `noUnusedLocals: true` in tsconfig | Fix the unused import in the source file |
 | API calls fail in production | Wrong `VITE_API_URL` | Update `fly.toml [build.args]` and redeploy |
