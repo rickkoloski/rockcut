@@ -1,7 +1,7 @@
 defmodule RockcutApi.AuthzBoundaryTest do
   @moduledoc """
   D31: `RockcutApi.Authz` is the only place that turns the role model
-  (`is_owner`, `memberships.role`) into an access decision. This test fails on
+  (`is_owner`, `memberships.role`, and since D33 the account `kind`) into an access decision. This test fails on
   any direct read of it elsewhere in `lib/`.
 
   Allowed: the files in `@allowlist`, and a line directly below a
@@ -12,11 +12,14 @@ defmodule RockcutApi.AuthzBoundaryTest do
 
   @root Path.expand("../..", __DIR__)
 
-  @pattern ~r/\.is_owner\b|is_owner: *true|\.role *==|role: *"manager"|role_in\(|managed_department_ids\(|member_of\?\(|can_manage_any\?\(/
+  # D33 adds the account kind: a device check (`.kind ==`, `kind: "device"`)
+  # outside Authz is an access decision too.
+  @pattern ~r/\.is_owner\b|is_owner: *true|\.role *==|role: *"manager"|role_in\(|managed_department_ids\(|member_of\?\(|can_manage_any\?\(|\.kind *(==|!=)|kind: *"(device|person)"/
 
   @allowlist [
     # The boundary itself.
     "lib/rockcut_api/authz.ex",
+    "lib/rockcut_api/authz/device.ex",
     # Schema field and its guarded changeset.
     "lib/rockcut_api/accounts/user.ex",
     # Serializes is_owner for the UI.
@@ -40,6 +43,13 @@ defmodule RockcutApi.AuthzBoundaryTest do
                "  #{file}:#{line}: #{String.trim(text)}"
              end) <>
              "\nIf a line is a data rule rather than an access decision, put `#{@marker}` on the line above it."
+  end
+
+  test "the pattern flags account-kind checks (D33)" do
+    assert Regex.match?(@pattern, ~s|where: u.kind == "device"|)
+    assert Regex.match?(@pattern, ~s|%User{kind: "device"} = user|)
+    refute Regex.match?(@pattern, ~s|kind: "unavailable"|)
+    refute Regex.match?(@pattern, ~s|kind: s.kind,|)
   end
 
   defp allowed_file?(file),

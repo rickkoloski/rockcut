@@ -23,5 +23,9 @@ defmodule RockcutApi.Accounts.Membership do
     |> unique_constraint([:user_id, :department_id])
     |> foreign_key_constraint(:user_id)
     |> foreign_key_constraint(:department_id)
+    |> validate_change(:user_id, fn :user_id, id ->
+      # D33: a shared device never has memberships, whatever the insert path.
+      if RockcutApi.Accounts.device_id?(id), do: [user_id: "can't be a shared device"], else: []
+    end)
   end
 end

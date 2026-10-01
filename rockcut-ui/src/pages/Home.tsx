@@ -28,8 +28,15 @@ export default function Home() {
   const canManageUsers = !!capabilities?.can_manage_users
 
   const firstName = (user?.name || user?.email || '').split(/[\s@]/)[0]
+  // D33: a shared tablet gets only what it can open.
+  const isDevice = user?.kind === 'device'
 
-  const links: QuickLink[] = [
+  const deviceLinks: QuickLink[] = [
+    { label: 'View Schedule', description: 'Who’s working and what’s on', path: '/schedule', icon: <CalendarMonthIcon /> },
+    { label: 'Messages', description: 'Read the team channels', path: '/messages', icon: <ForumIcon /> },
+  ]
+
+  const links: QuickLink[] = isDevice ? deviceLinks : [
     { label: 'View Schedule', description: 'Your upcoming shifts', path: '/schedule', icon: <CalendarMonthIcon /> },
     ...(canManageSchedule
       ? [{ label: 'Scheduler', description: 'Build & publish the week', path: '/scheduler', icon: <GridViewIcon /> }]
@@ -48,7 +55,7 @@ export default function Home() {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        {firstName ? `Welcome back, ${firstName}` : 'Welcome to Rockcut'}
+        {isDevice ? user?.name || 'Rockcut' : firstName ? `Welcome back, ${firstName}` : 'Welcome to Rockcut'}
       </Typography>
       <Typography color="text.secondary" sx={{ mb: 4 }}>
         Quick links to get you where you're going. More at-a-glance info is coming to this page soon.

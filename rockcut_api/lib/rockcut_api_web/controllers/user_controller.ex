@@ -54,6 +54,9 @@ defmodule RockcutApiWeb.UserController do
             {:ok, u} ->
               json(conn, %{data: user(u)})
 
+            {:error, :device_account} = error ->
+              error
+
             {:error, :last_owner} ->
               unprocessable(conn, %{base: ["Cannot demote or deactivate the last owner"]})
 
@@ -77,6 +80,7 @@ defmodule RockcutApiWeb.UserController do
         if Authz.can?(actor, :reset_password, target) do
           case Accounts.reset_password(target, actor) do
             {:ok, u, temp_password} -> json(conn, %{data: user(u), temp_password: temp_password})
+            {:error, :device_account} = error -> error
             {:error, %Ecto.Changeset{} = cs} -> {:error, cs}
           end
         else

@@ -14,6 +14,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       is_owner: user.is_owner,
       must_reset_password: user.must_reset_password,
       schedulable: user.schedulable,
+      kind: user.kind,
+      home_department_id: user.home_department_id,
       memberships: maybe_render(user, :memberships, &Enum.map(&1, fn m -> membership(m) end)),
       inserted_at: user.inserted_at,
       updated_at: user.updated_at
@@ -43,8 +45,52 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  def me(user, capabilities) do
-    %{user: user(user), capabilities: capabilities}
+  def me(user, capabilities, shared_devices \\ false) do
+    %{user: user(user), capabilities: capabilities, shared_devices: shared_devices}
+  end
+
+  # ── Shared devices (D33) ───────────────────────────────────────────
+
+  @doc """
+  What a shared device may see of a rendered response (DEV G8, decision Q6:
+  assume customers can read anything the device can fetch): no email
+  addresses anywhere. People get `data` unchanged. Used by every controller
+  action in the router's `:device_allowed` scope.
+  """
+  def for_viewer(data, viewer) do
+    if RockcutApi.Authz.device?(viewer), do: drop_emails(data), else: data
+  end
+
+  defp drop_emails(%{__struct__: _} = struct), do: struct
+
+  defp drop_emails(map) when is_map(map) do
+    for {k, v} <- map, k not in [:email, "email"], into: %{}, do: {k, drop_emails(v)}
+  end
+
+  defp drop_emails(list) when is_list(list), do: Enum.map(list, &drop_emails/1)
+  defp drop_emails(other), do: other
+
+  def device(d) do
+    %{
+      id: d.id,
+      name: d.name,
+      active: d.active,
+      home_department_id: d.home_department_id,
+      home_department: maybe_render(d, :home_department, &department/1),
+      tokens: maybe_render(d, :device_tokens, &Enum.map(&1, fn t -> device_token(t) end)),
+      inserted_at: d.inserted_at
+    }
+  end
+
+  def device_token(t) do
+    %{
+      id: t.id,
+      name: t.name,
+      paired_by: maybe_render(t, :paired_by, &audit_actor/1),
+      paired_at: t.inserted_at,
+      last_seen_at: t.last_seen_at,
+      revoked_at: t.revoked_at
+    }
   end
 
   def audit_entry(entry) do

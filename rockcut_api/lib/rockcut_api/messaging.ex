@@ -193,5 +193,7 @@ defmodule RockcutApi.Messaging do
     from(d in Department, where: d.assignable == true, order_by: [asc: d.name]) |> Repo.all()
   end
 
-  defp active_users_query, do: from(u in User, where: u.active == true)
+  # People only: a shared device is never notified (D33 §3.1).
+  defp active_users_query,
+    do: from(u in RockcutApi.Accounts.persons_query(), where: u.active == true)
 end

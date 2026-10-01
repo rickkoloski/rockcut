@@ -25,6 +25,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Messaging.Message
   alias RockcutApi.Notifications.Notification
   alias RockcutApi.Seeds.{Credentials, Guard}
+  alias RockcutApi.Devices.DeviceToken
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -55,6 +56,15 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"sales1", "sales1", "Robin Pitch", [{"sales", "employee"}], %{}}
   ]
 
+  # Shared-device personas (D33): {key, email local part, name, home department key}.
+  # Kept apart from @personas: a device has no password, no memberships, and
+  # logs in only with a `dev_` tablet token (see `mint_token/1`).
+  @devices [
+    {"taproomDevice", "taproom.device", "Taproom tablets", "bar"}
+  ]
+
+  @device_token_name "#{"[SEED]"} Playwright tablet"
+
   @default_flags %{
     is_owner: false,
     active: true,
@@ -74,6 +84,15 @@ defmodule RockcutApi.Seeds.Synthetic do
       }
     end)
   end
+
+  @doc "Shared-device persona definitions (D33) as maps (key, email, name, home)."
+  def device_personas do
+    Enum.map(@devices, fn {key, local, name, home} ->
+      %{key: key, email: local <> @domain, name: name, home: home}
+    end)
+  end
+
+  def device_persona?(key), do: Enum.any?(device_personas(), &(&1.key == key))
 
   def persona!(key) do
     Enum.find(personas(), &(&1.key == key)) ||
@@ -97,8 +116,10 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.transaction(fn ->
       cleanup_temp()
       users = Map.new(personas(), fn p -> {p.key, upsert_persona(p, hash, depts)} end)
+      devices = Map.new(device_personas(), fn d -> {d.key, upsert_device(d, depts)} end)
+      prune_device_tokens()
       seed_scenario(users)
-      users
+      Map.merge(users, devices)
     end)
     |> case do
       {:ok, users} -> {:ok, map_size(users)}
@@ -128,6 +149,12 @@ defmodule RockcutApi.Seeds.Synthetic do
     Guard.guard!()
     delete_tagged(@temp_tag)
     Repo.delete_all(from(p in Position, where: like(p.name, ^"#{@temp_tag}%")))
+    # D33: devices and tablet tokens agents created (tokens, codes and channel
+    # reads cascade with the device).
+    Repo.delete_all(from(t in DeviceToken, where: like(t.name, ^"#{@temp_tag}%")))
+
+    Repo.delete_all(from(u in User, where: u.kind == "device" and like(u.name, ^"#{@temp_tag}%")))
+
     :ok
   end
 
@@ -138,18 +165,35 @@ defmodule RockcutApi.Seeds.Synthetic do
         :error -> nil
       end
 
-    Enum.map(personas(), fn p ->
-      user = Repo.get_by(User, email: p.email)
+    devices =
+      Enum.map(device_personas(), fn d ->
+        user = Repo.get_by(User, email: d.email)
 
-      %{
-        key: p.key,
-        email: p.email,
-        exists: not is_nil(user),
-        active: !!(user && user.active),
-        authenticates:
-          !!(user && password && user.active && Argon2.verify_pass(password, user.password_hash))
-      }
-    end)
+        # A device never authenticates with a password (D33).
+        %{
+          key: d.key,
+          email: d.email,
+          exists: not is_nil(user),
+          active: !!(user && user.active),
+          authenticates: false
+        }
+      end)
+
+    persons =
+      Enum.map(personas(), fn p ->
+        user = Repo.get_by(User, email: p.email)
+
+        %{
+          key: p.key,
+          email: p.email,
+          exists: not is_nil(user),
+          active: !!(user && user.active),
+          authenticates:
+            !!(user && password && user.active && Argon2.verify_pass(password, user.password_hash))
+        }
+      end)
+
+    persons ++ devices
   end
 
   ## Tokens
@@ -159,6 +203,10 @@ defmodule RockcutApi.Seeds.Synthetic do
   accepted only where the guard allows (`RockcutApiWeb.SessionController.verify_token/1`).
   """
   def mint_token(key) do
+    if device_persona?(key), do: mint_device_token(key), else: mint_person_token(key)
+  end
+
+  defp mint_person_token(key) do
     Guard.guard!()
     # Plug.Crypto caches derived keys in an ETS table owned by :plug_crypto. A
     # release `eval` (fly ssh … eval) starts only the repo, so start it here.
@@ -182,8 +230,98 @@ defmodule RockcutApi.Seeds.Synthetic do
   def mint_tokens do
     Guard.guard!()
 
-    for p <- personas(), p.flags.active, into: %{} do
-      {p.key, %{email: p.email, token: mint_token(p.key)}}
+    persons =
+      for p <- personas(), p.flags.active, into: %{} do
+        {p.key, %{email: p.email, token: mint_token(p.key)}}
+      end
+
+    devices =
+      for d <- device_personas(), into: %{} do
+        {d.key, %{email: d.email, token: mint_token(d.key)}}
+      end
+
+    Map.merge(persons, devices)
+  end
+
+  # A device persona logs in like a real tablet: a `dev_` token row named
+  # "[SEED] Playwright tablet" (lead decision 2). No expiry of its own, so
+  # rows older than #{div(@token_max_age, 3600)} hours are deleted at each mint and setup.
+  @doc """
+  A real pairing code for a device persona, generated as the `owner` persona,
+  so a human can try "Set up as a shared device" on DEV or locally. 10 minutes, single use.
+  """
+  def pairing_code(key \\ "taproomDevice") do
+    Guard.guard!()
+
+    d =
+      Enum.find(device_personas(), &(&1.key == key)) ||
+        raise ArgumentError, "unknown device persona #{inspect(key)}"
+
+    device = Repo.get_by!(User, email: d.email)
+    owner = Repo.get_by!(User, email: persona!("owner").email)
+    {:ok, code, _expires_at} = RockcutApi.Devices.create_pairing_code(device, owner)
+    code
+  end
+
+  defp mint_device_token(key) do
+    Guard.guard!()
+    d = Enum.find(device_personas(), &(&1.key == key))
+
+    case Repo.get_by(User, email: d.email) do
+      %User{active: true, email: email} = device ->
+        true = synthetic_email?(email)
+        prune_device_tokens()
+        {token, _row} = RockcutApi.Devices.issue_token(device, @device_token_name, nil)
+        token
+
+      %User{} ->
+        raise "device persona #{key} is inactive; run the synthetic setup first"
+
+      nil ->
+        raise "device persona #{key} does not exist yet; run the synthetic setup first"
+    end
+  end
+
+  defp prune_device_tokens do
+    cutoff = DateTime.add(now(), -@token_max_age)
+    device_ids = from(u in User, where: like(u.email, ^"%#{@domain}"), select: u.id)
+
+    Repo.delete_all(
+      from(t in DeviceToken,
+        where:
+          t.name == ^@device_token_name and t.inserted_at < ^cutoff and
+            t.user_id in subquery(device_ids)
+      )
+    )
+  end
+
+  defp upsert_device(d, depts) do
+    home = Map.fetch!(depts, d.home)
+
+    case Repo.get_by(User, email: d.email) do
+      nil ->
+        device =
+          %{"name" => d.name, "home_department_id" => home.id}
+          |> User.device_create_changeset()
+          |> Ecto.Changeset.put_change(:email, d.email)
+          |> Repo.insert!()
+
+        device
+
+      %User{} = existing ->
+        # Heal drift: canonical name, home and active; never a person's fields.
+        existing
+        |> Ecto.Changeset.change(%{
+          name: d.name,
+          home_department_id: home.id,
+          active: true,
+          is_owner: false,
+          schedulable: false,
+          must_reset_password: false,
+          kind: "device"
+        })
+        |> Repo.update!()
+        |> tap(fn u -> Repo.delete_all(from(m in Membership, where: m.user_id == ^u.id)) end)
     end
   end
 
@@ -241,7 +379,10 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   defp departments! do
     depts = Repo.all(Department) |> Map.new(&{&1.key, &1})
-    needed = personas() |> Enum.flat_map(& &1.memberships) |> Enum.map(&elem(&1, 0))
+
+    needed =
+      (personas() |> Enum.flat_map(& &1.memberships) |> Enum.map(&elem(&1, 0))) ++
+        Enum.map(device_personas(), & &1.home)
 
     case Enum.reject(Enum.uniq(needed), &Map.has_key?(depts, &1)) do
       [] -> depts

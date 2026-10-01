@@ -6,7 +6,7 @@ defmodule RockcutApiWeb.ScheduleEventController do
   """
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [schedule_event: 1]
+  import RockcutApiWeb.JSONHelpers, only: [schedule_event: 1, for_viewer: 2]
   alias RockcutApi.{Scheduling, Authz}
   alias RockcutApi.Scheduling.{ScheduleEvent, ScheduleEventSeries}
 
@@ -14,7 +14,11 @@ defmodule RockcutApiWeb.ScheduleEventController do
 
   def index(conn, params) do
     events = Scheduling.list_events(conn.assigns.current_user, params)
-    json(conn, %{data: Enum.map(events, &schedule_event/1)})
+
+    json(
+      conn,
+      for_viewer(%{data: Enum.map(events, &schedule_event/1)}, conn.assigns.current_user)
+    )
   end
 
   def show(conn, %{"id" => id}) do

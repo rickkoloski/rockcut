@@ -43,3 +43,38 @@ Started with D32; earlier deliverables' scenarios are added as they're touched.
 
 Known gaps:
 - **GAP:** the taproom device's view of events (D33).
+
+## D33 — Taproom device access (`specs/d33_taproom_device_access_spec.md`)
+
+| # | Scenario | Layer |
+|---|---|---|
+| S1 | Owner creates a device; not in Users & Roles, roster or assignees; change log | Playwright `devices/shared_devices_admin`; ExUnit `device_controller_test`, `device_account_test` |
+| S2 | barMgr pairs a tablet in a second browser; listed with last seen | Playwright `devices/pairing`; ExUnit `device_controller_test`, `devices_test` |
+| S3 | breweryMgr can't pair or revoke taproom tablets (403) | Playwright `devices/device_permissions`; ExUnit `device_controller_test` |
+| S4 | Used, expired, wrong code refused; 6th wrong code rate-limited (IPv6 /64, global cap 50, atomic, header trusted only on Fly) | ExUnit `devices_test`, `devices/pairing_rate_limiter_test`, `device_controller_test` (429); Playwright `pairing` (wrong-code message); **DEV** header-spoof check |
+| S5 | Password login as the device refused | ExUnit `device_account_test`, `synthetic_test` |
+| S6 | Device nav and app bar | Playwright `devices/device_session`; ExUnit `device_session_api_test` |
+| S7 | Published shifts/events only; claim 403 | Playwright `device_session`; ExUnit `authz_device_test`, `device_session_api_test`, `device_route_matrix_test` |
+| S8 | All-staff + Taproom read-only; post 403; no Managers | Playwright `device_session`, `messaging/channel_urls`; ExUnit `authz_device_test`, `device_session_api_test` |
+| S9 | Typed URLs → "Not available on a shared device"; API 403 | Playwright `device_session`; ExUnit `device_route_matrix_test` (every route) |
+| S10 | Device not among All-staff recipients | ExUnit `device_account_test`, `authz_device_test` |
+| S11 | Revoke one of two tablets | Playwright `pairing`; ExUnit `auth_plug_device_test`, `device_controller_test` |
+| S12 | Deactivate → every tablet signed out | Playwright `device_permissions`; ExUnit `auth_plug_device_test` |
+| S13 | Personal sign-in; 5-minute idle return without re-pairing, also across sleep (wake/tap/reload) | Playwright `devices/personal_signin` (mocked clock + `setSystemTime` sleep); **manual** on a real tablet (DEV) |
+| S14 | Device never member/owner/assignee; 422; nobody (owners included) acts on behalf of a device | ExUnit `device_account_test` (incl. membership changeset), `authz_device_test` (owner → device); Playwright `shared_devices_admin` (API 422) |
+| 3939 | Unknown channel URL redirects; no 403 polling; failed send shows an error (every user) | Playwright `messaging/channel_urls` (revert-and-rerun recorded) |
+
+### D33 DEV fix cycle 1 (gaps from DEV pass 1)
+
+| Gap | Layer |
+|---|---|
+| G1 deactivate revokes tablets; reactivation needs new pairings | ExUnit `devices_test`, `auth_plug_device_test` |
+| G2 a personal session ends when its tablet is revoked/deactivated | Playwright `devices/personal_signin` (revoke + deactivate) |
+| G3 other tabs re-sync; Availability load error | Playwright `personal_signin` (two tabs), `devices/availability_errors` |
+| G4 sign-out only after a server revoke; stale tab can't unpair | Playwright `devices/device_signout` |
+| G5 Deactivate confirmation | Playwright `shared_devices_admin`, `device_permissions` (S12) |
+| G6 no Calendar sync; no refused requests on device pages | Playwright `device_session` |
+| G7 unpaired tablet lands on setup with a notice | Playwright `pairing` (S11), `device_permissions` (S12), `device_signout` |
+| G8 no email in any device-readable response | ExUnit `device_route_matrix_test` (walks every device-allowed route) |
+| G9 no Pair button on a deactivated device; API 422 | Playwright `shared_devices_admin`; ExUnit `device_controller_test` |
+

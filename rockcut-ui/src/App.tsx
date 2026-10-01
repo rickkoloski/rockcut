@@ -1,11 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import {
+  Alert,
   AppBar,
   Badge,
   Box,
   Button,
+  Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogContentText,
+  DialogTitle,
   Collapse,
   Drawer,
   IconButton,
@@ -42,10 +49,17 @@ import ForumIcon from '@mui/icons-material/Forum'
 import TagIcon from '@mui/icons-material/Tag'
 import HistoryIcon from '@mui/icons-material/History'
 import LogoutIcon from '@mui/icons-material/Logout'
+import LoginIcon from '@mui/icons-material/Login'
+import TabletIcon from '@mui/icons-material/TabletMac'
 import { useNavigate, useLocation } from 'react-router-dom'
 import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
 import useAuth from './hooks/useAuth'
+import useIdleReturn from './hooks/useIdleReturn'
+import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
+import useAuthStorageSync from './hooks/useAuthStorageSync'
+import { PERSONAL_IDLE_MS, asideDeviceToken } from './lib/device'
+import parseApiError from './lib/parseApiError'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
 
@@ -67,6 +81,8 @@ import Schedule from './pages/schedule/Schedule'
 import TimeOff from './pages/timeoff/TimeOff'
 import Availability from './pages/availability/Availability'
 import Messages from './pages/messages/Messages'
+import SharedDevices from './pages/devices/SharedDevices'
+import DeviceNotAvailable from './pages/devices/DeviceNotAvailable'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
 
@@ -124,7 +140,18 @@ function App() {
   const [openOverride, setOpenOverride] = useState<Record<string, boolean>>({})
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAuthenticated, bootstrapped, user, capabilities, loadMe, logout } = useAuth()
+  const { isAuthenticated, bootstrapped, user, capabilities, sharedDevices, loadMe, logout, signOutDevice, startPersonalSignIn, endPersonalSession } =
+    useAuth()
+  const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
+  const [deviceSignOutError, setDeviceSignOutError] = useState<string | null>(null)
+  const [deviceSigningOut, setDeviceSigningOut] = useState(false)
+  // D33: a person signed in on a shared tablet (the tablet's token is set aside).
+  const personalOnTablet = isAuthenticated && !!asideDeviceToken()
+  useIdleReturn(personalOnTablet, PERSONAL_IDLE_MS, endPersonalSession)
+  // DEV G2: the tablet may be revoked or deactivated while a person is on it.
+  useDeviceTokenWatch(personalOnTablet)
+  // DEV G3: another tab changed the session (sign-out, "Sign in as me", unpaired).
+  useAuthStorageSync()
 
   useEffect(() => {
     if (isAuthenticated && !bootstrapped) loadMe()
@@ -144,6 +171,8 @@ function App() {
   if (!bootstrapped || !user || !capabilities) return <LoadingScreen />
   if (user.must_reset_password) return <ForcePasswordReset />
 
+  // D33: a shared tablet account (read-only schedule + its channels).
+  const isDevice = user.kind === 'device'
   const modules = capabilities.modules
   const hasBrewery = modules.includes('brewery')
   const canManageUsers = capabilities.can_manage_users
@@ -179,19 +208,24 @@ function App() {
         ...(canManageSchedule
           ? [{ label: 'Scheduler', path: '/scheduler', icon: <GridViewIcon /> }]
           : []),
-        { label: 'Time off', path: '/time_off', icon: <EventBusyIcon /> },
-        { label: 'Availability', path: '/availability', icon: <EventAvailableIcon /> },
+        ...(isDevice
+          ? []
+          : [
+              { label: 'Time off', path: '/time_off', icon: <EventBusyIcon /> },
+              { label: 'Availability', path: '/availability', icon: <EventAvailableIcon /> },
+            ]),
       ],
     },
     ...deptSections,
-    ...(canManageUsers
+    ...(canManageUsers || sharedDevices
       ? [
           {
             key: 'admin',
             label: 'Admin',
             icon: <AdminPanelSettingsIcon />,
             children: [
-              { label: 'Users & Roles', path: '/users', icon: <PeopleIcon /> },
+              ...(canManageUsers ? [{ label: 'Users & Roles', path: '/users', icon: <PeopleIcon /> }] : []),
+              ...(sharedDevices ? [{ label: 'Shared devices', path: '/devices', icon: <TabletIcon /> }] : []),
               ...(isOwner
                 ? [
                     {
@@ -442,26 +476,84 @@ function App() {
 
             <Box sx={{ flexGrow: 1 }} />
 
-            <NotificationBell />
+            {isDevice ? (
+              <>
+                <Chip
+                  data-testid="device-chip"
+                  icon={<TabletIcon />}
+                  label={`Shared device · ${departments.find((d) => d.key === capabilities.home_department)?.name ?? DEPT_META[capabilities.home_department ?? '']?.label ?? ''}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{ mr: 1 }}
+                />
+                <Button
+                  data-testid="personal-signin"
+                  size="small"
+                  variant="contained"
+                  onClick={startPersonalSignIn}
+                  startIcon={<LoginIcon />}
+                  sx={{ mr: 1 }}
+                >
+                  Sign in as me
+                </Button>
+                <Button
+                  data-testid="device-signout"
+                  size="small"
+                  color="inherit"
+                  onClick={() => {
+                    setDeviceSignOutError(null)
+                    setConfirmDeviceSignOut(true)
+                  }}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  Sign out
+                </Button>
+              </>
+            ) : (
+              <>
+                <NotificationBell />
 
-            <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
-              {user.email}
-              {isOwner ? ' · Owner' : ''}
-            </Typography>
-            <Button
-              data-testid="logout-button"
-              size="small"
-              color="inherit"
-              onClick={logout}
-              startIcon={<LogoutIcon />}
-              sx={{ color: 'text.secondary' }}
-            >
-              Logout
-            </Button>
+                <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
+                  {user.email}
+                  {isOwner ? ' · Owner' : ''}
+                </Typography>
+                <Button
+                  data-testid="logout-button"
+                  size="small"
+                  color="inherit"
+                  onClick={logout}
+                  startIcon={<LogoutIcon />}
+                  sx={{ color: 'text.secondary' }}
+                >
+                  {personalOnTablet ? 'Sign out' : 'Logout'}
+                </Button>
+              </>
+            )}
           </Toolbar>
         </AppBar>
 
+        {personalOnTablet && (
+          <Box
+            data-testid="personal-session-banner"
+            sx={{ px: 3, py: 1, bgcolor: 'warning.light', color: 'warning.contrastText', fontSize: 14 }}
+          >
+            Signed in as {user.name || user.email} on a shared tablet. It returns to the shared screen after 5 minutes without
+            activity.
+          </Box>
+        )}
+
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+          {isDevice ? (
+            // D33: a shared tablet's routes. Anything else shows the device-only
+            // "Not available" page (lead decision 1); people keep the redirect below.
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/schedule" element={<Schedule forceView="agenda" />} />
+              <Route path="/messages" element={<Messages />} />
+              <Route path="/messages/:key" element={<Messages />} />
+              <Route path="*" element={<DeviceNotAvailable />} />
+            </Routes>
+          ) : (
           <Routes>
             <Route path="/" element={<Home />} />
             {/* Brewery pages exist only for Brewery members (and owners); anyone
@@ -488,12 +580,50 @@ function App() {
             <Route path="/messages/:key" element={<Messages />} />
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}
             {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
+            {sharedDevices && <Route path="/devices" element={<SharedDevices />} />}
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
+          )}
         </Box>
       </Box>
 
       <InstallPrompt />
+
+      <Dialog open={confirmDeviceSignOut} onClose={() => setConfirmDeviceSignOut(false)} maxWidth="xs" fullWidth>
+        <DialogTitle>Sign out this tablet?</DialogTitle>
+        <DialogContent>
+          <DialogContentText>A manager will need to pair this tablet again.</DialogContentText>
+          {deviceSignOutError && (
+            <Alert data-testid="device-signout-error" severity="error" sx={{ mt: 2 }}>
+              Couldn't sign this tablet out: {deviceSignOutError}. It's still paired; try again.
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmDeviceSignOut(false)} disabled={deviceSigningOut}>
+            Cancel
+          </Button>
+          <Button
+            data-testid="device-signout-confirm"
+            color="error"
+            variant="contained"
+            disabled={deviceSigningOut}
+            onClick={async () => {
+              setDeviceSigningOut(true)
+              setDeviceSignOutError(null)
+              try {
+                await signOutDevice()
+              } catch (err) {
+                setDeviceSignOutError(parseApiError(err))
+              } finally {
+                setDeviceSigningOut(false)
+              }
+            }}
+          >
+            {deviceSignOutError ? 'Try again' : 'Sign out'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

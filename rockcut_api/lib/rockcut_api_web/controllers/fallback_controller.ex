@@ -7,6 +7,13 @@ defmodule RockcutApiWeb.FallbackController do
     |> json(%{errors: format_changeset_errors(changeset)})
   end
 
+  # D33: shared devices are managed under Shared devices, not Users & Roles.
+  def call(conn, {:error, :device_account}) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{errors: %{base: ["Shared devices are managed under Shared devices"]}})
+  end
+
   def call(conn, {:error, :not_found}) do
     conn
     |> put_status(:not_found)

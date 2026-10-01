@@ -1,7 +1,7 @@
 defmodule RockcutApiWeb.ShiftController do
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [shift: 1]
+  import RockcutApiWeb.JSONHelpers, only: [shift: 1, for_viewer: 2]
   alias RockcutApi.{Scheduling, Authz}
   alias RockcutApi.Scheduling.Shift
 
@@ -9,7 +9,7 @@ defmodule RockcutApiWeb.ShiftController do
 
   def index(conn, params) do
     shifts = Scheduling.list_shifts(conn.assigns.current_user, params)
-    json(conn, %{data: Enum.map(shifts, &shift/1)})
+    json(conn, for_viewer(%{data: Enum.map(shifts, &shift/1)}, conn.assigns.current_user))
   end
 
   def show(conn, %{"id" => id}) do
@@ -20,7 +20,9 @@ defmodule RockcutApiWeb.ShiftController do
         {:error, :not_found}
 
       %Shift{} = s ->
-        if Authz.can?(actor, :read, s), do: json(conn, %{data: shift(s)}), else: forbidden(conn)
+        if Authz.can?(actor, :read, s),
+          do: json(conn, for_viewer(%{data: shift(s)}, actor)),
+          else: forbidden(conn)
     end
   end
 

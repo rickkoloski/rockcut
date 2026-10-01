@@ -44,7 +44,7 @@ defmodule RockcutApi.Release do
     with_repo(fn -> RockcutApi.Seeds.Synthetic.status() end)
     |> Enum.each(fn s ->
       IO.puts(
-        String.pad_trailing(s.key, 12) <>
+        String.pad_trailing(s.key, 14) <>
           String.pad_trailing(s.email, 36) <>
           "exists=#{s.exists} active=#{s.active} authenticates=#{s.authenticates}"
       )
@@ -54,6 +54,12 @@ defmodule RockcutApi.Release do
   @doc "Print a short-lived session token for a persona (the agent login path)."
   def mint_token(persona_key) do
     with_repo(fn -> RockcutApi.Seeds.Synthetic.mint_token(persona_key) end)
+    |> IO.puts()
+  end
+
+  @doc "Print a 10-minute pairing code for a synthetic device persona (D33; DEV/local only)."
+  def pair_synthetic_device(persona_key \\ "taproomDevice") do
+    with_repo(fn -> RockcutApi.Seeds.Synthetic.pairing_code(persona_key) end)
     |> IO.puts()
   end
 
