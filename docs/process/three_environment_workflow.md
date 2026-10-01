@@ -1,7 +1,7 @@
 > **Source:** Rick, PortableMind file #4003, discussion 80 msg 81855 (2026-09-28).
-> **Status note (msg 81856):** the §2 one-time branch cleanup is **on hold** until
-> Rick confirms. Don't merge PRs #1/#2, fast-forward `main`, create `develop` or
-> delete branches yet. The rest of this document stands.
+> **Status note:** the §2 one-time branch cleanup is **done** (task 4058, 2026-09-30;
+> step 8 confirmed by Rick, msg 83548). `develop` is the default branch; `main` and
+> `develop` are protected against force-pushes and deletion (PRs not yet required).
 
 # Rockcut three-environment workflow: Local → DEV → Prod
 
@@ -53,7 +53,7 @@ feature branch dNN-slug ──PR──▶ develop ──release PR──▶ main
 - **Feature branches** `dNN-short-slug` are cut from `develop`, one per deliverable.
 - **Hotfix** `hotfix-slug` is cut from `main` and merged to `main` *and* `develop`.
 
-**One-time cleanup** (Rick owns the repo, so Rick approves; Matt's agent can do the git work):
+**One-time cleanup** (done 2026-09-30, task 4058; kept for the record):
 1. Merge PR #1 into `scheduler-pwa`. Retarget PR #2 to `scheduler-pwa` and merge it.
 2. Fast-forward `main` to `scheduler-pwa`. It's linear from 2ff0473, so there's no merge commit. Tag it `v2026.09.26` (what prod runs today: API v19, UI v15).
 3. Create `develop` from `main`. Set the GitHub default branch to `develop`.
