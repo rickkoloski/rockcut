@@ -3,7 +3,18 @@
 Follows `SESSION_HANDOFF_2026-10-01.md`.
 
 This session: **release `v2026.10.02` (D31 + D32 + D33 + task 3999) shipped to
-prod**, then the release close-out.
+prod**, then the release close-out (`f4bc7de`).
+
+Matt is stepping away for a while. **Nothing is in flight:** no deploy is
+running, DEV is free, and the only checkout is `~/src/rockcut` on `develop`.
+
+## Start here next session
+
+1. Check prod logs since this handoff (see "Still open" 2 below), then ask Matt
+   whether a taproom staff member has opened their schedule.
+2. If Matt is ready: pair the tablets on prod (Still open 3).
+3. Then pick the next deliverable with Matt (list below); remind him of the two
+   deferred event features.
 
 ---
 
@@ -32,13 +43,14 @@ smoke results are in its comments. Reported in conv 80, msg 84288.
   - bundle check OK; `pnpm audit --prod` clean; `mix hex.audit` only `decimal`;
   - synthetic login 401, 0 synthetic users;
   - **Matt's own login check clean.**
-- Logs: no errors, locks, queue drops or 5xx in the first hour.
+- Logs: no errors, locks, queue drops or 5xx through 17:13 UTC (last check).
 
 ## Still open from the release
 
-1. **A taproom staff member opens their schedule.** As of about 17:05 UTC no staff
-   activity showed in the DB since the deploy (schedule-only visits leave no
-   per-user trace).
+1. **A taproom staff member opens their schedule.** As of 17:13 UTC no staff
+   activity showed in the DB since the deploy (no channel reads, notification
+   reads, push refreshes or audit entries; schedule-only visits leave no per-user
+   trace, and request logs don't name users).
 2. **Keep watching the logs** for `dropped from queue`, `database is locked`,
    `ConnectionError`. If they show up, raise `queue_target`/`queue_interval`,
    not `POOL_SIZE` (Rick).
@@ -51,7 +63,11 @@ smoke results are in its comments. Reported in conv 80, msg 84288.
   `d33_taproom_device_access_COMPLETE.md`; D31's record updated to released.
 - CLAUDE.md: Completed table D31–D33; "Next deliverable" updated.
 - Backlog tasks 3887, 3937, 3938, 3939, 3940, 3999 closed.
-- Old worktrees and scratch folders removed.
+- Old worktrees (`rockcut-3999`, `-d33`, `-hotfix`, `-hotfix-deploy`,
+  `-release-v2026.10.02`) and scratch folders (`rockcut-breaker-d33`,
+  `-d33-qa-2`, `-hotfix-notes`, `-release-notes`) removed. Merged remote branches
+  (`d33-taproom-device-access`, `hotfix-deps-2026-09`, `ui-docker-lockfile`) and
+  `~/src/shared` were left alone; they're safe to delete when convenient.
 
 ## Next deliverable: not chosen
 
