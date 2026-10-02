@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D33 — Taproom device access (`specs/d33_taproom_device_access_spec.md`, draft; open Q1: idle timeout). D31 (RBAC consolidation, PR #3) and D32 (schedule events incl. recurring + Taproom rename, PR #4) passed their DEV gates and wait on the §2 branch cleanup to merge and release. D19–D30 complete.
+- **Next deliverable**: not yet chosen. D31–D33 shipped to prod in `v2026.10.02` (2026-10-02); D19–D33 complete. Candidates: backlog 3991 (server-side revoke of a tablet's personal token), a "new version available" reload prompt, and two event features Matt deferred from D32 (events in calendar feeds; company-wide events).
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -133,6 +133,9 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D28 | Production deploy readiness — first prod deploy of the scheduler-pwa line (fresh SQLite DB, shared `rockcut` Fly org): UI Docker build fixed (PWA deps, `vite build`, pnpm-workspace.docker.yaml), nginx `no-cache` for SW/shell, prod mail no-op stub, always-on single API machine + snapshots, reference-data + owner-only seed; runbook in `03_deployment/ref/production_deploy_runbook.md` | 03_deployment |
 | D29 | RBAC capability model (design only) — inventory of all 48 authorization decisions; model = owner flag + fixed baseline + per-department roles; 8 modules (brewing department-bound); read/edit/manage × own/department/all; `Authz.scope` for lists; owner-only set; `counts_as_manager` role flag; decided change: managers limited to own departments for positions/templates/user create, roster order owner-only | 06_auth_roles |
 | D30 | Shared DEV server + synthetic test accounts — `rockcut-api-dev`/`rockcut-ui-dev` (fly.dev.toml, DEV ribbon); 17 fictional `@rockcut-test.com` personas + scenario data behind a fail-closed guard (`ROCKCUT_ENV` + host allowlist); secret seed password (private PortableMind file) and 8-hour minted tokens for agents; Playwright scaffold (`rockcut-ui/tests`); credentials policy in `docs/process/test-credentials-policy.md` | 03_deployment |
+| D31 | RBAC consolidation — every authorization decision through `Authz` (`can?/3` over every area, `scope/3` for lists, managers audience); frozen 394-test parity suite; boundary test fails the build on owner/role checks outside `Authz`; Brewery routes gated in the UI | 06_auth_roles |
+| D32 | Schedule events — one-off and recurring (weekly/monthly-by-weekday, 12-month cap + Extend, this/following edits, Colorado wall-clock via `tz`), Events row in the Scheduler, published with the week; Bar → Taproom display rename (key stays `bar`); Colorado day bounds for week queries; SQLite single-connection default (G1) | 07_scheduling |
+| D33 | Taproom device access — `users.kind` device accounts, one-time pairing codes (rate-limited) and revocable `dev_` tokens, deny-by-default `DeviceGate` + `Authz.Device`, read-only tablet UI with "Sign in as me" and a 5-minute idle return, Admin → Shared devices; PWA `orientation: any`; setup guide `docs/process/taproom_tablet_setup.md` | 06_auth_roles |
 
 ## References
 

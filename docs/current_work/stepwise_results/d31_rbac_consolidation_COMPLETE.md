@@ -1,12 +1,11 @@
 # D31: RBAC Consolidation — Completion Record
 
-**Status:** DEV gate passed (2026-09-29). **Not yet merged or on prod:** merging
-waits on the workflow §2 branch cleanup, which is on hold until Matt and Rick
-discuss it in person.
+**Status:** COMPLETE. DEV gate passed 2026-09-29; on prod since 2026-10-02 in
+release `v2026.10.02` (`5fd6b93`, PR #8; API v21, UI v17).
 **Spec:** `specs/d31_rbac_consolidation_spec.md` · **Plan:** `planning/d31_rbac_consolidation_plan.md`
 **Concept:** 06_auth_roles · roadmap Phase 1 (`planning/rbac_configurable_authorization_roadmap.md`)
 **Branch:** `d31-rbac-consolidation` (off `d30-dev-server-synthetic-accounts`), PR #3. Code SHA **`2e28039`**.
-**Backlog:** PortableMind project 254, task 3887 (in progress until merged and released)
+**Backlog:** PortableMind project 254, task 3887. Closed at release.
 
 ---
 
@@ -100,15 +99,15 @@ Three rules bind owners and therefore sit **above** the owner shortcut in
 
 ## Follow-Up Items
 
-- [ ] **Merge and release:** waits on the workflow §2 branch cleanup (Rick, in
-      person). Then: merge to `develop`, release PR → `main`, tag, prod deploy
-      and smoke, close backlog 3887.
-- [ ] **3939:** a forbidden or unknown channel URL renders as a working channel
-      and sending fails silently (found on DEV; predates D31). Fix in D33.
-- [ ] **3940:** Add shift defaults to today instead of the week being viewed
-      (found on DEV; predates D31).
+- [x] **Merge and release:** merged after the §2 branch cleanup; released in
+      `v2026.10.02` (2026-10-02). Backlog 3887 closed.
+- [x] **3939:** a forbidden or unknown channel URL renders as a working channel
+      and sending fails silently. Fixed in D33.
+- [x] **3940:** Add shift defaults to today instead of the week being viewed.
+      Fixed in D32.
 - [ ] **3941:** `seed_synthetic()` doesn't clean `[TEST-TEMP]` users or brands.
-- [ ] Fix the waived `tsc` and lint failures (backlog task still to be created).
+- [ ] Fix the waived lint failures (backlog task still to be created). The `tsc`
+      errors are gone since task 3999 vendored `datagrid-extended`.
 - [ ] Build SHA on `/api/health` and in the DEV ribbon (workflow §8). The
       independent pass couldn't confirm the build from the app itself.
 
