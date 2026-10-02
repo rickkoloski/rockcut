@@ -5,11 +5,14 @@ import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
 import MoreVertIcon from '@mui/icons-material/MoreVert'
 import WarningAmberIcon from '@mui/icons-material/WarningAmber'
+import EventNoteIcon from '@mui/icons-material/EventNote'
+import RepeatIcon from '@mui/icons-material/Repeat'
 import { formatDayColumn, formatHoursShort, formatTime, formatWallTime, localDayKey, shiftHours, weekDayKeys, weekdayOf } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
 import type { ShiftConflict } from '../../lib/conflicts'
 import type { OffMarker } from '../../lib/timeoff'
-import type { AvailabilitySlot, Department, RosterEntry, Shift } from '../../lib/types'
+import { eventDayKeys, eventDayLabel } from '../../lib/events'
+import type { AvailabilitySlot, Department, RosterEntry, ScheduleEvent, Shift } from '../../lib/types'
 
 interface Props {
   mondayKey: string
@@ -31,6 +34,10 @@ interface Props {
   offMarkers: Map<number, Map<string, OffMarker[]>> // userId -> day key -> time-off markers (with times)
   conflicts: Map<number, ShiftConflict[]> // shiftId -> conflict warnings (D24)
   availability: AvailabilitySlot[] // recurring weekly availability, shown per day (D25)
+  events: ScheduleEvent[] // D32 — shown in the Events row; never part of conflict detection
+  canCreateEvent: boolean
+  onEventClick: (e: ScheduleEvent) => void
+  onCreateEvent: (dayKey: string) => void
 }
 
 const NAME_COL = 160
@@ -40,6 +47,7 @@ export default function WeekGrid({
   mondayKey, shifts, roster, departments, currentUserId, canCreate, canManageSchedule,
   canManageShift, canClaim, onCreate, onEditShift, onClaim, onMoveShift,
   onReorder, onPublishEmployee, onDeleteEmployee, offMarkers, conflicts, availability,
+  events, canCreateEvent, onEventClick, onCreateEvent,
 }: Props) {
   const days = weekDayKeys(mondayKey)
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
@@ -75,6 +83,18 @@ export default function WeekGrid({
     }
     return m
   }, [shifts])
+
+  // Events by Denver day; a multi-day event appears on each of its days (D32).
+  const eventsByDay = useMemo(() => {
+    const m = new Map<string, ScheduleEvent[]>()
+    for (const e of events) {
+      for (const key of eventDayKeys(e)) {
+        if (!m.has(key)) m.set(key, [])
+        m.get(key)!.push(e)
+      }
+    }
+    return m
+  }, [events])
 
   // Weekly hours per assignee (published vs including drafts).
   const hoursByUser = useMemo(() => {
@@ -162,6 +182,7 @@ export default function WeekGrid({
     const box = (
       <Box
         key={s.id}
+        data-testid={`shift-chip-${s.id}`}
         draggable={draggable}
         onDragStart={(e) => {
           setDragShift(s)
@@ -217,6 +238,35 @@ export default function WeekGrid({
     )
   }
 
+  const eventChip = (e: ScheduleEvent, dayKey: string) => {
+    const color = departmentColor(deptById.get(e.department_id) ?? e.department ?? undefined)
+    const draft = e.status === 'draft'
+    return (
+      <Box
+        key={e.id}
+        data-testid={`event-chip-${e.id}`}
+        onClick={(ev) => {
+          ev.stopPropagation()
+          onEventClick(e)
+        }}
+        sx={{
+          px: 0.75, py: 0.5, borderRadius: 1, cursor: 'pointer',
+          // A long title truncates rather than widening the day column (G4).
+          maxWidth: DAY_COL - 12, boxSizing: 'border-box', overflow: 'hidden',
+          border: `2px ${draft ? 'dashed' : 'solid'}`, borderColor: color,
+          opacity: draft ? 0.85 : 1, fontSize: 12, lineHeight: 1.3,
+        }}
+      >
+        <Box sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.25, minWidth: 0 }}>
+          <EventNoteIcon sx={{ fontSize: 14, color }} />
+          <Box component="span" sx={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.title}</Box>
+          {e.series_id && <RepeatIcon sx={{ fontSize: 12, color: 'text.secondary' }} titleAccess="Repeats" />}
+        </Box>
+        <Box>{eventDayLabel(e, dayKey)}{draft ? ' · draft' : ''}</Box>
+      </Box>
+    )
+  }
+
   return (
     <Box sx={{ overflowX: 'auto', border: '1px solid', borderColor: 'divider', borderRadius: 1 }}>
       <Box sx={{ display: 'table', borderCollapse: 'collapse', minWidth: NAME_COL + DAY_COL * 7 }}>
@@ -228,6 +278,37 @@ export default function WeekGrid({
               {formatDayColumn(d)}
             </Box>
           ))}
+        </Box>
+
+        {/* D32 — events row (no conflicts, no drag) */}
+        <Box sx={{ display: 'table-row' }} data-testid="events-row">
+          <Box sx={{ ...stickyCol, display: 'table-cell', p: 1, verticalAlign: 'top', borderTop: '1px solid', borderColor: 'divider' }}>
+            <Typography variant="body2" sx={{ fontWeight: 600 }}>Events</Typography>
+          </Box>
+          {days.map((dayKey) => {
+            const items = eventsByDay.get(dayKey) ?? []
+            return (
+              <Box
+                key={dayKey}
+                data-testid={`events-cell-${dayKey}`}
+                onClick={canCreateEvent ? () => onCreateEvent(dayKey) : undefined}
+                sx={{
+                  display: 'table-cell', p: 0.75, verticalAlign: 'top', minWidth: DAY_COL,
+                  borderTop: '1px solid', borderLeft: '1px solid', borderColor: 'divider',
+                  bgcolor: 'action.hover',
+                  cursor: canCreateEvent ? 'pointer' : 'default',
+                  '&:hover .add-affordance': { opacity: canCreateEvent ? 0.4 : 0 },
+                }}
+              >
+                <Stack spacing={0.5}>
+                  {items.map((e) => eventChip(e, dayKey))}
+                  {items.length === 0 && (
+                    <AddIcon className="add-affordance" fontSize="small" sx={{ opacity: 0, color: 'text.disabled' }} />
+                  )}
+                </Stack>
+              </Box>
+            )
+          })}
         </Box>
 
         {rows.map((row, rowIndex) => (

@@ -35,7 +35,7 @@ defmodule RockcutApi.CalendarFeeds do
   end
 
   def rotate(subject_type, subject_id, %User{} = actor) do
-    if can_manage_feed?(actor, subject_type, subject_id) do
+    if Authz.can?(actor, :rotate, {:calendar_feed, subject_type, subject_id}) do
       feed = ensure_feed(subject_type, subject_id, actor)
       feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update()
     else
@@ -45,28 +45,21 @@ defmodule RockcutApi.CalendarFeeds do
 
   defp entitlements(%User{} = user) do
     departments =
-      if user.is_owner do
-        Accounts.list_departments()
-      else
-        user.memberships
-        |> Enum.filter(&(&1.role == "manager"))
-        |> Enum.map(& &1.department)
-        |> Enum.reject(&is_nil/1)
+      case Authz.scope(user, :calendar_feeds, :manage) do
+        :all -> Accounts.list_departments()
+        :none -> []
+        {:departments, ids} -> Enum.filter(Accounts.list_departments(), &(&1.id in ids))
       end
 
     dept_entries = Enum.map(departments, fn d -> {"department", d.id, d.name} end)
-    all_entry = if user.is_owner, do: [{"all", nil, "Whole schedule"}], else: []
+
+    all_entry =
+      if Authz.can?(user, :rotate, {:calendar_feed, "all", nil}),
+        do: [{"all", nil, "Whole schedule"}],
+        else: []
 
     [{"user", user.id, "My shifts"}] ++ dept_entries ++ all_entry
   end
-
-  defp can_manage_feed?(%User{} = actor, "user", sid), do: actor.id == sid or actor.is_owner
-
-  defp can_manage_feed?(%User{} = actor, "department", sid),
-    do: Authz.role_in(actor, sid) in [:owner, :manager]
-
-  defp can_manage_feed?(%User{} = actor, "all", _), do: actor.is_owner
-  defp can_manage_feed?(_actor, _type, _sid), do: false
 
   defp ensure_feed(subject_type, subject_id, creator) do
     case find_feed(subject_type, subject_id) do

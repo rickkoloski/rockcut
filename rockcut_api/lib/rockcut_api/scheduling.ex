@@ -10,7 +10,19 @@ defmodule RockcutApi.Scheduling do
   alias RockcutApi.Repo
   alias RockcutApi.Authz
   alias RockcutApi.Accounts.User
-  alias RockcutApi.Scheduling.{Position, Shift, ShiftTemplate, ScheduleTemplate}
+
+  alias RockcutApi.Scheduling.{
+    EventSeries,
+    Recurrence,
+    Position,
+    ScheduleEvent,
+    ScheduleEventSeries,
+    Shift,
+    ShiftTemplate,
+    ScheduleTemplate,
+    ScheduleTemplateItem
+  }
+
   alias RockcutApi.Notifications
 
   @shift_preloads [:department, :position, :assignee]
@@ -34,7 +46,7 @@ defmodule RockcutApi.Scheduling do
     position |> Position.changeset(attrs) |> Repo.update()
   end
 
-  @doc "Delete a position, or soft-deactivate it when shifts reference it."
+  @doc "Delete a position, or soft-deactivate it when shifts or schedule templates reference it."
   def deactivate_or_delete_position(%Position{} = position) do
     if referenced?(position) do
       update_position(position, %{"active" => false})
@@ -47,7 +59,8 @@ defmodule RockcutApi.Scheduling do
   end
 
   defp referenced?(%Position{id: id}) do
-    Repo.exists?(from s in Shift, where: s.position_id == ^id)
+    Repo.exists?(from s in Shift, where: s.position_id == ^id) or
+      Repo.exists?(from i in ScheduleTemplateItem, where: i.position_id == ^id)
   end
 
   defp filter_positions(query, filters) do
@@ -241,13 +254,116 @@ defmodule RockcutApi.Scheduling do
 
   def delete_schedule_template(%ScheduleTemplate{} = template), do: Repo.delete(template)
 
+  ## Schedule events (D32) — no assignee, no claiming, and never any
+  ## notifications. Visibility and permissions mirror shifts.
+
+  @event_preloads [:department, :series]
+
+  # Series links are set by the server only, never from request params.
+  @server_only ~w(series_id series_exception created_by_id)
+
+  def get_event(id), do: ScheduleEvent |> Repo.get(id) |> Repo.preload(@event_preloads)
+
+  def get_event!(id), do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(@event_preloads)
+
+  def get_series(id), do: Repo.get(ScheduleEventSeries, id)
+
+  @doc """
+  List events visible to `user` (published anywhere, plus drafts in the
+  departments they manage). `from`/`to` are Colorado date keys, bounded by
+  local midnights; any event overlapping the range matches, so a multi-day
+  event that began earlier is included.
+  """
+  def list_events(%User{} = user, filters \\ %{}) do
+    ScheduleEvent
+    |> restrict_visibility(user)
+    |> maybe(filters, "department_id", fn q, id ->
+      where(q, [e], e.department_id == ^to_int(id))
+    end)
+    |> maybe(filters, "from", fn q, d -> where(q, [e], e.ends_at > ^local_midnight(d, 0)) end)
+    |> maybe(filters, "to", fn q, d -> where(q, [e], e.starts_at < ^local_midnight(d, 1)) end)
+    |> order_by([e], asc: e.starts_at)
+    |> preload(^@event_preloads)
+    |> Repo.all()
+  end
+
+  @doc """
+  Create an event. With repeat params (`EventSeries`) this creates a series of
+  draft occurrences and returns `{:ok, first_occurrence, count}`.
+  """
+  def create_event(attrs, %User{} = actor) do
+    attrs = attrs |> stringify() |> Map.drop(@server_only)
+
+    if bad = EventSeries.invalid_repeat(attrs) do
+      {:error, bad}
+    else
+      create_event_checked(attrs, actor)
+    end
+  end
+
+  defp create_event_checked(attrs, actor) do
+    if EventSeries.repeat?(attrs) do
+      with {:ok, first, count} <- EventSeries.create(attrs, actor.id),
+           do: {:ok, get_event!(first.id), count}
+    else
+      attrs = attrs |> Map.put("created_by_id", actor.id) |> Map.put_new("status", "draft")
+
+      case %ScheduleEvent{} |> ScheduleEvent.changeset(attrs) |> Repo.insert() do
+        {:ok, event} -> {:ok, get_event!(event.id), 1}
+        other -> other
+      end
+    end
+  end
+
+  @doc "Update an event; for a repeating one, `scope` is `\"this\"` (default) or `\"following\"`."
+  def update_event(%ScheduleEvent{} = event, attrs, scope \\ "this") do
+    attrs = attrs |> stringify() |> Map.drop(@server_only)
+
+    with {:ok, updated} <- EventSeries.update(event, attrs, scope),
+         do: {:ok, get_event!(updated.id)}
+  end
+
+  def delete_event(%ScheduleEvent{} = event, scope \\ "this"),
+    do: EventSeries.delete(event, scope)
+
+  def publish_event(%ScheduleEvent{} = event), do: set_event_status(event, "published")
+
+  def unpublish_event(%ScheduleEvent{} = event), do: set_event_status(event, "draft")
+
+  def extend_series(%ScheduleEventSeries{} = series, today \\ Date.utc_today()),
+    do: EventSeries.extend(series, today)
+
+  defp set_event_status(event, status) do
+    case event |> ScheduleEvent.changeset(%{"status" => status}) |> Repo.update() do
+      {:ok, updated} -> {:ok, get_event!(updated.id)}
+      other -> other
+    end
+  end
+
+  @doc "Publish many events at once (Publish week). Only drafts transition."
+  def publish_events(events) when is_list(events) do
+    published =
+      events
+      |> Enum.filter(&(&1.status == "draft"))
+      |> Enum.map(&publish_event/1)
+      |> Enum.flat_map(fn
+        {:ok, e} -> [e]
+        _ -> []
+      end)
+
+    {:ok, published}
+  end
+
   ## Query helpers
 
-  defp restrict_visibility(query, %User{is_owner: true}), do: query
-
+  # Published shifts and events are visible to everyone; drafts only where the
+  # user manages the schedule.
   defp restrict_visibility(query, %User{} = user) do
-    managed = Authz.managed_department_ids(user)
-    where(query, [s], s.status == "published" or s.department_id in ^managed)
+    case Authz.scope(user, :schedule, :manage) do
+      :all -> query
+      :none -> where(query, [s], s.status == "published")
+      {:departments, ids} -> where(query, [s], s.status == "published" or s.department_id in ^ids)
+    end
   end
 
   defp filter_shifts(query, user, filters) do
@@ -258,8 +374,9 @@ defmodule RockcutApi.Scheduling do
     |> maybe(filters, "position_id", fn q, id -> where(q, [s], s.position_id == ^to_int(id)) end)
     |> maybe(filters, "status", fn q, st -> where(q, [s], s.status == ^st) end)
     |> maybe(filters, "assignee_id", fn q, id -> where(q, [s], s.assignee_id == ^to_int(id)) end)
-    |> maybe(filters, "from", fn q, d -> where(q, [s], s.starts_at >= ^start_of_day(d)) end)
-    |> maybe(filters, "to", fn q, d -> where(q, [s], s.starts_at <= ^end_of_day(d)) end)
+    # A shift belongs to the Colorado day it starts on (D32 §3.8).
+    |> maybe(filters, "from", fn q, d -> where(q, [s], s.starts_at >= ^local_midnight(d, 0)) end)
+    |> maybe(filters, "to", fn q, d -> where(q, [s], s.starts_at < ^local_midnight(d, 1)) end)
     |> maybe(filters, "mine", fn q, v ->
       if truthy(v), do: where(q, [s], s.assignee_id == ^user.id), else: q
     end)
@@ -283,12 +400,12 @@ defmodule RockcutApi.Scheduling do
   defp to_int(v) when is_integer(v), do: v
   defp to_int(v) when is_binary(v), do: String.to_integer(v)
 
-  defp start_of_day(date) when is_binary(date), do: parse_day(date, ~T[00:00:00])
-  defp end_of_day(date) when is_binary(date), do: parse_day(date, ~T[23:59:59])
-
-  defp parse_day(date, time) do
+  # Colorado midnight at the start of `date` + `days`, in UTC. Shift and event
+  # day bounds are local days, so a Sunday-evening one (Monday in UTC) stays in
+  # its week.
+  defp local_midnight(date, days) when is_binary(date) do
     case Date.from_iso8601(date) do
-      {:ok, d} -> DateTime.new!(d, time, "Etc/UTC")
+      {:ok, d} -> Recurrence.local_to_utc(Date.add(d, days), ~T[00:00:00])
       _ -> DateTime.utc_now()
     end
   end

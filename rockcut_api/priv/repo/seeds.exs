@@ -143,7 +143,7 @@ acct_now = DateTime.utc_now() |> DateTime.truncate(:second)
 # placeholder for cross-department positions (Training, Event-offsite).
 [
   {"Brewery", "brewery", "#B8742A", true},
-  {"Bar", "bar", "#2E6DB4", true},
+  {"Taproom", "bar", "#2E6DB4", true},
   {"Office", "office", "#3F8F5B", true},
   {"Sales", "sales", "#7A4FB0", true},
   {"Other", "other", "#6B7280", false}
@@ -201,14 +201,14 @@ end
 alias RockcutApi.Scheduling.Position
 
 dept_by_key = Repo.all(Department) |> Map.new(fn d -> {d.key, d} end)
-group_to_key = %{"Brewery" => "brewery", "Bar" => "bar", "Office" => "office", "Sales" => "sales", "Other" => "other"}
+group_to_key = %{"Brewery" => "brewery", "Taproom" => "bar", "Office" => "office", "Sales" => "sales", "Other" => "other"}
 
 [
   {"Brewer", "Brewery"},
-  {"Bar-open", "Bar"},
-  {"Bar-mid", "Bar"},
-  {"Bar-close", "Bar"},
-  {"Event-bar", "Bar"},
+  {"Bar-open", "Taproom"},
+  {"Bar-mid", "Taproom"},
+  {"Bar-close", "Taproom"},
+  {"Event-bar", "Taproom"},
   {"Office", "Office"},
   {"Sales", "Sales"},
   {"Delivery", "Sales"},

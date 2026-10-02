@@ -3,7 +3,8 @@ import Config
 # Configure your database
 config :rockcut_api, RockcutApi.Repo,
   database: Path.expand("../rockcut_api_dev.db", __DIR__),
-  pool_size: 5,
+  # One connection, as in prod (see runtime.exs, D32 G1).
+  pool_size: 1,
   stacktrace: true,
   show_sensitive_data_on_connection_error: true
 
@@ -61,3 +62,8 @@ config :phoenix, :plug_init_mode, :runtime
 
 # Disable swoosh api client as it is only required for production adapters.
 config :swoosh, :api_client, false
+
+# D33: local Playwright runs and reruns all pair from 127.0.0.1, so the local
+# dev server allows more wrong pairing codes per client. Tests and DEV/prod
+# keep the real limits (5 per client, 50 global per 10 minutes).
+config :rockcut_api, RockcutApi.Devices.PairingRateLimiter, per_ip: 1000, global: 1000

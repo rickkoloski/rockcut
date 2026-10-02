@@ -240,6 +240,9 @@ export interface User {
   is_owner: boolean
   must_reset_password: boolean
   schedulable?: boolean
+  // D33: 'device' for a shared tablet account; every human is 'person'.
+  kind?: 'person' | 'device'
+  home_department_id?: number | null
   memberships: Membership[] | null
   inserted_at: string
   updated_at: string
@@ -258,11 +261,37 @@ export interface Capabilities {
   manages_departments: string[]
   can_manage_users: boolean
   pending_owner_reviews: number
+  // D33: present for a shared device only.
+  kind?: 'device'
+  home_department?: string
 }
 
 export interface Me {
   user: User
   capabilities: Capabilities
+  // D33: sees Admin → Shared devices (owner, or manager of a device's home department).
+  shared_devices?: boolean
+}
+
+// ── Shared devices (D33) ────────────────────────────────────────────
+
+export interface DeviceTablet {
+  id: number
+  name: string
+  paired_by: AuditActor | null
+  paired_at: string
+  last_seen_at: string | null
+  revoked_at: string | null
+}
+
+export interface SharedDevice {
+  id: number
+  name: string
+  active: boolean
+  home_department_id: number
+  home_department: Department | null
+  tokens: DeviceTablet[] | null
+  inserted_at: string
 }
 
 export interface AuditActor {
@@ -352,6 +381,8 @@ export interface Channel {
   name: string
   kind: 'all' | 'managers' | 'department'
   unread: number
+  // D33: false for a shared device (read-only channels).
+  can_post?: boolean
 }
 
 export interface ChatMessage {
@@ -403,6 +434,40 @@ export interface AvailabilitySlot {
   end_time: string | null
   note: string | null
   inserted_at: string
+}
+
+// D32 — schedule events: on the schedule with no assignee or position.
+export type EventFrequency = 'weekly' | 'monthly_weekday'
+
+export interface EventSeries {
+  id: number
+  frequency: EventFrequency
+  interval: number
+  weekdays: number[] | null // ISO 1 = Mon … 7 = Sun (weekly)
+  week_of_month: number | null // 1–4, or -1 = last (monthly)
+  weekday: number | null // ISO weekday (monthly)
+  start_date: string
+  until_date: string | null
+  count: number | null
+  generated_through: string | null
+}
+
+export interface ScheduleEvent {
+  id: number
+  department_id: number
+  department: Department | null
+  title: string
+  notes: string | null
+  all_day: boolean
+  starts_at: string
+  ends_at: string // exclusive; for all-day events, local midnight after the last day
+  status: ShiftStatus
+  created_by_id: number | null
+  series_id: number | null
+  series_exception: boolean
+  series: EventSeries | null
+  inserted_at: string
+  updated_at: string
 }
 
 export interface Shift {

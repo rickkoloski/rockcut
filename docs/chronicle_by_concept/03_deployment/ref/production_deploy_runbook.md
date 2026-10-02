@@ -176,11 +176,13 @@ cd ../rockcut-ui
 fly deploy --remote-only -a rockcut-ui
 ```
 
-The UI Dockerfile uses `package.docker.json` (no linked packages), stubs
-`datagrid-extended` via a build-time source + a `DOCKER_BUILD` vite alias, and
-builds with `vite build` directly (the `tsc -b` script is pre-broken by the
-linked datagrid in dev). It also copies `pnpm-workspace.docker.yaml` before
-`pnpm install` — see gotcha #4.
+The UI Dockerfile installs from the real `package.json` and `pnpm-lock.yaml`
+with `pnpm install --frozen-lockfile` (pnpm pinned via `packageManager`), and
+builds with `vite build`. `datagrid-extended` is a vendored stub under
+`rockcut-ui/vendor/`, so there are no linked packages (task 3999; this replaced
+D28's `package.docker.json` + shim). After the deploy, run
+`node scripts/check-bundle-versions.mjs https://rockcut-ui.fly.dev` from
+`rockcut-ui`.
 
 ### 7. Smoke tests
 
@@ -223,11 +225,9 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 4. **pnpm 10+ build approval lives in `pnpm-workspace.yaml`, not
    `package.json`.** A `pnpm.onlyBuiltDependencies` field in package.json is
    ignored; pnpm hard-fails `pnpm install` with `ERR_PNPM_IGNORED_BUILDS` on
-   esbuild's build script. Fix: a Docker-only `pnpm-workspace.docker.yaml` with
-   `allowBuilds: { esbuild: true }`, copied into the image before `pnpm install`,
-   and the real `pnpm-workspace.yaml` added to `.dockerignore` (its
-   `overrides: datagrid-extended: link:...` must never enter the image — the
-   `DOCKER_BUILD` vite alias resolves the stub instead).
+   esbuild's build script. Fix: `allowBuilds: { esbuild: true }` in
+   `pnpm-workspace.yaml`, which the Dockerfile copies in before `pnpm install`
+   (since task 3999 there's no Docker-only workspace file).
 5. **Shell env-assignment vs. expansion.** `PW=secret curl ... "${PW}"` sends an
    **empty** value: the shell expands `${PW}` before the command-scoped
    assignment applies. Set the variable on its own line first, then reference it.

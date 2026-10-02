@@ -56,4 +56,23 @@ defmodule RockcutApi.AccountsFixtures do
     Repo.insert!(%Membership{user_id: user.id, department_id: dept.id, role: role})
     Accounts.get_user!(user.id)
   end
+
+  @doc "Create a shared-device account (D33) with its home department (default `bar`)."
+  def device_fixture(attrs \\ %{}) do
+    attrs = Map.new(attrs)
+    home = department_fixture(Map.get(attrs, :home, "bar"))
+
+    device =
+      %{name: Map.get(attrs, :name, "Taproom tablets"), home_department_id: home.id}
+      |> User.device_create_changeset()
+      |> Repo.insert!()
+
+    Accounts.get_user!(device.id)
+  end
+
+  @doc "Pair a tablet to `device` directly; returns the plain `dev_` token."
+  def device_token_fixture(%User{} = device, name \\ "Taproom iPad 1", paired_by_id \\ nil) do
+    {token, _row} = RockcutApi.Devices.issue_token(device, name, paired_by_id)
+    token
+  end
 end

@@ -39,6 +39,15 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# D32: real time-zone rules (recurring events keep Colorado wall-clock time across DST).
+config :elixir, :time_zone_database, Tz.TimeZoneDatabase
+
+# SQLite allows one writer at a time. Wait up to 10 s for the write lock rather
+# than failing with "database is locked" (ecto_sqlite3 default: 2 s) — a large
+# repeating-event series can hold it for a moment (D32 DEV finding G1).
+# Each environment's config adds the database path; these keys merge.
+config :rockcut_api, RockcutApi.Repo, busy_timeout: 10_000
+
 # Web Push (D21). This is a DEV/TEST keypair — safe to commit; prod overrides
 # public_key/private_key from Fly secrets in config/runtime.exs. Regenerate with
 # `mix web_push_ex.vapid`. The private key must never be a production secret.

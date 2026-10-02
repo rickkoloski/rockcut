@@ -8,7 +8,7 @@ defmodule RockcutApi.Availability do
   import Ecto.Query
   alias RockcutApi.Repo
   alias RockcutApi.Authz
-  alias RockcutApi.Accounts.{User, Membership}
+  alias RockcutApi.Accounts.User
   alias RockcutApi.Availability.Slot
 
   @preloads [:user]
@@ -25,23 +25,21 @@ defmodule RockcutApi.Availability do
   @doc "Slots visible to `user`: own + (managers) their departments' people + (owner) all."
   def list_for(user, filters \\ %{})
 
-  def list_for(%User{is_owner: true}, filters) do
+  def list_for(%User{} = user, filters) do
     Slot
+    |> visible_to(user)
     |> apply_filters(filters)
     |> ordered()
     |> preload(^@preloads)
     |> Repo.all()
   end
 
-  def list_for(%User{} = user, filters) do
-    visible_ids = [user.id | managed_member_ids(user)]
-
-    Slot
-    |> where([s], s.user_id in ^visible_ids)
-    |> apply_filters(filters)
-    |> ordered()
-    |> preload(^@preloads)
-    |> Repo.all()
+  # Own slots plus those of members of departments the user manages.
+  defp visible_to(query, %User{} = user) do
+    case Authz.scope(user, :availability, :manage) |> Authz.member_ids_in() do
+      :all -> query
+      member_ids -> where(query, [s], s.user_id == ^user.id or s.user_id in ^member_ids)
+    end
   end
 
   ## Writes
@@ -68,25 +66,24 @@ defmodule RockcutApi.Availability do
   end
 
   def delete(%Slot{} = slot, %User{} = actor) do
-    if can_manage?(actor, slot) do
+    if Authz.can?(actor, :delete, slot) do
       Repo.delete(slot)
     else
       {:error, :forbidden}
     end
   end
 
-  ## Authorization
-
-  def can_manage?(%User{is_owner: true}, _slot), do: true
-  def can_manage?(%User{id: id}, %Slot{user_id: uid}) when id == uid, do: true
-  def can_manage?(%User{} = user, %Slot{user_id: uid}), do: Authz.can_manage_user?(user, uid)
-
   # nil / own id → self; a managed employee → their id; otherwise forbidden.
   defp resolve_target(%User{} = actor, raw) do
     case to_user_id(raw) do
-      nil -> {:ok, actor.id}
-      id when id == actor.id -> {:ok, actor.id}
-      id -> if Authz.can_manage_user?(actor, id), do: {:ok, id}, else: {:error, :forbidden}
+      nil ->
+        {:ok, actor.id}
+
+      id when id == actor.id ->
+        {:ok, actor.id}
+
+      id ->
+        if Authz.can?(actor, :manage, {:user_for, id}), do: {:ok, id}, else: {:error, :forbidden}
     end
   end
 
@@ -101,20 +98,6 @@ defmodule RockcutApi.Availability do
   end
 
   ## Helpers
-
-  defp managed_member_ids(%User{} = user) do
-    case Authz.managed_department_ids(user) do
-      [] ->
-        []
-
-      dept_ids ->
-        Membership
-        |> where([m], m.department_id in ^dept_ids)
-        |> select([m], m.user_id)
-        |> distinct(true)
-        |> Repo.all()
-    end
-  end
 
   defp ordered(query), do: order_by(query, [s], asc: s.weekday, asc: s.start_time)
 

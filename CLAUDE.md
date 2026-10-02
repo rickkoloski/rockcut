@@ -11,7 +11,7 @@ Brewery management app for Matt at Rockcut Brewing Co, Estes Park, Colorado.
 | Frontend | React 19 SPA (Vite, MUI 7, pnpm) — port 5174 locally |
 | Hosting | Fly.io (rockcut-api.fly.dev, rockcut-ui.fly.dev) |
 | Auth | Bearer tokens, EnvAuth pattern |
-| Data Grid | datagrid-extended (linked from ~/src/shared/ui-components/) |
+| Data Grid | datagrid-extended (vendored stub in `rockcut-ui/vendor/`, task 3999) |
 
 ## Current Work
 
@@ -66,7 +66,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 - **FormDialog**: Handles preventDefault internally; child dialogs just pass `async () => {}`
 - **Error handling**: All form dialogs catch mutations, display via `parseApiError` + FormDialog `error` prop
 - **Batch size units**: LOV — `bbls`, `gallons`, `liters` (backend + frontend must stay in sync)
-- **datagrid-extended**: Linked package locally, Docker shim for deploy
+- **datagrid-extended**: a vendored stub (`rockcut-ui/vendor/datagrid-extended`, plain MUI `DataGrid`) imported through a Vite alias; types come from `src/datagrid-extended.d.ts`. The plain grid is intended (Rick, msg 83601). The UI Docker build installs from `pnpm-lock.yaml` with `--frozen-lockfile`, and pnpm is pinned via `packageManager` (task 3999).
 
 ## Auth
 
@@ -76,12 +76,14 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D31 — RBAC consolidation (roadmap Phase 1, `planning/rbac_configurable_authorization_roadmap.md`): route every authorization decision through `Authz`, parity tests first, no behavior change. D19–D30 complete.
+- **Next deliverable**: D33 — Taproom device access (`specs/d33_taproom_device_access_spec.md`, draft; open Q1: idle timeout). D31 (RBAC consolidation, PR #3) and D32 (schedule events incl. recurring + Taproom rename, PR #4) passed their DEV gates and wait on the §2 branch cleanup to merge and release. D19–D30 complete.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
 
 This project follows the SDLC framework from `~/src/pm-sdlc/`.
+
+**Every deliverable follows `docs/process/three_environment_workflow.md`** (Rick, 2026-09-28): spec with persona scenarios → local gate → DEV gate (claim DEV in PortableMind discussion 80, full Playwright on DEV, independent agent pass) → prod release from a tag. Read it at the start of each deliverable. The §2 one-time branch cleanup is **done** (2026-09-30): `develop` is the default branch and every deliverable branches from it as one flat PR; `main` is what prod runs, and hotfixes branch from `main` and merge to both.
 
 **CC must:**
 - Follow the deliverable workflow (Spec → Planning → Implementation → Result)

@@ -2,7 +2,5 @@
 # The UI's vite.config.ts sets resolve.preserveSymlinks:true, so it needs a
 # flat/hoisted node_modules — this preserves the old .npmrc shamefully-hoist=true.
 shamefullyHoist: true
-overrides:
-  datagrid-extended: link:../../shared/ui-components/datagrid-extended
 allowBuilds:
   esbuild: true

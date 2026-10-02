@@ -22,5 +22,11 @@ defmodule RockcutApi.Scheduling.ScheduleTemplateItem do
     |> validate_inclusion(:day_index, 0..6)
     |> foreign_key_constraint(:position_id)
     |> foreign_key_constraint(:assignee_id)
+    |> validate_change(:assignee_id, fn :assignee_id, id ->
+      # D33: a shared device is never an assignee.
+      if RockcutApi.Accounts.device_id?(id),
+        do: [assignee_id: "can't be a shared device"],
+        else: []
+    end)
   end
 end

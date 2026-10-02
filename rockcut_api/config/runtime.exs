@@ -20,6 +20,11 @@ if System.get_env("PHX_SERVER") do
   config :rockcut_api, RockcutApiWeb.Endpoint, server: true
 end
 
+# D33: trust the `fly-client-ip` header (set by Fly's edge proxy) for the
+# pairing-code rate limiter only when actually running on Fly. Everywhere else
+# the header is client-controlled, so the limiter uses the socket address.
+config :rockcut_api, :trust_fly_client_ip, System.get_env("FLY_APP_NAME") not in [nil, ""]
+
 # Deploy environment (D30). Releases read ROCKCUT_ENV — "prod" (default, fail
 # closed) or "dev" (the shared DEV server). Local Mix envs use their own name.
 # Gates synthetic personas + minted tokens (RockcutApi.Seeds.Guard).
@@ -43,9 +48,15 @@ if config_env() == :prod do
       For example: /data/rockcut_api.db
       """
 
+  # One connection: SQLite has a single writer, and with several connections
+  # concurrent writers wait inside SQLite's lock handler, which on DEV's 1 vCPU
+  # stalled requests (and even the health check) for the full busy timeout and
+  # failed some with "database is locked" (D32 DEV finding G1). With one
+  # connection, requests queue in Elixir instead: a burst of 6 repeating-event
+  # saves took ~340 ms, all succeeding. Override with POOL_SIZE if needed.
   config :rockcut_api, RockcutApi.Repo,
     database: database_path,
-    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "5")
+    pool_size: String.to_integer(System.get_env("POOL_SIZE") || "1")
 
   # The secret key base is used to sign/encrypt cookies and other secrets.
   # A default value is used in config/dev.exs and config/test.exs but you

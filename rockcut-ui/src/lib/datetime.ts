@@ -112,6 +112,15 @@ export function weekdayOf(dayKey: string): number {
   return new Date(`${dayKey}T12:00:00Z`).getUTCDay()
 }
 
+/**
+ * Default day for an "Add" dialog opened while viewing the week of `mondayKey`:
+ * today if it falls in that week, otherwise the week's Monday (D32, backlog 3940).
+ */
+export function defaultDayKeyForWeek(mondayKey: string): string {
+  const today = localDayKey(new Date().toISOString())
+  return today >= mondayKey && today <= addDaysKey(mondayKey, 6) ? today : mondayKey
+}
+
 /** Column label like "Mon 22" for a date key. */
 export function formatDayColumn(key: string): string {
   return new Intl.DateTimeFormat('en-US', {

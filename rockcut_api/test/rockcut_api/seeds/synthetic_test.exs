@@ -87,11 +87,11 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "is idempotent" do
-      assert {:ok, 17} = Synthetic.setup()
+      assert {:ok, 18} = Synthetic.setup()
       first = counts()
-      assert {:ok, 17} = Synthetic.setup()
+      assert {:ok, 18} = Synthetic.setup()
       assert counts() == first
-      assert first[User] == 17
+      assert first[User] == 18
     end
 
     test "every active persona authenticates; inactive does not" do
@@ -160,7 +160,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       bartender = Accounts.get_user_by_email("bartender1@rockcut-test.com")
       Repo.insert!(%Message{channel_key: "all", user_id: bartender.id, body: "agent chatter"})
 
-      assert {:ok, 17} = Synthetic.reset()
+      assert {:ok, 18} = Synthetic.reset()
       assert counts() == baseline
     end
   end
@@ -188,7 +188,9 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     test "mint_tokens/0 covers every active persona" do
       {:ok, _} = Synthetic.setup()
       tokens = Synthetic.mint_tokens()
-      assert map_size(tokens) == 16
+      # 16 active people + the taproomDevice tablet (D33).
+      assert map_size(tokens) == 17
+      assert "dev_" <> _ = tokens["taproomDevice"].token
       refute Map.has_key?(tokens, "inactive")
       assert {:ok, _} = RockcutApiWeb.SessionController.verify_token(tokens["owner"].token)
     end
@@ -207,6 +209,72 @@ defmodule RockcutApi.Seeds.SyntheticTest do
         assert {:ok, id} = RockcutApiWeb.SessionController.verify_token(token)
         assert id == user.id
       end)
+    end
+  end
+
+  describe "taproomDevice persona (D33)" do
+    test "exists as a device at home in bar, with the invariants" do
+      {:ok, _} = Synthetic.setup()
+      d = Accounts.get_user_by_email("taproom.device@rockcut-test.com")
+      assert d.kind == "device"
+      assert d.home_department_id == AccountsFixtures.department_fixture("bar").id
+      refute d.is_owner
+      refute d.schedulable
+      assert d.memberships == []
+
+      status = Map.new(Synthetic.status(), &{&1.key, &1})
+      assert status["taproomDevice"].exists
+      refute status["taproomDevice"].authenticates
+      refute Accounts.get_user_by_email_and_password(d.email, System.get_env("SEED_PASSWORD"))
+    end
+
+    test "its mint is a dev_ tablet token the API accepts", %{conn: conn} do
+      {:ok, _} = Synthetic.setup()
+      token = Synthetic.mint_token("taproomDevice")
+      assert "dev_" <> _ = token
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer #{token}")
+        |> get(~p"/api/me")
+        |> json_response(200)
+
+      assert body["user"]["kind"] == "device"
+      assert body["capabilities"]["modules"] == ["bar", "schedule"]
+    end
+
+    test "a pairing code for it works in the real exchange", %{conn: conn} do
+      {:ok, _} = Synthetic.setup()
+      code = Synthetic.pairing_code("taproomDevice")
+
+      conn = post(conn, ~p"/api/device_tokens", %{code: code, name: "[TEST-TEMP] iPad"})
+      assert "dev_" <> _ = json_response(conn, 201)["token"]
+
+      # cleanup_temp removes agent-paired tablets.
+      :ok = Synthetic.cleanup_temp()
+
+      refute Repo.exists?(
+               from(t in RockcutApi.Devices.DeviceToken, where: t.name == "[TEST-TEMP] iPad")
+             )
+    end
+
+    test "setup heals a drifted device and removes [TEST-TEMP] devices" do
+      {:ok, _} = Synthetic.setup()
+      d = Accounts.get_user_by_email("taproom.device@rockcut-test.com")
+      d |> Ecto.Changeset.change(name: "Renamed", active: false) |> Repo.update!()
+      owner = Accounts.get_user_by_email("owner@rockcut-test.com")
+
+      {:ok, temp} =
+        RockcutApi.Devices.create_device(
+          %{"name" => "[TEST-TEMP] Tablet", "home_department_id" => d.home_department_id},
+          owner
+        )
+
+      {:ok, _} = Synthetic.setup()
+      healed = Accounts.get_user!(d.id)
+      assert healed.name == "Taproom tablets"
+      assert healed.active
+      refute Repo.get(User, temp.id)
     end
   end
 end

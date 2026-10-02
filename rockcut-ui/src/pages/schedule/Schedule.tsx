@@ -25,18 +25,22 @@ import PublishIcon from '@mui/icons-material/Publish'
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import LibraryBooksIcon from '@mui/icons-material/LibraryBooks'
 import SyncIcon from '@mui/icons-material/Sync'
+import EventNoteIcon from '@mui/icons-material/EventNote'
+import RepeatIcon from '@mui/icons-material/Repeat'
 import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
-import { addDaysKey, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
+import { addDaysKey, defaultDayKeyForWeek, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
 import { buildUnavailability, conflictMap } from '../../lib/conflicts'
 import { buildOffMarkers } from '../../lib/timeoff'
-import type { AvailabilitySlot, Department, Position, RosterEntry, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
+import { eventDayKeys, eventDayLabel } from '../../lib/events'
+import type { AvailabilitySlot, Department, Position, RosterEntry, ScheduleEvent, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
+import EventFormDialog from './EventFormDialog'
 import PositionsDialog from './PositionsDialog'
 import TemplatesDialog from './TemplatesDialog'
 import CalendarSyncDialog from './CalendarSyncDialog'
@@ -59,6 +63,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const isOwner = !!user?.is_owner
   const managedKeys = capabilities?.manages_departments ?? []
   const canManageSchedule = isOwner || managedKeys.length > 0
+  // D33: a shared tablet reads the published schedule only — no time off,
+  // templates or claiming (its API would refuse them anyway).
+  const isDevice = user?.kind === 'device'
   const myModules = capabilities?.modules ?? []
 
   const [view, setView] = useState<View>(forceView ?? initialView)
@@ -77,6 +84,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const [notice, setNotice] = useState<string | null>(null)
   const [deleteState, setDeleteState] = useState<{ label: string; shifts: Shift[] } | null>(null)
   const [deleteBusy, setDeleteBusy] = useState(false)
+  const [eventDialog, setEventDialog] = useState(false)
+  const [editEvent, setEditEvent] = useState<ScheduleEvent | null>(null)
+  const [eventPrefill, setEventPrefill] = useState<{ departmentId?: number; dateKey?: string } | undefined>()
 
   const setViewPersist = (v: View) => {
     setView(v)
@@ -109,14 +119,27 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   }, [filters, view, mondayKey])
 
   const { data: shifts = [], isLoading } = useApiQuery<Shift[]>(['shifts', params], '/api/shifts', params)
+
+  // D32 — events follow the department and date filters. "My shifts", "Open only"
+  // and a position filter are about shifts, so they hide events.
+  const eventsHidden = filters.mine || filters.open || !!filters.position_id
+  const eventParams = useMemo(() => {
+    const p: Record<string, string> = {}
+    if (params.department_id) p.department_id = params.department_id
+    if (params.from) p.from = params.from
+    if (params.to) p.to = params.to
+    return p
+  }, [params])
+  const { data: loadedEvents } = useApiQuery<ScheduleEvent[]>(['schedule_events', eventParams], '/api/schedule_events', eventParams, { enabled: !eventsHidden })
+  const events = useMemo(() => (eventsHidden || !loadedEvents ? [] : loadedEvents), [eventsHidden, loadedEvents])
   const { data: positions = [] } = useApiQuery<Position[]>(['positions'], '/api/positions')
   const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments')
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
-  const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates')
+  const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates', undefined, { enabled: !isDevice })
   const { data: scheduleTemplates = [] } = useApiQuery<ScheduleTemplate[]>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
   // Fetch all statuses in range; the grid shows approved + pending distinctly.
   const timeOffParams = useMemo(() => ({ from: mondayKey, to: addDaysKey(mondayKey, 6) }), [mondayKey])
-  const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'schedule', mondayKey], '/api/time_off', timeOffParams)
+  const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'schedule', mondayKey], '/api/time_off', timeOffParams, { enabled: !isDevice })
   // Recurring availability (D25) — used for conflict detection; managers/owner only.
   const { data: availability = [] } = useApiQuery<AvailabilitySlot[]>(['availability'], '/api/availability', undefined, { enabled: canManageSchedule })
 
@@ -144,7 +167,8 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
 
   const canManageShift = (s: Shift) => isOwner || (s.department?.key ? managedKeys.includes(s.department.key) : false)
-  const canClaim = (s: Shift) => !s.assignee_id && s.status === 'published' && !!s.department?.key && myModules.includes(s.department.key)
+  const canManageEvent = (e: ScheduleEvent) => isOwner || (e.department?.key ? managedKeys.includes(e.department.key) : false)
+  const canClaim = (s: Shift) => !isDevice && !s.assignee_id && s.status === 'published' && !!s.department?.key && myModules.includes(s.department.key)
 
   // Empty week cells can create only when the filter picks one department you manage.
   const filterDept = departments.find((d) => String(d.id) === filters.department_id)
@@ -183,14 +207,18 @@ export default function Schedule({ forceView }: { forceView?: View }) {
 
   const publishWeek = async () => {
     const drafts = shifts.filter((s) => s.status === 'draft' && canManageShift(s))
-    if (drafts.length === 0) return
+    // Only events that start this week, so a multi-day event from last week isn't swept in.
+    const draftEvents = events.filter((e) => e.status === 'draft' && canManageEvent(e) && localDayKey(e.starts_at) >= mondayKey)
+    if (drafts.length === 0 && draftEvents.length === 0) return
     setPublishing(true)
     try {
       // One bulk call so each employee gets a single coalesced notification.
-      await api.post('/api/shifts/publish', { ids: drafts.map((s) => s.id) })
+      if (drafts.length) await api.post('/api/shifts/publish', { ids: drafts.map((s) => s.id) })
+      if (draftEvents.length) await api.post('/api/schedule_events/publish', { ids: draftEvents.map((e) => e.id) })
     } finally {
       setPublishing(false)
       qc.invalidateQueries({ queryKey: ['shifts'] })
+      qc.invalidateQueries({ queryKey: ['schedule_events'] })
     }
   }
 
@@ -290,15 +318,28 @@ export default function Schedule({ forceView }: { forceView?: View }) {
     }
   }
 
+  // In the week view, new shifts and events start in the week on screen (3940).
+  const weekDefaultDay = () => (view === 'week' ? defaultDayKeyForWeek(mondayKey) : undefined)
+
   const openCreate = () => {
     setEditShift(null)
-    setPrefill(undefined)
+    setPrefill({ dateKey: weekDefaultDay() })
     setShiftDialog(true)
   }
   const openEdit = (s: Shift) => {
     setEditShift(s)
     setPrefill(undefined)
     setShiftDialog(true)
+  }
+  const openCreateEvent = (dateKey?: string) => {
+    setEditEvent(null)
+    setEventPrefill({ departmentId: createDeptId, dateKey: dateKey ?? weekDefaultDay() })
+    setEventDialog(true)
+  }
+  const openEvent = (e: ScheduleEvent) => {
+    setEditEvent(e)
+    setEventPrefill(undefined)
+    setEventDialog(true)
   }
   // Cell click → confirm prompt; on Yes, open the add-shift dialog prefilled.
   const requestCellCreate = (cell: { userId: number | null; dateKey: string }) => setPendingCell(cell)
@@ -311,15 +352,23 @@ export default function Schedule({ forceView }: { forceView?: View }) {
     setPendingCell(null)
   }
 
+  // Agenda days: shifts, plus events on every day they cover (D32). Days outside
+  // the date filters aren't shown for multi-day events.
   const groups = useMemo(() => {
-    const map = new Map<string, Shift[]>()
-    for (const s of shifts) {
-      const key = localDayKey(s.starts_at)
-      if (!map.has(key)) map.set(key, [])
-      map.get(key)!.push(s)
+    const map = new Map<string, { shifts: Shift[]; events: ScheduleEvent[] }>()
+    const at = (key: string) => {
+      if (!map.has(key)) map.set(key, { shifts: [], events: [] })
+      return map.get(key)!
+    }
+    for (const s of shifts) at(localDayKey(s.starts_at)).shifts.push(s)
+    for (const e of events) {
+      for (const key of eventDayKeys(e)) {
+        if ((filters.from && key < filters.from) || (filters.to && key > filters.to)) continue
+        at(key).events.push(e)
+      }
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [shifts])
+  }, [shifts, events, filters.from, filters.to])
 
   return (
     <>
@@ -334,7 +383,8 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                 <ToggleButton value="week">Week</ToggleButton>
               </ToggleButtonGroup>
             )}
-            <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>
+            {/* DEV G6: calendar feeds are personal; not on a shared tablet. */}
+            {!isDevice && <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>}
             {canManageSchedule && (
               <>
                 {view === 'week' && (
@@ -346,6 +396,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                 )}
                 <Button startIcon={<LibraryBooksIcon />} onClick={() => setTemplatesOpen(true)}>Templates</Button>
                 <Button startIcon={<SettingsIcon />} onClick={() => setPositionsDialog(true)}>Positions</Button>
+                <Button startIcon={<EventNoteIcon />} onClick={() => openCreateEvent()} data-testid="add-event">Add event</Button>
                 <Button variant="contained" startIcon={<EventIcon />} onClick={openCreate}>Add shift</Button>
               </>
             )}
@@ -357,9 +408,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
         <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} flexWrap="wrap">
           {view === 'week' ? (
             <Stack direction="row" spacing={1} alignItems="center">
-              <IconButton size="small" onClick={() => setMondayKey((k) => addDaysKey(k, -7))}><ChevronLeftIcon /></IconButton>
+              <IconButton size="small" aria-label="Previous week" onClick={() => setMondayKey((k) => addDaysKey(k, -7))}><ChevronLeftIcon /></IconButton>
               <Typography sx={{ minWidth: 120, textAlign: 'center', fontWeight: 600 }}>{formatWeekRange(mondayKey)}</Typography>
-              <IconButton size="small" onClick={() => setMondayKey((k) => addDaysKey(k, 7))}><ChevronRightIcon /></IconButton>
+              <IconButton size="small" aria-label="Next week" onClick={() => setMondayKey((k) => addDaysKey(k, 7))}><ChevronRightIcon /></IconButton>
               <Button size="small" onClick={() => setMondayKey(mondayKeyOf())}>This week</Button>
             </Stack>
           ) : (
@@ -376,7 +427,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
             <MenuItem value="">All positions</MenuItem>
             {positions.map((p) => <MenuItem key={p.id} value={String(p.id)}>{p.name}</MenuItem>)}
           </TextField>
-          <FormControlLabel control={<Switch checked={filters.mine} onChange={(e) => setFilters((f) => ({ ...f, mine: e.target.checked }))} />} label="My shifts" />
+          {!isDevice && <FormControlLabel control={<Switch checked={filters.mine} onChange={(e) => setFilters((f) => ({ ...f, mine: e.target.checked }))} />} label="My shifts" />}
           <FormControlLabel control={<Switch checked={filters.open} onChange={(e) => setFilters((f) => ({ ...f, open: e.target.checked }))} />} label="Open only" />
         </Stack>
 
@@ -421,21 +472,45 @@ export default function Schedule({ forceView }: { forceView?: View }) {
             offMarkers={offMarkers}
             conflicts={conflicts}
             availability={availability}
+            events={events}
+            canCreateEvent={canManageSchedule}
+            onEventClick={openEvent}
+            onCreateEvent={openCreateEvent}
           />
         </>
       ) : groups.length === 0 ? (
-        <Typography color="text.secondary" sx={{ p: 2 }}>No shifts match these filters.</Typography>
+        <Typography color="text.secondary" sx={{ p: 2 }}>No shifts or events match these filters.</Typography>
       ) : (
-        groups.map(([day, dayShifts]) => (
+        groups.map(([day, { shifts: dayShifts, events: dayEvents }]) => (
           <Box key={day} sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>{formatDayHeading(dayShifts[0].starts_at)}</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>{formatDayHeading(`${day}T12:00:00Z`)}</Typography>
             <Stack spacing={1}>
+              {dayEvents.map((e) => {
+                const color = departmentColor(deptById.get(e.department_id) ?? e.department ?? undefined)
+                return (
+                  <Paper
+                    key={`e-${e.id}`}
+                    variant="outlined"
+                    data-testid={`agenda-event-${e.id}`}
+                    onClick={() => openEvent(e)}
+                    sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', cursor: 'pointer', border: '2px solid', borderColor: color, borderStyle: e.status === 'draft' ? 'dashed' : 'solid' }}
+                  >
+                    <EventNoteIcon sx={{ color }} />
+                    <Typography sx={{ fontWeight: 600 }}>{e.title}</Typography>
+                    {e.series_id && <RepeatIcon fontSize="small" sx={{ color: 'text.secondary' }} titleAccess="Repeats" />}
+                    <Typography color="text.secondary" sx={{ minWidth: 150, flexGrow: 1 }}>{eventDayLabel(e, day, true)}</Typography>
+                    <Typography variant="body2" color="text.secondary">{e.department?.name}</Typography>
+                    {e.status === 'draft' && <Chip label="Draft" size="small" color="warning" variant="outlined" />}
+                  </Paper>
+                )
+              })}
               {dayShifts.map((s) => {
                 const mine = s.assignee_id && s.assignee_id === user?.id
                 const { bg, fg } = shiftColor(departmentColor(deptById.get(s.department_id) ?? s.department ?? undefined), s.position_id, s.position?.color_shade)
                 return (
                   <Paper
                     key={s.id}
+                    data-testid={`agenda-shift-${s.id}`}
                     variant="outlined"
                     sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', borderColor: mine ? 'primary.main' : 'divider', cursor: canManageShift(s) ? 'pointer' : 'default' }}
                     onClick={canManageShift(s) ? () => openEdit(s) : undefined}
@@ -456,9 +531,17 @@ export default function Schedule({ forceView }: { forceView?: View }) {
         ))
       )}
 
+      <EventFormDialog
+        open={eventDialog}
+        onClose={() => setEventDialog(false)}
+        editEvent={editEvent}
+        departments={managedDepartments}
+        readOnly={!!editEvent && !canManageEvent(editEvent)}
+        prefill={eventPrefill}
+      />
       <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} allShifts={shifts} offDays={offDays} unavailability={unavailability} />
       <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} canEditColors={isOwner} />
-      <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />
+      {!isDevice && <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />}
       <ConfirmDialog
         open={pendingCell !== null}
         onClose={() => setPendingCell(null)}

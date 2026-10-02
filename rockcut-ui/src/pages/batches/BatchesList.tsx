@@ -71,7 +71,7 @@ export default function BatchesList() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Batches' }]}
         title="Batches"
-        action={{ label: 'Add Batch', onClick: () => setFormOpen(true) }}
+        action={{ label: 'Add Batch', onClick: () => setFormOpen(true), testId: 'batches-add-button' }}
       />
 
       <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>

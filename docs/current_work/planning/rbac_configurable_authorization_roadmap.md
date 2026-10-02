@@ -57,7 +57,7 @@ limited to their own departments), which lands as its own reviewed step.
 | # | Phase | Deliverable | Backlog |
 |---|-------|-------------|---------|
 | 0 | **Capability model** — decision inventory, vocabulary (modules × levels × scope), today-as-matrix, owner-only actions, list-scoping and role-derived-behavior rules | **D29** ✔ complete 2026-09-26 | 3848 |
-| 1 | **Consolidate** — route every decision through `Authz` with parity tests; no behavior change | **D31** | 3887 |
+| 1 | **Consolidate** — route every decision through `Authz` with parity tests; no behavior change | **D31** ✔ DEV gate passed 2026-09-29 (merge waits on branch cleanup) | 3887 |
 | 2 | **Level resolver** — `Authz` internals evaluate the D29 matrix (hardcoded); additive `/api/me` field | later | 3849 |
 | 3 | **Roles as data** — `roles` + `role_capabilities`, system roles seeded from the matrix, hardcoded fallback | later | 3850 |
 | 4 | **Custom roles + assignment** — owner-gated role CRUD, `memberships.role_id`, guardrails | later | 3851 |
@@ -87,6 +87,24 @@ role-derived behavior.
 - Exit check: nothing outside `Authz` (and `capabilities/1`) reads `is_owner` or
   `memberships.role` for an access decision — enforce with a grep in CI or a
   test.
+
+### Device accounts (D33) — carry through every later phase
+
+D33 (taproom device access, `specs/d33_taproom_device_access_spec.md`) adds
+`users.kind = "device"`: an account with no memberships whose permissions come
+from a deny-by-default allowlist in `Authz` (a first `can?/3` clause and a
+matching `scope/3` clause), backed by a router gate. The later phases must keep it:
+
+- **Phase 2:** the level resolver evaluates people only. Devices keep hitting
+  their own first clause, and the D33 device matrix tests stay green.
+- **Phase 3:** the allowlist becomes a locked **system role for `kind: device`**
+  (Rick, file #4026 Appendix A), with the hardcoded allowlist as its fallback.
+- **Phase 4:** guardrail: a person's role can never be assigned to a device,
+  and the device role never to a person.
+- **Phase 6:** retire the hardcoded allowlist only once the device role is authoritative.
+
+The backlog numbers in the table above predate D32/D33. Tasks 3849–3853 were
+relabeled "later" on 2026-09-29.
 
 ### Phase 2 — Level resolver (hardcoded)
 

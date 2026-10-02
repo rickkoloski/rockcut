@@ -15,12 +15,15 @@ defmodule RockcutApiWeb.MembershipController do
         {:error, :not_found}
 
       target ->
-        if Authz.can_manage_any?(actor) do
+        if Authz.can?(actor, :set, :memberships) do
           desired = Map.get(params, "memberships", [])
 
           case Accounts.set_memberships(target, desired, actor) do
             {:ok, u} ->
               json(conn, %{data: user(u)})
+
+            {:error, :device_account} = error ->
+              error
 
             {:error, {:unauthorized_department, key}} ->
               conn |> put_status(:forbidden) |> json(%{error: "Cannot manage department: #{key}"})

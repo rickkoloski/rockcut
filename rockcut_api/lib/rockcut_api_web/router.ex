@@ -5,7 +5,15 @@ defmodule RockcutApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Signed-in people only: shared devices get 403 here (D33 gate 1, deny by default).
   pipeline :authenticated do
+    plug RockcutApiWeb.AuthPlug
+    plug RockcutApiWeb.DeviceGate
+  end
+
+  # Signed-in people and shared devices. Only the D33 allowlist routes use it;
+  # what a device may do on them is decided by Authz.Device (gate 2).
+  pipeline :device_allowed do
     plug RockcutApiWeb.AuthPlug
   end
 
@@ -20,23 +28,43 @@ defmodule RockcutApiWeb.Router do
     get "/health", HealthController, :index
     post "/session", SessionController, :create
 
+    # A tablet exchanges a pairing code for its token (D33; rate-limited per IP)
+    post "/device_tokens", DeviceTokenController, :create
+
     # Public ICS calendar feed (token in the URL is the credential)
     get "/calendar/:token", CalendarController, :feed
   end
 
-  # Authenticated routes (any signed-in user)
+  # Routes a shared device may use as well as people (D33 §3.3 allowlist).
+  # Each path+verb here is in no other scope. Adding a route here opens it to
+  # devices: add its Authz.Device entry and classify it in
+  # device_route_matrix_test.exs.
   scope "/api", RockcutApiWeb do
-    pipe_through [:api, :authenticated]
+    pipe_through [:api, :device_allowed]
 
     get "/session", SessionController, :show
     delete "/session", SessionController, :delete
-    post "/session/password", SessionController, :password
-
-    # Current user + departments (drive UI nav)
     get "/me", MeController, :show
     get "/departments", DepartmentController, :index
-    patch "/departments/:id", DepartmentController, :update
+    get "/positions", PositionController, :index
     get "/roster", RosterController, :index
+    get "/shifts", ShiftController, :index
+    get "/shifts/:id", ShiftController, :show
+    get "/schedule_events", ScheduleEventController, :index
+    get "/channels", MessageController, :channels
+    get "/channels/:key/messages", MessageController, :index
+    post "/channels/:key/read", MessageController, :read
+    get "/messages/unread_count", MessageController, :unread_count
+  end
+
+  # Authenticated routes (signed-in people; closed to shared devices)
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :authenticated]
+
+    post "/session/password", SessionController, :password
+
+    # Departments (update) and roster order; reads are in the scope above
+    patch "/departments/:id", DepartmentController, :update
     post "/roster/order", RosterController, :order
 
     # User & role management (authorization enforced per-action in the controllers)
@@ -44,14 +72,20 @@ defmodule RockcutApiWeb.Router do
     put "/users/:user_id/memberships", MembershipController, :update
     post "/users/:id/reset_password", UserController, :reset_password
 
+    # Shared devices (D33): owners + managers of a device's home department
+    get "/devices", DeviceController, :index
+    post "/devices", DeviceController, :create
+    patch "/devices/:id", DeviceController, :update
+    delete "/devices/:id", DeviceController, :delete
+    post "/devices/:id/pairing_code", DeviceController, :pairing_code
+    delete "/device_tokens/:id", DeviceTokenController, :delete
+
     # Owner activity feed (in-app notification of manager actions)
     get "/owner/activity", OwnerActivityController, :index
     post "/owner/activity/seen", OwnerActivityController, :seen
 
     # Scheduling (shared module — global read; writes authorized in controllers)
-    resources "/positions", PositionController, only: [:index, :create, :update, :delete]
-    get "/shifts", ShiftController, :index
-    get "/shifts/:id", ShiftController, :show
+    resources "/positions", PositionController, only: [:create, :update, :delete]
     post "/shifts", ShiftController, :create
     post "/shifts/publish", ShiftController, :publish_batch
     patch "/shifts/:id", ShiftController, :update
@@ -61,6 +95,15 @@ defmodule RockcutApiWeb.Router do
     post "/shifts/:id/claim", ShiftController, :claim
 
     # Scheduling templates (D14)
+    post "/schedule_events", ScheduleEventController, :create
+    post "/schedule_events/publish", ScheduleEventController, :publish_batch
+    get "/schedule_events/:id", ScheduleEventController, :show
+    patch "/schedule_events/:id", ScheduleEventController, :update
+    delete "/schedule_events/:id", ScheduleEventController, :delete
+    post "/schedule_events/:id/publish", ScheduleEventController, :publish
+    post "/schedule_events/:id/unpublish", ScheduleEventController, :unpublish
+    post "/schedule_event_series/:id/extend", ScheduleEventController, :extend_series
+
     resources "/shift_templates", ShiftTemplateController,
       only: [:index, :create, :update, :delete]
 
@@ -95,11 +138,7 @@ defmodule RockcutApiWeb.Router do
     delete "/push/subscriptions", PushController, :unsubscribe
 
     # Messaging (D23)
-    get "/channels", MessageController, :channels
-    get "/channels/:key/messages", MessageController, :index
     post "/channels/:key/messages", MessageController, :create
-    post "/channels/:key/read", MessageController, :read
-    get "/messages/unread_count", MessageController, :unread_count
   end
 
   # Brewery module — the existing brewing app (gated by Brewery membership)
