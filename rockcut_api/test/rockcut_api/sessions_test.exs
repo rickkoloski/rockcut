@@ -56,9 +56,18 @@ defmodule RockcutApi.SessionsTest do
   end
 
   describe "authenticate/2" do
-    test "accepts a live session and touches last_seen_at at most once a minute" do
+    test "a normal session is never touched (no write per request)" do
       user = user_fixture()
       {token, row} = Sessions.create(user, [], @t0)
+      assert {:ok, _, _} = Sessions.authenticate(token, at(10))
+      assert {:ok, _, _} = Sessions.authenticate(token, at(120))
+      assert is_nil(Repo.get!(UserSession, row.id).last_seen_at)
+    end
+
+    test "accepts a tablet session and touches last_seen_at at most once a minute" do
+      user = user_fixture()
+      {_device, dt} = tablet()
+      {token, row} = Sessions.create(user, [device_token: dt], @t0)
 
       assert {:ok, %{id: id}, _} = Sessions.authenticate(token, at(10))
       assert id == user.id

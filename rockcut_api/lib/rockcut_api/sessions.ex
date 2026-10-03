@@ -64,8 +64,10 @@ defmodule RockcutApi.Sessions do
   @doc """
   Resolve a `ses_` token to `{:ok, user, row}`, or `:error` when it's unknown,
   revoked or expired, an idle tablet session, a tablet session whose tablet
-  was revoked, or its user is inactive or a device. Touches `last_seen_at` at
-  most once a minute.
+  was revoked, or its user is inactive or a device. A tablet session's
+  `last_seen_at` is touched at most once a minute (its 15-minute idle limit);
+  a normal session's never is, so ordinary requests don't write (SQLite has
+  one connection; DEV finding, D34 fix cycle 1).
   """
   def authenticate(token, now \\ now())
 
@@ -76,7 +78,7 @@ defmodule RockcutApi.Sessions do
          %User{active: true} = user <- Accounts.get_user(row.user_id),
          false <- Authz.device?(user),
          true <- allowed_here?(user) do
-      touch(row, now)
+      if row.device_token_id, do: touch(row, now)
       {:ok, user, row}
     else
       _ -> :error

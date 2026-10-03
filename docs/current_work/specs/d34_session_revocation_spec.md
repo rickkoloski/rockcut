@@ -72,7 +72,9 @@ the same way D33 made a tablet's pairing revocable.
   - `dev_…` → a tablet, unchanged;
   - `ses_…` → look up the hash; refuse it if it's unknown, revoked or
     expired, or its user is inactive or a device; touch `last_seen_at` at
-    most once a minute (as `device_tokens` does);
+    most once a minute for a tablet session (its idle limit); a normal
+    session is never touched, so ordinary requests don't write (D34 DEV fix
+    cycle 1, SQLite has one connection);
   - anything else → a pre-D34 token, accepted per §3.7.
 - The HMAC helper `Devices.hash/1` moves somewhere both contexts can use it
   (for example `RockcutApi.Tokens`), with no change in behavior.

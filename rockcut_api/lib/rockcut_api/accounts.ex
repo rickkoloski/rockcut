@@ -157,9 +157,13 @@ defmodule RockcutApi.Accounts do
       "must_reset_password" => true
     }
 
+    # Hash (Argon2, slow by design) before the transaction, so the single DB
+    # connection isn't held while it runs (D34 DEV fix cycle 1).
+    changeset = User.registration_changeset(%User{}, reg_attrs)
+
     result =
       Repo.transaction(fn ->
-        with {:ok, user} <- %User{} |> User.registration_changeset(reg_attrs) |> Repo.insert(),
+        with {:ok, user} <- Repo.insert(changeset),
              {:ok, user} <- apply_memberships(user, desired, actor) do
           log_audit(actor.id, user.id, "user.created", %{"email" => user.email})
           user
