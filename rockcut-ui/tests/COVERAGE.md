@@ -78,3 +78,33 @@ Known gaps:
 | G8 no email in any device-readable response | ExUnit `device_route_matrix_test` (walks every device-allowed route) |
 | G9 no Pair button on a deactivated device; API 422 | Playwright `shared_devices_admin`; ExUnit `device_controller_test` |
 
+
+## D34 — Revocable sign-in sessions + profile page (`specs/d34_session_revocation_spec.md`)
+
+Specs that end, revoke or change a person's session use a throwaway `[TEST-TEMP]` person (`regression/auth/helpers.ts`), never a shared persona token.
+
+| # | Scenario | Layer |
+|---|---|---|
+| S1 | Sign-in returns a working `ses_` token | ExUnit `session_revocation_test`, `sessions_test`; Playwright (every spec: minted persona tokens are sessions) |
+| S2 | Logout → old token 401 | ExUnit `session_revocation_test` (revert-and-rerun recorded); Playwright `auth/session_revocation` (revert-and-rerun recorded: UI sent no token) |
+| S3 | Logout in one browser; the other stays | ExUnit `session_revocation_test`; Playwright `auth/session_revocation` |
+| S4 | Tablet Sign out revokes the personal token; typed sign-in sends `X-Rockcut-Device` | ExUnit `session_revocation_test`; Playwright `devices/personal_signin_revoke` |
+| S5 | Idle return revokes it | Playwright `devices/personal_signin_revoke` (mocked clock) |
+| S6 | Revoke unreachable → tablet still returns; 15-min idle / 12-h cap on the server | Playwright `personal_signin_revoke` (DELETE aborted); ExUnit `sessions_test` (timing); **manual**: a real tablet offline (DEV) |
+| S7 | Revoking/deactivating/deleting a tablet ends sessions started on it; phone survives | ExUnit `sessions_test`, `session_revocation_test`; Playwright `personal_signin_revoke` (barMgr revoke) |
+| S8 | Own password change revokes other sessions | ExUnit `session_revocation_test`; Playwright `auth/profile` (S18) |
+| S9 | Owner reset revokes all | ExUnit `session_revocation_test` |
+| S10 | Deactivation unchanged | ExUnit `session_revocation_test`, `sessions_test` |
+| S11 | Made-up `ses_` → 401; stale/garbage device header → normal 30-day sign-in | ExUnit `session_revocation_test` |
+| S12 | Pre-D34 token still accepted | ExUnit `session_revocation_test` |
+| S13 | Pre-D34 token refused after reset / own change / sign-out-others | ExUnit `session_revocation_test` |
+| S14 | Profile → Sign out of all other devices | ExUnit `session_revocation_test` (audit); Playwright `auth/session_revocation` |
+| S15 | No profile during a personal sign-in on a tablet | Playwright `personal_signin_revoke` |
+| S16 | Device → `DELETE /api/sessions/others` 403 | ExUnit `session_revocation_test`, `device_route_matrix_test` |
+| S17 | Profile details, read-only; phone-width icon | Playwright `auth/profile` |
+| S18 | Change password: wrong current, success, others signed out, new password works | Playwright `auth/profile` |
+| S19 | Mismatch / too short refused | Playwright `auth/profile` |
+| S20 | Device `/profile` → not available; no link | Playwright `auth/profile` |
+| S21 | Show/hide toggle on login, forced reset, profile | Playwright `auth/password_toggle` |
+| S22 | Managers/owners see only their own details | Playwright `auth/profile` (barMgr) |
+| — | Synthetic sessions refused where the guard is off (prod) | ExUnit `synthetic_test` |
