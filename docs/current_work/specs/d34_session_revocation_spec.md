@@ -1,6 +1,6 @@
-# D34: Revocable Sign-in Sessions — Specification
+# D34: Revocable Sign-in Sessions and Profile Page — Specification
 
-**Status:** Draft, Q1–Q3 answered (2026-10-02); awaiting Matt's review of the whole spec
+**Status:** Draft, Q1–Q5 answered (2026-10-02); awaiting Matt's review of the whole spec
 **Created:** 2026-10-02
 **Author:** Matt + CC
 **Depends On:** D33 (shared tablets, "Sign in as me", `device_tokens`), D30 (synthetic personas, DEV), D10 (sign-in)
@@ -49,9 +49,11 @@ the same way D33 made a tablet's pairing revocable.
 | A4 | **A sign-in made on a paired tablet is marked as one** and gets a short server-side lifetime (Q2), so a session the tablet couldn't revoke (it was offline, asleep, or its storage was cleared) still dies soon. | Task 3991 |
 | A5 | **Revoking or signing out a tablet also revokes** every personal session started on that tablet. | CC, proposed |
 | A6 | **A password change revokes the person's other sessions;** an owner's password reset revokes all of them. | Task 3991 |
-| Q1 | **Tokens issued before D34 are honored until they expire** (at most 30 days), so the deploy signs nobody out. A per-user cutoff lets an owner kill one person's old tokens (§3.5). | Matt, 2026-10-02 |
+| Q1 | **Tokens issued before D34 are honored until they expire** (at most 30 days), so the deploy signs nobody out. A per-user cutoff lets an owner kill one person's old tokens (§3.7). | Matt, 2026-10-02 |
 | Q2 | **A tablet sign-in expires 15 minutes after its last request, and never lasts more than 12 hours.** | Matt, 2026-10-02 |
-| Q3 | **People get one "Sign out of all other devices" control** (§3.4). | Matt, 2026-10-02 |
+| Q3 | **People get one "Sign out of all other devices" control**, on the profile page (§3.5). | Matt, 2026-10-02 |
+| Q4 | **A profile page** with "Change password" and "Sign out of all other devices". | Matt, 2026-10-02 |
+| Q5 | **Every typed password gets a show/hide toggle**, hidden by default. | Matt, 2026-10-02 |
 
 ---
 
@@ -71,7 +73,7 @@ the same way D33 made a tablet's pairing revocable.
   - `ses_…` → look up the hash; refuse it if it's unknown, revoked or
     expired, or its user is inactive or a device; touch `last_seen_at` at
     most once a minute (as `device_tokens` does);
-  - anything else → a pre-D34 token, accepted per §3.5.
+  - anything else → a pre-D34 token, accepted per §3.7.
 - The HMAC helper `Devices.hash/1` moves somewhere both contexts can use it
   (for example `RockcutApi.Tokens`), with no change in behavior.
 - Synthetic persona tokens (D30, DEV and local only) are unchanged. They are
@@ -116,22 +118,63 @@ the same way D33 made a tablet's pairing revocable.
 
 - `change_password` (your own, `POST /api/session/password`): revoke every
   other unrevoked session of yours; the one you're using stays signed in.
-  Today the only UI that calls it is the forced reset after a temporary
-  password; there is no profile page, and D34 doesn't add one.
+  It's called by the forced reset after a temporary password and by the new
+  profile page's Change password (§3.5). The response adds
+  `revoked: <count>` so the page can say how many sessions ended.
 - `reset_password` (an owner, for someone else): revoke **all** of that
   person's sessions. They sign in with the temporary password next time.
 - Deactivation: unchanged (already immediate).
 - **"Sign out of all other devices" (Q3):**
   - API: `DELETE /api/sessions/others` revokes every unrevoked session of the
-    caller except the current one, and sets `legacy_tokens_revoked_at` (§3.5).
+    caller except the current one, and sets `legacy_tokens_revoked_at` (§3.7).
     Returns `{revoked: <count>}`. A device token gets 403 (DeviceGate).
-  - UI: the email in the top bar becomes an account menu with **Sign out of
-    all other devices** (a confirm step, then "Signed out of N other
-    sessions") and **Logout**. Not shown during a personal sign-in on a
-    tablet: there it's Sign out only, as today.
+  - UI: on the profile page (§3.5).
   - Audit: `user.signed_out_everywhere`, so an owner can see it happened.
 
-### 3.5 Tokens issued before D34 (Q1)
+### 3.5 Profile page (Q4)
+
+- New route **`/profile`**, for every person. Reached by clicking your name or
+  email in the top bar (it becomes a link; on phone width, where the email is
+  hidden today, an account icon button). Logout stays where it is.
+- **Not available to a device, or during a personal sign-in on a tablet.**
+  Changing a password on a bar-facing screen invites shoulder-surfing, and
+  D33 already keeps personal settings (calendar feeds) off the tablet. The
+  link isn't shown there, and `/profile` falls under the existing device rules
+  (the "Not available on a shared device" page for the device; Home for a
+  personal tablet session).
+- **Sections:**
+  1. **Your details, read-only:** name, email, and your departments with
+     your role in each. Editing them stays with owners and managers in Users
+     & Roles.
+  2. **Change password:** current password, new password, confirm new
+     password; the same rules and messages as the forced reset (at least 8
+     characters, must match, "Current password is incorrect"). On success:
+     "Password changed. Your other devices were signed out" (or "Password
+     changed" when there were none), and the form clears. You stay signed in
+     here (§3.4).
+  3. **Sign out of all other devices:** one button with a confirm step ("This
+     signs you out everywhere except this browser"), then "Signed out of N
+     other sessions". Calls `DELETE /api/sessions/others` (§3.4).
+- There's no "forgot password" email flow (prod mail is a no-op, D28). A
+  forgotten password is still an owner's Reset password in Users & Roles.
+
+### 3.6 Show/hide on password fields (Q5)
+
+- One shared component, `PasswordField`: an MUI `TextField` with an eye icon
+  button at the end. The field starts **hidden**; the button toggles it, and
+  its accessible name says what it does ("Show password" / "Hide password").
+  Each field toggles on its own. Pressing the button never submits the form,
+  and focus stays in the field.
+- Used for every typed password:
+  - the sign-in form (`Login.tsx`), which "Sign in as me" also uses;
+  - the forced "Set a new password" screen (`ForcePasswordReset.tsx`): all
+    three fields;
+  - the profile page's Change password (§3.5): all three fields.
+- Not for the temporary password an owner sees after creating a user or
+  resetting a password: it's shown as text to be shared, not typed.
+- `autoComplete` values stay as they are, so password managers keep working.
+
+### 3.7 Tokens issued before D34 (Q1)
 
 - A pre-D34 token (a signed `Phoenix.Token`, no prefix) is still accepted
   until its 30 days run out, as today, **unless** its user has
@@ -151,12 +194,12 @@ the same way D33 made a tablet's pairing revocable.
 - **Follow-up:** about 30 days after the D34 release, a small change removes
   the pre-D34 path and the column (backlog task, dated).
 
-### 3.6 Housekeeping
+### 3.8 Housekeeping
 
 - On each sign-in, delete that user's rows that expired or were revoked more
   than 7 days ago. No scheduled job.
 
-### 3.7 Non-functional
+### 3.9 Non-functional
 
 - **SQLite, one connection:** each request with a `ses_` token adds one
   indexed read, plus at most one small write per session per minute. That's
@@ -186,16 +229,23 @@ the same way D33 made a tablet's pairing revocable.
 | S11 | anyone | API | made-up `ses_` token, or a revoked tablet header on sign-in | Made-up token → 401. Revoked `X-Rockcut-Device` header → a normal 30-day sign-in, not an error. |
 | S12 | `bartender1` | phone | holds a token issued before D34 | Still signed in after the deploy; nothing changes for them. |
 | S13 | `owner` | Users & Roles → Reset password | `bartender1` holds a pre-D34 token | That token gets **401** from then on. `bartender1` signs in with the temporary password. |
-| S14 | `bartender1` | account menu → Sign out of all other devices | signed in on a phone, a laptop and a tablet | Confirms; sees "Signed out of 2 other sessions". The phone stays signed in after a reload; the laptop and the tablet session get 401. |
-| S15 | `bartender1` | tablet → "Sign in as me" | personal session active | No account menu, only Sign out. |
+| S14 | `bartender1` | Profile → Sign out of all other devices | signed in on a phone, a laptop and a tablet | Confirms; sees "Signed out of 2 other sessions". The phone stays signed in after a reload; the laptop and the tablet session get 401. |
+| S15 | `bartender1` | tablet → "Sign in as me" | personal session active | No profile link. Typing `/profile` goes to Home. |
 | S16 | `taproomDevice` | API `DELETE /api/sessions/others` | paired | 403. |
+| S17 | `bartender1` | top bar → name → Profile | signed in on a phone and a laptop | Sees their name, email and departments with roles, read-only. |
+| S18 | `bartender1` | Profile → Change password | signed in on a phone and a laptop | Wrong current password → "Current password is incorrect", nothing changes. Correct → "Password changed. Your other devices were signed out". The laptop gets 401; after a reload the phone is still signed in, and the new password works on the laptop. |
+| S19 | `bartender1` | Profile → Change password | new and confirm differ, or under 8 characters | Refused with the same message as the forced reset; the old password still works. |
+| S20 | `taproomDevice` | typed URL `/profile` | paired | "Not available on a shared device". No profile link. |
+| S21 | anyone | sign-in form; forced reset; Profile → Change password | typing a password | Each field starts hidden. The eye button shows and hides that field only, without submitting; a keyboard user can reach it and hear "Show password". |
+| S22 | `barMgr`, `owner` | Profile | signed in | Same page as everyone: their own details only, no other person's. |
 
 ---
 
 ## 5. Out of Scope
 
 - A list of your signed-in devices with per-device revoke (Q3 is one button).
-- A profile page or a self-service "Change password" screen.
+- Editing your own name or email on the profile page (read-only in D34).
+- A "forgot password" email flow (prod mail is a no-op).
 - Changing the 30-day lifetime of normal sign-ins, or making it sliding.
 - Calendar feed URLs after deactivation (backlog 3992, separate).
 - Server-side enforcement of the 5-minute idle on the tablet beyond Q2.
@@ -205,8 +255,12 @@ the same way D33 made a tablet's pairing revocable.
 ## 6. Open Questions
 
 - [x] **Q1: tokens issued before D34** → honored until they expire, with a
-  per-user cutoff for a current employee (Matt, 2026-10-02). See §3.5.
+  per-user cutoff for a current employee (Matt, 2026-10-02). See §3.7.
 - [x] **Q2: tablet sign-in lifetime** → 15 minutes without a request, 12 hours
   at most (Matt, 2026-10-02). See §3.3.
-- [x] **Q3: "Sign out of all other devices"** → yes, one control in a new
-  account menu (Matt, 2026-10-02). See §3.4.
+- [x] **Q3: "Sign out of all other devices"** → yes, one button on the
+  profile page (Matt, 2026-10-02). See §3.4 and §3.5.
+- [x] **Q4: a profile page** with Change password and Sign out of all other
+  devices (Matt, 2026-10-02). See §3.5.
+- [x] **Q5: show/hide toggle** on every typed password, hidden by default
+  (Matt, 2026-10-02). See §3.6.
