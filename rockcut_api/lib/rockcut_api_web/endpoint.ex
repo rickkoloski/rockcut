@@ -48,7 +48,8 @@ defmodule RockcutApiWeb.Endpoint do
   plug CORSPlug,
     origin: &RockcutApiWeb.Endpoint.cors_origins/0,
     credentials: true,
-    headers: ["Authorization", "Content-Type", "Accept"]
+    # X-Rockcut-Device marks a sign-in made on a paired tablet (D34 §3.3).
+    headers: ["Authorization", "Content-Type", "Accept", "X-Rockcut-Device"]
 
   def cors_origins do
     Application.get_env(:rockcut_api, :cors_origins, [
@@ -56,6 +57,7 @@ defmodule RockcutApiWeb.Endpoint do
       "http://localhost:5174"
     ])
   end
+
   plug Plug.MethodOverride
   plug Plug.Head
   plug Plug.Session, @session_options

@@ -155,6 +155,16 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     Repo.delete_all(from(u in User, where: u.kind == "device" and like(u.name, ^"#{@temp_tag}%")))
 
+    # D34: throwaway people a spec created to change or reset a password
+    # without touching a persona (sessions, memberships, audit rows cascade).
+    Repo.delete_all(
+      from(u in User,
+        where:
+          u.kind == "person" and like(u.name, ^"#{@temp_tag}%") and
+            like(u.email, ^"%#{@domain}")
+      )
+    )
+
     :ok
   end
 
@@ -199,8 +209,9 @@ defmodule RockcutApi.Seeds.Synthetic do
   ## Tokens
 
   @doc """
-  A session token for the persona, valid for #{div(@token_max_age, 3600)} hours and
-  accepted only where the guard allows (`RockcutApiWeb.SessionController.verify_token/1`).
+  A sign-in token for the persona, valid for #{div(@token_max_age, 3600)} hours. A person
+  gets a real revocable `ses_` session (D34), so specs exercise the same path
+  as a password sign-in; minting runs only where the guard allows.
   """
   def mint_token(key) do
     if device_persona?(key), do: mint_device_token(key), else: mint_person_token(key)
@@ -208,15 +219,13 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   defp mint_person_token(key) do
     Guard.guard!()
-    # Plug.Crypto caches derived keys in an ETS table owned by :plug_crypto. A
-    # release `eval` (fly ssh … eval) starts only the repo, so start it here.
-    {:ok, _} = Application.ensure_all_started(:plug_crypto)
     persona = persona!(key)
 
     case Repo.get_by(User, email: persona.email) do
       %User{active: true, email: email} = user ->
         true = synthetic_email?(email)
-        Phoenix.Token.sign(secret_key_base(), @token_salt, user.id)
+        {token, _row} = RockcutApi.Sessions.create(user, max_age: @token_max_age)
+        token
 
       %User{} ->
         raise "persona #{key} is inactive; tokens are only minted for active personas"
@@ -323,11 +332,6 @@ defmodule RockcutApi.Seeds.Synthetic do
         |> Repo.update!()
         |> tap(fn u -> Repo.delete_all(from(m in Membership, where: m.user_id == ^u.id)) end)
     end
-  end
-
-  defp secret_key_base do
-    Application.fetch_env!(:rockcut_api, RockcutApiWeb.Endpoint)[:secret_key_base] ||
-      raise "secret_key_base is not configured"
   end
 
   ## Personas

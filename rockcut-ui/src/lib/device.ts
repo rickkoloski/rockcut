@@ -1,3 +1,5 @@
+import axios from 'axios'
+
 // Shared tablets (D33). A paired tablet signs in with a `dev_` token stored in
 // the normal `rockcut_token` slot. When a staff member signs in personally on
 // the tablet, the device token is set aside under DEVICE_TOKEN_KEY and put
@@ -49,6 +51,28 @@ export function restoreDeviceToken(): boolean {
   localStorage.removeItem(PERSONAL_ACTIVITY_KEY)
   localStorage.removeItem('rockcut_email')
   return true
+}
+
+/** How long ending a personal session waits for the server's revoke (D34 §3.3). */
+export const REVOKE_TIMEOUT_MS = 3_000
+
+/**
+ * End the person's own session on the server before the tablet forgets it
+ * (D34). Best effort: offline, a timeout or a 401 is ignored, since the
+ * server lets an unrevoked tablet sign-in lapse after 15 idle minutes anyway.
+ * Plain axios, so a 401 here can't trigger the app's sign-out handling.
+ */
+export async function revokePersonalToken(): Promise<void> {
+  const token = readStorage(TOKEN_KEY)
+  if (!token || isDeviceToken(token)) return
+  try {
+    await axios.delete(`${import.meta.env.VITE_API_URL || ''}/api/session`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: REVOKE_TIMEOUT_MS,
+    })
+  } catch {
+    // Ignored: see above.
+  }
 }
 
 /** True for a shared tablet's token (D33 tokens start with `dev_`). */

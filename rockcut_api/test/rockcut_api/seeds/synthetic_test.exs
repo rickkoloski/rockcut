@@ -179,7 +179,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       token = Synthetic.mint_token("owner")
 
       with_deploy_env("prod", fn ->
-        assert {:error, _} = RockcutApiWeb.SessionController.verify_token(token)
+        assert :error = RockcutApi.Sessions.authenticate(token)
         conn = conn |> put_req_header("authorization", "Bearer #{token}") |> get(~p"/api/me")
         assert json_response(conn, 401)
       end)
@@ -192,7 +192,11 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert map_size(tokens) == 17
       assert "dev_" <> _ = tokens["taproomDevice"].token
       refute Map.has_key?(tokens, "inactive")
-      assert {:ok, _} = RockcutApiWeb.SessionController.verify_token(tokens["owner"].token)
+      # D34: a person's minted token is a real revocable session.
+      assert "ses_" <> _ = tokens["owner"].token
+
+      assert {:ok, %{email: "owner@rockcut-test.com"}, _} =
+               RockcutApi.Sessions.authenticate(tokens["owner"].token)
     end
 
     test "refuses unknown and inactive personas" do

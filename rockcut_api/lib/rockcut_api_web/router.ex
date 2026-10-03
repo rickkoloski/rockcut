@@ -62,6 +62,7 @@ defmodule RockcutApiWeb.Router do
     pipe_through [:api, :authenticated]
 
     post "/session/password", SessionController, :password
+    delete "/sessions/others", SessionController, :delete_others
 
     # Departments (update) and roster order; reads are in the scope above
     patch "/departments/:id", DepartmentController, :update

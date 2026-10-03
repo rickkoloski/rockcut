@@ -16,6 +16,7 @@ import {
   Collapse,
   Drawer,
   IconButton,
+  Link,
   List,
   ListItemButton,
   ListItemIcon,
@@ -51,9 +52,11 @@ import HistoryIcon from '@mui/icons-material/History'
 import LogoutIcon from '@mui/icons-material/Logout'
 import LoginIcon from '@mui/icons-material/Login'
 import TabletIcon from '@mui/icons-material/TabletMac'
-import { useNavigate, useLocation } from 'react-router-dom'
+import AccountCircle from '@mui/icons-material/AccountCircle'
+import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom'
 import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
+import Profile from './pages/profile/Profile'
 import useAuth from './hooks/useAuth'
 import useIdleReturn from './hooks/useIdleReturn'
 import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
@@ -513,10 +516,37 @@ function App() {
               <>
                 <NotificationBell />
 
-                <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
-                  {user.email}
-                  {isOwner ? ' · Owner' : ''}
-                </Typography>
+                {personalOnTablet ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
+                    {user.email}
+                  </Typography>
+                ) : (
+                  <>
+                    {/* D34: your name opens your profile; an icon at phone width. */}
+                    <Link
+                      component={RouterLink}
+                      to="/profile"
+                      data-testid="profile-link"
+                      variant="body2"
+                      color="text.secondary"
+                      underline="hover"
+                      sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}
+                    >
+                      {user.email}
+                      {isOwner ? ' · Owner' : ''}
+                    </Link>
+                    <IconButton
+                      component={RouterLink}
+                      to="/profile"
+                      aria-label="Profile"
+                      data-testid="profile-icon"
+                      size="small"
+                      sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                    >
+                      <AccountCircle />
+                    </IconButton>
+                  </>
+                )}
                 <Button
                   data-testid="logout-button"
                   size="small"
@@ -576,6 +606,8 @@ function App() {
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />
             <Route path="/availability" element={<Availability />} />
+            {/* D34: not on a shared tablet, even for a person signed in on it. */}
+            {!personalOnTablet && <Route path="/profile" element={<Profile />} />}
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:key" element={<Messages />} />
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}

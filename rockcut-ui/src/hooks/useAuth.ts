@@ -8,6 +8,7 @@ import {
   isDeviceToken,
   markUnpaired,
   restoreDeviceToken,
+  revokePersonalToken,
   setDeviceTokenAside,
 } from '../lib/device'
 
@@ -27,7 +28,7 @@ interface AuthState {
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
   startPersonalSignIn: () => void
-  endPersonalSession: () => void
+  endPersonalSession: () => Promise<void>
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -49,7 +50,13 @@ const useAuth = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null })
     try {
-      const { data } = await api.post<{ token: string }>('/api/session', { email, password })
+      // D34: "Sign in as me" on a paired tablet says so, for the short tablet lifetime.
+      const device = asideDeviceToken()
+      const { data } = await api.post<{ token: string }>(
+        '/api/session',
+        { email, password },
+        device ? { headers: { 'X-Rockcut-Device': device } } : undefined
+      )
       localStorage.setItem(TOKEN_KEY, data.token)
       set({ token: data.token, isAuthenticated: true })
       await get().loadMe()
@@ -62,7 +69,7 @@ const useAuth = create<AuthState>((set, get) => ({
   logout: () => {
     // A person signed in on a shared tablet goes back to the tablet's session.
     if (asideDeviceToken()) {
-      get().endPersonalSession()
+      void get().endPersonalSession()
       return
     }
     const { token } = get()
@@ -73,7 +80,9 @@ const useAuth = create<AuthState>((set, get) => ({
       return
     }
     if (token) {
-      api.delete('/api/session').catch(() => {})
+      // D34: the server revokes this session. Pass the token explicitly: the
+      // request interceptor runs after the removeItem below, so it would send none.
+      api.delete('/api/session', { headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
     }
     localStorage.removeItem(TOKEN_KEY)
     set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false })
@@ -136,9 +145,11 @@ const useAuth = create<AuthState>((set, get) => ({
     set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false, error: null })
   },
 
-  // Back to the tablet's session: drop the personal token, restore the device
-  // token and reload so nothing personal stays in memory.
-  endPersonalSession: () => {
+  // Back to the tablet's session: revoke the personal token on the server
+  // (D34; best effort), restore the device token and reload so nothing
+  // personal stays in memory. Sign out and the idle return both come here.
+  endPersonalSession: async () => {
+    await revokePersonalToken()
     if (restoreDeviceToken()) window.location.assign('/')
   },
 }))

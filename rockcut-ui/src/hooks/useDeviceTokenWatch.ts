@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import axios from 'axios'
-import { asideDeviceToken, markUnpaired } from '../lib/device'
+import { asideDeviceToken, markUnpaired, revokePersonalToken } from '../lib/device'
 
 const WATCH_MS = 20_000
 
@@ -35,6 +35,9 @@ export default function useDeviceTokenWatch(enabled: boolean) {
       } catch (err) {
         const status = (err as { response?: { status?: number } })?.response?.status
         if (!cancelled && status === 401 && asideDeviceToken() === token) {
+          // The server already ended sessions started on this tablet (D34 A5);
+          // this covers one that wasn't marked as a tablet sign-in.
+          await revokePersonalToken()
           markUnpaired()
           window.location.assign('/')
         }
