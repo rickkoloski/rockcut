@@ -13,6 +13,7 @@ defmodule RockcutApi.Accounts.User do
     field :schedule_order, :integer, default: 0
     field :notification_prefs, :map, default: %{}
     field :activity_seen_at, :utc_datetime
+    field :legacy_tokens_revoked_at, :utc_datetime
     # D33: "person" (every human account) or "device" (a shared tablet account).
     # Set at creation and never changed.
     field :kind, :string, default: "person"

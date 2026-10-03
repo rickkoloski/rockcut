@@ -252,6 +252,8 @@ defmodule RockcutApi.Accounts do
          |> User.password_changeset(%{"password" => temp, "must_reset_password" => true})
          |> Repo.update() do
       {:ok, user} ->
+        # D34 §3.4: a reset signs the person out everywhere.
+        RockcutApi.Sessions.revoke_all(user, nil)
         log_audit(actor.id, user.id, "user.password_reset", %{})
         {:ok, get_user!(user.id), temp}
 
