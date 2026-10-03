@@ -235,7 +235,16 @@ defmodule RockcutApi.Seeds.Synthetic do
     end
   end
 
-  @doc "Tokens for every active persona: `%{key => %{email, token}}` (one call for test setup)."
+  @spares_persona "bartender2"
+  @spare_count 40
+
+  @doc """
+  Tokens for every active persona: `%{key => %{email, token}}` (one call for
+  test setup), plus `"spares"`: #{@spare_count} extra sessions of `#{@spares_persona}`
+  for specs that sign a session out (D34). Each spec claims its own, so
+  revoking it never signs a shared persona token out, and no password hash
+  is spent (Argon2 on DEV's one vCPU starved the suite; DEV fix cycle 2).
+  """
   def mint_tokens do
     Guard.guard!()
 
@@ -249,7 +258,12 @@ defmodule RockcutApi.Seeds.Synthetic do
         {d.key, %{email: d.email, token: mint_token(d.key)}}
       end
 
-    Map.merge(persons, devices)
+    spares = %{
+      email: persona!(@spares_persona).email,
+      tokens: for(_ <- 1..@spare_count, do: mint_token(@spares_persona))
+    }
+
+    persons |> Map.merge(devices) |> Map.put("spares", spares)
   end
 
   # A device persona logs in like a real tablet: a `dev_` token row named

@@ -1,10 +1,13 @@
 import { test, expect as baseExpect } from '@playwright/test'
 import { contextWith, createTempPerson, meStatus, retireTempPerson, signIn, type TempPerson } from './helpers'
+import { claimSpare } from './spares'
 
 // D34 S2, S3, S14: sign-out and "Sign out of all other devices" revoke
-// sessions on the server. Each test uses a throwaway [TEST-TEMP] person.
+// sessions on the server. S2/S3 use spare sessions; S14 revokes everything of
+// a person, so it uses a throwaway [TEST-TEMP] person. In order, not in
+// parallel: password hashing is slow on DEV's one vCPU.
 const expect = baseExpect.configure({ timeout: 15_000 })
-test.describe.configure({ timeout: 60_000 })
+test.describe.configure({ timeout: 60_000, mode: 'default' })
 test.use({ storageState: { cookies: [], origins: [] } })
 
 let person: TempPerson | null = null
@@ -14,8 +17,7 @@ test.afterEach(async () => {
 })
 
 test('S2: Logout revokes the session; the old token gets 401', async ({ browser }) => {
-  person = await createTempPerson('S2 logout')
-  const token = await signIn(person)
+  const token = claimSpare()
   const { context, page } = await contextWith(browser, token)
 
   await page.goto('/')
@@ -30,9 +32,8 @@ test('S2: Logout revokes the session; the old token gets 401', async ({ browser 
 })
 
 test('S3: Logout in one browser leaves the other signed in', async ({ browser }) => {
-  person = await createTempPerson('S3 two browsers')
-  const a = await contextWith(browser, await signIn(person))
-  const bToken = await signIn(person)
+  const a = await contextWith(browser, claimSpare())
+  const bToken = claimSpare()
   const b = await contextWith(browser, bToken)
 
   await a.page.goto('/')

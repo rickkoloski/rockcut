@@ -8,7 +8,9 @@ import { createTempPerson, meStatus, retireTempPerson, signIn, type TempPerson }
 // server. The person really types their (throwaway) password into the tablet's
 // form, so the sign-in also carries X-Rockcut-Device.
 const expect = baseExpect.configure({ timeout: 15_000 })
-test.describe.configure({ timeout: 60_000 })
+// In order, in one worker: one throwaway person for the file, and password
+// hashing is slow on DEV's one vCPU.
+test.describe.configure({ timeout: 60_000, mode: 'default' })
 
 let person: TempPerson | null = null
 test.beforeAll(async () => {
@@ -83,7 +85,6 @@ test.describe('on the shared taproomDevice tablet', () => {
     // Not revoked: the server's 15-minute idle limit is what ends it (ExUnit covers the timing).
     expect(await meStatus(personal)).toBe(200)
     await page.unrouteAll({ behavior: 'ignoreErrors' })
-    await signIn(person!) // the person can still sign in elsewhere
   })
 
   test('S15: no profile during a personal sign-in on the tablet', async ({ page }) => {

@@ -4,7 +4,8 @@ import { contextWith, createTempPerson, retireTempPerson, signIn, type TempPerso
 // D34 S21: every typed password starts hidden; its eye button shows and hides
 // that field only, never submits, and is reachable by keyboard.
 const expect = baseExpect.configure({ timeout: 15_000 })
-test.describe.configure({ timeout: 60_000 })
+// In order, not in parallel: password hashing is slow on DEV's one vCPU (D34).
+test.describe.configure({ timeout: 60_000, mode: 'default' })
 test.use({ storageState: { cookies: [], origins: [] } })
 
 async function expectToggles(page: Page, testIds: string[]) {

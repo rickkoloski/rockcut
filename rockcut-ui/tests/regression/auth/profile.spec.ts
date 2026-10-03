@@ -5,7 +5,8 @@ import { contextWith, createTempPerson, meStatus, retireTempPerson, signIn, thro
 // D34 S17–S20, S22: the profile page. Password changes use a throwaway
 // [TEST-TEMP] person, never a persona (that would change the seed password).
 const expect = baseExpect.configure({ timeout: 15_000 })
-test.describe.configure({ timeout: 60_000 })
+// In order, not in parallel: password hashing is slow on DEV's one vCPU (D34).
+test.describe.configure({ timeout: 60_000, mode: 'default' })
 
 test.describe('S17/S22 your details', () => {
   test.use({ storageState: authFile('barMgr') })

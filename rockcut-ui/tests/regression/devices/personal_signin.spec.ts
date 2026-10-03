@@ -10,28 +10,20 @@ test.describe.configure({ timeout: 60_000 })
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, tempTag, weekMonday } from '../scheduler/helpers'
 import { blankTablet, createDevice, deleteDevices, getDevice, pairingCode, setUpTablet } from './helpers'
-import { apiWith, createTempPerson, retireTempPerson, signIn, type TempPerson } from '../auth/helpers'
+import { apiWith } from '../auth/helpers'
+import { SPARE_NAME, claimSpare } from '../auth/spares'
 
 // D33 S13: a staff member signs in as themself on a paired tablet, requests
 // time off, and the tablet returns to the shared session after 5 idle minutes
 // without re-pairing. The person "signs in" by token injection into the
 // personal slot. D34: signing out now revokes that token on the server, so it
-// is a fresh session of a throwaway [TEST-TEMP] person, never a shared
-// persona's token (see ../auth/helpers.ts).
+// is a spare session of its own, never a shared persona's token (../auth/spares.ts).
 
 test.use({ storageState: authFile('taproomDevice') })
 
-let person: TempPerson | null = null
-test.beforeAll(async () => {
-  person = await createTempPerson('tablet sign-in')
-})
-test.afterAll(async () => {
-  await retireTempPerson(person)
-})
-
-/** A new session for the temp person, for injection into the personal slot. */
+/** An unused spare session, for injection into the personal slot. */
 async function freshToken(): Promise<string> {
-  return signIn(person!)
+  return claimSpare()
 }
 
 function tokenOf(persona: 'taproomDevice'): string {
@@ -66,7 +58,7 @@ test('S13: personal sign-in on the tablet, time off persists, idle returns to th
   // Token injection stands in for typing the person's password.
   await page.evaluate((t) => localStorage.setItem('rockcut_token', t), await freshToken())
   await page.reload()
-  await expect(page.getByTestId('personal-session-banner')).toContainText(person!.name)
+  await expect(page.getByTestId('personal-session-banner')).toContainText(SPARE_NAME)
   await expect(page.getByTestId('device-chip')).toHaveCount(0)
 
   // Request time off as themself; persist-verify after a reload.
@@ -295,7 +287,7 @@ test('G3: a second tab follows a personal sign-out without a reload', async ({ c
 
   const b = await context.newPage()
   await b.goto('/time_off')
-  await expect(b.getByTestId('personal-session-banner')).toContainText(person!.name)
+  await expect(b.getByTestId('personal-session-banner')).toContainText(SPARE_NAME)
   await expect(b.getByText('My requests')).toBeVisible()
 
   await a.getByTestId('logout-button').click()
@@ -305,5 +297,5 @@ test('G3: a second tab follows a personal sign-out without a reload', async ({ c
   await expect(b.getByTestId('device-chip')).toBeVisible()
   await expect(b.getByTestId('personal-session-banner')).toHaveCount(0)
   await expect(b.getByText('My requests')).toHaveCount(0)
-  await expect(b.getByText(person!.name)).toHaveCount(0)
+  await expect(b.getByText(SPARE_NAME)).toHaveCount(0)
 })
