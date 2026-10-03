@@ -37,6 +37,7 @@ test.afterEach(async () => {
   const api = await apiWith(await freshToken())
   const mine = (await (await api.get('/api/time_off')).json()).data as { id: number; note: string | null; status: string }[]
   for (const r of mine.filter((x) => x.note?.startsWith(tag) && x.status !== 'cancelled')) await api.post(`/api/time_off/${r.id}/cancel`)
+  await api.dispose()
   tag = ''
 })
 

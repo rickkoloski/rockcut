@@ -1,6 +1,6 @@
 import { expect, request, type APIRequestContext, type Browser, type BrowserContext, type Page } from '@playwright/test'
 import { activeProfile } from '../../config/targets'
-import { apiAs } from '../scheduler/helpers'
+import { API_TIMEOUT_MS, apiAs } from '../scheduler/helpers'
 
 // D34: sessions are revocable, so a spec that signs out, changes a password or
 // signs out other devices must not use a shared persona's token (that would
@@ -26,7 +26,7 @@ export function throwawayPassword(): string {
 
 /** A fresh API context with no token (sign-in calls). */
 export async function anonApi(): Promise<APIRequestContext> {
-  return request.newContext({ baseURL: activeProfile().apiUrl })
+  return request.newContext({ baseURL: activeProfile().apiUrl, timeout: API_TIMEOUT_MS })
 }
 
 /** Sign in through the API; resolves to the new `ses_` token. */
@@ -42,9 +42,13 @@ export async function signIn(person: Pick<TempPerson, 'email' | 'password'>, dev
   return token
 }
 
-/** An API context authenticated with `token`. */
+/** An API context authenticated with `token`. The caller disposes it. */
 export async function apiWith(token: string): Promise<APIRequestContext> {
-  return request.newContext({ baseURL: activeProfile().apiUrl, extraHTTPHeaders: { Authorization: `Bearer ${token}` } })
+  return request.newContext({
+    baseURL: activeProfile().apiUrl,
+    extraHTTPHeaders: { Authorization: `Bearer ${token}` },
+    timeout: API_TIMEOUT_MS,
+  })
 }
 
 /** HTTP status of `GET /api/me` with `token`: 200 while the session lives, 401 once revoked. */

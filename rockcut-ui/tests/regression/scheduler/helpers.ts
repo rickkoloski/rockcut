@@ -6,14 +6,29 @@ import { localInputToUtc } from '../../../src/lib/datetime'
 
 // Shared helpers for the D32 scheduler specs.
 
+/** How long one API call from a spec may take before it fails (D34 DEV fix cycle 3). */
+export const API_TIMEOUT_MS = 20_000
+
+// One client per persona per worker, reused (D34 DEV fix cycle 3). A new
+// context per call left an open connection behind each time; on DEV, fresh
+// connections then intermittently hung before reaching the app. Never dispose
+// a client returned by apiAs().
+const clients = new Map<PersonaKey, Promise<APIRequestContext>>()
+
 /** An API client acting as `persona`, using the token the auth setup already minted. */
-export async function apiAs(persona: PersonaKey): Promise<APIRequestContext> {
-  const state = JSON.parse(readFileSync(authFile(persona), 'utf8'))
-  const token = state.origins[0].localStorage.find((e: { name: string }) => e.name === 'rockcut_token').value
-  return request.newContext({
-    baseURL: activeProfile().apiUrl,
-    extraHTTPHeaders: { Authorization: `Bearer ${token}` },
-  })
+export function apiAs(persona: PersonaKey): Promise<APIRequestContext> {
+  let client = clients.get(persona)
+  if (!client) {
+    const state = JSON.parse(readFileSync(authFile(persona), 'utf8'))
+    const token = state.origins[0].localStorage.find((e: { name: string }) => e.name === 'rockcut_token').value
+    client = request.newContext({
+      baseURL: activeProfile().apiUrl,
+      extraHTTPHeaders: { Authorization: `Bearer ${token}` },
+      timeout: API_TIMEOUT_MS,
+    })
+    clients.set(persona, client)
+  }
+  return client
 }
 
 /** A unique `[TEST-TEMP]` title/notes tag for one test run (specs run in parallel). */
