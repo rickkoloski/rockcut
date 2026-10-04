@@ -129,6 +129,30 @@ All 22 (spec §4). In particular:
     must be different"). Covered by ExUnit and `profile` S19.
   - **G4:** the owner's profile says "Change these in Users & Roles."
     Covered by `profile` "S17 the owner".
+- **Independent pass 2** (`stepwise_results/d34_dev_pass_2_qa_report.md`, at
+  `8f3f12a`): PASS with gaps. 20 PASS, 0 FAIL, 2 NOT RUN (S12/S13).
+  - **Pass 1's four gaps are confirmed fixed**, including a real offline drop
+    and 500/502/503 errors.
+  - **G1 (must-fix), fixed in `e708a70`:** a 404/408/429 from `/api/me` at
+    start-up still unpaired a tablet. Now only a 401 ends a session.
+  - **G4, fixed in `e708a70`:** a hung `/api/me`, or a captive Wi-Fi page,
+    left only a bare spinner. Now `/api/me` times out after 15 s, and a
+    non-`/api/me` answer counts as unreachable.
+  - Spec `personal_signin_revoke` "G1/G4" covers 404, 408, 429, 503, a
+    captive page and no answer. Revert-and-rerun: 5 of 6 fail on the old rule.
+  - **Minor, not fixed (backlog candidates, Matt to accept):**
+    - G2: two tabs on a tablet each keep their own idle timer, so the idle
+      tab ends the session early. This fails safe.
+    - G3: Logout while offline is never retried, so that session lives for
+      its 30 days on the server.
+    - G5: "Sign in as me" left open with no sign-in never returns to the
+      shared screen.
+- **Run 15 at `e708a70`** (API v18 / UI v12; only the UI changed):
+  - 117/118: a setup `PATCH` timed out at 20 s, the intermittent DEV
+    connection hang from cycle 3. That spec file passed 6/6 on rerun.
+  - The API log had no errors.
+  - Local at `e708a70`: 117 passed, 1 skipped.
+
 - **Local gate at `8f3f12a`:**
   - `mix test`: 851 tests, 0 failures.
   - `vite build` OK; lint 27 (the baseline).
