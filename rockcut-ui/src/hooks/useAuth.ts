@@ -21,6 +21,8 @@ interface AuthState {
   bootstrapped: boolean
   isLoading: boolean
   error: string | null
+  /** /api/me failed on the network or with a 5xx: the token is kept and loadMe is retried (DEV pass 1 G1). */
+  unreachable: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   loadMe: () => Promise<void>
@@ -30,6 +32,15 @@ interface AuthState {
   startPersonalSignIn: () => void
   endPersonalSession: () => Promise<void>
 }
+
+/** True when a request failed without the server answering, or with a 5xx. */
+function isTransient(err: unknown): boolean {
+  const status = (err as { response?: { status?: number } })?.response?.status
+  return status === undefined || status >= 500
+}
+
+// One /api/me at a time per token, so the retries can't pile up.
+let loading: { token: string; promise: Promise<void> } | null = null
 
 function errorMessage(err: unknown, fallback: string): string {
   return err && typeof err === 'object' && 'response' in err
@@ -46,6 +57,7 @@ const useAuth = create<AuthState>((set, get) => ({
   bootstrapped: false,
   isLoading: false,
   error: null,
+  unreachable: false,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null })
@@ -59,8 +71,9 @@ const useAuth = create<AuthState>((set, get) => ({
       )
       localStorage.setItem(TOKEN_KEY, data.token)
       set({ token: data.token, isAuthenticated: true })
+      // loadMe sets bootstrapped, or leaves it unset to retry if the server can't be reached.
       await get().loadMe()
-      set({ isLoading: false, bootstrapped: true })
+      set({ isLoading: false })
     } catch (err: unknown) {
       set({ error: errorMessage(err, 'Login failed'), isLoading: false })
     }
@@ -88,30 +101,53 @@ const useAuth = create<AuthState>((set, get) => ({
     set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false })
   },
 
-  loadMe: async () => {
+  loadMe: () => {
     const { token } = get()
     if (!token) {
-      set({ bootstrapped: true })
-      return
+      set({ bootstrapped: true, unreachable: false })
+      return Promise.resolve()
     }
-    try {
-      const { data } = await api.get<Me>('/api/me')
-      // The token changed while this was in flight (e.g. "Sign in as me" set a
-      // tablet's token aside): this answer is for a session that's gone (D33).
-      if (localStorage.getItem(TOKEN_KEY) !== token) return
-      set({
-        user: data.user,
-        capabilities: data.capabilities,
-        sharedDevices: !!data.shared_devices,
-        isAuthenticated: true,
-        bootstrapped: true,
-      })
-    } catch {
-      if (localStorage.getItem(TOKEN_KEY) !== token) return
-      // 401 is handled by the axios interceptor; clear local state for anything else.
-      localStorage.removeItem(TOKEN_KEY)
-      set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false, bootstrapped: true })
-    }
+    if (loading?.token === token) return loading.promise
+    const promise = (async () => {
+      try {
+        const { data } = await api.get<Me>('/api/me')
+        // The token changed while this was in flight (e.g. "Sign in as me" set a
+        // tablet's token aside): this answer is for a session that's gone (D33).
+        if (localStorage.getItem(TOKEN_KEY) !== token) return
+        set({
+          user: data.user,
+          capabilities: data.capabilities,
+          sharedDevices: !!data.shared_devices,
+          isAuthenticated: true,
+          bootstrapped: true,
+          unreachable: false,
+        })
+      } catch (err) {
+        if (localStorage.getItem(TOKEN_KEY) !== token) return
+        // DEV pass 1 G1: offline or a server error says nothing about the token.
+        // Keep it (on a tablet it may be the pairing itself) and retry; App
+        // shows "Can't reach the server". Only a 401 or other refusal signs out
+        // (the axios interceptor handles a 401).
+        if (isTransient(err)) {
+          set({ bootstrapped: false, unreachable: true })
+          return
+        }
+        localStorage.removeItem(TOKEN_KEY)
+        set({
+          token: null,
+          user: null,
+          capabilities: null,
+          sharedDevices: false,
+          isAuthenticated: false,
+          bootstrapped: true,
+          unreachable: false,
+        })
+      } finally {
+        if (loading?.token === token) loading = null
+      }
+    })()
+    loading = { token, promise }
+    return promise
   },
 
   // Exchange a pairing code for this tablet's token (D33 §3.2).
@@ -122,8 +158,9 @@ const useAuth = create<AuthState>((set, get) => ({
       localStorage.setItem(TOKEN_KEY, data.token)
       clearUnpaired()
       set({ token: data.token, isAuthenticated: true })
+      // loadMe sets bootstrapped, or leaves it unset to retry if the server can't be reached.
       await get().loadMe()
-      set({ isLoading: false, bootstrapped: true })
+      set({ isLoading: false })
     } catch (err: unknown) {
       set({ error: errorMessage(err, 'Could not set up this tablet'), isLoading: false })
     }

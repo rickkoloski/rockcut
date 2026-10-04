@@ -19,6 +19,7 @@ test.describe('login form', () => {
     await page.getByLabel('Email').fill(personas.inactive.email)
     await page.getByTestId('login-password').locator('input').fill(seedPassword!)
     await page.getByTestId('login-submit').click()
-    await expect(page.getByText('Account disabled')).toBeVisible()
+    // Argon2 on DEV's one vCPU can take several seconds under the full suite (D34 run 12).
+    await expect(page.getByText('Account disabled')).toBeVisible({ timeout: 20_000 })
   })
 })

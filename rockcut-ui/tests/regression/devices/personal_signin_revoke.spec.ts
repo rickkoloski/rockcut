@@ -87,6 +87,32 @@ test.describe('on the shared taproomDevice tablet', () => {
     await page.unrouteAll({ behavior: 'ignoreErrors' })
   })
 
+  test('G1: offline across the idle return and a reload, the tablet keeps its pairing', async ({ page }) => {
+    await page.clock.install()
+    await page.goto('/')
+    const deviceToken = await deviceTokenOf(page)
+    await signInAsMe(page)
+
+    // Every API call fails, as on a dropped Wi-Fi (the page itself still loads,
+    // as it would from the installed PWA's cache).
+    await page.route('**/api/**', (route) => route.abort('internetdisconnected'))
+    await page.clock.fastForward(5 * 60 * 1000 + 1000)
+    await expect(page.getByTestId('server-unreachable')).toBeVisible()
+    expect(await deviceTokenOf(page)).toBe(deviceToken)
+
+    await page.reload()
+    await expect(page.getByTestId('server-unreachable')).toBeVisible()
+    expect(await deviceTokenOf(page)).toBe(deviceToken)
+    await expect(page.getByTestId('login-submit')).toHaveCount(0)
+
+    // Back online: the next retry restores the tablet's own session.
+    await page.unrouteAll({ behavior: 'ignoreErrors' })
+    await page.clock.fastForward(10_000)
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+    await expect(page.getByTestId('personal-session-banner')).toHaveCount(0)
+    expect(await deviceTokenOf(page)).toBe(deviceToken)
+  })
+
   test('S15: no profile during a personal sign-in on the tablet', async ({ page }) => {
     await page.goto('/')
     await signInAsMe(page)

@@ -66,13 +66,30 @@ defmodule RockcutApiWeb.SessionController do
 
   @doc "\"Sign out of all other devices\" (D34 §3.4): every session but this one."
   def delete_others(conn, _params) do
+    if on_tablet?(conn), do: tablet_refused(conn), else: do_delete_others(conn)
+  end
+
+  defp do_delete_others(conn) do
     user = conn.assigns.current_user
     revoked = Sessions.revoke_all(user, conn.assigns[:current_session])
     Accounts.record_audit(user.id, user.id, "user.signed_out_everywhere", %{"revoked" => revoked})
     json(conn, %{revoked: revoked})
   end
 
-  def password(conn, %{"current_password" => current, "new_password" => new}) do
+  # A tablet sign-in can still finish a forced reset after a temporary password.
+  def password(conn, %{"current_password" => _, "new_password" => _} = params) do
+    if on_tablet?(conn) and not conn.assigns.current_user.must_reset_password,
+      do: tablet_refused(conn),
+      else: change_password(conn, params)
+  end
+
+  def password(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "current_password and new_password required"})
+  end
+
+  defp change_password(conn, %{"current_password" => current, "new_password" => new}) do
     case Accounts.change_password(conn.assigns.current_user, current, new) do
       {:ok, updated} ->
         # D34 §3.4: a new password signs out every other session.
@@ -84,6 +101,11 @@ defmodule RockcutApiWeb.SessionController do
         |> put_status(:unprocessable_entity)
         |> json(%{error: "Current password is incorrect"})
 
+      {:error, :same_password} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "The new password must be different"})
+
       {:error, %Ecto.Changeset{}} ->
         conn
         |> put_status(:unprocessable_entity)
@@ -91,10 +113,19 @@ defmodule RockcutApiWeb.SessionController do
     end
   end
 
-  def password(conn, _params) do
+  # DEV pass 1 G2: the profile actions aren't offered during "Sign in as me"
+  # (D34 §3.5), and the server refuses them too.
+  defp on_tablet?(conn) do
+    match?(
+      %Sessions.UserSession{device_token_id: id} when not is_nil(id),
+      conn.assigns[:current_session]
+    )
+  end
+
+  defp tablet_refused(conn) do
     conn
-    |> put_status(:bad_request)
-    |> json(%{error: "current_password and new_password required"})
+    |> put_status(:forbidden)
+    |> json(%{error: "Not available on a shared tablet. Use your own device."})
   end
 
   @doc """

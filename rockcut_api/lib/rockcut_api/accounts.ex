@@ -268,15 +268,21 @@ defmodule RockcutApi.Accounts do
 
   @doc "Change a user's own password after verifying the current one."
   def change_password(%User{} = user, current, new) do
-    if not Authz.device?(user) and Argon2.verify_pass(current, user.password_hash) do
-      case user
-           |> User.password_changeset(%{"password" => new, "must_reset_password" => false})
-           |> Repo.update() do
-        {:ok, user} -> {:ok, get_user!(user.id)}
-        {:error, cs} -> {:error, cs}
-      end
-    else
-      {:error, :invalid_current}
+    cond do
+      Authz.device?(user) or not Argon2.verify_pass(current, user.password_hash) ->
+        {:error, :invalid_current}
+
+      # DEV pass 1 G3: reusing the current password would only sign out the other devices.
+      new == current ->
+        {:error, :same_password}
+
+      true ->
+        case user
+             |> User.password_changeset(%{"password" => new, "must_reset_password" => false})
+             |> Repo.update() do
+          {:ok, user} -> {:ok, get_user!(user.id)}
+          {:error, cs} -> {:error, cs}
+        end
     end
   end
 

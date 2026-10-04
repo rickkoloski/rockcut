@@ -73,8 +73,10 @@ export default function Profile() {
               </Typography>
             )}
           </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            To change your name, email or departments, ask a manager or the owner.
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }} data-testid="profile-details-hint">
+            {user.is_owner
+              ? 'Change these in Users & Roles.'
+              : 'To change your name, email or departments, ask a manager or the owner.'}
           </Typography>
         </Paper>
 

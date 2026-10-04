@@ -20,6 +20,9 @@ test.describe('S17/S22 your details', () => {
     await expect(page.getByTestId('profile-memberships')).toContainText('Taproom · Manager')
     // Read-only: no inputs in the details card.
     await expect(page.getByTestId('profile-details').locator('input')).toHaveCount(0)
+    await expect(page.getByTestId('profile-details-hint')).toHaveText(
+      'To change your name, email or departments, ask a manager or the owner.',
+    )
   })
 
   test('at phone width the account icon opens it', async ({ page }) => {
@@ -28,6 +31,16 @@ test.describe('S17/S22 your details', () => {
     await expect(page.getByTestId('profile-link')).toBeHidden()
     await page.getByTestId('profile-icon').click()
     await expect(page.getByTestId('profile-page')).toBeVisible()
+  })
+})
+
+test.describe('S17 the owner', () => {
+  test.use({ storageState: authFile('owner') })
+
+  // DEV pass 1 G4: the owner isn't told to ask the owner.
+  test('is pointed to Users & Roles', async ({ page }) => {
+    await page.goto('/profile')
+    await expect(page.getByTestId('profile-details-hint')).toHaveText('Change these in Users & Roles.')
   })
 })
 
@@ -85,6 +98,12 @@ test.describe('S18/S19 change password', () => {
     await page.getByTestId('confirm-password').locator('input').fill('short')
     await page.getByTestId('change-password-submit').click()
     await expect(page.getByTestId('change-password-error')).toHaveText('New password must be at least 8 characters')
+
+    // DEV pass 1 G3: the current password again is refused by the server.
+    await page.getByTestId('new-password').locator('input').fill(person.password)
+    await page.getByTestId('confirm-password').locator('input').fill(person.password)
+    await page.getByTestId('change-password-submit').click()
+    await expect(page.getByTestId('change-password-error')).toHaveText('The new password must be different')
 
     // The old password still signs in.
     await signIn(person)

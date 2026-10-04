@@ -131,6 +131,49 @@ defmodule RockcutApiWeb.SessionRevocationTest do
       assert code(there) == 401
     end
 
+    test "G3 the current password can't be the new one", %{p: p} do
+      here = sign_in(p["bartender1"])
+      there = sign_in(p["bartender1"])
+
+      conn =
+        call_device(here, :post, "/api/session/password", %{
+          current_password: @password,
+          new_password: @password
+        })
+
+      assert json_response(conn, 422)["error"] == "The new password must be different"
+      assert code(there) == 200
+    end
+
+    test "G2 a tablet sign-in can't change the password", %{p: p, tablet_token: t} do
+      phone = sign_in(p["bartender1"])
+      tablet = sign_in(p["bartender1"], [{"x-rockcut-device", t}])
+
+      conn =
+        call_device(tablet, :post, "/api/session/password", %{
+          current_password: @password,
+          new_password: "a-new-password"
+        })
+
+      assert json_response(conn, 403)["error"] =~ "shared tablet"
+      assert code(phone) == 200
+      assert code(tablet) == 200
+      assert RockcutApi.Accounts.get_user_by_email_and_password(p["bartender1"].email, @password)
+    end
+
+    test "G2 a tablet sign-in can still finish a forced reset", %{p: p, tablet_token: t} do
+      tablet = sign_in(p["bartender1"], [{"x-rockcut-device", t}])
+      p["bartender1"] |> Ecto.Changeset.change(must_reset_password: true) |> Repo.update!()
+
+      call_device(tablet, :post, "/api/session/password", %{
+        current_password: @password,
+        new_password: "a-new-password"
+      })
+      |> json_response(200)
+
+      refute Repo.reload!(p["bartender1"]).must_reset_password
+    end
+
     test "S8 a wrong current password changes nothing", %{p: p} do
       here = sign_in(p["bartender1"])
       there = sign_in(p["bartender1"])
@@ -236,6 +279,15 @@ defmodule RockcutApiWeb.SessionRevocationTest do
 
     test "S16 a tablet gets 403", %{tablet_token: t} do
       assert code(t, :delete, "/api/sessions/others") == 403
+    end
+
+    test "G2 a tablet sign-in gets 403 and signs nothing out", %{p: p, tablet_token: t} do
+      phone = sign_in(p["bartender1"])
+      tablet = sign_in(p["bartender1"], [{"x-rockcut-device", t}])
+
+      assert code(tablet, :delete, "/api/sessions/others") == 403
+      assert code(phone) == 200
+      assert code(tablet) == 200
     end
   end
 
