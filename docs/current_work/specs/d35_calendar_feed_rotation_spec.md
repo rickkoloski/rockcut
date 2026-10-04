@@ -1,6 +1,6 @@
 # D35: Cut Off Calendar Feeds When Someone Leaves — Specification
 
-**Status:** Draft — Q1–Q4 for Matt
+**Status:** Approved (2026-10-04, Q1–Q4 answered)
 **Created:** 2026-10-04
 **Author:** Matt + CC
 **Depends On:** D17 (calendar feeds), D18 (notifications), D31 (`Authz`)
@@ -40,14 +40,16 @@ notification to everybody who might need to re-subscribe.
 |---|---|---|
 | D1 | **When someone is deactivated, every feed they could see gets a new token at once.** The old URLs answer 404. | Matt, 2026-10-04 |
 | D2 | **Everyone else who can see a rotated shared feed gets a notification** telling them to re-subscribe. | Matt, 2026-10-04 |
-| Q1 | *Open.* Should the same happen when someone **loses access without being deactivated**? For example, a manager made an employee, a department membership removed, or the owner flag removed. | Matt |
-| Q2 | *Open.* Should the notification **name the person who left**? | Matt |
-| Q3 | *Open.* Which **channels** should the notification use, and **can people turn it off**? | Matt |
-| Q4 | *Open.* An owner may deactivate several people at once, for example at the end of a season. Should the notifications for one feed be **combined**? | Matt |
+| Q1 | **Losing access without leaving rotates too.** That covers a manager made an employee, someone removed from a department they managed, and the owner flag removed. The shared feeds they lost rotate and others are notified the same way. Their own "My shifts" feed is left alone. | Matt, 2026-10-04 |
+| Q2 | **The notification doesn't name the person.** It says "someone who could see them no longer works here" (deactivation) or "no longer has access to them" (Q1). | Matt, 2026-10-04 |
+| Q3 | **In-app and push; no email.** For this event, in-app and push are on by default and email is off. Push reaches only people who have turned on push on a device. The event is listed in Notification preferences as "Calendar link changed", so people can change it. | Matt, 2026-10-04 |
+| Q4 | **No combining.** Each deactivation or access change sends its own notifications. | Matt, 2026-10-04 |
+
+---
 
 ## 3. Requirements
 
-### 3.1 Rotation on deactivation (D1)
+### 3.1 Rotation on deactivation (D1) and on lost access (Q1)
 
 When an owner or manager deactivates a person (`Accounts.update_user` with
 `active: false`), all of the following happen in the same transaction as the
@@ -67,6 +69,19 @@ deactivation:
 The rotation uses what the person could see **at the moment before they were
 deactivated**, since afterwards they have no memberships worth checking.
 
+**Losing access while staying (Q1).** Rotation also happens whenever a
+person's set of shared feeds shrinks while they stay active. The set is
+compared before and after the change, inside the same transaction:
+- **Memberships change** (`Accounts.set_memberships`): a manager made an
+  employee, or removed from a department they managed. That department's
+  feed rotates.
+- **The owner flag is removed** (`Accounts.update_user` with
+  `is_owner: false`). Every department feed they don't still manage rotates,
+  and so does the whole-schedule feed.
+
+Their own "My shifts" feed is **not** rotated, because they're still here.
+Gaining access rotates nothing.
+
 Reactivating someone changes nothing. Their feeds are created or shown again
 the usual way, with the current tokens.
 
@@ -79,8 +94,7 @@ Device accounts (D33) have no feeds and are unaffected.
   - for a department feed, that department's other active managers, plus
     the active owners;
   - for the whole-schedule feed, the other active owners.
-- **The actor gets one too,** unless they choose otherwise in Q3. They
-  subscribed to the old URL like anyone else.
+- **The actor gets one too.** They subscribed to the old URL like anyone else.
 - Nobody is notified about the departed person's own "My shifts" feed.
 - **We can't know who actually subscribed**, because the feed has no record of
   who uses it, so we notify everyone who gets the URL. The message says "if
@@ -91,14 +105,18 @@ Device accounts (D33) have no feeds and are unaffected.
 - **Content (draft):**
   - Title: "Re-subscribe to your Rockcut calendar"
   - Body: "The link for *Taproom* and *Whole schedule* changed because someone
-    who could see them no longer works here. If you subscribed to these in
-    Google, Apple or Outlook Calendar, remove the old calendar and add the new
-    link from Schedule → Calendar sync."
+    who could see them no longer works here" (for Q1: "no longer has access
+    to them"), followed by "If you subscribed to these in Google, Apple or
+    Outlook Calendar, remove the old calendar and add the new link from
+    Schedule → Calendar sync."
   - Data: a link to Schedule → Calendar sync.
 - **Delivery** is best-effort and after commit, like every D18 notification.
-  A failed email never blocks the deactivation.
-- **New event key:** `calendar_feed_rotated`. See Q3 for its defaults and
-  whether it shows in the notification preferences.
+  A failed push never blocks the deactivation or access change.
+- **New event key:** `calendar_feed_rotated` (Q3).
+  - Defaults: in-app **on**, push **on**, email **off**.
+  - These go in the backend's `@event_defaults` and the UI's `EVENT_DEFAULTS`,
+    and the two must match.
+  - It's listed in Notification preferences as "Calendar link changed".
 
 ### 3.3 Manual Rotate (unchanged, but consistent)
 
@@ -134,9 +152,13 @@ Scenarios that deactivate use throwaway `[TEST-TEMP]` people, never a persona.
 | S6 | `owner` | a `[TEST-TEMP]` Taproom manager, where the Taproom feed was never created | Nothing to rotate, and nobody notified about Taproom. |
 | S7 | `owner` | reactivates S2's person | No feed changes and no notifications. Their Calendar sync shows the current URLs. |
 | S8 | anyone | the last-owner guard refuses a deactivation | No feed rotates and nobody is notified (the transaction rolls back). |
-| S9 | `owner` | deactivation succeeds but email delivery fails | The deactivation still succeeds, and the in-app notification is still there. |
+| S9 | `owner` | deactivation succeeds but push delivery fails | The deactivation still succeeds, and the in-app notification is still there. No email is sent (Q3). |
 | S10 | `barMgr` | opens the notification | It goes to Schedule → Calendar sync, which shows the new Taproom URL. |
-| S11 | (Q1, if yes) `owner` | demotes a `[TEST-TEMP]` Taproom manager to employee | Same as S2. Their own feed is **not** rotated, because they're still here. |
+| S11 | `owner` | makes a `[TEST-TEMP]` Taproom manager an employee (Q1) | Same as S2, with "no longer has access to them". Their own feed is **not** rotated. |
+| S12 | `owner` | removes a `[TEST-TEMP]` manager of Taproom and Office from Office, keeping Taproom (Q1) | Only the Office feed rotates. `dualMgr` gets one notification listing Office. |
+| S13 | `owner` | removes the owner flag from a `[TEST-TEMP]` owner who also manages Taproom (Q1) | The whole-schedule feed and every department feed except Taproom rotate. Taproom is unchanged. |
+| S14 | `owner` | makes a `[TEST-TEMP]` employee a manager (gaining access) | Nothing rotates and nobody is notified. |
+| S15 | a `[TEST-TEMP]` Taproom manager | turns "Calendar link changed" off, then another Taproom manager leaves | That manager gets nothing; the others are still notified. |
 
 ## 5. Out of Scope
 
@@ -149,28 +171,4 @@ Scenarios that deactivate use throwaway `[TEST-TEMP]` people, never a persona.
 
 ## 6. Open Questions
 
-**Q1. Losing access without leaving.** The same leak happens when someone stays
-but loses access to a shared feed:
-- a manager made an employee;
-- removed from a department they managed;
-- the owner flag removed.
-
-*Recommendation:* **yes**. Rotate the shared feeds they lost, notify the
-same way, and leave their own feed alone. Otherwise a demoted manager keeps
-seeing the department's schedule with time off.
-
-**Q2. Name the person who left?** *Recommendation:* **no**. Say "someone who
-could see them no longer works here" (or "no longer has access", for Q1).
-Managers learn who left in other ways, and a notification email isn't a good
-place for a name.
-
-**Q3. Channels and opting out.** *Recommendation:*
-- **in-app and email on, push off**, like the other D18 events;
-- show it in Notification preferences as "Calendar link changed", so people
-  can mute it;
-- the actor gets it too, because they need to re-subscribe as well.
-
-**Q4. Several departures at once.** *Recommendation:* **don't combine** in
-D35. Each deactivation sends its own notification, and each one says the
-link changed. Combining needs a delay or a queue. A burst of departures is
-rare, and the latest notification always points to the current link.
+None. Q1–Q4 were answered by Matt on 2026-10-04 (§2).
