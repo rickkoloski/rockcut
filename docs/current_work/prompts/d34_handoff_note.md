@@ -153,6 +153,25 @@ All 22 (spec §4). In particular:
   - The API log had no errors.
   - Local at `e708a70`: 117 passed, 1 skipped.
 
+- **Independent pass 3** (`stepwise_results/d34_dev_pass_3_qa_report.md`, at
+  `e708a70`, focused on start-up when the server can't be reached): PASS with
+  minor gaps. 7 PASS, 1 FAIL (T2, minor), 0 NOT RUN.
+  - Every failure kept the session or pairing and recovered on its own:
+    offline, 4xx/5xx, no answer, captive page. Only a 401 ended a session.
+  - **G1, fixed in `a0846b3`:** "Try now" did nothing while a retry was
+    stalled. Now "Try now" and coming back online replace the stalled check.
+  - **G2, fixed in `a0846b3`:** the service worker skipped `/devices` (its
+    `/^\/dev/` pattern dates from D21, and prod has it too). It now matches
+    whole path segments.
+  - Both specs fail on the old code.
+  - On DEV, the lead checked that an offline reload of `/devices` on the
+    installed PWA shows the retry screen and recovers.
+  - **Minor, filed as backlog:** G3, an idle-return revoke during an outage
+    isn't retried (the 15-minute rule covers it); and a blank page if
+    `/api/channels` or `/api/departments` return `{"data":null}`.
+- **Run 16 at `a0846b3`** (API v18 / UI v13): **121/121**, no API errors.
+  Local: 120 passed, 1 skipped.
+
 - **Local gate at `8f3f12a`:**
   - `mix test`: 851 tests, 0 failures.
   - `vite build` OK; lint 27 (the baseline).
