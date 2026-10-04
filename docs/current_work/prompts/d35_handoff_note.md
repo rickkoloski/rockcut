@@ -47,6 +47,42 @@
   - S2/S10 and Q3 pass;
   - with the UI changes reverted, both fail.
 
+## DEV gate
+
+- **Run 1 at `bf0cba6`** (API v20 / UI v15): **123/123**, with no API errors.
+- **Independent pass 1** (`stepwise_results/d35_dev_pass_1_qa_report.md`):
+  PASS with gaps. 12 PASS, 0 FAIL, 1 NOT RUN (S8: setting it up would mean
+  demoting personas).
+  - **The core works.** The right feeds reset, old links give 404 and new
+    ones 200, the right people get exactly one notice, the person who leaves
+    gets none, and opting out works.
+  - **G1, must-fix, predates D35; fixed in `112a715`.** Calendar sync built
+    the link from the UI host, which doesn't forward `/api`, so a copied link
+    returned the app's HTML. This is also broken on prod today. Links now
+    use the API host.
+    - The new spec fails on the old DEV build (`text/html`) and passes on the
+      new one.
+  - **G2/G3, fixed in `112a715`.** One Users & Roles save that changed the
+    owner flag and departments reset links twice, and could reset a link the
+    person kept through a new role. The save now applies a deactivation
+    first, and otherwise memberships before the owner flag.
+    - The new spec fails with the old order.
+  - **G4, fixed:** the notification is shorter, with singular and plural
+    wording.
+  - **G5, fixed:** the User change log shows which links were reset and why.
+  - **G6, predates D35, not fixed:** changes to the owner flag aren't
+    listed in the change log. Backlog candidate.
+  - **G7, outside D35, not fixed:** a manual Reset in Calendar sync changes a
+    shared link with no notice or log entry. Backlog candidate.
+- **Run 2 at `112a715`** (API v21 / UI v16): 124/125.
+  - The failure was the intermittent DEV hang: a `GET /api/me` timed out
+    at 20 s in a D34 spec. That file passed 14/14 on rerun.
+  - The API log had no errors.
+- **Local gate at `112a715`:**
+  - `mix test`: 866 tests, 0 failures.
+  - Playwright: 124 passed, 1 skipped.
+  - lint: 27, the baseline.
+
 ## Scenarios DEV must exercise
 
 S1–S15 in spec §4. Every person who leaves or loses access must be a
