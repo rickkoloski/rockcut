@@ -99,6 +99,41 @@ All 22 (spec §4). In particular:
    API with a password the spec generates (never the seed password). `setup`
    now deletes them; on DEV, `seed_synthetic()` cleans them.
 
+## DEV gate
+
+- **Automated:** 4 fix cycles (`0086bfe`, `6c5fb25`, `cb335d1`, `8f3f12a`).
+  The 4th was authorized by Matt after independent pass 1.
+  - Run 13 at `cb335d1`: 110/110.
+  - **Run 14 at `8f3f12a`** (API v18 / UI v11): **112/112**. The API log had
+    no errors and no `dropped from queue`.
+- **Verified on DEV by the lead:**
+  - migrations ran at boot;
+  - the CORS preflight allows `X-Rockcut-Device`;
+  - a pre-D34 token minted before the deploy still worked after it (S12);
+  - the bundle check passes.
+- **Independent pass 1** (`stepwise_results/d34_dev_pass_1_qa_report.md`):
+  19 PASS, 1 FAIL (S6), 2 NOT RUN (S12/S13). Four gaps, all fixed in
+  `8f3f12a`, each with a test that fails when the fix is reverted:
+  - **G1 (must-fix):** a network drop at the idle return wiped the tablet's
+    pairing. `loadMe` now keeps the token on a network error or 5xx, shows
+    "Can't reach the server, retrying…", and retries every 10 s and on
+    `online`. Only a 401 signs out.
+    - Spec: `personal_signin_revoke` "G1". Revert-and-rerun recorded.
+    - On DEV, the lead reran QA's repro with a real `setOffline` on the
+      SW-controlled PWA: the device token was kept through the idle return
+      and an offline reload, and the tablet session came back once online.
+  - **G2:** a "Sign in as me" session gets 403 from
+    `DELETE /api/sessions/others` and `POST /api/session/password`, except
+    to finish a forced reset. Covered by ExUnit, and confirmed 403/403 on DEV.
+  - **G3:** Change password refuses the current password ("The new password
+    must be different"). Covered by ExUnit and `profile` S19.
+  - **G4:** the owner's profile says "Change these in Users & Roles."
+    Covered by `profile` "S17 the owner".
+- **Local gate at `8f3f12a`:**
+  - `mix test`: 851 tests, 0 failures.
+  - `vite build` OK; lint 27 (the baseline).
+  - Playwright: 111 passed, 1 skipped (the DEV-only banner).
+
 ## Follow-up to file at release
 
 - Remove the pre-D34 token path, `users.legacy_tokens_revoked_at` and
