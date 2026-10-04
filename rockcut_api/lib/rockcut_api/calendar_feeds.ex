@@ -75,7 +75,8 @@ defmodule RockcutApi.CalendarFeeds do
     if feeds != [] do
       Accounts.record_audit(actor.id, person.id, "calendar_feeds.rotated", %{
         "reason" => to_string(reason),
-        "feeds" => Enum.map(feeds, &%{"type" => &1.subject_type, "id" => &1.subject_id})
+        "feeds" => Enum.map(feeds, &%{"type" => &1.subject_type, "id" => &1.subject_id}),
+        "labels" => Enum.map(feeds, &feed_label({&1.subject_type, &1.subject_id}))
       })
     end
 
@@ -109,23 +110,27 @@ defmodule RockcutApi.CalendarFeeds do
     end)
   end
 
+  # Short enough for a phone notification; singular or plural (D35 DEV pass G4).
   defp payload(feeds, reason) do
+    names = feeds |> Enum.map(&feed_label/1) |> join_names()
+    {links, it} = if length(feeds) == 1, do: {"link", "it"}, else: {"links", "them"}
+
     why =
       case reason do
-        :departed -> "someone who could see them no longer works here"
-        :lost_access -> "someone who could see them no longer has access to them"
+        :departed -> "someone who could see #{it} no longer works here"
+        :lost_access -> "someone who could see #{it} no longer has access"
       end
 
     %{
       title: "Re-subscribe to your Rockcut calendar",
       body:
-        "The link for #{feeds |> Enum.map(&feed_label/1) |> join_names()} changed because #{why}. " <>
-          "If you subscribed to these in Google, Apple or Outlook Calendar, remove the old " <>
-          "calendar and add the new link from Schedule → Calendar sync.",
+        "The #{names} calendar #{links} changed: #{why}. If you subscribed in a calendar " <>
+          "app, remove the old calendar and add the new link from Schedule → Calendar sync.",
       data: %{"url" => "/schedule?calendar_sync=1"}
     }
   end
 
+  defp feed_label({"user", _}), do: "My shifts"
   defp feed_label({"all", _}), do: "Whole schedule"
 
   defp feed_label({"department", id}) do

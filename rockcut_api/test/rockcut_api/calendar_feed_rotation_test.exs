@@ -88,7 +88,7 @@ defmodule RockcutApi.CalendarFeedRotationTest do
         assert n.title == "Re-subscribe to your Rockcut calendar"
 
         assert n.body =~
-                 "The link for Taproom changed because someone who could see them no longer works here."
+                 "The Taproom calendar link changed: someone who could see it no longer works here."
 
         refute n.body =~ leaver.name
         assert n.data["url"] == "/schedule?calendar_sync=1"
@@ -111,9 +111,12 @@ defmodule RockcutApi.CalendarFeedRotationTest do
       assert now.brewery == before.brewery and now.all == before.all
 
       assert [n] = notes(c.dual_mgr)
-      assert n.body =~ "The link for Office and Taproom changed"
+
+      assert n.body =~
+               "The Office and Taproom calendar links changed: someone who could see them no longer works here."
+
       assert [n] = notes(c.bar_mgr)
-      assert n.body =~ "The link for Taproom changed"
+      assert n.body =~ "The Taproom calendar link changed"
       assert [n] = notes(c.owner)
       assert n.body =~ "Office and Taproom"
     end
@@ -130,7 +133,7 @@ defmodule RockcutApi.CalendarFeedRotationTest do
       assert [n] = notes(c.owner2)
       assert n.body =~ "Whole schedule"
       assert [n] = notes(c.brewery_mgr)
-      assert n.body =~ "The link for Brewery changed"
+      assert n.body =~ "The Brewery calendar link changed"
       refute n.body =~ "Whole schedule"
       assert notes(c.bartender) == []
     end
@@ -185,6 +188,9 @@ defmodule RockcutApi.CalendarFeedRotationTest do
       assert entry.actor_id == c.owner.id
       assert entry.detail["reason"] == "departed"
       assert %{"type" => "department", "id" => c.bar.id} in entry.detail["feeds"]
+
+      assert entry.detail["labels"] == ["Taproom"]
+
       refute inspect(entry.detail) =~ before.bar
       refute inspect(entry.detail) =~ tokens(c).bar
     end
@@ -206,7 +212,10 @@ defmodule RockcutApi.CalendarFeedRotationTest do
       refute tokens(c).bar == before.bar
       assert token("user", person.id) == own.token
       assert [n] = notes(c.bar_mgr)
-      assert n.body =~ "no longer has access to them"
+
+      assert n.body =~
+               "The Taproom calendar link changed: someone who could see it no longer has access."
+
       assert notes(person) == []
     end
 
@@ -222,7 +231,7 @@ defmodule RockcutApi.CalendarFeedRotationTest do
       refute now.office == before.office
       assert now.bar == before.bar
       assert [n] = notes(c.dual_mgr)
-      assert n.body =~ "The link for Office changed"
+      assert n.body =~ "The Office calendar link changed"
       assert notes(c.bar_mgr) == []
     end
 

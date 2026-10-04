@@ -35,9 +35,15 @@ function who(u: AuditEntry['actor']): string {
   return u.email.endsWith('@devices.rockcut.invalid') ? `${u.name ?? 'Shared device'} (shared device)` : u.email
 }
 
-// Device entries carry the device and tablet names in `detail`.
+// Device entries carry the device and tablet names in `detail`; a calendar
+// link reset (D35) carries the feed names and why.
 function detailText(row: AuditEntry): string {
   const d = (row.detail ?? {}) as Record<string, unknown>
+  if (row.action === 'calendar_feeds.rotated') {
+    const labels = Array.isArray(d.labels) ? d.labels.join(', ') : ''
+    const why = d.reason === 'departed' ? 'left' : 'lost access'
+    return [labels, why].filter(Boolean).join(' · ')
+  }
   if (!row.action.startsWith('device.')) return ''
   return [d.name, d.tablet].filter(Boolean).join(' · ')
 }

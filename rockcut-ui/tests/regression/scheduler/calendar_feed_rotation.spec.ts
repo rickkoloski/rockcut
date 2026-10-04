@@ -1,7 +1,7 @@
 import { test, expect as baseExpect, type APIRequestContext } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
-import { anonApi, createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
+import { anonApi, createTempPerson, retireTempPerson, throwawayPassword, type TempPerson } from '../auth/helpers'
 
 // D35: when someone who could see a shared calendar feed leaves, its link is
 // reset and everyone still using it is told to re-subscribe (S2, S10, Q3).
@@ -14,6 +14,21 @@ interface Feed {
   subject_id: number | null
   label: string
   token: string
+}
+
+async function feeds(api: APIRequestContext): Promise<Feed[]> {
+  return (await (await api.get('/api/calendar_feeds')).json()).data as Feed[]
+}
+
+async function deptId(api: APIRequestContext, key: string): Promise<number> {
+  const departments = (await (await api.get('/api/departments')).json()).data as { id: number; key: string }[]
+  return departments.find((d) => d.key === key)!.id
+}
+
+/** Ids of the persona's calendar_feed_rotated notifications. */
+async function rotatedNoticeIds(api: APIRequestContext): Promise<number[]> {
+  const items = (await (await api.get('/api/notifications')).json()).data as { id: number; event: string }[]
+  return items.filter((n) => n.event === 'calendar_feed_rotated').map((n) => n.id)
 }
 
 async function taproomFeed(api: APIRequestContext): Promise<Feed> {
@@ -53,7 +68,7 @@ test.describe('a Taproom manager leaves', () => {
     await page.getByRole('button', { name: 'Notifications' }).click()
     const notice = page.getByTestId('notification-calendar_feed_rotated').first()
     await expect(notice).toContainText('Re-subscribe to your Rockcut calendar')
-    await expect(notice).toContainText(`The link for ${before.label}`)
+    await expect(notice).toContainText(`The ${before.label} calendar link changed`)
     await notice.click()
     await expect(page).toHaveURL(/\/schedule$/)
     const dialog = page.getByRole('dialog', { name: 'Calendar sync' })
@@ -70,5 +85,79 @@ test.describe('a Taproom manager leaves', () => {
     await expect(inApp).toBeChecked()
     await expect(email).not.toBeChecked()
     await expect(push).toBeChecked()
+  })
+})
+
+test.describe('Calendar sync links (DEV pass G1)', () => {
+  test.use({ storageState: authFile('barMgr') })
+
+  // The shown link must serve the calendar itself. On DEV and prod the UI and
+  // API are separate hosts, and the UI host only serves the app's HTML.
+  test('the link shown in Calendar sync serves an ICS calendar', async ({ page, request }) => {
+    await page.goto('/schedule?calendar_sync=1')
+    const dialog = page.getByRole('dialog', { name: 'Calendar sync' })
+    const link = await dialog.locator('input').first().inputValue()
+    const res = await request.get(link)
+    expect(res.status()).toBe(200)
+    expect(res.headers()['content-type']).toContain('text/calendar')
+    expect((await res.text()).startsWith('BEGIN:VCALENDAR')).toBe(true)
+  })
+})
+
+test.describe('one Users & Roles save that changes the owner flag and departments (DEV pass G2/G3)', () => {
+  test.use({ storageState: authFile('owner') })
+
+  let personId: number | null = null
+  test.afterAll(async () => {
+    if (personId) await (await apiAs('owner')).patch(`/api/users/${personId}`, { data: { active: false } })
+  })
+
+  test('resets each lost link once, and not the one the person keeps', async ({ page }) => {
+    const owner = await apiAs('owner')
+    const owner2 = await apiAs('owner2')
+    const dualMgr = await apiAs('dualMgr')
+    const bar = await deptId(owner, 'bar')
+    const office = await deptId(owner, 'office')
+
+    // A throwaway owner who also manages Office. The email sorts first in the grid.
+    const suffix = Math.random().toString(36).slice(2, 8)
+    const created = await owner.post('/api/users', {
+      data: {
+        email: `a-d35-${suffix}@rockcut-test.com`,
+        name: `[TEST-TEMP] D35 combined ${suffix}`,
+        password: throwawayPassword(),
+        memberships: [{ department: 'office', role: 'manager' }],
+      },
+    })
+    expect(created.status(), await created.text()).toBe(201)
+    const person = (await created.json()).data as { id: number; email: string }
+    personId = person.id
+    expect((await owner.patch(`/api/users/${person.id}`, { data: { is_owner: true } })).status()).toBe(200)
+
+    const tokenOf = (fs: Feed[], type: string, id: number | null) =>
+      fs.find((f) => f.subject_type === type && f.subject_id === id)!.token
+    const before = await feeds(owner)
+    const owner2Before = await rotatedNoticeIds(owner2)
+    const dualBefore = await rotatedNoticeIds(dualMgr)
+
+    // One save: owner off, Office → none, Taproom → manager.
+    await page.goto('/users')
+    await page.getByRole('gridcell', { name: person.email }).click()
+    await page.getByLabel('Owner (full access to all departments)').uncheck()
+    await page.getByRole('combobox', { name: 'Office' }).click()
+    await page.getByRole('option', { name: '— None —' }).click()
+    await page.getByRole('combobox', { name: 'Taproom' }).click()
+    await page.getByRole('option', { name: 'Manager' }).click()
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+
+    const after = await feeds(owner)
+    // Taproom is kept through the new role: not reset (G3).
+    expect(tokenOf(after, 'department', bar)).toBe(tokenOf(before, 'department', bar))
+    expect(tokenOf(after, 'department', office)).not.toBe(tokenOf(before, 'department', office))
+    expect(tokenOf(after, 'all', null)).not.toBe(tokenOf(before, 'all', null))
+    // One notification each, not one per call (G2).
+    await expect.poll(async () => (await rotatedNoticeIds(owner2)).filter((id) => !owner2Before.includes(id)).length).toBe(1)
+    expect((await rotatedNoticeIds(dualMgr)).filter((id) => !dualBefore.includes(id)).length).toBe(1)
   })
 })

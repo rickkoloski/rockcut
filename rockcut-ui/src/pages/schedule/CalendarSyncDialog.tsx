@@ -30,7 +30,10 @@ export default function CalendarSyncDialog({ open, onClose }: Props) {
   const [copied, setCopied] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const urlFor = (f: CalendarFeed) => `${window.location.origin}${f.path}`
+  // The feed is served by the API host. The UI host only serves the app (its
+  // nginx doesn't forward /api), so a link on it returned the app's HTML
+  // (D35 DEV pass G1). Locally the API URL is empty and the dev proxy serves it.
+  const urlFor = (f: CalendarFeed) => `${import.meta.env.VITE_API_URL || window.location.origin}${f.path}`
 
   const copy = async (f: CalendarFeed) => {
     try {
