@@ -16,6 +16,7 @@ import {
   Collapse,
   Drawer,
   IconButton,
+  Link,
   List,
   ListItemButton,
   ListItemIcon,
@@ -51,13 +52,16 @@ import HistoryIcon from '@mui/icons-material/History'
 import LogoutIcon from '@mui/icons-material/Logout'
 import LoginIcon from '@mui/icons-material/Login'
 import TabletIcon from '@mui/icons-material/TabletMac'
-import { useNavigate, useLocation } from 'react-router-dom'
+import AccountCircle from '@mui/icons-material/AccountCircle'
+import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom'
 import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
+import Profile from './pages/profile/Profile'
 import useAuth from './hooks/useAuth'
 import useIdleReturn from './hooks/useIdleReturn'
 import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
 import useAuthStorageSync from './hooks/useAuthStorageSync'
+import useReconnect from './hooks/useReconnect'
 import { PERSONAL_IDLE_MS, asideDeviceToken } from './lib/device'
 import parseApiError from './lib/parseApiError'
 import { useApiQuery } from './hooks/useApiQuery'
@@ -126,10 +130,22 @@ const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavL
   sales: { label: 'Sales', icon: <PointOfSaleIcon />, children: [] },
 }
 
-function LoadingScreen() {
+function LoadingScreen({ unreachable, onRetry }: { unreachable?: boolean; onRetry?: () => void }) {
   return (
-    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+    <Box
+      sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', px: 2 }}
+    >
       <CircularProgress />
+      {unreachable && (
+        <>
+          <Typography color="text.secondary" textAlign="center" data-testid="server-unreachable">
+            Can’t reach the server, retrying…
+          </Typography>
+          <Button variant="outlined" onClick={onRetry}>
+            Try now
+          </Button>
+        </>
+      )}
     </Box>
   )
 }
@@ -140,8 +156,19 @@ function App() {
   const [openOverride, setOpenOverride] = useState<Record<string, boolean>>({})
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAuthenticated, bootstrapped, user, capabilities, sharedDevices, loadMe, logout, signOutDevice, startPersonalSignIn, endPersonalSession } =
-    useAuth()
+  const {
+    isAuthenticated,
+    bootstrapped,
+    unreachable,
+    user,
+    capabilities,
+    sharedDevices,
+    loadMe,
+    logout,
+    signOutDevice,
+    startPersonalSignIn,
+    endPersonalSession,
+  } = useAuth()
   const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
   const [deviceSignOutError, setDeviceSignOutError] = useState<string | null>(null)
   const [deviceSigningOut, setDeviceSigningOut] = useState(false)
@@ -156,6 +183,8 @@ function App() {
   useEffect(() => {
     if (isAuthenticated && !bootstrapped) loadMe()
   }, [isAuthenticated, bootstrapped, loadMe])
+  // DEV pass 1 G1: offline at start-up keeps the token and tries again.
+  useReconnect(isAuthenticated && !bootstrapped && unreachable, loadMe)
 
   // Channels the user can see — listed individually under Messages in the nav.
   const { data: channels = [] } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
@@ -168,7 +197,8 @@ function App() {
   })
 
   if (!isAuthenticated) return <Login />
-  if (!bootstrapped || !user || !capabilities) return <LoadingScreen />
+  if (!bootstrapped || !user || !capabilities)
+    return <LoadingScreen unreachable={unreachable} onRetry={() => void loadMe({ force: true })} />
   if (user.must_reset_password) return <ForcePasswordReset />
 
   // D33: a shared tablet account (read-only schedule + its channels).
@@ -513,10 +543,37 @@ function App() {
               <>
                 <NotificationBell />
 
-                <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
-                  {user.email}
-                  {isOwner ? ' · Owner' : ''}
-                </Typography>
+                {personalOnTablet ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
+                    {user.email}
+                  </Typography>
+                ) : (
+                  <>
+                    {/* D34: your name opens your profile; an icon at phone width. */}
+                    <Link
+                      component={RouterLink}
+                      to="/profile"
+                      data-testid="profile-link"
+                      variant="body2"
+                      color="text.secondary"
+                      underline="hover"
+                      sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}
+                    >
+                      {user.email}
+                      {isOwner ? ' · Owner' : ''}
+                    </Link>
+                    <IconButton
+                      component={RouterLink}
+                      to="/profile"
+                      aria-label="Profile"
+                      data-testid="profile-icon"
+                      size="small"
+                      sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                    >
+                      <AccountCircle />
+                    </IconButton>
+                  </>
+                )}
                 <Button
                   data-testid="logout-button"
                   size="small"
@@ -576,6 +633,8 @@ function App() {
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />
             <Route path="/availability" element={<Availability />} />
+            {/* D34: not on a shared tablet, even for a person signed in on it. */}
+            {!personalOnTablet && <Route path="/profile" element={<Profile />} />}
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:key" element={<Messages />} />
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}

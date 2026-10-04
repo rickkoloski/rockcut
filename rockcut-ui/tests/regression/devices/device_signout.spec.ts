@@ -1,19 +1,14 @@
-import { readFileSync } from 'node:fs'
 import { test, expect as baseExpect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { blankTablet, createDevice, deleteDevices, getDevice, pairingCode, setUpTablet } from './helpers'
+import { claimSpare } from '../auth/spares'
 
 // DEV G4: signing a tablet out always asks first, and never drops the tablet's
 // token unless the server revoked it. Full page loads on a busy local API.
 const expect = baseExpect.configure({ timeout: 15_000 })
 // Several full page loads per test on the local dev server (see device_session.spec.ts).
 test.describe.configure({ timeout: 60_000 })
-
-function tokenOf(persona: 'bartender1'): string {
-  const state = JSON.parse(readFileSync(authFile(persona), 'utf8'))
-  return state.origins[0].localStorage.find((e: { name: string }) => e.name === 'rockcut_token').value
-}
 
 let tag = ''
 test.afterEach(async () => {
@@ -74,8 +69,9 @@ test.describe('a paired [TEST-TEMP] tablet', () => {
     await setUpTablet(a, await pairingCode(owner, device.id), `${tag} iPad`)
     const deviceToken = await a.evaluate(() => localStorage.getItem('rockcut_token'))
 
+    // D34: a spare session of its own (signing out revokes it).
     await a.getByTestId('personal-signin').click()
-    await a.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+    await a.evaluate((t) => localStorage.setItem('rockcut_token', t), claimSpare())
     await a.reload()
     await expect(a.getByTestId('personal-session-banner')).toBeVisible()
 

@@ -14,7 +14,7 @@ defmodule RockcutApi.Devices do
       control, and `AuthPlug` checks both on every request.
   """
   import Ecto.Query
-  alias RockcutApi.{Accounts, Authz, Repo}
+  alias RockcutApi.{Accounts, Authz, Repo, Sessions}
   alias RockcutApi.Accounts.User
   alias RockcutApi.Devices.{DeviceToken, PairingCode, PairingRateLimiter}
 
@@ -114,9 +114,9 @@ defmodule RockcutApi.Devices do
   defp end_pairings(%User{id: id}) do
     now = now()
 
-    {revoked, _} =
-      from(t in DeviceToken, where: t.user_id == ^id and is_nil(t.revoked_at))
-      |> Repo.update_all(set: [revoked_at: now, updated_at: now])
+    live = from(t in DeviceToken, where: t.user_id == ^id and is_nil(t.revoked_at))
+    Sessions.revoke_for_device_tokens(Repo.all(select(live, [t], t.id)), now)
+    {revoked, _} = Repo.update_all(live, set: [revoked_at: now, updated_at: now])
 
     from(pc in PairingCode, where: pc.user_id == ^id and is_nil(pc.used_at)) |> Repo.delete_all()
     revoked
@@ -243,7 +243,7 @@ defmodule RockcutApi.Devices do
   token is never stored. Used by pairing and by the synthetic persona mint.
   """
   def issue_token(%User{} = device, name, paired_by_id, now \\ now()) do
-    token = @token_prefix <> (:crypto.strong_rand_bytes(32) |> Base.url_encode64(padding: false))
+    token = RockcutApi.Tokens.random(@token_prefix)
 
     row =
       Repo.insert!(%DeviceToken{
@@ -296,10 +296,29 @@ defmodule RockcutApi.Devices do
 
   def get_token(id), do: Repo.get(DeviceToken, id)
 
+  @doc """
+  The unrevoked `DeviceToken` row for a live tablet token, or nil. No side
+  effects: used to mark a "Sign in as me" session (D34), not to authenticate.
+  """
+  def live_token(@token_prefix <> _ = token) do
+    with %DeviceToken{revoked_at: nil} = row <-
+           Repo.one(from(t in DeviceToken, where: t.token_hash == ^hash(token))),
+         %User{active: true} = device <- Accounts.get_user(row.user_id),
+         true <- Authz.device?(device) do
+      row
+    else
+      _ -> nil
+    end
+  end
+
+  def live_token(_token), do: nil
+
   @doc "Revoke a tablet token (a manager's Revoke, or the tablet signing out)."
   def revoke_token(%DeviceToken{} = row, %User{} = actor, now \\ now()) do
     Repo.transaction(fn ->
       updated = row |> Ecto.Changeset.change(revoked_at: row.revoked_at || now) |> Repo.update!()
+      # D34 A5: personal sessions started on this tablet end with it.
+      Sessions.revoke_for_device_tokens([row.id], now)
       device = Repo.get!(User, row.user_id)
       action = if actor.id == device.id, do: "device.signed_out", else: "device.revoked"
 
@@ -315,10 +334,7 @@ defmodule RockcutApi.Devices do
   ## Helpers
 
   @doc "HMAC-SHA256 of a code or token, keyed by the endpoint secret."
-  def hash(value) do
-    secret = Application.fetch_env!(:rockcut_api, RockcutApiWeb.Endpoint)[:secret_key_base]
-    :crypto.mac(:hmac, :sha256, secret, value)
-  end
+  defdelegate hash(value), to: RockcutApi.Tokens
 
   @doc "Upper-case a typed code and drop spaces and dashes."
   def normalize_code(code) when is_binary(code),

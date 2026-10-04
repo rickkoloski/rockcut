@@ -10,15 +10,23 @@ test.describe.configure({ timeout: 60_000 })
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, tempTag, weekMonday } from '../scheduler/helpers'
 import { blankTablet, createDevice, deleteDevices, getDevice, pairingCode, setUpTablet } from './helpers'
+import { apiWith } from '../auth/helpers'
+import { SPARE_NAME, claimSpare } from '../auth/spares'
 
 // D33 S13: a staff member signs in as themself on a paired tablet, requests
 // time off, and the tablet returns to the shared session after 5 idle minutes
 // without re-pairing. The person "signs in" by token injection into the
-// personal slot (never a typed password; see the credentials policy).
+// personal slot. D34: signing out now revokes that token on the server, so it
+// is a spare session of its own, never a shared persona's token (../auth/spares.ts).
 
 test.use({ storageState: authFile('taproomDevice') })
 
-function tokenOf(persona: 'bartender1' | 'taproomDevice'): string {
+/** An unused spare session, for injection into the personal slot. */
+async function freshToken(): Promise<string> {
+  return claimSpare()
+}
+
+function tokenOf(persona: 'taproomDevice'): string {
   const state = JSON.parse(readFileSync(authFile(persona), 'utf8'))
   return state.origins[0].localStorage.find((e: { name: string }) => e.name === 'rockcut_token').value
 }
@@ -26,9 +34,10 @@ function tokenOf(persona: 'bartender1' | 'taproomDevice'): string {
 let tag = ''
 test.afterEach(async () => {
   if (!tag) return
-  const api = await apiAs('bartender1')
+  const api = await apiWith(await freshToken())
   const mine = (await (await api.get('/api/time_off')).json()).data as { id: number; note: string | null; status: string }[]
   for (const r of mine.filter((x) => x.note?.startsWith(tag) && x.status !== 'cancelled')) await api.post(`/api/time_off/${r.id}/cancel`)
+  await api.dispose()
   tag = ''
 })
 
@@ -47,10 +56,10 @@ test('S13: personal sign-in on the tablet, time off persists, idle returns to th
   await expect(page.getByTestId('back-to-shared')).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('rockcut_device_token'))).toBe(deviceToken)
 
-  // Token injection stands in for typing bartender1's password.
-  await page.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+  // Token injection stands in for typing the person's password.
+  await page.evaluate((t) => localStorage.setItem('rockcut_token', t), await freshToken())
   await page.reload()
-  await expect(page.getByTestId('personal-session-banner')).toContainText('Sam Pour')
+  await expect(page.getByTestId('personal-session-banner')).toContainText(SPARE_NAME)
   await expect(page.getByTestId('device-chip')).toHaveCount(0)
 
   // Request time off as themself; persist-verify after a reload.
@@ -83,7 +92,7 @@ test('S13: activity keeps the personal session; Cancel on the form goes straight
   await expect(page.getByTestId('device-chip')).toBeVisible()
 
   await page.getByTestId('personal-signin').click()
-  await page.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+  await page.evaluate((t) => localStorage.setItem('rockcut_token', t), await freshToken())
   await page.reload()
   await expect(page.getByTestId('personal-session-banner')).toBeVisible()
 
@@ -180,7 +189,7 @@ test.describe('S13: the idle return survives the tablet sleeping', () => {
     await page.goto('/')
     await page.getByTestId('personal-signin').click()
     await expect(page.getByTestId('login-email')).toBeVisible()
-    await page.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+    await page.evaluate((t) => localStorage.setItem('rockcut_token', t), await freshToken())
     await page.reload()
     await expect(page.getByTestId('personal-session-banner')).toBeVisible()
   }
@@ -242,7 +251,7 @@ test.describe('S11/S12: a personal session ends with its tablet', () => {
 
       await tablet.page.getByTestId('personal-signin').click()
       await expect(tablet.page.getByTestId('login-email')).toBeVisible()
-      await tablet.page.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+      await tablet.page.evaluate((t) => localStorage.setItem('rockcut_token', t), await freshToken())
       await tablet.page.reload()
       await expect(tablet.page.getByTestId('personal-session-banner')).toBeVisible()
 
@@ -273,13 +282,13 @@ test('G3: a second tab follows a personal sign-out without a reload', async ({ c
   await a.goto('/')
   await expect(a.getByTestId('device-chip')).toBeVisible()
   await a.getByTestId('personal-signin').click()
-  await a.evaluate((t) => localStorage.setItem('rockcut_token', t), tokenOf('bartender1'))
+  await a.evaluate((t) => localStorage.setItem('rockcut_token', t), await freshToken())
   await a.reload()
   await expect(a.getByTestId('personal-session-banner')).toBeVisible()
 
   const b = await context.newPage()
   await b.goto('/time_off')
-  await expect(b.getByTestId('personal-session-banner')).toContainText('Sam Pour')
+  await expect(b.getByTestId('personal-session-banner')).toContainText(SPARE_NAME)
   await expect(b.getByText('My requests')).toBeVisible()
 
   await a.getByTestId('logout-button').click()
@@ -289,5 +298,5 @@ test('G3: a second tab follows a personal sign-out without a reload', async ({ c
   await expect(b.getByTestId('device-chip')).toBeVisible()
   await expect(b.getByTestId('personal-session-banner')).toHaveCount(0)
   await expect(b.getByText('My requests')).toHaveCount(0)
-  await expect(b.getByText('Sam Pour')).toHaveCount(0)
+  await expect(b.getByText(SPARE_NAME)).toHaveCount(0)
 })

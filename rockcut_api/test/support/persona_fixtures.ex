@@ -41,9 +41,9 @@ defmodule RockcutApi.PersonaFixtures do
     Map.put(assignable, "other", other)
   end
 
-  @doc "A fresh conn authenticated as `user`."
+  @doc "A fresh conn authenticated as `user`, with a new `ses_` session (D34)."
   def as(%User{} = user) do
-    token = Phoenix.Token.sign(@endpoint, "user auth", user.id)
+    token = AccountsFixtures.session_token_fixture(user)
     build_conn() |> put_req_header("authorization", "Bearer #{token}")
   end
 

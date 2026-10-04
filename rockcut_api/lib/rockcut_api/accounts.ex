@@ -157,9 +157,13 @@ defmodule RockcutApi.Accounts do
       "must_reset_password" => true
     }
 
+    # Hash (Argon2, slow by design) before the transaction, so the single DB
+    # connection isn't held while it runs (D34 DEV fix cycle 1).
+    changeset = User.registration_changeset(%User{}, reg_attrs)
+
     result =
       Repo.transaction(fn ->
-        with {:ok, user} <- %User{} |> User.registration_changeset(reg_attrs) |> Repo.insert(),
+        with {:ok, user} <- Repo.insert(changeset),
              {:ok, user} <- apply_memberships(user, desired, actor) do
           log_audit(actor.id, user.id, "user.created", %{"email" => user.email})
           user
@@ -252,6 +256,8 @@ defmodule RockcutApi.Accounts do
          |> User.password_changeset(%{"password" => temp, "must_reset_password" => true})
          |> Repo.update() do
       {:ok, user} ->
+        # D34 §3.4: a reset signs the person out everywhere.
+        RockcutApi.Sessions.revoke_all(user, nil)
         log_audit(actor.id, user.id, "user.password_reset", %{})
         {:ok, get_user!(user.id), temp}
 
@@ -262,15 +268,21 @@ defmodule RockcutApi.Accounts do
 
   @doc "Change a user's own password after verifying the current one."
   def change_password(%User{} = user, current, new) do
-    if not Authz.device?(user) and Argon2.verify_pass(current, user.password_hash) do
-      case user
-           |> User.password_changeset(%{"password" => new, "must_reset_password" => false})
-           |> Repo.update() do
-        {:ok, user} -> {:ok, get_user!(user.id)}
-        {:error, cs} -> {:error, cs}
-      end
-    else
-      {:error, :invalid_current}
+    cond do
+      Authz.device?(user) or not Argon2.verify_pass(current, user.password_hash) ->
+        {:error, :invalid_current}
+
+      # DEV pass 1 G3: reusing the current password would only sign out the other devices.
+      new == current ->
+        {:error, :same_password}
+
+      true ->
+        case user
+             |> User.password_changeset(%{"password" => new, "must_reset_password" => false})
+             |> Repo.update() do
+          {:ok, user} -> {:ok, get_user!(user.id)}
+          {:error, cs} -> {:error, cs}
+        end
     end
   end
 

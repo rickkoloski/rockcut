@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { Box, Button, TextField, Typography, Paper, Alert, Link } from '@mui/material'
 import useAuth from '../hooks/useAuth'
+import PasswordField from '../components/PasswordField'
 import { UNPAIRED_KEY, asideDeviceToken, clearUnpaired, readStorage } from '../lib/device'
 
 // "abcd efgh" → "ABCD-EFGH" as it's typed (D33 pairing codes: 8 characters).
@@ -133,10 +134,9 @@ export default function Login() {
             autoFocus
             autoComplete="email"
           />
-          <TextField
+          <PasswordField
             data-testid="login-password"
             label="Password"
-            type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required

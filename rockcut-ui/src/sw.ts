@@ -4,6 +4,7 @@
 import { precacheAndRoute, createHandlerBoundToURL } from 'workbox-precaching'
 import { NavigationRoute, registerRoute } from 'workbox-routing'
 import { clientsClaim } from 'workbox-core'
+import { SW_NAVIGATION_DENYLIST } from './lib/swNavigation'
 
 declare const self: ServiceWorkerGlobalScope & { __WB_MANIFEST: Array<{ url: string; revision: string | null }> }
 
@@ -13,7 +14,7 @@ precacheAndRoute(self.__WB_MANIFEST)
 // SPA fallback: serve index.html for navigations, except API/dev requests.
 registerRoute(
   new NavigationRoute(createHandlerBoundToURL('index.html'), {
-    denylist: [/^\/api/, /^\/dev/],
+    denylist: SW_NAVIGATION_DENYLIST,
   }),
 )
 
