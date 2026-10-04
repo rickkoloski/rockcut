@@ -33,11 +33,13 @@ interface AuthState {
   endPersonalSession: () => Promise<void>
 }
 
-/** True when a request failed without the server answering, or with a 5xx. */
-function isTransient(err: unknown): boolean {
-  const status = (err as { response?: { status?: number } })?.response?.status
-  return status === undefined || status >= 500
+/** True when the server refused the session. Anything else (offline, a timeout, a 5xx, a proxy's 4xx) isn't about it. */
+function isRefused(err: unknown): boolean {
+  return (err as { response?: { status?: number } })?.response?.status === 401
 }
+
+/** How long start-up waits for /api/me before showing "Can't reach the server" (DEV pass 2 G4). */
+const ME_TIMEOUT_MS = 15_000
 
 // One /api/me at a time per token, so the retries can't pile up.
 let loading: { token: string; promise: Promise<void> } | null = null
@@ -110,7 +112,9 @@ const useAuth = create<AuthState>((set, get) => ({
     if (loading?.token === token) return loading.promise
     const promise = (async () => {
       try {
-        const { data } = await api.get<Me>('/api/me')
+        const { data } = await api.get<Me>('/api/me', { timeout: ME_TIMEOUT_MS })
+        // DEV pass 2 G4: a captive Wi-Fi page answers 200 with HTML.
+        if (!data?.user || !data?.capabilities) throw new Error('Not an /api/me answer')
         // The token changed while this was in flight (e.g. "Sign in as me" set a
         // tablet's token aside): this answer is for a session that's gone (D33).
         if (localStorage.getItem(TOKEN_KEY) !== token) return
@@ -124,11 +128,11 @@ const useAuth = create<AuthState>((set, get) => ({
         })
       } catch (err) {
         if (localStorage.getItem(TOKEN_KEY) !== token) return
-        // DEV pass 1 G1: offline or a server error says nothing about the token.
-        // Keep it (on a tablet it may be the pairing itself) and retry; App
-        // shows "Can't reach the server". Only a 401 or other refusal signs out
-        // (the axios interceptor handles a 401).
-        if (isTransient(err)) {
+        // DEV pass 1 G1, pass 2 G1: only a 401 says the token is no good (the
+        // axios interceptor handles it). Offline, a timeout, a 5xx or a
+        // proxy's 404/408/429 say nothing about it: keep it (on a tablet it may
+        // be the pairing itself) and retry; App shows "Can't reach the server".
+        if (!isRefused(err)) {
           set({ bootstrapped: false, unreachable: true })
           return
         }

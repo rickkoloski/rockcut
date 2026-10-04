@@ -113,6 +113,37 @@ test.describe('on the shared taproomDevice tablet', () => {
     expect(await deviceTokenOf(page)).toBe(deviceToken)
   })
 
+  // DEV pass 2 G1/G4: only a 401 unpairs a tablet. A proxy's 4xx, a server
+  // error, a captive Wi-Fi page or a request that never answers all keep the
+  // pairing, show "Can't reach the server" and recover on their own.
+  for (const [name, answer] of [
+    ['404', { status: 404, body: 'Not found' }],
+    ['408', { status: 408 }],
+    ['429', { status: 429 }],
+    ['503', { status: 503 }],
+    ['a captive Wi-Fi page', { status: 200, contentType: 'text/html', body: '<html>Sign in to Wi-Fi</html>' }],
+    ['no answer', null],
+  ] as const) {
+    test(`G1/G4: ${name} from /api/me at start-up keeps the pairing`, async ({ page }) => {
+      await page.clock.install()
+      await page.goto('/')
+      await expect(page.getByTestId('device-chip')).toBeVisible()
+      const deviceToken = await deviceTokenOf(page)
+
+      await page.route('**/api/me', (route) => (answer ? route.fulfill(answer) : undefined))
+      await page.reload()
+      // No answer: the request's own 15 s timeout (a native XHR timer the fake clock can't move).
+      await expect(page.getByTestId('server-unreachable')).toBeVisible({ timeout: answer ? undefined : 25_000 })
+      expect(await deviceTokenOf(page)).toBe(deviceToken)
+      await expect(page.getByTestId('login-submit')).toHaveCount(0)
+
+      await page.unrouteAll({ behavior: 'ignoreErrors' })
+      await page.clock.fastForward(10_000)
+      await expect(page.getByTestId('device-chip')).toBeVisible()
+      expect(await deviceTokenOf(page)).toBe(deviceToken)
+    })
+  }
+
   test('S15: no profile during a personal sign-in on the tablet', async ({ page }) => {
     await page.goto('/')
     await signInAsMe(page)
