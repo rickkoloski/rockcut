@@ -198,7 +198,7 @@ function App() {
 
   if (!isAuthenticated) return <Login />
   if (!bootstrapped || !user || !capabilities)
-    return <LoadingScreen unreachable={unreachable} onRetry={() => void loadMe()} />
+    return <LoadingScreen unreachable={unreachable} onRetry={() => void loadMe({ force: true })} />
   if (user.must_reset_password) return <ForcePasswordReset />
 
   // D33: a shared tablet account (read-only schedule + its channels).

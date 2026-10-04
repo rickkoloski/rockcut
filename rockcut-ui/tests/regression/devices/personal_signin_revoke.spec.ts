@@ -144,6 +144,32 @@ test.describe('on the shared taproomDevice tablet', () => {
     })
   }
 
+  // DEV pass 3 G1: a retry stuck on a stalled connection mustn't make "Try now" a no-op.
+  test('G1: Try now recovers at once while a retry is still stalled', async ({ page }) => {
+    await page.clock.install()
+    await page.goto('/')
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+    const deviceToken = await deviceTokenOf(page)
+
+    // The server stops answering: requests stall rather than fail. Those stay
+    // stalled for good; once the server is back, new requests get through.
+    let serverBack = false
+    await page.route('**/api/me', (route) => (serverBack ? route.continue() : undefined))
+    await page.reload()
+    // The first check's own 15 s timeout (a native timer the fake clock can't move).
+    await expect(page.getByTestId('server-unreachable')).toBeVisible({ timeout: 25_000 })
+    // The 10 s retry starts a check that stalls too.
+    const retried = page.waitForRequest('**/api/me')
+    await page.clock.fastForward(10_000)
+    await retried
+
+    // The server answers again; the stalled check never will.
+    serverBack = true
+    await page.getByRole('button', { name: 'Try now' }).click()
+    await expect(page.getByTestId('device-chip')).toBeVisible({ timeout: 5_000 })
+    expect(await deviceTokenOf(page)).toBe(deviceToken)
+  })
+
   test('S15: no profile during a personal sign-in on the tablet', async ({ page }) => {
     await page.goto('/')
     await signInAsMe(page)

@@ -25,7 +25,8 @@ interface AuthState {
   unreachable: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
-  loadMe: () => Promise<void>
+  /** `force` (Try now, back online) replaces a check that's still waiting on a stalled connection. */
+  loadMe: (opts?: { force?: boolean }) => Promise<void>
   // D33 — shared tablets
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
@@ -41,8 +42,14 @@ function isRefused(err: unknown): boolean {
 /** How long start-up waits for /api/me before showing "Can't reach the server" (DEV pass 2 G4). */
 const ME_TIMEOUT_MS = 15_000
 
-// One /api/me at a time per token, so the retries can't pile up.
-let loading: { token: string; promise: Promise<void> } | null = null
+// One /api/me at a time per token, so the retries can't pile up. A forced
+// call aborts it and takes over (DEV pass 3 G1).
+interface Load {
+  token: string
+  controller: AbortController
+  promise: Promise<void>
+}
+let loading: Load | null = null
 
 function errorMessage(err: unknown, fallback: string): string {
   return err && typeof err === 'object' && 'response' in err
@@ -103,16 +110,23 @@ const useAuth = create<AuthState>((set, get) => ({
     set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false })
   },
 
-  loadMe: () => {
+  loadMe: (opts) => {
     const { token } = get()
     if (!token) {
       set({ bootstrapped: true, unreachable: false })
       return Promise.resolve()
     }
-    if (loading?.token === token) return loading.promise
-    const promise = (async () => {
+    if (loading?.token === token) {
+      if (!opts?.force) return loading.promise
+      loading.controller.abort()
+    }
+    const load = { token, controller: new AbortController() } as Load
+    // A call that a forced one replaced has nothing more to say.
+    const superseded = () => loading !== load
+    load.promise = (async () => {
       try {
-        const { data } = await api.get<Me>('/api/me', { timeout: ME_TIMEOUT_MS })
+        const { data } = await api.get<Me>('/api/me', { timeout: ME_TIMEOUT_MS, signal: load.controller.signal })
+        if (superseded()) return
         // DEV pass 2 G4: a captive Wi-Fi page answers 200 with HTML.
         if (!data?.user || !data?.capabilities) throw new Error('Not an /api/me answer')
         // The token changed while this was in flight (e.g. "Sign in as me" set a
@@ -127,7 +141,7 @@ const useAuth = create<AuthState>((set, get) => ({
           unreachable: false,
         })
       } catch (err) {
-        if (localStorage.getItem(TOKEN_KEY) !== token) return
+        if (superseded() || localStorage.getItem(TOKEN_KEY) !== token) return
         // DEV pass 1 G1, pass 2 G1: only a 401 says the token is no good (the
         // axios interceptor handles it). Offline, a timeout, a 5xx or a
         // proxy's 404/408/429 say nothing about it: keep it (on a tablet it may
@@ -147,11 +161,11 @@ const useAuth = create<AuthState>((set, get) => ({
           unreachable: false,
         })
       } finally {
-        if (loading?.token === token) loading = null
+        if (loading === load) loading = null
       }
     })()
-    loading = { token, promise }
-    return promise
+    loading = load
+    return load.promise
   },
 
   // Exchange a pairing code for this tablet's token (D33 §3.2).

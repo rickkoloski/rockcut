@@ -7,14 +7,16 @@ const RETRY_MS = 10_000
  * every 10 s and as soon as the browser reports it's back online. Does
  * nothing while `enabled` is false.
  */
-export default function useReconnect(enabled: boolean, retry: () => void) {
+export default function useReconnect(enabled: boolean, retry: (opts?: { force?: boolean }) => void) {
   useEffect(() => {
     if (!enabled) return
-    const tick = window.setInterval(retry, RETRY_MS)
-    window.addEventListener('online', retry)
+    const tick = window.setInterval(() => retry(), RETRY_MS)
+    // Back online: don't wait for a check stuck on the old connection (DEV pass 3 G1).
+    const onOnline = () => retry({ force: true })
+    window.addEventListener('online', onOnline)
     return () => {
       window.clearInterval(tick)
-      window.removeEventListener('online', retry)
+      window.removeEventListener('online', onOnline)
     }
   }, [enabled, retry])
 }
