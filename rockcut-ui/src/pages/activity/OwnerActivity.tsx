@@ -13,6 +13,7 @@ const ACTION_LABELS: Record<string, string> = {
   'user.updated': 'User updated',
   'user.password_reset': 'Password reset',
   'user.signed_out_everywhere': 'Signed out of other devices',
+  'calendar_feeds.rotated': 'Calendar links reset',
   'membership.added': 'Role added',
   'membership.changed': 'Role changed',
   'membership.removed': 'Role removed',

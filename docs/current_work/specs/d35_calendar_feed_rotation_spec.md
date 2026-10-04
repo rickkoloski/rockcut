@@ -62,7 +62,7 @@ deactivation:
 - A feed that was never created (no one ever opened Calendar sync for it)
   is skipped; there is nothing to rotate.
 - **An audit entry** records the rotation:
-  - action `calendar_feeds.rotated_on_departure`;
+  - action `calendar_feeds.rotated`, with `reason` `departed` or `lost_access`;
   - the target is the person who left;
   - the data lists the rotated feeds (type and id), never the tokens.
 

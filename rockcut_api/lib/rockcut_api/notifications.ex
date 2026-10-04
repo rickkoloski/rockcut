@@ -16,7 +16,12 @@ defmodule RockcutApi.Notifications do
   @default_on %{in_app: true, email: true}
   # Per-event default overrides. message_posted (D23) skips the bell by default
   # (unread badges cover in-app) but emails; push stays opt-in like everywhere.
-  @event_defaults %{"message_posted" => %{in_app: false, email: true, push: false}}
+  # calendar_feed_rotated (D35 Q3): in-app and push, no email. Push still needs
+  # a device subscription. The UI's EVENT_DEFAULTS must match.
+  @event_defaults %{
+    "message_posted" => %{in_app: false, email: true, push: false},
+    "calendar_feed_rotated" => %{in_app: true, email: false, push: true}
+  }
 
   ## Dispatch
 
