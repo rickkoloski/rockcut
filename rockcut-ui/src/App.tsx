@@ -511,23 +511,35 @@ function App() {
 
             {isDevice ? (
               <>
+                {/* D36-C (task 4002): at phone width the pill drops the
+                    department and the button shortens, so the header stays on
+                    one line and nothing overlaps the logo. */}
                 <Chip
                   data-testid="device-chip"
                   icon={<TabletIcon />}
-                  label={`Shared device · ${departments.find((d) => d.key === capabilities.home_department)?.name ?? DEPT_META[capabilities.home_department ?? '']?.label ?? ''}`}
+                  label={
+                    <>
+                      Shared device
+                      <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                        {` · ${departments.find((d) => d.key === capabilities.home_department)?.name ?? DEPT_META[capabilities.home_department ?? '']?.label ?? ''}`}
+                      </Box>
+                    </>
+                  }
                   size="small"
                   variant="outlined"
-                  sx={{ mr: 1 }}
+                  sx={{ mr: 1, minWidth: 0 }}
                 />
                 <Button
                   data-testid="personal-signin"
+                  aria-label="Sign in as me"
                   size="small"
                   variant="contained"
                   onClick={startPersonalSignIn}
                   startIcon={<LoginIcon />}
-                  sx={{ mr: 1 }}
+                  sx={{ mr: 1, whiteSpace: 'nowrap', flexShrink: 0 }}
                 >
-                  Sign in as me
+                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Sign in as me</Box>
+                  <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>Sign in</Box>
                 </Button>
                 <Button
                   data-testid="device-signout"
