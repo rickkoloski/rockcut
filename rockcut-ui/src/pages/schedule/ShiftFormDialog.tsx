@@ -18,7 +18,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import { addDaysKey, formatHours, localInputToUtc, shiftHours, utcToLocalInput } from '../../lib/datetime'
-import { conflictsFor, type UnavailabilityByUser } from '../../lib/conflicts'
+import { conflictsFor, type OffWindows, type UnavailabilityByUser } from '../../lib/conflicts'
 import type { Department, Position, RosterEntry, Shift, ShiftTemplate } from '../../lib/types'
 
 interface Prefill {
@@ -37,7 +37,7 @@ interface Props {
   shiftTemplates: ShiftTemplate[] // per-position standard hours
   prefill?: Prefill
   allShifts: Shift[] // loaded shifts, for live double-booking detection (D24)
-  offDays: Map<number, Set<string>> // userId -> approved time-off day keys (D24)
+  offWindows: OffWindows // userId -> approved time-off windows (D24, D36)
   unavailability: UnavailabilityByUser // userId -> recurring unavailable windows (D25)
 }
 
@@ -56,7 +56,7 @@ function roundTime15(t: string): string {
   return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`
 }
 
-export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, roster, shiftTemplates, prefill, allShifts, offDays, unavailability }: Props) {
+export default function ShiftFormDialog({ open, onClose, editShift, departments, positions, roster, shiftTemplates, prefill, allShifts, offWindows, unavailability }: Props) {
   const qc = useQueryClient()
   const isEdit = !!editShift
 
@@ -141,10 +141,10 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
     return conflictsFor(
       { assigneeId, startsAt: localInputToUtc(startLocal), endsAt: localInputToUtc(endLocal), excludeId: editShift?.id },
       allShifts,
-      offDays,
+      offWindows,
       unavailability,
     )
-  }, [assigneeId, startLocal, endLocal, hours, allShifts, offDays, unavailability, editShift])
+  }, [assigneeId, startLocal, endLocal, hours, allShifts, offWindows, unavailability, editShift])
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['shifts'] })
 

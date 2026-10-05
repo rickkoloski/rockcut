@@ -1,10 +1,11 @@
 // D24 — Scheduling conflict detection (client-side, non-blocking).
 //
-// Flags an assigned shift that (a) falls on a day the assignee has approved
-// time off, or (b) overlaps another shift for the same assignee. Open
+// Flags an assigned shift that (a) overlaps the assignee's approved time off
+// (all-day time off covers its whole Denver days; D36: timed time off only its
+// hours), or (b) overlaps another shift for the same assignee. Open
 // (unassigned) shifts never conflict. All data needed is already loaded by the
 // scheduler, so this is pure and shared by the week grid and the shift dialog.
-import { addDaysKey, localDayKey, utcToLocalInput, weekdayOf } from './datetime'
+import { addDaysKey, localDayKey, localInputToUtc, utcToLocalInput, weekdayOf } from './datetime'
 import type { Shift } from './types'
 
 export type ConflictKind = 'time_off' | 'overlap' | 'availability'
@@ -22,17 +23,43 @@ export function rangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd
 }
 
 /** Denver day keys a shift touches, start day through end day (handles overnight). */
-function dayKeysSpanned(startsAt: string, endsAt: string): string[] {
-  const first = localDayKey(startsAt)
-  const last = localDayKey(endsAt)
-  const keys: string[] = []
-  let d = first
-  // Cap the walk so a bad range can never spin (a shift spans at most a day or two).
-  for (let i = 0; i < 14 && d <= last; i++) {
-    keys.push(d)
-    d = addDaysKey(d, 1)
+// ── Time off (D24; D36: by time, not by day) ─────────────────────────
+
+/** An approved time-off window as UTC instants. All-day time off is widened
+ *  to whole Denver days (stored 00:00–23:59, so through midnight). */
+export interface OffWindow {
+  startsAt: string
+  endsAt: string
+  allDay: boolean
+}
+
+/** userId -> their approved time-off windows. */
+export type OffWindows = Map<number, OffWindow[]>
+
+/** Time-off request shape (structural — matches TimeOffRequest from the API). */
+interface TimeOffLike {
+  user_id: number
+  status: string
+  all_day: boolean
+  starts_at: string
+  ends_at: string
+}
+
+/** Approved time off only: pending is a heads-up in the grid, not a conflict. */
+export function buildOffWindows(timeOff: TimeOffLike[]): OffWindows {
+  const m: OffWindows = new Map()
+  for (const r of timeOff) {
+    if (r.status !== 'approved') continue
+    const w: OffWindow = r.all_day
+      ? {
+          startsAt: localInputToUtc(`${localDayKey(r.starts_at)}T00:00`),
+          endsAt: localInputToUtc(`${addDaysKey(localDayKey(r.ends_at), 1)}T00:00`),
+          allDay: true,
+        }
+      : { startsAt: r.starts_at, endsAt: r.ends_at, allDay: false }
+    m.set(r.user_id, [...(m.get(r.user_id) ?? []), w])
   }
-  return keys.length ? keys : [first]
+  return m
 }
 
 export interface ConflictCandidate {
@@ -111,7 +138,7 @@ const NO_UNAVAILABILITY: UnavailabilityByUser = new Map()
 export function conflictsFor(
   candidate: ConflictCandidate,
   allShifts: Shift[],
-  offDays: Map<number, Set<string>>,
+  offWindows: OffWindows,
   unavailability: UnavailabilityByUser = NO_UNAVAILABILITY,
 ): ShiftConflict[] {
   const { assigneeId, startsAt, endsAt, excludeId } = candidate
@@ -119,10 +146,13 @@ export function conflictsFor(
 
   const out: ShiftConflict[] = []
 
-  // (a) Approved time off on any Denver day the shift touches.
-  const off = offDays.get(assigneeId)
-  if (off && dayKeysSpanned(startsAt, endsAt).some((k) => off.has(k))) {
-    out.push({ kind: 'time_off', message: 'Assignee has approved time off that day' })
+  // (a) Approved time off overlapping the shift (back-to-back doesn't count).
+  const hits = (offWindows.get(assigneeId) ?? []).filter((w) => rangesOverlap(startsAt, endsAt, w.startsAt, w.endsAt))
+  if (hits.length) {
+    const message = hits.some((w) => w.allDay)
+      ? 'Assignee has approved time off that day'
+      : 'Assignee has approved time off then'
+    out.push({ kind: 'time_off', message })
   }
 
   // (b) Double-booking: another shift for the same person overlapping in time.
@@ -153,13 +183,13 @@ export function conflictsFor(
 export function shiftConflicts(
   shift: Shift,
   allShifts: Shift[],
-  offDays: Map<number, Set<string>>,
+  offWindows: OffWindows,
   unavailability: UnavailabilityByUser = NO_UNAVAILABILITY,
 ): ShiftConflict[] {
   return conflictsFor(
     { assigneeId: shift.assignee_id, startsAt: shift.starts_at, endsAt: shift.ends_at, excludeId: shift.id },
     allShifts,
-    offDays,
+    offWindows,
     unavailability,
   )
 }
@@ -167,12 +197,12 @@ export function shiftConflicts(
 /** shiftId → its conflicts, for every conflicting shift in the set. */
 export function conflictMap(
   shifts: Shift[],
-  offDays: Map<number, Set<string>>,
+  offWindows: OffWindows,
   unavailability: UnavailabilityByUser = NO_UNAVAILABILITY,
 ): Map<number, ShiftConflict[]> {
   const m = new Map<number, ShiftConflict[]>()
   for (const s of shifts) {
-    const c = shiftConflicts(s, shifts, offDays, unavailability)
+    const c = shiftConflicts(s, shifts, offWindows, unavailability)
     if (c.length) m.set(s.id, c)
   }
   return m

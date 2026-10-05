@@ -36,7 +36,7 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { addDaysKey, defaultDayKeyForWeek, formatDayHeading, formatTimeRange, formatWeekRange, localDayKey, localInputToUtc, mondayKeyOf, utcToLocalInput, weekDayKeys } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
-import { buildUnavailability, conflictMap } from '../../lib/conflicts'
+import { buildOffWindows, buildUnavailability, conflictMap } from '../../lib/conflicts'
 import { buildOffMarkers } from '../../lib/timeoff'
 import { eventDayKeys, eventDayLabel } from '../../lib/events'
 import type { AvailabilitySlot, Department, Position, RosterEntry, ScheduleEvent, Shift, ShiftTemplate, ScheduleTemplate, TimeOffRequest } from '../../lib/types'
@@ -148,7 +148,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates', undefined, { enabled: !isDevice })
   const { data: scheduleTemplates = [] } = useApiQuery<ScheduleTemplate[]>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
   // Fetch all statuses in range; the grid shows approved + pending distinctly.
-  const timeOffParams = useMemo(() => ({ from: mondayKey, to: addDaysKey(mondayKey, 6) }), [mondayKey])
+  // Through the next Monday (D36 QA): a Sunday overnight shift runs into it, so
+  // its conflict check needs that day's time off. The grid clips to the week.
+  const timeOffParams = useMemo(() => ({ from: mondayKey, to: addDaysKey(mondayKey, 7) }), [mondayKey])
   const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'schedule', mondayKey], '/api/time_off', timeOffParams, { enabled: !isDevice })
   // Recurring availability (D25) — used for conflict detection; managers/owner only.
   const { data: availability = [] } = useApiQuery<AvailabilitySlot[]>(['availability'], '/api/availability', undefined, { enabled: canManageSchedule })
@@ -156,21 +158,13 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   // userId -> (Denver day key -> time-off markers with times), for the visible week.
   const offMarkers = useMemo(() => buildOffMarkers(timeOff, mondayKey), [timeOff, mondayKey])
 
-  // Day-level set for conflict detection — approved time off only (pending is a
-  // heads-up, not a hard conflict).
-  const offDays = useMemo(() => {
-    const m = new Map<number, Set<string>>()
-    for (const [uid, dayMap] of offMarkers) {
-      const set = new Set<string>()
-      for (const [dayKey, marks] of dayMap) if (marks.some((mk) => !mk.pending)) set.add(dayKey)
-      if (set.size) m.set(uid, set)
-    }
-    return m
-  }, [offMarkers])
+  // Approved time off as time windows for conflict detection (D36: a timed
+  // request conflicts only with shifts that overlap its hours).
+  const offWindows = useMemo(() => buildOffWindows(timeOff), [timeOff])
 
   // D24/D25 — non-blocking conflict warnings (time-off overlap + double-booking + availability).
   const unavailability = useMemo(() => buildUnavailability(availability), [availability])
-  const conflicts = useMemo(() => conflictMap(shifts, offDays, unavailability), [shifts, offDays, unavailability])
+  const conflicts = useMemo(() => conflictMap(shifts, offWindows, unavailability), [shifts, offWindows, unavailability])
   const conflictCount = conflicts.size
 
   const managedDepartments = isOwner ? departments : departments.filter((d) => managedKeys.includes(d.key))
@@ -549,7 +543,7 @@ export default function Schedule({ forceView }: { forceView?: View }) {
         readOnly={!!editEvent && !canManageEvent(editEvent)}
         prefill={eventPrefill}
       />
-      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} allShifts={shifts} offDays={offDays} unavailability={unavailability} />
+      <ShiftFormDialog open={shiftDialog} onClose={() => setShiftDialog(false)} editShift={editShift} departments={managedDepartments} positions={positions} roster={roster} shiftTemplates={shiftTemplates} prefill={prefill} allShifts={shifts} offWindows={offWindows} unavailability={unavailability} />
       <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} canEditColors={isOwner} />
       {!isDevice && <CalendarSyncDialog open={calendarSyncOpen} onClose={() => setCalendarSyncOpen(false)} />}
       <ConfirmDialog

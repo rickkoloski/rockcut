@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Alert, Box, Divider, IconButton, Stack, TextField, Typography, Paper } from '@mui/material'
+import { Alert, Box, Button, Divider, IconButton, Stack, TextField, Typography, Paper } from '@mui/material'
 import SendIcon from '@mui/icons-material/Send'
 import { useQueryClient } from '@tanstack/react-query'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import PageHeader from '../../components/PageHeader'
+import DeviceNotAvailable from '../devices/DeviceNotAvailable'
 import parseApiError from '../../lib/parseApiError'
 import type { Channel, ChatMessage } from '../../lib/types'
 
@@ -27,16 +28,14 @@ export default function Messages() {
   const selected = useMemo(() => channels.find((c) => c.key === selectedKey), [channels, selectedKey])
 
   // Bare /messages → open the first channel the user can see. A channel the
-  // user can't see (typed or stale URL) goes back to /messages too (3939):
-  // never an empty channel with a message box.
+  // user can't see (typed or stale URL) says so instead (D36-B, task 4001):
+  // never an empty channel with a message box (3939), never a silent redirect.
+  const unknownChannel = channelsLoaded && !!selectedKey && !selected
   useEffect(() => {
-    if (!channelsLoaded) return
-    if (selectedKey && !selected) {
-      navigate('/messages', { replace: true })
-    } else if (!selectedKey && channels.length > 0) {
+    if (channelsLoaded && !selectedKey && channels.length > 0) {
       navigate(`/messages/${channels[0].key}`, { replace: true })
     }
-  }, [channelsLoaded, selectedKey, selected, channels, navigate])
+  }, [channelsLoaded, selectedKey, channels, navigate])
 
   // Only fetch (and poll) a channel that's in the user's list, so an unknown
   // key never polls into 403s (3939).
@@ -85,6 +84,26 @@ export default function Messages() {
     } finally {
       setSending(false)
     }
+  }
+
+  if (unknownChannel) {
+    // A shared tablet gets its usual page; a person gets "not found".
+    if (user?.kind === 'device') return <DeviceNotAvailable />
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
+        <Paper data-testid="channel-not-found" variant="outlined" sx={{ p: 4, maxWidth: 440, textAlign: 'center' }}>
+          <Typography variant="h5" gutterBottom>
+            Channel not found
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 3 }}>
+            It doesn't exist, or you don't have access to it.
+          </Typography>
+          <Button variant="contained" onClick={() => navigate('/messages')}>
+            Go to Messages
+          </Button>
+        </Paper>
+      </Box>
+    )
   }
 
   return (

@@ -72,10 +72,17 @@ defmodule RockcutApiWeb.ScheduleEventController do
         {:error, :not_found}
 
       %ScheduleEventSeries{} = series ->
-        if Authz.can?(actor, :extend, series) do
-          with {:ok, added} <- Scheduling.extend_series(series), do: json(conn, %{count: added})
-        else
-          forbidden(conn)
+        cond do
+          Authz.can?(actor, :extend, series) ->
+            with {:ok, added} <- Scheduling.extend_series(series), do: json(conn, %{count: added})
+
+          # D32 A1 (task 3942): a series whose dates are all hidden drafts isn't
+          # revealed. 404 unless the actor can read one of its events.
+          Enum.any?(Scheduling.series_events(series), &Authz.can?(actor, :read, &1)) ->
+            forbidden(conn)
+
+          true ->
+            {:error, :not_found}
         end
     end
   end

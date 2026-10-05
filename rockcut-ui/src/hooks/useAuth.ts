@@ -10,6 +10,7 @@ import {
   restoreDeviceToken,
   revokePersonalToken,
   setDeviceTokenAside,
+  signOutOnServer,
 } from '../lib/device'
 
 interface AuthState {
@@ -102,9 +103,9 @@ const useAuth = create<AuthState>((set, get) => ({
       return
     }
     if (token) {
-      // D34: the server revokes this session. Pass the token explicitly: the
-      // request interceptor runs after the removeItem below, so it would send none.
-      api.delete('/api/session', { headers: { Authorization: `Bearer ${token}` } }).catch(() => {})
+      // D34: the server revokes this session. D36-H: if it can't be reached
+      // (offline, or the tab closes), the sign-out is retried later.
+      void signOutOnServer(token)
     }
     localStorage.removeItem(TOKEN_KEY)
     set({ token: null, user: null, capabilities: null, sharedDevices: false, isAuthenticated: false })

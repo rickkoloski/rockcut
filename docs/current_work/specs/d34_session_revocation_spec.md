@@ -1,6 +1,6 @@
 # D34: Revocable Sign-in Sessions and Profile Page — Specification
 
-**Status:** Approved (2026-10-02, Q1–Q5 answered)
+**Status:** Complete — on prod in `v2026.10.04` (2026-10-05). Approved (2026-10-02, Q1–Q5 answered)
 **Created:** 2026-10-02
 **Author:** Matt + CC
 **Depends On:** D33 (shared tablets, "Sign in as me", `device_tokens`), D30 (synthetic personas, DEV), D10 (sign-in)

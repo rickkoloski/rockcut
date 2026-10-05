@@ -20,9 +20,14 @@ export default function useIdleReturn(enabled: boolean, ms: number, onIdle: () =
   useEffect(() => {
     if (!enabled) return
     let done = false
-    const stored = Number(readStorage(PERSONAL_ACTIVITY_KEY))
-    let last = Number.isFinite(stored) && stored > 0 ? stored : Date.now()
+    const storedActivity = () => {
+      const v = Number(readStorage(PERSONAL_ACTIVITY_KEY))
+      return Number.isFinite(v) && v > 0 ? v : 0
+    }
+    let last = storedActivity() || Date.now()
+    let lastSaved = 0
     const save = () => {
+      lastSaved = last
       try {
         localStorage.setItem(PERSONAL_ACTIVITY_KEY, String(last))
       } catch {
@@ -31,7 +36,12 @@ export default function useIdleReturn(enabled: boolean, ms: number, onIdle: () =
     }
     save()
 
-    const expired = () => Date.now() - last >= ms
+    // D36-G (task 4050): activity in another tab counts too. Every tab writes
+    // the shared value, so take the newest before deciding we're idle.
+    const expired = () => {
+      last = Math.max(last, storedActivity())
+      return Date.now() - last >= ms
+    }
     const fire = () => {
       if (done) return
       done = true
@@ -42,14 +52,10 @@ export default function useIdleReturn(enabled: boolean, ms: number, onIdle: () =
     }
     const activity = () => {
       if (expired()) return fire()
-      const now = Date.now()
-      // Persist at most once a second; scrolling fires a lot.
-      if (now - last >= 1000) {
-        last = now
-        save()
-      } else {
-        last = now
-      }
+      // Persist at most once a second (scrolling fires a lot), but keep
+      // persisting during continuous activity so other tabs see it.
+      last = Date.now()
+      if (last - lastSaved >= 1000) save()
     }
     const onVisible = () => {
       if (document.visibilityState !== 'hidden') check()
