@@ -34,10 +34,27 @@ defmodule RockcutApi.CalendarFeeds do
     end)
   end
 
+  @doc """
+  The Reset button in Calendar sync. Audited; a shared feed's other users are
+  told to re-subscribe, as when someone leaves (D35 DEV pass G7).
+  """
   def rotate(subject_type, subject_id, %User{} = actor) do
     if Authz.can?(actor, :rotate, {:calendar_feed, subject_type, subject_id}) do
       feed = ensure_feed(subject_type, subject_id, actor)
-      feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update()
+
+      with {:ok, feed} <- feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update() do
+        target = if subject_type == "user", do: subject_id
+        key = {feed.subject_type, feed.subject_id}
+
+        Accounts.record_audit(actor.id, target, "calendar_feeds.rotated", %{
+          "reason" => "manual",
+          "feeds" => [%{"type" => feed.subject_type, "id" => feed.subject_id}],
+          "labels" => [feed_label(key)]
+        })
+
+        if subject_type != "user", do: notify_rotated([key], {:manual, actor}, actor.id)
+        {:ok, feed}
+      end
     else
       {:error, :forbidden}
     end
@@ -88,7 +105,8 @@ defmodule RockcutApi.CalendarFeeds do
   @doc """
   Tell everyone who still gets a rotated shared feed's URL to re-subscribe:
   one notification per person, listing their feeds (spec §3.2). Call after
-  the transaction commits. `reason` is `:departed` or `:lost_access`.
+  the transaction commits. `reason` is `:departed`, `:lost_access` or
+  `{:manual, actor}` (the Reset button).
   """
   def notify_rotated([], _reason, _except_id), do: :ok
 
@@ -119,6 +137,7 @@ defmodule RockcutApi.CalendarFeeds do
       case reason do
         :departed -> "someone who could see #{it} no longer works here"
         :lost_access -> "someone who could see #{it} no longer has access"
+        {:manual, actor} -> "#{actor.name || actor.email} reset #{it}"
       end
 
     %{

@@ -214,6 +214,14 @@ defmodule RockcutApi.Accounts do
           case Repo.update(changeset) do
             {:ok, user} ->
               log_audit(actor.id, user.id, "user.updated", %{"fields" => Map.keys(base)})
+
+              # D35 DEV pass G6: owner access changes get their own log entry.
+              case Ecto.Changeset.get_change(changeset, :is_owner) do
+                true -> log_audit(actor.id, user.id, "user.owner_granted", %{})
+                false -> log_audit(actor.id, user.id, "user.owner_removed", %{})
+                nil -> :unchanged
+              end
+
               {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
 
             {:error, cs} ->

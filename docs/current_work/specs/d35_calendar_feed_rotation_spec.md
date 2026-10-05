@@ -118,11 +118,23 @@ Device accounts (D33) have no feeds and are unaffected.
     and the two must match.
   - It's listed in Notification preferences as "Calendar link changed".
 
-### 3.3 Manual Rotate (unchanged, but consistent)
+### 3.3 The Reset button (added after DEV pass 1, G7; Matt 2026-10-04)
 
-The existing Rotate button in Calendar sync keeps working as it does today.
-**Out of scope:** notifying others after a manual rotate. That's a possible
-follow-up, since it has the same "everyone else must re-subscribe" effect.
+Resetting a link in Calendar sync now behaves like a departure for its other
+users:
+- **Resetting a shared link** (a department or the whole schedule) asks for
+  confirmation first. Everyone else who gets that URL is then told to
+  re-subscribe: "The Taproom calendar link changed: Casey Tap reset it."
+  The person who reset it isn't notified.
+- **Resetting your own "My shifts" link** needs no confirmation and notifies
+  nobody.
+- **Every reset is logged** as `calendar_feeds.rotated` with reason `manual`.
+  The target is the person for a "My shifts" feed, and empty for a shared
+  feed.
+
+**Owner access in the change log (G6).** Granting or removing the owner flag
+writes `user.owner_granted` / `user.owner_removed`, shown as "Owner access
+granted" / "Owner access removed".
 
 ### 3.4 Calendar sync screen
 
@@ -165,7 +177,6 @@ Scenarios that deactivate use throwaway `[TEST-TEMP]` people, never a persona.
 - Per-person subscription tokens for shared feeds. Those would let one person
   be cut off without anyone else re-subscribing. That's the longer-term fix
   in task 3992; this deliverable is the simple one Matt chose.
-- Notifying others after a manual Rotate (§3.3).
 - Knowing who actually subscribed to a feed.
 - Changing what feeds contain (task 4055 adds events).
 

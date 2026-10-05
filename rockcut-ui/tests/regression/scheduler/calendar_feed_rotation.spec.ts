@@ -159,5 +159,33 @@ test.describe('one Users & Roles save that changes the owner flag and department
     // One notification each, not one per call (G2).
     await expect.poll(async () => (await rotatedNoticeIds(owner2)).filter((id) => !owner2Before.includes(id)).length).toBe(1)
     expect((await rotatedNoticeIds(dualMgr)).filter((id) => !dualBefore.includes(id)).length).toBe(1)
+
+    // DEV pass G6: the owner-flag change is in the User change log.
+    await page.goto('/activity')
+    await expect(page.getByRole('gridcell', { name: 'Owner access removed' }).first()).toBeVisible()
+  })
+})
+
+test.describe('the Reset button on a shared link (DEV pass G7)', () => {
+  test.use({ storageState: authFile('barMgr') })
+
+  test('asks first, then tells the other Taproom users who reset it', async ({ page }) => {
+    const barMgr = await apiAs('barMgr')
+    const dualMgr = await apiAs('dualMgr')
+    const before = await taproomFeed(barMgr)
+    const dualBefore = await rotatedNoticeIds(dualMgr)
+
+    await page.goto('/schedule?calendar_sync=1')
+    await page.getByRole('button', { name: `Reset ${before.label} link` }).click()
+    const confirm = page.getByRole('dialog', { name: `Reset the ${before.label} link?` })
+    await expect(confirm).toContainText('Everyone else who uses this calendar is told to re-subscribe')
+    await confirm.getByRole('button', { name: 'Reset link' }).click()
+    await expect(confirm).toHaveCount(0)
+
+    expect((await taproomFeed(barMgr)).token).not.toBe(before.token)
+    await expect.poll(async () => (await rotatedNoticeIds(dualMgr)).filter((id) => !dualBefore.includes(id)).length).toBe(1)
+    const items = (await (await dualMgr.get('/api/notifications')).json()).data as { id: number; body: string }[]
+    const mine = items.find((n) => !dualBefore.includes(n.id) && n.body.includes('reset it'))!
+    expect(mine.body).toContain(`The ${before.label} calendar link changed: Casey Tap reset it.`)
   })
 })

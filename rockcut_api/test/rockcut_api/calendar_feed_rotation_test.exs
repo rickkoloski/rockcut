@@ -283,4 +283,85 @@ defmodule RockcutApi.CalendarFeedRotationTest do
       assert [_] = notes(c.dual_mgr)
     end
   end
+
+  describe "the Reset button (DEV pass G7)" do
+    test "resetting a shared feed tells its other users who reset it, and is logged", c do
+      before = tokens(c)
+
+      {:ok, _} = CalendarFeeds.rotate("department", c.bar.id, c.bar_mgr)
+
+      refute tokens(c).bar == before.bar
+      assert notes(c.bar_mgr) == []
+
+      for u <- [c.dual_mgr, c.owner, c.owner2] do
+        assert [n] = notes(u)
+        assert n.body =~ "The Taproom calendar link changed: Casey Tap reset it."
+      end
+
+      assert notes(c.brewery_mgr) == []
+
+      entry =
+        Repo.get_by!(Accounts.AuditEntry,
+          action: "calendar_feeds.rotated",
+          actor_id: c.bar_mgr.id
+        )
+
+      assert entry.target_id == nil
+      assert entry.detail["reason"] == "manual"
+      assert entry.detail["labels"] == ["Taproom"]
+    end
+
+    test "resetting your own feed is logged but tells nobody", c do
+      CalendarFeeds.feeds_for(c.bartender)
+      {:ok, _} = CalendarFeeds.rotate("user", c.bartender.id, c.bartender)
+
+      assert Repo.aggregate(Notification, :count) == 0
+
+      entry =
+        Repo.get_by!(Accounts.AuditEntry,
+          action: "calendar_feeds.rotated",
+          actor_id: c.bartender.id
+        )
+
+      assert entry.target_id == c.bartender.id
+      assert entry.detail["labels"] == ["My shifts"]
+    end
+
+    test "a refused reset changes and logs nothing", c do
+      before = tokens(c)
+      assert {:error, :forbidden} = CalendarFeeds.rotate("department", c.bar.id, c.brewery_mgr)
+      assert tokens(c) == before
+      refute Repo.get_by(Accounts.AuditEntry, action: "calendar_feeds.rotated")
+    end
+  end
+
+  describe "owner access in the change log (DEV pass G6)" do
+    test "granting and removing owner access each get an entry; other edits don't", c do
+      person = user_with_role("employee", "bar")
+
+      actions = fn ->
+        Accounts.AuditEntry
+        |> where([a], a.target_id == ^person.id and like(a.action, "user.owner_%"))
+        |> select([a], a.action)
+        |> order_by(:id)
+        |> Repo.all()
+      end
+
+      {:ok, _} = Accounts.update_user(person, %{"is_owner" => true}, c.owner)
+
+      {:ok, _} =
+        Accounts.update_user(Accounts.get_user!(person.id), %{"name" => "Renamed"}, c.owner)
+
+      {:ok, _} =
+        Accounts.update_user(Accounts.get_user!(person.id), %{"is_owner" => false}, c.owner)
+
+      assert actions.() == ["user.owner_granted", "user.owner_removed"]
+    end
+
+    test "a manager can't change owner access, so nothing is logged", c do
+      person = user_with_role("employee", "bar")
+      {:ok, _} = Accounts.update_user(person, %{"is_owner" => true}, c.bar_mgr)
+      refute Repo.get_by(Accounts.AuditEntry, action: "user.owner_granted")
+    end
+  end
 end

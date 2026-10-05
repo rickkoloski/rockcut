@@ -16,6 +16,7 @@ import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import AutorenewIcon from '@mui/icons-material/Autorenew'
 import { useQueryClient } from '@tanstack/react-query'
 import { useApiQuery } from '../../hooks/useApiQuery'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import api from '../../lib/api'
 import type { CalendarFeed } from '../../lib/types'
 
@@ -28,6 +29,8 @@ export default function CalendarSyncDialog({ open, onClose }: Props) {
   const qc = useQueryClient()
   const { data: feeds = [] } = useApiQuery<CalendarFeed[]>(['calendar_feeds'], '/api/calendar_feeds', undefined, { enabled: open })
   const [copied, setCopied] = useState<string | null>(null)
+  // D35: resetting a shared link signs everyone else out of it, so ask first.
+  const [confirmReset, setConfirmReset] = useState<CalendarFeed | null>(null)
   const [busy, setBusy] = useState(false)
 
   // The feed is served by the API host. The UI host only serves the app (its
@@ -52,8 +55,10 @@ export default function CalendarSyncDialog({ open, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['calendar_feeds'] })
     } finally {
       setBusy(false)
+      setConfirmReset(null)
     }
   }
+  const askRotate = (f: CalendarFeed) => (f.subject_type === 'user' ? rotate(f) : setConfirmReset(f))
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -85,9 +90,9 @@ export default function CalendarSyncDialog({ open, onClose }: Props) {
                       <ContentCopyIcon fontSize="small" />
                     </IconButton>
                   </Tooltip>
-                  <Tooltip title="Rotate (invalidate the old link)">
+                  <Tooltip title="Reset (the old link stops working)">
                     <span>
-                      <IconButton size="small" disabled={busy} onClick={() => rotate(f)}>
+                      <IconButton size="small" aria-label={`Reset ${f.label} link`} disabled={busy} onClick={() => askRotate(f)}>
                         <AutorenewIcon fontSize="small" />
                       </IconButton>
                     </span>
@@ -101,6 +106,15 @@ export default function CalendarSyncDialog({ open, onClose }: Props) {
       <DialogActions>
         <Button onClick={onClose}>Done</Button>
       </DialogActions>
+      <ConfirmDialog
+        open={!!confirmReset}
+        onClose={() => setConfirmReset(null)}
+        onConfirm={() => confirmReset && rotate(confirmReset)}
+        title={`Reset the ${confirmReset?.label ?? ''} link?`}
+        message="The old link stops working for everyone. Everyone else who uses this calendar is told to re-subscribe with the new link."
+        confirmLabel="Reset link"
+        loading={busy}
+      />
     </Dialog>
   )
 }
