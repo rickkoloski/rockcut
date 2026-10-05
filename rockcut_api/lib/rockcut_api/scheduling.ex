@@ -268,6 +268,10 @@ defmodule RockcutApi.Scheduling do
 
   def get_series(id), do: Repo.get(ScheduleEventSeries, id)
 
+  @doc "The events (occurrences) of a series."
+  def series_events(%ScheduleEventSeries{id: id}),
+    do: ScheduleEvent |> where([e], e.series_id == ^id) |> Repo.all()
+
   @doc """
   List events visible to `user` (published anywhere, plus drafts in the
   departments they manage). `from`/`to` are Colorado date keys, bounded by
