@@ -59,3 +59,9 @@ test('another person\'s time off never conflicts', () => {
   const theirs = [{ ...off('2026-10-06T09:00', '2026-10-06T12:00'), user_id: ME + 1 }]
   expect(timeOffConflict(theirs, '2026-10-06T10:00', '2026-10-06T11:00')).toBeNull()
 })
+
+test('L7: a Sunday overnight shift is flagged by Monday time off', () => {
+  // D36 QA gap 1: the logic was right; the Scheduler just didn't load Monday.
+  const t = [off('2026-10-12T01:00', '2026-10-12T06:00')]
+  expect(timeOffConflict(t, '2026-10-11T22:00', '2026-10-12T03:00')).toBe('Assignee has approved time off then')
+})

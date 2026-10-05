@@ -148,7 +148,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const { data: shiftTemplates = [] } = useApiQuery<ShiftTemplate[]>(['shift_templates'], '/api/shift_templates', undefined, { enabled: !isDevice })
   const { data: scheduleTemplates = [] } = useApiQuery<ScheduleTemplate[]>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
   // Fetch all statuses in range; the grid shows approved + pending distinctly.
-  const timeOffParams = useMemo(() => ({ from: mondayKey, to: addDaysKey(mondayKey, 6) }), [mondayKey])
+  // Through the next Monday (D36 QA): a Sunday overnight shift runs into it, so
+  // its conflict check needs that day's time off. The grid clips to the week.
+  const timeOffParams = useMemo(() => ({ from: mondayKey, to: addDaysKey(mondayKey, 7) }), [mondayKey])
   const { data: timeOff = [] } = useApiQuery<TimeOffRequest[]>(['time_off', 'schedule', mondayKey], '/api/time_off', timeOffParams, { enabled: !isDevice })
   // Recurring availability (D25) — used for conflict detection; managers/owner only.
   const { data: availability = [] } = useApiQuery<AvailabilitySlot[]>(['availability'], '/api/availability', undefined, { enabled: canManageSchedule })
