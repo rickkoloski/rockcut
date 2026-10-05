@@ -26,6 +26,8 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Notifications.Notification
   alias RockcutApi.Seeds.{Credentials, Guard}
   alias RockcutApi.Devices.DeviceToken
+  alias RockcutApi.Scheduling.{ScheduleEvent, ScheduleEventSeries}
+  alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -154,6 +156,35 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(t in DeviceToken, where: like(t.name, ^"#{@temp_tag}%")))
 
     Repo.delete_all(from(u in User, where: u.kind == "device" and like(u.name, ^"#{@temp_tag}%")))
+
+    # D36-F (task 3941): schedule events and series (D32) agents created, with
+    # the "[TEST-TEMP]" or bare "TEST-TEMP" title prefix seen on DEV.
+    tag = "#{@temp_tag}%"
+
+    series_ids =
+      Repo.all(
+        from(s in ScheduleEventSeries,
+          where: like(s.title, ^tag) or like(s.title, "TEST-TEMP%"),
+          select: s.id
+        )
+      )
+
+    Repo.delete_all(
+      from(e in ScheduleEvent,
+        where: like(e.title, ^tag) or like(e.title, "TEST-TEMP%") or e.series_id in ^series_ids
+      )
+    )
+
+    Repo.delete_all(from(s in ScheduleEventSeries, where: s.id in ^series_ids))
+
+    # Brands agents created, with what hangs off them (recipes and batches
+    # restrict a brand's delete; brew turns restrict a recipe's).
+    brand_ids = Repo.all(from(b in Brand, where: like(b.name, ^"#{@temp_tag}%"), select: b.id))
+    recipe_ids = Repo.all(from(r in Recipe, where: r.brand_id in ^brand_ids, select: r.id))
+    Repo.delete_all(from(t in BrewTurn, where: t.recipe_id in ^recipe_ids))
+    Repo.delete_all(from(b in Batch, where: b.brand_id in ^brand_ids))
+    Repo.delete_all(from(r in Recipe, where: r.id in ^recipe_ids))
+    Repo.delete_all(from(b in Brand, where: b.id in ^brand_ids))
 
     # D34: throwaway people a spec created to change or reset a password
     # without touching a persona (sessions, memberships, audit rows cascade).

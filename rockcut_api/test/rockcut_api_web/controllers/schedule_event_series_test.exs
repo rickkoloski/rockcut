@@ -344,9 +344,20 @@ defmodule RockcutApiWeb.ScheduleEventSeriesTest do
       {first, _} = create!(p["barMgr"], trivia(d))
       path = "/api/schedule_event_series/#{first["series_id"]}/extend"
 
+      # D36 E (task 3942): every date is a hidden draft, so the series isn't revealed.
+      assert status(p["breweryMgr"], :post, path) == 404
+      assert status(p["bartender1"], :post, path) == 404
+      assert status(p["barMgr"], :post, path) == 200
+
+      # Once a date is published, readers who can't extend get 403.
+      [a | _] = occurrences(first["series_id"])
+      Scheduling.publish_event(a)
       assert status(p["breweryMgr"], :post, path) == 403
       assert status(p["bartender1"], :post, path) == 403
-      assert status(p["barMgr"], :post, path) == 200
+    end
+
+    test "an unknown series is 404", %{p: p} do
+      assert status(p["barMgr"], :post, "/api/schedule_event_series/999999/extend") == 404
     end
   end
 

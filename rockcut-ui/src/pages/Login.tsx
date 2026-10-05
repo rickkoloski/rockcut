@@ -2,7 +2,8 @@ import { useState, type FormEvent } from 'react'
 import { Box, Button, TextField, Typography, Paper, Alert, Link } from '@mui/material'
 import useAuth from '../hooks/useAuth'
 import PasswordField from '../components/PasswordField'
-import { UNPAIRED_KEY, asideDeviceToken, clearUnpaired, readStorage } from '../lib/device'
+import { PERSONAL_IDLE_MS, UNPAIRED_KEY, asideDeviceToken, clearUnpaired, readStorage } from '../lib/device'
+import useIdleReturn from '../hooks/useIdleReturn'
 
 // "abcd efgh" → "ABCD-EFGH" as it's typed (D33 pairing codes: 8 characters).
 function formatCode(raw: string): string {
@@ -21,6 +22,10 @@ export default function Login() {
   const { login, pairDevice, endPersonalSession, isLoading, error } = useAuth()
   // D33: a staff member chose "Sign in as me" on a shared tablet.
   const onSharedTablet = !!asideDeviceToken()
+  // D36-I (task 4052): a form left open goes back to the shared screen after the
+  // same 5 idle minutes as a personal session (Cancel's path; the reload clears
+  // the typed email). Typing or tapping restarts the timer.
+  useIdleReturn(onSharedTablet, PERSONAL_IDLE_MS, endPersonalSession)
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()

@@ -1,5 +1,3 @@
-import axios from 'axios'
-
 // Shared tablets (D33). A paired tablet signs in with a `dev_` token stored in
 // the normal `rockcut_token` slot. When a staff member signs in personally on
 // the tablet, the device token is set aside under DEVICE_TOKEN_KEY and put
@@ -53,26 +51,79 @@ export function restoreDeviceToken(): boolean {
   return true
 }
 
+// ── Sign-outs that couldn't reach the server (D36-H, task 4051) ──────
+
+/** Session tokens whose sign-out hasn't reached the server yet. */
+export const PENDING_SIGNOUTS_KEY = 'rockcut_pending_signouts'
+
+function pendingSignOuts(): string[] {
+  try {
+    const v = JSON.parse(readStorage(PENDING_SIGNOUTS_KEY) ?? '[]')
+    return Array.isArray(v) ? v.filter((t) => typeof t === 'string') : []
+  } catch {
+    return []
+  }
+}
+
+function setPendingSignOuts(tokens: string[]): void {
+  try {
+    if (tokens.length) localStorage.setItem(PENDING_SIGNOUTS_KEY, JSON.stringify(tokens))
+    else localStorage.removeItem(PENDING_SIGNOUTS_KEY)
+  } catch {
+    // Storage unavailable: the server's own expiry still applies.
+  }
+}
+
+/**
+ * End `token`'s session on the server. Recorded first, so a sign-out that
+ * fails (offline) or never completes (the tab closed) is retried by
+ * `flushSignOuts` at the next start or reconnect. `keepalive` lets the request
+ * outlive a page that closes right away. Resolves true once the server has it.
+ */
+export async function signOutOnServer(token: string): Promise<boolean> {
+  setPendingSignOuts([...new Set([...pendingSignOuts(), token])])
+  return sendSignOut(token)
+}
+
+async function sendSignOut(token: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${import.meta.env.VITE_API_URL || ''}/api/session`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+      keepalive: true,
+    })
+    // 401: already ended (revoked, expired or deactivated). Either way, done.
+    if (res.ok || res.status === 401) {
+      setPendingSignOuts(pendingSignOuts().filter((t) => t !== token))
+      return true
+    }
+  } catch {
+    // Offline: stays pending.
+  }
+  return false
+}
+
+/** Retry sign-outs that didn't reach the server. */
+export async function flushSignOuts(): Promise<void> {
+  for (const token of pendingSignOuts()) await sendSignOut(token)
+}
+
 /** How long ending a personal session waits for the server's revoke (D34 §3.3). */
 export const REVOKE_TIMEOUT_MS = 3_000
 
 /**
  * End the person's own session on the server before the tablet forgets it
- * (D34). Best effort: offline, a timeout or a 401 is ignored, since the
- * server lets an unrevoked tablet sign-in lapse after 15 idle minutes anyway.
- * Plain axios, so a 401 here can't trigger the app's sign-out handling.
+ * (D34). The tablet waits at most REVOKE_TIMEOUT_MS; a sign-out that doesn't
+ * get through is retried later (D36-H), and the server lets an unrevoked
+ * tablet sign-in lapse after 15 idle minutes anyway. Plain fetch, so a 401
+ * here can't trigger the app's sign-out handling.
  */
 export async function revokePersonalToken(): Promise<void> {
   const token = readStorage(TOKEN_KEY)
   if (!token || isDeviceToken(token)) return
-  try {
-    await axios.delete(`${import.meta.env.VITE_API_URL || ''}/api/session`, {
-      headers: { Authorization: `Bearer ${token}` },
-      timeout: REVOKE_TIMEOUT_MS,
-    })
-  } catch {
-    // Ignored: see above.
-  }
+  // D36-H: if it can't get through, it's retried later (flushSignOuts); the
+  // tablet doesn't wait longer than REVOKE_TIMEOUT_MS for it.
+  await Promise.race([signOutOnServer(token), new Promise((done) => setTimeout(done, REVOKE_TIMEOUT_MS))])
 }
 
 /** True for a shared tablet's token (D33 tokens start with `dev_`). */

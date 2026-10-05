@@ -4,7 +4,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
   import Ecto.Query
   alias RockcutApi.{Accounts, Repo}
-  alias RockcutApi.Accounts.{User, Membership}
+  alias RockcutApi.Accounts.{Department, User, Membership}
   alias RockcutApi.Scheduling.{Position, Shift}
   alias RockcutApi.TimeOff.Request
   alias RockcutApi.Availability.Slot
@@ -133,6 +133,59 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       {:ok, _} = Synthetic.setup()
       assert Accounts.get_user_by_email("newhire@rockcut-test.com").must_reset_password
       refute Repo.exists?(from(m in Message, where: like(m.body, "[TEST-TEMP]%")))
+    end
+
+    test "removes [TEST-TEMP] events, series, brands and people; keeps real ones (D36-F)" do
+      alias RockcutApi.Scheduling.{ScheduleEvent, ScheduleEventSeries}
+      alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
+
+      {:ok, _} = Synthetic.setup()
+      bar = Repo.get_by!(Department, key: "bar")
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      event = fn title, extra ->
+        Repo.insert!(
+          struct(
+            %ScheduleEvent{department_id: bar.id, title: title, starts_at: now, ends_at: now},
+            extra
+          )
+        )
+      end
+
+      series =
+        Repo.insert!(%ScheduleEventSeries{
+          department_id: bar.id,
+          title: "TEST-TEMP Trivia",
+          frequency: "weekly",
+          start_date: Date.utc_today()
+        })
+
+      event.("TEST-TEMP Trivia", %{series_id: series.id})
+      event.("[TEST-TEMP] one-off", %{})
+      keep_event = event.("Real staff meeting", %{})
+
+      brand = Repo.insert!(%Brand{name: "[TEST-TEMP] Brand"})
+      recipe = Repo.insert!(%Recipe{brand_id: brand.id, batch_size: Decimal.new(10)})
+      batch = Repo.insert!(%Batch{brand_id: brand.id, batch_number: "T-1"})
+      Repo.insert!(%BrewTurn{batch_id: batch.id, recipe_id: recipe.id, turn_number: 1})
+      keep_brand = Repo.insert!(%Brand{name: "Real Brand"})
+
+      temp_person =
+        AccountsFixtures.user_fixture(%{
+          email: "a-temp-x@rockcut-test.com",
+          name: "[TEST-TEMP] QA x"
+        })
+
+      {:ok, _} = Synthetic.setup()
+
+      refute Repo.get(ScheduleEventSeries, series.id)
+      refute Repo.exists?(from(e in ScheduleEvent, where: like(e.title, "%TEST-TEMP%")))
+      assert Repo.get(ScheduleEvent, keep_event.id)
+      refute Repo.get(Brand, brand.id)
+      refute Repo.get(Recipe, recipe.id)
+      assert Repo.get(Brand, keep_brand.id)
+      refute Repo.get(User, temp_person.id)
+      assert Accounts.get_user_by_email("bartender1@rockcut-test.com")
     end
 
     test "seeds the scenario: open shifts, floater double-booking, time off" do

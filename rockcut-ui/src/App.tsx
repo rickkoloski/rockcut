@@ -62,7 +62,7 @@ import useIdleReturn from './hooks/useIdleReturn'
 import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
 import useAuthStorageSync from './hooks/useAuthStorageSync'
 import useReconnect from './hooks/useReconnect'
-import { PERSONAL_IDLE_MS, asideDeviceToken } from './lib/device'
+import { PERSONAL_IDLE_MS, asideDeviceToken, flushSignOuts } from './lib/device'
 import parseApiError from './lib/parseApiError'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
@@ -179,6 +179,14 @@ function App() {
   useDeviceTokenWatch(personalOnTablet)
   // DEV G3: another tab changed the session (sign-out, "Sign in as me", unpaired).
   useAuthStorageSync()
+  // D36-H (task 4051): sign-outs that couldn't reach the server, retried at
+  // start-up and whenever the device comes back online.
+  useEffect(() => {
+    void flushSignOuts()
+    const retry = () => void flushSignOuts()
+    window.addEventListener('online', retry)
+    return () => window.removeEventListener('online', retry)
+  }, [])
 
   useEffect(() => {
     if (isAuthenticated && !bootstrapped) loadMe()
@@ -187,14 +195,17 @@ function App() {
   useReconnect(isAuthenticated && !bootstrapped && unreachable, loadMe)
 
   // Channels the user can see — listed individually under Messages in the nav.
-  const { data: channels = [] } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
+  // D36-J (task 4053): a malformed reply (`data: null`) is an empty list, not a crash.
+  const { data: channelsData } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
     enabled: isAuthenticated,
     refetchInterval: 20000,
   })
+  const channels = Array.isArray(channelsData) ? channelsData : []
 
-  const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, {
+  const { data: departmentsData } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, {
     enabled: isAuthenticated,
   })
+  const departments = Array.isArray(departmentsData) ? departmentsData : []
 
   if (!isAuthenticated) return <Login />
   if (!bootstrapped || !user || !capabilities)
@@ -508,23 +519,35 @@ function App() {
 
             {isDevice ? (
               <>
+                {/* D36-C (task 4002): at phone width the pill drops the
+                    department and the button shortens, so the header stays on
+                    one line and nothing overlaps the logo. */}
                 <Chip
                   data-testid="device-chip"
                   icon={<TabletIcon />}
-                  label={`Shared device · ${departments.find((d) => d.key === capabilities.home_department)?.name ?? DEPT_META[capabilities.home_department ?? '']?.label ?? ''}`}
+                  label={
+                    <>
+                      Shared device
+                      <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                        {` · ${departments.find((d) => d.key === capabilities.home_department)?.name ?? DEPT_META[capabilities.home_department ?? '']?.label ?? ''}`}
+                      </Box>
+                    </>
+                  }
                   size="small"
                   variant="outlined"
-                  sx={{ mr: 1 }}
+                  sx={{ mr: 1, minWidth: 0 }}
                 />
                 <Button
                   data-testid="personal-signin"
+                  aria-label="Sign in as me"
                   size="small"
                   variant="contained"
                   onClick={startPersonalSignIn}
                   startIcon={<LoginIcon />}
-                  sx={{ mr: 1 }}
+                  sx={{ mr: 1, whiteSpace: 'nowrap', flexShrink: 0 }}
                 >
-                  Sign in as me
+                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Sign in as me</Box>
+                  <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>Sign in</Box>
                 </Button>
                 <Button
                   data-testid="device-signout"
