@@ -1,6 +1,6 @@
 # D35: Cut Off Calendar Feeds When Someone Leaves — Specification
 
-**Status:** Approved (2026-10-04, Q1–Q4 answered)
+**Status:** Complete — on prod in `v2026.10.04` (2026-10-05). Approved (2026-10-04, Q1–Q4 answered)
 **Created:** 2026-10-04
 **Author:** Matt + CC
 **Depends On:** D17 (calendar feeds), D18 (notifications), D31 (`Authz`)

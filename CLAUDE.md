@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: not yet chosen. D31–D33 shipped to prod in `v2026.10.02` (2026-10-02); D19–D33 complete. Candidates: backlog 3991 (server-side revoke of a tablet's personal token), a "new version available" reload prompt, and two event features Matt deferred from D32 (events in calendar feeds; company-wide events).
+- **Next deliverable**: D36, not yet specced. D34 and D35 shipped to prod in `v2026.10.04` (2026-10-05 UTC); D19–D35 complete. Matt's queue: task 4054 ("new version available, tap to reload" prompt), then 4055 (events in calendar feeds) and 4056 (company-wide events), then the small tasks. Task 4058 (remove the pre-D34 token path) is due 2026-11-04.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -136,6 +136,8 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D31 | RBAC consolidation — every authorization decision through `Authz` (`can?/3` over every area, `scope/3` for lists, managers audience); frozen 394-test parity suite; boundary test fails the build on owner/role checks outside `Authz`; Brewery routes gated in the UI | 06_auth_roles |
 | D32 | Schedule events — one-off and recurring (weekly/monthly-by-weekday, 12-month cap + Extend, this/following edits, Colorado wall-clock via `tz`), Events row in the Scheduler, published with the week; Bar → Taproom display rename (key stays `bar`); Colorado day bounds for week queries; SQLite single-connection default (G1) | 07_scheduling |
 | D33 | Taproom device access — `users.kind` device accounts, one-time pairing codes (rate-limited) and revocable `dev_` tokens, deny-by-default `DeviceGate` + `Authz.Device`, read-only tablet UI with "Sign in as me" and a 5-minute idle return, Admin → Shared devices; PWA `orientation: any`; setup guide `docs/process/taproom_tablet_setup.md` | 06_auth_roles |
+| D34 | Revocable sign-in sessions + profile page — `user_sessions` (HMAC-hashed `ses_` tokens; sign-out, password change/reset and deactivation revoke); pre-D34 tokens honored to expiry with a per-user cutoff; tablet "Sign in as me" sessions die at sign-out/idle return or after 15 idle minutes; Profile (Change password, Sign out of all other devices); show/hide on passwords; "Can't reach the server, retrying…" instead of signing out on network/proxy errors | 04_auth |
+| D35 | Calendar feed links reset when someone leaves or loses access — shared feeds rotate in the same transaction (deactivation, demotion, owner flag removed); one "Re-subscribe" notification per recipient (in-app + push); Reset button asks and notifies; change-log entries for link resets and owner access; Calendar sync links on the API host (they never worked on prod before) | 07_scheduling |
 
 ## References
 
