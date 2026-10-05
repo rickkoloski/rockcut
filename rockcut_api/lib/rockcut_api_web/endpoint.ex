@@ -11,9 +11,13 @@ defmodule RockcutApiWeb.Endpoint do
     same_site: "Lax"
   ]
 
-  socket "/live", Phoenix.LiveView.Socket,
-    websocket: [connect_info: [session: @session_options]],
-    longpoll: [connect_info: [session: @session_options]]
+  # The app is JSON-only; only the dev LiveDashboard (router `/dev`, behind
+  # `:dev_routes`) needs this socket, so prod doesn't mount it (D36-A, task 3997).
+  if Application.compile_env(:rockcut_api, :dev_routes) do
+    socket "/live", Phoenix.LiveView.Socket,
+      websocket: [connect_info: [session: @session_options]],
+      longpoll: [connect_info: [session: @session_options]]
+  end
 
   # Serve at "/" the static files from "priv/static" directory.
   #
