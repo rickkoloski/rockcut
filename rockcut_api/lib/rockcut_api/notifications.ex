@@ -16,7 +16,12 @@ defmodule RockcutApi.Notifications do
   @default_on %{in_app: true, email: true}
   # Per-event default overrides. message_posted (D23) skips the bell by default
   # (unread badges cover in-app) but emails; push stays opt-in like everywhere.
-  @event_defaults %{"message_posted" => %{in_app: false, email: true, push: false}}
+  # calendar_feed_rotated (D35 Q3): in-app and push, no email. Push still needs
+  # a device subscription. The UI's EVENT_DEFAULTS must match.
+  @event_defaults %{
+    "message_posted" => %{in_app: false, email: true, push: false},
+    "calendar_feed_rotated" => %{in_app: true, email: false, push: true}
+  }
 
   ## Dispatch
 
@@ -58,7 +63,7 @@ defmodule RockcutApi.Notifications do
   end
 
   defp deliver(:email, user, event, payload) do
-    Task.start(fn ->
+    background(fn ->
       try do
         Email.build(user, event, payload) |> Mailer.deliver()
       rescue
@@ -68,7 +73,16 @@ defmodule RockcutApi.Notifications do
   end
 
   defp deliver(:push, user, _event, payload) do
-    Task.start(fn -> WebPush.deliver(user, payload) end)
+    background(fn -> WebPush.deliver(user, payload) end)
+  end
+
+  # Email and push never hold up the request. Tests run them inline
+  # (`async_delivery: false`): a push task reads subscriptions, and one that
+  # outlived its test broke the sandboxed database for the next (D35).
+  defp background(fun) do
+    if Application.get_env(:rockcut_api, :async_delivery, true),
+      do: Task.start(fun),
+      else: fun.()
   end
 
   ## Inbox

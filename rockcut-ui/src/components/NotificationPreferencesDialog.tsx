@@ -34,11 +34,14 @@ const EVENTS = [
   { event: 'shift_reminder', label: 'Shift reminder' },
   { event: 'open_shift', label: 'Open shift available' },
   { event: 'message_posted', label: 'New message' },
+  { event: 'calendar_feed_rotated', label: 'Calendar link changed' },
 ]
 // Per-event default overrides (must match the backend). New messages skip the
-// in-app bell by default (unread badges cover it).
+// in-app bell by default (unread badges cover it). A changed calendar link
+// (D35 Q3) is in-app and push, not email.
 const EVENT_DEFAULTS: Record<string, Record<string, boolean>> = {
   message_posted: { in_app: false },
+  calendar_feed_rotated: { email: false, push: true },
 }
 const CHANNELS = [
   { key: 'in_app', label: 'In-app', enabled: true, def: true },

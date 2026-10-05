@@ -34,14 +34,133 @@ defmodule RockcutApi.CalendarFeeds do
     end)
   end
 
+  @doc """
+  The Reset button in Calendar sync. Audited; a shared feed's other users are
+  told to re-subscribe, as when someone leaves (D35 DEV pass G7).
+  """
   def rotate(subject_type, subject_id, %User{} = actor) do
     if Authz.can?(actor, :rotate, {:calendar_feed, subject_type, subject_id}) do
       feed = ensure_feed(subject_type, subject_id, actor)
-      feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update()
+
+      with {:ok, feed} <- feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update() do
+        target = if subject_type == "user", do: subject_id
+        key = {feed.subject_type, feed.subject_id}
+
+        Accounts.record_audit(actor.id, target, "calendar_feeds.rotated", %{
+          "reason" => "manual",
+          "feeds" => [%{"type" => feed.subject_type, "id" => feed.subject_id}],
+          "labels" => [feed_label(key)]
+        })
+
+        if subject_type != "user", do: notify_rotated([key], {:manual, actor}, actor.id)
+        {:ok, feed}
+      end
     else
       {:error, :forbidden}
     end
   end
+
+  ## Rotation when someone leaves or loses access (D35)
+
+  @doc """
+  The shared feeds `user` gets the URL of: `{"department", id}` for each
+  department feed, and `{"all", nil}` for the whole schedule. The same rule
+  as `feeds_for/1`. A personal feed is never shared.
+  """
+  def shared_feeds(%User{} = user) do
+    user
+    |> entitlements()
+    |> Enum.reject(fn {type, _, _} -> type == "user" end)
+    |> Enum.map(fn {type, id, _label} -> {type, id} end)
+  end
+
+  @doc """
+  Give a new token to every feed in `lost` that exists, and to `person`'s own
+  feed when `own?` (they left). No `Authz` check: the system does this when
+  `actor` deactivates someone or takes their access away. Audited without
+  tokens. Returns the rotated shared feeds, for `notify_rotated/3`.
+  """
+  def rotate_lost(%User{} = person, lost, own?, reason, %User{} = actor) do
+    shared = lost |> Enum.uniq() |> Enum.map(fn {type, id} -> find_feed(type, id) end)
+    own = if own?, do: [find_feed("user", person.id)], else: []
+    feeds = Enum.reject(shared ++ own, &is_nil/1)
+
+    Enum.each(feeds, fn feed ->
+      feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update!()
+    end)
+
+    if feeds != [] do
+      Accounts.record_audit(actor.id, person.id, "calendar_feeds.rotated", %{
+        "reason" => to_string(reason),
+        "feeds" => Enum.map(feeds, &%{"type" => &1.subject_type, "id" => &1.subject_id}),
+        "labels" => Enum.map(feeds, &feed_label({&1.subject_type, &1.subject_id}))
+      })
+    end
+
+    feeds
+    |> Enum.reject(&(&1.subject_type == "user"))
+    |> Enum.map(&{&1.subject_type, &1.subject_id})
+  end
+
+  @doc """
+  Tell everyone who still gets a rotated shared feed's URL to re-subscribe:
+  one notification per person, listing their feeds (spec §3.2). Call after
+  the transaction commits. `reason` is `:departed`, `:lost_access` or
+  `{:manual, actor}` (the Reset button).
+  """
+  def notify_rotated([], _reason, _except_id), do: :ok
+
+  def notify_rotated(rotated, reason, except_id) do
+    rotated = MapSet.new(rotated)
+
+    Accounts.persons_query()
+    |> where([u], u.active == true and u.id != ^except_id)
+    |> Repo.all()
+    |> Repo.preload(memberships: :department)
+    |> Enum.each(fn user ->
+      case user |> shared_feeds() |> Enum.filter(&MapSet.member?(rotated, &1)) do
+        [] ->
+          :ok
+
+        mine ->
+          RockcutApi.Notifications.notify(user, :calendar_feed_rotated, payload(mine, reason))
+      end
+    end)
+  end
+
+  # Short enough for a phone notification; singular or plural (D35 DEV pass G4).
+  defp payload(feeds, reason) do
+    names = feeds |> Enum.map(&feed_label/1) |> join_names()
+    {links, it} = if length(feeds) == 1, do: {"link", "it"}, else: {"links", "them"}
+
+    why =
+      case reason do
+        :departed -> "someone who could see #{it} no longer works here"
+        :lost_access -> "someone who could see #{it} no longer has access"
+        {:manual, actor} -> "#{actor.name || actor.email} reset #{it}"
+      end
+
+    %{
+      title: "Re-subscribe to your Rockcut calendar",
+      body:
+        "The #{names} calendar #{links} changed: #{why}. If you subscribed in a calendar " <>
+          "app, remove the old calendar and add the new link from Schedule → Calendar sync.",
+      data: %{"url" => "/schedule?calendar_sync=1"}
+    }
+  end
+
+  defp feed_label({"user", _}), do: "My shifts"
+  defp feed_label({"all", _}), do: "Whole schedule"
+
+  defp feed_label({"department", id}) do
+    case Repo.get(RockcutApi.Accounts.Department, id) do
+      nil -> "a department"
+      dept -> dept.name
+    end
+  end
+
+  defp join_names([one]), do: one
+  defp join_names(names), do: Enum.join(Enum.drop(names, -1), ", ") <> " and " <> List.last(names)
 
   defp entitlements(%User{} = user) do
     departments =
