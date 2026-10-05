@@ -7,6 +7,7 @@ import queryClient from './lib/queryClient'
 import './index.css'
 import App from './App.tsx'
 import EnvBanner from './components/EnvBanner.tsx'
+import AppErrorBoundary from './components/AppErrorBoundary.tsx'
 
 const theme = createTheme({
   palette: {
@@ -49,7 +50,9 @@ createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider theme={theme}>
           <CssBaseline />
-          <App />
+          <AppErrorBoundary>
+            <App />
+          </AppErrorBoundary>
           <EnvBanner />
         </ThemeProvider>
       </QueryClientProvider>

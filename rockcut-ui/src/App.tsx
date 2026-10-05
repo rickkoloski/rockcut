@@ -187,14 +187,17 @@ function App() {
   useReconnect(isAuthenticated && !bootstrapped && unreachable, loadMe)
 
   // Channels the user can see — listed individually under Messages in the nav.
-  const { data: channels = [] } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
+  // D36-J (task 4053): a malformed reply (`data: null`) is an empty list, not a crash.
+  const { data: channelsData } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
     enabled: isAuthenticated,
     refetchInterval: 20000,
   })
+  const channels = Array.isArray(channelsData) ? channelsData : []
 
-  const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, {
+  const { data: departmentsData } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, {
     enabled: isAuthenticated,
   })
+  const departments = Array.isArray(departmentsData) ? departmentsData : []
 
   if (!isAuthenticated) return <Login />
   if (!bootstrapped || !user || !capabilities)
