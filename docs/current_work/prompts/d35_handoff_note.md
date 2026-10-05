@@ -70,14 +70,29 @@
   - **G4, fixed:** the notification is shorter, with singular and plural
     wording.
   - **G5, fixed:** the User change log shows which links were reset and why.
-  - **G6, predates D35, not fixed:** changes to the owner flag aren't
-    listed in the change log. Backlog candidate.
-  - **G7, outside D35, not fixed:** a manual Reset in Calendar sync changes a
-    shared link with no notice or log entry. Backlog candidate.
+  - **G6, predates D35; fixed in `e17258a` at Matt's request.** Granting or
+    removing the owner flag is now logged ("Owner access granted" /
+    "Owner access removed").
+  - **G7, fixed in `e17258a` at Matt's request.** Reset on a shared link in
+    Calendar sync now asks first. It then tells everyone else who uses the
+    link who reset it, and every reset is logged.
 - **Run 2 at `112a715`** (API v21 / UI v16): 124/125.
   - The failure was the intermittent DEV hang: a `GET /api/me` timed out
     at 20 s in a D34 spec. That file passed 14/14 on rerun.
   - The API log had no errors.
+- **Run 3 at `e17258a`** (API v22 / UI v17): 125/126.
+  - The failure was the D34 "Try now" spec: its button re-rendered under
+    DEV latency until the test timed out. That file passed 14/14 on rerun;
+    a test flake, not D35.
+  - The API log had no errors.
+- **Local gate at `e17258a`:**
+  - `mix test`: 871 tests, 0 failures. Revert-and-rerun: the G6/G7 tests
+    fail without the change.
+  - Playwright: 125 passed, 1 skipped.
+  - lint: 27, the baseline.
+- **Tests now deliver notification email and push inline**
+  (`config :rockcut_api, :async_delivery, false`). The first push-on-by-default
+  event left tasks reading the database after their test had finished.
 - **Local gate at `112a715`:**
   - `mix test`: 866 tests, 0 failures.
   - Playwright: 124 passed, 1 skipped.
