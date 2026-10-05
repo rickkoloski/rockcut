@@ -92,8 +92,19 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
       if (isEdit && editUser) {
         const body: Record<string, unknown> = { name, active, schedulable }
         if (isOwnerActor) body.is_owner = isOwner
-        await api.patch(`/api/users/${editUser.id}`, body)
-        await api.put(`/api/users/${editUser.id}/memberships`, { memberships: memberships() })
+        // D35: each call resets the calendar links the person loses. Deactivating
+        // goes first (the membership change then resets nothing more); otherwise
+        // memberships go first, so removing the owner flag only resets what the
+        // person doesn't keep through their new roles. Either way, once.
+        const saveUser = () => api.patch(`/api/users/${editUser.id}`, body)
+        const saveMemberships = () => api.put(`/api/users/${editUser.id}/memberships`, { memberships: memberships() })
+        if (editUser.active && !active) {
+          await saveUser()
+          await saveMemberships()
+        } else {
+          await saveMemberships()
+          await saveUser()
+        }
         invalidate()
         onClose()
       } else {

@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Badge,
   Box,
@@ -19,6 +20,7 @@ import NotificationPreferencesDialog from './NotificationPreferencesDialog'
 
 export default function NotificationBell() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [prefsOpen, setPrefsOpen] = useState(false)
 
@@ -40,6 +42,15 @@ export default function NotificationBell() {
     if (!n.read_at) {
       await api.post(`/api/notifications/${n.id}/read`, {})
       invalidate()
+    }
+  }
+  // A notification with a link opens it, as a push notification's click does.
+  const open = (n: AppNotification) => {
+    void markRead(n)
+    const url = typeof n.data?.url === 'string' ? n.data.url : null
+    if (url && url.startsWith('/')) {
+      closeMenu()
+      navigate(url)
     }
   }
   const markAll = async () => {
@@ -84,7 +95,8 @@ export default function NotificationBell() {
             {items.map((n) => (
               <Box
                 key={n.id}
-                onClick={() => markRead(n)}
+                onClick={() => open(n)}
+                data-testid={`notification-${n.event}`}
                 sx={{
                   px: 2, py: 1, cursor: 'pointer',
                   bgcolor: n.read_at ? 'transparent' : 'action.hover',

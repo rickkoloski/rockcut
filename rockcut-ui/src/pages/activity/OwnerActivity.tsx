@@ -12,6 +12,10 @@ const ACTION_LABELS: Record<string, string> = {
   'user.created': 'User created',
   'user.updated': 'User updated',
   'user.password_reset': 'Password reset',
+  'user.signed_out_everywhere': 'Signed out of other devices',
+  'calendar_feeds.rotated': 'Calendar links reset',
+  'user.owner_granted': 'Owner access granted',
+  'user.owner_removed': 'Owner access removed',
   'membership.added': 'Role added',
   'membership.changed': 'Role changed',
   'membership.removed': 'Role removed',
@@ -33,9 +37,15 @@ function who(u: AuditEntry['actor']): string {
   return u.email.endsWith('@devices.rockcut.invalid') ? `${u.name ?? 'Shared device'} (shared device)` : u.email
 }
 
-// Device entries carry the device and tablet names in `detail`.
+// Device entries carry the device and tablet names in `detail`; a calendar
+// link reset (D35) carries the feed names and why.
 function detailText(row: AuditEntry): string {
   const d = (row.detail ?? {}) as Record<string, unknown>
+  if (row.action === 'calendar_feeds.rotated') {
+    const labels = Array.isArray(d.labels) ? d.labels.join(', ') : ''
+    const why = d.reason === 'departed' ? 'left' : d.reason === 'manual' ? 'reset by hand' : 'lost access'
+    return [labels, why].filter(Boolean).join(' · ')
+  }
   if (!row.action.startsWith('device.')) return ''
   return [d.name, d.tablet].filter(Boolean).join(' · ')
 }

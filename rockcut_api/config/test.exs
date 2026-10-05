@@ -34,3 +34,6 @@ config :phoenix, :plug_init_mode, :runtime
 
 # D30: never read a developer's local rockcut_api/.env.synthetic in tests.
 config :rockcut_api, :seed_env_file, nil
+
+# Deliver notification email/push inline in tests (D35): no task outlives its test.
+config :rockcut_api, :async_delivery, false

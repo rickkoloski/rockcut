@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -79,6 +80,15 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   const [publishing, setPublishing] = useState(false)
   const [templatesOpen, setTemplatesOpen] = useState(false)
   const [calendarSyncOpen, setCalendarSyncOpen] = useState(false)
+  // D35: "Re-subscribe to your Rockcut calendar" links here with ?calendar_sync=1.
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('calendar_sync') !== '1') return
+    if (!isDevice) setCalendarSyncOpen(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete('calendar_sync')
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams, isDevice])
   const [copyPreview, setCopyPreview] = useState<Shift[] | null>(null)
   const [copyBusy, setCopyBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)

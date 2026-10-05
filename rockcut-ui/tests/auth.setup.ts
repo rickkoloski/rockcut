@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { test as setup, expect } from '@playwright/test'
 import { activePersonaKeys, authFile, personas } from './config/test-env'
 import { activeProfile } from './config/targets'
+import { SPARE_CLAIMS_DIR, SPARES_FILE } from './regression/auth/spares'
 
-type Minted = Record<string, { email: string; token: string }>
+type Minted = Record<string, { email: string; token: string }> & { spares?: { email: string; tokens: string[] } }
 
 /**
  * Mint a short-lived token for every active persona in ONE call and write a
@@ -34,6 +35,13 @@ setup('mint persona tokens', async ({ request }) => {
   const profile = activeProfile()
   const minted = mintAll(profile.tokenSource)
   mkdirSync('tests/.playwright-auth', { recursive: true })
+
+  // D34: spare sessions for specs that sign a session out (claimSpare()).
+  if (minted.spares) {
+    writeFileSync(SPARES_FILE, JSON.stringify(minted.spares))
+    rmSync(SPARE_CLAIMS_DIR, { recursive: true, force: true })
+    mkdirSync(SPARE_CLAIMS_DIR, { recursive: true })
+  }
 
   for (const key of activePersonaKeys) {
     const entry = minted[key]

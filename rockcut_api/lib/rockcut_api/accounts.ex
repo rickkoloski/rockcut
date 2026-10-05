@@ -157,9 +157,13 @@ defmodule RockcutApi.Accounts do
       "must_reset_password" => true
     }
 
+    # Hash (Argon2, slow by design) before the transaction, so the single DB
+    # connection isn't held while it runs (D34 DEV fix cycle 1).
+    changeset = User.registration_changeset(%User{}, reg_attrs)
+
     result =
       Repo.transaction(fn ->
-        with {:ok, user} <- %User{} |> User.registration_changeset(reg_attrs) |> Repo.insert(),
+        with {:ok, user} <- Repo.insert(changeset),
              {:ok, user} <- apply_memberships(user, desired, actor) do
           log_audit(actor.id, user.id, "user.created", %{"email" => user.email})
           user
@@ -190,6 +194,8 @@ defmodule RockcutApi.Accounts do
     owner_change? = Map.has_key?(attrs, "is_owner") and Authz.can?(actor, :set_owner, target)
 
     Repo.transaction(fn ->
+      before = feed_access(target.id)
+
       cond do
         attrs["active"] == false and last_active_owner?(target) ->
           Repo.rollback(:last_owner)
@@ -208,14 +214,65 @@ defmodule RockcutApi.Accounts do
           case Repo.update(changeset) do
             {:ok, user} ->
               log_audit(actor.id, user.id, "user.updated", %{"fields" => Map.keys(base)})
-              get_user!(user.id)
+
+              # D35 DEV pass G6: owner access changes get their own log entry.
+              case Ecto.Changeset.get_change(changeset, :is_owner) do
+                true -> log_audit(actor.id, user.id, "user.owner_granted", %{})
+                false -> log_audit(actor.id, user.id, "user.owner_removed", %{})
+                nil -> :unchanged
+              end
+
+              {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
 
             {:error, cs} ->
               Repo.rollback(cs)
           end
       end
     end)
+    |> notify_rotated_feeds()
   end
+
+  # D35: when someone leaves, or a change takes shared calendar feeds away
+  # from them, those feeds get new tokens and everyone who still uses them is
+  # told to re-subscribe. `before` is taken inside the same transaction.
+  defp feed_access(user_id) do
+    user = get_user!(user_id)
+
+    %{
+      active: user.active,
+      feeds: if(user.active, do: RockcutApi.CalendarFeeds.shared_feeds(user), else: [])
+    }
+  end
+
+  defp rotate_lost_feeds(%{active: false}, _user_id, _actor), do: nil
+
+  defp rotate_lost_feeds(before, user_id, actor) do
+    now = feed_access(user_id)
+    departed? = not now.active
+    reason = if departed?, do: :departed, else: :lost_access
+    person = get_user!(user_id)
+
+    rotated =
+      RockcutApi.CalendarFeeds.rotate_lost(
+        person,
+        before.feeds -- now.feeds,
+        departed?,
+        reason,
+        actor
+      )
+
+    {rotated, reason, user_id}
+  end
+
+  # After commit: notifications never run for a rolled-back change.
+  defp notify_rotated_feeds({:ok, {user, nil}}), do: {:ok, user}
+
+  defp notify_rotated_feeds({:ok, {user, {rotated, reason, user_id}}}) do
+    RockcutApi.CalendarFeeds.notify_rotated(rotated, reason, user_id)
+    {:ok, user}
+  end
+
+  defp notify_rotated_feeds(other), do: other
 
   @doc """
   Reconcile a user's memberships to `desired` (declarative) under `actor`'s
@@ -231,11 +288,14 @@ defmodule RockcutApi.Accounts do
 
   defp do_set_memberships(target, desired, actor) do
     Repo.transaction(fn ->
+      before = feed_access(target.id)
+
       case apply_memberships(target, desired, actor) do
-        {:ok, user} -> user
+        {:ok, user} -> {user, rotate_lost_feeds(before, user.id, actor)}
         {:error, reason} -> Repo.rollback(reason)
       end
     end)
+    |> notify_rotated_feeds()
   end
 
   @doc "Reset a user's password to a fresh temp value with forced reset. Returns {:ok, user, temp}."
@@ -252,6 +312,8 @@ defmodule RockcutApi.Accounts do
          |> User.password_changeset(%{"password" => temp, "must_reset_password" => true})
          |> Repo.update() do
       {:ok, user} ->
+        # D34 §3.4: a reset signs the person out everywhere.
+        RockcutApi.Sessions.revoke_all(user, nil)
         log_audit(actor.id, user.id, "user.password_reset", %{})
         {:ok, get_user!(user.id), temp}
 
@@ -262,15 +324,21 @@ defmodule RockcutApi.Accounts do
 
   @doc "Change a user's own password after verifying the current one."
   def change_password(%User{} = user, current, new) do
-    if not Authz.device?(user) and Argon2.verify_pass(current, user.password_hash) do
-      case user
-           |> User.password_changeset(%{"password" => new, "must_reset_password" => false})
-           |> Repo.update() do
-        {:ok, user} -> {:ok, get_user!(user.id)}
-        {:error, cs} -> {:error, cs}
-      end
-    else
-      {:error, :invalid_current}
+    cond do
+      Authz.device?(user) or not Argon2.verify_pass(current, user.password_hash) ->
+        {:error, :invalid_current}
+
+      # DEV pass 1 G3: reusing the current password would only sign out the other devices.
+      new == current ->
+        {:error, :same_password}
+
+      true ->
+        case user
+             |> User.password_changeset(%{"password" => new, "must_reset_password" => false})
+             |> Repo.update() do
+          {:ok, user} -> {:ok, get_user!(user.id)}
+          {:error, cs} -> {:error, cs}
+        end
     end
   end
 
