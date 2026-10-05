@@ -62,7 +62,7 @@ import useIdleReturn from './hooks/useIdleReturn'
 import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
 import useAuthStorageSync from './hooks/useAuthStorageSync'
 import useReconnect from './hooks/useReconnect'
-import { PERSONAL_IDLE_MS, asideDeviceToken } from './lib/device'
+import { PERSONAL_IDLE_MS, asideDeviceToken, flushSignOuts } from './lib/device'
 import parseApiError from './lib/parseApiError'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
@@ -179,6 +179,14 @@ function App() {
   useDeviceTokenWatch(personalOnTablet)
   // DEV G3: another tab changed the session (sign-out, "Sign in as me", unpaired).
   useAuthStorageSync()
+  // D36-H (task 4051): sign-outs that couldn't reach the server, retried at
+  // start-up and whenever the device comes back online.
+  useEffect(() => {
+    void flushSignOuts()
+    const retry = () => void flushSignOuts()
+    window.addEventListener('online', retry)
+    return () => window.removeEventListener('online', retry)
+  }, [])
 
   useEffect(() => {
     if (isAuthenticated && !bootstrapped) loadMe()
