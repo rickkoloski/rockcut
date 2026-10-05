@@ -8,7 +8,7 @@
 
 | Item | Task | Change | Test (fails without the change) |
 |---|---|---|---|
-| **L** | 4059 (Matt's report) | Timed time off flags only shifts overlapping its hours ("…time off then"); all-day still covers whole days ("…that day"); pending never conflicts | `scheduler/time_off_conflicts.spec.ts` (3 of 8 fail on the old day rule) |
+| **L** | 4059 (Matt's report) | Timed time off flags only shifts overlapping its hours ("…time off then"); all-day still covers whole days ("…that day"); pending never conflicts. After QA: the Scheduler loads time off through the next Monday, so a Sunday overnight shift sees Monday's time off | `scheduler/time_off_conflicts.spec.ts` (3 of 8 fail on the old day rule); `scheduler/time_off_window.spec.ts` (fails without `d6fae38`) |
 | A | 3997 | `/live` LiveView socket mounted only with dev routes; prod answers 404 | `live_socket_test.exs` |
 | B | 4001 | Unknown or blocked channel URL: "Channel not found" (people) / "Not available on a shared device" (tablet), instead of a silent redirect | `messaging/channel_urls.spec.ts` (updated) |
 | C | 4002 | Tablet header fits at phone width: the pill drops the department, and the button reads "Sign in" (aria "Sign in as me") | `devices/device_header.spec.ts` (header 100 px → 64) |
@@ -19,7 +19,7 @@
 | H | 4051 | A sign-out that can't reach the server (offline, or the tab closed) is kept as pending, sent with `keepalive`, and retried at start-up and on `online` | `auth/offline_logout.spec.ts` |
 | I | 4052 | An abandoned "Sign in as me" form returns to the shared screen after 5 idle minutes and clears the email | `devices/tablet_idle.spec.ts` |
 | J | 4053 | Null nav lists render as empty; a top-level error boundary shows "Something went wrong" + Reload | `app/malformed_reply.spec.ts` |
-| K | 4057 | The flaky DEV "Try now" spec. The cause is to be found with a DEV trace during the DEV gate | DEV: 10 runs in a row |
+| K | 4057 | The flaky DEV "Try now" spec. Not reproduced, and the cause wasn't found (below). **4057 stays open** (Matt) | DEV: 10/10 in a row, then 30/31 |
 
 **No migration, no new secret, no dependency change.** Item A keeps
 `phoenix_live_view` (the dev dashboard needs it) and only stops mounting the
@@ -40,8 +40,31 @@ socket.
 - **Revert-and-rerun** for every item except D (nginx, DEV only) and K (DEV
   only). Each new or updated test fails without its change.
 
-**Stopped after the local gate at Matt's request (2026-10-04).** Nothing is
-pushed, DEV isn't claimed, and nothing is deployed.
+## DEV gate (2026-10-05)
+
+- Deployed `aafff58` to DEV (API + UI, `--depot=false`) from a clean worktree. Then `seed_synthetic()` (18 personas) and the bundle check: OK.
+- **D:** `manifest.webmanifest` is served as `application/manifest+json` (`no-cache`) and is valid JSON.
+- **A:** `/live/websocket` and `/live/longpoll` answer 404; `/api/health` answers 200.
+- **K (4057):** 10/10 with `--trace on` right after the deploy, then 30/31.
+  - The one failure was elsewhere: `POST /api/users` in the spec's own setup timed out after 20 s.
+  - The service-worker reload theory isn't supported. `autoUpdate` can call `location.reload()` on an `isExternal` activation, but a reload probe at 0 ms–5 s never caused an extra navigation, and every trace had exactly 2 document loads.
+  - The remount theory doesn't fit `LoadingScreen` (a stable module-level component).
+  - Findings are in task 4057.
+- **Full suite on DEV:** 141/141. The API logs captured during the run (9,057 lines) had no errors, warnings or 5xx.
+- **Independent QA** (`~/src/rockcut-d36-qa/D36_QA_REPORT.md`): **PASS with gaps.**
+  - All 16 scenarios passed: L1–L6, A1, B1–B2, C1, D1, E1, G1, H1, I1, J1.
+  - G was tried with 3 real tabs in real time, and H with a tab closed right after Logout.
+  - L held across the DST change and across weeks.
+  - 4 minor gaps:
+    1. A Sunday overnight shift didn't see Monday's time off. **Fixed in D36** (`d6fae38`).
+    2. The tablet header wraps at 384 px and below. Task **4061**.
+    3. A channel page shows "Loading…" forever when `/api/channels` fails. This predates D36. Task **4062**.
+    4. Malformed lists crash Messages, Scheduler and Time off to the full-screen Reload. J's own scope is met. Task **4063**.
+- **After the gap 1 fix** (`d6fae38`):
+  - Local: the new and affected specs pass, and revert-and-rerun shows the new test fails without the fix. `vite build` OK; lint 27 (the baseline).
+  - Full local Playwright: 141 passed, 1 skipped, 1 failed. The failure is `personal_signin` S13, which only fails when copies run in parallel against the local dev server. It failed 8/8 the same way on `develop`'s UI code, so it predates D36. Task **4064**.
+  - UI redeployed to DEV; bundle check OK. Full DEV suite: 142/143. The one failure, `device_signout` G4, timed out once and passed 16/16 on rerun.
+- Also filed: task **4060**, the intermittent ExUnit pairing failure from the local gate.
 
 ## Scenarios DEV must exercise
 
