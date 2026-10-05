@@ -1,6 +1,6 @@
 # D36: Backlog Sweep + Time-Off Conflict Fix — Specification
 
-**Status:** Draft — Q1–Q3 for Matt
+**Status:** Approved (2026-10-04, Q1–Q3 answered)
 **Created:** 2026-10-04
 **Author:** Matt + CC
 **Process:** `docs/process/three_environment_workflow.md`. One branch, one local gate, one DEV gate with an independent pass, one release.
@@ -174,15 +174,10 @@ The same applies to the tablet's idle-return revoke during an outage.
 | I1 | tablet | open "Sign in as me", type an email, walk away for 5:30 | shared screen; the email is gone |
 | J1 | anyone | `/api/channels` answers `{"data":null}` (page.route) | the app still renders; any crash shows Reload |
 
-## 5. Open Questions
+## 5. Decisions (Matt, 2026-10-04)
 
-**Q1 (4051).** Offline Logout: Option 1 (retry later + `keepalive`) or Option
-2 (`keepalive` only)? *Recommendation:* **Option 1**.
-
-**Q2 (4052).** An abandoned "Sign in as me" form returns to the shared screen
-after **5 minutes**. *Recommendation:* yes, 5 minutes, to match the idle
-return.
-
-**Q3 (3997).** Rick asked for the `/live` removal as its own deliverable. OK
-to bundle it here, with it called out in the PR and to Rick in conv 80?
-*Recommendation:* bundle. It's small, and the DEV gate checks it.
+| # | Decision |
+|---|---|
+| Q1 | **4051: retry later, plus `keepalive`** (Option 1). |
+| Q2 | **4052: 5 minutes**, matching the idle return. Any key or tap restarts it, and returning clears the typed email. |
+| Q3 | **3997 is bundled into D36.** Call it out in the PR and to Rick in conv 80. |
