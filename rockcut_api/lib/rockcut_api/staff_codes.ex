@@ -139,6 +139,33 @@ defmodule RockcutApi.StaffCodes do
     :ok
   end
 
+  ## Synthetic seed (D30 personas; never called from the API)
+
+  @doc """
+  Store `code` for `user` with no actor, authorization, eligibility check or
+  audit: the synthetic seed restores persona codes this way. Returns
+  `{:ok, user}`, `{:error, :invalid_code}` or `{:error, :code_in_use}`.
+  """
+  def seed_put(%User{} = user, code) when is_binary(code) do
+    with :ok <- check_format(code) do
+      user
+      |> Ecto.Changeset.change(
+        staff_code_digest: Tokens.hash(code),
+        staff_code_encrypted: encrypt(code, user.id),
+        staff_code_set_at: now()
+      )
+      |> Ecto.Changeset.unique_constraint(:staff_code_digest)
+      |> Repo.update()
+      |> case do
+        {:ok, user} -> {:ok, user}
+        {:error, %Ecto.Changeset{}} -> {:error, :code_in_use}
+      end
+    end
+  end
+
+  @doc "Clear `user`'s code with no actor or audit (the synthetic seed)."
+  def seed_clear!(%User{} = user), do: clear!(user)
+
   ## Encryption (AES-256-GCM, 12-byte IV, 16-byte tag)
 
   @doc false

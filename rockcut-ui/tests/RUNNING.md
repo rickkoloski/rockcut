@@ -17,6 +17,11 @@ Local seed password (only needed to seed, or for login-form specs): put
 `SEED_PASSWORD=<value from the PortableMind file>` in `rockcut_api/.env.synthetic`
 and `rockcut-ui/.env.test.local`. Both are gitignored.
 
+Optional, D37: `SYNTHETIC_STAFF_CODES=bartender1:<code>,bartender2:<code>,barMgr:<code>`
+in `rockcut_api/.env.synthetic` gives those personas their staff codes on
+`mix rockcut.synthetic.setup` (values from the same PortableMind file; never in
+git or chat). No spec needs it.
+
 ## Run
 
 ```bash

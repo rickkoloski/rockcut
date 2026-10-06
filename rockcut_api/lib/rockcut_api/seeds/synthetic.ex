@@ -11,13 +11,19 @@ defmodule RockcutApi.Seeds.Synthetic do
     * `reset/0`        — deletes the synthetic users and everything they own,
                           then `setup/0`.
     * `cleanup_temp/0` — deletes rows agents created with a `[TEST-TEMP]` prefix.
+
+  D37: `setup/0` also restores the staff codes of the personas listed in
+  `SYNTHETIC_STAFF_CODES` (a secret, like `SEED_PASSWORD`) and clears every
+  other persona's code; with the variable unset it leaves codes alone. The
+  `[SEED]` Buy-a-Beer Board entries carry the tag on Bought by.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
   Requires the reference seed (`priv/repo/seeds.exs`: departments + positions).
   """
   import Ecto.Query
-  alias RockcutApi.Repo
+  require Logger
+  alias RockcutApi.{Repo, StaffCodes}
   alias RockcutApi.Accounts.{User, Department, Membership}
   alias RockcutApi.Scheduling.{Shift, Position}
   alias RockcutApi.TimeOff.Request
@@ -28,6 +34,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Devices.DeviceToken
   alias RockcutApi.Scheduling.{ScheduleEvent, ScheduleEventSeries}
   alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
+  alias RockcutApi.BeerBoard.Entry
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -119,6 +126,7 @@ defmodule RockcutApi.Seeds.Synthetic do
       cleanup_temp()
       users = Map.new(personas(), fn p -> {p.key, upsert_persona(p, hash, depts)} end)
       devices = Map.new(device_personas(), fn d -> {d.key, upsert_device(d, depts)} end)
+      sync_staff_codes(users)
       prune_device_tokens()
       seed_scenario(users)
       Map.merge(users, devices)
@@ -439,6 +447,52 @@ defmodule RockcutApi.Seeds.Synthetic do
     end
   end
 
+  # D37: each listed persona gets its code back; every other persona's code is
+  # cleared (leftovers from manual testing). All persona codes are cleared
+  # first, so swapping two personas' codes doesn't collide.
+  defp sync_staff_codes(users) do
+    case Credentials.staff_codes() do
+      :unset ->
+        Logger.warning("SYNTHETIC_STAFF_CODES is not set: persona staff codes left as they are")
+        :skipped
+
+      {:ok, codes} ->
+        unknown = Map.keys(codes) -- Map.keys(users)
+
+        if unknown != [],
+          do:
+            raise(
+              ArgumentError,
+              "SYNTHETIC_STAFF_CODES names unknown personas: #{Enum.join(unknown, ", ")}"
+            )
+
+        ineligible = for {key, _} <- codes, not StaffCodes.eligible?(users[key]), do: key
+
+        if ineligible != [],
+          do:
+            raise(
+              ArgumentError,
+              "SYNTHETIC_STAFF_CODES lists personas who can't hold a staff code " <>
+                "(not active Taproom members): #{Enum.join(ineligible, ", ")}"
+            )
+
+        for {_key, user} <- users, do: StaffCodes.seed_clear!(user)
+
+        for {key, code} <- codes do
+          case StaffCodes.seed_put(users[key], code) do
+            {:ok, _} ->
+              :ok
+
+            {:error, :code_in_use} ->
+              raise ArgumentError,
+                    "SYNTHETIC_STAFF_CODES: #{key}'s code is already held by someone who isn't a persona"
+          end
+        end
+
+        :ok
+    end
+  end
+
   defp synthetic_user_ids do
     Repo.all(from(u in User, where: like(u.email, ^"%#{@domain}"), select: u.id))
   end
@@ -567,6 +621,31 @@ defmodule RockcutApi.Seeds.Synthetic do
       })
     end
 
+    # D37 Buy-a-Beer Board: one entry with 1 beer left, a For-name pair (an
+    # import duplicate group), and a few ordinary lines. The [SEED] tag is on
+    # Bought by. No change-log rows: events are history and never cleaned up.
+    # {for, bought by, beers, days since moved off, imported?}
+    board = [
+      {"Morgan Hill", "Lee", 1, 20, false},
+      {"Riley Stone", "Chris", 3, 12, false},
+      {"Riley Stone", "Dana", 2, 5, false},
+      {"Avery Lake", "Kim", 5, 9, true},
+      {"Jesse Park", "Bo", 4, 2, false}
+    ]
+
+    for {recipient, purchaser, beers, days_ago, imported?} <- board do
+      moved_off = DateTime.add(now, -days_ago * 86_400)
+
+      Repo.insert!(%Entry{
+        recipient_name: recipient,
+        purchaser_name: "#{@seed_tag} #{purchaser}",
+        beers_remaining: beers,
+        moved_off_board_at: moved_off,
+        imported_at: if(imported?, do: DateTime.add(moved_off, 3_600)),
+        created_by_id: u["barMgr"].id
+      })
+    end
+
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
       Repo.insert!(%Notification{
@@ -589,6 +668,14 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(r in Request, where: like(r.note, ^pattern)))
     Repo.delete_all(from(s in Slot, where: like(s.note, ^pattern)))
     Repo.delete_all(from(m in Message, where: like(m.body, ^pattern)))
+
+    # D37: board entries tagged on For or Bought by. Their change-log rows stay
+    # (history, harmless).
+    Repo.delete_all(
+      from(e in Entry,
+        where: like(e.recipient_name, ^pattern) or like(e.purchaser_name, ^pattern)
+      )
+    )
   end
 
   defp at(monday, day_offset, hour) do
