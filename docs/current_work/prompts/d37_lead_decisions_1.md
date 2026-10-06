@@ -6,8 +6,10 @@ questions after step 5 (`f18303a`).
 ## 1 · Excel dates: accept M/D/YYYY (Matt)
 
 The import also accepts US-order dates (`9/1/2026`, `09/01/2026`), read as midnight
-Colorado time like `YYYY-MM-DD`. Anything else is still a row-numbered error. Exports
-keep writing `YYYY-MM-DD`.
+Colorado time like `YYYY-MM-DD`. Anything else is still a row-numbered error. **Exports
+are unchanged:** the board export keeps writing the full date-time that spec §3.6 asks
+for, so a Replace from an export keeps exact moved-off times (S28). (Corrected after the
+builder asked; the first wording said `YYYY-MM-DD`.)
 - Update spec §3.6 to say so.
 - Add an ExUnit case and a fixture row (or extend the Excel-saved fixture).
 
@@ -32,3 +34,10 @@ reaching across the Brewery and Settings pages, which have little test coverage.
   on `develop`, and that D37 adds 0.
 - A follow-up task fixes them on their own branch.
 - **Don't touch Brewery, Settings or `ComponentShowcase` files in D37.**
+
+## 4 · Partial Playwright runs (lead)
+
+Because the Replace project depends on the main project, `npx playwright test <folder>`
+now runs the whole main suite first. That's accepted: the gate runs everything anyway.
+For a quick day-to-day run, use the split in `tests/RUNNING.md` (main project only, or
+Replace on its own). No script is needed.
