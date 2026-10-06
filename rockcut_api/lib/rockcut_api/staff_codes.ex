@@ -25,6 +25,9 @@ defmodule RockcutApi.StaffCodes do
   @doc "True if `user` may hold a staff code (`Authz.can_hold_staff_code?/1`)."
   def eligible?(%User{} = user), do: Authz.can_hold_staff_code?(Accounts.get_user!(user.id))
 
+  @doc "True if `user` sees and sets staff codes (owners and Taproom managers; `/api/me`)."
+  def can_manage?(%User{} = user), do: Authz.can?(user, :set_staff_code, %User{})
+
   @doc "True if the user has a staff code."
   def has_code?(%User{staff_code_digest: digest}), do: not is_nil(digest)
 

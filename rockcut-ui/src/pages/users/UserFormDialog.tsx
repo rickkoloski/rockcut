@@ -21,6 +21,8 @@ import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import useAuth from '../../hooks/useAuth'
 import type { Department, Role, User } from '../../lib/types'
+import StaffCodeSection from './StaffCodeSection'
+import { staffCodeError } from '../../lib/staffCode'
 
 interface Props {
   open: boolean
@@ -38,7 +40,7 @@ function readError(err: unknown): string {
 
 export default function UserFormDialog({ open, onClose, editUser, departments }: Props) {
   const qc = useQueryClient()
-  const { user: actor, capabilities } = useAuth()
+  const { user: actor, capabilities, staffCodes } = useAuth()
   const isOwnerActor = !!actor?.is_owner
   const isEdit = !!editUser
 
@@ -58,6 +60,15 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [tempPassword, setTempPassword] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [codeDraft, setCodeDraft] = useState('')
+
+  // D37: owners and Taproom managers see a Taproom member's staff code. Only
+  // active Taproom members (as saved) can hold one.
+  const showStaffCode =
+    isEdit &&
+    staffCodes &&
+    !!editUser?.active &&
+    !!editUser?.memberships?.some((m) => m.department_key === 'bar')
 
   useEffect(() => {
     if (!open) return
@@ -75,6 +86,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setRoles(initial)
     setTempPassword(null)
     setError(null)
+    setCodeDraft('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editUser])
 
@@ -87,6 +99,10 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
 
   const save = async () => {
     setError(null)
+    if (codeDraft !== '' && !/^\d{4}$/.test(codeDraft)) {
+      setError('A staff code is 4 digits.')
+      return
+    }
     setLoading(true)
     try {
       if (isEdit && editUser) {
@@ -104,6 +120,16 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
         } else {
           await saveMemberships()
           await saveUser()
+        }
+        if (showStaffCode && codeDraft !== '') {
+          try {
+            await api.put(`/api/users/${editUser.id}/staff_code`, { code: codeDraft })
+          } catch (err) {
+            // The rest is saved; keep the dialog open on the code's problem.
+            invalidate()
+            setError(staffCodeError(err))
+            return
+          }
         }
         invalidate()
         onClose()
@@ -208,6 +234,16 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
                 </TextField>
               ))}
             </Stack>
+
+            {showStaffCode && editUser && (
+              <StaffCodeSection
+                user={editUser}
+                draft={codeDraft}
+                onDraftChange={setCodeDraft}
+                onRemoved={invalidate}
+                disabled={loading}
+              />
+            )}
           </>
         )}
       </DialogContent>

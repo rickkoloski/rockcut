@@ -169,9 +169,10 @@ groups, errors}`.
   - `GET /users/:id/staff_code` (one code, for the dialog);
   - `PUT` / `DELETE /users/:id/staff_code`.
 - **`device_route_matrix_test.exs`:** classify every new route.
-- **`MeController` capabilities:** add `beer_board_manage: boolean` (history,
-  import and export) and `staff_codes_manage: boolean`, so the UI doesn't
-  re-derive roles.
+- **`/api/me`:** top-level `staff_codes` (step 2) and `beer_board_manage`
+  (step 4) flags beside `capabilities`, like D33's `shared_devices`. The D31
+  parity suite pins the `capabilities` keys, so new flags can't go inside
+  it. The UI reads the flags, so it doesn't re-derive roles.
 
 **Config and deps:**
 - `{:nimble_csv, "~> 1.2"}`;

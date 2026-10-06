@@ -243,6 +243,8 @@ export interface User {
   // D33: 'device' for a shared tablet account; every human is 'person'.
   kind?: 'person' | 'device'
   home_department_id?: number | null
+  // D37: a staff code is set (the code itself comes only from GET /api/users/:id/staff_code).
+  has_staff_code?: boolean
   memberships: Membership[] | null
   inserted_at: string
   updated_at: string
@@ -271,6 +273,8 @@ export interface Me {
   capabilities: Capabilities
   // D33: sees Admin → Shared devices (owner, or manager of a device's home department).
   shared_devices?: boolean
+  // D37: sees and sets Taproom staff codes in the user dialog (owners, Taproom managers).
+  staff_codes?: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────

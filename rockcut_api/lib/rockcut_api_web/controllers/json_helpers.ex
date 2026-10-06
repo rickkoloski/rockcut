@@ -16,6 +16,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       schedulable: user.schedulable,
       kind: user.kind,
       home_department_id: user.home_department_id,
+      # D37: whether a staff code is set; the code itself is only ever sent by
+      # GET /api/users/:id/staff_code.
+      has_staff_code: not is_nil(user.staff_code_digest),
       memberships: maybe_render(user, :memberships, &Enum.map(&1, fn m -> membership(m) end)),
       inserted_at: user.inserted_at,
       updated_at: user.updated_at
@@ -45,8 +48,15 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  def me(user, capabilities, shared_devices \\ false) do
-    %{user: user(user), capabilities: capabilities, shared_devices: shared_devices}
+  # `shared_devices` (D33) and `staff_codes` (D37) sit beside `capabilities`, whose
+  # keys the D31 parity suite pins.
+  def me(user, capabilities, shared_devices \\ false, staff_codes \\ false) do
+    %{
+      user: user(user),
+      capabilities: capabilities,
+      shared_devices: shared_devices,
+      staff_codes: staff_codes
+    }
   end
 
   # ── Shared devices (D33) ───────────────────────────────────────────
