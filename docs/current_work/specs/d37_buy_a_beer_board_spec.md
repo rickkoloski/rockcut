@@ -5,7 +5,7 @@
 **Author:** Matt + CC
 **Depends On:** D33 (shared devices, `Authz.Device`), D31 (every authorization decision goes through `Authz`), D30 (synthetic personas, DEV)
 **Process:** `docs/process/three_environment_workflow.md` (spec with persona scenarios → local gate → DEV gate → release)
-**Backlog:** no PortableMind task yet
+**Backlog:** PortableMind project 254, task 4083
 **Branch:** `d37-buy-a-beer-board`, cut from `develop`
 
 ---
