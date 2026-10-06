@@ -115,9 +115,13 @@ Names are free text: recipients and purchasers are customers, not app users.
 
 ### 3.2 Staff codes
 
-- **Setting a code:**
+- **Setting and seeing a code in the dialog:**
   - Users & Roles → edit person → **Staff code**: a 4-digit field
     (`0000`–`9999`, numeric keypad).
+  - If the person has a code, the field shows it **masked**, with an eye
+    toggle to show it. It's hidden each time the dialog opens.
+  - Showing it fetches that one person's code and writes a
+    `staff_code.reveal` entry.
   - **Suggest** fills in a random code that isn't in use. Save stores it.
   - A code already in use is refused with "That code is already in use".
     Telling a manager that is fine, because the same manager can see every
@@ -199,6 +203,7 @@ is needed, and the log shows just their name (Q3).
 | `POST /api/beer_board/import/preview` | managers | multipart CSV + `mode` (`add` / `replace`). Validates; **changes nothing**. Returns the rows, errors and duplicate groups. |
 | `POST /api/beer_board/import` | managers | `mode`, the previewed rows, and a resolution for every duplicate group. One transaction. |
 | `GET /api/staff_codes` | managers | `{user_id: code}` for the people the caller may see. Writes `staff_code.reveal`. |
+| `GET /api/users/:id/staff_code` | managers | one person's code, for the edit dialog's eye toggle. Writes `staff_code.reveal`. |
 | `PUT /api/users/:id/staff_code` | managers | `{code}` to set or change. `DELETE` removes it. |
 
 "Managers" means owners and Taproom managers.
@@ -402,7 +407,7 @@ me" on the tablet to import.
 
 | # | Persona | Entry point | Mode / state | Expected |
 |---|---|---|---|---|
-| S1 | `barMgr` | Users & Roles → edit `bartender1` → Staff code | no code yet | Types `4821`, Save. The grid shows `••••`, and Show codes reveals `4821`. After a reload the toggle is off again. `audit_log`: `staff_code.set`, then `staff_code.reveal`. |
+| S1 | `barMgr` | Users & Roles → edit `bartender1` → Staff code | no code yet | Types `4821`, Save. The grid shows `••••`, and Show codes reveals `4821`. After a reload the toggle is off again. Reopening the dialog shows the code masked, and the eye reveals `4821`. `audit_log`: `staff_code.set`, then `staff_code.reveal` for each reveal. |
 | S2 | `barMgr` | edit `bartender2` → Staff code `4821` | `bartender1` has `4821` | "That code is already in use". Suggest fills in an unused code, which saves. |
 | S3 | `barMgr` | Users & Roles → `brewer1` | not a Taproom member | No Staff code section, and `—` in the column. `PUT …/staff_code` returns 422. |
 | S4 | `breweryMgr`, `bartender1` | Users & Roles / API | | No Staff code column, toggle or section. `GET /api/staff_codes` and `PUT …/staff_code` return 403. |
@@ -449,8 +454,9 @@ me" on the tablet to import.
 
 - [x] **Q1: who picks the digits** → managers type them in. A Suggest button
   fills an unused one.
-- [x] **Q2: seeing codes later** → shown in Users & Roles, hidden by default
-  behind a Show codes toggle. Stored encrypted, plus a digest for lookup.
+- [x] **Q2: seeing codes later** → shown in Users & Roles, both in the list
+  (Show codes toggle) and in the edit dialog (eye toggle), hidden by
+  default. Stored encrypted, plus a digest for lookup.
 - [x] **Q3: attribution** → just the name when signed in directly (including
   "Sign in as me" on a tablet); "<name> on Shared Device" with a code.
 - [x] **Q4: limits** → as drafted: 1–99 beers, 80-character names, 5 wrong

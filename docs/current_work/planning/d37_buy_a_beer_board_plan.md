@@ -93,6 +93,8 @@ groups, errors}`.
   members exist, so collisions are rare.
 - `reveal(actor)`: `%{user_id => code}` for the people the actor may see.
   Decrypts and audits `staff_code.reveal` once.
+- `reveal_one(target, actor)`: one code, for the dialog. Audits
+  `staff_code.reveal`.
 - `resolve(code)`: an active Taproom member, or `nil`.
 - `clear_if_ineligible(user_id)`: called inside the existing transactions
   of `Accounts.update_user` (deactivation) and `Accounts.set_memberships`
@@ -167,6 +169,7 @@ groups, errors}`.
 - **`StaffCodeController`** (`:authenticated`):
   - `GET /staff_codes`;
   - `GET /staff_codes/suggest`;
+  - `GET /users/:id/staff_code` (one code, for the dialog);
   - `PUT` / `DELETE /users/:id/staff_code`.
 - **`device_route_matrix_test.exs`:** classify every new route.
 - **`MeController` capabilities:** add `beer_board_manage: boolean` (history,
@@ -222,6 +225,9 @@ groups, errors}`.
     `/api/staff_codes`.
 - **`UserFormDialog.tsx`:** a Staff code section for eligible users, with
   Suggest, Save and Remove.
+  - An existing code is shown masked, with an eye toggle that fetches
+    `GET /api/users/:id/staff_code`.
+  - It's hidden again each time the dialog opens.
 - **`lib/types.ts`:** `BeerBoardEntry`, `BeerBoardEvent`, `ImportPreview`,
   and the new capabilities.
 
