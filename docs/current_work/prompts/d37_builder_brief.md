@@ -124,3 +124,76 @@ Build spec §3.6 and scenarios **S20–S30**, as the plan describes:
   4. open `LEAD:` questions.
 
 Don't start step 6.
+
+---
+
+## Task 2: plan step 6, synthetic seed and COVERAGE.md
+
+**Also read:** `d37_lead_decisions_1.md` (all four sections). Lint is waived for
+D37. **Don't touch Brewery, Settings or `ComponentShowcase` files.**
+
+Build plan step 6 ("Changes → Synthetic seed" and "Config and deps"):
+
+**Seed (`lib/rockcut_api/seeds/synthetic.ex`):**
+- **`[SEED]` board entries**, rebuilt by `setup/0`. Include:
+  - an entry with 1 beer left;
+  - a pair with the same For name (for an import duplicate group);
+  - a few ordinary entries.
+
+  Give the bought-by names the `[SEED]` tag, or tag them however the other `[SEED]` rows
+  are tagged, so `reset/0`'s `delete_tagged` removes them.
+- **Persona staff codes** for `bartender1`, `bartender2` and `barMgr`:
+  - read `SYNTHETIC_STAFF_CODES` (`bartender1:1234,…` format), from the
+    environment first and then from `.env.synthetic`, the way
+    `Seeds.Credentials` reads `SEED_PASSWORD`;
+  - **when it's unset,** skip setting codes and log one line saying so. Don't fail:
+    DEV doesn't have the variable yet;
+  - `setup/0` **restores** each persona's code to its listed value and clears
+    codes on the other personas, so leftovers (like `bartender2`'s from step 4)
+    go away;
+  - validate the codes with the same rules as the API (4 digits, unique), and
+    reject a bad list with a clear error.
+- **`cleanup_temp/0`:** delete `beer_board_entries` whose For or Bought by starts
+  with `[TEST-TEMP]`. Leave `beer_board_events` alone: they're history (plan).
+- **ExUnit:** extend the synthetic seed tests to cover:
+  - the entries;
+  - codes set from the env;
+  - codes skipped when it's unset;
+  - leftover codes cleared;
+  - `cleanup_temp` removing `[TEST-TEMP]` entries;
+  - `setup/0` run twice giving the same result.
+
+**Local env:**
+- Add `SYNTHETIC_STAFF_CODES=…` to the gitignored `rockcut_api/.env.synthetic`.
+  Pick three distinct codes.
+- **Don't print the codes in your replies or commit them.** Treat them like
+  `SEED_PASSWORD`.
+- If any spec uses persona codes (none should; device specs make
+  `[TEST-TEMP]` people), say so.
+- Update `docs/process/test-credentials-policy.md` and `tests/RUNNING.md` where
+  they list the synthetic secrets: name the new variable, but give no values.
+
+**Local leftovers:** run `mix rockcut.synthetic.setup` and check:
+- the step 4 walkthrough entries ("Pat W…", "Ana W…", not tagged) are gone;
+- if `setup` doesn't remove them, delete just those entries by hand (through the
+  API as `barMgr`, or `mix run`) and tell me which way you used;
+- don't add a "delete everything untagged" rule to the seed.
+
+**`tests/COVERAGE.md`:** add a D37 section in the same format, with S1–S31 → where
+each is tested (ExUnit file and/or Playwright file). Mark any **GAP** or
+**Manual** row honestly. Pixel keypad, Android CSV download, and real Excel or
+Numbers export are DEV checks (plan LIMITATIONS).
+
+**Done means:**
+- the API suite, `tsc`, `vite build` and the taproom Playwright folder (which now
+  runs the full main suite plus Replace) all pass;
+- lint is still at 26 errors with none added;
+- after `mix rockcut.synthetic.setup`, the board shows the `[SEED]` entries.
+
+**Then:**
+- commit as `feat: D37 step 6 — synthetic seed, staff codes, coverage`;
+- **stop**;
+- reply with: what you built, the test counts, the leftover check result,
+  any GAP rows, and `LEAD:` questions.
+
+Don't start step 7, and don't push.
