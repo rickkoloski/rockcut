@@ -1,4 +1,5 @@
-import { expect } from '@playwright/test'
+import { readFileSync } from 'node:fs'
+import { expect, type Page } from '@playwright/test'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { createTempPerson, type TempPerson } from '../auth/helpers'
 import type { PersonaKey } from '../../config/test-env'
@@ -97,4 +98,63 @@ export async function exportBoard(): Promise<Buffer> {
   const res = await (await apiAs('barMgr')).get('/api/beer_board/export.csv')
   expect(res.status()).toBe(200)
   return await res.body()
+}
+
+/** Today in Colorado as the board shows it: "Oct 5, 2026". */
+export const today = () =>
+  new Intl.DateTimeFormat('en-US', { timeZone: 'America/Denver', month: 'short', day: 'numeric', year: 'numeric' }).format(new Date())
+
+/** Add an entry through the API as `as` (exact names; the caller tags them). */
+export async function addAs(as: PersonaKey, recipient: string, purchaser: string, beers: number) {
+  const res = await (await apiAs(as)).post('/api/beer_board', {
+    data: { recipient_name: recipient, purchaser_name: purchaser, beers },
+  })
+  expect(res.status(), await res.text()).toBe(201)
+  return (await res.json()).data as { id: number }
+}
+
+export async function openBoard(page: Page) {
+  await page.goto('/taproom/beer-board')
+  await expect(page.getByTestId('board-grid')).toBeVisible()
+}
+
+/** Board → Import CSV → choose the file (and mode) → Preview. */
+export async function previewImport(page: Page, file: Buffer, mode: 'add' | 'replace' = 'add') {
+  await openBoard(page)
+  await page.getByTestId('board-import').click()
+  await page.getByTestId('import-file').setInputFiles({ name: 'board.csv', mimeType: 'text/csv', buffer: file })
+  if (mode === 'replace') await page.getByTestId('import-mode-replace').check()
+  const done = page.waitForResponse((r) => r.url().endsWith('/api/beer_board/import/preview'))
+  await page.getByTestId('import-preview').click()
+  expect((await done).status()).toBe(200)
+}
+
+/** Press Confirm in the import dialog; resolves to the import response. */
+export async function confirmImport(page: Page) {
+  const done = page.waitForResponse((r) => r.url().endsWith('/api/beer_board/import'))
+  await page.getByTestId('import-confirm').click()
+  return done
+}
+
+/** Board → Export CSV; returns the downloaded file's name and text. */
+export async function downloadBoard(page: Page) {
+  const dl = page.waitForEvent('download')
+  await page.getByTestId('board-export').click()
+  const file = await dl
+  return { name: file.suggestedFilename(), text: readFileSync((await file.path())!, 'utf8') }
+}
+
+/** The grid rows for `q` after a reload, as "For | Bought by | Beers | Moved off | Imported". */
+export async function rowsAfterReload(page: Page, q: string) {
+  await page.reload()
+  await page.getByTestId('board-search').fill(q)
+  const rows = page.locator('[role=row][data-id]')
+  await expect(rows.first()).toBeVisible()
+  return rows.evaluateAll((els) =>
+    els.map((el) =>
+      ['recipient_name', 'purchaser_name', 'beers_remaining', 'moved_off_board_at', 'imported_at']
+        .map((f) => el.querySelector(`[data-field=${f}]`)?.textContent ?? '')
+        .join(' | '),
+    ),
+  )
 }

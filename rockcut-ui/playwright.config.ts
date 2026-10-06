@@ -27,7 +27,17 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
+      testIgnore: /beer-board-replace\.spec\.ts/,
       dependencies: ['setup'],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // D37: Import → Replace clears the whole shared board, so those specs run
+    // alone: one worker, after every other spec has finished.
+    {
+      name: 'board-replace',
+      testMatch: /beer-board-replace\.spec\.ts/,
+      dependencies: ['setup', 'chromium'],
+      workers: 1,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

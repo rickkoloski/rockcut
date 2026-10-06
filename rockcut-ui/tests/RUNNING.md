@@ -26,6 +26,27 @@ E2E_TARGET=dev npx playwright test     # DEV (needs `fly` logged in)
 npx playwright test tests/smoke/roles.spec.ts
 ```
 
+### Projects
+
+| Project | Runs | Notes |
+|---|---|---|
+| `setup` | `auth.setup.ts` | Mints persona tokens; every other project depends on it. |
+| `chromium` | every spec except Replace | Parallel. |
+| `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
+
+**Playwright runs a dependency project in full, whatever path you filter
+on.** Because `board-replace` depends on `chromium`, `npx playwright test
+tests/regression/taproom` runs the whole `chromium` suite first. To run part of
+the suite:
+
+```bash
+npx playwright test tests/regression/taproom --project=chromium   # the folder, without Replace
+npx playwright test --project=board-replace --no-deps              # Replace only (auth files must exist)
+```
+
+Never run `beer-board-replace.spec.ts` alongside other specs: anything they
+put on the board while a Replace runs is deleted.
+
 `tests/auth.setup.ts` mints a token for every active persona in one call and
 writes `tests/.playwright-auth/<persona>.json`. Specs switch user with
 `test.use({ storageState: authFile('barMgr') })`. No UI login.
