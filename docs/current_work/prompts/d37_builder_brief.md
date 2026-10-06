@@ -197,3 +197,63 @@ Numbers export are DEV checks (plan LIMITATIONS).
   any GAP rows, and `LEAD:` questions.
 
 Don't start step 7, and don't push.
+
+---
+
+## Task 3: plan step 7, the local gate and the handoff note
+
+**Also read:** `d37_lead_decisions_2.md`, and `three_environment_workflow.md` §3
+("Local gate" and "The handoff note"). Lint is waived (decisions 1 §3). Don't touch
+Brewery, Settings or `ComponentShowcase` files.
+
+**1. Run the whole gate on the final branch.** Run every item, even ones that passed
+earlier, and record the HEAD SHA:
+- `cd rockcut_api && MIX_ENV=test mix test`;
+- `cd rockcut-ui && npx tsc --noEmit -p tsconfig.app.json && pnpm exec vite build && pnpm lint`.
+  Lint is expected at 26 errors and 1 warning. Confirm none are in D37 files: list
+  them by file.
+- `cd rockcut-ui && npx playwright test`: the **whole** local suite, not just
+  taproom. Run `mix rockcut.synthetic.setup` first and again afterwards.
+- **Flakes:** a failure that passes on retry is still reported. Re-run that spec
+  alone with `--repeat-each 5` and say whether it predates D37 (task 4064 is a known
+  one).
+- **Persist-verify, one final pass:** as throwaway scripts in your scratchpad,
+  with the auth files, never reading tokens:
+  - as `bartender1`: add, redeem, edit and delete;
+  - on the tablet with a `[TEST-TEMP]` person's code: redeem;
+  - as `barMgr`: import (Add mode) and both exports.
+
+  Reload after each step and check the result is still there. Delete the
+  scripts afterwards.
+- No bug-fix revert check is needed. D37 is a feature, not a fix.
+
+**2. Write the handoff note:** `docs/current_work/prompts/d37_handoff_note.md`, in
+the D36 note's shape (`d36_handoff_note.md`):
+- deliverable, spec and branch, plus the SHA to put on DEV (leave it as
+  `<filled by lead at push>`, since the note's own commit changes it);
+- **What changed:** grouped by area (staff codes, board, History, import/export,
+  seed), with the scenarios and the tests that cover them;
+- **Migrations:** list them, and say whether each is reversible. Check `down`
+  actually works by rolling back and migrating forward on a **scratch copy** of
+  the dev DB, never the real one;
+- **New dependency** (`nimble_csv`) and the **new secrets:**
+  - `STAFF_CODE_KEY`: the API refuses to boot without it;
+  - `SYNTHETIC_STAFF_CODES`: DEV only, and optional.
+
+  Give no values;
+- **Personas and scenarios DEV must exercise;**
+- **Local gate:** the results with counts and the date;
+- **The lint waiver:** 26 errors already on `develop`, 0 from D37, Matt's waiver
+  (2026-10-06), and task 4084;
+- **⚠ LIMITATIONS:** the plan's list, plus decisions 2 §2 and §3. Add anything
+  else local couldn't show.
+
+**3. Commit** as `docs: D37 handoff note + local gate results`.
+
+**Then stop. Don't push.** The lead pushes and opens the PR, once Matt says so.
+
+**Reply with:**
+- the gate results (counts, the lint file list, any flakes);
+- the migration rollback result;
+- anything the note flags as a risk;
+- `LEAD:` questions.
