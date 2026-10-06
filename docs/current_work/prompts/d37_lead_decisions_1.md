@@ -21,15 +21,14 @@ Move the Replace tests (S25, S28) into a Playwright project of their own that:
 Tag them, or put them in their own file. Keep the restore-after-each-test approach.
 Update `tests/RUNNING.md` if the way to run the suite changes.
 
-## 3 · Lint: fix the 26 errors in D37 (Matt)
+## 3 · Lint: waived for D37 (Matt, 2026-10-06)
 
-Matt chose to fix them on this branch instead of waiving them.
-- **A separate commit:** `fix: clear pre-existing lint errors`. Keep it apart from
-  D37 code.
-- **No behavior changes.** For `react-hooks/set-state-in-effect`, use the handoff's
-  pattern: remount the dialog with a `key` and initialize from props.
-- `pnpm lint` ends with 0 errors. Note any warning you leave, and why.
-- **Check the dialogs you touched.**
-  - Run the Playwright specs that cover them.
-  - For any dialog with no spec, drive it once in a browser with a throwaway script
-    (open, edit, save, reopen), and say which dialogs those were.
+The 26 lint errors already on `develop` are **waived** for D37's local gate. D37 adds
+none. Matt first chose to fix them in D37. He reversed that once the cleanup was
+reaching across the Brewery and Settings pages, which have little test coverage.
+- The builder's uncommitted cleanup was stopped and discarded. Nothing from it was
+  committed.
+- **The PR records the waiver.** It says that `pnpm lint` shows 26 errors, all already
+  on `develop`, and that D37 adds 0.
+- A follow-up task fixes them on their own branch.
+- **Don't touch Brewery, Settings or `ComponentShowcase` files in D37.**
