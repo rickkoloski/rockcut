@@ -324,6 +324,15 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, :assign, {:memberships, dept_id}),
     do: role_in(user, dept_id) == :manager
 
+  # D37 Buy-a-Beer Board: any Taproom member reads and writes (add, redeem,
+  # edit, delete); the change log, import and export are for Taproom managers.
+  # Owners pass above.
+  def can?(%User{} = user, action, :beer_board) when action in [:read, :write],
+    do: member_of?(user, "bar")
+
+  def can?(%User{} = user, action, :beer_board) when action in [:history, :import, :export],
+    do: role_in(user, "bar") == :manager
+
   # D37 staff codes: owners (above) and Taproom managers set and see them.
   # Whether the target may hold one is StaffCodes' check (can_hold_staff_code?/1).
   def can?(%User{} = user, action, %User{})

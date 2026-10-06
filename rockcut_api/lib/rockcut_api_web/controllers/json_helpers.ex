@@ -59,6 +59,36 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  # ── Buy-a-Beer Board (D37) ─────────────────────────────────────────
+
+  def beer_board_entry(e) do
+    %{
+      id: e.id,
+      recipient_name: e.recipient_name,
+      purchaser_name: e.purchaser_name,
+      beers_remaining: e.beers_remaining,
+      moved_off_board_at: e.moved_off_board_at,
+      imported_at: e.imported_at
+    }
+  end
+
+  def beer_board_event(ev) do
+    %{
+      id: ev.id,
+      entry_id: ev.entry_id,
+      action: ev.action,
+      actor_name: maybe_render(ev, :actor, & &1.name),
+      on_shared_device: not is_nil(ev.device_id),
+      recipient_name: ev.recipient_name,
+      purchaser_name: ev.purchaser_name,
+      beers_before: ev.beers_before,
+      beers_after: ev.beers_after,
+      source: Map.get(ev.detail || %{}, "source"),
+      detail: ev.detail,
+      inserted_at: ev.inserted_at
+    }
+  end
+
   # ── Shared devices (D33) ───────────────────────────────────────────
 
   @doc """

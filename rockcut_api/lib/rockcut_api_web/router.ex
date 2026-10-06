@@ -21,6 +21,11 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.ModuleAccessPlug, module: :brewery
   end
 
+  # D37: Taproom pages (members and owners; a Taproom tablet by its home module).
+  pipeline :taproom do
+    plug RockcutApiWeb.ModuleAccessPlug, module: :bar
+  end
+
   # Public routes (no auth required)
   scope "/api", RockcutApiWeb do
     pipe_through :api
@@ -55,6 +60,25 @@ defmodule RockcutApiWeb.Router do
     get "/channels/:key/messages", MessageController, :index
     post "/channels/:key/read", MessageController, :read
     get "/messages/unread_count", MessageController, :unread_count
+  end
+
+  # D37 Buy-a-Beer Board: Taproom staff and the Taproom tablet. Writes from a
+  # tablet need a staff code (BeerBoardController); see the route matrix test.
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :device_allowed, :taproom]
+
+    get "/beer_board", BeerBoardController, :index
+    post "/beer_board", BeerBoardController, :create
+    post "/beer_board/:id/redeem", BeerBoardController, :redeem
+    patch "/beer_board/:id", BeerBoardController, :update
+    delete "/beer_board/:id", BeerBoardController, :delete
+  end
+
+  # D37: board history (and, from step 5, import/export). People only.
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :taproom]
+
+    get "/beer_board/history", BeerBoardAdminController, :history
   end
 
   # Authenticated routes (signed-in people; closed to shared devices)

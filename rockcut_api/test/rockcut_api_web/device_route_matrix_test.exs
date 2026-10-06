@@ -31,7 +31,18 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:get, "/api/channels"},
     {:get, "/api/channels/:key/messages"},
     {:post, "/api/channels/:key/read"},
-    {:get, "/api/messages/unread_count"}
+    {:get, "/api/messages/unread_count"},
+    # D37: a Taproom tablet reads the Buy-a-Beer Board.
+    {:get, "/api/beer_board"}
+  ]
+
+  # D37: device-allowed writes that need a person's staff code. Without one
+  # they answer 422 `staff_code_required` (with one: beer_board_controller_test).
+  @device_with_code [
+    {:post, "/api/beer_board"},
+    {:post, "/api/beer_board/:id/redeem"},
+    {:patch, "/api/beer_board/:id"},
+    {:delete, "/api/beer_board/:id"}
   ]
 
   @denied [
@@ -45,6 +56,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:put, "/api/users/:id"},
     {:put, "/api/users/:user_id/memberships"},
     {:post, "/api/users/:id/reset_password"},
+    {:get, "/api/beer_board/history"},
     {:get, "/api/users/:id/staff_code"},
     {:put, "/api/users/:id/staff_code"},
     {:delete, "/api/users/:id/staff_code"},
@@ -195,7 +207,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     routes = app_routes()
     assert length(routes) == length(Enum.uniq(routes)), "a path+verb is declared twice"
 
-    classified = @public ++ @device_ok ++ @denied
+    classified = @public ++ @device_ok ++ @device_with_code ++ @denied
     assert length(classified) == length(Enum.uniq(classified))
 
     unclassified = routes -- classified
@@ -221,6 +233,20 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
             conn = call_device(token, verb, fill(path)),
             conn.status != 403 or
               Jason.decode!(conn.resp_body)["error"] != "Not available on a shared device" do
+          {verb, path, conn.status}
+        end
+
+      assert failures == []
+    end
+
+    test "board writes without a staff code answer 422 staff_code_required (D37)", %{
+      token: token
+    } do
+      failures =
+        for {verb, path} <- @device_with_code,
+            conn = call_device(token, verb, fill(path)),
+            conn.status != 422 or
+              Jason.decode!(conn.resp_body)["error"] != "staff_code_required" do
           {verb, path, conn.status}
         end
 
