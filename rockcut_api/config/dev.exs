@@ -67,3 +67,11 @@ config :swoosh, :api_client, false
 # dev server allows more wrong pairing codes per client. Tests and DEV/prod
 # keep the real limits (5 per client, 50 global per 10 minutes).
 config :rockcut_api, RockcutApi.Devices.PairingRateLimiter, per_ip: 1000, global: 1000
+
+# D37: a fixed, public staff-code key for local dev only (prod reads STAFF_CODE_KEY),
+# and a high wrong-code limit for local Playwright reruns from one tablet token.
+config :rockcut_api,
+       :staff_code_key,
+       Base.decode64!("ZGV2LW9ubHktc3RhZmYtY29kZS1rZXktMzJieXRlcyE=")
+
+config :rockcut_api, RockcutApi.StaffCodes.RateLimiter, limit: 1000

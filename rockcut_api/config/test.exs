@@ -37,3 +37,8 @@ config :rockcut_api, :seed_env_file, nil
 
 # Deliver notification email/push inline in tests (D35): no task outlives its test.
 config :rockcut_api, :async_delivery, false
+
+# D37: a fixed staff-code key for tests (prod reads STAFF_CODE_KEY).
+config :rockcut_api,
+       :staff_code_key,
+       Base.decode64!("dGVzdC1vbmx5LXN0YWZmLWNvZGUta2V5LTMyYnl0ZSE=")
