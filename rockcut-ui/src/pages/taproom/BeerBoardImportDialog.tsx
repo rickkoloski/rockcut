@@ -151,7 +151,7 @@ export default function BeerBoardImportDialog({ open, onClose, onDone, onExport 
         {!preview ? (
           <>
             <Typography variant="body2" color="text.secondary">
-              Columns: For, Bought by, Beers, and optionally Moved off board (YYYY-MM-DD). A file you exported
+              Columns: For, Bought by, Beers, and optionally Moved off board (YYYY-MM-DD or M/D/YYYY). A file you exported
               from this page works as is.
             </Typography>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>

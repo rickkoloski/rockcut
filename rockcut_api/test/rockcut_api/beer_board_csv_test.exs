@@ -35,13 +35,28 @@ defmodule RockcutApi.BeerBoardCsvTest do
              ]
     end
 
-    test "an Excel-saved file: BOM, CRLF, header case and spaces, Date added, Imported ignored" do
-      assert {:ok, [pat, ana]} = Csv.parse(fixture("excel.csv"))
-      assert names([pat, ana]) == [{"Pat", "Chris", 2}, {"Ana", "Bo", 1}]
+    test "an Excel-saved file: BOM, CRLF, header case and spaces, Date added, Imported ignored, US dates" do
+      assert {:ok, [pat, ana, kim, ray]} = Csv.parse(fixture("excel.csv"))
+
+      assert names([pat, ana, kim, ray]) ==
+               [{"Pat", "Chris", 2}, {"Ana", "Bo", 1}, {"Kim", "Lee", 2}, {"Ray", "Jo", 1}]
+
       assert pat.moved_off_board_at == ~U[2026-09-01 06:00:00Z]
       # The Imported column is never taken from a file.
       refute Map.has_key?(ana, :imported_at)
       assert ana.moved_off_board_at == nil
+      # Excel re-saves dates in US order: 9/1/2026 = 2026-09-01, midnight in Colorado.
+      assert kim.moved_off_board_at == pat.moved_off_board_at
+      assert ray.moved_off_board_at == ~U[2026-09-15 06:00:00Z]
+    end
+
+    test "US dates must be real dates; day-first and two-digit years are refused" do
+      for bad <- ~w(13/1/2026 2/30/2026 9/1/26 1.9.2026) do
+        assert {:error, [%{row: 2, message: message}]} =
+                 Csv.parse("For,Bought by,Beers,Moved off board\nPat,Chris,1,#{bad}\n")
+
+        assert message == ~s(Moved off board "#{bad}" isn't a date; use YYYY-MM-DD or M/D/YYYY)
+      end
     end
 
     test "quoted commas and quotes" do
@@ -85,7 +100,10 @@ defmodule RockcutApi.BeerBoardCsvTest do
 
       assert {:error,
               [
-                %{row: 2, message: ~s(Moved off board "Sept 1" isn't a date; use YYYY-MM-DD)},
+                %{
+                  row: 2,
+                  message: ~s(Moved off board "Sept 1" isn't a date; use YYYY-MM-DD or M/D/YYYY)
+                },
                 %{row: 3, message: "For is longer than 80 characters"}
               ]} =
                Csv.parse(

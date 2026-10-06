@@ -144,8 +144,8 @@ defmodule RockcutApi.BeerBoard.Csv do
   @doc """
   Validate one row (from a file, or sent back by the client at confirm).
   Accepts atom or string keys; `beers` may be an integer or text, and
-  `moved_off_board_at` a `DateTime`, an ISO 8601 date-time, `YYYY-MM-DD`
-  (midnight in Colorado), blank or nil.
+  `moved_off_board_at` a `DateTime`, an ISO 8601 date-time, `YYYY-MM-DD` or
+  `M/D/YYYY` (midnight in Colorado), blank or nil.
   """
   def validate_row(raw) do
     get = fn key -> Map.get(raw, key, Map.get(raw, Atom.to_string(key))) end
@@ -215,12 +215,31 @@ defmodule RockcutApi.BeerBoard.Csv do
       match?({:ok, _}, Date.from_iso8601(value)) ->
         {Recurrence.local_to_utc(Date.from_iso8601!(value), ~T[00:00:00]), []}
 
+      match?({:ok, _}, us_date(value)) ->
+        {:ok, d} = us_date(value)
+        {Recurrence.local_to_utc(d, ~T[00:00:00]), []}
+
       true ->
-        {nil, [%{row: n, message: ~s(Moved off board "#{value}" isn't a date; use YYYY-MM-DD)}]}
+        {nil,
+         [
+           %{
+             row: n,
+             message: ~s(Moved off board "#{value}" isn't a date; use YYYY-MM-DD or M/D/YYYY)
+           }
+         ]}
     end
   end
 
-  defp date(_, n), do: {nil, [%{row: n, message: "Moved off board isn't a date; use YYYY-MM-DD"}]}
+  defp date(_, n),
+    do: {nil, [%{row: n, message: "Moved off board isn't a date; use YYYY-MM-DD or M/D/YYYY"}]}
+
+  # US order, as Excel re-saves a date: 9/1/2026 or 09/01/2026 (decision 1).
+  defp us_date(value) do
+    case Regex.run(~r"^(\d{1,2})/(\d{1,2})/(\d{4})$", value, capture: :all_but_first) do
+      [m, d, y] -> Date.new(String.to_integer(y), String.to_integer(m), String.to_integer(d))
+      nil -> :error
+    end
+  end
 
   @doc "Strip one leading `'` the formula guard added."
   def unguard("'" <> rest = value) do

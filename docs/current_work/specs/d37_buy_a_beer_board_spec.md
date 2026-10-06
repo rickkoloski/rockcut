@@ -267,7 +267,7 @@ format (`.xlsx`) adds a dependency for no gain at this size.
   | `For` | yes | recipient |
   | `Bought by` | yes | purchaser |
   | `Beers` | yes | whole number, 1–99 |
-  | `Moved off board` (or `Date added`) | no | `YYYY-MM-DD`, or the date-time an export wrote. Blank or missing means the import date. It keeps the original dates when a backup is restored. |
+  | `Moved off board` (or `Date added`) | no | `YYYY-MM-DD`, `M/D/YYYY` (US order, as Excel re-saves a date: `9/1/2026`, `09/01/2026`), or the date-time an export wrote. A date is midnight Colorado time. Anything else is a row error. Blank or missing means the import date. It keeps the original dates when a backup is restored. |
   | `Imported` | no | **Ignored on import.** Exports include it for reference, and every imported entry gets the current import time. |
 
 - Header matching ignores case and surrounding spaces.
