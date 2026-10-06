@@ -42,3 +42,7 @@ export function boardError(err: unknown): { staffCode?: string; message?: string
   if (data?.message) return { message: data.message }
   return { message: parseApiError(err) }
 }
+
+/** Today in Colorado as YYYY-MM-DD, for download file names. */
+export const boardFileDate = () =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())

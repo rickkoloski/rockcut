@@ -45,6 +45,11 @@ defmodule RockcutApi.BeerBoard do
     %{events: events, page: page, total: Repo.aggregate(base, :count)}
   end
 
+  @doc "The whole change log, newest first, actor preloaded (the History export)."
+  def all_events do
+    Repo.all(from ev in Event, order_by: [desc: ev.id], preload: [:actor])
+  end
+
   defp search(query, q) when is_binary(q) and q != "" do
     like = "%" <> escape_like(normalize_name(q)) <> "%"
 

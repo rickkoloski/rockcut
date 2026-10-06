@@ -51,3 +51,50 @@ export async function historyFor(q: string) {
     beers_after: number
   }[]
 }
+
+/** The open board entries, as barMgr sees them. */
+export async function boardEntries(): Promise<(Entry & { moved_off_board_at: string })[]> {
+  const res = await (await apiAs('barMgr')).get('/api/beer_board')
+  expect(res.status()).toBe(200)
+  return (await res.json()).data
+}
+
+/** Delete every open entry whose For name contains one of `tags` (case-insensitive). */
+export async function cleanTagged(tags: string[]) {
+  if (!tags.length) return
+  const lower = tags.map((t) => t.toLowerCase())
+  const ids = (await boardEntries())
+    .filter((e) => lower.some((t) => e.recipient_name.toLowerCase().includes(t)))
+    .map((e) => e.id)
+  await cleanEntries(ids)
+}
+
+/** A CSV import file: the header plus `lines`. */
+export const csvFile = (lines: string[], header = 'For,Bought by,Beers') =>
+  Buffer.from([header, ...lines].join('\n') + '\n')
+
+/**
+ * Import `file` through the API as barMgr, answering every duplicate group
+ * with Allow. Used to set up and to restore the board after a Replace spec.
+ */
+export async function importViaApi(file: Buffer, mode: 'add' | 'replace') {
+  const api = await apiAs('barMgr')
+  const pv = await api.post('/api/beer_board/import/preview', {
+    multipart: { mode, file: { name: 'restore.csv', mimeType: 'text/csv', buffer: file } },
+  })
+  expect(pv.status(), await pv.text()).toBe(200)
+  const preview = (await pv.json()).data
+  expect(preview.errors).toEqual([])
+  const resolutions = Object.fromEntries(preview.groups.map((g: { key: string }) => [g.key, { choice: 'allow' }]))
+  const res = await api.post('/api/beer_board/import', {
+    data: { mode, rows: preview.rows, resolutions, signature: preview.signature, file_name: 'restore.csv' },
+  })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
+/** The board as an export CSV (a snapshot to restore after a Replace spec). */
+export async function exportBoard(): Promise<Buffer> {
+  const res = await (await apiAs('barMgr')).get('/api/beer_board/export.csv')
+  expect(res.status()).toBe(200)
+  return await res.body()
+}

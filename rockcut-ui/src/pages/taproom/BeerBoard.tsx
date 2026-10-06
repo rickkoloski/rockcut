@@ -17,16 +17,19 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material'
-import { Delete, Edit, LocalBar, MoreVert, Search } from '@mui/icons-material'
+import { Add, Delete, Download, Edit, LocalBar, MoreVert, Search, UploadFile } from '@mui/icons-material'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
 import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
-import { formatBoardDate, matchesSearch } from '../../lib/beerBoard'
+import { download } from '../../lib/api'
+import parseApiError from '../../lib/parseApiError'
+import { boardFileDate, formatBoardDate, matchesSearch } from '../../lib/beerBoard'
 import type { BeerBoardEntry, BeerBoardWriteResult } from '../../lib/types'
 import BeerBoardHistory from './BeerBoardHistory'
+import BeerBoardImportDialog from './BeerBoardImportDialog'
 import DeleteEntryDialog from './DeleteEntryDialog'
 import EntryDialog from './EntryDialog'
 import RedeemDialog from './RedeemDialog'
@@ -35,11 +38,13 @@ import RedeemDialog from './RedeemDialog'
  * D37: Taproom → Buy-a-Beer Board. Lines moved off the taproom chalkboard,
  * redeemed beer by beer. Taproom staff (and the Taproom tablet, with a staff
  * code) add, redeem, edit and delete; owners and Taproom managers also get
- * History.
+ * History, Export CSV and Import CSV (not on a shared device).
  */
 export default function BeerBoard() {
   const qc = useQueryClient()
-  const { beerBoardManage } = useAuth()
+  const { beerBoardManage, user } = useAuth()
+  // History and the CSV files: owners and Taproom managers, never on a tablet.
+  const canManage = beerBoardManage && user?.kind !== 'device'
   const { data: entries = [], isLoading, isError } = useApiQuery<BeerBoardEntry[]>(['beer_board'], '/api/beer_board')
 
   const [tab, setTab] = useState<'board' | 'history'>('board')
@@ -50,6 +55,7 @@ export default function BeerBoard() {
   const [deleting, setDeleting] = useState<BeerBoardEntry | null>(null)
   const [menu, setMenu] = useState<{ anchor: HTMLElement; entry: BeerBoardEntry } | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  const [importing, setImporting] = useState(0)
 
   // Phones: no date columns, and an icon-only Redeem, so the actions stay on screen.
   const theme = useTheme()
@@ -66,6 +72,21 @@ export default function BeerBoard() {
     qc.invalidateQueries({ queryKey: ['beer_board_history'] })
     const removed = result.removed && verb.startsWith('Redeemed') ? ' (the last; entry removed)' : ''
     setNotice(`${verb}${removed}${result.recorded_as ? `. Recorded as ${result.recorded_as}` : ''}`)
+  }
+
+  const exportBoard = async () => {
+    try {
+      await download('/api/beer_board/export.csv', `buy-a-beer-board-${boardFileDate()}.csv`)
+    } catch (err) {
+      setNotice(`Export failed: ${parseApiError(err)}`)
+    }
+  }
+
+  const imported = (message: string) => {
+    setImporting(0)
+    qc.invalidateQueries({ queryKey: ['beer_board'] })
+    qc.invalidateQueries({ queryKey: ['beer_board_history'] })
+    setNotice(message)
   }
 
   // An entry that's already gone (someone else poured the last beer): refresh
@@ -141,17 +162,42 @@ export default function BeerBoard() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Buy-a-Beer Board' }]}
         title="Buy-a-Beer Board"
-        action={tab === 'board' ? { label: 'Add from chalkboard', onClick: () => setAdding(true), testId: 'board-add' } : undefined}
+        toolbar={
+          tab === 'board' ? (
+            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              {canManage && (
+                <>
+                  <Button variant="outlined" startIcon={<Download />} onClick={exportBoard} data-testid="board-export">
+                    Export CSV
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<UploadFile />}
+                    onClick={() => setImporting((n) => n + 1)}
+                    data-testid="board-import"
+                  >
+                    Import CSV
+                  </Button>
+                </>
+              )}
+              <Button variant="contained" startIcon={<Add />} onClick={() => setAdding(true)} data-testid="board-add">
+                Add from chalkboard
+              </Button>
+            </Box>
+          ) : (
+            <span />
+          )
+        }
       />
 
-      {beerBoardManage && (
+      {canManage && (
         <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ mb: 2 }}>
           <Tab label="Board" value="board" data-testid="board-tab-board" />
           <Tab label="History" value="history" data-testid="board-tab-history" />
         </Tabs>
       )}
 
-      {tab === 'history' && beerBoardManage ? (
+      {tab === 'history' && canManage ? (
         <BeerBoardHistory />
       ) : (
         <>
@@ -223,6 +269,15 @@ export default function BeerBoard() {
         onGone={refresh}
       />
       <RedeemDialog key={redeeming?.id ?? 'none'} entry={redeeming} onClose={() => setRedeeming(null)} onDone={done} onGone={refresh} />
+      {importing > 0 && (
+        <BeerBoardImportDialog
+          key={importing}
+          open
+          onClose={() => setImporting(0)}
+          onDone={imported}
+          onExport={exportBoard}
+        />
+      )}
       <DeleteEntryDialog entry={deleting} onClose={() => setDeleting(null)} onDone={done} onGone={refresh} />
 
       <Snackbar

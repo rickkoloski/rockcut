@@ -74,11 +74,15 @@ defmodule RockcutApiWeb.Router do
     delete "/beer_board/:id", BeerBoardController, :delete
   end
 
-  # D37: board history (and, from step 5, import/export). People only.
+  # D37: board history, CSV export and import. People only.
   scope "/api", RockcutApiWeb do
     pipe_through [:api, :authenticated, :taproom]
 
     get "/beer_board/history", BeerBoardAdminController, :history
+    get "/beer_board/history/export.csv", BeerBoardAdminController, :history_csv
+    get "/beer_board/export.csv", BeerBoardAdminController, :export_csv
+    post "/beer_board/import/preview", BeerBoardAdminController, :import_preview
+    post "/beer_board/import", BeerBoardAdminController, :import
   end
 
   # Authenticated routes (signed-in people; closed to shared devices)

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Alert, InputAdornment, Paper, TextField } from '@mui/material'
-import { Search } from '@mui/icons-material'
+import { Alert, Box, Button, InputAdornment, Paper, TextField } from '@mui/material'
+import { Download, Search } from '@mui/icons-material'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
-import api from '../../lib/api'
-import { formatBoardDateTime } from '../../lib/beerBoard'
+import api, { download } from '../../lib/api'
+import parseApiError from '../../lib/parseApiError'
+import { boardFileDate, formatBoardDateTime } from '../../lib/beerBoard'
 import type { BeerBoardEvent } from '../../lib/types'
 
 const ACTION_LABEL: Record<BeerBoardEvent['action'], string> = {
@@ -63,6 +64,16 @@ export default function BeerBoardHistory() {
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(0)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  const exportHistory = async () => {
+    setExportError(null)
+    try {
+      await download('/api/beer_board/history/export.csv', `buy-a-beer-board-history-${boardFileDate()}.csv`)
+    } catch (err) {
+      setExportError(parseApiError(err))
+    }
+  }
 
   // Search as you type, without a request per keystroke.
   useEffect(() => {
@@ -81,17 +92,23 @@ export default function BeerBoardHistory() {
 
   return (
     <>
-      <TextField
-        placeholder="Search For or Bought by"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        size="small"
-        sx={{ mb: 2, width: { xs: '100%', sm: 360 } }}
-        slotProps={{
-          htmlInput: { 'data-testid': 'board-history-search' },
-          input: { startAdornment: <InputAdornment position="start"><Search /></InputAdornment> },
-        }}
-      />
+      <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+        <TextField
+          placeholder="Search For or Bought by"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          size="small"
+          sx={{ width: { xs: '100%', sm: 360 } }}
+          slotProps={{
+            htmlInput: { 'data-testid': 'board-history-search' },
+            input: { startAdornment: <InputAdornment position="start"><Search /></InputAdornment> },
+          }}
+        />
+        <Button variant="outlined" startIcon={<Download />} onClick={exportHistory} data-testid="board-history-export">
+          Export CSV
+        </Button>
+      </Box>
+      {exportError && <Alert severity="error">Export failed: {exportError}</Alert>}
       {isError && <Alert severity="error">Couldn't load the history.</Alert>}
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }} data-testid="board-history">
         <DataGridExtended
