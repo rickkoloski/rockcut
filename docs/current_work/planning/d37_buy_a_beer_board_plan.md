@@ -286,6 +286,11 @@ groups, errors}`.
 
 ## Handoff-note LIMITATIONS to carry to DEV
 
+- **`SYNTHETIC_STAFF_CODES` isn't on DEV yet** (lead decision 2: the lead
+  asks Matt and sets it at the DEV gate, with `STAFF_CODE_KEY`). Until then
+  DEV setup logs a warning and leaves persona codes alone; no spec needs them.
+- **After a full Playwright run on DEV,** re-run `reset_synthetic()`: the
+  Replace specs mark the `[SEED]` board entries as imported (decision 3).
 - **`STAFF_CODE_KEY` must be set on `rockcut-api-dev`** before the deploy, or
   boot fails. That failure is intended; DEV is the first place it's checked.
 - **The tablet's code entry** is untested on the Samsung keyboard locally.

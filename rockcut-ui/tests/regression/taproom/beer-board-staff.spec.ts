@@ -20,6 +20,10 @@ test.describe('as bartender1', () => {
     await page.getByRole('button', { name: 'Buy-a-Beer Board' }).click()
     await expect(page).toHaveURL(/\/taproom\/beer-board$/)
     await expect(page.getByTestId('board-tab-history')).toHaveCount(0)
+    // No CSV files for staff (managers only).
+    await expect(page.getByTestId('board-add')).toBeVisible()
+    await expect(page.getByTestId('board-export')).toHaveCount(0)
+    await expect(page.getByTestId('board-import')).toHaveCount(0)
 
     await page.getByTestId('board-add').click()
     await page.getByTestId('board-recipient').fill(name)

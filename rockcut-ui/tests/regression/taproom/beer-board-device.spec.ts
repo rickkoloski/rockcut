@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { retireTempPerson, type TempPerson } from '../auth/helpers'
+import { readFileSync } from 'node:fs'
+import { createTempPerson, retireTempPerson, signIn, type TempPerson } from '../auth/helpers'
 import { addEntry, cleanEntries, historyFor, personWithCode } from './helpers'
 
-// D37 §3.3 / §3.5: the board on the Taproom tablet (S7–S11). Codes belong to a
+// D37 §3.3 / §3.5: the board on the Taproom tablet (S7–S11, S13). Codes belong to a
 // [TEST-TEMP] Taproom person, so persona codes stay untouched. The wrong-code
 // lockout itself is ExUnit's (the local limit is raised in config/dev.exs);
 // here the lock message is checked with a stubbed 429.
@@ -28,6 +29,10 @@ test('S7: redeem with a staff code; recorded as that person on Shared Device', a
   created.push(e.id)
   await page.goto('/taproom/beer-board')
   await expect(page.getByTestId('board-tab-history')).toHaveCount(0)
+  // S11: no CSV files on the tablet, whoever's code is typed later.
+  await expect(page.getByTestId('board-add')).toBeVisible()
+  await expect(page.getByTestId('board-export')).toHaveCount(0)
+  await expect(page.getByTestId('board-import')).toHaveCount(0)
   await page.getByTestId('board-search').fill(e.recipient_name)
   await page.getByTestId(`board-redeem-${e.id}`).click()
 
@@ -100,4 +105,44 @@ test('S7/S8: add from the tablet, then pour the last beer', async ({ page }) => 
   await page.reload()
   await page.getByTestId('board-search').fill(name)
   await expect(page.getByRole('gridcell', { name, exact: true })).toHaveCount(0)
+})
+
+test('S13: "Sign in as me" on the tablet, then Redeem: no code asked; History shows just the name', async ({ page }) => {
+  // A device-bound session for a [TEST-TEMP] Taproom person (D34: never a persona's token).
+  const person = await createTempPerson('D37 S13')
+  try {
+    const e = await addEntry(3, 'S13')
+    created.push(e.id)
+    const deviceToken = JSON.parse(readFileSync(authFile('taproomDevice'), 'utf8'))
+      .origins[0].localStorage.find((x: { name: string }) => x.name === 'rockcut_token').value as string
+
+    await page.goto('/')
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+    await page.getByTestId('personal-signin').click()
+    await expect(page.getByTestId('login-email')).toBeVisible()
+    // Token injection stands in for typing the person's password.
+    await page.evaluate((t) => localStorage.setItem('rockcut_token', t), await signIn(person, deviceToken))
+    await page.reload()
+    await expect(page.getByTestId('personal-session-banner')).toContainText(person.name)
+
+    await page.goto('/taproom/beer-board')
+    await page.getByTestId('board-search').fill(e.recipient_name)
+    await page.getByTestId(`board-redeem-${e.id}`).click()
+    await expect(page.getByTestId('board-redeem-dialog')).toBeVisible()
+    await expect(page.getByTestId('board-staff-code')).toHaveCount(0)
+    const saved = page.waitForResponse((r) => r.url().endsWith(`/api/beer_board/${e.id}/redeem`))
+    await page.getByTestId('board-dialog-submit').click()
+    expect((await saved).status()).toBe(200)
+    await expect(page.getByTestId('board-notice')).toContainText(`Redeemed 1 for ${e.recipient_name}`)
+    await expect(page.getByTestId('board-notice')).not.toContainText('Recorded as')
+
+    await page.reload()
+    await expect(page.getByTestId('personal-session-banner')).toBeVisible()
+    await page.getByTestId('board-search').fill(e.recipient_name)
+    await expect(page.getByRole('row').filter({ hasText: e.recipient_name })).toContainText('2')
+    const [latest] = await historyFor(e.recipient_name)
+    expect(latest).toMatchObject({ action: 'redeemed', actor_name: person.name, on_shared_device: false, beers_before: 3, beers_after: 2 })
+  } finally {
+    await retireTempPerson(person)
+  }
 })

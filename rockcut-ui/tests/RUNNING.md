@@ -76,3 +76,8 @@ Persona keys and what each one tests: `tests/config/test-env.ts` and the D30 spe
 - DEV: `fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.reset_synthetic()'"`
 
 `setup` also heals: it restores every persona and deletes `[TEST-TEMP]` rows.
+
+**After a full run (with the `board-replace` project):** a Replace run marks the
+`[SEED]` board entries as imported, so re-run `mix rockcut.synthetic.setup`
+(locally) or `RockcutApi.Release.reset_synthetic()` (DEV) afterwards. The specs
+don't depend on it.
