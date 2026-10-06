@@ -42,6 +42,7 @@ import EventAvailableIcon from '@mui/icons-material/EventAvailable'
 import ViewAgendaIcon from '@mui/icons-material/ViewAgenda'
 import GridViewIcon from '@mui/icons-material/GridView'
 import SportsBarIcon from '@mui/icons-material/SportsBar'
+import RedeemIcon from '@mui/icons-material/Redeem'
 import LocalBarIcon from '@mui/icons-material/LocalBar'
 import BusinessIcon from '@mui/icons-material/Business'
 import PointOfSaleIcon from '@mui/icons-material/PointOfSale'
@@ -79,6 +80,7 @@ import BatchesList from './pages/batches/BatchesList'
 import BatchDetail from './pages/batches/BatchDetail'
 import SettingsPage from './pages/settings/SettingsPage'
 import CategoryDetail from './pages/settings/CategoryDetail'
+import BeerBoard from './pages/taproom/BeerBoard'
 import UserManagement from './pages/users/UserManagement'
 import OwnerActivity from './pages/activity/OwnerActivity'
 import Schedule from './pages/schedule/Schedule'
@@ -110,8 +112,8 @@ interface NavSection {
   emptyLabel?: string
 }
 
-// Brewery is the only department with app pages today; the others (Taproom, Office,
-// Sales) show as headings with a "coming soon" placeholder until they get pages.
+// Brewery and (since D37) Taproom have app pages; Office and Sales show as
+// headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
@@ -123,8 +125,12 @@ const BREWERY_PAGES: NavLeaf[] = [
 // Per-department heading metadata, keyed by the department key from capabilities.modules.
 // The label shown is the department's name from /api/departments (D32: an owner's
 // rename, e.g. Bar → Taproom, needs no code change); `label` is only the fallback.
+const TAPROOM_PAGES: NavLeaf[] = [
+  { label: 'Buy-a-Beer Board', path: '/taproom/beer-board', icon: <RedeemIcon /> },
+]
+
 const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavLeaf[] }> = {
-  bar: { label: 'Taproom', icon: <LocalBarIcon />, children: [] },
+  bar: { label: 'Taproom', icon: <LocalBarIcon />, children: TAPROOM_PAGES },
   brewery: { label: 'Brewery', icon: <SportsBarIcon />, children: BREWERY_PAGES },
   office: { label: 'Office', icon: <BusinessIcon />, children: [] },
   sales: { label: 'Sales', icon: <PointOfSaleIcon />, children: [] },
@@ -216,6 +222,8 @@ function App() {
   const isDevice = user.kind === 'device'
   const modules = capabilities.modules
   const hasBrewery = modules.includes('brewery')
+  // D37: Taproom members and owners; a Taproom tablet (its home module).
+  const hasTaproom = modules.includes('bar')
   const canManageUsers = capabilities.can_manage_users
   const canManageSchedule = user.is_owner || (capabilities.manages_departments?.length ?? 0) > 0
   const isOwner = user.is_owner
@@ -631,6 +639,7 @@ function App() {
               <Route path="/schedule" element={<Schedule forceView="agenda" />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:key" element={<Messages />} />
+              {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
               <Route path="*" element={<DeviceNotAvailable />} />
             </Routes>
           ) : (
@@ -652,6 +661,7 @@ function App() {
                 <Route path="/settings/categories/:id" element={<CategoryDetail />} />
               </>
             )}
+            {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
             <Route path="/schedule" element={<Schedule forceView="agenda" />} />
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />

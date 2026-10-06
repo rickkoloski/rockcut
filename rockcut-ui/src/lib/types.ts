@@ -275,6 +275,8 @@ export interface Me {
   shared_devices?: boolean
   // D37: sees and sets Taproom staff codes in the user dialog (owners, Taproom managers).
   staff_codes?: boolean
+  // D37: the Buy-a-Beer Board's History tab, import and export (owners, Taproom managers).
+  beer_board_manage?: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────
@@ -488,4 +490,35 @@ export interface Shift {
   notes: string | null
   inserted_at: string
   updated_at: string
+}
+
+// D37: Buy-a-Beer Board
+export interface BeerBoardEntry {
+  id: number
+  recipient_name: string
+  purchaser_name: string
+  beers_remaining: number
+  moved_off_board_at: string
+  imported_at: string | null
+}
+
+export interface BeerBoardEvent {
+  id: number
+  entry_id: number
+  action: 'created' | 'redeemed' | 'edited' | 'deleted'
+  actor_name: string | null
+  on_shared_device: boolean
+  recipient_name: string
+  purchaser_name: string
+  beers_before: number
+  beers_after: number
+  source: string | null
+  inserted_at: string
+}
+
+/** A board write's answer; `recorded_as` names the staff-code owner on a shared device. */
+export interface BeerBoardWriteResult {
+  data: BeerBoardEntry | null
+  removed: boolean
+  recorded_as?: string
 }

@@ -105,6 +105,15 @@ defmodule RockcutApiWeb.BeerBoardControllerTest do
       end
     end
 
+    test "/api/me beer_board_manage: owners and Taproom managers", %{p: p} do
+      flag = fn key ->
+        (call(p[key], :get, "/api/me") |> json_response(200))["beer_board_manage"]
+      end
+
+      assert {flag.("owner"), flag.("barMgr"), flag.("bartender1"), flag.("breweryMgr")} ==
+               {true, true, false, false}
+    end
+
     test "History search matches either name", %{p: p} do
       add(p, "bartender1", %{recipient_name: "Ana", purchaser_name: "Bo"})
       add(p, "bartender1", %{recipient_name: "Chris", purchaser_name: "Dee"})

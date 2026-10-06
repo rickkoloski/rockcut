@@ -417,7 +417,7 @@ me" on the tablet to import.
 | S12 | `barMgr` | Users & Roles → remove `bartender2` from the Taproom | `bartender2` has a code | The code is cleared. On the tablet it's now a wrong code. |
 | S13 | `bartender1` | tablet → Sign in as me → Redeem | personal session on the tablet | No code prompt. History shows "Sam Pour" without "on Shared Device". |
 | S14 | `floater` | Board | Taproom + Brewery member | Same access as `bartender1`. |
-| S15 | `office1` / `brewer1` | typed `/taproom/beer-board`, and the API | not Taproom | No nav entry. The page shows a refusal, and the API returns 403. |
+| S15 | `office1` / `brewer1` | typed `/taproom/beer-board`, and the API | not Taproom | No nav entry. The URL goes to Home, as the Brewery pages do for non-members (D31), and the API returns 403. |
 | S16 | `owner` | Board, History, Users & Roles | no memberships | Full access, including any Taproom member's code in their edit dialog. |
 | S17 | `bartender1` + `bartender2` | Redeem the last beer at the same time | entry has 1 | One succeeds. The other gets "This entry was already removed" and the list refreshes. |
 | S18 | `bartender1` | search "chr" | entries for and by "Chris" | Shows rows where either name matches. Sorting by Bought by and Beers left works. |
