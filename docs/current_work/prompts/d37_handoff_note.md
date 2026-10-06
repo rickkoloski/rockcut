@@ -32,7 +32,7 @@ Scenario → test detail for every row is in `rockcut-ui/tests/COVERAGE.md` (D37
 
 All additive. **Rollback checked** on a scratch copy of the local dev DB (2026-10-06): `down` 2 steps dropped both tables, the three columns and the index, leaving other data intact (19 users, 22 shifts); `up` restored the same shape. A rollback **loses** board entries, history and staff codes.
 
-The spec's Non-functional says "three migrations"; the two tables are in one file, so there are two. Same schema.
+The spec's Non-functional originally said "three migrations"; the two tables are in one file, so there are two, with the same schema. The spec now says two (corrected before the push).
 
 ## New dependency and secrets
 

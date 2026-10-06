@@ -396,8 +396,9 @@ me" on the tablet to import.
   prod runbook, and listed in the release PR.
 - Board lists are small (tens of rows), so sorting and search run in the
   browser over one fetch. History is paged server-side (50 per page).
-- **Migrations:** three, all additive: two new tables (`beer_board_entries`
-  includes `imported_at`) and three nullable `users` columns. Reversible.
+- **Migrations:** two, all additive: one adds three nullable `users` columns,
+  and one creates both board tables (`beer_board_entries` includes
+  `imported_at`). Reversible.
 
 ## 4. Persona scenarios
 
