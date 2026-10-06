@@ -91,10 +91,8 @@ groups, errors}`.
 - `remove(target, actor)`: audits `staff_code.remove`.
 - `suggest()`: a random unused code. It retries on a hit; at most about 20
   members exist, so collisions are rare.
-- `reveal(actor)`: `%{user_id => code}` for the people the actor may see.
-  Decrypts and audits `staff_code.reveal` once.
-- `reveal_one(target, actor)`: one code, for the dialog. Audits
-  `staff_code.reveal`.
+- `reveal(target, actor)`: one person's code, for the edit dialog.
+  Decrypts and audits `staff_code.reveal`.
 - `resolve(code)`: an active Taproom member, or `nil`.
 - `clear_if_ineligible(user_id)`: called inside the existing transactions
   of `Accounts.update_user` (deactivation) and `Accounts.set_memberships`
@@ -151,7 +149,7 @@ groups, errors}`.
   Owners are allowed by the existing owner clause.
 - `can?(user, action, :beer_board)` for `:history`, `:import`, `:export` →
   `role_in(user, "bar") in [:owner, :manager]`.
-- `can?(user, :set_staff_code, %User{} = target)` and `:reveal_staff_codes` →
+- `can?(user, :set_staff_code, %User{} = target)` and `:reveal_staff_code` →
   the actor is an owner or a Taproom manager, and the target is eligible.
 - **`Authz.Device`:** `can?(device, :read, :beer_board)` when
   `home_key(device) == "bar"`. Nothing else, so the catch-all denies writes.
@@ -167,7 +165,6 @@ groups, errors}`.
   - `history`, `history_csv`, `export_csv`, `import_preview` (multipart),
     `import`.
 - **`StaffCodeController`** (`:authenticated`):
-  - `GET /staff_codes`;
   - `GET /staff_codes/suggest`;
   - `GET /users/:id/staff_code` (one code, for the dialog);
   - `PUT` / `DELETE /users/:id/staff_code`.
@@ -218,11 +215,8 @@ groups, errors}`.
 - **CSV downloads:** `api.ts` gains a `download(path, filename)` that
   fetches with the bearer header and saves a Blob. A plain link can't carry
   the token.
-- **`UserManagement.tsx`:**
-  - a Staff code column and a Show codes toggle, both shown only with
-    `staff_codes_manage`;
-  - the toggle state isn't persisted, and turning it on fetches
-    `/api/staff_codes`.
+- **`UserManagement.tsx`:** no change, so there's no code column (Matt).
+  The users payload gains only `has_staff_code`.
 - **`UserFormDialog.tsx`:** a Staff code section for eligible users, with
   Suggest, Save and Remove.
   - An existing code is shown masked, with an eye toggle that fetches

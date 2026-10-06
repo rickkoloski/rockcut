@@ -54,8 +54,9 @@ code**. Typing it on the tablet attributes the change to them without a full
 - **Sortable and searchable** by recipient or purchaser.
 - **Staff codes (Q1, Q2):**
   - owners and Taproom managers **type in** each person's 4-digit code;
-  - the codes are listed in Admin → Users & Roles, **hidden by default**,
-    with a toggle to show them.
+  - a person's code can be seen in their Admin → Users & Roles **edit
+    dialog**, **hidden by default** with a toggle to show it (Matt: the
+    dialog only, no list column).
 - **Attribution (Q3):** signed in directly, including "Sign in as me" on a
   tablet, the log shows just the person's name. A change made on the shared
   device with a code shows "<name> **on Shared Device**".
@@ -128,19 +129,15 @@ Names are free text: recipients and purchasers are customers, not app users.
     code anyway.
   - Changing a code makes the old one stop working immediately. **Remove**
     clears it.
-- **Listing codes:**
-  - The Users & Roles grid gets a **Staff code** column. It shows `••••`, or
-    "—" when the person has no code.
-  - A **Show codes** toggle in the grid toolbar reveals them. It's **off
-    each time the page loads**.
-  - The plain codes are only fetched when the toggle is turned on, from
-    their own endpoint, so they're never in the normal users payload.
-  - Turning it on writes one `audit_log` entry (`staff_code.reveal`).
+- **Not in the list:** the Users & Roles grid doesn't show codes. A
+  person's code is only fetched when the dialog's eye toggle is pressed, so
+  it's never in the normal users payload. The users payload carries only
+  `has_staff_code` (true/false).
 - **Who sees and sets codes:**
   - owners, for everyone with a Taproom membership;
   - Taproom managers, for Taproom members.
 
-  Nobody else sees the column, the toggle or the edit section.
+  Nobody else sees the Staff code section.
 - **Who can have one:** active people with a Taproom membership. The server
   clears the code when the person is:
   - deactivated;
@@ -202,7 +199,6 @@ is needed, and the log shows just their name (Q3).
 | `GET /api/beer_board/export.csv` | managers | the open entries as CSV (§3.6) |
 | `POST /api/beer_board/import/preview` | managers | multipart CSV + `mode` (`add` / `replace`). Validates; **changes nothing**. Returns the rows, errors and duplicate groups. |
 | `POST /api/beer_board/import` | managers | `mode`, the previewed rows, and a resolution for every duplicate group. One transaction. |
-| `GET /api/staff_codes` | managers | `{user_id: code}` for the people the caller may see. Writes `staff_code.reveal`. |
 | `GET /api/users/:id/staff_code` | managers | one person's code, for the edit dialog's eye toggle. Writes `staff_code.reveal`. |
 | `PUT /api/users/:id/staff_code` | managers | `{code}` to set or change. `DELETE` removes it. |
 
@@ -407,10 +403,10 @@ me" on the tablet to import.
 
 | # | Persona | Entry point | Mode / state | Expected |
 |---|---|---|---|---|
-| S1 | `barMgr` | Users & Roles → edit `bartender1` → Staff code | no code yet | Types `4821`, Save. The grid shows `••••`, and Show codes reveals `4821`. After a reload the toggle is off again. Reopening the dialog shows the code masked, and the eye reveals `4821`. `audit_log`: `staff_code.set`, then `staff_code.reveal` for each reveal. |
+| S1 | `barMgr` | Users & Roles → edit `bartender1` → Staff code | no code yet | Types `4821`, Save. Reopening the dialog shows the code masked, and the eye reveals `4821`. Closing and reopening it shows it masked again. The list has no code column. `audit_log`: `staff_code.set`, then `staff_code.reveal` for each reveal. |
 | S2 | `barMgr` | edit `bartender2` → Staff code `4821` | `bartender1` has `4821` | "That code is already in use". Suggest fills in an unused code, which saves. |
-| S3 | `barMgr` | Users & Roles → `brewer1` | not a Taproom member | No Staff code section, and `—` in the column. `PUT …/staff_code` returns 422. |
-| S4 | `breweryMgr`, `bartender1` | Users & Roles / API | | No Staff code column, toggle or section. `GET /api/staff_codes` and `PUT …/staff_code` return 403. |
+| S3 | `barMgr` | Users & Roles → `brewer1` | not a Taproom member | No Staff code section. `PUT …/staff_code` returns 422. |
+| S4 | `breweryMgr`, `bartender1` | Users & Roles / API | | No Staff code section. `GET` and `PUT /api/users/:id/staff_code` return 403. |
 | S5 | `bartender1` | Taproom → Buy-a-Beer Board → Add | signed in as themself | Adds "Pat / Chris / 3" with no code prompt. After a reload it's listed with today's date. No History tab, no Import or Export. |
 | S6 | `barMgr` | Board → History | after S5 | "Sam Pour · created · Pat / Chris · 3". |
 | S7 | `taproomDevice` | Board → Redeem on Pat's row | Pat has 3 | The code field is shown. `bartender2`'s code: count 2, toast "recorded as Alex Draft". `barMgr`'s History: "Alex Draft on Shared Device · redeemed · 3 → 2". |
@@ -422,7 +418,7 @@ me" on the tablet to import.
 | S13 | `bartender1` | tablet → Sign in as me → Redeem | personal session on the tablet | No code prompt. History shows "Sam Pour" without "on Shared Device". |
 | S14 | `floater` | Board | Taproom + Brewery member | Same access as `bartender1`. |
 | S15 | `office1` / `brewer1` | typed `/taproom/beer-board`, and the API | not Taproom | No nav entry. The page shows a refusal, and the API returns 403. |
-| S16 | `owner` | Board, History, Users & Roles | no memberships | Full access, including every Taproom member's code. |
+| S16 | `owner` | Board, History, Users & Roles | no memberships | Full access, including any Taproom member's code in their edit dialog. |
 | S17 | `bartender1` + `bartender2` | Redeem the last beer at the same time | entry has 1 | One succeeds. The other gets "This entry was already removed" and the list refreshes. |
 | S18 | `bartender1` | search "chr" | entries for and by "Chris" | Shows rows where either name matches. Sorting by Bought by and Beers left works. |
 | S19 | `bartender1` | Edit Pat's entry → count 5 | count was 2 | Saved. History "Sam Pour · edited · 2 → 5". |
@@ -454,9 +450,8 @@ me" on the tablet to import.
 
 - [x] **Q1: who picks the digits** → managers type them in. A Suggest button
   fills an unused one.
-- [x] **Q2: seeing codes later** → shown in Users & Roles, both in the list
-  (Show codes toggle) and in the edit dialog (eye toggle), hidden by
-  default. Stored encrypted, plus a digest for lookup.
+- [x] **Q2: seeing codes later** → in the Users & Roles edit dialog only,
+  hidden by default behind an eye toggle. Stored encrypted, plus a digest for lookup.
 - [x] **Q3: attribution** → just the name when signed in directly (including
   "Sign in as me" on a tablet); "<name> on Shared Device" with a code.
 - [x] **Q4: limits** → as drafted: 1–99 beers, 80-character names, 5 wrong
