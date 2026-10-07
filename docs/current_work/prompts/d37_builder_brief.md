@@ -257,3 +257,117 @@ the D36 note's shape (`d36_handoff_note.md`):
 - the migration rollback result;
 - anything the note flags as a risk;
 - `LEAD:` questions.
+
+## Task 4: DEV pass 1 fixes (QA gaps G1, G3, G4, G5, G9 + spec wording)
+
+**Context:** the branch is pushed (PR #15) and on DEV at `b71174b`. The full Playwright
+suite passed on DEV (175/175). The independent QA pass found the gaps below; read
+`docs/current_work/stepwise_results/d37_dev_qa_report.md` for the paths and evidence.
+Matt's decisions (2026-10-07): fix G1, G3, G4, G5 and G9 in D37, and fix the spec
+wording for G2 and G8. G6 and G7 go to the backlog (the lead files them). Everything
+in your limits above still applies, and so do Task 3's rules (lint waived; don't
+touch Brewery, Settings or `ComponentShowcase`).
+
+**One commit per item,** as `fix: D37 DEV pass 1 G<n> — <what>` (`docs:` for the spec).
+
+### G1 (must-fix): a manager's save that removes someone from their department says "Forbidden"
+
+- **Cause:** `rockcut-ui/src/pages/users/UserFormDialog.tsx` `save()`. Unless the person
+  is being deactivated, it sends `PUT …/memberships` first and then `PATCH /api/users/:id`.
+  When a non-owner manager removes the person from the manager's (only shared)
+  department, the PATCH runs after they stopped managing that person, so it gets 403.
+  The membership change landed, but the name/active/schedulable edits are lost and
+  the dialog says "Forbidden".
+- **This predates D37:** the order came from D35 (`112a715`), so it affects any
+  department manager, not just the Taproom. The D35 comment explains why memberships
+  go first: so that **removing the owner flag** only resets the calendar links the
+  person doesn't keep. Only owners can send `is_owner`.
+- **Fix:** keep the D35 order when the actor is an owner. When the actor isn't an owner,
+  send the PATCH first, then the memberships (the PATCH carries no `is_owner`, so the
+  D35 reason doesn't apply). Update the comment to say both. Don't change the API.
+- **Staff code in the same save:** if the new memberships leave the person with no
+  Taproom membership, don't send the staff-code PUT, even if a code was typed (the
+  server clears the code on removal).
+- **Tests:**
+  - Playwright (a `[TEST-TEMP]` Taproom employee with a code): as `barMgr`, rename them
+    **and** remove them from the Taproom in one save → the dialog closes, no error,
+    the new name is saved, the membership is gone, `has_staff_code` is false.
+  - The same shape for another department (as `breweryMgr` on a `[TEST-TEMP]` Brewery
+    person) to cover the D35 regression outside the Taproom.
+  - The existing D35 owner-flag ordering tests must still pass.
+
+### G3: Users & Roles shows a staff code in clear text while it's typed
+
+- `rockcut-ui/src/pages/users/StaffCodeSection.tsx`. A saved code reopens masked (right),
+  but digits being typed for a new or changed code are plain text, with no eye toggle.
+- **Fix:** the typed code is masked like the tablet field (same CSS approach), with the
+  same eye toggle to show it, hidden again each time the dialog opens. Keep
+  `inputMode="numeric"`. Revealing a **typed** code doesn't fetch anything or write
+  `staff_code.reveal` (that's only for the saved code).
+- **Test:** Playwright checks the field is masked while typing (computed style), and that
+  the eye shows and hides it.
+
+### G4: pasting a code with a space or dash keeps only 3 digits
+
+- The tablet's code field (`BoardActionDialog.tsx` / `EntryDialog.tsx`, wherever the
+  field lives) has `maxLength=4`, so the browser truncates the raw paste **before** the
+  digit filter: `" 1234"`, `"12 34"`, `"12-34"` become 3 digits, fail as a wrong code
+  and spend a lockout attempt.
+- **Fix:** drop `maxLength` (or use a shared field component), and in `onChange` keep
+  digits only, then cut to 4. Do the same in `StaffCodeSection.tsx`. Share one helper
+  (`src/lib/staffCode.ts`) if that's simpler.
+- **Test:** Playwright fills/pastes `" 1234"`, `"12-34"` and `"123456"` → the field holds
+  `1234` each time. Use `fill` or a dispatched paste; don't submit (no limiter spend).
+
+### G5: an extra column refuses the whole import (Matt: ignore it and say so)
+
+- `rockcut_api/lib/rockcut_api/beer_board/csv.ex` `map_header/1` turns any unknown header
+  into a row-1 error. Hand-kept sheets often have a `Notes` column.
+- **Fix:** ignore unknown columns. The preview response lists them (for example
+  `ignored_columns: ["Notes"]`), and the import dialog's preview shows one line such as
+  "Ignored columns: Notes". Missing required columns and repeated columns stay errors.
+  The import (apply) step works on the previewed rows, so it needs no change; check it.
+- **Spec:** update §3.6's file format with one bullet: "Other columns are ignored; the
+  preview lists them."
+- **Tests:** update `beer_board_csv_test.exs:91` (it asserts the old error). Add an ExUnit
+  case (Notes + an unknown column in the middle → rows parse, both listed), and a
+  Playwright check that the preview shows the ignored-columns line and the import applies.
+
+### G9: after "Only N left" the Redeem dialog keeps the old count
+
+- `rockcut-ui/src/pages/taproom/RedeemDialog.tsx`. After a 422 "Only N left", the dialog
+  still says "· 5 left", keeps the stepper at 5 and keeps the "last 5 beers … removes the
+  entry" wording.
+- **Fix:** on that error, refresh the board, then update the dialog from the fresh entry:
+  the header count, the stepper's max (clamp the current value to it), and the
+  last-beer wording. Keep the inline "Only N left" message. If the entry has gone, show
+  the existing "This entry was already removed" handling.
+- **Test:** Playwright with two contexts (or one context plus an API redeem): open
+  Redeem at 5, another redeem takes 2, press Redeem → "Only 3 left", the header shows
+  3, the stepper is at most 3, nothing changed.
+
+### Spec wording (no code): G2 and G8
+
+- **G2:** the 5th wrong code is the one that locks, which matches "5 wrong codes within
+  10 minutes locks". Reword **S9**: attempts 1–4 show the inline error; the 5th shows
+  "Too many wrong codes. Try again in N minutes, or use Sign in as me."; later attempts,
+  even with a valid code, stay locked. Nothing changes.
+- **G8:** the History tab shows **Added** / Redeemed / Edited / Deleted (with "(import)");
+  the API and CSV keep `created` / `redeemed` / `edited` / `deleted`. Say so in §3.5's
+  History tab, and change the History text in S6, S7, S19, S22 and S23 to the UI labels.
+- One `docs:` commit for both.
+
+### Then
+
+1. **Coverage:** add the new tests to `rockcut-ui/tests/COVERAGE.md` (as "DEV pass 1").
+2. **Local gate again, in full,** as in Task 3 step 1: API tests, `tsc` + `vite build`,
+   lint (still 26 errors + 1 warning, none in files you changed), the **whole**
+   Playwright suite (run setup before and after), and a short persist-verify of each fix
+   (G1 as `barMgr`, G5 with a Notes column, G9 with two sessions).
+3. **Handoff note:** add a "DEV pass 1 fixes" section to `d37_handoff_note.md` (each gap,
+   the fix, the test), and set "SHA for DEV" back to `<filled by lead at push>`. Commit
+   as `docs: D37 handoff note — DEV pass 1 fixes`.
+
+**Then stop. Don't push.** **Reply with:** the commits, the gate results (counts, lint
+file list, any flakes), anything you changed beyond this brief and why, and `LEAD:`
+questions.
