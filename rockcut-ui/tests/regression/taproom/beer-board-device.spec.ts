@@ -146,3 +146,19 @@ test('S13: "Sign in as me" on the tablet, then Redeem: no code asked; History sh
     await retireTempPerson(person)
   }
 })
+
+test('DEV pass 1 G4: a pasted code keeps its 4 digits (spaces and dashes dropped)', async ({ page }) => {
+  await page.goto('/taproom/beer-board')
+  await page.getByTestId('board-add').click()
+  const field = page.getByTestId('board-staff-code')
+  for (const text of [' 1234', '12 34', '12-34', '123456']) {
+    await field.fill(text)
+    await expect(field).toHaveValue('1234')
+    // As a paste: one insertion of the whole text into the empty field.
+    await field.fill('')
+    await field.focus()
+    await page.keyboard.insertText(text)
+    await expect(field).toHaveValue('1234')
+  }
+  // Nothing submitted, so no limiter attempt is spent.
+})

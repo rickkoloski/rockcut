@@ -11,7 +11,7 @@ import {
 } from '@mui/material'
 import { Visibility, VisibilityOff } from '@mui/icons-material'
 import api from '../../lib/api'
-import { staffCodeError } from '../../lib/staffCode'
+import { staffCodeDigits, staffCodeError } from '../../lib/staffCode'
 import type { User } from '../../lib/types'
 
 const MASK = '••••'
@@ -120,7 +120,7 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
         <TextField
           label="Staff code"
           value={value}
-          onChange={(e) => onDraftChange(e.target.value.replace(/\D/g, '').slice(0, 4))}
+          onChange={(e) => onDraftChange(staffCodeDigits(e.target.value))}
           error={!!error || (typing && draft.length !== 4)}
           helperText={helper}
           disabled={disabled || busy}

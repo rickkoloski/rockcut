@@ -11,6 +11,7 @@ import {
 } from '@mui/material'
 import useAuth from '../../hooks/useAuth'
 import { boardError } from '../../lib/beerBoard'
+import { staffCodeDigits } from '../../lib/staffCode'
 
 interface Props {
   open: boolean
@@ -99,14 +100,14 @@ export default function BoardActionDialog({
             <TextField
               label="Your staff code"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 4))}
+              onChange={(e) => setCode(staffCodeDigits(e.target.value))}
               error={!!codeError}
               helperText={codeError ?? 'Records who made this change.'}
               autoComplete="off"
               // Masked with CSS, not type="password": Android keyboards may
               // ignore inputMode on password fields and show letters.
               sx={{ '& input': { WebkitTextSecurity: 'disc' } }}
-              slotProps={{ htmlInput: { inputMode: 'numeric', maxLength: 4, 'data-testid': 'board-staff-code' } }}
+              slotProps={{ htmlInput: { inputMode: 'numeric', 'data-testid': 'board-staff-code' } }}
             />
           )}
         </DialogContent>
