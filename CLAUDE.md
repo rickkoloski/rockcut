@@ -71,12 +71,12 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Auth
 
 - **Local dev + DEV server:** fictional `@rockcut-test.com` personas only (D30). Agents log in with a minted token (`mix rockcut.synthetic.token <persona>`), not a password — see `docs/process/test-credentials-policy.md` and `rockcut-ui/tests/RUNNING.md`. The seed password is a secret (PortableMind file shared by Matt + Rick; locally in gitignored `rockcut_api/.env.synthetic`).
-- Prod secrets: ADMIN_EMAIL, ADMIN_PASSWORD_HASH (Fly secrets). Humans only.
+- Prod secrets: ADMIN_EMAIL, ADMIN_PASSWORD_HASH, STAFF_CODE_KEY (D37: 32 bytes base64; the API won't boot without it, and losing it makes stored staff codes unreadable) (Fly secrets). Humans only.
 
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D37 Buy-a-Beer Board + staff codes (task 4083), spec approved 2026-10-05, branch `d37-buy-a-beer-board`; PR #15 open; DEV gate pass 1 done 2026-10-07 (QA gaps fixed in Task 4, local gate clean, fixes not yet pushed). Next: push, redeploy DEV, re-run the DEV gate (see the latest `SESSION_HANDOFF_*`). Then D38. D36 shipped to prod in `v2026.10.05` (2026-10-05 UTC); D19–D36 complete. Matt's queue: task 4054 ("new version available, tap to reload" prompt), then 4055 (events in calendar feeds) and 4056 (company-wide events), then the small tasks (4060–4064 from D36). Task 3994 (`decimal` advisory) is due 2026-10-30, and 4058 (remove the pre-D34 token path) 2026-11-04.
+- **Next deliverable**: D38, not chosen yet. D37 (Buy-a-Beer Board + staff codes, task 4083) shipped to prod in `v2026.10.07` (2026-10-07 UTC); D19–D37 complete. Matt's queue: task 4054 ("new version available, tap to reload" prompt), then 4055 (events in calendar feeds) and 4056 (company-wide events), then the small tasks (4060–4064 from D36; 4115–4119 from D37). **4117** (API accepts writes before a required password reset) is medium. Task 3994 (`decimal` advisory) is due 2026-10-30, and 4058 (remove the pre-D34 token path) 2026-11-04.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance
@@ -139,6 +139,7 @@ If unsure about process, reference `~/src/pm-sdlc/lifecycles/native.md`.
 | D34 | Revocable sign-in sessions + profile page — `user_sessions` (HMAC-hashed `ses_` tokens; sign-out, password change/reset and deactivation revoke); pre-D34 tokens honored to expiry with a per-user cutoff; tablet "Sign in as me" sessions die at sign-out/idle return or after 15 idle minutes; Profile (Change password, Sign out of all other devices); show/hide on passwords; "Can't reach the server, retrying…" instead of signing out on network/proxy errors | 04_auth |
 | D35 | Calendar feed links reset when someone leaves or loses access — shared feeds rotate in the same transaction (deactivation, demotion, owner flag removed); one "Re-subscribe" notification per recipient (in-app + push); Reset button asks and notifies; change-log entries for link resets and owner access; Calendar sync links on the API host (they never worked on prod before) | 07_scheduling |
 | D36 | Backlog sweep + time-off conflict fix — timed time off conflicts only with overlapping shifts (all-day covers the day; Scheduler loads through the next Monday); `/live` socket dev-only; "Channel not found" / "Not available on a shared device"; tablet header at phone width; manifest content type; series-extend 404; DEV reseed cleans events/series/brands; tablet idle across tabs, abandoned "Sign in as me" form returns, offline sign-outs retried; null nav lists + top-level error boundary | 07_scheduling |
+| D37 | Buy-a-Beer Board + staff codes — Taproom board of prepaid beers (add/redeem/edit/delete, atomic redeem), manager History + CSV export/import (Add/Replace, duplicate groups, stale-preview check, ignored columns); 4-digit staff codes (HMAC digest + AES-GCM under `STAFF_CODE_KEY`) identify the person for writes on the shared tablet, rate-limited per device; `nimble_csv`; fixes the D35 manager-removal "Forbidden" in Users & Roles | 09_taproom |
 
 ## References
 
