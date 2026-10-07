@@ -4,7 +4,7 @@
 **Spec:** `docs/current_work/specs/d37_buy_a_beer_board_spec.md` (approved 2026-10-05, Q1–Q8; §3.6 amended for `M/D/YYYY` dates, lead decisions 1)
 **Plan:** `docs/current_work/planning/d37_buy_a_beer_board_plan.md`
 **Branch:** `d37-buy-a-beer-board`, cut from `develop` (`ade4433`). One commit per plan step, plus lead-decision follow-ups.
-**SHA for DEV:** `50ab6be` (HEAD at push; the commit that fills in this SHA comes after it and changes only this line)
+**SHA for DEV:** `<filled by lead at push>`
 
 ## What changed
 
@@ -57,6 +57,31 @@ Spec §4, S1–S31. Personas: `barMgr`, `bartender1`, `bartender2`, `taproomDevi
 - **Playwright, whole local suite** (setup before and after): **174 passed, 1 skipped** (`smoke/roles` "DEV shows the banner", DEV-only), 0 failed, no retries. The known parallel flake (task 4064, `devices/personal_signin` S13) passed.
 - **Persist-verify (final pass, browser, throwaway scripts):** as `bartender1` add → redeem (4 → 3) → edit (Chris & Lee, 7) → delete, each checked after a reload; on the tablet, redeem with a `[TEST-TEMP]` person's code (2 → 1, recorded as that person); as `barMgr`, import (Add, 2 rows incl. a `9/1/2026` date) persisted, and both exports downloaded with the rows.
 - No revert check: D37 is a feature, not a bug fix.
+
+## DEV pass 1 fixes (2026-10-07)
+
+The DEV QA pass on `b71174b` (`stepwise_results/d37_dev_qa_report.md`) found G1–G9. Matt's decisions: fix G1, G3, G4, G5 and G9 here and reword the spec for G2 and G8; G6 and G7 go to the backlog. One commit each, `27c2979`..`f98b550`.
+
+| Gap | Fix | Test |
+|---|---|---|
+| **G1** (must-fix) a manager removing someone from their department got "Forbidden" and lost the rest of the save | `UserFormDialog` `save()`: a non-owner sends the `PATCH` first, then the memberships (owners keep D35's memberships-first order, for the owner flag). A typed staff code isn't sent when the save takes the person out of the Taproom or deactivates them (the server clears it). Predates D37 (D35 order, any department manager). No API change. | Playwright `auth/manager_removes_member` (barMgr: rename + leave Taproom with a code → saved, membership gone, `has_staff_code` false; breweryMgr: the same for the Brewery). D35 ordering: `scheduler/calendar_feed_rotation` still passes. |
+| **G2** the 5th wrong code locks | Spec S9 reworded (no code). | as S9 |
+| **G3** a typed code was clear text in Users & Roles | `StaffCodeSection`: typed/suggested digits masked with the tablet's CSS (`maskedCodeSx` in `lib/staffCode.ts`); the eye shows/hides them without a fetch or `staff_code.reveal`; hidden on each open. `inputMode="numeric"` kept. | Playwright `staff-codes` "DEV pass 1 G3" (computed `-webkit-text-security`, no GET) |
+| **G4** a paste with a space or dash kept 3 digits | `maxLength` removed from the tablet field; both fields use `staffCodeDigits` (digits only, then 4). | Playwright `beer-board-device` "DEV pass 1 G4" (`" 1234"`, `"12 34"`, `"12-34"`, `"123456"` by `fill` and `insertText`; no submit). Fails with `maxLength` put back (`123`). |
+| **G5** an extra column refused the import | `Csv.parse/1` returns `{:ok, rows, ignored_columns}`; preview JSON gains `ignored_columns`; the dialog shows "Ignored columns: Notes". Missing / repeated columns stay errors. Apply works on the previewed rows, unchanged. Spec §3.6 gains the bullet. | ExUnit `beer_board_csv_test` (G5; the old "Unknown column" assertion removed), `beer_board_admin_controller_test` (G5: preview + apply; clean fixtures list none); Playwright `beer-board-import` "DEV pass 1 G5" |
+| **G8** History says Added, the spec said created | Spec §3.5 (UI labels vs API/CSV values) and S6, S7, S19, S22, S23, S25 use the UI labels. | as those scenarios |
+| **G9** after "Only N left" the Redeem dialog kept the old count | `RedeemDialog`: on the 422 it refetches the board and shows the fresh entry (header, stepper clamped, last-beer wording); the inline error stays; an entry gone meanwhile gets "This entry was already removed". | Playwright `beer-board-staff` "DEV pass 1 G9" (API redeem by bartender2 mid-dialog) |
+
+**Local gate after the fixes (2026-10-07, at `f98b550`):**
+- `MIX_ENV=test mix test`: **1,003 tests, 0 failures.**
+- `tsc` clean; `vite build` OK; `pnpm lint` **26 errors, 1 warning**, the same files as above, none changed by D37.
+- **Playwright, whole suite** (setup before and after), run twice:
+  - Run 1: 174 passed, 4 failed, 1 skipped, 2 did not run (`board-replace`, skipped because `chromium` failed). Failed: `devices/device_permissions` S12, `devices/personal_signin` S13 (task 4064), `devices/pairing` S11, `scheduler/events_manager` S2: all timeouts.
+  - Run 2: 176 passed, 2 failed (`personal_signin` S13 again; `taproom/staff-codes` "Remove clears the code at once": the `DELETE` took 8 s), 1 skipped, 2 did not run.
+  - Each failed test alone with `--repeat-each 5 --workers=1`: **5/5 passed** (all six). `pairing` S11 also passed 5/5 in parallel; the others fail 4 of 5 when the repeats run in parallel, because they share a persona/tablet/week. `board-replace` alone: 2/2 after each run.
+  - None of the failing specs exercises a file this pass changed except `staff-codes` (its Remove path is unchanged). The box had under 1.3 GB of memory free (10 GB, no swap) during the runs, and page loads took 2–3 s. That's my read of the timeouts, not a proven cause.
+- **Persist-verify** (throwaway script, auth files, deleted): G1 as barMgr (rename + leave Taproom → after reload: renamed, no Taproom, no code); G5 (Notes column → "Ignored columns: Notes", 2 entries after reload); G9 with two sessions (bartender2 redeems 2 in the UI while bartender1 holds 5 → "Only 3 left", header and stepper at 3; 3 left after reload).
+- Test-only changes beyond the brief: `openUser` moved to `taproom/helpers.ts` (shared with the G1 spec) and waits 15 s for the grid; `staff-codes.spec.ts` has a 60 s test timeout (each test loads Users several times).
 
 ## Lint waiver
 
