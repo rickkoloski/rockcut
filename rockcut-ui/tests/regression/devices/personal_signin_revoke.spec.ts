@@ -154,12 +154,15 @@ test.describe('on the shared taproomDevice tablet', () => {
     // The server stops answering: requests stall rather than fail. Those stay
     // stalled for good; once the server is back, new requests get through.
     let serverBack = false
-    await page.route('**/api/me', (route) => (serverBack ? route.continue() : undefined))
+    let heldRetry: () => void = () => {}
+    await page.route('**/api/me', (route) => (serverBack ? route.continue() : heldRetry()))
     await page.reload()
     // The first check's own 15 s timeout (a native timer the fake clock can't move).
     await expect(page.getByTestId('server-unreachable')).toBeVisible({ timeout: 25_000 })
-    // The 10 s retry starts a check that stalls too.
-    const retried = page.waitForRequest('**/api/me')
+    // The 10 s retry starts a check that stalls too. Wait for the route to hold it,
+    // not just for the request to start: the handler runs a moment after the
+    // request event, and by then serverBack would let the retry through (DEV, D37).
+    const retried = new Promise<void>((resolve) => { heldRetry = resolve })
     await page.clock.fastForward(10_000)
     await retried
 
