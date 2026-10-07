@@ -11,7 +11,7 @@ import {
 } from '@mui/material'
 import { Visibility, VisibilityOff } from '@mui/icons-material'
 import api from '../../lib/api'
-import { staffCodeDigits, staffCodeError } from '../../lib/staffCode'
+import { maskedCodeSx, staffCodeDigits, staffCodeError } from '../../lib/staffCode'
 import type { User } from '../../lib/types'
 
 const MASK = '••••'
@@ -30,12 +30,14 @@ interface Props {
  * D37 §3.2: a Taproom member's staff code in the Users & Roles edit dialog.
  * An existing code shows as •••• until the eye is pressed, which fetches it
  * (each reveal is audited). Typing 4 digits sets a new code on Save; Suggest
- * fills in an unused one; Remove clears it at once.
+ * fills in an unused one; Remove clears it at once. Typed digits are masked
+ * too, and the eye shows them without fetching anything.
  */
 export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved, disabled }: Props) {
   const [hasCode, setHasCode] = useState(!!user.has_staff_code)
   const [revealed, setRevealed] = useState<string | null>(null)
   const [showing, setShowing] = useState(false)
+  const [showTyped, setShowTyped] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -44,14 +46,18 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
     setHasCode(!!user.has_staff_code)
     setRevealed(null)
     setShowing(false)
+    setShowTyped(false)
     setError(null)
   }, [user])
 
   const typing = draft !== ''
   const value = typing ? draft : hasCode ? (showing && revealed ? revealed : MASK) : ''
+  const shown = typing ? showTyped : showing
 
   const toggleShow = async () => {
     setError(null)
+    // Digits being typed are already here: nothing to fetch or audit.
+    if (typing) return setShowTyped((s) => !s)
     if (showing) return setShowing(false)
     if (revealed === null) {
       setBusy(true)
@@ -124,7 +130,7 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
           error={!!error || (typing && draft.length !== 4)}
           helperText={helper}
           disabled={disabled || busy}
-          sx={{ width: 220 }}
+          sx={{ width: 220, ...(shown ? {} : maskedCodeSx) }}
           slotProps={{
             htmlInput: {
               inputMode: 'numeric',
@@ -133,19 +139,19 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
             },
             input: {
               endAdornment:
-                hasCode && !typing ? (
+                hasCode || typing ? (
                   <InputAdornment position="end">
                     <IconButton
                       type="button"
-                      aria-label={showing ? 'Hide staff code' : 'Show staff code'}
-                      aria-pressed={showing}
+                      aria-label={shown ? 'Hide staff code' : 'Show staff code'}
+                      aria-pressed={shown}
                       data-testid="staff-code-toggle"
                       onClick={toggleShow}
                       onMouseDown={(e) => e.preventDefault()}
                       edge="end"
                       disabled={disabled || busy}
                     >
-                      {busy ? <CircularProgress size={18} /> : showing ? <VisibilityOff /> : <Visibility />}
+                      {busy ? <CircularProgress size={18} /> : shown ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
                   </InputAdornment>
                 ) : undefined,

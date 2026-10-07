@@ -59,6 +59,33 @@ test.describe('as barMgr', () => {
     await expect(page.getByRole('columnheader', { name: /staff code/i })).toHaveCount(0)
   })
 
+  test('DEV pass 1 G3: a typed code is masked; the eye shows it without fetching', async ({ page }) => {
+    const input = page.getByTestId('staff-code-input')
+    const security = () => input.evaluate((el) => getComputedStyle(el).getPropertyValue('-webkit-text-security'))
+    const fetched: string[] = []
+    page.on('request', (r) => {
+      if (r.url().includes('/staff_code') && r.method() === 'GET' && !r.url().includes('suggest')) fetched.push(r.url())
+    })
+
+    await openUser(page, a!.name)
+    await input.pressSequentially('4821')
+    await expect(input).toHaveValue('4821')
+    expect(await security()).toBe('disc')
+    await page.getByTestId('staff-code-toggle').click()
+    await expect(page.getByTestId('staff-code-toggle')).toHaveAttribute('aria-label', 'Hide staff code')
+    expect(await security()).toBe('none')
+    await page.getByTestId('staff-code-toggle').click()
+    expect(await security()).toBe('disc')
+
+    // Hidden again the next time the dialog opens.
+    await page.getByTestId('staff-code-toggle').click()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await openUser(page, a!.name)
+    await input.pressSequentially('4821')
+    expect(await security()).toBe('disc')
+    expect(fetched).toEqual([])
+  })
+
   test('S2: a code in use is refused; Suggest fills a free one', async ({ page }) => {
     const code = await freeCode()
     const set = await (await apiAs('barMgr')).put(`/api/users/${a!.id}/staff_code`, { data: { code } })

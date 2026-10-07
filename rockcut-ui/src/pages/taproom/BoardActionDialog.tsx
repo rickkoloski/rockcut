@@ -11,7 +11,7 @@ import {
 } from '@mui/material'
 import useAuth from '../../hooks/useAuth'
 import { boardError } from '../../lib/beerBoard'
-import { staffCodeDigits } from '../../lib/staffCode'
+import { maskedCodeSx, staffCodeDigits } from '../../lib/staffCode'
 
 interface Props {
   open: boolean
@@ -104,9 +104,7 @@ export default function BoardActionDialog({
               error={!!codeError}
               helperText={codeError ?? 'Records who made this change.'}
               autoComplete="off"
-              // Masked with CSS, not type="password": Android keyboards may
-              // ignore inputMode on password fields and show letters.
-              sx={{ '& input': { WebkitTextSecurity: 'disc' } }}
+              sx={maskedCodeSx}
               slotProps={{ htmlInput: { inputMode: 'numeric', 'data-testid': 'board-staff-code' } }}
             />
           )}

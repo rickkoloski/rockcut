@@ -12,3 +12,9 @@ export function staffCodeError(err: unknown): string {
  * paste like " 1234" or "12-34" before the non-digits are dropped.)
  */
 export const staffCodeDigits = (text: string) => text.replace(/\D/g, '').slice(0, 4)
+
+/**
+ * Masks a staff-code input with CSS, not type="password": Android keyboards
+ * may ignore inputMode on password fields and show letters.
+ */
+export const maskedCodeSx = { '& input': { WebkitTextSecurity: 'disc' } } as const
