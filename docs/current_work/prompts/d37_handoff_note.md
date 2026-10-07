@@ -4,7 +4,7 @@
 **Spec:** `docs/current_work/specs/d37_buy_a_beer_board_spec.md` (approved 2026-10-05, Q1–Q8; §3.6 amended for `M/D/YYYY` dates, lead decisions 1)
 **Plan:** `docs/current_work/planning/d37_buy_a_beer_board_plan.md`
 **Branch:** `d37-buy-a-beer-board`, cut from `develop` (`ade4433`). One commit per plan step, plus lead-decision follow-ups.
-**SHA for DEV:** `<filled by lead at push>`
+**SHA for DEV:** `e211339` (HEAD at push; the commit that fills in this SHA comes after it and changes only this line)
 
 ## What changed
 
