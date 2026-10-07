@@ -17,6 +17,11 @@ Local seed password (only needed to seed, or for login-form specs): put
 `SEED_PASSWORD=<value from the PortableMind file>` in `rockcut_api/.env.synthetic`
 and `rockcut-ui/.env.test.local`. Both are gitignored.
 
+Optional, D37: `SYNTHETIC_STAFF_CODES=bartender1:<code>,bartender2:<code>,barMgr:<code>`
+in `rockcut_api/.env.synthetic` gives those personas their staff codes on
+`mix rockcut.synthetic.setup` (values from the same PortableMind file; never in
+git or chat). No spec needs it.
+
 ## Run
 
 ```bash
@@ -25,6 +30,27 @@ npx playwright test                    # local (default)
 E2E_TARGET=dev npx playwright test     # DEV (needs `fly` logged in)
 npx playwright test tests/smoke/roles.spec.ts
 ```
+
+### Projects
+
+| Project | Runs | Notes |
+|---|---|---|
+| `setup` | `auth.setup.ts` | Mints persona tokens; every other project depends on it. |
+| `chromium` | every spec except Replace | Parallel. |
+| `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
+
+**Playwright runs a dependency project in full, whatever path you filter
+on.** Because `board-replace` depends on `chromium`, `npx playwright test
+tests/regression/taproom` runs the whole `chromium` suite first. To run part of
+the suite:
+
+```bash
+npx playwright test tests/regression/taproom --project=chromium   # the folder, without Replace
+npx playwright test --project=board-replace --no-deps              # Replace only (auth files must exist)
+```
+
+Never run `beer-board-replace.spec.ts` alongside other specs: anything they
+put on the board while a Replace runs is deleted.
 
 `tests/auth.setup.ts` mints a token for every active persona in one call and
 writes `tests/.playwright-auth/<persona>.json`. Specs switch user with
@@ -50,3 +76,8 @@ Persona keys and what each one tests: `tests/config/test-env.ts` and the D30 spe
 - DEV: `fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.reset_synthetic()'"`
 
 `setup` also heals: it restores every persona and deletes `[TEST-TEMP]` rows.
+
+**After a full run (with the `board-replace` project):** a Replace run marks the
+`[SEED]` board entries as imported, so re-run `mix rockcut.synthetic.setup`
+(locally) or `RockcutApi.Release.reset_synthetic()` (DEV) afterwards. The specs
+don't depend on it.

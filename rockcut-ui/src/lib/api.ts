@@ -43,3 +43,19 @@ api.interceptors.response.use(
 )
 
 export default api
+
+/**
+ * Download a file from an authenticated GET (D37 CSV exports). A plain link
+ * can't carry the bearer token, so fetch it as a Blob and save that.
+ */
+export async function download(path: string, filename: string): Promise<void> {
+  const { data } = await api.get<Blob>(path, { responseType: 'blob' })
+  const url = URL.createObjectURL(data)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

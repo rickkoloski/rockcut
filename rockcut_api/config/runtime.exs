@@ -106,6 +106,20 @@ if config_env() == :prod do
     config :rockcut_api, :admin_password_hash, admin_password_hash
   end
 
+  # D37 staff codes: the AES-256-GCM key that lets managers see a code in the
+  # user dialog. 32 random bytes, base64 (`openssl rand -base64 32`). Required:
+  # boot stops here rather than failing on the first code a manager saves.
+  staff_code_key =
+    case Base.decode64(System.get_env("STAFF_CODE_KEY") || "") do
+      {:ok, <<_::binary-32>> = key} ->
+        key
+
+      _ ->
+        raise "STAFF_CODE_KEY is missing or not 32 bytes of base64 (openssl rand -base64 32)"
+    end
+
+  config :rockcut_api, :staff_code_key, staff_code_key
+
   # Web Push (D21) — production VAPID keypair from Fly secrets. Generate with
   # `mix web_push_ex.vapid` and set WEB_PUSH_EX_VAPID_{PUBLIC,PRIVATE}_KEY.
   # Without these, the web_push channel simply no-ops (best-effort delivery).

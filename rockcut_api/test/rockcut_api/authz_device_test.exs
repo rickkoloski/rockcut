@@ -208,6 +208,28 @@ defmodule RockcutApi.AuthzDeviceTest do
     end
   end
 
+  describe "D37 Buy-a-Beer Board and staff codes" do
+    test "a Taproom tablet reads the board; nothing else", %{d: d} do
+      assert Authz.can?(d, :read, :beer_board)
+
+      for action <- [:write, :history, :import, :export],
+          do: refute(Authz.can?(d, action, :beer_board), inspect(action))
+    end
+
+    test "a tablet from another department doesn't read it" do
+      brewery =
+        RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brew tablet"})
+
+      refute Authz.can?(Accounts.get_user!(brewery.id), :read, :beer_board)
+    end
+
+    test "can't hold, set or see staff codes", %{d: d, p: p} do
+      refute Authz.can_hold_staff_code?(d)
+      refute Authz.can?(d, :set_staff_code, p["bartender1"])
+      refute Authz.can?(d, :reveal_staff_code, p["bartender1"])
+    end
+  end
+
   test "anything else is denied (catch-all)", %{d: d} do
     refute Authz.can?(d, :anything, :anything)
     refute Authz.can?(d, :read, %ShiftTemplate{})

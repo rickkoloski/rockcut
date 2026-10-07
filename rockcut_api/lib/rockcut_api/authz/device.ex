@@ -8,7 +8,8 @@ defmodule RockcutApi.Authz.Device do
   A device may:
     * read published shifts and events, positions, departments and the roster;
     * view (and mark read) the All-staff channel and its home department's channel;
-    * access its home department's module.
+    * access its home department's module;
+    * read the Buy-a-Beer Board, if it's a Taproom tablet (D37).
 
   When roles become data (RBAC roadmap Phases 2–6), this list becomes the
   system role for device accounts; `authz_device_test.exs` pins it.
@@ -36,6 +37,11 @@ defmodule RockcutApi.Authz.Device do
 
   def can?(%User{} = device, :access, {:module, key}) when is_atom(key),
     do: Atom.to_string(key) == home_key(device)
+
+  # D37: a Taproom tablet reads the Buy-a-Beer Board. Writes need a person's
+  # staff code and are decided for that person; history, import and export
+  # never reach a device (people-only routes).
+  def can?(%User{} = device, :read, :beer_board), do: home_key(device) == "bar"
 
   def can?(_device, _action, _resource), do: false
 

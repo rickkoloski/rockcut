@@ -222,6 +222,9 @@ defmodule RockcutApi.Accounts do
                 nil -> :unchanged
               end
 
+              # D37: a deactivated person's staff code stops working.
+              RockcutApi.StaffCodes.clear_if_ineligible(user.id, actor)
+
               {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
 
             {:error, cs} ->
@@ -291,8 +294,13 @@ defmodule RockcutApi.Accounts do
       before = feed_access(target.id)
 
       case apply_memberships(target, desired, actor) do
-        {:ok, user} -> {user, rotate_lost_feeds(before, user.id, actor)}
-        {:error, reason} -> Repo.rollback(reason)
+        {:ok, user} ->
+          # D37: leaving the Taproom ends the person's staff code.
+          RockcutApi.StaffCodes.clear_if_ineligible(user.id, actor)
+          {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
+
+        {:error, reason} ->
+          Repo.rollback(reason)
       end
     end)
     |> notify_rotated_feeds()

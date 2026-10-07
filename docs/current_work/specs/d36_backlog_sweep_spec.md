@@ -1,6 +1,6 @@
 # D36: Backlog Sweep + Time-Off Conflict Fix — Specification
 
-**Status:** Approved (2026-10-04, Q1–Q3 answered)
+**Status:** Complete — on prod in `v2026.10.05` (2026-10-05). Approved (2026-10-04, Q1–Q3 answered)
 **Created:** 2026-10-04
 **Author:** Matt + CC
 **Process:** `docs/process/three_environment_workflow.md`. One branch, one local gate, one DEV gate with an independent pass, one release.

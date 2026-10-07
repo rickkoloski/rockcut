@@ -243,6 +243,8 @@ export interface User {
   // D33: 'device' for a shared tablet account; every human is 'person'.
   kind?: 'person' | 'device'
   home_department_id?: number | null
+  // D37: a staff code is set (the code itself comes only from GET /api/users/:id/staff_code).
+  has_staff_code?: boolean
   memberships: Membership[] | null
   inserted_at: string
   updated_at: string
@@ -271,6 +273,10 @@ export interface Me {
   capabilities: Capabilities
   // D33: sees Admin → Shared devices (owner, or manager of a device's home department).
   shared_devices?: boolean
+  // D37: sees and sets Taproom staff codes in the user dialog (owners, Taproom managers).
+  staff_codes?: boolean
+  // D37: the Buy-a-Beer Board's History tab, import and export (owners, Taproom managers).
+  beer_board_manage?: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────
@@ -484,4 +490,93 @@ export interface Shift {
   notes: string | null
   inserted_at: string
   updated_at: string
+}
+
+// D37: Buy-a-Beer Board
+export interface BeerBoardEntry {
+  id: number
+  recipient_name: string
+  purchaser_name: string
+  beers_remaining: number
+  moved_off_board_at: string
+  imported_at: string | null
+}
+
+export interface BeerBoardEvent {
+  id: number
+  entry_id: number
+  action: 'created' | 'redeemed' | 'edited' | 'deleted'
+  actor_name: string | null
+  on_shared_device: boolean
+  recipient_name: string
+  purchaser_name: string
+  beers_before: number
+  beers_after: number
+  source: string | null
+  inserted_at: string
+}
+
+/** D37 import: one validated file row (spreadsheet row number; header = row 1). */
+export interface ImportRow {
+  row: number
+  recipient_name: string
+  purchaser_name: string
+  beers: number
+  moved_off_board_at: string | null
+}
+
+/** One member of an import duplicate group: a board entry ("b:<id>") or a file row ("r:<row>"). */
+export interface ImportGroupItem {
+  id: string
+  source: 'board' | 'file'
+  row: number | null
+  entry_id: number | null
+  recipient_name: string
+  purchaser_name: string
+  beers: number
+  moved_off_board_at: string | null
+  imported_at: string | null
+}
+
+/** Board entries and file rows that share a For name (spec §3.6 step 3). */
+export interface ImportGroup {
+  key: string
+  name: string
+  total: number
+  combinable: boolean
+  combined_purchaser: string
+  items: ImportGroupItem[]
+}
+
+export interface ImportPreview {
+  mode: 'add' | 'replace'
+  file_name: string
+  errors: { row: number | null; message: string }[]
+  /** Headers of the file's columns the import doesn't use (DEV pass 1 G5). */
+  ignored_columns: string[]
+  rows: ImportRow[]
+  new: ImportRow[]
+  groups: ImportGroup[]
+  board: { count: number; beers: number }
+  signature: string | null
+}
+
+export type ImportResolution =
+  | { choice: 'allow' }
+  | { choice: 'combine'; purchaser_name: string }
+  | { choice: 'pick'; keep: string[] }
+
+export interface ImportResult {
+  imported: number
+  combined: number
+  deleted: number
+  skipped: number
+  removed: number
+}
+
+/** A board write's answer; `recorded_as` names the staff-code owner on a shared device. */
+export interface BeerBoardWriteResult {
+  data: BeerBoardEntry | null
+  removed: boolean
+  recorded_as?: string
 }

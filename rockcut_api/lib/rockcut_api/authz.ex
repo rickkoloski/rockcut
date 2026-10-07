@@ -36,6 +36,15 @@ defmodule RockcutApi.Authz do
   def device?(%User{kind: "device"}), do: true
   def device?(_), do: false
 
+  @doc """
+  True if `user` may hold a D37 staff code: an active person (not a device)
+  with a Taproom membership. Expects memberships preloaded with departments.
+  """
+  def can_hold_staff_code?(%User{kind: "person", active: true} = user),
+    do: member_of?(user, "bar")
+
+  def can_hold_staff_code?(_), do: false
+
   @doc "True if the user is a global owner."
   def owner?(%User{is_owner: owner}), do: owner == true
 
@@ -314,6 +323,21 @@ defmodule RockcutApi.Authz do
 
   def can?(%User{} = user, :assign, {:memberships, dept_id}),
     do: role_in(user, dept_id) == :manager
+
+  # D37 Buy-a-Beer Board: any Taproom member reads and writes (add, redeem,
+  # edit, delete); the change log, import and export are for Taproom managers.
+  # Owners pass above.
+  def can?(%User{} = user, action, :beer_board) when action in [:read, :write],
+    do: member_of?(user, "bar")
+
+  def can?(%User{} = user, action, :beer_board) when action in [:history, :import, :export],
+    do: role_in(user, "bar") == :manager
+
+  # D37 staff codes: owners (above) and Taproom managers set and see them.
+  # Whether the target may hold one is StaffCodes' check (can_hold_staff_code?/1).
+  def can?(%User{} = user, action, %User{})
+      when action in [:set_staff_code, :reveal_staff_code],
+      do: role_in(user, "bar") == :manager
 
   # Departments: anyone reads; only owners (handled above) change them.
   def can?(%User{}, :read, %Department{}), do: true

@@ -21,6 +21,8 @@ import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import useAuth from '../../hooks/useAuth'
 import type { Department, Role, User } from '../../lib/types'
+import StaffCodeSection from './StaffCodeSection'
+import { staffCodeError } from '../../lib/staffCode'
 
 interface Props {
   open: boolean
@@ -38,7 +40,7 @@ function readError(err: unknown): string {
 
 export default function UserFormDialog({ open, onClose, editUser, departments }: Props) {
   const qc = useQueryClient()
-  const { user: actor, capabilities } = useAuth()
+  const { user: actor, capabilities, staffCodes } = useAuth()
   const isOwnerActor = !!actor?.is_owner
   const isEdit = !!editUser
 
@@ -58,6 +60,15 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [tempPassword, setTempPassword] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [codeDraft, setCodeDraft] = useState('')
+
+  // D37: owners and Taproom managers see a Taproom member's staff code. Only
+  // active Taproom members (as saved) can hold one.
+  const showStaffCode =
+    isEdit &&
+    staffCodes &&
+    !!editUser?.active &&
+    !!editUser?.memberships?.some((m) => m.department_key === 'bar')
 
   useEffect(() => {
     if (!open) return
@@ -75,6 +86,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setRoles(initial)
     setTempPassword(null)
     setError(null)
+    setCodeDraft('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editUser])
 
@@ -87,23 +99,43 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
 
   const save = async () => {
     setError(null)
+    // Leaving the Taproom (or deactivating) clears the code on the server, so a
+    // typed code isn't sent.
+    const keepsCode = active && !!roles.bar
+    if (showStaffCode && keepsCode && codeDraft !== '' && !/^\d{4}$/.test(codeDraft)) {
+      setError('A staff code is 4 digits.')
+      return
+    }
     setLoading(true)
     try {
       if (isEdit && editUser) {
         const body: Record<string, unknown> = { name, active, schedulable }
         if (isOwnerActor) body.is_owner = isOwner
         // D35: each call resets the calendar links the person loses. Deactivating
-        // goes first (the membership change then resets nothing more); otherwise
-        // memberships go first, so removing the owner flag only resets what the
-        // person doesn't keep through their new roles. Either way, once.
+        // goes first (the membership change then resets nothing more). For an
+        // owner, memberships otherwise go first, so removing the owner flag only
+        // resets what the person doesn't keep through their new roles. Either
+        // way, once. A manager can't send the owner flag, so their user change
+        // goes first: removing someone from the manager's department ends the
+        // manager's right to edit them (D37 G1).
         const saveUser = () => api.patch(`/api/users/${editUser.id}`, body)
         const saveMemberships = () => api.put(`/api/users/${editUser.id}/memberships`, { memberships: memberships() })
-        if (editUser.active && !active) {
+        if (!isOwnerActor || (editUser.active && !active)) {
           await saveUser()
           await saveMemberships()
         } else {
           await saveMemberships()
           await saveUser()
+        }
+        if (showStaffCode && keepsCode && codeDraft !== '') {
+          try {
+            await api.put(`/api/users/${editUser.id}/staff_code`, { code: codeDraft })
+          } catch (err) {
+            // The rest is saved; keep the dialog open on the code's problem.
+            invalidate()
+            setError(staffCodeError(err))
+            return
+          }
         }
         invalidate()
         onClose()
@@ -208,6 +240,16 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
                 </TextField>
               ))}
             </Stack>
+
+            {showStaffCode && editUser && (
+              <StaffCodeSection
+                user={editUser}
+                draft={codeDraft}
+                onDraftChange={setCodeDraft}
+                onRemoved={invalidate}
+                disabled={loading}
+              />
+            )}
           </>
         )}
       </DialogContent>

@@ -17,6 +17,10 @@ defmodule RockcutApi.Accounts.User do
     # D33: "person" (every human account) or "device" (a shared tablet account).
     # Set at creation and never changed.
     field :kind, :string, default: "person"
+    # D37: staff code (see RockcutApi.StaffCodes). Never cast from params.
+    field :staff_code_digest, :binary, redact: true
+    field :staff_code_encrypted, :binary, redact: true
+    field :staff_code_set_at, :utc_datetime
 
     belongs_to :home_department, RockcutApi.Accounts.Department
 
