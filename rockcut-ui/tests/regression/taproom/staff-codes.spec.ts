@@ -1,24 +1,14 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from '../scheduler/helpers'
 import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
+import { openUser } from './helpers'
 
 // D37 §3.2: staff codes in the Users & Roles edit dialog (S1–S4, S12, S16).
 // Codes are set on [TEST-TEMP] Taproom people, never on personas: the seeded
 // persona codes are what the shared-device specs type.
-
-/** Open `name`'s edit dialog, paging through the grid (it shows 100 rows a page). */
-async function openUser(page: Page, name: string) {
-  await page.goto('/users')
-  const cell = page.getByRole('gridcell', { name, exact: true }).first()
-  const next = page.getByRole('button', { name: 'Go to next page' })
-  await expect(page.getByRole('gridcell').first()).toBeVisible()
-  while (!(await cell.isVisible()) && (await next.isEnabled())) {
-    await next.click()
-  }
-  await cell.click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-}
+// Each test loads the Users list several times: slow when the suite runs in parallel.
+test.describe.configure({ timeout: 60_000 })
 
 async function freeCode(): Promise<string> {
   const res = await (await apiAs('barMgr')).get('/api/staff_codes/suggest')

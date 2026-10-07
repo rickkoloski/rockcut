@@ -158,3 +158,17 @@ export async function rowsAfterReload(page: Page, q: string) {
     ),
   )
 }
+
+/** Open `name`'s edit dialog, paging through the grid (it shows 100 rows a page). */
+export async function openUser(page: Page, name: string) {
+  await page.goto('/users')
+  const cell = page.getByRole('gridcell', { name, exact: true }).first()
+  const next = page.getByRole('button', { name: 'Go to next page' })
+  // The list can take a while when parallel specs are creating people.
+  await expect(page.getByRole('gridcell').first()).toBeVisible({ timeout: 15_000 })
+  while (!(await cell.isVisible()) && (await next.isEnabled())) {
+    await next.click()
+  }
+  await cell.click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+}
