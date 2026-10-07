@@ -107,8 +107,30 @@ defmodule RockcutApiWeb.BeerBoardAdminControllerTest do
 
   test "Excel, quoted and formula fixtures preview cleanly", %{p: p} do
     for name <- ~w(excel.csv quoted.csv formula.csv clean.csv) do
-      assert preview(p, name)["errors"] == [], name
+      assert %{"errors" => [], "ignored_columns" => []} = preview(p, name), name
     end
+  end
+
+  @tag :tmp_dir
+  test "DEV pass 1 G5: a Notes column is ignored, listed, and the import applies", %{
+    p: p,
+    tmp_dir: dir
+  } do
+    path = Path.join(dir, "notes.csv")
+    File.write!(path, "For,Bought by,Beers,Notes\nPat,Chris,2,regular\nAna,Lee,1,\n")
+    upload = %Plug.Upload{path: path, filename: "notes.csv", content_type: "text/csv"}
+
+    data =
+      call(p["barMgr"], :post, "/api/beer_board/import/preview", %{file: upload, mode: "add"})
+      |> json_response(200)
+      |> Map.fetch!("data")
+
+    assert data["errors"] == []
+    assert data["ignored_columns"] == ["Notes"]
+    assert Enum.map(data["new"], & &1["recipient_name"]) == ~w(Pat Ana)
+
+    assert %{"data" => %{"imported" => 2}} = confirm(p, data, %{}) |> json_response(200)
+    assert BeerBoard.list_entries() |> Enum.map(& &1.recipient_name) |> Enum.sort() == ~w(Ana Pat)
   end
 
   test "S25: Replace preview carries the board summary", %{p: p} do

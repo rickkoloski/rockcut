@@ -3,7 +3,8 @@ defmodule RockcutApi.BeerBoard.Csv do
   D37 §3.6: the Buy-a-Beer Board's CSV files.
 
   - `parse/1` reads an import file into validated rows, or row-numbered
-    errors. Row numbers are spreadsheet rows: the header is row 1.
+    errors. Row numbers are spreadsheet rows: the header is row 1. Columns
+    it doesn't know are ignored and listed.
   - `entries_csv/1` and `events_csv/1` write the board and the change log.
 
   Spreadsheet-formula safety: a written value that starts with `= + - @`, a
@@ -36,20 +37,24 @@ defmodule RockcutApi.BeerBoard.Csv do
   ## Parse
 
   @doc """
-  Parse an import file. Returns `{:ok, rows}` or `{:error, errors}`, where a
-  row is `%{row:, recipient_name:, purchaser_name:, beers:, moved_off_board_at:}`
-  (`moved_off_board_at` a `DateTime` or nil) and an error is
-  `%{row: n | nil, message: text}`.
+  Parse an import file. Returns `{:ok, rows, ignored_columns}` or
+  `{:error, errors}`, where a row is
+  `%{row:, recipient_name:, purchaser_name:, beers:, moved_off_board_at:}`
+  (`moved_off_board_at` a `DateTime` or nil), `ignored_columns` are the
+  headers of columns the import doesn't use (e.g. `["Notes"]`), and an error
+  is `%{row: n | nil, message: text}`.
   """
   def parse(binary) when is_binary(binary) do
     with :ok <- check_size(binary),
          {:ok, text} <- decode(binary),
          {:ok, [header | lines]} <- split(text),
-         {:ok, columns} <- map_header(header) do
-      lines
-      |> Enum.with_index(2)
-      |> Enum.reject(fn {cells, _} -> Enum.all?(cells, &(String.trim(&1) == "")) end)
-      |> check_rows(columns)
+         {:ok, columns, ignored} <- map_header(header),
+         {:ok, rows} <-
+           lines
+           |> Enum.with_index(2)
+           |> Enum.reject(fn {cells, _} -> Enum.all?(cells, &(String.trim(&1) == "")) end)
+           |> check_rows(columns) do
+      {:ok, rows, ignored}
     end
   end
 
@@ -76,8 +81,9 @@ defmodule RockcutApi.BeerBoard.Csv do
       {:error, [%{row: nil, message: "The file isn't valid CSV: #{Exception.message(e)}"}]}
   end
 
-  # Column index → field. Blank header cells (a spreadsheet's trailing empty
-  # columns) are skipped.
+  # Column index → field, plus the headers of the columns it doesn't know
+  # (ignored: hand-kept sheets often have a Notes column). Blank header cells
+  # (a spreadsheet's trailing empty columns) are skipped.
   defp map_header(header) do
     named =
       header
@@ -85,10 +91,8 @@ defmodule RockcutApi.BeerBoard.Csv do
       |> Enum.map(fn {name, i} -> {unguard(name) |> String.trim(), i} end)
       |> Enum.reject(fn {name, _} -> name == "" end)
 
-    unknown =
-      for {name, _} <- named, not Map.has_key?(@headers, normalize_header(name)) do
-        %{row: 1, message: ~s(Unknown column "#{name}")}
-      end
+    ignored =
+      for {name, _} <- named, not Map.has_key?(@headers, normalize_header(name)), do: name
 
     fields =
       for {name, i} <- named,
@@ -110,9 +114,13 @@ defmodule RockcutApi.BeerBoard.Csv do
         %{row: 1, message: ~s(Missing column "#{label}")}
       end
 
-    case unknown ++ repeated ++ missing do
-      [] -> {:ok, for({field, i, _} <- fields, field != :ignore, into: %{}, do: {field, i})}
-      errors -> {:error, errors}
+    case repeated ++ missing do
+      [] ->
+        columns = for {field, i, _} <- fields, field != :ignore, into: %{}, do: {field, i}
+        {:ok, columns, ignored}
+
+      errors ->
+        {:error, errors}
     end
   end
 

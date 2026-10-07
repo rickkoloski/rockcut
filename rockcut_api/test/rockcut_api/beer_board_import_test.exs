@@ -21,7 +21,7 @@ defmodule RockcutApi.BeerBoardImportTest do
   defp rows!(name), do: elem(Csv.parse(File.read!(Path.join(@fixtures, name))), 1)
 
   defp rows_from(csv) do
-    {:ok, rows} = Csv.parse(csv)
+    {:ok, rows, _ignored} = Csv.parse(csv)
     rows
   end
 

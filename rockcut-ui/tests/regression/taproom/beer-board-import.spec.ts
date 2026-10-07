@@ -211,3 +211,14 @@ test('S30: no Moved off board column → import date; a filled date is kept', as
     `${t} C | Jo | 1 | ${d} | ${d}`,
   ])
 })
+
+test('DEV pass 1 G5: a Notes column is ignored and listed; the import applies', async ({ page }) => {
+  const t = tag('G5')
+  await previewImport(page, csvFile([`${t} Pat,Chris,2,regular`, `${t} Ana,Lee,1,`], 'For,Bought by,Beers,Notes'))
+  await expect(page.getByTestId('import-ignored-columns')).toHaveText('Ignored columns: Notes')
+  await expect(page.getByTestId('import-errors')).toHaveCount(0)
+  expect((await confirmImport(page)).status()).toBe(200)
+
+  const d = today()
+  expect(await rowsAfterReload(page, t)).toEqual([`${t} Ana | Lee | 1 | ${d} | ${d}`, `${t} Pat | Chris | 2 | ${d} | ${d}`])
+})

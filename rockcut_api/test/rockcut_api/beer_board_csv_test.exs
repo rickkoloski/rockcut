@@ -13,7 +13,7 @@ defmodule RockcutApi.BeerBoardCsvTest do
 
   describe "parse/1" do
     test "a clean file: rows numbered as spreadsheet rows, dates read" do
-      assert {:ok, [pat, ana, sam]} = Csv.parse(fixture("clean.csv"))
+      assert {:ok, [pat, ana, sam], []} = Csv.parse(fixture("clean.csv"))
       assert names([pat, ana, sam]) == [{"Pat", "Chris", 2}, {"Ana", "Bo", 1}, {"Sam", "Jo", 3}]
       assert Enum.map([pat, ana, sam], & &1.row) == [2, 3, 4]
 
@@ -36,7 +36,7 @@ defmodule RockcutApi.BeerBoardCsvTest do
     end
 
     test "an Excel-saved file: BOM, CRLF, header case and spaces, Date added, Imported ignored, US dates" do
-      assert {:ok, [pat, ana, kim, ray]} = Csv.parse(fixture("excel.csv"))
+      assert {:ok, [pat, ana, kim, ray], []} = Csv.parse(fixture("excel.csv"))
 
       assert names([pat, ana, kim, ray]) ==
                [{"Pat", "Chris", 2}, {"Ana", "Bo", 1}, {"Kim", "Lee", 2}, {"Ray", "Jo", 1}]
@@ -60,12 +60,12 @@ defmodule RockcutApi.BeerBoardCsvTest do
     end
 
     test "quoted commas and quotes" do
-      assert {:ok, rows} = Csv.parse(fixture("quoted.csv"))
+      assert {:ok, rows, []} = Csv.parse(fixture("quoted.csv"))
       assert names(rows) == [{"Smith, Pat", ~s(Lee "Doc" Jones), 4}, {"Ana, Jr.", "Bo", 1}]
     end
 
     test "S29: one guard quote is stripped before a formula character, not otherwise" do
-      assert {:ok, rows} = Csv.parse(fixture("formula.csv"))
+      assert {:ok, rows, []} = Csv.parse(fixture("formula.csv"))
 
       assert names(rows) == [
                {~s[=HYPERLINK("http://x")], "+Chris", 2},
@@ -75,24 +75,33 @@ defmodule RockcutApi.BeerBoardCsvTest do
     end
 
     test "the duplicates fixture parses (grouping is Import's job)" do
-      assert {:ok, rows} = Csv.parse(fixture("duplicates.csv"))
+      assert {:ok, rows, []} = Csv.parse(fixture("duplicates.csv"))
       assert length(rows) == 4
     end
 
     test "S30: no Moved off board column → no dates" do
-      assert {:ok, rows} = Csv.parse("For,Bought by,Beers\nPat,Chris,1\n")
+      assert {:ok, rows, []} = Csv.parse("For,Bought by,Beers\nPat,Chris,1\n")
       assert Enum.all?(rows, &is_nil(&1.moved_off_board_at))
     end
 
-    test "missing, unknown and repeated columns are header errors (row 1)" do
+    test "missing and repeated columns are header errors (row 1)" do
       assert {:error, [%{row: 1, message: ~s(Missing column "Beers")}]} =
                Csv.parse("For,Bought by\nPat,Chris\n")
 
-      assert {:error, [%{row: 1, message: ~s(Unknown column "Notes")}]} =
-               Csv.parse("For,Bought by,Beers,Notes\nPat,Chris,1,x\n")
-
       assert {:error, [%{row: 1, message: "Columns" <> _}]} =
                Csv.parse("For,Bought by,Beers,Moved off board,Date added\nPat,Chris,1,,\n")
+    end
+
+    test "DEV pass 1 G5: other columns are ignored and listed" do
+      csv = "For,Shelf,Bought by,Beers,Notes\nPat,A2,Chris,2,regular\nAna,,Lee,1,\n"
+
+      assert {:ok, [pat, ana], ["Shelf", "Notes"]} = Csv.parse(csv)
+      assert %{row: 2, recipient_name: "Pat", purchaser_name: "Chris", beers: 2} = pat
+      assert %{row: 3, recipient_name: "Ana", purchaser_name: "Lee", beers: 1} = ana
+
+      # A missing required column is still an error alongside an ignored one.
+      assert {:error, [%{row: 1, message: ~s(Missing column "Beers")}]} =
+               Csv.parse("For,Bought by,Notes\nPat,Chris,x\n")
     end
 
     test "a bad date, an over-long name" do
@@ -113,7 +122,7 @@ defmodule RockcutApi.BeerBoardCsvTest do
 
     test "limits: 1,000 rows and 1 MB" do
       ok = "For,Bought by,Beers\n" <> String.duplicate("Pat,Chris,1\n", 1_000)
-      assert {:ok, rows} = Csv.parse(ok)
+      assert {:ok, rows, []} = Csv.parse(ok)
       assert length(rows) == 1_000
 
       assert {:error, [%{message: "The file has 1001 rows; the limit is 1000"}]} =
@@ -174,7 +183,7 @@ defmodule RockcutApi.BeerBoardCsvTest do
       csv = Csv.entries_csv(entries)
       assert csv =~ ~s["'=HYPERLINK(""http://x"")",'-Lee]
 
-      assert {:ok, rows} = Csv.parse(csv)
+      assert {:ok, rows, []} = Csv.parse(csv)
 
       assert Enum.map(
                rows,

@@ -552,6 +552,8 @@ export interface ImportPreview {
   mode: 'add' | 'replace'
   file_name: string
   errors: { row: number | null; message: string }[]
+  /** Headers of the file's columns the import doesn't use (DEV pass 1 G5). */
+  ignored_columns: string[]
   rows: ImportRow[]
   new: ImportRow[]
   groups: ImportGroup[]

@@ -48,7 +48,8 @@ defmodule RockcutApiWeb.BeerBoardAdminController do
   @doc """
   POST /api/beer_board/import/preview: multipart `file` + `mode`. Validates
   and plans; changes nothing. Row errors come back in `errors` (200), and
-  block the import.
+  block the import. Columns the import doesn't use are listed in
+  `ignored_columns`.
   """
   def import_preview(conn, params) do
     with :ok <- allow(conn, :import),
@@ -57,13 +58,14 @@ defmodule RockcutApiWeb.BeerBoardAdminController do
       base = %{mode: mode, file_name: upload.filename, board: board_summary()}
 
       case read_upload(upload) do
-        {:ok, rows} ->
+        {:ok, rows, ignored} ->
           plan = Import.plan(rows, BeerBoard.list_entries(), mode)
 
           json(conn, %{
             data:
               Map.merge(base, %{
                 errors: [],
+                ignored_columns: ignored,
                 rows: Enum.map(rows, &row_json/1),
                 new: Enum.map(plan.new, &row_json/1),
                 groups: Enum.map(plan.groups, &group_json/1),
@@ -75,7 +77,14 @@ defmodule RockcutApiWeb.BeerBoardAdminController do
         {:error, errors} ->
           json(conn, %{
             data:
-              Map.merge(base, %{errors: errors, rows: [], new: [], groups: [], signature: nil})
+              Map.merge(base, %{
+                errors: errors,
+                ignored_columns: [],
+                rows: [],
+                new: [],
+                groups: [],
+                signature: nil
+              })
           })
       end
     end

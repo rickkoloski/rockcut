@@ -271,6 +271,7 @@ format (`.xlsx`) adds a dependency for no gain at this size.
   | `Imported` | no | **Ignored on import.** Exports include it for reference, and every imported entry gets the current import time. |
 
 - Header matching ignores case and surrounding spaces.
+- Other columns are ignored; the preview lists them.
 - Files saved by Excel are accepted: a byte-order mark and CRLF line endings
   are both fine.
 - Limits: 1 MB and 1,000 rows.

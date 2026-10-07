@@ -276,6 +276,11 @@ function PreviewBody({ preview, resolutions, choose, setResolution, replaceText,
 
   return (
     <>
+      {preview.ignored_columns.length > 0 && (
+        <Typography variant="body2" color="text.secondary" data-testid="import-ignored-columns">
+          Ignored columns: {preview.ignored_columns.join(', ')}
+        </Typography>
+      )}
       {preview.mode === 'replace' && (
         <Alert severity="warning" data-testid="import-replace-summary">
           <Typography>
