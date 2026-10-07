@@ -247,7 +247,9 @@ Staff and the tablet don't see them.
 - Each row shows:
   - when;
   - who: "Sam Pour", or "Sam Pour on Shared Device" when a code was used;
-  - the action, with "(import)" for import changes;
+  - the action: **Added**, **Redeemed**, **Edited** or **Deleted**, with
+    "(import)" for import changes (the API and the History CSV keep
+    `created` / `redeemed` / `edited` / `deleted`);
   - For / Bought by;
   - the count change (e.g. 3 → 2).
 - It has the same search box as the board, plus **Export CSV**.
@@ -410,10 +412,10 @@ me" on the tablet to import.
 | S3 | `barMgr` | Users & Roles → `brewer1` | not a Taproom member | No Staff code section. `PUT …/staff_code` returns 422. |
 | S4 | `breweryMgr`, `bartender1` | Users & Roles / API | | No Staff code section. `GET` and `PUT /api/users/:id/staff_code` return 403. |
 | S5 | `bartender1` | Taproom → Buy-a-Beer Board → Add | signed in as themself | Adds "Pat / Chris / 3" with no code prompt. After a reload it's listed with today's date. No History tab, no Import or Export. |
-| S6 | `barMgr` | Board → History | after S5 | "Sam Pour · created · Pat / Chris · 3". |
-| S7 | `taproomDevice` | Board → Redeem on Pat's row | Pat has 3 | The code field is shown. `bartender2`'s code: count 2, toast "recorded as Alex Draft". `barMgr`'s History: "Alex Draft on Shared Device · redeemed · 3 → 2". |
+| S6 | `barMgr` | Board → History | after S5 | "Sam Pour · Added · Pat / Chris · 3". |
+| S7 | `taproomDevice` | Board → Redeem on Pat's row | Pat has 3 | The code field is shown. `bartender2`'s code: count 2, toast "recorded as Alex Draft". `barMgr`'s History: "Alex Draft on Shared Device · Redeemed · 3 → 2". |
 | S8 | `taproomDevice` | Redeem, last beer | entry has 1 | A confirm, then the entry is gone after a reload. History still shows it, 1 → 0. |
-| S9 | `taproomDevice` | any write | wrong code ×5 | Inline error each time. The 6th attempt is locked with "Try again in N minutes". Nothing changed. |
+| S9 | `taproomDevice` | any write | wrong code ×5 | Attempts 1–4 show the inline wrong-code error. The 5th shows "Too many wrong codes. Try again in N minutes, or use Sign in as me." Later attempts, even with a valid code, stay locked. Nothing changed. |
 | S10 | `taproomDevice` | `POST /api/beer_board` with no `staff_code` | | 422 `staff_code_required`. |
 | S11 | `taproomDevice` | History, import and export APIs with `barMgr`'s code | | 403 for each. No History tab or file buttons on the tablet. |
 | S12 | `barMgr` | Users & Roles → remove `bartender2` from the Taproom | `bartender2` has a code | The code is cleared. On the tablet it's now a wrong code. |
@@ -423,13 +425,13 @@ me" on the tablet to import.
 | S16 | `owner` | Board, History, Users & Roles | no memberships | Full access, including any Taproom member's code in their edit dialog. |
 | S17 | `bartender1` + `bartender2` | Redeem the last beer at the same time | entry has 1 | One succeeds. The other gets "This entry was already removed" and the list refreshes. |
 | S18 | `bartender1` | search "chr" | entries for and by "Chris" | Shows rows where either name matches. Sorting by Bought by and Beers left works. |
-| S19 | `bartender1` | Edit Pat's entry → count 5 | count was 2 | Saved. History "Sam Pour · edited · 2 → 5". |
+| S19 | `bartender1` | Edit Pat's entry → count 5 | count was 2 | Saved. History "Sam Pour · Edited · 2 → 5". |
 | S20 | `barMgr` | Board → Export CSV | 4 entries, one name with a comma | Header plus 4 rows. It opens in a spreadsheet with the comma name intact. |
 | S21 | `barMgr` | Import → Add | board: "Pat / Chris / 2". File: "pat / Lee / 3", "Sam / Jo / 1", "Sam / Kim / 2", "Ana / Bo / 1" | Preview: 1 New (Ana) and 2 groups. **Pat** has one board entry and one file row; **Sam** has two file rows. Confirm stays disabled until both are resolved. |
-| S22 | `barMgr` | S21 → Combine Pat (Bought by pre-filled "Chris & Lee"), Allow Sam | | After a reload: Pat / Chris & Lee / 5 with its original moved-off date and no import date, then two Sam entries and Ana, each with today's import date. History (import): Pat `edited` 2 → 5, plus `created` ×3. |
-| S23 | `barMgr` | S21 → Pick for Pat: uncheck the board entry, check the file row | | The card warns "Deletes 1 entry on the board". After a reload: Pat / Lee / 3 only. History: `deleted` (Pat / Chris) + `created` (Pat / Lee). |
+| S22 | `barMgr` | S21 → Combine Pat (Bought by pre-filled "Chris & Lee"), Allow Sam | | After a reload: Pat / Chris & Lee / 5 with its original moved-off date and no import date, then two Sam entries and Ana, each with today's import date. History: Pat "Edited (import)" 2 → 5, plus "Added (import)" ×3. |
+| S23 | `barMgr` | S21 → Pick for Pat: uncheck the board entry, check the file row | | The card warns "Deletes 1 entry on the board". After a reload: Pat / Lee / 3 only. History: "Deleted (import)" (Pat / Chris) + "Added (import)" (Pat / Lee). |
 | S24 | `barMgr` | Combine on a group totalling 120 beers | | Combine is unavailable, with "Over 99". Allow and Pick still work. |
-| S25 | `barMgr` | Import → Replace | board has 4 entries; file has 2 rows, both "Ana" | The warning shows 4 entries and their beer total. The Ana group must be resolved, and Confirm needs `REPLACE`. After a reload the board matches the file and the choice. History: 4 `deleted`, then the file's effects. |
+| S25 | `barMgr` | Import → Replace | board has 4 entries; file has 2 rows, both "Ana" | The warning shows 4 entries and their beer total. The Ana group must be resolved, and Confirm needs `REPLACE`. After a reload the board matches the file and the choice. History: 4 "Deleted (import)", then the file's effects. |
 | S26 | `barMgr` | Import | blank name on row 3 and `Beers` = 0 on row 5 | Preview lists both errors by row. Nothing can be imported, and the board is unchanged. |
 | S27 | `barMgr` previews; `bartender1` adds "Pat" before `barMgr` confirms | Import → Add | | Confirm returns "The board changed since your preview". Nothing is applied, and re-previewing shows the new group member. |
 | S28 | `barMgr` | Export, then Replace with that same file | no duplicate For names | A round trip: the same names, counts and moved-off dates. Every entry's import date is now today. |
