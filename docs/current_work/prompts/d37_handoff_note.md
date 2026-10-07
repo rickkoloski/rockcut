@@ -75,10 +75,11 @@ The DEV QA pass on `b71174b` (`stepwise_results/d37_dev_qa_report.md`) found G1�
 **Local gate after the fixes (2026-10-07, at `f98b550`):**
 - `MIX_ENV=test mix test`: **1,003 tests, 0 failures.**
 - `tsc` clean; `vite build` OK; `pnpm lint` **26 errors, 1 warning**, the same files as above, none changed by D37.
-- **Playwright, whole suite** (setup before and after), run twice:
+- **Playwright, whole suite** (setup before and after), three runs:
   - Run 1: 174 passed, 4 failed, 1 skipped, 2 did not run (`board-replace`, skipped because `chromium` failed). Failed: `devices/device_permissions` S12, `devices/personal_signin` S13 (task 4064), `devices/pairing` S11, `scheduler/events_manager` S2: all timeouts.
   - Run 2: 176 passed, 2 failed (`personal_signin` S13 again; `taproom/staff-codes` "Remove clears the code at once": the `DELETE` took 8 s), 1 skipped, 2 did not run.
   - Each failed test alone with `--repeat-each 5 --workers=1`: **5/5 passed** (all six). `pairing` S11 also passed 5/5 in parallel; the others fail 4 of 5 when the repeats run in parallel, because they share a persona/tablet/week. `board-replace` alone: 2/2 after each run.
+  - **Run 3 (lead, `--workers=2`, at `63b26b4`, 2026-10-07): 180 passed, 0 failed, 1 skipped (the DEV-only banner check), no retries**, including `board-replace` S25 and S28. Runs 1 and 2 were timeouts under memory pressure (2 workers ease it).
   - None of the failing specs exercises a file this pass changed except `staff-codes` (its Remove path is unchanged). The box had under 1.3 GB of memory free (10 GB, no swap) during the runs, and page loads took 2–3 s. That's my read of the timeouts, not a proven cause.
 - **Persist-verify** (throwaway script, auth files, deleted): G1 as barMgr (rename + leave Taproom → after reload: renamed, no Taproom, no code); G5 (Notes column → "Ignored columns: Notes", 2 entries after reload); G9 with two sessions (bartender2 redeems 2 in the UI while bartender1 holds 5 → "Only 3 left", header and stepper at 3; 3 left after reload).
 - Test-only changes beyond the brief: `openUser` moved to `taproom/helpers.ts` (shared with the G1 spec) and waits 15 s for the grid; `staff-codes.spec.ts` has a 60 s test timeout (each test loads Users several times).
