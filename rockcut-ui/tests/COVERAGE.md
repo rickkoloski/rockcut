@@ -152,3 +152,15 @@ ExUnit files are under `rockcut_api/test/`; Playwright under `tests/regression/t
 | — | CSV download from the Android Chrome PWA (fetch + Blob) | **Manual** on DEV |
 | — | A real Excel or Numbers export imports (fixture is hand-made) | **Manual** on DEV |
 | — | `STAFF_CODE_KEY` missing → API refuses to boot | **Manual** on DEV (first deploy) |
+
+### D37 DEV pass 1 (gaps from the DEV QA report)
+
+| Gap | Layer |
+|---|---|
+| G1 a manager renames someone and removes them from their department in one save (no "Forbidden"; Taproom code cleared) | Playwright `auth/manager_removes_member` (barMgr / Taproom with a code; breweryMgr / Brewery); D35 owner-flag order: `scheduler/calendar_feed_rotation` |
+| G2 the 5th wrong code locks (spec S9 reworded) | as S9 |
+| G3 a typed code is masked in Users & Roles; the eye shows it with no fetch; hidden on reopen | Playwright `staff-codes` (DEV pass 1 G3: computed `-webkit-text-security`) |
+| G4 a pasted `" 1234"`, `"12-34"`, `"12 34"`, `"123456"` keeps 4 digits | Playwright `beer-board-device` (DEV pass 1 G4: `fill` and `insertText`, no submit) |
+| G5 other columns are ignored and listed; missing/repeated still errors | ExUnit `beer_board_csv_test` (G5), `beer_board_admin_controller_test` (G5: preview `ignored_columns` + apply); Playwright `beer-board-import` (DEV pass 1 G5) |
+| G8 History's labels (spec wording) | as S6, S7, S19, S22, S23 |
+| G9 after "Only N left" the Redeem dialog shows the fresh count, stepper and last-beer wording | Playwright `beer-board-staff` (DEV pass 1 G9: API redeem by bartender2 mid-dialog) |
