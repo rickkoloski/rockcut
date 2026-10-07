@@ -16,6 +16,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       schedulable: user.schedulable,
       kind: user.kind,
       home_department_id: user.home_department_id,
+      # D37: whether a staff code is set; the code itself is only ever sent by
+      # GET /api/users/:id/staff_code.
+      has_staff_code: not is_nil(user.staff_code_digest),
       memberships: maybe_render(user, :memberships, &Enum.map(&1, fn m -> membership(m) end)),
       inserted_at: user.inserted_at,
       updated_at: user.updated_at
@@ -45,8 +48,44 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  def me(user, capabilities, shared_devices \\ false) do
-    %{user: user(user), capabilities: capabilities, shared_devices: shared_devices}
+  # Flags such as `shared_devices` (D33), `staff_codes` and `beer_board_manage`
+  # (D37) sit beside `capabilities`, whose keys the D31 parity suite pins.
+  def me(user, capabilities, flags \\ %{}) do
+    Map.merge(
+      %{shared_devices: false, staff_codes: false, beer_board_manage: false},
+      flags
+    )
+    |> Map.merge(%{user: user(user), capabilities: capabilities})
+  end
+
+  # ── Buy-a-Beer Board (D37) ─────────────────────────────────────────
+
+  def beer_board_entry(e) do
+    %{
+      id: e.id,
+      recipient_name: e.recipient_name,
+      purchaser_name: e.purchaser_name,
+      beers_remaining: e.beers_remaining,
+      moved_off_board_at: e.moved_off_board_at,
+      imported_at: e.imported_at
+    }
+  end
+
+  def beer_board_event(ev) do
+    %{
+      id: ev.id,
+      entry_id: ev.entry_id,
+      action: ev.action,
+      actor_name: maybe_render(ev, :actor, & &1.name),
+      on_shared_device: not is_nil(ev.device_id),
+      recipient_name: ev.recipient_name,
+      purchaser_name: ev.purchaser_name,
+      beers_before: ev.beers_before,
+      beers_after: ev.beers_after,
+      source: Map.get(ev.detail || %{}, "source"),
+      detail: ev.detail,
+      inserted_at: ev.inserted_at
+    }
   end
 
   # ── Shared devices (D33) ───────────────────────────────────────────

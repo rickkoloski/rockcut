@@ -76,7 +76,7 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 ## Conventions
 
 - **Deliverable IDs**: D1, D2, ... Dnn (sequential, never reused)
-- **Next deliverable**: D37, not yet specced. D36 shipped to prod in `v2026.10.05` (2026-10-05 UTC); D19–D36 complete. Matt's queue: task 4054 ("new version available, tap to reload" prompt), then 4055 (events in calendar feeds) and 4056 (company-wide events), then the small tasks (4060–4064 from D36). Task 3994 (`decimal` advisory) is due 2026-10-30, and 4058 (remove the pre-D34 token path) 2026-11-04.
+- **Next deliverable**: D37 Buy-a-Beer Board + staff codes (task 4083), spec approved 2026-10-05, branch `d37-buy-a-beer-board`; PR #15 open; DEV gate pass 1 done 2026-10-07 (QA gaps fixed in Task 4, local gate clean, fixes not yet pushed). Next: push, redeploy DEV, re-run the DEV gate (see the latest `SESSION_HANDOFF_*`). Then D38. D36 shipped to prod in `v2026.10.05` (2026-10-05 UTC); D19–D36 complete. Matt's queue: task 4054 ("new version available, tap to reload" prompt), then 4055 (events in calendar feeds) and 4056 (company-wide events), then the small tasks (4060–4064 from D36). Task 3994 (`decimal` advisory) is due 2026-10-30, and 4058 (remove the pre-D34 token path) 2026-11-04.
 - **Commit format**: `feat: implement D6 feature name` or `fix: description`
 
 ## SDLC Process Compliance

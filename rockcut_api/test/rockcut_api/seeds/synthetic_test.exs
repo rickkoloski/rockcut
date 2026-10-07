@@ -1,6 +1,7 @@
 defmodule RockcutApi.Seeds.SyntheticTest do
   # Not async: tests flip the global :deploy_env and SEED_PASSWORD.
   use RockcutApiWeb.ConnCase, async: false
+  @moduletag :capture_log
 
   import Ecto.Query
   alias RockcutApi.{Accounts, Repo}
@@ -334,6 +335,149 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert healed.name == "Taproom tablets"
       assert healed.active
       refute Repo.get(User, temp.id)
+    end
+  end
+
+  describe "Buy-a-Beer Board and staff codes (D37)" do
+    alias RockcutApi.{BeerBoard, StaffCodes}
+    alias RockcutApi.BeerBoard.{Entry, Event}
+    alias RockcutApi.Seeds.Credentials
+
+    import ExUnit.CaptureLog
+
+    defp with_codes(value, fun) do
+      previous = System.get_env("SYNTHETIC_STAFF_CODES")
+
+      if value,
+        do: System.put_env("SYNTHETIC_STAFF_CODES", value),
+        else: System.delete_env("SYNTHETIC_STAFF_CODES")
+
+      try do
+        fun.()
+      after
+        if previous,
+          do: System.put_env("SYNTHETIC_STAFF_CODES", previous),
+          else: System.delete_env("SYNTHETIC_STAFF_CODES")
+      end
+    end
+
+    defp persona(key), do: Accounts.get_user_by_email(Synthetic.persona!(key).email)
+
+    defp code_of(key) do
+      user = persona(key)
+      user.staff_code_encrypted && StaffCodes.decrypt(user.staff_code_encrypted, user.id)
+    end
+
+    defp board,
+      do:
+        BeerBoard.list_entries()
+        |> Enum.map(
+          &{&1.recipient_name, &1.purchaser_name, &1.beers_remaining, not is_nil(&1.imported_at)}
+        )
+        |> Enum.sort()
+
+    @codes "bartender1:1111,bartender2:2222,barMgr:3333"
+
+    test "seeds the [SEED] entries: one with 1 left, a For-name pair, Bought by tagged" do
+      with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.setup() end) end)
+
+      assert board() == [
+               {"Avery Lake", "[SEED] Kim", 5, true},
+               {"Jesse Park", "[SEED] Bo", 4, false},
+               {"Morgan Hill", "[SEED] Lee", 1, false},
+               {"Riley Stone", "[SEED] Chris", 3, false},
+               {"Riley Stone", "[SEED] Dana", 2, false}
+             ]
+
+      assert Repo.aggregate(Event, :count) == 0
+    end
+
+    test "sets the listed personas' codes from SYNTHETIC_STAFF_CODES; they resolve" do
+      with_codes(@codes, fn -> {:ok, _} = Synthetic.setup() end)
+
+      assert {code_of("bartender1"), code_of("bartender2"), code_of("barMgr")} ==
+               {"1111", "2222", "3333"}
+
+      assert StaffCodes.resolve("2222").id == persona("bartender2").id
+    end
+
+    test "unset: logs one line and leaves codes alone" do
+      {:ok, _} = with_codes(@codes, fn -> Synthetic.setup() end)
+
+      log = with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.setup() end) end)
+      assert log =~ "SYNTHETIC_STAFF_CODES is not set"
+      assert code_of("bartender1") == "1111"
+    end
+
+    test "clears leftover codes on other personas and restores changed ones" do
+      {:ok, _} = with_codes(@codes, fn -> Synthetic.setup() end)
+      {:ok, _} = StaffCodes.seed_put(persona("floater"), "4444")
+      {:ok, _} = StaffCodes.seed_put(persona("bartender1"), "5555")
+
+      {:ok, _} = with_codes(@codes, fn -> Synthetic.setup() end)
+      assert code_of("floater") == nil
+      assert code_of("bartender1") == "1111"
+      assert StaffCodes.resolve("4444") == nil
+    end
+
+    test "codes can swap between personas" do
+      {:ok, _} = with_codes(@codes, fn -> Synthetic.setup() end)
+      {:ok, _} = with_codes("bartender1:2222,bartender2:1111", fn -> Synthetic.setup() end)
+
+      assert {code_of("bartender1"), code_of("bartender2"), code_of("barMgr")} ==
+               {"2222", "1111", nil}
+    end
+
+    test "a bad list is refused with a clear error that doesn't show the codes" do
+      for {value, reason} <- [
+            {"bartender1=1111", "isn't persona:code"},
+            {"bartender1:111", "4 digits"},
+            {"bartender1:1111,bartender1:2222", "listed twice"},
+            {"bartender1:1111,bartender2:1111", "share a code"}
+          ] do
+        error = assert_raise ArgumentError, fn -> Credentials.parse_staff_codes!(value) end
+        assert error.message =~ reason
+        refute error.message =~ "1111"
+      end
+
+      with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.setup() end) end)
+
+      assert_raise ArgumentError, ~r/unknown personas: nobody/, fn ->
+        with_codes("nobody:1111", fn -> Synthetic.setup() end)
+      end
+
+      assert_raise ArgumentError, ~r/can't hold a staff code.*brewer1/, fn ->
+        with_codes("brewer1:1111", fn -> Synthetic.setup() end)
+      end
+    end
+
+    test "cleanup_temp removes [TEST-TEMP] entries by For or Bought by; keeps history" do
+      with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.setup() end) end)
+      mgr = persona("barMgr")
+
+      for {r, p} <- [{"[TEST-TEMP] Pat", "Chris"}, {"Ana", "[TEST-TEMP] Bo"}, {"Kept", "Real"}] do
+        {:ok, _} = BeerBoard.create(%{recipient_name: r, purchaser_name: p, beers: 1}, mgr, nil)
+      end
+
+      :ok = Synthetic.cleanup_temp()
+      names = Enum.map(BeerBoard.list_entries(), & &1.recipient_name)
+      assert "Kept" in names
+      refute "[TEST-TEMP] Pat" in names
+      refute "Ana" in names
+      assert Repo.aggregate(Event, :count) == 3
+    end
+
+    test "setup twice gives the same board and codes" do
+      {:ok, _} = with_codes(@codes, fn -> Synthetic.setup() end)
+      first = {board(), Repo.aggregate(Entry, :count), code_of("barMgr")}
+      {:ok, _} = with_codes(@codes, fn -> Synthetic.setup() end)
+      assert {board(), Repo.aggregate(Entry, :count), code_of("barMgr")} == first
+    end
+
+    test "reset removes the [SEED] entries before rebuilding them" do
+      with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.setup() end) end)
+      with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.reset() end) end)
+      assert Repo.aggregate(Entry, :count) == 5
     end
   end
 end

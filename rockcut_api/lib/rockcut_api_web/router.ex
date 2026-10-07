@@ -21,6 +21,11 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.ModuleAccessPlug, module: :brewery
   end
 
+  # D37: Taproom pages (members and owners; a Taproom tablet by its home module).
+  pipeline :taproom do
+    plug RockcutApiWeb.ModuleAccessPlug, module: :bar
+  end
+
   # Public routes (no auth required)
   scope "/api", RockcutApiWeb do
     pipe_through :api
@@ -57,6 +62,29 @@ defmodule RockcutApiWeb.Router do
     get "/messages/unread_count", MessageController, :unread_count
   end
 
+  # D37 Buy-a-Beer Board: Taproom staff and the Taproom tablet. Writes from a
+  # tablet need a staff code (BeerBoardController); see the route matrix test.
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :device_allowed, :taproom]
+
+    get "/beer_board", BeerBoardController, :index
+    post "/beer_board", BeerBoardController, :create
+    post "/beer_board/:id/redeem", BeerBoardController, :redeem
+    patch "/beer_board/:id", BeerBoardController, :update
+    delete "/beer_board/:id", BeerBoardController, :delete
+  end
+
+  # D37: board history, CSV export and import. People only.
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :taproom]
+
+    get "/beer_board/history", BeerBoardAdminController, :history
+    get "/beer_board/history/export.csv", BeerBoardAdminController, :history_csv
+    get "/beer_board/export.csv", BeerBoardAdminController, :export_csv
+    post "/beer_board/import/preview", BeerBoardAdminController, :import_preview
+    post "/beer_board/import", BeerBoardAdminController, :import
+  end
+
   # Authenticated routes (signed-in people; closed to shared devices)
   scope "/api", RockcutApiWeb do
     pipe_through [:api, :authenticated]
@@ -72,6 +100,11 @@ defmodule RockcutApiWeb.Router do
     resources "/users", UserController, only: [:index, :create, :update]
     put "/users/:user_id/memberships", MembershipController, :update
     post "/users/:id/reset_password", UserController, :reset_password
+    # D37: staff codes (owners + Taproom managers; the user edit dialog)
+    get "/users/:id/staff_code", StaffCodeController, :show
+    put "/users/:id/staff_code", StaffCodeController, :update
+    delete "/users/:id/staff_code", StaffCodeController, :delete
+    get "/staff_codes/suggest", StaffCodeController, :suggest
 
     # Shared devices (D33): owners + managers of a device's home department
     get "/devices", DeviceController, :index

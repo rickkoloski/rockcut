@@ -18,6 +18,8 @@ defmodule RockcutApi.Application do
       RockcutApi.Reminders.Scheduler,
       # Wrong pairing-code counter per IP (D33).
       RockcutApi.Devices.PairingRateLimiter,
+      # Wrong staff-code counter per tablet (D37).
+      RockcutApi.StaffCodes.RateLimiter,
       # Start to serve requests, typically the last entry
       RockcutApiWeb.Endpoint
     ]
