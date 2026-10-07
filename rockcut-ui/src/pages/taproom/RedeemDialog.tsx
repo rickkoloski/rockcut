@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Alert, Box, IconButton, Typography } from '@mui/material'
 import { Add, Remove } from '@mui/icons-material'
 import api from '../../lib/api'
@@ -13,25 +14,48 @@ interface Props {
 }
 
 /** D37: redeem beers from an entry; 1 by default, a stepper for more. */
-export default function RedeemDialog({ entry, onClose, onDone, onGone }: Props) {
+export default function RedeemDialog({ entry: opened, onClose, onDone, onGone }: Props) {
+  const qc = useQueryClient()
   // The board remounts this dialog (a `key`) per entry, so it starts at 1.
   const [count, setCount] = useState(1)
+  // The entry as last read from the board, after an "Only N left" (G9).
+  const [fresh, setFresh] = useState<BeerBoardEntry | null>(null)
 
-  if (!entry) return null
+  if (!opened) return null
+  const entry = fresh ?? opened
   const max = entry.beers_remaining
   const last = count === max
 
+  // Someone else redeemed meanwhile: re-read the board so the count, the
+  // stepper and the last-beer wording match what's left.
+  const reread = async () => {
+    await qc.refetchQueries({ queryKey: ['beer_board'] })
+    const now = qc.getQueryData<BeerBoardEntry[]>(['beer_board'])?.find((e) => e.id === entry.id)
+    if (!now) {
+      // Gone since: the same answer as a redeem that finds no entry.
+      throw { response: { status: 404, data: { error: 'gone', message: 'This entry was already removed' } } }
+    }
+    setFresh(now)
+    setCount((c) => Math.min(c, now.beers_remaining))
+  }
+
   const submit = async (staffCode?: string) => {
-    const { data } = await api.post<BeerBoardWriteResult>(`/api/beer_board/${entry.id}/redeem`, {
-      count,
-      staff_code: staffCode,
-    })
-    onDone(data, `Redeemed ${count} for ${entry.recipient_name}`)
+    try {
+      const { data } = await api.post<BeerBoardWriteResult>(`/api/beer_board/${entry.id}/redeem`, {
+        count,
+        staff_code: staffCode,
+      })
+      onDone(data, `Redeemed ${count} for ${entry.recipient_name}`)
+    } catch (err) {
+      const e = err as { response?: { status?: number; data?: { error?: string } } }
+      if (e.response?.status === 422 && e.response.data?.error === 'not_enough') await reread()
+      throw err
+    }
   }
 
   return (
     <BoardActionDialog
-      open={!!entry}
+      open
       onClose={onClose}
       title={`Redeem for ${entry.recipient_name}`}
       submitLabel={last ? 'Redeem the last' : 'Redeem'}

@@ -184,3 +184,34 @@ test.describe('as office1', () => {
     expect((await (await apiAs('office1')).get('/api/beer_board')).status()).toBe(403)
   })
 })
+
+test.describe('as bartender1 (DEV pass 1 G9)', () => {
+  test.use({ storageState: authFile('bartender1') })
+
+  test('after "Only N left" the Redeem dialog shows the fresh count', async ({ page }) => {
+    const e = await addEntry(5, 'G9')
+    created.push(e.id)
+    await page.goto('/taproom/beer-board')
+    await page.getByTestId('board-search').fill(e.recipient_name)
+    await page.getByTestId(`board-redeem-${e.id}`).click()
+    const dialog = page.getByTestId('board-redeem-dialog')
+    for (let i = 1; i < 5; i++) await page.getByTestId('board-redeem-plus').click()
+    await expect(page.getByTestId('board-redeem-count')).toHaveText('5')
+    await expect(dialog).toContainText('· 5 left')
+
+    // Someone else redeems 2 meanwhile.
+    const other = await (await apiAs('bartender2')).post(`/api/beer_board/${e.id}/redeem`, { data: { count: 2 } })
+    expect(other.status(), await other.text()).toBe(200)
+
+    await page.getByTestId('board-dialog-submit').click()
+    await expect(page.getByTestId('board-dialog-error')).toHaveText('Only 3 left')
+    await expect(dialog).toContainText('· 3 left')
+    await expect(page.getByTestId('board-redeem-count')).toHaveText('3')
+    await expect(page.getByTestId('board-redeem-plus')).toBeDisabled()
+    await expect(page.getByTestId('board-redeem-last')).toContainText('the last 3 beers')
+
+    // Nothing changed beyond the other redeem.
+    const [latest] = await historyFor(e.recipient_name)
+    expect(latest).toMatchObject({ action: 'redeemed', beers_before: 5, beers_after: 3 })
+  })
+})
