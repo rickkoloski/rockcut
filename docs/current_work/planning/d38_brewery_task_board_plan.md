@@ -35,13 +35,14 @@ tasks and returns cards keyed `{task_id, day}` (or `{task_id, :future}`):
 | open, no `due_on` | one on Future |
 | done, `completed_display` = `planned_day` | one on `due_on`, in place |
 | done, `completed_display` = `completed_day` | one on `completed_on`, after that day's own tasks, by `completed_at` |
-| done, `completed_display` = `both` | one on each day; the `completed_on` one is locked |
+| done, `completed_display` = `both` | one on each day; **both** locked (S8b) |
 | done from Future | one on `completed_on`, tagged "from Future" |
 
 The board `GET`, the Unfinished card query and (in D40) the dashboard card
 and reminder all go through it. Nothing else filters on `due_on`. Each card
 carries `locked: true` when it can't be dragged (the copy on the finished
-day), and the UI uses `task_id + day` as its React key.
+day, and both copies of a "both" task), and the UI uses `task_id + day` as
+its React key.
 
 **Ordering:** `position` is a dense integer per list (one day, or the Future
 list).

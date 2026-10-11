@@ -116,3 +116,53 @@ the clock.
 5. open `LEAD:` questions.
 
 Don't start step 2.
+
+---
+
+## Task 2: plan step 2, the `BreweryTasks` context
+
+**Lead answers to your step 1 questions:**
+1. **Daily check and Daily item changes go in `brewery_task_events`** with
+   `task_id` null and `title` = the item's name. Use actions such as
+   `daily_ticked`, `daily_unticked`, `item_added`, `item_renamed`,
+   `item_reordered`, `item_retired`, and put `on_date` / `daily_item_id` /
+   old → new values in `detail`. History lists them with the task events.
+2. **No "done" tag on a `planned_day` card.** It shows done in place, as in
+   S8c. The detail view's "Completed by … on …" carries the date.
+
+**Step 1 accepted,** including your deviations 1–8, with one fix (the
+lead's brief was wrong):
+- **A "both" task: both cards are `locked`** (spec S8b: "Neither copy can
+  be dragged"). Fix `Placement` and its tests. The plan's table is updated.
+
+**Then build plan step 2,** as "Changes → API → `RockcutApi.BreweryTasks`"
+describes, without `board/3` and the header (that's step 3):
+- tasks: `create`, `update` (a day change is a move to the bottom of that
+  day), `move`, `move_overdue_to_today`, `complete`, `uncomplete`,
+  `delete`;
+- Daily: `tick`, `untick`, `list_items`, `create_item`, `rename_item`,
+  `retire_item`, `order_items` (12-item cap, unique active names ignoring
+  case);
+- `list_events(task_id \\ nil, page)`;
+- `unassign_if_ineligible(user_id, actor)`, wired into
+  `Accounts.update_user` and `Accounts.set_memberships` beside
+  `StaffCodes.clear_if_ineligible`.
+
+**Rules to keep:**
+- Every write runs in one `Repo.transaction` with its event row(s). Lists
+  stay dense after every write (create, move, delete, uncomplete of a
+  Future task, `move_overdue_to_today`).
+- Authorization isn't in the context. The controllers (step 3) call
+  `Authz`. The context validates data only (assignee an active Brewery
+  person, the `display` rules, future-day ticks).
+- Every function that needs today takes it as an optional last argument.
+- The assignee check uses `Authz.member_of?/2`, not a role or owner test,
+  so `authz_boundary_test` stays green.
+
+**ExUnit,** as the plan's "Tests" lists for `brewery_tasks_test.exs`,
+`brewery_daily_test.exs` and the `accounts_test.exs` case (S49), including
+the concurrent-move test with two `Task`s.
+
+**Done means:** `MIX_ENV=test mix test` passes in full. Commit as
+`feat: D38 step 2 — BreweryTasks context`, then **stop** and reply as in
+Task 1. Don't start step 3.
