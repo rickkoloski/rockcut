@@ -212,4 +212,50 @@ defmodule RockcutApi.AuthzTest do
       refute Authz.can_manage_user?(p["barMgr"], p["brewer1"])
     end
   end
+
+  describe "D38 Brewery task board" do
+    setup do
+      p = personas()
+      device = device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
+      %{p: p, device: device}
+    end
+
+    test "Brewery members read and write; only Brewery managers see History and edit Daily items",
+         %{p: p} do
+      for key <- ~w(brewer1 breweryMgr floater),
+          action <- [:read, :write],
+          do: assert(Authz.can?(p[key], action, :brewery_tasks), "#{key} #{action}")
+
+      assert Authz.can?(p["breweryMgr"], :history, :brewery_tasks)
+      assert Authz.can?(p["breweryMgr"], :manage, :brewery_daily_items)
+
+      for key <- ~w(brewer1 floater) do
+        refute Authz.can?(p[key], :history, :brewery_tasks), key
+        refute Authz.can?(p[key], :manage, :brewery_daily_items), key
+      end
+    end
+
+    test "Taproom-only people get nothing, managers included", %{p: p} do
+      for key <- ~w(bartender1 barMgr) do
+        for action <- [:read, :write, :history],
+            do: refute(Authz.can?(p[key], action, :brewery_tasks), "#{key} #{action}")
+
+        refute Authz.can?(p[key], :manage, :brewery_daily_items), key
+      end
+    end
+
+    test "owners get everything", %{p: p} do
+      for action <- [:read, :write, :history],
+          do: assert(Authz.can?(p["owner"], action, :brewery_tasks))
+
+      assert Authz.can?(p["owner"], :manage, :brewery_daily_items)
+    end
+
+    test "a shared device, even the Brewery's, gets nothing", %{device: d} do
+      for action <- [:read, :write, :history],
+          do: refute(Authz.can?(d, action, :brewery_tasks), inspect(action))
+
+      refute Authz.can?(d, :manage, :brewery_daily_items)
+    end
+  end
 end

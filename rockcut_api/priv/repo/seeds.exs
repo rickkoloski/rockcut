@@ -197,6 +197,21 @@ case {Application.get_env(:rockcut_api, :admin_email),
     IO.puts("No ADMIN_EMAIL/ADMIN_PASSWORD_HASH: bootstrap owner skipped.")
 end
 
+# ── Brewery: the Daily card's default items (D38, idempotent) ──
+# The migration adds them when the Brewery already exists; a fresh DB gets the
+# department above, so they're added here. Only when the Brewery has none.
+alias RockcutApi.BreweryTasks.DailyItem
+import Ecto.Query, only: [from: 2]
+
+with %Department{} = brewery <- Repo.get_by(Department, key: "brewery"),
+     false <- Repo.exists?(from i in DailyItem, where: i.department_id == ^brewery.id) do
+  DailyItem.defaults()
+  |> Enum.with_index(1)
+  |> Enum.each(fn {name, position} ->
+    Repo.insert!(%DailyItem{department_id: brewery.id, name: name, position: position, inserted_at: acct_now, updated_at: acct_now})
+  end)
+end
+
 # ── Scheduling: company-wide positions (idempotent) ──
 alias RockcutApi.Scheduling.Position
 
