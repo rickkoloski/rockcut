@@ -37,9 +37,10 @@ release) on its own branch. This spec covers all three. Where it says
 
 - **Order:** D38, then D39, then D40. Each branch is cut from `develop`
   after the previous one merges.
-- **D38 can go to prod on its own.** The brewers can start using the
-  board before recurring tasks or the tablet exist. Matt decides when each
-  one is released.
+- **One prod release for all three** (Matt, 2026-10-11). D38 and D39 each
+  pass their DEV gate and merge to `develop`, then wait. The board goes to
+  prod in the first release after D40 merges, so the brewhouse tablet is
+  there from day one. Each deliverable still gets its own PR and gates.
 - **D38 keeps the §7 rules** (cards keyed by task + day, one server
   function for what shows on a day, a generic drag layer), so D39 and D40
   add to it without restructuring.
@@ -213,7 +214,8 @@ follows D32's `schedule_event_series`.
 **General**
 - **Deleting a task really deletes it.** The change log keeps the record,
   as D37 does.
-- **Change log:** an `audit_log` entry, with who and when, for each of:
+- **Change log:** an entry in its own `brewery_task_events` table (as
+  D37's `beer_board_events`; Matt, 2026-10-11), with who and when, for each of:
   - task added, edited or deleted;
   - task moved (old day/position → new), including each task moved by
     "Move all to today";
