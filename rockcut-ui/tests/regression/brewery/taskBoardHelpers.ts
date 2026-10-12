@@ -123,20 +123,58 @@ export async function userId(api: APIRequestContext): Promise<number> {
   return (await (await api.get('/api/me')).json()).user.id
 }
 
+/** The lifted item's place in the list (`aria-pressed` marks it; the overlay copy has no sortable wrapper). */
+const LIFTED = '[aria-roledescription="sortable"][aria-pressed="true"]'
+
+/**
+ * Where the lifted item's placeholder shows in `list`, once nothing in it is
+ * still sliding: 'ok' when it's just before `before` (or last, with no
+ * `before`), else a few words for the failure message.
+ */
+async function dropSpot(list: Locator, before?: Locator) {
+  return list.evaluate(
+    (el, beforeEl) => {
+      const items = Array.from(el.querySelectorAll('[aria-roledescription="sortable"]'))
+      if (items.some((e) => e.getAnimations().length > 0)) return 'still moving'
+      const top = (e: Element) => e.getBoundingClientRect().top
+      const shown = items.sort((a, b) => top(a) - top(b))
+      const at = shown.findIndex((e) => e.getAttribute('aria-pressed') === 'true')
+      if (at < 0) return 'not in this list'
+      if (!beforeEl) return at === shown.length - 1 ? 'ok' : `${at + 1} of ${shown.length}, not last`
+      const next = shown.findIndex((e) => e.contains(beforeEl))
+      return next === at + 1 ? 'ok' : `${at + 1} of ${shown.length}, with the target card at ${next + 1}`
+    },
+    before ? await before.elementHandle() : null,
+  )
+}
+
 /**
  * Mouse-drag `source` into `list`: to its end, or just before `before` (a
- * card in it). Like a person watching the gap: first to the bottom of the
- * list, then up onto `before`. (Dropped straight onto a card from above, a
- * sortable item lands after it.) Moves in steps so the 8px activation
- * distance and the collision checks see it.
+ * card in it). Like a person watching the gap: round to just below the list,
+ * up into its bottom edge (the placeholder goes last), then up onto `before`
+ * (the placeholder slides in front of it), and let go only once the
+ * placeholder shows there. (Dropped straight onto a card from above, a
+ * sortable item lands after it; so does one already in front of it.) Moves
+ * in steps so the 8px activation distance and the collision checks see it.
+ *
+ * DEV run 2, S23e: on the straight line in, the placeholder went last, then
+ * flicked in front of `before` as the list grew under the pointer, and
+ * `before` was still sliding back when its box was read. The pointer went to
+ * that stale spot, which was the placeholder's own slot, and the drop
+ * landed at the end. So the route comes up from below the list (no cards
+ * crossed on the way in), and nothing is read or let go until the
+ * placeholder has settled where it should be. A source that can't be lifted
+ * (a locked card, the Daily card) gets the same moves with no waiting.
  */
 export async function mouseDrag(page: Page, source: Locator, list: Locator, before?: Locator) {
   const vp = page.viewportSize()!
   await source.scrollIntoViewIfNeeded()
+  const liftable = await source.evaluate((e) => !!e.closest('[aria-roledescription="sortable"]') && !e.closest('[data-locked="true"]'))
   const s = (await source.boundingBox())!
   await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2)
   await page.mouse.down()
   await page.mouse.move(s.x + s.width / 2 + 12, s.y + s.height / 2 + 12, { steps: 4 })
+  if (liftable) await expect(page.locator(LIFTED)).toHaveCount(1)
   let l = (await list.boundingBox())!
   if (l.y + l.height > vp.height * 0.8) {
     // Scrolling under a pointer resting on the board would move the card
@@ -144,12 +182,21 @@ export async function mouseDrag(page: Page, source: Locator, list: Locator, befo
     // off auto-scroll: specs that need both ends on screen use a tall viewport.
     throw new Error('mouseDrag: the target list ends near or past the bottom of the screen; use a taller viewport')
   }
-  await page.mouse.move(l.x + l.width / 2, l.y + l.height - 6, { steps: 20 })
-  l = (await list.boundingBox())!
-  await page.mouse.move(l.x + l.width / 2, l.y + l.height - 4, { steps: 3 })
+  const below = l.y + l.height + 24
+  await page.mouse.move(s.x + s.width / 2 + 12, below, { steps: 10 })
+  await page.mouse.move(l.x + l.width / 2, below, { steps: 20 })
+  // Up into the bottom edge. Lists the pointer crossed may have grown and
+  // pushed this one down, so aim again until the placeholder is last.
+  await expect(async () => {
+    l = (await list.boundingBox())!
+    await page.mouse.move(l.x + l.width / 2, l.y + l.height - 4, { steps: 3 })
+    if (liftable) expect(await dropSpot(list)).toBe('ok')
+  }).toPass({ timeout: 10_000 })
   if (before) {
+    // Read with the placeholder last and nothing shifted, so this is where `before` sits.
     const b = (await before.boundingBox())!
     await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 10 })
+    if (liftable) await expect.poll(() => dropSpot(list, before), { timeout: 10_000 }).toBe('ok')
   }
   await page.mouse.up()
 }
