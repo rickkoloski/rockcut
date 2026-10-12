@@ -4,7 +4,7 @@
 **Spec:** `docs/current_work/specs/d38_brewery_task_board_spec.md` (approved 2026-10-11; D38's part is in its "Delivery split")
 **Plan:** `docs/current_work/planning/d38_brewery_task_board_plan.md` (Decisions: Matt, 2026-10-11)
 **Branch:** `d38-brewery-task-board`, cut from `develop` (`2ec1f9a`). One commit (or a few) per plan step.
-**SHA for DEV:** `6c9e317` (HEAD at push; the commit that fills in this SHA comes after it and changes only this line)
+**SHA for DEV:** `fcaba29` (DEV pass 1 fixes; HEAD at push. Pass 1 ran at `6c9e317`. The commit that fills in this SHA comes after it and changes only this line)
 
 ## What changed
 
