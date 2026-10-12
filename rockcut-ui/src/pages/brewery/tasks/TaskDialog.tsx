@@ -24,7 +24,8 @@ interface Props {
 
 /**
  * D38 §3.8 add/edit dialog: title, notes, assignee and Day (or No day,
- * Future). Mount it with a `key` per task so it starts from that task.
+ * Future). Mount it with a `key` per task so it starts from that task. Save
+ * sends only the fields that changed; with none, it just closes.
  */
 export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onDelete, onHistory }: Props) {
   const card = mode.kind === 'edit' ? mode.card : null
@@ -61,8 +62,15 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onD
     const body: Record<string, unknown> = { title: trimmed, notes: notes.trim() || null, assignee_id: assigneeId === '' ? null : assigneeId }
     try {
       if (card) {
-        if (!dayLocked && dueOn !== card.due_on) body.due_on = dueOn
-        await api.patch(`/api/brewery/tasks/${card.id}`, body)
+        // Only what the person changed from the card the dialog opened with, so
+        // saving can't undo someone else's edit made meanwhile (G1).
+        const changed: Record<string, unknown> = {}
+        if (body.title !== card.title) changed.title = body.title
+        if (body.notes !== (card.notes?.trim() || null)) changed.notes = body.notes
+        if (body.assignee_id !== (card.assignee_id ?? null)) changed.assignee_id = body.assignee_id
+        if (!dayLocked && dueOn !== card.due_on) changed.due_on = dueOn
+        if (Object.keys(changed).length === 0) return onClose()
+        await api.patch(`/api/brewery/tasks/${card.id}`, changed)
       } else {
         await api.post('/api/brewery/tasks', { ...body, due_on: dueOn })
       }

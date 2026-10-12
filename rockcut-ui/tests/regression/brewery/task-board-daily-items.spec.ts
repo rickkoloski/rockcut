@@ -112,6 +112,32 @@ test('S28: Move up and Move down reorder without dragging', async ({ page }) => 
   expect((await dailyItems(await apiAs('breweryMgr'))).map((i) => i.id).slice(0, 2)).toEqual([second.id, first.id])
 })
 
+test("G1: an unchanged rename saves nothing, after someone else's rename reached the list", async ({ page }) => {
+  const temps = defaults.find((i) => i.name === 'Temps')!
+  await openBoard(page)
+  await openItems(page)
+  await page.getByTestId(`daily-items-rename-${temps.id}`).click()
+  await expect(page.getByTestId(`daily-items-rename-input-${temps.id}`)).toHaveValue('Temps')
+
+  // The owner renames Temps; a reorder here brings the new name into the list.
+  const res = await (await apiAs('owner')).patch(`/api/brewery/daily_items/${temps.id}`, { data: { name: '[TEST-TEMP] Temps G1' } })
+  expect(res.status(), await res.text()).toBe(200)
+  const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/daily_items' && r.request().method() === 'GET' && r.ok())
+  const ordered = itemWrite(page, 'PUT', /\/api\/brewery\/daily_items\/order$/)
+  await page.getByTestId(`daily-items-down-${defaults[0].id}`).click()
+  await ordered
+  await refetched
+
+  let patched = false
+  page.on('request', (r) => {
+    if (r.method() === 'PATCH' && new URL(r.url()).pathname === `/api/brewery/daily_items/${temps.id}`) patched = true
+  })
+  await page.getByTestId(`daily-items-rename-save-${temps.id}`).click()
+  await expect(page.getByTestId(`daily-items-rename-input-${temps.id}`)).toHaveCount(0)
+  expect(patched).toBe(false)
+  expect((await dailyItems(await apiAs('breweryMgr'))).find((i) => i.id === temps.id)!.name).toBe('[TEST-TEMP] Temps G1')
+})
+
 // A new item can't be ticked on a day before it was added (G4), so the tick
 // is today's; ExUnit covers a tick on an earlier day (brewery_daily_test, S29).
 test('S29: a retired item leaves the card, and the day it was ticked still shows its tick', async ({ page }) => {

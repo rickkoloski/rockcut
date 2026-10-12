@@ -50,7 +50,9 @@ export default function DailyItemsDialog({ onClose, onChanged }: Props) {
 
   const [newName, setNewName] = useState('')
   const [addError, setAddError] = useState<string | null>(null)
-  const [renaming, setRenaming] = useState<{ id: number; name: string; error: string | null } | null>(null)
+  // `from` is the name the rename opened with: an unchanged field saves nothing,
+  // even if someone else renamed the item meanwhile (G1).
+  const [renaming, setRenaming] = useState<{ id: number; from: string; name: string; error: string | null } | null>(null)
   const [retiring, setRetiring] = useState<DailyItem | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -76,8 +78,7 @@ export default function DailyItemsDialog({ onClose, onChanged }: Props) {
 
   const rename = async () => {
     if (!renaming) return
-    const item = byKey.get(String(renaming.id))
-    if (item && item.name === renaming.name.trim()) return setRenaming(null)
+    if (renaming.from === renaming.name.trim()) return setRenaming(null)
     setBusy(true)
     try {
       await api.patch(`/api/brewery/daily_items/${renaming.id}`, { name: renaming.name })
@@ -201,7 +202,7 @@ export default function DailyItemsDialog({ onClose, onChanged }: Props) {
                   <IconButton
                     size="small"
                     aria-label={`Rename ${item.name}`}
-                    onClick={() => setRenaming({ id: item.id, name: item.name, error: null })}
+                    onClick={() => setRenaming({ id: item.id, from: item.name, name: item.name, error: null })}
                     data-testid={`daily-items-rename-${item.id}`}
                   >
                     <Edit fontSize="small" />

@@ -307,6 +307,53 @@ test('S16: two people move the same task at once; both succeed, the last wins, a
   await ctx.close()
 })
 
+test("G1: a notes edit in a dialog opened before someone else's rename keeps both changes", async ({ page, browser }) => {
+  const title = tempTag('G1 Package FV6')
+  const renamed = tempTag('G1 Package FV7')
+  const today = denverToday()
+  const task = await createTask(await apiAs('brewer1'), { title, due_on: today })
+  created.push(task.id)
+  const ctx = await browser.newContext({ storageState: authFile('brewer2'), viewport: { width: 1600, height: 1000 } })
+  const other = await ctx.newPage()
+  await Promise.all([openBoard(page), openBoard(other)])
+
+  // brewer2 opens Edit and types notes.
+  await openMenu(other, task.id, today)
+  await other.getByTestId('task-menu-edit').click()
+  await other.getByTestId('task-notes-input').fill('Check the gauge')
+
+  // Meanwhile brewer1 renames the task.
+  await openMenu(page, task.id, today)
+  await page.getByTestId('task-menu-edit').click()
+  await page.getByTestId('task-title-input').fill(renamed)
+  const renaming = boardWrite(page, new RegExp(`^/api/brewery/tasks/${task.id}$`), 'PATCH')
+  await saveDialog(page).click()
+  await renaming
+
+  // brewer2 saves: only the notes go.
+  const saving = boardWrite(other, new RegExp(`^/api/brewery/tasks/${task.id}$`), 'PATCH')
+  await saveDialog(other).click()
+  expect((await saving).request().postDataJSON()).toEqual({ notes: 'Check the gauge' })
+  await expect(other.getByTestId('task-dialog')).toHaveCount(0)
+
+  const saved = (await getBoard(await apiAs('brewer1'), today, today)).days[0].cards.find((c) => c.id === task.id)!
+  expect(saved).toMatchObject({ title: renamed, notes: 'Check the gauge' })
+  await Promise.all([page.reload(), other.reload()])
+  for (const p of [page, other]) await expect(card(p, task.id, today).getByTestId(`task-title-${task.id}:${today}`)).toHaveText(renamed)
+
+  // With nothing changed, Save just closes.
+  await openMenu(other, task.id, today)
+  await other.getByTestId('task-menu-edit').click()
+  let patched = false
+  other.on('request', (r) => {
+    if (r.method() === 'PATCH' && new URL(r.url()).pathname === `/api/brewery/tasks/${task.id}`) patched = true
+  })
+  await saveDialog(other).click()
+  await expect(other.getByTestId('task-dialog')).toHaveCount(0)
+  expect(patched).toBe(false)
+  await ctx.close()
+})
+
 test('S17: an empty or 201-character title is an inline error, and nothing is saved', async ({ page }) => {
   const today = denverToday()
   await openBoard(page)
