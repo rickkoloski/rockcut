@@ -373,6 +373,8 @@ For each day on the board:
 - A new item doesn't appear on days before it was added, and ticking it on
   one is refused (422 `not_yet_added`). An item added today shows and can be
   ticked today. (DEV pass 1, G4, Matt 2026-10-12.)
+- Retiring is one-way: `{ active: true }` on a retired item is refused (422
+  `retired`). (DEV pass 1, G3.)
 
 ### 3.7 Shared drag and drop (app-wide)
 

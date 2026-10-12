@@ -329,6 +329,21 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
 
       refute Enum.any?(items, &(&1["name"] == "DO"))
     end
+
+    test "un-retiring an item is a 422 and leaves it retired (G3)", %{p: p} do
+      mgr = p["breweryMgr"]
+      temps = item_id("Temps")
+
+      call(mgr, :patch, "/api/brewery/daily_items/#{temps}", %{active: false})
+      |> json_response(200)
+
+      assert %{"error" => "retired"} =
+               call(mgr, :patch, "/api/brewery/daily_items/#{temps}", %{active: true})
+               |> json_response(422)
+
+      refute BreweryTasks.get_item(temps).active
+      refute Enum.any?(BreweryTasks.list_items(), &(&1.id == temps))
+    end
   end
 
   test "/api/me brewery_tasks_manage: owners and Brewery managers", %{p: p} do
