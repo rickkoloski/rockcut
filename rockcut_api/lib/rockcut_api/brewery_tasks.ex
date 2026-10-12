@@ -761,6 +761,21 @@ defmodule RockcutApi.BreweryTasks do
 
   defp renumber(dept_id, due_on), do: dept_id |> list_ids(due_on) |> write_order()
 
+  @doc """
+  Renumber every list (each day and the Future list) and the active Daily
+  items densely, keeping their order. For bulk deletes made outside this
+  module (the synthetic seed's cleanup).
+  """
+  def compact_lists do
+    dept = department!()
+
+    Repo.all(from t in Task, where: t.department_id == ^dept.id, distinct: true, select: t.due_on)
+    |> Enum.each(&renumber(dept.id, &1))
+
+    list_items() |> Enum.map(& &1.id) |> write_item_order()
+    :ok
+  end
+
   defp write_order(ids) do
     ids
     |> Enum.with_index(1)

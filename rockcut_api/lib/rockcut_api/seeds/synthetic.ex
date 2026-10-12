@@ -16,6 +16,11 @@ defmodule RockcutApi.Seeds.Synthetic do
   `SYNTHETIC_STAFF_CODES` (a secret, like `SEED_PASSWORD`) and clears every
   other persona's code; with the variable unset it leaves codes alone. The
   `[SEED]` Buy-a-Beer Board entries carry the tag on Bought by.
+
+  D38: `[SEED]` Brewery board tasks (tag on the title) relative to today,
+  Daily checks for yesterday (3) and today (1), and a `[SEED]` all-day Brewery
+  event this week (tag on its notes). `reset/0` also deletes every Daily check
+  and restores the four default Daily items.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -32,9 +37,11 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Notifications.Notification
   alias RockcutApi.Seeds.{Credentials, Guard}
   alias RockcutApi.Devices.DeviceToken
-  alias RockcutApi.Scheduling.{ScheduleEvent, ScheduleEventSeries}
+  alias RockcutApi.Scheduling.{Recurrence, ScheduleEvent, ScheduleEventSeries}
   alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
   alias RockcutApi.BeerBoard.Entry
+  alias RockcutApi.BreweryTasks
+  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task}
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -147,6 +154,9 @@ defmodule RockcutApi.Seeds.Synthetic do
       # created or work so they don't linger as orphaned open shifts.
       Repo.delete_all(from(s in Shift, where: s.assignee_id in ^ids or s.created_by_id in ^ids))
       delete_tagged(@seed_tag)
+      # D38: every Daily check, and the Daily card back to its four items.
+      Repo.delete_all(DailyCheck)
+      restore_daily_items()
       # Memberships, messages, time off, availability, notifications and push
       # subscriptions cascade (on_delete: :delete_all).
       Repo.delete_all(from(u in User, where: u.id in ^ids))
@@ -646,6 +656,8 @@ defmodule RockcutApi.Seeds.Synthetic do
       })
     end
 
+    seed_brewery_board(u, monday, now)
+
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
       Repo.insert!(%Notification{
@@ -676,6 +688,165 @@ defmodule RockcutApi.Seeds.Synthetic do
         where: like(e.recipient_name, ^pattern) or like(e.purchaser_name, ^pattern)
       )
     )
+
+    # D38: board tasks tagged on the title and Daily items on the name (their
+    # checks cascade), then the lists close up. Change-log rows stay, as D37.
+    # The [SEED] event is tagged on its notes.
+    Repo.delete_all(from(e in ScheduleEvent, where: like(e.notes, ^pattern)))
+    Repo.delete_all(from(t in Task, where: like(t.title, ^pattern)))
+    Repo.delete_all(from(i in DailyItem, where: like(i.name, ^pattern)))
+    if Repo.get_by(Department, key: "brewery"), do: BreweryTasks.compact_lists()
+  end
+
+  ## Brewery task board (D38)
+
+  # {title, day offset from today | nil (Future), assignee key | nil, done}
+  # where done is nil (open) or {display, completed day offset, completer key}.
+  @board_tasks [
+    {"Carb FV3", -3, "brewer1", nil},
+    {"Dry hop FV1", -2, nil, nil},
+    {"Transfer BBT2 to the keg line", -2, "brewer2", {"planned_day", -1, "brewer2"}},
+    {"Clean FV4", -3, nil, {"both", -1, "brewer1"}},
+    {"Cold crash FV5", -1, "brewer1", {"completed_day", 0, "brewer1"}},
+    {"Filter FV2 > FV3", 0, "brewer1", nil},
+    {"Package FV6", 0, nil, nil},
+    {"Brew Hazy IPA into FV4", 0, "brewer2", {"planned_day", 0, "brewer2"}},
+    {"Yeast pitch FV4", 1, "brewer2", nil},
+    {"CIP the brite tanks", 1, nil, nil},
+    {"Keg BBT1", 2, "brewer1", nil},
+    {"Gravity check FV1", 4, nil, nil},
+    {"Package FV3", 7, "brewer1", nil},
+    {"Brew Pale Ale into FV2", 9, "brewer2", nil},
+    {"Order CO2", 12, nil, nil},
+    {"Replace the glycol pump seal", nil, nil, nil},
+    {"Recalibrate the pH meter", nil, "brewer2", nil}
+  ]
+
+  defp seed_brewery_board(u, monday, now) do
+    dept = Repo.get_by!(Department, key: "brewery")
+    today = BreweryTasks.today()
+    mgr = u["breweryMgr"]
+
+    for {{title, offset, who, done}, index} <- Enum.with_index(@board_tasks) do
+      due_on = offset && Date.add(today, offset)
+
+      completion =
+        case done do
+          nil ->
+            %{}
+
+          {display, done_offset, by} ->
+            on = Date.add(today, done_offset)
+
+            %{
+              completed_at: Recurrence.local_to_utc(on, ~T[14:00:00]),
+              completed_by_id: u[by].id,
+              completed_on: on,
+              completed_display: display
+            }
+        end
+
+      Repo.insert!(
+        struct(
+          %Task{
+            department_id: dept.id,
+            title: "#{@seed_tag} #{title}",
+            due_on: due_on,
+            # After whatever is already on the day; compacted below.
+            position: 1_000 + index,
+            assignee_id: who && u[who].id,
+            created_by_id: mgr.id,
+            inserted_at: now,
+            updated_at: now
+          },
+          completion
+        )
+      )
+    end
+
+    BreweryTasks.compact_lists()
+
+    # Daily card: yesterday 3 of the first 4 ticked, today 1. A past day only
+    # counts items that existed then, and the migration may have added the
+    # defaults today: date them two weeks back so the seeded days show x/4.
+    items = BreweryTasks.list_items()
+    yesterday = Date.add(today, -1)
+    since = Recurrence.local_midnight(Date.add(today, -14))
+    default_ids = for i <- items, i.name in DailyItem.defaults(), do: i.id
+
+    Repo.update_all(
+      from(i in DailyItem, where: i.id in ^default_ids and i.inserted_at > ^since),
+      set: [inserted_at: since]
+    )
+
+    Repo.delete_all(from(c in DailyCheck, where: c.on_date in ^[yesterday, today]))
+
+    for {on_date, count, who} <- [{yesterday, 3, "brewer1"}, {today, 1, "brewer2"}],
+        item <- Enum.take(items, count) do
+      Repo.insert!(%DailyCheck{
+        department_id: dept.id,
+        on_date: on_date,
+        daily_item_id: item.id,
+        completed_by_id: u[who].id,
+        completed_at: Recurrence.local_to_utc(on_date, ~T[09:00:00])
+      })
+    end
+
+    # One published all-day Brewery event on this week's Wednesday.
+    wednesday = Date.add(monday, 2)
+
+    Repo.insert!(%ScheduleEvent{
+      department_id: dept.id,
+      created_by_id: mgr.id,
+      title: "Brew day: Hazy IPA",
+      notes: "#{@seed_tag} Brew day",
+      all_day: true,
+      starts_at: Recurrence.local_midnight(wednesday),
+      ends_at: Recurrence.local_midnight(Date.add(wednesday, 1)),
+      status: "published",
+      inserted_at: now,
+      updated_at: now
+    })
+  end
+
+  # The four default Daily items, active and in order; any other item goes
+  # (reset/0 has already deleted every check).
+  defp restore_daily_items do
+    case Repo.get_by(Department, key: "brewery") do
+      nil ->
+        :ok
+
+      dept ->
+        defaults = DailyItem.defaults()
+        existing = Repo.all(from(i in DailyItem, where: i.department_id == ^dept.id))
+
+        # The first (oldest) item of each default name stays; the rest go.
+        keep =
+          existing
+          |> Enum.filter(&(&1.name in defaults))
+          |> Enum.sort_by(& &1.id)
+          |> Enum.uniq_by(& &1.name)
+
+        drop_ids = Enum.map(existing -- keep, & &1.id)
+        Repo.delete_all(from(i in DailyItem, where: i.id in ^drop_ids))
+
+        for {name, position} <- Enum.with_index(defaults, 1) do
+          case Enum.find(keep, &(&1.name == name)) do
+            nil ->
+              Repo.insert!(%DailyItem{
+                department_id: dept.id,
+                name: name,
+                position: position,
+                active: true
+              })
+
+            item ->
+              item |> Ecto.Changeset.change(position: position, active: true) |> Repo.update!()
+          end
+        end
+
+        :ok
+    end
   end
 
   defp at(monday, day_offset, hour) do
