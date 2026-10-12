@@ -7,6 +7,7 @@ import {
   denverToday,
   mouseDrag,
   openBoard,
+  setBoardCheck,
   setCheck,
   type ApiDailyCard,
 } from './taskBoardHelpers'
@@ -49,10 +50,10 @@ test('S24: ticking Temps and Pressures today shows who and when, brewer2 sees it
   await expect(page.getByTestId(`daily-count-${today}`)).toHaveText(`Daily ${start}/${total}`)
 
   let saved = checkWrite(page, 'PUT')
-  await page.getByTestId(`daily-check-${today}-${temps}`).check()
+  await setBoardCheck(page.getByTestId(`daily-check-${today}-${temps}`), true)
   await saved
   saved = checkWrite(page, 'PUT')
-  await page.getByTestId(`daily-check-${today}-${pressures}`).check()
+  await setBoardCheck(page.getByTestId(`daily-check-${today}-${pressures}`), true)
   await saved
   await expect(page.getByTestId(`daily-count-${today}`)).toHaveText(`Daily ${start + 2}/${total}`)
 
@@ -69,7 +70,7 @@ test('S24: ticking Temps and Pressures today shows who and when, brewer2 sees it
   await other.close()
 
   saved = checkWrite(page, 'DELETE')
-  await page.getByTestId(`daily-check-${today}-${temps}`).uncheck()
+  await setBoardCheck(page.getByTestId(`daily-check-${today}-${temps}`), false)
   await saved
   await expect(page.getByTestId(`daily-count-${today}`)).toHaveText(`Daily ${start + 1}/${total}`)
   await page.reload()
@@ -130,7 +131,7 @@ test("S26: yesterday's 3/4 is amber, and the 4th can still be ticked", async ({ 
 
   await page.getByTestId(`daily-toggle-${yesterday}`).click()
   const saved = checkWrite(page, 'PUT')
-  await page.getByTestId(`daily-check-${yesterday}-${last}`).check()
+  await setBoardCheck(page.getByTestId(`daily-check-${yesterday}-${last}`), true)
   await saved
   await expect(count).toHaveText(`Daily ${total}/${total}`)
   await expect(page.getByTestId(`daily-${yesterday}`)).toHaveAttribute('data-behind', 'false')

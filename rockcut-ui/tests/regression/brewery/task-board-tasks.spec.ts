@@ -12,6 +12,7 @@ import {
   getBoard,
   listKeys,
   openBoard,
+  setBoardCheck,
   tempTag,
   userId,
 } from './taskBoardHelpers'
@@ -102,7 +103,7 @@ test.describe('as brewer2', () => {
 
     await openBoard(page)
     const done = boardWrite(page, new RegExp(`/${task.id}/complete$`))
-    await page.getByTestId(`task-check-${task.id}:${today}`).check()
+    await setBoardCheck(page.getByTestId(`task-check-${task.id}:${today}`), true)
     await done
     await expect(page.getByTestId('finish-dialog')).toHaveCount(0)
     await page.reload()
@@ -111,7 +112,7 @@ test.describe('as brewer2', () => {
     await expect(page.getByTestId(`task-title-${task.id}:${today}`)).toHaveCSS('text-decoration-line', 'line-through')
 
     const undone = boardWrite(page, new RegExp(`/${task.id}/uncomplete$`))
-    await page.getByTestId(`task-check-${task.id}:${today}`).uncheck()
+    await setBoardCheck(page.getByTestId(`task-check-${task.id}:${today}`), false)
     await undone
     await page.reload()
     await expect(card(page, task.id, today)).toHaveAttribute('data-done', 'false')

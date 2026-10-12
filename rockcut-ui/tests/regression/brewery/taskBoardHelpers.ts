@@ -105,6 +105,19 @@ export function boardWrite(page: Page, path: RegExp, method = 'POST') {
   return page.waitForResponse((r) => path.test(new URL(r.url()).pathname) && r.request().method() === method && r.ok())
 }
 
+/**
+ * Click one of the board's check boxes (a task or a Daily check) and wait for
+ * it to show `checked`. Not `locator.check()`: these boxes follow the cached
+ * board, which reaches React a tick after the click (TanStack Query batches its
+ * updates), and `check()` reads the box back at once, so under load it can see
+ * the old state and throw "did not change its state".
+ */
+export async function setBoardCheck(box: Locator, checked: boolean) {
+  await expect(box).toBeChecked({ checked: !checked })
+  await box.click()
+  await expect(box).toBeChecked({ checked })
+}
+
 /** The persona's user id, from /api/me. */
 export async function userId(api: APIRequestContext): Promise<number> {
   return (await (await api.get('/api/me')).json()).user.id
