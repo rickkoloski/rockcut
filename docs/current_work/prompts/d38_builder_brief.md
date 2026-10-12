@@ -639,3 +639,40 @@ revert and rerun, and record both runs for each fix in your reply.
 
 **Then stop. Don't push.** Reply with the commits, the revert-check
 results, the gate results and any `LEAD:` questions.
+
+## Task 11: harden the drag spec helper (S23e flake on DEV)
+
+**Task 10 accepted,** including your three answers (the S29 setup change,
+the toast check with `page.route`, and the DEV note). DEV pass 2 is at
+`fcaba29`. A fresh QA agent is rechecking G1, G3 and G4 on DEV right now:
+**don't run anything against DEV**, only locally.
+
+DEV Playwright run 2: 261 passed, 1 failed, in
+`task-board-future.spec.ts:78` "S23e: dragging a day's task onto the
+Future list between two tasks". The `move` request had `before_id: null`
+(dropped at the end of Future) instead of the target card's id. Alone on
+DEV with `--repeat-each 5` it passed 5/5. The DEV QA pass 1 also saw
+automated drags sometimes land at the end, "always where the on-screen
+placeholder showed". The trace is in
+`rockcut-ui/test-results/regression-brewery-task-bo-88e61-s-it-there-logged-→-Future--brewery-board/trace.zip`.
+This machine has no `unzip`; read it with python's `zipfile`.
+
+### What to do
+
+1. Find from the trace why the drop landed at the end. A likely cause:
+   `mouseDrag` releases before `@dnd-kit` has moved the placeholder in
+   front of the target (latency, a re-measure, or the 60-second refresh).
+2. Make `mouseDrag` (in `taskBoardHelpers.ts`) wait for the placeholder or
+   drop indicator to be in the intended spot before `mouse.up()`. Do it
+   with an `expect` or poll on the DOM, never `waitForTimeout`. Every drag
+   spec uses it, so they all get the fix.
+3. It's test-only: don't change app code unless the trace shows an app bug.
+   If it does, stop and write `LEAD:` first.
+4. Check locally: the drag, Future and Unfinished specs with
+   `--repeat-each 5`, then the whole brewery folder twice. If you can
+   make the old helper fail locally under load, for example with CPU
+   throttling through CDP, say how, and whether the new one passes the
+   same way.
+
+Commit as `test: D38 drag helper waits for the drop spot`, then **stop**.
+Don't push. Reply with the cause, the change and the runs.
