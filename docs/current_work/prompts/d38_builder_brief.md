@@ -417,3 +417,52 @@ Plan step 7, spec §3.8 "Daily card" and the Daily items API from step 3:
 **Context and done** are the same as Task 5. Commit as
 `feat: D38 step 7 — Daily card and Daily items`, then **stop** and reply as
 before. Don't start step 8.
+
+## Task 7: plan step 8, History and access (+ the two flakes)
+
+**Step 7 accepted,** including deviations 1–5. The board-refresh fix in
+deviation 2 is a good catch. **LEAD answer:** no un-retire for D38. Re-adding
+the name is fine for now; I'll log un-retire as a later idea.
+
+### First: the two unexplained failures
+
+Before building, find the causes of the two failures you saw in step 7.
+Don't just rerun until they pass:
+1. **The one ExUnit failure.** Run `MIX_ENV=test mix test` a few times
+   (and with `--seed` values from failing runs) until you catch it. If it's
+   in D38 code (time zone, ordering, `today/0` near midnight UTC), fix it.
+   If it's an older flaky test, name it and say so; don't fix old code.
+2. **`task-board-tasks` "S8: checking a task on today…"** in the full
+   brewery run. Likely suspects are the step 7 refetch change, or another
+   spec in the `brewery-board` project changing today's tasks. Fix the
+   cause (in the code or the spec's isolation).
+
+Commit these on their own (`fix: …`) before starting step 8.
+
+### What to build
+
+Plan step 8, spec §3.8 "Change log":
+- **`HistoryDialog`** (or a drawer, whichever reads better at tablet width)
+  from the board ⋮ menu, managers and owners only. Newest first, from
+  `GET` on the events API (50 per page, with Load more). Each entry: who,
+  when (Colorado time), what, and old → new in plain words (for example
+  "Moved Package FV6 from Mon 10/12 to Wed 10/14", "Completed, shown on
+  both days"). Daily check and item events (null `task_id`) are included
+  with their item names.
+- **Filtered to one task** from that task's dialog ("History" link,
+  managers and owners only).
+- **Devices** never see it (the API already 403s them).
+
+### How to check it
+
+1. Drive **S10, S11 and S38–S41** as the personas, including the
+   negatives (`floater`, `bartender1`, `office1`, `owner`,
+   `taproomDevice`). Check the nav, the typed URL redirect and the API
+   403s.
+2. Write `task-board-history.spec.ts` (S10, S11, the task filter) and
+   `task-board-access.spec.ts` (S38–S41, every D38 API route for a
+   non-Brewery user and the taproom device). Same rules as before.
+
+**Context and done** are the same as Task 5, and the whole brewery folder
+must pass twice in a row. Commit as `feat: D38 step 8 — History and access`,
+then **stop** and reply as before. Don't start step 9.
