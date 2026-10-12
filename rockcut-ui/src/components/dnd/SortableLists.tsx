@@ -49,6 +49,12 @@ interface Props {
   containers: ListContainer[]
   onMove: (move: Move) => void
   isLocked?: (itemId: string) => boolean
+  /**
+   * Items that always sit at the end of their list, after every item that
+   * can move there (locked ones the server orders apart). Nothing lands
+   * after them: a drop on or below them lands just above.
+   */
+  staysLast?: (itemId: string) => boolean
   renderItem: (itemId: string, state: ItemState) => ReactNode
   renderContainer: (container: ListContainer, slot: ContainerSlot) => ReactNode
   /** Plain words for screen readers: "Package FV6", "Mon 10/12". */
@@ -83,6 +89,7 @@ export default function SortableLists({
   containers,
   onMove,
   isLocked = noLock,
+  staysLast = noLock,
   renderItem,
   renderContainer,
   itemLabel,
@@ -112,7 +119,9 @@ export default function SortableLists({
     }),
   )
 
-  const collision: CollisionDetection = (input) => {
+  const collision: CollisionDetection = (input) => aboveLast(input, detect(input))
+
+  const detect: CollisionDetection = (input) => {
     const args = sameListOnly ? ownListOnly(input) : input
     if (!args.pointerCoordinates) return closestCorners(args)
     const hits = pointerWithin(args)
@@ -131,6 +140,25 @@ export default function SortableLists({
     return own.length ? closestCenter({ ...args, droppableContainers: own }) : [list]
   }
 
+  /**
+   * A hit on an item that stays last becomes the item above it (the last one
+   * that isn't), or the list itself when there's none, so the placeholder
+   * shows where the drop really lands (DEV pass 2, A).
+   */
+  const aboveLast = (args: Parameters<CollisionDetection>[0], hits: ReturnType<CollisionDetection>) => {
+    const hit = hits[0]
+    if (!hit || isTargetId(hit.id) || isContainerId(hit.id) || !staysLast(String(hit.id))) return hits
+    const lists = drag?.preview ?? containers
+    const containerId = containerOf(lists, String(hit.id))
+    if (!containerId) return hits
+    const ids = lists.find((c) => c.id === containerId)!.itemIds
+    const active = String(args.active.id)
+    const above = ids.slice(0, ids.indexOf(String(hit.id))).filter((i) => i !== active && !staysLast(i)).at(-1)
+    const id = above ?? containerDropId(containerId)
+    const droppable = args.droppableContainers.find((d) => d.id === id)
+    return droppable ? [{ id, data: { droppableContainer: droppable, value: 0 } }] : hits
+  }
+
   /** Where the dragged item would land for `overId`: [container, index]. */
   const landing = (lists: ListContainer[], event: DragOverEvent | DragEndEvent): [string, number] | null => {
     const { active, over } = event
@@ -140,7 +168,10 @@ export default function SortableLists({
     if (isContainerId(over.id)) {
       const id = unprefix(over.id, CONTAINER)
       const list = lists.find((c) => c.id === id)
-      return list && allowed(id) ? [id, list.itemIds.filter((i) => i !== active.id).length] : null
+      if (!list || !allowed(id)) return null
+      const rest = list.itemIds.filter((i) => i !== active.id)
+      const firstLast = rest.findIndex(staysLast)
+      return [id, firstLast < 0 ? rest.length : firstLast]
     }
     const overId = String(over.id)
     const id = containerOf(lists, overId)

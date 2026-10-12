@@ -183,6 +183,76 @@ test('S15: a long press lifts a task and reorders it within the day; the day doe
   expect(keys.indexOf(`${b.id}:${day}`)).toBe(keys.indexOf(`${a.id}:${day}`) - 1)
 })
 
+test('S15: a long press drags a task to the very bottom of today, under a card finished there from another day', async ({ page }) => {
+  // DEV pass 2, A (Matt's Pixel): today ended in a card finished there from
+  // yesterday. Those cards always sit after the day's own tasks (§7 rule 2),
+  // but the drag let the task go below it: the placeholder showed last, the
+  // server put it above that card, and it landed second from the bottom. The
+  // bottom spot is now just above the visitor, and the placeholder shows that.
+  const api = await apiAs('brewer1')
+  const day = today()
+  const visitor = await createTask(api, { title: tempTag('phone bottom visitor'), due_on: addDays(day, -1) })
+  created.push(visitor.id)
+  await completeTask(api, visitor.id, 'completed_day')
+  const own = []
+  for (const n of ['A', 'B', 'C', 'D']) {
+    const t = await createTask(api, { title: tempTag(`phone bottom ${n}`), due_on: day })
+    created.push(t.id)
+    own.push(t)
+  }
+
+  await openBoard(page)
+  const list = page.getByTestId(`day-list-${day}`)
+  const keysBefore = await listKeys(page, `day-list-${day}`)
+  // The day's visitors (ours, and any the seed has): the last cards in the list.
+  const visitors = (await getBoard(api, day, day)).days[0].cards.filter((c) => c.due_on !== day).map((c) => `${c.id}:${day}`)
+  expect(visitors).toContain(`${visitor.id}:${day}`)
+  expect(keysBefore.slice(-visitors.length)).toEqual(visitors)
+  const ownCount = keysBefore.length - visitors.length
+  const source = page.getByTestId(`task-title-${own[0].id}:${day}`)
+  await source.scrollIntoViewIfNeeded()
+  const s = (await source.boundingBox())!
+  const { touch } = await touchSession(page)
+  const [x, y] = [s.x + 40, s.y + s.height / 2]
+  await touch('touchStart', [[x, y]])
+  await expect(card(page, own[0].id, day)).toHaveCount(2)
+
+  // Down to the screen's bottom edge, as a finger does, until the page has
+  // scrolled as far as it goes; then onto the last card.
+  let at = y
+  const slide = async (to: number, steps: number) => {
+    for (let i = 1; i <= steps; i++) await touch('touchMove', [[x, at + ((to - at) * i) / steps]])
+    at = to
+  }
+  await slide(790, 20)
+  await expect
+    .poll(() => page.evaluate(() => Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight))
+    .toBe(true)
+  const last = (await page.getByTestId(`task-${visitors.at(-1)}`).boundingBox())!
+  await slide(last.y + last.height - 4, 8)
+  // The placeholder settles just above the visitors, not under them.
+  await expect
+    .poll(() =>
+      list.evaluate((el) => {
+        const items = Array.from(el.querySelectorAll('[aria-roledescription="sortable"]'))
+        if (items.some((e) => e.getAnimations().length > 0)) return 'still moving'
+        const shown = items.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top)
+        const lifted = shown.findIndex((e) => e.getAttribute('aria-pressed') === 'true')
+        return `${lifted + 1} of ${shown.length}`
+      }),
+    )
+    .toBe(`${ownCount} of ${keysBefore.length}`)
+
+  const moved = boardWrite(page, new RegExp(`/${own[0].id}/move$`))
+  await touch('touchEnd', [])
+  expect((await moved).request().postDataJSON()).toEqual({ due_on: day, before_id: null })
+
+  await page.reload()
+  await expect(list).toBeVisible()
+  const keys = await listKeys(page, `day-list-${day}`)
+  expect(keys.slice(ownCount - 1)).toEqual([`${own[0].id}:${day}`, ...visitors])
+})
+
 test('S9a: tapping a task opens a bottom sheet; Add notes focuses Notes, and then the sheet says Edit notes', async ({ page }) => {
   const api = await apiAs('brewer1')
   const task = await createTask(api, { title: tempTag('S9a Keg Wash'), due_on: today() })

@@ -116,6 +116,11 @@ export default function TaskBoard() {
   }, [board, filter, hideCompleted, user?.id])
 
   const isLocked = useCallback((key: string) => cards.get(key)?.locked ?? false, [cards])
+  // Finished on a day away from their planned one: the server lists them after the day's own tasks.
+  const staysLast = useCallback((key: string) => {
+    const card = cards.get(key)
+    return !!card && card.day !== FUTURE && card.day !== UNFINISHED && card.due_on !== card.day
+  }, [cards])
   const { containers, move } = useOptimisticLists(source, isLocked)
 
   const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null)
@@ -169,7 +174,8 @@ export default function TaskBoard() {
       setToast({ message: 'Mark it not done first to move it to Future', error: true })
       return
     }
-    const before = m.beforeId ? cards.get(m.beforeId) : null
+    // Ahead of a card that stays last means the end of the day's own tasks.
+    const before = m.beforeId && !staysLast(m.beforeId) ? cards.get(m.beforeId) : null
     const beforeId = before && before.id !== card.id ? before.id : null
     move(m, () => api.post(`/api/brewery/tasks/${card.id}/move`, { due_on: dueOn, before_id: beforeId }))
       .catch(fail)
@@ -460,6 +466,7 @@ export default function TaskBoard() {
           containers={containers}
           onMove={moveTask}
           isLocked={isLocked}
+          staysLast={staysLast}
           sameListOnly={phone}
           itemLabel={(key) => cards.get(key)?.title ?? 'task'}
           containerLabel={(id) => (id === FUTURE ? 'Future' : id === UNFINISHED ? 'Unfinished' : formatTaskDay(id))}
