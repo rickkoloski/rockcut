@@ -371,3 +371,49 @@ uncommitted work.
   drove and any you couldn't.
 
 Don't start step 7.
+
+## Task 6: plan step 7, the Daily card and the Daily items dialog
+
+**Step 6 accepted,** including deviations 1–8 and the `brewery-board`
+Playwright project. Answers to your LEAD questions:
+1. **Mark not done confirm:** yes. Confirm only when the card shows on a
+   day other than its planned day ("today" or "both"). A plain uncheck on
+   its own day, or of a Future task, asks nothing.
+2. **Open count:** keep it following the filter, so the count matches the
+   cards you see.
+
+**Servers:** as before (API :4002, UI :5174, both up).
+
+### What to build
+
+Plan step 7, spec §3.8 "Daily card" and the Daily items API from step 3:
+- **`DailyCard` ticking:** tick and untick on today and past days, each
+  item showing "✓ Temps — Kate, 8:12a" (Colorado time). Future days show
+  the checks disabled. The count turns amber on past days with unticked
+  items, and updates without a reload. Optimistic tick with a rollback
+  toast, the same as task moves. Retired items still show on days they
+  were ticked (and can be unticked, not ticked). The Daily card never
+  drags (S27).
+- **`DailyItemsDialog`** (managers and owners, from the board's ⋮ menu
+  and the Daily card's own menu): add, rename, reorder by drag through
+  `SortableLists` (one container, plus Move up/down for keyboard and
+  touch), retire after "Retire Temps? Past ticks are kept." Inline errors
+  for "Up to 12 items" and "Already on the list" (S31), from the API's 422
+  codes.
+- **Board ⋮ menu:** add it now with Edit Daily items, shown only when
+  `/api/me` has `brewery_tasks_manage`. Step 8 adds History to it. Don't
+  show an empty menu to brewers.
+
+### How to check it
+
+1. Drive **S24–S31** in a browser as the personas, the same way as Task 5.
+   Fix what you find.
+2. Write `task-board-daily.spec.ts` (S24–S27) and
+   `task-board-daily-items.spec.ts` (S28–S31). Item edits change shared
+   data, so put them in the `brewery-board` project and restore the four
+   default items (names, order, active) in `afterEach`. Same rules as
+   before: relative dates, persist-verify writes, no `waitForTimeout`.
+
+**Context and done** are the same as Task 5. Commit as
+`feat: D38 step 7 — Daily card and Daily items`, then **stop** and reply as
+before. Don't start step 8.
