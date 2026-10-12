@@ -917,6 +917,8 @@ brewhouse tablet, a staff code is needed.
   board is short-lived.
 - Task boards for other departments (the `department_id` column allows it
   later).
+- **Bringing back a retired Daily item.** Re-adding the name makes a new
+  item; the old one's past ticks stay with it.
 
 ## 6. Questions
 
