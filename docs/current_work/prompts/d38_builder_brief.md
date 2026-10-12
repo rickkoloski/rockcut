@@ -676,3 +676,73 @@ This machine has no `unzip`; read it with python's `zipfile`.
 
 Commit as `test: D38 drag helper waits for the drop spot`, then **stop**.
 Don't push. Reply with the cause, the change and the runs.
+
+## Task 12: DEV pass 2 fixes from Matt's Pixel checks (A, B)
+
+**Task 11 accepted** (`d0831e7`). DEV Playwright run 3 at `fcaba29` with the
+new helper: **262/262**. QA pass 2 verified G1, G3 and G4; its gaps moved to
+D39.
+
+Matt ran the phone-width checks on the Pixel (Chrome, `brewer1`, DEV). Six of
+eight passed clean; two issues, and Matt wants both fixed (2026-10-12). This
+is the **second and last** fix cycle the workflow allows for D38.
+**Local only:** nothing against DEV.
+
+### A. A long-press drag can't drop a task at the very bottom of its day
+
+On the phone layout (one day at a time, `sameListOnly`), dragging a task to
+the last slot of today lands it **second from the bottom**. Dropping
+anywhere else lands where the placeholder shows, and the order persists.
+Desktop drags to the end of a list work (the drag specs drop at the end).
+
+- **Find the cause before fixing.** Reproduce at 360×800 with touch
+  emulation (the phone spec's long-press approach). Suspects include:
+  - `ownListOnly` / `landing` in `SortableLists` with `sameListOnly`;
+  - the container drop target for the day not being reachable below the
+    last card;
+  - the "+ Add a task" row taking the space under the last card;
+  - collision picking the last card's top half.
+
+  Don't guess: log the collisions or `over` ids and say what it was.
+- Fix it so the last slot is reachable, and mouse and keyboard on desktop
+  still behave as now.
+- **Test (revert rule applies):** a phone-width test that long-press drags a
+  task to the very bottom of a day with at least 4 tasks, persist-verified
+  (the `move` request and a reload). It must fail with the fix reverted.
+
+### B. Android back with the task sheet open leaves the page
+
+With the bottom sheet open, the Android back gesture navigates to the
+previous page. **Matt's decision:** back closes the sheet, and only the
+sheet. With no sheet open, back works as now (the previous page; the board
+never changes day on back).
+
+- The usual way: when the sheet opens, push a history entry (for example
+  `history.pushState` with a marker, or the router's equivalent without
+  changing the URL the user sees). `popstate` closes the sheet. Closing it
+  any other way (tap outside, an action, Escape) removes that entry, so
+  back afterwards still leaves the page in one press. No dead extra back
+  presses, and no URL changes left behind.
+- Apply the same to the other phone dialogs opened from the sheet or the
+  board, **only if** it's simple and consistent; otherwise just the sheet,
+  and list the others in your reply.
+- **Test (revert rule applies):** a phone-width spec. Open the sheet,
+  `page.goBack()`: the sheet closes and the URL is still `/brewery/tasks`.
+  Then `page.goBack()` again leaves the board. Also cover closing the sheet
+  by tapping outside, then one `goBack()` leaves the board.
+
+### Then
+
+- Update COVERAGE.md and the handoff note ("DEV pass 2" section: A, B, the
+  tests, the gate). Matt's other Pixel results: #2–#8 pass.
+- Local gate: ExUnit (only if API code changed), `tsc`, `vite build`, lint
+  (still 26, none in D38 files), Vitest, and the whole brewery folder twice
+  in a row.
+- Commit each fix on its own (`fix: D38 …`), then the docs.
+
+**Then stop. Don't push.** Reply with:
+- the cause of A;
+- the commits;
+- the revert-check results;
+- the gate;
+- any `LEAD:` questions.
