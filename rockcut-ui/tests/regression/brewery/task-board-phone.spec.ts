@@ -286,6 +286,49 @@ test('S9a: tapping a task opens a bottom sheet; Add notes focuses Notes, and the
   await expect(page.getByTestId('task-menu-notes')).toHaveText('Edit notes')
 })
 
+test('Back with the sheet open closes the sheet and stays on the board; the next Back leaves', async ({ page }) => {
+  // DEV pass 2, B (Matt's Pixel): Android back left the page with the sheet open.
+  const api = await apiAs('brewer1')
+  const task = await createTask(api, { title: tempTag('phone back'), due_on: today() })
+  created.push(task.id)
+
+  await page.goto('/')
+  await openBoard(page)
+  await card(page, task.id, today()).scrollIntoViewIfNeeded()
+  await page.getByTestId(`task-title-${task.id}:${today()}`).click()
+  await expect(page.getByTestId('task-menu')).toBeVisible()
+
+  await page.goBack()
+  await expect(page.getByTestId('task-menu')).toHaveCount(0)
+  await expect(page).toHaveURL(/\/brewery\/tasks$/)
+  await expect(page.getByTestId('board-grid')).toBeVisible()
+
+  await page.goBack()
+  await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+})
+
+test('a sheet closed by tapping outside leaves no extra Back behind', async ({ page }) => {
+  const api = await apiAs('brewer1')
+  const task = await createTask(api, { title: tempTag('phone back outside'), due_on: today() })
+  created.push(task.id)
+
+  await page.goto('/')
+  await openBoard(page)
+  await card(page, task.id, today()).scrollIntoViewIfNeeded()
+  await page.getByTestId(`task-title-${task.id}:${today()}`).click()
+  await expect(page.getByTestId('task-menu')).toBeVisible()
+
+  // Above the sheet: the backdrop.
+  await page.mouse.click(180, 40)
+  await expect(page.getByTestId('task-menu')).toHaveCount(0)
+  await expect(page).toHaveURL(/\/brewery\/tasks$/)
+  // The sheet's entry is gone again: back on the page's own entry.
+  await expect.poll(() => page.evaluate(() => Object.keys(history.state ?? {}).some((k) => k.startsWith('rockcut')))).toBe(false)
+
+  await page.goBack()
+  await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+})
+
 test('S9a: the sheet greys out moves on a locked card, as the desktop menu does', async ({ page }) => {
   const api = await apiAs('brewer1')
   const task = await createTask(api, { title: tempTag('S9a locked'), due_on: addDays(today(), -1) })

@@ -9,6 +9,7 @@ import {
   EventRepeat,
   NotesOutlined,
 } from '@mui/icons-material'
+import { useBackCloses } from '../../../hooks/useBackCloses'
 import { formatTaskDay } from '../../../lib/breweryTasks'
 import type { TaskCardData } from '../../../lib/types'
 
@@ -29,7 +30,8 @@ interface Props {
  * D38 §3.8 task menu: beside the card, or a sheet from the bottom at phone
  * width (S9a), with the same actions either way. A
  * finished task shown on the day it was done can't move: Change day and Move
- * up/down are greyed out with "Mark not done first to move it".
+ * up/down are greyed out with "Mark not done first to move it". Back closes
+ * the sheet (DEV pass 2, B).
  */
 export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, onClose, onAction }: Props) {
   const pick = (action: TaskAction) => () => {
@@ -43,6 +45,8 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
     focusable.focus()
     onClose()
   }
+  // Android's back gesture closes the sheet, and only the sheet.
+  useBackCloses(!!sheet, dismiss)
 
   // An array, not a fragment: Menu and MenuList walk their children for focus.
   const items = [
