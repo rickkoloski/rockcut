@@ -99,6 +99,44 @@ The gate ran on the final code. The commit after it (this note and COVERAGE.md) 
 8. **S49 through the UI** (Users & Roles as `breweryMgr`) wasn't driven locally; ExUnit covers the unassignment, and D37's `auth/manager_removes_member` covers the save.
 9. **The shared board during a DEV Playwright run:** the `brewery-board` specs move every open past task ("Move all to today") and change Daily items, then put them back. Nobody should use the DEV board by hand while the suite runs; run `seed_synthetic()` after.
 
+## DEV pass 1 (2026-10-12)
+
+DEV pass 1 at `6c9e317` passed (259/259 Playwright on DEV, QA report `stepwise_results/d38_dev_qa_report.md`: no must-fix gaps). Matt approved fixing G1, G3 and G4 (2026-10-12). G2 was a spec wording change (the lead's `0d45b43`); G5 needs nothing. Un-retiring a Daily item moved to D39 (`917bf53`).
+
+### What changed
+
+- **G4, `2e4b24f`: past Daily cards keep their own list.** Today and past days show, and count, the active items that existed that Colorado day plus any item ticked that day (`BreweryTasks.daily_cards/2`). Future days are unchanged. Ticking an item on a day before it was added is a 422 `not_yet_added` ("That Daily item wasn't on the list that day"), shown in the board's toast like `future_day` and `retired`. An item added today shows and can be ticked today. A check written on DEV before the fix (the QA run's "4/5") still shows and counts on its day. The spec's "Which Daily items each day shows" now says this. S29's Playwright setup ticks today instead of yesterday, since yesterday is now refused for a just-added item.
+- **G1, `8decf0c`: edits send only what changed.** The Edit task dialog `PATCH`es only the fields that differ from the card it opened with (title, notes, assignee, day); with nothing changed, Save just closes with no request. The Daily items rename had the same pattern (it compared with the refetched name, so an untouched field could put back an old name) and now compares with the name it opened with.
+- **G3, `593a088`: un-retire is refused.** `PATCH /api/brewery/daily_items/:id` with `active: true` on a retired item is a 422 `retired`; the item stays retired.
+
+No migrations, dependencies, routes or secrets.
+
+### Tests and revert checks
+
+Each new test failed with its fix reverted (the patch reverse-applied) and passed with it restored:
+
+| Fix | Tests | Reverted | Restored |
+|---|---|---|---|
+| G4 | ExUnit `brewery_daily_test` (4 new: rows and counts, the tick refused, added today, a pre-fix check), controller (`not_yet_added` 422 + the board row) | 3 of 35 failed: the two `brewery_daily_test` tests for the bug and the controller G4 test (the other two new tests pin behavior that didn't change, so they pass either way) | 35/0 |
+| G4 | Playwright `task-board-daily-items` G4 (rows, count, 422, persist-verify, the toast on a stale board via `page.route`) | failed (yesterday showed the new row) | passed |
+| G1 | Playwright `task-board-tasks` G1 (brewer1 renames while brewer2's Edit is open with notes; both kept after reloads; the `PATCH` body is `{notes}` only; an unchanged Save sends nothing), `task-board-daily-items` G1 (an unchanged rename after the list refetched sends nothing) | both failed | both passed |
+| G3 | ExUnit controller (G3: 422 `retired`, still retired) | 1 failed of 35 | 35/0 |
+
+### Local gate (2026-10-12, at `593a088`)
+
+- `mix rockcut.synthetic.setup` before and after: 18 personas.
+- ExUnit: **1,122 tests, 0 failures** (seed 834316; full output kept in the builder's scratchpad).
+- `tsc --noEmit -p tsconfig.app.json`: clean. `vite build`: OK.
+- Lint: 26 errors + 1 warning, all pre-existing (list above); none in D38 files.
+- Vitest: 19/19.
+- Playwright, `tests/regression/brewery` (`chromium` + `brewery-board`), twice in a row: run 1 **102 passed**, run 2 **102 passed** (no retries or flakes).
+
+### ⚠ LIMITATIONS (DEV pass 1)
+
+1. **DEV data from before the fix.** DEV still has the QA run's items and checks. A pre-fix check on a day before its item was added keeps showing and counting there (by design); `seed_synthetic()` clears the `[TEST-TEMP]` ones. Check that yesterday's card on DEV is "out of 4" with no extra unticked row.
+2. **G1 with the real 60-second refresh.** Locally both people's saves ran back to back; on DEV, leave brewer2's Edit open across a refresh, rename as brewer1, then save brewer2's notes, as the QA repro did.
+3. **G4 on a UTC machine.** "Existed that day" uses the Colorado date of `inserted_at`; check on DEV after 6 pm Colorado that an item added then shows on today, not tomorrow only.
+
 ## Note for D39, D40 and the department boards
 
 D38 merges to `develop` after its DEV gate but **doesn't go to prod alone**. The board ships in one release after D40 merges (Matt, 2026-10-11), so the brewhouse tablet is there from day one. D39 adds the `series_*` columns and recurring tasks; D40 moves the write routes to `:device_allowed`, adds the `breweryDevice` persona, Brewery staff codes, the shift-end reminder and the dashboard card. When D38 merges, file the follow-up task to move the Scheduler's D13 HTML5 drag onto `components/dnd/`.
