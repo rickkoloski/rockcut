@@ -466,3 +466,50 @@ Plan step 8, spec §3.8 "Change log":
 **Context and done** are the same as Task 5, and the whole brewery folder
 must pass twice in a row. Commit as `feat: D38 step 8 — History and access`,
 then **stop** and reply as before. Don't start step 9.
+
+## Task 8: plan step 9, phone width
+
+**Step 8 accepted.** The handoff `SESSION_HANDOFF_2026-10-11b.md` has the
+state; read its **Gotchas** too.
+
+**Servers:** as before (API :4002, UI :5174, both up).
+
+### What to build
+
+Plan step 9, spec §3.8 "Phone width", plus the phone parts of "Tap or click
+a task → task menu". At phone width (MUI `sm` and below, checked at
+360×800):
+- **One day at a time:** the Unfinished card (on today only), then the
+  day's header, the Daily card and the tasks.
+- **Day navigation:** arrows and a horizontal swipe move between days. A
+  strip of the range's days shows each day's open-task count (following the
+  filter, as on desktop) and ends with a **Future** stop that shows the
+  Future list with its + Add a task (S23j). The selected day starts on
+  today.
+- **Swipe vs. scroll vs. drag:** a horizontal swipe changes day, vertical
+  movement scrolls, and a long press starts a drag that reorders within
+  the day (S15). They must never mix (§3.7). No cross-day drag on phones.
+- **Task menu as a bottom sheet** (S9a): same actions and greying rules as
+  the desktop menu. Change day… and Move to Future do the cross-day work.
+- **Toolbar:** the 1 week / 2 weeks toggle and the date range selector go
+  behind a calendar button. Hide completed and the ⋮ menu stay reachable.
+- Desktop and tablet layouts must not change. All current brewery specs
+  must still pass.
+
+### How to check it
+
+1. Drive **S9a, S15 (the parts a browser can do) and S23j** at 360×800 as
+   `brewer1`, plus a manager pass over the ⋮ menu, Daily items and History
+   dialogs at that width (no overflow, nothing cut off). Fix what you find.
+2. Write `task-board-phone.spec.ts` (S9a, S23j, day strip counts, arrows,
+   the calendar button, the Unfinished card only on today). Use a phone
+   viewport and touch emulation where it helps. Put it in the
+   `brewery-board` project if it writes shared data. Same rules as before:
+   relative dates, persist-verify writes, no `waitForTimeout`.
+3. Touch drag and swipe on real hardware (S9e, S15) are the lead's job on
+   the Pixel. List in your reply exactly what to try there.
+
+**Context and done** are the same as Task 5, and the whole brewery folder
+must pass twice in a row. Commit as `feat: D38 step 9 — phone width`, then
+**stop** and reply as before. Don't start step 10 (COVERAGE.md, the gate,
+the PR).
