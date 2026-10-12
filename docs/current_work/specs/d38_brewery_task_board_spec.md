@@ -28,7 +28,7 @@ release) on its own branch. This spec covers all three. Where it says
 
 | | **D38: Brewery Task Board** | **D39: Recurring tasks** | **D40: Brewhouse tablet, reminder, dashboard** |
 |---|---|---|---|
-| **What** | The shared drag layer (§3.7); the board: range, day header, tasks, task menu, Unfinished card, Future list, Hide completed, filter (§3.8); the Daily card and Daily items; the change log; `Authz` (§3.3). | Recurring tasks (§3.10): the `Recurrence` rules, series edits, the daily top-up. | The brewhouse tablet and staff codes for Brewery members (§3.4); the shift-end reminder and its opt-out (§3.5); the Brewery Dashboard card (§3.8). |
+| **What** | The shared drag layer (§3.7); the board: range, day header, tasks, task menu, Unfinished card, Future list, Hide completed, filter (§3.8); the Daily card and Daily items; the change log; `Authz` (§3.3). | Recurring tasks (§3.10): the `Recurrence` rules, series edits, the daily top-up. Un-retiring a Daily item (§5, Matt 2026-10-12). | The brewhouse tablet and staff codes for Brewery members (§3.4); the shift-end reminder and its opt-out (§3.5); the Brewery Dashboard card (§3.8). |
 | **Data** | `brewery_tasks` without the `series_*` columns, `brewery_daily_items`, `brewery_daily_checks` | `brewery_task_series`; adds `series_id`, `series_date`, `series_exception` to `brewery_tasks` | `brewery_task_reminders` |
 | **API** | Every §3.6 route, without `repeat` or `scope` | `repeat` on create/edit, `scope` on edit/delete | `staff_code` on every write from a device |
 | **Scenarios** | S1–S9f, S10–S31, S38–S41, S49 (except the staff code), S51 | S52–S67, S69 | S9g, S32–S37a, S42–S48, S49 (the staff code), S50, S68 |
@@ -932,8 +932,13 @@ brewhouse tablet, a staff code is needed.
 - Task boards for other departments (the `department_id` column allows it
   later). Decided 2026-10-12: one board per department, built after D39
   and before D40 (see "Delivery split").
-- **Bringing back a retired Daily item.** Re-adding the name makes a new
-  item; the old one's past ticks stay with it.
+- **Bringing back a retired Daily item** in D38. Re-adding the name makes
+  a new item; the old one's past ticks stay with it, and a day where the
+  old one was ticked shows both rows (DEV QA G3). In D38 the API refuses
+  `active: true` on a retired item. **Moved to D39** (Matt, 2026-10-12):
+  managers can un-retire an item from Edit Daily items (a "Retired" section
+  with Restore), it returns at the bottom of the list with its past ticks,
+  and it counts against the 12-item limit and name uniqueness.
 
 ## 6. Questions
 
