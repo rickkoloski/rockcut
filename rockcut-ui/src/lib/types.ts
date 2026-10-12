@@ -645,6 +645,14 @@ export interface DailyCardItem {
   completed_at: string | null
 }
 
+/** An item on the Daily card's list (D38 §3.6 `/api/brewery/daily_items`). */
+export interface DailyItem {
+  id: number
+  name: string
+  position: number
+  active: boolean
+}
+
 export interface DailyCardData {
   date: string
   done: number

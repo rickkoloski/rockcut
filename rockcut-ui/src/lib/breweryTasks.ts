@@ -97,6 +97,21 @@ export function taskError(err: unknown): string {
   return data?.message ?? parseApiError(err)
 }
 
+/** The most active Daily items (the API's cap). */
+export const MAX_DAILY_ITEMS = 12
+
+/**
+ * A refused Daily items change in the dialog's words (spec S31): "Up to 12
+ * items", or the name's own error ("Already on the list", too long).
+ */
+export function dailyItemError(err: unknown): string {
+  const data = (err as { response?: { data?: { error?: string; errors?: Record<string, string[]> } } })?.response?.data
+  if (data?.error === 'too_many_items') return `Up to ${MAX_DAILY_ITEMS} items`
+  const name = data?.errors?.name
+  if (name?.length) return name[0].replace(/^./, (c) => c.toUpperCase())
+  return taskError(err)
+}
+
 // ── Per-browser preferences (spec §3.8). Storage can be missing or throw. ──
 
 const SPAN_KEY = 'rockcut.breweryTasks.span'

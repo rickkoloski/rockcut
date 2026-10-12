@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, CircularProgress, Snackbar } from '@mui/material'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
@@ -28,9 +28,10 @@ import {
   type Span,
   type TaskFilter,
 } from '../../../lib/breweryTasks'
-import type { CompletedDisplay, RosterEntry, TaskBoardData, TaskCardData } from '../../../lib/types'
+import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData } from '../../../lib/types'
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
+import DailyItemsDialog from './DailyItemsDialog'
 import DayColumn from './DayColumn'
 import FinishElsewhereDialog from './FinishElsewhereDialog'
 import FutureList from './FutureList'
@@ -50,7 +51,8 @@ const WIDE_BOARD_PX = 1200
  */
 export default function TaskBoard() {
   const qc = useQueryClient()
-  const { user } = useAuth()
+  const { user, breweryTasksManage } = useAuth()
+  const canEditDaily = breweryTasksManage && user?.kind !== 'device'
   const [params, setParams] = useSearchParams()
   const [span, setSpan] = useState<Span>(readSpan)
   const [hideCompleted, setHideCompleted] = useState(readHideCompleted)
@@ -112,14 +114,21 @@ export default function TaskBoard() {
   const [changingDay, setChangingDay] = useState<TaskCardData | null>(null)
   const [deleting, setDeleting] = useState<TaskCardData | null>(null)
   const [movingAll, setMovingAll] = useState(false)
+  const [editingDaily, setEditingDaily] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY] })
   const fail = (err: unknown) => setToast({ message: taskError(err), error: true })
+  // Optimistic writes still waiting on the server. The board refetches when the
+  // last one settles: a refetch between two quick ticks would undo the second.
+  const pending = useRef(0)
 
   /** A write with an optional optimistic change to the cached board, rolled back on failure. */
   const run = async (write: () => Promise<unknown>, optimistic?: (b: TaskBoardData) => TaskBoardData) => {
     const queryKey = [BOARD_KEY, from, to]
+    pending.current += 1
+    // Cancels a fetch in flight at once (no await, so the change shows on this click).
+    if (optimistic) void qc.cancelQueries({ queryKey })
     const before = qc.getQueryData<TaskBoardData>(queryKey)
     if (before && optimistic) qc.setQueryData(queryKey, optimistic(before))
     try {
@@ -130,7 +139,8 @@ export default function TaskBoard() {
       fail(err)
       return false
     } finally {
-      refresh()
+      pending.current -= 1
+      if (pending.current === 0) refresh()
     }
   }
 
@@ -212,6 +222,41 @@ export default function TaskBoard() {
     } else {
       setFinishing(card)
     }
+  }
+
+  // ── Daily card ─────────────────────────────────────────────────────
+
+  /** Tick or untick one check, shown at once and rolled back if refused. */
+  const toggleDaily = (date: string, item: DailyCardItem) => {
+    const checked = !item.checked
+    const optimistic = (b: TaskBoardData): TaskBoardData => ({
+      ...b,
+      days: b.days.map((d) => {
+        if (d.date !== date) return d
+        const done = d.daily.done + (checked ? 1 : -1)
+        return {
+          ...d,
+          daily: {
+            ...d.daily,
+            done,
+            // A past day counts an item added since only once it's ticked; the refetch settles it.
+            total: Math.max(d.daily.total, done),
+            items: d.daily.items.map((i) =>
+              i.daily_item_id === item.daily_item_id
+                ? {
+                    ...i,
+                    checked,
+                    completed_by_name: checked ? (user?.name ?? null) : null,
+                    completed_at: checked ? new Date().toISOString() : null,
+                  }
+                : i,
+            ),
+          },
+        }
+      }),
+    })
+    const path = `/api/brewery/daily_checks/${date}/${item.daily_item_id}`
+    run(() => (checked ? api.put(path) : api.delete(path)), optimistic)
   }
 
   // ── Menu ───────────────────────────────────────────────────────────
@@ -313,6 +358,8 @@ export default function TaskBoard() {
         openCount={openCount(day.date)}
         slot={slot}
         onAdd={(date) => setDialog({ mode: { kind: 'add', dueOn: date }, n: Date.now() })}
+        onDailyToggle={toggleDaily}
+        onEditDailyItems={canEditDaily ? () => setEditingDaily(true) : undefined}
       />
     )
   }
@@ -376,6 +423,7 @@ export default function TaskBoard() {
         onRange={showRange}
         onFilter={setFilter}
         onHideCompleted={toggleHide}
+        onEditDailyItems={canEditDaily ? () => setEditingDaily(true) : undefined}
       />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}
@@ -430,6 +478,7 @@ export default function TaskBoard() {
           onDelete={setDeleting}
         />
       )}
+      {editingDaily && <DailyItemsDialog onClose={() => setEditingDaily(false)} onChanged={refresh} />}
       {finishing && (
         <FinishElsewhereDialog
           key={finishing.key}

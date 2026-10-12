@@ -2,7 +2,7 @@ import { Box, Button, Chip, Paper, Typography } from '@mui/material'
 import { Add } from '@mui/icons-material'
 import type { ContainerSlot } from '../../../components/dnd/SortableLists'
 import { formatTaskDay } from '../../../lib/breweryTasks'
-import type { BoardDay } from '../../../lib/types'
+import type { BoardDay, DailyCardItem } from '../../../lib/types'
 import DailyCard from './DailyCard'
 import DayHeader from './DayHeader'
 
@@ -12,10 +12,12 @@ interface Props {
   openCount: number
   slot: ContainerSlot
   onAdd: (date: string) => void
+  onDailyToggle: (date: string, item: DailyCardItem) => void
+  onEditDailyItems?: () => void
 }
 
 /** D38 §3.8 day column: title and open count, header, Daily card, tasks, "+ Add a task". */
-export default function DayColumn({ day, today, openCount, slot: { setNodeRef, isOver, items }, onAdd }: Props) {
+export default function DayColumn({ day, today, openCount, slot: { setNodeRef, isOver, items }, onAdd, onDailyToggle, onEditDailyItems }: Props) {
   const isToday = day.date === today
   return (
     <Paper
@@ -41,7 +43,7 @@ export default function DayColumn({ day, today, openCount, slot: { setNodeRef, i
         <Chip size="small" label={openCount} data-testid={`day-count-${day.date}`} aria-label={`${openCount} open`} sx={{ height: 20 }} />
       </Box>
       <DayHeader date={day.date} header={day.header} />
-      <DailyCard daily={day.daily} today={today} />
+      <DailyCard daily={day.daily} today={today} onToggle={onDailyToggle} onEditItems={onEditDailyItems} />
       <Box
         ref={setNodeRef}
         data-testid={`day-list-${day.date}`}

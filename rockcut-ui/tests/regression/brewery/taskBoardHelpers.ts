@@ -25,7 +25,7 @@ export interface ApiCard extends ApiTask {
 
 export interface ApiBoard {
   today: string
-  days: { date: string; cards: ApiCard[]; header: unknown }[]
+  days: { date: string; cards: ApiCard[]; header: unknown; daily: ApiDailyCard }[]
   unfinished: ApiCard[]
   future: ApiCard[]
 }
@@ -152,3 +152,60 @@ export const dayLabel = (key: string) =>
   new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })
     .format(new Date(`${key}T12:00:00Z`))
     .replace(',', '')
+
+// ── Daily card (S24–S31) ─────────────────────────────────────────────
+
+export interface ApiDailyItem {
+  id: number
+  name: string
+  position: number
+  active: boolean
+}
+
+export interface ApiDailyCard {
+  date: string
+  done: number
+  total: number
+  items: { daily_item_id: number; name: string; active: boolean; checked: boolean; completed_by_name: string | null }[]
+}
+
+/** The four items every Daily card starts with, in order. */
+export const DEFAULT_DAILY_ITEMS = ['Backups', 'Gravities', 'Temps', 'Pressures']
+
+export async function dailyItems(api: APIRequestContext): Promise<ApiDailyItem[]> {
+  const res = await api.get('/api/brewery/daily_items')
+  expect(res.status(), await res.text()).toBe(200)
+  return (await res.json()).data
+}
+
+export async function dailyCard(api: APIRequestContext, date: string): Promise<ApiDailyCard> {
+  return (await getBoard(api, date, date)).days[0].daily
+}
+
+/** Tick (or untick) one Daily check through the API. */
+export async function setCheck(api: APIRequestContext, date: string, itemId: number, checked: boolean) {
+  const path = `/api/brewery/daily_checks/${date}/${itemId}`
+  const res = checked ? await api.put(path) : await api.delete(path)
+  expect([200, 204], await res.text()).toContain(res.status())
+}
+
+/**
+ * Put the Daily items back: the four defaults by their ids, with their names,
+ * active, in order; every other active item retired.
+ */
+export async function restoreDailyItems(defaults: ApiDailyItem[]) {
+  const api = await apiAs('breweryMgr')
+  for (const item of await dailyItems(api)) {
+    const original = defaults.find((d) => d.id === item.id)
+    if (!original) {
+      const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })
+      expect(res.status(), await res.text()).toBe(200)
+    } else if (item.name !== original.name) {
+      const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { name: original.name } })
+      expect(res.status(), await res.text()).toBe(200)
+    }
+  }
+  const res = await api.put('/api/brewery/daily_items/order', { data: { ids: defaults.map((d) => d.id) } })
+  expect(res.status(), await res.text()).toBe(200)
+  expect((await dailyItems(api)).map((i) => i.name)).toEqual(DEFAULT_DAILY_ITEMS)
+}

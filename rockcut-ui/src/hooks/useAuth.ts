@@ -20,6 +20,7 @@ interface AuthState {
   sharedDevices: boolean
   staffCodes: boolean
   beerBoardManage: boolean
+  breweryTasksManage: boolean
   isAuthenticated: boolean
   bootstrapped: boolean
   isLoading: boolean
@@ -67,6 +68,7 @@ const useAuth = create<AuthState>((set, get) => ({
   sharedDevices: false,
   staffCodes: false,
   beerBoardManage: false,
+  breweryTasksManage: false,
   isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
   bootstrapped: false,
   isLoading: false,
@@ -112,7 +114,7 @@ const useAuth = create<AuthState>((set, get) => ({
       void signOutOnServer(token)
     }
     localStorage.removeItem(TOKEN_KEY)
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, isAuthenticated: false })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, breweryTasksManage: false, isAuthenticated: false })
   },
 
   loadMe: (opts) => {
@@ -143,6 +145,7 @@ const useAuth = create<AuthState>((set, get) => ({
           sharedDevices: !!data.shared_devices,
           staffCodes: !!data.staff_codes,
           beerBoardManage: !!data.beer_board_manage,
+          breweryTasksManage: !!data.brewery_tasks_manage,
           isAuthenticated: true,
           bootstrapped: true,
           unreachable: false,
@@ -165,6 +168,7 @@ const useAuth = create<AuthState>((set, get) => ({
           sharedDevices: false,
           staffCodes: false,
           beerBoardManage: false,
+          breweryTasksManage: false,
           isAuthenticated: false,
           bootstrapped: true,
           unreachable: false,
@@ -206,7 +210,7 @@ const useAuth = create<AuthState>((set, get) => ({
   // "Sign in as me" on a tablet: keep the device token aside and show the login form.
   startPersonalSignIn: () => {
     setDeviceTokenAside()
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, isAuthenticated: false, error: null })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, breweryTasksManage: false, isAuthenticated: false, error: null })
   },
 
   // Back to the tablet's session: revoke the personal token on the server

@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Box, Button, FormControlLabel, IconButton, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
-import { ChevronLeft, ChevronRight } from '@mui/icons-material'
+import { Box, Button, FormControlLabel, IconButton, Menu, MenuItem, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
+import { ChevronLeft, ChevronRight, MoreVert } from '@mui/icons-material'
 import { rangeError, type Span, type TaskFilter } from '../../../lib/breweryTasks'
 
 interface Props {
@@ -17,11 +17,17 @@ interface Props {
   onRange: (from: string, to: string) => void
   onFilter: (filter: TaskFilter) => void
   onHideCompleted: (on: boolean) => void
+  /** Edit Daily items (managers and owners). Without it there's no ⋮ menu. */
+  onEditDailyItems?: () => void
 }
 
-/** D38 §3.8 toolbar: Previous / Today / Next, 1 week / 2 weeks, the date range, the filter, Hide completed. */
+/**
+ * D38 §3.8 toolbar: Previous / Today / Next, 1 week / 2 weeks, the date
+ * range, the filter, Hide completed, and the ⋮ menu for managers.
+ */
 export default function BoardToolbar(props: Props) {
   const { from, to, span, filter, hideCompleted } = props
+  const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, mb: 2 }} data-testid="board-toolbar">
       <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -71,6 +77,24 @@ export default function BoardToolbar(props: Props) {
         }
         label="Hide completed"
       />
+      {props.onEditDailyItems && (
+        <>
+          <IconButton aria-label="Board menu" onClick={(e) => setMenuAnchor(e.currentTarget)} data-testid="board-menu" sx={{ ml: 'auto' }}>
+            <MoreVert />
+          </IconButton>
+          <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
+            <MenuItem
+              onClick={() => {
+                setMenuAnchor(null)
+                props.onEditDailyItems?.()
+              }}
+              data-testid="board-menu-daily-items"
+            >
+              Edit Daily items
+            </MenuItem>
+          </Menu>
+        </>
+      )}
     </Box>
   )
 }
