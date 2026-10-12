@@ -653,6 +653,43 @@ export interface DailyItem {
   active: boolean
 }
 
+/** One Brewery task board change-log entry (D38 History). Daily entries have no task_id. */
+export interface TaskEvent {
+  id: number
+  task_id: number | null
+  action:
+    | 'created'
+    | 'edited'
+    | 'assigned'
+    | 'unassigned'
+    | 'moved'
+    | 'completed'
+    | 'uncompleted'
+    | 'deleted'
+    | 'daily_ticked'
+    | 'daily_unticked'
+    | 'item_added'
+    | 'item_renamed'
+    | 'item_retired'
+    | 'item_reordered'
+  /** The task's title (or the Daily item's name) when it happened. */
+  title: string
+  actor_id: number | null
+  actor_name: string | null
+  on_shared_device: boolean
+  detail: Record<string, unknown>
+  inserted_at: string
+}
+
+/** A page of History, with names for the user and Daily item ids its details mention. */
+export interface TaskEventPage {
+  data: TaskEvent[]
+  names: { users: Record<string, string>; items: Record<string, string> }
+  page: number
+  total: number
+  per_page: number
+}
+
 export interface DailyCardData {
   date: string
   done: number

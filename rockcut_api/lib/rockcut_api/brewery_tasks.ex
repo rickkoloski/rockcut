@@ -678,7 +678,10 @@ defmodule RockcutApi.BreweryTasks do
   @doc """
   The change log, newest first, #{@history_page_size} per page (1-based),
   optionally for one task. Actor and device preloaded. Returns
-  `%{events: [...], page: n, total: count}`.
+  `%{events: [...], page: n, total: count, names: %{users: .., items: ..}}`:
+  `names` maps the user ids (assignees) and Daily item ids (a reorder) that
+  the page's `detail`s mention to their current names, so History reads in
+  words. Someone or something since deleted is simply missing.
   """
   def list_events(task_id \\ nil, page \\ 1) do
     page = max(page, 1)
@@ -698,7 +701,33 @@ defmodule RockcutApi.BreweryTasks do
           preload: [:actor, :device]
       )
 
-    %{events: events, page: page, total: Repo.aggregate(base, :count)}
+    %{events: events, page: page, total: Repo.aggregate(base, :count), names: event_names(events)}
+  end
+
+  @user_detail_actions ~w(created assigned unassigned)
+
+  defp event_names(events) do
+    user_ids =
+      events
+      |> Enum.filter(&(&1.action in @user_detail_actions))
+      |> Enum.flat_map(&[&1.detail["assignee_id"], &1.detail["from"], &1.detail["to"]])
+      |> Enum.filter(&is_integer/1)
+      |> Enum.uniq()
+
+    item_ids =
+      events
+      |> Enum.filter(&(&1.action == "item_reordered"))
+      |> Enum.flat_map(&((&1.detail["from"] || []) ++ (&1.detail["to"] || [])))
+      |> Enum.filter(&is_integer/1)
+      |> Enum.uniq()
+
+    %{
+      users:
+        Repo.all(from u in User, where: u.id in ^user_ids, select: {u.id, u.name}) |> Map.new(),
+      items:
+        Repo.all(from i in DailyItem, where: i.id in ^item_ids, select: {i.id, i.name})
+        |> Map.new()
+    }
   end
 
   ## Lists and positions

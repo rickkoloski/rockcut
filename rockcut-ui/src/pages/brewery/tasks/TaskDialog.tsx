@@ -18,13 +18,15 @@ interface Props {
   onClose: () => void
   onSaved: () => void
   onDelete: (card: TaskCardData) => void
+  /** This task's History (managers and owners). */
+  onHistory?: (card: TaskCardData) => void
 }
 
 /**
  * D38 §3.8 add/edit dialog: title, notes, assignee and Day (or No day,
  * Future). Mount it with a `key` per task so it starts from that task.
  */
-export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onDelete }: Props) {
+export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onDelete, onHistory }: Props) {
   const card = mode.kind === 'edit' ? mode.card : null
   const [title, setTitle] = useState(card?.title ?? '')
   const [notes, setNotes] = useState(card?.notes ?? '')
@@ -83,9 +85,16 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onD
       testId="task-dialog"
       secondaryAction={
         card && (
-          <Button color="error" onClick={() => onDelete(card)} disabled={saving} data-testid="task-dialog-delete">
-            Delete
-          </Button>
+          <>
+            <Button color="error" onClick={() => onDelete(card)} disabled={saving} data-testid="task-dialog-delete">
+              Delete
+            </Button>
+            {onHistory && (
+              <Button onClick={() => onHistory(card)} disabled={saving} data-testid="task-dialog-history">
+                History
+              </Button>
+            )}
+          </>
         )
       }
     >

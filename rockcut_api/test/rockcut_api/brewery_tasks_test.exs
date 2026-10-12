@@ -492,6 +492,17 @@ defmodule RockcutApi.BreweryTasksTest do
 
       assert %{events: [], page: 2} = BreweryTasks.list_events(nil, 2)
     end
+
+    test "names the assignees and reordered Daily items the page mentions", %{brewer: brewer} do
+      task = add!(brewer, "A", @today, brewer.id)
+      {:ok, _} = BreweryTasks.update(task, %{assignee_id: nil}, brewer)
+      ids = BreweryTasks.list_items() |> Enum.map(& &1.id)
+      {:ok, _} = BreweryTasks.order_items(Enum.reverse(ids), brewer)
+
+      %{names: %{users: users, items: items}} = BreweryTasks.list_events()
+      assert users == %{brewer.id => brewer.name}
+      assert items |> Map.keys() |> Enum.sort() == Enum.sort(ids)
+    end
   end
 
   describe "unassign_if_ineligible/2 (S49)" do

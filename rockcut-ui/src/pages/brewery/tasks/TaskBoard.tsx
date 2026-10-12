@@ -32,6 +32,7 @@ import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskC
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
+import HistoryDialog from './HistoryDialog'
 import DayColumn from './DayColumn'
 import FinishElsewhereDialog from './FinishElsewhereDialog'
 import FutureList from './FutureList'
@@ -52,7 +53,8 @@ const WIDE_BOARD_PX = 1200
 export default function TaskBoard() {
   const qc = useQueryClient()
   const { user, breweryTasksManage } = useAuth()
-  const canEditDaily = breweryTasksManage && user?.kind !== 'device'
+  // History and Edit Daily items (Brewery managers and owners, never a device).
+  const canManage = breweryTasksManage && user?.kind !== 'device'
   const [params, setParams] = useSearchParams()
   const [span, setSpan] = useState<Span>(readSpan)
   const [hideCompleted, setHideCompleted] = useState(readHideCompleted)
@@ -115,6 +117,8 @@ export default function TaskBoard() {
   const [deleting, setDeleting] = useState<TaskCardData | null>(null)
   const [movingAll, setMovingAll] = useState(false)
   const [editingDaily, setEditingDaily] = useState(false)
+  // History: the whole board's, or one task's (from its dialog).
+  const [history, setHistory] = useState<{ task?: { id: number; title: string } } | null>(null)
   const [busy, setBusy] = useState(false)
 
   const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY] })
@@ -359,7 +363,7 @@ export default function TaskBoard() {
         slot={slot}
         onAdd={(date) => setDialog({ mode: { kind: 'add', dueOn: date }, n: Date.now() })}
         onDailyToggle={toggleDaily}
-        onEditDailyItems={canEditDaily ? () => setEditingDaily(true) : undefined}
+        onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
       />
     )
   }
@@ -423,7 +427,8 @@ export default function TaskBoard() {
         onRange={showRange}
         onFilter={setFilter}
         onHideCompleted={toggleHide}
-        onEditDailyItems={canEditDaily ? () => setEditingDaily(true) : undefined}
+        onHistory={canManage ? () => setHistory({}) : undefined}
+        onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
       />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}
@@ -476,9 +481,11 @@ export default function TaskBoard() {
             refresh()
           }}
           onDelete={setDeleting}
+          onHistory={canManage ? (card) => setHistory({ task: { id: card.id, title: card.title } }) : undefined}
         />
       )}
       {editingDaily && <DailyItemsDialog onClose={() => setEditingDaily(false)} onChanged={refresh} />}
+      {history && <HistoryDialog task={history.task} onClose={() => setHistory(null)} />}
       {finishing && (
         <FinishElsewhereDialog
           key={finishing.key}

@@ -96,10 +96,13 @@ defmodule RockcutApiWeb.BreweryTaskController do
     with :ok <- allow(conn, :history) do
       task_id = int_param(params["task_id"], nil)
       page = max(int_param(params["page"], 1), 1)
-      %{events: events, page: page, total: total} = BreweryTasks.list_events(task_id, page)
+
+      %{events: events, page: page, total: total, names: names} =
+        BreweryTasks.list_events(task_id, page)
 
       json(conn, %{
         data: Enum.map(events, &brewery_task_event/1),
+        names: names,
         page: page,
         total: total,
         per_page: BreweryTasks.history_page_size()

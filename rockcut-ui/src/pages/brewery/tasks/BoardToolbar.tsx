@@ -17,7 +17,9 @@ interface Props {
   onRange: (from: string, to: string) => void
   onFilter: (filter: TaskFilter) => void
   onHideCompleted: (on: boolean) => void
-  /** Edit Daily items (managers and owners). Without it there's no ⋮ menu. */
+  /** History (managers and owners). */
+  onHistory?: () => void
+  /** Edit Daily items (managers and owners). Without either there's no ⋮ menu. */
   onEditDailyItems?: () => void
 }
 
@@ -77,21 +79,34 @@ export default function BoardToolbar(props: Props) {
         }
         label="Hide completed"
       />
-      {props.onEditDailyItems && (
+      {(props.onHistory || props.onEditDailyItems) && (
         <>
           <IconButton aria-label="Board menu" onClick={(e) => setMenuAnchor(e.currentTarget)} data-testid="board-menu" sx={{ ml: 'auto' }}>
             <MoreVert />
           </IconButton>
           <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={() => setMenuAnchor(null)}>
-            <MenuItem
-              onClick={() => {
-                setMenuAnchor(null)
-                props.onEditDailyItems?.()
-              }}
-              data-testid="board-menu-daily-items"
-            >
-              Edit Daily items
-            </MenuItem>
+            {props.onHistory && (
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null)
+                  props.onHistory?.()
+                }}
+                data-testid="board-menu-history"
+              >
+                History
+              </MenuItem>
+            )}
+            {props.onEditDailyItems && (
+              <MenuItem
+                onClick={() => {
+                  setMenuAnchor(null)
+                  props.onEditDailyItems?.()
+                }}
+                data-testid="board-menu-daily-items"
+              >
+                Edit Daily items
+              </MenuItem>
+            )}
           </Menu>
         </>
       )}

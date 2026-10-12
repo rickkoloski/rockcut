@@ -1,6 +1,6 @@
 import parseApiError from './parseApiError'
 import { TZ, addDaysKey, localDayKey } from './datetime'
-import type { DayHeaderData, HeaderShift, TaskCardData } from './types'
+import type { DayHeaderData, HeaderShift, TaskCardData, TaskEvent, TaskEventPage } from './types'
 
 // D38: Brewery task board helpers shared by the board, its dialogs and the specs.
 
@@ -110,6 +110,85 @@ export function dailyItemError(err: unknown): string {
   const name = data?.errors?.name
   if (name?.length) return name[0].replace(/^./, (c) => c.toUpperCase())
   return taskError(err)
+}
+
+// ── History (spec §3.8 "Change log") ──
+
+/** "Sun 10/11, 8:12p" in Colorado time. */
+export const formatEventTime = (iso: string) => `${formatTaskDay(localDayKey(iso))}, ${shortTime(iso)}`
+
+/** "Kate Kettle", or "Kate Kettle on Shared Device" (D40's tablet). */
+export const eventActor = (ev: TaskEvent) => `${ev.actor_name ?? 'Someone'}${ev.on_shared_device ? ' on Shared Device' : ''}`
+
+const dayOrFuture = (key: unknown) => (typeof key === 'string' ? formatTaskDay(key) : 'Future')
+
+/**
+ * One change-log entry in plain words, old → new: "Moved Package FV6 from
+ * Mon 10/12 to Wed 10/14", "Completed Carb FV3 on Wed 10/14, shown on both
+ * days", "Ticked Temps for Sun 10/11".
+ */
+export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): string {
+  const d = ev.detail
+  const t = ev.title
+  const person = (id: unknown) => (id == null ? null : (names.users[String(id)] ?? 'someone no longer here'))
+  switch (ev.action) {
+    case 'created': {
+      const who = person(d.assignee_id)
+      return `Added ${t} to ${dayOrFuture(d.due_on)}${who ? `, assigned to ${who}` : ''}`
+    }
+    case 'edited': {
+      const from = (d.from ?? {}) as { title?: string; notes?: string | null }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null }
+      const parts: string[] = []
+      if ('title' in to) parts.push(`Renamed ${from.title} to ${to.title}`)
+      if ('notes' in to) parts.push(`${to.notes ? (from.notes ? 'Changed' : 'Added') : 'Removed'} the notes on ${t}`)
+      return parts.join('; ') || `Edited ${t}`
+    }
+    case 'assigned': {
+      const from = person(d.from)
+      const to = person(d.to)
+      if (from && to) return `Reassigned ${t} from ${from} to ${to}`
+      if (to) return `Assigned ${t} to ${to}`
+      return `Unassigned ${t}${from ? ` (was ${from})` : ''}`
+    }
+    case 'unassigned':
+      return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${d.reason === 'left_brewery' ? ' (left the Brewery)' : ''}`
+    case 'moved': {
+      const from = (d.from ?? {}) as { due_on?: string | null; position?: number }
+      const to = (d.to ?? {}) as { due_on?: string | null; position?: number }
+      if (from.due_on !== to.due_on) return `Moved ${t} from ${dayOrFuture(from.due_on)} to ${dayOrFuture(to.due_on)}`
+      return `Moved ${t} from position ${from.position} to ${to.position} on ${dayOrFuture(to.due_on)}`
+    }
+    case 'completed': {
+      const on = dayOrFuture(d.completed_on)
+      if (d.due_on == null) return `Completed ${t} from Future, on ${on}`
+      if (d.due_on === d.completed_on) return `Completed ${t}`
+      if (d.display === 'both') return `Completed ${t} on ${on}, shown on both days`
+      if (d.display === 'completed_day') return `Completed ${t}, shown on ${on} (planned ${dayOrFuture(d.due_on)})`
+      return `Completed ${t} on ${on}, shown on ${dayOrFuture(d.due_on)}`
+    }
+    case 'uncompleted':
+      return `Marked ${t} not done${d.completed_on ? ` (was done ${dayOrFuture(d.completed_on)})` : ''}`
+    case 'deleted':
+      return `Deleted ${t} (${dayOrFuture(d.due_on)})`
+    case 'daily_ticked':
+      return `Ticked ${t} for ${dayOrFuture(d.on_date)}`
+    case 'daily_unticked':
+      return `Unticked ${t} for ${dayOrFuture(d.on_date)}`
+    case 'item_added':
+      return `Added ${t} to the Daily items`
+    case 'item_renamed':
+      return `Renamed the Daily item ${d.from} to ${d.to}`
+    case 'item_retired':
+      return `Retired the Daily item ${t}`
+    case 'item_reordered': {
+      const item = (id: unknown) => names.items[String(id)] ?? '?'
+      const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(item).join(', ') : '')
+      return `Reordered the Daily items from ${list(d.from)} to ${list(d.to)}`
+    }
+    default:
+      return `${ev.action} ${t}`
+  }
 }
 
 // ── Per-browser preferences (spec §3.8). Storage can be missing or throw. ──

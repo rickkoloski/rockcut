@@ -245,7 +245,7 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
 
     test "history: newest first, with names, filterable to one task", %{p: p} do
       a = add!(p["brewer1"], %{title: "First"})
-      _b = add!(p["breweryMgr"], %{title: "Second"})
+      _b = add!(p["breweryMgr"], %{title: "Second", assignee_id: p["brewer1"].id})
       call(p["brewer1"], :delete, "/api/brewery/tasks/#{a["id"]}")
 
       body = call(p["breweryMgr"], :get, "/api/brewery/tasks/history") |> json_response(200)
@@ -256,6 +256,12 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
                %{"action" => "created", "title" => "Second", "actor_name" => "Morgan Mash"},
                %{"action" => "created", "on_shared_device" => false}
              ] = body["data"]
+
+      # The assignee in "Second"'s detail, by name.
+      assert body["names"] == %{
+               "users" => %{"#{p["brewer1"].id}" => "Jake Brewer"},
+               "items" => %{}
+             }
 
       assert %{"data" => [%{"action" => "deleted"}, %{"action" => "created"}], "total" => 2} =
                call(p["owner"], :get, "/api/brewery/tasks/history", %{task_id: a["id"]})
