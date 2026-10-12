@@ -59,7 +59,11 @@ the machine may have slept, so check the servers and herdr panes first.
    commit (interrupted run or lost connection), ask it to rerun the brewery
    folder twice and commit `test: D38 drag helper waits for the drop spot`.
    Review the diff.
-3. **Push**, then **DEV Playwright run 3** against the deployed `fcaba29`.
+3. **Already done:** Task 11 committed (`d0831e7`, test-only) and **pushed**.
+   A DEV run 3 was started early by mistake and **stopped** after about 113
+   tests (Matt wanted DEV left alone until he's back online); DEV was
+   reseeded after. **Wait for Matt's "continue"**, then run **DEV Playwright
+   run 3** against the deployed `fcaba29`.
    It's a test-only change, so no redeploy is needed. Reseed with
    `reset_synthetic()` before and after. Run it in its own herdr tab.
 4. If green, the **DEV gate verdict** goes in the PR (SHA tested, run
