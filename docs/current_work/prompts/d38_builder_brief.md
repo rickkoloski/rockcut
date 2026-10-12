@@ -234,3 +234,66 @@ shows headers, cards, Unfinished, Future and Daily cards for this week.
 Commit step 3 and step 4 separately (`feat: D38 step 3 — board read model
 and routes`, `feat: D38 step 4 — synthetic seed`), then **stop** and reply
 as in Task 1. Don't start step 5.
+
+---
+
+## Task 4: plan step 5, the shared drag layer (+ a seed fix)
+
+**Lead answers to your step 3/4 questions** (steps 3–4 accepted, including
+deviations 1–8):
+1. **Switch the synthetic seed's week to the Colorado date**
+   (`BreweryTasks.today()` or a shared helper). It's a real bug on DEV,
+   which runs in UTC. Commit it on its own as `fix: synthetic seed uses the
+   Colorado date for its week`. Add a test that pins a Sunday 7 pm Colorado
+   time and checks the seeded shifts land in that week. Check that no
+   existing Playwright spec depends on the UTC behavior. Run the
+   `scheduler` folder to be sure; the UI server is up (below).
+2. **Daily 0/0 before deploy day on prod:** fine, no change.
+
+**Servers:** the lead runs the API (:4002) and the UI dev server (:5174).
+Don't start or stop them.
+
+### Step 5: `@dnd-kit`, `src/components/dnd/` and Vitest
+
+As the plan's "Changes → UI → The shared drag layer" describes:
+- **Dependencies,** exact versions (`pnpm add -E`), lockfile committed:
+  `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities`. Dev only:
+  `vitest`. Use current stable releases at least two weeks old. Say which
+  versions in your reply. Add a `test:unit` script (`vitest run`).
+  Check that `pnpm install --frozen-lockfile` still works (the UI Docker
+  build uses it) and that `pnpm exec vite build` passes.
+- **`SortableLists.tsx`, `DropTarget.tsx`, `moveModel.ts`**, as the plan
+  describes: the `onMove({ itemId, fromContainer, toContainer, beforeId })`
+  callback, `isLocked(itemId)`, the three sensors (mouse 8px, touch 250ms
+  delay with 5px tolerance, keyboard), `DragOverlay`, auto-scroll, and
+  plain-words screen-reader announcements. Item ids are strings (the board
+  uses card keys such as `"12:2026-10-14"` and `"12:unfinished"`).
+- **Rejected moves:** callers make the optimistic update with
+  `applyMove`, and roll back by restoring the previous containers.
+  Provide a small hook for this (`useOptimisticLists` or similar) so the
+  board and the Daily items dialog don't each write it.
+- **No Brewery code in `components/dnd/`.** Add the `no-restricted-imports`
+  lint rule scoped to that folder.
+- **Vitest:** `moveModel.test.ts` covers moving within a list, across
+  lists, to the end, onto an empty list, with a locked item, a no-op move,
+  and `beforeIdAt` at each edge.
+- **Trial page:** to settle sensors and auto-scroll, mount a temporary
+  page with about 10 lists of 8 items in a horizontally and vertically
+  scrolling grid (the board's real shape), at `/dev/dnd-trial` behind
+  `import.meta.env.DEV`. Check mouse drag, keyboard moves, Escape, a
+  rejected move snapping back (fail every third move on purpose), and
+  auto-scroll at the grid's edges, with Playwright MCP or a throwaway
+  script. **Delete the trial page in the same commit**, or in a separate
+  commit before you stop, and say which.
+
+**Done means:**
+- `pnpm test:unit`, `npx tsc --noEmit -p tsconfig.app.json`,
+  `pnpm exec vite build` pass;
+- `pnpm lint` adds no new errors (count the existing ones first);
+- `MIX_ENV=test mix test` still passes (for the seed fix);
+- commits: the seed fix, then `feat: D38 step 5 — shared drag layer
+  (@dnd-kit) + Vitest`. Then **stop** and reply as in Task 1, plus the
+  trial findings (anything about touch or auto-scroll the board should
+  know).
+
+Don't start step 6.
