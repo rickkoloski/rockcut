@@ -13,6 +13,7 @@ defmodule RockcutApiWeb.BreweryErrors do
     display_required: "Choose where the finished task should show",
     future_day: "Daily checks can't be ticked for a future day",
     retired: "That Daily item was retired",
+    not_yet_added: "That Daily item wasn't on the list that day",
     locked: "A finished task can't be moved",
     too_many_items: "The Daily card holds at most #{BreweryTasks.max_items()} items",
     invalid_order: "The list changed. Reload and try again",

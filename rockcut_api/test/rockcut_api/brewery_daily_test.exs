@@ -191,36 +191,59 @@ defmodule RockcutApi.BreweryDailyTest do
   end
 
   describe "daily_cards/2: which items a day counts" do
-    test "a new item shows on past days unticked, but only counts from the day it was added",
+    test "a new item doesn't show on days before it was added (G4)",
          %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, do_item} = BreweryTasks.create_item(%{name: "DO"}, mgr)
-      # Added Tue 10/13 at noon Colorado.
-      do_item
-      |> Ecto.Changeset.change(inserted_at: ~U[2026-10-13 18:00:00Z])
-      |> Repo.update!()
+      do_item = added_tuesday!("DO", mgr)
 
-      for name <- ~w(Backups Gravities Temps Pressures),
+      for name <- ~w(Backups Gravities Pressures),
           do: {:ok, _} = BreweryTasks.tick(@mon, items[name], brewer, @today)
 
       cards = BreweryTasks.daily_cards(Date.range(@mon, @thu), @today)
 
-      # Monday: DO shows (unticked) but the card is still 4/4.
-      assert %{done: 4, total: 4, items: mon_rows} = cards[@mon]
-      assert Enum.map(mon_rows, & &1.item.name) == ~w(Backups Gravities Temps Pressures DO)
-      assert %{done: 0, total: 5} = cards[@tue]
-      assert %{done: 0, total: 5} = cards[@today]
-      assert %{done: 0, total: 5} = cards[@thu]
+      # Monday: DO isn't there; the card is 3/4 over four rows.
+      assert %{done: 3, total: 4, items: mon_rows} = cards[@mon]
+      assert Enum.map(mon_rows, & &1.item.name) == ~w(Backups Gravities Temps Pressures)
+      # From Tuesday on (and on future days) it's on the card.
+      for day <- [@tue, @today, @thu] do
+        assert %{done: 0, total: 5, items: rows} = cards[day]
+        assert Enum.any?(rows, &(&1.item.id == do_item.id))
+      end
     end
 
-    test "a new item ticked on an earlier day counts there", %{brewer: brewer, mgr: mgr} do
+    test "a day before an item was added can't be ticked (G4)",
+         %{brewer: brewer, mgr: mgr} do
+      do_item = added_tuesday!("DO", mgr)
+
+      assert {:error, :not_yet_added} = BreweryTasks.tick(@mon, do_item, brewer, @today)
+      assert %{done: 0, total: 4} = card(@mon)
+      # The day it was added is fine, and so is today.
+      assert {:ok, _} = BreweryTasks.tick(@tue, do_item, brewer, @today)
+      assert {:ok, _} = BreweryTasks.tick(@today, do_item, brewer, @today)
+      assert %{done: 1, total: 5} = card(@tue)
+    end
+
+    test "an item added today shows and can be ticked today", %{brewer: brewer, mgr: mgr} do
       {:ok, do_item} = BreweryTasks.create_item(%{name: "DO"}, mgr)
+      today = BreweryTasks.today()
 
-      do_item =
-        do_item
-        |> Ecto.Changeset.change(inserted_at: ~U[2026-10-13 18:00:00Z])
-        |> Repo.update!()
+      assert %{done: 0, total: 5} = BreweryTasks.daily_cards([today])[today]
+      assert {:ok, _} = BreweryTasks.tick(today, do_item, brewer)
+      assert %{done: 1, total: 5} = BreweryTasks.daily_cards([today])[today]
+    end
 
-      {:ok, _} = BreweryTasks.tick(@mon, do_item, brewer, @today)
+    test "a check from before an item was added still shows and counts",
+         %{brewer: brewer, mgr: mgr} do
+      do_item = added_tuesday!("DO", mgr)
+
+      # Written before G4 refused it.
+      Repo.insert!(%DailyCheck{
+        department_id: do_item.department_id,
+        on_date: @mon,
+        daily_item_id: do_item.id,
+        completed_by_id: brewer.id,
+        completed_at: ~U[2026-10-14 15:00:00Z]
+      })
+
       assert %{done: 1, total: 5} = card(@mon)
     end
 
@@ -238,6 +261,12 @@ defmodule RockcutApi.BreweryDailyTest do
     test "an empty range" do
       assert BreweryTasks.daily_cards([], @today) == %{}
     end
+  end
+
+  # Added Tue 10/13 at noon Colorado.
+  defp added_tuesday!(name, mgr) do
+    {:ok, item} = BreweryTasks.create_item(%{name: name}, mgr)
+    item |> Ecto.Changeset.change(inserted_at: ~U[2026-10-13 18:00:00Z]) |> Repo.update!()
   end
 
   defp card(day), do: BreweryTasks.daily_cards([day], @today)[day]

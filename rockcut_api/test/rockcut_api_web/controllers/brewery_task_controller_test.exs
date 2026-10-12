@@ -305,6 +305,30 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
                call(mgr, :put, "/api/brewery/daily_items/order", %{ids: [1]})
                |> json_response(422)
     end
+
+    test "ticking a day before the item was added is a 422 (G4)", %{p: p, today: today} do
+      # The defaults have been on the card all year.
+      RockcutApi.Repo.update_all(RockcutApi.BreweryTasks.DailyItem,
+        set: [inserted_at: ~U[2026-01-01 12:00:00Z]]
+      )
+
+      created =
+        call(p["breweryMgr"], :post, "/api/brewery/daily_items", %{name: "DO"})
+        |> json_response(201)
+
+      yesterday = Date.to_iso8601(Date.add(today, -1))
+      check = "/api/brewery/daily_checks/#{yesterday}/#{created["data"]["id"]}"
+
+      assert %{"error" => "not_yet_added", "message" => _} =
+               call(p["brewer1"], :put, check) |> json_response(422)
+
+      assert %{"done" => 0, "total" => 4, "items" => items} =
+               board(p["brewer1"], Date.add(today, -1), Date.add(today, -1))
+               |> json_response(200)
+               |> get_in(["data", "days", Access.at(0), "daily"])
+
+      refute Enum.any?(items, &(&1["name"] == "DO"))
+    end
   end
 
   test "/api/me brewery_tasks_manage: owners and Brewery managers", %{p: p} do

@@ -365,12 +365,14 @@ For each day on the board:
 - Moving a task to a past day is allowed (Matt).
 
 **Which Daily items each day shows**
-- Today and future days: the active items.
-- A past day: the active items, plus any retired item that was ticked that
-  day.
+- Future days: the active items.
+- Today and past days: the active items that existed that Colorado day, plus
+  any item (active or retired) that was ticked that day. The count is out of
+  the rows shown.
 - A rename shows everywhere, past days included.
-- A new item appears on past days unticked. It doesn't count against those
-  days: a past day's count only counts items that existed then.
+- A new item doesn't appear on days before it was added, and ticking it on
+  one is refused (422 `not_yet_added`). An item added today shows and can be
+  ticked today. (DEV pass 1, G4, Matt 2026-10-12.)
 
 ### 3.7 Shared drag and drop (app-wide)
 

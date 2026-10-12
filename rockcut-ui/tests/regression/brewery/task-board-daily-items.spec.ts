@@ -112,17 +112,19 @@ test('S28: Move up and Move down reorder without dragging', async ({ page }) => 
   expect((await dailyItems(await apiAs('breweryMgr'))).map((i) => i.id).slice(0, 2)).toEqual([second.id, first.id])
 })
 
-test('S29: a retired item leaves today, and yesterday still shows its tick', async ({ page }) => {
+// A new item can't be ticked on a day before it was added (G4), so the tick
+// is today's; ExUnit covers a tick on an earlier day (brewery_daily_test, S29).
+test('S29: a retired item leaves the card, and the day it was ticked still shows its tick', async ({ page }) => {
   const today = denverToday()
-  const yesterday = addDays(today, -1)
+  const tomorrow = addDays(today, 1)
   const api = await apiAs('breweryMgr')
   const res = await api.post('/api/brewery/daily_items', { data: { name: '[TEST-TEMP] Backups' } })
   expect(res.status()).toBe(201)
   const item: ApiDailyItem = (await res.json()).data
-  await setCheck(api, yesterday, item.id, true)
-  ticks.push({ date: yesterday, id: item.id })
+  await setCheck(api, today, item.id, true)
+  ticks.push({ date: today, id: item.id })
 
-  await openBoard(page, { from: yesterday, to: addDays(today, 5) })
+  await openBoard(page, { from: today, to: addDays(today, 5) })
   await openItems(page)
   await page.getByTestId(`daily-items-retire-${item.id}`).click()
   await expect(page.getByRole('dialog').filter({ hasText: 'Retire [TEST-TEMP] Backups? Past ticks are kept.' })).toBeVisible()
@@ -134,11 +136,55 @@ test('S29: a retired item leaves today, and yesterday still shows its tick', asy
 
   await page.reload()
   await expect(page.getByTestId('board-grid')).toBeVisible()
-  await expect(page.getByTestId(`daily-count-${today}`)).toHaveText(/\/4$/)
-  await expect(page.getByTestId(`daily-item-${today}-${item.id}`)).toHaveCount(0)
+  await expect(page.getByTestId(`daily-count-${tomorrow}`)).toHaveText('Daily 0/4')
+  await expect(page.getByTestId(`daily-item-${tomorrow}-${item.id}`)).toHaveCount(0)
+  await expect(page.getByTestId(`daily-check-${today}-${item.id}`)).toBeChecked()
+  await expect(page.getByTestId(`daily-label-${today}-${item.id}`)).toHaveText(/^\[TEST-TEMP\] Backups — Morgan, /)
+})
+
+test('G4: an item added today is not on earlier days, and they refuse its tick', async ({ page }) => {
+  const today = denverToday()
+  const yesterday = addDays(today, -1)
+  const api = await apiAs('breweryMgr')
+  const before = await dailyCard(api, yesterday)
+  const res = await api.post('/api/brewery/daily_items', { data: { name: '[TEST-TEMP] DO' } })
+  expect(res.status()).toBe(201)
+  const item: ApiDailyItem = (await res.json()).data
+
+  await openBoard(page, { from: yesterday, to: addDays(today, 5) })
   await page.getByTestId(`daily-toggle-${yesterday}`).click()
-  await expect(page.getByTestId(`daily-check-${yesterday}-${item.id}`)).toBeChecked()
-  await expect(page.getByTestId(`daily-label-${yesterday}-${item.id}`)).toHaveText(/^\[TEST-TEMP\] Backups — Morgan, /)
+  await expect(page.getByTestId(`daily-item-${today}-${item.id}`)).toBeVisible()
+  await expect(page.getByTestId(`daily-item-${yesterday}-${item.id}`)).toHaveCount(0)
+  await expect(page.getByTestId(`daily-count-${yesterday}`)).toHaveText(`Daily ${before.done}/${before.total}`)
+  expect(await cardNames(page, yesterday)).toHaveLength(before.total)
+
+  // The API refuses a tick on yesterday, and nothing changes.
+  const tick = await api.put(`/api/brewery/daily_checks/${yesterday}/${item.id}`)
+  expect(tick.status()).toBe(422)
+  expect((await tick.json()).error).toBe('not_yet_added')
+  await page.reload()
+  await expect(page.getByTestId('board-grid')).toBeVisible()
+  await expect(page.getByTestId(`daily-item-${yesterday}-${item.id}`)).toHaveCount(0)
+  expect(await dailyCard(api, yesterday)).toMatchObject({ done: before.done, total: before.total })
+
+  // A board loaded before the fix (or a stale one) still shows the row: the
+  // refusal reaches the person as the other Daily errors do.
+  await page.route(/\/api\/brewery\/tasks\?/, async (route) => {
+    const response = await route.fetch()
+    const body = await response.json()
+    for (const d of body.data.days) {
+      if (d.date === yesterday) d.daily.items.push({ daily_item_id: item.id, name: item.name, active: true, checked: false, completed_by_name: null, completed_at: null })
+    }
+    // A tick cancels a board fetch in flight; that request is gone by now.
+    await route.fulfill({ response, json: body }).catch(() => {})
+  })
+  await page.reload()
+  await expect(page.getByTestId('board-grid')).toBeVisible()
+  await page.getByTestId(`daily-toggle-${yesterday}`).click()
+  await page.getByTestId(`daily-check-${yesterday}-${item.id}`).click()
+  await expect(page.getByTestId('board-toast')).toContainText("That Daily item wasn't on the list that day")
+  await expect(page.getByTestId(`daily-check-${yesterday}-${item.id}`)).not.toBeChecked()
+  await page.unroute(/\/api\/brewery\/tasks\?/)
 })
 
 test.describe('as brewer1', () => {

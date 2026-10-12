@@ -459,10 +459,9 @@ defmodule RockcutApi.BreweryTasks do
   The Daily card for each of `days`: `%{date => %{items: [%{item, check}],
   done: n, total: n}}`. One query per kind for the whole range.
 
-    * Today and past days show the active items plus any retired item ticked
-      that day (an item ticked today, then retired, still shows ticked). The
-      `total` counts only items that existed then (created on or before that
-      Colorado day) and any item ticked that day.
+    * Today and past days show, and count, the active items that existed
+      then (created on or before that Colorado day) plus any item ticked that
+      day (an item ticked today, then retired, still shows ticked).
     * Future days show the active items.
   """
   def daily_cards(days, today \\ today()) do
@@ -501,14 +500,13 @@ defmodule RockcutApi.BreweryTasks do
     rows =
       items
       |> Enum.map(&%{item: &1, check: Map.get(checks, {day, &1.id})})
-      |> Enum.filter(&(&1.item.active or (started? and &1.check != nil)))
+      |> Enum.filter(fn %{item: item, check: check} ->
+        if started?,
+          do: check != nil or (item.active and existed_on?(item, day)),
+          else: item.active
+      end)
 
-    counted =
-      if started?,
-        do: Enum.filter(rows, &(&1.check != nil or existed_on?(&1.item, day))),
-        else: rows
-
-    %{items: rows, done: Enum.count(counted, &(&1.check != nil)), total: length(counted)}
+    %{items: rows, done: Enum.count(rows, &(&1.check != nil)), total: length(rows)}
   end
 
   defp existed_on?(%DailyItem{inserted_at: at}, day),
@@ -516,12 +514,14 @@ defmodule RockcutApi.BreweryTasks do
 
   @doc """
   Tick `item` on `on_date`. A future date → `{:error, :future_day}`; a retired
-  item → `{:error, :retired}`. Ticking twice is a no-op (no second event).
+  item → `{:error, :retired}`; a day before the item was added →
+  `{:error, :not_yet_added}`. Ticking twice is a no-op (no second event).
   """
   def tick(on_date, %DailyItem{} = item, %User{} = actor, today \\ today()) do
     with {:ok, on_date} <- cast_date(on_date),
          :ok <- not_future(on_date, today),
-         :ok <- if(item.active, do: :ok, else: {:error, :retired}) do
+         :ok <- if(item.active, do: :ok, else: {:error, :retired}),
+         :ok <- if(existed_on?(item, on_date), do: :ok, else: {:error, :not_yet_added}) do
       Repo.transaction(fn ->
         {:ok, check} =
           Repo.insert(

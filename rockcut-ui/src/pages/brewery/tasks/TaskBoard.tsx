@@ -247,14 +247,11 @@ export default function TaskBoard() {
       ...b,
       days: b.days.map((d) => {
         if (d.date !== date) return d
-        const done = d.daily.done + (checked ? 1 : -1)
         return {
           ...d,
           daily: {
             ...d.daily,
-            done,
-            // A past day counts an item added since only once it's ticked; the refetch settles it.
-            total: Math.max(d.daily.total, done),
+            done: d.daily.done + (checked ? 1 : -1),
             items: d.daily.items.map((i) =>
               i.daily_item_id === item.daily_item_id
                 ? {
