@@ -49,10 +49,16 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   # Flags such as `shared_devices` (D33), `staff_codes` and `beer_board_manage`
-  # (D37) sit beside `capabilities`, whose keys the D31 parity suite pins.
+  # (D37) and `brewery_tasks_manage` (D38) sit beside `capabilities`, whose keys
+  # the D31 parity suite pins.
   def me(user, capabilities, flags \\ %{}) do
     Map.merge(
-      %{shared_devices: false, staff_codes: false, beer_board_manage: false},
+      %{
+        shared_devices: false,
+        staff_codes: false,
+        beer_board_manage: false,
+        brewery_tasks_manage: false
+      },
       flags
     )
     |> Map.merge(%{user: user(user), capabilities: capabilities})
@@ -87,6 +93,143 @@ defmodule RockcutApiWeb.JSONHelpers do
       inserted_at: ev.inserted_at
     }
   end
+
+  # ── Brewery task board (D38) ───────────────────────────────────────
+
+  @doc """
+  The board `GET` (`BreweryTasks.board/3`). Dates are `YYYY-MM-DD`; card keys
+  are `"<task_id>:<day>"`, `"<task_id>:future"` or `"<task_id>:unfinished"`.
+  """
+  def brewery_board(b) do
+    %{
+      from: b.from,
+      to: b.to,
+      today: b.today,
+      days: Enum.map(b.days, &brewery_board_day/1),
+      unfinished: Enum.map(b.unfinished, &brewery_task_card/1),
+      future: Enum.map(b.future, &brewery_task_card/1)
+    }
+  end
+
+  defp brewery_board_day(d) do
+    %{
+      date: d.date,
+      header: brewery_day_header(d.header),
+      cards: Enum.map(d.cards, &brewery_task_card/1),
+      daily: brewery_daily_card(d.date, d.daily)
+    }
+  end
+
+  defp brewery_day_header(h) do
+    %{
+      people:
+        Enum.map(h.people, fn p ->
+          %{
+            user_id: p.user.id,
+            name: p.user.name,
+            hours: p.hours,
+            shifts: Enum.map(p.shifts, &brewery_header_shift/1)
+          }
+        end),
+      open_shifts: Enum.map(h.open_shifts, &brewery_header_shift/1),
+      events:
+        Enum.map(h.events, fn e ->
+          %{
+            id: e.id,
+            title: e.title,
+            all_day: e.all_day,
+            starts_at: e.starts_at,
+            ends_at: e.ends_at
+          }
+        end),
+      no_brewers: h.people == [] and h.open_shifts == []
+    }
+  end
+
+  defp brewery_header_shift(s) do
+    %{
+      id: s.id,
+      position_name: s.position.name,
+      starts_at: s.starts_at,
+      ends_at: s.ends_at
+    }
+  end
+
+  def brewery_task_card(c) do
+    c.task
+    |> brewery_task()
+    |> Map.merge(%{
+      key: "#{c.task.id}:#{c.day}",
+      day: c.day,
+      planned_on: c.planned_on,
+      done_on: c.done_on,
+      from_future: c.from_future,
+      locked: c.locked,
+      overdue: c.overdue
+    })
+  end
+
+  def brewery_task(t) do
+    %{
+      id: t.id,
+      title: t.title,
+      notes: t.notes,
+      due_on: t.due_on,
+      position: t.position,
+      assignee_id: t.assignee_id,
+      assignee_name: maybe_render(t, :assignee, &name_of/1),
+      done: not is_nil(t.completed_at),
+      completed_at: t.completed_at,
+      completed_on: t.completed_on,
+      completed_display: t.completed_display,
+      completed_by_id: t.completed_by_id,
+      completed_by_name: maybe_render(t, :completed_by, &name_of/1),
+      created_by_id: t.created_by_id,
+      created_by_name: maybe_render(t, :created_by, &name_of/1),
+      inserted_at: t.inserted_at,
+      updated_at: t.updated_at
+    }
+  end
+
+  defp brewery_daily_card(date, card) do
+    %{
+      date: date,
+      done: card.done,
+      total: card.total,
+      items:
+        Enum.map(card.items, fn %{item: i, check: c} ->
+          %{
+            daily_item_id: i.id,
+            name: i.name,
+            active: i.active,
+            checked: not is_nil(c),
+            completed_by_name: c && maybe_render(c, :completed_by, &name_of/1),
+            completed_at: c && c.completed_at
+          }
+        end)
+    }
+  end
+
+  def brewery_daily_item(i) do
+    %{id: i.id, name: i.name, position: i.position, active: i.active}
+  end
+
+  def brewery_task_event(ev) do
+    %{
+      id: ev.id,
+      task_id: ev.task_id,
+      action: ev.action,
+      title: ev.title,
+      actor_id: ev.actor_id,
+      actor_name: maybe_render(ev, :actor, &name_of/1),
+      on_shared_device: not is_nil(ev.device_id),
+      detail: ev.detail,
+      inserted_at: ev.inserted_at
+    }
+  end
+
+  defp name_of(nil), do: nil
+  defp name_of(u), do: u.name
 
   # ── Shared devices (D33) ───────────────────────────────────────────
 

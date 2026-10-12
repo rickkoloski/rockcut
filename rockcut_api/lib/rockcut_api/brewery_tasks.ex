@@ -22,7 +22,7 @@ defmodule RockcutApi.BreweryTasks do
   alias RockcutApi.{Accounts, Authz, Repo}
   alias RockcutApi.Accounts.{Department, User}
   alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Event, Placement, Task}
-  alias RockcutApi.Scheduling.Recurrence
+  alias RockcutApi.Scheduling.{Recurrence, ScheduleEvent, Shift}
 
   @history_page_size 50
   @max_items 12
@@ -38,9 +38,160 @@ defmodule RockcutApi.BreweryTasks do
   @doc "The Brewery department (the only board in D38). Raises if missing."
   def department!, do: Repo.get_by!(Department, key: "brewery")
 
+  ## The board
+
+  @max_range_days 31
+
+  @doc """
+  The board's read model for `from..to` (at most #{@max_range_days} days,
+  `from` ≤ `to`, else `{:error, :range_too_long}`):
+
+    * `days`: each day in the range with its `cards` (through `Placement`),
+      its `header` (published Brewery shifts and events) and its `daily`
+      card;
+    * `unfinished`: every open task planned before `today`, whatever the
+      range, oldest day first;
+    * `future`: the Future list.
+
+  Names are preloaded once. One query per kind for the whole range.
+  """
+  def board(%Date{} = from, %Date{} = to, today \\ today()) do
+    if Date.compare(from, to) == :gt or Date.diff(to, from) >= @max_range_days do
+      {:error, :range_too_long}
+    else
+      dept = department!()
+      days = Date.range(from, to) |> Enum.to_list()
+      tasks = board_tasks(dept.id, from, to, today)
+      cards = Placement.cards(tasks, days, today)
+      headers = headers(dept.id, days)
+      daily = daily_cards(days, today)
+
+      {:ok,
+       %{
+         from: from,
+         to: to,
+         today: today,
+         days:
+           Enum.map(days, fn day ->
+             %{date: day, cards: cards[day], header: headers[day], daily: daily[day]}
+           end),
+         unfinished: tasks |> Placement.unfinished(today) |> Enum.map(&unfinished_card/1),
+         future: cards[:future]
+       }}
+    end
+  end
+
+  def max_range_days, do: @max_range_days
+
+  # Everything any card in the range can come from: tasks planned or finished
+  # in it, the Future list, and the open tasks planned before today.
+  defp board_tasks(dept_id, from, to, today) do
+    Repo.all(
+      from t in Task,
+        where:
+          t.department_id == ^dept_id and
+            ((t.due_on >= ^from and t.due_on <= ^to) or
+               (t.completed_on >= ^from and t.completed_on <= ^to) or
+               (is_nil(t.completed_at) and (is_nil(t.due_on) or t.due_on < ^today))),
+        preload: [:assignee, :completed_by, :created_by]
+    )
+  end
+
+  # The Unfinished card lists tasks, not day cards: key `{id, :unfinished}`.
+  defp unfinished_card(%Task{} = t) do
+    %{
+      key: {t.id, :unfinished},
+      day: :unfinished,
+      task: t,
+      planned_on: t.due_on,
+      done_on: nil,
+      from_future: false,
+      locked: false,
+      overdue: true
+    }
+  end
+
+  @doc """
+  The day header for each of `days` (Colorado dates), as `%{date => header}`:
+
+    * `people`: one entry per person with published Brewery shifts starting
+      that day, their shifts in time order and total `hours`, in roster order
+      (`schedule_order`, then name);
+    * `open_shifts`: published, unassigned Brewery shifts that day;
+    * `events`: published Brewery schedule events overlapping that day.
+
+  Drafts, shift notes and time off are never shown. One query each for shifts
+  and events across the whole range.
+  """
+  def headers(dept_id, days) do
+    case Enum.to_list(days) do
+      [] ->
+        %{}
+
+      days ->
+        {first, last} = Enum.min_max_by(days, &Date.to_gregorian_days/1)
+        lo = Recurrence.local_midnight(first)
+        hi = Recurrence.local_midnight(Date.add(last, 1))
+
+        shifts =
+          Repo.all(
+            from s in Shift,
+              where:
+                s.department_id == ^dept_id and s.status == "published" and
+                  s.starts_at >= ^lo and s.starts_at < ^hi,
+              order_by: [asc: s.starts_at, asc: s.id],
+              preload: [:position, :assignee]
+          )
+          |> Enum.group_by(&today_at(&1.starts_at))
+
+        events =
+          Repo.all(
+            from e in ScheduleEvent,
+              where:
+                e.department_id == ^dept_id and e.status == "published" and
+                  e.ends_at > ^lo and e.starts_at < ^hi,
+              order_by: [asc: e.starts_at, asc: e.id]
+          )
+
+        Map.new(days, &{&1, header(&1, Map.get(shifts, &1, []), events)})
+    end
+  end
+
+  defp header(day, shifts, events) do
+    {open, assigned} = Enum.split_with(shifts, &is_nil(&1.assignee_id))
+    {lo, hi} = {Recurrence.local_midnight(day), Recurrence.local_midnight(Date.add(day, 1))}
+
+    people =
+      assigned
+      |> Enum.group_by(& &1.assignee)
+      |> Enum.sort_by(fn {u, _} -> {u.schedule_order, u.name, u.email} end)
+      |> Enum.map(fn {user, shifts} ->
+        %{user: user, shifts: shifts, hours: hours(shifts)}
+      end)
+
+    %{
+      people: people,
+      open_shifts: open,
+      events:
+        Enum.filter(
+          events,
+          &(DateTime.compare(&1.ends_at, lo) == :gt and DateTime.compare(&1.starts_at, hi) == :lt)
+        )
+    }
+  end
+
+  defp hours(shifts) do
+    seconds = Enum.reduce(shifts, 0, &(&2 + DateTime.diff(&1.ends_at, &1.starts_at)))
+    Float.round(seconds / 3600, 2)
+  end
+
   ## Tasks
 
   def get_task(id), do: Repo.get(Task, id)
+
+  @doc "The task with assignee, completer and creator loaded, for its JSON."
+  def with_names(%Task{} = task),
+    do: Repo.preload(task, [:assignee, :completed_by, :created_by], force: true)
 
   @doc """
   Add a task at the bottom of its day, or of the Future list when `due_on` is
@@ -308,10 +459,11 @@ defmodule RockcutApi.BreweryTasks do
   The Daily card for each of `days`: `%{date => %{items: [%{item, check}],
   done: n, total: n}}`. One query per kind for the whole range.
 
-    * Today and future days show the active items.
-    * A past day shows the active items plus any retired item ticked that day.
-      Its `total` counts only items that existed then (created on or before
-      that Colorado day) and any item ticked that day.
+    * Today and past days show the active items plus any retired item ticked
+      that day (an item ticked today, then retired, still shows ticked). The
+      `total` counts only items that existed then (created on or before that
+      Colorado day) and any item ticked that day.
+    * Future days show the active items.
   """
   def daily_cards(days, today \\ today()) do
     dept = department!()
@@ -344,15 +496,15 @@ defmodule RockcutApi.BreweryTasks do
   end
 
   defp daily_card(day, items, checks, today) do
-    past? = Date.compare(day, today) == :lt
+    started? = Date.compare(day, today) != :gt
 
     rows =
       items
       |> Enum.map(&%{item: &1, check: Map.get(checks, {day, &1.id})})
-      |> Enum.filter(&(&1.item.active or (past? and &1.check != nil)))
+      |> Enum.filter(&(&1.item.active or (started? and &1.check != nil)))
 
     counted =
-      if past?,
+      if started?,
         do: Enum.filter(rows, &(&1.check != nil or existed_on?(&1.item, day))),
         else: rows
 
@@ -714,4 +866,7 @@ defmodule RockcutApi.BreweryTasks do
 
   @doc false
   def max_items, do: @max_items
+
+  @doc false
+  def history_page_size, do: @history_page_size
 end

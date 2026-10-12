@@ -167,6 +167,18 @@ defmodule RockcutApi.BreweryDailyTest do
       assert [%Event{action: "item_retired", title: "Backups"}, _tick] = daily_events()
     end
 
+    test "an item ticked today, then retired, still shows ticked today",
+         %{brewer: brewer, mgr: mgr, items: items} do
+      {:ok, _} = BreweryTasks.tick(@today, items["Backups"], brewer, @today)
+      {:ok, _} = BreweryTasks.retire_item(items["Backups"], mgr)
+
+      assert %{items: rows, done: 1, total: 4} = card(@today)
+      assert %{item: %DailyItem{name: "Backups", active: false}, check: %{}} = hd(rows)
+      # Future days show the active items only.
+      assert %{items: future, done: 0, total: 3} = card(@thu)
+      refute Enum.any?(future, &(&1.item.name == "Backups"))
+    end
+
     test "order_items needs exactly the active ids", %{mgr: mgr} do
       ids = Enum.map(BreweryTasks.list_items(), & &1.id)
       assert {:error, :invalid_order} = BreweryTasks.order_items(Enum.drop(ids, 1), mgr)

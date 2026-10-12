@@ -13,7 +13,9 @@ defmodule RockcutApiWeb.MeController do
         shared_devices: Accounts.shared_devices?(user),
         staff_codes: StaffCodes.can_manage?(user),
         # D37: the board's History tab, import and export.
-        beer_board_manage: Authz.can?(user, :history, :beer_board)
+        beer_board_manage: Authz.can?(user, :history, :beer_board),
+        # D38: the task board's History and Edit Daily items.
+        brewery_tasks_manage: Authz.can?(user, :history, :brewery_tasks)
       })
       |> for_viewer(user)
     )

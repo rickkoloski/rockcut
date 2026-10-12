@@ -404,12 +404,11 @@ defmodule RockcutApi.Scheduling do
   defp to_int(v) when is_integer(v), do: v
   defp to_int(v) when is_binary(v), do: String.to_integer(v)
 
-  # Colorado midnight at the start of `date` + `days`, in UTC. Shift and event
-  # day bounds are local days, so a Sunday-evening one (Monday in UTC) stays in
-  # its week.
+  # Colorado midnight at the start of the date key `date` + `days`, in UTC
+  # (Recurrence.local_midnight/1).
   defp local_midnight(date, days) when is_binary(date) do
     case Date.from_iso8601(date) do
-      {:ok, d} -> Recurrence.local_to_utc(Date.add(d, days), ~T[00:00:00])
+      {:ok, d} -> Recurrence.local_midnight(Date.add(d, days))
       _ -> DateTime.utc_now()
     end
   end

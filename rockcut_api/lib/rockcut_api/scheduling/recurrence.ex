@@ -97,6 +97,13 @@ defmodule RockcutApi.Scheduling.Recurrence do
   end
 
   @doc """
+  Colorado midnight at the start of `date`, in UTC: the D32 day bounds. A
+  shift or event belongs to the Colorado day it starts on, so a Sunday-evening
+  one (Monday in UTC) stays in its week.
+  """
+  def local_midnight(%Date{} = date), do: local_to_utc(date, ~T[00:00:00])
+
+  @doc """
   A Colorado wall-clock date and time as a UTC `DateTime`. A time skipped by
   the spring-forward gap moves to just after it; a repeated fall-back time uses
   the first one.
