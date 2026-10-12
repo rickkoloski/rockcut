@@ -580,3 +580,62 @@ in the D37 note's shape:
 **Then stop. Don't push.** The lead pushes and opens the PR once Matt says
 so. Reply with: the gate results (counts, the lint file list, any flakes
 or failures with names and seeds), GAP rows, and `LEAD:` questions.
+
+## Task 10: DEV pass 1 fixes (G1, G3, G4)
+
+**Step 10 accepted.** D38 is on DEV at `6c9e317` (PR #18): the full DEV
+Playwright run passed 259/259, and the independent QA pass found no
+must-fix gaps. Its report is
+`docs/current_work/stepwise_results/d38_dev_qa_report.md`; read the **Gaps**
+table. Matt approved these fixes (2026-10-12). G2 is a spec wording change
+(the lead has done it) and G5 needs nothing.
+
+**Servers:** as before (API :4002, UI :5174, both up).
+
+### What to fix
+
+1. **G4: past Daily cards show items added later.** A past day shows an
+   item created after that day as an unticked row and lets it be ticked, so
+   "3/4" becomes "4/5". Today `daily_card/4` counts with `existed_on?/2` but
+   shows every active item. Fix:
+   - a past day (and today) shows only the rows it counts: items that
+     existed that Colorado day, plus any item ticked that day;
+   - ticking an item on a day before it existed is refused (422, a clear
+     error code, shown inline like the other Daily errors);
+   - today is unchanged: an item added today shows and can be ticked today.
+2. **G1: a stale Edit dialog undoes someone else's change.** The task dialog
+   `PATCH`es every field, so saving a notes edit puts back an old title that
+   someone else changed meanwhile. Send **only the fields the person
+   changed**. With nothing changed, Save just closes. Same for the Daily
+   items rename if it has the same pattern.
+3. **G3: un-retire answers 200 and does nothing.** `PATCH
+   /api/brewery/daily_items/:id` with `active: true` on a retired item must
+   be refused (422, for example `retired`), not ignored. Un-retire itself is
+   still out of scope.
+
+### Tests
+
+These are bug fixes, so workflow §3's **revert rule** applies: each new test
+must **fail with the fix reverted and pass with it restored**. Actually
+revert and rerun, and record both runs for each fix in your reply.
+- G4: ExUnit (cards for a past day after an item is added later: rows and
+  counts; the tick refused) and a Playwright check in
+  `task-board-daily-items.spec.ts`.
+- G1: a Playwright spec with two contexts. One renames the task while the
+  other has Edit open and changes notes. After saving, both changes are
+  kept (persist-verified).
+- G3: ExUnit or a controller test for the 422.
+
+### Then
+
+- Update `tests/COVERAGE.md` (as "DEV pass 1") and the handoff note: add a
+  "DEV pass 1" section with what changed, the tests and the gate results.
+- Run the local gate again: ExUnit (full output saved), `tsc`, `vite
+  build`, lint (still 26, none in D38 files), Vitest, and the whole
+  brewery Playwright folder twice in a row. Run `mix rockcut.synthetic.setup`
+  before and after.
+- Commit each fix on its own (`fix: D38 …`), then the docs as
+  `docs: D38 handoff note — DEV pass 1 fixes`.
+
+**Then stop. Don't push.** Reply with the commits, the revert-check
+results, the gate results and any `LEAD:` questions.

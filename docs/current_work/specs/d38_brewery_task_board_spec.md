@@ -841,7 +841,7 @@ brewhouse tablet, a staff code is needed.
 
 | # | Persona | Entry point | Mode / state | Expected |
 |---|---|---|---|---|
-| S24 | `brewer1` | today's Daily card → tick Temps, Pressures | | "Daily 2/4", with "✓ Temps — \<brewer1\>, time". `brewer2` sees the same after a reload. Unticking Temps → "Daily 1/4". |
+| S24 | `brewer1` | today's Daily card → tick Temps, Pressures | | "Daily 2/4", with "✓ Temps — Jake, time" (first name, as on task cards; DEV QA G2). `brewer2` sees the same after a reload. Unticking Temps → "Daily 1/4". |
 | S25 | `brewer1` | tomorrow's Daily card | | The checks are shown but disabled. `PUT …/daily_checks/<tomorrow>/<id>` returns 422. |
 | S26 | `brewer1` | yesterday's Daily card | 3 of 4 ticked | "Daily 3/4" in amber. Ticking the 4th is still allowed. |
 | S27 | `brewer1` | try to drag a Daily card | | It doesn't move. |
