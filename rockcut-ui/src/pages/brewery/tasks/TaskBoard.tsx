@@ -264,6 +264,17 @@ export default function TaskBoard() {
   // ── Range ──────────────────────────────────────────────────────────
 
   const showRange = (f: string, t: string) => setParams({ from: f, to: t })
+  /**
+   * Previous / Next by the range's own length. They read the address bar, not
+   * this render's range: the URL changes before the board re-renders, and a
+   * quick second click mustn't step from the old range.
+   */
+  const step = (direction: 1 | -1) => {
+    const now = new URLSearchParams(window.location.search)
+    const [f, t] = rangeError(now.get('from') ?? '', now.get('to') ?? '') === null ? [now.get('from')!, now.get('to')!] : [from, to]
+    const n = dayCount(f, t) * direction
+    showRange(addDaysKey(f, n), addDaysKey(t, n))
+  }
   const pickSpan = (s: Span) => {
     writeSpan(s)
     setSpan(s)
@@ -358,8 +369,8 @@ export default function TaskBoard() {
         span={highlighted}
         filter={filter}
         hideCompleted={hideCompleted}
-        onPrev={() => showRange(addDaysKey(from, -length), addDaysKey(to, -length))}
-        onNext={() => showRange(addDaysKey(from, length), addDaysKey(to, length))}
+        onPrev={() => step(-1)}
+        onNext={() => step(1)}
         onToday={() => setParams({})}
         onSpan={pickSpan}
         onRange={showRange}

@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test'
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import { addDays, apiAs, denverToday, denverUtc, tempTag } from '../scheduler/helpers'
 
 // Shared helpers for the D38 task board specs (tests/regression/brewery/task-board-*.spec.ts).
@@ -109,3 +109,46 @@ export function boardWrite(page: Page, path: RegExp, method = 'POST') {
 export async function userId(api: APIRequestContext): Promise<number> {
   return (await (await api.get('/api/me')).json()).user.id
 }
+
+/**
+ * Mouse-drag `source` into `list`: to its end, or just before `before` (a
+ * card in it). Like a person watching the gap: first to the bottom of the
+ * list, then up onto `before`. (Dropped straight onto a card from above, a
+ * sortable item lands after it.) Moves in steps so the 8px activation
+ * distance and the collision checks see it.
+ */
+export async function mouseDrag(page: Page, source: Locator, list: Locator, before?: Locator) {
+  const vp = page.viewportSize()!
+  await source.scrollIntoViewIfNeeded()
+  const s = (await source.boundingBox())!
+  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(s.x + s.width / 2 + 12, s.y + s.height / 2 + 12, { steps: 4 })
+  let l = (await list.boundingBox())!
+  if (l.y + l.height > vp.height * 0.8) {
+    // Scrolling under a pointer resting on the board would move the card
+    // into whatever list passed beneath it, and resting near an edge sets
+    // off auto-scroll: specs that need both ends on screen use a tall viewport.
+    throw new Error('mouseDrag: the target list ends near or past the bottom of the screen; use a taller viewport')
+  }
+  await page.mouse.move(l.x + l.width / 2, l.y + l.height - 6, { steps: 20 })
+  l = (await list.boundingBox())!
+  await page.mouse.move(l.x + l.width / 2, l.y + l.height - 4, { steps: 3 })
+  if (before) {
+    const b = (await before.boundingBox())!
+    await page.mouse.move(b.x + b.width / 2, b.y + b.height / 2, { steps: 10 })
+  }
+  await page.mouse.up()
+}
+
+/** Move a task back to a day through the API (to put shared data back after a spec). */
+export async function moveTask(api: APIRequestContext, id: number, dueOn: string | null, beforeId: number | null = null) {
+  const res = await api.post(`/api/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId } })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
+/** "Mon 10/12", as the board labels a day. */
+export const dayLabel = (key: string) =>
+  new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })
+    .format(new Date(`${key}T12:00:00Z`))
+    .replace(',', '')

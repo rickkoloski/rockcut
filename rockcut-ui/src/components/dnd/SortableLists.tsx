@@ -116,7 +116,10 @@ export default function SortableLists({
     const items = hits.filter((h) => !isContainerId(h.id))
     if (items.length) return items
     const list = hits.find((h) => isContainerId(h.id))
-    if (!list) return closestCorners(args)
+    // Between lists the pointer is over nothing. Falling back to the closest
+    // list here made the lifted item jump between two lists as each one
+    // reflowed, until React gave up ("Maximum update depth", D38 step 6).
+    if (!list) return []
     // In a gap inside a list: the nearest item of that list, or the list if it's empty.
     const containerId = unprefix(list.id, CONTAINER)
     const own = args.droppableContainers.filter((d) => d.data.current?.sortable?.containerId === containerId)
