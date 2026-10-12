@@ -297,3 +297,77 @@ As the plan's "Changes → UI → The shared drag layer" describes:
   know).
 
 Don't start step 6.
+
+---
+
+## Task 5: plan step 6, the board page (desktop and tablet layout)
+
+**Step 5 accepted,** including deviations 1–7 and Vitest 4.1.11. Your
+trial notes stand: lists get a minimum height so an empty day is a real
+drop zone.
+
+**Servers:** the lead runs the API (:4002) and UI (:5174). Run
+`mix rockcut.synthetic.setup` whenever you need fresh seed data.
+
+### What to build
+
+Plan "Order of work" step 6 and "Changes → UI" (`src/pages/brewery/tasks/`),
+for spec §3.8 **except** the Daily card's tick/edit behavior (step 7),
+History (step 8) and the phone layout (step 9). In this step:
+- **Nav + route:** Brewery → Tasks (`/brewery/tasks`) in the `hasBrewery`
+  block.
+- **`TaskBoard`** with the range in the URL, the 1 week / 2 weeks toggle
+  remembered per browser, the date range selector (31-day limit with the
+  spec's message), Previous / Today / Next, the filter (All / My tasks /
+  Unassigned) and Hide completed (remembered per browser). `localStorage`
+  reads and writes in try/catch.
+- **Layout:** seven day columns per row, Unfinished as a side column at the
+  start and Future at the end, spanning all rows; above and below the days
+  below about 1280px. Today highlighted; amber edge on overdue cards.
+- **`DayHeader`:** the shift lines, open shifts, events, "No brewers
+  scheduled".
+- **`DailyCard` (display only for now):** the count, expanded on today,
+  amber on past days with unticked items. Ticking and Edit Daily items are
+  step 7.
+- **Cards, the task menu and dialogs:** `TaskCard`, `TaskMenu`,
+  `TaskDialog` (add/edit, Add notes focused on Notes), `FinishElsewhereDialog`,
+  `ChangeDayDialog` (with Move to Future), the delete confirm. Menu rules:
+  - locked cards grey out Change day, Move up and Move down with "Mark
+    not done first to move it";
+  - done tasks grey out Move to Future (lead decision);
+  - Move up/down disabled at the ends of a list.
+- **Unfinished card and Move all to today** (with the spec's confirm),
+  **Future list** (always shown, empty message, its own + Add a task).
+- **Drag** through `SortableLists`: one container per day, Unfinished and
+  Future; card keys as the API sends them. Optimistic moves through
+  `useOptimisticLists`, with an error toast on rollback.
+- **Freshness:** refetch every 60 seconds and on window focus.
+- `data-testid` on every control.
+
+### How to check it
+
+1. Drive scenarios **S1–S23j** in a browser as the personas (Playwright MCP
+   or throwaway scripts with `tests/.playwright-auth/<persona>.json`; never
+   read token files). Fix what you find.
+2. Then write the Playwright specs from what you saw, as the plan's table
+   lists: `task-board-header`, `task-board-tasks`,
+   `task-board-finish-elsewhere`, `task-board-range`, `task-board-future`
+   and `task-board-drag` (S12–S14, plus the rejected move via `page.route`).
+   Relative dates only, `[TEST-TEMP]` titles cleaned up in `afterEach`,
+   persist-verify every write, no `waitForTimeout`.
+3. S16 (two people moving one task) uses two browser contexts.
+
+**If your context gets to about 80%,** commit what works (with its specs),
+write what's left at the end of your reply, and stop. Don't leave
+uncommitted work.
+
+**Done means:**
+- `tsc`, `vite build`, `pnpm test:unit`, `MIX_ENV=test mix test` pass;
+- lint stays at 26 errors;
+- the new Playwright specs pass, and so does the whole
+  `tests/regression/brewery` folder;
+- commit as `feat: D38 step 6 — task board page` (more than one commit is
+  fine), then **stop** and reply as in Task 1, with the scenarios you
+  drove and any you couldn't.
+
+Don't start step 7.
