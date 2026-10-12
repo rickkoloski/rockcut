@@ -99,6 +99,8 @@ The gate ran on the final code. The commit after it (this note and COVERAGE.md) 
 8. **S49 through the UI** (Users & Roles as `breweryMgr`) wasn't driven locally; ExUnit covers the unassignment, and D37's `auth/manager_removes_member` covers the save.
 9. **The shared board during a DEV Playwright run:** the `brewery-board` specs move every open past task ("Move all to today") and change Daily items, then put them back. Nobody should use the DEV board by hand while the suite runs; run `seed_synthetic()` after.
 
-## Note for D39 / D40
+## Note for D39, D40 and the department boards
 
 D38 merges to `develop` after its DEV gate but **doesn't go to prod alone**. The board ships in one release after D40 merges (Matt, 2026-10-11), so the brewhouse tablet is there from day one. D39 adds the `series_*` columns and recurring tasks; D40 moves the write routes to `:device_allowed`, adds the `breweryDevice` persona, Brewery staff codes, the shift-end reminder and the dashboard card. When D38 merges, file the follow-up task to move the Scheduler's D13 HTML5 drag onto `components/dnd/`.
+
+**Department boards (Matt, 2026-10-12):** one board per department, each task in exactly one department, built as its own deliverable (proposed D41) after D39 and before D40. It renames `brewery_*` to generic names and keys `Authz` on the task's department. D38's `department_id` columns already fit it; see the spec's "Delivery split".

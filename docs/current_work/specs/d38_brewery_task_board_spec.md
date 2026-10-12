@@ -46,6 +46,20 @@ release) on its own branch. This spec covers all three. Where it says
   add to it without restructuring.
 - The reminder (D40) lists recurring occurrences like any open task; with
   D39 already shipped, that needs nothing extra.
+- **Boards for every department** (Matt, 2026-10-12): one board per
+  department, with a switcher for people in more than one. Each task
+  belongs to exactly one department and is never shared. D38 ships as
+  built (Brewery only). The generalization is its own deliverable
+  (proposed D41, spec amendment to come), built **after D39 and before
+  D40**, so D40's tablet, reminder and dashboard card target the final
+  model. It covers:
+  - the `brewery_*` → generic rename (tables, modules, routes, UI);
+  - `Authz` keyed on the task's department instead of the Brewery;
+  - `department_id` on the change log;
+  - the day header from the board's department's schedule;
+  - the department switcher and a top-level Tasks nav.
+
+  It still ships in the one prod release after D40, so no prod data moves.
 
 ## 1. Problem Statement
 
@@ -916,7 +930,8 @@ brewhouse tablet, a staff code is needed.
 - **Importing the Trello board.** The brewers retype the current weeks; the
   board is short-lived.
 - Task boards for other departments (the `department_id` column allows it
-  later).
+  later). Decided 2026-10-12: one board per department, built after D39
+  and before D40 (see "Delivery split").
 - **Bringing back a retired Daily item.** Re-adding the name makes a new
   item; the old one's past ticks stay with it.
 
