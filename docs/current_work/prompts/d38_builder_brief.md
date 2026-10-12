@@ -513,3 +513,70 @@ a task → task menu". At phone width (MUI `sm` and below, checked at
 must pass twice in a row. Commit as `feat: D38 step 9 — phone width`, then
 **stop** and reply as before. Don't start step 10 (COVERAGE.md, the gate,
 the PR).
+
+## Task 9: plan step 10, COVERAGE.md, the local gate and the handoff note
+
+**Step 9 accepted.** Matt moved the Pixel checks (S9e, S15) to the DEV
+gate; they're in the plan's LIMITATIONS. Leave the day arrows and swipe
+stopping at the strip's ends. The lead has run `mix rockcut.synthetic.reset`
+locally, so the data is fresh.
+
+**Also read:** `three_environment_workflow.md` §3 ("Local gate" and "The
+handoff note"), and `d37_handoff_note.md` for the note's shape.
+
+**1. `rockcut-ui/tests/COVERAGE.md`:** add a D38 section in the existing
+format: S1–S51 (D38's rows only, per the spec's "Delivery split") → where
+each is tested (ExUnit file and/or Playwright file). Mark **GAP** and
+**Manual** rows honestly. S9e and S15's touch parts are Manual (DEV, Pixel).
+
+**2. Tidy:** confirm the temporary two-list page from step 5 is gone, no
+debug code is left, and `d38_ref/` is still untracked.
+
+**3. Run the whole gate on the final branch.** Run every item, even ones
+that passed before, and record the HEAD SHA:
+- `cd rockcut_api && MIX_ENV=test mix test`. **Watch for the step 7
+  one-off failure:** run it with full output saved to your scratchpad (not
+  cut to a tail). If any test fails, report its name and seed.
+- `cd rockcut-ui && npx tsc --noEmit -p tsconfig.app.json && pnpm exec vite build && pnpm lint`.
+  Lint is expected at 26 errors. List them by file and confirm none are in
+  D38 files.
+- Vitest.
+- `cd rockcut-ui && npx playwright test`: the **whole** local suite, every
+  project, not just brewery. Run `mix rockcut.synthetic.setup` first and
+  again afterwards.
+- **Flakes:** a failure that passes on retry is still reported. Re-run that
+  spec alone with `--repeat-each 5` and say whether it predates D38.
+- **Persist-verify, one final pass:** throwaway scripts in your scratchpad,
+  using the auth files, never reading tokens. As `brewer1`: add, move
+  (another day, Future, back), complete on another day, tick a Daily item,
+  delete. As `breweryMgr`: add a Daily item, retire it, check History.
+  Reload after each step and check the result stuck. Delete the scripts and
+  any data they made.
+- No bug-fix revert check; D38 is a feature.
+
+**4. Write the handoff note:** `docs/current_work/prompts/d38_handoff_note.md`,
+in the D37 note's shape:
+- deliverable (D38, task 4211), spec and branch, and the SHA for DEV as
+  `<filled by lead at push>`;
+- **What changed,** grouped by area (data model and `Authz`, the context
+  and API, the drag layer, the board, Daily, History, phone width, seed),
+  with the scenarios and tests that cover each;
+- **Migrations:** list them and say whether each is reversible. If any has
+  a `down`, check it by rolling back and migrating forward on a **scratch
+  copy** of the dev DB, never the real one;
+- **New dependencies** (`@dnd-kit/*`, Vitest dev-only) and new routes.
+  No new secrets, unless you find one;
+- **Personas and scenarios DEV must exercise;**
+- **Local gate:** results with counts and the date;
+- **Lint:** 26 errors already on `develop`, 0 from D38 (task 4084);
+- **⚠ LIMITATIONS:** the plan's list (including the Pixel checklist), plus
+  anything else local couldn't show;
+- **Note for D39/D40:** D38 merges to `develop` but doesn't go to prod
+  alone; one release after D40.
+
+**5. Commit** as `docs: D38 coverage, handoff note + local gate results`
+(and any fixes before it as their own `fix:`/`test:` commits).
+
+**Then stop. Don't push.** The lead pushes and opens the PR once Matt says
+so. Reply with: the gate results (counts, the lint file list, any flakes
+or failures with names and seeds), GAP rows, and `LEAD:` questions.
