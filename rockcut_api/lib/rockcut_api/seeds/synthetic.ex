@@ -124,7 +124,12 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   ## Setup / reset
 
-  def setup do
+  @doc """
+  Upserts the personas and rebuilds the scenario data around `today`'s week.
+  `today` defaults to the Colorado date (Fly runs in UTC), so an evening setup
+  in Colorado doesn't seed next week.
+  """
+  def setup(today \\ BreweryTasks.today()) do
     Guard.guard!()
     hash = Argon2.hash_pwd_salt(Credentials.password())
     depts = departments!()
@@ -135,7 +140,7 @@ defmodule RockcutApi.Seeds.Synthetic do
       devices = Map.new(device_personas(), fn d -> {d.key, upsert_device(d, depts)} end)
       sync_staff_codes(users)
       prune_device_tokens()
-      seed_scenario(users)
+      seed_scenario(users, today)
       Map.merge(users, devices)
     end)
     |> case do
@@ -509,12 +514,12 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   ## Scenario data (rebuilt each setup, relative to the current week)
 
-  defp seed_scenario(u) do
+  defp seed_scenario(u, today) do
     delete_tagged(@seed_tag)
     Repo.delete_all(from(n in Notification, where: n.event == "seed.welcome"))
 
     pos = Repo.all(Position) |> Map.new(&{&1.name, &1})
-    monday = Date.beginning_of_week(Date.utc_today())
+    monday = Date.beginning_of_week(today)
     owner = u["owner"]
 
     # {week offset, day offset, position, assignee key | nil, start hour UTC, hours, status}
@@ -656,7 +661,7 @@ defmodule RockcutApi.Seeds.Synthetic do
       })
     end
 
-    seed_brewery_board(u, monday, now)
+    seed_brewery_board(u, monday, today, now)
 
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
@@ -722,9 +727,8 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Recalibrate the pH meter", nil, "brewer2", nil}
   ]
 
-  defp seed_brewery_board(u, monday, now) do
+  defp seed_brewery_board(u, monday, today, now) do
     dept = Repo.get_by!(Department, key: "brewery")
-    today = BreweryTasks.today()
     mgr = u["breweryMgr"]
 
     for {{title, offset, who, done}, index} <- Enum.with_index(@board_tasks) do

@@ -205,6 +205,31 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       statuses = Repo.all(from(r in Request, where: r.user_id == ^brewer1.id, select: r.status))
       assert Enum.sort(statuses) == ["approved", "pending"]
     end
+
+    test "seeds the Colorado week on a Sunday evening (UTC already Monday)" do
+      alias RockcutApi.BreweryTasks
+      alias RockcutApi.Scheduling.Recurrence
+
+      # Sunday 2026-10-11, 7 pm MDT = Monday 01:00 UTC.
+      now = ~U[2026-10-12 01:00:00Z]
+      sunday = BreweryTasks.today_at(now)
+      assert sunday == ~D[2026-10-11]
+
+      {:ok, _} = Synthetic.setup(sunday)
+
+      week_start = Recurrence.local_midnight(~D[2026-10-05])
+      week_end = Recurrence.local_midnight(~D[2026-10-12])
+
+      published =
+        Repo.all(from(s in Shift, where: s.status == "published", select: s.starts_at))
+
+      assert length(published) == 18
+
+      for starts <- published do
+        assert DateTime.compare(starts, week_start) != :lt
+        assert DateTime.compare(starts, week_end) == :lt
+      end
+    end
   end
 
   describe "reset/0" do
@@ -549,7 +574,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
                  )
                )
 
-      monday = Date.beginning_of_week(Date.utc_today())
+      monday = Date.beginning_of_week(BreweryTasks.today())
       assert BreweryTasks.today_at(event.starts_at) == Date.add(monday, 2)
     end
 
