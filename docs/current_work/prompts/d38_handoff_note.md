@@ -137,6 +137,52 @@ Each new test failed with its fix reverted (the patch reverse-applied) and passe
 2. **G1 with the real 60-second refresh.** Locally both people's saves ran back to back; on DEV, leave brewer2's Edit open across a refresh, rename as brewer1, then save brewer2's notes, as the QA repro did.
 3. **G4 on a UTC machine.** "Existed that day" uses the Colorado date of `inserted_at`; check on DEV after 6 pm Colorado that an item added then shows on today, not tomorrow only.
 
+## DEV pass 2 (2026-10-12)
+
+DEV Playwright run 3 at `fcaba29` (with Task 11's drag helper, `d0831e7`): **262/262**. QA pass 2 (`stepwise_results/d38_dev_qa2_report.md`) verified G1, G3 and G4; its gaps moved to D39. Matt's Pixel checks (Chrome, `brewer1`, DEV): **#2–#8 passed**; two issues, both fixed here (Matt, 2026-10-12). This is D38's second and last fix cycle.
+
+### What changed
+
+- **A, `9a8196c`: a drag to the very bottom of a day lands there.**
+  - **Cause** (reproduced at 360×800 with emulated touch, with `over` ids and the `move` body logged): today on the seed ends in a card **finished there from another day** (`[SEED] Cold crash FV5`: planned yesterday, done today, `completed_day`, locked). Placement always lists those cards after the day's own tasks, and the server's order for a day is only the tasks planned on it.
+  - Dragged onto that last card, the placeholder showed the task under it, and the client sent `before_id: null` ("last"). The server put the task last among the day's own tasks, which is still above the visitor card, so it showed second from the bottom.
+  - The suspects in the brief weren't it: `ownListOnly`/`landing` were right, and a drop below the list (on "+ Add a task") is a no-op, not a misplaced drop. The desktop has the same gap whenever a list ends in such a card; the drag specs just never had one.
+  - **Fix:** `SortableLists` takes `staysLast(itemId)`. A hit on such an item becomes the last movable item above it (or the list itself), and a drop on the list lands above them. So the bottom spot is just above the visitor cards, and the placeholder shows it there. The board passes "a card on a day it isn't planned on", and a move ahead of one sends `before_id: null`. Mouse and keyboard on desktop go through the same path; the drag, phone and Daily items specs pass unchanged.
+- **B, `4a8d79e`: Android back closes the task sheet, and only the sheet.**
+  - New `src/hooks/useBackCloses.ts`. While the sheet is open, a history entry for the same URL (the router's state kept, plus a marker) sits on top, and `popstate` closes the sheet.
+  - Closed any other way (tap outside, an action, Escape), the entry is popped again, so one back then leaves the board. That pop waits one tick so StrictMode's effect re-run keeps the entry.
+  - With no sheet open, back is unchanged.
+  - **Only the sheet.** The dialogs opened from it (Edit / notes, Change day…, Delete, Mark not done?, "where should it show") and from the board (+ Add a task, the calendar button, Daily items, History, the ⋮ menu) still leave the page on back. Applying the hook there isn't simple: a sheet action closes the sheet and opens a dialog in the same tick, so the sheet's delayed pop would run after the dialog's push and leave a dead entry. That needs one shared stack of back-closable layers.
+
+No migrations, dependencies, routes or secrets. No API code changed.
+
+### Tests and revert checks
+
+Each fix's patch was reverse-applied, the test run, then the patch restored:
+
+| Fix | Tests | Reverted | Restored |
+|---|---|---|---|
+| A | Playwright `task-board-phone` "S15: … the very bottom of today, under a card finished there from another day" (4 `[TEST-TEMP]` tasks + one finished there from yesterday; long press, down to the screen edge until the page has auto-scrolled to its end, onto the last card; the placeholder's position, the `move` body, a reload) | failed: placeholder "9 of 9", expected "7 of 9" | passed (3/3 with `--repeat-each 3`) |
+| B | Playwright `task-board-phone` "Back with the sheet open closes the sheet…" (`goBack()`: the sheet closes, URL still `/brewery/tasks`; `goBack()` again leaves) | failed: the first back went to `/` | passed |
+| B | Playwright `task-board-phone` "a sheet closed by tapping outside leaves no extra Back behind" | passed: it guards the fix's own pop (no dead back press), so it can't fail without the fix | passed |
+
+### Local gate (2026-10-12, at `4a8d79e`)
+
+- `mix rockcut.synthetic.setup` before and after: 18 personas.
+- ExUnit: not run (no API code changed).
+- `tsc --noEmit -p tsconfig.app.json`: clean. `vite build`: OK.
+- Lint: 26 errors + 1 warning, all pre-existing (list above); none in D38 files.
+- Vitest: 19/19.
+- Playwright, `tests/regression/brewery` (`chromium` + `brewery-board`), four runs:
+  - **Run 1: 104 passed, 1 failed.** The failure was `task-board-daily` **S26** ("yesterday's 3/4 is amber, and the 4th can still be ticked"): the click on the last Daily box never checked it (`toBeChecked` timed out). That's the same symptom as the first local gate's run 1. S26 runs on the desktop layout and never drags or opens the sheet, so neither fix is on its path. Alone with `--repeat-each 5` it passed 5/5. The cause is still unproven, and the trace was overwritten by the next run.
+  - **Run 2: 105 passed.**
+  - **Runs 3 and 4 (a clean pair back to back): 105 passed each**, with no retries or flakes.
+
+### ⚠ LIMITATIONS (DEV pass 2)
+
+1. **The real back gesture.** Playwright's `goBack()` is a history back. On the Pixel: open the sheet, swipe back, and check that the sheet closes and the board stays. Swipe back again and the board should be left. Also tap outside the sheet, then check that one back leaves.
+2. **A on the Pixel:** long-press drag a task to the very bottom of today, which ends in the seed's finished-yesterday card. It should land just above that card, where the placeholder showed.
+
 ## Note for D39, D40 and the department boards
 
 D38 merges to `develop` after its DEV gate but **doesn't go to prod alone**. The board ships in one release after D40 merges (Matt, 2026-10-11), so the brewhouse tablet is there from day one. D39 adds the `series_*` columns and recurring tasks; D40 moves the write routes to `:device_allowed`, adds the `breweryDevice` persona, Brewery staff codes, the shift-end reminder and the dashboard card. When D38 merges, file the follow-up task to move the Scheduler's D13 HTML5 drag onto `components/dnd/`.
