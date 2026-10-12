@@ -513,6 +513,16 @@ Daily items dialog) are the only users in D38.
   **Move to Future** in the task menu do the job.
 - The 1 week / 2 weeks toggle and the date range selector sit behind a
   calendar button.
+- **Back closes the task sheet** (Matt, 2026-10-12, Pixel check). With the
+  bottom sheet open, Android's back gesture closes it and nothing else.
+  With no sheet open, back goes to the previous page; it never changes day.
+- **No edge-drag to another day** (Matt, 2026-10-12): holding a dragged
+  card at the screen edge doesn't switch days.
+- **Vertical view** (Matt, 2026-10-12; which deliverable: TBD): a toggle
+  shows every day of the range stacked vertically, scrolling up and down
+  through the days, with drag between days as on desktop. Phones **start
+  in the vertical view**; the choice is remembered per browser, like
+  1 week / 2 weeks.
 
 **Task card:**
 - a checkbox to complete it;
