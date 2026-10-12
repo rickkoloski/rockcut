@@ -364,7 +364,20 @@ exist in the DEV build).
 
 - **Touch drag** (long press vs. scroll vs. tap) is only checked by hand,
   and only on real Android hardware: the Pixel, and a Samsung tablet if one
-  is available.
+  is available. Matt chose (2026-10-11) to do the phone-width checks (S9e,
+  S15) at the DEV gate, as `brewer1` on the Pixel:
+  1. A quick tap opens the bottom sheet; a long press (about ¼ s) lifts the
+     card instead, and the sheet doesn't open.
+  2. A long-press drag reorders within the day. Drifting sideways doesn't
+     change the day or move the card out of it.
+  3. A sideways swipe changes day, including one that starts on a card,
+     and doesn't lift the card.
+  4. Scrolling up and down a long day, starting on a card, only scrolls.
+  5. A sideways swipe on the day strip scrolls the strip; tapping a stop
+     selects it.
+  6. Android's edge back gesture doesn't also change the day.
+  7. Change day… and Move to Future in the sheet, and the calendar
+     button's native date pickers.
 - **`@dnd-kit` in the release build and the PWA bundle.** After the DEV
   deploy, run `pnpm audit --prod` and `check-bundle-versions.mjs` against
   the DEV UI.
