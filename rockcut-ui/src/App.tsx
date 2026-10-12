@@ -31,6 +31,7 @@ import ExpandLess from '@mui/icons-material/ExpandLess'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 import HomeIcon from '@mui/icons-material/Home'
 import DashboardIcon from '@mui/icons-material/Dashboard'
+import ChecklistIcon from '@mui/icons-material/Checklist'
 import ScienceIcon from '@mui/icons-material/Science'
 import InventoryIcon from '@mui/icons-material/Inventory'
 import AssignmentIcon from '@mui/icons-material/Assignment'
@@ -71,6 +72,7 @@ import type { Channel, Department } from './lib/types'
 // Pages
 import Home from './pages/Home'
 import BreweryDashboard from './pages/brewery/BreweryDashboard'
+import TaskBoard from './pages/brewery/tasks/TaskBoard'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
 import RecipeDetail from './pages/recipes/RecipeDetail'
@@ -116,6 +118,7 @@ interface NavSection {
 // headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
+  { label: 'Tasks', path: '/brewery/tasks', icon: <ChecklistIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
   { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
@@ -314,9 +317,10 @@ function App() {
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
+  // `/brewery` (the Dashboard) is exact, so Brewery → Tasks doesn't light it too.
   const isSelected = (path: string) =>
-    path === '/'
-      ? location.pathname === '/'
+    path === '/' || path === '/brewery'
+      ? location.pathname === path
       : location.pathname === path || location.pathname.startsWith(path + '/')
 
   // A section is open if the user toggled it, else auto-open when it holds the
@@ -650,6 +654,7 @@ function App() {
             {hasBrewery && (
               <>
                 <Route path="/brewery" element={<BreweryDashboard />} />
+                <Route path="/brewery/tasks" element={<TaskBoard />} />
                 <Route path="/brands" element={<BrandsList />} />
                 <Route path="/brands/:id" element={<BrandDetail />} />
                 <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />

@@ -292,7 +292,8 @@ function SortableItem({ id, locked, renderItem, onActivate }: ItemProps) {
     }
   }
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onKeyDown={onKeyDown}>
+    // A locked item can't be dragged but can still be activated, so it isn't aria-disabled.
+    <div ref={setNodeRef} style={style} {...attributes} aria-disabled={undefined} {...listeners} onKeyDown={onKeyDown}>
       {renderItem(id, { dragging: isDragging, overlay: false, locked })}
     </div>
   )
