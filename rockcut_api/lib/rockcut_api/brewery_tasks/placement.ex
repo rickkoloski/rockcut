@@ -10,11 +10,12 @@ defmodule RockcutApi.BreweryTasks.Placement do
   | open, no `due_on` | one on Future |
   | done, `planned_day` | one on `due_on`, in place |
   | done, `completed_day` | one on `completed_on`, tagged with its planned day |
-  | done, `both` | one in place on `due_on` (tagged done), one on `completed_on` |
+  | done, `both` | one in place on `due_on` (tagged done), one on `completed_on`; both locked |
   | done from Future | one on `completed_on`, tagged "from Future" |
 
   A card on the day a task was finished, away from its planned day, is
-  `locked` (it can't be dragged). A task finished on its own day gets one card
+  `locked` (it can't be dragged), and so are both copies of a `both` task
+  (S8b: "Neither copy can be dragged"). A task finished on its own day gets one card
   in place, whatever its `completed_display`.
 
   Each card is a map:
@@ -78,7 +79,7 @@ defmodule RockcutApi.BreweryTasks.Placement do
     do: [finished_day_card(t)]
 
   defp cards_for(%Task{completed_display: "both"} = t, _today),
-    do: [card(t, t.due_on, done_on: t.completed_on), finished_day_card(t)]
+    do: [card(t, t.due_on, done_on: t.completed_on, locked: true), finished_day_card(t)]
 
   # planned_day, and anything unexpected: in place on the planned day.
   defp cards_for(%Task{} = t, _today), do: [card(t, t.due_on)]

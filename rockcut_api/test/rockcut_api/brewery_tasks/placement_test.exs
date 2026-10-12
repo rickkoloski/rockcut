@@ -73,22 +73,22 @@ defmodule RockcutApi.BreweryTasks.PlacementTest do
                by_day[@today]
     end
 
-    test "done, both: one in place tagged done, one on completed_on locked" do
+    test "done, both: one in place tagged done, one on completed_on; both locked (S8b)" do
       by_day = cards([done(1, due_on: @mon, completed_display: "both")])
 
-      assert [%{key: {1, @mon}, done_on: @today, planned_on: nil, locked: false}] =
+      assert [%{key: {1, @mon}, done_on: @today, planned_on: nil, locked: true}] =
                by_day[@mon]
 
       assert [%{key: {1, @today}, planned_on: @mon, done_on: nil, locked: true}] =
                by_day[@today]
 
-      assert all_cards(by_day) |> Enum.count(& &1.locked) == 1
+      assert all_cards(by_day) |> Enum.all?(& &1.locked)
     end
 
-    test "done early (future day), both: the finished-day copy is the locked one" do
+    test "done early (future day), both: both copies are locked" do
       by_day = cards([done(1, due_on: @thu, completed_display: "both")])
 
-      assert [%{locked: false, done_on: @today}] = by_day[@thu]
+      assert [%{locked: true, done_on: @today}] = by_day[@thu]
       assert [%{locked: true, planned_on: @thu}] = by_day[@today]
     end
 

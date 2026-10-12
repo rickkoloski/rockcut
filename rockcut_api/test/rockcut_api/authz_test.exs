@@ -257,5 +257,14 @@ defmodule RockcutApi.AuthzTest do
 
       refute Authz.can?(d, :manage, :brewery_daily_items)
     end
+
+    test "who can be assigned a task: active Brewery people and owners", %{p: p, device: d} do
+      for key <- ~w(brewer1 breweryMgr floater owner),
+          do: assert(Authz.can_take_brewery_task?(p[key]), key)
+
+      refute Authz.can_take_brewery_task?(p["bartender1"])
+      refute Authz.can_take_brewery_task?(d)
+      refute Authz.can_take_brewery_task?(%{p["brewer1"] | active: false})
+    end
   end
 end

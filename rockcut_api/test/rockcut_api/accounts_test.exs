@@ -67,4 +67,66 @@ defmodule RockcutApi.AccountsTest do
       assert "sales" in keys
     end
   end
+
+  describe "leaving the Brewery (D38 S49)" do
+    alias RockcutApi.BreweryTasks
+    alias RockcutApi.Authz
+    alias RockcutApi.BreweryTasks.{DailyCheck, Event, Task}
+
+    setup do
+      mgr = user_with_role("manager", "brewery")
+      brewer2 = user_with_role("employee", "brewery") |> add_membership("bar", "employee")
+      today = ~D[2026-10-14]
+
+      {:ok, open} =
+        BreweryTasks.create(%{title: "Open", due_on: today, assignee_id: brewer2.id}, mgr)
+
+      {:ok, done} =
+        BreweryTasks.create(%{title: "Done", due_on: today, assignee_id: brewer2.id}, mgr)
+
+      {:ok, _} = BreweryTasks.complete(done, nil, brewer2, today)
+      [item | _] = BreweryTasks.list_items()
+      {:ok, _} = BreweryTasks.tick(today, item, brewer2, today)
+
+      %{mgr: mgr, brewer2: brewer2, open: open, done: done}
+    end
+
+    test "removing someone from the Brewery unassigns open tasks only", ctx do
+      assert {:ok, _} =
+               Accounts.set_memberships(ctx.brewer2, [], ctx.mgr)
+
+      # The manager touches only the Brewery; the Taproom membership stays.
+      assert Authz.member_of?(Accounts.get_user!(ctx.brewer2.id), "bar")
+      assert Repo.get!(Task, ctx.open.id).assignee_id == nil
+      done = Repo.get!(Task, ctx.done.id)
+      assert {done.assignee_id, done.completed_by_id} == {ctx.brewer2.id, ctx.brewer2.id}
+      assert [%DailyCheck{completed_by_id: id}] = Repo.all(DailyCheck)
+      assert id == ctx.brewer2.id
+
+      assert [%Event{actor_id: actor_id, detail: detail}] =
+               Repo.all(from e in Event, where: e.action == "unassigned")
+
+      assert actor_id == ctx.mgr.id
+      assert detail == %{"from" => ctx.brewer2.id, "to" => nil, "reason" => "left_brewery"}
+    end
+
+    test "deactivating someone unassigns their open tasks", ctx do
+      owner = owner_fixture()
+      assert {:ok, _} = Accounts.update_user(ctx.brewer2, %{"active" => false}, owner)
+      assert Repo.get!(Task, ctx.open.id).assignee_id == nil
+      assert Repo.get!(Task, ctx.done.id).assignee_id == ctx.brewer2.id
+    end
+
+    test "a change that keeps them in the Brewery leaves their tasks", ctx do
+      assert {:ok, _} =
+               Accounts.set_memberships(
+                 ctx.brewer2,
+                 [%{"department" => "brewery", "role" => "manager"}],
+                 owner_fixture()
+               )
+
+      assert Repo.get!(Task, ctx.open.id).assignee_id == ctx.brewer2.id
+      assert Repo.all(from e in Event, where: e.action == "unassigned") == []
+    end
+  end
 end

@@ -45,6 +45,16 @@ defmodule RockcutApi.Authz do
 
   def can_hold_staff_code?(_), do: false
 
+  @doc """
+  True if `user` may be assigned a D38 Brewery task: an active person (not a
+  device) in the Brewery (owners count, as everywhere). Expects memberships
+  preloaded with departments.
+  """
+  def can_take_brewery_task?(%User{kind: "person", active: true} = user),
+    do: member_of?(user, "brewery")
+
+  def can_take_brewery_task?(_), do: false
+
   @doc "True if the user is a global owner."
   def owner?(%User{is_owner: owner}), do: owner == true
 
