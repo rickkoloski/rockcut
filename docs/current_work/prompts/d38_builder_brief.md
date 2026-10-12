@@ -166,3 +166,71 @@ the concurrent-move test with two `Task`s.
 **Done means:** `MIX_ENV=test mix test` passes in full. Commit as
 `feat: D38 step 2 — BreweryTasks context`, then **stop** and reply as in
 Task 1. Don't start step 3.
+
+---
+
+## Task 3: plan steps 3 and 4, the board read model, routes and seed
+
+**Lead answers to your step 2 questions** (step 2 accepted, including
+deviations 1–6):
+1. **A done task can't go to Future:** keep `{:error, :locked}`. The UI
+   will grey out Move to Future for done tasks.
+2. **Ticks on retired items refused, unticks allowed:** keep.
+3. **Ticked today, then retired the same day:** today keeps showing it,
+   ticked. Use the past-day rule for **today** as well (active items plus
+   retired items ticked that day). Future days show active items only. Fix
+   `daily_cards/2` and add a test.
+
+### Step 3: `board/3`, the header, controllers and routes
+
+As the plan's "Changes → API" describes ("The header", "Controllers and
+router", the `/api/me` flag):
+- `BreweryTasks.board(from, to, today \\ today())`: days with cards
+  (through `Placement`), header and Daily card; the Unfinished list; the
+  Future list; names preloaded once. One query per kind for the whole
+  range, no query per day.
+- **The header:** published Brewery shifts by Colorado day, grouped per
+  person (both shifts on one line, total hours), in roster order
+  (`schedule_order`, then name); open shifts last; published Brewery
+  events overlapping the day. Reuse `Scheduling`'s Colorado midnight
+  helper by making it public or moving it to `Recurrence`; don't copy it.
+- **`BreweryTaskController`** and **`BreweryDailyController`** in a new
+  `[:api, :authenticated, :brewery]` scope. Every action calls `Authz.can?`
+  (`:read` / `:write` / `:history` on `:brewery_tasks`, `:manage` on
+  `:brewery_daily_items`). The routes are in spec §3.6, plus `GET
+  /api/brewery/tasks/history?task_id=&page=`.
+- **Errors** as 422 with a code, as D37 does: `display_required`,
+  `future_day`, `retired`, `locked`, `too_many_items`, `range_too_long`
+  (more than 31 days, or `from` after `to`). 404 for a missing task or
+  item.
+- **JSON:** dates as `YYYY-MM-DD`, card keys as `"<task_id>:<day>"` or
+  `"<task_id>:future"`, names (not just ids) for assignee, completer and
+  event actors. Keep it flat, in house style.
+- **`device_route_matrix_test.exs`:** add every new route as denied to
+  devices.
+- **`/api/me`:** a top-level `brewery_tasks_manage` flag.
+- **ExUnit:** `brewery_task_board_test.exs` (header and board, as the
+  plan's "Tests" lists) and controller tests for every route as an
+  employee, a manager, an owner, a Taproom-only person (403) and a device
+  (403).
+
+### Step 4: synthetic seed
+
+As the plan's "Changes → API → Synthetic seed" describes: `[SEED]` tasks
+relative to today, Daily checks, one published all-day Brewery event this
+week, `cleanup_temp/0` and `reset/0` additions. Extend the synthetic seed
+tests: the rows exist, `setup/0` twice gives the same result, and
+`cleanup_temp` removes `[TEST-TEMP]` tasks and items.
+
+Then run `mix rockcut.synthetic.setup` against the **local dev DB** (that's
+what it's for; it's guarded to synthetic data) and check the board as
+`brewer1` with `curl localhost:4002/api/brewery/tasks?...`. You'll need
+the API running: say "LEAD: please start the API" and wait. Mint the token
+with `mix rockcut.synthetic.token brewer1` in a shell variable; never print
+it.
+
+**Done means:** `MIX_ENV=test mix test` passes in full, and the curl check
+shows headers, cards, Unfinished, Future and Daily cards for this week.
+Commit step 3 and step 4 separately (`feat: D38 step 3 — board read model
+and routes`, `feat: D38 step 4 — synthetic seed`), then **stop** and reply
+as in Task 1. Don't start step 5.
