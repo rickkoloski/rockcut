@@ -17,8 +17,8 @@ import {
   type ApiCard,
 } from './taskBoardHelpers'
 
-// D38 §3.8 Future list, scenarios S23c–S23i (S23j, the phone day strip, comes
-// with the phone layout in step 9).
+// D38 §3.8 Future list, scenarios S23c–S23i (S23j, the phone day strip's
+// Future stop, is in task-board-phone.spec.ts).
 
 test.use({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
 

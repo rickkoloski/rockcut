@@ -1,6 +1,23 @@
 import { useState } from 'react'
-import { Box, Button, FormControlLabel, IconButton, Menu, MenuItem, Switch, TextField, ToggleButton, ToggleButtonGroup, Tooltip, Typography } from '@mui/material'
-import { ChevronLeft, ChevronRight, MoreVert } from '@mui/icons-material'
+import {
+  Box,
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControlLabel,
+  IconButton,
+  Menu,
+  MenuItem,
+  Switch,
+  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
+  Tooltip,
+  Typography,
+} from '@mui/material'
+import { CalendarMonth, ChevronLeft, ChevronRight, MoreVert } from '@mui/icons-material'
 import { rangeError, type Span, type TaskFilter } from '../../../lib/breweryTasks'
 
 interface Props {
@@ -21,6 +38,8 @@ interface Props {
   onHistory?: () => void
   /** Edit Daily items (managers and owners). Without either there's no ⋮ menu. */
   onEditDailyItems?: () => void
+  /** Phone width: 1 week / 2 weeks and the date range go behind a calendar button. */
+  compact?: boolean
 }
 
 /**
@@ -28,8 +47,25 @@ interface Props {
  * range, the filter, Hide completed, and the ⋮ menu for managers.
  */
 export default function BoardToolbar(props: Props) {
-  const { from, to, span, filter, hideCompleted } = props
+  const { from, to, span, filter, hideCompleted, compact } = props
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const spanToggle = (
+    <ToggleButtonGroup
+      size="small"
+      exclusive
+      value={span}
+      onChange={(_, v: Span | null) => {
+        if (!v) return
+        setCalendarOpen(false)
+        props.onSpan(v)
+      }}
+      aria-label="Days shown"
+    >
+      <ToggleButton value={7} data-testid="board-span-7">1 week</ToggleButton>
+      <ToggleButton value={14} data-testid="board-span-14">2 weeks</ToggleButton>
+    </ToggleButtonGroup>
+  )
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, mb: 2 }} data-testid="board-toolbar">
       <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -47,17 +83,41 @@ export default function BoardToolbar(props: Props) {
           </IconButton>
         </Tooltip>
       </Box>
-      <ToggleButtonGroup
-        size="small"
-        exclusive
-        value={span}
-        onChange={(_, v: Span | null) => v && props.onSpan(v)}
-        aria-label="Days shown"
-      >
-        <ToggleButton value={7} data-testid="board-span-7">1 week</ToggleButton>
-        <ToggleButton value={14} data-testid="board-span-14">2 weeks</ToggleButton>
-      </ToggleButtonGroup>
-      <RangeSelector key={`${from}:${to}`} from={from} to={to} onRange={props.onRange} />
+      {compact ? (
+        <>
+          <Tooltip title="Days shown">
+            <IconButton aria-label="Days shown" onClick={() => setCalendarOpen(true)} data-testid="board-calendar">
+              <CalendarMonth />
+            </IconButton>
+          </Tooltip>
+          <Dialog open={calendarOpen} onClose={() => setCalendarOpen(false)} fullWidth maxWidth="xs" data-testid="board-calendar-dialog">
+            <DialogTitle>Days shown</DialogTitle>
+            <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
+              {spanToggle}
+              <RangeSelector
+                key={`${from}:${to}`}
+                from={from}
+                to={to}
+                stacked
+                onRange={(f, t) => {
+                  setCalendarOpen(false)
+                  props.onRange(f, t)
+                }}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setCalendarOpen(false)} data-testid="board-calendar-close">
+                Close
+              </Button>
+            </DialogActions>
+          </Dialog>
+        </>
+      ) : (
+        <>
+          {spanToggle}
+          <RangeSelector key={`${from}:${to}`} from={from} to={to} onRange={props.onRange} />
+        </>
+      )}
       <ToggleButtonGroup
         size="small"
         exclusive
@@ -115,7 +175,18 @@ export default function BoardToolbar(props: Props) {
 }
 
 /** From and To (up to 31 days). Mounted per range, so it starts from what's showing. */
-function RangeSelector({ from, to, onRange }: { from: string; to: string; onRange: (from: string, to: string) => void }) {
+function RangeSelector({
+  from,
+  to,
+  stacked,
+  onRange,
+}: {
+  from: string
+  to: string
+  /** One field under the other (the phone's calendar dialog). */
+  stacked?: boolean
+  onRange: (from: string, to: string) => void
+}) {
   const [draftFrom, setDraftFrom] = useState(from)
   const [draftTo, setDraftTo] = useState(to)
   const [error, setError] = useState<string | null>(null)
@@ -134,7 +205,7 @@ function RangeSelector({ from, to, onRange }: { from: string; to: string; onRang
         e.preventDefault()
         apply()
       }}
-      sx={{ display: 'flex', alignItems: 'center', gap: 1 }}
+      sx={stacked ? { display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 2 } : { display: 'flex', alignItems: 'center', gap: 1 }}
     >
       <TextField
         type="date"

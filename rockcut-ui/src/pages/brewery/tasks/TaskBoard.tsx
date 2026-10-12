@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Alert, Box, CircularProgress, Snackbar } from '@mui/material'
+import { Alert, Box, CircularProgress, Snackbar, useMediaQuery, useTheme } from '@mui/material'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../../components/PageHeader'
 import ConfirmDialog from '../../../components/ConfirmDialog'
@@ -33,6 +33,7 @@ import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
 import HistoryDialog from './HistoryDialog'
+import PhoneDayView from './PhoneDayView'
 import DayColumn from './DayColumn'
 import FinishElsewhereDialog from './FinishElsewhereDialog'
 import FutureList from './FutureList'
@@ -48,7 +49,8 @@ const WIDE_BOARD_PX = 1200
  * D38: Brewery → Tasks. The days in the range (in rows of seven), each with
  * its schedule header, Daily card and tasks; the Unfinished card first and
  * the Future list last. Every list is one container in a single
- * SortableLists, so a drag between any two of them is one move.
+ * SortableLists, so a drag between any two of them is one move. At phone
+ * width it's one day at a time (PhoneDayView), and drags stay in their list.
  */
 export default function TaskBoard() {
   const qc = useQueryClient()
@@ -70,6 +72,8 @@ export default function TaskBoard() {
     return () => observer.disconnect()
   }, [boardEl])
   const wide = boardWidth >= WIDE_BOARD_PX
+  const theme = useTheme()
+  const phone = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true })
 
   // The range lives in the URL; without a valid one it's today plus the default span.
   const urlFrom = params.get('from') ?? ''
@@ -89,6 +93,12 @@ export default function TaskBoard() {
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
   const brewers = useMemo(() => roster.filter((r) => r.departments.includes('brewery')), [roster])
   const today = board?.today ?? coloradoToday()
+
+  // Phone: the day (or FUTURE) showing. It starts on today, or the range's
+  // first day when today isn't in it.
+  const [picked, setPicked] = useState<string | null>(null)
+  const stops = useMemo(() => [...(board?.days.map((d) => d.date) ?? []), FUTURE], [board])
+  const selected = picked && stops.includes(picked) ? picked : stops.includes(today) ? today : stops[0]
 
   // Every card by key, and the lists as the filter shows them.
   const { cards, source } = useMemo(() => {
@@ -371,6 +381,18 @@ export default function TaskBoard() {
   const layout = (lists: Record<string, ReactNode>) => {
     if (!board) return null
     const showUnfinished = board.unfinished.length > 0
+    if (phone)
+      return (
+        <PhoneDayView
+          stops={stops}
+          selected={selected}
+          today={today}
+          onSelect={setPicked}
+          openCount={openCount}
+          showUnfinished={showUnfinished}
+          lists={lists}
+        />
+      )
     const rows = Math.ceil(board.days.length / 7)
     const lead = showUnfinished && wide ? 1 : 0
     const days = board.days.map((d, i) => (
@@ -422,13 +444,17 @@ export default function TaskBoard() {
         hideCompleted={hideCompleted}
         onPrev={() => step(-1)}
         onNext={() => step(1)}
-        onToday={() => setParams({})}
+        onToday={() => {
+          setPicked(null)
+          setParams({})
+        }}
         onSpan={pickSpan}
         onRange={showRange}
         onFilter={setFilter}
         onHideCompleted={toggleHide}
         onHistory={canManage ? () => setHistory({}) : undefined}
         onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
+        compact={phone}
       />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}
@@ -437,6 +463,7 @@ export default function TaskBoard() {
           containers={containers}
           onMove={moveTask}
           isLocked={isLocked}
+          sameListOnly={phone}
           itemLabel={(key) => cards.get(key)?.title ?? 'task'}
           containerLabel={(id) => (id === FUTURE ? 'Future' : id === UNFINISHED ? 'Unfinished' : formatTaskDay(id))}
           onItemActivate={(key, element) => setMenu({ key, anchor: element })}
@@ -465,6 +492,7 @@ export default function TaskBoard() {
           card={menuCard}
           canMoveUp={menuOwn.indexOf(menuCard.key) > 0}
           canMoveDown={menuOwn.indexOf(menuCard.key) > -1 && menuOwn.indexOf(menuCard.key) < menuOwn.length - 1}
+          sheet={phone}
           onClose={() => setMenu(null)}
           onAction={onAction}
         />

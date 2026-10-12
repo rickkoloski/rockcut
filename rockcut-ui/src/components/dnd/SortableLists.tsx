@@ -22,6 +22,7 @@ import {
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { containerOf, moveBetween, placeAt, type ListContainer, type Move } from './moveModel'
+import { DragActiveContext } from './dragActive'
 import { CONTAINER_PREFIX, containerDropId, DropTargetsContext, TARGET_PREFIX, type DropHandlers } from './dropTargets'
 
 // The shared drag layer (D38): any number of vertical lists in one
@@ -55,6 +56,8 @@ interface Props {
   containerLabel: (containerId: string) => string
   /** Enter on a focused item (Space picks it up). */
   onItemActivate?: (itemId: string, element: HTMLElement) => void
+  /** Items only reorder within their own list (a phone, where one list shows at a time). */
+  sameListOnly?: boolean
   /**
    * Places the rendered lists (keyed by container id). Defaults to their
    * order in `containers`. DropTargets go here too.
@@ -85,6 +88,7 @@ export default function SortableLists({
   itemLabel,
   containerLabel,
   onItemActivate,
+  sameListOnly = false,
   children,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -108,7 +112,8 @@ export default function SortableLists({
     }),
   )
 
-  const collision: CollisionDetection = (args) => {
+  const collision: CollisionDetection = (input) => {
+    const args = sameListOnly ? ownListOnly(input) : input
     if (!args.pointerCoordinates) return closestCorners(args)
     const hits = pointerWithin(args)
     const targets = hits.filter((h) => isTargetId(h.id))
@@ -130,14 +135,16 @@ export default function SortableLists({
   const landing = (lists: ListContainer[], event: DragOverEvent | DragEndEvent): [string, number] | null => {
     const { active, over } = event
     if (!over || isTargetId(over.id)) return null
+    // The keyboard finds its next spot without the collision check, so this guards it too.
+    const allowed = (id: string) => !sameListOnly || id === containerOf(drag?.original ?? containers, String(active.id))
     if (isContainerId(over.id)) {
       const id = unprefix(over.id, CONTAINER)
       const list = lists.find((c) => c.id === id)
-      return list ? [id, list.itemIds.filter((i) => i !== active.id).length] : null
+      return list && allowed(id) ? [id, list.itemIds.filter((i) => i !== active.id).length] : null
     }
     const overId = String(over.id)
     const id = containerOf(lists, overId)
-    if (!id) return null
+    if (!id || !allowed(id)) return null
     const ids = lists.find((c) => c.id === id)!.itemIds
     const index = ids.indexOf(overId)
     if (id === containerOf(lists, String(active.id))) return [id, index]
@@ -218,30 +225,42 @@ export default function SortableLists({
 
   return (
     <DropTargetsContext.Provider value={dropHandlers}>
-      <DndContext
-        sensors={sensors}
-        collisionDetection={collision}
-        measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-        autoScroll
-        accessibility={{
-          announcements,
-          screenReaderInstructions: {
-            draggable:
-              'To pick up an item, press Space. Use the arrow keys to move it, Space to drop it, or Escape to cancel.',
-          },
-        }}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={() => setDrag(null)}
-      >
-        {children ? children(lists) : shown.map((c) => lists[c.id])}
-        <DragOverlay>
-          {drag ? renderItem(drag.itemId, { dragging: false, overlay: true, locked: false }) : null}
-        </DragOverlay>
-      </DndContext>
+      <DragActiveContext.Provider value={drag !== null}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collision}
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          autoScroll
+          accessibility={{
+            announcements,
+            screenReaderInstructions: {
+              draggable:
+                'To pick up an item, press Space. Use the arrow keys to move it, Space to drop it, or Escape to cancel.',
+            },
+          }}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => setDrag(null)}
+        >
+          {children ? children(lists) : shown.map((c) => lists[c.id])}
+          <DragOverlay>
+            {drag ? renderItem(drag.itemId, { dragging: false, overlay: true, locked: false }) : null}
+          </DragOverlay>
+        </DndContext>
+      </DragActiveContext.Provider>
     </DropTargetsContext.Provider>
   )
+}
+
+/** The drop spots in the dragged item's own list (and any DropTargets). */
+function ownListOnly(args: Parameters<CollisionDetection>[0]): Parameters<CollisionDetection>[0] {
+  const from = args.active.data.current?.sortable?.containerId as string | undefined
+  if (from === undefined) return args
+  const droppableContainers = args.droppableContainers.filter(
+    (d) => isTargetId(d.id) || d.id === containerDropId(from) || d.data.current?.sortable?.containerId === from,
+  )
+  return { ...args, droppableContainers }
 }
 
 interface ListProps {
