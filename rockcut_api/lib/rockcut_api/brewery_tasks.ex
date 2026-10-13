@@ -21,7 +21,7 @@ defmodule RockcutApi.BreweryTasks do
 
   alias RockcutApi.{Accounts, Authz, Repo}
   alias RockcutApi.Accounts.{Department, User}
-  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Event, Placement, Task}
+  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Event, Placement, Series, Task}
   alias RockcutApi.Scheduling.{Recurrence, ScheduleEvent, Shift}
 
   @history_page_size 50
@@ -196,9 +196,19 @@ defmodule RockcutApi.BreweryTasks do
   @doc """
   Add a task at the bottom of its day, or of the Future list when `due_on` is
   empty. `attrs`: title, notes, due_on, assignee_id.
+
+  With `repeat` (D39), it's a recurring task: `Series.create/3` makes every
+  occurrence through today + 12 months and returns the first.
   """
-  def create(attrs, %User{} = actor) do
+  def create(attrs, %User{} = actor, today \\ today()) do
     attrs = stringify(attrs)
+
+    if Series.repeat?(attrs),
+      do: Series.create(attrs, actor, today),
+      else: create_one(attrs, actor)
+  end
+
+  defp create_one(attrs, actor) do
     dept = department!()
 
     Repo.transaction(fn ->
@@ -838,7 +848,8 @@ defmodule RockcutApi.BreweryTasks do
 
   ## Validation
 
-  defp validate_assignee(changeset) do
+  @doc false
+  def validate_assignee(changeset) do
     case Ecto.Changeset.get_change(changeset, :assignee_id) do
       nil ->
         changeset
