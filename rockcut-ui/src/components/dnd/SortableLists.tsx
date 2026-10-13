@@ -21,7 +21,7 @@ import {
 } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { containerOf, moveBetween, placeAt, type ListContainer, type Move } from './moveModel'
+import { canLand, containerOf, moveBetween, placeAt, type ListContainer, type Move } from './moveModel'
 import { DragActiveContext } from './dragActive'
 import { CONTAINER_PREFIX, containerDropId, DropTargetsContext, TARGET_PREFIX, type DropHandlers } from './dropTargets'
 
@@ -62,8 +62,12 @@ interface Props {
   containerLabel: (containerId: string) => string
   /** Enter on a focused item (Space picks it up). */
   onItemActivate?: (itemId: string, element: HTMLElement) => void
-  /** Items only reorder within their own list (a phone, where one list shows at a time). */
-  sameListOnly?: boolean
+  /**
+   * Whether an item from `fromList` may land in `toList` (default: any). A
+   * phone showing one list at a time allows its own list, and whatever else
+   * the page says.
+   */
+  canMoveTo?: (fromList: string, toList: string) => boolean
   /**
    * Places the rendered lists (keyed by container id). Defaults to their
    * order in `containers`. DropTargets go here too.
@@ -95,7 +99,7 @@ export default function SortableLists({
   itemLabel,
   containerLabel,
   onItemActivate,
-  sameListOnly = false,
+  canMoveTo,
   children,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null)
@@ -122,7 +126,9 @@ export default function SortableLists({
   const collision: CollisionDetection = (input) => aboveLast(input, detect(input))
 
   const detect: CollisionDetection = (input) => {
-    const args = sameListOnly ? ownListOnly(input) : input
+    // Where it started, not the preview's list it may already be shown in.
+    const from = containerOf(drag?.original ?? containers, String(input.active.id))
+    const args = canMoveTo && from !== null ? allowedOnly(input, from, canMoveTo) : input
     if (!args.pointerCoordinates) return closestCorners(args)
     const hits = pointerWithin(args)
     const targets = hits.filter((h) => isTargetId(h.id))
@@ -164,7 +170,8 @@ export default function SortableLists({
     const { active, over } = event
     if (!over || isTargetId(over.id)) return null
     // The keyboard finds its next spot without the collision check, so this guards it too.
-    const allowed = (id: string) => !sameListOnly || id === containerOf(drag?.original ?? containers, String(active.id))
+    const from = containerOf(drag?.original ?? containers, String(active.id))
+    const allowed = (id: string) => from !== null && canLand(from, id, canMoveTo)
     if (isContainerId(over.id)) {
       const id = unprefix(over.id, CONTAINER)
       const list = lists.find((c) => c.id === id)
@@ -284,13 +291,17 @@ export default function SortableLists({
   )
 }
 
-/** The drop spots in the dragged item's own list (and any DropTargets). */
-function ownListOnly(args: Parameters<CollisionDetection>[0]): Parameters<CollisionDetection>[0] {
-  const from = args.active.data.current?.sortable?.containerId as string | undefined
-  if (from === undefined) return args
-  const droppableContainers = args.droppableContainers.filter(
-    (d) => isTargetId(d.id) || d.id === containerDropId(from) || d.data.current?.sortable?.containerId === from,
-  )
+/** The drop spots in the lists the dragged item may move to (and any DropTargets). */
+function allowedOnly(
+  args: Parameters<CollisionDetection>[0],
+  from: string,
+  canMoveTo: (fromList: string, toList: string) => boolean,
+): Parameters<CollisionDetection>[0] {
+  const droppableContainers = args.droppableContainers.filter((d) => {
+    if (isTargetId(d.id)) return true
+    const list = isContainerId(d.id) ? unprefix(d.id, CONTAINER) : (d.data.current?.sortable?.containerId as string | undefined)
+    return list !== undefined && canLand(from, list, canMoveTo)
+  })
   return { ...args, droppableContainers }
 }
 

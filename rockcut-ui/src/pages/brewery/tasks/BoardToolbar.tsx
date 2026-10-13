@@ -17,8 +17,8 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { CalendarMonth, ChevronLeft, ChevronRight, MoreVert } from '@mui/icons-material'
-import { rangeError, type Span, type TaskFilter } from '../../../lib/breweryTasks'
+import { CalendarMonth, ChevronLeft, ChevronRight, MoreVert, ViewAgenda, ViewDay } from '@mui/icons-material'
+import { rangeError, type PhoneView, type Span, type TaskFilter } from '../../../lib/breweryTasks'
 
 interface Props {
   from: string
@@ -40,6 +40,9 @@ interface Props {
   onEditDailyItems?: () => void
   /** Phone width: 1 week / 2 weeks and the date range go behind a calendar button. */
   compact?: boolean
+  /** Phone width (D39): every day stacked, or one day at a time. */
+  phoneView?: PhoneView
+  onPhoneView?: (view: PhoneView) => void
 }
 
 /**
@@ -85,6 +88,26 @@ export default function BoardToolbar(props: Props) {
       </Box>
       {compact ? (
         <>
+          {props.onPhoneView && (
+            <ToggleButtonGroup
+              size="small"
+              exclusive
+              value={props.phoneView}
+              onChange={(_, v: PhoneView | null) => v && props.onPhoneView?.(v)}
+              aria-label="View"
+            >
+              <ToggleButton value="vertical" aria-label="All days" data-testid="board-view-vertical">
+                <Tooltip title="All days">
+                  <ViewAgenda fontSize="small" />
+                </Tooltip>
+              </ToggleButton>
+              <ToggleButton value="day" aria-label="One day" data-testid="board-view-day">
+                <Tooltip title="One day">
+                  <ViewDay fontSize="small" />
+                </Tooltip>
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
           <Tooltip title="Days shown">
             <IconButton aria-label="Days shown" onClick={() => setCalendarOpen(true)} data-testid="board-calendar">
               <CalendarMonth />

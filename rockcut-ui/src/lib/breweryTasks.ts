@@ -239,6 +239,7 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
 // ── Per-browser preferences (spec §3.8). Storage can be missing or throw. ──
 
 const SPAN_KEY = 'rockcut.breweryTasks.span'
+const PHONE_VIEW_KEY = 'rockcut.breweryTasks.phoneView'
 const HIDE_KEY = 'rockcut.breweryTasks.hideCompleted'
 
 function read(key: string): string | null {
@@ -262,3 +263,18 @@ export const readSpan = (): Span => (read(SPAN_KEY) === '7' ? 7 : 14)
 export const writeSpan = (span: Span) => write(SPAN_KEY, String(span))
 export const readHideCompleted = () => read(HIDE_KEY) === 'true'
 export const writeHideCompleted = (on: boolean) => write(HIDE_KEY, String(on))
+
+/** D39 phone width: every day stacked (`vertical`, the default) or one day at a time. */
+export type PhoneView = 'vertical' | 'day'
+export const readPhoneView = (): PhoneView => (read(PHONE_VIEW_KEY) === 'day' ? 'day' : 'vertical')
+export const writePhoneView = (view: PhoneView) => write(PHONE_VIEW_KEY, view)
+
+/**
+ * Where a task may be dragged on a phone (spec §3.8 "Phone width"). The
+ * vertical view: anywhere, as on desktop (no rule). The one-day view: within
+ * its list, or from the Unfinished card into today when today shows (S73).
+ */
+export function phoneMoveRule(view: PhoneView, selected: string, today: string) {
+  if (view === 'vertical') return undefined
+  return (from: string, to: string) => from === to || (from === UNFINISHED && to === today && selected === today)
+}

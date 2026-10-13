@@ -18,13 +18,17 @@ import {
   coloradoToday,
   dayCount,
   formatTaskDay,
+  phoneMoveRule,
   rangeError,
   readHideCompleted,
+  readPhoneView,
   readSpan,
   spanEnd,
   taskError,
   writeHideCompleted,
+  writePhoneView,
   writeSpan,
+  type PhoneView,
   type Span,
   type TaskFilter,
 } from '../../../lib/breweryTasks'
@@ -34,6 +38,7 @@ import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
 import HistoryDialog from './HistoryDialog'
 import PhoneDayView from './PhoneDayView'
+import PhoneVerticalView from './PhoneVerticalView'
 import { RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
 import DayColumn from './DayColumn'
 import FinishElsewhereDialog from './FinishElsewhereDialog'
@@ -51,7 +56,9 @@ const WIDE_BOARD_PX = 1200
  * its schedule header, Daily card and tasks; the Unfinished card first and
  * the Future list last. Every list is one container in a single
  * SortableLists, so a drag between any two of them is one move. At phone
- * width it's one day at a time (PhoneDayView), and drags stay in their list.
+ * width (D39) it's every day stacked (PhoneVerticalView, drags anywhere) or
+ * one day at a time (PhoneDayView: drags stay in the day, or come from the
+ * Unfinished card into today).
  */
 export default function TaskBoard() {
   const qc = useQueryClient()
@@ -61,6 +68,8 @@ export default function TaskBoard() {
   const [params, setParams] = useSearchParams()
   const [span, setSpan] = useState<Span>(readSpan)
   const [hideCompleted, setHideCompleted] = useState(readHideCompleted)
+  // D39: at phone width, every day stacked (the default) or one at a time.
+  const [phoneView, setPhoneView] = useState<PhoneView>(readPhoneView)
   const [filter, setFilter] = useState<TaskFilter>('all')
   // Nine columns (Unfinished, seven days, Future) need about 1,200px of board,
   // which a 1280px screen beside the nav doesn't have (spec §3.8).
@@ -429,6 +438,8 @@ export default function TaskBoard() {
   const layout = (lists: Record<string, ReactNode>) => {
     if (!board) return null
     const showUnfinished = board.unfinished.length > 0
+    if (phone && phoneView === 'vertical')
+      return <PhoneVerticalView days={board.days.map((d) => d.date)} showUnfinished={showUnfinished} lists={lists} />
     if (phone)
       return (
         <PhoneDayView
@@ -503,6 +514,11 @@ export default function TaskBoard() {
         onHistory={canManage ? () => setHistory({}) : undefined}
         onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
         compact={phone}
+        phoneView={phoneView}
+        onPhoneView={(view) => {
+          writePhoneView(view)
+          setPhoneView(view)
+        }}
       />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}
@@ -512,7 +528,7 @@ export default function TaskBoard() {
           onMove={moveTask}
           isLocked={isLocked}
           staysLast={staysLast}
-          sameListOnly={phone}
+          canMoveTo={phone ? phoneMoveRule(phoneView, selected, today) : undefined}
           itemLabel={(key) => cards.get(key)?.title ?? 'task'}
           containerLabel={(id) => (id === FUTURE ? 'Future' : id === UNFINISHED ? 'Unfinished' : formatTaskDay(id))}
           onItemActivate={(key, element) => setMenu({ key, anchor: element })}

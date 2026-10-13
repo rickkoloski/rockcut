@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { taskError, taskGone } from './breweryTasks'
+import { FUTURE, UNFINISHED, phoneMoveRule, taskError, taskGone } from './breweryTasks'
 
 const err = (status: number, url: string, data: Record<string, unknown> = {}) => ({ response: { status, data }, config: { url } })
 
@@ -24,5 +24,30 @@ describe('taskGone / taskError', () => {
     const locked = err(422, '/api/brewery/tasks/12/move', { error: 'locked', message: 'A finished task can’t be moved' })
     expect(taskGone(locked)).toBe(false)
     expect(taskError(locked)).toBe('A finished task can’t be moved')
+  })
+})
+
+describe('phoneMoveRule', () => {
+  const today = '2026-10-12'
+  const tomorrow = '2026-10-13'
+
+  it('the vertical view has no rule: anywhere, as on desktop', () => {
+    expect(phoneMoveRule('vertical', today, today)).toBeUndefined()
+  })
+
+  it('one day on today: its own list, or Unfinished → today', () => {
+    const rule = phoneMoveRule('day', today, today)!
+    expect(rule(today, today)).toBe(true)
+    expect(rule(UNFINISHED, today)).toBe(true)
+    expect(rule(today, tomorrow)).toBe(false)
+    expect(rule(today, FUTURE)).toBe(false)
+    expect(rule(today, UNFINISHED)).toBe(false)
+  })
+
+  it('one day on another day: its own list only', () => {
+    const rule = phoneMoveRule('day', tomorrow, today)!
+    expect(rule(tomorrow, tomorrow)).toBe(true)
+    expect(rule(UNFINISHED, tomorrow)).toBe(false)
+    expect(rule(UNFINISHED, today)).toBe(false)
   })
 })
