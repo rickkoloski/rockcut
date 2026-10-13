@@ -955,7 +955,7 @@ brewhouse tablet, a staff code is needed.
 
 | # | Persona | Entry point | Mode / state | Expected |
 |---|---|---|---|---|
-| S75 | `breweryMgr` | Edit Daily items → Retired → **Restore** "Temps" | Temps retired last week, with ticks before that | Temps is back at the bottom of the list, today's card shows it, and its old ticks still show on their days. With 12 items already active, Restore is refused with the limit message. |
+| S75 | `breweryMgr` | Edit Daily items → Retired → **Restore** "Temps" | Temps retired last week, with ticks before that | Temps is back at the bottom of the list, today's card shows it, and its old ticks still show on their days. The days it was retired keep their counts: it isn't on those cards and can't be ticked there (D39 Decision 5). With 12 items already active, Restore is refused with the limit message. |
 | S76 | `brewer1` | Pixel → open a task's Edit dialog → back gesture | phone width | The dialog closes and the board stays. The same for the "where should it show" dialog and Change day…. |
 | S77 | `brewer2` | Edit a task, leave it open; `brewer1` deletes the task; `brewer2` saves | | "This task was deleted", not "Not found". Nothing is recreated. |
 

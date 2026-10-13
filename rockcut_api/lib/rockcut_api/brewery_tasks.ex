@@ -543,8 +543,9 @@ defmodule RockcutApi.BreweryTasks do
   done: n, total: n}}`. One query per kind for the whole range.
 
     * Today and past days show, and count, the active items that existed
-      then (created on or before that Colorado day) plus any item ticked that
-      day (an item ticked today, then retired, still shows ticked).
+      then (created on or before that Colorado day) and weren't retired then
+      (`retired_spans/1`), plus any item ticked that day (an item ticked
+      today, then retired, still shows ticked).
     * Future days show the active items.
   """
   def daily_cards(days, today \\ today()) do
@@ -574,10 +575,11 @@ defmodule RockcutApi.BreweryTasks do
           |> Map.new(&{{&1.on_date, &1.daily_item_id}, &1})
       end
 
-    Map.new(days, &{&1, daily_card(&1, items, checks, today)})
+    spans = retired_spans()
+    Map.new(days, &{&1, daily_card(&1, items, checks, spans, today)})
   end
 
-  defp daily_card(day, items, checks, today) do
+  defp daily_card(day, items, checks, spans, today) do
     started? = Date.compare(day, today) != :gt
 
     rows =
@@ -585,7 +587,7 @@ defmodule RockcutApi.BreweryTasks do
       |> Enum.map(&%{item: &1, check: Map.get(checks, {day, &1.id})})
       |> Enum.filter(fn %{item: item, check: check} ->
         if started?,
-          do: check != nil or (item.active and existed_on?(item, day)),
+          do: check != nil or (item.active and in_list_on?(item, day, spans)),
           else: item.active
       end)
 
@@ -595,15 +597,79 @@ defmodule RockcutApi.BreweryTasks do
   defp existed_on?(%DailyItem{inserted_at: at}, day),
     do: Date.compare(today_at(at), day) != :gt
 
+  defp in_list_on?(%DailyItem{} = item, day, spans),
+    do: existed_on?(item, day) and not retired_on?(spans, item.id, day)
+
+  defp retired_on?(spans, item_id, day) do
+    spans
+    |> Map.get(item_id, [])
+    |> Enum.any?(fn {from, to} ->
+      Date.compare(from, day) != :gt and Date.compare(day, to) != :gt
+    end)
+  end
+
+  @doc """
+  The Colorado days each restored Daily item was off the list (D39 Decision
+  5): `%{item_id => [{first, last}]}`, from its `item_retired` and
+  `item_restored` events, oldest first.
+
+  Retired on day R and restored on day S, it's out on R through S - 1:
+
+    * R is out: while retired, R's card didn't show it, so restoring doesn't
+      change R's count. A tick on R (made before retiring) still shows, as
+      every tick does.
+    * S is in: it's back on the list that day and can be ticked.
+    * Retired and restored the same day: no span, the day keeps it.
+
+  An item still retired has an open span; `active: false` already keeps it
+  off every card. One query for all items (or just `item_id`).
+  """
+  def retired_spans(item_id \\ nil) do
+    query =
+      from e in Event,
+        where: e.action in ["item_retired", "item_restored"],
+        order_by: [asc: e.inserted_at, asc: e.id]
+
+    query
+    |> Repo.all()
+    |> Enum.filter(&(item_id == nil or &1.detail["daily_item_id"] == item_id))
+    |> Enum.group_by(& &1.detail["daily_item_id"])
+    |> Map.new(fn {id, events} -> {id, spans_from(events)} end)
+  end
+
+  defp spans_from(events) do
+    {spans, _open} =
+      Enum.reduce(events, {[], nil}, fn
+        %Event{action: "item_retired"} = e, {spans, nil} ->
+          {spans, today_at(e.inserted_at)}
+
+        %Event{action: "item_restored"} = e, {spans, %Date{} = from} ->
+          to = Date.add(today_at(e.inserted_at), -1)
+          {if(Date.compare(from, to) == :gt, do: spans, else: [{from, to} | spans]), nil}
+
+        _, acc ->
+          acc
+      end)
+
+    Enum.reverse(spans)
+  end
+
+  defp not_retired_on(%DailyItem{active: false}, _on_date), do: {:error, :retired}
+
+  defp not_retired_on(%DailyItem{id: id}, on_date) do
+    if retired_on?(retired_spans(id), id, on_date), do: {:error, :retired}, else: :ok
+  end
+
   @doc """
   Tick `item` on `on_date`. A future date → `{:error, :future_day}`; a retired
-  item → `{:error, :retired}`; a day before the item was added →
-  `{:error, :not_yet_added}`. Ticking twice is a no-op (no second event).
+  item, or a day it was retired (D39 Decision 5) → `{:error, :retired}`; a
+  day before the item was added → `{:error, :not_yet_added}`. Ticking twice
+  is a no-op (no second event).
   """
   def tick(on_date, %DailyItem{} = item, %User{} = actor, today \\ today()) do
     with {:ok, on_date} <- cast_date(on_date),
          :ok <- not_future(on_date, today),
-         :ok <- if(item.active, do: :ok, else: {:error, :retired}),
+         :ok <- not_retired_on(item, on_date),
          :ok <- if(existed_on?(item, on_date), do: :ok, else: {:error, :not_yet_added}) do
       Repo.transaction(fn ->
         {:ok, check} =
@@ -627,13 +693,13 @@ defmodule RockcutApi.BreweryTasks do
 
   @doc """
   Untick `item` on `on_date`. Not ticked → a no-op. A future date →
-  `{:error, :future_day}`. A retired item → `{:error, :retired}`: its ticks
-  are kept (D39 Decision 1, O-3).
+  `{:error, :future_day}`. A retired item, or a day it was retired →
+  `{:error, :retired}`: its ticks are kept (D39 Decisions 1 and 5).
   """
   def untick(on_date, %DailyItem{} = item, %User{} = actor, today \\ today()) do
     with {:ok, on_date} <- cast_date(on_date),
          :ok <- not_future(on_date, today),
-         :ok <- if(item.active, do: :ok, else: {:error, :retired}) do
+         :ok <- not_retired_on(item, on_date) do
       Repo.transaction(fn ->
         {n, _} =
           Repo.delete_all(
@@ -715,9 +781,9 @@ defmodule RockcutApi.BreweryTasks do
   (a changeset error "Already on the list"). Logs `item_restored`. An active
   item is returned unchanged.
 
-  Only `active` and its place change: past days show it again as they did
-  before it was retired (ticked or not), and it can be ticked on any day since
-  it was first added.
+  Only `active` and its place change. The days it was retired stay without it
+  (`retired_spans/1`, D39 Decision 5); the days before show it again, ticked
+  or not.
   """
   def restore_item(%DailyItem{id: id}, %User{} = actor) do
     Repo.transaction(fn ->

@@ -266,6 +266,61 @@ defmodule RockcutApi.BreweryDailyTest do
     end
   end
 
+  describe "retired spans: a restored item stays off the days it was retired (Decision 5)" do
+    # Retired Sat 10/10, restored Tue 10/13 (noon Colorado): out 10/10–10/12.
+    test "the retired days' totals leave it out; the days before and after count it",
+         %{mgr: mgr, items: items} do
+      off_and_back!(items["Temps"], mgr, ~D[2026-10-10], ~D[2026-10-13])
+      cards = BreweryTasks.daily_cards(Date.range(~D[2026-10-09], @thu), @today)
+
+      totals = Map.new(cards, fn {day, c} -> {day.day, c.total} end)
+      assert totals == %{9 => 4, 10 => 3, 11 => 3, 12 => 3, 13 => 4, 14 => 4, 15 => 4}
+      refute Enum.any?(cards[~D[2026-10-11]].items, &(&1.item.name == "Temps"))
+    end
+
+    test "retired and restored twice: both spans are out", %{mgr: mgr, items: items} do
+      temps = off_and_back!(items["Temps"], mgr, ~D[2026-10-06], ~D[2026-10-08])
+      off_and_back!(temps, mgr, ~D[2026-10-10], ~D[2026-10-13])
+
+      assert BreweryTasks.retired_spans(temps.id) == %{
+               temps.id => [
+                 {~D[2026-10-06], ~D[2026-10-07]},
+                 {~D[2026-10-10], ~D[2026-10-12]}
+               ]
+             }
+
+      cards = BreweryTasks.daily_cards(Date.range(~D[2026-10-05], @tue), @today)
+      out = for {day, %{total: 3}} <- cards, do: day.day
+      assert Enum.sort(out) == [6, 7, 10, 11, 12]
+    end
+
+    test "retired and restored the same day leaves no gap", %{mgr: mgr, items: items} do
+      off_and_back!(items["Temps"], mgr, @mon, @mon)
+      assert %{total: 4} = card(@mon)
+    end
+
+    test "a tick from the retire day, made before retiring, still shows",
+         %{brewer: brewer, mgr: mgr, items: items} do
+      {:ok, _} = BreweryTasks.tick(~D[2026-10-10], items["Temps"], brewer, @today)
+      off_and_back!(items["Temps"], mgr, ~D[2026-10-10], ~D[2026-10-13])
+
+      assert %{done: 1, total: 4} = card(~D[2026-10-10])
+      assert %{done: 0, total: 3} = card(~D[2026-10-11])
+    end
+
+    test "a day inside a retired span can't be ticked or unticked; the days around it can",
+         %{brewer: brewer, mgr: mgr, items: items} do
+      temps = off_and_back!(items["Temps"], mgr, ~D[2026-10-10], ~D[2026-10-13])
+
+      assert {:error, :retired} = BreweryTasks.tick(~D[2026-10-10], temps, brewer, @today)
+      assert {:error, :retired} = BreweryTasks.tick(~D[2026-10-12], temps, brewer, @today)
+      assert {:error, :retired} = BreweryTasks.untick(~D[2026-10-11], temps, brewer, @today)
+      assert {:ok, _} = BreweryTasks.tick(~D[2026-10-09], temps, brewer, @today)
+      assert {:ok, _} = BreweryTasks.tick(@tue, temps, brewer, @today)
+      assert %{done: 0, total: 3} = card(~D[2026-10-12])
+    end
+  end
+
   describe "daily_cards/2: which items a day counts" do
     test "a new item doesn't show on days before it was added (G4)",
          %{brewer: brewer, mgr: mgr, items: items} do
@@ -343,6 +398,21 @@ defmodule RockcutApi.BreweryDailyTest do
   defp added_tuesday!(name, mgr) do
     {:ok, item} = BreweryTasks.create_item(%{name: name}, mgr)
     item |> Ecto.Changeset.change(inserted_at: ~U[2026-10-13 18:00:00Z]) |> Repo.update!()
+  end
+
+  # Retire `item` at noon Colorado on `off`, restore it at noon on `back`.
+  defp off_and_back!(item, mgr, off, back) do
+    {:ok, retired} = BreweryTasks.retire_item(item, mgr)
+    backdate_last_event!(off)
+    {:ok, restored} = BreweryTasks.restore_item(retired, mgr)
+    backdate_last_event!(back)
+    restored
+  end
+
+  defp backdate_last_event!(day) do
+    [event | _] = daily_events()
+    at = DateTime.new!(day, ~T[18:00:00], "Etc/UTC")
+    event |> Ecto.Changeset.change(inserted_at: at) |> Repo.update!()
   end
 
   defp card(day), do: BreweryTasks.daily_cards([day], @today)[day]
