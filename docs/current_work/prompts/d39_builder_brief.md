@@ -856,3 +856,48 @@ Fix the tests, not the product:
 
 `test:` commits. **Reply with:** what you changed, the sweep result, the
 counts, SHAs. Then stop.
+
+## Task 13: DEV QA recheck R1, a rule change from before a split (must-fix)
+
+The QA recheck (`stepwise_results/d39_dev_qa_recheck.md`) passed G1's edit,
+delete, stop and two-person paths, and G2. It found **R1**:
+
+Setup: weekly Wed from 10/14; at 12/2 a rule change to Monthly 1st Wed,
+following, keep. The old part (series A) now has `until_date` 12/1, the
+split's **internal** end; the new part (B, continues A) is open-ended.
+1. Edit (or Edit series…) on an **old-part** occurrence shows Ends = "On a
+   date", "Repeats every week on Wed, until Dec 1, 2026". The person never
+   set that.
+2. Change the rule there (11/4: Wed → Fri, following). The confirm counts
+   B's occurrences (correct, they're removed), but the new Friday series is
+   saved with `until_date` 12/1. It makes 11/6–11/27 and stops: the task
+   silently ends. **Setting Ends = Never explicitly still saves 12/1**
+   (likely: `repeat.ts` sends no `repeat_until` for "never", and the merge
+   with the old series' fields keeps its `until_date`; confirm).
+
+Fix:
+- **Separate the internal end from the person's end.** A series' ends, as
+  the person sees them, are the **chain's**: the last continuation's
+  `until_date`/`count`, or never. A split's internal `until_date` on the old
+  part is not an "Ends" value. Return the chain's ends from `GET …/series`
+  and wherever the dialog gets its rule, and use them as the base when a
+  rule change from an earlier occurrence is merged (so leaving Ends
+  untouched keeps the chain's real end).
+- **Ends = Never must clear.** The dialog sends explicit blanks for the
+  ends it isn't using (`repeat_until: ""`, `repeat_count: ""`) whenever the
+  rule is sent, and the API treats a blank as "none", overriding the base.
+- A `count` end across a split: decide and document what "after N times"
+  means for a chain (simplest defensible: count from the chain's start,
+  or convert to an until date at split time). Say which.
+- ExUnit: QA's repro (rule change from before a split, Ends untouched →
+  the chain's end, here never; Ends = Never → never; Ends = a date → that
+  date); the dialog data for an old-part occurrence shows the chain's ends;
+  a count-ended series split and then edited from before. Revert-check the
+  repro.
+- Vitest for the explicit blanks; one Playwright check (QA's repro short:
+  after the rule change from before the split, an occurrence 6 months out
+  exists with the new rule).
+
+`fix:` commits. **Done when:** ExUnit, Vitest, `tsc`, build, no new lint;
+brewery folder once. **Reply with:** counts, SHAs, the count-across-split
+call, and any `LEAD:` question. Then stop.
