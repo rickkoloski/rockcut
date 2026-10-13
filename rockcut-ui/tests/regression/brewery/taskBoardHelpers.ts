@@ -254,9 +254,15 @@ export async function touchDrag(page: Page, source: Locator, list: Locator, befo
     else expect(spot).toBe('ok')
   }).toPass({ timeout: 10_000 })
   if (before) {
-    const b = (await before.boundingBox())!
-    await slide(b.y + b.height / 2, 6)
-    await expect.poll(() => dropSpot(list, before), { timeout: 10_000 }).toBe('ok')
+    // Onto `before` from below, so the placeholder slides in front of it (from
+    // above it would go after). Aim again if the lists moved under the finger.
+    await expect(async () => {
+      let b = (await before.boundingBox())!
+      await slide(b.y + b.height + 12, 4)
+      b = (await before.boundingBox())!
+      await slide(b.y + b.height / 2, 4)
+      await expect.poll(() => dropSpot(list, before), { timeout: 2_000 }).toBe('ok')
+    }).toPass({ timeout: 15_000 })
   }
   await touch('touchEnd', [])
 }
