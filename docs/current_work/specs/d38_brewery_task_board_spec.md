@@ -60,6 +60,15 @@ release) on its own branch. This spec covers all three. Where it says
   - the department switcher and a top-level Tasks nav.
 
   It still ships in the one prod release after D40, so no prod data moves.
+- **D42, task board follow-ups** (Matt, 2026-10-13, at the D39 DEV gate;
+  task 4260): a small deliverable **after D41 and before D40**, so it
+  lands on the generic board names. Order: D39 → D41 → D42 → D40, all in
+  the one prod release. It covers deleting a retired Daily item, greying
+  out Add/Restore at 12 items, the notes-only exemption rule (Matt to
+  decide), two split-series edge cases from the D39 QA recheck 2 (R2: a
+  count end across a split; O1: an Ends-only change from the earlier
+  part), and task 4117 (writes before a required password reset). Matt
+  has more changes to add when D42 starts.
 
 ## 1. Problem Statement
 
