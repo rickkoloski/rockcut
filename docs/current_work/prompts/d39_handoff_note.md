@@ -1,4 +1,97 @@
-# D39 handoff note
+# D39 handoff note (PR description)
+
+**Deliverable:** D39, recurring Brewery tasks and the D38 follow-ups
+(PortableMind task 4212). The second of the D38 spec's deliverables; D41
+(department boards, 4237) and D40 (brewhouse tablet, 4213) follow. D38, D39,
+D41 and D40 ship to prod in one release after D40.
+**Spec:** `docs/current_work/specs/d38_brewery_task_board_spec.md`: §3.10,
+"Phone width", §5's D39 items; scenarios S52–S67, S69–S78 (S68 is D40)
+**Plan:** `docs/current_work/planning/d39_brewery_recurring_tasks_plan.md`
+(Decisions 1–6: Matt, 2026-10-12 and 2026-10-13)
+**Branch:** `d39-brewery-recurring-tasks`, cut from `develop` (`2d9624d`).
+**SHA for DEV:** _filled in at push_
+
+## What changed
+
+Scenario → test for every row is in `rockcut-ui/tests/COVERAGE.md` (D39
+section). S66 (the daily top-up) is ExUnit only; S70–S74 and S76 are also
+**Pixel (manual)** on DEV.
+
+| Area | Change | Scenarios |
+|---|---|---|
+| **Recurring tasks** | A task can repeat weekly (every 1–4 weeks, on chosen weekdays), monthly (by day, or nth/last weekday), quarterly, or annually, ending on a date, after N times, or never. Each occurrence is an ordinary `brewery_tasks` row, so everything D38 does to a task works unchanged. `(series_id, series_date)` is unique, so a moved occurrence never comes back on its old date. Occurrences are kept a year ahead: the D22 scheduler tick calls `Series.top_up/1` daily (rescued on its own). `Scheduling.Recurrence` is shared with D32, generalized to take rule fields; D32's tests pass untouched | S52–S58, S66 |
+| **Series edits** | Editing an occurrence asks "Just this one" / "This and all following" (a split, as D32). A day change is always just this one (`series_exception`). Moving an occurrence to Future makes it a one-off (Decision 4). Delete asks for the scope; **Stop repeating** and **Edit series…** in the task menu. Removing later repeats when some were changed on their own offers "Remove N, keep the M changed on their own" or "Remove all" (Decision 2; also on a rule change saved with "following"). Finished occurrences are never removed. One History entry per series action, none from the top-up (Decision 3) | S59–S65, S69 |
+| **One-off → repeat** | Editing a one-off can make it repeat: it becomes the first occurrence of a new series from its day (a rule starting later moves it to the rule's first day). A Future task needs a day; a finished one can't (`repeat_finished`, and Repeat is hidden). One `made_repeating` History entry (Decision 6) | S67, S78 |
+| **Phone: vertical view** | Phones start in an all-days vertical view (Unfinished at top, days, Future at bottom); the toggle to the one-day view is remembered per browser (`rockcut.breweryTasks.phoneView`). Long press drags a task to any day, between days with edge auto-scroll, off Unfinished onto a day, or onto Future. The one-day view allows Unfinished → today. No drop onto Unfinished at any width (`canMoveTo` / pure `canLand` in `components/dnd/`) | S70–S74 |
+| **Back closes dialogs** | Android back closes every phone dialog (task, "where should it show", Change day…, History, Edit Daily items, the series dialogs, the board confirms). A dialog opened from the sheet takes over the sheet's history entry, so one back closes it and the next leaves the board; no dead back press after Cancel | S76 |
+| **Daily items** | Restore a retired item (Edit Daily items → Retired): at the bottom, old ticks kept, counts against the 12 cap. The days it was retired stay without it (spans from its History, Decision 5). Unticking a retired item, or on a retired day, is refused (Decision 1, O-3). Any PATCH on a retired item is 422 `retired` (GAP-1, GAP-2) | S75 |
+| **Smaller fixes** | A task route that 404s or 410s reads "This task was deleted" (S77). The board refetches on focus `'always'`. The Daily items dialog reads the board query (O-2) | S77 |
+| **Seed** | `[SEED]` Keg Wash (weekly Wed, from ~14 days ago), Glycol check (monthly, last Fri), Calibrate pH meter (quarterly, 15th). `reset` and `cleanup_temp` cover series | — |
+
+## Migrations
+
+| Migration | Change | Reversible |
+|---|---|---|
+| `20261012120001_create_brewery_task_series` | `brewery_task_series` (the rule, `generated_through`, `skipped_dates`) + indexes on `department_id`, `generated_through`; adds `series_id` (FK, nilify), `series_date`, `series_exception` (default false) to `brewery_tasks`; unique `(series_id, series_date)` | Yes (`change`) |
+
+Additive. **Rollback checked** 2026-10-13 on a scratch copy of the local dev
+DB (read-only `VACUUM INTO`, the real DB untouched): `down` dropped the
+series table, its two indexes, the unique index and the three task columns,
+and kept every task (88), user (27), History entry and Daily item; `up`
+restored the identical schema. A rollback turns every occurrence into a
+one-off and loses the rules.
+
+## New routes, dependencies and secrets
+
+- **Routes** (people only, in the route matrix): `GET /api/brewery/tasks/:id/series`,
+  `POST /api/brewery/tasks/:id/stop_repeating`, `POST /api/brewery/daily_items/:id/restore`.
+  `POST /tasks` and `PATCH /tasks/:id` take flat `repeat*` params;
+  `PATCH` / `DELETE` take `scope=this|following` and `changed=keep|remove`;
+  `GET /daily_items?include_retired=true`.
+- **New errors:** `repeat_needs_day`, `repeat_finished`, `scope_required`,
+  `not_in_series`, 410 `deleted`, `retired` on every retired-item write.
+- **No new dependencies, secrets or config.**
+
+## DEV must exercise
+
+- **The top-up on a real clock:** after the deploy, the scanner has run
+  (`generated_through` = today + 12 months for the seed's series); again the
+  next day if the gate runs that long.
+- **The migration at boot** on the DEV volume.
+- **Volume:** a 31-day range `GET` stays quick with the seed's series.
+- **On the Pixel as `brewer1`** (the checklist below).
+- S51-style: create a repeating task after 6 pm Colorado; its first
+  occurrence is on the Colorado day.
+
+### Pixel checklist
+
+1. First visit at phone width opens the vertical view; switch to one day,
+   reload, still one day (S70).
+2. Long-press a task and drag it down two days; the page auto-scrolls; it
+   lands where dropped (S71). Is the scroll speed comfortable?
+3. Long-press a task on Unfinished and drop it on tomorrow (S72); in the
+   one-day view on today, drop one from Unfinished between today's first and
+   second (S73).
+4. Drag a task onto Future (S74).
+5. A normal flick that starts on a card only scrolls.
+6. Back closes each dialog: the task dialog, "where should it show",
+   Change day…; open one from the sheet, back closes it, back again leaves
+   the board (S76).
+7. Create a weekly repeat, edit one occurrence "just this one", then Stop
+   repeating with the two-button confirm.
+
+## Local gate
+
+2026-10-13, at `6f73e31` (the code is final; later commits are docs only):
+
+- **ExUnit (full): 1,257 tests, 0 failures.**
+- **Vitest: 62 passed.** `tsc` and `vite build` clean.
+- **Lint:** 27 problems (26 errors, 1 warning), all pre-existing; none new.
+- **Full Playwright, every project** (`setup`, `chromium`, `brewery-board`,
+  `board-replace`): **292 passed, 1 skipped** (the DEV-only ribbon check),
+  0 failed, no retries (19.6 min).
+- During the build, the brewery folder passed 132/132 three times (Task 8)
+  and 133/133 (Task 9); S26 never failed in D39 (see below).
 
 ## S26
 
