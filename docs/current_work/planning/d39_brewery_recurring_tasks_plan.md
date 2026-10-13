@@ -351,3 +351,10 @@ with `canMoveTo`.
    top-up.
 4. **Moving an occurrence to the Future list makes it a one-off.** Its
    `series_id` is cleared and its date is skipped.
+5. **A restored Daily item is left out of the days it was retired** (Matt,
+   2026-10-13). Those days' counts don't change. Its retired spans come from
+   its `item_retired` / `item_restored` History events. A tick on a day
+   inside a retired span is refused like a retired item (422 `retired`).
+6. **Editing a one-off task can make it repeat** (Matt, 2026-10-13). The
+   task becomes the first occurrence of a new series starting on its day.
+   A Future task needs a day first (`repeat_needs_day`). One History entry.

@@ -693,3 +693,50 @@ later).
 - any `LEAD:` question.
 
 Then stop.
+
+## Task 9: Matt's two answers (plan Decisions 5 and 6)
+
+Task 8 was reviewed and accepted (`9ee6c67`, `fb93e45`, `e28dac9`,
+`6da04be`). **S26:** no guard for now; we wait for a real failure.
+
+**1. A restored Daily item is left out of the days it was retired.**
+Today `restore_item` only sets `active`, so `daily_card` shows the item
+(unticked) on every past day since `inserted_at`, including the days it was
+retired. Change that:
+- Derive each item's retired spans from its `item_retired` and
+  `item_restored` events (Colorado days). An item retired on day R and
+  restored on day S is out of the days after R through the day before S.
+  Decide and document the edges: an item ticked on R before it was retired
+  still shows ticked (a tick always shows, as now).
+- `daily_card`: on a past or today column, an active item shows only when it
+  existed that day **and** wasn't retired that day (or it has a tick).
+  Load the events once per `daily_cards` call, not per day.
+- `tick` / `untick` on a day inside a retired span → `{:error, :retired}`
+  (the same 422 the UI already handles).
+- ExUnit: retire, restore days later; the retired days' totals exclude it,
+  days before and after include it; retire/restore twice; a tick on a
+  retired day is refused. Revert-check one of them.
+- Playwright S75: extend it to check a retired day's count stays the same
+  after restore, if the seed allows it cheaply (backdate the events in the
+  test setup, or say why not).
+
+**2. Editing a one-off task can make it repeat.**
+- TaskDialog in edit mode on a task with no `series_id`: show the Repeat
+  field (now create-only). Choosing a rule and saving turns the task into
+  the first occurrence of a new series starting on its day, with the
+  later occurrences created as on create (top-up to the horizon).
+- A Future task (no day) with a rule → `repeat_needs_day`, as on create;
+  the dialog says so before saving if it can.
+- A finished one-off: refuse (`422`), or hide Repeat; your call, say which.
+- One History entry (`series_created` or whatever create logs), none for
+  the occurrences.
+- API: reuse `Series.create` paths; no new route if `PATCH /tasks/:id`
+  with a `repeat` field fits. ExUnit for the conversion, Future refusal and
+  History count; one Playwright scenario (add as S78 in the spec's
+  scenarios and the Delivery split).
+
+**Done when:** ExUnit, Vitest, `tsc` and the build pass, no new lint errors,
+and the brewery folder passes once. Commit each part as `feat:`.
+
+**Reply with:** the counts, the SHAs, the retired-span edge rules you chose,
+the finished-one-off call, and any `LEAD:` question. Then stop.
