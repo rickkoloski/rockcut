@@ -212,6 +212,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
       return `Renamed the Daily item ${d.from} to ${d.to}`
     case 'item_retired':
       return `Retired the Daily item ${t}`
+    case 'item_restored':
+      return `Restored Daily item ${t}`
     case 'item_reordered': {
       const item = (id: unknown) => names.items[String(id)] ?? '?'
       const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(item).join(', ') : '')

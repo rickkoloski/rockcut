@@ -514,6 +514,17 @@ defmodule RockcutApi.BreweryTasks do
 
   ## Daily card
 
+  @doc "The retired Daily items, by name (Edit Daily items' Retired section, D39)."
+  def list_retired_items do
+    dept = department!()
+
+    Repo.all(
+      from i in DailyItem,
+        where: i.department_id == ^dept.id and not i.active,
+        order_by: [asc: i.name, asc: i.id]
+    )
+  end
+
   @doc "The active Daily items, in order."
   def list_items do
     dept = department!()
@@ -694,6 +705,40 @@ defmodule RockcutApi.BreweryTasks do
       list_items() |> Enum.map(& &1.id) |> write_item_order()
       log_item!(retired, "item_retired", actor, %{"daily_item_id" => id})
       retired
+    end)
+  end
+
+  @doc """
+  Bring a retired Daily item back (D39, S75): at the bottom of the list, with
+  its past ticks. It counts against the #{@max_items}-item cap
+  (`{:error, :too_many_items}`) and against the active names, ignoring case
+  (a changeset error "Already on the list"). Logs `item_restored`. An active
+  item is returned unchanged.
+
+  Only `active` and its place change: past days show it again as they did
+  before it was retired (ticked or not), and it can be ticked on any day since
+  it was first added.
+  """
+  def restore_item(%DailyItem{id: id}, %User{} = actor) do
+    Repo.transaction(fn ->
+      item = Repo.get(DailyItem, id) || Repo.rollback(:not_found)
+
+      if item.active do
+        item
+      else
+        active = list_items()
+        if length(active) >= @max_items, do: Repo.rollback(:too_many_items)
+
+        restored =
+          item
+          |> Ecto.Changeset.change(active: true, position: length(active) + 1)
+          |> unique_name(active)
+          |> Repo.update()
+          |> ok_or_rollback()
+
+        log_item!(restored, "item_restored", actor, %{"daily_item_id" => id})
+        restored
+      end
     end)
   end
 

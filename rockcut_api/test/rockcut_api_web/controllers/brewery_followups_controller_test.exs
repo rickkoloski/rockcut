@@ -117,4 +117,55 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
       end
     end
   end
+
+  describe "restore (S75)" do
+    test "Brewery managers and owners; not brewers or the Taproom", %{p: p} do
+      for key <- ~w(breweryMgr owner) do
+        temps = retire!(p["breweryMgr"], "Temps")
+
+        assert %{"data" => %{"id" => ^temps, "active" => true, "position" => 4}} =
+                 call(p[key], :post, "/api/brewery/daily_items/#{temps}/restore")
+                 |> json_response(200)
+      end
+
+      temps = retire!(p["breweryMgr"], "Temps")
+
+      for key <- ~w(brewer1 bartender1),
+          do:
+            assert(call(p[key], :post, "/api/brewery/daily_items/#{temps}/restore").status == 403)
+
+      refute BreweryTasks.get_item(temps).active
+      assert call(p["breweryMgr"], :post, "/api/brewery/daily_items/999999/restore").status == 404
+    end
+
+    test "include_retired lists the retired items after the active ones", %{p: p} do
+      temps = retire!(p["breweryMgr"], "Temps")
+
+      assert Enum.map(
+               call(p["brewer1"], :get, "/api/brewery/daily_items")
+               |> json_response(200)
+               |> Map.get("data"),
+               & &1["name"]
+             ) == ~w(Backups Gravities Pressures)
+
+      assert [_, _, _, %{"id" => ^temps, "name" => "Temps", "active" => false}] =
+               call(p["brewer1"], :get, "/api/brewery/daily_items", %{include_retired: "true"})
+               |> json_response(200)
+               |> Map.get("data")
+    end
+
+    test "the cap and a name clash are refused with D38's answers", %{p: p} do
+      mgr = p["breweryMgr"]
+      temps = retire!(mgr, "Temps")
+      call(mgr, :post, "/api/brewery/daily_items", %{name: "temps"}) |> json_response(201)
+
+      assert %{"errors" => %{"name" => ["Already on the list"]}} =
+               call(mgr, :post, "/api/brewery/daily_items/#{temps}/restore") |> json_response(422)
+
+      for n <- 1..8, do: call(mgr, :post, "/api/brewery/daily_items", %{name: "Item #{n}"})
+
+      assert %{"error" => "too_many_items"} =
+               call(mgr, :post, "/api/brewery/daily_items/#{temps}/restore") |> json_response(422)
+    end
+  end
 end

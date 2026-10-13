@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Box,
   Button,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -13,7 +14,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { ArrowDownward, ArrowUpward, Check, Close, DragIndicator, Edit, RemoveCircleOutline } from '@mui/icons-material'
+import { ArrowDownward, ArrowUpward, Check, Close, DragIndicator, Edit, ExpandLess, ExpandMore, RemoveCircleOutline, Restore } from '@mui/icons-material'
 import { useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import SortableLists from '../../../components/dnd/SortableLists'
@@ -33,16 +34,31 @@ interface Props {
   onClose: () => void
   /** Something changed: the board refetches its Daily cards. */
   onChanged: () => void
+  /** When the board last loaded: the list refetches with it (O-2). */
+  boardUpdatedAt: number
 }
 
 /**
  * D38 §3.8 Edit Daily items (managers and owners): add, rename, reorder (drag
  * through the shared layer, or Move up/down for keyboard and touch), and
  * retire after "Retire Temps? Past ticks are kept." Each change saves at once.
+ *
+ * D39: a collapsed Retired section restores an item to the bottom of the list
+ * with its past ticks (S75). The list refetches whenever the board does (its
+ * 60-second refresh, focus), so changes made elsewhere show while it's open
+ * (O-2); a name being typed in a rename field is the dialog's own and stays.
  */
-export default function DailyItemsDialog({ onClose, onChanged }: Props) {
+export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }: Props) {
   const qc = useQueryClient()
-  const { data: items = NO_ITEMS, isLoading } = useApiQuery<DailyItem[]>([ITEMS_KEY], '/api/brewery/daily_items')
+  const { data: all = NO_ITEMS, isLoading, refetch } = useApiQuery<DailyItem[]>([ITEMS_KEY], '/api/brewery/daily_items', {
+    include_retired: 'true',
+  })
+  const items = useMemo(() => all.filter((i) => i.active), [all])
+  const retired = useMemo(() => all.filter((i) => !i.active), [all])
+  useEffect(() => {
+    void refetch()
+  }, [boardUpdatedAt, refetch])
+  const [showRetired, setShowRetired] = useState(false)
   const byKey = useMemo(() => new Map(items.map((i) => [String(i.id), i])), [items])
   const source = useMemo<ListContainer[]>(() => [{ id: LIST, itemIds: items.map((i) => String(i.id)) }], [items])
   const { containers, move } = useOptimisticLists(source)
@@ -100,6 +116,19 @@ export default function DailyItemsDialog({ onClose, onChanged }: Props) {
       changed()
     } catch (err) {
       setRetiring(null)
+      setError(dailyItemError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const restore = async (item: DailyItem) => {
+    setBusy(true)
+    try {
+      await api.post(`/api/brewery/daily_items/${item.id}/restore`)
+      setError(null)
+      changed()
+    } catch (err) {
       setError(dailyItemError(err))
     } finally {
       setBusy(false)
@@ -276,6 +305,45 @@ export default function DailyItemsDialog({ onClose, onChanged }: Props) {
             Add
           </Button>
         </Box>
+        {retired.length > 0 && (
+          <Box sx={{ mt: 2 }}>
+            <Button
+              size="small"
+              onClick={() => setShowRetired((v) => !v)}
+              endIcon={showRetired ? <ExpandLess /> : <ExpandMore />}
+              aria-expanded={showRetired}
+              data-testid="daily-items-retired-toggle"
+            >
+              Retired ({retired.length})
+            </Button>
+            <Collapse in={showRetired}>
+              <Box data-testid="daily-items-retired" sx={{ mt: 0.5 }}>
+                {retired.map((item) => (
+                  <Paper
+                    key={item.id}
+                    variant="outlined"
+                    data-testid={`daily-items-retired-row-${item.id}`}
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, py: 0.5, mb: 0.5 }}
+                  >
+                    <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+                      {item.name}
+                    </Typography>
+                    <Button
+                      size="small"
+                      startIcon={<Restore fontSize="small" />}
+                      disabled={busy}
+                      onClick={() => restore(item)}
+                      aria-label={`Restore ${item.name}`}
+                      data-testid={`daily-items-restore-${item.id}`}
+                    >
+                      Restore
+                    </Button>
+                  </Paper>
+                ))}
+              </Box>
+            </Collapse>
+          </Box>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} data-testid="daily-items-close">

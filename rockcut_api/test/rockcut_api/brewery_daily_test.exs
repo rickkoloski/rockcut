@@ -205,6 +205,67 @@ defmodule RockcutApi.BreweryDailyTest do
     end
   end
 
+  describe "restore_item/2 (S75)" do
+    test "back at the bottom with its past ticks; past days show it as before it was retired; logged",
+         %{brewer: brewer, mgr: mgr, items: items} do
+      {:ok, _} = BreweryTasks.tick(@mon, items["Temps"], brewer, @today)
+
+      summary = fn day ->
+        c = card(day)
+        {c.done, c.total, Enum.sort(Enum.map(c.items, &{&1.item.name, &1.check != nil}))}
+      end
+
+      before = {summary.(@mon), summary.(@tue)}
+      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
+      # Retired: Tuesday (not ticked) stops counting it; Monday keeps its tick.
+      assert %{total: 3} = card(@tue)
+
+      assert {:ok, restored} = BreweryTasks.restore_item(retired, mgr)
+      assert restored.active
+
+      assert Enum.map(BreweryTasks.list_items(), & &1.name) ==
+               ~w(Backups Gravities Pressures Temps)
+
+      assert Enum.map(BreweryTasks.list_items(), & &1.position) == [1, 2, 3, 4]
+
+      assert {summary.(@mon), summary.(@tue)} == before
+      assert Enum.any?(card(@mon).items, &(&1.item.name == "Temps" and &1.check))
+      assert Enum.any?(card(@thu).items, &(&1.item.name == "Temps"))
+      # It can be ticked again, on a past day too.
+      assert {:ok, _} = BreweryTasks.tick(@tue, restored, brewer, @today)
+
+      assert [%Event{action: "item_restored", title: "Temps", actor_id: actor} | _] =
+               Enum.drop(daily_events(), 1)
+
+      assert actor == mgr.id
+    end
+
+    test "refused at #{BreweryTasks.max_items()} active items", %{mgr: mgr, items: items} do
+      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
+      for n <- 1..9, do: {:ok, _} = BreweryTasks.create_item(%{name: "Item #{n}"}, mgr)
+
+      assert {:error, :too_many_items} = BreweryTasks.restore_item(retired, mgr)
+      refute BreweryTasks.get_item(retired.id).active
+    end
+
+    test "refused when an active item has the name, ignoring case", %{mgr: mgr, items: items} do
+      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
+      {:ok, _} = BreweryTasks.create_item(%{name: "TEMPS"}, mgr)
+
+      assert {:error, %Ecto.Changeset{errors: [name: {"Already on the list", _}]}} =
+               BreweryTasks.restore_item(retired, mgr)
+
+      refute BreweryTasks.get_item(retired.id).active
+    end
+
+    test "an active item is returned unchanged, with no event", %{mgr: mgr, items: items} do
+      events = length(daily_events())
+      assert {:ok, item} = BreweryTasks.restore_item(items["Temps"], mgr)
+      assert item == items["Temps"]
+      assert length(daily_events()) == events
+    end
+  end
+
   describe "daily_cards/2: which items a day counts" do
     test "a new item doesn't show on days before it was added (G4)",
          %{brewer: brewer, mgr: mgr, items: items} do

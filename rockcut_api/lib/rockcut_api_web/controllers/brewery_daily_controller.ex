@@ -42,10 +42,28 @@ defmodule RockcutApiWeb.BreweryDailyController do
     |> BreweryErrors.handle(conn)
   end
 
-  @doc "GET /api/brewery/daily_items: the active items, in order."
-  def items(conn, _params) do
+  @doc """
+  GET /api/brewery/daily_items: the active items, in order. With
+  `include_retired=true` (D39), the retired ones follow, by name.
+  """
+  def items(conn, params) do
     with :ok <- allow(conn, :read, :brewery_tasks) do
-      render_items(conn, BreweryTasks.list_items())
+      retired =
+        if params["include_retired"] in ["true", true],
+          do: BreweryTasks.list_retired_items(),
+          else: []
+
+      render_items(conn, BreweryTasks.list_items() ++ retired)
+    end
+    |> BreweryErrors.handle(conn)
+  end
+
+  @doc "POST /api/brewery/daily_items/:id/restore: a retired item back at the bottom (D39, S75)."
+  def restore_item(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :manage, :brewery_daily_items),
+         {:ok, item} <- fetch(id),
+         {:ok, item} <- BreweryTasks.restore_item(item, actor(conn)) do
+      json(conn, %{data: brewery_daily_item(item)})
     end
     |> BreweryErrors.handle(conn)
   end

@@ -85,11 +85,13 @@ export default function TaskBoard() {
   const length = dayCount(from, to)
   const highlighted: Span | null = urlValid ? (length === 7 || length === 14 ? length : null) : span
 
-  const { data: board, isLoading, isError, error } = useApiQuery<TaskBoardData>(
+  const { data: board, isLoading, isError, error, dataUpdatedAt } = useApiQuery<TaskBoardData>(
     [BOARD_KEY, from, to],
     '/api/brewery/tasks',
     { from, to },
-    { refetchInterval: 60_000, refetchOnWindowFocus: true, placeholderData: keepPreviousData },
+    // Back to the tab: always fresh, even within the default 30 seconds (and
+    // Edit Daily items with it, O-2).
+    { refetchInterval: 60_000, refetchOnWindowFocus: 'always', placeholderData: keepPreviousData },
   )
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
   const brewers = useMemo(() => roster.filter((r) => r.departments.includes('brewery')), [roster])
@@ -560,7 +562,7 @@ export default function TaskBoard() {
           onHistory={canManage ? (card) => setHistory({ task: { id: card.id, title: card.title } }) : undefined}
         />
       )}
-      {editingDaily && <DailyItemsDialog onClose={() => setEditingDaily(false)} onChanged={refresh} />}
+      {editingDaily && <DailyItemsDialog onClose={() => setEditingDaily(false)} onChanged={refresh} boardUpdatedAt={dataUpdatedAt} />}
       {history && <HistoryDialog task={history.task} onClose={() => setHistory(null)} />}
       {finishing && (
         <FinishElsewhereDialog

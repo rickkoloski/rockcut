@@ -216,7 +216,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:get, "/api/brewery/daily_items"},
     {:post, "/api/brewery/daily_items"},
     {:put, "/api/brewery/daily_items/order"},
-    {:patch, "/api/brewery/daily_items/:id"}
+    {:patch, "/api/brewery/daily_items/:id"},
+    {:post, "/api/brewery/daily_items/:id/restore"}
   ]
 
   defp app_routes do

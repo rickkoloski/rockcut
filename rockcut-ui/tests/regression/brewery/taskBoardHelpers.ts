@@ -243,6 +243,20 @@ export async function dailyCard(api: APIRequestContext, date: string): Promise<A
   return (await getBoard(api, date, date)).days[0].daily
 }
 
+/**
+ * Take a tick a spec made off again. A retired item's ticks can't be unticked
+ * (D39 Decision 1), so a retired one is restored, unticked and retired again.
+ */
+export async function removeTick(api: APIRequestContext, date: string, itemId: number) {
+  const path = `/api/brewery/daily_checks/${date}/${itemId}`
+  const res = await api.delete(path)
+  if (res.status() !== 422) return expect([204, 404], await res.text()).toContain(res.status())
+  expect((await res.json()).error).toBe('retired')
+  expect((await api.post(`/api/brewery/daily_items/${itemId}/restore`)).status()).toBe(200)
+  expect((await api.delete(path)).status()).toBe(204)
+  expect((await api.patch(`/api/brewery/daily_items/${itemId}`, { data: { active: false } })).status()).toBe(200)
+}
+
 /** Tick (or untick) one Daily check through the API. */
 export async function setCheck(api: APIRequestContext, date: string, itemId: number, checked: boolean) {
   const path = `/api/brewery/daily_checks/${date}/${itemId}`
@@ -252,19 +266,30 @@ export async function setCheck(api: APIRequestContext, date: string, itemId: num
 
 /**
  * Put the Daily items back: the four defaults by their ids, with their names,
- * active, in order; every other active item retired.
+ * active (restored if a spec retired one), in order; every other active item
+ * retired.
  */
 export async function restoreDailyItems(defaults: ApiDailyItem[]) {
   const api = await apiAs('breweryMgr')
+  const isDefault = (item: ApiDailyItem) => defaults.some((d) => d.id === item.id)
+  // Every other item goes first, so a retired default has room (and its name) to come back.
   for (const item of await dailyItems(api)) {
-    const original = defaults.find((d) => d.id === item.id)
-    if (!original) {
-      const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })
-      expect(res.status(), await res.text()).toBe(200)
-    } else if (item.name !== original.name) {
-      const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { name: original.name } })
-      expect(res.status(), await res.text()).toBe(200)
-    }
+    if (isDefault(item)) continue
+    const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })
+    expect(res.status(), await res.text()).toBe(200)
+  }
+  // D39: a default a spec retired comes back through Restore.
+  const listed = await api.get('/api/brewery/daily_items', { params: { include_retired: 'true' } })
+  for (const item of (await listed.json()).data as ApiDailyItem[]) {
+    if (item.active || !isDefault(item)) continue
+    const res = await api.post(`/api/brewery/daily_items/${item.id}/restore`)
+    expect(res.status(), await res.text()).toBe(200)
+  }
+  for (const item of await dailyItems(api)) {
+    const original = defaults.find((d) => d.id === item.id)!
+    if (item.name === original.name) continue
+    const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { name: original.name } })
+    expect(res.status(), await res.text()).toBe(200)
   }
   const res = await api.put('/api/brewery/daily_items/order', { data: { ids: defaults.map((d) => d.id) } })
   expect(res.status(), await res.text()).toBe(200)

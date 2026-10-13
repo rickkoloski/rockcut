@@ -699,6 +699,7 @@ export interface TaskEvent {
     | 'item_retired'
     | 'item_reordered'
     | 'stopped_repeating' // D39
+    | 'item_restored' // D39
   /** The task's title (or the Daily item's name) when it happened. */
   title: string
   actor_id: number | null
