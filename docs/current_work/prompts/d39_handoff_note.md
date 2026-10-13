@@ -10,7 +10,7 @@ branch `d39-brewery-recurring-tasks` at `fb93e45`, local servers).
 **What ran:**
 - S26 alone, `--repeat-each 20`, traces on failure: **20/20 passed**.
 - The full brewery folder (`chromium` + `brewery-board`), 3 times, with
-  `--trace retain-on-failure`: **132/132, 132/132, 132/132**. The third run
+  `--trace retain-on-failure`: **132/132, 132/132, 132/132**. The second run
   crossed local midnight.
 - With the six D39 runs of the folder before these (Tasks 6 and 7, 123–128
   tests each), S26 has now passed 9 full runs and 20 lone runs in a row.
