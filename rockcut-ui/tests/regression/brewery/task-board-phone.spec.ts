@@ -11,8 +11,10 @@ import {
   denverToday,
   getBoard,
   listKeys,
+  moveTask,
   openBoard,
   tempTag,
+  touchDrag,
   userId,
 } from './taskBoardHelpers'
 
@@ -26,6 +28,15 @@ test.use({ storageState: authFile('brewer1'), viewport: { width: 360, height: 80
 const created: number[] = []
 test.afterEach(async () => {
   await cleanupTasks(created.splice(0))
+})
+
+// D38's tests are about the one-day view; phones start in the vertical view
+// since D39, so they pick one day before each page load. The D39 tests start
+// with nothing saved, as a first visit does.
+const VERTICAL = 'D39 vertical view'
+test.beforeEach(async ({ page }, testInfo) => {
+  if (testInfo.titlePath.includes(VERTICAL)) return
+  await page.addInitScript(() => localStorage.setItem('rockcut.breweryTasks.phoneView', 'day'))
 })
 
 const today = () => denverToday()
@@ -452,4 +463,132 @@ test('as breweryMgr, the ⋮ menu, Daily items and History fit the phone screen'
   } finally {
     await ctx.close()
   }
+})
+
+test.describe(VERTICAL, () => {
+  const dayCard = (page: Page, date: string) => page.getByTestId(`day-${date}`)
+
+  test('S70: a first visit is the vertical view; choosing one day survives a reload', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const late = await createTask(api, { title: tempTag('S70 overdue'), due_on: addDays(today(), -3) })
+    created.push(late.id)
+
+    await openBoard(page)
+    await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'vertical')
+    await expect(page.getByTestId('board-view-vertical')).toHaveAttribute('aria-pressed', 'true')
+    // Unfinished first, every day of the range in order with its header and Daily card, then Future.
+    const order = await page
+      .getByTestId('board-grid')
+      .locator('[data-testid="unfinished-card"], [data-testid^="day-"][data-today], [data-testid="future-list"]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+    expect(order).toEqual(['unfinished-card', ...Array.from({ length: 14 }, (_, i) => `day-${addDays(today(), i)}`), 'future-list'])
+    await expect(dayCard(page, addDays(today(), 5)).getByTestId(`daily-${addDays(today(), 5)}`)).toBeAttached()
+    await expect(page.getByTestId('phone-strip')).toHaveCount(0)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
+
+    await page.getByTestId('board-view-day').click()
+    await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'phone')
+    await page.reload()
+    await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'phone')
+    await expect(page.getByTestId('board-view-day')).toHaveAttribute('aria-pressed', 'true')
+    await page.getByTestId('board-view-vertical').click()
+    await page.reload()
+    await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'vertical')
+  })
+
+  test('S71: a long press drags a task down to day 3, scrolling the page; it lands where dropped', async ({ page, browser }) => {
+    const api = await apiAs('brewer1')
+    const day3 = addDays(today(), 3)
+    const task = await createTask(api, { title: tempTag('S71 Keg BBT1'), due_on: today() })
+    const a = await createTask(api, { title: tempTag('S71 day 3 A'), due_on: day3 })
+    const b = await createTask(api, { title: tempTag('S71 day 3 B'), due_on: day3 })
+    created.push(task.id, a.id, b.id)
+
+    await openBoard(page)
+    const scrolledFrom = await page.evaluate(() => window.scrollY)
+    const moved = boardWrite(page, new RegExp(`/${task.id}/move$`))
+    await touchDrag(page, card(page, task.id, today()), page.getByTestId(`day-list-${day3}`), card(page, b.id, day3))
+    expect((await moved).request().postDataJSON()).toEqual({ due_on: day3, before_id: b.id })
+    expect(await page.evaluate(() => window.scrollY)).toBeGreaterThan(scrolledFrom)
+
+    await page.reload()
+    await expect(card(page, task.id, day3)).toBeAttached()
+    await expect(card(page, task.id, today())).toHaveCount(0)
+    const keys = await listKeys(page, `day-list-${day3}`)
+    expect(keys.indexOf(`${task.id}:${day3}`)).toBe(keys.indexOf(`${b.id}:${day3}`) - 1)
+
+    // History, as a manager reads it.
+    const ctx = await browser.newContext({ storageState: authFile('breweryMgr'), viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true })
+    const mgr = await ctx.newPage()
+    await openBoard(mgr)
+    await mgr.getByTestId('board-menu').click()
+    await mgr.getByTestId('board-menu-history').click()
+    const label = (key: string) =>
+      new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })
+        .format(new Date(`${key}T12:00:00Z`))
+        .replace(',', '')
+    await expect(mgr.getByTestId('history-list')).toContainText(`Moved ${task.title} from ${label(today())} to ${label(day3)}`)
+    await ctx.close()
+  })
+
+  test('S72: a long press drags a task off the Unfinished card onto tomorrow', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const tomorrow = addDays(today(), 1)
+    const late = await createTask(api, { title: tempTag('S72 three days ago'), due_on: addDays(today(), -3) })
+    created.push(late.id)
+
+    await openBoard(page)
+    const moved = boardWrite(page, new RegExp(`/${late.id}/move$`))
+    await touchDrag(page, card(page, late.id, 'unfinished'), page.getByTestId(`day-list-${tomorrow}`))
+    expect((await moved).request().postDataJSON()).toEqual({ due_on: tomorrow, before_id: null })
+
+    await page.reload()
+    await expect(card(page, late.id, tomorrow)).toBeVisible()
+    await expect(card(page, late.id, 'unfinished')).toHaveCount(0)
+    expect((await getBoard(api, addDays(today(), -3), addDays(today(), -3))).days[0].cards.some((c) => c.id === late.id)).toBe(false)
+  })
+
+  test('S73: in the one-day view on today, a task from the Unfinished card goes between today\'s first and second', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const late = await createTask(api, { title: tempTag('S73 yesterday'), due_on: addDays(today(), -1) })
+    created.push(late.id)
+    // Two tasks at the top of today: put them first.
+    const first = await createTask(api, { title: tempTag('S73 first'), due_on: today() })
+    const second = await createTask(api, { title: tempTag('S73 second'), due_on: today() })
+    created.push(first.id, second.id)
+    const top = (await getBoard(api, today(), today())).days[0].cards.find((c) => c.due_on === today())!
+    await moveTask(api, second.id, today(), top.id)
+    await moveTask(api, first.id, today(), second.id)
+    const keysBefore = (await getBoard(api, today(), today())).days[0].cards.filter((c) => c.due_on === today()).map((c) => c.id)
+    expect(keysBefore.slice(0, 2)).toEqual([first.id, second.id])
+
+    await openBoard(page)
+    await page.getByTestId('board-view-day').click()
+    await expect(page.getByTestId('phone-day')).toHaveAttribute('data-stop', today())
+    const moved = boardWrite(page, new RegExp(`/${late.id}/move$`))
+    await touchDrag(page, card(page, late.id, 'unfinished'), page.getByTestId(`day-list-${today()}`), card(page, second.id, today()))
+    expect((await moved).request().postDataJSON()).toEqual({ due_on: today(), before_id: second.id })
+
+    await page.reload()
+    await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'phone')
+    await expect(card(page, late.id, today())).toBeAttached()
+    await expect(card(page, late.id, 'unfinished')).toHaveCount(0)
+    const keys = await listKeys(page, `day-list-${today()}`)
+    expect(keys.slice(0, 3)).toEqual([`${first.id}:${today()}`, `${late.id}:${today()}`, `${second.id}:${today()}`])
+  })
+
+  test('S74: a long press drags a task onto the Future list at the bottom', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const task = await createTask(api, { title: tempTag('S74 Order CO2'), due_on: today() })
+    created.push(task.id)
+
+    await openBoard(page)
+    const moved = boardWrite(page, new RegExp(`/${task.id}/move$`))
+    await touchDrag(page, card(page, task.id, today()), page.getByTestId('future-items'))
+    expect((await moved).request().postDataJSON()).toMatchObject({ due_on: null })
+
+    await page.reload()
+    await expect(card(page, task.id, 'future')).toBeAttached()
+    await expect(card(page, task.id, today())).toHaveCount(0)
+  })
 })

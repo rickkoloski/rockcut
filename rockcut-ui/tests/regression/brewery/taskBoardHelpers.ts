@@ -202,6 +202,65 @@ export async function mouseDrag(page: Page, source: Locator, list: Locator, befo
   await page.mouse.up()
 }
 
+/**
+ * D39: a long-press drag with a finger (CDP touch events) from `source` into
+ * `list`, at its end or just before `before`. While the list is off screen
+ * the finger rests at the screen's top or bottom edge, so @dnd-kit scrolls the
+ * page, until the list is well on screen; then, as `mouseDrag` does, it aims
+ * at the list's bottom edge and lets go only once the placeholder shows where
+ * it should.
+ */
+export async function touchDrag(page: Page, source: Locator, list: Locator, before?: Locator) {
+  const cdp = await page.context().newCDPSession(page)
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: [number, number][]) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y]) => ({ x, y })) })
+  const vp = page.viewportSize()!
+  await source.scrollIntoViewIfNeeded()
+  const s = (await source.boundingBox())!
+  const x = s.x + Math.min(30, s.width / 2)
+  let y = s.y + s.height / 2
+  const slide = async (to: number, steps = 8) => {
+    const from = y
+    for (let i = 1; i <= steps; i++) await touch('touchMove', [[x, from + ((to - from) * i) / steps]])
+    y = to
+  }
+  await touch('touchStart', [[x, y]])
+  await expect(page.locator(LIFTED)).toHaveCount(1)
+
+  // Rest at an edge until the list's bottom is well inside the screen.
+  const margin = 140
+  await expect(async () => {
+    const b = (await list.boundingBox())!
+    const bottom = b.y + b.height
+    const [atTop, atEnd] = await page.evaluate(() => [
+      window.scrollY <= 0,
+      Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight,
+    ])
+    // Scrolled as far as it goes, or the list's bottom is well on screen.
+    if (bottom > vp.height - margin && !atEnd) await slide(vp.height - 4, 4)
+    else if (bottom < margin && !atTop) await slide(4, 4)
+    else return
+    throw new Error(`list bottom at ${Math.round(bottom)}, still scrolling`)
+  }).toPass({ timeout: 20_000, intervals: [100] })
+
+  // Into its bottom edge (the placeholder goes last), aiming again as lists
+  // reflow. Heading for `before`, it only needs to be in the list: cards
+  // finished there from other days stay below it.
+  await expect(async () => {
+    const b = (await list.boundingBox())!
+    await slide(b.y + b.height - 4, 3)
+    const spot = await dropSpot(list)
+    if (before) expect(['not in this list', 'still moving']).not.toContain(spot)
+    else expect(spot).toBe('ok')
+  }).toPass({ timeout: 10_000 })
+  if (before) {
+    const b = (await before.boundingBox())!
+    await slide(b.y + b.height / 2, 6)
+    await expect.poll(() => dropSpot(list, before), { timeout: 10_000 }).toBe('ok')
+  }
+  await touch('touchEnd', [])
+}
+
 /** Move a task back to a day through the API (to put shared data back after a spec). */
 export async function moveTask(api: APIRequestContext, id: number, dueOn: string | null, beforeId: number | null = null) {
   const res = await api.post(`/api/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId } })
