@@ -618,8 +618,36 @@ export interface TaskCardData {
   locked: boolean
   /** Open and planned before today (the amber edge). */
   overdue: boolean
+  /** D39: one occurrence of a recurring task (the date its rule made it for), and changed on its own. */
+  series_id: number | null
+  series_date: string | null
+  series_exception: boolean
+  /** D39 G2: the series has ended here and nothing open comes after it (no Stop repeating). */
+  series_last: boolean
   inserted_at: string
   updated_at: string
+}
+
+/** D39 `GET /api/brewery/tasks/:id/series`: the rule and the open occurrences after this one. */
+export interface TaskSeriesData {
+  id: number
+  title: string
+  notes: string | null
+  assignee_id: number | null
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'annually'
+  month_rule: 'day' | 'weekday' | null
+  interval: number
+  weekdays: number[] | null
+  day_of_month: number | null
+  week_of_month: number | null
+  weekday: number | null
+  start_date: string
+  until_date: string | null
+  count: number | null
+  /** Open, after this one, not changed on their own. */
+  later_open: number
+  /** Open, after this one, changed on their own. */
+  later_changed: number
 }
 
 export interface HeaderShift {
@@ -672,6 +700,9 @@ export interface TaskEvent {
     | 'item_renamed'
     | 'item_retired'
     | 'item_reordered'
+    | 'stopped_repeating' // D39
+    | 'item_restored' // D39
+    | 'made_repeating' // D39 Decision 6
   /** The task's title (or the Daily item's name) when it happened. */
   title: string
   actor_id: number | null

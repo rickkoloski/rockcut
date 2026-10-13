@@ -92,3 +92,11 @@ export function placeAt(containers: ListContainer[], itemId: string, toContainer
 function sameIds(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i])
 }
+
+/**
+ * Whether an item that started in `from` may land in `to`: its own list
+ * always; another list when there's no rule, or the rule allows it.
+ */
+export function canLand(from: string, to: string, canMoveTo?: (fromList: string, toList: string) => boolean): boolean {
+  return to === from || !canMoveTo || canMoveTo(from, to)
+}

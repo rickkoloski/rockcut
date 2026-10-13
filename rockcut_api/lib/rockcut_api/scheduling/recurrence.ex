@@ -1,8 +1,15 @@
 defmodule RockcutApi.Scheduling.Recurrence do
   @moduledoc """
-  Pure date rules for repeating schedule events (D32). Everything is computed
-  in the business zone, so an occurrence keeps its Colorado wall-clock time
-  across daylight-saving changes (7 pm trivia stays 7 pm in November).
+  Pure date rules for repeating schedule events (D32) and recurring brewery
+  tasks (D39). Everything is computed in the business zone, so an occurrence
+  keeps its Colorado wall-clock time across daylight-saving changes (7 pm
+  trivia stays 7 pm in November).
+
+  The date functions take any map or struct with the rule fields
+  (`frequency`, `interval`, `weekdays`, `week_of_month`, `weekday`,
+  `day_of_month`, `start_date`, `until_date`, `count`, `skipped_dates`).
+  `frequency` is the internal rule kind: `weekly`, `monthly_weekday`,
+  `monthly_day`, `quarterly_day`, `quarterly_weekday` or `annually`.
   """
   alias RockcutApi.Scheduling.ScheduleEventSeries
 
@@ -15,12 +22,21 @@ defmodule RockcutApi.Scheduling.Recurrence do
   The last date a series may be generated through when it's created: 12 months
   after its start (exclusive), or its end date if that's sooner.
   """
-  def initial_horizon(%ScheduleEventSeries{} = s),
+  def initial_horizon(%{start_date: %Date{}} = s),
     do: cap_until(s, Date.add(Date.shift(s.start_date, year: 1), -1))
 
   @doc "How far `extend` may generate: 12 months from `today`, or the series' end date."
-  def extend_horizon(%ScheduleEventSeries{} = s, %Date{} = today),
+  def extend_horizon(%{} = s, %Date{} = today),
     do: cap_until(s, Date.add(Date.shift(today, year: 1), -1))
+
+  @doc """
+  How far a brewery task series is kept generated (D39): through `today` plus
+  12 months, **including** that date, so an annual series started today
+  already has next year's occurrence. Capped by the series' end date. Unlike
+  `initial_horizon/1`, which stops the day before.
+  """
+  def rolling_horizon(%{} = s, %Date{} = today),
+    do: cap_until(s, Date.shift(today, year: 1))
 
   defp cap_until(%{until_date: nil}, date), do: date
   defp cap_until(%{until_date: until}, date), do: Enum.min([until, date], Date)
@@ -30,7 +46,7 @@ defmodule RockcutApi.Scheduling.Recurrence do
   its end date and count. Skipped (deleted) dates still count toward `count`
   but are not returned.
   """
-  def dates(%ScheduleEventSeries{} = s, %Date{} = through) do
+  def dates(%{start_date: %Date{}} = s, %Date{} = through) do
     last = cap_until(s, through)
 
     if Date.compare(last, s.start_date) == :lt do
@@ -57,16 +73,35 @@ defmodule RockcutApi.Scheduling.Recurrence do
     end)
   end
 
-  defp candidates(%{frequency: "monthly_weekday"} = s, last) do
+  defp candidates(%{frequency: "monthly_weekday"} = s, last),
+    do: every_months(s, last, 1, &nth_weekday(&1, &2, s.week_of_month, s.weekday))
+
+  defp candidates(%{frequency: "monthly_day"} = s, last),
+    do: every_months(s, last, 1, &day_or_last(&1, &2, s.day_of_month))
+
+  defp candidates(%{frequency: "quarterly_weekday"} = s, last),
+    do: every_months(s, last, 3, &nth_weekday(&1, &2, s.week_of_month, s.weekday))
+
+  defp candidates(%{frequency: "quarterly_day"} = s, last),
+    do: every_months(s, last, 3, &day_or_last(&1, &2, s.day_of_month))
+
+  defp candidates(%{frequency: "annually"} = s, last),
+    do: every_months(s, last, 12, &day_or_last(&1, &2, s.start_date.day))
+
+  # One date per `step` months from the start month (picked by `pick.(year,
+  # month)`), from the start date through `last`.
+  defp every_months(s, last, step, pick) do
     {s.start_date.year, s.start_date.month}
-    |> Stream.iterate(fn
-      {y, 12} -> {y + 1, 1}
-      {y, m} -> {y, m + 1}
-    end)
-    |> Stream.map(fn {y, m} -> nth_weekday(y, m, s.week_of_month, s.weekday) end)
+    |> Stream.iterate(fn {y, m} -> {y + div(m - 1 + step, 12), rem(m - 1 + step, 12) + 1} end)
+    |> Stream.map(fn {y, m} -> pick.(y, m) end)
     |> Stream.take_while(&(Date.compare(&1, last) != :gt))
     |> Enum.filter(&(Date.compare(&1, s.start_date) != :lt))
   end
+
+  # Day `day` of the month, or its last day when the month is shorter
+  # (31 → Nov 30; Feb 29 → Feb 28 outside leap years).
+  defp day_or_last(year, month, day),
+    do: Date.new!(year, month, min(day, Calendar.ISO.days_in_month(year, month)))
 
   @doc "The `n`th (1–4) or last (`-1`) ISO `weekday` of a month."
   def nth_weekday(year, month, -1, weekday) do

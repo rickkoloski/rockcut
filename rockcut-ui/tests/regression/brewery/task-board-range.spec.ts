@@ -64,6 +64,8 @@ test('S19: dragging a task out of the Unfinished card onto day 2 moves it there'
   created.push(task.id)
   const day2 = addDays(today(), 1)
 
+  // Tall, as the other drag specs: other tasks on a shared board make the days taller.
+  await page.setViewportSize({ width: 1600, height: 2200 })
   await openBoard(page)
   const moved = boardWrite(page, new RegExp(`/${task.id}/move$`))
   await mouseDrag(page, card(page, task.id, 'unfinished'), page.getByTestId(`day-list-${day2}`))
@@ -71,6 +73,49 @@ test('S19: dragging a task out of the Unfinished card onto day 2 moves it there'
   await page.reload()
   await expect(card(page, task.id, day2)).toBeVisible()
   await expect(card(page, task.id, 'unfinished')).toHaveCount(0)
+})
+
+test('a task dragged over the Unfinished card gets no spot there, and stays on its day', async ({ page }) => {
+  // D39 (lead, Task 8): the Unfinished card isn't a place to drop. S19's drag out of it still works.
+  const api = await apiAs('brewer1')
+  const late = await createTask(api, { title: tempTag('Unfinished stays'), due_on: addDays(today(), -2) })
+  const task = await createTask(api, { title: tempTag('Drag over Unfinished'), due_on: today() })
+  created.push(late.id, task.id)
+
+  // Tall, as the other drag specs, so an extra card or two can't push today's card off screen.
+  await page.setViewportSize({ width: 1600, height: 2200 })
+  await openBoard(page)
+  const lifted = '[aria-roledescription="sortable"][aria-pressed="true"]'
+  const unfinished = page.getByTestId('unfinished-list')
+  let moves = 0
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && new URL(r.url()).pathname === `/api/brewery/tasks/${task.id}/move`) moves += 1
+  })
+
+  await card(page, task.id, today()).scrollIntoViewIfNeeded()
+  await expect(unfinished).toBeInViewport()
+  const s = (await card(page, task.id, today()).boundingBox())!
+  await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(s.x + s.width / 2 + 12, s.y + s.height / 2 + 12, { steps: 4 })
+  await expect(page.locator(lifted)).toHaveCount(1)
+  // Over the Unfinished card's list, onto its card, and its empty end.
+  const u = (await unfinished.boundingBox())!
+  const c = (await card(page, late.id, 'unfinished').boundingBox())!
+  await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2, { steps: 20 })
+  await page.mouse.move(u.x + u.width / 2, u.y + u.height - 4, { steps: 10 })
+  // The drag layer has taken the hover in (its screen-reader announcement), and
+  // the placeholder stays in today's list; none shows in Unfinished.
+  await expect(page.getByRole('status').filter({ hasText: `${task.title} is not over a list.` })).toHaveCount(1)
+  await expect(page.getByTestId(`day-list-${today()}`).locator(lifted)).toHaveCount(1)
+  await expect(unfinished.locator(lifted)).toHaveCount(0)
+  await page.mouse.up()
+  await expect(page.locator(lifted)).toHaveCount(0)
+
+  await page.reload()
+  await expect(card(page, task.id, today())).toBeVisible()
+  await expect(card(page, task.id, 'unfinished')).toHaveCount(0)
+  expect(moves).toBe(0)
 })
 
 test.describe('Move all to today', () => {

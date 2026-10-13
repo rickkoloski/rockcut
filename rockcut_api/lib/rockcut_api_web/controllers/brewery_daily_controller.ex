@@ -42,10 +42,28 @@ defmodule RockcutApiWeb.BreweryDailyController do
     |> BreweryErrors.handle(conn)
   end
 
-  @doc "GET /api/brewery/daily_items: the active items, in order."
-  def items(conn, _params) do
+  @doc """
+  GET /api/brewery/daily_items: the active items, in order. With
+  `include_retired=true` (D39), the retired ones follow, by name.
+  """
+  def items(conn, params) do
     with :ok <- allow(conn, :read, :brewery_tasks) do
-      render_items(conn, BreweryTasks.list_items())
+      retired =
+        if params["include_retired"] in ["true", true],
+          do: BreweryTasks.list_retired_items(),
+          else: []
+
+      render_items(conn, BreweryTasks.list_items() ++ retired)
+    end
+    |> BreweryErrors.handle(conn)
+  end
+
+  @doc "POST /api/brewery/daily_items/:id/restore: a retired item back at the bottom (D39, S75)."
+  def restore_item(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :manage, :brewery_daily_items),
+         {:ok, item} <- fetch(id),
+         {:ok, item} <- BreweryTasks.restore_item(item, actor(conn)) do
+      json(conn, %{data: brewery_daily_item(item)})
     end
     |> BreweryErrors.handle(conn)
   end
@@ -60,13 +78,14 @@ defmodule RockcutApiWeb.BreweryDailyController do
 
   @doc """
   PATCH /api/brewery/daily_items/:id: `{ name? }` renames, `{ active: false }`
-  retires. Retiring is one-way: `{ active: true }` on a retired item is a 422
-  `retired`.
+  retires. Any `PATCH` on a retired item (a rename, `active`, `position`) is a
+  422 `retired` and changes nothing (G3, D39 GAP-1/GAP-2); restore brings one
+  back.
   """
   def update_item(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :manage, :brewery_daily_items),
          {:ok, item} <- fetch(id),
-         :ok <- refuse_unretire(item, params),
+         :ok <- refuse_retired(item),
          {:ok, item} <- maybe_rename(item, params, actor(conn)),
          {:ok, item} <- maybe_retire(item, params, actor(conn)) do
       json(conn, %{data: brewery_daily_item(item)})
@@ -83,10 +102,8 @@ defmodule RockcutApiWeb.BreweryDailyController do
     |> BreweryErrors.handle(conn)
   end
 
-  defp refuse_unretire(%{active: false}, %{"active" => active}) when active in [true, "true"],
-    do: {:error, :retired}
-
-  defp refuse_unretire(_item, _params), do: :ok
+  defp refuse_retired(%{active: false}), do: {:error, :retired}
+  defp refuse_retired(_item), do: :ok
 
   defp maybe_rename(item, %{"name" => name}, actor),
     do: BreweryTasks.rename_item(item, name, actor)

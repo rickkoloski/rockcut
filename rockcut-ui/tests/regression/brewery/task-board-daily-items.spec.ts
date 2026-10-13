@@ -9,6 +9,7 @@ import {
   denverToday,
   mouseDrag,
   openBoard,
+  removeTick,
   restoreDailyItems,
   setCheck,
   type ApiDailyItem,
@@ -17,7 +18,7 @@ import {
 // D38 §3.8 Edit Daily items, scenarios S28–S31. The items are shared, so
 // after each test the four defaults are put back (names, order, active) and
 // every other item is retired; checks the tests made are taken off first.
-// Retired items can't come back, so S29 retires a [TEST-TEMP] item, not Backups.
+// S29 retires a [TEST-TEMP] item; D39's S75 retires Temps and restores it.
 
 test.use({ storageState: authFile('breweryMgr'), viewport: { width: 1600, height: 2200 } })
 
@@ -31,8 +32,9 @@ test.beforeEach(async () => {
 
 test.afterEach(async () => {
   const api = await apiAs('breweryMgr')
-  for (const t of ticks.splice(0)) await setCheck(api, t.date, t.id, false)
+  // Items first: a retired item's tick comes off by restoring it, which needs room on the list.
   await restoreDailyItems(defaults)
+  for (const t of ticks.splice(0)) await removeTick(api, t.date, t.id)
 })
 
 const itemWrite = (page: Page, method: string, path = /\/api\/brewery\/daily_items/) =>
@@ -259,4 +261,99 @@ test("S31: a 13th item and a duplicate name are refused in the dialog", async ({
   await page.getByTestId(`daily-items-rename-save-${gravities.id}`).click()
   await expect(page.getByTestId(`daily-items-row-${gravities.id}`).getByText('Already on the list')).toBeVisible()
   expect((await dailyItems(api)).map((i) => i.name)).toContain('Gravities')
+})
+
+// ── D39 follow-ups ──────────────────────────────────────────────────
+
+test('S75: Restore brings Temps back at the bottom with its past ticks; at 12 items it is refused', async ({ page }) => {
+  const today = denverToday()
+  const yesterday = addDays(today, -1)
+  const api = await apiAs('breweryMgr')
+  const temps = defaults.find((i) => i.name === 'Temps')!
+  await setCheck(api, yesterday, temps.id, true)
+  ticks.push({ date: yesterday, id: temps.id })
+  expect((await api.patch(`/api/brewery/daily_items/${temps.id}`, { data: { active: false } })).status()).toBe(200)
+
+  await openBoard(page, { from: yesterday, to: addDays(today, 5) })
+  await openItems(page)
+  await expect(page.getByTestId(`daily-items-row-${temps.id}`)).toHaveCount(0)
+  await page.getByTestId('daily-items-retired-toggle').click()
+  await expect(page.getByTestId(`daily-items-retired-row-${temps.id}`)).toBeVisible()
+  const restored = itemWrite(page, 'POST', /\/restore$/)
+  await page.getByTestId(`daily-items-restore-${temps.id}`).click()
+  await restored
+  await expect(page.getByTestId('daily-items-list').locator('[data-testid^="daily-items-name-"]')).toHaveText([
+    'Backups',
+    'Gravities',
+    'Pressures',
+    'Temps',
+  ])
+  await expect(page.getByTestId(`daily-items-retired-row-${temps.id}`)).toHaveCount(0)
+  await page.getByTestId('daily-items-close').click()
+
+  await page.reload()
+  await expect(page.getByTestId('board-grid')).toBeVisible()
+  expect((await cardNames(page, today)).map((n) => n.split(' — ')[0])).toEqual(['Backups', 'Gravities', 'Pressures', 'Temps'])
+  await page.getByTestId(`daily-toggle-${yesterday}`).click()
+  await expect(page.getByTestId(`daily-check-${yesterday}-${temps.id}`)).toBeChecked()
+
+  // Retired again, with 12 items on the list: Restore is refused with the limit message.
+  expect((await api.patch(`/api/brewery/daily_items/${temps.id}`, { data: { active: false } })).status()).toBe(200)
+  for (let n = 1; n <= 9; n++) {
+    const res = await api.post('/api/brewery/daily_items', { data: { name: `[TEST-TEMP] Item ${n}` } })
+    expect(res.status()).toBe(201)
+  }
+  await openItems(page)
+  await page.getByTestId('daily-items-retired-toggle').click()
+  await page.getByTestId(`daily-items-restore-${temps.id}`).click()
+  await expect(page.getByTestId('daily-items-error')).toHaveText('Up to 12 items')
+  await page.reload()
+  await expect(page.getByTestId('board-grid')).toBeVisible()
+  expect((await dailyItems(api)).some((i) => i.id === temps.id)).toBe(false)
+})
+
+test('Decision 1: a retired item ticked today shows a disabled box that says its ticks are kept', async ({ page }) => {
+  const today = denverToday()
+  const api = await apiAs('breweryMgr')
+  const res = await api.post('/api/brewery/daily_items', { data: { name: '[TEST-TEMP] Hoses' } })
+  expect(res.status()).toBe(201)
+  const item: ApiDailyItem = (await res.json()).data
+  await setCheck(api, today, item.id, true)
+  ticks.push({ date: today, id: item.id })
+  expect((await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })).status()).toBe(200)
+
+  await openBoard(page, { from: today, to: addDays(today, 5) })
+  const box = page.getByTestId(`daily-check-${today}-${item.id}`)
+  await expect(box).toBeChecked()
+  await expect(box).toBeDisabled()
+  await page.getByTestId(`daily-retired-${today}-${item.id}`).hover()
+  await expect(page.getByRole('tooltip')).toHaveText('[TEST-TEMP] Hoses is retired; its ticks are kept')
+
+  // The API refuses the untick too, and the tick stays.
+  const untick = await api.delete(`/api/brewery/daily_checks/${today}/${item.id}`)
+  expect(untick.status()).toBe(422)
+  await page.reload()
+  await expect(page.getByTestId(`daily-check-${today}-${item.id}`)).toBeChecked()
+})
+
+test('O-2: the open dialog picks up a rename made elsewhere when the board refetches; a rename being typed stays', async ({ page }) => {
+  const backups = defaults.find((i) => i.name === 'Backups')!
+  const gravities = defaults.find((i) => i.name === 'Gravities')!
+  await openBoard(page)
+  await openItems(page)
+
+  // A rename in progress here.
+  await page.getByTestId(`daily-items-rename-${gravities.id}`).click()
+  await page.getByTestId(`daily-items-rename-input-${gravities.id}`).fill('Gravity readings')
+
+  // Someone else renames Backups.
+  const owner = await apiAs('owner')
+  expect((await owner.patch(`/api/brewery/daily_items/${backups.id}`, { data: { name: 'Backups (NAS)' } })).status()).toBe(200)
+
+  // The board refetches on focus, and the dialog with it.
+  const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/daily_items' && r.ok())
+  await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')))
+  await refetched
+  await expect(page.getByTestId(`daily-items-name-${backups.id}`)).toHaveText('Backups (NAS)')
+  await expect(page.getByTestId(`daily-items-rename-input-${gravities.id}`)).toHaveValue('Gravity readings')
 })

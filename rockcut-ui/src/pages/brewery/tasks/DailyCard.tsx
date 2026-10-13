@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, ButtonBase, Checkbox, Collapse, IconButton, Menu, MenuItem, Paper, Typography } from '@mui/material'
+import { Box, ButtonBase, Checkbox, Collapse, IconButton, Menu, MenuItem, Paper, Tooltip, Typography } from '@mui/material'
 import { ExpandLess, ExpandMore, MoreVert } from '@mui/icons-material'
 import { firstName, shortTime } from '../../../lib/breweryTasks'
 import type { DailyCardData, DailyCardItem } from '../../../lib/types'
@@ -15,8 +15,8 @@ interface Props {
 /**
  * D38 §3.8 Daily card: "Daily 2/4", expanded on today, amber on a past day
  * with unticked checks. Today and past days tick; future days show the checks
- * disabled. A retired item (shown where it was ticked) can be unticked, not
- * ticked. It isn't a drag item.
+ * disabled. A retired item (shown where it was ticked) can't be ticked or
+ * unticked: its ticks are kept (D39 Decision 1). It isn't a drag item.
  */
 export default function DailyCard({ daily, today, onToggle, onEditItems }: Props) {
   const [expanded, setExpanded] = useState(daily.date === today)
@@ -72,9 +72,21 @@ export default function DailyCard({ daily, today, onToggle, onEditItems }: Props
       <Collapse in={expanded}>
         <Box sx={{ px: 0.5, pb: 0.5 }}>
           {daily.items.map((item) => {
-            // Future days can't be ticked; a retired item can only come off.
-            const disabled = future || (!item.active && !item.checked)
+            // Future days can't be ticked; a retired item's ticks stay as they are.
+            const retired = !item.active
+            const disabled = future || retired
             const label = item.checked ? `Untick ${item.name}` : `Tick ${item.name}`
+            const box = (
+              <Checkbox
+                size="small"
+                checked={item.checked}
+                disabled={disabled}
+                color="success"
+                onChange={() => onToggle(daily.date, item)}
+                sx={{ p: 0.5 }}
+                slotProps={{ input: { 'aria-label': label, 'data-testid': `daily-check-${id}-${item.daily_item_id}` } as object }}
+              />
+            )
             return (
               <Box
                 key={item.daily_item_id}
@@ -82,15 +94,13 @@ export default function DailyCard({ daily, today, onToggle, onEditItems }: Props
                 data-testid={`daily-item-${id}-${item.daily_item_id}`}
                 data-checked={item.checked}
               >
-                <Checkbox
-                  size="small"
-                  checked={item.checked}
-                  disabled={disabled}
-                  color="success"
-                  onChange={() => onToggle(daily.date, item)}
-                  sx={{ p: 0.5 }}
-                  slotProps={{ input: { 'aria-label': label, 'data-testid': `daily-check-${id}-${item.daily_item_id}` } as object }}
-                />
+                {retired ? (
+                  <Tooltip title={`${item.name} is retired; its ticks are kept`}>
+                    <span data-testid={`daily-retired-${id}-${item.daily_item_id}`}>{box}</span>
+                  </Tooltip>
+                ) : (
+                  box
+                )}
                 <Typography variant="caption" data-testid={`daily-label-${id}-${item.daily_item_id}`}>
                   {item.name}
                   {item.checked && item.completed_at && ` — ${firstName(item.completed_by_name)}, ${shortTime(item.completed_at)}`}

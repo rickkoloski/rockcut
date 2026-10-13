@@ -3,6 +3,11 @@ defmodule RockcutApi.BreweryTasks.Task do
   D38: one task on the Brewery board. `due_on` is the Colorado day it's planned
   for (nil = the Future list) and never changes when it's finished;
   `completed_display` decides where a finished task shows (see `Placement`).
+
+  D39: an occurrence of a recurring task has `series_id` and the
+  `series_date` the rule made it for (unchanged when it moves);
+  `series_exception` is set once it's changed on its own. Only
+  `BreweryTasks.Series` sets these; `changeset/2` never casts them.
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -19,11 +24,16 @@ defmodule RockcutApi.BreweryTasks.Task do
     field :completed_at, :utc_datetime
     field :completed_on, :date
     field :completed_display, :string
+    field :series_date, :date
+    field :series_exception, :boolean, default: false
+    # G2: set by the board on the occurrence that ends its chain (`Series.mark_last/1`).
+    field :series_last, :boolean, virtual: true, default: false
 
     belongs_to :department, RockcutApi.Accounts.Department
     belongs_to :assignee, RockcutApi.Accounts.User
     belongs_to :completed_by, RockcutApi.Accounts.User
     belongs_to :created_by, RockcutApi.Accounts.User
+    belongs_to :series, RockcutApi.BreweryTasks.TaskSeries
 
     timestamps(type: :utc_datetime)
   end

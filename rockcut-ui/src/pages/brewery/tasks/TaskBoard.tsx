@@ -9,6 +9,7 @@ import { containerOf, type ListContainer, type Move } from '../../../components/
 import { useOptimisticLists } from '../../../components/dnd/useOptimisticLists'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import useAuth from '../../../hooks/useAuth'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import api from '../../../lib/api'
 import { addDaysKey } from '../../../lib/datetime'
 import {
@@ -18,22 +19,28 @@ import {
   coloradoToday,
   dayCount,
   formatTaskDay,
+  boardMoveRule,
   rangeError,
   readHideCompleted,
+  readPhoneView,
   readSpan,
   spanEnd,
   taskError,
   writeHideCompleted,
+  writePhoneView,
   writeSpan,
+  type PhoneView,
   type Span,
   type TaskFilter,
 } from '../../../lib/breweryTasks'
-import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData } from '../../../lib/types'
+import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData, TaskSeriesData } from '../../../lib/types'
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
 import HistoryDialog from './HistoryDialog'
 import PhoneDayView from './PhoneDayView'
+import PhoneVerticalView from './PhoneVerticalView'
+import { RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
 import DayColumn from './DayColumn'
 import FinishElsewhereDialog from './FinishElsewhereDialog'
 import FutureList from './FutureList'
@@ -50,7 +57,9 @@ const WIDE_BOARD_PX = 1200
  * its schedule header, Daily card and tasks; the Unfinished card first and
  * the Future list last. Every list is one container in a single
  * SortableLists, so a drag between any two of them is one move. At phone
- * width it's one day at a time (PhoneDayView), and drags stay in their list.
+ * width (D39) it's every day stacked (PhoneVerticalView, drags anywhere) or
+ * one day at a time (PhoneDayView: drags stay in the day, or come from the
+ * Unfinished card into today).
  */
 export default function TaskBoard() {
   const qc = useQueryClient()
@@ -60,6 +69,8 @@ export default function TaskBoard() {
   const [params, setParams] = useSearchParams()
   const [span, setSpan] = useState<Span>(readSpan)
   const [hideCompleted, setHideCompleted] = useState(readHideCompleted)
+  // D39: at phone width, every day stacked (the default) or one at a time.
+  const [phoneView, setPhoneView] = useState<PhoneView>(readPhoneView)
   const [filter, setFilter] = useState<TaskFilter>('all')
   // Nine columns (Unfinished, seven days, Future) need about 1,200px of board,
   // which a 1280px screen beside the nav doesn't have (spec §3.8).
@@ -84,11 +95,13 @@ export default function TaskBoard() {
   const length = dayCount(from, to)
   const highlighted: Span | null = urlValid ? (length === 7 || length === 14 ? length : null) : span
 
-  const { data: board, isLoading, isError, error } = useApiQuery<TaskBoardData>(
+  const { data: board, isLoading, isError, error, dataUpdatedAt } = useApiQuery<TaskBoardData>(
     [BOARD_KEY, from, to],
     '/api/brewery/tasks',
     { from, to },
-    { refetchInterval: 60_000, refetchOnWindowFocus: true, placeholderData: keepPreviousData },
+    // Back to the tab: always fresh, even within the default 30 seconds (and
+    // Edit Daily items with it, O-2).
+    { refetchInterval: 60_000, refetchOnWindowFocus: 'always', placeholderData: keepPreviousData },
   )
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
   const brewers = useMemo(() => roster.filter((r) => r.departments.includes('brewery')), [roster])
@@ -130,11 +143,22 @@ export default function TaskBoard() {
   const [reopening, setReopening] = useState<TaskCardData | null>(null)
   const [changingDay, setChangingDay] = useState<TaskCardData | null>(null)
   const [deleting, setDeleting] = useState<TaskCardData | null>(null)
+  // D39: an occurrence's delete asks which ones, then (for "following", or
+  // Stop repeating) confirms the later ones it removes (Decision 2).
+  const [deletingSeries, setDeletingSeries] = useState<TaskCardData | null>(null)
+  const [removing, setRemoving] = useState<{ card: TaskCardData; kind: 'delete' | 'stop'; laterOpen: number; laterChanged: number } | null>(
+    null,
+  )
   const [movingAll, setMovingAll] = useState(false)
   const [editingDaily, setEditingDaily] = useState(false)
   // History: the whole board's, or one task's (from its dialog).
   const [history, setHistory] = useState<{ task?: { id: number; title: string } } | null>(null)
   const [busy, setBusy] = useState(false)
+  // S76: at phone width, back closes the board's confirms (the dialogs do their own).
+  usePhoneBackCloses(!!reopening, () => setReopening(null))
+  usePhoneBackCloses(!!deleting, () => setDeleting(null))
+  usePhoneBackCloses(movingAll, () => setMovingAll(false))
+  usePhoneBackCloses(!!removing && removing.laterOpen + removing.laterChanged === 0, () => setRemoving(null))
 
   const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY] })
   const fail = (err: unknown) => setToast({ message: taskError(err), error: true })
@@ -288,6 +312,10 @@ export default function TaskBoard() {
       case 'edit':
       case 'notes':
         return setDialog({ mode: { kind: 'edit', card: menuCard, focusNotes: action === 'notes' }, n: Date.now() })
+      case 'edit-series':
+        return setDialog({ mode: { kind: 'edit', card: menuCard, series: true }, n: Date.now() })
+      case 'stop-repeating':
+        return askRemoveLater(menuCard, 'stop')
       case 'toggle':
         return toggle(menuCard)
       case 'change-day':
@@ -296,18 +324,50 @@ export default function TaskBoard() {
       case 'down':
         return menuContainer && moveStep(menuCard, menuContainer, action)
       case 'delete':
-        return setDeleting(menuCard)
+        return startDelete(menuCard)
     }
   }
 
-  const deleteTask = async (card: TaskCardData) => {
+  const startDelete = (card: TaskCardData) => (card.series_id != null ? setDeletingSeries(card) : setDeleting(card))
+
+  const deleteTask = async (card: TaskCardData, params?: { scope: SeriesScope; changed?: Changed }) => {
     setBusy(true)
-    const ok = await run(() => api.delete(`/api/brewery/tasks/${card.id}`))
+    const ok = await run(() => api.delete(`/api/brewery/tasks/${card.id}`, params ? { params } : undefined))
     setBusy(false)
     if (ok) {
       setDeleting(null)
+      setDeletingSeries(null)
+      setRemoving(null)
       setDialog(null)
-      setToast({ message: `Deleted "${card.title}"` })
+      setToast({ message: params?.scope === 'following' ? `Deleted "${card.title}" and the later ones` : `Deleted "${card.title}"` })
+    }
+  }
+
+  /** Stop repeating, or Delete "This and all following": confirm with the later counts. */
+  const askRemoveLater = async (card: TaskCardData, kind: 'delete' | 'stop') => {
+    setBusy(true)
+    try {
+      const { data } = await api.get<{ data: TaskSeriesData }>(`/api/brewery/tasks/${card.id}/series`)
+      setDeletingSeries(null)
+      setRemoving({ card, kind, laterOpen: data.data.later_open, laterChanged: data.data.later_changed })
+    } catch (err) {
+      fail(err)
+      refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeLater = async (changed: Changed) => {
+    if (!removing) return
+    const { card, kind } = removing
+    if (kind === 'delete') return deleteTask(card, { scope: 'following', changed })
+    setBusy(true)
+    const ok = await run(() => api.post(`/api/brewery/tasks/${card.id}/stop_repeating`, { changed }))
+    setBusy(false)
+    if (ok) {
+      setRemoving(null)
+      setToast({ message: `"${card.title}" no longer repeats after ${formatTaskDay(card.series_date ?? card.due_on ?? today)}` })
     }
   }
 
@@ -384,6 +444,8 @@ export default function TaskBoard() {
   const layout = (lists: Record<string, ReactNode>) => {
     if (!board) return null
     const showUnfinished = board.unfinished.length > 0
+    if (phone && phoneView === 'vertical')
+      return <PhoneVerticalView days={board.days.map((d) => d.date)} showUnfinished={showUnfinished} lists={lists} />
     if (phone)
       return (
         <PhoneDayView
@@ -458,6 +520,11 @@ export default function TaskBoard() {
         onHistory={canManage ? () => setHistory({}) : undefined}
         onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
         compact={phone}
+        phoneView={phoneView}
+        onPhoneView={(view) => {
+          writePhoneView(view)
+          setPhoneView(view)
+        }}
       />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}
@@ -467,7 +534,7 @@ export default function TaskBoard() {
           onMove={moveTask}
           isLocked={isLocked}
           staysLast={staysLast}
-          sameListOnly={phone}
+          canMoveTo={boardMoveRule(phone ? phoneView : null, selected, today)}
           itemLabel={(key) => cards.get(key)?.title ?? 'task'}
           containerLabel={(id) => (id === FUTURE ? 'Future' : id === UNFINISHED ? 'Unfinished' : formatTaskDay(id))}
           onItemActivate={(key, element) => setMenu({ key, anchor: element })}
@@ -512,11 +579,12 @@ export default function TaskBoard() {
             setDialog(null)
             refresh()
           }}
-          onDelete={setDeleting}
+          onStale={refresh}
+          onDelete={startDelete}
           onHistory={canManage ? (card) => setHistory({ task: { id: card.id, title: card.title } }) : undefined}
         />
       )}
-      {editingDaily && <DailyItemsDialog onClose={() => setEditingDaily(false)} onChanged={refresh} />}
+      {editingDaily && <DailyItemsDialog onClose={() => setEditingDaily(false)} onChanged={refresh} boardUpdatedAt={dataUpdatedAt} />}
       {history && <HistoryDialog task={history.task} onClose={() => setHistory(null)} />}
       {finishing && (
         <FinishElsewhereDialog
@@ -557,6 +625,37 @@ export default function TaskBoard() {
         onConfirm={() => deleting && deleteTask(deleting)}
         title="Delete task"
         message={deleting ? `Delete '${deleting.title}'?` : ''}
+        loading={busy}
+      />
+      {deletingSeries && (
+        <ScopeDialog
+          action="delete"
+          loading={busy}
+          onChoose={(scope) => (scope === 'this' ? deleteTask(deletingSeries, { scope }) : askRemoveLater(deletingSeries, 'delete'))}
+          onCancel={() => setDeletingSeries(null)}
+        />
+      )}
+      {removing && removing.laterOpen + removing.laterChanged > 0 && (
+        <RemoveLaterDialog
+          title={removing.kind === 'stop' ? 'Stop repeating' : 'Delete this and all following'}
+          laterOpen={removing.laterOpen}
+          laterChanged={removing.laterChanged}
+          loading={busy}
+          onConfirm={removeLater}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={!!removing && removing.laterOpen + removing.laterChanged === 0}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => removeLater('keep')}
+        title={removing?.kind === 'stop' ? 'Stop repeating' : 'Delete this and all following'}
+        message={
+          removing?.kind === 'stop'
+            ? `"${removing.card.title}" stops repeating after this one. There are no later ones.`
+            : `Delete '${removing?.card.title ?? ''}'? There are no later ones.`
+        }
+        confirmLabel={removing?.kind === 'stop' ? 'Stop repeating' : 'Delete'}
         loading={busy}
       />
       <ConfirmDialog

@@ -191,7 +191,9 @@ test('S9b: Change day… to six weeks out takes it out of the range; that day sh
   await page.getByTestId('board-range-to').fill(target)
   await page.getByTestId('board-range-apply').click()
   await expect(page).toHaveURL(new RegExp(`from=${target}&to=${target}`))
-  await expect.poll(() => listKeys(page, `day-list-${target}`)).toEqual([`${already.id}:${target}`, `${task.id}:${target}`])
+  // Only ours: a shared board (DEV) can hold other tasks on that day too.
+  const ours = [`${already.id}:${target}`, `${task.id}:${target}`]
+  await expect.poll(async () => (await listKeys(page, `day-list-${target}`)).filter((k) => ours.includes(k))).toEqual(ours)
 })
 
 test('S9d: a task finished on another day can\'t be moved from the menu ("Mark not done first to move it")', async ({ page }) => {
@@ -372,4 +374,40 @@ test('S17: an empty or 201-character title is an inline error, and nothing is sa
   await page.getByTestId('task-dialog').getByRole('button', { name: 'Cancel' }).click()
   await page.reload()
   await expect(page.getByTestId('task-board').getByText('[TEST-TEMP] S17')).toHaveCount(0)
+})
+
+test('S77: saving a dialog for a task someone deleted says so, refreshes, and recreates nothing', async ({ browser }) => {
+  const title = tempTag('S77 Package FV6')
+  const today = denverToday()
+  const task = await createTask(await apiAs('brewer1'), { title, due_on: today })
+  created.push(task.id)
+  const ctx = await browser.newContext({ storageState: authFile('brewer2'), viewport: { width: 1600, height: 1000 } })
+  const other = await ctx.newPage()
+  await openBoard(other)
+
+  // brewer2 opens Edit and leaves it open; brewer1 deletes the task.
+  await openMenu(other, task.id, today)
+  await other.getByTestId('task-menu-edit').click()
+  await other.getByTestId('task-notes-input').fill('Check the gauge')
+  const gone = await (await apiAs('brewer1')).delete(`/api/brewery/tasks/${task.id}`)
+  expect(gone.status()).toBe(204)
+
+  // brewer2 saves.
+  const saving = other.waitForResponse(
+    (r) => new URL(r.url()).pathname === `/api/brewery/tasks/${task.id}` && r.request().method() === 'PATCH',
+  )
+  const refetch = other.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/tasks' && r.ok())
+  await saveDialog(other).click()
+  expect((await saving).status()).toBe(410)
+  await expect(other.getByTestId('task-dialog')).toContainText('This task was deleted')
+  await expect(other.getByTestId('task-dialog')).not.toContainText('Not found')
+  await refetch
+  await expect(card(other, task.id, today)).toHaveCount(0)
+
+  // Nothing is recreated.
+  await other.reload()
+  await expect(other.getByTestId('board-grid')).toBeVisible()
+  await expect(card(other, task.id, today)).toHaveCount(0)
+  expect((await getBoard(await apiAs('brewer1'), today, today)).days[0].cards.some((c) => c.title === title)).toBe(false)
+  await ctx.close()
 })

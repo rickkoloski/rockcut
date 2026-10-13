@@ -31,7 +31,7 @@ release) on its own branch. This spec covers all three. Where it says
 | **What** | The shared drag layer (§3.7); the board: range, day header, tasks, task menu, Unfinished card, Future list, Hide completed, filter (§3.8); the Daily card and Daily items; the change log; `Authz` (§3.3). | Recurring tasks (§3.10): the `Recurrence` rules, series edits, the daily top-up. Un-retiring a Daily item, plus the D38 DEV QA pass 2 follow-ups (§5), and the phone **vertical view** (§3.8 "Phone width") (Matt 2026-10-12). | The brewhouse tablet and staff codes for Brewery members (§3.4); the shift-end reminder and its opt-out (§3.5); the Brewery Dashboard card (§3.8). |
 | **Data** | `brewery_tasks` without the `series_*` columns, `brewery_daily_items`, `brewery_daily_checks` | `brewery_task_series`; adds `series_id`, `series_date`, `series_exception` to `brewery_tasks` | `brewery_task_reminders` |
 | **API** | Every §3.6 route, without `repeat` or `scope` | `repeat` on create/edit, `scope` on edit/delete | `staff_code` on every write from a device |
-| **Scenarios** | S1–S9f, S10–S31, S38–S41, S49 (except the staff code), S51 | S52–S67, S69 | S9g, S32–S37a, S42–S48, S49 (the staff code), S50, S68 |
+| **Scenarios** | S1–S9f, S10–S31, S38–S41, S49 (except the staff code), S51 | S52–S67, S69–S78 | S9g, S32–S37a, S42–S48, S49 (the staff code), S50, S68 |
 | **New dependency** | `@dnd-kit` | — | — |
 | **DEV seed** | Sample tasks, Daily cards, shifts and an event (§3.9) | A few `[SEED]` recurring tasks | The `breweryDevice` persona, `brewer1`'s staff code |
 
@@ -509,8 +509,10 @@ Daily items dialog) are the only users in D38.
 - Arrows (and swiping) move between days, and a strip of the range's days
   shows open-task counts. The strip ends with a **Future** stop that shows
   the Future list.
-- Dragging across days isn't practical on a phone. **Change day…** and
-  **Move to Future** in the task menu do the job.
+- In the one-day view, dragging across days isn't practical.
+  **Change day…** and **Move to Future** in the task menu do the job.
+  On today, a task on the Unfinished card can be long-pressed and dragged
+  into today's list, landing where it's dropped (Matt, 2026-10-12; D39).
 - The 1 week / 2 weeks toggle and the date range selector sit behind a
   calendar button.
 - **Back closes the task sheet** (Matt, 2026-10-12, Pixel check). With the
@@ -523,6 +525,13 @@ Daily items dialog) are the only users in D38.
   through the days, with drag between days as on desktop. Phones **start
   in the vertical view**; the choice is remembered per browser, like
   1 week / 2 weeks.
+  - The Unfinished card is at the top (when there is one) and the Future
+    list at the bottom, so the order matches the desktop's left to right.
+  - A long press drags a task from any day, or from the Unfinished card,
+    onto any day or the Future list. The page scrolls while the task is
+    held near the top or bottom edge. Dropping a task on another day
+    reschedules it, like Change day…, but at the spot it's dropped (Matt,
+    2026-10-12).
 
 **Task card:**
 - a checkbox to complete it;
@@ -767,6 +776,15 @@ toggle appears on Profile → Notifications, for Brewery members only.
     occurrences are removed, after a confirm that says how many.
 - **Delete** on an occurrence asks "Just this one" or "This and all
   following".
+- **Removing later occurrences** (Stop repeating, Delete "This and all
+  following", or a rule change saved with "This and all following")
+  confirms first (Matt, 2026-10-12).
+  - If any later open occurrence was moved or edited on its own, the
+    person chooses between two buttons:
+    - **"Remove 40, keep the 2 changed on their own"**;
+    - **"Remove all 42"**.
+  - Otherwise the confirm reads "Removes 40 later occurrences".
+  - Finished occurrences are never removed.
 
 **Who:** any Brewery member or owner, the same as other tasks. On the
 brewhouse tablet, a staff code is needed.
@@ -923,6 +941,25 @@ brewhouse tablet, a staff code is needed.
 | S68 | `breweryDevice` | create a recurring task | no active code | Asks for a staff code. History: "\<name\> on Shared Device · created recurring task". |
 | S69 | `brewer1` | Edit an occurrence → change only the notes | | Asked "Just this one" or "This and all following", like D32 events. |
 
+**Phone: vertical view and dragging between days** (D39; Matt, 2026-10-12)
+
+| # | Persona | Entry point | Mode / state | Expected |
+|---|---|---|---|---|
+| S70 | `brewer1` | Tasks on the Pixel, first visit in this browser | phone width | The vertical view: Unfinished (if any), then each day of the range with its header, Daily card and tasks, then Future. Switching to the one-day view and reloading keeps the one-day view. |
+| S71 | `brewer1` | vertical view → long-press a task on today, drag down to day 3, drop between two tasks | | The page scrolls while the task is held near the bottom edge. The task is on day 3 where it was dropped, after a reload too. History: "Moved … from \<today\> to \<day 3\>". |
+| S72 | `brewer1` | vertical view → long-press a task on the Unfinished card, drop on tomorrow | an open task from 3 days ago | It leaves the Unfinished card and is on tomorrow where it was dropped. Its old day no longer shows it. |
+| S73 | `brewer1` | one-day view on today → long-press a task on the Unfinished card, drop between today's first and second tasks | an open task from yesterday | It's second on today, after a reload too, and gone from the Unfinished card. |
+| S74 | `brewer1` | vertical view → long-press a task, drop on the Future list | | It's on the Future list where it was dropped. |
+
+**D38 follow-ups** (D39; Matt, 2026-10-12)
+
+| # | Persona | Entry point | Mode / state | Expected |
+|---|---|---|---|---|
+| S75 | `breweryMgr` | Edit Daily items → Retired → **Restore** "Temps" | Temps retired last week, with ticks before that | Temps is back at the bottom of the list, today's card shows it, and its old ticks still show on their days. The days it was retired keep their counts: it isn't on those cards and can't be ticked there (D39 Decision 5). With 12 items already active, Restore is refused with the limit message. |
+| S76 | `brewer1` | Pixel → open a task's Edit dialog → back gesture | phone width | The dialog closes and the board stays. The same for the "where should it show" dialog and Change day…. |
+| S77 | `brewer2` | Edit a task, leave it open; `brewer1` deletes the task; `brewer2` saves | | "This task was deleted", not "Not found". Nothing is recreated. |
+| S78 | `breweryMgr` | Edit a one-off task on a day → Repeat: Every week → Save | a one-off on Wed; another on the Future list; a finished one | It becomes the first occurrence of a weekly series from Wed, with ↻ and next week's copy; History has one entry for it. The Future one's Repeat says "Pick a day to repeat"; the finished one has no Repeat (D39 Decision 6). |
+
 ## 5. Out of Scope
 
 - **Moving the Scheduler grid's drag (D13) onto the shared layer.** File it
@@ -962,8 +999,8 @@ brewhouse tablet, a staff code is needed.
     deleted, not "Not found" (O-1);
   - the Edit Daily items dialog refreshes its own list with the board
     (O-2);
-  - unticking a retired item ticked today can be undone that day, or is
-    refused (decide when planning D39) (O-3).
+  - unticking a retired item ticked today is refused: 422 `retired`, and
+    its ticks are kept (Matt, 2026-10-12) (O-3).
   Also moved to D39 from the D38 Pixel checks (Matt, 2026-10-12):
   - the Android back gesture closes the other phone dialogs (Edit task,
     "Where should it show", and the rest) the way it closes the task sheet

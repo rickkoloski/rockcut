@@ -3,10 +3,14 @@ defmodule RockcutApi.Reminders.Scheduler do
   Lightweight periodic scanner (D22): ticks on an interval and asks
   `RockcutApi.Reminders.run/0` to send any due shift reminders. Single supervised
   process; the scan itself is idempotent. Disabled in :test.
+
+  D39: each tick also tops up recurring Brewery tasks to today + 12 months
+  (`BreweryTasks.Series.top_up/1`; a no-op after the day's first run). Each job
+  is rescued on its own, so one failing never stops the other.
   """
   use GenServer
   require Logger
-  alias RockcutApi.Reminders
+  alias RockcutApi.{BreweryTasks, Reminders}
 
   @default_interval_ms 300_000
 
@@ -28,6 +32,12 @@ defmodule RockcutApi.Reminders.Scheduler do
       Reminders.run()
     rescue
       e -> Logger.error("reminder scan failed: #{inspect(e)}")
+    end
+
+    try do
+      BreweryTasks.Series.top_up(BreweryTasks.today())
+    rescue
+      e -> Logger.error("recurring task top-up failed: #{inspect(e)}")
     end
 
     schedule_tick()

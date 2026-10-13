@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyMove, beforeIdAt, containerOf, moveBetween, placeAt, type ListContainer } from './moveModel'
+import { applyMove, beforeIdAt, canLand, containerOf, moveBetween, placeAt, type ListContainer } from './moveModel'
 
 const lists = (): ListContainer[] => [
   { id: 'mon', itemIds: ['a', 'b', 'c'] },
@@ -119,5 +119,20 @@ describe('moveBetween and placeAt', () => {
   it('finds an item’s list', () => {
     expect(containerOf(lists(), 'e')).toBe('tue')
     expect(containerOf(lists(), 'zz')).toBeNull()
+  })
+})
+
+describe('canLand', () => {
+  it('its own list always; any list with no rule', () => {
+    expect(canLand('a', 'a')).toBe(true)
+    expect(canLand('a', 'b')).toBe(true)
+    expect(canLand('a', 'a', () => false)).toBe(true)
+  })
+
+  it('another list only when the rule allows it', () => {
+    const rule = (from: string, to: string) => from === 'unfinished' && to === 'today'
+    expect(canLand('unfinished', 'today', rule)).toBe(true)
+    expect(canLand('unfinished', 'tomorrow', rule)).toBe(false)
+    expect(canLand('today', 'unfinished', rule)).toBe(false)
   })
 })

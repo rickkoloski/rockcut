@@ -1,6 +1,7 @@
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, List, ListItem, ListItemText, Typography, useMediaQuery, useTheme } from '@mui/material'
 import { useInfiniteQuery } from '@tanstack/react-query'
 import api from '../../../lib/api'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { describeEvent, eventActor, formatEventTime, taskError } from '../../../lib/breweryTasks'
 import type { TaskEventPage } from '../../../lib/types'
 
@@ -16,6 +17,7 @@ interface Props {
  * changed in plain words. Daily checks and items are included in the full list.
  */
 export default function HistoryDialog({ task, onClose }: Props) {
+  usePhoneBackCloses(true, onClose)
   const theme = useTheme()
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'))
 

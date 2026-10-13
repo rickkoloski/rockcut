@@ -79,6 +79,10 @@ test('S13: dragging from today to day 9 (second row) between two tasks lands the
   const day9 = addDays(today(), 8)
   const [t] = await tasksOn(today(), ['S13 move me'])
   const [x, y] = await tasksOn(day9, ['S13 X', 'S13 Y'])
+  // Taller still: day 9 is in the second row, under today, and other tasks on
+  // a shared board (DEV) push it down; at 2200px the whole board fits, so
+  // there's nothing to scroll.
+  await page.setViewportSize({ width: 1600, height: 2600 })
   await openBoard(page)
   const todayCount = Number(await page.getByTestId(`day-count-${today()}`).textContent())
   const day9Count = Number(await page.getByTestId(`day-count-${day9}`).textContent())

@@ -220,6 +220,8 @@ defmodule RockcutApiWeb.Router do
     post "/tasks/:id/move", BreweryTaskController, :move
     post "/tasks/:id/complete", BreweryTaskController, :complete
     post "/tasks/:id/uncomplete", BreweryTaskController, :uncomplete
+    get "/tasks/:id/series", BreweryTaskController, :series
+    post "/tasks/:id/stop_repeating", BreweryTaskController, :stop_repeating
 
     put "/daily_checks/:on_date/:daily_item_id", BreweryDailyController, :tick
     delete "/daily_checks/:on_date/:daily_item_id", BreweryDailyController, :untick
@@ -227,6 +229,7 @@ defmodule RockcutApiWeb.Router do
     post "/daily_items", BreweryDailyController, :create_item
     put "/daily_items/order", BreweryDailyController, :order_items
     patch "/daily_items/:id", BreweryDailyController, :update_item
+    post "/daily_items/:id/restore", BreweryDailyController, :restore_item
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

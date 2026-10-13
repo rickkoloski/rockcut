@@ -60,8 +60,8 @@ export async function futureTitles(api: APIRequestContext): Promise<string[]> {
 }
 
 /**
- * Delete every `[TEST-TEMP]` task this spec could have left: the ids it
- * created, plus a sweep of the Unfinished card, the Future list and a month
+ * Delete every `[TEST-TEMP]` task this spec could have left (a recurring
+ * one with its later occurrences): the ids it created, plus a sweep of the Unfinished card, the Future list and a month
  * either side of today.
  */
 export async function cleanupTasks(ids: number[]) {
@@ -78,8 +78,9 @@ export async function cleanupTasks(ids: number[]) {
     }
   }
   for (const id of seen) {
-    const res = await api.delete(`/api/brewery/tasks/${id}`)
-    expect([204, 404]).toContain(res.status())
+    // D39: an occurrence goes with its later ones; a one-off ignores the scope.
+    const res = await api.delete(`/api/brewery/tasks/${id}`, { params: { scope: 'following', changed: 'remove' } })
+    expect([204, 404, 410]).toContain(res.status()) // 410: deleted already (O-1)
   }
 }
 
@@ -149,6 +150,31 @@ async function dropSpot(list: Locator, before?: Locator) {
 }
 
 /**
+ * Before a mouse drag: scroll so `source` is on screen and, as far as that
+ * allows, `list` ends above 70% of the screen (room for the placeholder and
+ * the route below it). On a shared board (DEV) other tasks make the days
+ * taller and can push the target down; scrolling is safe only now, before
+ * anything is lifted.
+ */
+async function frame(page: Page, source: Locator, list: Locator, height: number) {
+  await source.scrollIntoViewIfNeeded()
+  const s = (await source.boundingBox())!
+  const l = (await list.boundingBox())!
+  const over = l.y + l.height - height * 0.7
+  const room = s.y - 8 // scrolling further would take the source off the top
+  if (over > 0 && room > 0) {
+    await page.evaluate(
+      (dy) =>
+        new Promise((done) => {
+          window.scrollBy(0, dy)
+          requestAnimationFrame(() => done(null))
+        }),
+      Math.min(over, room),
+    )
+  }
+}
+
+/**
  * Mouse-drag `source` into `list`: to its end, or just before `before` (a
  * card in it). Like a person watching the gap: round to just below the list,
  * up into its bottom edge (the placeholder goes last), then up onto `before`
@@ -168,7 +194,7 @@ async function dropSpot(list: Locator, before?: Locator) {
  */
 export async function mouseDrag(page: Page, source: Locator, list: Locator, before?: Locator) {
   const vp = page.viewportSize()!
-  await source.scrollIntoViewIfNeeded()
+  await frame(page, source, list, vp.height)
   const liftable = await source.evaluate((e) => !!e.closest('[aria-roledescription="sortable"]') && !e.closest('[data-locked="true"]'))
   const s = (await source.boundingBox())!
   await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2)
@@ -199,6 +225,71 @@ export async function mouseDrag(page: Page, source: Locator, list: Locator, befo
     if (liftable) await expect.poll(() => dropSpot(list, before), { timeout: 10_000 }).toBe('ok')
   }
   await page.mouse.up()
+}
+
+/**
+ * D39: a long-press drag with a finger (CDP touch events) from `source` into
+ * `list`, at its end or just before `before`. While the list is off screen
+ * the finger rests at the screen's top or bottom edge, so @dnd-kit scrolls the
+ * page, until the list is well on screen; then, as `mouseDrag` does, it aims
+ * at the list's bottom edge and lets go only once the placeholder shows where
+ * it should.
+ */
+export async function touchDrag(page: Page, source: Locator, list: Locator, before?: Locator) {
+  const cdp = await page.context().newCDPSession(page)
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: [number, number][]) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y]) => ({ x, y })) })
+  const vp = page.viewportSize()!
+  await source.scrollIntoViewIfNeeded()
+  const s = (await source.boundingBox())!
+  const x = s.x + Math.min(30, s.width / 2)
+  let y = s.y + s.height / 2
+  const slide = async (to: number, steps = 8) => {
+    const from = y
+    for (let i = 1; i <= steps; i++) await touch('touchMove', [[x, from + ((to - from) * i) / steps]])
+    y = to
+  }
+  await touch('touchStart', [[x, y]])
+  await expect(page.locator(LIFTED)).toHaveCount(1)
+
+  // Rest at an edge until the list's bottom is well inside the screen.
+  const margin = 140
+  await expect(async () => {
+    const b = (await list.boundingBox())!
+    const bottom = b.y + b.height
+    const [atTop, atEnd] = await page.evaluate(() => [
+      window.scrollY <= 0,
+      Math.ceil(window.scrollY + window.innerHeight) >= document.documentElement.scrollHeight,
+    ])
+    // Scrolled as far as it goes, or the list's bottom is well on screen.
+    if (bottom > vp.height - margin && !atEnd) await slide(vp.height - 4, 4)
+    else if (bottom < margin && !atTop) await slide(4, 4)
+    else return
+    throw new Error(`list bottom at ${Math.round(bottom)}, still scrolling`)
+  }).toPass({ timeout: 20_000, intervals: [100] })
+
+  // Into its bottom edge (the placeholder goes last), aiming again as lists
+  // reflow. Heading for `before`, it only needs to be in the list: cards
+  // finished there from other days stay below it.
+  await expect(async () => {
+    const b = (await list.boundingBox())!
+    await slide(b.y + b.height - 4, 3)
+    const spot = await dropSpot(list)
+    if (before) expect(['not in this list', 'still moving']).not.toContain(spot)
+    else expect(spot).toBe('ok')
+  }).toPass({ timeout: 10_000 })
+  if (before) {
+    // Onto `before` from below, so the placeholder slides in front of it (from
+    // above it would go after). Aim again if the lists moved under the finger.
+    await expect(async () => {
+      let b = (await before.boundingBox())!
+      await slide(b.y + b.height + 12, 4)
+      b = (await before.boundingBox())!
+      await slide(b.y + b.height / 2, 4)
+      await expect.poll(() => dropSpot(list, before), { timeout: 2_000 }).toBe('ok')
+    }).toPass({ timeout: 15_000 })
+  }
+  await touch('touchEnd', [])
 }
 
 /** Move a task back to a day through the API (to put shared data back after a spec). */
@@ -242,6 +333,20 @@ export async function dailyCard(api: APIRequestContext, date: string): Promise<A
   return (await getBoard(api, date, date)).days[0].daily
 }
 
+/**
+ * Take a tick a spec made off again. A retired item's ticks can't be unticked
+ * (D39 Decision 1), so a retired one is restored, unticked and retired again.
+ */
+export async function removeTick(api: APIRequestContext, date: string, itemId: number) {
+  const path = `/api/brewery/daily_checks/${date}/${itemId}`
+  const res = await api.delete(path)
+  if (res.status() !== 422) return expect([204, 404], await res.text()).toContain(res.status())
+  expect((await res.json()).error).toBe('retired')
+  expect((await api.post(`/api/brewery/daily_items/${itemId}/restore`)).status()).toBe(200)
+  expect((await api.delete(path)).status()).toBe(204)
+  expect((await api.patch(`/api/brewery/daily_items/${itemId}`, { data: { active: false } })).status()).toBe(200)
+}
+
 /** Tick (or untick) one Daily check through the API. */
 export async function setCheck(api: APIRequestContext, date: string, itemId: number, checked: boolean) {
   const path = `/api/brewery/daily_checks/${date}/${itemId}`
@@ -251,19 +356,30 @@ export async function setCheck(api: APIRequestContext, date: string, itemId: num
 
 /**
  * Put the Daily items back: the four defaults by their ids, with their names,
- * active, in order; every other active item retired.
+ * active (restored if a spec retired one), in order; every other active item
+ * retired.
  */
 export async function restoreDailyItems(defaults: ApiDailyItem[]) {
   const api = await apiAs('breweryMgr')
+  const isDefault = (item: ApiDailyItem) => defaults.some((d) => d.id === item.id)
+  // Every other item goes first, so a retired default has room (and its name) to come back.
   for (const item of await dailyItems(api)) {
-    const original = defaults.find((d) => d.id === item.id)
-    if (!original) {
-      const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })
-      expect(res.status(), await res.text()).toBe(200)
-    } else if (item.name !== original.name) {
-      const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { name: original.name } })
-      expect(res.status(), await res.text()).toBe(200)
-    }
+    if (isDefault(item)) continue
+    const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })
+    expect(res.status(), await res.text()).toBe(200)
+  }
+  // D39: a default a spec retired comes back through Restore.
+  const listed = await api.get('/api/brewery/daily_items', { params: { include_retired: 'true' } })
+  for (const item of (await listed.json()).data as ApiDailyItem[]) {
+    if (item.active || !isDefault(item)) continue
+    const res = await api.post(`/api/brewery/daily_items/${item.id}/restore`)
+    expect(res.status(), await res.text()).toBe(200)
+  }
+  for (const item of await dailyItems(api)) {
+    const original = defaults.find((d) => d.id === item.id)!
+    if (item.name === original.name) continue
+    const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { name: original.name } })
+    expect(res.status(), await res.text()).toBe(200)
   }
   const res = await api.put('/api/brewery/daily_items/order', { data: { ids: defaults.map((d) => d.id) } })
   expect(res.status(), await res.text()).toBe(200)

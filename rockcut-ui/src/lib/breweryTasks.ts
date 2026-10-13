@@ -1,4 +1,5 @@
 import parseApiError from './parseApiError'
+import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
 import type { DayHeaderData, HeaderShift, TaskCardData, TaskEvent, TaskEventPage } from './types'
 
@@ -91,8 +92,20 @@ export function cardShown(card: TaskCardData, filter: TaskFilter, hideCompleted:
   return true
 }
 
+/**
+ * The task behind a stale card is gone: a 410 (someone deleted it, O-1), or a
+ * 404 on a task route (an occurrence removed with its series, or any id that's
+ * no longer there). Either way the card's id is gone.
+ */
+export function taskGone(err: unknown): boolean {
+  const e = err as { response?: { status?: number }; config?: { url?: string } }
+  const status = e?.response?.status
+  return status === 410 || (status === 404 && /\/api\/brewery\/tasks\/\d+/.test(e?.config?.url ?? ''))
+}
+
 /** A refused board write as a sentence: the API's `message`, else the usual parse. */
 export function taskError(err: unknown): string {
+  if (taskGone(err)) return 'This task was deleted'
   const data = (err as { response?: { data?: { message?: string } } })?.response?.data
   return data?.message ?? parseApiError(err)
 }
@@ -122,10 +135,22 @@ export const eventActor = (ev: TaskEvent) => `${ev.actor_name ?? 'Someone'}${ev.
 
 const dayOrFuture = (key: unknown) => (typeof key === 'string' ? formatTaskDay(key) : 'Future')
 
+/** D39: " (just this one)" / " (this and following)" for a series edit. */
+const scopeNote = (scope: unknown) =>
+  scope === 'following' ? ' (this and following)' : scope === 'this' ? ' (just this one)' : ''
+
+/** D39: "removed 40, kept 2" (kept only when some were). */
+const removedNote = (d: Record<string, unknown>) =>
+  `removed ${Number(d.removed ?? 0)}${Number(d.kept ?? 0) > 0 ? `, kept ${Number(d.kept)}` : ''}`
+
 /**
  * One change-log entry in plain words, old → new: "Moved Package FV6 from
  * Mon 10/12 to Wed 10/14", "Completed Carb FV3 on Wed 10/14, shown on both
- * days", "Ticked Temps for Sun 10/11".
+ * days", "Ticked Temps for Sun 10/11". D39 adds the recurring-task wording:
+ * "Created recurring task Keg Wash on Wed 10/14 (Repeats every week on
+ * Wed)", "… (this and following)", "Deleted … this and following (removed
+ * 40, kept 2)", "Stopped repeating … (removed 40)", "… to Future (no longer
+ * repeats)", "Made Keg Wash repeat from Wed 10/14 (Repeats every week on Wed)".
  */
 export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): string {
   const d = ev.detail
@@ -134,29 +159,58 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
   switch (ev.action) {
     case 'created': {
       const who = person(d.assignee_id)
-      return `Added ${t} to ${dayOrFuture(d.due_on)}${who ? `, assigned to ${who}` : ''}`
+      const assigned = who ? `, assigned to ${who}` : ''
+      if (d.repeat)
+        return `Created recurring task ${t} on ${dayOrFuture(d.due_on)}${assigned} (${summaryFromDetail(d.repeat as Record<string, unknown>, d.due_on as string)})`
+      return `Added ${t} to ${dayOrFuture(d.due_on)}${assigned}`
     }
     case 'edited': {
-      const from = (d.from ?? {}) as { title?: string; notes?: string | null }
-      const to = (d.to ?? {}) as { title?: string; notes?: string | null }
+      const scope = scopeNote(d.scope)
+      const rule = d.repeat as { from?: Record<string, unknown>; to?: Record<string, unknown> } | undefined
+      if (rule?.to) {
+        const removed = Number(d.removed ?? 0) + Number(d.kept ?? 0) > 0 ? `; ${removedNote(d)}` : ''
+        return `Changed how ${t} repeats${scope}: ${summaryFromDetail(rule.to, null)}${removed}`
+      }
+      const from = (d.from ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
       const parts: string[] = []
       if ('title' in to) parts.push(`Renamed ${from.title} to ${to.title}`)
       if ('notes' in to) parts.push(`${to.notes ? (from.notes ? 'Changed' : 'Added') : 'Removed'} the notes on ${t}`)
-      return parts.join('; ') || `Edited ${t}`
+      if ('assignee_id' in to) {
+        const who = person(to.assignee_id)
+        parts.push(who ? `Assigned ${t} to ${who}` : `Unassigned ${t}`)
+      }
+      return (parts.join('; ') || `Edited ${t}`) + scope
     }
     case 'assigned': {
       const from = person(d.from)
       const to = person(d.to)
-      if (from && to) return `Reassigned ${t} from ${from} to ${to}`
-      if (to) return `Assigned ${t} to ${to}`
-      return `Unassigned ${t}${from ? ` (was ${from})` : ''}`
+      const scope = scopeNote(d.scope)
+      if (from && to) return `Reassigned ${t} from ${from} to ${to}${scope}`
+      if (to) return `Assigned ${t} to ${to}${scope}`
+      return `Unassigned ${t}${from ? ` (was ${from})` : ''}${scope}`
     }
+    case 'made_repeating': {
+      const from = (d.from ?? {}) as { title?: string }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
+      const parts = [`Made ${t} repeat from ${dayOrFuture(d.due_on)} (${summaryFromDetail(d.repeat as Record<string, unknown>, d.due_on as string)})`]
+      if ('title' in to) parts.push(`renamed from ${from.title}`)
+      if ('notes' in to) parts.push(to.notes ? 'notes changed' : 'notes removed')
+      if ('assignee_id' in to) {
+        const who = person(to.assignee_id)
+        parts.push(who ? `assigned to ${who}` : 'unassigned')
+      }
+      return parts.join('; ')
+    }
+    case 'stopped_repeating':
+      return `Stopped repeating ${t} after ${dayOrFuture(d.series_date)} (${removedNote(d)})`
     case 'unassigned':
       return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${d.reason === 'left_brewery' ? ' (left the Brewery)' : ''}`
     case 'moved': {
       const from = (d.from ?? {}) as { due_on?: string | null; position?: number }
       const to = (d.to ?? {}) as { due_on?: string | null; position?: number }
-      if (from.due_on !== to.due_on) return `Moved ${t} from ${dayOrFuture(from.due_on)} to ${dayOrFuture(to.due_on)}`
+      if (from.due_on !== to.due_on)
+        return `Moved ${t} from ${dayOrFuture(from.due_on)} to ${dayOrFuture(to.due_on)}${d.one_off ? ' (no longer repeats)' : ''}`
       return `Moved ${t} from position ${from.position} to ${to.position} on ${dayOrFuture(to.due_on)}`
     }
     case 'completed': {
@@ -170,7 +224,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
     case 'uncompleted':
       return `Marked ${t} not done${d.completed_on ? ` (was done ${dayOrFuture(d.completed_on)})` : ''}`
     case 'deleted':
-      return `Deleted ${t} (${dayOrFuture(d.due_on)})`
+      if (d.scope === 'following') return `Deleted ${t} (${dayOrFuture(d.due_on)}) this and following (${removedNote(d)})`
+      return `Deleted ${t} (${dayOrFuture(d.due_on)}${d.scope === 'this' ? ', just this one' : ''})`
     case 'daily_ticked':
       return `Ticked ${t} for ${dayOrFuture(d.on_date)}`
     case 'daily_unticked':
@@ -181,6 +236,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
       return `Renamed the Daily item ${d.from} to ${d.to}`
     case 'item_retired':
       return `Retired the Daily item ${t}`
+    case 'item_restored':
+      return `Restored Daily item ${t}`
     case 'item_reordered': {
       const item = (id: unknown) => names.items[String(id)] ?? '?'
       const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(item).join(', ') : '')
@@ -194,6 +251,7 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
 // ── Per-browser preferences (spec §3.8). Storage can be missing or throw. ──
 
 const SPAN_KEY = 'rockcut.breweryTasks.span'
+const PHONE_VIEW_KEY = 'rockcut.breweryTasks.phoneView'
 const HIDE_KEY = 'rockcut.breweryTasks.hideCompleted'
 
 function read(key: string): string | null {
@@ -217,3 +275,24 @@ export const readSpan = (): Span => (read(SPAN_KEY) === '7' ? 7 : 14)
 export const writeSpan = (span: Span) => write(SPAN_KEY, String(span))
 export const readHideCompleted = () => read(HIDE_KEY) === 'true'
 export const writeHideCompleted = (on: boolean) => write(HIDE_KEY, String(on))
+
+/** D39 phone width: every day stacked (`vertical`, the default) or one day at a time. */
+export type PhoneView = 'vertical' | 'day'
+export const readPhoneView = (): PhoneView => (read(PHONE_VIEW_KEY) === 'day' ? 'day' : 'vertical')
+export const writePhoneView = (view: PhoneView) => write(PHONE_VIEW_KEY, view)
+
+/**
+ * Where a task may be dragged on the board (any width). Nothing lands on the
+ * Unfinished card from elsewhere: it lists open past tasks, it isn't a place.
+ * At phone width (spec §3.8 "Phone width"), the vertical view goes anywhere
+ * else, as desktop does; the one-day view stays in its list, or goes from the
+ * Unfinished card into today when today shows (S73).
+ */
+export function boardMoveRule(phoneView: PhoneView | null, selected: string, today: string) {
+  return (from: string, to: string) => {
+    if (from === to) return true
+    if (to === UNFINISHED) return false
+    if (phoneView !== 'day') return true
+    return from === UNFINISHED && to === today && selected === today
+  }
+}

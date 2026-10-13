@@ -1,6 +1,6 @@
 import type { MouseEvent } from 'react'
 import { Avatar, Box, Checkbox, Paper, Tooltip, Typography } from '@mui/material'
-import { NotesOutlined } from '@mui/icons-material'
+import { NotesOutlined, Repeat } from '@mui/icons-material'
 import { firstName, formatTaskDay, initials } from '../../../lib/breweryTasks'
 import type { TaskCardData } from '../../../lib/types'
 
@@ -17,7 +17,8 @@ interface Props {
 }
 
 /**
- * D38 §3.8 task card: checkbox, title, initials, notes icon and tags. A click
+ * D38 §3.8 task card: checkbox, title, initials, notes icon and tags (D39: a
+ * ↻ on an occurrence of a recurring task). A click
  * anywhere but the checkbox opens the task menu (Enter does too, through
  * SortableLists).
  */
@@ -77,6 +78,11 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
           >
             {card.title}
           </Typography>
+          {card.series_id != null && (
+            <Tooltip title="Repeats">
+              <Repeat sx={{ fontSize: 16, mt: 0.25 }} color="action" role="img" aria-label="Repeats" aria-hidden={false} data-testid={`task-repeat-icon-${card.key}`} />
+            </Tooltip>
+          )}
           {card.notes && (
             <Tooltip title="Has notes">
               <NotesOutlined sx={{ fontSize: 16, mt: 0.25 }} color="action" data-testid={`task-notes-icon-${card.key}`} />

@@ -8,12 +8,14 @@ import {
   Edit,
   EventRepeat,
   NotesOutlined,
+  Repeat,
+  StopCircleOutlined,
 } from '@mui/icons-material'
 import { useBackCloses } from '../../../hooks/useBackCloses'
 import { formatTaskDay } from '../../../lib/breweryTasks'
 import type { TaskCardData } from '../../../lib/types'
 
-export type TaskAction = 'edit' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete'
+export type TaskAction = 'edit' | 'edit-series' | 'stop-repeating' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete'
 
 interface Props {
   anchor: HTMLElement
@@ -31,7 +33,8 @@ interface Props {
  * width (S9a), with the same actions either way. A
  * finished task shown on the day it was done can't move: Change day and Move
  * up/down are greyed out with "Mark not done first to move it". Back closes
- * the sheet (DEV pass 2, B).
+ * the sheet (DEV pass 2, B). D39: an occurrence of a recurring task adds
+ * Edit series… and Stop repeating (not on the last one once it has stopped).
  */
 export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, onClose, onAction }: Props) {
   const pick = (action: TaskAction) => () => {
@@ -63,6 +66,19 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
       <ListItemIcon><Edit fontSize="small" /></ListItemIcon>
       <ListItemText>Edit</ListItemText>
     </MenuItem>,
+    card.series_id != null && (
+      <MenuItem key="edit-series" onClick={pick('edit-series')} data-testid="task-menu-edit-series">
+        <ListItemIcon><Repeat fontSize="small" /></ListItemIcon>
+        <ListItemText>Edit series…</ListItemText>
+      </MenuItem>
+    ),
+    // G2: not on the last one of a series that already stopped.
+    card.series_id != null && !card.series_last && (
+      <MenuItem key="stop-repeating" onClick={pick('stop-repeating')} data-testid="task-menu-stop-repeating">
+        <ListItemIcon><StopCircleOutlined fontSize="small" /></ListItemIcon>
+        <ListItemText>Stop repeating</ListItemText>
+      </MenuItem>
+    ),
     <MenuItem key="notes" onClick={pick('notes')} data-testid="task-menu-notes">
       <ListItemIcon><NotesOutlined fontSize="small" /></ListItemIcon>
       <ListItemText>{card.notes ? 'Edit notes' : 'Add notes'}</ListItemText>
