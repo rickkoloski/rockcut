@@ -3,7 +3,7 @@ import { Alert, Button, Checkbox, CircularProgress, FormControlLabel, MenuItem, 
 import FormDialog from '../../../components/FormDialog'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import api from '../../../lib/api'
-import { taskError } from '../../../lib/breweryTasks'
+import { taskError, taskGone } from '../../../lib/breweryTasks'
 import { defaultRule, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../../lib/repeat'
 import type { RosterEntry, TaskCardData, TaskSeriesData } from '../../../lib/types'
 import RepeatFields from './RepeatFields'
@@ -24,7 +24,7 @@ interface Props {
   today: string
   onClose: () => void
   onSaved: () => void
-  /** The board is out of date (the task was deleted meanwhile, O-1): refetch it, keep the dialog. */
+  /** The board is out of date (the task is gone: deleted, or removed with its series): refetch it, keep the dialog. */
   onStale: () => void
   onDelete: (card: TaskCardData) => void
   /** This task's History (managers and owners). */
@@ -109,7 +109,7 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
       onSaved()
     } catch (err) {
       // Someone deleted it meanwhile: "This task was deleted", and the board catches up.
-      if ((err as { response?: { status?: number } })?.response?.status === 410) onStale()
+      if (taskGone(err)) onStale()
       setError(taskError(err))
     } finally {
       setSaving(false)

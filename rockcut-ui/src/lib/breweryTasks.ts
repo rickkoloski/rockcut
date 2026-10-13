@@ -92,8 +92,20 @@ export function cardShown(card: TaskCardData, filter: TaskFilter, hideCompleted:
   return true
 }
 
+/**
+ * The task behind a stale card is gone: a 410 (someone deleted it, O-1), or a
+ * 404 on a task route (an occurrence removed with its series, or any id that's
+ * no longer there). Either way the card's id is gone.
+ */
+export function taskGone(err: unknown): boolean {
+  const e = err as { response?: { status?: number }; config?: { url?: string } }
+  const status = e?.response?.status
+  return status === 410 || (status === 404 && /\/api\/brewery\/tasks\/\d+/.test(e?.config?.url ?? ''))
+}
+
 /** A refused board write as a sentence: the API's `message`, else the usual parse. */
 export function taskError(err: unknown): string {
+  if (taskGone(err)) return 'This task was deleted'
   const data = (err as { response?: { data?: { message?: string } } })?.response?.data
   return data?.message ?? parseApiError(err)
 }
