@@ -165,8 +165,9 @@ Decision 3 below.
 ### API (`rockcut_api`)
 
 - **Migration `…_create_brewery_task_series`:**
-  - `brewery_task_series` with the spec §3.1 columns, plus a `kind` for
-    the internal rule name;
+  - `brewery_task_series` with the spec §3.1 columns. The internal rule
+    kind isn't stored: `TaskSeries.rule_kind/1` derives it from
+    `frequency` + `month_rule`;
   - adds `series_id` (FK, `on_delete: :nilify_all`), `series_date` and
     `series_exception` (default false) to `brewery_tasks`;
   - a unique index on `(series_id, series_date)`, and an index on

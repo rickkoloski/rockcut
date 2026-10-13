@@ -201,3 +201,101 @@ Commit as `feat: D39 recurring task series, create and daily top-up`.
 - any `LEAD:` question.
 
 Then stop.
+
+## Task 3: plan step 3, series edits, stop, preview and the special moves
+
+Task 2 was reviewed and accepted (`f62d71d`).
+
+**Answer to your question:** don't store a `kind` column. Deriving it with
+`rule_kind/1` is right, because a stored copy could drift from `frequency` and
+`month_rule`. The plan now says so.
+
+Build plan "Order of work" step 3, as the plan's "Edits" bullets and
+**Decisions 2–4** describe. It's all in `BreweryTasks.Series` and
+`BreweryTasks`, with no controller changes yet.
+
+1. **`update(task, attrs, scope, actor, opts)`:**
+   - A task that isn't in a series → the D38 update path, unchanged.
+   - **`"this"`:** the D38 update, plus `series_exception: true` (S60).
+   - **`"following"`, content only** (title, notes, assignee):
+     - update the series row's content;
+     - update every occurrence with `series_date >= this.series_date`
+       that's open and **not** an exception;
+     - this occurrence gets the change even if it's an exception;
+     - earlier, finished and exception occurrences don't change (S61).
+   - **`"following"` with a changed rule:** split, as D32's `split/2` and
+     `remaining_count` do (S62):
+     - the old series gets `until_date` = this `series_date` − 1 (or is
+       deleted if this is its first date);
+     - its later open occurrences are removed, and those that are
+       exceptions are kept or removed per `opts[:changed]` (`:keep`, the
+       default, or `:remove`) (Decision 2);
+     - finished ones are never removed;
+     - a new series starts on this occurrence's date with the merged
+       content and the new rule;
+     - this occurrence is either reused as the new series' first one, or
+       replaced. Pick one and say which; it must keep its History.
+   - **A `due_on` change in `attrs`, whatever the scope,** applies to this
+     occurrence only and sets `series_exception` (plan "Day changes always
+     apply to one occurrence"). With "following", the content goes to the
+     following ones and the day to this one only.
+   - A `PATCH` or `DELETE` on an occurrence with no `scope` →
+     `{:error, :scope_required}`.
+2. **`delete(task, "following", actor, opts)`:** ends the series the day
+   before and removes this and later open occurrences, keeping or removing
+   the exceptions per `opts[:changed]`. History gets one `deleted` event,
+   for the occurrence acted on, with `detail` holding the counts (Decision
+   3). Don't log one per removed row.
+3. **`stop(task, actor, opts)`:** the series ends **on** this occurrence
+   (`until_date` = its `series_date`), and later open occurrences are
+   removed per `opts[:changed]`. It logs one `stopped_repeating` event
+   with the counts (S63).
+4. **`preview(task)`:** `%{later_open: n, later_changed: m}`. These are
+   the open occurrences after this one, split into those not changed on
+   their own and those that were. It's for the confirm wording (Decision
+   2).
+5. **Moves:** `BreweryTasks.move` and `move_overdue_to_today` set
+   `series_exception: true` when they move an occurrence to another day
+   (S59, S65). A move within the same day doesn't count as a change.
+   **Moving an occurrence onto Future** makes it a one-off (Decision 4):
+   - `series_id` and `series_date` are cleared, and `series_exception` is
+     false;
+   - the old `series_date` goes on `skipped_dates`.
+6. **Leaving the Brewery:** wherever D38's `unassign_if_ineligible`
+   unassigns open tasks, also clear `assignee_id` on series assigned to
+   that person, in the same transaction.
+7. **History actions:** reuse D38's event shape. The new actions are
+   `edited` with a `scope` in `detail`, `deleted` with `scope` and counts,
+   and `stopped_repeating`. Check that `BreweryTasks.list_events` /
+   `event_names` still render them; the UI wording comes in step 5.
+
+**Tests** (in `series_test.exs`, or a second file):
+- S59: a move becomes an exception, with no second copy after `top_up`;
+- S60;
+- S61: the S60 exception and an S59-moved one keep their own values;
+- S62: the split dates, the count carry-over, and finished and earlier
+  occurrences untouched;
+- `changed: :keep` and `changed: :remove`, for split, stop and delete
+  "following";
+- S63: the counts from `preview`, then stop;
+- delete "following";
+- the Future move becomes a one-off and isn't regenerated;
+- S65: Move all to today on three missed occurrences;
+- leaving the Brewery clears the series assignee, and `top_up` then
+  creates unassigned occurrences;
+- `scope_required`;
+- History: one event per action.
+
+**Done when** these and the full `MIX_ENV=test mix test` are green, with the
+D32 and D38 tests unchanged.
+
+Commit as `feat: D39 recurring task edits, stop repeating and moves` (more
+than one commit is fine).
+
+**Reply with:**
+- the counts;
+- the SHA(s);
+- which way you handled "this occurrence" in the split;
+- any `LEAD:` question.
+
+Then stop.
