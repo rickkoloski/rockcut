@@ -28,12 +28,13 @@ import {
   type Span,
   type TaskFilter,
 } from '../../../lib/breweryTasks'
-import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData } from '../../../lib/types'
+import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData, TaskSeriesData } from '../../../lib/types'
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
 import HistoryDialog from './HistoryDialog'
 import PhoneDayView from './PhoneDayView'
+import { RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
 import DayColumn from './DayColumn'
 import FinishElsewhereDialog from './FinishElsewhereDialog'
 import FutureList from './FutureList'
@@ -130,6 +131,12 @@ export default function TaskBoard() {
   const [reopening, setReopening] = useState<TaskCardData | null>(null)
   const [changingDay, setChangingDay] = useState<TaskCardData | null>(null)
   const [deleting, setDeleting] = useState<TaskCardData | null>(null)
+  // D39: an occurrence's delete asks which ones, then (for "following", or
+  // Stop repeating) confirms the later ones it removes (Decision 2).
+  const [deletingSeries, setDeletingSeries] = useState<TaskCardData | null>(null)
+  const [removing, setRemoving] = useState<{ card: TaskCardData; kind: 'delete' | 'stop'; laterOpen: number; laterChanged: number } | null>(
+    null,
+  )
   const [movingAll, setMovingAll] = useState(false)
   const [editingDaily, setEditingDaily] = useState(false)
   // History: the whole board's, or one task's (from its dialog).
@@ -288,6 +295,10 @@ export default function TaskBoard() {
       case 'edit':
       case 'notes':
         return setDialog({ mode: { kind: 'edit', card: menuCard, focusNotes: action === 'notes' }, n: Date.now() })
+      case 'edit-series':
+        return setDialog({ mode: { kind: 'edit', card: menuCard, series: true }, n: Date.now() })
+      case 'stop-repeating':
+        return askRemoveLater(menuCard, 'stop')
       case 'toggle':
         return toggle(menuCard)
       case 'change-day':
@@ -296,18 +307,50 @@ export default function TaskBoard() {
       case 'down':
         return menuContainer && moveStep(menuCard, menuContainer, action)
       case 'delete':
-        return setDeleting(menuCard)
+        return startDelete(menuCard)
     }
   }
 
-  const deleteTask = async (card: TaskCardData) => {
+  const startDelete = (card: TaskCardData) => (card.series_id != null ? setDeletingSeries(card) : setDeleting(card))
+
+  const deleteTask = async (card: TaskCardData, params?: { scope: SeriesScope; changed?: Changed }) => {
     setBusy(true)
-    const ok = await run(() => api.delete(`/api/brewery/tasks/${card.id}`))
+    const ok = await run(() => api.delete(`/api/brewery/tasks/${card.id}`, params ? { params } : undefined))
     setBusy(false)
     if (ok) {
       setDeleting(null)
+      setDeletingSeries(null)
+      setRemoving(null)
       setDialog(null)
-      setToast({ message: `Deleted "${card.title}"` })
+      setToast({ message: params?.scope === 'following' ? `Deleted "${card.title}" and the later ones` : `Deleted "${card.title}"` })
+    }
+  }
+
+  /** Stop repeating, or Delete "This and all following": confirm with the later counts. */
+  const askRemoveLater = async (card: TaskCardData, kind: 'delete' | 'stop') => {
+    setBusy(true)
+    try {
+      const { data } = await api.get<{ data: TaskSeriesData }>(`/api/brewery/tasks/${card.id}/series`)
+      setDeletingSeries(null)
+      setRemoving({ card, kind, laterOpen: data.data.later_open, laterChanged: data.data.later_changed })
+    } catch (err) {
+      fail(err)
+      refresh()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const removeLater = async (changed: Changed) => {
+    if (!removing) return
+    const { card, kind } = removing
+    if (kind === 'delete') return deleteTask(card, { scope: 'following', changed })
+    setBusy(true)
+    const ok = await run(() => api.post(`/api/brewery/tasks/${card.id}/stop_repeating`, { changed }))
+    setBusy(false)
+    if (ok) {
+      setRemoving(null)
+      setToast({ message: `"${card.title}" no longer repeats after ${formatTaskDay(card.series_date ?? card.due_on ?? today)}` })
     }
   }
 
@@ -512,7 +555,7 @@ export default function TaskBoard() {
             setDialog(null)
             refresh()
           }}
-          onDelete={setDeleting}
+          onDelete={startDelete}
           onHistory={canManage ? (card) => setHistory({ task: { id: card.id, title: card.title } }) : undefined}
         />
       )}
@@ -557,6 +600,37 @@ export default function TaskBoard() {
         onConfirm={() => deleting && deleteTask(deleting)}
         title="Delete task"
         message={deleting ? `Delete '${deleting.title}'?` : ''}
+        loading={busy}
+      />
+      {deletingSeries && (
+        <ScopeDialog
+          action="delete"
+          loading={busy}
+          onChoose={(scope) => (scope === 'this' ? deleteTask(deletingSeries, { scope }) : askRemoveLater(deletingSeries, 'delete'))}
+          onCancel={() => setDeletingSeries(null)}
+        />
+      )}
+      {removing && removing.laterOpen + removing.laterChanged > 0 && (
+        <RemoveLaterDialog
+          title={removing.kind === 'stop' ? 'Stop repeating' : 'Delete this and all following'}
+          laterOpen={removing.laterOpen}
+          laterChanged={removing.laterChanged}
+          loading={busy}
+          onConfirm={removeLater}
+          onCancel={() => setRemoving(null)}
+        />
+      )}
+      <ConfirmDialog
+        open={!!removing && removing.laterOpen + removing.laterChanged === 0}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => removeLater('keep')}
+        title={removing?.kind === 'stop' ? 'Stop repeating' : 'Delete this and all following'}
+        message={
+          removing?.kind === 'stop'
+            ? `"${removing.card.title}" stops repeating after this one. There are no later ones.`
+            : `Delete '${removing?.card.title ?? ''}'? There are no later ones.`
+        }
+        confirmLabel={removing?.kind === 'stop' ? 'Stop repeating' : 'Delete'}
         loading={busy}
       />
       <ConfirmDialog

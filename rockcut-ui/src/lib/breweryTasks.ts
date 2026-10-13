@@ -1,4 +1,5 @@
 import parseApiError from './parseApiError'
+import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
 import type { DayHeaderData, HeaderShift, TaskCardData, TaskEvent, TaskEventPage } from './types'
 
@@ -122,10 +123,22 @@ export const eventActor = (ev: TaskEvent) => `${ev.actor_name ?? 'Someone'}${ev.
 
 const dayOrFuture = (key: unknown) => (typeof key === 'string' ? formatTaskDay(key) : 'Future')
 
+/** D39: " (just this one)" / " (this and following)" for a series edit. */
+const scopeNote = (scope: unknown) =>
+  scope === 'following' ? ' (this and following)' : scope === 'this' ? ' (just this one)' : ''
+
+/** D39: "removed 40, kept 2" (kept only when some were). */
+const removedNote = (d: Record<string, unknown>) =>
+  `removed ${Number(d.removed ?? 0)}${Number(d.kept ?? 0) > 0 ? `, kept ${Number(d.kept)}` : ''}`
+
 /**
  * One change-log entry in plain words, old → new: "Moved Package FV6 from
  * Mon 10/12 to Wed 10/14", "Completed Carb FV3 on Wed 10/14, shown on both
- * days", "Ticked Temps for Sun 10/11".
+ * days", "Ticked Temps for Sun 10/11". D39 adds the recurring-task wording:
+ * "Created recurring task Keg Wash on Wed 10/14 (Repeats every week on
+ * Wed)", "… (this and following)", "Deleted … this and following (removed
+ * 40, kept 2)", "Stopped repeating … (removed 40)", "… to Future (no longer
+ * repeats)".
  */
 export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): string {
   const d = ev.detail
@@ -134,29 +147,46 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
   switch (ev.action) {
     case 'created': {
       const who = person(d.assignee_id)
-      return `Added ${t} to ${dayOrFuture(d.due_on)}${who ? `, assigned to ${who}` : ''}`
+      const assigned = who ? `, assigned to ${who}` : ''
+      if (d.repeat)
+        return `Created recurring task ${t} on ${dayOrFuture(d.due_on)}${assigned} (${summaryFromDetail(d.repeat as Record<string, unknown>, d.due_on as string)})`
+      return `Added ${t} to ${dayOrFuture(d.due_on)}${assigned}`
     }
     case 'edited': {
-      const from = (d.from ?? {}) as { title?: string; notes?: string | null }
-      const to = (d.to ?? {}) as { title?: string; notes?: string | null }
+      const scope = scopeNote(d.scope)
+      const rule = d.repeat as { from?: Record<string, unknown>; to?: Record<string, unknown> } | undefined
+      if (rule?.to) {
+        const removed = Number(d.removed ?? 0) + Number(d.kept ?? 0) > 0 ? `; ${removedNote(d)}` : ''
+        return `Changed how ${t} repeats${scope}: ${summaryFromDetail(rule.to, null)}${removed}`
+      }
+      const from = (d.from ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
       const parts: string[] = []
       if ('title' in to) parts.push(`Renamed ${from.title} to ${to.title}`)
       if ('notes' in to) parts.push(`${to.notes ? (from.notes ? 'Changed' : 'Added') : 'Removed'} the notes on ${t}`)
-      return parts.join('; ') || `Edited ${t}`
+      if ('assignee_id' in to) {
+        const who = person(to.assignee_id)
+        parts.push(who ? `Assigned ${t} to ${who}` : `Unassigned ${t}`)
+      }
+      return (parts.join('; ') || `Edited ${t}`) + scope
     }
     case 'assigned': {
       const from = person(d.from)
       const to = person(d.to)
-      if (from && to) return `Reassigned ${t} from ${from} to ${to}`
-      if (to) return `Assigned ${t} to ${to}`
-      return `Unassigned ${t}${from ? ` (was ${from})` : ''}`
+      const scope = scopeNote(d.scope)
+      if (from && to) return `Reassigned ${t} from ${from} to ${to}${scope}`
+      if (to) return `Assigned ${t} to ${to}${scope}`
+      return `Unassigned ${t}${from ? ` (was ${from})` : ''}${scope}`
     }
+    case 'stopped_repeating':
+      return `Stopped repeating ${t} after ${dayOrFuture(d.series_date)} (${removedNote(d)})`
     case 'unassigned':
       return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${d.reason === 'left_brewery' ? ' (left the Brewery)' : ''}`
     case 'moved': {
       const from = (d.from ?? {}) as { due_on?: string | null; position?: number }
       const to = (d.to ?? {}) as { due_on?: string | null; position?: number }
-      if (from.due_on !== to.due_on) return `Moved ${t} from ${dayOrFuture(from.due_on)} to ${dayOrFuture(to.due_on)}`
+      if (from.due_on !== to.due_on)
+        return `Moved ${t} from ${dayOrFuture(from.due_on)} to ${dayOrFuture(to.due_on)}${d.one_off ? ' (no longer repeats)' : ''}`
       return `Moved ${t} from position ${from.position} to ${to.position} on ${dayOrFuture(to.due_on)}`
     }
     case 'completed': {
@@ -170,7 +200,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
     case 'uncompleted':
       return `Marked ${t} not done${d.completed_on ? ` (was done ${dayOrFuture(d.completed_on)})` : ''}`
     case 'deleted':
-      return `Deleted ${t} (${dayOrFuture(d.due_on)})`
+      if (d.scope === 'following') return `Deleted ${t} (${dayOrFuture(d.due_on)}) this and following (${removedNote(d)})`
+      return `Deleted ${t} (${dayOrFuture(d.due_on)}${d.scope === 'this' ? ', just this one' : ''})`
     case 'daily_ticked':
       return `Ticked ${t} for ${dayOrFuture(d.on_date)}`
     case 'daily_unticked':
