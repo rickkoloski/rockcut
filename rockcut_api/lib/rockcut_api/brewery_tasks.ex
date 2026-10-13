@@ -603,10 +603,15 @@ defmodule RockcutApi.BreweryTasks do
     end
   end
 
-  @doc "Untick `item` on `on_date`. Not ticked → a no-op. A future date → `{:error, :future_day}`."
+  @doc """
+  Untick `item` on `on_date`. Not ticked → a no-op. A future date →
+  `{:error, :future_day}`. A retired item → `{:error, :retired}`: its ticks
+  are kept (D39 Decision 1, O-3).
+  """
   def untick(on_date, %DailyItem{} = item, %User{} = actor, today \\ today()) do
     with {:ok, on_date} <- cast_date(on_date),
-         :ok <- not_future(on_date, today) do
+         :ok <- not_future(on_date, today),
+         :ok <- if(item.active, do: :ok, else: {:error, :retired}) do
       Repo.transaction(fn ->
         {n, _} =
           Repo.delete_all(

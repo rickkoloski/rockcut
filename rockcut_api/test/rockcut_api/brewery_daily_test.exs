@@ -79,13 +79,17 @@ defmodule RockcutApi.BreweryDailyTest do
       assert {:error, :invalid_date} = BreweryTasks.tick("tomorrow", items["Temps"], brewer)
     end
 
-    test "a retired item can't be ticked, but can be unticked",
+    test "a retired item can't be ticked or unticked; its ticks are kept (Decision 1, O-3)",
          %{brewer: brewer, mgr: mgr, items: items} do
       {:ok, _} = BreweryTasks.tick(@tue, items["Backups"], brewer, @today)
+      {:ok, _} = BreweryTasks.tick(@today, items["Backups"], brewer, @today)
       {:ok, retired} = BreweryTasks.retire_item(items["Backups"], mgr)
 
       assert {:error, :retired} = BreweryTasks.tick(@today, retired, brewer, @today)
-      assert {:ok, :ok} = BreweryTasks.untick(@tue, retired, brewer, @today)
+      assert {:error, :retired} = BreweryTasks.untick(@tue, retired, brewer, @today)
+      assert {:error, :retired} = BreweryTasks.untick(@today, retired, brewer, @today)
+      assert Repo.aggregate(DailyCheck, :count) == 2
+      refute Enum.any?(daily_events(), &(&1.action == "daily_unticked"))
     end
   end
 

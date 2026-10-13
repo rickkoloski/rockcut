@@ -54,4 +54,25 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
                404
     end
   end
+
+  test "unticking a retired item is 422 retired and the tick stays (Decision 1, O-3)", %{
+    p: p,
+    today: today
+  } do
+    path = "/api/brewery/daily_checks/#{Date.to_iso8601(today)}/#{item_id("Temps")}"
+    assert call(p["brewer1"], :put, path).status == 200
+    retire!(p["breweryMgr"], "Temps")
+
+    assert %{"error" => "retired"} = call(p["brewer1"], :delete, path) |> json_response(422)
+
+    assert %{"items" => items} =
+             call(p["brewer1"], :get, "/api/brewery/tasks", %{
+               from: Date.to_iso8601(today),
+               to: Date.to_iso8601(today)
+             })
+             |> json_response(200)
+             |> get_in(["data", "days", Access.at(0), "daily"])
+
+    assert %{"checked" => true, "active" => false} = Enum.find(items, &(&1["name"] == "Temps"))
+  end
 end
