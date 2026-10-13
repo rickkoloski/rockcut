@@ -583,10 +583,14 @@ defmodule RockcutApi.BreweryTasks.Series do
     {length(doomed), if(changed == :remove, do: 0, else: length(changed_ones))}
   end
 
-  # The series ends the day before `date`, or is deleted when `date` is its
-  # start (what's left of it, finished and kept occurrences, become one-offs).
+  # The series ends the day before `date`, or is deleted when the rule has no
+  # date before it (`date` is its first; the start may be earlier, as a
+  # "last Friday" rule started on a Monday). What's left of a deleted one,
+  # finished and kept occurrences, become one-offs.
   defp end_series_before(series, date) do
-    if Date.compare(date, series.start_date) == :gt do
+    before = Recurrence.dates(%{TaskSeries.rule(series) | skipped_dates: []}, Date.add(date, -1))
+
+    if before != [] do
       series |> Changeset.change(until_date: Date.add(date, -1), count: nil) |> Repo.update!()
     else
       Repo.delete!(series)

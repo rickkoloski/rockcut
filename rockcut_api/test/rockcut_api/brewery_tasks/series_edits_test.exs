@@ -552,6 +552,28 @@ defmodule RockcutApi.BreweryTasks.SeriesEditsTest do
       assert Repo.aggregate(TaskSeries, :count) == 0
     end
 
+    test "from the first date when the start is earlier, deletes the series", ctx do
+      # Started on Wednesday Oct 14; the first last-Friday is Oct 30.
+      {:ok, first} =
+        BreweryTasks.create(
+          %{
+            title: "Glycol",
+            due_on: @today,
+            repeat: "monthly",
+            repeat_month_rule: "weekday",
+            repeat_week_of_month: -1,
+            repeat_weekday: 5
+          },
+          ctx.brewer,
+          @today
+        )
+
+      assert first.due_on == ~D[2026-10-30]
+      assert {:ok, :deleted} = BreweryTasks.delete(first, ctx.brewer, scope: "following")
+      assert Repo.aggregate(TaskSeries, :count) == 0
+      assert Repo.aggregate(Task, :count) == 0
+    end
+
     test "days close up after the removal", ctx do
       {:ok, a} = BreweryTasks.create(%{title: "A", due_on: Date.add(@today, 7)}, ctx.brewer)
       w0 = keg_wash!(ctx.brewer)
