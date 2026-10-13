@@ -35,6 +35,7 @@ section). S66 (the daily top-up) is ExUnit only; S70–S74 and S76 are also
 | `20261012120001_create_brewery_task_series` | `brewery_task_series` (the rule, `generated_through`, `skipped_dates`) + indexes on `department_id`, `generated_through`; adds `series_id` (FK, nilify), `series_date`, `series_exception` (default false) to `brewery_tasks`; unique `(series_id, series_date)` | Yes (`change`) |
 
 | `20261014120001_add_continues_series_id_to_brewery_task_series` | DEV QA G1: `brewery_task_series.continues_series_id` (FK to itself, nilify) + index; a split records what it continues | Yes (`change`) |
+| `20261015120001_add_internal_end_to_brewery_task_series` | DEV QA R1: `internal_end` (boolean, default false) marks the `until_date`s that only stop the top-up (a split's old part), so Ends shows the chain's real end | Yes (`change`) |
 
 Additive. **Rollback checked** 2026-10-13 on a scratch copy of the local dev
 DB (read-only `VACUUM INTO`, the real DB untouched): `down` dropped the
