@@ -555,6 +555,7 @@ export default function TaskBoard() {
             setDialog(null)
             refresh()
           }}
+          onStale={refresh}
           onDelete={startDelete}
           onHistory={canManage ? (card) => setHistory({ task: { id: card.id, title: card.title } }) : undefined}
         />

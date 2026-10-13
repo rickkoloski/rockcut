@@ -2,7 +2,8 @@ defmodule RockcutApiWeb.BreweryErrors do
   @moduledoc """
   D38: how the Brewery task board's controllers answer a refused action. A
   rule the board enforces is a 422 with a code (as D37's board does); a
-  missing task or item is a 404; a changeset goes to `FallbackController`
+  missing task or item is a 404, and a task someone deleted a 410 `deleted`
+  (D39 O-1); a changeset goes to `FallbackController`
   (a repeat rule's errors too, D39, e.g. `errors.repeat`).
   """
   import Plug.Conn, only: [put_status: 2]
@@ -37,6 +38,9 @@ defmodule RockcutApiWeb.BreweryErrors do
 
   def handle({:error, :not_found}, conn),
     do: conn |> put_status(:not_found) |> json(%{error: "not_found", message: "Not found"})
+
+  def handle({:error, :deleted}, conn),
+    do: conn |> put_status(:gone) |> json(%{error: "deleted", message: "This task was deleted"})
 
   def handle({:error, code}, conn) when is_map_key(@messages, code) do
     conn

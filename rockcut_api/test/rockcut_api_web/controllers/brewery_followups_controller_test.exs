@@ -75,4 +75,46 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
 
     assert %{"checked" => true, "active" => false} = Enum.find(items, &(&1["name"] == "Temps"))
   end
+
+  describe "a task someone deleted (O-1, S77)" do
+    test "edit, delete, move, complete and uncomplete answer 410 deleted", %{p: p, today: today} do
+      brewer = p["brewer1"]
+      iso = Date.to_iso8601(today)
+
+      task =
+        call(brewer, :post, "/api/brewery/tasks", %{title: "Package FV6", due_on: iso})
+        |> json_response(201)
+        |> Map.get("data")
+
+      path = "/api/brewery/tasks/#{task["id"]}"
+      assert call(p["breweryMgr"], :delete, path).status == 204
+
+      for {verb, route, params} <- [
+            {:patch, path, %{title: "Package FV7"}},
+            {:delete, path, %{}},
+            {:post, path <> "/move", %{due_on: iso}},
+            {:post, path <> "/complete", %{}},
+            {:post, path <> "/uncomplete", %{}}
+          ] do
+        assert %{"error" => "deleted", "message" => "This task was deleted"} =
+                 call(brewer, verb, route, params) |> json_response(410),
+               "#{verb} #{route}"
+      end
+
+      # Nothing is recreated.
+      refute BreweryTasks.get_task(task["id"])
+    end
+
+    test "an id that never existed stays 404", %{p: p, today: today} do
+      for {verb, route, params} <- [
+            {:patch, "/api/brewery/tasks/999999", %{title: "X"}},
+            {:delete, "/api/brewery/tasks/999999", %{}},
+            {:post, "/api/brewery/tasks/999999/move", %{due_on: Date.to_iso8601(today)}},
+            {:post, "/api/brewery/tasks/999999/complete", %{}},
+            {:post, "/api/brewery/tasks/999999/uncomplete", %{}}
+          ] do
+        assert call(p["brewer1"], verb, route, params).status == 404, "#{verb} #{route}"
+      end
+    end
+  end
 end

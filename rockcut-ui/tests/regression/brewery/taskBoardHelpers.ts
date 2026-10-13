@@ -80,7 +80,7 @@ export async function cleanupTasks(ids: number[]) {
   for (const id of seen) {
     // D39: an occurrence goes with its later ones; a one-off ignores the scope.
     const res = await api.delete(`/api/brewery/tasks/${id}`, { params: { scope: 'following', changed: 'remove' } })
-    expect([204, 404]).toContain(res.status())
+    expect([204, 404, 410]).toContain(res.status()) // 410: deleted already (O-1)
   }
 }
 

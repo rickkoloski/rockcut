@@ -156,9 +156,11 @@ defmodule RockcutApiWeb.BreweryTaskController do
     ]
   end
 
+  # A task someone deleted is 410 `deleted` (a stale dialog or menu, D39 O-1);
+  # an id that never existed stays 404.
   defp fetch(id) do
     case BreweryTasks.get_task(id) do
-      nil -> {:error, :not_found}
+      nil -> if BreweryTasks.deleted_task?(id), do: {:error, :deleted}, else: {:error, :not_found}
       task -> {:ok, task}
     end
   end

@@ -199,6 +199,17 @@ defmodule RockcutApi.BreweryTasks do
 
   def get_task(id), do: Repo.get(Task, id)
 
+  @doc """
+  True when History has a `deleted` entry for task `id`: someone deleted it
+  (D39 O-1). An id that never existed is false.
+  """
+  def deleted_task?(id) do
+    case to_int(id) do
+      nil -> false
+      id -> Repo.exists?(from ev in Event, where: ev.task_id == ^id and ev.action == "deleted")
+    end
+  end
+
   @doc "The task with assignee, completer and creator loaded, for its JSON."
   def with_names(%Task{} = task),
     do: Repo.preload(task, [:assignee, :completed_by, :created_by], force: true)

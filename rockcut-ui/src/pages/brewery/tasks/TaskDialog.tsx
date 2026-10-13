@@ -24,6 +24,8 @@ interface Props {
   today: string
   onClose: () => void
   onSaved: () => void
+  /** The board is out of date (the task was deleted meanwhile, O-1): refetch it, keep the dialog. */
+  onStale: () => void
   onDelete: (card: TaskCardData) => void
   /** This task's History (managers and owners). */
   onHistory?: (card: TaskCardData) => void
@@ -41,7 +43,7 @@ interface Props {
  * after the Decision 2 confirm when it removes later ones; a day-only change
  * never asks (it's this one).
  */
-export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onDelete, onHistory }: Props) {
+export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onStale, onDelete, onHistory }: Props) {
   const card = mode.kind === 'edit' ? mode.card : null
   const inSeries = !!card?.series_id
   const presetFollowing = mode.kind === 'edit' && !!mode.series
@@ -106,6 +108,8 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onD
       else await api.post('/api/brewery/tasks', body)
       onSaved()
     } catch (err) {
+      // Someone deleted it meanwhile: "This task was deleted", and the board catches up.
+      if ((err as { response?: { status?: number } })?.response?.status === 410) onStale()
       setError(taskError(err))
     } finally {
       setSaving(false)
