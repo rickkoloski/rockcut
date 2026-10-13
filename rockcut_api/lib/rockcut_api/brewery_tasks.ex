@@ -713,7 +713,8 @@ defmodule RockcutApi.BreweryTasks do
   defp active_item!(id) do
     case Repo.get(DailyItem, id) do
       %DailyItem{active: true} = item -> item
-      _ -> Repo.rollback(:not_found)
+      %DailyItem{} -> Repo.rollback(:retired)
+      nil -> Repo.rollback(:not_found)
     end
   end
 

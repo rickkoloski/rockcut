@@ -162,8 +162,8 @@ defmodule RockcutApi.BreweryDailyTest do
       # A past day where it wasn't ticked doesn't show it.
       assert %{total: 3} = card(@mon)
 
-      assert {:error, :not_found} = BreweryTasks.retire_item(items["Backups"], mgr)
-      assert {:error, :not_found} = BreweryTasks.rename_item(items["Backups"], "B", mgr)
+      assert {:error, :retired} = BreweryTasks.retire_item(items["Backups"], mgr)
+      assert {:error, :retired} = BreweryTasks.rename_item(items["Backups"], "B", mgr)
       assert [%Event{action: "item_retired", title: "Backups"}, _tick] = daily_events()
     end
 
@@ -177,6 +177,17 @@ defmodule RockcutApi.BreweryDailyTest do
       # Future days show the active items only.
       assert %{items: future, done: 0, total: 3} = card(@thu)
       refute Enum.any?(future, &(&1.item.name == "Backups"))
+    end
+
+    test "renaming or retiring a retired item is refused as retired (GAP-1)", %{
+      mgr: mgr,
+      items: items
+    } do
+      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
+
+      assert {:error, :retired} = BreweryTasks.rename_item(retired, "Temperature", mgr)
+      assert {:error, :retired} = BreweryTasks.retire_item(retired, mgr)
+      assert BreweryTasks.get_item(retired.id).name == "Temps"
     end
 
     test "order_items needs exactly the active ids", %{mgr: mgr} do
