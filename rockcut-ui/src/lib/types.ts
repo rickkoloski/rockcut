@@ -700,6 +700,7 @@ export interface TaskEvent {
     | 'item_reordered'
     | 'stopped_repeating' // D39
     | 'item_restored' // D39
+    | 'made_repeating' // D39 Decision 6
   /** The task's title (or the Daily item's name) when it happened. */
   title: string
   actor_id: number | null

@@ -6,6 +6,8 @@ import {
   boardWrite,
   card,
   cleanupTasks,
+  completeTask,
+  createTask,
   denverToday,
   getBoard,
   moveTask,
@@ -17,7 +19,7 @@ import {
   type ApiCard,
 } from './taskBoardHelpers'
 
-// D39 spec §3.10, scenarios S52–S65, S67 and S69: recurring tasks on the
+// D39 spec §3.10, scenarios S52–S65, S67, S69 and S78: recurring tasks on the
 // board. Dates are relative to today; every write is checked again after a
 // reload or through the API. Each series is removed afterwards (DELETE
 // "following" with changed=remove on its first occurrence).
@@ -509,5 +511,59 @@ test.describe('as breweryMgr', () => {
     )
     await expect(list).toContainText(`Stopped repeating ${title} after`)
     await expect(list).toContainText(`(removed ${later_open})`)
+  })
+
+  test('S78: editing a one-off can make it repeat; a Future one needs a day; a finished one has no Repeat; one History entry', async ({ page }) => {
+    const api = await apiAs('breweryMgr')
+    const t = today()
+    const title = tempTag('S78 Hose check')
+    const oneOff = await createTask(api, { title, due_on: t })
+    created.push(oneOff.id)
+    const future = await createTask(api, { title: tempTag('S78 Future'), due_on: null })
+    created.push(future.id)
+    const done = await createTask(api, { title: tempTag('S78 Done'), due_on: t })
+    created.push(done.id)
+    await completeTask(api, done.id)
+
+    await openBoard(page)
+    // A Future one-off: Repeat is there but needs a day.
+    await openMenu(page, future.id, 'future')
+    await page.getByTestId('task-menu-edit').click()
+    await expect(page.getByTestId('task-repeat-hint')).toHaveText('Pick a day to repeat')
+    await expect(page.getByTestId('task-repeat-select')).toHaveAttribute('aria-disabled', 'true')
+    await page.getByTestId('task-dialog').getByRole('button', { name: 'Cancel' }).click()
+    // A finished one: no Repeat.
+    await openMenu(page, done.id, t)
+    await page.getByTestId('task-menu-edit').click()
+    await expect(page.getByTestId('task-title-input')).toBeVisible()
+    await expect(page.getByTestId('task-repeat-select')).toHaveCount(0)
+    await page.getByTestId('task-dialog').getByRole('button', { name: 'Cancel' }).click()
+
+    // The open one-off on today: Never → every week.
+    await openMenu(page, oneOff.id, t)
+    await page.getByTestId('task-menu-edit').click()
+    await expect(page.getByTestId('task-repeat-select')).toHaveText('Never')
+    await pick(page, 'task-repeat-select', 'task-repeat-option-weekly')
+    await expect(page.getByTestId('task-repeat-summary')).toHaveText(`Repeats every week on ${WEEKDAY_SHORT[isoWeekday(t) - 1]}`)
+    const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${oneOff.id}$`), 'PATCH')
+    await saveDialog(page).click()
+    const res = await saved
+    expect(res.request().postDataJSON()).toMatchObject({ repeat: 'weekly', repeat_weekdays: [isoWeekday(t)] })
+    const first = (await res.json()).data as ApiOccurrence
+    expect([first.id, first.series_date, first.due_on]).toEqual([oneOff.id, t, t])
+    await expect(page.getByTestId('task-dialog')).toHaveCount(0)
+
+    await page.reload()
+    await expect(page.getByTestId(`task-repeat-icon-${oneOff.id}:${t}`)).toBeVisible()
+    const nextWeek = await on(api, first.series_id!, addDays(t, 7))
+    expect(nextWeek?.title).toBe(title)
+    expect((await seriesInfo(api, oneOff.id)).later_open).toBeGreaterThanOrEqual(51)
+
+    // History: one entry for it, none for the occurrences.
+    await page.getByTestId('board-menu').click()
+    await page.getByTestId('board-menu-history').click()
+    const list = page.getByTestId('history-list')
+    await expect(list.getByText(`Made ${title} repeat from`)).toHaveCount(1)
+    await expect(list.getByText(title)).toHaveCount(2) // Added …, Made … repeat
   })
 })

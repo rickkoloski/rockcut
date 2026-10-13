@@ -31,7 +31,7 @@ release) on its own branch. This spec covers all three. Where it says
 | **What** | The shared drag layer (§3.7); the board: range, day header, tasks, task menu, Unfinished card, Future list, Hide completed, filter (§3.8); the Daily card and Daily items; the change log; `Authz` (§3.3). | Recurring tasks (§3.10): the `Recurrence` rules, series edits, the daily top-up. Un-retiring a Daily item, plus the D38 DEV QA pass 2 follow-ups (§5), and the phone **vertical view** (§3.8 "Phone width") (Matt 2026-10-12). | The brewhouse tablet and staff codes for Brewery members (§3.4); the shift-end reminder and its opt-out (§3.5); the Brewery Dashboard card (§3.8). |
 | **Data** | `brewery_tasks` without the `series_*` columns, `brewery_daily_items`, `brewery_daily_checks` | `brewery_task_series`; adds `series_id`, `series_date`, `series_exception` to `brewery_tasks` | `brewery_task_reminders` |
 | **API** | Every §3.6 route, without `repeat` or `scope` | `repeat` on create/edit, `scope` on edit/delete | `staff_code` on every write from a device |
-| **Scenarios** | S1–S9f, S10–S31, S38–S41, S49 (except the staff code), S51 | S52–S67, S69–S77 | S9g, S32–S37a, S42–S48, S49 (the staff code), S50, S68 |
+| **Scenarios** | S1–S9f, S10–S31, S38–S41, S49 (except the staff code), S51 | S52–S67, S69–S78 | S9g, S32–S37a, S42–S48, S49 (the staff code), S50, S68 |
 | **New dependency** | `@dnd-kit` | — | — |
 | **DEV seed** | Sample tasks, Daily cards, shifts and an event (§3.9) | A few `[SEED]` recurring tasks | The `breweryDevice` persona, `brewer1`'s staff code |
 
@@ -958,6 +958,7 @@ brewhouse tablet, a staff code is needed.
 | S75 | `breweryMgr` | Edit Daily items → Retired → **Restore** "Temps" | Temps retired last week, with ticks before that | Temps is back at the bottom of the list, today's card shows it, and its old ticks still show on their days. The days it was retired keep their counts: it isn't on those cards and can't be ticked there (D39 Decision 5). With 12 items already active, Restore is refused with the limit message. |
 | S76 | `brewer1` | Pixel → open a task's Edit dialog → back gesture | phone width | The dialog closes and the board stays. The same for the "where should it show" dialog and Change day…. |
 | S77 | `brewer2` | Edit a task, leave it open; `brewer1` deletes the task; `brewer2` saves | | "This task was deleted", not "Not found". Nothing is recreated. |
+| S78 | `breweryMgr` | Edit a one-off task on a day → Repeat: Every week → Save | a one-off on Wed; another on the Future list; a finished one | It becomes the first occurrence of a weekly series from Wed, with ↻ and next week's copy; History has one entry for it. The Future one's Repeat says "Pick a day to repeat"; the finished one has no Repeat (D39 Decision 6). |
 
 ## 5. Out of Scope
 

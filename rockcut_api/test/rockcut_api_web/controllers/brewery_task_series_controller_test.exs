@@ -118,6 +118,41 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
                |> json_response(422)
     end
 
+    test "PATCH with repeat makes a one-off repeat; a Future one needs a day; a finished one is refused",
+         %{p: p, today: today} do
+      user = p["brewer1"]
+      iso = Date.to_iso8601(today)
+      repeat = %{repeat: "weekly", repeat_weekdays: [Date.day_of_week(today)]}
+
+      one_off =
+        call(user, :post, "/api/brewery/tasks", %{title: "Keg Wash", due_on: iso})
+        |> json_response(201)
+        |> Map.get("data")
+
+      assert %{"series_id" => id, "series_date" => ^iso} =
+               call(user, :patch, path(one_off), repeat) |> json_response(200) |> Map.get("data")
+
+      assert count(id) == 53
+
+      future =
+        call(user, :post, "/api/brewery/tasks", %{title: "Hoses"})
+        |> json_response(201)
+        |> Map.get("data")
+
+      assert %{"error" => "repeat_needs_day"} =
+               call(user, :patch, path(future), repeat) |> json_response(422)
+
+      done =
+        call(user, :post, "/api/brewery/tasks", %{title: "Done", due_on: iso})
+        |> json_response(201)
+        |> Map.get("data")
+
+      call(user, :post, "#{path(done)}/complete", %{}) |> json_response(200)
+
+      assert %{"error" => "repeat_finished", "message" => "A finished task can't repeat"} =
+               call(user, :patch, path(done), repeat) |> json_response(422)
+    end
+
     test "scope_required on an occurrence's edit or delete without a scope", %{
       p: p,
       today: today

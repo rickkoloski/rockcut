@@ -262,15 +262,22 @@ defmodule RockcutApi.BreweryTasks do
   `assigned` and `moved` for what changed.
 
   An occurrence of a recurring task (D39) goes through `Series.update/5`
-  with `opts[:scope]` (`"this"` | `"following"`) and `opts[:changed]`.
+  with `opts[:scope]` (`"this"` | `"following"`) and `opts[:changed]`. A
+  one-off with `repeat` becomes a recurring task (`Series.make_repeating/4`,
+  Decision 6).
   """
   def update(task, attrs, actor, opts \\ [])
 
   def update(%Task{series_id: id} = task, attrs, %User{} = actor, opts) when not is_nil(id),
     do: Series.update(task, stringify(attrs), opts[:scope], actor, opts)
 
-  def update(%Task{} = task, attrs, %User{} = actor, _opts),
-    do: update_one(task, attrs, actor)
+  def update(%Task{} = task, attrs, %User{} = actor, opts) do
+    attrs = stringify(attrs)
+
+    if Series.repeat?(attrs),
+      do: Series.make_repeating(task, attrs, actor, opts[:today] || today()),
+      else: update_one(task, attrs, actor)
+  end
 
   @doc false
   # The D38 edit of one task. `scope` (D39) goes into the `edited` and
@@ -1040,7 +1047,8 @@ defmodule RockcutApi.BreweryTasks do
     end)
   end
 
-  defp next_position(dept_id, due_on) do
+  @doc false
+  def next_position(dept_id, due_on) do
     (Repo.one(from t in list_query(dept_id, due_on), select: max(t.position)) || 0) + 1
   end
 

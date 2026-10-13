@@ -43,12 +43,17 @@ interface Props {
  * (S69) unless it's Edit series…; a changed rule always goes as "following",
  * after the Decision 2 confirm when it removes later ones; a day-only change
  * never asks (it's this one).
+ *
+ * D39 Decision 6: an open one-off shows Repeat too (from Never; a Future one
+ * needs a day first). Saving a rule makes it the first occurrence of a new
+ * series. A finished one-off has no Repeat.
  */
 export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onStale, onDelete, onHistory }: Props) {
   // S76: the phone's back gesture closes the dialog, not the board.
   usePhoneBackCloses(true, onClose)
   const card = mode.kind === 'edit' ? mode.card : null
   const inSeries = !!card?.series_id
+  const showRepeat = !card || inSeries || !card.done
   const presetFollowing = mode.kind === 'edit' && !!mode.series
   const [title, setTitle] = useState(card?.title ?? '')
   const [notes, setNotes] = useState(card?.notes ?? '')
@@ -60,8 +65,9 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
 
-  // Repeat: on add it follows the Day until the person changes it. On an
-  // occurrence it's the series' rule, anchored on this occurrence's date.
+  // Repeat: on add (and on a one-off) it follows the Day until the person
+  // changes it. On an occurrence it's the series' rule, anchored on this
+  // occurrence's date.
   const [rule, setRule] = useState<TaskRule>(() => defaultRule(startDay ?? today))
   const [ruleTouched, setRuleTouched] = useState(false)
   const { data: series, isError: seriesFailed, error: seriesError } = useApiQuery<TaskSeriesData>(
@@ -94,7 +100,7 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
 
   const changeDay = (value: string) => {
     setDay(value)
-    if (!card && value) setRule((r) => (ruleTouched ? { ...r, startDate: value } : reseed(r, value)))
+    if (!inSeries && value) setRule((r) => (ruleTouched ? { ...r, startDate: value } : reseed(r, value)))
   }
 
   const changeRule = (next: TaskRule) => {
@@ -144,6 +150,8 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
     const dayChange: Record<string, unknown> = !dayLocked && dueOn !== card.due_on ? { due_on: dueOn } : {}
 
     if (!inSeries) {
+      // A rule makes it repeat, from its day (Decision 6).
+      if (repeating) return send({ ...content, ...dayChange, ...taskRepeatParams(rule) })
       const changed = { ...content, ...dayChange }
       if (Object.keys(changed).length === 0) return onClose()
       return send(changed)
@@ -261,7 +269,7 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
           }
           label={inSeries ? 'No day (Future; it stops repeating)' : 'No day (Future)'}
         />
-        {(!card || inSeries) &&
+        {showRepeat &&
           (inSeries && !original ? (
             seriesFailed ? (
               <Alert severity="error">{taskError(seriesError)}</Alert>

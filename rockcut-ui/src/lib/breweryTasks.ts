@@ -150,7 +150,7 @@ const removedNote = (d: Record<string, unknown>) =>
  * "Created recurring task Keg Wash on Wed 10/14 (Repeats every week on
  * Wed)", "… (this and following)", "Deleted … this and following (removed
  * 40, kept 2)", "Stopped repeating … (removed 40)", "… to Future (no longer
- * repeats)".
+ * repeats)", "Made Keg Wash repeat from Wed 10/14 (Repeats every week on Wed)".
  */
 export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): string {
   const d = ev.detail
@@ -189,6 +189,18 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
       if (from && to) return `Reassigned ${t} from ${from} to ${to}${scope}`
       if (to) return `Assigned ${t} to ${to}${scope}`
       return `Unassigned ${t}${from ? ` (was ${from})` : ''}${scope}`
+    }
+    case 'made_repeating': {
+      const from = (d.from ?? {}) as { title?: string }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
+      const parts = [`Made ${t} repeat from ${dayOrFuture(d.due_on)} (${summaryFromDetail(d.repeat as Record<string, unknown>, d.due_on as string)})`]
+      if ('title' in to) parts.push(`renamed from ${from.title}`)
+      if ('notes' in to) parts.push(to.notes ? 'notes changed' : 'notes removed')
+      if ('assignee_id' in to) {
+        const who = person(to.assignee_id)
+        parts.push(who ? `assigned to ${who}` : 'unassigned')
+      }
+      return parts.join('; ')
     }
     case 'stopped_repeating':
       return `Stopped repeating ${t} after ${dayOrFuture(d.series_date)} (${removedNote(d)})`

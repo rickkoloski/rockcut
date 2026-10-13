@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { FUTURE, UNFINISHED, boardMoveRule, taskError, taskGone } from './breweryTasks'
+import { FUTURE, UNFINISHED, boardMoveRule, describeEvent, taskError, taskGone } from './breweryTasks'
+import type { TaskEvent } from './types'
 
 const err = (status: number, url: string, data: Record<string, unknown> = {}) => ({ response: { status, data }, config: { url } })
 
@@ -56,5 +57,30 @@ describe('boardMoveRule', () => {
     expect(rule(tomorrow, tomorrow)).toBe(true)
     expect(rule(UNFINISHED, tomorrow)).toBe(false)
     expect(rule(UNFINISHED, today)).toBe(false)
+  })
+})
+
+describe('describeEvent: made_repeating (Decision 6)', () => {
+  const ev = (detail: Record<string, unknown>): TaskEvent => ({
+    id: 1,
+    task_id: 7,
+    action: 'made_repeating',
+    title: 'Keg Wash FV1',
+    actor_id: 1,
+    actor_name: 'Kate',
+    on_shared_device: false,
+    detail,
+    inserted_at: '2026-10-14T18:00:00Z',
+  })
+  const names = { users: { '5': 'Sam Brewer' }, items: {} }
+  const repeat = { frequency: 'weekly', interval: 1, weekdays: [3] }
+
+  it('names the day and the rule', () => {
+    expect(describeEvent(ev({ due_on: '2026-10-14', repeat, from: {}, to: {} }), names)).toMatch(/^Made Keg Wash FV1 repeat from Wed 10\/14 \(.+\)$/)
+  })
+
+  it('adds what else the save changed', () => {
+    const text = describeEvent(ev({ due_on: '2026-10-14', repeat, from: { title: 'Keg Wash', assignee_id: null }, to: { title: 'Keg Wash FV1', assignee_id: 5 } }), names)
+    expect(text).toMatch(/; renamed from Keg Wash; assigned to Sam Brewer$/)
   })
 })

@@ -148,6 +148,101 @@ defmodule RockcutApi.BreweryTasks.Series do
     end
   end
 
+  @doc """
+  Make a one-off task repeat (D39 Decision 6). It becomes the first
+  occurrence of a new series starting on its day (or on `attrs["due_on"]`),
+  and the later ones are made as on create, through today + 12 months. When
+  the rule's first date isn't that day (a weekly rule on other weekdays), the
+  task moves to the bottom of the first date, as a new series' first
+  occurrence would be there. Title, notes and assignee in `attrs` apply too.
+
+  Logs one `made_repeating` event, with the rule and any content change
+  (`from`/`to`); none for the occurrences or the move.
+
+  No day → `{:error, :repeat_needs_day}`; a finished task →
+  `{:error, :repeat_finished}`; an invalid rule, or one with no dates in
+  range → `{:error, changeset}`.
+  """
+  def make_repeating(%Task{id: id}, attrs, %User{} = actor, %Date{} = today) do
+    write_transaction(fn ->
+      task = fetch!(id)
+      if task.series_id, do: Repo.rollback(:already_repeats)
+      if Task.done?(task), do: Repo.rollback(:repeat_finished)
+
+      content = Task.changeset(task, Map.take(attrs, @content_fields))
+      if not content.valid?, do: Repo.rollback(content)
+
+      due_on =
+        if Map.has_key?(attrs, "due_on"), do: blank_nil(attrs["due_on"]), else: task.due_on
+
+      if is_nil(due_on), do: Repo.rollback(:repeat_needs_day)
+
+      merged =
+        content
+        |> Changeset.apply_changes()
+        |> Map.take([:title, :notes, :assignee_id])
+        |> Map.new(fn {k, v} -> {to_string(k), v} end)
+        |> Map.merge(Map.take(attrs, Map.keys(@rule_params)))
+        |> Map.put("due_on", due_on)
+
+      series =
+        %TaskSeries{department_id: task.department_id, created_by_id: actor.id, skipped_dates: []}
+        |> TaskSeries.changeset(series_attrs(merged))
+        |> BreweryTasks.validate_assignee()
+        |> Repo.insert()
+        |> ok_or_rollback()
+
+      through = Recurrence.rolling_horizon(series, today)
+
+      [first | later] =
+        case series |> TaskSeries.rule() |> Recurrence.dates(through) do
+          [] ->
+            series
+            |> Changeset.change()
+            |> Changeset.add_error(:repeat, "the repeat pattern has no dates in range")
+            |> Repo.rollback()
+
+          dates ->
+            dates
+        end
+
+      position =
+        if task.due_on == first,
+          do: task.position,
+          else: BreweryTasks.next_position(task.department_id, first)
+
+      updated =
+        task
+        |> Changeset.change(
+          series_id: series.id,
+          series_date: first,
+          series_exception: false,
+          title: series.title,
+          notes: series.notes,
+          assignee_id: series.assignee_id,
+          due_on: first,
+          position: position
+        )
+        |> Repo.update!()
+
+      if task.due_on != first, do: BreweryTasks.renumber_days(task.department_id, [task.due_on])
+      insert_occurrences(series, later)
+      mark_generated(series, through)
+
+      edited =
+        Map.new(content.changes, fn {k, v} -> {to_string(k), {Map.get(task, k), v}} end)
+
+      log!(updated, "made_repeating", actor, %{
+        "due_on" => Date.to_iso8601(first),
+        "repeat" => describe(series),
+        "from" => Map.new(edited, fn {k, {from, _}} -> {k, from} end),
+        "to" => Map.new(edited, fn {k, {_, to}} -> {k, to} end)
+      })
+
+      updated
+    end)
+  end
+
   ## Edits
 
   @doc """

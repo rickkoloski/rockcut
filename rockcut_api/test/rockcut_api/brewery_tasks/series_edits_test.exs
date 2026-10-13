@@ -612,4 +612,103 @@ defmodule RockcutApi.BreweryTasks.SeriesEditsTest do
     assert {:ok, 1} = Series.top_up(Date.add(@today, 7))
     assert week(w0, 53).assignee_id == nil
   end
+
+  describe "making a one-off repeat (Decision 6)" do
+    test "it becomes the first occurrence, in its place; the later ones are made as on create; one History entry",
+         ctx do
+      {:ok, one_off} = BreweryTasks.create(%{title: "Keg Wash", due_on: @today}, ctx.brewer)
+      {:ok, _below} = BreweryTasks.create(%{title: "Other", due_on: @today}, ctx.brewer)
+      created = keg_wash!(ctx.brewer, %{title: "Created repeating"})
+      events = event_count()
+
+      assert {:ok, first} =
+               BreweryTasks.update(
+                 one_off,
+                 %{"title" => "Keg Wash FV1", "repeat" => "weekly", "repeat_weekdays" => [3]},
+                 ctx.brewer,
+                 today: @today
+               )
+
+      assert {first.id, first.series_date, first.due_on, first.position, first.series_exception} ==
+               {one_off.id, @today, @today, 1, false}
+
+      assert first.title == "Keg Wash FV1"
+      assert series(first).title == "Keg Wash FV1"
+      assert week(first, 1).title == "Keg Wash FV1"
+      assert length(series_tasks(first.series_id)) == length(series_tasks(created.series_id))
+
+      assert event_count() == events + 1
+      assert [%Event{task_id: id, detail: detail}] = events("made_repeating")
+      assert id == one_off.id
+
+      assert detail == %{
+               "due_on" => "2026-10-14",
+               "repeat" => %{"frequency" => "weekly", "interval" => 1, "weekdays" => [3]},
+               "from" => %{"title" => "Keg Wash"},
+               "to" => %{"title" => "Keg Wash FV1"}
+             }
+    end
+
+    test "a rule whose first date is later moves it there, at the bottom", ctx do
+      {:ok, one_off} = BreweryTasks.create(%{title: "Keg Wash", due_on: @today}, ctx.brewer)
+      {:ok, below} = BreweryTasks.create(%{title: "Other", due_on: @today}, ctx.brewer)
+      {:ok, _} = BreweryTasks.create(%{title: "Thursday", due_on: ~D[2026-10-15]}, ctx.brewer)
+
+      assert {:ok, first} =
+               BreweryTasks.update(
+                 one_off,
+                 %{"repeat" => "weekly", "repeat_weekdays" => [4]},
+                 ctx.brewer,
+                 today: @today
+               )
+
+      assert {first.due_on, first.series_date, first.position} ==
+               {~D[2026-10-15], ~D[2026-10-15], 2}
+
+      assert reload(below).position == 1
+      assert length(events("made_repeating")) == 1
+      assert events("moved") == []
+    end
+
+    test "a Future task needs a day; with one in the same save it repeats from there", ctx do
+      {:ok, future} = BreweryTasks.create(%{title: "Keg Wash", due_on: nil}, ctx.brewer)
+      repeat = %{"repeat" => "weekly", "repeat_weekdays" => [3]}
+
+      assert {:error, :repeat_needs_day} =
+               BreweryTasks.update(future, repeat, ctx.brewer, today: @today)
+
+      assert {:error, :repeat_needs_day} =
+               BreweryTasks.update(future, Map.put(repeat, "due_on", nil), ctx.brewer,
+                 today: @today
+               )
+
+      assert Repo.aggregate(TaskSeries, :count) == 0
+      assert events("made_repeating") == []
+
+      assert {:ok, first} =
+               BreweryTasks.update(future, Map.put(repeat, "due_on", "2026-10-21"), ctx.brewer,
+                 today: @today
+               )
+
+      assert {first.id, first.due_on} == {future.id, ~D[2026-10-21]}
+    end
+
+    test "a finished one-off is refused; Never is a plain edit", ctx do
+      {:ok, task} = BreweryTasks.create(%{title: "Keg Wash", due_on: @today}, ctx.brewer)
+      {:ok, done} = BreweryTasks.complete(task, nil, ctx.brewer, @today)
+      repeat = %{"repeat" => "weekly", "repeat_weekdays" => [3]}
+
+      assert {:error, :repeat_finished} =
+               BreweryTasks.update(done, repeat, ctx.brewer, today: @today)
+
+      {:ok, open} = BreweryTasks.create(%{title: "Open", due_on: @today}, ctx.brewer)
+
+      assert {:ok, %Task{series_id: nil, title: "Renamed"}} =
+               BreweryTasks.update(open, %{"title" => "Renamed", "repeat" => "never"}, ctx.brewer,
+                 today: @today
+               )
+
+      assert Repo.aggregate(TaskSeries, :count) == 0
+    end
+  end
 end

@@ -22,6 +22,8 @@ defmodule RockcutApiWeb.BreweryErrors do
     invalid_date: "Enter dates as YYYY-MM-DD",
     range_too_long: "Choose a range of 1 to #{BreweryTasks.max_range_days()} days",
     repeat_needs_day: "Pick a day to repeat",
+    repeat_finished: "A finished task can't repeat",
+    already_repeats: "That task already repeats",
     scope_required: "Choose Just this one or This and all following",
     not_in_series: "That task doesn't repeat"
   }
