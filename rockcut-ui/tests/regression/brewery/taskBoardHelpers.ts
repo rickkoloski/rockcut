@@ -60,8 +60,8 @@ export async function futureTitles(api: APIRequestContext): Promise<string[]> {
 }
 
 /**
- * Delete every `[TEST-TEMP]` task this spec could have left: the ids it
- * created, plus a sweep of the Unfinished card, the Future list and a month
+ * Delete every `[TEST-TEMP]` task this spec could have left (a recurring
+ * one with its later occurrences): the ids it created, plus a sweep of the Unfinished card, the Future list and a month
  * either side of today.
  */
 export async function cleanupTasks(ids: number[]) {
@@ -78,7 +78,8 @@ export async function cleanupTasks(ids: number[]) {
     }
   }
   for (const id of seen) {
-    const res = await api.delete(`/api/brewery/tasks/${id}`)
+    // D39: an occurrence goes with its later ones; a one-off ignores the scope.
+    const res = await api.delete(`/api/brewery/tasks/${id}`, { params: { scope: 'following', changed: 'remove' } })
     expect([204, 404]).toContain(res.status())
   }
 }
