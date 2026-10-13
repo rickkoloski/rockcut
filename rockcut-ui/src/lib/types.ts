@@ -622,6 +622,8 @@ export interface TaskCardData {
   series_id: number | null
   series_date: string | null
   series_exception: boolean
+  /** D39 G2: the series has ended here and nothing open comes after it (no Stop repeating). */
+  series_last: boolean
   inserted_at: string
   updated_at: string
 }

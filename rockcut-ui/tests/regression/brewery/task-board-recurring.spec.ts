@@ -419,6 +419,49 @@ test('S63: Stop repeating, with one changed on its own: keep it', async ({ page 
   const left = await occurrences(api, first.series_id!, t, addDays(t, 120))
   expect(left.map((o) => o.id)).toEqual([first.id, w1.id, w3.id])
   expect((await seriesInfo(api, w1.id)).later_open).toBe(0)
+
+  // G2: the kept one is now the last; its menu has Edit series… but no Stop repeating.
+  await openBoard(page, { from: t, to: addDays(t, 27) })
+  await openMenu(page, w3.id, addDays(w3.due_on!, 1))
+  await expect(page.getByTestId('task-menu-edit-series')).toBeVisible()
+  await expect(page.getByTestId('task-menu-stop-repeating')).toHaveCount(0)
+})
+
+test('G1: Edit series… from before a split reaches the occurrences after it', async ({ page }) => {
+  const api = await apiAs('brewer1')
+  const t = today()
+  const first = await createSeries(api, weekly(tempTag('G1 Keg Wash'), t))
+  const w = async (n: number) => (await on(api, first.series_id!, addDays(t, 7 * n)))!
+  const [w1, w3, w7] = [await w(1), await w(3), await w(7)]
+  // QA's setup, through the API: assign w3 on "following", then split w7 to monthly.
+  const brewer2 = await userId(await apiAs('brewer2'))
+  const assigned = await api.patch(`/api/brewery/tasks/${w3.id}`, { data: { assignee_id: brewer2, scope: 'following' } })
+  expect(assigned.status(), await assigned.text()).toBe(200)
+  const split = await api.patch(`/api/brewery/tasks/${w7.id}`, {
+    data: { scope: 'following', repeat: 'monthly', repeat_interval: 1, repeat_month_rule: 'weekday', repeat_week_of_month: 1, repeat_weekday: isoWeekday(t) },
+  })
+  expect(split.status(), await split.text()).toBe(200)
+  const after = (await split.json()).data as ApiOccurrence
+  created.push(after.id)
+  expect(after.series_id).not.toBe(first.series_id)
+
+  const me = await userId(api)
+  await openBoard(page)
+  await openMenu(page, w1.id, w1.due_on!)
+  await page.getByTestId('task-menu-edit-series').click()
+  await pick(page, 'task-assignee-select', `task-assignee-option-${me}`)
+  const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w1.id}$`), 'PATCH')
+  await saveDialog(page).click()
+  expect((await saved).request().postDataJSON()).toEqual({ assignee_id: me, scope: 'following' })
+  await expect(page.getByTestId('task-dialog')).toHaveCount(0)
+
+  // Every open one from w1 on, past the split too, is brewer1's.
+  const later = [
+    ...(await occurrences(api, first.series_id!, w1.due_on!, addDays(t, 60))),
+    ...(await occurrences(api, after.series_id!, addDays(t, 40), addDays(t, 130))),
+  ]
+  expect(later.filter((o) => o.series_id === after.series_id).length).toBeGreaterThanOrEqual(2)
+  for (const o of later) expect([o.due_on, o.assignee_id]).toEqual([o.due_on, me])
 })
 
 test('S64 and delete "This and all following"', async ({ page }) => {
