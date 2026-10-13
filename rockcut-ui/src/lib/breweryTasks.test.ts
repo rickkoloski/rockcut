@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { FUTURE, UNFINISHED, phoneMoveRule, taskError, taskGone } from './breweryTasks'
+import { FUTURE, UNFINISHED, boardMoveRule, taskError, taskGone } from './breweryTasks'
 
 const err = (status: number, url: string, data: Record<string, unknown> = {}) => ({ response: { status, data }, config: { url } })
 
@@ -27,16 +27,23 @@ describe('taskGone / taskError', () => {
   })
 })
 
-describe('phoneMoveRule', () => {
+describe('boardMoveRule', () => {
   const today = '2026-10-12'
   const tomorrow = '2026-10-13'
 
-  it('the vertical view has no rule: anywhere, as on desktop', () => {
-    expect(phoneMoveRule('vertical', today, today)).toBeUndefined()
+  it('desktop and the vertical view: anywhere but onto the Unfinished card', () => {
+    for (const rule of [boardMoveRule(null, today, today), boardMoveRule('vertical', today, today)]) {
+      expect(rule(today, tomorrow)).toBe(true)
+      expect(rule(UNFINISHED, tomorrow)).toBe(true)
+      expect(rule(today, FUTURE)).toBe(true)
+      expect(rule(today, UNFINISHED)).toBe(false)
+      expect(rule(FUTURE, UNFINISHED)).toBe(false)
+      expect(rule(UNFINISHED, UNFINISHED)).toBe(true)
+    }
   })
 
   it('one day on today: its own list, or Unfinished → today', () => {
-    const rule = phoneMoveRule('day', today, today)!
+    const rule = boardMoveRule('day', today, today)
     expect(rule(today, today)).toBe(true)
     expect(rule(UNFINISHED, today)).toBe(true)
     expect(rule(today, tomorrow)).toBe(false)
@@ -45,7 +52,7 @@ describe('phoneMoveRule', () => {
   })
 
   it('one day on another day: its own list only', () => {
-    const rule = phoneMoveRule('day', tomorrow, today)!
+    const rule = boardMoveRule('day', tomorrow, today)
     expect(rule(tomorrow, tomorrow)).toBe(true)
     expect(rule(UNFINISHED, tomorrow)).toBe(false)
     expect(rule(UNFINISHED, today)).toBe(false)

@@ -18,7 +18,7 @@ import {
   coloradoToday,
   dayCount,
   formatTaskDay,
-  phoneMoveRule,
+  boardMoveRule,
   rangeError,
   readHideCompleted,
   readPhoneView,
@@ -528,7 +528,7 @@ export default function TaskBoard() {
           onMove={moveTask}
           isLocked={isLocked}
           staysLast={staysLast}
-          canMoveTo={phone ? phoneMoveRule(phoneView, selected, today) : undefined}
+          canMoveTo={boardMoveRule(phone ? phoneView : null, selected, today)}
           itemLabel={(key) => cards.get(key)?.title ?? 'task'}
           containerLabel={(id) => (id === FUTURE ? 'Future' : id === UNFINISHED ? 'Unfinished' : formatTaskDay(id))}
           onItemActivate={(key, element) => setMenu({ key, anchor: element })}

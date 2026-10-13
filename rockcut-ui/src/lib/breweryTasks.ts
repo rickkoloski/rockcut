@@ -270,11 +270,17 @@ export const readPhoneView = (): PhoneView => (read(PHONE_VIEW_KEY) === 'day' ? 
 export const writePhoneView = (view: PhoneView) => write(PHONE_VIEW_KEY, view)
 
 /**
- * Where a task may be dragged on a phone (spec §3.8 "Phone width"). The
- * vertical view: anywhere, as on desktop (no rule). The one-day view: within
- * its list, or from the Unfinished card into today when today shows (S73).
+ * Where a task may be dragged on the board (any width). Nothing lands on the
+ * Unfinished card from elsewhere: it lists open past tasks, it isn't a place.
+ * At phone width (spec §3.8 "Phone width"), the vertical view goes anywhere
+ * else, as desktop does; the one-day view stays in its list, or goes from the
+ * Unfinished card into today when today shows (S73).
  */
-export function phoneMoveRule(view: PhoneView, selected: string, today: string) {
-  if (view === 'vertical') return undefined
-  return (from: string, to: string) => from === to || (from === UNFINISHED && to === today && selected === today)
+export function boardMoveRule(phoneView: PhoneView | null, selected: string, today: string) {
+  return (from: string, to: string) => {
+    if (from === to) return true
+    if (to === UNFINISHED) return false
+    if (phoneView !== 'day') return true
+    return from === UNFINISHED && to === today && selected === today
+  }
 }
