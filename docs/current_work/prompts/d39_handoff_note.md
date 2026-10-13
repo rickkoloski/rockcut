@@ -9,7 +9,7 @@ D41 and D40 ship to prod in one release after D40.
 **Plan:** `docs/current_work/planning/d39_brewery_recurring_tasks_plan.md`
 (Decisions 1–6: Matt, 2026-10-12 and 2026-10-13)
 **Branch:** `d39-brewery-recurring-tasks`, cut from `develop` (`2d9624d`).
-**SHA for DEV:** pass 1 `914aa21`; pass 2 _the push after the DEV QA fixes_
+**SHA for DEV:** pass 1 `914aa21`; pass 2 `ef48d87`; pass 3 **`08dd32e`** (the gate's SHA; later commits are docs only)
 
 ## What changed
 
@@ -107,6 +107,30 @@ one-off and loses the rules.
   dialog; a weekly repeat, "Just this one", Stop repeating with two buttons.
 - After the fixes, local: ExUnit, Vitest, `tsc`, build pass; brewery folder
   134/134.
+- **Pass 2 (`ef48d87`, API v32 / UI v30):** 290/294. The 4 failures were
+  test assumptions about DEV's shared board (Matt's weekly test series, an
+  open non-test task on today), not product bugs; the series were deleted
+  (Matt's OK) and the specs hardened (`f363754`: order checks only compare
+  the test's own cards; drags frame their source and target).
+- **QA recheck 1** (`stepwise_results/d39_dev_qa_recheck.md`): G1's edit,
+  delete, stop and two-person paths and G2 pass. **R1 (must-fix), fixed in
+  `0d32ede` / `c6a07db`:** a rule change from before a split kept the
+  split's internal end date, so the task silently stopped. `internal_end`
+  marks those dates; Ends is the chain's; the dialog sends both ends.
+  "After N times" counts from the chain's first occurrence and becomes a
+  date after a split.
+- **Pass 3 (`08dd32e`, API v34 / UI v31):** the first API release (v33)
+  failed on a Fly "unauthorized" mid-rollout after the machine had taken
+  the image; `fly agent restart` and a redeploy of the same image (v34).
+  Full Playwright on DEV: **295/295**, no retries.
+- **QA recheck 2** (`stepwise_results/d39_dev_qa_recheck2.md`): **PASS**,
+  one minor gap. Moved to D42 (Matt, 2026-10-13):
+  - **R2:** a split "after N times" series given a rule change from before
+    the split keeps the shown end date, which can be one short of N.
+  - **O1:** changing only Ends from the earlier part of a split series
+    applies that part's rule to everything after (a monthly later part
+    becomes weekly), and the confirm says "Removes 13" for what is an
+    extension.
 
 ## Local gate
 
