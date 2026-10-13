@@ -36,3 +36,7 @@ No fix was made.
 **If it fails again:** keep the trace. Check the network panel for a
 `GET /api/brewery/tasks` that started after the click and finished after the
 `PUT`, and the box's `checked` state in the snapshots around it.
+
+## LIMITATIONS
+
+- A Daily-items spec (S29, S75, Decision 1) retires and restores an item in one test; a run that crosses Colorado midnight between the two leaves a one-day retired span on the shared DB (Decision 5), so yesterday shows one item fewer and S26 could miss its box.

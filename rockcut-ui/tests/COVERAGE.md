@@ -255,3 +255,47 @@ project (see `RUNNING.md`).
 |---|---|
 | A a long-press drag to the very bottom of a day lands there: below the day's own tasks, above any card finished there from another day (those always sort last), and the placeholder shows that spot | Playwright `task-board-phone` (S15 very bottom: today with 4 `[TEST-TEMP]` tasks and a finished-from-yesterday card, the page auto-scrolled to its end, placeholder position, `move` body `before_id: null`, persist-verify) |
 | B Android back with the task sheet open closes the sheet only; the URL stays `/brewery/tasks` and the next back leaves the board; a sheet closed by tapping outside leaves no extra back | Playwright `task-board-phone` (Back closes the sheet; tapping outside). The real back gesture on the Pixel: **Manual** (DEV) |
+
+## D39 — Recurring tasks + D38 follow-ups (`specs/d38_brewery_task_board_spec.md` §3.10, §5)
+
+D39's rows only (spec "Delivery split"): S52–S67 and S69–S78; S68 (the staff code on the tablet)
+is D40. ExUnit files are under `rockcut_api/test/` (`series_test` and `series_edits_test` =
+`brewery_tasks/…`, `recurrence_test` = `scheduling/recurrence_test`, controllers =
+`brewery_task_series_controller_test` and `brewery_followups_controller_test`); Vitest under
+`src/lib/` (`repeat.test`, `breweryTasks.test`); Playwright under `tests/regression/brewery/`, in the
+one-worker `brewery-board` project. `task-board-phone` emulates the Pixel (412 px, touch, CDP
+long-press); the real gestures on hardware are **Pixel (manual)** on DEV.
+
+| # | Scenario | Layer |
+|---|---|---|
+| S52 | Weekly on Wed: "Repeats every week on Wed", ↻ on every Wednesday, 11 months out too | Playwright `task-board-recurring` (S52, S67); ExUnit `series_test` (S52: through today + 12 months), `recurrence_test` (weekly); Vitest `repeat.test` (defaultRule, taskRepeatSummary) |
+| S53 | Every 2 weeks on Mon and Thu, from this week | Playwright `task-board-recurring` (S53); ExUnit `series_test` (S53), `recurrence_test` (weekly) |
+| S54 | Monthly on day 31: the last day in shorter months | Playwright `task-board-recurring` (S54); ExUnit `series_test` (S54) |
+| S55 | Monthly on the last Friday | Playwright `task-board-recurring` (S55); ExUnit `series_test` (S55), `recurrence_test` (monthly by weekday) |
+| S56 | Quarterly on the 15th from Oct 15 | Playwright `task-board-recurring` (S56); ExUnit `series_test` (S56) |
+| S57 | Annually on Mar 1, after 3 times | Playwright `task-board-recurring` (S57); ExUnit `series_test` (S57), `recurrence_test` (ends) |
+| S58 | Checking this week's leaves next week's open | Playwright `task-board-recurring` (S58); ExUnit `series_test` (S58) |
+| S59 | A drag to Thu moves only that one; no second copy | Playwright `task-board-recurring` (S59); ExUnit `series_edits_test` (moves: S59, Decision 4 onto Future) |
+| S60 | Edit → Just this one: only that week changes | Playwright `task-board-recurring` (S60, S69, S61: request body + persist-verify); ExUnit `series_edits_test` (edit "this") |
+| S61 | Edit → This and all following: later ones change, earlier and own-changed ones don't | Playwright `task-board-recurring` (S60, S69, S61); ExUnit `series_edits_test` (edit "following", content only) |
+| S62 | Rule change weekly → monthly first Wed, after the confirm (Decision 2) | Playwright `task-board-recurring` (S62); ExUnit `series_edits_test` (edit "following" with a new rule); Vitest `repeat.test` (removeLaterWording) |
+| S63 | Stop repeating: "Removes 40 later occurrences"; keep or remove the own-changed ones | Playwright `task-board-recurring` (S63); ExUnit `series_edits_test` (stop repeating) |
+| S64 | Delete Just this one: gone, not made again | Playwright `task-board-recurring` (S64 and delete "This and all following"); ExUnit `series_test` (delete "this"), `series_edits_test` (delete "following") |
+| S65 | 3 missed occurrences on Unfinished; Move all to today | Playwright `task-board-recurring` (S65: three missed occurrences); ExUnit `series_edits_test` (S65) |
+| S66 | The daily scan adds one more week; a second run adds nothing | **ExUnit only** `series_test` (top_up ×7: a day later, a week later, no History, until, count, skipped dates, no duplicates): a scheduler job with no UI, and Playwright can't move the clock |
+| S67 | Add with No day: Repeat disabled, "Pick a day to repeat" | Playwright `task-board-recurring` (S52, S67); ExUnit controller `brewery_task_series_controller_test` (repeat_needs_day) |
+| S69 | Editing only an occurrence's notes asks Just this one / This and all following | Playwright `task-board-recurring` (S60, S69, S61: the scope dialog); ExUnit `series_edits_test` (scope: scope_required, a one-off ignores it), controller (scope_required) |
+| S70 | First visit at phone width is the vertical view; one day survives a reload | Playwright `task-board-phone` (S70); **Pixel (manual)** |
+| S71 | Long-press drag down to day 3, the page scrolling; lands where dropped | Playwright `task-board-phone` (S71: CDP touch, auto-scroll, persist-verify); **Pixel (manual)**: the real long-press and edge scroll |
+| S72 | Long-press drag off the Unfinished card onto tomorrow | Playwright `task-board-phone` (S72); **Pixel (manual)** |
+| S73 | One-day view on today: from Unfinished to between today's first and second | Playwright `task-board-phone` (S73); Vitest `breweryTasks.test` (boardMoveRule); **Pixel (manual)** |
+| S74 | Long-press drag onto the Future list | Playwright `task-board-phone` (S74); **Pixel (manual)** |
+| S75 | Restore Temps: at the bottom, old ticks kept, the retired days keep their counts (Decision 5); refused at 12 | Playwright `task-board-daily-items` (S75: same-day retire/restore, the 12-item refusal); ExUnit `brewery_daily_test` (restore_item, retired spans ×5), controller `brewery_followups_controller_test` (restore). The retired-days rule is **ExUnit only**: Playwright can't backdate the History events |
+| S76 | Back closes the Edit dialog, "where should it show" and Change day…; the board stays | Playwright `task-board-phone` (S76 ×3: each dialog, the sheet → dialog handover, Cancel leaves no dead back); **Pixel (manual)**: the real back gesture |
+| S77 | Saving a dialog for a task someone deleted: "This task was deleted"; nothing recreated | Playwright `task-board-tasks` (S77: brewer1 + brewer2 contexts); ExUnit controller `brewery_followups_controller_test` (O-1, S77: 410 deleted vs 404); Vitest `breweryTasks.test` (taskGone / taskError) |
+| S78 | Editing a one-off can make it repeat; Future needs a day; a finished one has no Repeat; one History entry | Playwright `task-board-recurring` (S78, breweryMgr); ExUnit `series_edits_test` (making a one-off repeat ×4), controller (PATCH with repeat); Vitest `breweryTasks.test` (made_repeating) |
+| — | Decision 1 (O-3): a retired item ticked today shows a disabled box; untick refused | Playwright `task-board-daily-items` (Decision 1); ExUnit `brewery_daily_test`, controller `brewery_followups_controller_test` |
+| — | GAP-1 / GAP-2: any PATCH on a retired item is 422 `retired` | ExUnit `brewery_daily_test` (GAP-1), controller `brewery_followups_controller_test` (GAP-1, GAP-2) |
+| — | O-2: the Edit Daily items dialog picks up a rename on the board's refetch | Playwright `task-board-daily-items` (O-2) |
+| — | Nothing is dropped onto the Unfinished card, at any width | Playwright `task-board-range` (a task dragged over the Unfinished card); Vitest `breweryTasks.test` (boardMoveRule) |
+| — | History reads the series actions | Playwright `task-board-recurring` (History reads the series actions, breweryMgr); Vitest `repeat.test` (summaryFromDetail) |
