@@ -389,3 +389,100 @@ Commit as `feat: D39 recurring task API, scanner top-up and seed`.
 - any `LEAD:` question.
 
 Then stop.
+
+## Task 5: plan step 5, the recurring-task UI and its Playwright spec
+
+Task 4 was reviewed and accepted (`0b24eb1`).
+
+**Answers:**
+1. **Protecting the day of every remaining old-series occurrence,
+   finished ones included:** yes, right.
+2. **An unknown `changed` value treated as `keep`:** OK.
+
+Build plan "Order of work" step 5 ("Changes → UI"). Follow spec §3.10
+"Creating one" and "Changing one", Matt's Decision 2 wording, and the D32
+event dialog (`src/pages/schedule/EventFormDialog.tsx`) as the pattern.
+**D32's dialog and its specs must keep working unchanged.**
+
+1. **Repeat helpers:** extend `src/lib/events.ts`'s `RepeatRule`,
+   `repeatSummary` and `repeatParams`, or add `src/lib/repeat.ts` that the
+   events code keeps using. Cover monthly by day ("on the 31st (or the last
+   day)"), quarterly ("every 3 months on the 15th", "every 3 months on the
+   last Friday") and annually ("every year on Mar 1"). Write Vitest tests
+   for the summaries and the defaults from a day.
+2. **`TaskDialog`:**
+   - **The Repeat field:** Never / Weekly / Monthly / Quarterly /
+     Annually.
+     - Its defaults come from the Day: "Weekly on Wed", "Monthly on the
+       14th" (with a day / nth-weekday choice), and so on.
+     - It has the rule options, Ends (Never / On date / After N times) and
+       a summary line.
+     - When Day is No day (Future), Repeat is disabled and reads "Pick a
+       day to repeat" (S67).
+   - **Editing an occurrence:**
+     - the dialog loads the rule from `GET /tasks/:id/series`;
+     - it shows the summary with a ↻;
+     - Never isn't offered.
+   - **Save on an occurrence** asks "Just this one" or "This and all
+     following" (S69), as D32's dialog does.
+     - A changed rule always goes as "following".
+     - A day-only change doesn't ask: it's that occurrence only.
+     - Keep G1: send only the fields that changed.
+   - **A rule change that would remove later occurrences** shows the
+     Decision 2 confirm before saving: two buttons when `later_changed >
+     0`, a plain confirm otherwise. A rule change that removes nothing
+     needs no confirm.
+3. **`TaskCard`:** a small ↻ icon when `series_id` is set, with an
+   accessible label "Repeats".
+4. **`TaskMenu`** (desktop menu and phone sheet), for an occurrence:
+   - **Edit series…**: the dialog, with "This and all following" already
+     chosen;
+   - **Stop repeating**: the Decision 2 confirm, using `GET …/series`'s
+     `later_open` and `later_changed`;
+   - **Delete**: asks "Just this one" or "This and all following". For
+     "following", the Decision 2 confirm.
+
+   **Decision 2 wording:**
+   - `later_changed > 0`: "Removes {later_open} later occurrences.
+     {later_changed} were changed on their own." with buttons **"Remove
+     {later_open}, keep the {later_changed} changed on their own"** and
+     **"Remove all {later_open + later_changed}"**, plus Cancel;
+   - otherwise: "Removes {later_open} later occurrences." with **Remove**
+     and Cancel.
+   - Use singular forms for 1.
+5. **History wording** (`HistoryDialog`):
+   - "created recurring task (Repeats every week on Wed)";
+   - "edited (this and following)";
+   - "deleted this and following (removed 40, kept 2)";
+   - "stopped repeating (removed 40)";
+   - "moved … to Future (no longer repeats)".
+6. **Drive it in a browser first** as `brewer1` and `breweryMgr` against
+   the local servers (token injection, per the workflow), covering S52–S65,
+   S67 and S69. Then write `tests/regression/brewery/task-board-recurring.spec.ts`
+   from what you saw:
+   - dates relative to today;
+   - persist-verify every write;
+   - `[TEST-TEMP]` titles, with the series deleted in `afterEach` (a
+     DELETE with `scope=following&changed=remove` on the first occurrence,
+     or a test-support route if one exists);
+   - long ranges through the date range selector, 31 days at a time;
+   - put the spec in the `brewery-board` project.
+
+**Done when:**
+- `tsc --noEmit -p tsconfig.app.json`, `vite build` and `pnpm test:unit`
+  pass;
+- lint shows no new errors in your files;
+- the new spec passes twice in a row;
+- `tests/regression/brewery` (`chromium` + `brewery-board`) and the D32
+  event specs pass.
+
+Commit as `feat: D39 recurring tasks UI` and `test: D39 recurring task
+Playwright spec` (more commits are fine).
+
+**Reply with:**
+- the counts;
+- the SHAs;
+- anything you saw in the browser that the spec doesn't cover;
+- any `LEAD:` question.
+
+Then stop.
