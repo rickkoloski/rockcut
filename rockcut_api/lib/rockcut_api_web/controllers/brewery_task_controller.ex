@@ -5,13 +5,19 @@ defmodule RockcutApiWeb.BreweryTaskController do
   writes to the brewhouse tablet). Every action asks `Authz` first: `:read`
   and `:write` on `:brewery_tasks` for Brewery members, `:history` for Brewery
   managers. Owners pass `Authz`'s owner clause.
+
+  D39 recurring tasks: `POST` takes the flat `repeat*` params; `PATCH` and
+  `DELETE` on an occurrence take `scope` (`this` | `following`) and
+  `changed` (`keep`, the default, | `remove`), in the query or the body;
+  `GET …/series` and `POST …/stop_repeating`.
   """
   use RockcutApiWeb, :controller
 
   import RockcutApiWeb.JSONHelpers,
-    only: [brewery_board: 1, brewery_task: 1, brewery_task_event: 1]
+    only: [brewery_board: 1, brewery_task: 1, brewery_task_event: 1, brewery_task_series: 2]
 
   alias RockcutApi.{Authz, BreweryTasks}
+  alias RockcutApi.BreweryTasks.Series
   alias RockcutApiWeb.BreweryErrors
 
   action_fallback RockcutApiWeb.FallbackController
@@ -38,7 +44,13 @@ defmodule RockcutApiWeb.BreweryTaskController do
   def update(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :write),
          {:ok, task} <- fetch(id),
-         {:ok, task} <- BreweryTasks.update(task, Map.drop(params, ["id"]), actor(conn)) do
+         {:ok, task} <-
+           BreweryTasks.update(
+             task,
+             Map.drop(params, ~w(id scope changed)),
+             actor(conn),
+             series_opts(params)
+           ) do
       render_task(conn, task)
     end
     |> BreweryErrors.handle(conn)
@@ -82,11 +94,31 @@ defmodule RockcutApiWeb.BreweryTaskController do
     |> BreweryErrors.handle(conn)
   end
 
-  def delete(conn, %{"id" => id}) do
+  def delete(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :write),
          {:ok, task} <- fetch(id),
-         {:ok, :deleted} <- BreweryTasks.delete(task, actor(conn)) do
+         {:ok, :deleted} <- BreweryTasks.delete(task, actor(conn), series_opts(params)) do
       send_resp(conn, :no_content, "")
+    end
+    |> BreweryErrors.handle(conn)
+  end
+
+  @doc "GET /api/brewery/tasks/:id/series: the rule, `later_open` and `later_changed`."
+  def series(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :read),
+         {:ok, task} <- fetch(id),
+         {:ok, {series, preview}} <- Series.info(task) do
+      json(conn, %{data: brewery_task_series(series, preview)})
+    end
+    |> BreweryErrors.handle(conn)
+  end
+
+  @doc "POST /api/brewery/tasks/:id/stop_repeating: `{ changed? }`. Ends the series on this one."
+  def stop_repeating(conn, %{"id" => id} = params) do
+    with :ok <- allow(conn, :write),
+         {:ok, task} <- fetch(id),
+         {:ok, task} <- Series.stop(task, actor(conn), series_opts(params)) do
+      render_task(conn, task)
     end
     |> BreweryErrors.handle(conn)
   end
@@ -116,6 +148,13 @@ defmodule RockcutApiWeb.BreweryTaskController do
   end
 
   defp actor(conn), do: conn.assigns.current_user
+
+  defp series_opts(params) do
+    [
+      scope: params["scope"],
+      changed: if(params["changed"] == "remove", do: :remove, else: :keep)
+    ]
+  end
 
   defp fetch(id) do
     case BreweryTasks.get_task(id) do

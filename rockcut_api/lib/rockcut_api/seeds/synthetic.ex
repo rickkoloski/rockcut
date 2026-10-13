@@ -20,7 +20,9 @@ defmodule RockcutApi.Seeds.Synthetic do
   D38: `[SEED]` Brewery board tasks (tag on the title) relative to today,
   Daily checks for yesterday (3) and today (1), and a `[SEED]` all-day Brewery
   event this week (tag on its notes). `reset/0` also deletes every Daily check
-  and restores the four default Daily items.
+  and restores the four default Daily items. D39: three `[SEED]` recurring
+  tasks (Keg Wash weekly, Glycol check monthly, Calibrate pH meter
+  quarterly); `[SEED]` and `[TEST-TEMP]` series go with their occurrences.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -41,7 +43,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
   alias RockcutApi.BeerBoard.Entry
   alias RockcutApi.BreweryTasks
-  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task}
+  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task, TaskSeries}
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -698,7 +700,13 @@ defmodule RockcutApi.Seeds.Synthetic do
     # checks cascade), then the lists close up. Change-log rows stay, as D37.
     # The [SEED] event is tagged on its notes.
     Repo.delete_all(from(e in ScheduleEvent, where: like(e.notes, ^pattern)))
-    Repo.delete_all(from(t in Task, where: like(t.title, ^pattern)))
+    # D39: recurring task series tagged on the title, with every occurrence
+    # (including ones since retitled).
+    series_ids = Repo.all(from(s in TaskSeries, where: like(s.title, ^pattern), select: s.id))
+
+    Repo.delete_all(from(t in Task, where: like(t.title, ^pattern) or t.series_id in ^series_ids))
+
+    Repo.delete_all(from(s in TaskSeries, where: s.id in ^series_ids))
     Repo.delete_all(from(i in DailyItem, where: like(i.name, ^pattern)))
     if Repo.get_by(Department, key: "brewery"), do: BreweryTasks.compact_lists()
   end
@@ -769,6 +777,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     end
 
     BreweryTasks.compact_lists()
+    seed_recurring_tasks(mgr, today)
 
     # Daily card: yesterday 3 of the first 4 ticked, today 1. A past day only
     # counts items that existed then, and the migration may have added the
@@ -811,6 +820,41 @@ defmodule RockcutApi.Seeds.Synthetic do
       inserted_at: now,
       updated_at: now
     })
+  end
+
+  # D39: three recurring tasks, made through the context (12 months ahead,
+  # like a real one). Keg Wash starts on the first Wednesday on or after 14
+  # days ago, so its two past Wednesdays are open on the Unfinished card.
+  defp seed_recurring_tasks(mgr, today) do
+    from = Date.add(today, -14)
+    first_wed = Date.add(from, rem(3 - Date.day_of_week(from) + 7, 7))
+
+    for attrs <- [
+          %{
+            title: "Keg Wash",
+            due_on: first_wed,
+            repeat: "weekly",
+            repeat_weekdays: [3]
+          },
+          %{
+            title: "Glycol check",
+            due_on: today,
+            repeat: "monthly",
+            repeat_month_rule: "weekday",
+            repeat_week_of_month: -1,
+            repeat_weekday: 5
+          },
+          %{
+            title: "Calibrate pH meter",
+            due_on: today,
+            repeat: "quarterly",
+            repeat_month_rule: "day",
+            repeat_day_of_month: 15
+          }
+        ] do
+      {:ok, _} =
+        BreweryTasks.create(%{attrs | title: "#{@seed_tag} #{attrs.title}"}, mgr, today)
+    end
   end
 
   # The four default Daily items, active and in order; any other item goes

@@ -391,6 +391,56 @@ defmodule RockcutApi.BreweryTasks.SeriesEditsTest do
       end
     end
 
+    test "with keep, a kept occurrence's day gets no second task (just this one)", ctx do
+      w0 = keg_wash!(ctx.brewer)
+      {:ok, _} = BreweryTasks.update(week(w0, 5), %{title: "Own"}, ctx.brewer, scope: "this")
+
+      {:ok, first} =
+        BreweryTasks.update(week(w0, 2), %{repeat_weekdays: [3, 5]}, ctx.brewer,
+          scope: "following",
+          today: @today
+        )
+
+      nov18 = ~D[2026-11-18]
+
+      assert [%Task{title: "Own", series_id: old}] =
+               Repo.all(from t in Task, where: t.due_on == ^nov18)
+
+      assert old == w0.series_id
+      assert nov18 in Repo.get!(TaskSeries, first.series_id).skipped_dates
+
+      # The Fridays are new, and the other Wednesdays are the new series'.
+      for day <- [~D[2026-10-30], ~D[2026-11-20], ~D[2026-11-25]] do
+        assert [%Task{series_id: id}] = Repo.all(from t in Task, where: t.due_on == ^day)
+        assert id == first.series_id
+      end
+
+      # A top-up never fills it either.
+      assert {:ok, _} = Series.top_up(Date.add(@today, 30))
+      assert length(Repo.all(from t in Task, where: t.due_on == ^nov18)) == 1
+    end
+
+    test "with keep, a kept occurrence moved onto a day the new rule makes gets no second", ctx do
+      w0 = keg_wash!(ctx.brewer)
+      nov20 = ~D[2026-11-20]
+      {:ok, moved} = BreweryTasks.move(week(w0, 5), nov20, nil, ctx.brewer)
+
+      {:ok, first} =
+        BreweryTasks.update(week(w0, 2), %{repeat_weekdays: [3, 5]}, ctx.brewer,
+          scope: "following",
+          today: @today
+        )
+
+      assert [%Task{id: id}] = Repo.all(from t in Task, where: t.due_on == ^nov20)
+      assert id == moved.id
+
+      # Its old Wednesday is free, so the new series makes one there.
+      assert [%Task{series_id: sid}] =
+               Repo.all(from t in Task, where: t.due_on == ^~D[2026-11-18])
+
+      assert sid == first.series_id
+    end
+
     test "a count already used up is refused", ctx do
       w0 = keg_wash!(ctx.brewer, %{repeat_count: 10})
 
@@ -463,7 +513,7 @@ defmodule RockcutApi.BreweryTasks.SeriesEditsTest do
 
     test "a one-off can't be stopped", ctx do
       {:ok, task} = BreweryTasks.create(%{title: "One-off", due_on: @today}, ctx.brewer)
-      assert {:error, :not_recurring} = Series.stop(task, ctx.brewer)
+      assert {:error, :not_in_series} = Series.stop(task, ctx.brewer)
     end
   end
 

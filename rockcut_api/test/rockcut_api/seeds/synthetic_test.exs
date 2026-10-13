@@ -511,13 +511,14 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
   describe "Brewery task board (D38)" do
     alias RockcutApi.BreweryTasks
-    alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task}
+    alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task, TaskSeries}
     alias RockcutApi.Scheduling.ScheduleEvent
 
+    # The one-off [SEED] tasks (D39's recurring ones are checked on their own).
     defp seed_tasks do
       Repo.all(
         from(t in Task,
-          where: like(t.title, "[SEED]%"),
+          where: like(t.title, "[SEED]%") and is_nil(t.series_id),
           order_by: [t.due_on, t.position, t.id],
           select: {t.title, t.due_on, t.position, t.completed_on, t.completed_display}
         )
@@ -554,7 +555,8 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       {:ok, board} = BreweryTasks.board(Date.add(today, -3), Date.add(today, 13), today)
 
       assert length(seed_tasks()) == 17
-      assert length(board.unfinished) == 2
+      # D38's two, plus Keg Wash's two past Wednesdays (D39).
+      assert length(board.unfinished) == 4
       assert length(board.future) == 2
 
       displays = for {_, _, _, on, d} <- seed_tasks(), on, uniq: true, do: d
@@ -612,6 +614,71 @@ defmodule RockcutApi.Seeds.SyntheticTest do
           do: assert(positions == Enum.to_list(1..length(positions)))
     end
 
+    defp seed_series do
+      Repo.all(
+        from(s in TaskSeries,
+          left_join: t in assoc(s, :tasks),
+          group_by: [s.id, s.title, s.frequency, s.start_date],
+          order_by: s.title,
+          select: {s.title, s.frequency, s.start_date, count(t.id)}
+        )
+      )
+    end
+
+    test "seeds three recurring tasks, Keg Wash with two open past Wednesdays (D39)" do
+      {:ok, _} = Synthetic.setup()
+      today = BreweryTasks.today()
+
+      assert [
+               {"[SEED] Calibrate pH meter", "quarterly", ^today, _},
+               {"[SEED] Glycol check", "monthly", ^today, _},
+               {"[SEED] Keg Wash", "weekly", keg_start, keg_count}
+             ] = seed_series()
+
+      assert Date.day_of_week(keg_start) == 3
+      assert Date.diff(today, keg_start) in 8..14
+      assert keg_count >= 54
+
+      {:ok, board} = BreweryTasks.board(Date.add(today, -3), Date.add(today, 27), today)
+      keg = Enum.filter(board.unfinished, &(&1.task.title == "[SEED] Keg Wash"))
+      assert length(keg) == 2
+      assert Enum.all?(keg, & &1.task.series_id)
+
+      cards = Enum.flat_map(board.days, & &1.cards)
+      assert Enum.any?(cards, &(&1.task.title == "[SEED] Glycol check" and &1.task.series_id))
+      assert Enum.any?(cards, &(&1.task.title == "[SEED] Keg Wash" and &1.task.series_id))
+    end
+
+    test "setup twice gives the same series; cleanup_temp removes [TEST-TEMP] series" do
+      {:ok, _} = Synthetic.setup()
+      first = seed_series()
+      {:ok, _} = Synthetic.setup()
+      assert seed_series() == first
+
+      mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
+      today = BreweryTasks.today()
+
+      {:ok, temp} =
+        BreweryTasks.create(
+          %{title: "[TEST-TEMP] Hoses", due_on: today, repeat: "annually"},
+          mgr,
+          today
+        )
+
+      # An occurrence retitled on its own still goes with its series.
+      {:ok, _} =
+        BreweryTasks.update(temp, %{title: "Renamed"}, mgr, scope: "this")
+
+      :ok = Synthetic.cleanup_temp()
+      refute Repo.get(TaskSeries, temp.series_id)
+      refute Repo.exists?(from(t in Task, where: t.series_id == ^temp.series_id))
+      refute Repo.get(Task, temp.id)
+      assert seed_series() == first
+
+      for {_day, positions} <- board_lists(),
+          do: assert(positions == Enum.to_list(1..length(positions)))
+    end
+
     test "reset deletes every Daily check and restores the four default items" do
       {:ok, _} = Synthetic.setup()
       mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
@@ -628,6 +695,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert item_names() == Enum.with_index(DailyItem.defaults(), 1)
       assert Enum.map(checks(), &elem(&1, 0)) |> Enum.uniq() == [Date.add(today, -1), today]
       assert length(seed_tasks()) == 17
+      assert length(seed_series()) == 3
     end
   end
 end

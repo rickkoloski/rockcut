@@ -186,8 +186,33 @@ defmodule RockcutApiWeb.JSONHelpers do
       completed_by_name: maybe_render(t, :completed_by, &name_of/1),
       created_by_id: t.created_by_id,
       created_by_name: maybe_render(t, :created_by, &name_of/1),
+      series_id: t.series_id,
+      series_date: t.series_date,
+      series_exception: t.series_exception,
       inserted_at: t.inserted_at,
       updated_at: t.updated_at
+    }
+  end
+
+  @doc "A recurring task's rule (D39 `GET /api/brewery/tasks/:id/series`), for the dialog."
+  def brewery_task_series(s, preview) do
+    %{
+      id: s.id,
+      title: s.title,
+      notes: s.notes,
+      assignee_id: s.assignee_id,
+      frequency: s.frequency,
+      month_rule: s.month_rule,
+      interval: s.interval,
+      weekdays: s.weekdays,
+      day_of_month: s.day_of_month,
+      week_of_month: s.week_of_month,
+      weekday: s.weekday,
+      start_date: s.start_date,
+      until_date: s.until_date,
+      count: s.count,
+      later_open: preview.later_open,
+      later_changed: preview.later_changed
     }
   end
 

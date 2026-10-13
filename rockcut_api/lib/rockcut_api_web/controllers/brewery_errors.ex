@@ -2,7 +2,8 @@ defmodule RockcutApiWeb.BreweryErrors do
   @moduledoc """
   D38: how the Brewery task board's controllers answer a refused action. A
   rule the board enforces is a 422 with a code (as D37's board does); a
-  missing task or item is a 404; a changeset goes to `FallbackController`.
+  missing task or item is a 404; a changeset goes to `FallbackController`
+  (a repeat rule's errors too, D39, e.g. `errors.repeat`).
   """
   import Plug.Conn, only: [put_status: 2]
   import Phoenix.Controller, only: [json: 2]
@@ -18,7 +19,10 @@ defmodule RockcutApiWeb.BreweryErrors do
     too_many_items: "The Daily card holds at most #{BreweryTasks.max_items()} items",
     invalid_order: "The list changed. Reload and try again",
     invalid_date: "Enter dates as YYYY-MM-DD",
-    range_too_long: "Choose a range of 1 to #{BreweryTasks.max_range_days()} days"
+    range_too_long: "Choose a range of 1 to #{BreweryTasks.max_range_days()} days",
+    repeat_needs_day: "Pick a day to repeat",
+    scope_required: "Choose Just this one or This and all following",
+    not_in_series: "That task doesn't repeat"
   }
 
   @doc """

@@ -209,6 +209,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/brewery/tasks/:id/move"},
     {:post, "/api/brewery/tasks/:id/complete"},
     {:post, "/api/brewery/tasks/:id/uncomplete"},
+    {:get, "/api/brewery/tasks/:id/series"},
+    {:post, "/api/brewery/tasks/:id/stop_repeating"},
     {:put, "/api/brewery/daily_checks/:on_date/:daily_item_id"},
     {:delete, "/api/brewery/daily_checks/:on_date/:daily_item_id"},
     {:get, "/api/brewery/daily_items"},

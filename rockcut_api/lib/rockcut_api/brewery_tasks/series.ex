@@ -376,6 +376,7 @@ defmodule RockcutApi.BreweryTasks.Series do
       end
     end
 
+    {new_series, dates} = skip_kept_days(new_series, series, date, through, dates, reuse?)
     end_series_before(series, date)
     insert_occurrences(new_series, dates)
     mark_generated(new_series, through)
@@ -396,6 +397,38 @@ defmodule RockcutApi.BreweryTasks.Series do
     )
 
     if reuse?, do: move_this(first, attrs, actor), else: first
+  end
+
+  # The old series' occurrences that stay from `date` on (kept exceptions and
+  # finished ones) already hold their days: the new series skips those days
+  # (their current `due_on`), now and in every top-up, so no day shows two.
+  defp skip_kept_days(new_series, old_series, date, through, dates, reuse?) do
+    days =
+      Repo.all(
+        from t in Task,
+          where:
+            t.series_id == ^old_series.id and t.series_date >= ^date and not is_nil(t.due_on),
+          select: t.due_on
+      )
+      |> Enum.uniq()
+
+    if days == [] do
+      {new_series, dates}
+    else
+      new_series =
+        new_series |> Changeset.change(skipped_dates: days) |> Repo.update!()
+
+      case new_series |> TaskSeries.rule() |> Recurrence.dates(through) do
+        [] when not reuse? ->
+          new_series
+          |> Changeset.change()
+          |> Changeset.add_error(:repeat, "the repeat pattern has no dates in range")
+          |> Repo.rollback()
+
+        dates ->
+          {new_series, dates}
+      end
+    end
   end
 
   defp remaining_count(%{"count" => total} = attrs, used) when is_integer(total) do
@@ -467,7 +500,7 @@ defmodule RockcutApi.BreweryTasks.Series do
   def stop(%Task{} = task, %User{} = actor, opts \\ []) do
     write_transaction(fn ->
       task = fetch!(task.id)
-      if is_nil(task.series_id), do: Repo.rollback(:not_recurring)
+      if is_nil(task.series_id), do: Repo.rollback(:not_in_series)
       series = Repo.get!(TaskSeries, task.series_id)
 
       {removed, kept} =
@@ -505,6 +538,19 @@ defmodule RockcutApi.BreweryTasks.Series do
       |> Map.new()
 
     %{later_open: Map.get(counts, false, 0), later_changed: Map.get(counts, true, 0)}
+  end
+
+  @doc """
+  The rule behind an occurrence and its `preview/1` counts:
+  `{:ok, {series, preview}}`, or `{:error, :not_in_series}` for a one-off.
+  """
+  def info(%Task{series_id: nil}), do: {:error, :not_in_series}
+
+  def info(%Task{series_id: id} = task) do
+    case Repo.get(TaskSeries, id) do
+      nil -> {:error, :not_in_series}
+      series -> {:ok, {series, preview(task)}}
+    end
   end
 
   @doc false
