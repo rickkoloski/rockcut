@@ -21,7 +21,17 @@ defmodule RockcutApi.BreweryTasks do
 
   alias RockcutApi.{Accounts, Authz, Repo}
   alias RockcutApi.Accounts.{Department, User}
-  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Event, Placement, Series, Task}
+
+  alias RockcutApi.BreweryTasks.{
+    DailyCheck,
+    DailyItem,
+    Event,
+    Placement,
+    Series,
+    Task,
+    TaskSeries
+  }
+
   alias RockcutApi.Scheduling.{Recurrence, ScheduleEvent, Shift}
 
   @history_page_size 50
@@ -239,9 +249,24 @@ defmodule RockcutApi.BreweryTasks do
   Edit title, notes, assignee and day. A day change is a move to the bottom
   of that day (or of the Future list for `due_on: nil`). Logs `edited`,
   `assigned` and `moved` for what changed.
+
+  An occurrence of a recurring task (D39) goes through `Series.update/5`
+  with `opts[:scope]` (`"this"` | `"following"`) and `opts[:changed]`.
   """
-  def update(%Task{id: id}, attrs, %User{} = actor) do
+  def update(task, attrs, actor, opts \\ [])
+
+  def update(%Task{series_id: id} = task, attrs, %User{} = actor, opts) when not is_nil(id),
+    do: Series.update(task, stringify(attrs), opts[:scope], actor, opts)
+
+  def update(%Task{} = task, attrs, %User{} = actor, _opts),
+    do: update_one(task, attrs, actor)
+
+  @doc false
+  # The D38 edit of one task. `scope` (D39) goes into the `edited` and
+  # `assigned` events' detail when given.
+  def update_one(%Task{id: id}, attrs, %User{} = actor, scope \\ nil) do
     attrs = stringify(attrs)
+    scoped = if scope, do: %{"scope" => scope}, else: %{}
 
     Repo.transaction(fn ->
       task = fetch!(id)
@@ -265,17 +290,24 @@ defmodule RockcutApi.BreweryTasks do
       edited = Map.take(changeset.changes, [:title, :notes])
 
       if edited != %{} do
-        log!(updated, "edited", actor, %{
-          "from" => Map.new(edited, fn {k, _} -> {to_string(k), Map.get(task, k)} end),
-          "to" => Map.new(edited, fn {k, v} -> {to_string(k), v} end)
-        })
+        log!(
+          updated,
+          "edited",
+          actor,
+          Map.merge(scoped, %{
+            "from" => Map.new(edited, fn {k, _} -> {to_string(k), Map.get(task, k)} end),
+            "to" => Map.new(edited, fn {k, v} -> {to_string(k), v} end)
+          })
+        )
       end
 
       if Map.has_key?(changeset.changes, :assignee_id) do
-        log!(updated, "assigned", actor, %{
-          "from" => task.assignee_id,
-          "to" => updated.assignee_id
-        })
+        log!(
+          updated,
+          "assigned",
+          actor,
+          Map.merge(scoped, %{"from" => task.assignee_id, "to" => updated.assignee_id})
+        )
       end
 
       case day_change do
@@ -414,11 +446,25 @@ defmodule RockcutApi.BreweryTasks do
   defp reopen_position(%Task{due_on: nil} = t), do: next_position(t.department_id, nil)
   defp reopen_position(%Task{position: p}), do: p
 
-  @doc "Delete a task. Its history stays (the event keeps a copy of the title)."
-  def delete(%Task{id: id}, %User{} = actor) do
+  @doc """
+  Delete a task. Its history stays (the event keeps a copy of the title).
+
+  An occurrence of a recurring task (D39) goes through `Series.delete/4` with
+  `opts[:scope]` and `opts[:changed]`.
+  """
+  def delete(task, actor, opts \\ [])
+
+  def delete(%Task{series_id: id} = task, %User{} = actor, opts) when not is_nil(id),
+    do: Series.delete(task, opts[:scope], actor, opts)
+
+  def delete(%Task{} = task, %User{} = actor, _opts), do: delete_one(task, actor)
+
+  @doc false
+  # The D38 delete of one task; `detail` adds to its `deleted` event.
+  def delete_one(%Task{id: id}, %User{} = actor, detail \\ %{}) do
     Repo.transaction(fn ->
       task = fetch!(id)
-      log!(task, "deleted", actor, %{"due_on" => iso(task.due_on)})
+      log!(task, "deleted", actor, Map.merge(%{"due_on" => iso(task.due_on)}, detail))
       Repo.delete!(task)
       if in_list?(task), do: renumber(task.department_id, task.due_on)
       :deleted
@@ -429,12 +475,17 @@ defmodule RockcutApi.BreweryTasks do
   Clear `user_id` as assignee on **open** tasks when they're no longer an
   active Brewery person (S49). Called inside `Accounts`' user and membership
   transactions, beside `StaffCodes.clear_if_ineligible/2`. Done tasks keep
-  the name.
+  the name. D39: recurring task series assigned to them are cleared too, so
+  the top-up doesn't assign them new occurrences.
   """
   def unassign_if_ineligible(user_id, %User{} = actor) do
     user = Accounts.get_user!(user_id)
 
     if not assignable?(user) do
+      Repo.update_all(from(s in TaskSeries, where: s.assignee_id == ^user_id),
+        set: [assignee_id: nil, updated_at: now()]
+      )
+
       Repo.all(from t in Task, where: t.assignee_id == ^user_id and is_nil(t.completed_at))
       |> Enum.each(fn task ->
         task = task |> Ecto.Changeset.change(assignee_id: nil) |> Repo.update!()
@@ -714,13 +765,13 @@ defmodule RockcutApi.BreweryTasks do
     %{events: events, page: page, total: Repo.aggregate(base, :count), names: event_names(events)}
   end
 
-  @user_detail_actions ~w(created assigned unassigned)
+  @user_detail_actions ~w(created assigned unassigned edited)
 
   defp event_names(events) do
     user_ids =
       events
       |> Enum.filter(&(&1.action in @user_detail_actions))
-      |> Enum.flat_map(&[&1.detail["assignee_id"], &1.detail["from"], &1.detail["to"]])
+      |> Enum.flat_map(&detail_user_ids(&1.detail))
       |> Enum.filter(&is_integer/1)
       |> Enum.uniq()
 
@@ -740,11 +791,23 @@ defmodule RockcutApi.BreweryTasks do
     }
   end
 
+  # Assignees an event mentions: `assignee_id`, or `from`/`to` as ids or (an
+  # `edited` event, D39) as maps with an `assignee_id`.
+  defp detail_user_ids(detail) do
+    [detail["assignee_id"] | Enum.map([detail["from"], detail["to"]], &assignee_in/1)]
+  end
+
+  defp assignee_in(%{} = values), do: values["assignee_id"]
+  defp assignee_in(value), do: value
+
   ## Lists and positions
 
   # Take the task out of its list, put it into `due_on`'s list ahead of
   # `before_id` (or last), renumber both, and log the move. Runs inside the
   # caller's transaction.
+  #
+  # D39: an occurrence moved to another day becomes an exception; moved onto
+  # the Future list it becomes a one-off (Decision 4) and its date is skipped.
   defp do_move(%Task{} = task, due_on, before_id, actor) do
     was = %{"due_on" => iso(task.due_on), "position" => task.position}
     dept_id = task.department_id
@@ -761,8 +824,10 @@ defmodule RockcutApi.BreweryTasks do
 
     ids = List.insert_at(target, index, task.id)
 
+    series_set = moved_series_fields(task, due_on)
+
     Repo.update_all(from(t in Task, where: t.id == ^task.id),
-      set: [due_on: due_on, updated_at: now()]
+      set: [due_on: due_on, updated_at: now()] ++ series_set
     )
 
     write_order(ids)
@@ -771,14 +836,32 @@ defmodule RockcutApi.BreweryTasks do
     moved = Repo.get!(Task, task.id)
 
     if was != %{"due_on" => iso(moved.due_on), "position" => moved.position} do
-      log!(moved, "moved", actor, %{
-        "from" => was,
-        "to" => %{"due_on" => iso(moved.due_on), "position" => moved.position}
-      })
+      log!(
+        moved,
+        "moved",
+        actor,
+        %{
+          "from" => was,
+          "to" => %{"due_on" => iso(moved.due_on), "position" => moved.position}
+        }
+        |> Map.merge(
+          if task.series_id && is_nil(moved.series_id), do: %{"one_off" => true}, else: %{}
+        )
+      )
     end
 
     moved
   end
+
+  defp moved_series_fields(%Task{series_id: nil}, _due_on), do: []
+  defp moved_series_fields(%Task{due_on: same}, same), do: []
+
+  defp moved_series_fields(%Task{} = task, nil) do
+    Series.skip_date!(task.series_id, task.series_date)
+    [series_id: nil, series_date: nil, series_exception: false]
+  end
+
+  defp moved_series_fields(%Task{}, _day), do: [series_exception: true]
 
   # A day's list: every task on that day. The Future list: open tasks with no day.
   defp list_query(dept_id, nil),
@@ -799,6 +882,10 @@ defmodule RockcutApi.BreweryTasks do
   end
 
   defp renumber(dept_id, due_on), do: dept_id |> list_ids(due_on) |> write_order()
+
+  @doc false
+  # Close up each of `days`' lists after a bulk removal (D39 series).
+  def renumber_days(dept_id, days), do: days |> Enum.uniq() |> Enum.each(&renumber(dept_id, &1))
 
   @doc """
   Renumber every list (each day and the Future list) and the active Daily

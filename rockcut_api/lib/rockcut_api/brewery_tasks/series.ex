@@ -15,8 +15,33 @@ defmodule RockcutApi.BreweryTasks.Series do
   `repeat_weekdays`, `repeat_month_rule` (`day` | `weekday`),
   `repeat_day_of_month`, `repeat_week_of_month`, `repeat_weekday`,
   `repeat_until` (a date) or `repeat_count`.
+
+  **Changing one** (spec "Changing one"). Edits and deletes of an occurrence
+  take a scope, `"this"` or `"following"`; without one they answer
+  `{:error, :scope_required}`, except an edit that only changes the day.
+  "Following" is decided by `series_date`, and never changes a finished
+  occurrence. Removing later occurrences (a rule split, delete "following",
+  `stop/3`) keeps the ones changed on their own (`series_exception`) unless
+  `changed: :remove` (Decision 2). A day change always applies to one
+  occurrence and makes it an exception; onto the Future list it makes it a
+  one-off (`BreweryTasks` moves). One History event per series action
+  (Decision 3).
   """
   import Ecto.Query, only: [from: 2]
+
+  @content_fields ~w(title notes assignee_id)
+  @rule_params %{
+    "repeat" => "frequency",
+    "repeat_month_rule" => "month_rule",
+    "repeat_interval" => "interval",
+    "repeat_weekdays" => "weekdays",
+    "repeat_day_of_month" => "day_of_month",
+    "repeat_week_of_month" => "week_of_month",
+    "repeat_weekday" => "weekday",
+    "repeat_until" => "until_date",
+    "repeat_count" => "count"
+  }
+  @rule_fields ~w(frequency month_rule interval weekdays day_of_month week_of_month weekday until_date count)a
 
   alias Ecto.Changeset
   alias RockcutApi.{BreweryTasks, Repo}
@@ -123,21 +148,403 @@ defmodule RockcutApi.BreweryTasks.Series do
     end
   end
 
-  @doc """
-  Delete one occurrence (`"this"`): its `series_date` goes on the series'
-  `skipped_dates` so it's never made again, and the task goes through the D38
-  delete, so History has its `deleted` entry (S64).
-  """
-  def delete(%Task{series_id: nil} = task, _scope, %User{} = actor),
-    do: BreweryTasks.delete(task, actor)
+  ## Edits
 
-  def delete(%Task{} = task, "this", %User{} = actor) do
+  @doc """
+  Edit an occurrence (`attrs` with string keys):
+
+    * `"this"`: the D38 edit, and the occurrence becomes an exception (S60).
+      Repeat params are ignored.
+    * `"following"`, content only (title, notes, assignee): the series and
+      every open, non-exception occurrence from this `series_date` on take
+      it; this occurrence takes it even if it's an exception (S61).
+    * `"following"` with a changed rule: a split (S62, see `split/5`).
+    * A `due_on` change applies to this occurrence only, whatever the scope.
+    * No scope: `{:error, :scope_required}`, unless only the day changes.
+
+  `opts`: `changed` (`:keep` | `:remove`) for a split, and `today`.
+  """
+  def update(task, attrs, scope, actor, opts \\ [])
+
+  def update(%Task{series_id: nil} = task, attrs, _scope, %User{} = actor, _opts),
+    do: BreweryTasks.update_one(task, attrs, actor)
+
+  def update(%Task{} = task, attrs, scope, %User{} = actor, opts) do
+    attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
+
+    cond do
+      scope == "following" -> update_following(task, attrs, actor, opts)
+      scope == "this" or not content_change?(task, attrs) -> update_this(task, attrs, actor)
+      true -> {:error, :scope_required}
+    end
+  end
+
+  defp content_change?(task, attrs) do
+    Task.changeset(task, Map.take(attrs, @content_fields)).changes != %{} or
+      Enum.any?(Map.keys(@rule_params), &Map.has_key?(attrs, &1))
+  end
+
+  defp update_this(task, attrs, actor) do
     write_transaction(fn ->
-      series = Repo.get!(TaskSeries, task.series_id)
-      skipped = Enum.uniq([task.series_date | series.skipped_dates || []])
-      series |> Changeset.change(skipped_dates: skipped) |> Repo.update!()
-      BreweryTasks.delete(task, actor) |> ok_or_rollback()
+      task = fetch!(task.id)
+      content = Task.changeset(task, Map.take(attrs, @content_fields)).changes
+
+      updated =
+        task
+        |> BreweryTasks.update_one(Map.take(attrs, ["due_on" | @content_fields]), actor, "this")
+        |> ok_or_rollback()
+
+      if content != %{} and updated.series_id do
+        updated |> Changeset.change(series_exception: true) |> Repo.update!()
+      else
+        updated
+      end
     end)
+  end
+
+  defp update_following(task, attrs, actor, opts) do
+    write_transaction(fn ->
+      task = fetch!(task.id)
+      series = Repo.get!(TaskSeries, task.series_id)
+
+      case new_rule(series, attrs) do
+        :same -> following_content(task, series, attrs, actor)
+        {:changed, rule} -> split(task, series, rule, attrs, actor, opts)
+        {:error, cs} -> Repo.rollback(cs)
+      end
+    end)
+  end
+
+  # The series' rule with the repeat params in `attrs` over it: `:same`,
+  # `{:changed, rule_attrs}`, or an error for "never" (that's Stop repeating).
+  defp new_rule(series, attrs) do
+    current = Map.new(@rule_fields, &{to_string(&1), Map.get(series, &1)})
+    given = Map.take(attrs, Map.keys(@rule_params))
+
+    overrides =
+      given
+      |> Map.new(fn {k, v} -> {@rule_params[k], v} end)
+      |> parse_rule()
+
+    rule = Map.merge(current, overrides)
+
+    cond do
+      Map.get(given, "repeat") in ["never", ""] ->
+        {:error,
+         %TaskSeries{}
+         |> Changeset.change()
+         |> Changeset.add_error(:repeat, "to end the repeats, use Stop repeating")}
+
+      given == %{} or same_rule?(series, rule) ->
+        :same
+
+      true ->
+        {:changed, rule}
+    end
+  end
+
+  # Compare after the changeset clears the options that don't belong to the
+  # rule, so leftovers (weekdays on a monthly rule) don't count as a change.
+  defp same_rule?(series, rule) do
+    cs = TaskSeries.changeset(series, rule)
+    cs.valid? and Map.take(cs.changes, @rule_fields) == %{}
+  end
+
+  # Content to this occurrence and the later open, non-exception ones; the day
+  # (if it changed) to this one only.
+  defp following_content(task, series, attrs, actor) do
+    content = Map.take(attrs, @content_fields)
+
+    this_cs =
+      task
+      |> Task.changeset(content)
+      |> BreweryTasks.validate_assignee()
+
+    if not this_cs.valid?, do: Repo.rollback(this_cs)
+
+    series =
+      series
+      |> TaskSeries.changeset(content)
+      |> BreweryTasks.validate_assignee()
+      |> Repo.update()
+      |> ok_or_rollback()
+
+    changes = Map.take(this_cs.changes, [:title, :notes, :assignee_id])
+
+    if changes != %{} do
+      Repo.update!(this_cs)
+
+      {n, _} =
+        Repo.update_all(
+          from(t in Task,
+            where:
+              t.series_id == ^series.id and t.series_date >= ^task.series_date and
+                t.id != ^task.id and is_nil(t.completed_at) and not t.series_exception
+          ),
+          set: Keyword.new(changes) ++ [updated_at: now()]
+        )
+
+      log!(task, "edited", actor, %{
+        "scope" => "following",
+        "from" => Map.new(changes, fn {k, _} -> {to_string(k), Map.get(task, k)} end),
+        "to" => Map.new(changes, fn {k, v} -> {to_string(k), v} end),
+        "count" => n + 1
+      })
+    end
+
+    move_this(fetch!(task.id), attrs, actor)
+  end
+
+  defp move_this(task, attrs, actor) do
+    if Map.has_key?(attrs, "due_on") do
+      BreweryTasks.update_one(task, %{"due_on" => attrs["due_on"]}, actor) |> ok_or_rollback()
+    else
+      task
+    end
+  end
+
+  # "This and all following" with a new rule (S62), as D32's split: the old
+  # series ends the day before this occurrence's `series_date` (or is deleted
+  # when this is its first date); its later open occurrences are removed
+  # (exceptions per `changed`); a new series starts on this `series_date` with
+  # the merged content and rule. A `count` is the whole series' total, so the
+  # new part gets what's left after the old one's earlier dates.
+  #
+  # This occurrence is reused as the new series' first one when the new rule
+  # gives its date, so it keeps its id and History. Otherwise the new rule
+  # doesn't include its date: if open it's removed with the others (History
+  # stays under its id), and the new series' first occurrence is a new task.
+  # A finished occurrence is never changed or removed.
+  defp split(task, series, rule, attrs, actor, opts) do
+    date = task.series_date
+    today = opts[:today] || BreweryTasks.today()
+
+    used =
+      length(Recurrence.dates(%{TaskSeries.rule(series) | skipped_dates: []}, Date.add(date, -1)))
+
+    content =
+      series
+      |> Map.take([:title, :notes, :assignee_id])
+      |> Map.new(fn {k, v} -> {to_string(k), v} end)
+      |> Map.merge(Map.take(attrs, @content_fields))
+
+    new_attrs =
+      content
+      |> Map.merge(rule)
+      |> Map.merge(%{"start_date" => date})
+      |> remaining_count(used)
+
+    new_series =
+      %TaskSeries{
+        department_id: series.department_id,
+        created_by_id: actor.id,
+        skipped_dates: []
+      }
+      |> TaskSeries.changeset(new_attrs)
+      |> BreweryTasks.validate_assignee()
+      |> Repo.insert()
+      |> ok_or_rollback()
+
+    through = Recurrence.rolling_horizon(new_series, today)
+    dates = new_series |> TaskSeries.rule() |> Recurrence.dates(through)
+
+    if dates == [] do
+      new_series
+      |> Changeset.change()
+      |> Changeset.add_error(:repeat, "the repeat pattern has no dates in range")
+      |> Repo.rollback()
+    end
+
+    reuse? = hd(dates) == date and is_nil(task.completed_at)
+
+    # The acted-on occurrence is reused or replaced, never kept as a changed one.
+    {removed, kept} = remove_later(series, date, opts[:changed], [task.id])
+
+    if reuse? do
+      task
+      |> Task.changeset(Map.take(attrs, @content_fields))
+      |> Changeset.change(
+        series_id: new_series.id,
+        series_date: date,
+        series_exception: task.due_on != date
+      )
+      |> Repo.update!()
+    else
+      if is_nil(task.completed_at) do
+        Repo.delete!(task)
+        BreweryTasks.renumber_days(task.department_id, [task.due_on])
+      end
+    end
+
+    end_series_before(series, date)
+    insert_occurrences(new_series, dates)
+    mark_generated(new_series, through)
+
+    first = first_occurrence(new_series)
+
+    log!(
+      first,
+      "edited",
+      actor,
+      %{
+        "scope" => "following",
+        "repeat" => %{"from" => describe(series), "to" => describe(new_series)},
+        "removed" => removed,
+        "kept" => kept
+      }
+      |> Map.merge(if reuse?, do: %{}, else: %{"replaced_task_id" => task.id})
+    )
+
+    if reuse?, do: move_this(first, attrs, actor), else: first
+  end
+
+  defp remaining_count(%{"count" => total} = attrs, used) when is_integer(total) do
+    if total > used do
+      Map.put(attrs, "count", total - used)
+    else
+      %TaskSeries{}
+      |> Changeset.change()
+      |> Changeset.add_error(
+        :count,
+        "the series already has #{used} dates before this one; choose a larger number"
+      )
+      |> Repo.rollback()
+    end
+  end
+
+  defp remaining_count(attrs, _used), do: attrs
+
+  ## Delete and stop
+
+  @doc """
+  Delete an occurrence:
+
+    * `"this"`: its `series_date` goes on the series' `skipped_dates` so it's
+      never made again, and the task goes through the D38 delete, so History
+      has its `deleted` entry (S64).
+    * `"following"`: this occurrence and the later open ones are removed
+      (exceptions per `opts[:changed]`), and the series ends the day before.
+      One `deleted` event, on this occurrence, with the counts.
+    * No scope: `{:error, :scope_required}`.
+  """
+  def delete(task, scope, actor, opts \\ [])
+
+  def delete(%Task{series_id: nil} = task, _scope, %User{} = actor, _opts),
+    do: BreweryTasks.delete_one(task, actor)
+
+  def delete(%Task{} = task, "this", %User{} = actor, _opts) do
+    write_transaction(fn ->
+      task = fetch!(task.id)
+      skip_date!(task.series_id, task.series_date)
+      BreweryTasks.delete_one(task, actor, %{"scope" => "this"}) |> ok_or_rollback()
+    end)
+  end
+
+  def delete(%Task{} = task, "following", %User{} = actor, opts) do
+    write_transaction(fn ->
+      task = fetch!(task.id)
+      series = Repo.get!(TaskSeries, task.series_id)
+      {removed, kept} = remove_later(series, task.series_date, opts[:changed], [task.id])
+      end_series_before(series, task.series_date)
+
+      BreweryTasks.delete_one(task, actor, %{
+        "scope" => "following",
+        "removed" => removed,
+        "kept" => kept
+      })
+      |> ok_or_rollback()
+    end)
+  end
+
+  def delete(%Task{}, _scope, _actor, _opts), do: {:error, :scope_required}
+
+  @doc """
+  Stop repeating after this occurrence (S63): the series ends on its
+  `series_date`, and the later open occurrences are removed (exceptions per
+  `opts[:changed]`). One `stopped_repeating` event with the counts. Returns
+  `{:ok, task}`.
+  """
+  def stop(%Task{} = task, %User{} = actor, opts \\ []) do
+    write_transaction(fn ->
+      task = fetch!(task.id)
+      if is_nil(task.series_id), do: Repo.rollback(:not_recurring)
+      series = Repo.get!(TaskSeries, task.series_id)
+
+      {removed, kept} =
+        remove_later(series, Date.add(task.series_date, 1), opts[:changed], [])
+
+      series |> Changeset.change(until_date: task.series_date, count: nil) |> Repo.update!()
+
+      log!(task, "stopped_repeating", actor, %{
+        "series_date" => Date.to_iso8601(task.series_date),
+        "removed" => removed,
+        "kept" => kept
+      })
+
+      fetch!(task.id)
+    end)
+  end
+
+  @doc """
+  The open occurrences after this one (by `series_date`), for the confirm
+  (Decision 2): `later_open` not changed on their own, `later_changed` that
+  were.
+  """
+  def preview(%Task{series_id: nil}), do: %{later_open: 0, later_changed: 0}
+
+  def preview(%Task{} = task) do
+    counts =
+      Repo.all(
+        from t in Task,
+          where:
+            t.series_id == ^task.series_id and t.series_date > ^task.series_date and
+              is_nil(t.completed_at),
+          group_by: t.series_exception,
+          select: {t.series_exception, count(t.id)}
+      )
+      |> Map.new()
+
+    %{later_open: Map.get(counts, false, 0), later_changed: Map.get(counts, true, 0)}
+  end
+
+  @doc false
+  # Put `date` on the series' skipped dates (a deleted or detached occurrence).
+  def skip_date!(series_id, %Date{} = date) do
+    series = Repo.get!(TaskSeries, series_id)
+    skipped = Enum.uniq([date | series.skipped_dates || []])
+    series |> Changeset.change(skipped_dates: skipped) |> Repo.update!()
+  end
+
+  # Remove the open occurrences with `series_date >= from`, except the `except`
+  # ids (the acted-on one, handled by the caller); exceptions are kept unless
+  # `changed` is `:remove`. Finished ones stay. Returns `{removed, kept}`.
+  defp remove_later(series, from, changed, except) do
+    open =
+      Repo.all(
+        from t in Task,
+          where:
+            t.series_id == ^series.id and t.series_date >= ^from and is_nil(t.completed_at) and
+              t.id not in ^except
+      )
+
+    {changed_ones, plain} = Enum.split_with(open, & &1.series_exception)
+    doomed = if changed == :remove, do: open, else: plain
+    ids = Enum.map(doomed, & &1.id)
+
+    Repo.delete_all(from t in Task, where: t.id in ^ids)
+    BreweryTasks.renumber_days(series.department_id, Enum.map(doomed, & &1.due_on))
+
+    {length(doomed), if(changed == :remove, do: 0, else: length(changed_ones))}
+  end
+
+  # The series ends the day before `date`, or is deleted when `date` is its
+  # start (what's left of it, finished and kept occurrences, become one-offs).
+  defp end_series_before(series, date) do
+    if Date.compare(date, series.start_date) == :gt do
+      series |> Changeset.change(until_date: Date.add(date, -1), count: nil) |> Repo.update!()
+    else
+      Repo.delete!(series)
+    end
   end
 
   ## Occurrences
@@ -254,6 +661,19 @@ defmodule RockcutApi.BreweryTasks.Series do
       title: task.title,
       detail: detail
     })
+  end
+
+  defp fetch!(id), do: Repo.get(Task, id) || Repo.rollback(:not_found)
+
+  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
+
+  defp parse_rule(rule) do
+    rule
+    |> Map.new(fn
+      {k, v} when k in ~w(interval day_of_month week_of_month weekday count) -> {k, int(v)}
+      {"weekdays", v} -> {"weekdays", int_list(v)}
+      {k, v} -> {k, blank_nil(v)}
+    end)
   end
 
   defp ok_or_rollback({:ok, value}), do: value
