@@ -9,7 +9,7 @@ D41 and D40 ship to prod in one release after D40.
 **Plan:** `docs/current_work/planning/d39_brewery_recurring_tasks_plan.md`
 (Decisions 1–6: Matt, 2026-10-12 and 2026-10-13)
 **Branch:** `d39-brewery-recurring-tasks`, cut from `develop` (`2d9624d`).
-**SHA for DEV:** _filled in at push_
+**SHA for DEV:** pass 1 `914aa21`; pass 2 _the push after the DEV QA fixes_
 
 ## What changed
 
@@ -33,6 +33,8 @@ section). S66 (the daily top-up) is ExUnit only; S70–S74 and S76 are also
 | Migration | Change | Reversible |
 |---|---|---|
 | `20261012120001_create_brewery_task_series` | `brewery_task_series` (the rule, `generated_through`, `skipped_dates`) + indexes on `department_id`, `generated_through`; adds `series_id` (FK, nilify), `series_date`, `series_exception` (default false) to `brewery_tasks`; unique `(series_id, series_date)` | Yes (`change`) |
+
+| `20261014120001_add_continues_series_id_to_brewery_task_series` | DEV QA G1: `brewery_task_series.continues_series_id` (FK to itself, nilify) + index; a split records what it continues | Yes (`change`) |
 
 Additive. **Rollback checked** 2026-10-13 on a scratch copy of the local dev
 DB (read-only `VACUUM INTO`, the real DB untouched): `down` dropped the
@@ -79,6 +81,31 @@ one-off and loses the rules.
    the board (S76).
 7. Create a weekly repeat, edit one occurrence "just this one", then Stop
    repeating with the two-button confirm.
+
+## DEV gate
+
+- **Pass 1 (`914aa21`, API v31 / UI v29, 2026-10-13):** the migration ran at
+  boot; the top-up on DEV's clock took the seed series to 2027-10-13 with no
+  duplicate dates. Full Playwright on DEV: **293/293**, no retries.
+- **Independent QA** (`stepwise_results/d39_dev_qa_report.md`): PASS with
+  gaps. All 26 D39 scenarios and the D38 sweep passed (phone ones emulated).
+  - **G1 (must-fix), fixed in `85c33c8`:** after a rule change split a
+    series, "following" actions from an earlier occurrence stopped at the
+    split. A split now records what it continues (`continues_series_id`),
+    and every "following" action and the confirm counts walk the chain.
+    Splits made before the fix have no link (DEV test data only; no
+    backfill).
+  - **G2 (minor), fixed in `fc422e1`:** the last occurrence of a stopped
+    series no longer offers Stop repeating.
+  - Observations moved to D42 (Matt, 2026-10-13): deleting a retired Daily
+    item; Add/Restore enabled at 12 items; the notes-only exemption rule.
+- **Matt's Pixel checks (hardware, DEV, `914aa21`): 7/7 pass:** the
+  vertical view and remembered toggle; drag down two days with auto-scroll
+  (speed good); Unfinished → tomorrow and → between today's first and
+  second; drop on Future; a flick on a card only scrolls; back closes each
+  dialog; a weekly repeat, "Just this one", Stop repeating with two buttons.
+- After the fixes, local: ExUnit, Vitest, `tsc`, build pass; brewery folder
+  134/134.
 
 ## Local gate
 
