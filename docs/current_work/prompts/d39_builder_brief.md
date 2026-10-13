@@ -299,3 +299,93 @@ than one commit is fine).
 - any `LEAD:` question.
 
 Then stop.
+
+## Task 4: plan step 4, controller, routes, errors, scanner and seed
+
+Task 3 was reviewed and accepted (`61ae1cc`).
+
+**Answers:**
+1. **A day-only edit with no `scope`** going through as "this": yes, keep
+   it.
+2. **Repeat Never with "following"** refused with "to end the repeats, use
+   Stop repeating": yes. In step 5 the dialog won't offer Never on an
+   occurrence, as D32's dialog disables "Does not repeat" in a series.
+3. **Repeat params with "this"** ignored: yes, as D32 does.
+4. **Duplicates after a split with `changed: :keep`:** fix it. The new
+   series must not make an occurrence on a date where a kept occurrence
+   from the old series is (its current `due_on`). Put those dates on the
+   new series' `skipped_dates` when it's created, so `top_up` never fills
+   them either.
+   - Add a test: weekly Wed, edit one future Wed "just this one" (title),
+     then split from an earlier date to weekly Wed + Fri with keep. That
+     Wed has one task, the kept one, and the Fridays are new.
+   - The same for a kept occurrence that was moved onto a day the new rule
+     produces.
+   - The lead decided this; it'll be reported to Matt.
+
+Then build plan "Order of work" step 4 ("Changes → API" → Controller, the
+board JSON, Errors, Scanner, Seed):
+
+1. **Controller and router** (`BreweryTaskController`, the people-only
+   `/api/brewery` scope):
+   - `POST /tasks` passes the `repeat*` params through;
+   - `PATCH /tasks/:id` and `DELETE /tasks/:id` take `scope` and `changed`
+     (`keep` | `remove`) as query or body params;
+   - `GET /tasks/:id/series` returns the rule (the spec's fields, as the
+     dialog needs them), `later_open` and `later_changed`;
+   - `POST /tasks/:id/stop_repeating` takes `changed`.
+
+   Every new route goes in the route matrix test (`device_route_matrix_test`:
+   people only) and gets the same `Authz` checks as the D38 task routes.
+2. **The board JSON:** each card has `series_id`. The task JSON the dialog
+   uses (from the board or `GET`) has `series_id`, `series_date` and
+   `series_exception`.
+3. **Errors** (`brewery_errors.ex`), in D38's style:
+   - `repeat_needs_day` → 422 "Pick a day to repeat";
+   - `scope_required` → 422;
+   - a changeset `repeat` error → 422 with its message;
+   - `not_in_series` for `/series` and `/stop_repeating` on a one-off task
+     → 422.
+4. **Scanner:** `Reminders.Scheduler`'s tick also calls
+   `BreweryTasks.Series.top_up(BreweryTasks.today())`, in its own
+   `try/rescue` so a failure doesn't stop the reminders, or the reverse.
+   Keep the scheduler disabled in `:test` as it is. Test `top_up` through
+   the function, not the GenServer.
+5. **Seed** (`seeds/synthetic.ex`, through the context, not raw inserts):
+   - `[SEED] Keg Wash`: weekly on Wednesday, starting the first Wednesday
+     on or after 14 days ago, so some are in the past (a couple open past
+     ones show on Unfinished);
+   - `[SEED] Glycol check`: monthly, last Friday;
+   - `[SEED] Calibrate pH meter`: quarterly, day 15.
+
+   `reset` deletes `[SEED]` series and their tasks. `cleanup_temp`
+   deletes `[TEST-TEMP]` series and their tasks. Extend the seed's tests,
+   and keep the Sunday 7 pm MDT pinned case green.
+6. **Controller tests:**
+   - the new params and routes, as `brewer1`, `breweryMgr` and `owner`;
+   - `bartender1` and a device get 403;
+   - `scope_required`, `repeat_needs_day` and `not_in_series`;
+   - `/series` counts;
+   - stop with `changed=remove`;
+   - the board JSON has `series_id`.
+
+**Done when** the full `MIX_ENV=test mix test` is green.
+
+Then check by hand against the local server:
+- run `mix rockcut.synthetic.setup` (it doesn't touch the running server);
+- `curl` the board for a 31-day range with a minted `brewer1` token
+  (`mix rockcut.synthetic.token brewer1`);
+- confirm the three `[SEED]` series show with `series_id`;
+- report the response time.
+
+If the API isn't running, ask the lead.
+
+Commit as `feat: D39 recurring task API, scanner top-up and seed`.
+
+**Reply with:**
+- the counts;
+- the SHA;
+- the curl check;
+- any `LEAD:` question.
+
+Then stop.
