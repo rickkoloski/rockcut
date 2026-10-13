@@ -300,10 +300,12 @@ defmodule RockcutApi.BreweryTasks.SeriesEditsTest do
              ]
 
       new = Repo.get!(TaskSeries, first.series_id)
-      assert {new.start_date, new.count, new.frequency} == {~D[2026-10-28], 8, "monthly"}
+      # R1: the 8 left are stored as the date of the last one.
+      assert {new.start_date, new.until_date, new.count, new.frequency} ==
+               {~D[2026-10-28], ~D[2027-06-02], nil, "monthly"}
 
       old = Repo.get!(TaskSeries, old_id)
-      assert {old.until_date, old.count} == {~D[2026-10-27], nil}
+      assert {old.until_date, old.count, old.internal_end} == {~D[2026-10-27], nil, true}
 
       # Earlier and finished occurrences stay in the old series, unchanged.
       assert Enum.map(series_tasks(old_id), & &1.due_on) == [~D[2026-10-14], ~D[2026-10-21]]
@@ -902,5 +904,176 @@ defmodule RockcutApi.BreweryTasks.SeriesEditsTest do
       refute Repo.get(TaskSeries, b.series_id)
       refute Repo.get(TaskSeries, c.series_id)
     end
+  end
+
+  describe "the chain's ends: a rule change from before a split (R1)" do
+    @fridays %{repeat: "weekly", repeat_interval: 1, repeat_weekdays: [5]}
+
+    # QA's setup: weekly Wed from 10/14; at 12/2 a rule change to monthly on
+    # the 1st Wednesday, "following", keep. A ends 12/1 (internal), B is open.
+    defp split_at_dec2!(ctx) do
+      w0 = keg_wash!(ctx.brewer)
+
+      {:ok, b} =
+        BreweryTasks.update(
+          week(w0, 7),
+          @monthly_first_wed,
+          ctx.brewer,
+          scope: "following",
+          today: @today
+        )
+
+      {w0, b}
+    end
+
+    defp fridays_from_nov4!(ctx, w0, ends) do
+      BreweryTasks.update(week(w0, 3), Map.merge(@fridays, ends), ctx.brewer,
+        scope: "following",
+        today: @today,
+        changed: :keep
+      )
+    end
+
+    test "QA repro: Ends left alone keeps the chain's end (never); the Fridays don't stop at 12/1",
+         ctx do
+      {w0, b} = split_at_dec2!(ctx)
+      a = series(w0)
+      assert {a.until_date, a.internal_end} == {~D[2026-12-01], true}
+      assert Series.chain_ends(a) == {nil, nil}
+
+      # The confirm counts B's occurrences too.
+      assert %{later_open: later} = Series.preview(week(w0, 3))
+      assert later == 3 + length(series_tasks(b.series_id))
+
+      assert {:ok, fri} = fridays_from_nov4!(ctx, w0, %{})
+      new = series(fri)
+      assert {new.until_date, new.count, new.internal_end} == {nil, nil, false}
+      # Six months out, and on to the horizon.
+      assert on(new.id, ~D[2027-05-07])
+      assert List.last(series_tasks(new.id)).series_date == ~D[2027-10-08]
+      # A now ends 11/3 for the split; B had nothing kept and is gone.
+      assert {series(w0).until_date, series(w0).internal_end} == {~D[2026-11-03], true}
+      refute Repo.get(TaskSeries, b.series_id)
+
+      assert [%Event{detail: detail} | _] = Enum.reverse(events("edited"))
+      refute Map.has_key?(detail["repeat"]["from"], "until")
+    end
+
+    test "Ends = Never (blanks) is never; Ends = a date is that date", ctx do
+      {w0, _b} = split_at_dec2!(ctx)
+      assert {:ok, fri} = fridays_from_nov4!(ctx, w0, %{repeat_until: "", repeat_count: ""})
+      assert {series(fri).until_date, series(fri).count} == {nil, nil}
+
+      {w0, _b} = split_at_dec2!(ctx)
+      assert {:ok, fri} = fridays_from_nov4!(ctx, w0, %{repeat_until: "2027-01-29"})
+      assert {series(fri).until_date, series(fri).count} == {~D[2027-01-29], nil}
+      assert List.last(series_tasks(fri.series_id)).series_date == ~D[2027-01-29]
+    end
+
+    test "an end param alone replaces both ends", ctx do
+      w0 = keg_wash!(ctx.brewer, %{repeat_count: 30})
+
+      assert {:ok, fri} =
+               BreweryTasks.update(
+                 week(w0, 2),
+                 Map.put(@fridays, :repeat_until, "2027-02-26"),
+                 ctx.brewer,
+                 scope: "following",
+                 today: @today
+               )
+
+      assert {series(fri).until_date, series(fri).count} == {~D[2027-02-26], nil}
+    end
+
+    test "the dialog's rule for an old-part occurrence has the chain's ends", ctx do
+      {w0, b} = split_at_dec2!(ctx)
+      assert {:ok, {rule, _}} = Series.info(week(w0, 3))
+      assert {rule.until_date, rule.count} == {nil, nil}
+      # The real series still stops its top-up at 12/1.
+      assert series(w0).until_date == ~D[2026-12-01]
+
+      # The person's end, set later on B (Stop repeating on 1/6), shows from A.
+      {:ok, _} = Series.stop(on(b.series_id, ~D[2027-01-06]), ctx.brewer)
+      assert {:ok, {rule, _}} = Series.info(week(w0, 3))
+      assert {rule.until_date, rule.count} == {~D[2027-01-06], nil}
+      assert Series.chain_ends(series(w0)) == {~D[2027-01-06], nil}
+
+      # Delete "following" from B's first date: B goes, and A's 12/1 is now
+      # the task's real end.
+      {w0, b} = split_at_dec2!(ctx)
+
+      {:ok, :deleted} =
+        BreweryTasks.delete(on(b.series_id, ~D[2026-12-02]), ctx.brewer, scope: "following")
+
+      refute Repo.get(TaskSeries, b.series_id)
+      assert {series(w0).until_date, series(w0).internal_end} == {~D[2026-12-01], false}
+      assert Series.chain_ends(series(w0)) == {~D[2026-12-01], nil}
+    end
+
+    test "a count-ended series, split, then edited from before: the chain still ends after 10",
+         ctx do
+      # 10 times: Wednesdays 10/14 … 12/16.
+      w0 = keg_wash!(ctx.brewer, %{repeat_count: 10})
+
+      # At 11/18 (5 used) to Fridays, Ends left alone: 5 more, 11/20 … 12/18,
+      # stored as that date.
+      assert {:ok, fri} =
+               BreweryTasks.update(week(w0, 5), @fridays, ctx.brewer,
+                 scope: "following",
+                 today: @today
+               )
+
+      f = series(fri)
+      assert {f.until_date, f.count} == {~D[2026-12-18], nil}
+      assert length(series_tasks(f.id)) == 5
+      assert {:ok, {rule, _}} = Series.info(week(w0, 1))
+      assert {rule.until_date, rule.count} == {~D[2026-12-18], nil}
+
+      # From 10/21 to Thursdays, Ends left alone: through 12/18 still.
+      assert {:ok, thu} =
+               BreweryTasks.update(week(w0, 1), %{@fridays | repeat_weekdays: [4]}, ctx.brewer,
+                 scope: "following",
+                 today: @today
+               )
+
+      t = series(thu)
+      assert {t.until_date, t.count} == {~D[2026-12-18], nil}
+      assert List.last(series_tasks(t.id)).series_date == ~D[2026-12-17]
+      assert open_after(w0.series_id, ~D[2026-12-18]) == []
+    end
+
+    test "\"after N times\" given on a later part counts from the chain's first", ctx do
+      w0 = keg_wash!(ctx.brewer)
+      # Fridays from 11/18: A has 5 (10/14 … 11/11).
+      {:ok, fri} =
+        BreweryTasks.update(week(w0, 5), @fridays, ctx.brewer, scope: "following", today: @today)
+
+      # From 11/27 (1 Friday before it, 6 in all) to Thursdays, 10 times: 4 more.
+      nov27 = on(fri.series_id, ~D[2026-11-27])
+
+      assert {:ok, thu} =
+               BreweryTasks.update(
+                 nov27,
+                 %{@fridays | repeat_weekdays: [4]} |> Map.put(:repeat_count, 10),
+                 ctx.brewer,
+                 scope: "following",
+                 today: @today
+               )
+
+      assert Enum.map(series_tasks(thu.series_id), & &1.series_date) ==
+               [~D[2026-12-03], ~D[2026-12-10], ~D[2026-12-17], ~D[2026-12-24]]
+
+      assert {series(thu).until_date, series(thu).count} == {~D[2026-12-24], nil}
+    end
+  end
+
+  # Open occurrences after `date`, in the series and every part continuing it.
+  defp open_after(series_id, date) do
+    ids = [series_id | Series.chain_ids(series_id)]
+
+    Repo.all(
+      from t in Task,
+        where: t.series_id in ^ids and t.series_date > ^date and is_nil(t.completed_at)
+    )
   end
 end

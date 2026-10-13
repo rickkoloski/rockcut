@@ -35,6 +35,9 @@ defmodule RockcutApi.BreweryTasks.TaskSeries do
     field :count, :integer
     field :generated_through, :date
     field :skipped_dates, {:array, :date}, default: []
+    # R1: `until_date` only stops the top-up (a split's old part, or a part
+    # left with kept occurrences); the person's "Ends" is the chain's.
+    field :internal_end, :boolean, default: false
 
     belongs_to :department, RockcutApi.Accounts.Department
     belongs_to :assignee, RockcutApi.Accounts.User

@@ -306,4 +306,26 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
     assert hd(keg)["series_date"] == iso
     assert Enum.all?(keg, &(&1["series_exception"] == false))
   end
+
+  test "R1: /series for an occurrence before a split has the chain's ends, not the split's", %{
+    p: p,
+    today: today
+  } do
+    user = p["brewer1"]
+    first = weekly!(user, today)
+    split = week(first, today, 6)
+
+    assert call(user, :patch, path(split) <> "?scope=following", %{
+             repeat: "weekly",
+             repeat_interval: 2,
+             repeat_weekdays: [Date.day_of_week(today)]
+           }).status == 200
+
+    assert Repo.get!(TaskSeries, first["series_id"]).until_date == Date.add(split.series_date, -1)
+
+    assert %{"until_date" => nil, "count" => nil} =
+             call(user, :get, path(week(first, today, 2)) <> "/series")
+             |> json_response(200)
+             |> Map.get("data")
+  end
 end
