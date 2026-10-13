@@ -26,6 +26,8 @@ defmodule RockcutApi.BreweryTasks.Task do
     field :completed_display, :string
     field :series_date, :date
     field :series_exception, :boolean, default: false
+    # G2: set by the board on the occurrence that ends its chain (`Series.mark_last/1`).
+    field :series_last, :boolean, virtual: true, default: false
 
     belongs_to :department, RockcutApi.Accounts.Department
     belongs_to :assignee, RockcutApi.Accounts.User

@@ -39,6 +39,8 @@ defmodule RockcutApi.BreweryTasks.TaskSeries do
     belongs_to :department, RockcutApi.Accounts.Department
     belongs_to :assignee, RockcutApi.Accounts.User
     belongs_to :created_by, RockcutApi.Accounts.User
+    # G1: the series this one was split off (a rule change, "following").
+    belongs_to :continues_series, __MODULE__
     has_many :tasks, Task, foreign_key: :series_id
 
     timestamps(type: :utc_datetime)

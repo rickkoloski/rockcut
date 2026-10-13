@@ -189,6 +189,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       series_id: t.series_id,
       series_date: t.series_date,
       series_exception: t.series_exception,
+      series_last: t.series_last,
       inserted_at: t.inserted_at,
       updated_at: t.updated_at
     }

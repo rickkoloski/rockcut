@@ -26,6 +26,14 @@ defmodule RockcutApi.BreweryTasks.Series do
   occurrence and makes it an exception; onto the Future list it makes it a
   one-off (`BreweryTasks` moves). One History event per series action
   (Decision 3).
+
+  **The chain (G1).** To the person a split series is still one ↻ task: the
+  new series records the one it continues (`continues_series_id`). Every
+  "following" action, and `preview/1`, covers the acted-on series from the
+  occurrence's date **and every series that continues it**, transitively
+  (`continuations/1`). After an action, each continuing series with nothing
+  left is deleted; one with finished or kept occurrences ends on its last one
+  and continues the action's head (`settle/2`).
   """
   import Ecto.Query, only: [from: 2]
 
@@ -357,13 +365,16 @@ defmodule RockcutApi.BreweryTasks.Series do
 
     if not this_cs.valid?, do: Repo.rollback(this_cs)
 
-    series =
-      series
-      |> TaskSeries.changeset(content)
-      |> BreweryTasks.validate_assignee()
-      |> Repo.update()
-      |> ok_or_rollback()
+    chain =
+      Enum.map([series | continuations(series)], fn s ->
+        s
+        |> TaskSeries.changeset(content)
+        |> BreweryTasks.validate_assignee()
+        |> Repo.update()
+        |> ok_or_rollback()
+      end)
 
+    ids = Enum.map(chain, & &1.id)
     changes = Map.take(this_cs.changes, [:title, :notes, :assignee_id])
 
     if changes != %{} do
@@ -373,7 +384,7 @@ defmodule RockcutApi.BreweryTasks.Series do
         Repo.update_all(
           from(t in Task,
             where:
-              t.series_id == ^series.id and t.series_date >= ^task.series_date and
+              t.series_id in ^ids and t.series_date >= ^task.series_date and
                 t.id != ^task.id and is_nil(t.completed_at) and not t.series_exception
           ),
           set: Keyword.new(changes) ++ [updated_at: now()]
@@ -453,7 +464,8 @@ defmodule RockcutApi.BreweryTasks.Series do
     reuse? = hd(dates) == date and is_nil(task.completed_at)
 
     # The acted-on occurrence is reused or replaced, never kept as a changed one.
-    {removed, kept} = remove_later(series, date, opts[:changed], [task.id])
+    continuing = continuations(series)
+    {removed, kept} = remove_chain(series, continuing, date, opts[:changed], [task.id])
 
     if reuse? do
       task
@@ -471,8 +483,14 @@ defmodule RockcutApi.BreweryTasks.Series do
       end
     end
 
-    {new_series, dates} = skip_kept_days(new_series, series, date, through, dates, reuse?)
-    end_series_before(series, date)
+    chain_ids = [series.id | Enum.map(continuing, & &1.id)]
+    {new_series, dates} = skip_kept_days(new_series, chain_ids, date, through, dates, reuse?)
+    head = series |> end_series_before(date) |> head_id(series)
+
+    new_series =
+      new_series |> Changeset.change(continues_series_id: head) |> Repo.update!()
+
+    settle(continuing, new_series.id)
     insert_occurrences(new_series, dates)
     mark_generated(new_series, through)
 
@@ -494,15 +512,14 @@ defmodule RockcutApi.BreweryTasks.Series do
     if reuse?, do: move_this(first, attrs, actor), else: first
   end
 
-  # The old series' occurrences that stay from `date` on (kept exceptions and
+  # The chain's occurrences that stay from `date` on (kept exceptions and
   # finished ones) already hold their days: the new series skips those days
   # (their current `due_on`), now and in every top-up, so no day shows two.
-  defp skip_kept_days(new_series, old_series, date, through, dates, reuse?) do
+  defp skip_kept_days(new_series, chain_ids, date, through, dates, reuse?) do
     days =
       Repo.all(
         from t in Task,
-          where:
-            t.series_id == ^old_series.id and t.series_date >= ^date and not is_nil(t.due_on),
+          where: t.series_id in ^chain_ids and t.series_date >= ^date and not is_nil(t.due_on),
           select: t.due_on
       )
       |> Enum.uniq()
@@ -550,8 +567,9 @@ defmodule RockcutApi.BreweryTasks.Series do
     * `"this"`: its `series_date` goes on the series' `skipped_dates` so it's
       never made again, and the task goes through the D38 delete, so History
       has its `deleted` entry (S64).
-    * `"following"`: this occurrence and the later open ones are removed
-      (exceptions per `opts[:changed]`), and the series ends the day before.
+    * `"following"`: this occurrence and the later open ones, through the
+      chain, are removed (exceptions per `opts[:changed]`), and the series
+      ends the day before.
       One `deleted` event, on this occurrence, with the counts.
     * No scope: `{:error, :scope_required}`.
   """
@@ -572,8 +590,13 @@ defmodule RockcutApi.BreweryTasks.Series do
     write_transaction(fn ->
       task = fetch!(task.id)
       series = Repo.get!(TaskSeries, task.series_id)
-      {removed, kept} = remove_later(series, task.series_date, opts[:changed], [task.id])
-      end_series_before(series, task.series_date)
+      continuing = continuations(series)
+
+      {removed, kept} =
+        remove_chain(series, continuing, task.series_date, opts[:changed], [task.id])
+
+      head = series |> end_series_before(task.series_date) |> head_id(series)
+      settle(continuing, head)
 
       BreweryTasks.delete_one(task, actor, %{
         "scope" => "following",
@@ -588,8 +611,8 @@ defmodule RockcutApi.BreweryTasks.Series do
 
   @doc """
   Stop repeating after this occurrence (S63): the series ends on its
-  `series_date`, and the later open occurrences are removed (exceptions per
-  `opts[:changed]`). One `stopped_repeating` event with the counts. Returns
+  `series_date`, and the later open occurrences, through the chain, are
+  removed (exceptions per `opts[:changed]`). One `stopped_repeating` event with the counts. Returns
   `{:ok, task}`.
   """
   def stop(%Task{} = task, %User{} = actor, opts \\ []) do
@@ -597,11 +620,13 @@ defmodule RockcutApi.BreweryTasks.Series do
       task = fetch!(task.id)
       if is_nil(task.series_id), do: Repo.rollback(:not_in_series)
       series = Repo.get!(TaskSeries, task.series_id)
+      continuing = continuations(series)
 
       {removed, kept} =
-        remove_later(series, Date.add(task.series_date, 1), opts[:changed], [])
+        remove_chain(series, continuing, Date.add(task.series_date, 1), opts[:changed], [])
 
       series |> Changeset.change(until_date: task.series_date, count: nil) |> Repo.update!()
+      settle(continuing, series.id)
 
       log!(task, "stopped_repeating", actor, %{
         "series_date" => Date.to_iso8601(task.series_date),
@@ -614,18 +639,20 @@ defmodule RockcutApi.BreweryTasks.Series do
   end
 
   @doc """
-  The open occurrences after this one (by `series_date`), for the confirm
-  (Decision 2): `later_open` not changed on their own, `later_changed` that
-  were.
+  The open occurrences after this one (by `series_date`) through the chain,
+  for the confirm (Decision 2): `later_open` not changed on their own,
+  `later_changed` that were.
   """
   def preview(%Task{series_id: nil}), do: %{later_open: 0, later_changed: 0}
 
-  def preview(%Task{} = task) do
+  def preview(%Task{series_id: id} = task) do
+    ids = [id | chain_ids(id)]
+
     counts =
       Repo.all(
         from t in Task,
           where:
-            t.series_id == ^task.series_id and t.series_date > ^task.series_date and
+            t.series_id in ^ids and t.series_date > ^task.series_date and
               is_nil(t.completed_at),
           group_by: t.series_exception,
           select: {t.series_exception, count(t.id)}
@@ -633,6 +660,41 @@ defmodule RockcutApi.BreweryTasks.Series do
       |> Map.new()
 
     %{later_open: Map.get(counts, false, 0), later_changed: Map.get(counts, true, 0)}
+  end
+
+  @doc """
+  Mark the occurrences that end their chain (G2), for the board: the series
+  has ended on or before the occurrence (`until_date`) and nothing open comes
+  after it in the chain, so Stop repeating would do nothing. One query for the
+  series; the chain is looked at only for the ones that ended.
+  """
+  def mark_last(tasks) do
+    ids = tasks |> Enum.map(& &1.series_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
+
+    untils =
+      Repo.all(
+        from s in TaskSeries,
+          where: s.id in ^ids and not is_nil(s.until_date),
+          select: {s.id, s.until_date}
+      )
+      |> Map.new()
+
+    Enum.map(tasks, fn t ->
+      until = if t.series_id, do: untils[t.series_id]
+
+      if until != nil and Date.compare(until, t.series_date) != :gt and not open_later?(t),
+        do: %{t | series_last: true},
+        else: t
+    end)
+  end
+
+  defp open_later?(%Task{series_id: id, series_date: date}) do
+    ids = [id | chain_ids(id)]
+
+    Repo.exists?(
+      from t in Task,
+        where: t.series_id in ^ids and t.series_date > ^date and is_nil(t.completed_at)
+    )
   end
 
   @doc """
@@ -687,9 +749,67 @@ defmodule RockcutApi.BreweryTasks.Series do
 
     if before != [] do
       series |> Changeset.change(until_date: Date.add(date, -1), count: nil) |> Repo.update!()
+      :ended
     else
       Repo.delete!(series)
+      :deleted
     end
+  end
+
+  # What the survivors continue: the acted-on series, or what it continued
+  # when it was deleted.
+  defp head_id(:ended, series), do: series.id
+  defp head_id(:deleted, series), do: series.continues_series_id
+
+  @doc """
+  The ids of every series that continues series `id` (G1), transitively:
+  the series split off it by a "following" rule change, and theirs.
+  """
+  def chain_ids(id), do: %TaskSeries{id: id} |> continuations() |> Enum.map(& &1.id)
+
+  # The continuing series, oldest start first. One query per generation.
+  defp continuations(%TaskSeries{id: id}), do: continuations([id], MapSet.new([id]), [])
+
+  defp continuations([], _seen, acc), do: Enum.sort_by(acc, & &1.start_date, Date)
+
+  defp continuations(ids, seen, acc) do
+    next =
+      Repo.all(from s in TaskSeries, where: s.continues_series_id in ^ids)
+      |> Enum.reject(&MapSet.member?(seen, &1.id))
+
+    continuations(
+      Enum.map(next, & &1.id),
+      Enum.reduce(next, seen, &MapSet.put(&2, &1.id)),
+      acc ++ next
+    )
+  end
+
+  # `remove_later/4` over the acted-on series and its continuations; the
+  # counts are the whole chain's.
+  defp remove_chain(series, continuing, from, changed, except) do
+    Enum.reduce([series | continuing], {0, 0}, fn s, {removed, kept} ->
+      {r, k} = remove_later(s, from, changed, except)
+      {removed + r, kept + k}
+    end)
+  end
+
+  # After an action over the chain: a continuing series with nothing left is
+  # deleted; one with finished or kept occurrences ends on its last one (so
+  # the top-up never fills it again) and continues `head`.
+  defp settle(continuing, head) do
+    for s <- continuing do
+      last = Repo.one(from t in Task, where: t.series_id == ^s.id, select: max(t.series_date))
+
+      if last do
+        s
+        |> Changeset.change(until_date: last, count: nil, continues_series_id: head)
+        |> Repo.update!()
+      else
+        Repo.delete!(s)
+      end
+    end
+
+    :ok
   end
 
   ## Occurrences

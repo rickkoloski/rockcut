@@ -711,4 +711,196 @@ defmodule RockcutApi.BreweryTasks.SeriesEditsTest do
       assert Repo.aggregate(TaskSeries, :count) == 0
     end
   end
+
+  describe "the chain: \"following\" from before a split (G1)" do
+    @monthly_first_wed %{
+      repeat: "monthly",
+      repeat_interval: 1,
+      repeat_month_rule: "weekday",
+      repeat_week_of_month: 1,
+      repeat_weekday: 3
+    }
+
+    # QA's setup: weekly Wed from 10/14; 11/4 assigned to Riley "following";
+    # 12/2 split to monthly on the 1st Wednesday, "following". Returns the
+    # first occurrence and the split's new series id.
+    defp qa_chain!(ctx, changed \\ :keep) do
+      w0 = keg_wash!(ctx.brewer)
+      following = [scope: "following", today: @today, changed: changed]
+
+      {:ok, _} =
+        BreweryTasks.update(week(w0, 3), %{assignee_id: ctx.brewer2.id}, ctx.brewer, following)
+
+      {:ok, split} = BreweryTasks.update(week(w0, 7), @monthly_first_wed, ctx.brewer, following)
+      {w0, split.series_id}
+    end
+
+    defp open_from(ids, date) do
+      Repo.all(
+        from t in Task,
+          where: t.series_id in ^ids and t.series_date >= ^date and is_nil(t.completed_at),
+          order_by: t.series_date
+      )
+    end
+
+    test "QA repro: an assign \"following\" from 10/28 reaches 12/2, 1/6 and the rest", ctx do
+      jake = user_with_role("employee", "brewery", %{name: "Jake Brewer"})
+      {w0, new_id} = qa_chain!(ctx)
+      assert Repo.get!(TaskSeries, new_id).continues_series_id == w0.series_id
+      w2 = week(w0, 2)
+
+      assert %{later_open: later, later_changed: 0} = Series.preview(w2)
+      chain = open_from([w0.series_id, new_id], ~D[2026-10-28])
+      assert later == length(chain) - 1
+      assert Enum.any?(chain, &(&1.series_date == ~D[2027-01-06]))
+
+      assert {:ok, _} =
+               BreweryTasks.update(w2, %{assignee_id: jake.id}, ctx.brewer,
+                 scope: "following",
+                 today: @today
+               )
+
+      assert Enum.map(open_from([w0.series_id, new_id], ~D[2026-10-28]), & &1.assignee_id) ==
+               List.duplicate(jake.id, length(chain))
+
+      assert Repo.get!(TaskSeries, new_id).assignee_id == jake.id
+      assert reload(w0).assignee_id == nil
+      assert %Event{detail: %{"count" => count}} = List.last(events("edited"))
+      assert count == length(chain)
+
+      # The top-up makes the next monthly one for Jake.
+      assert {:ok, 1} = Series.top_up(~D[2026-11-14])
+      assert on(new_id, ~D[2027-11-03]).assignee_id == jake.id
+    end
+
+    test "a rule change from before a split: keep leaves the kept one in its ended series", ctx do
+      {w0, new_id} = qa_chain!(ctx)
+      jan = on(new_id, ~D[2027-01-06])
+      {:ok, _} = BreweryTasks.update(jan, %{notes: "Own"}, ctx.brewer, scope: "this")
+      w2 = week(w0, 2)
+      assert %{later_changed: 1} = Series.preview(w2)
+
+      assert {:ok, first} =
+               BreweryTasks.update(w2, %{repeat_weekdays: [4]}, ctx.brewer,
+                 scope: "following",
+                 changed: :keep,
+                 today: @today
+               )
+
+      assert first.due_on == ~D[2026-10-29]
+      assert open_from([new_id], @today) == [reload(jan)]
+      monthly = Repo.get!(TaskSeries, new_id)
+
+      assert {monthly.until_date, monthly.continues_series_id} ==
+               {~D[2027-01-06], first.series_id}
+
+      assert Repo.get!(TaskSeries, first.series_id).continues_series_id == w0.series_id
+
+      assert [%Event{detail: %{"kept" => 1, "removed" => removed}} | _] =
+               Enum.reverse(events("edited"))
+
+      assert removed > 10
+      # No top-up refills the ended monthly series.
+      assert {:ok, _} = Series.top_up(Date.add(@today, 60))
+      assert open_from([new_id], @today) == [reload(jan)]
+      # And the kept one is still reached from the start.
+      assert %{later_changed: 1} = Series.preview(w0)
+    end
+
+    test "a rule change from before a split: remove deletes the emptied series", ctx do
+      {w0, new_id} = qa_chain!(ctx)
+
+      {:ok, _} =
+        BreweryTasks.update(on(new_id, ~D[2027-01-06]), %{notes: "Own"}, ctx.brewer,
+          scope: "this"
+        )
+
+      assert {:ok, first} =
+               BreweryTasks.update(week(w0, 2), %{repeat_weekdays: [4]}, ctx.brewer,
+                 scope: "following",
+                 changed: :remove,
+                 today: @today
+               )
+
+      refute Repo.get(TaskSeries, new_id)
+      refute on(first.series_id, ~D[2027-01-06])
+      assert Repo.all(from t in Task, where: t.due_on == ^~D[2027-01-06]) == []
+    end
+
+    test "delete \"following\" from before a split, keep and remove", ctx do
+      {w0, new_id} = qa_chain!(ctx)
+      jan = on(new_id, ~D[2027-01-06])
+      {:ok, _} = BreweryTasks.update(jan, %{notes: "Own"}, ctx.brewer, scope: "this")
+
+      assert {:ok, _} =
+               BreweryTasks.delete(week(w0, 2), ctx.brewer, scope: "following", changed: :keep)
+
+      assert open_from([w0.series_id, new_id], ~D[2026-10-28]) == [reload(jan)]
+      assert Repo.get!(TaskSeries, w0.series_id).until_date == ~D[2026-10-27]
+      assert Repo.get!(TaskSeries, new_id).continues_series_id == w0.series_id
+      assert [%Event{detail: %{"kept" => 1}}] = events("deleted")
+
+      assert {:ok, _} =
+               BreweryTasks.delete(week(w0, 1), ctx.brewer, scope: "following", changed: :remove)
+
+      refute Repo.get(Task, jan.id)
+      refute Repo.get(TaskSeries, new_id)
+    end
+
+    test "Stop repeating from before a split, keep and remove; then it's the last", ctx do
+      {w0, new_id} = qa_chain!(ctx)
+      jan = on(new_id, ~D[2027-01-06])
+      {:ok, _} = BreweryTasks.update(jan, %{notes: "Own"}, ctx.brewer, scope: "this")
+      w2 = week(w0, 2)
+      %{later_open: later} = Series.preview(w2)
+
+      assert {:ok, _} = Series.stop(w2, ctx.brewer, changed: :keep)
+      assert open_from([w0.series_id, new_id], ~D[2026-10-29]) == [reload(jan)]
+      assert [%Event{detail: %{"removed" => ^later, "kept" => 1}}] = events("stopped_repeating")
+
+      {:ok, board} = BreweryTasks.board(~D[2026-10-26], ~D[2026-10-30], @today)
+      [card] = for d <- board.days, c <- d.cards, c.task.id == w2.id, do: c
+      refute card.task.series_last
+
+      assert {:ok, _} = Series.stop(w2, ctx.brewer, changed: :remove)
+      refute Repo.get(TaskSeries, new_id)
+
+      {:ok, board} = BreweryTasks.board(~D[2026-10-26], ~D[2026-10-30], @today)
+      [card] = for d <- board.days, c <- d.cards, c.task.id == w2.id, do: c
+      assert card.task.series_last
+    end
+
+    test "a chain of two splits: preview, an edit and Stop from the start reach both", ctx do
+      w0 = keg_wash!(ctx.brewer)
+      following = [scope: "following", today: @today]
+
+      {:ok, b} =
+        BreweryTasks.update(week(w0, 3), %{repeat_interval: 2}, ctx.brewer, following)
+
+      {:ok, c} =
+        BreweryTasks.update(
+          on(b.series_id, ~D[2026-12-02]),
+          @monthly_first_wed,
+          ctx.brewer,
+          following
+        )
+
+      assert Repo.get!(TaskSeries, c.series_id).continues_series_id == b.series_id
+      assert Series.chain_ids(w0.series_id) == [b.series_id, c.series_id]
+
+      ids = [w0.series_id, b.series_id, c.series_id]
+      all = open_from(ids, Date.add(@today, 1))
+      assert %{later_open: later} = Series.preview(w0)
+      assert later == length(all)
+      assert Enum.any?(all, &(&1.series_id == c.series_id))
+
+      {:ok, _} = BreweryTasks.update(w0, %{title: "Keg Wash all"}, ctx.brewer, following)
+      assert Enum.all?(open_from(ids, @today), &(&1.title == "Keg Wash all"))
+
+      assert {:ok, _} = Series.stop(w0, ctx.brewer)
+      assert open_from(ids, Date.add(@today, 1)) == []
+      refute Repo.get(TaskSeries, b.series_id)
+      refute Repo.get(TaskSeries, c.series_id)
+    end
+  end
 end

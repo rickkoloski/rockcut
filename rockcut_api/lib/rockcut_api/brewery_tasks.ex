@@ -71,7 +71,7 @@ defmodule RockcutApi.BreweryTasks do
     else
       dept = department!()
       days = Date.range(from, to) |> Enum.to_list()
-      tasks = board_tasks(dept.id, from, to, today)
+      tasks = dept.id |> board_tasks(from, to, today) |> Series.mark_last()
       cards = Placement.cards(tasks, days, today)
       headers = headers(dept.id, days)
       daily = daily_cards(days, today)
