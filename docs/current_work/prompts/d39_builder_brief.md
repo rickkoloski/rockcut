@@ -765,3 +765,62 @@ note; the lead writes it.
 
 **Reply with:** the counts per check, the full Playwright total and any
 failures (with your flaky/real call), the SHAs. Then stop.
+
+## Task 11: DEV QA fixes, G1 and G2
+
+The DEV gate is under way at `914aa21` (DEV run 1: 293/293). The QA pass
+(`~/src/rockcut-d39-qa/D39_QA_REPORT.md`, summarized here; you can't read
+it) found:
+
+**G1 (must-fix): "following" stops at an earlier split.** A rule change
+saved with "This and all following" splits the series (`split/6`): the old
+series ends the day before, and the rest is a new series. To the user it's
+still one ↻ task. But a later "following" action taken from an occurrence
+**before** the split reaches only up to the split. QA repro on DEV:
+weekly Wed from 10/14 → 11/4 assign Riley, following → 12/2 rule to
+Monthly 1st Wed, following, keep → 10/28 Edit series… assign Jake → only
+10/28–11/25 change; 12/2, 1/6 … stay Riley. History says `count: 4`. The
+Stop repeating confirm from before the split also counted only the
+pre-split occurrences.
+
+Fix: a split remembers what it continues, and every "following" action
+walks the chain.
+- New **additive** migration (the D39 one has already run on DEV; don't
+  edit it): `brewery_task_series.continues_series_id` (FK to
+  `brewery_task_series`, nilify). `split` sets it on the new series.
+- "Following", from an occurrence of series A on day d, covers A's
+  occurrences from d **and every series that continues A** (transitively),
+  all of them:
+  - a field edit (title, notes, assignee) applies to those series' rules
+    and their open, not-changed-on-their-own occurrences;
+  - a rule change: A splits at d as now, and the continuing series'
+    open occurrences go the same way as A's later ones (with the
+    `changed=keep|remove` choice over the whole set). The continuing
+    series end (or are deleted if nothing finished or kept is left in
+    them); the new rule covers from d onwards;
+  - delete "following" and Stop repeating: the same, over the whole chain;
+  - `GET …/series` (`later_open`, `later_changed`) counts the whole chain,
+    so the confirms show the right numbers.
+- History: still one entry per action, with the total count.
+- The top-up must keep working for the series that remain open.
+- ExUnit: QA's repro exactly (assign following from before a split
+  reaches the end); rule change, delete following and stop from before a
+  split, with keep and remove; a chain of two splits; counts in
+  `preview`. Revert-check the repro test. One Playwright check in
+  `task-board-recurring` (QA's repro, short).
+
+**G2 (minor):** after Stop repeating, the last occurrence's menu still
+offers **Stop repeating** (a no-op). Hide Stop repeating when the
+occurrence has no later occurrences in its chain and the series has
+ended (`until_date` on or before it). Keep **Edit series…**. A Vitest or
+Playwright check.
+
+**Not changing** (as designed; I'll tell Matt): an occurrence changed on
+its own only in its notes is skipped by a later "following" edit.
+
+**Done when:** ExUnit, Vitest, `tsc` and the build pass, no new lint
+errors, the brewery folder passes once. `fix:` commits.
+
+**Reply with:** counts, SHAs, the migration name, how the chain is walked
+(and anything about ordering or locking), and any `LEAD:` question. Then
+stop.
