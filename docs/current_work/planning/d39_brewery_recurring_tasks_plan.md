@@ -79,8 +79,9 @@ The top-up is `BreweryTasks.Series.top_up(today)`, called from the D22
   gets it. Earlier occurrences, finished ones and exceptions don't change
   (S61).
 - **This and all following, rule changed:** a real split, D32's `split/2`.
-  The old series ends the day before. Its later open non-exception
-  occurrences are removed. A new series starts on this occurrence's date
+  The old series ends the day before. Its later open occurrences are
+  removed, and those changed on their own are kept or removed as chosen in
+  the confirm (Decision 2). A new series starts on this occurrence's date
   with the new rule, and the count carries over (D32's `remaining_count`).
 - **Day changes always apply to one occurrence.** That covers a drag,
   Change day…, Move to Future, Move all to today, and the Day field in the
@@ -89,7 +90,9 @@ The top-up is `BreweryTasks.Series.top_up(today)`, called from the D22
   then deletes it (S64).
 - **Delete this and all following**, and **Stop repeating:** end the series
   the day before (Stop repeating: on this one), and remove later open
-  occurrences. The confirm's count comes from a `series` endpoint (S63).
+  occurrences. Occurrences changed on their own are kept or removed, as
+  the person chooses in the confirm (Decision 2). The counts come from a
+  `series` endpoint (S63).
 - **Moving a task onto the Future list ends its repeat link.** A recurring
   task needs a day (S67), so the occurrence becomes a one-off: `series_id`
   is cleared, and its date goes on `skipped_dates`.
@@ -250,6 +253,8 @@ Decision 3 below.
   - complete one (S58), and move one with no second copy (S59);
   - "this" (S60), "following" content (S61, exceptions kept), "following"
     rule (S62, split and count);
+  - `changed=keep` and `changed=remove` for stop, delete "following" and a
+    rule split;
   - stop (S63, with the count), delete "this" with the skip held (S64), and
     delete "following";
   - move to Future ends the link;
@@ -325,19 +330,23 @@ with `canMoveTo`.
 - **Size.** If the gate runs long, the S26 investigation and back-closes on
   the confirm dialogs can move out without touching the rest.
 
-## Decisions (Matt)
+## Decisions (Matt, 2026-10-12)
 
-1. **O-3: unticking a retired item ticked today.** Recommended: **refuse
-   it** (422 `retired`, "Temps is retired; its ticks are kept"), so a
-   retired item's record can't be changed. The other option: allow the
-   untick and a re-tick on that same day only.
-2. **Series-wide removals and occurrences changed on their own.** These are
-   a rule change, Stop repeating, and Delete "this and all following".
-   Recommended: **keep** open occurrences that were moved or edited on
-   their own, as the spec does for content edits. The confirm says so:
-   "Removes 40 later occurrences. 2 you changed on their own are kept." The
-   other option: remove them too.
-3. **History for series:** one entry per series action, and none from the
-   daily top-up. Recommended.
-4. **Moving an occurrence to the Future list makes it a one-off** (not
-   repeating), since a repeat needs a day. Recommended.
+1. **O-3:** unticking a retired item is **refused** (422 `retired`, "Temps
+   is retired; its ticks are kept").
+2. **Removing later repeats asks about the ones changed on their own.**
+   This covers Stop repeating, Delete "this and all following", and a
+   rule change saved with "This and all following".
+   - When some later open occurrences were moved or edited on their own,
+     the confirm offers two buttons:
+     - **"Remove 40, keep the 2 changed on their own"**;
+     - **"Remove all 42"** (that deletes the 2 changed on their own too).
+   - When none were changed, it's a plain confirm: "Removes 40 later
+     occurrences".
+   - A rule change has no confirm when nothing would be removed.
+   - The API takes `changed=keep|remove` (default `keep`), and
+     `GET …/series` returns both counts.
+3. **History:** one entry per series action, and none from the daily
+   top-up.
+4. **Moving an occurrence to the Future list makes it a one-off.** Its
+   `series_id` is cleared and its date is skipped.

@@ -776,6 +776,15 @@ toggle appears on Profile → Notifications, for Brewery members only.
     occurrences are removed, after a confirm that says how many.
 - **Delete** on an occurrence asks "Just this one" or "This and all
   following".
+- **Removing later occurrences** (Stop repeating, Delete "This and all
+  following", or a rule change saved with "This and all following")
+  confirms first (Matt, 2026-10-12).
+  - If any later open occurrence was moved or edited on its own, the
+    person chooses between two buttons:
+    - **"Remove 40, keep the 2 changed on their own"**;
+    - **"Remove all 42"**.
+  - Otherwise the confirm reads "Removes 40 later occurrences".
+  - Finished occurrences are never removed.
 
 **Who:** any Brewery member or owner, the same as other tasks. On the
 brewhouse tablet, a staff code is needed.
@@ -989,8 +998,8 @@ brewhouse tablet, a staff code is needed.
     deleted, not "Not found" (O-1);
   - the Edit Daily items dialog refreshes its own list with the board
     (O-2);
-  - unticking a retired item ticked today can be undone that day, or is
-    refused (decide when planning D39) (O-3).
+  - unticking a retired item ticked today is refused: 422 `retired`, and
+    its ticks are kept (Matt, 2026-10-12) (O-3).
   Also moved to D39 from the D38 Pixel checks (Matt, 2026-10-12):
   - the Android back gesture closes the other phone dialogs (Edit task,
     "Where should it show", and the rest) the way it closes the task sheet
