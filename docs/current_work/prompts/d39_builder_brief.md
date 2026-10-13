@@ -740,3 +740,28 @@ and the brewery folder passes once. Commit each part as `feat:`.
 
 **Reply with:** the counts, the SHAs, the retired-span edge rules you chose,
 the finished-one-off call, and any `LEAD:` question. Then stop.
+
+## Task 10: plan step 9, coverage and the full local gate
+
+Task 9 was reviewed and accepted (`0403fdc`, `b38a9dc`). **Answers:**
+1. Moving the task to the rule's first day is fine; it matches create.
+2. Leave the midnight edge alone; note it in the handoff note's LIMITATIONS
+   next to the S26 section (one line).
+
+**1. `rockcut-ui/tests/COVERAGE.md`:** add a D39 section after D38, in the
+same shape: each scenario S52–S67 and S69–S78 → its spec file and test
+title, or "ExUnit only" / "Pixel (manual)" with the reason. Phone-only
+scenarios that need hardware (S70–S74, S76) list both the emulated test
+and "Pixel".
+
+**2. Full local gate**, from a clean tree:
+- ExUnit (full), Vitest, `tsc`, `vite build`, lint (count vs the 27
+  pre-existing);
+- full Playwright, every project, as the D38 gate ran it. Any failure:
+  rerun it alone, then say flaky or real; fix only real ones (as `fix:`).
+
+**3.** Commit COVERAGE.md as `docs:`. Don't touch the rest of the handoff
+note; the lead writes it.
+
+**Reply with:** the counts per check, the full Playwright total and any
+failures (with your flaky/real call), the SHAs. Then stop.
