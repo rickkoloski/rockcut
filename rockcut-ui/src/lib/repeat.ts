@@ -121,7 +121,11 @@ export function ruleProblem(r: TaskRule): string | null {
   return null
 }
 
-/** Flat API params (D39: `repeat`, `repeat_*`). Only the rule's own options. */
+/**
+ * Flat API params (D39: `repeat`, `repeat_*`). Only the rule's own options,
+ * and both ends, the unused one blank (R1): a blank is "none", so Ends =
+ * Never clears an end the series had.
+ */
 export function taskRepeatParams(r: TaskRule): Record<string, unknown> {
   if (r.frequency === 'never') return { repeat: 'never' }
   const p: Record<string, unknown> = { repeat: r.frequency }
@@ -136,8 +140,8 @@ export function taskRepeatParams(r: TaskRule): Record<string, unknown> {
       p.repeat_weekday = r.weekday
     }
   }
-  if (r.ends === 'until') p.repeat_until = r.until
-  else if (r.ends === 'count') p.repeat_count = Number(r.count)
+  p.repeat_until = r.ends === 'until' ? r.until : ''
+  p.repeat_count = r.ends === 'count' ? Number(r.count) : ''
   return p
 }
 

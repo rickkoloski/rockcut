@@ -96,16 +96,20 @@ describe('ordinal', () => {
 })
 
 describe('taskRepeatParams', () => {
-  it('sends only the rule’s own options', () => {
+  it('sends only the rule’s own options, and both ends', () => {
     expect(taskRepeatParams(rule({ frequency: 'weekly', weekdays: [4, 1], interval: 2 }))).toEqual({
       repeat: 'weekly',
       repeat_weekdays: [1, 4],
       repeat_interval: 2,
+      repeat_until: '',
+      repeat_count: '',
     })
     expect(taskRepeatParams(rule({ frequency: 'monthly', dayOfMonth: 31 }))).toEqual({
       repeat: 'monthly',
       repeat_month_rule: 'day',
       repeat_day_of_month: 31,
+      repeat_until: '',
+      repeat_count: '',
     })
     expect(taskRepeatParams(rule({ frequency: 'quarterly', monthRule: 'weekday', weekOfMonth: -1, weekday: 5, ends: 'until', until: '2027-12-31' }))).toEqual({
       repeat: 'quarterly',
@@ -113,8 +117,18 @@ describe('taskRepeatParams', () => {
       repeat_week_of_month: -1,
       repeat_weekday: 5,
       repeat_until: '2027-12-31',
+      repeat_count: '',
     })
-    expect(taskRepeatParams(rule({ frequency: 'annually', ends: 'count', count: '3' }))).toEqual({ repeat: 'annually', repeat_count: 3 })
+    expect(taskRepeatParams(rule({ frequency: 'annually', ends: 'count', count: '3' }))).toEqual({ repeat: 'annually', repeat_until: '', repeat_count: 3 })
+  })
+
+  it('R1: Ends = Never sends explicit blanks, so a saved end is cleared', () => {
+    const saved = rule({ frequency: 'weekly', ends: 'until', until: '2026-12-01' })
+    const never = { ...saved, ends: 'never' as const }
+    // The date still in the form isn't sent once Ends is Never.
+    expect(taskRepeatParams(never)).toMatchObject({ repeat_until: '', repeat_count: '' })
+    expect(sameRule(never, saved)).toBe(false)
+    expect(taskRepeatParams({ ...saved, ends: 'count', count: '5' })).toMatchObject({ repeat_until: '', repeat_count: 5 })
   })
 
   it('round-trips through a saved series', () => {

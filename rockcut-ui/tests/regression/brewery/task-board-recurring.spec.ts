@@ -464,6 +464,42 @@ test('G1: Edit series… from before a split reaches the occurrences after it', 
   for (const o of later) expect([o.due_on, o.assignee_id]).toEqual([o.due_on, me])
 })
 
+test('R1: a rule change from before a split, Ends left alone, keeps repeating past the split', async ({ page }) => {
+  const api = await apiAs('brewer1')
+  const t = today()
+  const first = await createSeries(api, weekly(tempTag('R1 Keg Wash'), t))
+  const w3 = (await on(api, first.series_id!, addDays(t, 21)))!
+  const w7 = (await on(api, first.series_id!, addDays(t, 49)))!
+  // QA's setup, through the API: w7 on "following" to monthly, the 1st weekday.
+  const split = await api.patch(`/api/brewery/tasks/${w7.id}`, {
+    data: { scope: 'following', repeat: 'monthly', repeat_interval: 1, repeat_month_rule: 'weekday', repeat_week_of_month: 1, repeat_weekday: isoWeekday(t) },
+  })
+  expect(split.status(), await split.text()).toBe(200)
+  created.push(((await split.json()).data as ApiOccurrence).id)
+
+  await openBoard(page, { from: addDays(t, 21), to: addDays(t, 27) })
+  await openMenu(page, w3.id, w3.due_on!)
+  await page.getByTestId('task-menu-edit-series').click()
+  // The split's end (the day before w7) isn't the person's: Ends is Never.
+  await expect(page.getByTestId('task-repeat-summary')).not.toContainText('until')
+  await pick(page, 'task-repeat-interval', 'task-repeat-interval-2')
+  await expect(page.getByTestId('task-repeat-summary')).toHaveText(`Repeats every other week on ${WEEKDAY_SHORT[isoWeekday(t) - 1]}`)
+  await saveDialog(page).click()
+  const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w3.id}$`), 'PATCH')
+  await page.getByTestId('remove-later-confirm').click()
+  expect((await saved).request().postDataJSON()).toMatchObject({ repeat_interval: 2, repeat_until: '', repeat_count: '' })
+  const result = (await (await saved).json()).data as ApiOccurrence
+  created.push(result.id)
+
+  // Six months out, every other week from w3, in the new series.
+  const later = await occurrences(api, result.series_id!, addDays(t, 175), addDays(t, 205))
+  expect(later.length).toBeGreaterThanOrEqual(2)
+  for (const o of later) {
+    const days = (Date.parse(o.due_on!) - Date.parse(w3.due_on!)) / 86_400_000
+    expect(days % 14).toBe(0)
+  }
+})
+
 test('S64 and delete "This and all following"', async ({ page }) => {
   const api = await apiAs('brewer1')
   const t = today()
