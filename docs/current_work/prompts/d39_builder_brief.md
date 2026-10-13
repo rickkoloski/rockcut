@@ -555,3 +555,77 @@ and O-3, and `feat:` for restore.
 - any `LEAD:` question.
 
 Then stop.
+
+## Task 7: plan step 7, phone: vertical view and dragging between days
+
+Task 6 was reviewed and accepted (`53141b4`, `a701c82`, `018c1bb`,
+`10b9a60`).
+
+**Answers:**
+1. **What a restore does to past days:** keep the simple version for now.
+   The lead is asking Matt, and it may come back as a follow-up.
+2. **410 for removed occurrences:** no API change. In the UI, a 404 on a
+   task route shows the same "This task was deleted" and refreshes the
+   board, since a stale card's id is gone either way. Do that small change
+   in this task, as its own `fix:` commit.
+
+Then build plan "Order of work" step 7: the plan's "Phone: vertical view
+and drag between days", spec §3.8 "Phone width" (as amended 2026-10-12),
+S70–S74.
+
+1. **`SortableLists`:** replace `sameListOnly: boolean` with
+   `canMoveTo?: (fromList: string, toList: string) => boolean`, defaulting
+   to any. Keep `staysLast` working. There's still no Brewery code in
+   `components/dnd/`, and the ESLint rule stays green. Update
+   `moveModel.test.ts` or add Vitest tests for the rule.
+2. **The vertical view at phone width:**
+   - the desktop containers stacked in one column: Unfinished (when
+     present), each day of the range (title, header, Daily card, tasks,
+     "+ Add a task"), then Future;
+   - a long press drags between any of them, with window auto-scroll near
+     the top and bottom edges (`@dnd-kit` `autoScroll`; check that it
+     scrolls the window, not just a container);
+   - a normal vertical swipe that starts on a card still scrolls;
+   - no sideways swipe-to-change-day in this view.
+3. **The toggle:** a one-day / vertical switch in the phone toolbar.
+   - It's remembered in `localStorage` (try/catch, as 1 week / 2 weeks
+     is).
+   - With no saved choice, a phone starts in the vertical view (S70).
+   - Desktop ignores it.
+4. **The one-day view:** keep its swipe and day strip. Its `canMoveTo`
+   allows the same list, or Unfinished → the selected day, when the
+   selected day is today (S73).
+5. **Drive at 360×800 with touch emulated** before writing tests. Then add
+   to `task-board-phone.spec.ts`:
+   - S70: the first visit is vertical, and the choice survives a reload;
+   - S71: drag down to day 3 with auto-scroll, persist-verified, plus the
+     History wording;
+   - S72: Unfinished → tomorrow;
+   - S73: one-day, Unfinished → between today's first and second tasks;
+   - S74: onto Future.
+
+   Use the existing touch helpers and the `mouseDrag` hardening pattern:
+   wait for the drop spot before releasing.
+6. **Check that D38's phone tests still pass:**
+   - the one-day reorder;
+   - the bottom slot (fix A);
+   - back closes the sheet (fix B).
+
+   They need the one-day view set explicitly now that phones start
+   vertical.
+
+**Done when:**
+- `tsc`, the build and the unit tests pass, with no new lint errors;
+- the brewery folder passes twice.
+
+Commits: `feat: D39 phone vertical view and drag between days`, the test
+commit, and the 404 `fix:`.
+
+**Reply with:**
+- the counts;
+- the SHAs;
+- what auto-scroll did in the emulator (so the lead can tell Matt what to
+  check on the Pixel);
+- any `LEAD:` question.
+
+Then stop.
