@@ -824,3 +824,35 @@ errors, the brewery folder passes once. `fix:` commits.
 **Reply with:** counts, SHAs, the migration name, how the chain is walked
 (and anything about ordering or locking), and any `LEAD:` question. Then
 stop.
+
+## Task 12: DEV pass 2, test hardening (test-only)
+
+Task 11 accepted (`85c33c8`, `fc422e1`). Answers: no backfill; DEV runs
+migrations at boot (done, API v32).
+
+DEV pass 2 at `ef48d87`: 290 passed, 4 failed, all because DEV's shared
+board held tasks the tests didn't make (Matt's weekly "Repeat test 1" on
+Tuesdays, since deleted; "Test2", an open task on today):
+- `task-board-tasks` **S9b** (`:168`) expects the target day's keys to equal
+  exactly `[already, task]`; a foreign card there fails it.
+- `task-board-drag` **S13** (`:78`) and `task-board-range` **S19** (`:61`):
+  the taller day column pushed the drag target past the viewport
+  (`mouseDrag: … use a taller viewport`, then a timeout).
+- `task-board-range` **"dragged over the Unfinished card"** (`:76`), still
+  failing 3/3 after the cleanup: its 1600×1000 viewport, and today's card at
+  y=1008 (one extra card on today), so `mouse.down` lands off-screen.
+
+Fix the tests, not the product:
+- Assertions on a list's order: compare only the cards the test created
+  (filter `listKeys` to the test's ids), or the relative order, wherever a
+  brewery spec assumes a list holds nothing else. Sweep the brewery specs
+  for the same pattern; fix those that are cheap.
+- Drag specs: the 2,200px viewport (as the other drag specs), and/or
+  `scrollIntoViewIfNeeded` before reading a bounding box, so an extra card
+  or two can't push the source or target off-screen.
+- Verify by adding two foreign open tasks to today and the S9b day in a
+  local run (not tagged `[TEST-TEMP]`, deleted after), and run the brewery
+  folder once with them in place, then once without.
+
+`test:` commits. **Reply with:** what you changed, the sweep result, the
+counts, SHAs. Then stop.
