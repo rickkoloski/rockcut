@@ -629,3 +629,67 @@ commit, and the 404 `fix:`.
 - any `LEAD:` question.
 
 Then stop.
+
+## Task 8: back-closes for the phone dialogs, the Unfinished drop rule, and the S26 investigation
+
+Task 7 was reviewed and accepted (`8138066`, `d1a4e57`, `31853c9`,
+`3a1c40d`).
+
+**Answer:** yes, refuse drops onto the Unfinished card, at **every** width,
+not only the phone: the board's `canMoveTo` refuses `toList ===
+Unfinished` unless it's the list the drag started in. Desktop's S19 drag
+(out of Unfinished) must still work. Add a Vitest case and one Playwright
+check (desktop: drag a day task over Unfinished; no placeholder there,
+and the task stays on its day). Commit as `fix:`.
+
+**1. Back-closes for the phone dialogs (S76)**, plan "D38 follow-ups".
+This was missed from Task 6's list:
+- Use D38's `useBackCloses(open, close)` at phone width on:
+  - the task dialog;
+  - "Where should it show";
+  - Change day…;
+  - History;
+  - Edit Daily items;
+  - the series scope and remove-later dialogs (`SeriesDialogs.tsx`);
+  - the board's confirm dialogs (Move all to today, the Daily retire
+    confirm).
+- A dialog opened from the sheet replaces the sheet's history entry. It
+  doesn't stack a second one, so one back closes the dialog, and a second
+  back leaves the board. That matches fix B's "no dead back press" rule.
+  Check how the sheet and dialog hand over, and say what you did.
+- Playwright in `task-board-phone.spec.ts`:
+  - for the task dialog, Change day… and "Where should it show": back
+    closes it, the URL is unchanged, and the board stays;
+  - once: open the dialog from the sheet, then back, then back again
+    leaves the board;
+  - once: close a dialog with its Cancel, and one back leaves the board
+    (no dead press).
+
+**2. S26 investigation (plan step 8, about 2 hours, time-boxed).**
+`task-board-daily` S26 ("yesterday's 3/4 is amber, and the 4th can still
+be ticked") failed once in some full local runs: the click on the last
+Daily box never checked it. Steps:
+- run it with `--repeat-each 20`;
+- then the full brewery folder 3 times with `--trace retain-on-failure`;
+- if it fails, read the trace: is the box disabled, re-rendered, covered,
+  or did the request fail or get refused?
+- Task 6's board change (`refetchOnWindowFocus: 'always'`) may matter
+  here: a refetch landing during the click.
+
+Fix only with a proven cause. Otherwise, write what you ran and saw. Either
+way, add a short "S26" note to `docs/current_work/prompts/d39_handoff_note.md`
+(create the file with just an "S26" section; the lead fills in the rest
+later).
+
+**Done when:**
+- `tsc`, the build and the unit tests pass, with no new lint errors;
+- the brewery folder passes twice.
+
+**Reply with:**
+- the counts;
+- the SHAs;
+- the sheet-to-dialog history handover;
+- the S26 findings;
+- any `LEAD:` question.
+
+Then stop.
