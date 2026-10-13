@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Alert, Button, Checkbox, CircularProgress, FormControlLabel, MenuItem, TextField } from '@mui/material'
 import FormDialog from '../../../components/FormDialog'
 import { useApiQuery } from '../../../hooks/useApiQuery'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import api from '../../../lib/api'
 import { taskError, taskGone } from '../../../lib/breweryTasks'
 import { defaultRule, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../../lib/repeat'
@@ -44,6 +45,8 @@ interface Props {
  * never asks (it's this one).
  */
 export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onStale, onDelete, onHistory }: Props) {
+  // S76: the phone's back gesture closes the dialog, not the board.
+  usePhoneBackCloses(true, onClose)
   const card = mode.kind === 'edit' ? mode.card : null
   const inSeries = !!card?.series_id
   const presetFollowing = mode.kind === 'edit' && !!mode.series

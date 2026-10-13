@@ -41,6 +41,9 @@ test.beforeEach(async ({ page }, testInfo) => {
 
 const today = () => denverToday()
 const phoneDay = (page: Page) => page.getByTestId('phone-day')
+/** A closed phone dialog takes its back entry off (S76): wait for that before a reload. */
+const settled = (page: Page) =>
+  expect.poll(() => page.evaluate(() => Object.keys(history.state ?? {}).some((k) => k.startsWith('rockcut')))).toBe(false)
 const stop = (page: Page, s: string) => page.getByTestId(s === 'future' ? 'phone-stop-future' : `phone-stop-${s}`)
 
 /** Open tasks per strip stop, as the API sees them (filter All). */
@@ -290,6 +293,9 @@ test('S9a: tapping a task opens a bottom sheet; Add notes focuses Notes, and the
   const saved = boardWrite(page, new RegExp(`/api/brewery/tasks/${task.id}$`), 'PATCH')
   await page.getByTestId('task-dialog').getByRole('button', { name: 'Save' }).click()
   await saved
+  // The closed dialog takes its back entry off (S76) before the reload.
+  await expect(page.getByTestId('task-dialog')).toHaveCount(0)
+  await settled(page)
 
   await page.reload()
   await expect(page.getByTestId(`task-notes-icon-${task.id}:${today()}`)).toBeVisible()
@@ -369,6 +375,7 @@ test('Change day… and Move to Future in the sheet move a task across days', as
   let moved = boardWrite(page, new RegExp(`/${task.id}/move$`))
   await page.getByTestId('change-day-confirm').click()
   expect((await moved).request().postDataJSON()).toEqual({ due_on: target, before_id: null })
+  await settled(page)
 
   await page.reload()
   await expect(card(page, task.id, today())).toHaveCount(0)
@@ -380,6 +387,7 @@ test('Change day… and Move to Future in the sheet move a task across days', as
   moved = boardWrite(page, new RegExp(`/${task.id}/move$`))
   await page.getByTestId('change-day-future').click()
   expect((await moved).request().postDataJSON()).toEqual({ due_on: null, before_id: null })
+  await settled(page)
 
   await page.reload()
   await stop(page, 'future').click()
@@ -402,6 +410,7 @@ test('S23j: the strip\'s Future stop shows the Future list, and its + Add a task
   const task = (await (await saved).json()).data
   created.push(task.id)
   expect(task.due_on).toBeNull()
+  await settled(page)
 
   await page.reload()
   await stop(page, 'future').click()
@@ -590,5 +599,77 @@ test.describe(VERTICAL, () => {
     await page.reload()
     await expect(card(page, task.id, 'future')).toBeAttached()
     await expect(card(page, task.id, today())).toHaveCount(0)
+  })
+})
+
+test.describe('S76: the back gesture closes the phone dialogs', () => {
+  const sheetAction = async (page: Page, id: number, day: string, action: string) => {
+    await card(page, id, day).scrollIntoViewIfNeeded()
+    await page.getByTestId(`task-title-${id}:${day}`).click()
+    await expect(page.getByTestId('task-menu')).toHaveAttribute('data-variant', 'sheet')
+    await page.getByTestId(`task-menu-${action}`).click()
+  }
+
+  const backClosesIt = async (page: Page, dialog: string) => {
+    const url = page.url()
+    await expect(page.getByTestId(dialog)).toBeVisible()
+    await page.goBack()
+    await expect(page.getByTestId(dialog)).toHaveCount(0)
+    expect(page.url()).toBe(url)
+    await expect(page.getByTestId('board-grid')).toBeVisible()
+  }
+
+  test('Edit, Change day… and "where should it show" each close on back; the board stays', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const task = await createTask(api, { title: tempTag('S76 back'), due_on: today() })
+    const later = await createTask(api, { title: tempTag('S76 tomorrow'), due_on: addDays(today(), 1) })
+    created.push(task.id, later.id)
+
+    await page.goto('/')
+    await openBoard(page)
+    await sheetAction(page, task.id, today(), 'edit')
+    await backClosesIt(page, 'task-dialog')
+    await sheetAction(page, task.id, today(), 'change-day')
+    await backClosesIt(page, 'change-day-dialog')
+
+    // Ticking tomorrow's task today asks where it should show.
+    await stop(page, addDays(today(), 1)).click()
+    await page.getByTestId(`task-check-${later.id}:${addDays(today(), 1)}`).click()
+    await backClosesIt(page, 'finish-dialog')
+    expect((await getBoard(api, addDays(today(), 1), addDays(today(), 1))).days[0].cards.find((c) => c.id === later.id)!.done).toBe(false)
+
+    // Nothing left behind: one more back leaves the board.
+    await page.goBack()
+    await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+  })
+
+  test('a dialog opened from the sheet takes over its entry: back closes it, the next back leaves', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const task = await createTask(api, { title: tempTag('S76 handover'), due_on: today() })
+    created.push(task.id)
+
+    await page.goto('/')
+    await openBoard(page)
+    await sheetAction(page, task.id, today(), 'edit')
+    await expect(page.getByTestId('task-menu')).toHaveCount(0)
+    await backClosesIt(page, 'task-dialog')
+    await page.goBack()
+    await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+  })
+
+  test('a dialog closed with Cancel leaves no dead back press', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const task = await createTask(api, { title: tempTag('S76 cancel'), due_on: today() })
+    created.push(task.id)
+
+    await page.goto('/')
+    await openBoard(page)
+    await sheetAction(page, task.id, today(), 'edit')
+    await expect(page.getByTestId('task-dialog')).toBeVisible()
+    await page.getByTestId('task-dialog').getByRole('button', { name: 'Cancel' }).click()
+    await expect(page.getByTestId('task-dialog')).toHaveCount(0)
+    await expect.poll(() => page.evaluate(() => Object.keys(history.state ?? {}).some((k) => k.startsWith('rockcut')))).toBe(false)
+    await page.goBack()
+    await expect(page).not.toHaveURL(/\/brewery\/tasks/)
   })
 })

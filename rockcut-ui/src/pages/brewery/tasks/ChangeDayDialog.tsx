@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Tooltip } from '@mui/material'
 import { isDateKey } from '../../../lib/breweryTasks'
 import type { TaskCardData } from '../../../lib/types'
@@ -13,6 +14,7 @@ interface Props {
 
 /** D38 §3.8 Change day…: any date, or Move to Future. Mount with a `key`. */
 export default function ChangeDayDialog({ card, today, onCancel, onMove }: Props) {
+  usePhoneBackCloses(true, onCancel)
   const [day, setDay] = useState(card.due_on ?? today)
   const onFuture = card.due_on === null
   const valid = isDateKey(day) && day !== card.due_on

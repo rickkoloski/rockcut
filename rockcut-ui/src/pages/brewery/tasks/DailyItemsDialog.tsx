@@ -21,6 +21,7 @@ import SortableLists from '../../../components/dnd/SortableLists'
 import { applyMove, type ListContainer, type Move } from '../../../components/dnd/moveModel'
 import { useOptimisticLists } from '../../../components/dnd/useOptimisticLists'
 import { useApiQuery } from '../../../hooks/useApiQuery'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import api from '../../../lib/api'
 import { dailyItemError } from '../../../lib/breweryTasks'
 import type { DailyItem } from '../../../lib/types'
@@ -70,6 +71,9 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
   // even if someone else renamed the item meanwhile (G1).
   const [renaming, setRenaming] = useState<{ id: number; from: string; name: string; error: string | null } | null>(null)
   const [retiring, setRetiring] = useState<DailyItem | null>(null)
+  // S76: back closes the retire confirm, then the dialog.
+  usePhoneBackCloses(true, onClose)
+  usePhoneBackCloses(!!retiring, () => setRetiring(null))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 

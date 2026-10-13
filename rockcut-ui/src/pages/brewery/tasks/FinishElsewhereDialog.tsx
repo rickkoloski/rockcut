@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import {
   Button,
   Dialog,
@@ -25,6 +26,7 @@ interface Props {
  * Nothing is preselected; Cancel leaves the task open. Mount with a `key`.
  */
 export default function FinishElsewhereDialog({ card, today, onCancel, onConfirm }: Props) {
+  usePhoneBackCloses(true, onCancel)
   const [choice, setChoice] = useState<CompletedDisplay | null>(null)
   const planned = formatTaskDay(card.due_on!)
 

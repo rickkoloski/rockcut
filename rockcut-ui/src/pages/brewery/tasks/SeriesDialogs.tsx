@@ -1,5 +1,6 @@
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
 import { removeLaterWording } from '../../../lib/repeat'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 
 export type SeriesScope = 'this' | 'following'
 export type Changed = 'keep' | 'remove'
@@ -17,6 +18,7 @@ interface ScopeProps {
  * recurring task's occurrence applies to, as D32's events ask.
  */
 export function ScopeDialog({ action, loading, onChoose, onCancel }: ScopeProps) {
+  usePhoneBackCloses(true, onCancel)
   return (
     <Dialog open onClose={onCancel} maxWidth="xs" fullWidth data-testid="series-scope-dialog">
       <DialogTitle>{action === 'delete' ? 'Delete recurring task' : 'Save recurring task'}</DialogTitle>
@@ -63,6 +65,7 @@ interface RemoveProps {
  * changed on their own, the person chooses whether those go too.
  */
 export function RemoveLaterDialog({ title, laterOpen, laterChanged, loading, onConfirm, onCancel }: RemoveProps) {
+  usePhoneBackCloses(true, onCancel)
   const w = removeLaterWording(laterOpen, laterChanged)
   return (
     <Dialog open onClose={onCancel} maxWidth="xs" fullWidth data-testid="remove-later-dialog">

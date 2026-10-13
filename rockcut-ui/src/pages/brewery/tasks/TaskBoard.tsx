@@ -9,6 +9,7 @@ import { containerOf, type ListContainer, type Move } from '../../../components/
 import { useOptimisticLists } from '../../../components/dnd/useOptimisticLists'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import useAuth from '../../../hooks/useAuth'
+import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import api from '../../../lib/api'
 import { addDaysKey } from '../../../lib/datetime'
 import {
@@ -153,6 +154,11 @@ export default function TaskBoard() {
   // History: the whole board's, or one task's (from its dialog).
   const [history, setHistory] = useState<{ task?: { id: number; title: string } } | null>(null)
   const [busy, setBusy] = useState(false)
+  // S76: at phone width, back closes the board's confirms (the dialogs do their own).
+  usePhoneBackCloses(!!reopening, () => setReopening(null))
+  usePhoneBackCloses(!!deleting, () => setDeleting(null))
+  usePhoneBackCloses(movingAll, () => setMovingAll(false))
+  usePhoneBackCloses(!!removing && removing.laterOpen + removing.laterChanged === 0, () => setRemoving(null))
 
   const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY] })
   const fail = (err: unknown) => setToast({ message: taskError(err), error: true })
