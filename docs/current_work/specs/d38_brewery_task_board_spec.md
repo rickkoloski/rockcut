@@ -964,6 +964,12 @@ brewhouse tablet, a staff code is needed.
     (O-2);
   - unticking a retired item ticked today can be undone that day, or is
     refused (decide when planning D39) (O-3).
+  Also moved to D39 from the D38 Pixel checks (Matt, 2026-10-12):
+  - the Android back gesture closes the other phone dialogs (Edit task,
+    "Where should it show", and the rest) the way it closes the task sheet
+    (`useBackCloses`);
+  - look into the S26 Playwright spec that failed once in some full local
+    runs (never on DEV; passes alone).
 
 ## 6. Questions
 
