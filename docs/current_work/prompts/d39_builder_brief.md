@@ -486,3 +486,72 @@ Playwright spec` (more commits are fine).
 - any `LEAD:` question.
 
 Then stop.
+
+## Task 6: plan step 6, the D38 follow-ups (API and UI)
+
+Task 5 was reviewed and accepted (`eff9d01`, `460c229`, `c2b7202`).
+
+**Answers:**
+1. **"Later" by `series_date`:** yes, that's the right reading.
+2. **Making a one-off repeat:** the lead is asking Matt. Leave it as it is
+   for now; it may come back as a small task.
+
+Build plan "Order of work" step 6: the plan's "D38 follow-ups" section,
+spec §5, Decision 1 and S75–S77.
+
+1. **Un-retire (S75):**
+   - `POST /api/brewery/daily_items/:id/restore` (Brewery managers and
+     owners, as the other item routes) puts a retired item back at the
+     bottom of the active list. Its past ticks are untouched.
+   - It's refused with D38's messages at 12 active items, or when an active
+     item has the same name, ignoring case. It logs `restored`, which
+     History renders as "Restored Daily item Temps".
+   - Add the route to the route matrix.
+   - In the UI, the Edit Daily items dialog gets a collapsed **Retired**
+     section listing retired items, each with a **Restore** button.
+2. **GAP-1 / GAP-2:** every `PATCH /daily_items/:id` on a retired item (a
+   rename, `active: false`, `position`) answers 422 `retired`, with no
+   change made. G3's `active: true` case already does.
+3. **Decision 1 (O-3):** `DELETE /daily_checks/:on_date/:id` on a retired
+   item → 422 `retired`, and the tick stays. The UI: a retired item's row
+   on a past or today card has a disabled checkbox, with a tooltip "Temps
+   is retired; its ticks are kept".
+4. **O-1 (S77):** `PATCH`, `DELETE`, `move`, `complete` and `uncomplete`
+   on a task id that doesn't exist, but has a `deleted` event in History,
+   → **410** `deleted` "This task was deleted". An id that never existed
+   stays 404. In the UI, the task dialog, menu actions and drag show
+   "This task was deleted" and refresh the board.
+5. **O-2:** the Edit Daily items dialog reads its list from the board's
+   query (or refetches when the board does), so the 60-second refresh and
+   focus refetch update it while it's open. Edits in progress in a rename
+   field aren't overwritten while that field has focus.
+
+**Tests:**
+- ExUnit for 1–4: restore limit, name clash, position, log, the matrix;
+  each retired `PATCH`; the untick refusal; 410 against 404.
+- Playwright:
+  - S75 in `task-board-daily-items`;
+  - S77 in `task-board-tasks` (two contexts, as G1's test does);
+  - O-2: open the dialog, rename an item from a second context, and let
+    the board refetch (trigger it with focus, not a 60-second wait);
+  - the disabled checkbox for a retired item.
+
+Run the revert check for the three behavior fixes (GAP-1/2, O-1, O-3):
+each new test must fail with the fix reverted and pass with it restored.
+Record the results in your reply.
+
+**Done when:**
+- full ExUnit is green;
+- `tsc`, the build and the unit tests pass, with no new lint errors;
+- the brewery folder passes twice.
+
+Commits: one per item, or grouped sensibly. Use `fix:` for GAP-1/2, O-1
+and O-3, and `feat:` for restore.
+
+**Reply with:**
+- the counts;
+- the SHAs;
+- the revert results;
+- any `LEAD:` question.
+
+Then stop.
