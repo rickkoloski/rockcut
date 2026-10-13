@@ -191,7 +191,9 @@ test('S9b: Change day… to six weeks out takes it out of the range; that day sh
   await page.getByTestId('board-range-to').fill(target)
   await page.getByTestId('board-range-apply').click()
   await expect(page).toHaveURL(new RegExp(`from=${target}&to=${target}`))
-  await expect.poll(() => listKeys(page, `day-list-${target}`)).toEqual([`${already.id}:${target}`, `${task.id}:${target}`])
+  // Only ours: a shared board (DEV) can hold other tasks on that day too.
+  const ours = [`${already.id}:${target}`, `${task.id}:${target}`]
+  await expect.poll(async () => (await listKeys(page, `day-list-${target}`)).filter((k) => ours.includes(k))).toEqual(ours)
 })
 
 test('S9d: a task finished on another day can\'t be moved from the menu ("Mark not done first to move it")', async ({ page }) => {

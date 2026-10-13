@@ -150,6 +150,31 @@ async function dropSpot(list: Locator, before?: Locator) {
 }
 
 /**
+ * Before a mouse drag: scroll so `source` is on screen and, as far as that
+ * allows, `list` ends above 70% of the screen (room for the placeholder and
+ * the route below it). On a shared board (DEV) other tasks make the days
+ * taller and can push the target down; scrolling is safe only now, before
+ * anything is lifted.
+ */
+async function frame(page: Page, source: Locator, list: Locator, height: number) {
+  await source.scrollIntoViewIfNeeded()
+  const s = (await source.boundingBox())!
+  const l = (await list.boundingBox())!
+  const over = l.y + l.height - height * 0.7
+  const room = s.y - 8 // scrolling further would take the source off the top
+  if (over > 0 && room > 0) {
+    await page.evaluate(
+      (dy) =>
+        new Promise((done) => {
+          window.scrollBy(0, dy)
+          requestAnimationFrame(() => done(null))
+        }),
+      Math.min(over, room),
+    )
+  }
+}
+
+/**
  * Mouse-drag `source` into `list`: to its end, or just before `before` (a
  * card in it). Like a person watching the gap: round to just below the list,
  * up into its bottom edge (the placeholder goes last), then up onto `before`
@@ -169,7 +194,7 @@ async function dropSpot(list: Locator, before?: Locator) {
  */
 export async function mouseDrag(page: Page, source: Locator, list: Locator, before?: Locator) {
   const vp = page.viewportSize()!
-  await source.scrollIntoViewIfNeeded()
+  await frame(page, source, list, vp.height)
   const liftable = await source.evaluate((e) => !!e.closest('[aria-roledescription="sortable"]') && !e.closest('[data-locked="true"]'))
   const s = (await source.boundingBox())!
   await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2)
