@@ -1,0 +1,219 @@
+import parseApiError from './parseApiError'
+import { TZ, addDaysKey, localDayKey } from './datetime'
+import type { DayHeaderData, HeaderShift, TaskCardData, TaskEvent, TaskEventPage } from './types'
+
+// D38: Brewery task board helpers shared by the board, its dialogs and the specs.
+
+/** The longest range the board shows (spec §3.6). */
+export const MAX_RANGE_DAYS = 31
+
+export type Span = 7 | 14
+export type TaskFilter = 'all' | 'mine' | 'unassigned'
+
+/** Container ids beside the day dates. */
+export const UNFINISHED = 'unfinished'
+export const FUTURE = 'future'
+
+/** Today in Colorado as YYYY-MM-DD. The server's `today` wins once the board loads. */
+export const coloradoToday = () => localDayKey(new Date().toISOString())
+
+/** Days from `from` to `to`, both included (0 or less when `to` is before `from`). */
+export function dayCount(from: string, to: string): number {
+  return Math.round((Date.parse(`${to}T12:00:00Z`) - Date.parse(`${from}T12:00:00Z`)) / 86_400_000) + 1
+}
+
+/** A valid "YYYY-MM-DD" date key. */
+export function isDateKey(value: string | null): value is string {
+  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00Z`))
+}
+
+/** Why a From–To pair can't be shown, or null when it can. */
+export function rangeError(from: string, to: string): string | null {
+  if (!isDateKey(from) || !isDateKey(to)) return 'Pick both dates'
+  if (to < from) return 'To must be on or after From'
+  if (dayCount(from, to) > MAX_RANGE_DAYS) return `Up to ${MAX_RANGE_DAYS} days`
+  return null
+}
+
+export const spanEnd = (from: string, span: number) => addDaysKey(from, span - 1)
+
+const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })
+
+/** "Mon 10/12" for a date key. */
+export function formatTaskDay(key: string): string {
+  return dayFmt.format(new Date(`${key}T12:00:00Z`)).replace(',', '')
+}
+
+const timeFmt = new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: 'numeric', minute: '2-digit', hour12: true })
+
+/** "7:00a" / "3:30p" in Colorado time. */
+export function shortTime(iso: string): string {
+  return timeFmt.format(new Date(iso)).replace(/\s?([AP])M$/i, (_, m: string) => m.toLowerCase())
+}
+
+const shortRange = (s: { starts_at: string; ends_at: string }) => `${shortTime(s.starts_at)}–${shortTime(s.ends_at)}`
+
+const hoursLabel = (hours: number) => `${Math.round(hours * 100) / 100}h`
+
+/**
+ * "Jake Brewer · Brewer · 7:00a–3:00p · 8h". Two shifts share the line:
+ * "· Brewer · 6:00a–10:00a, 2:00p–6:00p · 8h", or each with its position when
+ * they differ.
+ */
+export function personLine(p: DayHeaderData['people'][number]): string {
+  const positions = [...new Set(p.shifts.map((s) => s.position_name))]
+  const shifts =
+    positions.length === 1
+      ? `${positions[0]} · ${p.shifts.map(shortRange).join(', ')}`
+      : p.shifts.map((s) => `${s.position_name} ${shortRange(s)}`).join(', ')
+  return `${p.name} · ${shifts} · ${hoursLabel(p.hours)}`
+}
+
+export const openShiftLine = (s: HeaderShift) => `Open · ${s.position_name} · ${shortRange(s)}`
+
+export const eventLine = (e: DayHeaderData['events'][number]) =>
+  `${e.title} · ${e.all_day ? 'All day' : shortRange(e)}`
+
+/** "JB" for "Jake Brewer". */
+export function initials(name: string | null): string {
+  if (!name) return ''
+  const parts = name.trim().split(/\s+/)
+  return ((parts[0]?.[0] ?? '') + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase()
+}
+
+export const firstName = (name: string | null) => name?.trim().split(/\s+/)[0] ?? ''
+
+/** Does the card pass the toolbar's filter and Hide completed? */
+export function cardShown(card: TaskCardData, filter: TaskFilter, hideCompleted: boolean, userId: number | undefined) {
+  if (hideCompleted && card.done) return false
+  if (filter === 'mine') return card.assignee_id != null && card.assignee_id === userId
+  if (filter === 'unassigned') return card.assignee_id == null
+  return true
+}
+
+/** A refused board write as a sentence: the API's `message`, else the usual parse. */
+export function taskError(err: unknown): string {
+  const data = (err as { response?: { data?: { message?: string } } })?.response?.data
+  return data?.message ?? parseApiError(err)
+}
+
+/** The most active Daily items (the API's cap). */
+export const MAX_DAILY_ITEMS = 12
+
+/**
+ * A refused Daily items change in the dialog's words (spec S31): "Up to 12
+ * items", or the name's own error ("Already on the list", too long).
+ */
+export function dailyItemError(err: unknown): string {
+  const data = (err as { response?: { data?: { error?: string; errors?: Record<string, string[]> } } })?.response?.data
+  if (data?.error === 'too_many_items') return `Up to ${MAX_DAILY_ITEMS} items`
+  const name = data?.errors?.name
+  if (name?.length) return name[0].replace(/^./, (c) => c.toUpperCase())
+  return taskError(err)
+}
+
+// ── History (spec §3.8 "Change log") ──
+
+/** "Sun 10/11, 8:12p" in Colorado time. */
+export const formatEventTime = (iso: string) => `${formatTaskDay(localDayKey(iso))}, ${shortTime(iso)}`
+
+/** "Kate Kettle", or "Kate Kettle on Shared Device" (D40's tablet). */
+export const eventActor = (ev: TaskEvent) => `${ev.actor_name ?? 'Someone'}${ev.on_shared_device ? ' on Shared Device' : ''}`
+
+const dayOrFuture = (key: unknown) => (typeof key === 'string' ? formatTaskDay(key) : 'Future')
+
+/**
+ * One change-log entry in plain words, old → new: "Moved Package FV6 from
+ * Mon 10/12 to Wed 10/14", "Completed Carb FV3 on Wed 10/14, shown on both
+ * days", "Ticked Temps for Sun 10/11".
+ */
+export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): string {
+  const d = ev.detail
+  const t = ev.title
+  const person = (id: unknown) => (id == null ? null : (names.users[String(id)] ?? 'someone no longer here'))
+  switch (ev.action) {
+    case 'created': {
+      const who = person(d.assignee_id)
+      return `Added ${t} to ${dayOrFuture(d.due_on)}${who ? `, assigned to ${who}` : ''}`
+    }
+    case 'edited': {
+      const from = (d.from ?? {}) as { title?: string; notes?: string | null }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null }
+      const parts: string[] = []
+      if ('title' in to) parts.push(`Renamed ${from.title} to ${to.title}`)
+      if ('notes' in to) parts.push(`${to.notes ? (from.notes ? 'Changed' : 'Added') : 'Removed'} the notes on ${t}`)
+      return parts.join('; ') || `Edited ${t}`
+    }
+    case 'assigned': {
+      const from = person(d.from)
+      const to = person(d.to)
+      if (from && to) return `Reassigned ${t} from ${from} to ${to}`
+      if (to) return `Assigned ${t} to ${to}`
+      return `Unassigned ${t}${from ? ` (was ${from})` : ''}`
+    }
+    case 'unassigned':
+      return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${d.reason === 'left_brewery' ? ' (left the Brewery)' : ''}`
+    case 'moved': {
+      const from = (d.from ?? {}) as { due_on?: string | null; position?: number }
+      const to = (d.to ?? {}) as { due_on?: string | null; position?: number }
+      if (from.due_on !== to.due_on) return `Moved ${t} from ${dayOrFuture(from.due_on)} to ${dayOrFuture(to.due_on)}`
+      return `Moved ${t} from position ${from.position} to ${to.position} on ${dayOrFuture(to.due_on)}`
+    }
+    case 'completed': {
+      const on = dayOrFuture(d.completed_on)
+      if (d.due_on == null) return `Completed ${t} from Future, on ${on}`
+      if (d.due_on === d.completed_on) return `Completed ${t}`
+      if (d.display === 'both') return `Completed ${t} on ${on}, shown on both days`
+      if (d.display === 'completed_day') return `Completed ${t}, shown on ${on} (planned ${dayOrFuture(d.due_on)})`
+      return `Completed ${t} on ${on}, shown on ${dayOrFuture(d.due_on)}`
+    }
+    case 'uncompleted':
+      return `Marked ${t} not done${d.completed_on ? ` (was done ${dayOrFuture(d.completed_on)})` : ''}`
+    case 'deleted':
+      return `Deleted ${t} (${dayOrFuture(d.due_on)})`
+    case 'daily_ticked':
+      return `Ticked ${t} for ${dayOrFuture(d.on_date)}`
+    case 'daily_unticked':
+      return `Unticked ${t} for ${dayOrFuture(d.on_date)}`
+    case 'item_added':
+      return `Added ${t} to the Daily items`
+    case 'item_renamed':
+      return `Renamed the Daily item ${d.from} to ${d.to}`
+    case 'item_retired':
+      return `Retired the Daily item ${t}`
+    case 'item_reordered': {
+      const item = (id: unknown) => names.items[String(id)] ?? '?'
+      const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(item).join(', ') : '')
+      return `Reordered the Daily items from ${list(d.from)} to ${list(d.to)}`
+    }
+    default:
+      return `${ev.action} ${t}`
+  }
+}
+
+// ── Per-browser preferences (spec §3.8). Storage can be missing or throw. ──
+
+const SPAN_KEY = 'rockcut.breweryTasks.span'
+const HIDE_KEY = 'rockcut.breweryTasks.hideCompleted'
+
+function read(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function write(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    // Not remembered in this browser; the board still works.
+  }
+}
+
+/** The default span: 2 weeks until someone picks. */
+export const readSpan = (): Span => (read(SPAN_KEY) === '7' ? 7 : 14)
+export const writeSpan = (span: Span) => write(SPAN_KEY, String(span))
+export const readHideCompleted = () => read(HIDE_KEY) === 'true'
+export const writeHideCompleted = (on: boolean) => write(HIDE_KEY, String(on))

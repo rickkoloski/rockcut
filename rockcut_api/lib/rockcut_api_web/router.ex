@@ -206,6 +206,29 @@ defmodule RockcutApiWeb.Router do
     post "/formulas/execute", FormulaController, :execute
   end
 
+  # D38 Brewery task board: Brewery members and owners, people only (D40 opens
+  # the writes to the brewhouse tablet). Each action asks Authz.
+  scope "/api/brewery", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :brewery]
+
+    get "/tasks", BreweryTaskController, :index
+    get "/tasks/history", BreweryTaskController, :history
+    post "/tasks", BreweryTaskController, :create
+    post "/tasks/move_overdue_to_today", BreweryTaskController, :move_overdue_to_today
+    patch "/tasks/:id", BreweryTaskController, :update
+    delete "/tasks/:id", BreweryTaskController, :delete
+    post "/tasks/:id/move", BreweryTaskController, :move
+    post "/tasks/:id/complete", BreweryTaskController, :complete
+    post "/tasks/:id/uncomplete", BreweryTaskController, :uncomplete
+
+    put "/daily_checks/:on_date/:daily_item_id", BreweryDailyController, :tick
+    delete "/daily_checks/:on_date/:daily_item_id", BreweryDailyController, :untick
+    get "/daily_items", BreweryDailyController, :items
+    post "/daily_items", BreweryDailyController, :create_item
+    put "/daily_items/order", BreweryDailyController, :order_items
+    patch "/daily_items/:id", BreweryDailyController, :update_item
+  end
+
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:rockcut_api, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put

@@ -198,7 +198,23 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:put, "/api/batch_log_entries/:id"},
     {:delete, "/api/batch_log_entries/:id"},
     {:get, "/api/formulas/catalog"},
-    {:post, "/api/formulas/execute"}
+    {:post, "/api/formulas/execute"},
+    # D38 Brewery task board: people only until D40 adds the brewhouse tablet.
+    {:get, "/api/brewery/tasks"},
+    {:get, "/api/brewery/tasks/history"},
+    {:post, "/api/brewery/tasks"},
+    {:post, "/api/brewery/tasks/move_overdue_to_today"},
+    {:patch, "/api/brewery/tasks/:id"},
+    {:delete, "/api/brewery/tasks/:id"},
+    {:post, "/api/brewery/tasks/:id/move"},
+    {:post, "/api/brewery/tasks/:id/complete"},
+    {:post, "/api/brewery/tasks/:id/uncomplete"},
+    {:put, "/api/brewery/daily_checks/:on_date/:daily_item_id"},
+    {:delete, "/api/brewery/daily_checks/:on_date/:daily_item_id"},
+    {:get, "/api/brewery/daily_items"},
+    {:post, "/api/brewery/daily_items"},
+    {:put, "/api/brewery/daily_items/order"},
+    {:patch, "/api/brewery/daily_items/:id"}
   ]
 
   defp app_routes do

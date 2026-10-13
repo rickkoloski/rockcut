@@ -20,4 +20,21 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // D38: the shared drag layer stays generic; no page or Brewery code in it.
+    files: ['src/components/dnd/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/pages', '**/pages/**', '**/*brewery*', '**/*Brewery*'],
+              message: 'components/dnd must not depend on pages or Brewery code.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ])

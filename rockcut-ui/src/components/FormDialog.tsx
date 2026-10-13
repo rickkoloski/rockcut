@@ -1,6 +1,7 @@
 import type { FormEvent, ReactNode } from 'react'
 import {
   Alert,
+  Box,
   Button,
   CircularProgress,
   Dialog,
@@ -17,11 +18,14 @@ interface FormDialogProps {
   loading?: boolean
   error?: string | null
   children: ReactNode
+  /** Shown at the left of the actions (e.g. a Delete button). */
+  secondaryAction?: ReactNode
+  testId?: string
 }
 
-export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children }: FormDialogProps) {
+export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children, secondaryAction, testId }: FormDialogProps) {
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid={testId}>
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); onSubmit() }}>
         <DialogTitle>{title}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
@@ -29,6 +33,7 @@ export default function FormDialog({ open, onClose, title, onSubmit, loading, er
           {children}
         </DialogContent>
         <DialogActions>
+          {secondaryAction && <Box sx={{ mr: 'auto' }}>{secondaryAction}</Box>}
           <Button onClick={onClose} disabled={loading}>Cancel</Button>
           <Button type="submit" variant="contained" disabled={loading}>
             {loading ? <CircularProgress size={20} /> : 'Save'}

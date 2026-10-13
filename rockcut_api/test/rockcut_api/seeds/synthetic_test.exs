@@ -205,6 +205,31 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       statuses = Repo.all(from(r in Request, where: r.user_id == ^brewer1.id, select: r.status))
       assert Enum.sort(statuses) == ["approved", "pending"]
     end
+
+    test "seeds the Colorado week on a Sunday evening (UTC already Monday)" do
+      alias RockcutApi.BreweryTasks
+      alias RockcutApi.Scheduling.Recurrence
+
+      # Sunday 2026-10-11, 7 pm MDT = Monday 01:00 UTC.
+      now = ~U[2026-10-12 01:00:00Z]
+      sunday = BreweryTasks.today_at(now)
+      assert sunday == ~D[2026-10-11]
+
+      {:ok, _} = Synthetic.setup(sunday)
+
+      week_start = Recurrence.local_midnight(~D[2026-10-05])
+      week_end = Recurrence.local_midnight(~D[2026-10-12])
+
+      published =
+        Repo.all(from(s in Shift, where: s.status == "published", select: s.starts_at))
+
+      assert length(published) == 18
+
+      for starts <- published do
+        assert DateTime.compare(starts, week_start) != :lt
+        assert DateTime.compare(starts, week_end) == :lt
+      end
+    end
   end
 
   describe "reset/0" do
@@ -304,6 +329,9 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "a pairing code for it works in the real exchange", %{conn: conn} do
+      # The limiter's counters are global; another module's wrong codes in the
+      # same 10-minute window would make this exchange a 429.
+      RockcutApi.Devices.PairingRateLimiter.reset()
       {:ok, _} = Synthetic.setup()
       code = Synthetic.pairing_code("taproomDevice")
 
@@ -478,6 +506,128 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.setup() end) end)
       with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.reset() end) end)
       assert Repo.aggregate(Entry, :count) == 5
+    end
+  end
+
+  describe "Brewery task board (D38)" do
+    alias RockcutApi.BreweryTasks
+    alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task}
+    alias RockcutApi.Scheduling.ScheduleEvent
+
+    defp seed_tasks do
+      Repo.all(
+        from(t in Task,
+          where: like(t.title, "[SEED]%"),
+          order_by: [t.due_on, t.position, t.id],
+          select: {t.title, t.due_on, t.position, t.completed_on, t.completed_display}
+        )
+      )
+    end
+
+    defp checks do
+      Repo.all(
+        from(c in DailyCheck,
+          join: i in assoc(c, :daily_item),
+          order_by: [c.on_date, i.position],
+          select: {c.on_date, i.name}
+        )
+      )
+    end
+
+    defp item_names,
+      do: Enum.map(BreweryTasks.list_items(), &{&1.name, &1.position})
+
+    defp board_lists do
+      Repo.all(
+        from(t in Task,
+          where: not is_nil(t.due_on) or is_nil(t.completed_at),
+          order_by: [t.due_on, t.position],
+          select: {t.due_on, t.position}
+        )
+      )
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    end
+
+    test "seeds tasks, Daily checks and a Brewery event relative to today" do
+      {:ok, _} = Synthetic.setup()
+      today = BreweryTasks.today()
+      {:ok, board} = BreweryTasks.board(Date.add(today, -3), Date.add(today, 13), today)
+
+      assert length(seed_tasks()) == 17
+      assert length(board.unfinished) == 2
+      assert length(board.future) == 2
+
+      displays = for {_, _, _, on, d} <- seed_tasks(), on, uniq: true, do: d
+      assert Enum.sort(displays) == ~w(both completed_day planned_day)
+
+      cards = Enum.flat_map(board.days, & &1.cards)
+      assert Enum.any?(cards, & &1.task.assignee_id)
+      assert Enum.any?(cards, & &1.locked)
+
+      daily = Map.new(board.days, &{&1.date, &1.daily})
+      assert %{done: 3, total: 4} = daily[Date.add(today, -1)]
+      assert %{done: 1, total: 4} = daily[today]
+
+      brewery = Repo.get_by!(Department, key: "brewery")
+
+      assert [%ScheduleEvent{all_day: true, status: "published"} = event] =
+               Repo.all(
+                 from(e in ScheduleEvent,
+                   where: e.department_id == ^brewery.id and like(e.notes, "[SEED]%")
+                 )
+               )
+
+      monday = Date.beginning_of_week(BreweryTasks.today())
+      assert BreweryTasks.today_at(event.starts_at) == Date.add(monday, 2)
+    end
+
+    test "setup twice gives the same tasks, checks and items" do
+      {:ok, _} = Synthetic.setup()
+      first = {seed_tasks(), checks(), item_names(), Repo.aggregate(ScheduleEvent, :count)}
+      {:ok, _} = Synthetic.setup()
+
+      assert {seed_tasks(), checks(), item_names(), Repo.aggregate(ScheduleEvent, :count)} ==
+               first
+    end
+
+    test "cleanup_temp removes [TEST-TEMP] tasks and items; the lists stay dense" do
+      {:ok, _} = Synthetic.setup()
+      mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
+      today = BreweryTasks.today()
+
+      {:ok, _} = BreweryTasks.create(%{title: "[TEST-TEMP] first", due_on: today}, mgr)
+      {:ok, kept} = BreweryTasks.create(%{title: "Real task", due_on: today}, mgr)
+      {:ok, _} = BreweryTasks.create(%{title: "[TEST-TEMP] later"}, mgr)
+      {:ok, item} = BreweryTasks.create_item(%{name: "[TEST-TEMP] Hoses"}, mgr)
+      {:ok, _} = BreweryTasks.tick(today, item, mgr, today)
+
+      :ok = Synthetic.cleanup_temp()
+
+      refute Repo.exists?(from(t in Task, where: like(t.title, "[TEST-TEMP]%")))
+      refute Repo.exists?(from(i in DailyItem, where: like(i.name, "[TEST-TEMP]%")))
+      assert Repo.get(Task, kept.id)
+      assert Enum.map(item_names(), &elem(&1, 0)) == DailyItem.defaults()
+
+      for {_day, positions} <- board_lists(),
+          do: assert(positions == Enum.to_list(1..length(positions)))
+    end
+
+    test "reset deletes every Daily check and restores the four default items" do
+      {:ok, _} = Synthetic.setup()
+      mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
+      today = BreweryTasks.today()
+      [backups, gravities | _] = BreweryTasks.list_items()
+
+      {:ok, _} = BreweryTasks.tick(Date.add(today, -5), gravities, mgr, today)
+      {:ok, _} = BreweryTasks.rename_item(gravities, "Gravity", mgr)
+      {:ok, _} = BreweryTasks.retire_item(backups, mgr)
+      {:ok, _} = BreweryTasks.create_item(%{name: "Hoses"}, mgr)
+
+      {:ok, _} = Synthetic.reset()
+
+      assert item_names() == Enum.with_index(DailyItem.defaults(), 1)
+      assert Enum.map(checks(), &elem(&1, 0)) |> Enum.uniq() == [Date.add(today, -1), today]
+      assert length(seed_tasks()) == 17
     end
   end
 end

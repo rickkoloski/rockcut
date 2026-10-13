@@ -277,6 +277,8 @@ export interface Me {
   staff_codes?: boolean
   // D37: the Buy-a-Beer Board's History tab, import and export (owners, Taproom managers).
   beer_board_manage?: boolean
+  // D38: the Brewery task board's History and Edit Daily items (owners, Brewery managers).
+  brewery_tasks_manage?: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────
@@ -579,4 +581,134 @@ export interface BeerBoardWriteResult {
   data: BeerBoardEntry | null
   removed: boolean
   recorded_as?: string
+}
+
+// ── Brewery task board (D38) ────────────────────────────────────────
+
+export type CompletedDisplay = 'planned_day' | 'completed_day' | 'both'
+
+/**
+ * One card on the board. A task can show on two days (spec §7), so `key`
+ * ("<task_id>:<day>", "<task_id>:future" or "<task_id>:unfinished") is the
+ * card's identity, not `id`.
+ */
+export interface TaskCardData {
+  key: string
+  day: string // a date, "future" or "unfinished"
+  id: number
+  title: string
+  notes: string | null
+  due_on: string | null
+  position: number
+  assignee_id: number | null
+  assignee_name: string | null
+  done: boolean
+  completed_at: string | null
+  completed_on: string | null
+  completed_display: CompletedDisplay | null
+  completed_by_id: number | null
+  completed_by_name: string | null
+  created_by_id: number | null
+  created_by_name: string | null
+  /** Tags: "planned Mon 10/12", "done Wed 10/14", "from Future". */
+  planned_on: string | null
+  done_on: string | null
+  from_future: boolean
+  /** Can't be dragged or moved (a finished task shown on the day it was done). */
+  locked: boolean
+  /** Open and planned before today (the amber edge). */
+  overdue: boolean
+  inserted_at: string
+  updated_at: string
+}
+
+export interface HeaderShift {
+  id: number
+  position_name: string
+  starts_at: string
+  ends_at: string
+}
+
+export interface DayHeaderData {
+  people: { user_id: number; name: string; hours: number; shifts: HeaderShift[] }[]
+  open_shifts: HeaderShift[]
+  events: { id: number; title: string; all_day: boolean; starts_at: string; ends_at: string }[]
+  no_brewers: boolean
+}
+
+export interface DailyCardItem {
+  daily_item_id: number
+  name: string
+  active: boolean
+  checked: boolean
+  completed_by_name: string | null
+  completed_at: string | null
+}
+
+/** An item on the Daily card's list (D38 §3.6 `/api/brewery/daily_items`). */
+export interface DailyItem {
+  id: number
+  name: string
+  position: number
+  active: boolean
+}
+
+/** One Brewery task board change-log entry (D38 History). Daily entries have no task_id. */
+export interface TaskEvent {
+  id: number
+  task_id: number | null
+  action:
+    | 'created'
+    | 'edited'
+    | 'assigned'
+    | 'unassigned'
+    | 'moved'
+    | 'completed'
+    | 'uncompleted'
+    | 'deleted'
+    | 'daily_ticked'
+    | 'daily_unticked'
+    | 'item_added'
+    | 'item_renamed'
+    | 'item_retired'
+    | 'item_reordered'
+  /** The task's title (or the Daily item's name) when it happened. */
+  title: string
+  actor_id: number | null
+  actor_name: string | null
+  on_shared_device: boolean
+  detail: Record<string, unknown>
+  inserted_at: string
+}
+
+/** A page of History, with names for the user and Daily item ids its details mention. */
+export interface TaskEventPage {
+  data: TaskEvent[]
+  names: { users: Record<string, string>; items: Record<string, string> }
+  page: number
+  total: number
+  per_page: number
+}
+
+export interface DailyCardData {
+  date: string
+  done: number
+  total: number
+  items: DailyCardItem[]
+}
+
+export interface BoardDay {
+  date: string
+  header: DayHeaderData
+  cards: TaskCardData[]
+  daily: DailyCardData
+}
+
+export interface TaskBoardData {
+  from: string
+  to: string
+  today: string
+  days: BoardDay[]
+  unfinished: TaskCardData[]
+  future: TaskCardData[]
 }

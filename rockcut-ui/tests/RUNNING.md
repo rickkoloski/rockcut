@@ -37,6 +37,7 @@ npx playwright test tests/smoke/roles.spec.ts
 |---|---|---|
 | `setup` | `auth.setup.ts` | Mints persona tokens; every other project depends on it. |
 | `chromium` | every spec except Replace | Parallel. |
+| `brewery-board` | `regression/brewery/task-board-*.spec.ts` (D38) | One worker, beside `chromium`. "Move all to today" moves every open past task on the one shared board, so these specs mustn't overlap. Drag specs use a tall viewport so no drag has to scroll. |
 | `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
 
 **Playwright runs a dependency project in full, whatever path you filter
