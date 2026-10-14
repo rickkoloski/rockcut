@@ -11,7 +11,7 @@ tables).
 scenarios S101–S120
 **Plan:** `docs/current_work/planning/d41_department_task_boards_plan.md`
 **Branch:** `d41-department-task-boards`, cut from `develop` (`e3548f3`).
-**SHA for DEV:** _filled in at push_
+**SHA for DEV:** `1d61ba8`, then `e61869d` (fix cycle 1)
 
 ## What changed
 
@@ -143,3 +143,29 @@ section). S116 (the top-up per board) is ExUnit only.
   a board doesn't carry into the All view; nothing to keep there.
 - **Phone gestures on the All view** (scrolling, the one-day strip) were
   emulated at 412 px only; the Pixel checks them on DEV.
+
+## DEV gate verdict
+
+**SHA tested:** UI `e61869d` (rockcut-ui-dev v33) on API `1d61ba8`
+(rockcut-api-dev v35); `e61869d` changes only the UI and a spec.
+
+- **Migrations at boot on DEV's volume:** row counts identical before
+  (`brewery_*`) and after: tasks 90, task_series 3, task_events 3,043 (all
+  backfilled to the Brewery), daily_items 4, daily_checks 7. Pre-deploy
+  snapshot `vs_D4BGyy2BMJgcwKLekeZj`.
+- **Full Playwright on DEV, run 1 (`1d61ba8`):** 315 passed, 1 failed (S111:
+  the ⋮ menu named "Edit Daily items" while a board's Daily items were still
+  loading; box-only, the response beat the click locally).
+- **Fix cycle 1 (`e61869d`):** the Daily entry waits for the board's Daily
+  items; a test holding the response fails with the old code (revert-checked).
+- **Full Playwright on DEV, run 2 (`e61869d`):** **317 passed, 0 failed**
+  (19.9 min).
+- **Independent pass** (fresh qa agent, personas + scenarios + LIMITATIONS
+  only): **PASS with gaps**; S101–S120 all pass, no must-fix. Report:
+  `docs/current_work/stepwise_results/d41_dev_qa_report.md`.
+  - **G1** (minor): 1 week / Hide completed / phone view are remembered once
+    per browser, shared by every board. **Matt: per board, in D42** (4260).
+  - **G2** (minor): a move accepts another board's task as `before_id` (200,
+    ignored, nothing crosses boards). **Matt: in D42** (4260).
+  - Notes: N1 is task 4117 (in D42); N3 (`no_brewers` key) filed in D42;
+    N2 (phone Next jumps by the range) is D38 behavior, unchanged.
