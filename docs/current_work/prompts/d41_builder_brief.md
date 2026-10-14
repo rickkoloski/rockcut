@@ -289,3 +289,15 @@ Spec §3.5; plan "UI" and step 4. Not the All departments view (step 5).
 the new spec and the brewery folder (`--workers=1`) pass. `feat:` commits.
 **Reply with:** counts, SHAs, a screenshot path for the switcher (desktop
 and 412px), anything you couldn't drive, and any `LEAD:`. Then stop.
+
+## Task 4 answers (lead)
+
+Task 4 accepted (`592fdeb`, `1473777`, `1cf0dde`).
+1. Owners stay out of the assignee list, as on D38's board (the API still
+   accepts one). Spec S105 reworded.
+2. A board whose items are all retired showing "Set up Daily checks" again
+   is fine.
+
+**Paused here** for a machine restart (Matt, 2026-10-13). Next is Task 5
+(plan step 5, the All departments view); the lead writes it after the
+restart.

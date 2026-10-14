@@ -189,7 +189,7 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
 | S102 | `bartender1` | typed `/tasks/brewery`; `GET /api/boards/brewery/tasks` | not Brewery | Goes to `/tasks/bar`. The API answers 403. |
 | S103 | `floater` | Tasks → switcher | Taproom + Brewery member | Lists Taproom and Brewery. Switching to Brewery shows the Brewery board; reloading `/tasks` opens Brewery again (remembered). |
 | S104 | `owner` | Tasks → switcher | no memberships | Lists all four boards; full access on each, including History and Edit Daily items. |
-| S105 | `bartender1` | Taproom board → + Add a task, assign | | The assignee list has only Taproom members (and owners). `brewer1` isn't offered; assigning `brewer1` through the API → 422. |
+| S105 | `bartender1` | Taproom board → + Add a task, assign | | The assignee list has only Taproom members (owners aren't listed, as on D38's board, though the API accepts one). `brewer1` isn't offered; assigning `brewer1` through the API → 422. |
 | S106 | `floater` | Brewery board → add "Keg Wash" weekly; Taproom board | | The series' occurrences are only on the Brewery board. The Taproom board doesn't show them. |
 | S107 | `barMgr` | Taproom ⋮ → **Set up Daily checks** → add "Lines cleaned" | Taproom has no items | The Taproom Daily card appears with "Daily 0/1". The Brewery's card still has its four. |
 | S108 | `barMgr` | Taproom ⋮ → History | after S105–S107 | Taproom events only; nothing from the Brewery board. |
