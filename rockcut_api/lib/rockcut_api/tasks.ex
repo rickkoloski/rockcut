@@ -648,13 +648,28 @@ defmodule RockcutApi.Tasks do
 
   ## Daily card
 
-  @doc "The retired Daily items, by name (Edit Daily items' Retired section, D39)."
+  @doc """
+  The retired Daily items, by name (Edit Daily items' Retired section, D39),
+  each with `deletable` set: never ticked on any day (D42 §2.4).
+  """
   def list_retired_items(%Department{} = dept) do
+    ticked =
+      Repo.all(
+        from c in DailyCheck,
+          join: i in DailyItem,
+          on: i.id == c.daily_item_id,
+          where: i.department_id == ^dept.id and not i.active,
+          distinct: true,
+          select: c.daily_item_id
+      )
+      |> MapSet.new()
+
     Repo.all(
       from i in DailyItem,
         where: i.department_id == ^dept.id and not i.active,
         order_by: [asc: i.name, asc: i.id]
     )
+    |> Enum.map(&%{&1 | deletable: not MapSet.member?(ticked, &1.id)})
   end
 
   @doc "The active Daily items, in order."
@@ -958,6 +973,29 @@ defmodule RockcutApi.Tasks do
         log_item!(restored, "item_restored", actor, %{"daily_item_id" => id})
         restored
       end
+    end)
+  end
+
+  @doc """
+  Delete a retired Daily item that was never ticked (D42 §2.4): an active one
+  is `{:error, :not_retired}`, one with any tick `{:error, :has_ticks}`. Logs
+  `item_deleted`; its earlier History rows stay.
+  """
+  def delete_item(%Department{} = dept, %DailyItem{id: id} = item, %User{} = actor) do
+    with :ok <- on_board(dept, item), do: do_delete_item(dept, id, actor)
+  end
+
+  defp do_delete_item(dept, id, actor) do
+    Repo.transaction(fn ->
+      item = get_item(dept, id) || Repo.rollback(:not_found)
+      if item.active, do: Repo.rollback(:not_retired)
+
+      if Repo.exists?(from c in DailyCheck, where: c.daily_item_id == ^id),
+        do: Repo.rollback(:has_ticks)
+
+      Repo.delete!(item)
+      log_item!(item, "item_deleted", actor, %{"daily_item_id" => id})
+      :ok
     end)
   end
 

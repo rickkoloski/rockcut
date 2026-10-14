@@ -289,7 +289,8 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
             String.starts_with?(r.path, "/api/boards/:dept"),
             do: {r.verb, fill.(r.path)}
 
-      assert length(routes) == 18
+      # D42 added DELETE daily_items/:id.
+      assert length(routes) == 19
 
       for {verb, path} <- routes, {verb, path} != {:get, "/api/boards/all/tasks"} do
         conn = call(p["owner"], verb, path, %{title: "x", name: "x", ids: []})

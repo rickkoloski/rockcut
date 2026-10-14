@@ -14,6 +14,8 @@ defmodule RockcutApi.Tasks.DailyItem do
     field :name, :string
     field :position, :integer, default: 0
     field :active, :boolean, default: true
+    # D42: set on the retired list only (never ticked, so it may be deleted).
+    field :deletable, :boolean, virtual: true
 
     belongs_to :department, RockcutApi.Accounts.Department
 

@@ -250,6 +250,7 @@ defmodule RockcutApiWeb.Router do
     put "/daily_items/order", DailyController, :order_items
     patch "/daily_items/:id", DailyController, :update_item
     post "/daily_items/:id/restore", DailyController, :restore_item
+    delete "/daily_items/:id", DailyController, :delete_item
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -69,6 +69,19 @@ defmodule RockcutApiWeb.DailyController do
     |> TaskErrors.handle(conn)
   end
 
+  @doc """
+  DELETE /api/boards/:dept/daily_items/:id: a retired item never ticked (D42
+  §2.4); otherwise 422 `not_retired` or `has_ticks`.
+  """
+  def delete_item(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :manage, :daily_items),
+         {:ok, item} <- fetch(conn, id),
+         {:ok, :ok} <- Tasks.delete_item(board(conn), item, actor(conn)) do
+      send_resp(conn, :no_content, "")
+    end
+    |> TaskErrors.handle(conn)
+  end
+
   def create_item(conn, params) do
     with :ok <- allow(conn, :manage, :daily_items),
          {:ok, item} <- Tasks.create_item(board(conn), Map.take(params, ["name"]), actor(conn)) do
