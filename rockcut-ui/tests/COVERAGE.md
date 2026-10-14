@@ -334,3 +334,41 @@ brewery folder (S117), all in the one-worker `brewery-board` project.
 | S120 | breweryMgr, floater: no All departments; `/tasks/all` → their board; API 403 | Playwright `task-board-departments` (S120 ×2); ExUnit controller (S120, devices included), `authz_parity/task_boards_test` (All departments rows); Vitest `tasks.test` (boardTarget never picks `all`) |
 | — | Seed: Taproom and Office `[SEED]` tasks, Sales empty, Daily items only on the Brewery; `cleanup_temp` and `reset` on every board | ExUnit `seeds/synthetic_test` (the other boards, D41 ×4) |
 | — | The rename migrations on DEV's real D38/D39 data; the installed PWA's old link; the switcher and header against DEV's schedule | **Manual on DEV** (handoff note LIMITATIONS) |
+
+## D42 — Task board follow-ups + required password reset (`specs/d42_task_board_follow_ups_spec.md`)
+
+S121–S142. ExUnit files are under `rockcut_api/test/`: `rockcut_api_web/plugs/password_reset_gate_test`
+(§2.1), controllers `task_boards_controller_test` (S124), `task_board_controller_test` (the header
+key), `daily_item_delete_test` (§2.4), `task_series_controller_test` (the series preview, §2.6),
+`device_route_matrix_test` (the new DELETE route), `rockcut_api/tasks/series_edits_test` ("notes
+only", §2.5 and the keep offer), `rockcut_api/tasks/series_ends_test` (§2.6 and R2, §3). Vitest
+under `src/lib/` (`tasks.test`, `repeat.test`). Playwright
+`tests/regression/tasks/task-board-follow-ups.spec.ts`, in the one-worker `brewery-board` project.
+
+| # | Scenario | Layer |
+|---|---|---|
+| S121 | newhire (reset required): board 403, beer board 403, `/api/me` 200 | Playwright `task-board-follow-ups` (S121, API); ExUnit `password_reset_gate_test` (19 routes across areas and both pipelines, the four allowed ones, devices unaffected) |
+| S122 | a `[TEST-TEMP]` person after an owner resets their password: a write 403, new password, then 200 | **ExUnit only** `password_reset_gate_test` (S122; also a person created with a temporary password): the reset signs the person out everywhere, so the browser side is S123 |
+| S123 | a person with a temporary password signs in: "Set a new password", then the board works | Playwright `task-board-follow-ups` (S123, a `[TEST-TEMP]` person) |
+| S124 | floater: a Taproom task's id as a Brewery move's `before_id` → 404, nothing changes | Playwright `task-board-follow-ups` (S124, API); ExUnit controller `task_boards_controller_test` (S124; a same-board `before_id` still works), `tasks_test` (a stale one goes last) |
+| S125 | bartender1: Taproom day with no one scheduled → "No one scheduled" from `no_one_scheduled` | Playwright `task-board-follow-ups` (S125, also the API key); ExUnit controller `task_board_controller_test` (header) |
+| S126 | barMgr: add "[TEST-TEMP] Typo", retire, Delete; History "Deleted the Daily item"; no day's count changes | Playwright `task-board-follow-ups` (S126, persist-verified); ExUnit `daily_item_delete_test` (S126) |
+| S127 | breweryMgr: a retired item ticked once has no Delete; API 422 `has_ticks` | Playwright `task-board-follow-ups` (S127); ExUnit `daily_item_delete_test` (S127) |
+| S128 | breweryMgr: DELETE an active item → 422 `not_retired`; a Taproom item → 403 | Playwright `task-board-follow-ups` (S128, API); ExUnit `daily_item_delete_test` (S128; another board's id 404, owners may) |
+| S129 | brewer1: notes on one "just this one", then "following" title + notes from earlier: that one keeps its notes | **ExUnit only** `series_edits_test` ("notes only": S129, notes reach only the ones whose notes were the series'): no UI change |
+| S130 | brewer1: a title on one "just this one", then "following" title: that one keeps its title | **ExUnit only** `series_edits_test` (S130); Playwright `brewery/task-board-recurring` (S60/S61, a title-changed one keeps its values) |
+| S131 | breweryMgr: split weekly → monthly, Edit series… on the earlier part, Ends → Never: monthly stays monthly, no "Removes", ~12 months | ExUnit `series_ends_test` (S131: same parts and rules, to the horizon, one History entry); the wording in Playwright `task-board-follow-ups` ("Extends the series.") |
+| S132 | breweryMgr: unsplit weekly ending on a date → After 5 times: "Removes N later occurrences"; 5 remain | Playwright `task-board-follow-ups` (S131/S132 wording: "Removes 11 later occurrences.", then 5 through the API); ExUnit `series_ends_test` (S132), controller `task_series_controller_test` (the preview); Vitest `repeat.test` (endsOnlyChange) |
+| S133 | breweryMgr: 12 active Daily items: Add and Restore disabled with the hint | Playwright `task-board-follow-ups` (S133), `brewery/task-board-daily-items` (S31, S75 updated: greyed out, the API still refuses) |
+| S134 | floater: Brewery 2 weeks + Hide completed; Taproom keeps its own; back on Brewery they hold | Playwright `task-board-follow-ups` (S134, revert-checked); Vitest `tasks.test` (the choices per board, All departments included) |
+| S135 | brewer1 with D41 settings in this browser: the same span / Hide completed / phone view after D42 | Playwright `task-board-follow-ups` (S135); Vitest `tasks.test` (S135: the shared value, then the board's own; the D41 key before it) |
+| S136 | brewer1: First day → Monday on a Wednesday: Mon–Sun, Mon and Tue dimmed and usable; Next → next Mon | Playwright `task-board-follow-ups` (S136, revert-checked; remembered after a reload); Vitest `tasks.test` (weekStart, defaultRange) |
+| S137 | brewer1: First day → Sunday, 2 weeks: this Sun through next Sat; "Today" returns there | Playwright `task-board-follow-ups` (S137); Vitest `tasks.test` (S136, S137) |
+| S138 | owner: All departments on Monday, Brewery on Today; an All card for Tuesday opens Brewery with Tuesday in range | Playwright `task-board-follow-ups` (S138); Vitest `tasks.test` (S138: rangeForDay with a first day) |
+| S139 | brewer1 at 412×915: Monday, vertical view starts Monday scrolled to today; one-day opens today | Playwright `task-board-follow-ups` (S139, emulated touch) |
+| S140 | brewer1: First day → Monday, then a typed range shows as typed | Playwright `task-board-follow-ups` (S140) |
+| S141 | breweryMgr: weekly Wed after 10; split to Thu at the 6th; Wed → Fri from the 3rd: every part "After 10 times", 10 in all | **ExUnit only** `series_ends_test` (S141), `series_edits_test` (count-ended split, updated for R2): the dialog shows the API's count |
+| S142 | breweryMgr: the same split, Ends → After 12 from the later part: 12, the Thursday rule unchanged | **ExUnit only** `series_ends_test` (S142; a part stored as a date before D42 still a date) |
+| — | A notes-only occurrence is offered for keeping (split, Stop repeating, Ends-only) | ExUnit `series_edits_test` (keep and remove, revert-checked) |
+| — | A `password_reset_required` answer in an open tab shows "Set a new password" | **GAP (manual)**: a manager's reset revokes the session (401), so no test reaches the 403 in a browser; the handler is `api.ts` + `useAuth.ts` |
+| — | Old split parts stored as dates (D39) and real per-browser D41 settings | **Manual on DEV** (handoff note LIMITATIONS) |
