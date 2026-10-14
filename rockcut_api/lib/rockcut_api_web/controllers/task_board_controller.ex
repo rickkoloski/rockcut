@@ -3,9 +3,15 @@ defmodule RockcutApiWeb.TaskBoardController do
   A department's task board (D38 §3.6; per department since D41): the board
   `GET`, task writes and the change log, under `/api/boards/:dept`. The
   `TaskBoard` plug puts the board's department in `conn.assigns.board`.
-  People only (D40 opens the writes to the brewhouse tablet). Every action
-  asks `Authz`: `:read` and `:write` on `{:tasks, dept}` for the department's
-  members, `:history` for its managers. Owners pass `Authz`'s owner clause.
+  Every action asks `Authz`: `:read` and `:write` on `{:tasks, dept}` for the
+  department's members, `:history` for its managers. Owners pass `Authz`'s
+  owner clause.
+
+  D40: a department's shared tablet reads and writes its home board (not
+  History, not another board). Each write from it needs a `staff_code` and is
+  made as that person (`StaffCodeActing`), with the tablet in the change
+  log; its responses carry `recorded_as` (the person's name), and a delete
+  answers 200 with it instead of 204.
 
   A route with a task id asks `Authz` first (someone outside the department
   gets 403 on every route, D38 S39), then finds the task **on this board**:
@@ -19,10 +25,17 @@ defmodule RockcutApiWeb.TaskBoardController do
   use RockcutApiWeb, :controller
 
   import RockcutApiWeb.JSONHelpers,
-    only: [task_board: 1, all_task_boards: 1, task: 1, task_event: 1, task_series: 2]
+    only: [
+      task_board: 1,
+      all_task_boards: 1,
+      task: 1,
+      task_event: 1,
+      task_series: 2,
+      for_viewer: 2
+    ]
 
   alias RockcutApi.{Authz, Tasks}
-  alias RockcutApiWeb.TaskErrors
+  alias RockcutApiWeb.{StaffCodeActing, TaskErrors}
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -32,7 +45,7 @@ defmodule RockcutApiWeb.TaskBoardController do
          {:ok, from} <- date_param(params["from"]),
          {:ok, to} <- date_param(params["to"]),
          {:ok, board} <- Tasks.board(board(conn), from, to) do
-      json(conn, %{data: task_board(board)})
+      reply(conn, %{data: task_board(board)})
     end
     |> TaskErrors.handle(conn)
   end
@@ -52,72 +65,74 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def create(conn, params) do
-    with :ok <- allow(conn, :write),
-         {:ok, task} <- Tasks.create(board(conn), params, actor(conn)) do
-      conn |> put_status(:created) |> render_task(task)
+    with {:ok, actor} <- writer(conn, params),
+         {:ok, task} <- Tasks.create(board(conn), Map.delete(params, "staff_code"), actor) do
+      conn |> put_status(:created) |> render_task(task, actor)
     end
     |> TaskErrors.handle(conn)
   end
 
   def update(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, actor} <- writer(conn, params),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
            Tasks.update(
              board(conn),
              task,
-             Map.drop(params, ~w(id scope changed)),
-             actor(conn),
+             Map.drop(params, ~w(id scope changed staff_code)),
+             actor,
              series_opts(params)
            ) do
-      render_task(conn, task)
+      render_task(conn, task, actor)
     end
     |> TaskErrors.handle(conn)
   end
 
   @doc "POST /api/boards/:dept/tasks/:id/move: `{ due_on, before_id? }`; `due_on: null` = Future."
   def move(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, actor} <- writer(conn, params),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
-           Tasks.move(board(conn), task, params["due_on"], params["before_id"], actor(conn)) do
-      render_task(conn, task)
+           Tasks.move(board(conn), task, params["due_on"], params["before_id"], actor) do
+      render_task(conn, task, actor)
     end
     |> TaskErrors.handle(conn)
   end
 
-  def move_overdue_to_today(conn, _params) do
-    with :ok <- allow(conn, :write),
-         {:ok, count} <- Tasks.move_overdue_to_today(board(conn), actor(conn)) do
-      json(conn, %{moved: count})
+  def move_overdue_to_today(conn, params) do
+    with {:ok, actor} <- writer(conn, params),
+         {:ok, count} <- Tasks.move_overdue_to_today(board(conn), actor) do
+      reply(conn, %{moved: count}, actor)
     end
     |> TaskErrors.handle(conn)
   end
 
   @doc "POST /api/boards/:dept/tasks/:id/complete: `{ display? }` (required off its own day)."
   def complete(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, actor} <- writer(conn, params),
          {:ok, task} <- fetch(conn, id),
-         {:ok, task} <- Tasks.complete(board(conn), task, params["display"], actor(conn)) do
-      render_task(conn, task)
+         {:ok, task} <- Tasks.complete(board(conn), task, params["display"], actor) do
+      render_task(conn, task, actor)
     end
     |> TaskErrors.handle(conn)
   end
 
-  def uncomplete(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+  def uncomplete(conn, %{"id" => id} = params) do
+    with {:ok, actor} <- writer(conn, params),
          {:ok, task} <- fetch(conn, id),
-         {:ok, task} <- Tasks.uncomplete(board(conn), task, actor(conn)) do
-      render_task(conn, task)
+         {:ok, task} <- Tasks.uncomplete(board(conn), task, actor) do
+      render_task(conn, task, actor)
     end
     |> TaskErrors.handle(conn)
   end
 
   def delete(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, actor} <- writer(conn, params),
          {:ok, task} <- fetch(conn, id),
-         {:ok, :deleted} <- Tasks.delete(board(conn), task, actor(conn), series_opts(params)) do
-      send_resp(conn, :no_content, "")
+         {:ok, :deleted} <- Tasks.delete(board(conn), task, actor, series_opts(params)) do
+      if actor.on_device_id,
+        do: reply(conn, %{}, actor),
+        else: send_resp(conn, :no_content, "")
     end
     |> TaskErrors.handle(conn)
   end
@@ -133,7 +148,7 @@ defmodule RockcutApiWeb.TaskBoardController do
          {:ok, {series, preview}} <- Tasks.series_info(board(conn), task),
          {:ok, change} <- change_preview(conn, task, params) do
       data = task_series(series, preview)
-      json(conn, %{data: if(change, do: Map.put(data, :change, change), else: data)})
+      reply(conn, %{data: if(change, do: Map.put(data, :change, change), else: data)})
     end
     |> TaskErrors.handle(conn)
   end
@@ -147,10 +162,10 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/stop_repeating: `{ changed? }`. Ends the series on this one."
   def stop_repeating(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, actor} <- writer(conn, params),
          {:ok, task} <- fetch(conn, id),
-         {:ok, task} <- Tasks.stop_repeating(board(conn), task, actor(conn), series_opts(params)) do
-      render_task(conn, task)
+         {:ok, task} <- Tasks.stop_repeating(board(conn), task, actor, series_opts(params)) do
+      render_task(conn, task, actor)
     end
     |> TaskErrors.handle(conn)
   end
@@ -176,18 +191,30 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   defp allow(conn, action) do
-    if Authz.can?(actor(conn), action, {:tasks, board(conn)}),
+    if Authz.can?(current_user(conn), action, {:tasks, board(conn)}),
       do: :ok,
       else: {:error, :forbidden}
   end
 
   defp allow_all(conn) do
-    if Authz.can?(actor(conn), :read, {:tasks, :all}),
+    if Authz.can?(current_user(conn), :read, {:tasks, :all}),
       do: :ok,
       else: {:error, :forbidden}
   end
 
-  defp actor(conn), do: conn.assigns.current_user
+  # Who a write is for (D40): the signed-in person, or on the board's shared
+  # tablet the person whose staff code came with it, carrying the tablet for
+  # the change log. Access to the board comes first, so a tablet on another
+  # board is 403 before any code is checked.
+  defp writer(conn, params) do
+    with :ok <- allow(conn, :write),
+         {:ok, person, device} <-
+           StaffCodeActing.acting(conn, params, {:tasks, board(conn)}) do
+      {:ok, %{person | on_device_id: device && device.id}}
+    end
+  end
+
+  defp current_user(conn), do: conn.assigns.current_user
   defp board(conn), do: conn.assigns.board
 
   defp series_opts(params) do
@@ -212,8 +239,17 @@ defmodule RockcutApiWeb.TaskBoardController do
     end
   end
 
-  defp render_task(conn, task),
-    do: json(conn, %{data: task |> Tasks.with_names() |> task()})
+  defp render_task(conn, task, actor),
+    do: reply(conn, %{data: task |> Tasks.with_names() |> task()}, actor)
+
+  # A write's response from a shared tablet names the person it was recorded
+  # as (D37's `recorded_as`), so the tablet can show "Acting as …".
+  defp reply(conn, body, actor) do
+    body = if actor.on_device_id, do: Map.put(body, :recorded_as, actor.name), else: body
+    reply(conn, body)
+  end
+
+  defp reply(conn, body), do: json(conn, for_viewer(body, current_user(conn)))
 
   defp date_param(value) when is_binary(value) do
     case Date.from_iso8601(value) do

@@ -476,8 +476,9 @@ defmodule RockcutApi.Seeds.SyntheticTest do
         with_codes("nobody:1111", fn -> Synthetic.setup() end)
       end
 
-      assert_raise ArgumentError, ~r/can't hold a staff code.*brewer1/, fn ->
-        with_codes("brewer1:1111", fn -> Synthetic.setup() end)
+      # D40: any employee may hold one; someone in no department may not.
+      assert_raise ArgumentError, ~r/can't hold a staff code.*noDept/, fn ->
+        with_codes("noDept:1111", fn -> Synthetic.setup() end)
       end
     end
 

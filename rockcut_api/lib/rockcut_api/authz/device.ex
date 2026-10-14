@@ -9,7 +9,11 @@ defmodule RockcutApi.Authz.Device do
     * read published shifts and events, positions, departments and the roster;
     * view (and mark read) the All-staff channel and its home department's channel;
     * access its home department's module;
-    * read the Buy-a-Beer Board, if it's a Taproom tablet (D37).
+    * read the Buy-a-Beer Board, if it's a Taproom tablet (D37);
+    * read and write its home department's task board (D40): tasks, moves
+      and Daily ticks. Never another board, the All departments view, History
+      or the Daily items list's changes. Every write also needs a person's
+      staff code and is decided for that person (`StaffCodeActing`).
 
   When roles become data (RBAC roadmap Phases 2–6), this list becomes the
   system role for device accounts; `authz_device_test.exs` pins it.
@@ -42,6 +46,12 @@ defmodule RockcutApi.Authz.Device do
   # staff code and are decided for that person; history, import and export
   # never reach a device (people-only routes).
   def can?(%User{} = device, :read, :beer_board), do: home_key(device) == "bar"
+
+  # D40: a tablet's home board, and no other. `:history`, `{:daily_items, _}`
+  # and `{:tasks, :all}` fall through to the catch-all.
+  def can?(%User{} = device, action, {:tasks, %Department{key: key}})
+      when action in [:read, :write],
+      do: key == home_key(device)
 
   def can?(_device, _action, _resource), do: false
 

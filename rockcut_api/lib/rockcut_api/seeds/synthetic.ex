@@ -496,7 +496,7 @@ defmodule RockcutApi.Seeds.Synthetic do
             raise(
               ArgumentError,
               "SYNTHETIC_STAFF_CODES lists personas who can't hold a staff code " <>
-                "(not active Taproom members): #{Enum.join(ineligible, ", ")}"
+                "(inactive, or in no department): #{Enum.join(ineligible, ", ")}"
             )
 
         for {_key, user} <- users, do: StaffCodes.seed_clear!(user)

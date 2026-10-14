@@ -1,5 +1,9 @@
 defmodule RockcutApi.StaffCodesTest do
-  @moduledoc "D37 §3.2: staff codes (set, remove, reveal, resolve, eligibility, storage)."
+  @moduledoc """
+  D37 §3.2: staff codes (set, remove, reveal, resolve, eligibility, storage).
+  D40 (plan decision 2): every employee can hold one, set by owners and the
+  managers of a department the person belongs to.
+  """
   use RockcutApi.DataCase, async: false
 
   import RockcutApi.AccountsFixtures
@@ -69,8 +73,26 @@ defmodule RockcutApi.StaffCodesTest do
       assert {:error, :invalid_code} = StaffCodes.set(b, 1234, mgr)
     end
 
-    test "someone outside the Taproom can't hold a code (S3)", %{bar_mgr: mgr, brewer: brewer} do
-      assert {:error, :not_eligible} = StaffCodes.set(brewer, "4821", mgr)
+    test "D40: a Brewery-only employee gets a code from a Brewery manager", %{
+      brewery_mgr: bm,
+      brewer: brewer
+    } do
+      assert {:ok, _} = StaffCodes.set(brewer, "4821", bm)
+      assert StaffCodes.resolve("4821").id == brewer.id
+      assert {:ok, "4821"} = StaffCodes.reveal(brewer, bm)
+    end
+
+    test "D40: a Taproom manager can't set one for a Brewery-only person", %{
+      bar_mgr: mgr,
+      brewer: brewer
+    } do
+      assert {:error, :forbidden} = StaffCodes.set(brewer, "4821", mgr)
+      assert {:error, :forbidden} = StaffCodes.reveal(brewer, mgr)
+    end
+
+    test "D40: someone with no department can't hold a code", %{owner: o} do
+      nobody = RockcutApi.AccountsFixtures.user_fixture()
+      assert {:error, :not_eligible} = StaffCodes.set(nobody, "4821", o)
     end
 
     test "a shared device can't hold a code", %{owner: o} do
@@ -104,7 +126,7 @@ defmodule RockcutApi.StaffCodesTest do
       assert audits(b, "staff_code.reveal") == []
     end
 
-    test "forbidden to anyone but owners and Taproom managers (S4)", %{
+    test "forbidden to anyone but owners and the person's department managers (S4)", %{
       bar_mgr: mgr,
       bartender: b,
       brewery_mgr: bm
@@ -161,14 +183,28 @@ defmodule RockcutApi.StaffCodesTest do
       assert [%{detail: %{"reason" => "ineligible"}}] = audits(b, "staff_code.remove")
     end
 
-    test "leaving the Taproom clears the code (S12)", %{owner: o, bar_mgr: mgr, bartender: b} do
+    test "D40: leaving one of two departments keeps the code", %{
+      owner: o,
+      bar_mgr: mgr,
+      bartender: b
+    } do
       {:ok, _} = StaffCodes.set(b, "4821", mgr)
 
       {:ok, _} =
         Accounts.set_memberships(b, [%{"department" => "brewery", "role" => "employee"}], o)
 
-      refute StaffCodes.has_code?(Accounts.get_user!(b.id))
+      assert StaffCodes.resolve("4821").id == b.id
+      assert audits(b, "staff_code.remove") == []
+    end
+
+    test "S49 (D40 wording): leaving the only department clears the code, since none is left",
+         %{owner: o, brewery_mgr: bm, brewer: brewer} do
+      {:ok, _} = StaffCodes.set(brewer, "4821", bm)
+      {:ok, _} = Accounts.set_memberships(brewer, [], o)
+
+      refute StaffCodes.has_code?(Accounts.get_user!(brewer.id))
       assert StaffCodes.resolve("4821") == nil
+      assert [%{detail: %{"reason" => "ineligible"}}] = audits(brewer, "staff_code.remove")
     end
 
     test "other edits keep the code", %{owner: o, bar_mgr: mgr, bartender: b} do

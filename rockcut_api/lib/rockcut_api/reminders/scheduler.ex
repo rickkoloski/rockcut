@@ -6,7 +6,9 @@ defmodule RockcutApi.Reminders.Scheduler do
 
   D39: each tick also tops up recurring Brewery tasks to today + 12 months
   (`Tasks.Series.top_up/1`; a no-op after the day's first run). Each job
-  is rescued on its own, so one failing never stops the other.
+  is rescued on its own, so one failing never stops the others.
+
+  D40: and sends the shift-end reminders (`Reminders.run_shift_end/1`).
   """
   use GenServer
   require Logger
@@ -32,6 +34,13 @@ defmodule RockcutApi.Reminders.Scheduler do
       Reminders.run()
     rescue
       e -> Logger.error("reminder scan failed: #{inspect(e)}")
+    end
+
+    # D40: the shift-end reminder for Brewery shifts.
+    try do
+      Reminders.run_shift_end()
+    rescue
+      e -> Logger.error("shift-end reminder scan failed: #{inspect(e)}")
     end
 
     try do

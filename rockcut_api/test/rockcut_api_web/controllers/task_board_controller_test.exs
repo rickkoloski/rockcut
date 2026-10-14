@@ -97,13 +97,24 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
       end
     end
 
-    test "a shared device gets 403 on every route", %{p: p, token: token, today: today} do
+    # D40: a tablet reaches only its own board (task_board_device_test). The
+    # Taproom's on the Brewery board: `Authz.Device` refuses the routes a
+    # tablet may use, the router gate the people-only ones.
+    test "another department's tablet gets 403 on every route", %{
+      p: p,
+      token: token,
+      today: today
+    } do
       owner_task = add!(p["owner"], %{due_on: Date.to_iso8601(today)})
 
       for {verb, path, params} <- routes(owner_task["id"], today) do
-        conn = call_device(token, verb, path, params)
+        conn = call_device(token, verb, path, Map.put(params, :staff_code, "1234"))
         assert conn.status == 403, "#{verb} #{path}"
-        assert json_response(conn, 403)["error"] == "Not available on a shared device"
+
+        assert json_response(conn, 403)["error"] in [
+                 "Forbidden",
+                 "Not available on a shared device"
+               ]
       end
     end
   end

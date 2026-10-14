@@ -1254,6 +1254,7 @@ defmodule RockcutApi.Tasks.Series do
       task_id: task.id,
       action: action,
       actor_id: actor.id,
+      device_id: actor.on_device_id,
       title: task.title,
       detail: detail
     })

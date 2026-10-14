@@ -3,42 +3,53 @@ defmodule RockcutApiWeb.DailyController do
   A board's Daily card (D38 §3.6; per department since D41): ticking checks
   (`:write` on `{:tasks, dept}`, any member of the department) and the Daily
   items list (read by its members; changed by its managers, `:manage` on
-  `{:daily_items, dept}`). People only. A route with an item id asks `Authz`
-  first, then finds the item on this board: another board's is 404.
+  `{:daily_items, dept}`). A route with an item id asks `Authz` first, then
+  finds the item on this board: another board's is 404.
+
+  D40: a department's shared tablet ticks and unticks its home board's checks
+  with a `staff_code`, as the person it belongs to (`StaffCodeActing`); the
+  responses carry `recorded_as`, and an untick answers 200 with it instead of
+  204. It reads the items list (the board needs it) but never changes it.
   """
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [daily_item: 1]
+  import RockcutApiWeb.JSONHelpers, only: [daily_item: 1, for_viewer: 2]
 
   alias RockcutApi.{Authz, Tasks}
-  alias RockcutApiWeb.TaskErrors
+  alias RockcutApiWeb.{StaffCodeActing, TaskErrors}
 
   action_fallback RockcutApiWeb.FallbackController
 
   @doc "PUT /api/boards/:dept/daily_checks/:on_date/:daily_item_id: tick (today or earlier)."
-  def tick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
-    with :ok <- allow(conn, :write, :tasks),
+  def tick(conn, %{"on_date" => on_date, "daily_item_id" => item_id} = params) do
+    with {:ok, actor} <- writer(conn, params),
          {:ok, item} <- fetch(conn, item_id),
-         {:ok, check} <- Tasks.tick(board(conn), on_date, item, actor(conn)) do
-      json(conn, %{
-        data: %{
-          on_date: check.on_date,
-          daily_item_id: check.daily_item_id,
-          checked: true,
-          completed_by_id: check.completed_by_id,
-          completed_at: check.completed_at
-        }
-      })
+         {:ok, check} <- Tasks.tick(board(conn), on_date, item, actor) do
+      reply(
+        conn,
+        %{
+          data: %{
+            on_date: check.on_date,
+            daily_item_id: check.daily_item_id,
+            checked: true,
+            completed_by_id: check.completed_by_id,
+            completed_at: check.completed_at
+          }
+        },
+        actor
+      )
     end
     |> TaskErrors.handle(conn)
   end
 
   @doc "DELETE /api/boards/:dept/daily_checks/:on_date/:daily_item_id: untick."
-  def untick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
-    with :ok <- allow(conn, :write, :tasks),
+  def untick(conn, %{"on_date" => on_date, "daily_item_id" => item_id} = params) do
+    with {:ok, actor} <- writer(conn, params),
          {:ok, item} <- fetch(conn, item_id),
-         {:ok, :ok} <- Tasks.untick(board(conn), on_date, item, actor(conn)) do
-      send_resp(conn, :no_content, "")
+         {:ok, :ok} <- Tasks.untick(board(conn), on_date, item, actor) do
+      if actor.on_device_id,
+        do: reply(conn, %{}, actor),
+        else: send_resp(conn, :no_content, "")
     end
     |> TaskErrors.handle(conn)
   end
@@ -130,12 +141,28 @@ defmodule RockcutApiWeb.DailyController do
   defp maybe_retire(_dept, item, _params, _actor), do: {:ok, item}
 
   defp render_items(conn, items),
-    do: json(conn, %{data: Enum.map(items, &daily_item/1)})
+    do: json(conn, for_viewer(%{data: Enum.map(items, &daily_item/1)}, actor(conn)))
 
   defp allow(conn, action, area) do
     if Authz.can?(actor(conn), action, {area, board(conn)}),
       do: :ok,
       else: {:error, :forbidden}
+  end
+
+  # Who a tick is for (D40): the signed-in person, or on the board's shared
+  # tablet the person whose staff code came with it (`TaskBoardController`
+  # does the same for tasks).
+  defp writer(conn, params) do
+    with :ok <- allow(conn, :write, :tasks),
+         {:ok, person, device} <-
+           StaffCodeActing.acting(conn, params, {:tasks, board(conn)}) do
+      {:ok, %{person | on_device_id: device && device.id}}
+    end
+  end
+
+  defp reply(conn, body, actor) do
+    body = if actor.on_device_id, do: Map.put(body, :recorded_as, actor.name), else: body
+    json(conn, for_viewer(body, actor(conn)))
   end
 
   defp actor(conn), do: conn.assigns.current_user

@@ -1,7 +1,8 @@
 defmodule RockcutApi.StaffCodes do
   @moduledoc """
-  Staff codes (D37 §3.2): a 4-digit code per Taproom member. Typed on a shared
-  device, it attributes that one request to the person. It is not a sign-in.
+  Staff codes (D37 §3.2): a 4-digit code per employee (Taproom only until
+  D40). Typed on a shared device, it attributes that one request to the
+  person. It is not a sign-in.
 
   Each code is stored twice on `users`:
     * `staff_code_digest`: `Tokens.hash/1` (HMAC-SHA256 with the endpoint
@@ -11,9 +12,11 @@ defmodule RockcutApi.StaffCodes do
       (`config :rockcut_api, :staff_code_key`), the user id as associated
       data. This is what lets a manager see the code in the user dialog.
 
-  Owners and Taproom managers set and see codes (`Authz`). Only active people
-  with a Taproom membership may hold one; `clear_if_ineligible/2` runs when
-  someone is deactivated or leaves the Taproom.
+  Owners and the managers of a department the person belongs to set and see
+  codes (`Authz`). Only active people with at least one department may hold
+  one; `clear_if_ineligible/2` runs when someone is deactivated or left with
+  no department. Which tablet accepts a code is the caller's check
+  (`RockcutApiWeb.StaffCodeActing`: a member of the tablet's home department).
   """
   import Ecto.Query, only: [from: 2]
 
@@ -25,8 +28,8 @@ defmodule RockcutApi.StaffCodes do
   @doc "True if `user` may hold a staff code (`Authz.can_hold_staff_code?/1`)."
   def eligible?(%User{} = user), do: Authz.can_hold_staff_code?(Accounts.get_user!(user.id))
 
-  @doc "True if `user` sees and sets staff codes (owners and Taproom managers; `/api/me`)."
-  def can_manage?(%User{} = user), do: Authz.can?(user, :set_staff_code, %User{})
+  @doc "True if `user` sees and sets staff codes (owners and managers; `/api/me`)."
+  def can_manage?(%User{} = user), do: Authz.can?(user, :manage, :staff_codes)
 
   @doc "True if the user has a staff code."
   def has_code?(%User{staff_code_digest: digest}), do: not is_nil(digest)
@@ -106,8 +109,8 @@ defmodule RockcutApi.StaffCodes do
   end
 
   @doc """
-  The person a code belongs to, or `nil`. Only an active Taproom member's code
-  resolves, so a stale code is just a wrong one.
+  The person a code belongs to, or `nil`. Only an eligible person's code
+  resolves (`eligible?/1`), so a stale code is just a wrong one.
   """
   def resolve(code) when is_binary(code) do
     code = String.trim(code)
@@ -124,9 +127,9 @@ defmodule RockcutApi.StaffCodes do
   def resolve(_), do: nil
 
   @doc """
-  Clear the code of someone who may no longer hold one (deactivated, or no
-  longer in the Taproom). Called inside `Accounts`' user and membership
-  transactions; audited as an automatic removal.
+  Clear the code of someone who may no longer hold one (deactivated, or left
+  with no department; leaving one of two keeps it). Called inside `Accounts`'
+  user and membership transactions; audited as an automatic removal.
   """
   def clear_if_ineligible(user_id, %User{} = actor) do
     user = Accounts.get_user!(user_id)

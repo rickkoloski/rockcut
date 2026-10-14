@@ -120,6 +120,33 @@ defmodule RockcutApi.AccountsTest do
       assert detail == %{"from" => ctx.brewer2.id, "to" => nil, "reason" => "left_brewery"}
     end
 
+    test "S49 (D40): Brewery-only, removed from the Brewery → tasks as above, code cleared",
+         ctx do
+      only = user_with_role("employee", "brewery")
+      {:ok, _} = RockcutApi.StaffCodes.set(only, "4821", ctx.mgr)
+
+      {:ok, open} =
+        Tasks.create(
+          brewery_board(),
+          %{title: "Open 2", due_on: ~D[2026-10-14], assignee_id: only.id},
+          ctx.mgr
+        )
+
+      assert {:ok, _} = Accounts.set_memberships(only, [], ctx.mgr)
+
+      assert Repo.get!(Task, open.id).assignee_id == nil
+      # No department left, so no code (plan decision 2).
+      refute RockcutApi.StaffCodes.has_code?(Accounts.get_user!(only.id))
+    end
+
+    test "D40: leaving the Brewery but staying in the Taproom keeps the code", ctx do
+      {:ok, _} = RockcutApi.StaffCodes.set(ctx.brewer2, "4821", ctx.mgr)
+      assert {:ok, _} = Accounts.set_memberships(ctx.brewer2, [], ctx.mgr)
+
+      assert Repo.get!(Task, ctx.open.id).assignee_id == nil
+      assert RockcutApi.StaffCodes.resolve("4821").id == ctx.brewer2.id
+    end
+
     test "deactivating someone unassigns their open tasks", ctx do
       owner = owner_fixture()
       assert {:ok, _} = Accounts.update_user(ctx.brewer2, %{"active" => false}, owner)

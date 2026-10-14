@@ -230,6 +230,37 @@ defmodule RockcutApi.AuthzDeviceTest do
     end
   end
 
+  describe "D40 task boards" do
+    test "a tablet reads and writes its home board only", %{d: d, depts: depts} do
+      assert Authz.can?(d, :read, {:tasks, depts["bar"]})
+      assert Authz.can?(d, :write, {:tasks, depts["bar"]})
+
+      for key <- ~w(brewery office sales),
+          action <- [:read, :write],
+          do: refute(Authz.can?(d, action, {:tasks, depts[key]}), "#{action} #{key}")
+    end
+
+    test "no History, no Daily items changes, no All departments", %{d: d, depts: depts} do
+      refute Authz.can?(d, :history, {:tasks, depts["bar"]})
+      refute Authz.can?(d, :manage, {:daily_items, depts["bar"]})
+      refute Authz.can?(d, :read, {:tasks, :all})
+    end
+
+    test "the brewhouse tablet: the Brewery board, nothing else", %{depts: depts} do
+      brewery =
+        RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
+        |> then(&Accounts.get_user!(&1.id))
+
+      assert Authz.can?(brewery, :write, {:tasks, depts["brewery"]})
+      refute Authz.can?(brewery, :read, {:tasks, depts["bar"]})
+      refute Authz.can?(brewery, :history, {:tasks, depts["brewery"]})
+      refute Authz.can?(brewery, :manage, {:daily_items, depts["brewery"]})
+
+      assert [%{department: %{key: "brewery"}, manage: false}] =
+               RockcutApi.Tasks.boards_for(brewery)
+    end
+  end
+
   test "anything else is denied (catch-all)", %{d: d} do
     refute Authz.can?(d, :anything, :anything)
     refute Authz.can?(d, :read, %ShiftTemplate{})

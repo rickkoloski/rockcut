@@ -5,13 +5,14 @@ defmodule RockcutApiWeb.BeerBoardController do
   These routes are in the router's `:device_allowed` scope. On a shared
   device every write needs a `staff_code`: the change is then decided for, and
   logged as, the person it belongs to, with the device recorded beside them.
-  Wrong codes are rate-limited per tablet token (`StaffCodes.RateLimiter`).
+  Wrong codes are rate-limited per tablet token (`StaffCodes.RateLimiter`);
+  the flow is `StaffCodeActing`, shared with the task boards (D40).
   """
   use RockcutApiWeb, :controller
 
   import RockcutApiWeb.JSONHelpers, only: [beer_board_entry: 1, for_viewer: 2]
-  alias RockcutApi.{Authz, BeerBoard, StaffCodes}
-  alias RockcutApi.StaffCodes.RateLimiter
+  alias RockcutApi.{Authz, BeerBoard}
+  alias RockcutApiWeb.StaffCodeActing
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -57,44 +58,8 @@ defmodule RockcutApiWeb.BeerBoardController do
   end
 
   # The person making a write: the signed-in person, or on a shared device the
-  # owner of the staff code (D37 §3.3). Returns {:ok, person, device_or_nil}.
-  defp acting(conn, params) do
-    user = conn.assigns.current_user
-
-    if Authz.device?(user) do
-      key = conn.assigns.device_token.id
-
-      with :ok <- RateLimiter.check(key),
-           {:ok, code} <- code_param(params),
-           {:ok, person} <- resolve(code, key) do
-        authorize(person, user)
-      end
-    else
-      authorize(user, nil)
-    end
-  end
-
-  defp code_param(%{"staff_code" => code}) when is_binary(code) and code != "", do: {:ok, code}
-  defp code_param(_), do: {:error, :staff_code_required}
-
-  defp resolve(code, key) do
-    case StaffCodes.resolve(code) do
-      nil ->
-        case RateLimiter.failure(key) do
-          :ok -> {:error, :staff_code_invalid}
-          {:locked, _} = locked -> locked
-        end
-
-      person ->
-        {:ok, person}
-    end
-  end
-
-  defp authorize(person, device) do
-    if Authz.can?(person, :write, :beer_board),
-      do: {:ok, person, device},
-      else: {:error, :forbidden}
-  end
+  # owner of the staff code, a Taproom member (D37 §3.3, `StaffCodeActing`).
+  defp acting(conn, params), do: StaffCodeActing.acting(conn, params, :beer_board)
 
   defp respond(conn, result, person, device) do
     data = if result == :removed, do: nil, else: beer_board_entry(result)
@@ -117,24 +82,7 @@ defmodule RockcutApiWeb.BeerBoardController do
   defp handle({:error, {:only, left}}, conn),
     do: error(conn, 422, "not_enough", "Only #{left} left")
 
-  defp handle({:error, :staff_code_required}, conn),
-    do: error(conn, 422, "staff_code_required", "Enter your staff code")
-
-  defp handle({:error, :staff_code_invalid}, conn),
-    do: error(conn, 422, "staff_code_invalid", "That staff code isn't right")
-
-  defp handle({:locked, seconds}, conn) do
-    minutes = max(div(seconds + 59, 60), 1)
-
-    conn
-    |> put_status(:too_many_requests)
-    |> json(%{
-      error: "staff_code_locked",
-      retry_after_minutes: minutes,
-      message:
-        "Too many wrong codes. Try again in #{minutes} #{if minutes == 1, do: "minute", else: "minutes"}, or use Sign in as me."
-    })
-  end
+  defp handle(staff_code_error, conn), do: StaffCodeActing.render_error(staff_code_error, conn)
 
   defp error(conn, status, code, message),
     do: conn |> put_status(status) |> json(%{error: code, message: message})
