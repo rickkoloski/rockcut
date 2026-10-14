@@ -257,7 +257,7 @@ fly deploy --image <previous-image-ref> -a rockcut-api   # or: fly releases roll
 
 The SQLite data lives on the `rockcut_data` volume (independent of image
 version) and has daily snapshots retained 14 days (`snapshot_retention` in
-`fly.toml [mounts]`); restore via `fly volumes snapshots list <vol-id>` →
+`fly.toml [mounts]`); restore via `fly volumes snapshots list <vol-id>` (look the id up with `fly volumes list -a rockcut-api`: Fly moved the prod volume on 2026-10-09, so it is `vol_vden5mz7qg3d2864` now, not `vol_rkgemljzzkozz3w4`) →
 `fly volumes create ... --snapshot-id <id>`.
 
 ---

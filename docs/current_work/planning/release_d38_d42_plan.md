@@ -1,6 +1,6 @@
 # Release plan: D38, D39, D41, D42, D40 to prod (task boards)
 
-**Status:** DRAFT. Waiting on D40's DEV gate, then Matt's go and timing.
+**Status:** RELEASED 2026-10-14 ~21:52 UTC: API v26 / UI v21, snapshot `vs_3278xNvpqVDOS9JlkgpeX` (volume `vol_vden5mz7qg3d2864`; see PR #24's comment). Matt's checks passed.
 **Prepared:** 2026-10-14 (lead)
 **Process:** `docs/process/three_environment_workflow.md` §5. Runbook:
 `docs/chronicle_by_concept/03_deployment/ref/production_deploy_runbook.md`
@@ -86,7 +86,7 @@ DEV's volume with real data (D41: row counts identical).
 ## 6. Steps (on Matt's go)
 
 1. **Release PR** `develop → main`, "Release v2026.10.14: task boards (D38–D42, D40)", body = §1–§4 + §8.
-2. **Snapshot:** `fly volumes snapshots create vol_rkgemljzzkozz3w4 -a rockcut-api`; record the id.
+2. **Snapshot:** `fly volumes snapshots create vol_vden5mz7qg3d2864 -a rockcut-api`; record the id. (The volume moved hosts on 2026-10-09; `vol_rkgemljzzkozz3w4` is gone. Check `fly volumes list -a rockcut-api` first.)
 3. **Merge** the release PR (squash, as #17), **tag** `v2026.10.14`, push the tag.
 4. **Clean worktree of the tag.** Never deploy from the working tree.
 5. **Deploy the API:** `fly deploy --remote-only --depot=false`; machine `started`.
