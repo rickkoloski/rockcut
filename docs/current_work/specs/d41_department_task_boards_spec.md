@@ -41,7 +41,7 @@ model, not on a Brewery-only one that gets generalized afterwards.
 7. **D40, shift-end reminder: Brewery only,** as the D38 spec has it.
 8. **An All departments view for owners** (2026-10-13). Separate boards
    stay; owners also get a read-only overview of every board together,
-   grouped by department within each day (§3.7). Considered and declined:
+   grouped by department within each day (§3.6). Considered and declined:
    one shared board with a department flag per task.
 
 ## 3. Requirements
@@ -144,7 +144,7 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
 - Everything else (range, filter, drag, Unfinished, Future, repeats, phone
   vertical view, back gesture) is unchanged per board.
 
-### 3.7 All departments view (owners only, read-only)
+### 3.6 All departments view (owners only, read-only)
 
 - **Where:** the switcher's last entry for owners, "All departments", at
   `/tasks/all`. It's remembered like any board. Nobody else sees it, and
@@ -167,7 +167,7 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
   `/api/me`'s `task_boards` adds `{key: "all", name: "All departments"}`
   for owners.
 
-### 3.6 Seed and test support
+### 3.7 Seed and test support
 
 - `[SEED]` tasks for the Taproom board (relative to today, a couple
   assigned to `bartender1`, one open past, one on Future) and one for
