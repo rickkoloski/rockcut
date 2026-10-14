@@ -86,6 +86,25 @@ defmodule RockcutApiWeb.DailyItemDeleteTest do
     assert Repo.get(DailyItem, temps)
   end
 
+  test "QA gap 1: an item ticked then unticked was ticked once: no Delete", %{p: p, today: today} do
+    mgr = p["breweryMgr"]
+    temps = item_id("brewery", "Temps")
+
+    call(p["brewer1"], :put, "/api/boards/brewery/daily_checks/#{today}/#{temps}")
+    |> json_response(200)
+
+    call(p["brewer1"], :delete, "/api/boards/brewery/daily_checks/#{today}/#{temps}")
+
+    retire!(mgr, "brewery", temps)
+
+    assert [%{"id" => ^temps, "deletable" => false}] = retired(mgr, "brewery")
+
+    assert %{"error" => "has_ticks"} =
+             call(mgr, :delete, "/api/boards/brewery/daily_items/#{temps}") |> json_response(422)
+
+    assert Repo.get(DailyItem, temps)
+  end
+
   test "S128 an active item is 422 not_retired; another board's managers and members 403", %{
     p: p
   } do

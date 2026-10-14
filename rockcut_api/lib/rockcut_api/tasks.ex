@@ -658,16 +658,7 @@ defmodule RockcutApi.Tasks do
   each with `deletable` set: never ticked on any day (D42 §2.4).
   """
   def list_retired_items(%Department{} = dept) do
-    ticked =
-      Repo.all(
-        from c in DailyCheck,
-          join: i in DailyItem,
-          on: i.id == c.daily_item_id,
-          where: i.department_id == ^dept.id and not i.active,
-          distinct: true,
-          select: c.daily_item_id
-      )
-      |> MapSet.new()
+    ticked = ever_ticked(dept)
 
     Repo.all(
       from i in DailyItem,
@@ -675,6 +666,29 @@ defmodule RockcutApi.Tasks do
         order_by: [asc: i.name, asc: i.id]
     )
     |> Enum.map(&%{&1 | deletable: not MapSet.member?(ticked, &1.id)})
+  end
+
+  # Ids of `dept`'s Daily items that were ever ticked: a check now, or a
+  # `daily_ticked` History entry (a tick later unticked removes the check but
+  # not the entry, D42 QA gap 1).
+  defp ever_ticked(%Department{} = dept) do
+    checks =
+      Repo.all(
+        from c in DailyCheck,
+          where: c.department_id == ^dept.id,
+          distinct: true,
+          select: c.daily_item_id
+      )
+
+    logged =
+      Repo.all(
+        from e in Event,
+          where: e.department_id == ^dept.id and e.action == "daily_ticked",
+          distinct: true,
+          select: fragment("CAST(json_extract(?, '$.daily_item_id') AS INTEGER)", e.detail)
+      )
+
+    MapSet.new(checks ++ logged)
   end
 
   @doc "The active Daily items, in order."
@@ -995,8 +1009,7 @@ defmodule RockcutApi.Tasks do
       item = get_item(dept, id) || Repo.rollback(:not_found)
       if item.active, do: Repo.rollback(:not_retired)
 
-      if Repo.exists?(from c in DailyCheck, where: c.daily_item_id == ^id),
-        do: Repo.rollback(:has_ticks)
+      if MapSet.member?(ever_ticked(dept), id), do: Repo.rollback(:has_ticks)
 
       Repo.delete!(item)
       log_item!(item, "item_deleted", actor, %{"daily_item_id" => id})
