@@ -10,6 +10,8 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
   import RockcutApi.PersonaFixtures
   import RockcutApi.TaskFixtures
 
+  import Ecto.Query, only: [from: 2]
+
   alias RockcutApi.{Repo, Tasks}
   alias RockcutApi.Accounts.Department
   alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task}
@@ -115,6 +117,31 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
       assert %{"data" => [], "total" => 0} =
                call(p["owner"], :get, "/api/boards/bar/tasks/history", %{task_id: task["id"]})
                |> json_response(200)
+    end
+
+    test "S124 a Taproom task's id as a Brewery move's before_id: 404, nothing changes (D42)",
+         %{p: p, task: task, today: today} do
+      day = Date.to_iso8601(today)
+      other = create!(p["floater"], "brewery", %{title: "[TEST-TEMP] Hoses", due_on: day})
+      taproom = create!(p["floater"], "bar", %{title: "[TEST-TEMP] Lines", due_on: day})
+      before = Repo.all(from(t in Task, order_by: t.id))
+
+      conn =
+        call(p["floater"], :post, "/api/boards/brewery/tasks/#{task["id"]}/move", %{
+          due_on: day,
+          before_id: taproom["id"]
+        })
+
+      assert %{"error" => "not_found"} = json_response(conn, 404)
+      assert Repo.all(from(t in Task, order_by: t.id)) == before
+
+      # A same-board before_id still works.
+      assert call(p["floater"], :post, "/api/boards/brewery/tasks/#{other["id"]}/move", %{
+               due_on: day,
+               before_id: task["id"]
+             })
+             |> json_response(200)
+             |> get_in(["data", "position"]) == 1
     end
 
     test "a deleted Brewery task is 410 on its board, 404 on another", %{p: p, task: task} do

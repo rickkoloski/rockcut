@@ -432,11 +432,12 @@ defmodule RockcutApi.Tasks do
   @doc """
   Put the task on `due_on` (nil = Future) ahead of `before_id`, or last when
   `before_id` is nil or no longer in that list. Both lists are renumbered.
-  A task with a locked card (finished away from its planned day) can't move,
+  A `before_id` from another board is `{:error, :not_found}` (D42 §2.2). A task with a locked card (finished away from its planned day) can't move,
   nor can a done task go to the Future list: `{:error, :locked}`.
   """
   def move(%Department{} = dept, %Task{id: id} = task, due_on, before_id, %User{} = actor) do
     with :ok <- on_board(dept, task),
+         :ok <- before_on_board(dept, before_id),
          {:ok, due_on} <- cast_date(due_on) do
       Repo.transaction(fn ->
         task = fetch!(dept, id)
@@ -1250,6 +1251,15 @@ defmodule RockcutApi.Tasks do
   # A task or Daily item given for `dept`'s board must be on it.
   defp on_board(%Department{id: id}, %{department_id: id}), do: :ok
   defp on_board(%Department{}, _record), do: {:error, :not_found}
+
+  # A move's `before_id` names a task on `dept`'s board, or none that exists
+  # (gone since the client loaded: the task goes last, D38).
+  defp before_on_board(%Department{} = dept, before_id) do
+    case to_int(before_id) && Repo.get(Task, to_int(before_id)) do
+      nil -> :ok
+      task -> on_board(dept, task)
+    end
+  end
 
   # Inside a transaction: the task by id, on `dept`'s board.
   defp fetch!(%Department{} = dept, id), do: get_task(dept, id) || Repo.rollback(:not_found)
