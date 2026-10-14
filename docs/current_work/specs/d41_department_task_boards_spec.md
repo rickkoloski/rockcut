@@ -39,6 +39,10 @@ model, not on a Brewery-only one that gets generalized afterwards.
    (D33) gets the Taproom board; the brewhouse tablet the Brewery board.
    Built in D40, not here.
 7. **D40, shift-end reminder: Brewery only,** as the D38 spec has it.
+8. **An All departments view for owners** (2026-10-13). Separate boards
+   stay; owners also get a read-only overview of every board together,
+   grouped by department within each day (§3.7). Considered and declined:
+   one shared board with a department flag per task.
 
 ## 3. Requirements
 
@@ -140,6 +144,29 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
 - Everything else (range, filter, drag, Unfinished, Future, repeats, phone
   vertical view, back gesture) is unchanged per board.
 
+### 3.7 All departments view (owners only, read-only)
+
+- **Where:** the switcher's last entry for owners, "All departments", at
+  `/tasks/all`. It's remembered like any board. Nobody else sees it, and
+  the URL sends a non-owner to their own board.
+- **Range and controls:** the same range, 1 week / 2 weeks, date range,
+  filter (All / Unassigned; "Mine" is left out) and Hide completed as a
+  board. Phone width uses the same vertical and one-day views.
+- **Each day:** a small section per department (its color and name), in
+  nav order, holding that department's cards for the day and its Daily
+  count ("Daily 3/4"). A department with nothing that day is left out.
+  There's **no schedule header** in this view.
+- **Unfinished and Future:** one card each, with the tasks grouped by
+  department the same way.
+- **Read-only:** no checkboxes, drag, + Add a task, Move all to today or
+  task menu. Tapping a card opens it **on its own board** (that board's
+  URL, scrolled to the day), where the owner can change it.
+- **API:** `GET /api/boards/all/tasks?from=&to=` returns the same shape
+  as a board, with each card carrying its `department` key; owners only
+  (403 otherwise). The 31-day limit applies. No write routes under `all`.
+  `/api/me`'s `task_boards` adds `{key: "all", name: "All departments"}`
+  for owners.
+
 ### 3.6 Seed and test support
 
 - `[SEED]` tasks for the Taproom board (relative to today, a couple
@@ -171,14 +198,18 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
 | S114 | `noDept`, `taproomDevice` | nav; `GET /api/boards/bar/tasks` | | `noDept`: no Tasks entry, the URL goes Home, 403. The Taproom tablet: 403 (until D40). |
 | S115 | `brewer1` | `PATCH /api/boards/bar/tasks/<a Brewery task id>` | Brewery member | 404 (the id isn't on that board), and the task is unchanged. |
 | S116 | — | daily scan | a weekly series on Taproom and one on Brewery | Both top up 12 months ahead, each on its own board. |
+| S118 | `owner` | Tasks → switcher → **All departments** | Brewery and Taproom tasks today, Office tomorrow, Sales none | `/tasks/all`. Today shows a Brewery section then a Taproom section, each with its Daily count (Taproom only if it has items); tomorrow shows Office; Sales never appears. No schedule header. |
+| S119 | `owner` | All departments → tap a Taproom task | | Opens `/tasks/bar` at that day; the task can be changed there. Nothing on the All view is draggable or tickable. |
+| S120 | `breweryMgr`, `floater` | typed `/tasks/all`; `GET /api/boards/all/tasks` | not owners | No All departments in the switcher; the URL goes to their own board; the API answers 403. |
 | S117 | `brewer1` | Brewery board, every D38/D39 scenario | | Unchanged behavior: the D38/D39 Playwright specs pass against `/tasks/brewery` (path and names updated only). |
 
 ## 5. Out of scope
 
 - D40's tablet, staff codes on boards, the reminder (Brewery only) and the
   dashboard card.
-- A combined "all my boards" view, moving a task between boards, or
-  sharing a task across boards (Decision 1).
+- A combined view for anyone but owners, changing tasks from the All
+  departments view, moving a task between boards, or sharing a task across
+  boards (Decisions 1 and 8).
 - Boards for "Other".
 - Copying Daily items or tasks between boards.
 - D42's items (4260).
