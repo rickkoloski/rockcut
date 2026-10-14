@@ -138,6 +138,16 @@ Wait for the lead's go after Task 1.
 
 Report and stop for the lead.
 
+## Task 2 answers (lead)
+
+1. A new first day jumps to the week holding today: **confirmed.**
+2. Days before today dimmed in every mode: **confirmed** (consistent).
+3. The confirm's numbers from `GET …/series`: confirmed (Task 1).
+
+The lead runs full ExUnit and the full Playwright suite for the gate; don't
+run them. Note the two `tsc -p tsconfig.e2e.json` errors in the handoff
+note's LIMITATIONS (say whether they're on `develop` too).
+
 ## Task 3: local gate and handoff note
 
 Wait for the lead's go. Then: COVERAGE.md (a D42 section, scenario →
