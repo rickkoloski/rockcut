@@ -116,3 +116,45 @@ the board until then; that's expected.
 Commit as `refactor:` (one or a few commits). **Reply with:** the counts,
 the SHAs, the migration name and index list, the rollback-check numbers,
 the grep leftovers, and any `LEAD:` question. Then stop.
+
+## Task 2: plan step 2, the UI rename (no behavior change)
+
+Task 1 accepted (`e3086df`). **Answer:** the plug's 404 test comes in step
+3, when the plug opens to every assignable department.
+
+Same rule: **names and paths change, behavior doesn't.** The board still
+shows only the Brewery, and the nav still has Brewery → Tasks (the
+top-level Tasks entry is step 4).
+
+1. **Files:** `src/pages/brewery/tasks/` → `src/pages/tasks/`;
+   `src/lib/breweryTasks.ts` (+ test) → `src/lib/tasks.ts`; other
+   `breweryTasks` names in `src/` (hooks, types) to generic ones. Keep
+   `useAuth`'s `breweryTasksManage` (it follows `/api/me`, step 3).
+2. **API paths:** one helper `boardPath(dept, ...segments)` →
+   `/api/boards/<dept>/...`; every board call uses it with `'brewery'`
+   for now.
+3. **Routes:** the board at `/tasks/brewery`; `/brewery/tasks` redirects
+   there (replace, keeping the query string, e.g. `?from=&to=`). Brewery →
+   Tasks in the nav points at `/tasks/brewery` and still lights up there.
+4. **Storage keys:** `rockcut.breweryTasks.*` → `rockcut.tasks.*`. A
+   reader falls back to the old key when the new one is missing (and
+   writes the new key), wrapped in try/catch as now. Vitest for the
+   fallback.
+5. **Playwright:** `tests/regression/brewery/` keeps its folder for now;
+   update paths only (`/brewery/tasks` → `/tasks/brewery`, API paths, any
+   storage-key names the specs set or read). Add one small check: an old
+   `/brewery/tasks?from=…&to=…` URL lands on `/tasks/brewery` with the
+   same range. Same verification as Task 1: show that spec diffs are
+   paths and names only.
+
+**Also (time-boxed, 30 min):** name the occasional ExUnit failures from
+Task 1. Run the full suite 5 times with `--seed` printed, writing each
+run's full output to a file in your scratch dir (no `tail`), and list
+each failing test with its seed and the UTC time. Don't fix anything;
+report.
+
+**Done when:** `tsc`, `vite build`, Vitest and lint (no new problems)
+pass; the brewery Playwright folder passes; ExUnit still 1,270/0 at least
+once. `refactor:` commits (and `test:` for the new check). **Reply with:**
+counts, SHAs, the spec-diff check, the ExUnit failure list, any `LEAD:`.
+Then stop.
