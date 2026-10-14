@@ -164,3 +164,22 @@ as D37's beer board does). Note both in the handoff note's LIMITATIONS.
 Then the targeted ExUnit/Vitest and the tablet + beer-board Playwright
 files (`--workers=1`; the qa agent on DEV is finishing, the lead says the
 memory is fine), commit, and report.
+
+## Task 5: DEV fix cycle 2 (D40 qa gaps 5 and 6, UI only)
+
+The final qa report (`stepwise_results/d40_dev_qa_report.md`) adds two:
+
+1. **Gap 5:** the "Acting as … · Done" banner stays visible on the Taproom
+   tablet's beer board, which still asks for a code on every action (D37),
+   so the banner can name one person while the entry is recorded as
+   another. Show the banner **only on the task board** (`/tasks/...`);
+   leaving the board doesn't end the acting window (coming back within 5
+   minutes still shows it), but nothing outside the board shows or uses it.
+   The beer board is unchanged.
+2. **Gap 6:** the banner scrolls out of view on a long board. Keep it
+   visible (sticky/pinned at the top of the board area, not covering the
+   board's toolbar), at tablet and phone widths.
+
+Playwright for both in `task-board-tablets.spec.ts` (and the beer board's
+device spec stays green), `--workers=1`. Add both to the handoff note's DEV
+fix cycle section; commit, report.
