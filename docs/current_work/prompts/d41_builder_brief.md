@@ -224,3 +224,15 @@ passes (the UI is unchanged; this proves the Brewery behaves the same).
 `feat:` commits. **Reply with:** counts, SHAs, the scoped-lookup grep
 result, the `Authz` rows added, the migration check, any flaky names, and
 any `LEAD:`. Then stop.
+
+## Task 3 answers (lead, before Task 4)
+
+1. Keep `4e843b7`'s order (authorize, then find). The spec's S115 now uses
+   `floater` (404) and notes `brewer1` gets 403; §3.4 says access is
+   checked first. Update the S115 tests' wording to match if needed.
+2. `task_boards` order: the departments' natural order, **Brewery,
+   Taproom, Office, Sales** (by department id, which is the seed order),
+   not alphabetical. Fix in Task 4.
+3. `left_<key>` is fine; step 4's UI words it with the department name.
+
+The lead is running the brewery Playwright folder on `4e843b7`.

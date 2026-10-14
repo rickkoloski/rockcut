@@ -111,11 +111,14 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
 `daily_items`, `tasks/history`, `tasks/:id/series`, `stop_repeating`,
 `restore`. Same params, same errors.
 
-- A task id under the wrong department's path → 404 (never act on another
-  board's task through this one).
+- Access is checked first: someone who can't open the board gets 403 on
+  every route, whatever the id. For someone who can, a task id from
+  another board → 404 (never act on another board's task through this
+  one).
 - `other` or an unknown key → 404.
 - `/api/me` replaces `brewery_tasks_manage` with **`task_boards`**: the
-  boards this person can open, in nav order, each with `key`, `name`,
+  boards this person can open, in department order (Brewery, Taproom,
+  Office, Sales), each with `key`, `name`,
   `color` and `manage` (Daily items + History).
 - The old `/api/brewery/...` routes are **removed**, not aliased: nothing
   outside the UI uses them, and prod never had them.
@@ -196,7 +199,7 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
 | S112 | `owner` | Users & Roles → remove `[TEST-TEMP]` person from the Taproom | assigned an open task on Taproom and one on Brewery | The Taproom task becomes unassigned; the Brewery one keeps them. |
 | S113 | `brewer1` | an old bookmark `/brewery/tasks` | | Redirects to `/tasks/brewery`. The board's 1 week / Hide completed choices survive the key rename. |
 | S114 | `noDept`, `taproomDevice` | nav; `GET /api/boards/bar/tasks` | | `noDept`: no Tasks entry, the URL goes Home, 403. The Taproom tablet: 403 (until D40). |
-| S115 | `brewer1` | `PATCH /api/boards/bar/tasks/<a Brewery task id>` | Brewery member | 404 (the id isn't on that board), and the task is unchanged. |
+| S115 | `floater`; `brewer1` | `PATCH /api/boards/bar/tasks/<a Brewery task id>` | `floater`: member of both; `brewer1`: Brewery only | `floater`: 404 (the id isn't on that board), and the task is unchanged. `brewer1`: 403, as on every Taproom route (access is checked before the id, so ids on boards you can't open aren't revealed). |
 | S116 | — | daily scan | a weekly series on Taproom and one on Brewery | Both top up 12 months ahead, each on its own board. |
 | S118 | `owner` | Tasks → switcher → **All departments** | Brewery and Taproom tasks today, Office tomorrow, Sales none | `/tasks/all`. Today shows a Brewery section then a Taproom section, each with its Daily count (Taproom only if it has items); tomorrow shows Office; Sales never appears. No schedule header. |
 | S119 | `owner` | All departments → tap a Taproom task | | Opens `/tasks/bar` at that day; the task can be changed there. Nothing on the All view is draggable or tickable. |
