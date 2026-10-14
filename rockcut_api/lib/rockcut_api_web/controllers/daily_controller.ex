@@ -3,8 +3,8 @@ defmodule RockcutApiWeb.DailyController do
   A board's Daily card (D38 §3.6; per department since D41): ticking checks
   (`:write` on `{:tasks, dept}`, any member of the department) and the Daily
   items list (read by its members; changed by its managers, `:manage` on
-  `{:daily_items, dept}`). People only. A route with an item id finds the
-  item on this board first: another board's is 404.
+  `{:daily_items, dept}`). People only. A route with an item id asks `Authz`
+  first, then finds the item on this board: another board's is 404.
   """
   use RockcutApiWeb, :controller
 
@@ -17,8 +17,8 @@ defmodule RockcutApiWeb.DailyController do
 
   @doc "PUT /api/boards/:dept/daily_checks/:on_date/:daily_item_id: tick (today or earlier)."
   def tick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
-    with {:ok, item} <- fetch(conn, item_id),
-         :ok <- allow(conn, :write, :tasks),
+    with :ok <- allow(conn, :write, :tasks),
+         {:ok, item} <- fetch(conn, item_id),
          {:ok, check} <- Tasks.tick(board(conn), on_date, item, actor(conn)) do
       json(conn, %{
         data: %{
@@ -35,8 +35,8 @@ defmodule RockcutApiWeb.DailyController do
 
   @doc "DELETE /api/boards/:dept/daily_checks/:on_date/:daily_item_id: untick."
   def untick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
-    with {:ok, item} <- fetch(conn, item_id),
-         :ok <- allow(conn, :write, :tasks),
+    with :ok <- allow(conn, :write, :tasks),
+         {:ok, item} <- fetch(conn, item_id),
          {:ok, :ok} <- Tasks.untick(board(conn), on_date, item, actor(conn)) do
       send_resp(conn, :no_content, "")
     end
@@ -61,8 +61,8 @@ defmodule RockcutApiWeb.DailyController do
 
   @doc "POST /api/boards/:dept/daily_items/:id/restore: a retired item back at the bottom (D39, S75)."
   def restore_item(conn, %{"id" => id}) do
-    with {:ok, item} <- fetch(conn, id),
-         :ok <- allow(conn, :manage, :daily_items),
+    with :ok <- allow(conn, :manage, :daily_items),
+         {:ok, item} <- fetch(conn, id),
          {:ok, item} <- Tasks.restore_item(board(conn), item, actor(conn)) do
       json(conn, %{data: daily_item(item)})
     end
@@ -84,8 +84,8 @@ defmodule RockcutApiWeb.DailyController do
   back.
   """
   def update_item(conn, %{"id" => id} = params) do
-    with {:ok, item} <- fetch(conn, id),
-         :ok <- allow(conn, :manage, :daily_items),
+    with :ok <- allow(conn, :manage, :daily_items),
+         {:ok, item} <- fetch(conn, id),
          :ok <- refuse_retired(item),
          {:ok, item} <- maybe_rename(board(conn), item, params, actor(conn)),
          {:ok, item} <- maybe_retire(board(conn), item, params, actor(conn)) do

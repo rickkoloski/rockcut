@@ -7,8 +7,9 @@ defmodule RockcutApiWeb.TaskBoardController do
   asks `Authz`: `:read` and `:write` on `{:tasks, dept}` for the department's
   members, `:history` for its managers. Owners pass `Authz`'s owner clause.
 
-  A route with a task id finds the task **on this board** first: an id from
-  another board is 404 whoever asks (S115), and nothing changes.
+  A route with a task id asks `Authz` first (someone outside the department
+  gets 403 on every route, D38 S39), then finds the task **on this board**:
+  another board's id is 404 (S115), and nothing changes.
 
   D39 recurring tasks: `POST` takes the flat `repeat*` params; `PATCH` and
   `DELETE` on an occurrence take `scope` (`this` | `following`) and
@@ -45,8 +46,8 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def update(conn, %{"id" => id} = params) do
-    with {:ok, task} <- fetch(conn, id),
-         :ok <- allow(conn, :write),
+    with :ok <- allow(conn, :write),
+         {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
            Tasks.update(
              board(conn),
@@ -62,8 +63,8 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/move: `{ due_on, before_id? }`; `due_on: null` = Future."
   def move(conn, %{"id" => id} = params) do
-    with {:ok, task} <- fetch(conn, id),
-         :ok <- allow(conn, :write),
+    with :ok <- allow(conn, :write),
+         {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
            Tasks.move(board(conn), task, params["due_on"], params["before_id"], actor(conn)) do
       render_task(conn, task)
@@ -81,8 +82,8 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/complete: `{ display? }` (required off its own day)."
   def complete(conn, %{"id" => id} = params) do
-    with {:ok, task} <- fetch(conn, id),
-         :ok <- allow(conn, :write),
+    with :ok <- allow(conn, :write),
+         {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.complete(board(conn), task, params["display"], actor(conn)) do
       render_task(conn, task)
     end
@@ -90,8 +91,8 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def uncomplete(conn, %{"id" => id}) do
-    with {:ok, task} <- fetch(conn, id),
-         :ok <- allow(conn, :write),
+    with :ok <- allow(conn, :write),
+         {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.uncomplete(board(conn), task, actor(conn)) do
       render_task(conn, task)
     end
@@ -99,8 +100,8 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def delete(conn, %{"id" => id} = params) do
-    with {:ok, task} <- fetch(conn, id),
-         :ok <- allow(conn, :write),
+    with :ok <- allow(conn, :write),
+         {:ok, task} <- fetch(conn, id),
          {:ok, :deleted} <- Tasks.delete(board(conn), task, actor(conn), series_opts(params)) do
       send_resp(conn, :no_content, "")
     end
@@ -109,8 +110,8 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "GET /api/boards/:dept/tasks/:id/series: the rule, `later_open` and `later_changed`."
   def series(conn, %{"id" => id}) do
-    with {:ok, task} <- fetch(conn, id),
-         :ok <- allow(conn, :read),
+    with :ok <- allow(conn, :read),
+         {:ok, task} <- fetch(conn, id),
          {:ok, {series, preview}} <- Tasks.series_info(board(conn), task) do
       json(conn, %{data: task_series(series, preview)})
     end
@@ -119,8 +120,8 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/stop_repeating: `{ changed? }`. Ends the series on this one."
   def stop_repeating(conn, %{"id" => id} = params) do
-    with {:ok, task} <- fetch(conn, id),
-         :ok <- allow(conn, :write),
+    with :ok <- allow(conn, :write),
+         {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.stop_repeating(board(conn), task, actor(conn), series_opts(params)) do
       render_task(conn, task)
     end

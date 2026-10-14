@@ -81,7 +81,7 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
       %{task: task, item: item}
     end
 
-    test "every task route, whoever asks (a Brewery member, a member of both, an owner)",
+    test "every task route, for anyone who may use both boards (a member of both, an owner)",
          %{p: p, task: task, today: today} do
       before = Repo.get!(Task, task["id"])
       tomorrow = Date.to_iso8601(Date.add(today, 1))
@@ -96,10 +96,17 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
         {:post, "/stop_repeating", %{}}
       ]
 
-      for who <- ~w(brewer1 floater owner), {verb, suffix, params} <- routes do
+      for who <- ~w(floater owner), {verb, suffix, params} <- routes do
         conn = call(p[who], verb, "/api/boards/bar/tasks/#{task["id"]}#{suffix}", params)
         assert conn.status == 404, "#{who} #{verb} #{suffix}"
         assert %{"error" => "not_found"} = json_response(conn, 404)
+      end
+
+      # Someone outside the Taproom is refused before the id is looked at
+      # (D38 S39: 403 on every route).
+      for {verb, suffix, params} <- routes do
+        conn = call(p["brewer1"], verb, "/api/boards/bar/tasks/#{task["id"]}#{suffix}", params)
+        assert conn.status == 403, "brewer1 #{verb} #{suffix}"
       end
 
       assert Repo.get!(Task, task["id"]) == before
@@ -120,15 +127,17 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
     test "every Daily item route", %{p: p, item: item, today: today} do
       day = Date.to_iso8601(today)
 
+      # Each route for people allowed it on the Taproom board: checks for any
+      # member, the items for its managers (splitRole manages the Taproom).
       routes = [
-        {:put, "/daily_checks/#{day}/#{item.id}", %{}},
-        {:delete, "/daily_checks/#{day}/#{item.id}", %{}},
-        {:patch, "/daily_items/#{item.id}", %{name: "Hijacked"}},
-        {:patch, "/daily_items/#{item.id}", %{active: false}},
-        {:post, "/daily_items/#{item.id}/restore", %{}}
+        {~w(floater owner), :put, "/daily_checks/#{day}/#{item.id}", %{}},
+        {~w(floater owner), :delete, "/daily_checks/#{day}/#{item.id}", %{}},
+        {~w(splitRole owner), :patch, "/daily_items/#{item.id}", %{name: "Hijacked"}},
+        {~w(splitRole owner), :patch, "/daily_items/#{item.id}", %{active: false}},
+        {~w(splitRole owner), :post, "/daily_items/#{item.id}/restore", %{}}
       ]
 
-      for who <- ~w(floater owner), {verb, path, params} <- routes do
+      for {people, verb, path, params} <- routes, who <- people do
         conn = call(p[who], verb, "/api/boards/bar" <> path, params)
         assert conn.status == 404, "#{who} #{verb} #{path}"
       end
