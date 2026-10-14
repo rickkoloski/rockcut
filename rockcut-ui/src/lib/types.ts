@@ -660,6 +660,18 @@ export interface TaskSeriesData {
   later_open: number
   /** Open, after this one, changed on their own. */
   later_changed: number
+  /**
+   * D42 §2.6: asked with the dialog's repeat params, what saving them "This
+   * and all following" would do: no rule change, an Ends-only change (the
+   * end moves), or a rule change (a split); and what it removes.
+   */
+  change?: SeriesChange
+}
+
+export interface SeriesChange {
+  kind: 'same' | 'ends' | 'rule'
+  removes_open: number
+  removes_changed: number
 }
 
 export interface HeaderShift {
@@ -673,7 +685,7 @@ export interface DayHeaderData {
   people: { user_id: number; name: string; hours: number; shifts: HeaderShift[] }[]
   open_shifts: HeaderShift[]
   events: { id: number; title: string; all_day: boolean; starts_at: string; ends_at: string }[]
-  no_brewers: boolean
+  no_one_scheduled: boolean
 }
 
 export interface DailyCardItem {
@@ -691,6 +703,8 @@ export interface DailyItem {
   name: string
   position: number
   active: boolean
+  /** D42: retired items only: never ticked, so it can be deleted. */
+  deletable?: boolean
 }
 
 /** One Brewery task board change-log entry (D38 History). Daily entries have no task_id. */
@@ -715,6 +729,7 @@ export interface TaskEvent {
     | 'stopped_repeating' // D39
     | 'item_restored' // D39
     | 'made_repeating' // D39 Decision 6
+    | 'item_deleted' // D42
   /** The task's title (or the Daily item's name) when it happened. */
   title: string
   actor_id: number | null

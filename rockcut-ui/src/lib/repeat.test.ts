@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   defaultRule,
   ordinal,
+  endsOnlyChange,
   removeLaterWording,
   reseed,
   ruleFromTaskSeries,
@@ -188,5 +189,23 @@ describe('removeLaterWording (Decision 2)', () => {
 
   it('a plain confirm otherwise', () => {
     expect(removeLaterWording(40, 0)).toEqual({ message: 'Removes 40 later occurrences.', keep: null, removeAll: 'Remove' })
+  })
+})
+
+describe('endsOnlyChange (D42 §2.6)', () => {
+  const weekly = { ...defaultRule('2026-10-14', 'weekly') }
+
+  it('only Ends changed', () => {
+    expect(endsOnlyChange({ ...weekly, ends: 'count', count: '5' }, weekly)).toBe(true)
+    expect(endsOnlyChange(weekly, { ...weekly, ends: 'until', until: '2027-01-27' })).toBe(true)
+    expect(endsOnlyChange({ ...weekly, ends: 'until', until: '2027-02-03' }, { ...weekly, ends: 'until', until: '2027-01-27' })).toBe(true)
+  })
+
+  it('a rule change (with or without Ends) or no change at all is not', () => {
+    expect(endsOnlyChange(weekly, weekly)).toBe(false)
+    expect(endsOnlyChange({ ...weekly, weekdays: [5] }, weekly)).toBe(false)
+    expect(endsOnlyChange({ ...weekly, interval: 2, ends: 'count', count: '5' }, weekly)).toBe(false)
+    // A leftover count behind Ends = Never is no change.
+    expect(endsOnlyChange({ ...weekly, count: '9' }, weekly)).toBe(false)
   })
 })

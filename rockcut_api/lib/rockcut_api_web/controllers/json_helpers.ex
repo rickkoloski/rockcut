@@ -170,7 +170,7 @@ defmodule RockcutApiWeb.JSONHelpers do
             ends_at: e.ends_at
           }
         end),
-      no_brewers: h.people == [] and h.open_shifts == []
+      no_one_scheduled: h.people == [] and h.open_shifts == []
     }
   end
 
@@ -266,7 +266,9 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   def daily_item(i) do
-    %{id: i.id, name: i.name, position: i.position, active: i.active}
+    json = %{id: i.id, name: i.name, position: i.position, active: i.active}
+    # D42: only the retired list sets `deletable`.
+    if is_nil(i.deletable), do: json, else: Map.put(json, :deletable, i.deletable)
   end
 
   def task_event(ev) do

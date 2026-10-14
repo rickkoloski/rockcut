@@ -97,3 +97,32 @@ export function RemoveLaterDialog({ title, laterOpen, laterChanged, loading, onC
     </Dialog>
   )
 }
+
+interface ExtendProps {
+  loading?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}
+
+/** D42 §2.6: an Ends-only change that removes nothing: it extends the series. */
+export function ExtendDialog({ loading, onConfirm, onCancel }: ExtendProps) {
+  usePhoneBackCloses(true, onCancel)
+  return (
+    <Dialog open onClose={onCancel} maxWidth="xs" fullWidth data-testid="extend-series-dialog">
+      <DialogTitle>Change when it ends</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" data-testid="extend-series-message">
+          Extends the series.
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onCancel} disabled={loading} data-testid="extend-series-cancel">
+          Cancel
+        </Button>
+        <Button variant="contained" disabled={loading} onClick={onConfirm} data-testid="extend-series-confirm">
+          {loading ? <CircularProgress size={20} /> : 'Save'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}

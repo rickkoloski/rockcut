@@ -25,7 +25,9 @@ defmodule RockcutApiWeb.TaskErrors do
     repeat_finished: "A finished task can't repeat",
     already_repeats: "That task already repeats",
     scope_required: "Choose Just this one or This and all following",
-    not_in_series: "That task doesn't repeat"
+    not_in_series: "That task doesn't repeat",
+    not_retired: "Retire the Daily item first",
+    has_ticks: "That Daily item was ticked, so it can only be restored"
   }
 
   @doc """

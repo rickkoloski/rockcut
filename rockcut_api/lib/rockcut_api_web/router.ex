@@ -6,8 +6,11 @@ defmodule RockcutApiWeb.Router do
   end
 
   # Signed-in people only: shared devices get 403 here (D33 gate 1, deny by default).
+  # Both people pipelines refuse all but the reset flow while a password reset
+  # is required (D42, PasswordResetGate).
   pipeline :authenticated do
     plug RockcutApiWeb.AuthPlug
+    plug RockcutApiWeb.PasswordResetGate
     plug RockcutApiWeb.DeviceGate
   end
 
@@ -15,6 +18,7 @@ defmodule RockcutApiWeb.Router do
   # what a device may do on them is decided by Authz.Device (gate 2).
   pipeline :device_allowed do
     plug RockcutApiWeb.AuthPlug
+    plug RockcutApiWeb.PasswordResetGate
   end
 
   pipeline :brewery do
@@ -246,6 +250,7 @@ defmodule RockcutApiWeb.Router do
     put "/daily_items/order", DailyController, :order_items
     patch "/daily_items/:id", DailyController, :update_item
     post "/daily_items/:id/restore", DailyController, :restore_item
+    delete "/daily_items/:id", DailyController, :delete_item
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

@@ -219,7 +219,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/boards/:dept/daily_items"},
     {:put, "/api/boards/:dept/daily_items/order"},
     {:patch, "/api/boards/:dept/daily_items/:id"},
-    {:post, "/api/boards/:dept/daily_items/:id/restore"}
+    {:post, "/api/boards/:dept/daily_items/:id/restore"},
+    {:delete, "/api/boards/:dept/daily_items/:id"}
   ]
 
   defp app_routes do

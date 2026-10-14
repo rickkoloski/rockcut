@@ -310,6 +310,50 @@ defmodule RockcutApiWeb.TaskSeriesControllerTest do
     assert Enum.all?(keg, &(&1["series_exception"] == false))
   end
 
+  test "D42: /series with the dialog's repeat params says what saving would do", %{
+    p: p,
+    today: today
+  } do
+    user = p["breweryMgr"]
+    first = weekly!(user, today, %{repeat_until: Date.to_iso8601(Date.add(today, 7 * 15))})
+    w1 = week(first, today, 1)
+    rule = %{repeat: "weekly", repeat_interval: 1, repeat_weekdays: [Date.day_of_week(today)]}
+
+    get = fn params ->
+      call(user, :get, path(w1) <> "/series", params) |> json_response(200) |> Map.get("data")
+    end
+
+    refute Map.has_key?(get.(%{}), "change")
+
+    # S132: an unsplit series ending on a date, After 5 times: the 11 after the 5th go.
+    assert %{"kind" => "ends", "removes_open" => 11, "removes_changed" => 0} =
+             get.(Map.merge(rule, %{repeat_until: "", repeat_count: 5}))["change"]
+
+    assert %{"kind" => "ends", "removes_open" => 0} =
+             get.(Map.merge(rule, %{repeat_until: "", repeat_count: ""}))["change"]
+
+    assert %{"kind" => "same"} = get.(rule)["change"]
+
+    assert %{"kind" => "rule", "removes_open" => 14} =
+             get.(Map.put(rule, :repeat_interval, 2))["change"]
+
+    # An end before this occurrence: the save's 422, before saving.
+    assert %{"errors" => %{"count" => [_]}} =
+             call(user, :get, path(w1) <> "/series", Map.put(rule, :repeat_count, 1))
+             |> json_response(422)
+
+    # Saving After 5 times leaves 5.
+    call(
+      user,
+      :patch,
+      path(w1),
+      Map.merge(rule, %{repeat_until: "", repeat_count: 5, scope: "following"})
+    )
+    |> json_response(200)
+
+    assert count(first["series_id"]) == 5
+  end
+
   test "R1: /series for an occurrence before a split has the chain's ends, not the split's", %{
     p: p,
     today: today

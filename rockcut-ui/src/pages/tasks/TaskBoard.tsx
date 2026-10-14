@@ -75,8 +75,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   }
   const {
     from, to, highlighted, hideCompleted, phoneView, phone, wide, focus, clearFocus,
-    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, setPhoneView,
-  } = useBoardView()
+    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, setPhoneView, firstDay, pickFirstDay,
+  } = useBoardView(dept)
   const [filter, setFilter] = useState<TaskFilter>('all')
 
   const { data: board, isLoading, isError, error, dataUpdatedAt } = useApiQuery<TaskBoardData>(
@@ -443,6 +443,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         from={from}
         to={to}
         span={highlighted}
+        firstDay={firstDay}
+        onFirstDay={pickFirstDay}
         filter={filter}
         hideCompleted={hideCompleted}
         onPrev={() => step(-1)}

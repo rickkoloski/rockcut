@@ -170,6 +170,14 @@ export function sameRule(a: TaskRule, b: TaskRule): boolean {
 }
 
 /**
+ * D42 §2.6: `next` differs from `original` only in Ends (Never / On a date /
+ * After N times). Saved, it moves the series' end and changes no rule.
+ */
+export function endsOnlyChange(next: TaskRule, original: TaskRule): boolean {
+  return !sameRule(next, original) && sameRule({ ...next, ends: original.ends, until: original.until, count: original.count }, original)
+}
+
+/**
  * A rule as History stores it (`detail.repeat`, snake_case, only its own
  * options) back as a summary. `startDate` gives an annual rule its day.
  */

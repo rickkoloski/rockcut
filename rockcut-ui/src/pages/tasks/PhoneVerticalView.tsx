@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { Box } from '@mui/material'
 import { FUTURE, UNFINISHED } from '../../lib/tasks'
 
@@ -8,6 +8,7 @@ interface Props {
   showUnfinished: boolean
   /** The rendered lists from SortableLists, by container id. */
   lists: Record<string, ReactNode>
+  today: string
 }
 
 /**
@@ -17,8 +18,18 @@ interface Props {
  * the desktop's left to right. A long press drags a task between any of them;
  * the page scrolls while it's held near the top or bottom edge. There's no
  * sideways swipe here: the page scrolls up and down.
+ *
+ * D42 §2.9: a range that starts before today (First day Sunday or Monday)
+ * opens scrolled to today. A `?day=` link scrolls after this (the board's own
+ * effect runs later), so it wins.
  */
-export default function PhoneVerticalView({ days, showUnfinished, lists }: Props) {
+export default function PhoneVerticalView({ days, showUnfinished, lists, today }: Props) {
+  const first = days[0]
+  const holdsToday = days.includes(today)
+  useEffect(() => {
+    if (holdsToday && first !== today)
+      document.querySelector(`[data-testid="day-${today}"]`)?.scrollIntoView({ block: 'start' })
+  }, [first, today, holdsToday])
   return (
     <Box data-testid="board-grid" data-layout="vertical" sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
       {showUnfinished && lists[UNFINISHED]}

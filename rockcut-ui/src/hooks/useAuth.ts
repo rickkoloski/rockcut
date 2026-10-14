@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import api from '../lib/api'
+import api, { PASSWORD_RESET_EVENT } from '../lib/api'
 import type { Me, User, Capabilities, TaskBoardEntry } from '../lib/types'
 import {
   TOKEN_KEY,
@@ -222,5 +222,12 @@ const useAuth = create<AuthState>((set, get) => ({
     if (restoreDeviceToken()) window.location.assign('/')
   },
 }))
+
+// D42 §2.1: the API refused a call because a new password is required: show
+// "Set a new password" (App), as when /api/me says so.
+window.addEventListener(PASSWORD_RESET_EVENT, () => {
+  const { user } = useAuth.getState()
+  if (user && !user.must_reset_password) useAuth.setState({ user: { ...user, must_reset_password: true } })
+})
 
 export default useAuth

@@ -432,11 +432,12 @@ defmodule RockcutApi.Tasks do
   @doc """
   Put the task on `due_on` (nil = Future) ahead of `before_id`, or last when
   `before_id` is nil or no longer in that list. Both lists are renumbered.
-  A task with a locked card (finished away from its planned day) can't move,
+  A `before_id` from another board is `{:error, :not_found}` (D42 §2.2). A task with a locked card (finished away from its planned day) can't move,
   nor can a done task go to the Future list: `{:error, :locked}`.
   """
   def move(%Department{} = dept, %Task{id: id} = task, due_on, before_id, %User{} = actor) do
     with :ok <- on_board(dept, task),
+         :ok <- before_on_board(dept, before_id),
          {:ok, due_on} <- cast_date(due_on) do
       Repo.transaction(fn ->
         task = fetch!(dept, id)
@@ -594,6 +595,11 @@ defmodule RockcutApi.Tasks do
     with :ok <- on_board(dept, task), do: Series.info(task)
   end
 
+  @doc "What a \"following\" edit with these repeat params would do (D42, `Series.change_preview/2`)."
+  def series_change_preview(%Department{} = dept, %Task{} = task, attrs) do
+    with :ok <- on_board(dept, task), do: Series.change_preview(task, attrs)
+  end
+
   @doc false
   # The D38 delete of one task; `detail` adds to its `deleted` event. For
   # `Series`, after `delete/4` has checked the board.
@@ -647,13 +653,42 @@ defmodule RockcutApi.Tasks do
 
   ## Daily card
 
-  @doc "The retired Daily items, by name (Edit Daily items' Retired section, D39)."
+  @doc """
+  The retired Daily items, by name (Edit Daily items' Retired section, D39),
+  each with `deletable` set: never ticked on any day (D42 §2.4).
+  """
   def list_retired_items(%Department{} = dept) do
+    ticked = ever_ticked(dept)
+
     Repo.all(
       from i in DailyItem,
         where: i.department_id == ^dept.id and not i.active,
         order_by: [asc: i.name, asc: i.id]
     )
+    |> Enum.map(&%{&1 | deletable: not MapSet.member?(ticked, &1.id)})
+  end
+
+  # Ids of `dept`'s Daily items that were ever ticked: a check now, or a
+  # `daily_ticked` History entry (a tick later unticked removes the check but
+  # not the entry, D42 QA gap 1).
+  defp ever_ticked(%Department{} = dept) do
+    checks =
+      Repo.all(
+        from c in DailyCheck,
+          where: c.department_id == ^dept.id,
+          distinct: true,
+          select: c.daily_item_id
+      )
+
+    logged =
+      Repo.all(
+        from e in Event,
+          where: e.department_id == ^dept.id and e.action == "daily_ticked",
+          distinct: true,
+          select: fragment("CAST(json_extract(?, '$.daily_item_id') AS INTEGER)", e.detail)
+      )
+
+    MapSet.new(checks ++ logged)
   end
 
   @doc "The active Daily items, in order."
@@ -961,6 +996,28 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc """
+  Delete a retired Daily item that was never ticked (D42 §2.4): an active one
+  is `{:error, :not_retired}`, one with any tick `{:error, :has_ticks}`. Logs
+  `item_deleted`; its earlier History rows stay.
+  """
+  def delete_item(%Department{} = dept, %DailyItem{id: id} = item, %User{} = actor) do
+    with :ok <- on_board(dept, item), do: do_delete_item(dept, id, actor)
+  end
+
+  defp do_delete_item(dept, id, actor) do
+    Repo.transaction(fn ->
+      item = get_item(dept, id) || Repo.rollback(:not_found)
+      if item.active, do: Repo.rollback(:not_retired)
+
+      if MapSet.member?(ever_ticked(dept), id), do: Repo.rollback(:has_ticks)
+
+      Repo.delete!(item)
+      log_item!(item, "item_deleted", actor, %{"daily_item_id" => id})
+      :ok
+    end)
+  end
+
+  @doc """
   Reorder the active items. `ids` must be exactly the active items' ids, else
   `{:error, :invalid_order}`. Returns the items in their new order.
   """
@@ -1250,6 +1307,15 @@ defmodule RockcutApi.Tasks do
   # A task or Daily item given for `dept`'s board must be on it.
   defp on_board(%Department{id: id}, %{department_id: id}), do: :ok
   defp on_board(%Department{}, _record), do: {:error, :not_found}
+
+  # A move's `before_id` names a task on `dept`'s board, or none that exists
+  # (gone since the client loaded: the task goes last, D38).
+  defp before_on_board(%Department{} = dept, before_id) do
+    case to_int(before_id) && Repo.get(Task, to_int(before_id)) do
+      nil -> :ok
+      task -> on_board(dept, task)
+    end
+  end
 
   # Inside a transaction: the task by id, on `dept`'s board.
   defp fetch!(%Department{} = dept, id), do: get_task(dept, id) || Repo.rollback(:not_found)

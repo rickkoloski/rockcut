@@ -1,7 +1,7 @@
 import { Box, Button, Chip, Paper, Typography } from '@mui/material'
 import { Add } from '@mui/icons-material'
 import type { ContainerSlot } from '../../components/dnd/SortableLists'
-import { formatTaskDay } from '../../lib/tasks'
+import { PAST_OPACITY, formatTaskDay } from '../../lib/tasks'
 import type { BoardDay, DailyCardItem } from '../../lib/types'
 import DailyCard from './DailyCard'
 import DayHeader from './DayHeader'
@@ -19,15 +19,19 @@ interface Props {
 /**
  * D38 §3.8 day column: title and open count, header, Daily card, tasks, "+ Add a task".
  * D41: no Daily card on a day the board has no Daily items for (S107).
+ * D42: a day before today is dimmed, and works as any other.
  */
 export default function DayColumn({ day, today, openCount, slot: { setNodeRef, isOver, items }, onAdd, onDailyToggle, onEditDailyItems }: Props) {
   const isToday = day.date === today
+  const isPast = day.date < today
   return (
     <Paper
       variant="outlined"
       data-testid={`day-${day.date}`}
       data-today={isToday}
+      data-past={isPast}
       sx={{
+        opacity: isPast ? PAST_OPACITY : undefined,
         p: 1,
         display: 'flex',
         flexDirection: 'column',

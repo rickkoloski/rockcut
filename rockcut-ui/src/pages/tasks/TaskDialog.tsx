@@ -5,10 +5,10 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
 import { boardPath, taskError, taskGone, taskSaveError } from '../../lib/tasks'
-import { defaultRule, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
-import type { RosterEntry, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
+import { defaultRule, endsOnlyChange, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
+import type { RosterEntry, SeriesChange, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
 import RepeatFields from './RepeatFields'
-import { RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
+import { ExtendDialog, RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
 
 const TITLE_MAX = 200
 const NOTES_MAX = 2000
@@ -44,7 +44,9 @@ interface Props {
  * Saving an occurrence asks "Just this one" / "This and all following"
  * (S69) unless it's Edit series…; a changed rule always goes as "following",
  * after the Decision 2 confirm when it removes later ones; a day-only change
- * never asks (it's this one).
+ * never asks (it's this one). D42 §2.6: a change to Ends alone asks the API
+ * what it does, and the confirm says "Extends the series" or "Removes N
+ * later occurrences".
  *
  * D39 Decision 6: an open one-off shows Repeat too (from Never; a Future one
  * needs a day first). Saving a rule makes it the first occurrence of a new
@@ -89,6 +91,8 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
   // Asking before a save or a delete on an occurrence.
   const [asking, setAsking] = useState<{ body: Record<string, unknown> } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<{ body: Record<string, unknown> } | null>(null)
+  // D42: an Ends-only change, with what saving it does.
+  const [confirmEnds, setConfirmEnds] = useState<{ body: Record<string, unknown>; change: SeriesChange } | null>(null)
 
   // A finished task shown on the day it was done can't change day (Mark not
   // done first), and no finished task goes to Future.
@@ -113,6 +117,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
   const send = async (body: Record<string, unknown>, scope?: SeriesScope, changed?: Changed) => {
     setAsking(null)
     setConfirmRemove(null)
+    setConfirmEnds(null)
     setSaving(true)
     try {
       if (card) await api.patch(boardPath(board.key, 'tasks', card.id), { ...body, ...(scope ? { scope } : {}), ...(changed ? { changed } : {}) })
@@ -120,6 +125,27 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
       onSaved()
     } catch (err) {
       // Someone deleted it meanwhile: "This task was deleted", and the board catches up.
+      if (taskGone(err)) onStale()
+      setError(taskSaveError(err, board))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  /** D42 §2.6: what an Ends-only save does (the API works it out), then confirm. */
+  const askEnds = async (body: Record<string, unknown>) => {
+    if (!card) return
+    setSaving(true)
+    try {
+      const { data } = await api.get<{ data: TaskSeriesData }>(boardPath(board.key, 'tasks', card.id, 'series'), {
+        params: taskRepeatParams(rule),
+      })
+      const change = data.data.change
+      const removes = change ? change.removes_open + change.removes_changed : 0
+      // Only an Ends change that removes nothing "extends"; anything else without removals just saves.
+      if (!change || change.kind === 'same' || (change.kind === 'rule' && removes === 0)) return send(body, 'following')
+      setConfirmEnds({ body, change })
+    } catch (err) {
       if (taskGone(err)) onStale()
       setError(taskSaveError(err, board))
     } finally {
@@ -163,6 +189,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     // open ones: confirm first when there are any (Decision 2).
     if (repeating && original && !sameRule(rule, original)) {
       const full = { ...content, ...dayChange, ...taskRepeatParams(rule) }
+      if (endsOnlyChange(rule, original)) return askEnds(full)
       if (series && series.later_open + series.later_changed > 0) return setConfirmRemove({ body: full })
       return send(full, 'following')
     }
@@ -289,6 +316,19 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
           ))}
       </FormDialog>
       {asking && <ScopeDialog action="save" loading={saving} onChoose={(scope) => send(asking.body, scope)} onCancel={() => setAsking(null)} />}
+      {confirmEnds &&
+        (confirmEnds.change.removes_open + confirmEnds.change.removes_changed > 0 ? (
+          <RemoveLaterDialog
+            title={confirmEnds.change.kind === 'ends' ? 'Change when it ends' : 'Change the repeat'}
+            laterOpen={confirmEnds.change.removes_open}
+            laterChanged={confirmEnds.change.removes_changed}
+            loading={saving}
+            onConfirm={(changed) => send(confirmEnds.body, 'following', changed)}
+            onCancel={() => setConfirmEnds(null)}
+          />
+        ) : (
+          <ExtendDialog loading={saving} onConfirm={() => send(confirmEnds.body, 'following')} onCancel={() => setConfirmEnds(null)} />
+        ))}
       {confirmRemove && series && (
         <RemoveLaterDialog
           title="Change the repeat"
