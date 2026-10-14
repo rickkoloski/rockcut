@@ -9,7 +9,7 @@ tables).
 (from Matt's decisions of 2026-10-13/14; amends the D38 and D41 specs; R2
 added as item 10 on 2026-10-14); scenarios S121–S142
 **Branch:** `d42-task-board-follow-ups`, cut from `develop` (`9966d4d`).
-**SHA for DEV:** `fd39845` (the last code commit; later commits are docs only)
+**SHA for DEV:** `0b609e7` (app code as of `fd39845`; later commits are docs and one test fix)
 
 ## What changed
 
