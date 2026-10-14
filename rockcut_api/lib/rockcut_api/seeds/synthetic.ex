@@ -23,6 +23,10 @@ defmodule RockcutApi.Seeds.Synthetic do
   and restores the four default Daily items. D39: three `[SEED]` recurring
   tasks (Keg Wash weekly, Glycol check monthly, Calibrate pH meter
   quarterly); `[SEED]` and `[TEST-TEMP]` series go with their occurrences.
+  D41: `[SEED]` Taproom tasks (two for `bartender1`, one unassigned, one open
+  2 days ago, one on Future) and one Office task; Sales starts empty, and only
+  the Brewery has Daily items. Tagged tasks, series and Daily items go from
+  every board; `reset/0` also deletes the other boards' Daily items.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -162,8 +166,10 @@ defmodule RockcutApi.Seeds.Synthetic do
       Repo.delete_all(from(s in Shift, where: s.assignee_id in ^ids or s.created_by_id in ^ids))
       delete_tagged(@seed_tag)
       # D38: every Daily check, and the Daily card back to its four items.
+      # D41: the other boards start with none.
       Repo.delete_all(DailyCheck)
       restore_daily_items()
+      Repo.delete_all(from(i in DailyItem, where: i.department_id != ^brewery_id()))
       # Memberships, messages, time off, availability, notifications and push
       # subscriptions cascade (on_delete: :delete_all).
       Repo.delete_all(from(u in User, where: u.id in ^ids))
@@ -664,6 +670,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     end
 
     seed_brewery_board(u, monday, today, now)
+    seed_other_boards(u, today, now)
 
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
@@ -735,48 +742,34 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Recalibrate the pH meter", nil, "brewer2", nil}
   ]
 
-  defp seed_brewery_board(u, monday, today, now) do
-    dept = Repo.get_by!(Department, key: "brewery")
-    mgr = u["breweryMgr"]
+  # D41: the other boards, in the same shape (none done). No Daily items.
+  @taproom_tasks [
+    {"Restock the walk-in cooler", -2, nil, nil},
+    {"Clean lines", 0, "bartender1", nil},
+    {"Restock glassware", 1, "bartender1", nil},
+    {"Change the tap list board", 2, nil, nil},
+    {"Order more coasters", nil, nil, nil}
+  ]
 
-    for {{title, offset, who, done}, index} <- Enum.with_index(@board_tasks) do
-      due_on = offset && Date.add(today, offset)
+  @office_tasks [
+    {"Run payroll", 1, "office1", nil}
+  ]
 
-      completion =
-        case done do
-          nil ->
-            %{}
+  defp seed_other_boards(u, today, now) do
+    seed_board_tasks("bar", @taproom_tasks, u["barMgr"], u, today, now)
+    seed_board_tasks("office", @office_tasks, u["dualMgr"], u, today, now)
+  end
 
-          {display, done_offset, by} ->
-            on = Date.add(today, done_offset)
-
-            %{
-              completed_at: Recurrence.local_to_utc(on, ~T[14:00:00]),
-              completed_by_id: u[by].id,
-              completed_on: on,
-              completed_display: display
-            }
-        end
-
-      Repo.insert!(
-        struct(
-          %Task{
-            department_id: dept.id,
-            title: "#{@seed_tag} #{title}",
-            due_on: due_on,
-            # After whatever is already on the day; compacted below.
-            position: 1_000 + index,
-            assignee_id: who && u[who].id,
-            created_by_id: mgr.id,
-            inserted_at: now,
-            updated_at: now
-          },
-          completion
-        )
-      )
+  defp brewery_id do
+    case Repo.get_by(Department, key: "brewery") do
+      nil -> -1
+      dept -> dept.id
     end
+  end
 
-    Tasks.compact_lists(dept)
+  defp seed_brewery_board(u, monday, today, now) do
+    dept = seed_board_tasks("brewery", @board_tasks, u["breweryMgr"], u, today, now)
+    mgr = u["breweryMgr"]
     seed_recurring_tasks(mgr, today)
 
     # Daily card: yesterday 3 of the first 4 ticked, today 1. A past day only
@@ -820,6 +813,52 @@ defmodule RockcutApi.Seeds.Synthetic do
       inserted_at: now,
       updated_at: now
     })
+  end
+
+  # A board's one-off [SEED] tasks, after whatever is on each day, then the
+  # lists close up. Returns the department.
+  defp seed_board_tasks(key, tasks, mgr, u, today, now) do
+    dept = Repo.get_by!(Department, key: key)
+
+    for {{title, offset, who, done}, index} <- Enum.with_index(tasks) do
+      due_on = offset && Date.add(today, offset)
+
+      completion =
+        case done do
+          nil ->
+            %{}
+
+          {display, done_offset, by} ->
+            on = Date.add(today, done_offset)
+
+            %{
+              completed_at: Recurrence.local_to_utc(on, ~T[14:00:00]),
+              completed_by_id: u[by].id,
+              completed_on: on,
+              completed_display: display
+            }
+        end
+
+      Repo.insert!(
+        struct(
+          %Task{
+            department_id: dept.id,
+            title: "#{@seed_tag} #{title}",
+            due_on: due_on,
+            # After whatever is already on the day; compacted below.
+            position: 1_000 + index,
+            assignee_id: who && u[who].id,
+            created_by_id: mgr.id,
+            inserted_at: now,
+            updated_at: now
+          },
+          completion
+        )
+      )
+    end
+
+    Tasks.compact_lists(dept)
+    dept
   end
 
   # D39: three recurring tasks, made through the context (12 months ahead,
