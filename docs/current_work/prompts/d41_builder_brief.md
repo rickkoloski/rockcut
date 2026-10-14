@@ -236,3 +236,56 @@ any `LEAD:`. Then stop.
 3. `left_<key>` is fine; step 4's UI words it with the department name.
 
 The lead is running the brewery Playwright folder on `4e843b7`.
+
+## Task 4: plan step 4, per-department UI
+
+**You're a fresh session.** Read the brief from the top ("Read first", your
+limits), then Tasks 1–3 and "Task 3 answers" for what's done. Step 3
+accepted (`31fe3ce`, `4e843b7`): the lead ran the brewery folder on it,
+136/136. **Memory is tight on this machine:** run Playwright with
+`--workers=1`, and don't run ExUnit and Playwright at the same time.
+
+First, from "Task 3 answers": `task_boards` in department order
+(Brewery, Taproom, Office, Sales, by id). ExUnit for it.
+
+Spec §3.5; plan "UI" and step 4. Not the All departments view (step 5).
+
+1. **Nav:** a top-level **Tasks** entry after Schedule, shown when
+   `/api/me`'s `task_boards` isn't empty; Brewery → Tasks removed. The
+   Tasks routes leave the Brewery-only route group.
+2. **Routes:** `/tasks/:dept` for each board in `task_boards`; `/tasks`
+   opens the remembered board (`rockcut.tasks.board`), else the first. A
+   board the person can't open → their first board, or Home with none
+   (S102, S109, S114). `/brewery/tasks` still redirects to
+   `/tasks/brewery`, and from there to the person's own board if they
+   can't open the Brewery's.
+3. **The board takes its department** from the route: `boardPath(dept,
+   …)` everywhere, query keys include the department (so switching boards
+   never shows another board's cached data), and the optimistic writes
+   target the right board.
+4. **Switcher:** with two or more boards, the title is a picker
+   ("<Department> tasks ▾", department colors); choosing one changes the URL
+   and is remembered. Phone width: in the toolbar beside the calendar
+   button. One board: plain title "<Department> tasks".
+5. **Manager tools per board:** History and Edit Daily items from
+   `task_boards[].manage`, not `breweryTasksManage`. Then remove
+   `brewery_tasks_manage` from `/api/me` and `useAuth`.
+6. **Daily card hidden** when the board has no Daily items; managers see
+   **Set up Daily checks** in the ⋮ menu (it opens the Edit Daily items
+   dialog) until the first item exists (S107).
+7. **Copy:** "No one scheduled" (header), the assignee error with the
+   department's name, History's "left the <Department>" for
+   `left_<key>`, and any other "Brewery"/"brewer" wording on the board.
+   The assignee list shows only the board's people (it comes from the
+   API; check).
+8. **Playwright:** a new `tests/regression/tasks/task-board-departments.spec.ts`
+   in the `brewery-board` project (one worker; boards are shared):
+   S101–S114 (S112 through Users & Roles as `owner` with a `[TEST-TEMP]`
+   person, like D38's S49), and S115 for `floater` over HTTP. Drive them
+   in a browser first (token injection, per the workflow), then write the
+   spec. The brewery folder must still pass.
+
+**Done when:** `tsc`, build, Vitest, lint (no new problems), ExUnit (once),
+the new spec and the brewery folder (`--workers=1`) pass. `feat:` commits.
+**Reply with:** counts, SHAs, a screenshot path for the switcher (desktop
+and 412px), anything you couldn't drive, and any `LEAD:`. Then stop.
