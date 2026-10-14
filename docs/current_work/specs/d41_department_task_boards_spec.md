@@ -1,6 +1,6 @@
 # D41: Department Task Boards — Spec (amends the D38 spec)
 
-**Status:** APPROVED (Matt, 2026-10-13)
+**Status:** COMPLETE on `develop` (PR #20, merged 2026-10-14); approved by Matt 2026-10-13
 **Amends:** `specs/d38_brewery_task_board_spec.md` (D38 board, D39 recurring
 tasks). Everything there still holds unless this spec changes it; where the
 D38 spec says "the Brewery", read "the board's department".
