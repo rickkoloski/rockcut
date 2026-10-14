@@ -12,8 +12,9 @@ decisions (`planning/d40_tablets_reminder_dashboard_plan.md`, which win
 where they differ).
 **Branch:** `d40-brewhouse-tablet-reminders`, cut from the D42 tip
 (`cb59d3b`, PR #21).
-**SHA for DEV:** `790cf13` (API `3b00bb5`, UI `8ecbc8e`, seed and tests
-`790cf13`; later commits are docs).
+**SHA for DEV:** the commit "test: D40 S44 keeps its titles" (after the
+D42 merge `c454bc8`; API `3b00bb5`, UI `8ecbc8e`, seed and tests
+`790cf13`). The lead fills in the hash.
 
 ## What changed
 
@@ -92,13 +93,15 @@ from `Authz.Device`):
   `vite build` clean.
 - **Lint:** 27 problems (26 errors, 1 warning), all pre-existing; none in
   D40's files.
-- **Playwright: written, not yet run** (the lead held the browser for D42's
-  DEV QA): `tests/regression/tasks/task-board-tablets.spec.ts`,
-  `task-board-dashboard.spec.ts`, and `taproom/staff-codes.spec.ts`
-  (S48 added; S3/S4/S12 updated). Also updated for D40, not run:
-  `brewery/task-board-access.spec.ts` (S41) and
-  `tasks/task-board-departments.spec.ts` (S114), which pinned "devices 403
-  until D40".
+- **Playwright (builder, `--workers=1`, local, after the D42 merge
+  `c454bc8`):** `tasks/task-board-tablets.spec.ts` 8/9 on the first run,
+  S44 failing on a test bug (it rebuilt the `[TEST-TEMP]` titles, whose
+  suffix is random); fixed, the file reran 9/9.
+  `tasks/task-board-dashboard.spec.ts` 4/4; `taproom/staff-codes.spec.ts`
+  (S48 added; S3/S4/S12 updated) plus `brewery/task-board-access.spec.ts`
+  (S41 updated), 15/15 together; `tasks/task-board-departments.spec.ts`
+  (S114 updated) 22/22. The two D41 specs pinned "devices 403 until D40".
+  Full Playwright is the lead's run.
 - **Revert checks: not done.** D40 is new behavior, not a bug fix; one
   attempt (dropping the membership check in `StaffCodeActing` to watch S45
   fail) was blocked by permissions.
@@ -148,9 +151,8 @@ from `Authz.Device`):
 
 ## LIMITATIONS
 
-- **Playwright hasn't run** for D40's specs or the two D41 specs it
-  updated. They were written against the components' test ids and the
-  existing helpers; the first run may need selector fixes.
+- **Playwright ran locally only, Chromium at desktop width.** The tablet
+  specs don't cover phone width or touch; the Pixel/tablet checks above do.
 - **The real push** (timing on a phone, the tap's deep link from a closed
   app) is only on DEV; ExUnit checks the scan, text, channels and ledger.
 - **The 5-minute window across a tablet's sleep** is checked by Vitest

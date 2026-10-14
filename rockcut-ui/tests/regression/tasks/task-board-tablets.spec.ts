@@ -144,19 +144,21 @@ test.describe('the brewhouse tablet', () => {
       await page.getByTestId('task-title-input').fill(title)
       await saveDialog(page).click()
     }
-    await add(tempTag('S44 first'))
+    const first = tempTag('S44 first')
+    const second = tempTag('S44 second')
+    await add(first)
     await enterCode(page, brewer!.code)
     await expect(page.getByTestId('acting-banner')).toBeVisible()
 
     await page.clock.fastForward('05:01')
     await expect(page.getByTestId('acting-banner')).toHaveCount(0)
-    await add(tempTag('S44 second'))
+    await add(second)
     await expect(page.getByTestId('acting-code-dialog')).toBeVisible()
     await enterCode(page, brewer!.code)
     await expect(page.getByTestId('task-dialog')).toHaveCount(0)
 
     const titles = (await getBoard(await apiAs('breweryMgr'), today, today)).days[0].cards.map((c) => c.title)
-    expect(titles).toEqual(expect.arrayContaining([tempTag('S44 first'), tempTag('S44 second')]))
+    expect(titles).toEqual(expect.arrayContaining([first, second]))
   })
 
   test('S45: a Taproom member’s code is a wrong code here; the dialog stays open', async ({ page }) => {
