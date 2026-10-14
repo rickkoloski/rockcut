@@ -12,7 +12,7 @@ decisions (`planning/d40_tablets_reminder_dashboard_plan.md`, which win
 where they differ).
 **Branch:** `d40-brewhouse-tablet-reminders`, cut from the D42 tip
 (`cb59d3b`, PR #21).
-**SHA for DEV:** `6419501` (D40 with `develop` merged after D42; API
+**SHA for DEV:** `8895862` (fix cycle 1; first pass `6419501`) (D40 with `develop` merged after D42; API
 `3b00bb5`, UI `8ecbc8e`, seed and tests `790cf13`, S44 `a868fed`, D33 S3
 `9791fde`). Later commits are docs only. **DEV fix cycle 1:** the commit
 "fix: D40 DEV qa gaps 1 and 3" (the lead fills in the hash).
