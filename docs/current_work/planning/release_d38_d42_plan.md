@@ -73,8 +73,14 @@ DEV's volume with real data (D41: row counts identical).
       `develop` commit `0ed1afa` (D37 merged), so the sync changes no file.
 - [ ] `develop` merges into `main` cleanly and the result equals `develop`
       (dry run).
-- [ ] `mix hex.audit` (only the accepted `decimal` advisory, task 3994) and
-      `pnpm audit --prod` at the release commit.
+- [x] Audits (2026-10-14): none introduced by this release (`mix.lock`
+      unchanged since `v2026.10.07`; `source-map-js` unchanged in the lockfile).
+      `mix hex.audit`: `decimal` 2.4.1 (EEF-CVE-2026-32686, accepted, task
+      3994; and new EEF-CVE-2026-97853, `Decimal.round` places), `bandit`
+      1.12.5 (EEF-CVE-2026-105659, HTTP/2 only: `fly.toml` doesn't enable h2
+      to the app, so Fly's proxy speaks HTTP/1.1). `pnpm audit --prod`:
+      `source-map-js` 1.2.1 (build-time via Tailwind/PostCSS, not in the
+      shipped bundle). Proposed: fold the bandit upgrade into 3994.
 - [ ] DEV runs `develop` HEAD with the full suite green.
 
 ## 6. Steps (on Matt's go)

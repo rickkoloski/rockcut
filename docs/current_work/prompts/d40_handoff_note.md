@@ -197,3 +197,22 @@ from `Authz.Device`):
 - **`tsc -p tsconfig.e2e.json`** still reports the two pre-existing errors
   D42's note lists (`task-board-phone.spec.ts:458`,
   `beer-board-import.spec.ts:39`); none in D40's specs.
+
+## DEV gate verdict (lead)
+
+- **First pass (`0f2f0a0`, API v38 / UI v35):** migration ran at boot;
+  reseed 19 personas (`breweryDevice` added); **full Playwright on DEV 343
+  passed, 0 failed** (2 skipped, login-form). Independent qa: **PASS with
+  gaps**, no must-fix (`stepwise_results/d40_dev_qa_report.md`); no tablet
+  write ever went through without a code or under the wrong person; the
+  reminder worked on the real clock (S33 not run: it would need completing
+  others' tasks).
+- **Fix cycle 1 (`8895862`, API v39 / UI v36):** gap 1 (staff code only in
+  the body) and gap 3 (nothing ticked before the code is accepted). Full
+  ExUnit 1,455/0.
+- **Fix cycle 2 (`9dae539`, UI v37):** gaps 5 and 6 (banner only on the
+  task board, pinned).
+- **DEV recheck after cycle 2:** the tablet, beer-board device, dashboard
+  and staff-code spec files against DEV, **29/29**.
+- Not fixed: gap 2 (reminder body lists up to 3 tasks, per spec §3.5) and
+  gap 4 (a locked tablet says so only after a code is typed, as D37).
