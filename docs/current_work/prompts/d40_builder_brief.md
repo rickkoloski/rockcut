@@ -76,9 +76,40 @@ ExUnit files only, never the full suite and never Playwright.
 Then: the targeted suites you touched, `mix compile --warnings-as-errors`,
 and stop for the lead (the lead says when the full ExUnit run is safe).
 
+## Task 1 answers (lead)
+
+Decisions 1–5: **confirmed** (owners keep codes; the 50–60 minute window
+with the ledger; the reminder text; 200 + `recorded_as` on tablet deletes;
+tablets read `daily_items`). The local dev DB is migrated
+(`20261017120001`). Task 1's full ExUnit run waits until the D42 qa agent
+finishes on DEV (memory); the lead will run it.
+
 ## Task 2: the UI (plan steps 4–6)
 
-Wait for the lead's go.
+1. **Tablet mode on the boards** (plan decision 1): a device sees only its
+   home board (no switcher, All departments, History, Edit Daily items or
+   "My tasks"); the brewhouse tablet lands on `/tasks/brewery`; the Taproom
+   tablet keeps its landing and gets **Tasks** in its nav.
+2. **Staff code flow** (plan decision 3; spec §3.4): before the first write,
+   the D37 code dialog (reuse it); then "Acting as <name> · Done" with a
+   5-minute idle timer; the code only in memory; Done or idle clears it;
+   wrong / locked / not a member errors as D37's copy. A write that comes
+   back `staff_code_invalid` clears the remembered code and asks again.
+3. **Users & Roles:** the Staff code section for every employee, shown to
+   owners and to managers of one of the person's departments (`/api/me`
+   `staff_codes`).
+4. **Brewery Dashboard card** (`/brewery`, spec §3.8, S50) and the
+   **notification toggle** "Unfinished tasks before shift end" on Profile →
+   Notifications for Brewery members only (S35, S37).
+5. **Tests:** Vitest for the acting timer; Playwright in a new
+   `tests/regression/tasks/task-board-tablets.spec.ts` (S9g, S42–S46, S68 in
+   the browser, the Taproom tablet's Tasks) and the dashboard card / toggle
+   (S50, S35 UI). A device storageState for the brewhouse tablet is Task
+   3's seed work; until then, build what you can and write the tests.
+   **Memory:** Vitest is fine; **don't run Playwright until the lead says**
+   (the D42 qa agent is using the browser on DEV).
+
+Report and stop.
 
 ## Task 3: seed, coverage, gate, handoff note (plan step 7)
 
