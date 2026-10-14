@@ -111,6 +111,27 @@ finishes on DEV (memory); the lead will run it.
 
 Report and stop.
 
+## Task 2 answers (lead)
+
+1–4 confirmed: the persona in Task 3; the toggle in the bell's
+Preferences (where the others are); two switches like every event (S35
+turns both off); taps and keys count as activity, scrolling doesn't.
+Tablets keep All and Unassigned (plan decision 1).
+
 ## Task 3: seed, coverage, gate, handoff note (plan step 7)
 
-Wait for the lead's go.
+1. **Seed:** a `breweryDevice` persona (home Brewery, "Brewhouse tablet"),
+   paired like `taproomDevice`, in `Seeds.Synthetic`, `tests/config/test-env.ts`
+   and the auth setup; `brewer1`'s staff code in the seed (as D37 seeds the
+   Taproom ones; same secret source, never printed). ExUnit for the seed.
+2. **COVERAGE.md** D40 section (S9g, S32–S37a, S42–S50, S68 → tests).
+3. `docs/current_work/prompts/d40_handoff_note.md` (the D42 note's shape:
+   what changed, migration + rollback numbers, routes a device can now
+   reach, tests, DEV must exercise incl. one real reminder on DEV and the
+   Pixel/tablet checks, decisions, LIMITATIONS).
+4. **Still no Playwright and no full ExUnit** until the lead says (the D42
+   qa agent is still on DEV). Targeted ExUnit and Vitest are fine. When
+   the lead gives the go, you run the two new spec files plus
+   `taproom/staff-codes.spec.ts`; the lead runs the full suites.
+
+Report and stop.
