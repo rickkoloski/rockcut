@@ -157,7 +157,9 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
   board. Phone width uses the same vertical and one-day views.
 - **Each day:** a small section per department (its color and name), in
   nav order, holding that department's cards for the day and its Daily
-  count ("Daily 3/4"). A department with nothing that day is left out.
+  count ("Daily 3/4"). A department with Daily items always has a section,
+  even on a day with no tasks (just its Daily count); one with neither is
+  left out (Matt, 2026-10-13).
   There's **no schedule header** in this view.
 - **Unfinished and Future:** one card each, with the tasks grouped by
   department the same way.
@@ -201,7 +203,7 @@ Routes move from `/api/brewery/...` to **`/api/boards/:dept/...`**, where
 | S114 | `noDept`, `taproomDevice` | nav; `GET /api/boards/bar/tasks` | | `noDept`: no Tasks entry, the URL goes Home, 403. The Taproom tablet: 403 (until D40). |
 | S115 | `floater`; `brewer1` | `PATCH /api/boards/bar/tasks/<a Brewery task id>` | `floater`: member of both; `brewer1`: Brewery only | `floater`: 404 (the id isn't on that board), and the task is unchanged. `brewer1`: 403, as on every Taproom route (access is checked before the id, so ids on boards you can't open aren't revealed). |
 | S116 | — | daily scan | a weekly series on Taproom and one on Brewery | Both top up 12 months ahead, each on its own board. |
-| S118 | `owner` | Tasks → switcher → **All departments** | Brewery and Taproom tasks today, Office tomorrow, Sales none | `/tasks/all`. Today shows a Brewery section then a Taproom section, each with its Daily count (Taproom only if it has items); tomorrow shows Office; Sales never appears. No schedule header. |
+| S118 | `owner` | Tasks → switcher → **All departments** | Brewery and Taproom tasks today, Office tomorrow, Sales none | `/tasks/all`. Today shows a Brewery section then a Taproom section, each with its Daily count (Taproom only if it has items); tomorrow shows Office, plus a Brewery section with only its Daily count; Sales never appears. No schedule header. |
 | S119 | `owner` | All departments → tap a Taproom task | | Opens `/tasks/bar` at that day; the task can be changed there. Nothing on the All view is draggable or tickable. |
 | S120 | `breweryMgr`, `floater` | typed `/tasks/all`; `GET /api/boards/all/tasks` | not owners | No All departments in the switcher; the URL goes to their own board; the API answers 403. |
 | S117 | `brewer1` | Brewery board, every D38/D39 scenario | | Unchanged behavior: the D38/D39 Playwright specs pass against `/tasks/brewery` (path and names updated only). |

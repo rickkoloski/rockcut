@@ -386,3 +386,26 @@ full output kept), the new tests and the `brewery-board` project
 `all` response shape (one trimmed example), screenshot paths for
 `/tasks/all` at desktop and 412px, anything you couldn't drive, flaky
 names, and any `LEAD:`. Then stop.
+
+## Task 5 answers (lead)
+
+Task 5 accepted (`e31e4f9`, `15b0711`). `daily_counts`, the `?day=future`
+link and the shared `board_parts/3` are fine.
+
+1. **Daily-only sections: yes** (Matt). A department with Daily items gets
+   a section every day, even with no tasks that day, showing just its
+   Daily count; one with neither is left out. Spec §3.6 and S118 updated
+   (tomorrow shows Office **and** a Brewery section with only its Daily
+   count). Change the `departmentSections` filter, its Vitest, and S118's
+   Playwright assertions. Check the API already sends `daily_counts` for
+   days with no cards (say if it doesn't, and fix it there).
+2. **The `git stash list` slip:** noted, thanks for saying so.
+3. **Housekeeping:** close your Playwright MCP browser when you're done
+   driving (two `playwright-mcp` processes and a Chrome have been up 30+
+   minutes; memory is tight).
+
+**Done when:** Vitest, `tsc`, lint (no new problems), the
+`task-board-departments` spec (`--workers=1`), and ExUnit if you touched
+the API. One `feat:` or `fix:` commit. **Reply with:** counts, the SHA, a
+fresh `/tasks/all` desktop screenshot showing a Daily-only section. Then
+stop.
