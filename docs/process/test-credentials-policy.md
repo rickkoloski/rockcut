@@ -27,10 +27,11 @@ minted tokens.
      `rockcut-ui/.env.test.local`.
    Never paste it into chat, docs, commits, PR descriptions or screenshots.
    - **D37 persona staff codes** (`SYNTHETIC_STAFF_CODES`, as
-     `bartender1:<code>,bartender2:<code>,barMgr:<code>`) are the same kind of
+     `bartender1:<code>,bartender2:<code>,barMgr:<code>,brewer1:<code>`; D40 added
+     `brewer1` for the brewhouse tablet) are the same kind of
      secret, kept in the same places: the PortableMind file, a Fly secret on
      `rockcut-api-dev`, and `rockcut_api/.env.synthetic` locally. The seed
-     restores those three codes and clears every other persona's code. Unset,
+     restores those codes and clears every other persona's code. Unset,
      it logs a warning and leaves codes alone. Specs don't use them: device
      specs create `[TEST-TEMP]` people with their own codes.
 5. **Prod has zero synthetic accounts.** The synthetic seed and token minting

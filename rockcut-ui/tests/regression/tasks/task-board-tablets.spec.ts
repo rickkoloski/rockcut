@@ -22,10 +22,6 @@ import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/hel
 // their department's manager), so persona codes stay untouched. The lockout
 // itself is ExUnit's (task_board_device_test); here its message is checked
 // with a stubbed 429. Runs in the one-worker `brewery-board` project.
-//
-// `breweryDevice` (home Brewery, a paired token like `taproomDevice`) is
-// Task 3's seed work; until it's in test-env.ts and the seed, this spec can't run.
-const BREWERY_DEVICE = 'breweryDevice' as PersonaKey
 
 test.use({ viewport: { width: 1600, height: 1100 } })
 
@@ -69,7 +65,7 @@ test.afterEach(async () => {
 })
 
 test.describe('the brewhouse tablet', () => {
-  test.use({ storageState: authFile(BREWERY_DEVICE) })
+  test.use({ storageState: authFile('breweryDevice') })
 
   test('S42: opens on the Brewery board; no switcher, History, Edit Daily items or My tasks', async ({ page }) => {
     await page.goto('/')

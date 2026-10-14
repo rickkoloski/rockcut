@@ -76,11 +76,11 @@ for (const persona of ['bartender1', 'office1'] as const) {
 test.describe('taproomDevice', () => {
   test.use({ storageState: authFile('taproomDevice') })
 
-  test('S41: no board, and every D38 route is 403 (people only until D40)', async ({ page }) => {
+  test('S41 (D40): the Brewery board isn’t its own; the URL goes to the Taproom board, every Brewery route is 403', async ({ page }) => {
     await page.goto('/tasks/brewery')
-    await expect(page.getByText('Not available on a shared device')).toBeVisible()
-    await expect(page.getByTestId('task-board')).toHaveCount(0)
-    await expect(navTasks(page)).toHaveCount(0)
+    await expect(page).toHaveURL(/\/tasks\/bar/)
+    await expect(page.getByTestId('board-title')).toContainText('Taproom')
+    await expectTasksInNav(page)
 
     for (const [route, status] of Object.entries(await statuses('taproomDevice'))) expect(status, route).toBe(403)
   })

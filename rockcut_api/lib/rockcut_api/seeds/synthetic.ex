@@ -82,7 +82,9 @@ defmodule RockcutApi.Seeds.Synthetic do
   # Kept apart from @personas: a device has no password, no memberships, and
   # logs in only with a `dev_` tablet token (see `mint_token/1`).
   @devices [
-    {"taproomDevice", "taproom.device", "Taproom tablets", "bar"}
+    {"taproomDevice", "taproom.device", "Taproom tablets", "bar"},
+    # D40: the brewhouse tablet, on the Brewery's task board.
+    {"breweryDevice", "brewery.device", "Brewhouse tablet", "brewery"}
   ]
 
   @device_token_name "#{"[SEED]"} Playwright tablet"

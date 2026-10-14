@@ -404,10 +404,13 @@ test.describe('noDept', () => {
 test.describe('taproomDevice', () => {
   test.use({ storageState: authFile('taproomDevice') })
 
-  test('S114: the Taproom tablet gets 403 on the Taproom board (until D40)', async ({ page }) => {
+  // D40 opened the tablet's own board (task-board-tablets.spec.ts); it still gets nothing else.
+  test('S114 (D40): the Taproom tablet reads the Taproom board only', async ({ page }) => {
     await page.goto('/tasks/bar')
-    await expect(page.getByText('Not available on a shared device')).toBeVisible()
-    expect(await status('taproomDevice', 'GET', `/api/boards/bar/tasks?from=${denverToday()}&to=${denverToday()}`)).toBe(403)
+    await expect(page.getByTestId('task-board')).toBeVisible()
+    expect(await status('taproomDevice', 'GET', `/api/boards/bar/tasks?from=${denverToday()}&to=${denverToday()}`)).toBe(200)
+    expect(await status('taproomDevice', 'GET', `/api/boards/brewery/tasks?from=${denverToday()}&to=${denverToday()}`)).toBe(403)
+    expect(await status('taproomDevice', 'GET', '/api/boards/bar/tasks/history')).toBe(403)
   })
 })
 
