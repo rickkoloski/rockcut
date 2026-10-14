@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { Button, Dialog, DialogActions, DialogContent, DialogTitle, TextField, Tooltip } from '@mui/material'
-import { isDateKey } from '../../../lib/breweryTasks'
-import type { TaskCardData } from '../../../lib/types'
+import { isDateKey } from '../../lib/tasks'
+import type { TaskCardData } from '../../lib/types'
 
 interface Props {
   card: TaskCardData

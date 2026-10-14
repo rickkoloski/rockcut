@@ -3,7 +3,13 @@ import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
 import type { DayHeaderData, HeaderShift, TaskCardData, TaskEvent, TaskEventPage } from './types'
 
-// D38: Brewery task board helpers shared by the board, its dialogs and the specs.
+// D38: task board helpers shared by the board, its dialogs and the specs.
+// D41: one board per department, under `/api/boards/<dept>`.
+
+/** A board's API path: `boardPath('brewery', 'tasks', 12, 'move')` → `/api/boards/brewery/tasks/12/move`. */
+export function boardPath(dept: string, ...segments: (string | number | undefined)[]): string {
+  return ['/api/boards', dept, ...segments.map(String)].join('/')
+}
 
 /** The longest range the board shows (spec §3.6). */
 export const MAX_RANGE_DAYS = 31
@@ -100,7 +106,7 @@ export function cardShown(card: TaskCardData, filter: TaskFilter, hideCompleted:
 export function taskGone(err: unknown): boolean {
   const e = err as { response?: { status?: number }; config?: { url?: string } }
   const status = e?.response?.status
-  return status === 410 || (status === 404 && /\/api\/brewery\/tasks\/\d+/.test(e?.config?.url ?? ''))
+  return status === 410 || (status === 404 && /\/api\/boards\/[^/]+\/tasks\/\d+/.test(e?.config?.url ?? ''))
 }
 
 /** A refused board write as a sentence: the API's `message`, else the usual parse. */
@@ -250,13 +256,20 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
 
 // ── Per-browser preferences (spec §3.8). Storage can be missing or throw. ──
 
-const SPAN_KEY = 'rockcut.breweryTasks.span'
-const PHONE_VIEW_KEY = 'rockcut.breweryTasks.phoneView'
-const HIDE_KEY = 'rockcut.breweryTasks.hideCompleted'
+const SPAN_KEY = 'rockcut.tasks.span'
+const PHONE_VIEW_KEY = 'rockcut.tasks.phoneView'
+const HIDE_KEY = 'rockcut.tasks.hideCompleted'
+// D41: the keys before the rename. A choice saved under the old key is read
+// once, then kept under the new one.
+const OLD_PREFIX = 'rockcut.breweryTasks.'
 
 function read(key: string): string | null {
   try {
-    return localStorage.getItem(key)
+    const value = localStorage.getItem(key)
+    if (value !== null) return value
+    const old = localStorage.getItem(OLD_PREFIX + key.slice('rockcut.tasks.'.length))
+    if (old !== null) write(key, old)
+    return old
   } catch {
     return null
   }

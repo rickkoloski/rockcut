@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import {
   Button,
   Dialog,
@@ -11,8 +11,8 @@ import {
   RadioGroup,
   Typography,
 } from '@mui/material'
-import { formatTaskDay } from '../../../lib/breweryTasks'
-import type { CompletedDisplay, TaskCardData } from '../../../lib/types'
+import { formatTaskDay } from '../../lib/tasks'
+import type { CompletedDisplay, TaskCardData } from '../../lib/types'
 
 interface Props {
   card: TaskCardData

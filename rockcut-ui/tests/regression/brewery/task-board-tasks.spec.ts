@@ -41,7 +41,7 @@ test('S6: + Add a task on today adds it at the bottom, unassigned, and it persis
   await page.getByTestId(`day-add-${today}`).click()
   await page.getByTestId('task-title-input').fill(title)
   await expect(page.getByTestId('task-assignee-select')).toHaveText('Anyone')
-  const saved = boardWrite(page, /^\/api\/brewery\/tasks$/)
+  const saved = boardWrite(page, /^\/api\/boards\/brewery\/tasks$/)
   await saveDialog(page).click()
   const task = (await (await saved).json()).data
   created.push(task.id)
@@ -70,7 +70,7 @@ test.describe('as brewer2', () => {
     await page.getByTestId('task-assignee-select').click()
     const brewer1Id = await userId(await apiAs('brewer1'))
     await page.getByTestId(`task-assignee-option-${brewer1Id}`).click()
-    const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${task.id}$`), 'PATCH')
+    const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${task.id}$`), 'PATCH')
     await saveDialog(page).click()
     await saved
     await page.reload()
@@ -130,7 +130,7 @@ test.describe('as brewer2', () => {
     await page.getByTestId('task-menu-delete').click()
     const dialog = page.getByRole('dialog').filter({ hasText: `Delete '${title}'?` })
     await expect(dialog).toBeVisible()
-    const deleted = boardWrite(page, new RegExp(`^/api/brewery/tasks/${task.id}$`), 'DELETE')
+    const deleted = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${task.id}$`), 'DELETE')
     await dialog.getByRole('button', { name: 'Delete' }).click()
     await deleted
     await page.reload()
@@ -155,7 +155,7 @@ test('S9a: the menu offers Add notes; it opens the dialog in Notes, and then the
   await page.getByTestId('task-menu-notes').click()
   await expect(page.getByTestId('task-notes-input')).toBeFocused()
   await page.keyboard.type('Use the caustic, then acid rinse')
-  const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${task.id}$`), 'PATCH')
+  const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${task.id}$`), 'PATCH')
   await saveDialog(page).click()
   await saved
 
@@ -328,12 +328,12 @@ test("G1: a notes edit in a dialog opened before someone else's rename keeps bot
   await openMenu(page, task.id, today)
   await page.getByTestId('task-menu-edit').click()
   await page.getByTestId('task-title-input').fill(renamed)
-  const renaming = boardWrite(page, new RegExp(`^/api/brewery/tasks/${task.id}$`), 'PATCH')
+  const renaming = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${task.id}$`), 'PATCH')
   await saveDialog(page).click()
   await renaming
 
   // brewer2 saves: only the notes go.
-  const saving = boardWrite(other, new RegExp(`^/api/brewery/tasks/${task.id}$`), 'PATCH')
+  const saving = boardWrite(other, new RegExp(`^/api/boards/brewery/tasks/${task.id}$`), 'PATCH')
   await saveDialog(other).click()
   expect((await saving).request().postDataJSON()).toEqual({ notes: 'Check the gauge' })
   await expect(other.getByTestId('task-dialog')).toHaveCount(0)
@@ -348,7 +348,7 @@ test("G1: a notes edit in a dialog opened before someone else's rename keeps bot
   await other.getByTestId('task-menu-edit').click()
   let patched = false
   other.on('request', (r) => {
-    if (r.method() === 'PATCH' && new URL(r.url()).pathname === `/api/brewery/tasks/${task.id}`) patched = true
+    if (r.method() === 'PATCH' && new URL(r.url()).pathname === `/api/boards/brewery/tasks/${task.id}`) patched = true
   })
   await saveDialog(other).click()
   await expect(other.getByTestId('task-dialog')).toHaveCount(0)
@@ -360,7 +360,7 @@ test('S17: an empty or 201-character title is an inline error, and nothing is sa
   const today = denverToday()
   await openBoard(page)
   const posts: string[] = []
-  page.on('request', (r) => r.method() === 'POST' && r.url().endsWith('/api/brewery/tasks') && posts.push(r.url()))
+  page.on('request', (r) => r.method() === 'POST' && r.url().endsWith('/api/boards/brewery/tasks') && posts.push(r.url()))
   await page.getByTestId(`day-add-${today}`).click()
   await saveDialog(page).click()
   await expect(page.getByTestId('task-dialog').getByText('Enter a title')).toBeVisible()
@@ -389,14 +389,14 @@ test('S77: saving a dialog for a task someone deleted says so, refreshes, and re
   await openMenu(other, task.id, today)
   await other.getByTestId('task-menu-edit').click()
   await other.getByTestId('task-notes-input').fill('Check the gauge')
-  const gone = await (await apiAs('brewer1')).delete(`/api/brewery/tasks/${task.id}`)
+  const gone = await (await apiAs('brewer1')).delete(`/api/boards/brewery/tasks/${task.id}`)
   expect(gone.status()).toBe(204)
 
   // brewer2 saves.
   const saving = other.waitForResponse(
-    (r) => new URL(r.url()).pathname === `/api/brewery/tasks/${task.id}` && r.request().method() === 'PATCH',
+    (r) => new URL(r.url()).pathname === `/api/boards/brewery/tasks/${task.id}` && r.request().method() === 'PATCH',
   )
-  const refetch = other.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/tasks' && r.ok())
+  const refetch = other.waitForResponse((r) => new URL(r.url()).pathname === '/api/boards/brewery/tasks' && r.ok())
   await saveDialog(other).click()
   expect((await saving).status()).toBe(410)
   await expect(other.getByTestId('task-dialog')).toContainText('This task was deleted')

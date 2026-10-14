@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { Box } from '@mui/material'
-import { FUTURE, UNFINISHED } from '../../../lib/breweryTasks'
+import { FUTURE, UNFINISHED } from '../../lib/tasks'
 
 interface Props {
   /** The range's days, in order. */

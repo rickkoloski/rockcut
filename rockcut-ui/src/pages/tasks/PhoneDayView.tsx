@@ -1,8 +1,8 @@
 import { useEffect, useRef, type ReactNode, type TouchEvent } from 'react'
 import { Box, ButtonBase, IconButton, Tooltip, Typography } from '@mui/material'
 import { ChevronLeft, ChevronRight } from '@mui/icons-material'
-import { useDragActive } from '../../../components/dnd/dragActive'
-import { FUTURE, UNFINISHED, formatTaskDay } from '../../../lib/breweryTasks'
+import { useDragActive } from '../../components/dnd/dragActive'
+import { FUTURE, UNFINISHED, formatTaskDay } from '../../lib/tasks'
 
 interface Props {
   /** The range's days, then FUTURE: the strip's stops in order. */

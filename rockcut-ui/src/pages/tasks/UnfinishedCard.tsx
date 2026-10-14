@@ -1,6 +1,6 @@
 import { Box, Button, Paper, Typography } from '@mui/material'
 import { Today } from '@mui/icons-material'
-import type { ContainerSlot } from '../../../components/dnd/SortableLists'
+import type { ContainerSlot } from '../../components/dnd/SortableLists'
 
 interface Props {
   /** Every open task before today, whatever the filter (what Move all moves). */

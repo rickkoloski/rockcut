@@ -41,7 +41,7 @@ test('S23c: + Add a task on the Future list adds it at the bottom with no date; 
   await page.getByTestId('future-add').click()
   await expect(page.getByTestId('task-no-day')).toBeChecked()
   await page.getByTestId('task-title-input').fill(title)
-  const saved = boardWrite(page, /^\/api\/brewery\/tasks$/)
+  const saved = boardWrite(page, /^\/api\/boards\/brewery\/tasks$/)
   await page.getByTestId('task-dialog').getByRole('button', { name: 'Save' }).click()
   const task = (await (await saved).json()).data
   created.push(task.id)
@@ -93,7 +93,7 @@ test('S23e: dragging a day\'s task onto the Future list between two tasks puts i
   expect(keys.slice(keys.indexOf(`${a.id}:future`))).toEqual([`${a.id}:future`, `${t.id}:future`, `${b.id}:future`])
   await expect(card(page, t.id, day)).toHaveCount(0)
 
-  const history = (await (await (await apiAs('breweryMgr')).get('/api/brewery/tasks/history', { params: { task_id: String(t.id) } })).json()).data
+  const history = (await (await (await apiAs('breweryMgr')).get('/api/boards/brewery/tasks/history', { params: { task_id: String(t.id) } })).json()).data
   expect(history.find((e: { action: string }) => e.action === 'moved').detail).toMatchObject({ from: { due_on: day }, to: { due_on: null } })
 })
 

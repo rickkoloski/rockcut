@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
 import { Alert, Button, Checkbox, CircularProgress, FormControlLabel, MenuItem, TextField } from '@mui/material'
-import FormDialog from '../../../components/FormDialog'
-import { useApiQuery } from '../../../hooks/useApiQuery'
-import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import api from '../../../lib/api'
-import { taskError, taskGone } from '../../../lib/breweryTasks'
-import { defaultRule, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../../lib/repeat'
-import type { RosterEntry, TaskCardData, TaskSeriesData } from '../../../lib/types'
+import FormDialog from '../../components/FormDialog'
+import { useApiQuery } from '../../hooks/useApiQuery'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
+import api from '../../lib/api'
+import { boardPath, taskError, taskGone } from '../../lib/tasks'
+import { defaultRule, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
+import type { RosterEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
 import RepeatFields from './RepeatFields'
 import { RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
 
@@ -71,8 +71,8 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
   const [rule, setRule] = useState<TaskRule>(() => defaultRule(startDay ?? today))
   const [ruleTouched, setRuleTouched] = useState(false)
   const { data: series, isError: seriesFailed, error: seriesError } = useApiQuery<TaskSeriesData>(
-    ['brewery-task-series', card?.id],
-    `/api/brewery/tasks/${card?.id}/series`,
+    ['task-series', card?.id],
+    boardPath('brewery', 'tasks', card?.id, 'series'),
     undefined,
     { enabled: inSeries, staleTime: 0, gcTime: 0 },
   )
@@ -113,8 +113,8 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
     setConfirmRemove(null)
     setSaving(true)
     try {
-      if (card) await api.patch(`/api/brewery/tasks/${card.id}`, { ...body, ...(scope ? { scope } : {}), ...(changed ? { changed } : {}) })
-      else await api.post('/api/brewery/tasks', body)
+      if (card) await api.patch(boardPath('brewery', 'tasks', card.id), { ...body, ...(scope ? { scope } : {}), ...(changed ? { changed } : {}) })
+      else await api.post(boardPath('brewery', 'tasks'), body)
       onSaved()
     } catch (err) {
       // Someone deleted it meanwhile: "This task was deleted", and the board catches up.

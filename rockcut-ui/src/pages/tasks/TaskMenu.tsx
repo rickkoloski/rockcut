@@ -11,9 +11,9 @@ import {
   Repeat,
   StopCircleOutlined,
 } from '@mui/icons-material'
-import { useBackCloses } from '../../../hooks/useBackCloses'
-import { formatTaskDay } from '../../../lib/breweryTasks'
-import type { TaskCardData } from '../../../lib/types'
+import { useBackCloses } from '../../hooks/useBackCloses'
+import { formatTaskDay } from '../../lib/tasks'
+import type { TaskCardData } from '../../lib/types'
 
 export type TaskAction = 'edit' | 'edit-series' | 'stop-repeating' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete'
 

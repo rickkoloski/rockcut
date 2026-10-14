@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { Box, ButtonBase, Checkbox, Collapse, IconButton, Menu, MenuItem, Paper, Tooltip, Typography } from '@mui/material'
 import { ExpandLess, ExpandMore, MoreVert } from '@mui/icons-material'
-import { firstName, shortTime } from '../../../lib/breweryTasks'
-import type { DailyCardData, DailyCardItem } from '../../../lib/types'
+import { firstName, shortTime } from '../../lib/tasks'
+import type { DailyCardData, DailyCardItem } from '../../lib/types'
 
 interface Props {
   daily: DailyCardData

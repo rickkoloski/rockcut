@@ -51,7 +51,7 @@ async function openHistory(page: Page) {
 
 /** The whole log's size, from the API. */
 async function historyTotal(api: APIRequestContext) {
-  const res = await api.get('/api/brewery/tasks/history')
+  const res = await api.get('/api/boards/brewery/tasks/history')
   expect(res.status(), await res.text()).toBe(200)
   return (await res.json()).total as number
 }
@@ -64,14 +64,14 @@ test('S10: History lists added, assigned, completed, uncompleted, moved and dele
   created.push(task.id)
   const ids = { brewer1: await userId(brewer) }
 
-  let res = await brewer.patch(`/api/brewery/tasks/${task.id}`, { data: { assignee_id: ids.brewer1 } })
+  let res = await brewer.patch(`/api/boards/brewery/tasks/${task.id}`, { data: { assignee_id: ids.brewer1 } })
   expect(res.status(), await res.text()).toBe(200)
   await completeTask(brewer, task.id)
-  res = await brewer.post(`/api/brewery/tasks/${task.id}/uncomplete`)
+  res = await brewer.post(`/api/boards/brewery/tasks/${task.id}/uncomplete`)
   expect(res.status(), await res.text()).toBe(200)
-  res = await brewer.post(`/api/brewery/tasks/${task.id}/move`, { data: { due_on: null } })
+  res = await brewer.post(`/api/boards/brewery/tasks/${task.id}/move`, { data: { due_on: null } })
   expect(res.status(), await res.text()).toBe(200)
-  res = await brewer.delete(`/api/brewery/tasks/${task.id}`)
+  res = await brewer.delete(`/api/boards/brewery/tasks/${task.id}`)
   expect(res.status()).toBe(204)
 
   await openBoard(page)
@@ -127,7 +127,7 @@ test('Load more shows the next 50', async ({ page }) => {
   await openHistory(page)
   const rows = page.getByTestId('history-list').locator('li')
   await expect(rows).toHaveCount(50)
-  const more = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/tasks/history' && new URL(r.url()).searchParams.get('page') === '2')
+  const more = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/boards/brewery/tasks/history' && new URL(r.url()).searchParams.get('page') === '2')
   await page.getByTestId('history-load-more').click()
   await more
   expect(await rows.count()).toBeGreaterThan(50)
@@ -140,7 +140,7 @@ test('History filtered to one task, from its dialog', async ({ page }) => {
   const other = await createTask(brewer, { title: tempTag('Package FV6'), due_on: today })
   created.push(mine.id, other.id)
   const renamed = `${mine.title} (racked)`
-  const res = await brewer.patch(`/api/brewery/tasks/${mine.id}`, { data: { title: renamed } })
+  const res = await brewer.patch(`/api/boards/brewery/tasks/${mine.id}`, { data: { title: renamed } })
   expect(res.status(), await res.text()).toBe(200)
 
   await openBoard(page)
@@ -173,7 +173,7 @@ test.describe('brewer1', () => {
     await expect(page.getByTestId('task-dialog')).toBeVisible()
     await expect(page.getByTestId('task-dialog-history')).toHaveCount(0)
 
-    expect((await brewer.get('/api/brewery/tasks/history')).status()).toBe(403)
-    expect((await brewer.get('/api/brewery/tasks/history', { params: { task_id: task.id } })).status()).toBe(403)
+    expect((await brewer.get('/api/boards/brewery/tasks/history')).status()).toBe(403)
+    expect((await brewer.get('/api/boards/brewery/tasks/history', { params: { task_id: task.id } })).status()).toBe(403)
   })
 })

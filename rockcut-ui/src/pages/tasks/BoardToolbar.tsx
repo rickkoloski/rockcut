@@ -18,7 +18,7 @@ import {
   Typography,
 } from '@mui/material'
 import { CalendarMonth, ChevronLeft, ChevronRight, MoreVert, ViewAgenda, ViewDay } from '@mui/icons-material'
-import { rangeError, type PhoneView, type Span, type TaskFilter } from '../../../lib/breweryTasks'
+import { rangeError, type PhoneView, type Span, type TaskFilter } from '../../lib/tasks'
 
 interface Props {
   from: string

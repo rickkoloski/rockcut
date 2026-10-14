@@ -1,8 +1,8 @@
 import type { MouseEvent } from 'react'
 import { Avatar, Box, Checkbox, Paper, Tooltip, Typography } from '@mui/material'
 import { NotesOutlined, Repeat } from '@mui/icons-material'
-import { firstName, formatTaskDay, initials } from '../../../lib/breweryTasks'
-import type { TaskCardData } from '../../../lib/types'
+import { firstName, formatTaskDay, initials } from '../../lib/tasks'
+import type { TaskCardData } from '../../lib/types'
 
 interface Props {
   card: TaskCardData

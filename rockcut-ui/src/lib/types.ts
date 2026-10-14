@@ -628,7 +628,7 @@ export interface TaskCardData {
   updated_at: string
 }
 
-/** D39 `GET /api/brewery/tasks/:id/series`: the rule and the open occurrences after this one. */
+/** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */
 export interface TaskSeriesData {
   id: number
   title: string
@@ -673,7 +673,7 @@ export interface DailyCardItem {
   completed_at: string | null
 }
 
-/** An item on the Daily card's list (D38 §3.6 `/api/brewery/daily_items`). */
+/** An item on the Daily card's list (D38 §3.6 `/api/boards/:dept/daily_items`). */
 export interface DailyItem {
   id: number
   name: string

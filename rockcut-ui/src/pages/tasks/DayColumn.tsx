@@ -1,8 +1,8 @@
 import { Box, Button, Chip, Paper, Typography } from '@mui/material'
 import { Add } from '@mui/icons-material'
-import type { ContainerSlot } from '../../../components/dnd/SortableLists'
-import { formatTaskDay } from '../../../lib/breweryTasks'
-import type { BoardDay, DailyCardItem } from '../../../lib/types'
+import type { ContainerSlot } from '../../components/dnd/SortableLists'
+import { formatTaskDay } from '../../lib/tasks'
+import type { BoardDay, DailyCardItem } from '../../lib/types'
 import DailyCard from './DailyCard'
 import DayHeader from './DayHeader'
 

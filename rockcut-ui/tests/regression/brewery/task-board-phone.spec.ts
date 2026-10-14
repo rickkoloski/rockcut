@@ -36,7 +36,7 @@ test.afterEach(async () => {
 const VERTICAL = 'D39 vertical view'
 test.beforeEach(async ({ page }, testInfo) => {
   if (testInfo.titlePath.includes(VERTICAL)) return
-  await page.addInitScript(() => localStorage.setItem('rockcut.breweryTasks.phoneView', 'day'))
+  await page.addInitScript(() => localStorage.setItem('rockcut.tasks.phoneView', 'day'))
 })
 
 const today = () => denverToday()
@@ -290,7 +290,7 @@ test('S9a: tapping a task opens a bottom sheet; Add notes focuses Notes, and the
   await page.getByTestId('task-menu-notes').click()
   await expect(page.getByTestId('task-notes-input')).toBeFocused()
   await page.keyboard.type('Rinse twice')
-  const saved = boardWrite(page, new RegExp(`/api/brewery/tasks/${task.id}$`), 'PATCH')
+  const saved = boardWrite(page, new RegExp(`/api/boards/brewery/tasks/${task.id}$`), 'PATCH')
   await page.getByTestId('task-dialog').getByRole('button', { name: 'Save' }).click()
   await saved
   // The closed dialog takes its back entry off (S76) before the reload.
@@ -317,11 +317,11 @@ test('Back with the sheet open closes the sheet and stays on the board; the next
 
   await page.goBack()
   await expect(page.getByTestId('task-menu')).toHaveCount(0)
-  await expect(page).toHaveURL(/\/brewery\/tasks$/)
+  await expect(page).toHaveURL(/\/tasks\/brewery$/)
   await expect(page.getByTestId('board-grid')).toBeVisible()
 
   await page.goBack()
-  await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+  await expect(page).not.toHaveURL(/\/tasks\/brewery/)
 })
 
 test('a sheet closed by tapping outside leaves no extra Back behind', async ({ page }) => {
@@ -338,12 +338,12 @@ test('a sheet closed by tapping outside leaves no extra Back behind', async ({ p
   // Above the sheet: the backdrop.
   await page.mouse.click(180, 40)
   await expect(page.getByTestId('task-menu')).toHaveCount(0)
-  await expect(page).toHaveURL(/\/brewery\/tasks$/)
+  await expect(page).toHaveURL(/\/tasks\/brewery$/)
   // The sheet's entry is gone again: back on the page's own entry.
   await expect.poll(() => page.evaluate(() => Object.keys(history.state ?? {}).some((k) => k.startsWith('rockcut')))).toBe(false)
 
   await page.goBack()
-  await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+  await expect(page).not.toHaveURL(/\/tasks\/brewery/)
 })
 
 test('S9a: the sheet greys out moves on a locked card, as the desktop menu does', async ({ page }) => {
@@ -405,7 +405,7 @@ test('S23j: the strip\'s Future stop shows the Future list, and its + Add a task
   await page.getByTestId('future-add').click()
   await expect(page.getByTestId('task-no-day')).toBeChecked()
   await page.getByTestId('task-title-input').fill(title)
-  const saved = boardWrite(page, /^\/api\/brewery\/tasks$/)
+  const saved = boardWrite(page, /^\/api\/boards\/brewery\/tasks$/)
   await page.getByTestId('task-dialog').getByRole('button', { name: 'Save' }).click()
   const task = (await (await saved).json()).data
   created.push(task.id)
@@ -640,7 +640,7 @@ test.describe('S76: the back gesture closes the phone dialogs', () => {
 
     // Nothing left behind: one more back leaves the board.
     await page.goBack()
-    await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+    await expect(page).not.toHaveURL(/\/tasks\/brewery/)
   })
 
   test('a dialog opened from the sheet takes over its entry: back closes it, the next back leaves', async ({ page }) => {
@@ -654,7 +654,7 @@ test.describe('S76: the back gesture closes the phone dialogs', () => {
     await expect(page.getByTestId('task-menu')).toHaveCount(0)
     await backClosesIt(page, 'task-dialog')
     await page.goBack()
-    await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+    await expect(page).not.toHaveURL(/\/tasks\/brewery/)
   })
 
   test('a dialog closed with Cancel leaves no dead back press', async ({ page }) => {
@@ -670,6 +670,6 @@ test.describe('S76: the back gesture closes the phone dialogs', () => {
     await expect(page.getByTestId('task-dialog')).toHaveCount(0)
     await expect.poll(() => page.evaluate(() => Object.keys(history.state ?? {}).some((k) => k.startsWith('rockcut')))).toBe(false)
     await page.goBack()
-    await expect(page).not.toHaveURL(/\/brewery\/tasks/)
+    await expect(page).not.toHaveURL(/\/tasks\/brewery/)
   })
 })

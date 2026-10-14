@@ -89,7 +89,7 @@ test('a task dragged over the Unfinished card gets no spot there, and stays on i
   const unfinished = page.getByTestId('unfinished-list')
   let moves = 0
   page.on('request', (r) => {
-    if (r.method() === 'POST' && new URL(r.url()).pathname === `/api/brewery/tasks/${task.id}/move`) moves += 1
+    if (r.method() === 'POST' && new URL(r.url()).pathname === `/api/boards/brewery/tasks/${task.id}/move`) moves += 1
   })
 
   await card(page, task.id, today()).scrollIntoViewIfNeeded()
@@ -154,7 +154,7 @@ test.describe('Move all to today', () => {
     const mine = titlesIn(after).filter((t) => [t3.title, t2.title, t1.title].includes(t))
     expect(mine).toEqual([t3.title, t2.title, t1.title])
 
-    const history = (await (await (await apiAs('breweryMgr')).get('/api/brewery/tasks/history')).json()).data as { task_id: number; action: string }[]
+    const history = (await (await (await apiAs('breweryMgr')).get('/api/boards/brewery/tasks/history')).json()).data as { task_id: number; action: string }[]
     for (const t of [t3, t2, t1]) expect(history.filter((e) => e.task_id === t.id && e.action === 'moved')).toHaveLength(1)
   })
 })
@@ -208,7 +208,7 @@ test('S23a: 1 week becomes this browser\'s default (after a reload and Today); a
   const last = (await page.getByTestId(`day-${addDays(today(), 6)}`).boundingBox())!
   expect(Math.abs(last.y - first.y)).toBeLessThan(2)
 
-  await page.goto('/brewery/tasks')
+  await page.goto('/tasks/brewery')
   await expect(days).toHaveCount(7)
   await page.getByTestId('board-today').click()
   await expect(days).toHaveCount(7)
@@ -244,7 +244,7 @@ test('S23b: a custom range highlights neither side; Today uses the default; pick
   await page.getByTestId('board-span-14').click()
   await expect(page).toHaveURL(new RegExp(`from=${from}&to=${addDays(from, 13)}`))
   await expect(days).toHaveCount(14)
-  await page.goto('/brewery/tasks')
+  await page.goto('/tasks/brewery')
   await expect(days).toHaveCount(14)
   await expect(page.getByTestId('board-span-14')).toHaveAttribute('aria-pressed', 'true')
 })

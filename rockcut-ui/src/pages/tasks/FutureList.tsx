@@ -1,6 +1,6 @@
 import { Box, Button, Chip, Paper, Typography } from '@mui/material'
 import { Add } from '@mui/icons-material'
-import type { ContainerSlot } from '../../../components/dnd/SortableLists'
+import type { ContainerSlot } from '../../components/dnd/SortableLists'
 
 interface Props {
   openCount: number

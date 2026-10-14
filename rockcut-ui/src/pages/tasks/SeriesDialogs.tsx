@@ -1,6 +1,6 @@
 import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
-import { removeLaterWording } from '../../../lib/repeat'
-import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
+import { removeLaterWording } from '../../lib/repeat'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 
 export type SeriesScope = 'this' | 'following'
 export type Changed = 'keep' | 'remove'

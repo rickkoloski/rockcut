@@ -1,6 +1,6 @@
 import { Box, Typography } from '@mui/material'
-import { eventLine, openShiftLine, personLine } from '../../../lib/breweryTasks'
-import type { DayHeaderData } from '../../../lib/types'
+import { eventLine, openShiftLine, personLine } from '../../lib/tasks'
+import type { DayHeaderData } from '../../lib/types'
 
 /** D38 §3.2: who's scheduled (published Brewery shifts), open shifts and events. Read-only. */
 export default function DayHeader({ date, header }: { date: string; header: DayHeaderData }) {

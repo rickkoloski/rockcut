@@ -1,9 +1,9 @@
 import { Alert, Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, List, ListItem, ListItemText, Typography, useMediaQuery, useTheme } from '@mui/material'
 import { useInfiniteQuery } from '@tanstack/react-query'
-import api from '../../../lib/api'
-import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import { describeEvent, eventActor, formatEventTime, taskError } from '../../../lib/breweryTasks'
-import type { TaskEventPage } from '../../../lib/types'
+import api from '../../lib/api'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
+import { boardPath, describeEvent, eventActor, formatEventTime, taskError } from '../../lib/tasks'
+import type { TaskEventPage } from '../../lib/types'
 
 interface Props {
   /** Only this task's entries; without it, the whole board's. */
@@ -22,10 +22,10 @@ export default function HistoryDialog({ task, onClose }: Props) {
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'))
 
   const { data, isLoading, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['brewery-task-history', task?.id ?? null],
+    queryKey: ['task-history', task?.id ?? null],
     queryFn: async ({ pageParam }) =>
       (
-        await api.get<TaskEventPage>('/api/brewery/tasks/history', {
+        await api.get<TaskEventPage>(boardPath('brewery', 'tasks', 'history'), {
           params: { page: pageParam, ...(task ? { task_id: task.id } : {}) },
         })
       ).data,

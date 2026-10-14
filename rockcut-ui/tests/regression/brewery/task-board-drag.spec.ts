@@ -125,7 +125,7 @@ test('S14: Escape mid-move puts it back and saves nothing', async ({ page }) => 
   await openBoard(page)
   const before = await listKeys(page, `day-list-${day}`)
   const moves: string[] = []
-  page.on('request', (r) => /\/api\/brewery\/tasks\/\d+\/move$/.test(r.url()) && moves.push(r.url()))
+  page.on('request', (r) => /\/api\/boards\/brewery\/tasks\/\d+\/move$/.test(r.url()) && moves.push(r.url()))
 
   await handle(page, tasks[0].id, day).focus()
   await page.keyboard.press('Space')
@@ -144,7 +144,7 @@ test('a move the server refuses snaps back with an error toast', async ({ page }
   const [a, b] = await tasksOn(day, ['reject A', 'reject B'])
   await openBoard(page)
   const before = await orderOf(page, day, [a.id, b.id])
-  await page.route('**/api/brewery/tasks/*/move', (route) =>
+  await page.route('**/api/boards/brewery/tasks/*/move', (route) =>
     route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom', message: 'The server had a problem' }) }),
   )
 
@@ -154,7 +154,7 @@ test('a move the server refuses snaps back with an error toast', async ({ page }
   await expect(page.getByTestId('board-toast')).toContainText('The server had a problem')
   await expect.poll(() => orderOf(page, day, [a.id, b.id])).toEqual(before)
 
-  await page.unroute('**/api/brewery/tasks/*/move')
+  await page.unroute('**/api/boards/brewery/tasks/*/move')
   await page.reload()
   await expect(card(page, b.id, day)).toBeVisible()
   expect(await orderOf(page, day, [a.id, b.id])).toEqual(before)
@@ -164,12 +164,12 @@ test('a task finished on another day can\'t be dragged', async ({ page }) => {
   const api = await apiAs('brewer1')
   const t = await createTask(api, { title: tempTag('locked drag'), due_on: addDays(today(), -1) })
   created.push(t.id)
-  const res = await api.post(`/api/brewery/tasks/${t.id}/complete`, { data: { display: 'completed_day' } })
+  const res = await api.post(`/api/boards/brewery/tasks/${t.id}/complete`, { data: { display: 'completed_day' } })
   expect(res.status()).toBe(200)
   await tasksOn(addDays(today(), 2), ['locked target'])
   await openBoard(page)
   const moves: string[] = []
-  page.on('request', (r) => /\/api\/brewery\/tasks\/\d+\/move$/.test(r.url()) && moves.push(r.url()))
+  page.on('request', (r) => /\/api\/boards\/brewery\/tasks\/\d+\/move$/.test(r.url()) && moves.push(r.url()))
 
   await mouseDrag(page, card(page, t.id, today()), page.getByTestId(`day-list-${addDays(today(), 2)}`))
   await expect(card(page, t.id, today())).toBeVisible()

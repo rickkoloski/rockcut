@@ -14,21 +14,21 @@ test.afterEach(async () => {
 /** Every D38 route. Ids and dates are placeholders: a refusal comes before any lookup. */
 function routes(today: string): [string, string][] {
   return [
-    ['GET', `/api/brewery/tasks?from=${today}&to=${today}`],
-    ['GET', '/api/brewery/tasks/history'],
-    ['POST', '/api/brewery/tasks'],
-    ['POST', '/api/brewery/tasks/move_overdue_to_today'],
-    ['PATCH', '/api/brewery/tasks/1'],
-    ['DELETE', '/api/brewery/tasks/1'],
-    ['POST', '/api/brewery/tasks/1/move'],
-    ['POST', '/api/brewery/tasks/1/complete'],
-    ['POST', '/api/brewery/tasks/1/uncomplete'],
-    ['PUT', `/api/brewery/daily_checks/${today}/1`],
-    ['DELETE', `/api/brewery/daily_checks/${today}/1`],
-    ['GET', '/api/brewery/daily_items'],
-    ['POST', '/api/brewery/daily_items'],
-    ['PUT', '/api/brewery/daily_items/order'],
-    ['PATCH', '/api/brewery/daily_items/1'],
+    ['GET', `/api/boards/brewery/tasks?from=${today}&to=${today}`],
+    ['GET', '/api/boards/brewery/tasks/history'],
+    ['POST', '/api/boards/brewery/tasks'],
+    ['POST', '/api/boards/brewery/tasks/move_overdue_to_today'],
+    ['PATCH', '/api/boards/brewery/tasks/1'],
+    ['DELETE', '/api/boards/brewery/tasks/1'],
+    ['POST', '/api/boards/brewery/tasks/1/move'],
+    ['POST', '/api/boards/brewery/tasks/1/complete'],
+    ['POST', '/api/boards/brewery/tasks/1/uncomplete'],
+    ['PUT', `/api/boards/brewery/daily_checks/${today}/1`],
+    ['DELETE', `/api/boards/brewery/daily_checks/${today}/1`],
+    ['GET', '/api/boards/brewery/daily_items'],
+    ['POST', '/api/boards/brewery/daily_items'],
+    ['PUT', '/api/boards/brewery/daily_items/order'],
+    ['PATCH', '/api/boards/brewery/daily_items/1'],
   ]
 }
 
@@ -65,7 +65,7 @@ for (const persona of ['bartender1', 'office1'] as const) {
       await expect(page.getByRole('button', { name: 'Brewery', exact: true })).toHaveCount(0)
       await expect(navTasks(page)).toHaveCount(0)
 
-      await page.goto('/brewery/tasks')
+      await page.goto('/tasks/brewery')
       await expect(page).toHaveURL(/\/$/)
       await expect(page.getByTestId('task-board')).toHaveCount(0)
 
@@ -78,7 +78,7 @@ test.describe('taproomDevice', () => {
   test.use({ storageState: authFile('taproomDevice') })
 
   test('S41: no board, and every D38 route is 403 (people only until D40)', async ({ page }) => {
-    await page.goto('/brewery/tasks')
+    await page.goto('/tasks/brewery')
     await expect(page.getByText('Not available on a shared device')).toBeVisible()
     await expect(page.getByTestId('task-board')).toHaveCount(0)
     await expect(navTasks(page)).toHaveCount(0)
@@ -95,14 +95,14 @@ test.describe('floater (Brewery + Taproom)', () => {
     await page.goto('/')
     await expectTasksInNav(page)
     await navTasks(page).click()
-    await expect(page).toHaveURL(/\/brewery\/tasks$/)
+    await expect(page).toHaveURL(/\/tasks\/brewery$/)
     await expect(page.getByTestId('board-grid')).toBeVisible()
 
     // Adds a task through the board, and it's there after a reload.
     const title = tempTag('S38 Keg Wash')
     await page.getByTestId(`day-add-${today}`).click()
     await page.getByTestId('task-title-input').fill(title)
-    const saved = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/tasks' && r.request().method() === 'POST' && r.ok())
+    const saved = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/boards/brewery/tasks' && r.request().method() === 'POST' && r.ok())
     await page.getByTestId('task-dialog').getByRole('button', { name: 'Save' }).click()
     const task = (await (await saved).json()).data
     created.push(task.id)
@@ -112,9 +112,9 @@ test.describe('floater (Brewery + Taproom)', () => {
     await expect(page.getByTestId('board-menu')).toHaveCount(0)
     await expect(page.getByTestId(`daily-menu-${today}`)).toHaveCount(0)
     const api = await apiAs('floater')
-    expect((await api.get('/api/brewery/tasks/history')).status()).toBe(403)
-    expect((await api.post('/api/brewery/daily_items', { data: { name: tempTag('x') } })).status()).toBe(403)
-    expect((await api.get('/api/brewery/daily_items')).status()).toBe(200)
+    expect((await api.get('/api/boards/brewery/tasks/history')).status()).toBe(403)
+    expect((await api.post('/api/boards/brewery/daily_items', { data: { name: tempTag('x') } })).status()).toBe(403)
+    expect((await api.get('/api/boards/brewery/daily_items')).status()).toBe(200)
   })
 })
 

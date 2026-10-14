@@ -16,17 +16,17 @@ import {
 } from '@mui/material'
 import { ArrowDownward, ArrowUpward, Check, Close, DragIndicator, Edit, ExpandLess, ExpandMore, RemoveCircleOutline, Restore } from '@mui/icons-material'
 import { useQueryClient } from '@tanstack/react-query'
-import ConfirmDialog from '../../../components/ConfirmDialog'
-import SortableLists from '../../../components/dnd/SortableLists'
-import { applyMove, type ListContainer, type Move } from '../../../components/dnd/moveModel'
-import { useOptimisticLists } from '../../../components/dnd/useOptimisticLists'
-import { useApiQuery } from '../../../hooks/useApiQuery'
-import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import api from '../../../lib/api'
-import { dailyItemError } from '../../../lib/breweryTasks'
-import type { DailyItem } from '../../../lib/types'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import SortableLists from '../../components/dnd/SortableLists'
+import { applyMove, type ListContainer, type Move } from '../../components/dnd/moveModel'
+import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
+import { useApiQuery } from '../../hooks/useApiQuery'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
+import api from '../../lib/api'
+import { boardPath, dailyItemError } from '../../lib/tasks'
+import type { DailyItem } from '../../lib/types'
 
-const ITEMS_KEY = 'brewery-daily-items'
+const ITEMS_KEY = 'daily-items'
 const LIST = 'items'
 // One empty list while loading: a new [] each render would reset useOptimisticLists every time.
 const NO_ITEMS: DailyItem[] = []
@@ -51,7 +51,7 @@ interface Props {
  */
 export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }: Props) {
   const qc = useQueryClient()
-  const { data: all = NO_ITEMS, isLoading, refetch } = useApiQuery<DailyItem[]>([ITEMS_KEY], '/api/brewery/daily_items', {
+  const { data: all = NO_ITEMS, isLoading, refetch } = useApiQuery<DailyItem[]>([ITEMS_KEY], boardPath('brewery', 'daily_items'), {
     include_retired: 'true',
   })
   const items = useMemo(() => all.filter((i) => i.active), [all])
@@ -85,7 +85,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
   const add = async () => {
     setBusy(true)
     try {
-      await api.post('/api/brewery/daily_items', { name: newName })
+      await api.post(boardPath('brewery', 'daily_items'), { name: newName })
       setNewName('')
       setAddError(null)
       changed()
@@ -101,7 +101,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
     if (renaming.from === renaming.name.trim()) return setRenaming(null)
     setBusy(true)
     try {
-      await api.patch(`/api/brewery/daily_items/${renaming.id}`, { name: renaming.name })
+      await api.patch(boardPath('brewery', 'daily_items', renaming.id), { name: renaming.name })
       setRenaming(null)
       changed()
     } catch (err) {
@@ -114,7 +114,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
   const retire = async (item: DailyItem) => {
     setBusy(true)
     try {
-      await api.patch(`/api/brewery/daily_items/${item.id}`, { active: false })
+      await api.patch(boardPath('brewery', 'daily_items', item.id), { active: false })
       setRetiring(null)
       setError(null)
       changed()
@@ -129,7 +129,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
   const restore = async (item: DailyItem) => {
     setBusy(true)
     try {
-      await api.post(`/api/brewery/daily_items/${item.id}/restore`)
+      await api.post(boardPath('brewery', 'daily_items', item.id, 'restore'))
       setError(null)
       changed()
     } catch (err) {
@@ -143,7 +143,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
     const next = applyMove(containers, m)
     if (next === containers) return
     setError(null)
-    move(m, () => api.put('/api/brewery/daily_items/order', { ids: next[0].itemIds.map(Number) }))
+    move(m, () => api.put(boardPath('brewery', 'daily_items', 'order'), { ids: next[0].itemIds.map(Number) }))
       .catch((err) => setError(dailyItemError(err)))
       .finally(changed)
   }

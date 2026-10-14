@@ -72,7 +72,7 @@ import type { Channel, Department } from './lib/types'
 // Pages
 import Home from './pages/Home'
 import BreweryDashboard from './pages/brewery/BreweryDashboard'
-import TaskBoard from './pages/brewery/tasks/TaskBoard'
+import TaskBoard from './pages/tasks/TaskBoard'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
 import RecipeDetail from './pages/recipes/RecipeDetail'
@@ -118,7 +118,7 @@ interface NavSection {
 // headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
-  { label: 'Tasks', path: '/brewery/tasks', icon: <ChecklistIcon /> },
+  { label: 'Tasks', path: '/tasks/brewery', icon: <ChecklistIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
   { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
@@ -157,6 +157,13 @@ function LoadingScreen({ unreachable, onRetry }: { unreachable?: boolean; onRetr
       )}
     </Box>
   )
+}
+
+// D41: the board moved from /brewery/tasks to /tasks/brewery. Old bookmarks
+// and the installed PWA's history land there, with their range (?from=&to=).
+function OldTaskBoardRedirect() {
+  const { search } = useLocation()
+  return <Navigate to={`/tasks/brewery${search}`} replace />
 }
 
 function App() {
@@ -654,7 +661,8 @@ function App() {
             {hasBrewery && (
               <>
                 <Route path="/brewery" element={<BreweryDashboard />} />
-                <Route path="/brewery/tasks" element={<TaskBoard />} />
+                <Route path="/tasks/brewery" element={<TaskBoard />} />
+                <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
                 <Route path="/brands" element={<BrandsList />} />
                 <Route path="/brands/:id" element={<BrandDetail />} />
                 <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />

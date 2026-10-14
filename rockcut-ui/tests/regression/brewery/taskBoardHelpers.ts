@@ -32,18 +32,18 @@ export interface ApiBoard {
 
 /** Create a task as `api` (a Brewery member); returns it. */
 export async function createTask(api: APIRequestContext, attrs: { title: string; due_on?: string | null; assignee_id?: number | null; notes?: string }) {
-  const res = await api.post('/api/brewery/tasks', { data: attrs })
+  const res = await api.post('/api/boards/brewery/tasks', { data: attrs })
   expect(res.status(), await res.text()).toBe(201)
   return (await res.json()).data as ApiTask
 }
 
 export async function completeTask(api: APIRequestContext, id: number, display?: string) {
-  const res = await api.post(`/api/brewery/tasks/${id}/complete`, { data: display ? { display } : {} })
+  const res = await api.post(`/api/boards/brewery/tasks/${id}/complete`, { data: display ? { display } : {} })
   expect(res.status(), await res.text()).toBe(200)
 }
 
 export async function getBoard(api: APIRequestContext, from: string, to: string): Promise<ApiBoard> {
-  const res = await api.get('/api/brewery/tasks', { params: { from, to } })
+  const res = await api.get('/api/boards/brewery/tasks', { params: { from, to } })
   expect(res.status(), await res.text()).toBe(200)
   return (await res.json()).data
 }
@@ -79,14 +79,14 @@ export async function cleanupTasks(ids: number[]) {
   }
   for (const id of seen) {
     // D39: an occurrence goes with its later ones; a one-off ignores the scope.
-    const res = await api.delete(`/api/brewery/tasks/${id}`, { params: { scope: 'following', changed: 'remove' } })
+    const res = await api.delete(`/api/boards/brewery/tasks/${id}`, { params: { scope: 'following', changed: 'remove' } })
     expect([204, 404, 410]).toContain(res.status()) // 410: deleted already (O-1)
   }
 }
 
 /** Open the board (optionally on a range) and wait for it. */
 export async function openBoard(page: Page, range?: { from: string; to: string }) {
-  await page.goto(range ? `/brewery/tasks?from=${range.from}&to=${range.to}` : '/brewery/tasks')
+  await page.goto(range ? `/tasks/brewery?from=${range.from}&to=${range.to}` : '/tasks/brewery')
   await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
 }
 
@@ -294,7 +294,7 @@ export async function touchDrag(page: Page, source: Locator, list: Locator, befo
 
 /** Move a task back to a day through the API (to put shared data back after a spec). */
 export async function moveTask(api: APIRequestContext, id: number, dueOn: string | null, beforeId: number | null = null) {
-  const res = await api.post(`/api/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId } })
+  const res = await api.post(`/api/boards/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId } })
   expect(res.status(), await res.text()).toBe(200)
 }
 
@@ -324,7 +324,7 @@ export interface ApiDailyCard {
 export const DEFAULT_DAILY_ITEMS = ['Backups', 'Gravities', 'Temps', 'Pressures']
 
 export async function dailyItems(api: APIRequestContext): Promise<ApiDailyItem[]> {
-  const res = await api.get('/api/brewery/daily_items')
+  const res = await api.get('/api/boards/brewery/daily_items')
   expect(res.status(), await res.text()).toBe(200)
   return (await res.json()).data
 }
@@ -338,18 +338,18 @@ export async function dailyCard(api: APIRequestContext, date: string): Promise<A
  * (D39 Decision 1), so a retired one is restored, unticked and retired again.
  */
 export async function removeTick(api: APIRequestContext, date: string, itemId: number) {
-  const path = `/api/brewery/daily_checks/${date}/${itemId}`
+  const path = `/api/boards/brewery/daily_checks/${date}/${itemId}`
   const res = await api.delete(path)
   if (res.status() !== 422) return expect([204, 404], await res.text()).toContain(res.status())
   expect((await res.json()).error).toBe('retired')
-  expect((await api.post(`/api/brewery/daily_items/${itemId}/restore`)).status()).toBe(200)
+  expect((await api.post(`/api/boards/brewery/daily_items/${itemId}/restore`)).status()).toBe(200)
   expect((await api.delete(path)).status()).toBe(204)
-  expect((await api.patch(`/api/brewery/daily_items/${itemId}`, { data: { active: false } })).status()).toBe(200)
+  expect((await api.patch(`/api/boards/brewery/daily_items/${itemId}`, { data: { active: false } })).status()).toBe(200)
 }
 
 /** Tick (or untick) one Daily check through the API. */
 export async function setCheck(api: APIRequestContext, date: string, itemId: number, checked: boolean) {
-  const path = `/api/brewery/daily_checks/${date}/${itemId}`
+  const path = `/api/boards/brewery/daily_checks/${date}/${itemId}`
   const res = checked ? await api.put(path) : await api.delete(path)
   expect([200, 204], await res.text()).toContain(res.status())
 }
@@ -365,23 +365,23 @@ export async function restoreDailyItems(defaults: ApiDailyItem[]) {
   // Every other item goes first, so a retired default has room (and its name) to come back.
   for (const item of await dailyItems(api)) {
     if (isDefault(item)) continue
-    const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })
+    const res = await api.patch(`/api/boards/brewery/daily_items/${item.id}`, { data: { active: false } })
     expect(res.status(), await res.text()).toBe(200)
   }
   // D39: a default a spec retired comes back through Restore.
-  const listed = await api.get('/api/brewery/daily_items', { params: { include_retired: 'true' } })
+  const listed = await api.get('/api/boards/brewery/daily_items', { params: { include_retired: 'true' } })
   for (const item of (await listed.json()).data as ApiDailyItem[]) {
     if (item.active || !isDefault(item)) continue
-    const res = await api.post(`/api/brewery/daily_items/${item.id}/restore`)
+    const res = await api.post(`/api/boards/brewery/daily_items/${item.id}/restore`)
     expect(res.status(), await res.text()).toBe(200)
   }
   for (const item of await dailyItems(api)) {
     const original = defaults.find((d) => d.id === item.id)!
     if (item.name === original.name) continue
-    const res = await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { name: original.name } })
+    const res = await api.patch(`/api/boards/brewery/daily_items/${item.id}`, { data: { name: original.name } })
     expect(res.status(), await res.text()).toBe(200)
   }
-  const res = await api.put('/api/brewery/daily_items/order', { data: { ids: defaults.map((d) => d.id) } })
+  const res = await api.put('/api/boards/brewery/daily_items/order', { data: { ids: defaults.map((d) => d.id) } })
   expect(res.status(), await res.text()).toBe(200)
   expect((await dailyItems(api)).map((i) => i.name)).toEqual(DEFAULT_DAILY_ITEMS)
 }

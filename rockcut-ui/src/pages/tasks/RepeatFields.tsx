@@ -10,7 +10,7 @@ import {
   type RepeatEnds,
   type TaskFrequency,
   type TaskRule,
-} from '../../../lib/repeat'
+} from '../../lib/repeat'
 
 const WEEKDAY_LONG = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 const FREQUENCIES: { value: TaskFrequency; label: string }[] = [

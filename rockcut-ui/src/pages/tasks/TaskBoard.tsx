@@ -2,19 +2,20 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, CircularProgress, Snackbar, useMediaQuery, useTheme } from '@mui/material'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
-import PageHeader from '../../../components/PageHeader'
-import ConfirmDialog from '../../../components/ConfirmDialog'
-import SortableLists, { type ContainerSlot } from '../../../components/dnd/SortableLists'
-import { containerOf, type ListContainer, type Move } from '../../../components/dnd/moveModel'
-import { useOptimisticLists } from '../../../components/dnd/useOptimisticLists'
-import { useApiQuery } from '../../../hooks/useApiQuery'
-import useAuth from '../../../hooks/useAuth'
-import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import api from '../../../lib/api'
-import { addDaysKey } from '../../../lib/datetime'
+import PageHeader from '../../components/PageHeader'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import SortableLists, { type ContainerSlot } from '../../components/dnd/SortableLists'
+import { containerOf, type ListContainer, type Move } from '../../components/dnd/moveModel'
+import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
+import { useApiQuery } from '../../hooks/useApiQuery'
+import useAuth from '../../hooks/useAuth'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
+import api from '../../lib/api'
+import { addDaysKey } from '../../lib/datetime'
 import {
   FUTURE,
   UNFINISHED,
+  boardPath,
   cardShown,
   coloradoToday,
   dayCount,
@@ -32,8 +33,8 @@ import {
   type PhoneView,
   type Span,
   type TaskFilter,
-} from '../../../lib/breweryTasks'
-import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData, TaskSeriesData } from '../../../lib/types'
+} from '../../lib/tasks'
+import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData, TaskSeriesData } from '../../lib/types'
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
@@ -49,7 +50,7 @@ import TaskDialog, { type TaskDialogMode } from './TaskDialog'
 import TaskMenu, { type TaskAction } from './TaskMenu'
 import UnfinishedCard from './UnfinishedCard'
 
-const BOARD_KEY = 'brewery-tasks'
+const BOARD_KEY = 'task-board'
 const WIDE_BOARD_PX = 1200
 
 /**
@@ -97,7 +98,7 @@ export default function TaskBoard() {
 
   const { data: board, isLoading, isError, error, dataUpdatedAt } = useApiQuery<TaskBoardData>(
     [BOARD_KEY, from, to],
-    '/api/brewery/tasks',
+    boardPath('brewery', 'tasks'),
     { from, to },
     // Back to the tab: always fresh, even within the default 30 seconds (and
     // Edit Daily items with it, O-2).
@@ -201,7 +202,7 @@ export default function TaskBoard() {
     // Ahead of a card that stays last means the end of the day's own tasks.
     const before = m.beforeId && !staysLast(m.beforeId) ? cards.get(m.beforeId) : null
     const beforeId = before && before.id !== card.id ? before.id : null
-    move(m, () => api.post(`/api/brewery/tasks/${card.id}/move`, { due_on: dueOn, before_id: beforeId }))
+    move(m, () => api.post(boardPath('brewery', 'tasks', card.id, 'move'), { due_on: dueOn, before_id: beforeId }))
       .catch(fail)
       .finally(refresh)
   }
@@ -232,7 +233,7 @@ export default function TaskBoard() {
       return
     }
     // Out of the range: nothing to show it moving to.
-    run(() => api.post(`/api/brewery/tasks/${card.id}/move`, { due_on: dueOn, before_id: null })).then(
+    run(() => api.post(boardPath('brewery', 'tasks', card.id, 'move'), { due_on: dueOn, before_id: null })).then(
       (ok) => ok && setToast({ message: `Moved "${card.title}" to ${dueOn ? formatTaskDay(dueOn) : 'Future'}` }),
     )
   }
@@ -250,10 +251,10 @@ export default function TaskBoard() {
   }
 
   const complete = (card: TaskCardData, display?: CompletedDisplay) =>
-    run(() => api.post(`/api/brewery/tasks/${card.id}/complete`, display ? { display } : {}), setDone(card.id, true))
+    run(() => api.post(boardPath('brewery', 'tasks', card.id, 'complete'), display ? { display } : {}), setDone(card.id, true))
 
   const uncomplete = (card: TaskCardData) =>
-    run(() => api.post(`/api/brewery/tasks/${card.id}/uncomplete`), setDone(card.id, false))
+    run(() => api.post(boardPath('brewery', 'tasks', card.id, 'uncomplete')), setDone(card.id, false))
 
   const toggle = (card: TaskCardData) => {
     if (card.done) {
@@ -296,7 +297,7 @@ export default function TaskBoard() {
         }
       }),
     })
-    const path = `/api/brewery/daily_checks/${date}/${item.daily_item_id}`
+    const path = boardPath('brewery', 'daily_checks', date, item.daily_item_id)
     run(() => (checked ? api.put(path) : api.delete(path)), optimistic)
   }
 
@@ -332,7 +333,7 @@ export default function TaskBoard() {
 
   const deleteTask = async (card: TaskCardData, params?: { scope: SeriesScope; changed?: Changed }) => {
     setBusy(true)
-    const ok = await run(() => api.delete(`/api/brewery/tasks/${card.id}`, params ? { params } : undefined))
+    const ok = await run(() => api.delete(boardPath('brewery', 'tasks', card.id), params ? { params } : undefined))
     setBusy(false)
     if (ok) {
       setDeleting(null)
@@ -347,7 +348,7 @@ export default function TaskBoard() {
   const askRemoveLater = async (card: TaskCardData, kind: 'delete' | 'stop') => {
     setBusy(true)
     try {
-      const { data } = await api.get<{ data: TaskSeriesData }>(`/api/brewery/tasks/${card.id}/series`)
+      const { data } = await api.get<{ data: TaskSeriesData }>(boardPath('brewery', 'tasks', card.id, 'series'))
       setDeletingSeries(null)
       setRemoving({ card, kind, laterOpen: data.data.later_open, laterChanged: data.data.later_changed })
     } catch (err) {
@@ -363,7 +364,7 @@ export default function TaskBoard() {
     const { card, kind } = removing
     if (kind === 'delete') return deleteTask(card, { scope: 'following', changed })
     setBusy(true)
-    const ok = await run(() => api.post(`/api/brewery/tasks/${card.id}/stop_repeating`, { changed }))
+    const ok = await run(() => api.post(boardPath('brewery', 'tasks', card.id, 'stop_repeating'), { changed }))
     setBusy(false)
     if (ok) {
       setRemoving(null)
@@ -375,7 +376,7 @@ export default function TaskBoard() {
     setBusy(true)
     let moved = 0
     const ok = await run(async () => {
-      const res = await api.post<{ moved: number }>('/api/brewery/tasks/move_overdue_to_today')
+      const res = await api.post<{ moved: number }>(boardPath('brewery', 'tasks', 'move_overdue_to_today'))
       moved = res.data.moved
     })
     setBusy(false)
