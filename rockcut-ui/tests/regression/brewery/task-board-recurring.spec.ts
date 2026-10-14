@@ -310,8 +310,8 @@ test('S60, S69, S61: "Just this one" and "This and all following"; ones changed 
   const first = await createSeries(api, weekly(title, t))
   const w = async (n: number) => (await on(api, first.series_id!, addDays(t, 7 * n)))!
   const [w1, w2, w4] = [await w(1), await w(2), await w(4)]
-  // A later one changed on its own beforehand.
-  const own = await api.patch(`/api/boards/brewery/tasks/${w4.id}`, { data: { notes: 'own', scope: 'this' } })
+  // A later one changed on its own beforehand (a title: notes alone don't count since D42).
+  const own = await api.patch(`/api/boards/brewery/tasks/${w4.id}`, { data: { title: `${title} own`, scope: 'this' } })
   expect(own.status()).toBe(200)
 
   await openBoard(page, { from: t, to: addDays(t, 30) })

@@ -229,7 +229,7 @@ test.describe('as brewer1', () => {
   })
 })
 
-test("S31: a 13th item and a duplicate name are refused in the dialog", async ({ page }) => {
+test("S31: a 13th item and a duplicate name are refused in the dialog (D42: Add greyed out at 12)", async ({ page }) => {
   const api = await apiAs('breweryMgr')
   for (let n = defaults.length + 1; n <= 12; n++) {
     const res = await api.post('/api/boards/brewery/daily_items', { data: { name: `[TEST-TEMP] S31 ${n}` } })
@@ -242,14 +242,20 @@ test("S31: a 13th item and a duplicate name are refused in the dialog", async ({
   await page.getByTestId(`daily-menu-edit-${denverToday()}`).click()
   await expect(page.getByTestId('daily-items-dialog')).toBeVisible()
 
-  await page.getByTestId('daily-items-new').fill('[TEST-TEMP] S31 13')
-  await page.getByTestId('daily-items-add').click()
-  await expect(page.getByTestId('daily-items-dialog').getByText('Up to 12 items')).toBeVisible()
+  // D42 §2.7: at 12, Add is greyed out with the hint; the API still refuses a 13th.
+  await expect(page.getByTestId('daily-items-new')).toBeDisabled()
+  await expect(page.getByTestId('daily-items-add')).toBeDisabled()
+  await expect(page.getByTestId('daily-items-dialog').getByText('Up to 12 Daily items. Retire one first.')).toBeVisible()
+  const thirteenth = await api.post('/api/boards/brewery/daily_items', { data: { name: '[TEST-TEMP] S31 13' } })
+  expect(thirteenth.status()).toBe(422)
+  expect((await thirteenth.json()).error).toBe('too_many_items')
   expect((await dailyItems(api)).length).toBe(12)
 
-  // Room for one more, then a name already on the list (ignoring case).
+  // Room for one more (retired here, so the dialog sees it), then a name already on the list (ignoring case).
   const extra = (await dailyItems(api)).find((i) => i.name === '[TEST-TEMP] S31 12')!
-  expect((await api.patch(`/api/boards/brewery/daily_items/${extra.id}`, { data: { active: false } })).status()).toBe(200)
+  await page.getByTestId(`daily-items-retire-${extra.id}`).click()
+  await page.getByRole('button', { name: 'Retire', exact: true }).click()
+  await expect(page.getByTestId('daily-items-new')).toBeEnabled()
   await page.getByTestId('daily-items-new').fill('temps')
   await page.getByTestId('daily-items-add').click()
   await expect(page.getByTestId('daily-items-dialog').getByText('Already on the list')).toBeVisible()
@@ -297,7 +303,7 @@ test('S75: Restore brings Temps back at the bottom with its past ticks; at 12 it
   await page.getByTestId(`daily-toggle-${yesterday}`).click()
   await expect(page.getByTestId(`daily-check-${yesterday}-${temps.id}`)).toBeChecked()
 
-  // Retired again, with 12 items on the list: Restore is refused with the limit message.
+  // Retired again, with 12 items on the list: Restore is greyed out with the hint (D42 §2.7), and the API refuses it.
   expect((await api.patch(`/api/boards/brewery/daily_items/${temps.id}`, { data: { active: false } })).status()).toBe(200)
   for (let n = 1; n <= 9; n++) {
     const res = await api.post('/api/boards/brewery/daily_items', { data: { name: `[TEST-TEMP] Item ${n}` } })
@@ -305,8 +311,11 @@ test('S75: Restore brings Temps back at the bottom with its past ticks; at 12 it
   }
   await openItems(page)
   await page.getByTestId('daily-items-retired-toggle').click()
-  await page.getByTestId(`daily-items-restore-${temps.id}`).click()
-  await expect(page.getByTestId('daily-items-error')).toHaveText('Up to 12 items')
+  await expect(page.getByTestId(`daily-items-restore-${temps.id}`)).toBeDisabled()
+  await expect(page.getByTestId('daily-items-retired-full')).toHaveText('Up to 12 Daily items. Retire one first.')
+  const refused = await api.post(`/api/boards/brewery/daily_items/${temps.id}/restore`)
+  expect(refused.status()).toBe(422)
+  expect((await refused.json()).error).toBe('too_many_items')
   await page.reload()
   await expect(page.getByTestId('board-grid')).toBeVisible()
   expect((await dailyItems(api)).some((i) => i.id === temps.id)).toBe(false)
