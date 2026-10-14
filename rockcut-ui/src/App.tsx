@@ -94,7 +94,7 @@ import SharedDevices from './pages/devices/SharedDevices'
 import DeviceNotAvailable from './pages/devices/DeviceNotAvailable'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
-import { ActingBanner, ActingCodeDialog } from './components/ActingCode'
+import { ActingCodeDialog } from './components/ActingCode'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -652,8 +652,7 @@ function App() {
           </Toolbar>
         </AppBar>
 
-        {/* D40: "Acting as Kate · Done" while a tablet remembers a staff code. */}
-        {isDevice && <ActingBanner />}
+        {/* D40: the task board's staff-code dialog (the "Acting as" banner is the board's own). */}
         {isDevice && <ActingCodeDialog />}
 
         {personalOnTablet && (

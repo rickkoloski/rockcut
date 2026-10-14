@@ -64,9 +64,13 @@ function CodeForm({ error }: { error: string | null }) {
 }
 
 /**
- * D40: "Acting as Kate · Done" while a shared tablet remembers a code. Pointer
- * and key activity keep it; 5 minutes without any (wall clock, so a tablet
- * that slept past it doesn't revive it) or Done ends it.
+ * D40: "Acting as Kate · Done" while a shared tablet remembers a code. Shown
+ * only on the task board (DEV qa gap 5: the beer board asks for a code on
+ * every action), pinned to the top of the window as the board scrolls (gap
+ * 6). Leaving the board doesn't end the window; coming back within 5 minutes
+ * shows it again. Pointer and key activity keep it; 5 minutes without any
+ * (wall clock, so a tablet that slept past it doesn't revive it) or Done ends
+ * it.
  */
 export function ActingBanner() {
   const session = useActing((s) => s.session)
@@ -77,6 +81,8 @@ export function ActingBanner() {
 
   useEffect(() => {
     if (!active) return
+    // Back on the board after a while: ended if it's been idle too long.
+    expire()
     ACTIVITY_EVENTS.forEach((e) => window.addEventListener(e, activity, { passive: true, capture: true }))
     const timer = window.setInterval(expire, TICK_MS)
     document.addEventListener('visibilitychange', expire)
@@ -91,7 +97,21 @@ export function ActingBanner() {
   return (
     <Box
       data-testid="acting-banner"
-      sx={{ px: 3, py: 1, bgcolor: 'info.light', color: 'info.contrastText', display: 'flex', alignItems: 'center', gap: 1 }}
+      sx={{
+        position: 'sticky',
+        top: 0,
+        zIndex: (t) => t.zIndex.appBar,
+        mb: 2,
+        px: 2,
+        py: 1,
+        borderRadius: 1,
+        boxShadow: 2,
+        bgcolor: 'info.light',
+        color: 'info.contrastText',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1,
+      }}
     >
       <Typography variant="body2" sx={{ fontWeight: 600 }} data-testid="acting-name">
         Acting as {firstName(session.name) || 'you'}

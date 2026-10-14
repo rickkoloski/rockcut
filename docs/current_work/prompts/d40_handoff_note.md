@@ -15,7 +15,8 @@ where they differ).
 **SHA for DEV:** `8895862` (fix cycle 1; first pass `6419501`) (D40 with `develop` merged after D42; API
 `3b00bb5`, UI `8ecbc8e`, seed and tests `790cf13`, S44 `a868fed`, D33 S3
 `9791fde`). Later commits are docs only. **DEV fix cycle 1:** the commit
-"fix: D40 DEV qa gaps 1 and 3" (the lead fills in the hash).
+"fix: D40 DEV qa gaps 1 and 3"; **DEV fix cycle 2:** "fix: D40 DEV qa
+gaps 5 and 6" (the lead fills in the hashes).
 
 ## What changed
 
@@ -135,6 +136,13 @@ from `Authz.Device`):
 | **3 (UX): ticked behind the code dialog, and still ticked after a wrong code** | The board's optimistic change (ticks, Daily checks, a drag) is made only when the write is sent with a code, and undone as soon as that try fails; nothing changes while the dialog is open | Playwright `task-board-tablets` S45 (unticked behind the dialog and after a wrong code); **revert-checked** (the old order: S45 fails, "checked") |
 
 **Not fixed** (the lead): gap 2 and gap 4, in LIMITATIONS.
+
+## DEV fix cycle 2 (the final D40 qa report: gaps 5 and 6, UI only)
+
+| Gap | Fix | Tests |
+|---|---|---|
+| **5: the "Acting as" banner on the beer board.** The Taproom tablet's beer board asks for a code on every action (D37), so the banner could name one person while the entry was recorded as another | The banner is the task board's own (rendered in `TaskBoard`, not the app shell). Nothing else shows or uses it; the beer board is unchanged. Leaving the board doesn't end the 5 minutes: back on it within them (in-app navigation), the banner is there again; past them, it's gone when the board opens | Playwright `task-board-tablets` (Taproom tablet: banner on `/tasks/bar`, none on the beer board, back on Tasks it's there); **revert-checked** (banner in the shell again: fails). `beer-board-device` unchanged and green |
+| **6: the banner scrolled out of view on a long board** | Sticky at the top of the window as the board scrolls (`position: sticky; top: 0`), above the toolbar at the top of the page, not over it | Playwright `task-board-tablets` (1024×600 and 412×915: above the toolbar at scroll 0; scrolled to the bottom, the banner and Done in view at the top); **revert-checked** (not sticky: both fail) |
 
 ## DEV must exercise
 

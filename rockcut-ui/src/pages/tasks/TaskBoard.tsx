@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Alert, Box, CircularProgress, Snackbar } from '@mui/material'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import { ActingBanner } from '../../components/ActingCode'
 import SortableLists, { type ContainerSlot } from '../../components/dnd/SortableLists'
 import { containerOf, type ListContainer, type Move } from '../../components/dnd/moveModel'
 import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
@@ -461,6 +462,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
 
   return (
     <Box data-testid="task-board" ref={setBoardEl}>
+      {/* D40: "Acting as Kate · Done" on a shared tablet, pinned as the board scrolls. */}
+      {isDevice && <ActingBanner />}
       {!phone && (
         <Box sx={{ mb: 2 }}>
           <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} />

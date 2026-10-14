@@ -231,6 +231,42 @@ test.describe('the brewhouse tablet', () => {
   })
 })
 
+// D40 DEV qa gap 6: the banner stays in view on a long board, at tablet and phone widths.
+for (const [label, viewport] of [
+  ['tablet', { width: 1024, height: 600 }],
+  ['phone', { width: 412, height: 915 }],
+] as const) {
+  test.describe(`the brewhouse tablet at ${label} width`, () => {
+    test.use({ storageState: authFile('breweryDevice'), viewport })
+
+    test('the Acting as banner stays in view as the board scrolls', async ({ page }) => {
+      const today = denverToday()
+      const t = await createTask(await apiAs('brewer1'), { title: tempTag('gap 6'), due_on: today })
+      made.push(t.id)
+      await page.goto('/tasks/brewery')
+      await expect(page.getByTestId('task-board')).toBeVisible({ timeout: 20_000 })
+      await page.getByTestId(`task-check-${t.id}:${today}`).click()
+      await enterCode(page, brewer!.code)
+      const banner = page.getByTestId('acting-banner')
+      await expect(banner).toBeVisible()
+      // At the top of the page it sits above the toolbar, not over it.
+      await page.evaluate(() => window.scrollTo(0, 0))
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+      const bar = (await page.getByTestId('board-toolbar').boundingBox())!
+      const top = (await banner.boundingBox())!
+      expect(top.y + top.height).toBeLessThanOrEqual(bar.y + 1)
+
+      await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(200)
+      await expect(banner).toBeInViewport()
+      const box = (await banner.boundingBox())!
+      expect(box.y).toBeGreaterThanOrEqual(-1)
+      expect(box.y).toBeLessThan(10)
+      await expect(page.getByTestId('acting-done')).toBeInViewport()
+    })
+  })
+}
+
 test.describe('the Taproom tablet', () => {
   test.use({ storageState: authFile('taproomDevice') })
 
@@ -248,6 +284,18 @@ test.describe('the Taproom tablet', () => {
       await page.getByTestId('task-title-input').fill(title)
       await saveDialog(page).click()
       await enterCode(page, bartender.code)
+      await expect(page.getByTestId('acting-banner')).toBeVisible()
+
+      // D40 DEV qa gap 5: the banner is the board's only. The beer board (a code
+      // on every action, D37) doesn't show it; back on the board within 5
+      // minutes it's still there (in-app navigation: a reload forgets the code).
+      await page.getByRole('button', { name: 'Taproom', exact: true }).click()
+      await page.getByRole('button', { name: 'Buy-a-Beer Board' }).click()
+      await expect(page).toHaveURL(/\/taproom\/beer-board/)
+      await expect(page.getByTestId('board-add')).toBeVisible()
+      await expect(page.getByTestId('acting-banner')).toHaveCount(0)
+      await page.getByRole('button', { name: 'Tasks', exact: true }).click()
+      await expect(page).toHaveURL(/\/tasks\/bar/)
       await expect(page.getByTestId('acting-banner')).toBeVisible()
 
       await page.reload()
