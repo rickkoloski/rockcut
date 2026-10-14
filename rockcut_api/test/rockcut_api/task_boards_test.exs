@@ -341,6 +341,62 @@ defmodule RockcutApi.TaskBoardsTest do
     end
   end
 
+  describe "all_boards/3: the All departments view (S118)" do
+    test "every board's cards, tagged and in department order; Daily counts only where a board has items",
+         ctx do
+      office = department_fixture("office")
+      department_fixture("sales")
+      tomorrow = Date.add(@today, 1)
+
+      pour = add!(ctx.bar, ctx.bartender, %{title: "Clean lines"})
+      brew1 = add!(ctx.brewery, ctx.brewer, %{title: "Keg Wash"})
+      brew2 = add!(ctx.brewery, ctx.brewer, %{title: "Dry hop"})
+      payroll = add!(office, ctx.owner, %{title: "Payroll", due_on: tomorrow})
+      co2 = add!(ctx.bar, ctx.bartender, %{title: "Order CO2", due_on: nil})
+      malt = add!(ctx.brewery, ctx.brewer, %{title: "Order malt", due_on: nil})
+      old = add!(ctx.bar, ctx.bartender, %{title: "Fix stool", due_on: Date.add(@today, -2)})
+
+      {:ok, all} = Tasks.all_boards(@today, tomorrow, @today)
+      [today, next] = all.days
+
+      cards = fn day -> Enum.map(day.cards, &{&1.department, &1.task.id}) end
+
+      # Brewery's cards first, in the board's own order, then the Taproom's.
+      assert cards.(today) == [{"brewery", brew1.id}, {"brewery", brew2.id}, {"bar", pour.id}]
+      assert cards.(next) == [{"office", payroll.id}]
+      refute Enum.any?(all.days, &Enum.any?(&1.cards, fn c -> c.department == "sales" end))
+
+      # The Brewery's four defaults; the Taproom, Office and Sales have none.
+      assert today.daily_counts == [%{department: "brewery", done: 0, total: 4}]
+      refute Map.has_key?(today, :header)
+      refute Map.has_key?(today, :daily)
+
+      assert Enum.map(all.future, &{&1.department, &1.task.id}) ==
+               [{"brewery", malt.id}, {"bar", co2.id}]
+
+      assert Enum.map(all.unfinished, &{&1.department, &1.task.id}) == [{"bar", old.id}]
+
+      # A board's first item brings its count in.
+      item = item!(ctx.bar, ctx.bar_mgr, "Lines cleaned")
+      {:ok, _} = Tasks.tick(ctx.bar, @today, item, ctx.bartender, @today)
+      {:ok, all} = Tasks.all_boards(@today, @today, @today)
+
+      assert hd(all.days).daily_counts == [
+               %{department: "brewery", done: 0, total: 4},
+               %{department: "bar", done: 1, total: 1}
+             ]
+    end
+
+    test "the same range limit as a board", ctx do
+      assert Tasks.all_boards(@today, Date.add(@today, 30), @today) |> elem(0) == :ok
+      assert Tasks.all_boards(@today, Date.add(@today, 31), @today) == {:error, :range_too_long}
+      assert Tasks.all_boards(@today, Date.add(@today, -1), @today) == {:error, :range_too_long}
+
+      assert Tasks.board(ctx.bar, @today, Date.add(@today, 31), @today) ==
+               {:error, :range_too_long}
+    end
+  end
+
   describe "boards_for/1 (/api/me's task_boards)" do
     test "the boards a person can open, in department order (by id); owners get all four",
          ctx do

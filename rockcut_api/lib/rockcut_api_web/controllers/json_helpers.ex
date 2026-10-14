@@ -115,6 +115,30 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  @doc """
+  The All departments `GET` (`Tasks.all_boards/3`, D41 §3.6): a board's shape
+  without `header`; every card carries its `department` key, and each day has
+  `daily_counts` (`[%{department, done, total}]`, boards with items that day)
+  in place of `daily`.
+  """
+  def all_task_boards(b) do
+    %{
+      from: b.from,
+      to: b.to,
+      today: b.today,
+      days:
+        Enum.map(b.days, fn d ->
+          %{
+            date: d.date,
+            cards: Enum.map(d.cards, &task_card/1),
+            daily_counts: d.daily_counts
+          }
+        end),
+      unfinished: Enum.map(b.unfinished, &task_card/1),
+      future: Enum.map(b.future, &task_card/1)
+    }
+  end
+
   defp task_board_day(d) do
     %{
       date: d.date,
@@ -171,6 +195,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       locked: c.locked,
       overdue: c.overdue
     })
+    |> Map.merge(Map.take(c, [:department]))
   end
 
   def task(t) do

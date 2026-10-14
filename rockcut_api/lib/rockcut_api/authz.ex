@@ -353,6 +353,9 @@ defmodule RockcutApi.Authz do
       when action in [:read, :write],
       do: member_of?(user, dept)
 
+  # D41 §3.6: the All departments view is owners' only (they pass above).
+  def can?(%User{}, :read, {:tasks, :all}), do: false
+
   def can?(%User{} = user, :history, {:tasks, %Department{} = dept}),
     do: role_in(user, dept) == :manager
 

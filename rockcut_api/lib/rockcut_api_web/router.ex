@@ -211,6 +211,15 @@ defmodule RockcutApiWeb.Router do
     post "/formulas/execute", FormulaController, :execute
   end
 
+  # D41 §3.6: the All departments view, owners only and read-only. Declared
+  # before the boards so it wins over `:dept`; every other `/api/boards/all/...`
+  # route reaches the `TaskBoard` plug, which 404s `all` (no writes here).
+  scope "/api/boards/all", RockcutApiWeb do
+    pipe_through [:api, :authenticated]
+
+    get "/tasks", TaskBoardController, :all
+  end
+
   # D38 task boards, one per assignable department since D41
   # (`/api/boards/:dept`): the department's members and owners, people only
   # (D40 opens the writes to the brewhouse tablet). Not tied to a module: each

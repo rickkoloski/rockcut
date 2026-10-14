@@ -200,6 +200,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:get, "/api/formulas/catalog"},
     {:post, "/api/formulas/execute"},
     # D38 Brewery task board: people only until D40 adds the brewhouse tablet.
+    # D41 §3.6: the All departments view, owners only.
+    {:get, "/api/boards/all/tasks"},
     {:get, "/api/boards/:dept/tasks"},
     {:get, "/api/boards/:dept/tasks/history"},
     {:post, "/api/boards/:dept/tasks"},

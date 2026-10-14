@@ -15,7 +15,13 @@ defmodule RockcutApiWeb.MeController do
         # D37: the board's History tab, import and export.
         beer_board_manage: Authz.can?(user, :history, :beer_board),
         # D41: the boards this person can open, in nav order.
-        task_boards: user |> Tasks.boards_for() |> Enum.map(&task_board_entry/1)
+        # Owners also get the All departments view, last.
+        task_boards:
+          Enum.map(Tasks.boards_for(user), &task_board_entry/1) ++
+            if(Authz.can?(user, :read, {:tasks, :all}),
+              do: [%{key: "all", name: "All departments", manage: false}],
+              else: []
+            )
       })
       |> for_viewer(user)
     )

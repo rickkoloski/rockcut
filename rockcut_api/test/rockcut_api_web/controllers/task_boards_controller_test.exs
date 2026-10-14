@@ -198,6 +198,93 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
     end
   end
 
+  describe "the All departments view, /api/boards/all/tasks (S118, S120)" do
+    defp range(from, to), do: %{from: Date.to_iso8601(from), to: Date.to_iso8601(to)}
+
+    test "S118: the owner gets every board's cards, tagged, in department order; Daily counts only where a board has items",
+         %{p: p, today: today} do
+      tomorrow = Date.add(today, 1)
+      pour = create!(p["bartender1"], "bar", %{title: "[TEST-TEMP] Clean lines", due_on: today})
+      brew = create!(p["brewer1"], "brewery", %{title: "[TEST-TEMP] Keg Wash", due_on: today})
+
+      payroll =
+        create!(p["office1"], "office", %{title: "[TEST-TEMP] Payroll", due_on: tomorrow})
+
+      co2 = create!(p["bartender1"], "bar", %{title: "[TEST-TEMP] Order CO2"})
+
+      body =
+        call(p["owner"], :get, "/api/boards/all/tasks", range(today, tomorrow))
+        |> json_response(200)
+        |> Map.fetch!("data")
+
+      [d1, d2] = body["days"]
+      cards = fn day -> Enum.map(day["cards"], &{&1["department"], &1["id"]}) end
+
+      assert cards.(d1) == [{"brewery", brew["id"]}, {"bar", pour["id"]}]
+      assert cards.(d2) == [{"office", payroll["id"]}]
+      assert Enum.map(body["future"], &{&1["department"], &1["id"]}) == [{"bar", co2["id"]}]
+      assert body["unfinished"] == []
+
+      # The Brewery has its four Daily items; the other boards have none.
+      assert d1["daily_counts"] == [%{"department" => "brewery", "done" => 0, "total" => 4}]
+      assert Map.keys(d1) |> Enum.sort() == ~w(cards daily_counts date)
+
+      assert %{"key" => _, "title" => "[TEST-TEMP] Keg Wash", "assignee_name" => _} =
+               hd(d1["cards"])
+    end
+
+    test "S120: everyone but owners is 403, devices included", %{p: p, today: today} do
+      assert call(p["owner2"], :get, "/api/boards/all/tasks", range(today, today)).status == 200
+
+      for who <- ~w(breweryMgr floater noDept barMgr dualMgr splitRole brewer1),
+          do:
+            assert(
+              call(p[who], :get, "/api/boards/all/tasks", range(today, today)).status == 403,
+              who
+            )
+
+      {_device, token} = taproom_device()
+
+      assert call_device(token, :get, "/api/boards/all/tasks", range(today, today)).status ==
+               403
+    end
+
+    test "every other route under all is 404: no writes, no History", %{p: p, today: today} do
+      fill = fn path ->
+        path
+        |> String.replace(":dept", "all")
+        |> String.replace(":on_date", Date.to_iso8601(today))
+        |> String.replace(~r/:\w+/, "1")
+      end
+
+      routes =
+        for r <- RockcutApiWeb.Router.__routes__(),
+            String.starts_with?(r.path, "/api/boards/:dept"),
+            do: {r.verb, fill.(r.path)}
+
+      assert length(routes) == 18
+
+      for {verb, path} <- routes, {verb, path} != {:get, "/api/boards/all/tasks"} do
+        conn = call(p["owner"], verb, path, %{title: "x", name: "x", ids: []})
+        assert conn.status == 404, "#{verb} #{path}"
+      end
+
+      refute Repo.exists?(Task)
+    end
+
+    test "the 31-day limit and bad dates, as on a board", %{p: p, today: today} do
+      assert call(p["owner"], :get, "/api/boards/all/tasks", range(today, Date.add(today, 30))).status ==
+               200
+
+      for params <- [range(today, Date.add(today, 31)), %{from: "nope", to: "x"}, %{}] do
+        all = call(p["owner"], :get, "/api/boards/all/tasks", params)
+        board = call(p["owner"], :get, "/api/boards/bar/tasks", params)
+        assert {all.status, all.resp_body} == {board.status, board.resp_body}
+        assert all.status in [400, 422]
+      end
+    end
+  end
+
   describe "/api/me task_boards" do
     defp boards(user),
       do:
@@ -205,7 +292,7 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
         |> json_response(200)
         |> Map.take(~w(task_boards))
 
-    test "floater, splitRole, dualMgr, owner and noDept", %{p: p} do
+    test "floater, splitRole, dualMgr, owner and noDept; all for owners only", %{p: p} do
       depts = Map.new(Repo.all(Department), &{&1.key, &1})
 
       entry = fn key, manage ->
@@ -229,14 +316,23 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
                "task_boards" => [entry.("bar", true), entry.("office", true)]
              }
 
-      assert boards(p["owner"]) == %{
-               "task_boards" => [
-                 entry.("brewery", true),
-                 entry.("bar", true),
-                 entry.("office", true),
-                 entry.("sales", true)
-               ]
-             }
+      # Owners also get the All departments view, last (no color, no tools).
+      all = %{"key" => "all", "name" => "All departments", "manage" => false}
+
+      for owner <- ~w(owner owner2) do
+        assert boards(p[owner]) == %{
+                 "task_boards" => [
+                   entry.("brewery", true),
+                   entry.("bar", true),
+                   entry.("office", true),
+                   entry.("sales", true),
+                   all
+                 ]
+               }
+      end
+
+      for who <- ~w(breweryMgr floater barMgr dualMgr noDept),
+          do: refute(Enum.any?(boards(p[who])["task_boards"], &(&1["key"] == "all")), who)
 
       assert boards(p["noDept"]) == %{"task_boards" => []}
 

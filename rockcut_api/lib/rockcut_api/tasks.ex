@@ -58,10 +58,14 @@ defmodule RockcutApi.Tasks do
   board; owners get all of them, a device none (until D40).
   """
   def boards_for(%User{} = user) do
-    for dept <- Enum.sort_by(Accounts.list_departments(), & &1.id),
-        dept.assignable,
+    for dept <- board_departments(),
         Authz.can?(user, :read, {:tasks, dept}),
         do: %{department: dept, manage: Authz.can?(user, :history, {:tasks, dept})}
+  end
+
+  # Every department with a board (the assignable ones), in department order.
+  defp board_departments do
+    Accounts.list_departments() |> Enum.filter(& &1.assignable) |> Enum.sort_by(& &1.id)
   end
 
   ## The board
@@ -82,14 +86,9 @@ defmodule RockcutApi.Tasks do
   Names are preloaded once. One query per kind for the whole range.
   """
   def board(%Department{} = dept, %Date{} = from, %Date{} = to, today \\ today()) do
-    if Date.compare(from, to) == :gt or Date.diff(to, from) >= @max_range_days do
-      {:error, :range_too_long}
-    else
-      days = Date.range(from, to) |> Enum.to_list()
-      tasks = dept.id |> board_tasks(from, to, today) |> Series.mark_last()
-      cards = Placement.cards(tasks, days, today)
+    with {:ok, days} <- range_days(from, to) do
+      %{cards: cards, daily: daily, unfinished: unfinished} = board_parts(dept, days, today)
       headers = headers(dept, days)
-      daily = daily_cards(dept, days, today)
 
       {:ok,
        %{
@@ -100,13 +99,76 @@ defmodule RockcutApi.Tasks do
            Enum.map(days, fn day ->
              %{date: day, cards: cards[day], header: headers[day], daily: daily[day]}
            end),
-         unfinished: tasks |> Placement.unfinished(today) |> Enum.map(&unfinished_card/1),
+         unfinished: unfinished,
          future: cards[:future]
        }}
     end
   end
 
+  @doc """
+  The All departments view (D41 §3.6, owners only; callers authorize): every
+  board's read model for `from..to` together, read-only. Built from each
+  board's own parts (`board/4`'s, without the header), in department order:
+
+    * `days`: each day's `cards` from every board, by department, then in
+      each board's order, each card with its `department` key, and
+      `daily_counts`: `%{department, done, total}` for each board whose
+      Daily card has items that day;
+    * `unfinished` and `future`: every board's, merged the same way.
+
+  No schedule header. Same range limit as `board/4`.
+  """
+  def all_boards(%Date{} = from, %Date{} = to, today \\ today()) do
+    with {:ok, days} <- range_days(from, to) do
+      parts = for dept <- board_departments(), do: {dept.key, board_parts(dept, days, today)}
+
+      tagged = fn pick ->
+        Enum.flat_map(parts, fn {key, part} ->
+          part |> pick.() |> Enum.map(&Map.put(&1, :department, key))
+        end)
+      end
+
+      {:ok,
+       %{
+         from: from,
+         to: to,
+         today: today,
+         days:
+           Enum.map(days, fn day ->
+             %{
+               date: day,
+               cards: tagged.(& &1.cards[day]),
+               daily_counts:
+                 for {key, %{daily: daily}} <- parts, daily[day].total > 0 do
+                   %{department: key, done: daily[day].done, total: daily[day].total}
+                 end
+             }
+           end),
+         unfinished: tagged.(& &1.unfinished),
+         future: tagged.(& &1.cards[:future])
+       }}
+    end
+  end
+
   def max_range_days, do: @max_range_days
+
+  defp range_days(from, to) do
+    if Date.compare(from, to) == :gt or Date.diff(to, from) >= @max_range_days,
+      do: {:error, :range_too_long},
+      else: {:ok, Date.range(from, to) |> Enum.to_list()}
+  end
+
+  # A board's cards (each day's and `:future`, through `Placement`), its Daily
+  # cards and its Unfinished list: everything but the header.
+  defp board_parts(%Department{} = dept, days, today) do
+    tasks = dept.id |> board_tasks(List.first(days), List.last(days), today) |> Series.mark_last()
+
+    %{
+      cards: Placement.cards(tasks, days, today),
+      daily: daily_cards(dept, days, today),
+      unfinished: tasks |> Placement.unfinished(today) |> Enum.map(&unfinished_card/1)
+    }
+  end
 
   # Everything any card in the range can come from: tasks planned or finished
   # in it, the Future list, and the open tasks planned before today.

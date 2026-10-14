@@ -19,7 +19,7 @@ defmodule RockcutApiWeb.TaskBoardController do
   use RockcutApiWeb, :controller
 
   import RockcutApiWeb.JSONHelpers,
-    only: [task_board: 1, task: 1, task_event: 1, task_series: 2]
+    only: [task_board: 1, all_task_boards: 1, task: 1, task_event: 1, task_series: 2]
 
   alias RockcutApi.{Authz, Tasks}
   alias RockcutApiWeb.TaskErrors
@@ -33,6 +33,20 @@ defmodule RockcutApiWeb.TaskBoardController do
          {:ok, to} <- date_param(params["to"]),
          {:ok, board} <- Tasks.board(board(conn), from, to) do
       json(conn, %{data: task_board(board)})
+    end
+    |> TaskErrors.handle(conn)
+  end
+
+  @doc """
+  GET /api/boards/all/tasks?from=&to=: every board together (D41 §3.6),
+  owners only, read-only. Not under the `TaskBoard` plug: there's no board.
+  """
+  def all(conn, params) do
+    with :ok <- allow_all(conn),
+         {:ok, from} <- date_param(params["from"]),
+         {:ok, to} <- date_param(params["to"]),
+         {:ok, boards} <- Tasks.all_boards(from, to) do
+      json(conn, %{data: all_task_boards(boards)})
     end
     |> TaskErrors.handle(conn)
   end
@@ -150,6 +164,12 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   defp allow(conn, action) do
     if Authz.can?(actor(conn), action, {:tasks, board(conn)}),
+      do: :ok,
+      else: {:error, :forbidden}
+  end
+
+  defp allow_all(conn) do
+    if Authz.can?(actor(conn), :read, {:tasks, :all}),
       do: :ok,
       else: {:error, :forbidden}
   end

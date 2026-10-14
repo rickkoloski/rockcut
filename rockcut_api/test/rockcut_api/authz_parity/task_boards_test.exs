@@ -54,4 +54,16 @@ defmodule RockcutApi.AuthzParity.TaskBoardsTest do
                expected(roles, board, :manage)
     end
   end
+
+  # D41 §3.6: the All departments view, owners only (`{:tasks, :all}`).
+  for {who, roles} <- @people do
+    test "D41 #{who} on the All departments view", %{p: p} do
+      user = p[unquote(who)]
+      today = Date.to_iso8601(RockcutApi.Tasks.today())
+      expected = if unquote(Macro.escape(roles)) == :owner, do: 200, else: 403
+
+      assert status(user, :get, "/api/boards/all/tasks", %{from: today, to: today}) == expected
+      assert RockcutApi.Authz.can?(user, :read, {:tasks, :all}) == (expected == 200)
+    end
+  end
 end
