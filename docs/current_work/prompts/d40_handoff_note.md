@@ -66,6 +66,17 @@ from `Authz.Device`):
 
 ## Tests
 
+- **Lead's local gate (2026-10-14, at `a868fed` + the D33 S3 fix):** full
+  ExUnit **1,453 tests, 0 failures**; full Playwright every project
+  (`--workers=1`) **341 passed, 1 skipped, 1 failed**: D33 S3
+  (`device_permissions.spec.ts`) expected `breweryMgr` to have no Admin →
+  Shared devices, but the D40 seed's brewhouse tablet makes them a manager of
+  a device's home department (D33's rule), so the page is correct. The test
+  now checks the Taproom tablet isn't listed for them; the file reran 3/3.
+- **Lead's revert-check:** with the tablet's department check in
+  `StaffCodeActing` disabled, S45 and the Taproom-tablet test fail (2 of
+  15); restored, 15/15.
+
 - **ExUnit (builder, targeted only, as the lead asked):** the suites D40
   touches and their neighbours, 1,012 tests, 0 failures, at `3b00bb5`;
   after the seed changes, `seeds`, `device_route_matrix_test`,
