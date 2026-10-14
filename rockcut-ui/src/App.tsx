@@ -208,14 +208,16 @@ function App() {
 
   // Channels the user can see — listed individually under Messages in the nav.
   // D36-J (task 4053): a malformed reply (`data: null`) is an empty list, not a crash.
+  // D42: not while a new password is required (the API refuses everything but the reset).
+  const signedInFully = isAuthenticated && !!user && !user.must_reset_password
   const { data: channelsData } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
-    enabled: isAuthenticated,
+    enabled: signedInFully,
     refetchInterval: 20000,
   })
   const channels = Array.isArray(channelsData) ? channelsData : []
 
   const { data: departmentsData } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, {
-    enabled: isAuthenticated,
+    enabled: signedInFully,
   })
   const departments = Array.isArray(departmentsData) ? departmentsData : []
 

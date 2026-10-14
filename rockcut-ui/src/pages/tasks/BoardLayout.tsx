@@ -29,7 +29,7 @@ interface Props {
  * stacked or one day at a time.
  */
 export default function BoardLayout({ days, showUnfinished, lists, phoneView, wide, stops, selected, today, onSelect, openCount }: Props) {
-  if (phoneView === 'vertical') return <PhoneVerticalView days={days} showUnfinished={showUnfinished} lists={lists} />
+  if (phoneView === 'vertical') return <PhoneVerticalView days={days} showUnfinished={showUnfinished} lists={lists} today={today} />
   if (phoneView === 'day')
     return (
       <PhoneDayView

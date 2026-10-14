@@ -87,13 +87,40 @@ export function allBoardCardLink(card: AllBoardCard, today: string): string {
 
 /**
  * The range a board shows for `?day=` (D41 §3.6): the current one when it
- * already holds the day (Future is in every range), else `span` days starting
- * on it, as picking that date as From would.
+ * already holds the day (Future is in every range), else `span` days from
+ * the first day of the week holding it (D42 §2.9; with First day = Today,
+ * starting on the day itself, as picking that date as From would).
  */
-export function rangeForDay(day: string, from: string, to: string, span: number): { from: string; to: string } {
+export function rangeForDay(
+  day: string,
+  from: string,
+  to: string,
+  span: number,
+  first: FirstDay = 'today',
+): { from: string; to: string } {
   if (day === FUTURE || (day >= from && day <= to)) return { from, to }
-  return { from: day, to: spanEnd(day, span) }
+  const start = weekStart(day, first)
+  return { from: start, to: spanEnd(start, span) }
 }
+
+/** D42 §2.9: where the board's range starts: today, or the week's Sunday or Monday. */
+export type FirstDay = 'today' | 'sunday' | 'monday'
+
+/** The first day of the week holding `day` (`day` itself for Today). */
+export function weekStart(day: string, first: FirstDay): string {
+  if (first === 'today') return day
+  const weekday = new Date(`${day}T12:00:00Z`).getUTCDay() // 0 = Sunday
+  return addDaysKey(day, -(first === 'sunday' ? weekday : (weekday + 6) % 7))
+}
+
+/** The range shown without one in the URL: `span` days from the week holding `today`. */
+export function defaultRange(today: string, span: Span, first: FirstDay): { from: string; to: string } {
+  const from = weekStart(today, first)
+  return { from, to: spanEnd(from, span) }
+}
+
+/** D42 §2.9: a day before today is dimmed this much (and still works). */
+export const PAST_OPACITY = 0.6
 
 /** The longest range the board shows (spec §3.6). */
 export const MAX_RANGE_DAYS = 31
@@ -340,6 +367,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
       return `Retired the Daily item ${t}`
     case 'item_restored':
       return `Restored Daily item ${t}`
+    case 'item_deleted':
+      return `Deleted the Daily item '${t}'`
     case 'item_reordered': {
       const item = (id: unknown) => names.items[String(id)] ?? '?'
       const list = (ids: unknown) => (Array.isArray(ids) ? ids.map(item).join(', ') : '')
@@ -355,6 +384,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
 const SPAN_KEY = 'rockcut.tasks.span'
 const PHONE_VIEW_KEY = 'rockcut.tasks.phoneView'
 const HIDE_KEY = 'rockcut.tasks.hideCompleted'
+// D42: no shared value before it; Today until someone picks.
+const FIRST_DAY_KEY = 'rockcut.tasks.firstDay'
 // D41: the board last opened (no old key: there was one board).
 const BOARD_KEY = 'rockcut.tasks.board'
 // D41: the keys before the rename. A choice saved under the old key is read
@@ -381,19 +412,44 @@ function write(key: string, value: string) {
   }
 }
 
+/**
+ * D42 §2.8: a board's own choice (`<key>.<board>`, `all` for All
+ * departments). A board without one starts from the browser's shared value
+ * (D41's key, or the one before it), kept as its own from then on.
+ */
+function readFor(key: string, board: string): string | null {
+  const own = `${key}.${board}`
+  try {
+    const value = localStorage.getItem(own)
+    if (value !== null) return value
+  } catch {
+    return null
+  }
+  const shared = read(key)
+  if (shared !== null) write(own, shared)
+  return shared
+}
+
+const writeFor = (key: string, board: string, value: string) => write(`${key}.${board}`, value)
+
 /** The default span: 2 weeks until someone picks. */
-export const readSpan = (): Span => (read(SPAN_KEY) === '7' ? 7 : 14)
-export const writeSpan = (span: Span) => write(SPAN_KEY, String(span))
-export const readHideCompleted = () => read(HIDE_KEY) === 'true'
-export const writeHideCompleted = (on: boolean) => write(HIDE_KEY, String(on))
+export const readSpan = (board: string): Span => (readFor(SPAN_KEY, board) === '7' ? 7 : 14)
+export const writeSpan = (board: string, span: Span) => writeFor(SPAN_KEY, board, String(span))
+export const readHideCompleted = (board: string) => readFor(HIDE_KEY, board) === 'true'
+export const writeHideCompleted = (board: string, on: boolean) => writeFor(HIDE_KEY, board, String(on))
+export function readFirstDay(board: string): FirstDay {
+  const value = readFor(FIRST_DAY_KEY, board)
+  return value === 'sunday' || value === 'monday' ? value : 'today'
+}
+export const writeFirstDay = (board: string, first: FirstDay) => writeFor(FIRST_DAY_KEY, board, first)
 
 export const readBoard = () => read(BOARD_KEY)
 export const writeBoard = (key: string) => write(BOARD_KEY, key)
 
 /** D39 phone width: every day stacked (`vertical`, the default) or one day at a time. */
 export type PhoneView = 'vertical' | 'day'
-export const readPhoneView = (): PhoneView => (read(PHONE_VIEW_KEY) === 'day' ? 'day' : 'vertical')
-export const writePhoneView = (view: PhoneView) => write(PHONE_VIEW_KEY, view)
+export const readPhoneView = (board: string): PhoneView => (readFor(PHONE_VIEW_KEY, board) === 'day' ? 'day' : 'vertical')
+export const writePhoneView = (board: string, view: PhoneView) => writeFor(PHONE_VIEW_KEY, board, view)
 
 /**
  * Where a task may be dragged on the board (any width). Nothing lands on the

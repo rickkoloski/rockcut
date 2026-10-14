@@ -11,7 +11,10 @@ import {
   departmentSections,
   describeEvent,
   rangeForDay,
+  coloradoToday,
+  defaultRange,
   readBoard,
+  readFirstDay,
   readHideCompleted,
   readPhoneView,
   readSpan,
@@ -19,7 +22,11 @@ import {
   taskGone,
   switcherBoards,
   taskSaveError,
+  weekStart,
   writeBoard,
+  writeFirstDay,
+  writeHideCompleted,
+  writePhoneView,
   writeSpan,
 } from './tasks'
 import type { AllBoardCard, TaskBoardEntry, TaskEvent } from './types'
@@ -132,23 +139,12 @@ describe('the board’s remembered choices (D41 storage keys)', () => {
       'rockcut.breweryTasks.hideCompleted': 'true',
       'rockcut.breweryTasks.phoneView': 'day',
     })
-    expect(readSpan()).toBe(7)
-    expect(readHideCompleted()).toBe(true)
-    expect(readPhoneView()).toBe('day')
+    expect(readSpan('brewery')).toBe(7)
+    expect(readHideCompleted('brewery')).toBe(true)
+    expect(readPhoneView('brewery')).toBe('day')
     expect(store.get('rockcut.tasks.span')).toBe('7')
     expect(store.get('rockcut.tasks.hideCompleted')).toBe('true')
     expect(store.get('rockcut.tasks.phoneView')).toBe('day')
-  })
-
-  it('the new key wins; writes go to the new key only', () => {
-    const store = stubStorage({ 'rockcut.breweryTasks.span': '7', 'rockcut.tasks.span': '14' })
-    expect(readSpan()).toBe(14)
-    store.set('rockcut.breweryTasks.span', 'old')
-    writeSpan(7)
-    expect(store.get('rockcut.tasks.span')).toBe('7')
-    expect(store.get('rockcut.breweryTasks.span')).toBe('old')
-    stubStorage({})
-    expect([readSpan(), readHideCompleted(), readPhoneView()]).toEqual([14, false, 'vertical'])
   })
 
   it('storage that throws gives the defaults', () => {
@@ -160,8 +156,9 @@ describe('the board’s remembered choices (D41 storage keys)', () => {
         throw new Error('blocked')
       },
     })
-    expect([readSpan(), readHideCompleted(), readPhoneView()]).toEqual([14, false, 'vertical'])
-    expect(() => writeSpan(7)).not.toThrow()
+    expect([readSpan('bar'), readHideCompleted('bar'), readPhoneView('bar'), readFirstDay('bar')]).toEqual([14, false, 'vertical', 'today'])
+    expect(() => writeSpan('bar', 7)).not.toThrow()
+    expect(() => writeFirstDay('bar', 'monday')).not.toThrow()
   })
 
   it('an old value is still read when writing the new key throws', () => {
@@ -171,7 +168,100 @@ describe('the board’s remembered choices (D41 storage keys)', () => {
         throw new Error('full')
       },
     })
-    expect(readSpan()).toBe(7)
+    expect(readSpan('brewery')).toBe(7)
+  })
+})
+
+describe('the choices per board (D42 §2.8)', () => {
+  const stubStorage = (initial: Record<string, string>) => {
+    const store = new Map(Object.entries(initial))
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    })
+    return store
+  }
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('S135: a board without its own choice starts from the shared one, then keeps it as its own', () => {
+    const store = stubStorage({
+      'rockcut.tasks.span': '7',
+      'rockcut.tasks.hideCompleted': 'true',
+      'rockcut.tasks.phoneView': 'day',
+    })
+    expect([readSpan('brewery'), readHideCompleted('brewery'), readPhoneView('brewery')]).toEqual([7, true, 'day'])
+    expect(store.get('rockcut.tasks.span.brewery')).toBe('7')
+    expect(store.get('rockcut.tasks.hideCompleted.brewery')).toBe('true')
+    expect(store.get('rockcut.tasks.phoneView.brewery')).toBe('day')
+    // The shared value isn't written again.
+    writeSpan('brewery', 14)
+    expect(store.get('rockcut.tasks.span')).toBe('7')
+    expect(readSpan('brewery')).toBe(14)
+  })
+
+  it('S134: each board keeps its own, All departments included', () => {
+    const store = stubStorage({})
+    writeSpan('brewery', 7)
+    writeHideCompleted('brewery', true)
+    writeFirstDay(ALL_BOARDS, 'monday')
+    writePhoneView('bar', 'day')
+    expect([readSpan('brewery'), readHideCompleted('brewery'), readFirstDay('brewery')]).toEqual([7, true, 'today'])
+    expect([readSpan('bar'), readHideCompleted('bar'), readPhoneView('bar')]).toEqual([14, false, 'day'])
+    expect([readFirstDay(ALL_BOARDS), readPhoneView(ALL_BOARDS)]).toEqual(['monday', 'vertical'])
+    expect(store.get('rockcut.tasks.firstDay.all')).toBe('monday')
+  })
+
+  it('a board’s own value wins over the shared one; the D41 key before it still counts as shared', () => {
+    stubStorage({ 'rockcut.tasks.span': '7', 'rockcut.tasks.span.bar': '14', 'rockcut.breweryTasks.hideCompleted': 'true' })
+    expect(readSpan('bar')).toBe(14)
+    expect(readSpan('office')).toBe(7)
+    expect(readHideCompleted('sales')).toBe(true)
+  })
+
+  it('an unknown first day reads as Today', () => {
+    stubStorage({ 'rockcut.tasks.firstDay.bar': 'friday' })
+    expect(readFirstDay('bar')).toBe('today')
+  })
+})
+
+describe('the first day and the range (D42 §2.9)', () => {
+  // 2026-10-14 is a Wednesday.
+  it('the week’s Sunday or Monday; Today is the day itself', () => {
+    expect(weekStart('2026-10-14', 'today')).toBe('2026-10-14')
+    expect(weekStart('2026-10-14', 'sunday')).toBe('2026-10-11')
+    expect(weekStart('2026-10-14', 'monday')).toBe('2026-10-12')
+    // On the boundary days themselves.
+    expect(weekStart('2026-10-11', 'sunday')).toBe('2026-10-11')
+    expect(weekStart('2026-10-11', 'monday')).toBe('2026-10-05')
+    expect(weekStart('2026-10-12', 'monday')).toBe('2026-10-12')
+    expect(weekStart('2026-10-17', 'sunday')).toBe('2026-10-11')
+  })
+
+  it('S136, S137: 1 week and 2 weeks from the week holding today', () => {
+    expect(defaultRange('2026-10-14', 7, 'monday')).toEqual({ from: '2026-10-12', to: '2026-10-18' })
+    expect(defaultRange('2026-10-14', 14, 'sunday')).toEqual({ from: '2026-10-11', to: '2026-10-24' })
+    expect(defaultRange('2026-10-14', 7, 'today')).toEqual({ from: '2026-10-14', to: '2026-10-20' })
+  })
+
+  it('a week across a month and a year', () => {
+    expect(defaultRange('2026-11-01', 7, 'monday')).toEqual({ from: '2026-10-26', to: '2026-11-01' })
+    expect(defaultRange('2027-01-01', 7, 'sunday')).toEqual({ from: '2026-12-27', to: '2027-01-02' })
+    expect(defaultRange('2027-01-01', 14, 'monday')).toEqual({ from: '2026-12-28', to: '2027-01-10' })
+  })
+
+  it('Colorado’s today: late evening there is still that day', () => {
+    vi.useFakeTimers()
+    // 11:30pm Wednesday in Denver is 05:30 Thursday UTC.
+    vi.setSystemTime(new Date('2026-10-15T05:30:00Z'))
+    expect(coloradoToday()).toBe('2026-10-14')
+    expect(defaultRange(coloradoToday(), 7, 'monday').from).toBe('2026-10-12')
+    vi.useRealTimers()
+  })
+
+  it('S138: ?day= out of the range moves to the week holding it', () => {
+    expect(rangeForDay('2026-10-20', '2026-10-12', '2026-10-18', 7, 'monday')).toEqual({ from: '2026-10-19', to: '2026-10-25' })
+    expect(rangeForDay('2026-10-20', '2026-10-11', '2026-10-17', 14, 'sunday')).toEqual({ from: '2026-10-18', to: '2026-10-31' })
+    expect(rangeForDay('2026-10-13', '2026-10-12', '2026-10-18', 7, 'monday')).toEqual({ from: '2026-10-12', to: '2026-10-18' })
   })
 })
 

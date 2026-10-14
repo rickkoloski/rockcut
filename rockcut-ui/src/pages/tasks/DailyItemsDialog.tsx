@@ -14,7 +14,7 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material'
-import { ArrowDownward, ArrowUpward, Check, Close, DragIndicator, Edit, ExpandLess, ExpandMore, RemoveCircleOutline, Restore } from '@mui/icons-material'
+import { ArrowDownward, ArrowUpward, Check, Close, DeleteOutline, DragIndicator, Edit, ExpandLess, ExpandMore, RemoveCircleOutline, Restore } from '@mui/icons-material'
 import { useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SortableLists from '../../components/dnd/SortableLists'
@@ -23,10 +23,11 @@ import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
-import { DAILY_ITEMS_KEY, boardPath, dailyItemError } from '../../lib/tasks'
+import { DAILY_ITEMS_KEY, MAX_DAILY_ITEMS, boardPath, dailyItemError } from '../../lib/tasks'
 import type { DailyItem, TaskBoardEntry } from '../../lib/types'
 
 const LIST = 'items'
+const FULL_HINT = `Up to ${MAX_DAILY_ITEMS} Daily items. Retire one first.`
 // One empty list while loading: a new [] each render would reset useOptimisticLists every time.
 const NO_ITEMS: DailyItem[] = []
 
@@ -48,6 +49,9 @@ interface Props {
  * with its past ticks (S75). The list refetches whenever the board does (its
  * 60-second refresh, focus), so changes made elsewhere show while it's open
  * (O-2); a name being typed in a rename field is the dialog's own and stays.
+ *
+ * D42: a retired item that was never ticked can be deleted (§2.4), and at
+ * 12 active items Add and Restore are greyed out with a hint (§2.7).
  */
 export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdatedAt }: Props) {
   const dept = board.key
@@ -72,9 +76,12 @@ export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdat
   // even if someone else renamed the item meanwhile (G1).
   const [renaming, setRenaming] = useState<{ id: number; from: string; name: string; error: string | null } | null>(null)
   const [retiring, setRetiring] = useState<DailyItem | null>(null)
-  // S76: back closes the retire confirm, then the dialog.
+  const [deleting, setDeleting] = useState<DailyItem | null>(null)
+  // S76: back closes the retire (or delete) confirm, then the dialog.
   usePhoneBackCloses(true, onClose)
   usePhoneBackCloses(!!retiring, () => setRetiring(null))
+  usePhoneBackCloses(!!deleting, () => setDeleting(null))
+  const full = items.length >= MAX_DAILY_ITEMS
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -134,6 +141,21 @@ export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdat
       setError(null)
       changed()
     } catch (err) {
+      setError(dailyItemError(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async (item: DailyItem) => {
+    setBusy(true)
+    try {
+      await api.delete(boardPath(dept, 'daily_items', item.id))
+      setDeleting(null)
+      setError(null)
+      changed()
+    } catch (err) {
+      setDeleting(null)
       setError(dailyItemError(err))
     } finally {
       setBusy(false)
@@ -297,16 +319,17 @@ export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdat
             size="small"
             fullWidth
             label="New item"
+            disabled={full}
             value={newName}
             onChange={(e) => {
               setNewName(e.target.value)
               setAddError(null)
             }}
             error={!!addError}
-            helperText={addError}
+            helperText={addError ?? (full ? FULL_HINT : null)}
             slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'daily-items-new' }, formHelperText: { role: 'alert' } as object }}
           />
-          <Button type="submit" variant="outlined" disabled={busy || !newName.trim()} data-testid="daily-items-add" sx={{ mt: 0.25 }}>
+          <Button type="submit" variant="outlined" disabled={busy || full || !newName.trim()} data-testid="daily-items-add" sx={{ mt: 0.25 }}>
             Add
           </Button>
         </Box>
@@ -323,6 +346,11 @@ export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdat
             </Button>
             <Collapse in={showRetired}>
               <Box data-testid="daily-items-retired" sx={{ mt: 0.5 }}>
+                {full && (
+                  <Typography variant="caption" color="text.secondary" component="p" sx={{ mb: 0.5 }} data-testid="daily-items-retired-full">
+                    {FULL_HINT}
+                  </Typography>
+                )}
                 {retired.map((item) => (
                   <Paper
                     key={item.id}
@@ -336,13 +364,26 @@ export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdat
                     <Button
                       size="small"
                       startIcon={<Restore fontSize="small" />}
-                      disabled={busy}
+                      disabled={busy || full}
                       onClick={() => restore(item)}
                       aria-label={`Restore ${item.name}`}
                       data-testid={`daily-items-restore-${item.id}`}
                     >
                       Restore
                     </Button>
+                    {item.deletable && (
+                      <Button
+                        size="small"
+                        color="error"
+                        startIcon={<DeleteOutline fontSize="small" />}
+                        disabled={busy}
+                        onClick={() => setDeleting(item)}
+                        aria-label={`Delete ${item.name}`}
+                        data-testid={`daily-items-delete-${item.id}`}
+                      >
+                        Delete
+                      </Button>
+                    )}
                   </Paper>
                 ))}
               </Box>
@@ -362,6 +403,15 @@ export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdat
         title="Retire item"
         message={retiring ? `Retire ${retiring.name}? Past ticks are kept.` : ''}
         confirmLabel="Retire"
+        loading={busy}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove(deleting)}
+        title="Delete item"
+        message={deleting ? `Delete ${deleting.name}? It was never ticked, so no day's Daily checks change.` : ''}
+        confirmLabel="Delete"
         loading={busy}
       />
     </Dialog>

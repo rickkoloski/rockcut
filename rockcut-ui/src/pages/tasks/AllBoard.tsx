@@ -6,6 +6,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import {
   ALL_BOARDS,
   FUTURE,
+  PAST_OPACITY,
   UNFINISHED,
   allBoardCardLink,
   boardPath,
@@ -49,8 +50,8 @@ export default function AllBoard({ board: entry, boards }: Props) {
   const navigate = useNavigate()
   const {
     from, to, highlighted, hideCompleted, phoneView, phone, wide,
-    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, setPhoneView,
-  } = useBoardView()
+    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, setPhoneView, firstDay, pickFirstDay,
+  } = useBoardView(ALL_BOARDS)
   // "My tasks" isn't offered here; the board's own filter isn't remembered, so nothing to keep.
   const [filter, setFilter] = useState<TaskFilter>('all')
   const [picked, setPicked] = useState<string | null>(null)
@@ -87,13 +88,16 @@ export default function AllBoard({ board: entry, boards }: Props) {
     )
     data.days.forEach((d) => {
       const isToday = d.date === today
+      const isPast = d.date < today
       const daySections = sections(d.cards, d.daily_counts)
       lists[d.date] = (
         <Paper
           variant="outlined"
           data-testid={`day-${d.date}`}
           data-today={isToday}
+          data-past={isPast}
           sx={{
+            opacity: isPast ? PAST_OPACITY : undefined,
             p: 1,
             display: 'flex',
             flexDirection: 'column',
@@ -160,6 +164,8 @@ export default function AllBoard({ board: entry, boards }: Props) {
         from={from}
         to={to}
         span={highlighted}
+        firstDay={firstDay}
+        onFirstDay={pickFirstDay}
         filter={filter}
         hideCompleted={hideCompleted}
         onPrev={() => step(-1)}

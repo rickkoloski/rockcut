@@ -18,19 +18,22 @@ import {
   Typography,
 } from '@mui/material'
 import { CalendarMonth, ChevronLeft, ChevronRight, MoreVert, ViewAgenda, ViewDay } from '@mui/icons-material'
-import { rangeError, type PhoneView, type Span, type TaskFilter } from '../../lib/tasks'
+import { rangeError, type FirstDay, type PhoneView, type Span, type TaskFilter } from '../../lib/tasks'
 
 interface Props {
   from: string
   to: string
   /** The toggle side to highlight; null while a custom range shows. */
   span: Span | null
+  /** D42 §2.9: the day the range starts on. */
+  firstDay: FirstDay
   filter: TaskFilter
   hideCompleted: boolean
   onPrev: () => void
   onNext: () => void
   onToday: () => void
   onSpan: (span: Span) => void
+  onFirstDay: (first: FirstDay) => void
   onRange: (from: string, to: string) => void
   onFilter: (filter: TaskFilter) => void
   onHideCompleted: (on: boolean) => void
@@ -52,8 +55,9 @@ interface Props {
 }
 
 /**
- * D38 §3.8 toolbar: Previous / Today / Next, 1 week / 2 weeks, the date
- * range, the filter, Hide completed, and the ⋮ menu for managers.
+ * D38 §3.8 toolbar: Previous / Today / Next, 1 week / 2 weeks, the first
+ * day (D42), the date range, the filter, Hide completed, and the ⋮ menu for
+ * managers.
  */
 export default function BoardToolbar(props: Props) {
   const { from, to, span, filter, hideCompleted, compact } = props
@@ -74,6 +78,24 @@ export default function BoardToolbar(props: Props) {
       <ToggleButton value={7} data-testid="board-span-7">1 week</ToggleButton>
       <ToggleButton value={14} data-testid="board-span-14">2 weeks</ToggleButton>
     </ToggleButtonGroup>
+  )
+  const firstDaySelect = (
+    <TextField
+      select
+      size="small"
+      label="First day"
+      value={props.firstDay}
+      onChange={(e) => {
+        setCalendarOpen(false)
+        props.onFirstDay(e.target.value as FirstDay)
+      }}
+      slotProps={{ select: { native: true }, inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'board-first-day' } }}
+      sx={{ minWidth: 110 }}
+    >
+      <option value="today">Today</option>
+      <option value="sunday">Sunday</option>
+      <option value="monday">Monday</option>
+    </TextField>
   )
   return (
     <Box sx={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 1.5, mb: 2 }} data-testid="board-toolbar">
@@ -124,6 +146,7 @@ export default function BoardToolbar(props: Props) {
             <DialogTitle>Days shown</DialogTitle>
             <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
               {spanToggle}
+              {firstDaySelect}
               <RangeSelector
                 key={`${from}:${to}`}
                 from={from}
@@ -145,6 +168,7 @@ export default function BoardToolbar(props: Props) {
       ) : (
         <>
           {spanToggle}
+          {firstDaySelect}
           <RangeSelector key={`${from}:${to}`} from={from} to={to} onRange={props.onRange} />
         </>
       )}
