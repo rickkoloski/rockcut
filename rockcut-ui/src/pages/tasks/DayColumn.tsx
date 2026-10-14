@@ -16,7 +16,10 @@ interface Props {
   onEditDailyItems?: () => void
 }
 
-/** D38 §3.8 day column: title and open count, header, Daily card, tasks, "+ Add a task". */
+/**
+ * D38 §3.8 day column: title and open count, header, Daily card, tasks, "+ Add a task".
+ * D41: no Daily card on a day the board has no Daily items for (S107).
+ */
 export default function DayColumn({ day, today, openCount, slot: { setNodeRef, isOver, items }, onAdd, onDailyToggle, onEditDailyItems }: Props) {
   const isToday = day.date === today
   return (
@@ -43,7 +46,9 @@ export default function DayColumn({ day, today, openCount, slot: { setNodeRef, i
         <Chip size="small" label={openCount} data-testid={`day-count-${day.date}`} aria-label={`${openCount} open`} sx={{ height: 20 }} />
       </Box>
       <DayHeader date={day.date} header={day.header} />
-      <DailyCard daily={day.daily} today={today} onToggle={onDailyToggle} onEditItems={onEditDailyItems} />
+      {day.daily.items.length > 0 && (
+        <DailyCard daily={day.daily} today={today} onToggle={onDailyToggle} onEditItems={onEditDailyItems} />
+      )}
       <Box
         ref={setNodeRef}
         data-testid={`day-list-${day.date}`}

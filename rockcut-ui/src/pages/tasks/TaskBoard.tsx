@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { Alert, Box, CircularProgress, Snackbar, useMediaQuery, useTheme } from '@mui/material'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
-import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SortableLists, { type ContainerSlot } from '../../components/dnd/SortableLists'
 import { containerOf, type ListContainer, type Move } from '../../components/dnd/moveModel'
@@ -13,6 +12,7 @@ import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
 import { addDaysKey } from '../../lib/datetime'
 import {
+  DAILY_ITEMS_KEY,
   FUTURE,
   UNFINISHED,
   boardPath,
@@ -27,6 +27,7 @@ import {
   readSpan,
   spanEnd,
   taskError,
+  writeBoard,
   writeHideCompleted,
   writePhoneView,
   writeSpan,
@@ -34,7 +35,8 @@ import {
   type Span,
   type TaskFilter,
 } from '../../lib/tasks'
-import type { CompletedDisplay, DailyCardItem, RosterEntry, TaskBoardData, TaskCardData, TaskSeriesData } from '../../lib/types'
+import type { CompletedDisplay, DailyCardItem, DailyItem, RosterEntry, TaskBoardData, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
+import BoardSwitcher from './BoardSwitcher'
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
@@ -53,8 +55,15 @@ import UnfinishedCard from './UnfinishedCard'
 const BOARD_KEY = 'task-board'
 const WIDE_BOARD_PX = 1200
 
+interface Props {
+  /** The board showing (D41: one per department, from the URL). */
+  board: TaskBoardEntry
+  /** Every board this person can open, for the switcher. */
+  boards: TaskBoardEntry[]
+}
+
 /**
- * D38: Brewery → Tasks. The days in the range (in rows of seven), each with
+ * D38: the task board (D41: one per department, at `/tasks/<dept>`). The days in the range (in rows of seven), each with
  * its schedule header, Daily card and tasks; the Unfinished card first and
  * the Future list last. Every list is one container in a single
  * SortableLists, so a drag between any two of them is one move. At phone
@@ -62,12 +71,21 @@ const WIDE_BOARD_PX = 1200
  * one day at a time (PhoneDayView: drags stay in the day, or come from the
  * Unfinished card into today).
  */
-export default function TaskBoard() {
+export default function TaskBoard({ board: boardEntry, boards }: Props) {
+  const dept = boardEntry.key
   const qc = useQueryClient()
-  const { user, breweryTasksManage } = useAuth()
-  // History and Edit Daily items (Brewery managers and owners, never a device).
-  const canManage = breweryTasksManage && user?.kind !== 'device'
+  const navigate = useNavigate()
+  const { user } = useAuth()
+  // History and Edit Daily items (the department's managers and owners, never a device).
+  const canManage = boardEntry.manage && user?.kind !== 'device'
   const [params, setParams] = useSearchParams()
+  // D41: the board last opened is the one `/tasks` opens.
+  useEffect(() => writeBoard(dept), [dept])
+  /** Another board, at the same range. */
+  const switchBoard = (key: string) => {
+    writeBoard(key)
+    navigate({ pathname: `/tasks/${key}`, search: window.location.search })
+  }
   const [span, setSpan] = useState<Span>(readSpan)
   const [hideCompleted, setHideCompleted] = useState(readHideCompleted)
   // D39: at phone width, every day stacked (the default) or one at a time.
@@ -97,15 +115,20 @@ export default function TaskBoard() {
   const highlighted: Span | null = urlValid ? (length === 7 || length === 14 ? length : null) : span
 
   const { data: board, isLoading, isError, error, dataUpdatedAt } = useApiQuery<TaskBoardData>(
-    [BOARD_KEY, from, to],
-    boardPath('brewery', 'tasks'),
+    [BOARD_KEY, dept, from, to],
+    boardPath(dept, 'tasks'),
     { from, to },
     // Back to the tab: always fresh, even within the default 30 seconds (and
     // Edit Daily items with it, O-2).
     { refetchInterval: 60_000, refetchOnWindowFocus: 'always', placeholderData: keepPreviousData },
   )
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
-  const brewers = useMemo(() => roster.filter((r) => r.departments.includes('brewery')), [roster])
+  // The board's department's members: the people a task can be assigned to.
+  const members = useMemo(() => roster.filter((r) => r.departments.includes(dept)), [roster, dept])
+  // D41 S107: the Daily card hides until the board has an item, and a manager's
+  // ⋮ menu says "Set up Daily checks" instead of "Edit Daily items" until then.
+  const { data: dailyItems } = useApiQuery<DailyItem[]>([DAILY_ITEMS_KEY, dept], boardPath(dept, 'daily_items'), { include_retired: 'true' })
+  const hasDailyItems = dailyItems?.some((i) => i.active) ?? true
   const today = board?.today ?? coloradoToday()
 
   // Phone: the day (or FUTURE) showing. It starts on today, or the range's
@@ -161,7 +184,7 @@ export default function TaskBoard() {
   usePhoneBackCloses(movingAll, () => setMovingAll(false))
   usePhoneBackCloses(!!removing && removing.laterOpen + removing.laterChanged === 0, () => setRemoving(null))
 
-  const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY] })
+  const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY, dept] })
   const fail = (err: unknown) => setToast({ message: taskError(err), error: true })
   // Optimistic writes still waiting on the server. The board refetches when the
   // last one settles: a refetch between two quick ticks would undo the second.
@@ -169,7 +192,7 @@ export default function TaskBoard() {
 
   /** A write with an optional optimistic change to the cached board, rolled back on failure. */
   const run = async (write: () => Promise<unknown>, optimistic?: (b: TaskBoardData) => TaskBoardData) => {
-    const queryKey = [BOARD_KEY, from, to]
+    const queryKey = [BOARD_KEY, dept, from, to]
     pending.current += 1
     // Cancels a fetch in flight at once (no await, so the change shows on this click).
     if (optimistic) void qc.cancelQueries({ queryKey })
@@ -202,7 +225,7 @@ export default function TaskBoard() {
     // Ahead of a card that stays last means the end of the day's own tasks.
     const before = m.beforeId && !staysLast(m.beforeId) ? cards.get(m.beforeId) : null
     const beforeId = before && before.id !== card.id ? before.id : null
-    move(m, () => api.post(boardPath('brewery', 'tasks', card.id, 'move'), { due_on: dueOn, before_id: beforeId }))
+    move(m, () => api.post(boardPath(dept, 'tasks', card.id, 'move'), { due_on: dueOn, before_id: beforeId }))
       .catch(fail)
       .finally(refresh)
   }
@@ -233,7 +256,7 @@ export default function TaskBoard() {
       return
     }
     // Out of the range: nothing to show it moving to.
-    run(() => api.post(boardPath('brewery', 'tasks', card.id, 'move'), { due_on: dueOn, before_id: null })).then(
+    run(() => api.post(boardPath(dept, 'tasks', card.id, 'move'), { due_on: dueOn, before_id: null })).then(
       (ok) => ok && setToast({ message: `Moved "${card.title}" to ${dueOn ? formatTaskDay(dueOn) : 'Future'}` }),
     )
   }
@@ -251,10 +274,10 @@ export default function TaskBoard() {
   }
 
   const complete = (card: TaskCardData, display?: CompletedDisplay) =>
-    run(() => api.post(boardPath('brewery', 'tasks', card.id, 'complete'), display ? { display } : {}), setDone(card.id, true))
+    run(() => api.post(boardPath(dept, 'tasks', card.id, 'complete'), display ? { display } : {}), setDone(card.id, true))
 
   const uncomplete = (card: TaskCardData) =>
-    run(() => api.post(boardPath('brewery', 'tasks', card.id, 'uncomplete')), setDone(card.id, false))
+    run(() => api.post(boardPath(dept, 'tasks', card.id, 'uncomplete')), setDone(card.id, false))
 
   const toggle = (card: TaskCardData) => {
     if (card.done) {
@@ -297,7 +320,7 @@ export default function TaskBoard() {
         }
       }),
     })
-    const path = boardPath('brewery', 'daily_checks', date, item.daily_item_id)
+    const path = boardPath(dept, 'daily_checks', date, item.daily_item_id)
     run(() => (checked ? api.put(path) : api.delete(path)), optimistic)
   }
 
@@ -333,7 +356,7 @@ export default function TaskBoard() {
 
   const deleteTask = async (card: TaskCardData, params?: { scope: SeriesScope; changed?: Changed }) => {
     setBusy(true)
-    const ok = await run(() => api.delete(boardPath('brewery', 'tasks', card.id), params ? { params } : undefined))
+    const ok = await run(() => api.delete(boardPath(dept, 'tasks', card.id), params ? { params } : undefined))
     setBusy(false)
     if (ok) {
       setDeleting(null)
@@ -348,7 +371,7 @@ export default function TaskBoard() {
   const askRemoveLater = async (card: TaskCardData, kind: 'delete' | 'stop') => {
     setBusy(true)
     try {
-      const { data } = await api.get<{ data: TaskSeriesData }>(boardPath('brewery', 'tasks', card.id, 'series'))
+      const { data } = await api.get<{ data: TaskSeriesData }>(boardPath(dept, 'tasks', card.id, 'series'))
       setDeletingSeries(null)
       setRemoving({ card, kind, laterOpen: data.data.later_open, laterChanged: data.data.later_changed })
     } catch (err) {
@@ -364,7 +387,7 @@ export default function TaskBoard() {
     const { card, kind } = removing
     if (kind === 'delete') return deleteTask(card, { scope: 'following', changed })
     setBusy(true)
-    const ok = await run(() => api.post(boardPath('brewery', 'tasks', card.id, 'stop_repeating'), { changed }))
+    const ok = await run(() => api.post(boardPath(dept, 'tasks', card.id, 'stop_repeating'), { changed }))
     setBusy(false)
     if (ok) {
       setRemoving(null)
@@ -376,7 +399,7 @@ export default function TaskBoard() {
     setBusy(true)
     let moved = 0
     const ok = await run(async () => {
-      const res = await api.post<{ moved: number }>(boardPath('brewery', 'tasks', 'move_overdue_to_today'))
+      const res = await api.post<{ moved: number }>(boardPath(dept, 'tasks', 'move_overdue_to_today'))
       moved = res.data.moved
     })
     setBusy(false)
@@ -501,7 +524,11 @@ export default function TaskBoard() {
 
   return (
     <Box data-testid="task-board" ref={setBoardEl}>
-      <PageHeader breadcrumbs={[{ label: 'Brewery', to: '/brewery' }, { label: 'Tasks' }]} title="Tasks" toolbar={<span />} />
+      {!phone && (
+        <Box sx={{ mb: 2 }}>
+          <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} />
+        </Box>
+      )}
       <BoardToolbar
         from={from}
         to={to}
@@ -520,7 +547,9 @@ export default function TaskBoard() {
         onHideCompleted={toggleHide}
         onHistory={canManage ? () => setHistory({}) : undefined}
         onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
+        setUpDaily={!hasDailyItems}
         compact={phone}
+        title={phone ? <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} compact /> : undefined}
         phoneView={phoneView}
         onPhoneView={(view) => {
           writePhoneView(view)
@@ -573,7 +602,8 @@ export default function TaskBoard() {
         <TaskDialog
           key={dialog.n}
           mode={dialog.mode}
-          brewers={brewers}
+          board={boardEntry}
+          members={members}
           today={today}
           onClose={() => setDialog(null)}
           onSaved={() => {
@@ -585,8 +615,10 @@ export default function TaskBoard() {
           onHistory={canManage ? (card) => setHistory({ task: { id: card.id, title: card.title } }) : undefined}
         />
       )}
-      {editingDaily && <DailyItemsDialog onClose={() => setEditingDaily(false)} onChanged={refresh} boardUpdatedAt={dataUpdatedAt} />}
-      {history && <HistoryDialog task={history.task} onClose={() => setHistory(null)} />}
+      {editingDaily && (
+        <DailyItemsDialog board={boardEntry} onClose={() => setEditingDaily(false)} onChanged={refresh} boardUpdatedAt={dataUpdatedAt} />
+      )}
+      {history && <HistoryDialog board={boardEntry} task={history.task} onClose={() => setHistory(null)} />}
       {finishing && (
         <FinishElsewhereDialog
           key={finishing.key}

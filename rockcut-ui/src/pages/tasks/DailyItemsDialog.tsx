@@ -23,15 +23,15 @@ import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
-import { boardPath, dailyItemError } from '../../lib/tasks'
-import type { DailyItem } from '../../lib/types'
+import { DAILY_ITEMS_KEY, boardPath, dailyItemError } from '../../lib/tasks'
+import type { DailyItem, TaskBoardEntry } from '../../lib/types'
 
-const ITEMS_KEY = 'daily-items'
 const LIST = 'items'
 // One empty list while loading: a new [] each render would reset useOptimisticLists every time.
 const NO_ITEMS: DailyItem[] = []
 
 interface Props {
+  board: TaskBoardEntry
   onClose: () => void
   /** Something changed: the board refetches its Daily cards. */
   onChanged: () => void
@@ -49,9 +49,10 @@ interface Props {
  * 60-second refresh, focus), so changes made elsewhere show while it's open
  * (O-2); a name being typed in a rename field is the dialog's own and stays.
  */
-export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }: Props) {
+export default function DailyItemsDialog({ board, onClose, onChanged, boardUpdatedAt }: Props) {
+  const dept = board.key
   const qc = useQueryClient()
-  const { data: all = NO_ITEMS, isLoading, refetch } = useApiQuery<DailyItem[]>([ITEMS_KEY], boardPath('brewery', 'daily_items'), {
+  const { data: all = NO_ITEMS, isLoading, refetch } = useApiQuery<DailyItem[]>([DAILY_ITEMS_KEY, dept], boardPath(dept, 'daily_items'), {
     include_retired: 'true',
   })
   const items = useMemo(() => all.filter((i) => i.active), [all])
@@ -78,14 +79,14 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
   const [busy, setBusy] = useState(false)
 
   const changed = () => {
-    qc.invalidateQueries({ queryKey: [ITEMS_KEY] })
+    qc.invalidateQueries({ queryKey: [DAILY_ITEMS_KEY, dept] })
     onChanged()
   }
 
   const add = async () => {
     setBusy(true)
     try {
-      await api.post(boardPath('brewery', 'daily_items'), { name: newName })
+      await api.post(boardPath(dept, 'daily_items'), { name: newName })
       setNewName('')
       setAddError(null)
       changed()
@@ -101,7 +102,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
     if (renaming.from === renaming.name.trim()) return setRenaming(null)
     setBusy(true)
     try {
-      await api.patch(boardPath('brewery', 'daily_items', renaming.id), { name: renaming.name })
+      await api.patch(boardPath(dept, 'daily_items', renaming.id), { name: renaming.name })
       setRenaming(null)
       changed()
     } catch (err) {
@@ -114,7 +115,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
   const retire = async (item: DailyItem) => {
     setBusy(true)
     try {
-      await api.patch(boardPath('brewery', 'daily_items', item.id), { active: false })
+      await api.patch(boardPath(dept, 'daily_items', item.id), { active: false })
       setRetiring(null)
       setError(null)
       changed()
@@ -129,7 +130,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
   const restore = async (item: DailyItem) => {
     setBusy(true)
     try {
-      await api.post(boardPath('brewery', 'daily_items', item.id, 'restore'))
+      await api.post(boardPath(dept, 'daily_items', item.id, 'restore'))
       setError(null)
       changed()
     } catch (err) {
@@ -143,7 +144,7 @@ export default function DailyItemsDialog({ onClose, onChanged, boardUpdatedAt }:
     const next = applyMove(containers, m)
     if (next === containers) return
     setError(null)
-    move(m, () => api.put(boardPath('brewery', 'daily_items', 'order'), { ids: next[0].itemIds.map(Number) }))
+    move(m, () => api.put(boardPath(dept, 'daily_items', 'order'), { ids: next[0].itemIds.map(Number) }))
       .catch((err) => setError(dailyItemError(err)))
       .finally(changed)
   }

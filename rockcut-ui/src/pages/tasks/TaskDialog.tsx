@@ -4,9 +4,9 @@ import FormDialog from '../../components/FormDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
-import { boardPath, taskError, taskGone } from '../../lib/tasks'
+import { boardPath, taskError, taskGone, taskSaveError } from '../../lib/tasks'
 import { defaultRule, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
-import type { RosterEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
+import type { RosterEntry, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
 import RepeatFields from './RepeatFields'
 import { RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
 
@@ -20,8 +20,10 @@ export type TaskDialogMode =
 
 interface Props {
   mode: TaskDialogMode
-  /** Brewery members, in roster order. */
-  brewers: RosterEntry[]
+  /** The board (D41): its department's members can be assigned. */
+  board: TaskBoardEntry
+  /** The department's members, in roster order. */
+  members: RosterEntry[]
   today: string
   onClose: () => void
   onSaved: () => void
@@ -48,7 +50,7 @@ interface Props {
  * needs a day first). Saving a rule makes it the first occurrence of a new
  * series. A finished one-off has no Repeat.
  */
-export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onStale, onDelete, onHistory }: Props) {
+export default function TaskDialog({ mode, board, members, today, onClose, onSaved, onStale, onDelete, onHistory }: Props) {
   // S76: the phone's back gesture closes the dialog, not the board.
   usePhoneBackCloses(true, onClose)
   const card = mode.kind === 'edit' ? mode.card : null
@@ -72,7 +74,7 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
   const [ruleTouched, setRuleTouched] = useState(false)
   const { data: series, isError: seriesFailed, error: seriesError } = useApiQuery<TaskSeriesData>(
     ['task-series', card?.id],
-    boardPath('brewery', 'tasks', card?.id, 'series'),
+    boardPath(board.key, 'tasks', card?.id, 'series'),
     undefined,
     { enabled: inSeries, staleTime: 0, gcTime: 0 },
   )
@@ -92,11 +94,11 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
   // done first), and no finished task goes to Future.
   const dayLocked = !!card?.locked
   const futureLocked = !!card?.done
-  // Someone who left the Brewery stays selectable on a task that still names them.
+  // Someone who left the department stays selectable on a task that still names them.
   const options =
-    card?.assignee_id && !brewers.some((b) => b.id === card.assignee_id)
-      ? [...brewers, { id: card.assignee_id, name: card.assignee_name ?? 'Unknown', departments: [] }]
-      : brewers
+    card?.assignee_id && !members.some((b) => b.id === card.assignee_id)
+      ? [...members, { id: card.assignee_id, name: card.assignee_name ?? 'Unknown', departments: [] }]
+      : members
 
   const changeDay = (value: string) => {
     setDay(value)
@@ -113,13 +115,13 @@ export default function TaskDialog({ mode, brewers, today, onClose, onSaved, onS
     setConfirmRemove(null)
     setSaving(true)
     try {
-      if (card) await api.patch(boardPath('brewery', 'tasks', card.id), { ...body, ...(scope ? { scope } : {}), ...(changed ? { changed } : {}) })
-      else await api.post(boardPath('brewery', 'tasks'), body)
+      if (card) await api.patch(boardPath(board.key, 'tasks', card.id), { ...body, ...(scope ? { scope } : {}), ...(changed ? { changed } : {}) })
+      else await api.post(boardPath(board.key, 'tasks'), body)
       onSaved()
     } catch (err) {
       // Someone deleted it meanwhile: "This task was deleted", and the board catches up.
       if (taskGone(err)) onStale()
-      setError(taskError(err))
+      setError(taskSaveError(err, board))
     } finally {
       setSaving(false)
     }

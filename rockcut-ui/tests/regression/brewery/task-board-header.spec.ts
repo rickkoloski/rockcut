@@ -87,10 +87,10 @@ test('S1: two shifts for one person share a line with their total hours', async 
   await expect(page.getByTestId(`header-person-${day}-${brewer1Id}`)).toHaveText('Jake Brewer · Brewer · 6:00a–10:00a, 2:00p–6:30p · 8.5h')
 })
 
-test('S2: a day without published Brewery shifts says "No brewers scheduled" and keeps its Daily card', async ({ page }) => {
+test('S2: a day without published Brewery shifts says "No one scheduled" (D41) and keeps its Daily card', async ({ page }) => {
   const day = addDays(denverToday(), 12)
   await openBoard(page)
-  await expect(page.getByTestId(`header-none-${day}`)).toHaveText('No brewers scheduled')
+  await expect(page.getByTestId(`header-none-${day}`)).toHaveText('No one scheduled')
   await expect(page.getByTestId(`daily-count-${day}`)).toHaveText(/^Daily \d+\/\d+$/)
 })
 

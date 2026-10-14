@@ -3,29 +3,30 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import api from '../../lib/api'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { boardPath, describeEvent, eventActor, formatEventTime, taskError } from '../../lib/tasks'
-import type { TaskEventPage } from '../../lib/types'
+import type { TaskBoardEntry, TaskEventPage } from '../../lib/types'
 
 interface Props {
+  board: TaskBoardEntry
   /** Only this task's entries; without it, the whole board's. */
   task?: { id: number; title: string }
   onClose: () => void
 }
 
 /**
- * D38 §3.8 "Change log" (Brewery managers and owners): newest first, 50 at a
+ * D38 §3.8 "Change log" (the board's managers and owners; D41: that board's events only): newest first, 50 at a
  * time with Load more. Each entry: who, when (Colorado time), and what
  * changed in plain words. Daily checks and items are included in the full list.
  */
-export default function HistoryDialog({ task, onClose }: Props) {
+export default function HistoryDialog({ board, task, onClose }: Props) {
   usePhoneBackCloses(true, onClose)
   const theme = useTheme()
   const fullScreen = useMediaQuery(theme.breakpoints.down('sm'))
 
   const { data, isLoading, isError, error, hasNextPage, fetchNextPage, isFetchingNextPage } = useInfiniteQuery({
-    queryKey: ['task-history', task?.id ?? null],
+    queryKey: ['task-history', board.key, task?.id ?? null],
     queryFn: async ({ pageParam }) =>
       (
-        await api.get<TaskEventPage>(boardPath('brewery', 'tasks', 'history'), {
+        await api.get<TaskEventPage>(boardPath(board.key, 'tasks', 'history'), {
           params: { page: pageParam, ...(task ? { task_id: task.id } : {}) },
         })
       ).data,
@@ -61,7 +62,7 @@ export default function HistoryDialog({ task, onClose }: Props) {
           {entries.map(({ ev, names }) => (
             <ListItem key={ev.id} divider data-testid={`history-entry-${ev.id}`} data-action={ev.action} data-task-id={ev.task_id ?? ''}>
               <ListItemText
-                primary={<span data-testid={`history-text-${ev.id}`}>{describeEvent(ev, names)}</span>}
+                primary={<span data-testid={`history-text-${ev.id}`}>{describeEvent(ev, names, board)}</span>}
                 secondary={
                   <span data-testid={`history-meta-${ev.id}`}>
                     {eventActor(ev)} · {formatEventTime(ev.inserted_at)}

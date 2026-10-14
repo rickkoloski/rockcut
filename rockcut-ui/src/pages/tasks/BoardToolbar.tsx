@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import {
   Box,
   Button,
@@ -38,6 +38,10 @@ interface Props {
   onHistory?: () => void
   /** Edit Daily items (managers and owners). Without either there's no ⋮ menu. */
   onEditDailyItems?: () => void
+  /** D41 S107: the board has no Daily items yet, so the entry reads "Set up Daily checks". */
+  setUpDaily?: boolean
+  /** Phone width (D41): the board's title or switcher, beside the calendar button. */
+  title?: ReactNode
   /** Phone width: 1 week / 2 weeks and the date range go behind a calendar button. */
   compact?: boolean
   /** Phone width (D39): every day stacked, or one day at a time. */
@@ -108,6 +112,7 @@ export default function BoardToolbar(props: Props) {
               </ToggleButton>
             </ToggleButtonGroup>
           )}
+          {props.title}
           <Tooltip title="Days shown">
             <IconButton aria-label="Days shown" onClick={() => setCalendarOpen(true)} data-testid="board-calendar">
               <CalendarMonth />
@@ -187,7 +192,7 @@ export default function BoardToolbar(props: Props) {
                 }}
                 data-testid="board-menu-daily-items"
               >
-                Edit Daily items
+                {props.setUpDaily ? 'Set up Daily checks' : 'Edit Daily items'}
               </MenuItem>
             )}
           </Menu>

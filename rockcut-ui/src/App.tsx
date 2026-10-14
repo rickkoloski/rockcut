@@ -72,7 +72,7 @@ import type { Channel, Department } from './lib/types'
 // Pages
 import Home from './pages/Home'
 import BreweryDashboard from './pages/brewery/BreweryDashboard'
-import TaskBoard from './pages/tasks/TaskBoard'
+import { OldTaskBoardRedirect, TaskBoardPage, TasksIndex } from './pages/tasks/TaskBoardRoutes'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
 import RecipeDetail from './pages/recipes/RecipeDetail'
@@ -108,6 +108,8 @@ interface NavSection {
   label: string
   icon: ReactNode
   children: NavLeaf[]
+  // A top-level link instead of a collapsible heading (D41: Tasks).
+  path?: string
   // Optional count shown on the section's icon (e.g. total unread).
   badge?: number
   // Shown (disabled) when the section has no children yet.
@@ -118,7 +120,6 @@ interface NavSection {
 // headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
-  { label: 'Tasks', path: '/tasks/brewery', icon: <ChecklistIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
   { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
@@ -159,13 +160,6 @@ function LoadingScreen({ unreachable, onRetry }: { unreachable?: boolean; onRetr
   )
 }
 
-// D41: the board moved from /brewery/tasks to /tasks/brewery. Old bookmarks
-// and the installed PWA's history land there, with their range (?from=&to=).
-function OldTaskBoardRedirect() {
-  const { search } = useLocation()
-  return <Navigate to={`/tasks/brewery${search}`} replace />
-}
-
 function App() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
@@ -179,6 +173,7 @@ function App() {
     user,
     capabilities,
     sharedDevices,
+    taskBoards,
     loadMe,
     logout,
     signOutDevice,
@@ -275,6 +270,8 @@ function App() {
             ]),
       ],
     },
+    // D41: Tasks opens the person's own board (a switcher when there are more).
+    ...(taskBoards.length > 0 ? [{ key: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, children: [], path: '/tasks' }] : []),
     ...deptSections,
     ...(canManageUsers || sharedDevices
       ? [
@@ -324,7 +321,7 @@ function App() {
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
-  // `/brewery` (the Dashboard) is exact, so Brewery → Tasks doesn't light it too.
+  // `/brewery` (the Dashboard) is exact, so Brewery's other pages don't light it too.
   const isSelected = (path: string) =>
     path === '/' || path === '/brewery'
       ? location.pathname === path
@@ -405,7 +402,9 @@ function App() {
             {sections.map((s) => (
               <Tooltip key={s.key} title={s.label} placement="right" arrow>
                 <ListItemButton
+                  selected={!!s.path && isSelected(s.path)}
                   onClick={() => {
+                    if (s.path) return go(s.path, isMobile)
                     setCollapsed(false)
                     setOpenOverride((o) => ({ ...o, [s.key]: true }))
                   }}
@@ -429,6 +428,18 @@ function App() {
               <ListItemText primary="Home" primaryTypographyProps={{ fontWeight: 600 }} />
             </ListItemButton>
             {sections.map((s) => {
+              if (s.path)
+                return (
+                  <ListItemButton
+                    key={s.key}
+                    selected={isSelected(s.path)}
+                    onClick={() => go(s.path!, isMobile)}
+                    sx={{ mx: 1, borderRadius: 1 }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 36 }}>{sectionIcon(s)}</ListItemIcon>
+                    <ListItemText primary={s.label} primaryTypographyProps={{ fontWeight: 600 }} />
+                  </ListItemButton>
+                )
               const open = sectionOpen(s)
               return (
                 <Box key={s.key}>
@@ -661,8 +672,6 @@ function App() {
             {hasBrewery && (
               <>
                 <Route path="/brewery" element={<BreweryDashboard />} />
-                <Route path="/tasks/brewery" element={<TaskBoard />} />
-                <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
                 <Route path="/brands" element={<BrandsList />} />
                 <Route path="/brands/:id" element={<BrandDetail />} />
                 <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
@@ -675,6 +684,11 @@ function App() {
               </>
             )}
             {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
+            {/* D41: a board per department; each page sends a person who can't
+                open it to their own board, or Home. */}
+            <Route path="/tasks" element={<TasksIndex />} />
+            <Route path="/tasks/:dept" element={<TaskBoardPage />} />
+            <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
             <Route path="/schedule" element={<Schedule forceView="agenda" />} />
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />

@@ -4,12 +4,17 @@ import {
   UNFINISHED,
   boardMoveRule,
   boardPath,
+  boardTarget,
+  boardTitle,
   describeEvent,
+  readBoard,
   readHideCompleted,
   readPhoneView,
   readSpan,
   taskError,
   taskGone,
+  taskSaveError,
+  writeBoard,
   writeSpan,
 } from './tasks'
 import type { TaskEvent } from './types'
@@ -162,5 +167,70 @@ describe('the board’s remembered choices (D41 storage keys)', () => {
       },
     })
     expect(readSpan()).toBe(7)
+  })
+})
+
+describe('boardTarget: which board a Tasks URL shows (D41 §3.5)', () => {
+  const boards = [{ key: 'brewery' }, { key: 'bar' }]
+
+  it('a board the person can open shows', () => {
+    expect(boardTarget(boards, 'bar', 'brewery')).toBe('bar')
+  })
+
+  it('/tasks opens the remembered board, else the first', () => {
+    expect(boardTarget(boards, null, 'bar')).toBe('bar')
+    expect(boardTarget(boards, null, null)).toBe('brewery')
+    expect(boardTarget(boards, null, 'office')).toBe('brewery')
+  })
+
+  it('a board they can’t open goes to their first (S102, S109), and with none, Home (S114)', () => {
+    expect(boardTarget([{ key: 'bar' }], 'brewery', 'brewery')).toBe('bar')
+    expect(boardTarget(boards, 'other', null)).toBe('brewery')
+    expect(boardTarget([], 'bar', 'bar')).toBeNull()
+    expect(boardTarget([], null, null)).toBeNull()
+  })
+})
+
+describe('the switcher’s words (D41)', () => {
+  it('titles a board "<Department> tasks"', () => {
+    expect(boardTitle({ name: 'Taproom' })).toBe('Taproom tasks')
+  })
+
+  it('an assignee from another department reads "Only members of the Taproom can be assigned" (S105)', () => {
+    const refused = { response: { status: 422, data: { errors: { assignee_id: ['must be a Taproom member'] } } } }
+    expect(taskSaveError(refused, { name: 'Taproom' })).toBe('Only members of the Taproom can be assigned')
+    expect(taskSaveError(err(422, '/api/boards/bar/tasks', { message: 'Pick a day to repeat' }), { name: 'Taproom' })).toBe('Pick a day to repeat')
+  })
+
+  it('History says who left which department (`left_<key>`)', () => {
+    const left: TaskEvent = {
+      id: 1,
+      task_id: 2,
+      action: 'unassigned',
+      title: 'Lines',
+      actor_id: 1,
+      actor_name: 'Owner',
+      on_shared_device: false,
+      detail: { from: 5, reason: 'left_bar' },
+      inserted_at: '2026-10-13T12:00:00Z',
+    }
+    const names = { users: { '5': 'Sam Pour' }, items: {} }
+    expect(describeEvent(left, names, { key: 'bar', name: 'Taproom' })).toBe('Unassigned Lines from Sam Pour (left the Taproom)')
+    expect(describeEvent(left, names, { key: 'brewery', name: 'Brewery' })).toBe('Unassigned Lines from Sam Pour')
+  })
+})
+
+describe('the remembered board (rockcut.tasks.board)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is written and read back, with no old key to fall back to', () => {
+    const store = new Map<string, string>([['rockcut.breweryTasks.board', 'brewery']])
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    })
+    expect(readBoard()).toBeNull()
+    writeBoard('bar')
+    expect(readBoard()).toBe('bar')
   })
 })

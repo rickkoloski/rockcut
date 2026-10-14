@@ -3,8 +3,9 @@ import { authFile, type PersonaKey } from '../../config/test-env'
 import { apiAs, card, cleanupTasks, createTask, denverToday, openBoard, tempTag } from './taskBoardHelpers'
 
 // D38 §3.8 access, scenarios S38–S41: who gets the task board, History and
-// Edit Daily items. Negative personas get no nav entry, a redirect to Home for
-// the typed URL, and a 403 from every D38 route.
+// Edit Daily items. Since D41 every department has a board, so someone outside
+// the Brewery gets their own board for the typed URL (D41 S102), and a 403
+// from every Brewery board route.
 
 const created: number[] = []
 test.afterEach(async () => {
@@ -44,30 +45,28 @@ async function statuses(persona: PersonaKey) {
 
 const navTasks = (page: Page) => page.getByRole('button', { name: 'Tasks', exact: true })
 
-/** Brewery → Tasks in the left nav, opening the Brewery section if it's collapsed. */
+/** D41: Tasks is a top-level nav entry. */
 async function expectTasksInNav(page: Page) {
-  const brewery = page.getByRole('button', { name: 'Brewery', exact: true })
-  await expect(brewery).toBeVisible()
-  if ((await navTasks(page).count()) === 0) await brewery.click()
   await expect(navTasks(page)).toBeVisible()
 }
 
-// Each persona's own department heading: once it shows, the nav has loaded.
+// Each persona's own department heading (once it shows, the nav has loaded) and board.
 const OWN_SECTION = { bartender1: 'Taproom', office1: 'Office' } as const
+const OWN_BOARD = { bartender1: 'bar', office1: 'office' } as const
 
 for (const persona of ['bartender1', 'office1'] as const) {
   test.describe(`${persona} (not in the Brewery)`, () => {
     test.use({ storageState: authFile(persona) })
 
-    test('S39: no nav entry, the typed URL goes Home, and every D38 route is 403', async ({ page }) => {
+    test('S39: the typed URL goes to their own board (D41), and every Brewery board route is 403', async ({ page }) => {
       await page.goto('/')
       await expect(page.getByRole('button', { name: OWN_SECTION[persona], exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Brewery', exact: true })).toHaveCount(0)
-      await expect(navTasks(page)).toHaveCount(0)
 
       await page.goto('/tasks/brewery')
-      await expect(page).toHaveURL(/\/$/)
-      await expect(page.getByTestId('task-board')).toHaveCount(0)
+      await expect(page).toHaveURL(new RegExp(`/tasks/${OWN_BOARD[persona]}$`))
+      await expect(page.getByTestId('board-title')).toHaveText(`${OWN_SECTION[persona]} tasks`)
+      await expect(page.getByTestId('board-switcher')).toHaveCount(0)
 
       for (const [route, status] of Object.entries(await statuses(persona))) expect(status, route).toBe(403)
     })

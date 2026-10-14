@@ -277,8 +277,16 @@ export interface Me {
   staff_codes?: boolean
   // D37: the Buy-a-Beer Board's History tab, import and export (owners, Taproom managers).
   beer_board_manage?: boolean
-  // D38: the Brewery task board's History and Edit Daily items (owners, Brewery managers).
-  brewery_tasks_manage?: boolean
+  // D41: the task boards this person can open, in department order.
+  task_boards?: TaskBoardEntry[]
+}
+
+/** D41: one of `/api/me`'s `task_boards`. `manage`: History and Edit Daily items. */
+export interface TaskBoardEntry {
+  key: string
+  name: string
+  color: string | null
+  manage: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import parseApiError from './parseApiError'
 import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
-import type { DayHeaderData, HeaderShift, TaskCardData, TaskEvent, TaskEventPage } from './types'
+import type { DayHeaderData, HeaderShift, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage } from './types'
 
 // D38: task board helpers shared by the board, its dialogs and the specs.
 // D41: one board per department, under `/api/boards/<dept>`.
@@ -9,6 +9,25 @@ import type { DayHeaderData, HeaderShift, TaskCardData, TaskEvent, TaskEventPage
 /** A board's API path: `boardPath('brewery', 'tasks', 12, 'move')` → `/api/boards/brewery/tasks/12/move`. */
 export function boardPath(dept: string, ...segments: (string | number | undefined)[]): string {
   return ['/api/boards', dept, ...segments.map(String)].join('/')
+}
+
+/** The query key of a board's Daily items (with the retired ones), with its department. */
+export const DAILY_ITEMS_KEY = 'daily-items'
+
+/** "Taproom tasks": a board's title. */
+export const boardTitle = (board: Pick<TaskBoardEntry, 'name'>) => `${board.name} tasks`
+
+/**
+ * D41 §3.5: the board key a Tasks URL should show, or null for Home (no
+ * boards). `wanted` is the URL's board (`/tasks/bar`), or null for `/tasks`,
+ * which opens the remembered board. A board the person can't open (or a
+ * forgotten one) falls back to their first.
+ */
+export function boardTarget(boards: Pick<TaskBoardEntry, 'key'>[], wanted: string | null, remembered: string | null): string | null {
+  const open = (key: string | null) => !!key && boards.some((b) => b.key === key)
+  if (open(wanted)) return wanted
+  if (wanted === null && open(remembered)) return remembered
+  return boards[0]?.key ?? null
 }
 
 /** The longest range the board shows (spec §3.6). */
@@ -116,6 +135,17 @@ export function taskError(err: unknown): string {
   return data?.message ?? parseApiError(err)
 }
 
+/**
+ * A refused add or edit in the dialog's words. D41: an assignee from outside
+ * the board's department reads "Only members of the Taproom can be assigned"
+ * (S105).
+ */
+export function taskSaveError(err: unknown, board: Pick<TaskBoardEntry, 'name'>): string {
+  const errors = (err as { response?: { data?: { errors?: Record<string, string[]> } } })?.response?.data?.errors
+  if (errors?.assignee_id) return `Only members of the ${board.name} can be assigned`
+  return taskError(err)
+}
+
 /** The most active Daily items (the API's cap). */
 export const MAX_DAILY_ITEMS = 12
 
@@ -158,7 +188,7 @@ const removedNote = (d: Record<string, unknown>) =>
  * 40, kept 2)", "Stopped repeating … (removed 40)", "… to Future (no longer
  * repeats)", "Made Keg Wash repeat from Wed 10/14 (Repeats every week on Wed)".
  */
-export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): string {
+export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], board?: Pick<TaskBoardEntry, 'key' | 'name'>): string {
   const d = ev.detail
   const t = ev.title
   const person = (id: unknown) => (id == null ? null : (names.users[String(id)] ?? 'someone no longer here'))
@@ -211,7 +241,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
     case 'stopped_repeating':
       return `Stopped repeating ${t} after ${dayOrFuture(d.series_date)} (${removedNote(d)})`
     case 'unassigned':
-      return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${d.reason === 'left_brewery' ? ' (left the Brewery)' : ''}`
+      // D41: `left_<key>`, logged on that department's board.
+      return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${board && d.reason === `left_${board.key}` ? ` (left the ${board.name})` : ''}`
     case 'moved': {
       const from = (d.from ?? {}) as { due_on?: string | null; position?: number }
       const to = (d.to ?? {}) as { due_on?: string | null; position?: number }
@@ -259,6 +290,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names']): str
 const SPAN_KEY = 'rockcut.tasks.span'
 const PHONE_VIEW_KEY = 'rockcut.tasks.phoneView'
 const HIDE_KEY = 'rockcut.tasks.hideCompleted'
+// D41: the board last opened (no old key: there was one board).
+const BOARD_KEY = 'rockcut.tasks.board'
 // D41: the keys before the rename. A choice saved under the old key is read
 // once, then kept under the new one.
 const OLD_PREFIX = 'rockcut.breweryTasks.'
@@ -266,7 +299,7 @@ const OLD_PREFIX = 'rockcut.breweryTasks.'
 function read(key: string): string | null {
   try {
     const value = localStorage.getItem(key)
-    if (value !== null) return value
+    if (value !== null || key === BOARD_KEY) return value
     const old = localStorage.getItem(OLD_PREFIX + key.slice('rockcut.tasks.'.length))
     if (old !== null) write(key, old)
     return old
@@ -288,6 +321,9 @@ export const readSpan = (): Span => (read(SPAN_KEY) === '7' ? 7 : 14)
 export const writeSpan = (span: Span) => write(SPAN_KEY, String(span))
 export const readHideCompleted = () => read(HIDE_KEY) === 'true'
 export const writeHideCompleted = (on: boolean) => write(HIDE_KEY, String(on))
+
+export const readBoard = () => read(BOARD_KEY)
+export const writeBoard = (key: string) => write(BOARD_KEY, key)
 
 /** D39 phone width: every day stacked (`vertical`, the default) or one day at a time. */
 export type PhoneView = 'vertical' | 'day'
