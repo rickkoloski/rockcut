@@ -138,3 +138,7 @@ migrations. Pre-deploy snapshot taken (`vol_vz8l9elx6oe0dzqv`).
     and changes nothing. **By design** (spec §2.2 keeps D38's rule: a
     `before_id` no longer in the list puts the task last); only another
     board's id is 404.
+- **Fix cycle 1 on DEV** (`eb5b2ce`, API v37): the Daily-items and D42
+  follow-up spec files against DEV, **27/27** (after restoring Gravities,
+  which a Pixel check had retired by accident). **Matt's Pixel checks:**
+  Daily item Delete / tick-untick-retire (5/5).
