@@ -245,7 +245,7 @@ test("S31: a 13th item and a duplicate name are refused in the dialog (D42: Add 
   // D42 §2.7: at 12, Add is greyed out with the hint; the API still refuses a 13th.
   await expect(page.getByTestId('daily-items-new')).toBeDisabled()
   await expect(page.getByTestId('daily-items-add')).toBeDisabled()
-  await expect(page.getByTestId('daily-items-dialog').getByText('Up to 12 Daily items. Retire one first.')).toBeVisible()
+  await expect(page.getByTestId('daily-items-dialog').getByText('Up to 12 Daily items. Retire one first.').first()).toBeVisible()
   const thirteenth = await api.post('/api/boards/brewery/daily_items', { data: { name: '[TEST-TEMP] S31 13' } })
   expect(thirteenth.status()).toBe(422)
   expect((await thirteenth.json()).error).toBe('too_many_items')

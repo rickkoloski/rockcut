@@ -43,10 +43,8 @@ a browser can't reach the state).
 
 ## Tests
 
-- **ExUnit:** full run at the end of Task 1: **1,413 tests, 0 failures**;
-  `mix compile --warnings-as-errors --force` clean. The decision-6 fix
-  (`ec8a645`) was run against the series and recurring-task suites only
-  (143, 0 failures). **The lead runs the full suite for the gate.**
+- **ExUnit (full, the lead, at `ca8c947`): 1,414 tests, 0 failures.**
+  `mix compile --warnings-as-errors --force` clean.
 - **Vitest: 95 passed.** `tsc -p tsconfig.app.json` and `vite build` clean.
 - **Lint:** 27 problems (26 errors, 1 warning), all pre-existing in the
   brewing pages; none in D42's files.
@@ -54,8 +52,12 @@ a browser can't reach the state).
   `tests/regression/tasks/task-board-follow-ups.spec.ts` 17/17; the
   `brewery-board` project 150 passed, 3 failed: S31, S75 (the dialog now
   greys out Add/Restore at 12) and S60/S61 (made its "changed on its own"
-  occurrence with a notes edit). Updated; those three pass. **The lead runs
-  the full suite.**
+  occurrence with a notes edit). Updated; those three pass.
+- **Full Playwright, every project (the lead, `--workers=1`, 2026-10-14):**
+  331 passed, 1 skipped (the DEV-only banner check), 1 failed: S31's new
+  hint check matched two elements when the board already had retired items
+  (the hint shows under Add and in Retired). Test fixed (`.first()`); the
+  file reran 11/11.
 - **Revert-checked:** the reset gate (21 of 24 tests fail without the plug),
   foreign `before_id` (S124), notes-only (3 tests), the notes-only keep
   offer (2), Ends-only (9 of 12 in `series_ends_test`), R2's chain total
