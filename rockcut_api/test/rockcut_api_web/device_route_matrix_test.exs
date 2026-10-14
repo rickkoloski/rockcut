@@ -1,7 +1,9 @@
 defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   @moduledoc """
   D33 §3.7: every route in the router × `taproomDevice`. The allowlist passes;
-  everything else is refused by `DeviceGate` (403). Generated from the router:
+  everything else is refused by `DeviceGate` (403). D40: the tablet's home
+  board (bar here) is on the allowlist; another board is `Authz.Device`'s
+  403 (task_board_device_test). Generated from the router:
   a new route fails "every route is classified" until someone puts it in one
   of the lists below. Put it in `@device_ok` only together with its
   `Authz.Device` entry and a scope change in the router.
@@ -33,7 +35,11 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/channels/:key/read"},
     {:get, "/api/messages/unread_count"},
     # D37: a Taproom tablet reads the Buy-a-Beer Board.
-    {:get, "/api/beer_board"}
+    {:get, "/api/beer_board"},
+    # D40: a tablet reads its home department's board (`:dept` = bar here).
+    {:get, "/api/boards/:dept/tasks"},
+    {:get, "/api/boards/:dept/tasks/:id/series"},
+    {:get, "/api/boards/:dept/daily_items"}
   ]
 
   # D37: device-allowed writes that need a person's staff code. Without one
@@ -42,7 +48,18 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/beer_board"},
     {:post, "/api/beer_board/:id/redeem"},
     {:patch, "/api/beer_board/:id"},
-    {:delete, "/api/beer_board/:id"}
+    {:delete, "/api/beer_board/:id"},
+    # D40: writes on the tablet's home board (task_board_device_test with a code).
+    {:post, "/api/boards/:dept/tasks"},
+    {:post, "/api/boards/:dept/tasks/move_overdue_to_today"},
+    {:patch, "/api/boards/:dept/tasks/:id"},
+    {:delete, "/api/boards/:dept/tasks/:id"},
+    {:post, "/api/boards/:dept/tasks/:id/move"},
+    {:post, "/api/boards/:dept/tasks/:id/complete"},
+    {:post, "/api/boards/:dept/tasks/:id/uncomplete"},
+    {:post, "/api/boards/:dept/tasks/:id/stop_repeating"},
+    {:put, "/api/boards/:dept/daily_checks/:on_date/:daily_item_id"},
+    {:delete, "/api/boards/:dept/daily_checks/:on_date/:daily_item_id"}
   ]
 
   @denied [
@@ -198,7 +215,16 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:put, "/api/batch_log_entries/:id"},
     {:delete, "/api/batch_log_entries/:id"},
     {:get, "/api/formulas/catalog"},
-    {:post, "/api/formulas/execute"}
+    {:post, "/api/formulas/execute"},
+    # D41 §3.6: the All departments view, owners only. D40: a board's History
+    # and its Daily items changes stay people-only.
+    {:get, "/api/boards/all/tasks"},
+    {:get, "/api/boards/:dept/tasks/history"},
+    {:post, "/api/boards/:dept/daily_items"},
+    {:put, "/api/boards/:dept/daily_items/order"},
+    {:patch, "/api/boards/:dept/daily_items/:id"},
+    {:post, "/api/boards/:dept/daily_items/:id/restore"},
+    {:delete, "/api/boards/:dept/daily_items/:id"}
   ]
 
   defp app_routes do
@@ -228,7 +254,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     setup do
       {device, token} = taproom_device()
       shift = shift_fixture(%{status: "published"})
-      %{device: device, token: token, shift: shift}
+      %{device: device, token: token, shift: shift, task: repeating_task()}
     end
 
     test "every denied route is refused by the router gate (403)", %{token: token} do
@@ -257,12 +283,12 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
       assert failures == []
     end
 
-    test "every allowlisted route answers 2xx", %{device: device, shift: shift} do
+    test "every allowlisted route answers 2xx", %{device: device, shift: shift, task: task} do
       failures =
         for {verb, path} <- @device_ok,
             # A fresh token per call: DELETE /api/session revokes the one it uses.
             token = RockcutApi.AccountsFixtures.device_token_fixture(device, "matrix"),
-            conn = call_device(token, verb, fill(path, shift)),
+            conn = call_device(token, verb, fill(path, shift, task), query(path)),
             conn.status not in 200..299 do
           {verb, path, conn.status}
         end
@@ -294,17 +320,18 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
       for key <- ["all", "dept:bar"],
           do: call(p["bartender1"], :post, "/api/channels/#{key}/messages", %{body: "hi #{key}"})
 
-      %{device: device, token: token, shift: shift, p: p}
+      %{device: device, token: token, shift: shift, p: p, task: repeating_task(p["bartender1"])}
     end
 
     test "every allowlisted route answers without an email anywhere", %{
       device: device,
-      shift: shift
+      shift: shift,
+      task: task
     } do
       bodies =
         for {verb, path} <- @device_ok, {verb, path} != {:delete, "/api/session"} do
           token = RockcutApi.AccountsFixtures.device_token_fixture(device, "privacy")
-          conn = call_device(token, verb, fill(path, shift))
+          conn = call_device(token, verb, fill(path, shift, task), query(path))
           assert conn.status in 200..299, "#{verb} #{path}"
           {path, if(conn.resp_body == "", do: nil, else: Jason.decode!(conn.resp_body))}
         end
@@ -346,15 +373,48 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   test "the allowlisted routes still work for people", %{} do
     p = personas(~w(bartender1))["bartender1"]
     shift = shift_fixture(%{status: "published"})
+    task = repeating_task(p)
 
     for {verb, path} <- @device_ok, {verb, path} != {:delete, "/api/session"} do
-      assert call(p, verb, fill(path, shift)).status in 200..299, "#{verb} #{path}"
+      assert call(p, verb, fill(path, shift, task), query(path)).status in 200..299,
+             "#{verb} #{path}"
     end
   end
 
-  defp fill(path, shift \\ nil) do
+  # A repeating task on the Taproom board (taproomDevice's home), for the
+  # series read.
+  defp repeating_task(person \\ nil) do
+    person = person || personas(~w(bartender1))["bartender1"]
+    today = RockcutApi.Tasks.today()
+
+    {:ok, task} =
+      RockcutApi.Tasks.create(
+        RockcutApi.TaskFixtures.task_board("bar"),
+        %{
+          "title" => "Matrix weekly",
+          "due_on" => Date.to_iso8601(today),
+          "repeat" => "weekly",
+          "repeat_weekdays" => [Date.day_of_week(today)]
+        },
+        person
+      )
+
+    task
+  end
+
+  defp query("/api/boards/:dept/tasks") do
+    today = Date.to_iso8601(RockcutApi.Tasks.today())
+    %{from: today, to: today}
+  end
+
+  defp query(_path), do: %{}
+
+  # `:dept` is the device's home (bar): another board is 403 for a device.
+  defp fill(path, shift \\ nil, task \\ nil) do
     path
     |> String.replace(":key", "all")
+    |> String.replace(":dept", "bar")
+    |> String.replace("/tasks/:id", "/tasks/#{(task && task.id) || 1}")
     |> String.replace(":id", to_string((shift && shift.id) || 1))
     |> String.replace(~r/:[a-z_]+/, "1")
   end

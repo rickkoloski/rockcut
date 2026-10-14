@@ -25,6 +25,10 @@ defmodule RockcutApi.Accounts.User do
     belongs_to :home_department, RockcutApi.Accounts.Department
 
     field :password, :string, virtual: true, redact: true
+    # D40: the shared tablet this person is acting on for one request (their
+    # staff code came with it). Never cast or stored; the task change log
+    # records it beside the person (`task_events.device_id`).
+    field :on_device_id, :integer, virtual: true
 
     has_many :memberships, RockcutApi.Accounts.Membership
     has_many :departments, through: [:memberships, :department]

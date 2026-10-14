@@ -29,6 +29,7 @@ export type PersonaKey =
   | 'owner2'
   | 'sales1'
   | 'taproomDevice'
+  | 'breweryDevice'
 
 export interface Persona {
   email: string
@@ -61,6 +62,8 @@ export const personas: Record<PersonaKey, Persona> = {
   owner2: { email: 'owner2@rockcut-test.com', name: 'Avery Owner', memberships: {}, isOwner: true },
   sales1: { email: 'sales1@rockcut-test.com', name: 'Robin Pitch', memberships: { sales: 'employee' } },
   taproomDevice: { email: 'taproom.device@rockcut-test.com', name: 'Taproom tablets', memberships: {}, device: { home: 'bar' } },
+  // D40: the brewhouse tablet (the Brewery's task board).
+  breweryDevice: { email: 'brewery.device@rockcut-test.com', name: 'Brewhouse tablet', memberships: {}, device: { home: 'brewery' } },
 }
 
 export const personaKeys = Object.keys(personas) as PersonaKey[]

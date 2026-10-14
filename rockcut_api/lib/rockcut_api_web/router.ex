@@ -6,8 +6,11 @@ defmodule RockcutApiWeb.Router do
   end
 
   # Signed-in people only: shared devices get 403 here (D33 gate 1, deny by default).
+  # Both people pipelines refuse all but the reset flow while a password reset
+  # is required (D42, PasswordResetGate).
   pipeline :authenticated do
     plug RockcutApiWeb.AuthPlug
+    plug RockcutApiWeb.PasswordResetGate
     plug RockcutApiWeb.DeviceGate
   end
 
@@ -15,10 +18,16 @@ defmodule RockcutApiWeb.Router do
   # what a device may do on them is decided by Authz.Device (gate 2).
   pipeline :device_allowed do
     plug RockcutApiWeb.AuthPlug
+    plug RockcutApiWeb.PasswordResetGate
   end
 
   pipeline :brewery do
     plug RockcutApiWeb.ModuleAccessPlug, module: :brewery
+  end
+
+  # D41: the board's department, from `:dept` (404 unless it's assignable).
+  pipeline :task_board do
+    plug RockcutApiWeb.Plugs.TaskBoard
   end
 
   # D37: Taproom pages (members and owners; a Taproom tablet by its home module).
@@ -100,7 +109,7 @@ defmodule RockcutApiWeb.Router do
     resources "/users", UserController, only: [:index, :create, :update]
     put "/users/:user_id/memberships", MembershipController, :update
     post "/users/:id/reset_password", UserController, :reset_password
-    # D37: staff codes (owners + Taproom managers; the user edit dialog)
+    # Staff codes (D37; every department since D40): the user edit dialog
     get "/users/:id/staff_code", StaffCodeController, :show
     put "/users/:id/staff_code", StaffCodeController, :update
     delete "/users/:id/staff_code", StaffCodeController, :delete
@@ -204,6 +213,56 @@ defmodule RockcutApiWeb.Router do
     # Formula execution
     get "/formulas/catalog", FormulaController, :catalog
     post "/formulas/execute", FormulaController, :execute
+  end
+
+  # D41 §3.6: the All departments view, owners only and read-only. Declared
+  # before the boards so it wins over `:dept`; every other `/api/boards/all/...`
+  # route reaches the `TaskBoard` plug, which 404s `all` (no writes here).
+  scope "/api/boards/all", RockcutApiWeb do
+    pipe_through [:api, :authenticated]
+
+    get "/tasks", TaskBoardController, :all
+  end
+
+  # D38 task boards, one per assignable department since D41
+  # (`/api/boards/:dept`): the department's members and owners. Not tied to a
+  # module: each action asks Authz about the board's department.
+  #
+  # D40: what a department's shared tablet uses on its home board (Authz.Device
+  # refuses every other board): the board, a task's series for the dialog,
+  # the Daily items list (the board needs it), task writes and Daily ticks.
+  # Writes from a tablet need a staff code (StaffCodeActing); see the route
+  # matrix test.
+  scope "/api/boards/:dept", RockcutApiWeb do
+    pipe_through [:api, :device_allowed, :task_board]
+
+    get "/tasks", TaskBoardController, :index
+    post "/tasks", TaskBoardController, :create
+    post "/tasks/move_overdue_to_today", TaskBoardController, :move_overdue_to_today
+    patch "/tasks/:id", TaskBoardController, :update
+    delete "/tasks/:id", TaskBoardController, :delete
+    post "/tasks/:id/move", TaskBoardController, :move
+    post "/tasks/:id/complete", TaskBoardController, :complete
+    post "/tasks/:id/uncomplete", TaskBoardController, :uncomplete
+    get "/tasks/:id/series", TaskBoardController, :series
+    post "/tasks/:id/stop_repeating", TaskBoardController, :stop_repeating
+
+    put "/daily_checks/:on_date/:daily_item_id", DailyController, :tick
+    delete "/daily_checks/:on_date/:daily_item_id", DailyController, :untick
+    get "/daily_items", DailyController, :items
+  end
+
+  # A board's History and its Daily items list changes: people only.
+  scope "/api/boards/:dept", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :task_board]
+
+    get "/tasks/history", TaskBoardController, :history
+
+    post "/daily_items", DailyController, :create_item
+    put "/daily_items/order", DailyController, :order_items
+    patch "/daily_items/:id", DailyController, :update_item
+    post "/daily_items/:id/restore", DailyController, :restore_item
+    delete "/daily_items/:id", DailyController, :delete_item
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

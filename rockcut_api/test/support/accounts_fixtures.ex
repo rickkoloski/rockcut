@@ -13,10 +13,32 @@ defmodule RockcutApi.AccountsFixtures do
     name = name || String.capitalize(key)
 
     case Repo.get_by(Department, key: key) do
-      nil -> Repo.insert!(%Department{key: key, name: name})
+      nil -> Repo.insert!(%Department{key: key, name: name}) |> with_defaults()
       dept -> dept
     end
   end
+
+  # D38: on a real DB the migration gives the Brewery its four Daily items; a
+  # test DB has no departments when it migrates, so the fixture adds them.
+  defp with_defaults(%Department{key: "brewery"} = dept) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    RockcutApi.Tasks.DailyItem.defaults()
+    |> Enum.with_index(1)
+    |> Enum.each(fn {name, position} ->
+      Repo.insert!(%RockcutApi.Tasks.DailyItem{
+        department_id: dept.id,
+        name: name,
+        position: position,
+        inserted_at: now,
+        updated_at: now
+      })
+    end)
+
+    dept
+  end
+
+  defp with_defaults(dept), do: dept
 
   @doc "Create a user (no memberships). Pass :is_owner/:active/:email/:password in attrs."
   def user_fixture(attrs \\ %{}) do

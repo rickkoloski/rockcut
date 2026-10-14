@@ -38,9 +38,16 @@ api.interceptors.response.use(
       }
       window.location.reload()
     }
+    // D42 §2.1: the server wants a new password first (a tab left open, say):
+    // useAuth shows "Set a new password" instead of an error.
+    if (error.response?.status === 403 && error.response?.data?.error === 'password_reset_required' && forCurrentToken)
+      window.dispatchEvent(new Event(PASSWORD_RESET_EVENT))
     return Promise.reject(error)
   }
 )
+
+/** D42: dispatched on `window` when the API answers 403 `password_reset_required`. */
+export const PASSWORD_RESET_EVENT = 'rockcut:password-reset-required'
 
 export default api
 

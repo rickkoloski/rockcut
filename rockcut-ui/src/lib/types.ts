@@ -277,6 +277,20 @@ export interface Me {
   staff_codes?: boolean
   // D37: the Buy-a-Beer Board's History tab, import and export (owners, Taproom managers).
   beer_board_manage?: boolean
+  // D41: the task boards this person can open, in department order.
+  task_boards?: TaskBoardEntry[]
+}
+
+/**
+ * D41: one of `/api/me`'s `task_boards`. `manage`: History and Edit Daily
+ * items. Owners also get `{ key: 'all', name: 'All departments' }` last (no
+ * color): the All departments view, not a board.
+ */
+export interface TaskBoardEntry {
+  key: string
+  name: string
+  color?: string | null
+  manage: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────
@@ -579,4 +593,200 @@ export interface BeerBoardWriteResult {
   data: BeerBoardEntry | null
   removed: boolean
   recorded_as?: string
+}
+
+// ── Brewery task board (D38) ────────────────────────────────────────
+
+export type CompletedDisplay = 'planned_day' | 'completed_day' | 'both'
+
+/**
+ * One card on the board. A task can show on two days (spec §7), so `key`
+ * ("<task_id>:<day>", "<task_id>:future" or "<task_id>:unfinished") is the
+ * card's identity, not `id`.
+ */
+export interface TaskCardData {
+  key: string
+  day: string // a date, "future" or "unfinished"
+  id: number
+  title: string
+  notes: string | null
+  due_on: string | null
+  position: number
+  assignee_id: number | null
+  assignee_name: string | null
+  done: boolean
+  completed_at: string | null
+  completed_on: string | null
+  completed_display: CompletedDisplay | null
+  completed_by_id: number | null
+  completed_by_name: string | null
+  created_by_id: number | null
+  created_by_name: string | null
+  /** Tags: "planned Mon 10/12", "done Wed 10/14", "from Future". */
+  planned_on: string | null
+  done_on: string | null
+  from_future: boolean
+  /** Can't be dragged or moved (a finished task shown on the day it was done). */
+  locked: boolean
+  /** Open and planned before today (the amber edge). */
+  overdue: boolean
+  /** D39: one occurrence of a recurring task (the date its rule made it for), and changed on its own. */
+  series_id: number | null
+  series_date: string | null
+  series_exception: boolean
+  /** D39 G2: the series has ended here and nothing open comes after it (no Stop repeating). */
+  series_last: boolean
+  inserted_at: string
+  updated_at: string
+}
+
+/** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */
+export interface TaskSeriesData {
+  id: number
+  title: string
+  notes: string | null
+  assignee_id: number | null
+  frequency: 'weekly' | 'monthly' | 'quarterly' | 'annually'
+  month_rule: 'day' | 'weekday' | null
+  interval: number
+  weekdays: number[] | null
+  day_of_month: number | null
+  week_of_month: number | null
+  weekday: number | null
+  start_date: string
+  until_date: string | null
+  count: number | null
+  /** Open, after this one, not changed on their own. */
+  later_open: number
+  /** Open, after this one, changed on their own. */
+  later_changed: number
+  /**
+   * D42 §2.6: asked with the dialog's repeat params, what saving them "This
+   * and all following" would do: no rule change, an Ends-only change (the
+   * end moves), or a rule change (a split); and what it removes.
+   */
+  change?: SeriesChange
+}
+
+export interface SeriesChange {
+  kind: 'same' | 'ends' | 'rule'
+  removes_open: number
+  removes_changed: number
+}
+
+export interface HeaderShift {
+  id: number
+  position_name: string
+  starts_at: string
+  ends_at: string
+}
+
+export interface DayHeaderData {
+  people: { user_id: number; name: string; hours: number; shifts: HeaderShift[] }[]
+  open_shifts: HeaderShift[]
+  events: { id: number; title: string; all_day: boolean; starts_at: string; ends_at: string }[]
+  no_one_scheduled: boolean
+}
+
+export interface DailyCardItem {
+  daily_item_id: number
+  name: string
+  active: boolean
+  checked: boolean
+  completed_by_name: string | null
+  completed_at: string | null
+}
+
+/** An item on the Daily card's list (D38 §3.6 `/api/boards/:dept/daily_items`). */
+export interface DailyItem {
+  id: number
+  name: string
+  position: number
+  active: boolean
+  /** D42: retired items only: never ticked, so it can be deleted. */
+  deletable?: boolean
+}
+
+/** One Brewery task board change-log entry (D38 History). Daily entries have no task_id. */
+export interface TaskEvent {
+  id: number
+  task_id: number | null
+  action:
+    | 'created'
+    | 'edited'
+    | 'assigned'
+    | 'unassigned'
+    | 'moved'
+    | 'completed'
+    | 'uncompleted'
+    | 'deleted'
+    | 'daily_ticked'
+    | 'daily_unticked'
+    | 'item_added'
+    | 'item_renamed'
+    | 'item_retired'
+    | 'item_reordered'
+    | 'stopped_repeating' // D39
+    | 'item_restored' // D39
+    | 'made_repeating' // D39 Decision 6
+    | 'item_deleted' // D42
+  /** The task's title (or the Daily item's name) when it happened. */
+  title: string
+  actor_id: number | null
+  actor_name: string | null
+  on_shared_device: boolean
+  detail: Record<string, unknown>
+  inserted_at: string
+}
+
+/** A page of History, with names for the user and Daily item ids its details mention. */
+export interface TaskEventPage {
+  data: TaskEvent[]
+  names: { users: Record<string, string>; items: Record<string, string> }
+  page: number
+  total: number
+  per_page: number
+}
+
+export interface DailyCardData {
+  date: string
+  done: number
+  total: number
+  items: DailyCardItem[]
+}
+
+export interface BoardDay {
+  date: string
+  header: DayHeaderData
+  cards: TaskCardData[]
+  daily: DailyCardData
+}
+
+export interface TaskBoardData {
+  from: string
+  to: string
+  today: string
+  days: BoardDay[]
+  unfinished: TaskCardData[]
+  future: TaskCardData[]
+}
+
+/** D41 §3.6: a card on the All departments view, with its board's key. */
+export type AllBoardCard = TaskCardData & { department: string }
+
+/** D41: one board's Daily count on a day of the All departments view. */
+export interface DailyCount {
+  department: string
+  done: number
+  total: number
+}
+
+/** D41 §3.6: `GET /api/boards/all/tasks`, every board together (owners, read-only). */
+export interface AllBoardData {
+  from: string
+  to: string
+  today: string
+  days: { date: string; cards: AllBoardCard[]; daily_counts: DailyCount[] }[]
+  unfinished: AllBoardCard[]
+  future: AllBoardCard[]
 }

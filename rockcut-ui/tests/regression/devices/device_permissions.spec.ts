@@ -26,10 +26,12 @@ test.describe('breweryMgr', () => {
     const tablet = await blankTablet(browser)
     await setUpTablet(tablet.page, await pairingCode(await apiAs('barMgr'), device.id), `${tag} iPad`)
 
-    await page.goto('/')
-    await expect(page.getByRole('button', { name: 'Admin' })).toBeVisible()
-    await page.getByRole('button', { name: 'Admin' }).click()
-    await expect(page.getByRole('button', { name: 'Shared devices' })).toHaveCount(0)
+    // D40 seeds a brewhouse tablet (home Brewery), so breweryMgr has Admin →
+    // Shared devices for it (D33: a manager of some device's home department);
+    // the Taproom tablet isn't listed there.
+    await page.goto('/devices')
+    await expect(page.getByRole('heading', { name: 'Shared devices' })).toBeVisible()
+    await expect(page.getByText(tag)).toHaveCount(0)
 
     const api = await apiAs('breweryMgr')
     expect((await api.post(`/api/devices/${device.id}/pairing_code`)).status()).toBe(403)

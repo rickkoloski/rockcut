@@ -31,6 +31,7 @@ import ExpandLess from '@mui/icons-material/ExpandLess'
 import ExpandMore from '@mui/icons-material/ExpandMore'
 import HomeIcon from '@mui/icons-material/Home'
 import DashboardIcon from '@mui/icons-material/Dashboard'
+import ChecklistIcon from '@mui/icons-material/Checklist'
 import ScienceIcon from '@mui/icons-material/Science'
 import InventoryIcon from '@mui/icons-material/Inventory'
 import AssignmentIcon from '@mui/icons-material/Assignment'
@@ -65,12 +66,14 @@ import useAuthStorageSync from './hooks/useAuthStorageSync'
 import useReconnect from './hooks/useReconnect'
 import { PERSONAL_IDLE_MS, asideDeviceToken, flushSignOuts } from './lib/device'
 import parseApiError from './lib/parseApiError'
+import { realBoards } from './lib/tasks'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
 
 // Pages
 import Home from './pages/Home'
 import BreweryDashboard from './pages/brewery/BreweryDashboard'
+import { OldTaskBoardRedirect, TaskBoardPage, TasksIndex } from './pages/tasks/TaskBoardRoutes'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
 import RecipeDetail from './pages/recipes/RecipeDetail'
@@ -91,6 +94,7 @@ import SharedDevices from './pages/devices/SharedDevices'
 import DeviceNotAvailable from './pages/devices/DeviceNotAvailable'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
+import { ActingCodeDialog } from './components/ActingCode'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -106,6 +110,8 @@ interface NavSection {
   label: string
   icon: ReactNode
   children: NavLeaf[]
+  // A top-level link instead of a collapsible heading (D41: Tasks).
+  path?: string
   // Optional count shown on the section's icon (e.g. total unread).
   badge?: number
   // Shown (disabled) when the section has no children yet.
@@ -128,6 +134,9 @@ const BREWERY_PAGES: NavLeaf[] = [
 const TAPROOM_PAGES: NavLeaf[] = [
   { label: 'Buy-a-Beer Board', path: '/taproom/beer-board', icon: <RedeemIcon /> },
 ]
+
+// D40: the department pages a shared tablet can open (its Tasks board is the top-level Tasks).
+const DEVICE_PAGES = ['/taproom/beer-board']
 
 const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavLeaf[] }> = {
   bar: { label: 'Taproom', icon: <LocalBarIcon />, children: TAPROOM_PAGES },
@@ -169,6 +178,7 @@ function App() {
     user,
     capabilities,
     sharedDevices,
+    taskBoards,
     loadMe,
     logout,
     signOutDevice,
@@ -202,14 +212,16 @@ function App() {
 
   // Channels the user can see — listed individually under Messages in the nav.
   // D36-J (task 4053): a malformed reply (`data: null`) is an empty list, not a crash.
+  // D42: not while a new password is required (the API refuses everything but the reset).
+  const signedInFully = isAuthenticated && !!user && !user.must_reset_password
   const { data: channelsData } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
-    enabled: isAuthenticated,
+    enabled: signedInFully,
     refetchInterval: 20000,
   })
   const channels = Array.isArray(channelsData) ? channelsData : []
 
   const { data: departmentsData } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, {
-    enabled: isAuthenticated,
+    enabled: signedInFully,
   })
   const departments = Array.isArray(departmentsData) ? departmentsData : []
 
@@ -243,9 +255,12 @@ function App() {
       key: `dept:${key}`,
       label,
       icon: meta.icon,
-      children: meta.children,
+      // D40: a shared tablet lists only the pages it can open (the Taproom's
+      // Buy-a-Beer Board); the Brewery's pages are people-only.
+      children: isDevice ? meta.children.filter((c) => DEVICE_PAGES.includes(c.path)) : meta.children,
       emptyLabel: 'Coming soon',
     }))
+    .filter((s) => !isDevice || s.children.length > 0)
 
   const sections: NavSection[] = [
     {
@@ -265,6 +280,8 @@ function App() {
             ]),
       ],
     },
+    // D41: Tasks opens the person's own board (a switcher when there are more).
+    ...(realBoards(taskBoards).length > 0 ? [{ key: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, children: [], path: '/tasks' }] : []),
     ...deptSections,
     ...(canManageUsers || sharedDevices
       ? [
@@ -314,9 +331,10 @@ function App() {
 
   const currentWidth = collapsed ? DRAWER_COLLAPSED_WIDTH : DRAWER_WIDTH
 
+  // `/brewery` (the Dashboard) is exact, so Brewery's other pages don't light it too.
   const isSelected = (path: string) =>
-    path === '/'
-      ? location.pathname === '/'
+    path === '/' || path === '/brewery'
+      ? location.pathname === path
       : location.pathname === path || location.pathname.startsWith(path + '/')
 
   // A section is open if the user toggled it, else auto-open when it holds the
@@ -394,7 +412,9 @@ function App() {
             {sections.map((s) => (
               <Tooltip key={s.key} title={s.label} placement="right" arrow>
                 <ListItemButton
+                  selected={!!s.path && isSelected(s.path)}
                   onClick={() => {
+                    if (s.path) return go(s.path, isMobile)
                     setCollapsed(false)
                     setOpenOverride((o) => ({ ...o, [s.key]: true }))
                   }}
@@ -418,6 +438,18 @@ function App() {
               <ListItemText primary="Home" primaryTypographyProps={{ fontWeight: 600 }} />
             </ListItemButton>
             {sections.map((s) => {
+              if (s.path)
+                return (
+                  <ListItemButton
+                    key={s.key}
+                    selected={isSelected(s.path)}
+                    onClick={() => go(s.path!, isMobile)}
+                    sx={{ mx: 1, borderRadius: 1 }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 36 }}>{sectionIcon(s)}</ListItemIcon>
+                    <ListItemText primary={s.label} primaryTypographyProps={{ fontWeight: 600 }} />
+                  </ListItemButton>
+                )
               const open = sectionOpen(s)
               return (
                 <Box key={s.key}>
@@ -620,6 +652,9 @@ function App() {
           </Toolbar>
         </AppBar>
 
+        {/* D40: the task board's staff-code dialog (the "Acting as" banner is the board's own). */}
+        {isDevice && <ActingCodeDialog />}
+
         {personalOnTablet && (
           <Box
             data-testid="personal-session-banner"
@@ -635,11 +670,18 @@ function App() {
             // D33: a shared tablet's routes. Anything else shows the device-only
             // "Not available" page (lead decision 1); people keep the redirect below.
             <Routes>
-              <Route path="/" element={<Home />} />
+              {/* D40: the brewhouse tablet opens to its board; the Taproom's keeps Home. */}
+              <Route
+                path="/"
+                element={capabilities.home_department === 'brewery' ? <Navigate to="/tasks/brewery" replace /> : <Home />}
+              />
               <Route path="/schedule" element={<Schedule forceView="agenda" />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:key" element={<Messages />} />
               {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
+              {/* D40: its home board only (/api/me lists just that one; any other goes there). */}
+              <Route path="/tasks" element={<TasksIndex />} />
+              <Route path="/tasks/:dept" element={<TaskBoardPage />} />
               <Route path="*" element={<DeviceNotAvailable />} />
             </Routes>
           ) : (
@@ -662,6 +704,11 @@ function App() {
               </>
             )}
             {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
+            {/* D41: a board per department; each page sends a person who can't
+                open it to their own board, or Home. */}
+            <Route path="/tasks" element={<TasksIndex />} />
+            <Route path="/tasks/:dept" element={<TaskBoardPage />} />
+            <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
             <Route path="/schedule" element={<Schedule forceView="agenda" />} />
             {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
             <Route path="/time_off" element={<TimeOff />} />

@@ -17,7 +17,7 @@ Local seed password (only needed to seed, or for login-form specs): put
 `SEED_PASSWORD=<value from the PortableMind file>` in `rockcut_api/.env.synthetic`
 and `rockcut-ui/.env.test.local`. Both are gitignored.
 
-Optional, D37: `SYNTHETIC_STAFF_CODES=bartender1:<code>,bartender2:<code>,barMgr:<code>`
+Optional, D37 (D40 adds `brewer1`): `SYNTHETIC_STAFF_CODES=bartender1:<code>,bartender2:<code>,barMgr:<code>,brewer1:<code>`
 in `rockcut_api/.env.synthetic` gives those personas their staff codes on
 `mix rockcut.synthetic.setup` (values from the same PortableMind file; never in
 git or chat). No spec needs it.
@@ -37,6 +37,7 @@ npx playwright test tests/smoke/roles.spec.ts
 |---|---|---|
 | `setup` | `auth.setup.ts` | Mints persona tokens; every other project depends on it. |
 | `chromium` | every spec except Replace | Parallel. |
+| `brewery-board` | `regression/brewery/task-board-*.spec.ts` (D38) | One worker, beside `chromium`. "Move all to today" moves every open past task on the one shared board, so these specs mustn't overlap. Drag specs use a tall viewport so no drag has to scroll. |
 | `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
 
 **Playwright runs a dependency project in full, whatever path you filter

@@ -1,6 +1,6 @@
 import { create } from 'zustand'
-import api from '../lib/api'
-import type { Me, User, Capabilities } from '../lib/types'
+import api, { PASSWORD_RESET_EVENT } from '../lib/api'
+import type { Me, User, Capabilities, TaskBoardEntry } from '../lib/types'
 import {
   TOKEN_KEY,
   asideDeviceToken,
@@ -20,6 +20,8 @@ interface AuthState {
   sharedDevices: boolean
   staffCodes: boolean
   beerBoardManage: boolean
+  /** D41: the task boards this person can open (D40: a device, its home board). */
+  taskBoards: TaskBoardEntry[]
   isAuthenticated: boolean
   bootstrapped: boolean
   isLoading: boolean
@@ -67,6 +69,7 @@ const useAuth = create<AuthState>((set, get) => ({
   sharedDevices: false,
   staffCodes: false,
   beerBoardManage: false,
+  taskBoards: [],
   isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
   bootstrapped: false,
   isLoading: false,
@@ -112,7 +115,7 @@ const useAuth = create<AuthState>((set, get) => ({
       void signOutOnServer(token)
     }
     localStorage.removeItem(TOKEN_KEY)
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, isAuthenticated: false })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], isAuthenticated: false })
   },
 
   loadMe: (opts) => {
@@ -143,6 +146,7 @@ const useAuth = create<AuthState>((set, get) => ({
           sharedDevices: !!data.shared_devices,
           staffCodes: !!data.staff_codes,
           beerBoardManage: !!data.beer_board_manage,
+          taskBoards: Array.isArray(data.task_boards) ? data.task_boards : [],
           isAuthenticated: true,
           bootstrapped: true,
           unreachable: false,
@@ -165,6 +169,7 @@ const useAuth = create<AuthState>((set, get) => ({
           sharedDevices: false,
           staffCodes: false,
           beerBoardManage: false,
+          taskBoards: [],
           isAuthenticated: false,
           bootstrapped: true,
           unreachable: false,
@@ -206,7 +211,7 @@ const useAuth = create<AuthState>((set, get) => ({
   // "Sign in as me" on a tablet: keep the device token aside and show the login form.
   startPersonalSignIn: () => {
     setDeviceTokenAside()
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, isAuthenticated: false, error: null })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], isAuthenticated: false, error: null })
   },
 
   // Back to the tablet's session: revoke the personal token on the server
@@ -217,5 +222,12 @@ const useAuth = create<AuthState>((set, get) => ({
     if (restoreDeviceToken()) window.location.assign('/')
   },
 }))
+
+// D42 §2.1: the API refused a call because a new password is required: show
+// "Set a new password" (App), as when /api/me says so.
+window.addEventListener(PASSWORD_RESET_EVENT, () => {
+  const { user } = useAuth.getState()
+  if (user && !user.must_reset_password) useAuth.setState({ user: { ...user, must_reset_password: true } })
+})
 
 export default useAuth

@@ -1,6 +1,8 @@
 defmodule RockcutApi.Seeds.SyntheticTest do
   # Not async: tests flip the global :deploy_env and SEED_PASSWORD.
   use RockcutApiWeb.ConnCase, async: false
+
+  import RockcutApi.TaskFixtures
   @moduletag :capture_log
 
   import Ecto.Query
@@ -88,11 +90,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "is idempotent" do
-      assert {:ok, 18} = Synthetic.setup()
+      assert {:ok, 19} = Synthetic.setup()
       first = counts()
-      assert {:ok, 18} = Synthetic.setup()
+      assert {:ok, 19} = Synthetic.setup()
       assert counts() == first
-      assert first[User] == 18
+      # 17 people + 2 tablets (D33, D40).
+      assert first[User] == 19
     end
 
     test "every active persona authenticates; inactive does not" do
@@ -205,6 +208,31 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       statuses = Repo.all(from(r in Request, where: r.user_id == ^brewer1.id, select: r.status))
       assert Enum.sort(statuses) == ["approved", "pending"]
     end
+
+    test "seeds the Colorado week on a Sunday evening (UTC already Monday)" do
+      alias RockcutApi.Tasks
+      alias RockcutApi.Scheduling.Recurrence
+
+      # Sunday 2026-10-11, 7 pm MDT = Monday 01:00 UTC.
+      now = ~U[2026-10-12 01:00:00Z]
+      sunday = Tasks.today_at(now)
+      assert sunday == ~D[2026-10-11]
+
+      {:ok, _} = Synthetic.setup(sunday)
+
+      week_start = Recurrence.local_midnight(~D[2026-10-05])
+      week_end = Recurrence.local_midnight(~D[2026-10-12])
+
+      published =
+        Repo.all(from(s in Shift, where: s.status == "published", select: s.starts_at))
+
+      assert length(published) == 18
+
+      for starts <- published do
+        assert DateTime.compare(starts, week_start) != :lt
+        assert DateTime.compare(starts, week_end) == :lt
+      end
+    end
   end
 
   describe "reset/0" do
@@ -214,7 +242,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       bartender = Accounts.get_user_by_email("bartender1@rockcut-test.com")
       Repo.insert!(%Message{channel_key: "all", user_id: bartender.id, body: "agent chatter"})
 
-      assert {:ok, 18} = Synthetic.reset()
+      assert {:ok, 19} = Synthetic.reset()
       assert counts() == baseline
     end
   end
@@ -242,11 +270,13 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     test "mint_tokens/0 covers every active persona" do
       {:ok, _} = Synthetic.setup()
       tokens = Synthetic.mint_tokens()
-      # 16 active people + the taproomDevice tablet (D33) + D34's spare sessions.
-      assert map_size(tokens) == 18
+      # 16 active people + the taproomDevice and breweryDevice tablets (D33,
+      # D40) + D34's spare sessions.
+      assert map_size(tokens) == 19
       assert %{email: "bartender2@rockcut-test.com", tokens: spares} = tokens["spares"]
       assert length(spares) == 40 and length(Enum.uniq(spares)) == 40
       assert "dev_" <> _ = tokens["taproomDevice"].token
+      assert "dev_" <> _ = tokens["breweryDevice"].token
       refute Map.has_key?(tokens, "inactive")
       # D34: a person's minted token is a real revocable session.
       assert "ses_" <> _ = tokens["owner"].token
@@ -303,7 +333,28 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert body["capabilities"]["modules"] == ["bar", "schedule"]
     end
 
+    test "D40: breweryDevice is at home in the Brewery and opens only its board", %{conn: conn} do
+      {:ok, _} = Synthetic.setup()
+      d = Accounts.get_user_by_email("brewery.device@rockcut-test.com")
+      assert d.kind == "device"
+      assert d.name == "Brewhouse tablet"
+      assert d.home_department_id == AccountsFixtures.department_fixture("brewery").id
+      assert d.memberships == []
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer #{Synthetic.mint_token("breweryDevice")}")
+        |> get(~p"/api/me")
+        |> json_response(200)
+
+      assert body["capabilities"]["modules"] == ["brewery", "schedule"]
+      assert [%{"key" => "brewery", "manage" => false}] = body["task_boards"]
+    end
+
     test "a pairing code for it works in the real exchange", %{conn: conn} do
+      # The limiter's counters are global; another module's wrong codes in the
+      # same 10-minute window would make this exchange a 429.
+      RockcutApi.Devices.PairingRateLimiter.reset()
       {:ok, _} = Synthetic.setup()
       code = Synthetic.pairing_code("taproomDevice")
 
@@ -392,6 +443,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Repo.aggregate(Event, :count) == 0
     end
 
+    test "D40: brewer1 (Brewery only) gets a code from the list too" do
+      with_codes(@codes <> ",brewer1:4444", fn -> {:ok, _} = Synthetic.setup() end)
+      assert code_of("brewer1") == "4444"
+      assert StaffCodes.resolve("4444").email == "brewer1@rockcut-test.com"
+    end
+
     test "sets the listed personas' codes from SYNTHETIC_STAFF_CODES; they resolve" do
       with_codes(@codes, fn -> {:ok, _} = Synthetic.setup() end)
 
@@ -446,8 +503,9 @@ defmodule RockcutApi.Seeds.SyntheticTest do
         with_codes("nobody:1111", fn -> Synthetic.setup() end)
       end
 
-      assert_raise ArgumentError, ~r/can't hold a staff code.*brewer1/, fn ->
-        with_codes("brewer1:1111", fn -> Synthetic.setup() end)
+      # D40: any employee may hold one; someone in no department may not.
+      assert_raise ArgumentError, ~r/can't hold a staff code.*noDept/, fn ->
+        with_codes("noDept:1111", fn -> Synthetic.setup() end)
       end
     end
 
@@ -478,6 +536,310 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.setup() end) end)
       with_codes(nil, fn -> capture_log(fn -> {:ok, _} = Synthetic.reset() end) end)
       assert Repo.aggregate(Entry, :count) == 5
+    end
+  end
+
+  describe "Brewery task board (D38)" do
+    alias RockcutApi.Tasks
+    alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}
+    alias RockcutApi.Scheduling.ScheduleEvent
+
+    # The Brewery's one-off [SEED] tasks (D39's recurring ones are checked on
+    # their own; D41's other boards below).
+    defp seed_tasks do
+      brewery = brewery_board()
+
+      Repo.all(
+        from(t in Task,
+          where:
+            like(t.title, "[SEED]%") and is_nil(t.series_id) and
+              t.department_id == ^brewery.id,
+          order_by: [t.due_on, t.position, t.id],
+          select: {t.title, t.due_on, t.position, t.completed_on, t.completed_display}
+        )
+      )
+    end
+
+    defp checks do
+      Repo.all(
+        from(c in DailyCheck,
+          join: i in assoc(c, :daily_item),
+          order_by: [c.on_date, i.position],
+          select: {c.on_date, i.name}
+        )
+      )
+    end
+
+    defp item_names,
+      do: Enum.map(Tasks.list_items(brewery_board()), &{&1.name, &1.position})
+
+    defp board_lists do
+      Repo.all(
+        from(t in Task,
+          where: not is_nil(t.due_on) or is_nil(t.completed_at),
+          order_by: [t.due_on, t.position],
+          select: {{t.department_id, t.due_on}, t.position}
+        )
+      )
+      # D41: each board has its own lists.
+      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
+    end
+
+    test "seeds tasks, Daily checks and a Brewery event relative to today" do
+      {:ok, _} = Synthetic.setup()
+      today = Tasks.today()
+      {:ok, board} = Tasks.board(brewery_board(), Date.add(today, -3), Date.add(today, 13), today)
+
+      assert length(seed_tasks()) == 17
+      # D38's two, plus Keg Wash's two past Wednesdays (D39).
+      assert length(board.unfinished) == 4
+      assert length(board.future) == 2
+
+      displays = for {_, _, _, on, d} <- seed_tasks(), on, uniq: true, do: d
+      assert Enum.sort(displays) == ~w(both completed_day planned_day)
+
+      cards = Enum.flat_map(board.days, & &1.cards)
+      assert Enum.any?(cards, & &1.task.assignee_id)
+      assert Enum.any?(cards, & &1.locked)
+
+      daily = Map.new(board.days, &{&1.date, &1.daily})
+      assert %{done: 3, total: 4} = daily[Date.add(today, -1)]
+      assert %{done: 1, total: 4} = daily[today]
+
+      brewery = Repo.get_by!(Department, key: "brewery")
+
+      assert [%ScheduleEvent{all_day: true, status: "published"} = event] =
+               Repo.all(
+                 from(e in ScheduleEvent,
+                   where: e.department_id == ^brewery.id and like(e.notes, "[SEED]%")
+                 )
+               )
+
+      monday = Date.beginning_of_week(Tasks.today())
+      assert Tasks.today_at(event.starts_at) == Date.add(monday, 2)
+    end
+
+    test "setup twice gives the same tasks, checks and items" do
+      {:ok, _} = Synthetic.setup()
+      first = {seed_tasks(), checks(), item_names(), Repo.aggregate(ScheduleEvent, :count)}
+      {:ok, _} = Synthetic.setup()
+
+      assert {seed_tasks(), checks(), item_names(), Repo.aggregate(ScheduleEvent, :count)} ==
+               first
+    end
+
+    test "cleanup_temp removes [TEST-TEMP] tasks and items; the lists stay dense" do
+      {:ok, _} = Synthetic.setup()
+      mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
+      today = Tasks.today()
+
+      {:ok, _} = Tasks.create(brewery_board(), %{title: "[TEST-TEMP] first", due_on: today}, mgr)
+      {:ok, kept} = Tasks.create(brewery_board(), %{title: "Real task", due_on: today}, mgr)
+      {:ok, _} = Tasks.create(brewery_board(), %{title: "[TEST-TEMP] later"}, mgr)
+      {:ok, item} = Tasks.create_item(brewery_board(), %{name: "[TEST-TEMP] Hoses"}, mgr)
+      {:ok, _} = Tasks.tick(brewery_board(), today, item, mgr, today)
+
+      :ok = Synthetic.cleanup_temp()
+
+      refute Repo.exists?(from(t in Task, where: like(t.title, "[TEST-TEMP]%")))
+      refute Repo.exists?(from(i in DailyItem, where: like(i.name, "[TEST-TEMP]%")))
+      assert Repo.get(Task, kept.id)
+      assert Enum.map(item_names(), &elem(&1, 0)) == DailyItem.defaults()
+
+      for {_day, positions} <- board_lists(),
+          do: assert(positions == Enum.to_list(1..length(positions)))
+    end
+
+    defp seed_series do
+      Repo.all(
+        from(s in TaskSeries,
+          left_join: t in assoc(s, :tasks),
+          group_by: [s.id, s.title, s.frequency, s.start_date],
+          order_by: s.title,
+          select: {s.title, s.frequency, s.start_date, count(t.id)}
+        )
+      )
+    end
+
+    test "seeds three recurring tasks, Keg Wash with two open past Wednesdays (D39)" do
+      {:ok, _} = Synthetic.setup()
+      today = Tasks.today()
+
+      assert [
+               {"[SEED] Calibrate pH meter", "quarterly", ^today, _},
+               {"[SEED] Glycol check", "monthly", ^today, _},
+               {"[SEED] Keg Wash", "weekly", keg_start, keg_count}
+             ] = seed_series()
+
+      assert Date.day_of_week(keg_start) == 3
+      assert Date.diff(today, keg_start) in 8..14
+      assert keg_count >= 54
+
+      {:ok, board} = Tasks.board(brewery_board(), Date.add(today, -3), Date.add(today, 27), today)
+      keg = Enum.filter(board.unfinished, &(&1.task.title == "[SEED] Keg Wash"))
+      assert length(keg) == 2
+      assert Enum.all?(keg, & &1.task.series_id)
+
+      cards = Enum.flat_map(board.days, & &1.cards)
+      assert Enum.any?(cards, &(&1.task.title == "[SEED] Glycol check" and &1.task.series_id))
+      assert Enum.any?(cards, &(&1.task.title == "[SEED] Keg Wash" and &1.task.series_id))
+    end
+
+    test "setup twice gives the same series; cleanup_temp removes [TEST-TEMP] series" do
+      {:ok, _} = Synthetic.setup()
+      first = seed_series()
+      {:ok, _} = Synthetic.setup()
+      assert seed_series() == first
+
+      mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
+      today = Tasks.today()
+
+      {:ok, temp} =
+        Tasks.create(
+          brewery_board(),
+          %{title: "[TEST-TEMP] Hoses", due_on: today, repeat: "annually"},
+          mgr,
+          today
+        )
+
+      # An occurrence retitled on its own still goes with its series.
+      {:ok, _} =
+        Tasks.update(brewery_board(), temp, %{title: "Renamed"}, mgr, scope: "this")
+
+      :ok = Synthetic.cleanup_temp()
+      refute Repo.get(TaskSeries, temp.series_id)
+      refute Repo.exists?(from(t in Task, where: t.series_id == ^temp.series_id))
+      refute Repo.get(Task, temp.id)
+      assert seed_series() == first
+
+      for {_day, positions} <- board_lists(),
+          do: assert(positions == Enum.to_list(1..length(positions)))
+    end
+
+    test "reset deletes every Daily check and restores the four default items" do
+      {:ok, _} = Synthetic.setup()
+      mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
+      today = Tasks.today()
+      [backups, gravities | _] = Tasks.list_items(brewery_board())
+
+      {:ok, _} = Tasks.tick(brewery_board(), Date.add(today, -5), gravities, mgr, today)
+      {:ok, _} = Tasks.rename_item(brewery_board(), gravities, "Gravity", mgr)
+      {:ok, _} = Tasks.retire_item(brewery_board(), backups, mgr)
+      {:ok, _} = Tasks.create_item(brewery_board(), %{name: "Hoses"}, mgr)
+
+      {:ok, _} = Synthetic.reset()
+
+      assert item_names() == Enum.with_index(DailyItem.defaults(), 1)
+      assert Enum.map(checks(), &elem(&1, 0)) |> Enum.uniq() == [Date.add(today, -1), today]
+      assert length(seed_tasks()) == 17
+      assert length(seed_series()) == 3
+    end
+  end
+
+  describe "the other boards (D41)" do
+    alias RockcutApi.Tasks
+    alias RockcutApi.Tasks.{DailyItem, Task, TaskSeries}
+
+    defp board_titles(key) do
+      dept = task_board(key)
+
+      Repo.all(
+        from(t in Task,
+          where: t.department_id == ^dept.id,
+          order_by: [t.title],
+          select: {t.title, t.due_on, t.assignee_id}
+        )
+      )
+    end
+
+    defp persona_id(key), do: Accounts.get_user_by_email(Synthetic.persona!(key).email).id
+
+    test "seeds the Taproom (two for bartender1, one unassigned, one 2 days ago, one on Future) and one Office task; Sales empty; Daily items only on the Brewery" do
+      {:ok, _} = Synthetic.setup()
+      today = Tasks.today()
+      bartender = persona_id("bartender1")
+
+      taproom = board_titles("bar")
+      assert length(taproom) == 5
+      assert Enum.all?(taproom, fn {title, _, _} -> String.starts_with?(title, "[SEED] ") end)
+      assert Enum.count(taproom, &(elem(&1, 2) == bartender)) == 2
+
+      {:ok, board} = Tasks.board(task_board("bar"), today, Date.add(today, 6), today)
+      assert [%{planned_on: past}] = board.unfinished
+      assert past == Date.add(today, -2)
+      assert [%{task: %{assignee_id: nil}}] = board.future
+      cards = Enum.flat_map(board.days, & &1.cards)
+      assert Enum.any?(cards, &is_nil(&1.task.assignee_id))
+      assert Enum.all?(board.days, &(&1.daily.total == 0))
+
+      assert [{"[SEED] Run payroll", due, office1}] = board_titles("office")
+      assert due == Date.add(today, 1)
+      assert office1 == persona_id("office1")
+      assert board_titles("sales") == []
+
+      for key <- ~w(bar office sales),
+          do: assert(Tasks.list_items(task_board(key)) == [], key)
+    end
+
+    test "setup twice gives the same boards" do
+      {:ok, _} = Synthetic.setup()
+      first = for key <- ~w(bar office sales), do: board_titles(key)
+      {:ok, _} = Synthetic.setup()
+      assert for(key <- ~w(bar office sales), do: board_titles(key)) == first
+    end
+
+    test "cleanup_temp removes a [TEST-TEMP] Taproom task, series and Daily item; keeps real ones" do
+      {:ok, _} = Synthetic.setup()
+      mgr = Accounts.get_user!(persona_id("barMgr"))
+      today = Tasks.today()
+      bar = task_board("bar")
+
+      {:ok, temp} = Tasks.create(bar, %{title: "[TEST-TEMP] Lines", due_on: today}, mgr, today)
+
+      {:ok, series} =
+        Tasks.create(
+          bar,
+          %{
+            title: "[TEST-TEMP] Kegs",
+            due_on: today,
+            repeat: "monthly",
+            repeat_month_rule: "day",
+            repeat_day_of_month: 1
+          },
+          mgr,
+          today
+        )
+
+      {:ok, real} = Tasks.create(bar, %{title: "Real taproom task", due_on: today}, mgr, today)
+      {:ok, item} = Tasks.create_item(bar, %{name: "[TEST-TEMP] Lines cleaned"}, mgr)
+
+      :ok = Synthetic.cleanup_temp()
+
+      refute Repo.get(Task, temp.id)
+      refute Repo.get(TaskSeries, series.series_id)
+      refute Repo.exists?(from(t in Task, where: t.series_id == ^series.series_id))
+      refute Repo.get(DailyItem, item.id)
+      assert Repo.get(Task, real.id)
+      assert length(board_titles("bar")) == 6
+
+      {:ok, board} = Tasks.board(bar, today, today, today)
+
+      assert Enum.map(hd(board.days).cards, & &1.task.position) |> Enum.sort() ==
+               Enum.to_list(1..length(hd(board.days).cards))
+    end
+
+    test "reset clears the other boards' Daily items and rebuilds their [SEED] tasks" do
+      {:ok, _} = Synthetic.setup()
+      mgr = Accounts.get_user!(persona_id("barMgr"))
+      {:ok, _} = Tasks.create_item(task_board("bar"), %{name: "Lines cleaned"}, mgr)
+      {:ok, _} = Tasks.create(task_board("bar"), %{title: "[SEED] Stray"}, mgr)
+
+      {:ok, _} = Synthetic.reset()
+
+      assert Tasks.list_items(task_board("bar")) == []
+      assert length(board_titles("bar")) == 5
+      assert length(board_titles("office")) == 1
+      assert Enum.map(Tasks.list_items(task_board("brewery")), & &1.name) == DailyItem.defaults()
     end
   end
 end

@@ -212,4 +212,99 @@ defmodule RockcutApi.AuthzTest do
       refute Authz.can_manage_user?(p["barMgr"], p["brewer1"])
     end
   end
+
+  describe "D41 task boards (per department)" do
+    # Each persona's departments and role, as the synthetic personas have
+    # them: the expectations, written out rather than asked of Authz.
+    @roles %{
+      "brewer1" => %{"brewery" => :employee},
+      "breweryMgr" => %{"brewery" => :manager},
+      "bartender1" => %{"bar" => :employee},
+      "barMgr" => %{"bar" => :manager},
+      "floater" => %{"bar" => :employee, "brewery" => :employee},
+      "splitRole" => %{"bar" => :manager, "brewery" => :employee},
+      "dualMgr" => %{"bar" => :manager, "office" => :manager},
+      "office1" => %{"office" => :employee},
+      "sales1" => %{"sales" => :employee},
+      "noDept" => %{}
+    }
+    @boards ~w(brewery bar office sales)
+
+    setup do
+      p = personas()
+      device = device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
+      %{p: p, device: device, depts: departments()}
+    end
+
+    test "a department's members read and write its board; only its managers get History and Daily items",
+         %{p: p, depts: depts} do
+      for {key, roles} <- @roles, board <- @boards do
+        dept = depts[board]
+        member = Map.has_key?(roles, board)
+        manager = roles[board] == :manager
+
+        for action <- [:read, :write],
+            do:
+              assert(
+                Authz.can?(p[key], action, {:tasks, dept}) == member,
+                "#{key} #{action} #{board}"
+              )
+
+        assert Authz.can?(p[key], :history, {:tasks, dept}) == manager, "#{key} history #{board}"
+
+        assert Authz.can?(p[key], :manage, {:daily_items, dept}) == manager,
+               "#{key} manage #{board}"
+      end
+    end
+
+    test "a manager of another department gets nothing here; a member there isn't one here",
+         %{p: p, depts: depts} do
+      # barMgr manages the Taproom only; breweryMgr the Brewery only.
+      for action <- [:read, :write, :history],
+          do: refute(Authz.can?(p["barMgr"], action, {:tasks, depts["brewery"]}))
+
+      refute Authz.can?(p["barMgr"], :manage, {:daily_items, depts["brewery"]})
+      refute Authz.can?(p["breweryMgr"], :read, {:tasks, depts["bar"]})
+      # splitRole: Taproom manager, Brewery employee.
+      assert Authz.can?(p["splitRole"], :history, {:tasks, depts["bar"]})
+      refute Authz.can?(p["splitRole"], :history, {:tasks, depts["brewery"]})
+    end
+
+    test "owners get everything on every board", %{p: p, depts: depts} do
+      for board <- @boards, owner <- ~w(owner owner2) do
+        for action <- [:read, :write, :history],
+            do: assert(Authz.can?(p[owner], action, {:tasks, depts[board]}))
+
+        assert Authz.can?(p[owner], :manage, {:daily_items, depts[board]})
+      end
+    end
+
+    # D40: a tablet reads and writes its home board (writes as a person with
+    # a staff code); never History, Daily items or another board.
+    test "the Brewery's shared device: read and write on its board only",
+         %{device: d, depts: depts} do
+      for board <- @boards do
+        for action <- [:read, :write],
+            do:
+              assert(
+                Authz.can?(d, action, {:tasks, depts[board]}) == (board == "brewery"),
+                "#{action} #{board}"
+              )
+
+        refute Authz.can?(d, :history, {:tasks, depts[board]}), "history #{board}"
+        refute Authz.can?(d, :manage, {:daily_items, depts[board]})
+      end
+    end
+
+    test "who can be assigned a task: active members of the board's department, and owners",
+         %{p: p, device: d, depts: depts} do
+      for {key, roles} <- @roles,
+          board <- @boards,
+          do: assert(Authz.can_take_task?(p[key], depts[board]) == Map.has_key?(roles, board))
+
+      for board <- @boards, do: assert(Authz.can_take_task?(p["owner"], depts[board]))
+      refute Authz.can_take_task?(d, depts["brewery"])
+      refute Authz.can_take_task?(%{p["brewer1"] | active: false}, depts["brewery"])
+    end
+  end
 end
