@@ -277,8 +277,20 @@ export interface Me {
   staff_codes?: boolean
   // D37: the Buy-a-Beer Board's History tab, import and export (owners, Taproom managers).
   beer_board_manage?: boolean
-  // D38: the Brewery task board's History and Edit Daily items (owners, Brewery managers).
-  brewery_tasks_manage?: boolean
+  // D41: the task boards this person can open, in department order.
+  task_boards?: TaskBoardEntry[]
+}
+
+/**
+ * D41: one of `/api/me`'s `task_boards`. `manage`: History and Edit Daily
+ * items. Owners also get `{ key: 'all', name: 'All departments' }` last (no
+ * color): the All departments view, not a board.
+ */
+export interface TaskBoardEntry {
+  key: string
+  name: string
+  color?: string | null
+  manage: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────
@@ -628,7 +640,7 @@ export interface TaskCardData {
   updated_at: string
 }
 
-/** D39 `GET /api/brewery/tasks/:id/series`: the rule and the open occurrences after this one. */
+/** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */
 export interface TaskSeriesData {
   id: number
   title: string
@@ -673,7 +685,7 @@ export interface DailyCardItem {
   completed_at: string | null
 }
 
-/** An item on the Daily card's list (D38 §3.6 `/api/brewery/daily_items`). */
+/** An item on the Daily card's list (D38 §3.6 `/api/boards/:dept/daily_items`). */
 export interface DailyItem {
   id: number
   name: string
@@ -742,4 +754,24 @@ export interface TaskBoardData {
   days: BoardDay[]
   unfinished: TaskCardData[]
   future: TaskCardData[]
+}
+
+/** D41 §3.6: a card on the All departments view, with its board's key. */
+export type AllBoardCard = TaskCardData & { department: string }
+
+/** D41: one board's Daily count on a day of the All departments view. */
+export interface DailyCount {
+  department: string
+  done: number
+  total: number
+}
+
+/** D41 §3.6: `GET /api/boards/all/tasks`, every board together (owners, read-only). */
+export interface AllBoardData {
+  from: string
+  to: string
+  today: string
+  days: { date: string; cards: AllBoardCard[]; daily_counts: DailyCount[] }[]
+  unfinished: AllBoardCard[]
+  future: AllBoardCard[]
 }

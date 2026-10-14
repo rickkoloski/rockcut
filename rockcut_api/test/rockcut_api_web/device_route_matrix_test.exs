@@ -200,24 +200,26 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:get, "/api/formulas/catalog"},
     {:post, "/api/formulas/execute"},
     # D38 Brewery task board: people only until D40 adds the brewhouse tablet.
-    {:get, "/api/brewery/tasks"},
-    {:get, "/api/brewery/tasks/history"},
-    {:post, "/api/brewery/tasks"},
-    {:post, "/api/brewery/tasks/move_overdue_to_today"},
-    {:patch, "/api/brewery/tasks/:id"},
-    {:delete, "/api/brewery/tasks/:id"},
-    {:post, "/api/brewery/tasks/:id/move"},
-    {:post, "/api/brewery/tasks/:id/complete"},
-    {:post, "/api/brewery/tasks/:id/uncomplete"},
-    {:get, "/api/brewery/tasks/:id/series"},
-    {:post, "/api/brewery/tasks/:id/stop_repeating"},
-    {:put, "/api/brewery/daily_checks/:on_date/:daily_item_id"},
-    {:delete, "/api/brewery/daily_checks/:on_date/:daily_item_id"},
-    {:get, "/api/brewery/daily_items"},
-    {:post, "/api/brewery/daily_items"},
-    {:put, "/api/brewery/daily_items/order"},
-    {:patch, "/api/brewery/daily_items/:id"},
-    {:post, "/api/brewery/daily_items/:id/restore"}
+    # D41 §3.6: the All departments view, owners only.
+    {:get, "/api/boards/all/tasks"},
+    {:get, "/api/boards/:dept/tasks"},
+    {:get, "/api/boards/:dept/tasks/history"},
+    {:post, "/api/boards/:dept/tasks"},
+    {:post, "/api/boards/:dept/tasks/move_overdue_to_today"},
+    {:patch, "/api/boards/:dept/tasks/:id"},
+    {:delete, "/api/boards/:dept/tasks/:id"},
+    {:post, "/api/boards/:dept/tasks/:id/move"},
+    {:post, "/api/boards/:dept/tasks/:id/complete"},
+    {:post, "/api/boards/:dept/tasks/:id/uncomplete"},
+    {:get, "/api/boards/:dept/tasks/:id/series"},
+    {:post, "/api/boards/:dept/tasks/:id/stop_repeating"},
+    {:put, "/api/boards/:dept/daily_checks/:on_date/:daily_item_id"},
+    {:delete, "/api/boards/:dept/daily_checks/:on_date/:daily_item_id"},
+    {:get, "/api/boards/:dept/daily_items"},
+    {:post, "/api/boards/:dept/daily_items"},
+    {:put, "/api/boards/:dept/daily_items/order"},
+    {:patch, "/api/boards/:dept/daily_items/:id"},
+    {:post, "/api/boards/:dept/daily_items/:id/restore"}
   ]
 
   defp app_routes do
@@ -374,6 +376,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   defp fill(path, shift \\ nil) do
     path
     |> String.replace(":key", "all")
+    |> String.replace(":dept", "brewery")
     |> String.replace(":id", to_string((shift && shift.id) || 1))
     |> String.replace(~r/:[a-z_]+/, "1")
   end

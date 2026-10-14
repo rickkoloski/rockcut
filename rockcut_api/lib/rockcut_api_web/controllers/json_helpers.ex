@@ -49,20 +49,24 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   # Flags such as `shared_devices` (D33), `staff_codes` and `beer_board_manage`
-  # (D37) and `brewery_tasks_manage` (D38) sit beside `capabilities`, whose keys
-  # the D31 parity suite pins.
+  # (D37) and `task_boards` (D41) sit beside
+  # `capabilities`, whose keys the D31 parity suite pins.
   def me(user, capabilities, flags \\ %{}) do
     Map.merge(
       %{
         shared_devices: false,
         staff_codes: false,
         beer_board_manage: false,
-        brewery_tasks_manage: false
+        task_boards: []
       },
       flags
     )
     |> Map.merge(%{user: user(user), capabilities: capabilities})
   end
+
+  @doc "One of `/api/me`'s `task_boards` (D41): `key`, `name`, `color`, `manage`."
+  def task_board_entry(%{department: d, manage: manage}),
+    do: %{key: d.key, name: d.name, color: d.color, manage: manage}
 
   # ── Buy-a-Beer Board (D37) ─────────────────────────────────────────
 
@@ -97,26 +101,50 @@ defmodule RockcutApiWeb.JSONHelpers do
   # ── Brewery task board (D38) ───────────────────────────────────────
 
   @doc """
-  The board `GET` (`BreweryTasks.board/3`). Dates are `YYYY-MM-DD`; card keys
+  The board `GET` (`Tasks.board/3`). Dates are `YYYY-MM-DD`; card keys
   are `"<task_id>:<day>"`, `"<task_id>:future"` or `"<task_id>:unfinished"`.
   """
-  def brewery_board(b) do
+  def task_board(b) do
     %{
       from: b.from,
       to: b.to,
       today: b.today,
-      days: Enum.map(b.days, &brewery_board_day/1),
-      unfinished: Enum.map(b.unfinished, &brewery_task_card/1),
-      future: Enum.map(b.future, &brewery_task_card/1)
+      days: Enum.map(b.days, &task_board_day/1),
+      unfinished: Enum.map(b.unfinished, &task_card/1),
+      future: Enum.map(b.future, &task_card/1)
     }
   end
 
-  defp brewery_board_day(d) do
+  @doc """
+  The All departments `GET` (`Tasks.all_boards/3`, D41 §3.6): a board's shape
+  without `header`; every card carries its `department` key, and each day has
+  `daily_counts` (`[%{department, done, total}]`, boards with items that day)
+  in place of `daily`.
+  """
+  def all_task_boards(b) do
+    %{
+      from: b.from,
+      to: b.to,
+      today: b.today,
+      days:
+        Enum.map(b.days, fn d ->
+          %{
+            date: d.date,
+            cards: Enum.map(d.cards, &task_card/1),
+            daily_counts: d.daily_counts
+          }
+        end),
+      unfinished: Enum.map(b.unfinished, &task_card/1),
+      future: Enum.map(b.future, &task_card/1)
+    }
+  end
+
+  defp task_board_day(d) do
     %{
       date: d.date,
       header: brewery_day_header(d.header),
-      cards: Enum.map(d.cards, &brewery_task_card/1),
-      daily: brewery_daily_card(d.date, d.daily)
+      cards: Enum.map(d.cards, &task_card/1),
+      daily: daily_card(d.date, d.daily)
     }
   end
 
@@ -155,9 +183,9 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  def brewery_task_card(c) do
+  def task_card(c) do
     c.task
-    |> brewery_task()
+    |> task()
     |> Map.merge(%{
       key: "#{c.task.id}:#{c.day}",
       day: c.day,
@@ -167,9 +195,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       locked: c.locked,
       overdue: c.overdue
     })
+    |> Map.merge(Map.take(c, [:department]))
   end
 
-  def brewery_task(t) do
+  def task(t) do
     %{
       id: t.id,
       title: t.title,
@@ -195,8 +224,8 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  @doc "A recurring task's rule (D39 `GET /api/brewery/tasks/:id/series`), for the dialog."
-  def brewery_task_series(s, preview) do
+  @doc "A recurring task's rule (D39 `GET /api/boards/brewery/tasks/:id/series`), for the dialog."
+  def task_series(s, preview) do
     %{
       id: s.id,
       title: s.title,
@@ -217,7 +246,7 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  defp brewery_daily_card(date, card) do
+  defp daily_card(date, card) do
     %{
       date: date,
       done: card.done,
@@ -236,11 +265,11 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  def brewery_daily_item(i) do
+  def daily_item(i) do
     %{id: i.id, name: i.name, position: i.position, active: i.active}
   end
 
-  def brewery_task_event(ev) do
+  def task_event(ev) do
     %{
       id: ev.id,
       task_id: ev.task_id,

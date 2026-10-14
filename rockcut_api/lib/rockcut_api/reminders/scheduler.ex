@@ -5,12 +5,12 @@ defmodule RockcutApi.Reminders.Scheduler do
   process; the scan itself is idempotent. Disabled in :test.
 
   D39: each tick also tops up recurring Brewery tasks to today + 12 months
-  (`BreweryTasks.Series.top_up/1`; a no-op after the day's first run). Each job
+  (`Tasks.Series.top_up/1`; a no-op after the day's first run). Each job
   is rescued on its own, so one failing never stops the other.
   """
   use GenServer
   require Logger
-  alias RockcutApi.{BreweryTasks, Reminders}
+  alias RockcutApi.{Tasks, Reminders}
 
   @default_interval_ms 300_000
 
@@ -35,7 +35,7 @@ defmodule RockcutApi.Reminders.Scheduler do
     end
 
     try do
-      BreweryTasks.Series.top_up(BreweryTasks.today())
+      Tasks.Series.top_up(Tasks.today())
     rescue
       e -> Logger.error("recurring task top-up failed: #{inspect(e)}")
     end

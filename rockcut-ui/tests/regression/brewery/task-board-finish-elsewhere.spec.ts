@@ -21,7 +21,7 @@ async function pastTask(label: string, daysAgo = 2) {
 }
 
 async function history(taskId: number) {
-  const res = await (await apiAs('breweryMgr')).get('/api/brewery/tasks/history', { params: { task_id: String(taskId) } })
+  const res = await (await apiAs('breweryMgr')).get('/api/boards/brewery/tasks/history', { params: { task_id: String(taskId) } })
   expect(res.status()).toBe(200)
   return (await res.json()).data as { action: string; detail: Record<string, unknown> }[]
 }
@@ -136,7 +136,7 @@ test('S8g: a future-day task finished early asks too; On today moves its card to
 
 test('S8f: completing a past-day task without `display` is 422 display_required', async () => {
   const task = await pastTask('S8f Carb FV3')
-  const res = await (await apiAs('brewer1')).post(`/api/brewery/tasks/${task.id}/complete`, { data: {} })
+  const res = await (await apiAs('brewer1')).post(`/api/boards/brewery/tasks/${task.id}/complete`, { data: {} })
   expect(res.status()).toBe(422)
   expect((await res.json()).error).toBe('display_required')
 })

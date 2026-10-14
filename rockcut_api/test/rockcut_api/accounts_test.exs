@@ -1,6 +1,8 @@
 defmodule RockcutApi.AccountsTest do
   use RockcutApi.DataCase
 
+  import RockcutApi.TaskFixtures
+
   alias RockcutApi.Accounts
   import RockcutApi.AccountsFixtures
 
@@ -69,9 +71,9 @@ defmodule RockcutApi.AccountsTest do
   end
 
   describe "leaving the Brewery (D38 S49)" do
-    alias RockcutApi.BreweryTasks
+    alias RockcutApi.Tasks
     alias RockcutApi.Authz
-    alias RockcutApi.BreweryTasks.{DailyCheck, Event, Task}
+    alias RockcutApi.Tasks.{DailyCheck, Event, Task}
 
     setup do
       mgr = user_with_role("manager", "brewery")
@@ -79,14 +81,22 @@ defmodule RockcutApi.AccountsTest do
       today = ~D[2026-10-14]
 
       {:ok, open} =
-        BreweryTasks.create(%{title: "Open", due_on: today, assignee_id: brewer2.id}, mgr)
+        Tasks.create(
+          brewery_board(),
+          %{title: "Open", due_on: today, assignee_id: brewer2.id},
+          mgr
+        )
 
       {:ok, done} =
-        BreweryTasks.create(%{title: "Done", due_on: today, assignee_id: brewer2.id}, mgr)
+        Tasks.create(
+          brewery_board(),
+          %{title: "Done", due_on: today, assignee_id: brewer2.id},
+          mgr
+        )
 
-      {:ok, _} = BreweryTasks.complete(done, nil, brewer2, today)
-      [item | _] = BreweryTasks.list_items()
-      {:ok, _} = BreweryTasks.tick(today, item, brewer2, today)
+      {:ok, _} = Tasks.complete(brewery_board(), done, nil, brewer2, today)
+      [item | _] = Tasks.list_items(brewery_board())
+      {:ok, _} = Tasks.tick(brewery_board(), today, item, brewer2, today)
 
       %{mgr: mgr, brewer2: brewer2, open: open, done: done}
     end

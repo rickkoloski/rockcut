@@ -225,7 +225,7 @@ defmodule RockcutApi.Accounts do
               # D37: a deactivated person's staff code stops working.
               RockcutApi.StaffCodes.clear_if_ineligible(user.id, actor)
               # D38: and they come off open Brewery tasks.
-              RockcutApi.BreweryTasks.unassign_if_ineligible(user.id, actor)
+              RockcutApi.Tasks.unassign_if_ineligible(user.id, actor)
 
               {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
 
@@ -300,7 +300,7 @@ defmodule RockcutApi.Accounts do
           # D37: leaving the Taproom ends the person's staff code.
           RockcutApi.StaffCodes.clear_if_ineligible(user.id, actor)
           # D38: leaving the Brewery takes them off open Brewery tasks.
-          RockcutApi.BreweryTasks.unassign_if_ineligible(user.id, actor)
+          RockcutApi.Tasks.unassign_if_ineligible(user.id, actor)
           {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
 
         {:error, reason} ->

@@ -50,7 +50,7 @@ const created: number[] = []
 test.afterEach(async () => {
   const api = await apiAs('breweryMgr')
   for (const id of created) {
-    const res = await api.delete(`/api/brewery/tasks/${id}`, { params: { scope: 'following', changed: 'remove' } })
+    const res = await api.delete(`/api/boards/brewery/tasks/${id}`, { params: { scope: 'following', changed: 'remove' } })
     expect([204, 404, 410]).toContain(res.status()) // 410: deleted already (O-1)
   }
   await cleanupTasks(created.splice(0))
@@ -58,7 +58,7 @@ test.afterEach(async () => {
 
 /** Create a recurring task through the API; returns its first occurrence. */
 async function createSeries(api: APIRequestContext, attrs: Record<string, unknown>): Promise<ApiOccurrence> {
-  const res = await api.post('/api/brewery/tasks', { data: attrs })
+  const res = await api.post('/api/boards/brewery/tasks', { data: attrs })
   expect(res.status(), await res.text()).toBe(201)
   const first = (await res.json()).data as ApiOccurrence
   created.push(first.id)
@@ -86,7 +86,7 @@ async function occurrences(api: APIRequestContext, seriesId: number, from: strin
 }
 
 async function seriesInfo(api: APIRequestContext, taskId: number) {
-  const res = await api.get(`/api/brewery/tasks/${taskId}/series`)
+  const res = await api.get(`/api/boards/brewery/tasks/${taskId}/series`)
   expect(res.status(), await res.text()).toBe(200)
   return (await res.json()).data as { later_open: number; later_changed: number; count: number | null; frequency: string }
 }
@@ -115,7 +115,7 @@ async function addThroughDialog(page: Page, title: string, day: string, setRepea
   if (day !== today()) await page.getByTestId('task-day-input').fill(day)
   await setRepeat()
   await expect(page.getByTestId('task-repeat-summary')).toHaveText(summary)
-  const saved = boardWrite(page, /^\/api\/brewery\/tasks$/)
+  const saved = boardWrite(page, /^\/api\/boards\/brewery\/tasks$/)
   await saveDialog(page).click()
   const first = (await (await saved).json()).data as ApiOccurrence
   created.push(first.id)
@@ -139,7 +139,7 @@ test('S52, S67: a weekly task from a day; No day disables Repeat; ↻ on every w
   await pick(page, 'task-repeat-select', 'task-repeat-option-weekly')
   await expect(page.getByTestId(`task-repeat-day-${isoWeekday(t)}`)).toHaveAttribute('aria-pressed', 'true')
   await expect(page.getByTestId('task-repeat-summary')).toHaveText(`Repeats every week on ${WEEKDAY_SHORT[isoWeekday(t) - 1]}`)
-  const saved = boardWrite(page, /^\/api\/brewery\/tasks$/)
+  const saved = boardWrite(page, /^\/api\/boards\/brewery\/tasks$/)
   await saveDialog(page).click()
   const first = (await (await saved).json()).data as ApiOccurrence
   created.push(first.id)
@@ -311,7 +311,7 @@ test('S60, S69, S61: "Just this one" and "This and all following"; ones changed 
   const w = async (n: number) => (await on(api, first.series_id!, addDays(t, 7 * n)))!
   const [w1, w2, w4] = [await w(1), await w(2), await w(4)]
   // A later one changed on its own beforehand.
-  const own = await api.patch(`/api/brewery/tasks/${w4.id}`, { data: { notes: 'own', scope: 'this' } })
+  const own = await api.patch(`/api/boards/brewery/tasks/${w4.id}`, { data: { notes: 'own', scope: 'this' } })
   expect(own.status()).toBe(200)
 
   await openBoard(page, { from: t, to: addDays(t, 30) })
@@ -323,7 +323,7 @@ test('S60, S69, S61: "Just this one" and "This and all following"; ones changed 
   await page.getByTestId('task-title-input').fill(`${title} + sanitize`)
   await saveDialog(page).click()
   await expect(page.getByTestId('series-scope-dialog')).toBeVisible()
-  const thisOne = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w1.id}$`), 'PATCH')
+  const thisOne = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w1.id}$`), 'PATCH')
   await page.getByTestId('series-scope-this').click()
   expect((await thisOne).request().postDataJSON()).toEqual({ title: `${title} + sanitize`, scope: 'this' })
 
@@ -334,7 +334,7 @@ test('S60, S69, S61: "Just this one" and "This and all following"; ones changed 
   const brewer2 = await userId(await apiAs('brewer2'))
   await pick(page, 'task-assignee-select', `task-assignee-option-${brewer2}`)
   await saveDialog(page).click()
-  const following = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w2.id}$`), 'PATCH')
+  const following = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w2.id}$`), 'PATCH')
   await page.getByTestId('series-scope-following').click()
   expect((await following).request().postDataJSON()).toEqual({ assignee_id: brewer2, scope: 'following' })
   await page.reload()
@@ -359,7 +359,7 @@ test('S62: Edit series… from weekly to the 1st weekday of the month, after the
   const first = await createSeries(api, weekly(tempTag('S62 Keg Wash'), t))
   const w1 = (await on(api, first.series_id!, addDays(t, 7)))!
   const { later_open } = await seriesInfo(api, w1.id)
-  await api.post(`/api/brewery/tasks/${first.id}/complete`, { data: {} })
+  await api.post(`/api/boards/brewery/tasks/${first.id}/complete`, { data: {} })
 
   await openBoard(page, { from: t, to: addDays(t, 13) })
   await openMenu(page, w1.id, w1.due_on!)
@@ -372,7 +372,7 @@ test('S62: Edit series… from weekly to the 1st weekday of the month, after the
   await saveDialog(page).click()
   await expect(page.getByTestId('remove-later-message')).toHaveText(`Removes ${later_open} later occurrences.`)
   await expect(page.getByTestId('remove-later-keep')).toHaveCount(0)
-  const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w1.id}$`), 'PATCH')
+  const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w1.id}$`), 'PATCH')
   await page.getByTestId('remove-later-confirm').click()
   const body = (await saved).request().postDataJSON()
   expect(body).toMatchObject({ scope: 'following', repeat: 'monthly', repeat_month_rule: 'weekday', repeat_week_of_month: 1 })
@@ -435,9 +435,9 @@ test('G1: Edit series… from before a split reaches the occurrences after it', 
   const [w1, w3, w7] = [await w(1), await w(3), await w(7)]
   // QA's setup, through the API: assign w3 on "following", then split w7 to monthly.
   const brewer2 = await userId(await apiAs('brewer2'))
-  const assigned = await api.patch(`/api/brewery/tasks/${w3.id}`, { data: { assignee_id: brewer2, scope: 'following' } })
+  const assigned = await api.patch(`/api/boards/brewery/tasks/${w3.id}`, { data: { assignee_id: brewer2, scope: 'following' } })
   expect(assigned.status(), await assigned.text()).toBe(200)
-  const split = await api.patch(`/api/brewery/tasks/${w7.id}`, {
+  const split = await api.patch(`/api/boards/brewery/tasks/${w7.id}`, {
     data: { scope: 'following', repeat: 'monthly', repeat_interval: 1, repeat_month_rule: 'weekday', repeat_week_of_month: 1, repeat_weekday: isoWeekday(t) },
   })
   expect(split.status(), await split.text()).toBe(200)
@@ -450,7 +450,7 @@ test('G1: Edit series… from before a split reaches the occurrences after it', 
   await openMenu(page, w1.id, w1.due_on!)
   await page.getByTestId('task-menu-edit-series').click()
   await pick(page, 'task-assignee-select', `task-assignee-option-${me}`)
-  const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w1.id}$`), 'PATCH')
+  const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w1.id}$`), 'PATCH')
   await saveDialog(page).click()
   expect((await saved).request().postDataJSON()).toEqual({ assignee_id: me, scope: 'following' })
   await expect(page.getByTestId('task-dialog')).toHaveCount(0)
@@ -471,7 +471,7 @@ test('R1: a rule change from before a split, Ends left alone, keeps repeating pa
   const w3 = (await on(api, first.series_id!, addDays(t, 21)))!
   const w7 = (await on(api, first.series_id!, addDays(t, 49)))!
   // QA's setup, through the API: w7 on "following" to monthly, the 1st weekday.
-  const split = await api.patch(`/api/brewery/tasks/${w7.id}`, {
+  const split = await api.patch(`/api/boards/brewery/tasks/${w7.id}`, {
     data: { scope: 'following', repeat: 'monthly', repeat_interval: 1, repeat_month_rule: 'weekday', repeat_week_of_month: 1, repeat_weekday: isoWeekday(t) },
   })
   expect(split.status(), await split.text()).toBe(200)
@@ -485,7 +485,7 @@ test('R1: a rule change from before a split, Ends left alone, keeps repeating pa
   await pick(page, 'task-repeat-interval', 'task-repeat-interval-2')
   await expect(page.getByTestId('task-repeat-summary')).toHaveText(`Repeats every other week on ${WEEKDAY_SHORT[isoWeekday(t) - 1]}`)
   await saveDialog(page).click()
-  const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w3.id}$`), 'PATCH')
+  const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w3.id}$`), 'PATCH')
   await page.getByTestId('remove-later-confirm').click()
   expect((await saved).request().postDataJSON()).toMatchObject({ repeat_interval: 2, repeat_until: '', repeat_count: '' })
   const result = (await (await saved).json()).data as ApiOccurrence
@@ -511,7 +511,7 @@ test('S64 and delete "This and all following"', async ({ page }) => {
   await openBoard(page)
   await openMenu(page, w1.id, w1.due_on!)
   await page.getByTestId('task-menu-delete').click()
-  const one = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w1.id}$`), 'DELETE')
+  const one = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w1.id}$`), 'DELETE')
   await page.getByTestId('series-scope-this').click()
   expect(new URL((await one).url()).searchParams.get('scope')).toBe('this')
   await page.reload()
@@ -525,7 +525,7 @@ test('S64 and delete "This and all following"', async ({ page }) => {
   await page.getByTestId('task-menu-delete').click()
   await page.getByTestId('series-scope-following').click()
   await expect(page.getByTestId('remove-later-message')).toHaveText(`Removes ${later_open} later occurrences.`)
-  const rest = boardWrite(page, new RegExp(`^/api/brewery/tasks/${w2.id}$`), 'DELETE')
+  const rest = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w2.id}$`), 'DELETE')
   await page.getByTestId('remove-later-confirm').click()
   expect(new URL((await rest).url()).searchParams.get('scope')).toBe('following')
   await page.reload()
@@ -578,7 +578,7 @@ test.describe('as breweryMgr', () => {
     const first = await createSeries(api, weekly(title, t))
     const w1 = (await on(api, first.series_id!, addDays(t, 7)))!
     const { later_open } = await seriesInfo(api, w1.id)
-    const res = await api.post(`/api/brewery/tasks/${w1.id}/stop_repeating`, { data: { changed: 'remove' } })
+    const res = await api.post(`/api/boards/brewery/tasks/${w1.id}/stop_repeating`, { data: { changed: 'remove' } })
     expect(res.status()).toBe(200)
 
     await openBoard(page)
@@ -624,7 +624,7 @@ test.describe('as breweryMgr', () => {
     await expect(page.getByTestId('task-repeat-select')).toHaveText('Never')
     await pick(page, 'task-repeat-select', 'task-repeat-option-weekly')
     await expect(page.getByTestId('task-repeat-summary')).toHaveText(`Repeats every week on ${WEEKDAY_SHORT[isoWeekday(t) - 1]}`)
-    const saved = boardWrite(page, new RegExp(`^/api/brewery/tasks/${oneOff.id}$`), 'PATCH')
+    const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${oneOff.id}$`), 'PATCH')
     await saveDialog(page).click()
     const res = await saved
     expect(res.request().postDataJSON()).toMatchObject({ repeat: 'weekly', repeat_weekdays: [isoWeekday(t)] })

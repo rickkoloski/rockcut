@@ -23,10 +23,10 @@ defmodule RockcutApi.AccountsFixtures do
   defp with_defaults(%Department{key: "brewery"} = dept) do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    RockcutApi.BreweryTasks.DailyItem.defaults()
+    RockcutApi.Tasks.DailyItem.defaults()
     |> Enum.with_index(1)
     |> Enum.each(fn {name, position} ->
-      Repo.insert!(%RockcutApi.BreweryTasks.DailyItem{
+      Repo.insert!(%RockcutApi.Tasks.DailyItem{
         department_id: dept.id,
         name: name,
         position: position,

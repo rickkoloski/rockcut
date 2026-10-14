@@ -37,7 +37,7 @@ test.afterEach(async () => {
   for (const t of ticks.splice(0)) await removeTick(api, t.date, t.id)
 })
 
-const itemWrite = (page: Page, method: string, path = /\/api\/brewery\/daily_items/) =>
+const itemWrite = (page: Page, method: string, path = /\/api\/boards\/brewery\/daily_items/) =>
   page.waitForResponse((r) => path.test(new URL(r.url()).pathname) && r.request().method() === method && r.ok())
 
 async function openItems(page: Page) {
@@ -65,7 +65,7 @@ test('S28: add DO, drag it first, rename Temps → Temperatures', async ({ page 
   const doItem: ApiDailyItem = (await (await added).json()).data
   await expect(page.getByTestId(`daily-items-row-${doItem.id}`)).toBeVisible()
 
-  const ordered = itemWrite(page, 'PUT', /\/api\/brewery\/daily_items\/order$/)
+  const ordered = itemWrite(page, 'PUT', /\/api\/boards\/brewery\/daily_items\/order$/)
   await mouseDrag(
     page,
     page.getByTestId(`daily-items-name-${doItem.id}`),
@@ -108,7 +108,7 @@ test('S28: Move up and Move down reorder without dragging', async ({ page }) => 
   const [first, second] = defaults
   await expect(page.getByTestId(`daily-items-up-${first.id}`)).toBeDisabled()
   await expect(page.getByTestId(`daily-items-down-${defaults[3].id}`)).toBeDisabled()
-  const ordered = itemWrite(page, 'PUT', /\/api\/brewery\/daily_items\/order$/)
+  const ordered = itemWrite(page, 'PUT', /\/api\/boards\/brewery\/daily_items\/order$/)
   await page.getByTestId(`daily-items-down-${first.id}`).click()
   await ordered
   expect((await dailyItems(await apiAs('breweryMgr'))).map((i) => i.id).slice(0, 2)).toEqual([second.id, first.id])
@@ -122,17 +122,17 @@ test("G1: an unchanged rename saves nothing, after someone else's rename reached
   await expect(page.getByTestId(`daily-items-rename-input-${temps.id}`)).toHaveValue('Temps')
 
   // The owner renames Temps; a reorder here brings the new name into the list.
-  const res = await (await apiAs('owner')).patch(`/api/brewery/daily_items/${temps.id}`, { data: { name: '[TEST-TEMP] Temps G1' } })
+  const res = await (await apiAs('owner')).patch(`/api/boards/brewery/daily_items/${temps.id}`, { data: { name: '[TEST-TEMP] Temps G1' } })
   expect(res.status(), await res.text()).toBe(200)
-  const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/daily_items' && r.request().method() === 'GET' && r.ok())
-  const ordered = itemWrite(page, 'PUT', /\/api\/brewery\/daily_items\/order$/)
+  const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/boards/brewery/daily_items' && r.request().method() === 'GET' && r.ok())
+  const ordered = itemWrite(page, 'PUT', /\/api\/boards\/brewery\/daily_items\/order$/)
   await page.getByTestId(`daily-items-down-${defaults[0].id}`).click()
   await ordered
   await refetched
 
   let patched = false
   page.on('request', (r) => {
-    if (r.method() === 'PATCH' && new URL(r.url()).pathname === `/api/brewery/daily_items/${temps.id}`) patched = true
+    if (r.method() === 'PATCH' && new URL(r.url()).pathname === `/api/boards/brewery/daily_items/${temps.id}`) patched = true
   })
   await page.getByTestId(`daily-items-rename-save-${temps.id}`).click()
   await expect(page.getByTestId(`daily-items-rename-input-${temps.id}`)).toHaveCount(0)
@@ -146,7 +146,7 @@ test('S29: a retired item leaves the card, and the day it was ticked still shows
   const today = denverToday()
   const tomorrow = addDays(today, 1)
   const api = await apiAs('breweryMgr')
-  const res = await api.post('/api/brewery/daily_items', { data: { name: '[TEST-TEMP] Backups' } })
+  const res = await api.post('/api/boards/brewery/daily_items', { data: { name: '[TEST-TEMP] Backups' } })
   expect(res.status()).toBe(201)
   const item: ApiDailyItem = (await res.json()).data
   await setCheck(api, today, item.id, true)
@@ -175,7 +175,7 @@ test('G4: an item added today is not on earlier days, and they refuse its tick',
   const yesterday = addDays(today, -1)
   const api = await apiAs('breweryMgr')
   const before = await dailyCard(api, yesterday)
-  const res = await api.post('/api/brewery/daily_items', { data: { name: '[TEST-TEMP] DO' } })
+  const res = await api.post('/api/boards/brewery/daily_items', { data: { name: '[TEST-TEMP] DO' } })
   expect(res.status()).toBe(201)
   const item: ApiDailyItem = (await res.json()).data
 
@@ -187,7 +187,7 @@ test('G4: an item added today is not on earlier days, and they refuse its tick',
   expect(await cardNames(page, yesterday)).toHaveLength(before.total)
 
   // The API refuses a tick on yesterday, and nothing changes.
-  const tick = await api.put(`/api/brewery/daily_checks/${yesterday}/${item.id}`)
+  const tick = await api.put(`/api/boards/brewery/daily_checks/${yesterday}/${item.id}`)
   expect(tick.status()).toBe(422)
   expect((await tick.json()).error).toBe('not_yet_added')
   await page.reload()
@@ -197,7 +197,7 @@ test('G4: an item added today is not on earlier days, and they refuse its tick',
 
   // A board loaded before the fix (or a stale one) still shows the row: the
   // refusal reaches the person as the other Daily errors do.
-  await page.route(/\/api\/brewery\/tasks\?/, async (route) => {
+  await page.route(/\/api\/boards\/brewery\/tasks\?/, async (route) => {
     const response = await route.fetch()
     const body = await response.json()
     for (const d of body.data.days) {
@@ -212,7 +212,7 @@ test('G4: an item added today is not on earlier days, and they refuse its tick',
   await page.getByTestId(`daily-check-${yesterday}-${item.id}`).click()
   await expect(page.getByTestId('board-toast')).toContainText("That Daily item wasn't on the list that day")
   await expect(page.getByTestId(`daily-check-${yesterday}-${item.id}`)).not.toBeChecked()
-  await page.unroute(/\/api\/brewery\/tasks\?/)
+  await page.unroute(/\/api\/boards\/brewery\/tasks\?/)
 })
 
 test.describe('as brewer1', () => {
@@ -224,7 +224,7 @@ test.describe('as brewer1', () => {
     await expect(page.getByTestId(`daily-${today}`)).toBeVisible()
     await expect(page.getByTestId('board-menu')).toHaveCount(0)
     await expect(page.getByTestId(`daily-menu-${today}`)).toHaveCount(0)
-    const res = await (await apiAs('brewer1')).post('/api/brewery/daily_items', { data: { name: '[TEST-TEMP] S30' } })
+    const res = await (await apiAs('brewer1')).post('/api/boards/brewery/daily_items', { data: { name: '[TEST-TEMP] S30' } })
     expect(res.status()).toBe(403)
   })
 })
@@ -232,7 +232,7 @@ test.describe('as brewer1', () => {
 test("S31: a 13th item and a duplicate name are refused in the dialog", async ({ page }) => {
   const api = await apiAs('breweryMgr')
   for (let n = defaults.length + 1; n <= 12; n++) {
-    const res = await api.post('/api/brewery/daily_items', { data: { name: `[TEST-TEMP] S31 ${n}` } })
+    const res = await api.post('/api/boards/brewery/daily_items', { data: { name: `[TEST-TEMP] S31 ${n}` } })
     expect(res.status(), await res.text()).toBe(201)
   }
 
@@ -249,7 +249,7 @@ test("S31: a 13th item and a duplicate name are refused in the dialog", async ({
 
   // Room for one more, then a name already on the list (ignoring case).
   const extra = (await dailyItems(api)).find((i) => i.name === '[TEST-TEMP] S31 12')!
-  expect((await api.patch(`/api/brewery/daily_items/${extra.id}`, { data: { active: false } })).status()).toBe(200)
+  expect((await api.patch(`/api/boards/brewery/daily_items/${extra.id}`, { data: { active: false } })).status()).toBe(200)
   await page.getByTestId('daily-items-new').fill('temps')
   await page.getByTestId('daily-items-add').click()
   await expect(page.getByTestId('daily-items-dialog').getByText('Already on the list')).toBeVisible()
@@ -272,7 +272,7 @@ test('S75: Restore brings Temps back at the bottom with its past ticks; at 12 it
   const temps = defaults.find((i) => i.name === 'Temps')!
   await setCheck(api, yesterday, temps.id, true)
   ticks.push({ date: yesterday, id: temps.id })
-  expect((await api.patch(`/api/brewery/daily_items/${temps.id}`, { data: { active: false } })).status()).toBe(200)
+  expect((await api.patch(`/api/boards/brewery/daily_items/${temps.id}`, { data: { active: false } })).status()).toBe(200)
 
   await openBoard(page, { from: yesterday, to: addDays(today, 5) })
   await openItems(page)
@@ -298,9 +298,9 @@ test('S75: Restore brings Temps back at the bottom with its past ticks; at 12 it
   await expect(page.getByTestId(`daily-check-${yesterday}-${temps.id}`)).toBeChecked()
 
   // Retired again, with 12 items on the list: Restore is refused with the limit message.
-  expect((await api.patch(`/api/brewery/daily_items/${temps.id}`, { data: { active: false } })).status()).toBe(200)
+  expect((await api.patch(`/api/boards/brewery/daily_items/${temps.id}`, { data: { active: false } })).status()).toBe(200)
   for (let n = 1; n <= 9; n++) {
-    const res = await api.post('/api/brewery/daily_items', { data: { name: `[TEST-TEMP] Item ${n}` } })
+    const res = await api.post('/api/boards/brewery/daily_items', { data: { name: `[TEST-TEMP] Item ${n}` } })
     expect(res.status()).toBe(201)
   }
   await openItems(page)
@@ -315,12 +315,12 @@ test('S75: Restore brings Temps back at the bottom with its past ticks; at 12 it
 test('Decision 1: a retired item ticked today shows a disabled box that says its ticks are kept', async ({ page }) => {
   const today = denverToday()
   const api = await apiAs('breweryMgr')
-  const res = await api.post('/api/brewery/daily_items', { data: { name: '[TEST-TEMP] Hoses' } })
+  const res = await api.post('/api/boards/brewery/daily_items', { data: { name: '[TEST-TEMP] Hoses' } })
   expect(res.status()).toBe(201)
   const item: ApiDailyItem = (await res.json()).data
   await setCheck(api, today, item.id, true)
   ticks.push({ date: today, id: item.id })
-  expect((await api.patch(`/api/brewery/daily_items/${item.id}`, { data: { active: false } })).status()).toBe(200)
+  expect((await api.patch(`/api/boards/brewery/daily_items/${item.id}`, { data: { active: false } })).status()).toBe(200)
 
   await openBoard(page, { from: today, to: addDays(today, 5) })
   const box = page.getByTestId(`daily-check-${today}-${item.id}`)
@@ -330,7 +330,7 @@ test('Decision 1: a retired item ticked today shows a disabled box that says its
   await expect(page.getByRole('tooltip')).toHaveText('[TEST-TEMP] Hoses is retired; its ticks are kept')
 
   // The API refuses the untick too, and the tick stays.
-  const untick = await api.delete(`/api/brewery/daily_checks/${today}/${item.id}`)
+  const untick = await api.delete(`/api/boards/brewery/daily_checks/${today}/${item.id}`)
   expect(untick.status()).toBe(422)
   await page.reload()
   await expect(page.getByTestId(`daily-check-${today}-${item.id}`)).toBeChecked()
@@ -348,10 +348,10 @@ test('O-2: the open dialog picks up a rename made elsewhere when the board refet
 
   // Someone else renames Backups.
   const owner = await apiAs('owner')
-  expect((await owner.patch(`/api/brewery/daily_items/${backups.id}`, { data: { name: 'Backups (NAS)' } })).status()).toBe(200)
+  expect((await owner.patch(`/api/boards/brewery/daily_items/${backups.id}`, { data: { name: 'Backups (NAS)' } })).status()).toBe(200)
 
   // The board refetches on focus, and the dialog with it.
-  const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/brewery/daily_items' && r.ok())
+  const refetched = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/boards/brewery/daily_items' && r.ok())
   await page.evaluate(() => window.dispatchEvent(new Event('visibilitychange')))
   await refetched
   await expect(page.getByTestId(`daily-items-name-${backups.id}`)).toHaveText('Backups (NAS)')

@@ -21,6 +21,11 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.ModuleAccessPlug, module: :brewery
   end
 
+  # D41: the board's department, from `:dept` (404 unless it's assignable).
+  pipeline :task_board do
+    plug RockcutApiWeb.Plugs.TaskBoard
+  end
+
   # D37: Taproom pages (members and owners; a Taproom tablet by its home module).
   pipeline :taproom do
     plug RockcutApiWeb.ModuleAccessPlug, module: :bar
@@ -206,30 +211,41 @@ defmodule RockcutApiWeb.Router do
     post "/formulas/execute", FormulaController, :execute
   end
 
-  # D38 Brewery task board: Brewery members and owners, people only (D40 opens
-  # the writes to the brewhouse tablet). Each action asks Authz.
-  scope "/api/brewery", RockcutApiWeb do
-    pipe_through [:api, :authenticated, :brewery]
+  # D41 §3.6: the All departments view, owners only and read-only. Declared
+  # before the boards so it wins over `:dept`; every other `/api/boards/all/...`
+  # route reaches the `TaskBoard` plug, which 404s `all` (no writes here).
+  scope "/api/boards/all", RockcutApiWeb do
+    pipe_through [:api, :authenticated]
 
-    get "/tasks", BreweryTaskController, :index
-    get "/tasks/history", BreweryTaskController, :history
-    post "/tasks", BreweryTaskController, :create
-    post "/tasks/move_overdue_to_today", BreweryTaskController, :move_overdue_to_today
-    patch "/tasks/:id", BreweryTaskController, :update
-    delete "/tasks/:id", BreweryTaskController, :delete
-    post "/tasks/:id/move", BreweryTaskController, :move
-    post "/tasks/:id/complete", BreweryTaskController, :complete
-    post "/tasks/:id/uncomplete", BreweryTaskController, :uncomplete
-    get "/tasks/:id/series", BreweryTaskController, :series
-    post "/tasks/:id/stop_repeating", BreweryTaskController, :stop_repeating
+    get "/tasks", TaskBoardController, :all
+  end
 
-    put "/daily_checks/:on_date/:daily_item_id", BreweryDailyController, :tick
-    delete "/daily_checks/:on_date/:daily_item_id", BreweryDailyController, :untick
-    get "/daily_items", BreweryDailyController, :items
-    post "/daily_items", BreweryDailyController, :create_item
-    put "/daily_items/order", BreweryDailyController, :order_items
-    patch "/daily_items/:id", BreweryDailyController, :update_item
-    post "/daily_items/:id/restore", BreweryDailyController, :restore_item
+  # D38 task boards, one per assignable department since D41
+  # (`/api/boards/:dept`): the department's members and owners, people only
+  # (D40 opens the writes to the brewhouse tablet). Not tied to a module: each
+  # action asks Authz about the board's department.
+  scope "/api/boards/:dept", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :task_board]
+
+    get "/tasks", TaskBoardController, :index
+    get "/tasks/history", TaskBoardController, :history
+    post "/tasks", TaskBoardController, :create
+    post "/tasks/move_overdue_to_today", TaskBoardController, :move_overdue_to_today
+    patch "/tasks/:id", TaskBoardController, :update
+    delete "/tasks/:id", TaskBoardController, :delete
+    post "/tasks/:id/move", TaskBoardController, :move
+    post "/tasks/:id/complete", TaskBoardController, :complete
+    post "/tasks/:id/uncomplete", TaskBoardController, :uncomplete
+    get "/tasks/:id/series", TaskBoardController, :series
+    post "/tasks/:id/stop_repeating", TaskBoardController, :stop_repeating
+
+    put "/daily_checks/:on_date/:daily_item_id", DailyController, :tick
+    delete "/daily_checks/:on_date/:daily_item_id", DailyController, :untick
+    get "/daily_items", DailyController, :items
+    post "/daily_items", DailyController, :create_item
+    put "/daily_items/order", DailyController, :order_items
+    patch "/daily_items/:id", DailyController, :update_item
+    post "/daily_items/:id/restore", DailyController, :restore_item
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

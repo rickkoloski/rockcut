@@ -33,7 +33,7 @@ async function prepare(card: ApiDailyCard, name: string, checked: boolean) {
 }
 
 const checkWrite = (page: Page, method: 'PUT' | 'DELETE') =>
-  page.waitForResponse((r) => /\/api\/brewery\/daily_checks\//.test(r.url()) && r.request().method() === method && r.ok())
+  page.waitForResponse((r) => /\/api\/boards\/brewery\/daily_checks\//.test(r.url()) && r.request().method() === method && r.ok())
 
 test('S24: ticking Temps and Pressures today shows who and when, brewer2 sees it, unticking counts down', async ({ page, browser }) => {
   const today = denverToday()
@@ -84,7 +84,7 @@ test('S24: a refused tick snaps back with a message', async ({ page }) => {
   const temps = await prepare(before, 'Temps', false)
   const start = (await dailyCard(await apiAs('brewer1'), today)).done
 
-  await page.route('**/api/brewery/daily_checks/**', (route) =>
+  await page.route('**/api/boards/brewery/daily_checks/**', (route) =>
     route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Server error' }) }),
   )
   await openBoard(page)
@@ -106,7 +106,7 @@ test("S25: tomorrow's checks are shown but disabled, and the API refuses them", 
     await expect(page.getByTestId(`daily-check-${tomorrow}-${item.daily_item_id}`)).toBeDisabled()
   }
 
-  const res = await (await apiAs('brewer1')).put(`/api/brewery/daily_checks/${tomorrow}/${card.items[0].daily_item_id}`)
+  const res = await (await apiAs('brewer1')).put(`/api/boards/brewery/daily_checks/${tomorrow}/${card.items[0].daily_item_id}`)
   expect(res.status()).toBe(422)
   expect((await res.json()).error).toBe('future_day')
 })
@@ -144,7 +144,7 @@ test("S27: a Daily card can't be dragged", async ({ page }) => {
   const tomorrow = addDays(today, 1)
   let moves = 0
   page.on('request', (r) => {
-    if (/\/api\/brewery\/tasks\/\d+\/move$/.test(r.url())) moves += 1
+    if (/\/api\/boards\/brewery\/tasks\/\d+\/move$/.test(r.url())) moves += 1
   })
 
   await openBoard(page)
