@@ -55,7 +55,7 @@ defmodule RockcutApi.Tasks do
   The boards `user` can open (D41), in department order (by id, the seed
   order: Brewery, Taproom, Office, Sales), each `%{department, manage}`:
   `manage` is History and Edit Daily items. Every assignable department has a
-  board; owners get all of them, a device none (until D40).
+  board; owners get all of them, a shared tablet its home board (D40).
   """
   def boards_for(%User{} = user) do
     for dept <- board_departments(),
@@ -270,6 +270,48 @@ defmodule RockcutApi.Tasks do
   defp hours(shifts) do
     seconds = Enum.reduce(shifts, 0, &(&2 + DateTime.diff(&1.ends_at, &1.starts_at)))
     Float.round(seconds / 3600, 2)
+  end
+
+  ## The shift-end reminder (D40)
+
+  @doc """
+  What's still open on `dept`'s board on `day`, for `user`'s shift-end
+  reminder (D38 spec §3.5):
+
+    * `tasks`: every open task planned that day, whoever it's assigned to:
+      `user`'s first, then unassigned ones, then other people's, each in
+      board order, assignee preloaded;
+    * `daily`: that day's Daily card as the board shows it, `%{done, total,
+      unticked}` with `unticked` the open items' names in card order.
+
+  The Future list and earlier days' tasks aren't part of it (S23h).
+  """
+  def open_work(%Department{} = dept, %User{id: user_id}, %Date{} = day, today \\ today()) do
+    tasks =
+      Repo.all(
+        from t in Task,
+          where: t.department_id == ^dept.id and t.due_on == ^day and is_nil(t.completed_at),
+          order_by: [asc: t.position, asc: t.id],
+          preload: :assignee
+      )
+      |> Enum.sort_by(fn t ->
+        cond do
+          t.assignee_id == user_id -> 0
+          is_nil(t.assignee_id) -> 1
+          true -> 2
+        end
+      end)
+
+    %{done: done, total: total, items: rows} = daily_cards(dept, [day], today)[day]
+
+    %{
+      tasks: tasks,
+      daily: %{
+        done: done,
+        total: total,
+        unticked: for(%{item: item, check: nil} <- rows, do: item.name)
+      }
+    }
   end
 
   ## Tasks
@@ -1038,6 +1080,7 @@ defmodule RockcutApi.Tasks do
           department_id: dept.id,
           action: "item_reordered",
           actor_id: actor.id,
+          device_id: actor.on_device_id,
           title: "Daily items",
           detail: %{"from" => current, "to" => ids}
         })
@@ -1330,6 +1373,7 @@ defmodule RockcutApi.Tasks do
       task_id: task.id,
       action: action,
       actor_id: actor.id,
+      device_id: actor.on_device_id,
       title: task.title,
       detail: detail
     })
@@ -1343,6 +1387,7 @@ defmodule RockcutApi.Tasks do
       department_id: item.department_id,
       action: action,
       actor_id: actor.id,
+      device_id: actor.on_device_id,
       title: item.name,
       detail: detail
     })

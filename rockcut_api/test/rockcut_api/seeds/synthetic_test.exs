@@ -90,11 +90,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "is idempotent" do
-      assert {:ok, 18} = Synthetic.setup()
+      assert {:ok, 19} = Synthetic.setup()
       first = counts()
-      assert {:ok, 18} = Synthetic.setup()
+      assert {:ok, 19} = Synthetic.setup()
       assert counts() == first
-      assert first[User] == 18
+      # 17 people + 2 tablets (D33, D40).
+      assert first[User] == 19
     end
 
     test "every active persona authenticates; inactive does not" do
@@ -241,7 +242,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       bartender = Accounts.get_user_by_email("bartender1@rockcut-test.com")
       Repo.insert!(%Message{channel_key: "all", user_id: bartender.id, body: "agent chatter"})
 
-      assert {:ok, 18} = Synthetic.reset()
+      assert {:ok, 19} = Synthetic.reset()
       assert counts() == baseline
     end
   end
@@ -269,11 +270,13 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     test "mint_tokens/0 covers every active persona" do
       {:ok, _} = Synthetic.setup()
       tokens = Synthetic.mint_tokens()
-      # 16 active people + the taproomDevice tablet (D33) + D34's spare sessions.
-      assert map_size(tokens) == 18
+      # 16 active people + the taproomDevice and breweryDevice tablets (D33,
+      # D40) + D34's spare sessions.
+      assert map_size(tokens) == 19
       assert %{email: "bartender2@rockcut-test.com", tokens: spares} = tokens["spares"]
       assert length(spares) == 40 and length(Enum.uniq(spares)) == 40
       assert "dev_" <> _ = tokens["taproomDevice"].token
+      assert "dev_" <> _ = tokens["breweryDevice"].token
       refute Map.has_key?(tokens, "inactive")
       # D34: a person's minted token is a real revocable session.
       assert "ses_" <> _ = tokens["owner"].token
@@ -328,6 +331,24 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       assert body["user"]["kind"] == "device"
       assert body["capabilities"]["modules"] == ["bar", "schedule"]
+    end
+
+    test "D40: breweryDevice is at home in the Brewery and opens only its board", %{conn: conn} do
+      {:ok, _} = Synthetic.setup()
+      d = Accounts.get_user_by_email("brewery.device@rockcut-test.com")
+      assert d.kind == "device"
+      assert d.name == "Brewhouse tablet"
+      assert d.home_department_id == AccountsFixtures.department_fixture("brewery").id
+      assert d.memberships == []
+
+      body =
+        conn
+        |> put_req_header("authorization", "Bearer #{Synthetic.mint_token("breweryDevice")}")
+        |> get(~p"/api/me")
+        |> json_response(200)
+
+      assert body["capabilities"]["modules"] == ["brewery", "schedule"]
+      assert [%{"key" => "brewery", "manage" => false}] = body["task_boards"]
     end
 
     test "a pairing code for it works in the real exchange", %{conn: conn} do
@@ -422,6 +443,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Repo.aggregate(Event, :count) == 0
     end
 
+    test "D40: brewer1 (Brewery only) gets a code from the list too" do
+      with_codes(@codes <> ",brewer1:4444", fn -> {:ok, _} = Synthetic.setup() end)
+      assert code_of("brewer1") == "4444"
+      assert StaffCodes.resolve("4444").email == "brewer1@rockcut-test.com"
+    end
+
     test "sets the listed personas' codes from SYNTHETIC_STAFF_CODES; they resolve" do
       with_codes(@codes, fn -> {:ok, _} = Synthetic.setup() end)
 
@@ -476,8 +503,9 @@ defmodule RockcutApi.Seeds.SyntheticTest do
         with_codes("nobody:1111", fn -> Synthetic.setup() end)
       end
 
-      assert_raise ArgumentError, ~r/can't hold a staff code.*brewer1/, fn ->
-        with_codes("brewer1:1111", fn -> Synthetic.setup() end)
+      # D40: any employee may hold one; someone in no department may not.
+      assert_raise ArgumentError, ~r/can't hold a staff code.*noDept/, fn ->
+        with_codes("noDept:1111", fn -> Synthetic.setup() end)
       end
     end
 

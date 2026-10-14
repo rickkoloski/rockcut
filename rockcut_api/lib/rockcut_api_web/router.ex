@@ -109,7 +109,7 @@ defmodule RockcutApiWeb.Router do
     resources "/users", UserController, only: [:index, :create, :update]
     put "/users/:user_id/memberships", MembershipController, :update
     post "/users/:id/reset_password", UserController, :reset_password
-    # D37: staff codes (owners + Taproom managers; the user edit dialog)
+    # Staff codes (D37; every department since D40): the user edit dialog
     get "/users/:id/staff_code", StaffCodeController, :show
     put "/users/:id/staff_code", StaffCodeController, :update
     delete "/users/:id/staff_code", StaffCodeController, :delete
@@ -225,14 +225,18 @@ defmodule RockcutApiWeb.Router do
   end
 
   # D38 task boards, one per assignable department since D41
-  # (`/api/boards/:dept`): the department's members and owners, people only
-  # (D40 opens the writes to the brewhouse tablet). Not tied to a module: each
-  # action asks Authz about the board's department.
+  # (`/api/boards/:dept`): the department's members and owners. Not tied to a
+  # module: each action asks Authz about the board's department.
+  #
+  # D40: what a department's shared tablet uses on its home board (Authz.Device
+  # refuses every other board): the board, a task's series for the dialog,
+  # the Daily items list (the board needs it), task writes and Daily ticks.
+  # Writes from a tablet need a staff code (StaffCodeActing); see the route
+  # matrix test.
   scope "/api/boards/:dept", RockcutApiWeb do
-    pipe_through [:api, :authenticated, :task_board]
+    pipe_through [:api, :device_allowed, :task_board]
 
     get "/tasks", TaskBoardController, :index
-    get "/tasks/history", TaskBoardController, :history
     post "/tasks", TaskBoardController, :create
     post "/tasks/move_overdue_to_today", TaskBoardController, :move_overdue_to_today
     patch "/tasks/:id", TaskBoardController, :update
@@ -246,6 +250,14 @@ defmodule RockcutApiWeb.Router do
     put "/daily_checks/:on_date/:daily_item_id", DailyController, :tick
     delete "/daily_checks/:on_date/:daily_item_id", DailyController, :untick
     get "/daily_items", DailyController, :items
+  end
+
+  # A board's History and its Daily items list changes: people only.
+  scope "/api/boards/:dept", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :task_board]
+
+    get "/tasks/history", TaskBoardController, :history
+
     post "/daily_items", DailyController, :create_item
     put "/daily_items/order", DailyController, :order_items
     patch "/daily_items/:id", DailyController, :update_item

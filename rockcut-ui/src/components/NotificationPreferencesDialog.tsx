@@ -19,6 +19,7 @@ import {
 } from '@mui/material'
 import NotificationsActiveIcon from '@mui/icons-material/NotificationsActive'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import useAuth from '../hooks/useAuth'
 import api from '../lib/api'
 import type { NotificationPrefs } from '../lib/types'
 import { currentPushState, subscribePush, unsubscribePush, type PushState } from '../lib/push'
@@ -35,6 +36,8 @@ const EVENTS = [
   { event: 'open_shift', label: 'Open shift available' },
   { event: 'message_posted', label: 'New message' },
   { event: 'calendar_feed_rotated', label: 'Calendar link changed' },
+  // D40 (spec §3.5): Brewery members only; push and the bell, never email.
+  { event: 'task_shift_end', label: 'Unfinished tasks before shift end', brewery: true },
 ]
 // Per-event default overrides (must match the backend). New messages skip the
 // in-app bell by default (unread badges cover it). A changed calendar link
@@ -42,7 +45,10 @@ const EVENTS = [
 const EVENT_DEFAULTS: Record<string, Record<string, boolean>> = {
   message_posted: { in_app: false },
   calendar_feed_rotated: { email: false, push: true },
+  task_shift_end: { email: false, push: true },
 }
+// Channels an event is never sent on (shown as "—").
+const NOT_SENT: Record<string, string[]> = { task_shift_end: ['email'] }
 const CHANNELS = [
   { key: 'in_app', label: 'In-app', enabled: true, def: true },
   { key: 'email', label: 'Email', enabled: true, def: true },
@@ -52,6 +58,9 @@ const CHANNELS = [
 
 export default function NotificationPreferencesDialog({ open, onClose }: Props) {
   const qc = useQueryClient()
+  const { user } = useAuth()
+  const breweryMember = !!user?.memberships?.some((m) => m.department_key === 'brewery')
+  const events = EVENTS.filter((e) => !e.brewery || breweryMember)
   const { data: prefs = {} } = useQuery({
     queryKey: ['notification_preferences'],
     queryFn: async () => (await api.get<{ data: NotificationPrefs }>('/api/notification_preferences')).data.data,
@@ -85,7 +94,7 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
       if (state === 'subscribed') {
         // Turn the Push column on for every event so it works right away.
         const next: NotificationPrefs = { ...prefs }
-        for (const e of EVENTS) next[e.event] = { ...(next[e.event] ?? {}), push: true }
+        for (const e of events) next[e.event] = { ...(next[e.event] ?? {}), push: true }
         await writePrefs(next)
       }
     } finally {
@@ -162,19 +171,20 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
             </TableRow>
           </TableHead>
           <TableBody>
-            {EVENTS.map((e) => (
-              <TableRow key={e.event}>
+            {events.map((e) => (
+              <TableRow key={e.event} data-testid={`notification-pref-${e.event}`}>
                 <TableCell>{e.label}</TableCell>
                 {CHANNELS.map((c) => (
                   <TableCell key={c.key} align="center">
-                    {c.enabled ? (
+                    {c.enabled && !NOT_SENT[e.event]?.includes(c.key) ? (
                       <Switch
                         size="small"
                         checked={isOn(e.event, c)}
                         onChange={(ev) => toggle(e.event, c.key, ev.target.checked)}
+                        slotProps={{ input: { 'aria-label': `${e.label}: ${c.label}` } }}
                       />
                     ) : (
-                      <Tooltip title="Coming soon">
+                      <Tooltip title={c.enabled ? 'Not sent this way' : 'Coming soon'}>
                         <Box component="span" sx={{ color: 'text.disabled' }}>—</Box>
                       </Tooltip>
                     )}

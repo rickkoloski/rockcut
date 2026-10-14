@@ -20,7 +20,9 @@ defmodule RockcutApi.Notifications do
   # a device subscription. The UI's EVENT_DEFAULTS must match.
   @event_defaults %{
     "message_posted" => %{in_app: false, email: true, push: false},
-    "calendar_feed_rotated" => %{in_app: true, email: false, push: true}
+    "calendar_feed_rotated" => %{in_app: true, email: false, push: true},
+    # D40 shift-end reminder (D38 spec §3.5): push and the bell, never email.
+    "task_shift_end" => %{in_app: true, email: false, push: true}
   }
 
   ## Dispatch
@@ -214,6 +216,69 @@ defmodule RockcutApi.Notifications do
         })
       end
     end)
+  end
+
+  @doc """
+  The shift-end reminder (D40, D38 spec §3.5): what's still open on the
+  Brewery board on `day` (`Tasks.open_work/4`), for the shift's assignee.
+  Title "Still open today: 3 tasks, Daily 2/4"; the body lists up to three
+  task titles (other people's with their initials), then "+N more". Tapping
+  it opens the board on that day.
+  """
+  def task_shift_end(%User{} = user, %Date{} = day, %{tasks: tasks, daily: daily}) do
+    safe(fn ->
+      notify(user, :task_shift_end, %{
+        title: "Still open today: " <> Enum.join(shift_end_counts(tasks, daily), ", "),
+        body: shift_end_body(user, tasks, daily),
+        data: %{
+          "url" => "/tasks/brewery?day=#{Date.to_iso8601(day)}",
+          "day" => Date.to_iso8601(day),
+          "open_tasks" => length(tasks)
+        }
+      })
+    end)
+  end
+
+  defp shift_end_counts(tasks, daily) do
+    tasks_part =
+      case length(tasks) do
+        0 -> []
+        1 -> ["1 task"]
+        n -> ["#{n} tasks"]
+      end
+
+    daily_part = if daily.unticked == [], do: [], else: ["Daily #{daily.done}/#{daily.total}"]
+    tasks_part ++ daily_part
+  end
+
+  @shift_end_titles 3
+
+  defp shift_end_body(_user, [], daily), do: "Daily: " <> Enum.join(daily.unticked, ", ")
+
+  defp shift_end_body(user, tasks, _daily) do
+    shown =
+      tasks
+      |> Enum.take(@shift_end_titles)
+      |> Enum.map(fn t ->
+        if t.assignee_id && t.assignee_id != user.id,
+          do: "#{t.title} (#{initials(t.assignee && t.assignee.name)})",
+          else: t.title
+      end)
+
+    more = length(tasks) - @shift_end_titles
+    Enum.join(shown ++ if(more > 0, do: ["+#{more} more"], else: []), ", ")
+  end
+
+  # "JB" for "Jake Brewer", as the board's cards show them (UI `initials`).
+  defp initials(nil), do: ""
+
+  defp initials(name) do
+    parts = String.split(String.trim(name))
+
+    [List.first(parts), if(length(parts) > 1, do: List.last(parts))]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map_join(&String.first/1)
+    |> String.upcase()
   end
 
   ## Internal

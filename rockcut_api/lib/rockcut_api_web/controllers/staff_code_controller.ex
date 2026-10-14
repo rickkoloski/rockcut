@@ -1,14 +1,15 @@
 defmodule RockcutApiWeb.StaffCodeController do
   @moduledoc """
-  D37 §3.2: staff codes in the Users & Roles edit dialog. Owners and Taproom
-  managers set, reveal and remove a Taproom member's code; `suggest` offers an
-  unused one. People only (the `:authenticated` scope): a shared device never
+  D37 §3.2: staff codes in the Users & Roles edit dialog. Owners and the
+  managers of a department the person belongs to set, reveal and remove an
+  employee's code (any department since D40); `suggest` offers an unused one
+  to anyone who sets codes. People only (the `:authenticated` scope): a shared device never
   reaches these routes.
   """
   use RockcutApiWeb, :controller
 
   import RockcutApiWeb.JSONHelpers, only: [user: 1]
-  alias RockcutApi.{Accounts, Authz, StaffCodes}
+  alias RockcutApi.{Accounts, StaffCodes}
   alias RockcutApi.Accounts.User
 
   action_fallback RockcutApiWeb.FallbackController
@@ -34,7 +35,7 @@ defmodule RockcutApiWeb.StaffCodeController do
           forbidden(conn)
 
         {:error, :not_eligible} ->
-          invalid(conn, "Only active Taproom staff can have a staff code")
+          invalid(conn, "Only active staff in a department can have a staff code")
 
         {:error, :invalid_code} ->
           invalid(conn, "A staff code is 4 digits")
@@ -57,7 +58,7 @@ defmodule RockcutApiWeb.StaffCodeController do
 
   # GET /api/staff_codes/suggest
   def suggest(conn, _params) do
-    if Authz.can?(conn.assigns.current_user, :set_staff_code, %User{}) do
+    if StaffCodes.can_manage?(conn.assigns.current_user) do
       case StaffCodes.suggest() do
         {:ok, code} -> json(conn, %{data: %{code: code}})
         {:error, :none_available} -> invalid(conn, "No unused code found. Type one instead.")

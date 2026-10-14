@@ -4,12 +4,14 @@ defmodule RockcutApiWeb.TaskErrors do
   rule the board enforces is a 422 with a code (as D37's board does); a
   missing task or item is a 404, and a task someone deleted a 410 `deleted`
   (D39 O-1); a changeset goes to `FallbackController`
-  (a repeat rule's errors too, D39, e.g. `errors.repeat`).
+  (a repeat rule's errors too, D39, e.g. `errors.repeat`); a shared tablet's
+  staff-code refusals are `StaffCodeActing`'s (D40).
   """
   import Plug.Conn, only: [put_status: 2]
   import Phoenix.Controller, only: [json: 2]
 
   alias RockcutApi.Tasks
+  alias RockcutApiWeb.StaffCodeActing
 
   @messages %{
     display_required: "Choose where the finished task should show",
@@ -51,4 +53,8 @@ defmodule RockcutApiWeb.TaskErrors do
     |> put_status(:unprocessable_entity)
     |> json(%{error: Atom.to_string(code), message: Map.fetch!(@messages, code)})
   end
+
+  # D40: a shared tablet's staff code (required, wrong, or the tablet locked),
+  # answered exactly as D37's board does.
+  def handle(staff_code_error, conn), do: StaffCodeActing.render_error(staff_code_error, conn)
 end

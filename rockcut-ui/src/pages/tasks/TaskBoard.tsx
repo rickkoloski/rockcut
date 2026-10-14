@@ -3,13 +3,16 @@ import { useNavigate } from 'react-router-dom'
 import { Alert, Box, CircularProgress, Snackbar } from '@mui/material'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import { ActingBanner } from '../../components/ActingCode'
 import SortableLists, { type ContainerSlot } from '../../components/dnd/SortableLists'
 import { containerOf, type ListContainer, type Move } from '../../components/dnd/moveModel'
 import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
+import useActing, { actingRun } from '../../hooks/useActing'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
+import { deleteWithCode, isActingCancelled, withCode } from '../../lib/acting'
 import {
   DAILY_ITEMS_KEY,
   FUTURE,
@@ -65,7 +68,11 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const navigate = useNavigate()
   const { user } = useAuth()
   // History and Edit Daily items (the department's managers and owners, never a device).
-  const canManage = boardEntry.manage && user?.kind !== 'device'
+  const isDevice = user?.kind === 'device'
+  const canManage = boardEntry.manage && !isDevice
+  // Who a change shows as at once: the person, or on a tablet who it's acting as.
+  const actingName = useActing((s) => s.session?.name ?? null)
+  const myName = isDevice ? actingName : (user?.name ?? null)
   // D41: the board last opened is the one `/tasks` opens.
   useEffect(() => writeBoard(dept), [dept])
   /** Another board, at the same range. */
@@ -160,24 +167,41 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   usePhoneBackCloses(!!removing && removing.laterOpen + removing.laterChanged === 0, () => setRemoving(null))
 
   const refresh = () => qc.invalidateQueries({ queryKey: [BOARD_KEY, dept] })
-  const fail = (err: unknown) => setToast({ message: taskError(err), error: true })
+  // D40: a cancelled staff-code dialog isn't an error; the write never ran.
+  const fail = (err: unknown) => {
+    if (!isActingCancelled(err)) setToast({ message: taskError(err), error: true })
+  }
   // Optimistic writes still waiting on the server. The board refetches when the
   // last one settles: a refetch between two quick ticks would undo the second.
   const pending = useRef(0)
 
-  /** A write with an optional optimistic change to the cached board, rolled back on failure. */
-  const run = async (write: () => Promise<unknown>, optimistic?: (b: TaskBoardData) => TaskBoardData) => {
+  /**
+   * A write with an optional optimistic change to the cached board, rolled
+   * back on failure. D40: `write` gets the staff code on a shared tablet
+   * (`actingRun` asks for one first); people get none. The change is shown
+   * only when the write is sent (with a code, on a tablet), and undone as
+   * soon as that try fails, so nothing shows ticked behind the code dialog
+   * or after a wrong code (D40 DEV qa gap 3).
+   */
+  const run = async (write: (code?: string) => Promise<unknown>, optimistic?: (b: TaskBoardData) => TaskBoardData) => {
     const queryKey = [BOARD_KEY, dept, from, to]
     pending.current += 1
-    // Cancels a fetch in flight at once (no await, so the change shows on this click).
-    if (optimistic) void qc.cancelQueries({ queryKey })
-    const before = qc.getQueryData<TaskBoardData>(queryKey)
-    if (before && optimistic) qc.setQueryData(queryKey, optimistic(before))
+    const attempt = async (code?: string) => {
+      // Cancels a fetch in flight at once (no await, so the change shows on this click).
+      if (optimistic) void qc.cancelQueries({ queryKey })
+      const before = qc.getQueryData<TaskBoardData>(queryKey)
+      if (before && optimistic) qc.setQueryData(queryKey, optimistic(before))
+      try {
+        return await write(code)
+      } catch (err) {
+        if (before && optimistic) qc.setQueryData(queryKey, before)
+        throw err
+      }
+    }
     try {
-      await write()
+      await actingRun(attempt)
       return true
     } catch (err) {
-      if (before && optimistic) qc.setQueryData(queryKey, before)
       fail(err)
       return false
     } finally {
@@ -200,7 +224,11 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     // Ahead of a card that stays last means the end of the day's own tasks.
     const before = m.beforeId && !staysLast(m.beforeId) ? cards.get(m.beforeId) : null
     const beforeId = before && before.id !== card.id ? before.id : null
-    move(m, () => api.post(boardPath(dept, 'tasks', card.id, 'move'), { due_on: dueOn, before_id: beforeId }))
+    // D40: on a tablet the card moves only once the code is in (each try moves
+    // it, and a refused try puts it back).
+    actingRun((code) =>
+      move(m, () => api.post(boardPath(dept, 'tasks', card.id, 'move'), withCode({ due_on: dueOn, before_id: beforeId }, code))),
+    )
       .catch(fail)
       .finally(refresh)
   }
@@ -231,7 +259,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
       return
     }
     // Out of the range: nothing to show it moving to.
-    run(() => api.post(boardPath(dept, 'tasks', card.id, 'move'), { due_on: dueOn, before_id: null })).then(
+    run((code) => api.post(boardPath(dept, 'tasks', card.id, 'move'), withCode({ due_on: dueOn, before_id: null }, code))).then(
       (ok) => ok && setToast({ message: `Moved "${card.title}" to ${dueOn ? formatTaskDay(dueOn) : 'Future'}` }),
     )
   }
@@ -239,7 +267,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   // ── Completing ─────────────────────────────────────────────────────
 
   const setDone = (taskId: number, done: boolean) => (b: TaskBoardData): TaskBoardData => {
-    const patch = (c: TaskCardData) => (c.id === taskId ? { ...c, done, completed_by_name: done ? (user?.name ?? null) : null } : c)
+    const patch = (c: TaskCardData) => (c.id === taskId ? { ...c, done, completed_by_name: done ? myName : null } : c)
     return {
       ...b,
       unfinished: b.unfinished.map(patch),
@@ -249,10 +277,10 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   }
 
   const complete = (card: TaskCardData, display?: CompletedDisplay) =>
-    run(() => api.post(boardPath(dept, 'tasks', card.id, 'complete'), display ? { display } : {}), setDone(card.id, true))
+    run((code) => api.post(boardPath(dept, 'tasks', card.id, 'complete'), withCode(display ? { display } : {}, code)), setDone(card.id, true))
 
   const uncomplete = (card: TaskCardData) =>
-    run(() => api.post(boardPath(dept, 'tasks', card.id, 'uncomplete')), setDone(card.id, false))
+    run((code) => api.post(boardPath(dept, 'tasks', card.id, 'uncomplete'), withCode({}, code)), setDone(card.id, false))
 
   const toggle = (card: TaskCardData) => {
     if (card.done) {
@@ -286,7 +314,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
                 ? {
                     ...i,
                     checked,
-                    completed_by_name: checked ? (user?.name ?? null) : null,
+                    completed_by_name: checked ? myName : null,
                     completed_at: checked ? new Date().toISOString() : null,
                   }
                 : i,
@@ -296,7 +324,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
       }),
     })
     const path = boardPath(dept, 'daily_checks', date, item.daily_item_id)
-    run(() => (checked ? api.put(path) : api.delete(path)), optimistic)
+    run((code) => (checked ? api.put(path, withCode({}, code)) : api.delete(path, deleteWithCode(undefined, code))), optimistic)
   }
 
   // ── Menu ───────────────────────────────────────────────────────────
@@ -331,7 +359,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
 
   const deleteTask = async (card: TaskCardData, params?: { scope: SeriesScope; changed?: Changed }) => {
     setBusy(true)
-    const ok = await run(() => api.delete(boardPath(dept, 'tasks', card.id), params ? { params } : undefined))
+    const ok = await run((code) => api.delete(boardPath(dept, 'tasks', card.id), deleteWithCode(params, code)))
     setBusy(false)
     if (ok) {
       setDeleting(null)
@@ -362,7 +390,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     const { card, kind } = removing
     if (kind === 'delete') return deleteTask(card, { scope: 'following', changed })
     setBusy(true)
-    const ok = await run(() => api.post(boardPath(dept, 'tasks', card.id, 'stop_repeating'), { changed }))
+    const ok = await run((code) => api.post(boardPath(dept, 'tasks', card.id, 'stop_repeating'), withCode({ changed }, code)))
     setBusy(false)
     if (ok) {
       setRemoving(null)
@@ -373,8 +401,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const moveAllToToday = async () => {
     setBusy(true)
     let moved = 0
-    const ok = await run(async () => {
-      const res = await api.post<{ moved: number }>(boardPath(dept, 'tasks', 'move_overdue_to_today'))
+    const ok = await run(async (code) => {
+      const res = await api.post<{ moved: number }>(boardPath(dept, 'tasks', 'move_overdue_to_today'), withCode({}, code))
       moved = res.data.moved
     })
     setBusy(false)
@@ -434,6 +462,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
 
   return (
     <Box data-testid="task-board" ref={setBoardEl}>
+      {/* D40: "Acting as Kate · Done" on a shared tablet, pinned as the board scrolls. */}
+      {isDevice && <ActingBanner />}
       {!phone && (
         <Box sx={{ mb: 2 }}>
           <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} />
@@ -456,6 +486,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         onSpan={pickSpan}
         onRange={showRange}
         onFilter={setFilter}
+        // D40: a shared tablet has no "My tasks" (plan decision 1).
+        noMine={isDevice}
         onHideCompleted={toggleHide}
         onHistory={canManage ? () => setHistory({}) : undefined}
         onEditDailyItems={canManage && dailyItems ? () => setEditingDaily(true) : undefined}

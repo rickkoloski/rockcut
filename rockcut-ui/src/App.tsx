@@ -94,6 +94,7 @@ import SharedDevices from './pages/devices/SharedDevices'
 import DeviceNotAvailable from './pages/devices/DeviceNotAvailable'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
+import { ActingCodeDialog } from './components/ActingCode'
 
 const DRAWER_WIDTH = 240
 const DRAWER_COLLAPSED_WIDTH = 64
@@ -133,6 +134,9 @@ const BREWERY_PAGES: NavLeaf[] = [
 const TAPROOM_PAGES: NavLeaf[] = [
   { label: 'Buy-a-Beer Board', path: '/taproom/beer-board', icon: <RedeemIcon /> },
 ]
+
+// D40: the department pages a shared tablet can open (its Tasks board is the top-level Tasks).
+const DEVICE_PAGES = ['/taproom/beer-board']
 
 const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavLeaf[] }> = {
   bar: { label: 'Taproom', icon: <LocalBarIcon />, children: TAPROOM_PAGES },
@@ -251,9 +255,12 @@ function App() {
       key: `dept:${key}`,
       label,
       icon: meta.icon,
-      children: meta.children,
+      // D40: a shared tablet lists only the pages it can open (the Taproom's
+      // Buy-a-Beer Board); the Brewery's pages are people-only.
+      children: isDevice ? meta.children.filter((c) => DEVICE_PAGES.includes(c.path)) : meta.children,
       emptyLabel: 'Coming soon',
     }))
+    .filter((s) => !isDevice || s.children.length > 0)
 
   const sections: NavSection[] = [
     {
@@ -645,6 +652,9 @@ function App() {
           </Toolbar>
         </AppBar>
 
+        {/* D40: the task board's staff-code dialog (the "Acting as" banner is the board's own). */}
+        {isDevice && <ActingCodeDialog />}
+
         {personalOnTablet && (
           <Box
             data-testid="personal-session-banner"
@@ -660,11 +670,18 @@ function App() {
             // D33: a shared tablet's routes. Anything else shows the device-only
             // "Not available" page (lead decision 1); people keep the redirect below.
             <Routes>
-              <Route path="/" element={<Home />} />
+              {/* D40: the brewhouse tablet opens to its board; the Taproom's keeps Home. */}
+              <Route
+                path="/"
+                element={capabilities.home_department === 'brewery' ? <Navigate to="/tasks/brewery" replace /> : <Home />}
+              />
               <Route path="/schedule" element={<Schedule forceView="agenda" />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:key" element={<Messages />} />
               {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
+              {/* D40: its home board only (/api/me lists just that one; any other goes there). */}
+              <Route path="/tasks" element={<TasksIndex />} />
+              <Route path="/tasks/:dept" element={<TaskBoardPage />} />
               <Route path="*" element={<DeviceNotAvailable />} />
             </Routes>
           ) : (

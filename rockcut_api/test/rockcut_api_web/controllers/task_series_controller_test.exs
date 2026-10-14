@@ -82,7 +82,11 @@ defmodule RockcutApiWeb.TaskSeriesControllerTest do
       end
     end
 
-    test "a Taproom-only person and a shared device get 403", %{p: p, token: token, today: today} do
+    test "a Taproom-only person and the Taproom's tablet get 403", %{
+      p: p,
+      token: token,
+      today: today
+    } do
       first = weekly!(p["owner"], today)
       iso = Date.to_iso8601(today)
 
@@ -98,9 +102,10 @@ defmodule RockcutApiWeb.TaskSeriesControllerTest do
       for {verb, route, params} <- routes do
         assert call(p["bartender1"], verb, route, params).status == 403, "#{verb} #{route}"
 
+        # D40: `Authz.Device` refuses another department's board.
         conn = call_device(token, verb, route, params)
         assert conn.status == 403, "device #{verb} #{route}"
-        assert json_response(conn, 403)["error"] == "Not available on a shared device"
+        assert json_response(conn, 403)["error"] == "Forbidden"
       end
 
       assert count(first["series_id"]) == 53

@@ -3,7 +3,8 @@ defmodule RockcutApi.Tasks.Event do
   D38: one change to a task board (append-only). D41: `department_id` is the
   board's, so History is per board. `task_id` has no foreign
   key and `title` is a copy, so a deleted task's history still reads. `actor`
-  is always the person; `device` is the shared tablet (D40), nil until then.
+  is always the person; `device` is the shared tablet they acted on (D40),
+  nil otherwise.
   `detail` holds old → new values.
   """
   use Ecto.Schema

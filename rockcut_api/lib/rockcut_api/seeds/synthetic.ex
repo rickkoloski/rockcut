@@ -82,7 +82,9 @@ defmodule RockcutApi.Seeds.Synthetic do
   # Kept apart from @personas: a device has no password, no memberships, and
   # logs in only with a `dev_` tablet token (see `mint_token/1`).
   @devices [
-    {"taproomDevice", "taproom.device", "Taproom tablets", "bar"}
+    {"taproomDevice", "taproom.device", "Taproom tablets", "bar"},
+    # D40: the brewhouse tablet, on the Brewery's task board.
+    {"breweryDevice", "brewery.device", "Brewhouse tablet", "brewery"}
   ]
 
   @device_token_name "#{"[SEED]"} Playwright tablet"
@@ -496,7 +498,7 @@ defmodule RockcutApi.Seeds.Synthetic do
             raise(
               ArgumentError,
               "SYNTHETIC_STAFF_CODES lists personas who can't hold a staff code " <>
-                "(not active Taproom members): #{Enum.join(ineligible, ", ")}"
+                "(inactive, or in no department): #{Enum.join(ineligible, ", ")}"
             )
 
         for {_key, user} <- users, do: StaffCodes.seed_clear!(user)

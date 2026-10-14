@@ -20,7 +20,7 @@ interface AuthState {
   sharedDevices: boolean
   staffCodes: boolean
   beerBoardManage: boolean
-  /** D41: the task boards this person can open (empty for a device). */
+  /** D41: the task boards this person can open (D40: a device, its home board). */
   taskBoards: TaskBoardEntry[]
   isAuthenticated: boolean
   bootstrapped: boolean

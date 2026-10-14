@@ -70,7 +70,7 @@ end
 defmodule Mix.Tasks.Rockcut.Synthetic.PairCode do
   @shortdoc "Print a pairing code for a synthetic shared device (D33)"
   @moduledoc """
-  Usage: mix rockcut.synthetic.pair_code [taproomDevice]
+  Usage: mix rockcut.synthetic.pair_code [taproomDevice | breweryDevice]
 
   Enter the code on the login screen under "Set up as a shared device".
   Single use; expires in 10 minutes.

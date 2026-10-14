@@ -279,12 +279,19 @@ defmodule RockcutApi.AuthzTest do
       end
     end
 
-    test "a shared device, even the Brewery's, gets nothing on any board",
+    # D40: a tablet reads and writes its home board (writes as a person with
+    # a staff code); never History, Daily items or another board.
+    test "the Brewery's shared device: read and write on its board only",
          %{device: d, depts: depts} do
       for board <- @boards do
-        for action <- [:read, :write, :history],
-            do: refute(Authz.can?(d, action, {:tasks, depts[board]}), "#{action} #{board}")
+        for action <- [:read, :write],
+            do:
+              assert(
+                Authz.can?(d, action, {:tasks, depts[board]}) == (board == "brewery"),
+                "#{action} #{board}"
+              )
 
+        refute Authz.can?(d, :history, {:tasks, depts[board]}), "history #{board}"
         refute Authz.can?(d, :manage, {:daily_items, depts[board]})
       end
     end

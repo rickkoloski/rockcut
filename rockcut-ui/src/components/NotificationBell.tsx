@@ -61,7 +61,7 @@ export default function NotificationBell() {
   return (
     <>
       <Tooltip title="Notifications">
-        <IconButton onClick={openMenu} sx={{ color: 'text.secondary' }}>
+        <IconButton onClick={openMenu} sx={{ color: 'text.secondary' }} aria-label="Notifications" data-testid="notification-bell">
           <Badge badgeContent={unread} color="error">
             <NotificationsIcon />
           </Badge>
@@ -79,7 +79,7 @@ export default function NotificationBell() {
           <Box>
             <Button size="small" disabled={unread === 0} onClick={markAll}>Mark all read</Button>
             <Tooltip title="Preferences">
-              <IconButton size="small" onClick={() => { closeMenu(); setPrefsOpen(true) }}>
+              <IconButton size="small" aria-label="Notification preferences" data-testid="notification-preferences" onClick={() => { closeMenu(); setPrefsOpen(true) }}>
                 <SettingsIcon fontSize="small" />
               </IconButton>
             </Tooltip>

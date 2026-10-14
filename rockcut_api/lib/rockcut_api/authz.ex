@@ -37,11 +37,12 @@ defmodule RockcutApi.Authz do
   def device?(_), do: false
 
   @doc """
-  True if `user` may hold a D37 staff code: an active person (not a device)
-  with a Taproom membership. Expects memberships preloaded with departments.
+  True if `user` may hold a staff code (D37; every department since D40): an
+  active person (not a device) with at least one department. Owners count, as
+  everywhere (`member_of?/2`). Expects memberships preloaded.
   """
   def can_hold_staff_code?(%User{kind: "person", active: true} = user),
-    do: member_of?(user, "bar")
+    do: owner?(user) or memberships(user) != []
 
   def can_hold_staff_code?(_), do: false
 
@@ -347,8 +348,8 @@ defmodule RockcutApi.Authz do
   # D38 task boards, one per department since D41: the department's members
   # read and write its board (tasks, moves, Daily checks); its change log and
   # Daily items list are for its managers. Not tied to a module (a
-  # Taproom-only person uses the Taproom's board). Owners pass above; devices
-  # are denied until D40.
+  # Taproom-only person uses the Taproom's board). Owners pass above; a
+  # shared tablet's home board is `Authz.Device`'s (D40).
   def can?(%User{} = user, action, {:tasks, %Department{} = dept})
       when action in [:read, :write],
       do: member_of?(user, dept)
@@ -362,11 +363,16 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, :manage, {:daily_items, %Department{} = dept}),
     do: role_in(user, dept) == :manager
 
-  # D37 staff codes: owners (above) and Taproom managers set and see them.
-  # Whether the target may hold one is StaffCodes' check (can_hold_staff_code?/1).
-  def can?(%User{} = user, action, %User{})
-      when action in [:set_staff_code, :reveal_staff_code],
-      do: role_in(user, "bar") == :manager
+  # Staff codes (D37; every department since D40): owners (above) and the
+  # managers of a department the person belongs to set and see a person's
+  # code (needs the target's memberships preloaded). Whether the target may
+  # hold one is StaffCodes' check (can_hold_staff_code?/1). `:staff_codes`:
+  # whether someone sets codes at all (the suggest route, `/api/me`).
+  def can?(%User{} = user, action, %User{memberships: memberships} = target)
+      when action in [:set_staff_code, :reveal_staff_code] and is_list(memberships),
+      do: can_manage_user?(user, target)
+
+  def can?(%User{} = user, :manage, :staff_codes), do: counts_as_manager?(user)
 
   # Departments: anyone reads; only owners (handled above) change them.
   def can?(%User{}, :read, %Department{}), do: true

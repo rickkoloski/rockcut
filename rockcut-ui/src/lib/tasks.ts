@@ -1,7 +1,7 @@
 import parseApiError from './parseApiError'
 import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
-import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage } from './types'
+import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage } from './types'
 
 // D38: task board helpers shared by the board, its dialogs and the specs.
 // D41: one board per department, under `/api/boards/<dept>`.
@@ -464,5 +464,25 @@ export function boardMoveRule(phoneView: PhoneView | null, selected: string, tod
     if (to === UNFINISHED) return false
     if (phoneView !== 'day') return true
     return from === UNFINISHED && to === today && selected === today
+  }
+}
+
+/** D40 (spec §3.8, S50): how many of today's open tasks the dashboard card lists. */
+export const DASHBOARD_TASKS = 5
+
+/**
+ * D40: the Brewery Dashboard's Today's tasks card, from the board's read of
+ * today: the Daily count with its unticked items, today's open tasks (planned
+ * today, board order) — the first DASHBOARD_TASKS and how many more — and
+ * the Unfinished count.
+ */
+export function todaysTasks(board: TaskBoardData) {
+  const day = board.days.find((d) => d.date === board.today)
+  const open = (day?.cards ?? []).filter((c) => !c.done && c.due_on === board.today)
+  return {
+    daily: day ? { done: day.daily.done, total: day.daily.total, unticked: day.daily.items.filter((i) => !i.checked) } : null,
+    tasks: open.slice(0, DASHBOARD_TASKS),
+    more: Math.max(open.length - DASHBOARD_TASKS, 0),
+    unfinished: board.unfinished.length,
   }
 }

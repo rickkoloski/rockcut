@@ -123,6 +123,19 @@ defmodule RockcutApiWeb.BeerBoardControllerTest do
   end
 
   describe "the Taproom tablet" do
+    test "D40 qa gap 1: a staff code in the query string counts as missing; the body's works",
+         %{p: p, token: token} do
+      %{"data" => %{"id" => id}} = add(p) |> json_response(201)
+
+      assert %{"error" => "staff_code_required"} =
+               call_device(token, :delete, "/api/beer_board/#{id}?staff_code=2468")
+               |> json_response(422)
+
+      assert %{"removed" => true, "recorded_as" => "Alex Draft"} =
+               call_device(token, :delete, "/api/beer_board/#{id}", %{staff_code: "2468"})
+               |> json_response(200)
+    end
+
     test "reads the board", %{p: p, token: token} do
       add(p)
 

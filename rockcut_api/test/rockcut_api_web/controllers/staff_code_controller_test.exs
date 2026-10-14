@@ -1,5 +1,8 @@
 defmodule RockcutApiWeb.StaffCodeControllerTest do
-  @moduledoc "D37 §3.2 / §3.4: staff code routes for the user edit dialog (S1–S4, S16)."
+  @moduledoc """
+  D37 §3.2 / §3.4: staff code routes for the user edit dialog (S1–S4, S16).
+  D40: any employee, set by owners and their department managers (S48).
+  """
   use RockcutApiWeb.ConnCase, async: false
 
   import RockcutApi.PersonaFixtures
@@ -8,7 +11,7 @@ defmodule RockcutApiWeb.StaffCodeControllerTest do
   alias RockcutApi.StaffCodes
 
   setup do
-    %{p: personas(~w(owner barMgr breweryMgr bartender1 bartender2 brewer1))}
+    %{p: personas(~w(owner barMgr breweryMgr bartender1 bartender2 brewer1 brewer2 noDept))}
   end
 
   defp path(user, suffix \\ ""), do: "/api/users/#{user.id}/staff_code#{suffix}"
@@ -40,10 +43,26 @@ defmodule RockcutApiWeb.StaffCodeControllerTest do
     assert call(p["barMgr"], :put, path(p["bartender2"]), %{"code" => code}).status == 200
   end
 
-  test "S3: someone outside the Taproom can't get a code", %{p: p} do
-    conn = call(p["barMgr"], :put, path(p["brewer1"]), %{"code" => "4821"})
+  test "S48: breweryMgr sets and reveals brewer2's code, as D37 S1", %{p: p} do
+    conn = call(p["breweryMgr"], :put, path(p["brewer2"]), %{"code" => "5150"})
+    assert %{"data" => %{"has_staff_code" => true}} = json_response(conn, 200)
 
-    assert %{"errors" => %{"code" => ["Only active Taproom staff can have a staff code"]}} =
+    assert %{"data" => %{"code" => "5150"}} =
+             call(p["breweryMgr"], :get, path(p["brewer2"])) |> json_response(200)
+
+    assert %{"data" => %{"code" => _}} =
+             call(p["breweryMgr"], :get, "/api/staff_codes/suggest") |> json_response(200)
+  end
+
+  test "D40: barMgr can't set or see a Brewery-only person's code", %{p: p} do
+    assert call(p["barMgr"], :put, path(p["brewer1"]), %{"code" => "4821"}).status == 403
+    assert call(p["barMgr"], :get, path(p["brewer1"])).status == 403
+  end
+
+  test "S3 (D40): someone with no department can't get a code", %{p: p} do
+    conn = call(p["owner"], :put, path(p["noDept"]), %{"code" => "4821"})
+
+    assert %{"errors" => %{"code" => ["Only active staff in a department can have a staff code"]}} =
              json_response(conn, 422)
   end
 
@@ -61,8 +80,10 @@ defmodule RockcutApiWeb.StaffCodeControllerTest do
       assert call(actor, :get, path(p["bartender1"])).status == 403
       assert call(actor, :put, path(p["bartender1"]), %{"code" => "1234"}).status == 403
       assert call(actor, :delete, path(p["bartender1"])).status == 403
-      assert call(actor, :get, "/api/staff_codes/suggest").status == 403
     end
+
+    # Suggest is for anyone who sets codes (any manager since D40).
+    assert call(p["bartender2"], :get, "/api/staff_codes/suggest").status == 403
   end
 
   test "S16: an owner (no memberships) reveals and removes", %{p: p} do
@@ -78,13 +99,14 @@ defmodule RockcutApiWeb.StaffCodeControllerTest do
              call(p["owner"], :get, path(p["bartender1"])) |> json_response(200)
   end
 
-  test "/api/me staff_codes: owners and Taproom managers only", %{p: p} do
+  test "/api/me staff_codes: owners and managers only (any department since D40)", %{p: p} do
     flag = fn key -> (call(p[key], :get, "/api/me") |> json_response(200))["staff_codes"] end
 
     assert flag.("owner") == true
     assert flag.("barMgr") == true
-    assert flag.("breweryMgr") == false
+    assert flag.("breweryMgr") == true
     assert flag.("bartender1") == false
+    assert flag.("brewer1") == false
   end
 
   test "unknown user → 404", %{p: p} do

@@ -372,3 +372,39 @@ under `src/lib/` (`tasks.test`, `repeat.test`). Playwright
 | — | A notes-only occurrence is offered for keeping (split, Stop repeating, Ends-only) | ExUnit `series_edits_test` (keep and remove, revert-checked) |
 | — | A `password_reset_required` answer in an open tab shows "Set a new password" | **GAP (manual)**: a manager's reset revokes the session (401), so no test reaches the 403 in a browser; the handler is `api.ts` + `useAuth.ts` |
 | — | Old split parts stored as dates (D39) and real per-browser D41 settings | **Manual on DEV** (handoff note LIMITATIONS) |
+
+## D40 — Shared tablets on the boards, shift-end reminder, dashboard card (`specs/d38_brewery_task_board_spec.md` §3.4, §3.5, §3.8; `planning/d40_tablets_reminder_dashboard_plan.md`)
+
+S9g, S32–S37a, S42–S50, S68. ExUnit files are under `rockcut_api/test/`: controllers
+`task_board_device_test` (the tablets on the boards), `staff_code_controller_test`, `rockcut_api/staff_codes_test`,
+`accounts_test` (S49), `task_shift_end_reminder_test` (the reminder, injected clock), `authz_device_test` and
+`authz_test` (the device rows), `rockcut_api_web/device_route_matrix_test` (the routes a tablet reaches),
+`seeds/synthetic_test` (`breweryDevice`, `brewer1`'s code). Vitest: `src/lib/acting.test`,
+`src/hooks/useActing.test`, `src/lib/tasks.test` (todaysTasks). Playwright (written; first run at the local gate):
+`tests/regression/tasks/task-board-tablets.spec.ts` and `task-board-dashboard.spec.ts` (the one-worker
+`brewery-board` project), `taproom/staff-codes.spec.ts` (S48 and D37's rows updated).
+
+| # | Scenario | Layer |
+|---|---|---|
+| S9g | breweryDevice: the task menu opens without a code; Mark completed asks for one | Playwright `task-board-tablets` (S9g, persist-verified, History); ExUnit `task_board_device_test` (S9g: reads need no code, a write 422 `staff_code_required`); Vitest `useActing.test` |
+| S32 | brewer1 7a–3p: one push between 2:00 and 2:05, "Still open today: 4 tasks, Daily 2/4", own first, then unassigned, then others with initials; bell entry; opens Tasks on today | ExUnit `task_shift_end_reminder_test` (S32 ×2: text, order, initials, deep link, channels, no resend); **manual on DEV/Pixel**: the real push and its tap |
+| S33 | everything done by 2:00 → nothing | ExUnit `task_shift_end_reminder_test` (S33; the shift is still settled in the ledger) |
+| S34 | the shift extended after the reminder → no second | ExUnit `task_shift_end_reminder_test` (S34) |
+| S35 | the toggle off → no reminder | ExUnit `task_shift_end_reminder_test` (S35); Playwright `task-board-dashboard` (S35 UI: the row, on by default, both switches off, persist-verified) |
+| S36 | a 45-minute shift → none | ExUnit `task_shift_end_reminder_test` (S36; also draft and unassigned shifts) |
+| S37 | bartender1's Taproom shift → nothing; no toggle | ExUnit `task_shift_end_reminder_test` (S37); Playwright `task-board-dashboard` (S37: no row) |
+| S37a | two shifts → one reminder before each, each with what's open then | ExUnit `task_shift_end_reminder_test` (S37a; also a late scan inside the 10-minute window) |
+| S42 | breweryDevice after pairing: Brewery → Tasks, no History, Edit Daily items or My tasks | Playwright `task-board-tablets` (S42; `/tasks/bar` and `/tasks/all` go back to its board); ExUnit `task_board_device_test` (S42 `/api/me`), `synthetic_test` (breweryDevice's `/api/me`) |
+| S43 | tick Temps with brewer1's code; "Acting as" banner; a second tick needs no code; History "<name> on Shared Device" | Playwright `task-board-tablets` (S43; Done ends it, Cancel changes nothing); ExUnit `task_board_device_test` (S43: `recorded_as`, `device_id`, History); Vitest `useActing.test`, `acting.test` |
+| S44 | add, 5 idle minutes, add → asks again | Playwright `task-board-tablets` (S44, with Playwright's clock); Vitest `acting.test` (the timer, a slept tablet), `useActing.test` (S44); ExUnit `task_board_device_test` (S44: the server keeps no window) |
+| S45 | bartender1's code on the brewhouse tablet → wrong code | Playwright `task-board-tablets` (S45, a `[TEST-TEMP]` Taproom person); ExUnit `task_board_device_test` (S45: counts toward the lock; floater accepted on both tablets) |
+| S46 | 5 wrong codes → locked 10 minutes | ExUnit `task_board_device_test` (S46: a right code waits too; another board's 403s don't count); Playwright `task-board-tablets` (the lock message, a stubbed 429) |
+| S47 | `POST …/tasks` with no `staff_code` → 422 `staff_code_required` | **ExUnit only** `task_board_device_test` (S47), `device_route_matrix_test` (every tablet write route) |
+| S48 | breweryMgr sets and reveals brewer2's code | Playwright `taproom/staff-codes` (S48, a `[TEST-TEMP]` Brewery person; S3/S4/S12 updated to D40's rules); ExUnit `staff_code_controller_test` (S48; barMgr refused for a Brewery-only person; `/api/me` `staff_codes` for any manager), `staff_codes_test` |
+| S49 | breweryMgr removes brewer2 (Brewery only) from the Brewery: open task unassigned, history keeps the name, the code is cleared (no department left) | ExUnit `accounts_test` (S49 (D40); and leaving one of two departments keeps the code), `staff_codes_test` (S49); Playwright `auth/manager_removes_member` (G1, a Taproom-only person) |
+| S50 | brewer1 Brewery Dashboard: "Daily 2/4" with the unticked names, the first 5 tasks, "+2 more", "1 unfinished…"; ticking updates the board | Playwright `task-board-dashboard` (S50, against the board's own read; the board shows the tick); Vitest `tasks.test` (todaysTasks) |
+| S68 | breweryDevice creates a recurring task → asks for a code; History "<name> on Shared Device · created" | Playwright `task-board-tablets` (S68); ExUnit `task_board_device_test` (S68) |
+| — | the Taproom tablet: Tasks in its nav, its board with a Taproom code; the Brewery board 403 | Playwright `task-board-tablets` (Taproom tablet), `brewery/task-board-access` (S41 updated), `tasks/task-board-departments` (S114 updated); ExUnit `task_board_device_test` |
+| — | a tablet on History, Daily items changes, another board, All departments → 403 | ExUnit `task_board_device_test`, `authz_device_test`, `authz_test`, `device_route_matrix_test` |
+| — | the beer board's staff-code flow, now through the shared `StaffCodeActing` | ExUnit `beer_board_controller_test` (unchanged, green); Playwright `taproom/beer-board-device` (unchanged) |
+| — | the reminder's real push on a phone; a real tablet's touch and keypad | **Manual on DEV** (handoff note LIMITATIONS) |

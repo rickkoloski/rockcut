@@ -7,11 +7,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  TextField,
 } from '@mui/material'
+import StaffCodeField from '../../components/StaffCodeField'
 import useAuth from '../../hooks/useAuth'
 import { boardError } from '../../lib/beerBoard'
-import { maskedCodeSx, staffCodeDigits } from '../../lib/staffCode'
 
 interface Props {
   open: boolean
@@ -97,15 +96,12 @@ export default function BoardActionDialog({
           )}
           {children}
           {isDevice && (
-            <TextField
-              label="Your staff code"
+            <StaffCodeField
               value={code}
-              onChange={(e) => setCode(staffCodeDigits(e.target.value))}
-              error={!!codeError}
-              helperText={codeError ?? 'Records who made this change.'}
-              autoComplete="off"
-              sx={maskedCodeSx}
-              slotProps={{ htmlInput: { inputMode: 'numeric', 'data-testid': 'board-staff-code' } }}
+              onChange={setCode}
+              error={codeError}
+              helperText="Records who made this change."
+              testId="board-staff-code"
             />
           )}
         </DialogContent>
