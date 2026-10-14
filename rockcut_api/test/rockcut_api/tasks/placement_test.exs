@@ -1,7 +1,7 @@
-defmodule RockcutApi.BreweryTasks.PlacementTest do
+defmodule RockcutApi.Tasks.PlacementTest do
   use ExUnit.Case, async: true
 
-  alias RockcutApi.BreweryTasks.{Placement, Task}
+  alias RockcutApi.Tasks.{Placement, Task}
 
   # Wed 10/14 is today; the board shows Mon 10/12 – Sun 10/18.
   @today ~D[2026-10-14]

@@ -200,7 +200,7 @@ end
 # ── Brewery: the Daily card's default items (D38, idempotent) ──
 # The migration adds them when the Brewery already exists; a fresh DB gets the
 # department above, so they're added here. Only when the Brewery has none.
-alias RockcutApi.BreweryTasks.DailyItem
+alias RockcutApi.Tasks.DailyItem
 import Ecto.Query, only: [from: 2]
 
 with %Department{} = brewery <- Repo.get_by(Department, key: "brewery"),

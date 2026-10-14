@@ -1,4 +1,4 @@
-defmodule RockcutApi.BreweryTasks.Task do
+defmodule RockcutApi.Tasks.Task do
   @moduledoc """
   D38: one task on the Brewery board. `due_on` is the Colorado day it's planned
   for (nil = the Future list) and never changes when it's finished;
@@ -7,7 +7,7 @@ defmodule RockcutApi.BreweryTasks.Task do
   D39: an occurrence of a recurring task has `series_id` and the
   `series_date` the rule made it for (unchanged when it moves);
   `series_exception` is set once it's changed on its own. Only
-  `BreweryTasks.Series` sets these; `changeset/2` never casts them.
+  `Tasks.Series` sets these; `changeset/2` never casts them.
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -16,7 +16,7 @@ defmodule RockcutApi.BreweryTasks.Task do
   @max_notes 2_000
   @displays ~w(planned_day completed_day both)
 
-  schema "brewery_tasks" do
+  schema "tasks" do
     field :title, :string
     field :notes, :string
     field :due_on, :date
@@ -33,7 +33,7 @@ defmodule RockcutApi.BreweryTasks.Task do
     belongs_to :assignee, RockcutApi.Accounts.User
     belongs_to :completed_by, RockcutApi.Accounts.User
     belongs_to :created_by, RockcutApi.Accounts.User
-    belongs_to :series, RockcutApi.BreweryTasks.TaskSeries
+    belongs_to :series, RockcutApi.Tasks.TaskSeries
 
     timestamps(type: :utc_datetime)
   end

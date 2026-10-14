@@ -207,12 +207,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "seeds the Colorado week on a Sunday evening (UTC already Monday)" do
-      alias RockcutApi.BreweryTasks
+      alias RockcutApi.Tasks
       alias RockcutApi.Scheduling.Recurrence
 
       # Sunday 2026-10-11, 7 pm MDT = Monday 01:00 UTC.
       now = ~U[2026-10-12 01:00:00Z]
-      sunday = BreweryTasks.today_at(now)
+      sunday = Tasks.today_at(now)
       assert sunday == ~D[2026-10-11]
 
       {:ok, _} = Synthetic.setup(sunday)
@@ -510,8 +510,8 @@ defmodule RockcutApi.Seeds.SyntheticTest do
   end
 
   describe "Brewery task board (D38)" do
-    alias RockcutApi.BreweryTasks
-    alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task, TaskSeries}
+    alias RockcutApi.Tasks
+    alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}
     alias RockcutApi.Scheduling.ScheduleEvent
 
     # The one-off [SEED] tasks (D39's recurring ones are checked on their own).
@@ -536,7 +536,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     defp item_names,
-      do: Enum.map(BreweryTasks.list_items(), &{&1.name, &1.position})
+      do: Enum.map(Tasks.list_items(), &{&1.name, &1.position})
 
     defp board_lists do
       Repo.all(
@@ -551,8 +551,8 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
     test "seeds tasks, Daily checks and a Brewery event relative to today" do
       {:ok, _} = Synthetic.setup()
-      today = BreweryTasks.today()
-      {:ok, board} = BreweryTasks.board(Date.add(today, -3), Date.add(today, 13), today)
+      today = Tasks.today()
+      {:ok, board} = Tasks.board(Date.add(today, -3), Date.add(today, 13), today)
 
       assert length(seed_tasks()) == 17
       # D38's two, plus Keg Wash's two past Wednesdays (D39).
@@ -579,8 +579,8 @@ defmodule RockcutApi.Seeds.SyntheticTest do
                  )
                )
 
-      monday = Date.beginning_of_week(BreweryTasks.today())
-      assert BreweryTasks.today_at(event.starts_at) == Date.add(monday, 2)
+      monday = Date.beginning_of_week(Tasks.today())
+      assert Tasks.today_at(event.starts_at) == Date.add(monday, 2)
     end
 
     test "setup twice gives the same tasks, checks and items" do
@@ -595,13 +595,13 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     test "cleanup_temp removes [TEST-TEMP] tasks and items; the lists stay dense" do
       {:ok, _} = Synthetic.setup()
       mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
-      today = BreweryTasks.today()
+      today = Tasks.today()
 
-      {:ok, _} = BreweryTasks.create(%{title: "[TEST-TEMP] first", due_on: today}, mgr)
-      {:ok, kept} = BreweryTasks.create(%{title: "Real task", due_on: today}, mgr)
-      {:ok, _} = BreweryTasks.create(%{title: "[TEST-TEMP] later"}, mgr)
-      {:ok, item} = BreweryTasks.create_item(%{name: "[TEST-TEMP] Hoses"}, mgr)
-      {:ok, _} = BreweryTasks.tick(today, item, mgr, today)
+      {:ok, _} = Tasks.create(%{title: "[TEST-TEMP] first", due_on: today}, mgr)
+      {:ok, kept} = Tasks.create(%{title: "Real task", due_on: today}, mgr)
+      {:ok, _} = Tasks.create(%{title: "[TEST-TEMP] later"}, mgr)
+      {:ok, item} = Tasks.create_item(%{name: "[TEST-TEMP] Hoses"}, mgr)
+      {:ok, _} = Tasks.tick(today, item, mgr, today)
 
       :ok = Synthetic.cleanup_temp()
 
@@ -627,7 +627,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
     test "seeds three recurring tasks, Keg Wash with two open past Wednesdays (D39)" do
       {:ok, _} = Synthetic.setup()
-      today = BreweryTasks.today()
+      today = Tasks.today()
 
       assert [
                {"[SEED] Calibrate pH meter", "quarterly", ^today, _},
@@ -639,7 +639,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Date.diff(today, keg_start) in 8..14
       assert keg_count >= 54
 
-      {:ok, board} = BreweryTasks.board(Date.add(today, -3), Date.add(today, 27), today)
+      {:ok, board} = Tasks.board(Date.add(today, -3), Date.add(today, 27), today)
       keg = Enum.filter(board.unfinished, &(&1.task.title == "[SEED] Keg Wash"))
       assert length(keg) == 2
       assert Enum.all?(keg, & &1.task.series_id)
@@ -656,10 +656,10 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert seed_series() == first
 
       mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
-      today = BreweryTasks.today()
+      today = Tasks.today()
 
       {:ok, temp} =
-        BreweryTasks.create(
+        Tasks.create(
           %{title: "[TEST-TEMP] Hoses", due_on: today, repeat: "annually"},
           mgr,
           today
@@ -667,7 +667,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       # An occurrence retitled on its own still goes with its series.
       {:ok, _} =
-        BreweryTasks.update(temp, %{title: "Renamed"}, mgr, scope: "this")
+        Tasks.update(temp, %{title: "Renamed"}, mgr, scope: "this")
 
       :ok = Synthetic.cleanup_temp()
       refute Repo.get(TaskSeries, temp.series_id)
@@ -682,13 +682,13 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     test "reset deletes every Daily check and restores the four default items" do
       {:ok, _} = Synthetic.setup()
       mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
-      today = BreweryTasks.today()
-      [backups, gravities | _] = BreweryTasks.list_items()
+      today = Tasks.today()
+      [backups, gravities | _] = Tasks.list_items()
 
-      {:ok, _} = BreweryTasks.tick(Date.add(today, -5), gravities, mgr, today)
-      {:ok, _} = BreweryTasks.rename_item(gravities, "Gravity", mgr)
-      {:ok, _} = BreweryTasks.retire_item(backups, mgr)
-      {:ok, _} = BreweryTasks.create_item(%{name: "Hoses"}, mgr)
+      {:ok, _} = Tasks.tick(Date.add(today, -5), gravities, mgr, today)
+      {:ok, _} = Tasks.rename_item(gravities, "Gravity", mgr)
+      {:ok, _} = Tasks.retire_item(backups, mgr)
+      {:ok, _} = Tasks.create_item(%{name: "Hoses"}, mgr)
 
       {:ok, _} = Synthetic.reset()
 

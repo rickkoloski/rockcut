@@ -1,4 +1,4 @@
-defmodule RockcutApiWeb.BreweryDailyController do
+defmodule RockcutApiWeb.DailyController do
   @moduledoc """
   The Brewery board's Daily card (D38 §3.6): ticking checks (`:write` on
   `:brewery_tasks`, any Brewery member) and the Daily items list (read by
@@ -7,18 +7,18 @@ defmodule RockcutApiWeb.BreweryDailyController do
   """
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [brewery_daily_item: 1]
+  import RockcutApiWeb.JSONHelpers, only: [daily_item: 1]
 
-  alias RockcutApi.{Authz, BreweryTasks}
-  alias RockcutApiWeb.BreweryErrors
+  alias RockcutApi.{Authz, Tasks}
+  alias RockcutApiWeb.TaskErrors
 
   action_fallback RockcutApiWeb.FallbackController
 
-  @doc "PUT /api/brewery/daily_checks/:on_date/:daily_item_id: tick (today or earlier)."
+  @doc "PUT /api/boards/brewery/daily_checks/:on_date/:daily_item_id: tick (today or earlier)."
   def tick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
     with :ok <- allow(conn, :write, :brewery_tasks),
          {:ok, item} <- fetch(item_id),
-         {:ok, check} <- BreweryTasks.tick(on_date, item, actor(conn)) do
+         {:ok, check} <- Tasks.tick(on_date, item, actor(conn)) do
       json(conn, %{
         data: %{
           on_date: check.on_date,
@@ -29,55 +29,55 @@ defmodule RockcutApiWeb.BreweryDailyController do
         }
       })
     end
-    |> BreweryErrors.handle(conn)
+    |> TaskErrors.handle(conn)
   end
 
-  @doc "DELETE /api/brewery/daily_checks/:on_date/:daily_item_id: untick."
+  @doc "DELETE /api/boards/brewery/daily_checks/:on_date/:daily_item_id: untick."
   def untick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
     with :ok <- allow(conn, :write, :brewery_tasks),
          {:ok, item} <- fetch(item_id),
-         {:ok, :ok} <- BreweryTasks.untick(on_date, item, actor(conn)) do
+         {:ok, :ok} <- Tasks.untick(on_date, item, actor(conn)) do
       send_resp(conn, :no_content, "")
     end
-    |> BreweryErrors.handle(conn)
+    |> TaskErrors.handle(conn)
   end
 
   @doc """
-  GET /api/brewery/daily_items: the active items, in order. With
+  GET /api/boards/brewery/daily_items: the active items, in order. With
   `include_retired=true` (D39), the retired ones follow, by name.
   """
   def items(conn, params) do
     with :ok <- allow(conn, :read, :brewery_tasks) do
       retired =
         if params["include_retired"] in ["true", true],
-          do: BreweryTasks.list_retired_items(),
+          do: Tasks.list_retired_items(),
           else: []
 
-      render_items(conn, BreweryTasks.list_items() ++ retired)
+      render_items(conn, Tasks.list_items() ++ retired)
     end
-    |> BreweryErrors.handle(conn)
+    |> TaskErrors.handle(conn)
   end
 
-  @doc "POST /api/brewery/daily_items/:id/restore: a retired item back at the bottom (D39, S75)."
+  @doc "POST /api/boards/brewery/daily_items/:id/restore: a retired item back at the bottom (D39, S75)."
   def restore_item(conn, %{"id" => id}) do
     with :ok <- allow(conn, :manage, :brewery_daily_items),
          {:ok, item} <- fetch(id),
-         {:ok, item} <- BreweryTasks.restore_item(item, actor(conn)) do
-      json(conn, %{data: brewery_daily_item(item)})
+         {:ok, item} <- Tasks.restore_item(item, actor(conn)) do
+      json(conn, %{data: daily_item(item)})
     end
-    |> BreweryErrors.handle(conn)
+    |> TaskErrors.handle(conn)
   end
 
   def create_item(conn, params) do
     with :ok <- allow(conn, :manage, :brewery_daily_items),
-         {:ok, item} <- BreweryTasks.create_item(Map.take(params, ["name"]), actor(conn)) do
-      conn |> put_status(:created) |> json(%{data: brewery_daily_item(item)})
+         {:ok, item} <- Tasks.create_item(Map.take(params, ["name"]), actor(conn)) do
+      conn |> put_status(:created) |> json(%{data: daily_item(item)})
     end
-    |> BreweryErrors.handle(conn)
+    |> TaskErrors.handle(conn)
   end
 
   @doc """
-  PATCH /api/brewery/daily_items/:id: `{ name? }` renames, `{ active: false }`
+  PATCH /api/boards/brewery/daily_items/:id: `{ name? }` renames, `{ active: false }`
   retires. Any `PATCH` on a retired item (a rename, `active`, `position`) is a
   422 `retired` and changes nothing (G3, D39 GAP-1/GAP-2); restore brings one
   back.
@@ -88,35 +88,35 @@ defmodule RockcutApiWeb.BreweryDailyController do
          :ok <- refuse_retired(item),
          {:ok, item} <- maybe_rename(item, params, actor(conn)),
          {:ok, item} <- maybe_retire(item, params, actor(conn)) do
-      json(conn, %{data: brewery_daily_item(item)})
+      json(conn, %{data: daily_item(item)})
     end
-    |> BreweryErrors.handle(conn)
+    |> TaskErrors.handle(conn)
   end
 
-  @doc "PUT /api/brewery/daily_items/order: `{ ids: [...] }`, exactly the active items."
+  @doc "PUT /api/boards/brewery/daily_items/order: `{ ids: [...] }`, exactly the active items."
   def order_items(conn, params) do
     with :ok <- allow(conn, :manage, :brewery_daily_items),
-         {:ok, items} <- BreweryTasks.order_items(params["ids"], actor(conn)) do
+         {:ok, items} <- Tasks.order_items(params["ids"], actor(conn)) do
       render_items(conn, items)
     end
-    |> BreweryErrors.handle(conn)
+    |> TaskErrors.handle(conn)
   end
 
   defp refuse_retired(%{active: false}), do: {:error, :retired}
   defp refuse_retired(_item), do: :ok
 
   defp maybe_rename(item, %{"name" => name}, actor),
-    do: BreweryTasks.rename_item(item, name, actor)
+    do: Tasks.rename_item(item, name, actor)
 
   defp maybe_rename(item, _params, _actor), do: {:ok, item}
 
   defp maybe_retire(item, %{"active" => active}, actor) when active in [false, "false"],
-    do: BreweryTasks.retire_item(item, actor)
+    do: Tasks.retire_item(item, actor)
 
   defp maybe_retire(item, _params, _actor), do: {:ok, item}
 
   defp render_items(conn, items),
-    do: json(conn, %{data: Enum.map(items, &brewery_daily_item/1)})
+    do: json(conn, %{data: Enum.map(items, &daily_item/1)})
 
   defp allow(conn, action, area) do
     if Authz.can?(actor(conn), action, area), do: :ok, else: {:error, :forbidden}
@@ -126,7 +126,7 @@ defmodule RockcutApiWeb.BreweryDailyController do
 
   # Active or retired: the context decides what a retired item allows.
   defp fetch(id) do
-    case BreweryTasks.get_item(id) do
+    case Tasks.get_item(id) do
       nil -> {:error, :not_found}
       item -> {:ok, item}
     end

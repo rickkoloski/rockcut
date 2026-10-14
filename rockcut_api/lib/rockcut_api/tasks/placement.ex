@@ -1,4 +1,4 @@
-defmodule RockcutApi.BreweryTasks.Placement do
+defmodule RockcutApi.Tasks.Placement do
   @moduledoc """
   D38 §7 rule 2: the one function that decides which cards show on a day. Pure
   (no Repo): it takes tasks and returns cards. Nothing else filters on
@@ -30,7 +30,7 @@ defmodule RockcutApi.BreweryTasks.Placement do
     * `overdue`: open and planned before today (the amber edge).
   """
 
-  alias RockcutApi.BreweryTasks.Task
+  alias RockcutApi.Tasks.Task
 
   @doc """
   The cards for `days` (any enumerable of dates) and the Future list, as

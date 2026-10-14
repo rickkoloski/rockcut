@@ -1,4 +1,4 @@
-defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
+defmodule RockcutApiWeb.TaskSeriesControllerTest do
   @moduledoc """
   D39: recurring tasks through the API: `repeat*` on create, `scope` and
   `changed` on edit and delete, `GET …/series`, `POST …/stop_repeating`, the
@@ -10,13 +10,13 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
   import RockcutApi.PersonaFixtures
   import Phoenix.ConnTest
 
-  alias RockcutApi.{BreweryTasks, Repo}
-  alias RockcutApi.BreweryTasks.{Task, TaskSeries}
+  alias RockcutApi.{Tasks, Repo}
+  alias RockcutApi.Tasks.{Task, TaskSeries}
 
   setup do
     p = personas(~w(owner breweryMgr brewer1 bartender1))
     {_device, token} = taproom_device()
-    %{p: p, token: token, today: BreweryTasks.today()}
+    %{p: p, token: token, today: Tasks.today()}
   end
 
   # Weekly on today's weekday, from today: 53 occurrences.
@@ -24,7 +24,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
     call(
       user,
       :post,
-      "/api/brewery/tasks",
+      "/api/boards/brewery/tasks",
       Map.merge(
         %{
           title: "Keg Wash",
@@ -42,8 +42,8 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
   defp week(%{"series_id" => id}, today, n),
     do: Repo.get_by!(Task, series_id: id, series_date: Date.add(today, 7 * n))
 
-  defp path(%Task{id: id}), do: "/api/brewery/tasks/#{id}"
-  defp path(%{"id" => id}), do: "/api/brewery/tasks/#{id}"
+  defp path(%Task{id: id}), do: "/api/boards/brewery/tasks/#{id}"
+  defp path(%{"id" => id}), do: "/api/boards/brewery/tasks/#{id}"
 
   defp count(series_id),
     do: Repo.aggregate(from(t in Task, where: t.series_id == ^series_id), :count)
@@ -87,7 +87,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
       iso = Date.to_iso8601(today)
 
       routes = [
-        {:post, "/api/brewery/tasks",
+        {:post, "/api/boards/brewery/tasks",
          %{title: "Nope", due_on: iso, repeat: "weekly", repeat_weekdays: [1]}},
         {:get, path(first) <> "/series", %{}},
         {:post, path(first) <> "/stop_repeating", %{}},
@@ -110,7 +110,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
   describe "errors" do
     test "repeat_needs_day", %{p: p} do
       assert %{"error" => "repeat_needs_day", "message" => "Pick a day to repeat"} =
-               call(p["brewer1"], :post, "/api/brewery/tasks", %{
+               call(p["brewer1"], :post, "/api/boards/brewery/tasks", %{
                  title: "Keg Wash",
                  repeat: "weekly",
                  repeat_weekdays: [3]
@@ -125,7 +125,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
       repeat = %{repeat: "weekly", repeat_weekdays: [Date.day_of_week(today)]}
 
       one_off =
-        call(user, :post, "/api/brewery/tasks", %{title: "Keg Wash", due_on: iso})
+        call(user, :post, "/api/boards/brewery/tasks", %{title: "Keg Wash", due_on: iso})
         |> json_response(201)
         |> Map.get("data")
 
@@ -135,7 +135,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
       assert count(id) == 53
 
       future =
-        call(user, :post, "/api/brewery/tasks", %{title: "Hoses"})
+        call(user, :post, "/api/boards/brewery/tasks", %{title: "Hoses"})
         |> json_response(201)
         |> Map.get("data")
 
@@ -143,7 +143,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
                call(user, :patch, path(future), repeat) |> json_response(422)
 
       done =
-        call(user, :post, "/api/brewery/tasks", %{title: "Done", due_on: iso})
+        call(user, :post, "/api/boards/brewery/tasks", %{title: "Done", due_on: iso})
         |> json_response(201)
         |> Map.get("data")
 
@@ -179,7 +179,10 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
       user = p["brewer1"]
 
       one_off =
-        call(user, :post, "/api/brewery/tasks", %{title: "Once", due_on: Date.to_iso8601(today)})
+        call(user, :post, "/api/boards/brewery/tasks", %{
+          title: "Once",
+          due_on: Date.to_iso8601(today)
+        })
         |> json_response(201)
         |> Map.get("data")
 
@@ -190,7 +193,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
                  call(user, verb, path(one_off) <> suffix) |> json_response(422)
       end
 
-      assert call(user, :get, "/api/brewery/tasks/999999/series").status == 404
+      assert call(user, :get, "/api/boards/brewery/tasks/999999/series").status == 404
     end
 
     test "rule errors are 422 with their field", %{p: p, today: today} do
@@ -198,7 +201,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
       iso = Date.to_iso8601(today)
 
       assert %{"errors" => %{"weekdays" => [_]}} =
-               call(user, :post, "/api/brewery/tasks", %{
+               call(user, :post, "/api/boards/brewery/tasks", %{
                  title: "K",
                  due_on: iso,
                  repeat: "weekly"
@@ -206,7 +209,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
                |> json_response(422)
 
       assert %{"errors" => %{"count" => [_]}} =
-               call(user, :post, "/api/brewery/tasks", %{
+               call(user, :post, "/api/boards/brewery/tasks", %{
                  title: "K",
                  due_on: iso,
                  repeat: "annually",
@@ -292,7 +295,7 @@ defmodule RockcutApiWeb.BreweryTaskSeriesControllerTest do
     iso = Date.to_iso8601(today)
 
     data =
-      call(user, :get, "/api/brewery/tasks", %{
+      call(user, :get, "/api/boards/brewery/tasks", %{
         from: iso,
         to: Date.to_iso8601(Date.add(today, 30))
       })

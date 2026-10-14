@@ -1,4 +1,4 @@
-defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
+defmodule RockcutApiWeb.TaskFollowupsControllerTest do
   @moduledoc """
   D39 follow-ups from the D38 DEV QA (spec §5): writes on a retired Daily
   item (GAP-1/GAP-2, O-3), restoring one (S75), and a task someone deleted
@@ -9,18 +9,21 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
   import RockcutApi.PersonaFixtures
   import Phoenix.ConnTest
 
-  alias RockcutApi.BreweryTasks
+  alias RockcutApi.Tasks
 
   setup do
     p = personas(~w(owner breweryMgr brewer1 bartender1))
-    %{p: p, today: BreweryTasks.today()}
+    %{p: p, today: Tasks.today()}
   end
 
-  defp item_id(name), do: Enum.find(BreweryTasks.list_items(), &(&1.name == name)).id
+  defp item_id(name), do: Enum.find(Tasks.list_items(), &(&1.name == name)).id
 
   defp retire!(mgr, name) do
     id = item_id(name)
-    call(mgr, :patch, "/api/brewery/daily_items/#{id}", %{active: false}) |> json_response(200)
+
+    call(mgr, :patch, "/api/boards/brewery/daily_items/#{id}", %{active: false})
+    |> json_response(200)
+
     id
   end
 
@@ -34,23 +37,23 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
       test label, %{p: p} do
         mgr = p["breweryMgr"]
         temps = retire!(mgr, "Temps")
-        before = BreweryTasks.get_item(temps)
+        before = Tasks.get_item(temps)
 
         assert %{"error" => "retired", "message" => "That Daily item was retired"} =
                  call(
                    mgr,
                    :patch,
-                   "/api/brewery/daily_items/#{temps}",
+                   "/api/boards/brewery/daily_items/#{temps}",
                    unquote(Macro.escape(params))
                  )
                  |> json_response(422)
 
-        assert BreweryTasks.get_item(temps) == before
+        assert Tasks.get_item(temps) == before
       end
     end
 
     test "an item that never existed stays 404", %{p: p} do
-      assert call(p["breweryMgr"], :patch, "/api/brewery/daily_items/999999", %{name: "X"}).status ==
+      assert call(p["breweryMgr"], :patch, "/api/boards/brewery/daily_items/999999", %{name: "X"}).status ==
                404
     end
   end
@@ -59,14 +62,14 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
     p: p,
     today: today
   } do
-    path = "/api/brewery/daily_checks/#{Date.to_iso8601(today)}/#{item_id("Temps")}"
+    path = "/api/boards/brewery/daily_checks/#{Date.to_iso8601(today)}/#{item_id("Temps")}"
     assert call(p["brewer1"], :put, path).status == 200
     retire!(p["breweryMgr"], "Temps")
 
     assert %{"error" => "retired"} = call(p["brewer1"], :delete, path) |> json_response(422)
 
     assert %{"items" => items} =
-             call(p["brewer1"], :get, "/api/brewery/tasks", %{
+             call(p["brewer1"], :get, "/api/boards/brewery/tasks", %{
                from: Date.to_iso8601(today),
                to: Date.to_iso8601(today)
              })
@@ -82,11 +85,11 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
       iso = Date.to_iso8601(today)
 
       task =
-        call(brewer, :post, "/api/brewery/tasks", %{title: "Package FV6", due_on: iso})
+        call(brewer, :post, "/api/boards/brewery/tasks", %{title: "Package FV6", due_on: iso})
         |> json_response(201)
         |> Map.get("data")
 
-      path = "/api/brewery/tasks/#{task["id"]}"
+      path = "/api/boards/brewery/tasks/#{task["id"]}"
       assert call(p["breweryMgr"], :delete, path).status == 204
 
       for {verb, route, params} <- [
@@ -102,16 +105,16 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
       end
 
       # Nothing is recreated.
-      refute BreweryTasks.get_task(task["id"])
+      refute Tasks.get_task(task["id"])
     end
 
     test "an id that never existed stays 404", %{p: p, today: today} do
       for {verb, route, params} <- [
-            {:patch, "/api/brewery/tasks/999999", %{title: "X"}},
-            {:delete, "/api/brewery/tasks/999999", %{}},
-            {:post, "/api/brewery/tasks/999999/move", %{due_on: Date.to_iso8601(today)}},
-            {:post, "/api/brewery/tasks/999999/complete", %{}},
-            {:post, "/api/brewery/tasks/999999/uncomplete", %{}}
+            {:patch, "/api/boards/brewery/tasks/999999", %{title: "X"}},
+            {:delete, "/api/boards/brewery/tasks/999999", %{}},
+            {:post, "/api/boards/brewery/tasks/999999/move", %{due_on: Date.to_iso8601(today)}},
+            {:post, "/api/boards/brewery/tasks/999999/complete", %{}},
+            {:post, "/api/boards/brewery/tasks/999999/uncomplete", %{}}
           ] do
         assert call(p["brewer1"], verb, route, params).status == 404, "#{verb} #{route}"
       end
@@ -124,7 +127,7 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
         temps = retire!(p["breweryMgr"], "Temps")
 
         assert %{"data" => %{"id" => ^temps, "active" => true, "position" => 4}} =
-                 call(p[key], :post, "/api/brewery/daily_items/#{temps}/restore")
+                 call(p[key], :post, "/api/boards/brewery/daily_items/#{temps}/restore")
                  |> json_response(200)
       end
 
@@ -132,24 +135,31 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
 
       for key <- ~w(brewer1 bartender1),
           do:
-            assert(call(p[key], :post, "/api/brewery/daily_items/#{temps}/restore").status == 403)
+            assert(
+              call(p[key], :post, "/api/boards/brewery/daily_items/#{temps}/restore").status ==
+                403
+            )
 
-      refute BreweryTasks.get_item(temps).active
-      assert call(p["breweryMgr"], :post, "/api/brewery/daily_items/999999/restore").status == 404
+      refute Tasks.get_item(temps).active
+
+      assert call(p["breweryMgr"], :post, "/api/boards/brewery/daily_items/999999/restore").status ==
+               404
     end
 
     test "include_retired lists the retired items after the active ones", %{p: p} do
       temps = retire!(p["breweryMgr"], "Temps")
 
       assert Enum.map(
-               call(p["brewer1"], :get, "/api/brewery/daily_items")
+               call(p["brewer1"], :get, "/api/boards/brewery/daily_items")
                |> json_response(200)
                |> Map.get("data"),
                & &1["name"]
              ) == ~w(Backups Gravities Pressures)
 
       assert [_, _, _, %{"id" => ^temps, "name" => "Temps", "active" => false}] =
-               call(p["brewer1"], :get, "/api/brewery/daily_items", %{include_retired: "true"})
+               call(p["brewer1"], :get, "/api/boards/brewery/daily_items", %{
+                 include_retired: "true"
+               })
                |> json_response(200)
                |> Map.get("data")
     end
@@ -157,15 +167,17 @@ defmodule RockcutApiWeb.BreweryFollowupsControllerTest do
     test "the cap and a name clash are refused with D38's answers", %{p: p} do
       mgr = p["breweryMgr"]
       temps = retire!(mgr, "Temps")
-      call(mgr, :post, "/api/brewery/daily_items", %{name: "temps"}) |> json_response(201)
+      call(mgr, :post, "/api/boards/brewery/daily_items", %{name: "temps"}) |> json_response(201)
 
       assert %{"errors" => %{"name" => ["Already on the list"]}} =
-               call(mgr, :post, "/api/brewery/daily_items/#{temps}/restore") |> json_response(422)
+               call(mgr, :post, "/api/boards/brewery/daily_items/#{temps}/restore")
+               |> json_response(422)
 
-      for n <- 1..8, do: call(mgr, :post, "/api/brewery/daily_items", %{name: "Item #{n}"})
+      for n <- 1..8, do: call(mgr, :post, "/api/boards/brewery/daily_items", %{name: "Item #{n}"})
 
       assert %{"error" => "too_many_items"} =
-               call(mgr, :post, "/api/brewery/daily_items/#{temps}/restore") |> json_response(422)
+               call(mgr, :post, "/api/boards/brewery/daily_items/#{temps}/restore")
+               |> json_response(422)
     end
   end
 end

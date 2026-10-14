@@ -1,7 +1,7 @@
-defmodule RockcutApi.BreweryTasks.SchemasTest do
+defmodule RockcutApi.Tasks.SchemasTest do
   use ExUnit.Case, async: true
 
-  alias RockcutApi.BreweryTasks.{DailyItem, Task}
+  alias RockcutApi.Tasks.{DailyItem, Task}
 
   defp errors(cs), do: Keyword.keys(cs.errors)
 

@@ -42,8 +42,8 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Scheduling.{Recurrence, ScheduleEvent, ScheduleEventSeries}
   alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
   alias RockcutApi.BeerBoard.Entry
-  alias RockcutApi.BreweryTasks
-  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Task, TaskSeries}
+  alias RockcutApi.Tasks
+  alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -131,7 +131,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   `today` defaults to the Colorado date (Fly runs in UTC), so an evening setup
   in Colorado doesn't seed next week.
   """
-  def setup(today \\ BreweryTasks.today()) do
+  def setup(today \\ Tasks.today()) do
     Guard.guard!()
     hash = Argon2.hash_pwd_salt(Credentials.password())
     depts = departments!()
@@ -708,7 +708,7 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     Repo.delete_all(from(s in TaskSeries, where: s.id in ^series_ids))
     Repo.delete_all(from(i in DailyItem, where: like(i.name, ^pattern)))
-    if Repo.get_by(Department, key: "brewery"), do: BreweryTasks.compact_lists()
+    if Repo.get_by(Department, key: "brewery"), do: Tasks.compact_lists()
   end
 
   ## Brewery task board (D38)
@@ -776,13 +776,13 @@ defmodule RockcutApi.Seeds.Synthetic do
       )
     end
 
-    BreweryTasks.compact_lists()
+    Tasks.compact_lists()
     seed_recurring_tasks(mgr, today)
 
     # Daily card: yesterday 3 of the first 4 ticked, today 1. A past day only
     # counts items that existed then, and the migration may have added the
     # defaults today: date them two weeks back so the seeded days show x/4.
-    items = BreweryTasks.list_items()
+    items = Tasks.list_items()
     yesterday = Date.add(today, -1)
     since = Recurrence.local_midnight(Date.add(today, -14))
     default_ids = for i <- items, i.name in DailyItem.defaults(), do: i.id
@@ -853,7 +853,7 @@ defmodule RockcutApi.Seeds.Synthetic do
           }
         ] do
       {:ok, _} =
-        BreweryTasks.create(%{attrs | title: "#{@seed_tag} #{attrs.title}"}, mgr, today)
+        Tasks.create(%{attrs | title: "#{@seed_tag} #{attrs.title}"}, mgr, today)
     end
   end
 

@@ -1,11 +1,11 @@
-defmodule RockcutApi.BreweryTasks.SeriesTest do
+defmodule RockcutApi.Tasks.SeriesTest do
   use RockcutApi.DataCase, async: false
 
   import Ecto.Query, only: [from: 2]
   import RockcutApi.AccountsFixtures
 
-  alias RockcutApi.BreweryTasks
-  alias RockcutApi.BreweryTasks.{Event, Series, Task, TaskSeries}
+  alias RockcutApi.Tasks
+  alias RockcutApi.Tasks.{Event, Series, Task, TaskSeries}
 
   # A Wednesday. Its rolling horizon is 2027-10-14 (inclusive).
   @today ~D[2026-10-14]
@@ -20,7 +20,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
   end
 
   defp repeat!(actor, attrs, today \\ @today) do
-    {:ok, first} = BreweryTasks.create(Map.merge(%{title: "Keg Wash"}, attrs), actor, today)
+    {:ok, first} = Tasks.create(Map.merge(%{title: "Keg Wash"}, attrs), actor, today)
     first
   end
 
@@ -171,9 +171,9 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
 
     test "each occurrence goes at the bottom of its day", ctx do
       next_wed = Date.add(@today, 7)
-      {:ok, _} = BreweryTasks.create(%{title: "A", due_on: @today}, ctx.brewer)
-      {:ok, _} = BreweryTasks.create(%{title: "B", due_on: @today}, ctx.brewer)
-      {:ok, _} = BreweryTasks.create(%{title: "C", due_on: next_wed}, ctx.brewer)
+      {:ok, _} = Tasks.create(%{title: "A", due_on: @today}, ctx.brewer)
+      {:ok, _} = Tasks.create(%{title: "B", due_on: @today}, ctx.brewer)
+      {:ok, _} = Tasks.create(%{title: "C", due_on: next_wed}, ctx.brewer)
 
       first = repeat!(ctx.brewer, %{due_on: @today, repeat: "weekly", repeat_weekdays: [3]})
 
@@ -217,7 +217,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
     test "with no day: repeat_needs_day, and nothing is saved", ctx do
       for due_on <- [nil, ""] do
         assert {:error, :repeat_needs_day} =
-                 BreweryTasks.create(
+                 Tasks.create(
                    %{title: "Keg Wash", due_on: due_on, repeat: "weekly", repeat_weekdays: [3]},
                    ctx.brewer,
                    @today
@@ -231,7 +231,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
     test "repeat never or empty makes a one-off task", ctx do
       for r <- ["never", ""] do
         {:ok, task} =
-          BreweryTasks.create(%{title: "One-off", due_on: @today, repeat: r}, ctx.brewer, @today)
+          Tasks.create(%{title: "One-off", due_on: @today, repeat: r}, ctx.brewer, @today)
 
         assert task.series_id == nil
       end
@@ -243,7 +243,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
       outsider = user_with_role("employee", "bar")
 
       assert {:error, cs} =
-               BreweryTasks.create(
+               Tasks.create(
                  %{title: "K", due_on: @today, repeat: "annually", assignee_id: outsider.id},
                  ctx.brewer,
                  @today
@@ -297,7 +297,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
         ] do
       test name, ctx do
         assert {:error, %Ecto.Changeset{} = cs} =
-                 BreweryTasks.create(
+                 Tasks.create(
                    Map.merge(@base, unquote(Macro.escape(attrs))),
                    ctx.brewer,
                    @today
@@ -387,7 +387,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
       first = repeat!(ctx.brewer, %{due_on: @today, repeat: "weekly", repeat_weekdays: [3]})
 
       {:ok, _} =
-        BreweryTasks.create(%{title: "Already there", due_on: ~D[2027-10-20]}, ctx.brewer)
+        Tasks.create(%{title: "Already there", due_on: ~D[2027-10-20]}, ctx.brewer)
 
       assert {:ok, 1} = Series.top_up(Date.add(@today, 7))
       assert List.last(dates(first)) == ~D[2027-10-20]
@@ -485,7 +485,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
     end
 
     test "a one-off task is simply deleted", ctx do
-      {:ok, task} = BreweryTasks.create(%{title: "One-off", due_on: @today}, ctx.brewer)
+      {:ok, task} = Tasks.create(%{title: "One-off", due_on: @today}, ctx.brewer)
       assert {:ok, :deleted} = Series.delete(task, "this", ctx.brewer)
       refute Repo.get(Task, task.id)
     end
@@ -494,7 +494,7 @@ defmodule RockcutApi.BreweryTasks.SeriesTest do
   test "completing one occurrence leaves the others open (S58)", ctx do
     first = repeat!(ctx.brewer, %{due_on: @today, repeat: "weekly", repeat_weekdays: [3]})
 
-    assert {:ok, done} = BreweryTasks.complete(first, nil, ctx.brewer, @today)
+    assert {:ok, done} = Tasks.complete(first, nil, ctx.brewer, @today)
     assert done.completed_on == @today
 
     open =

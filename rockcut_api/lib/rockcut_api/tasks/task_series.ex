@@ -1,4 +1,4 @@
-defmodule RockcutApi.BreweryTasks.TaskSeries do
+defmodule RockcutApi.Tasks.TaskSeries do
   @moduledoc """
   D39: the rule behind a recurring Brewery task (spec §3.10). Every occurrence
   is an ordinary `Task` with this series' id and its `series_date`; the series
@@ -14,13 +14,13 @@ defmodule RockcutApi.BreweryTasks.TaskSeries do
   use Ecto.Schema
   import Ecto.Changeset
 
-  alias RockcutApi.BreweryTasks.Task
+  alias RockcutApi.Tasks.Task
 
   @frequencies ~w(weekly monthly quarterly annually)
   @month_rules ~w(day weekday)
   @max_count 400
 
-  schema "brewery_task_series" do
+  schema "task_series" do
     field :title, :string
     field :notes, :string
     field :frequency, :string

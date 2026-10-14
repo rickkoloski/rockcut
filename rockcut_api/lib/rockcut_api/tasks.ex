@@ -1,7 +1,7 @@
-defmodule RockcutApi.BreweryTasks do
+defmodule RockcutApi.Tasks do
   @moduledoc """
   The Brewery task board (D38): tasks planned on days or on the Future list,
-  the Daily card, and the change log (`brewery_task_events`). Which cards show
+  the Daily card, and the change log (`task_events`). Which cards show
   on a day is decided only by `Placement`.
 
   "Today" is the Colorado date, never the server's (Fly runs in UTC). Every
@@ -22,7 +22,7 @@ defmodule RockcutApi.BreweryTasks do
   alias RockcutApi.{Accounts, Authz, Repo}
   alias RockcutApi.Accounts.{Department, User}
 
-  alias RockcutApi.BreweryTasks.{
+  alias RockcutApi.Tasks.{
     DailyCheck,
     DailyItem,
     Event,

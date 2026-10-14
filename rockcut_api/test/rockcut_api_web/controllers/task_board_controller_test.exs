@@ -1,4 +1,4 @@
-defmodule RockcutApiWeb.BreweryTaskControllerTest do
+defmodule RockcutApiWeb.TaskBoardControllerTest do
   @moduledoc """
   D38 §3.3 / §3.6: every Brewery task board route as `brewer1`, `breweryMgr`,
   `owner`, `bartender1` (403) and a shared device (403); the 422 codes; the
@@ -9,24 +9,25 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
   import RockcutApi.PersonaFixtures
   import Phoenix.ConnTest
 
-  alias RockcutApi.BreweryTasks
+  alias RockcutApi.Tasks
 
   setup do
     p = personas(~w(owner breweryMgr brewer1 bartender1))
     {_device, token} = taproom_device()
-    %{p: p, token: token, today: BreweryTasks.today()}
+    %{p: p, token: token, today: Tasks.today()}
   end
 
   defp add(user, attrs) do
-    call(user, :post, "/api/brewery/tasks", Map.merge(%{title: "Package FV6"}, attrs))
+    call(user, :post, "/api/boards/brewery/tasks", Map.merge(%{title: "Package FV6"}, attrs))
   end
 
   defp add!(user, attrs), do: add(user, attrs) |> json_response(201) |> Map.get("data")
 
-  defp item_id(name), do: Enum.find(BreweryTasks.list_items(), &(&1.name == name)).id
+  defp item_id(name), do: Enum.find(Tasks.list_items(), &(&1.name == name)).id
 
   defp board(user, from, to),
-    do: call(user, :get, "/api/brewery/tasks", %{from: Date.to_iso8601(from), to: to_iso(to)})
+    do:
+      call(user, :get, "/api/boards/brewery/tasks", %{from: Date.to_iso8601(from), to: to_iso(to)})
 
   defp to_iso(%Date{} = d), do: Date.to_iso8601(d)
   defp to_iso(s), do: s
@@ -43,7 +44,7 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
         assert board(user, today, today).status == 200
         task = add!(user, %{due_on: iso})
         other = add!(user, %{due_on: iso})
-        path = "/api/brewery/tasks/#{task["id"]}"
+        path = "/api/boards/brewery/tasks/#{task["id"]}"
 
         assert call(user, :patch, path, %{title: "Package FV7"}).status == 200
 
@@ -52,30 +53,34 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
 
         assert call(user, :post, path <> "/complete").status == 200
         assert call(user, :post, path <> "/uncomplete").status == 200
-        assert call(user, :post, "/api/brewery/tasks/move_overdue_to_today").status == 200
+        assert call(user, :post, "/api/boards/brewery/tasks/move_overdue_to_today").status == 200
         assert call(user, :delete, path).status == 204
 
-        check = "/api/brewery/daily_checks/#{iso}/#{item_id("Temps")}"
+        check = "/api/boards/brewery/daily_checks/#{iso}/#{item_id("Temps")}"
         assert call(user, :put, check).status == 200
         assert call(user, :delete, check).status == 204
-        assert call(user, :get, "/api/brewery/daily_items").status == 200
+        assert call(user, :get, "/api/boards/brewery/daily_items").status == 200
 
         manager? = key != "brewer1"
         expected = if manager?, do: 200, else: 403
-        assert call(user, :get, "/api/brewery/tasks/history").status == expected, key
+        assert call(user, :get, "/api/boards/brewery/tasks/history").status == expected, key
 
-        created = call(user, :post, "/api/brewery/daily_items", %{name: "Hoses #{key}"})
+        created = call(user, :post, "/api/boards/brewery/daily_items", %{name: "Hoses #{key}"})
         assert created.status == if(manager?, do: 201, else: 403), key
 
         id = if manager?, do: json_response(created, 201)["data"]["id"], else: item_id("Temps")
 
-        assert call(user, :patch, "/api/brewery/daily_items/#{id}", %{name: "Hoses2 #{key}"}).status ==
+        assert call(user, :patch, "/api/boards/brewery/daily_items/#{id}", %{
+                 name: "Hoses2 #{key}"
+               }).status ==
                  expected
 
-        ids = Enum.map(BreweryTasks.list_items(), & &1.id) |> Enum.reverse()
-        assert call(user, :put, "/api/brewery/daily_items/order", %{ids: ids}).status == expected
+        ids = Enum.map(Tasks.list_items(), & &1.id) |> Enum.reverse()
 
-        assert call(user, :patch, "/api/brewery/daily_items/#{id}", %{active: false}).status ==
+        assert call(user, :put, "/api/boards/brewery/daily_items/order", %{ids: ids}).status ==
+                 expected
+
+        assert call(user, :patch, "/api/boards/brewery/daily_items/#{id}", %{active: false}).status ==
                  expected
       end
     end
@@ -104,21 +109,21 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
     item = item_id("Temps")
 
     [
-      {:get, "/api/brewery/tasks", %{from: iso, to: iso}},
-      {:get, "/api/brewery/tasks/history", %{}},
-      {:post, "/api/brewery/tasks", %{title: "Nope"}},
-      {:post, "/api/brewery/tasks/move_overdue_to_today", %{}},
-      {:patch, "/api/brewery/tasks/#{task_id}", %{title: "Nope"}},
-      {:delete, "/api/brewery/tasks/#{task_id}", %{}},
-      {:post, "/api/brewery/tasks/#{task_id}/move", %{due_on: iso}},
-      {:post, "/api/brewery/tasks/#{task_id}/complete", %{}},
-      {:post, "/api/brewery/tasks/#{task_id}/uncomplete", %{}},
-      {:put, "/api/brewery/daily_checks/#{iso}/#{item}", %{}},
-      {:delete, "/api/brewery/daily_checks/#{iso}/#{item}", %{}},
-      {:get, "/api/brewery/daily_items", %{}},
-      {:post, "/api/brewery/daily_items", %{name: "Nope"}},
-      {:put, "/api/brewery/daily_items/order", %{ids: []}},
-      {:patch, "/api/brewery/daily_items/#{item}", %{name: "Nope"}}
+      {:get, "/api/boards/brewery/tasks", %{from: iso, to: iso}},
+      {:get, "/api/boards/brewery/tasks/history", %{}},
+      {:post, "/api/boards/brewery/tasks", %{title: "Nope"}},
+      {:post, "/api/boards/brewery/tasks/move_overdue_to_today", %{}},
+      {:patch, "/api/boards/brewery/tasks/#{task_id}", %{title: "Nope"}},
+      {:delete, "/api/boards/brewery/tasks/#{task_id}", %{}},
+      {:post, "/api/boards/brewery/tasks/#{task_id}/move", %{due_on: iso}},
+      {:post, "/api/boards/brewery/tasks/#{task_id}/complete", %{}},
+      {:post, "/api/boards/brewery/tasks/#{task_id}/uncomplete", %{}},
+      {:put, "/api/boards/brewery/daily_checks/#{iso}/#{item}", %{}},
+      {:delete, "/api/boards/brewery/daily_checks/#{iso}/#{item}", %{}},
+      {:get, "/api/boards/brewery/daily_items", %{}},
+      {:post, "/api/boards/brewery/daily_items", %{name: "Nope"}},
+      {:put, "/api/boards/brewery/daily_items/order", %{ids: []}},
+      {:patch, "/api/boards/brewery/daily_items/#{item}", %{name: "Nope"}}
     ]
   end
 
@@ -134,7 +139,7 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
           assignee_id: brewer.id
         })
 
-      call(brewer, :post, "/api/brewery/tasks/#{done["id"]}/complete", %{display: "both"})
+      call(brewer, :post, "/api/boards/brewery/tasks/#{done["id"]}/complete", %{display: "both"})
       open = add!(brewer, %{title: "Filter FV2 > FV3", due_on: Date.to_iso8601(today)})
       future = add!(brewer, %{title: "Clean the cold room"})
 
@@ -207,7 +212,7 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
     } do
       user = p["brewer1"]
       task = add!(user, %{due_on: Date.to_iso8601(Date.add(today, -1))})
-      path = "/api/brewery/tasks/#{task["id"]}"
+      path = "/api/boards/brewery/tasks/#{task["id"]}"
 
       assert %{"error" => "display_required", "message" => _} =
                call(user, :post, path <> "/complete") |> json_response(422)
@@ -224,7 +229,7 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
     test "move to Future and back; move_overdue_to_today counts", %{p: p, today: today} do
       user = p["brewer1"]
       task = add!(user, %{due_on: Date.to_iso8601(Date.add(today, -2))})
-      path = "/api/brewery/tasks/#{task["id"]}/move"
+      path = "/api/boards/brewery/tasks/#{task["id"]}/move"
 
       assert %{"data" => %{"due_on" => nil}} =
                call(user, :post, path, %{due_on: nil}) |> json_response(200)
@@ -232,13 +237,16 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
       call(user, :post, path, %{due_on: Date.to_iso8601(Date.add(today, -2))})
 
       assert %{"moved" => 1} =
-               call(user, :post, "/api/brewery/tasks/move_overdue_to_today") |> json_response(200)
+               call(user, :post, "/api/boards/brewery/tasks/move_overdue_to_today")
+               |> json_response(200)
     end
 
     test "a missing task is a 404", %{p: p} do
       for {verb, suffix} <- [patch: "", delete: "", post: "/move", post: "/complete"] do
         assert %{"error" => "not_found"} =
-                 call(p["brewer1"], verb, "/api/brewery/tasks/999999#{suffix}", %{title: "x"})
+                 call(p["brewer1"], verb, "/api/boards/brewery/tasks/999999#{suffix}", %{
+                   title: "x"
+                 })
                  |> json_response(404)
       end
     end
@@ -246,9 +254,11 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
     test "history: newest first, with names, filterable to one task", %{p: p} do
       a = add!(p["brewer1"], %{title: "First"})
       _b = add!(p["breweryMgr"], %{title: "Second", assignee_id: p["brewer1"].id})
-      call(p["brewer1"], :delete, "/api/brewery/tasks/#{a["id"]}")
+      call(p["brewer1"], :delete, "/api/boards/brewery/tasks/#{a["id"]}")
 
-      body = call(p["breweryMgr"], :get, "/api/brewery/tasks/history") |> json_response(200)
+      body =
+        call(p["breweryMgr"], :get, "/api/boards/brewery/tasks/history") |> json_response(200)
+
       assert %{"page" => 1, "total" => 3, "per_page" => 50} = body
 
       assert [
@@ -264,7 +274,7 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
              }
 
       assert %{"data" => [%{"action" => "deleted"}, %{"action" => "created"}], "total" => 2} =
-               call(p["owner"], :get, "/api/brewery/tasks/history", %{task_id: a["id"]})
+               call(p["owner"], :get, "/api/boards/brewery/tasks/history", %{task_id: a["id"]})
                |> json_response(200)
     end
   end
@@ -274,50 +284,58 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
       brewer = p["brewer1"]
       mgr = p["breweryMgr"]
       temps = item_id("Temps")
-      future = "/api/brewery/daily_checks/#{Date.to_iso8601(Date.add(today, 1))}/#{temps}"
+      future = "/api/boards/brewery/daily_checks/#{Date.to_iso8601(Date.add(today, 1))}/#{temps}"
 
       assert %{"error" => "future_day"} = call(brewer, :put, future) |> json_response(422)
 
       assert %{"data" => %{"active" => false}} =
-               call(mgr, :patch, "/api/brewery/daily_items/#{temps}", %{active: false})
+               call(mgr, :patch, "/api/boards/brewery/daily_items/#{temps}", %{active: false})
                |> json_response(200)
 
       assert %{"error" => "retired"} =
-               call(brewer, :put, "/api/brewery/daily_checks/#{Date.to_iso8601(today)}/#{temps}")
+               call(
+                 brewer,
+                 :put,
+                 "/api/boards/brewery/daily_checks/#{Date.to_iso8601(today)}/#{temps}"
+               )
                |> json_response(422)
 
-      for n <- 1..9, do: call(mgr, :post, "/api/brewery/daily_items", %{name: "Item #{n}"})
+      for n <- 1..9, do: call(mgr, :post, "/api/boards/brewery/daily_items", %{name: "Item #{n}"})
 
       assert %{"error" => "too_many_items"} =
-               call(mgr, :post, "/api/brewery/daily_items", %{name: "One more"})
+               call(mgr, :post, "/api/boards/brewery/daily_items", %{name: "One more"})
                |> json_response(422)
 
       assert %{"errors" => %{"name" => ["Already on the list"]}} =
-               call(mgr, :patch, "/api/brewery/daily_items/#{item_id("Backups")}", %{
+               call(mgr, :patch, "/api/boards/brewery/daily_items/#{item_id("Backups")}", %{
                  name: "item 1"
                })
                |> json_response(422)
 
-      assert call(brewer, :put, "/api/brewery/daily_checks/#{Date.to_iso8601(today)}/999999").status ==
+      assert call(
+               brewer,
+               :put,
+               "/api/boards/brewery/daily_checks/#{Date.to_iso8601(today)}/999999"
+             ).status ==
                404
 
       assert %{"error" => "invalid_order"} =
-               call(mgr, :put, "/api/brewery/daily_items/order", %{ids: [1]})
+               call(mgr, :put, "/api/boards/brewery/daily_items/order", %{ids: [1]})
                |> json_response(422)
     end
 
     test "ticking a day before the item was added is a 422 (G4)", %{p: p, today: today} do
       # The defaults have been on the card all year.
-      RockcutApi.Repo.update_all(RockcutApi.BreweryTasks.DailyItem,
+      RockcutApi.Repo.update_all(RockcutApi.Tasks.DailyItem,
         set: [inserted_at: ~U[2026-01-01 12:00:00Z]]
       )
 
       created =
-        call(p["breweryMgr"], :post, "/api/brewery/daily_items", %{name: "DO"})
+        call(p["breweryMgr"], :post, "/api/boards/brewery/daily_items", %{name: "DO"})
         |> json_response(201)
 
       yesterday = Date.to_iso8601(Date.add(today, -1))
-      check = "/api/brewery/daily_checks/#{yesterday}/#{created["data"]["id"]}"
+      check = "/api/boards/brewery/daily_checks/#{yesterday}/#{created["data"]["id"]}"
 
       assert %{"error" => "not_yet_added", "message" => _} =
                call(p["brewer1"], :put, check) |> json_response(422)
@@ -334,15 +352,15 @@ defmodule RockcutApiWeb.BreweryTaskControllerTest do
       mgr = p["breweryMgr"]
       temps = item_id("Temps")
 
-      call(mgr, :patch, "/api/brewery/daily_items/#{temps}", %{active: false})
+      call(mgr, :patch, "/api/boards/brewery/daily_items/#{temps}", %{active: false})
       |> json_response(200)
 
       assert %{"error" => "retired"} =
-               call(mgr, :patch, "/api/brewery/daily_items/#{temps}", %{active: true})
+               call(mgr, :patch, "/api/boards/brewery/daily_items/#{temps}", %{active: true})
                |> json_response(422)
 
-      refute BreweryTasks.get_item(temps).active
-      refute Enum.any?(BreweryTasks.list_items(), &(&1.id == temps))
+      refute Tasks.get_item(temps).active
+      refute Enum.any?(Tasks.list_items(), &(&1.id == temps))
     end
   end
 

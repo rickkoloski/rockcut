@@ -1,11 +1,11 @@
-defmodule RockcutApi.BreweryDailyTest do
+defmodule RockcutApi.DailyTest do
   use RockcutApi.DataCase
 
   import Ecto.Query, only: [from: 2]
   import RockcutApi.AccountsFixtures
 
-  alias RockcutApi.BreweryTasks
-  alias RockcutApi.BreweryTasks.{DailyCheck, DailyItem, Event}
+  alias RockcutApi.Tasks
+  alias RockcutApi.Tasks.{DailyCheck, DailyItem, Event}
 
   @mon ~D[2026-10-12]
   @tue ~D[2026-10-13]
@@ -19,7 +19,7 @@ defmodule RockcutApi.BreweryDailyTest do
 
     brewer = user_with_role("employee", "brewery", %{name: "Kate Brewer"})
     mgr = user_with_role("manager", "brewery")
-    items = Map.new(BreweryTasks.list_items(), &{&1.name, &1})
+    items = Map.new(Tasks.list_items(), &{&1.name, &1})
 
     %{brewer: brewer, mgr: mgr, items: items}
   end
@@ -29,13 +29,13 @@ defmodule RockcutApi.BreweryDailyTest do
       temps = items["Temps"]
 
       assert {:ok, %DailyCheck{completed_by_id: id, on_date: @today}} =
-               BreweryTasks.tick(@today, temps, brewer, @today)
+               Tasks.tick(@today, temps, brewer, @today)
 
       assert id == brewer.id
-      assert {:ok, _} = BreweryTasks.tick("2026-10-14", items["Pressures"], brewer, @today)
+      assert {:ok, _} = Tasks.tick("2026-10-14", items["Pressures"], brewer, @today)
       assert %{done: 2, total: 4} = card(@today)
 
-      assert {:ok, :ok} = BreweryTasks.untick(@today, temps, brewer, @today)
+      assert {:ok, :ok} = Tasks.untick(@today, temps, brewer, @today)
       assert %{done: 1, total: 4} = card(@today)
 
       assert [
@@ -48,46 +48,46 @@ defmodule RockcutApi.BreweryDailyTest do
     end
 
     test "ticking twice is a no-op, logged once", %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, first} = BreweryTasks.tick(@today, items["Temps"], brewer, @today)
-      assert {:ok, second} = BreweryTasks.tick(@today, items["Temps"], mgr, @today)
+      {:ok, first} = Tasks.tick(@today, items["Temps"], brewer, @today)
+      assert {:ok, second} = Tasks.tick(@today, items["Temps"], mgr, @today)
       assert second.id == first.id
       assert second.completed_by_id == brewer.id
       assert length(daily_events()) == 1
     end
 
     test "unticking an unticked check is a no-op", %{brewer: brewer, items: items} do
-      assert {:ok, :ok} = BreweryTasks.untick(@today, items["Temps"], brewer, @today)
+      assert {:ok, :ok} = Tasks.untick(@today, items["Temps"], brewer, @today)
       assert daily_events() == []
     end
 
     test "a future day is refused (S25)", %{brewer: brewer, items: items} do
-      assert {:error, :future_day} = BreweryTasks.tick(@thu, items["Temps"], brewer, @today)
-      assert {:error, :future_day} = BreweryTasks.untick(@thu, items["Temps"], brewer, @today)
+      assert {:error, :future_day} = Tasks.tick(@thu, items["Temps"], brewer, @today)
+      assert {:error, :future_day} = Tasks.untick(@thu, items["Temps"], brewer, @today)
       assert Repo.aggregate(DailyCheck, :count) == 0
     end
 
     test "a past day can still be ticked (S26)", %{brewer: brewer, items: items} do
       for name <- ~w(Backups Gravities Temps),
-          do: {:ok, _} = BreweryTasks.tick(@tue, items[name], brewer, @today)
+          do: {:ok, _} = Tasks.tick(@tue, items[name], brewer, @today)
 
       assert %{done: 3, total: 4} = card(@tue)
-      assert {:ok, _} = BreweryTasks.tick(@tue, items["Pressures"], brewer, @today)
+      assert {:ok, _} = Tasks.tick(@tue, items["Pressures"], brewer, @today)
       assert %{done: 4, total: 4} = card(@tue)
     end
 
     test "a bad date", %{brewer: brewer, items: items} do
-      assert {:error, :invalid_date} = BreweryTasks.tick("tomorrow", items["Temps"], brewer)
+      assert {:error, :invalid_date} = Tasks.tick("tomorrow", items["Temps"], brewer)
     end
 
     test "a retired item can't be ticked or unticked; its ticks are kept (Decision 1, O-3)",
          %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, _} = BreweryTasks.tick(@tue, items["Backups"], brewer, @today)
-      {:ok, _} = BreweryTasks.tick(@today, items["Backups"], brewer, @today)
-      {:ok, retired} = BreweryTasks.retire_item(items["Backups"], mgr)
+      {:ok, _} = Tasks.tick(@tue, items["Backups"], brewer, @today)
+      {:ok, _} = Tasks.tick(@today, items["Backups"], brewer, @today)
+      {:ok, retired} = Tasks.retire_item(items["Backups"], mgr)
 
-      assert {:error, :retired} = BreweryTasks.tick(@today, retired, brewer, @today)
-      assert {:error, :retired} = BreweryTasks.untick(@tue, retired, brewer, @today)
-      assert {:error, :retired} = BreweryTasks.untick(@today, retired, brewer, @today)
+      assert {:error, :retired} = Tasks.tick(@today, retired, brewer, @today)
+      assert {:error, :retired} = Tasks.untick(@tue, retired, brewer, @today)
+      assert {:error, :retired} = Tasks.untick(@today, retired, brewer, @today)
       assert Repo.aggregate(DailyCheck, :count) == 2
       refute Enum.any?(daily_events(), &(&1.action == "daily_unticked"))
     end
@@ -96,15 +96,15 @@ defmodule RockcutApi.BreweryDailyTest do
   describe "daily items (S28, S29, S31)" do
     test "add at the bottom; rename; reorder", %{mgr: mgr, items: items} do
       assert {:ok, %DailyItem{name: "DO", position: 5}} =
-               BreweryTasks.create_item(%{name: " DO "}, mgr)
+               Tasks.create_item(%{name: " DO "}, mgr)
 
       assert {:ok, %DailyItem{name: "Temperatures"}} =
-               BreweryTasks.rename_item(items["Temps"], "Temperatures", mgr)
+               Tasks.rename_item(items["Temps"], "Temperatures", mgr)
 
-      ids = Enum.map(BreweryTasks.list_items(), & &1.id)
+      ids = Enum.map(Tasks.list_items(), & &1.id)
       new_order = [List.last(ids) | Enum.drop(ids, -1)]
 
-      assert {:ok, ordered} = BreweryTasks.order_items(new_order, mgr)
+      assert {:ok, ordered} = Tasks.order_items(new_order, mgr)
       assert Enum.map(ordered, & &1.name) == ~w(DO Backups Gravities Temperatures Pressures)
       assert Enum.map(ordered, & &1.position) == [1, 2, 3, 4, 5]
 
@@ -120,44 +120,44 @@ defmodule RockcutApi.BreweryDailyTest do
     end
 
     test "at most 12 active items", %{mgr: mgr} do
-      for n <- 5..12, do: {:ok, _} = BreweryTasks.create_item(%{name: "Item #{n}"}, mgr)
-      assert {:error, :too_many_items} = BreweryTasks.create_item(%{name: "Thirteen"}, mgr)
-      assert length(BreweryTasks.list_items()) == 12
+      for n <- 5..12, do: {:ok, _} = Tasks.create_item(%{name: "Item #{n}"}, mgr)
+      assert {:error, :too_many_items} = Tasks.create_item(%{name: "Thirteen"}, mgr)
+      assert length(Tasks.list_items()) == 12
     end
 
     test "retired items don't count against the cap", %{mgr: mgr, items: items} do
-      for n <- 5..12, do: {:ok, _} = BreweryTasks.create_item(%{name: "Item #{n}"}, mgr)
-      {:ok, _} = BreweryTasks.retire_item(items["Backups"], mgr)
-      assert {:ok, _} = BreweryTasks.create_item(%{name: "Backups v2"}, mgr)
+      for n <- 5..12, do: {:ok, _} = Tasks.create_item(%{name: "Item #{n}"}, mgr)
+      {:ok, _} = Tasks.retire_item(items["Backups"], mgr)
+      assert {:ok, _} = Tasks.create_item(%{name: "Backups v2"}, mgr)
     end
 
     test "names are unique among active items, ignoring case", %{mgr: mgr, items: items} do
-      assert {:error, cs} = BreweryTasks.create_item(%{name: "temps"}, mgr)
+      assert {:error, cs} = Tasks.create_item(%{name: "temps"}, mgr)
       assert %{name: ["Already on the list"]} = errors_on(cs)
 
-      assert {:error, cs} = BreweryTasks.rename_item(items["Backups"], "TEMPS", mgr)
+      assert {:error, cs} = Tasks.rename_item(items["Backups"], "TEMPS", mgr)
       assert %{name: ["Already on the list"]} = errors_on(cs)
 
       # Its own name in another case is fine, and a retired name is free again.
-      assert {:ok, _} = BreweryTasks.rename_item(items["Temps"], "TEMPS", mgr)
-      {:ok, _} = BreweryTasks.retire_item(items["Backups"], mgr)
-      assert {:ok, _} = BreweryTasks.create_item(%{name: "Backups"}, mgr)
+      assert {:ok, _} = Tasks.rename_item(items["Temps"], "TEMPS", mgr)
+      {:ok, _} = Tasks.retire_item(items["Backups"], mgr)
+      assert {:ok, _} = Tasks.create_item(%{name: "Backups"}, mgr)
     end
 
     test "names are 1–40 characters", %{mgr: mgr} do
-      assert {:error, cs} = BreweryTasks.create_item(%{name: "  "}, mgr)
+      assert {:error, cs} = Tasks.create_item(%{name: "  "}, mgr)
       assert %{name: ["can't be blank"]} = errors_on(cs)
-      assert {:error, cs} = BreweryTasks.create_item(%{name: String.duplicate("x", 41)}, mgr)
+      assert {:error, cs} = Tasks.create_item(%{name: String.duplicate("x", 41)}, mgr)
       assert %{name: [_]} = errors_on(cs)
     end
 
     test "retire closes the gap and keeps past ticks (S29)",
          %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, _} = BreweryTasks.tick(@tue, items["Backups"], brewer, @today)
+      {:ok, _} = Tasks.tick(@tue, items["Backups"], brewer, @today)
 
-      assert {:ok, %DailyItem{active: false}} = BreweryTasks.retire_item(items["Backups"], mgr)
+      assert {:ok, %DailyItem{active: false}} = Tasks.retire_item(items["Backups"], mgr)
 
-      assert Enum.map(BreweryTasks.list_items(), &{&1.name, &1.position}) ==
+      assert Enum.map(Tasks.list_items(), &{&1.name, &1.position}) ==
                [{"Gravities", 1}, {"Temps", 2}, {"Pressures", 3}]
 
       assert %{total: 3} = card(@today)
@@ -166,15 +166,15 @@ defmodule RockcutApi.BreweryDailyTest do
       # A past day where it wasn't ticked doesn't show it.
       assert %{total: 3} = card(@mon)
 
-      assert {:error, :retired} = BreweryTasks.retire_item(items["Backups"], mgr)
-      assert {:error, :retired} = BreweryTasks.rename_item(items["Backups"], "B", mgr)
+      assert {:error, :retired} = Tasks.retire_item(items["Backups"], mgr)
+      assert {:error, :retired} = Tasks.rename_item(items["Backups"], "B", mgr)
       assert [%Event{action: "item_retired", title: "Backups"}, _tick] = daily_events()
     end
 
     test "an item ticked today, then retired, still shows ticked today",
          %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, _} = BreweryTasks.tick(@today, items["Backups"], brewer, @today)
-      {:ok, _} = BreweryTasks.retire_item(items["Backups"], mgr)
+      {:ok, _} = Tasks.tick(@today, items["Backups"], brewer, @today)
+      {:ok, _} = Tasks.retire_item(items["Backups"], mgr)
 
       assert %{items: rows, done: 1, total: 4} = card(@today)
       assert %{item: %DailyItem{name: "Backups", active: false}, check: %{}} = hd(rows)
@@ -187,20 +187,20 @@ defmodule RockcutApi.BreweryDailyTest do
       mgr: mgr,
       items: items
     } do
-      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
+      {:ok, retired} = Tasks.retire_item(items["Temps"], mgr)
 
-      assert {:error, :retired} = BreweryTasks.rename_item(retired, "Temperature", mgr)
-      assert {:error, :retired} = BreweryTasks.retire_item(retired, mgr)
-      assert BreweryTasks.get_item(retired.id).name == "Temps"
+      assert {:error, :retired} = Tasks.rename_item(retired, "Temperature", mgr)
+      assert {:error, :retired} = Tasks.retire_item(retired, mgr)
+      assert Tasks.get_item(retired.id).name == "Temps"
     end
 
     test "order_items needs exactly the active ids", %{mgr: mgr} do
-      ids = Enum.map(BreweryTasks.list_items(), & &1.id)
-      assert {:error, :invalid_order} = BreweryTasks.order_items(Enum.drop(ids, 1), mgr)
-      assert {:error, :invalid_order} = BreweryTasks.order_items([hd(ids) | ids], mgr)
-      assert {:error, :invalid_order} = BreweryTasks.order_items("1,2", mgr)
+      ids = Enum.map(Tasks.list_items(), & &1.id)
+      assert {:error, :invalid_order} = Tasks.order_items(Enum.drop(ids, 1), mgr)
+      assert {:error, :invalid_order} = Tasks.order_items([hd(ids) | ids], mgr)
+      assert {:error, :invalid_order} = Tasks.order_items("1,2", mgr)
 
-      assert {:ok, _} = BreweryTasks.order_items(Enum.map(ids, &to_string/1), mgr)
+      assert {:ok, _} = Tasks.order_items(Enum.map(ids, &to_string/1), mgr)
       assert daily_events() == []
     end
   end
@@ -208,7 +208,7 @@ defmodule RockcutApi.BreweryDailyTest do
   describe "restore_item/2 (S75)" do
     test "back at the bottom with its past ticks; past days show it as before it was retired; logged",
          %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, _} = BreweryTasks.tick(@mon, items["Temps"], brewer, @today)
+      {:ok, _} = Tasks.tick(@mon, items["Temps"], brewer, @today)
 
       summary = fn day ->
         c = card(day)
@@ -216,23 +216,23 @@ defmodule RockcutApi.BreweryDailyTest do
       end
 
       before = {summary.(@mon), summary.(@tue)}
-      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
+      {:ok, retired} = Tasks.retire_item(items["Temps"], mgr)
       # Retired: Tuesday (not ticked) stops counting it; Monday keeps its tick.
       assert %{total: 3} = card(@tue)
 
-      assert {:ok, restored} = BreweryTasks.restore_item(retired, mgr)
+      assert {:ok, restored} = Tasks.restore_item(retired, mgr)
       assert restored.active
 
-      assert Enum.map(BreweryTasks.list_items(), & &1.name) ==
+      assert Enum.map(Tasks.list_items(), & &1.name) ==
                ~w(Backups Gravities Pressures Temps)
 
-      assert Enum.map(BreweryTasks.list_items(), & &1.position) == [1, 2, 3, 4]
+      assert Enum.map(Tasks.list_items(), & &1.position) == [1, 2, 3, 4]
 
       assert {summary.(@mon), summary.(@tue)} == before
       assert Enum.any?(card(@mon).items, &(&1.item.name == "Temps" and &1.check))
       assert Enum.any?(card(@thu).items, &(&1.item.name == "Temps"))
       # It can be ticked again, on a past day too.
-      assert {:ok, _} = BreweryTasks.tick(@tue, restored, brewer, @today)
+      assert {:ok, _} = Tasks.tick(@tue, restored, brewer, @today)
 
       assert [%Event{action: "item_restored", title: "Temps", actor_id: actor} | _] =
                Enum.drop(daily_events(), 1)
@@ -240,27 +240,27 @@ defmodule RockcutApi.BreweryDailyTest do
       assert actor == mgr.id
     end
 
-    test "refused at #{BreweryTasks.max_items()} active items", %{mgr: mgr, items: items} do
-      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
-      for n <- 1..9, do: {:ok, _} = BreweryTasks.create_item(%{name: "Item #{n}"}, mgr)
+    test "refused at #{Tasks.max_items()} active items", %{mgr: mgr, items: items} do
+      {:ok, retired} = Tasks.retire_item(items["Temps"], mgr)
+      for n <- 1..9, do: {:ok, _} = Tasks.create_item(%{name: "Item #{n}"}, mgr)
 
-      assert {:error, :too_many_items} = BreweryTasks.restore_item(retired, mgr)
-      refute BreweryTasks.get_item(retired.id).active
+      assert {:error, :too_many_items} = Tasks.restore_item(retired, mgr)
+      refute Tasks.get_item(retired.id).active
     end
 
     test "refused when an active item has the name, ignoring case", %{mgr: mgr, items: items} do
-      {:ok, retired} = BreweryTasks.retire_item(items["Temps"], mgr)
-      {:ok, _} = BreweryTasks.create_item(%{name: "TEMPS"}, mgr)
+      {:ok, retired} = Tasks.retire_item(items["Temps"], mgr)
+      {:ok, _} = Tasks.create_item(%{name: "TEMPS"}, mgr)
 
       assert {:error, %Ecto.Changeset{errors: [name: {"Already on the list", _}]}} =
-               BreweryTasks.restore_item(retired, mgr)
+               Tasks.restore_item(retired, mgr)
 
-      refute BreweryTasks.get_item(retired.id).active
+      refute Tasks.get_item(retired.id).active
     end
 
     test "an active item is returned unchanged, with no event", %{mgr: mgr, items: items} do
       events = length(daily_events())
-      assert {:ok, item} = BreweryTasks.restore_item(items["Temps"], mgr)
+      assert {:ok, item} = Tasks.restore_item(items["Temps"], mgr)
       assert item == items["Temps"]
       assert length(daily_events()) == events
     end
@@ -271,7 +271,7 @@ defmodule RockcutApi.BreweryDailyTest do
     test "the retired days' totals leave it out; the days before and after count it",
          %{mgr: mgr, items: items} do
       off_and_back!(items["Temps"], mgr, ~D[2026-10-10], ~D[2026-10-13])
-      cards = BreweryTasks.daily_cards(Date.range(~D[2026-10-09], @thu), @today)
+      cards = Tasks.daily_cards(Date.range(~D[2026-10-09], @thu), @today)
 
       totals = Map.new(cards, fn {day, c} -> {day.day, c.total} end)
       assert totals == %{9 => 4, 10 => 3, 11 => 3, 12 => 3, 13 => 4, 14 => 4, 15 => 4}
@@ -282,14 +282,14 @@ defmodule RockcutApi.BreweryDailyTest do
       temps = off_and_back!(items["Temps"], mgr, ~D[2026-10-06], ~D[2026-10-08])
       off_and_back!(temps, mgr, ~D[2026-10-10], ~D[2026-10-13])
 
-      assert BreweryTasks.retired_spans(temps.id) == %{
+      assert Tasks.retired_spans(temps.id) == %{
                temps.id => [
                  {~D[2026-10-06], ~D[2026-10-07]},
                  {~D[2026-10-10], ~D[2026-10-12]}
                ]
              }
 
-      cards = BreweryTasks.daily_cards(Date.range(~D[2026-10-05], @tue), @today)
+      cards = Tasks.daily_cards(Date.range(~D[2026-10-05], @tue), @today)
       out = for {day, %{total: 3}} <- cards, do: day.day
       assert Enum.sort(out) == [6, 7, 10, 11, 12]
     end
@@ -301,7 +301,7 @@ defmodule RockcutApi.BreweryDailyTest do
 
     test "a tick from the retire day, made before retiring, still shows",
          %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, _} = BreweryTasks.tick(~D[2026-10-10], items["Temps"], brewer, @today)
+      {:ok, _} = Tasks.tick(~D[2026-10-10], items["Temps"], brewer, @today)
       off_and_back!(items["Temps"], mgr, ~D[2026-10-10], ~D[2026-10-13])
 
       assert %{done: 1, total: 4} = card(~D[2026-10-10])
@@ -312,11 +312,11 @@ defmodule RockcutApi.BreweryDailyTest do
          %{brewer: brewer, mgr: mgr, items: items} do
       temps = off_and_back!(items["Temps"], mgr, ~D[2026-10-10], ~D[2026-10-13])
 
-      assert {:error, :retired} = BreweryTasks.tick(~D[2026-10-10], temps, brewer, @today)
-      assert {:error, :retired} = BreweryTasks.tick(~D[2026-10-12], temps, brewer, @today)
-      assert {:error, :retired} = BreweryTasks.untick(~D[2026-10-11], temps, brewer, @today)
-      assert {:ok, _} = BreweryTasks.tick(~D[2026-10-09], temps, brewer, @today)
-      assert {:ok, _} = BreweryTasks.tick(@tue, temps, brewer, @today)
+      assert {:error, :retired} = Tasks.tick(~D[2026-10-10], temps, brewer, @today)
+      assert {:error, :retired} = Tasks.tick(~D[2026-10-12], temps, brewer, @today)
+      assert {:error, :retired} = Tasks.untick(~D[2026-10-11], temps, brewer, @today)
+      assert {:ok, _} = Tasks.tick(~D[2026-10-09], temps, brewer, @today)
+      assert {:ok, _} = Tasks.tick(@tue, temps, brewer, @today)
       assert %{done: 0, total: 3} = card(~D[2026-10-12])
     end
   end
@@ -327,9 +327,9 @@ defmodule RockcutApi.BreweryDailyTest do
       do_item = added_tuesday!("DO", mgr)
 
       for name <- ~w(Backups Gravities Pressures),
-          do: {:ok, _} = BreweryTasks.tick(@mon, items[name], brewer, @today)
+          do: {:ok, _} = Tasks.tick(@mon, items[name], brewer, @today)
 
-      cards = BreweryTasks.daily_cards(Date.range(@mon, @thu), @today)
+      cards = Tasks.daily_cards(Date.range(@mon, @thu), @today)
 
       # Monday: DO isn't there; the card is 3/4 over four rows.
       assert %{done: 3, total: 4, items: mon_rows} = cards[@mon]
@@ -345,21 +345,21 @@ defmodule RockcutApi.BreweryDailyTest do
          %{brewer: brewer, mgr: mgr} do
       do_item = added_tuesday!("DO", mgr)
 
-      assert {:error, :not_yet_added} = BreweryTasks.tick(@mon, do_item, brewer, @today)
+      assert {:error, :not_yet_added} = Tasks.tick(@mon, do_item, brewer, @today)
       assert %{done: 0, total: 4} = card(@mon)
       # The day it was added is fine, and so is today.
-      assert {:ok, _} = BreweryTasks.tick(@tue, do_item, brewer, @today)
-      assert {:ok, _} = BreweryTasks.tick(@today, do_item, brewer, @today)
+      assert {:ok, _} = Tasks.tick(@tue, do_item, brewer, @today)
+      assert {:ok, _} = Tasks.tick(@today, do_item, brewer, @today)
       assert %{done: 1, total: 5} = card(@tue)
     end
 
     test "an item added today shows and can be ticked today", %{brewer: brewer, mgr: mgr} do
-      {:ok, do_item} = BreweryTasks.create_item(%{name: "DO"}, mgr)
-      today = BreweryTasks.today()
+      {:ok, do_item} = Tasks.create_item(%{name: "DO"}, mgr)
+      today = Tasks.today()
 
-      assert %{done: 0, total: 5} = BreweryTasks.daily_cards([today])[today]
-      assert {:ok, _} = BreweryTasks.tick(today, do_item, brewer)
-      assert %{done: 1, total: 5} = BreweryTasks.daily_cards([today])[today]
+      assert %{done: 0, total: 5} = Tasks.daily_cards([today])[today]
+      assert {:ok, _} = Tasks.tick(today, do_item, brewer)
+      assert %{done: 1, total: 5} = Tasks.daily_cards([today])[today]
     end
 
     test "a check from before an item was added still shows and counts",
@@ -380,8 +380,8 @@ defmodule RockcutApi.BreweryDailyTest do
 
     test "a rename shows on past days; a check carries who ticked it",
          %{brewer: brewer, mgr: mgr, items: items} do
-      {:ok, _} = BreweryTasks.tick(@mon, items["Temps"], brewer, @today)
-      {:ok, _} = BreweryTasks.rename_item(items["Temps"], "Temperatures", mgr)
+      {:ok, _} = Tasks.tick(@mon, items["Temps"], brewer, @today)
+      {:ok, _} = Tasks.rename_item(items["Temps"], "Temperatures", mgr)
 
       %{items: rows} = card(@mon)
       row = Enum.find(rows, & &1.check)
@@ -390,21 +390,21 @@ defmodule RockcutApi.BreweryDailyTest do
     end
 
     test "an empty range" do
-      assert BreweryTasks.daily_cards([], @today) == %{}
+      assert Tasks.daily_cards([], @today) == %{}
     end
   end
 
   # Added Tue 10/13 at noon Colorado.
   defp added_tuesday!(name, mgr) do
-    {:ok, item} = BreweryTasks.create_item(%{name: name}, mgr)
+    {:ok, item} = Tasks.create_item(%{name: name}, mgr)
     item |> Ecto.Changeset.change(inserted_at: ~U[2026-10-13 18:00:00Z]) |> Repo.update!()
   end
 
   # Retire `item` at noon Colorado on `off`, restore it at noon on `back`.
   defp off_and_back!(item, mgr, off, back) do
-    {:ok, retired} = BreweryTasks.retire_item(item, mgr)
+    {:ok, retired} = Tasks.retire_item(item, mgr)
     backdate_last_event!(off)
-    {:ok, restored} = BreweryTasks.restore_item(retired, mgr)
+    {:ok, restored} = Tasks.restore_item(retired, mgr)
     backdate_last_event!(back)
     restored
   end
@@ -415,7 +415,7 @@ defmodule RockcutApi.BreweryDailyTest do
     event |> Ecto.Changeset.change(inserted_at: at) |> Repo.update!()
   end
 
-  defp card(day), do: BreweryTasks.daily_cards([day], @today)[day]
+  defp card(day), do: Tasks.daily_cards([day], @today)[day]
 
   defp daily_events,
     do: Repo.all(from e in Event, where: is_nil(e.task_id), order_by: [desc: e.id])

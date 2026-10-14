@@ -1,4 +1,4 @@
-defmodule RockcutApiWeb.BreweryErrors do
+defmodule RockcutApiWeb.TaskErrors do
   @moduledoc """
   D38: how the Brewery task board's controllers answer a refused action. A
   rule the board enforces is a 422 with a code (as D37's board does); a
@@ -9,7 +9,7 @@ defmodule RockcutApiWeb.BreweryErrors do
   import Plug.Conn, only: [put_status: 2]
   import Phoenix.Controller, only: [json: 2]
 
-  alias RockcutApi.BreweryTasks
+  alias RockcutApi.Tasks
 
   @messages %{
     display_required: "Choose where the finished task should show",
@@ -17,10 +17,10 @@ defmodule RockcutApiWeb.BreweryErrors do
     retired: "That Daily item was retired",
     not_yet_added: "That Daily item wasn't on the list that day",
     locked: "A finished task can't be moved",
-    too_many_items: "The Daily card holds at most #{BreweryTasks.max_items()} items",
+    too_many_items: "The Daily card holds at most #{Tasks.max_items()} items",
     invalid_order: "The list changed. Reload and try again",
     invalid_date: "Enter dates as YYYY-MM-DD",
-    range_too_long: "Choose a range of 1 to #{BreweryTasks.max_range_days()} days",
+    range_too_long: "Choose a range of 1 to #{Tasks.max_range_days()} days",
     repeat_needs_day: "Pick a day to repeat",
     repeat_finished: "A finished task can't repeat",
     already_repeats: "That task already repeats",

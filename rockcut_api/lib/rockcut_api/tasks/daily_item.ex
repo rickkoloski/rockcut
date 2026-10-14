@@ -1,4 +1,4 @@
-defmodule RockcutApi.BreweryTasks.DailyItem do
+defmodule RockcutApi.Tasks.DailyItem do
   @moduledoc """
   D38: one line of the Daily card (Backups, Gravities, …). Retired items keep
   `active: false` so past ticks still read; `inserted_at` decides whether an
@@ -10,7 +10,7 @@ defmodule RockcutApi.BreweryTasks.DailyItem do
   @max_name 40
   @defaults ~w(Backups Gravities Temps Pressures)
 
-  schema "brewery_daily_items" do
+  schema "daily_items" do
     field :name, :string
     field :position, :integer, default: 0
     field :active, :boolean, default: true

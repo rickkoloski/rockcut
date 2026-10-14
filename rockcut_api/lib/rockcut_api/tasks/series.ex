@@ -1,7 +1,7 @@
-defmodule RockcutApi.BreweryTasks.Series do
+defmodule RockcutApi.Tasks.Series do
   @moduledoc """
   Recurring Brewery tasks (D39, spec §3.10), used through
-  `RockcutApi.BreweryTasks`. Follows D32's `Scheduling.EventSeries`: a
+  `RockcutApi.Tasks`. Follows D32's `Scheduling.EventSeries`: a
   `TaskSeries` rule row plus a real `Task` per date.
 
   Occurrences are always kept through `Recurrence.rolling_horizon/2` (today
@@ -24,7 +24,7 @@ defmodule RockcutApi.BreweryTasks.Series do
   `stop/3`) keeps the ones changed on their own (`series_exception`) unless
   `changed: :remove` (Decision 2). A day change always applies to one
   occurrence and makes it an exception; onto the Future list it makes it a
-  one-off (`BreweryTasks` moves). One History event per series action
+  one-off (`Tasks` moves). One History event per series action
   (Decision 3).
 
   **The chain (G1).** To the person a split series is still one ↻ task: the
@@ -67,9 +67,9 @@ defmodule RockcutApi.BreweryTasks.Series do
   @rule_fields ~w(frequency month_rule interval weekdays day_of_month week_of_month weekday until_date count)a
 
   alias Ecto.Changeset
-  alias RockcutApi.{BreweryTasks, Repo}
+  alias RockcutApi.{Tasks, Repo}
   alias RockcutApi.Accounts.User
-  alias RockcutApi.BreweryTasks.{Event, Task, TaskSeries}
+  alias RockcutApi.Tasks.{Event, Task, TaskSeries}
   alias RockcutApi.Scheduling.Recurrence
 
   @doc "True when `attrs` (string keys) ask for a recurring task."
@@ -90,12 +90,12 @@ defmodule RockcutApi.BreweryTasks.Series do
       {:error, :repeat_needs_day}
     else
       write_transaction(fn ->
-        dept = BreweryTasks.department!()
+        dept = Tasks.department!()
 
         series =
           %TaskSeries{department_id: dept.id, created_by_id: actor.id, skipped_dates: []}
           |> TaskSeries.changeset(series_attrs(attrs))
-          |> BreweryTasks.validate_assignee()
+          |> Tasks.validate_assignee()
           |> Repo.insert()
           |> ok_or_rollback()
 
@@ -211,7 +211,7 @@ defmodule RockcutApi.BreweryTasks.Series do
       series =
         %TaskSeries{department_id: task.department_id, created_by_id: actor.id, skipped_dates: []}
         |> TaskSeries.changeset(series_attrs(merged))
-        |> BreweryTasks.validate_assignee()
+        |> Tasks.validate_assignee()
         |> Repo.insert()
         |> ok_or_rollback()
 
@@ -232,7 +232,7 @@ defmodule RockcutApi.BreweryTasks.Series do
       position =
         if task.due_on == first,
           do: task.position,
-          else: BreweryTasks.next_position(task.department_id, first)
+          else: Tasks.next_position(task.department_id, first)
 
       updated =
         task
@@ -248,7 +248,7 @@ defmodule RockcutApi.BreweryTasks.Series do
         )
         |> Repo.update!()
 
-      if task.due_on != first, do: BreweryTasks.renumber_days(task.department_id, [task.due_on])
+      if task.due_on != first, do: Tasks.renumber_days(task.department_id, [task.due_on])
       insert_occurrences(series, later)
       mark_generated(series, through)
 
@@ -285,7 +285,7 @@ defmodule RockcutApi.BreweryTasks.Series do
   def update(task, attrs, scope, actor, opts \\ [])
 
   def update(%Task{series_id: nil} = task, attrs, _scope, %User{} = actor, _opts),
-    do: BreweryTasks.update_one(task, attrs, actor)
+    do: Tasks.update_one(task, attrs, actor)
 
   def update(%Task{} = task, attrs, scope, %User{} = actor, opts) do
     attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
@@ -309,7 +309,7 @@ defmodule RockcutApi.BreweryTasks.Series do
 
       updated =
         task
-        |> BreweryTasks.update_one(Map.take(attrs, ["due_on" | @content_fields]), actor, "this")
+        |> Tasks.update_one(Map.take(attrs, ["due_on" | @content_fields]), actor, "this")
         |> ok_or_rollback()
 
       if content != %{} and updated.series_id do
@@ -384,7 +384,7 @@ defmodule RockcutApi.BreweryTasks.Series do
     this_cs =
       task
       |> Task.changeset(content)
-      |> BreweryTasks.validate_assignee()
+      |> Tasks.validate_assignee()
 
     if not this_cs.valid?, do: Repo.rollback(this_cs)
 
@@ -392,7 +392,7 @@ defmodule RockcutApi.BreweryTasks.Series do
       Enum.map([series | continuations(series)], fn s ->
         s
         |> TaskSeries.changeset(content)
-        |> BreweryTasks.validate_assignee()
+        |> Tasks.validate_assignee()
         |> Repo.update()
         |> ok_or_rollback()
       end)
@@ -426,7 +426,7 @@ defmodule RockcutApi.BreweryTasks.Series do
 
   defp move_this(task, attrs, actor) do
     if Map.has_key?(attrs, "due_on") do
-      BreweryTasks.update_one(task, %{"due_on" => attrs["due_on"]}, actor) |> ok_or_rollback()
+      Tasks.update_one(task, %{"due_on" => attrs["due_on"]}, actor) |> ok_or_rollback()
     else
       task
     end
@@ -446,7 +446,7 @@ defmodule RockcutApi.BreweryTasks.Series do
   # A finished occurrence is never changed or removed.
   defp split(task, series, rule, attrs, actor, opts) do
     date = task.series_date
-    today = opts[:today] || BreweryTasks.today()
+    today = opts[:today] || Tasks.today()
 
     used = used_before(series, date)
 
@@ -469,7 +469,7 @@ defmodule RockcutApi.BreweryTasks.Series do
         skipped_dates: []
       }
       |> TaskSeries.changeset(new_attrs)
-      |> BreweryTasks.validate_assignee()
+      |> Tasks.validate_assignee()
       |> Repo.insert()
       |> ok_or_rollback()
 
@@ -501,7 +501,7 @@ defmodule RockcutApi.BreweryTasks.Series do
     else
       if is_nil(task.completed_at) do
         Repo.delete!(task)
-        BreweryTasks.renumber_days(task.department_id, [task.due_on])
+        Tasks.renumber_days(task.department_id, [task.due_on])
       end
     end
 
@@ -601,13 +601,13 @@ defmodule RockcutApi.BreweryTasks.Series do
   def delete(task, scope, actor, opts \\ [])
 
   def delete(%Task{series_id: nil} = task, _scope, %User{} = actor, _opts),
-    do: BreweryTasks.delete_one(task, actor)
+    do: Tasks.delete_one(task, actor)
 
   def delete(%Task{} = task, "this", %User{} = actor, _opts) do
     write_transaction(fn ->
       task = fetch!(task.id)
       skip_date!(task.series_id, task.series_date)
-      BreweryTasks.delete_one(task, actor, %{"scope" => "this"}) |> ok_or_rollback()
+      Tasks.delete_one(task, actor, %{"scope" => "this"}) |> ok_or_rollback()
     end)
   end
 
@@ -625,7 +625,7 @@ defmodule RockcutApi.BreweryTasks.Series do
       if head && head != series.id, do: real_end!(head)
       settle(continuing, head)
 
-      BreweryTasks.delete_one(task, actor, %{
+      Tasks.delete_one(task, actor, %{
         "scope" => "following",
         "removed" => removed,
         "kept" => kept
@@ -766,7 +766,7 @@ defmodule RockcutApi.BreweryTasks.Series do
     ids = Enum.map(doomed, & &1.id)
 
     Repo.delete_all(from t in Task, where: t.id in ^ids)
-    BreweryTasks.renumber_days(series.department_id, Enum.map(doomed, & &1.due_on))
+    Tasks.renumber_days(series.department_id, Enum.map(doomed, & &1.due_on))
 
     {length(doomed), if(changed == :remove, do: 0, else: length(changed_ones))}
   end
