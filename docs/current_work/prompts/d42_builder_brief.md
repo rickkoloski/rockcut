@@ -46,7 +46,7 @@ ExUnit.
 **When a decision isn't in the spec,** don't guess. Stop, and write the
 question in your reply starting with `LEAD:`.
 
-## Task 1: the API (spec items 1–6)
+## Task 1: the API (spec items 1–6 and 10)
 
 One commit per item is fine; each with ExUnit.
 
@@ -84,6 +84,12 @@ One commit per item is fine; each with ExUnit.
    the UI say "Extends" vs "Removes N". Tests: S131 (split weekly → monthly,
    Ends → Never from the earlier part: monthly part unchanged, ~12 months),
    S132, and an unsplit series.
+7. **R2, counts across a split (spec §3, item 10; added after you
+   started):** a split part keeps a count (what's left), not a date (stop
+   `count_to_until/2` turning it into one); `chain_ends` / `info/1` report
+   the chain's total; rule and Ends-only changes from any part keep the
+   total. Do it with or right after item 6 (same code). Tests: S141, S142,
+   and an old-style part stored as a date still behaving as a date.
 
 Then: full ExUnit once (`mix test`), `mix compile --warnings-as-errors`.
 Report counts, and stop for the lead.

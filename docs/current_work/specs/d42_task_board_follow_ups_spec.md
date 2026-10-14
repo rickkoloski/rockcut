@@ -24,7 +24,7 @@ beyond this list.
 | 7 | Add and Restore greyed out at 12 active Daily items | D39 QA O2 | UI |
 | 8 | 1 week / 2 weeks, Hide completed, phone view remembered **per board** | D41 QA G1 | UI |
 | 9 | First day of the board: **Today**, **Sunday** or **Monday**; past days dimmed | Matt, 2026-10-14 | UI |
-| — | R2 (split "after N times" series can end one short after a rule change from before the split) | D39 recheck 2 | **No change** (lead's proposal, see §3) |
+| 10 | "After N times" stays a count across a split (R2) | D39 recheck 2 R2 | API + UI (Ends shown) |
 
 No new tables, no migrations, no secrets, no dependencies.
 
@@ -141,13 +141,27 @@ or **Monday**.
   follows the browser, not the person). UI only, no API change.
 - "Today" is Colorado's today, as everywhere on the board.
 
-## 3. R2: proposed no change
+## 3. "After N times" across a split (item 10, R2; Matt, 2026-10-14)
 
-After a split, every part shows Ends as a date ("until Dec 17"), and a
-later rule change keeps that date, so an "after 10 times" series can end
-with 9. The dialog shows the date before saving, so nothing is hidden. The
-lead proposes keeping the shown date as the rule (no code change); Matt can
-overrule.
+Today a split converts a count end into the date of the last occurrence
+(`Series.count_to_until/2`), so after a split every part shows "On a date"
+and a later rule change from before the split keeps that date: weekly Wed
+from 10/14 after 10 times, split to Thu at 11/18, then Wed → Fri from 10/28
+gives 9, not 10.
+
+New rule: **the chain's Ends is what the person set**, for counts as for
+dates (D39 R1):
+
+- a split part keeps a **count** (what's left after the earlier parts'
+  dates, as `remaining_count/2` already works out), not a date;
+- every part's dialog (`info/1` / `chain_ends`) shows the chain's total,
+  "After 10 times";
+- a later rule change or Ends-only change (§2.6) from any part keeps the
+  total: the example above gives 10/14, 10/21 and 8 Fridays to 12/18;
+- deleted occurrences still count, as now (`Recurrence.dates/2`).
+
+No migration. Existing split parts already stored as dates keep working as
+dates (DEV is reseeded; prod has no series).
 
 ## 4. Scenarios
 
@@ -173,6 +187,8 @@ overrule.
 | S138 | `owner` | All departments, First day → Monday; Brewery stays Today | Each keeps its own; an All card for Tuesday opens Brewery with Tuesday in range |
 | S139 | `brewer1` at 412×915 | First day → Monday, vertical view; one-day view | Starts Monday, scrolled to today; one-day opens today |
 | S140 | `brewer1` | First day → Monday, then type a date range | The typed range shows as typed |
+| S141 | `breweryMgr` | weekly Wed after 10 times; split to Thu at the 6th; then Wed → Fri from the 3rd | Every part shows "After 10 times"; 10 in total (2 Wed + 8 Fri) |
+| S142 | `breweryMgr` | the same split, then Ends → After 12 times from the later part | 12 in total; the Thursday rule unchanged |
 
 S117 (the D38/D39 sweep) and S101–S120 stay green.
 
