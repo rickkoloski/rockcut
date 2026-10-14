@@ -94,6 +94,22 @@ One commit per item is fine; each with ExUnit.
 Then: full ExUnit once (`mix test`), `mix compile --warnings-as-errors`.
 Report counts, and stop for the lead.
 
+## Task 1 answers (lead)
+
+ExUnit 1,413/0 at Task 1. Decisions 1–5: **confirmed** as you built them.
+
+Decision 6 (a split removes notes-only occurrences without offering to
+keep them): **overruled.** Matt's rule is that an occurrence keeps its own
+notes. Before Task 2, make a split's keep/remove offer (and remove-later /
+Stop repeating, wherever `series_exception` drives the offer) also count an
+open occurrence whose notes differ from its series part's notes as "changed
+on its own": it's offered for keeping, and kept when the person keeps
+changed ones. No new column; compare notes. ExUnit for a split with one
+notes-only occurrence, keep and remove. One commit, then go on to Task 2.
+
+Task 2 also: History wording for `item_deleted` (`types.ts`,
+`lib/tasks.ts`), as you noted.
+
 ## Task 2: the UI (spec items 3, 4, 6–9)
 
 Wait for the lead's go after Task 1.
