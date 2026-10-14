@@ -135,3 +135,32 @@ Tablets keep All and Unassigned (plan decision 1).
    `taproom/staff-codes.spec.ts`; the lead runs the full suites.
 
 Report and stop.
+
+## Task 4: DEV fix cycle 1 (D40 qa gaps 1 and 3)
+
+The D40 qa pass on DEV (`0f2f0a0`) is PASS with gaps, no must-fix. Fix two:
+
+1. **Gap 1 (security, minor): the staff code in the URL.** On a tablet,
+   `DELETE …/daily_checks/<date>/<id>?staff_code=…` and
+   `DELETE …/tasks/<id>?staff_code=…` put the code in the query string,
+   where proxy and access logs keep it. Send it in the **JSON body** for
+   every tablet write, DELETE included, and have the API take
+   `staff_code` **only from the body** (`conn.body_params`), never the
+   query string (a query-string code counts as missing: 422
+   `staff_code_required`). Check the beer board's deletes too. ExUnit for
+   a query-string code refused and a body code accepted on both DELETE
+   routes; Playwright or Vitest that the UI sends it in the body.
+2. **Gap 3 (UX, minor):** on a tablet, ticking a task (or a Daily check)
+   shows it ticked behind the code dialog, and it **stays ticked after a
+   wrong code** although nothing was saved. Keep it unticked until the code
+   is accepted and the write succeeds (or revert the optimistic tick as
+   soon as the dialog opens / a code is refused). Same for any other
+   optimistic change made before the code dialog (drag, delete).
+
+Not fixing: gap 2 (the reminder body lists up to three tasks, as spec
+§3.5 says) and gap 4 (a locked tablet says so only after a code is typed,
+as D37's beer board does). Note both in the handoff note's LIMITATIONS.
+
+Then the targeted ExUnit/Vitest and the tablet + beer-board Playwright
+files (`--workers=1`; the qa agent on DEV is finishing, the lead says the
+memory is fine), commit, and report.
