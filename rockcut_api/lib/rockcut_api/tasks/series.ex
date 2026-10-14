@@ -271,11 +271,12 @@ defmodule RockcutApi.Tasks.Series do
   @doc """
   Edit an occurrence (`attrs` with string keys):
 
-    * `"this"`: the D38 edit, and the occurrence becomes an exception (S60).
-      Repeat params are ignored.
+    * `"this"`: the D38 edit, and the occurrence becomes an exception (S60)
+      unless only its notes changed (D42). Repeat params are ignored.
     * `"following"`, content only (title, notes, assignee): the series and
       every open, non-exception occurrence from this `series_date` on take
-      it; this occurrence takes it even if it's an exception (S61).
+      it, notes only where they were the series' (D42); this occurrence
+      takes it even if it's an exception (S61).
     * `"following"` with a changed rule: a split (S62, see `split/5`).
     * A `due_on` change applies to this occurrence only, whatever the scope.
     * No scope: `{:error, :scope_required}`, unless only the day changes.
@@ -312,7 +313,8 @@ defmodule RockcutApi.Tasks.Series do
         |> Tasks.update_one(Map.take(attrs, ["due_on" | @content_fields]), actor, "this")
         |> ok_or_rollback()
 
-      if content != %{} and updated.series_id do
+      # D42 §2.5: a notes-only change doesn't make it changed on its own.
+      if Map.delete(content, :notes) != %{} and updated.series_id do
         updated |> Changeset.change(series_exception: true) |> Repo.update!()
       else
         updated
@@ -377,7 +379,9 @@ defmodule RockcutApi.Tasks.Series do
   end
 
   # Content to this occurrence and the later open, non-exception ones; the day
-  # (if it changed) to this one only.
+  # (if it changed) to this one only. D42 §2.5: new notes skip an occurrence
+  # whose notes differ from its series' notes before the edit (its own notes
+  # stay); title and assignee still reach it.
   defp following_content(task, series, attrs, actor) do
     content = Map.take(attrs, @content_fields)
 
@@ -388,40 +392,65 @@ defmodule RockcutApi.Tasks.Series do
 
     if not this_cs.valid?, do: Repo.rollback(this_cs)
 
-    chain =
-      Enum.map([series | continuations(series)], fn s ->
-        s
-        |> TaskSeries.changeset(content)
-        |> Tasks.validate_assignee()
-        |> Repo.update()
-        |> ok_or_rollback()
-      end)
+    parts = [series | continuations(series)]
 
-    ids = Enum.map(chain, & &1.id)
+    Enum.each(parts, fn s ->
+      s
+      |> TaskSeries.changeset(content)
+      |> Tasks.validate_assignee()
+      |> Repo.update()
+      |> ok_or_rollback()
+    end)
+
     changes = Map.take(this_cs.changes, [:title, :notes, :assignee_id])
 
     if changes != %{} do
       Repo.update!(this_cs)
 
-      {n, _} =
-        Repo.update_all(
-          from(t in Task,
-            where:
-              t.series_id in ^ids and t.series_date >= ^task.series_date and
-                t.id != ^task.id and is_nil(t.completed_at) and not t.series_exception
-          ),
-          set: Keyword.new(changes) ++ [updated_at: now()]
+      later =
+        from(t in Task,
+          where:
+            t.series_id in ^Enum.map(parts, & &1.id) and
+              t.series_date >= ^task.series_date and t.id != ^task.id and
+              is_nil(t.completed_at) and not t.series_exception
         )
+
+      {notes, others} = Map.split(changes, [:notes])
+      others_ids = if others == %{}, do: [], else: Repo.all(from t in later, select: t.id)
+      notes_ids = if notes == %{}, do: [], else: same_notes_ids(later, parts)
+
+      set_on(others_ids, others)
+      set_on(notes_ids, notes)
 
       log!(task, "edited", actor, %{
         "scope" => "following",
         "from" => Map.new(changes, fn {k, _} -> {to_string(k), Map.get(task, k)} end),
         "to" => Map.new(changes, fn {k, v} -> {to_string(k), v} end),
-        "count" => n + 1
+        "count" => length(Enum.uniq(others_ids ++ notes_ids)) + 1
       })
     end
 
     move_this(fetch!(task.id), attrs, actor)
+  end
+
+  # The ids in `query` whose notes are their series part's (as loaded, before
+  # the edit).
+  defp same_notes_ids(query, parts) do
+    Enum.flat_map(parts, fn %TaskSeries{id: id, notes: notes} ->
+      query = from t in query, where: t.series_id == ^id, select: t.id
+
+      if is_nil(notes),
+        do: Repo.all(from t in query, where: is_nil(t.notes)),
+        else: Repo.all(from t in query, where: t.notes == ^notes)
+    end)
+  end
+
+  defp set_on([], _changes), do: :ok
+
+  defp set_on(ids, changes) do
+    Repo.update_all(from(t in Task, where: t.id in ^ids),
+      set: Keyword.new(changes) ++ [updated_at: now()]
+    )
   end
 
   defp move_this(task, attrs, actor) do

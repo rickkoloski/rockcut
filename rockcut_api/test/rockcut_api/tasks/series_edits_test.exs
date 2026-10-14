@@ -220,8 +220,15 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
     test "this occurrence takes the change even if it's an exception", ctx do
       w0 = keg_wash!(ctx.brewer)
 
+      # Notes alone wouldn't make it an exception (D42); the assignee does.
       {:ok, _} =
-        Tasks.update(brewery_board(), week(w0, 2), %{notes: "Mine"}, ctx.brewer, scope: "this")
+        Tasks.update(
+          brewery_board(),
+          week(w0, 2),
+          %{notes: "Mine", assignee_id: ctx.brewer2.id},
+          ctx.brewer,
+          scope: "this"
+        )
 
       assert {:ok, edited} =
                Tasks.update(brewery_board(), week(w0, 2), %{title: "Keg Wash v2"}, ctx.brewer,
@@ -274,6 +281,66 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
 
       assert {:error, %Ecto.Changeset{}} =
                Tasks.update(brewery_board(), w1, %{title: " "}, ctx.brewer, scope: "following")
+    end
+  end
+
+  describe "notes only (D42 §2.5)" do
+    defp this!(task, attrs, ctx),
+      do: Tasks.update(brewery_board(), task, attrs, ctx.brewer, scope: "this")
+
+    defp following!(task, attrs, ctx),
+      do: Tasks.update(brewery_board(), task, attrs, ctx.brewer, scope: "following")
+
+    test "S129 notes on one aren't a change on its own; a later following title + notes", ctx do
+      w0 = keg_wash!(ctx.brewer)
+
+      assert {:ok, %Task{notes: "Mine", series_exception: false}} =
+               this!(week(w0, 2), %{notes: "Mine"}, ctx)
+
+      assert {:ok, _} = following!(week(w0, 1), %{title: "Keg Wash v2", notes: "Hot water"}, ctx)
+
+      assert {week(w0, 2).title, week(w0, 2).notes} == {"Keg Wash v2", "Mine"}
+
+      for n <- [1, 3, 10],
+          do: assert({week(w0, n).title, week(w0, n).notes} == {"Keg Wash v2", "Hot water"})
+
+      assert {week(w0, 0).title, week(w0, 0).notes} == {"Keg Wash", nil}
+      assert series(w0).notes == "Hot water"
+
+      # w1 and the 51 open ones after it, w2 included (its title changed).
+      assert %Event{detail: %{"count" => 52}} = List.last(events("edited"))
+    end
+
+    test "notes reach the ones whose notes were the series'; an assignee reaches all", ctx do
+      w0 = keg_wash!(ctx.brewer, %{notes: "Rinse"})
+      {:ok, _} = this!(week(w0, 3), %{notes: "Rinse twice"}, ctx)
+      {:ok, _} = this!(week(w0, 4), %{notes: ""}, ctx)
+
+      assert {:ok, _} = following!(week(w0, 1), %{notes: "Rinse, then sanitize"}, ctx)
+      assert week(w0, 3).notes == "Rinse twice"
+      assert week(w0, 4).notes == nil
+      assert week(w0, 5).notes == "Rinse, then sanitize"
+      assert %Event{detail: %{"count" => 50}} = List.last(events("edited"))
+
+      assert {:ok, _} = following!(week(w0, 1), %{assignee_id: ctx.brewer2.id}, ctx)
+      for n <- [3, 4, 5], do: assert(week(w0, n).assignee_id == ctx.brewer2.id)
+    end
+
+    test "S130 a title on one is still a change on its own", ctx do
+      w0 = keg_wash!(ctx.brewer)
+      assert {:ok, %Task{series_exception: true}} = this!(week(w0, 2), %{title: "Mine"}, ctx)
+      assert {:ok, _} = following!(week(w0, 1), %{title: "Keg Wash v2"}, ctx)
+      assert week(w0, 2).title == "Mine"
+      assert week(w0, 3).title == "Keg Wash v2"
+    end
+
+    test "remove-later doesn't offer to keep a notes-only one", ctx do
+      w0 = keg_wash!(ctx.brewer)
+      {:ok, _} = this!(week(w0, 5), %{notes: "Mine"}, ctx)
+
+      assert %{later_changed: 0} = Series.preview(week(w0, 1))
+      assert {:ok, _} = Series.stop(week(w0, 1), ctx.brewer)
+      refute week(w0, 5)
     end
   end
 
@@ -853,7 +920,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
     test "a rule change from before a split: keep leaves the kept one in its ended series", ctx do
       {w0, new_id} = qa_chain!(ctx)
       jan = on(new_id, ~D[2027-01-06])
-      {:ok, _} = Tasks.update(brewery_board(), jan, %{notes: "Own"}, ctx.brewer, scope: "this")
+      {:ok, _} = Tasks.update(brewery_board(), jan, %{title: "Own"}, ctx.brewer, scope: "this")
       w2 = week(w0, 2)
       assert %{later_changed: 1} = Series.preview(w2)
 
@@ -888,7 +955,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       {w0, new_id} = qa_chain!(ctx)
 
       {:ok, _} =
-        Tasks.update(brewery_board(), on(new_id, ~D[2027-01-06]), %{notes: "Own"}, ctx.brewer,
+        Tasks.update(brewery_board(), on(new_id, ~D[2027-01-06]), %{title: "Own"}, ctx.brewer,
           scope: "this"
         )
 
@@ -907,7 +974,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
     test "delete \"following\" from before a split, keep and remove", ctx do
       {w0, new_id} = qa_chain!(ctx)
       jan = on(new_id, ~D[2027-01-06])
-      {:ok, _} = Tasks.update(brewery_board(), jan, %{notes: "Own"}, ctx.brewer, scope: "this")
+      {:ok, _} = Tasks.update(brewery_board(), jan, %{title: "Own"}, ctx.brewer, scope: "this")
 
       assert {:ok, _} =
                Tasks.delete(brewery_board(), week(w0, 2), ctx.brewer,
@@ -933,7 +1000,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
     test "Stop repeating from before a split, keep and remove; then it's the last", ctx do
       {w0, new_id} = qa_chain!(ctx)
       jan = on(new_id, ~D[2027-01-06])
-      {:ok, _} = Tasks.update(brewery_board(), jan, %{notes: "Own"}, ctx.brewer, scope: "this")
+      {:ok, _} = Tasks.update(brewery_board(), jan, %{title: "Own"}, ctx.brewer, scope: "this")
       w2 = week(w0, 2)
       %{later_open: later} = Series.preview(w2)
 
