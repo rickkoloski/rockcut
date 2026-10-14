@@ -673,7 +673,7 @@ export interface DayHeaderData {
   people: { user_id: number; name: string; hours: number; shifts: HeaderShift[] }[]
   open_shifts: HeaderShift[]
   events: { id: number; title: string; all_day: boolean; starts_at: string; ends_at: string }[]
-  no_brewers: boolean
+  no_one_scheduled: boolean
 }
 
 export interface DailyCardItem {

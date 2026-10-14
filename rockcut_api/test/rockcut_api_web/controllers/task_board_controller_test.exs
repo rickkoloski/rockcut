@@ -178,7 +178,7 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
 
       assert %{"done" => 0, "total" => 4, "items" => [%{"name" => "Backups"} | _]} = t["daily"]
 
-      assert %{"people" => [], "open_shifts" => [], "events" => [], "no_brewers" => true} =
+      assert %{"people" => [], "open_shifts" => [], "events" => [], "no_one_scheduled" => true} =
                t["header"]
 
       assert [%{"key" => uk, "overdue" => true}] = data["unfinished"]

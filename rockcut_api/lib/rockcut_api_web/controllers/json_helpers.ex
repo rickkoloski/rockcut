@@ -170,7 +170,7 @@ defmodule RockcutApiWeb.JSONHelpers do
             ends_at: e.ends_at
           }
         end),
-      no_brewers: h.people == [] and h.open_shifts == []
+      no_one_scheduled: h.people == [] and h.open_shifts == []
     }
   end
 

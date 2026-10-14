@@ -9,7 +9,7 @@ export default function DayHeader({ date, header }: { date: string; header: DayH
       data-testid={`day-header-${date}`}
       sx={{ bgcolor: 'action.hover', borderRadius: 1, px: 1, py: 0.5, display: 'flex', flexDirection: 'column', gap: 0.25 }}
     >
-      {header.no_brewers && (
+      {header.no_one_scheduled && (
         <Typography variant="caption" color="text.secondary" data-testid={`header-none-${date}`}>
           No one scheduled
         </Typography>
