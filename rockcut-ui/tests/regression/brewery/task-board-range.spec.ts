@@ -197,6 +197,23 @@ test('S23: a range over 31 days says "Up to 31 days" and isn\'t applied', async 
   await expect(page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(14)
 })
 
+test('D41: an old /brewery/tasks link lands on /tasks/brewery with its range, replacing the old entry', async ({ page }) => {
+  const from = addDays(today(), 3)
+  const to = addDays(today(), 9)
+  await page.goto('/')
+  await expect(page.getByTestId('board-grid')).toHaveCount(0)
+  await page.goto(`/brewery/tasks?from=${from}&to=${to}`)
+  await expect(page).toHaveURL(new RegExp(`/tasks/brewery\\?from=${from}&to=${to}$`))
+  await expect(page.getByTestId('board-grid')).toBeVisible()
+  await expect(page.getByTestId('board-range-from')).toHaveValue(from)
+  await expect(page.getByTestId('board-range-to')).toHaveValue(to)
+  await expect(page.getByTestId(`day-${from}`)).toBeVisible()
+  await expect(page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(7)
+  // Replaced: Back goes to the page before, not through the old URL again.
+  await page.goBack()
+  await expect(page).toHaveURL(/\/$/)
+})
+
 test('S23a: 1 week becomes this browser\'s default (after a reload and Today); another browser still opens on 2 weeks', async ({ page, browser }) => {
   await openBoard(page)
   await page.getByTestId('board-span-7').click()
