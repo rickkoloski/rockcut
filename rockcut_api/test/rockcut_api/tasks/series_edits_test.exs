@@ -381,9 +381,11 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
              ]
 
       new = Repo.get!(TaskSeries, first.series_id)
-      # R1: the 8 left are stored as the date of the last one.
+      # The 8 left stay a count (D42 R2; D39 stored the date of the last one).
       assert {new.start_date, new.until_date, new.count, new.frequency} ==
-               {~D[2026-10-28], ~D[2027-06-02], nil, "monthly"}
+               {~D[2026-10-28], nil, 8, "monthly"}
+
+      assert List.last(series_tasks(new.id)).series_date == ~D[2027-06-02]
 
       old = Repo.get!(TaskSeries, old_id)
       assert {old.until_date, old.count, old.internal_end} == {~D[2026-10-27], nil, true}
@@ -1171,7 +1173,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       w0 = keg_wash!(ctx.brewer, %{repeat_count: 10})
 
       # At 11/18 (5 used) to Fridays, Ends left alone: 5 more, 11/20 … 12/18,
-      # stored as that date.
+      # stored as a count of 5; every part shows 10 (D42 R2).
       assert {:ok, fri} =
                Tasks.update(brewery_board(), week(w0, 5), @fridays, ctx.brewer,
                  scope: "following",
@@ -1179,12 +1181,13 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
                )
 
       f = series(fri)
-      assert {f.until_date, f.count} == {~D[2026-12-18], nil}
+      assert {f.until_date, f.count} == {nil, 5}
+      assert List.last(series_tasks(f.id)).series_date == ~D[2026-12-18]
       assert length(series_tasks(f.id)) == 5
       assert {:ok, {rule, _}} = Series.info(week(w0, 1))
-      assert {rule.until_date, rule.count} == {~D[2026-12-18], nil}
+      assert {rule.until_date, rule.count} == {nil, 10}
 
-      # From 10/21 to Thursdays, Ends left alone: through 12/18 still.
+      # From 10/21 (1 used) to Thursdays, Ends left alone: 9 more, to 12/17.
       assert {:ok, thu} =
                Tasks.update(
                  brewery_board(),
@@ -1196,7 +1199,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
                )
 
       t = series(thu)
-      assert {t.until_date, t.count} == {~D[2026-12-18], nil}
+      assert {t.until_date, t.count} == {nil, 9}
       assert List.last(series_tasks(t.id)).series_date == ~D[2026-12-17]
       assert open_after(w0.series_id, ~D[2026-12-18]) == []
     end
@@ -1226,7 +1229,8 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       assert Enum.map(series_tasks(thu.series_id), & &1.series_date) ==
                [~D[2026-12-03], ~D[2026-12-10], ~D[2026-12-17], ~D[2026-12-24]]
 
-      assert {series(thu).until_date, series(thu).count} == {~D[2026-12-24], nil}
+      assert {series(thu).until_date, series(thu).count} == {nil, 4}
+      assert Series.chain_ends(series(thu)) == {nil, 10}
     end
   end
 

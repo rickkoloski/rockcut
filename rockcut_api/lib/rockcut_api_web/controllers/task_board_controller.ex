@@ -122,14 +122,27 @@ defmodule RockcutApiWeb.TaskBoardController do
     |> TaskErrors.handle(conn)
   end
 
-  @doc "GET /api/boards/:dept/tasks/:id/series: the rule, `later_open` and `later_changed`."
-  def series(conn, %{"id" => id}) do
+  @doc """
+  GET /api/boards/:dept/tasks/:id/series: the rule, `later_open` and
+  `later_changed`. With the dialog's `repeat*` params (D42), also `change`:
+  `{ kind: same | ends | rule, removes_open, removes_changed }`.
+  """
+  def series(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :read),
          {:ok, task} <- fetch(conn, id),
-         {:ok, {series, preview}} <- Tasks.series_info(board(conn), task) do
-      json(conn, %{data: task_series(series, preview)})
+         {:ok, {series, preview}} <- Tasks.series_info(board(conn), task),
+         {:ok, change} <- change_preview(conn, task, params) do
+      data = task_series(series, preview)
+      json(conn, %{data: if(change, do: Map.put(data, :change, change), else: data)})
     end
     |> TaskErrors.handle(conn)
+  end
+
+  # D42 §2.6: given the dialog's repeat params, what saving them "following"
+  # would do (an Ends-only change moves the end; a rule change splits).
+  defp change_preview(conn, task, params) do
+    repeat = Map.filter(params, fn {k, _} -> String.starts_with?(k, "repeat") end)
+    if repeat == %{}, do: {:ok, nil}, else: Tasks.series_change_preview(board(conn), task, repeat)
   end
 
   @doc "POST /api/boards/:dept/tasks/:id/stop_repeating: `{ changed? }`. Ends the series on this one."

@@ -48,9 +48,15 @@ defmodule RockcutApi.Tasks.Series do
 
   **"After N times" across a split.** N counts from the chain's first
   occurrence: the dates before the edited one in its series and in the
-  series parts it continues (`used_before/2`). The new series then stores
-  the end as the date of its last time (`until_date`), not a count, so after
-  a split a chain's end is always a date or never.
+  series parts it continues (`used_before/2`). The new series stores what's
+  left as its own count, and `chain_ends/1` adds the earlier parts' dates
+  back, so every part shows the person's N (D42 R2). A part stored as a
+  date before D42 stays a date.
+
+  **Ends only (D42).** A "following" edit that changes only Ends moves the
+  chain's end (`move_end/5`): no part's rule changes, and occurrences are
+  added or removed only at the end. `change_preview/2` tells the confirm
+  which it is.
   """
   import Ecto.Query, only: [from: 2]
 
@@ -328,14 +334,24 @@ defmodule RockcutApi.Tasks.Series do
       series = Repo.get!(TaskSeries, task.series_id)
 
       case new_rule(series, attrs) do
-        :same -> following_content(task, series, attrs, actor)
-        {:changed, rule} -> split(task, series, rule, attrs, actor, opts)
-        {:error, cs} -> Repo.rollback(cs)
+        :same ->
+          following_content(task, series, attrs, actor)
+
+        {:ends, rule} ->
+          ends = move_end(task, series, rule, actor, opts)
+          following_content(fetch!(task.id), Repo.get!(TaskSeries, series.id), attrs, actor, ends)
+
+        {:changed, rule} ->
+          split(task, series, rule, attrs, actor, opts)
+
+        {:error, cs} ->
+          Repo.rollback(cs)
       end
     end)
   end
 
   # The series' rule with the repeat params in `attrs` over it: `:same`,
+  # `{:ends, rule_attrs}` when only Ends changed (D42 §2.6),
   # `{:changed, rule_attrs}`, or an error for "never" (that's Stop repeating).
   defp new_rule(series, attrs) do
     base = with_chain_ends(series)
@@ -358,6 +374,9 @@ defmodule RockcutApi.Tasks.Series do
 
       given == %{} or same_rule?(base, rule) ->
         :same
+
+      same_rule?(base, Map.merge(rule, %{"until_date" => base.until_date, "count" => base.count})) ->
+        {:ends, rule}
 
       true ->
         {:changed, rule}
@@ -382,7 +401,9 @@ defmodule RockcutApi.Tasks.Series do
   # (if it changed) to this one only. D42 §2.5: new notes skip an occurrence
   # whose notes differ from its series' notes before the edit (its own notes
   # stay); title and assignee still reach it.
-  defp following_content(task, series, attrs, actor) do
+  # `ends`: an Ends-only change's History detail (`move_end/5`), logged in the
+  # same `edited` event (one per series action, Decision 3).
+  defp following_content(task, series, attrs, actor, ends \\ nil) do
     content = Map.take(attrs, @content_fields)
 
     this_cs =
@@ -422,12 +443,20 @@ defmodule RockcutApi.Tasks.Series do
       set_on(others_ids, others)
       set_on(notes_ids, notes)
 
-      log!(task, "edited", actor, %{
-        "scope" => "following",
-        "from" => Map.new(changes, fn {k, _} -> {to_string(k), Map.get(task, k)} end),
-        "to" => Map.new(changes, fn {k, v} -> {to_string(k), v} end),
-        "count" => length(Enum.uniq(others_ids ++ notes_ids)) + 1
-      })
+      log!(
+        task,
+        "edited",
+        actor,
+        %{
+          "scope" => "following",
+          "from" => Map.new(changes, fn {k, _} -> {to_string(k), Map.get(task, k)} end),
+          "to" => Map.new(changes, fn {k, v} -> {to_string(k), v} end),
+          "count" => length(Enum.uniq(others_ids ++ notes_ids)) + 1
+        }
+        |> Map.merge(ends || %{})
+      )
+    else
+      if ends, do: log!(task, "edited", actor, Map.put(ends, "scope", "following"))
     end
 
     move_this(fetch!(task.id), attrs, actor)
@@ -459,6 +488,130 @@ defmodule RockcutApi.Tasks.Series do
     else
       task
     end
+  end
+
+  # D42 §2.6: an Ends-only change moves the chain's end and changes no part's
+  # rule: the open occurrences after the new end are removed (exceptions per
+  # `changed`), the parts left with nothing after it settle, and the part the
+  # end lands on generates up to it. Returns the History detail.
+  defp move_end(task, series, rule, _actor, opts) do
+    today = opts[:today] || Tasks.today()
+    base = with_chain_ends(series)
+    plan = end_plan(task, series, rule) |> ok_or_rollback()
+    [first | rest] = plan.chain
+
+    {removed, kept} =
+      if plan.cut, do: remove_chain(first, rest, plan.cut, opts[:changed], []), else: {0, 0}
+
+    held = MapSet.new(plan.held, & &1.id)
+    settle(Enum.reject(plan.chain, &MapSet.member?(held, &1.id)), plan.target.id)
+
+    target = plan.changeset |> Changeset.change(internal_end: false) |> Repo.update!()
+    through = Recurrence.rolling_horizon(target, today)
+    added = insert_occurrences(target, target |> TaskSeries.rule() |> Recurrence.dates(through))
+    mark_generated(target, through)
+
+    %{
+      "repeat" => %{
+        "from" => describe(base),
+        "to" => describe(%{base | until_date: plan.until, count: plan.count})
+      },
+      "ends_only" => true,
+      "removed" => removed,
+      "kept" => kept,
+      "added" => added
+    }
+  end
+
+  # Where an Ends-only change puts the end: `{:ok, plan}` or `{:error, cs}`.
+  # The end goes on the latest part of the chain's main line (`line/1`) that
+  # it reaches, `target`, as that part's own end: a date, or the count less
+  # the dates before the part (R2). `cut` is the first date after the new end
+  # (nil for never); `held` the line's parts up to the target, which keep
+  # their place; `chain` the acted-on series and its continuations. An end
+  # before this occurrence is refused with a split's answers.
+  defp end_plan(task, series, rule) do
+    whole = TaskSeries.changeset(series, Map.take(rule, ["until_date", "count"]))
+    {until, count} = {Changeset.get_field(whole, :until_date), Changeset.get_field(whole, :count)}
+    chain = [series | continuations(series)]
+
+    last =
+      chain
+      |> Enum.reject(& &1.internal_end)
+      |> Enum.max_by(& &1.start_date, Date, fn -> series end)
+
+    line = line(last)
+    used = used_before(series, task.series_date)
+
+    target =
+      cond do
+        until -> Enum.filter(line, &(Date.compare(&1.start_date, until) != :gt))
+        count -> Enum.filter(line, &(used_before(&1, &1.start_date) < count))
+        true -> line
+      end
+      |> List.last()
+      |> Kernel.||(hd(line))
+
+    own = if count, do: count - used_before(target, target.start_date)
+    changeset = TaskSeries.changeset(target, %{"until_date" => until, "count" => own})
+
+    cond do
+      not whole.valid? ->
+        {:error, whole}
+
+      until && Date.compare(until, task.series_date) == :lt ->
+        {:error, Changeset.add_error(whole, :until_date, "must be on or after the start date")}
+
+      count && count <= used ->
+        {:error,
+         Changeset.add_error(
+           whole,
+           :count,
+           "the series already has #{used} dates before this one; choose a larger number"
+         )}
+
+      not changeset.valid? ->
+        {:error, changeset}
+
+      true ->
+        {:ok,
+         %{
+           chain: chain,
+           target: target,
+           changeset: changeset,
+           until: until,
+           count: count,
+           cut: cut_after(Changeset.apply_changes(changeset)),
+           held: Enum.filter(line, &(Date.compare(&1.start_date, target.start_date) != :gt))
+         }}
+    end
+  end
+
+  # The day after the series' last date (deleted ones count); nil for never.
+  defp cut_after(%TaskSeries{until_date: nil, count: nil}), do: nil
+
+  defp cut_after(%TaskSeries{} = s) do
+    far = s.until_date || Date.add(s.start_date, 366 * (s.count + 1))
+
+    case %{TaskSeries.rule(s) | skipped_dates: []} |> Recurrence.dates(far) |> List.last() do
+      nil -> s.start_date
+      last -> Date.add(last, 1)
+    end
+  end
+
+  # The chain's main line ending in `series`, first part first: each part
+  # ends (internally) the day before the next one starts, as `used_before/3`
+  # walks it. Parts left holding kept occurrences after a split are off it.
+  defp line(%TaskSeries{} = series, acc \\ []) do
+    acc = [series | acc]
+
+    parent =
+      series.continues_series_id && !Enum.any?(acc, &(&1.id == series.continues_series_id)) &&
+        Repo.get(TaskSeries, series.continues_series_id)
+
+    if parent && parent.internal_end && parent.until_date == Date.add(series.start_date, -1),
+      do: line(parent, acc),
+      else: acc
   end
 
   # "This and all following" with a new rule (S62), as D32's split: the old
@@ -541,7 +694,6 @@ defmodule RockcutApi.Tasks.Series do
     new_series =
       new_series
       |> Changeset.change(continues_series_id: head)
-      |> count_to_until(head)
       |> Repo.update!()
 
     settle(continuing, new_series.id)
@@ -722,6 +874,61 @@ defmodule RockcutApi.Tasks.Series do
   end
 
   @doc """
+  What a "following" edit with these repeat params (`attrs`, string keys)
+  would do, for the confirm (D42 §2.6): `kind` is `"same"` (no rule change),
+  `"ends"` (only Ends changed: the end moves) or `"rule"` (a split), with the
+  open occurrences it removes, `removes_open` not changed on their own and
+  `removes_changed` that were. `{:error, changeset}` for an end it would
+  refuse.
+  """
+  def change_preview(%Task{series_id: nil}, _attrs), do: {:error, :not_in_series}
+
+  def change_preview(%Task{series_id: id} = task, attrs) do
+    attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
+
+    case Repo.get(TaskSeries, id) do
+      nil ->
+        {:error, :not_in_series}
+
+      series ->
+        case new_rule(series, attrs) do
+          :same ->
+            {:ok, %{kind: "same", removes_open: 0, removes_changed: 0}}
+
+          {:changed, _rule} ->
+            %{later_open: open, later_changed: changed} = preview(task)
+            {:ok, %{kind: "rule", removes_open: open, removes_changed: changed}}
+
+          {:ends, rule} ->
+            with {:ok, plan} <- end_plan(task, series, rule) do
+              {open, changed} = open_from(plan.chain, plan.cut)
+              {:ok, %{kind: "ends", removes_open: open, removes_changed: changed}}
+            end
+
+          {:error, cs} ->
+            {:error, cs}
+        end
+    end
+  end
+
+  defp open_from(_chain, nil), do: {0, 0}
+
+  defp open_from(chain, %Date{} = cut) do
+    counts =
+      Repo.all(
+        from t in Task,
+          where:
+            t.series_id in ^Enum.map(chain, & &1.id) and t.series_date >= ^cut and
+              is_nil(t.completed_at),
+          group_by: t.series_exception,
+          select: {t.series_exception, count(t.id)}
+      )
+      |> Map.new()
+
+    {Map.get(counts, false, 0), Map.get(counts, true, 0)}
+  end
+
+  @doc """
   Mark the occurrences that end their chain (G2), for the board: the series
   has ended on or before the occurrence (`until_date`) and nothing open comes
   after it in the chain, so Stop repeating would do nothing. One query for the
@@ -885,7 +1092,8 @@ defmodule RockcutApi.Tasks.Series do
   @doc """
   The chain's ends as the person set them (R1): `{until_date, count}` of the
   latest-starting series, from `series` through its continuations, whose end
-  isn't internal; `{nil, nil}` (never) when there's none.
+  isn't internal; `{nil, nil}` (never) when there's none. A count is the
+  chain's total: that part's own plus the dates of the parts before it (R2).
   """
   def chain_ends(%TaskSeries{} = series) do
     [series | continuations(series)]
@@ -893,7 +1101,7 @@ defmodule RockcutApi.Tasks.Series do
     |> Enum.max_by(& &1.start_date, Date, fn -> nil end)
     |> case do
       nil -> {nil, nil}
-      s -> {s.until_date, s.count}
+      s -> {s.until_date, s.count && s.count + used_before(s, s.start_date)}
     end
   end
 
@@ -922,25 +1130,6 @@ defmodule RockcutApi.Tasks.Series do
     if parent && parent.internal_end && parent.until_date == Date.add(series.start_date, -1),
       do: own + used_before(parent, series.start_date, seen),
       else: own
-  end
-
-  # A new series that continues another stores "after N times" as the date of
-  # its last time, so the chain's end reads the same from every part.
-  defp count_to_until(changeset, nil), do: changeset
-
-  defp count_to_until(changeset, _head) do
-    series = Changeset.apply_changes(changeset)
-
-    if series.count do
-      far = Date.add(series.start_date, 366 * (TaskSeries.max_count() + 1))
-
-      last =
-        %{TaskSeries.rule(series) | skipped_dates: []} |> Recurrence.dates(far) |> List.last()
-
-      Changeset.change(changeset, until_date: last, count: nil)
-    else
-      changeset
-    end
   end
 
   ## Occurrences

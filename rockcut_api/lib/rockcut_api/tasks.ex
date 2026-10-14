@@ -595,6 +595,11 @@ defmodule RockcutApi.Tasks do
     with :ok <- on_board(dept, task), do: Series.info(task)
   end
 
+  @doc "What a \"following\" edit with these repeat params would do (D42, `Series.change_preview/2`)."
+  def series_change_preview(%Department{} = dept, %Task{} = task, attrs) do
+    with :ok <- on_board(dept, task), do: Series.change_preview(task, attrs)
+  end
+
   @doc false
   # The D38 delete of one task; `detail` adds to its `deleted` event. For
   # `Series`, after `delete/4` has checked the board.
