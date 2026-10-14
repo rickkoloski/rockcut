@@ -45,11 +45,27 @@ section). S116 (the top-up per board) is ExUnit only.
 **Rollback checked** on scratch copies of the local dev DB (read-only
 `VACUUM INTO` through Exqlite; the real DB untouched):
 
-- Migration 1 (Task 1): up, down, up; row counts per table equal before and
-  after, and the index list matched. _Lead: numbers and index list from the
-  Task 1 reply._
-- Migration 2 (Task 3): up, down; the column and index come and go, every
-  event backfilled. _Lead: numbers from the Task 3 reply._
+- Migration 1 (Task 1, `e3086df`): up, down, up. Row counts identical at
+  every step: `tasks` 88, `task_series` 3, `task_events` 16,975,
+  `daily_items` 88, `daily_checks` 8. 10 indexes named `brewery_*` after
+  `down`, the same 10 under the new names after each `up`:
+  - `tasks`: `department_id_due_on_position`, `department_id_completed_on`,
+    `assignee_id`, `series_id_series_date` (unique);
+  - `task_series`: `department_id`, `generated_through`,
+    `continues_series_id`;
+  - `task_events`: `inserted_at`, `task_id`;
+  - `daily_checks`: `on_date_daily_item_id` (unique); `daily_items` has none.
+
+  `PRAGMA foreign_key_list` after `up`: `tasks.series_id` →
+  `task_series`, `task_series.continues_series_id` → `task_series`,
+  `daily_checks.daily_item_id` → `daily_items`; after `down`, all three point
+  at the `brewery_*` tables again.
+- Migration 2 (Task 3, `31fe3ce`): up, down, up. `task_events` stays at
+  17,430 rows; `task_events_department_id_inserted_at_index` is there after
+  each `up` and gone after `down`. Backfill: all 17,430 events got the
+  Brewery, none disagreeing with their task's department (14,437 belong to
+  deleted tasks and 2,826 have no task: the Brewery fallback). An ExUnit test
+  also runs it down and up with events written the old way.
 
 ## New routes, dependencies and secrets
 
@@ -65,7 +81,9 @@ section). S116 (the top-up per board) is ExUnit only.
   `175aa20`). `mix compile --warnings-as-errors` clean.
 - **Vitest: 85 passed.** `tsc` and `vite build` clean.
 - **Lint:** 27 problems (26 errors, 1 warning), all pre-existing; none new.
-- **Full Playwright, every project (`--workers=1`):** _lead fills in_
+- **Full Playwright, every project (`--workers=1`):** 315 passed, 1 skipped
+  (`roles.spec.ts` "DEV shows the banner", DEV only), 0 failed, 30.2 min, on
+  `d097781` (the lead, 2026-10-13; later commits are docs only).
 - During the build: `brewery-board` project 136/136 (Task 5, with S118–S120);
   `task-board-departments` 21/21 after the Daily-only change.
 - Revert-checked: S112 and S115 (Task 3), and the All view's owner-only
