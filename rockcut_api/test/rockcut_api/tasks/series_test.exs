@@ -1,6 +1,8 @@
 defmodule RockcutApi.Tasks.SeriesTest do
   use RockcutApi.DataCase, async: false
 
+  import RockcutApi.TaskFixtures
+
   import Ecto.Query, only: [from: 2]
   import RockcutApi.AccountsFixtures
 
@@ -20,7 +22,9 @@ defmodule RockcutApi.Tasks.SeriesTest do
   end
 
   defp repeat!(actor, attrs, today \\ @today) do
-    {:ok, first} = Tasks.create(Map.merge(%{title: "Keg Wash"}, attrs), actor, today)
+    {:ok, first} =
+      Tasks.create(brewery_board(), Map.merge(%{title: "Keg Wash"}, attrs), actor, today)
+
     first
   end
 
@@ -171,9 +175,9 @@ defmodule RockcutApi.Tasks.SeriesTest do
 
     test "each occurrence goes at the bottom of its day", ctx do
       next_wed = Date.add(@today, 7)
-      {:ok, _} = Tasks.create(%{title: "A", due_on: @today}, ctx.brewer)
-      {:ok, _} = Tasks.create(%{title: "B", due_on: @today}, ctx.brewer)
-      {:ok, _} = Tasks.create(%{title: "C", due_on: next_wed}, ctx.brewer)
+      {:ok, _} = Tasks.create(brewery_board(), %{title: "A", due_on: @today}, ctx.brewer)
+      {:ok, _} = Tasks.create(brewery_board(), %{title: "B", due_on: @today}, ctx.brewer)
+      {:ok, _} = Tasks.create(brewery_board(), %{title: "C", due_on: next_wed}, ctx.brewer)
 
       first = repeat!(ctx.brewer, %{due_on: @today, repeat: "weekly", repeat_weekdays: [3]})
 
@@ -218,6 +222,7 @@ defmodule RockcutApi.Tasks.SeriesTest do
       for due_on <- [nil, ""] do
         assert {:error, :repeat_needs_day} =
                  Tasks.create(
+                   brewery_board(),
                    %{title: "Keg Wash", due_on: due_on, repeat: "weekly", repeat_weekdays: [3]},
                    ctx.brewer,
                    @today
@@ -231,7 +236,12 @@ defmodule RockcutApi.Tasks.SeriesTest do
     test "repeat never or empty makes a one-off task", ctx do
       for r <- ["never", ""] do
         {:ok, task} =
-          Tasks.create(%{title: "One-off", due_on: @today, repeat: r}, ctx.brewer, @today)
+          Tasks.create(
+            brewery_board(),
+            %{title: "One-off", due_on: @today, repeat: r},
+            ctx.brewer,
+            @today
+          )
 
         assert task.series_id == nil
       end
@@ -244,6 +254,7 @@ defmodule RockcutApi.Tasks.SeriesTest do
 
       assert {:error, cs} =
                Tasks.create(
+                 brewery_board(),
                  %{title: "K", due_on: @today, repeat: "annually", assignee_id: outsider.id},
                  ctx.brewer,
                  @today
@@ -298,6 +309,7 @@ defmodule RockcutApi.Tasks.SeriesTest do
       test name, ctx do
         assert {:error, %Ecto.Changeset{} = cs} =
                  Tasks.create(
+                   brewery_board(),
                    Map.merge(@base, unquote(Macro.escape(attrs))),
                    ctx.brewer,
                    @today
@@ -387,7 +399,11 @@ defmodule RockcutApi.Tasks.SeriesTest do
       first = repeat!(ctx.brewer, %{due_on: @today, repeat: "weekly", repeat_weekdays: [3]})
 
       {:ok, _} =
-        Tasks.create(%{title: "Already there", due_on: ~D[2027-10-20]}, ctx.brewer)
+        Tasks.create(
+          brewery_board(),
+          %{title: "Already there", due_on: ~D[2027-10-20]},
+          ctx.brewer
+        )
 
       assert {:ok, 1} = Series.top_up(Date.add(@today, 7))
       assert List.last(dates(first)) == ~D[2027-10-20]
@@ -485,7 +501,7 @@ defmodule RockcutApi.Tasks.SeriesTest do
     end
 
     test "a one-off task is simply deleted", ctx do
-      {:ok, task} = Tasks.create(%{title: "One-off", due_on: @today}, ctx.brewer)
+      {:ok, task} = Tasks.create(brewery_board(), %{title: "One-off", due_on: @today}, ctx.brewer)
       assert {:ok, :deleted} = Series.delete(task, "this", ctx.brewer)
       refute Repo.get(Task, task.id)
     end
@@ -494,7 +510,7 @@ defmodule RockcutApi.Tasks.SeriesTest do
   test "completing one occurrence leaves the others open (S58)", ctx do
     first = repeat!(ctx.brewer, %{due_on: @today, repeat: "weekly", repeat_weekdays: [3]})
 
-    assert {:ok, done} = Tasks.complete(first, nil, ctx.brewer, @today)
+    assert {:ok, done} = Tasks.complete(brewery_board(), first, nil, ctx.brewer, @today)
     assert done.completed_on == @today
 
     open =

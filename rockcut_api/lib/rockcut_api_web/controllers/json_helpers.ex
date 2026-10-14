@@ -49,20 +49,25 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   # Flags such as `shared_devices` (D33), `staff_codes` and `beer_board_manage`
-  # (D37) and `brewery_tasks_manage` (D38) sit beside `capabilities`, whose keys
-  # the D31 parity suite pins.
+  # (D37), `brewery_tasks_manage` (D38) and `task_boards` (D41) sit beside
+  # `capabilities`, whose keys the D31 parity suite pins.
   def me(user, capabilities, flags \\ %{}) do
     Map.merge(
       %{
         shared_devices: false,
         staff_codes: false,
         beer_board_manage: false,
-        brewery_tasks_manage: false
+        brewery_tasks_manage: false,
+        task_boards: []
       },
       flags
     )
     |> Map.merge(%{user: user(user), capabilities: capabilities})
   end
+
+  @doc "One of `/api/me`'s `task_boards` (D41): `key`, `name`, `color`, `manage`."
+  def task_board_entry(%{department: d, manage: manage}),
+    do: %{key: d.key, name: d.name, color: d.color, manage: manage}
 
   # ── Buy-a-Beer Board (D37) ─────────────────────────────────────────
 

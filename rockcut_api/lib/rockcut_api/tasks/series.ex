@@ -1,12 +1,14 @@
 defmodule RockcutApi.Tasks.Series do
   @moduledoc """
-  Recurring Brewery tasks (D39, spec §3.10), used through
-  `RockcutApi.Tasks`. Follows D32's `Scheduling.EventSeries`: a
-  `TaskSeries` rule row plus a real `Task` per date.
+  Recurring tasks (D39, spec §3.10), used through `RockcutApi.Tasks`.
+  Follows D32's `Scheduling.EventSeries`: a `TaskSeries` rule row plus a real
+  `Task` per date. A series and its occurrences are on one department's board
+  (D41). The functions here that take a task or series act on the board it's
+  on; `Tasks` checks the board first.
 
   Occurrences are always kept through `Recurrence.rolling_horizon/2` (today
-  plus 12 months, inclusive): `create/3` generates them, and `top_up/1`, run
-  by the D22 scanner, adds the new dates each day. Each one goes at the bottom
+  plus 12 months, inclusive): `create/4` generates them, and `top_up/1`, run
+  by the D22 scanner, adds the new dates each day, for every board's series. Each one goes at the bottom
   of its day. `series_id` + `series_date` is unique, so a date is never made
   twice.
 
@@ -68,7 +70,7 @@ defmodule RockcutApi.Tasks.Series do
 
   alias Ecto.Changeset
   alias RockcutApi.{Tasks, Repo}
-  alias RockcutApi.Accounts.User
+  alias RockcutApi.Accounts.{Department, User}
   alias RockcutApi.Tasks.{Event, Task, TaskSeries}
   alias RockcutApi.Scheduling.Recurrence
 
@@ -76,22 +78,20 @@ defmodule RockcutApi.Tasks.Series do
   def repeat?(attrs), do: Map.get(attrs, "repeat") not in [nil, "", "never"]
 
   @doc """
-  Create a recurring task starting on `due_on`, with every occurrence through
-  today + 12 months. Logs one `created` event, with the rule, on the first
+  Create a recurring task on `dept`'s board starting on `due_on`, with every
+  occurrence through today + 12 months. Logs one `created` event, with the rule, on the first
   occurrence, and returns `{:ok, first_occurrence}`.
 
   No `due_on` → `{:error, :repeat_needs_day}`. An invalid rule, or one with no
   dates in range → `{:error, changeset}`.
   """
-  def create(attrs, %User{} = actor, %Date{} = today) do
+  def create(%Department{} = dept, attrs, %User{} = actor, %Date{} = today) do
     attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
 
     if attrs["due_on"] in [nil, ""] do
       {:error, :repeat_needs_day}
     else
       write_transaction(fn ->
-        dept = Tasks.department!()
-
         series =
           %TaskSeries{department_id: dept.id, created_by_id: actor.id, skipped_dates: []}
           |> TaskSeries.changeset(series_attrs(attrs))
@@ -1022,6 +1022,7 @@ defmodule RockcutApi.Tasks.Series do
 
   defp log!(%Task{} = task, action, actor, detail) do
     Repo.insert!(%Event{
+      department_id: task.department_id,
       task_id: task.id,
       action: action,
       actor_id: actor.id,

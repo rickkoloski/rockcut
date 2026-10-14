@@ -1,14 +1,20 @@
 defmodule RockcutApi.Tasks do
   @moduledoc """
-  The Brewery task board (D38): tasks planned on days or on the Future list,
-  the Daily card, and the change log (`task_events`). Which cards show
-  on a day is decided only by `Placement`.
+  The task boards (D38; one per department since D41): tasks planned on days
+  or on the Future list, the Daily card, and the change log (`task_events`).
+  Which cards show on a day is decided only by `Placement`.
+
+  **The board.** Every function that reads or writes a board takes its
+  `%Department{}` first. Lookups by id match the department too
+  (`get_task/2`, `get_item/2`), so an id from another board is not found;
+  a function given a task or item from another board answers
+  `{:error, :not_found}` and changes nothing.
 
   "Today" is the Colorado date, never the server's (Fly runs in UTC). Every
   function that needs it takes it as an optional last argument so tests can
   pin it.
 
-  Callers authorize first (`Authz.can?(person, :write, :brewery_tasks)` and
+  Callers authorize first (`Authz.can?(person, :write, {:tasks, dept})` and
   friends) and pass the acting person. The context validates data only. Every
   write runs in one transaction with its event row(s).
 
@@ -17,7 +23,7 @@ defmodule RockcutApi.Tasks do
   with no `due_on`; a task finished from it leaves the list. `position` is
   dense (1, 2, 3, …) within each list after every write.
   """
-  import Ecto.Query, only: [from: 1, from: 2]
+  import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.{Accounts, Authz, Repo}
   alias RockcutApi.Accounts.{Department, User}
@@ -45,8 +51,18 @@ defmodule RockcutApi.Tasks do
     now |> DateTime.shift_zone!(Recurrence.zone()) |> DateTime.to_date()
   end
 
-  @doc "The Brewery department (the only board in D38). Raises if missing."
-  def department!, do: Repo.get_by!(Department, key: "brewery")
+  @doc """
+  The boards `user` can open (D41), in nav order (the departments' order by
+  name, as `Accounts.list_departments/0`), each `%{department, manage}`:
+  `manage` is History and Edit Daily items. Every assignable department has a
+  board; owners get all of them, a device none (until D40).
+  """
+  def boards_for(%User{} = user) do
+    for dept <- Accounts.list_departments(),
+        dept.assignable,
+        Authz.can?(user, :read, {:tasks, dept}),
+        do: %{department: dept, manage: Authz.can?(user, :history, {:tasks, dept})}
+  end
 
   ## The board
 
@@ -57,7 +73,7 @@ defmodule RockcutApi.Tasks do
   `from` ≤ `to`, else `{:error, :range_too_long}`):
 
     * `days`: each day in the range with its `cards` (through `Placement`),
-      its `header` (published Brewery shifts and events) and its `daily`
+      its `header` (the department's published shifts and events) and its `daily`
       card;
     * `unfinished`: every open task planned before `today`, whatever the
       range, oldest day first;
@@ -65,16 +81,15 @@ defmodule RockcutApi.Tasks do
 
   Names are preloaded once. One query per kind for the whole range.
   """
-  def board(%Date{} = from, %Date{} = to, today \\ today()) do
+  def board(%Department{} = dept, %Date{} = from, %Date{} = to, today \\ today()) do
     if Date.compare(from, to) == :gt or Date.diff(to, from) >= @max_range_days do
       {:error, :range_too_long}
     else
-      dept = department!()
       days = Date.range(from, to) |> Enum.to_list()
       tasks = dept.id |> board_tasks(from, to, today) |> Series.mark_last()
       cards = Placement.cards(tasks, days, today)
-      headers = headers(dept.id, days)
-      daily = daily_cards(days, today)
+      headers = headers(dept, days)
+      daily = daily_cards(dept, days, today)
 
       {:ok,
        %{
@@ -124,16 +139,16 @@ defmodule RockcutApi.Tasks do
   @doc """
   The day header for each of `days` (Colorado dates), as `%{date => header}`:
 
-    * `people`: one entry per person with published Brewery shifts starting
-      that day, their shifts in time order and total `hours`, in roster order
-      (`schedule_order`, then name);
-    * `open_shifts`: published, unassigned Brewery shifts that day;
-    * `events`: published Brewery schedule events overlapping that day.
+    * `people`: one entry per person with the department's published shifts
+      starting that day, their shifts in time order and total `hours`, in
+      roster order (`schedule_order`, then name);
+    * `open_shifts`: its published, unassigned shifts that day;
+    * `events`: its published schedule events overlapping that day.
 
   Drafts, shift notes and time off are never shown. One query each for shifts
   and events across the whole range.
   """
-  def headers(dept_id, days) do
+  def headers(%Department{id: dept_id}, days) do
     case Enum.to_list(days) do
       [] ->
         %{}
@@ -197,16 +212,29 @@ defmodule RockcutApi.Tasks do
 
   ## Tasks
 
-  def get_task(id), do: Repo.get(Task, id)
+  @doc "The task with id `id` on `dept`'s board, or nil (another board's too)."
+  def get_task(%Department{id: dept_id}, id) do
+    case to_int(id) do
+      nil -> nil
+      id -> Repo.get_by(Task, id: id, department_id: dept_id)
+    end
+  end
 
   @doc """
-  True when History has a `deleted` entry for task `id`: someone deleted it
-  (D39 O-1). An id that never existed is false.
+  True when `dept`'s History has a `deleted` entry for task `id`: someone
+  deleted it (D39 O-1). An id that never existed, or another board's, is
+  false.
   """
-  def deleted_task?(id) do
+  def deleted_task?(%Department{id: dept_id}, id) do
     case to_int(id) do
-      nil -> false
-      id -> Repo.exists?(from ev in Event, where: ev.task_id == ^id and ev.action == "deleted")
+      nil ->
+        false
+
+      id ->
+        Repo.exists?(
+          from ev in Event,
+            where: ev.task_id == ^id and ev.action == "deleted" and ev.department_id == ^dept_id
+        )
     end
   end
 
@@ -218,20 +246,18 @@ defmodule RockcutApi.Tasks do
   Add a task at the bottom of its day, or of the Future list when `due_on` is
   empty. `attrs`: title, notes, due_on, assignee_id.
 
-  With `repeat` (D39), it's a recurring task: `Series.create/3` makes every
+  With `repeat` (D39), it's a recurring task: `Series.create/4` makes every
   occurrence through today + 12 months and returns the first.
   """
-  def create(attrs, %User{} = actor, today \\ today()) do
+  def create(%Department{} = dept, attrs, %User{} = actor, today \\ today()) do
     attrs = stringify(attrs)
 
     if Series.repeat?(attrs),
-      do: Series.create(attrs, actor, today),
-      else: create_one(attrs, actor)
+      do: Series.create(dept, attrs, actor, today),
+      else: create_one(dept, attrs, actor)
   end
 
-  defp create_one(attrs, actor) do
-    dept = department!()
-
+  defp create_one(dept, attrs, actor) do
     Repo.transaction(fn ->
       changeset =
         %Task{department_id: dept.id, created_by_id: actor.id}
@@ -266,14 +292,14 @@ defmodule RockcutApi.Tasks do
   one-off with `repeat` becomes a recurring task (`Series.make_repeating/4`,
   Decision 6).
   """
-  def update(task, attrs, actor, opts \\ [])
+  def update(%Department{} = dept, %Task{} = task, attrs, %User{} = actor, opts \\ []) do
+    with :ok <- on_board(dept, task), do: update_on_board(task, stringify(attrs), actor, opts)
+  end
 
-  def update(%Task{series_id: id} = task, attrs, %User{} = actor, opts) when not is_nil(id),
-    do: Series.update(task, stringify(attrs), opts[:scope], actor, opts)
+  defp update_on_board(%Task{series_id: id} = task, attrs, actor, opts) when not is_nil(id),
+    do: Series.update(task, attrs, opts[:scope], actor, opts)
 
-  def update(%Task{} = task, attrs, %User{} = actor, opts) do
-    attrs = stringify(attrs)
-
+  defp update_on_board(task, attrs, actor, opts) do
     if Series.repeat?(attrs),
       do: Series.make_repeating(task, attrs, actor, opts[:today] || today()),
       else: update_one(task, attrs, actor)
@@ -281,7 +307,8 @@ defmodule RockcutApi.Tasks do
 
   @doc false
   # The D38 edit of one task. `scope` (D39) goes into the `edited` and
-  # `assigned` events' detail when given.
+  # `assigned` events' detail when given. For `Series`, after `update/5` has
+  # checked the board.
   def update_one(%Task{id: id}, attrs, %User{} = actor, scope \\ nil) do
     attrs = stringify(attrs)
     scoped = if scope, do: %{"scope" => scope}, else: %{}
@@ -346,10 +373,11 @@ defmodule RockcutApi.Tasks do
   A task with a locked card (finished away from its planned day) can't move,
   nor can a done task go to the Future list: `{:error, :locked}`.
   """
-  def move(%Task{id: id}, due_on, before_id, %User{} = actor) do
-    with {:ok, due_on} <- cast_date(due_on) do
+  def move(%Department{} = dept, %Task{id: id} = task, due_on, before_id, %User{} = actor) do
+    with :ok <- on_board(dept, task),
+         {:ok, due_on} <- cast_date(due_on) do
       Repo.transaction(fn ->
-        task = fetch!(id)
+        task = fetch!(dept, id)
         if not movable?(task, due_on), do: Repo.rollback(:locked)
         do_move(task, due_on, before_id, actor)
       end)
@@ -361,9 +389,7 @@ defmodule RockcutApi.Tasks do
   day first, keeping each day's order (S20). One `moved` event per task.
   Returns `{:ok, count}`.
   """
-  def move_overdue_to_today(%User{} = actor, today \\ today()) do
-    dept = department!()
-
+  def move_overdue_to_today(%Department{} = dept, %User{} = actor, today \\ today()) do
     Repo.transaction(fn ->
       overdue =
         Repo.all(
@@ -386,9 +412,19 @@ defmodule RockcutApi.Tasks do
     * A Future task: always `completed_day`; it leaves the Future list.
     * Already done: a no-op that returns it unchanged, with no event.
   """
-  def complete(%Task{id: id}, display, %User{} = actor, today \\ today()) do
+  def complete(
+        %Department{} = dept,
+        %Task{id: id} = task,
+        display,
+        %User{} = actor,
+        today \\ today()
+      ) do
+    with :ok <- on_board(dept, task), do: do_complete(dept, id, display, actor, today)
+  end
+
+  defp do_complete(dept, id, display, actor, today) do
     Repo.transaction(fn ->
-      task = fetch!(id)
+      task = fetch!(dept, id)
 
       if Task.done?(task) do
         task
@@ -432,9 +468,13 @@ defmodule RockcutApi.Tasks do
   Mark a task not done: all four completion fields cleared. A Future task goes
   back to the bottom of the Future list. Not done already → a no-op.
   """
-  def uncomplete(%Task{id: id}, %User{} = actor) do
+  def uncomplete(%Department{} = dept, %Task{id: id} = task, %User{} = actor) do
+    with :ok <- on_board(dept, task), do: do_uncomplete(dept, id, actor)
+  end
+
+  defp do_uncomplete(dept, id, actor) do
     Repo.transaction(fn ->
-      task = fetch!(id)
+      task = fetch!(dept, id)
 
       if Task.done?(task) do
         reopened =
@@ -470,15 +510,31 @@ defmodule RockcutApi.Tasks do
   An occurrence of a recurring task (D39) goes through `Series.delete/4` with
   `opts[:scope]` and `opts[:changed]`.
   """
-  def delete(task, actor, opts \\ [])
+  def delete(%Department{} = dept, %Task{} = task, %User{} = actor, opts \\ []) do
+    with :ok <- on_board(dept, task), do: delete_on_board(task, actor, opts)
+  end
 
-  def delete(%Task{series_id: id} = task, %User{} = actor, opts) when not is_nil(id),
+  defp delete_on_board(%Task{series_id: id} = task, actor, opts) when not is_nil(id),
     do: Series.delete(task, opts[:scope], actor, opts)
 
-  def delete(%Task{} = task, %User{} = actor, _opts), do: delete_one(task, actor)
+  defp delete_on_board(task, actor, _opts), do: delete_one(task, actor)
+
+  @doc """
+  Stop repeating after this occurrence (D39 S63, `Series.stop/3`) on `dept`'s
+  board.
+  """
+  def stop_repeating(%Department{} = dept, %Task{} = task, %User{} = actor, opts \\ []) do
+    with :ok <- on_board(dept, task), do: Series.stop(task, actor, opts)
+  end
+
+  @doc "The rule behind an occurrence on `dept`'s board and its counts (`Series.info/1`)."
+  def series_info(%Department{} = dept, %Task{} = task) do
+    with :ok <- on_board(dept, task), do: Series.info(task)
+  end
 
   @doc false
-  # The D38 delete of one task; `detail` adds to its `deleted` event.
+  # The D38 delete of one task; `detail` adds to its `deleted` event. For
+  # `Series`, after `delete/4` has checked the board.
   def delete_one(%Task{id: id}, %User{} = actor, detail \\ %{}) do
     Repo.transaction(fn ->
       task = fetch!(id)
@@ -490,28 +546,36 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc """
-  Clear `user_id` as assignee on **open** tasks when they're no longer an
-  active Brewery person (S49). Called inside `Accounts`' user and membership
-  transactions, beside `StaffCodes.clear_if_ineligible/2`. Done tasks keep
-  the name. D39: recurring task series assigned to them are cleared too, so
+  Clear `user_id` as assignee on **open** tasks on each board they can no
+  longer take tasks on (S49; per department since D41, S112): leaving the
+  Taproom doesn't touch their Brewery tasks, and deactivation clears every
+  board. Called inside `Accounts`' user and membership transactions, beside
+  `StaffCodes.clear_if_ineligible/2`. Done tasks keep the name. Each
+  unassigned task is logged on its board, with reason `left_<key>`. D39:
+  recurring task series assigned to them on that board are cleared too, so
   the top-up doesn't assign them new occurrences.
   """
   def unassign_if_ineligible(user_id, %User{} = actor) do
     user = Accounts.get_user!(user_id)
 
-    if not assignable?(user) do
-      Repo.update_all(from(s in TaskSeries, where: s.assignee_id == ^user_id),
+    for dept <- Accounts.list_departments(), not Authz.can_take_task?(user, dept) do
+      Repo.update_all(
+        from(s in TaskSeries, where: s.assignee_id == ^user_id and s.department_id == ^dept.id),
         set: [assignee_id: nil, updated_at: now()]
       )
 
-      Repo.all(from t in Task, where: t.assignee_id == ^user_id and is_nil(t.completed_at))
+      Repo.all(
+        from t in Task,
+          where:
+            t.assignee_id == ^user_id and t.department_id == ^dept.id and is_nil(t.completed_at)
+      )
       |> Enum.each(fn task ->
         task = task |> Ecto.Changeset.change(assignee_id: nil) |> Repo.update!()
 
         log!(task, "unassigned", actor, %{
           "from" => user_id,
           "to" => nil,
-          "reason" => "left_brewery"
+          "reason" => "left_#{dept.key}"
         })
       end)
     end
@@ -522,9 +586,7 @@ defmodule RockcutApi.Tasks do
   ## Daily card
 
   @doc "The retired Daily items, by name (Edit Daily items' Retired section, D39)."
-  def list_retired_items do
-    dept = department!()
-
+  def list_retired_items(%Department{} = dept) do
     Repo.all(
       from i in DailyItem,
         where: i.department_id == ^dept.id and not i.active,
@@ -533,9 +595,7 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc "The active Daily items, in order."
-  def list_items do
-    dept = department!()
-
+  def list_items(%Department{} = dept) do
     Repo.all(
       from i in DailyItem,
         where: i.department_id == ^dept.id and i.active,
@@ -543,7 +603,13 @@ defmodule RockcutApi.Tasks do
     )
   end
 
-  def get_item(id), do: Repo.get(DailyItem, id)
+  @doc "The Daily item with id `id` on `dept`'s board (active or retired), or nil."
+  def get_item(%Department{id: dept_id}, id) do
+    case to_int(id) do
+      nil -> nil
+      id -> Repo.get_by(DailyItem, id: id, department_id: dept_id)
+    end
+  end
 
   @doc """
   The Daily card for each of `days`: `%{date => %{items: [%{item, check}],
@@ -555,8 +621,7 @@ defmodule RockcutApi.Tasks do
       today, then retired, still shows ticked).
     * Future days show the active items.
   """
-  def daily_cards(days, today \\ today()) do
-    dept = department!()
+  def daily_cards(%Department{} = dept, days, today \\ today()) do
     days = Enum.to_list(days)
 
     items =
@@ -673,8 +738,9 @@ defmodule RockcutApi.Tasks do
   day before the item was added → `{:error, :not_yet_added}`. Ticking twice
   is a no-op (no second event).
   """
-  def tick(on_date, %DailyItem{} = item, %User{} = actor, today \\ today()) do
-    with {:ok, on_date} <- cast_date(on_date),
+  def tick(%Department{} = dept, on_date, %DailyItem{} = item, %User{} = actor, today \\ today()) do
+    with :ok <- on_board(dept, item),
+         {:ok, on_date} <- cast_date(on_date),
          :ok <- not_future(on_date, today),
          :ok <- not_retired_on(item, on_date),
          :ok <- if(existed_on?(item, on_date), do: :ok, else: {:error, :not_yet_added}) do
@@ -703,8 +769,15 @@ defmodule RockcutApi.Tasks do
   `{:error, :future_day}`. A retired item, or a day it was retired →
   `{:error, :retired}`: its ticks are kept (D39 Decisions 1 and 5).
   """
-  def untick(on_date, %DailyItem{} = item, %User{} = actor, today \\ today()) do
-    with {:ok, on_date} <- cast_date(on_date),
+  def untick(
+        %Department{} = dept,
+        on_date,
+        %DailyItem{} = item,
+        %User{} = actor,
+        today \\ today()
+      ) do
+    with :ok <- on_board(dept, item),
+         {:ok, on_date} <- cast_date(on_date),
          :ok <- not_future(on_date, today),
          :ok <- not_retired_on(item, on_date) do
       Repo.transaction(fn ->
@@ -727,11 +800,9 @@ defmodule RockcutApi.Tasks do
   (`{:error, :too_many_items}`); names unique among active items, ignoring
   case (a changeset error "Already on the list").
   """
-  def create_item(attrs, %User{} = actor) do
-    dept = department!()
-
+  def create_item(%Department{} = dept, attrs, %User{} = actor) do
     Repo.transaction(fn ->
-      active = list_items()
+      active = list_items(dept)
       if length(active) >= @max_items, do: Repo.rollback(:too_many_items)
 
       item =
@@ -747,14 +818,18 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc "Rename an active Daily item. The new name shows on past days too."
-  def rename_item(%DailyItem{id: id}, name, %User{} = actor) do
+  def rename_item(%Department{} = dept, %DailyItem{id: id} = item, name, %User{} = actor) do
+    with :ok <- on_board(dept, item), do: do_rename_item(dept, id, name, actor)
+  end
+
+  defp do_rename_item(dept, id, name, actor) do
     Repo.transaction(fn ->
-      item = active_item!(id)
+      item = active_item!(dept, id)
 
       changeset =
         item
         |> DailyItem.changeset(%{"name" => name})
-        |> unique_name(Enum.reject(list_items(), &(&1.id == id)))
+        |> unique_name(Enum.reject(list_items(dept), &(&1.id == id)))
 
       renamed = Repo.update(changeset) |> ok_or_rollback()
 
@@ -771,11 +846,15 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc "Retire an active Daily item. Past ticks are kept; the rest close up."
-  def retire_item(%DailyItem{id: id}, %User{} = actor) do
+  def retire_item(%Department{} = dept, %DailyItem{id: id} = item, %User{} = actor) do
+    with :ok <- on_board(dept, item), do: do_retire_item(dept, id, actor)
+  end
+
+  defp do_retire_item(dept, id, actor) do
     Repo.transaction(fn ->
-      item = active_item!(id)
+      item = active_item!(dept, id)
       retired = item |> Ecto.Changeset.change(active: false) |> Repo.update!()
-      list_items() |> Enum.map(& &1.id) |> write_item_order()
+      list_items(dept) |> Enum.map(& &1.id) |> write_item_order()
       log_item!(retired, "item_retired", actor, %{"daily_item_id" => id})
       retired
     end)
@@ -792,14 +871,18 @@ defmodule RockcutApi.Tasks do
   (`retired_spans/1`, D39 Decision 5); the days before show it again, ticked
   or not.
   """
-  def restore_item(%DailyItem{id: id}, %User{} = actor) do
+  def restore_item(%Department{} = dept, %DailyItem{id: id} = item, %User{} = actor) do
+    with :ok <- on_board(dept, item), do: do_restore_item(dept, id, actor)
+  end
+
+  defp do_restore_item(dept, id, actor) do
     Repo.transaction(fn ->
-      item = Repo.get(DailyItem, id) || Repo.rollback(:not_found)
+      item = get_item(dept, id) || Repo.rollback(:not_found)
 
       if item.active do
         item
       else
-        active = list_items()
+        active = list_items(dept)
         if length(active) >= @max_items, do: Repo.rollback(:too_many_items)
 
         restored =
@@ -819,9 +902,11 @@ defmodule RockcutApi.Tasks do
   Reorder the active items. `ids` must be exactly the active items' ids, else
   `{:error, :invalid_order}`. Returns the items in their new order.
   """
-  def order_items(ids, %User{} = actor) when is_list(ids) do
+  def order_items(dept, ids, actor)
+
+  def order_items(%Department{} = dept, ids, %User{} = actor) when is_list(ids) do
     Repo.transaction(fn ->
-      current = list_items() |> Enum.map(& &1.id)
+      current = list_items(dept) |> Enum.map(& &1.id)
       ids = Enum.map(ids, &to_int/1)
 
       if Enum.sort(ids) != Enum.sort(current) or length(Enum.uniq(ids)) != length(ids),
@@ -831,6 +916,7 @@ defmodule RockcutApi.Tasks do
         write_item_order(ids)
 
         Repo.insert!(%Event{
+          department_id: dept.id,
           action: "item_reordered",
           actor_id: actor.id,
           title: "Daily items",
@@ -838,14 +924,14 @@ defmodule RockcutApi.Tasks do
         })
       end
 
-      list_items()
+      list_items(dept)
     end)
   end
 
-  def order_items(_ids, _actor), do: {:error, :invalid_order}
+  def order_items(%Department{}, _ids, _actor), do: {:error, :invalid_order}
 
-  defp active_item!(id) do
-    case Repo.get(DailyItem, id) do
+  defp active_item!(dept, id) do
+    case get_item(dept, id) do
       %DailyItem{active: true} = item -> item
       %DailyItem{} -> Repo.rollback(:retired)
       nil -> Repo.rollback(:not_found)
@@ -872,20 +958,21 @@ defmodule RockcutApi.Tasks do
   ## History
 
   @doc """
-  The change log, newest first, #{@history_page_size} per page (1-based),
-  optionally for one task. Actor and device preloaded. Returns
+  `dept`'s change log, newest first, #{@history_page_size} per page
+  (1-based), optionally for one task. Actor and device preloaded. Returns
   `%{events: [...], page: n, total: count, names: %{users: .., items: ..}}`:
   `names` maps the user ids (assignees) and Daily item ids (a reorder) that
   the page's `detail`s mention to their current names, so History reads in
   words. Someone or something since deleted is simply missing.
   """
-  def list_events(task_id \\ nil, page \\ 1) do
+  def list_events(%Department{id: dept_id}, task_id \\ nil, page \\ 1) do
     page = max(page, 1)
+    board = from(ev in Event, where: ev.department_id == ^dept_id)
 
     base =
       case task_id do
-        nil -> from(ev in Event)
-        id -> from(ev in Event, where: ev.task_id == ^id)
+        nil -> board
+        id -> from(ev in board, where: ev.task_id == ^id)
       end
 
     events =
@@ -1027,13 +1114,11 @@ defmodule RockcutApi.Tasks do
   items densely, keeping their order. For bulk deletes made outside this
   module (the synthetic seed's cleanup).
   """
-  def compact_lists do
-    dept = department!()
-
+  def compact_lists(%Department{} = dept) do
     Repo.all(from t in Task, where: t.department_id == ^dept.id, distinct: true, select: t.due_on)
     |> Enum.each(&renumber(dept.id, &1))
 
-    list_items() |> Enum.map(& &1.id) |> write_item_order()
+    list_items(dept) |> Enum.map(& &1.id) |> write_item_order()
     :ok
   end
 
@@ -1072,27 +1157,48 @@ defmodule RockcutApi.Tasks do
   ## Validation
 
   @doc false
+  # The assignee must be able to take a task on the record's board (its
+  # `department_id`): an active member of that department, or an owner.
   def validate_assignee(changeset) do
     case Ecto.Changeset.get_change(changeset, :assignee_id) do
       nil ->
         changeset
 
       id ->
-        if assignable?(Accounts.get_user(id)),
+        dept_id = Ecto.Changeset.get_field(changeset, :department_id)
+
+        if assignable?(Accounts.get_user(id), dept_id),
           do: changeset,
-          else: Ecto.Changeset.add_error(changeset, :assignee_id, "must be a Brewery member")
+          else: Ecto.Changeset.add_error(changeset, :assignee_id, assignee_error(dept_id))
     end
   end
 
-  defp assignable?(%User{} = user), do: Authz.can_take_brewery_task?(user)
-  defp assignable?(nil), do: false
+  defp assignable?(%User{} = user, dept_id), do: Authz.can_take_task?(user, dept_id)
+  defp assignable?(nil, _dept_id), do: false
+
+  defp assignee_error(dept_id) do
+    case Repo.get(Department, dept_id) do
+      %Department{name: name} -> "must be a #{name} member"
+      nil -> "must be a member"
+    end
+  end
 
   ## Helpers
 
+  # A task or Daily item given for `dept`'s board must be on it.
+  defp on_board(%Department{id: id}, %{department_id: id}), do: :ok
+  defp on_board(%Department{}, _record), do: {:error, :not_found}
+
+  # Inside a transaction: the task by id, on `dept`'s board.
+  defp fetch!(%Department{} = dept, id), do: get_task(dept, id) || Repo.rollback(:not_found)
+
+  # By id alone, for `update_one/4` and `delete_one/3`, whose callers have
+  # already checked the board.
   defp fetch!(id), do: Repo.get(Task, id) || Repo.rollback(:not_found)
 
   defp log!(%Task{} = task, action, actor, detail) do
     Repo.insert!(%Event{
+      department_id: task.department_id,
       task_id: task.id,
       action: action,
       actor_id: actor.id,
@@ -1105,7 +1211,13 @@ defmodule RockcutApi.Tasks do
     do: log_item!(item, action, actor, %{"on_date" => iso(on_date), "daily_item_id" => item.id})
 
   defp log_item!(item, action, actor, detail) do
-    Repo.insert!(%Event{action: action, actor_id: actor.id, title: item.name, detail: detail})
+    Repo.insert!(%Event{
+      department_id: item.department_id,
+      action: action,
+      actor_id: actor.id,
+      title: item.name,
+      detail: detail
+    })
   end
 
   defp ok_or_rollback({:ok, value}), do: value

@@ -21,7 +21,7 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.ModuleAccessPlug, module: :brewery
   end
 
-  # D41: the board's department, from `:dept` (404 for any other key).
+  # D41: the board's department, from `:dept` (404 unless it's assignable).
   pipeline :task_board do
     plug RockcutApiWeb.Plugs.TaskBoard
   end
@@ -211,11 +211,12 @@ defmodule RockcutApiWeb.Router do
     post "/formulas/execute", FormulaController, :execute
   end
 
-  # D38 task board, per department since D41 (`/api/boards/:dept`; only the
-  # Brewery's for now): Brewery members and owners, people only (D40 opens the
-  # writes to the brewhouse tablet). Each action asks Authz.
+  # D38 task boards, one per assignable department since D41
+  # (`/api/boards/:dept`): the department's members and owners, people only
+  # (D40 opens the writes to the brewhouse tablet). Not tied to a module: each
+  # action asks Authz about the board's department.
   scope "/api/boards/:dept", RockcutApiWeb do
-    pipe_through [:api, :authenticated, :task_board, :brewery]
+    pipe_through [:api, :authenticated, :task_board]
 
     get "/tasks", TaskBoardController, :index
     get "/tasks/history", TaskBoardController, :history

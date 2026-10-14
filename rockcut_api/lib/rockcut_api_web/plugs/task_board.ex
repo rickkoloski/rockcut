@@ -3,21 +3,21 @@ defmodule RockcutApiWeb.Plugs.TaskBoard do
   D41: resolves a task board's `:dept` path param to its department and
   assigns it as `conn.assigns.board`. Runs after `AuthPlug`.
 
-  For now only the Brewery has a board (D41 step 1, the rename): any other
-  key halts with 404 JSON. Step 3 opens every assignable department.
+  Every assignable department has a board (`brewery`, `bar`, `office`,
+  `sales`). `other` (scheduling only, not assignable) and unknown keys halt
+  with 404 JSON. Whether this person may use the board is `Authz`'s call, in
+  the controllers.
   """
   import Plug.Conn
   alias RockcutApi.Accounts
   alias RockcutApi.Accounts.Department
 
-  @boards ~w(brewery)
-
   def init(opts), do: opts
 
-  def call(%Plug.Conn{path_params: %{"dept" => key}} = conn, _opts) when key in @boards do
+  def call(%Plug.Conn{path_params: %{"dept" => key}} = conn, _opts) do
     case Accounts.get_department_by_key(key) do
-      %Department{} = dept -> assign(conn, :board, dept)
-      nil -> not_found(conn)
+      %Department{assignable: true} = dept -> assign(conn, :board, dept)
+      _ -> not_found(conn)
     end
   end
 

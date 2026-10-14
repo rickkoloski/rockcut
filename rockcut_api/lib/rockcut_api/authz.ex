@@ -46,14 +46,15 @@ defmodule RockcutApi.Authz do
   def can_hold_staff_code?(_), do: false
 
   @doc """
-  True if `user` may be assigned a D38 Brewery task: an active person (not a
-  device) in the Brewery (owners count, as everywhere). Expects memberships
-  preloaded with departments.
+  True if `user` may be assigned a task on `department`'s board (D38, D41):
+  an active person (not a device) in that department (owners count, as
+  everywhere). `department` as in `role_in/2`. Expects memberships preloaded
+  with departments.
   """
-  def can_take_brewery_task?(%User{kind: "person", active: true} = user),
-    do: member_of?(user, "brewery")
+  def can_take_task?(%User{kind: "person", active: true} = user, department),
+    do: member_of?(user, department)
 
-  def can_take_brewery_task?(_), do: false
+  def can_take_task?(_, _department), do: false
 
   @doc "True if the user is a global owner."
   def owner?(%User{is_owner: owner}), do: owner == true
@@ -343,17 +344,20 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, :beer_board) when action in [:history, :import, :export],
     do: role_in(user, "bar") == :manager
 
-  # D38 Brewery task board: any Brewery member reads and writes (tasks, moves,
-  # Daily checks); the change log and the Daily items list are for Brewery
-  # managers. Owners pass above; devices are denied until D40.
-  def can?(%User{} = user, action, :brewery_tasks) when action in [:read, :write],
-    do: member_of?(user, "brewery")
+  # D38 task boards, one per department since D41: the department's members
+  # read and write its board (tasks, moves, Daily checks); its change log and
+  # Daily items list are for its managers. Not tied to a module (a
+  # Taproom-only person uses the Taproom's board). Owners pass above; devices
+  # are denied until D40.
+  def can?(%User{} = user, action, {:tasks, %Department{} = dept})
+      when action in [:read, :write],
+      do: member_of?(user, dept)
 
-  def can?(%User{} = user, :history, :brewery_tasks),
-    do: role_in(user, "brewery") == :manager
+  def can?(%User{} = user, :history, {:tasks, %Department{} = dept}),
+    do: role_in(user, dept) == :manager
 
-  def can?(%User{} = user, :manage, :brewery_daily_items),
-    do: role_in(user, "brewery") == :manager
+  def can?(%User{} = user, :manage, {:daily_items, %Department{} = dept}),
+    do: role_in(user, dept) == :manager
 
   # D37 staff codes: owners (above) and Taproom managers set and see them.
   # Whether the target may hold one is StaffCodes' check (can_hold_staff_code?/1).

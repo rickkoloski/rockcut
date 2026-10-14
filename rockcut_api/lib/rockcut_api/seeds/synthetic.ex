@@ -708,7 +708,7 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     Repo.delete_all(from(s in TaskSeries, where: s.id in ^series_ids))
     Repo.delete_all(from(i in DailyItem, where: like(i.name, ^pattern)))
-    if Repo.get_by(Department, key: "brewery"), do: Tasks.compact_lists()
+    for dept <- Repo.all(Department), do: Tasks.compact_lists(dept)
   end
 
   ## Brewery task board (D38)
@@ -776,13 +776,13 @@ defmodule RockcutApi.Seeds.Synthetic do
       )
     end
 
-    Tasks.compact_lists()
+    Tasks.compact_lists(dept)
     seed_recurring_tasks(mgr, today)
 
     # Daily card: yesterday 3 of the first 4 ticked, today 1. A past day only
     # counts items that existed then, and the migration may have added the
     # defaults today: date them two weeks back so the seeded days show x/4.
-    items = Tasks.list_items()
+    items = Tasks.list_items(dept)
     yesterday = Date.add(today, -1)
     since = Recurrence.local_midnight(Date.add(today, -14))
     default_ids = for i <- items, i.name in DailyItem.defaults(), do: i.id
@@ -826,6 +826,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   # like a real one). Keg Wash starts on the first Wednesday on or after 14
   # days ago, so its two past Wednesdays are open on the Unfinished card.
   defp seed_recurring_tasks(mgr, today) do
+    brewery = Repo.get_by!(Department, key: "brewery")
     from = Date.add(today, -14)
     first_wed = Date.add(from, rem(3 - Date.day_of_week(from) + 7, 7))
 
@@ -853,7 +854,7 @@ defmodule RockcutApi.Seeds.Synthetic do
           }
         ] do
       {:ok, _} =
-        Tasks.create(%{attrs | title: "#{@seed_tag} #{attrs.title}"}, mgr, today)
+        Tasks.create(brewery, %{attrs | title: "#{@seed_tag} #{attrs.title}"}, mgr, today)
     end
   end
 

@@ -6,6 +6,8 @@ defmodule RockcutApiWeb.TaskFollowupsControllerTest do
   """
   use RockcutApiWeb.ConnCase, async: false
 
+  import RockcutApi.TaskFixtures
+
   import RockcutApi.PersonaFixtures
   import Phoenix.ConnTest
 
@@ -16,7 +18,8 @@ defmodule RockcutApiWeb.TaskFollowupsControllerTest do
     %{p: p, today: Tasks.today()}
   end
 
-  defp item_id(name), do: Enum.find(Tasks.list_items(), &(&1.name == name)).id
+  defp item_id(name),
+    do: Enum.find(Tasks.list_items(brewery_board()), &(&1.name == name)).id
 
   defp retire!(mgr, name) do
     id = item_id(name)
@@ -37,7 +40,7 @@ defmodule RockcutApiWeb.TaskFollowupsControllerTest do
       test label, %{p: p} do
         mgr = p["breweryMgr"]
         temps = retire!(mgr, "Temps")
-        before = Tasks.get_item(temps)
+        before = Tasks.get_item(brewery_board(), temps)
 
         assert %{"error" => "retired", "message" => "That Daily item was retired"} =
                  call(
@@ -48,7 +51,7 @@ defmodule RockcutApiWeb.TaskFollowupsControllerTest do
                  )
                  |> json_response(422)
 
-        assert Tasks.get_item(temps) == before
+        assert Tasks.get_item(brewery_board(), temps) == before
       end
     end
 
@@ -105,7 +108,7 @@ defmodule RockcutApiWeb.TaskFollowupsControllerTest do
       end
 
       # Nothing is recreated.
-      refute Tasks.get_task(task["id"])
+      refute Tasks.get_task(brewery_board(), task["id"])
     end
 
     test "an id that never existed stays 404", %{p: p, today: today} do
@@ -140,7 +143,7 @@ defmodule RockcutApiWeb.TaskFollowupsControllerTest do
                 403
             )
 
-      refute Tasks.get_item(temps).active
+      refute Tasks.get_item(brewery_board(), temps).active
 
       assert call(p["breweryMgr"], :post, "/api/boards/brewery/daily_items/999999/restore").status ==
                404

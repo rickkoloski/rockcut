@@ -1,6 +1,8 @@
 defmodule RockcutApi.Seeds.SyntheticTest do
   # Not async: tests flip the global :deploy_env and SEED_PASSWORD.
   use RockcutApiWeb.ConnCase, async: false
+
+  import RockcutApi.TaskFixtures
   @moduletag :capture_log
 
   import Ecto.Query
@@ -536,7 +538,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     defp item_names,
-      do: Enum.map(Tasks.list_items(), &{&1.name, &1.position})
+      do: Enum.map(Tasks.list_items(brewery_board()), &{&1.name, &1.position})
 
     defp board_lists do
       Repo.all(
@@ -552,7 +554,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     test "seeds tasks, Daily checks and a Brewery event relative to today" do
       {:ok, _} = Synthetic.setup()
       today = Tasks.today()
-      {:ok, board} = Tasks.board(Date.add(today, -3), Date.add(today, 13), today)
+      {:ok, board} = Tasks.board(brewery_board(), Date.add(today, -3), Date.add(today, 13), today)
 
       assert length(seed_tasks()) == 17
       # D38's two, plus Keg Wash's two past Wednesdays (D39).
@@ -597,11 +599,11 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
       today = Tasks.today()
 
-      {:ok, _} = Tasks.create(%{title: "[TEST-TEMP] first", due_on: today}, mgr)
-      {:ok, kept} = Tasks.create(%{title: "Real task", due_on: today}, mgr)
-      {:ok, _} = Tasks.create(%{title: "[TEST-TEMP] later"}, mgr)
-      {:ok, item} = Tasks.create_item(%{name: "[TEST-TEMP] Hoses"}, mgr)
-      {:ok, _} = Tasks.tick(today, item, mgr, today)
+      {:ok, _} = Tasks.create(brewery_board(), %{title: "[TEST-TEMP] first", due_on: today}, mgr)
+      {:ok, kept} = Tasks.create(brewery_board(), %{title: "Real task", due_on: today}, mgr)
+      {:ok, _} = Tasks.create(brewery_board(), %{title: "[TEST-TEMP] later"}, mgr)
+      {:ok, item} = Tasks.create_item(brewery_board(), %{name: "[TEST-TEMP] Hoses"}, mgr)
+      {:ok, _} = Tasks.tick(brewery_board(), today, item, mgr, today)
 
       :ok = Synthetic.cleanup_temp()
 
@@ -639,7 +641,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Date.diff(today, keg_start) in 8..14
       assert keg_count >= 54
 
-      {:ok, board} = Tasks.board(Date.add(today, -3), Date.add(today, 27), today)
+      {:ok, board} = Tasks.board(brewery_board(), Date.add(today, -3), Date.add(today, 27), today)
       keg = Enum.filter(board.unfinished, &(&1.task.title == "[SEED] Keg Wash"))
       assert length(keg) == 2
       assert Enum.all?(keg, & &1.task.series_id)
@@ -660,6 +662,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       {:ok, temp} =
         Tasks.create(
+          brewery_board(),
           %{title: "[TEST-TEMP] Hoses", due_on: today, repeat: "annually"},
           mgr,
           today
@@ -667,7 +670,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       # An occurrence retitled on its own still goes with its series.
       {:ok, _} =
-        Tasks.update(temp, %{title: "Renamed"}, mgr, scope: "this")
+        Tasks.update(brewery_board(), temp, %{title: "Renamed"}, mgr, scope: "this")
 
       :ok = Synthetic.cleanup_temp()
       refute Repo.get(TaskSeries, temp.series_id)
@@ -683,12 +686,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       {:ok, _} = Synthetic.setup()
       mgr = Accounts.get_user_by_email(Synthetic.persona!("breweryMgr").email)
       today = Tasks.today()
-      [backups, gravities | _] = Tasks.list_items()
+      [backups, gravities | _] = Tasks.list_items(brewery_board())
 
-      {:ok, _} = Tasks.tick(Date.add(today, -5), gravities, mgr, today)
-      {:ok, _} = Tasks.rename_item(gravities, "Gravity", mgr)
-      {:ok, _} = Tasks.retire_item(backups, mgr)
-      {:ok, _} = Tasks.create_item(%{name: "Hoses"}, mgr)
+      {:ok, _} = Tasks.tick(brewery_board(), Date.add(today, -5), gravities, mgr, today)
+      {:ok, _} = Tasks.rename_item(brewery_board(), gravities, "Gravity", mgr)
+      {:ok, _} = Tasks.retire_item(brewery_board(), backups, mgr)
+      {:ok, _} = Tasks.create_item(brewery_board(), %{name: "Hoses"}, mgr)
 
       {:ok, _} = Synthetic.reset()
 

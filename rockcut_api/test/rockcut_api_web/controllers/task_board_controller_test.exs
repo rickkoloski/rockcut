@@ -6,6 +6,8 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
   """
   use RockcutApiWeb.ConnCase, async: false
 
+  import RockcutApi.TaskFixtures
+
   import RockcutApi.PersonaFixtures
   import Phoenix.ConnTest
 
@@ -23,7 +25,8 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
 
   defp add!(user, attrs), do: add(user, attrs) |> json_response(201) |> Map.get("data")
 
-  defp item_id(name), do: Enum.find(Tasks.list_items(), &(&1.name == name)).id
+  defp item_id(name),
+    do: Enum.find(Tasks.list_items(brewery_board()), &(&1.name == name)).id
 
   defp board(user, from, to),
     do:
@@ -75,7 +78,8 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
                }).status ==
                  expected
 
-        ids = Enum.map(Tasks.list_items(), & &1.id) |> Enum.reverse()
+        ids =
+          Enum.map(Tasks.list_items(brewery_board()), & &1.id) |> Enum.reverse()
 
         assert call(user, :put, "/api/boards/brewery/daily_items/order", %{ids: ids}).status ==
                  expected
@@ -359,8 +363,8 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
                call(mgr, :patch, "/api/boards/brewery/daily_items/#{temps}", %{active: true})
                |> json_response(422)
 
-      refute Tasks.get_item(temps).active
-      refute Enum.any?(Tasks.list_items(), &(&1.id == temps))
+      refute Tasks.get_item(brewery_board(), temps).active
+      refute Enum.any?(Tasks.list_items(brewery_board()), &(&1.id == temps))
     end
   end
 

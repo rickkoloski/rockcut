@@ -2,6 +2,8 @@ defmodule RockcutApi.TaskBoardTest do
   @moduledoc "D38: the board read model (`Tasks.board/3`) and its day header (§3.2)."
   use RockcutApi.DataCase, async: true
 
+  import RockcutApi.TaskFixtures
+
   import RockcutApi.AccountsFixtures
   import RockcutApi.SchedulingFixtures
 
@@ -52,10 +54,10 @@ defmodule RockcutApi.TaskBoardTest do
     )
   end
 
-  defp header(day), do: Tasks.headers(Tasks.department!().id, [day])[day]
+  defp header(day), do: Tasks.headers(brewery_board(), [day])[day]
 
   defp add!(actor, title, due_on) do
-    {:ok, task} = Tasks.create(%{title: title, due_on: due_on}, actor)
+    {:ok, task} = Tasks.create(brewery_board(), %{title: title, due_on: due_on}, actor)
     task
   end
 
@@ -144,7 +146,7 @@ defmodule RockcutApi.TaskBoardTest do
         ends_at: at(@today, 10)
       })
 
-      headers = Tasks.headers(ctx.brewery.id, Date.range(@mon, @thu))
+      headers = Tasks.headers(ctx.brewery, Date.range(@mon, @thu))
       assert Enum.map(headers[@today].events, & &1.id) == [long.id, all_day.id]
       assert Enum.map(headers[@tue].events, & &1.id) == [long.id]
       assert Enum.map(headers[@thu].events, & &1.id) == [long.id]
@@ -160,10 +162,10 @@ defmodule RockcutApi.TaskBoardTest do
       future = add!(ctx.kate, "Clean the cold room", nil)
       later = add!(ctx.kate, "Dry hop FV1", Date.add(@sun, 7))
       # Finished today from Monday, shown on today.
-      {:ok, _} = Tasks.complete(mon, "completed_day", ctx.kate, @today)
+      {:ok, _} = Tasks.complete(brewery_board(), mon, "completed_day", ctx.kate, @today)
       shift!(ctx, @today, 7, 15, %{assignee_id: ctx.kate.id})
 
-      assert {:ok, board} = Tasks.board(@mon, @sun, @today)
+      assert {:ok, board} = Tasks.board(brewery_board(), @mon, @sun, @today)
       assert board.from == @mon and board.to == @sun and board.today == @today
       assert Enum.map(board.days, & &1.date) == Enum.to_list(Date.range(@mon, @sun))
 
@@ -185,26 +187,29 @@ defmodule RockcutApi.TaskBoardTest do
 
     test "a task finished elsewhere shows on its finished day only when that's in range", ctx do
       task = add!(ctx.kate, "Carb FV3", @mon)
-      {:ok, _} = Tasks.complete(task, "completed_day", ctx.kate, @today)
+      {:ok, _} = Tasks.complete(brewery_board(), task, "completed_day", ctx.kate, @today)
 
-      {:ok, board} = Tasks.board(@today, @today, @today)
+      {:ok, board} = Tasks.board(brewery_board(), @today, @today, @today)
       assert [%{key: {_, @today}, planned_on: @mon, locked: true}] = hd(board.days).cards
 
-      {:ok, board} = Tasks.board(@mon, @mon, @today)
+      {:ok, board} = Tasks.board(brewery_board(), @mon, @mon, @today)
       assert hd(board.days).cards == []
       assert board.unfinished == []
     end
 
     test "the range is 1 to 31 days, from ≤ to" do
       department_fixture("brewery")
-      assert {:ok, %{days: [_]}} = Tasks.board(@today, @today, @today)
-      assert {:ok, %{days: days}} = Tasks.board(@today, Date.add(@today, 30), @today)
+      assert {:ok, %{days: [_]}} = Tasks.board(brewery_board(), @today, @today, @today)
+
+      assert {:ok, %{days: days}} =
+               Tasks.board(brewery_board(), @today, Date.add(@today, 30), @today)
+
       assert length(days) == 31
 
       assert {:error, :range_too_long} =
-               Tasks.board(@today, Date.add(@today, 31), @today)
+               Tasks.board(brewery_board(), @today, Date.add(@today, 31), @today)
 
-      assert {:error, :range_too_long} = Tasks.board(@today, @tue, @today)
+      assert {:error, :range_too_long} = Tasks.board(brewery_board(), @today, @tue, @today)
     end
   end
 end

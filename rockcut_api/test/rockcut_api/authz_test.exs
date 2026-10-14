@@ -213,58 +213,91 @@ defmodule RockcutApi.AuthzTest do
     end
   end
 
-  describe "D38 Brewery task board" do
+  describe "D41 task boards (per department)" do
+    # Each persona's departments and role, as the synthetic personas have
+    # them: the expectations, written out rather than asked of Authz.
+    @roles %{
+      "brewer1" => %{"brewery" => :employee},
+      "breweryMgr" => %{"brewery" => :manager},
+      "bartender1" => %{"bar" => :employee},
+      "barMgr" => %{"bar" => :manager},
+      "floater" => %{"bar" => :employee, "brewery" => :employee},
+      "splitRole" => %{"bar" => :manager, "brewery" => :employee},
+      "dualMgr" => %{"bar" => :manager, "office" => :manager},
+      "office1" => %{"office" => :employee},
+      "sales1" => %{"sales" => :employee},
+      "noDept" => %{}
+    }
+    @boards ~w(brewery bar office sales)
+
     setup do
       p = personas()
       device = device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
-      %{p: p, device: device}
+      %{p: p, device: device, depts: departments()}
     end
 
-    test "Brewery members read and write; only Brewery managers see History and edit Daily items",
-         %{p: p} do
-      for key <- ~w(brewer1 breweryMgr floater),
-          action <- [:read, :write],
-          do: assert(Authz.can?(p[key], action, :brewery_tasks), "#{key} #{action}")
+    test "a department's members read and write its board; only its managers get History and Daily items",
+         %{p: p, depts: depts} do
+      for {key, roles} <- @roles, board <- @boards do
+        dept = depts[board]
+        member = Map.has_key?(roles, board)
+        manager = roles[board] == :manager
 
-      assert Authz.can?(p["breweryMgr"], :history, :brewery_tasks)
-      assert Authz.can?(p["breweryMgr"], :manage, :brewery_daily_items)
+        for action <- [:read, :write],
+            do:
+              assert(
+                Authz.can?(p[key], action, {:tasks, dept}) == member,
+                "#{key} #{action} #{board}"
+              )
 
-      for key <- ~w(brewer1 floater) do
-        refute Authz.can?(p[key], :history, :brewery_tasks), key
-        refute Authz.can?(p[key], :manage, :brewery_daily_items), key
+        assert Authz.can?(p[key], :history, {:tasks, dept}) == manager, "#{key} history #{board}"
+
+        assert Authz.can?(p[key], :manage, {:daily_items, dept}) == manager,
+               "#{key} manage #{board}"
       end
     end
 
-    test "Taproom-only people get nothing, managers included", %{p: p} do
-      for key <- ~w(bartender1 barMgr) do
+    test "a manager of another department gets nothing here; a member there isn't one here",
+         %{p: p, depts: depts} do
+      # barMgr manages the Taproom only; breweryMgr the Brewery only.
+      for action <- [:read, :write, :history],
+          do: refute(Authz.can?(p["barMgr"], action, {:tasks, depts["brewery"]}))
+
+      refute Authz.can?(p["barMgr"], :manage, {:daily_items, depts["brewery"]})
+      refute Authz.can?(p["breweryMgr"], :read, {:tasks, depts["bar"]})
+      # splitRole: Taproom manager, Brewery employee.
+      assert Authz.can?(p["splitRole"], :history, {:tasks, depts["bar"]})
+      refute Authz.can?(p["splitRole"], :history, {:tasks, depts["brewery"]})
+    end
+
+    test "owners get everything on every board", %{p: p, depts: depts} do
+      for board <- @boards, owner <- ~w(owner owner2) do
         for action <- [:read, :write, :history],
-            do: refute(Authz.can?(p[key], action, :brewery_tasks), "#{key} #{action}")
+            do: assert(Authz.can?(p[owner], action, {:tasks, depts[board]}))
 
-        refute Authz.can?(p[key], :manage, :brewery_daily_items), key
+        assert Authz.can?(p[owner], :manage, {:daily_items, depts[board]})
       end
     end
 
-    test "owners get everything", %{p: p} do
-      for action <- [:read, :write, :history],
-          do: assert(Authz.can?(p["owner"], action, :brewery_tasks))
+    test "a shared device, even the Brewery's, gets nothing on any board",
+         %{device: d, depts: depts} do
+      for board <- @boards do
+        for action <- [:read, :write, :history],
+            do: refute(Authz.can?(d, action, {:tasks, depts[board]}), "#{action} #{board}")
 
-      assert Authz.can?(p["owner"], :manage, :brewery_daily_items)
+        refute Authz.can?(d, :manage, {:daily_items, depts[board]})
+      end
     end
 
-    test "a shared device, even the Brewery's, gets nothing", %{device: d} do
-      for action <- [:read, :write, :history],
-          do: refute(Authz.can?(d, action, :brewery_tasks), inspect(action))
+    test "who can be assigned a task: active members of the board's department, and owners",
+         %{p: p, device: d, depts: depts} do
+      for {key, roles} <- @roles,
+          board <- @boards,
+          do: assert(Authz.can_take_task?(p[key], depts[board]) == Map.has_key?(roles, board))
 
-      refute Authz.can?(d, :manage, :brewery_daily_items)
-    end
-
-    test "who can be assigned a task: active Brewery people and owners", %{p: p, device: d} do
-      for key <- ~w(brewer1 breweryMgr floater owner),
-          do: assert(Authz.can_take_brewery_task?(p[key]), key)
-
-      refute Authz.can_take_brewery_task?(p["bartender1"])
-      refute Authz.can_take_brewery_task?(d)
-      refute Authz.can_take_brewery_task?(%{p["brewer1"] | active: false})
+      for board <- @boards, do: assert(Authz.can_take_task?(p["owner"], depts[board]))
+      refute Authz.can_take_task?(d, depts["brewery"])
+      refute Authz.can_take_task?(%{p["brewer1"] | active: false}, depts["brewery"])
     end
   end
 end
