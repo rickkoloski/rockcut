@@ -396,7 +396,7 @@ const sectionKeys = (page: Page, date: string) =>
 test.describe('owner: All departments', () => {
   test.use({ storageState: authFile('owner') })
 
-  test('S118: the switcher opens /tasks/all; today a Brewery section then a Taproom one with their Daily counts, tomorrow Office, never Sales, no header', async ({
+  test('S118: the switcher opens /tasks/all; today a Brewery section then a Taproom one with their Daily counts, tomorrow Office and the Brewery’s Daily count, never Sales, no header', async ({
     page,
   }) => {
     const today = denverToday()
@@ -421,7 +421,7 @@ test.describe('owner: All departments', () => {
     await expect(page.getByTestId(`day-${tomorrow}`).getByTestId('section-office').getByTestId(`task-${payroll.id}:${tomorrow}`)).toBeVisible()
 
     // The Daily counts are the boards' own (the Taproom's only if it has items).
-    const all = (await (await owner.get('/api/boards/all/tasks', { params: { from: today, to: today } })).json()).data as { days: AllDay[] }
+    const all = (await (await owner.get('/api/boards/all/tasks', { params: { from: today, to: tomorrow } })).json()).data as { days: AllDay[] }
     const counts = all.days[0].daily_counts
     expect(counts.map((c) => c.department)).toContain('brewery')
     for (const key of ['brewery', 'bar']) {
@@ -429,6 +429,22 @@ test.describe('owner: All departments', () => {
       const label = todayCol.getByTestId(`section-daily-${key}`)
       if (count) await expect(label).toHaveText(`Daily ${count.done}/${count.total}`)
       else await expect(label).toHaveCount(0)
+    }
+
+    // The Brewery has Daily items, so it has a section every day, with its
+    // count even on a day with none of its tasks. Tomorrow: Office and Brewery.
+    const brewTomorrow = all.days[1].daily_counts.find((c) => c.department === 'brewery')!
+    const tomorrowCol = page.getByTestId(`day-${tomorrow}`)
+    await expect(tomorrowCol.getByTestId('section-daily-brewery')).toHaveText(`Daily ${brewTomorrow.done}/${brewTomorrow.total}`)
+    const tomorrowKeys = await sectionKeys(page, tomorrow)
+    expect(tomorrowKeys.indexOf('brewery')).toBeLessThan(tomorrowKeys.indexOf('office'))
+    const wide = (await (await owner.get('/api/boards/all/tasks', { params: { from: today, to: addDays(today, 13) } })).json()).data as { days: AllDay[] }
+    const quiet = wide.days.find((d) => !d.cards.some((c) => c.department === 'brewery'))
+    if (quiet) {
+      // A day with no Brewery tasks: the section is just its Daily count.
+      const section = page.getByTestId(`day-${quiet.date}`).getByTestId('section-brewery')
+      await expect(section.getByTestId(`section-daily-brewery`)).toBeVisible()
+      await expect(section.locator('[data-testid^="task-"]')).toHaveCount(0)
     }
 
     await expect(page.locator('[data-department="sales"]')).toHaveCount(0)

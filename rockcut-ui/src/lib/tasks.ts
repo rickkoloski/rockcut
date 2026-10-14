@@ -57,8 +57,9 @@ export interface DepartmentSection {
 /**
  * D41 §3.6: the All departments view's cards grouped by department, in the
  * boards' order. A department shows when it has a card to show (after the
- * filter and Hide completed); its Daily count comes along when its board has
- * items that day. Cards keep their board's order.
+ * filter and Hide completed) or a Daily count (its board has items that day),
+ * even with no tasks; one with neither is left out. Cards keep their board's
+ * order.
  */
 export function departmentSections(
   boards: TaskBoardEntry[],
@@ -72,7 +73,7 @@ export function departmentSections(
       cards: cards.filter((c) => c.department === board.key && shown(c)),
       daily: dailyCounts.find((d) => d.department === board.key) ?? null,
     }))
-    .filter((s) => s.cards.length > 0)
+    .filter((s) => s.cards.length > 0 || s.daily !== null)
 }
 
 /**

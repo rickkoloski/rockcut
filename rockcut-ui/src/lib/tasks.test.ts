@@ -303,12 +303,25 @@ describe('departmentSections: the All departments view grouped by department', (
     expect(sections.map((s) => s.daily)).toEqual([{ department: 'brewery', done: 3, total: 4 }, null])
   })
 
-  it('the filter decides what counts: a department whose cards are all hidden is left out, Daily count or not', () => {
+  it('a department with a Daily count has a section even with no tasks that day: just its count', () => {
+    const counts = [{ department: 'brewery', done: 2, total: 4 }]
+    const sections = departmentSections(boards, [card(4, 'office')], counts, everything)
+    expect(sections.map((s) => [s.board.key, s.cards.map((c) => c.id), s.daily?.done ?? null])).toEqual([
+      ['brewery', [], 2],
+      ['office', [4], null],
+    ])
+    expect(departmentSections(boards, [], counts, everything).map((s) => s.board.key)).toEqual(['brewery'])
+  })
+
+  it('the filter decides which cards show: a department whose cards are all hidden is left out unless it has a Daily count', () => {
     const counts = [{ department: 'brewery', done: 0, total: 4 }]
-    const cards = [card(1, 'brewery', { done: true }), card(2, 'bar', { assignee_id: 7 }), card(3, 'bar')]
+    const cards = [card(1, 'brewery', { done: true }), card(2, 'bar', { assignee_id: 7 }), card(3, 'bar'), card(4, 'office', { done: true })]
     const sections = departmentSections(boards, cards, counts, (c) => !c.done && c.assignee_id == null)
-    expect(sections.map((s) => [s.board.key, s.cards.map((c) => c.id)])).toEqual([['bar', [3]]])
-    expect(departmentSections(boards, [], counts, everything)).toEqual([])
+    expect(sections.map((s) => [s.board.key, s.cards.map((c) => c.id)])).toEqual([
+      ['brewery', []],
+      ['bar', [3]],
+    ])
+    expect(departmentSections(boards, [], [], everything)).toEqual([])
   })
 })
 
