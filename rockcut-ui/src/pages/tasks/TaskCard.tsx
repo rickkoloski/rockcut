@@ -1,4 +1,4 @@
-import type { MouseEvent } from 'react'
+import type { KeyboardEvent, MouseEvent } from 'react'
 import { Avatar, Box, Checkbox, Paper, Tooltip, Typography } from '@mui/material'
 import { NotesOutlined, Repeat } from '@mui/icons-material'
 import { firstName, formatTaskDay, initials } from '../../lib/tasks'
@@ -14,6 +14,11 @@ interface Props {
   showDate?: boolean
   onToggle?: (card: TaskCardData) => void
   onOpen?: (card: TaskCardData, anchor: HTMLElement) => void
+  /**
+   * D41 All departments view: no checkbox and no drag; the card is a link
+   * (click or Enter) to `onOpen`.
+   */
+  readOnly?: boolean
 }
 
 /**
@@ -22,7 +27,7 @@ interface Props {
  * anywhere but the checkbox opens the task menu (Enter does too, through
  * SortableLists).
  */
-export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen }: Props) {
+export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly }: Props) {
   const open = (e: MouseEvent<HTMLElement>) => onOpen?.(card, e.currentTarget)
   const tags = [
     card.planned_on && !showDate && { id: 'planned', label: `planned ${formatTaskDay(card.planned_on)}` },
@@ -38,14 +43,20 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
       data-locked={card.locked}
       data-overdue={card.overdue}
       onClick={open}
+      {...(readOnly && {
+        role: 'link',
+        tabIndex: 0,
+        'aria-label': `${card.title}, open on its board`,
+        onKeyDown: (e: KeyboardEvent<HTMLElement>) => e.key === 'Enter' && onOpen?.(card, e.currentTarget),
+      })}
       sx={{
         py: 0.5,
         pr: 0.75,
-        pl: 0,
+        pl: readOnly ? 0.75 : 0,
         display: 'flex',
         alignItems: 'flex-start',
         gap: 0.25,
-        cursor: card.locked ? 'pointer' : 'grab',
+        cursor: card.locked || readOnly ? 'pointer' : 'grab',
         opacity: dragging ? 0.4 : card.done ? 0.65 : 1,
         borderLeft: card.overdue ? '4px solid' : undefined,
         borderLeftColor: card.overdue ? 'warning.main' : undefined,
@@ -54,16 +65,18 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
         '&:hover': { borderColor: 'primary.light' },
       }}
     >
-      <Checkbox
-        size="small"
-        checked={card.done}
-        sx={{ p: 0.5, mt: -0.25 }}
-        onClick={(e) => e.stopPropagation()}
-        // Space on the checkbox ticks it; it mustn't reach the drag handle.
-        onKeyDown={(e) => e.stopPropagation()}
-        onChange={() => onToggle?.(card)}
-        slotProps={{ input: { 'aria-label': card.done ? `Mark ${card.title} not done` : `Mark ${card.title} completed`, 'data-testid': `task-check-${card.key}` } as object }}
-      />
+      {!readOnly && (
+        <Checkbox
+          size="small"
+          checked={card.done}
+          sx={{ p: 0.5, mt: -0.25 }}
+          onClick={(e) => e.stopPropagation()}
+          // Space on the checkbox ticks it; it mustn't reach the drag handle.
+          onKeyDown={(e) => e.stopPropagation()}
+          onChange={() => onToggle?.(card)}
+          slotProps={{ input: { 'aria-label': card.done ? `Mark ${card.title} not done` : `Mark ${card.title} completed`, 'data-testid': `task-check-${card.key}` } as object }}
+        />
+      )}
       <Box sx={{ flex: 1, minWidth: 0, pt: 0.25 }}>
         {showDate && card.planned_on && (
           <Typography variant="caption" color="warning.dark" sx={{ display: 'block', fontWeight: 600 }} data-testid={`task-date-${card.key}`}>

@@ -4,10 +4,11 @@ import { addDays, apiAs, denverToday, denverUtc, tempTag, userId } from '../brew
 import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
 import { openUser } from '../taproom/helpers'
 
-// D41 §4, scenarios S101–S115: a task board per department. Who sees which
+// D41 §4, scenarios S101–S115 and S118–S120: a task board per department. Who sees which
 // board (nav, switcher, typed URLs), manager tools per board, the hidden Daily
 // card and "Set up Daily checks", assignees and History per board, leaving one
-// department, the old /brewery/tasks link, and ids from another board.
+// department, the old /brewery/tasks link, and ids from another board; the
+// owners' read-only All departments view (S118–S120).
 // The boards are shared, so this runs in the one-worker `brewery-board` project.
 
 test.use({ viewport: { width: 1600, height: 1100 } })
@@ -210,7 +211,8 @@ test.describe('owner (no memberships)', () => {
 
   test('S104: all four boards in the switcher, each with History and its Daily items entry', async ({ page }) => {
     await openBoard(page, '/tasks/brewery')
-    expect(await switcherEntries(page)).toEqual(['Brewery', 'Taproom', 'Office', 'Sales'])
+    // Then the All departments view, last (S118).
+    expect(await switcherEntries(page)).toEqual(['Brewery', 'Taproom', 'Office', 'Sales', 'All departments'])
     expect(await boardMenu(page)).toEqual(['History', 'Edit Daily items'])
     for (const key of ['bar', 'office', 'sales']) {
       await openBoard(page, `/tasks/${key}`)
@@ -378,3 +380,121 @@ test.describe('taproomDevice', () => {
     expect(await status('taproomDevice', 'GET', `/api/boards/bar/tasks?from=${denverToday()}&to=${denverToday()}`)).toBe(403)
   })
 })
+
+// ── S118–S120: the All departments view (owners, read-only) ──
+
+interface AllDay {
+  date: string
+  cards: { id: number; department: string }[]
+  daily_counts: { department: string; done: number; total: number }[]
+}
+
+/** The departments' sections in a day's column on /tasks/all, in order. */
+const sectionKeys = (page: Page, date: string) =>
+  page.getByTestId(`day-${date}`).locator('[data-department]').evaluateAll((els) => els.map((e) => (e as HTMLElement).dataset.department))
+
+test.describe('owner: All departments', () => {
+  test.use({ storageState: authFile('owner') })
+
+  test('S118: the switcher opens /tasks/all; today a Brewery section then a Taproom one with their Daily counts, tomorrow Office, never Sales, no header', async ({
+    page,
+  }) => {
+    const today = denverToday()
+    const tomorrow = addDays(today, 1)
+    const owner = await apiAs('owner')
+    const pour = await createTask(owner, 'bar', { title: tempTag('S118 Lines'), due_on: today })
+    const brew = await createTask(owner, 'brewery', { title: tempTag('S118 Keg Wash'), due_on: today })
+    const payroll = await createTask(owner, 'office', { title: tempTag('S118 Payroll'), due_on: tomorrow })
+
+    await openBoard(page, '/tasks/brewery')
+    await page.getByTestId('board-switcher').click()
+    await page.getByTestId('board-switch-all').click()
+    await expect(page).toHaveURL(/\/tasks\/all$/)
+    await expect(page.getByTestId('board-title')).toHaveText('All departments')
+    await expect(page.getByTestId('board-grid')).toBeVisible()
+
+    const todayCol = page.getByTestId(`day-${today}`)
+    await expect(todayCol.getByTestId('section-brewery').getByTestId(`task-${brew.id}:${today}`)).toBeVisible()
+    await expect(todayCol.getByTestId('section-bar').getByTestId(`task-${pour.id}:${today}`)).toBeVisible()
+    const keys = await sectionKeys(page, today)
+    expect(keys.indexOf('brewery')).toBeLessThan(keys.indexOf('bar'))
+    await expect(page.getByTestId(`day-${tomorrow}`).getByTestId('section-office').getByTestId(`task-${payroll.id}:${tomorrow}`)).toBeVisible()
+
+    // The Daily counts are the boards' own (the Taproom's only if it has items).
+    const all = (await (await owner.get('/api/boards/all/tasks', { params: { from: today, to: today } })).json()).data as { days: AllDay[] }
+    const counts = all.days[0].daily_counts
+    expect(counts.map((c) => c.department)).toContain('brewery')
+    for (const key of ['brewery', 'bar']) {
+      const count = counts.find((c) => c.department === key)
+      const label = todayCol.getByTestId(`section-daily-${key}`)
+      if (count) await expect(label).toHaveText(`Daily ${count.done}/${count.total}`)
+      else await expect(label).toHaveCount(0)
+    }
+
+    await expect(page.locator('[data-department="sales"]')).toHaveCount(0)
+    await expect(page.locator('[data-testid^="day-header-"]')).toHaveCount(0)
+    // Remembered like a board.
+    expect(await page.evaluate(() => localStorage.getItem('rockcut.tasks.board'))).toBe('all')
+    await page.goto('/tasks')
+    await expect(page).toHaveURL(/\/tasks\/all$/)
+  })
+
+  test('S119: nothing on /tasks/all is draggable or tickable; tapping a Taproom card opens /tasks/bar at its day, where it can be changed', async ({
+    page,
+  }) => {
+    const today = denverToday()
+    const owner = await apiAs('owner')
+    const pour = await createTask(owner, 'bar', { title: tempTag('S119 Lines'), due_on: today })
+
+    await openBoard(page, '/tasks/all')
+    const card = page.getByTestId(`task-${pour.id}:${today}`)
+    await expect(card).toBeVisible()
+    await expect(page.locator('[data-testid^="task-check-"]')).toHaveCount(0)
+    await expect(page.locator('[aria-roledescription="sortable"], [draggable="true"]')).toHaveCount(0)
+    for (const id of ['board-menu', 'unfinished-move-all', 'future-add']) await expect(page.getByTestId(id)).toHaveCount(0)
+    await expect(page.locator('[data-testid^="day-add-"]')).toHaveCount(0)
+    await expect(page.getByTestId('board-filter-mine')).toHaveCount(0)
+
+    await card.click()
+    await expect(page).toHaveURL(/\/tasks\/bar$/)
+    await expect(page.getByTestId('board-title')).toHaveText('Taproom tasks')
+    const onBoard = page.getByTestId(`task-${pour.id}:${today}`)
+    await expect(onBoard).toBeInViewport()
+    await page.getByTestId(`task-check-${pour.id}:${today}`).check()
+    // Persisted: the API has it done, and so does the board after a reload.
+    await expect.poll(async () => ((await getTask(owner, 'bar', pour.id)) as { done?: boolean } | undefined)?.done).toBe(true)
+    await page.reload()
+    await expect(onBoard).toHaveAttribute('data-done', 'true')
+  })
+
+  test('S119 at phone width: a card from another day opens that day in the one-day view', async ({ page }) => {
+    const day = addDays(denverToday(), 3)
+    const owner = await apiAs('owner')
+    const payroll = await createTask(owner, 'office', { title: tempTag('S119 Payroll'), due_on: day })
+    await page.setViewportSize({ width: 412, height: 915 })
+    await page.addInitScript(() => localStorage.setItem('rockcut.tasks.phoneView', 'day'))
+
+    await openBoard(page, '/tasks/all')
+    await page.getByTestId(`phone-stop-${day}`).click()
+    await page.getByTestId(`task-${payroll.id}:${day}`).click()
+    await expect(page).toHaveURL(/\/tasks\/office$/)
+    await expect(page.getByTestId(`phone-stop-${day}`)).toHaveAttribute('data-selected', 'true')
+    await expect(page.getByTestId(`task-check-${payroll.id}:${day}`)).toBeVisible()
+  })
+})
+
+for (const persona of ['breweryMgr', 'floater'] as const) {
+  test.describe(`${persona}: not an owner`, () => {
+    test.use({ storageState: authFile(persona) })
+
+    test(`S120: no All departments; a typed /tasks/all goes to their board; the API answers 403 (${persona})`, async ({ page }) => {
+      await page.goto('/tasks/all')
+      await expect(page).toHaveURL(/\/tasks\/brewery$/)
+      await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
+      if (persona === 'floater') expect(await switcherEntries(page)).toEqual(['Brewery', 'Taproom'])
+      else await expect(page.getByTestId('board-switcher')).toHaveCount(0)
+      const today = denverToday()
+      expect(await status(persona, 'GET', `/api/boards/all/tasks?from=${today}&to=${today}`)).toBe(403)
+    })
+  })
+}

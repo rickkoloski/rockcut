@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Alert, Box, CircularProgress, Snackbar, useMediaQuery, useTheme } from '@mui/material'
+import { useNavigate } from 'react-router-dom'
+import { Alert, Box, CircularProgress, Snackbar } from '@mui/material'
 import { keepPreviousData, useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import SortableLists, { type ContainerSlot } from '../../components/dnd/SortableLists'
@@ -10,7 +10,6 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
-import { addDaysKey } from '../../lib/datetime'
 import {
   DAILY_ITEMS_KEY,
   FUTURE,
@@ -18,31 +17,19 @@ import {
   boardPath,
   cardShown,
   coloradoToday,
-  dayCount,
   formatTaskDay,
   boardMoveRule,
-  rangeError,
-  readHideCompleted,
-  readPhoneView,
-  readSpan,
-  spanEnd,
   taskError,
   writeBoard,
-  writeHideCompleted,
-  writePhoneView,
-  writeSpan,
-  type PhoneView,
-  type Span,
   type TaskFilter,
 } from '../../lib/tasks'
 import type { CompletedDisplay, DailyCardItem, DailyItem, RosterEntry, TaskBoardData, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
+import BoardLayout from './BoardLayout'
 import BoardSwitcher from './BoardSwitcher'
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
 import HistoryDialog from './HistoryDialog'
-import PhoneDayView from './PhoneDayView'
-import PhoneVerticalView from './PhoneVerticalView'
 import { RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
 import DayColumn from './DayColumn'
 import FinishElsewhereDialog from './FinishElsewhereDialog'
@@ -51,9 +38,9 @@ import TaskCard from './TaskCard'
 import TaskDialog, { type TaskDialogMode } from './TaskDialog'
 import TaskMenu, { type TaskAction } from './TaskMenu'
 import UnfinishedCard from './UnfinishedCard'
+import { scrollToStop, useBoardView } from './useBoardView'
 
 const BOARD_KEY = 'task-board'
-const WIDE_BOARD_PX = 1200
 
 interface Props {
   /** The board showing (D41: one per department, from the URL). */
@@ -69,7 +56,8 @@ interface Props {
  * SortableLists, so a drag between any two of them is one move. At phone
  * width (D39) it's every day stacked (PhoneVerticalView, drags anywhere) or
  * one day at a time (PhoneDayView: drags stay in the day, or come from the
- * Unfinished card into today).
+ * Unfinished card into today). D41: `?day=` opens it at that day (the All
+ * departments view's links).
  */
 export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const dept = boardEntry.key
@@ -78,7 +66,6 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const { user } = useAuth()
   // History and Edit Daily items (the department's managers and owners, never a device).
   const canManage = boardEntry.manage && user?.kind !== 'device'
-  const [params, setParams] = useSearchParams()
   // D41: the board last opened is the one `/tasks` opens.
   useEffect(() => writeBoard(dept), [dept])
   /** Another board, at the same range. */
@@ -86,33 +73,11 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     writeBoard(key)
     navigate({ pathname: `/tasks/${key}`, search: window.location.search })
   }
-  const [span, setSpan] = useState<Span>(readSpan)
-  const [hideCompleted, setHideCompleted] = useState(readHideCompleted)
-  // D39: at phone width, every day stacked (the default) or one at a time.
-  const [phoneView, setPhoneView] = useState<PhoneView>(readPhoneView)
+  const {
+    from, to, highlighted, hideCompleted, phoneView, phone, wide, focus, clearFocus,
+    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, setPhoneView,
+  } = useBoardView()
   const [filter, setFilter] = useState<TaskFilter>('all')
-  // Nine columns (Unfinished, seven days, Future) need about 1,200px of board,
-  // which a 1280px screen beside the nav doesn't have (spec §3.8).
-  const [boardEl, setBoardEl] = useState<HTMLElement | null>(null)
-  const [boardWidth, setBoardWidth] = useState(0)
-  useEffect(() => {
-    if (!boardEl) return
-    const observer = new ResizeObserver(([entry]) => setBoardWidth(entry.contentRect.width))
-    observer.observe(boardEl)
-    return () => observer.disconnect()
-  }, [boardEl])
-  const wide = boardWidth >= WIDE_BOARD_PX
-  const theme = useTheme()
-  const phone = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true })
-
-  // The range lives in the URL; without a valid one it's today plus the default span.
-  const urlFrom = params.get('from') ?? ''
-  const urlTo = params.get('to') ?? ''
-  const urlValid = rangeError(urlFrom, urlTo) === null
-  const from = urlValid ? urlFrom : coloradoToday()
-  const to = urlValid ? urlTo : spanEnd(from, span)
-  const length = dayCount(from, to)
-  const highlighted: Span | null = urlValid ? (length === 7 || length === 14 ? length : null) : span
 
   const { data: board, isLoading, isError, error, dataUpdatedAt } = useApiQuery<TaskBoardData>(
     [BOARD_KEY, dept, from, to],
@@ -136,6 +101,14 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const [picked, setPicked] = useState<string | null>(null)
   const stops = useMemo(() => [...(board?.days.map((d) => d.date) ?? []), FUTURE], [board])
   const selected = picked && stops.includes(picked) ? picked : stops.includes(today) ? today : stops[0]
+
+  // D41 `?day=`: once the board holds that day, show it (phone one-day: select it).
+  useEffect(() => {
+    if (!focus || !board || !stops.includes(focus)) return
+    if (phone && phoneView === 'day') setPicked(focus)
+    else scrollToStop(focus)
+    clearFocus()
+  }, [focus, board, stops, phone, phoneView, clearFocus])
 
   // Every card by key, and the lists as the filter shows them.
   const { cards, source } = useMemo(() => {
@@ -407,30 +380,6 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     if (ok) setToast({ message: `Moved ${moved} ${moved === 1 ? 'task' : 'tasks'} to today` })
   }
 
-  // ── Range ──────────────────────────────────────────────────────────
-
-  const showRange = (f: string, t: string) => setParams({ from: f, to: t })
-  /**
-   * Previous / Next by the range's own length. They read the address bar, not
-   * this render's range: the URL changes before the board re-renders, and a
-   * quick second click mustn't step from the old range.
-   */
-  const step = (direction: 1 | -1) => {
-    const now = new URLSearchParams(window.location.search)
-    const [f, t] = rangeError(now.get('from') ?? '', now.get('to') ?? '') === null ? [now.get('from')!, now.get('to')!] : [from, to]
-    const n = dayCount(f, t) * direction
-    showRange(addDaysKey(f, n), addDaysKey(t, n))
-  }
-  const pickSpan = (s: Span) => {
-    writeSpan(s)
-    setSpan(s)
-    showRange(from, spanEnd(from, s))
-  }
-  const toggleHide = (on: boolean) => {
-    writeHideCompleted(on)
-    setHideCompleted(on)
-  }
-
   // ── Render ─────────────────────────────────────────────────────────
 
   const openCount = (id: string) =>
@@ -465,62 +414,21 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     )
   }
 
-  const layout = (lists: Record<string, ReactNode>) => {
-    if (!board) return null
-    const showUnfinished = board.unfinished.length > 0
-    if (phone && phoneView === 'vertical')
-      return <PhoneVerticalView days={board.days.map((d) => d.date)} showUnfinished={showUnfinished} lists={lists} />
-    if (phone)
-      return (
-        <PhoneDayView
-          stops={stops}
-          selected={selected}
-          today={today}
-          onSelect={setPicked}
-          openCount={openCount}
-          showUnfinished={showUnfinished}
-          lists={lists}
-        />
-      )
-    const rows = Math.ceil(board.days.length / 7)
-    const lead = showUnfinished && wide ? 1 : 0
-    const days = board.days.map((d, i) => (
-      <Box key={d.date} sx={{ gridColumn: lead + (i % 7) + 1, gridRow: Math.floor(i / 7) + 1, minWidth: 0 }}>
-        {lists[d.date]}
-      </Box>
-    ))
-    if (wide) {
-      // Unfinished first and Future last, as side columns spanning every row.
-      return (
-        <Box
-          data-testid="board-grid"
-          data-layout="wide"
-          sx={{
-            display: 'grid',
-            gap: 1,
-            alignItems: 'start',
-            gridTemplateColumns: `${showUnfinished ? 'minmax(150px, 1fr) ' : ''}repeat(7, minmax(120px, 1fr)) minmax(150px, 1fr)`,
-            overflowX: 'auto',
-            pb: 1,
-          }}
-        >
-          {showUnfinished && <Box sx={{ gridColumn: 1, gridRow: `1 / span ${rows}` }}>{lists[UNFINISHED]}</Box>}
-          {days}
-          <Box sx={{ gridColumn: lead + 8, gridRow: `1 / span ${rows}` }}>{lists[FUTURE]}</Box>
-        </Box>
-      )
-    }
-    // Too narrow for nine columns: Unfinished above the days, Future below.
-    return (
-      <Box data-testid="board-grid" data-layout="stacked" sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        {showUnfinished && lists[UNFINISHED]}
-        <Box sx={{ display: 'grid', gap: 1, alignItems: 'start', gridTemplateColumns: 'repeat(7, minmax(160px, 1fr))', overflowX: 'auto', pb: 1 }}>
-          {days}
-        </Box>
-        {lists[FUTURE]}
-      </Box>
-    )
-  }
+  const layout = (lists: Record<string, ReactNode>) =>
+    board ? (
+      <BoardLayout
+        days={board.days.map((d) => d.date)}
+        showUnfinished={board.unfinished.length > 0}
+        lists={lists}
+        phoneView={phone ? phoneView : null}
+        wide={wide}
+        stops={stops}
+        selected={selected}
+        today={today}
+        onSelect={setPicked}
+        openCount={openCount}
+      />
+    ) : null
 
   return (
     <Box data-testid="task-board" ref={setBoardEl}>
@@ -539,7 +447,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         onNext={() => step(1)}
         onToday={() => {
           setPicked(null)
-          setParams({})
+          showToday()
         }}
         onSpan={pickSpan}
         onRange={showRange}
@@ -551,10 +459,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         compact={phone}
         title={phone ? <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} compact /> : undefined}
         phoneView={phoneView}
-        onPhoneView={(view) => {
-          writePhoneView(view)
-          setPhoneView(view)
-        }}
+        onPhoneView={setPhoneView}
       />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}

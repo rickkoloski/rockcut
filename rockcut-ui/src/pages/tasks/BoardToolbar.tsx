@@ -34,6 +34,8 @@ interface Props {
   onRange: (from: string, to: string) => void
   onFilter: (filter: TaskFilter) => void
   onHideCompleted: (on: boolean) => void
+  /** D41 All departments view: All and Unassigned only ("My tasks" is left out). */
+  noMine?: boolean
   /** History (managers and owners). */
   onHistory?: () => void
   /** Edit Daily items (managers and owners). Without either there's no ⋮ menu. */
@@ -154,7 +156,11 @@ export default function BoardToolbar(props: Props) {
         aria-label="Filter"
       >
         <ToggleButton value="all" data-testid="board-filter-all">All</ToggleButton>
-        <ToggleButton value="mine" data-testid="board-filter-mine">My tasks</ToggleButton>
+        {!props.noMine && (
+          <ToggleButton value="mine" data-testid="board-filter-mine">
+            My tasks
+          </ToggleButton>
+        )}
         <ToggleButton value="unassigned" data-testid="board-filter-unassigned">Unassigned</ToggleButton>
       </ToggleButtonGroup>
       <FormControlLabel

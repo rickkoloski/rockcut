@@ -1,7 +1,7 @@
 import parseApiError from './parseApiError'
 import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
-import type { DayHeaderData, HeaderShift, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage } from './types'
+import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage } from './types'
 
 // D38: task board helpers shared by the board, its dialogs and the specs.
 // D41: one board per department, under `/api/boards/<dept>`.
@@ -14,20 +14,84 @@ export function boardPath(dept: string, ...segments: (string | number | undefine
 /** The query key of a board's Daily items (with the retired ones), with its department. */
 export const DAILY_ITEMS_KEY = 'daily-items'
 
-/** "Taproom tasks": a board's title. */
-export const boardTitle = (board: Pick<TaskBoardEntry, 'name'>) => `${board.name} tasks`
+/** D41 §3.6: the All departments view's key in `task_boards` and its URL, `/tasks/all`. */
+export const ALL_BOARDS = 'all'
+
+/** "Taproom tasks": a board's title; the All departments view is just "All departments". */
+export const boardTitle = (board: Pick<TaskBoardEntry, 'name'> & { key?: string }) =>
+  board.key === ALL_BOARDS ? board.name : `${board.name} tasks`
+
+/** The real boards in `task_boards`: everything but the All departments view. */
+export const realBoards = <T extends Pick<TaskBoardEntry, 'key'>>(boards: T[]): T[] => boards.filter((b) => b.key !== ALL_BOARDS)
+
+/**
+ * The switcher's entries: the boards in department order, then All
+ * departments last when the person has it (owners).
+ */
+export const switcherBoards = <T extends Pick<TaskBoardEntry, 'key'>>(boards: T[]): T[] => [
+  ...realBoards(boards),
+  ...boards.filter((b) => b.key === ALL_BOARDS),
+]
 
 /**
  * D41 §3.5: the board key a Tasks URL should show, or null for Home (no
  * boards). `wanted` is the URL's board (`/tasks/bar`), or null for `/tasks`,
  * which opens the remembered board. A board the person can't open (or a
- * forgotten one) falls back to their first.
+ * forgotten one) falls back to their first. All departments (owners) opens
+ * when asked for or remembered, but it's never the "first board".
  */
 export function boardTarget(boards: Pick<TaskBoardEntry, 'key'>[], wanted: string | null, remembered: string | null): string | null {
   const open = (key: string | null) => !!key && boards.some((b) => b.key === key)
   if (open(wanted)) return wanted
   if (wanted === null && open(remembered)) return remembered
-  return boards[0]?.key ?? null
+  return realBoards(boards)[0]?.key ?? null
+}
+
+/** A department's section on a day (or Unfinished, or Future) of the All departments view. */
+export interface DepartmentSection {
+  board: TaskBoardEntry
+  cards: AllBoardCard[]
+  daily: DailyCount | null
+}
+
+/**
+ * D41 §3.6: the All departments view's cards grouped by department, in the
+ * boards' order. A department shows when it has a card to show (after the
+ * filter and Hide completed); its Daily count comes along when its board has
+ * items that day. Cards keep their board's order.
+ */
+export function departmentSections(
+  boards: TaskBoardEntry[],
+  cards: AllBoardCard[],
+  dailyCounts: DailyCount[],
+  shown: (card: AllBoardCard) => boolean,
+): DepartmentSection[] {
+  return realBoards(boards)
+    .map((board) => ({
+      board,
+      cards: cards.filter((c) => c.department === board.key && shown(c)),
+      daily: dailyCounts.find((d) => d.department === board.key) ?? null,
+    }))
+    .filter((s) => s.cards.length > 0)
+}
+
+/**
+ * Where a card on the All departments view opens: its own board, at its day
+ * (`?day=`). An Unfinished card opens at today, a Future one at Future.
+ */
+export function allBoardCardLink(card: AllBoardCard, today: string): string {
+  const day = card.day === UNFINISHED ? today : card.day
+  return `/tasks/${card.department}?day=${day}`
+}
+
+/**
+ * The range a board shows for `?day=` (D41 §3.6): the current one when it
+ * already holds the day (Future is in every range), else `span` days starting
+ * on it, as picking that date as From would.
+ */
+export function rangeForDay(day: string, from: string, to: string, span: number): { from: string; to: string } {
+  if (day === FUTURE || (day >= from && day <= to)) return { from, to }
+  return { from: day, to: spanEnd(day, span) }
 }
 
 /** The longest range the board shows (spec §3.6). */

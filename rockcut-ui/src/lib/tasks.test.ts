@@ -1,23 +1,28 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  ALL_BOARDS,
   FUTURE,
   UNFINISHED,
+  allBoardCardLink,
   boardMoveRule,
   boardPath,
   boardTarget,
   boardTitle,
+  departmentSections,
   describeEvent,
+  rangeForDay,
   readBoard,
   readHideCompleted,
   readPhoneView,
   readSpan,
   taskError,
   taskGone,
+  switcherBoards,
   taskSaveError,
   writeBoard,
   writeSpan,
 } from './tasks'
-import type { TaskEvent } from './types'
+import type { AllBoardCard, TaskBoardEntry, TaskEvent } from './types'
 
 const err = (status: number, url: string, data: Record<string, unknown> = {}) => ({ response: { status, data }, config: { url } })
 
@@ -232,5 +237,94 @@ describe('the remembered board (rockcut.tasks.board)', () => {
     expect(readBoard()).toBeNull()
     writeBoard('bar')
     expect(readBoard()).toBe('bar')
+  })
+})
+
+describe('All departments in task_boards (D41 §3.6)', () => {
+  const entry = (key: string, name: string): TaskBoardEntry => ({ key, name, color: '#000', manage: true })
+  const all: TaskBoardEntry = { key: ALL_BOARDS, name: 'All departments', manage: false }
+  const owner = [entry('brewery', 'Brewery'), entry('bar', 'Taproom'), entry('office', 'Office'), entry('sales', 'Sales'), all]
+
+  it('the switcher lists the boards in order, then All departments last; only an owner has it', () => {
+    expect(switcherBoards(owner).map((b) => b.key)).toEqual(['brewery', 'bar', 'office', 'sales', 'all'])
+    // Last even if it came first.
+    expect(switcherBoards([all, ...owner.slice(0, 2)]).map((b) => b.key)).toEqual(['brewery', 'bar', 'all'])
+    const floater = [entry('brewery', 'Brewery'), entry('bar', 'Taproom')]
+    expect(switcherBoards(floater).map((b) => b.key)).toEqual(['brewery', 'bar'])
+  })
+
+  it('the "first board" is never All departments', () => {
+    expect(boardTarget(owner, null, null)).toBe('brewery')
+    expect(boardTarget([all, ...owner.slice(0, 4)], null, null)).toBe('brewery')
+    expect(boardTarget([all, ...owner.slice(0, 4)], 'nope', null)).toBe('brewery')
+    expect(boardTarget([all], null, null)).toBeNull()
+  })
+
+  it('an owner opens it from the URL or the remembered choice; anyone else goes to their first board (S120)', () => {
+    expect(boardTarget(owner, 'all', null)).toBe('all')
+    expect(boardTarget(owner, null, 'all')).toBe('all')
+    const breweryMgr = [entry('brewery', 'Brewery')]
+    expect(boardTarget(breweryMgr, 'all', null)).toBe('brewery')
+    expect(boardTarget(breweryMgr, null, 'all')).toBe('brewery')
+    expect(boardTarget([], 'all', 'all')).toBeNull()
+  })
+
+  it('its title is just "All departments"', () => {
+    expect(boardTitle(all)).toBe('All departments')
+    expect(boardTitle(entry('bar', 'Taproom'))).toBe('Taproom tasks')
+  })
+})
+
+describe('departmentSections: the All departments view grouped by department', () => {
+  const boards: TaskBoardEntry[] = [
+    { key: 'brewery', name: 'Brewery', color: '#b87', manage: true },
+    { key: 'bar', name: 'Taproom', color: '#2e6', manage: true },
+    { key: 'office', name: 'Office', color: '#3f8', manage: true },
+    { key: 'sales', name: 'Sales', color: '#7a4', manage: true },
+    { key: ALL_BOARDS, name: 'All departments', manage: false },
+  ]
+  const card = (id: number, department: string, extra: Partial<AllBoardCard> = {}) =>
+    ({ id, key: `${id}:2026-10-14`, day: '2026-10-14', department, title: `T${id}`, done: false, assignee_id: null, ...extra }) as AllBoardCard
+  const everything = () => true
+
+  it('in the boards’ order, each keeping its own cards’ order; departments with nothing are left out', () => {
+    const cards = [card(3, 'bar'), card(1, 'brewery'), card(2, 'brewery'), card(4, 'office')]
+    const sections = departmentSections(boards, cards, [], everything)
+    expect(sections.map((s) => [s.board.key, s.cards.map((c) => c.id)])).toEqual([
+      ['brewery', [1, 2]],
+      ['bar', [3]],
+      ['office', [4]],
+    ])
+  })
+
+  it('a section carries its board’s Daily count, when it has one', () => {
+    const counts = [{ department: 'brewery', done: 3, total: 4 }]
+    const sections = departmentSections(boards, [card(1, 'brewery'), card(2, 'bar')], counts, everything)
+    expect(sections.map((s) => s.daily)).toEqual([{ department: 'brewery', done: 3, total: 4 }, null])
+  })
+
+  it('the filter decides what counts: a department whose cards are all hidden is left out, Daily count or not', () => {
+    const counts = [{ department: 'brewery', done: 0, total: 4 }]
+    const cards = [card(1, 'brewery', { done: true }), card(2, 'bar', { assignee_id: 7 }), card(3, 'bar')]
+    const sections = departmentSections(boards, cards, counts, (c) => !c.done && c.assignee_id == null)
+    expect(sections.map((s) => [s.board.key, s.cards.map((c) => c.id)])).toEqual([['bar', [3]]])
+    expect(departmentSections(boards, [], counts, everything)).toEqual([])
+  })
+})
+
+describe('a card on the All departments view opens on its board (S119)', () => {
+  const card = (day: string) => ({ id: 1, key: `1:${day}`, day, department: 'bar' }) as AllBoardCard
+
+  it('at its day; Unfinished at today; Future at Future', () => {
+    expect(allBoardCardLink(card('2026-10-15'), '2026-10-13')).toBe('/tasks/bar?day=2026-10-15')
+    expect(allBoardCardLink(card(UNFINISHED), '2026-10-13')).toBe('/tasks/bar?day=2026-10-13')
+    expect(allBoardCardLink(card(FUTURE), '2026-10-13')).toBe('/tasks/bar?day=future')
+  })
+
+  it('?day= keeps a range that holds the day, else starts the span on it', () => {
+    expect(rangeForDay('2026-10-15', '2026-10-13', '2026-10-26', 14)).toEqual({ from: '2026-10-13', to: '2026-10-26' })
+    expect(rangeForDay('2026-10-30', '2026-10-13', '2026-10-19', 7)).toEqual({ from: '2026-10-30', to: '2026-11-05' })
+    expect(rangeForDay('2026-10-01', '2026-10-13', '2026-10-26', 14)).toEqual({ from: '2026-10-01', to: '2026-10-14' })
+    expect(rangeForDay(FUTURE, '2026-10-13', '2026-10-19', 7)).toEqual({ from: '2026-10-13', to: '2026-10-19' })
   })
 })

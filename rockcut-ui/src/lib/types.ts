@@ -281,11 +281,15 @@ export interface Me {
   task_boards?: TaskBoardEntry[]
 }
 
-/** D41: one of `/api/me`'s `task_boards`. `manage`: History and Edit Daily items. */
+/**
+ * D41: one of `/api/me`'s `task_boards`. `manage`: History and Edit Daily
+ * items. Owners also get `{ key: 'all', name: 'All departments' }` last (no
+ * color): the All departments view, not a board.
+ */
 export interface TaskBoardEntry {
   key: string
   name: string
-  color: string | null
+  color?: string | null
   manage: boolean
 }
 
@@ -750,4 +754,24 @@ export interface TaskBoardData {
   days: BoardDay[]
   unfinished: TaskCardData[]
   future: TaskCardData[]
+}
+
+/** D41 §3.6: a card on the All departments view, with its board's key. */
+export type AllBoardCard = TaskCardData & { department: string }
+
+/** D41: one board's Daily count on a day of the All departments view. */
+export interface DailyCount {
+  department: string
+  done: number
+  total: number
+}
+
+/** D41 §3.6: `GET /api/boards/all/tasks`, every board together (owners, read-only). */
+export interface AllBoardData {
+  from: string
+  to: string
+  today: string
+  days: { date: string; cards: AllBoardCard[]; daily_counts: DailyCount[] }[]
+  unfinished: AllBoardCard[]
+  future: AllBoardCard[]
 }

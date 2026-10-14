@@ -66,6 +66,7 @@ import useAuthStorageSync from './hooks/useAuthStorageSync'
 import useReconnect from './hooks/useReconnect'
 import { PERSONAL_IDLE_MS, asideDeviceToken, flushSignOuts } from './lib/device'
 import parseApiError from './lib/parseApiError'
+import { realBoards } from './lib/tasks'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
 
@@ -271,7 +272,7 @@ function App() {
       ],
     },
     // D41: Tasks opens the person's own board (a switcher when there are more).
-    ...(taskBoards.length > 0 ? [{ key: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, children: [], path: '/tasks' }] : []),
+    ...(realBoards(taskBoards).length > 0 ? [{ key: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, children: [], path: '/tasks' }] : []),
     ...deptSections,
     ...(canManageUsers || sharedDevices
       ? [

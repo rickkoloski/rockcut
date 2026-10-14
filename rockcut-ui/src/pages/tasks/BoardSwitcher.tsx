@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, Button, ListItemIcon, ListItemText, Menu, MenuItem, Typography } from '@mui/material'
-import { ArrowDropDown, Check } from '@mui/icons-material'
-import { boardTitle } from '../../lib/tasks'
+import { ArrowDropDown, Check, ViewModule } from '@mui/icons-material'
+import { ALL_BOARDS, boardTitle, switcherBoards } from '../../lib/tasks'
 import type { TaskBoardEntry } from '../../lib/types'
 
 interface Props {
@@ -12,13 +12,18 @@ interface Props {
   compact?: boolean
 }
 
-const Swatch = ({ color }: { color: string | null }) => (
-  <Box component="span" sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: color ?? 'grey.500', flexShrink: 0, display: 'inline-block' }} />
-)
+// A department's color; All departments (D41 §3.6, no color) gets a grid icon.
+const Swatch = ({ board }: { board: TaskBoardEntry }) =>
+  board.key === ALL_BOARDS ? (
+    <ViewModule sx={{ fontSize: 16, flexShrink: 0 }} color="action" />
+  ) : (
+    <Box component="span" sx={{ width: 12, height: 12, borderRadius: '50%', bgcolor: board.color ?? 'grey.500', flexShrink: 0, display: 'inline-block' }} />
+  )
 
 /**
  * D41 §3.5: the board's title. With two or more boards it's a picker
  * ("Taproom tasks ▾"), each department with its color; with one, plain text.
+ * Owners get All departments last (D41 §3.6).
  */
 export default function BoardSwitcher({ board, boards, onSwitch, compact }: Props) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
@@ -40,13 +45,13 @@ export default function BoardSwitcher({ board, boards, onSwitch, compact }: Prop
         data-testid="board-switcher"
         sx={{ textTransform: 'none', px: 1, ml: -1, minWidth: 0 }}
       >
-        <Swatch color={board.color} />
+        <Swatch board={board} />
         <Typography variant={variant} component="span" data-testid="board-title" sx={{ ml: 1 }}>
           {boardTitle(board)}
         </Typography>
       </Button>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)} data-testid="board-switcher-menu">
-        {boards.map((b) => (
+        {switcherBoards(boards).map((b) => (
           <MenuItem
             key={b.key}
             selected={b.key === board.key}
@@ -57,7 +62,7 @@ export default function BoardSwitcher({ board, boards, onSwitch, compact }: Prop
             }}
           >
             <ListItemIcon>
-              <Swatch color={b.color} />
+              <Swatch board={b} />
             </ListItemIcon>
             <ListItemText primary={b.name} />
             {b.key === board.key && <Check fontSize="small" sx={{ ml: 2 }} />}
