@@ -457,3 +457,37 @@ Spec §3.7, plan "Seed", "Tests", "Handoff-note LIMITATIONS"; workflow §3
 **Done when:** steps 1–4 committed (`feat:` for the seed, `docs:` for the
 rest). **Reply with:** counts, SHAs, what you saw on the seeded boards, and
 any `LEAD:`. Then stop.
+
+## Task 7: DEV fix cycle 1 (S111 on DEV)
+
+Task 6 accepted (`175aa20`, `d097781`, `169a80a`; the lead filled in the
+note, `1d61ba8`). `1d61ba8` is on DEV (API v35 / UI v32). DEV Playwright:
+**315 passed, 1 failed**: S111.
+
+**What failed:** `task-board-departments.spec.ts:332`, `dualMgr` on
+`/tasks/office`: the ⋮ menu read `["History", "Edit Daily items"]`, expected
+`"Set up Daily checks"`. DEV's Office has no Daily items. The trace: the
+switch to Office at +0 ms, the menu read at about +120 ms, the Office
+`daily_items` response at about +170 ms. **Cause:** `TaskBoard.tsx:96`,
+`hasDailyItems = dailyItems?.some(...) ?? true`: while the board's Daily
+items load, the menu says "Edit Daily items". Locally the response beats
+the click, so it passed.
+
+1. **Fix:** the ⋮ menu shouldn't claim either state before the board's
+   Daily items have loaded. Hide or disable the Daily entry until they
+   have (your call; say which). Check the Daily card and anything else
+   reading `hasDailyItems` (and the All view, if it has the same pattern)
+   for the same loading assumption.
+2. **A test that would have caught it:** delay the `daily_items` response
+   (`page.route` with a delay, e.g. 1.5 s) and assert the menu never shows
+   "Edit Daily items" for a board without items while it loads, then shows
+   "Set up Daily checks". **Revert-check:** fails with `?? true` restored,
+   passes with the fix.
+3. **The S111 assertion** waits for the board's data before opening the
+   menu (as a user would see it), so it isn't a race either way.
+4. Run: Vitest, `tsc`, lint, the `task-board-departments` spec and the
+   brewery folder (`brewery-board` project, `--workers=1`). No ExUnit
+   needed unless you touch the API.
+
+`fix:` commit. **Reply with:** counts, the SHA, the revert-check result,
+and any `LEAD:`. Then stop. The lead redeploys DEV after Matt's OK.
