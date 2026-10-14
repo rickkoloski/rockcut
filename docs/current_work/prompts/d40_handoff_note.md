@@ -216,3 +216,8 @@ from `Authz.Device`):
   and staff-code spec files against DEV, **29/29**.
 - Not fixed: gap 2 (reminder body lists up to 3 tasks, per spec §3.5) and
   gap 4 (a locked tablet says so only after a code is typed, as D37).
+- **Matt's checks on DEV (final build):** A, the brewhouse tablet (pairing,
+  landing, staff code, "Acting as" pinned while scrolling, Done, wrong code
+  with nothing ticked behind, History "on Shared Device") **pass**; B, a
+  real shift-end push on the Pixel (notification, tap opens today, bell
+  entry) **pass**.
