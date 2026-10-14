@@ -117,3 +117,24 @@ a browser can't reach the state).
   (`Page` not imported). Playwright still runs them (it doesn't type-check).
 - **Full ExUnit wasn't rerun after the last API commit** (`ec8a645`, series
   only) by the builder; the lead's gate run is the check.
+
+## DEV gate verdict
+
+**SHA tested:** `cb59d3b` (rockcut-api-dev v36 / rockcut-ui-dev v34). No
+migrations. Pre-deploy snapshot taken (`vol_vz8l9elx6oe0dzqv`).
+
+- **Full Playwright on DEV:** **331 passed, 0 failed**, 2 skipped (the
+  login-form specs that need the seed password), 12.9 min.
+- **Independent pass** (fresh qa agent, personas + scenarios + LIMITATIONS
+  only): **PASS with gaps**; S121–S142 all pass (S135 set up by hand, S139
+  emulated), no must-fix. The reset gate held across ~60 API routes and every
+  page for `newhire`. Report:
+  `docs/current_work/stepwise_results/d42_dev_qa_report.md`.
+  - **Gap 1** (minor): a Daily item ticked and then unticked could be
+    deleted, with a confirm saying it was never ticked. **Fixed in
+    `44022b6`:** "ever ticked" also counts a `daily_ticked` History entry;
+    ExUnit, revert-checked.
+  - **Gap 2** (minor): a move whose `before_id` doesn't exist answers 200
+    and changes nothing. **By design** (spec §2.2 keeps D38's rule: a
+    `before_id` no longer in the list puts the task last); only another
+    board's id is 404.
