@@ -23,7 +23,8 @@ defmodule RockcutApi.Tasks.Series do
   `{:error, :scope_required}`, except an edit that only changes the day.
   "Following" is decided by `series_date`, and never changes a finished
   occurrence. Removing later occurrences (a rule split, delete "following",
-  `stop/3`) keeps the ones changed on their own (`series_exception`) unless
+  `stop/3`) keeps the ones changed on their own (`series_exception`, or
+  their own notes since D42) unless
   `changed: :remove` (Decision 2). A day change always applies to one
   occurrence and makes it an exception; onto the Future list it makes it a
   one-off (`Tasks` moves). One History event per series action
@@ -859,18 +860,33 @@ defmodule RockcutApi.Tasks.Series do
   def preview(%Task{series_id: id} = task) do
     ids = [id | chain_ids(id)]
 
-    counts =
-      Repo.all(
+    {open, changed} =
+      changed_counts(
         from t in Task,
           where:
             t.series_id in ^ids and t.series_date > ^task.series_date and
-              is_nil(t.completed_at),
-          group_by: t.series_exception,
-          select: {t.series_exception, count(t.id)}
+              is_nil(t.completed_at)
       )
-      |> Map.new()
 
-    %{later_open: Map.get(counts, false, 0), later_changed: Map.get(counts, true, 0)}
+    %{later_open: open, later_changed: changed}
+  end
+
+  # Changed on its own (Decision 2): an exception, or an occurrence with its
+  # own notes, different from its series part's (D42; notes alone don't make
+  # an exception, but the person's notes are kept like one).
+  defp changed?(%Task{} = t, %TaskSeries{} = s), do: t.series_exception or t.notes != s.notes
+
+  # `{plain, changed}` counts of the occurrences `query` finds.
+  defp changed_counts(query) do
+    Repo.all(
+      from t in query,
+        join: s in TaskSeries,
+        on: s.id == t.series_id,
+        select: {t.series_exception, t.notes, s.notes}
+    )
+    |> Enum.reduce({0, 0}, fn {exception, notes, own}, {plain, changed} ->
+      if exception or notes != own, do: {plain, changed + 1}, else: {plain + 1, changed}
+    end)
   end
 
   @doc """
@@ -914,18 +930,12 @@ defmodule RockcutApi.Tasks.Series do
   defp open_from(_chain, nil), do: {0, 0}
 
   defp open_from(chain, %Date{} = cut) do
-    counts =
-      Repo.all(
-        from t in Task,
-          where:
-            t.series_id in ^Enum.map(chain, & &1.id) and t.series_date >= ^cut and
-              is_nil(t.completed_at),
-          group_by: t.series_exception,
-          select: {t.series_exception, count(t.id)}
-      )
-      |> Map.new()
-
-    {Map.get(counts, false, 0), Map.get(counts, true, 0)}
+    changed_counts(
+      from t in Task,
+        where:
+          t.series_id in ^Enum.map(chain, & &1.id) and t.series_date >= ^cut and
+            is_nil(t.completed_at)
+    )
   end
 
   @doc """
@@ -986,8 +996,8 @@ defmodule RockcutApi.Tasks.Series do
   end
 
   # Remove the open occurrences with `series_date >= from`, except the `except`
-  # ids (the acted-on one, handled by the caller); exceptions are kept unless
-  # `changed` is `:remove`. Finished ones stay. Returns `{removed, kept}`.
+  # ids (the acted-on one, handled by the caller); the ones changed on their
+  # own (`changed?/2`) are kept unless `changed` is `:remove`. Finished ones stay. Returns `{removed, kept}`.
   defp remove_later(series, from, changed, except) do
     open =
       Repo.all(
@@ -997,7 +1007,7 @@ defmodule RockcutApi.Tasks.Series do
               t.id not in ^except
       )
 
-    {changed_ones, plain} = Enum.split_with(open, & &1.series_exception)
+    {changed_ones, plain} = Enum.split_with(open, &changed?(&1, series))
     doomed = if changed == :remove, do: open, else: plain
     ids = Enum.map(doomed, & &1.id)
 

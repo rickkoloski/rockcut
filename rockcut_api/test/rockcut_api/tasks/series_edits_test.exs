@@ -334,13 +334,45 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       assert week(w0, 3).title == "Keg Wash v2"
     end
 
-    test "remove-later doesn't offer to keep a notes-only one", ctx do
-      w0 = keg_wash!(ctx.brewer)
-      {:ok, _} = this!(week(w0, 5), %{notes: "Mine"}, ctx)
+    test "Stop repeating offers to keep a notes-only one, as a changed one", ctx do
+      for {changed, kept?} <- [keep: true, remove: false] do
+        w0 = keg_wash!(ctx.brewer)
+        {:ok, _} = this!(week(w0, 5), %{notes: "Mine"}, ctx)
 
-      assert %{later_changed: 0} = Series.preview(week(w0, 1))
-      assert {:ok, _} = Series.stop(week(w0, 1), ctx.brewer)
-      refute week(w0, 5)
+        assert %{later_changed: 1} = Series.preview(week(w0, 1))
+        assert {:ok, _} = Series.stop(week(w0, 1), ctx.brewer, changed: changed)
+        assert !!week(w0, 5) == kept?
+      end
+    end
+
+    test "a split offers to keep a notes-only one: keep keeps it with its notes, remove removes it",
+         ctx do
+      for {changed, kept?} <- [keep: true, remove: false] do
+        w0 = keg_wash!(ctx.brewer)
+        {:ok, _} = this!(week(w0, 5), %{notes: "Mine"}, ctx)
+        assert %{later_open: 50, later_changed: 1} = Series.preview(week(w0, 1))
+
+        assert {:ok, fri} =
+                 Tasks.update(
+                   brewery_board(),
+                   week(w0, 1),
+                   %{repeat: "weekly", repeat_interval: 1, repeat_weekdays: [5]},
+                   ctx.brewer,
+                   scope: "following",
+                   today: @today,
+                   changed: changed
+                 )
+
+        assert %Event{detail: %{"kept" => kept}} = List.last(events("edited"))
+
+        if kept? do
+          assert {week(w0, 5).notes, week(w0, 5).series_id, kept} == {"Mine", w0.series_id, 1}
+          # Its day is a Wednesday, so the Friday of that week is still made.
+          assert on(fri.series_id, ~D[2026-11-20])
+        else
+          assert {week(w0, 5), kept} == {nil, 0}
+        end
+      end
     end
   end
 
