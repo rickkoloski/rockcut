@@ -301,3 +301,88 @@ Task 4 accepted (`592fdeb`, `1473777`, `1cf0dde`).
 **Paused here** for a machine restart (Matt, 2026-10-13). Next is Task 5
 (plan step 5, the All departments view); the lead writes it after the
 restart.
+
+## Task 5: plan step 5, the All departments view
+
+**You're a fresh session** (the machine restarted). Read the brief from the
+top ("Read first", your limits), then Tasks 1–4 and their answers for
+what's done. Steps 1–4 are accepted; HEAD is `b3c3365`. The servers are
+up (the lead's, as before). **Memory is tight:** Playwright with
+`--workers=1`, and never ExUnit and Playwright at the same time. Before
+your first browser pass, run `cd rockcut_api && mix rockcut.synthetic.setup`
+(it clears `[TEST-TEMP] … Trivia` events left by the old spec leak).
+
+Spec §3.6 and S118–S120; plan "Board query", "`/api/me`", "All
+departments view". Nothing from step 6 (seed, COVERAGE.md, full gate).
+
+**API**
+1. `GET /api/boards/all/tasks?from=&to=`: owners only
+   (`can?(user, :read, {:tasks, :all})`, a new `Authz` row; 403 for
+   everyone else, devices included). Same 31-day limit and errors as a
+   board. Route it so the `TaskBoard` plug still 404s `all` on **every
+   other** board route (`/api/boards/all/tasks/history`, `POST
+   /api/boards/all/tasks`, `daily_checks`, …): no write route under `all`.
+2. **Shape:** a board's shape, built from the four boards in department
+   order (Brewery, Taproom, Office, Sales):
+   - each card carries `department` (the key);
+   - each day carries the cards (ordered by department, then as each board
+     orders them) and, instead of `header`/`daily`, a per-department Daily
+     count for the departments that have Daily items
+     (e.g. `daily: [%{department: "brewery", done: 3, total: 4}]`; pick a
+     clear name and say it in your reply);
+   - `unfinished` and `future` merged the same way, each card with its
+     `department`.
+   - No `header`. Reuse `board/4` per department rather than a second query
+     path, unless that's clearly wasteful; say which.
+3. **`/api/me`:** `task_boards` gets `%{key: "all", name: "All departments"}`
+   **last**, owners only (no `color`; `manage: false`).
+4. **ExUnit:** owner gets every department's cards, tagged, in order, with
+   Daily counts only where a board has items; `breweryMgr`, `floater`,
+   `noDept`, `taproomDevice` → 403; `all` 404 on every other route (the
+   route matrix); the 31-day limit; `task_boards` with and without `all`.
+   Revert-check the owner-only check.
+
+**UI**
+5. **Routes:** `/tasks/all` renders `AllBoard` for owners. A non-owner on
+   `/tasks/all` goes to their first real board (or Home). "All
+   departments" is the switcher's last entry, remembered in
+   `rockcut.tasks.board` like a board. Everywhere else that walks
+   `task_boards` (the nav, `/tasks`'s "first board", the redirect for
+   boards you can't open) must treat `all` as not a board: the "first
+   board" is never `all`.
+6. **`AllBoard`:** reuses the board's day columns, range controls,
+   1 week / 2 weeks, date range, Hide completed and the phone views
+   (vertical and one day). Filter: All / Unassigned only; a remembered
+   "My tasks" reads as All here (don't overwrite the stored value).
+   - Each day: a section per department with something that day (its
+     color and name, then its Daily count "Daily 3/4" if it has items, then
+     its cards); a department with nothing that day is left out. No
+     schedule header.
+   - Unfinished and Future: one card each, grouped by department the same
+     way.
+   - **Read-only:** no checkbox, drag, + Add a task, Move all to today,
+     task menu, or ⋮ manager tools. The cards still show what a board card
+     shows (title, assignee, repeat mark, done state).
+7. **Tapping a card** opens `/tasks/<dept>?day=<YYYY-MM-DD>` (the board's
+   own URL). Add `?day=` to the board: the range moves to include that day
+   (keep the 1 week / 2 weeks length; start it the way picking that date in
+   the date range would), the day is scrolled into view (phone one-day:
+   that day selected), and the `day` param is then dropped from the URL
+   (replace). A card from Unfinished opens its board at today; one from
+   Future opens the board with Future in view if that's easy, else today;
+   say which.
+8. **Vitest:** the switcher list with `all` (last, owners only) and the
+   "first board" rule ignoring `all`; the grouping helper.
+9. **Playwright:** S118–S120 in `tests/regression/tasks/task-board-departments.spec.ts`
+   (same project, one worker). S118 needs Brewery + Taproom tasks today
+   and an Office task tomorrow: create them as `[TEST-TEMP]` through the
+   API in the test, and clean up. Assert Sales never appears, and that
+   nothing on `/tasks/all` is draggable or tickable (S119). Drive it in a
+   browser first, as in Task 4.
+
+**Done when:** `tsc`, build, Vitest, lint (no new problems), ExUnit (once,
+full output kept), the new tests and the `brewery-board` project
+(`--workers=1`) pass. `feat:` commits. **Reply with:** counts, SHAs, the
+`all` response shape (one trimmed example), screenshot paths for
+`/tasks/all` at desktop and 412px, anything you couldn't drive, flaky
+names, and any `LEAD:`. Then stop.
