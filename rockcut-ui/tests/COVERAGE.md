@@ -299,3 +299,38 @@ long-press); the real gestures on hardware are **Pixel (manual)** on DEV.
 | — | O-2: the Edit Daily items dialog picks up a rename on the board's refetch | Playwright `task-board-daily-items` (O-2) |
 | — | Nothing is dropped onto the Unfinished card, at any width | Playwright `task-board-range` (a task dragged over the Unfinished card); Vitest `tasks.test` (boardMoveRule) |
 | — | History reads the series actions | Playwright `task-board-recurring` (History reads the series actions, breweryMgr); Vitest `repeat.test` (summaryFromDetail) |
+
+## D41 — Department task boards (`specs/d41_department_task_boards_spec.md`)
+
+S101–S120. ExUnit files are under `rockcut_api/test/`: `task_boards_test` (the context per
+board), controllers `task_boards_controller_test` (the board in the path, S115 over HTTP,
+`/api/me`'s `task_boards`, the All departments route), `authz_parity/task_boards_test` (every
+persona × every board, and the All departments view), `device_route_matrix_test` (devices:
+403 on every board route), `seeds/synthetic_test` (the seed). Vitest under `src/lib/`
+(`tasks.test`). Playwright `tests/regression/tasks/task-board-departments.spec.ts` and the
+brewery folder (S117), all in the one-worker `brewery-board` project.
+
+| # | Scenario | Layer |
+|---|---|---|
+| S101 | bartender1: nav → Tasks opens "Taproom tasks", no switcher, Taproom shifts, no Daily card | Playwright `task-board-departments` (S101); ExUnit `task_boards_test` (the header is the board's department's) |
+| S102 | bartender1: typed `/tasks/brewery` → `/tasks/bar`; the Brewery API 403 | Playwright `task-board-departments` (S102); ExUnit controller `task_boards_controller_test` (S102, S114), `authz_parity/task_boards_test`; Vitest `tasks.test` (boardTarget) |
+| S103 | floater: switcher lists Brewery and Taproom; `/tasks` reopens the remembered one | Playwright `task-board-departments` (S103); Vitest `tasks.test` (boardTarget, the remembered board) |
+| S104 | owner: all four boards (then All departments), History and Daily items on each | Playwright `task-board-departments` (S104); ExUnit controller (`/api/me` task_boards), `authz_parity/task_boards_test` |
+| S105 | bartender1: only Taproom members to assign; brewer1 through the API → 422 | Playwright `task-board-departments` (S105); ExUnit `task_boards_test` (S105), controller (S105); Vitest `tasks.test` (taskSaveError) |
+| S106 | floater: a weekly series on the Brewery shows only there | Playwright `task-board-departments` (S106); ExUnit `task_boards_test` (an occurrence of another board's series is not found) |
+| S107 | barMgr: Set up Daily checks → "Lines cleaned", Taproom card "Daily 0/1"; the Brewery's keeps its four | Playwright `task-board-departments` (S107–S108); ExUnit `task_boards_test` (Daily items only on their board) |
+| S108 | barMgr: History is Taproom events only | Playwright `task-board-departments` (S107–S108); ExUnit `task_boards_test` (History is per board, events carry the department), controller (S108) |
+| S109 | breweryMgr: typed `/tasks/bar` → `/tasks/brewery`; Taproom History 403 | Playwright `task-board-departments` (S109); ExUnit controller (S109, S110), `authz_parity/task_boards_test` |
+| S110 | splitRole: manager tools on the Taproom board, none on the Brewery's | Playwright `task-board-departments` (S110); ExUnit controller (S109, S110), `authz_parity/task_boards_test` |
+| S111 | dualMgr: Taproom and Office, manager tools on both | Playwright `task-board-departments` (S111); ExUnit controller (`/api/me` task_boards) |
+| S112 | owner removes a `[TEST-TEMP]` person from the Taproom: only the Taproom task unassigned | Playwright `task-board-departments` (S112, Users & Roles); ExUnit `task_boards_test` (leaving a department clears only that board, deactivated: every board); Vitest `tasks.test` (History "left the Taproom") |
+| S113 | brewer1: old `/brewery/tasks` → `/tasks/brewery`, 1 week / Hide completed kept | Playwright `task-board-departments` (S113), `brewery/task-board-range` (an old link keeps its range); Vitest `tasks.test` (the storage-key fallback) |
+| S114 | noDept: no Tasks entry, URL → Home, 403; the Taproom tablet 403 | Playwright `task-board-departments` (S114 ×2); ExUnit controller (S102, S114), `device_route_matrix_test` |
+| S115 | floater: a Brewery id on the Taproom board → 404, unchanged; brewer1 → 403 | Playwright `task-board-departments` (S115, over HTTP); ExUnit `task_boards_test` (each board keeps to itself), controller (S115: every task and Daily item route) |
+| S116 | The daily scan tops up a Taproom and a Brewery series, each on its own board | **ExUnit only** `task_boards_test` (the top-up covers every board): a scheduler job with no UI |
+| S117 | brewer1: every D38/D39 scenario on `/tasks/brewery` | Playwright the brewery folder (`tests/regression/brewery/`), paths and names updated only; ExUnit the D38/D39 suites, renamed only |
+| S118 | owner: switcher → All departments; Brewery then Taproom today with Daily counts, Office and the Brewery's Daily count tomorrow, no Sales, no header | Playwright `task-board-departments` (S118); ExUnit `task_boards_test` (all_boards), controller (S118: tagged cards, Daily counts); Vitest `tasks.test` (departmentSections, switcher) |
+| S119 | owner: nothing draggable or tickable; a Taproom card opens `/tasks/bar` at its day, where it can be changed | Playwright `task-board-departments` (S119; S119 at phone width, one-day view); ExUnit controller (every other route under `all` is 404); Vitest `tasks.test` (allBoardCardLink, rangeForDay) |
+| S120 | breweryMgr, floater: no All departments; `/tasks/all` → their board; API 403 | Playwright `task-board-departments` (S120 ×2); ExUnit controller (S120, devices included), `authz_parity/task_boards_test` (All departments rows); Vitest `tasks.test` (boardTarget never picks `all`) |
+| — | Seed: Taproom and Office `[SEED]` tasks, Sales empty, Daily items only on the Brewery; `cleanup_temp` and `reset` on every board | ExUnit `seeds/synthetic_test` (the other boards, D41 ×4) |
+| — | The rename migrations on DEV's real D38/D39 data; the installed PWA's old link; the switcher and header against DEV's schedule | **Manual on DEV** (handoff note LIMITATIONS) |
