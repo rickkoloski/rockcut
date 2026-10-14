@@ -228,16 +228,16 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
              }
 
       assert boards(p["dualMgr"]) == %{
-               "task_boards" => [entry.("office", true), entry.("bar", true)],
+               "task_boards" => [entry.("bar", true), entry.("office", true)],
                "brewery_tasks_manage" => false
              }
 
       assert boards(p["owner"]) == %{
                "task_boards" => [
                  entry.("brewery", true),
+                 entry.("bar", true),
                  entry.("office", true),
-                 entry.("sales", true),
-                 entry.("bar", true)
+                 entry.("sales", true)
                ],
                "brewery_tasks_manage" => true
              }

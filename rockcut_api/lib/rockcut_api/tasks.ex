@@ -52,13 +52,13 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc """
-  The boards `user` can open (D41), in nav order (the departments' order by
-  name, as `Accounts.list_departments/0`), each `%{department, manage}`:
+  The boards `user` can open (D41), in department order (by id, the seed
+  order: Brewery, Taproom, Office, Sales), each `%{department, manage}`:
   `manage` is History and Edit Daily items. Every assignable department has a
   board; owners get all of them, a device none (until D40).
   """
   def boards_for(%User{} = user) do
-    for dept <- Accounts.list_departments(),
+    for dept <- Enum.sort_by(Accounts.list_departments(), & &1.id),
         dept.assignable,
         Authz.can?(user, :read, {:tasks, dept}),
         do: %{department: dept, manage: Authz.can?(user, :history, {:tasks, dept})}
