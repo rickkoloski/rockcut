@@ -59,9 +59,16 @@ async function getTask(api: APIRequestContext, dept: string, id: number) {
 const navTasks = (page: Page) => page.getByRole('button', { name: 'Tasks', exact: true })
 
 /** Open a board's URL and wait for it (or for wherever it sends the person). */
+/**
+ * Open a board and wait for its Daily items as well as its days: the ⋮ menu
+ * leaves out the Daily entry until they're in (DEV fix cycle 1, S111).
+ */
 async function openBoard(page: Page, path: string) {
+  // The All departments view has no Daily items to load.
+  const dailyItems = path.startsWith('/tasks/all') ? null : page.waitForResponse((r) => r.url().includes('/daily_items'))
   await page.goto(path)
   await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
+  await dailyItems
 }
 
 /** The switcher's entries, in order. */
@@ -325,11 +332,34 @@ test.describe('dualMgr (Taproom + Office manager)', () => {
     await expect(page).toHaveURL(/\/tasks\/bar$/)
     expect(await switcherEntries(page)).toEqual(['Taproom', 'Office'])
     expect((await boardMenu(page))[0]).toBe('History')
+    const officeItems = page.waitForResponse((r) => r.url().includes('/api/boards/office/daily_items'))
     await page.getByTestId('board-switcher').click()
     await page.getByTestId('board-switch-office').click()
     await expect(page).toHaveURL(/\/tasks\/office$/)
     await expect(page.getByTestId('board-title')).toHaveText('Office tasks')
+    await officeItems
     expect(await boardMenu(page)).toEqual(['History', 'Set up Daily checks'])
+  })
+
+  test('S111: while the Office Daily items load, the ⋮ menu claims neither Daily state', async ({ page }) => {
+    // Hold the Office's Daily items until the menu has been read (DEV: the
+    // menu was read before they arrived and said "Edit Daily items").
+    let release: () => void = () => {}
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    let held = false
+    await page.route('**/api/boards/office/daily_items*', async (route) => {
+      held = true
+      await gate
+      await route.continue()
+    })
+    await page.goto('/tasks/office')
+    await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
+    await expect.poll(() => held).toBe(true)
+    expect(await boardMenu(page)).toEqual(['History'])
+    const officeItems = page.waitForResponse((r) => r.url().includes('/api/boards/office/daily_items'))
+    release()
+    await officeItems
+    await expect(async () => expect(await boardMenu(page)).toEqual(['History', 'Set up Daily checks'])).toPass()
   })
 })
 

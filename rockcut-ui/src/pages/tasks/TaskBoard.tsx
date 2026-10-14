@@ -92,8 +92,10 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const members = useMemo(() => roster.filter((r) => r.departments.includes(dept)), [roster, dept])
   // D41 S107: the Daily card hides until the board has an item, and a manager's
   // ⋮ menu says "Set up Daily checks" instead of "Edit Daily items" until then.
+  // The entry waits for the board's items: while they load it would claim
+  // either (DEV fix cycle 1, S111).
   const { data: dailyItems } = useApiQuery<DailyItem[]>([DAILY_ITEMS_KEY, dept], boardPath(dept, 'daily_items'), { include_retired: 'true' })
-  const hasDailyItems = dailyItems?.some((i) => i.active) ?? true
+  const hasDailyItems = dailyItems?.some((i) => i.active) ?? false
   const today = board?.today ?? coloradoToday()
 
   // Phone: the day (or FUTURE) showing. It starts on today, or the range's
@@ -409,7 +411,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         slot={slot}
         onAdd={(date) => setDialog({ mode: { kind: 'add', dueOn: date }, n: Date.now() })}
         onDailyToggle={toggleDaily}
-        onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
+        onEditDailyItems={canManage && dailyItems ? () => setEditingDaily(true) : undefined}
       />
     )
   }
@@ -454,7 +456,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         onFilter={setFilter}
         onHideCompleted={toggleHide}
         onHistory={canManage ? () => setHistory({}) : undefined}
-        onEditDailyItems={canManage ? () => setEditingDaily(true) : undefined}
+        onEditDailyItems={canManage && dailyItems ? () => setEditingDaily(true) : undefined}
         setUpDaily={!hasDailyItems}
         compact={phone}
         title={phone ? <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} compact /> : undefined}
