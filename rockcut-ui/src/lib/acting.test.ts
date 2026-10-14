@@ -76,10 +76,11 @@ describe('sending the code', () => {
     expect(withCode(undefined, '1111')).toEqual({ staff_code: '1111' })
   })
 
-  it('puts it in a DELETE’s query', () => {
-    expect(deleteWithCode({ scope: 'this' }, '1111')).toEqual({ params: { scope: 'this', staff_code: '1111' } })
-    expect(deleteWithCode(undefined, '1111')).toEqual({ params: { staff_code: '1111' } })
+  it('puts it in a DELETE’s body, never its query (D40 DEV qa gap 1)', () => {
+    expect(deleteWithCode({ scope: 'this' }, '1111')).toEqual({ params: { scope: 'this' }, data: { staff_code: '1111' } })
+    expect(deleteWithCode(undefined, '1111')).toEqual({ data: { staff_code: '1111' } })
     expect(deleteWithCode(undefined, undefined)).toBeUndefined()
     expect(deleteWithCode({ scope: 'this' }, undefined)).toEqual({ params: { scope: 'this' } })
+    expect(JSON.stringify(deleteWithCode({ scope: 'this' }, '1111')?.params)).not.toContain('1111')
   })
 })

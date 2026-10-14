@@ -62,8 +62,12 @@ export const isActingCancelled = (err: unknown) => err instanceof ActingCancelle
 export const withCode = <T extends object>(body: T | undefined, code: string | undefined) =>
   code ? { ...(body ?? {}), staff_code: code } : body
 
-/** A DELETE's axios config with the code as a query param. */
+/**
+ * A DELETE's axios config: `params` in the query, the code in the JSON body.
+ * Never in the URL: proxy and access logs keep URLs, and the API takes the
+ * code only from the body (D40 DEV qa gap 1).
+ */
 export const deleteWithCode = (params: Record<string, unknown> | undefined, code: string | undefined) => {
-  const all = code ? { ...(params ?? {}), staff_code: code } : params
-  return all ? { params: all } : undefined
+  if (!params && !code) return undefined
+  return { ...(params ? { params } : {}), ...(code ? { data: { staff_code: code } } : {}) }
 }

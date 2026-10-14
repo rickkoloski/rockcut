@@ -122,6 +122,14 @@ test.describe('the brewhouse tablet', () => {
       const rows = (await history()).filter((h) => h.title === 'Temps')
       expect(rows[0]).toMatchObject({ actor_name: brewer!.person.name, on_shared_device: true })
 
+      // D40 DEV qa gap 1: an untick sends the code in the body, never the URL.
+      const untick = page.waitForRequest((r) => r.method() === 'DELETE' && r.url().includes(`/daily_checks/${today}/${temps.id}`))
+      await setBoardCheck(page.getByTestId(`daily-check-${today}-${temps.id}`), false)
+      const req = await untick
+      expect(req.url()).not.toContain('staff_code')
+      expect(req.postDataJSON()).toEqual({ staff_code: brewer!.code })
+      await expect.poll(async () => (await dailyCard(api, today)).items.find((i) => i.daily_item_id === temps.id)?.checked).toBe(false)
+
       // Done ends it: the next tick asks again.
       await page.getByTestId('acting-done').click()
       await expect(page.getByTestId('acting-banner')).toHaveCount(0)
@@ -168,10 +176,15 @@ test.describe('the brewhouse tablet', () => {
       const t = await createTask(await apiAs('brewer1'), { title: tempTag('S45'), due_on: today })
       made.push(t.id)
       await page.goto('/tasks/brewery')
-      await page.getByTestId(`task-check-${t.id}:${today}`).click()
+      const box = page.getByTestId(`task-check-${t.id}:${today}`)
+      await box.click()
+      // D40 DEV qa gap 3: nothing shows ticked behind the dialog, or after a wrong code.
+      await expect(page.getByTestId('acting-code-dialog')).toBeVisible()
+      await expect(box).not.toBeChecked()
       await enterCode(page, bartender.code)
       await expect(page.getByTestId('acting-code-dialog')).toContainText("That staff code isn't right")
       await expect(page.getByTestId('acting-staff-code')).toHaveValue('')
+      await expect(box).not.toBeChecked()
       await page.getByTestId('acting-cancel').click()
       await page.reload()
       await expect(page.getByTestId(`task-check-${t.id}:${today}`)).not.toBeChecked()

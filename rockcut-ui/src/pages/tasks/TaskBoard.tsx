@@ -177,20 +177,30 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   /**
    * A write with an optional optimistic change to the cached board, rolled
    * back on failure. D40: `write` gets the staff code on a shared tablet
-   * (`actingRun` asks for one first); people get none.
+   * (`actingRun` asks for one first); people get none. The change is shown
+   * only when the write is sent (with a code, on a tablet), and undone as
+   * soon as that try fails, so nothing shows ticked behind the code dialog
+   * or after a wrong code (D40 DEV qa gap 3).
    */
   const run = async (write: (code?: string) => Promise<unknown>, optimistic?: (b: TaskBoardData) => TaskBoardData) => {
     const queryKey = [BOARD_KEY, dept, from, to]
     pending.current += 1
-    // Cancels a fetch in flight at once (no await, so the change shows on this click).
-    if (optimistic) void qc.cancelQueries({ queryKey })
-    const before = qc.getQueryData<TaskBoardData>(queryKey)
-    if (before && optimistic) qc.setQueryData(queryKey, optimistic(before))
+    const attempt = async (code?: string) => {
+      // Cancels a fetch in flight at once (no await, so the change shows on this click).
+      if (optimistic) void qc.cancelQueries({ queryKey })
+      const before = qc.getQueryData<TaskBoardData>(queryKey)
+      if (before && optimistic) qc.setQueryData(queryKey, optimistic(before))
+      try {
+        return await write(code)
+      } catch (err) {
+        if (before && optimistic) qc.setQueryData(queryKey, before)
+        throw err
+      }
+    }
     try {
-      await actingRun(write)
+      await actingRun(attempt)
       return true
     } catch (err) {
-      if (before && optimistic) qc.setQueryData(queryKey, before)
       fail(err)
       return false
     } finally {
@@ -213,8 +223,10 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     // Ahead of a card that stays last means the end of the day's own tasks.
     const before = m.beforeId && !staysLast(m.beforeId) ? cards.get(m.beforeId) : null
     const beforeId = before && before.id !== card.id ? before.id : null
-    move(m, () =>
-      actingRun((code) => api.post(boardPath(dept, 'tasks', card.id, 'move'), withCode({ due_on: dueOn, before_id: beforeId }, code))),
+    // D40: on a tablet the card moves only once the code is in (each try moves
+    // it, and a refused try puts it back).
+    actingRun((code) =>
+      move(m, () => api.post(boardPath(dept, 'tasks', card.id, 'move'), withCode({ due_on: dueOn, before_id: beforeId }, code))),
     )
       .catch(fail)
       .finally(refresh)

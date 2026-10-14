@@ -21,8 +21,8 @@ defmodule RockcutApiWeb.DailyController do
   action_fallback RockcutApiWeb.FallbackController
 
   @doc "PUT /api/boards/:dept/daily_checks/:on_date/:daily_item_id: tick (today or earlier)."
-  def tick(conn, %{"on_date" => on_date, "daily_item_id" => item_id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+  def tick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
+    with {:ok, actor} <- writer(conn),
          {:ok, item} <- fetch(conn, item_id),
          {:ok, check} <- Tasks.tick(board(conn), on_date, item, actor) do
       reply(
@@ -43,8 +43,8 @@ defmodule RockcutApiWeb.DailyController do
   end
 
   @doc "DELETE /api/boards/:dept/daily_checks/:on_date/:daily_item_id: untick."
-  def untick(conn, %{"on_date" => on_date, "daily_item_id" => item_id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+  def untick(conn, %{"on_date" => on_date, "daily_item_id" => item_id}) do
+    with {:ok, actor} <- writer(conn),
          {:ok, item} <- fetch(conn, item_id),
          {:ok, :ok} <- Tasks.untick(board(conn), on_date, item, actor) do
       if actor.on_device_id,
@@ -152,10 +152,10 @@ defmodule RockcutApiWeb.DailyController do
   # Who a tick is for (D40): the signed-in person, or on the board's shared
   # tablet the person whose staff code came with it (`TaskBoardController`
   # does the same for tasks).
-  defp writer(conn, params) do
+  defp writer(conn) do
     with :ok <- allow(conn, :write, :tasks),
          {:ok, person, device} <-
-           StaffCodeActing.acting(conn, params, {:tasks, board(conn)}) do
+           StaffCodeActing.acting(conn, {:tasks, board(conn)}) do
       {:ok, %{person | on_device_id: device && device.id}}
     end
   end

@@ -65,7 +65,7 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def create(conn, params) do
-    with {:ok, actor} <- writer(conn, params),
+    with {:ok, actor} <- writer(conn),
          {:ok, task} <- Tasks.create(board(conn), Map.delete(params, "staff_code"), actor) do
       conn |> put_status(:created) |> render_task(task, actor)
     end
@@ -73,7 +73,7 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def update(conn, %{"id" => id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+    with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
            Tasks.update(
@@ -90,7 +90,7 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/move: `{ due_on, before_id? }`; `due_on: null` = Future."
   def move(conn, %{"id" => id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+    with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
            Tasks.move(board(conn), task, params["due_on"], params["before_id"], actor) do
@@ -99,8 +99,8 @@ defmodule RockcutApiWeb.TaskBoardController do
     |> TaskErrors.handle(conn)
   end
 
-  def move_overdue_to_today(conn, params) do
-    with {:ok, actor} <- writer(conn, params),
+  def move_overdue_to_today(conn, _params) do
+    with {:ok, actor} <- writer(conn),
          {:ok, count} <- Tasks.move_overdue_to_today(board(conn), actor) do
       reply(conn, %{moved: count}, actor)
     end
@@ -109,7 +109,7 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/complete: `{ display? }` (required off its own day)."
   def complete(conn, %{"id" => id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+    with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.complete(board(conn), task, params["display"], actor) do
       render_task(conn, task, actor)
@@ -117,8 +117,8 @@ defmodule RockcutApiWeb.TaskBoardController do
     |> TaskErrors.handle(conn)
   end
 
-  def uncomplete(conn, %{"id" => id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+  def uncomplete(conn, %{"id" => id}) do
+    with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.uncomplete(board(conn), task, actor) do
       render_task(conn, task, actor)
@@ -127,7 +127,7 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def delete(conn, %{"id" => id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+    with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, :deleted} <- Tasks.delete(board(conn), task, actor, series_opts(params)) do
       if actor.on_device_id,
@@ -162,7 +162,7 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/stop_repeating: `{ changed? }`. Ends the series on this one."
   def stop_repeating(conn, %{"id" => id} = params) do
-    with {:ok, actor} <- writer(conn, params),
+    with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.stop_repeating(board(conn), task, actor, series_opts(params)) do
       render_task(conn, task, actor)
@@ -206,10 +206,10 @@ defmodule RockcutApiWeb.TaskBoardController do
   # tablet the person whose staff code came with it, carrying the tablet for
   # the change log. Access to the board comes first, so a tablet on another
   # board is 403 before any code is checked.
-  defp writer(conn, params) do
+  defp writer(conn) do
     with :ok <- allow(conn, :write),
          {:ok, person, device} <-
-           StaffCodeActing.acting(conn, params, {:tasks, board(conn)}) do
+           StaffCodeActing.acting(conn, {:tasks, board(conn)}) do
       {:ok, %{person | on_device_id: device && device.id}}
     end
   end

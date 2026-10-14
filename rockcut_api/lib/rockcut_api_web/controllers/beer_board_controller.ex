@@ -26,7 +26,7 @@ defmodule RockcutApiWeb.BeerBoardController do
   end
 
   def create(conn, params) do
-    with {:ok, person, device} <- acting(conn, params),
+    with {:ok, person, device} <- acting(conn),
          {:ok, entry} <- BeerBoard.create(params, person, device) do
       conn |> put_status(:created) |> respond(entry, person, device)
     end
@@ -34,7 +34,7 @@ defmodule RockcutApiWeb.BeerBoardController do
   end
 
   def redeem(conn, %{"id" => id} = params) do
-    with {:ok, person, device} <- acting(conn, params),
+    with {:ok, person, device} <- acting(conn),
          {:ok, result} <- BeerBoard.redeem(id, params["count"], person, device) do
       respond(conn, result, person, device)
     end
@@ -42,15 +42,15 @@ defmodule RockcutApiWeb.BeerBoardController do
   end
 
   def update(conn, %{"id" => id} = params) do
-    with {:ok, person, device} <- acting(conn, params),
+    with {:ok, person, device} <- acting(conn),
          {:ok, entry} <- BeerBoard.update(id, params, person, device) do
       respond(conn, entry, person, device)
     end
     |> handle(conn)
   end
 
-  def delete(conn, %{"id" => id} = params) do
-    with {:ok, person, device} <- acting(conn, params),
+  def delete(conn, %{"id" => id}) do
+    with {:ok, person, device} <- acting(conn),
          {:ok, :removed} <- BeerBoard.delete(id, person, device) do
       respond(conn, :removed, person, device)
     end
@@ -59,7 +59,7 @@ defmodule RockcutApiWeb.BeerBoardController do
 
   # The person making a write: the signed-in person, or on a shared device the
   # owner of the staff code, a Taproom member (D37 §3.3, `StaffCodeActing`).
-  defp acting(conn, params), do: StaffCodeActing.acting(conn, params, :beer_board)
+  defp acting(conn), do: StaffCodeActing.acting(conn, :beer_board)
 
   defp respond(conn, result, person, device) do
     data = if result == :removed, do: nil, else: beer_board_entry(result)

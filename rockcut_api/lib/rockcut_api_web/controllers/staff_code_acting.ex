@@ -10,7 +10,8 @@ defmodule RockcutApiWeb.StaffCodeActing do
     * a locked tablet is refused before its code is checked (429
       `staff_code_locked`, `StaffCodes.RateLimiter`, keyed by the tablet's
       token);
-    * no code → 422 `staff_code_required`;
+    * no code in the JSON body → 422 `staff_code_required` (a `staff_code`
+      in the query string doesn't count: URLs end up in logs; D40 DEV qa);
     * a code that resolves to nobody, or to someone who may not make this
       write (`Authz.can?(person, :write, resource)`: on a task board, a
       member of the tablet's home department), is a wrong code: 422
@@ -30,14 +31,14 @@ defmodule RockcutApiWeb.StaffCodeActing do
   `{:error, :forbidden | :staff_code_required | :staff_code_invalid}`, or
   `{:locked, seconds_left}`.
   """
-  def acting(conn, params, resource) do
+  def acting(conn, resource) do
     user = conn.assigns.current_user
 
     if Authz.device?(user) do
       key = conn.assigns.device_token.id
 
       with :ok <- RateLimiter.check(key),
-           {:ok, code} <- code_param(params),
+           {:ok, code} <- code_param(conn.body_params),
            {:ok, person} <- resolve(code, key, resource) do
         {:ok, person, user}
       end
@@ -48,6 +49,8 @@ defmodule RockcutApiWeb.StaffCodeActing do
     end
   end
 
+  # Only from the JSON body, never the query string: a URL ends up in proxy
+  # and access logs (D40 DEV qa gap 1). A code in the query is a missing one.
   defp code_param(%{"staff_code" => code}) when is_binary(code) and code != "", do: {:ok, code}
   defp code_param(_), do: {:error, :staff_code_required}
 

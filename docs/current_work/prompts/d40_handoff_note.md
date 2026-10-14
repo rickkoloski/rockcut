@@ -14,7 +14,8 @@ where they differ).
 (`cb59d3b`, PR #21).
 **SHA for DEV:** `6419501` (D40 with `develop` merged after D42; API
 `3b00bb5`, UI `8ecbc8e`, seed and tests `790cf13`, S44 `a868fed`, D33 S3
-`9791fde`). Later commits are docs only.
+`9791fde`). Later commits are docs only. **DEV fix cycle 1:** the commit
+"fix: D40 DEV qa gaps 1 and 3" (the lead fills in the hash).
 
 ## What changed
 
@@ -126,6 +127,15 @@ from `Authz.Device`):
 - **`mix rockcut.synthetic.setup`** locally (and the DEV reseed) creates
   `breweryDevice`; the Playwright auth setup mints its token.
 
+## DEV fix cycle 1 (D40 qa on DEV at `0f2f0a0`: PASS with gaps)
+
+| Gap | Fix | Tests |
+|---|---|---|
+| **1 (security): the staff code in the URL.** A tablet's untick and task delete sent `?staff_code=…`, which proxy and access logs keep | The UI sends the code in the **JSON body** for every tablet write, DELETE included (`deleteWithCode`: `scope`/`changed` stay in the query). The API takes `staff_code` **only from `conn.body_params`** (`StaffCodeActing`); a query-string code counts as missing (422 `staff_code_required`). The beer board's deletes already used the body and now get the same check | ExUnit `task_board_device_test` (both DELETE routes: query refused, body accepted), `beer_board_controller_test` (the same for its delete); **revert-checked** (reading all params again: both fail). Vitest `acting.test` (the body, never the query). Playwright `task-board-tablets` S43 (the untick request: no `staff_code` in the URL, the code in the body) |
+| **3 (UX): ticked behind the code dialog, and still ticked after a wrong code** | The board's optimistic change (ticks, Daily checks, a drag) is made only when the write is sent with a code, and undone as soon as that try fails; nothing changes while the dialog is open | Playwright `task-board-tablets` S45 (unticked behind the dialog and after a wrong code); **revert-checked** (the old order: S45 fails, "checked") |
+
+**Not fixed** (the lead): gap 2 and gap 4, in LIMITATIONS.
+
 ## DEV must exercise
 
 - **One real reminder:** a `[TEST-TEMP]` published Brewery shift for a
@@ -162,6 +172,11 @@ from `Authz.Device`):
 
 ## LIMITATIONS
 
+- **Gap 2 (not fixed, as spec §3.5 says):** the reminder's body lists up
+  to three task titles, then "+N more"; the rest are on the board.
+- **Gap 4 (not fixed, as D37's beer board does):** a locked tablet says
+  it's locked only after a code is typed; the dialog doesn't know before a
+  write is tried.
 - **Playwright ran locally only, Chromium at desktop width.** The tablet
   specs don't cover phone width or touch; the Pixel/tablet checks above do.
 - **The real push** (timing on a phone, the tap's deep link from a closed

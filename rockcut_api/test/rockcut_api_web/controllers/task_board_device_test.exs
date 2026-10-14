@@ -83,6 +83,40 @@ defmodule RockcutApiWeb.TaskBoardDeviceTest do
   end
 
   describe "writes need a staff code" do
+    test "D40 qa gap 1: on both DELETE routes a code in the query string counts as missing; the body's works",
+         %{token: token, temps: temps, p: p} do
+      tick = "/api/boards/brewery/daily_checks/#{today()}/#{temps.id}"
+      assert call_device(token, :put, tick, %{staff_code: "1111"}).status == 200
+
+      assert %{"error" => "staff_code_required"} =
+               call_device(token, :delete, tick <> "?staff_code=1111") |> json_response(422)
+
+      assert %{"recorded_as" => _} =
+               call_device(token, :delete, tick, %{staff_code: "1111"}) |> json_response(200)
+
+      %{"data" => %{"id" => id}} =
+        call(p["brewer1"], :post, "/api/boards/brewery/tasks", %{
+          title: "Keg Wash",
+          due_on: today()
+        })
+        |> json_response(201)
+
+      task = "/api/boards/brewery/tasks/#{id}"
+
+      assert %{"error" => "staff_code_required"} =
+               call_device(token, :delete, task <> "?staff_code=1111") |> json_response(422)
+
+      assert call(p["brewer1"], :get, "/api/boards/brewery/tasks", %{from: today(), to: today()})
+             |> json_response(200)
+             |> get_in(["data", "days", Access.at(0), "cards"])
+             |> Enum.any?(&(&1["id"] == id))
+
+      # The scope stays in the query (not a secret); the code goes in the body.
+      assert %{"recorded_as" => _} =
+               call_device(token, :delete, task <> "?scope=this", %{staff_code: "1111"})
+               |> json_response(200)
+    end
+
     test "S47: POST a task with no staff_code → 422 staff_code_required", %{token: token} do
       assert %{"error" => "staff_code_required"} = add(token) |> json_response(422)
       assert Repo.all(RockcutApi.Tasks.Task) == []
