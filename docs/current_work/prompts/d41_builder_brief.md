@@ -158,3 +158,69 @@ pass; the brewery Playwright folder passes; ExUnit still 1,270/0 at least
 once. `refactor:` commits (and `test:` for the new check). **Reply with:**
 counts, SHAs, the spec-diff check, the ExUnit failure list, any `LEAD:`.
 Then stop.
+
+## Task 3: plan step 3, per-department API
+
+Tasks 1–2 accepted (`e3086df`, `b10058a`, `383f357`): the rename
+checkpoint is passed. **Flaky ExUnit:** don't hunt now; from here on, keep
+the full output of every ExUnit run (no `tail`), and if a test fails then
+passes alone, put its name and seed in your reply.
+
+Now behavior changes. Spec §3.1–§3.4; plan "The department on every call",
+"`Authz`", "Leaving a department", API changes. The UI still only uses
+`brewery` (step 4 adds the rest).
+
+1. **The plug** accepts every **assignable** department key (`brewery`,
+   `bar`, `office`, `sales`); `other` and unknown keys → 404. Add the 404
+   tests now (Task 1's question).
+2. **Context takes the department:** every `Tasks` function takes the
+   board's `%Department{}` first; `department!/0` goes away. Controllers
+   pass `conn.assigns.board`.
+3. **Scoped lookups:** every by-id read or write matches the department
+   (`Tasks.get(dept, id)`, series, Daily items, checks). An id from
+   another board → 404, and nothing changes (S115). In review I'll grep
+   for an unscoped `Repo.get(Task` / `Repo.get(TaskSeries` /
+   `Repo.get(DailyItem`; explain any that stay (e.g. inside a function
+   that already scoped the parent).
+4. **`Authz`:** areas `{:tasks, dept}` and `{:daily_items, dept}` (plan
+   "`Authz`") replace `:brewery_tasks` / `:brewery_daily_items`;
+   `can_take_task?(user, dept)` replaces `can_take_brewery_task?/1`. The
+   task areas leave the `brewing` module, and the router's `:brewery`
+   pipeline comes off the board scope. D31's parity suite and boundary
+   test: add the rows, keep them green. Devices: still 403 on every board
+   route (route matrix).
+5. **Assignee rule:** an active member of the board's department, or an
+   owner (S105: assigning `brewer1` on the Taproom board → 422, same error
+   as today's ineligible assignee).
+6. **Leaving a department:** `unassign_if_ineligible` per department:
+   only open tasks on the department the person left (S112), logged on that
+   board. Series assignees likewise.
+7. **Migration 2** `…_add_department_id_to_task_events`: nullable FK, backfill
+   from the task where it exists, else the Brewery; index
+   `(department_id, inserted_at)`. Every new event writes it. History
+   (`list_events`) filters by the board (S108). Up/down checked on a copy.
+8. **Header:** the board's department's published shifts and events
+   (today the code filters on the Brewery). The "No brewers scheduled"
+   text lives in the UI, so nothing to do in the API there.
+9. **`/api/me`:** `task_boards` (spec §3.4: `key`, `name`, `color`,
+   `manage`, in nav order; owners get all four). Keep
+   `brewery_tasks_manage` too **for now**, computed from the Brewery
+   board, so the UI keeps working until step 4 removes it. Don't add `all`
+   yet (step 5).
+10. **Top-up:** confirm `Series.top_up/1` covers every department's series
+    (S116 ExUnit: a Taproom series and a Brewery series both top up, each
+    on its own board).
+11. **Seed:** not yet (step 6).
+
+**ExUnit** for each behavior: S105, S108, S112, S115, S116, the plug 404s,
+the `Authz` matrix (each area × member / other department's member /
+manager / other department's manager / owner / device), `task_boards`
+for `floater`, `splitRole`, `dualMgr`, `owner`, `noDept`, the events
+backfill. Revert-check S115 and S112.
+
+**Done when:** ExUnit green (full output kept), `--warnings-as-errors`
+clean, migration up/down checked, and the brewery Playwright folder still
+passes (the UI is unchanged; this proves the Brewery behaves the same).
+`feat:` commits. **Reply with:** counts, SHAs, the scoped-lookup grep
+result, the `Authz` rows added, the migration check, any flaky names, and
+any `LEAD:`. Then stop.
