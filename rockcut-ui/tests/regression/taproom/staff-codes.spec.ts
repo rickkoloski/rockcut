@@ -5,6 +5,8 @@ import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/hel
 import { openUser } from './helpers'
 
 // D37 §3.2: staff codes in the Users & Roles edit dialog (S1–S4, S12, S16).
+// D40 (plan decision 2): every employee, set by owners and the managers of one
+// of the person's departments (S48, S49).
 // Codes are set on [TEST-TEMP] Taproom people, never on personas: the seeded
 // persona codes are what the shared-device specs type.
 // Each test loads the Users list several times: slow when the suite runs in parallel.
@@ -107,7 +109,7 @@ test.describe('as barMgr', () => {
     await expect(page.getByTestId('staff-code-input')).toHaveValue('••••')
   })
 
-  test('S12: leaving the Taproom ends the code', async () => {
+  test('S12 (D40): moving to another department keeps the code; no department ends it', async () => {
     const api = await apiAs('barMgr')
     expect((await api.put(`/api/users/${a!.id}/staff_code`, { data: { code: await freeCode() } })).status()).toBe(200)
     const owner = await apiAs('owner')
@@ -115,7 +117,11 @@ test.describe('as barMgr', () => {
       data: { memberships: [{ department: 'office', role: 'employee' }] },
     })
     expect(moved.status(), await moved.text()).toBe(200)
-    expect((await moved.json()).data.has_staff_code).toBe(false)
+    expect((await moved.json()).data.has_staff_code).toBe(true)
+
+    const none = await owner.put(`/api/users/${a!.id}/memberships`, { data: { memberships: [] } })
+    expect(none.status(), await none.text()).toBe(200)
+    expect((await none.json()).data.has_staff_code).toBe(false)
   })
 
   test('Remove clears the code at once', async ({ page }) => {
@@ -133,8 +139,11 @@ test.describe('as barMgr', () => {
 test.describe('as owner', () => {
   test.use({ storageState: authFile('owner') })
 
-  test('S3: no Staff code section for someone outside the Taproom', async ({ page }) => {
+  test('S3 (D40): a Brewery member has a Staff code section; someone with no department doesn’t', async ({ page }) => {
     await openUser(page, 'Jake Brewer')
+    await expect(page.getByTestId('staff-code-section')).toBeVisible()
+    await page.getByRole('button', { name: 'Cancel' }).click()
+    await openUser(page, 'Nico None')
     await expect(page.getByTestId('staff-code-section')).toHaveCount(0)
   })
 
@@ -155,16 +164,34 @@ test.describe('as owner', () => {
 test.describe('as breweryMgr', () => {
   test.use({ storageState: authFile('breweryMgr') })
 
-  test('S4: a manager of another department sees no Staff code section and gets 403', async ({ page }) => {
-    // floater is in the Brewery and the Taproom, so breweryMgr can open them.
-    await openUser(page, 'Jordan Float')
-    await expect(page.getByTestId('staff-code-section')).toHaveCount(0)
+  test('S48: breweryMgr sets and reveals a Brewery employee’s code, as D37 S1', async ({ page }) => {
+    const p = await createTempPerson('D40 S48 brewer', { ready: false, memberships: [{ department: 'brewery', role: 'employee' }] })
+    try {
+      const code = await freeCode()
+      await openUser(page, p.name)
+      await expect(page.getByTestId('staff-code-section')).toContainText('No code yet')
+      await page.getByTestId('staff-code-input').fill(code)
+      await page.getByRole('button', { name: 'Save' }).click()
+      await expect(page.getByRole('dialog')).toBeHidden()
 
+      await page.reload()
+      await openUser(page, p.name)
+      await expect(page.getByTestId('staff-code-input')).toHaveValue('••••')
+      await page.getByTestId('staff-code-toggle').click()
+      await expect(page.getByTestId('staff-code-input')).toHaveValue(code)
+    } finally {
+      await retireTempPerson(p)
+    }
+  })
+
+  test('S4 (D40): a manager of another department gets 403 on a Taproom-only person', async () => {
     const api = await apiAs('breweryMgr')
-    const users = (await (await api.get('/api/users')).json()).data as { id: number; name: string }[]
-    const floater = users.find((u) => u.name === 'Jordan Float')!
-    expect((await api.get(`/api/users/${floater.id}/staff_code`)).status()).toBe(403)
-    expect((await api.put(`/api/users/${floater.id}/staff_code`, { data: { code: '1234' } })).status()).toBe(403)
-    expect((await api.get('/api/staff_codes/suggest')).status()).toBe(403)
+    const owner = await apiAs('owner')
+    const users = (await (await owner.get('/api/users')).json()).data as { id: number; name: string }[]
+    const bartender = users.find((u) => u.name === 'Sam Pour')!
+    expect((await api.get(`/api/users/${bartender.id}/staff_code`)).status()).toBe(403)
+    expect((await api.put(`/api/users/${bartender.id}/staff_code`, { data: { code: '1234' } })).status()).toBe(403)
+    // Any manager may ask for a free code (D40).
+    expect((await api.get('/api/staff_codes/suggest')).status()).toBe(200)
   })
 })

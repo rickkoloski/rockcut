@@ -62,13 +62,16 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [loading, setLoading] = useState(false)
   const [codeDraft, setCodeDraft] = useState('')
 
-  // D37: owners and Taproom managers see a Taproom member's staff code. Only
-  // active Taproom members (as saved) can hold one.
+  // D37, every department since D40: owners and the managers of one of the
+  // person's departments see their staff code. Only active people with a
+  // department (as saved) can hold one; owners count, as in the API.
+  const savedKeys = (editUser?.memberships ?? []).flatMap((m) => (m.department_key ? [m.department_key] : []))
   const showStaffCode =
     isEdit &&
     staffCodes &&
     !!editUser?.active &&
-    !!editUser?.memberships?.some((m) => m.department_key === 'bar')
+    (savedKeys.length > 0 || !!editUser?.is_owner) &&
+    (isOwnerActor || savedKeys.some((k) => managedKeys.includes(k)))
 
   useEffect(() => {
     if (!open) return
@@ -99,9 +102,14 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
 
   const save = async () => {
     setError(null)
-    // Leaving the Taproom (or deactivating) clears the code on the server, so a
-    // typed code isn't sent.
-    const keepsCode = active && !!roles.bar
+    // Deactivating, or leaving every department, clears the code on the
+    // server, so a typed code isn't sent. Departments this manager doesn't
+    // manage aren't in `roles` and stay as they are.
+    const keepsCode =
+      active &&
+      (Object.values(roles).some(Boolean) ||
+        savedKeys.some((k) => !managedKeys.includes(k)) ||
+        (isOwnerActor ? isOwner : !!editUser?.is_owner))
     if (showStaffCode && keepsCode && codeDraft !== '' && !/^\d{4}$/.test(codeDraft)) {
       setError('A staff code is 4 digits.')
       return

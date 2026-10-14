@@ -27,7 +27,8 @@ interface Props {
 }
 
 /**
- * D37 §3.2: a Taproom member's staff code in the Users & Roles edit dialog.
+ * D37 §3.2: an employee's staff code in the Users & Roles edit dialog (any
+ * department since D40).
  * An existing code shows as •••• until the eye is pressed, which fetches it
  * (each reveal is audited). Typing 4 digits sets a new code on Save; Suggest
  * fills in an unused one; Remove clears it at once. Typed digits are masked
@@ -120,7 +121,7 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
         <Typography variant="overline">Staff code</Typography>
       </Divider>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-        Typed on the shared Taproom tablet to record who made a change.
+        Typed on a shared tablet (the Taproom's or the brewhouse's) to record who made a change.
       </Typography>
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}>
         <TextField

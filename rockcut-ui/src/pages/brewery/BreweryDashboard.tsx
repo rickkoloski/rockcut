@@ -6,9 +6,14 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import StatusChip from '../../components/StatusChip'
 import PageHeader from '../../components/PageHeader'
 import type { Brand, Batch, Recipe } from '../../lib/types'
+import useAuth from '../../hooks/useAuth'
+import TodaysTasksCard from './TodaysTasksCard'
 
 export default function BreweryDashboard() {
   const navigate = useNavigate()
+  // D40: the Brewery board's Today's tasks card (Brewery members and owners).
+  const { taskBoards } = useAuth()
+  const hasBoard = taskBoards.some((b) => b.key === 'brewery')
   const { data: brands } = useApiQuery<Brand[]>(['brands'], '/api/brands')
   const { data: batches } = useApiQuery<Batch[]>(['batches'], '/api/batches')
   const { data: recipes } = useApiQuery<Recipe[]>(['recipes'], '/api/recipes')
@@ -56,6 +61,8 @@ export default function BreweryDashboard() {
           </Grid>
         ))}
       </Grid>
+
+      {hasBoard && <TodaysTasksCard />}
 
       <Typography variant="h5" gutterBottom>Active Batches</Typography>
       <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', mb: 4 }}>

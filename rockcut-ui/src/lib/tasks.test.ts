@@ -22,6 +22,7 @@ import {
   taskGone,
   switcherBoards,
   taskSaveError,
+  todaysTasks,
   weekStart,
   writeBoard,
   writeFirstDay,
@@ -29,7 +30,7 @@ import {
   writePhoneView,
   writeSpan,
 } from './tasks'
-import type { AllBoardCard, TaskBoardEntry, TaskEvent } from './types'
+import type { AllBoardCard, DailyCardItem, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent } from './types'
 
 const err = (status: number, url: string, data: Record<string, unknown> = {}) => ({ response: { status, data }, config: { url } })
 
@@ -429,5 +430,35 @@ describe('a card on the All departments view opens on its board (S119)', () => {
     expect(rangeForDay('2026-10-30', '2026-10-13', '2026-10-19', 7)).toEqual({ from: '2026-10-30', to: '2026-11-05' })
     expect(rangeForDay('2026-10-01', '2026-10-13', '2026-10-26', 14)).toEqual({ from: '2026-10-01', to: '2026-10-14' })
     expect(rangeForDay(FUTURE, '2026-10-13', '2026-10-19', 7)).toEqual({ from: '2026-10-13', to: '2026-10-19' })
+  })
+})
+
+// D40 (S50): the Brewery Dashboard's Today's tasks card.
+describe('todaysTasks', () => {
+  const card = (id: number, over: Partial<TaskCardData> = {}) =>
+    ({ id, key: `${id}:2026-10-14`, title: `T${id}`, done: false, due_on: '2026-10-14', assignee_name: null, ...over }) as TaskCardData
+  const item = (id: number, checked: boolean) =>
+    ({ daily_item_id: id, name: `D${id}`, active: true, checked, completed_by_name: null, completed_at: null }) as DailyCardItem
+
+  it('Daily 2/4 with the unticked names, the first five open tasks, +2 more, 1 unfinished', () => {
+    const cards = [1, 2, 3, 4, 5, 6, 7].map((id) => card(id))
+    cards.push(card(8, { done: true }))
+    // Finished today from another day: not open, not listed.
+    cards.push(card(9, { done: true, due_on: '2026-10-12' }))
+    const board = {
+      from: '2026-10-14',
+      to: '2026-10-14',
+      today: '2026-10-14',
+      days: [{ date: '2026-10-14', header: {}, cards, daily: { date: '2026-10-14', done: 2, total: 4, items: [item(1, true), item(2, false), item(3, true), item(4, false)] } }],
+      unfinished: [card(10, { due_on: '2026-10-10' })],
+      future: [card(11, { due_on: null })],
+    } as unknown as TaskBoardData
+
+    const s = todaysTasks(board)
+    expect(s.daily).toMatchObject({ done: 2, total: 4 })
+    expect(s.daily!.unticked.map((i) => i.name)).toEqual(['D2', 'D4'])
+    expect(s.tasks.map((t) => t.id)).toEqual([1, 2, 3, 4, 5])
+    expect(s.more).toBe(2)
+    expect(s.unfinished).toBe(1)
   })
 })

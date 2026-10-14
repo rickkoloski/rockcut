@@ -3,7 +3,9 @@ import { Alert, Button, Checkbox, CircularProgress, FormControlLabel, MenuItem, 
 import FormDialog from '../../components/FormDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
+import { actingRun } from '../../hooks/useActing'
 import api from '../../lib/api'
+import { isActingCancelled, withCode } from '../../lib/acting'
 import { boardPath, taskError, taskGone, taskSaveError } from '../../lib/tasks'
 import { defaultRule, endsOnlyChange, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
 import type { RosterEntry, SeriesChange, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
@@ -120,10 +122,16 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     setConfirmEnds(null)
     setSaving(true)
     try {
-      if (card) await api.patch(boardPath(board.key, 'tasks', card.id), { ...body, ...(scope ? { scope } : {}), ...(changed ? { changed } : {}) })
-      else await api.post(boardPath(board.key, 'tasks'), body)
+      // D40: on a shared tablet, with the staff code (asked for first if none is remembered).
+      await actingRun((code) =>
+        card
+          ? api.patch(boardPath(board.key, 'tasks', card.id), withCode({ ...body, ...(scope ? { scope } : {}), ...(changed ? { changed } : {}) }, code))
+          : api.post(boardPath(board.key, 'tasks'), withCode(body, code)),
+      )
       onSaved()
     } catch (err) {
+      // The staff-code dialog was cancelled: nothing saved, the dialog stays.
+      if (isActingCancelled(err)) return
       // Someone deleted it meanwhile: "This task was deleted", and the board catches up.
       if (taskGone(err)) onStale()
       setError(taskSaveError(err, board))

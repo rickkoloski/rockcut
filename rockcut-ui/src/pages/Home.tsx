@@ -8,6 +8,7 @@ import EventAvailableIcon from '@mui/icons-material/EventAvailable'
 import ForumIcon from '@mui/icons-material/Forum'
 import SportsBarIcon from '@mui/icons-material/SportsBar'
 import PeopleIcon from '@mui/icons-material/People'
+import ChecklistIcon from '@mui/icons-material/Checklist'
 import useAuth from '../hooks/useAuth'
 
 interface QuickLink {
@@ -19,7 +20,7 @@ interface QuickLink {
 
 export default function Home() {
   const navigate = useNavigate()
-  const { user, capabilities } = useAuth()
+  const { user, capabilities, taskBoards } = useAuth()
 
   const isOwner = !!user?.is_owner
   const modules = capabilities?.modules ?? []
@@ -33,6 +34,10 @@ export default function Home() {
 
   const deviceLinks: QuickLink[] = [
     { label: 'View Schedule', description: 'Who’s working and what’s on', path: '/schedule', icon: <CalendarMonthIcon /> },
+    // D40: the tablet's department board (writes take a staff code).
+    ...(taskBoards.length > 0
+      ? [{ label: 'Tasks', description: 'Today’s tasks and Daily checks', path: '/tasks', icon: <ChecklistIcon /> }]
+      : []),
     { label: 'Messages', description: 'Read the team channels', path: '/messages', icon: <ForumIcon /> },
   ]
 

@@ -1,0 +1,94 @@
+import { test, expect, type Page } from '@playwright/test'
+import { authFile } from '../../config/test-env'
+import { addDays, apiAs, cleanupTasks, createTask, denverToday, getBoard, tempTag } from '../brewery/taskBoardHelpers'
+
+// D40 (spec §3.8): the Brewery Dashboard's Today's tasks card (S50) and the
+// "Unfinished tasks before shift end" notification toggle (S35 UI, S37).
+// The board is shared (DEV has [SEED] tasks), so the card is checked against
+// the board's own read of today. Runs in the one-worker `brewery-board` project.
+
+test.use({ viewport: { width: 1600, height: 1100 } })
+
+const made: number[] = []
+test.afterEach(async () => {
+  await cleanupTasks(made.splice(0))
+})
+
+test.describe('as brewer1', () => {
+  test.use({ storageState: authFile('brewer1') })
+
+  test('S50: Daily count with the unticked items, the first five open tasks, +N more, unfinished count; ticking updates the board', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const today = denverToday()
+    for (let i = 1; i <= 7; i++) made.push((await createTask(api, { title: tempTag(`S50 task ${i}`), due_on: today })).id)
+    made.push((await createTask(api, { title: tempTag('S50 earlier'), due_on: addDays(today, -2) })).id)
+
+    const board = await getBoard(api, today, today)
+    const day = board.days[0]
+    const open = day.cards.filter((c) => !c.done && c.due_on === today)
+    const unticked = day.daily.items.filter((i) => !i.checked)
+
+    await page.goto('/brewery')
+    const cardEl = page.getByTestId('todays-tasks-card')
+    await expect(cardEl).toBeVisible()
+    if (day.daily.total > 0) await expect(page.getByTestId('todays-tasks-daily-count')).toHaveText(`Daily ${day.daily.done}/${day.daily.total}`)
+    for (const i of unticked) await expect(page.getByTestId('todays-tasks-daily')).toContainText(i.name)
+    await expect(page.getByTestId('todays-task')).toHaveCount(Math.min(open.length, 5))
+    for (const c of open.slice(0, 5)) await expect(page.getByTestId('todays-tasks-list')).toContainText(c.title)
+    await expect(page.getByTestId('todays-tasks-more')).toHaveText(`+${open.length - 5} more`)
+    await expect(page.getByTestId('todays-tasks-unfinished')).toHaveText(`${board.unfinished.length} unfinished from earlier days`)
+
+    // Ticking the first listed task there completes it on the board.
+    const first = open[0]
+    const done = page.waitForResponse((r) => r.url().includes(`/tasks/${first.id}/complete`) && r.ok())
+    await page.getByRole('checkbox', { name: `Mark "${first.title}" done` }).click()
+    await done
+    await expect(page.getByTestId('todays-tasks-list')).not.toContainText(first.title)
+    await page.goto('/tasks/brewery')
+    await expect(page.getByTestId(`task-check-${first.id}:${today}`)).toBeChecked()
+  })
+
+  test('S35 (UI): the toggle is in the preferences; turned off, it stays off after a reload', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const before = (await (await api.get('/api/notification_preferences')).json()).data
+    try {
+      await openPrefs(page)
+      const row = page.getByTestId('notification-pref-task_shift_end')
+      await expect(row).toContainText('Unfinished tasks before shift end')
+      // On by default for the bell and push; never email.
+      const inApp = row.getByLabel(/In-app/)
+      const push = row.getByLabel(/Push/)
+      await expect(inApp).toBeChecked()
+      await expect(push).toBeChecked()
+      await expect(row.getByLabel(/Email/)).toHaveCount(0)
+
+      await inApp.click()
+      await push.click()
+      await expect(inApp).not.toBeChecked()
+      await page.reload()
+      await openPrefs(page)
+      await expect(page.getByTestId('notification-pref-task_shift_end').getByLabel(/In-app/)).not.toBeChecked()
+      const saved = (await (await api.get('/api/notification_preferences')).json()).data
+      expect(saved.task_shift_end).toMatchObject({ in_app: false, push: false })
+    } finally {
+      await api.put('/api/notification_preferences', { data: { prefs: before } })
+    }
+  })
+})
+
+test.describe('as bartender1', () => {
+  test.use({ storageState: authFile('bartender1') })
+
+  test('S37: not a Brewery member, no toggle', async ({ page }) => {
+    await openPrefs(page)
+    await expect(page.getByRole('dialog')).toContainText('Shift reminder')
+    await expect(page.getByTestId('notification-pref-task_shift_end')).toHaveCount(0)
+  })
+})
+
+async function openPrefs(page: Page) {
+  if (!page.url().includes('/schedule')) await page.goto('/schedule')
+  await page.getByTestId('notification-bell').click()
+  await page.getByTestId('notification-preferences').click()
+  await expect(page.getByRole('dialog')).toBeVisible()
+}
