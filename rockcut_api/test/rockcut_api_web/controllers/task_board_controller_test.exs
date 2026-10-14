@@ -368,17 +368,21 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
     end
   end
 
-  test "/api/me brewery_tasks_manage: owners and Brewery managers", %{p: p} do
+  test "/api/me task_boards: the Brewery board's manage for owners and Brewery managers", %{p: p} do
     flags =
       for key <- ~w(owner breweryMgr brewer1 bartender1),
           into: %{},
-          do: {key, (call(p[key], :get, "/api/me") |> json_response(200))["brewery_tasks_manage"]}
+          do:
+            {key,
+             (call(p[key], :get, "/api/me") |> json_response(200))["task_boards"]
+             |> Enum.find(&(&1["key"] == "brewery"))
+             |> then(&(&1 && &1["manage"]))}
 
     assert flags == %{
              "owner" => true,
              "breweryMgr" => true,
              "brewer1" => false,
-             "bartender1" => false
+             "bartender1" => nil
            }
   end
 end

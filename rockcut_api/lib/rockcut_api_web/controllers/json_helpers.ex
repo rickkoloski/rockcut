@@ -49,7 +49,7 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   # Flags such as `shared_devices` (D33), `staff_codes` and `beer_board_manage`
-  # (D37), `brewery_tasks_manage` (D38) and `task_boards` (D41) sit beside
+  # (D37) and `task_boards` (D41) sit beside
   # `capabilities`, whose keys the D31 parity suite pins.
   def me(user, capabilities, flags \\ %{}) do
     Map.merge(
@@ -57,7 +57,6 @@ defmodule RockcutApiWeb.JSONHelpers do
         shared_devices: false,
         staff_codes: false,
         beer_board_manage: false,
-        brewery_tasks_manage: false,
         task_boards: []
       },
       flags

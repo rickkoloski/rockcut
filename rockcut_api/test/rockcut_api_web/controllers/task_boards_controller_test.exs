@@ -203,7 +203,7 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
       do:
         call(user, :get, "/api/me")
         |> json_response(200)
-        |> Map.take(~w(task_boards brewery_tasks_manage))
+        |> Map.take(~w(task_boards))
 
     test "floater, splitRole, dualMgr, owner and noDept", %{p: p} do
       depts = Map.new(Repo.all(Department), &{&1.key, &1})
@@ -218,18 +218,15 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
       end
 
       assert boards(p["floater"]) == %{
-               "task_boards" => [entry.("brewery", false), entry.("bar", false)],
-               "brewery_tasks_manage" => false
+               "task_boards" => [entry.("brewery", false), entry.("bar", false)]
              }
 
       assert boards(p["splitRole"]) == %{
-               "task_boards" => [entry.("brewery", false), entry.("bar", true)],
-               "brewery_tasks_manage" => false
+               "task_boards" => [entry.("brewery", false), entry.("bar", true)]
              }
 
       assert boards(p["dualMgr"]) == %{
-               "task_boards" => [entry.("bar", true), entry.("office", true)],
-               "brewery_tasks_manage" => false
+               "task_boards" => [entry.("bar", true), entry.("office", true)]
              }
 
       assert boards(p["owner"]) == %{
@@ -238,12 +235,15 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
                  entry.("bar", true),
                  entry.("office", true),
                  entry.("sales", true)
-               ],
-               "brewery_tasks_manage" => true
+               ]
              }
 
-      assert boards(p["breweryMgr"])["brewery_tasks_manage"] == true
-      assert boards(p["noDept"]) == %{"task_boards" => [], "brewery_tasks_manage" => false}
+      assert boards(p["noDept"]) == %{"task_boards" => []}
+
+      refute Map.has_key?(
+               call(p["owner"], :get, "/api/me") |> json_response(200),
+               "brewery_tasks_manage"
+             )
     end
   end
 end
