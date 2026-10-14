@@ -409,3 +409,51 @@ link and the shared `board_parts/3` are fine.
 the API. One `feat:` or `fix:` commit. **Reply with:** counts, the SHA, a
 fresh `/tasks/all` desktop screenshot showing a Daily-only section. Then
 stop.
+
+## Task 6: plan step 6, seed, coverage, local gate, handoff note
+
+Task 5 and its answers accepted (`a553808`). Memory: 3.8 GB available now;
+still one Playwright worker, and never ExUnit and Playwright at once.
+
+Spec §3.7, plan "Seed", "Tests", "Handoff-note LIMITATIONS"; workflow §3
+(the local gate).
+
+1. **Seed** (`Seeds.Synthetic`, relative to today, like D38's Brewery seed):
+   - **Taproom** (`bar`): `[SEED]` tasks, two assigned to `bartender1`, one
+     unassigned, one open 2 days ago (shows in Unfinished), one on Future.
+     Titles a taproom would use (e.g. "Clean lines", "Restock glassware").
+   - **Office:** one `[SEED]` task. **Sales:** none.
+   - **No Daily items** for Taproom, Office or Sales (DEV shows the
+     hidden-card case). The Brewery's seed is unchanged.
+   - `reset` and `cleanup_temp` cover every board: tasks, series, Daily
+     items/checks and events of every department (`[SEED]` rebuilt,
+     `[TEST-TEMP]` removed), not just the Brewery.
+   - ExUnit for the seed: the counts per board, idempotent on a second run,
+     `cleanup_temp` removing a `[TEST-TEMP]` Taproom task and series.
+   - Run `mix rockcut.synthetic.setup` locally afterwards and check
+     `/tasks/bar` and `/tasks/office` in a browser (as `bartender1` and
+     `owner`); say what you saw.
+   - Check no existing Playwright spec assumes the Taproom/Office boards are
+     empty (S101's "no Daily card" still holds; S118 builds its own data).
+2. **COVERAGE.md** (`rockcut-ui/tests/COVERAGE.md`): a D41 section mapping
+   S101–S120 to tests (Playwright spec + test name, ExUnit file, or
+   "manual on DEV"), the same style as D39's.
+3. **Gate, everything but the full Playwright run:** ExUnit (full output
+   kept), `mix compile --warnings-as-errors`, `tsc`, `vite build`, Vitest,
+   lint (no new problems). Commit, then **stop and reply "LEAD: ready for
+   the full Playwright run"** with the counts. The lead runs the full
+   suite (all projects, `--workers=1`) in its own herdr tab, so it isn't
+   reaped with your shells, and sends you any failures.
+4. **Handoff note** `docs/current_work/prompts/d41_handoff_note.md` (the PR
+   description), in D39's format (`d39_handoff_note.md`): deliverable,
+   spec, plan, branch (cut from `develop` `e3548f3`), "SHA for DEV: filled
+   in at push"; **What changed** (area / change / scenarios); **Migrations**
+   (both, with the rollback checks from Tasks 1 and 3); **Tests** (counts;
+   leave the full Playwright line as "_lead fills in_"); **LIMITATIONS to
+   carry to DEV** (the plan's list, plus anything you found); decisions
+   (Matt's and the lead's answers in this brief). Write it while the lead's
+   run goes.
+
+**Done when:** steps 1–4 committed (`feat:` for the seed, `docs:` for the
+rest). **Reply with:** counts, SHAs, what you saw on the seeded boards, and
+any `LEAD:`. Then stop.
