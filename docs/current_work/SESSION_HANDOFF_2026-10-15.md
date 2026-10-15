@@ -1,5 +1,16 @@
 # Session Handoff — 2026-10-15
 
+> **Update (afternoon): D43 is built and passed the local gate** on branch
+> `d43-ui-tweaks` (not pushed): API `7ae1d48`, test-date fix `43a082f`, UI
+> `dfcd682`, dark sweep `7a03922`, tests `1388c5b`; lead decisions 1–3 in
+> `prompts/`. Gate: Playwright 379 passed / 1 skipped (DEV ribbon, by design),
+> `mix test` 1470 / 0, `vite build`, typecheck, lint clean on D43's files (the
+> 26 repo-wide lint errors are older brewing pages, task 4084). **Next: DEV
+> gate, waiting for Matt's go** (claim DEV in conv 80, deploy, reseed, full
+> Playwright on DEV, QA pass). For QA's LIMITATIONS: batch, ingredient and
+> Settings-category detail pages and the phone nav drawer weren't covered by
+> the local dark sweep (no local data). The section below is this morning's.
+
 Supersedes `SESSION_HANDOFF_2026-10-14b.md`. **D43 (UI tweaks): scope closed
 at 14 items (Matt, end of session).** D44 is scoped. Nothing is on DEV or
 prod; all of D43 is an uncommitted prototype on a local branch.
