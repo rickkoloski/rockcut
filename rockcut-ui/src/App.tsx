@@ -29,6 +29,7 @@ import {
   ListSubheader,
   Snackbar,
   useTheme,
+  darken,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
@@ -724,7 +725,15 @@ function App() {
         {personalOnTablet && (
           <Box
             data-testid="personal-session-banner"
-            sx={{ px: 3, py: 1, bgcolor: 'warning.light', color: 'warning.contrastText', fontSize: 14 }}
+            sx={(t) => ({
+              px: 3,
+              py: 1,
+              fontSize: 14,
+              // D43: a muted band in dark; the bright one glared.
+              ...(t.palette.mode === 'dark'
+                ? { bgcolor: darken(t.palette.warning.main, 0.65), color: t.palette.warning.light }
+                : { bgcolor: 'warning.light', color: 'warning.contrastText' }),
+            })}
           >
             Signed in as {user.name || user.email} on a shared tablet. It returns to the shared screen after 5 minutes without
             activity.

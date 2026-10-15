@@ -19,6 +19,17 @@ const base: ThemeOptions = {
     h6: { fontWeight: 600 },
   },
   shape: { borderRadius: 8 },
+  components: {
+    // D43: an unselected toggle reads as a choice, not as disabled.
+    MuiToggleButton: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          color: theme.palette.text.secondary,
+          '&.Mui-selected, &.Mui-selected:hover': { color: theme.palette.text.primary },
+        }),
+      },
+    },
+  },
 }
 
 const HOP_GREEN_NIGHT = '#8DBF6A'
@@ -44,6 +55,8 @@ const dark: ThemeOptions = {
     background: { default: '#151915', paper: '#1F241E', boardColumn: '#20271E', boardToday: '#273425', boardCard: '#2D362A' },
     text: { primary: '#E6E9E2', secondary: '#A1A99B' },
     divider: '#333B30',
+    // MUI's dark defaults (0.3 / 0.12) left disabled buttons and arrows near-invisible.
+    action: { disabled: 'rgba(255, 255, 255, 0.45)', disabledBackground: 'rgba(255, 255, 255, 0.14)' },
   },
   components: {
     MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },

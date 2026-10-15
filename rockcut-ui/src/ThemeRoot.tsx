@@ -22,7 +22,8 @@ export default function ThemeRoot({ children }: { children: ReactNode }) {
 
   return (
     <ThemeProvider theme={theme}>
-      <CssBaseline />
+      {/* color-scheme: native date/time pickers, scrollbars and form controls follow the mode. */}
+      <CssBaseline enableColorScheme />
       {children}
     </ThemeProvider>
   )

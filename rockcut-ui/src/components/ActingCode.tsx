@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Typography } from '@mui/material'
+import { Box, Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, Typography, darken, useTheme } from '@mui/material'
 import useActing from '../hooks/useActing'
 import { firstName } from '../lib/tasks'
 import StaffCodeField from './StaffCodeField'
@@ -93,25 +93,29 @@ export function ActingBanner() {
     }
   }, [active, activity, expire])
 
+  const dark = useTheme().palette.mode === 'dark'
+
   if (!session) return null
   return (
     <Box
       data-testid="acting-banner"
-      sx={{
+      sx={(t) => ({
         position: 'sticky',
         top: 0,
-        zIndex: (t) => t.zIndex.appBar,
+        zIndex: t.zIndex.appBar,
         mb: 2,
         px: 2,
         py: 1,
         borderRadius: 1,
         boxShadow: 2,
-        bgcolor: 'info.light',
-        color: 'info.contrastText',
         display: 'flex',
         alignItems: 'center',
         gap: 1,
-      }}
+        // D43: solid (it sits over the board when scrolled), muted in dark.
+        ...(t.palette.mode === 'dark'
+          ? { bgcolor: darken(t.palette.info.main, 0.6), color: t.palette.info.light }
+          : { bgcolor: 'info.light', color: 'info.contrastText' }),
+      })}
     >
       <Typography variant="body2" sx={{ fontWeight: 600 }} data-testid="acting-name">
         Acting as {firstName(session.name) || 'you'}
@@ -120,7 +124,14 @@ export function ActingBanner() {
         · ends after 5 minutes without activity
       </Typography>
       <Box sx={{ flexGrow: 1 }} />
-      <Button size="small" variant="contained" color="inherit" onClick={done} data-testid="acting-done" sx={{ color: 'info.dark' }}>
+      <Button
+        size="small"
+        variant={dark ? 'outlined' : 'contained'}
+        color="inherit"
+        onClick={done}
+        data-testid="acting-done"
+        sx={{ color: dark ? 'info.light' : 'info.dark' }}
+      >
         Done
       </Button>
     </Box>
