@@ -57,7 +57,8 @@ defmodule RockcutApiWeb.JSONHelpers do
         shared_devices: false,
         staff_codes: false,
         beer_board_manage: false,
-        task_boards: []
+        task_boards: [],
+        color_mode: "light"
       },
       flags
     )
@@ -314,6 +315,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       id: d.id,
       name: d.name,
       active: d.active,
+      color_mode: d.color_mode,
       home_department_id: d.home_department_id,
       home_department: maybe_render(d, :home_department, &department/1),
       tokens: maybe_render(d, :device_tokens, &Enum.map(&1, fn t -> device_token(t) end)),

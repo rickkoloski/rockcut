@@ -179,6 +179,29 @@ defmodule RockcutApi.Accounts do
   end
 
   @doc """
+  D43: set the person's own theme. A display preference: no change-log entry.
+  """
+  def set_color_mode(%User{} = user, mode) do
+    user |> User.color_mode_changeset(%{color_mode: mode}) |> Repo.update()
+  end
+
+  @doc """
+  D43: the theme `/api/me` reports. A "Sign in as me" session on a tablet
+  (`session.device_token`) uses the tablet's device account's setting, so the
+  tablet keeps its look whoever is signed in; otherwise the user's own.
+  """
+  def effective_color_mode(%User{} = user, session \\ nil) do
+    case session do
+      %{device_token: %{user_id: device_id}} when not is_nil(device_id) ->
+        Repo.one(from u in User, where: u.id == ^device_id, select: u.color_mode) ||
+          user.color_mode
+
+      _ ->
+        user.color_mode
+    end
+  end
+
+  @doc """
   Update a user's profile/status. `is_owner` is only honored when `actor` is an
   owner. Refuses to deactivate or demote the last active owner.
   """

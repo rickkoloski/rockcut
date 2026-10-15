@@ -73,7 +73,7 @@ defmodule RockcutApi.Devices do
   end
 
   @doc """
-  Rename, move or (de)activate a device. Deactivating revokes every tablet's
+  Rename, move, (de)activate or set the theme of a device. Deactivating revokes every tablet's
   token and deletes unused codes: each tablet is signed out at its next request
   and needs a new pairing after reactivation.
   """
@@ -97,11 +97,14 @@ defmodule RockcutApi.Devices do
               nil -> "device.updated"
             end
 
-          Accounts.record_audit(actor.id, updated.id, action, %{
-            "name" => updated.name,
-            "fields" => changeset.changes |> Map.keys() |> Enum.map(&to_string/1),
-            "tablets_revoked" => revoked
-          })
+          # D43: a theme change alone is a display preference, not logged.
+          unless Map.keys(changeset.changes) == [:color_mode] do
+            Accounts.record_audit(actor.id, updated.id, action, %{
+              "name" => updated.name,
+              "fields" => changeset.changes |> Map.keys() |> Enum.map(&to_string/1),
+              "tablets_revoked" => revoked
+            })
+          end
 
           preload_device(updated)
 

@@ -312,11 +312,11 @@ defmodule RockcutApi.Authz do
     do: role_in(user, sid) == :manager
 
   # Shared devices (D33 Q2): managers of a device's home department see it, pair
-  # tablets to it and revoke them. Creating, renaming, deactivating and deleting
-  # the device account is owner-only (owners pass above; `:manage_device` falls
-  # through to false for everyone else).
+  # tablets to it, revoke them and (D43) set its theme. Creating, renaming,
+  # deactivating and deleting the device account is owner-only (owners pass
+  # above; `:manage_device` falls through to false for everyone else).
   def can?(%User{} = user, action, %User{kind: "device"} = device)
-      when action in [:view_device, :pair, :revoke_token],
+      when action in [:view_device, :pair, :revoke_token, :set_color_mode],
       do: role_in(user, device.home_department_id) == :manager
 
   # People: listing and creating users is "any manager"; changing a user needs
