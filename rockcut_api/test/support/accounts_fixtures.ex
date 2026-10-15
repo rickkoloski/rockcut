@@ -19,9 +19,10 @@ defmodule RockcutApi.AccountsFixtures do
   end
 
   # D38: on a real DB the migration gives the Brewery its four Daily items; a
-  # test DB has no departments when it migrates, so the fixture adds them.
+  # test DB has no departments when it migrates, so the fixture adds them,
+  # dated well before any "today" a test pins (they predate every test date).
   defp with_defaults(%Department{key: "brewery"} = dept) do
-    now = DateTime.utc_now() |> DateTime.truncate(:second)
+    now = ~U[2026-01-01 12:00:00Z]
 
     RockcutApi.Tasks.DailyItem.defaults()
     |> Enum.with_index(1)
