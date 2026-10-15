@@ -32,6 +32,7 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import type { Department, DeviceTablet, SharedDevice } from '../../lib/types'
+import { COLOR_MODES, type ColorMode } from '../../lib/colorMode'
 
 const DENVER = 'America/Denver'
 
@@ -163,6 +164,10 @@ export default function SharedDevices() {
 
   const setActive = (d: SharedDevice, active: boolean) => run(() => api.patch(`/api/devices/${d.id}`, { active }))
 
+  // D43: the home department's managers may set this too (theme only), so it
+  // sits in the row rather than the owner-only edit form.
+  const setColorMode = (d: SharedDevice, color_mode: ColorMode) => run(() => api.patch(`/api/devices/${d.id}`, { color_mode }))
+
   return (
     <>
       <PageHeader
@@ -202,6 +207,22 @@ export default function SharedDevices() {
                 <Chip size="small" label={`Home: ${d.home_department?.name ?? '—'}`} />
                 {!d.active && <Chip size="small" color="default" variant="outlined" label="Deactivated" />}
                 <Box sx={{ flexGrow: 1 }} />
+                <TextField
+                  select
+                  size="small"
+                  label="Theme"
+                  value={d.color_mode ?? 'light'}
+                  disabled={busy}
+                  onChange={(e) => setColorMode(d, e.target.value as ColorMode)}
+                  sx={{ minWidth: 180 }}
+                  slotProps={{ htmlInput: { 'data-testid': `device-theme-${d.id}` } }}
+                >
+                  {COLOR_MODES.map((m) => (
+                    <MenuItem key={m.key} value={m.key}>
+                      {m.label}
+                    </MenuItem>
+                  ))}
+                </TextField>
                 {/* DEV G9: a deactivated device can't get codes (the API says 422 too). */}
                 {d.active && (
                   <Button

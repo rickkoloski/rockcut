@@ -29,6 +29,7 @@ import {
 import type { CompletedDisplay, DailyCardItem, DailyItem, RosterEntry, TaskBoardData, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
 import BoardLayout from './BoardLayout'
 import BoardSwitcher from './BoardSwitcher'
+import PageTitle from '../../components/PageTitle'
 import BoardToolbar from './BoardToolbar'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
@@ -464,11 +465,10 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     <Box data-testid="task-board" ref={setBoardEl}>
       {/* D40: "Acting as Kate · Done" on a shared tablet, pinned as the board scrolls. */}
       {isDevice && <ActingBanner />}
-      {!phone && (
-        <Box sx={{ mb: 2 }}>
-          <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} />
-        </Box>
-      )}
+      {/* D43: the board's title and switcher sit in the top bar. */}
+      <PageTitle>
+        <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} compact />
+      </PageTitle>
       <BoardToolbar
         from={from}
         to={to}
@@ -493,7 +493,6 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         onEditDailyItems={canManage && dailyItems ? () => setEditingDaily(true) : undefined}
         setUpDaily={!hasDailyItems}
         compact={phone}
-        title={phone ? <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} compact /> : undefined}
         phoneView={phoneView}
         onPhoneView={setPhoneView}
       />

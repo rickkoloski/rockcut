@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import api, { PASSWORD_RESET_EVENT } from '../lib/api'
 import type { Me, User, Capabilities, TaskBoardEntry } from '../lib/types'
+import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
 import {
   TOKEN_KEY,
   asideDeviceToken,
@@ -22,6 +23,8 @@ interface AuthState {
   beerBoardManage: boolean
   /** D41: the task boards this person can open (D40: a device, its home board). */
   taskBoards: TaskBoardEntry[]
+  /** D43: the theme that applies here (a tablet's own during "Sign in as me"); null until /api/me answers. */
+  colorMode: ColorMode | null
   isAuthenticated: boolean
   bootstrapped: boolean
   isLoading: boolean
@@ -32,6 +35,8 @@ interface AuthState {
   logout: () => void
   /** `force` (Try now, back online) replaces a check that's still waiting on a stalled connection. */
   loadMe: (opts?: { force?: boolean }) => Promise<void>
+  /** D43: save the person's theme. Applied at once; put back (and rethrown) if the server refuses. */
+  setColorMode: (mode: ColorMode) => Promise<void>
   // D33 — shared tablets
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
@@ -70,6 +75,7 @@ const useAuth = create<AuthState>((set, get) => ({
   staffCodes: false,
   beerBoardManage: false,
   taskBoards: [],
+  colorMode: null,
   isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
   bootstrapped: false,
   isLoading: false,
@@ -115,7 +121,7 @@ const useAuth = create<AuthState>((set, get) => ({
       void signOutOnServer(token)
     }
     localStorage.removeItem(TOKEN_KEY)
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], isAuthenticated: false })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], colorMode: null, isAuthenticated: false })
   },
 
   loadMe: (opts) => {
@@ -140,6 +146,8 @@ const useAuth = create<AuthState>((set, get) => ({
         // The token changed while this was in flight (e.g. "Sign in as me" set a
         // tablet's token aside): this answer is for a session that's gone (D33).
         if (localStorage.getItem(TOKEN_KEY) !== token) return
+        const colorMode = isColorMode(data.color_mode) ? data.color_mode : 'light'
+        cacheColorMode(colorMode)
         set({
           user: data.user,
           capabilities: data.capabilities,
@@ -147,6 +155,7 @@ const useAuth = create<AuthState>((set, get) => ({
           staffCodes: !!data.staff_codes,
           beerBoardManage: !!data.beer_board_manage,
           taskBoards: Array.isArray(data.task_boards) ? data.task_boards : [],
+          colorMode,
           isAuthenticated: true,
           bootstrapped: true,
           unreachable: false,
@@ -170,6 +179,7 @@ const useAuth = create<AuthState>((set, get) => ({
           staffCodes: false,
           beerBoardManage: false,
           taskBoards: [],
+          colorMode: null,
           isAuthenticated: false,
           bootstrapped: true,
           unreachable: false,
@@ -180,6 +190,19 @@ const useAuth = create<AuthState>((set, get) => ({
     })()
     loading = load
     return load.promise
+  },
+
+  setColorMode: async (mode) => {
+    const before = get().colorMode
+    set({ colorMode: mode })
+    cacheColorMode(mode)
+    try {
+      await api.put('/api/me/color_mode', { color_mode: mode })
+    } catch (err) {
+      set({ colorMode: before })
+      if (before) cacheColorMode(before)
+      throw err
+    }
   },
 
   // Exchange a pairing code for this tablet's token (D33 §3.2).
@@ -211,7 +234,7 @@ const useAuth = create<AuthState>((set, get) => ({
   // "Sign in as me" on a tablet: keep the device token aside and show the login form.
   startPersonalSignIn: () => {
     setDeviceTokenAside()
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], isAuthenticated: false, error: null })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], colorMode: null, isAuthenticated: false, error: null })
   },
 
   // Back to the tablet's session: revoke the personal token on the server

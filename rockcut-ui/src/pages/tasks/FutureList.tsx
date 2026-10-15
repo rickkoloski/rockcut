@@ -12,7 +12,7 @@ interface Props {
 /** D38 §3.8 Future list: tasks on no day yet. Always shown, so there's always somewhere to drop. */
 export default function FutureList({ openCount, empty, slot: { setNodeRef, isOver, items }, onAdd }: Props) {
   return (
-    <Paper variant="outlined" data-testid="future-list" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, bgcolor: 'background.default' }}>
+    <Paper variant="outlined" data-testid="future-list" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, bgcolor: 'background.boardColumn' }}>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
           Future

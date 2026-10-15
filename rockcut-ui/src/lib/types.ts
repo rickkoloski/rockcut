@@ -1,5 +1,7 @@
 // TypeScript interfaces matching API JSON shapes (json_helpers.ex)
 
+import type { ColorMode } from './colorMode'
+
 export interface Brand {
   id: number
   name: string
@@ -279,6 +281,8 @@ export interface Me {
   beer_board_manage?: boolean
   // D41: the task boards this person can open, in department order.
   task_boards?: TaskBoardEntry[]
+  // D43: the theme that applies here (a shared tablet's own, also during "Sign in as me").
+  color_mode?: ColorMode
 }
 
 /**
@@ -310,6 +314,8 @@ export interface SharedDevice {
   active: boolean
   home_department_id: number
   home_department: Department | null
+  // D43: the theme its tablets show.
+  color_mode: ColorMode
   tokens: DeviceTablet[] | null
   inserted_at: string
 }

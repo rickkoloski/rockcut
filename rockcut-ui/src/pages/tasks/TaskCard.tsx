@@ -61,7 +61,7 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
         borderLeft: card.overdue ? '4px solid' : undefined,
         borderLeftColor: card.overdue ? 'warning.main' : undefined,
         boxShadow: overlay ? 6 : undefined,
-        bgcolor: 'background.paper',
+        bgcolor: 'background.boardCard',
         '&:hover': { borderColor: 'primary.light' },
       }}
     >
