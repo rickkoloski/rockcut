@@ -1,5 +1,5 @@
 import { test, expect as baseExpect } from '@playwright/test'
-import { contextWith, createTempPerson, meStatus, retireTempPerson, signIn, type TempPerson } from './helpers'
+import { contextWith, createTempPerson, logOut, meStatus, retireTempPerson, signIn, type TempPerson } from './helpers'
 import { claimSpare } from './spares'
 
 // D34 S2, S3, S14: sign-out and "Sign out of all other devices" revoke
@@ -21,9 +21,9 @@ test('S2: Logout revokes the session; the old token gets 401', async ({ browser 
   const { context, page } = await contextWith(browser, token)
 
   await page.goto('/')
-  await expect(page.getByTestId('logout-button')).toBeVisible()
+  await expect(page.getByTestId('account-menu')).toBeVisible()
   const revoked = page.waitForResponse((r) => r.url().endsWith('/api/session') && r.request().method() === 'DELETE')
-  await page.getByTestId('logout-button').click()
+  await logOut(page)
   expect((await revoked).status()).toBe(200)
   await expect(page.getByTestId('login-email')).toBeVisible()
 
@@ -37,11 +37,11 @@ test('S3: Logout in one browser leaves the other signed in', async ({ browser })
   const b = await contextWith(browser, bToken)
 
   await a.page.goto('/')
-  await a.page.getByTestId('logout-button').click()
+  await logOut(a.page)
   await expect(a.page.getByTestId('login-email')).toBeVisible()
 
   await b.page.goto('/')
-  await expect(b.page.getByTestId('logout-button')).toBeVisible()
+  await expect(b.page.getByTestId('account-menu')).toBeVisible()
   expect(await meStatus(bToken)).toBe(200)
   await a.context.close()
   await b.context.close()

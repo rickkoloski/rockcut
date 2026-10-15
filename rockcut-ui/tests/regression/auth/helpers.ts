@@ -113,3 +113,15 @@ export async function contextWith(browser: Browser, token: string): Promise<{ co
   })
   return { context, page: await context.newPage() }
 }
+
+/** D43: Logout lives in the account menu (a personal session on a tablet keeps a visible Sign out). */
+export async function logOut(page: Page) {
+  await page.getByTestId('account-menu').click()
+  await page.getByTestId('logout-button').click()
+}
+
+/** D43: Profile is in the account menu at every width. */
+export async function openProfile(page: Page) {
+  await page.getByTestId('account-menu').click()
+  await page.getByTestId('profile-link').click()
+}

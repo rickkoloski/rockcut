@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
@@ -270,13 +270,19 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   }
 
   // Employee display order (up/down arrows → persist globally).
-  const reorderRoster = async (ids: number[]) => {
-    try {
-      await api.post('/api/roster/order', { user_ids: ids })
-      qc.invalidateQueries({ queryKey: ['roster'] })
-    } catch {
-      setNotice('Could not save order')
-    }
+  // D43: Move mode steps quickly (arrow keys), so the new order shows at once
+  // and the saves go one after another; the next step builds on this order,
+  // not on a roster that hasn't come back yet.
+  const rosterSaves = useRef<Promise<unknown>>(Promise.resolve())
+  const reorderRoster = (ids: number[]) => {
+    const byId = new Map(roster.map((r) => [r.id, r]))
+    qc.setQueryData<RosterEntry[]>(['roster'], ids.map((id) => byId.get(id)).filter((r): r is RosterEntry => !!r))
+    rosterSaves.current = rosterSaves.current
+      .then(() => api.post('/api/roster/order', { user_ids: ids }))
+      .catch(() => {
+        setNotice('Could not save order')
+        qc.invalidateQueries({ queryKey: ['roster'] })
+      })
   }
 
   const publishForEmployee = async (userId: number) => {

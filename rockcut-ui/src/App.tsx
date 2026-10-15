@@ -579,6 +579,7 @@ function App() {
           >
             <IconButton
               edge="start"
+              aria-label="Open navigation"
               onClick={() => setMobileOpen(true)}
               sx={{ display: { md: 'none' }, mr: 1 }}
             >

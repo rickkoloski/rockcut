@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Box, Button, Chip, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
@@ -57,11 +57,20 @@ export default function WeekGrid({
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [menuUserId, setMenuUserId] = useState<number | null>(null)
 
-  const moveEmployee = (rosterIndex: number, dir: -1 | 1) => {
-    const target = rosterIndex + dir
-    if (target < 0 || target >= roster.length) return
-    const next = [...roster]
-    ;[next[rosterIndex], next[target]] = [next[target], next[rosterIndex]]
+  // D43: quick steps (arrow keys) can come before the next render, so each
+  // one builds on the order the last one made, not on the roster prop.
+  const order = useRef(roster)
+  useLayoutEffect(() => {
+    order.current = roster
+  }, [roster])
+  const moveEmployee = (userId: number, dir: -1 | 1) => {
+    const list = order.current
+    const i = list.findIndex((r) => r.id === userId)
+    const target = i + dir
+    if (i < 0 || target < 0 || target >= list.length) return
+    const next = [...list]
+    ;[next[i], next[target]] = [next[target], next[i]]
+    order.current = next
     onReorder(next.map((r) => r.id))
   }
 
@@ -75,8 +84,7 @@ export default function WeekGrid({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault()
-        const i = roster.findIndex((r) => r.id === movingId)
-        if (i >= 0) moveEmployee(i, e.key === 'ArrowUp' ? -1 : 1)
+        moveEmployee(movingId, e.key === 'ArrowUp' ? -1 : 1)
       } else if (e.key === 'Enter' || e.key === 'Escape') {
         e.preventDefault()
         setMovingId(null)
@@ -385,10 +393,10 @@ export default function WeekGrid({
               </Stack>
               {row.id === movingId && movingId != null && (
                 <Stack direction="row" alignItems="center" spacing={0.25} sx={{ mt: 0.5 }} data-testid="move-controls">
-                  <IconButton size="small" aria-label="Move up" sx={{ p: 0.25 }} disabled={rowIndex === 0} onClick={() => moveEmployee(rowIndex, -1)}>
+                  <IconButton size="small" aria-label="Move up" sx={{ p: 0.25 }} disabled={rowIndex === 0} onClick={() => moveEmployee(row.id!, -1)}>
                     <ArrowUpwardIcon sx={{ fontSize: 18 }} />
                   </IconButton>
-                  <IconButton size="small" aria-label="Move down" sx={{ p: 0.25 }} disabled={rowIndex >= roster.length - 1} onClick={() => moveEmployee(rowIndex, 1)}>
+                  <IconButton size="small" aria-label="Move down" sx={{ p: 0.25 }} disabled={rowIndex >= roster.length - 1} onClick={() => moveEmployee(row.id!, 1)}>
                     <ArrowDownwardIcon sx={{ fontSize: 18 }} />
                   </IconButton>
                   <Button size="small" variant="contained" onClick={() => setMovingId(null)} sx={{ ml: 'auto', minWidth: 0, px: 1, py: 0, fontSize: 12 }}>

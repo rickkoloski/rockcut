@@ -1,6 +1,6 @@
 import { test, expect as baseExpect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { contextWith, createTempPerson, meStatus, retireTempPerson, signIn, throwawayPassword, type TempPerson } from './helpers'
+import { contextWith, createTempPerson, meStatus, openProfile, retireTempPerson, signIn, throwawayPassword, type TempPerson } from './helpers'
 
 // D34 S17–S20, S22: the profile page. Password changes use a throwaway
 // [TEST-TEMP] person, never a persona (that would change the seed password).
@@ -11,9 +11,9 @@ test.describe.configure({ timeout: 60_000, mode: 'default' })
 test.describe('S17/S22 your details', () => {
   test.use({ storageState: authFile('barMgr') })
 
-  test('the name link opens your own read-only details', async ({ page }) => {
+  test('the account menu opens your own read-only details', async ({ page }) => {
     await page.goto('/')
-    await page.getByTestId('profile-link').click()
+    await openProfile(page)
     await expect(page).toHaveURL(/\/profile$/)
     await expect(page.getByTestId('profile-email')).toHaveText('bar.manager@rockcut-test.com')
     await expect(page.getByTestId('profile-name')).toHaveText('Casey Tap')
@@ -25,11 +25,10 @@ test.describe('S17/S22 your details', () => {
     )
   })
 
-  test('at phone width the account icon opens it', async ({ page }) => {
+  test('at phone width the account menu opens it too', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 800 })
     await page.goto('/')
-    await expect(page.getByTestId('profile-link')).toBeHidden()
-    await page.getByTestId('profile-icon').click()
+    await openProfile(page)
     await expect(page.getByTestId('profile-page')).toBeVisible()
   })
 })
@@ -118,6 +117,6 @@ test.describe('S20 a shared tablet', () => {
     await page.goto('/profile')
     await expect(page.getByText('Not available on a shared device')).toBeVisible()
     await expect(page.getByTestId('profile-link')).toHaveCount(0)
-    await expect(page.getByTestId('profile-icon')).toHaveCount(0)
+    await expect(page.getByTestId('account-menu')).toHaveCount(0)
   })
 })
