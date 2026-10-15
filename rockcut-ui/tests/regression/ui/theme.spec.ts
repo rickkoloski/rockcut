@@ -3,6 +3,7 @@ import { authFile } from '../../config/test-env'
 import { activeProfile } from '../../config/targets'
 import { apiAs } from '../scheduler/helpers'
 import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
+import { contrastOf, iconButtonContrasts } from './contrast'
 
 // D43 §1.2, S143–S149, S169: the color mode (`users.color_mode`). It follows
 // the person; a shared tablet has its own, kept during "Sign in as me". Every
@@ -92,6 +93,86 @@ test.describe('brewer1', () => {
     await page.getByTestId('theme-dark').click()
     await expect(page.getByText('Couldn’t save your theme. Try again.')).toBeVisible()
     await expect.poll(() => bodyBg(page)).toBe(LIGHT_BG)
+  })
+
+  test('a save that never answers gives up, puts the theme back and says so', async ({ page }) => {
+    await page.goto('/')
+    await page.route('**/api/me/color_mode', () => {}) // held: no answer
+    await page.getByTestId('account-menu').click()
+    await page.getByTestId('theme-dark').click()
+    await expect.poll(() => bodyBg(page)).toBe(DARK_BG)
+    await expect(page.getByText('Couldn’t save your theme. Try again.')).toBeVisible({ timeout: 15_000 })
+    await expect.poll(() => bodyBg(page)).toBe(LIGHT_BG)
+  })
+
+  // DEV QA G5: offline is a network error, not an HTTP answer; the same must happen.
+  test('a save that fails offline puts the theme back and says so', async ({ page, context }) => {
+    await page.goto('/')
+    await expect(page.getByTestId('account-menu')).toBeVisible()
+    await context.setOffline(true)
+    await page.getByTestId('account-menu').click()
+    await page.getByTestId('theme-dark').click()
+    // As QA did: Escape and a click elsewhere don't dismiss the message before it can be read.
+    await page.waitForTimeout(800)
+    await page.keyboard.press('Escape')
+    await page.mouse.click(5, 400)
+    await expect(page.getByText('Couldn’t save your theme. Try again.')).toBeVisible()
+    await expect.poll(() => bodyBg(page)).toBe(LIGHT_BG)
+    await page.getByTestId('account-menu').click()
+    await expect(page.getByTestId('theme-light')).toHaveClass(/Mui-selected/)
+    await page.keyboard.press('Escape')
+    await context.setOffline(false)
+    expect((await (await (await apiAs('brewer1')).get('/api/me')).json()).color_mode).toBe('light')
+  })
+})
+
+// DEV QA G1, G2: dark mode used light defaults for text.disabled and action.active
+// (black timestamps and icon buttons on the dark page). Icons need 3:1, text 4.5:1.
+test.describe('owner in Dark', () => {
+  test.use({ storageState: authFile('owner') })
+  const setOwnerMode = async (mode: string) =>
+    expect((await (await apiAs('owner')).put('/api/me/color_mode', { data: { color_mode: mode } })).status()).toBe(200)
+  test.beforeAll(() => setOwnerMode('dark'))
+  test.afterAll(() => setOwnerMode('light'))
+
+  const lowIcons = async (page: Page) => (await iconButtonContrasts(page.locator('body'))).filter((b) => b.ratio < 3)
+
+  test('G1: the bell popover: timestamps and ⚙ readable', async ({ page }) => {
+    await page.goto('/')
+    await expect.poll(() => bodyBg(page)).toBe(DARK_BG)
+    await page.getByTestId('notification-bell').click()
+    const prefs = page.getByTestId('notification-preferences')
+    await expect(prefs).toBeVisible()
+    expect(await contrastOf(prefs)).toBeGreaterThanOrEqual(3)
+    const stamps = page.locator('.MuiPopover-paper .MuiTypography-caption')
+    expect(await stamps.count(), 'owner has notifications to show').toBeGreaterThan(0)
+    expect(await contrastOf(stamps.first())).toBeGreaterThanOrEqual(4.5)
+  })
+
+  for (const path of ['/tasks/brewery', '/scheduler', '/profile']) {
+    test(`G2: icon buttons on ${path} stand out from the page`, async ({ page }) => {
+      await page.goto(path)
+      await expect.poll(() => bodyBg(page)).toBe(DARK_BG)
+      await expect(page.locator('header h1')).toBeVisible()
+      await expect(page.locator('button.MuiIconButton-root:visible').first()).toBeVisible()
+      if (path === '/tasks/brewery') await expect(page.getByTestId('board-prev')).toBeVisible()
+      if (path === '/scheduler') await expect(page.getByRole('button', { name: 'Previous week' })).toBeVisible()
+      expect(await lowIcons(page)).toEqual([])
+    })
+  }
+
+  test('G2: the sign-in page eye icon (Dark on this device)', async ({ browser }) => {
+    const origin = new URL(activeProfile().uiUrl).origin
+    const ctx = await browser.newContext({
+      colorScheme: 'dark',
+      storageState: { cookies: [], origins: [{ origin, localStorage: [{ name: 'rockcut_color_mode', value: 'device' }] }] },
+    })
+    const page = await ctx.newPage()
+    await page.goto('/')
+    await expect.poll(() => bodyBg(page)).toBe(DARK_BG)
+    await expect(page.getByTestId('login-submit')).toBeVisible()
+    expect(await lowIcons(page)).toEqual([])
+    await ctx.close()
   })
 })
 

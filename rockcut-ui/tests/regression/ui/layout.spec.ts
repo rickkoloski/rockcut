@@ -62,6 +62,11 @@ test.describe('S153: owner — the title is in the top bar', () => {
     await expect(page.locator('.MuiBreadcrumbs-root')).toHaveCount(0)
   })
 
+  test('User change log: the title matches the nav (DEV QA obs)', async ({ page }) => {
+    await page.goto('/activity')
+    await expect(page.locator('header h1')).toHaveText('User change log')
+  })
+
   test('a Settings category: "‹ Settings" back link, no breadcrumbs', async ({ page }) => {
     const res = await (await apiAs('owner')).post('/api/ingredient_categories', { data: { name: tempTag('S153 category') } })
     expect(res.status(), await res.text()).toBe(201)

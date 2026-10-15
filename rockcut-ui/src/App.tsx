@@ -842,8 +842,11 @@ function App() {
 
       <Snackbar
         open={!!themeError}
-        autoHideDuration={4000}
-        onClose={() => setThemeError(null)}
+        autoHideDuration={6000}
+        // Only time ends it: Escape or a click elsewhere (closing the menu) mustn't hide it unread (DEV QA G5).
+        onClose={(_e, reason) => {
+          if (reason === 'timeout') setThemeError(null)
+        }}
         message={themeError ?? ''}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       />

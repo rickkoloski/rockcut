@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
-import { addDays, apiAs, dailyCard, denverToday, denverUtc, openBoard, removeTick, setBoardCheck, tempTag, userId } from '../brewery/taskBoardHelpers'
+import { addDays, apiAs, cleanupTasks, completeTask, createTask, dailyCard, denverToday, denverUtc, openBoard, removeTick, setBoardCheck, tempTag, userId } from '../brewery/taskBoardHelpers'
+import { contrastOf } from './contrast'
 
 // D43 §1.3, §1.11, §1.14: board layers (S151), the finished Daily card
 // (S163, S164) and the day header in time order (S167, S168). Named
@@ -32,6 +33,36 @@ test.describe('S151: owner, board layers', () => {
       expect(new Set([page_, column, card]).size).toBe(3)
       expect(todayColumn).not.toBe(column)
       expect(todayColumn).not.toBe(page_)
+    })
+  }
+})
+
+// DEV QA G3: a done card's "✓ name" line and the assignee's initials were
+// about 2:1 on dark boards (the whole card was faded). Text needs 4.5:1.
+test.describe('owner, a done task card', () => {
+  test.use({ storageState: authFile('owner') })
+  let taskId: number | null = null
+  test.afterAll(async () => {
+    await setOwnerMode('light')
+    if (taskId) await cleanupTasks([taskId])
+  })
+
+  for (const mode of ['light', 'dark'] as const) {
+    test(`"✓ name" and the initials are readable (${mode})`, async ({ page }) => {
+      const today = denverToday()
+      if (!taskId) {
+        const t = await createTask(await apiAs('breweryMgr'), { title: tempTag('G3 done card'), due_on: today, assignee_id: await userId(await apiAs('brewer1')) })
+        taskId = t.id
+        await completeTask(await apiAs('brewer1'), t.id)
+      }
+      await setOwnerMode(mode)
+      await openBoard(page)
+      const key = `${taskId}:${today}`
+      await expect(page.getByTestId(`task-done-by-${key}`)).toHaveText('✓ Jake')
+      expect(await contrastOf(page.getByTestId(`task-done-by-${key}`))).toBeGreaterThanOrEqual(4.5)
+      expect(await contrastOf(page.getByTestId(`task-assignee-${key}`))).toBeGreaterThanOrEqual(4.5)
+      expect(await page.getByTestId(`task-${key}`).evaluate((el) => getComputedStyle(el).opacity)).toBe('1')
+      await expect(page.getByTestId(`task-title-${key}`)).toHaveCSS('text-decoration-line', 'line-through')
     })
   }
 })

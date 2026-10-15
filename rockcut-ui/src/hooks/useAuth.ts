@@ -197,7 +197,8 @@ const useAuth = create<AuthState>((set, get) => ({
     set({ colorMode: mode })
     cacheColorMode(mode)
     try {
-      await api.put('/api/me/color_mode', { color_mode: mode })
+      // A stalled connection fails too, rather than leaving an unsaved theme showing.
+      await api.put('/api/me/color_mode', { color_mode: mode }, { timeout: 10_000 })
     } catch (err) {
       set({ colorMode: before })
       if (before) cacheColorMode(before)

@@ -82,6 +82,8 @@ export default function WeekGrid({
   useEffect(() => {
     if (movingId == null) return
     const onKey = (e: KeyboardEvent) => {
+      // Keys in an open dialog or menu are its own (focus is trapped there): they never move the row (QA G4).
+      if ((e.target as Element | null)?.closest?.('[role="dialog"], [role="menu"], [role="listbox"], .MuiModal-root')) return
       if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
         e.preventDefault()
         moveEmployee(movingId, e.key === 'ArrowUp' ? -1 : 1)
@@ -90,8 +92,17 @@ export default function WeekGrid({
         setMovingId(null)
       }
     }
+    // A click anywhere but the moving row's ↑ ↓ Finished ends Move (and still does what it does).
+    const onPointer = (e: PointerEvent) => {
+      const t = e.target as Element | null
+      if (t && t !== document.documentElement && !t.closest?.('[data-testid="move-controls"]')) setMovingId(null)
+    }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onPointer, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onPointer, true)
+    }
   })
   useEffect(() => {
     if (movingId == null) return
@@ -482,6 +493,8 @@ export default function WeekGrid({
           onClick={() => {
             setMovingId(menuUserId)
             closeMenu()
+            // Focus leaves the closing menu, so the arrow keys aren't taken as the menu's own.
+            ;(document.activeElement as HTMLElement | null)?.blur()
           }}
         >
           Move

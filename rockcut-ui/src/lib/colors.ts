@@ -58,14 +58,26 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   return [(r + m) * 255, (g + m) * 255, (b + m) * 255]
 }
 
-export function contrastText(hex: string): '#000000' | '#ffffff' {
+/** WCAG relative luminance of a hex color (0 black … 1 white). */
+export function luminance(hex: string): number {
   const lin = (v: number) => {
     const c = v / 255
     return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
   }
   const [r, g, b] = hexToRgb(hex)
-  const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-  return L > 0.5 ? '#000000' : '#ffffff'
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+}
+
+/** WCAG contrast ratio of two hex colors (1 … 21). */
+export function contrastRatio(a: string, b: string): number {
+  const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x)
+  return (hi + 0.05) / (lo + 0.05)
+}
+
+/** Black or white, whichever reads better on `hex` (D43 QA G3: the old 0.5
+ *  cut-off put white on mid-light fills such as Brewer #D6934A, about 2.6:1). */
+export function contrastText(hex: string): '#000000' | '#ffffff' {
+  return contrastRatio(hex, '#000000') >= contrastRatio(hex, '#ffffff') ? '#000000' : '#ffffff'
 }
 
 const STEPS = [0, 0.12, -0.12, 0.24, -0.24, 0.06, -0.06]

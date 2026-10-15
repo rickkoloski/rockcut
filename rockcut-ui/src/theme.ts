@@ -44,6 +44,8 @@ const light: ThemeOptions = {
   },
   components: {
     MuiDrawer: { styleOverrides: { paper: { backgroundColor: '#E6ECDD' } } },
+    // Initials on the task cards (MUI's grey 400 with near-white text is about 1.7:1).
+    MuiAvatar: { styleOverrides: { colorDefault: { backgroundColor: '#5A6B52', color: '#FFFFFF' } } },
   },
 }
 
@@ -60,6 +62,7 @@ const dark: ThemeOptions = {
   },
   components: {
     MuiPaper: { styleOverrides: { root: { backgroundImage: 'none' } } },
+    MuiAvatar: { styleOverrides: { colorDefault: { backgroundColor: '#A1A99B', color: '#151915' } } },
     // The account icon in the top bar, and icons in menus (Profile, Log out), in hop green.
     MuiAppBar: { styleOverrides: { root: { '& [data-testid="account-menu"]': { color: HOP_GREEN_NIGHT } } } },
     MuiMenu: { styleOverrides: { paper: { '& .MuiListItemIcon-root': { color: HOP_GREEN_NIGHT } } } },
@@ -77,5 +80,11 @@ const dark: ThemeOptions = {
   },
 }
 
-export const lightTheme: Theme = createTheme(base, light)
-export const darkTheme: Theme = createTheme(base, dark)
+// The options are merged before createTheme builds the theme. createTheme(base, dark)
+// would build a light theme from `base` and lay `dark` over it, keeping light
+// defaults for everything dark doesn't set (text.disabled, action.active: dark
+// icons and timestamps on a dark page, DEV QA G1/G2).
+const withBase = (o: ThemeOptions): ThemeOptions => ({ ...base, ...o, components: { ...base.components, ...o.components } })
+
+export const lightTheme: Theme = createTheme(withBase(light))
+export const darkTheme: Theme = createTheme(withBase(dark))

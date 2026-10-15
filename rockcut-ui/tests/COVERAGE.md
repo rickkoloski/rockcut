@@ -440,3 +440,14 @@ S9g, S32–S37a, S42–S50, S68. ExUnit files are under `rockcut_api/test/`: con
 | S167 | Taproom header: 8a, open 10a, 12p | Playwright `ui/task-board-ui` (S167) |
 | S168 | Brewery header: the 7a+3p brewer first, then 11a | Playwright `ui/task-board-ui` (S168) |
 | S169 | sign-in page, Match this device, dark browser: green logo | Playwright `ui/theme` (S169) |
+
+DEV QA pass 1 fixes (`stepwise_results/d43_dev_qa_report.md`):
+
+| Gap | What | Layer |
+|---|---|---|
+| G1 | bell popover in Dark: timestamps 4.5:1, ⚙ 3:1 | Playwright `ui/theme` (owner in Dark, G1; `ui/contrast.ts`) |
+| G2 | icon buttons in Dark 3:1 on the board, Scheduler, Profile and the sign-in page | Playwright `ui/theme` (owner in Dark, G2) |
+| G3 | shift-chip text 4.5:1 on every shade; done card "✓ name" and initials 4.5:1 in both themes | Vitest `src/lib/colors.test.ts`; Playwright `ui/task-board-ui` (a done task card) |
+| G4 | a click elsewhere ends Move; arrows in an open dialog move nothing | Playwright `ui/schedule` (G4) |
+| G5 | a theme save that fails offline or never answers reverts and says so (Escape and a click don't hide it) | Playwright `ui/theme` (offline; never answers; refused) |
+| obs | User change log page title | Playwright `ui/layout` (S153 block) |

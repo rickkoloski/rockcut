@@ -171,6 +171,45 @@ test.describe('owner, the Scheduler', () => {
       await expect(controls).toHaveCount(0)
       await expect(page.getByRole('button', { name: / options$/ }).first()).toBeVisible()
     })
+
+    // DEV QA G4: a click outside the controls ends Move; keys in an open dialog never move the row.
+    test('G4: a click elsewhere ends Move; arrows in an open dialog move nothing', async ({ page }) => {
+      let saves = 0
+      page.on('request', (r) => {
+        if (r.url().endsWith('/api/roster/order') && r.method() === 'POST') saves += 1
+      })
+      await page.goto('/scheduler')
+      await expect(page.getByRole('button', { name: / options$/ }).first()).toBeVisible()
+      const before = await rowNames(page)
+      const controls = page.getByTestId('move-controls')
+
+      await page.getByRole('button', { name: `${before[2]} options` }).first().click()
+      await page.getByTestId('row-move').click()
+      await expect(controls).toBeVisible()
+      await page.getByTestId('week-hours').click()
+      await expect(controls).toHaveCount(0)
+      await expect(page.getByRole('button', { name: / options$/ }).first()).toBeVisible()
+
+      // A dialog opened from the keyboard while moving (no click to end Move).
+      await page.getByRole('button', { name: `${before[2]} options` }).first().click()
+      await page.getByTestId('row-move').click()
+      await expect(controls).toBeVisible()
+      await page.getByRole('button', { name: 'Add shift', exact: true }).focus()
+      await page.keyboard.press('Space')
+      const dialog = page.getByRole('dialog')
+      await expect(dialog).toBeVisible()
+      await page.keyboard.press('ArrowUp')
+      await page.keyboard.press('ArrowUp')
+      await page.keyboard.press('Escape')
+      await expect(dialog).toHaveCount(0)
+      await expect(controls).toBeVisible()
+      await page.keyboard.press('Escape')
+      await expect(controls).toHaveCount(0)
+
+      expect(saves).toBe(0)
+      await page.reload()
+      await expect.poll(() => rowNames(page)).toEqual(before)
+    })
   })
 })
 
