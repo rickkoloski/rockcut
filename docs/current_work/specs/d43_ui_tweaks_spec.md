@@ -157,8 +157,8 @@ The grid's top-left cell reads "Staff", then "Scheduled N hr" (published)
 and "Draft N hr" (drafts only). Summed from the shifts the grid already
 loads: the week on screen, open shifts included, following the Department,
 Position, My shifts and Open only filters (a tooltip says so). No API. Note
-the per-person label reads differently ("8 hr / 16 hr draft" = published /
-published + draft); decide in the build whether to align them. Prototyped.
+the per-person label now matches: "8 hr · 8 hr draft" (published, then
+drafts on their own; was "8 hr / 16 hr draft"). Built.
 
 ### 1.10 Move mode for the staff order (item 10)
 
@@ -209,9 +209,8 @@ tinted band (`background.boardColumn`) with a divider above it. Positions
 are indented further and each has a small rounded **square** in the color
 its shifts get in the week grid (`shiftColor`, the D27 shade), so the two
 levels differ in weight, case, indent, background and marker shape, not just
-color. Checked in both themes. Same treatment is a candidate for the
-Scheduler's Position filter and the Positions / Templates dialogs if they
-group positions the same way (check in the build).
+color. Checked in both themes. The Scheduler's Position filter is a flat
+list (no department groups), so it keeps its look.
 
 ### 1.14 Day header order (item 14)
 
@@ -257,7 +256,7 @@ Desktop is 1366×860, tablet 1280×800 (landscape, Samsung / Chrome PWA), phone
 | # | Persona | Path | Expected |
 |---|---|---|---|
 | S143 | `brewer1` (no setting saved) | sign in, any page | Light: hop green buttons, pale green page, sage nav, black logo; nothing asks to choose |
-| S144 | `brewer1` | account menu → Theme → Dark | Page reloads dark: green logo, green nav / account / menu icons, lifted nav panel; ✓ on Dark |
+| S144 | `brewer1` | account menu → Theme → Dark | Changes to dark in place (no reload): green logo, green nav / account / menu icons, lifted nav panel; ✓ on Dark |
 | S145 | `brewer1` | after S144, sign in on another browser | Dark there too (the setting is on the person) |
 | S146 | `brewer1` | Theme → Match this device, browser set to dark, then to light | Follows the browser: dark, then light |
 | S147 | `breweryMgr` | Admin → Shared devices → Brewhouse tablet → Dark | Saved; `breweryDevice` shows dark on its next load |
