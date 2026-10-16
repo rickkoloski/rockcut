@@ -100,3 +100,12 @@ Leaving the page open across midnight and reopening it gives the new day (10-17 
   - Hide shifts settings live in each test browser's localStorage, which was thrown away when the browser closed. I also turned them back off.
 - **Not touched:** no tasks saved (the half-filled Add task dialog was cancelled, and no `[TEST-TEMP]` items are on `/tasks/brewery` 10/01–11/30 or on `/tasks/all`). No Daily ticks, no Scheduler staff order, no Brewery Daily items. No persona was signed out, deactivated, demoted or had its password changed. `newhire` and `auth/spares.json` weren't used, and no credential beyond the brief was needed.
 - **Couldn't put back:** nothing. The only lasting traces are the deactivated throwaway person (deactivated as the brief instructs) and any notification the temporary event may have sent.
+
+## Lead note (2026-10-16)
+
+G1 → task **4318**, G2 → task **4319** (both low, older than D45); Matt
+accepted both for the backlog. The prompt scenarios (S170–S177, S189) were
+verified by the lead on DEV with three UI deploys (v41–v43): a profile on the
+old build reloaded itself into D45 once; a person's browser showed the bar and
+Reload moved it to the next build; an idle Taproom tablet reloaded itself 16 s
+after the screen-wake check, with no taps. Automated: `PWA_UPDATE=1` 10/10.
