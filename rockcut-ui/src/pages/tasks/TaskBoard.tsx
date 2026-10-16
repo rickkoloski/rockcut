@@ -82,8 +82,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     navigate({ pathname: `/tasks/${key}`, search: window.location.search })
   }
   const {
-    from, to, highlighted, hideCompleted, phoneView, phone, wide, focus, clearFocus,
-    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, setPhoneView, firstDay, pickFirstDay,
+    from, to, highlighted, hideCompleted, hideShifts, phoneView, phone, wide, focus, clearFocus,
+    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, toggleHideShifts, setPhoneView, firstDay, pickFirstDay,
   } = useBoardView(dept)
   const [filter, setFilter] = useState<TaskFilter>('all')
 
@@ -437,6 +437,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         day={day}
         today={today}
         openCount={openCount(day.date)}
+        hideShifts={hideShifts}
         slot={slot}
         onAdd={(date) => setDialog({ mode: { kind: 'add', dueOn: date }, n: Date.now() })}
         onDailyToggle={toggleDaily}
@@ -489,6 +490,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         // D40: a shared tablet has no "My tasks" (plan decision 1).
         noMine={isDevice}
         onHideCompleted={toggleHide}
+        hideShifts={hideShifts}
+        onHideShifts={toggleHideShifts}
         onHistory={canManage ? () => setHistory({}) : undefined}
         onEditDailyItems={canManage && dailyItems ? () => setEditingDaily(true) : undefined}
         setUpDaily={!hasDailyItems}

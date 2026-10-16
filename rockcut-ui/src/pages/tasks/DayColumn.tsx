@@ -10,6 +10,8 @@ interface Props {
   day: BoardDay
   today: string
   openCount: number
+  /** D45: the header without shifts (events stay). */
+  hideShifts?: boolean
   slot: ContainerSlot
   onAdd: (date: string) => void
   onDailyToggle: (date: string, item: DailyCardItem) => void
@@ -21,7 +23,7 @@ interface Props {
  * D41: no Daily card on a day the board has no Daily items for (S107).
  * D42: a day before today is dimmed, and works as any other.
  */
-export default function DayColumn({ day, today, openCount, slot: { setNodeRef, isOver, items }, onAdd, onDailyToggle, onEditDailyItems }: Props) {
+export default function DayColumn({ day, today, openCount, hideShifts, slot: { setNodeRef, isOver, items }, onAdd, onDailyToggle, onEditDailyItems }: Props) {
   const isToday = day.date === today
   const isPast = day.date < today
   return (
@@ -49,7 +51,7 @@ export default function DayColumn({ day, today, openCount, slot: { setNodeRef, i
         </Typography>
         <Chip size="small" label={openCount} data-testid={`day-count-${day.date}`} aria-label={`${openCount} open`} sx={{ height: 20 }} />
       </Box>
-      <DayHeader date={day.date} header={day.header} />
+      <DayHeader date={day.date} header={day.header} hideShifts={hideShifts} />
       {day.daily.items.length > 0 && (
         <DailyCard daily={day.daily} today={today} onToggle={onDailyToggle} onEditItems={onEditDailyItems} />
       )}

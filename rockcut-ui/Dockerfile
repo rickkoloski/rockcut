@@ -7,6 +7,10 @@ ENV VITE_API_URL=${VITE_API_URL}
 # D30: "DEV" on the DEV server shows the environment ribbon; empty on prod.
 ARG VITE_ENV_LABEL
 ENV VITE_ENV_LABEL=${VITE_ENV_LABEL}
+# D45: optional build id (`fly deploy --build-arg VITE_BUILD_ID=…`), shown as
+# <html data-build>; a different id also makes a new service worker.
+ARG VITE_BUILD_ID
+ENV VITE_BUILD_ID=${VITE_BUILD_ID}
 
 WORKDIR /app
 

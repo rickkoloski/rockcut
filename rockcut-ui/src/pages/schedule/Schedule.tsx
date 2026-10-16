@@ -71,7 +71,11 @@ export default function Schedule({ forceView }: { forceView?: View }) {
 
   const [view, setView] = useState<View>(forceView ?? initialView)
   const [mondayKey, setMondayKey] = useState<string>(mondayKeyOf())
-  const [filters, setFilters] = useState({ department_id: '', position_id: '', from: '', to: '', mine: false, open: false })
+  // D45: View Schedule opens on today through six days later (Colorado); not remembered.
+  const [filters, setFilters] = useState(() => {
+    const from = forceView !== 'week' ? localDayKey(new Date().toISOString()) : ''
+    return { department_id: '', position_id: '', from, to: from && addDaysKey(from, 6), mine: false, open: false }
+  })
   const [shiftDialog, setShiftDialog] = useState(false)
   const [editShift, setEditShift] = useState<Shift | null>(null)
   const [prefill, setPrefill] = useState<{ departmentId?: number; assigneeId?: number | null; dateKey?: string } | undefined>()

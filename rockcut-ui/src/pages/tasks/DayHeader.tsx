@@ -6,8 +6,13 @@ import type { DayHeaderData } from '../../lib/types'
  * D38 §3.2: who's scheduled (the department's published shifts), open shifts and events. Read-only.
  * D43: people and open shifts in start-time order (a person by their first shift); ties keep the
  * Scheduler's roster order, which is the order the API sends. Events stay last.
+ * D45: Hide shifts leaves the events only, and no box on a day without any.
  */
-export default function DayHeader({ date, header }: { date: string; header: DayHeaderData }) {
+export default function DayHeader({ date, header, hideShifts }: { date: string; header: DayHeaderData; hideShifts?: boolean }) {
+  if (hideShifts) {
+    if (header.events.length === 0) return null
+    header = { ...header, people: [], open_shifts: [], no_one_scheduled: false }
+  }
   const firstStart = (shifts: { starts_at: string }[]) => Math.min(...shifts.map((s) => Date.parse(s.starts_at)))
   const lines = [
     ...header.people.map((p, i) => ({ at: firstStart(p.shifts), i, person: p, open: null })),

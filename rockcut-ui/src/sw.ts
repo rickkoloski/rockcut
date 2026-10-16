@@ -18,8 +18,56 @@ registerRoute(
   }),
 )
 
-// autoUpdate: activate a new SW immediately and take control of open pages.
-self.skipWaiting()
+// D45: prompt mode. A new worker waits until the page asks it to take over
+// ("New version available · Reload" sends SKIP_WAITING), so nobody's open page
+// is swapped out from under them.
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  if (event.data?.type === 'SKIP_WAITING') void self.skipWaiting()
+})
+
+// Pages served by a worker from before D45 have no prompt to send that, never
+// check for a new build, and a plain reload doesn't let a waiting worker in.
+// So the first D45 worker on a device takes over at once, as every worker did
+// before, and reloads the open pages itself, once (Q5). It leaves PROMPT_MARK
+// so every worker after it waits for the prompt.
+const PROMPT_MARK = 'rockcut-sw-prompt-v1'
+// Set at install when a pre-D45 worker was in charge: activate then reloads
+// the pages. Kept in a cache, not a variable: the browser may stop the worker
+// between install and activate.
+const TAKEOVER = 'rockcut-sw-takeover'
+
+self.addEventListener('install', (event: ExtendableEvent) => {
+  event.waitUntil(
+    (async () => {
+      if (await caches.has(PROMPT_MARK)) return
+      // A first visit has no worker in charge and no pages to reload.
+      if (self.registration.active) await caches.open(TAKEOVER)
+      await self.skipWaiting()
+    })(),
+  )
+})
+
+self.addEventListener('activate', (event: ExtendableEvent) => {
+  const takeover = (async () => {
+    const takeover = await caches.has(TAKEOVER)
+    // Marked before any reload, so a reloaded page (or a later activation)
+    // never reloads again.
+    await caches.open(PROMPT_MARK)
+    await caches.delete(TAKEOVER)
+    if (takeover) await self.clients.claim()
+    return takeover
+  })()
+  event.waitUntil(takeover)
+  // Not inside waitUntil: a page's reload waits for this worker to finish
+  // activating, so waiting on the reload here would never end.
+  void takeover.then(async (reload) => {
+    if (!reload) return
+    const pages = await self.clients.matchAll({ type: 'window' })
+    await Promise.all(pages.map((page) => page.navigate(page.url).catch(() => null)))
+  })
+})
+
+// The new worker controls open pages once it takes over (their reload follows).
 clientsClaim()
 
 interface PushPayload {
