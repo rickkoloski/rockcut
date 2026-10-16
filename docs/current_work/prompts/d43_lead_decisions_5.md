@@ -36,3 +36,9 @@ with a test that would have caught it (revert-and-rerun rule):
 Then: typecheck, eslint on touched files, the affected specs locally
 (workers ≤ 2), commit, stop and report. The lead redeploys DEV and runs the
 full suite; QA rechecks.
+
+## Matt, 2026-10-15 (after seeing it on DEV v41 / v39)
+
+- Done task cards dim and strike only the title ("✓ name" and initials stay
+  readable): **approved** ("this looks good to me"). The finished Daily card
+  keeps its whole-card fade (unchanged).
