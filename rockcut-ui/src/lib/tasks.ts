@@ -384,6 +384,8 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
 const SPAN_KEY = 'rockcut.tasks.span'
 const PHONE_VIEW_KEY = 'rockcut.tasks.phoneView'
 const HIDE_KEY = 'rockcut.tasks.hideCompleted'
+// D45: per board only (`<key>.<board>`); there's no shared value before it.
+const HIDE_SHIFTS_KEY = 'rockcut.tasks.hideShifts'
 // D42: no shared value before it; Today until someone picks.
 const FIRST_DAY_KEY = 'rockcut.tasks.firstDay'
 // D41: the board last opened (no old key: there was one board).
@@ -437,6 +439,15 @@ export const readSpan = (board: string): Span => (readFor(SPAN_KEY, board) === '
 export const writeSpan = (board: string, span: Span) => writeFor(SPAN_KEY, board, String(span))
 export const readHideCompleted = (board: string) => readFor(HIDE_KEY, board) === 'true'
 export const writeHideCompleted = (board: string, on: boolean) => writeFor(HIDE_KEY, board, String(on))
+/** D45 §3.3: Hide shifts, off until someone turns it on for this board. */
+export function readHideShifts(board: string): boolean {
+  try {
+    return localStorage.getItem(`${HIDE_SHIFTS_KEY}.${board}`) === 'true'
+  } catch {
+    return false
+  }
+}
+export const writeHideShifts = (board: string, on: boolean) => writeFor(HIDE_SHIFTS_KEY, board, String(on))
 export function readFirstDay(board: string): FirstDay {
   const value = readFor(FIRST_DAY_KEY, board)
   return value === 'sunday' || value === 'monday' ? value : 'today'

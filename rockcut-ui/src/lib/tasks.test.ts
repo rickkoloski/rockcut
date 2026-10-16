@@ -16,6 +16,7 @@ import {
   readBoard,
   readFirstDay,
   readHideCompleted,
+  readHideShifts,
   readPhoneView,
   readSpan,
   taskError,
@@ -27,6 +28,7 @@ import {
   writeBoard,
   writeFirstDay,
   writeHideCompleted,
+  writeHideShifts,
   writePhoneView,
   writeSpan,
 } from './tasks'
@@ -460,5 +462,36 @@ describe('todaysTasks', () => {
     expect(s.tasks.map((t) => t.id)).toEqual([1, 2, 3, 4, 5])
     expect(s.more).toBe(2)
     expect(s.unfinished).toBe(1)
+  })
+})
+
+describe('Hide shifts (D45 §3.3)', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('is off by default and kept per board, under rockcut.tasks.hideShifts.<board>', () => {
+    const store = new Map<string, string>()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+    })
+    expect(readHideShifts('brewery')).toBe(false)
+    writeHideShifts('brewery', true)
+    expect(store.get('rockcut.tasks.hideShifts.brewery')).toBe('true')
+    expect([readHideShifts('brewery'), readHideShifts('bar')]).toEqual([true, false])
+    writeHideShifts('brewery', false)
+    expect(readHideShifts('brewery')).toBe(false)
+  })
+
+  it('storage that throws: off, and turning it on doesn’t throw', () => {
+    vi.stubGlobal('localStorage', {
+      getItem: () => {
+        throw new Error('blocked')
+      },
+      setItem: () => {
+        throw new Error('blocked')
+      },
+    })
+    expect(readHideShifts('bar')).toBe(false)
+    expect(() => writeHideShifts('bar', true)).not.toThrow()
   })
 })

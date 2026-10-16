@@ -37,6 +37,9 @@ interface Props {
   onRange: (from: string, to: string) => void
   onFilter: (filter: TaskFilter) => void
   onHideCompleted: (on: boolean) => void
+  /** D45: Hide shifts in the day headers. Left out where there are no headers (All departments). */
+  hideShifts?: boolean
+  onHideShifts?: (on: boolean) => void
   /** D41 All departments view: All and Unassigned only ("My tasks" is left out). */
   noMine?: boolean
   /** History (managers and owners). */
@@ -56,7 +59,7 @@ interface Props {
 
 /**
  * D38 §3.8 toolbar: Previous / Today / Next, 1 week / 2 weeks, the first
- * day (D42), the date range, the filter, Hide completed, and the ⋮ menu for
+ * day (D42), the date range, the filter, Hide completed, Hide shifts (D45), and the ⋮ menu for
  * managers.
  */
 export default function BoardToolbar(props: Props) {
@@ -197,6 +200,18 @@ export default function BoardToolbar(props: Props) {
         }
         label="Hide completed"
       />
+      {props.onHideShifts && (
+        <FormControlLabel
+          control={
+            <Switch
+              checked={!!props.hideShifts}
+              onChange={(e) => props.onHideShifts?.(e.target.checked)}
+              slotProps={{ input: { 'data-testid': 'board-hide-shifts' } as object }}
+            />
+          }
+          label="Hide shifts"
+        />
+      )}
       {(props.onHistory || props.onEditDailyItems) && (
         <>
           <IconButton aria-label="Board menu" onClick={(e) => setMenuAnchor(e.currentTarget)} data-testid="board-menu" sx={{ ml: 'auto' }}>

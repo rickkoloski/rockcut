@@ -17,7 +17,8 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      registerType: 'autoUpdate',
+      // D45: a new build waits for the page's "New version available · Reload" (components/UpdatePrompt).
+      registerType: 'prompt',
       includeAssets: ['favicon-32x32.png', 'apple-touch-icon.png', 'rockcut-logo.png'],
       manifest: {
         name: 'Rockcut Scheduler',
