@@ -50,6 +50,11 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
   while a person is signed in, acting, or has a dialog open, it shows the
   prompt like everyone else and waits.
 - Push notifications, the precache and the SPA fallback keep working as now.
+- **First rollout:** devices running `v2026.10.15` or older have no prompt
+  code, and D45's worker waits instead of taking over, so each device needs
+  **one** reload (or closing and reopening the app) to get D45. After that,
+  every release announces itself. The release note in conv 80 says so, and
+  someone reloads the two tablets.
 
 ### 3.2 View Schedule default (item 2)
 
