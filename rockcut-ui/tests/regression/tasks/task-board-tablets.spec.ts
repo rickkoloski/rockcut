@@ -117,8 +117,11 @@ test.describe('the brewhouse tablet', () => {
       await setBoardCheck(page.getByTestId(`daily-check-${today}-${pressures.id}`), true)
       await expect(page.getByTestId('acting-code-dialog')).toHaveCount(0)
 
-      const daily = await dailyCard(api, today)
-      expect(daily.items.filter((i) => [temps.id, pressures.id].includes(i.daily_item_id)).every((i) => i.checked)).toBe(true)
+      // The box ticks at once (optimistic); the save lands a moment later.
+      // Reading straight away raced it on DEV (D45 DEV run 1), so wait, as the untick below does.
+      await expect
+        .poll(async () => (await dailyCard(api, today)).items.filter((i) => [temps.id, pressures.id].includes(i.daily_item_id)).every((i) => i.checked))
+        .toBe(true)
       const rows = (await history()).filter((h) => h.title === 'Temps')
       expect(rows[0]).toMatchObject({ actor_name: brewer!.person.name, on_shared_device: true })
 
