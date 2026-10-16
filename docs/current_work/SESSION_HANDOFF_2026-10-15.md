@@ -1,15 +1,16 @@
 # Session Handoff — 2026-10-15
 
-> **Update (afternoon): D43 is built and passed the local gate** on branch
-> `d43-ui-tweaks` (not pushed): API `7ae1d48`, test-date fix `43a082f`, UI
-> `dfcd682`, dark sweep `7a03922`, tests `1388c5b`; lead decisions 1–3 in
-> `prompts/`. Gate: Playwright 379 passed / 1 skipped (DEV ribbon, by design),
-> `mix test` 1470 / 0, `vite build`, typecheck, lint clean on D43's files (the
-> 26 repo-wide lint errors are older brewing pages, task 4084). **Next: DEV
-> gate, waiting for Matt's go** (claim DEV in conv 80, deploy, reseed, full
-> Playwright on DEV, QA pass). For QA's LIMITATIONS: batch, ingredient and
-> Settings-category detail pages and the phone nav drawer weren't covered by
-> the local dark sweep (no local data). The section below is this morning's.
+> **Update (evening): D43 is COMPLETE and merged to `develop`** (PR #25,
+> merge `a0fa758`). DEV gate PASS: DEV runs 377/1 → 380/0 → 391/0; QA pass 1
+> PASS with gaps, fixes in `6259eb1`, recheck PASS; G6 by design; G7 (Light
+> "Acting as" bar contrast) → **task 4298**, backlog per Matt. Matt approved
+> the done-task look and did his hands-on check on DEV. **DEV is free** and
+> runs `develop` (API v42 / UI v40, reseeded; conv 80 msg 89762). Record:
+> `stepwise_results/d43_ui_tweaks_COMPLETE.md`. **Not on prod** — a release
+> is Matt's call (alone or with D44). Local checkout is on `develop`; the
+> `theme-servers` herdr tab still runs the local servers. QA folder
+> `~/src/rockcut-d43-qa/` and scratch `~/src/rockcut-d43-scratch/` can be
+> deleted once the release is done. The sections below are earlier in the day.
 
 Supersedes `SESSION_HANDOFF_2026-10-14b.md`. **D43 (UI tweaks): scope closed
 at 14 items (Matt, end of session).** D44 is scoped. Nothing is on DEV or
