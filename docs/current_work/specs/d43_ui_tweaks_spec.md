@@ -1,6 +1,6 @@
 # D43: UI tweaks — Spec
 
-**Status:** APPROVED (Matt, 2026-10-15). Scope closed at items 1–14; scenarios S143–S169. Next: planning.
+**Status:** COMPLETE (merged to `develop`, PR #25, 2026-10-15). Record: `stepwise_results/d43_ui_tweaks_COMPLETE.md`.
 **Backlog:** none yet
 **Concept:** 02_scaffold_ui
 **Prototype:** local branch `local/theme-preview` (not pushed); comparison
