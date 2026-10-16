@@ -39,7 +39,7 @@ npx playwright test tests/smoke/roles.spec.ts
 | `chromium` | every spec except Replace | Parallel. |
 | `brewery-board` | `regression/brewery/task-board-*.spec.ts` (D38) | One worker, beside `chromium`. "Move all to today" moves every open past task on the one shared board, so these specs mustn't overlap. Drag specs use a tall viewport so no drag has to scroll. |
 | `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
-| `pwa-update` | `pwa-update/*.spec.ts` (D45 S170–S177) | **Only with `PWA_UPDATE=1`**, so not in the default run. One worker. Builds the app twice and serves it with `vite preview` on :4173. See below. |
+| `pwa-update` | `pwa-update/*.spec.ts` (D45 S170–S177, S189) | **Only with `PWA_UPDATE=1`**, so not in the default run. One worker. Builds the app twice and serves it with `vite preview` on :4173. See below. |
 
 **Playwright runs a dependency project in full, whatever path you filter
 on.** Because `board-replace` depends on `chromium`, `npx playwright test
@@ -60,7 +60,10 @@ The "New version available · Reload" bar needs the service worker, which
 `pnpm dev` (:5174) doesn't run. The spec builds the app twice (`VITE_BUILD_ID=A`
 and `B` into `tests/.pwa-update/`, gitignored), serves A with `vite preview` on
 :4173 (`/api` proxied to the local API on :4002), and "deploys" B by swapping
-the served files. `<html data-build>` says which build a page runs. The spec
+the served files. `<html data-build>` says which build a page runs. S189 (first
+rollout) also builds the last release before D45 (`OLD_RELEASE` in
+`tests/pwa-update/helpers.ts`) from a temporary git worktree, once; delete
+`tests/.pwa-update/OLD` to rebuild it. The spec
 starts and stops the preview server itself; :4173 must be free.
 
 ```bash

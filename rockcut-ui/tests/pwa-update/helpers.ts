@@ -1,5 +1,6 @@
 import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
-import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { expect, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../config/test-env'
 
@@ -8,7 +9,10 @@ import { authFile, type PersonaKey } from '../config/test-env'
 
 export const PREVIEW_URL = 'http://localhost:4173'
 const ROOT = 'tests/.pwa-update'
-export type Build = 'A' | 'B'
+export type Build = 'A' | 'B' | 'OLD'
+
+/** The last release before D45: no prompt code, an auto-updating worker (S189). */
+export const OLD_RELEASE = 'v2026.10.15'
 
 /** Build A and B (the same source; `VITE_BUILD_ID` makes them differ) once per worker. */
 export function buildBoth() {
@@ -17,6 +21,26 @@ export function buildBoth() {
       env: { ...process.env, VITE_BUILD_ID: id, VITE_ENV_LABEL: '' },
       stdio: 'ignore',
     })
+  }
+}
+
+/** Build OLD_RELEASE from a temporary worktree (sharing node_modules), once. */
+export function buildOld() {
+  const out = resolve(`${ROOT}/OLD`)
+  if (existsSync(`${out}/sw.js`)) return
+  const src = resolve(`${ROOT}/old-src`)
+  rmSync(src, { recursive: true, force: true })
+  execFileSync('git', ['worktree', 'prune'])
+  execFileSync('git', ['worktree', 'add', '--detach', src, OLD_RELEASE], { stdio: 'ignore' })
+  try {
+    symlinkSync(resolve('node_modules'), `${src}/rockcut-ui/node_modules`)
+    execFileSync('npx', ['vite', 'build', '--outDir', out, '--emptyOutDir'], {
+      cwd: `${src}/rockcut-ui`,
+      env: { ...process.env, VITE_ENV_LABEL: '' },
+      stdio: 'ignore',
+    })
+  } finally {
+    execFileSync('git', ['worktree', 'remove', '--force', src])
   }
 }
 

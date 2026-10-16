@@ -3,7 +3,7 @@ import type { ChildProcess } from 'node:child_process'
 import { addDays, apiAs, cleanupTasks, denverToday, tempTag } from '../regression/brewery/taskBoardHelpers'
 import { claimSpare } from '../regression/auth/spares'
 import { createTempPerson, retireTempPerson, type TempPerson } from '../regression/auth/helpers'
-import { buildBoth, deployBAndLook, openOnA, previewState, prompt, runningBuild, serve, startPreview, stopPreview, writePreviewStates } from './helpers'
+import { buildBoth, buildOld, deployBAndLook, openOnA, previewState, prompt, runningBuild, serve, startPreview, stopPreview, writePreviewStates } from './helpers'
 
 // D45 §3.1, S170–S177: "New version available · Reload", and the shared
 // tablets reloading by themselves when idle. Two builds behind `vite preview`;
@@ -17,6 +17,7 @@ test.beforeAll(async () => {
   test.setTimeout(300_000)
   writePreviewStates(['brewer1', 'breweryMgr', 'taproomDevice', 'breweryDevice'])
   buildBoth()
+  buildOld()
   serve('A')
   server = await startPreview()
 })
@@ -184,5 +185,35 @@ test.describe('S177: breweryDevice', () => {
 
     await page.getByTestId('acting-done').click()
     await expect.poll(() => runningBuild(page), { timeout: 45_000 }).toBe('B')
+  })
+})
+
+test.describe('S189: brewer1, first rollout', () => {
+  test.use({ storageState: previewState('brewer1') })
+
+  test('a page on the last release reloads itself once into D45; the next build prompts', async ({ page }) => {
+    serve('OLD')
+    await page.goto('/schedule')
+    await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20_000 })
+    expect(await runningBuild(page)).toBeUndefined()
+
+    let loads = 0
+    page.on('load', () => loads++)
+    serve('A')
+    // The old page never checks; the browser does (on its next navigation or a push).
+    await page.evaluate(() => navigator.serviceWorker.getRegistration().then((r) => r?.update()))
+    await expect.poll(() => runningBuild(page), { timeout: 20_000 }).toBe('A')
+    await expect(page.locator('header h1')).toHaveText('Schedule')
+    // Once, no tap, and no loop.
+    await page.waitForTimeout(5_000)
+    expect(loads).toBe(1)
+    await expect(prompt(page)).toHaveCount(0)
+
+    // Every build after that waits for the prompt.
+    await deployBAndLook(page)
+    await expect(prompt(page)).toBeVisible()
+    await page.waitForTimeout(3_000)
+    expect(await runningBuild(page)).toBe('A')
+    expect(loads).toBe(1)
   })
 })
