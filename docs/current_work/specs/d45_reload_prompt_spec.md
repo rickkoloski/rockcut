@@ -1,6 +1,6 @@
 # D45: "New version available" prompt + View Schedule default range — Spec
 
-**Status:** DRAFT for review: Q1–Q3 decided (Matt, 2026-10-15)
+**Status:** APPROVED (Matt, 2026-10-15)
 **Backlog:** task 4054 (item 1)
 **Concept:** 02_scaffold_ui
 **Follows:** `v2026.10.15` (D43)
