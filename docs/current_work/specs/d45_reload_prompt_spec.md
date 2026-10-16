@@ -51,11 +51,13 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
   while a person is signed in, acting, or has a dialog open, it shows the
   prompt like everyone else and waits.
 - Push notifications, the precache and the SPA fallback keep working as now.
-- **First rollout:** devices running `v2026.10.15` or older have no prompt
-  code, and D45's worker waits instead of taking over, so each device needs
-  **one** reload (or closing and reopening the app) to get D45. After that,
-  every release announces itself. The release note in conv 80 says so, and
-  someone reloads the two tablets.
+- **First rollout** (Q5, Matt 2026-10-15): pages on `v2026.10.15` or older
+  have no prompt and never check for updates, and a plain reload can't hand
+  over to a waiting worker. So the **first** D45 worker on a device takes
+  over at once (as every worker did before) and **reloads the open pages
+  itself, once**, so phones and tablets update with nobody touching them.
+  It leaves a marker; every later worker waits for the prompt. Accepted
+  cost: that one time, an open page reloads even mid-form.
 
 ### 3.2 View Schedule default (item 2)
 
@@ -87,6 +89,8 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
 - **Q2.** An open app checks **once a day**, plus whenever the page comes
   back into view (Matt, 2026-10-15).
 - **Q3.** View Schedule **always reopens on today + 6** (Matt, 2026-10-15).
+- **Q5.** First rollout: the first D45 worker **auto-reloads open pages
+  once** (Matt, 2026-10-15), rather than needing two manual reloads.
 - **Q4.** Hide shifts hides **shifts only**, events stay; it behaves **like
   Hide completed** (off by default, per board, per browser) (Matt, 2026-10-15).
 
@@ -119,6 +123,7 @@ redeploy.
 | S181 | `brewer1` | clear From and To | Everything from the first published shift, as before |
 | S182 | `taproomDevice` | View Schedule | Same 7-day default |
 | S183 | `owner` | Scheduler | Unchanged (week grid) |
+| S189 | `brewer1` (open on `v2026.10.15`, no prompt code) | deploy D45 | The page reloads by itself once into D45; a later build shows the prompt instead |
 | S184 | `brewer1` | Brewery board, Hide shifts on | Day headers lose people, open shifts and "No one scheduled"; an event day keeps its event line; a day with no event has no header box |
 | S185 | `brewer1` | reload; switch to the Taproom board and back | Brewery stays on; Taproom has its own setting (off) |
 | S186 | `brewer1` at 412×915 | Hide shifts in the phone's board menu / settings | Same effect in the phone views |
