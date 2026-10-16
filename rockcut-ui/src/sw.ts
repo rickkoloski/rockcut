@@ -18,8 +18,26 @@ registerRoute(
   }),
 )
 
-// autoUpdate: activate a new SW immediately and take control of open pages.
-self.skipWaiting()
+// D45: prompt mode. A new worker waits until the page asks it to take over
+// ("New version available · Reload" sends SKIP_WAITING), so nobody's open page
+// is swapped out from under them.
+self.addEventListener('message', (event: ExtendableMessageEvent) => {
+  if (event.data?.type === 'SKIP_WAITING') void self.skipWaiting()
+})
+
+// Pages served by a worker from before D45 have no prompt to send that, and a
+// plain reload doesn't let a waiting worker in. So the first D45 worker on a
+// device takes over at once, as every worker did before; it leaves this mark
+// so the ones after it wait.
+const PROMPT_MARK = 'rockcut-sw-prompt-v1'
+self.addEventListener('install', (event: ExtendableEvent) => {
+  event.waitUntil(caches.has(PROMPT_MARK).then((promptAware) => (promptAware ? undefined : self.skipWaiting())))
+})
+self.addEventListener('activate', (event: ExtendableEvent) => {
+  event.waitUntil(caches.open(PROMPT_MARK).then(() => undefined))
+})
+
+// The new worker controls open pages once it takes over (their reload follows).
 clientsClaim()
 
 interface PushPayload {
