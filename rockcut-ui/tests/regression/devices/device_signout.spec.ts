@@ -82,13 +82,24 @@ test.describe('a paired [TEST-TEMP] tablet', () => {
       window.addEventListener = ((type: string, ...rest: unknown[]) =>
         type === 'storage' ? undefined : (add as (...x: unknown[]) => void)(type, ...rest)) as typeof window.addEventListener
     })
+    // B is frozen while A logs out: any API read B sends then is held, never
+    // answered. Otherwise a read in flight across A's revoke (B's own page
+    // load, or a poll) gets a real 401 and B rightly falls back to the tablet
+    // before its Logout (DEV run 1, D43: /api/time_off still loading on DEV).
+    // Only B's own Logout may move it.
+    let frozen = false
+    await b.route('**/api/**', (route) => (frozen ? undefined : route.continue()))
     await b.goto('/time_off')
     await expect(b.getByTestId('personal-session-banner')).toBeVisible()
+    await b.waitForLoadState('networkidle')
+    frozen = true
 
     await a.getByTestId('logout-button').click()
     await expect(a.getByTestId('device-chip')).toBeVisible()
 
     // The stale tab's Logout: the tablet stays paired, and B re-syncs to it.
+    await expect(b.getByTestId('personal-session-banner')).toBeVisible()
+    frozen = false
     await b.getByTestId('logout-button').click()
     await expect(b.getByTestId('device-chip')).toBeVisible()
     expect(await b.evaluate(() => localStorage.getItem('rockcut_token'))).toBe(deviceToken)

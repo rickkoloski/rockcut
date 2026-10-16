@@ -65,6 +65,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   @denied [
     {:post, "/api/session/password"},
     {:delete, "/api/sessions/others"},
+    {:put, "/api/me/color_mode"},
     {:patch, "/api/departments/:id"},
     {:post, "/api/roster/order"},
     {:get, "/api/users"},

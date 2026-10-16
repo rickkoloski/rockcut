@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react'
-import { Box, Button, TextField, Typography, Paper, Alert, Link } from '@mui/material'
+import { Box, Button, TextField, Typography, Paper, Alert, Link, useTheme } from '@mui/material'
 import useAuth from '../hooks/useAuth'
 import PasswordField from '../components/PasswordField'
 import { PERSONAL_IDLE_MS, UNPAIRED_KEY, asideDeviceToken, clearUnpaired, readStorage } from '../lib/device'
@@ -12,6 +12,7 @@ function formatCode(raw: string): string {
 }
 
 export default function Login() {
+  const dark = useTheme().palette.mode === 'dark'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   // DEV G7: a tablet whose pairing ended opens straight on setup, saying why.
@@ -62,7 +63,7 @@ export default function Login() {
         }}
       >
         <img
-          src="/rockcut-logo.png"
+          src={dark ? '/rockcut-logo-light.png' : '/rockcut-logo.png'}
           alt="Rockcut Brewing Co"
           style={{ width: 140, marginBottom: 8 }}
         />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
@@ -270,13 +270,19 @@ export default function Schedule({ forceView }: { forceView?: View }) {
   }
 
   // Employee display order (up/down arrows → persist globally).
-  const reorderRoster = async (ids: number[]) => {
-    try {
-      await api.post('/api/roster/order', { user_ids: ids })
-      qc.invalidateQueries({ queryKey: ['roster'] })
-    } catch {
-      setNotice('Could not save order')
-    }
+  // D43: Move mode steps quickly (arrow keys), so the new order shows at once
+  // and the saves go one after another; the next step builds on this order,
+  // not on a roster that hasn't come back yet.
+  const rosterSaves = useRef<Promise<unknown>>(Promise.resolve())
+  const reorderRoster = (ids: number[]) => {
+    const byId = new Map(roster.map((r) => [r.id, r]))
+    qc.setQueryData<RosterEntry[]>(['roster'], ids.map((id) => byId.get(id)).filter((r): r is RosterEntry => !!r))
+    rosterSaves.current = rosterSaves.current
+      .then(() => api.post('/api/roster/order', { user_ids: ids }))
+      .catch(() => {
+        setNotice('Could not save order')
+        qc.invalidateQueries({ queryKey: ['roster'] })
+      })
   }
 
   const publishForEmployee = async (userId: number) => {
@@ -379,7 +385,9 @@ export default function Schedule({ forceView }: { forceView?: View }) {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: forceView === 'week' ? 'Scheduler' : 'Schedule' }]}
         title={forceView === 'week' ? 'Scheduler' : 'Schedule'}
+        // D43: View Schedule has no header buttons (Calendar sync is in the filter box).
         toolbar={
+          forceView === 'agenda' ? undefined : (
           <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
             {!forceView && (
               <ToggleButtonGroup size="small" exclusive value={view} onChange={(_e, v) => v && setViewPersist(v)}>
@@ -387,8 +395,6 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                 <ToggleButton value="week">Week</ToggleButton>
               </ToggleButtonGroup>
             )}
-            {/* DEV G6: calendar feeds are personal; not on a shared tablet. */}
-            {!isDevice && <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)}>Calendar sync</Button>}
             {canManageSchedule && (
               <>
                 {view === 'week' && (
@@ -398,13 +404,19 @@ export default function Schedule({ forceView }: { forceView?: View }) {
                     <Button color="error" onClick={requestDeleteWeek}>Delete week</Button>
                   </>
                 )}
-                <Button startIcon={<LibraryBooksIcon />} onClick={() => setTemplatesOpen(true)}>Templates</Button>
-                <Button startIcon={<SettingsIcon />} onClick={() => setPositionsDialog(true)}>Positions</Button>
-                <Button startIcon={<EventNoteIcon />} onClick={() => openCreateEvent()} data-testid="add-event">Add event</Button>
-                <Button variant="contained" startIcon={<EventIcon />} onClick={openCreate}>Add shift</Button>
+                {/* D43: setting up the schedule lives in the Scheduler only. */}
+                {forceView === 'week' && (
+                  <>
+                    <Button startIcon={<LibraryBooksIcon />} onClick={() => setTemplatesOpen(true)}>Templates</Button>
+                    <Button startIcon={<SettingsIcon />} onClick={() => setPositionsDialog(true)}>Positions</Button>
+                    <Button startIcon={<EventNoteIcon />} onClick={() => openCreateEvent()} data-testid="add-event">Add event</Button>
+                    <Button variant="contained" startIcon={<EventIcon />} onClick={openCreate}>Add shift</Button>
+                  </>
+                )}
               </>
             )}
           </Stack>
+          )
         }
       />
 
@@ -433,6 +445,12 @@ export default function Schedule({ forceView }: { forceView?: View }) {
           </TextField>
           {!isDevice && <FormControlLabel control={<Switch checked={filters.mine} onChange={(e) => setFilters((f) => ({ ...f, mine: e.target.checked }))} />} label="My shifts" />}
           <FormControlLabel control={<Switch checked={filters.open} onChange={(e) => setFilters((f) => ({ ...f, open: e.target.checked }))} />} label="Open only" />
+          {/* DEV G6: calendar feeds are personal; not on a shared tablet. D43: View Schedule only. */}
+          {!isDevice && forceView !== 'week' && (
+            <Button startIcon={<SyncIcon />} onClick={() => setCalendarSyncOpen(true)} sx={{ alignSelf: { xs: 'flex-start', md: 'center' } }}>
+              Calendar sync
+            </Button>
+          )}
         </Stack>
 
         {/* legend */}

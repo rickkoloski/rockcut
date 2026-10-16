@@ -107,8 +107,8 @@ export default function OwnerActivity() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Activity' }]}
-        title="Activity"
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'User change log' }]}
+        title="User change log"
       />
 
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>

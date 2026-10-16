@@ -408,3 +408,46 @@ S9g, S32–S37a, S42–S50, S68. ExUnit files are under `rockcut_api/test/`: con
 | — | a tablet on History, Daily items changes, another board, All departments → 403 | ExUnit `task_board_device_test`, `authz_device_test`, `authz_test`, `device_route_matrix_test` |
 | — | the beer board's staff-code flow, now through the shared `StaffCodeActing` | ExUnit `beer_board_controller_test` (unchanged, green); Playwright `taproom/beer-board-device` (unchanged) |
 | — | the reminder's real push on a phone; a real tablet's touch and keypad | **Manual on DEV** (handoff note LIMITATIONS) |
+
+## D43 — UI tweaks (`specs/d43_ui_tweaks_spec.md`)
+
+| # | Scenario | Layer |
+|---|---|---|
+| S143 | brewer1 with no setting: Light, black logo, nothing asks | Playwright `ui/theme` (S143); ExUnit `color_mode_test` (default `light`) |
+| S144 | account menu → Dark changes in place; ✓ on Dark | Playwright `ui/theme` (S144: no reload, logo, ✓; a refused save reverts with a message) |
+| S145 | Dark in another browser | Playwright `ui/theme` (S145, a fresh context); ExUnit `color_mode_test` |
+| S146 | Match this device follows the browser, live | Playwright `ui/theme` (S146, `emulateMedia`) |
+| S147 | breweryMgr sets the Brewhouse tablet to Dark; the tablet loads dark | Playwright `ui/theme` (S147); ExUnit `color_mode_test` (manager 200, theme-only; rename by a manager 403) |
+| S148 | Sign in as me on a Dark tablet: stays dark, email + Sign out, no account menu | Playwright `ui/theme` (S148, a `[TEST-TEMP]` person); ExUnit `color_mode_test` (`/api/me` gives the tablet's) |
+| S149 | bartender1: no Shared devices page; PATCH 403 | Playwright `ui/theme` (S149); ExUnit `color_mode_test`, `authz_device_test` |
+| S150 | owner (Dark): every page and the main dialogs readable | **Manual** (Task 3 sweep, screenshots kept for the PR); QA's DEV pass |
+| S151 | board page, columns, today, cards: distinct in both themes | Playwright `ui/task-board-ui` (S151, light and dark) |
+| S152 | nav order Home, Tasks, Schedule; phone drawer the same | Playwright `ui/layout` (S152) |
+| S153 | title in the top bar; board switcher; "‹ Settings" back link; no breadcrumbs | Playwright `ui/layout` (S153, a temp category) |
+| S154 | phone: the title replaces the logo; Home keeps it | Playwright `ui/layout` (S154) |
+| S155 | account menu contents; Profile; Log out | Playwright `ui/layout` (S155; Log out with a spare session); `auth/profile`, `auth/session_revocation`, `auth/offline_logout` updated |
+| S156 | brewer1 View Schedule: no header buttons; Calendar sync opens its dialog | Playwright `ui/schedule` (S156) |
+| S157 | breweryMgr: setup buttons only on the Scheduler; no Calendar sync there | Playwright `ui/schedule` (S157) |
+| S158 | taproomDevice: no Calendar sync | Playwright `ui/schedule` (S158) |
+| S159 | week totals match the rows and follow the Department filter | Playwright `ui/schedule` (S159) |
+| S160 | Move; ↑ ↑ (quick) ; Enter; order saved | Playwright `ui/schedule` (S160, restores the order) |
+| S161 | Move ↓ + Finished; Move + Esc | Playwright `ui/schedule` (S161) |
+| S162 | brewer1: no Scheduler, no ⋮ or arrows | Playwright `ui/schedule` (S162) |
+| S163 | today's Daily all ticked: open, struck, dimmed; after reload closed | Playwright `ui/task-board-ui` (S163, restores the ticks); `brewery/task-board-daily` S24 updated |
+| S164 | a 2/4 day looks normal and starts closed; unfinished today open | Playwright `ui/task-board-ui` (S164) |
+| S165 | preferences: In-app and Push only | Playwright `ui/notification-prefs` (S165); `scheduler/calendar_feed_rotation` Q3 updated |
+| S166 | Position menu: headings vs positions, both themes | Playwright `ui/position-menu` (S166, computed styles) |
+| S167 | Taproom header: 8a, open 10a, 12p | Playwright `ui/task-board-ui` (S167) |
+| S168 | Brewery header: the 7a+3p brewer first, then 11a | Playwright `ui/task-board-ui` (S168) |
+| S169 | sign-in page, Match this device, dark browser: green logo | Playwright `ui/theme` (S169) |
+
+DEV QA pass 1 fixes (`stepwise_results/d43_dev_qa_report.md`):
+
+| Gap | What | Layer |
+|---|---|---|
+| G1 | bell popover in Dark: timestamps 4.5:1, ⚙ 3:1 | Playwright `ui/theme` (owner in Dark, G1; `ui/contrast.ts`) |
+| G2 | icon buttons in Dark 3:1 on the board, Scheduler, Profile and the sign-in page | Playwright `ui/theme` (owner in Dark, G2) |
+| G3 | shift-chip text 4.5:1 on every shade; done card "✓ name" and initials 4.5:1 in both themes | Vitest `src/lib/colors.test.ts`; Playwright `ui/task-board-ui` (a done task card) |
+| G4 | a click elsewhere ends Move; arrows in an open dialog move nothing | Playwright `ui/schedule` (G4) |
+| G5 | a theme save that fails offline or never answers reverts and says so (Escape and a click don't hide it) | Playwright `ui/theme` (offline; never answers; refused) |
+| obs | User change log page title | Playwright `ui/layout` (S153 block) |

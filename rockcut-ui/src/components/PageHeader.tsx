@@ -1,6 +1,6 @@
-import { Box, Breadcrumbs, Button, Link as MuiLink, Typography } from '@mui/material'
-import { Link } from 'react-router-dom'
+import { Box, Button } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
+import PageTitle from './PageTitle'
 
 interface Crumb {
   label: string
@@ -15,33 +15,21 @@ interface PageHeaderProps {
   toolbar?: React.ReactNode
 }
 
+// D43: the title goes to the top bar. Breadcrumbs become one "‹ Parent" link,
+// shown only on detail pages (a crumb other than Home that links somewhere).
 export default function PageHeader({ breadcrumbs, title, action, toolbar }: PageHeaderProps) {
+  const parent = breadcrumbs.filter((c) => c.to && c.to !== '/').pop()
+  const actions =
+    toolbar ??
+    (action && (
+      <Button variant="contained" startIcon={<AddIcon />} onClick={action.onClick} data-testid={action.testId}>
+        {action.label}
+      </Button>
+    ))
   return (
-    <Box sx={{ mb: 3 }}>
-      <Breadcrumbs sx={{ mb: 1 }}>
-        {breadcrumbs.map((crumb, i) =>
-          crumb.to ? (
-            <MuiLink key={i} component={Link} to={crumb.to} underline="hover" color="inherit">
-              {crumb.label}
-            </MuiLink>
-          ) : (
-            <Typography key={i} color="text.primary">{crumb.label}</Typography>
-          )
-        )}
-      </Breadcrumbs>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <Typography variant="h4">{title}</Typography>
-        {toolbar ?? (action && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={action.onClick}
-            data-testid={action.testId}
-          >
-            {action.label}
-          </Button>
-        ))}
-      </Box>
-    </Box>
+    <>
+      <PageTitle title={title} back={parent?.to ? { label: parent.label, to: parent.to } : undefined} />
+      {actions && <Box sx={{ mb: 2, display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 1 }}>{actions}</Box>}
+    </>
   )
 }

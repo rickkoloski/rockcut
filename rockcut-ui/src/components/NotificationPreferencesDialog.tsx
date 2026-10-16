@@ -51,10 +51,13 @@ const EVENT_DEFAULTS: Record<string, Record<string, boolean>> = {
 const NOT_SENT: Record<string, string[]> = { task_shift_end: ['email'] }
 const CHANNELS = [
   { key: 'in_app', label: 'In-app', enabled: true, def: true },
-  { key: 'email', label: 'Email', enabled: true, def: true },
-  { key: 'sms', label: 'SMS', enabled: false, def: false },
+  // D43: email (a no-op on prod since D28) and SMS (never built) aren't offered.
+  // Their stored preferences are kept; show them again when they're real.
+  { key: 'email', label: 'Email', enabled: true, def: true, hidden: true },
+  { key: 'sms', label: 'SMS', enabled: false, def: false, hidden: true },
   { key: 'push', label: 'Push', enabled: true, def: false },
 ]
+const SHOWN = CHANNELS.filter((c) => !c.hidden)
 
 export default function NotificationPreferencesDialog({ open, onClose }: Props) {
   const qc = useQueryClient()
@@ -159,13 +162,13 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
       <DialogContent>
         {pushNotice()}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-          Choose how you're notified. SMS is coming soon.
+          Choose how you're notified.
         </Typography>
         <Table size="small">
           <TableHead>
             <TableRow>
               <TableCell />
-              {CHANNELS.map((c) => (
+              {SHOWN.map((c) => (
                 <TableCell key={c.key} align="center">{c.label}</TableCell>
               ))}
             </TableRow>
@@ -174,7 +177,7 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
             {events.map((e) => (
               <TableRow key={e.event} data-testid={`notification-pref-${e.event}`}>
                 <TableCell>{e.label}</TableCell>
-                {CHANNELS.map((c) => (
+                {SHOWN.map((c) => (
                   <TableCell key={c.key} align="center">
                     {c.enabled && !NOT_SENT[e.event]?.includes(c.key) ? (
                       <Switch

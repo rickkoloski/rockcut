@@ -39,7 +39,7 @@ export default function DayColumn({ day, today, openCount, slot: { setNodeRef, i
         minWidth: 0,
         borderColor: isToday ? 'primary.main' : undefined,
         borderWidth: isToday ? 2 : 1,
-        bgcolor: isToday ? 'action.selected' : 'background.default',
+        bgcolor: isToday ? 'background.boardToday' : 'background.boardColumn',
       }}
     >
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>

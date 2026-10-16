@@ -22,6 +22,7 @@ import {
 import type { AllBoardCard, AllBoardData, DailyCount, TaskBoardEntry } from '../../lib/types'
 import BoardLayout from './BoardLayout'
 import BoardSwitcher from './BoardSwitcher'
+import PageTitle from '../../components/PageTitle'
 import BoardToolbar from './BoardToolbar'
 import TaskCard from './TaskCard'
 import { useBoardView } from './useBoardView'
@@ -79,7 +80,7 @@ export default function AllBoard({ board: entry, boards }: Props) {
   const lists: Record<string, ReactNode> = {}
   if (data) {
     lists[UNFINISHED] = (
-      <Paper variant="outlined" data-testid="unfinished-card" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, borderColor: 'warning.main', bgcolor: 'background.default' }}>
+      <Paper variant="outlined" data-testid="unfinished-card" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, borderColor: 'warning.main', bgcolor: 'background.boardColumn' }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 600 }} data-testid="unfinished-title">
           Unfinished ({data.unfinished.length})
         </Typography>
@@ -105,7 +106,7 @@ export default function AllBoard({ board: entry, boards }: Props) {
             minWidth: 0,
             borderColor: isToday ? 'primary.main' : undefined,
             borderWidth: isToday ? 2 : 1,
-            bgcolor: isToday ? 'action.selected' : 'background.default',
+            bgcolor: isToday ? 'background.boardToday' : 'background.boardColumn',
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
@@ -127,7 +128,7 @@ export default function AllBoard({ board: entry, boards }: Props) {
     })
     const futureSections = sections(data.future)
     lists[FUTURE] = (
-      <Paper variant="outlined" data-testid="future-list" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, bgcolor: 'background.default' }}>
+      <Paper variant="outlined" data-testid="future-list" sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, bgcolor: 'background.boardColumn' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
             Future
@@ -159,7 +160,8 @@ export default function AllBoard({ board: entry, boards }: Props) {
 
   return (
     <Box data-testid="task-board" data-board="all" ref={setBoardEl}>
-      {!phone && <Box sx={{ mb: 2 }}>{switcher()}</Box>}
+      {/* D43: the board's title and switcher sit in the top bar. */}
+      <PageTitle>{switcher(true)}</PageTitle>
       <BoardToolbar
         from={from}
         to={to}
@@ -180,7 +182,6 @@ export default function AllBoard({ board: entry, boards }: Props) {
         onHideCompleted={toggleHide}
         noMine
         compact={phone}
-        title={phone ? switcher(true) : undefined}
         phoneView={phoneView}
         onPhoneView={setPhoneView}
       />

@@ -30,9 +30,12 @@ defmodule RockcutApiWeb.DeviceController do
   end
 
   def update(conn, %{"id" => id} = params) do
-    with_device(conn, id, :manage_device, fn actor, d ->
-      attrs = Map.take(params, ["name", "home_department_id", "active"])
+    attrs = Map.take(params, ["name", "home_department_id", "active", "color_mode"])
 
+    # D43: the theme alone is the home department's managers' too (spec S147).
+    action = if Map.keys(attrs) == ["color_mode"], do: :set_color_mode, else: :manage_device
+
+    with_device(conn, id, action, fn actor, d ->
       with {:ok, updated} <- Devices.update_device(d, attrs, actor) do
         json(conn, %{data: device(updated)})
       end

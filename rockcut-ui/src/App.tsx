@@ -16,7 +16,6 @@ import {
   Collapse,
   Drawer,
   IconButton,
-  Link,
   List,
   ListItemButton,
   ListItemIcon,
@@ -24,6 +23,13 @@ import {
   Toolbar,
   Tooltip,
   Typography,
+  Divider,
+  Menu,
+  MenuItem,
+  ListSubheader,
+  Snackbar,
+  useTheme,
+  darken,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
@@ -55,6 +61,10 @@ import LogoutIcon from '@mui/icons-material/Logout'
 import LoginIcon from '@mui/icons-material/Login'
 import TabletIcon from '@mui/icons-material/TabletMac'
 import AccountCircle from '@mui/icons-material/AccountCircle'
+import PersonIcon from '@mui/icons-material/Person'
+import { PageTitleProvider, PageTitleSlot } from './components/PageTitle'
+import Check from '@mui/icons-material/Check'
+import { COLOR_MODES, type ColorMode } from './lib/colorMode'
 import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom'
 import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
@@ -165,8 +175,27 @@ function LoadingScreen({ unreachable, onRetry }: { unreachable?: boolean; onRetr
   )
 }
 
+/** D43: the account menu's Theme choices (an array: MUI menus don't take fragments). */
+function themeMenuItems(current: ColorMode | null, onPick: (mode: ColorMode) => void) {
+  return [
+    <Divider key="theme-divider" />,
+    <ListSubheader key="theme-heading" sx={{ lineHeight: '28px', fontSize: 12, bgcolor: 'transparent' }}>
+      Theme
+    </ListSubheader>,
+    ...COLOR_MODES.map((m) => (
+      <MenuItem key={m.key} selected={m.key === current} data-testid={`theme-${m.key}`} onClick={() => onPick(m.key)}>
+        <ListItemIcon>{m.key === current ? <Check fontSize="small" /> : null}</ListItemIcon>
+        {m.label}
+      </MenuItem>
+    )),
+  ]
+}
+
 function App() {
+  // Black logo on light themes, white on dark.
+  const logoSrc = useTheme().palette.mode === 'dark' ? '/rockcut-logo-light.png' : '/rockcut-logo.png'
   const [mobileOpen, setMobileOpen] = useState(false)
+  const [accountAnchor, setAccountAnchor] = useState<HTMLElement | null>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [openOverride, setOpenOverride] = useState<Record<string, boolean>>({})
   const navigate = useNavigate()
@@ -179,6 +208,8 @@ function App() {
     capabilities,
     sharedDevices,
     taskBoards,
+    colorMode,
+    setColorMode,
     loadMe,
     logout,
     signOutDevice,
@@ -186,6 +217,13 @@ function App() {
     endPersonalSession,
   } = useAuth()
   const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
+  const [themeError, setThemeError] = useState<string | null>(null)
+  // D43: the theme changes at once; the save follows and is undone if refused.
+  const pickTheme = (mode: ColorMode) => {
+    setAccountAnchor(null)
+    if (mode === colorMode) return
+    setColorMode(mode).catch(() => setThemeError('Couldn’t save your theme. Try again.'))
+  }
   const [deviceSignOutError, setDeviceSignOutError] = useState<string | null>(null)
   const [deviceSigningOut, setDeviceSigningOut] = useState(false)
   // D33: a person signed in on a shared tablet (the tablet's token is set aside).
@@ -263,6 +301,9 @@ function App() {
     .filter((s) => !isDevice || s.children.length > 0)
 
   const sections: NavSection[] = [
+    // D41: Tasks opens the person's own board (a switcher when there are more).
+    // D43: first, beside Home, so the plain links sit above the expandable headings.
+    ...(realBoards(taskBoards).length > 0 ? [{ key: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, children: [], path: '/tasks' }] : []),
     {
       key: 'schedule',
       label: 'Schedule',
@@ -280,8 +321,6 @@ function App() {
             ]),
       ],
     },
-    // D41: Tasks opens the person's own board (a switcher when there are more).
-    ...(realBoards(taskBoards).length > 0 ? [{ key: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, children: [], path: '/tasks' }] : []),
     ...deptSections,
     ...(canManageUsers || sharedDevices
       ? [
@@ -387,7 +426,7 @@ function App() {
             onClick={() => go('/', isMobile)}
           >
             <img
-              src="/rockcut-logo.png"
+              src={logoSrc}
               alt="Rockcut Brewing Co"
               style={{
                 width: rail ? 40 : 120,
@@ -492,6 +531,7 @@ function App() {
   }
 
   return (
+    <PageTitleProvider>
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
       <Drawer
         variant="permanent"
@@ -532,9 +572,14 @@ function App() {
             borderColor: 'divider',
           }}
         >
-          <Toolbar variant="dense">
+          <Toolbar
+            variant="dense"
+            // D43: at phone width the page title replaces the small logo.
+            sx={{ gap: 1, '&:has(.page-title-slot:not(:empty)) .phone-logo': { display: 'none' } }}
+          >
             <IconButton
               edge="start"
+              aria-label="Open navigation"
               onClick={() => setMobileOpen(true)}
               sx={{ display: { md: 'none' }, mr: 1 }}
             >
@@ -551,9 +596,11 @@ function App() {
               </IconButton>
             )}
 
-            <Box sx={{ display: { xs: 'flex', md: 'none' } }}>
-              <img src="/rockcut-logo.png" alt="Rockcut Brewing Co" style={{ height: 32 }} />
+            <Box className="phone-logo" sx={{ display: { xs: 'flex', md: 'none' } }}>
+              <img src={logoSrc} alt="Rockcut Brewing Co" style={{ height: 32 }} />
             </Box>
+
+            <PageTitleSlot />
 
             <Box sx={{ flexGrow: 1 }} />
 
@@ -607,46 +654,67 @@ function App() {
                 <NotificationBell />
 
                 {personalOnTablet ? (
-                  <Typography variant="body2" color="text.secondary" sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}>
-                    {user.email}
-                  </Typography>
+                  <>
+                    {/* A shared tablet keeps a visible Sign out: the next person shouldn't hunt for it. */}
+                    <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+                      {user.email}
+                    </Typography>
+                    <Button
+                      data-testid="logout-button"
+                      size="small"
+                      color="inherit"
+                      onClick={logout}
+                      startIcon={<LogoutIcon />}
+                      sx={{ color: 'text.secondary' }}
+                    >
+                      Sign out
+                    </Button>
+                  </>
                 ) : (
                   <>
-                    {/* D34: your name opens your profile; an icon at phone width. */}
-                    <Link
-                      component={RouterLink}
-                      to="/profile"
-                      data-testid="profile-link"
-                      variant="body2"
-                      color="text.secondary"
-                      underline="hover"
-                      sx={{ mr: 1, ml: 1, display: { xs: 'none', sm: 'block' } }}
-                    >
-                      {user.email}
-                      {isOwner ? ' · Owner' : ''}
-                    </Link>
+                    {/* D43: your account, Profile and Log out in one menu. */}
                     <IconButton
-                      component={RouterLink}
-                      to="/profile"
-                      aria-label="Profile"
-                      data-testid="profile-icon"
+                      aria-label="Account"
+                      data-testid="account-menu"
                       size="small"
-                      sx={{ display: { xs: 'inline-flex', sm: 'none' } }}
+                      onClick={(e) => setAccountAnchor(e.currentTarget)}
                     >
                       <AccountCircle />
                     </IconButton>
+                    <Menu
+                      anchorEl={accountAnchor}
+                      open={!!accountAnchor}
+                      onClose={() => setAccountAnchor(null)}
+                      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                    >
+                      <Box sx={{ px: 2, py: 1, maxWidth: 280 }}>
+                        <Typography variant="subtitle2" noWrap>{user.name || user.email}</Typography>
+                        <Typography variant="body2" color="text.secondary" noWrap>
+                          {user.email}
+                          {isOwner ? ' · Owner' : ''}
+                        </Typography>
+                      </Box>
+                      <Divider />
+                      <MenuItem component={RouterLink} to="/profile" data-testid="profile-link" onClick={() => setAccountAnchor(null)}>
+                        <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
+                        Profile
+                      </MenuItem>
+                      {themeMenuItems(colorMode, pickTheme)}
+                      <Divider />
+                      <MenuItem
+                        data-testid="logout-button"
+                        onClick={() => {
+                          setAccountAnchor(null)
+                          logout()
+                        }}
+                      >
+                        <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
+                        Log out
+                      </MenuItem>
+                    </Menu>
                   </>
                 )}
-                <Button
-                  data-testid="logout-button"
-                  size="small"
-                  color="inherit"
-                  onClick={logout}
-                  startIcon={<LogoutIcon />}
-                  sx={{ color: 'text.secondary' }}
-                >
-                  {personalOnTablet ? 'Sign out' : 'Logout'}
-                </Button>
               </>
             )}
           </Toolbar>
@@ -658,7 +726,15 @@ function App() {
         {personalOnTablet && (
           <Box
             data-testid="personal-session-banner"
-            sx={{ px: 3, py: 1, bgcolor: 'warning.light', color: 'warning.contrastText', fontSize: 14 }}
+            sx={(t) => ({
+              px: 3,
+              py: 1,
+              fontSize: 14,
+              // D43: a muted band in dark; the bright one glared.
+              ...(t.palette.mode === 'dark'
+                ? { bgcolor: darken(t.palette.warning.main, 0.65), color: t.palette.warning.light }
+                : { bgcolor: 'warning.light', color: 'warning.contrastText' }),
+            })}
           >
             Signed in as {user.name || user.email} on a shared tablet. It returns to the shared screen after 5 minutes without
             activity.
@@ -763,7 +839,19 @@ function App() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Snackbar
+        open={!!themeError}
+        autoHideDuration={6000}
+        // Only time ends it: Escape or a click elsewhere (closing the menu) mustn't hide it unread (DEV QA G5).
+        onClose={(_e, reason) => {
+          if (reason === 'timeout') setThemeError(null)
+        }}
+        message={themeError ?? ''}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      />
     </Box>
+    </PageTitleProvider>
   )
 }
 
