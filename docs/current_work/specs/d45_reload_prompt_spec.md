@@ -57,7 +57,10 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
   over at once (as every worker did before) and **reloads the open pages
   itself, once**, so phones and tablets update with nobody touching them.
   It leaves a marker; every later worker waits for the prompt. Accepted
-  cost: that one time, an open page reloads even mid-form.
+  cost: that one time, an open page reloads even mid-form. Limit (built):
+  an old page only meets D45 when the browser next checks for a worker (a
+  real page load or a push), so a tablet open for days needs one reload
+  after the release (then no tap), or its next page load for any reason.
 
 ### 3.2 View Schedule default (item 2)
 
@@ -72,7 +75,7 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
 ### 3.3 Hide shifts (item 3)
 
 - A **"Hide shifts"** switch next to **Hide completed** on every board
-  (Brewery, Taproom, Office, Sales, All departments), in the same place on
+  (Brewery, Taproom, Office, Sales; not All departments, which has no day headers), in the same place on
   the phone. Off by default: shifts show, as today.
 - On: each day's header drops the people lines and the open-shift lines (and
   "No one scheduled"). **Events stay** (e.g. "Brew day: Hazy IPA · All day").
@@ -125,9 +128,9 @@ redeploy.
 | S183 | `owner` | Scheduler | Unchanged (week grid) |
 | S189 | `brewer1` (open on `v2026.10.15`, no prompt code) | deploy D45 | The page reloads by itself once into D45; a later build shows the prompt instead |
 | S184 | `brewer1` | Brewery board, Hide shifts on | Day headers lose people, open shifts and "No one scheduled"; an event day keeps its event line; a day with no event has no header box |
-| S185 | `brewer1` | reload; switch to the Taproom board and back | Brewery stays on; Taproom has its own setting (off) |
+| S185 | `owner` (brewer1 sees only Brewery) | reload; switch to the Taproom board and back | Brewery stays on; Taproom has its own setting (off) |
 | S186 | `brewer1` at 412×915 | Hide shifts in the phone's board menu / settings | Same effect in the phone views |
-| S187 | `owner` | All departments board | Has its own Hide shifts |
+| S187 | `owner` | All departments board | No Hide shifts switch (that board has no day headers, D41) |
 | S188 | `taproomDevice` | Hide shifts on the tablet | Remembered on that tablet |
 
 ## 7. Acceptance criteria
@@ -143,7 +146,7 @@ redeploy.
 - [ ] View Schedule defaults to today + 6, not remembered; clearing shows
       everything (S179–S182); Scheduler unchanged (S183).
 - [ ] Hide shifts: hides shifts, keeps events, per board per browser,
-      phone too, All departments too (S184–S188).
+      phone too; not on All departments (S184–S188).
 - [ ] Tested against `vite preview` with two builds and on DEV with two
       deploys; Matt checks the Pixel and a taproom tablet.
 
