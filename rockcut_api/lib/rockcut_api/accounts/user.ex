@@ -22,6 +22,10 @@ defmodule RockcutApi.Accounts.User do
     field :staff_code_encrypted, :binary, redact: true
     field :staff_code_set_at, :utc_datetime
 
+    # D43: "light" | "dark" | "device" (follow the browser). A device account's
+    # applies on its tablets, also while someone uses "Sign in as me" there.
+    field :color_mode, :string, default: "light"
+
     belongs_to :home_department, RockcutApi.Accounts.Department
 
     field :password, :string, virtual: true, redact: true
@@ -94,11 +98,30 @@ defmodule RockcutApi.Accounts.User do
     |> device_common()
   end
 
-  @doc "Rename a device, move it to another home department, or (de)activate it."
+  @doc "Rename a device, move it to another home department, (de)activate it, or set its theme."
   def device_update_changeset(%__MODULE__{} = device, attrs) do
     device
     |> cast(attrs, [:name, :home_department_id, :active])
+    |> cast(attrs, [:color_mode], empty_values: [])
+    |> validate_color_mode()
     |> device_common()
+  end
+
+  @color_modes ~w(light dark device)
+  def color_modes, do: @color_modes
+
+  @doc "D43: a person's own theme (the account menu)."
+  def color_mode_changeset(user, attrs) do
+    user
+    # "" would otherwise be cast to the default and saved as "light".
+    |> cast(attrs, [:color_mode], empty_values: [])
+    |> validate_color_mode()
+  end
+
+  defp validate_color_mode(changeset) do
+    changeset
+    |> validate_required([:color_mode])
+    |> validate_inclusion(:color_mode, @color_modes)
   end
 
   defp device_common(changeset) do

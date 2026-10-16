@@ -18,7 +18,7 @@ export default function UnfinishedCard({ total, slot: { setNodeRef, items }, onM
     <Paper
       variant="outlined"
       data-testid="unfinished-card"
-      sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, borderColor: 'warning.main', bgcolor: 'background.default' }}
+      sx={{ p: 1, display: 'flex', flexDirection: 'column', gap: 1, borderColor: 'warning.main', bgcolor: 'background.boardColumn' }}
     >
       <Typography variant="subtitle2" sx={{ fontWeight: 600 }} data-testid="unfinished-title">
         Unfinished ({total})

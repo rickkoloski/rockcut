@@ -1,6 +1,6 @@
 # D42: Task board follow-ups + required password reset — Spec
 
-**Status:** DRAFT (lead, 2026-10-14), from Matt's decisions of 2026-10-13/14
+**Status:** COMPLETE, on prod in `v2026.10.14` (PR #21 merged 2026-10-14); from Matt's decisions of 2026-10-13/14
 **Backlog:** PortableMind task 4260 (and 4117)
 **Concept:** 10_brewery_tasks
 **Amends:** `specs/d38_brewery_task_board_spec.md` and

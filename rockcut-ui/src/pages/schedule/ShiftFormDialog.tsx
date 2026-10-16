@@ -20,6 +20,7 @@ import parseApiError from '../../lib/parseApiError'
 import { addDaysKey, formatHours, localInputToUtc, shiftHours, utcToLocalInput } from '../../lib/datetime'
 import { conflictsFor, type OffWindows, type UnavailabilityByUser } from '../../lib/conflicts'
 import type { Department, Position, RosterEntry, Shift, ShiftTemplate } from '../../lib/types'
+import { departmentColor, shiftColor } from '../../lib/colors'
 
 interface Prefill {
   departmentId?: number
@@ -242,15 +243,37 @@ export default function ShiftFormDialog({ open, onClose, editShift, departments,
           }}
           fullWidth
         >
-          {grouped.flatMap(([group, list]) => [
-            <ListSubheader key={`h-${group}`}>{group}</ListSubheader>,
-            ...list.map((p) => (
-              <MenuItem key={p.id} value={p.id}>
-                {p.name}
-                {p.active ? '' : ' (inactive)'}
-              </MenuItem>
-            )),
-          ])}
+          {/* D43: department headings read as headings (small caps, the
+              department's color dot, a band) and positions sit indented with
+              the color their shifts get in the grid. */}
+          {grouped.flatMap(([group, list], gi) => {
+            const dept = departments.find((d) => d.id === list[0]?.department_id)
+            const deptHex = departmentColor(dept)
+            return [
+              <ListSubheader
+                key={`h-${group}`}
+                sx={{
+                  display: 'flex', alignItems: 'center', gap: 1, lineHeight: '32px',
+                  fontSize: 12, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase',
+                  color: 'text.secondary', bgcolor: 'background.boardColumn',
+                  borderTop: gi > 0 ? '1px solid' : 'none', borderColor: 'divider',
+                }}
+              >
+                <Box component="span" sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: deptHex, flexShrink: 0 }} />
+                {group}
+              </ListSubheader>,
+              ...list.map((p) => (
+                <MenuItem key={p.id} value={p.id} sx={{ pl: 4, gap: 1.25 }}>
+                  <Box
+                    component="span"
+                    sx={{ width: 14, height: 14, borderRadius: '3px', bgcolor: shiftColor(deptHex, p.id, p.color_shade).bg, flexShrink: 0 }}
+                  />
+                  {p.name}
+                  {p.active ? '' : ' (inactive)'}
+                </MenuItem>
+              )),
+            ]
+          })}
         </TextField>
         {derivedDept && (
           <Typography variant="caption" color="text.secondary" sx={{ mt: -1 }}>

@@ -1,6 +1,6 @@
 # D38–D40: Brewery Task Board — Specification
 
-**Status:** Approved (Matt, 2026-10-11). Q19–Q20 answered; checked against the three-environment workflow (§3.9).
+**Status:** COMPLETE (D38, D39, D40 on prod in `v2026.10.14`, 2026-10-14). Approved by Matt 2026-10-11.
 **Created:** 2026-10-11
 **Author:** Matt + CC
 **Depends On:**

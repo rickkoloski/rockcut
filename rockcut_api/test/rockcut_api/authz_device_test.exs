@@ -179,10 +179,10 @@ defmodule RockcutApi.AuthzDeviceTest do
       refute Authz.can?(d, :read, :owner_activity)
     end
 
-    test "shared devices: can't create, pair, revoke or manage devices", %{d: d} do
+    test "shared devices: can't create, pair, revoke, manage or theme devices", %{d: d} do
       refute Authz.can?(d, :create, :devices)
 
-      for a <- [:view_device, :pair, :revoke_token, :manage_device],
+      for a <- [:view_device, :pair, :revoke_token, :manage_device, :set_color_mode],
           do: refute(Authz.can?(d, a, d))
     end
   end

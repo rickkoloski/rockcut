@@ -1,6 +1,6 @@
 # D40: Shared tablets on the boards, shift-end reminder, dashboard card — Plan
 
-**Status:** DRAFT (lead, 2026-10-14)
+**Status:** COMPLETE, on prod in `v2026.10.14` (PR #22 merged 2026-10-14)
 **Backlog:** PortableMind task 4213
 **Spec:** `specs/d38_brewery_task_board_spec.md` §3.4 (tablet), §3.5
 (reminder), §3.8 (Dashboard card, Notification settings), scenarios S9g,

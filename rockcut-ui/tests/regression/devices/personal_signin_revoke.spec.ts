@@ -177,7 +177,7 @@ test.describe('on the shared taproomDevice tablet', () => {
     await page.goto('/')
     await signInAsMe(page)
     await expect(page.getByTestId('profile-link')).toHaveCount(0)
-    await expect(page.getByTestId('profile-icon')).toHaveCount(0)
+    await expect(page.getByTestId('account-menu')).toHaveCount(0)
     await page.goto('/profile')
     await expect(page).toHaveURL(/\/$/)
     await expect(page.getByTestId('profile-page')).toHaveCount(0)

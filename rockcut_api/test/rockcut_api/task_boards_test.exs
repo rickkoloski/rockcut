@@ -39,9 +39,10 @@ defmodule RockcutApi.TaskBoardsTest do
     task
   end
 
+  # Added on the pinned @today, not the real date, so it's on that day's list.
   defp item!(dept, actor, name) do
     {:ok, item} = Tasks.create_item(dept, %{name: name}, actor)
-    item
+    item |> Ecto.Changeset.change(inserted_at: ~U[2026-10-14 12:00:00Z]) |> Repo.update!()
   end
 
   describe "each board keeps to itself (S115)" do

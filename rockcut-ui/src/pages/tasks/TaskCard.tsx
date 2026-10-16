@@ -57,11 +57,13 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
         alignItems: 'flex-start',
         gap: 0.25,
         cursor: card.locked || readOnly ? 'pointer' : 'grab',
-        opacity: dragging ? 0.4 : card.done ? 0.65 : 1,
+        // A done card dims its title, not the whole card: the "✓ name" line and
+        // the initials stay readable (D43 QA G3).
+        opacity: dragging ? 0.4 : 1,
         borderLeft: card.overdue ? '4px solid' : undefined,
         borderLeftColor: card.overdue ? 'warning.main' : undefined,
         boxShadow: overlay ? 6 : undefined,
-        bgcolor: 'background.paper',
+        bgcolor: 'background.boardCard',
         '&:hover': { borderColor: 'primary.light' },
       }}
     >
@@ -87,7 +89,7 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
           <Typography
             variant="body2"
             data-testid={`task-title-${card.key}`}
-            sx={{ flex: 1, minWidth: 0, textDecoration: card.done ? 'line-through' : undefined, overflowWrap: 'break-word' }}
+            sx={{ flex: 1, minWidth: 0, textDecoration: card.done ? 'line-through' : undefined, color: card.done ? 'text.secondary' : undefined, overflowWrap: 'break-word' }}
           >
             {card.title}
           </Typography>

@@ -69,6 +69,11 @@ test('S24: ticking Temps and Pressures today shows who and when, brewer2 sees it
   await expect(page2.getByTestId(`daily-label-${today}-${temps}`)).toHaveText(/^Temps — Jake, /)
   await other.close()
 
+  // D43 §1.11: a finished card starts closed after a load; open it to untick.
+  if (start + 2 === total) {
+    await expect(page.getByTestId(`daily-toggle-${today}`)).toHaveAttribute('aria-expanded', 'false')
+    await page.getByTestId(`daily-toggle-${today}`).click()
+  }
   saved = checkWrite(page, 'DELETE')
   await setBoardCheck(page.getByTestId(`daily-check-${today}-${temps}`), false)
   await saved

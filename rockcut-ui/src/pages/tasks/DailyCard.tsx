@@ -17,9 +17,12 @@ interface Props {
  * with unticked checks. Today and past days tick; future days show the checks
  * disabled. A retired item (shown where it was ticked) can't be ticked or
  * unticked: its ticks are kept (D39 Decision 1). It isn't a drag item.
+ * D43: once every item is ticked it looks like a finished task (dimmed,
+ * struck through) and starts closed, even on today.
  */
 export default function DailyCard({ daily, today, onToggle, onEditItems }: Props) {
-  const [expanded, setExpanded] = useState(daily.date === today)
+  const complete = daily.total > 0 && daily.done === daily.total
+  const [expanded, setExpanded] = useState(daily.date === today && !complete)
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const past = daily.date < today
   const future = daily.date > today
@@ -27,7 +30,7 @@ export default function DailyCard({ daily, today, onToggle, onEditItems }: Props
   const id = daily.date
 
   return (
-    <Paper variant="outlined" data-testid={`daily-${id}`} data-behind={behind} sx={{ borderColor: behind ? 'warning.main' : undefined }}>
+    <Paper variant="outlined" data-testid={`daily-${id}`} data-behind={behind} data-complete={complete} sx={{ bgcolor: 'background.boardCard', borderColor: behind ? 'warning.main' : undefined, opacity: complete ? 0.65 : 1 }}>
       <Box sx={{ display: 'flex', alignItems: 'center' }}>
         <ButtonBase
           onClick={() => setExpanded((v) => !v)}
@@ -37,7 +40,7 @@ export default function DailyCard({ daily, today, onToggle, onEditItems }: Props
         >
           <Typography
             variant="body2"
-            sx={{ fontWeight: 600, whiteSpace: 'nowrap', color: behind ? 'warning.dark' : undefined }}
+            sx={{ fontWeight: 600, whiteSpace: 'nowrap', color: behind ? 'warning.dark' : undefined, textDecoration: complete ? 'line-through' : undefined }}
             data-testid={`daily-count-${id}`}
           >
             Daily {daily.done}/{daily.total}

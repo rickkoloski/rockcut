@@ -76,14 +76,15 @@ test.describe('a Taproom manager leaves', () => {
     await expect(dialog.locator(`input[value$="${after.token}.ics"], input[value*="${after.token}"]`)).toHaveCount(1)
   })
 
-  test('Q3: "Calendar link changed" is in-app and push, not email, by default', async ({ page }) => {
+  // D43 §1.12: the Email column is hidden (email stays off by default in the API).
+  test('Q3: "Calendar link changed" is in-app and push by default', async ({ page }) => {
     await page.goto('/')
     await page.getByRole('button', { name: 'Notifications' }).click()
     await page.getByRole('button', { name: 'Preferences' }).click()
     const row = page.getByRole('row', { name: /Calendar link changed/ })
-    const [inApp, email, push] = [0, 1, 2].map((i) => row.locator('input[type="checkbox"]').nth(i))
+    await expect(row.locator('input[type="checkbox"]')).toHaveCount(2)
+    const [inApp, push] = [0, 1].map((i) => row.locator('input[type="checkbox"]').nth(i))
     await expect(inApp).toBeChecked()
-    await expect(email).not.toBeChecked()
     await expect(push).toBeChecked()
   })
 })

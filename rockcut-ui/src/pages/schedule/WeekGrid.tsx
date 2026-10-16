@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Box, Chip, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Box, Button, Chip, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
@@ -57,13 +57,57 @@ export default function WeekGrid({
   const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null)
   const [menuUserId, setMenuUserId] = useState<number | null>(null)
 
-  const moveEmployee = (rosterIndex: number, dir: -1 | 1) => {
-    const target = rosterIndex + dir
-    if (target < 0 || target >= roster.length) return
-    const next = [...roster]
-    ;[next[rosterIndex], next[target]] = [next[target], next[rosterIndex]]
+  // D43: quick steps (arrow keys) can come before the next render, so each
+  // one builds on the order the last one made, not on the roster prop.
+  const order = useRef(roster)
+  useLayoutEffect(() => {
+    order.current = roster
+  }, [roster])
+  const moveEmployee = (userId: number, dir: -1 | 1) => {
+    const list = order.current
+    const i = list.findIndex((r) => r.id === userId)
+    const target = i + dir
+    if (i < 0 || target < 0 || target >= list.length) return
+    const next = [...list]
+    ;[next[i], next[target]] = [next[target], next[i]]
+    order.current = next
     onReorder(next.map((r) => r.id))
   }
+
+  // D43: reordering is a mode, started from a row's ⋮ menu ("Move"). While it's
+  // on, that row shows ↑ ↓ and Finished; the arrow keys move it, Enter or Esc
+  // ends it. Each step saves, as the arrows always have.
+  const [movingId, setMovingId] = useState<number | null>(null)
+  const movingIndex = movingId == null ? -1 : roster.findIndex((r) => r.id === movingId)
+  useEffect(() => {
+    if (movingId == null) return
+    const onKey = (e: KeyboardEvent) => {
+      // Keys in an open dialog or menu are its own (focus is trapped there): they never move the row (QA G4).
+      if ((e.target as Element | null)?.closest?.('[role="dialog"], [role="menu"], [role="listbox"], .MuiModal-root')) return
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        moveEmployee(movingId, e.key === 'ArrowUp' ? -1 : 1)
+      } else if (e.key === 'Enter' || e.key === 'Escape') {
+        e.preventDefault()
+        setMovingId(null)
+      }
+    }
+    // A click anywhere but the moving row's ↑ ↓ Finished ends Move (and still does what it does).
+    const onPointer = (e: PointerEvent) => {
+      const t = e.target as Element | null
+      if (t && t !== document.documentElement && !t.closest?.('[data-testid="move-controls"]')) setMovingId(null)
+    }
+    window.addEventListener('keydown', onKey)
+    document.addEventListener('pointerdown', onPointer, true)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.removeEventListener('pointerdown', onPointer, true)
+    }
+  })
+  useEffect(() => {
+    if (movingId == null) return
+    document.querySelector(`[data-moving-row="${movingId}"]`)?.scrollIntoView({ block: 'nearest' })
+  }, [movingId, movingIndex])
 
   const openMenu = (e: React.MouseEvent<HTMLElement>, userId: number) => {
     setMenuAnchor(e.currentTarget)
@@ -144,10 +188,22 @@ export default function WeekGrid({
 
   const round2 = (n: number) => Math.round(n * 100) / 100
 
+  // D43: the week's totals (everyone, open shifts included; follows the filters).
+  const weekTotals = useMemo(() => {
+    let pub = 0
+    let draft = 0
+    for (const h of hoursByUser.values()) {
+      pub += h.pub
+      draft += h.draft
+    }
+    return { pub, draft }
+  }, [hoursByUser])
+
   const hoursLabel = (rowId: number | null): string => {
     const h = hoursByUser.get(rowId ?? 'open')
     if (!h) return ''
-    if (h.draft > 0) return `${round2(h.pub)} hr / ${round2(h.pub + h.draft)} hr draft`
+    // D43: as the week totals say it: published, then drafts only.
+    if (h.draft > 0) return `${round2(h.pub)} hr · ${round2(h.draft)} hr draft`
     return h.pub > 0 ? `${round2(h.pub)} hr` : ''
   }
 
@@ -272,7 +328,17 @@ export default function WeekGrid({
       <Box sx={{ display: 'table', borderCollapse: 'collapse', minWidth: NAME_COL + DAY_COL * 7 }}>
         {/* header */}
         <Box sx={{ display: 'table-row' }}>
-          <Box sx={{ ...stickyCol, display: 'table-cell', p: 1, fontWeight: 700, top: 0 }}>Staff</Box>
+          <Box sx={{ ...stickyCol, display: 'table-cell', p: 1, fontWeight: 700, top: 0 }}>
+            Staff
+            <Box
+              data-testid="week-hours"
+              title="This week's shifts, open shifts included, for the department and position shown"
+              sx={{ fontWeight: 400, fontSize: 12, color: 'text.secondary', lineHeight: 1.4, mt: 0.25 }}
+            >
+              <Box>Scheduled {round2(weekTotals.pub)} hr</Box>
+              <Box>Draft {round2(weekTotals.draft)} hr</Box>
+            </Box>
+          </Box>
           {days.map((d) => (
             <Box key={d} sx={{ display: 'table-cell', p: 1, fontWeight: 700, minWidth: DAY_COL, borderBottom: '1px solid', borderColor: 'divider' }}>
               {formatDayColumn(d)}
@@ -313,7 +379,15 @@ export default function WeekGrid({
 
         {rows.map((row, rowIndex) => (
           <Box key={row.id ?? 'open'} sx={{ display: 'table-row' }}>
-            <Box sx={{ ...stickyCol, display: 'table-cell', p: 1, verticalAlign: 'top', borderTop: '1px solid', borderColor: 'divider' }}>
+            <Box
+              data-moving-row={row.id === movingId ? movingId : undefined}
+              sx={{
+                ...stickyCol, display: 'table-cell', p: 1, verticalAlign: 'top', borderTop: '1px solid', borderColor: 'divider',
+                ...(row.id === movingId && movingId != null
+                  ? { bgcolor: 'background.boardToday', boxShadow: (t) => `inset 3px 0 0 ${t.palette.primary.main}` }
+                  : {}),
+              }}
+            >
               <Stack direction="row" alignItems="center" spacing={0.25} sx={{ minWidth: 0 }}>
                 <Typography
                   variant="body2"
@@ -322,20 +396,25 @@ export default function WeekGrid({
                 >
                   {row.name}{row.id === currentUserId ? ' (you)' : ''}
                 </Typography>
-                {canManageSchedule && row.id !== null && (
-                  <>
-                    <IconButton size="small" sx={{ p: 0.25 }} disabled={rowIndex === 0} onClick={() => moveEmployee(rowIndex, -1)}>
-                      <ArrowUpwardIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                    <IconButton size="small" sx={{ p: 0.25 }} disabled={rowIndex >= roster.length - 1} onClick={() => moveEmployee(rowIndex, 1)}>
-                      <ArrowDownwardIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                    <IconButton size="small" sx={{ p: 0.25 }} onClick={(e) => openMenu(e, row.id!)}>
-                      <MoreVertIcon sx={{ fontSize: 16 }} />
-                    </IconButton>
-                  </>
+                {canManageSchedule && row.id !== null && movingId == null && (
+                  <IconButton size="small" sx={{ p: 0.25 }} aria-label={`${row.name} options`} onClick={(e) => openMenu(e, row.id!)}>
+                    <MoreVertIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
                 )}
               </Stack>
+              {row.id === movingId && movingId != null && (
+                <Stack direction="row" alignItems="center" spacing={0.25} sx={{ mt: 0.5 }} data-testid="move-controls">
+                  <IconButton size="small" aria-label="Move up" sx={{ p: 0.25 }} disabled={rowIndex === 0} onClick={() => moveEmployee(row.id!, -1)}>
+                    <ArrowUpwardIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                  <IconButton size="small" aria-label="Move down" sx={{ p: 0.25 }} disabled={rowIndex >= roster.length - 1} onClick={() => moveEmployee(row.id!, 1)}>
+                    <ArrowDownwardIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                  <Button size="small" variant="contained" onClick={() => setMovingId(null)} sx={{ ml: 'auto', minWidth: 0, px: 1, py: 0, fontSize: 12 }}>
+                    Finished
+                  </Button>
+                </Stack>
+              )}
               {hoursLabel(row.id) && (
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
                   {hoursLabel(row.id)}
@@ -409,6 +488,17 @@ export default function WeekGrid({
       </Box>
 
       <Menu anchorEl={menuAnchor} open={!!menuAnchor} onClose={closeMenu}>
+        <MenuItem
+          data-testid="row-move"
+          onClick={() => {
+            setMovingId(menuUserId)
+            closeMenu()
+            // Focus leaves the closing menu, so the arrow keys aren't taken as the menu's own.
+            ;(document.activeElement as HTMLElement | null)?.blur()
+          }}
+        >
+          Move
+        </MenuItem>
         <MenuItem
           onClick={() => {
             if (menuUserId != null) onPublishEmployee(menuUserId)

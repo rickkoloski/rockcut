@@ -100,6 +100,9 @@ defmodule RockcutApiWeb.Router do
 
     post "/session/password", SessionController, :password
     delete "/sessions/others", SessionController, :delete_others
+    # D43: the person's own theme. Not for devices (a manager sets a tablet's
+    # on Shared devices); a "Sign in as me" session may set its person's.
+    put "/me/color_mode", MeController, :update_color_mode
 
     # Departments (update) and roster order; reads are in the scope above
     patch "/departments/:id", DepartmentController, :update
