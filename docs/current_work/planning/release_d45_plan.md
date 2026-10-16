@@ -1,6 +1,6 @@
 # Release plan: D45 to prod (update prompt, View Schedule 7 days, Hide shifts)
 
-**Status:** IN PROGRESS 2026-10-16 (Matt: "release to prod").
+**Status:** RELEASED 2026-10-16: UI v23 (build id `v2026.10.16`), API unchanged v27, snapshot `vs_l03KbyLXg4j1tewzvl2XXXmw`, smoke green, Matt's checks 1–4 passed. PR #30.
 **Tag:** `v2026.10.16` · **UI only** (API unchanged since `v2026.10.15`).
 
 ## 1. What ships

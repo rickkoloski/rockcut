@@ -1,6 +1,6 @@
 # D45: "New version available" Prompt, View Schedule 7 Days, Hide Shifts — Completion Record
 
-**Status:** COMPLETE, merged to `develop` (PR #29), 2026-10-16. Not yet on prod.
+**Status:** COMPLETE and **on prod** in `v2026.10.16` (2026-10-16, PR #30: UI v23, API unchanged v27). Merged to `develop` 2026-10-16 (PR #29, merge `dded6b0`).
 **Spec:** `specs/d45_reload_prompt_spec.md` (scenarios S170–S189)
 **Plan:** `planning/d45_reload_prompt_plan.md`
 **Concept:** 02_scaffold_ui
@@ -39,6 +39,10 @@ build arg.
 - **Matt on DEV (UI v44):** the Pixel showed the bar and Reload worked; the
   taproom tablet reloaded itself; a push arrived on the Pixel after the Reload
   (S178); View Schedule "looks good too".
+- **Prod (`v2026.10.16`):** agent smoke green (UI 200, `sw.js` no-cache with
+  the prompt-mode handler, build id in the bundle, bundle check, API health);
+  Matt's checks 1–4 passed (the one-time self-reload, View Schedule, Hide
+  shifts, the taproom tablet).
 
 ## Notes for the release
 
