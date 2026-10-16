@@ -38,7 +38,7 @@ build arg.
   older than D45, backlog per Matt.
 - **Matt on DEV (UI v44):** the Pixel showed the bar and Reload worked; the
   taproom tablet reloaded itself; a push arrived on the Pixel after the Reload
-  (S178).
+  (S178); View Schedule "looks good too".
 
 ## Notes for the release
 
