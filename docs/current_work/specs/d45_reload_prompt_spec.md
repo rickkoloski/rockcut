@@ -1,6 +1,6 @@
 # D45: "New version available" prompt, View Schedule default range, Hide shifts — Spec
 
-**Status:** APPROVED (Matt, 2026-10-15), including item 3 (Hide shifts)
+**Status:** COMPLETE (merged to `develop`, PR #29, 2026-10-16). Record: `stepwise_results/d45_reload_prompt_COMPLETE.md`.
 **Backlog:** task 4054 (item 1)
 **Concept:** 02_scaffold_ui
 **Follows:** `v2026.10.15` (D43)
