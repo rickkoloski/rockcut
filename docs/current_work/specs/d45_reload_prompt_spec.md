@@ -1,6 +1,6 @@
 # D45: "New version available" prompt, View Schedule default range, Hide shifts — Spec
 
-**Status:** APPROVED (Matt, 2026-10-15); item 3 added 2026-10-15, awaiting approval
+**Status:** APPROVED (Matt, 2026-10-15), including item 3 (Hide shifts)
 **Backlog:** task 4054 (item 1)
 **Concept:** 02_scaffold_ui
 **Follows:** `v2026.10.15` (D43)
