@@ -1,6 +1,6 @@
 # Release plan: D43 to prod (UI tweaks)
 
-**Status:** IN PROGRESS 2026-10-15 (Matt: "deploy d43 to production").
+**Status:** RELEASED 2026-10-15 ~21:27 Colorado (03:27 UTC 10-16): API v27 / UI v22, snapshot `vs_Aqb8a3KXyAnRCv98JJbvJ8q`, migration up, smoke green, Matt's checks passed. PR #27.
 **Tag:** `v2026.10.15` · **Prod volume:** `vol_vden5mz7qg3d2864`
 
 ## 1. What ships

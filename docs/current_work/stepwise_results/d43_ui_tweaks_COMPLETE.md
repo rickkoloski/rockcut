@@ -1,6 +1,6 @@
 # D43: UI Tweaks — Completion Record
 
-**Status:** COMPLETE, merged to `develop` (PR #25), 2026-10-15. Not yet on prod.
+**Status:** COMPLETE and **on prod** in `v2026.10.15` (2026-10-15 ~21:27 Colorado, PR #27: API v27 / UI v22). Merged to `develop` 2026-10-15 (PR #25, merge `a0fa758`).
 **Spec:** `specs/d43_ui_tweaks_spec.md` (scenarios S143–S169)
 **Plan:** `planning/d43_ui_tweaks_plan.md`
 **Concept:** 02_scaffold_ui
@@ -65,6 +65,9 @@ dependencies.
   4298, accepted for the backlog by Matt.
 - **Matt:** done-task look approved on DEV; hands-on check on DEV ("looks
   good to me").
+- **Prod (`v2026.10.15`):** agent smoke green (health, UI, `sw.js`
+  no-cache, theme-color, synthetic sign-in 401, 0 synthetic users, bundle
+  check, logs); Matt's checks 1–4 passed ("1-4 all look good").
 
 ## Notes for the release
 
