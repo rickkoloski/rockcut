@@ -12,11 +12,13 @@ import {
   rangeForDay,
   readFirstDay,
   readHideCompleted,
+  readHideShifts,
   readPhoneView,
   readSpan,
   spanEnd,
   writeFirstDay,
   writeHideCompleted,
+  writeHideShifts,
   writePhoneView,
   writeSpan,
   type FirstDay,
@@ -44,6 +46,8 @@ export function useBoardView(board: string) {
   const [params, setParams] = useSearchParams()
   const [span, setSpan] = useState<Span>(() => readSpan(board))
   const [hideCompleted, setHideCompleted] = useState(() => readHideCompleted(board))
+  // D45: the day headers without who's working and open shifts (events stay).
+  const [hideShifts, setHideShifts] = useState(() => readHideShifts(board))
   // D39: at phone width, every day stacked (the default) or one at a time.
   const [phoneView, setPhoneViewState] = useState<PhoneView>(() => readPhoneView(board))
   const [firstDay, setFirstDayState] = useState<FirstDay>(() => readFirstDay(board))
@@ -121,6 +125,10 @@ export function useBoardView(board: string) {
     writeHideCompleted(board, on)
     setHideCompleted(on)
   }
+  const toggleHideShifts = (on: boolean) => {
+    writeHideShifts(board, on)
+    setHideShifts(on)
+  }
   const setPhoneView = (view: PhoneView) => {
     writePhoneView(board, view)
     setPhoneViewState(view)
@@ -132,6 +140,7 @@ export function useBoardView(board: string) {
     highlighted,
     firstDay,
     hideCompleted,
+    hideShifts,
     phoneView,
     phone,
     wide,
@@ -143,6 +152,7 @@ export function useBoardView(board: string) {
     pickSpan,
     pickFirstDay,
     toggleHide,
+    toggleHideShifts,
     setPhoneView,
     /** Today: the default range, the week holding today (the URL loses its range). */
     showToday: () => setParams({}),
