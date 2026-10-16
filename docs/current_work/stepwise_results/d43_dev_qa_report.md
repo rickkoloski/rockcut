@@ -89,3 +89,99 @@ Final state check (`results/s99_final_state.log`):
 - **Notifications:** publishing the test shifts and creating users may have created notifications ("You've been scheduled", open shift) for Sam Pour, Alex Draft, Jake Brewer and Riley Wort, which can't be deleted. The shifts themselves were removed.
 
 No credential outside the brief was needed. No tokens or passwords appear in the logs or screenshots.
+
+---
+
+## Recheck (pass 2)
+
+- **Tester:** Claude (independent QA, automated)
+- **Time:** 2026-10-16, about 00:30–00:57 UTC
+- **Target:** DEV, API v41 / UI v39 (D43 fixes at `6259eb1`, as given in RECHECK.md). Fresh `auth/` files; DEV reseeded.
+- **Method:** Same rules and setup as pass 1. Contrast is the WCAG ratio of the computed color (including opacity) against the effective background; each result was also checked in a screenshot. Scripts are `scripts/r01_*`–`r05_*`, logs `results/r0*.log`, screenshots `shots/r_*.png`.
+
+### Result: **PASS**
+
+All six items (G1–G5 and obs) are fixed. The Dark re-walk of banners, alerts and every nav page found nothing that got worse. One banner, the "Acting as" bar, could not be reached (see below).
+
+### Gap recheck
+
+| # | Result | Evidence |
+|---|---|---|
+| G1 | FIXED | In Dark, the bell-popover timestamps are `rgb(161,169,155)` at **5.1:1**; the ⚙ is white at **15.8:1**; the popover audit is clean. `shots/r_g1_bell_popover_dark.png` |
+| G2 | FIXED | In Dark, all of these are white `#FFF`:<br>• board ‹ › and ⋮ **17.8:1**; Daily ⋮ 12.6:1<br>• phone hamburger 15.8:1 and "Days shown" 17.8:1 (emulated)<br>• Scheduler ‹ › week and every row ⋮ **15.8:1**<br>• Edit pencils on Settings → Grains and the ingredient **17.8:1**<br>• trash icons in Manage positions and Grains field rows 15.8:1<br>• password eye on the sign-in page (Dark, Match this device) and on Profile 15.8:1<br>The red Delete-ingredient icon is 4.8:1. `shots/r_g2_*.png`, `shots/r_g2_board_nav_zoom.png` |
+| G3 | FIXED | Chip text now switches between black and white by contrast, the same in both themes:<br>• Brewer: black, 8.1:1<br>• Bar-mid: black, 8.8:1<br>• Event-offsite: black, 9.7:1<br>• Bar-open: white, 8.4:1<br>• Bar-close: white, 11.4:1<br>• Office and Sales: about 5.2–5.9:1<br>Done cards: "✓ name" is now full opacity (Light 5.1:1, Dark 5.3:1), and the initials are Light 5.7:1, Dark 7.3:1. `shots/r_g3_scheduler_light.png`, `shots/r_g2_scheduler_dark.png` |
+| G4 | FIXED | Repeated the pass-1 repro: Move on Morgan Mash → click an empty cell. Move ends, "Add shift?" opens, and ↑ sends **no** `POST /api/roster/order`; the order is unchanged after reload. Variants:<br>• Department menu opened during Move: ↑↑ sends nothing<br>• clicking the top bar ends Move<br>• the ↑ button inside Move still works<br>Order restored. `results/r02_g4_g5.log` |
+| G5 | FIXED | Offline → Theme Dark: stays or reverts to Light within 0.3 s, and the toast **"Couldn’t save your theme. Try again."** shows. Escape and a page click do not hide it; it disappeared between 5.8 s and 6.3 s after the click. The menu keeps ✓ Light and the server stays light. Stalled save (request never answered): Dark applies right away, then reverts to Light with the same message at **10.2 s**. In Dark the toast is a light snackbar with dark text, 15.5:1. `shots/r_g5_*.png`, `shots/r_toast_dark_phone.png` |
+| obs | FIXED | `/activity` top-bar title and h1 read "User change log". |
+
+### Banners and alerts in Dark
+
+| Item | Result |
+|---|---|
+| Tablet personal-session banner ("Signed in as [TEST-TEMP] … returns to the shared screen after 5 minutes without activity.") | Readable: amber `rgb(255,183,77)` on brown `rgb(89,58,13)`, about **6:1** (from screenshot pixels). The header shows email + Sign out, and the screen returned to the tablet after 5:30. `shots/r_tablet_personal_session_dark.png` |
+| "Sign in as me" screen on the Dark tablet | Audit clean. |
+| Scheduler conflict banner | Text `rgb(255,226,183)` on `rgb(25,18,7)` **14.9:1**; icon 7.9:1. |
+| Dialog alert (Notification preferences "Notifications are blocked…") | 14.9:1; icon 7.9:1. |
+| Sign-in error alert ("Invalid credentials") | 12.7:1. |
+| Redeem dialog on the Taproom tablet (Dark, staff-code field) | Audit clean. `shots/r_taproom_redeem_dialog_dark.png` |
+| Toast | See G5 (15.5:1). On the phone it sits just above the DEV ribbon and is not covered by it. |
+| DEV ribbon | White on orange, **3.8:1**: below 4.5:1, but it is bold, it has not changed since pass 1, and it only appears on DEV. Noted, not a gap. |
+| **"Acting as" bar** | **NOT REACHED.** I gave a throwaway person a staff code and typed it into the Taproom tablet's Redeem dialog. The code is only a field there and no "Acting as" bar appeared. I cancelled without redeeming, so no data changed, and I found no other place that shows the bar. I'd like a pointer to where it appears so I can check it. |
+
+### Quick S150 pass (Dark)
+
+I walked every owner nav page (Home, Brewery/Taproom/All boards, View Schedule, Scheduler, Time off, Availability, Brewery dashboard, Brands, Ingredients, Batches, Settings, Buy-a-Beer, Users & Roles, Shared devices, User change log, both Messages channels, Profile) plus the Add shift, Add event, Templates, Positions, Redeem and Notification preferences dialogs. There were no light panels, low-contrast text or dim icons. (On Home the audit flagged the cards' hidden focus-highlight spans, which are invisible; the screenshot is clean.) Nothing got worse; the amber/orange accents now use MUI's dark warning colors. `shots/r_s150_dark_*.png`
+
+### Put back (pass 2)
+
+- **Themes:** `owner`, `brewer1`, `breweryMgr`, `barMgr`, `dualMgr`, `bartender1`, `floater` and `office1` are on **Light**. Both tablets are **Light**; they were set Dark as owner for the banner checks and reset in Admin → Shared devices.
+- **Staff order:** matches what I recorded first (`results/staff_order_original_pass2.json`).
+- **Throwaway person:** `[TEST-TEMP] QA D43 recheck` (id 1765, with a staff code) was **deactivated**.
+- **No other data changed:** no shifts, brands, batches or Daily ticks were added; the Redeem dialog was cancelled.
+
+**Could not undo:** creating the throwaway may have created notifications. No tokens, passwords or staff codes appear in logs or screenshots, and nothing asked for a credential outside the brief.
+
+### Addendum: "Acting as" bar (Brewhouse tablet), 2026-10-16 about 01:15 UTC
+
+This replaces the "NOT REACHED" row above. Method:
+- Created a throwaway Brewery employee, `[TEST-TEMP] QA D43 acting` (id 1766), and gave them a staff code in Users & Roles; they set their own password first (rule 3).
+- As owner, set the Brewhouse tablet to **Dark**.
+- As `breweryDevice`, on Tasks (Brewery board), ticked today's Daily "Gravities".
+- The tablet asked "Who's making this change? Your staff code … remembered for 5 minutes, until you tap Done" (Cancel / Continue); I entered the code.
+- Unticked the item, pressed Done, then repeated the same steps with the tablet on **Light**.
+
+Script `scripts/r06_acting_as.mjs`, log `results/r06_acting_as.log`.
+
+| Theme | Bar | Text "Acting as [TEST-TEMP] · ends after 5 minutes without activity" | Done button | Result |
+|---|---|---|---|---|
+| Dark | `rgb(16,72,98)` (dark info), pinned to the top of the board | light blue `rgb(79,195,247)`, **4.9:1** | outlined, light blue text and border, **4.9:1** | PASS (just above 4.5:1) |
+| Light | `rgb(3,169,244)` (MUI info) | white, **2.6:1** | grey filled, dark-blue text `rgb(1,87,155)`, **5.6:1** | **FAIL** on the text |
+
+Screenshots: `shots/r_acting_as_{dark,light}.png`, `shots/r_acting_as_bar_{dark,light}.png`, prompt `shots/r_acting_prompt_*.png`.
+
+Behaviour in both themes:
+- The tick records "Gravities — [TEST-TEMP], 7:00p".
+- Unticking during the same session did not ask for the code again.
+- Done removes the bar.
+- After a reload the Daily is back to its original 1/4.
+
+**New gap:**
+
+| # | Severity | Path → expected → observed → repro |
+|---|---|---|
+| G7 | minor | **"Acting as" bar text is low-contrast in Light.** Brewhouse tablet on Light → Brewery board → tick a Daily item → enter a staff code → expected: bar text readable (≥ 4.5:1, as for the other banners) → observed: white "Acting as <name> · ends after 5 minutes without activity" on `#03A9F4`, **2.6:1**. The Done button (5.6:1) and the Dark version (4.9:1) are fine. This is in Light, not Dark, so it may predate D43. |
+
+**Recheck result (updated): PASS with gaps.** G1–G5 and obs stay FIXED; G7 (minor) is new.
+
+**Put back:**
+- Gravities unticked (today's Brewery Daily is back to 1/4) and Done pressed in both runs.
+- Brewhouse tablet set back to **Light** as owner in Admin → Shared devices; the Taproom tablets were not touched and are Light.
+- Throwaway `[TEST-TEMP] QA D43 acting` (id 1766) **deactivated**.
+
+The staff code and passwords were never logged.
+
+## Lead note (2026-10-15)
+
+G7 filed as PortableMind **task 4298** (low); Matt accepted it for the
+backlog rather than a D43 fix. G6 is by design (S147). All other gaps fixed
+in `6259eb1` and confirmed in the recheck.
