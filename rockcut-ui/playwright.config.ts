@@ -27,7 +27,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/],
+      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//],
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
@@ -50,5 +50,19 @@ export default defineConfig({
       workers: 1,
       use: { ...devices['Desktop Chrome'] },
     },
+    // D45: the "New version available" prompt, against two builds behind
+    // `vite preview` (:4173). Only with PWA_UPDATE=1: it builds the app twice.
+    // See tests/RUNNING.md.
+    ...(process.env.PWA_UPDATE
+      ? [
+          {
+            name: 'pwa-update',
+            testMatch: /pwa-update\/.*\.spec\.ts/,
+            dependencies: ['setup'],
+            workers: 1,
+            use: { ...devices['Desktop Chrome'], baseURL: 'http://localhost:4173' },
+          },
+        ]
+      : []),
   ],
 })

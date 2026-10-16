@@ -27,3 +27,4 @@ dist-ssr
 tests/.playwright-auth/
 test-results/
 playwright-report/
+tests/.pwa-update/

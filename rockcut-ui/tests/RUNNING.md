@@ -39,6 +39,7 @@ npx playwright test tests/smoke/roles.spec.ts
 | `chromium` | every spec except Replace | Parallel. |
 | `brewery-board` | `regression/brewery/task-board-*.spec.ts` (D38) | One worker, beside `chromium`. "Move all to today" moves every open past task on the one shared board, so these specs mustn't overlap. Drag specs use a tall viewport so no drag has to scroll. |
 | `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
+| `pwa-update` | `pwa-update/*.spec.ts` (D45 S170–S177) | **Only with `PWA_UPDATE=1`**, so not in the default run. One worker. Builds the app twice and serves it with `vite preview` on :4173. See below. |
 
 **Playwright runs a dependency project in full, whatever path you filter
 on.** Because `board-replace` depends on `chromium`, `npx playwright test
@@ -52,6 +53,24 @@ npx playwright test --project=board-replace --no-deps              # Replace onl
 
 Never run `beer-board-replace.spec.ts` alongside other specs: anything they
 put on the board while a Replace runs is deleted.
+
+### The update prompt (`pwa-update`, D45)
+
+The "New version available · Reload" bar needs the service worker, which
+`pnpm dev` (:5174) doesn't run. The spec builds the app twice (`VITE_BUILD_ID=A`
+and `B` into `tests/.pwa-update/`, gitignored), serves A with `vite preview` on
+:4173 (`/api` proxied to the local API on :4002), and "deploys" B by swapping
+the served files. `<html data-build>` says which build a page runs. The spec
+starts and stops the preview server itself; :4173 must be free.
+
+```bash
+PWA_UPDATE=1 npx playwright test --project=pwa-update   # about 3½ minutes
+```
+
+It uses the shared tablets' real 10 s / 30 s waits (`src/lib/updatePrompt.ts`)
+and Playwright's clock for the once-a-day check. The S177 "Acting as" test adds
+one `[TEST-TEMP]` task to the Brewery board and removes it, so don't run it
+beside the `brewery-board` project.
 
 `tests/auth.setup.ts` mints a token for every active persona in one call and
 writes `tests/.playwright-auth/<persona>.json`. Specs switch user with
