@@ -1,6 +1,6 @@
 # D45: "New version available" prompt + View Schedule default range — Spec
 
-**Status:** DRAFT (Matt, 2026-10-15)
+**Status:** DRAFT for review: Q1–Q3 decided (Matt, 2026-10-15)
 **Backlog:** task 4054 (item 1)
 **Concept:** 02_scaffold_ui
 **Follows:** `v2026.10.15` (D43)
@@ -36,15 +36,15 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
 - **Detection:** switch to prompt mode (`registerType: 'prompt'`; the worker
   no longer calls `skipWaiting()` on install). A new worker that installs
   waits, and the app is told (`onNeedRefresh`). The app also asks the browser
-  to check for an update **when the page comes back into view** and **every
-  N minutes** while open (Q2), so a tablet that never navigates still finds
+  to check for an update **when the page comes back into view** and **once a
+  day** while open (Q2), so a tablet that never navigates still finds
   out.
 - **The prompt:** a small bar at the bottom: "New version available" and a
   **Reload** button (plus × to dismiss for now). It never blocks the page,
   so a half-filled form isn't lost. Dismissed, it comes back on the next
   check (or the next page view).
 - **Reload:** tells the waiting worker to take over, then reloads the page.
-- **Shared tablets** (Q1): proposal: a tablet on its **shared screen** (no
+- **Shared tablets** (Q1, decided): a tablet on its **shared screen** (no
   one signed in with "Sign in as me", no "Acting as" window, no dialog open)
   reloads **by itself** after a short delay, so the bar staff never have to;
   while a person is signed in, acting, or has a dialog open, it shows the
@@ -58,17 +58,17 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
   everything, as today.
 - Applies everywhere View Schedule shows, including shared tablets and
   phones. The Scheduler (week grid) is unchanged.
-- Q3: remember a changed range for the session, or always reopen on the
-  7 days? Proposal: always reopen on the 7 days.
+- Q3 (decided): a changed range is not remembered; every visit reopens on
+  today + 6.
 
-## 4. Open questions
+## 4. Decisions
 
-- **Q1.** Shared tablets: reload by themselves when idle on the shared
-  screen (proposal), or always show the prompt like a person's device?
-- **Q2.** How often an open app checks for a new version: proposal **every
-  15 minutes**, plus whenever the page comes back into view.
-- **Q3.** View Schedule: always reopen on today + 6 (proposal), or remember
-  a changed range?
+- **Q1.** Shared tablets **reload by themselves** when idle on the shared
+  screen; with a person signed in, acting, or a dialog open they show the
+  prompt and wait (Matt, 2026-10-15).
+- **Q2.** An open app checks **once a day**, plus whenever the page comes
+  back into view (Matt, 2026-10-15).
+- **Q3.** View Schedule **always reopens on today + 6** (Matt, 2026-10-15).
 
 ## 5. Testing notes
 
@@ -78,4 +78,45 @@ on DEV (deploy, open, deploy again). Playwright can drive two builds against
 `vite preview`. Matt checks on the Pixel and a taproom tablet after a DEV
 redeploy.
 
-Scenarios and acceptance criteria follow once Q1–Q3 are settled.
+
+## 6. Scenarios
+
+"Build A" is what the device is running; "build B" is a newer deploy.
+
+| # | Persona | Path | Expected |
+|---|---|---|---|
+| S170 | `brewer1` (phone, installed app) | app open on build A; deploy B; bring the app back into view | "New version available · Reload" bar at the bottom within seconds; the page still works underneath |
+| S171 | `brewer1` | S170, tap **Reload** | Page reloads into build B; the bar is gone; still signed in |
+| S172 | `brewer1` | S170, tap **×** | Bar hides; it comes back on the next check or the next page view |
+| S173 | `breweryMgr` | half-filled Add task dialog when build B lands | The bar shows; the dialog and its text stay until the person chooses to reload |
+| S174 | `taproomDevice` | idle on the shared screen, page never leaves view; deploy B | Within a day (simulated with Playwright's clock) the tablet reloads itself into B, no tap needed |
+| S175 | `taproomDevice` | screen wakes (page comes back into view) after B | Checks at once; reloads by itself if idle on the shared screen |
+| S176 | `taproomDevice` | a person signed in with "Sign in as me" when B lands | Prompt shows; no automatic reload; after the person signs out and the tablet is idle, it reloads by itself |
+| S177 | `breweryDevice` | "Acting as" window open, or a dialog open (staff-code, task) when B lands | No automatic reload until the window ends / the dialog closes |
+| S178 | `brewer1` | push notification after Reload into B | Push still arrives; tapping it opens the right page (D21 unchanged) |
+| S179 | `brewer1` | View Schedule | From = today, To = today + 6 (Colorado); only those days listed |
+| S180 | `brewer1` | change To to a month out; leave and come back | Reopens on today + 6 |
+| S181 | `brewer1` | clear From and To | Everything from the first published shift, as before |
+| S182 | `taproomDevice` | View Schedule | Same 7-day default |
+| S183 | `owner` | Scheduler | Unchanged (week grid) |
+
+## 7. Acceptance criteria
+
+- [ ] Prompt mode: a new worker waits; the app shows the bar; Reload
+      activates it and reloads (S170–S172).
+- [ ] Checks for an update when the page comes back into view and once a
+      day while open (S174, S175).
+- [ ] Shared tablets reload by themselves only when idle on the shared
+      screen (no personal sign-in, no "Acting as", no dialog) (S174–S177).
+- [ ] Nothing forces a reload over a person's open form (S173).
+- [ ] Push, precache and SPA fallback unchanged (S178; D19/D21 specs green).
+- [ ] View Schedule defaults to today + 6, not remembered; clearing shows
+      everything (S179–S182); Scheduler unchanged (S183).
+- [ ] Tested against `vite preview` with two builds and on DEV with two
+      deploys; Matt checks the Pixel and a taproom tablet.
+
+## 8. Out of scope
+
+Release notes in the prompt, forcing old clients to update, task 4053's
+error-boundary reload button (may share the component later), any API
+version check.
