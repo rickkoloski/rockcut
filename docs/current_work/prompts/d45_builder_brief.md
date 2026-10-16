@@ -19,3 +19,11 @@
 ## Task 1 — View Schedule default (plan order 1)
 ## Task 2 — the update prompt (plan order 2, 3), with the preview two-build check and the `pwa-update` project
 ## Task 3 — full local default suite (plan order 4), report
+
+## Task 4 — Hide shifts (spec item 3, §3.3, S184–S188)
+
+Added 2026-10-15 after Tasks 1–3 were briefed: do it **after Task 2**, before
+Task 3's full run (so the full run includes it). Follow how D42 built Hide
+completed's per-board setting (`useBoardView` / board settings), the
+`DayHeader` (people + open shifts hidden, events kept, no empty box), the
+phone placement, and Playwright specs for S184–S188 (restore the setting).

@@ -1,6 +1,6 @@
-# D45: "New version available" prompt + View Schedule default range — Spec
+# D45: "New version available" prompt, View Schedule default range, Hide shifts — Spec
 
-**Status:** APPROVED (Matt, 2026-10-15)
+**Status:** APPROVED (Matt, 2026-10-15); item 3 added 2026-10-15, awaiting approval
 **Backlog:** task 4054 (item 1)
 **Concept:** 02_scaffold_ui
 **Follows:** `v2026.10.15` (D43)
@@ -13,6 +13,7 @@
 |---|---|---|---|
 | 1 | When a new build is deployed, the running app shows a small **"New version available · Reload"** prompt; Reload loads the new build | Task 4054 (Matt, 2026-10-02) | UI, service worker |
 | 2 | **View Schedule** opens on **today through six days later** (7 days) instead of every shift since the first published | Matt, 2026-10-15 (a D43 follow-up) | UI, `schedule/Schedule.tsx` |
+| 3 | **Task boards: "Hide shifts"** toggle beside Hide completed hides who's working and open shifts in each day's header (events stay) | Matt, 2026-10-15 | UI, `pages/tasks/` |
 
 No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
 `virtual:pwa-register`, already installed).
@@ -66,6 +67,18 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
 - Q3 (decided): a changed range is not remembered; every visit reopens on
   today + 6.
 
+### 3.3 Hide shifts (item 3)
+
+- A **"Hide shifts"** switch next to **Hide completed** on every board
+  (Brewery, Taproom, Office, Sales, All departments), in the same place on
+  the phone. Off by default: shifts show, as today.
+- On: each day's header drops the people lines and the open-shift lines (and
+  "No one scheduled"). **Events stay** (e.g. "Brew day: Hazy IPA · All day").
+  A day with no events then has no header box at all.
+- Remembered **per board, per browser**, like Hide completed (D42 item 8;
+  key `rockcut.tasks.hideShifts.<board>`). Shared tablets remember their own.
+- Display only: the schedule and the shift-end reminder are unaffected.
+
 ## 4. Decisions
 
 - **Q1.** Shared tablets **reload by themselves** when idle on the shared
@@ -74,6 +87,8 @@ No API change, migration, secret or dependency (item 1 uses `vite-plugin-pwa`'s
 - **Q2.** An open app checks **once a day**, plus whenever the page comes
   back into view (Matt, 2026-10-15).
 - **Q3.** View Schedule **always reopens on today + 6** (Matt, 2026-10-15).
+- **Q4.** Hide shifts hides **shifts only**, events stay; it behaves **like
+  Hide completed** (off by default, per board, per browser) (Matt, 2026-10-15).
 
 ## 5. Testing notes
 
@@ -104,6 +119,11 @@ redeploy.
 | S181 | `brewer1` | clear From and To | Everything from the first published shift, as before |
 | S182 | `taproomDevice` | View Schedule | Same 7-day default |
 | S183 | `owner` | Scheduler | Unchanged (week grid) |
+| S184 | `brewer1` | Brewery board, Hide shifts on | Day headers lose people, open shifts and "No one scheduled"; an event day keeps its event line; a day with no event has no header box |
+| S185 | `brewer1` | reload; switch to the Taproom board and back | Brewery stays on; Taproom has its own setting (off) |
+| S186 | `brewer1` at 412×915 | Hide shifts in the phone's board menu / settings | Same effect in the phone views |
+| S187 | `owner` | All departments board | Has its own Hide shifts |
+| S188 | `taproomDevice` | Hide shifts on the tablet | Remembered on that tablet |
 
 ## 7. Acceptance criteria
 
@@ -117,6 +137,8 @@ redeploy.
 - [ ] Push, precache and SPA fallback unchanged (S178; D19/D21 specs green).
 - [ ] View Schedule defaults to today + 6, not remembered; clearing shows
       everything (S179–S182); Scheduler unchanged (S183).
+- [ ] Hide shifts: hides shifts, keeps events, per board per browser,
+      phone too, All departments too (S184–S188).
 - [ ] Tested against `vite preview` with two builds and on DEV with two
       deploys; Matt checks the Pixel and a taproom tablet.
 
