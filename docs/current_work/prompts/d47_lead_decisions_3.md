@@ -13,3 +13,9 @@ Process note: after a stop with `LEAD:` lines, wait for the lead's reply even if
 5. **Links in an expanded tank only within the tank:** accepted. The transfer arrow covers the hand-off.
 6. **"Label by" picker:** deferred. "step · batch" labels are acceptable for D47. List it as a LIMITATION in the Task 5 report.
 7. **ExUnit after Task 2:** 1599 tests, 0 failures.
+
+## After Task 4 (`5cea21f`)
+
+8. **Touch long-press:** checked by hand at the DEV gate (Matt, on the tablet or the Pixel). List it under LIMITATIONS.
+9. **A bar dropped on another row only changes the tank:** accepted. Changing time and tank are two separate gestures.
+10. **Regular dialogs on phones (not full-screen):** accepted, as long as they fit at 412 px.
