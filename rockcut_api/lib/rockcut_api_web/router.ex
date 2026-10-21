@@ -314,6 +314,19 @@ defmodule RockcutApiWeb.Router do
     patch "/templates/:id/links/:link_id", ProductionTemplateController, :update_link
     delete "/templates/:id/links/:link_id", ProductionTemplateController, :remove_link
     post "/templates/:id/ramp", ProductionTemplateController, :add_ramp
+
+    # D47: the schedule, batches and their steps.
+    get "/schedule", ProductionScheduleController, :show
+    post "/batches", ProductionScheduleController, :create_batch
+    patch "/batches/:id", ProductionScheduleController, :update_batch
+    delete "/batches/:id", ProductionScheduleController, :delete_batch
+    post "/batches/:id/shift", ProductionScheduleController, :shift_batch
+    patch "/batches/:id/vessels/:index", ProductionScheduleController, :update_vessel
+    post "/steps/move", ProductionScheduleController, :move_steps
+    post "/steps/assign", ProductionScheduleController, :assign_steps
+    post "/steps/:id/complete", ProductionScheduleController, :complete_step
+    post "/steps/:id/uncomplete", ProductionScheduleController, :uncomplete_step
+    patch "/steps/:id", ProductionScheduleController, :update_step
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

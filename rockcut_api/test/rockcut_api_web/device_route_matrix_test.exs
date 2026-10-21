@@ -263,7 +263,19 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/production/templates/:id/links"},
     {:patch, "/api/production/templates/:id/links/:link_id"},
     {:delete, "/api/production/templates/:id/links/:link_id"},
-    {:post, "/api/production/templates/:id/ramp"}
+    {:post, "/api/production/templates/:id/ramp"},
+    # D47: the schedule, batches and steps; people only until D49.
+    {:get, "/api/production/schedule"},
+    {:post, "/api/production/batches"},
+    {:patch, "/api/production/batches/:id"},
+    {:delete, "/api/production/batches/:id"},
+    {:post, "/api/production/batches/:id/shift"},
+    {:patch, "/api/production/batches/:id/vessels/:index"},
+    {:post, "/api/production/steps/move"},
+    {:post, "/api/production/steps/assign"},
+    {:post, "/api/production/steps/:id/complete"},
+    {:post, "/api/production/steps/:id/uncomplete"},
+    {:patch, "/api/production/steps/:id"}
   ]
 
   defp app_routes do

@@ -391,6 +391,89 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  # ── Production schedule (D47) ──────────────────────────────────────
+
+  @doc "`GET /api/production/schedule`: see `Production.Schedule.load/3`."
+  def production_schedule(sched) do
+    %{
+      from: sched.from,
+      to: sched.to,
+      today: sched.today,
+      tanks: Enum.map(sched.tanks, &production_tank(&1, sched.today)),
+      phases: Enum.map(sched.phases, &production_phase/1),
+      step_types: Enum.map(sched.step_types, &production_step_type/1),
+      batches: Enum.map(sched.batches, &production_batch/1),
+      cips: Enum.map(sched.cips, &production_step(&1, [])),
+      next_batch_number: sched.next_batch_number,
+      brewers: sched.brewers
+    }
+  end
+
+  @doc "A scheduled batch from `Production.Schedule.batches/1`, with its vessels, steps and links."
+  def production_batch(%{batch: b} = entry) do
+    %{
+      id: b.id,
+      brand_id: b.brand_id,
+      brand_name: b.brand && b.brand.name,
+      batch_number: b.batch_number,
+      p_number: entry.p_number && "P#{entry.p_number}",
+      label: entry.label,
+      status: b.status,
+      volume_bbl: decimal_number(b.volume_bbl),
+      template_id: b.template_id,
+      template_name: b.template && b.template.name,
+      brew_two_days: b.brew_two_days,
+      vessels: Enum.map(entry.vessels, &%{vessel_index: &1.vessel_index, tank_id: &1.tank_id}),
+      steps: Enum.map(entry.steps, &production_step(&1, entry.steps)),
+      links:
+        Enum.map(
+          entry.links,
+          &%{
+            id: &1.id,
+            from_step_id: &1.from_step_id,
+            to_step_id: &1.to_step_id,
+            default_answer: &1.default_answer
+          }
+        )
+    }
+  end
+
+  @doc """
+  A batch step or a standalone CIP (`batch_steps`: the batch's steps, to
+  mark its first Brew day). Needs type, phase, assignee and done-by loaded.
+  """
+  def production_step(s, batch_steps) do
+    type = s.step_type
+
+    %{
+      id: s.id,
+      batch_id: s.batch_id,
+      tank_id: s.tank_id,
+      step_type_id: s.step_type_id,
+      marker: is_nil(s.step_type_id),
+      name: RockcutApi.Production.Steps.name(s),
+      type_name: type && type.name,
+      full_name: type && type.full_name,
+      behavior: type && type.behavior,
+      first_brew: s.batch_id != nil and RockcutApi.Production.Steps.first_brew?(s, batch_steps),
+      phase_id: s.phase_id,
+      vessel_index: s.vessel_index,
+      detail: s.detail,
+      temperature: s.temperature,
+      split_method: s.split_method,
+      package_partial: s.package_partial,
+      notes: s.notes,
+      on_task_list: s.on_task_list,
+      position: s.position,
+      due_on: s.due_on,
+      done_on: s.done_on,
+      done_by: s.done_by && %{id: s.done_by.id, name: s.done_by.name},
+      assignee_id: s.assignee_id,
+      assignee: s.assignee && %{id: s.assignee.id, name: s.assignee.name},
+      added: s.added
+    }
+  end
+
   defp decimal_number(nil), do: nil
   defp decimal_number(%Decimal{} = d), do: Decimal.to_float(d)
   defp decimal_number(n), do: n

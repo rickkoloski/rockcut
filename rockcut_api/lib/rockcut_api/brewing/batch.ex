@@ -26,7 +26,15 @@ defmodule RockcutApi.Brewing.Batch do
     field :tasting_notes, :string
     field :notes, :string
 
+    # D47 production schedule (spec §3.5). A scheduled batch has vessels; a
+    # planned one has no number yet (its P-number is computed).
+    field :volume_bbl, :decimal
+    field :brew_two_days, :boolean, default: false
+
     belongs_to :brand, RockcutApi.Brewing.Brand
+    belongs_to :template, RockcutApi.Production.Template
+    has_many :vessels, RockcutApi.Production.BatchVessel
+    has_many :steps, RockcutApi.Production.Step
     has_many :brew_turns, RockcutApi.Brewing.BrewTurn
     has_many :log_entries, RockcutApi.Brewing.BatchLogEntry
 
@@ -45,11 +53,19 @@ defmodule RockcutApi.Brewing.Batch do
       :package_date, :package_type,
       :rating, :tasting_notes, :notes
     ])
-    |> validate_required([:brand_id, :batch_number])
+    |> validate_required([:brand_id])
+    |> validate_number_unless_planned()
     |> validate_inclusion(:status, @valid_statuses)
     |> validate_inclusion(:package_type, @valid_package_types)
     |> validate_number(:rating, greater_than_or_equal_to: 1, less_than_or_equal_to: 5)
-    |> unique_constraint(:batch_number)
+    |> unique_constraint(:batch_number, name: :batches_lower_batch_number_index)
     |> foreign_key_constraint(:brand_id)
+  end
+
+  # D47: only a planned batch may be without a number.
+  defp validate_number_unless_planned(changeset) do
+    if get_field(changeset, :status) == "planned",
+      do: changeset,
+      else: validate_required(changeset, [:batch_number])
   end
 end
