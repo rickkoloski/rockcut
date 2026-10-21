@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { activeTankIds, createTank, openBreweryNav, retireTanks, shortTag, tanks } from './helpers'
+import { addDays, Made, today } from './schedule'
+
+const madeSchedule = new Made()
 
 // D46 §3.2 Tanks page: P1–P5. Each test makes its own [TEST-TEMP] tank and
 // retires it; the active order is put back afterwards.
@@ -12,6 +15,7 @@ test.beforeAll(async () => {
   order = await activeTankIds()
 })
 test.afterAll(async () => {
+  await madeSchedule.cleanup()
   await retireTanks(made.splice(0), order)
 })
 
@@ -77,21 +81,18 @@ test.describe('as brewer1', () => {
   })
 
   test('P4: Retire refused while steps are planned in the tank: the batches are listed', async ({ page }) => {
-    // The API's check returns no batches until D47 adds them; the refusal
-    // the page shows is stubbed here (the real one: ExUnit + D47).
+    // D47: a real batch planned in the tank (it was stubbed in D46).
     const tank = await createTank(shortTag('FV7 busy'))
     made.push(tank.id)
-    const message = 'Unfinished steps are planned in this tank: Galactic P1. Move them first.'
-    await page.route(`**/api/production/tanks/${tank.id}`, (route) =>
-      route.request().method() === 'DELETE'
-        ? route.fulfill({ status: 422, json: { error: 'tank_in_use', message, batches: [{ id: 1, label: 'Galactic P1' }] } })
-        : route.continue(),
-    )
+    const brand = await madeSchedule.brand('Fest')
+    const batch = await madeSchedule.plan({ brand_id: brand.id, template: '[SEED] Standard ale', brew_on: addDays(today(), 3), tank_ids: [tank.id] })
     await page.goto('/brewery/production/tanks')
     await page.getByTestId(`tank-retire-${tank.id}`).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Retire' }).click()
-    await expect(page.getByTestId('tanks-error')).toHaveText(message)
+    await expect(page.getByTestId('tanks-error')).toHaveText(`Unfinished steps are planned in this tank: ${batch.label}. Move them first.`)
     await expect(page.getByTestId(`tank-name-${tank.id}`)).toBeVisible()
+    // The batch goes first, then the tank can be retired (afterAll).
+    await madeSchedule.cleanup()
   })
 })
 
