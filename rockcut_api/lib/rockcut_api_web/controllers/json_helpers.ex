@@ -289,6 +289,110 @@ defmodule RockcutApiWeb.JSONHelpers do
   defp name_of(nil), do: nil
   defp name_of(u), do: u.name
 
+  # ── Production setup (D46) ─────────────────────────────────────────
+
+  @doc "A tank with its out-of-service periods, each with `state` (now / coming / past) for `today`."
+  def production_tank(t, today) do
+    %{
+      id: t.id,
+      name: t.name,
+      kind: t.kind,
+      capacity_bbl: decimal_number(t.capacity_bbl),
+      location: t.location,
+      position: t.position,
+      notes: t.notes,
+      retired_at: t.retired_at,
+      outages: maybe_render(t, :outages, &Enum.map(&1, fn o -> tank_outage(o, today) end))
+    }
+  end
+
+  def tank_outage(o, today) do
+    %{
+      id: o.id,
+      tank_id: o.tank_id,
+      starts_on: o.starts_on,
+      ends_on: o.ends_on,
+      reason: o.reason,
+      state: RockcutApi.Production.outage_state(o, today),
+      label: RockcutApi.Production.period_label(o)
+    }
+  end
+
+  def production_phase(p) do
+    %{id: p.id, name: p.name, color: p.color, position: p.position, retired_at: p.retired_at}
+  end
+
+  def production_step_type(t) do
+    %{
+      id: t.id,
+      name: t.name,
+      full_name: t.full_name,
+      behavior: t.behavior,
+      built_in: t.built_in,
+      starts_phase_id: t.starts_phase_id,
+      on_task_list: t.on_task_list,
+      position: t.position,
+      retired_at: t.retired_at
+    }
+  end
+
+  @doc "A template in the list: no entries, with `step_count` and `issues`."
+  def process_template_summary(t) do
+    %{
+      id: t.id,
+      name: t.name,
+      notes: t.notes,
+      position: t.position,
+      retired_at: t.retired_at,
+      step_count: t.step_count,
+      issues: t.issues
+    }
+  end
+
+  @doc "A template with its entries (day order) and links."
+  def process_template(t) do
+    Map.merge(process_template_summary(t), %{
+      steps: Enum.map(t.steps, &template_step/1),
+      links: Enum.map(t.links, &template_link/1)
+    })
+  end
+
+  def template_step(s) do
+    type = s.step_type
+
+    %{
+      id: s.id,
+      step_type_id: s.step_type_id,
+      marker: is_nil(s.step_type_id),
+      name: RockcutApi.Production.step_name(s),
+      type_name: type && type.name,
+      full_name: type && type.full_name,
+      behavior: type && type.behavior,
+      phase_id: s.phase_id,
+      day_offset: s.day_offset,
+      vessel_index: s.vessel_index,
+      detail: s.detail,
+      temperature: s.temperature,
+      notes: s.notes,
+      on_task_list: s.on_task_list,
+      position: s.position,
+      ramp_group: s.ramp_group
+    }
+  end
+
+  def template_link(l) do
+    %{
+      id: l.id,
+      from_step_id: l.from_step_id,
+      to_step_id: l.to_step_id,
+      default_answer: l.default_answer
+    }
+  end
+
+  defp decimal_number(nil), do: nil
+  defp decimal_number(%Decimal{} = d), do: Decimal.to_float(d)
+  defp decimal_number(n), do: n
+
   # ── Shared devices (D33) ───────────────────────────────────────────
 
   @doc """

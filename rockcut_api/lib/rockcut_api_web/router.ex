@@ -268,6 +268,54 @@ defmodule RockcutApiWeb.Router do
     delete "/daily_items/:id", DailyController, :delete_item
   end
 
+  # D46 production setup (spec §3.2–§3.4): Brewery members and owners
+  # (`Authz` `:production`; each action asks). People only until D49 brings
+  # the brewhouse tablet.
+  scope "/api/production", RockcutApiWeb do
+    pipe_through [:api, :authenticated]
+
+    get "/tanks", ProductionTankController, :index
+    post "/tanks", ProductionTankController, :create
+    post "/tanks/reorder", ProductionTankController, :reorder
+    patch "/tanks/:id", ProductionTankController, :update
+    delete "/tanks/:id", ProductionTankController, :retire
+    post "/tanks/:id/restore", ProductionTankController, :restore
+    post "/tanks/:id/outages", ProductionTankController, :create_outage
+    patch "/outages/:id", ProductionTankController, :update_outage
+    delete "/outages/:id", ProductionTankController, :delete_outage
+    post "/outages/:id/end_today", ProductionTankController, :end_outage_today
+
+    get "/phases", ProductionListController, :phases
+    post "/phases", ProductionListController, :create_phase
+    post "/phases/reorder", ProductionListController, :reorder_phases
+    patch "/phases/:id", ProductionListController, :update_phase
+    delete "/phases/:id", ProductionListController, :retire_phase
+    post "/phases/:id/restore", ProductionListController, :restore_phase
+
+    get "/step_types", ProductionListController, :step_types
+    post "/step_types", ProductionListController, :create_step_type
+    post "/step_types/reorder", ProductionListController, :reorder_step_types
+    patch "/step_types/:id", ProductionListController, :update_step_type
+    delete "/step_types/:id", ProductionListController, :retire_step_type
+    post "/step_types/:id/restore", ProductionListController, :restore_step_type
+
+    get "/templates", ProductionTemplateController, :index
+    post "/templates", ProductionTemplateController, :create
+    post "/templates/reorder", ProductionTemplateController, :reorder
+    get "/templates/:id", ProductionTemplateController, :show
+    patch "/templates/:id", ProductionTemplateController, :update
+    delete "/templates/:id", ProductionTemplateController, :retire
+    post "/templates/:id/restore", ProductionTemplateController, :restore
+    post "/templates/:id/duplicate", ProductionTemplateController, :duplicate
+    post "/templates/:id/steps", ProductionTemplateController, :add_step
+    patch "/templates/:id/steps/:step_id", ProductionTemplateController, :update_step
+    delete "/templates/:id/steps/:step_id", ProductionTemplateController, :remove_step
+    post "/templates/:id/links", ProductionTemplateController, :add_link
+    patch "/templates/:id/links/:link_id", ProductionTemplateController, :update_link
+    delete "/templates/:id/links/:link_id", ProductionTemplateController, :remove_link
+    post "/templates/:id/ramp", ProductionTemplateController, :add_ramp
+  end
+
   # Enable LiveDashboard and Swoosh mailbox preview in development
   if Application.compile_env(:rockcut_api, :dev_routes) do
     # If you want to use the LiveDashboard in production, you should put
