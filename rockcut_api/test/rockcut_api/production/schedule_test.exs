@@ -517,6 +517,45 @@ defmodule RockcutApi.Production.ScheduleTest do
     end
   end
 
+  describe "brew-day check-off preview (N1)" do
+    test "the preview's renumbering is the write's: the batch leaves the P-numbers", %{
+      brewer: brewer
+    } do
+      t = ale_template!()
+      {late, _} = plan!(brand!("Galactic"), t, ~D[2026-11-26])
+      {a, _} = plan!(brand!("Altruism"), t, ~D[2026-10-25])
+      {e, _} = plan!(brand!("Enos"), t, ~D[2026-11-01])
+      assert Batches.p_numbers() == %{a.id => 1, e.id => 2, late.id => 3}
+      brew = named(late, "Brew day")
+      attrs = %{"done_on" => "2026-09-28", "batch_number" => "77", "answer" => "move_all"}
+
+      assert {:ok, {:preview, %{move: %{renumbered: previewed}}}} =
+               Steps.complete(brew.id, attrs, brewer, preview: true, today: @today)
+
+      assert {:ok, %{renumbered: written}} = Steps.complete(brew.id, attrs, brewer, today: @today)
+
+      # Nobody else moves: the brewed batch just leaves the list.
+      assert previewed["move_all"] == written
+      assert written == []
+      assert Batches.p_numbers() == %{a.id => 1, e.id => 2}
+    end
+
+    test "and when it does renumber, both say the same", %{brewer: brewer} do
+      t = ale_template!()
+      {first, _} = plan!(brand!("Galactic"), t, ~D[2026-10-21])
+      {_a, _} = plan!(brand!("Altruism"), t, ~D[2026-10-25])
+      brew = named(first, "Brew day")
+      attrs = %{"done_on" => "2026-10-20", "batch_number" => "78", "answer" => "move_all"}
+
+      assert {:ok, {:preview, %{move: %{renumbered: previewed}}}} =
+               Steps.complete(brew.id, attrs, brewer, preview: true, today: @today)
+
+      assert {:ok, %{renumbered: written}} = Steps.complete(brew.id, attrs, brewer, today: @today)
+      assert previewed["move_all"] == written
+      assert [%{brand: "Altruism", from: "P2", to: "P1"}] = written
+    end
+  end
+
   describe "a full Package checked off early (M3)" do
     test "the prompt's out-of-order warning and the flag agree", %{brewer: brewer} do
       tank = tank!("FV3")

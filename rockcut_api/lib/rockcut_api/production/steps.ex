@@ -181,7 +181,9 @@ defmodule RockcutApi.Production.Steps do
     end
   end
 
-  defp preview(graph, plan, done \\ []) do
+  # `done`: the steps the change checks off; `leaving`: the batches it takes
+  # off the P-number list (a first Brew day: the batch is brewed).
+  defp preview(graph, plan, done \\ [], leaving \\ []) do
     pnums = Batches.p_numbers()
 
     per_answer = fn f ->
@@ -196,7 +198,7 @@ defmodule RockcutApi.Production.Steps do
       following: Enum.map(plan.following, &brief(&1, plan.days)),
       default_answer: plan.default,
       out_of_order: per_answer.(&out_of_order(graph, &1, done)),
-      renumbered: per_answer.(&Batches.renumbered(pnums, Batches.p_numbers(&1)))
+      renumbered: per_answer.(&Batches.renumbered(pnums, Batches.p_numbers(&1, leaving)))
     }
   end
 
@@ -288,11 +290,12 @@ defmodule RockcutApi.Production.Steps do
 
       days = Date.diff(done_on, step.due_on)
       plan = if days != 0, do: plan(graph, [step], days)
+      leaving = if numbering?, do: [batch.id], else: []
 
       if opts[:preview] do
         {:preview,
          %{
-           move: plan && preview(graph, plan, [step.id]),
+           move: plan && preview(graph, plan, [step.id], leaving),
            done_on: done_on,
            needs_batch_number: numbering?,
            next_batch_number: if(numbering?, do: Batches.next_batch_number())
@@ -307,7 +310,7 @@ defmodule RockcutApi.Production.Steps do
           end
 
         if plan && plan.following != [] && is_nil(answer),
-          do: Repo.rollback({:answer_required, preview(graph, plan, [step.id])})
+          do: Repo.rollback({:answer_required, preview(graph, plan, [step.id], leaving)})
 
         changes = if plan, do: changes(plan, answer || "move_only"), else: %{}
 

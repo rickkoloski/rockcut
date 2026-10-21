@@ -93,12 +93,26 @@ test('a Transfer’s CIP follows its new day (lead decisions 1, item 1)', async 
   await expect(page.getByTestId('template-issues')).toHaveCount(0)
 })
 
-test('N2: removing a middle Transfer warns that the tank after it depends on it, by name', async ({ page }) => {
+test('N2: removing a middle Transfer names every tank that depends on it; Remove waits for the preview', async ({ page }) => {
   const t = await twoTransfers('N2 remove')
   await page.goto(`/brewery/production/templates/${t.id}`)
+  // Remove waits for the preview (held back here), with a spinner; Cancel works.
+  let release = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  await page.route(/\/steps\/\d+\?preview=true/, async (route) => {
+    await held
+    await route.continue()
+  })
   await page.getByTestId(`entry-remove-${t.first}`).click()
   const confirm = page.getByRole('dialog').filter({ hasText: 'Remove Transfer?' })
-  await expect(confirm).toContainText('After transfer 1 depends on it.')
+  await expect(confirm.getByRole('button', { name: 'Cancel' })).toBeEnabled()
+  await expect(confirm.getByRole('progressbar')).toBeVisible()
+  await expect(confirm.locator('button').last()).toBeDisabled()
+  release()
+  await expect(confirm.getByRole('button', { name: 'Remove' })).toBeEnabled()
+  await page.unroute(/\/steps\/\d+\?preview=true/)
+  // Every tank reached through it, by name.
+  await expect(confirm).toContainText('After transfer 1 and After transfer 2 depend on it.')
   await expect(page.getByTestId('remove-issues')).toContainText('The template becomes incomplete')
   await expect(page.getByTestId('remove-issue-vessel_not_started')).toHaveText('The tank after transfer 1 has no Transfer or Filter starting it.')
   await confirm.getByRole('button', { name: 'Cancel' }).click()

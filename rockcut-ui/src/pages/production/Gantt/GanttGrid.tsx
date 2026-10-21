@@ -71,6 +71,8 @@ export interface GanttDrag {
   active: DragState | null
   bind: (key: string, onDrop: (d: DropInfo) => void) => object
   consumeClick: (e?: { clientX: number; clientY: number }) => boolean
+  /** From a drag's start until the pointer moves after it: hover tooltips stay hidden (N2). */
+  quiet?: boolean
 }
 
 interface Props extends GanttActions {
@@ -110,6 +112,62 @@ const activate = (fn?: () => void, drag?: GanttDrag) => ({
 })
 
 /**
+ * The drag hint, beside the pointer and inside the window (N3): below-right
+ * of a mouse, flipped left near the right edge and above near the bottom;
+ * above a finger, below it near the top. Placed after measuring itself.
+ */
+function HintBox({ hint, at }: { hint: { text: string; warn: boolean }; at: DragState }) {
+  const ref = useRef<HTMLDivElement>(null)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const M = 8
+    const [vw, vh] = [window.innerWidth, window.innerHeight]
+    const { width: w, height: h } = el.getBoundingClientRect()
+    let left: number
+    let top: number
+    if (at.touch) {
+      left = at.x - w / 2
+      top = at.y - 48 - h
+      if (top < M) top = at.y + 48
+    } else {
+      left = at.x + 14
+      if (left + w > vw - M) left = at.x - 14 - w
+      top = at.y + 18
+      if (top + h > vh - M) top = at.y - 18 - h
+    }
+    el.style.left = `${Math.max(M, Math.min(left, vw - w - M))}px`
+    el.style.top = `${Math.max(M, Math.min(top, vh - h - M))}px`
+  })
+  return (
+    <Box
+      ref={ref}
+      role="status"
+      sx={{
+        position: 'fixed',
+        left: 0,
+        top: 0,
+        maxWidth: 'min(440px, calc(100vw - 16px))',
+        zIndex: 1500,
+        pointerEvents: 'none',
+        px: 1,
+        py: 0.5,
+        borderRadius: 1,
+        fontSize: 12,
+        fontWeight: 600,
+        boxShadow: 3,
+        bgcolor: hint.warn ? 'error.main' : 'grey.900',
+        color: hint.warn ? 'error.contrastText' : 'common.white',
+      }}
+      data-testid="gantt-drag-hint"
+      data-warn={hint.warn || undefined}
+    >
+      {hint.text}
+    </Box>
+  )
+}
+
+/**
  * D47 §3.6 the grid: a sticky tank column and date header over day columns;
  * per tank, its parts as bars colored by phase (planned ones ghosted), the
  * dots under them with initials, standalone CIP blocks, out-of-service
@@ -139,6 +197,8 @@ export default function GanttGrid(props: Props) {
   const surface2 = theme.palette.background.boardColumn ?? theme.palette.background.default
 
   // ── Drags ──
+  // Hover tooltips step aside for the drag hint (N2).
+  const hover = (title: string) => (drag?.quiet ? '' : title)
   const snap = (dx: number) => Math.round(dx / dayPx)
   const lifted = (key: string, vertical = false) => {
     const a = drag?.active
@@ -360,7 +420,7 @@ export default function GanttGrid(props: Props) {
         </IconButton>
         {compact ? (
           // Names only cuts long names: the tooltip starts with the full name.
-          <Tooltip title={[tank.name, status?.batch_label, status?.line].filter(Boolean).join(' · ')} placement="right">
+          <Tooltip title={hover([tank.name, status?.batch_label, status?.line].filter(Boolean).join(' · '))} placement="right">
             {name}
           </Tooltip>
         ) : (
@@ -404,7 +464,7 @@ export default function GanttGrid(props: Props) {
         const end = o.ends_on ? minKey(o.ends_on, to) : to
         const label = `Out of service ${o.label}${o.reason ? ` · ${o.reason}` : ''}`
         return (
-          <Tooltip key={o.id} title={label}>
+          <Tooltip key={o.id} title={hover(label)}>
             <Box
               {...activate(props.onBand && row.tank ? () => props.onBand!(row.tank!, o) : undefined, drag)}
               aria-label={label}
@@ -455,7 +515,7 @@ export default function GanttGrid(props: Props) {
     return (
       <Box key={part.key} sx={{ position: 'absolute', left: 0, top, width: '100%', height: TRACK_H, pointerEvents: 'none' }}>
         {segs.length > 0 && (
-          <Tooltip title={`${part.batch.label}${part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`}>
+          <Tooltip title={hover(`${part.batch.label}${part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`)}>
             <Box
               {...activate(props.onBar ? () => props.onBar!(part) : undefined, drag)}
               {...bindDrag(`bar:${part.key}`, (d) => {
@@ -501,7 +561,7 @@ export default function GanttGrid(props: Props) {
           </Tooltip>
         )}
         {badge && segs.length > 0 && (
-          <Tooltip title={myFlags.map((f) => `${f.signed_off ? '✓ ' : ''}${f.message}`).join('\n')}>
+          <Tooltip title={hover(myFlags.map((f) => `${f.signed_off ? '✓ ' : ''}${f.message}`).join('\n'))}>
             <Box
               component="button"
               type="button"
@@ -548,7 +608,7 @@ export default function GanttGrid(props: Props) {
                   {initials(who)}
                 </Box>
               )}
-              <Tooltip title={tip}>
+              <Tooltip title={hover(tip)}>
                 <Box
                   {...activate(props.onStep ? () => props.onStep!(step) : undefined, drag)}
                   {...bindDrag(`dot:${step.id}`, (d) => overChart(d) && snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
@@ -585,7 +645,7 @@ export default function GanttGrid(props: Props) {
     const state = dotState(cip, today)
     const tip = ['CIP & Sanitize', dayLabel(cip.due_on), STATE_WORDS[state], cip.assignee?.name, cip.notes].filter(Boolean).join(' · ')
     return (
-      <Tooltip key={`cip-${cip.id}`} title={tip}>
+      <Tooltip key={`cip-${cip.id}`} title={hover(tip)}>
         <Box
           {...activate(props.onCip ? () => props.onCip!(cip) : undefined, drag)}
           {...bindDrag(`cip:${cip.id}`, (d) => overChart(d) && snap(d.dx) && props.onMoveCip?.(cip, snap(d.dx)), !cip.done_on)}
@@ -658,7 +718,7 @@ export default function GanttGrid(props: Props) {
         </Box>
         <Box sx={{ position: 'relative', flex: 'none', width, borderBottom: 1, borderColor: 'divider', borderTop: i === 0 ? `1px dashed ${theme.palette.divider}` : undefined }}>
           {visible && (
-            <Tooltip title={[step.name, part.batch.label, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · ')}>
+            <Tooltip title={hover([step.name, part.batch.label, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · '))}>
               <Box
                 {...activate(props.onStep ? () => props.onStep!(step) : undefined, drag)}
                 {...bindDrag(`dia:${step.id}`, (d) => snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
@@ -836,31 +896,7 @@ export default function GanttGrid(props: Props) {
         </defs>
         {overlay}
       </Box>
-      {hint && drag?.active && (
-        <Box
-          role="status"
-          sx={{
-            position: 'fixed',
-            // Beside the pointer; above a finger, so it isn't under it.
-            ...(drag.active.touch ? { left: drag.active.x, top: drag.active.y - 56, transform: 'translateX(-50%)' } : { left: drag.active.x + 14, top: drag.active.y + 18 }),
-            zIndex: 1500,
-            pointerEvents: 'none',
-            px: 1,
-            py: 0.5,
-            borderRadius: 1,
-            fontSize: 12,
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            boxShadow: 3,
-            bgcolor: hint.warn ? 'error.main' : 'grey.900',
-            color: hint.warn ? 'error.contrastText' : 'common.white',
-          }}
-          data-testid="gantt-drag-hint"
-          data-warn={hint.warn || undefined}
-        >
-          {hint.text}
-        </Box>
-      )}
+      {hint && drag?.active && <HintBox hint={hint} at={drag.active} />}
     </Box>
   )
 }

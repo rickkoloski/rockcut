@@ -200,23 +200,25 @@ describe('a done exit (D47 QA M3)', () => {
     steps: fest.steps.map((s) => (s.id === 3 ? { ...s, done_on: s.due_on } : s.id === 6 ? { ...s, due_on: '2026-10-21', done_on: '2026-10-21' } : s)),
   })
 
-  it('the bar ends at its CIP still to come; later unfinished steps are stranded, red', () => {
+  it('the bar ends at the exit; later unfinished steps are stranded, red; the leftover CIP holds no lane (N4)', () => {
     const second = buildParts(early)[1]
-    expect(second.end).toBe('2026-10-25')
+    expect(second.end).toBe('2026-10-21')
     expect([...second.stranded]).toEqual([5])
-    expect(second.reach).toBe('2026-10-25')
+    expect(second.reach).toBe('2026-10-22')
     const carb = second.steps.find((s) => s.id === 5)!
     expect(dotState(carb, '2026-10-21', second)).toBe('stranded')
     expect(dotState(carb, '2026-10-21')).toBe('planned')
-    // After the Package no phase: plain to the CIP.
-    expect(segments(second, '2026-10-20', 6, phaseAt(early))).toEqual([
-      { from: 0, to: 1, fill: 11 },
-      { from: 2, to: 4, fill: null },
-      { from: 5, to: 5, fill: 'cip' },
-    ])
+    expect(segments(second, '2026-10-20', 6, phaseAt(early))).toEqual([{ from: 0, to: 1, fill: 11 }])
+    // The CIP (Oct 25) is still a dot on its day.
+    expect(partDots(second).map((d) => d.step.id)).toContain(7)
+    // Without the stranded Carb, the next batch from Oct 23 shares the lane despite the leftover CIP on Oct 25.
+    const plain = buildParts(batch({ ...early, steps: early.steps.filter((s) => s.id !== 5) }))[1]
+    expect(plain.reach).toBe('2026-10-21')
+    const next = buildParts(batch({ id: 2, vessels: [{ vessel_index: 0, tank_id: 9 }], steps: [step({ id: 20, batch_id: 2, behavior: 'brew', due_on: '2026-10-23' })] }))[0]
+    expect(layoutRows([tank(9, 'Serving 2')], [plain, next], [], new Set())[0].tracks).toBe(1)
   })
 
-  it('with its CIP done (or none) the bar ends at the exit; stranded steps still reach past it', () => {
+  it('with its CIP done the bar still ends at the exit; stranded steps reach past it', () => {
     const cleaned = batch({ ...early, steps: early.steps.map((s) => (s.id === 7 ? { ...s, due_on: '2026-10-21', done_on: '2026-10-21' } : s)) })
     const second = buildParts(cleaned)[1]
     expect(second.end).toBe('2026-10-21')
@@ -257,6 +259,27 @@ describe('drag hint (lead decisions 4, addition)', () => {
       text: '→ FV6 · FV6 is out of service Oct 10–12 · overlaps Enos P1 in FV6',
       warn: true,
     })
+  })
+
+  it('a completed part holds its tank only to its exit: no overlap for a batch before its leftover CIP (N4)', () => {
+    // Fest's Package done Oct 21 in Serving 2, its CIP still planned Oct 25; Enos dragged to Oct 23.
+    const done = buildParts(batch({ ...fest, status: 'completed', steps: fest.steps.filter((s) => s.id !== 5).map((s) => (s.id === 3 ? { ...s, done_on: s.due_on } : s.id === 6 ? { ...s, due_on: '2026-10-21', done_on: '2026-10-21' } : s)) }))
+    const enos = buildParts(batch({ id: 2, label: 'Enos P1', vessels: [{ vessel_index: 0, tank_id: 9 }], steps: [step({ id: 30, batch_id: 2, behavior: 'brew', due_on: '2026-10-20' }), step({ id: 31, batch_id: 2, due_on: '2026-10-30' })] }))[0]
+    expect(dragHint({ ...base, parts: [...done, enos], kind: 'bar', days: 3, part: enos })).toEqual({ text: 'Fri Oct 23 · +3 days', warn: false })
+    // Before the exit, it does overlap.
+    expect(dragHint({ ...base, parts: [...done, enos], kind: 'bar', days: -1, part: enos })!.text).toMatch(/overlaps Fest #38 in Serving 2$/)
+  })
+
+  it('a fill or exit dot checks the new stay; any other dot its own day (N6)', () => {
+    // FV7 holds Fest's first part Oct 1–20; FV7 out Oct 22–24.
+    const fv7out = { ...fv7, outages: [{ id: 2, tank_id: 7, starts_on: '2026-10-22', ends_on: '2026-10-24', reason: null, state: 'coming', label: '' }] } as Tank
+    const t = { ...base, tanks: [fv6, fv7out, s2] }
+    const transfer = first.exit!
+    // The exit 5 days later (Oct 25): the day is past the outage, but the stay now covers it.
+    expect(dragHint({ ...t, kind: 'dot', days: 5, part: first, step: transfer })!.text).toMatch(/^Sun Oct 25 · \+5 days · FV7 is out of service Oct 22–24/)
+    // Another step (the CIP on Oct 20, a dot of this part) only its own day.
+    const cip = first.steps.find((s) => s.id === 4)!
+    expect(dragHint({ ...t, kind: 'dot', days: 5, part: first, step: cip })).toEqual({ text: 'Sun Oct 25 · +5 days', warn: false })
   })
 
   it('a dot before the step it follows, or past one that follows it', () => {

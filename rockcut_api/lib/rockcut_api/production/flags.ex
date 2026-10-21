@@ -34,14 +34,20 @@ defmodule RockcutApi.Production.Flags do
     cips_by_tank = Enum.group_by(world.cips, & &1.tank_id)
     signed = Map.new(signoffs, &{&1.flag_key, &1})
 
+    # Standalone CIPs, and a done exit's leftover CIP (it only cleans the
+    # tank; lead decisions 5, N4): flagged the same way.
+    loose_cips =
+      world.cips ++
+        for p <- world.parts, c = p.leftover_cip, c, p.tank_id, do: %{c | tank_id: p.tank_id}
+
     (overlaps(live, tanks) ++
        too_big(live, tanks) ++
        dirty_fills(live, by_tank, cips_by_tank, tanks) ++
        dirty_no_cip(by_tank, cips_by_tank, tanks) ++
        out_of_order(world.parts) ++
        no_tank(live, world.today) ++
-       out_of_service(live, world.cips, tanks) ++
-       cip_with_beer(live, world.cips, tanks))
+       out_of_service(live, loose_cips, tanks) ++
+       cip_with_beer(live, loose_cips, tanks))
     |> Enum.uniq_by(& &1.key)
     |> Enum.map(&with_signoff(&1, signed[&1.key]))
     |> Enum.sort_by(&{&1.signed_off, &1.key})

@@ -94,8 +94,10 @@ export interface Part {
   cip: SchedStep | null
   /**
    * First and last day of the bar: its fill (or first step) to its last
-   * step, CIP included. Once its exit is done it ends at the exit, or at its
-   * CIP while that's still to come.
+   * step, CIP included. Once its exit is done it ends at the exit: that's
+   * its stay in the tank (lead decisions 5, N4; the API's `Parts`). A
+   * leftover CIP after it only says when the tank gets cleaned: a dot on
+   * its day, holding no lane.
    */
   start: string
   end: string
@@ -133,7 +135,7 @@ export function buildParts(batch: SchedBatch): Part[] {
     const days = steps.map((s) => s.due_on).sort()
     const exited = exit?.done_on ? exit.due_on : null
     const stranded = exited ? own.filter((s) => !s.done_on && s !== cip && s.due_on > exited) : []
-    const end = exited ? (cip && !cip.done_on && cip.due_on > exited ? cip.due_on : exited) : (days.at(-1) ?? fill?.due_on ?? '')
+    const end = exited ?? days.at(-1) ?? fill?.due_on ?? ''
     return {
       key: `${batch.id}.${k}`,
       batch,
@@ -188,20 +190,15 @@ export interface Segment {
   fill: number | 'cip' | null
 }
 
-/**
- * A part's bar within the view as runs of the same fill, CIP days hatched.
- * After a done exit it isn't in a phase any more: the days to its CIP are
- * plain.
- */
+/** A part's bar within the view as runs of the same fill, CIP days hatched. */
 export function segments(part: Part, viewFrom: string, viewDays: number, phase: (day: string) => number | null): Segment[] {
   const cipDays = new Set(part.steps.filter((s) => s.behavior === 'cip' && s.vessel_index === part.vessel).map((s) => s.due_on))
-  const exited = part.exit?.done_on ? part.exit.due_on : null
   const first = Math.max(0, daysBetween(viewFrom, part.start))
   const last = Math.min(viewDays - 1, daysBetween(viewFrom, part.end))
   const out: Segment[] = []
   for (let i = first; i <= last; i++) {
     const day = addDaysKey(viewFrom, i)
-    const fill = cipDays.has(day) ? 'cip' : exited && day > exited ? null : phase(day)
+    const fill = cipDays.has(day) ? 'cip' : phase(day)
     const prev = out.at(-1)
     if (prev && prev.fill === fill && prev.to === i - 1) prev.to = i
     else out.push({ from: i, to: i, fill })
@@ -384,7 +381,13 @@ export function dragHint(a: DragHintInput): DragHint | null {
     const step = a.step
     const day = addDaysKey(step.due_on, a.days)
     text = `${dayLabel(day)} · ${signedDays(a.days)}`
-    outIn(tankById(a.kind === 'cip' ? step.tank_id : (a.part?.tankId ?? null)), day, day)
+    const part = a.part
+    if (a.kind === 'dot' && part && (step.id === part.fill?.id || step.id === part.exit?.id)) {
+      // Its fill or its exit: the part's stay changes; check the new stay (N6).
+      const [from, to] = step.id === part.fill?.id ? [day, part.end] : [part.start, day]
+      outIn(tankById(part.tankId), from, to)
+      overlapIn(tankById(part.tankId), part, from, to)
+    } else outIn(tankById(a.kind === 'cip' ? step.tank_id : (part?.tankId ?? null)), day, day)
     const batch = a.part?.batch
     if (batch) {
       const byId = new Map(batch.steps.map((s) => [s.id, s]))

@@ -221,6 +221,19 @@ defmodule RockcutApi.Production.StatusFlagsTest do
       # A standalone CIP done today cleans it.
       cip = step(99, "cip", 0, done: true, batch: nil, tank: 12) |> Map.put(:batch_id, nil)
       assert %{state: "sani", line: "Sani 0 days"} = status(s1, [emptied(nil, false)], [cip])
+
+      # A CIP on the exit's own day cleans after it (N4).
+      assert %{state: "sani", line: "Sani 8 days"} = status(s1, [emptied(-8, true)])
+
+      emptied_today = %{
+        emptied(nil, false)
+        | steps: [
+            step(21, "brew", -40, done: true, batch: 3),
+            step(22, "package", 0, done: true, batch: 3)
+          ]
+      }
+
+      assert %{state: "sani", line: "Sani 0 days"} = status(s1, [emptied_today], [cip])
     end
 
     test "never used: Empty · clean; a partial Package doesn't empty it (P112)" do
@@ -394,9 +407,10 @@ defmodule RockcutApi.Production.StatusFlagsTest do
       assert ["out_of_order"] = kinds(flags([packaged_early(cip: 0, cip_done: 0)]))
     end
 
-    test "a done exit ends the bar there, its CIP still to come included; later steps are stranded (M3)" do
+    test "a done exit ends the stay there; its CIP is a leftover; later steps are stranded (M3, N4)" do
       [part] = Parts.build([packaged_early()])
-      assert part.end == Date.add(@today, 6)
+      assert part.end == @today
+      assert part.leftover_cip.id == 44
       assert Enum.map(part.stranded, & &1.id) == [42]
       assert Parts.occupied_until(part) == @today
 
@@ -406,20 +420,30 @@ defmodule RockcutApi.Production.StatusFlagsTest do
       [planned] = Parts.build([galactic()])
       assert planned.end == Date.add(@today, 10)
       assert planned.stranded == []
+      assert planned.leftover_cip == nil
       assert Parts.occupied_until(planned) == Date.add(@today, 10)
     end
 
-    test "after a done exit the tank is held to the exit; a done CIP ends the dirty fill, no overlap (M3)" do
+    test "after a done exit the tank is held to the exit: dirty, no overlap; the leftover CIP in the next stay is flagged (M3, N4)" do
       next = planned(5, "Altruism P1", 3)
       without_carb = fn e -> %{e | steps: Enum.reject(e.steps, &(&1.id == 42)), links: []} end
       done = without_carb.(packaged_early())
 
-      # Its own CIP (day 6) is after the next fill (day 3): dirty, not overlapping.
-      assert kinds(flags([done, next])) == ["dirty_fill"]
+      # Its own CIP (day 6) is after the next fill (day 3): dirty, not
+      # overlapping; and that CIP falls in the next batch's stay.
+      f = flags([done, next])
+      assert kinds(f) == ["cip_with_beer", "dirty_fill"]
 
-      # A done standalone CIP in between cleaned it: nothing.
+      assert Enum.find(f, &(&1.kind == "cip_with_beer")).message ==
+               "A CIP & Sanitize in FV2 on #{Calendar.strftime(Date.add(@today, 6), "%b %-d")} while Altruism P1 is in it."
+
+      # A done standalone CIP in between cleaned it: only the leftover CIP's flag.
       cip = %{step(98, "cip", 1, done: true, tank: 10) | batch_id: nil}
-      assert flags([done, next], cips: [cip]) == []
+      assert kinds(flags([done, next], cips: [cip])) == ["cip_with_beer"]
+
+      # The leftover CIP on the exit day: cleaning after it, nothing at all.
+      same_day = without_carb.(packaged_early(cip: 0))
+      assert flags([same_day, next]) == []
 
       # Not yet emptied, the same dates overlap.
       not_done = %{

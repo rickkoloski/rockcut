@@ -1060,6 +1060,26 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert [%{signed_off: true, signoff: %{user_name: "Jake Brewer"}}] =
                Enum.filter(sched.flags, &(&1.kind == "too_big"))
 
+      # Nothing that drifts on its own is in the signature (lead decisions 5):
+      # seen days later, and after another batch renumbers Enos, it holds.
+      {:ok, later} = Schedule.load(@today, Date.add(@today, 70), Date.add(@today, 3))
+      assert [%{signed_off: true}] = Enum.filter(later.flags, &(&1.kind == "too_big"))
+      enos = Enum.find(sched.batches, &(&1.label == "Enos P2"))
+      template = Repo.get_by!(RockcutApi.Production.Template, name: "[SEED] Standard ale")
+
+      {:ok, {_, renumbered}} =
+        Batches.plan(%{
+          "brand_id" => enos.batch.brand_id,
+          "template_id" => template.id,
+          "brew_on" => Date.to_iso8601(@today),
+          "volume_bbl" => "10"
+        })
+
+      assert Enum.any?(renumbered, &(&1.batch_id == enos.batch.id))
+
+      assert [%{signed_off: true, message: "Enos P3 " <> _}] =
+               Enum.filter(schedule().flags, &(&1.kind == "too_big"))
+
       assigned =
         Repo.all(
           from(s in Step,

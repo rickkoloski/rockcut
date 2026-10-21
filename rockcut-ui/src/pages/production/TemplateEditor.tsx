@@ -46,6 +46,14 @@ const NO_TYPES: StepType[] = []
 
 type Editing = { kind: 'step' | 'marker'; entry: TemplateStep | null } | { kind: 'ramp' } | { kind: 'name' } | null
 
+/** "After transfer 1 and After transfer 2 depend on it.": the tank a Transfer fills and every tank reached through it. */
+function dependents(template: Template, transfer: TemplateStep): string {
+  const last = Math.max(transfer.vessel_index, ...template.steps.map((s) => s.vessel_index))
+  const names = Array.from({ length: last - transfer.vessel_index + 1 }, (_, i) => vesselLabel(transfer.vessel_index + i))
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]
+  return `${list} ${names.length > 1 ? 'depend' : 'depends'} on it.`
+}
+
 /**
  * D46 §3.4 the template editor (`/brewery/production/templates/:id`): name and
  * notes, what keeps it from being complete, its entries in day order, Add
@@ -323,11 +331,12 @@ export default function TemplateEditor() {
         title="Remove from the template"
         message={
           removing
-            ? `Remove ${removing.name}? The steps it linked stay linked through it.${removing.behavior === 'transfer' ? ' The CIP & Sanitize it added goes too.' : ''}${removing.behavior === 'transfer' && removalIssues?.length ? ` ${vesselLabel(removing.vessel_index)} depends on it.` : ''}`
+            ? `Remove ${removing.name}? The steps it linked stay linked through it.${removing.behavior === 'transfer' ? ' The CIP & Sanitize it added goes too.' : ''}${removing.behavior === 'transfer' && removalIssues?.length ? ` ${dependents(template, removing)}` : ''}`
             : ''
         }
         confirmLabel="Remove"
         loading={busy}
+        pending={!!removing && removalIssues === null}
       >
         {removalIssues && removalIssues.length > 0 && (
           <Alert severity="warning" sx={{ mt: 2 }} data-testid="remove-issues">

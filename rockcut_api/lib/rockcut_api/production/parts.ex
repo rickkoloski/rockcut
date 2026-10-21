@@ -10,14 +10,16 @@ defmodule RockcutApi.Production.Parts do
   and **emptied** by its exit: a full Package or a Split in it, or the next
   Transfer/Filter (a partial Package isn't an exit). Its CIP is its
   vessel's latest CIP & Sanitize. It runs from its fill (or first step) to
-  its last step, its CIP included: the bar on the Gantt. Once its exit is
-  done it ends at the exit, or at its CIP while that's still to come;
-  unfinished steps dated after a done exit are `stranded` (flagged as out
-  of order, drawn red).
+  its last step, its CIP included: the bar on the Gantt.
 
-  It **occupies** its tank (`occupied_until/1`) to its end, or only to its
-  exit once that's done: the tank is then dirty until a CIP, which the
-  "Filling a dirty tank" flag looks after.
+  **Occupancy** (lead decisions 5, N4), the one definition every place
+  uses: once its exit is done a part holds its tank from its fill to its
+  exit, and no longer (`end`, `occupied_until/1`). Its own CIP, done or
+  planned, only says when the tank gets cleaned: between the exit and that
+  CIP the tank is dirty, not occupied ("Filling a dirty tank" looks after
+  that), and a `leftover_cip` dated in another part's stay is flagged like
+  a standalone one. Unfinished steps dated after a done exit are
+  `stranded` (flagged as out of order, drawn red).
   """
   alias RockcutApi.Production.Steps
 
@@ -63,14 +65,7 @@ defmodule RockcutApi.Production.Parts do
         do: Enum.filter(own, &(is_nil(&1.done_on) and &1 != cip and after?(&1.due_on, exited))),
         else: []
 
-    last =
-      if exited,
-        do:
-          if(cip && is_nil(cip.done_on) && after?(cip.due_on, exited),
-            do: cip.due_on,
-            else: exited
-          ),
-        else: Enum.max(days, Date, fn -> nil end)
+    last = if exited, do: exited, else: Enum.max(days, Date, fn -> nil end)
 
     %{
       id: "#{entry.batch.id}.#{k}",
@@ -88,6 +83,7 @@ defmodule RockcutApi.Production.Parts do
       end: last,
       steps: span,
       stranded: stranded,
+      leftover_cip: if(exited && cip && not after?(exited, cip.due_on), do: cip),
       batch_steps: steps,
       links: entry.links
     }
@@ -98,7 +94,7 @@ defmodule RockcutApi.Production.Parts do
   def label(%{label: label, vessel_index: k}), do: "#{label} (after transfer #{k})"
 
   @doc "The last day the part holds its tank: its exit once that's done, else its end."
-  def occupied_until(part), do: if(emptied?(part), do: part.exit.due_on, else: part.end)
+  def occupied_until(part), do: part.end
 
   def filled?(part), do: done?(part.fill)
   def emptied?(part), do: done?(part.exit)

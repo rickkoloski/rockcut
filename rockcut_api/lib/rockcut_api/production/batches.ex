@@ -61,9 +61,10 @@ defmodule RockcutApi.Production.Batches do
   @doc """
   The P-numbers: `%{batch_id => n}` for every planned scheduled batch, by
   the first Brew day's date (with `overrides`, `%{step_id => date}`, in
-  place of the stored dates: a preview), then id.
+  place of the stored dates: a preview), then id. `leaving`: batch ids that
+  won't be planned any more (a brew-day check-off's preview).
   """
-  def p_numbers(overrides \\ %{}) do
+  def p_numbers(overrides \\ %{}, leaving \\ []) do
     Repo.all(
       from(s in Step,
         join: b in Batch,
@@ -74,6 +75,7 @@ defmodule RockcutApi.Production.Batches do
         select: {s.batch_id, s.id, s.due_on}
       )
     )
+    |> Enum.reject(&(elem(&1, 0) in leaving))
     |> Enum.group_by(&elem(&1, 0))
     |> Enum.map(fn {batch_id, brews} ->
       {_, step_id, due_on} = Enum.min_by(brews, &elem(&1, 1))

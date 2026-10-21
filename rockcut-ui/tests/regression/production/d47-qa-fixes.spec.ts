@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { addOutage } from './helpers'
-import { addDays, batchOf, dayPx, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
+import { addOutage, apiAs } from './helpers'
+import { addDays, batchOf, dayPx, dragBy, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
 
 // D47 DEV QA fix cycle 1 (lead decisions 4): M1 typing a date, M2 a batch
 // number with a leading #, M3 a full Package checked off early, and the
@@ -188,4 +188,108 @@ test('drag hint: a sideways drag shows the day; a row change names the tank, red
   await page.mouse.up()
   await expect(hint).toHaveCount(0)
   expect((await batchOf(b.id)).vessels).toEqual([{ vessel_index: 0, tank_id: fv.id }])
+})
+
+test('N5: after an Escape-cancelled drag, the next drag of a CIP block works', async ({ page }) => {
+  const b = await ale('Enos', 2)
+  const tankId = (await made.tank('CIP')).id
+  const api = await apiAs('brewer1')
+  const res = await api.post('/api/production/cips', { data: { tank_id: tankId, due_on: addDays(today(), 20) } })
+  expect(res.status()).toBe(201)
+  const cip = (await res.json()).data.cip
+  made.cips.push(cip.id)
+  await openGantt(page)
+  const px = await dayPx(page)
+  for (const el of [page.getByTestId(`gantt-step-${stepOf(b, 'FDH').id}`), page.getByTestId(`gantt-cip-${cip.id}`)]) {
+    await el.scrollIntoViewIfNeeded()
+    const box = (await el.boundingBox())!
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2]
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 6, y, { steps: 3 })
+    await page.mouse.move(x + 2 * px, y, { steps: 8 })
+    await expect(page.getByTestId('gantt-drag-hint')).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('gantt-drag-hint')).toHaveCount(0)
+    await page.mouse.up()
+  }
+  // Neither release clicked through (the empty-spot menu used to open and cover the CIP).
+  for (const id of ['step-dialog', 'gantt-spot-menu', 'cip-dialog']) await expect(page.getByTestId(id)).toHaveCount(0)
+  await dragBy(page, page.getByTestId(`gantt-cip-${cip.id}`), 2)
+  await expect(snack(page)).toHaveText('CIP & Sanitize moved 2 days later.')
+  expect((await schedule()).cips.find((c) => c.id === cip.id)!.due_on).toBe(addDays(today(), 22))
+})
+
+test('N7, N2: a bar dragged away and back opens nothing and moves nothing; the hover tooltip stays hidden through the drag', async ({ page }) => {
+  const b = await ale('Fest', 4)
+  const moves: string[] = []
+  page.on('request', (r) => r.method() !== 'GET' && r.url().includes('/api/production/') && moves.push(r.url()))
+  await openGantt(page)
+  const bar = page.getByTestId(`gantt-bar-${b.id}-0`)
+  await bar.scrollIntoViewIfNeeded()
+  const box = (await bar.boundingBox())!
+  const [x, y] = [box.x + 30, box.y + box.height / 2]
+  const px = await dayPx(page)
+  await page.mouse.move(x, y)
+  await expect(page.getByRole('tooltip')).toContainText(b.label)
+  await page.mouse.down()
+  await page.mouse.move(x + 6, y, { steps: 3 })
+  await page.mouse.move(x + 3 * px, y, { steps: 8 })
+  await expect(page.getByTestId('gantt-drag-hint')).toBeVisible()
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  // Back to within half a day of the start, and released.
+  await page.mouse.move(x + px / 3, y, { steps: 8 })
+  await page.mouse.up()
+  await page.waitForTimeout(300)
+  for (const id of ['batch-dialog', 'gantt-spot-menu']) await expect(page.getByTestId(id)).toHaveCount(0)
+  await expect(page.getByTestId('gantt-snack-text')).toHaveCount(0)
+  expect(moves).toEqual([])
+  // Not again until the pointer moves.
+  await expect(page.getByRole('tooltip')).toHaveCount(0)
+  await page.mouse.move(x + 4, y + 1)
+  await expect(page.getByRole('tooltip')).toContainText(b.label)
+})
+
+test('N3: near the window’s right edge the drag hint flips to the left and stays inside', async ({ page }) => {
+  const b = await ale('Galactic', 3)
+  await openGantt(page)
+  const dot = page.getByTestId(`gantt-step-${stepOf(b, 'FDH').id}`)
+  await dot.scrollIntoViewIfNeeded()
+  const box = (await dot.boundingBox())!
+  const [x, y] = [box.x + box.width / 2, box.y + box.height / 2]
+  const vw = page.viewportSize()!.width
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 6, y, { steps: 3 })
+  await page.mouse.move(vw - 12, y, { steps: 12 })
+  const hint = page.getByTestId('gantt-drag-hint')
+  await expect(hint).toBeVisible()
+  const h = (await hint.boundingBox())!
+  expect(h.x).toBeGreaterThanOrEqual(0)
+  expect(h.x + h.width).toBeLessThanOrEqual(vw)
+  expect(h.x + h.width).toBeLessThanOrEqual(vw - 12)
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+})
+
+test('the plan dialog’s tank menu keeps its rows while open, though a refetch adds a tank; the pick is by id', async ({ page }) => {
+  const pick = await made.tank('QR1')
+  await page.clock.install()
+  await openGantt(page)
+  await page.getByTestId('gantt-plan').click()
+  await page.getByTestId('plan-tank-0').click()
+  const items = page.getByRole('option')
+  const before = await items.evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+  const added = await made.tank('QR0')
+  const refetched = page.waitForResponse((r) => r.url().includes('/api/production/schedule') && r.request().method() === 'GET')
+  await page.clock.fastForward(61_000)
+  await refetched
+  await page.waitForTimeout(200)
+  expect(await items.evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))).toEqual(before)
+  await page.getByTestId(`plan-tank-0-${pick.id}`).click()
+  await expect(page.getByTestId('plan-tank-0')).toContainText(pick.name)
+  // Open again: the new tank is there now.
+  await page.getByTestId('plan-tank-0').click()
+  await expect(page.getByTestId(`plan-tank-0-${added.id}`)).toBeVisible()
+  await page.keyboard.press('Escape')
 })

@@ -19,11 +19,13 @@ interface ConfirmDialogProps {
   confirmColor?: 'error' | 'primary'
   /** More under the message (a list of consequences). */
   children?: React.ReactNode
+  /** Still finding out what confirming would do: the confirm button waits, with a spinner (Cancel still works). */
+  pending?: boolean
 }
 
 export default function ConfirmDialog({
   open, onClose, onConfirm, title, message, loading,
-  confirmLabel = 'Delete', confirmColor = 'error', children,
+  confirmLabel = 'Delete', confirmColor = 'error', children, pending,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -34,8 +36,8 @@ export default function ConfirmDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancel</Button>
-        <Button onClick={onConfirm} color={confirmColor} variant="contained" disabled={loading}>
-          {loading ? <CircularProgress size={20} /> : confirmLabel}
+        <Button onClick={onConfirm} color={confirmColor} variant="contained" disabled={loading || pending}>
+          {loading || pending ? <CircularProgress size={20} /> : confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>
