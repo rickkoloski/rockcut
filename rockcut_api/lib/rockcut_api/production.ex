@@ -414,7 +414,8 @@ defmodule RockcutApi.Production do
   tank (`:brew_day_fixed`); a new day that would put it before a step it
   follows (or after one that follows it) is `:link_order`. A Transfer/Filter
   keeps its tank (`:transfer_not_new_tank`); a new day that takes it past another transfer is
-  `{:transfer_order, :before | :after, day}` (D47 task 0, N1).
+  `{:transfer_order, :before | :after, day}` (D47 task 0, N1). The CIP &
+  Sanitize it set up moves to its new day too, unless it was moved apart.
   """
   def update_step(%Template{} = template, %TemplateStep{} = step, attrs) do
     attrs = stringify(attrs)
@@ -440,7 +441,26 @@ defmodule RockcutApi.Production do
           do: Map.put(fields, :position, next_day_position(template.id, fields.day_offset)),
           else: fields
 
+      # Lead decisions 1, item 1: the CIP a Transfer/Filter set up (still on
+      # its day) moves with it; one moved on its own stays.
+      cips =
+        if behavior_of(type) == "transfer" and fields.day_offset != step.day_offset,
+          do: set_up_cips(step),
+          else: []
+
       step |> Ecto.Changeset.change(fields) |> Repo.update!()
+
+      for cip <- cips do
+        cip
+        |> Ecto.Changeset.change(
+          day_offset: fields.day_offset,
+          position: next_day_position(template.id, fields.day_offset)
+        )
+        |> Repo.update!()
+
+        check_link_order!(cip.id)
+      end
+
       check_link_order!(step.id)
       load(template)
     end)

@@ -807,6 +807,26 @@ defmodule RockcutApi.ProductionTest do
                })
     end
 
+    test "a Transfer's CIP follows its day, earlier or later; one moved on its own stays" do
+      t = three_tanks!()
+
+      cip_of = fn t, k ->
+        Enum.find(t.steps, &(&1.step_type.behavior == "cip" and &1.vessel_index == k))
+      end
+
+      {:ok, t} = Production.update_step(t, transfer_on(t, 25), %{"day_offset" => 26})
+      assert transfer_on(t, 26).vessel_index == 2
+      assert cip_of.(t, 1).day_offset == 26
+
+      {:ok, t} = Production.update_step(t, transfer_on(t, 26), %{"day_offset" => 24})
+      assert cip_of.(t, 1).day_offset == 24
+
+      # The brewer moves the first tank's CIP a day later; the Transfer then moves without it.
+      {:ok, t} = Production.update_step(t, cip_of.(t, 0), %{"day_offset" => 21})
+      {:ok, t} = Production.update_step(t, transfer_on(t, 20), %{"day_offset" => 19})
+      assert cip_of.(t, 0).day_offset == 21
+    end
+
     test "N2: removal_issues lists what a removal leaves incomplete and changes nothing" do
       t = three_tanks!()
       middle = transfer_on(t, 25)

@@ -78,6 +78,21 @@ test('N1: a Transfer out of day order says why and offers no tank', async ({ pag
   await expect(page.getByTestId(`entry-day-${t.first}`)).toHaveText('Day 20')
 })
 
+test('a Transfer’s CIP follows its new day (lead decisions 1, item 1)', async ({ page }) => {
+  const t = await twoTransfers('CIP follows')
+  const cip = (await template(t.id)).steps.find((s) => s.name === 'CIP & Sanitize' && s.vessel_index === 1)!
+  expect(cip.day_offset).toBe(25)
+  await page.goto(`/brewery/production/templates/${t.id}`)
+  await page.getByTestId(`entry-edit-${t.second}`).click()
+  await page.getByTestId('entry-day').fill('27')
+  await page.getByTestId('entry-dialog-save').click()
+  await expect(page.getByTestId('entry-dialog')).toBeHidden()
+  await page.reload()
+  await expect(page.getByTestId(`entry-day-${t.second}`)).toHaveText('Day 27')
+  await expect(page.getByTestId(`entry-day-${cip.id}`)).toHaveText('Day 27')
+  await expect(page.getByTestId('template-issues')).toHaveCount(0)
+})
+
 test('N2: removing a middle Transfer warns that the later tanks depend on it', async ({ page }) => {
   const t = await twoTransfers('N2 remove')
   await page.goto(`/brewery/production/templates/${t.id}`)
