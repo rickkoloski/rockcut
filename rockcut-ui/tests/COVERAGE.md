@@ -451,3 +451,48 @@ DEV QA pass 1 fixes (`stepwise_results/d43_dev_qa_report.md`):
 | G4 | a click elsewhere ends Move; arrows in an open dialog move nothing | Playwright `ui/schedule` (G4) |
 | G5 | a theme save that fails offline or never answers reverts and says so (Escape and a click don't hide it) | Playwright `ui/theme` (offline; never answers; refused) |
 | obs | User change log page title | Playwright `ui/layout` (S153 block) |
+
+## D46 — Tanks, phases & step types, templates (`specs/d46_production_scheduling_spec.md` §3.1–§3.4; `planning/d46_tanks_templates_plan.md`)
+
+Playwright specs are in `regression/production/`, project `production` (one worker: the lists are shared and a reorder names every active row). Lead decision 1: the Gantt parts of P6–P10 come with D47; out-of-service periods are tested on the Tanks page here.
+
+| # | Scenario | Layer |
+|---|---|---|
+| P1 | brewer1 adds a tank: listed last, persists | Playwright `production/tanks` (P1: through the hub, fields checked through the API after a reload); ExUnit `production_test` (order), `production_controller_test`. The Gantt row → D47 |
+| P2 | drag a tank above FV1: order persists, for brewer2 too | Playwright `production/tanks` (P2: arrow up once, then a drag by the handle; reload; brewer2's browser); ExUnit `production_test` (reorder takes exactly the active ids). Gantt order → D47 |
+| P3 | Add "fv1": "A tank named FV1 already exists." | Playwright `production/tanks` (P3); ExUnit `production_test` (case-insensitive, retired names too), `production_controller_test` |
+| P4 | Retire a tank with unfinished steps: refused, listing the batches | Playwright `production/tanks` (P4: the page shows the 422 `tank_in_use` message, **stubbed**); ExUnit: `batches_in_tank/1` returns none until D47 fills it. Real refusal → D47 |
+| P5 | Retire an empty tank; Retired list; Restore | Playwright `production/tanks` (P5: the spec's confirm text, reload, Restore puts it last); ExUnit `production_test`. "Gone from the Gantt and pickers" → D47 |
+| P6 | Serving 2 out Oct 27–Nov 2 over a planned batch: preview, band, tag, flag | **D47** (Gantt, batches, flags). The period itself: P9's and the out-of-service specs |
+| P7 | Until further notice from today, "Valve repair" | Playwright `production/out-of-service` (P7: Now group, "Out from <today>" chip, reload, API state `now`). Status line and band → D47 |
+| P8 | Back in service today | Playwright `production/out-of-service` (P8: yesterday becomes the last day, under Past; a period that started today is deleted; only a current period offers it); ExUnit `production_test` |
+| P9 | an overlapping period is refused, naming the other | Playwright `production/out-of-service` (P9: exact message, nothing saved); ExUnit `production_test`, `production_controller_test` |
+| P10 | Delete a period; its flags clear; Undo | Playwright `production/out-of-service` (Delete on the Tanks page). Flags and Undo → D47 |
+| P11 | Add step type "Hop stand check": in the editor's picker | Playwright `production/lists` (P11); ExUnit `production_test` (always `plain`) |
+| P12 | Retire a type a template uses: hidden from pickers, the template keeps its step | Playwright `production/lists` (P12, a `[TEST-TEMP]` stand-in for Fining so the seed list stays as it is); ExUnit `production_test` (retired type refused when adding; the step stays) |
+| P13 | Transfer: no Retire, rename only | Playwright `production/lists` (P13: Edit with the built-in note, rename and back; API retire 422); ExUnit `production_test`, `production_controller_test` |
+| P14 | build "Lager with transfer": day order, CIP for the first tank on day 35, preview in color | Playwright `production/templates` (P14: every entry through Add step / Add phase start, notes on Diacetyl test, after a reload; preview phases by day, CIP hatched, task-list dots); ExUnit `production_test` (transfer adds the CIP), `seeds/synthetic_test` (the `[SEED]` copy) |
+| P15 | ramp 58° → 32°, 10°/day, from day 18 after FDH | Playwright `production/templates` (P15: the dialog's preview line, days 18–21, chained `move_all`, the last links to Conditioning, the direct FDH link replaced, Crash on the first); ExUnit `production_test` |
+| P16 | link Carb → Package "move only": "stays by default" | Playwright `production/templates` (P16: the row shows "after Carb · stays" after a reload; a loop is refused in the dialog); ExUnit `production_test` (cycle, order, exists) |
+| P17 | remove the Package: allowed, the banner (lead decision 3; the wording "The first tank has no Package, Split or Transfer.") | Playwright `production/templates` (P17: banner after a reload, Incomplete badge in the list; Brew day has no Remove); ExUnit `production_test` (`issues`) |
+| P18 | brewer2 duplicates "Standard ale", renames: independent copy | Playwright `production/templates` (P18, `[SEED] Standard ale`; the copy is renamed `[TEST-TEMP]` and retired); ExUnit `production_test` (deep copy, "Copy of … (2)") |
+| P19 | bartender1 / barMgr: Home, API 403; breweryDevice read-only | Playwright `production/access` (bartender1 and barMgr: no nav entry, every setup URL goes Home, API 403; owner and floater open every page; breweryDevice API 403 until D49); ExUnit `authz_parity/production_test` (12 personas), `authz_test`, `device_route_matrix_test`. Read-only tablet pages → D49 |
+
+Also covered: the hub's counts (`production/tanks`); a period's first day carries its last along, and the order check before saving (`production/out-of-service`); a new phase's palette color, recolor and duplicate name (`production/lists`); the 12 colors readable (≥ 4.5:1) in both modes and the preview model (Vitest `src/lib/production.test.ts`).
+
+Not automated (accepted at Task 2): drag on touch (the shared layer's long-press; by hand on the Pixel/Samsung at the DEV gate). Display limits: Brew day's starting temperature shows only in its Edit dialog; the preview's CIP hatch covers that day's phase color; no "Will be flagged" preview until D47.
+
+DEV gate fix cycle 2 (`stepwise_results/d46_qa_report.md`, `prompts/d46_lead_decisions_3.md`):
+
+| Gap | What | Layer |
+|---|---|---|
+| M1 | a Transfer/Filter goes into a new tank only (422 `transfer_not_new_tank`); its CIP on the tank it leaves; "Into tank" offers only the next new tank and isn't changed by switching the type | ExUnit `production_test` (into the same tank, skipping one, before the first, a change back, two the same day), `production_controller_test` (the message); Playwright `production/qa-fixes` (M1 ×2); Vitest `production.test` (`newTankFor`, `existingTanks`). Revert-and-rerun: with the check removed, 3 ExUnit tests fail; restored, 39/39 pass |
+| 1 | link pickers offer only reachable steps (day order, no loops, not already linked) | Playwright `production/qa-fixes` (Add step and the links editor), `production/templates` P16 (no loop offered); Vitest (`reachable`) |
+| 2 | dialogs that save at once say Close; removing a link and deleting a period ask first | Playwright `production/qa-fixes` (minor 2), `production/out-of-service` (P10 and the tank dialog's Close) |
+| 3 | a 404 on a row someone else removed: "This was removed by someone else. Reload to see the latest." + Reload | Playwright `production/qa-fixes` (a step removed by brewer2, then edited); Vitest (`prodError`) |
+| 4 | a step or ramp in a tank no Transfer/Filter starts: 422 `no_such_tank` | ExUnit `production_test`, `production_controller_test` |
+| 5 | ramp preview keeps to 28–80°F, whole degrees, ≥ 1°/day; inline error, nothing added | Playwright `production/qa-fixes` (minor 5); Vitest (`rampPlan`) |
+| 6 | Out chips, the Now chip, the Incomplete badge ≥ 4.5:1 in both themes | Playwright `production/qa-fixes` (minor 6, light and dark, `ui/contrast.ts`; the theme set for the page only) |
+| 7 | phone preview: tank labels stay in view while scrolling; fades where there's more | Playwright `production/qa-fixes` (390 px, `[SEED] Lager with transfer`) |
+| 8 | capacity ≥ 10,000: "Capacity must be under 10,000 bbl."; names NFKC-normalized ("Ｆv1" = FV1) | ExUnit `production_test`; Playwright `production/qa-fixes` (the capacity message) |
+| 9 | Add phase start's help text: Comes after only | Playwright `production/qa-fixes` (minor 9) |

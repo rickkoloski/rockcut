@@ -307,4 +307,30 @@ defmodule RockcutApi.AuthzTest do
       refute Authz.can_take_task?(%{p["brewer1"] | active: false}, depts["brewery"])
     end
   end
+
+  describe "production (D46)" do
+    test "Brewery members of any role and owners read, write and set up; others don't" do
+      p = personas()
+
+      for who <- ~w(owner breweryMgr brewer1 floater splitRole),
+          action <- [:read, :write, :setup] do
+        assert Authz.can?(p[who], action, :production), "#{who} #{action}"
+      end
+
+      for who <- ~w(barMgr dualMgr bartender1 office1 noDept),
+          action <- [:read, :write, :setup] do
+        refute Authz.can?(p[who], action, :production), "#{who} #{action}"
+      end
+
+      refute Authz.can?(p["brewer1"], :delete_everything, :production)
+    end
+
+    test "a shared device gets nothing yet, even at home in the Brewery (D49)" do
+      departments()
+      device = device_fixture(%{name: "Brewhouse tablet", home: "brewery"})
+
+      for action <- [:read, :write, :setup],
+          do: refute(Authz.can?(device, action, :production))
+    end
+  end
 end

@@ -225,7 +225,45 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:put, "/api/boards/:dept/daily_items/order"},
     {:patch, "/api/boards/:dept/daily_items/:id"},
     {:post, "/api/boards/:dept/daily_items/:id/restore"},
-    {:delete, "/api/boards/:dept/daily_items/:id"}
+    {:delete, "/api/boards/:dept/daily_items/:id"},
+    # D46: production setup, people only until D49 brings the brewhouse tablet.
+    {:get, "/api/production/tanks"},
+    {:post, "/api/production/tanks"},
+    {:post, "/api/production/tanks/reorder"},
+    {:patch, "/api/production/tanks/:id"},
+    {:delete, "/api/production/tanks/:id"},
+    {:post, "/api/production/tanks/:id/restore"},
+    {:post, "/api/production/tanks/:id/outages"},
+    {:patch, "/api/production/outages/:id"},
+    {:delete, "/api/production/outages/:id"},
+    {:post, "/api/production/outages/:id/end_today"},
+    {:get, "/api/production/phases"},
+    {:post, "/api/production/phases"},
+    {:post, "/api/production/phases/reorder"},
+    {:patch, "/api/production/phases/:id"},
+    {:delete, "/api/production/phases/:id"},
+    {:post, "/api/production/phases/:id/restore"},
+    {:get, "/api/production/step_types"},
+    {:post, "/api/production/step_types"},
+    {:post, "/api/production/step_types/reorder"},
+    {:patch, "/api/production/step_types/:id"},
+    {:delete, "/api/production/step_types/:id"},
+    {:post, "/api/production/step_types/:id/restore"},
+    {:get, "/api/production/templates"},
+    {:post, "/api/production/templates"},
+    {:post, "/api/production/templates/reorder"},
+    {:get, "/api/production/templates/:id"},
+    {:patch, "/api/production/templates/:id"},
+    {:delete, "/api/production/templates/:id"},
+    {:post, "/api/production/templates/:id/restore"},
+    {:post, "/api/production/templates/:id/duplicate"},
+    {:post, "/api/production/templates/:id/steps"},
+    {:patch, "/api/production/templates/:id/steps/:step_id"},
+    {:delete, "/api/production/templates/:id/steps/:step_id"},
+    {:post, "/api/production/templates/:id/links"},
+    {:patch, "/api/production/templates/:id/links/:link_id"},
+    {:delete, "/api/production/templates/:id/links/:link_id"},
+    {:post, "/api/production/templates/:id/ramp"}
   ]
 
   defp app_routes do
@@ -253,6 +291,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
 
   describe "as taproomDevice" do
     setup do
+      # The staff-code limiter is keyed by token id, and the test DB reuses
+      # ids after a rollback: a lock another test left would answer 429 here.
+      RockcutApi.StaffCodes.RateLimiter.reset()
       {device, token} = taproom_device()
       shift = shift_fixture(%{status: "published"})
       %{device: device, token: token, shift: shift, task: repeating_task()}

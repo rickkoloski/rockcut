@@ -62,8 +62,15 @@ test.describe('as brewer1', () => {
       await expect(push).toBeChecked()
       await expect(row.getByLabel(/Email/)).toHaveCount(0)
 
+      // Each switch saves on its own: wait for both saves before reloading
+      // (DEV latency; the switch turns off before the PUT lands).
+      const putDone = () => page.waitForResponse((r) => r.url().endsWith('/api/notification_preferences') && r.request().method() === 'PUT')
+      let put = putDone()
       await inApp.click()
+      expect((await put).ok()).toBe(true)
+      put = putDone()
       await push.click()
+      expect((await put).ok()).toBe(true)
       await expect(inApp).not.toBeChecked()
       await page.reload()
       await openPrefs(page)

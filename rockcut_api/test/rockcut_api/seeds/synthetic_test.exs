@@ -842,4 +842,163 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Enum.map(Tasks.list_items(task_board("brewery")), & &1.name) == DailyItem.defaults()
     end
   end
+
+  describe "production setup (D46)" do
+    alias RockcutApi.{Production, Tasks}
+    alias RockcutApi.Production.{Outage, Tank}
+
+    defp production_state do
+      tanks =
+        for t <- Production.list_tanks(),
+            do:
+              {t.name, t.kind, Decimal.to_string(t.capacity_bbl), t.location, t.position,
+               t.retired_at, Enum.map(t.outages, &{&1.starts_on, &1.ends_on, &1.reason})}
+
+      templates =
+        for t <- Production.list_templates() do
+          full = Production.get_template(t.id)
+
+          {t.name, t.issues,
+           Enum.map(full.steps, &{Production.step_name(&1), &1.day_offset, &1.vessel_index}),
+           length(full.links)}
+        end
+
+      {tanks, templates}
+    end
+
+    test "seeds nine tanks, Serving 2's periods and three complete [SEED] templates" do
+      {:ok, _} = Synthetic.setup()
+      today = Tasks.today()
+      tanks = Production.list_tanks()
+
+      assert Enum.map(
+               tanks,
+               &{&1.name, &1.kind, Decimal.to_integer(&1.capacity_bbl), &1.location}
+             ) == [
+               {"FV1", "unitank", 30, "brewhouse"},
+               {"FV2", "unitank", 20, "brewhouse"},
+               {"FV3", "unitank", 20, "brewhouse"},
+               {"FV4", "unitank", 30, "brewhouse"},
+               {"FV5", "unitank", 20, "brewhouse"},
+               {"FV6", "unitank", 20, "brewhouse"},
+               {"FV7", "unitank", 30, "brewhouse"},
+               {"Serving 1", "serving", 30, "walk_in"},
+               {"Serving 2", "serving", 30, "walk_in"}
+             ]
+
+      serving2 = List.last(tanks)
+
+      assert Enum.map(serving2.outages, &{&1.starts_on, &1.ends_on, &1.reason}) == [
+               {Date.add(today, -30), Date.add(today, -28), "Pressure relief valve"},
+               {Date.add(today, 7), Date.add(today, 13), "Replace door gasket"}
+             ]
+
+      templates = Production.list_templates()
+
+      assert Enum.map(templates, & &1.name) ==
+               ["[SEED] Standard ale", "[SEED] Hazy with AMG", "[SEED] Lager with transfer"]
+
+      assert Enum.all?(templates, &(&1.issues == []))
+
+      lager = Production.get_template(List.last(templates).id)
+
+      assert Enum.map(lager.steps, &{Production.step_name(&1), &1.day_offset, &1.vessel_index}) ==
+               [
+                 {"Brew day", 0, 0},
+                 {"Lag", 1, 0},
+                 {"Fermentation", 2, 0},
+                 {"Set temp - 65°", 12, 0},
+                 {"Diacetyl test", 15, 0},
+                 {"Set temp - 40°", 16, 0},
+                 {"Lagering", 17, 0},
+                 {"Set temp - 30°", 31, 0},
+                 {"Conditioning", 33, 0},
+                 {"Transfer", 35, 1},
+                 {"CIP & Sanitize", 35, 0},
+                 {"Carb", 36, 1},
+                 {"Conditioning", 38, 1},
+                 {"Package", 40, 1},
+                 {"CIP & Sanitize", 40, 1}
+               ]
+
+      assert Enum.find(lager.steps, &(Production.step_name(&1) == "Diacetyl test")).notes =~
+               "140°F"
+
+      assert hd(lager.steps).temperature == 50
+
+      ale = Production.get_template(hd(templates).id)
+      ramp = Enum.filter(ale.steps, & &1.ramp_group)
+
+      assert Enum.map(ramp, &{&1.day_offset, &1.temperature}) == [
+               {18, 58},
+               {19, 48},
+               {20, 38},
+               {21, 32}
+             ]
+    end
+
+    test "setup twice gives the same tanks and templates; drift is healed" do
+      {:ok, _} = Synthetic.setup()
+      first = production_state()
+
+      fv3 = Repo.get_by!(Tank, name: "FV3")
+      {:ok, _} = Production.update_tank(fv3, %{"capacity_bbl" => 99, "name" => "fv3"})
+      {:ok, _} = Production.retire_tank(Repo.get_by!(Tank, name: "FV1"))
+
+      {:ok, _} =
+        Production.create_outage(
+          fv3,
+          %{"starts_on" => Date.to_iso8601(Tasks.today())},
+          %RockcutApi.Accounts.User{id: nil}
+        )
+
+      {:ok, _} = Synthetic.setup()
+      assert production_state() == first
+    end
+
+    test "cleanup_temp removes [TEST-TEMP] tanks, templates, step types and phases; keeps real ones" do
+      {:ok, _} = Synthetic.setup()
+
+      {:ok, temp_tank} =
+        Production.create_tank(%{"name" => "[TEST-TEMP] FV8", "capacity_bbl" => 30})
+
+      {:ok, real_tank} = Production.create_tank(%{"name" => "FV10", "capacity_bbl" => 30})
+
+      {:ok, phase} =
+        Production.create_phase(%{"name" => "[TEST-TEMP] Souring", "color" => "rose"})
+
+      {:ok, type} =
+        Production.create_step_type(%{
+          "name" => "[TEST-TEMP] Hop stand",
+          "starts_phase_id" => phase.id
+        })
+
+      {:ok, temp_t} = Production.create_template(%{"name" => "[TEST-TEMP] Lager"})
+
+      # A real template that used the temporary type and phase loses those entries only.
+      {:ok, real_t} = Production.create_template(%{"name" => "Real ale"})
+      {:ok, real_t} = Production.add_step(real_t, %{"step_type_id" => type.id, "day_offset" => 3})
+      {:ok, _} = Production.add_step(real_t, %{"phase_id" => phase.id, "day_offset" => 4})
+
+      {:ok, _} =
+        Production.create_outage(
+          temp_tank,
+          %{"starts_on" => "2026-11-01"},
+          %RockcutApi.Accounts.User{id: nil}
+        )
+
+      :ok = Synthetic.cleanup_temp()
+
+      refute Repo.get(Tank, temp_tank.id)
+      refute Repo.exists?(from(o in Outage, where: o.tank_id == ^temp_tank.id))
+      assert Repo.get(Tank, real_tank.id)
+      refute Production.get_template(temp_t.id)
+      refute Production.get_step_type(type.id)
+      refute Production.get_phase(phase.id)
+
+      assert Enum.map(Production.get_template(real_t.id).steps, &Production.step_name/1) == [
+               "Brew day"
+             ]
+    end
+  end
 end
