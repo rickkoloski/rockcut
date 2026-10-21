@@ -323,7 +323,7 @@ export default function TemplateEditor() {
         title="Remove from the template"
         message={
           removing
-            ? `Remove ${removing.name}? The steps it linked stay linked through it.${removing.behavior === 'transfer' ? ' The CIP & Sanitize it added goes too.' : ''}${removing.behavior === 'transfer' && removalIssues?.length ? ' The tanks after this transfer depend on it.' : ''}`
+            ? `Remove ${removing.name}? The steps it linked stay linked through it.${removing.behavior === 'transfer' ? ' The CIP & Sanitize it added goes too.' : ''}${removing.behavior === 'transfer' && removalIssues?.length ? ` ${vesselLabel(removing.vessel_index)} depends on it.` : ''}`
             : ''
         }
         confirmLabel="Remove"

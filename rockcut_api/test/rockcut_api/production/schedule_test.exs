@@ -9,7 +9,7 @@ defmodule RockcutApi.Production.ScheduleTest do
   import RockcutApi.AccountsFixtures
 
   alias RockcutApi.Production
-  alias RockcutApi.Production.{Batches, Schedule, Step, StepType, Steps}
+  alias RockcutApi.Production.{Batches, Parts, Schedule, Step, StepType, Steps}
   alias RockcutApi.Brewing.{Batch, Brand}
 
   @brew ~D[2026-11-02]
@@ -251,6 +251,37 @@ defmodule RockcutApi.Production.ScheduleTest do
       assert {:ok, "45"} = Batches.check_number("45")
     end
 
+    test "a leading # is dropped: #40 is 40 (M2)", %{brewer: brewer} do
+      t = ale_template!()
+      galactic = brand!("Galactic")
+      Repo.insert!(%Batch{brand_id: galactic.id, batch_number: "40", status: "fermenting"})
+      Repo.insert!(%Batch{brand_id: galactic.id, batch_number: "QA44b", status: "completed"})
+
+      assert {:error, {:batch_number_taken, "40", "Galactic #40"}} = Batches.check_number("#40")
+      assert {:error, {:batch_number_taken, "qa44b", _}} = Batches.check_number(" # qa44b ")
+      assert {:error, :batch_number_required} = Batches.check_number(" ## ")
+      assert {:ok, "45"} = Batches.check_number("##45 ")
+
+      # The brew-day check-off.
+      {batch, _} = plan!(brand!("Crusher"), t, @today)
+      brew = named(batch, "Brew day")
+
+      assert {:error, {:batch_number_taken, "40", "Galactic #40"}} =
+               Steps.complete(brew.id, %{"batch_number" => "#40"}, brewer, today: @today)
+
+      assert {:ok, _} =
+               Steps.complete(brew.id, %{"batch_number" => " #46 "}, brewer, today: @today)
+
+      assert %Batch{batch_number: "46"} = batch = reload(batch)
+
+      # The batch dialog's edit.
+      assert {:error, {:batch_number_taken, "40", _}} =
+               Batches.update(batch, %{"batch_number" => "#40"})
+
+      assert {:ok, _} = Batches.update(batch, %{"batch_number" => "#47"})
+      assert %Batch{batch_number: "47"} = reload(batch)
+    end
+
     test "checking off the first brew day takes the number; un-checking frees it (P36–P39)", %{
       brewer: brewer
     } do
@@ -486,6 +517,37 @@ defmodule RockcutApi.Production.ScheduleTest do
     end
   end
 
+  describe "a full Package checked off early (M3)" do
+    test "the prompt's out-of-order warning and the flag agree", %{brewer: brewer} do
+      tank = tank!("FV3")
+      {batch, _} = plan!(brand!("Galactic"), ale_template!(), @brew, %{"tank_ids" => [tank.id]})
+      batch |> Ecto.Changeset.change(status: "fermenting", batch_number: "40") |> Repo.update!()
+      package = named(batch, "Package")
+      today = ~D[2026-11-14]
+
+      assert {:ok, {:preview, %{move: %{out_of_order: warned}}}} =
+               Steps.complete(package.id, %{}, brewer, preview: true, today: today)
+
+      assert [%{from_name: "Carb", to_name: "Package"}] = warned["move_all"]
+
+      assert {:ok, %{out_of_order: [%{from_name: "Carb", to_name: "Package"}]}} =
+               Steps.complete(package.id, %{"answer" => "move_all"}, brewer, today: today)
+
+      assert reload(batch).status == "completed"
+
+      {:ok, s} = Schedule.load(~D[2026-11-01], ~D[2026-12-31], today)
+      carb = named(batch, "Carb")
+
+      assert [%{message: "Galactic #40: Package is before Carb, the step it follows."}] =
+               Enum.filter(s.flags, &(&1.kind == "out_of_order" and batch.id in &1.batch_ids))
+
+      # The part ends at the Package; Carb is stranded after it.
+      [part] = s.batches |> Enum.find(&(&1.batch.id == batch.id)) |> List.wrap() |> Parts.build()
+      assert part.end == today
+      assert Enum.map(part.stranded, & &1.id) == [carb.id]
+    end
+  end
+
   describe "batch changes" do
     test "shift: a planned batch's every step; a brewed one's unfinished steps (P30, P31)", %{
       brewer: brewer
@@ -599,6 +661,12 @@ defmodule RockcutApi.Production.ScheduleTest do
 
       assert {:error, :range_invalid} = Schedule.load(~D[2026-10-21], ~D[2026-10-20], @today)
       assert {:error, :range_invalid} = Schedule.load(~D[2026-01-01], ~D[2028-01-02], @today)
+      # 7 to 730 days, both ends included, as the UI says (minor 7).
+      assert {:error, :range_invalid} = Schedule.load(~D[2026-10-21], ~D[2026-10-21], @today)
+      assert {:error, :range_invalid} = Schedule.load(~D[2026-10-21], ~D[2026-10-26], @today)
+      assert {:ok, _} = Schedule.load(~D[2026-10-21], ~D[2026-10-27], @today)
+      assert {:ok, _} = Schedule.load(~D[2026-10-01], ~D[2028-09-29], @today)
+      assert {:error, :range_invalid} = Schedule.load(~D[2026-10-01], ~D[2028-09-30], @today)
     end
   end
 end

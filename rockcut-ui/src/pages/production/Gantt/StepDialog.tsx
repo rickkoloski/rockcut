@@ -21,6 +21,7 @@ import { dayN, stepStatus } from './scheduleText'
 import { answerLabel, prodPath, type Person, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
 import ErrorAlert from '../ErrorAlert'
 import { useFlows } from './flowsContext'
+import DateField from '../DateField'
 
 interface Props {
   step: SchedStep
@@ -245,12 +246,11 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField
+              <DateField
                 size="small"
-                type="date"
                 label="Done on"
                 value={doneOn}
-                onChange={(e) => setDoneOn(e.target.value)}
+                onCommit={setDoneOn}
                 slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: today, 'data-testid': 'step-done-on' } }}
               />
               <Button variant="contained" disabled={busy || !doneOn} onClick={() => act(() => flows.checkOff(step, doneOn, batch?.label ?? null))} data-testid="step-check-off">
@@ -258,12 +258,11 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
               </Button>
             </Box>
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              <TextField
+              <DateField
                 size="small"
-                type="date"
                 label="Or move to"
                 value={moveTo}
-                onChange={(e) => setMoveTo(e.target.value)}
+                onCommit={setMoveTo}
                 slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'step-move-to' } }}
               />
               <Button variant="outlined" disabled={busy || !moveTo || moveDays === 0} onClick={() => act(() => flows.moveSteps([step.id], moveDays))} data-testid="step-move">

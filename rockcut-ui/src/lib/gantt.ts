@@ -3,7 +3,7 @@
 // is its index from the view's first day.
 
 import { addDaysKey } from './datetime'
-import type { Flag, SchedBatch, SchedStep, Tank } from './production'
+import { shortPeriod, type Flag, type SchedBatch, type SchedStep, type Tank } from './production'
 
 // ── Days ──
 
@@ -92,11 +92,19 @@ export interface Part {
   /** A full Package or a Split in it, or the next Transfer/Filter. */
   exit: SchedStep | null
   cip: SchedStep | null
-  /** First and last day: its fill (or first step) to its last step, CIP included. */
+  /**
+   * First and last day of the bar: its fill (or first step) to its last
+   * step, CIP included. Once its exit is done it ends at the exit, or at its
+   * CIP while that's still to come.
+   */
   start: string
   end: string
+  /** The last day anything of it is drawn (its stranded steps past `end`). */
+  reach: string
   /** Its vessel's steps, plus the step that empties it. */
   steps: SchedStep[]
+  /** Unfinished steps dated after its done exit: still dots, drawn red, flagged out of order. */
+  stranded: Set<number>
   planned: boolean
 }
 
@@ -123,6 +131,9 @@ export function buildParts(batch: SchedBatch): Part[] {
     const steps = (exit && !own.includes(exit) ? [...own, exit] : own).sort(order)
     const cip = own.filter((s) => s.behavior === 'cip').sort(order).at(-1) ?? null
     const days = steps.map((s) => s.due_on).sort()
+    const exited = exit?.done_on ? exit.due_on : null
+    const stranded = exited ? own.filter((s) => !s.done_on && s !== cip && s.due_on > exited) : []
+    const end = exited ? (cip && !cip.done_on && cip.due_on > exited ? cip.due_on : exited) : (days.at(-1) ?? fill?.due_on ?? '')
     return {
       key: `${batch.id}.${k}`,
       batch,
@@ -132,8 +143,10 @@ export function buildParts(batch: SchedBatch): Part[] {
       exit,
       cip,
       start: fill?.due_on ?? days[0],
-      end: days.at(-1) ?? fill?.due_on ?? '',
+      end,
+      reach: [end, ...stranded.map((s) => s.due_on)].sort().at(-1)!,
       steps,
+      stranded: new Set(stranded.map((s) => s.id)),
       planned: batch.status === 'planned',
     }
   })
@@ -175,15 +188,20 @@ export interface Segment {
   fill: number | 'cip' | null
 }
 
-/** A part's bar within the view as runs of the same fill, CIP days hatched. */
+/**
+ * A part's bar within the view as runs of the same fill, CIP days hatched.
+ * After a done exit it isn't in a phase any more: the days to its CIP are
+ * plain.
+ */
 export function segments(part: Part, viewFrom: string, viewDays: number, phase: (day: string) => number | null): Segment[] {
   const cipDays = new Set(part.steps.filter((s) => s.behavior === 'cip' && s.vessel_index === part.vessel).map((s) => s.due_on))
+  const exited = part.exit?.done_on ? part.exit.due_on : null
   const first = Math.max(0, daysBetween(viewFrom, part.start))
   const last = Math.min(viewDays - 1, daysBetween(viewFrom, part.end))
   const out: Segment[] = []
   for (let i = first; i <= last; i++) {
     const day = addDaysKey(viewFrom, i)
-    const fill = cipDays.has(day) ? 'cip' : phase(day)
+    const fill = cipDays.has(day) ? 'cip' : exited && day > exited ? null : phase(day)
     const prev = out.at(-1)
     if (prev && prev.fill === fill && prev.to === i - 1) prev.to = i
     else out.push({ from: i, to: i, fill })
@@ -208,10 +226,12 @@ export function assignTracks<T extends { start: string; end: string }>(items: T[
 
 // ── Dots ──
 
-export type DotState = 'done' | 'late' | 'today' | 'planned'
+/** `stranded`: unfinished and dated after its tank's done exit (red, like late). */
+export type DotState = 'done' | 'late' | 'stranded' | 'today' | 'planned'
 
-export function dotState(step: SchedStep, today: string): DotState {
+export function dotState(step: SchedStep, today: string, part?: Part): DotState {
   if (step.done_on) return 'done'
+  if (part?.stranded.has(step.id)) return 'stranded'
   if (step.due_on < today) return 'late'
   if (step.due_on === today) return 'today'
   return 'planned'
@@ -282,7 +302,7 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
     const mine = parts.filter((p) => p.tankId === (tank?.id ?? null))
     const myCips = tank ? cips.filter((c) => c.tank_id === tank.id) : []
     const items: (Part | SchedStep)[] = [...mine, ...myCips]
-    const spans = items.map((x) => ('key' in x ? { x, start: x.start, end: x.end } : { x, start: x.due_on, end: x.due_on }))
+    const spans = items.map((x) => ('key' in x ? { x, start: x.start, end: x.reach } : { x, start: x.due_on, end: x.due_on }))
     const { tracks, count } = assignTracks(spans)
     const track = new Map<Part | SchedStep, number>(spans.map((s) => [s.x, tracks.get(s)!]))
     const open = expanded.has(rowKey(tank))
@@ -297,6 +317,88 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
 }
 
 export const rowKey = (tank: Tank | null) => (tank ? String(tank.id) : 'unassigned')
+
+// ── Live feedback while dragging (lead decisions 4, addition) ──
+
+export interface DragHint {
+  text: string
+  /** The drop would be refused or flagged (red). */
+  warn: boolean
+}
+
+export interface DragHintInput {
+  kind: 'bar' | 'dot' | 'cip'
+  /** Whole days sideways. */
+  days: number
+  /** Over the day columns (else the drop is cancelled). */
+  over: boolean
+  /** A bar or a dot: its part. */
+  part?: Part
+  /** A dot or a CIP block: the step. */
+  step?: SchedStep
+  /** A bar dropped on another row: that row's tank (null = Unassigned). Undefined: same row. */
+  toRow?: Tank | null
+  tanks: Tank[]
+  /** Every part on the chart, for overlaps. */
+  parts: Part[]
+}
+
+const signedDays = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'}`
+
+/**
+ * The tooltip that follows the pointer while dragging: where the drop goes
+ * ("Fri Oct 23 · +2 days", "→ FV6", "→ Unassigned") and, in red, why it
+ * would be refused or flagged, from what the page already has. A hint only:
+ * the server's preview stays the source of truth. Null: nothing to say yet.
+ */
+export function dragHint(a: DragHintInput): DragHint | null {
+  if (!a.over) return { text: 'Release over the chart to move', warn: true }
+  const tankById = (id: number | null) => (id == null ? null : (a.tanks.find((t) => t.id === id) ?? null))
+  const reasons: string[] = []
+  const outIn = (tank: Tank | null, from: string, to: string) => {
+    const o = tank?.outages?.find((o) => o.starts_on <= to && (!o.ends_on || o.ends_on >= from))
+    if (o) reasons.push(`${tank!.name} is out of service ${shortPeriod(o)}`)
+  }
+  const overlapIn = (tank: Tank | null, part: Part, from: string, to: string) => {
+    if (!tank) return
+    const other = a.parts.find((p) => p.tankId === tank.id && p.batch.id !== part.batch.id && p.start < to && from < p.end)
+    if (other) reasons.push(`overlaps ${other.batch.label} in ${tank.name}`)
+  }
+  let text: string
+
+  if (a.kind === 'bar' && a.part) {
+    const part = a.part
+    if (a.toRow !== undefined && a.toRow?.id !== (part.tankId ?? undefined)) {
+      text = `→ ${a.toRow?.name ?? 'Unassigned'}`
+      outIn(a.toRow, part.start, part.end)
+      overlapIn(a.toRow, part, part.start, part.end)
+    } else {
+      if (!a.days) return null
+      const [from, to] = [addDaysKey(part.start, a.days), addDaysKey(part.end, a.days)]
+      text = `${dayLabel(from)} · ${signedDays(a.days)}`
+      outIn(tankById(part.tankId), from, to)
+      overlapIn(tankById(part.tankId), part, from, to)
+    }
+  } else if (a.step) {
+    if (!a.days) return null
+    const step = a.step
+    const day = addDaysKey(step.due_on, a.days)
+    text = `${dayLabel(day)} · ${signedDays(a.days)}`
+    outIn(tankById(a.kind === 'cip' ? step.tank_id : (a.part?.tankId ?? null)), day, day)
+    const batch = a.part?.batch
+    if (batch) {
+      const byId = new Map(batch.steps.map((s) => [s.id, s]))
+      for (const l of batch.links) {
+        const before = l.to_step_id === step.id ? byId.get(l.from_step_id) : undefined
+        if (before && day < before.due_on) reasons.push(`before ${before.name}, the step it follows`)
+        const after = l.from_step_id === step.id ? byId.get(l.to_step_id) : undefined
+        if (after && !after.done_on && day > after.due_on) reasons.push(`Move only: after ${after.name}, which follows it`)
+      }
+    }
+  } else return null
+
+  return reasons.length ? { text: [text, ...reasons].join(' · '), warn: true } : { text, warn: false }
+}
 
 // ── Remembered per person, in this browser (plan decision 6) ──
 

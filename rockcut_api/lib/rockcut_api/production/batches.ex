@@ -146,13 +146,13 @@ defmodule RockcutApi.Production.Batches do
   end
 
   @doc """
-  Check a batch number for `batch` (nil = any batch): trimmed, 1–20
-  characters, not another batch's ignoring case. `{:ok, number}`, or
+  Check a batch number for `batch` (nil = any batch): trimmed, leading
+  `#`s dropped ("#40" is 40, as the labels show it), 1–20 characters, not another batch's ignoring case. `{:ok, number}`, or
   `{:error, :batch_number_required | :batch_number_invalid}` or
   `{:error, {:batch_number_taken, number, other_label}}`.
   """
   def check_number(raw, batch \\ nil) do
-    number = if is_binary(raw), do: String.trim(raw), else: raw && to_string(raw)
+    number = raw && raw |> to_string() |> String.replace(~r/^[#\s]+/u, "") |> String.trim()
 
     cond do
       number in [nil, ""] ->

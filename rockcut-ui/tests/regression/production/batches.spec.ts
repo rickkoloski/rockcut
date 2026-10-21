@@ -155,14 +155,89 @@ test('P31: drag a brewed bar 2 days: only unfinished steps move', async ({ page 
   expect(stepOf(after, 'FDH').due_on).toBe(addDays(stepOf(batch, 'FDH').due_on, 2))
 })
 
+test('P32 on DEV: a refetch in the middle of a drag (someone adds a tank) neither cancels it nor moves the drop', async ({ page }) => {
+  const brand = await made.brand('Galactic')
+  const [fv, target] = [await made.tank('FV'), await made.tank('Serving')]
+  const batch = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 3), tank_ids: [fv.id] })
+  await page.clock.install()
+  await openGantt(page)
+  const bar = page.getByTestId(`gantt-bar-${batch.id}-0`)
+  await bar.scrollIntoViewIfNeeded()
+  const lane = (await page.getByTestId(`gantt-lane-${target.id}`).boundingBox())!
+  const from = (await bar.boundingBox())!
+  const [x, y] = [from.x + 20, from.y + from.height / 2]
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x, y + 6, { steps: 3 })
+  await page.mouse.move(x, lane.y + lane.height / 2, { steps: 10 })
+  await expect(page.getByTestId(`gantt-lane-${target.id}`)).toHaveAttribute('data-drop', 'true')
+
+  // Another person adds a tank; the minute's refetch arrives mid-drag.
+  const added = await made.tank('Brite')
+  const refetched = page.waitForResponse((r) => r.url().includes('/api/production/schedule') && r.request().method() === 'GET')
+  await page.clock.fastForward(61_000)
+  await refetched
+  await expect(page.getByTestId(`gantt-row-${added.id}`)).toBeVisible()
+  await expect(page.getByTestId(`gantt-lane-${target.id}`)).toHaveAttribute('data-drop', 'true')
+  await page.mouse.up()
+  await expect(snack(page)).toHaveText(`${batch.label} → ${target.name}.`)
+  expect((await batchOf(batch.id)).vessels).toEqual([{ vessel_index: 0, tank_id: target.id }])
+})
+
+test('minor 5: a bar dropped over the tank column, or a dot outside the chart, is not moved', async ({ page }) => {
+  const brand = await made.brand('Enos')
+  const fv = await made.tank('FV')
+  const batch = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 5), tank_ids: [fv.id] })
+  await openGantt(page)
+  const bar = page.getByTestId(`gantt-bar-${batch.id}-0`)
+  await bar.scrollIntoViewIfNeeded()
+  const box = (await bar.boundingBox())!
+  const column = (await page.getByTestId(`gantt-tank-name-${fv.id}`).boundingBox())!
+  // Left, past the chart's edge, released over the tank names.
+  await page.mouse.move(box.x + 10, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 4, box.y + box.height / 2, { steps: 3 })
+  await page.mouse.move(column.x + 10, box.y + box.height / 2, { steps: 12 })
+  await page.mouse.up()
+  // A dot dragged down out of the chart.
+  const dot = page.getByTestId(`gantt-step-${stepOf(batch, 'FDH').id}`)
+  const d = (await dot.boundingBox())!
+  const chart = (await page.getByTestId('gantt').boundingBox())!
+  await page.mouse.move(d.x + d.width / 2, d.y + d.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(d.x + d.width / 2 + 40, d.y + 6, { steps: 3 })
+  await page.mouse.move(d.x + d.width / 2 + 40, chart.y + chart.height + 40, { steps: 12 })
+  await page.mouse.up()
+
+  await expect(page.getByTestId('move-prompt')).toHaveCount(0)
+  await expect(page.getByTestId('gantt-snack-text')).toHaveCount(0)
+  const after = await batchOf(batch.id)
+  for (const s of batch.steps) expect(after.steps.find((x) => x.id === s.id)!.due_on).toBe(s.due_on)
+})
+
+test('minor 4: double-clicking Apply in the move prompt doesn’t open the batch dialog underneath', async ({ page }) => {
+  const brand = await made.brand('Crusher')
+  const fv = await made.tank('FV')
+  const batch = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 2), tank_ids: [fv.id] })
+  await openGantt(page)
+  await dragBy(page, page.getByTestId(`gantt-step-${stepOf(batch, 'FDH').id}`), 1)
+  // The prompt is centred over the chart: the second click lands on a lane, a bar or a dot.
+  await page.getByTestId('move-apply').dblclick()
+  await expect(page.getByTestId('move-prompt')).toBeHidden()
+  await expect(snack(page)).toContainText('FDH moved 1 day later')
+  await page.waitForTimeout(300)
+  for (const id of ['batch-dialog', 'step-dialog', 'gantt-spot-menu']) await expect(page.getByTestId(id)).toHaveCount(0)
+})
+
 test('P32, P33: drag the after-transfer part to another tank, then a part to Unassigned (No tank flag near its fill)', async ({ page }) => {
   const brand = await made.brand('Fest')
   const [fv7, s2, s1] = [await made.tank('FV7'), await made.tank('Serving 2', 30), await made.tank('Serving 1', 30)]
   const batch = await made.plan({ brand_id: brand.id, template: LAGER, brew_on: addDays(today(), -30), tank_ids: [fv7.id, s2.id] })
   await openGantt(page)
-  const lane = (await page.getByTestId(`gantt-lane-${s1.id}`).boundingBox())!
   const bar = page.getByTestId(`gantt-bar-${batch.id}-1`)
   await bar.scrollIntoViewIfNeeded()
+  // Measured after the scroll, right before the drag.
+  const lane = (await page.getByTestId(`gantt-lane-${s1.id}`).boundingBox())!
   const from = (await bar.boundingBox())!
   await dragBy(page, bar, 0, lane.y + lane.height / 2 - (from.y + from.height / 2), { x: 20 })
   await expect(snack(page)).toHaveText(`${batch.label} (after transfer) → ${s1.name}.`)
@@ -174,9 +249,9 @@ test('P32, P33: drag the after-transfer part to another tank, then a part to Una
   // P33: a batch filling in 2 days dragged to Unassigned gets the flag.
   const soon = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 2), tank_ids: [fv7.id] })
   await page.reload()
-  const un = (await page.getByTestId('gantt-lane-unassigned').boundingBox())!
   const bar2 = page.getByTestId(`gantt-bar-${soon.id}-0`)
   await bar2.scrollIntoViewIfNeeded()
+  const un = (await page.getByTestId('gantt-lane-unassigned').boundingBox())!
   const b2 = (await bar2.boundingBox())!
   await dragBy(page, bar2, 0, un.y + un.height / 2 - (b2.y + b2.height / 2), { x: 20 })
   await expect(snack(page)).toHaveText(`${soon.label} → Unassigned.`)

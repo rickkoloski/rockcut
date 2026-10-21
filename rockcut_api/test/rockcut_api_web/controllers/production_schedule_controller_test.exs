@@ -162,6 +162,11 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
 
     range = call(b, :get, "/api/production/schedule?from=2026-10-26&to=2026-10-01")
     assert body(range)["error"] == "range_invalid"
+
+    for q <- ["from=2026-10-26&to=2026-10-26", "from=2026-10-01&to=2028-09-30"] do
+      range = call(b, :get, "/api/production/schedule?#{q}")
+      assert {range.status, body(range)["error"]} == {422, "range_invalid"}
+    end
   end
 
   test "undo over HTTP: a move back, 409 when stale, 404 for someone else; CIPs, sign-offs, outages",

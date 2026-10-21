@@ -10,7 +10,14 @@ defmodule RockcutApi.Production.Parts do
   and **emptied** by its exit: a full Package or a Split in it, or the next
   Transfer/Filter (a partial Package isn't an exit). Its CIP is its
   vessel's latest CIP & Sanitize. It runs from its fill (or first step) to
-  its last step, its CIP included: the bar on the Gantt.
+  its last step, its CIP included: the bar on the Gantt. Once its exit is
+  done it ends at the exit, or at its CIP while that's still to come;
+  unfinished steps dated after a done exit are `stranded` (flagged as out
+  of order, drawn red).
+
+  It **occupies** its tank (`occupied_until/1`) to its end, or only to its
+  exit once that's done: the tank is then dirty until a CIP, which the
+  "Filling a dirty tank" flag looks after.
   """
   alias RockcutApi.Production.Steps
 
@@ -49,6 +56,21 @@ defmodule RockcutApi.Production.Parts do
     span = if exit && exit not in own, do: [exit | own], else: own
     cip = own |> Enum.filter(&(behavior(&1) == "cip")) |> Enum.max_by(&order/1, fn -> nil end)
     days = Enum.map(span, & &1.due_on)
+    exited = exit && exit.done_on && exit.due_on
+
+    stranded =
+      if exited,
+        do: Enum.filter(own, &(is_nil(&1.done_on) and &1 != cip and after?(&1.due_on, exited))),
+        else: []
+
+    last =
+      if exited,
+        do:
+          if(cip && is_nil(cip.done_on) && after?(cip.due_on, exited),
+            do: cip.due_on,
+            else: exited
+          ),
+        else: Enum.max(days, Date, fn -> nil end)
 
     %{
       id: "#{entry.batch.id}.#{k}",
@@ -63,8 +85,9 @@ defmodule RockcutApi.Production.Parts do
       cip: cip,
       first_brew: first_brew,
       start: (fill && fill.due_on) || Enum.min(days, Date, fn -> nil end),
-      end: Enum.max(days, Date, fn -> nil end),
+      end: last,
       steps: span,
+      stranded: stranded,
       batch_steps: steps,
       links: entry.links
     }
@@ -73,6 +96,9 @@ defmodule RockcutApi.Production.Parts do
   @doc ~S|"Galactic #40", or "Fest #38 (after transfer 1)" for a later tank.|
   def label(%{label: label, vessel_index: 0}), do: label
   def label(%{label: label, vessel_index: k}), do: "#{label} (after transfer #{k})"
+
+  @doc "The last day the part holds its tank: its exit once that's done, else its end."
+  def occupied_until(part), do: if(emptied?(part), do: part.exit.due_on, else: part.end)
 
   def filled?(part), do: done?(part.fill)
   def emptied?(part), do: done?(part.exit)
@@ -95,6 +121,8 @@ defmodule RockcutApi.Production.Parts do
 
   @doc "A step's place in time: its date, then its position in the day, then id."
   def order(step), do: {Date.to_gregorian_days(step.due_on), step.position, step.id}
+
+  defp after?(a, b), do: Date.compare(a, b) == :gt
 
   defp earliest([]), do: nil
   defp earliest(steps), do: Enum.min_by(steps, &order/1)

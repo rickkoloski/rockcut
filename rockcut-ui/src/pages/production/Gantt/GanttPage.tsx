@@ -43,7 +43,7 @@ type Open =
   | { kind: 'cip'; tankId: number | null; day: string }
   | { kind: 'flags' }
   | { kind: 'tank'; tankId: number }
-  | { kind: 'outage'; tankId: number; outage: Outage | null; fromPanel: boolean }
+  | { kind: 'outage'; tankId: number; outage: Outage | null; fromPanel: boolean; day?: string }
   | null
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
@@ -288,7 +288,7 @@ function GanttScreen() {
         {spot?.tank && (
           <MenuItem
             onClick={() => {
-              setOpen({ kind: 'outage', tankId: spot.tank!.id, outage: null, fromPanel: false })
+              setOpen({ kind: 'outage', tankId: spot.tank!.id, outage: null, fromPanel: false, day: spot.day })
               setSpot(null)
             }}
             data-testid="spot-outage"
@@ -308,6 +308,7 @@ function GanttScreen() {
         <OutageDialog
           tank={tankById(open.tankId)!}
           outage={open.outage}
+          day={open.day}
           plannedIn={plannedIn(open.tankId)}
           onClose={() => setOpen(open.fromPanel ? { kind: 'tank', tankId: open.tankId } : null)}
           onSaved={async (message, token) => {

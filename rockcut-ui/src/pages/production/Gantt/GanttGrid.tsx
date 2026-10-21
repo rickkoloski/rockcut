@@ -1,4 +1,4 @@
-import { useMemo, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { alpha, Box, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
 import { ChevronRight, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight, MoreHoriz } from '@mui/icons-material'
 import { addDaysKey } from '../../../lib/datetime'
@@ -15,6 +15,7 @@ import {
   dayLabel,
   daysBetween,
   dotState,
+  dragHint,
   isWeekend,
   maxKey,
   minKey,
@@ -69,7 +70,7 @@ export interface GanttActions {
 export interface GanttDrag {
   active: DragState | null
   bind: (key: string, onDrop: (d: DropInfo) => void) => object
-  consumeClick: () => boolean
+  consumeClick: (e?: { clientX: number; clientY: number }) => boolean
 }
 
 interface Props extends GanttActions {
@@ -88,7 +89,7 @@ interface Props extends GanttActions {
   onToggleCompact: () => void
 }
 
-const STATE_WORDS: Record<DotState, string> = { done: 'done', late: 'late', today: 'due today', planned: 'planned' }
+const STATE_WORDS: Record<DotState, string> = { done: 'done', late: 'late', stranded: 'after the tank was emptied', today: 'due today', planned: 'planned' }
 
 /** Enter (or Space) on a focusable Gantt element opens it, as a click does (not the click that ends a drag). */
 const activate = (fn?: () => void, drag?: GanttDrag) => ({
@@ -97,7 +98,7 @@ const activate = (fn?: () => void, drag?: GanttDrag) => ({
   onClick: fn
     ? (e: MouseEvent) => {
         e.stopPropagation()
-        if (!drag?.consumeClick()) fn()
+        if (!drag?.consumeClick(e)) fn()
       }
     : undefined,
   onKeyDown: (e: KeyboardEvent) => {
@@ -150,16 +151,51 @@ export default function GanttGrid(props: Props) {
       cursor: 'grabbing',
     }
   }
-  /** The row under a pointer (client y), from the layout. */
-  const rowAt = (clientY: number): Row | null => {
+  // A drop runs the handler bound when the drag began; a refetch during the
+  // drag (someone else adding a tank) can change the rows, so the drop reads
+  // the latest layout and compares rows by tank id (P32 on DEV).
+  const rowsRef = useRef(rows)
+  useLayoutEffect(() => {
+    rowsRef.current = rows
+  }, [rows])
+  /** The row under a pointer (client y), from the latest layout (or `among`). */
+  const rowAt = (clientY: number, among: Row[] = rowsRef.current): Row | null => {
     const el = innerRef.current
     if (!el) return null
     const y = clientY - el.getBoundingClientRect().top - HEAD_H - 1
-    return rows.find((r) => y >= r.top && y < r.top + r.height) ?? null
+    return among.find((r) => y >= r.top && y < r.top + r.height) ?? null
+  }
+  /** Dropped over the day columns (not the tank column, the header or outside the chart)? Otherwise the drag is cancelled. */
+  const overChart = (d: DropInfo) => {
+    const box = innerRef.current?.parentElement?.getBoundingClientRect()
+    return !!box && d.x >= box.left + leftW && d.x < box.right && d.y >= box.top + HEAD_H && d.y < box.bottom
   }
   const dropRow =
-    drag?.active && drag.active.key.startsWith('bar:') && Math.abs(drag.active.dy) > TRACK_H / 2 ? rowAt(drag.active.y) : null
+    drag?.active && drag.active.key.startsWith('bar:') && Math.abs(drag.active.dy) > TRACK_H / 2 ? rowAt(drag.active.y, rows) : null
   const bindDrag = (key: string, onDrop: (d: DropInfo) => void, enabled = true) => (drag && enabled ? drag.bind(key, onDrop) : {})
+
+  // The tooltip that follows the pointer: where it goes, and in red why it'd be refused or flagged.
+  const hint = (() => {
+    const a = drag?.active
+    if (!a) return null
+    const kind = a.key.slice(0, a.key.indexOf(':'))
+    const id = a.key.slice(a.key.indexOf(':') + 1)
+    const parts = rows.flatMap((r) => r.parts)
+    const base = { days: snap(a.dx), over: overChart(a), tanks: rows.flatMap((r) => (r.tank ? [r.tank] : [])), parts }
+    if (kind === 'bar') {
+      const part = parts.find((p) => p.key === id)
+      if (!part) return null
+      const moved = dropRow && rowKey(dropRow.tank) !== (part.tankId == null ? 'unassigned' : String(part.tankId))
+      return dragHint({ ...base, kind: 'bar', part, toRow: moved ? dropRow.tank : undefined })
+    }
+    if (kind === 'dot') {
+      const part = parts.find((p) => p.steps.some((s) => s.id === Number(id)))
+      const step = part?.steps.find((s) => s.id === Number(id))
+      return step ? dragHint({ ...base, kind: 'dot', part, step }) : null
+    }
+    const cip = rows.flatMap((r) => r.cips).find((c) => c.id === Number(id))
+    return cip ? dragHint({ ...base, kind: 'cip', step: cip }) : null
+  })()
 
   const fillColor = (fill: number | 'cip' | null) => {
     if (fill === 'cip') return `repeating-linear-gradient(135deg, ${cipHatch} 0 4px, transparent 4px 8px)`
@@ -170,6 +206,7 @@ export default function GanttGrid(props: Props) {
   const dotSx = (state: DotState) => ({
     done: { bgcolor: 'primary.main', borderColor: 'primary.main' },
     late: { bgcolor: alpha(theme.palette.error.main, 0.18), borderColor: 'error.main' },
+    stranded: { bgcolor: alpha(theme.palette.error.main, 0.18), borderColor: 'error.main' },
     today: { bgcolor: 'background.paper', borderColor: 'primary.main', boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.3)}` },
     planned: { bgcolor: 'background.paper', borderColor: 'text.secondary' },
   })[state]
@@ -295,7 +332,11 @@ export default function GanttGrid(props: Props) {
     const name = (
       // One line: the name, then the batch (shortened when it doesn't fit).
       <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', minWidth: 0, flexWrap: 'nowrap', overflow: 'hidden' }}>
-        <Typography sx={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: compact ? '1 1 auto' : '0 0 auto' }} data-testid={`gantt-tank-name-${tank.id}`}>
+        <Typography
+          sx={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: compact ? '1 1 auto' : '0 0 auto' }}
+          title={compact ? undefined : tank.name}
+          data-testid={`gantt-tank-name-${tank.id}`}
+        >
           {tank.name}
         </Typography>
         {!compact && status?.batch_label && (
@@ -318,7 +359,8 @@ export default function GanttGrid(props: Props) {
           <ChevronRight fontSize="small" />
         </IconButton>
         {compact ? (
-          <Tooltip title={status ? `${status.batch_label ? `${status.batch_label} · ` : ''}${status.line}` : ''} placement="right">
+          // Names only cuts long names: the tooltip starts with the full name.
+          <Tooltip title={[tank.name, status?.batch_label, status?.line].filter(Boolean).join(' · ')} placement="right">
             {name}
           </Tooltip>
         ) : (
@@ -398,11 +440,11 @@ export default function GanttGrid(props: Props) {
       })
 
   const bar = (row: Row, part: Part) => {
-    if (part.end < from || part.start > to) return null
+    if (part.reach < from || part.start > to) return null
     const segs = segments(part, from, days, phaseFns.get(part.batch.id)!)
-    if (!segs.length) return null
-    const left = segs[0].from * dayPx
-    const right = (segs.at(-1)!.to + 1) * dayPx
+    // Only stranded dots in view (the bar ended before it): just the dots.
+    const left = segs.length ? segs[0].from * dayPx : 0
+    const right = segs.length ? (segs.at(-1)!.to + 1) * dayPx : 0
     const top = row.track.get(part)! * TRACK_H
     const myFlags = partFlags(part, flags)
     const badge = badgeText(myFlags)
@@ -412,55 +454,58 @@ export default function GanttGrid(props: Props) {
     const showI = showInitials(dayPx)
     return (
       <Box key={part.key} sx={{ position: 'absolute', left: 0, top, width: '100%', height: TRACK_H, pointerEvents: 'none' }}>
-        <Tooltip title={`${part.batch.label}${part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`}>
-          <Box
-            {...activate(props.onBar ? () => props.onBar!(part) : undefined, drag)}
-            {...bindDrag(`bar:${part.key}`, (d) => {
-              const target = Math.abs(d.dy) > TRACK_H / 2 ? rowAt(d.y) : null
-              if (target && target !== row) props.onMoveBar?.(part, target.tank?.id ?? null)
-              else if (snap(d.dx)) props.onShiftBar?.(part, snap(d.dx))
-            })}
-            aria-label={`${partLabel(part)}${part.planned ? ', planned' : ''}`}
-            data-testid={`gantt-bar-${part.batch.id}-${part.vessel}`}
-            data-planned={part.planned || undefined}
-            sx={{
-              position: 'absolute',
-              top: BAR_TOP,
-              height: BAR_H,
-              left,
-              width: right - left,
-              borderRadius: 1.5,
-              overflow: 'hidden',
-              pointerEvents: 'auto',
-              cursor: props.onBar ? 'grab' : 'default',
-              touchAction: 'pan-x pan-y',
-              userSelect: 'none',
-              ...lifted(`bar:${part.key}`, true),
-              boxShadow: part.planned ? `0 0 0 1.5px ${theme.palette.text.secondary} inset` : `0 0 0 1px ${alpha('#000', 0.08)} inset`,
-              outline: part.planned ? `1.5px dashed ${theme.palette.text.secondary}` : 'none',
-              outlineOffset: -1.5,
-              opacity: part.planned ? 0.62 : 1,
-              '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1, opacity: 1 },
-              ...(drag?.active?.key === `bar:${part.key}` ? { boxShadow: '0 4px 14px rgba(0,0,0,.25)' } : {}),
-            }}
-          >
-            {segs.map((s) => (
-              <Box key={s.from} sx={{ position: 'absolute', top: 0, bottom: 0, left: s.from * dayPx - left, width: (s.to - s.from + 1) * dayPx, background: fillColor(s.fill) }} />
-            ))}
-            <Typography
-              component="span"
-              sx={{ position: 'relative', zIndex: 1, px: 1, fontWeight: 600, fontSize: 12, lineHeight: `${BAR_H}px`, whiteSpace: 'nowrap', color: textColor, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        {segs.length > 0 && (
+          <Tooltip title={`${part.batch.label}${part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`}>
+            <Box
+              {...activate(props.onBar ? () => props.onBar!(part) : undefined, drag)}
+              {...bindDrag(`bar:${part.key}`, (d) => {
+                if (!overChart(d)) return
+                const target = Math.abs(d.dy) > TRACK_H / 2 ? rowAt(d.y) : null
+                if (target && rowKey(target.tank) !== rowKey(row.tank)) props.onMoveBar?.(part, target.tank?.id ?? null)
+                else if (snap(d.dx)) props.onShiftBar?.(part, snap(d.dx))
+              })}
+              aria-label={`${partLabel(part)}${part.planned ? ', planned' : ''}`}
+              data-testid={`gantt-bar-${part.batch.id}-${part.vessel}`}
+              data-planned={part.planned || undefined}
+              sx={{
+                position: 'absolute',
+                top: BAR_TOP,
+                height: BAR_H,
+                left,
+                width: right - left,
+                borderRadius: 1.5,
+                overflow: 'hidden',
+                pointerEvents: 'auto',
+                cursor: props.onBar ? 'grab' : 'default',
+                touchAction: 'pan-x pan-y',
+                userSelect: 'none',
+                ...lifted(`bar:${part.key}`, true),
+                boxShadow: part.planned ? `0 0 0 1.5px ${theme.palette.text.secondary} inset` : `0 0 0 1px ${alpha('#000', 0.08)} inset`,
+                outline: part.planned ? `1.5px dashed ${theme.palette.text.secondary}` : 'none',
+                outlineOffset: -1.5,
+                opacity: part.planned ? 0.62 : 1,
+                '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1, opacity: 1 },
+                ...(drag?.active?.key === `bar:${part.key}` ? { boxShadow: '0 4px 14px rgba(0,0,0,.25)' } : {}),
+              }}
             >
-              {label}
-            </Typography>
-          </Box>
-        </Tooltip>
-        {badge && (
+              {segs.map((s) => (
+                <Box key={s.from} sx={{ position: 'absolute', top: 0, bottom: 0, left: s.from * dayPx - left, width: (s.to - s.from + 1) * dayPx, background: fillColor(s.fill) }} />
+              ))}
+              <Typography
+                component="span"
+                sx={{ position: 'relative', zIndex: 1, px: 1, fontWeight: 600, fontSize: 12, lineHeight: `${BAR_H}px`, whiteSpace: 'nowrap', color: textColor, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}
+              >
+                {label}
+              </Typography>
+            </Box>
+          </Tooltip>
+        )}
+        {badge && segs.length > 0 && (
           <Tooltip title={myFlags.map((f) => `${f.signed_off ? '✓ ' : ''}${f.message}`).join('\n')}>
             <Box
               component="button"
               type="button"
-              onClick={props.onBar ? () => props.onBar!(part, true) : undefined}
+              onClick={props.onBar ? (e: MouseEvent) => !drag?.consumeClick(e) && props.onBar!(part, true) : undefined}
               aria-label={`${myFlags.length} flag${myFlags.length === 1 ? '' : 's'} on ${part.batch.label}`}
               data-testid={`gantt-badge-${part.batch.id}-${part.vessel}`}
               sx={{
@@ -489,7 +534,7 @@ export default function GanttGrid(props: Props) {
         )}
         {partDots(part).map(({ step, slot, of }) => {
           if (step.due_on < from || step.due_on > to) return null
-          const state = dotState(step, today)
+          const state = dotState(step, today, part)
           const center = x(step.due_on) + dayPx / 2 + (slot - (of - 1) / 2) * Math.min(DOT + 2, dayPx / of)
           const who = step.assignee?.name
           const tip = [step.name, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · ')
@@ -506,7 +551,7 @@ export default function GanttGrid(props: Props) {
               <Tooltip title={tip}>
                 <Box
                   {...activate(props.onStep ? () => props.onStep!(step) : undefined, drag)}
-                  {...bindDrag(`dot:${step.id}`, (d) => snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
+                  {...bindDrag(`dot:${step.id}`, (d) => overChart(d) && snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
                   aria-label={tip}
                   data-testid={`gantt-step-${step.id}`}
                   data-state={state}
@@ -543,7 +588,7 @@ export default function GanttGrid(props: Props) {
       <Tooltip key={`cip-${cip.id}`} title={tip}>
         <Box
           {...activate(props.onCip ? () => props.onCip!(cip) : undefined, drag)}
-          {...bindDrag(`cip:${cip.id}`, (d) => snap(d.dx) && props.onMoveCip?.(cip, snap(d.dx)), !cip.done_on)}
+          {...bindDrag(`cip:${cip.id}`, (d) => overChart(d) && snap(d.dx) && props.onMoveCip?.(cip, snap(d.dx)), !cip.done_on)}
           aria-label={tip}
           data-testid={`gantt-cip-${cip.id}`}
           data-state={state}
@@ -573,10 +618,10 @@ export default function GanttGrid(props: Props) {
   const stepLine = (row: Row, i: number) => {
     const { part, step } = row.stepRows[i]
     const many = new Set(row.parts.map((p) => p.batch.id)).size > 1
-    const state = dotState(step, today)
+    const state = dotState(step, today, part)
     const who = step.assignee?.name
     const visible = step.due_on >= from && step.due_on <= to
-    const text = `${step.name}${state === 'late' ? ' · late' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
+    const text = `${step.name}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
     return (
       <Box key={`${part.key}-${step.id}`} sx={{ display: 'flex', height: STEP_ROW_H }} data-testid={`gantt-step-row-${step.id}`}>
         <Box
@@ -637,7 +682,7 @@ export default function GanttGrid(props: Props) {
                 }}
               >
                 <Box sx={{ width: 11, height: 11, ml: '-5.5px', transform: 'rotate(45deg)', border: 2, flex: 'none', ...dotSx(state), boxShadow: 'none' }} />
-                <Box component="span" sx={{ fontSize: 11, fontWeight: 600, bgcolor: 'background.paper', px: 0.5, borderRadius: 0.5, color: state === 'late' ? 'error.main' : 'text.primary' }}>
+                <Box component="span" sx={{ fontSize: 11, fontWeight: 600, bgcolor: 'background.paper', px: 0.5, borderRadius: 0.5, color: state === 'late' || state === 'stranded' ? 'error.main' : 'text.primary' }}>
                   {text}
                 </Box>
               </Box>
@@ -736,7 +781,9 @@ export default function GanttGrid(props: Props) {
                   zIndex: 7,
                   width: leftW,
                   flex: 'none',
-                  bgcolor: row.tank ? surface2 : alpha(theme.palette.warning.main, mode === 'dark' ? 0.18 : 0.14),
+                  // Opaque, like the tank headers: the warning tint over the column's surface.
+                  bgcolor: surface2,
+                  backgroundImage: row.tank ? 'none' : `linear-gradient(${alpha(theme.palette.warning.main, mode === 'dark' ? 0.18 : 0.14)}, ${alpha(theme.palette.warning.main, mode === 'dark' ? 0.18 : 0.14)})`,
                   borderRight: 1,
                   borderBottom: 1,
                   borderColor: 'divider',
@@ -744,6 +791,7 @@ export default function GanttGrid(props: Props) {
                   py: 0.75,
                   minWidth: 0,
                 }}
+                data-testid={row.tank ? undefined : 'gantt-unassigned-head'}
               >
                 {tankHeader(row)}
               </Box>
@@ -755,12 +803,12 @@ export default function GanttGrid(props: Props) {
                   borderBottom: 1,
                   borderColor: 'divider',
                   cursor: props.onSpot ? 'cell' : 'default',
-                  ...(dropRow === row ? { boxShadow: `inset 0 0 0 2px ${theme.palette.primary.main}`, bgcolor: alpha(theme.palette.primary.main, 0.12) } : {}),
+                  ...(dropRow && rowKey(dropRow.tank) === key ? { boxShadow: `inset 0 0 0 2px ${theme.palette.primary.main}`, bgcolor: alpha(theme.palette.primary.main, 0.12) } : {}),
                 }}
                 data-testid={`gantt-lane-${key}`}
-                data-drop={dropRow === row || undefined}
+                data-drop={(dropRow && rowKey(dropRow.tank) === key) || undefined}
                 onClick={(e) => {
-                  if (!props.onSpot || e.target !== e.currentTarget) return
+                  if (!props.onSpot || e.target !== e.currentTarget || drag?.consumeClick(e)) return
                   const left = e.currentTarget.getBoundingClientRect().left
                   const i = Math.floor((e.clientX - left) / dayPx)
                   if (i >= 0 && i < days) props.onSpot(row.tank, addDaysKey(from, i), { x: e.clientX, y: e.clientY })
@@ -788,6 +836,31 @@ export default function GanttGrid(props: Props) {
         </defs>
         {overlay}
       </Box>
+      {hint && drag?.active && (
+        <Box
+          role="status"
+          sx={{
+            position: 'fixed',
+            // Beside the pointer; above a finger, so it isn't under it.
+            ...(drag.active.touch ? { left: drag.active.x, top: drag.active.y - 56, transform: 'translateX(-50%)' } : { left: drag.active.x + 14, top: drag.active.y + 18 }),
+            zIndex: 1500,
+            pointerEvents: 'none',
+            px: 1,
+            py: 0.5,
+            borderRadius: 1,
+            fontSize: 12,
+            fontWeight: 600,
+            whiteSpace: 'nowrap',
+            boxShadow: 3,
+            bgcolor: hint.warn ? 'error.main' : 'grey.900',
+            color: hint.warn ? 'error.contrastText' : 'common.white',
+          }}
+          data-testid="gantt-drag-hint"
+          data-warn={hint.warn || undefined}
+        >
+          {hint.text}
+        </Box>
+      )}
     </Box>
   )
 }

@@ -18,6 +18,9 @@ test.describe('brewer1', () => {
     await expect(rows).toHaveCount(active.length + 1)
     for (const [i, t] of active.entries()) await expect(rows.nth(i)).toHaveAttribute('data-testid', `gantt-row-${t.id}`)
     await expect(rows.last()).toHaveAttribute('data-testid', 'gantt-row-unassigned')
+    // Its header is opaque, like the tanks': the chart doesn't show through when scrolled (minor 2).
+    const bg = await page.getByTestId('gantt-unassigned-head').evaluate((e) => getComputedStyle(e).backgroundColor)
+    expect(bg).toMatch(/^rgb\(|^rgba\(.*, 1\)$/)
     await expect(page.getByTestId('gantt-today-line')).toBeVisible()
     await expect(page.getByTestId('gantt-zoom-6')).toHaveAttribute('aria-pressed', 'true')
     expect(await page.getByTestId('gantt-from').inputValue()).toBe(addDays(today(), -7))
@@ -69,15 +72,19 @@ test.describe('brewer1', () => {
     await page.getByTestId('gantt-collapse-all').click()
   })
 
-  test('P47: « shows names only, the status on hover; remembered', async ({ page }) => {
+  test('P47: « shows names only, the full name and status on hover; remembered', async ({ page }) => {
     await openGantt(page)
     const sched = await schedule()
     const fv4 = sched.statuses.find((s) => s.batch_label === 'Crusher #42')!
+    const name = sched.tanks.find((t) => t.id === fv4.tank_id)!.name
+    // Shown in full as the name's title (minor 6).
+    await expect(page.getByTestId(`gantt-tank-name-${fv4.tank_id}`)).toHaveAttribute('title', name)
     await page.getByTestId('gantt-compact').click()
     await expect(gantt(page)).toHaveAttribute('data-compact', 'true')
     await expect(page.getByTestId(`gantt-status-${fv4.tank_id}`)).toHaveCount(0)
     await page.getByTestId(`gantt-tank-name-${fv4.tank_id}`).hover()
-    await expect(page.getByRole('tooltip')).toHaveText(`Crusher #42 · ${fv4.line}`)
+    // Names only cuts long names: the tooltip starts with the full one (minor 6).
+    await expect(page.getByRole('tooltip')).toHaveText(`${name} · Crusher #42 · ${fv4.line}`)
     await page.reload()
     await expect(gantt(page)).toHaveAttribute('data-compact', 'true')
     await page.getByTestId('gantt-compact').click()

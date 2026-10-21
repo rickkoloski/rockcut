@@ -5,12 +5,13 @@ import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import api from '../../../lib/api'
 import { buildParts, dayLabel, daysBetween, dotState, firstBrew } from '../../../lib/gantt'
-import { prodPath, vesselLabel, type Flag, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
+import { plainBatchNumber, prodPath, vesselLabel, type Flag, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
 import ErrorAlert from '../ErrorAlert'
 import { FlagRow } from './FlagsDialog'
 import TankSelect from './TankSelect'
 import { dayN } from './scheduleText'
 import { useFlows } from './flowsContext'
+import DateField from '../DateField'
 
 interface Props {
   batch: SchedBatch
@@ -31,7 +32,7 @@ function StepLine({ step, batch, today, onOpenStep }: { step: SchedStep; batch: 
   const flows = useFlows()
   const [detail, setDetail] = useState(step.detail ?? '')
   const [temp, setTemp] = useState(step.temperature != null ? String(step.temperature) : '')
-  const state = dotState(step, today)
+  const state = dotState(step, today, buildParts(batch).find((p) => p.stranded.has(step.id)))
   const done = !!step.done_on
   const patch = (body: Record<string, unknown>) => flows.write(() => api.patch(prodPath('steps', step.id), body), 'Saved.')
 
@@ -40,15 +41,11 @@ function StepLine({ step, batch, today, onOpenStep }: { step: SchedStep; batch: 
       sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr auto', sm: '150px 56px minmax(0, 1fr) auto' }, gap: 1, alignItems: 'center', py: 0.5 }}
       data-testid={`batch-step-${step.id}`}
     >
-      <TextField
+      <DateField
         size="small"
-        type="date"
         value={step.due_on}
         disabled={done}
-        onChange={(e) => {
-          const d = e.target.value
-          if (/^\d{4}-\d{2}-\d{2}$/.test(d) && d !== step.due_on) flows.moveSteps([step.id], daysBetween(step.due_on, d))
-        }}
+        onCommit={(d) => flows.moveSteps([step.id], daysBetween(step.due_on, d))}
         slotProps={{ htmlInput: { 'aria-label': `${step.name} date`, 'data-testid': `batch-step-date-${step.id}` } }}
       />
       <Typography variant="caption" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
@@ -93,6 +90,7 @@ function StepLine({ step, batch, today, onOpenStep }: { step: SchedStep; batch: 
         </Button>
         {state === 'done' && <Chip size="small" label="✓ done" color="primary" variant="outlined" />}
         {state === 'late' && <Chip size="small" label="late" color="error" variant="outlined" />}
+        {state === 'stranded' && <Chip size="small" label="after the tank was emptied" color="error" variant="outlined" data-testid={`batch-step-stranded-${step.id}`} />}
       </Box>
     </Box>
   )
@@ -157,8 +155,12 @@ export default function BatchDialog({ batch, tanks, flags, today, focusFlags, on
                 slotProps={{ htmlInput: { maxLength: 20, 'data-testid': 'batch-number' } }}
               />
               <Button
-                disabled={number.trim() === (batch.batch_number ?? '')}
-                onClick={() => run(() => flows.write(() => api.patch(prodPath('batches', batch.id), { batch_number: number.trim() }), `Batch number is now #${number.trim()}.`))}
+                disabled={plainBatchNumber(number) === (batch.batch_number ?? '')}
+                onClick={async () => {
+                  const n = plainBatchNumber(number)
+                  // Saved: the field shows the number as saved (trimmed, no #).
+                  if (await run(() => flows.write(() => api.patch(prodPath('batches', batch.id), { batch_number: n }), `Batch number is now #${n}.`))) setNumber(n)
+                }}
                 data-testid="batch-number-save"
               >
                 Save

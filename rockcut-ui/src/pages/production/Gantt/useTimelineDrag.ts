@@ -8,6 +8,9 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 export const LONG_PRESS_MS = 450
 const MOUSE_SLOP = 4
 const TOUCH_SLOP = 8
+/** After a press in a dialog or menu, a click on the grid this soon and this near is the rest of a double-click. */
+const CLICK_THROUGH_MS = 500
+const CLICK_THROUGH_PX = 6
 
 export interface DragState {
   key: string
@@ -17,6 +20,8 @@ export interface DragState {
   /** Where the pointer is (client coordinates), for the drop row. */
   x: number
   y: number
+  /** A finger: the drag hint goes above it. */
+  touch: boolean
 }
 
 export interface DropInfo {
@@ -41,12 +46,20 @@ interface Pending {
  * `bind(key, onDrop)` gives an element its pointer handlers; `active` is
  * the drag in progress (to draw the lifted element and the drop row).
  * `consumeClick()` is true right after a drag: the click that follows it
- * mustn't open the element's dialog.
+ * mustn't open the element's dialog. Given the click, it's also true for
+ * the second click of a double-click whose first closed a dialog or menu
+ * (QA minor 4: double-clicking Apply mustn't open the bar under it): the
+ * same spot, within half a second. A click elsewhere is a click.
  */
 export function useTimelineDrag() {
   const [active, setActive] = useState<DragState | null>(null)
   const pending = useRef<Pending | null>(null)
   const justDragged = useRef(false)
+  const modalPress = useRef({ at: 0, x: 0, y: 0 })
+  const throughModal = (e?: { clientX: number; clientY: number }) => {
+    const m = modalPress.current
+    return !!e && performance.now() - m.at < CLICK_THROUGH_MS && Math.hypot(e.clientX - m.x, e.clientY - m.y) <= CLICK_THROUGH_PX
+  }
 
   const clear = useCallback(() => {
     const p = pending.current
@@ -79,7 +92,7 @@ export function useTimelineDrag() {
         if (dist < MOUSE_SLOP) return
         p.armed = true
       }
-      setActive({ key: p.key, dx, dy, x: e.clientX, y: e.clientY })
+      setActive({ key: p.key, dx, dy, x: e.clientX, y: e.clientY, touch: p.touch })
     }
     const up = (e: PointerEvent) => {
       const p = pending.current
@@ -95,11 +108,16 @@ export function useTimelineDrag() {
       if (pending.current && e.pointerId === pending.current.pointerId) clear()
     }
     const key = (e: KeyboardEvent) => e.key === 'Escape' && pending.current && clear()
+    const pressInModal = (e: PointerEvent) => {
+      if (e.target instanceof Element && e.target.closest('.MuiModal-root')) modalPress.current = { at: performance.now(), x: e.clientX, y: e.clientY }
+    }
+    window.addEventListener('pointerup', pressInModal, true)
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
     window.addEventListener('pointercancel', cancel)
     window.addEventListener('keydown', key)
     return () => {
+      window.removeEventListener('pointerup', pressInModal, true)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       window.removeEventListener('pointercancel', cancel)
@@ -111,6 +129,7 @@ export function useTimelineDrag() {
     (key: string, onDrop: (d: DropInfo) => void) => ({
       onPointerDown: (e: ReactPointerEvent) => {
         if (e.button !== 0 || pending.current) return
+        if (throughModal(e)) return
         e.stopPropagation()
         const touch = e.pointerType !== 'mouse'
         const p: Pending = { key, pointerId: e.pointerId, startX: e.clientX, startY: e.clientY, touch, armed: false, timer: null, onDrop }
@@ -118,7 +137,7 @@ export function useTimelineDrag() {
           p.timer = window.setTimeout(() => {
             p.armed = true
             navigator.vibrate?.(10)
-            setActive({ key, dx: 0, dy: 0, x: p.startX, y: p.startY })
+            setActive({ key, dx: 0, dy: 0, x: p.startX, y: p.startY, touch: true })
           }, LONG_PRESS_MS)
         }
         pending.current = p
@@ -129,7 +148,7 @@ export function useTimelineDrag() {
     [],
   )
 
-  const consumeClick = useCallback(() => justDragged.current, [])
+  const consumeClick = useCallback((e?: { clientX: number; clientY: number }) => justDragged.current || throughModal(e), [])
 
   return { active, bind, consumeClick }
 }

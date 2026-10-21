@@ -14,6 +14,7 @@ defmodule RockcutApi.Production.StatusFlagsTest do
     Parts,
     Step,
     StepLink,
+    Steps,
     StepType,
     Tank,
     TankStatus
@@ -360,6 +361,87 @@ defmodule RockcutApi.Production.StatusFlagsTest do
 
       assert [%{kind: "cip_with_beer", key: "cip_with_beer:cip99:1.0"}] =
                flags([galactic()], cips: [cip])
+    end
+
+    # Fest #44 in FV2: Carb in 2 days, then a full Package in 5 and its CIP
+    # in 6; the Package was checked off early, today (M3).
+    defp packaged_early(opts \\ []) do
+      entry(
+        4,
+        "Fest #44",
+        [
+          step(41, "brew", -20, done: true, batch: 4),
+          step(42, "plain", 2, batch: 4),
+          step(43, "package", 0, done: true, batch: 4),
+          step(44, "cip", opts[:cip] || 6, batch: 4, done: opts[:cip_done])
+        ],
+        status: "completed",
+        links: [link(41, 41, 42), link(42, 42, 43), link(43, 43, 44)]
+      )
+    end
+
+    test "a done step before an unfinished step it follows is out of order (M3)" do
+      assert [%{kind: "out_of_order", key: "out_of_order:42", batch_ids: [4]}] =
+               flags([packaged_early()])
+
+      # The same rule as the move prompt's warning; both done isn't flagged.
+      [carb, pkg] = Enum.filter(packaged_early().steps, &(&1.id in [42, 43]))
+      assert Steps.out_of_order?(carb, pkg)
+      refute Steps.out_of_order?(%{carb | done_on: @today}, pkg)
+      refute Steps.out_of_order?(pkg, carb)
+
+      # Still flagged once the part is finished (its CIP done too).
+      assert ["out_of_order"] = kinds(flags([packaged_early(cip: 0, cip_done: 0)]))
+    end
+
+    test "a done exit ends the bar there, its CIP still to come included; later steps are stranded (M3)" do
+      [part] = Parts.build([packaged_early()])
+      assert part.end == Date.add(@today, 6)
+      assert Enum.map(part.stranded, & &1.id) == [42]
+      assert Parts.occupied_until(part) == @today
+
+      [done_cip] = Parts.build([packaged_early(cip: 1, cip_done: 1)])
+      assert done_cip.end == @today
+
+      [planned] = Parts.build([galactic()])
+      assert planned.end == Date.add(@today, 10)
+      assert planned.stranded == []
+      assert Parts.occupied_until(planned) == Date.add(@today, 10)
+    end
+
+    test "after a done exit the tank is held to the exit; a done CIP ends the dirty fill, no overlap (M3)" do
+      next = planned(5, "Altruism P1", 3)
+      without_carb = fn e -> %{e | steps: Enum.reject(e.steps, &(&1.id == 42)), links: []} end
+      done = without_carb.(packaged_early())
+
+      # Its own CIP (day 6) is after the next fill (day 3): dirty, not overlapping.
+      assert kinds(flags([done, next])) == ["dirty_fill"]
+
+      # A done standalone CIP in between cleaned it: nothing.
+      cip = %{step(98, "cip", 1, done: true, tank: 10) | batch_id: nil}
+      assert flags([done, next], cips: [cip]) == []
+
+      # Not yet emptied, the same dates overlap.
+      not_done = %{
+        done
+        | steps: Enum.map(done.steps, &%{&1 | done_on: if(&1.id == 41, do: &1.done_on)})
+      }
+
+      assert "tank_overlap" in kinds(flags([not_done, next]))
+    end
+
+    test "a done standalone CIP while the beer is in the tank is flagged too (minor 10)" do
+      cip = %{step(97, "cip", -2, done: true, tank: 10) | batch_id: nil}
+
+      assert [%{kind: "cip_with_beer", key: "cip_with_beer:cip97:1.0"}] =
+               flags([galactic()], cips: [cip])
+    end
+
+    test "moving a batch bigger than its tank reopens the sign-off (minor 1)" do
+      [flag] = flags([planned(2, "Altruism P1", 30, volume: 30)])
+      [moved] = flags([planned(2, "Altruism P1", 31, volume: 30)])
+      assert moved.key == flag.key
+      refute moved.signature == flag.signature
     end
 
     test "sign-off holds for the same signature; a change reopens it (P55, P56)" do

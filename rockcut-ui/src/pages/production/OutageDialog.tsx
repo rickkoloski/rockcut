@@ -19,6 +19,7 @@ import api from '../../lib/api'
 import { addDaysKey } from '../../lib/datetime'
 import { prodError, prodPath, shortPeriod, type Outage, type Tank } from '../../lib/production'
 import { coloradoToday } from '../../lib/tasks'
+import DateField from './DateField'
 
 interface Props {
   tank: Tank
@@ -29,6 +30,8 @@ interface Props {
   onSaved: (message: string, undoToken: string | null) => void
   /** D47 (P6): what's planned in the tank on these days ("Galactic P1 · Oct 26–Nov 2"), named before saving. */
   plannedIn?: (from: string, to: string | null) => string[]
+  /** D47: a new period starts on this day and ends on it (a tapped spot on the Gantt). */
+  day?: string
 }
 
 /**
@@ -37,11 +40,11 @@ interface Props {
  * it's going on, Back in service today. Errors show inline, the overlap one
  * naming the other period.
  */
-export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn }: Props) {
+export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn, day }: Props) {
   const today = coloradoToday()
-  const [from, setFrom] = useState(outage?.starts_on ?? today)
+  const [from, setFrom] = useState(outage?.starts_on ?? day ?? today)
   const [open, setOpen] = useState(outage ? outage.ends_on === null : false)
-  const [to, setTo] = useState(outage?.ends_on ?? addDaysKey(outage?.starts_on ?? today, 2))
+  const [to, setTo] = useState(outage?.ends_on ?? day ?? addDaysKey(today, 2))
   const [reason, setReason] = useState(outage?.reason ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -98,19 +101,17 @@ export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn
         </Typography>
         <ErrorAlert error={error} testId="outage-error" />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-          <TextField
+          <DateField
             label="Out from"
-            type="date"
             value={from}
-            onChange={(e) => moveFrom(e.target.value)}
+            onCommit={moveFrom}
             slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'outage-from' } }}
           />
-          <TextField
+          <DateField
             label="Last day out"
-            type="date"
             value={open ? '' : to}
             disabled={open}
-            onChange={(e) => setTo(e.target.value)}
+            onCommit={setTo}
             slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'outage-to' } }}
           />
         </Box>

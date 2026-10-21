@@ -284,6 +284,9 @@ export const BEHAVIOR_LABELS: Record<Behavior, string> = {
   package: 'Packages the beer',
 }
 
+/** A batch number as saved: leading `#`s and spaces dropped ("#40" is 40), as the API does (D47 QA M2). */
+export const plainBatchNumber = (n: string) => n.replace(/^[#\s]+/, '').trim()
+
 /** "First tank", "After transfer 2". */
 export const vesselLabel = (k: number) => (k === 0 ? 'First tank' : `After transfer ${k}`)
 

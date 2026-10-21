@@ -73,10 +73,18 @@ test.describe('as brewer1', () => {
     await expect(page.getByTestId(`tank-name-${tank.id}`)).toHaveCount(0)
     await page.getByTestId('tanks-retired-toggle').click()
     await expect(page.getByTestId(`tank-retired-row-${tank.id}`)).toBeVisible()
+    // "Last" means after every tank active before it came back: other tests
+    // (and people, on DEV) may add tanks meanwhile, after it.
+    const before = await activeTankIds()
     const restored = page.waitForResponse((r) => r.url().endsWith(`/api/production/tanks/${tank.id}/restore`))
     await page.getByTestId(`tank-restore-${tank.id}`).click()
     expect((await restored).status()).toBe(200)
-    await expect(names(page).last()).toHaveText(tank.name)
+    await expect(page.getByTestId(`tank-name-${tank.id}`)).toHaveText(tank.name)
+    const shown = await names(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+    const at = shown.indexOf(`tank-name-${tank.id}`)
+    for (const id of before) expect(shown.indexOf(`tank-name-${id}`)).toBeLessThan(at)
+    const after = await activeTankIds()
+    for (const id of before) expect(after.indexOf(id)).toBeLessThan(after.indexOf(tank.id))
     expect((await tanks()).find((t) => t.id === tank.id)!.retired_at).toBeNull()
   })
 

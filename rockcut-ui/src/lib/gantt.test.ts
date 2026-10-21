@@ -8,6 +8,7 @@ import {
   dayWidth,
   daysBetween,
   dotState,
+  dragHint,
   flagChip,
   layoutRows,
   monthLabels,
@@ -188,6 +189,81 @@ describe('parts', () => {
     expect(dotState(step({ due_on: '2026-10-20' }), '2026-10-21')).toBe('late')
     expect(dotState(step({ due_on: '2026-10-21' }), '2026-10-21')).toBe('today')
     expect(dotState(step({ due_on: '2026-10-22' }), '2026-10-21')).toBe('planned')
+  })
+})
+
+describe('a done exit (D47 QA M3)', () => {
+  // Fest's Package done early, Oct 21: Carb (Oct 22) is left after it, the CIP (Oct 25) still to come.
+  const early = batch({
+    ...fest,
+    status: 'completed',
+    steps: fest.steps.map((s) => (s.id === 3 ? { ...s, done_on: s.due_on } : s.id === 6 ? { ...s, due_on: '2026-10-21', done_on: '2026-10-21' } : s)),
+  })
+
+  it('the bar ends at its CIP still to come; later unfinished steps are stranded, red', () => {
+    const second = buildParts(early)[1]
+    expect(second.end).toBe('2026-10-25')
+    expect([...second.stranded]).toEqual([5])
+    expect(second.reach).toBe('2026-10-25')
+    const carb = second.steps.find((s) => s.id === 5)!
+    expect(dotState(carb, '2026-10-21', second)).toBe('stranded')
+    expect(dotState(carb, '2026-10-21')).toBe('planned')
+    // After the Package no phase: plain to the CIP.
+    expect(segments(second, '2026-10-20', 6, phaseAt(early))).toEqual([
+      { from: 0, to: 1, fill: 11 },
+      { from: 2, to: 4, fill: null },
+      { from: 5, to: 5, fill: 'cip' },
+    ])
+  })
+
+  it('with its CIP done (or none) the bar ends at the exit; stranded steps still reach past it', () => {
+    const cleaned = batch({ ...early, steps: early.steps.map((s) => (s.id === 7 ? { ...s, due_on: '2026-10-21', done_on: '2026-10-21' } : s)) })
+    const second = buildParts(cleaned)[1]
+    expect(second.end).toBe('2026-10-21')
+    expect(second.reach).toBe('2026-10-22')
+    // The track is held to the stranded dot: nothing else draws over it.
+    const other = buildParts(batch({ id: 2, vessels: [{ vessel_index: 0, tank_id: 9 }], steps: [step({ id: 20, batch_id: 2, behavior: 'brew', due_on: '2026-10-22' })] }))[0]
+    expect(layoutRows([tank(9, 'Serving 2')], [second, other], [], new Set())[0].tracks).toBe(2)
+  })
+
+  it('not done: as before', () => {
+    expect(buildParts(fest)[1]).toMatchObject({ end: '2026-10-25', reach: '2026-10-25' })
+    expect(buildParts(fest)[1].stranded.size).toBe(0)
+  })
+})
+
+describe('drag hint (lead decisions 4, addition)', () => {
+  const fv7 = tank(7, 'FV7')
+  const s2 = tank(9, 'Serving 2')
+  const fv6 = { ...tank(6, 'FV6'), outages: [{ id: 1, tank_id: 6, starts_on: '2026-10-10', ends_on: '2026-10-12', reason: null, state: 'coming', label: '' }] } as Tank
+  const linked = batch({ ...fest, links: [{ id: 1, from_step_id: 3, to_step_id: 5, default_answer: 'move_all' }, { id: 2, from_step_id: 5, to_step_id: 6, default_answer: 'move_only' }] })
+  const [first, second] = buildParts(linked)
+  const other = buildParts(batch({ id: 2, label: 'Enos P1', vessels: [{ vessel_index: 0, tank_id: 6 }], steps: [step({ id: 30, batch_id: 2, behavior: 'brew', due_on: '2026-09-25' }), step({ id: 31, batch_id: 2, due_on: '2026-10-05' })] }))[0]
+  const base = { over: true, tanks: [fv6, fv7, s2], parts: [first, second, other] }
+
+  it('outside the chart: release over it', () => {
+    expect(dragHint({ ...base, over: false, kind: 'bar', days: 3, part: first })).toEqual({ text: 'Release over the chart to move', warn: true })
+  })
+
+  it('sideways: the new first day and the days; nothing yet at 0', () => {
+    expect(dragHint({ ...base, kind: 'bar', days: 2, part: first })).toEqual({ text: 'Sat Oct 3 · +2 days', warn: false })
+    expect(dragHint({ ...base, kind: 'bar', days: 0, part: first })).toBeNull()
+    expect(dragHint({ ...base, kind: 'cip', days: -1, step: step({ id: 40, behavior: 'cip', tank_id: 7, due_on: '2026-10-21' }) })).toEqual({ text: 'Tue Oct 20 · −1 day', warn: false })
+  })
+
+  it('another row: its name; red when it is out of service or another batch is in it then', () => {
+    expect(dragHint({ ...base, kind: 'bar', days: 0, part: second, toRow: null })).toEqual({ text: '→ Unassigned', warn: false })
+    expect(dragHint({ ...base, kind: 'bar', days: 0, part: first, toRow: fv6 })).toEqual({
+      text: '→ FV6 · FV6 is out of service Oct 10–12 · overlaps Enos P1 in FV6',
+      warn: true,
+    })
+  })
+
+  it('a dot before the step it follows, or past one that follows it', () => {
+    const carb = second.steps.find((s) => s.id === 5)!
+    expect(dragHint({ ...base, kind: 'dot', days: -3, part: second, step: carb })).toEqual({ text: 'Mon Oct 19 · −3 days · before Transfer, the step it follows', warn: true })
+    expect(dragHint({ ...base, kind: 'dot', days: 4, part: second, step: carb })).toEqual({ text: 'Mon Oct 26 · +4 days · Move only: after Package, which follows it', warn: true })
+    expect(dragHint({ ...base, kind: 'dot', days: 1, part: second, step: carb })).toEqual({ text: 'Fri Oct 23 · +1 day', warn: false })
   })
 })
 

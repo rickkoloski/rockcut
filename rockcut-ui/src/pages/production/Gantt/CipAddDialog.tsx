@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FormControlLabel, Switch, TextField } from '@mui/material'
+import { FormControlLabel, Switch } from '@mui/material'
 import FormDialog from '../../../components/FormDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import api from '../../../lib/api'
@@ -7,6 +7,7 @@ import { dayLabel } from '../../../lib/gantt'
 import { prodPath, type Tank } from '../../../lib/production'
 import TankSelect from './TankSelect'
 import { useFlows } from './flowsContext'
+import DateField from '../DateField'
 
 /**
  * D47 §3.10 Add CIP & Sanitize: tank, date, and "Already done" (records it
@@ -39,11 +40,10 @@ export default function CipAddDialog({ tanks, initialTankId, initialDay, today, 
   return (
     <FormDialog open onClose={onClose} title="Add CIP & Sanitize" onSubmit={save} loading={busy} error={error} testId="cip-add-dialog">
       <TankSelect label="Tank" tanks={tanks} value={tankId} onChange={setTankId} testId="cip-tank" />
-      <TextField
-        type="date"
+      <DateField
         label="Day"
         value={day}
-        onChange={(e) => setDay(e.target.value)}
+        onCommit={setDay}
         slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'cip-day' } }}
       />
       <FormControlLabel

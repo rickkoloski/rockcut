@@ -93,12 +93,12 @@ test('a Transfer’s CIP follows its new day (lead decisions 1, item 1)', async 
   await expect(page.getByTestId('template-issues')).toHaveCount(0)
 })
 
-test('N2: removing a middle Transfer warns that the later tanks depend on it', async ({ page }) => {
+test('N2: removing a middle Transfer warns that the tank after it depends on it, by name', async ({ page }) => {
   const t = await twoTransfers('N2 remove')
   await page.goto(`/brewery/production/templates/${t.id}`)
   await page.getByTestId(`entry-remove-${t.first}`).click()
   const confirm = page.getByRole('dialog').filter({ hasText: 'Remove Transfer?' })
-  await expect(confirm).toContainText('The tanks after this transfer depend on it.')
+  await expect(confirm).toContainText('After transfer 1 depends on it.')
   await expect(page.getByTestId('remove-issues')).toContainText('The template becomes incomplete')
   await expect(page.getByTestId('remove-issue-vessel_not_started')).toHaveText('The tank after transfer 1 has no Transfer or Filter starting it.')
   await confirm.getByRole('button', { name: 'Cancel' }).click()
@@ -243,13 +243,22 @@ test.describe('item 10: ordered lists drag by a handle', () => {
     await expect(handle).toHaveAttribute('role', 'button')
     await expect(page.getByRole('button', { name: `Drag ${tank.name}` })).toBeVisible()
 
+    // Relative to the tank above it: other tests may add tanks meanwhile (P5 on DEV).
     const before = await activeTankIds()
+    const above = before[before.indexOf(tank.id) - 1]
     await handle.focus()
     await page.keyboard.press('Space')
     await page.keyboard.press('ArrowUp')
     await page.keyboard.press('Space')
-    await expect.poll(async () => (await activeTankIds()).indexOf(tank.id)).toBe(before.length - 2)
+    await expect
+      .poll(async () => {
+        const ids = await activeTankIds()
+        return ids.indexOf(above) - ids.indexOf(tank.id)
+      })
+      .toBe(1)
     await page.reload()
-    await expect(page.locator('[data-testid^="tanks-list-row-"]').nth(before.length - 2)).toHaveAttribute('data-testid', `tanks-list-row-${tank.id}`)
+    await expect(row).toBeVisible()
+    const rows = await page.locator('[data-testid^="tanks-list-row-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+    expect(rows.indexOf(`tanks-list-row-${above}`) - rows.indexOf(`tanks-list-row-${tank.id}`)).toBe(1)
   })
 })

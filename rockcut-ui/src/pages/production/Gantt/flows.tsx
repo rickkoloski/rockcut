@@ -19,7 +19,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { AxiosResponse } from 'axios'
 import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
-import { prodError, prodPath, SCHEDULE_KEY, type Answer, type SchedStep } from '../../../lib/production'
+import { plainBatchNumber, prodError, prodPath, SCHEDULE_KEY, type Answer, type SchedStep } from '../../../lib/production'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { renumberText, type Renumber } from './scheduleText'
 import { FlowsContext } from './flowsContext'
@@ -147,16 +147,22 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         number = n
       }
       let answer: Answer | undefined
+      let move = pre.move
       if (pre.move && pre.move.following.length) {
         const off = pre.move.days
         const a = await askMove(pre.move, `${step.name} done ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}`)
         if (!a) return null
         answer = a
       }
+      // "FDH done · 8 following steps moved 2 days later" when it moved them.
+      const doneText = () =>
+        answer === 'move_all' && move?.following.length
+          ? `${step.name} done · ${plural(move.following.length, 'following step')} moved ${daysWord(move.days)}`
+          : `${step.name} done`
       for (;;) {
         const r = await write<Record<string, unknown>>(
           () => api.post(path, { done_on: doneOn, batch_number: number, answer }),
-          () => (number ? `${step.name} done. ${batchLabel?.replace(/ P\d+$/, '') ?? 'The batch'} is #${number}.` : `${step.name} done.`),
+          () => (number ? `${doneText()}. ${batchLabel?.replace(/ P\d+$/, '') ?? 'The batch'} is #${plainBatchNumber(number)}.` : `${doneText()}.`),
         )
         if (r.ok) return r
         if (number !== undefined && r.code?.startsWith('batch_number')) {
@@ -166,7 +172,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           continue
         }
         if (r.code === 'answer_required' && r.body?.preview) {
-          const a = await askMove(r.body.preview as MovePreview, `${step.name} done on ${dayLabel(doneOn)}`)
+          move = r.body.preview as MovePreview
+          const a = await askMove(move, `${step.name} done on ${dayLabel(doneOn)}`)
           if (!a) return null
           answer = a
           continue
@@ -371,7 +378,7 @@ function NumberPrompt({
 }) {
   const [value, setValue] = useState(initial)
   usePhoneBackCloses(true, onCancel)
-  const trimmed = value.trim()
+  const trimmed = plainBatchNumber(value)
   const plain = /^\d+$/.test(trimmed)
   const last = Number(suggestion) - 1
   const local = !trimmed ? 'Enter the batch number.' : trimmed.length > 20 ? 'A batch number is 1 to 20 characters.' : null

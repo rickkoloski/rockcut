@@ -156,20 +156,32 @@ defmodule RockcutApi.Production.Steps do
     Map.new(steps, &{&1.id, Date.add(&1.due_on, plan.days)})
   end
 
-  # The links that would run backwards after `changes` (one end changed).
-  defp out_of_order(graph, changes) do
+  @doc """
+  Whether the link from `from` to `to` runs backwards: `to` is dated before
+  the step it follows, and they aren't both done. The move prompt's warning
+  and the "Steps out of order" flag both use it; `due` and `done?` give a
+  step's date and whether it's done after the change being previewed.
+  """
+  def out_of_order?(from, to, due \\ & &1.due_on, done? \\ &(&1.done_on != nil)) do
+    not (done?.(from) and done?.(to)) and Date.compare(due.(to), due.(from)) == :lt
+  end
+
+  # The links that would run backwards after `changes` (one end changed);
+  # `done` the steps checked off by it.
+  defp out_of_order(graph, changes, done \\ []) do
+    due = &Map.get(changes, &1.id, &1.due_on)
+    done? = &(&1.done_on != nil or &1.id in done)
+
     for l <- graph.links,
         Map.has_key?(changes, l.from_step_id) or Map.has_key?(changes, l.to_step_id),
         from = graph.steps[l.from_step_id],
         to = graph.steps[l.to_step_id],
-        from && to,
-        Date.compare(Map.get(changes, to.id, to.due_on), Map.get(changes, from.id, from.due_on)) ==
-          :lt do
+        from && to && out_of_order?(from, to, due, done?) do
       %{from_step_id: from.id, from_name: name(from), to_step_id: to.id, to_name: name(to)}
     end
   end
 
-  defp preview(graph, plan) do
+  defp preview(graph, plan, done \\ []) do
     pnums = Batches.p_numbers()
 
     per_answer = fn f ->
@@ -183,7 +195,7 @@ defmodule RockcutApi.Production.Steps do
       moved: Enum.map(plan.moved, &brief(&1, plan.days)),
       following: Enum.map(plan.following, &brief(&1, plan.days)),
       default_answer: plan.default,
-      out_of_order: per_answer.(&out_of_order(graph, &1)),
+      out_of_order: per_answer.(&out_of_order(graph, &1, done)),
       renumbered: per_answer.(&Batches.renumbered(pnums, Batches.p_numbers(&1)))
     }
   end
@@ -280,7 +292,7 @@ defmodule RockcutApi.Production.Steps do
       if opts[:preview] do
         {:preview,
          %{
-           move: plan && preview(graph, plan),
+           move: plan && preview(graph, plan, [step.id]),
            done_on: done_on,
            needs_batch_number: numbering?,
            next_batch_number: if(numbering?, do: Batches.next_batch_number())
@@ -295,7 +307,7 @@ defmodule RockcutApi.Production.Steps do
           end
 
         if plan && plan.following != [] && is_nil(answer),
-          do: Repo.rollback({:answer_required, preview(graph, plan)})
+          do: Repo.rollback({:answer_required, preview(graph, plan, [step.id])})
 
         changes = if plan, do: changes(plan, answer || "move_only"), else: %{}
 
@@ -329,7 +341,7 @@ defmodule RockcutApi.Production.Steps do
         %{
           batch_ids: batch_ids([step.id | Map.keys(changes)], graph),
           renumbered: renumbered,
-          out_of_order: out_of_order(graph, Map.put(changes, step.id, done_on))
+          out_of_order: out_of_order(graph, Map.put(changes, step.id, done_on), [step.id])
         }
       end
     end)

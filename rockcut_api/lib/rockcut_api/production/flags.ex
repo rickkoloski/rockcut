@@ -10,7 +10,9 @@ defmodule RockcutApi.Production.Flags do
   open again with `was_signed_off`.
 
   Only what's still to do is flagged: unfinished parts (`Parts.finished?/1`),
-  steps not done, CIPs not done. "Dirty, no CIP planned" looks at each tank's
+  links with a step not done, CIPs not done (but a done CIP while beer is
+  in the tank is still flagged). A part whose exit is done holds its tank
+  only to the exit (`Parts.occupied_until/1`). "Dirty, no CIP planned" looks at each tank's
   last emptying.
   """
   alias RockcutApi.Production.Parts
@@ -36,7 +38,7 @@ defmodule RockcutApi.Production.Flags do
        too_big(live, tanks) ++
        dirty_fills(live, by_tank, cips_by_tank, tanks) ++
        dirty_no_cip(by_tank, cips_by_tank, tanks) ++
-       out_of_order(live) ++
+       out_of_order(world.parts) ++
        no_tank(live, world.today) ++
        out_of_service(live, world.cips, tanks) ++
        cip_with_beer(live, world.cips, tanks))
@@ -51,8 +53,10 @@ defmodule RockcutApi.Production.Flags do
     for {tank_id, parts} <- Enum.group_by(Enum.filter(live, & &1.tank_id), & &1.tank_id),
         [a, b] <- pairs(Enum.sort_by(parts, &{Date.to_gregorian_days(&1.start), &1.id})),
         a.batch_id != b.batch_id,
-        Date.compare(b.start, a.end) == :lt and Date.compare(a.start, b.end) == :lt do
-      flag(:tank_overlap, [a.id, b.id], [tank_id, a.start, a.end, b.start, b.end],
+        a_end = Parts.occupied_until(a),
+        b_end = Parts.occupied_until(b),
+        Date.compare(b.start, a_end) == :lt and Date.compare(a.start, b_end) == :lt do
+      flag(:tank_overlap, [a.id, b.id], [tank_id, a.start, a_end, b.start, b_end],
         message: "#{Parts.label(a)} and #{Parts.label(b)} overlap in #{tanks[tank_id].name}.",
         batch_ids: [a.batch_id, b.batch_id],
         tank_id: tank_id
@@ -67,7 +71,13 @@ defmodule RockcutApi.Production.Flags do
       flag(
         :too_big,
         [p.id],
-        [tank.id, Decimal.to_string(p.volume), Decimal.to_string(tank.capacity_bbl)],
+        [
+          tank.id,
+          Decimal.to_string(p.volume),
+          Decimal.to_string(tank.capacity_bbl),
+          (p.fill && p.fill.due_on) || p.start,
+          (p.exit && p.exit.due_on) || p.end
+        ],
         message:
           "#{Parts.label(p)} (#{bbl(p.volume)}) is bigger than #{tank.name} (#{bbl(tank.capacity_bbl)}).",
         batch_ids: [p.batch_id],
@@ -139,14 +149,15 @@ defmodule RockcutApi.Production.Flags do
     end
   end
 
-  # A step dated before a step it follows (the later one not done yet).
-  defp out_of_order(live) do
-    for {_batch_id, [p | _]} <- Enum.group_by(live, & &1.batch_id),
+  # A step dated before a step it follows, unless both are done: the same
+  # rule as the move prompt's warning (`Steps.out_of_order?/2`).
+  defp out_of_order(parts) do
+    for {_batch_id, [p | _]} <- Enum.group_by(parts, & &1.batch_id),
         by_id = Map.new(p.batch_steps, &{&1.id, &1}),
         l <- p.links,
         from = by_id[l.from_step_id],
         to = by_id[l.to_step_id],
-        (from && to && is_nil(to.done_on)) and Date.compare(to.due_on, from.due_on) == :lt do
+        from && to && RockcutApi.Production.Steps.out_of_order?(from, to) do
       flag(:out_of_order, [l.id], [from.due_on, to.due_on],
         message:
           "#{p.label}: #{RockcutApi.Production.Steps.name(to)} is before #{RockcutApi.Production.Steps.name(from)}, the step it follows.",
@@ -202,11 +213,10 @@ defmodule RockcutApi.Production.Flags do
     part_flags ++ cip_flags
   end
 
-  # A standalone CIP dated while a batch's beer is in the tank (after its
-  # fill, before its exit).
+  # A standalone CIP, planned or done, dated while a batch's beer is in the
+  # tank (after its fill, before its exit).
   defp cip_with_beer(live, cips, tanks) do
     for c <- cips,
-        is_nil(c.done_on),
         p <- live,
         p.tank_id == c.tank_id,
         p.fill != nil,

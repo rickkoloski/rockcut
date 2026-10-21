@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { FormControlLabel, MenuItem, Switch, TextField, Typography } from '@mui/material'
 import FormDialog from '../../../components/FormDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
@@ -37,6 +37,9 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Enter and a click on Save in the same moment would both submit before
+  // `busy` disables the button (QA: two "planned" snackbars once).
+  const saving = useRef(false)
   const template = useApiQuery<Template>(templateKey(templateId || 0), prodPath('templates', templateId || 0), undefined, { enabled: templateId !== '' }).data
   const vessels = template && template.id === templateId ? Math.max(0, ...template.steps.map((s) => s.vessel_index)) + 1 : 1
   // A rough span for the out-of-service hints: the brew day to the template's last day.
@@ -52,7 +55,8 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
     if (!brewOn) local.brew_on = 'Pick the brew day.'
     if (!(Number(volume) > 0 && Number(volume) < 10000)) local.volume_bbl = 'Enter a volume more than 0 and under 10,000 bbl.'
     setErrors(local)
-    if (Object.keys(local).length) return
+    if (Object.keys(local).length || saving.current) return
+    saving.current = true
     setBusy(true)
     setError(null)
     const r = await flows.write<{ batches: { label: string }[] }>(
@@ -67,6 +71,7 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
         }),
       (d) => `${d.batches[0]?.label ?? 'The batch'} planned.`,
     )
+    saving.current = false
     setBusy(false)
     if (r.ok) return onClose()
     const f = fieldErrors({ response: { data: r.body } })

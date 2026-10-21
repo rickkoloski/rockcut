@@ -28,6 +28,8 @@ defmodule RockcutApi.Production.Schedule do
     TankStatus
   }
 
+  # Days in the range, both ends included (the UI's "7 to 730 days").
+  @min_days 7
   @max_days 730
 
   # Tank status and flags look past the view: every batch still going, and
@@ -35,15 +37,15 @@ defmodule RockcutApi.Production.Schedule do
   @history_days 180
 
   @doc """
-  The schedule from `from` to `to` (dates, at most 730 days apart:
-  `:range_invalid` otherwise) as seen on `today`: also each active tank's
+  The schedule from `from` to `to` (dates, 7 to 730 days with both ends
+  included: `:range_invalid` otherwise) as seen on `today`: also each active tank's
   `statuses` (`TankStatus`) and the `flags` (`Flags`, with sign-offs),
   worked out over the range and every batch still going.
   """
   def load(%Date{} = from, %Date{} = to, %Date{} = today) do
-    days = Date.diff(to, from)
+    days = Date.diff(to, from) + 1
 
-    if days < 0 or days > @max_days do
+    if days < @min_days or days > @max_days do
       {:error, :range_invalid}
     else
       since = Date.add(today, -@history_days)
