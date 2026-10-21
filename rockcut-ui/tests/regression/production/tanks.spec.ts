@@ -23,7 +23,8 @@ test.describe('as brewer1', () => {
   test('P1: Add a tank; it is listed last and persists', async ({ page }) => {
     const name = shortTag('FV8')
     await page.goto('/brewery/production')
-    await page.getByTestId('hub-tanks').click()
+    await page.getByTestId('gantt-setup').click()
+    await page.getByTestId('gantt-setup-tanks').click()
     await expect(page).toHaveURL(/\/brewery\/production\/tanks$/)
     await page.getByTestId('tank-add').click()
     await page.getByTestId('tank-name').fill(name)
@@ -135,18 +136,32 @@ test.describe('P2: reorder', () => {
   })
 })
 
-test.describe('the hub', () => {
+test.describe('the Gantt and its Set up menu (D47)', () => {
   test.use({ storageState: authFile('brewer1') })
 
-  test('Brewery → Production lists Tanks, Templates and Phases & steps with counts', async ({ page }) => {
+  test('Brewery → Production opens the Gantt; Set up reaches the setup pages; no Batches entry', async ({ page }) => {
     await openBreweryNav(page, 'Production')
     await expect(page).toHaveURL(/\/brewery\/production$/)
-    const active = (await tanks()).filter((t) => !t.retired_at).length
-    await expect(page.getByTestId('hub-tanks-count')).toHaveText(`${active} tanks`)
-    await expect(page.getByTestId('hub-templates-count')).toContainText('template')
-    await expect(page.getByTestId('hub-lists-count')).toContainText('phases ·')
-    await page.getByTestId('hub-lists').click()
-    await expect(page).toHaveURL(/\/brewery\/production\/lists$/)
-  })
+    await expect(page.getByTestId('gantt')).toBeVisible()
+    await expect(page.getByTestId('gantt-row-unassigned')).toBeVisible()
+    await expect(page.locator('.MuiDrawer-paper:visible').getByText('Batches', { exact: true })).toHaveCount(0)
 
+    // P1: the tanks in display order are the Gantt's rows, then Unassigned.
+    const active = (await tanks()).filter((t) => !t.retired_at)
+    const rows = page.locator('[data-testid^="gantt-row-"]')
+    await expect(rows).toHaveCount(active.length + 1)
+    await expect(rows.last()).toHaveAttribute('data-testid', 'gantt-row-unassigned')
+    await expect(rows.nth(active.length - 1)).toHaveAttribute('data-testid', `gantt-row-${active.at(-1)!.id}`)
+
+    for (const [item, url] of [
+      ['gantt-setup-tanks', /\/tanks$/],
+      ['gantt-setup-templates', /\/templates$/],
+      ['gantt-setup-lists', /\/lists$/],
+    ] as const) {
+      await page.goto('/brewery/production')
+      await page.getByTestId('gantt-setup').click()
+      await page.getByTestId(item).click()
+      await expect(page).toHaveURL(url)
+    }
+  })
 })

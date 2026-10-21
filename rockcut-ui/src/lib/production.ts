@@ -115,6 +115,110 @@ export interface Template extends TemplateSummary {
   links: TemplateLink[]
 }
 
+// ── The schedule (D47, `GET /schedule`) ──
+
+export type BatchStatus = 'planned' | 'fermenting' | 'completed' | 'dumped' | string
+
+export interface Person {
+  id: number
+  name: string
+}
+
+/** A batch step, or a standalone CIP & Sanitize (`batch_id` null, `tank_id` set). */
+export interface SchedStep {
+  id: number
+  batch_id: number | null
+  tank_id: number | null
+  step_type_id: number | null
+  marker: boolean
+  /** "FDH - #2", "Set temp - 52°", "Brew day - 1 of 2", or a marker's phase. */
+  name: string
+  type_name: string | null
+  full_name: string | null
+  behavior: Behavior | null
+  /** The batch's first Brew day (its number prompt). */
+  first_brew: boolean
+  phase_id: number | null
+  vessel_index: number
+  detail: string | null
+  temperature: number | null
+  split_method: SplitMethod | null
+  package_partial: boolean
+  notes: string | null
+  on_task_list: boolean
+  position: number
+  due_on: string
+  done_on: string | null
+  done_by: Person | null
+  assignee_id: number | null
+  assignee: Person | null
+  added: boolean
+}
+
+export interface SchedLink {
+  id: number
+  from_step_id: number
+  to_step_id: number
+  default_answer: Answer
+}
+
+export interface SchedBatch {
+  id: number
+  brand_id: number
+  brand_name: string | null
+  batch_number: string | null
+  /** "P2" while planned. */
+  p_number: string | null
+  /** "Galactic #40" / "Altruism P1" */
+  label: string
+  status: BatchStatus
+  volume_bbl: number | null
+  template_id: number | null
+  template_name: string | null
+  brew_two_days: boolean
+  vessels: { vessel_index: number; tank_id: number | null }[]
+  steps: SchedStep[]
+  links: SchedLink[]
+}
+
+export interface TankStatusLine {
+  tank_id: number
+  state: 'out' | 'in_use' | 'sani' | 'dirty' | 'clean'
+  /** "Day 18 · Fermentation · 68° · set to 58° today" */
+  line: string
+  /** Red: a late temperature change, or dirty with no CIP planned. */
+  alert: boolean
+  batch_id: number | null
+  batch_label: string | null
+}
+
+export interface Flag {
+  key: string
+  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer'
+  message: string
+  signature: string
+  batch_ids: number[]
+  tank_id: number | null
+  signed_off: boolean
+  was_signed_off: boolean
+  signoff: { user_id: number | null; user_name: string | null; note: string | null; signed_at: string } | null
+}
+
+export interface Schedule {
+  from: string
+  to: string
+  today: string
+  tanks: Tank[]
+  phases: Phase[]
+  step_types: StepType[]
+  batches: SchedBatch[]
+  cips: SchedStep[]
+  statuses: TankStatusLine[]
+  flags: Flag[]
+  next_batch_number: string
+  brewers: Person[]
+}
+
 // ── API ──
 
 export const PROD = '/api/production'
@@ -125,6 +229,9 @@ export const PHASES_KEY = ['production', 'phases']
 export const STEP_TYPES_KEY = ['production', 'step_types']
 export const TEMPLATES_KEY = ['production', 'templates']
 export const templateKey = (id: number | string) => ['production', 'template', String(id)]
+/** Every schedule query starts with this; writes invalidate it. */
+export const SCHEDULE_KEY = ['production', 'schedule']
+export const scheduleKey = (from: string, to: string) => [...SCHEDULE_KEY, from, to]
 
 type ErrorBody = { error?: string; message?: string; errors?: Record<string, string[]> }
 

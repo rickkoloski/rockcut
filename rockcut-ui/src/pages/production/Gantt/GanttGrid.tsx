@@ -1,0 +1,699 @@
+import { useMemo, type KeyboardEvent, type ReactNode } from 'react'
+import { alpha, Box, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
+import { ChevronRight, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight } from '@mui/icons-material'
+import { addDaysKey } from '../../../lib/datetime'
+import { initials } from '../../../lib/tasks'
+import {
+  BAR_H,
+  BAR_TOP,
+  DOT,
+  DOT_TOP,
+  INITIALS_TOP,
+  STEP_ROW_H,
+  TRACK_H,
+  badgeText,
+  dayLabel,
+  daysBetween,
+  dotState,
+  isWeekend,
+  maxKey,
+  minKey,
+  monthLabels,
+  partDots,
+  partFlags,
+  partLabel,
+  phaseAt,
+  rowKey,
+  segments,
+  showInitials,
+  type DotState,
+  type Part,
+  type Row,
+} from '../../../lib/gantt'
+import {
+  CIP_COLOR,
+  headlineOutage,
+  phaseFill,
+  shortPeriod,
+  type Flag,
+  type Mode,
+  type Outage,
+  type Phase,
+  type SchedStep,
+  type Tank,
+  type TankStatusLine,
+} from '../../../lib/production'
+
+export const LEFT_W = 240
+export const LEFT_W_COMPACT = 124
+const HEAD_H = 46
+
+/** What a click (or Enter) on the Gantt opens; Task 4 fills these in. */
+export interface GanttActions {
+  onStep?: (step: SchedStep) => void
+  onBar?: (part: Part, flags?: boolean) => void
+  onCip?: (cip: SchedStep) => void
+  onBand?: (tank: Tank, outage: Outage) => void
+}
+
+interface Props extends GanttActions {
+  from: string
+  days: number
+  dayPx: number
+  today: string
+  rows: Row[]
+  phases: Phase[]
+  statuses: TankStatusLine[]
+  flags: Flag[]
+  compact: boolean
+  expanded: Set<string>
+  onToggleRow: (key: string) => void
+  onToggleCompact: () => void
+}
+
+const STATE_WORDS: Record<DotState, string> = { done: 'done', late: 'late', today: 'due today', planned: 'planned' }
+
+/** Enter (or Space) on a focusable Gantt element opens it, as a click does. */
+const activate = (fn?: () => void) => ({
+  role: 'button',
+  tabIndex: 0,
+  onClick: fn,
+  onKeyDown: (e: KeyboardEvent) => {
+    if ((e.key === 'Enter' || e.key === ' ') && fn) {
+      e.preventDefault()
+      fn()
+    }
+  },
+})
+
+/**
+ * D47 §3.6 the grid: a sticky tank column and date header over day columns;
+ * per tank, its parts as bars colored by phase (planned ones ghosted), the
+ * dots under them with initials, standalone CIP blocks, out-of-service
+ * bands and flag badges, stacked on tracks so nothing overlaps; an
+ * expanded tank lists every step as a diamond with its links. Transfer
+ * arrows join a batch's parts across rows.
+ */
+export default function GanttGrid(props: Props) {
+  const { from, days, dayPx, today, rows, phases, statuses, flags, compact, expanded, onToggleRow, onToggleCompact } = props
+  const theme = useTheme()
+  const mode = theme.palette.mode as Mode
+  const leftW = compact ? LEFT_W_COMPACT : LEFT_W
+  const width = days * dayPx
+  const totalH = rows.reduce((h, r) => h + r.height, 0)
+  const to = addDaysKey(from, days - 1)
+  const phaseById = useMemo(() => new Map(phases.map((p) => [p.id, p])), [phases])
+  const statusOf = useMemo(() => new Map(statuses.map((s) => [s.tank_id, s])), [statuses])
+  const phaseFns = useMemo(() => {
+    const m = new Map<number, (day: string) => number | null>()
+    for (const r of rows) for (const p of r.parts) if (!m.has(p.batch.id)) m.set(p.batch.id, phaseAt(p.batch))
+    return m
+  }, [rows])
+  const cipHatch = mode === 'dark' ? CIP_COLOR.dark : CIP_COLOR.light
+  const col = (key: string) => daysBetween(from, key)
+  const x = (key: string) => col(key) * dayPx
+  const surface2 = theme.palette.background.boardColumn ?? theme.palette.background.default
+
+  const fillColor = (fill: number | 'cip' | null) => {
+    if (fill === 'cip') return `repeating-linear-gradient(135deg, ${cipHatch} 0 4px, transparent 4px 8px)`
+    const phase = fill != null ? phaseById.get(fill) : undefined
+    return phase ? phaseFill(phase.color, mode).bg : alpha(theme.palette.text.secondary, 0.25)
+  }
+
+  const dotSx = (state: DotState) => ({
+    done: { bgcolor: 'primary.main', borderColor: 'primary.main' },
+    late: { bgcolor: alpha(theme.palette.error.main, 0.18), borderColor: 'error.main' },
+    today: { bgcolor: 'background.paper', borderColor: 'primary.main', boxShadow: `0 0 0 3px ${alpha(theme.palette.primary.main, 0.3)}` },
+    planned: { bgcolor: 'background.paper', borderColor: 'text.secondary' },
+  })[state]
+
+  // ── Pieces ──
+
+  const header = (
+    <Box sx={{ position: 'sticky', top: 0, zIndex: 9, display: 'flex', bgcolor: 'background.paper', borderBottom: 1, borderColor: 'divider' }}>
+      <Box
+        sx={{
+          position: 'sticky',
+          left: 0,
+          zIndex: 10,
+          width: leftW,
+          flex: 'none',
+          bgcolor: surface2,
+          borderRight: 1,
+          borderColor: 'divider',
+          px: 1,
+          display: 'flex',
+          alignItems: 'flex-end',
+          justifyContent: 'space-between',
+          pb: 0.5,
+        }}
+      >
+        <Typography variant="caption" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: 'text.secondary' }}>
+          Tanks
+        </Typography>
+        <Tooltip title={compact ? 'Show status' : 'Names only'}>
+          <IconButton size="small" onClick={onToggleCompact} aria-label={compact ? 'Show the tank status column' : 'Show tank names only'} data-testid="gantt-compact">
+            {compact ? <KeyboardDoubleArrowRight fontSize="small" /> : <KeyboardDoubleArrowLeft fontSize="small" />}
+          </IconButton>
+        </Tooltip>
+      </Box>
+      <Box sx={{ position: 'relative', flex: 'none', width, height: HEAD_H }} data-testid="gantt-dates">
+        {monthLabels(from, days).map((m) => (
+          <Typography key={m.index} variant="caption" sx={{ position: 'absolute', top: 2, left: m.index * dayPx + 4, fontWeight: 600, color: 'text.secondary', whiteSpace: 'nowrap' }}>
+            {m.label}
+          </Typography>
+        ))}
+        {Array.from({ length: days }, (_, i) => {
+          const key = addDaysKey(from, i)
+          const isToday = key === today
+          // Every day when there's room, else Mondays (today then has its line only).
+          if (dayPx < 16 && new Date(`${key}T12:00:00Z`).getUTCDay() !== 1) return null
+          return (
+            <Box
+              key={key}
+              sx={{
+                position: 'absolute',
+                top: 20,
+                left: i * dayPx,
+                width: Math.max(dayPx, 16),
+                textAlign: 'center',
+                fontSize: 11,
+                lineHeight: 1.05,
+                color: isToday ? 'primary.main' : 'text.secondary',
+                fontWeight: isToday ? 700 : 400,
+                fontVariantNumeric: 'tabular-nums',
+              }}
+              data-testid={isToday ? 'gantt-today-label' : undefined}
+            >
+              {Number(key.slice(8))}
+              {dayPx >= 18 && <Box sx={{ fontSize: 10 }}>{dayLabel(key).slice(0, 1)}</Box>}
+            </Box>
+          )
+        })}
+      </Box>
+    </Box>
+  )
+
+  // Weekends, day lines and the today line, under every row.
+  const background = (
+    <Box sx={{ position: 'absolute', top: HEAD_H + 1, left: leftW, width, height: totalH, pointerEvents: 'none', zIndex: 0 }}>
+      {Array.from({ length: days }, (_, i) =>
+        isWeekend(addDaysKey(from, i)) ? <Box key={i} sx={{ position: 'absolute', top: 0, bottom: 0, left: i * dayPx, width: dayPx, bgcolor: alpha(theme.palette.text.primary, 0.035) }} /> : null,
+      )}
+      <Box
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          backgroundImage: `linear-gradient(to right, ${alpha(theme.palette.divider, 0.6)} 1px, transparent 1px)`,
+          backgroundSize: `${dayPx}px 100%`,
+        }}
+      />
+      {today >= from && today <= to && (
+        <Box sx={{ position: 'absolute', top: 0, bottom: 0, left: x(today) + dayPx / 2 - 1, width: 2, bgcolor: 'primary.main', opacity: 0.75 }} data-testid="gantt-today-line" />
+      )}
+    </Box>
+  )
+
+  const tankHeader = (row: Row) => {
+    const tank = row.tank
+    const key = rowKey(tank)
+    const open = expanded.has(key)
+    if (!tank) {
+      const n = row.parts.length
+      return (
+        <Box sx={{ minWidth: 0 }}>
+          <Typography sx={{ fontWeight: 700, fontSize: 14 }}>Unassigned</Typography>
+          {!compact && (
+            <Typography variant="caption" color="text.secondary" component="div" data-testid="gantt-unassigned-line">
+              {n ? `${n} part${n === 1 ? '' : 's'} with no tank` : 'Drag a batch here to unassign it'}
+            </Typography>
+          )}
+        </Box>
+      )
+    }
+    const status = statusOf.get(tank.id)
+    const out = headlineOutage(tank)
+    const statusLine = (
+      <Typography
+        variant="caption"
+        component="div"
+        noWrap
+        sx={{ color: status?.alert ? 'error.main' : status?.state === 'dirty' ? 'warning.main' : status?.state === 'in_use' ? 'text.primary' : 'text.secondary', fontWeight: status?.alert ? 600 : 400 }}
+        data-testid={`gantt-status-${tank.id}`}
+        title={status?.line}
+      >
+        {status?.line ?? ''}
+      </Typography>
+    )
+    const name = (
+      // One line: the name, then the batch (shortened when it doesn't fit).
+      <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', minWidth: 0, flexWrap: 'nowrap', overflow: 'hidden' }}>
+        <Typography sx={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: compact ? '1 1 auto' : '0 0 auto' }} data-testid={`gantt-tank-name-${tank.id}`}>
+          {tank.name}
+        </Typography>
+        {!compact && status?.batch_label && (
+          <Typography noWrap sx={{ fontSize: 13, fontWeight: 600, color: 'primary.main', minWidth: 0, flex: '0 1 auto' }} data-testid={`gantt-tank-batch-${tank.id}`}>
+            · {status.batch_label}
+          </Typography>
+        )}
+      </Box>
+    )
+    return (
+      <Box sx={{ display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', columnGap: 0.5, alignItems: 'start', minWidth: 0 }}>
+        <IconButton
+          size="small"
+          sx={{ p: 0, width: 24, height: 24, '& svg': { transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none' } }}
+          aria-expanded={open}
+          aria-label={`${open ? 'Collapse' : 'Expand'} ${tank.name}`}
+          onClick={() => onToggleRow(key)}
+          data-testid={`gantt-caret-${tank.id}`}
+        >
+          <ChevronRight fontSize="small" />
+        </IconButton>
+        {compact ? (
+          <Tooltip title={status ? `${status.batch_label ? `${status.batch_label} · ` : ''}${status.line}` : ''} placement="right">
+            {name}
+          </Tooltip>
+        ) : (
+          name
+        )}
+        {!compact && (
+          <Box sx={{ gridColumn: 2, minWidth: 0, display: 'flex', gap: 0.75, alignItems: 'center' }}>
+            {out && (
+              <Box
+                component="span"
+                sx={{ fontSize: 10, fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', color: 'error.main', bgcolor: alpha(theme.palette.error.main, 0.12), borderRadius: 0.5, px: 0.6, whiteSpace: 'nowrap', flex: 'none' }}
+                data-testid={`gantt-out-tag-${tank.id}`}
+              >
+                Out {shortPeriod(out.outage)}
+                {out.more ? ` +${out.more}` : ''}
+              </Box>
+            )}
+            <Box sx={{ minWidth: 0, flex: 1 }}>{statusLine}</Box>
+          </Box>
+        )}
+      </Box>
+    )
+  }
+
+  const bands = (row: Row) =>
+    (row.tank?.outages ?? [])
+      .filter((o) => o.starts_on <= to && (!o.ends_on || o.ends_on >= from))
+      .map((o) => {
+        const start = maxKey(o.starts_on, from)
+        const end = o.ends_on ? minKey(o.ends_on, to) : to
+        const label = `Out of service ${o.label}${o.reason ? ` · ${o.reason}` : ''}`
+        return (
+          <Tooltip key={o.id} title={label}>
+            <Box
+              {...activate(props.onBand && row.tank ? () => props.onBand!(row.tank!, o) : undefined)}
+              aria-label={label}
+              data-testid={`gantt-band-${o.id}`}
+              sx={{
+                position: 'absolute',
+                top: 0,
+                height: row.tracks * TRACK_H,
+                left: x(start),
+                width: (col(end) - col(start) + 1) * dayPx,
+                zIndex: 1,
+                cursor: props.onBand ? 'pointer' : 'default',
+                background: `repeating-linear-gradient(135deg, ${alpha(theme.palette.error.main, 0.14)} 0 6px, transparent 6px 12px)`,
+                borderLeft: 2,
+                borderRight: o.ends_on && o.ends_on <= to ? 2 : 0,
+                borderColor: 'error.main',
+                color: 'error.main',
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: 'uppercase',
+                letterSpacing: '.04em',
+                px: 0.75,
+                pt: '2px',
+                overflow: 'hidden',
+                whiteSpace: 'nowrap',
+                '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: -2 },
+              }}
+            >
+              Out{o.reason ? ` · ${o.reason}` : ''}
+            </Box>
+          </Tooltip>
+        )
+      })
+
+  const bar = (row: Row, part: Part) => {
+    if (part.end < from || part.start > to) return null
+    const segs = segments(part, from, days, phaseFns.get(part.batch.id)!)
+    if (!segs.length) return null
+    const left = segs[0].from * dayPx
+    const right = (segs.at(-1)!.to + 1) * dayPx
+    const top = row.track.get(part)! * TRACK_H
+    const myFlags = partFlags(part, flags)
+    const badge = badgeText(myFlags)
+    const cut = part.start < from
+    const label = `${cut ? '‹ ' : ''}${partLabel(part)}`
+    const textColor = mode === 'dark' ? '#F1F4EE' : '#172014'
+    const showI = showInitials(dayPx)
+    return (
+      <Box key={part.key} sx={{ position: 'absolute', left: 0, top, width: '100%', height: TRACK_H, pointerEvents: 'none' }}>
+        <Tooltip title={`${part.batch.label}${part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`}>
+          <Box
+            {...activate(props.onBar ? () => props.onBar!(part) : undefined)}
+            aria-label={`${partLabel(part)}${part.planned ? ', planned' : ''}`}
+            data-testid={`gantt-bar-${part.batch.id}-${part.vessel}`}
+            data-planned={part.planned || undefined}
+            sx={{
+              position: 'absolute',
+              top: BAR_TOP,
+              height: BAR_H,
+              left,
+              width: right - left,
+              borderRadius: 1.5,
+              overflow: 'hidden',
+              pointerEvents: 'auto',
+              cursor: props.onBar ? 'pointer' : 'default',
+              boxShadow: part.planned ? `0 0 0 1.5px ${theme.palette.text.secondary} inset` : `0 0 0 1px ${alpha('#000', 0.08)} inset`,
+              outline: part.planned ? `1.5px dashed ${theme.palette.text.secondary}` : 'none',
+              outlineOffset: -1.5,
+              opacity: part.planned ? 0.62 : 1,
+              '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1, opacity: 1 },
+            }}
+          >
+            {segs.map((s) => (
+              <Box key={s.from} sx={{ position: 'absolute', top: 0, bottom: 0, left: s.from * dayPx - left, width: (s.to - s.from + 1) * dayPx, background: fillColor(s.fill) }} />
+            ))}
+            <Typography
+              component="span"
+              sx={{ position: 'relative', zIndex: 1, px: 1, fontWeight: 600, fontSize: 12, lineHeight: `${BAR_H}px`, whiteSpace: 'nowrap', color: textColor, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {label}
+            </Typography>
+          </Box>
+        </Tooltip>
+        {badge && (
+          <Tooltip title={myFlags.map((f) => `${f.signed_off ? '✓ ' : ''}${f.message}`).join('\n')}>
+            <Box
+              component="button"
+              type="button"
+              onClick={props.onBar ? () => props.onBar!(part, true) : undefined}
+              aria-label={`${myFlags.length} flag${myFlags.length === 1 ? '' : 's'} on ${part.batch.label}`}
+              data-testid={`gantt-badge-${part.batch.id}-${part.vessel}`}
+              sx={{
+                position: 'absolute',
+                top: BAR_TOP - 3,
+                left: Math.max(left, right - 22),
+                height: 18,
+                minWidth: 18,
+                px: 0.6,
+                borderRadius: 9,
+                border: 0,
+                fontSize: 11,
+                fontWeight: 700,
+                zIndex: 5,
+                pointerEvents: 'auto',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                ...(badge === '✓'
+                  ? { bgcolor: surface2, color: 'text.secondary', boxShadow: `0 0 0 1px ${theme.palette.divider}` }
+                  : { bgcolor: 'error.main', color: 'error.contrastText' }),
+              }}
+            >
+              {badge}
+            </Box>
+          </Tooltip>
+        )}
+        {partDots(part).map(({ step, slot, of }) => {
+          if (step.due_on < from || step.due_on > to) return null
+          const state = dotState(step, today)
+          const center = x(step.due_on) + dayPx / 2 + (slot - (of - 1) / 2) * Math.min(DOT + 2, dayPx / of)
+          const who = step.assignee?.name
+          const tip = [step.name, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · ')
+          return (
+            <Box key={step.id}>
+              {showI && who && (
+                <Box
+                  sx={{ position: 'absolute', top: INITIALS_TOP, left: center - 12, width: 24, textAlign: 'center', fontSize: 9, fontWeight: 700, lineHeight: '10px', color: 'text.secondary' }}
+                  data-testid={`gantt-initials-${step.id}`}
+                >
+                  {initials(who)}
+                </Box>
+              )}
+              <Tooltip title={tip}>
+                <Box
+                  {...activate(props.onStep ? () => props.onStep!(step) : undefined)}
+                  aria-label={tip}
+                  data-testid={`gantt-step-${step.id}`}
+                  data-state={state}
+                  sx={{
+                    position: 'absolute',
+                    top: DOT_TOP,
+                    left: center - DOT / 2,
+                    width: DOT,
+                    height: DOT,
+                    borderRadius: step.behavior === 'cip' ? 0.5 : '50%',
+                    border: 2,
+                    zIndex: 3,
+                    pointerEvents: 'auto',
+                    cursor: props.onStep ? 'pointer' : 'default',
+                    ...dotSx(state),
+                    '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 2 },
+                  }}
+                />
+              </Tooltip>
+            </Box>
+          )
+        })}
+      </Box>
+    )
+  }
+
+  const cipBlock = (row: Row, cip: SchedStep) => {
+    if (cip.due_on < from || cip.due_on > to) return null
+    const state = dotState(cip, today)
+    const tip = ['CIP & Sanitize', dayLabel(cip.due_on), STATE_WORDS[state], cip.assignee?.name, cip.notes].filter(Boolean).join(' · ')
+    return (
+      <Tooltip key={`cip-${cip.id}`} title={tip}>
+        <Box
+          {...activate(props.onCip ? () => props.onCip!(cip) : undefined)}
+          aria-label={tip}
+          data-testid={`gantt-cip-${cip.id}`}
+          data-state={state}
+          sx={{
+            position: 'absolute',
+            top: row.track.get(cip)! * TRACK_H + BAR_TOP,
+            left: x(cip.due_on) + 1,
+            width: Math.max(dayPx - 2, 8),
+            height: BAR_H,
+            borderRadius: 1.5,
+            border: 1.5,
+            zIndex: 2,
+            cursor: props.onCip ? 'pointer' : 'default',
+            borderColor: state === 'done' ? 'primary.main' : state === 'late' ? 'error.main' : 'text.secondary',
+            background: state === 'done' ? cipHatch : `repeating-linear-gradient(135deg, ${cipHatch} 0 4px, ${theme.palette.background.paper} 4px 8px)`,
+            boxShadow: state === 'today' ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.3)}` : 'none',
+            '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 2 },
+          }}
+        />
+      </Tooltip>
+    )
+  }
+
+  // An expanded tank: one line per step, a diamond on its day.
+  const stepLine = (row: Row, i: number) => {
+    const { part, step } = row.stepRows[i]
+    const many = new Set(row.parts.map((p) => p.batch.id)).size > 1
+    const state = dotState(step, today)
+    const who = step.assignee?.name
+    const visible = step.due_on >= from && step.due_on <= to
+    const text = `${step.name}${state === 'late' ? ' · late' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
+    return (
+      <Box key={`${part.key}-${step.id}`} sx={{ display: 'flex', height: STEP_ROW_H }} data-testid={`gantt-step-row-${step.id}`}>
+        <Box
+          sx={{
+            position: 'sticky',
+            left: 0,
+            zIndex: 7,
+            width: leftW,
+            flex: 'none',
+            bgcolor: surface2,
+            borderRight: 1,
+            borderBottom: 1,
+            borderColor: 'divider',
+            pl: compact ? 1.5 : 4,
+            pr: 1,
+            display: 'flex',
+            gap: 0.75,
+            alignItems: 'center',
+            fontSize: 12,
+            whiteSpace: 'nowrap',
+            minWidth: 0,
+            borderTop: i === 0 ? `1px dashed ${theme.palette.divider}` : undefined,
+          }}
+        >
+          <Box component="span" sx={{ fontWeight: step.marker ? 500 : 600, fontStyle: step.marker ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {step.name}
+          </Box>
+          {!compact && (many || part.vessel > 0) && (
+            <Box component="span" sx={{ color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {part.batch.label}
+              {part.vessel > 0 ? ' · after transfer' : ''}
+            </Box>
+          )}
+        </Box>
+        <Box sx={{ position: 'relative', flex: 'none', width, borderBottom: 1, borderColor: 'divider', borderTop: i === 0 ? `1px dashed ${theme.palette.divider}` : undefined }}>
+          {visible && (
+            <Tooltip title={[step.name, part.batch.label, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · ')}>
+              <Box
+                {...activate(props.onStep ? () => props.onStep!(step) : undefined)}
+                aria-label={`${step.name}, ${part.batch.label}, ${dayLabel(step.due_on)}, ${STATE_WORDS[state]}`}
+                data-testid={`gantt-diamond-${step.id}`}
+                data-state={state}
+                sx={{
+                  position: 'absolute',
+                  top: 0,
+                  height: STEP_ROW_H,
+                  left: x(step.due_on) + dayPx / 2,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.75,
+                  zIndex: 3,
+                  whiteSpace: 'nowrap',
+                  cursor: props.onStep ? 'pointer' : 'default',
+                  '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 1 },
+                }}
+              >
+                <Box sx={{ width: 11, height: 11, ml: '-5.5px', transform: 'rotate(45deg)', border: 2, flex: 'none', ...dotSx(state), boxShadow: 'none' }} />
+                <Box component="span" sx={{ fontSize: 11, fontWeight: 600, bgcolor: 'background.paper', px: 0.5, borderRadius: 0.5, color: state === 'late' ? 'error.main' : 'text.primary' }}>
+                  {text}
+                </Box>
+              </Box>
+            </Tooltip>
+          )}
+        </Box>
+      </Box>
+    )
+  }
+
+  // ── Lines over the lanes: transfer arrows and an expanded tank's links ──
+
+  const overlay = useMemo(() => {
+    const paths: ReactNode[] = []
+    const where = new Map<string, { row: Row; part: Part }>()
+    for (const row of rows) for (const part of row.parts) where.set(part.key, { row, part })
+    const midY = (row: Row, part: Part) => row.top + row.track.get(part)! * TRACK_H + BAR_TOP + BAR_H / 2
+    const green = theme.palette.primary.main
+
+    for (const { row, part } of where.values()) {
+      const next = where.get(`${part.batch.id}.${part.vessel + 1}`)
+      if (!next || !part.exit) continue
+      const day = part.exit.due_on
+      if (day < from || day > to) continue
+      const x1 = x(day) + dayPx / 2
+      const y1 = midY(row, part)
+      const y2 = midY(next.row, next.part)
+      const x2 = Math.max(0, x(maxKey(next.part.start, from))) + 4
+      paths.push(
+        <path
+          key={`t-${part.key}`}
+          d={`M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x2 - 24} ${y2}, ${x2} ${y2}`}
+          fill="none"
+          stroke={green}
+          strokeWidth={1.75}
+          strokeDasharray="5 4"
+          markerEnd="url(#gantt-arrow)"
+          data-testid={`gantt-transfer-${part.batch.id}-${part.vessel}`}
+        />,
+      )
+    }
+
+    for (const row of rows) {
+      if (!row.stepRows.length) continue
+      const base = row.top + row.tracks * TRACK_H
+      const index = new Map(row.stepRows.map((r, i) => [r.step.id, i]))
+      const seen = new Set<number>()
+      for (const { part } of row.stepRows) {
+        if (seen.has(part.batch.id)) continue
+        seen.add(part.batch.id)
+        for (const l of part.batch.links) {
+          const a = index.get(l.from_step_id)
+          const b = index.get(l.to_step_id)
+          if (a == null || b == null) continue
+          const sa = row.stepRows[a].step
+          const sb = row.stepRows[b].step
+          const xa = x(sa.due_on) + dayPx / 2
+          const xb = x(sb.due_on) + dayPx / 2
+          const ya = base + a * STEP_ROW_H + STEP_ROW_H / 2
+          const yb = base + b * STEP_ROW_H + STEP_ROW_H / 2
+          const elbow = Math.min(xa, xb) - 8
+          paths.push(
+            <path
+              key={`l-${row.top}-${l.id}`}
+              d={`M ${xa - 6} ${ya} H ${elbow} V ${yb} H ${xb - 7}`}
+              fill="none"
+              stroke={theme.palette.text.secondary}
+              strokeWidth={1.25}
+              strokeDasharray={l.default_answer === 'move_only' ? '4 3' : undefined}
+              opacity={0.8}
+              data-testid={`gantt-link-${l.id}`}
+              data-answer={l.default_answer}
+            />,
+          )
+        }
+      }
+    }
+    return paths
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, from, to, dayPx, theme])
+
+  return (
+    <Box sx={{ position: 'relative', width: leftW + width, minWidth: '100%' }} data-testid="gantt-inner">
+      {header}
+      {background}
+      {rows.map((row) => {
+        const key = rowKey(row.tank)
+        const testId = row.tank ? `gantt-row-${row.tank.id}` : 'gantt-row-unassigned'
+        return (
+          <Box key={key} data-testid={testId} sx={{ position: 'relative' }}>
+            <Box sx={{ display: 'flex', height: row.tracks * TRACK_H }}>
+              <Box
+                sx={{
+                  position: 'sticky',
+                  left: 0,
+                  zIndex: 7,
+                  width: leftW,
+                  flex: 'none',
+                  bgcolor: row.tank ? surface2 : alpha(theme.palette.warning.main, mode === 'dark' ? 0.18 : 0.14),
+                  borderRight: 1,
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                  px: 1,
+                  py: 0.75,
+                  minWidth: 0,
+                }}
+              >
+                {tankHeader(row)}
+              </Box>
+              <Box sx={{ position: 'relative', flex: 'none', width, borderBottom: 1, borderColor: 'divider' }}>
+                {bands(row)}
+                {row.parts.map((p) => bar(row, p))}
+                {row.cips.map((c) => cipBlock(row, c))}
+              </Box>
+            </Box>
+            {row.stepRows.map((_, i) => stepLine(row, i))}
+          </Box>
+        )
+      })}
+      <Box
+        component="svg"
+        aria-hidden
+        sx={{ position: 'absolute', top: HEAD_H + 1, left: leftW, width, height: totalH, pointerEvents: 'none', zIndex: 4, overflow: 'visible' }}
+        data-testid="gantt-lines"
+      >
+        <defs>
+          <marker id="gantt-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={theme.palette.primary.main} />
+          </marker>
+        </defs>
+        {overlay}
+      </Box>
+    </Box>
+  )
+}

@@ -16,7 +16,7 @@ for (const persona of ['bartender1', 'barMgr'] as PersonaKey[]) {
       for (const path of PAGES) {
         await page.goto(path)
         await expect(page).toHaveURL(/\/$/)
-        await expect(page.getByTestId('production-hub')).toHaveCount(0)
+        await expect(page.getByTestId('gantt')).toHaveCount(0)
         await expect(page.getByTestId('templates-list')).toHaveCount(0)
       }
       await expect(page.locator('.MuiDrawer-paper:visible').getByText('Production', { exact: true })).toHaveCount(0)
