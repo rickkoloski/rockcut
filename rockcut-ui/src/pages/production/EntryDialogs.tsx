@@ -30,9 +30,13 @@ import {
   prodPath,
   rampPlan,
   reachable,
+  transferOrderError,
   vesselLabel,
+  vesselPhrase,
+  SPLIT_METHODS,
   type Answer,
   type Phase,
+  type SplitMethod,
   type StepType,
   type Template,
   type TemplateStep,
@@ -221,6 +225,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const type = types.find((t) => t.id === typeId)
   const [detail, setDetail] = useState(entry?.detail ?? '')
   const [temperature, setTemperature] = useState(entry?.temperature != null ? String(entry.temperature) : '')
+  const [splitMethod, setSplitMethod] = useState<SplitMethod>(entry?.split_method ?? 'transfer')
+  const [packagePartial, setPackagePartial] = useState(entry?.package_partial ?? false)
   const [day, setDay] = useState(String(entry?.day_offset ?? ''))
   const [vessel, setVessel] = useState(entry?.vessel_index ?? 0)
   const [phaseId, setPhaseId] = useState<number | ''>(entry ? (entry.phase_id ?? '') : '')
@@ -236,11 +242,22 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const others = template.steps.filter((s) => s.id !== entry?.id)
   const behavior = type?.behavior ?? entry?.behavior ?? null
   const showTemp = behavior === 'set_temp' || behavior === 'brew'
-  // D46 QA M1: a Transfer/Filter goes into the next new tank, worked out from
-  // its day; any other entry goes in a tank that exists.
+  // D46 QA M1: a new Transfer/Filter goes into the next new tank, worked out
+  // from its day; one being edited keeps its tank. Any other entry goes in a
+  // tank that exists. D47 task 0 (N1): transfers stay in day order, so a day
+  // before an existing transfer offers no tank and says why.
   const transfer = behavior === 'transfer'
   const dayNum = day === '' ? null : Number(day)
-  const intoTank = newTankFor(template, dayNum ?? 0, entry?.id)
+  const intoTank = entry && transfer ? entry.vessel_index : newTankFor(template, dayNum ?? 0, entry?.id)
+  const orderError = transfer ? transferOrderError(template, dayNum, entry) : null
+  // D47: "Split - Filter", "Package - Partial": the fixed part of the name.
+  const typeName = type?.name ?? entry?.type_name ?? 'Step'
+  const fixedName =
+    behavior === 'split'
+      ? `${typeName} - ${SPLIT_METHODS.find((m) => m.key === splitMethod)!.label}`
+      : behavior === 'package' && packagePartial
+        ? `${typeName} - Partial`
+        : typeName
   const tankValue = transfer ? intoTank : vessel
   // Link pickers (QA minor 1): only steps a link to or from can reach.
   const afterChoices = onOrBefore(others, dayNum)
@@ -254,6 +271,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     if (t) {
       setPhaseId(t.starts_phase_id ?? '')
       setOnTaskList(t.on_task_list)
+      setSplitMethod('transfer')
+      setPackagePartial(false)
     }
   }
 
@@ -263,6 +282,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     if (marker && phaseId === '') local.phase_id = 'Pick a phase.'
     if (day === '' || Number(day) < 0) local.day_offset = 'Pick a day (0 or later).'
     if (behavior === 'set_temp' && temperature === '') local.temperature = 'Enter the temperature.'
+    if (orderError) local.vessel_index = orderError
     setErrors(local)
     if (Object.keys(local).length) return
     setBusy(true)
@@ -276,6 +296,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     }
     if (!marker) body.detail = detail.trim() || null
     if (showTemp) body.temperature = temperature === '' ? null : Number(temperature)
+    if (behavior === 'split') body.split_method = splitMethod
+    if (behavior === 'package') body.package_partial = packagePartial
     if (isBrew) {
       delete body.day_offset
       delete body.vessel_index
@@ -329,9 +351,42 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
             ))}
           </TextField>
         ))}
+      {behavior === 'split' && (
+        <TextField
+          select
+          label="How the parts leave"
+          value={splitMethod}
+          onChange={(e) => setSplitMethod(e.target.value as SplitMethod)}
+          helperText="Every part that leaves the tank goes this way."
+          slotProps={selectTestId('entry-split-method')}
+        >
+          {SPLIT_METHODS.map((m) => (
+            <MenuItem key={m.key} value={m.key} data-testid={`entry-split-method-${m.key}`}>
+              {m.label}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
+      {behavior === 'package' && (
+        <TextField
+          select
+          label="Package"
+          value={packagePartial ? 'partial' : 'full'}
+          onChange={(e) => setPackagePartial(e.target.value === 'partial')}
+          helperText={packagePartial ? 'Packages some of the beer; the rest stays in the tank.' : 'Packages all of it and empties the tank.'}
+          slotProps={selectTestId('entry-package')}
+        >
+          <MenuItem value="full" data-testid="entry-package-full">
+            Full
+          </MenuItem>
+          <MenuItem value="partial" data-testid="entry-package-partial">
+            Partial
+          </MenuItem>
+        </TextField>
+      )}
       {!marker && (
         <TextField
-          label={`Add to the name (“${type?.name ?? entry?.type_name ?? 'Step'}” stays)`}
+          label={`Add to the name (“${fixedName}” stays)`}
           placeholder="e.g. #2"
           value={detail}
           onChange={(e) => setDetail(e.target.value)}
@@ -362,13 +417,22 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           helperText={errors.day_offset ?? (isBrew ? 'Brew day stays on day 0 in the first tank.' : undefined)}
           slotProps={{ htmlInput: { min: 0, max: 365, 'data-testid': 'entry-day' } }}
         />
-        {transfer ? (
+        {transfer && orderError ? (
+          <TextField
+            label="Into tank"
+            value=""
+            disabled
+            error
+            helperText={orderError}
+            slotProps={{ htmlInput: { 'data-testid': 'entry-tank-order' }, formHelperText: { role: 'alert' } as object }}
+          />
+        ) : transfer ? (
           <TankPicker
             label="Into tank"
             choices={[intoTank]}
             value={intoTank}
             onChange={() => {}}
-            helper={`Moves the beer out of the ${vesselLabel(intoTank - 1).toLowerCase()} into a new tank.`}
+            helper={`Moves the beer out of ${vesselPhrase(intoTank - 1)} into a new tank.`}
             testId="entry-tank"
           />
         ) : (

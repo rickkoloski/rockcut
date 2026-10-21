@@ -1,7 +1,7 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Alert, Box, IconButton, Paper, Tooltip } from '@mui/material'
 import { ArrowDownward, ArrowUpward, DragIndicator } from '@mui/icons-material'
-import SortableLists from '../../components/dnd/SortableLists'
+import SortableLists, { type DragHandleProps } from '../../components/dnd/SortableLists'
 import { applyMove, type ListContainer, type Move } from '../../components/dnd/moveModel'
 import { useOptimisticLists } from '../../components/dnd/useOptimisticLists'
 import { prodError } from '../../lib/production'
@@ -19,9 +19,11 @@ interface Props<T extends { id: number }> {
 }
 
 /**
- * D46: a list in display order (tanks, phases, step types). Drag a row
- * through the shared layer (D38: mouse, long-press on touch, Space on the
- * keyboard), or use the arrows. Saved at once; a refusal puts it back.
+ * D46: a list in display order (tanks, phases, step types). Drag a row by
+ * its handle through the shared layer (D38: mouse, long-press on touch,
+ * Space on the keyboard), or use the arrows. Saved at once; a refusal puts
+ * it back. Only the handle is the drag button, so the row's own buttons
+ * aren't nested inside one (D47 task 0, item 10).
  */
 export default function OrderedList<T extends { id: number }>({ items, onReorder, label, render, testId }: Props<T>) {
   const byKey = useMemo(() => new Map(items.map((i) => [String(i.id), i])), [items])
@@ -43,15 +45,7 @@ export default function OrderedList<T extends { id: number }>({ items, onReorder
     reorder({ itemId: key, fromContainer: LIST, toContainer: LIST, beforeId })
   }
 
-  // Buttons and fields in a row mustn't pick it up.
-  const stop = {
-    onKeyDown: (e: React.SyntheticEvent) => e.stopPropagation(),
-    onPointerDown: (e: React.SyntheticEvent) => e.stopPropagation(),
-    onMouseDown: (e: React.SyntheticEvent) => e.stopPropagation(),
-    onTouchStart: (e: React.SyntheticEvent) => e.stopPropagation(),
-  }
-
-  const row = (key: string, overlay: boolean, dragging: boolean) => {
+  const row = (key: string, overlay: boolean, dragging: boolean, handle?: DragHandleProps) => {
     const item = byKey.get(key)
     if (!item) return null
     const i = ids.indexOf(key)
@@ -60,14 +54,31 @@ export default function OrderedList<T extends { id: number }>({ items, onReorder
       <Paper
         variant="outlined"
         data-testid={`${testId}-row-${item.id}`}
-        sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.75, mb: 0.75, opacity: dragging ? 0.4 : 1, cursor: 'grab' }}
+        sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.75, mb: 0.75, opacity: dragging ? 0.4 : 1 }}
       >
-        <DragIndicator fontSize="small" color="action" />
-        <Box sx={{ flex: 1, minWidth: 0 }} {...stop}>
-          {render(item)}
+        <Box
+          {...handle}
+          aria-label={`Drag ${name}`}
+          data-testid={`${testId}-handle-${item.id}`}
+          sx={{
+            display: 'flex',
+            alignSelf: 'stretch',
+            alignItems: 'center',
+            px: 0.5,
+            borderRadius: 1,
+            cursor: 'grab',
+            // A long press picks it up; don't let it select text or open the callout menu.
+            touchAction: 'manipulation',
+            userSelect: 'none',
+            WebkitTouchCallout: 'none',
+            '&:focus-visible': { outline: 2, outlineColor: 'primary.main' },
+          }}
+        >
+          <DragIndicator fontSize="small" color="action" />
         </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>{render(item)}</Box>
         {!overlay && (
-          <Box sx={{ display: 'flex' }} {...stop}>
+          <Box sx={{ display: 'flex' }}>
             <Tooltip title="Move up">
               <span>
                 <IconButton size="small" aria-label={`Move ${name} up`} disabled={i <= 0} onClick={() => step(key, -1)} data-testid={`${testId}-up-${item.id}`}>
@@ -106,7 +117,8 @@ export default function OrderedList<T extends { id: number }>({ items, onReorder
         onMove={reorder}
         itemLabel={(key) => (byKey.get(key) ? label(byKey.get(key)!) : 'row')}
         containerLabel={() => 'list'}
-        renderItem={(key, state) => row(key, state.overlay, state.dragging)}
+        handle
+        renderItem={(key, state) => row(key, state.overlay, state.dragging, state.handle)}
         renderContainer={(_, slot) => (
           <Box ref={slot.setNodeRef} data-testid={testId} sx={{ minHeight: 40 }}>
             {slot.items}

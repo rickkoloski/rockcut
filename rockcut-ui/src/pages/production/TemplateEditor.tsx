@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link as RouterLink, useParams } from 'react-router-dom'
 import {
   Alert,
   AlertTitle,
@@ -32,6 +32,7 @@ import {
   type Phase,
   type StepType,
   type Template,
+  type TemplateIssue,
   type TemplateStep,
 } from '../../lib/production'
 import { PhaseChip } from './ListsPage'
@@ -44,6 +45,14 @@ const NO_PHASES: Phase[] = []
 const NO_TYPES: StepType[] = []
 
 type Editing = { kind: 'step' | 'marker'; entry: TemplateStep | null } | { kind: 'ramp' } | { kind: 'name' } | null
+
+/** "After transfer 1 and After transfer 2 depend on it.": the tank a Transfer fills and every tank reached through it. */
+function dependents(template: Template, transfer: TemplateStep): string {
+  const last = Math.max(transfer.vessel_index, ...template.steps.map((s) => s.vessel_index))
+  const names = Array.from({ length: last - transfer.vessel_index + 1 }, (_, i) => vesselLabel(transfer.vessel_index + i))
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0]
+  return `${list} ${names.length > 1 ? 'depend' : 'depends'} on it.`
+}
 
 /**
  * D46 §3.4 the template editor (`/brewery/production/templates/:id`): name and
@@ -59,10 +68,26 @@ export default function TemplateEditor() {
   const { data: types = NO_TYPES } = useApiQuery<StepType[]>(STEP_TYPES_KEY, prodPath('step_types'))
   const [editing, setEditing] = useState<Editing>(null)
   const [removing, setRemoving] = useState<TemplateStep | null>(null)
+  // D47 task 0 (N2): what the removal would leave incomplete, from the API (null while asking).
+  const [removalIssues, setRemovalIssues] = useState<TemplateIssue[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const phaseById = new Map(phases.map((p) => [p.id, p]))
+
+  useEffect(() => {
+    setRemovalIssues(null)
+    if (!removing) return
+    let live = true
+    api
+      .delete<ApiResponse<{ issues: TemplateIssue[] }>>(prodPath('templates', id, 'steps', removing.id), { params: { preview: true } })
+      .then((res) => live && setRemovalIssues(res.data.data.issues))
+      // No preview: the dialog still works, without the list.
+      .catch(() => live && setRemovalIssues([]))
+    return () => {
+      live = false
+    }
+  }, [id, removing])
 
   const show = (t: Template, message?: string) => {
     qc.setQueryData(templateKey(id), t)
@@ -84,10 +109,26 @@ export default function TemplateEditor() {
   }
 
   if (isLoading) return <Typography variant="body2">Loading…</Typography>
+  // D47 task 0 (N4b): an id that doesn't exist (an old bookmark) isn't "removed by someone else".
+  const notFound = !template && (!loadError || (loadError as { response?: { status?: number } }).response?.status === 404)
+  if (notFound)
+    return (
+      <Alert
+        severity="error"
+        data-testid="template-load-error"
+        action={
+          <Button color="inherit" size="small" component={RouterLink} to="/brewery/production/templates" data-testid="template-load-back">
+            Templates
+          </Button>
+        }
+      >
+        Template not found.
+      </Alert>
+    )
   if (loadError || !template)
     return (
       <Alert severity="error" data-testid="template-load-error">
-        {loadError ? prodError(loadError) : 'Template not found.'}
+        {prodError(loadError)}
       </Alert>
     )
 
@@ -290,12 +331,24 @@ export default function TemplateEditor() {
         title="Remove from the template"
         message={
           removing
-            ? `Remove ${removing.name}? The steps it linked stay linked through it.${removing.behavior === 'transfer' ? ' The CIP & Sanitize it added goes too.' : ''}`
+            ? `Remove ${removing.name}? The steps it linked stay linked through it.${removing.behavior === 'transfer' ? ' The CIP & Sanitize it added goes too.' : ''}${removing.behavior === 'transfer' && removalIssues?.length ? ` ${dependents(template, removing)}` : ''}`
             : ''
         }
         confirmLabel="Remove"
         loading={busy}
-      />
+        pending={!!removing && removalIssues === null}
+      >
+        {removalIssues && removalIssues.length > 0 && (
+          <Alert severity="warning" sx={{ mt: 2 }} data-testid="remove-issues">
+            <AlertTitle>The template becomes incomplete</AlertTitle>
+            {removalIssues.map((i) => (
+              <div key={`${i.code}-${i.message}`} data-testid={`remove-issue-${i.code}`}>
+                {i.message}
+              </div>
+            ))}
+          </Alert>
+        )}
+      </ConfirmDialog>
       <Snackbar open={!!toast} autoHideDuration={4000} onClose={() => setToast(null)} message={toast} data-testid="production-toast" />
     </Box>
   )

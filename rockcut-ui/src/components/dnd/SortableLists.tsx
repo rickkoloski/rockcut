@@ -1,4 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type DOMAttributes,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 import {
   closestCenter,
   closestCorners,
@@ -17,6 +26,7 @@ import {
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type DraggableAttributes,
   type UniqueIdentifier,
 } from '@dnd-kit/core'
 import { SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable'
@@ -35,7 +45,17 @@ export interface ItemState {
   /** This is the lifted copy under the pointer. */
   overlay: boolean
   locked: boolean
+  /**
+   * With `handle`, what to spread on the item's drag handle (a button-like
+   * element: role, tabIndex, the pointer and keyboard listeners). The rest
+   * of the item is then plain content, so its own buttons aren't nested in
+   * a `role="button"` (D47 task 0, item 10).
+   */
+  handle?: DragHandleProps
 }
+
+export type DragHandleProps = DraggableAttributes &
+  DOMAttributes<HTMLElement> & { ref: (node: HTMLElement | null) => void }
 
 export interface ContainerSlot {
   setNodeRef: (node: HTMLElement | null) => void
@@ -73,6 +93,8 @@ interface Props {
    * order in `containers`. DropTargets go here too.
    */
   children?: (lists: Record<string, ReactNode>) => ReactNode
+  /** Items are dragged by a handle (`ItemState.handle`), not as a whole. */
+  handle?: boolean
 }
 
 interface DragState {
@@ -101,6 +123,7 @@ export default function SortableLists({
   onItemActivate,
   canMoveTo,
   children,
+  handle = false,
 }: Props) {
   const [drag, setDrag] = useState<DragState | null>(null)
   const shown = drag?.preview ?? containers
@@ -257,6 +280,7 @@ export default function SortableLists({
         renderItem={renderItem}
         isLocked={isLocked}
         onItemActivate={onItemActivate}
+        handle={handle}
       />
     )
   }
@@ -311,15 +335,16 @@ interface ListProps {
   renderItem: Props['renderItem']
   isLocked: (itemId: string) => boolean
   onItemActivate?: Props['onItemActivate']
+  handle: boolean
 }
 
-function SortableList({ container, renderContainer, renderItem, isLocked, onItemActivate }: ListProps) {
+function SortableList({ container, renderContainer, renderItem, isLocked, onItemActivate, handle }: ListProps) {
   const { setNodeRef, isOver, over } = useDroppable({ id: containerDropId(container.id) })
   const overItem = over ? container.itemIds.includes(String(over.id)) : false
   const items = (
     <SortableContext id={container.id} items={container.itemIds} strategy={verticalListSortingStrategy}>
       {container.itemIds.map((id) => (
-        <SortableItem key={id} id={id} locked={isLocked(id)} renderItem={renderItem} onActivate={onItemActivate} />
+        <SortableItem key={id} id={id} locked={isLocked(id)} renderItem={renderItem} onActivate={onItemActivate} handle={handle} />
       ))}
     </SortableContext>
   )
@@ -331,10 +356,11 @@ interface ItemProps {
   locked: boolean
   renderItem: Props['renderItem']
   onActivate?: Props['onItemActivate']
+  handle: boolean
 }
 
-function SortableItem({ id, locked, renderItem, onActivate }: ItemProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+function SortableItem({ id, locked, renderItem, onActivate, handle }: ItemProps) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id,
     // A locked item stays put but still marks a place to drop next to.
     disabled: { draggable: locked, droppable: false },
@@ -354,6 +380,15 @@ function SortableItem({ id, locked, renderItem, onActivate }: ItemProps) {
       event.preventDefault()
       onActivate(id, event.currentTarget)
     }
+  }
+  if (handle) {
+    // dnd-kit types its listeners loosely; they're DOM event handlers.
+    const handleProps: DragHandleProps = { ...attributes, ...(listeners as DOMAttributes<HTMLElement>), ref: setActivatorNodeRef }
+    return (
+      <div ref={setNodeRef} style={{ transform: style.transform, transition }}>
+        {renderItem(id, { dragging: isDragging, overlay: false, locked, handle: handleProps })}
+      </div>
+    )
   }
   return (
     // A locked item can't be dragged but can still be activated, so it isn't aria-disabled.

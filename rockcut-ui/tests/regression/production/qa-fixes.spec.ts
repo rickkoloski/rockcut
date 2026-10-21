@@ -76,7 +76,7 @@ test.describe('M1: a Transfer/Filter goes into a new tank', () => {
     await expect(page.getByTestId('entry-dialog').locator('label', { hasText: /^Into tank$/ })).toBeVisible()
     await expect(page.getByTestId('entry-tank')).toHaveText('After transfer 2')
     expect(await optionIds(page, 'entry-tank')).toEqual(['entry-tank-2'])
-    await expect(page.getByTestId('entry-dialog')).toContainText('Moves the beer out of the after transfer 1 into a new tank.')
+    await expect(page.getByTestId('entry-dialog')).toContainText('Moves the beer out of the tank after transfer 1 into a new tank.')
     await page.getByTestId('entry-dialog-save').click()
     await expect(page.getByTestId('entry-dialog')).toBeHidden()
 

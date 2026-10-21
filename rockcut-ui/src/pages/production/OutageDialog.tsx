@@ -19,14 +19,19 @@ import api from '../../lib/api'
 import { addDaysKey } from '../../lib/datetime'
 import { prodError, prodPath, shortPeriod, type Outage, type Tank } from '../../lib/production'
 import { coloradoToday } from '../../lib/tasks'
+import DateField from './DateField'
 
 interface Props {
   tank: Tank
   /** The period to change; none = Mark out of service. */
   outage: Outage | null
   onClose: () => void
-  /** Something was saved: the tank list refetches. */
-  onSaved: (message: string) => void
+  /** Something was saved: the tank list refetches. `undoToken` (D47) undoes it for 2 minutes. */
+  onSaved: (message: string, undoToken: string | null) => void
+  /** D47 (P6): what's planned in the tank on these days ("Galactic P1 · Oct 26–Nov 2"), named before saving. */
+  plannedIn?: (from: string, to: string | null) => string[]
+  /** D47: a new period starts on this day and ends on it (a tapped spot on the Gantt). */
+  day?: string
 }
 
 /**
@@ -35,11 +40,11 @@ interface Props {
  * it's going on, Back in service today. Errors show inline, the overlap one
  * naming the other period.
  */
-export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) {
+export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn, day }: Props) {
   const today = coloradoToday()
-  const [from, setFrom] = useState(outage?.starts_on ?? today)
+  const [from, setFrom] = useState(outage?.starts_on ?? day ?? today)
   const [open, setOpen] = useState(outage ? outage.ends_on === null : false)
-  const [to, setTo] = useState(outage?.ends_on ?? addDaysKey(outage?.starts_on ?? today, 2))
+  const [to, setTo] = useState(outage?.ends_on ?? day ?? addDaysKey(today, 2))
   const [reason, setReason] = useState(outage?.reason ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -63,12 +68,12 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
     return null
   }
 
-  const run = async (call: () => Promise<unknown>, message: string) => {
+  const run = async (call: () => Promise<{ data?: { undo_token?: string | null } }>, message: string) => {
     setBusy(true)
     setError(null)
     try {
-      await call()
-      onSaved(message)
+      const res = await call()
+      onSaved(message, res.data?.undo_token ?? null)
     } catch (err) {
       setError(prodError(err))
     } finally {
@@ -96,19 +101,17 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
         </Typography>
         <ErrorAlert error={error} testId="outage-error" />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-          <TextField
+          <DateField
             label="Out from"
-            type="date"
             value={from}
-            onChange={(e) => moveFrom(e.target.value)}
+            onCommit={moveFrom}
             slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'outage-from' } }}
           />
-          <TextField
+          <DateField
             label="Last day out"
-            type="date"
             value={open ? '' : to}
             disabled={open}
-            onChange={(e) => setTo(e.target.value)}
+            onCommit={setTo}
             slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'outage-to' } }}
           />
         </Box>
@@ -116,6 +119,14 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
           control={<Switch checked={open} onChange={(e) => setOpen(e.target.checked)} slotProps={{ input: { 'data-testid': 'outage-open' } as object }} />}
           label="Until further notice (no end date yet)"
         />
+        {(() => {
+          const planned = plannedIn && from && (open || to) ? plannedIn(from, open ? null : to) : []
+          return planned.length ? (
+            <Typography variant="body2" color="warning.main" data-testid="outage-planned">
+              Planned in {tank.name} then: {planned.join('; ')}. It will be flagged; nothing is moved.
+            </Typography>
+          ) : null
+        })()}
         <TextField
           label="Reason (optional)"
           placeholder="e.g. Valve repair"

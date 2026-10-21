@@ -1,6 +1,9 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { activeTankIds, createTank, openBreweryNav, retireTanks, shortTag, tanks } from './helpers'
+import { addDays, Made, today } from './schedule'
+
+const madeSchedule = new Made()
 
 // D46 §3.2 Tanks page: P1–P5. Each test makes its own [TEST-TEMP] tank and
 // retires it; the active order is put back afterwards.
@@ -12,6 +15,7 @@ test.beforeAll(async () => {
   order = await activeTankIds()
 })
 test.afterAll(async () => {
+  await madeSchedule.cleanup()
   await retireTanks(made.splice(0), order)
 })
 
@@ -23,7 +27,8 @@ test.describe('as brewer1', () => {
   test('P1: Add a tank; it is listed last and persists', async ({ page }) => {
     const name = shortTag('FV8')
     await page.goto('/brewery/production')
-    await page.getByTestId('hub-tanks').click()
+    await page.getByTestId('gantt-setup').click()
+    await page.getByTestId('gantt-setup-tanks').click()
     await expect(page).toHaveURL(/\/brewery\/production\/tanks$/)
     await page.getByTestId('tank-add').click()
     await page.getByTestId('tank-name').fill(name)
@@ -68,29 +73,34 @@ test.describe('as brewer1', () => {
     await expect(page.getByTestId(`tank-name-${tank.id}`)).toHaveCount(0)
     await page.getByTestId('tanks-retired-toggle').click()
     await expect(page.getByTestId(`tank-retired-row-${tank.id}`)).toBeVisible()
+    // "Last" means after every tank active before it came back: other tests
+    // (and people, on DEV) may add tanks meanwhile, after it.
+    const before = await activeTankIds()
     const restored = page.waitForResponse((r) => r.url().endsWith(`/api/production/tanks/${tank.id}/restore`))
     await page.getByTestId(`tank-restore-${tank.id}`).click()
     expect((await restored).status()).toBe(200)
-    await expect(names(page).last()).toHaveText(tank.name)
+    await expect(page.getByTestId(`tank-name-${tank.id}`)).toHaveText(tank.name)
+    const shown = await names(page).evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+    const at = shown.indexOf(`tank-name-${tank.id}`)
+    for (const id of before) expect(shown.indexOf(`tank-name-${id}`)).toBeLessThan(at)
+    const after = await activeTankIds()
+    for (const id of before) expect(after.indexOf(id)).toBeLessThan(after.indexOf(tank.id))
     expect((await tanks()).find((t) => t.id === tank.id)!.retired_at).toBeNull()
   })
 
   test('P4: Retire refused while steps are planned in the tank: the batches are listed', async ({ page }) => {
-    // The API's check returns no batches until D47 adds them; the refusal
-    // the page shows is stubbed here (the real one: ExUnit + D47).
+    // D47: a real batch planned in the tank (it was stubbed in D46).
     const tank = await createTank(shortTag('FV7 busy'))
     made.push(tank.id)
-    const message = 'Unfinished steps are planned in this tank: Galactic P1. Move them first.'
-    await page.route(`**/api/production/tanks/${tank.id}`, (route) =>
-      route.request().method() === 'DELETE'
-        ? route.fulfill({ status: 422, json: { error: 'tank_in_use', message, batches: [{ id: 1, label: 'Galactic P1' }] } })
-        : route.continue(),
-    )
+    const brand = await madeSchedule.brand('Fest')
+    const batch = await madeSchedule.plan({ brand_id: brand.id, template: '[SEED] Standard ale', brew_on: addDays(today(), 3), tank_ids: [tank.id] })
     await page.goto('/brewery/production/tanks')
     await page.getByTestId(`tank-retire-${tank.id}`).click()
     await page.getByRole('dialog').getByRole('button', { name: 'Retire' }).click()
-    await expect(page.getByTestId('tanks-error')).toHaveText(message)
+    await expect(page.getByTestId('tanks-error')).toHaveText(`Unfinished steps are planned in this tank: ${batch.label}. Move them first.`)
     await expect(page.getByTestId(`tank-name-${tank.id}`)).toBeVisible()
+    // The batch goes first, then the tank can be retired (afterAll).
+    await madeSchedule.cleanup()
   })
 })
 
@@ -111,7 +121,7 @@ test.describe('P2: reorder', () => {
     await expect.poll(async () => (await activeTankIds()).indexOf(tank.id)).toBe(before.length - 2)
 
     // …then dragged by its handle above the first tank.
-    const handle = page.getByTestId(`tanks-list-row-${tank.id}`).locator('svg').first()
+    const handle = page.getByTestId(`tanks-list-handle-${tank.id}`)
     const from = (await handle.boundingBox())!
     const top = (await page.locator('[data-testid^="tanks-list-row-"]').first().boundingBox())!
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)
@@ -135,18 +145,32 @@ test.describe('P2: reorder', () => {
   })
 })
 
-test.describe('the hub', () => {
+test.describe('the Gantt and its Set up menu (D47)', () => {
   test.use({ storageState: authFile('brewer1') })
 
-  test('Brewery → Production lists Tanks, Templates and Phases & steps with counts', async ({ page }) => {
+  test('Brewery → Production opens the Gantt; Set up reaches the setup pages; no Batches entry', async ({ page }) => {
     await openBreweryNav(page, 'Production')
     await expect(page).toHaveURL(/\/brewery\/production$/)
-    const active = (await tanks()).filter((t) => !t.retired_at).length
-    await expect(page.getByTestId('hub-tanks-count')).toHaveText(`${active} tanks`)
-    await expect(page.getByTestId('hub-templates-count')).toContainText('template')
-    await expect(page.getByTestId('hub-lists-count')).toContainText('phases ·')
-    await page.getByTestId('hub-lists').click()
-    await expect(page).toHaveURL(/\/brewery\/production\/lists$/)
-  })
+    await expect(page.getByTestId('gantt')).toBeVisible()
+    await expect(page.getByTestId('gantt-row-unassigned')).toBeVisible()
+    await expect(page.locator('.MuiDrawer-paper:visible').getByText('Batches', { exact: true })).toHaveCount(0)
 
+    // P1: the tanks in display order are the Gantt's rows, then Unassigned.
+    const active = (await tanks()).filter((t) => !t.retired_at)
+    const rows = page.locator('[data-testid^="gantt-row-"]')
+    await expect(rows).toHaveCount(active.length + 1)
+    await expect(rows.last()).toHaveAttribute('data-testid', 'gantt-row-unassigned')
+    await expect(rows.nth(active.length - 1)).toHaveAttribute('data-testid', `gantt-row-${active.at(-1)!.id}`)
+
+    for (const [item, url] of [
+      ['gantt-setup-tanks', /\/tanks$/],
+      ['gantt-setup-templates', /\/templates$/],
+      ['gantt-setup-lists', /\/lists$/],
+    ] as const) {
+      await page.goto('/brewery/production')
+      await page.getByTestId('gantt-setup').click()
+      await page.getByTestId(item).click()
+      await expect(page).toHaveURL(url)
+    }
+  })
 })

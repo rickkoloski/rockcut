@@ -9,6 +9,7 @@ defmodule RockcutApiWeb.ProductionTankController do
   import RockcutApiWeb.JSONHelpers, only: [production_tank: 2, tank_outage: 2]
 
   alias RockcutApi.{Authz, Production, Tasks}
+  alias RockcutApi.Production.Undo
   alias RockcutApiWeb.ProductionErrors
 
   action_fallback RockcutApiWeb.FallbackController
@@ -74,8 +75,14 @@ defmodule RockcutApiWeb.ProductionTankController do
   def create_outage(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :write),
          {:ok, tank} <- fetch(&Production.get_tank/1, id),
-         {:ok, outage} <- Production.create_outage(tank, params, actor(conn)) do
-      conn |> put_status(:created) |> render_outage(outage)
+         {:ok, {outage, token}} <-
+           Undo.track(
+             actor(conn),
+             %{},
+             fn -> Production.create_outage(tank, params, actor(conn)) end,
+             &%{outages: [&1.id]}
+           ) do
+      conn |> put_status(:created) |> render_outage(outage, token)
     end
     |> ProductionErrors.handle(conn)
   end
@@ -83,8 +90,11 @@ defmodule RockcutApiWeb.ProductionTankController do
   def update_outage(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :write),
          {:ok, outage} <- fetch(&Production.get_outage/1, id),
-         {:ok, outage} <- Production.update_outage(outage, Map.delete(params, "id")) do
-      render_outage(conn, outage)
+         {:ok, {outage, token}} <-
+           Undo.track(actor(conn), %{outages: [outage.id]}, fn ->
+             Production.update_outage(outage, Map.delete(params, "id"))
+           end) do
+      render_outage(conn, outage, token)
     end
     |> ProductionErrors.handle(conn)
   end
@@ -92,8 +102,11 @@ defmodule RockcutApiWeb.ProductionTankController do
   def delete_outage(conn, %{"id" => id}) do
     with :ok <- allow(conn, :write),
          {:ok, outage} <- fetch(&Production.get_outage/1, id),
-         {:ok, :deleted} <- Production.delete_outage(outage) do
-      render_tank(conn, Production.get_tank(outage.tank_id))
+         {:ok, {:deleted, token}} <-
+           Undo.track(actor(conn), %{outages: [outage.id]}, fn ->
+             Production.delete_outage(outage)
+           end) do
+      render_tank(conn, Production.get_tank(outage.tank_id), token)
     end
     |> ProductionErrors.handle(conn)
   end
@@ -105,8 +118,11 @@ defmodule RockcutApiWeb.ProductionTankController do
   def end_outage_today(conn, %{"id" => id}) do
     with :ok <- allow(conn, :write),
          {:ok, outage} <- fetch(&Production.get_outage/1, id),
-         {:ok, _} <- Production.end_outage_today(outage) do
-      render_tank(conn, Production.get_tank(outage.tank_id))
+         {:ok, {_, token}} <-
+           Undo.track(actor(conn), %{outages: [outage.id]}, fn ->
+             Production.end_outage_today(outage)
+           end) do
+      render_tank(conn, Production.get_tank(outage.tank_id), token)
     end
     |> ProductionErrors.handle(conn)
   end
@@ -116,15 +132,17 @@ defmodule RockcutApiWeb.ProductionTankController do
     json(conn, %{data: Enum.map(tanks, &production_tank(&1, today)), today: today})
   end
 
-  defp render_tank(conn, tank),
-    do: json(conn, %{data: production_tank(tank, Tasks.today())})
+  # `undo_token` (D47): the write can be undone for 2 minutes.
+  defp render_tank(conn, tank, token \\ nil),
+    do: json(conn, %{data: production_tank(tank, Tasks.today()), undo_token: token})
 
-  defp render_outage(conn, outage) do
+  defp render_outage(conn, outage, token) do
     today = Tasks.today()
 
     json(conn, %{
       data: tank_outage(outage, today),
-      tank: production_tank(Production.get_tank(outage.tank_id), today)
+      tank: production_tank(Production.get_tank(outage.tank_id), today),
+      undo_token: token
     })
   end
 

@@ -84,11 +84,22 @@ export interface TemplateStep {
   vessel_index: number
   detail: string | null
   temperature: number | null
+  /** How a Split's parts leave (D47): "Split - Transfer" / "Split - Filter". Null for anything else. */
+  split_method: SplitMethod | null
+  /** A Package that takes only some of the beer (D47): not the tank's exit. */
+  package_partial: boolean
   notes: string | null
   on_task_list: boolean
   position: number
   ramp_group: string | null
 }
+
+export type SplitMethod = 'transfer' | 'filter'
+
+export const SPLIT_METHODS: { key: SplitMethod; label: string }[] = [
+  { key: 'transfer', label: 'Transfer' },
+  { key: 'filter', label: 'Filter' },
+]
 
 export type Answer = 'move_all' | 'move_only'
 
@@ -104,6 +115,110 @@ export interface Template extends TemplateSummary {
   links: TemplateLink[]
 }
 
+// ── The schedule (D47, `GET /schedule`) ──
+
+export type BatchStatus = 'planned' | 'fermenting' | 'completed' | 'dumped' | string
+
+export interface Person {
+  id: number
+  name: string
+}
+
+/** A batch step, or a standalone CIP & Sanitize (`batch_id` null, `tank_id` set). */
+export interface SchedStep {
+  id: number
+  batch_id: number | null
+  tank_id: number | null
+  step_type_id: number | null
+  marker: boolean
+  /** "FDH - #2", "Set temp - 52°", "Brew day - 1 of 2", or a marker's phase. */
+  name: string
+  type_name: string | null
+  full_name: string | null
+  behavior: Behavior | null
+  /** The batch's first Brew day (its number prompt). */
+  first_brew: boolean
+  phase_id: number | null
+  vessel_index: number
+  detail: string | null
+  temperature: number | null
+  split_method: SplitMethod | null
+  package_partial: boolean
+  notes: string | null
+  on_task_list: boolean
+  position: number
+  due_on: string
+  done_on: string | null
+  done_by: Person | null
+  assignee_id: number | null
+  assignee: Person | null
+  added: boolean
+}
+
+export interface SchedLink {
+  id: number
+  from_step_id: number
+  to_step_id: number
+  default_answer: Answer
+}
+
+export interface SchedBatch {
+  id: number
+  brand_id: number
+  brand_name: string | null
+  batch_number: string | null
+  /** "P2" while planned. */
+  p_number: string | null
+  /** "Galactic #40" / "Altruism P1" */
+  label: string
+  status: BatchStatus
+  volume_bbl: number | null
+  template_id: number | null
+  template_name: string | null
+  brew_two_days: boolean
+  vessels: { vessel_index: number; tank_id: number | null }[]
+  steps: SchedStep[]
+  links: SchedLink[]
+}
+
+export interface TankStatusLine {
+  tank_id: number
+  state: 'out' | 'in_use' | 'sani' | 'dirty' | 'clean'
+  /** "Day 18 · Fermentation · 68° · set to 58° today" */
+  line: string
+  /** Red: a late temperature change, or dirty with no CIP planned. */
+  alert: boolean
+  batch_id: number | null
+  batch_label: string | null
+}
+
+export interface Flag {
+  key: string
+  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer'
+  message: string
+  signature: string
+  batch_ids: number[]
+  tank_id: number | null
+  signed_off: boolean
+  was_signed_off: boolean
+  signoff: { user_id: number | null; user_name: string | null; note: string | null; signed_at: string } | null
+}
+
+export interface Schedule {
+  from: string
+  to: string
+  today: string
+  tanks: Tank[]
+  phases: Phase[]
+  step_types: StepType[]
+  batches: SchedBatch[]
+  cips: SchedStep[]
+  statuses: TankStatusLine[]
+  flags: Flag[]
+  next_batch_number: string
+  brewers: Person[]
+}
+
 // ── API ──
 
 export const PROD = '/api/production'
@@ -114,6 +229,9 @@ export const PHASES_KEY = ['production', 'phases']
 export const STEP_TYPES_KEY = ['production', 'step_types']
 export const TEMPLATES_KEY = ['production', 'templates']
 export const templateKey = (id: number | string) => ['production', 'template', String(id)]
+/** Every schedule query starts with this; writes invalidate it. */
+export const SCHEDULE_KEY = ['production', 'schedule']
+export const scheduleKey = (from: string, to: string) => [...SCHEDULE_KEY, from, to]
 
 type ErrorBody = { error?: string; message?: string; errors?: Record<string, string[]> }
 
@@ -165,6 +283,9 @@ export const BEHAVIOR_LABELS: Record<Behavior, string> = {
   cip: 'Cleans the tank',
   package: 'Packages the beer',
 }
+
+/** A batch number as saved: leading `#`s and spaces dropped ("#40" is 40), as the API does (D47 QA M2). */
+export const plainBatchNumber = (n: string) => n.replace(/^[#\s]+/, '').trim()
 
 /** "First tank", "After transfer 2". */
 export const vesselLabel = (k: number) => (k === 0 ? 'First tank' : `After transfer ${k}`)
@@ -275,7 +396,7 @@ export function existingTanks(t: Template, excludeId?: number): number[] {
 }
 
 /**
- * The tank a Transfer/Filter on `day` moves the beer into: one past the
+ * The tank a new Transfer/Filter on `day` moves the beer into: one past the
  * highest tank used on an earlier day (the API's rule). `excludeId` is the
  * transfer being edited.
  */
@@ -286,6 +407,25 @@ export function newTankFor(t: Template, day: number, excludeId?: number): number
   while (others.some((s) => isTransfer(s) && s.day_offset === day && s.vessel_index === k)) k++
   return k
 }
+
+/**
+ * Why a Transfer/Filter can't go on `day` (D47 task 0, N1, the API's rule):
+ * transfers stay in day order. A new one can't come before an existing one;
+ * `entry` (being edited, it keeps its tank) can't pass the ones either side.
+ */
+export function transferOrderError(t: Template, day: number | null, entry?: TemplateStep | null): string | null {
+  if (day == null) return null
+  const others = t.steps.filter((s) => isTransfer(s) && s.id !== entry?.id)
+  const before = entry ? others.filter((s) => s.vessel_index < entry.vessel_index && s.day_offset > day) : others.filter((s) => s.day_offset > day)
+  const after = entry ? others.filter((s) => s.vessel_index > entry.vessel_index && s.day_offset < day) : []
+  const message = (side: string, d: number) => `Transfers stay in day order: this one would come ${side} the transfer on day ${d}.`
+  if (before.length) return message('before', Math.min(...before.map((s) => s.day_offset)))
+  if (after.length) return message('after', Math.max(...after.map((s) => s.day_offset)))
+  return null
+}
+
+/** "the first tank", "the tank after transfer 2" (in a sentence). */
+export const vesselPhrase = (k: number) => (k === 0 ? 'the first tank' : `the tank after transfer ${k}`)
 
 /** Every entry reachable along links from `id` (`dir` "down" = what follows it). */
 export function reachable(t: Template, id: number, dir: 'down' | 'up'): Set<number> {
@@ -306,7 +446,8 @@ export function reachable(t: Template, id: number, dir: 'down' | 'up'): Set<numb
 
 /**
  * What a ramp's fields make: the temperatures, or why not (D46 QA minor 5:
- * the limits are the API's, 28–80°F in whole degrees, at least 1° a day).
+ * the limits are the API's, 28–80°F in whole degrees, at least 1° a day and
+ * at most the gap between start and target, D47 task 0 N3).
  */
 export function rampPlan(start: string, target: string, change: string): { temps: number[] } | { error: string } {
   const whole = (v: string) => /^\d+$/.test(v.trim())
@@ -314,6 +455,8 @@ export function rampPlan(start: string, target: string, change: string): { temps
     return { error: 'Start and target are whole degrees from 28 to 80°F.' }
   if (!whole(change) || Number(change) < 1) return { error: 'The change per day is a whole number of degrees, at least 1.' }
   if (Number(start) === Number(target)) return { error: 'The start and target temperatures are the same.' }
+  const gap = Math.abs(Number(start) - Number(target))
+  if (Number(change) > gap) return { error: `The change per day can be at most ${gap}°, the gap between start and target.` }
   return { temps: rampTemperatures(Number(start), Number(target), Number(change)) }
 }
 

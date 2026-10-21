@@ -461,7 +461,7 @@ Playwright specs are in `regression/production/`, project `production` (one work
 | P1 | brewer1 adds a tank: listed last, persists | Playwright `production/tanks` (P1: through the hub, fields checked through the API after a reload); ExUnit `production_test` (order), `production_controller_test`. The Gantt row → D47 |
 | P2 | drag a tank above FV1: order persists, for brewer2 too | Playwright `production/tanks` (P2: arrow up once, then a drag by the handle; reload; brewer2's browser); ExUnit `production_test` (reorder takes exactly the active ids). Gantt order → D47 |
 | P3 | Add "fv1": "A tank named FV1 already exists." | Playwright `production/tanks` (P3); ExUnit `production_test` (case-insensitive, retired names too), `production_controller_test` |
-| P4 | Retire a tank with unfinished steps: refused, listing the batches | Playwright `production/tanks` (P4: the page shows the 422 `tank_in_use` message, **stubbed**); ExUnit: `batches_in_tank/1` returns none until D47 fills it. Real refusal → D47 |
+| P4 | Retire a tank with unfinished steps: refused, listing the batches | Playwright `production/tanks` (P4: since D47 a real planned batch in the tank; the page names it); ExUnit `undo_cips_test` (refused, a marker doesn't hold the tank), `seeds/synthetic_test` |
 | P5 | Retire an empty tank; Retired list; Restore | Playwright `production/tanks` (P5: the spec's confirm text, reload, Restore puts it last); ExUnit `production_test`. "Gone from the Gantt and pickers" → D47 |
 | P6 | Serving 2 out Oct 27–Nov 2 over a planned batch: preview, band, tag, flag | **D47** (Gantt, batches, flags). The period itself: P9's and the out-of-service specs |
 | P7 | Until further notice from today, "Valve repair" | Playwright `production/out-of-service` (P7: Now group, "Out from <today>" chip, reload, API state `now`). Status line and band → D47 |
@@ -496,3 +496,96 @@ DEV gate fix cycle 2 (`stepwise_results/d46_qa_report.md`, `prompts/d46_lead_dec
 | 7 | phone preview: tank labels stay in view while scrolling; fades where there's more | Playwright `production/qa-fixes` (390 px, `[SEED] Lager with transfer`) |
 | 8 | capacity ≥ 10,000: "Capacity must be under 10,000 bbl."; names NFKC-normalized ("Ｆv1" = FV1) | ExUnit `production_test`; Playwright `production/qa-fixes` (the capacity message) |
 | 9 | Add phase start's help text: Comes after only | Playwright `production/qa-fixes` (minor 9) |
+
+## D47 — Batch schedule and Gantt (`specs/d46_production_scheduling_spec.md` §3.5–§3.10; `planning/d47_batch_schedule_gantt_plan.md`)
+
+Playwright specs are in `regression/production/` (project `production`, one worker). Each test makes its own `[TEST-TEMP]` brand, tanks and batches (`schedule.ts` `Made`) and removes them; brewed batches are un-checked first. P-number assertions are relative (read before, compare after). P49–P51 read the `[SEED]` schedule; P52 changes Serving 1 and puts it back with Undo. ExUnit: `production/schedule_test` (batches, numbers, moves, check-off), `production/status_flags_test` (pure status and flags), `production/undo_cips_test` (Undo, CIPs, sign-offs, P4, performance), `production_schedule_controller_test` (HTTP, authz), `seeds/synthetic_test` (the D47 seed). Vitest: `src/lib/gantt.test.ts` (layout, ranges, stacking, prefs).
+
+| # | Scenario | Layer |
+|---|---|---|
+| P1, P2 (Gantt) | a new tank is the last row before Unassigned; the rows follow the Tanks order, for brewer2 too | Playwright `production/tanks` (Set up menu, row order), `production/gantt` (P2 as brewer2) |
+| P4 | Retire a tank in use: refused, naming the batch | Playwright `production/tanks` (real batch); ExUnit `undo_cips_test` |
+| P6 | ⋯ → Mark out of service over a planned batch: named before saving; band, Out tag, the batch's flag badge | Playwright `production/gantt-outages`; ExUnit `status_flags_test` (`out_of_service`) |
+| P7 | empty spot → Mark out of service, until further notice | Playwright `production/gantt-outages` (status "Out of service · Valve repair", "Out from …", band) |
+| P8 | the band → Back in service today; under Past | Playwright `production/gantt-outages` |
+| P9 | an overlapping period from the Gantt is refused | Playwright `production/gantt-outages` |
+| P10 | Delete a period: the flag clears; Undo | Playwright `production/gantt-outages`; ExUnit `undo_cips_test`, `production_schedule_controller_test` (outage Undo) |
+| P20 | rows, today line, 6 weeks, every status line | Playwright `production/gantt` (status lines compared with the API) |
+| P21 | Plan batch: ghosted, P-number, renumbering named | Playwright `production/batches`; ExUnit `schedule_test` (planning, P-numbers) |
+| P22 | empty spot → Plan a batch with an Unassigned transfer: two bars, the arrow | Playwright `production/batches` |
+| P23, P24 | same brew day: the first keeps the lower P; two-day brew names | Playwright `production/batches`; ExUnit `schedule_test` |
+| P25–P28 | the move prompt: default all (listed), move only (warning, flag), Carb's default only, Undo | Playwright `production/steps`; ExUnit `schedule_test` (`following`, default, out of order, previews) |
+| P29 | a date in the batch dialog runs the prompt; the dialog stays | Playwright `production/steps` |
+| P30, P31 | drag a bar: planned every step, brewed only unfinished; no prompt; Undo | Playwright `production/batches`; ExUnit `schedule_test` (`shift`) |
+| P32, P33 | drag a part to another tank or Unassigned; No tank flag near its fill | Playwright `production/batches`; ExUnit `schedule_test`, `status_flags_test` (`no_tank`) |
+| P34 | check off Set temp due today: the status line's temperature | Playwright `production/steps`; ExUnit `status_flags_test` |
+| P35 | check off 2 days late: moves, then the prompt | Playwright `production/steps`; ExUnit `schedule_test` (off-plan) |
+| P36–P39 | the brew-day number: suggestion, taken, non-plain note, duplicate ignoring case, un-check frees it, API 422 | Playwright `production/batches`; ExUnit `schedule_test`, `production_schedule_controller_test` |
+| P40 | change a brewed batch's number; a taken one refused | Playwright `production/batches`; ExUnit `schedule_test` |
+| P41–P44 | addition, temperature, assignee (initials), notes | Playwright `production/steps`; ExUnit `schedule_test` (step edits, Brewery members only) |
+| P45 | + Note opens the step; closing returns, Note ✎ | Playwright `production/steps` |
+| P46 | expand: step rows, diamonds, links solid/dashed; remembered; Expand/Collapse all | Playwright `production/gantt` |
+| P47 | « names only, status on hover; remembered | Playwright `production/gantt`; Vitest (`readPrefs`) |
+| P48 | zoom, 4 weeks back, From/To; remembered; 7–730 days | Playwright `production/gantt`; Vitest (`clampRange`, `dayWidth`) |
+| P49–P51 | the seed's FV4, FV5 (red) and Serving 1 status lines and flag | Playwright `production/gantt`; ExUnit `status_flags_test` (every §3.8 row), `seeds/synthetic_test` |
+| P52 | Add CIP & Sanitize already done: Sani 0 days, the flag clears | Playwright `production/flags-cips` (Undo restores the seed); ExUnit `undo_cips_test` |
+| P53, P54 | overlap + dirty fill (!2); bigger than the tank | Playwright `production/batches`; ExUnit `status_flags_test` |
+| P55–P57 | sign off with a note; a change reopens it; Remove sign-off | Playwright `production/flags-cips`; ExUnit `status_flags_test` (signatures), `undo_cips_test` |
+| P58, P59 | a CIP while beer is in the tank; drag a standalone CIP, Undo | Playwright `production/flags-cips`; ExUnit `undo_cips_test` |
+| P60 | Delete planned batch; renumbering | Playwright `production/batches`; ExUnit `schedule_test` |
+| P61 | brewer1 and brewer2 move steps in one batch at once | Playwright `production/flags-cips` (two contexts, reload: both agree) |
+| P62–P64 | owner and floater full access; office1 Home and 403 | Playwright `production/gantt`, `production/access`; ExUnit `production_schedule_controller_test` |
+| P109 | Split - Transfer / Split - Filter in templates; planning copies the method | Playwright `production/followups-4650` (editor), `production/batches` (planned batch); ExUnit `production_test`, `production_schedule_controller_test` |
+| P111 | Package - Partial in templates: not an exit, no CIP | Playwright `production/followups-4650`; ExUnit `production_test` |
+| P112 | a partial Package done: the batch and the tank carry on; Partial in the step dialog renames it | Playwright `production/batches`; ExUnit `schedule_test`, `status_flags_test` |
+
+Task 4650 (D46 recheck N1–N4, item 10) and lead decisions 1 item 1: Playwright `production/followups-4650` (N1 day order, N2 the Remove warning, N3 the ramp cap, N4a–b messages, P109, P111, the handle and keyboard reorder, a Transfer's CIP follows its day); ExUnit `production_test` ("D47 task 0"), `production_controller_test`.
+
+Also covered: Undo (restore, stale 409, expiry, another person, a delete and a plan undone) in ExUnit `undo_cips_test` and `production_schedule_controller_test`; the old Batches page and Brewery Dashboard skip schedule batches (`undo_cips_test`); the schedule loads in ~10 ms for 12 weeks, 10 tanks and 30 batches (`undo_cips_test`, logged).
+
+DEV gate fix cycle 1 (`stepwise_results/d47_qa_report.md`, lead decisions 4):
+
+| # | Finding | Test |
+|---|---|---|
+| M1 | typing a date opens the move prompt mid-typing | Playwright `production/d47-qa-fixes` (types 12152026: no request until Enter, then one preview for Dec 15; again, committed by leaving the field). `DateField` is used for every date that moves or checks off (batch dialog, step dialog Done on / Or move to, CIP, out of service) |
+| M2 | "#40" gets around the duplicate check | ExUnit `schedule_test` (check_number, the brew-day check-off and the batch dialog's edit); Playwright `production/d47-qa-fixes` (brew day and batch dialog refuse "#&lt;taken&gt;"; " #n " saved as n, the field shows it) |
+| M3 | a full Package done early: bar, stranded steps, flags, overlap | ExUnit `status_flags_test` (a done step before an unfinished one it follows; `Steps.out_of_order?/2` shared with the preview; the part ends at the done exit, its CIP still to come included; stranded steps; held to the exit, a done standalone CIP ends the dirty fill, no overlap), `schedule_test` (the preview's warning and the flag agree); Vitest `gantt` (end, reach, stranded, no phase after the exit, tracks); Playwright `production/d47-qa-fixes` (red dot, flag, badge, the bar ends before Carb, the batch dialog's note) |
+| 1 | "Bigger than tank" ignores dates | ExUnit `status_flags_test` (moving the batch changes the signature) |
+| 2 | the Unassigned header is see-through | Playwright `production/gantt` (P20: opaque background) |
+| 3 | empty spot → out of service ignores the tapped day | Playwright `production/d47-qa-fixes` |
+| 4 | double-clicking Apply clicks through | Playwright `production/batches` (minor 4: nothing opens) |
+| 5 | a bar dropped over the tank column still moves | Playwright `production/batches` (minor 5: a bar over the tank names, a dot below the chart: no prompt, nothing moved) |
+| 6 | names only cuts long names, no tooltip | Playwright `production/gantt` (P47: the name's title; the tooltip starts with the full name) |
+| 7 | the API takes 1-day and 731-day ranges | ExUnit `schedule_test`, `production_schedule_controller_test` (422 `range_invalid`) |
+| 8 | the Remove-Transfer warning names no tank | Playwright `production/followups-4650` (N2: "After transfer 1 depends on it.") |
+| 9 | trimmed number in the field; duplicate "planned"; check-off message | Playwright `production/d47-qa-fixes` (M2 field; "FDH done · 8 following steps moved 2 days later."). The plan dialog ignores a second submit while saving (not reproducible as a test) |
+| 10 | a done standalone CIP while beer is in the tank isn't flagged | ExUnit `status_flags_test` |
+| P32 | a refetch mid-drag | Playwright `production/batches` ("P32 on DEV": the minute's refetch arrives mid-drag with a new tank; the drop still lands, by tank id). The P32 spec measures the lane after scrolling |
+| P5 | Restore "last" with tanks added meanwhile | Playwright `production/tanks` (P5 checks it's after every tank active before; the handle test in `followups-4650` is relative to its neighbour too) |
+| Addition | live feedback while dragging (the hint that follows the pointer) | Vitest `gantt` (`dragHint`: day and ±days, → tank / Unassigned, out of service, overlap, before the step it follows, Move only past a follower, outside the chart); Playwright `production/d47-qa-fixes` (mid-drag: a sideways drag, a row change into an out-of-service tank in red, outside the chart; nothing moved). Touch places it above the finger: by hand at the DEV gate with the long-press |
+
+DEV gate fix cycle 2 (`stepwise_results/d47_qa_recheck.md`, lead decisions 5):
+
+| # | Finding | Test |
+|---|---|---|
+| N1 | the brew-day check-off preview announced renumbering that doesn't happen | ExUnit `schedule_test` ("brew-day check-off preview": the preview's `renumbered` equals the write's, with and without a change) |
+| N2 | the bar's hover tooltip covers the drag hint | Playwright `production/d47-qa-fixes` (N7, N2: hidden through the drag, back only once the pointer moves) |
+| N3 | the drag hint clipped at the right edge | Playwright `production/d47-qa-fixes` (N3: flipped left, inside the window) |
+| N4 | a completed part's leftover CIP | ExUnit `status_flags_test` (the stay ends at the exit; `leftover_cip`; no overlap; the leftover CIP in another stay is "CIP while beer is in the tank"; on the exit day it cleans after it, "Sani 0 days"); Vitest `gantt` (bar ends at the exit, the CIP dot holds no lane, the drag hint sees no overlap past the exit) |
+| N5 | after an Escape-cancelled drag the next CIP drag did nothing (its release clicked through and opened the empty-spot menu) | Playwright `production/d47-qa-fixes` (N5: Esc a dot and a CIP drag, then the CIP moves) |
+| N6 | a dot's out-of-service hint | Vitest `gantt` (a fill or exit dot checks the new stay; any other dot its own day) |
+| N7 | a drag back to its start opened the dialog | Playwright `production/d47-qa-fixes` (N7: nothing opens, nothing sent) |
+| Remove-Transfer | Remove before the preview; every dependent tank named | Playwright `production/followups-4650` (N2: the preview held back, Remove disabled with a spinner, Cancel works; "After transfer 1 and After transfer 2 depend on it.") |
+| Seed sign-off | showed as reopened on DEV | ExUnit `seeds/synthetic_test` (a fresh seed reads as signed off; still so days later and after another batch renumbers Enos) |
+| Plan "Ferment in" | FV7 after picking QR1 while tanks were added | Playwright `production/d47-qa-fixes` (the menu's rows hold while it's open through a refetch that adds a tank; picked by id) |
+
+Fix cycle 3 (lead decisions 6):
+
+| # | Item | Test |
+|---|---|---|
+| 1 | flag signatures differed between nodes (`term_to_binary`) | ExUnit `status_flags_test` (a canonical pipe-joined string, pinned; 30 and 30.0, a `Date` built three ways: one signature; too-big with a 20.0 capacity), `seeds/synthetic_test` (the seeded sign-off reads as signed off) |
+| 2 | a fill or exit dot's hint checks the stay as the default answer leaves it | Vitest `gantt` (an outage just after the stay, the fill +2 days: red with "move all", clear with "move only") |
+| 3 | a reason that applies only to the other answer is a neutral second line | Vitest `gantt` ("If you move only this step: after Carb, which follows it"; red only when "move only" is the default) |
+| 4 | Remove-Transfer while loading: `aria-label="Remove"`, `aria-busy="true"` | Playwright `production/followups-4650` (N2) |
+
+Not automated (LIMITATIONS, lead decisions 3): touch long-press drag (450 ms) — by hand on the tablet or the Pixel at the DEV gate; the "Label by" picker when batches share a track is deferred (lines show "step · batch"); links between tanks aren't drawn in an expanded tank (the transfer arrow covers the hand-off).

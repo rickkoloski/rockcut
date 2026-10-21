@@ -41,7 +41,6 @@ import ChecklistIcon from '@mui/icons-material/Checklist'
 import ScienceIcon from '@mui/icons-material/Science'
 import FactoryIcon from '@mui/icons-material/Factory'
 import InventoryIcon from '@mui/icons-material/Inventory'
-import AssignmentIcon from '@mui/icons-material/Assignment'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PeopleIcon from '@mui/icons-material/People'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
@@ -84,7 +83,7 @@ import type { Channel, Department } from './lib/types'
 // Pages
 import Home from './pages/Home'
 import BreweryDashboard from './pages/brewery/BreweryDashboard'
-import ProductionHub from './pages/production/ProductionHub'
+import GanttPage from './pages/production/Gantt/GanttPage'
 import TanksPage from './pages/production/TanksPage'
 import ListsPage from './pages/production/ListsPage'
 import TemplatesPage from './pages/production/TemplatesPage'
@@ -141,7 +140,6 @@ const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Production', path: '/brewery/production', icon: <FactoryIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
-  { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
   { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
 ]
 
@@ -775,7 +773,7 @@ function App() {
             {hasBrewery && (
               <>
                 <Route path="/brewery" element={<BreweryDashboard />} />
-                <Route path="/brewery/production" element={<ProductionHub />} />
+                <Route path="/brewery/production" element={<GanttPage />} />
                 <Route path="/brewery/production/tanks" element={<TanksPage />} />
                 <Route path="/brewery/production/lists" element={<ListsPage />} />
                 <Route path="/brewery/production/templates" element={<TemplatesPage />} />

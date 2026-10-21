@@ -264,6 +264,77 @@ defmodule RockcutApiWeb.ProductionControllerTest do
     end
   end
 
+  describe "D47 task 0" do
+    test "transfer order, ramp cap, remove preview, Split method and partial Package", %{
+      brewer: b
+    } do
+      t = call(b, :post, "/api/production/templates", %{name: "Task 0"}) |> body()
+      base = "/api/production/templates/#{t["data"]["id"]}"
+      add = &call(b, :post, base <> "/steps", &1)
+
+      add.(%{step_type_id: type_id("Transfer"), day_offset: 20, vessel_index: 1})
+      t = add.(%{step_type_id: type_id("Transfer"), day_offset: 25, vessel_index: 2}) |> body()
+
+      early = add.(%{step_type_id: type_id("Transfer"), day_offset: 22, vessel_index: 2})
+      assert early.status == 422
+
+      assert body(early) == %{
+               "error" => "transfer_order",
+               "message" =>
+                 "Transfers stay in day order: this one would come before the transfer on day 25.",
+               "day" => 25
+             }
+
+      ramp =
+        call(b, :post, base <> "/ramp", %{
+          start: 80,
+          target: 28,
+          change_per_day: 100,
+          first_day: 30,
+          vessel_index: 2
+        })
+
+      assert ramp.status == 422
+
+      assert body(ramp)["message"] ==
+               "The change per day is a whole number of degrees from 1 to 52° (the gap between start and target)."
+
+      first =
+        Enum.find(t["data"]["steps"], &(&1["day_offset"] == 20 and &1["behavior"] == "transfer"))
+
+      preview = call(b, :delete, base <> "/steps/#{first["id"]}?preview=true")
+      assert preview.status == 200
+      assert %{"data" => %{"issues" => issues}} = body(preview)
+      assert Enum.any?(issues, &(&1["code"] == "vessel_not_started"))
+      # Nothing was removed.
+      shown = call(b, :get, base) |> body()
+      assert Enum.any?(shown["data"]["steps"], &(&1["id"] == first["id"]))
+
+      split = add.(%{step_type_id: type_id("Split"), day_offset: 30, vessel_index: 2}) |> body()
+      s = Enum.find(split["data"]["steps"], &(&1["behavior"] == "split"))
+      assert {s["name"], s["split_method"]} == {"Split - Transfer", "transfer"}
+
+      filtered = call(b, :patch, base <> "/steps/#{s["id"]}", %{split_method: "filter"}) |> body()
+
+      assert Enum.find(filtered["data"]["steps"], &(&1["id"] == s["id"]))["name"] ==
+               "Split - Filter"
+
+      pkg =
+        add.(%{
+          step_type_id: type_id("Package"),
+          day_offset: 28,
+          vessel_index: 2,
+          package_partial: true
+        })
+        |> body()
+
+      p = Enum.find(pkg["data"]["steps"], &(&1["behavior"] == "package"))
+
+      assert {p["name"], p["package_partial"], p["split_method"]} ==
+               {"Package - Partial", true, nil}
+    end
+  end
+
   test "a shared tablet gets 403 on the production routes (D49 brings it)" do
     {_device, token} = taproom_device()
 

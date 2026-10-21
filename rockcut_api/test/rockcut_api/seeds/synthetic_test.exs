@@ -943,7 +943,8 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       fv3 = Repo.get_by!(Tank, name: "FV3")
       {:ok, _} = Production.update_tank(fv3, %{"capacity_bbl" => 99, "name" => "fv3"})
-      {:ok, _} = Production.retire_tank(Repo.get_by!(Tank, name: "FV1"))
+      # D47: FV6 only holds finished steps, so it can be retired (FV1 has Enos P2).
+      {:ok, _} = Production.retire_tank(Repo.get_by!(Tank, name: "FV6"))
 
       {:ok, _} =
         Production.create_outage(
@@ -999,6 +1000,141 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Enum.map(Production.get_template(real_t.id).steps, &Production.step_name/1) == [
                "Brew day"
              ]
+    end
+  end
+
+  describe "production schedule (D47)" do
+    alias RockcutApi.Production
+    alias RockcutApi.Production.{Batches, Cips, Schedule, Signoffs, Step}
+    alias RockcutApi.Brewing.{Batch, BatchLogEntry, Brand}
+
+    @today ~D[2026-10-21]
+
+    defp schedule do
+      {:ok, sched} = Schedule.load(Date.add(@today, -14), Date.add(@today, 70), @today)
+      sched
+    end
+
+    defp line(sched, tank_name) do
+      tank = Enum.find(sched.tanks, &(&1.name == tank_name))
+      Enum.find(sched.statuses, &(&1.tank_id == tank.id))
+    end
+
+    test "seeds batches in every state; statuses, numbers, a signed-off flag (P36, P49–P51)" do
+      brand = Repo.insert!(%Brand{name: "Old brand", status: "active"})
+
+      legacy =
+        Repo.insert!(%Batch{brand_id: brand.id, batch_number: "D1-7", status: "fermenting"})
+
+      Repo.insert!(%BatchLogEntry{
+        batch_id: legacy.id,
+        timestamp: DateTime.utc_now() |> DateTime.truncate(:second),
+        event_type: "note"
+      })
+
+      {:ok, _} = Synthetic.setup(@today)
+      refute Repo.get(Batch, legacy.id)
+      refute Repo.exists?(from(e in BatchLogEntry, where: e.batch_id == ^legacy.id))
+
+      sched = schedule()
+
+      assert %{line: "Day 18 · Fermentation · 68° · set to 58° today", batch_label: "Crusher #42"} =
+               line(sched, "FV4")
+
+      assert %{line: "Day 22 · Crash · 38° · 32° change late", alert: true} = line(sched, "FV5")
+      assert %{batch_label: "Galactic #40", state: "in_use"} = line(sched, "FV2")
+      assert %{batch_label: "Fest #38", state: "in_use"} = line(sched, "Serving 2")
+
+      assert %{line: "Empty · dirty 8 days · no CIP planned", alert: true} =
+               line(sched, "Serving 1")
+
+      assert %{line: "Sani 13 days"} = line(sched, "FV6")
+
+      labels = sched.batches |> Enum.map(& &1.label) |> Enum.sort()
+      assert "Altruism P1" in labels
+      assert "Enos P2" in labels
+      assert Batches.next_batch_number() == "44"
+
+      assert Enum.any?(sched.flags, &(&1.kind == "dirty_no_cip" and not &1.signed_off))
+
+      assert [%{signed_off: true, signoff: %{user_name: "Jake Brewer"}}] =
+               Enum.filter(sched.flags, &(&1.kind == "too_big"))
+
+      # Nothing that drifts on its own is in the signature (lead decisions 5):
+      # seen days later, and after another batch renumbers Enos, it holds.
+      {:ok, later} = Schedule.load(@today, Date.add(@today, 70), Date.add(@today, 3))
+      assert [%{signed_off: true}] = Enum.filter(later.flags, &(&1.kind == "too_big"))
+      enos = Enum.find(sched.batches, &(&1.label == "Enos P2"))
+      template = Repo.get_by!(RockcutApi.Production.Template, name: "[SEED] Standard ale")
+
+      {:ok, {_, renumbered}} =
+        Batches.plan(%{
+          "brand_id" => enos.batch.brand_id,
+          "template_id" => template.id,
+          "brew_on" => Date.to_iso8601(@today),
+          "volume_bbl" => "10"
+        })
+
+      assert Enum.any?(renumbered, &(&1.batch_id == enos.batch.id))
+
+      assert [%{signed_off: true, message: "Enos P3 " <> _}] =
+               Enum.filter(schedule().flags, &(&1.kind == "too_big"))
+
+      assigned =
+        Repo.all(
+          from(s in Step,
+            join: u in assoc(s, :assignee),
+            where: not is_nil(s.assignee_id),
+            select: u.name
+          )
+        )
+
+      assert "Jake Brewer" in assigned
+      assert "Riley Wort" in assigned
+    end
+
+    test "setup twice gives the same schedule" do
+      {:ok, _} = Synthetic.setup(@today)
+      first = schedule()
+      {:ok, _} = Synthetic.setup(@today)
+      second = schedule()
+      assert Enum.map(second.batches, & &1.label) == Enum.map(first.batches, & &1.label)
+      assert Enum.map(second.statuses, & &1.line) == Enum.map(first.statuses, & &1.line)
+      assert length(second.flags) == length(first.flags)
+    end
+
+    test "cleanup_temp removes [TEST-TEMP] batches, CIPs on [TEST-TEMP] tanks, and their sign-offs" do
+      {:ok, _} = Synthetic.setup(@today)
+      brewer = Repo.get_by!(RockcutApi.Accounts.User, name: "Jake Brewer")
+
+      {:ok, temp_tank} =
+        Production.create_tank(%{"name" => "[TEST-TEMP] FV9", "capacity_bbl" => 20})
+
+      [template | _] = Production.list_templates()
+      galactic = Repo.get_by!(Brand, name: "Galactic")
+
+      {:ok, {temp, _}} =
+        Batches.plan(%{
+          "brand_id" => galactic.id,
+          "template_id" => template.id,
+          "brew_on" => "2026-11-02",
+          "volume_bbl" => 20,
+          "tank_ids" => [temp_tank.id]
+        })
+
+      temp |> Ecto.Changeset.change(notes: "[TEST-TEMP] P21") |> Repo.update!()
+
+      {:ok, cip} =
+        Cips.create(%{"tank_id" => temp_tank.id, "due_on" => "2026-10-22"}, brewer, @today)
+
+      {:ok, _} = Signoffs.sign_off(%{"key" => "no_tank:#{temp.id}.0", "signature" => "x"}, brewer)
+
+      :ok = Synthetic.cleanup_temp()
+
+      refute Repo.get(Batch, temp.id)
+      refute Repo.get(Step, cip.id)
+      refute Signoffs.get_by_key("no_tank:#{temp.id}.0")
+      assert Enum.any?(Signoffs.list(), &String.starts_with?(&1.flag_key, "too_big"))
     end
   end
 end

@@ -29,7 +29,7 @@ three-environment workflow on its own branch.
 |---|---|---|---|---|
 | **What** | Tanks and out-of-service periods (§3.2); phases and step types, brewer-editable (§3.3); process templates and their editor (§3.4); Brewery → Production nav | Planning batches from a template; the Gantt (§3.6); moving steps with the move prompt (§3.7); checking steps off; P-numbers and the brew-day batch number (§3.5); tank status (§3.8); flags and sign-off (§3.9); standalone CIP & Sanitize (§3.10); assignee and notes on steps; the batch dialog without §3.11's actions | Add/remove steps (and Set temp ramps), add/remove transfers and filters, split and undo split, change a planned batch's template and brand, multi-select (§3.11) | Steps on the Brewery task board, two-way (§3.12); the Gantt's task list panel; planned-batch tasks and their toggle; the brewhouse tablet on the schedule (§3.13) |
 | **Data** | `tanks`, `tank_outages`, `production_phases`, `production_step_types`, `process_templates`, `template_steps`, `template_links` | `batches` changes; `batch_vessels`, `production_steps`, `production_step_links`, `flag_signoffs` | (columns on D47's tables: `split_parent_id`, `part_number`, `ramp_group`) | `production_steps.task_id`; `tasks.production_step_id` |
-| **Scenarios** | P1–P19 | P20–P64 | P65–P89 | P90–P108 |
+| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113 | P90–P108 |
 | **DEV seed** | Tanks FV1–FV7, Serving 1–2; `[SEED]` templates; an outage | `[SEED]` batches in every state; a signed-off flag; assigned steps | A transferred and a split batch | Linked tasks on the Brewery board; `breweryDevice` writes |
 
 - **Order:** D46 → D47 → D48 → D49, each branch cut from `develop` after the previous one merges.
@@ -70,7 +70,7 @@ Production scheduling moves this into Rockcut:
 - A transfer or filter does **not** start a phase.
 - Phases with no natural task (Lag, Fermentation, Lagering, Conditioning) start from a **phase marker**: a template entry on a day, not a task unless someone turns that on. A marker takes effect on its day once the steps before it are done.
 
-**Step types** (Matt's list): Brew day, PDH (Primary Dry Hop), FDH (Final Dry Hop), Dry hop, Amylo (AMG), Set temp, Diacetyl test, Plug dump, Yeast harvest, Rouse, Addition, Fining, Gravity check, Carb, Transfer, **Filter** (behaves exactly like Transfer), Split, CIP & Sanitize, Package. Plus a free-text custom step. "Hold" is not used. "Keg / Package" is "Package".
+**Step types** (Matt's list): Brew day, PDH (Primary Dry Hop), FDH (Final Dry Hop), Dry hop, Amylo (AMG), Set temp, Diacetyl test, Plug dump, Yeast harvest, Rouse, Addition, Fining, Gravity check, Carb, Transfer, **Filter** (behaves exactly like Transfer), Split (**Split - Transfer** or **Split - Filter**: how the parts that leave get out; Matt, 2026-10-21), CIP & Sanitize, Package (**Full** or **Partial**: "Package - Partial" packages some and leaves the rest in the tank; Matt, 2026-10-21). Plus a free-text custom step. "Hold" is not used. "Keg / Package" is "Package".
 - **Names:** a step always keeps its type name; a brewer can **add to it** ("Dry hop - #2"). Set temp shows its temperature ("Set temp - 52°"). The addition is edited in the template, the step dialog (from the Gantt or the task list) and the batch dialog's step list.
 - Brewers can **add phases and step types** later, and rename, recolor, reorder and retire them (§3.3).
 
@@ -175,6 +175,8 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
 | `vessel_index` | 0 = first tank, 1 = after the first Transfer/Filter, … |
 | `detail` | the added part of the name, ≤ 40 |
 | `temperature` | integer °F 28–80, Set temp only (required there) |
+| `split_method` | `transfer` / `filter`, Split only (required there, default `transfer`); the name shows "Split - Transfer" / "Split - Filter" before any addition ("Split - Filter - #2") (D47, Matt 2026-10-21) |
+| `package_partial` | boolean, Package only (default false). A partial Package shows "Package - Partial" before any addition ("Package - Partial - kegs"); it isn't the tank's exit (D47, Matt 2026-10-21) |
 | `notes` | text ≤ 2000 |
 | `on_task_list` | default from the type; markers default off |
 | `position` | ordering within a day |
@@ -183,11 +185,11 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
 
 **Rules**
 - Exactly one Brew day at offset 0. A Transfer/Filter starts each `vessel_index` > 0, and the vessel it leaves gets a CIP & Sanitize the same day (added automatically, removable).
-- Every vessel's last step is a Package, Split, or the next Transfer/Filter (422 `vessel_has_no_exit` otherwise).
+- Every vessel's last step is a Package, Split, or the next Transfer/Filter (422 `vessel_has_no_exit` otherwise). A **partial** Package doesn't count: a tank can have several, and still needs a full Package, Split or Transfer/Filter after them.
 
 **Template editor** (a page per template):
 - A list of entries in day order: day, name (type + addition, or the temperature), phase started, tank (First tank / After transfer 1 …), task-list switch, notes icon, links ("after FDH · moves with it"), Remove.
-- **Add step:** type, addition, temperature (Set temp), day, tank, "comes after" / "leads to" (slots it into a chain when both are set), default answer for each link, task list, notes.
+- **Add step:** type, addition, temperature (Set temp), Transfer / Filter (Split), Full / Partial (Package), day, tank, "comes after" / "leads to" (slots it into a chain when both are set), default answer for each link, task list, notes.
 - **Add phase start:** phase, day, tank, comes after.
 - **Add a ramp:** start temperature, target, change per day (5–10° typical), first day, comes after → one Set temp step per temperature, chained with "move all" links (`ramp_group` shared). The last step links to whatever the ramp's "leads to" names.
 - **Preview:** a small one-batch Gantt of the template from a sample brew day, using phase colors.
@@ -210,7 +212,7 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
 | `tank_id` | standalone CIP only |
 | `step_type_id` | null for a phase marker |
 | `name` | only for a custom ("Something else") step. A typed step's fixed name always comes from its type, so **renaming a type renames it on every batch, past ones included** (Matt, 2026-10-20), and D49 retitles the linked board tasks in the same transaction |
-| `phase_id`, `vessel_index`, `detail`, `temperature`, `notes`, `on_task_list`, `position` | as in templates |
+| `phase_id`, `vessel_index`, `detail`, `temperature`, `split_method`, `package_partial`, `notes`, `on_task_list`, `position` | as in templates |
 | `due_on` | date |
 | `done_on`, `done_by_id`, `completed_at` | null until checked off |
 | `assignee_id` | Brewery member, nullable |
@@ -244,7 +246,7 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
 
 **Step dialog** (click a step):
 - Name and subtitle, batch · tank · template; date and "day N"; status (Planned / Due today / Late (planned …) / Done …); set temperature; "After this" (each link with "Moves with it by default" / "Stays by default"); "Before this".
-- Edit: temperature (Set temp), "Add to the name (“FDH” stays)", **Assigned to** (Brewery members), **Notes**, "Show on the Brewery task list".
+- Edit: temperature (Set temp), Full / Partial (an unfinished Package), "Add to the name (“FDH” stays)", **Assigned to** (Brewery members), **Notes**, "Show on the Brewery task list".
 - Open steps: **Done on** (default today) + **Check off**; **Or move to** + **Move**; Remove step (D48). Done steps: **Mark not done**.
 - Typed notes are kept when the dialog closes or a button is pressed.
 
@@ -283,6 +285,7 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
 | Drag a bar up/down | That part to another tank or Unassigned (drop row highlighted) |
 | Ctrl/Cmd-click steps; Shift-click for a range in one tank | Selection; the selection bar says "3 steps selected", **Assign to …**, **Done selecting**; dragging any selected step moves them together, and the prompt runs from the first unselected step that depends on a moved one (D48) |
 | Long-press a step (touch) | Starts selection mode; taps add/remove; drag moves (D48) |
+| Shift-drag a step (mouse) | Moves only that step (and any selected ones): no prompt, the same as answering "Move only". The message says so and offers Undo (D48; from Bryntum's "pin successors during drag", Matt 2026-10-21) |
 | Tap an empty spot in a row | "FV3 · Thu Oct 22": Plan a batch / Add CIP & Sanitize / Mark out of service |
 | Flag badge | Batch dialog scrolled to its flags |
 | Keyboard | Every dot, diamond, bar and band is focusable; Enter opens it. Moves by keyboard go through the dialogs' date fields. |
@@ -308,7 +311,7 @@ Touch: a normal swipe scrolls the grid; a drag needs a long-press (450 ms) on to
 - On another day: the step moves to the day it was done, then the move prompt.
 - A **Set temp** step, when done, sets the tank's set temperature (§3.8).
 - A **Transfer/Filter** done: the beer is in the new tank from that day; the old tank is emptied (dirty) unless its CIP is done.
-- **Package** done: the batch is `completed`; the tank is emptied.
+- **Package** done: the batch is `completed`; the tank is emptied. A **partial** Package done changes nothing about the tank or the batch: the beer stays, there's no CIP, the status line goes on.
 
 **API rule:** the server recomputes "following" and applies the answer in one transaction; the client's preview is only a preview.
 
@@ -360,7 +363,7 @@ Computed server-side by one function, returned with the schedule.
 - **Remove step:** unfinished, not Brew day or a split part's fill. Links pass through to the steps after it.
 - **Add transfer / filter:** Transfer or Filter, date, destination tank (or Unassigned). Unfinished steps from that date move to the new vessel; the tank left behind gets a CIP & Sanitize that day. Refused if a step after the date is done. A batch can have several.
 - **Remove transfer / filter** (unfinished): the beer stays in the earlier tank; the CIP it set up is removed.
-- **Split:** date, two or more parts (add/remove), each with a tank (one may stay in the current tank, marked "(stays here)") and a volume.
+- **Split:** date, **Transfer or Filter** (one choice for the whole split, default Transfer; Matt, 2026-10-21: it applies to every part that leaves; it behaves the same either way and names the step "Split - Transfer" / "Split - Filter"), two or more parts (add/remove), each with a tank (one may stay in the current tank, marked "(stays here)") and a volume.
   - Volumes must add up to the batch's. Two parts can't share a tank.
   - The parent keeps its history up to the split. Each part is its own batch (`split_parent_id`, `part_number`) with its own copy of the remaining steps; numbered #40.1, #40.2 (P2.1 while planned), following the parent's number.
   - If no part stays, the tank left behind gets a CIP that day. Checking off the split fills each part.
@@ -502,6 +505,9 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P62 | `owner` | Gantt | not a Brewery member | Full access. |
 | P63 | `bartender1`, `barMgr`, `office1` | Brewery nav / typed URL `/brewery/production` | | No nav entry; redirected Home; API 403. |
 | P64 | `floater` (Bar + Brewery employee) | Gantt | | Full brewer access. |
+| P111 | `brewer1` | template editor → Add step → Package, Partial, day 30, before the full Package on day 40 | | "Package - Partial" listed; no CIP added for it; no issues banner. Remove the full Package → the banner says the tank has no exit. |
+| P112 | `brewer1` | check off a batch's "Package - Partial" | the batch is in FV4 | FV4 still shows the batch and its status line; the batch isn't completed; no dirty-tank flag. Switching an unfinished Package to Partial in the step dialog renames it. |
+| P109 | `brewer1` | template editor → Add step → Split, Filter | | "Split - Filter" in the entries and the preview; it counts as the tank's exit; Edit switches it to Split - Transfer. Existing template Splits show "Split - Transfer". Plan batch copies the method. |
 
 **D48: changing a batch**
 
@@ -517,7 +523,7 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P72 | `brewer1` | Add transfer / filter → Filter, Nov 5, Serving 1 | | Steps from Nov 5 move to a Serving 1 part; the first tank gets a CIP on Nov 5; arrow between them. |
 | P73 | `brewer1` | Add transfer on a date after a finished step | | "Some steps after that date are already done. Pick a later date." |
 | P74 | `brewer1` | remove that filter (step dialog → Remove step) | | The beer stays in the first tank; the CIP it added is gone. |
-| P75 | `brewer1` | Split Galactic #40 (20 bbl) on Nov 3: #40.1 12 bbl → stays in FV2; #40.2 8 bbl → FV6 | | Two parts with their own steps; gold arrow; no CIP for FV2 (a part stays). |
+| P75 | `brewer1` | Split - Transfer Galactic #40 (20 bbl) on Nov 3: #40.1 12 bbl → stays in FV2; #40.2 8 bbl → FV6 | | Two parts with their own steps; gold arrow; no CIP for FV2 (a part stays). |
 | P76 | `brewer1` | Split with volumes 12 + 6 | | "The parts add up to 18 bbl, but Galactic #40 is 20 bbl." |
 | P77 | `brewer1` | Split with both parts → FV6 | | "Two parts can’t go into the same tank." |
 | P78 | `brewer1` | Split with no part staying | | A CIP for FV2 on the split day. |
@@ -532,6 +538,8 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P87 | `brewer1` | Pixel: long-press a step, tap two more, drag | | Moves all three. A normal swipe still scrolls. |
 | P88 | `brewer1` | Shift-click two steps in one tank | | Everything between them in that tank is selected. |
 | P89 | `brewer1` | Undo after a split | | The split is undone. |
+| P113 | `brewer1` | Shift-drag FDH 1 day later | FDH links on to the ramp ("move all") | No prompt; only FDH moves; message "FDH moved 1 day later (only this step)" with Undo; any out-of-order step is flagged. |
+| P110 | `brewer1` | Split - Filter Galactic #40 on Nov 3: #40.1 12 bbl stays in FV2; #40.2 8 bbl → Serving 1 | | "Split - Filter" on the schedule; FV2 keeps #40.1 (no CIP); Serving 1 fills with #40.2. |
 
 **D49: task list linkage and the tablet**
 

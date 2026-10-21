@@ -5,6 +5,9 @@ defmodule RockcutApi.Production.TemplateStep do
   end of the first brew day; `vessel_index` 0 is the first tank, 1 the tank
   after the first Transfer/Filter, and so on. `temperature` is °F, for Set
   temp (required) and Brew day (the starting temperature, optional).
+  `split_method` is how a Split's parts leave, `transfer` or `filter` (D47,
+  Split only); `package_partial` marks a Package that takes only some of the
+  beer, so it isn't the tank's exit (D47, Package only).
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -12,12 +15,15 @@ defmodule RockcutApi.Production.TemplateStep do
   @max_detail 40
   @max_notes 2_000
   @temperatures 28..80
+  @split_methods ~w(transfer filter)
 
   schema "template_steps" do
     field :day_offset, :integer, default: 0
     field :vessel_index, :integer, default: 0
     field :detail, :string
     field :temperature, :integer
+    field :split_method, :string
+    field :package_partial, :boolean, default: false
     field :notes, :string
     field :on_task_list, :boolean, default: true
     field :position, :integer, default: 0
@@ -31,6 +37,7 @@ defmodule RockcutApi.Production.TemplateStep do
   end
 
   def temperatures, do: @temperatures
+  def split_methods, do: @split_methods
 
   @doc "The fields a brewer edits; `Production` sets the type, template and position."
   def changeset(step, attrs) do
@@ -41,6 +48,8 @@ defmodule RockcutApi.Production.TemplateStep do
       :vessel_index,
       :detail,
       :temperature,
+      :split_method,
+      :package_partial,
       :notes,
       :on_task_list
     ])
@@ -57,6 +66,7 @@ defmodule RockcutApi.Production.TemplateStep do
       less_than_or_equal_to: @temperatures.last,
       message: "Enter #{@temperatures.first}–#{@temperatures.last}°F."
     )
+    |> validate_inclusion(:split_method, @split_methods, message: "Pick Transfer or Filter.")
   end
 
   defp blank_to_nil(nil), do: nil

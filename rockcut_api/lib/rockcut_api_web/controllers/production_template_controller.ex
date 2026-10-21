@@ -96,12 +96,22 @@ defmodule RockcutApiWeb.ProductionTemplateController do
     |> ProductionErrors.handle(conn)
   end
 
-  def remove_step(conn, %{"id" => id, "step_id" => step_id}) do
+  @doc """
+  DELETE /api/production/templates/:id/steps/:step_id. With `preview=true`
+  nothing is removed: `{ data: { issues } }` lists what the template would
+  newly lack (D47 task 0, N2).
+  """
+  def remove_step(conn, %{"id" => id, "step_id" => step_id} = params) do
     with :ok <- allow(conn, :setup),
          {:ok, template} <- fetch(id),
-         {:ok, step} <- fetch_in(&Production.get_template_step/2, template, step_id),
-         {:ok, template} <- Production.remove_step(template, step) do
-      render_one(conn, template)
+         {:ok, step} <- fetch_in(&Production.get_template_step/2, template, step_id) do
+      if params["preview"] in ["true", true] do
+        with {:ok, issues} <- Production.removal_issues(template, step),
+             do: json(conn, %{data: %{issues: issues}})
+      else
+        with {:ok, template} <- Production.remove_step(template, step),
+             do: render_one(conn, template)
+      end
     end
     |> ProductionErrors.handle(conn)
   end
@@ -161,7 +171,7 @@ defmodule RockcutApiWeb.ProductionTemplateController do
   end
 
   # The route's ids aren't entry fields.
-  defp entry_params(params), do: Map.drop(params, ["id", "step_id", "link_id"])
+  defp entry_params(params), do: Map.drop(params, ["id", "step_id", "link_id", "preview"])
 
   defp render_list(conn, templates),
     do: json(conn, %{data: Enum.map(templates, &process_template_summary/1)})

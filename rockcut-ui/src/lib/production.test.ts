@@ -13,6 +13,7 @@ import {
   previewBars,
   rampTemperatures,
   shortPeriod,
+  transferOrderError,
   type Outage,
   type Tank,
   type Template,
@@ -87,6 +88,8 @@ describe('previewBars', () => {
     vessel_index: 0,
     detail: null,
     temperature: null,
+    split_method: null,
+    package_partial: false,
     notes: null,
     on_task_list: true,
     position: 1,
@@ -110,6 +113,20 @@ describe('previewBars', () => {
     expect(first.dots.map((d) => d.name)).toEqual(['Brew day'])
     expect(second).toMatchObject({ vessel: 1, start: 4, end: 6, phases: [11, 11, 12] })
     expect(second.dots.map((d) => d.name)).toEqual(['Transfer', 'Package'])
+  })
+
+  it('runs a bar past a partial Package to the full one (D47, P111)', () => {
+    const t = {
+      steps: [
+        step({ id: 1, behavior: 'brew', name: 'Brew day', phase_id: 10 }),
+        step({ id: 2, behavior: 'package', name: 'Package - Partial', day_offset: 3, package_partial: true }),
+        step({ id: 3, behavior: 'package', name: 'Package', day_offset: 6 }),
+      ],
+      links: [],
+    } as unknown as Template
+    const [bar] = previewBars(t)
+    expect(bar).toMatchObject({ vessel: 0, start: 0, end: 6 })
+    expect(bar.dots.map((d) => d.name)).toEqual(['Brew day', 'Package - Partial', 'Package'])
   })
 })
 
@@ -143,6 +160,27 @@ describe('tanks in a template (QA M1)', () => {
   })
 })
 
+describe('transferOrderError (D47 task 0, N1)', () => {
+  const s = (id: number, day: number, vessel: number, behavior: TemplateStep['behavior'] = 'plain') =>
+    ({ id, day_offset: day, vessel_index: vessel, behavior }) as TemplateStep
+  const steps = [s(1, 0, 0, 'brew'), s(2, 20, 1, 'transfer'), s(3, 25, 2, 'transfer'), s(4, 28, 3, 'transfer')]
+  const t = { steps, links: [] } as unknown as Template
+
+  it('a new transfer goes after the existing ones', () => {
+    expect(transferOrderError(t, 22)).toBe('Transfers stay in day order: this one would come before the transfer on day 25.')
+    expect(transferOrderError(t, 10)).toBe('Transfers stay in day order: this one would come before the transfer on day 20.')
+    expect(transferOrderError(t, 28)).toBeNull()
+    expect(transferOrderError(t, 30)).toBeNull()
+    expect(transferOrderError(t, null)).toBeNull()
+  })
+
+  it('an edited transfer stays between its neighbours', () => {
+    expect(transferOrderError(t, 27, steps[1])).toBe('Transfers stay in day order: this one would come after the transfer on day 25.')
+    expect(transferOrderError(t, 22, steps[3])).toBe('Transfers stay in day order: this one would come before the transfer on day 25.')
+    expect(transferOrderError(t, 24, steps[2])).toBeNull()
+  })
+})
+
 describe('rampPlan (QA minor 5)', () => {
   it('lists the temperatures, or says why not', () => {
     expect(rampPlan('58', '32', '10')).toEqual({ temps: [58, 48, 38, 32] })
@@ -150,6 +188,9 @@ describe('rampPlan (QA minor 5)', () => {
     expect(rampPlan('58', '32', '0.5')).toEqual({ error: 'The change per day is a whole number of degrees, at least 1.' })
     expect(rampPlan('58', '32.5', '5')).toHaveProperty('error')
     expect(rampPlan('40', '40', '5')).toEqual({ error: 'The start and target temperatures are the same.' })
+    // D47 task 0 (N3): at most the gap between start and target.
+    expect(rampPlan('80', '28', '100')).toEqual({ error: 'The change per day can be at most 52°, the gap between start and target.' })
+    expect(rampPlan('80', '28', '52')).toEqual({ temps: [80, 28] })
   })
 })
 
