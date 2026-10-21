@@ -29,7 +29,7 @@ three-environment workflow on its own branch.
 |---|---|---|---|---|
 | **What** | Tanks and out-of-service periods (§3.2); phases and step types, brewer-editable (§3.3); process templates and their editor (§3.4); Brewery → Production nav | Planning batches from a template; the Gantt (§3.6); moving steps with the move prompt (§3.7); checking steps off; P-numbers and the brew-day batch number (§3.5); tank status (§3.8); flags and sign-off (§3.9); standalone CIP & Sanitize (§3.10); assignee and notes on steps; the batch dialog without §3.11's actions | Add/remove steps (and Set temp ramps), add/remove transfers and filters, split and undo split, change a planned batch's template and brand, multi-select (§3.11) | Steps on the Brewery task board, two-way (§3.12); the Gantt's task list panel; planned-batch tasks and their toggle; the brewhouse tablet on the schedule (§3.13) |
 | **Data** | `tanks`, `tank_outages`, `production_phases`, `production_step_types`, `process_templates`, `template_steps`, `template_links` | `batches` changes; `batch_vessels`, `production_steps`, `production_step_links`, `flag_signoffs` | (columns on D47's tables: `split_parent_id`, `part_number`, `ramp_group`) | `production_steps.task_id`; `tasks.production_step_id` |
-| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110 | P90–P108 |
+| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113 | P90–P108 |
 | **DEV seed** | Tanks FV1–FV7, Serving 1–2; `[SEED]` templates; an outage | `[SEED]` batches in every state; a signed-off flag; assigned steps | A transferred and a split batch | Linked tasks on the Brewery board; `breweryDevice` writes |
 
 - **Order:** D46 → D47 → D48 → D49, each branch cut from `develop` after the previous one merges.
@@ -285,6 +285,7 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
 | Drag a bar up/down | That part to another tank or Unassigned (drop row highlighted) |
 | Ctrl/Cmd-click steps; Shift-click for a range in one tank | Selection; the selection bar says "3 steps selected", **Assign to …**, **Done selecting**; dragging any selected step moves them together, and the prompt runs from the first unselected step that depends on a moved one (D48) |
 | Long-press a step (touch) | Starts selection mode; taps add/remove; drag moves (D48) |
+| Shift-drag a step (mouse) | Moves only that step (and any selected ones): no prompt, the same as answering "Move only". The message says so and offers Undo (D48; from Bryntum's "pin successors during drag", Matt 2026-10-21) |
 | Tap an empty spot in a row | "FV3 · Thu Oct 22": Plan a batch / Add CIP & Sanitize / Mark out of service |
 | Flag badge | Batch dialog scrolled to its flags |
 | Keyboard | Every dot, diamond, bar and band is focusable; Enter opens it. Moves by keyboard go through the dialogs' date fields. |
@@ -537,6 +538,7 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P87 | `brewer1` | Pixel: long-press a step, tap two more, drag | | Moves all three. A normal swipe still scrolls. |
 | P88 | `brewer1` | Shift-click two steps in one tank | | Everything between them in that tank is selected. |
 | P89 | `brewer1` | Undo after a split | | The split is undone. |
+| P113 | `brewer1` | Shift-drag FDH 1 day later | FDH links on to the ramp ("move all") | No prompt; only FDH moves; message "FDH moved 1 day later (only this step)" with Undo; any out-of-order step is flagged. |
 | P110 | `brewer1` | Split - Filter Galactic #40 on Nov 3: #40.1 12 bbl stays in FV2; #40.2 8 bbl → Serving 1 | | "Split - Filter" on the schedule; FV2 keeps #40.1 (no CIP); Serving 1 fills with #40.2. |
 
 **D49: task list linkage and the tablet**
