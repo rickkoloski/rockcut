@@ -246,10 +246,19 @@ test.describe('item 10: ordered lists drag by a handle', () => {
     // Relative to the tank above it: other tests may add tanks meanwhile (P5 on DEV).
     const before = await activeTankIds()
     const above = before[before.indexOf(tank.id) - 1]
+    // dnd-kit's live region: wait for each step before the next key.
+    const shown = await page.locator('[data-testid^="tanks-list-row-"]').evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
+    const pos = shown.indexOf(`tanks-list-row-${tank.id}`) + 1
+    const live = page.locator('[id^="DndLiveRegion"]')
     await handle.focus()
     await page.keyboard.press('Space')
+    // "Picked up …", at once replaced by "…: list, position <pos> of <n>." (over its own place).
+    const name = tank.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    await expect(live).toHaveText(new RegExp(`^(Picked up ${name}\\.|${name}: .*position ${pos} of ${shown.length}\\.)`))
     await page.keyboard.press('ArrowUp')
+    await expect(live).toHaveText(new RegExp(`^${name}: .*position ${pos - 1} of ${shown.length}\\.`))
     await page.keyboard.press('Space')
+    await expect(live).toContainText(`Dropped ${tank.name}, `)
     await expect
       .poll(async () => {
         const ids = await activeTankIds()
