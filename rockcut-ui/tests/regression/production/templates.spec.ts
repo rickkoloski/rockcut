@@ -190,10 +190,17 @@ test('P16: link Carb → Package with "stays by default"', async ({ page }) => {
   await page.getByTestId(`entry-edit-${t.carb}`).click()
   await page.getByTestId('link-new-leads').click()
   await page.getByTestId(`link-new-leads-${t.pack}`).click()
+  // Wait for the link's save before reading it (DEV latency).
+  const added = page.waitForResponse((r) => r.url().endsWith(`/api/production/templates/${t.id}/links`) && r.request().method() === 'POST')
   await page.getByTestId('link-new-leads-add').click()
+  expect((await added).status()).toBe(201)
   const link = (await template(t.id)).links.find((l) => l.from_step_id === t.carb && l.to_step_id === t.pack)!
+  expect(link).toBeTruthy()
+  await expect(page.getByTestId(`link-row-${link.id}`)).toBeVisible()
+  const answered = page.waitForResponse((r) => r.url().endsWith(`/links/${link.id}`) && r.request().method() === 'PATCH')
   await page.getByTestId(`link-answer-${link.id}`).click()
   await page.getByTestId(`link-answer-${link.id}-move_only`).click()
+  expect((await answered).ok()).toBe(true)
   await expect(page.getByTestId(`link-answer-${link.id}`)).toHaveText('Stays by default')
   await page.getByTestId('entry-dialog-cancel').click()
   await expect(page.getByTestId(`entry-links-${t.pack}`)).toHaveText('after Carb · stays')
