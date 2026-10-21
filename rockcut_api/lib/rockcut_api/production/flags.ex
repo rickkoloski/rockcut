@@ -132,7 +132,7 @@ defmodule RockcutApi.Production.Flags do
           ) ++ Map.get(cips_by_tank, tank_id, []),
         not Enum.any?(cips, &(Date.compare(&1.due_on, emptied) != :lt)) do
       flag(:dirty_no_cip, [tank_id, last.id], [tank_id, emptied],
-        message: "#{tank.name} was emptied (#{Parts.label(last)}) and has no CIP planned.",
+        message: "#{tank.name} was emptied (#{last.label}) and has no CIP planned.",
         batch_ids: [last.batch_id],
         tank_id: tank_id
       )

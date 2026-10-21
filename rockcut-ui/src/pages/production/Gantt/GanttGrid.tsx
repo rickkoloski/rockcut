@@ -1,6 +1,6 @@
-import { useMemo, type KeyboardEvent, type ReactNode } from 'react'
+import { useMemo, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { alpha, Box, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
-import { ChevronRight, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight } from '@mui/icons-material'
+import { ChevronRight, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight, MoreHoriz } from '@mui/icons-material'
 import { addDaysKey } from '../../../lib/datetime'
 import { initials } from '../../../lib/tasks'
 import {
@@ -43,20 +43,37 @@ import {
   type Tank,
   type TankStatusLine,
 } from '../../../lib/production'
+import type { DropInfo, DragState } from './useTimelineDrag'
 
 export const LEFT_W = 240
 export const LEFT_W_COMPACT = 124
 const HEAD_H = 46
 
-/** What a click (or Enter) on the Gantt opens; Task 4 fills these in. */
+/** What a click (or Enter) on the Gantt opens, and what a drag does (§3.6 interactions). */
 export interface GanttActions {
   onStep?: (step: SchedStep) => void
   onBar?: (part: Part, flags?: boolean) => void
   onCip?: (cip: SchedStep) => void
   onBand?: (tank: Tank, outage: Outage) => void
+  /** Tank ⋯: its out-of-service panel. */
+  onTankMenu?: (tank: Tank) => void
+  /** A tap on an empty spot: the row's tank (null = Unassigned), the day, where. */
+  onSpot?: (tank: Tank | null, day: string, at: { x: number; y: number }) => void
+  onMoveStep?: (step: SchedStep, days: number) => void
+  onShiftBar?: (part: Part, days: number) => void
+  onMoveBar?: (part: Part, tankId: number | null) => void
+  onMoveCip?: (cip: SchedStep, days: number) => void
+}
+
+/** The drag layer (`useTimelineDrag`), passed in by the page. */
+export interface GanttDrag {
+  active: DragState | null
+  bind: (key: string, onDrop: (d: DropInfo) => void) => object
+  consumeClick: () => boolean
 }
 
 interface Props extends GanttActions {
+  drag?: GanttDrag
   from: string
   days: number
   dayPx: number
@@ -73,11 +90,16 @@ interface Props extends GanttActions {
 
 const STATE_WORDS: Record<DotState, string> = { done: 'done', late: 'late', today: 'due today', planned: 'planned' }
 
-/** Enter (or Space) on a focusable Gantt element opens it, as a click does. */
-const activate = (fn?: () => void) => ({
+/** Enter (or Space) on a focusable Gantt element opens it, as a click does (not the click that ends a drag). */
+const activate = (fn?: () => void, drag?: GanttDrag) => ({
   role: 'button',
   tabIndex: 0,
-  onClick: fn,
+  onClick: fn
+    ? (e: MouseEvent) => {
+        e.stopPropagation()
+        if (!drag?.consumeClick()) fn()
+      }
+    : undefined,
   onKeyDown: (e: KeyboardEvent) => {
     if ((e.key === 'Enter' || e.key === ' ') && fn) {
       e.preventDefault()
@@ -95,7 +117,8 @@ const activate = (fn?: () => void) => ({
  * arrows join a batch's parts across rows.
  */
 export default function GanttGrid(props: Props) {
-  const { from, days, dayPx, today, rows, phases, statuses, flags, compact, expanded, onToggleRow, onToggleCompact } = props
+  const { from, days, dayPx, today, rows, phases, statuses, flags, compact, expanded, onToggleRow, onToggleCompact, drag } = props
+  const innerRef = useRef<HTMLDivElement>(null)
   const theme = useTheme()
   const mode = theme.palette.mode as Mode
   const leftW = compact ? LEFT_W_COMPACT : LEFT_W
@@ -113,6 +136,30 @@ export default function GanttGrid(props: Props) {
   const col = (key: string) => daysBetween(from, key)
   const x = (key: string) => col(key) * dayPx
   const surface2 = theme.palette.background.boardColumn ?? theme.palette.background.default
+
+  // ── Drags ──
+  const snap = (dx: number) => Math.round(dx / dayPx)
+  const lifted = (key: string, vertical = false) => {
+    const a = drag?.active
+    if (!a || a.key !== key) return {}
+    return {
+      transform: `translate(${snap(a.dx) * dayPx}px, ${vertical ? a.dy : 0}px)`,
+      zIndex: 6,
+      opacity: 0.9,
+      boxShadow: '0 4px 14px rgba(0,0,0,.25)',
+      cursor: 'grabbing',
+    }
+  }
+  /** The row under a pointer (client y), from the layout. */
+  const rowAt = (clientY: number): Row | null => {
+    const el = innerRef.current
+    if (!el) return null
+    const y = clientY - el.getBoundingClientRect().top - HEAD_H - 1
+    return rows.find((r) => y >= r.top && y < r.top + r.height) ?? null
+  }
+  const dropRow =
+    drag?.active && drag.active.key.startsWith('bar:') && Math.abs(drag.active.dy) > TRACK_H / 2 ? rowAt(drag.active.y) : null
+  const bindDrag = (key: string, onDrop: (d: DropInfo) => void, enabled = true) => (drag && enabled ? drag.bind(key, onDrop) : {})
 
   const fillColor = (fill: number | 'cip' | null) => {
     if (fill === 'cip') return `repeating-linear-gradient(135deg, ${cipHatch} 0 4px, transparent 4px 8px)`
@@ -259,7 +306,7 @@ export default function GanttGrid(props: Props) {
       </Box>
     )
     return (
-      <Box sx={{ display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', columnGap: 0.5, alignItems: 'start', minWidth: 0 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', columnGap: 0.5, alignItems: 'start', minWidth: 0, pr: compact ? 0 : 3 }}>
         <IconButton
           size="small"
           sx={{ p: 0, width: 24, height: 24, '& svg': { transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none' } }}
@@ -276,6 +323,17 @@ export default function GanttGrid(props: Props) {
           </Tooltip>
         ) : (
           name
+        )}
+        {!compact && props.onTankMenu && (
+          <IconButton
+            size="small"
+            sx={{ position: 'absolute', top: 4, right: 4, p: 0.25 }}
+            aria-label={`${tank.name}: out of service`}
+            onClick={() => props.onTankMenu!(tank)}
+            data-testid={`gantt-tank-menu-${tank.id}`}
+          >
+            <MoreHoriz fontSize="small" />
+          </IconButton>
         )}
         {!compact && (
           <Box sx={{ gridColumn: 2, minWidth: 0, display: 'flex', gap: 0.75, alignItems: 'center' }}>
@@ -306,7 +364,7 @@ export default function GanttGrid(props: Props) {
         return (
           <Tooltip key={o.id} title={label}>
             <Box
-              {...activate(props.onBand && row.tank ? () => props.onBand!(row.tank!, o) : undefined)}
+              {...activate(props.onBand && row.tank ? () => props.onBand!(row.tank!, o) : undefined, drag)}
               aria-label={label}
               data-testid={`gantt-band-${o.id}`}
               sx={{
@@ -356,7 +414,12 @@ export default function GanttGrid(props: Props) {
       <Box key={part.key} sx={{ position: 'absolute', left: 0, top, width: '100%', height: TRACK_H, pointerEvents: 'none' }}>
         <Tooltip title={`${part.batch.label}${part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`}>
           <Box
-            {...activate(props.onBar ? () => props.onBar!(part) : undefined)}
+            {...activate(props.onBar ? () => props.onBar!(part) : undefined, drag)}
+            {...bindDrag(`bar:${part.key}`, (d) => {
+              const target = Math.abs(d.dy) > TRACK_H / 2 ? rowAt(d.y) : null
+              if (target && target !== row) props.onMoveBar?.(part, target.tank?.id ?? null)
+              else if (snap(d.dx)) props.onShiftBar?.(part, snap(d.dx))
+            })}
             aria-label={`${partLabel(part)}${part.planned ? ', planned' : ''}`}
             data-testid={`gantt-bar-${part.batch.id}-${part.vessel}`}
             data-planned={part.planned || undefined}
@@ -369,12 +432,16 @@ export default function GanttGrid(props: Props) {
               borderRadius: 1.5,
               overflow: 'hidden',
               pointerEvents: 'auto',
-              cursor: props.onBar ? 'pointer' : 'default',
+              cursor: props.onBar ? 'grab' : 'default',
+              touchAction: 'pan-x pan-y',
+              userSelect: 'none',
+              ...lifted(`bar:${part.key}`, true),
               boxShadow: part.planned ? `0 0 0 1.5px ${theme.palette.text.secondary} inset` : `0 0 0 1px ${alpha('#000', 0.08)} inset`,
               outline: part.planned ? `1.5px dashed ${theme.palette.text.secondary}` : 'none',
               outlineOffset: -1.5,
               opacity: part.planned ? 0.62 : 1,
               '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1, opacity: 1 },
+              ...(drag?.active?.key === `bar:${part.key}` ? { boxShadow: '0 4px 14px rgba(0,0,0,.25)' } : {}),
             }}
           >
             {segs.map((s) => (
@@ -438,7 +505,8 @@ export default function GanttGrid(props: Props) {
               )}
               <Tooltip title={tip}>
                 <Box
-                  {...activate(props.onStep ? () => props.onStep!(step) : undefined)}
+                  {...activate(props.onStep ? () => props.onStep!(step) : undefined, drag)}
+                  {...bindDrag(`dot:${step.id}`, (d) => snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
                   aria-label={tip}
                   data-testid={`gantt-step-${step.id}`}
                   data-state={state}
@@ -452,8 +520,10 @@ export default function GanttGrid(props: Props) {
                     border: 2,
                     zIndex: 3,
                     pointerEvents: 'auto',
-                    cursor: props.onStep ? 'pointer' : 'default',
+                    cursor: props.onStep ? (step.done_on ? 'pointer' : 'grab') : 'default',
+                    touchAction: 'pan-x pan-y',
                     ...dotSx(state),
+                    ...lifted(`dot:${step.id}`),
                     '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 2 },
                   }}
                 />
@@ -472,7 +542,8 @@ export default function GanttGrid(props: Props) {
     return (
       <Tooltip key={`cip-${cip.id}`} title={tip}>
         <Box
-          {...activate(props.onCip ? () => props.onCip!(cip) : undefined)}
+          {...activate(props.onCip ? () => props.onCip!(cip) : undefined, drag)}
+          {...bindDrag(`cip:${cip.id}`, (d) => snap(d.dx) && props.onMoveCip?.(cip, snap(d.dx)), !cip.done_on)}
           aria-label={tip}
           data-testid={`gantt-cip-${cip.id}`}
           data-state={state}
@@ -485,7 +556,9 @@ export default function GanttGrid(props: Props) {
             borderRadius: 1.5,
             border: 1.5,
             zIndex: 2,
-            cursor: props.onCip ? 'pointer' : 'default',
+            cursor: props.onCip ? 'grab' : 'default',
+            touchAction: 'pan-x pan-y',
+            ...lifted(`cip:${cip.id}`),
             borderColor: state === 'done' ? 'primary.main' : state === 'late' ? 'error.main' : 'text.secondary',
             background: state === 'done' ? cipHatch : `repeating-linear-gradient(135deg, ${cipHatch} 0 4px, ${theme.palette.background.paper} 4px 8px)`,
             boxShadow: state === 'today' ? `0 0 0 3px ${alpha(theme.palette.primary.main, 0.3)}` : 'none',
@@ -542,7 +615,8 @@ export default function GanttGrid(props: Props) {
           {visible && (
             <Tooltip title={[step.name, part.batch.label, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · ')}>
               <Box
-                {...activate(props.onStep ? () => props.onStep!(step) : undefined)}
+                {...activate(props.onStep ? () => props.onStep!(step) : undefined, drag)}
+                {...bindDrag(`dia:${step.id}`, (d) => snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
                 aria-label={`${step.name}, ${part.batch.label}, ${dayLabel(step.due_on)}, ${STATE_WORDS[state]}`}
                 data-testid={`gantt-diamond-${step.id}`}
                 data-state={state}
@@ -556,8 +630,10 @@ export default function GanttGrid(props: Props) {
                   gap: 0.75,
                   zIndex: 3,
                   whiteSpace: 'nowrap',
-                  cursor: props.onStep ? 'pointer' : 'default',
+                  cursor: props.onStep ? (step.done_on ? 'pointer' : 'grab') : 'default',
+                  touchAction: 'pan-x pan-y',
                   '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 1 },
+                  ...lifted(`dia:${step.id}`),
                 }}
               >
                 <Box sx={{ width: 11, height: 11, ml: '-5.5px', transform: 'rotate(45deg)', border: 2, flex: 'none', ...dotSx(state), boxShadow: 'none' }} />
@@ -644,7 +720,7 @@ export default function GanttGrid(props: Props) {
   }, [rows, from, to, dayPx, theme])
 
   return (
-    <Box sx={{ position: 'relative', width: leftW + width, minWidth: '100%' }} data-testid="gantt-inner">
+    <Box ref={innerRef} sx={{ position: 'relative', width: leftW + width, minWidth: '100%' }} data-testid="gantt-inner">
       {header}
       {background}
       {rows.map((row) => {
@@ -671,7 +747,25 @@ export default function GanttGrid(props: Props) {
               >
                 {tankHeader(row)}
               </Box>
-              <Box sx={{ position: 'relative', flex: 'none', width, borderBottom: 1, borderColor: 'divider' }}>
+              <Box
+                sx={{
+                  position: 'relative',
+                  flex: 'none',
+                  width,
+                  borderBottom: 1,
+                  borderColor: 'divider',
+                  cursor: props.onSpot ? 'cell' : 'default',
+                  ...(dropRow === row ? { boxShadow: `inset 0 0 0 2px ${theme.palette.primary.main}`, bgcolor: alpha(theme.palette.primary.main, 0.12) } : {}),
+                }}
+                data-testid={`gantt-lane-${key}`}
+                data-drop={dropRow === row || undefined}
+                onClick={(e) => {
+                  if (!props.onSpot || e.target !== e.currentTarget) return
+                  const left = e.currentTarget.getBoundingClientRect().left
+                  const i = Math.floor((e.clientX - left) / dayPx)
+                  if (i >= 0 && i < days) props.onSpot(row.tank, addDaysKey(from, i), { x: e.clientX, y: e.clientY })
+                }}
+              >
                 {bands(row)}
                 {row.parts.map((p) => bar(row, p))}
                 {row.cips.map((c) => cipBlock(row, c))}

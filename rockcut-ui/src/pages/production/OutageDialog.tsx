@@ -25,8 +25,10 @@ interface Props {
   /** The period to change; none = Mark out of service. */
   outage: Outage | null
   onClose: () => void
-  /** Something was saved: the tank list refetches. */
-  onSaved: (message: string) => void
+  /** Something was saved: the tank list refetches. `undoToken` (D47) undoes it for 2 minutes. */
+  onSaved: (message: string, undoToken: string | null) => void
+  /** D47 (P6): what's planned in the tank on these days ("Galactic P1 · Oct 26–Nov 2"), named before saving. */
+  plannedIn?: (from: string, to: string | null) => string[]
 }
 
 /**
@@ -35,7 +37,7 @@ interface Props {
  * it's going on, Back in service today. Errors show inline, the overlap one
  * naming the other period.
  */
-export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) {
+export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn }: Props) {
   const today = coloradoToday()
   const [from, setFrom] = useState(outage?.starts_on ?? today)
   const [open, setOpen] = useState(outage ? outage.ends_on === null : false)
@@ -63,12 +65,12 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
     return null
   }
 
-  const run = async (call: () => Promise<unknown>, message: string) => {
+  const run = async (call: () => Promise<{ data?: { undo_token?: string | null } }>, message: string) => {
     setBusy(true)
     setError(null)
     try {
-      await call()
-      onSaved(message)
+      const res = await call()
+      onSaved(message, res.data?.undo_token ?? null)
     } catch (err) {
       setError(prodError(err))
     } finally {
@@ -116,6 +118,14 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
           control={<Switch checked={open} onChange={(e) => setOpen(e.target.checked)} slotProps={{ input: { 'data-testid': 'outage-open' } as object }} />}
           label="Until further notice (no end date yet)"
         />
+        {(() => {
+          const planned = plannedIn && from && (open || to) ? plannedIn(from, open ? null : to) : []
+          return planned.length ? (
+            <Typography variant="body2" color="warning.main" data-testid="outage-planned">
+              Planned in {tank.name} then: {planned.join('; ')}. It will be flagged; nothing is moved.
+            </Typography>
+          ) : null
+        })()}
         <TextField
           label="Reason (optional)"
           placeholder="e.g. Valve repair"
