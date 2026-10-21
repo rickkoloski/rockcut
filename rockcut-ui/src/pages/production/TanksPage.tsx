@@ -31,8 +31,17 @@ export function OutageChip({ tank }: { tank: Tank }) {
   return (
     <Chip
       size="small"
-      color="error"
       variant={outage.state === 'now' ? 'filled' : 'outlined'}
+      // ≥ 4.5:1 in both themes (D46 QA minor 6): a deep red fill while it's
+      // going on; red text and outline (lighter on dark) when it's coming up.
+      sx={
+        outage.state === 'now'
+          ? { bgcolor: '#b71c1c', color: '#ffffff' }
+          : (theme) => {
+              const c = theme.palette.mode === 'dark' ? '#ff8a80' : '#b71c1c'
+              return { color: c, borderColor: c }
+            }
+      }
       label={`Out ${shortPeriod(outage)}${more ? ` +${more}` : ''}`}
       title={`Out of service ${outage.label}${outage.reason ? ` · ${outage.reason}` : ''}`}
       data-testid={`tank-out-chip-${tank.id}`}

@@ -17,8 +17,8 @@ defmodule RockcutApiWeb.ProductionErrors do
     retired: "That was retired. Restore it first.",
     one_brew_day: "A template has exactly one Brew day.",
     brew_day_fixed: "Brew day stays on day 0 in the first tank and can't be removed.",
-    transfer_needs_later_tank:
-      "A Transfer or Filter moves the beer to a later tank. Pick After transfer 1 or later.",
+    transfer_not_new_tank: "A transfer moves the beer into a new tank.",
+    no_such_tank: "That tank doesn't exist yet. Add the Transfer or Filter into it first.",
     link_cycle: "That link would go in a circle.",
     link_order: "A step can't come before the step it follows.",
     link_exists: "Those steps are already linked.",

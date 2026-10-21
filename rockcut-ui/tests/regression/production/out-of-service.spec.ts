@@ -37,7 +37,7 @@ test('P7: Mark out of service until further notice from today', async ({ page })
 
   await expect(page.getByTestId('tank-outages-now')).toContainText('until further notice')
   await expect(page.getByTestId('tank-outages-now')).toContainText('Valve repair')
-  await page.getByTestId('tank-dialog').getByRole('button', { name: 'Cancel' }).click()
+  await page.getByTestId('tank-dialog').getByRole('button', { name: 'Close' }).click()
   await expect(page.getByTestId(`tank-out-chip-${tank.id}`)).toHaveText(`Out from ${monthDay(denverToday())}`)
 
   await page.reload()
@@ -57,7 +57,7 @@ test('P8: Back in service today: yesterday becomes the last day out, under Past'
   await expect(page.getByTestId('outage-dialog')).toBeHidden()
   await expect(page.getByTestId('tank-outages-past')).toContainText('Valve repair')
   await expect(page.getByTestId('tank-outages-now')).toHaveCount(0)
-  await page.getByTestId('tank-dialog').getByRole('button', { name: 'Cancel' }).click()
+  await page.getByTestId('tank-dialog').getByRole('button', { name: 'Close' }).click()
   await expect(page.getByTestId(`tank-out-chip-${tank.id}`)).toHaveCount(0)
 
   const [saved] = (await tanks()).find((t) => t.id === tank.id)!.outages
@@ -127,6 +127,8 @@ test('P10 (Tanks page): Delete a period', async ({ page }) => {
   await openTank(page, tank.id)
   await page.getByTestId(`tank-outage-change-${o.id}`).click()
   await page.getByTestId('outage-delete').click()
+  // QA minor 2: it asks first.
+  await page.getByRole('dialog').filter({ hasText: 'Delete the out-of-service period' }).getByRole('button', { name: 'Delete' }).click()
   await expect(page.getByTestId('outage-dialog')).toBeHidden()
   await expect(page.getByTestId('tank-outages')).toContainText('No out-of-service periods.')
   expect((await tanks()).find((t) => t.id === tank.id)!.outages).toEqual([])

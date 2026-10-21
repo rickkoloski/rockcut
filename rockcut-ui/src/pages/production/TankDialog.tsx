@@ -16,6 +16,9 @@ import {
   type TankLocation,
 } from '../../lib/production'
 
+/** A filled "Now" chip that reads in both themes (≥ 4.5:1, D46 QA minor 6). */
+const NOW_CHIP = { bgcolor: '#b71c1c', color: '#ffffff' } as const
+
 interface Props {
   /** The tank to edit; none = Add tank. */
   tank: Tank | null
@@ -64,7 +67,7 @@ export default function TankDialog({ tank, onClose, onSaved, onOutage }: Props) 
   }
 
   return (
-    <FormDialog open onClose={onClose} title={tank ? `Edit ${tank.name}` : 'Add tank'} onSubmit={save} loading={busy} error={error} testId="tank-dialog">
+    <FormDialog open onClose={onClose} title={tank ? `Edit ${tank.name}` : 'Add tank'} onSubmit={save} loading={busy} error={error} testId="tank-dialog" cancelLabel={tank ? 'Close' : 'Cancel'}>
       <TextField
         label="Name"
         value={name}
@@ -143,7 +146,7 @@ export default function TankDialog({ tank, onClose, onSaved, onOutage }: Props) 
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography variant="body2" component="div" sx={{ fontWeight: 600 }}>
                           {o.label}
-                          {state === 'now' && <Chip size="small" color="error" label="Now" sx={{ ml: 1 }} />}
+                          {state === 'now' && <Chip size="small" label="Now" sx={{ ml: 1, ...NOW_CHIP }} />}
                         </Typography>
                         {o.reason && (
                           <Typography variant="body2" color="text.secondary">

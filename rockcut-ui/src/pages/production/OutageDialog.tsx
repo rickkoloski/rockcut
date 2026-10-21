@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  Alert,
   Box,
   Button,
   CircularProgress,
@@ -13,7 +12,9 @@ import {
   TextField,
   Typography,
 } from '@mui/material'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
+import ErrorAlert from './ErrorAlert'
 import api from '../../lib/api'
 import { addDaysKey } from '../../lib/datetime'
 import { prodError, prodPath, shortPeriod, type Outage, type Tank } from '../../lib/production'
@@ -42,7 +43,9 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
   const [reason, setReason] = useState(outage?.reason ?? '')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   usePhoneBackCloses(true, onClose)
+  usePhoneBackCloses(deleting, () => setDeleting(false))
 
   // The last day keeps its distance from the first when the first moves.
   const moveFrom = (next: string) => {
@@ -91,11 +94,7 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
         <Typography variant="body2" color="text.secondary">
           Shows on the schedule and flags anything planned in {tank.name} while it’s out. No task is added.
         </Typography>
-        {error && (
-          <Alert severity="error" data-testid="outage-error">
-            {error}
-          </Alert>
-        )}
+        <ErrorAlert error={error} testId="outage-error" />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
           <TextField
             label="Out from"
@@ -130,7 +129,7 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
           <Button
             color="error"
             disabled={busy}
-            onClick={() => run(() => api.delete(prodPath('outages', outage.id)), `Out-of-service period deleted.`)}
+            onClick={() => setDeleting(true)}
             data-testid="outage-delete"
           >
             Delete
@@ -153,6 +152,19 @@ export default function OutageDialog({ tank, outage, onClose, onSaved }: Props) 
           {busy ? <CircularProgress size={20} /> : outage ? 'Save' : 'Mark out of service'}
         </Button>
       </DialogActions>
+      {outage && (
+        <ConfirmDialog
+          open={deleting}
+          onClose={() => setDeleting(false)}
+          onConfirm={() => {
+            setDeleting(false)
+            run(() => api.delete(prodPath('outages', outage.id)), 'Out-of-service period deleted.')
+          }}
+          title="Delete period"
+          message={`Delete the out-of-service period ${outage.label}?`}
+          loading={busy}
+        />
+      )}
     </Dialog>
   )
 }

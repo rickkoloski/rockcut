@@ -24,7 +24,7 @@ defmodule RockcutApi.Production.Phase do
   def changeset(phase, attrs) do
     phase
     |> cast(attrs, [:name, :color])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &RockcutApi.Production.normalize_name/1)
     |> validate_required([:name], message: "Give the phase a name.")
     |> validate_required([:color], message: "Pick a color.")
     |> validate_length(:name, max: @max_name)

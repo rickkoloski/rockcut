@@ -18,7 +18,17 @@ export function IncompleteChip({ template }: { template: Pick<TemplateSummary, '
   if (!template.issues.length) return null
   return (
     <Tooltip title={template.issues.map((i) => i.message).join(' ')}>
-      <Chip size="small" color="warning" variant="outlined" label="Incomplete" data-testid={`template-incomplete-${template.id}`} />
+      <Chip
+        size="small"
+        variant="outlined"
+        label="Incomplete"
+        // ≥ 4.5:1 in both themes (D46 QA minor 6); MUI's warning orange is ~3:1 on light.
+        sx={(theme) => {
+          const c = theme.palette.mode === 'dark' ? '#ffb74d' : '#8a4b00'
+          return { color: c, borderColor: c }
+        }}
+        data-testid={`template-incomplete-${template.id}`}
+      />
     </Tooltip>
   )
 }

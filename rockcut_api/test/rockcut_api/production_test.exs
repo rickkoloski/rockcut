@@ -361,7 +361,7 @@ defmodule RockcutApi.ProductionTest do
     test "a Transfer starts a later tank and adds a CIP for the tank it leaves (P14)" do
       t = template!()
 
-      assert {:error, :transfer_needs_later_tank} =
+      assert {:error, :transfer_not_new_tank} =
                Production.add_step(t, %{
                  "step_type_id" => type!("Transfer").id,
                  "day_offset" => 35
@@ -566,12 +566,21 @@ defmodule RockcutApi.ProductionTest do
 
     test "issues: a later tank needs its Transfer and its own exit" do
       t = template!()
-      t = add!(t, %{"step_type_id" => type!("Carb").id, "day_offset" => 30, "vessel_index" => 2})
 
-      assert Enum.sort(codes(t)) ==
-               Enum.sort(
-                 ~w(vessel_not_started vessel_not_started vessel_has_no_exit vessel_has_no_exit vessel_has_no_exit)
-               )
+      t =
+        add!(t, %{"step_type_id" => type!("Transfer").id, "day_offset" => 20, "vessel_index" => 1})
+
+      t = add!(t, %{"step_type_id" => type!("Carb").id, "day_offset" => 22, "vessel_index" => 1})
+      xfer = step(t, "Transfer")
+
+      assert Enum.sort(codes(t)) == ["vessel_has_no_exit"]
+
+      assert hd(t.issues).message ==
+               "The tank after transfer 1 has no Package, Split or Transfer."
+
+      # A tank whose Transfer was removed: nothing starts it any more.
+      {:ok, t} = Production.remove_step(t, xfer)
+      assert "vessel_not_started" in codes(t)
 
       t =
         add!(t, %{"step_type_id" => type!("Transfer").id, "day_offset" => 20, "vessel_index" => 1})
@@ -584,6 +593,107 @@ defmodule RockcutApi.ProductionTest do
 
       assert t.issues == []
       assert Production.vessel_label(2) == "The tank after transfer 2"
+    end
+
+    test "a Transfer/Filter goes into a new tank only (QA M1)" do
+      t = template!()
+      transfer = type!("Transfer").id
+      filter = type!("Filter").id
+
+      t = add!(t, %{"step_type_id" => transfer, "day_offset" => 35, "vessel_index" => 1})
+      t = add!(t, %{"step_type_id" => type!("Carb").id, "day_offset" => 36, "vessel_index" => 1})
+
+      # Into the tank it's already in, or skipping a tank: refused.
+      for {k, type} <- [{1, transfer}, {1, filter}, {3, transfer}, {0, filter}] do
+        assert {:error, :transfer_not_new_tank} =
+                 Production.add_step(t, %{
+                   "step_type_id" => type,
+                   "day_offset" => 39,
+                   "vessel_index" => k
+                 }),
+               "vessel #{k}"
+      end
+
+      # Before the first transfer, a second one into tank 1 isn't new either.
+      assert {:error, :transfer_not_new_tank} =
+               Production.add_step(t, %{
+                 "step_type_id" => filter,
+                 "day_offset" => 30,
+                 "vessel_index" => 1
+               })
+
+      # Into tank 2: accepted, and its CIP is for tank 1, the tank it leaves.
+      t = add!(t, %{"step_type_id" => filter, "day_offset" => 39, "vessel_index" => 2})
+      second = step(t, "Filter")
+
+      assert Enum.filter(t.steps, &(Production.step_name(&1) == "CIP & Sanitize"))
+             |> Enum.map(&{&1.day_offset, &1.vessel_index}) == [{35, 0}, {39, 1}]
+
+      # A change that would point it back into tank 1 is refused too.
+      assert {:error, :transfer_not_new_tank} =
+               Production.update_step(t, second, %{"vessel_index" => 1})
+
+      # Two transfers the same day, one after the other: 0 → 1 → 2.
+      u = template!("Same day")
+      u = add!(u, %{"step_type_id" => transfer, "day_offset" => 10, "vessel_index" => 1})
+      u = add!(u, %{"step_type_id" => filter, "day_offset" => 10, "vessel_index" => 2})
+      assert {:ok, _} = Production.update_step(u, step(u, "Transfer"), %{"notes" => "fine"})
+    end
+
+    test "a step or ramp in a tank no Transfer/Filter starts is refused (QA minor 4)" do
+      t = template!()
+
+      assert {:error, :no_such_tank} =
+               Production.add_step(t, %{
+                 "step_type_id" => type!("Carb").id,
+                 "day_offset" => 5,
+                 "vessel_index" => 5
+               })
+
+      assert {:error, :no_such_tank} =
+               Production.add_step(t, %{
+                 "phase_id" => phase!("Lag").id,
+                 "day_offset" => 1,
+                 "vessel_index" => 1
+               })
+
+      assert {:error, :no_such_tank} =
+               Production.add_ramp(t, %{
+                 "start" => 58,
+                 "target" => 40,
+                 "change_per_day" => 10,
+                 "first_day" => 10,
+                 "vessel_index" => 1
+               })
+
+      t = add!(t, %{"step_type_id" => type!("Carb").id, "day_offset" => 5})
+
+      assert {:error, :no_such_tank} =
+               Production.update_step(t, step(t, "Carb"), %{"vessel_index" => 1})
+
+      t =
+        add!(t, %{"step_type_id" => type!("Transfer").id, "day_offset" => 20, "vessel_index" => 1})
+
+      assert {:ok, _} =
+               Production.update_step(t, step(t, "Carb"), %{
+                 "vessel_index" => 1,
+                 "day_offset" => 21
+               })
+    end
+
+    test "names are trimmed and NFKC-normalized before the uniqueness check; capacity under 10,000 (QA minor 8)" do
+      tank!("FV1")
+      assert {:error, cs} = Production.create_tank(%{"name" => " Ｆv1 ", "capacity_bbl" => 20})
+      assert "A tank named FV1 already exists." in errors_on(cs).name
+
+      assert {:error, cs} = Production.create_tank(%{"name" => "Big", "capacity_bbl" => 10_000})
+      assert errors_on(cs).capacity_bbl == ["Capacity must be under 10,000 bbl."]
+
+      assert {:error, cs} = Production.create_step_type(%{"name" => "ＦＤＨ"})
+      assert "A step type named FDH already exists." in errors_on(cs).name
+
+      {:ok, t} = Production.create_tank(%{"name" => "Ｓｅｒｖｉｎｇ 9", "capacity_bbl" => 20})
+      assert t.name == "Serving 9"
     end
 
     test "duplicate is a deep copy (P18)" do

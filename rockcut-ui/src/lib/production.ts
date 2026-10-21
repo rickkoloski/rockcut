@@ -126,8 +126,12 @@ export function fieldErrors(err: unknown): Record<string, string> {
   return Object.fromEntries(Object.entries(errors).map(([k, v]) => [k, v[0]]))
 }
 
+/** A 404 on a row the page still shows: someone else removed it (D46 QA minor 3). */
+export const GONE_MESSAGE = 'This was removed by someone else. Reload to see the latest.'
+
 /** One sentence for an alert: a coded 422's message, else the first field error. */
 export function prodError(err: unknown): string {
+  if ((err as { response?: { status?: number } })?.response?.status === 404) return GONE_MESSAGE
   const body = bodyOf(err)
   if (body?.message) return body.message
   const first = Object.values(body?.errors ?? {})[0]?.[0]
@@ -259,6 +263,59 @@ export function linkSummary(t: Template, step: TemplateStep): string[] {
 
 /** The tanks a template uses: 0 … the highest vessel_index. */
 export const templateVessels = (t: Template) => Math.max(0, ...t.steps.map((s) => s.vessel_index))
+
+// ── Tanks in a template (D46 QA M1) ──
+
+const isTransfer = (s: TemplateStep) => s.behavior === 'transfer'
+
+/** The tanks entries can go in: the first, and each one a Transfer/Filter starts. */
+export function existingTanks(t: Template, excludeId?: number): number[] {
+  const started = t.steps.filter((s) => isTransfer(s) && s.id !== excludeId).map((s) => s.vessel_index)
+  return [0, ...[...new Set(started)].sort((a, b) => a - b)]
+}
+
+/**
+ * The tank a Transfer/Filter on `day` moves the beer into: one past the
+ * highest tank used on an earlier day (the API's rule). `excludeId` is the
+ * transfer being edited.
+ */
+export function newTankFor(t: Template, day: number, excludeId?: number): number {
+  const others = t.steps.filter((s) => s.id !== excludeId)
+  let k = Math.max(0, ...others.filter((s) => s.day_offset < day).map((s) => s.vessel_index)) + 1
+  // Another transfer the same day into k goes first; this one goes on from there.
+  while (others.some((s) => isTransfer(s) && s.day_offset === day && s.vessel_index === k)) k++
+  return k
+}
+
+/** Every entry reachable along links from `id` (`dir` "down" = what follows it). */
+export function reachable(t: Template, id: number, dir: 'down' | 'up'): Set<number> {
+  const seen = new Set<number>()
+  const todo = [id]
+  while (todo.length) {
+    const at = todo.pop()!
+    for (const l of t.links) {
+      const [from, to] = dir === 'down' ? [l.from_step_id, l.to_step_id] : [l.to_step_id, l.from_step_id]
+      if (from === at && !seen.has(to)) {
+        seen.add(to)
+        todo.push(to)
+      }
+    }
+  }
+  return seen
+}
+
+/**
+ * What a ramp's fields make: the temperatures, or why not (D46 QA minor 5:
+ * the limits are the API's, 28–80°F in whole degrees, at least 1° a day).
+ */
+export function rampPlan(start: string, target: string, change: string): { temps: number[] } | { error: string } {
+  const whole = (v: string) => /^\d+$/.test(v.trim())
+  if (![start, target].every(whole) || [start, target].some((v) => Number(v) < 28 || Number(v) > 80))
+    return { error: 'Start and target are whole degrees from 28 to 80°F.' }
+  if (!whole(change) || Number(change) < 1) return { error: 'The change per day is a whole number of degrees, at least 1.' }
+  if (Number(start) === Number(target)) return { error: 'The start and target temperatures are the same.' }
+  return { temps: rampTemperatures(Number(start), Number(target), Number(change)) }
+}
 
 /** The temperatures of a ramp, as the API makes them (its last is the target). */
 export function rampTemperatures(start: number, target: number, change: number): number[] {

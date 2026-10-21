@@ -32,7 +32,7 @@ defmodule RockcutApi.Production.Tank do
   def changeset(tank, attrs) do
     tank
     |> cast(attrs, [:name, :kind, :capacity_bbl, :location, :notes])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &RockcutApi.Production.normalize_name/1)
     |> validate_required([:name], message: "Give the tank a name.")
     |> validate_required([:capacity_bbl], message: "Enter the capacity in bbl.")
     |> validate_required([:kind, :location])
@@ -40,7 +40,11 @@ defmodule RockcutApi.Production.Tank do
     |> validate_length(:notes, max: 2_000)
     |> validate_inclusion(:kind, @kinds)
     |> validate_inclusion(:location, @locations)
-    |> validate_number(:capacity_bbl, greater_than: 0, less_than: 10_000)
+    |> validate_number(:capacity_bbl, greater_than: 0, message: "Enter the capacity in bbl.")
+    |> validate_number(:capacity_bbl,
+      less_than: 10_000,
+      message: "Capacity must be under 10,000 bbl."
+    )
     |> unique_constraint(:name,
       name: :tanks_lower_name_index,
       message: "A tank with that name already exists."

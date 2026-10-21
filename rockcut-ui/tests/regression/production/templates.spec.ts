@@ -207,12 +207,13 @@ test('P16: link Carb → Package with "stays by default"', async ({ page }) => {
   await page.reload()
   await expect(page.getByTestId(`entry-links-${t.pack}`)).toHaveText('after Carb · stays')
 
-  // A link that would close a loop (Package → FDH, which Package follows) is refused in the dialog.
+  // A link that would close a loop (Package → FDH, which Package follows) isn't offered
+  // (DEV QA minor 1; the API's refusal is ExUnit's).
   await page.getByTestId(`entry-edit-${t.pack}`).click()
   await page.getByTestId('link-new-leads').click()
-  await page.getByTestId(`link-new-leads-${t.fdh}`).click()
-  await page.getByTestId('link-new-leads-add').click()
-  await expect(page.getByTestId('links-error')).toHaveText('That link would go in a circle.')
+  await expect(page.getByRole('option').first()).toBeVisible()
+  await expect(page.getByTestId(`link-new-leads-${t.fdh}`)).toHaveCount(0)
+  await page.keyboard.press('Escape')
 })
 
 test('P17: removing the Package is allowed; the banner and the Incomplete badge appear', async ({ page }) => {

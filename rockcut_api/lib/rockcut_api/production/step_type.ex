@@ -31,7 +31,7 @@ defmodule RockcutApi.Production.StepType do
   def changeset(type, attrs) do
     type
     |> cast(attrs, [:name, :full_name, :starts_phase_id, :on_task_list])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &RockcutApi.Production.normalize_name/1)
     |> update_change(:full_name, &blank_to_nil/1)
     |> validate_required([:name], message: "Give the step type a name.")
     |> validate_length(:name, max: @max_name)

@@ -21,9 +21,11 @@ interface FormDialogProps {
   /** Shown at the left of the actions (e.g. a Delete button). */
   secondaryAction?: ReactNode
   testId?: string
+  /** The dismiss button's label: "Close" when parts of the dialog save at once (D46). */
+  cancelLabel?: string
 }
 
-export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children, secondaryAction, testId }: FormDialogProps) {
+export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children, secondaryAction, testId, cancelLabel = 'Cancel' }: FormDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid={testId}>
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); onSubmit() }}>
@@ -34,7 +36,7 @@ export default function FormDialog({ open, onClose, title, onSubmit, loading, er
         </DialogContent>
         <DialogActions>
           {secondaryAction && <Box sx={{ mr: 'auto' }}>{secondaryAction}</Box>}
-          <Button onClick={onClose} disabled={loading}>Cancel</Button>
+          <Button onClick={onClose} disabled={loading}>{cancelLabel}</Button>
           <Button type="submit" variant="contained" disabled={loading}>
             {loading ? <CircularProgress size={20} /> : 'Save'}
           </Button>

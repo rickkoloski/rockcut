@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import {
-  Alert,
   Box,
   Button,
   CircularProgress,
@@ -18,15 +17,19 @@ import {
   Typography,
 } from '@mui/material'
 import { Close } from '@mui/icons-material'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
 import type { ApiResponse } from '../../lib/types'
+import ErrorAlert from './ErrorAlert'
 import {
   fieldErrors,
   prodError,
+  existingTanks,
+  newTankFor,
   prodPath,
-  rampTemperatures,
-  templateVessels,
+  rampPlan,
+  reachable,
   vesselLabel,
   type Answer,
   type Phase,
@@ -94,11 +97,35 @@ function AnswerPicker({ value, onChange, testId }: { value: Answer; onChange: (a
   )
 }
 
-function TankPicker({ template, value, onChange, disabled, testId }: { template: Template; value: number; onChange: (v: number) => void; disabled?: boolean; testId: string }) {
-  const last = Math.max(templateVessels(template) + 1, value)
+/** A tank among `choices` (vessel indexes): the existing tanks, or a transfer's one new tank. */
+function TankPicker({
+  choices,
+  value,
+  onChange,
+  label = 'Tank',
+  helper,
+  disabled,
+  testId,
+}: {
+  choices: number[]
+  value: number
+  onChange: (v: number) => void
+  label?: string
+  helper?: string
+  disabled?: boolean
+  testId: string
+}) {
   return (
-    <TextField select label="Tank" value={value} disabled={disabled} onChange={(e) => onChange(Number(e.target.value))} slotProps={selectTestId(testId)}>
-      {Array.from({ length: last + 1 }, (_, k) => (
+    <TextField
+      select
+      label={label}
+      value={value}
+      disabled={disabled}
+      helperText={helper}
+      onChange={(e) => onChange(Number(e.target.value))}
+      slotProps={selectTestId(testId)}
+    >
+      {choices.map((k) => (
         <MenuItem key={k} value={k} data-testid={`${testId}-${k}`}>
           {vesselLabel(k)}
         </MenuItem>
@@ -106,6 +133,14 @@ function TankPicker({ template, value, onChange, disabled, testId }: { template:
     </TextField>
   )
 }
+
+/** The existing tanks, plus `current` if it isn't one (an entry left in a tank whose transfer was removed). */
+const tankChoices = (t: Template, current: number) => [...new Set([...existingTanks(t), current])].sort((a, b) => a - b)
+
+/** Steps on the same day or earlier ("comes after") / later ("leads to"). */
+const onOrBefore = (steps: TemplateStep[], day: number | null) => (day == null ? steps : steps.filter((s) => s.day_offset <= day))
+const onOrAfter = (steps: TemplateStep[], day: number | null) =>
+  steps.filter((s) => s.behavior !== 'brew' && (day == null || s.day_offset >= day))
 
 function DialogShell({
   title,
@@ -115,6 +150,7 @@ function DialogShell({
   onClose,
   onSave,
   saveLabel = 'Save',
+  closeLabel = 'Cancel',
   children,
 }: {
   title: string
@@ -124,6 +160,8 @@ function DialogShell({
   onClose: () => void
   onSave: () => void
   saveLabel?: string
+  /** "Close" when parts of the dialog have saved already (links). */
+  closeLabel?: string
   children: React.ReactNode
 }) {
   usePhoneBackCloses(true, onClose)
@@ -137,16 +175,12 @@ function DialogShell({
       >
         <DialogTitle>{title}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
-          {error && (
-            <Alert severity="error" data-testid={`${testId}-error`}>
-              {error}
-            </Alert>
-          )}
+          <ErrorAlert error={error} testId={`${testId}-error`} />
           {children}
         </DialogContent>
         <DialogActions>
           <Button onClick={onClose} disabled={busy} data-testid={`${testId}-cancel`}>
-            Cancel
+            {closeLabel}
           </Button>
           <Button type="submit" variant="contained" disabled={busy} data-testid={`${testId}-save`}>
             {busy ? <CircularProgress size={20} /> : saveLabel}
@@ -202,6 +236,17 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const others = template.steps.filter((s) => s.id !== entry?.id)
   const behavior = type?.behavior ?? entry?.behavior ?? null
   const showTemp = behavior === 'set_temp' || behavior === 'brew'
+  // D46 QA M1: a Transfer/Filter goes into the next new tank, worked out from
+  // its day; any other entry goes in a tank that exists.
+  const transfer = behavior === 'transfer'
+  const dayNum = day === '' ? null : Number(day)
+  const intoTank = newTankFor(template, dayNum ?? 0, entry?.id)
+  const tankValue = transfer ? intoTank : vessel
+  // Link pickers (QA minor 1): only steps a link to or from can reach.
+  const afterChoices = onOrBefore(others, dayNum)
+  const afterValue = after !== '' && afterChoices.some((s) => s.id === after) ? after : ''
+  const leadsChoices = onOrAfter(others, dayNum).filter((s) => s.id !== afterValue)
+  const leadsValue = leads !== '' && leadsChoices.some((s) => s.id === leads) ? leads : ''
 
   const pickType = (id: number | '') => {
     setTypeId(id)
@@ -209,7 +254,6 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     if (t) {
       setPhaseId(t.starts_phase_id ?? '')
       setOnTaskList(t.on_task_list)
-      if (t.behavior === 'transfer' && vessel === 0) setVessel(templateVessels(template) + 1)
     }
   }
 
@@ -225,7 +269,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     setError(null)
     const body: Record<string, unknown> = {
       day_offset: Number(day),
-      vessel_index: vessel,
+      vessel_index: tankValue,
       phase_id: phaseId === '' ? null : phaseId,
       on_task_list: onTaskList,
       notes: notes.trim() || null,
@@ -242,8 +286,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
         res = await api.patch<ApiResponse<Template>>(prodPath('templates', template.id, 'steps', entry.id), body)
       } else {
         if (!marker) body.step_type_id = typeId
-        if (after !== '') Object.assign(body, { comes_after_id: after, comes_after_answer: afterAnswer })
-        if (leads !== '') Object.assign(body, { leads_to_id: leads, leads_to_answer: leadsAnswer })
+        if (afterValue !== '') Object.assign(body, { comes_after_id: afterValue, comes_after_answer: afterAnswer })
+        if (leadsValue !== '') Object.assign(body, { leads_to_id: leadsValue, leads_to_answer: leadsAnswer })
         res = await api.post<ApiResponse<Template>>(prodPath('templates', template.id, 'steps'), body)
       }
       onDone(res.data.data, entry ? 'Saved.' : marker ? 'Phase start added.' : `${type?.name ?? 'Step'} added.`)
@@ -259,7 +303,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const title = entry ? `Edit ${entry.name}` : marker ? 'Add phase start' : 'Add step'
 
   return (
-    <DialogShell title={title} testId="entry-dialog" error={error} busy={busy} onClose={onClose} onSave={save} saveLabel={entry ? 'Save' : 'Add'}>
+    <DialogShell title={title} testId="entry-dialog" error={error} busy={busy} onClose={onClose} onSave={save} saveLabel={entry ? 'Save' : 'Add'} closeLabel={entry ? 'Close' : 'Cancel'}>
       {!marker &&
         (entry ? (
           <Typography variant="body2" color="text.secondary">
@@ -318,7 +362,18 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           helperText={errors.day_offset ?? (isBrew ? 'Brew day stays on day 0 in the first tank.' : undefined)}
           slotProps={{ htmlInput: { min: 0, max: 365, 'data-testid': 'entry-day' } }}
         />
-        <TankPicker template={template} value={vessel} onChange={setVessel} disabled={isBrew} testId="entry-tank" />
+        {transfer ? (
+          <TankPicker
+            label="Into tank"
+            choices={[intoTank]}
+            value={intoTank}
+            onChange={() => {}}
+            helper={`Moves the beer out of the ${vesselLabel(intoTank - 1).toLowerCase()} into a new tank.`}
+            testId="entry-tank"
+          />
+        ) : (
+          <TankPicker choices={tankChoices(template, vessel)} value={vessel} onChange={setVessel} disabled={isBrew} testId="entry-tank" />
+        )}
       </Box>
       <TextField
         select
@@ -339,18 +394,18 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       {!entry && (
         <>
           <Box sx={grid2}>
-            <StepPicker label="Comes after" steps={others} value={after} onChange={setAfter} testId="entry-after" />
-            {after !== '' && <AnswerPicker value={afterAnswer} onChange={setAfterAnswer} testId="entry-after-answer" />}
+            <StepPicker label="Comes after" steps={afterChoices} value={afterValue} onChange={setAfter} testId="entry-after" />
+            {afterValue !== '' && <AnswerPicker value={afterAnswer} onChange={setAfterAnswer} testId="entry-after-answer" />}
           </Box>
           {!marker && (
             <Box sx={grid2}>
-              <StepPicker label="Leads to" steps={others.filter((s) => s.behavior !== 'brew')} value={leads} onChange={setLeads} testId="entry-leads" />
-              {leads !== '' && <AnswerPicker value={leadsAnswer} onChange={setLeadsAnswer} testId="entry-leads-answer" />}
+              <StepPicker label="Leads to" steps={leadsChoices} value={leadsValue} onChange={setLeads} testId="entry-leads" />
+              {leadsValue !== '' && <AnswerPicker value={leadsAnswer} onChange={setLeadsAnswer} testId="entry-leads-answer" />}
             </Box>
           )}
           <Typography variant="body2" color="text.secondary">
-            Comes after: moving that step offers to move this one too. Leads to: moving this step offers to move that one.
-            {!marker && ' Pick both to slot it into the chain between them.'}
+            Comes after: moving that step offers to move this one too.
+            {!marker && ' Leads to: moving this step offers to move that one. Pick both to slot it into the chain between them.'}
           </Typography>
         </>
       )}
@@ -378,7 +433,17 @@ function LinksEditor({ template, entry, onDone }: { template: Template; entry: T
   const [busy, setBusy] = useState(false)
   const [newAfter, setNewAfter] = useState<number | ''>('')
   const [newLeads, setNewLeads] = useState<number | ''>('')
+  const [removing, setRemoving] = useState<(typeof template.links)[number] | null>(null)
   const others = template.steps.filter((s) => s.id !== entry.id)
+  // QA minor 1: only links the server would take. "Comes after": the same day
+  // or earlier, not already linked, nothing that follows this entry (a loop);
+  // "Leads to": the same day or later, the same the other way round.
+  const after = new Set(template.links.filter((l) => l.to_step_id === entry.id).map((l) => l.from_step_id))
+  const leads = new Set(template.links.filter((l) => l.from_step_id === entry.id).map((l) => l.to_step_id))
+  const below = reachable(template, entry.id, 'down')
+  const above = reachable(template, entry.id, 'up')
+  const afterChoices = onOrBefore(others, entry.day_offset).filter((s) => !after.has(s.id) && !below.has(s.id))
+  const leadsChoices = onOrAfter(others, entry.day_offset).filter((s) => !leads.has(s.id) && !above.has(s.id))
 
   const call = async (fn: () => Promise<{ data: ApiResponse<Template> }>) => {
     setBusy(true)
@@ -428,7 +493,7 @@ function LinksEditor({ template, entry, onDone }: { template: Template; entry: T
             ))}
           </TextField>
           <Tooltip title="Remove link">
-            <IconButton size="small" aria-label="Remove link" disabled={busy} onClick={() => call(() => api.delete(`${base}/${l.id}`))} data-testid={`link-remove-${l.id}`}>
+            <IconButton size="small" aria-label="Remove link" disabled={busy} onClick={() => setRemoving(l)} data-testid={`link-remove-${l.id}`}>
               <Close fontSize="small" />
             </IconButton>
           </Tooltip>
@@ -441,27 +506,40 @@ function LinksEditor({ template, entry, onDone }: { template: Template; entry: T
     <Box data-testid="links-editor" sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       <Divider />
       <Typography variant="subtitle2">Links</Typography>
-      {error && (
-        <Alert severity="error" data-testid="links-error">
-          {error}
-        </Alert>
-      )}
+      <ErrorAlert error={error} testId="links-error" />
       {list('Comes after', template.links.filter((l) => l.to_step_id === entry.id), (l) => l.from_step_id)}
       {list('Leads to (“moves with it” = the step after follows when this one moves)', template.links.filter((l) => l.from_step_id === entry.id), (l) => l.to_step_id)}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-          <StepPicker label="Add: comes after" steps={others} value={newAfter} onChange={setNewAfter} testId="link-new-after" />
+          <StepPicker label="Add: comes after" steps={afterChoices} value={newAfter} onChange={setNewAfter} testId="link-new-after" />
           <Button disabled={newAfter === '' || busy} onClick={async () => newAfter !== '' && (await add(newAfter, entry.id)) && setNewAfter('')} data-testid="link-new-after-add">
             Link
           </Button>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-          <StepPicker label="Add: leads to" steps={others.filter((s) => s.behavior !== 'brew')} value={newLeads} onChange={setNewLeads} testId="link-new-leads" />
+          <StepPicker label="Add: leads to" steps={leadsChoices} value={newLeads} onChange={setNewLeads} testId="link-new-leads" />
           <Button disabled={newLeads === '' || busy} onClick={async () => newLeads !== '' && (await add(entry.id, newLeads)) && setNewLeads('')} data-testid="link-new-leads-add">
             Link
           </Button>
         </Box>
       </Box>
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        onConfirm={async () => {
+          const l = removing!
+          setRemoving(null)
+          await call(() => api.delete(`${base}/${l.id}`))
+        }}
+        title="Remove link"
+        message={
+          removing
+            ? `Remove the link from ${byId.get(removing.from_step_id)?.name ?? '?'} to ${byId.get(removing.to_step_id)?.name ?? '?'}? Moving one will no longer offer to move the other.`
+            : ''
+        }
+        confirmLabel="Remove"
+        loading={busy}
+      />
     </Box>
   )
 }
@@ -485,10 +563,18 @@ export function RampDialog({ template, phases, onClose, onDone }: { template: Te
   const [onTaskList, setOnTaskList] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const temps = rampTemperatures(Number(start), Number(target), Number(change))
+  // QA minor 5: the API's limits, before anything is listed.
+  const plan = rampPlan(start, target, change)
+  const temps = 'temps' in plan ? plan.temps : []
   const first = Number(firstDay)
+  const lastDay = firstDay === '' ? null : first + Math.max(temps.length, 1) - 1
+  const afterChoices = onOrBefore(template.steps, firstDay === '' ? null : first)
+  const afterValue = after !== '' && afterChoices.some((s) => s.id === after) ? after : ''
+  const leadsChoices = onOrAfter(template.steps, lastDay).filter((s) => s.id !== afterValue)
+  const leadsValue = leads !== '' && leadsChoices.some((s) => s.id === leads) ? leads : ''
 
   const save = async () => {
+    if ('error' in plan) return setError(plan.error)
     if (firstDay === '') return setError('Pick the first day.')
     setBusy(true)
     setError(null)
@@ -501,8 +587,8 @@ export function RampDialog({ template, phases, onClose, onDone }: { template: Te
       phase_id: phaseId === '' ? null : phaseId,
       on_task_list: onTaskList,
     }
-    if (after !== '') Object.assign(body, { comes_after_id: after, comes_after_answer: afterAnswer })
-    if (leads !== '') Object.assign(body, { leads_to_id: leads, leads_to_answer: leadsAnswer })
+    if (afterValue !== '') Object.assign(body, { comes_after_id: afterValue, comes_after_answer: afterAnswer })
+    if (leadsValue !== '') Object.assign(body, { leads_to_id: leadsValue, leads_to_answer: leadsAnswer })
     try {
       const res = await api.post<ApiResponse<Template>>(prodPath('templates', template.id, 'ramp'), body)
       onDone(res.data.data, `Ramp added: ${temps.map((t) => `${t}°`).join(', ')}.`)
@@ -516,25 +602,31 @@ export function RampDialog({ template, phases, onClose, onDone }: { template: Te
   return (
     <DialogShell title="Add a ramp" testId="ramp-dialog" error={error} busy={busy} onClose={onClose} onSave={save} saveLabel="Add ramp">
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr 1fr', sm: '1fr 1fr 1fr' }, gap: 2 }}>
-        <TextField label="Start (°F)" type="number" value={start} onChange={(e) => setStart(e.target.value)} slotProps={{ htmlInput: { min: 28, max: 80, 'data-testid': 'ramp-start' } }} />
-        <TextField label="Target (°F)" type="number" value={target} onChange={(e) => setTarget(e.target.value)} slotProps={{ htmlInput: { min: 28, max: 80, 'data-testid': 'ramp-target' } }} />
+        <TextField label="Start (°F)" type="number" value={start} onChange={(e) => setStart(e.target.value)} slotProps={{ htmlInput: { 'data-testid': 'ramp-start' } }} />
+        <TextField label="Target (°F)" type="number" value={target} onChange={(e) => setTarget(e.target.value)} slotProps={{ htmlInput: { 'data-testid': 'ramp-target' } }} />
         <TextField
           label="Change per day (°F)"
           type="number"
           value={change}
           onChange={(e) => setChange(e.target.value)}
           helperText="5–10° is typical"
-          slotProps={{ htmlInput: { min: 1, 'data-testid': 'ramp-change' } }}
+          // No native limits: the inline check says what's wrong (QA minor 5).
+          slotProps={{ htmlInput: { 'data-testid': 'ramp-change' } }}
         />
       </Box>
       <Box sx={grid2}>
         <TextField label="First day (after brew day)" type="number" value={firstDay} onChange={(e) => setFirstDay(e.target.value)} slotProps={{ htmlInput: { min: 0, 'data-testid': 'ramp-first-day' } }} />
-        <TankPicker template={template} value={vessel} onChange={setVessel} testId="ramp-tank" />
+        <TankPicker choices={tankChoices(template, vessel)} value={vessel} onChange={setVessel} testId="ramp-tank" />
       </Box>
-      <Typography variant="body2" data-testid="ramp-preview" color={temps.length ? 'text.primary' : 'text.secondary'}>
-        {temps.length
-          ? `${temps.length} Set temp steps: ${temps.map((t) => `${t}°`).join(', ')}${firstDay !== '' ? ` on days ${first}–${first + temps.length - 1}` : ''}.`
-          : 'Enter a start, a different target and a change per day.'}
+      <Typography
+        variant="body2"
+        data-testid="ramp-preview"
+        role={'error' in plan ? 'alert' : undefined}
+        color={'error' in plan ? 'error' : 'text.primary'}
+      >
+        {'error' in plan
+          ? plan.error
+          : `${temps.length} Set temp steps: ${temps.map((t) => `${t}°`).join(', ')}${firstDay !== '' ? ` on days ${first}–${first + temps.length - 1}` : ''}.`}
       </Typography>
       <TextField
         select
@@ -553,19 +645,19 @@ export function RampDialog({ template, phases, onClose, onDone }: { template: Te
           ))}
       </TextField>
       <Box sx={grid2}>
-        <StepPicker label="Comes after" steps={template.steps} value={after} onChange={setAfter} testId="ramp-after" />
-        {after !== '' && <AnswerPicker value={afterAnswer} onChange={setAfterAnswer} testId="ramp-after-answer" />}
+        <StepPicker label="Comes after" steps={afterChoices} value={afterValue} onChange={setAfter} testId="ramp-after" />
+        {afterValue !== '' && <AnswerPicker value={afterAnswer} onChange={setAfterAnswer} testId="ramp-after-answer" />}
       </Box>
       <Box sx={grid2}>
         <StepPicker
           label="Leads to"
-          steps={template.steps.filter((s) => s.behavior !== 'brew')}
-          value={leads}
+          steps={leadsChoices}
+          value={leadsValue}
           onChange={setLeads}
           testId="ramp-leads"
           helper="The ramp’s last step links to it."
         />
-        {leads !== '' && <AnswerPicker value={leadsAnswer} onChange={setLeadsAnswer} testId="ramp-leads-answer" />}
+        {leadsValue !== '' && <AnswerPicker value={leadsAnswer} onChange={setLeadsAnswer} testId="ramp-leads-answer" />}
       </Box>
       <FormControlLabel
         control={<Switch checked={onTaskList} onChange={(e) => setOnTaskList(e.target.checked)} slotProps={{ input: { 'data-testid': 'ramp-task-list' } as object }} />}

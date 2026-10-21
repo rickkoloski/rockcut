@@ -182,6 +182,30 @@ defmodule RockcutApiWeb.ProductionControllerTest do
                  {"CIP & Sanitize", 35, 0}
                ]
 
+      # QA M1: a second transfer into the tank it's already in.
+      again =
+        call(b, :post, base <> "/steps", %{
+          step_type_id: type_id("Filter"),
+          day_offset: 39,
+          vessel_index: 1
+        })
+
+      assert again.status == 422
+
+      assert body(again) == %{
+               "error" => "transfer_not_new_tank",
+               "message" => "A transfer moves the beer into a new tank."
+             }
+
+      nowhere =
+        call(b, :post, base <> "/steps", %{
+          step_type_id: type_id("Carb"),
+          day_offset: 40,
+          vessel_index: 4
+        })
+
+      assert body(nowhere)["error"] == "no_such_tank"
+
       ramp =
         call(b, :post, base <> "/ramp", %{
           start: 58,

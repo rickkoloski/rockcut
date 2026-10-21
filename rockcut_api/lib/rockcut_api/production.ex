@@ -33,6 +33,15 @@ defmodule RockcutApi.Production do
     TemplateStep
   }
 
+  @doc """
+  A name as it's stored and compared: trimmed and NFKC-normalized, so a
+  full-width "Ｆv1" is the same name as "Fv1" (D46 QA minor 8).
+  """
+  def normalize_name(name) when is_binary(name),
+    do: name |> :unicode.characters_to_nfkc_binary() |> String.trim()
+
+  def normalize_name(name), do: name
+
   ## Tanks
 
   @doc "Every tank with its outages (by start): active in display order, then retired by name."
@@ -356,8 +365,12 @@ defmodule RockcutApi.Production do
   `comes_after_answer` and `leads_to_id` / `leads_to_answer`. With both, the
   entry slots in between and the direct link between them goes.
 
-  A Transfer/Filter starts a later tank (`vessel_index` ≥ 1) and adds a
-  CIP & Sanitize for the tank it leaves, the same day, linked from it.
+  A Transfer/Filter's `vessel_index` is the tank it moves the beer **into**:
+  always a new one, one more than the highest tank used before it in day
+  order (`:transfer_not_new_tank` otherwise). It adds a CIP & Sanitize for
+  the tank it leaves (`vessel_index − 1`), the same day, linked from it.
+  Any other entry goes in the first tank or one a Transfer/Filter starts
+  (`:no_such_tank` otherwise).
 
   Returns the whole template (`get_template/1`).
   """
@@ -368,9 +381,7 @@ defmodule RockcutApi.Production do
       type = attr_type!(attrs)
       fields = entry_fields!(type, attrs)
       if behavior_of(type) == "brew", do: Repo.rollback(:one_brew_day)
-
-      if behavior_of(type) == "transfer" and fields.vessel_index < 1,
-        do: Repo.rollback(:transfer_needs_later_tank)
+      check_vessel!(template, type, fields, nil)
 
       step = insert_step!(template, type, fields)
       link_into_chain!(template, step, step, attrs)
@@ -411,8 +422,8 @@ defmodule RockcutApi.Production do
 
       fields = entry_fields!(type, attrs, step)
 
-      if behavior_of(type) == "transfer" and fields.vessel_index < 1,
-        do: Repo.rollback(:transfer_needs_later_tank)
+      if fields.vessel_index != step.vessel_index or fields.day_offset != step.day_offset,
+        do: check_vessel!(template, type, fields, step.id)
 
       fields =
         if fields.day_offset != step.day_offset,
@@ -572,6 +583,7 @@ defmodule RockcutApi.Production do
             do: truthy?(attrs["on_task_list"]),
             else: type.on_task_list
 
+        check_vessel!(template, type, %{vessel_index: vessel, day_offset: first_day}, nil)
         group = new_ramp_group()
 
         steps =
@@ -813,6 +825,39 @@ defmodule RockcutApi.Production do
         Repo.rollback(invalid)
     end
   end
+
+  # D46 fix cycle 2 (QA M1, minor 4). A Transfer/Filter moves the beer into
+  # a new tank: exactly one past the highest tank used before it (earlier
+  # days, or an earlier transfer the same day), and no other transfer goes
+  # into it. Any other entry needs its tank to exist: the first, or one a
+  # Transfer/Filter starts. `step_id` is the entry being changed (nil = new).
+  defp check_vessel!(%Template{id: tid}, type, %{vessel_index: k, day_offset: day}, step_id) do
+    others =
+      from(s in TemplateStep, where: s.template_id == ^tid, preload: :step_type)
+      |> except_id(step_id)
+      |> Repo.all()
+
+    transfer? = &(behavior_of(&1.step_type) == "transfer")
+
+    if behavior_of(type) == "transfer" do
+      highest =
+        others
+        |> Enum.filter(
+          &(&1.day_offset < day or
+              (&1.day_offset == day and transfer?.(&1) and &1.vessel_index < k))
+        )
+        |> Enum.map(& &1.vessel_index)
+        |> Enum.max(fn -> 0 end)
+
+      if k != highest + 1 or starts?(others, k, transfer?),
+        do: Repo.rollback(:transfer_not_new_tank)
+    else
+      if k > 0 and not starts?(others, k, transfer?), do: Repo.rollback(:no_such_tank)
+    end
+  end
+
+  defp starts?(steps, k, transfer?),
+    do: Enum.any?(steps, &(transfer?.(&1) and &1.vessel_index == k))
 
   defp insert_step!(%Template{id: tid}, type, fields) do
     Repo.insert!(

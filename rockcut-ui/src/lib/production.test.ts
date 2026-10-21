@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import { contrastRatio } from './colors'
 import {
+  GONE_MESSAGE,
   PHASE_PALETTE,
+  existingTanks,
   headlineOutage,
+  newTankFor,
+  prodError,
+  rampPlan,
+  reachable,
   phaseFill,
   previewBars,
   rampTemperatures,
@@ -104,5 +110,54 @@ describe('previewBars', () => {
     expect(first.dots.map((d) => d.name)).toEqual(['Brew day'])
     expect(second).toMatchObject({ vessel: 1, start: 4, end: 6, phases: [11, 11, 12] })
     expect(second.dots.map((d) => d.name)).toEqual(['Transfer', 'Package'])
+  })
+})
+
+describe('tanks in a template (QA M1)', () => {
+  const s = (id: number, day: number, vessel: number, behavior: TemplateStep['behavior'] = 'plain') =>
+    ({ id, day_offset: day, vessel_index: vessel, behavior }) as TemplateStep
+  const t = {
+    steps: [s(1, 0, 0, 'brew'), s(2, 35, 1, 'transfer'), s(3, 35, 0, 'cip'), s(4, 36, 1)],
+    links: [
+      { id: 1, from_step_id: 1, to_step_id: 2, default_answer: 'move_all' },
+      { id: 2, from_step_id: 2, to_step_id: 4, default_answer: 'move_all' },
+    ],
+  } as unknown as Template
+
+  it('a transfer goes into the next new tank, from its day', () => {
+    expect(newTankFor(t, 39)).toBe(2)
+    expect(newTankFor(t, 35, 2)).toBe(1) // the transfer itself, being edited
+    expect(newTankFor(t, 20)).toBe(1)
+    // a second transfer the same day goes one further
+    expect(newTankFor(t, 35)).toBe(2)
+  })
+
+  it('other entries go in the first tank or one a transfer starts', () => {
+    expect(existingTanks(t)).toEqual([0, 1])
+    expect(existingTanks(t, 2)).toEqual([0])
+  })
+
+  it('reachable follows links down or up', () => {
+    expect([...reachable(t, 1, 'down')].sort()).toEqual([2, 4])
+    expect([...reachable(t, 4, 'up')].sort()).toEqual([1, 2])
+  })
+})
+
+describe('rampPlan (QA minor 5)', () => {
+  it('lists the temperatures, or says why not', () => {
+    expect(rampPlan('58', '32', '10')).toEqual({ temps: [58, 48, 38, 32] })
+    expect(rampPlan('90', '20', '10')).toEqual({ error: 'Start and target are whole degrees from 28 to 80°F.' })
+    expect(rampPlan('58', '32', '0.5')).toEqual({ error: 'The change per day is a whole number of degrees, at least 1.' })
+    expect(rampPlan('58', '32.5', '5')).toHaveProperty('error')
+    expect(rampPlan('40', '40', '5')).toEqual({ error: 'The start and target temperatures are the same.' })
+  })
+})
+
+describe('prodError', () => {
+  it('a 404 says someone else removed it (QA minor 3)', () => {
+    expect(prodError({ response: { status: 404, data: { error: 'not_found', message: 'Not found' } } })).toBe(GONE_MESSAGE)
+    expect(prodError({ response: { status: 422, data: { error: 'x', message: 'A transfer moves the beer into a new tank.' } } })).toBe(
+      'A transfer moves the beer into a new tank.',
+    )
   })
 })

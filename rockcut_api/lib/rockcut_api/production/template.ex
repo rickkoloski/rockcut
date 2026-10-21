@@ -26,7 +26,7 @@ defmodule RockcutApi.Production.Template do
   def changeset(template, attrs) do
     template
     |> cast(attrs, [:name, :notes])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &RockcutApi.Production.normalize_name/1)
     |> validate_required([:name], message: "Give the template a name.")
     |> validate_length(:name, max: @max_name)
     |> validate_length(:notes, max: 2_000)

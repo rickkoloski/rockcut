@@ -37,6 +37,7 @@ import {
 import { PhaseChip } from './ListsPage'
 import { EntryDialog, RampDialog } from './EntryDialogs'
 import TemplatePreview from './TemplatePreview'
+import ErrorAlert from './ErrorAlert'
 import { TemplateNameDialog } from './TemplatesPage'
 
 const NO_PHASES: Phase[] = []
@@ -220,11 +221,7 @@ export default function TemplateEditor() {
           ))}
         </Alert>
       )}
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)} data-testid="template-error">
-          {error}
-        </Alert>
-      )}
+      <ErrorAlert error={error} onClose={() => setError(null)} sx={{ mb: 2 }} testId="template-error" />
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
         <Button variant="contained" startIcon={<Add />} onClick={() => setEditing({ kind: 'step', entry: null })} data-testid="template-add-step">
           Add step
