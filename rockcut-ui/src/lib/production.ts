@@ -84,11 +84,22 @@ export interface TemplateStep {
   vessel_index: number
   detail: string | null
   temperature: number | null
+  /** How a Split's parts leave (D47): "Split - Transfer" / "Split - Filter". Null for anything else. */
+  split_method: SplitMethod | null
+  /** A Package that takes only some of the beer (D47): not the tank's exit. */
+  package_partial: boolean
   notes: string | null
   on_task_list: boolean
   position: number
   ramp_group: string | null
 }
+
+export type SplitMethod = 'transfer' | 'filter'
+
+export const SPLIT_METHODS: { key: SplitMethod; label: string }[] = [
+  { key: 'transfer', label: 'Transfer' },
+  { key: 'filter', label: 'Filter' },
+]
 
 export type Answer = 'move_all' | 'move_only'
 
@@ -275,7 +286,7 @@ export function existingTanks(t: Template, excludeId?: number): number[] {
 }
 
 /**
- * The tank a Transfer/Filter on `day` moves the beer into: one past the
+ * The tank a new Transfer/Filter on `day` moves the beer into: one past the
  * highest tank used on an earlier day (the API's rule). `excludeId` is the
  * transfer being edited.
  */
@@ -286,6 +297,25 @@ export function newTankFor(t: Template, day: number, excludeId?: number): number
   while (others.some((s) => isTransfer(s) && s.day_offset === day && s.vessel_index === k)) k++
   return k
 }
+
+/**
+ * Why a Transfer/Filter can't go on `day` (D47 task 0, N1, the API's rule):
+ * transfers stay in day order. A new one can't come before an existing one;
+ * `entry` (being edited, it keeps its tank) can't pass the ones either side.
+ */
+export function transferOrderError(t: Template, day: number | null, entry?: TemplateStep | null): string | null {
+  if (day == null) return null
+  const others = t.steps.filter((s) => isTransfer(s) && s.id !== entry?.id)
+  const before = entry ? others.filter((s) => s.vessel_index < entry.vessel_index && s.day_offset > day) : others.filter((s) => s.day_offset > day)
+  const after = entry ? others.filter((s) => s.vessel_index > entry.vessel_index && s.day_offset < day) : []
+  const message = (side: string, d: number) => `Transfers stay in day order: this one would come ${side} the transfer on day ${d}.`
+  if (before.length) return message('before', Math.min(...before.map((s) => s.day_offset)))
+  if (after.length) return message('after', Math.max(...after.map((s) => s.day_offset)))
+  return null
+}
+
+/** "the first tank", "the tank after transfer 2" (in a sentence). */
+export const vesselPhrase = (k: number) => (k === 0 ? 'the first tank' : `the tank after transfer ${k}`)
 
 /** Every entry reachable along links from `id` (`dir` "down" = what follows it). */
 export function reachable(t: Template, id: number, dir: 'down' | 'up'): Set<number> {
@@ -306,7 +336,8 @@ export function reachable(t: Template, id: number, dir: 'down' | 'up'): Set<numb
 
 /**
  * What a ramp's fields make: the temperatures, or why not (D46 QA minor 5:
- * the limits are the API's, 28–80°F in whole degrees, at least 1° a day).
+ * the limits are the API's, 28–80°F in whole degrees, at least 1° a day and
+ * at most the gap between start and target, D47 task 0 N3).
  */
 export function rampPlan(start: string, target: string, change: string): { temps: number[] } | { error: string } {
   const whole = (v: string) => /^\d+$/.test(v.trim())
@@ -314,6 +345,8 @@ export function rampPlan(start: string, target: string, change: string): { temps
     return { error: 'Start and target are whole degrees from 28 to 80°F.' }
   if (!whole(change) || Number(change) < 1) return { error: 'The change per day is a whole number of degrees, at least 1.' }
   if (Number(start) === Number(target)) return { error: 'The start and target temperatures are the same.' }
+  const gap = Math.abs(Number(start) - Number(target))
+  if (Number(change) > gap) return { error: `The change per day can be at most ${gap}°, the gap between start and target.` }
   return { temps: rampTemperatures(Number(start), Number(target), Number(change)) }
 }
 

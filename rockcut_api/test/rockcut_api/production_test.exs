@@ -614,8 +614,8 @@ defmodule RockcutApi.ProductionTest do
                "vessel #{k}"
       end
 
-      # Before the first transfer, a second one into tank 1 isn't new either.
-      assert {:error, :transfer_not_new_tank} =
+      # Before the first transfer: transfers stay in day order (N1).
+      assert {:error, {:transfer_order, :before, 35}} =
                Production.add_step(t, %{
                  "step_type_id" => filter,
                  "day_offset" => 30,
@@ -748,6 +748,208 @@ defmodule RockcutApi.ProductionTest do
       assert t.retired_at
       {:ok, t} = Production.restore_template(t)
       assert is_nil(t.retired_at)
+    end
+  end
+
+  describe "D47 task 0: 4650 follow-ups, Split method, partial Package" do
+    # Transfers on days 20 and 25, a Filter on day 28 (the QA recheck's template).
+    defp three_tanks! do
+      t = template!("Three tanks")
+
+      t =
+        add!(t, %{"step_type_id" => type!("Transfer").id, "day_offset" => 20, "vessel_index" => 1})
+
+      t = add!(t, %{"step_type_id" => type!("Rouse").id, "day_offset" => 22, "vessel_index" => 1})
+
+      t =
+        add!(t, %{"step_type_id" => type!("Transfer").id, "day_offset" => 25, "vessel_index" => 2})
+
+      t =
+        add!(t, %{"step_type_id" => type!("Filter").id, "day_offset" => 28, "vessel_index" => 3})
+
+      add!(t, %{"step_type_id" => type!("Package").id, "day_offset" => 32, "vessel_index" => 3})
+    end
+
+    defp transfer_on(t, day),
+      do: Enum.find(t.steps, &(&1.step_type.behavior == "transfer" and &1.day_offset == day))
+
+    test "N1: transfers stay in day order" do
+      t = three_tanks!()
+      assert t.issues == []
+
+      # A new one before the day-25 transfer (into the tank that one starts).
+      for k <- [2, 3] do
+        assert {:error, {:transfer_order, :before, 25}} =
+                 Production.add_step(t, %{
+                   "step_type_id" => type!("Transfer").id,
+                   "day_offset" => 22,
+                   "vessel_index" => k
+                 })
+      end
+
+      # The day-20 transfer moved past the day-25 one, the Filter moved before it.
+      assert {:error, {:transfer_order, :after, 25}} =
+               Production.update_step(t, transfer_on(t, 20), %{"day_offset" => 27})
+
+      assert {:error, {:transfer_order, :before, 25}} =
+               Production.update_step(t, transfer_on(t, 28), %{"day_offset" => 22})
+
+      # Within its neighbours it can move, keeping its tank.
+      {:ok, t2} = Production.update_step(t, transfer_on(t, 25), %{"day_offset" => 24})
+      assert transfer_on(t2, 24).vessel_index == 2
+
+      # After the last one is fine.
+      assert {:ok, _} =
+               Production.add_step(t, %{
+                 "step_type_id" => type!("Transfer").id,
+                 "day_offset" => 34,
+                 "vessel_index" => 4
+               })
+    end
+
+    test "N2: removal_issues lists what a removal leaves incomplete and changes nothing" do
+      t = three_tanks!()
+      middle = transfer_on(t, 25)
+
+      assert {:ok, issues} = Production.removal_issues(t, middle)
+      assert "vessel_not_started" in Enum.map(issues, & &1.code)
+
+      assert %{message: "The tank after transfer 2 has no Transfer or Filter starting it."} =
+               Enum.find(issues, &(&1.code == "vessel_not_started"))
+
+      assert length(Production.get_template(t.id).steps) == length(t.steps)
+
+      # Nothing new: an empty list; Brew day: refused as before.
+      assert {:ok, []} = Production.removal_issues(t, step(t, "Rouse"))
+      assert {:error, :brew_day_fixed} = Production.removal_issues(t, step(t, "Brew day"))
+    end
+
+    test "N3: a ramp changes at most the gap between start and target per day" do
+      t = template!()
+      ramp = &Map.merge(%{"start" => 80, "target" => 28, "first_day" => 30}, &1)
+
+      assert {:error, {:ramp_change, 52}} =
+               Production.add_ramp(t, ramp.(%{"change_per_day" => 100}))
+
+      assert {:error, {:ramp_change, 52}} =
+               Production.add_ramp(t, ramp.(%{"change_per_day" => 53}))
+
+      assert {:error, {:ramp_change, 52}} =
+               Production.add_ramp(t, ramp.(%{"change_per_day" => 0}))
+
+      assert {:error, :ramp_days} =
+               Production.add_ramp(t, ramp.(%{"change_per_day" => 10, "first_day" => -1}))
+
+      assert {:error, :ramp_flat} =
+               Production.add_ramp(t, ramp.(%{"target" => 80, "change_per_day" => 5}))
+
+      assert {:ok, t} = Production.add_ramp(t, ramp.(%{"change_per_day" => 52}))
+
+      assert t.steps |> Enum.filter(& &1.ramp_group) |> Enum.map(& &1.temperature) == [80, 28]
+    end
+
+    test "N4a: an entry after the tank's exit is named" do
+      t = template!()
+
+      t =
+        add!(t, %{"step_type_id" => type!("Transfer").id, "day_offset" => 20, "vessel_index" => 1})
+
+      t =
+        add!(t, %{"step_type_id" => type!("Package").id, "day_offset" => 30, "vessel_index" => 1})
+
+      assert t.issues == []
+
+      t = add!(t, %{"step_type_id" => type!("FDH").id, "day_offset" => 22})
+      assert codes(t) == ["step_after_exit"]
+
+      assert hd(t.issues).message ==
+               "The first tank is emptied by the Transfer on day 20, but FDH on day 22 comes after it."
+
+      t = add!(t, %{"step_type_id" => type!("Rouse").id, "day_offset" => 24, "detail" => "#2"})
+
+      assert hd(t.issues).message ==
+               "The first tank is emptied by the Transfer on day 20, but FDH on day 22 and Rouse - #2 on day 24 come after it."
+    end
+
+    test "P109: a Split is Split - Transfer by default, or Split - Filter; it's the tank's exit" do
+      t = template!()
+      t = add!(t, %{"step_type_id" => type!("Split").id, "day_offset" => 30})
+      split = step(t, "Split - Transfer")
+      assert split.split_method == "transfer"
+      assert t.issues == []
+
+      {:ok, t} = Production.update_step(t, split, %{"split_method" => "filter", "detail" => "#2"})
+      assert step(t, "Split - Filter - #2")
+
+      assert {:error, cs} =
+               Production.update_step(t, split, %{"split_method" => "pump"})
+
+      assert errors_on(cs).split_method == ["Pick Transfer or Filter."]
+
+      # Only a Split keeps a method.
+      t =
+        add!(t, %{
+          "step_type_id" => type!("Carb").id,
+          "day_offset" => 25,
+          "split_method" => "filter"
+        })
+
+      assert is_nil(step(t, "Carb").split_method)
+
+      {:ok, copy} = Production.duplicate_template(t)
+      assert step(copy, "Split - Filter - #2").split_method == "filter"
+    end
+
+    test "P111: a partial Package isn't the tank's exit and adds no CIP" do
+      t = template!()
+
+      t =
+        add!(t, %{
+          "step_type_id" => type!("Package").id,
+          "day_offset" => 30,
+          "package_partial" => true,
+          "detail" => "kegs"
+        })
+
+      partial = step(t, "Package - Partial - kegs")
+      assert partial.package_partial
+
+      assert Enum.map(t.steps, &Production.step_name/1) == [
+               "Brew day",
+               "Package - Partial - kegs"
+             ]
+
+      assert codes(t) == ["vessel_has_no_exit"]
+
+      t = add!(t, %{"step_type_id" => type!("Package").id, "day_offset" => 40})
+      assert step(t, "Package")
+      assert t.issues == []
+
+      # Remove the full Package: the tank has no exit again.
+      assert {:ok, [%{code: "vessel_has_no_exit"}]} =
+               Production.removal_issues(t, step(t, "Package"))
+
+      # Switching the full one to partial, and back.
+      {:ok, t} = Production.update_step(t, step(t, "Package"), %{"package_partial" => true})
+      assert codes(t) == ["vessel_has_no_exit"]
+
+      {:ok, t} =
+        Production.update_step(t, step(t, "Package - Partial"), %{"package_partial" => false})
+
+      assert t.issues == []
+
+      # Only a Package can be partial.
+      t =
+        add!(t, %{
+          "step_type_id" => type!("Carb").id,
+          "day_offset" => 25,
+          "package_partial" => true
+        })
+
+      refute step(t, "Carb").package_partial
+
+      {:ok, copy} = Production.duplicate_template(t)
+      assert step(copy, "Package - Partial - kegs").package_partial
     end
   end
 end

@@ -111,7 +111,7 @@ test.describe('P2: reorder', () => {
     await expect.poll(async () => (await activeTankIds()).indexOf(tank.id)).toBe(before.length - 2)
 
     // …then dragged by its handle above the first tank.
-    const handle = page.getByTestId(`tanks-list-row-${tank.id}`).locator('svg').first()
+    const handle = page.getByTestId(`tanks-list-handle-${tank.id}`)
     const from = (await handle.boundingBox())!
     const top = (await page.locator('[data-testid^="tanks-list-row-"]').first().boundingBox())!
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2)

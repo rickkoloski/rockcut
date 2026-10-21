@@ -321,6 +321,8 @@ defmodule RockcutApi.Production do
               vessel_index: s.vessel_index,
               detail: s.detail,
               temperature: s.temperature,
+              split_method: s.split_method,
+              package_partial: s.package_partial,
               notes: s.notes,
               on_task_list: s.on_task_list,
               position: s.position,
@@ -360,14 +362,17 @@ defmodule RockcutApi.Production do
   Add an entry to `template`. A step has `step_type_id`; a phase marker has
   none and needs `phase_id`. Optional: `phase_id` (a step defaults to its
   type's), `day_offset`, `vessel_index`, `detail`, `temperature` (Set temp,
-  required there; Brew day's starting temperature), `notes`, `on_task_list`
+  required there; Brew day's starting temperature), `split_method` (a
+  Split's `transfer` / `filter`, default `transfer`), `package_partial` (a
+  Package), `notes`, `on_task_list`
   (default: the type's; markers off), and the links `comes_after_id` /
   `comes_after_answer` and `leads_to_id` / `leads_to_answer`. With both, the
   entry slots in between and the direct link between them goes.
 
   A Transfer/Filter's `vessel_index` is the tank it moves the beer **into**:
   always a new one, one more than the highest tank used before it in day
-  order (`:transfer_not_new_tank` otherwise). It adds a CIP & Sanitize for
+  order (`:transfer_not_new_tank` otherwise). Transfers stay in day order:
+  one before an existing transfer is `{:transfer_order, :before, day}`. It adds a CIP & Sanitize for
   the tank it leaves (`vessel_index − 1`), the same day, linked from it.
   Any other entry goes in the first tank or one a Transfer/Filter starts
   (`:no_such_tank` otherwise).
@@ -404,10 +409,12 @@ defmodule RockcutApi.Production do
   end
 
   @doc """
-  Change an entry: phase, day, tank, detail, temperature, notes, task list.
-  Brew day stays on day 0 in the first tank (`:brew_day_fixed`); a new day
-  that would put it before a step it follows (or after one that follows it)
-  is `:link_order`.
+  Change an entry: phase, day, tank, detail, temperature, split method,
+  partial package, notes, task list. Brew day stays on day 0 in the first
+  tank (`:brew_day_fixed`); a new day that would put it before a step it
+  follows (or after one that follows it) is `:link_order`. A Transfer/Filter
+  keeps its tank (`:transfer_not_new_tank`); a new day that takes it past another transfer is
+  `{:transfer_order, :before | :after, day}` (D47 task 0, N1).
   """
   def update_step(%Template{} = template, %TemplateStep{} = step, attrs) do
     attrs = stringify(attrs)
@@ -421,6 +428,9 @@ defmodule RockcutApi.Production do
          do: Repo.rollback(:brew_day_fixed)
 
       fields = entry_fields!(type, attrs, step)
+
+      if behavior_of(type) == "transfer" and fields.vessel_index != step.vessel_index,
+        do: Repo.rollback(:transfer_not_new_tank)
 
       if fields.vessel_index != step.vessel_index or fields.day_offset != step.day_offset,
         do: check_vessel!(template, type, fields, step.id)
@@ -442,7 +452,7 @@ defmodule RockcutApi.Production do
   (`move_all` only when both links were). Removing a Transfer/Filter also
   removes the CIP & Sanitize it set up.
   """
-  def remove_step(%Template{} = template, %TemplateStep{} = step) do
+  def remove_step(%Template{} = template, %TemplateStep{} = step, opts \\ []) do
     step = Repo.preload(step, :step_type)
 
     if behavior_of(step.step_type) == "brew" do
@@ -454,8 +464,23 @@ defmodule RockcutApi.Production do
         end
 
         remove_one!(template, step)
-        load(template)
+        result = load(template)
+        if opts[:preview], do: Repo.rollback({:preview, result.issues}), else: result
       end)
+    end
+  end
+
+  @doc """
+  What removing `step` would leave incomplete (D47 task 0, N2): the issues
+  the template would have afterwards that it doesn't have now. Nothing is
+  changed.
+  """
+  def removal_issues(%Template{} = template, %TemplateStep{} = step) do
+    before = load(template).issues
+
+    case remove_step(template, step, preview: true) do
+      {:error, {:preview, issues}} -> {:ok, issues -- before}
+      error -> error
     end
   end
 
@@ -553,9 +578,11 @@ defmodule RockcutApi.Production do
   per temperature, one a day, the last reaching the target exactly; chained
   with `move_all` links and sharing a `ramp_group`.
 
-  `:ramp_invalid` for temperatures outside 28–80°F, no change per day, or
-  days past 365;
-  `:ramp_flat` when start and target are the same.
+  `:ramp_invalid` for temperatures outside 28–80°F;
+  `:ramp_flat` when start and target are the same;
+  `{:ramp_change, gap}` for a change per day under 1° or over the gap
+  between start and target (D47 task 0, N3);
+  `:ramp_days` for a first day before 0 or a ramp that ends past day 365.
   """
   def add_ramp(%Template{} = template, attrs) do
     attrs = stringify(attrs)
@@ -563,13 +590,15 @@ defmodule RockcutApi.Production do
 
     with {:ok, start} <- int_in(attrs["start"], range),
          {:ok, target} <- int_in(attrs["target"], range),
-         {:ok, change} <- int_in(attrs["change_per_day"], 1..52),
+         true <- start != target || {:error, :ramp_flat},
+         gap = abs(start - target),
+         {:ok, change} <- ramp_change(attrs["change_per_day"], gap),
          {:ok, temps} <- ramp_temperatures(start, target, change),
          first_day = to_int(attrs["first_day"]) || 0,
          vessel = to_int(attrs["vessel_index"]) || 0,
+         true <- vessel in 0..9 || {:error, :ramp_invalid},
          true <-
-           (first_day >= 0 and first_day + length(temps) - 1 <= 365 and vessel in 0..9) ||
-             {:error, :ramp_invalid} do
+           (first_day >= 0 and first_day + length(temps) - 1 <= 365) || {:error, :ramp_days} do
       type = behavior_type!("set_temp")
 
       Repo.transaction(fn ->
@@ -633,6 +662,13 @@ defmodule RockcutApi.Production do
     end
   end
 
+  defp ramp_change(value, gap) do
+    case to_int(value) do
+      n when is_integer(n) and n >= 1 and n <= gap -> {:ok, n}
+      _ -> {:error, {:ramp_change, gap}}
+    end
+  end
+
   defp default_crash_phase_id do
     Repo.one(
       from(p in Phase,
@@ -650,7 +686,9 @@ defmodule RockcutApi.Production do
   What keeps a template from being complete, as `%{code, message}` maps:
   no Brew day on day 0 (`no_brew_day`); a later tank no Transfer/Filter
   starts (`vessel_not_started`); a tank whose last entry isn't a Package,
-  Split or the next Transfer/Filter (`vessel_has_no_exit`; CIPs don't count);
+  Split or the next Transfer/Filter (`vessel_has_no_exit`; CIPs and partial
+  Packages don't count); a tank with entries after the beer has left it
+  (`step_after_exit`, naming them);
   a Set temp without a temperature (`set_temp_without_temperature`). Needs
   the steps preloaded with their types.
   """
@@ -672,10 +710,7 @@ defmodule RockcutApi.Production do
               "#{vessel_label(k)} has no Transfer or Filter starting it."
             )
 
-    exits =
-      for k <- 0..max_vessel//1,
-          not vessel_exit?(steps, k, behavior),
-          do: issue(:vessel_has_no_exit, "#{vessel_label(k)} has no Package, Split or Transfer.")
+    exits = for k <- 0..max_vessel//1, issue = exit_issue(steps, k, behavior), do: issue
 
     temps =
       for s <- Enum.sort_by(steps, & &1.day_offset),
@@ -692,36 +727,59 @@ defmodule RockcutApi.Production do
   defp issue(code, message), do: %{code: Atom.to_string(code), message: message}
 
   # Tank k's entries (not its CIPs, not the transfer that starts it) and the
-  # transfer that leaves it: the last day's must include an exit.
-  defp vessel_exit?(steps, k, behavior) do
+  # transfer that leaves it: the last day's must include an exit (a full
+  # Package, a Split, or the next Transfer/Filter). When there is an exit but
+  # entries come after it, the issue names them (D47 task 0, N4a).
+  defp exit_issue(steps, k, behavior) do
     candidates =
-      Enum.filter(steps, fn s ->
+      steps
+      |> Enum.filter(fn s ->
         b = behavior.(s)
 
         (s.vessel_index == k and b not in ["cip", "transfer"]) or
           (b == "transfer" and s.vessel_index == k + 1)
       end)
+      |> Enum.sort_by(&{&1.day_offset, &1.position, &1.id})
 
-    case candidates do
-      [] ->
-        false
+    exit? = fn s ->
+      case behavior.(s) do
+        "package" -> not s.package_partial
+        "split" -> true
+        "transfer" -> s.vessel_index == k + 1
+        _ -> false
+      end
+    end
 
-      _ ->
-        last = candidates |> Enum.map(& &1.day_offset) |> Enum.max()
+    case Enum.find(candidates, exit?) do
+      nil ->
+        issue(:vessel_has_no_exit, "#{vessel_label(k)} has no Package, Split or Transfer.")
 
-        Enum.any?(candidates, fn s ->
-          s.day_offset == last and
-            (behavior.(s) in ["package", "split"] or
-               (behavior.(s) == "transfer" and s.vessel_index == k + 1))
-        end)
+      exit ->
+        case Enum.filter(candidates, &(&1.day_offset > exit.day_offset)) do
+          [] ->
+            nil
+
+          later ->
+            names = Enum.map(later, &"#{step_name(&1)} on day #{&1.day_offset}")
+            verb = if length(later) == 1, do: "comes", else: "come"
+
+            issue(
+              :step_after_exit,
+              "#{vessel_label(k)} is emptied by the #{step_name(exit)} on day #{exit.day_offset}, " <>
+                "but #{join_and(names)} #{verb} after it."
+            )
+        end
     end
   end
+
+  defp join_and([one]), do: one
+  defp join_and(list), do: Enum.join(Enum.drop(list, -1), ", ") <> " and " <> List.last(list)
 
   @doc ~S|"The first tank", "The tank after transfer 2".|
   def vessel_label(0), do: "The first tank"
   def vessel_label(k), do: "The tank after transfer #{k}"
 
-  @doc ~S|An entry's name: "FDH", "Dry hop - #2", "Set temp - 52°", or a marker's phase.|
+  @doc ~S|An entry's name: "FDH", "Dry hop - #2", "Set temp - 52°", "Split - Filter", "Package - Partial", or a marker's phase.|
   def step_name(%TemplateStep{step_type: nil, phase: %Phase{name: name}}), do: name
   def step_name(%TemplateStep{step_type: nil}), do: "Phase start"
 
@@ -729,11 +787,17 @@ defmodule RockcutApi.Production do
     [
       type.name,
       if(type.behavior == "set_temp" and s.temperature, do: "#{s.temperature}°"),
+      if(type.behavior == "split", do: split_method_label(s.split_method)),
+      if(type.behavior == "package" and s.package_partial, do: "Partial"),
       s.detail
     ]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" - ")
   end
+
+  @doc ~S|"Transfer" / "Filter": how a Split's parts leave (D47).|
+  def split_method_label("filter"), do: "Filter"
+  def split_method_label(_), do: "Transfer"
 
   ## Entry helpers
 
@@ -782,7 +846,8 @@ defmodule RockcutApi.Production do
         do: %{},
         else: %{
           "phase_id" => type && type.starts_phase_id,
-          "on_task_list" => if(type, do: type.on_task_list, else: false)
+          "on_task_list" => if(type, do: type.on_task_list, else: false),
+          "split_method" => if(behavior_of(type) == "split", do: "transfer")
         }
 
     changeset =
@@ -809,6 +874,20 @@ defmodule RockcutApi.Production do
           Ecto.Changeset.put_change(changeset, :temperature, nil)
       end
 
+    # Only a Split has a method, and only a Package can be partial (D47).
+    changeset =
+      if behavior_of(type) == "split",
+        do:
+          Ecto.Changeset.validate_required(changeset, [:split_method],
+            message: "Pick Transfer or Filter."
+          ),
+        else: Ecto.Changeset.put_change(changeset, :split_method, nil)
+
+    changeset =
+      if behavior_of(type) == "package",
+        do: Ecto.Changeset.validate_required(changeset, [:package_partial]),
+        else: Ecto.Changeset.put_change(changeset, :package_partial, false)
+
     case changeset do
       %{valid?: true} ->
         Map.take(Ecto.Changeset.apply_changes(changeset), [
@@ -817,6 +896,8 @@ defmodule RockcutApi.Production do
           :vessel_index,
           :detail,
           :temperature,
+          :split_method,
+          :package_partial,
           :notes,
           :on_task_list
         ])
@@ -831,6 +912,7 @@ defmodule RockcutApi.Production do
   # days, or an earlier transfer the same day), and no other transfer goes
   # into it. Any other entry needs its tank to exist: the first, or one a
   # Transfer/Filter starts. `step_id` is the entry being changed (nil = new).
+  # Transfers also stay in day order (D47 task 0, N1).
   defp check_vessel!(%Template{id: tid}, type, %{vessel_index: k, day_offset: day}, step_id) do
     others =
       from(s in TemplateStep, where: s.template_id == ^tid, preload: :step_type)
@@ -840,6 +922,8 @@ defmodule RockcutApi.Production do
     transfer? = &(behavior_of(&1.step_type) == "transfer")
 
     if behavior_of(type) == "transfer" do
+      check_transfer_order!(Enum.filter(others, transfer?), k, day, step_id)
+
       highest =
         others
         |> Enum.filter(
@@ -853,6 +937,33 @@ defmodule RockcutApi.Production do
         do: Repo.rollback(:transfer_not_new_tank)
     else
       if k > 0 and not starts?(others, k, transfer?), do: Repo.rollback(:no_such_tank)
+    end
+  end
+
+  # A new transfer can't go before an existing one (the later tanks would
+  # need renumbering); a changed one, which keeps its tank, can't pass the
+  # transfers before or after it.
+  defp check_transfer_order!(transfers, k, day, step_id) do
+    {before, after_} =
+      if step_id,
+        do:
+          {Enum.filter(transfers, &(&1.vessel_index < k and &1.day_offset > day)),
+           Enum.filter(transfers, &(&1.vessel_index > k and &1.day_offset < day))},
+        else: {Enum.filter(transfers, &(&1.day_offset > day)), []}
+
+    cond do
+      before != [] ->
+        Repo.rollback(
+          {:transfer_order, :before, before |> Enum.map(& &1.day_offset) |> Enum.min()}
+        )
+
+      after_ != [] ->
+        Repo.rollback(
+          {:transfer_order, :after, after_ |> Enum.map(& &1.day_offset) |> Enum.max()}
+        )
+
+      true ->
+        :ok
     end
   end
 

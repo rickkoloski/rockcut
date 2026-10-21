@@ -22,8 +22,8 @@ defmodule RockcutApiWeb.ProductionErrors do
     link_cycle: "That link would go in a circle.",
     link_order: "A step can't come before the step it follows.",
     link_exists: "Those steps are already linked.",
-    ramp_invalid:
-      "Enter start and target temperatures from 28 to 80°F, a change per day of at least 1°, and a first day.",
+    ramp_invalid: "Start and target are whole degrees from 28 to 80°F.",
+    ramp_days: "The first day is 0 or later, and the ramp ends by day 365.",
     ramp_flat: "The start and target temperatures are the same."
   }
 
@@ -55,6 +55,30 @@ defmodule RockcutApiWeb.ProductionErrors do
       message:
         "Unfinished steps are planned in this tank: #{Enum.map_join(batches, ", ", & &1.label)}. Move them first.",
       batches: batches
+    })
+  end
+
+  # D47 task 0 (N1): transfers stay in day order.
+  def handle({:error, {:transfer_order, side, day}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "transfer_order",
+      message:
+        "Transfers stay in day order: this one would come #{side} the transfer on day #{day}.",
+      day: day
+    })
+  end
+
+  # D47 task 0 (N3): the most a ramp can change per day is the whole gap.
+  def handle({:error, {:ramp_change, gap}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "ramp_change",
+      message:
+        "The change per day is a whole number of degrees from 1 to #{gap}° (the gap between start and target).",
+      max: gap
     })
   end
 

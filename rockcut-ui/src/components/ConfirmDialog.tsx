@@ -17,17 +17,20 @@ interface ConfirmDialogProps {
   loading?: boolean
   confirmLabel?: string
   confirmColor?: 'error' | 'primary'
+  /** More under the message (a list of consequences). */
+  children?: React.ReactNode
 }
 
 export default function ConfirmDialog({
   open, onClose, onConfirm, title, message, loading,
-  confirmLabel = 'Delete', confirmColor = 'error',
+  confirmLabel = 'Delete', confirmColor = 'error', children,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         <DialogContentText>{message}</DialogContentText>
+        {children}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancel</Button>

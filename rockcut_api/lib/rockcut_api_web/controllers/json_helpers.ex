@@ -373,6 +373,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       vessel_index: s.vessel_index,
       detail: s.detail,
       temperature: s.temperature,
+      split_method: s.split_method,
+      package_partial: s.package_partial,
       notes: s.notes,
       on_task_list: s.on_task_list,
       position: s.position,
