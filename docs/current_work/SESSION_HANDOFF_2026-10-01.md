@@ -50,7 +50,7 @@ The PR body has the full plan, migrations, config and rollback. Local copy: `~/s
 - **Watch list I gave Matt:**
   - **Before:** check that prod's department is named exactly "Bar", plus position groups "Bar" (the rename only matches that). Take a copy of next week's schedule to compare. Matt declined both tonight; offer again before the window.
   - **After:**
-    - **the single DB connection** (`connection not available … dropped from queue`, `database is locked`, slow requests). Fix: `fly secrets set POOL_SIZE=5 -a rockcut-api`;
+    - **the single DB connection** (`connection not available … dropped from queue`, `database is locked`, slow requests). Fix: `fly secrets set POOL_SIZE=5 -a rockcut-api`; **(Outdated, per Rick's 2026-10-21 review: use `queue_target`/`queue_interval` as in the 10-02 docs and the D32 record, not `POOL_SIZE`.)**
     - shifts that cross midnight land on the same days (D32's Colorado day bounds);
     - one real manager and one real employee log in (D31 rewired every permission check);
     - calendar feeds still refresh;
