@@ -81,11 +81,32 @@ defmodule RockcutApi.Production do
   def restore_tank(%Tank{} = tank), do: restore(tank) |> preload_ok(:outages, force: true)
 
   @doc """
-  The batches with an unfinished step planned in `tank`, as
-  `%{id, label}` maps: what keeps a tank from being retired. There are no
-  batch steps before D47, which fills this in.
+  The batches with an unfinished step planned in `tank` (a step, not a
+  phase marker, of the part that vessel puts there), as `%{id, label}` maps by label: what keeps a
+  tank from being retired (P4).
   """
-  def batches_in_tank(%Tank{}), do: []
+  def batches_in_tank(%Tank{id: tank_id}) do
+    alias RockcutApi.Production.{BatchVessel, Batches, Step}
+
+    ids =
+      Repo.all(
+        from(v in BatchVessel,
+          join: s in Step,
+          on: s.batch_id == v.batch_id and s.vessel_index == v.vessel_index,
+          # Markers can't be checked off (D47), so they don't hold a tank.
+          where: v.tank_id == ^tank_id and is_nil(s.done_on) and not is_nil(s.step_type_id),
+          distinct: true,
+          select: v.batch_id
+        )
+      )
+
+    pnums = Batches.p_numbers()
+
+    from(b in RockcutApi.Brewing.Batch, where: b.id in ^ids, preload: :brand)
+    |> Repo.all()
+    |> Enum.map(&%{id: &1.id, label: Batches.label(&1, pnums)})
+    |> Enum.sort_by(& &1.label)
+  end
 
   ## Out-of-service periods
 

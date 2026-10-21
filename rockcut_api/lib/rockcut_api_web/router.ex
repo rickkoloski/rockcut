@@ -327,6 +327,14 @@ defmodule RockcutApiWeb.Router do
     post "/steps/:id/complete", ProductionScheduleController, :complete_step
     post "/steps/:id/uncomplete", ProductionScheduleController, :uncomplete_step
     patch "/steps/:id", ProductionScheduleController, :update_step
+    post "/cips", ProductionScheduleController, :create_cip
+    patch "/cips/:id", ProductionScheduleController, :update_cip
+    delete "/cips/:id", ProductionScheduleController, :delete_cip
+    post "/cips/:id/complete", ProductionScheduleController, :complete_cip
+    post "/cips/:id/uncomplete", ProductionScheduleController, :uncomplete_cip
+    post "/flags/signoff", ProductionScheduleController, :sign_off
+    delete "/flags/signoff/:key", ProductionScheduleController, :remove_signoff
+    post "/undo/:token", ProductionScheduleController, :undo
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

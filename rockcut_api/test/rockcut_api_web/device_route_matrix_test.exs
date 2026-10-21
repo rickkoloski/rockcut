@@ -275,7 +275,15 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/production/steps/assign"},
     {:post, "/api/production/steps/:id/complete"},
     {:post, "/api/production/steps/:id/uncomplete"},
-    {:patch, "/api/production/steps/:id"}
+    {:patch, "/api/production/steps/:id"},
+    {:post, "/api/production/cips"},
+    {:patch, "/api/production/cips/:id"},
+    {:delete, "/api/production/cips/:id"},
+    {:post, "/api/production/cips/:id/complete"},
+    {:post, "/api/production/cips/:id/uncomplete"},
+    {:post, "/api/production/flags/signoff"},
+    {:delete, "/api/production/flags/signoff/:key"},
+    {:post, "/api/production/undo/:token"}
   ]
 
   defp app_routes do

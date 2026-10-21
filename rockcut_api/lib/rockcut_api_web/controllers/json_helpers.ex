@@ -404,6 +404,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       step_types: Enum.map(sched.step_types, &production_step_type/1),
       batches: Enum.map(sched.batches, &production_batch/1),
       cips: Enum.map(sched.cips, &production_step(&1, [])),
+      statuses: sched.statuses,
+      flags: sched.flags,
       next_batch_number: sched.next_batch_number,
       brewers: sched.brewers
     }

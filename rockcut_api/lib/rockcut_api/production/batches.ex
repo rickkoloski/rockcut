@@ -29,6 +29,7 @@ defmodule RockcutApi.Production.Batches do
     BatchVessel,
     Step,
     StepLink,
+    Steps,
     StepType,
     Tank,
     Template,
@@ -311,7 +312,7 @@ defmodule RockcutApi.Production.Batches do
   defp copy_steps!(batch, template, brew_on, two_days) do
     ids =
       Map.new(template.steps, fn %TemplateStep{} = s ->
-        brew? = s.step_type && s.step_type.behavior == "brew"
+        brew? = Steps.behavior(%Step{step_type: s.step_type}) == "brew"
 
         step =
           Repo.insert!(%Step{
@@ -340,7 +341,7 @@ defmodule RockcutApi.Production.Batches do
     steps = Map.values(ids) |> Repo.preload(:step_type)
 
     if two_days do
-      first = Enum.find(steps, &(&1.step_type && &1.step_type.behavior == "brew"))
+      first = Enum.find(steps, &(Steps.behavior(&1) == "brew"))
 
       second =
         Repo.insert!(%Step{
@@ -368,13 +369,11 @@ defmodule RockcutApi.Production.Batches do
     steps
     |> Enum.group_by(& &1.vessel_index)
     |> Enum.each(fn {k, in_tank} ->
-      behaviors = Enum.map(in_tank, &(&1.step_type && &1.step_type.behavior))
+      behaviors = Enum.map(in_tank, &Steps.behavior/1)
 
       package =
         in_tank
-        |> Enum.filter(
-          &((&1.step_type && &1.step_type.behavior == "package") and not &1.package_partial)
-        )
+        |> Enum.filter(&(Steps.behavior(&1) == "package" and not &1.package_partial))
         |> Enum.max_by(& &1.due_on, Date, fn -> nil end)
 
       if package && "cip" not in behaviors do

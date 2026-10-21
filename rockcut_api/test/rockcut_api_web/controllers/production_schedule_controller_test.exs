@@ -164,6 +164,95 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
     assert body(range)["error"] == "range_invalid"
   end
 
+  test "undo over HTTP: a move back, 409 when stale, 404 for someone else; CIPs, sign-offs, outages",
+       ctx do
+    b = ctx["brewer1"]
+    [batch] = body(plan(b, ctx))["data"]["batches"]
+    fdh = Enum.find(batch["steps"], &(&1["name"] == "FDH"))
+
+    moved =
+      call(b, :post, "/api/production/steps/move", %{
+        ids: [fdh["id"]],
+        days: 1,
+        answer: "move_only"
+      })
+      |> body()
+
+    token = moved["undo_token"]
+    assert is_binary(token)
+    assert call(ctx["brewer2"], :post, "/api/production/undo/#{token}").status == 404
+
+    undone = call(b, :post, "/api/production/undo/#{token}")
+    assert undone.status == 200
+    [back] = body(undone)["data"]["batches"]
+    assert Enum.find(back["steps"], &(&1["id"] == fdh["id"]))["due_on"] == fdh["due_on"]
+
+    # Stale: someone changed it since.
+    noted = call(b, :patch, "/api/production/steps/#{fdh["id"]}", %{notes: "One"}) |> body()
+    call(ctx["brewer2"], :patch, "/api/production/steps/#{fdh["id"]}", %{notes: "Two"})
+    stale = call(b, :post, "/api/production/undo/#{noted["undo_token"]}")
+    assert stale.status == 409
+
+    assert body(stale) == %{
+             "error" => "undo_stale",
+             "message" => "Something changed since. Nothing was undone."
+           }
+
+    # A previewed move has no token and changes nothing.
+    preview =
+      call(b, :post, "/api/production/steps/move", %{ids: [fdh["id"]], days: 1, preview: true})
+      |> body()
+
+    refute Map.has_key?(preview, "undo_token")
+
+    # CIPs
+    created =
+      call(b, :post, "/api/production/cips", %{tank_id: ctx.tank.id, due_on: "2026-12-01"})
+
+    assert created.status == 201
+    cip = body(created)["data"]["cip"]
+    assert {cip["name"], cip["tank_id"], cip["batch_id"]} == {"CIP & Sanitize", ctx.tank.id, nil}
+    assert body(created)["undo_token"]
+
+    patched = call(b, :patch, "/api/production/cips/#{cip["id"]}", %{notes: "Caustic"}) |> body()
+    assert patched["data"]["cip"]["notes"] == "Caustic"
+
+    sched = call(b, :get, "/api/production/schedule?from=2026-11-20&to=2026-12-10") |> body()
+    assert Enum.any?(sched["data"]["cips"], &(&1["id"] == cip["id"]))
+    assert Enum.any?(sched["data"]["statuses"], &(&1["tank_id"] == ctx.tank.id))
+    assert is_list(sched["data"]["flags"])
+
+    # A batch step isn't a CIP.
+    assert call(b, :patch, "/api/production/cips/#{fdh["id"]}", %{notes: "x"}).status == 404
+    deleted = call(b, :delete, "/api/production/cips/#{cip["id"]}")
+    assert body(deleted)["data"]["deleted_id"] == cip["id"]
+    assert call(b, :post, "/api/production/undo/#{body(deleted)["undo_token"]}").status == 200
+
+    # Sign-offs
+    signed =
+      call(b, :post, "/api/production/flags/signoff", %{
+        key: "no_tank:#{batch["id"]}.0",
+        signature: "abc",
+        note: "Tank decided on brew morning."
+      })
+
+    assert signed.status == 200
+    key = URI.encode("no_tank:#{batch["id"]}.0", &URI.char_unreserved?/1)
+    assert call(b, :delete, "/api/production/flags/signoff/#{key}").status == 200
+    assert call(b, :delete, "/api/production/flags/signoff/#{key}").status == 404
+
+    # D46's out-of-service writes answer a token too.
+    out =
+      call(b, :post, "/api/production/tanks/#{ctx.tank.id}/outages", %{
+        starts_on: "2027-01-04",
+        ends_on: "2027-01-06"
+      })
+      |> body()
+
+    assert call(b, :post, "/api/production/undo/#{out["undo_token"]}").status == 200
+    assert Production.get_tank(ctx.tank.id).outages == []
+  end
+
   test "Brewery members and owners use it; other departments get 403 (P62–P64)", ctx do
     for key <- ~w(brewer2 owner floater) do
       assert call(ctx[key], :get, "/api/production/schedule").status == 200, key

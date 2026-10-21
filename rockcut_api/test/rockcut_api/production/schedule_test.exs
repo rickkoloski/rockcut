@@ -131,6 +131,15 @@ defmodule RockcutApi.Production.ScheduleTest do
       assert entry.label == "Galactic P1"
     end
 
+    test "a template with phase markers plans (they're copied without a type)" do
+      t = ale_template!()
+      lag = Repo.get_by!(RockcutApi.Production.Phase, name: "Lag")
+      {:ok, t} = Production.add_step(t, %{"phase_id" => lag.id, "day_offset" => 1})
+      {batch, _} = plan!(brand!("Galactic"), t, @brew, %{"brew_two_days" => true})
+      assert named(batch, "Lag").due_on == ~D[2026-11-03]
+      assert is_nil(named(batch, "Lag").step_type_id)
+    end
+
     test "a transfer template: two vessels, the second Unassigned by default" do
       {batch, _} = plan!(brand!("Fest"), lager_template!(), @brew)
 

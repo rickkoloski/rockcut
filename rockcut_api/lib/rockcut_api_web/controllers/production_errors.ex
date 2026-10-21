@@ -40,7 +40,8 @@ defmodule RockcutApiWeb.ProductionErrors do
     not_done: "That step isn't done.",
     done_on_invalid: "Enter the day it was done.",
     done_on_future: "A step can't be done in the future.",
-    assignee_invalid: "Steps can be assigned to Brewery members only."
+    assignee_invalid: "Steps can be assigned to Brewery members only.",
+    undo_expired: "It's too late to undo that."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
@@ -115,6 +116,13 @@ defmodule RockcutApiWeb.ProductionErrors do
       message: "Choose whether the following steps move too.",
       preview: preview
     })
+  end
+
+  # D47 plan decision 5.
+  def handle({:error, :undo_stale}, conn) do
+    conn
+    |> put_status(:conflict)
+    |> json(%{error: "undo_stale", message: "Something changed since. Nothing was undone."})
   end
 
   def handle({:error, code}, conn) when is_map_key(@messages, code) do

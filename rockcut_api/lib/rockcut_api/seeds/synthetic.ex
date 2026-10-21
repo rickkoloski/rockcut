@@ -53,7 +53,22 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Tasks
   alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}
   alias RockcutApi.Production
-  alias RockcutApi.Production.{Outage, Phase, StepType, Tank, Template, TemplateStep}
+
+  alias RockcutApi.Production.{
+    BatchVessel,
+    Batches,
+    FlagSignoff,
+    Outage,
+    Phase,
+    Schedule,
+    Signoffs,
+    Step,
+    StepType,
+    Tank,
+    Template,
+    TemplateStep,
+    UndoRecord
+  }
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -240,6 +255,21 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     Repo.delete_all(from(t in StepType, where: like(t.name, ^tag)))
     Repo.delete_all(from(p in Phase, where: like(p.name, ^tag)))
+
+    # D47: schedule rows agents made: batches tagged on notes (brands tagged
+    # went above; steps, vessels and links cascade), standalone CIPs on
+    # temporary tanks or tagged, and the sign-offs of flags about them.
+    temp_batch_ids = Repo.all(from(b in Batch, where: like(b.notes, ^tag), select: b.id))
+    Repo.delete_all(from(b in Batch, where: b.id in ^temp_batch_ids))
+    temp_tanks = from(t in Tank, where: like(t.name, ^tag), select: t.id)
+
+    Repo.delete_all(
+      from(s in Step,
+        where: is_nil(s.batch_id) and (s.tank_id in subquery(temp_tanks) or like(s.notes, ^tag))
+      )
+    )
+
+    delete_orphan_signoffs()
     Repo.delete_all(from(t in Tank, where: like(t.name, ^tag)))
 
     # D34: throwaway people a spec created to change or reset a password
@@ -251,6 +281,20 @@ defmodule RockcutApi.Seeds.Synthetic do
             like(u.email, ^"%#{@domain}")
       )
     )
+
+    :ok
+  end
+
+  # A sign-off whose flag names a batch that's gone (keys hold "batchId.vessel").
+  defp delete_orphan_signoffs do
+    live = MapSet.new(Repo.all(from(b in Batch, select: b.id)))
+
+    for s <- Repo.all(FlagSignoff),
+        ids =
+          Regex.scan(~r/(?:^|:)(\d+)\.\d+/, s.flag_key)
+          |> Enum.map(fn [_, id] -> String.to_integer(id) end),
+        Enum.any?(ids, &(not MapSet.member?(live, &1))),
+        do: Repo.delete!(s)
 
     :ok
   end
@@ -816,7 +860,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     ]
   end
 
-  defp seed_production(_u, today) do
+  defp seed_production(u, today) do
     seed_tanks(today)
 
     Repo.delete_all(from(t in Template, where: like(t.name, ^"#{@seed_tag}%")))
@@ -829,7 +873,166 @@ defmodule RockcutApi.Seeds.Synthetic do
       |> Enum.map(& &1.id)
 
     {:ok, _} = Production.reorder_templates(ids ++ others)
+    seed_batches(u, today)
     :ok
+  end
+
+  ## Production schedule (D47)
+
+  # {key, brand, template, brew day (offset from today), tanks per vessel,
+  # number | nil (planned), steps done through (offset), opts}. Every typed
+  # step due on or before "done through" is checked off on its day.
+  @batches [
+    # P49: brewed 18 days ago, Fermentation, 68°, "Set temp - 58°" due today.
+    {:crusher, "Crusher", "Standard ale", -18, ["FV4"], "42", -1,
+     assign: [{"Set temp - 58°", "brewer1"}]},
+    # P50: its 32° step was due yesterday.
+    {:enos41, "Enos", "Standard ale", -22, ["FV5"], "41", -2, []},
+    {:galactic, "Galactic", "Hazy with AMG", -12, ["FV2"], "40", -1,
+     assign: [{"Set temp - 58°", "brewer2"}]},
+    # Transferred from FV7 into Serving 2 two days ago.
+    {:fest, "Fest", "Lager with transfer", -37, ["FV7", "Serving 2"], "38", -1, []},
+    # P51: emptied (packaged) 8 days ago from Serving 1, its CIP removed: dirty, no CIP planned.
+    {:crusher43, "Crusher", "Lager with transfer", -48, ["FV6", "Serving 1"], "43", -1,
+     drop_cip: 1},
+    # P36: Altruism P1, then a later planned batch.
+    {:altruism, "Altruism", "Standard ale", 2, ["FV3"], nil, nil,
+     assign: [{"Brew day", "brewer2"}]},
+    {:enos, "Enos", "Lager with transfer", 9, ["FV1", nil], nil, nil, volume: 35}
+  ]
+
+  # Plan decision 2: batches not on the schedule (the D1-era rows) go, with
+  # their brew turns and log entries (cascade), so DEV matches prod after
+  # the clean-up. Then the [SEED] batches (tagged on notes), rebuilt around
+  # today, and one signed-off flag (Enos is bigger than FV1).
+  defp seed_batches(u, today) do
+    Repo.delete_all(
+      from(b in Batch, where: b.id not in subquery(from(v in BatchVessel, select: v.batch_id)))
+    )
+
+    Repo.delete_all(from(b in Batch, where: like(b.notes, ^"#{@seed_tag}%")))
+
+    Repo.delete_all(
+      from(s in Step, where: is_nil(s.batch_id) and like(s.notes, ^"#{@seed_tag}%"))
+    )
+
+    Repo.delete_all(FlagSignoff)
+    Repo.delete_all(UndoRecord)
+
+    tanks = Map.new(Repo.all(from(t in Tank, where: is_nil(t.retired_at))), &{&1.name, &1.id})
+    templates = Map.new(Repo.all(Template), &{&1.name, &1.id})
+
+    batches =
+      for {key, brand, template, brew, vessels, number, done_through, opts} <- @batches,
+          into: %{} do
+        batch =
+          seed_batch(
+            brand!(brand),
+            templates["#{@seed_tag} #{template}"],
+            Date.add(today, brew),
+            Enum.map(vessels, &(&1 && tanks[&1])),
+            opts
+          )
+
+        if done_through, do: check_off_through(batch, Date.add(today, done_through), u["brewer1"])
+
+        if number do
+          last_exit_done =
+            Repo.exists?(
+              from(s in Step,
+                join: t in StepType,
+                on: t.id == s.step_type_id,
+                where:
+                  s.batch_id == ^batch.id and t.behavior == "package" and not is_nil(s.done_on)
+              )
+            )
+
+          batch
+          |> Ecto.Changeset.change(
+            batch_number: number,
+            status: if(last_exit_done, do: "completed", else: "fermenting")
+          )
+          |> Repo.update!()
+        end
+
+        if k = opts[:drop_cip] do
+          cip_types = from(t in StepType, where: t.behavior == "cip", select: t.id)
+
+          Repo.delete_all(
+            from(s in Step,
+              where:
+                s.batch_id == ^batch.id and s.vessel_index == ^k and
+                  s.step_type_id in subquery(cip_types)
+            )
+          )
+        end
+
+        for {name, persona} <- Keyword.get(opts, :assign, []) do
+          step = batch |> batch_steps() |> Enum.find(&(Production.Steps.name(&1) == name))
+          step |> Ecto.Changeset.change(assignee_id: u[persona].id) |> Repo.update!()
+        end
+
+        {key, batch}
+      end
+
+    # One signed-off flag: Enos (35 bbl) is bigger than FV1 (30 bbl).
+    {:ok, sched} = Schedule.load(Date.add(today, -7), Date.add(today, 84), today)
+    enos = batches[:enos]
+
+    case Enum.find(sched.flags, &(&1.kind == "too_big" and enos.id in &1.batch_ids)) do
+      nil ->
+        :ok
+
+      flag ->
+        {:ok, _} =
+          Signoffs.sign_off(
+            %{
+              "key" => flag.key,
+              "signature" => flag.signature,
+              "note" => "We'll top up FV1 from the second turn."
+            },
+            u["brewer1"]
+          )
+    end
+
+    :ok
+  end
+
+  defp seed_batch(brand, template_id, brew_on, tank_ids, opts) do
+    {:ok, {batch, _}} =
+      Batches.plan(%{
+        "brand_id" => brand.id,
+        "template_id" => template_id,
+        "brew_on" => brew_on,
+        "volume_bbl" => Keyword.get(opts, :volume, 20),
+        "tank_ids" => tank_ids
+      })
+
+    batch |> Ecto.Changeset.change(notes: "#{@seed_tag} #{brand.name}") |> Repo.update!()
+  end
+
+  # Typed steps due on or before `through` are checked off on their day.
+  defp check_off_through(batch, through, by) do
+    now = now()
+
+    Repo.update_all(
+      from(s in Step,
+        where: s.batch_id == ^batch.id and not is_nil(s.step_type_id) and s.due_on <= ^through,
+        update: [set: [done_on: s.due_on, done_by_id: ^by.id, completed_at: ^now]]
+      ),
+      []
+    )
+  end
+
+  defp batch_steps(batch),
+    do: Repo.all(from(s in Step, where: s.batch_id == ^batch.id, preload: [:step_type, :phase]))
+
+  # A real brand by name (case-insensitive), made if it's missing.
+  defp brand!(name) do
+    lowered = String.downcase(name)
+
+    Repo.one(from(b in Brand, where: fragment("lower(?)", b.name) == ^lowered, limit: 1)) ||
+      Repo.insert!(%Brand{name: name, status: "active"})
   end
 
   # The nine tanks with their canonical fields, first in display order and
