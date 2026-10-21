@@ -41,3 +41,18 @@ Fix everything below on this branch. Give each fix a test at the level it lives:
 
 - **Renaming a step type renames it on existing batches.** Matt's decision, spec §3.5.
 - **A template Split has no parts.** The parts are chosen on the batch (D48). A Split is a valid exit.
+
+## Addition (Matt, 2026-10-21): live feedback while dragging
+
+Borrowed from Bryntum's "Validation when dragging" (Rick's references):
+- **While dragging a dot, diamond, bar or CIP block,** show a small tooltip that follows the pointer:
+  - the target, e.g. "Fri Oct 23 · +2 days" for a sideways move, or "→ FV6" / "→ Unassigned" for a row change;
+  - in red, with the reason, when the drop would be refused or flagged. Reuse the client-side data you already have; this is a hint, and the server's preview stays the source of truth:
+    - outside the chart: "Release over the chart to move";
+    - a finished step: no drag at all;
+    - the target tank is out of service on those days;
+    - it would overlap another batch in that tank;
+    - it would come before a step it follows (Move only).
+- **Touch:** the tooltip sits above the finger.
+- **Keyboard:** no change.
+- **Tests:** Playwright checks the tooltip text for one sideways drag and one row change, mid-drag (`mouse.down` / `move`, assert, then `up`). Vitest covers the text function.
