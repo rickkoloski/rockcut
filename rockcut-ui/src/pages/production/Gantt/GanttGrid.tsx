@@ -16,6 +16,7 @@ import {
   daysBetween,
   dotState,
   dragHint,
+  type DragHint as DragHintT,
   isWeekend,
   maxKey,
   minKey,
@@ -116,7 +117,7 @@ const activate = (fn?: () => void, drag?: GanttDrag) => ({
  * of a mouse, flipped left near the right edge and above near the bottom;
  * above a finger, below it near the top. Placed after measuring itself.
  */
-function HintBox({ hint, at }: { hint: { text: string; warn: boolean }; at: DragState }) {
+function HintBox({ hint, at }: { hint: DragHintT; at: DragState }) {
   const ref = useRef<HTMLDivElement>(null)
   useLayoutEffect(() => {
     const el = ref.current
@@ -150,19 +151,25 @@ function HintBox({ hint, at }: { hint: { text: string; warn: boolean }; at: Drag
         maxWidth: 'min(440px, calc(100vw - 16px))',
         zIndex: 1500,
         pointerEvents: 'none',
-        px: 1,
-        py: 0.5,
         borderRadius: 1,
+        overflow: 'hidden',
         fontSize: 12,
         fontWeight: 600,
         boxShadow: 3,
-        bgcolor: hint.warn ? 'error.main' : 'grey.900',
-        color: hint.warn ? 'error.contrastText' : 'common.white',
+        '& > div': { px: 1, py: 0.5 },
       }}
       data-testid="gantt-drag-hint"
       data-warn={hint.warn || undefined}
     >
-      {hint.text}
+      <Box sx={{ bgcolor: hint.warn ? 'error.main' : 'grey.900', color: hint.warn ? 'error.contrastText' : 'common.white' }} data-testid="gantt-drag-hint-text">
+        {hint.text}
+      </Box>
+      {/* Only with the other answer: neutral, not an error (lead decisions 6). */}
+      {hint.note && (
+        <Box sx={{ bgcolor: 'grey.800', color: 'common.white', fontWeight: 500 }} data-testid="gantt-drag-hint-note">
+          {hint.note}
+        </Box>
+      )}
     </Box>
   )
 }

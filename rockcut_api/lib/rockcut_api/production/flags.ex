@@ -79,8 +79,8 @@ defmodule RockcutApi.Production.Flags do
         [p.id],
         [
           tank.id,
-          Decimal.to_string(p.volume),
-          Decimal.to_string(tank.capacity_bbl),
+          p.volume,
+          tank.capacity_bbl,
           (p.fill && p.fill.due_on) || p.start,
           (p.exit && p.exit.due_on) || p.end
         ],
@@ -250,12 +250,24 @@ defmodule RockcutApi.Production.Flags do
     }
   end
 
-  @doc "A short hash of what a flag is about."
-  def signature(term) do
-    :crypto.hash(:sha256, :erlang.term_to_binary(term))
+  @doc """
+  A short hash of what a flag is about: its parts (ids, dates, decimals,
+  nil) as one canonical string, `|`-joined, hashed. The same values give
+  the same signature on every node and OTP version (`term_to_binary` bytes
+  aren't guaranteed to; lead decisions 6): dates are ISO strings, decimals
+  normalised ("30" and "30.0" agree).
+  """
+  def signature(parts) when is_list(parts) do
+    :crypto.hash(:sha256, parts |> Enum.map(&canonical/1) |> Enum.join("|"))
     |> Base.encode16(case: :lower)
     |> binary_part(0, 16)
   end
+
+  defp canonical(nil), do: ""
+  defp canonical(%Date{} = d), do: Date.to_iso8601(d)
+  defp canonical(%Decimal{} = d), do: d |> Decimal.normalize() |> Decimal.to_string(:normal)
+  defp canonical(n) when is_integer(n), do: Integer.to_string(n)
+  defp canonical(s) when is_binary(s), do: s
 
   defp with_signoff(flag, nil),
     do: Map.merge(flag, %{signed_off: false, was_signed_off: false, signoff: nil})

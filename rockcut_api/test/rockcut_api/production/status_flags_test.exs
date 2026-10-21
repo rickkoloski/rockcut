@@ -468,6 +468,49 @@ defmodule RockcutApi.Production.StatusFlagsTest do
       refute moved.signature == flag.signature
     end
 
+    test "a signature is the same for equal values in any form, on any node (lead decisions 6)" do
+      a = Flags.signature([7, Decimal.new("30"), Decimal.new("35"), ~D[2026-10-30], nil])
+
+      b =
+        Flags.signature([
+          7,
+          Decimal.new("30.0"),
+          Decimal.new("35.00"),
+          Date.new!(2026, 10, 30),
+          nil
+        ])
+
+      c =
+        Flags.signature([
+          7,
+          Decimal.new("3E1"),
+          Decimal.new("35"),
+          Date.from_iso8601!("2026-10-30"),
+          nil
+        ])
+
+      assert a == b and b == c
+      assert a =~ ~r/^[0-9a-f]{16}$/
+
+      # A canonical string, not term_to_binary: pinned so it can't drift.
+      assert a ==
+               :crypto.hash(:sha256, "7|30|35|2026-10-30|")
+               |> Base.encode16(case: :lower)
+               |> binary_part(0, 16)
+
+      refute a == Flags.signature([7, Decimal.new("30"), Decimal.new("36"), ~D[2026-10-30], nil])
+
+      # The too-big flag: a capacity of 20 vs 20.0 gives one signature.
+      [f1] = flags([planned(2, "Altruism P1", 30, volume: 30)])
+
+      [f2] =
+        flags([planned(2, "Altruism P1", 30, volume: 30)],
+          tanks: [%{tank(10, "FV2") | capacity_bbl: Decimal.new("20.0")}]
+        )
+
+      assert f1.signature == f2.signature
+    end
+
     test "sign-off holds for the same signature; a change reopens it (P55, P56)" do
       [flag] = flags([planned(2, "Enos P2", 3, tanks: [nil])])
 

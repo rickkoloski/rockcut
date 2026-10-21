@@ -276,16 +276,34 @@ describe('drag hint (lead decisions 4, addition)', () => {
     const t = { ...base, tanks: [fv6, fv7out, s2] }
     const transfer = first.exit!
     // The exit 5 days later (Oct 25): the day is past the outage, but the stay now covers it.
-    expect(dragHint({ ...t, kind: 'dot', days: 5, part: first, step: transfer })!.text).toMatch(/^Sun Oct 25 · \+5 days · FV7 is out of service Oct 22–24/)
+    // Transfer → Carb is "move all", the default: being after Carb only matters if moved alone, a neutral note.
+    expect(dragHint({ ...t, kind: 'dot', days: 5, part: first, step: transfer })).toEqual({
+      text: 'Sun Oct 25 · +5 days · FV7 is out of service Oct 22–24',
+      warn: true,
+      note: 'If you move only this step: after Carb, which follows it',
+    })
     // Another step (the CIP on Oct 20, a dot of this part) only its own day.
     const cip = first.steps.find((s) => s.id === 4)!
     expect(dragHint({ ...t, kind: 'dot', days: 5, part: first, step: cip })).toEqual({ text: 'Sun Oct 25 · +5 days', warn: false })
   })
 
+  it('a fill dot checks the stay as the default answer leaves it (lead decisions 6)', () => {
+    // FV7: Fest's first part Oct 1–20 (Brew day Oct 1 → the marker, "move all"); out Oct 21–22, just after it.
+    const out = { ...fv7, outages: [{ id: 3, tank_id: 7, starts_on: '2026-10-21', ends_on: '2026-10-22', reason: null, state: 'coming', label: '' }] } as Tank
+    const all = buildParts(batch({ ...fest, links: [{ id: 9, from_step_id: 1, to_step_id: 2, default_answer: 'move_all' }] }))[0]
+    const brew = all.fill!
+    // Move all (the default): the whole stay shifts to Oct 3–22, into the outage: red.
+    expect(dragHint({ ...base, tanks: [out], parts: [all], kind: 'dot', days: 2, part: all, step: brew })).toEqual({ text: 'Sat Oct 3 · +2 days · FV7 is out of service Oct 21–22', warn: true })
+    // Move only by default: only the start moves (Oct 3–20): clear.
+    const only = buildParts(batch({ ...fest, links: [{ id: 9, from_step_id: 1, to_step_id: 2, default_answer: 'move_only' }] }))[0]
+    expect(dragHint({ ...base, tanks: [out], parts: [only], kind: 'dot', days: 2, part: only, step: only.fill! })).toEqual({ text: 'Sat Oct 3 · +2 days', warn: false })
+  })
+
   it('a dot before the step it follows, or past one that follows it', () => {
     const carb = second.steps.find((s) => s.id === 5)!
     expect(dragHint({ ...base, kind: 'dot', days: -3, part: second, step: carb })).toEqual({ text: 'Mon Oct 19 · −3 days · before Transfer, the step it follows', warn: true })
-    expect(dragHint({ ...base, kind: 'dot', days: 4, part: second, step: carb })).toEqual({ text: 'Mon Oct 26 · +4 days · Move only: after Package, which follows it', warn: true })
+    // Carb → Package is "move only", the default: past Package is a problem with it, red.
+    expect(dragHint({ ...base, kind: 'dot', days: 4, part: second, step: carb })).toEqual({ text: 'Mon Oct 26 · +4 days · after Package, which follows it', warn: true })
     expect(dragHint({ ...base, kind: 'dot', days: 1, part: second, step: carb })).toEqual({ text: 'Fri Oct 23 · +1 day', warn: false })
   })
 })

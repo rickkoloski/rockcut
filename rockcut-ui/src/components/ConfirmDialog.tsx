@@ -36,7 +36,15 @@ export default function ConfirmDialog({
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} disabled={loading}>Cancel</Button>
-        <Button onClick={onConfirm} color={confirmColor} variant="contained" disabled={loading || pending}>
+        {/* A spinner in place of the label: the button keeps its name and says it's busy. */}
+        <Button
+          onClick={onConfirm}
+          color={confirmColor}
+          variant="contained"
+          disabled={loading || pending}
+          aria-label={confirmLabel}
+          aria-busy={loading || pending ? true : undefined}
+        >
           {loading || pending ? <CircularProgress size={20} /> : confirmLabel}
         </Button>
       </DialogActions>

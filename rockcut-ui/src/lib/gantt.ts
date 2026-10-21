@@ -319,8 +319,10 @@ export const rowKey = (tank: Tank | null) => (tank ? String(tank.id) : 'unassign
 
 export interface DragHint {
   text: string
-  /** The drop would be refused or flagged (red). */
+  /** The drop would be refused or flagged with the prompt's default answer (red). */
   warn: boolean
+  /** A second line, neutral: what happens only with the other answer ("If you move only this step: …"). */
+  note?: string
 }
 
 export interface DragHintInput {
@@ -382,22 +384,32 @@ export function dragHint(a: DragHintInput): DragHint | null {
     const day = addDaysKey(step.due_on, a.days)
     text = `${dayLabel(day)} · ${signedDays(a.days)}`
     const part = a.part
+    const batch = part?.batch
+    const byId = new Map((batch?.steps ?? []).map((s) => [s.id, s]))
+    // The move prompt's default, as the API works it out: "move only" when
+    // every link out of the step says so, or nothing unfinished follows it.
+    const out = (batch?.links ?? []).filter((l) => l.from_step_id === step.id)
+    const following = out.some((l) => !byId.get(l.to_step_id)?.done_on)
+    const moveAll = following && !out.every((l) => l.default_answer === 'move_only')
     if (a.kind === 'dot' && part && (step.id === part.fill?.id || step.id === part.exit?.id)) {
-      // Its fill or its exit: the part's stay changes; check the new stay (N6).
-      const [from, to] = step.id === part.fill?.id ? [day, part.end] : [part.start, day]
+      // Its fill or its exit changes the stay: check it as the default
+      // answer leaves it (lead decisions 6). Moving the fill with everything
+      // after it shifts the whole stay; alone, it only moves the start.
+      const [from, to] =
+        step.id === part.fill?.id ? (moveAll ? [day, addDaysKey(part.end, a.days)] : [day, part.end]) : [part.start, day]
       outIn(tankById(part.tankId), from, to)
       overlapIn(tankById(part.tankId), part, from, to)
     } else outIn(tankById(a.kind === 'cip' ? step.tank_id : (part?.tankId ?? null)), day, day)
-    const batch = a.part?.batch
-    if (batch) {
-      const byId = new Map(batch.steps.map((s) => [s.id, s]))
-      for (const l of batch.links) {
-        const before = l.to_step_id === step.id ? byId.get(l.from_step_id) : undefined
-        if (before && day < before.due_on) reasons.push(`before ${before.name}, the step it follows`)
-        const after = l.from_step_id === step.id ? byId.get(l.to_step_id) : undefined
-        if (after && !after.done_on && day > after.due_on) reasons.push(`Move only: after ${after.name}, which follows it`)
-      }
+    const onlyIf: string[] = []
+    for (const l of batch?.links ?? []) {
+      const before = l.to_step_id === step.id ? byId.get(l.from_step_id) : undefined
+      if (before && day < before.due_on) reasons.push(`before ${before.name}, the step it follows`)
+      const after = l.from_step_id === step.id ? byId.get(l.to_step_id) : undefined
+      // Past a step that follows it: a problem only if that step stays put.
+      if (after && !after.done_on && day > after.due_on) (moveAll ? onlyIf : reasons).push(`after ${after.name}, which follows it`)
     }
+    const note = onlyIf.length ? `If you move only this step: ${onlyIf.join(' · ')}` : undefined
+    return { text: [text, ...reasons].join(' · '), warn: reasons.length > 0, ...(note ? { note } : {}) }
   } else return null
 
   return reasons.length ? { text: [text, ...reasons].join(' · '), warn: true } : { text, warn: false }
