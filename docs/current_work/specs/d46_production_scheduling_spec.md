@@ -14,7 +14,7 @@
 **Process:** `docs/process/three_environment_workflow.md` (spec with persona scenarios → local gate → DEV gate → release)
 **Split:** four deliverables, one spec. See "Delivery split" below.
 **Concept:** new concept folder `11_production_scheduling` at close-out.
-**Backlog:** PortableMind tasks to be created when Matt approves the split.
+**Backlog:** PortableMind project 254: D46 = task 4629, D47 = 4630, D48 = 4631, D49 = 4632
 **Branches:** one per deliverable, each cut from `develop` after the previous one merges: `d46-tanks-templates`, `d47-batch-schedule-gantt`, `d48-batch-changes`, `d49-schedule-task-list`
 **Reference:** the clickable mockup, https://claude.ai/artifact/SU9STudcjNJZKf13hGQ3z8 (version 36, private to Matt). Its source and the design notes are in `docs/current_work/reference/` (git-excluded, local only). Everything decided there is restated in this spec; the spec is the source of truth.
 
