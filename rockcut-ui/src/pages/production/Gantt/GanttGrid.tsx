@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { alpha, Box, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
-import { ChevronRight, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight, MoreHoriz } from '@mui/icons-material'
+import { ChevronRight, CleaningServices, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight, MoreHoriz, WarningAmber } from '@mui/icons-material'
 import { addDaysKey } from '../../../lib/datetime'
 import { initials } from '../../../lib/tasks'
 import {
@@ -37,6 +37,7 @@ import {
   headlineOutage,
   phaseFill,
   shortPeriod,
+  type ConditionMark,
   type Flag,
   type Mode,
   type Outage,
@@ -49,11 +50,20 @@ import type { DropInfo, DragState } from './useTimelineDrag'
 
 export const LEFT_W = 240
 export const LEFT_W_COMPACT = 124
-const HEAD_H = 46
+/** The date header, sticky over the grid (D48: drags auto-scroll below it). */
+export const HEAD_H = 46
 
 /** What a click (or Enter) on the Gantt opens, and what a drag does (§3.6 interactions). */
+/** D48: how a step was clicked: Ctrl/Cmd toggles it in the selection, Shift selects a range in its tank. */
+export interface StepClick {
+  toggle?: boolean
+  range?: boolean
+}
+
 export interface GanttActions {
-  onStep?: (step: SchedStep) => void
+  onStep?: (step: SchedStep, click?: StepClick) => void
+  /** D48: a long-press let go without moving (touch): selection mode, starting with it. */
+  onHoldStep?: (step: SchedStep) => void
   onBar?: (part: Part, flags?: boolean) => void
   onCip?: (cip: SchedStep) => void
   onBand?: (tank: Tank, outage: Outage) => void
@@ -61,7 +71,8 @@ export interface GanttActions {
   onTankMenu?: (tank: Tank) => void
   /** A tap on an empty spot: the row's tank (null = Unassigned), the day, where. */
   onSpot?: (tank: Tank | null, day: string, at: { x: number; y: number }) => void
-  onMoveStep?: (step: SchedStep, days: number) => void
+  /** `only`: Shift held at the drop (D48, P113: move only, no prompt). */
+  onMoveStep?: (step: SchedStep, days: number, only?: boolean) => void
   onShiftBar?: (part: Part, days: number) => void
   onMoveBar?: (part: Part, tankId: number | null) => void
   onMoveCip?: (cip: SchedStep, days: number) => void
@@ -70,7 +81,7 @@ export interface GanttActions {
 /** The drag layer (`useTimelineDrag`), passed in by the page. */
 export interface GanttDrag {
   active: DragState | null
-  bind: (key: string, onDrop: (d: DropInfo) => void) => object
+  bind: (key: string, onDrop: (d: DropInfo) => void, onHold?: () => void) => object
   consumeClick: (e?: { clientX: number; clientY: number }) => boolean
   /** From a drag's start until the pointer moves after it: hover tooltips stay hidden (N2). */
   quiet?: boolean
@@ -88,8 +99,14 @@ interface Props extends GanttActions {
   flags: Flag[]
   compact: boolean
   expanded: Set<string>
+  /** An expanded tank's step rows: 20 px with a mouse, 28 px on touch (D48 §3.6). */
+  stepRowH?: number
   onToggleRow: (key: string) => void
   onToggleCompact: () => void
+  /** D48: the selected steps (multi-select), drawn ringed and dragged together. */
+  selected?: Set<number>
+  /** D48: tanks' clean / dirty marks, drawn on their day. */
+  marks?: ConditionMark[]
 }
 
 const STATE_WORDS: Record<DotState, string> = { done: 'done', late: 'late', stranded: 'after the tank was emptied', today: 'due today', planned: 'planned' }
@@ -108,6 +125,24 @@ const activate = (fn?: () => void, drag?: GanttDrag) => ({
     if ((e.key === 'Enter' || e.key === ' ') && fn) {
       e.preventDefault()
       fn()
+    }
+  },
+})
+
+/** D48: a step's click and Enter: the modifiers say whether it selects instead of opening. */
+const activateStep = (step: SchedStep, fn: GanttActions['onStep'], drag?: GanttDrag) => ({
+  role: 'button',
+  tabIndex: 0,
+  onClick: fn
+    ? (e: MouseEvent) => {
+        e.stopPropagation()
+        if (!drag?.consumeClick(e)) fn(step, { toggle: e.ctrlKey || e.metaKey, range: e.shiftKey })
+      }
+    : undefined,
+  onKeyDown: (e: KeyboardEvent) => {
+    if ((e.key === 'Enter' || e.key === ' ') && fn) {
+      e.preventDefault()
+      fn(step)
     }
   },
 })
@@ -184,6 +219,8 @@ function HintBox({ hint, at }: { hint: DragHintT; at: DragState }) {
  */
 export default function GanttGrid(props: Props) {
   const { from, days, dayPx, today, rows, phases, statuses, flags, compact, expanded, onToggleRow, onToggleCompact, drag } = props
+  const stepRowH = props.stepRowH ?? STEP_ROW_H
+  const tight = stepRowH < STEP_ROW_H
   const innerRef = useRef<HTMLDivElement>(null)
   const theme = useTheme()
   const mode = theme.palette.mode as Mode
@@ -207,9 +244,14 @@ export default function GanttGrid(props: Props) {
   // Hover tooltips step aside for the drag hint (N2).
   const hover = (title: string) => (drag?.quiet ? '' : title)
   const snap = (dx: number) => Math.round(dx / dayPx)
+  // D48: dragging a selected step lifts every selected one with it.
+  const selected = props.selected ?? new Set<number>()
+  const activeStep = drag?.active && /^(dot|dia):/.test(drag.active.key) ? Number(drag.active.key.split(':')[1]) : null
+  const groupDrag = activeStep != null && selected.has(activeStep)
   const lifted = (key: string, vertical = false) => {
     const a = drag?.active
-    if (!a || a.key !== key) return {}
+    const id = /^(dot|dia):/.test(key) ? Number(key.split(':')[1]) : null
+    if (!a || (a.key !== key && !(groupDrag && id != null && selected.has(id)))) return {}
     return {
       transform: `translate(${snap(a.dx) * dayPx}px, ${vertical ? a.dy : 0}px)`,
       zIndex: 6,
@@ -233,13 +275,15 @@ export default function GanttGrid(props: Props) {
     return among.find((r) => y >= r.top && y < r.top + r.height) ?? null
   }
   /** Dropped over the day columns (not the tank column, the header or outside the chart)? Otherwise the drag is cancelled. */
-  const overChart = (d: DropInfo) => {
+  const overChart = (d: { x: number; y: number }) => {
     const box = innerRef.current?.parentElement?.getBoundingClientRect()
     return !!box && d.x >= box.left + leftW && d.x < box.right && d.y >= box.top + HEAD_H && d.y < box.bottom
   }
   const dropRow =
     drag?.active && drag.active.key.startsWith('bar:') && Math.abs(drag.active.dy) > TRACK_H / 2 ? rowAt(drag.active.y, rows) : null
-  const bindDrag = (key: string, onDrop: (d: DropInfo) => void, enabled = true) => (drag && enabled ? drag.bind(key, onDrop) : {})
+  const bindDrag = (key: string, onDrop: (d: DropInfo) => void, enabled = true, onHold?: () => void) =>
+    drag && enabled ? drag.bind(key, onDrop, onHold) : {}
+  const ring = (id: number) => (selected.has(id) ? { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 2 } : {})
 
   // The tooltip that follows the pointer: where it goes, and in red why it'd be refused or flagged.
   const hint = (() => {
@@ -506,6 +550,43 @@ export default function GanttGrid(props: Props) {
         )
       })
 
+  // D48 §3.8: a tank's clean / dirty marks, a small icon on their day.
+  const marksIn = (row: Row) =>
+    (props.marks ?? [])
+      .filter((m) => row.tank && m.tank_id === row.tank.id && m.marked_on >= from && m.marked_on <= to)
+      .map((m) => {
+        const tip = `Marked ${m.state} by ${m.user_name ?? 'someone'} · ${dayLabel(m.marked_on)}${m.note ? ` · “${m.note}”` : ''}`
+        const Icon = m.state === 'clean' ? CleaningServices : WarningAmber
+        return (
+          <Tooltip key={`mark-${m.id}`} title={hover(tip)}>
+            <Box
+              tabIndex={0}
+              aria-label={tip}
+              data-testid={`gantt-mark-${m.id}`}
+              data-state={m.state}
+              sx={{
+                position: 'absolute',
+                top: TRACK_H / 2 - 8,
+                left: x(m.marked_on) + dayPx / 2 - 8,
+                width: 16,
+                height: 16,
+                zIndex: 4,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: '50%',
+                bgcolor: 'background.paper',
+                color: m.state === 'clean' ? 'success.main' : 'warning.main',
+                boxShadow: `0 0 0 1px ${theme.palette.divider}`,
+                '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 1 },
+              }}
+            >
+              <Icon sx={{ fontSize: 12 }} />
+            </Box>
+          </Tooltip>
+        )
+      })
+
   const bar = (row: Row, part: Part) => {
     if (part.reach < from || part.start > to) return null
     const segs = segments(part, from, days, phaseFns.get(part.batch.id)!)
@@ -617,11 +698,18 @@ export default function GanttGrid(props: Props) {
               )}
               <Tooltip title={hover(tip)}>
                 <Box
-                  {...activate(props.onStep ? () => props.onStep!(step) : undefined, drag)}
-                  {...bindDrag(`dot:${step.id}`, (d) => overChart(d) && snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
+                  {...activateStep(step, props.onStep, drag)}
+                  {...bindDrag(
+                    `dot:${step.id}`,
+                    (d) => overChart(d) && snap(d.dx) && props.onMoveStep?.(step, snap(d.dx), d.shift),
+                    !step.done_on,
+                    props.onHoldStep && (() => props.onHoldStep!(step)),
+                  )}
                   aria-label={tip}
+                  aria-pressed={selected.has(step.id) || undefined}
                   data-testid={`gantt-step-${step.id}`}
                   data-state={state}
+                  data-selected={selected.has(step.id) || undefined}
                   sx={{
                     position: 'absolute',
                     top: DOT_TOP,
@@ -635,6 +723,7 @@ export default function GanttGrid(props: Props) {
                     cursor: props.onStep ? (step.done_on ? 'pointer' : 'grab') : 'default',
                     touchAction: 'pan-x pan-y',
                     ...dotSx(state),
+                    ...ring(step.id),
                     ...lifted(`dot:${step.id}`),
                     '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 2 },
                   }}
@@ -690,7 +779,7 @@ export default function GanttGrid(props: Props) {
     const visible = step.due_on >= from && step.due_on <= to
     const text = `${step.name}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
     return (
-      <Box key={`${part.key}-${step.id}`} sx={{ display: 'flex', height: STEP_ROW_H }} data-testid={`gantt-step-row-${step.id}`}>
+      <Box key={`${part.key}-${step.id}`} sx={{ display: 'flex', height: stepRowH }} data-testid={`gantt-step-row-${step.id}`}>
         <Box
           sx={{
             position: 'sticky',
@@ -702,18 +791,19 @@ export default function GanttGrid(props: Props) {
             borderRight: 1,
             borderBottom: 1,
             borderColor: 'divider',
-            pl: compact ? 1.5 : 4,
+            // An outline under the tank's name (8 px in): phases a little further, steps more (D48 §3.6).
+            pl: `${8 + (step.marker ? 8 : 20)}px`,
             pr: 1,
             display: 'flex',
             gap: 0.75,
             alignItems: 'center',
-            fontSize: 12,
+            fontSize: tight ? 11 : 12,
             whiteSpace: 'nowrap',
             minWidth: 0,
             borderTop: i === 0 ? `1px dashed ${theme.palette.divider}` : undefined,
           }}
         >
-          <Box component="span" sx={{ fontWeight: step.marker ? 500 : 600, fontStyle: step.marker ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Box component="span" data-testid={`gantt-step-label-${step.id}`} sx={{ fontWeight: step.marker ? 500 : 600, fontStyle: step.marker ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {step.name}
           </Box>
           {!compact && (many || part.vessel > 0) && (
@@ -727,15 +817,22 @@ export default function GanttGrid(props: Props) {
           {visible && (
             <Tooltip title={hover([step.name, part.batch.label, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · '))}>
               <Box
-                {...activate(props.onStep ? () => props.onStep!(step) : undefined, drag)}
-                {...bindDrag(`dia:${step.id}`, (d) => snap(d.dx) && props.onMoveStep?.(step, snap(d.dx)), !step.done_on)}
+                {...activateStep(step, props.onStep, drag)}
+                {...bindDrag(
+                  `dia:${step.id}`,
+                  (d) => snap(d.dx) && props.onMoveStep?.(step, snap(d.dx), d.shift),
+                  !step.done_on,
+                  props.onHoldStep && (() => props.onHoldStep!(step)),
+                )}
                 aria-label={`${step.name}, ${part.batch.label}, ${dayLabel(step.due_on)}, ${STATE_WORDS[state]}`}
+                aria-pressed={selected.has(step.id) || undefined}
                 data-testid={`gantt-diamond-${step.id}`}
                 data-state={state}
+                data-selected={selected.has(step.id) || undefined}
                 sx={{
                   position: 'absolute',
                   top: 0,
-                  height: STEP_ROW_H,
+                  height: stepRowH,
                   left: x(step.due_on) + dayPx / 2,
                   display: 'flex',
                   alignItems: 'center',
@@ -748,8 +845,8 @@ export default function GanttGrid(props: Props) {
                   ...lifted(`dia:${step.id}`),
                 }}
               >
-                <Box sx={{ width: 11, height: 11, ml: '-5.5px', transform: 'rotate(45deg)', border: 2, flex: 'none', ...dotSx(state), boxShadow: 'none' }} />
-                <Box component="span" sx={{ fontSize: 11, fontWeight: 600, bgcolor: 'background.paper', px: 0.5, borderRadius: 0.5, color: state === 'late' || state === 'stranded' ? 'error.main' : 'text.primary' }}>
+                <Box sx={{ width: tight ? 9 : 11, height: tight ? 9 : 11, ml: tight ? '-4.5px' : '-5.5px', transform: 'rotate(45deg)', border: 2, flex: 'none', ...dotSx(state), boxShadow: 'none', ...ring(step.id) }} />
+                <Box component="span" sx={{ fontSize: tight ? 10 : 11, lineHeight: tight ? '14px' : undefined, fontWeight: 600, bgcolor: 'background.paper', px: 0.5, borderRadius: 0.5, color: state === 'late' || state === 'stranded' ? 'error.main' : 'text.primary' }}>
                   {text}
                 </Box>
               </Box>
@@ -792,6 +889,32 @@ export default function GanttGrid(props: Props) {
       )
     }
 
+    // D48: a dashed gold arrow from a split's parent (at its Split) to each part.
+    const gold = theme.palette.secondary.main
+    for (const { row, part } of where.values()) {
+      const b = part.batch
+      if (b.split_parent_id == null || part.vessel !== 0 || !part.fill) continue
+      const parent = where.get(`${b.split_parent_id}.${part.fill.vessel_index}`)
+      const day = part.fill.due_on
+      if (!parent || day < from || day > to) continue
+      const x1 = x(day) + dayPx / 2
+      const y1 = midY(parent.row, parent.part)
+      const y2 = midY(row, part)
+      const x2 = Math.max(0, x(maxKey(part.start, from))) + 4
+      paths.push(
+        <path
+          key={`s-${part.key}`}
+          d={`M ${x1} ${y1} C ${x1 + 24} ${y1}, ${x2 - 24} ${y2}, ${x2} ${y2}`}
+          fill="none"
+          stroke={gold}
+          strokeWidth={1.75}
+          strokeDasharray="5 4"
+          markerEnd="url(#gantt-arrow-split)"
+          data-testid={`gantt-split-${b.split_parent_id}-${b.id}`}
+        />,
+      )
+    }
+
     for (const row of rows) {
       if (!row.stepRows.length) continue
       const base = row.top + row.tracks * TRACK_H
@@ -808,8 +931,8 @@ export default function GanttGrid(props: Props) {
           const sb = row.stepRows[b].step
           const xa = x(sa.due_on) + dayPx / 2
           const xb = x(sb.due_on) + dayPx / 2
-          const ya = base + a * STEP_ROW_H + STEP_ROW_H / 2
-          const yb = base + b * STEP_ROW_H + STEP_ROW_H / 2
+          const ya = base + a * stepRowH + stepRowH / 2
+          const yb = base + b * stepRowH + stepRowH / 2
           const elbow = Math.min(xa, xb) - 8
           paths.push(
             <path
@@ -829,7 +952,7 @@ export default function GanttGrid(props: Props) {
     }
     return paths
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, from, to, dayPx, theme])
+  }, [rows, from, to, dayPx, theme, stepRowH])
 
   return (
     <Box ref={innerRef} sx={{ position: 'relative', width: leftW + width, minWidth: '100%' }} data-testid="gantt-inner">
@@ -882,6 +1005,7 @@ export default function GanttGrid(props: Props) {
                 }}
               >
                 {bands(row)}
+                {marksIn(row)}
                 {row.parts.map((p) => bar(row, p))}
                 {row.cips.map((c) => cipBlock(row, c))}
               </Box>
@@ -899,6 +1023,9 @@ export default function GanttGrid(props: Props) {
         <defs>
           <marker id="gantt-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill={theme.palette.primary.main} />
+          </marker>
+          <marker id="gantt-arrow-split" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={theme.palette.secondary.main} />
           </marker>
         </defs>
         {overlay}

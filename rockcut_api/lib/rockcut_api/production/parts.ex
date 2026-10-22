@@ -32,15 +32,24 @@ defmodule RockcutApi.Production.Parts do
   def part(entry, vessel) do
     k = vessel.vessel_index
     steps = entry.steps
-    first_brew = first_brew(steps)
+    # D48: a split part is filled by its parent's Split and counts its days
+    # from the parent's first Brew day.
+    origin = Map.get(entry, :origin)
+    first_brew = (origin && origin.first_brew) || first_brew(steps)
 
     fill =
-      if k == 0,
-        do: first_brew,
-        else:
+      cond do
+        k == 0 and origin != nil ->
+          origin.fill
+
+        k == 0 ->
+          first_brew
+
+        true ->
           steps
           |> Enum.filter(&(behavior(&1) == "transfer" and &1.vessel_index == k))
           |> earliest()
+      end
 
     exit =
       steps
@@ -85,7 +94,10 @@ defmodule RockcutApi.Production.Parts do
       stranded: stranded,
       leftover_cip: if(exited && cip && not after?(exited, cip.due_on), do: cip),
       batch_steps: steps,
-      links: entry.links
+      links: entry.links,
+      # D48: a split part's parent's steps and links, its history before the split.
+      history:
+        if(origin, do: %{steps: origin.steps, links: origin.links}, else: %{steps: [], links: []})
     }
   end
 
@@ -117,6 +129,62 @@ defmodule RockcutApi.Production.Parts do
 
   @doc "A step's place in time: its date, then its position in the day, then id."
   def order(step), do: {Date.to_gregorian_days(step.due_on), step.position, step.id}
+
+  ## Clean or dirty (D48 §3.8)
+
+  @doc """
+  A tank's cleanliness record: each done exit of `parts` (the parts that
+  were in it) leaves it dirty, each done CIP & Sanitize (the filled parts'
+  own and the standalone `cips`) leaves it clean, and each mark
+  (`ConditionMark`) leaves it as marked. `[%{on, state, source, at, mark}]`
+  in order (`latest_condition/1`); `state` is `:clean` or `:dirty`, `source`
+  `:exit`, `:cip` or `:mark`.
+  """
+  def condition_events(parts, cips, marks \\ []) do
+    exits =
+      for p <- parts,
+          emptied?(p),
+          do: %{
+            on: p.exit.done_on,
+            state: :dirty,
+            source: :exit,
+            at: p.exit.completed_at,
+            mark: nil
+          }
+
+    cleans =
+      for c <- Enum.flat_map(Enum.filter(parts, &filled?/1), &own_cips/1) ++ cips,
+          c.done_on,
+          do: %{on: c.done_on, state: :clean, source: :cip, at: c.completed_at, mark: nil}
+
+    marked =
+      for m <- marks,
+          do: %{
+            on: m.marked_on,
+            state: String.to_existing_atom(m.state),
+            source: :mark,
+            at: m.inserted_at,
+            mark: m
+          }
+
+    Enum.sort_by(exits ++ cleans ++ marked, &condition_order/1)
+  end
+
+  @doc """
+  The last of `events` (`condition_events/3`), or nil: by date; on the same
+  day a CIP or a mark counts after an exit (lead decisions 5, N4), and
+  otherwise the later recorded one wins.
+  """
+  def latest_condition(events), do: Enum.max_by(events, &condition_order/1, fn -> nil end)
+
+  defp condition_order(e) do
+    at = if e.at, do: DateTime.to_unix(e.at), else: 0
+    {Date.to_gregorian_days(e.on), if(e.source == :exit, do: 0, else: 1), at}
+  end
+
+  @doc "A part's own CIP & Sanitize steps (in its vessel)."
+  def own_cips(part),
+    do: Enum.filter(part.steps, &(behavior(&1) == "cip" and &1.vessel_index == part.vessel_index))
 
   defp after?(a, b), do: Date.compare(a, b) == :gt
 

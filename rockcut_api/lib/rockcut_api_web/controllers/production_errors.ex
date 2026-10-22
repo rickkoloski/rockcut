@@ -30,7 +30,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     template_incomplete: "That template is incomplete. Finish it under Set up → Templates first.",
     tank_invalid: "That tank isn't available. Pick another or leave it unassigned.",
     volume_invalid: "Enter a volume more than 0 and under 10,000 bbl.",
-    not_planned: "Only a planned batch can be deleted.",
+    not_planned: "Only a planned batch can be changed that way.",
     not_brewed: "A planned batch gets its number when brew day is checked off.",
     batch_number_required: "Enter the batch number.",
     batch_number_invalid: "A batch number is 1 to 20 characters.",
@@ -41,7 +41,28 @@ defmodule RockcutApiWeb.ProductionErrors do
     done_on_invalid: "Enter the day it was done.",
     done_on_future: "A step can't be done in the future.",
     assignee_invalid: "Steps can be assigned to Brewery members only.",
-    undo_expired: "It's too late to undo that."
+    undo_expired: "It's too late to undo that.",
+    # D48: changing a batch.
+    name_required: "Give the step a name.",
+    name_too_long: "A step name is up to 40 characters.",
+    due_on_invalid: "Pick the day.",
+    brew_day: "Brew day can't be added or removed.",
+    use_split: "Use Split… to split the batch.",
+    not_ramp: "That step isn't part of a ramp.",
+    step_done_after: "Some steps after that date are already done. Pick a later date.",
+    split: "Undo the split first.",
+    brand_invalid: "Pick a brand.",
+    # D48: splits and clean / dirty marks.
+    split_part: "That's a part of a split. Undo the split to change it that way.",
+    split_fill: "The Split fills the parts. Use Undo split to take it out.",
+    split_method_invalid: "Pick Transfer or Filter.",
+    parts_required: "Split into two parts or more.",
+    one_stays: "Only one part can stay in the tank.",
+    same_tank: "Two parts can’t go into the same tank.",
+    not_split: "That batch isn't split.",
+    part_step_done: "Some steps on the parts are already done, so the split can't be undone.",
+    tank_in_use: "There's beer in this tank: its state comes from the batch.",
+    date_invalid: "Pick a day from the tank's last emptying through today."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
@@ -118,6 +139,16 @@ defmodule RockcutApiWeb.ProductionErrors do
     })
   end
 
+  # D48 (P76): "The parts add up to 18 bbl, but Galactic #40 is 20 bbl."
+  def handle({:error, {:volumes_must_add_up, total, volume, label}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "volumes_must_add_up",
+      message: "The parts add up to #{bbl(total)} bbl, but #{label} is #{bbl(volume)} bbl."
+    })
+  end
+
   # D47 plan decision 5.
   def handle({:error, :undo_stale}, conn) do
     conn
@@ -130,4 +161,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     |> put_status(:unprocessable_entity)
     |> json(%{error: Atom.to_string(code), message: Map.fetch!(@messages, code)})
   end
+
+  defp bbl(nil), do: "0"
+  defp bbl(%Decimal{} = d), do: d |> Decimal.normalize() |> Decimal.to_string(:normal)
 end

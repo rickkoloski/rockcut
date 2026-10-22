@@ -322,11 +322,22 @@ defmodule RockcutApiWeb.Router do
     delete "/batches/:id", ProductionScheduleController, :delete_batch
     post "/batches/:id/shift", ProductionScheduleController, :shift_batch
     patch "/batches/:id/vessels/:index", ProductionScheduleController, :update_vessel
+    # D48: changing a batch (§3.11).
+    post "/batches/:id/steps", ProductionScheduleController, :add_step
+    post "/batches/:id/ramp", ProductionScheduleController, :add_ramp
+    post "/batches/:id/transfers", ProductionScheduleController, :add_transfer
+    delete "/batches/:id/transfers/:step_id", ProductionScheduleController, :remove_transfer
+    post "/batches/:id/split", ProductionScheduleController, :split
+    delete "/batches/:id/split", ProductionScheduleController, :undo_split
+    post "/tanks/:id/condition", ProductionScheduleController, :mark_condition
+    delete "/condition_marks/:id", ProductionScheduleController, :remove_condition_mark
     post "/steps/move", ProductionScheduleController, :move_steps
     post "/steps/assign", ProductionScheduleController, :assign_steps
     post "/steps/:id/complete", ProductionScheduleController, :complete_step
     post "/steps/:id/uncomplete", ProductionScheduleController, :uncomplete_step
     patch "/steps/:id", ProductionScheduleController, :update_step
+    delete "/steps/:id", ProductionScheduleController, :remove_step
+    post "/steps/:id/ramp", ProductionScheduleController, :change_ramp
     post "/cips", ProductionScheduleController, :create_cip
     patch "/cips/:id", ProductionScheduleController, :update_cip
     delete "/cips/:id", ProductionScheduleController, :delete_cip

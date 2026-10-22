@@ -152,7 +152,10 @@ export interface SchedStep {
   done_by: Person | null
   assignee_id: number | null
   assignee: Person | null
+  /** D48: added to the batch (not from its template). */
   added: boolean
+  /** D48: the Set temp steps of one ramp share it. */
+  ramp_group: string | null
 }
 
 export interface SchedLink {
@@ -176,6 +179,10 @@ export interface SchedBatch {
   template_id: number | null
   template_name: string | null
   brew_two_days: boolean
+  /** D48: a split's part: its parent, its number (1…n) and the parent's Split step that fills it. */
+  split_parent_id: number | null
+  part_number: number | null
+  split_step_id: number | null
   vessels: { vessel_index: number; tank_id: number | null }[]
   steps: SchedStep[]
   links: SchedLink[]
@@ -217,6 +224,19 @@ export interface Schedule {
   flags: Flag[]
   next_batch_number: string
   brewers: Person[]
+  /** D48 §3.8: brewers' clean / dirty marks on tanks. */
+  condition_marks: ConditionMark[]
+}
+
+export interface ConditionMark {
+  id: number
+  tank_id: number
+  state: 'clean' | 'dirty'
+  marked_on: string
+  note: string | null
+  user_id: number | null
+  user_name: string | null
+  inserted_at: string
 }
 
 // ── API ──

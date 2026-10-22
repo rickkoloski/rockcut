@@ -37,6 +37,8 @@ defmodule RockcutApi.Production.Steps do
   "Package - Partial - kegs", "Brew day - 1 of 2", a custom step's own name,
   or a marker's phase. Needs `step_type` and `phase` preloaded.
   """
+  def name(%Step{step_type_id: nil, name: name}) when is_binary(name), do: name
+
   def name(%Step{step_type: nil} = s) do
     case s.phase do
       %Phase{name: name} -> name
@@ -267,7 +269,8 @@ defmodule RockcutApi.Production.Steps do
   (`Batches.check_number/2`; the batch becomes `fermenting`). Done on
   another day than planned, the step moves to that day and `answer` says
   what happens to the following steps, as in `move/3`. A full Package
-  completes the batch; a partial one changes nothing.
+  completes the batch; a partial one changes nothing. A Split (D48)
+  completes the parent and the parts become `fermenting`.
 
   `preview: true` returns `{:ok, {:preview, %{move, done_on,
   needs_batch_number, next_batch_number}}}` (`move` nil when it's done on
@@ -336,6 +339,11 @@ defmodule RockcutApi.Production.Steps do
               batch && behavior(step) == "package" && not step.package_partial ->
                 batch |> Changeset.change(status: "completed") |> Repo.update!()
 
+              # D48: the Split ends the parent's part and fills the parts.
+              batch && behavior(step) == "split" ->
+                batch |> Changeset.change(status: "completed") |> Repo.update!()
+                set_parts_status(batch, "fermenting")
+
               true ->
                 :ok
             end
@@ -382,6 +390,14 @@ defmodule RockcutApi.Production.Steps do
             batch && batch.status == "completed" && behavior(step) == "package" &&
                 not step.package_partial ->
               batch |> Changeset.change(status: "fermenting") |> Repo.update!()
+              nil
+
+            # D48: the parts aren't filled any more (unless one has a step done).
+            batch && behavior(step) == "split" ->
+              if batch.status == "completed",
+                do: batch |> Changeset.change(status: "fermenting") |> Repo.update!()
+
+              set_parts_status(batch, "planned")
               nil
 
             true ->
@@ -460,6 +476,18 @@ defmodule RockcutApi.Production.Steps do
     do: Authz.can_take_task?(Accounts.get_user(id), "brewery")
 
   ## Helpers
+
+  defp set_parts_status(%Batch{id: id}, "planned") do
+    done = from(s in Step, where: not is_nil(s.done_on), select: s.batch_id)
+
+    Repo.update_all(
+      from(b in Batch, where: b.split_parent_id == ^id and b.id not in subquery(done)),
+      set: [status: "planned"]
+    )
+  end
+
+  defp set_parts_status(%Batch{id: id}, status),
+    do: Repo.update_all(from(b in Batch, where: b.split_parent_id == ^id), set: [status: status])
 
   defp batch_ids(step_ids, graph) do
     step_ids

@@ -8,7 +8,10 @@ import Config
 config :rockcut_api, RockcutApi.Repo,
   database: Path.expand("../rockcut_api_test.db", __DIR__),
   pool_size: 5,
-  pool: Ecto.Adapters.SQL.Sandbox
+  pool: Ecto.Adapters.SQL.Sandbox,
+  # Async tests write to one SQLite file: wait for a lock instead of
+  # failing with "Database busy" (seen in TaskBoardTest setup).
+  busy_timeout: 10_000
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

@@ -2,7 +2,7 @@ defmodule RockcutApi.Production.TankStatus do
   @moduledoc """
   D47 §3.8: a tank's status line for `today` (Colorado). Pure: it takes the
   tank (with its outages), the parts that were ever in it (`Parts`), its
-  standalone CIPs and the phase names.
+  standalone CIPs, the phase names and its clean / dirty marks (D48).
 
   In order:
   - **Out of service** today: "Out of service · Gasket · through Oct 30".
@@ -14,7 +14,8 @@ defmodule RockcutApi.Production.TankStatus do
     checked-off Set temp, else the Brew day's. A Set temp due today and not
     done adds "set to 48° today"; an overdue one "48° change late" (`alert`).
   - **Emptied**, cleaned since: "Sani 6 days"; not cleaned: "Empty · dirty 3
-    days", plus "no CIP planned" (`alert`) when no CIP is dated after.
+    days", plus "no CIP planned" (`alert`) when no CIP is dated after. D48:
+    a brewer's clean / dirty mark counts too (`Parts.latest_condition/1`).
   - **Never used**: "Empty · clean" ("Sani N days" after a standalone CIP).
   """
   alias RockcutApi.Production.Parts
@@ -24,7 +25,7 @@ defmodule RockcutApi.Production.TankStatus do
   `out`, `in_use`, `sani`, `dirty` or `clean`. `batch_*` name the batch in
   the tank (also while it's out of service).
   """
-  def for(tank, parts, cips, today, phase_names) do
+  def for(tank, parts, cips, today, phase_names, marks \\ []) do
     current = parts |> Enum.filter(&Parts.in_tank?/1) |> Enum.max_by(&fill_day/1, fn -> nil end)
 
     base = %{
@@ -42,7 +43,7 @@ defmodule RockcutApi.Production.TankStatus do
         Map.merge(base, beer(current, today, phase_names))
 
       true ->
-        Map.merge(base, empty(parts, cips, today))
+        Map.merge(base, empty(parts, cips, marks, today))
     end
   end
 
@@ -62,12 +63,15 @@ defmodule RockcutApi.Production.TankStatus do
   end
 
   defp beer(part, today, phase_names) do
-    steps = part.batch_steps
+    # A split part's history before the split is its parent's (D48).
+    history = Map.get(part, :history, %{steps: [], links: []})
+    steps = history.steps ++ part.batch_steps
     brew = part.first_brew
     day = brew && brew.done_on && Date.diff(today, brew.done_on)
-    phase_id = phase_on(steps, part.links, today)
+    phase_id = phase_on(steps, history.links ++ part.links, today)
 
     set_temps = Enum.filter(steps, &(Parts.behavior(&1) == "set_temp"))
+    own_set_temps = Enum.filter(part.batch_steps, &(Parts.behavior(&1) == "set_temp"))
 
     temperature =
       case set_temps
@@ -77,7 +81,7 @@ defmodule RockcutApi.Production.TankStatus do
         s -> s.temperature
       end
 
-    open = Enum.reject(set_temps, & &1.done_on)
+    open = Enum.reject(own_set_temps, & &1.done_on)
 
     late =
       open
@@ -161,47 +165,35 @@ defmodule RockcutApi.Production.TankStatus do
       end)
   end
 
-  defp empty(parts, cips, today) do
-    # The CIPs that clean up after beer that was here (the filled parts'
-    # own; a planned batch's comes after its own beer) and the standalone ones.
-    all_cips =
-      parts |> Enum.filter(&Parts.filled?/1) |> Enum.flat_map(&own_cips/1) |> Kernel.++(cips)
-
-    last_clean =
-      all_cips
-      |> Enum.map(& &1.done_on)
-      |> Enum.reject(&is_nil/1)
-      |> Enum.max(Date, fn -> nil end)
-
-    emptied =
-      parts
-      |> Enum.filter(&Parts.emptied?/1)
-      |> Enum.map(& &1.exit.done_on)
-      |> Enum.max(Date, fn -> nil end)
-
-    cond do
-      emptied && !(last_clean && Date.compare(last_clean, emptied) != :lt) ->
+  # D48: the latest of the done exits (dirty), done CIPs (clean) and marks
+  # decides (`Parts.latest_condition/1`).
+  defp empty(parts, cips, marks, today) do
+    case Parts.latest_condition(Parts.condition_events(parts, cips, marks)) do
+      %{state: :dirty, on: since} ->
+        # The CIPs that clean up after beer that was here (the filled parts'
+        # own; a planned batch's comes after its own beer) and the standalone ones.
         planned? =
-          Enum.any?(all_cips, &(is_nil(&1.done_on) and Date.compare(&1.due_on, emptied) != :lt))
+          parts
+          |> Enum.filter(&Parts.filled?/1)
+          |> Enum.flat_map(&Parts.own_cips/1)
+          |> Kernel.++(cips)
+          |> Enum.any?(&(is_nil(&1.done_on) and Date.compare(&1.due_on, since) != :lt))
 
-        line = "Empty · dirty #{Date.diff(today, emptied)} days"
+        line = "Empty · dirty #{days(Date.diff(today, since))}"
 
         if planned?,
           do: %{state: "dirty", line: line},
           else: %{state: "dirty", line: line <> " · no CIP planned", alert: true}
 
-      last_clean ->
-        %{state: "sani", line: "Sani #{Date.diff(today, last_clean)} days"}
+      %{state: :clean, on: since} ->
+        %{state: "sani", line: "Sani #{days(Date.diff(today, since))}"}
 
-      true ->
+      nil ->
         %{state: "clean", line: "Empty · clean"}
     end
   end
 
-  defp own_cips(part),
-    do:
-      Enum.filter(
-        part.steps,
-        &(Parts.behavior(&1) == "cip" and &1.vessel_index == part.vessel_index)
-      )
+  # "1 day" (P115), "0 days", "8 days".
+  defp days(1), do: "1 day"
+  defp days(n), do: "#{n} days"
 end

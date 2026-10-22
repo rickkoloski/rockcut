@@ -120,7 +120,18 @@ defmodule RockcutApi.Production.Batches do
     "#{brand} #{number_label(batch, pnums)}"
   end
 
-  @doc ~S|"#40" or "P2" ("" for a planned batch that isn't scheduled).|
+  @doc ~S|"#40" or "P2" ("" for a planned batch that isn't scheduled); a split's part "#40.1" or "P2.1" (D48).|
+  def number_label(%Batch{split_parent_id: parent_id, part_number: n} = part, pnums)
+      when not is_nil(parent_id) do
+    parent =
+      case part.split_parent do
+        %Batch{} = parent -> parent
+        _ -> Repo.get!(Batch, parent_id)
+      end
+
+    "#{number_label(parent, pnums)}.#{n}"
+  end
+
   def number_label(%Batch{batch_number: n}, _pnums) when is_binary(n), do: "##{n}"
 
   def number_label(%Batch{id: id}, pnums) do
@@ -271,7 +282,8 @@ defmodule RockcutApi.Production.Batches do
 
   defp volume_ok?(_), do: false
 
-  defp plannable_template!(id) do
+  @doc false
+  def plannable_template!(id) do
     case Production.get_template(id) do
       %Template{retired_at: nil, issues: []} = t -> t
       %Template{retired_at: nil} -> Repo.rollback(:template_incomplete)
@@ -311,7 +323,12 @@ defmodule RockcutApi.Production.Batches do
     end
   end
 
-  defp copy_steps!(batch, template, brew_on, two_days) do
+  @doc """
+  Copy `template`'s entries into `batch` from `brew_on` (plan, and D48's
+  Change template): the steps and links, a two-day brew's "2 of 2", and a
+  CIP after a full Package.
+  """
+  def copy_steps!(batch, template, brew_on, two_days) do
     ids =
       Map.new(template.steps, fn %TemplateStep{} = s ->
         brew? = Steps.behavior(%Step{step_type: s.step_type}) == "brew"
@@ -330,7 +347,8 @@ defmodule RockcutApi.Production.Batches do
             on_task_list: s.on_task_list,
             position: s.position,
             due_on: Date.add(brew_on, s.day_offset),
-            template_step_id: s.id
+            template_step_id: s.id,
+            ramp_group: s.ramp_group
           })
 
         {s.id, step}
@@ -401,12 +419,20 @@ defmodule RockcutApi.Production.Batches do
   ## Changing
 
   @doc """
-  Delete a planned batch with its steps, links and vessels
-  (`:not_planned` once brewed). `{:ok, renumbered}`.
+  Delete a planned batch with its steps, links and vessels, and its parts
+  (`:not_planned` once brewed; `:split_part` for a part: Undo split). `{:ok, renumbered}`.
   """
+  def delete_planned(%Batch{split_parent_id: id}) when not is_nil(id), do: {:error, :split_part}
+
   def delete_planned(%Batch{status: "planned"} = batch) do
     Repo.transaction(fn ->
-      {_, renumbered} = with_renumbering(fn -> Repo.delete!(batch) end)
+      {_, renumbered} =
+        with_renumbering(fn ->
+          # D48: its parts (planned too) go with it.
+          Repo.delete_all(from(b in Batch, where: b.split_parent_id == ^batch.id))
+          Repo.delete!(batch)
+        end)
+
       renumbered
     end)
   end
@@ -478,6 +504,8 @@ defmodule RockcutApi.Production.Batches do
             end
 
           {"batch_number", raw}, acc ->
+            # D48: a part's number is its parent's.
+            if batch.split_parent_id, do: Repo.rollback(:split_part)
             if batch.status == "planned", do: Repo.rollback(:not_brewed)
 
             case check_number(raw, batch) do

@@ -7,8 +7,10 @@ import {
   dayLabel,
   dayWidth,
   daysBetween,
+  defaultRange,
   dotState,
   dragHint,
+  expandMode,
   flagChip,
   layoutRows,
   monthLabels,
@@ -16,12 +18,14 @@ import {
   partFlags,
   partLabel,
   phaseAt,
-  rangeAroundToday,
+  rangeForZoom,
+  scheduleParts,
   readPrefs,
   segments,
   shiftRange,
   showInitials,
   STEP_ROW_H,
+  STEP_ROW_H_FINE,
   TRACK_H,
   writePref,
 } from './gantt'
@@ -53,6 +57,7 @@ const step = (s: Partial<SchedStep>): SchedStep => ({
   assignee_id: null,
   assignee: null,
   added: false,
+  ramp_group: null,
   ...s,
 })
 
@@ -68,6 +73,9 @@ const batch = (b: Partial<SchedBatch>): SchedBatch => ({
   template_id: 1,
   template_name: 'Lager',
   brew_two_days: false,
+  split_parent_id: null,
+  part_number: null,
+  split_step_id: null,
   vessels: [{ vessel_index: 0, tank_id: 7 }],
   steps: [],
   links: [],
@@ -125,7 +133,25 @@ describe('range and zoom', () => {
     expect(clampRange({ from: '2026-10-21', to: '2026-10-22' })).toEqual({ from: '2026-10-21', to: '2026-10-27' })
     expect(clampRange({ from: '2026-01-01', to: '2029-01-01' })).toEqual({ from: '2026-01-01', to: '2027-12-31' })
     expect(shiftRange({ from: '2026-10-14', to: '2027-01-06' }, -28)).toEqual({ from: '2026-09-16', to: '2026-12-09' })
-    expect(rangeAroundToday({ from: '2026-01-01', to: '2026-01-31' }, '2026-10-21')).toEqual({ from: '2026-10-14', to: '2026-11-13' })
+  })
+
+  it('Today: a week back plus the zoom’s weeks; a new zoom keeps the start (P118)', () => {
+    expect(defaultRange('2026-10-21', 6)).toEqual({ from: '2026-10-14', to: '2026-12-02' })
+    expect(defaultRange('2026-10-21', 2)).toEqual({ from: '2026-10-14', to: '2026-11-04' })
+    expect(defaultRange('2026-10-21', 12)).toEqual({ from: '2026-10-14', to: '2027-01-13' })
+    // The same as Today after switching: start kept, a week plus the zoom.
+    expect(rangeForZoom(defaultRange('2026-10-21', 6), 2)).toEqual(defaultRange('2026-10-21', 2))
+    expect(rangeForZoom({ from: '2026-09-01', to: '2026-09-10' }, 12)).toEqual({ from: '2026-09-01', to: '2026-12-01' })
+  })
+
+  it('the expand switch follows the open rows (P119)', () => {
+    const keys = ['7', '9', 'unassigned']
+    expect(expandMode(keys, new Set())).toBe('collapse')
+    expect(expandMode(keys, new Set(['7']))).toBe('mine')
+    expect(expandMode(keys, new Set(['7', '9', 'unassigned']))).toBe('expand')
+    // A retired tank's key left in the set doesn't count.
+    expect(expandMode(keys, new Set(['42']))).toBe('collapse')
+    expect(expandMode([], new Set())).toBe('collapse')
   })
 
   it('fits the zoom’s weeks into the width; initials need 14 px', () => {
@@ -329,6 +355,10 @@ describe('stacking and rows', () => {
     // Serving 2: the CIP block on Oct 22 overlaps Fest's part there.
     expect(rows[1]).toMatchObject({ tracks: 2, top: TRACK_H + 4 * STEP_ROW_H, height: 2 * TRACK_H })
     expect(rows[2].parts.map((p) => p.key)).toEqual(['2.0'])
+    // With a mouse, step rows are 20 px (P121).
+    const fine = layoutRows([tank(7, 'FV7'), tank(9, 'Serving 2')], [...parts, ...unassigned], [cip], new Set(['7']), STEP_ROW_H_FINE)
+    expect(fine[0].height).toBe(TRACK_H + 4 * 20)
+    expect(fine[1].top).toBe(TRACK_H + 4 * 20)
   })
 })
 
@@ -371,14 +401,15 @@ describe('remembered per person', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('defaults to 6 weeks, names-only on a phone; keeps each user’s own', () => {
-    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, expanded: [] })
+    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, expanded: [], mix: [] })
     expect(readPrefs(4, true).collapsed).toBe(true)
     writePref(4, 'zoom', 12)
     writePref(4, 'collapsed', false)
     writePref(4, 'range', { from: '2026-10-01', to: '2026-10-02' })
     writePref(4, 'expanded', ['7', 'unassigned'])
+    writePref(4, 'mix', ['7'])
     expect(store.get('rockcut.production.4.zoom')).toBe('12')
-    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, expanded: ['7', 'unassigned'] })
+    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, expanded: ['7', 'unassigned'], mix: ['7'] })
     expect(readPrefs(5, false).zoom).toBe(6)
     store.set('rockcut.production.4.range', 'not json')
     expect(readPrefs(4, false).range).toBeNull()
@@ -395,5 +426,44 @@ describe('remembered per person', () => {
     })
     expect(readPrefs(4, false).zoom).toBe(6)
     expect(() => writePref(4, 'zoom', 2)).not.toThrow()
+  })
+})
+
+describe('split lanes (D48 lead decisions 1)', () => {
+  // Galactic in FV2 (tank 9): Brew day Oct 1, Split Oct 10. Part 1 stays in FV2 from the Split; another batch fills FV2 that day too.
+  const parent = batch({
+    id: 40,
+    label: 'Galactic #40',
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [
+      step({ id: 401, batch_id: 40, behavior: 'brew', first_brew: true, due_on: '2026-10-01' }),
+      step({ id: 402, batch_id: 40, behavior: 'split', split_method: 'transfer', due_on: '2026-10-10' }),
+    ],
+  })
+  const part = batch({
+    id: 41,
+    label: 'Galactic #40.1',
+    split_parent_id: 40,
+    part_number: 1,
+    split_step_id: 402,
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [step({ id: 411, batch_id: 41, due_on: '2026-10-14' })],
+  })
+  const other = batch({
+    id: 50,
+    label: 'Enos #41',
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [step({ id: 501, batch_id: 50, behavior: 'brew', first_brew: true, due_on: '2026-10-10' })],
+  })
+
+  it('the part that stays shares its parent’s lane; a different batch filling that day does not', () => {
+    const parts = scheduleParts([parent, part])
+    expect(parts.find((p) => p.batch.id === 41)!.start).toBe('2026-10-10')
+    const [row] = layoutRows([tank(9, 'FV2')], parts, [], new Set())
+    expect(row.tracks).toBe(1)
+    expect(row.height).toBe(TRACK_H)
+
+    const [busy] = layoutRows([tank(9, 'FV2')], scheduleParts([parent, other]), [], new Set())
+    expect(busy.tracks).toBe(2)
   })
 })

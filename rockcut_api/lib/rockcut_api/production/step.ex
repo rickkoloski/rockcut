@@ -4,7 +4,7 @@ defmodule RockcutApi.Production.Step do
   (`template_step_id`), or a standalone CIP & Sanitize (no batch, a
   `tank_id`). A phase marker has no type. A typed step's name always comes
   from its type (renaming a type renames every batch's step); `name` is only
-  for a custom step (D48). `due_on` is the day it's planned for, or the day
+  for a custom step (D48: no type, a name, no phase). `due_on` is the day it's planned for, or the day
   it was done (checking off on another day moves it there).
   """
   use Ecto.Schema
@@ -26,6 +26,8 @@ defmodule RockcutApi.Production.Step do
     field :done_on, :date
     field :completed_at, :utc_datetime
     field :added, :boolean, default: false
+    # D48: the Set temp steps of one ramp share it (copied from the template).
+    field :ramp_group, :string
 
     belongs_to :batch, RockcutApi.Brewing.Batch
     belongs_to :tank, RockcutApi.Production.Tank
@@ -37,6 +39,10 @@ defmodule RockcutApi.Production.Step do
 
     timestamps(type: :utc_datetime)
   end
+
+  @doc "A phase marker: no type and no name of its own (a custom step has a name; D48)."
+  def marker?(%__MODULE__{step_type_id: nil, name: nil}), do: true
+  def marker?(%__MODULE__{}), do: false
 
   @doc """
   What the step dialog edits: the addition to the name, the temperature (Set

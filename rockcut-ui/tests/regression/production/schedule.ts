@@ -15,6 +15,7 @@ export interface SStep {
   name: string
   type_name: string | null
   behavior: string | null
+  marker: boolean
   first_brew: boolean
   vessel_index: number
   due_on: string
@@ -24,6 +25,8 @@ export interface SStep {
   temperature: number | null
   detail: string | null
   package_partial: boolean
+  added: boolean
+  ramp_group: string | null
 }
 
 export interface SBatch {
@@ -33,6 +36,8 @@ export interface SBatch {
   p_number: string | null
   batch_number: string | null
   status: string
+  split_parent_id: number | null
+  part_number: number | null
   vessels: { vessel_index: number; tank_id: number | null }[]
   steps: SStep[]
   links: { id: number; from_step_id: number; to_step_id: number; default_answer: string }[]
@@ -158,6 +163,12 @@ export async function openGantt(page: Page) {
   await expect(page.getByTestId('gantt-inner')).toBeVisible()
 }
 
+/** Toolbar → Add process ▾ → Plan batch… or CIP & Sanitize… (D48 §3.6). */
+export async function addProcess(page: Page, which: 'plan' | 'cip') {
+  await page.getByTestId('gantt-add-process').click()
+  await page.getByTestId(which === 'plan' ? 'gantt-plan' : 'gantt-add-cip').click()
+}
+
 /** Pixels per day in the page now. */
 export async function dayPx(page: Page): Promise<number> {
   const from = await page.getByTestId('gantt-from').inputValue()
@@ -179,6 +190,54 @@ export async function dragBy(page: Page, el: Locator, days: number, dy = 0, at?:
   await page.mouse.move(x + days * px, y + dy, { steps: 12 })
   await page.waitForTimeout(100)
   await page.mouse.up()
+}
+
+/**
+ * Press `el` (at `x` px into it) and move to the middle of the row
+ * `gantt-lane-…` named by `laneId`. When it's off the grid, the pointer waits
+ * in the grid's edge zone and the grid scrolls itself (D48 auto-scroll). The
+ * button stays down: the caller checks the hint or drop row, then releases.
+ * `tick` runs while it waits: with `page.clock` installed, the scrolling
+ * frames only come when the clock moves.
+ */
+export async function dragToLane(page: Page, el: Locator, laneId: string, x = 20, tick?: () => Promise<void>) {
+  await el.scrollIntoViewIfNeeded()
+  const box = (await el.boundingBox())!
+  const [px, py] = [box.x + x, box.y + box.height / 2]
+  await page.mouse.move(px, py)
+  await page.mouse.down()
+  await page.mouse.move(px, py + 6, { steps: 3 })
+  await followToLane(page, px, laneId, py, tick)
+}
+
+/** During a drag: move to the middle of the row `laneId`, waiting in the edge zone while the grid scrolls to it. */
+export async function followToLane(page: Page, px: number, laneId: string, startY?: number, tick?: () => Promise<void>) {
+  const grid = (await gantt(page).boundingBox())!
+  const from = startY ?? grid.y + grid.height / 2
+  const [top, bottom] = [grid.y + 47 + 45, grid.y + grid.height - 45]
+  for (let i = 0; i < 200; i++) {
+    const lane = (await page.getByTestId(laneId).boundingBox())!
+    const mid = lane.y + Math.min(lane.height, 54) / 2
+    if (mid > top && mid < bottom) {
+      await page.mouse.move(px, mid, { steps: 6 })
+      return
+    }
+    // The last (or first) row can't leave the edge zone: once the grid
+    // can't scroll further that way, aim at the part of the row in view.
+    const scroll = await gantt(page).evaluate((e) => ({ at: e.scrollTop, max: e.scrollHeight - e.clientHeight, view: e.clientHeight }))
+    if ((mid >= bottom && scroll.at >= scroll.max - 1) || (mid <= top && scroll.at <= 0)) {
+      const [lo, hi] = [Math.max(lane.y, grid.y + 48), Math.min(lane.y + lane.height, grid.y + scroll.view - 2)]
+      if (hi - lo < 8) throw new Error(`${laneId} is out of the grid's reach`)
+      await page.mouse.move(px, (lo + hi) / 2, { steps: 6 })
+      return
+    }
+    // In the edge zone, and far enough from the press to count as heading there.
+    const y = mid >= bottom ? Math.max(grid.y + grid.height - 8, from + 20) : Math.min(grid.y + 47 + 8, from - 20)
+    await page.mouse.move(px, y, { steps: 3 })
+    if (tick) await tick()
+    else await page.waitForTimeout(40)
+  }
+  throw new Error(`${laneId} never scrolled into the grid`)
 }
 
 /** The last message shown (the Undo snackbar). */
