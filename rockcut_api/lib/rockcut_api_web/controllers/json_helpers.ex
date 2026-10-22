@@ -452,7 +452,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       batch_id: s.batch_id,
       tank_id: s.tank_id,
       step_type_id: s.step_type_id,
-      marker: is_nil(s.step_type_id),
+      marker: RockcutApi.Production.Step.marker?(s),
       name: RockcutApi.Production.Steps.name(s),
       type_name: type && type.name,
       full_name: type && type.full_name,
@@ -472,7 +472,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       done_by: s.done_by && %{id: s.done_by.id, name: s.done_by.name},
       assignee_id: s.assignee_id,
       assignee: s.assignee && %{id: s.assignee.id, name: s.assignee.name},
-      added: s.added
+      added: s.added,
+      ramp_group: s.ramp_group
     }
   end
 

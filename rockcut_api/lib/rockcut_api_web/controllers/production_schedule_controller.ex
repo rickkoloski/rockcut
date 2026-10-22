@@ -18,7 +18,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
     only: [production_schedule: 1, production_batch: 1, production_step: 2]
 
   alias RockcutApi.{Authz, Repo, Tasks}
-  alias RockcutApi.Production.{Batches, Cips, Schedule, Signoffs, Step, Steps, Undo}
+  alias RockcutApi.Production.{BatchChanges, Batches, Cips, Schedule, Signoffs, Step, Steps, Undo}
   alias RockcutApiWeb.ProductionErrors
 
   action_fallback RockcutApiWeb.FallbackController
@@ -55,18 +55,119 @@ defmodule RockcutApiWeb.ProductionScheduleController do
     |> ProductionErrors.handle(conn)
   end
 
-  @doc "PATCH /api/production/batches/:id: `volume_bbl`, `batch_number` (brewed)."
+  @doc """
+  PATCH /api/production/batches/:id: `volume_bbl`, `batch_number` (brewed),
+  and while planned `brand_id` and `template_id` (D48: the steps are
+  rebuilt; `message` says what was kept).
+  """
   def update_batch(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :write),
          {:ok, batch} <- fetch_batch(id),
-         {:ok, {_, token}} <-
+         {:ok, {extra, token}} <-
            Undo.track(user(conn), %{batches: [batch.id]}, fn ->
-             Batches.update(batch, Map.take(params, ["volume_bbl", "batch_number"]))
+             change_batch(batch, params)
            end) do
-      render_write(conn, [batch.id], %{renumbered: []}, token)
+      render_write(conn, [batch.id], extra, token)
     end
     |> ProductionErrors.handle(conn)
   end
+
+  defp change_batch(batch, params) do
+    Repo.transaction(fn ->
+      extra =
+        if Map.has_key?(params, "template_id"),
+          do: ok!(BatchChanges.change_template(batch, params["template_id"])),
+          else: %{renumbered: []}
+
+      if Map.has_key?(params, "brand_id"),
+        do: ok!(BatchChanges.change_brand(Batches.get(batch.id), params["brand_id"]))
+
+      ok!(Batches.update(Batches.get(batch.id), Map.take(params, ["volume_bbl", "batch_number"])))
+      Map.take(extra, [:renumbered, :message])
+    end)
+  end
+
+  defp ok!({:ok, result}), do: result
+  defp ok!({:error, reason}), do: Repo.rollback(reason)
+
+  ## Changing a batch (D48 §3.11)
+
+  @doc """
+  POST /api/production/batches/:id/steps: `{ step_type_id | name, due_on,
+  vessel_index?, detail?, temperature?, package_partial?, notes?,
+  on_task_list?, assignee_id?, comes_after_id?, comes_after_answer?,
+  leads_to_id?, leads_to_answer? }`. Answers `step_ids` (the new steps).
+  """
+  def add_step(conn, %{"id" => id} = params) do
+    batch_write(conn, id, &BatchChanges.add_step(&1, Map.drop(params, ["id"])), :created)
+  end
+
+  @doc """
+  POST /api/production/batches/:id/ramp: `{ start, target, change_per_day,
+  first_on, vessel_index?, phase_id?, on_task_list?, assignee_id?,
+  comes_after_id?, leads_to_id? }`.
+  """
+  def add_ramp(conn, %{"id" => id} = params) do
+    batch_write(conn, id, &BatchChanges.add_ramp(&1, Map.drop(params, ["id"])), :created)
+  end
+
+  @doc """
+  POST /api/production/batches/:id/transfers: `{ step_type_id?, due_on,
+  tank_id?, notes?, assignee_id? }` (Transfer or Filter). Answers `moved`.
+  """
+  def add_transfer(conn, %{"id" => id} = params) do
+    batch_write(conn, id, &BatchChanges.add_transfer(&1, Map.drop(params, ["id"])), :created)
+  end
+
+  @doc "DELETE /api/production/batches/:id/transfers/:step_id: the beer stays in the tank before it."
+  def remove_transfer(conn, %{"id" => id, "step_id" => step_id}) do
+    with :ok <- allow(conn, :write),
+         {:ok, batch} <- fetch_batch(id),
+         {:ok, step} <- fetch_step(step_id),
+         true <- (step.batch_id == batch.id and transfer?(step)) || {:error, :not_found} do
+      remove_step(conn, %{"id" => step_id})
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  @doc "DELETE /api/production/steps/:id: an unfinished step (not Brew day); links pass through."
+  def remove_step(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :write),
+         {:ok, step} <- fetch_step(id),
+         {:ok, result, token} <-
+           tracked(conn, step_scope([step.id]), false, fn _ -> BatchChanges.remove_step(step) end) do
+      render_result(conn, Map.put(result, :renumbered, []), token)
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  @doc "POST /api/production/steps/:id/ramp: `{ target?, change_per_day? }` (Change ramp…)."
+  def change_ramp(conn, %{"id" => id} = params) do
+    with :ok <- allow(conn, :write),
+         {:ok, step} <- fetch_step(id),
+         {:ok, result, token} <-
+           tracked(conn, step_scope([step.id]), false, fn _ ->
+             BatchChanges.change_ramp(step, Map.drop(params, ["id"]))
+           end) do
+      render_result(conn, Map.put(result, :renumbered, []), token)
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  defp batch_write(conn, id, fun, status) do
+    with :ok <- allow(conn, :write),
+         {:ok, batch} <- fetch_batch(id),
+         {:ok, {result, token}} <-
+           Undo.track(user(conn), %{batches: [batch.id]}, fn -> fun.(batch) end) do
+      conn
+      |> put_status(status)
+      |> render_result(Map.put(result, :renumbered, []), token)
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  defp transfer?(step),
+    do: Steps.behavior(Repo.preload(step, :step_type)) == "transfer"
 
   @doc "DELETE /api/production/batches/:id: a planned batch only (`not_planned`)."
   def delete_batch(conn, %{"id" => id}) do

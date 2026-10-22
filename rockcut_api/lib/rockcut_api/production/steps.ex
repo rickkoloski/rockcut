@@ -37,6 +37,8 @@ defmodule RockcutApi.Production.Steps do
   "Package - Partial - kegs", "Brew day - 1 of 2", a custom step's own name,
   or a marker's phase. Needs `step_type` and `phase` preloaded.
   """
+  def name(%Step{step_type_id: nil, name: name}) when is_binary(name), do: name
+
   def name(%Step{step_type: nil} = s) do
     case s.phase do
       %Phase{name: name} -> name

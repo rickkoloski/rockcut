@@ -30,7 +30,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     template_incomplete: "That template is incomplete. Finish it under Set up → Templates first.",
     tank_invalid: "That tank isn't available. Pick another or leave it unassigned.",
     volume_invalid: "Enter a volume more than 0 and under 10,000 bbl.",
-    not_planned: "Only a planned batch can be deleted.",
+    not_planned: "Only a planned batch can be changed that way.",
     not_brewed: "A planned batch gets its number when brew day is checked off.",
     batch_number_required: "Enter the batch number.",
     batch_number_invalid: "A batch number is 1 to 20 characters.",
@@ -41,7 +41,17 @@ defmodule RockcutApiWeb.ProductionErrors do
     done_on_invalid: "Enter the day it was done.",
     done_on_future: "A step can't be done in the future.",
     assignee_invalid: "Steps can be assigned to Brewery members only.",
-    undo_expired: "It's too late to undo that."
+    undo_expired: "It's too late to undo that.",
+    # D48: changing a batch.
+    name_required: "Give the step a name.",
+    name_too_long: "A step name is up to 40 characters.",
+    due_on_invalid: "Pick the day.",
+    brew_day: "Brew day can't be added or removed.",
+    use_split: "Use Split… to split the batch.",
+    not_ramp: "That step isn't part of a ramp.",
+    step_done_after: "Some steps after that date are already done. Pick a later date.",
+    split: "Undo the split first.",
+    brand_invalid: "Pick a brand."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn

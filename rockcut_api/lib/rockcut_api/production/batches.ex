@@ -271,7 +271,8 @@ defmodule RockcutApi.Production.Batches do
 
   defp volume_ok?(_), do: false
 
-  defp plannable_template!(id) do
+  @doc false
+  def plannable_template!(id) do
     case Production.get_template(id) do
       %Template{retired_at: nil, issues: []} = t -> t
       %Template{retired_at: nil} -> Repo.rollback(:template_incomplete)
@@ -311,7 +312,12 @@ defmodule RockcutApi.Production.Batches do
     end
   end
 
-  defp copy_steps!(batch, template, brew_on, two_days) do
+  @doc """
+  Copy `template`'s entries into `batch` from `brew_on` (plan, and D48's
+  Change template): the steps and links, a two-day brew's "2 of 2", and a
+  CIP after a full Package.
+  """
+  def copy_steps!(batch, template, brew_on, two_days) do
     ids =
       Map.new(template.steps, fn %TemplateStep{} = s ->
         brew? = Steps.behavior(%Step{step_type: s.step_type}) == "brew"
@@ -330,7 +336,8 @@ defmodule RockcutApi.Production.Batches do
             on_task_list: s.on_task_list,
             position: s.position,
             due_on: Date.add(brew_on, s.day_offset),
-            template_step_id: s.id
+            template_step_id: s.id,
+            ramp_group: s.ramp_group
           })
 
         {s.id, step}
