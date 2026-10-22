@@ -186,7 +186,8 @@ defmodule RockcutApi.Production.BatchChanges do
   the target; the first new step takes the first unfinished one's day,
   tank, phase and settings, and the links into and out of the unfinished
   steps are kept. `:not_ramp` for a step outside a ramp, `:step_done` when
-  every step of it is done, and `Ramp`'s errors for the values.
+  every step of it is done, `:after_exit` when its last step would be after
+  the tank's exit (as for `add_ramp/2`), and `Ramp`'s errors for the values.
   """
   def change_ramp(%Step{} = step, attrs) do
     attrs = stringify(attrs)
@@ -229,6 +230,16 @@ defmodule RockcutApi.Production.BatchChanges do
                 l.to_step_id in ^MapSet.to_list(open_ids)
           )
         )
+
+      # D48 DEV QA addendum: refused when its last new step is after the tank's exit.
+      batch = Repo.get!(Batch, step.batch_id)
+
+      not_after_exit!(
+        batch,
+        steps!(batch),
+        first.vessel_index,
+        Date.add(first.due_on, length(temps) - 1)
+      )
 
       into = Enum.reject(links, &MapSet.member?(open_ids, &1.from_step_id))
       out = Enum.reject(links, &MapSet.member?(open_ids, &1.to_step_id))

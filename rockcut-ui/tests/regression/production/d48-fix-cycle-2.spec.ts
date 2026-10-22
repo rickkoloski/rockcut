@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
-import { addDays, batchOf, Made, openGantt, snack, stepOf, today, type SBatch } from './schedule'
+import { addDays, batchOf, dragToLane, Made, openGantt, snack, stepOf, today, type SBatch } from './schedule'
 import { dayLabel } from '../../../src/lib/gantt'
 
 // D48 DEV gate fix cycle 2 (lead decisions 3): no transfer into the tank the
@@ -106,4 +106,28 @@ test('N2, N3, and a brewed split’s part 2 opens on a click; N5: the split dial
   await expect(page.getByTestId('split-dialog-error')).toContainText('The split has to be after brew day.')
   await page.getByTestId('split-day').fill(addDays(stepOf(other, 'Brew day').due_on, 2))
   await expect(page.getByTestId('split-dialog-error')).toHaveCount(0)
+})
+
+test('addendum 1: the batch dialog’s tank pickers and a drag onto another row refuse the tank before or after', async ({ page }) => {
+  const [a, b] = [await made.tank('FV2'), await made.tank('Q1RB')]
+  const brand = await made.brand('Lager')
+  const planned = await made.plan({ brand_id: brand.id, template: LAGER, brew_on: addDays(today(), 7), tank_ids: [a.id, b.id] })
+  const transfer = planned.steps.find((s) => s.behavior === 'transfer' && s.vessel_index === 1)!.due_on
+  await openGantt(page)
+
+  // Ferment in b, the tank it goes into next.
+  await openBatch(page, planned)
+  await page.getByTestId('batch-tank-0').click()
+  await page.getByTestId(`batch-tank-0-${b.id}`).click()
+  await expect(page.getByTestId('batch-dialog-error')).toHaveText(`The beer goes into ${b.name} next, on ${dayLabel(transfer)}.`)
+  await page.getByTestId('batch-dialog-close').click()
+
+  // Drag the second tank's bar onto a's row: the hint says why, in red, and the drop is refused.
+  await dragToLane(page, page.getByTestId(`gantt-bar-${planned.id}-1`), `gantt-lane-${a.id}`)
+  const hint = page.getByTestId('gantt-drag-hint')
+  await expect(hint).toContainText(`→ ${a.name} · the beer is already in ${a.name}`)
+  await expect(hint).toHaveAttribute('data-warn', 'true')
+  await page.mouse.up()
+  await expect(snack(page)).toHaveText(`The beer is already in ${a.name}.`)
+  expect((await batchOf(planned.id)).vessels.map((v) => v.tank_id)).toEqual([a.id, b.id])
 })

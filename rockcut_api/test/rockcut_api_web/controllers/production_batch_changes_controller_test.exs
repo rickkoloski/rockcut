@@ -321,6 +321,13 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
              "message" => "The beer goes into BBT1 next, on Thu Nov 12."
            }
 
+    vessel = call(b, :patch, "/api/production/batches/#{lager.id}/vessels/0", %{tank_id: bbt.id})
+
+    assert body(vessel) == %{
+             "error" => "same_tank",
+             "message" => "The beer goes into BBT1 next, on Thu Nov 12."
+           }
+
     path = "/api/production/batches/#{ctx.batch.id}"
     late = call(b, :post, "#{path}/steps", %{name: "Late", due_on: "2026-11-23"})
 

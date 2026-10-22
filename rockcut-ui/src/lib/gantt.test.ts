@@ -287,6 +287,12 @@ describe('drag hint (lead decisions 4, addition)', () => {
     })
   })
 
+  it('another row: red when it is the tank the beer comes from or goes into next (D48 DEV QA N1)', () => {
+    expect(dragHint({ ...base, kind: 'bar', days: 0, part: second, toRow: fv7 })).toMatchObject({ text: '→ FV7 · the beer is already in FV7', warn: true })
+    const transfer = linked.steps.find((s) => s.behavior === 'transfer')!
+    expect(dragHint({ ...base, kind: 'bar', days: 0, part: first, toRow: s2 })).toMatchObject({ text: `→ Serving 2 · the beer goes into Serving 2 next, on ${dayLabel(transfer.due_on)}`, warn: true })
+  })
+
   it('a completed part holds its tank only to its exit: no overlap for a batch before its leftover CIP (N4)', () => {
     // Fest's Package done Oct 21 in Serving 2, its CIP still planned Oct 25; Enos dragged to Oct 23.
     const done = buildParts(batch({ ...fest, status: 'completed', steps: fest.steps.filter((s) => s.id !== 5).map((s) => (s.id === 3 ? { ...s, done_on: s.due_on } : s.id === 6 ? { ...s, due_on: '2026-10-21', done_on: '2026-10-21' } : s)) }))

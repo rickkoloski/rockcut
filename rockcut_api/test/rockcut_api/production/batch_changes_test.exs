@@ -436,6 +436,14 @@ defmodule RockcutApi.Production.BatchChangesTest do
       assert {:ok, %{step_ids: [_, _, _]}} =
                BatchChanges.add_ramp(ctx.batch, Map.put(ramp, "first_on", "2026-11-20"))
 
+      # Change ramp… too (addendum 2): 60° to 40° at 5° a day would end Nov 24.
+      [ramp_step | _] = steps_of(ctx.batch) |> Enum.filter(&(&1.ramp_group != nil))
+
+      assert {:error, :after_exit} =
+               BatchChanges.change_ramp(ramp_step, %{"change_per_day" => 5})
+
+      assert {:ok, %{step_ids: [_, _]}} = BatchChanges.change_ramp(ramp_step, %{"target" => 50})
+
       # A tank left by a transfer: up to the transfer's day.
       lager = plan!(brand!("Enos"), lager_template!(), @brew, %{"tank_ids" => [tank!("FV1").id]})
 
@@ -521,6 +529,33 @@ defmodule RockcutApi.Production.BatchChangesTest do
       {:ok, _} = Production.Batches.set_vessel_tank(ctx.lager, 2, nil)
       assert {:ok, _} = BatchChanges.add_transfer(ctx.lager, %{"due_on" => "2026-11-09"})
       assert vessels(ctx.lager) == %{0 => ctx.fv1.id, 1 => nil, 2 => nil, 3 => nil}
+    end
+
+    test "setting a vessel's tank directly, and Plan batch's tanks (addendum 1)", ctx do
+      alias RockcutApi.Production.Batches
+
+      assert {:error, {:same_tank, "FV1"}} = Batches.set_vessel_tank(ctx.lager, 1, ctx.fv1.id)
+
+      assert {:error, {:same_tank, "BBT1", ~D[2026-11-12]}} =
+               Batches.set_vessel_tank(ctx.lager, 0, ctx.bbt.id)
+
+      assert vessels(ctx.lager) == %{0 => ctx.fv1.id, 1 => ctx.bbt.id}
+
+      # A swap, through Unassigned: the vessels after each save are checked.
+      {:ok, _} = Batches.set_vessel_tank(ctx.lager, 0, nil)
+      {:ok, _} = Batches.set_vessel_tank(ctx.lager, 1, ctx.fv1.id)
+      {:ok, _} = Batches.set_vessel_tank(ctx.lager, 0, ctx.bbt.id)
+      assert vessels(ctx.lager) == %{0 => ctx.bbt.id, 1 => ctx.fv1.id}
+
+      # Plan batch checks the tanks picked together.
+      assert {:error, {:same_tank, "FV1", ~D[2026-11-12]}} =
+               Batches.plan(%{
+                 "brand_id" => brand!("Fest").id,
+                 "template_id" => lager_template!("Lager 3").id,
+                 "brew_on" => "2026-11-02",
+                 "volume_bbl" => "20",
+                 "tank_ids" => [ctx.fv1.id, ctx.fv1.id]
+               })
     end
 
     test "removing a transfer is refused when the tanks either side of it are one", ctx do

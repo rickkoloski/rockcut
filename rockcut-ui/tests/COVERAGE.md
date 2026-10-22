@@ -635,5 +635,7 @@ Playwright specs are in `regression/production/` (project `production`, one work
 | DEV QA N4, N6 | A part's steps and ramps start on its Split (`before_split`, "A step can't come before the split."); added steps and ramps end on or before the tank's exit (`after_exit`; a ramp refused whole) | ExUnit `batch_changes_test`, `splits_marks_test`, controller test |
 | DEV QA N5 | The split dialog clears its refusal when the day, the method or a part changes | Playwright `d48-fix-cycle-2` |
 | DEV QA check | A brewed split's part 2 (own tank) opens on a click: not reproduced | Playwright `d48-fix-cycle-2` |
+| DEV QA addendum 1 | Setting a vessel's tank (batch dialog pickers, drag onto another row) and Plan batch's tanks: the same `same_tank` refusals, on the vessels after the save; the drag hint names it in red | ExUnit `batch_changes_test`, controller test; Vitest `gantt` (drag hint); Playwright `d48-fix-cycle-2` |
+| DEV QA addendum 2 | Change ramp… refused (`after_exit`) when a regenerated step would be after the tank's exit | ExUnit `batch_changes_test` |
 
 Not automated: P87 (touch long-press selection on the Pixel) and a touch drag's auto-scroll, by hand at the DEV gate.

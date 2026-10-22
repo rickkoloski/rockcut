@@ -399,6 +399,14 @@ export function dragHint(a: DragHintInput): DragHint | null {
     const part = a.part
     if (a.toRow !== undefined && a.toRow?.id !== (part.tankId ?? undefined)) {
       text = `→ ${a.toRow?.name ?? 'Unassigned'}`
+      // Not the tank the beer comes from or goes into next: the API refuses it (D48 DEV QA N1).
+      const to = a.toRow
+      const tankOf = (k: number) => part.batch.vessels.find((v) => v.vessel_index === k)?.tank_id ?? null
+      const nextFill = part.batch.steps
+        .filter((s) => s.behavior === 'transfer' && s.vessel_index === part.vessel + 1)
+        .sort((x, y) => x.due_on.localeCompare(y.due_on))[0]
+      if (to && part.vessel > 0 && tankOf(part.vessel - 1) === to.id) reasons.push(`the beer is already in ${to.name}`)
+      else if (to && nextFill && tankOf(part.vessel + 1) === to.id) reasons.push(`the beer goes into ${to.name} next, on ${dayLabel(nextFill.due_on)}`)
       outIn(a.toRow, part.start, part.end)
       overlapIn(a.toRow, part, part.start, part.end)
     } else {

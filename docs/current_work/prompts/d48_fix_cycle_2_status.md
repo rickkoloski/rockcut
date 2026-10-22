@@ -32,20 +32,45 @@ I checked the move itself and kept it as it was. Only the wording changed.
 - In QA's case, the CIP landed on a full Q1RC only because the transfer went Q1RC → Q1RC. That's refused now.
 - So the preview just doesn't list or count that CIP as a step that moves. The Playwright test checks the result: vessels a → d → b → c, and the transfer-day CIP in vessel 1 (d).
 
+## Addendum (lead answers), committed on top of `967d927`
+
+| Item | Change | Tests |
+|---|---|---|
+| **1. Direct tank set** | **API:**<ul><li>`Batches.set_vessel_tank` (`PATCH /batches/:id/vessels/:k`, used by the batch dialog's Ferment in / Transfer to pickers and by dragging a bar onto another tank's row) runs `no_tank_twice!` on the vessels after the save.</li><li>The same tank as the vessel before gives "The beer is already in FV1.". The same tank as the vessel after gives "The beer goes into BBT1 next, on Thu Nov 12.".</li><li>Plan batch checks the tanks picked together, too.</li></ul>**UI:**<ul><li>The pickers show the API's refusal at the top of the batch dialog.</li><li>The drag hint adds "the beer is already in FV2" / "the beer goes into Q1RB next, on …" in red (`data-warn`), as other refused or flagged drops do. The drop itself is refused, with the message in the snackbar.</li></ul> | ExUnit `batch_changes_test` ("setting a vessel's tank directly, and Plan batch's tanks"), controller test (the PATCH message); Vitest `gantt` (drag hint, both wordings); Playwright `d48-fix-cycle-2` "addendum 1" (picker refusal, hint text and red, refused drop, vessels unchanged) |
+| **2. Change ramp past the exit** | `change_ramp` is refused with `after_exit` when its last regenerated step would fall after the tank's exit, like Add a ramp. | ExUnit `batch_changes_test` (60°→40° at 5°/day would end Nov 24, after the Nov 22 Package: refused; target 50° is fine) |
+| **3. Revert check** | See below. | — |
+
+**About "a swap in one save":** every save that sets tanks changes one vessel (`PATCH …/vessels/:k`), except Plan batch, which sets them all at once and is checked on the whole list. No save changes two existing vessels together. So a swap of A and B takes three saves through Unassigned (vessel 0 → Unassigned, vessel 1 → A, vessel 0 → B), and each save is checked on the vessels it leaves. ExUnit covers this swap. A swap in one save would need a new multi-vessel save; I didn't add one. **Question for the lead:** is the swap through Unassigned enough?
+
+### Revert check (§3; temporary worktree)
+
+- **Setup:** `git worktree add --detach ../rockcut-d48-revert 63d7ecb` (the code from before the fix). I copied in this cycle's three test files (`batch_changes_test`, `splits_marks_test`, the batch-changes controller test), with the addendum tests. `deps` was symlinked; `_build` and the test DB were the worktree's own.
+- **Result:** 54 tests, **10 failures**. Each new N1, N3, N4 and N6 test fails, and the old code accepts the change in every case:
+  - **N1, Add transfer:** into the next tank → `{:ok, … moved: 1}`.
+  - **N1, Remove transfer:** removing it → `{:ok, …}`.
+  - **N1, template change:** → `{:ok, …}`.
+  - **N1, split:** a part into the next tank → `{:ok, %{part_ids: …}}`.
+  - **N1 / addendum 1, set_vessel_tank:** → `{:ok, …}`.
+  - **N6:** Add step after the exit → `{:ok, …}`.
+  - **N3 / N4:** a part's volume → `{:ok, …}`.
+  - **The controller test** gets 201s and the old messages.
+  - **The two `moved` assertions** get 3, not 2: the old exit CIP was counted.
+- **Change ramp:** in the N6 test, the Change ramp assertion comes after an assertion that already fails, so I also ran it on its own in a throwaway test in the worktree. The old code gave `{:ok, %{step_ids: [10, 11, 12, 13, 14]}}`, five steps running past the exit.
+- **Cleanup:** the worktree was removed (`git worktree remove --force`, after unlinking `deps`). `git worktree list` no longer shows it. The main checkout's `deps` is intact.
+
 ## Results
 
-- **ExUnit (targeted):** 217 tests, 0 failures. This covers `production/*`, `production_test`, `seeds/synthetic_test`, the three production controller tests, `device_route_matrix_test` and `authz_boundary_test`. `mix compile --warnings-as-errors --force` and `mix format --check-formatted` are clean.
-- **UI:** tsc and ESLint (`src/pages/production`, the new spec) are clean. Vitest: 169 passed.
-- **Playwright, targeted** (`--project=production --workers=1`): d48-toolbar, d48-batch-changes, d48-split-select, d48-fix-cycle-1, d48-fix-cycle-2, batches, d47-qa-fixes, steps and gantt. **70 passed** (7.3 min; 69 tests plus the setup project).
+After the addendum:
+- **ExUnit (targeted):** 218 tests, 0 failures. This covers `production/*`, `production_test`, `seeds/synthetic_test`, the three production controller tests, `device_route_matrix_test` and `authz_boundary_test`. `mix compile --warnings-as-errors --force` is clean, and the files I changed are formatted.
+- **Correction:** the first version of this file said `mix format --check-formatted` was clean repo-wide. It isn't, because of old files this deliverable never touched (`priv/repo/seeds.exs`, several `brewing/*` schemas, `formula_*`, `mailer_noop.ex`). Only my files were checked.
+- **UI:** tsc and ESLint (`src/pages/production`, `src/lib`, the new spec) are clean. Vitest: 170 passed.
+- **Playwright, targeted** (`--project=production --workers=1`): d48-toolbar, d48-batch-changes, d48-split-select, d48-fix-cycle-1, d48-fix-cycle-2, batches, d47-qa-fixes, steps and gantt. **71 passed** (7.4 min; 70 tests plus the setup project).
 
-## Questions (for the lead, or Matt in the morning)
+## Questions (for the lead)
 
-1. **Setting a vessel's tank directly:** the batch dialog's "Ferment in / Transfer to" pickers, and dragging a bar to another tank's row (`PATCH /batches/:id/vessels/:k`). Right now these can still put two vessels in a row in one tank.
-   - The decision's list (Add transfer, a part's transfer, Remove transfer, template change) didn't name them, so I left them alone. Add and Remove transfer, and Undo split, only check the vessels they touch, so a pair made with a picker doesn't block them elsewhere in the batch. A template change and a split check every vessel of the batch or part, so such a pair would refuse them.
-   - Refusing these too would match "any change to a batch's vessels".
-   - The cost: a brewer could no longer swap two vessels' tanks directly. A → B, B → A would be refused at the middle step, so they'd have to go through a third tank or Unassigned.
-   - Should they be refused too, and should the pickers leave out the neighbouring tanks?
-2. **Change ramp past the exit:** N6 covers Add step and Add a ramp. Change ramp… can still regenerate a ramp so that its last steps fall after the tank's exit, for example with a lower target or a smaller change per day. Should it be refused with `after_exit` too?
+1. ~~Setting a vessel's tank directly~~: answered (refused) and done.
+2. ~~Change ramp past the exit~~: answered (refused) and done.
+3. Is a swap through Unassigned enough, or do you want a multi-vessel save (above)?
 
 ## LEAD:
 

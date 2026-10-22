@@ -30,3 +30,9 @@ Fix everything below, with tests at the level each fix lives. Commit as `fix: D4
 
 - First-pass item 9 (zoom ✓ after a custom range) stays by design.
 - The task-board-ui dark "✓ name" flake goes in the backlog as a separate task. It isn't D48 work.
+
+## Addendum: the builder's questions after `967d927`
+
+1. **Setting a vessel's tank directly** (the batch dialog's Ferment in / Transfer to pickers, and dragging a bar onto another tank's row) **is refused the same way** (`same_tank`, with the same two messages). Check the final vessel list of the whole save, so swapping two vessels' tanks in one save still works. For a drag, show the refusal in the drag hint, as other refused drops do.
+2. **Change ramp is refused with `after_exit`** when any regenerated step would fall after the tank's exit, like Add a ramp.
+3. **Revert check** (§3 of the workflow; `git stash` is blocked): use a temporary worktree (`git worktree add --detach ../rockcut-d48-revert 63d7ecb`) to run the new N1 and N6 ExUnit tests against the code from before the fix. Record in the status file that they fail there, then remove the worktree.

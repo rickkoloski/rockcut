@@ -261,6 +261,8 @@ defmodule RockcutApi.Production.Batches do
                   })
 
             copy_steps!(batch, template, fields.brew_on, fields.brew_two_days)
+            # D48 DEV QA N1: no tank twice in a row among the tanks picked.
+            RockcutApi.Production.BatchChanges.no_tank_twice!(batch, :all)
             batch
           end)
 
@@ -474,7 +476,9 @@ defmodule RockcutApi.Production.Batches do
   @doc """
   Put vessel `index` of `batch` in `tank_id` (nil = Unassigned); only that
   part changes. `:not_found` for a vessel the batch doesn't have,
-  `:tank_invalid` for a retired or unknown tank.
+  `:tank_invalid` for a retired or unknown tank, and `same_tank` when it
+  would be the tank before or after it (`BatchChanges.no_tank_twice!/3`;
+  D48 DEV QA N1, checked on the vessels after the change).
   """
   def set_vessel_tank(%Batch{} = batch, index, tank_id) do
     Repo.transaction(fn ->
@@ -482,7 +486,10 @@ defmodule RockcutApi.Production.Batches do
         Repo.get_by(BatchVessel, batch_id: batch.id, vessel_index: to_int(index) || -1) ||
           Repo.rollback(:not_found)
 
-      vessel |> Changeset.change(tank_id: active_tank_id!(tank_id)) |> Repo.update!()
+      vessel = vessel |> Changeset.change(tank_id: active_tank_id!(tank_id)) |> Repo.update!()
+      k = vessel.vessel_index
+      RockcutApi.Production.BatchChanges.no_tank_twice!(batch, [k, k + 1], k)
+      vessel
     end)
   end
 
