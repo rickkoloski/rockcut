@@ -43,6 +43,8 @@ export interface DropInfo {
   dy: number
   x: number
   y: number
+  /** Shift held at the release: "move only this step" (D48, P113). */
+  shift: boolean
 }
 
 interface Pending {
@@ -54,6 +56,8 @@ interface Pending {
   armed: boolean
   timer: number | null
   onDrop: (d: DropInfo) => void
+  /** A long-press let go without moving (touch): D48 selection mode. */
+  onHold?: () => void
   /** The pointer now, and the grid's scroll at the press. */
   x: number
   y: number
@@ -195,7 +199,8 @@ export function useTimelineDrag(auto?: AutoScroll) {
         p.x = e.clientX
         p.y = e.clientY
         const { dx, dy, x, y } = where(p)
-        p.onDrop({ dx, dy, x, y })
+        if (p.touch && p.onHold && Math.hypot(e.clientX - p.startX, e.clientY - p.startY) < TOUCH_SLOP) p.onHold()
+        else p.onDrop({ dx, dy, x, y, shift: e.shiftKey })
       }
       clear()
     }
@@ -228,7 +233,7 @@ export function useTimelineDrag(auto?: AutoScroll) {
   }, [clear, hush, where])
 
   const bind = useCallback(
-    (key: string, onDrop: (d: DropInfo) => void) => ({
+    (key: string, onDrop: (d: DropInfo) => void, onHold?: () => void) => ({
       onPointerDown: (e: ReactPointerEvent) => {
         if (e.button !== 0 || pending.current) return
         cancelledDown.current = null
@@ -245,6 +250,7 @@ export function useTimelineDrag(auto?: AutoScroll) {
           armed: false,
           timer: null,
           onDrop,
+          onHold,
           x: e.clientX,
           y: e.clientY,
           scrollLeft: el?.scrollLeft ?? 0,

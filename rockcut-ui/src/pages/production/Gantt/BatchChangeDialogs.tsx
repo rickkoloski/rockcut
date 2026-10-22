@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Box, FormControlLabel, MenuItem, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, FormControlLabel, MenuItem, Switch, TextField, Typography } from '@mui/material'
 import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
 import { addDaysKey } from '../../../lib/datetime'
@@ -455,6 +455,121 @@ export function AddTransferDialog({ batch, types, tanks, today, onClose }: { bat
           ? 'Some steps after that date are already done. Pick a later date.'
           : `${plural(moving.length, 'step')} from that day (${moving.map((s) => s.name).join(', ') || 'none'}) move to ${tankName}; ${vesselName(batch, tanks, k)} gets a CIP & Sanitize that day.`}
       </Typography>
+    </DialogShell>
+  )
+}
+
+type PartRow = { tank: number | 'stay' | null; volume: string }
+
+/**
+ * Split… (§3.11, P75–P78, P110): the day, Transfer or Filter for every part
+ * that leaves, and two or more parts, each with a tank (one may stay in the
+ * tank the beer is in) and a volume; a live total against the batch's.
+ */
+export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatch; tanks: Tank[]; today: string; onClose: () => void }) {
+  const flows = useFlows()
+  const brew = batch.steps.filter((s) => s.first_brew)[0]
+  const [day, setDay] = useState(brew && brew.due_on >= today ? addDaysKey(brew.due_on, 1) : today)
+  const [method, setMethod] = useState<'transfer' | 'filter'>('transfer')
+  const volume = batch.volume_bbl ?? 0
+  const half = String(Math.round((volume / 2) * 100) / 100)
+  const [parts, setParts] = useState<PartRow[]>([
+    { tank: 'stay', volume: half },
+    { tank: null, volume: String(Math.round((volume - Number(half)) * 100) / 100) },
+  ])
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const here = day ? vesselName(batch, tanks, vesselOn(batch, day)) : '—'
+  const total = parts.reduce((t, p) => t + (Number(p.volume) || 0), 0)
+  const adds = Math.abs(total - volume) < 0.001
+  const set = (i: number, change: Partial<PartRow>) => setParts((ps) => ps.map((p, j) => (j === i ? { ...p, ...change } : p)))
+  const tankName = (p: PartRow) => (p.tank === 'stay' ? here : p.tank ? (tanks.find((t) => t.id === p.tank)?.name ?? 'tank') : 'Unassigned')
+
+  const save = async () => {
+    if (!day) return setError('Pick the day.')
+    setBusy(true)
+    setError(null)
+    const body = {
+      due_on: day,
+      split_method: method,
+      parts: parts.map((p) => ({ stays: p.tank === 'stay', tank_id: p.tank === 'stay' ? null : p.tank, volume_bbl: Number(p.volume) })),
+    }
+    const r = await flows.write<{ batches?: SchedBatch[]; part_ids?: number[] }>(
+      () => api.post(prodPath('batches', batch.id, 'split'), body),
+      (d) => {
+        const label = (id: number) => d.batches?.find((b) => b.id === id)?.label ?? 'A part'
+        const each = (d.part_ids ?? []).map((id, i) => `${label(id)} (${Number(parts[i].volume)} bbl) ${parts[i].tank === 'stay' ? `stays in ${here}` : `→ ${tankName(parts[i])}`}`)
+        return `${batch.label} split on ${dayLabel(day)}: ${each.join('; ')}.`
+      },
+    )
+    setBusy(false)
+    if (r.ok) onClose()
+    else setError(r.error)
+  }
+
+  return (
+    <DialogShell title={`Split · ${batch.label}`} testId="split-dialog" error={error} busy={busy} onClose={onClose} onSave={save} saveLabel="Split">
+      <Box sx={grid2}>
+        <TextField type="date" label="Day" value={day} onChange={(e) => setDay(e.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'split-day' } }} />
+        <TextField
+          select
+          label="How the parts leave"
+          value={method}
+          onChange={(e) => setMethod(e.target.value as 'transfer' | 'filter')}
+          helperText="Every part that leaves the tank goes this way."
+          slotProps={selectTestId('split-method')}
+        >
+          <MenuItem value="transfer" data-testid="split-method-transfer">
+            Transfer
+          </MenuItem>
+          <MenuItem value="filter" data-testid="split-method-filter">
+            Filter
+          </MenuItem>
+        </TextField>
+      </Box>
+      {parts.map((p, i) => (
+        <Box key={i} sx={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) 110px auto', gap: 1, alignItems: 'center' }} data-testid={`split-part-${i}`}>
+          <TextField
+            select
+            label={`Part ${i + 1}`}
+            value={p.tank ?? ''}
+            onChange={(e) => set(i, { tank: e.target.value === 'stay' ? 'stay' : e.target.value === '' ? null : Number(e.target.value) })}
+            slotProps={{ ...selectTestId(`split-tank-${i}`), inputLabel: { shrink: true } }}
+          >
+            <MenuItem value="stay" disabled={parts.some((q, j) => j !== i && q.tank === 'stay')} data-testid={`split-tank-${i}-stay`}>
+              {here} (stays here)
+            </MenuItem>
+            <MenuItem value="" data-testid={`split-tank-${i}-none`}>
+              Unassigned
+            </MenuItem>
+            {tanks
+              .filter((t) => !t.retired_at)
+              .map((t) => (
+                <MenuItem key={t.id} value={t.id} data-testid={`split-tank-${i}-${t.id}`}>
+                  {t.name} · {t.capacity_bbl} bbl
+                </MenuItem>
+              ))}
+          </TextField>
+          <TextField
+            label="bbl"
+            type="number"
+            value={p.volume}
+            onChange={(e) => set(i, { volume: e.target.value })}
+            slotProps={{ htmlInput: { min: 0, step: 'any', 'data-testid': `split-volume-${i}` } }}
+          />
+          <Button size="small" disabled={parts.length <= 2} onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))} data-testid={`split-remove-${i}`}>
+            Remove
+          </Button>
+        </Box>
+      ))}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Button size="small" onClick={() => setParts((ps) => [...ps, { tank: null, volume: '' }])} data-testid="split-add-part">
+          Add part
+        </Button>
+        <Typography variant="body2" color={adds ? 'text.secondary' : 'error'} data-testid="split-total" sx={{ ml: 'auto' }}>
+          Total {Math.round(total * 100) / 100} of {volume} bbl
+        </Typography>
+      </Box>
     </DialogShell>
   )
 }

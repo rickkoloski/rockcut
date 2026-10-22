@@ -607,4 +607,10 @@ Not automated (LIMITATIONS, lead decisions 3): touch long-press drag (450 ms) �
 | P73 | A transfer before a done step: refused with the spec's message | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
 | P83–P84 | Change a planned batch's template (added step kept, message) and brand | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, controller test (Undo) |
 | — | Drags auto-scroll the grid near its edges (rows below the fold, dates past the right edge); a press in the edge zone doesn't scroll until it heads that way | Playwright `production/d48-batch-changes` ("a short window"); the P32/P33 and drag-hint specs drag to off-screen rows |
-| P75–P82, P89, P110, P114–P117 | Splits, Undo split, part numbers, clean / dirty marks (API) | ExUnit `splits_marks_test`, `production_batch_changes_controller_test`, `seeds/synthetic_test`; Playwright with task 4 |
+| P75, P110, P89 | Split - Filter: 12 bbl stays, 8 bbl to another tank; part labels, own steps, gold arrows; Undo | Playwright `production/d48-split-select`; ExUnit `splits_marks_test` |
+| P76–P78 | Volumes must add up; two parts can't share a tank; no part staying adds a CIP | Playwright `production/d48-split-select`; ExUnit `splits_marks_test`, controller test |
+| P79–P82 | Parts move on their own; Undo split refused once a part step is done, then merges with part 1's schedule; planned parts P-numbered, numbered at brew day | Playwright `production/d48-split-select`; ExUnit `splits_marks_test` |
+| P85, P86, P88 | Ctrl-click select + drag together; Assign to… "4 steps assigned to Riley Wort."; Shift-click range | Playwright `production/d48-split-select` |
+| P87 | Pixel: long-press starts selection mode, taps add, drag moves all | **Manual** at the DEV gate |
+| P113 | Shift-drag: move only, no prompt, "(only this step)" with Undo | Playwright `production/d48-split-select` |
+| P114–P117 | Mark dirty / Mark clean (note, marker tooltip), flags; no marks on a tank in use; History → Remove; Undo | Playwright `production/d48-split-select`; ExUnit `splits_marks_test` |

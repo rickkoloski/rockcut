@@ -36,6 +36,8 @@ export interface SBatch {
   p_number: string | null
   batch_number: string | null
   status: string
+  split_parent_id: number | null
+  part_number: number | null
   vessels: { vessel_index: number; tank_id: number | null }[]
   steps: SStep[]
   links: { id: number; from_step_id: number; to_step_id: number; default_answer: string }[]

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Box, Button, Chip, Dialog, DialogActions, DialogContent, DialogTitle, Divider, IconButton, MenuItem, TextField, Tooltip, Typography } from '@mui/material'
-import { Add, DeleteOutline, EditNote, NoteAddOutlined } from '@mui/icons-material'
+import { Add, CallSplit, DeleteOutline, EditNote, NoteAddOutlined } from '@mui/icons-material'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { useApiQuery } from '../../../hooks/useApiQuery'
@@ -21,7 +21,7 @@ import {
   type TemplateSummary,
 } from '../../../lib/production'
 import type { Brand } from '../../../lib/types'
-import { AddRampDialog, AddStepDialog, AddTransferDialog } from './BatchChangeDialogs'
+import { AddRampDialog, AddStepDialog, AddTransferDialog, SplitDialog } from './BatchChangeDialogs'
 import { removeMessage, removeQuestion, removable } from './scheduleText'
 import ErrorAlert from '../ErrorAlert'
 import { FlagRow } from './FlagsDialog'
@@ -39,6 +39,8 @@ interface Props {
   types: StepType[]
   phases: Phase[]
   brewers: Person[]
+  /** D48: its split parts (on the schedule now). */
+  parts?: SchedBatch[]
   /** Scroll to the flags (opened from a bar's badge). */
   focusFlags?: boolean
   onOpenStep: (step: SchedStep) => void
@@ -223,7 +225,7 @@ function BrandTemplate({ batch, run }: { batch: SchedBatch; run: (call: () => Pr
  * filter…, Remove on each unfinished step, "Added" chips, and a planned
  * batch's brand and template.
  */
-export default function BatchDialog({ batch, tanks, flags, today, types, phases, brewers, focusFlags, onOpenStep, onClose }: Props) {
+export default function BatchDialog({ batch, tanks, flags, today, types, phases, brewers, parts: splitParts = [], focusFlags, onOpenStep, onClose }: Props) {
   const flows = useFlows()
   usePhoneBackCloses(true, onClose)
   const planned = batch.status === 'planned'
@@ -231,7 +233,9 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
   const [volume, setVolume] = useState(batch.volume_bbl != null ? String(batch.volume_bbl) : '')
   const [error, setError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
-  const [adding, setAdding] = useState<'step' | 'ramp' | 'transfer' | null>(null)
+  const [adding, setAdding] = useState<'step' | 'ramp' | 'transfer' | 'split' | null>(null)
+  const [unsplitting, setUnsplitting] = useState(false)
+  const split = batch.split_parent_id != null || splitParts.length > 0
   const flagsRef = useRef<HTMLDivElement>(null)
   const parts = buildParts(batch)
   const brew = firstBrew(batch.steps)
@@ -353,6 +357,15 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
           <Button size="small" startIcon={<Add />} onClick={() => setAdding('transfer')} data-testid="batch-add-transfer">
             Add transfer / filter…
           </Button>
+          {split ? (
+            <Button size="small" onClick={() => setUnsplitting(true)} data-testid="batch-undo-split">
+              Undo split
+            </Button>
+          ) : (
+            <Button size="small" startIcon={<CallSplit />} onClick={() => setAdding('split')} data-testid="batch-split">
+              Split…
+            </Button>
+          )}
         </Box>
         <Box data-testid="batch-steps">
           {steps.map((s) => (
@@ -384,6 +397,20 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
       {adding === 'step' && <AddStepDialog batch={batch} types={types} tanks={tanks} brewers={brewers} today={today} onClose={() => setAdding(null)} />}
       {adding === 'ramp' && <AddRampDialog batch={batch} phases={phases} tanks={tanks} today={today} onClose={() => setAdding(null)} />}
       {adding === 'transfer' && <AddTransferDialog batch={batch} types={types} tanks={tanks} today={today} onClose={() => setAdding(null)} />}
+      {adding === 'split' && <SplitDialog batch={batch} tanks={tanks} today={today} onClose={() => setAdding(null)} />}
+      <ConfirmDialog
+        open={unsplitting}
+        onClose={() => setUnsplitting(false)}
+        onConfirm={async () => {
+          setUnsplitting(false)
+          const parent = batch.split_parent_id != null ? batch.label.replace(/\.\d+$/, '') : batch.label
+          if (await run(() => flows.write(() => api.delete(prodPath('batches', batch.id, 'split')), `Split undone: ${parent} is one batch again, with part 1’s schedule.`))) onClose()
+        }}
+        title="Undo split"
+        message="Merge the parts back into one batch? The beer stays in the tank it was split from, with part 1’s schedule; the other parts are deleted."
+        confirmLabel="Undo split"
+        confirmColor="primary"
+      />
     </Dialog>
   )
 }

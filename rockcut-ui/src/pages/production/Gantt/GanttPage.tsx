@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, ListSubheader, Menu, MenuItem, Typography, useMediaQuery } from '@mui/material'
+import { Alert, Box, Button, ListSubheader, Menu, MenuItem, Paper, Typography, useMediaQuery } from '@mui/material'
 import api from '../../../lib/api'
 import PageHeader from '../../../components/PageHeader'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import useAuth from '../../../hooks/useAuth'
 import { coloradoToday } from '../../../lib/tasks'
 import {
-  buildParts,
+  scheduleParts,
   clampRange,
   dayLabel,
   dayWidth,
@@ -26,12 +26,12 @@ import {
   type Range,
   type Zoom,
 } from '../../../lib/gantt'
-import { prodError, prodPath, scheduleKey, shortPeriod, type Outage, type Schedule, type SchedStep, type Tank } from '../../../lib/production'
+import { prodError, prodPath, scheduleKey, shortPeriod, type Outage, type Person, type Schedule, type SchedStep, type Tank } from '../../../lib/production'
 import OutageDialog from '../OutageDialog'
 import BatchDialog from './BatchDialog'
 import CipAddDialog from './CipAddDialog'
 import FlagsDialog from './FlagsDialog'
-import GanttGrid, { HEAD_H, LEFT_W, LEFT_W_COMPACT } from './GanttGrid'
+import GanttGrid, { HEAD_H, LEFT_W, LEFT_W_COMPACT, type StepClick } from './GanttGrid'
 import GanttLegend from './GanttLegend'
 import GanttToolbar from './GanttToolbar'
 import PlanBatchDialog from './PlanBatchDialog'
@@ -131,7 +131,7 @@ function GanttScreen() {
   const dayPx = dayWidth(Math.max(200, width - leftW - 2), zoom)
   const days = daysBetween(range.from, range.to) + 1
 
-  const parts = useMemo(() => (data ? data.batches.flatMap(buildParts) : []), [data])
+  const parts = useMemo(() => (data ? scheduleParts(data.batches) : []), [data])
   const rows = useMemo(() => (data ? layoutRows(data.tanks, parts, data.cips, expanded, stepRowH) : []), [data, parts, expanded, stepRowH])
   const rowKeys = rows.map((r) => rowKey(r.tank))
   // The switch reads the tanks, which have carets; Expand all opens Unassigned too.
@@ -173,14 +173,82 @@ function GanttScreen() {
     if (!r.ok && r.error) flows.notify(r.error)
   }
 
+  // ── D48 multi-select (§3.6): Ctrl/Cmd-click toggles a step, Shift-click
+  // selects a range in one tank, a long-press on touch starts selection mode
+  // where taps toggle. Dragging a selected step moves them all. ──
+  const [selected, setSelected] = useState<Set<number>>(() => new Set())
+  const [selecting, setSelecting] = useState(false)
+  const [anchor, setAnchor] = useState<number | null>(null)
+  const [assignAt, setAssignAt] = useState<HTMLElement | null>(null)
+  const toggle = (id: number) =>
+    setSelected((cur) => {
+      const next = new Set(cur)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  const doneSelecting = () => {
+    setSelected(new Set())
+    setSelecting(false)
+    setAnchor(null)
+  }
+  /** Every step in `a`'s tank dated from `a` to `b` (both in that tank's rows), or null when they're in different tanks. */
+  const rangeIn = (a: SchedStep, b: SchedStep): number[] | null => {
+    const row = rows.find((r) => r.parts.some((p) => p.steps.some((s) => s.id === a.id)) && r.parts.some((p) => p.steps.some((s) => s.id === b.id)))
+    if (!row) return null
+    const [lo, hi] = [a.due_on, b.due_on].sort()
+    return [...new Set(row.parts.flatMap((p) => p.steps).filter((s) => !s.marker && s.due_on >= lo && s.due_on <= hi).map((s) => s.id))]
+  }
+  const pickStep = (s: SchedStep, click?: StepClick) => {
+    const from = anchor != null ? findStep(anchor) : undefined
+    if (click?.range && from) {
+      const ids = rangeIn(from, s)
+      if (ids) return setSelected((cur) => new Set([...cur, ...ids]))
+    }
+    if (click?.toggle || click?.range || selecting) {
+      toggle(s.id)
+      setAnchor(s.id)
+      return
+    }
+    setStepOpen(s.id)
+  }
+  const moveStep = async (s: SchedStep, days: number, only?: boolean) => {
+    // The selection moves together when the step dragged is in it; finished steps stay.
+    const ids = selected.has(s.id) ? [...selected].filter((id) => !findStep(id)?.done_on) : [s.id]
+    if (!only) return void flows.moveSteps(ids, days)
+    // Shift-drag (P113): move only, no prompt.
+    const title = ids.length === 1 ? `${s.name} moved ${daysWord(days)}` : `${plural(ids.length, 'step')} moved ${daysWord(days)}`
+    report(
+      await flows.write(
+        () => api.post(prodPath('steps', 'move'), { ids, days, answer: 'move_only' }),
+        `${title} (only ${ids.length === 1 ? 'this step' : 'these steps'}).`,
+      ),
+    )
+  }
+  const assign = async (person: Person | null) => {
+    setAssignAt(null)
+    const ids = [...selected]
+    report(
+      await flows.write(
+        () => api.post(prodPath('steps', 'assign'), { ids, assignee_id: person?.id ?? null }),
+        `${plural(ids.length, 'step')} assigned to ${person?.name ?? 'nobody'}.`,
+      ),
+    )
+  }
+
   const handlers = {
-    onStep: (s: SchedStep) => setStepOpen(s.id),
+    onStep: pickStep,
+    onHoldStep: (s: SchedStep) => {
+      setSelecting(true)
+      setSelected(new Set([s.id]))
+      setAnchor(s.id)
+    },
     onCip: (s: SchedStep) => setStepOpen(s.id),
     onBar: (p: Part, flags?: boolean) => setBatchOpen({ id: p.batch.id, flags: !!flags }),
     onBand: (t: Tank, o: Outage) => setOpen({ kind: 'outage', tankId: t.id, outage: o, fromPanel: false }),
     onTankMenu: (t: Tank) => setOpen({ kind: 'tank', tankId: t.id }),
     onSpot: (tank: Tank | null, day: string, at: { x: number; y: number }) => setSpot({ tank, day, ...at }),
-    onMoveStep: (s: SchedStep, days: number) => void flows.moveSteps([s.id], days),
+    onMoveStep: (s: SchedStep, days: number, only?: boolean) => void moveStep(s, days, only),
     onMoveCip: async (c: SchedStep, days: number) =>
       report(await flows.write(() => api.post(prodPath('steps', 'move'), { ids: [c.id], days }), `CIP & Sanitize moved ${daysWord(days)}.`)),
     onShiftBar: async (p: Part, days: number) =>
@@ -234,6 +302,33 @@ function GanttScreen() {
         onPlan={() => setOpen({ kind: 'plan', tankId: null, day: data?.today ?? today })}
         onAddCip={() => setOpen({ kind: 'cip', tankId: null, day: data?.today ?? today })}
       />
+      {(selected.size > 0 || selecting) && (
+        <Paper
+          variant="outlined"
+          sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', px: 1.5, py: 0.75, mb: 1, borderColor: 'primary.main' }}
+          data-testid="gantt-selection-bar"
+        >
+          <Typography variant="body2" sx={{ fontWeight: 600, mr: 'auto' }} data-testid="gantt-selection-count">
+            {selected.size ? `${plural(selected.size, 'step')} selected` : 'Tap steps to select them'}
+          </Typography>
+          <Button size="small" variant="outlined" disabled={!selected.size} onClick={(e) => setAssignAt(e.currentTarget)} data-testid="gantt-selection-assign">
+            Assign to…
+          </Button>
+          <Button size="small" onClick={doneSelecting} data-testid="gantt-selection-done">
+            Done selecting
+          </Button>
+          <Menu anchorEl={assignAt} open={!!assignAt} onClose={() => setAssignAt(null)}>
+            <MenuItem onClick={() => assign(null)} data-testid="gantt-assign-nobody">
+              Nobody
+            </MenuItem>
+            {(data?.brewers ?? []).map((p) => (
+              <MenuItem key={p.id} onClick={() => assign(p)} data-testid={`gantt-assign-${p.id}`}>
+                {p.name}
+              </MenuItem>
+            ))}
+          </Menu>
+        </Paper>
+      )}
       {error && !data && (
         <Alert severity="error" data-testid="gantt-error">
           {prodError(error)}
@@ -274,6 +369,8 @@ function GanttScreen() {
             compact={compact}
             expanded={expanded}
             stepRowH={stepRowH}
+            selected={selected}
+            marks={data.condition_marks}
             onToggleRow={toggleRow}
             onToggleCompact={() => setCompact(!compact)}
           />
@@ -326,7 +423,12 @@ function GanttScreen() {
       {data && open?.kind === 'cip' && <CipAddDialog tanks={data.tanks} initialTankId={open.tankId} initialDay={open.day} today={data.today} onClose={() => setOpen(null)} />}
       {data && open?.kind === 'flags' && <FlagsDialog flags={data.flags} onClose={() => setOpen(null)} />}
       {open?.kind === 'tank' && tankById(open.tankId) && (
-        <TankPanel tank={tankById(open.tankId)!} onOpen={(o) => setOpen({ kind: 'outage', tankId: open.tankId, outage: o, fromPanel: true })} onClose={() => setOpen(null)} />
+        <TankPanel
+          tank={tankById(open.tankId)!}
+          status={data?.statuses.find((x) => x.tank_id === open.tankId)}
+          marks={(data?.condition_marks ?? []).filter((m) => m.tank_id === open.tankId)}
+          today={data?.today ?? today}
+          onOpen={(o) => setOpen({ kind: 'outage', tankId: open.tankId, outage: o, fromPanel: true })} onClose={() => setOpen(null)} />
       )}
       {open?.kind === 'outage' && tankById(open.tankId) && (
         <OutageDialog
@@ -350,6 +452,7 @@ function GanttScreen() {
           types={data.step_types}
           phases={data.phases}
           brewers={data.brewers}
+          parts={data.batches.filter((b) => b.split_parent_id === openBatch.id)}
           focusFlags={batchOpen.flags}
           onOpenStep={(s) => setStepOpen(s.id)}
           onClose={() => setBatchOpen(null)}

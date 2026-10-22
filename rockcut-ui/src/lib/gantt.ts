@@ -112,11 +112,15 @@ export function firstBrew(steps: SchedStep[]): SchedStep | null {
   return steps.filter((s) => s.behavior === 'brew').sort((a, b) => a.id - b.id)[0] ?? null
 }
 
-export function buildParts(batch: SchedBatch): Part[] {
+/**
+ * A batch's parts, one per tank. D48: a split's part (`origin`, its
+ * parent's Split step) is filled by that Split, so its bar starts there.
+ */
+export function buildParts(batch: SchedBatch, origin: SchedStep | null = null): Part[] {
   const brew = firstBrew(batch.steps)
   return batch.vessels.map(({ vessel_index: k, tank_id }) => {
     const own = batch.steps.filter((s) => s.vessel_index === k)
-    const fill = k === 0 ? brew : (batch.steps.filter((s) => s.behavior === 'transfer' && s.vessel_index === k).sort(order)[0] ?? null)
+    const fill = k === 0 ? (origin ?? brew) : (batch.steps.filter((s) => s.behavior === 'transfer' && s.vessel_index === k).sort(order)[0] ?? null)
     const exit =
       batch.steps
         .filter(
@@ -148,6 +152,12 @@ export function buildParts(batch: SchedBatch): Part[] {
       planned: batch.status === 'planned',
     }
   })
+}
+
+/** D48: every batch's parts, a split part's filled by its parent's Split (when the parent is loaded). */
+export function scheduleParts(batches: SchedBatch[]): Part[] {
+  const steps = new Map(batches.flatMap((b) => b.steps.map((s) => [s.id, s] as const)))
+  return batches.flatMap((b) => buildParts(b, b.split_step_id != null ? (steps.get(b.split_step_id) ?? null) : null))
 }
 
 /** "Galactic #40 · 20 bbl", "· after transfer" for a later tank. */
