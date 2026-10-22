@@ -6,8 +6,10 @@ defmodule RockcutApi.Production.Undo do
   changed, the row as it was (`before`, nil for a row it inserted) and a
   hash of the row as it left it (`after`, nil for a row it deleted). Rows
   are read whole and raw from the tracked tables, within a **scope**: the
-  batches (with their vessels, steps and links), standalone steps,
-  out-of-service periods and sign-offs the write may touch.
+  batches (with their vessels, steps and links, and their split parts:
+  D48), standalone steps, out-of-service periods, sign-offs and clean /
+  dirty marks the write may touch. Batches a write inserts or deletes are
+  put back or removed like any other row.
 
   `undo/2` puts every row back in one transaction, if each still matches
   its after-hash (`:undo_stale` otherwise: "Something changed since. Nothing
@@ -24,12 +26,12 @@ defmodule RockcutApi.Production.Undo do
   @ttl_seconds 120
 
   # Parents before children (inserts and updates); deletes go the other way.
-  @order ~w(batches batch_vessels production_steps production_step_links tank_outages flag_signoffs)
+  @order ~w(batches batch_vessels production_steps production_step_links tank_outages flag_signoffs tank_condition_marks)
 
   @doc """
   Run `fun` (returning `{:ok, result}` or an error) as `user`, tracking the
   rows in `scope` (`%{batches: ids, steps: ids, outages: ids, signoffs:
-  keys}`) plus `after_scope.(result)` (rows the write created).
+  keys, marks: ids}`) plus `after_scope.(result)` (rows the write created).
   `{:ok, {result, token}}` (token nil when nothing changed), or `fun`'s error.
   """
   def track(%User{} = user, scope, fun, after_scope \\ fn _ -> %{} end) do
@@ -106,7 +108,9 @@ defmodule RockcutApi.Production.Undo do
   ## Rows
 
   defp rows(scope) do
-    batch_ids = Map.get(scope, :batches, [])
+    # D48: a batch's split parts always come with it (a split inserts them,
+    # Undo split deletes them, the Split's check-off changes them).
+    batch_ids = with_parts(Map.get(scope, :batches, []))
     step_ids = Map.get(scope, :steps, [])
 
     batch_steps =
@@ -125,10 +129,18 @@ defmodule RockcutApi.Production.Undo do
        select("production_step_links", "from_step_id", all_step_ids) ++
          select("production_step_links", "to_step_id", all_step_ids)},
       {"tank_outages", select("tank_outages", "id", Map.get(scope, :outages, []))},
-      {"flag_signoffs", select("flag_signoffs", "flag_key", Map.get(scope, :signoffs, []))}
+      {"flag_signoffs", select("flag_signoffs", "flag_key", Map.get(scope, :signoffs, []))},
+      {"tank_condition_marks", select("tank_condition_marks", "id", Map.get(scope, :marks, []))}
     ]
     |> Enum.flat_map(fn {table, list} -> Enum.map(list, &{{table, &1["id"]}, &1}) end)
     |> Map.new()
+  end
+
+  defp with_parts([]), do: []
+
+  defp with_parts(ids) do
+    parts = select("batches", "split_parent_id", ids) |> Enum.map(& &1["id"])
+    Enum.uniq(ids ++ parts)
   end
 
   defp select(_table, _column, []), do: []

@@ -15,10 +15,29 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   import Ecto.Query, only: [from: 2]
 
   import RockcutApiWeb.JSONHelpers,
-    only: [production_schedule: 1, production_batch: 1, production_step: 2]
+    only: [
+      production_schedule: 1,
+      production_batch: 1,
+      production_step: 2,
+      production_condition_mark: 1
+    ]
 
   alias RockcutApi.{Authz, Repo, Tasks}
-  alias RockcutApi.Production.{BatchChanges, Batches, Cips, Schedule, Signoffs, Step, Steps, Undo}
+  alias RockcutApi.Production
+
+  alias RockcutApi.Production.{
+    BatchChanges,
+    Batches,
+    Cips,
+    ConditionMarks,
+    Schedule,
+    Signoffs,
+    Splits,
+    Step,
+    Steps,
+    Undo
+  }
+
   alias RockcutApiWeb.ProductionErrors
 
   action_fallback RockcutApiWeb.FallbackController
@@ -150,6 +169,55 @@ defmodule RockcutApiWeb.ProductionScheduleController do
              BatchChanges.change_ramp(step, Map.drop(params, ["id"]))
            end) do
       render_result(conn, Map.put(result, :renumbered, []), token)
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  @doc """
+  POST /api/production/batches/:id/split: `{ due_on, split_method?, parts:
+  [{ tank_id?, stays?, volume_bbl }] }`. Answers the parent and its parts
+  (`part_ids`).
+  """
+  def split(conn, %{"id" => id} = params) do
+    batch_write(conn, id, &Splits.split(&1, Map.drop(params, ["id"])), :created)
+  end
+
+  @doc "DELETE /api/production/batches/:id/split (the parent or a part): Undo split."
+  def undo_split(conn, %{"id" => id}) do
+    batch_write(conn, id, &Splits.undo_split/1, :ok)
+  end
+
+  ## Clean / dirty marks (D48 §3.8)
+
+  @doc """
+  POST /api/production/tanks/:id/condition: `{ state, marked_on?, note? }`.
+  422 `tank_in_use` while beer is in it, `date_invalid` for a future day or
+  one before its last emptying.
+  """
+  def mark_condition(conn, %{"id" => id} = params) do
+    with :ok <- allow(conn, :write),
+         %{} = tank <- Production.get_tank(id) || {:error, :not_found},
+         {:ok, {mark, token}} <-
+           Undo.track(
+             user(conn),
+             %{},
+             fn -> ConditionMarks.create(tank, Map.drop(params, ["id"]), user(conn)) end,
+             &%{marks: [&1.id]}
+           ) do
+      conn
+      |> put_status(:created)
+      |> json(%{data: %{mark: production_condition_mark(mark), batches: []}, undo_token: token})
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  @doc "DELETE /api/production/condition_marks/:id: History → Remove."
+  def remove_condition_mark(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :write),
+         %{} = mark <- ConditionMarks.get(id) || {:error, :not_found},
+         {:ok, {_, token}} <-
+           Undo.track(user(conn), %{marks: [mark.id]}, fn -> ConditionMarks.delete(mark) end) do
+      json(conn, %{data: %{deleted_id: mark.id, batches: []}, undo_token: token})
     end
     |> ProductionErrors.handle(conn)
   end

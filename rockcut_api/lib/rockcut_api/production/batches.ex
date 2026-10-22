@@ -120,7 +120,18 @@ defmodule RockcutApi.Production.Batches do
     "#{brand} #{number_label(batch, pnums)}"
   end
 
-  @doc ~S|"#40" or "P2" ("" for a planned batch that isn't scheduled).|
+  @doc ~S|"#40" or "P2" ("" for a planned batch that isn't scheduled); a split's part "#40.1" or "P2.1" (D48).|
+  def number_label(%Batch{split_parent_id: parent_id, part_number: n} = part, pnums)
+      when not is_nil(parent_id) do
+    parent =
+      case part.split_parent do
+        %Batch{} = parent -> parent
+        _ -> Repo.get!(Batch, parent_id)
+      end
+
+    "#{number_label(parent, pnums)}.#{n}"
+  end
+
   def number_label(%Batch{batch_number: n}, _pnums) when is_binary(n), do: "##{n}"
 
   def number_label(%Batch{id: id}, pnums) do
@@ -408,12 +419,20 @@ defmodule RockcutApi.Production.Batches do
   ## Changing
 
   @doc """
-  Delete a planned batch with its steps, links and vessels
-  (`:not_planned` once brewed). `{:ok, renumbered}`.
+  Delete a planned batch with its steps, links and vessels, and its parts
+  (`:not_planned` once brewed; `:split_part` for a part: Undo split). `{:ok, renumbered}`.
   """
+  def delete_planned(%Batch{split_parent_id: id}) when not is_nil(id), do: {:error, :split_part}
+
   def delete_planned(%Batch{status: "planned"} = batch) do
     Repo.transaction(fn ->
-      {_, renumbered} = with_renumbering(fn -> Repo.delete!(batch) end)
+      {_, renumbered} =
+        with_renumbering(fn ->
+          # D48: its parts (planned too) go with it.
+          Repo.delete_all(from(b in Batch, where: b.split_parent_id == ^batch.id))
+          Repo.delete!(batch)
+        end)
+
       renumbered
     end)
   end
@@ -485,6 +504,8 @@ defmodule RockcutApi.Production.Batches do
             end
 
           {"batch_number", raw}, acc ->
+            # D48: a part's number is its parent's.
+            if batch.split_parent_id, do: Repo.rollback(:split_part)
             if batch.status == "planned", do: Repo.rollback(:not_brewed)
 
             case check_number(raw, batch) do

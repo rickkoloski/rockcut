@@ -168,6 +168,98 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
     assert id == enos.id
   end
 
+  test "split, its messages, Undo split (P75–P77, P80, P89)", ctx do
+    b = ctx["brewer1"]
+    fv6 = tank!("FV6")
+    path = "/api/production/batches/#{ctx.batch.id}/split"
+    parts = fn a, c -> [%{stays: true, volume_bbl: a}, %{tank_id: c, volume_bbl: 8}] end
+
+    short = call(b, :post, path, %{due_on: "2026-11-13", parts: parts.(10, fv6.id)})
+    assert body(short)["message"] == "The parts add up to 18 bbl, but Galactic P1 is 20 bbl."
+
+    same =
+      call(b, :post, path, %{
+        due_on: "2026-11-13",
+        parts: [%{tank_id: fv6.id, volume_bbl: 12}, %{tank_id: fv6.id, volume_bbl: 8}]
+      })
+
+    assert body(same) == %{
+             "error" => "same_tank",
+             "message" => "Two parts can’t go into the same tank."
+           }
+
+    split =
+      call(b, :post, path, %{
+        due_on: "2026-11-13",
+        split_method: "filter",
+        parts: parts.(12, fv6.id)
+      })
+
+    assert split.status == 201
+    data = body(split)["data"]
+    [p1, p2] = data["part_ids"]
+    labels = Map.new(data["batches"], &{&1["id"], &1})
+    assert labels[p1]["label"] == "Galactic P1.1"
+    assert %{"split_parent_id" => parent, "part_number" => 2, "split_step_id" => sid} = labels[p2]
+    assert parent == ctx.batch.id
+    assert sid == named(ctx.batch, "Split - Filter").id
+
+    sched = body(call(b, :get, "/api/production/schedule?from=2026-10-26&to=2026-12-06"))["data"]
+    assert Enum.count(sched["batches"], &(&1["split_parent_id"] == ctx.batch.id)) == 2
+
+    # Undo of the split itself.
+    assert undo(b, split).status == 200
+
+    assert RockcutApi.Production.Splits.parts_of(ctx.batch) == []
+
+    split = call(b, :post, path, %{due_on: "2026-11-13", parts: parts.(12, fv6.id)})
+    [_, p2] = body(split)["data"]["part_ids"]
+    undone = call(b, :delete, "/api/production/batches/#{p2}/split")
+    assert undone.status == 200
+    assert [%{"id" => id}] = body(undone)["data"]["batches"]
+    assert id == ctx.batch.id
+    assert body(call(b, :delete, path))["error"] == "not_split"
+  end
+
+  test "clean / dirty marks: create, the schedule lists them, remove, Undo; refusals (P114–P117)",
+       ctx do
+    b = ctx["brewer1"]
+    fv8 = tank!("FV8")
+
+    marked =
+      call(b, :post, "/api/production/tanks/#{fv8.id}/condition", %{
+        state: "dirty",
+        note: "Gasket job"
+      })
+
+    assert marked.status == 201
+
+    assert %{"state" => "dirty", "note" => "Gasket job", "user_name" => name, "id" => id} =
+             body(marked)["data"]["mark"]
+
+    assert name == b.name
+
+    sched = body(call(b, :get, "/api/production/schedule"))["data"]
+    assert Enum.any?(sched["condition_marks"], &(&1["id"] == id))
+
+    assert Enum.find(sched["statuses"], &(&1["tank_id"] == fv8.id))["line"] ==
+             "Empty · dirty 0 days · no CIP planned"
+
+    removed = call(b, :delete, "/api/production/condition_marks/#{id}")
+    assert removed.status == 200
+    assert undo(b, removed).status == 200
+    assert RockcutApi.Production.ConditionMarks.get(id)
+
+    future =
+      call(b, :post, "/api/production/tanks/#{fv8.id}/condition", %{
+        state: "clean",
+        marked_on: "2099-01-01"
+      })
+
+    assert body(future)["error"] == "date_invalid"
+    assert call(b, :post, "/api/production/tanks/0/condition", %{state: "clean"}).status == 404
+  end
+
   test "Brewery members and owners only; others get 403", ctx do
     s = named(ctx.batch, "Carb")
 
@@ -179,7 +271,11 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
       {:post, "/api/production/batches/#{ctx.batch.id}/transfers", %{due_on: "2026-11-14"}},
       {:delete, "/api/production/batches/#{ctx.batch.id}/transfers/#{s.id}", %{}},
       {:delete, "/api/production/steps/#{s.id}", %{}},
-      {:post, "/api/production/steps/#{s.id}/ramp", %{target: 40}}
+      {:post, "/api/production/steps/#{s.id}/ramp", %{target: 40}},
+      {:post, "/api/production/batches/#{ctx.batch.id}/split", %{due_on: "2026-11-13"}},
+      {:delete, "/api/production/batches/#{ctx.batch.id}/split", %{}},
+      {:post, "/api/production/tanks/#{tank!("FV8").id}/condition", %{state: "clean"}},
+      {:delete, "/api/production/condition_marks/1", %{}}
     ]
 
     for {method, path, params} <- requests do

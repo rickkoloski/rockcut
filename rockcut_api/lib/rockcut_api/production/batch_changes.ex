@@ -287,8 +287,8 @@ defmodule RockcutApi.Production.BatchChanges do
 
   @doc """
   Remove an unfinished step (§3.11, P70–P71): its links pass through to
-  the steps after it. Not Brew day (`:brew_day`) or a done step
-  (`:step_done`). A Transfer/Filter is `remove_transfer` (the beer stays in
+  the steps after it. Not Brew day (`:brew_day`), a Split (`:split_fill`:
+  it fills the parts; Undo split instead) or a done step (`:step_done`). A Transfer/Filter is `remove_transfer` (the beer stays in
   the tank before it).
   """
   def remove_step(%Step{} = step) do
@@ -299,6 +299,8 @@ defmodule RockcutApi.Production.BatchChanges do
 
       case Steps.behavior(step) do
         "brew" -> Repo.rollback(:brew_day)
+        # D48: the Split fills the parts; Undo split takes it out.
+        "split" -> Repo.rollback(:split_fill)
         "transfer" -> remove_transfer!(step)
         _ -> StepGraph.pass_through!(StepGraph.batch(step.batch_id), step)
       end
@@ -549,6 +551,7 @@ defmodule RockcutApi.Production.BatchChanges do
   """
   def change_brand(%Batch{} = batch, brand_id) do
     Repo.transaction(fn ->
+      if batch.split_parent_id, do: Repo.rollback(:split_part)
       if batch.status != "planned", do: Repo.rollback(:not_planned)
 
       brand =
@@ -580,10 +583,10 @@ defmodule RockcutApi.Production.BatchChanges do
     |> Enum.max(fn -> 0 end)
   end
 
-  # What fills vessel k: the first Brew day for 0, else its Transfer/Filter.
-  defp fill_of(steps, 0), do: Parts.first_brew(steps)
+  @doc "What fills vessel k: the first Brew day for 0, else its Transfer/Filter (nil for a part's 0)."
+  def fill_of(steps, 0), do: Parts.first_brew(steps)
 
-  defp fill_of(steps, k),
+  def fill_of(steps, k),
     do:
       steps
       |> Enum.filter(&(Steps.behavior(&1) == "transfer" and &1.vessel_index == k))

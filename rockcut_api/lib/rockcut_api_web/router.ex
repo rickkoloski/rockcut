@@ -327,6 +327,10 @@ defmodule RockcutApiWeb.Router do
     post "/batches/:id/ramp", ProductionScheduleController, :add_ramp
     post "/batches/:id/transfers", ProductionScheduleController, :add_transfer
     delete "/batches/:id/transfers/:step_id", ProductionScheduleController, :remove_transfer
+    post "/batches/:id/split", ProductionScheduleController, :split
+    delete "/batches/:id/split", ProductionScheduleController, :undo_split
+    post "/tanks/:id/condition", ProductionScheduleController, :mark_condition
+    delete "/condition_marks/:id", ProductionScheduleController, :remove_condition_mark
     post "/steps/move", ProductionScheduleController, :move_steps
     post "/steps/assign", ProductionScheduleController, :assign_steps
     post "/steps/:id/complete", ProductionScheduleController, :complete_step

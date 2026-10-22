@@ -13,7 +13,8 @@ defmodule RockcutApi.Production.Flags do
   links with a step not done, CIPs not done (but a done CIP while beer is
   in the tank is still flagged). A part whose exit is done holds its tank
   only to the exit (`Parts.occupied_until/1`). "Dirty, no CIP planned" looks at each tank's
-  last emptying.
+  last emptying. D48: clean / dirty marks (`world.marks`) count as cleaning
+  and emptying, through the one rule in `Parts.latest_condition/1`.
   """
   alias RockcutApi.Production.Parts
 
@@ -32,6 +33,7 @@ defmodule RockcutApi.Production.Flags do
     live = Enum.reject(world.parts, &Parts.finished?/1)
     by_tank = world.parts |> Enum.filter(& &1.tank_id) |> Enum.group_by(& &1.tank_id)
     cips_by_tank = Enum.group_by(world.cips, & &1.tank_id)
+    marks_by_tank = world |> Map.get(:marks, []) |> Enum.group_by(& &1.tank_id)
     signed = Map.new(signoffs, &{&1.flag_key, &1})
 
     # Standalone CIPs, and a done exit's leftover CIP (it only cleans the
@@ -42,8 +44,10 @@ defmodule RockcutApi.Production.Flags do
 
     (overlaps(live, tanks) ++
        too_big(live, tanks) ++
-       dirty_fills(live, by_tank, cips_by_tank, tanks) ++
-       dirty_no_cip(by_tank, cips_by_tank, tanks) ++
+       dirty_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) ++
+       marked_dirty_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) ++
+       dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) ++
+       marked_dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) ++
        out_of_order(world.parts) ++
        no_tank(live, world.today) ++
        out_of_service(live, loose_cips, tanks) ++
@@ -93,12 +97,15 @@ defmodule RockcutApi.Production.Flags do
   end
 
   # A planned fill into a tank whose previous part's CIP comes after it or
-  # is missing, with no standalone CIP in between.
-  defp dirty_fills(live, by_tank, cips_by_tank, tanks) do
+  # is missing, with no standalone CIP or clean mark (D48) in between.
+  defp dirty_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) do
     for p <- live,
         p.tank_id && p.fill && is_nil(p.fill.done_on),
         prev = previous(by_tank[p.tank_id], p),
         prev,
+        # D48: a split part that stays is the same beer: the Split that ends
+        # the parent's stay is what fills it.
+        not (prev.exit != nil and prev.exit.id == p.fill.id),
         # A generator, not `prev_cip = …`: in `for` a binding is also a
         # filter, and a missing CIP (nil) would drop the flag.
         prev_cip <- [prev.cip],
@@ -108,6 +115,11 @@ defmodule RockcutApi.Production.Flags do
           Map.get(cips_by_tank, p.tank_id, []),
           &(Date.compare(&1.due_on, emptied) != :lt and
               Date.compare(&1.due_on, p.fill.due_on) != :gt)
+        ),
+        not Enum.any?(
+          Map.get(marks_by_tank, p.tank_id, []),
+          &(&1.state == "clean" and Date.compare(&1.marked_on, emptied) != :lt and
+              Date.compare(&1.marked_on, p.fill.due_on) != :gt)
         ) do
       flag(:dirty_fill, [p.id, prev.id], [p.tank_id, p.fill.due_on, prev_cip && prev_cip.due_on],
         message:
@@ -125,8 +137,39 @@ defmodule RockcutApi.Production.Flags do
     |> Enum.max_by(&{Date.to_gregorian_days(&1.start), &1.id}, fn -> nil end)
   end
 
-  # A tank's last emptying with no CIP dated on or after it.
-  defp dirty_no_cip(by_tank, cips_by_tank, tanks) do
+  # D48: a planned fill into a tank that was last marked dirty (the latest
+  # of its done exits, done CIPs and marks before the fill is a dirty mark),
+  # with no CIP planned or done between the mark and the fill.
+  defp marked_dirty_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) do
+    for p <- live,
+        p.tank_id && p.fill && is_nil(p.fill.done_on),
+        marks = Map.get(marks_by_tank, p.tank_id, []),
+        marks != [],
+        parts = Map.get(by_tank, p.tank_id, []),
+        cips = Map.get(cips_by_tank, p.tank_id, []),
+        %{source: :mark, state: :dirty, mark: m} <- [
+          parts
+          |> Parts.condition_events(cips, marks)
+          |> Enum.filter(&(Date.compare(&1.on, p.fill.due_on) != :gt))
+          |> Parts.latest_condition()
+        ],
+        not Enum.any?(
+          Enum.flat_map(Enum.reject(parts, &(&1.id == p.id)), &Parts.own_cips/1) ++ cips,
+          &(Date.compare(&1.due_on, m.marked_on) != :lt and
+              Date.compare(&1.due_on, p.fill.due_on) != :gt)
+        ) do
+      flag(:dirty_fill, [p.id, "mark#{m.id}"], [p.tank_id, p.fill.due_on, m.marked_on],
+        message:
+          "#{Parts.label(p)} fills #{tanks[p.tank_id].name}, which was marked dirty on #{Calendar.strftime(m.marked_on, "%b %-d")}.",
+        batch_ids: [p.batch_id],
+        tank_id: p.tank_id
+      )
+    end
+  end
+
+  # A tank's last emptying with no CIP dated on or after it, unless a clean
+  # mark (D48) came after it.
+  defp dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) do
     for {tank_id, parts} <- by_tank,
         tank = tanks[tank_id],
         tank,
@@ -146,10 +189,47 @@ defmodule RockcutApi.Production.Flags do
             last.steps,
             &(Parts.behavior(&1) == "cip" and &1.vessel_index == last.vessel_index)
           ) ++ Map.get(cips_by_tank, tank_id, []),
-        not Enum.any?(cips, &(Date.compare(&1.due_on, emptied) != :lt)) do
+        not Enum.any?(cips, &(Date.compare(&1.due_on, emptied) != :lt)),
+        match?(
+          %{state: :dirty},
+          Parts.latest_condition(
+            Parts.condition_events(
+              parts,
+              Map.get(cips_by_tank, tank_id, []),
+              Map.get(marks_by_tank, tank_id, [])
+            )
+          )
+        ) do
       flag(:dirty_no_cip, [tank_id, last.id], [tank_id, emptied],
         message: "#{tank.name} was emptied (#{last.label}) and has no CIP planned.",
         batch_ids: [last.batch_id],
+        tank_id: tank_id
+      )
+    end
+  end
+
+  # D48: a tank whose latest state is a dirty mark, with nothing filled
+  # since and no CIP dated on or after the mark.
+  defp marked_dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) do
+    for {tank_id, marks} <- marks_by_tank,
+        tank = tanks[tank_id],
+        tank,
+        parts = Map.get(by_tank, tank_id, []),
+        cips = Map.get(cips_by_tank, tank_id, []),
+        %{source: :mark, state: :dirty, mark: m} <- [
+          Parts.latest_condition(Parts.condition_events(parts, cips, marks))
+        ],
+        not Enum.any?(
+          parts,
+          &(Parts.filled?(&1) and Date.compare(&1.fill.done_on, m.marked_on) != :lt)
+        ),
+        not Enum.any?(
+          Enum.flat_map(Enum.filter(parts, &Parts.filled?/1), &Parts.own_cips/1) ++ cips,
+          &(Date.compare(&1.due_on, m.marked_on) != :lt)
+        ) do
+      flag(:dirty_no_cip, [tank_id, "mark#{m.id}"], [tank_id, m.marked_on],
+        message: "#{tank.name} was marked dirty and has no CIP planned.",
+        batch_ids: [],
         tank_id: tank_id
       )
     end
