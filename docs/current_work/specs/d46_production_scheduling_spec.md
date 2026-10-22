@@ -422,6 +422,14 @@ Sometimes a tank is CIP'd but not sanitized, and there's no shelf life on "Sani"
   - a later fill raises a new **soft flag**, **Filling a tank that isn't sanitized**, which can be signed off under D47's rules;
   - a later done CIP & Sanitize (batch or standalone), or a Clean & sanitized mark, returns the tank to "Sani N days".
 - **Manual expiry:** marking a long-sanitized tank "Clean, not sanitized" is how a brewer asks for a fresh sanitize before the next fill.
+- **A "CIP - no sani" process** (Matt, 2026-10-22): the `cip` step type gets two variants, the way Package has Full / Partial and Split has Transfer / Filter: **CIP & Sanitize** (as today) and **CIP - no sani**.
+  - **Choosing it:**
+    - Add process ▾ → **CIP…** and the empty-spot menu's **Add CIP…** open the standalone CIP dialog, which has the variant choice;
+    - the step dialog switches an unfinished CIP between the two, renaming it;
+    - a template's CIP entries can be set to either.
+  - **Done → "CIP'd · no sani N days":** the same effect as the Clean, not sanitized mark, including the soft flag on a later fill.
+  - **Not done:** it counts as a planned CIP for "Dirty, no CIP planned" and "Filling a dirty tank", like CIP & Sanitize. But a fill after it raises the soft "Filling a tank that isn't sanitized" flag in place of the dirty one.
+  - **Board title (§3.12):** "FV6 · CIP - no sani".
 
 ### 3.13 Who can do what (`Authz`) and the brewhouse tablet
 
@@ -611,6 +619,8 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P122 | `brewer1` | Serving 1 ("Sani 40 days") → ⋯ → Mark… → **Clean, not sanitized**, today | | "CIP'd · no sani 0 days" in amber; a marker on today; Undo puts it back. |
 | P123 | `brewer1` | Plan a batch into Serving 1 next week | P122 | A "Filling a tank that isn't sanitized" flag (soft; no dirty flags). Sign off → muted. A done CIP & Sanitize, or Mark… → Clean & sanitized, before the fill clears it. |
 | P124 | `brewer1` | a dirty tank → Mark… → Clean, not sanitized | | The dirty flags clear; the status is "CIP'd · no sani 0 days". |
+| P125 | `brewer1` | Add process ▾ → CIP… → **CIP - no sani**, Serving 1, today, Already done | Serving 1 dirty | "CIP'd · no sani 0 days"; the dirty flags clear; on the board as "Serving 1 · CIP - no sani". |
+| P126 | `brewer1` | a batch's exit CIP → step dialog → switch to **CIP - no sani**; plan the next batch into that tank | | The step is renamed. The next fill gets "Filling a tank that isn't sanitized", not "Filling a dirty tank". |
 
 ## 5. Out of Scope
 
