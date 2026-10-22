@@ -9,7 +9,7 @@ Supersedes `SESSION_HANDOFF_2026-10-21b.md`. **Paused mid-gate for a machine reb
 | **Prod** | Unchanged: `v2026.10.16` (UI v23 / API v27). D46–D49 go to prod together after D49. |
 | **DEV** | **Claimed for D48** in discussion 80 (msg 96772). Running `4fce188` (API v51, UI v54); QA and Matt's Pixel test have changed its data since the reseed. |
 | **develop** | `e7cb13e`…`bce3015` (spec additions) plus the D47 merge `5e0a4ed`. |
-| **D48 branch** | `d48-batch-changes`, pushed up to `4fce188` (PR #34, open). **Local is ahead and unpushed:** `f701a9f` (QA report + lead decisions 2), `a0fa314` (fix cycle 1), `64bf783` (fix cycle 1 status). |
+| **D48 branch** | `d48-batch-changes`, PR #34 open; **pushed up to `011577c`** (includes `f701a9f` QA report + lead decisions 2, `a0fa314` fix cycle 1, `64bf783` its status, and this handoff). DEV still runs `4fce188`. |
 | **Local servers** | Stop with the reboot. Restart the API with `cd rockcut_api && mix rockcut.synthetic.setup && mix phx.server` (reseed first: the seed is date-relative) and the UI with `cd rockcut-ui && pnpm dev --port 5174`. |
 | **PortableMind** | 4629 (D46) and 4630 (D47) In Review; 4631 (D48) In Progress; 4650 Completed; 4669 and 4670 backlog. |
 
