@@ -29,7 +29,7 @@ three-environment workflow on its own branch.
 |---|---|---|---|---|
 | **What** | Tanks and out-of-service periods (§3.2); phases and step types, brewer-editable (§3.3); process templates and their editor (§3.4); Brewery → Production nav | Planning batches from a template; the Gantt (§3.6); moving steps with the move prompt (§3.7); checking steps off; P-numbers and the brew-day batch number (§3.5); tank status (§3.8); flags and sign-off (§3.9); standalone CIP & Sanitize (§3.10); assignee and notes on steps; the batch dialog without §3.11's actions | Add/remove steps (and Set temp ramps), add/remove transfers and filters, split and undo split, change a planned batch's template and brand, multi-select (§3.11) | Steps on the Brewery task board, two-way (§3.12); the Gantt's task list panel; planned-batch tasks and their toggle; the brewhouse tablet on the schedule (§3.13) |
 | **Data** | `tanks`, `tank_outages`, `production_phases`, `production_step_types`, `process_templates`, `template_steps`, `template_links` | `batches` changes; `batch_vessels`, `production_steps`, `production_step_links`, `flag_signoffs` | (columns on D47's tables: `split_parent_id`, `part_number`, `ramp_group`) | `production_steps.task_id`; `tasks.production_step_id` |
-| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113 | P90–P108 |
+| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113–P117 | P90–P108 |
 | **DEV seed** | Tanks FV1–FV7, Serving 1–2; `[SEED]` templates; an outage | `[SEED]` batches in every state; a signed-off flag; assigned steps | A transferred and a split batch | Linked tasks on the Brewery board; `breweryDevice` writes |
 
 - **Order:** D46 → D47 → D48 → D49, each branch cut from `develop` after the previous one merges.
@@ -329,6 +329,13 @@ The status line, computed server-side for "today" (Colorado):
 
 The tank header also shows the current batch ("FV4 · Crusher #42").
 
+**Marking a tank clean or dirty (D48; Matt, 2026-10-21).** The tank's ⋯ menu, next to "Mark out of service…", offers **Mark clean…** when the tank is empty and dirty, and **Mark dirty…** when it's empty and clean. Neither is offered while a part is in the tank, whose state comes from the batch.
+- **Dialog:** Date (default today; earlier days allowed, never in the future or before the tank's last exit) and an optional Note (≤ 500).
+- **`tank_condition_marks`** (new): `tank_id`, `state` (`clean` / `dirty`), `marked_on`, `user_id`, `note`. **Not a step and not a task:** nothing reaches the Brewery board in D49, and no CIP block is drawn.
+- **Effect:** the tank's empty-state is the **latest** of its done exits (dirty), done CIPs (clean) and marks, by date, with ties going to the later-recorded one. Mark clean → "Sani N days", and it clears "Filling a dirty tank" and "Dirty, no CIP planned" for what follows. Mark dirty → "Empty · dirty N days", "· no CIP planned" (red) until a CIP is planned, and a later fill raises "Filling a dirty tank".
+- **On the Gantt:** a small marker on that day in the tank's row; its tooltip shows "Marked clean by Jake Brewer · Wed Oct 21 · “note”". The ⋯ panel lists the marks under History, each with **Remove**. Every change offers **Undo** (§3.6).
+- **API:** `POST /tanks/:id/condition` (`state`, `marked_on`, `note`) and `DELETE /condition_marks/:id`; 422 `tank_in_use` while a part is in the tank, `date_invalid` for a future date or one before the last exit.
+
 ### 3.9 Flags and sign-off (D47)
 
 Computed server-side by one function, returned with the schedule.
@@ -539,6 +546,10 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P88 | `brewer1` | Shift-click two steps in one tank | | Everything between them in that tank is selected. |
 | P89 | `brewer1` | Undo after a split | | The split is undone. |
 | P113 | `brewer1` | Shift-drag FDH 1 day later | FDH links on to the ramp ("move all") | No prompt; only FDH moves; message "FDH moved 1 day later (only this step)" with Undo; any out-of-order step is flagged. |
+| P114 | `brewer1` | Serving 1 ("Empty · dirty 8 days · no CIP planned") → ⋯ → Mark clean…, today, note "Hosed and sanitized after the gasket job" | | "Sani 0 days"; the dirty flags clear; a marker on today with the note in its tooltip; no CIP block and no task. Undo puts it back. |
+| P115 | `brewer1` | a clean empty tank → ⋯ → Mark dirty…, yesterday | a batch planned into it next week | "Empty · dirty 1 day · no CIP planned"; the planned batch gets "Filling a dirty tank". Planning a CIP before the fill clears both. |
+| P116 | `brewer1` | ⋯ on a tank with beer in it | | No Mark clean / Mark dirty. The API refuses with 422 `tank_in_use`. |
+| P117 | `brewer1` | ⋯ panel → History → Remove a mark | | The mark is gone and the status goes back to what the exits and CIPs say. |
 | P110 | `brewer1` | Split - Filter Galactic #40 on Nov 3: #40.1 12 bbl stays in FV2; #40.2 8 bbl → Serving 1 | | "Split - Filter" on the schedule; FV2 keeps #40.1 (no CIP); Serving 1 fills with #40.2. |
 
 **D49: task list linkage and the tablet**
