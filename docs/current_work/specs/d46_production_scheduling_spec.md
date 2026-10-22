@@ -414,7 +414,14 @@ Sometimes a tank is CIP'd but not sanitized, and there's no shelf life on "Sani"
   - **Clean & sanitized** (`clean`, D48's Mark clean);
   - **Clean not sanitized** (`cleaned`, new);
   - **Dirty** (`dirty`).
-  Each takes a date and an optional note, as in D48. The current state isn't offered.
+  Each takes a date and an optional note, as in D48.
+- **Layout: a vertical list in the tank ⋯ dialog** (Matt, 2026-10-22; mockup B, https://claude.ai/artifact/V8DLwX5dfcYZ19h6iZ198V):
+  - a "MARK THE TANK AS" heading;
+  - three large tappable rows (at least 56 px tall), each with a radio dot, the state's name in its color (Clean & sanitized green, Clean not sanitized amber, Dirty red) and a one-line hint;
+  - the **current state's row is greyed out and reads "Current state"**, so it can't be picked;
+  - the Day and Note (optional) fields sit under the list, and the dialog's bottom row has **Save mark** next to Mark out of service… and Close;
+  - no second dialog;
+  - the rows are hidden while beer is in the tank, as in D48.
 - **`tank_condition_marks.state`** gains `cleaned`. The latest-wins rule from §3.8 is unchanged.
 - **Status line:** "Clean no sani N days", in amber.
 - **Effect:**
