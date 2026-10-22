@@ -44,3 +44,7 @@ Refuse with `same_tank`, and name the part when a part is involved ("Part 2: The
 
 - The three-save swap (Matt).
 - R4 stays allowed-and-flagged (Matt).
+
+## Close-out rule (Matt, 2026-10-22)
+
+After fix cycle 4: the full local and DEV suites, then a **final, split-focused QA pass**. If it finds only minors, D48 closes, and those minors become D49's first fix items. A must-fix still blocks close-out.
