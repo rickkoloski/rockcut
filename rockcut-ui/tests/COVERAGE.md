@@ -624,4 +624,11 @@ Playwright specs are in `regression/production/` (project `production`, one work
 | — | DEV seed: a split batch (one part stays), an added filter, a clean and a dirty mark; `[TEST-TEMP]` parts and marks cleaned up | ExUnit `seeds/synthetic_test` |
 | — | Brewery members and owners only (403 for others); the new routes people-only until D49 | ExUnit controller test, `device_route_matrix_test` |
 
+| DEV QA M1 | Transfers, filters and splits only while the beer is in that tank (`before_fill`, `after_exit`, "The split has to be after brew day."); added steps and ramps from brew day; dialogs default to the first valid day | ExUnit `batch_changes_test`, `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
+| DEV QA M2, minors 6, 8 | A split parent can't be deleted or resized until Undo split (a note in place of Delete); a part shows "P5.2 · …" and has no Delete; Undo of a delete restores vessels, steps, links and a ramp | ExUnit `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
+| DEV QA M3 | No transfer or part into the tank the beer is in: "The beer is already in FV2."; Into leaves that tank out | ExUnit `batch_changes_test`, `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
+| DEV QA 7a, 7b | Template change names a dropped added transfer; kept ramps and steps (one checked off before brew day too) stay linked in | ExUnit `batch_changes_test`; Playwright `d48-fix-cycle-1` (7a) |
+| DEV QA 9, 10, 11 | Zoom tooltip "Weeks on screen"; a two-batch move: "2 batches · 2 steps moved 1 day later", following steps under each batch; Ctrl/Cmd+Space selects, Escape clears | Playwright `d48-fix-cycle-1`; ExUnit controller test (preview batches) |
+| Pixel | Auto-scroll down on a phone: the edge zone is the part of the grid on screen; the page scrolls once the grid is at its end | Playwright `d48-fix-cycle-1` (412×915); Matt rechecks on the Pixel |
+
 Not automated: P87 (touch long-press selection on the Pixel) and a touch drag's auto-scroll, by hand at the DEV gate.

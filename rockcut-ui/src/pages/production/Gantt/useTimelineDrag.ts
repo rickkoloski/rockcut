@@ -63,6 +63,9 @@ interface Pending {
   y: number
   scrollLeft: number
   scrollTop: number
+  /** The page's scroll at the press (it can scroll too: D48 DEV, the Pixel). */
+  pageX: number
+  pageY: number
 }
 
 /**
@@ -103,8 +106,8 @@ export function useTimelineDrag(auto?: AutoScroll) {
   // Where the drag is over the content: the pointer's move plus the grid's scroll since the press.
   const where = useCallback((p: Pending): DragState => {
     const el = autoRef.current?.scroller.current
-    const sx = el ? el.scrollLeft - p.scrollLeft : 0
-    const sy = el ? el.scrollTop - p.scrollTop : 0
+    const sx = (el ? el.scrollLeft - p.scrollLeft : 0) + window.scrollX - p.pageX
+    const sy = (el ? el.scrollTop - p.scrollTop : 0) + window.scrollY - p.pageY
     return { key: p.key, dx: p.x - p.startX + sx, dy: p.y - p.startY + sy, x: p.x, y: p.y, touch: p.touch }
   }, [])
 
@@ -142,7 +145,16 @@ export function useTimelineDrag(auto?: AutoScroll) {
       const a = autoRef.current
       const el = a?.scroller.current
       if (p?.armed && a && el) {
-        const r = el.getBoundingClientRect()
+        // The part of the grid on screen: on a phone the grid runs on below
+        // the screen, so its own bottom edge is out of reach (Matt, Pixel).
+        const box = el.getBoundingClientRect()
+        const vv = window.visualViewport
+        const r = {
+          top: Math.max(box.top, vv?.offsetTop ?? 0),
+          bottom: Math.min(box.bottom, vv ? vv.offsetTop + vv.height : window.innerHeight),
+          left: Math.max(box.left, vv?.offsetLeft ?? 0),
+          right: Math.min(box.right, vv ? vv.offsetLeft + vv.width : window.innerWidth),
+        }
         const inset = a.insets()
         // Only toward an edge the pointer has moved toward: a press near the
         // bottom row mustn't scroll the grid out from under it.
@@ -151,9 +163,11 @@ export function useTimelineDrag(auto?: AutoScroll) {
           (mx > EDGE_INTENT_PX ? edgeSpeed(r.right - p.x) : 0) - (mx < -EDGE_INTENT_PX ? edgeSpeed(p.x - (r.left + inset.left)) : 0)
         const vy =
           (my > EDGE_INTENT_PX ? edgeSpeed(r.bottom - p.y) : 0) - (my < -EDGE_INTENT_PX ? edgeSpeed(p.y - (r.top + inset.top)) : 0)
-        const before = [el.scrollLeft, el.scrollTop]
+        const before = [el.scrollLeft, el.scrollTop, window.scrollX, window.scrollY]
         if (vx || vy) el.scrollBy(vx, vy)
-        if (el.scrollLeft !== before[0] || el.scrollTop !== before[1]) setActive(where(p))
+        // At the grid's own end, the page scrolls instead (when it can).
+        if (vy && el.scrollTop === before[1]) window.scrollBy(0, vy)
+        if (el.scrollLeft !== before[0] || el.scrollTop !== before[1] || window.scrollX !== before[2] || window.scrollY !== before[3]) setActive(where(p))
       }
       frame = requestAnimationFrame(tick)
     }
@@ -255,6 +269,8 @@ export function useTimelineDrag(auto?: AutoScroll) {
           y: e.clientY,
           scrollLeft: el?.scrollLeft ?? 0,
           scrollTop: el?.scrollTop ?? 0,
+          pageX: window.scrollX,
+          pageY: window.scrollY,
         }
         if (touch) {
           p.timer = window.setTimeout(() => {

@@ -419,25 +419,29 @@ defmodule RockcutApi.Production.Batches do
   ## Changing
 
   @doc """
-  Delete a planned batch with its steps, links and vessels, and its parts
-  (`:not_planned` once brewed; `:split_part` for a part: Undo split). `{:ok, renumbered}`.
+  Delete a planned batch with its steps, links and vessels (`:not_planned`
+  once brewed; `:split` while it's split and `:split_part` for a part: Undo
+  split first). `{:ok, renumbered}`.
   """
   def delete_planned(%Batch{split_parent_id: id}) when not is_nil(id), do: {:error, :split_part}
 
   def delete_planned(%Batch{status: "planned"} = batch) do
-    Repo.transaction(fn ->
-      {_, renumbered} =
-        with_renumbering(fn ->
-          # D48: its parts (planned too) go with it.
-          Repo.delete_all(from(b in Batch, where: b.split_parent_id == ^batch.id))
-          Repo.delete!(batch)
-        end)
-
-      renumbered
-    end)
+    # D48 DEV QA M2: not while it's split.
+    if split_parent?(batch) do
+      {:error, :split}
+    else
+      Repo.transaction(fn ->
+        {_, renumbered} = with_renumbering(fn -> Repo.delete!(batch) end)
+        renumbered
+      end)
+    end
   end
 
   def delete_planned(%Batch{}), do: {:error, :not_planned}
+
+  @doc "Whether `batch` has split parts."
+  def split_parent?(%Batch{id: id}),
+    do: Repo.exists?(from(b in Batch, where: b.split_parent_id == ^id))
 
   @doc """
   Move a batch in time by `days`: a planned batch's every step, a brewed
@@ -493,6 +497,9 @@ defmodule RockcutApi.Production.Batches do
       changes =
         Enum.reduce(attrs, %{}, fn
           {"volume_bbl", v}, acc ->
+            # D48 DEV QA minor 6: the parts' volumes add up to it.
+            if split_parent?(batch), do: Repo.rollback(:split)
+
             case Decimal.cast(v) do
               {:ok, d} ->
                 if volume_ok?(d),

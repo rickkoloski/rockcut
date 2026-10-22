@@ -142,7 +142,8 @@ const activateStep = (step: SchedStep, fn: GanttActions['onStep'], drag?: GanttD
   onKeyDown: (e: KeyboardEvent) => {
     if ((e.key === 'Enter' || e.key === ' ') && fn) {
       e.preventDefault()
-      fn(step)
+      // Ctrl/Cmd+Space toggles it in the selection (QA minor 11).
+      fn(step, e.key === ' ' && (e.ctrlKey || e.metaKey) ? { toggle: true } : undefined)
     }
   },
 })

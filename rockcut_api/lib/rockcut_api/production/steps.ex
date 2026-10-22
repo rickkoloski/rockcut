@@ -196,6 +196,13 @@ defmodule RockcutApi.Production.Steps do
       days: plan.days,
       batch_id: plan.first.batch_id,
       batch_label: batch_label(plan.first.batch_id, pnums),
+      # D48 DEV QA minor 10: every batch the move touches, for the prompt's groups.
+      batches:
+        (plan.moved ++ plan.following)
+        |> Enum.map(& &1.batch_id)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+        |> Enum.map(&%{id: &1, label: batch_label(&1, pnums)}),
       moved: Enum.map(plan.moved, &brief(&1, plan.days)),
       following: Enum.map(plan.following, &brief(&1, plan.days)),
       default_answer: plan.default,
@@ -205,7 +212,13 @@ defmodule RockcutApi.Production.Steps do
   end
 
   defp brief(%Step{} = s, days) do
-    %{id: s.id, name: name(s), due_on: s.due_on, new_due_on: Date.add(s.due_on, days)}
+    %{
+      id: s.id,
+      batch_id: s.batch_id,
+      name: name(s),
+      due_on: s.due_on,
+      new_due_on: Date.add(s.due_on, days)
+    }
   end
 
   defp batch_label(nil, _pnums), do: nil

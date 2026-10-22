@@ -192,6 +192,22 @@ function GanttScreen() {
     setSelecting(false)
     setAnchor(null)
   }
+  // Escape clears an active selection before it closes anything else (QA minor 11); a drag's Escape stays the drag's.
+  const hasSelection = selected.size > 0 || selecting
+  const dragging = !!drag.active
+  useEffect(() => {
+    if (!hasSelection || dragging) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      e.stopPropagation()
+      setSelected(new Set())
+      setSelecting(false)
+      setAnchor(null)
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [hasSelection, dragging])
   /** Every step in `a`'s tank dated from `a` to `b` (both in that tank's rows), or null when they're in different tanks. */
   const rangeIn = (a: SchedStep, b: SchedStep): number[] | null => {
     const row = rows.find((r) => r.parts.some((p) => p.steps.some((s) => s.id === a.id)) && r.parts.some((p) => p.steps.some((s) => s.id === b.id)))

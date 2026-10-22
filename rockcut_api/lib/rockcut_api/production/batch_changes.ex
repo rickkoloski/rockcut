@@ -35,7 +35,8 @@ defmodule RockcutApi.Production.BatchChanges do
     StepGraph,
     StepLink,
     Steps,
-    StepType
+    StepType,
+    Tank
   }
 
   @max_name 40
@@ -75,6 +76,7 @@ defmodule RockcutApi.Production.BatchChanges do
   defp add_one!(batch, type, name, attrs) do
     due_on = date!(attrs["due_on"])
     steps = steps!(batch)
+    not_before_brew!(batch, steps, due_on)
     vessel = vessel!(batch, attrs["vessel_index"], vessel_on(steps, due_on))
 
     step =
@@ -143,7 +145,9 @@ defmodule RockcutApi.Production.BatchChanges do
       Repo.transaction(fn ->
         type = behavior_type!("set_temp")
         first_on = date!(attrs["first_on"])
-        vessel = vessel!(batch, attrs["vessel_index"], vessel_on(steps!(batch), first_on))
+        steps = steps!(batch)
+        not_before_brew!(batch, steps, first_on)
+        vessel = vessel!(batch, attrs["vessel_index"], vessel_on(steps, first_on))
 
         phase_id =
           if Map.has_key?(attrs, "phase_id"),
@@ -319,7 +323,9 @@ defmodule RockcutApi.Production.BatchChanges do
   vessel k + 1 in that tank, and the later vessels move up one. The tank
   left behind gets a CIP & Sanitize that day, linked "move all" from the
   transfer. Refused (`:step_done_after`) when a step of vessel k or later
-  dated after that day is done.
+  dated after that day is done. The day must fall while the beer is in that
+  tank (`in_tank!/4`), and the tank must be another one
+  (`{:same_tank, name}`; D48 DEV QA M1, M3).
   """
   def add_transfer(%Batch{} = batch, attrs) do
     attrs = stringify(attrs)
@@ -342,6 +348,16 @@ defmodule RockcutApi.Production.BatchChanges do
     steps = steps!(batch)
     k = vessel_on(steps, day)
     fill = fill_of(steps, k)
+    in_tank!(batch, steps, k, day)
+
+    here =
+      Enum.find_value(
+        Repo.all(from(v in BatchVessel, where: v.batch_id == ^batch.id)),
+        &(&1.vessel_index == k && &1.tank_id)
+      )
+
+    # D48 QA M3: a transfer goes into another tank (Unassigned is fine).
+    if tank_id && tank_id == here, do: Repo.rollback({:same_tank, Repo.get!(Tank, here).name})
 
     if Enum.any?(
          steps,
@@ -478,9 +494,13 @@ defmodule RockcutApi.Production.BatchChanges do
       if split?(batch), do: Repo.rollback(:split)
       template = Batches.plannable_template!(Batches.to_int(template_id))
 
-      {kept, renumbered} =
+      {{kept, dropped}, renumbered} =
         Batches.with_renumbering(fn ->
-          for t <- Enum.filter(steps!(batch), &(&1.added and Steps.behavior(&1) == "transfer")),
+          # Added transfers go first; the message names where they went (QA minor 7a).
+          added = Enum.filter(steps!(batch), &(&1.added and Steps.behavior(&1) == "transfer"))
+          dropped = Enum.map(added, &vessel_tank_name(batch, &1.vessel_index))
+
+          for t <- Enum.sort_by(added, & &1.vessel_index, :desc),
               do: remove_transfer!(Repo.get!(Step, t.id))
 
           steps = steps!(batch)
@@ -506,7 +526,7 @@ defmodule RockcutApi.Production.BatchChanges do
           Batches.copy_steps!(batch, template, brew_on, batch.brew_two_days)
           batch |> Changeset.change(template_id: template.id) |> Repo.update!()
           reanchor!(batch, kept)
-          kept
+          {kept, dropped}
         end)
 
       n = Enum.count(kept, &(not Step.marker?(&1)))
@@ -515,16 +535,40 @@ defmodule RockcutApi.Production.BatchChanges do
       %{
         batch_ids: [batch.id],
         renumbered: renumbered,
-        message:
-          "#{from_name} → #{template.name}." <>
-            if(n > 0, do: " Kept #{n} added step#{if n == 1, do: "", else: "s"}.", else: "")
+        message: "#{from_name} → #{template.name}." <> kept_dropped(n, dropped)
       }
     end)
   end
 
+  # " Kept 1 added step; dropped the added transfer into Q1D."
+  defp kept_dropped(0, []), do: ""
+
+  defp kept_dropped(n, dropped) do
+    kept = if n > 0, do: "kept #{n} added step#{if n == 1, do: "", else: "s"}"
+
+    gone =
+      case dropped do
+        [] -> nil
+        [nil] -> "dropped the added transfer"
+        [one] -> "dropped the added transfer into #{one}"
+        many -> "dropped #{length(many)} added transfers"
+      end
+
+    text = [kept, gone] |> Enum.reject(&is_nil/1) |> Enum.join("; ")
+    " " <> String.capitalize(String.first(text)) <> String.slice(text, 1..-1//1) <> "."
+  end
+
+  defp vessel_tank_name(batch, k) do
+    case Repo.get_by(BatchVessel, batch_id: batch.id, vessel_index: k) do
+      %BatchVessel{tank_id: id} when not is_nil(id) -> Repo.get!(Tank, id).name
+      _ -> nil
+    end
+  end
+
   # Added steps kept through a template change: in the tank the beer is in
-  # on their day, after the last rebuilt step there (unless another kept
-  # step already leads into them).
+  # on their day, and each kept chain's first step after the last rebuilt
+  # step there (QA minor 7b: kept ramps too; nothing kept is left unlinked).
+  # A ramp keeps its own chain.
   defp reanchor!(batch, kept) do
     steps = steps!(batch)
     kept_ids = MapSet.new(kept, & &1.id)
@@ -536,12 +580,29 @@ defmodule RockcutApi.Production.BatchChanges do
       s = s |> Changeset.change(vessel_index: k) |> Repo.update!()
       led = Repo.exists?(from(l in StepLink, where: l.to_step_id == ^s.id))
 
+      in_tank = Enum.filter(rebuilt, &(&1.vessel_index == k))
+
       prev =
-        rebuilt
-        |> Enum.filter(&(&1.vessel_index == k and not after?(&1.due_on, s.due_on)))
+        in_tank
+        |> Enum.filter(&(not after?(&1.due_on, s.due_on)))
         |> Enum.max_by(&Parts.order/1, fn -> nil end)
 
-      if prev && not led, do: StepGraph.insert_link!(graph, prev, s, "move_all")
+      cond do
+        led ->
+          :ok
+
+        prev ->
+          StepGraph.insert_link!(graph, prev, s, "move_all")
+
+        # Dated before everything rebuilt there (a step checked off early):
+        # still linked, from the tank's first step; "Steps out of order"
+        # flags it (QA minor 7b: nothing kept is left unlinked).
+        first = Enum.min_by(in_tank, &Parts.order/1, fn -> nil end) ->
+          put_link!(first.id, s.id, "move_all")
+
+        true ->
+          :ok
+      end
     end
   end
 
@@ -581,6 +642,65 @@ defmodule RockcutApi.Production.BatchChanges do
     |> Enum.filter(&(Steps.behavior(&1) == "transfer" and not after?(&1.due_on, day)))
     |> Enum.map(& &1.vessel_index)
     |> Enum.max(fn -> 0 end)
+  end
+
+  ## When the beer is there (D48 DEV QA M1)
+
+  @doc """
+  The days the beer is in vessel `k`: `{fill, exit}`, the day it comes in
+  (the first Brew day, the Transfer/Filter into it, or for a split part's
+  first tank its parent's Split) and the day it leaves (a full Package or a
+  Split in it, or the next Transfer/Filter), either nil when there's none.
+  """
+  def stay(%Batch{} = batch, steps, k) do
+    fill =
+      case fill_of(steps, k) do
+        nil when k == 0 -> parent_split(batch)
+        step -> step
+      end
+
+    exit =
+      steps
+      |> Enum.filter(fn s ->
+        case Steps.behavior(s) do
+          "package" -> s.vessel_index == k and not s.package_partial
+          "split" -> s.vessel_index == k
+          "transfer" -> s.vessel_index == k + 1
+          _ -> false
+        end
+      end)
+      |> Enum.min_by(&Parts.order/1, fn -> nil end)
+
+    {fill && fill.due_on, exit && exit.due_on}
+  end
+
+  @doc "A transfer, filter or split on `day` in vessel `k`: after its fill (`:before_fill`) and before its exit (`:after_exit`)."
+  def in_tank!(batch, steps, k, day) do
+    {fill, exit} = stay(batch, steps, k)
+    if fill && not after?(day, fill), do: Repo.rollback(:before_fill)
+    if exit && not after?(exit, day), do: Repo.rollback(:after_exit)
+    :ok
+  end
+
+  # Added steps and ramps start on brew day or later (a split part: its Split).
+  defp not_before_brew!(batch, steps, day) do
+    floor = Parts.first_brew(steps) || parent_split(batch)
+    if floor && after?(floor.due_on, day), do: Repo.rollback(:before_brew_day)
+    :ok
+  end
+
+  defp parent_split(%Batch{split_parent_id: nil}), do: nil
+
+  defp parent_split(%Batch{split_parent_id: id}) do
+    Repo.one(
+      from(s in Step,
+        join: t in StepType,
+        on: t.id == s.step_type_id,
+        where: s.batch_id == ^id and t.behavior == "split",
+        order_by: [s.due_on, s.id],
+        limit: 1
+      )
+    )
   end
 
   @doc "What fills vessel k: the first Brew day for 0, else its Transfer/Filter (nil for a part's 0)."

@@ -81,10 +81,13 @@ defmodule RockcutApi.Production.Undo do
 
       {gone, back} = Enum.split_with(entries, &is_nil(&1["before"]))
 
-      for e <- Enum.sort_by(gone, &(-rank(&1["table"]))),
+      # Children before parents, and within a table the later rows first (a
+      # split's parts before their parent); put back the other way (D48 QA M2).
+      for e <- Enum.sort_by(gone, &{-rank(&1["table"]), -&1["id"]}),
           do: Repo.query!("DELETE FROM #{e["table"]} WHERE id = ?", [e["id"]])
 
-      for e <- Enum.sort_by(back, &rank(&1["table"])), do: put_row!(e["table"], e["before"])
+      for e <- Enum.sort_by(back, &{rank(&1["table"]), &1["id"]}),
+          do: put_row!(e["table"], e["before"])
 
       Repo.delete!(record)
 

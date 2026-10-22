@@ -236,6 +236,8 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
   const [adding, setAdding] = useState<'step' | 'ramp' | 'transfer' | 'split' | null>(null)
   const [unsplitting, setUnsplitting] = useState(false)
   const split = batch.split_parent_id != null || splitParts.length > 0
+  const part = batch.split_parent_id != null
+  const partNumber = batch.label.split(' ').at(-1)
   const flagsRef = useRef<HTMLDivElement>(null)
   const parts = buildParts(batch)
   const brew = firstBrew(batch.steps)
@@ -272,7 +274,12 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
               Template: {batch.template_name ?? '—'} · Brand: {batch.brand_name ?? '—'}
             </Typography>
           )}
-          {planned ? (
+          {part ? (
+            // A part's number is its parent's plus ".2" (QA minor 8).
+            <Typography variant="body2" data-testid="batch-dialog-pnumber">
+              {partNumber} · {planned ? 'the real number is set when the parent’s brew day is checked off' : 'the parent’s number'}
+            </Typography>
+          ) : planned ? (
             <Typography variant="body2" data-testid="batch-dialog-pnumber">
               {batch.p_number} · the real number is set when brew day is checked off
             </Typography>
@@ -305,10 +312,12 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
               label="Volume (bbl)"
               value={volume}
               onChange={(e) => setVolume(e.target.value)}
-              slotProps={{ htmlInput: { min: 0, step: 'any', 'data-testid': 'batch-volume' } }}
+              // A split parent's parts add up to it (QA minor 6).
+              helperText={splitParts.length ? 'Undo the split first to change it' : undefined}
+              slotProps={{ htmlInput: { min: 0, step: 'any', readOnly: splitParts.length > 0, 'data-testid': 'batch-volume' } }}
             />
             <Button
-              disabled={volume === '' || Number(volume) === batch.volume_bbl}
+              disabled={splitParts.length > 0 || volume === '' || Number(volume) === batch.volume_bbl}
               onClick={() => run(() => flows.write(() => api.patch(prodPath('batches', batch.id), { volume_bbl: Number(volume) }), 'Volume saved.'))}
               data-testid="batch-volume-save"
             >
@@ -375,7 +384,13 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
         </Box>
       </DialogContent>
       <DialogActions>
-        {planned && (
+        {/* Not while split, and never a part on its own: Undo split first (QA M2, minor 8). */}
+        {planned && !part && splitParts.length > 0 && (
+          <Typography variant="body2" color="text.secondary" sx={{ mr: 'auto', pl: 1 }} data-testid="batch-delete-split-note">
+            Undo the split first to delete it.
+          </Typography>
+        )}
+        {planned && !part && !splitParts.length && (
           <Button color="error" sx={{ mr: 'auto' }} onClick={() => setDeleting(true)} data-testid="batch-delete">
             Delete planned batch
           </Button>

@@ -35,8 +35,10 @@ export interface MovePreview {
   days: number
   batch_id: number | null
   batch_label: string | null
-  moved: { id: number; name: string; due_on: string; new_due_on: string }[]
-  following: { id: number; name: string; due_on: string; new_due_on: string }[]
+  /** D48 QA minor 10: every batch the move touches. */
+  batches?: { id: number; label: string }[]
+  moved: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
+  following: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   default_answer: Answer | null
   out_of_order: Record<Answer, { from_name: string; to_name: string }[]>
   renumbered: Record<Answer, Renumber[]>
@@ -293,15 +295,29 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
   const pill = (a: Answer) =>
     preview.default_answer === a ? <Chip label="Default" size="small" color="primary" variant="outlined" sx={{ ml: 1, height: 20 }} data-testid={`move-default-${a}`} /> : null
   const renum = renumberText(preview.renumbered[answer] ?? [])
+  // Steps in several batches: say how many, and list what follows under each batch (QA minor 10).
+  const batches = preview.batches ?? []
+  const many = batches.length > 1
+  const line = (s: MovePreview['following'][number]) => (
+    <li key={s.id}>
+      {s.name} → {dayLabel(s.new_due_on)}
+    </li>
+  )
 
   return (
     <Dialog open onClose={onCancel} maxWidth="sm" fullWidth data-testid="move-prompt">
       <DialogTitle>
         {title}
-        {preview.batch_label && (
+        {many ? (
           <Typography variant="body2" color="text.secondary" data-testid="move-prompt-sub">
-            {preview.batch_label} · now {dayLabel(first.new_due_on)}
+            {batches.length} batches · {title}
           </Typography>
+        ) : (
+          preview.batch_label && (
+            <Typography variant="body2" color="text.secondary" data-testid="move-prompt-sub">
+              {preview.batch_label} · now {dayLabel(first.new_due_on)}
+            </Typography>
+          )
         )}
       </DialogTitle>
       <DialogContent>
@@ -317,11 +333,20 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
             }
           />
           <Box component="ul" sx={{ m: 0, mb: 1.5, pl: 6, color: 'text.secondary', fontSize: 14 }} data-testid="move-following">
-            {preview.following.map((s) => (
-              <li key={s.id}>
-                {s.name} → {dayLabel(s.new_due_on)}
-              </li>
-            ))}
+            {many
+              ? batches
+                  .filter((b) => preview.following.some((s) => s.batch_id === b.id))
+                  .map((b) => (
+                    <li key={`b-${b.id}`} data-testid={`move-following-batch-${b.id}`}>
+                      <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                        {b.label}
+                      </Box>
+                      <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                        {preview.following.filter((s) => s.batch_id === b.id).map(line)}
+                      </Box>
+                    </li>
+                  ))
+              : preview.following.map(line)}
           </Box>
           <FormControlLabel
             value="move_only"

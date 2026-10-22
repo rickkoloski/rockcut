@@ -62,7 +62,12 @@ defmodule RockcutApiWeb.ProductionErrors do
     not_split: "That batch isn't split.",
     part_step_done: "Some steps on the parts are already done, so the split can't be undone.",
     tank_in_use: "There's beer in this tank: its state comes from the batch.",
-    date_invalid: "Pick a day from the tank's last emptying through today."
+    date_invalid: "Pick a day from the tank's last emptying through today.",
+    # D48 DEV QA fix cycle 1.
+    before_fill: "The beer isn't in that tank on that day.",
+    after_exit: "The beer isn't in that tank on that day.",
+    before_brew_day: "A step can't come before brew day.",
+    split_before_brew: "The split has to be after brew day."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
@@ -137,6 +142,13 @@ defmodule RockcutApiWeb.ProductionErrors do
       message: "Choose whether the following steps move too.",
       preview: preview
     })
+  end
+
+  # D48 DEV QA M3: a transfer or a part into the tank the beer is already in.
+  def handle({:error, {:same_tank, name}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "same_tank", message: "The beer is already in #{name}."})
   end
 
   # D48 (P76): "The parts add up to 18 bbl, but Galactic #40 is 20 bbl."

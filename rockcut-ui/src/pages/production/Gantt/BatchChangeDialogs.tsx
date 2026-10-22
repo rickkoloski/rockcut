@@ -37,6 +37,42 @@ const ordered = (steps: SchedStep[]) => [...steps].sort((a, b) => a.due_on.local
 const vesselOn = (batch: SchedBatch, day: string) =>
   Math.max(0, ...batch.steps.filter((s) => s.behavior === 'transfer' && s.due_on <= day).map((s) => s.vessel_index))
 
+// ── When the beer is there (D48 DEV QA M1): the API's rule, for defaults and previews. ──
+
+/** Brew day (a split part: its first step). */
+const brewDay = (batch: SchedBatch) => batch.steps.find((s) => s.first_brew)?.due_on ?? ordered(batch.steps)[0]?.due_on ?? null
+
+/** The days the beer is in vessel `k`: its fill and its exit, either null when there's none. */
+const stayOf = (batch: SchedBatch, k: number) => {
+  const steps = ordered(batch.steps)
+  const fill = k === 0 ? brewDay(batch) : (steps.find((s) => s.behavior === 'transfer' && s.vessel_index === k)?.due_on ?? null)
+  const exit = steps.find(
+    (s) =>
+      (s.behavior === 'package' && s.vessel_index === k && !s.package_partial) ||
+      (s.behavior === 'split' && s.vessel_index === k) ||
+      (s.behavior === 'transfer' && s.vessel_index === k + 1),
+  )
+  return { fill, exit: exit?.due_on ?? null }
+}
+
+/** Add step / Add a ramp: today, or the day after brew day for a batch still to brew. */
+const firstStepDay = (batch: SchedBatch, today: string) => {
+  const brew = brewDay(batch)
+  return brew && brew > today ? addDaysKey(brew, 1) : today
+}
+
+/** A transfer or split: the first day after the beer's fill into the tank it's in, on or after today. */
+const firstMoveDay = (batch: SchedBatch, today: string) => {
+  const { fill } = stayOf(batch, vesselOn(batch, today))
+  return fill && fill >= today ? addDaysKey(fill, 1) : today
+}
+
+/** Why a transfer or split can't be on `day`, or null. */
+const outsideStay = (batch: SchedBatch, day: string) => {
+  const { fill, exit } = stayOf(batch, vesselOn(batch, day))
+  return (fill && day <= fill) || (exit && day >= exit) ? 'The beer isn’t in that tank on that day.' : null
+}
+
 const vesselName = (batch: SchedBatch, tanks: Tank[], k: number) => {
   const id = batch.vessels.find((v) => v.vessel_index === k)?.tank_id
   return id ? (tanks.find((t) => t.id === id)?.name ?? 'Retired tank') : 'Unassigned'
@@ -147,7 +183,7 @@ export function AddStepDialog({ batch, types, tanks, brewers, today, onClose }: 
   const [detail, setDetail] = useState('')
   const [temperature, setTemperature] = useState('')
   const [partial, setPartial] = useState(false)
-  const [day, setDay] = useState(batch.steps.some((s) => s.due_on >= today) ? today : (ordered(batch.steps).at(-1)?.due_on ?? today))
+  const [day, setDay] = useState(() => firstStepDay(batch, today))
   const [vessel, setVessel] = useState<number | ''>('')
   const [links, setLinks] = useState(noLinks)
   const [onList, setOnList] = useState(true)
@@ -290,7 +326,7 @@ export function AddRampDialog({ batch, phases, tanks, today, onClose }: { batch:
   const [start, setStart] = useState('58')
   const [target, setTarget] = useState('32')
   const [change, setChange] = useState('10')
-  const [firstOn, setFirstOn] = useState(today)
+  const [firstOn, setFirstOn] = useState(() => firstStepDay(batch, today))
   const [vessel, setVessel] = useState<number | ''>('')
   const [phaseId, setPhaseId] = useState<number | ''>(crash?.id ?? '')
   const [links, setLinks] = useState(noLinks)
@@ -413,7 +449,7 @@ export function AddTransferDialog({ batch, types, tanks, today, onClose }: { bat
   const flows = useFlows()
   const kinds = types.filter((t) => !t.retired_at && t.behavior === 'transfer')
   const [typeId, setTypeId] = useState<number | ''>(kinds[0]?.id ?? '')
-  const [day, setDay] = useState(today)
+  const [day, setDay] = useState(() => firstMoveDay(batch, today))
   const [tankId, setTankId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -422,6 +458,10 @@ export function AddTransferDialog({ batch, types, tanks, today, onClose }: { bat
   const fill = (s: SchedStep) => (k === 0 ? s.first_brew : s.behavior === 'transfer' && s.vessel_index === k)
   const moving = batch.steps.filter((s) => s.vessel_index === k && !fill(s) && !s.done_on && s.due_on >= day)
   const doneLater = batch.steps.some((s) => s.vessel_index >= k && !fill(s) && s.done_on && s.due_on > day)
+  const outside = day ? outsideStay(batch, day) : null
+  // Into another tank: not the one the beer is in that day (QA M3).
+  const here = batch.vessels.find((v) => v.vessel_index === k)?.tank_id ?? null
+  const into = tanks.filter((t) => t.id !== here)
   const tankName = tankId ? (tanks.find((t) => t.id === tankId)?.name ?? 'the tank') : 'Unassigned'
 
   const save = async () => {
@@ -448,10 +488,12 @@ export function AddTransferDialog({ batch, types, tanks, today, onClose }: { bat
       </TextField>
       <Box sx={grid2}>
         <TextField type="date" label="Day" value={day} onChange={(e) => setDay(e.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'add-transfer-day' } }} />
-        <TankSelect label="Into" tanks={tanks} value={tankId} onChange={setTankId} from={day} testId="add-transfer-tank" />
+        <TankSelect label="Into" tanks={into} value={tankId === here ? null : tankId} onChange={setTankId} from={day} testId="add-transfer-tank" />
       </Box>
-      <Typography variant="body2" color={doneLater ? 'error' : 'text.secondary'} role={doneLater ? 'alert' : undefined} data-testid="add-transfer-preview">
-        {doneLater
+      <Typography variant="body2" color={outside || doneLater ? 'error' : 'text.secondary'} role={outside || doneLater ? 'alert' : undefined} data-testid="add-transfer-preview">
+        {outside
+          ? outside
+          : doneLater
           ? 'Some steps after that date are already done. Pick a later date.'
           : `${plural(moving.length, 'step')} from that day (${moving.map((s) => s.name).join(', ') || 'none'}) move to ${tankName}; ${vesselName(batch, tanks, k)} gets a CIP & Sanitize that day.`}
       </Typography>
@@ -468,8 +510,7 @@ type PartRow = { tank: number | 'stay' | null; volume: string }
  */
 export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatch; tanks: Tank[]; today: string; onClose: () => void }) {
   const flows = useFlows()
-  const brew = batch.steps.filter((s) => s.first_brew)[0]
-  const [day, setDay] = useState(brew && brew.due_on >= today ? addDaysKey(brew.due_on, 1) : today)
+  const [day, setDay] = useState(() => firstMoveDay(batch, today))
   const [method, setMethod] = useState<'transfer' | 'filter'>('transfer')
   const volume = batch.volume_bbl ?? 0
   const half = String(Math.round((volume / 2) * 100) / 100)
@@ -480,6 +521,8 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const here = day ? vesselName(batch, tanks, vesselOn(batch, day)) : '—'
+  // "(stays here)" is the only way to stay (QA M3): the tank the beer is in isn't offered again.
+  const hereId = day ? (batch.vessels.find((v) => v.vessel_index === vesselOn(batch, day))?.tank_id ?? null) : null
   const total = parts.reduce((t, p) => t + (Number(p.volume) || 0), 0)
   const adds = Math.abs(total - volume) < 0.001
   const set = (i: number, change: Partial<PartRow>) => setParts((ps) => ps.map((p, j) => (j === i ? { ...p, ...change } : p)))
@@ -543,7 +586,7 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
               Unassigned
             </MenuItem>
             {tanks
-              .filter((t) => !t.retired_at)
+              .filter((t) => !t.retired_at && t.id !== hereId)
               .map((t) => (
                 <MenuItem key={t.id} value={t.id} data-testid={`split-tank-${i}-${t.id}`}>
                   {t.name} · {t.capacity_bbl} bbl

@@ -260,6 +260,62 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
     assert call(b, :post, "/api/production/tanks/0/condition", %{state: "clean"}).status == 404
   end
 
+  test "DEV QA fix cycle 1: the messages for days outside the beer's stay, the same tank, and a split parent",
+       ctx do
+    b = ctx["brewer1"]
+    fv2 = vessels(ctx.batch)[0]
+    path = "/api/production/batches/#{ctx.batch.id}"
+
+    early = call(b, :post, "#{path}/transfers", %{due_on: "2026-10-25"})
+
+    assert body(early) == %{
+             "error" => "before_fill",
+             "message" => "The beer isn't in that tank on that day."
+           }
+
+    same = call(b, :post, "#{path}/transfers", %{due_on: "2026-11-14", tank_id: fv2})
+    assert body(same) == %{"error" => "same_tank", "message" => "The beer is already in FV2."}
+    step = call(b, :post, "#{path}/steps", %{name: "Early", due_on: "2026-11-01"})
+    assert body(step)["message"] == "A step can't come before brew day."
+
+    split =
+      call(b, :post, "#{path}/split", %{
+        due_on: "2026-11-02",
+        parts: [%{stays: true, volume_bbl: 10}, %{volume_bbl: 10}]
+      })
+
+    assert body(split)["message"] == "The split has to be after brew day."
+
+    assert call(b, :post, "#{path}/split", %{
+             due_on: "2026-11-13",
+             parts: [%{stays: true, volume_bbl: 10}, %{volume_bbl: 10}]
+           }).status == 201
+
+    assert body(call(b, :delete, path)) == %{
+             "error" => "split",
+             "message" => "Undo the split first."
+           }
+
+    assert body(call(b, :patch, path, %{volume_bbl: 30}))["error"] == "split"
+  end
+
+  test "a move of steps in two batches names both batches in its preview (QA minor 10)", ctx do
+    b = ctx["brewer1"]
+    other = plan!(brand!("Enos"), ctx.template, ~D[2026-11-02])
+    ids = [named(ctx.batch, "FDH").id, named(other, "FDH").id]
+
+    preview =
+      body(call(b, :post, "/api/production/steps/move", %{ids: ids, days: 1, preview: true}))[
+        "data"
+      ]["preview"]
+
+    assert preview["batches"] |> Enum.map(& &1["id"]) |> Enum.sort() ==
+             Enum.sort([ctx.batch.id, other.id])
+
+    assert preview["following"] |> Enum.map(& &1["batch_id"]) |> Enum.uniq() |> Enum.sort() ==
+             Enum.sort([ctx.batch.id, other.id])
+  end
+
   test "Brewery members and owners only; others get 403", ctx do
     s = named(ctx.batch, "Carb")
 

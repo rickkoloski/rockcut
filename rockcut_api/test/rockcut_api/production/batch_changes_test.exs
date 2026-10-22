@@ -378,14 +378,143 @@ defmodule RockcutApi.Production.BatchChangesTest do
     end
   end
 
+  describe "when the beer is there (DEV QA M1, M3)" do
+    test "a transfer falls after its tank's fill and before its exit, into another tank", ctx do
+      assert {:error, :before_fill} =
+               BatchChanges.add_transfer(ctx.batch, %{"due_on" => "2026-10-25"})
+
+      assert {:error, :before_fill} =
+               BatchChanges.add_transfer(ctx.batch, %{"due_on" => "2026-11-02"})
+
+      assert {:error, :after_exit} =
+               BatchChanges.add_transfer(ctx.batch, %{"due_on" => "2026-11-22"})
+
+      assert {:error, :after_exit} =
+               BatchChanges.add_transfer(ctx.batch, %{"due_on" => "2026-12-20"})
+
+      assert {:error, {:same_tank, "FV2"}} =
+               BatchChanges.add_transfer(ctx.batch, %{
+                 "due_on" => "2026-11-14",
+                 "tank_id" => vessels(ctx.batch)[0]
+               })
+
+      # Through Add step too.
+      assert {:error, :before_fill} =
+               add(ctx.batch, %{"step_type_id" => type!("Filter").id, "due_on" => "2026-10-25"})
+
+      # Into a later tank: after the transfer into it.
+      {:ok, _} =
+        BatchChanges.add_transfer(ctx.batch, %{
+          "due_on" => "2026-11-14",
+          "tank_id" => tank!("Q1C").id
+        })
+
+      assert {:error, :before_fill} =
+               BatchChanges.add_transfer(ctx.batch, %{"due_on" => "2026-11-14"})
+
+      assert {:error, {:same_tank, "Q1C"}} =
+               BatchChanges.add_transfer(ctx.batch, %{
+                 "due_on" => "2026-11-16",
+                 "tank_id" => Repo.get_by!(RockcutApi.Production.Tank, name: "Q1C").id
+               })
+
+      assert {:ok, _} = BatchChanges.add_transfer(ctx.batch, %{"due_on" => "2026-11-16"})
+      assert map_size(vessels(ctx.batch)) == 3
+    end
+
+    test "added steps and ramps start on brew day or later", ctx do
+      assert {:error, :before_brew_day} =
+               add(ctx.batch, %{"name" => "Early", "due_on" => "2026-11-01"})
+
+      assert {:ok, _} = add(ctx.batch, %{"name" => "Brew-day check", "due_on" => "2026-11-02"})
+
+      assert {:error, :before_brew_day} =
+               BatchChanges.add_ramp(ctx.batch, %{
+                 "start" => 60,
+                 "target" => 50,
+                 "change_per_day" => 10,
+                 "first_on" => "2026-10-30"
+               })
+    end
+  end
+
   describe "template and brand" do
+    test "a kept ramp and a kept step stay linked into the rebuilt chain, both ways (QA minor 7b)",
+         ctx do
+      {:ok, %{step_ids: ramp}} =
+        BatchChanges.add_ramp(ctx.batch, %{
+          "start" => 60,
+          "target" => 40,
+          "change_per_day" => 10,
+          "first_on" => "2026-11-10",
+          "comes_after_id" => named(ctx.batch, "FDH").id
+        })
+
+      {:ok, _} =
+        add(ctx.batch, %{
+          "step_type_id" => type!("Rouse").id,
+          "due_on" => "2026-11-05",
+          "comes_after_id" => named(ctx.batch, "Brew day").id
+        })
+
+      [head | _] = ramp
+
+      for t <- [lager_template!(), ctx.template] do
+        {:ok, _} = BatchChanges.change_template(reload(ctx.batch), t.id)
+        l = links(ctx.batch)
+
+        into_head =
+          Repo.all(
+            from(x in RockcutApi.Production.StepLink,
+              where: x.to_step_id == ^head,
+              select: x.from_step_id
+            )
+          )
+
+        assert [from] = into_head
+        refute from in ramp
+        assert {"Set temp - 60°", "Set temp - 50°", "move_all"} in l
+        assert {"Set temp - 50°", "Set temp - 40°", "move_all"} in l
+        assert Enum.any?(l, &match?({_, "Rouse", "move_all"}, &1))
+      end
+    end
+
+    test "a kept step dated before brew day (checked off early) is still linked in (QA minor 7b)",
+         ctx do
+      {:ok, %{step_ids: [early | _]}} =
+        BatchChanges.add_ramp(ctx.batch, %{
+          "start" => 60,
+          "target" => 50,
+          "change_per_day" => 10,
+          "first_on" => "2026-11-10"
+        })
+
+      Repo.get!(Step, early)
+      |> Ecto.Changeset.change(due_on: ~D[2026-10-21], done_on: ~D[2026-10-21])
+      |> Repo.update!()
+
+      {:ok, _} = BatchChanges.change_template(reload(ctx.batch), lager_template!().id)
+      assert {"Brew day", "Set temp - 60°", "move_all"} in links(ctx.batch)
+    end
+
     test "Standard ale → Lager with transfer keeps the added step (P83)", ctx do
       {:ok, _} = add(ctx.batch, %{"step_type_id" => type!("Rouse").id, "due_on" => "2026-11-05"})
-      {:ok, _} = BatchChanges.add_transfer(ctx.batch, %{"due_on" => "2026-11-18"})
+
+      {:ok, _} =
+        BatchChanges.add_transfer(ctx.batch, %{
+          "due_on" => "2026-11-18",
+          "tank_id" => tank!("Q1D").id
+        })
+
       lager = lager_template!()
       fv2 = vessels(ctx.batch)[0]
 
-      assert {:ok, %{message: "Standard ale → Lager with transfer. Kept 1 added step."}} =
+      # QA minor 7a: the dropped transfer is named.
+      assert {:ok,
+              %{
+                message:
+                  "Standard ale → Lager with transfer. Kept 1 added step; dropped the added transfer into Q1D."
+              }} =
                BatchChanges.change_template(reload(ctx.batch), lager.id)
 
       assert reload(ctx.batch).template_id == lager.id

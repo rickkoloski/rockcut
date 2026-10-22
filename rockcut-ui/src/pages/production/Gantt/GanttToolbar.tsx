@@ -28,18 +28,21 @@ function ZoomMenu({ zoom, onZoom }: { zoom: Zoom; onZoom: (z: Zoom) => void }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   return (
     <>
-      <Button
-        size="small"
-        variant="outlined"
-        endIcon={<ArrowDropDown />}
-        onClick={(e) => setAnchor(e.currentTarget)}
-        aria-haspopup="menu"
-        aria-expanded={!!anchor}
-        aria-label={`Zoom: ${zoom} weeks`}
-        data-testid="gantt-zoom"
-      >
-        {zoom} weeks
-      </Button>
+      {/* The zoom is how many weeks fit across the screen, whatever From and To say (QA minor 9). */}
+      <Tooltip title="Weeks on screen">
+        <Button
+          size="small"
+          variant="outlined"
+          endIcon={<ArrowDropDown />}
+          onClick={(e) => setAnchor(e.currentTarget)}
+          aria-haspopup="menu"
+          aria-expanded={!!anchor}
+          aria-label={`Zoom: ${zoom} weeks on screen`}
+          data-testid="gantt-zoom"
+        >
+          {zoom} weeks
+        </Button>
+      </Tooltip>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)}>
         {ZOOMS.map((z) => (
           <MenuItem

@@ -111,10 +111,15 @@ defmodule RockcutApi.Production.SplitsMarksTest do
       assert {:error, :same_tank} = split(ctx.batch, [into(ctx.fv6, "12"), into(ctx.fv6, "8")])
       assert {:error, :one_stays} = split(ctx.batch, [stays("12"), stays("8")])
       # Going into the tank the beer is in is staying.
-      assert {:error, :one_stays} = split(ctx.batch, [stays("12"), into(ctx.fv2, "8")])
+      # "(stays here)" is the only way to stay (DEV QA M3).
+      assert {:error, {:same_tank, "FV2"}} = split(ctx.batch, [stays("12"), into(ctx.fv2, "8")])
+
+      assert {:error, {:same_tank, "FV2"}} =
+               split(ctx.batch, [into(ctx.fv2, "12"), into(ctx.fv6, "8")])
+
       assert {:error, :parts_required} = split(ctx.batch, [stays("20")])
 
-      assert {:error, :due_on_invalid} =
+      assert {:error, :split_before_brew} =
                split(ctx.batch, [stays("12"), into(ctx.fv6, "8")], %{"due_on" => "2026-11-02"})
 
       assert {:error, :split_method_invalid} =
@@ -292,10 +297,39 @@ defmodule RockcutApi.Production.SplitsMarksTest do
       assert named(ctx.batch, "Split - Transfer")
     end
 
-    test "deleting a planned parent takes its parts", ctx do
+    test "a split parent can't be deleted, or its volume changed, until Undo split (DEV QA M2, minor 6)",
+         ctx do
       {:ok, %{part_ids: [p1, _]}} = split(ctx.batch, [stays("12"), into(ctx.fv6, "8")])
-      {:ok, _} = Batches.delete_planned(reload(ctx.batch))
-      refute Repo.get(Batch, p1)
+      assert {:error, :split} = Batches.delete_planned(reload(ctx.batch))
+      assert {:error, :split} = Batches.update(reload(ctx.batch), %{"volume_bbl" => "30"})
+      assert Repo.get(Batch, p1)
+      # After the package day the beer is gone: no split then.
+      {:ok, _} = Splits.undo_split(reload(ctx.batch))
+
+      assert {:error, :after_exit} =
+               split(ctx.batch, [stays("12"), into(ctx.fv6, "8")], %{"due_on" => "2026-11-22"})
+    end
+
+    test "Undo of a delete puts back the batch with its vessels, steps, links and ramp (DEV QA M2)",
+         ctx do
+      {:ok, _} =
+        RockcutApi.Production.BatchChanges.add_ramp(reload(ctx.batch), %{
+          "start" => 60,
+          "target" => 40,
+          "change_per_day" => 10,
+          "first_on" => "2026-11-13"
+        })
+
+      before = {layout(ctx.batch), links(ctx.batch), vessels(ctx.batch)}
+
+      {:ok, {_, token}} =
+        Undo.track(ctx.brewer, %{batches: [ctx.batch.id]}, fn ->
+          Batches.delete_planned(reload(ctx.batch))
+        end)
+
+      refute Repo.get(Batch, ctx.batch.id)
+      assert {:ok, %{batch_ids: [_]}} = Undo.undo(ctx.brewer, token)
+      assert {layout(ctx.batch), links(ctx.batch), vessels(ctx.batch)} == before
     end
   end
 

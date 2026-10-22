@@ -65,9 +65,11 @@ defmodule RockcutApi.Production.Splits do
       steps = steps!(batch)
       day = date!(attrs["due_on"])
       brew = Parts.first_brew(steps)
-      if brew && Date.compare(day, brew.due_on) != :gt, do: Repo.rollback(:due_on_invalid)
+      # D48 DEV QA M1, minor 12: after brew day, and while the beer is in the tank.
+      if brew && Date.compare(day, brew.due_on) != :gt, do: Repo.rollback(:split_before_brew)
 
       k = BatchChanges.vessel_on(steps, day)
+      BatchChanges.in_tank!(batch, steps, k, day)
       vessels = Repo.all(from(v in BatchVessel, where: v.batch_id == ^batch.id))
       here = Enum.find_value(vessels, &(&1.vessel_index == k && &1.tank_id))
       parts = parts!(attrs["parts"], here)
@@ -292,8 +294,8 @@ defmodule RockcutApi.Production.Splits do
     )
   end
 
-  # The parts asked for: at least two, at most one staying (a part going
-  # into the tank the beer is in stays), no two in one tank.
+  # The parts asked for: at least two, at most one staying ("(stays here)";
+  # picking the tank the beer is in is refused), no two in one tank.
   defp parts!(raw, here) do
     list =
       cond do
@@ -314,6 +316,10 @@ defmodule RockcutApi.Production.Splits do
         p = stringify(p)
         tank = if truthy?(p["stays"]), do: here, else: Batches.active_tank_id!(p["tank_id"])
 
+        # "(stays here)" is the only way to stay (D48 DEV QA M3).
+        if here && tank == here && not truthy?(p["stays"]),
+          do: Repo.rollback({:same_tank, Repo.get!(RockcutApi.Production.Tank, here).name})
+
         volume =
           case Decimal.cast(p["volume_bbl"]) do
             {:ok, v} -> if Decimal.gt?(v, 0), do: v, else: Repo.rollback(:volume_invalid)
@@ -322,7 +328,7 @@ defmodule RockcutApi.Production.Splits do
 
         %{
           tank_id: tank,
-          stays: truthy?(p["stays"]) or (here != nil and tank == here),
+          stays: truthy?(p["stays"]),
           volume: volume
         }
       end)
