@@ -443,6 +443,32 @@ Sometimes a tank is CIP'd but not sanitized, and there's no shelf life on "Sani"
     - **planned:** it doesn't count as a planned CIP for the dirty flags. A planned CIP - no sani followed by a planned Sanitize before the fill raises no flag.
   - The variant choice and the switch in the step dialog cover all three.
 
+### 3.12b Pencilled batches (D49; Matt, 2026-10-22)
+
+**Why:** to see where a batch fits the tanks without giving staff tasks yet, and to track batches we know we'll make, so ordering can use them later. A pencilled batch is a planned batch that isn't committed.
+- **States:** **Pencilled** → **Scheduled** (today's planned) → brewed.
+  - A pencilled batch has a brew day and may have tanks or be Unassigned, like any planned batch.
+  - There's no dateless "idea" state: a rough date serves that purpose (Matt, 2026-10-22).
+- **Numbers:** **X1, X2…** by brew date, a separate sequence from P-numbers and renumbered the same way. Scheduling gives it the next P-number in date order, and pencilling it in again gives it an X-number back. The batch dialog title shows "Oktoberfest X1".
+- **Plan batch:** gets a choice, **Pencil in** or **Schedule** (default Schedule).
+- **The batch dialog:**
+  - **Schedule this batch** on a pencilled batch;
+  - **Pencil in** on a scheduled planned batch, while none of its steps is done;
+  - both can be undone.
+- **On the Gantt:** drawn faded or hatched, with a "Pencilled" label, in any row. Drag, move, split, add steps and every other D48 change work as for a planned batch.
+- **The board (§3.12):**
+  - a pencilled batch's steps never become tasks;
+  - Schedule creates its task-list tasks in the same transaction, and Pencil in removes its unfinished ones;
+  - "Show planned batches" doesn't show them.
+  - The Task list panel leaves them out too.
+- **Flags:**
+  - they show **muted**, aren't in the flag chip's count, and can't be signed off;
+  - they unmute when the batch is scheduled;
+  - "No tank assigned within 3 days" doesn't apply.
+  - A scheduled batch that overlaps a pencilled one still gets its own (unmuted) overlap flag.
+- **Brewing:** checking off brew day on a pencilled batch asks "Schedule this batch first." with a Schedule button.
+- **Not in D49:** linking a batch to a recipe, and materials ordering (Matt, 2026-10-22: "We need to flesh out that whole system later"). Ordering will count pencilled batches when it comes.
+
 ### 3.13 Who can do what (`Authz`) and the brewhouse tablet
 
 | Action | Who |
@@ -636,6 +662,12 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P127 | `brewer1` | Serving 1 "Clean no sani 2 days" → Add process ▾ → CIP… → **Sanitize**, today, Already done | P125 | "Sani 0 days"; a fill planned after it has no flags. |
 | P128 | `brewer1` | plan CIP - no sani on Mon and Sanitize on Tue into a dirty tank, then a batch on Wed | | No flags on the fill. Remove the Sanitize → "Filling a tank that isn't sanitized". |
 | P129 | `brewer1` | Sanitize, Already done, on a dirty tank | | Still "Empty · dirty"; the step shows "The tank was dirty: run a CIP first." |
+| P130 | `brewer1` | Plan batch → **Pencil in**: Oktoberfest, Lager with transfer, Mar 9, Unassigned | | "Oktoberfest X1" faded in the Unassigned row, labeled Pencilled; no board tasks; no "no tank within 3 days" flag. |
+| P131 | `brewer1` | drag X1 into FV6, overlapping a scheduled batch | P130 | It moves; a muted "Tank overlap" flag; the flag chip's count doesn't include it. |
+| P132 | `brewer1` | X1 → batch dialog → **Schedule this batch** | P131 | Becomes the next P-number by date (others renumber); drawn normally; its task-list steps appear on the Brewery board; the flags are no longer muted. Undo reverses it. |
+| P133 | `brewer1` | a scheduled planned batch → **Pencil in** | nothing done | Back to an X-number; its board tasks are removed; drawn faded. Refused once a step is done. |
+| P134 | `brewer1` | check off brew day on a pencilled batch | | "Schedule this batch first." with a Schedule button; nothing is checked off until it is. |
+| P135 | `brewer1` | Brewery board → "Show planned batches" on | P130 | Pencilled batches never show on the board, whatever the toggle. |
 
 ## 5. Out of Scope
 
