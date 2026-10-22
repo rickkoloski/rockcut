@@ -25,6 +25,8 @@ export interface SStep {
   temperature: number | null
   detail: string | null
   package_partial: boolean
+  added: boolean
+  ramp_group: string | null
 }
 
 export interface SBatch {

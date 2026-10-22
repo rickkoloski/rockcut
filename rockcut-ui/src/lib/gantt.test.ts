@@ -56,6 +56,7 @@ const step = (s: Partial<SchedStep>): SchedStep => ({
   assignee_id: null,
   assignee: null,
   added: false,
+  ramp_group: null,
   ...s,
 })
 
@@ -71,6 +72,9 @@ const batch = (b: Partial<SchedBatch>): SchedBatch => ({
   template_id: 1,
   template_name: 'Lager',
   brew_two_days: false,
+  split_parent_id: null,
+  part_number: null,
+  split_step_id: null,
   vessels: [{ vessel_index: 0, tank_id: 7 }],
   steps: [],
   links: [],

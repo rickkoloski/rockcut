@@ -346,6 +346,9 @@ function GanttScreen() {
           tanks={data.tanks}
           flags={data.flags}
           today={data.today}
+          types={data.step_types}
+          phases={data.phases}
+          brewers={data.brewers}
           focusFlags={batchOpen.flags}
           onOpenStep={(s) => setStepOpen(s.id)}
           onClose={() => setBatchOpen(null)}

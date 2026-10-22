@@ -598,3 +598,12 @@ Not automated (LIMITATIONS, lead decisions 3): touch long-press drag (450 ms) �
 | P119 | Collapse all \| ● \| Expand all follows the carets; the middle restores the mix; remembered | Playwright `production/d48-toolbar`; Vitest `gantt` (`expandMode`, the `mix` pref) |
 | P120 | "6 weeks ▾" zoom menu and Add process ▾ (Plan batch…, CIP & Sanitize…), mouse and keyboard; old buttons gone | Playwright `production/d48-toolbar` (the other production specs open the dialogs through the menu) |
 | P121 | 20 px step rows with a mouse, 28 px on touch and at phone width; phases at 16 px, steps at 28 px; diamonds and links on their rows | Playwright `production/d48-toolbar` (desktop, phone width, `hasTouch`); Vitest `gantt` (`layoutRows` with 20 px) |
+| P65–P66 | Add step: an addition after FDH, slotted before Set temp 58°; Added; the template unchanged; Undo | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
+| P67 | Something else with no name: "Give the step a name." | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
+| P68 | Add a ramp 60° → 40° at 10°/day: three chained Set temp steps | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
+| P69 | Change ramp…: only unfinished steps rebuilt | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
+| P70–P71 | Remove a step: links pass through; Brew day has no Remove | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
+| P72, P74 | Add a Filter into a tank (CIP for the first tank, arrow); remove it from the step dialog | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
+| P73 | A transfer before a done step: refused with the spec's message | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
+| P83–P84 | Change a planned batch's template (added step kept, message) and brand | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, controller test (Undo) |
+| P75–P82, P89, P110, P114–P117 | Splits, Undo split, part numbers, clean / dirty marks (API) | ExUnit `splits_marks_test`, `production_batch_changes_controller_test`, `seeds/synthetic_test`; Playwright with task 4 |
