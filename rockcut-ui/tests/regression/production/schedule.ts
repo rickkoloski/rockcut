@@ -1,6 +1,6 @@
 import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import { addDays, apiAs, denverToday, tempTag } from '../scheduler/helpers'
-import { createTank, retireTanks, shortTag, templates } from './helpers'
+import { createTank, retireTanks, shortTag, succeeds, templates } from './helpers'
 
 // D47 helpers: the schedule through the API, and the Gantt in the page.
 // Every spec makes its own [TEST-TEMP] brand, tanks and batches and removes
@@ -135,22 +135,40 @@ export class Made {
     return ok(await (await apiAs('brewer1')).post(`${P}/steps/${step.id}/complete`, { data: { done_on: step.due_on, batch_number: number, answer: 'move_only' } }))
   }
 
+  /**
+   * Split parents are un-split first (a part's finished steps and the Split
+   * are un-checked; D48 M2 refuses to delete a split parent), and every
+   * request has to succeed, so a leak fails the spec instead of the next one.
+   */
   async cleanup() {
     const api = await apiAs('brewer1')
     const sched = await schedule()
-    for (const id of this.batches.splice(0)) {
+    // Batches the spec planned, and any it planned through the page under its brands (parts go with their parent).
+    const ids = new Set(this.batches.splice(0))
+    for (const b of sched.batches) if (this.brands.includes(b.brand_id) && !b.split_parent_id) ids.add(b.id)
+    for (const id of ids) {
       const b = sched.batches.find((x) => x.id === id)
-      if (b && b.status !== 'planned') {
-        const brew = b.steps.find((s) => s.first_brew && s.done_on)
-        if (brew) await api.post(`${P}/steps/${brew.id}/uncomplete`)
+      if (!b) continue
+      const parts = sched.batches.filter((x) => x.split_parent_id === id)
+      if (parts.length) {
+        const done = parts.flatMap((p) => p.steps).filter((s) => s.done_on)
+        done.sort((x, y) => y.done_on!.localeCompare(x.done_on!))
+        for (const s of done) await succeeds(api.post(`${P}/steps/${s.id}/uncomplete`), `un-check step ${s.id} of a part of batch ${id}`)
+        const split = b.steps.find((s) => s.behavior === 'split' && s.done_on)
+        if (split) await succeeds(api.post(`${P}/steps/${split.id}/uncomplete`), `un-check the Split of batch ${id}`)
+        await succeeds(api.delete(`${P}/batches/${id}/split`), `undo the split of batch ${id}`)
       }
-      await api.delete(`${P}/batches/${id}`)
+      if (b.status !== 'planned') {
+        const brew = b.steps.find((s) => s.first_brew && s.done_on)
+        if (brew) await succeeds(api.post(`${P}/steps/${brew.id}/uncomplete`), `un-check brew day of batch ${id}`)
+      }
+      await succeeds(api.delete(`${P}/batches/${id}`), `delete batch ${id}`)
     }
-    for (const id of this.cips.splice(0)) await api.delete(`${P}/cips/${id}`)
-    // Standalone CIPs a spec added through the page, on its tanks.
-    for (const c of sched.cips.filter((c) => c.tank_id && this.tanks.includes(c.tank_id))) await api.delete(`${P}/cips/${c.id}`)
+    // Standalone CIPs: the spec's own, and any it added through the page on its tanks. A 404 is one the spec already deleted.
+    const cips = new Set([...this.cips.splice(0), ...sched.cips.filter((c) => c.tank_id && this.tanks.includes(c.tank_id)).map((c) => c.id)])
+    for (const id of cips) await succeeds(api.delete(`${P}/cips/${id}`), `delete CIP ${id}`, [404])
     await retireTanks(this.tanks.splice(0))
-    for (const id of this.brands.splice(0)) await api.delete(`/api/brands/${id}`)
+    for (const id of this.brands.splice(0)) await succeeds(api.delete(`/api/brands/${id}`), `delete brand ${id}`)
   }
 }
 

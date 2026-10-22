@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs } from './helpers'
+import { apiAs, succeeds } from './helpers'
 import { addDays, addProcess, batchOf, dragBy, Made, openGantt, schedule, snack, stepOf, today, undo } from './schedule'
 
 // D47 §3.9 flags and sign-off, §3.10 standalone CIPs, and two people at
@@ -12,7 +12,7 @@ const made = new Made()
 const seedCips: number[] = []
 test.afterAll(async () => {
   const api = await apiAs('brewer1')
-  for (const id of seedCips) await api.delete(`/api/production/cips/${id}`)
+  for (const id of seedCips) await succeeds(api.delete(`/api/production/cips/${id}`), `delete seed CIP ${id}`, [404])
   await made.cleanup()
 })
 
