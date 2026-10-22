@@ -201,7 +201,7 @@ export interface TankStatusLine {
 
 export interface Flag {
   key: string
-  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer'
+  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'transfer_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer'
   message: string
   signature: string
   batch_ids: number[]

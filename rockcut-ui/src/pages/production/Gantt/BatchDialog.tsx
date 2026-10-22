@@ -244,11 +244,18 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
   const myFlags = flags.filter((f) => f.batch_ids.includes(batch.id))
   const steps = [...batch.steps].sort((a, b) => a.due_on.localeCompare(b.due_on) || a.position - b.position || a.id - b.id)
 
+  const openAdd = (what: typeof adding) => {
+    setError(null)
+    setAdding(what)
+  }
+
   useEffect(() => {
     if (focusFlags) flagsRef.current?.scrollIntoView({ block: 'start' })
   }, [focusFlags])
 
+  // The banner is about the last change: a new one, or another dialog opened from here, clears it (DEV QA R2).
   const run = async (call: () => Promise<{ ok: boolean; error?: string }>) => {
+    setError(null)
     const r = await call()
     setError(r.ok ? null : (r.error ?? null))
     return r.ok
@@ -358,21 +365,24 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
           <Typography variant="subtitle2" sx={{ mr: 'auto' }}>
             Steps
           </Typography>
-          <Button size="small" startIcon={<Add />} onClick={() => setAdding('step')} data-testid="batch-add-step">
+          <Button size="small" startIcon={<Add />} onClick={() => openAdd('step')} data-testid="batch-add-step">
             Add step…
           </Button>
-          <Button size="small" startIcon={<Add />} onClick={() => setAdding('ramp')} data-testid="batch-add-ramp">
+          <Button size="small" startIcon={<Add />} onClick={() => openAdd('ramp')} data-testid="batch-add-ramp">
             Add a ramp…
           </Button>
-          <Button size="small" startIcon={<Add />} onClick={() => setAdding('transfer')} data-testid="batch-add-transfer">
+          <Button size="small" startIcon={<Add />} onClick={() => openAdd('transfer')} data-testid="batch-add-transfer">
             Add transfer / filter…
           </Button>
           {split ? (
-            <Button size="small" onClick={() => setUnsplitting(true)} data-testid="batch-undo-split">
+            <Button size="small" onClick={() => {
+              setError(null)
+              setUnsplitting(true)
+            }} data-testid="batch-undo-split">
               Undo split
             </Button>
           ) : (
-            <Button size="small" startIcon={<CallSplit />} onClick={() => setAdding('split')} data-testid="batch-split">
+            <Button size="small" startIcon={<CallSplit />} onClick={() => openAdd('split')} data-testid="batch-split">
               Split…
             </Button>
           )}
@@ -380,7 +390,17 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
         <Box data-testid="batch-steps">
           {steps.map((s) => (
             // Keyed on the saved values too: a change from the server starts the line afresh.
-            <StepLine key={`${s.id}-${s.detail}-${s.temperature}`} step={s} batch={batch} tanks={tanks} today={today} onOpenStep={onOpenStep} />
+            <StepLine
+              key={`${s.id}-${s.detail}-${s.temperature}`}
+              step={s}
+              batch={batch}
+              tanks={tanks}
+              today={today}
+              onOpenStep={(step) => {
+                setError(null)
+                onOpenStep(step)
+              }}
+            />
           ))}
         </Box>
       </DialogContent>
@@ -392,7 +412,10 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
           </Typography>
         )}
         {planned && !part && !splitParts.length && (
-          <Button color="error" sx={{ mr: 'auto' }} onClick={() => setDeleting(true)} data-testid="batch-delete">
+          <Button color="error" sx={{ mr: 'auto' }} onClick={() => {
+            setError(null)
+            setDeleting(true)
+          }} data-testid="batch-delete">
             Delete planned batch
           </Button>
         )}

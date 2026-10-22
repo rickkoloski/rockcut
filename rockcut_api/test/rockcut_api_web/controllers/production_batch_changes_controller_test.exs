@@ -397,4 +397,42 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
              due_on: "2026-11-10"
            }).status == 201
   end
+
+  test "DEV QA fix cycle 3: a stale tank-change Undo is a 409; a split names the part", ctx do
+    [owner, other] = [ctx["brewer1"], ctx["brewer2"]]
+    [fv1, bbt, fv9] = Enum.map(~w(FV1 BBT1 FV9), &tank!/1)
+
+    lager =
+      plan!(brand!("Enos"), lager_template!(), ~D[2026-11-02], %{"tank_ids" => [fv1.id, bbt.id]})
+
+    path = "/api/production/batches/#{lager.id}/vessels"
+
+    changed = call(owner, :patch, "#{path}/1", %{tank_id: fv9.id})
+    assert changed.status == 200
+    assert call(other, :patch, "#{path}/0", %{tank_id: bbt.id}).status == 200
+
+    stale = undo(owner, changed)
+    assert stale.status == 409
+
+    assert body(stale) == %{
+             "error" => "undo_stale",
+             "message" => "Something changed since. Nothing was undone."
+           }
+
+    assert vessels(lager) == %{0 => bbt.id, 1 => fv9.id}
+
+    # R3: nothing stays, and part 1 keeps the later tank (FV9).
+    {:ok, _} = RockcutApi.Production.Batches.set_vessel_tank(lager, 0, fv1.id)
+
+    split =
+      call(owner, :post, "/api/production/batches/#{lager.id}/split", %{
+        due_on: "2026-11-05",
+        parts: [%{tank_id: fv9.id, volume_bbl: 8}, %{tank_id: bbt.id, volume_bbl: 12}]
+      })
+
+    assert body(split) == %{
+             "error" => "same_tank",
+             "message" => "Part 1: The beer goes into FV9 next, on Thu Nov 12."
+           }
+  end
 end

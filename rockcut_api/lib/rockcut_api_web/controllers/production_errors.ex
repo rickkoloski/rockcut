@@ -146,22 +146,18 @@ defmodule RockcutApiWeb.ProductionErrors do
     })
   end
 
-  # D48 DEV QA M3: a transfer or a part into the tank the beer is already in.
-  def handle({:error, {:same_tank, name}}, conn) do
-    conn
-    |> put_status(:unprocessable_entity)
-    |> json(%{error: "same_tank", message: "The beer is already in #{name}."})
-  end
+  # D48 DEV QA M3, N1: a transfer or a part into the tank the beer is
+  # already in, or goes into next ("…next, on Fri Dec 18."). R3: a split
+  # names the part ("Part 1: …").
+  def handle({:error, {:part, n, reason}}, conn)
+      when is_tuple(reason) and elem(reason, 0) == :same_tank,
+      do: same_tank(conn, "Part #{n}: " <> same_tank_message(reason))
 
-  # D48 DEV QA N1: "The beer goes into Q1RC next, on Fri Dec 18."
-  def handle({:error, {:same_tank, name, day}}, conn) do
-    conn
-    |> put_status(:unprocessable_entity)
-    |> json(%{
-      error: "same_tank",
-      message: "The beer goes into #{name} next, on #{Calendar.strftime(day, "%a %b %-d")}."
-    })
-  end
+  def handle({:error, {:same_tank, name}}, conn),
+    do: same_tank(conn, same_tank_message({:same_tank, name}))
+
+  def handle({:error, {:same_tank, _, _} = reason}, conn),
+    do: same_tank(conn, same_tank_message(reason))
 
   # D48 (P76): "The parts add up to 18 bbl, but Galactic #40 is 20 bbl."
   def handle({:error, {:volumes_must_add_up, total, volume, label}}, conn) do
@@ -185,6 +181,18 @@ defmodule RockcutApiWeb.ProductionErrors do
     |> put_status(:unprocessable_entity)
     |> json(%{error: Atom.to_string(code), message: Map.fetch!(@messages, code)})
   end
+
+  defp same_tank(conn, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "same_tank", message: message})
+  end
+
+  defp same_tank_message({:same_tank, name}), do: "The beer is already in #{name}."
+  defp same_tank_message({:same_tank, name, nil}), do: "The beer goes into #{name} next."
+
+  defp same_tank_message({:same_tank, name, day}),
+    do: "The beer goes into #{name} next, on #{Calendar.strftime(day, "%a %b %-d")}."
 
   defp bbl(nil), do: "0"
   defp bbl(%Decimal{} = d), do: d |> Decimal.normalize() |> Decimal.to_string(:normal)

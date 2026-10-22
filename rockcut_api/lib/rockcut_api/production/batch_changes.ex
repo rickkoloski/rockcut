@@ -738,7 +738,15 @@ defmodule RockcutApi.Production.BatchChanges do
   a tank in (`new`), else `{:same_tank, name, day}`, the day the beer goes
   into `j`.
   """
-  def no_tank_twice!(%Batch{id: id} = batch, indexes, new \\ nil) do
+  def no_tank_twice!(%Batch{} = batch, indexes, new \\ nil) do
+    case tank_twice(batch, indexes, new) do
+      :ok -> :ok
+      reason -> Repo.rollback(reason)
+    end
+  end
+
+  @doc "`no_tank_twice!/3`'s check: `:ok` or the reason, without rolling back."
+  def tank_twice(%Batch{id: id} = batch, indexes, new \\ nil) do
     tanks =
       Repo.all(
         from(v in BatchVessel, where: v.batch_id == ^id, select: {v.vessel_index, v.tank_id})
@@ -752,11 +760,11 @@ defmodule RockcutApi.Production.BatchChanges do
         :ok
 
       ^new ->
-        Repo.rollback({:same_tank, Repo.get!(Tank, tanks[new]).name})
+        {:same_tank, Repo.get!(Tank, tanks[new]).name}
 
       j ->
         fill = fill_of(steps!(batch), j)
-        Repo.rollback({:same_tank, Repo.get!(Tank, tanks[j]).name, fill && fill.due_on})
+        {:same_tank, Repo.get!(Tank, tanks[j]).name, fill && fill.due_on}
     end
   end
 

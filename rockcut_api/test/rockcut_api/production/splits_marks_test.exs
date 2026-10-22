@@ -192,8 +192,9 @@ defmodule RockcutApi.Production.SplitsMarksTest do
           "volume_bbl" => "20"
         })
 
-      # No part stays, so part 1 keeps the later tank (BBT1).
-      assert {:error, {:same_tank, "BBT1", ~D[2026-11-12]}} =
+      # No part stays, so part 1 keeps the later tank (BBT1); the refusal
+      # names it (DEV QA R3).
+      assert {:error, {:part, 1, {:same_tank, "BBT1", ~D[2026-11-12]}}} =
                split(batch, [into(bbt, "8"), into(fv7, "12")], %{"due_on" => "2026-11-05"})
 
       assert parts(batch) == []

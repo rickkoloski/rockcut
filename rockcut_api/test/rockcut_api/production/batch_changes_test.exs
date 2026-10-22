@@ -591,6 +591,81 @@ defmodule RockcutApi.Production.BatchChangesTest do
     end
   end
 
+  describe "transfers out of order are flagged, not refused (DEV QA R4)" do
+    setup do
+      fv1 = tank!("FV1")
+      bbt = tank!("BBT1")
+      batch = plan!(brand!("Enos"), lager_template!(), @brew, %{"tank_ids" => [fv1.id, bbt.id]})
+      %{lager: batch, fv1: fv1, bbt: bbt}
+    end
+
+    defp flags_of(batch) do
+      {:ok, s} = Schedule.load(~D[2026-10-20], ~D[2026-12-31], ~D[2026-10-21])
+      Enum.filter(s.flags, &(batch.id in &1.batch_ids))
+    end
+
+    defp kinds_of(batch), do: batch |> flags_of() |> Enum.map(& &1.kind) |> Enum.sort()
+
+    defp transfer_on(batch, day),
+      do: Enum.find(steps_of(batch), &(Steps.name(&1) == "Transfer" and &1.due_on == day))
+
+    test "A → B → A with the way back moved first: the flag names it, no dirty fill; it clears",
+         ctx do
+      {:ok, _} =
+        BatchChanges.add_transfer(ctx.lager, %{"due_on" => "2026-11-15", "tank_id" => ctx.fv1.id})
+
+      assert vessels(ctx.lager) == %{0 => ctx.fv1.id, 1 => ctx.bbt.id, 2 => ctx.fv1.id}
+      assert kinds_of(ctx.lager) == []
+      back = transfer_on(ctx.lager, ~D[2026-11-15])
+
+      # Move only: allowed, as D47's move-only rule is.
+      # The link it follows runs backwards too (D47's flag); FV1 isn't a
+      # dirty fill: the beer never left it.
+      assert {:ok, _} = Steps.move([back.id], -4, answer: "move_only")
+      assert kinds_of(ctx.lager) == ["out_of_order", "transfer_order"]
+      flag = Enum.find(flags_of(ctx.lager), &(&1.kind == "transfer_order"))
+
+      assert flag.message =~
+               ~r/^Enos P\d+'s transfers are out of order: on Wed Nov 11 the beer goes into FV1, which it's already in\.$/
+
+      assert flag.tank_id == ctx.fv1.id
+
+      # A move back clears it.
+      {:ok, _} = Steps.move([back.id], 4, answer: "move_only")
+      assert kinds_of(ctx.lager) == []
+    end
+
+    test "into a new tank before the transfer it should follow; Undo and Move all clear it",
+         ctx do
+      fv9 = tank!("FV9")
+
+      {:ok, _} =
+        BatchChanges.add_transfer(ctx.lager, %{"due_on" => "2026-11-15", "tank_id" => fv9.id})
+
+      second = transfer_on(ctx.lager, ~D[2026-11-15])
+      user = RockcutApi.AccountsFixtures.user_with_role("employee", "brewery")
+
+      {:ok, {_, token}} =
+        RockcutApi.Production.Undo.track(user, %{batches: [ctx.lager.id]}, fn ->
+          Steps.move([second.id], -3, answer: "move_only")
+        end)
+
+      [flag] = flags_of(ctx.lager)
+      assert flag.kind == "transfer_order"
+
+      assert flag.message =~
+               ~r/out of order: on Thu Nov 12 the beer goes into FV9, before BBT1 that day\.$/
+
+      assert {:ok, _} = RockcutApi.Production.Undo.undo(user, token)
+      assert kinds_of(ctx.lager) == []
+
+      # Move all keeps the order: the first transfer takes the second with it.
+      first = transfer_on(ctx.lager, ~D[2026-11-12])
+      {:ok, _} = Steps.move([first.id], 5, answer: "move_all")
+      assert kinds_of(ctx.lager) == []
+    end
+  end
+
   describe "template and brand" do
     test "a kept ramp and a kept step stay linked into the rebuilt chain, both ways (QA minor 7b)",
          ctx do

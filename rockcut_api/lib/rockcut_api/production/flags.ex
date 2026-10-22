@@ -58,6 +58,7 @@ defmodule RockcutApi.Production.Flags do
        dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) ++
        marked_dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) ++
        out_of_order(world.parts) ++
+       transfer_order(world.parts, tanks) ++
        no_tank(live, world.today) ++
        out_of_service(live, loose_cips, tanks) ++
        cip_with_beer(live, loose_cips, tanks))
@@ -115,6 +116,10 @@ defmodule RockcutApi.Production.Flags do
         # D48: a split part that stays is the same beer: the Split that ends
         # the parent's stay is what fills it.
         not (prev.exit != nil and prev.exit.id == p.fill.id),
+        # D48 DEV QA R4: the same batch coming back before it left is about
+        # its transfers' order (`transfer_order`), not cleaning.
+        not (prev.batch_id == p.batch_id and prev.exit != nil and
+               Date.compare(p.fill.due_on, prev.exit.due_on) != :gt),
         # A generator, not `prev_cip = …`: in `for` a binding is also a
         # filter, and a missing CIP (nil) would drop the flag.
         prev_cip <- [prev.cip],
@@ -261,6 +266,47 @@ defmodule RockcutApi.Production.Flags do
       )
     end
   end
+
+  # D48 DEV QA R4: a batch's transfers out of date order (a Move only can
+  # do it): the Transfer/Filter into vessel k + 1 dated on or before the one
+  # into k, unless both are done. Named by the earlier-dated one, with the
+  # tank the beer is in by then when it's the same.
+  defp transfer_order(parts, tanks) do
+    for {_batch_id, [p | _] = mine} <- Enum.group_by(parts, & &1.batch_id),
+        tank_of = Map.new(mine, &{&1.vessel_index, &1.tank_id}),
+        transfers = Enum.filter(p.batch_steps, &(Parts.behavior(&1) == "transfer")),
+        fills =
+          transfers
+          |> Enum.group_by(& &1.vessel_index)
+          |> Map.new(fn {k, ts} -> {k, Enum.min_by(ts, &Parts.order/1)} end),
+        {k, a} <- Enum.sort(fills),
+        b = fills[k + 1],
+        b,
+        not (Parts.done?(a) and Parts.done?(b)),
+        Date.compare(b.due_on, a.due_on) != :gt do
+      before = Enum.filter(transfers, &(&1.id != b.id and Parts.order(&1) < Parts.order(b)))
+      here = before |> Enum.max_by(&Parts.order/1, fn -> %{vessel_index: 0} end)
+      into = tank_of[k + 1]
+      day = &Calendar.strftime(&1, "%a %b %-d")
+
+      detail =
+        if into != nil and tank_of[here.vessel_index] == into,
+          do: "which it's already in",
+          else:
+            "before #{tank_name(tanks, tank_of[k])}" <>
+              if(a.due_on == b.due_on, do: " that day", else: " on #{day.(a.due_on)}")
+
+      flag(:transfer_order, [a.id, b.id], [a.due_on, b.due_on, tank_of[k], into],
+        message:
+          "#{p.label}'s transfers are out of order: on #{day.(b.due_on)} the beer goes into #{tank_name(tanks, into)}, #{detail}.",
+        batch_ids: [p.batch_id],
+        tank_id: into
+      )
+    end
+  end
+
+  defp tank_name(_tanks, nil), do: "Unassigned"
+  defp tank_name(tanks, id), do: (tanks[id] && tanks[id].name) || "a retired tank"
 
   defp no_tank(live, today) do
     for p <- live,

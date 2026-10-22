@@ -133,8 +133,13 @@ defmodule RockcutApi.Production.Splits do
           end
 
           copy_steps!(moving, links, part.id, -k)
-          # D48 DEV QA N1: a part doesn't fill the tank its copied steps go into next.
-          BatchChanges.no_tank_twice!(part, :all)
+          # D48 DEV QA N1: a part doesn't fill the tank its copied steps go
+          # into next; each part is checked on its own and named (R3).
+          case BatchChanges.tank_twice(part, :all) do
+            :ok -> :ok
+            reason -> Repo.rollback({:part, i, reason})
+          end
+
           part.id
         end
 

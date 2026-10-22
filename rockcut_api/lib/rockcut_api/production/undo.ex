@@ -16,12 +16,18 @@ defmodule RockcutApi.Production.Undo do
   was undone."). Tokens last 2 minutes (`:undo_expired`), belong to the
   person who made the change (anyone else gets `:not_found`) and are pruned
   on every write.
+
+  **Vessels** (D48 DEV QA R1): a write that changed a batch's vessels also
+  records that batch's whole vessel list as it left it. Its Undo is stale
+  when any of them changed since, not only the rows it changed, and what it
+  puts back must pass `BatchChanges.no_tank_twice!/3` (`:same_tank`).
   """
   import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.User
-  alias RockcutApi.Production.UndoRecord
+  alias RockcutApi.Brewing.Batch
+  alias RockcutApi.Production.{BatchChanges, UndoRecord}
 
   @ttl_seconds 120
 
@@ -43,7 +49,9 @@ defmodule RockcutApi.Production.Undo do
         {:ok, result} ->
           after_ = rows(merge(scope, after_scope.(result)))
           entries = entries(before, after_)
-          {result, if(entries == [], do: nil, else: save!(user, entries))}
+
+          {result,
+           if(entries == [], do: nil, else: save!(user, entries, vessels(entries, after_)))}
 
         other ->
           Repo.rollback({__MODULE__, other})
@@ -73,11 +81,16 @@ defmodule RockcutApi.Production.Undo do
 
   defp restore(record) do
     entries = record.entries["rows"]
+    vessels = Map.get(record.entries, "vessels", %{})
 
     Repo.transaction(fn ->
       for e <- entries do
         if hash(row(e["table"], e["id"])) != e["after"], do: Repo.rollback(:undo_stale)
       end
+
+      for {id, h} <- vessels,
+          vessels_hash(String.to_integer(id)) != h,
+          do: Repo.rollback(:undo_stale)
 
       {gone, back} = Enum.split_with(entries, &is_nil(&1["before"]))
 
@@ -88,6 +101,11 @@ defmodule RockcutApi.Production.Undo do
 
       for e <- Enum.sort_by(back, &{rank(&1["table"]), &1["id"]}),
           do: put_row!(e["table"], e["before"])
+
+      # What it puts back follows the N1 rule, as any other change does.
+      for {id, _} <- vessels,
+          batch = Repo.get(Batch, String.to_integer(id)),
+          do: BatchChanges.no_tank_twice!(batch, :all)
 
       Repo.delete!(record)
 
@@ -188,6 +206,23 @@ defmodule RockcutApi.Production.Undo do
     end
   end
 
+  # The batches whose vessels the write changed, each with its whole vessel
+  # list as the write left it.
+  defp vessels(entries, after_) do
+    entries
+    |> Enum.filter(&(&1["table"] == "batch_vessels"))
+    |> Enum.map(&(&1["before"] || after_[{"batch_vessels", &1["id"]}])["batch_id"])
+    |> Enum.uniq()
+    |> Map.new(&{to_string(&1), vessels_hash(&1)})
+  end
+
+  defp vessels_hash(batch_id) do
+    select("batch_vessels", "batch_id", [batch_id])
+    |> Enum.map(&{&1["id"], hash(&1)})
+    |> Enum.sort()
+    |> digest()
+  end
+
   defp entries(before, after_) do
     for key <- Enum.uniq(Map.keys(before) ++ Map.keys(after_)),
         before[key] != after_[key] do
@@ -204,19 +239,24 @@ defmodule RockcutApi.Production.Undo do
     |> Jason.encode!()
     |> Jason.decode!()
     |> Enum.sort()
-    |> :erlang.term_to_binary()
-    |> then(&:crypto.hash(:sha256, &1))
-    |> Base.encode16(case: :lower)
+    |> digest()
   end
 
-  defp save!(user, entries) do
+  defp digest(term),
+    do:
+      term
+      |> :erlang.term_to_binary()
+      |> then(&:crypto.hash(:sha256, &1))
+      |> Base.encode16(case: :lower)
+
+  defp save!(user, entries, vessels) do
     token = Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 
     Repo.insert!(%UndoRecord{
       token: token,
       user_id: user.id,
       expires_at: DateTime.utc_now() |> DateTime.add(@ttl_seconds) |> DateTime.truncate(:second),
-      entries: %{"rows" => entries}
+      entries: %{"rows" => entries, "vessels" => vessels}
     })
 
     token
