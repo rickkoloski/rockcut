@@ -181,6 +181,58 @@ defmodule RockcutApi.Production.SplitsMarksTest do
              ]
     end
 
+    test "a part doesn't fill the tank its steps go into next; a part's own transfer either (DEV QA N1)",
+         ctx do
+      bbt = tank!("BBT1")
+      fv7 = tank!("FV7")
+
+      batch =
+        plan!(brand!("Fest"), lager_template!(), @brew, %{
+          "tank_ids" => [ctx.fv2.id, bbt.id],
+          "volume_bbl" => "20"
+        })
+
+      # No part stays, so part 1 keeps the later tank (BBT1).
+      assert {:error, {:same_tank, "BBT1", ~D[2026-11-12]}} =
+               split(batch, [into(bbt, "8"), into(fv7, "12")], %{"due_on" => "2026-11-05"})
+
+      assert parts(batch) == []
+      assert vessels(batch) == %{0 => ctx.fv2.id, 1 => bbt.id}
+
+      # Part 2's later tank starts Unassigned, which never matches.
+      {:ok, %{part_ids: [p1, p2]}} =
+        split(batch, [into(fv7, "8"), into(bbt, "12")], %{"due_on" => "2026-11-05"})
+
+      assert vessels(Repo.get!(Batch, p1)) == %{0 => fv7.id, 1 => bbt.id}
+      assert vessels(Repo.get!(Batch, p2)) == %{0 => bbt.id, 1 => nil}
+
+      assert {:error, {:same_tank, "BBT1", ~D[2026-11-12]}} =
+               RockcutApi.Production.BatchChanges.add_transfer(Repo.get!(Batch, p1), %{
+                 "due_on" => "2026-11-08",
+                 "tank_id" => bbt.id
+               })
+    end
+
+    test "a part's volume is locked; its steps start on the split day (DEV QA N3, N4)", ctx do
+      {:ok, %{part_ids: [_, p2]}} = split(ctx.batch, [stays("12"), into(ctx.fv6, "8")])
+      part = Repo.get!(Batch, p2)
+      assert {:error, :split} = Batches.update(part, %{"volume_bbl" => "9"})
+
+      add =
+        &RockcutApi.Production.BatchChanges.add_step(part, %{"name" => "Check", "due_on" => &1})
+
+      assert {:error, :before_split} = add.("2026-11-12")
+      assert {:ok, _} = add.("2026-11-13")
+
+      assert {:error, :before_split} =
+               RockcutApi.Production.BatchChanges.add_ramp(part, %{
+                 "start" => 60,
+                 "target" => 50,
+                 "change_per_day" => 10,
+                 "first_on" => "2026-11-12"
+               })
+    end
+
     test "parts move on their own (P79)", ctx do
       {:ok, %{part_ids: [p1, p2]}} = split(ctx.batch, [stays("12"), into(ctx.fv6, "8")])
       carb2 = named(Repo.get!(Batch, p2), "Carb")

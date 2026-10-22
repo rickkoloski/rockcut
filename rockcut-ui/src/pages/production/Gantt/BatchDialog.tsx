@@ -277,7 +277,8 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
           {part ? (
             // A part's number is its parent's plus ".2" (QA minor 8).
             <Typography variant="body2" data-testid="batch-dialog-pnumber">
-              {partNumber} · {planned ? 'the real number is set when the parent’s brew day is checked off' : 'the parent’s number'}
+              {/* A part stays planned until its Split is done; its label has the parent's number once that's brewed (DEV QA N2). */}
+              {partNumber} · {partNumber?.startsWith('#') ? 'the parent’s number' : 'the real number is set when the parent’s brew day is checked off'}
             </Typography>
           ) : planned ? (
             <Typography variant="body2" data-testid="batch-dialog-pnumber">
@@ -312,12 +313,12 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
               label="Volume (bbl)"
               value={volume}
               onChange={(e) => setVolume(e.target.value)}
-              // A split parent's parts add up to it (QA minor 6).
-              helperText={splitParts.length ? 'Undo the split first to change it' : undefined}
-              slotProps={{ htmlInput: { min: 0, step: 'any', readOnly: splitParts.length > 0, 'data-testid': 'batch-volume' } }}
+              // A split parent's parts add up to it (QA minor 6), so neither changes (DEV QA N3).
+              helperText={split ? 'Undo the split first to change it' : undefined}
+              slotProps={{ htmlInput: { min: 0, step: 'any', readOnly: split, 'data-testid': 'batch-volume' } }}
             />
             <Button
-              disabled={splitParts.length > 0 || volume === '' || Number(volume) === batch.volume_bbl}
+              disabled={split || volume === '' || Number(volume) === batch.volume_bbl}
               onClick={() => run(() => flows.write(() => api.patch(prodPath('batches', batch.id), { volume_bbl: Number(volume) }), 'Volume saved.'))}
               data-testid="batch-volume-save"
             >

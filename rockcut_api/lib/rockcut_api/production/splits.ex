@@ -133,6 +133,8 @@ defmodule RockcutApi.Production.Splits do
           end
 
           copy_steps!(moving, links, part.id, -k)
+          # D48 DEV QA N1: a part doesn't fill the tank its copied steps go into next.
+          BatchChanges.no_tank_twice!(part, :all)
           part.id
         end
 
@@ -219,6 +221,7 @@ defmodule RockcutApi.Production.Splits do
       end
 
       Repo.delete_all(from(b in Batch, where: b.id in ^part_ids))
+      BatchChanges.no_tank_twice!(parent, [k + 1])
       %{batch_ids: [parent.id]}
     end)
   end

@@ -92,7 +92,8 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
       })
 
     assert added.status == 201
-    assert body(added)["data"]["moved"] == 3
+    # Carb and Package; the CIP after Package goes on with it (DEV QA N1).
+    assert body(added)["data"]["moved"] == 2
     [batch] = body(added)["data"]["batches"]
 
     assert batch["vessels"] == [
@@ -297,6 +298,52 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
            }
 
     assert body(call(b, :patch, path, %{volume_bbl: 30}))["error"] == "split"
+  end
+
+  test "DEV QA fix cycle 2: the next tank, a part's volume, before the split, after the exit",
+       ctx do
+    b = ctx["brewer1"]
+    bbt = tank!("BBT1")
+
+    lager =
+      plan!(brand!("Enos"), lager_template!(), ~D[2026-11-02], %{
+        "tank_ids" => [tank!("FV1").id, bbt.id]
+      })
+
+    next =
+      call(b, :post, "/api/production/batches/#{lager.id}/transfers", %{
+        due_on: "2026-11-07",
+        tank_id: bbt.id
+      })
+
+    assert body(next) == %{
+             "error" => "same_tank",
+             "message" => "The beer goes into BBT1 next, on Thu Nov 12."
+           }
+
+    path = "/api/production/batches/#{ctx.batch.id}"
+    late = call(b, :post, "#{path}/steps", %{name: "Late", due_on: "2026-11-23"})
+
+    assert body(late) == %{
+             "error" => "after_exit",
+             "message" => "The beer isn't in that tank on that day."
+           }
+
+    split =
+      call(b, :post, "#{path}/split", %{
+        due_on: "2026-11-13",
+        parts: [%{stays: true, volume_bbl: 10}, %{volume_bbl: 10}]
+      })
+
+    [_, part] = body(split)["data"]["part_ids"]
+    part_path = "/api/production/batches/#{part}"
+    assert body(call(b, :patch, part_path, %{volume_bbl: 9}))["error"] == "split"
+    early = call(b, :post, "#{part_path}/steps", %{name: "Early", due_on: "2026-11-12"})
+
+    assert body(early) == %{
+             "error" => "before_split",
+             "message" => "A step can't come before the split."
+           }
   end
 
   test "a move of steps in two batches names both batches in its preview (QA minor 10)", ctx do

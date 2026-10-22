@@ -456,13 +456,22 @@ export function AddTransferDialog({ batch, types, tanks, today, onClose }: { bat
   const kind = kinds.find((t) => t.id === typeId)?.name ?? 'Transfer'
   const k = day ? vesselOn(batch, day) : 0
   const fill = (s: SchedStep) => (k === 0 ? s.first_brew : s.behavior === 'transfer' && s.vessel_index === k)
-  const moving = batch.steps.filter((s) => s.vessel_index === k && !fill(s) && !s.done_on && s.due_on >= day)
+  // The CIP at the tank's old exit goes on with that exit; it isn't a step that moves (DEV QA N1).
+  const { exit } = stayOf(batch, k)
+  const moving = batch.steps.filter((s) => s.vessel_index === k && !fill(s) && !s.done_on && s.due_on >= day && !(s.behavior === 'cip' && s.due_on === exit))
   const doneLater = batch.steps.some((s) => s.vessel_index >= k && !fill(s) && s.done_on && s.due_on > day)
   const outside = day ? outsideStay(batch, day) : null
-  // Into another tank: not the one the beer is in that day (QA M3).
-  const here = batch.vessels.find((v) => v.vessel_index === k)?.tank_id ?? null
-  const into = tanks.filter((t) => t.id !== here)
+  // Into another tank: not the one the beer is in that day (QA M3), nor the one it goes into next (DEV QA N1).
+  const tankOf = (i: number) => batch.vessels.find((v) => v.vessel_index === i)?.tank_id ?? null
+  const here = tankOf(k)
+  const next = tankOf(k + 1)
+  const nextOn = stayOf(batch, k + 1).fill
+  // A tank picked before the day changed stays shown, with the refusal.
+  const into = tanks.filter((t) => (t.id !== here && t.id !== next) || t.id === tankId)
   const tankName = tankId ? (tanks.find((t) => t.id === tankId)?.name ?? 'the tank') : 'Unassigned'
+  const sameTank =
+    tankId == null ? null : tankId === here ? `The beer is already in ${tankName}.` : tankId === next && nextOn ? `The beer goes into ${tankName} next, on ${dayLabel(nextOn)}.` : null
+  const refusal = outside ?? sameTank ?? (doneLater ? 'Some steps after that date are already done. Pick a later date.' : null)
 
   const save = async () => {
     if (!day) return setError('Pick the day.')
@@ -488,14 +497,11 @@ export function AddTransferDialog({ batch, types, tanks, today, onClose }: { bat
       </TextField>
       <Box sx={grid2}>
         <TextField type="date" label="Day" value={day} onChange={(e) => setDay(e.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'add-transfer-day' } }} />
-        <TankSelect label="Into" tanks={into} value={tankId === here ? null : tankId} onChange={setTankId} from={day} testId="add-transfer-tank" />
+        <TankSelect label="Into" tanks={into} value={tankId} onChange={setTankId} from={day} testId="add-transfer-tank" />
       </Box>
-      <Typography variant="body2" color={outside || doneLater ? 'error' : 'text.secondary'} role={outside || doneLater ? 'alert' : undefined} data-testid="add-transfer-preview">
-        {outside
-          ? outside
-          : doneLater
-          ? 'Some steps after that date are already done. Pick a later date.'
-          : `${plural(moving.length, 'step')} from that day (${moving.map((s) => s.name).join(', ') || 'none'}) move to ${tankName}; ${vesselName(batch, tanks, k)} gets a CIP & Sanitize that day.`}
+      <Typography variant="body2" color={refusal ? 'error' : 'text.secondary'} role={refusal ? 'alert' : undefined} data-testid="add-transfer-preview">
+        {refusal ??
+          `${plural(moving.length, 'step')} from that day (${moving.map((s) => s.name).join(', ') || 'none'}) move to ${tankName}; ${vesselName(batch, tanks, k)} gets a CIP & Sanitize that day.`}
       </Typography>
     </DialogShell>
   )
@@ -525,7 +531,12 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
   const hereId = day ? (batch.vessels.find((v) => v.vessel_index === vesselOn(batch, day))?.tank_id ?? null) : null
   const total = parts.reduce((t, p) => t + (Number(p.volume) || 0), 0)
   const adds = Math.abs(total - volume) < 0.001
-  const set = (i: number, change: Partial<PartRow>) => setParts((ps) => ps.map((p, j) => (j === i ? { ...p, ...change } : p)))
+  // Any change clears the last refusal, as the transfer preview does (DEV QA N5).
+  const changeParts = (f: (ps: PartRow[]) => PartRow[]) => {
+    setError(null)
+    setParts(f)
+  }
+  const set = (i: number, change: Partial<PartRow>) => changeParts((ps) => ps.map((p, j) => (j === i ? { ...p, ...change } : p)))
   const tankName = (p: PartRow) => (p.tank === 'stay' ? here : p.tank ? (tanks.find((t) => t.id === p.tank)?.name ?? 'tank') : 'Unassigned')
 
   const save = async () => {
@@ -553,12 +564,24 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
   return (
     <DialogShell title={`Split · ${batch.label}`} testId="split-dialog" error={error} busy={busy} onClose={onClose} onSave={save} saveLabel="Split">
       <Box sx={grid2}>
-        <TextField type="date" label="Day" value={day} onChange={(e) => setDay(e.target.value)} slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'split-day' } }} />
+        <TextField
+          type="date"
+          label="Day"
+          value={day}
+          onChange={(e) => {
+            setError(null)
+            setDay(e.target.value)
+          }}
+          slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'split-day' } }}
+        />
         <TextField
           select
           label="How the parts leave"
           value={method}
-          onChange={(e) => setMethod(e.target.value as 'transfer' | 'filter')}
+          onChange={(e) => {
+            setError(null)
+            setMethod(e.target.value as 'transfer' | 'filter')
+          }}
           helperText="Every part that leaves the tank goes this way."
           slotProps={selectTestId('split-method')}
         >
@@ -600,13 +623,13 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
             onChange={(e) => set(i, { volume: e.target.value })}
             slotProps={{ htmlInput: { min: 0, step: 'any', 'data-testid': `split-volume-${i}` } }}
           />
-          <Button size="small" disabled={parts.length <= 2} onClick={() => setParts((ps) => ps.filter((_, j) => j !== i))} data-testid={`split-remove-${i}`}>
+          <Button size="small" disabled={parts.length <= 2} onClick={() => changeParts((ps) => ps.filter((_, j) => j !== i))} data-testid={`split-remove-${i}`}>
             Remove
           </Button>
         </Box>
       ))}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-        <Button size="small" onClick={() => setParts((ps) => [...ps, { tank: null, volume: '' }])} data-testid="split-add-part">
+        <Button size="small" onClick={() => changeParts((ps) => [...ps, { tank: null, volume: '' }])} data-testid="split-add-part">
           Add part
         </Button>
         <Typography variant="body2" color={adds ? 'text.secondary' : 'error'} data-testid="split-total" sx={{ ml: 'auto' }}>

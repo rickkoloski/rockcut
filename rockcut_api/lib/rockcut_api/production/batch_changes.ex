@@ -78,6 +78,7 @@ defmodule RockcutApi.Production.BatchChanges do
     steps = steps!(batch)
     not_before_brew!(batch, steps, due_on)
     vessel = vessel!(batch, attrs["vessel_index"], vessel_on(steps, due_on))
+    not_after_exit!(batch, steps, vessel, due_on)
 
     step =
       Repo.insert!(%Step{
@@ -148,6 +149,8 @@ defmodule RockcutApi.Production.BatchChanges do
         steps = steps!(batch)
         not_before_brew!(batch, steps, first_on)
         vessel = vessel!(batch, attrs["vessel_index"], vessel_on(steps, first_on))
+        # D48 DEV QA N6: refused whole when its last step is after the exit.
+        not_after_exit!(batch, steps, vessel, Date.add(first_on, length(temps) - 1))
 
         phase_id =
           if Map.has_key?(attrs, "phase_id"),
@@ -302,11 +305,20 @@ defmodule RockcutApi.Production.BatchChanges do
       if step.done_on, do: Repo.rollback(:step_done)
 
       case Steps.behavior(step) do
-        "brew" -> Repo.rollback(:brew_day)
+        "brew" ->
+          Repo.rollback(:brew_day)
+
         # D48: the Split fills the parts; Undo split takes it out.
-        "split" -> Repo.rollback(:split_fill)
-        "transfer" -> remove_transfer!(step)
-        _ -> StepGraph.pass_through!(StepGraph.batch(step.batch_id), step)
+        "split" ->
+          Repo.rollback(:split_fill)
+
+        "transfer" ->
+          remove_transfer!(step)
+          # D48 DEV QA N1: the tanks either side of it now meet.
+          no_tank_twice!(%Batch{id: step.batch_id}, [step.vessel_index])
+
+        _ ->
+          StepGraph.pass_through!(StepGraph.batch(step.batch_id), step)
       end
 
       %{batch_ids: [step.batch_id]}
@@ -324,8 +336,9 @@ defmodule RockcutApi.Production.BatchChanges do
   left behind gets a CIP & Sanitize that day, linked "move all" from the
   transfer. Refused (`:step_done_after`) when a step of vessel k or later
   dated after that day is done. The day must fall while the beer is in that
-  tank (`in_tank!/4`), and the tank must be another one
-  (`{:same_tank, name}`; D48 DEV QA M1, M3).
+  tank (`in_tank!/4`), and the tank must be another one, nor the one the
+  beer goes into next (`no_tank_twice!/3`; D48 DEV QA M1, M3, N1). `moved`
+  doesn't count the CIP at the old exit, which goes on with it.
   """
   def add_transfer(%Batch{} = batch, attrs) do
     attrs = stringify(attrs)
@@ -350,15 +363,6 @@ defmodule RockcutApi.Production.BatchChanges do
     fill = fill_of(steps, k)
     in_tank!(batch, steps, k, day)
 
-    here =
-      Enum.find_value(
-        Repo.all(from(v in BatchVessel, where: v.batch_id == ^batch.id)),
-        &(&1.vessel_index == k && &1.tank_id)
-      )
-
-    # D48 QA M3: a transfer goes into another tank (Unassigned is fine).
-    if tank_id && tank_id == here, do: Repo.rollback({:same_tank, Repo.get!(Tank, here).name})
-
     if Enum.any?(
          steps,
          &(&1.vessel_index >= k and &1.done_on != nil and after?(&1.due_on, day) and &1 != fill)
@@ -374,6 +378,8 @@ defmodule RockcutApi.Production.BatchChanges do
 
     shift_vessels!(batch, k, +1)
     Repo.insert!(%BatchVessel{batch_id: batch.id, vessel_index: k + 1, tank_id: tank_id})
+    # D48 QA M3, DEV QA N1: not the tank the beer is in, nor the one it goes into next.
+    no_tank_twice!(batch, [k + 1, k + 2], k + 1)
 
     ids = Enum.map(moving, & &1.id)
     Repo.update_all(from(s in Step, where: s.id in ^ids), set: [vessel_index: k + 1])
@@ -423,7 +429,16 @@ defmodule RockcutApi.Production.BatchChanges do
       "leads_to_id" => next && next.id
     })
 
-    %{batch_ids: [batch.id], step_ids: [transfer.id, cip.id], moved: length(moving)}
+    # The CIP for the old exit goes on with it to the new tank; it isn't a
+    # step that moves (D48 DEV QA N1).
+    {_, exit} = stay(batch, steps, k)
+    exit_cips = Enum.count(moving, &(Steps.behavior(&1) == "cip" and &1.due_on == exit))
+
+    %{
+      batch_ids: [batch.id],
+      step_ids: [transfer.id, cip.id],
+      moved: length(moving) - exit_cips
+    }
   end
 
   # Removing an unfinished transfer into vessel j (P74): its steps go back
@@ -526,6 +541,7 @@ defmodule RockcutApi.Production.BatchChanges do
           Batches.copy_steps!(batch, template, brew_on, batch.brew_two_days)
           batch |> Changeset.change(template_id: template.id) |> Repo.update!()
           reanchor!(batch, kept)
+          no_tank_twice!(batch, :all)
           {kept, dropped}
         end)
 
@@ -682,11 +698,55 @@ defmodule RockcutApi.Production.BatchChanges do
     :ok
   end
 
-  # Added steps and ramps start on brew day or later (a split part: its Split).
+  # Added steps and ramps start on brew day or later (a split part: its
+  # Split, `:before_split`; D48 DEV QA N4).
   defp not_before_brew!(batch, steps, day) do
-    floor = Parts.first_brew(steps) || parent_split(batch)
-    if floor && after?(floor.due_on, day), do: Repo.rollback(:before_brew_day)
+    case Parts.first_brew(steps) do
+      nil ->
+        split = parent_split(batch)
+        if split && after?(split.due_on, day), do: Repo.rollback(:before_split)
+
+      brew ->
+        if after?(brew.due_on, day), do: Repo.rollback(:before_brew_day)
+    end
+
     :ok
+  end
+
+  # ... and on or before the exit of the tank they're in (D48 DEV QA N6).
+  defp not_after_exit!(batch, steps, k, day) do
+    {_, exit} = stay(batch, steps, k)
+    if exit && after?(day, exit), do: Repo.rollback(:after_exit)
+    :ok
+  end
+
+  @doc """
+  No two vessels in a row in one tank (D48 DEV QA N1; Unassigned never
+  matches): vessel `j` against `j - 1`, for each `j` in `indexes` (or
+  `:all`). `{:same_tank, name}` when `j` is the vessel the change just put
+  a tank in (`new`), else `{:same_tank, name, day}`, the day the beer goes
+  into `j`.
+  """
+  def no_tank_twice!(%Batch{id: id} = batch, indexes, new \\ nil) do
+    tanks =
+      Repo.all(
+        from(v in BatchVessel, where: v.batch_id == ^id, select: {v.vessel_index, v.tank_id})
+      )
+      |> Map.new()
+
+    js = if indexes == :all, do: Enum.sort(Map.keys(tanks)), else: indexes
+
+    case Enum.find(js, &(tanks[&1] != nil and tanks[&1] == tanks[&1 - 1])) do
+      nil ->
+        :ok
+
+      ^new ->
+        Repo.rollback({:same_tank, Repo.get!(Tank, tanks[new]).name})
+
+      j ->
+        fill = fill_of(steps!(batch), j)
+        Repo.rollback({:same_tank, Repo.get!(Tank, tanks[j]).name, fill && fill.due_on})
+    end
   end
 
   defp parent_split(%Batch{split_parent_id: nil}), do: nil

@@ -282,7 +282,8 @@ defmodule RockcutApi.Production.BatchChangesTest do
       fv2 = vessels(ctx.batch)[0]
       s1 = tank!("Serving 1")
 
-      assert {:ok, %{moved: 3}} =
+      # Carb and Package; the CIP after Package goes on with it (DEV QA N1).
+      assert {:ok, %{moved: 2}} =
                BatchChanges.add_transfer(ctx.batch, %{
                  "step_type_id" => type!("Filter").id,
                  "due_on" => "2026-11-14",
@@ -422,6 +423,33 @@ defmodule RockcutApi.Production.BatchChangesTest do
       assert map_size(vessels(ctx.batch)) == 3
     end
 
+    test "added steps and ramps end on or before the tank's exit (DEV QA N6)", ctx do
+      assert {:error, :after_exit} = add(ctx.batch, %{"name" => "Late", "due_on" => "2026-11-23"})
+      assert {:ok, _} = add(ctx.batch, %{"name" => "Exit-day check", "due_on" => "2026-11-22"})
+
+      ramp = %{"start" => 60, "target" => 40, "change_per_day" => 10}
+
+      # Nov 21–23: the last step is after the Package, so none of it is added.
+      assert {:error, :after_exit} =
+               BatchChanges.add_ramp(ctx.batch, Map.put(ramp, "first_on", "2026-11-21"))
+
+      assert {:ok, %{step_ids: [_, _, _]}} =
+               BatchChanges.add_ramp(ctx.batch, Map.put(ramp, "first_on", "2026-11-20"))
+
+      # A tank left by a transfer: up to the transfer's day.
+      lager = plan!(brand!("Enos"), lager_template!(), @brew, %{"tank_ids" => [tank!("FV1").id]})
+
+      assert {:error, :after_exit} =
+               add(lager, %{"name" => "Late", "due_on" => "2026-11-13", "vessel_index" => 0})
+
+      assert {:ok, _} =
+               add(lager, %{
+                 "name" => "Transfer-day",
+                 "due_on" => "2026-11-12",
+                 "vessel_index" => 0
+               })
+    end
+
     test "added steps and ramps start on brew day or later", ctx do
       assert {:error, :before_brew_day} =
                add(ctx.batch, %{"name" => "Early", "due_on" => "2026-11-01"})
@@ -435,6 +463,96 @@ defmodule RockcutApi.Production.BatchChangesTest do
                  "change_per_day" => 10,
                  "first_on" => "2026-10-30"
                })
+    end
+  end
+
+  describe "no two vessels in a row in one tank (DEV QA N1)" do
+    setup do
+      fv1 = tank!("FV1")
+      bbt = tank!("BBT1")
+      batch = plan!(brand!("Enos"), lager_template!(), @brew, %{"tank_ids" => [fv1.id, bbt.id]})
+      %{lager: batch, fv1: fv1, bbt: bbt}
+    end
+
+    test "a transfer into the tank the beer goes into next is refused; Unassigned isn't", ctx do
+      before = layout(ctx.lager)
+
+      assert {:error, {:same_tank, "BBT1", ~D[2026-11-12]}} =
+               BatchChanges.add_transfer(ctx.lager, %{
+                 "due_on" => "2026-11-07",
+                 "tank_id" => ctx.bbt.id
+               })
+
+      assert {:error, {:same_tank, "FV1"}} =
+               BatchChanges.add_transfer(ctx.lager, %{
+                 "due_on" => "2026-11-07",
+                 "tank_id" => ctx.fv1.id
+               })
+
+      # Through Add step too.
+      assert {:error, {:same_tank, "BBT1", _}} =
+               add(ctx.lager, %{
+                 "step_type_id" => type!("Filter").id,
+                 "due_on" => "2026-11-07",
+                 "tank_id" => ctx.bbt.id
+               })
+
+      assert layout(ctx.lager) == before
+      assert vessels(ctx.lager) == %{0 => ctx.fv1.id, 1 => ctx.bbt.id}
+
+      # Into Unassigned: the CIP for FV1's old exit goes on with the Nov 12
+      # transfer (it now cleans the new tank) and isn't counted as moving.
+      assert {:ok, %{moved: 0}} =
+               BatchChanges.add_transfer(ctx.lager, %{"due_on" => "2026-11-07"})
+
+      assert vessels(ctx.lager) == %{0 => ctx.fv1.id, 1 => nil, 2 => ctx.bbt.id}
+
+      assert layout(ctx.lager) == [
+               {"Brew day", ~D[2026-11-02], 0},
+               {"Transfer", ~D[2026-11-07], 1},
+               {"CIP & Sanitize", ~D[2026-11-07], 0},
+               {"Transfer", ~D[2026-11-12], 2},
+               {"CIP & Sanitize", ~D[2026-11-12], 1},
+               {"Package", ~D[2026-11-22], 2},
+               {"CIP & Sanitize", ~D[2026-11-22], 2}
+             ]
+
+      # Unassigned between two Unassigned is fine too.
+      {:ok, _} = Production.Batches.set_vessel_tank(ctx.lager, 2, nil)
+      assert {:ok, _} = BatchChanges.add_transfer(ctx.lager, %{"due_on" => "2026-11-09"})
+      assert vessels(ctx.lager) == %{0 => ctx.fv1.id, 1 => nil, 2 => nil, 3 => nil}
+    end
+
+    test "removing a transfer is refused when the tanks either side of it are one", ctx do
+      {:ok, _} =
+        BatchChanges.add_transfer(ctx.lager, %{
+          "due_on" => "2026-11-07",
+          "tank_id" => tank!("FV9").id
+        })
+
+      {:ok, _} = Production.Batches.set_vessel_tank(ctx.lager, 2, ctx.fv1.id)
+
+      transfer =
+        Enum.find(steps_of(ctx.lager), &(&1.due_on == ~D[2026-11-07] and &1.vessel_index == 1))
+
+      assert {:error, {:same_tank, "FV1", ~D[2026-11-12]}} = BatchChanges.remove_step(transfer)
+      assert map_size(vessels(ctx.lager)) == 3
+    end
+
+    test "a template change is refused when it leaves one tank twice in a row", ctx do
+      {:ok, _} =
+        BatchChanges.add_transfer(ctx.lager, %{
+          "due_on" => "2026-11-07",
+          "tank_id" => tank!("FV9").id
+        })
+
+      {:ok, _} = Production.Batches.set_vessel_tank(ctx.lager, 2, ctx.fv1.id)
+
+      # The added transfer is dropped: FV1, then FV1 again.
+      assert {:error, {:same_tank, "FV1", ~D[2026-11-12]}} =
+               BatchChanges.change_template(ctx.lager, lager_template!("Lager 2").id)
+
+      assert map_size(vessels(ctx.lager)) == 3
     end
   end
 

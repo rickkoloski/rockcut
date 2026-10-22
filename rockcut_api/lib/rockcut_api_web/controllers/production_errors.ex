@@ -67,7 +67,9 @@ defmodule RockcutApiWeb.ProductionErrors do
     before_fill: "The beer isn't in that tank on that day.",
     after_exit: "The beer isn't in that tank on that day.",
     before_brew_day: "A step can't come before brew day.",
-    split_before_brew: "The split has to be after brew day."
+    split_before_brew: "The split has to be after brew day.",
+    # D48 DEV QA fix cycle 2.
+    before_split: "A step can't come before the split."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
@@ -149,6 +151,16 @@ defmodule RockcutApiWeb.ProductionErrors do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: "same_tank", message: "The beer is already in #{name}."})
+  end
+
+  # D48 DEV QA N1: "The beer goes into Q1RC next, on Fri Dec 18."
+  def handle({:error, {:same_tank, name, day}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "same_tank",
+      message: "The beer goes into #{name} next, on #{Calendar.strftime(day, "%a %b %-d")}."
+    })
   end
 
   # D48 (P76): "The parts add up to 18 bbl, but Galactic #40 is 20 bbl."

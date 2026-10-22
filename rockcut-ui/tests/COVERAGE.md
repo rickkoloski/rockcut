@@ -630,5 +630,10 @@ Playwright specs are in `regression/production/` (project `production`, one work
 | DEV QA 7a, 7b | Template change names a dropped added transfer; kept ramps and steps (one checked off before brew day too) stay linked in | ExUnit `batch_changes_test`; Playwright `d48-fix-cycle-1` (7a) |
 | DEV QA 9, 10, 11 | Zoom tooltip "Weeks on screen"; a two-batch move: "2 batches · 2 steps moved 1 day later", following steps under each batch; Ctrl/Cmd+Space selects, Escape clears | Playwright `d48-fix-cycle-1`; ExUnit controller test (preview batches) |
 | Pixel | Auto-scroll down on a phone: the edge zone is the part of the grid on screen; the page scrolls once the grid is at its end | Playwright `d48-fix-cycle-1` (412×915); Matt rechecks on the Pixel |
+| DEV QA N1 | No two vessels in a row in one tank (Unassigned never matches) after Add transfer / filter, a part's own transfer, Remove transfer, a template change, a split or Undo split: "The beer goes into Q1RC next, on Fri Dec 18."; Into leaves out the next tank and the preview refuses it; the old exit's CIP isn't counted as moving (it goes on with that exit) | ExUnit `batch_changes_test`, `splits_marks_test`, controller test; Playwright `d48-fix-cycle-2` |
+| DEV QA N2, N3 | A brewed part reads "#44.2 · the parent's number"; a part's volume is locked like the parent's (`split`) | ExUnit `splits_marks_test`, controller test; Playwright `d48-fix-cycle-2` |
+| DEV QA N4, N6 | A part's steps and ramps start on its Split (`before_split`, "A step can't come before the split."); added steps and ramps end on or before the tank's exit (`after_exit`; a ramp refused whole) | ExUnit `batch_changes_test`, `splits_marks_test`, controller test |
+| DEV QA N5 | The split dialog clears its refusal when the day, the method or a part changes | Playwright `d48-fix-cycle-2` |
+| DEV QA check | A brewed split's part 2 (own tank) opens on a click: not reproduced | Playwright `d48-fix-cycle-2` |
 
 Not automated: P87 (touch long-press selection on the Pixel) and a touch drag's auto-scroll, by hand at the DEV gate.

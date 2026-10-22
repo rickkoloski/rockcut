@@ -497,8 +497,8 @@ defmodule RockcutApi.Production.Batches do
       changes =
         Enum.reduce(attrs, %{}, fn
           {"volume_bbl", v}, acc ->
-            # D48 DEV QA minor 6: the parts' volumes add up to it.
-            if split_parent?(batch), do: Repo.rollback(:split)
+            # D48 DEV QA minor 6, N3: the parts' volumes add up to the parent's.
+            if batch.split_parent_id || split_parent?(batch), do: Repo.rollback(:split)
 
             case Decimal.cast(v) do
               {:ok, d} ->
