@@ -53,8 +53,8 @@ export interface Range {
   to: string
 }
 
-/** The default view: a week back, then 12 weeks on. */
-export const defaultRange = (today: string): Range => ({ from: addDaysKey(today, -7), to: addDaysKey(today, 77) })
+/** The first visit and "Today" (D48 §3.6, P118): a week before today through the zoom's weeks after it. */
+export const defaultRange = (today: string, zoom: Zoom): Range => ({ from: addDaysKey(today, -7), to: addDaysKey(today, zoom * 7) })
 
 /** A range kept to 7–730 days (counting both ends), `to` moving to fit. */
 export function clampRange(r: Range): Range {
@@ -67,12 +67,8 @@ export function clampRange(r: Range): Range {
 /** ‹ 4 wks / 4 wks ›: the same length, moved. */
 export const shiftRange = (r: Range, days: number): Range => ({ from: addDaysKey(r.from, days), to: addDaysKey(r.to, days) })
 
-/** "Today": the same length, starting a week back. */
-export function rangeAroundToday(r: Range, today: string): Range {
-  const len = daysBetween(r.from, r.to)
-  const from = addDaysKey(today, -7)
-  return { from, to: addDaysKey(from, len) }
-}
+/** A new zoom keeps the start and sets the length to match: a week plus the zoom's weeks (D48 §3.6). */
+export const rangeForZoom = (r: Range, zoom: Zoom): Range => ({ from: r.from, to: addDaysKey(r.from, 7 + zoom * 7) })
 
 /** Pixels per day: the zoom's weeks across the timeline's width, never under 10 (narrower, it scrolls). */
 export const dayWidth = (timelineWidth: number, zoom: Zoom) => Math.max(10, Math.floor(timelineWidth / (zoom * 7)))
@@ -270,7 +266,9 @@ export function flagChip(flags: Flag[]): string {
 // ── Rows ──
 
 export const TRACK_H = 54
+/** An expanded tank's step rows: 28 px for a finger, 20 px with a mouse (D48 §3.6, P121). */
 export const STEP_ROW_H = 28
+export const STEP_ROW_H_FINE = 20
 /** In a track: the bar, the initials under it, the dots under them. */
 export const BAR_TOP = 4
 export const BAR_H = 26
@@ -292,7 +290,7 @@ export interface Row {
 }
 
 /** The tanks in order, then Unassigned, with their tracks, step rows and place. */
-export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expanded: Set<string>): Row[] {
+export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expanded: Set<string>, stepRowH = STEP_ROW_H): Row[] {
   const keys: (Tank | null)[] = [...tanks, null]
   let top = 0
   return keys.map((tank) => {
@@ -306,7 +304,7 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
     const stepRows = open
       ? [...mine].sort((a, b) => a.start.localeCompare(b.start)).flatMap((part) => part.steps.map((step) => ({ part, step })))
       : []
-    const height = count * TRACK_H + stepRows.length * STEP_ROW_H
+    const height = count * TRACK_H + stepRows.length * stepRowH
     const row = { tank, parts: mine, cips: myCips, track, tracks: count, stepRows, top, height }
     top += height
     return row
@@ -314,6 +312,19 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
 }
 
 export const rowKey = (tank: Tank | null) => (tank ? String(tank.id) : 'unassigned')
+
+/**
+ * Collapse all | ● | Expand all (D48 §3.6, P119): where the switch sits for
+ * the open rows. All open → expand, none → collapse, anything else is the
+ * person's own mix.
+ */
+export type ExpandMode = 'collapse' | 'mine' | 'expand'
+
+export function expandMode(keys: string[], expanded: Set<string>): ExpandMode {
+  const open = keys.filter((k) => expanded.has(k)).length
+  if (keys.length && open === keys.length) return 'expand'
+  return open ? 'mine' : 'collapse'
+}
 
 // ── Live feedback while dragging (lead decisions 4, addition) ──
 
@@ -422,6 +433,8 @@ export interface GanttPrefs {
   zoom: Zoom
   collapsed: boolean
   expanded: string[]
+  /** The last mix of open tanks, for the switch's middle (D48 §3.6). */
+  mix: string[]
 }
 
 const prefKey = (userId: number | string, name: string) => `rockcut.production.${userId}.${name}`
@@ -455,18 +468,20 @@ export function readPrefs(userId: number | string, phone: boolean): GanttPrefs {
   }
   const zoom = Number(read(prefKey(userId, 'zoom')))
   const collapsed = read(prefKey(userId, 'collapsed'))
-  let expanded: string[] = []
-  try {
-    const e = JSON.parse(read(prefKey(userId, 'expanded')) ?? '[]')
-    if (Array.isArray(e)) expanded = e.filter((x) => typeof x === 'string')
-  } catch {
-    expanded = []
+  const keys = (name: string): string[] => {
+    try {
+      const e = JSON.parse(read(prefKey(userId, name)) ?? '[]')
+      return Array.isArray(e) ? e.filter((x) => typeof x === 'string') : []
+    } catch {
+      return []
+    }
   }
   return {
     range,
     zoom: (ZOOMS as readonly number[]).includes(zoom) ? (zoom as Zoom) : 6,
     collapsed: collapsed === null ? phone : collapsed === 'true',
-    expanded,
+    expanded: keys('expanded'),
+    mix: keys('mix'),
   }
 }
 

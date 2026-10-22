@@ -88,6 +88,8 @@ interface Props extends GanttActions {
   flags: Flag[]
   compact: boolean
   expanded: Set<string>
+  /** An expanded tank's step rows: 20 px with a mouse, 28 px on touch (D48 §3.6). */
+  stepRowH?: number
   onToggleRow: (key: string) => void
   onToggleCompact: () => void
 }
@@ -184,6 +186,8 @@ function HintBox({ hint, at }: { hint: DragHintT; at: DragState }) {
  */
 export default function GanttGrid(props: Props) {
   const { from, days, dayPx, today, rows, phases, statuses, flags, compact, expanded, onToggleRow, onToggleCompact, drag } = props
+  const stepRowH = props.stepRowH ?? STEP_ROW_H
+  const tight = stepRowH < STEP_ROW_H
   const innerRef = useRef<HTMLDivElement>(null)
   const theme = useTheme()
   const mode = theme.palette.mode as Mode
@@ -690,7 +694,7 @@ export default function GanttGrid(props: Props) {
     const visible = step.due_on >= from && step.due_on <= to
     const text = `${step.name}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
     return (
-      <Box key={`${part.key}-${step.id}`} sx={{ display: 'flex', height: STEP_ROW_H }} data-testid={`gantt-step-row-${step.id}`}>
+      <Box key={`${part.key}-${step.id}`} sx={{ display: 'flex', height: stepRowH }} data-testid={`gantt-step-row-${step.id}`}>
         <Box
           sx={{
             position: 'sticky',
@@ -702,18 +706,19 @@ export default function GanttGrid(props: Props) {
             borderRight: 1,
             borderBottom: 1,
             borderColor: 'divider',
-            pl: compact ? 1.5 : 4,
+            // An outline under the tank's name (8 px in): phases a little further, steps more (D48 §3.6).
+            pl: `${8 + (step.marker ? 8 : 20)}px`,
             pr: 1,
             display: 'flex',
             gap: 0.75,
             alignItems: 'center',
-            fontSize: 12,
+            fontSize: tight ? 11 : 12,
             whiteSpace: 'nowrap',
             minWidth: 0,
             borderTop: i === 0 ? `1px dashed ${theme.palette.divider}` : undefined,
           }}
         >
-          <Box component="span" sx={{ fontWeight: step.marker ? 500 : 600, fontStyle: step.marker ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <Box component="span" data-testid={`gantt-step-label-${step.id}`} sx={{ fontWeight: step.marker ? 500 : 600, fontStyle: step.marker ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {step.name}
           </Box>
           {!compact && (many || part.vessel > 0) && (
@@ -735,7 +740,7 @@ export default function GanttGrid(props: Props) {
                 sx={{
                   position: 'absolute',
                   top: 0,
-                  height: STEP_ROW_H,
+                  height: stepRowH,
                   left: x(step.due_on) + dayPx / 2,
                   display: 'flex',
                   alignItems: 'center',
@@ -748,8 +753,8 @@ export default function GanttGrid(props: Props) {
                   ...lifted(`dia:${step.id}`),
                 }}
               >
-                <Box sx={{ width: 11, height: 11, ml: '-5.5px', transform: 'rotate(45deg)', border: 2, flex: 'none', ...dotSx(state), boxShadow: 'none' }} />
-                <Box component="span" sx={{ fontSize: 11, fontWeight: 600, bgcolor: 'background.paper', px: 0.5, borderRadius: 0.5, color: state === 'late' || state === 'stranded' ? 'error.main' : 'text.primary' }}>
+                <Box sx={{ width: tight ? 9 : 11, height: tight ? 9 : 11, ml: tight ? '-4.5px' : '-5.5px', transform: 'rotate(45deg)', border: 2, flex: 'none', ...dotSx(state), boxShadow: 'none' }} />
+                <Box component="span" sx={{ fontSize: tight ? 10 : 11, lineHeight: tight ? '14px' : undefined, fontWeight: 600, bgcolor: 'background.paper', px: 0.5, borderRadius: 0.5, color: state === 'late' || state === 'stranded' ? 'error.main' : 'text.primary' }}>
                   {text}
                 </Box>
               </Box>
@@ -808,8 +813,8 @@ export default function GanttGrid(props: Props) {
           const sb = row.stepRows[b].step
           const xa = x(sa.due_on) + dayPx / 2
           const xb = x(sb.due_on) + dayPx / 2
-          const ya = base + a * STEP_ROW_H + STEP_ROW_H / 2
-          const yb = base + b * STEP_ROW_H + STEP_ROW_H / 2
+          const ya = base + a * stepRowH + stepRowH / 2
+          const yb = base + b * stepRowH + stepRowH / 2
           const elbow = Math.min(xa, xb) - 8
           paths.push(
             <path
@@ -829,7 +834,7 @@ export default function GanttGrid(props: Props) {
     }
     return paths
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, from, to, dayPx, theme])
+  }, [rows, from, to, dayPx, theme, stepRowH])
 
   return (
     <Box ref={innerRef} sx={{ position: 'relative', width: leftW + width, minWidth: '100%' }} data-testid="gantt-inner">

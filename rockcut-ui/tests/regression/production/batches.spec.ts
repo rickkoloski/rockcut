@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addTemplateStep, apiAs, createTemplate, retireAll, stepTypes, tempTag } from './helpers'
-import { addDays, batchOf, dragBy, Made, openGantt, pNumbers, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
+import { addDays, addProcess, batchOf, dragBy, Made, openGantt, pNumbers, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
 
 // D47 §3.5–§3.6 planning batches, their numbers, moving and re-tanking bars,
 // and the flags planning raises: P21–P24, P30–P33, P36–P40, P53, P54, P60,
@@ -60,7 +60,7 @@ test('P21: Plan batch: ghosted with its P-number; later planned batches renumber
   const tank = await made.tank('FV3')
   const before = await pNumbers()
   await openGantt(page)
-  await page.getByTestId('gantt-plan').click()
+  await addProcess(page, 'plan')
   await planThroughDialog(page, { brand: brand.id, template: ALE, brewOn: addDays(today(), 1), volume: 20, tanks: [tank.id] })
   const batch = await newest(brand.id)
   expect(batch.p_number).toMatch(/^P\d+$/)
@@ -113,7 +113,7 @@ test('P23, P24: the first planned keeps the lower P-number; a two-day brew', asy
   expect(Number(nums.get(a.id)!.slice(1))).toBe(Number(nums.get(b.id)!.slice(1)) - 1)
 
   await openGantt(page)
-  await page.getByTestId('gantt-plan').click()
+  await addProcess(page, 'plan')
   await planThroughDialog(page, { brand: brand.id, template: ALE, brewOn: addDays(today(), 4), volume: 15, twoDays: true })
   const two = await newest(brand.id)
   const first = stepOf(two, 'Brew day - 1 of 2')

@@ -15,6 +15,7 @@ export interface SStep {
   name: string
   type_name: string | null
   behavior: string | null
+  marker: boolean
   first_brew: boolean
   vessel_index: number
   due_on: string
@@ -156,6 +157,12 @@ export const gantt = (page: Page) => page.getByTestId('gantt')
 export async function openGantt(page: Page) {
   await page.goto('/brewery/production')
   await expect(page.getByTestId('gantt-inner')).toBeVisible()
+}
+
+/** Toolbar → Add process ▾ → Plan batch… or CIP & Sanitize… (D48 §3.6). */
+export async function addProcess(page: Page, which: 'plan' | 'cip') {
+  await page.getByTestId('gantt-add-process').click()
+  await page.getByTestId(which === 'plan' ? 'gantt-plan' : 'gantt-add-cip').click()
 }
 
 /** Pixels per day in the page now. */

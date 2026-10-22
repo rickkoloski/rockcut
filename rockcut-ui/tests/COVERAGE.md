@@ -589,3 +589,12 @@ Fix cycle 3 (lead decisions 6):
 | 4 | Remove-Transfer while loading: `aria-label="Remove"`, `aria-busy="true"` | Playwright `production/followups-4650` (N2) |
 
 Not automated (LIMITATIONS, lead decisions 3): touch long-press drag (450 ms) — by hand on the tablet or the Pixel at the DEV gate; the "Label by" picker when batches share a track is deferred (lines show "step · batch"); links between tanks aren't drawn in an expanded tank (the transfer arrow covers the hand-off).
+
+## D48 — Changing a batch (`specs/d46_production_scheduling_spec.md` §3.11, §3.6 D48 toolbar, §3.8 marks; `planning/d48_batch_changes_plan.md`)
+
+| # | Scenario | Layer |
+|---|---|---|
+| P118 | Today: a week back plus the zoom's weeks, always scrolls back (the D47 no-op); a new zoom keeps the start | Playwright `production/d48-toolbar`; Vitest `gantt` (`defaultRange`, `rangeForZoom`) |
+| P119 | Collapse all \| ● \| Expand all follows the carets; the middle restores the mix; remembered | Playwright `production/d48-toolbar`; Vitest `gantt` (`expandMode`, the `mix` pref) |
+| P120 | "6 weeks ▾" zoom menu and Add process ▾ (Plan batch…, CIP & Sanitize…), mouse and keyboard; old buttons gone | Playwright `production/d48-toolbar` (the other production specs open the dialogs through the menu) |
+| P121 | 20 px step rows with a mouse, 28 px on touch and at phone width; phases at 16 px, steps at 28 px; diamonds and links on their rows | Playwright `production/d48-toolbar` (desktop, phone width, `hasTouch`); Vitest `gantt` (`layoutRows` with 20 px) |

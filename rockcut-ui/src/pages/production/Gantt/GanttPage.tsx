@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Box, Button, ListSubheader, Menu, MenuItem, Typography, useMediaQuery } from '@mui/material'
-import { Add, CleaningServices } from '@mui/icons-material'
+import { Alert, Box, ListSubheader, Menu, MenuItem, Typography, useMediaQuery } from '@mui/material'
 import api from '../../../lib/api'
 import PageHeader from '../../../components/PageHeader'
 import { useApiQuery } from '../../../hooks/useApiQuery'
@@ -13,12 +12,16 @@ import {
   dayWidth,
   daysBetween,
   defaultRange,
+  expandMode,
   layoutRows,
-  rangeAroundToday,
+  rangeForZoom,
   readPrefs,
   rowKey,
   shiftRange,
+  STEP_ROW_H,
+  STEP_ROW_H_FINE,
   writePref,
+  type ExpandMode,
   type Part,
   type Range,
   type Zoom,
@@ -68,12 +71,18 @@ function GanttScreen() {
   const drag = useTimelineDrag()
   const userId = useAuth((s) => s.user?.id) ?? 'anon'
   const phone = useMediaQuery('(max-width:559.95px)')
+  // Compact step rows with a mouse; a finger (the tablet, phones) keeps 28 px (D48 §3.6, P121).
+  const fine = useMediaQuery('(pointer: fine)') && !phone
+  const stepRowH = fine ? STEP_ROW_H_FINE : STEP_ROW_H
   const today = coloradoToday()
   const [prefs] = useState(() => readPrefs(userId, phone))
-  const [range, setRangeState] = useState<Range>(() => prefs.range ?? defaultRange(today))
+  const [range, setRangeState] = useState<Range>(() => prefs.range ?? defaultRange(today, prefs.zoom))
   const [zoom, setZoomState] = useState<Zoom>(prefs.zoom)
   const [compact, setCompactState] = useState(prefs.collapsed)
   const [expanded, setExpandedState] = useState(() => new Set(prefs.expanded))
+  const [mix, setMixState] = useState(() => new Set(prefs.mix))
+  // Bumped by Today so it scrolls even when the range is unchanged (D48 §3.6, the D47 no-op).
+  const [todayTick, setTodayTick] = useState(0)
 
   const setRange = (r: Range) => {
     const next = clampRange(r)
@@ -83,6 +92,7 @@ function GanttScreen() {
   const setZoom = (z: Zoom) => {
     setZoomState(z)
     writePref(userId, 'zoom', z)
+    setRange(rangeForZoom(range, z))
   }
   const setCompact = (c: boolean) => {
     setCompactState(c)
@@ -91,6 +101,10 @@ function GanttScreen() {
   const setExpanded = (keys: Set<string>) => {
     setExpandedState(keys)
     writePref(userId, 'expanded', [...keys])
+  }
+  const setMix = (keys: Set<string>) => {
+    setMixState(keys)
+    writePref(userId, 'mix', [...keys])
   }
 
   const { data, isLoading, error } = useApiQuery<Schedule>(
@@ -117,16 +131,24 @@ function GanttScreen() {
   const days = daysBetween(range.from, range.to) + 1
 
   const parts = useMemo(() => (data ? data.batches.flatMap(buildParts) : []), [data])
-  const rows = useMemo(() => (data ? layoutRows(data.tanks, parts, data.cips, expanded) : []), [data, parts, expanded])
+  const rows = useMemo(() => (data ? layoutRows(data.tanks, parts, data.cips, expanded, stepRowH) : []), [data, parts, expanded, stepRowH])
+  const rowKeys = rows.map((r) => rowKey(r.tank))
+  // The switch reads the tanks, which have carets; Expand all opens Unassigned too.
+  const tankKeys = rows.flatMap((r) => (r.tank ? [rowKey(r.tank)] : []))
 
-  // Scroll today into view when the range or zoom changes.
+  // Scroll a week before today to the left edge when the range or zoom changes, and on every Today.
   useEffect(() => {
     const el = scroller.current
     if (!el || !data) return
     const at = daysBetween(range.from, data.today)
     if (at >= 0 && at < days) el.scrollLeft = Math.max(0, at * dayPx - 7 * dayPx)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range.from, range.to, zoom, !!data])
+  }, [range.from, range.to, zoom, !!data, todayTick])
+
+  const goToday = () => {
+    setRange(defaultRange(data?.today ?? today, zoom))
+    setTodayTick((t) => t + 1)
+  }
 
   // ── Dialogs (§3.5–§3.10). The step dialog can sit over the batch dialog. ──
   const [open, setOpen] = useState<Open>(null)
@@ -179,11 +201,18 @@ function GanttScreen() {
       ),
   }
 
+  // A caret makes the open tanks the person's own mix, unless it opened or closed them all (P119).
   const toggleRow = (key: string) => {
     const next = new Set(expanded)
     if (next.has(key)) next.delete(key)
     else next.add(key)
     setExpanded(next)
+    if (expandMode(tankKeys, next) === 'mine') setMix(new Set(tankKeys.filter((k) => next.has(k))))
+  }
+  const pickExpandMode = (m: ExpandMode) => {
+    if (m === 'expand') setExpanded(new Set(rowKeys))
+    else if (m === 'collapse') setExpanded(new Set())
+    else if (mix.size) setExpanded(new Set(mix))
   }
 
   return (
@@ -195,21 +224,14 @@ function GanttScreen() {
         flags={data?.flags ?? []}
         onRange={setRange}
         onShift={(d) => setRange(shiftRange(range, d))}
-        onToday={() => setRange(rangeAroundToday(range, data?.today ?? today))}
+        onToday={goToday}
         onZoom={setZoom}
-        onExpandAll={() => setExpanded(new Set(rows.map((r) => rowKey(r.tank))))}
-        onCollapseAll={() => setExpanded(new Set())}
+        expandMode={expandMode(tankKeys, expanded)}
+        hasMix={mix.size > 0}
+        onExpandMode={pickExpandMode}
         onFlags={() => setOpen({ kind: 'flags' })}
-        actions={
-          <>
-            <Button variant="outlined" startIcon={<CleaningServices />} onClick={() => setOpen({ kind: 'cip', tankId: null, day: data?.today ?? today })} data-testid="gantt-add-cip">
-              Add CIP & Sanitize
-            </Button>
-            <Button variant="contained" startIcon={<Add />} onClick={() => setOpen({ kind: 'plan', tankId: null, day: data?.today ?? today })} data-testid="gantt-plan">
-              Plan batch
-            </Button>
-          </>
-        }
+        onPlan={() => setOpen({ kind: 'plan', tankId: null, day: data?.today ?? today })}
+        onAddCip={() => setOpen({ kind: 'cip', tankId: null, day: data?.today ?? today })}
       />
       {error && !data && (
         <Alert severity="error" data-testid="gantt-error">
@@ -250,6 +272,7 @@ function GanttScreen() {
             flags={data.flags}
             compact={compact}
             expanded={expanded}
+            stepRowH={stepRowH}
             onToggleRow={toggleRow}
             onToggleCompact={() => setCompact(!compact)}
           />

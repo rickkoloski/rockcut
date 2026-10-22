@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addOutage, apiAs } from './helpers'
-import { addDays, batchOf, dayPx, dragBy, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
+import { addDays, addProcess, batchOf, dayPx, dragBy, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
 
 // D47 DEV QA fix cycle 1 (lead decisions 4): M1 typing a date, M2 a batch
 // number with a leading #, M3 a full Package checked off early, and the
@@ -276,7 +276,7 @@ test('the plan dialog’s tank menu keeps its rows while open, though a refetch 
   const pick = await made.tank('QR1')
   await page.clock.install()
   await openGantt(page)
-  await page.getByTestId('gantt-plan').click()
+  await addProcess(page, 'plan')
   await page.getByTestId('plan-tank-0').click()
   const items = page.getByRole('option')
   const before = await items.evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')))
