@@ -21,7 +21,7 @@ defmodule RockcutApi.Production.Parts do
   a standalone one. Unfinished steps dated after a done exit are
   `stranded` (flagged as out of order, drawn red).
   """
-  alias RockcutApi.Production.Steps
+  alias RockcutApi.Production.{StepLink, Steps}
 
   @doc "Every vessel of every entry as a part."
   def build(entries) do
@@ -126,6 +126,23 @@ defmodule RockcutApi.Production.Parts do
   end
 
   def behavior(step), do: Steps.behavior(step)
+
+  @doc """
+  D48 DEV QA Y1: a split part's place after its parent's Split, as links
+  (not stored): `split` → each of the part's first steps (`steps` with no
+  link into them from another of `steps`; `links` the part's), `move_all`.
+  Moves follow them (`Steps`), and "Steps out of order" checks them (`Flags`).
+  """
+  def split_links(split, steps, links) do
+    ids = MapSet.new(steps, & &1.id)
+
+    led =
+      for l <- links, MapSet.member?(ids, l.from_step_id), into: MapSet.new(), do: l.to_step_id
+
+    for s <- steps,
+        not MapSet.member?(led, s.id),
+        do: %StepLink{from_step_id: split.id, to_step_id: s.id, default_answer: "move_all"}
+  end
 
   @doc "A step's place in time: its date, then its position in the day, then id."
   def order(step), do: {Date.to_gregorian_days(step.due_on), step.position, step.id}

@@ -641,12 +641,15 @@ defmodule RockcutApi.Production.BatchChanges do
   end
 
   @doc """
-  Change a planned batch's brand (§3.11, P84); its parts follow.
-  `:not_planned` once brewed, `:brand_invalid` for a retired or unknown brand.
+  Change a planned batch's brand (§3.11, P84). `:not_planned` once brewed,
+  `:brand_invalid` for a retired or unknown brand; `:split` on a split
+  parent and `:split_part` on a part (D48 DEV QA Y3: locked while split,
+  like its tanks and volume).
   """
   def change_brand(%Batch{} = batch, brand_id) do
     Repo.transaction(fn ->
       if batch.split_parent_id, do: Repo.rollback(:split_part)
+      if split?(batch), do: Repo.rollback(:split)
       if batch.status != "planned", do: Repo.rollback(:not_planned)
 
       brand =
@@ -656,11 +659,6 @@ defmodule RockcutApi.Production.BatchChanges do
         end
 
       batch |> Changeset.change(brand_id: brand.id) |> Repo.update!()
-
-      Repo.update_all(from(b in Batch, where: b.split_parent_id == ^batch.id),
-        set: [brand_id: brand.id]
-      )
-
       %{batch_ids: [batch.id]}
     end)
   end

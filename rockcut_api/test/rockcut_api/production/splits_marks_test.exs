@@ -541,10 +541,13 @@ defmodule RockcutApi.Production.SplitsMarksTest do
     end
   end
 
-  test "a step added to a part is unaffected by the parent's moves", ctx do
+  # D48 DEV QA Y1 changed this: a split batch moves as one tree.
+  test "a parent's Move all takes the parts along; Move only leaves them", ctx do
     {:ok, %{part_ids: [p1, _]}} = split(ctx.batch, [stays("12"), into(ctx.fv6, "8")])
     {:ok, _} = Steps.move([named(ctx.batch, "FDH").id], 1, answer: "move_all")
-    assert named(Repo.get!(Batch, p1), "Carb").due_on == ~D[2026-11-16]
+    assert named(Repo.get!(Batch, p1), "Carb").due_on == ~D[2026-11-17]
+    {:ok, _} = Steps.move([named(ctx.batch, "FDH").id], 1, answer: "move_only")
+    assert named(Repo.get!(Batch, p1), "Carb").due_on == ~D[2026-11-17]
     assert %Step{} = named(ctx.batch, "Split - Transfer")
   end
 end

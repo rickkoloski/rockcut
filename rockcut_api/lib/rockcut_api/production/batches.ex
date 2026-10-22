@@ -447,17 +447,21 @@ defmodule RockcutApi.Production.Batches do
 
   @doc """
   Move a batch in time by `days`: a planned batch's every step, a brewed
-  one's unfinished steps (finished ones keep their dates). No prompt.
+  one's unfinished steps (finished ones keep their dates). No prompt. A
+  split parent whose Split isn't done takes its parts' steps along (D48 DEV
+  QA Y1), refused (`:part_done`) while one of them is done.
   `{:ok, %{moved, kept, renumbered}}`.
   """
   def shift(%Batch{} = batch, days) do
     case to_int(days) do
       d when is_integer(d) and d != 0 and abs(d) <= @max_shift ->
         Repo.transaction(fn ->
-          steps = Repo.all(from(s in Step, where: s.batch_id == ^batch.id))
+          steps = Repo.all(from(s in Step, where: s.batch_id == ^batch.id, preload: :step_type))
 
           {open, done} =
             Enum.split_with(steps, &(batch.status == "planned" or is_nil(&1.done_on)))
+
+          open = open ++ carried_parts!(batch, steps)
 
           {_, renumbered} =
             with_renumbering(fn ->
@@ -472,6 +476,35 @@ defmodule RockcutApi.Production.Batches do
         {:error, :days_invalid}
     end
   end
+
+  # A split parent's parts' steps, while its Split isn't done (D48 DEV QA Y1).
+  defp carried_parts!(batch, steps) do
+    split = Enum.find(steps, &(Steps.behavior(&1) == "split"))
+
+    if split && is_nil(split.done_on) do
+      parts =
+        Repo.all(
+          from(s in Step, where: s.batch_id in subquery(parts_q(batch)), preload: :step_type)
+        )
+
+      case Enum.find(parts, & &1.done_on) do
+        nil ->
+          parts
+
+        step ->
+          part = Repo.get!(Batch, step.batch_id) |> Repo.preload(:brand)
+
+          Repo.rollback(
+            {:part_done, label(part, p_numbers()), Steps.name(Repo.preload(step, :phase))}
+          )
+      end
+    else
+      []
+    end
+  end
+
+  defp parts_q(%Batch{id: id}),
+    do: from(b in Batch, where: b.split_parent_id == ^id, select: b.id)
 
   @doc """
   Put vessel `index` of `batch` in `tank_id` (nil = Unassigned); only that

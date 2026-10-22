@@ -160,8 +160,11 @@ function StepLine({
   )
 }
 
-/** D48: a planned batch's brand and template (a new template rebuilds the steps; added ones are kept). */
-function BrandTemplate({ batch, run }: { batch: SchedBatch; run: (call: () => Promise<{ ok: boolean; error?: string }>) => Promise<boolean> }) {
+/**
+ * D48: a planned batch's brand and template (a new template rebuilds the steps; added ones are kept).
+ * Read-only on a split parent and its parts, like the tanks and volume (DEV QA Y3).
+ */
+function BrandTemplate({ batch, locked, run }: { batch: SchedBatch; locked: boolean; run: (call: () => Promise<{ ok: boolean; error?: string }>) => Promise<boolean> }) {
   const flows = useFlows()
   const brands = (useApiQuery<Brand[]>(['brands'], '/api/brands').data ?? []).filter((b) => b.status !== 'retired' || b.id === batch.brand_id).sort((a, b) => a.name.localeCompare(b.name))
   const templates = (useApiQuery<TemplateSummary[]>(TEMPLATES_KEY, prodPath('templates')).data ?? []).filter((t) => !t.retired_at || t.id === batch.template_id)
@@ -180,6 +183,8 @@ function BrandTemplate({ batch, run }: { batch: SchedBatch; run: (call: () => Pr
             flows.write<Changed>(() => api.patch(prodPath('batches', batch.id), { brand_id: Number(e.target.value) }), (d) => `${batch.label} is now ${d.batches?.[0]?.label ?? 'changed'}.`),
           )
         }
+        disabled={locked}
+        helperText={locked ? SPLIT_LOCKED : undefined}
         slotProps={{ select: { SelectDisplayProps: { 'data-testid': 'batch-brand' } as object } }}
       >
         {brands.map((b) => (
@@ -194,6 +199,8 @@ function BrandTemplate({ batch, run }: { batch: SchedBatch; run: (call: () => Pr
         label="Template"
         value={templates.some((t) => t.id === batch.template_id) ? batch.template_id : ''}
         onChange={(e) => setTemplate(templates.find((t) => t.id === Number(e.target.value)) ?? null)}
+        disabled={locked}
+        helperText={locked ? SPLIT_LOCKED : undefined}
         slotProps={{ select: { SelectDisplayProps: { 'data-testid': 'batch-template' } as object } }}
       >
         {templates.map((t) => (
@@ -285,8 +292,8 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
       <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         <ErrorAlert error={error} onClose={() => setError(null)} testId="batch-dialog-error" />
         <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>
-          {planned && !batch.split_parent_id ? (
-            <BrandTemplate batch={batch} run={run} />
+          {planned ? (
+            <BrandTemplate batch={batch} locked={split} run={run} />
           ) : (
             <Typography variant="body2" sx={{ gridColumn: '1 / -1' }}>
               Template: {batch.template_name ?? '—'} · Brand: {batch.brand_name ?? '—'}

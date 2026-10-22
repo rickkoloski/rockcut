@@ -200,6 +200,10 @@ export class Made {
         await succeeds(api.delete(`${P}/batches/${id}/split`), `undo the split of batch ${id}`)
       }
       if (b.status !== 'planned') {
+        // Brew day stays done while a Transfer/Filter or Package is (DEV QA Y2): those first, latest first.
+        const exits = b.steps.filter((s) => (s.behavior === 'transfer' || s.behavior === 'package') && s.done_on)
+        exits.sort((x, y) => y.done_on!.localeCompare(x.done_on!))
+        for (const s of exits) await succeeds(api.post(`${P}/steps/${s.id}/uncomplete`), `un-check step ${s.id} of batch ${id}`)
         const brew = b.steps.find((s) => s.first_brew && s.done_on)
         if (brew) await succeeds(api.post(`${P}/steps/${brew.id}/uncomplete`), `un-check brew day of batch ${id}`)
       }

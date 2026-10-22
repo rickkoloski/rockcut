@@ -38,6 +38,8 @@ export interface MovePreview {
   /** D48 QA minor 10: every batch the move touches. */
   batches?: { id: number; label: string }[]
   moved: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
+  /** D48 DEV QA Y1: a moved Split's parts' steps, which go with it whatever the answer. */
+  carried?: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   following: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   default_answer: Answer | null
   out_of_order: Record<Answer, { from_name: string; to_name: string }[]>
@@ -56,6 +58,14 @@ export type Result<T = Record<string, unknown>> = { ok: true; data: T } | Failur
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 const daysWord = (days: number) => `${plural(Math.abs(days), 'day')} ${days > 0 ? 'later' : 'earlier'}`
+const andList = (items: string[]) => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
+
+/** The parts a moved Split takes along ("Galactic P5.1 and Galactic P5.2"), or null. */
+const carriedText = (pre: MovePreview) => {
+  const ids = new Set((pre.carried ?? []).map((s) => s.batch_id))
+  const labels = (pre.batches ?? []).filter((b) => ids.has(b.id)).map((b) => b.label)
+  return labels.length ? andList(labels) : null
+}
 
 
 const bodyOf = (err: unknown) => (err as { response?: { data?: Record<string, unknown>; status?: number } })?.response
@@ -125,7 +135,10 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       }
       const r = await write<{ out_of_order?: unknown[] }>(
         () => api.post(prodPath('steps', 'move'), { ids, days, answer }),
-        () => (answer === 'move_all' ? `${title}, with ${plural(pre.following.length, 'following step')}.` : `${title}.`),
+        () => {
+          const withParts = [answer === 'move_all' && plural(pre.following.length, 'following step'), carriedText(pre)].filter(Boolean)
+          return withParts.length ? `${title}, with ${andList(withParts as string[])}.` : `${title}.`
+        },
       )
       if (!r.ok) notify(r.error)
       return r
@@ -297,6 +310,7 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
   const pill = (a: Answer) =>
     preview.default_answer === a ? <Chip label="Default" size="small" color="primary" variant="outlined" sx={{ ml: 1, height: 20 }} data-testid={`move-default-${a}`} /> : null
   const renum = renumberText(preview.renumbered[answer] ?? [])
+  const carried = carriedText(preview)
   // Steps in several batches: say how many, and list what follows under each batch (QA minor 10).
   const batches = preview.batches ?? []
   const many = batches.length > 1
@@ -323,6 +337,11 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
         )}
       </DialogTitle>
       <DialogContent>
+        {carried && (
+          <Typography variant="body2" sx={{ mb: 1 }} data-testid="move-carried">
+            {carried} move{carried.includes(' and ') ? '' : 's'} with it either way.
+          </Typography>
+        )}
         <RadioGroup value={answer} onChange={(e) => setAnswer(e.target.value as Answer)}>
           <FormControlLabel
             value="move_all"

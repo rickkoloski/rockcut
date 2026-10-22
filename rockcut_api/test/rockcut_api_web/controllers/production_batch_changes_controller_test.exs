@@ -481,4 +481,63 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
     assert RockcutApi.Production.Splits.parts_of(ale) == []
     assert vessels(ale) == %{0 => fv9.id}
   end
+
+  test "DEV QA fix cycle 5: a split moves as one; brew day first; brand locked", ctx do
+    b = ctx["brewer1"]
+    path = "/api/production/batches/#{ctx.batch.id}"
+
+    split =
+      call(b, :post, "#{path}/split", %{
+        due_on: "2026-11-13",
+        parts: [%{stays: true, volume_bbl: 12}, %{tank_id: tank!("FV6").id, volume_bbl: 8}]
+      })
+
+    [p1, p2] = body(split)["data"]["part_ids"]
+    split_id = named(ctx.batch, "Split - Transfer").id
+
+    # Y1: Move all from Brew day lists the parts under their labels.
+    brew = named(ctx.batch, "Brew day").id
+    pre = call(b, :post, "/api/production/steps/move", %{ids: [brew], days: 7, preview: true})
+    preview = body(pre)["data"]["preview"]
+
+    assert Enum.map(preview["batches"], & &1["label"]) ==
+             ["Galactic P1", "Galactic P1.1", "Galactic P1.2"]
+
+    assert Enum.count(preview["following"], &(&1["batch_id"] in [p1, p2])) == 6
+
+    # The Split itself carries them, with no prompt.
+    pre = call(b, :post, "/api/production/steps/move", %{ids: [split_id], days: 7, preview: true})
+    assert length(body(pre)["data"]["preview"]["carried"]) == 6
+    assert body(pre)["data"]["preview"]["following"] == []
+
+    moved = call(b, :post, "/api/production/steps/move", %{ids: [split_id], days: 7})
+    assert moved.status == 200
+    assert named(Repo.get!(RockcutApi.Brewing.Batch, p2), "Carb").due_on == ~D[2026-11-23]
+    assert undo(b, moved).status == 200
+    assert named(Repo.get!(RockcutApi.Brewing.Batch, p2), "Carb").due_on == ~D[2026-11-16]
+
+    # Y2: the Split waits for brew day.
+    refused = call(b, :post, "/api/production/steps/#{split_id}/complete", %{})
+
+    assert {refused.status, body(refused)} ==
+             {422, %{"error" => "before_brew_day", "message" => "Check off brew day first."}}
+
+    # Y3: the brand is locked on the parent too.
+    rebrand = call(b, :patch, path, %{brand_id: brand!("Enos").id})
+
+    assert {rebrand.status, body(rebrand)} ==
+             {422, %{"error" => "split", "message" => "Undo the split first."}}
+
+    # A done step on a part blocks the move that would take it.
+    done!(named(Repo.get!(RockcutApi.Brewing.Batch, p2), "Carb"))
+
+    blocked =
+      call(b, :post, "/api/production/steps/move", %{ids: [brew], days: 7, answer: "move_all"})
+
+    assert body(blocked) == %{
+             "error" => "part_step_done",
+             "message" =>
+               "Galactic P1.2: Carb is already done, so the split can't move. Mark it not done first."
+           }
+  end
 end

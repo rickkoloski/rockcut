@@ -264,6 +264,25 @@ defmodule RockcutApi.Production.Flags do
         batch_ids: [p.batch_id],
         tank_id: nil
       )
+    end ++ split_order(parts)
+  end
+
+  # D48 DEV QA Y1: a split part's first steps follow its parent's Split
+  # (`Parts.split_links/3`), checked by the same rule.
+  defp split_order(parts) do
+    for {_batch_id, mine} <- Enum.group_by(parts, & &1.batch_id),
+        p = Enum.find(mine, &(&1.vessel_index == 0)),
+        split = p && p.fill,
+        split && Parts.behavior(split) == "split" && split.batch_id != p.batch_id,
+        l <- Parts.split_links(split, p.batch_steps, p.links),
+        to = Enum.find(p.batch_steps, &(&1.id == l.to_step_id)),
+        RockcutApi.Production.Steps.out_of_order?(split, to) do
+      flag(:out_of_order, ["split#{split.id}", to.id], [split.due_on, to.due_on],
+        message:
+          "#{p.label}: #{RockcutApi.Production.Steps.name(to)} is before #{RockcutApi.Production.Steps.name(split)}, the step it follows.",
+        batch_ids: [p.batch_id, split.batch_id],
+        tank_id: nil
+      )
     end
   end
 

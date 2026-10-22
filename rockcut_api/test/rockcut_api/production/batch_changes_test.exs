@@ -790,23 +790,26 @@ defmodule RockcutApi.Production.BatchChangesTest do
       assert {:error, :split} = BatchChanges.change_template(reload(batch), ctx.template.id)
     end
 
-    test "change brand: the label follows, parts too (P84)", ctx do
+    test "change brand: the label follows (P84); locked while split (DEV QA Y3)", ctx do
       enos = brand!("Enos")
+      assert {:ok, _} = BatchChanges.change_brand(reload(ctx.batch), enos.id)
+      assert [%{label: "Enos P1"}] = Schedule.batches([ctx.batch.id])
+
+      retired = Repo.insert!(%RockcutApi.Brewing.Brand{name: "Old", status: "retired"})
+      assert {:error, :brand_invalid} = BatchChanges.change_brand(reload(ctx.batch), retired.id)
 
       part =
         Repo.insert!(%RockcutApi.Brewing.Batch{
-          brand_id: ctx.batch.brand_id,
+          brand_id: enos.id,
           status: "planned",
           split_parent_id: ctx.batch.id,
           part_number: 1
         })
 
-      assert {:ok, _} = BatchChanges.change_brand(reload(ctx.batch), enos.id)
-      assert [%{label: "Enos P1"}] = Schedule.batches([ctx.batch.id])
-      assert reload(part).brand_id == enos.id
-
-      retired = Repo.insert!(%RockcutApi.Brewing.Brand{name: "Old", status: "retired"})
-      assert {:error, :brand_invalid} = BatchChanges.change_brand(reload(ctx.batch), retired.id)
+      galactic = brand!("Galactic 2")
+      assert {:error, :split} = BatchChanges.change_brand(reload(ctx.batch), galactic.id)
+      assert {:error, :split_part} = BatchChanges.change_brand(reload(part), galactic.id)
+      assert reload(ctx.batch).brand_id == enos.id and reload(part).brand_id == enos.id
     end
   end
 end

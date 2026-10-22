@@ -385,11 +385,12 @@ Computed server-side by one function, returned with the schedule.
 - **Split:** date, **Transfer or Filter** (one choice for the whole split, default Transfer; Matt, 2026-10-21: it applies to every part that leaves; it behaves the same either way and names the step "Split - Transfer" / "Split - Filter"), two or more parts (add/remove), each with a tank (one may stay in the current tank, marked "(stays here)") and a volume.
   - Volumes must add up to the batch's. Two parts can't share a tank.
   - The parent keeps its history up to the split. Each part is its own batch (`split_parent_id`, `part_number`) with its own copy of the remaining steps; numbered #40.1, #40.2 (P2.1 while planned), following the parent's number.
-  - If no part stays, the tank left behind gets a CIP that day. Checking off the split fills each part.
+  - If no part stays, the tank left behind gets a CIP that day. Checking off the split fills each part. Like a Transfer/Filter and a Package, it can't be checked off before brew day ("Check off brew day first."; lead decisions 6, Y2).
+  - A split batch moves as one (lead decisions 6, Y1): **Move all** on a parent step on or before the Split, and any move of the Split itself, move the parts' unfinished steps by the same days (listed under each part in the move prompt). A done step on a part refuses those moves. A part step dated before the Split is flagged "Steps out of order".
   - **Undo split** merges back (beer stays in the parent's tank, part 1's schedule kept) unless a part has finished steps.
   - Splitting a part again and blending are out of scope.
 - **Change template** (planned, not split): rebuilds the steps from the new template, keeping brew day, two-day brew, tanks and added steps (added transfers aren't kept). Switching to a template with a transfer adds an Unassigned later vessel; switching away drops it.
-- **Change brand** (planned): parts follow.
+- **Change brand** (planned, not split): locked while split, like the tanks and volume (lead decisions 6, Y3).
 - **Multi-select:** §3.6.
 
 ### 3.12 Task list linkage (D49)

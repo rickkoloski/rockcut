@@ -177,6 +177,23 @@ defmodule RockcutApiWeb.ProductionErrors do
     })
   end
 
+  # D48 DEV QA Y2: a Split, Transfer/Filter or Package waits for brew day,
+  # and brew day stays done while one of them is.
+  def handle({:error, {:before_brew_day, :check_off}}, conn),
+    do: refused(conn, "before_brew_day", "Check off brew day first.")
+
+  def handle({:error, {:exit_done, name}}, conn),
+    do: refused(conn, "exit_done", "Mark #{name} not done first.")
+
+  # D48 DEV QA Y1: a split moves with its parts, so not while a part's step is done.
+  def handle({:error, {:part_done, label, name}}, conn),
+    do:
+      refused(
+        conn,
+        "part_step_done",
+        "#{label}: #{name} is already done, so the split can't move. Mark it not done first."
+      )
+
   # D47 plan decision 5.
   def handle({:error, :undo_stale}, conn) do
     conn
@@ -188,6 +205,12 @@ defmodule RockcutApiWeb.ProductionErrors do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: Atom.to_string(code), message: Map.fetch!(@messages, code)})
+  end
+
+  defp refused(conn, code, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: code, message: message})
   end
 
   defp same_tank(conn, message) do
