@@ -31,7 +31,7 @@ import OutageDialog from '../OutageDialog'
 import BatchDialog from './BatchDialog'
 import CipAddDialog from './CipAddDialog'
 import FlagsDialog from './FlagsDialog'
-import GanttGrid, { LEFT_W, LEFT_W_COMPACT } from './GanttGrid'
+import GanttGrid, { HEAD_H, LEFT_W, LEFT_W_COMPACT } from './GanttGrid'
 import GanttLegend from './GanttLegend'
 import GanttToolbar from './GanttToolbar'
 import PlanBatchDialog from './PlanBatchDialog'
@@ -68,7 +68,9 @@ export default function GanttPage() {
 
 function GanttScreen() {
   const flows = useFlows()
-  const drag = useTimelineDrag()
+  // The grid scrolls under a drag near its edges (D48), below the date header and right of the tank column.
+  const scroller = useRef<HTMLDivElement>(null)
+  const drag = useTimelineDrag({ scroller, insets: () => ({ top: HEAD_H + 1, left: leftW }) })
   const userId = useAuth((s) => s.user?.id) ?? 'anon'
   const phone = useMediaQuery('(max-width:559.95px)')
   // Compact step rows with a mouse; a finger (the tablet, phones) keeps 28 px (D48 §3.6, P121).
@@ -115,7 +117,6 @@ function GanttScreen() {
   )
 
   // The timeline's width sets the pixels per day for the zoom.
-  const scroller = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(900)
   useEffect(() => {
     const el = scroller.current

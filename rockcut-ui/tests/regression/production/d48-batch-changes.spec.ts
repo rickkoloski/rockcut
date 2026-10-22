@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
-import { addDays, batchOf, Made, openGantt, snack, stepOf, today, undo, type SBatch } from './schedule'
+import { addDays, batchOf, dayPx, dragToLane, gantt, Made, openGantt, snack, stepOf, today, undo, type SBatch } from './schedule'
 
 // D48 §3.11 (task 3): the batch and step dialogs' changes. Add step (P65–P67),
 // Add a ramp (P68), Change ramp… (P69), Remove step (P70–P71), Add / remove
@@ -199,4 +199,45 @@ test('P83–P84: a planned batch changes template (keeping its added step) and b
   after = await batchOf(b.id)
   expect(after.brand_id).toBe(other.id)
   await expect(snack(page)).toHaveText(`${b.label} is now ${after.label}.`)
+})
+
+test.describe('a short window', () => {
+  test.use({ viewport: { width: 1280, height: 760 } })
+
+  test('drags auto-scroll the grid: down to a row below the fold, and sideways past the right edge', async ({ page }) => {
+    const fv = await made.tank('FV')
+    const b = await planned('Crusher', 2, ALE, [fv.id])
+    // Made last: its row is the last tank's, below the grid's fold here.
+    const target = await made.tank('Serving')
+    await openGantt(page)
+    const grid = gantt(page)
+    const box = (await grid.boundingBox())!
+    expect((await page.getByTestId(`gantt-lane-${target.id}`).boundingBox())!.y).toBeGreaterThan(box.y + box.height)
+
+    const top = await grid.evaluate((e) => e.scrollTop)
+    await dragToLane(page, page.getByTestId(`gantt-bar-${b.id}-0`), `gantt-lane-${target.id}`)
+    expect(await grid.evaluate((e) => e.scrollTop)).toBeGreaterThan(top)
+    await expect(page.getByTestId(`gantt-lane-${target.id}`)).toHaveAttribute('data-drop', 'true')
+    await expect(page.getByTestId('gantt-drag-hint')).toContainText(`→ ${target.name}`)
+    await page.mouse.up()
+    await expect(snack(page)).toHaveText(`${b.label} → ${target.name}.`)
+    await expect(page.getByTestId(`gantt-row-${target.id}`).getByTestId(`gantt-bar-${b.id}-0`)).toBeVisible()
+
+    // Sideways: held at the right edge, the dates scroll and the hint counts on.
+    const dot = page.getByTestId(`gantt-step-${stepOf(b, 'FDH').id}`)
+    await dot.scrollIntoViewIfNeeded()
+    const d = (await dot.boundingBox())!
+    const left = await grid.evaluate((e) => e.scrollLeft)
+    const px = await dayPx(page)
+    const [x, y] = [d.x + d.width / 2, d.y + d.height / 2]
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x + 6, y, { steps: 3 })
+    await page.mouse.move(box.x + box.width - 6, y, { steps: 8 })
+    await expect.poll(() => grid.evaluate((e) => e.scrollLeft), { timeout: 5000 }).toBeGreaterThan(left + 3 * px)
+    const days = Number((await page.getByTestId('gantt-drag-hint').textContent())!.match(/\+(\d+) days/)![1])
+    expect(days * px).toBeGreaterThan(box.x + box.width - 6 - x)
+    await page.keyboard.press('Escape')
+    await page.mouse.up()
+  })
 })

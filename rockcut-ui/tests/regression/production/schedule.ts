@@ -190,6 +190,45 @@ export async function dragBy(page: Page, el: Locator, days: number, dy = 0, at?:
   await page.mouse.up()
 }
 
+/**
+ * Press `el` (at `x` px into it) and move to the middle of the row
+ * `gantt-lane-…` named by `laneId`. When it's off the grid, the pointer waits
+ * in the grid's edge zone and the grid scrolls itself (D48 auto-scroll). The
+ * button stays down: the caller checks the hint or drop row, then releases.
+ * `tick` runs while it waits: with `page.clock` installed, the scrolling
+ * frames only come when the clock moves.
+ */
+export async function dragToLane(page: Page, el: Locator, laneId: string, x = 20, tick?: () => Promise<void>) {
+  await el.scrollIntoViewIfNeeded()
+  const box = (await el.boundingBox())!
+  const [px, py] = [box.x + x, box.y + box.height / 2]
+  await page.mouse.move(px, py)
+  await page.mouse.down()
+  await page.mouse.move(px, py + 6, { steps: 3 })
+  await followToLane(page, px, laneId, py, tick)
+}
+
+/** During a drag: move to the middle of the row `laneId`, waiting in the edge zone while the grid scrolls to it. */
+export async function followToLane(page: Page, px: number, laneId: string, startY?: number, tick?: () => Promise<void>) {
+  const grid = (await gantt(page).boundingBox())!
+  const from = startY ?? grid.y + grid.height / 2
+  const [top, bottom] = [grid.y + 47 + 45, grid.y + grid.height - 45]
+  for (let i = 0; i < 200; i++) {
+    const lane = (await page.getByTestId(laneId).boundingBox())!
+    const mid = lane.y + Math.min(lane.height, 54) / 2
+    if (mid > top && mid < bottom) {
+      await page.mouse.move(px, mid, { steps: 6 })
+      return
+    }
+    // In the edge zone, and far enough from the press to count as heading there.
+    const y = mid >= bottom ? Math.max(grid.y + grid.height - 8, from + 20) : Math.min(grid.y + 47 + 8, from - 20)
+    await page.mouse.move(px, y, { steps: 3 })
+    if (tick) await tick()
+    else await page.waitForTimeout(40)
+  }
+  throw new Error(`${laneId} never scrolled into the grid`)
+}
+
 /** The last message shown (the Undo snackbar). */
 export const snack = (page: Page) => page.getByTestId('gantt-snack-text').last()
 

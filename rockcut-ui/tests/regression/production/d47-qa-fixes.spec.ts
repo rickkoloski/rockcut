@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addOutage, apiAs } from './helpers'
-import { addDays, addProcess, batchOf, dayPx, dragBy, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
+import { addDays, addProcess, batchOf, dayPx, dragBy, followToLane, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
 
 // D47 DEV QA fix cycle 1 (lead decisions 4): M1 typing a date, M2 a batch
 // number with a leading #, M3 a full Package checked off early, and the
@@ -166,7 +166,6 @@ test('drag hint: a sideways drag shows the day; a row change names the tank, red
   const bar = page.getByTestId(`gantt-bar-${b.id}-0`)
   await bar.scrollIntoViewIfNeeded()
   const box = (await bar.boundingBox())!
-  const lane = (await page.getByTestId(`gantt-lane-${out.id}`).boundingBox())!
   const px = await dayPx(page)
   const hint = page.getByTestId('gantt-drag-hint')
   const [x, y] = [box.x + 20, box.y + box.height / 2]
@@ -178,7 +177,8 @@ test('drag hint: a sideways drag shows the day; a row change names the tank, red
   await expect(hint).toHaveText(`${label(addDays(today(), 5))} · +2 days`)
   await expect(hint).not.toHaveAttribute('data-warn', 'true')
 
-  await page.mouse.move(x, lane.y + lane.height / 2, { steps: 8 })
+  // On to the row, still pressed (the grid scrolls when it's below the fold: D48).
+  await followToLane(page, x, `gantt-lane-${out.id}`)
   await expect(hint).toHaveText(`→ ${out.name} · ${out.name} is out of service ${period(from, to)}`)
   await expect(hint).toHaveAttribute('data-warn', 'true')
 

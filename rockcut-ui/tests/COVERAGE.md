@@ -606,4 +606,5 @@ Not automated (LIMITATIONS, lead decisions 3): touch long-press drag (450 ms) �
 | P72, P74 | Add a Filter into a tank (CIP for the first tank, arrow); remove it from the step dialog | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
 | P73 | A transfer before a done step: refused with the spec's message | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
 | P83–P84 | Change a planned batch's template (added step kept, message) and brand | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, controller test (Undo) |
+| — | Drags auto-scroll the grid near its edges (rows below the fold, dates past the right edge); a press in the edge zone doesn't scroll until it heads that way | Playwright `production/d48-batch-changes` ("a short window"); the P32/P33 and drag-hint specs drag to off-screen rows |
 | P75–P82, P89, P110, P114–P117 | Splits, Undo split, part numbers, clean / dirty marks (API) | ExUnit `splits_marks_test`, `production_batch_changes_controller_test`, `seeds/synthetic_test`; Playwright with task 4 |

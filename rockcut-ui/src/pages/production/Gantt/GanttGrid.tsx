@@ -49,7 +49,8 @@ import type { DropInfo, DragState } from './useTimelineDrag'
 
 export const LEFT_W = 240
 export const LEFT_W_COMPACT = 124
-const HEAD_H = 46
+/** The date header, sticky over the grid (D48: drags auto-scroll below it). */
+export const HEAD_H = 46
 
 /** What a click (or Enter) on the Gantt opens, and what a drag does (§3.6 interactions). */
 export interface GanttActions {

@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addTemplateStep, apiAs, createTemplate, retireAll, stepTypes, tempTag } from './helpers'
-import { addDays, addProcess, batchOf, dragBy, Made, openGantt, pNumbers, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
+import { addDays, addProcess, batchOf, dragBy, dragToLane, Made, openGantt, pNumbers, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
 
 // D47 §3.5–§3.6 planning batches, their numbers, moving and re-tanking bars,
 // and the flags planning raises: P21–P24, P30–P33, P36–P40, P53, P54, P60,
@@ -161,15 +161,8 @@ test('P32 on DEV: a refetch in the middle of a drag (someone adds a tank) neithe
   const batch = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 3), tank_ids: [fv.id] })
   await page.clock.install()
   await openGantt(page)
-  const bar = page.getByTestId(`gantt-bar-${batch.id}-0`)
-  await bar.scrollIntoViewIfNeeded()
-  const lane = (await page.getByTestId(`gantt-lane-${target.id}`).boundingBox())!
-  const from = (await bar.boundingBox())!
-  const [x, y] = [from.x + 20, from.y + from.height / 2]
-  await page.mouse.move(x, y)
-  await page.mouse.down()
-  await page.mouse.move(x, y + 6, { steps: 3 })
-  await page.mouse.move(x, lane.y + lane.height / 2, { steps: 10 })
+  // The rows can be below the grid's fold: the drag scrolls it (D48).
+  await dragToLane(page, page.getByTestId(`gantt-bar-${batch.id}-0`), `gantt-lane-${target.id}`, 20, () => page.clock.runFor(48))
   await expect(page.getByTestId(`gantt-lane-${target.id}`)).toHaveAttribute('data-drop', 'true')
 
   // Another person adds a tank; the minute's refetch arrives mid-drag.
@@ -234,12 +227,8 @@ test('P32, P33: drag the after-transfer part to another tank, then a part to Una
   const [fv7, s2, s1] = [await made.tank('FV7'), await made.tank('Serving 2', 30), await made.tank('Serving 1', 30)]
   const batch = await made.plan({ brand_id: brand.id, template: LAGER, brew_on: addDays(today(), -30), tank_ids: [fv7.id, s2.id] })
   await openGantt(page)
-  const bar = page.getByTestId(`gantt-bar-${batch.id}-1`)
-  await bar.scrollIntoViewIfNeeded()
-  // Measured after the scroll, right before the drag.
-  const lane = (await page.getByTestId(`gantt-lane-${s1.id}`).boundingBox())!
-  const from = (await bar.boundingBox())!
-  await dragBy(page, bar, 0, lane.y + lane.height / 2 - (from.y + from.height / 2), { x: 20 })
+  await dragToLane(page, page.getByTestId(`gantt-bar-${batch.id}-1`), `gantt-lane-${s1.id}`)
+  await page.mouse.up()
   await expect(snack(page)).toHaveText(`${batch.label} (after transfer) → ${s1.name}.`)
   expect((await batchOf(batch.id)).vessels).toEqual([
     { vessel_index: 0, tank_id: fv7.id },
@@ -249,11 +238,8 @@ test('P32, P33: drag the after-transfer part to another tank, then a part to Una
   // P33: a batch filling in 2 days dragged to Unassigned gets the flag.
   const soon = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 2), tank_ids: [fv7.id] })
   await page.reload()
-  const bar2 = page.getByTestId(`gantt-bar-${soon.id}-0`)
-  await bar2.scrollIntoViewIfNeeded()
-  const un = (await page.getByTestId('gantt-lane-unassigned').boundingBox())!
-  const b2 = (await bar2.boundingBox())!
-  await dragBy(page, bar2, 0, un.y + un.height / 2 - (b2.y + b2.height / 2), { x: 20 })
+  await dragToLane(page, page.getByTestId(`gantt-bar-${soon.id}-0`), 'gantt-lane-unassigned')
+  await page.mouse.up()
   await expect(snack(page)).toHaveText(`${soon.label} → Unassigned.`)
   await expect(page.getByTestId('gantt-row-unassigned').getByTestId(`gantt-bar-${soon.id}-0`)).toBeVisible()
   const flag = (await schedule()).flags.find((f) => f.kind === 'no_tank' && f.batch_ids.includes(soon.id))
