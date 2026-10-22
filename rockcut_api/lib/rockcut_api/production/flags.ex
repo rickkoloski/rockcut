@@ -20,6 +20,15 @@ defmodule RockcutApi.Production.Flags do
 
   @no_tank_days 3
 
+  # D48 lead decisions 1: the signature recipe's version, the first part of
+  # every signature's canonical string ("v1|…"). Changing which values go
+  # into any flag's signature, or how they're written (`canonical/1`), means
+  # bumping it AND shipping a data migration that recomputes the stored
+  # `flag_signoffs.signature` of every sign-off that still matches under the
+  # old recipe; without it, every sign-off reads as reopened ("Was signed
+  # off by …, but something changed since").
+  @signature_version "v1"
+
   # In the comprehensions below a `x = …` binding is also a filter: only
   # values that are never nil or false are bound that way.
 
@@ -331,17 +340,22 @@ defmodule RockcutApi.Production.Flags do
   end
 
   @doc """
-  A short hash of what a flag is about: its parts (ids, dates, decimals,
-  nil) as one canonical string, `|`-joined, hashed. The same values give
+  A short hash of what a flag is about: the recipe version (D48, see
+  `@signature_version`), then its parts (ids, dates, decimals, nil), as one
+  canonical string, `|`-joined, hashed. The same values give
   the same signature on every node and OTP version (`term_to_binary` bytes
   aren't guaranteed to; lead decisions 6): dates are ISO strings, decimals
   normalised ("30" and "30.0" agree).
   """
   def signature(parts) when is_list(parts) do
-    :crypto.hash(:sha256, parts |> Enum.map(&canonical/1) |> Enum.join("|"))
+    :crypto.hash(:sha256, signature_string(parts))
     |> Base.encode16(case: :lower)
     |> binary_part(0, 16)
   end
+
+  @doc "The canonical string a signature hashes: the recipe version (`v1`), then the parts, `|`-joined."
+  def signature_string(parts) when is_list(parts),
+    do: Enum.map_join([@signature_version | parts], "|", &canonical/1)
 
   defp canonical(nil), do: ""
   defp canonical(%Date{} = d), do: Date.to_iso8601(d)

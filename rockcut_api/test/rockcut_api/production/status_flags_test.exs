@@ -492,9 +492,19 @@ defmodule RockcutApi.Production.StatusFlagsTest do
       assert a == b and b == c
       assert a =~ ~r/^[0-9a-f]{16}$/
 
-      # A canonical string, not term_to_binary: pinned so it can't drift.
+      # A canonical string, not term_to_binary, starting from the recipe
+      # version (D48 lead decisions 1): pinned so it can't drift.
+      assert Flags.signature_string([
+               7,
+               Decimal.new("30.0"),
+               Decimal.new("35"),
+               ~D[2026-10-30],
+               nil
+             ]) ==
+               "v1|7|30|35|2026-10-30|"
+
       assert a ==
-               :crypto.hash(:sha256, "7|30|35|2026-10-30|")
+               :crypto.hash(:sha256, "v1|7|30|35|2026-10-30|")
                |> Base.encode16(case: :lower)
                |> binary_part(0, 16)
 
@@ -509,6 +519,22 @@ defmodule RockcutApi.Production.StatusFlagsTest do
         )
 
       assert f1.signature == f2.signature
+    end
+
+    test "a sign-off made with the current recipe stays signed off (D48 lead decisions 1)" do
+      [flag] = flags([planned(2, "Enos P2", 3, tanks: [nil])])
+
+      signoff = %FlagSignoff{
+        flag_key: flag.key,
+        signature: flag.signature,
+        user_id: 7,
+        user: %User{name: "Jake Brewer"},
+        signed_at: ~U[2026-10-20 12:00:00Z]
+      }
+
+      # Worked out again later (another load, the same recipe): still signed off.
+      [again] = flags([planned(2, "Enos P2", 3, tanks: [nil])], signoffs: [signoff])
+      assert {again.signed_off, again.was_signed_off} == {true, false}
     end
 
     test "sign-off holds for the same signature; a change reopens it (P55, P56)" do
