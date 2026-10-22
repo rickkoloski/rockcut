@@ -40,8 +40,16 @@ COVERAGE.md has rows for all of these.
 
   Failures 2 and 3 both look like the seed being a day old: it was seeded relative to Oct 21 and the date rolled to Oct 22 during the run. **Reseed local and re-run `gantt.spec.ts`** before treating either as a bug.
 
+## After the reboot
+
+- The local reseed failed in `cleanup_temp`: a `[TEST-TEMP]` brand's split parent was deleted before its parts (`split_parent_id` restricts, row by row in SQLite). The lead's fix deletes the parts first. New ExUnit test: "cleanup_temp removes a [TEST-TEMP] brand's split batch and its parts" (fails without the fix with a FOREIGN KEY error).
+- **`gantt.spec.ts`:** 10 passed after the reseed. Failures 2 and 3 were the day-old seed.
+- **P120:** the "Weeks on screen" tooltip stayed open when the zoom menu gave focus back, and as an interactive MUI tooltip it covered Add process and caught the click (a mouse user would hit it too). The tooltip is now `disableInteractive`.
+- **Targeted ExUnit:** 210 tests, 0 failures; `--warnings-as-errors` clean. tsc and ESLint clean.
+- **Targeted Playwright** (the same 8 specs, `--workers=1`): **68 passed** (7.4 min).
+
 ## What's left
 
-1. Reseed local. Re-run `gantt.spec.ts` (expect it to pass) and `d48-toolbar.spec.ts -g P120` (investigate and fix it if it still fails).
-2. Re-run the targeted production specs. Then `LEAD: run` the full ExUnit and the full default Playwright suite.
+1. ~~Reseed local; `gantt.spec.ts`; P120.~~ Done (above).
+2. ~~Targeted production specs.~~ Done. `LEAD: run` the full ExUnit and the full default Playwright suite.
 3. On DEV: Matt rechecks touch auto-scroll down on the Pixel, and QA rechecks the 12 items.

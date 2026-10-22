@@ -1191,5 +1191,32 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       refute Signoffs.get_by_key("no_tank:#{temp.id}.0")
       assert Enum.any?(Signoffs.list(), &String.starts_with?(&1.flag_key, "too_big"))
     end
+
+    test "cleanup_temp removes a [TEST-TEMP] brand's split batch and its parts" do
+      {:ok, _} = Synthetic.setup(@today)
+      [template | _] = Production.list_templates()
+      brand = Repo.insert!(%Brand{name: "[TEST-TEMP] Split brand"})
+      fv = Repo.get_by!(RockcutApi.Production.Tank, name: "FV6")
+
+      {:ok, {batch, _}} =
+        Batches.plan(%{
+          "brand_id" => brand.id,
+          "template_id" => template.id,
+          "brew_on" => "2026-11-02",
+          "volume_bbl" => 20,
+          "tank_ids" => [fv.id]
+        })
+
+      {:ok, %{part_ids: part_ids}} =
+        RockcutApi.Production.Splits.split(Repo.get!(Batch, batch.id), %{
+          "due_on" => "2026-11-10",
+          "parts" => [%{"stays" => true, "volume_bbl" => 10}, %{"volume_bbl" => 10}]
+        })
+
+      :ok = Synthetic.cleanup_temp()
+      refute Repo.get(Batch, batch.id)
+      refute Enum.any?(part_ids, &Repo.get(Batch, &1))
+      refute Repo.get(Brand, brand.id)
+    end
   end
 end

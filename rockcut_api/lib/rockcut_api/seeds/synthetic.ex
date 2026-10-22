@@ -244,6 +244,16 @@ defmodule RockcutApi.Seeds.Synthetic do
     brand_ids = Repo.all(from(b in Brand, where: like(b.name, ^"#{@temp_tag}%"), select: b.id))
     recipe_ids = Repo.all(from(r in Recipe, where: r.brand_id in ^brand_ids, select: r.id))
     Repo.delete_all(from(t in BrewTurn, where: t.recipe_id in ^recipe_ids))
+    # D48: split parts first (the parent restricts, row by row in SQLite).
+    Repo.delete_all(
+      from(b in Batch,
+        where:
+          b.split_parent_id in subquery(
+            from(p in Batch, where: p.brand_id in ^brand_ids, select: p.id)
+          )
+      )
+    )
+
     Repo.delete_all(from(b in Batch, where: b.brand_id in ^brand_ids))
     Repo.delete_all(from(r in Recipe, where: r.id in ^recipe_ids))
     Repo.delete_all(from(b in Brand, where: b.id in ^brand_ids))

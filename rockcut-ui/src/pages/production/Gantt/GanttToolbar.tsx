@@ -28,8 +28,9 @@ function ZoomMenu({ zoom, onZoom }: { zoom: Zoom; onZoom: (z: Zoom) => void }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   return (
     <>
-      {/* The zoom is how many weeks fit across the screen, whatever From and To say (QA minor 9). */}
-      <Tooltip title="Weeks on screen">
+      {/* The zoom is how many weeks fit across the screen, whatever From and To say (QA minor 9).
+          Not interactive: it stays open when the menu hands focus back, and must not catch clicks on Add process. */}
+      <Tooltip title="Weeks on screen" disableInteractive>
         <Button
           size="small"
           variant="outlined"
