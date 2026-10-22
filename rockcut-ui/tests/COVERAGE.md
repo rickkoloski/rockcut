@@ -592,25 +592,36 @@ Not automated (LIMITATIONS, lead decisions 3): touch long-press drag (450 ms) �
 
 ## D48 — Changing a batch (`specs/d46_production_scheduling_spec.md` §3.11, §3.6 D48 toolbar, §3.8 marks; `planning/d48_batch_changes_plan.md`)
 
+Playwright specs are in `regression/production/` (project `production`, one worker), each on its own `[TEST-TEMP]` data with relative P-number checks.
+
 | # | Scenario | Layer |
 |---|---|---|
-| P118 | Today: a week back plus the zoom's weeks, always scrolls back (the D47 no-op); a new zoom keeps the start | Playwright `production/d48-toolbar`; Vitest `gantt` (`defaultRange`, `rangeForZoom`) |
-| P119 | Collapse all \| ● \| Expand all follows the carets; the middle restores the mix; remembered | Playwright `production/d48-toolbar`; Vitest `gantt` (`expandMode`, the `mix` pref) |
-| P120 | "6 weeks ▾" zoom menu and Add process ▾ (Plan batch…, CIP & Sanitize…), mouse and keyboard; old buttons gone | Playwright `production/d48-toolbar` (the other production specs open the dialogs through the menu) |
-| P121 | 20 px step rows with a mouse, 28 px on touch and at phone width; phases at 16 px, steps at 28 px; diamonds and links on their rows | Playwright `production/d48-toolbar` (desktop, phone width, `hasTouch`); Vitest `gantt` (`layoutRows` with 20 px) |
-| P65–P66 | Add step: an addition after FDH, slotted before Set temp 58°; Added; the template unchanged; Undo | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
-| P67 | Something else with no name: "Give the step a name." | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
-| P68 | Add a ramp 60° → 40° at 10°/day: three chained Set temp steps | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
-| P69 | Change ramp…: only unfinished steps rebuilt | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
-| P70–P71 | Remove a step: links pass through; Brew day has no Remove | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
-| P72, P74 | Add a Filter into a tank (CIP for the first tank, arrow); remove it from the step dialog | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test` |
-| P73 | A transfer before a done step: refused with the spec's message | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
-| P83–P84 | Change a planned batch's template (added step kept, message) and brand | Playwright `production/d48-batch-changes`; ExUnit `batch_changes_test`, controller test (Undo) |
-| — | Drags auto-scroll the grid near its edges (rows below the fold, dates past the right edge); a press in the edge zone doesn't scroll until it heads that way | Playwright `production/d48-batch-changes` ("a short window"); the P32/P33 and drag-hint specs drag to off-screen rows |
-| P75, P110, P89 | Split - Filter: 12 bbl stays, 8 bbl to another tank; part labels, own steps, gold arrows; Undo | Playwright `production/d48-split-select`; ExUnit `splits_marks_test` |
-| P76–P78 | Volumes must add up; two parts can't share a tank; no part staying adds a CIP | Playwright `production/d48-split-select`; ExUnit `splits_marks_test`, controller test |
-| P79–P82 | Parts move on their own; Undo split refused once a part step is done, then merges with part 1's schedule; planned parts P-numbered, numbered at brew day | Playwright `production/d48-split-select`; ExUnit `splits_marks_test` |
-| P85, P86, P88 | Ctrl-click select + drag together; Assign to… "4 steps assigned to Riley Wort."; Shift-click range | Playwright `production/d48-split-select` |
-| P87 | Pixel: long-press starts selection mode, taps add, drag moves all | **Manual** at the DEV gate |
-| P113 | Shift-drag: move only, no prompt, "(only this step)" with Undo | Playwright `production/d48-split-select` |
-| P114–P117 | Mark dirty / Mark clean (note, marker tooltip), flags; no marks on a tank in use; History → Remove; Undo | Playwright `production/d48-split-select`; ExUnit `splits_marks_test` |
+| P65–P66 | Add step: an addition after FDH, slotted before Set temp 58°; Added; the template unchanged; Undo | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
+| P67 | Something else with no name: "Give the step a name." | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test |
+| P68 | Add a ramp 60° → 40° at 10°/day: three chained Set temp steps | Playwright `d48-batch-changes`; ExUnit `batch_changes_test` |
+| P69 | Change ramp…: only unfinished steps rebuilt, from the last finished temperature | Playwright `d48-batch-changes`; ExUnit `batch_changes_test` |
+| P70–P71 | Remove a step: links pass through; Brew day has no Remove (API `brew_day`) | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test |
+| P72, P74 | Add a Filter into a tank (CIP for the first tank, transfer arrow); remove it from the step dialog | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test (both routes, Undo) |
+| P73 | A transfer before a done step: "Some steps after that date are already done. Pick a later date." | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test |
+| P75, P110 | Split - Transfer / Split - Filter: 12 bbl stays, 8 bbl to another tank; labels, own steps, gold arrows; the staying part shares its parent's lane (row doesn't grow) | Playwright `d48-split-select`; ExUnit `splits_marks_test`; Vitest `gantt` (split lanes) |
+| P76–P78 | Volumes must add up (the spec's message); two parts can't share a tank; no part staying adds a CIP | Playwright `d48-split-select`; ExUnit `splits_marks_test`, controller test |
+| P79 | Parts move on their own | Playwright `d48-split-select`; ExUnit `splits_marks_test` |
+| P80–P81 | Undo split merges with part 1's schedule; refused once a part step is done | Playwright `d48-split-select`; ExUnit `splits_marks_test` |
+| P82 | A planned split: parts P-numbered from the parent, then its number at brew day; the Split's check-off fills them | Playwright `d48-split-select`; ExUnit `splits_marks_test` |
+| P83–P84 | Change a planned batch's template (added step kept, added transfers dropped, the message) and brand (parts follow) | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test (Undo) |
+| P85, P88 | Ctrl-click select and drag together (the prompt about what follows); Shift-click range in one tank | Playwright `d48-split-select` |
+| P86 | Assign to… "4 steps assigned to Riley Wort." | Playwright `d48-split-select` |
+| P87 | Pixel: long-press starts selection mode, taps add, drag moves all; a swipe still scrolls | **Manual** at the DEV gate |
+| P89 | Undo after a split | Playwright `d48-split-select` (P75); ExUnit `splits_marks_test` (Undo of split and of Undo split) |
+| P113 | Shift-drag: move only, no prompt, "(only this step)" with Undo | Playwright `d48-split-select` |
+| P114–P117 | Mark dirty / Mark clean (note, marker tooltip), the flags they raise and clear; none on a tank in use (API `tank_in_use`); History → Remove; Undo | Playwright `d48-split-select`; ExUnit `splits_marks_test`, controller test |
+| P118 | Today: a week back plus the zoom's weeks, always scrolls back (the D47 no-op); a new zoom keeps the start | Playwright `d48-toolbar`; Vitest `gantt` (`defaultRange`, `rangeForZoom`) |
+| P119 | Collapse all \| ● \| Expand all follows the carets; the middle restores the mix; remembered | Playwright `d48-toolbar`; Vitest `gantt` (`expandMode`, the `mix` pref) |
+| P120 | "6 weeks ▾" zoom menu and Add process ▾ (Plan batch…, CIP & Sanitize…), mouse and keyboard; old buttons gone | Playwright `d48-toolbar` (the other production specs open the dialogs through the menu) |
+| P121 | 20 px step rows with a mouse, 28 px on touch and at phone width; phases at 16 px, steps at 28 px; diamonds and links on their rows | Playwright `d48-toolbar` (desktop, phone width, `hasTouch`); Vitest `gantt` (`layoutRows` with 20 px) |
+| — | Drags auto-scroll the grid near its edges (rows below the fold, dates past the right edge); a press in an edge zone doesn't scroll until it heads that way | Playwright `d48-batch-changes` ("a short window"); the P32/P33 and drag-hint specs drag to off-screen rows |
+| — | Flag signatures start with the recipe version `v1|`; a current sign-off stays signed off | ExUnit `status_flags_test`, `seeds/synthetic_test` |
+| — | DEV seed: a split batch (one part stays), an added filter, a clean and a dirty mark; `[TEST-TEMP]` parts and marks cleaned up | ExUnit `seeds/synthetic_test` |
+| — | Brewery members and owners only (403 for others); the new routes people-only until D49 | ExUnit controller test, `device_route_matrix_test` |
+
+Not automated: P87 (touch long-press selection on the Pixel) and a touch drag's auto-scroll, by hand at the DEV gate.
