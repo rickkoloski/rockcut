@@ -19,6 +19,7 @@ import {
   partLabel,
   phaseAt,
   rangeForZoom,
+  scheduleParts,
   readPrefs,
   segments,
   shiftRange,
@@ -425,5 +426,44 @@ describe('remembered per person', () => {
     })
     expect(readPrefs(4, false).zoom).toBe(6)
     expect(() => writePref(4, 'zoom', 2)).not.toThrow()
+  })
+})
+
+describe('split lanes (D48 lead decisions 1)', () => {
+  // Galactic in FV2 (tank 9): Brew day Oct 1, Split Oct 10. Part 1 stays in FV2 from the Split; another batch fills FV2 that day too.
+  const parent = batch({
+    id: 40,
+    label: 'Galactic #40',
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [
+      step({ id: 401, batch_id: 40, behavior: 'brew', first_brew: true, due_on: '2026-10-01' }),
+      step({ id: 402, batch_id: 40, behavior: 'split', split_method: 'transfer', due_on: '2026-10-10' }),
+    ],
+  })
+  const part = batch({
+    id: 41,
+    label: 'Galactic #40.1',
+    split_parent_id: 40,
+    part_number: 1,
+    split_step_id: 402,
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [step({ id: 411, batch_id: 41, due_on: '2026-10-14' })],
+  })
+  const other = batch({
+    id: 50,
+    label: 'Enos #41',
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [step({ id: 501, batch_id: 50, behavior: 'brew', first_brew: true, due_on: '2026-10-10' })],
+  })
+
+  it('the part that stays shares its parent’s lane; a different batch filling that day does not', () => {
+    const parts = scheduleParts([parent, part])
+    expect(parts.find((p) => p.batch.id === 41)!.start).toBe('2026-10-10')
+    const [row] = layoutRows([tank(9, 'FV2')], parts, [], new Set())
+    expect(row.tracks).toBe(1)
+    expect(row.height).toBe(TRACK_H)
+
+    const [busy] = layoutRows([tank(9, 'FV2')], scheduleParts([parent, other]), [], new Set())
+    expect(busy.tracks).toBe(2)
   })
 })

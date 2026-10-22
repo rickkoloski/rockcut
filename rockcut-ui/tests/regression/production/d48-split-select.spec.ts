@@ -54,6 +54,8 @@ test('P75, P110: Split - Filter, 12 bbl stays, 8 bbl to another tank: labels, ow
   const b = await planned('Galactic', [fv.id])
   const day = addDays(stepOf(b, 'FDH').due_on, 3)
   await openBatch(page, b)
+  const rowHeight = async () => (await page.getByTestId(`gantt-row-${fv.id}`).boundingBox())!.height
+  const before = await rowHeight()
   await splitThroughDialog(page, { day, method: 'filter', parts: [{ tank: 'stay', volume: 12 }, { tank: s1.id, volume: 8 }] })
   await expect(snack(page)).toContainText(`${b.label} split on`)
   await expect(snack(page)).toContainText(`${b.label}.1 (12 bbl) stays in ${fv.name}; ${b.label}.2 (8 bbl) → ${s1.name}.`)
@@ -67,6 +69,8 @@ test('P75, P110: Split - Filter, 12 bbl stays, 8 bbl to another tank: labels, ow
     await expect(page.getByTestId(`gantt-split-${b.id}-${p.id}`)).toBeAttached()
     await expect(page.getByTestId(`gantt-bar-${p.id}-0`)).toBeVisible()
   }
+  // The part that stays shares its parent's lane: FV2's row doesn't grow (lead decisions 1).
+  expect(await rowHeight()).toBe(before)
   // A part stays: no CIP for FV2 on the split day.
   expect((await batchOf(b.id)).steps.some((s) => s.name === 'CIP & Sanitize' && s.due_on === day)).toBe(false)
 

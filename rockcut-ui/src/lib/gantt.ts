@@ -215,16 +215,23 @@ export function segments(part: Part, viewFrom: string, viewDays: number, phase: 
 // ── Stacking (§3.6: nothing draws on top of anything else) ──
 
 /** A track for each item (inclusive days), the first free one, by start; and how many tracks. */
-export function assignTracks<T extends { start: string; end: string }>(items: T[]): { tracks: Map<T, number>; count: number } {
-  const ends: string[] = []
+export function assignTracks<T extends { start: string; end: string; fill?: number | null; exit?: number | null }>(
+  items: T[],
+): { tracks: Map<T, number>; count: number } {
+  const last: T[] = []
   const tracks = new Map<T, number>()
+  // D48 (lead decisions 1): an item filled by the step that ends the one
+  // before it (a split part that stays, a hand-off in the same tank) shares
+  // its lane: that day is the exit's for the leaver and the fill's for the
+  // one that stays, as the occupancy rule has it (D47 cycle 2).
+  const fits = (prev: T, item: T) => prev.end < item.start || (prev.end === item.start && prev.exit != null && prev.exit === item.fill)
   for (const item of [...items].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))) {
-    let t = ends.findIndex((end) => end < item.start)
-    if (t < 0) t = ends.length
-    ends[t] = item.end
+    let t = last.findIndex((prev) => fits(prev, item))
+    if (t < 0) t = last.length
+    last[t] = item
     tracks.set(item, t)
   }
-  return { tracks, count: Math.max(1, ends.length) }
+  return { tracks, count: Math.max(1, last.length) }
 }
 
 // ── Dots ──
@@ -307,7 +314,9 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
     const mine = parts.filter((p) => p.tankId === (tank?.id ?? null))
     const myCips = tank ? cips.filter((c) => c.tank_id === tank.id) : []
     const items: (Part | SchedStep)[] = [...mine, ...myCips]
-    const spans = items.map((x) => ('key' in x ? { x, start: x.start, end: x.reach } : { x, start: x.due_on, end: x.due_on }))
+    const spans = items.map((x) =>
+      'key' in x ? { x, start: x.start, end: x.reach, fill: x.fill?.id, exit: x.exit?.id } : { x, start: x.due_on, end: x.due_on },
+    )
     const { tracks, count } = assignTracks(spans)
     const track = new Map<Part | SchedStep, number>(spans.map((s) => [s.x, tracks.get(s)!]))
     const open = expanded.has(rowKey(tank))
