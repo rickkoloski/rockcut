@@ -165,9 +165,12 @@ export function localInputToUtc(local: string): string {
   const [datePart, timePart] = local.split('T')
   const [y, mo, d] = datePart.split('-').map(Number)
   const [h, mi] = timePart.split(':').map(Number)
-  // Treat the wall-clock components as if UTC, then correct by the tz offset
-  // that applies at that instant.
+  // Treat the wall-clock components as if UTC, then correct by the tz offset.
+  // The offset read at that provisional instant can be the wrong side of a
+  // DST switch (on Nov 1, 06:00Z is still MDT), so read it again at the
+  // corrected instant and use that one.
   const provisional = Date.UTC(y, mo - 1, d, h, mi)
-  const offset = tzOffsetMs(new Date(provisional))
+  const guess = provisional - tzOffsetMs(new Date(provisional))
+  const offset = tzOffsetMs(new Date(guess))
   return new Date(provisional - offset).toISOString()
 }
