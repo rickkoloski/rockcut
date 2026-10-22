@@ -92,13 +92,40 @@ export async function templateId(name: string): Promise<number> {
 }
 
 /** What a spec made; `cleanup()` in afterAll removes it (brewed batches are un-checked first). */
+/**
+ * The seed batches (no `[TEST-TEMP]` in the label) as one line per vessel and
+ * step: what a spec must never change (BRIEF rule 4; DEV run 5 found one
+ * moved). Compared before and after each test by `Made`.
+ */
+export async function seedState(): Promise<string[]> {
+  const sched = await schedule()
+  return sched.batches
+    .filter((b) => !b.label.includes('[TEST-TEMP]'))
+    // By id, not label: a spec's planned batch may shift the seed's P-numbers (allowed).
+    .flatMap((b) => {
+      const name = `${b.label.replace(/ P\d+(\.\d+)?$/, '')} (batch ${b.id})`
+      return [
+        ...b.vessels.map((v) => `${name} vessel ${v.vessel_index}: tank ${v.tank_id}`),
+        ...b.steps.map((st) => `${name} ${st.name} (step ${st.id}): due ${st.due_on}, done ${st.done_on}`),
+      ]
+    })
+    .sort()
+}
+
 export class Made {
   brands: number[] = []
   tanks: number[] = []
   batches: number[] = []
   cips: number[] = []
+  /** The seed as the test found it: taken at its first write through `Made`, checked by `cleanup()`. */
+  private seed: string[] | null = null
+
+  private async before() {
+    this.seed ??= await seedState()
+  }
 
   async brand(label: string): Promise<{ id: number; name: string }> {
+    await this.before()
     const name = tempTag(label)
     const b = (await ok<{ data: { id: number; name: string } }>(await (await apiAs('brewer1')).post('/api/brands', { data: { name } }), 201)).data
     this.brands.push(b.id)
@@ -106,12 +133,14 @@ export class Made {
   }
 
   async tank(label: string, capacity = 20) {
+    await this.before()
     const t = await createTank(shortTag(label), capacity)
     this.tanks.push(t.id)
     return t
   }
 
   async plan(attrs: { brand_id: number; template: string; brew_on: string; volume?: number; tank_ids?: (number | null)[]; two_days?: boolean }): Promise<SBatch> {
+    await this.before()
     const body = await ok<{ data: { batches: SBatch[] } }>(
       await (await apiAs('brewer1')).post(`${P}/batches`, {
         data: {
@@ -141,6 +170,18 @@ export class Made {
    * request has to succeed, so a leak fails the spec instead of the next one.
    */
   async cleanup() {
+    await this.removeMine()
+    // The seed is read-only for specs: a change fails the test that made it, by name.
+    const seed = this.seed
+    this.seed = null
+    if (seed) {
+      const now = await seedState()
+      const changed = [...now.filter((l) => !seed.includes(l)).map((l) => `now:  ${l}`), ...seed.filter((l) => !now.includes(l)).map((l) => `was:  ${l}`)]
+      expect(changed, 'this test changed the seed schedule').toEqual([])
+    }
+  }
+
+  private async removeMine() {
     const api = await apiAs('brewer1')
     const sched = await schedule()
     // Batches the spec planned, and any it planned through the page under its brands (parts go with their parent).
