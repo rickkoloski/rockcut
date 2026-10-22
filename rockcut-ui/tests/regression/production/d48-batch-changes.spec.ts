@@ -16,7 +16,8 @@ test.use({ storageState: authFile('brewer1'), viewport: { width: 1440, height: 1
 const ALE = '[SEED] Standard ale'
 const LAGER = '[SEED] Lager with transfer'
 const made = new Made()
-test.afterAll(() => made.cleanup())
+// Each test cleans up after itself, failed or not: tanks left over make the grid taller for the next.
+test.afterEach(() => made.cleanup())
 
 async function openBatch(page: Page, b: SBatch) {
   await openGantt(page)

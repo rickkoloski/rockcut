@@ -12,7 +12,8 @@ test.use({ storageState: authFile('brewer1'), viewport: { width: 1440, height: 1
 
 const made = new Made()
 const templatesMade: number[] = []
-test.afterAll(async () => {
+// Each test cleans up after itself, failed or not: tanks left over make the grid taller for the next.
+test.afterEach(async () => {
   await made.cleanup()
   await retireAll('templates', templatesMade.splice(0))
 })

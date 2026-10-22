@@ -222,6 +222,15 @@ export async function followToLane(page: Page, px: number, laneId: string, start
       await page.mouse.move(px, mid, { steps: 6 })
       return
     }
+    // The last (or first) row can't leave the edge zone: once the grid
+    // can't scroll further that way, aim at the part of the row in view.
+    const scroll = await gantt(page).evaluate((e) => ({ at: e.scrollTop, max: e.scrollHeight - e.clientHeight, view: e.clientHeight }))
+    if ((mid >= bottom && scroll.at >= scroll.max - 1) || (mid <= top && scroll.at <= 0)) {
+      const [lo, hi] = [Math.max(lane.y, grid.y + 48), Math.min(lane.y + lane.height, grid.y + scroll.view - 2)]
+      if (hi - lo < 8) throw new Error(`${laneId} is out of the grid's reach`)
+      await page.mouse.move(px, (lo + hi) / 2, { steps: 6 })
+      return
+    }
     // In the edge zone, and far enough from the press to count as heading there.
     const y = mid >= bottom ? Math.max(grid.y + grid.height - 8, from + 20) : Math.min(grid.y + 47 + 8, from - 20)
     await page.mouse.move(px, y, { steps: 3 })

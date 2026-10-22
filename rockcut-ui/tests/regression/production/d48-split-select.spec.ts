@@ -16,7 +16,8 @@ test.use({ storageState: authFile('brewer1'), viewport: { width: 1440, height: 1
 const ALE = '[SEED] Standard ale'
 const P = '/api/production'
 const made = new Made()
-test.afterAll(() => made.cleanup())
+// Each test cleans up after itself, failed or not: tanks left over make the grid taller for the next.
+test.afterEach(() => made.cleanup())
 
 async function planned(label: string, tanks: (number | null)[] = [], brewIn = 2) {
   const brand = await made.brand(label)
@@ -246,7 +247,8 @@ test('P115, P114, P117: Mark dirty, a fill flags it; Mark clean with a note clea
   const marker = page.getByTestId(`gantt-mark-${clean.id}`)
   await expect(marker).toHaveAttribute('data-state', 'clean')
   await marker.hover()
-  await expect(page.getByRole('tooltip')).toHaveText(/^Marked clean by Jake Brewer · .* · “Hosed and sanitized after the gasket job”$/)
+  // By its text: the pointer may pass over a bar on its way and leave that tooltip open too.
+  await expect(page.getByRole('tooltip').filter({ hasText: /^Marked clean/ })).toHaveText(/^Marked clean by Jake Brewer · .* · “Hosed and sanitized after the gasket job”$/)
 
   // P117: Remove it from History: back to dirty; Undo brings it back.
   await page.getByTestId(`gantt-tank-menu-${tank.id}`).click()

@@ -11,7 +11,8 @@ import { addDays, addProcess, batchOf, dayPx, dragBy, followToLane, Made, openGa
 test.use({ storageState: authFile('brewer1'), viewport: { width: 1440, height: 1400 } })
 
 const made = new Made()
-test.afterAll(() => made.cleanup())
+// Each test cleans up after itself, failed or not: tanks left over make the grid taller for the next.
+test.afterEach(() => made.cleanup())
 
 const ALE = '[SEED] Standard ale'
 const tag = () => `T${Date.now().toString(36).slice(-5)}`
