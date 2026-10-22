@@ -21,7 +21,13 @@ Fix everything below, with tests at the level each fix lives. Commit as `fix: D4
 
 - **R2. Every changing dialog clears its refusal when its input changes**, as Split does (N5): Add step, Add a ramp, Change ramp, Plan batch, and the batch dialog's banner when the picker changes or another dialog opens from it. If several dialogs repeat the same pattern, share it rather than copying it five times.
 - **R3. A split where nothing stays checks each part on its own and names it:** "Part 1: The beer goes into Q1SC next, on Fri Dec 18." The split dialog's tank picker for each part leaves out tanks that would break the rule for that part, in the same way the Into picker does. The order dependence itself is fine: part 1 keeps the template's later transfer, and that rule stays.
-- **R4. Transfers keep their order.** A Move only (or a Shift-drag, or a multi-select move) that would put a batch's transfer or filter on or before the previous one, or on or after the next one, is refused with a new code, `transfer_order`: "Transfers can't pass each other: the next one is on Fri Dec 18." Move all is unaffected, since it keeps the order. Show it in the drag hint before the drop, as other refused drops do.
+- **R4 (changed by Matt, 2026-10-22): allow it, but flag it correctly.** A Move only (or a Shift-drag, or a multi-select move) that puts a batch's transfers out of date order stays **allowed**, as D47's move-only rule does. In its place:
+  - add a flag, kind `transfer_order`, on the batch: "P7's transfers are out of order: on Thu Dec 17 the beer goes into Q1SB, which it's already in." Name the transfer and the tank.
+  - In that case the flag replaces the misleading `dirty_fill` for the same pair. Keep `dirty_fill` where it's genuinely about cleaning.
+  - The move prompt's "They'll be flagged." stays.
+  - The flag clears when the order is fixed (Move all, a move back, or Undo).
+  - It follows D47's flag rules (sign-off etc.).
+  - Tests: ExUnit for the flag appearing and clearing; Playwright for the flag showing after a Move only.
 
 ## Not changing
 
