@@ -125,7 +125,8 @@ test('R3: with nothing staying, part 1’s picker leaves out the next tank, and 
   // stays. Part 1's own picker no longer offers b while it stays (fix cycle 4, X4).
   await page.getByTestId('split-tank-0').click()
   await expect(page.getByTestId(`split-tank-0-${b.id}`)).toHaveCount(0)
-  await page.keyboard.press('Escape')
+  // Part 1 into c first, so part 2 can take "(stays here)".
+  await page.getByTestId(`split-tank-0-${c.id}`).click()
   await page.getByTestId('split-tank-1').click()
   await page.getByTestId('split-tank-1-stay').click()
   await page.getByTestId('split-tank-0').click()

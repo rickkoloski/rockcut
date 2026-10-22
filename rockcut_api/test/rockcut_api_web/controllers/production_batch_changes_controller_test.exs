@@ -453,26 +453,21 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
     parts = Enum.filter(body(split)["data"]["batches"], &(&1["split_parent_id"] == ale.id))
     assert Enum.map(parts, & &1["split_stays"]) == [true, false]
 
-    # X2: the parent into part 2's tank; part 2 into the tank part 1 stays in.
-    assert body(call(owner, :patch, "#{path}/vessels/0", %{tank_id: fv9.id})) == %{
-             "error" => "same_tank",
-             "message" => "Part 2: The beer is already in FV9."
-           }
+    # Locked while split (Matt): the parent's tank and the staying part's.
+    for id <- [ale.id, p1] do
+      assert body(
+               call(owner, :patch, "/api/production/batches/#{id}/vessels/0", %{tank_id: fv9.id})
+             ) ==
+               %{"error" => "split", "message" => "Undo the split first."}
+    end
 
+    # X2: part 2 into the tank part 1 stays in.
     assert body(
              call(owner, :patch, "/api/production/batches/#{p2}/vessels/0", %{tank_id: fv1.id})
            ) ==
              %{
                "error" => "same_tank",
                "message" => "Part 2 can't go into FV1: part 1 stays there."
-             }
-
-    assert body(
-             call(owner, :patch, "/api/production/batches/#{p1}/vessels/0", %{tank_id: fv9.id})
-           ) ==
-             %{
-               "error" => "same_tank",
-               "message" => "Part 1 can't go into FV9: part 2 goes there."
              }
 
     # X1: Undo split, another user moves the merged batch, then the Undo.

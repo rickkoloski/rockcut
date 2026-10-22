@@ -101,7 +101,7 @@ defmodule RockcutApi.Production.UndoVesselsTest do
     assert vessels(ctx.lager) == %{0 => ctx.bbt.id}
   end
 
-  test "split: stale once the parent's vessel changed", ctx do
+  test "split: stale once a part's vessel changed", ctx do
     {:ok, {%{part_ids: [p1, _]}, token}} =
       track(ctx.owner, ctx.lager, fn ->
         Splits.split(reload(ctx.lager), %{
@@ -115,14 +115,15 @@ defmodule RockcutApi.Production.UndoVesselsTest do
 
     assert vessels(ctx.lager) == %{0 => ctx.fv1.id}
     assert vessels(Repo.get!(RockcutApi.Brewing.Batch, p1)) == %{0 => ctx.fv1.id, 1 => ctx.bbt.id}
-    # BBT1 is refused now (part 1, which stays, would go from BBT1 into
-    # BBT1; fix cycle 4), so another tank: part 1 moves with the parent.
+    # The parent's tank is locked while split (fix cycle 4, Matt), so the
+    # other user changes part 2's.
+    [_, p2] = Splits.parts_of(ctx.lager)
     fv10 = tank!("FV10")
-    set_tank(ctx.other, ctx.lager, 0, fv10)
-    assert vessels(Repo.get!(RockcutApi.Brewing.Batch, p1)) == %{0 => fv10.id, 1 => ctx.bbt.id}
+    set_tank(ctx.other, p2, 0, fv10)
 
     assert {:error, :undo_stale} = Undo.undo(ctx.owner, token)
-    assert vessels(ctx.lager) == %{0 => fv10.id}
+    assert vessels(ctx.lager) == %{0 => ctx.fv1.id}
+    assert vessels(p2) == %{0 => fv10.id, 1 => nil}
     assert length(Splits.parts_of(ctx.lager)) == 2
   end
 

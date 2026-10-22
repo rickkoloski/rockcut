@@ -5,7 +5,7 @@ import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import api from '../../../lib/api'
-import { buildParts, dayLabel, daysBetween, dotState, firstBrew, treeRefusal } from '../../../lib/gantt'
+import { buildParts, dayLabel, daysBetween, dotState, firstBrew, SPLIT_LOCKED, splitLocked, treeRefusal } from '../../../lib/gantt'
 import {
   plainBatchNumber,
   prodPath,
@@ -249,8 +249,11 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
   const parentId = batch.split_parent_id ?? batch.id
   const keeper = batches.find((b) => b.split_parent_id === parentId && b.split_stays)?.part_number ?? 1
   // On a split, a picker leaves out the tanks the tree rule refuses; the tank it has stays shown (DEV QA X2).
+  // The parent's tanks and the staying part's first one are locked (Matt).
   const pickable = (vessel: number, current: number | null) =>
     split ? tanks.filter((t) => t.id === current || !treeRefusal(batches, batch, vessel, t.id, tanks)) : tanks
+  const locked = (vessel: number) => splitLocked(batches, batch, vessel)
+  const parentSplit = !part && splitParts.length > 0
 
   const openAdd = (what: typeof adding) => {
     setError(null)
@@ -357,6 +360,8 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
                 )
               }
               testId={`batch-tank-${p.vessel}`}
+              disabled={locked(p.vessel)}
+              helper={locked(p.vessel) ? SPLIT_LOCKED : undefined}
             />
           ))}
         </Box>
@@ -379,7 +384,8 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
           <Button size="small" startIcon={<Add />} onClick={() => openAdd('ramp')} data-testid="batch-add-ramp">
             Add a ramp…
           </Button>
-          <Button size="small" startIcon={<Add />} onClick={() => openAdd('transfer')} data-testid="batch-add-transfer">
+          {/* Not on a split parent: its tanks are locked (Matt). */}
+          <Button size="small" startIcon={<Add />} disabled={parentSplit} title={parentSplit ? SPLIT_LOCKED : undefined} onClick={() => openAdd('transfer')} data-testid="batch-add-transfer">
             Add transfer / filter…
           </Button>
           {split ? (

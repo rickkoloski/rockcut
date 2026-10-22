@@ -20,6 +20,7 @@ import {
   phaseAt,
   rangeForZoom,
   scheduleParts,
+  splitLocked,
   treeRefusal,
   readPrefs,
   segments,
@@ -480,18 +481,22 @@ describe('a split tree (DEV QA fix cycle 4, X2)', () => {
   const tanks = [tank(1, 'FV1'), tank(9, 'FV9'), tank(10, 'FV10')]
   const parent = batch({ id: 40, vessels: [{ vessel_index: 0, tank_id: 1 }] })
   const part = (id: number, n: number, tankId: number, stays = false) =>
-    batch({ id, split_parent_id: 40, part_number: n, split_stays: stays, vessels: [{ vessel_index: 0, tank_id: tankId }] })
+    batch({ id, split_parent_id: 40, part_number: n, split_stays: stays, vessels: [{ vessel_index: 0, tank_id: tankId }, { vessel_index: 1, tank_id: null }] })
   const stays = [parent, part(41, 1, 1, true), part(42, 2, 9)]
 
-  it('the parent into part 2’s tank: the part that stays would go with it', () => {
-    expect(treeRefusal(stays, parent, 0, 9, tanks)).toBe('Part 2: The beer is already in FV9.')
-    expect(treeRefusal(stays, parent, 0, 10, tanks)).toBeNull()
+  it('the parent’s tanks and the staying part’s first one are locked (Matt)', () => {
+    expect(splitLocked(stays, parent, 0)).toBe(true)
+    expect(splitLocked(stays, stays[1], 0)).toBe(true)
+    expect(splitLocked(stays, stays[1], 1)).toBe(false)
+    expect(splitLocked(stays, stays[2], 0)).toBe(false)
+    expect(treeRefusal(stays, parent, 0, 10, tanks)).toBe('Undo the split first to change it.')
+    expect(splitLocked([parent], parent, 0)).toBe(false)
   })
 
-  it('part 2 into the tank part 1 stays in; part 1 into part 2’s', () => {
+  it('part 2 into the tank part 1 stays in; its later tank along its own path', () => {
     expect(treeRefusal(stays, stays[2], 0, 1, tanks)).toBe("Part 2 can't go into FV1: part 1 stays there.")
-    expect(treeRefusal(stays, stays[1], 0, 9, tanks)).toBe("Part 1 can't go into FV9: part 2 goes there.")
     expect(treeRefusal(stays, stays[2], 0, 10, tanks)).toBeNull()
+    expect(treeRefusal(stays, stays[2], 1, 9, tanks)).toBe('Part 2: The beer is already in FV9.')
   })
 
   it('nothing stays: no shared tank, not back into the parent’s', () => {

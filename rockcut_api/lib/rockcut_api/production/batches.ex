@@ -479,8 +479,9 @@ defmodule RockcutApi.Production.Batches do
   `:tank_invalid` for a retired or unknown tank, and `same_tank` when it
   would be the tank before or after it (`BatchChanges.no_tank_twice!/3`;
   D48 DEV QA N1, checked on the vessels after the change). On a split, the
-  part that stays and its parent's last vessel change together, and the
-  whole tree is checked (`BatchChanges.no_tree_twice!/3`; fix cycle 4).
+  parent's tanks and the staying part's first one are locked (`:split`), and
+  a part's change is checked over the whole tree
+  (`BatchChanges.no_tree_twice!/3`; fix cycle 4).
   """
   def set_vessel_tank(%Batch{} = batch, index, tank_id) do
     Repo.transaction(fn ->
@@ -488,11 +489,11 @@ defmodule RockcutApi.Production.Batches do
         Repo.get_by(BatchVessel, batch_id: batch.id, vessel_index: to_int(index) || -1) ||
           Repo.rollback(:not_found)
 
+      # D48 DEV QA fix cycle 4 (X2, Matt): locked while split, else checked
+      # over the whole tree.
+      RockcutApi.Production.BatchChanges.unlocked!(batch, vessel.vessel_index)
       vessel = vessel |> Changeset.change(tank_id: active_tank_id!(tank_id)) |> Repo.update!()
       k = vessel.vessel_index
-      # D48 DEV QA fix cycle 4 (X2): on a split, the part that stays moves
-      # with its parent's tank (and back), and the whole tree is checked.
-      RockcutApi.Production.BatchChanges.keep_stayer!(batch, k)
       RockcutApi.Production.BatchChanges.no_tree_twice!(batch, [k, k + 1], k)
       vessel
     end)

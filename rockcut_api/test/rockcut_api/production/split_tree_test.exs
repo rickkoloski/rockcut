@@ -1,8 +1,8 @@
 defmodule RockcutApi.Production.SplitTreeTest do
   @moduledoc """
   D48 DEV QA fix cycle 4: the N1 rule over a split's whole tree (X2), the
-  part that stays moving with its parent's tank, Undo of an Undo split (X1),
-  and Undo split putting the batch back as it was (X3).
+  parent's and the staying part's tanks locked while split (Matt), Undo of
+  an Undo split (X1), and Undo split putting the batch back as it was (X3).
   """
   use RockcutApi.DataCase
 
@@ -58,75 +58,55 @@ defmodule RockcutApi.Production.SplitTreeTest do
     batch |> vessels() |> Map.new(fn {k, id} -> {k, names[id]} end)
   end
 
-  describe "the tree rule on a tank change (X2)" do
+  describe "locked while split (Matt, fix cycle 4)" do
     setup ctx do
       parent = ale(ctx)
       [p1, p2] = split!(parent, ctx, [:stays, "FV9"])
       %{parent: parent, p1: p1, p2: p2}
     end
 
-    test "the parent into the tank part 2 goes into: refused, named on part 2", ctx do
-      assert {:error, {:part, 2, {:same_tank, "FV9"}}} = set(ctx.parent, 0, ctx, "FV9")
+    test "the parent's tank: refused with :split, into any tank or Unassigned", ctx do
+      for name <- ["FV9", "FV10", nil],
+          do: assert({:error, :split} = set(ctx.parent, 0, ctx, name))
+
       assert tank_names(ctx.parent, ctx) == %{0 => "FV1"}
       assert tank_names(ctx.p1, ctx) == %{0 => "FV1"}
     end
 
-    test "part 2 into the tank part 1 stays in: refused", ctx do
-      assert {:error, {:part, 2, {:stays_there, "FV1", 1}}} = set(ctx.p2, 0, ctx, "FV1")
-      assert tank_names(ctx.p2, ctx) == %{0 => "FV9"}
-    end
-
-    test "the part that stays into part 2's tank: refused, named on part 1", ctx do
-      assert {:error, {:part, 1, {:goes_there, "FV9", 2}}} = set(ctx.p1, 0, ctx, "FV9")
-      assert tank_names(ctx.parent, ctx) == %{0 => "FV1"}
-    end
-
-    test "the parent into another tank takes the part that stays with it, and back", ctx do
-      assert {:ok, _} = set(ctx.parent, 0, ctx, "FV10")
-      assert tank_names(ctx.p1, ctx) == %{0 => "FV10"}
-
-      assert {:ok, _} = set(ctx.p1, 0, ctx, "BBT1")
-      assert tank_names(ctx.parent, ctx) == %{0 => "BBT1"}
-      assert tank_names(ctx.p2, ctx) == %{0 => "FV9"}
-    end
-
-    test "part 2 into another free tank is fine", ctx do
-      assert {:ok, _} = set(ctx.p2, 0, ctx, "FV10")
-    end
-
-    test "its Undo puts the parent and the part that stays back together", ctx do
-      {:ok, {_, token}} =
-        Undo.track(ctx.owner, %{batches: [ctx.p1.id]}, fn -> set(ctx.p1, 0, ctx, "FV10") end)
-
-      assert tank_names(ctx.parent, ctx) == %{0 => "FV10"}
-      assert {:ok, _} = Undo.undo(ctx.owner, token)
-      assert tank_names(ctx.parent, ctx) == %{0 => "FV1"}
+    test "the staying part's tank: refused with :split", ctx do
+      for name <- ["FV9", "FV10"], do: assert({:error, :split} = set(ctx.p1, 0, ctx, name))
       assert tank_names(ctx.p1, ctx) == %{0 => "FV1"}
     end
 
-    test "a transfer before the Split takes the part that stays with it", ctx do
-      assert {:error, {:part, 2, {:same_tank, "FV9"}}} =
+    test "a transfer on the parent before the Split: refused with :split", ctx do
+      assert {:error, :split} =
                BatchChanges.add_transfer(reload(ctx.parent), %{
                  "due_on" => "2026-11-04",
-                 "tank_id" => ctx.t["FV9"].id
+                 "tank_id" => ctx.t["FV10"].id
                })
 
-      {:ok, _} =
-        BatchChanges.add_transfer(reload(ctx.parent), %{
-          "due_on" => "2026-11-04",
-          "tank_id" => ctx.t["FV10"].id
-        })
-
-      assert tank_names(ctx.parent, ctx) == %{0 => "FV1", 1 => "FV10"}
-      assert tank_names(ctx.p1, ctx) == %{0 => "FV10"}
-
-      transfer =
-        Enum.find(steps_of(ctx.parent), &(&1.due_on == ~D[2026-11-04] and &1.vessel_index == 1))
-
-      {:ok, _} = BatchChanges.remove_step(transfer)
       assert tank_names(ctx.parent, ctx) == %{0 => "FV1"}
-      assert tank_names(ctx.p1, ctx) == %{0 => "FV1"}
     end
+
+    test "the leaving part's tank: under the tree rule", ctx do
+      assert {:error, {:part, 2, {:stays_there, "FV1", 1}}} = set(ctx.p2, 0, ctx, "FV1")
+      assert tank_names(ctx.p2, ctx) == %{0 => "FV9"}
+      assert {:ok, _} = set(ctx.p2, 0, ctx, "FV10")
+    end
+  end
+
+  test "removing a transfer on the parent before the Split: refused with :split", ctx do
+    parent = lager(ctx)
+
+    {:ok, _} =
+      Splits.split(parent, %{
+        split_attrs(ctx, [:stays, "FV9"])
+        | "due_on" => "2026-11-15"
+      })
+
+    transfer = named(parent, "Transfer")
+    assert {:error, :split} = BatchChanges.remove_step(transfer)
+    assert tank_names(parent, ctx) == %{0 => "FV1", 1 => "BBT1"}
   end
 
   test "nothing stays: parts don't share a tank or go back into the parent's", ctx do
@@ -135,15 +115,31 @@ defmodule RockcutApi.Production.SplitTreeTest do
 
     assert {:error, {:part, 2, {:goes_there, "FV9", 1}}} = set(p2, 0, ctx, "FV9")
     assert {:error, {:part, 2, {:same_tank, "FV1"}}} = set(p2, 0, ctx, "FV1")
-    # The parent into a part's tank, with nothing staying.
-    assert {:error, {:part, 1, {:same_tank, "FV9"}}} = set(parent, 0, ctx, "FV9")
-    assert {:ok, _} = set(parent, 0, ctx, "BBT1")
+    assert {:ok, _} = set(p2, 0, ctx, "BBT1")
+    # Nothing stays, so no part's tank is locked; the parent's still is.
+    assert {:error, :split} = set(parent, 0, ctx, "BBT1")
   end
 
-  test "along a part's own path: named on the part", ctx do
-    [p1, _p2] = split!(lager(ctx), ctx, [:stays, "FV9"])
+  test "a part's later tanks and transfers: under the tree rule, named on the part", ctx do
+    [p1, p2] = split!(lager(ctx), ctx, [:stays, "FV9"])
     assert tank_names(p1, ctx) == %{0 => "FV1", 1 => "BBT1"}
+    assert tank_names(p2, ctx) == %{0 => "FV9", 1 => nil}
+
+    assert {:error, {:part, 2, {:same_tank, "FV9"}}} = set(p2, 1, ctx, "FV9")
+    assert {:ok, _} = set(p2, 1, ctx, "FV10")
     assert {:error, {:part, 1, {:same_tank, "FV1"}}} = set(p1, 1, ctx, "FV1")
+
+    assert {:error, {:part, 2, {:same_tank, "FV9"}}} =
+             BatchChanges.add_transfer(reload(p2), %{
+               "due_on" => "2026-11-08",
+               "tank_id" => ctx.t["FV9"].id
+             })
+
+    assert {:ok, _} =
+             BatchChanges.add_transfer(reload(p2), %{
+               "due_on" => "2026-11-08",
+               "tank_id" => ctx.t["BBT1"].id
+             })
   end
 
   describe "Undo of an Undo split (X1)" do

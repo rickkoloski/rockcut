@@ -137,8 +137,8 @@ defmodule RockcutApi.Production.Undo do
   defp rows(scope) do
     # D48: a batch's split parts always come with it (a split inserts them,
     # Undo split deletes them, the Split's check-off changes them), and a
-    # part brings its parent and the other parts (a tank change on the part
-    # that stays changes its parent's; fix cycle 4).
+    # part brings its parent and the other parts (its Undo's stale check and
+    # tree rule cover the whole split; fix cycle 4).
     batch_ids = with_parts(Map.get(scope, :batches, []))
     step_ids = Map.get(scope, :steps, [])
 

@@ -1,10 +1,11 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
-import { addDays, batchOf, dragToLane, Made, openGantt, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
+import { addDays, batchOf, dragToLane, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
 
-// D48 DEV gate fix cycle 4 (lead decisions 5): on a split, the tank pickers
-// and a bar drag follow the rule over the whole tree (X2), the split dialog
+// D48 DEV gate fix cycle 4 (lead decisions 5): on a split, the parent's and
+// the staying part's tanks are locked (Matt), the other pickers and a bar
+// drag follow the rule over the whole tree (X2), the split dialog
 // shows part 1's refusal before Split (X4), and a refused Undo shows what
 // the server has (X5). X1 and X3 are in ExUnit (split_tree_test).
 
@@ -24,7 +25,7 @@ async function openBatch(page: Page, b: { id: number }, vessel = 0) {
 
 const tankOf = (b: SBatch, k = 0) => b.vessels.find((v) => v.vessel_index === k)!.tank_id
 
-test('X2: on a split, the parent’s and the parts’ pickers leave out what the tree refuses; a bar drag says why', async ({ page }) => {
+test('X2 and the lock: on a split, the parent’s and the staying part’s tanks are locked; part 2’s picker and a bar drag follow the tree', async ({ page }) => {
   const [a, d, e] = [await made.tank('FV2'), await made.tank('Q1SD'), await made.tank('Q1SE')]
   const brand = await made.brand('Ale')
   const b = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 7), tank_ids: [a.id] })
@@ -36,18 +37,20 @@ test('X2: on a split, the parent’s and the parts’ pickers leave out what the
   const [p1, p2] = (await schedule()).batches.filter((x) => x.split_parent_id === b.id).sort((x, y) => x.part_number! - y.part_number!)
   await openGantt(page)
 
-  // The parent: not part 2's tank; another one takes part 1 (which stays) with it.
+  // The parent: Ferment in is read-only, and Add transfer / filter is off (Matt).
   await openBatch(page, b)
-  await page.getByTestId('batch-tank-0').click()
-  await expect(page.getByTestId(`batch-tank-0-${d.id}`)).toHaveCount(0)
-  await page.getByTestId(`batch-tank-0-${e.id}`).click()
-  await expect(snack(page)).toContainText(`→ ${e.name}`)
-  expect(tankOf(await batchOf(p1.id))).toBe(e.id)
+  const locked = 'Undo the split first to change it'
+  await expect(page.getByTestId('batch-tank-0')).toHaveAttribute('aria-disabled', 'true')
+  await expect(page.getByTestId('batch-dialog')).toContainText(locked)
+  await expect(page.getByTestId('batch-add-transfer')).toBeDisabled()
   await page.getByTestId('batch-dialog-close').click()
-  await undo(page)
-  expect([tankOf(await batchOf(b.id)), tankOf(await batchOf(p1.id))]).toEqual([a.id, a.id])
 
-  // Part 2: not the tank part 1 stays in.
+  // Part 1 stays: its tank is locked too.
+  await openBatch(page, p1)
+  await expect(page.getByTestId('batch-tank-0')).toHaveAttribute('aria-disabled', 'true')
+  await page.getByTestId('batch-dialog-close').click()
+
+  // Part 2: not the tank part 1 stays in; another free one is offered.
   await openBatch(page, p2)
   await page.getByTestId('batch-tank-0').click()
   await expect(page.getByTestId(`batch-tank-0-${a.id}`)).toHaveCount(0)
@@ -55,7 +58,7 @@ test('X2: on a split, the parent’s and the parts’ pickers leave out what the
   await page.keyboard.press('Escape')
   await page.getByTestId('batch-dialog-close').click()
 
-  // Part 2's bar onto that row: the hint says why, and the drop is refused.
+  // Part 2's bar onto a's row: the hint says why, and the drop is refused.
   const refused = `Part 2 can't go into ${a.name}: part 1 stays there`
   await dragToLane(page, page.getByTestId(`gantt-bar-${p2.id}-0`), `gantt-lane-${a.id}`)
   const hint = page.getByTestId('gantt-drag-hint')
@@ -64,6 +67,13 @@ test('X2: on a split, the parent’s and the parts’ pickers leave out what the
   await page.mouse.up()
   await expect(snack(page)).toHaveText(`${refused}.`)
   expect(tankOf(await batchOf(p2.id))).toBe(d.id)
+
+  // The parent's bar onto e's row: locked, in the hint and on the drop.
+  await dragToLane(page, page.getByTestId(`gantt-bar-${b.id}-0`), `gantt-lane-${e.id}`)
+  await expect(hint).toContainText(`→ ${e.name} · ${locked}`)
+  await page.mouse.up()
+  await expect(snack(page)).toHaveText('Undo the split first.')
+  expect([tankOf(await batchOf(b.id)), tankOf(await batchOf(p1.id))]).toEqual([a.id, a.id])
 })
 
 test('X4: with nothing staying, part 1’s picker leaves out the next tank, and the dialog says why before Split', async ({ page }) => {

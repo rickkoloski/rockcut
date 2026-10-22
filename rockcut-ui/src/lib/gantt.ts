@@ -373,26 +373,36 @@ export interface DragHintInput {
 }
 
 /**
+ * D48 DEV QA fix cycle 4 (Matt): while a batch is split, the parent's tanks
+ * and the first tank of the part that stays don't change ("Undo the split
+ * first to change it"; the API answers `split`).
+ */
+export function splitLocked(batches: SchedBatch[], batch: SchedBatch, k: number): boolean {
+  if (batch.split_parent_id != null) return batch.split_stays && k === 0
+  return batches.some((b) => b.split_parent_id === batch.id)
+}
+
+export const SPLIT_LOCKED = 'Undo the split first to change it'
+
+/**
  * D48 DEV QA fix cycle 4 (X2): the API's rule over a split batch's whole
  * tree, for putting vessel `k` of `batch` (the parent or a part) in
- * `tankId`. The part that stays moves with its parent's last tank (and
- * back); no two vessels in a row in one tank along any path; the parts that
- * leave start neither in the tank the beer is in at the Split nor in
- * another part's. The refusal the API gives ("Part 2: The beer is already
- * in FV9.", "Part 2 can't go into FV1: part 1 stays there."), or null: fine,
- * or `batch` isn't split.
+ * `tankId`: locked (`splitLocked`); no two vessels in a row in one tank
+ * along any path; the parts that leave start neither in the tank the beer
+ * is in at the Split nor in another part's. The refusal ("Part 2: The beer
+ * is already in FV9.", "Part 2 can't go into FV1: part 1 stays there."), or
+ * null: fine, or `batch` isn't split.
  */
 export function treeRefusal(batches: SchedBatch[], batch: SchedBatch, k: number, tankId: number | null, tanks: Tank[]): string | null {
   const root = batch.split_parent_id != null ? batches.find((b) => b.id === batch.split_parent_id) : batch
   const parts = root ? batches.filter((b) => b.split_parent_id === root.id).sort((x, y) => (x.part_number ?? 0) - (y.part_number ?? 0)) : []
   if (!root || !parts.length) return null
+  if (splitLocked(batches, batch, k)) return `${SPLIT_LOCKED}.`
   const last = Math.max(...root.vessels.map((v) => v.vessel_index))
   const stayer = parts.find((p) => p.split_stays)
   const tree = [root, ...parts]
   const tanksOf = new Map(tree.map((b) => [b.id, new Map(b.vessels.map((v) => [v.vessel_index, v.tank_id]))]))
   tanksOf.get(batch.id)?.set(k, tankId)
-  if (stayer && batch.id === stayer.id && k === 0) tanksOf.get(root.id)!.set(last, tankId)
-  if (stayer && batch.id === root.id && k === last) tanksOf.get(stayer.id)!.set(0, tankId)
   const name = (id: number) => tanks.find((t) => t.id === id)?.name ?? 'that tank'
   const n = (b: SchedBatch) => b.part_number ?? 0
 
@@ -414,7 +424,6 @@ export function treeRefusal(batches: SchedBatch[], batch: SchedBatch, k: number,
     const t = first(p)
     if (t == null || t !== here) continue
     if (stayer && batch.id === p.id) return `Part ${n(p)} can't go into ${name(t)}: part ${n(stayer)} stays there.`
-    if (stayer && batch.id === stayer.id) return `Part ${n(stayer)} can't go into ${name(t)}: part ${n(p)} goes there.`
     return `Part ${n(p)}: The beer is already in ${name(t)}.`
   }
   for (const [i, p] of leaving.entries())
@@ -460,7 +469,7 @@ export function dragHint(a: DragHintInput): DragHint | null {
       const nextFill = part.batch.steps
         .filter((s) => s.behavior === 'transfer' && s.vessel_index === part.vessel + 1)
         .sort((x, y) => x.due_on.localeCompare(y.due_on))[0]
-      // A split batch: the rule over its whole tree (fix cycle 4, X2).
+      // A split batch: locked, or the rule over its whole tree (fix cycle 4, X2).
       const batches = [...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()]
       const tree = treeRefusal(batches, part.batch, part.vessel, to?.id ?? null, a.tanks)
       if (tree) reasons.push(tree.replace(/\.$/, ''))

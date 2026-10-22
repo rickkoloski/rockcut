@@ -324,10 +324,11 @@ defmodule RockcutApi.Production.BatchChanges do
           Repo.rollback(:split_fill)
 
         "transfer" ->
+          # Not on a split parent (fix cycle 4, Matt: its tanks are locked).
+          unlocked!(%Batch{id: step.batch_id})
           remove_transfer!(step)
-          # D48 DEV QA N1: the tanks either side of it now meet (on a split,
-          # over the whole tree; fix cycle 4).
-          keep_stayer!(%Batch{id: step.batch_id})
+          # D48 DEV QA N1: the tanks either side of it now meet (on a split
+          # part, over the whole tree; fix cycle 4).
           no_tree_twice!(%Batch{id: step.batch_id}, [step.vessel_index])
 
         _ ->
@@ -369,6 +370,8 @@ defmodule RockcutApi.Production.BatchChanges do
   end
 
   defp add_transfer!(batch, type, attrs) do
+    # Not on a split parent (fix cycle 4, Matt: its tanks are locked).
+    unlocked!(batch)
     day = date!(attrs["due_on"])
     tank_id = Batches.active_tank_id!(attrs["tank_id"])
     steps = steps!(batch)
@@ -446,9 +449,7 @@ defmodule RockcutApi.Production.BatchChanges do
     exit_cips = Enum.count(moving, &(Steps.behavior(&1) == "cip" and &1.due_on == exit))
 
     # D48 QA M3, DEV QA N1: not the tank the beer is in, nor the one it goes
-    # into next; on a split, over the whole tree (fix cycle 4: a transfer
-    # before the Split takes the part that stays with it).
-    keep_stayer!(batch)
+    # into next; on a split part, over the whole tree (fix cycle 4).
     no_tree_twice!(batch, [k + 1, k + 2], k + 1)
 
     %{
@@ -788,8 +789,9 @@ defmodule RockcutApi.Production.BatchChanges do
     Split (`{:part, n, {:same_tank, name}}`, or `{:stays_there, name, m}`
     when the change was on that part and part m stays there), nor in one
     another part starts in (`{:goes_there, name, m}`, named on the part the
-    change was on when it's one of them, else the later one). The part that
-    stays continues in the parent's tank (`keep_stayer!/2`).
+    change was on when it's one of them, else the later one). The parent's
+    tanks and the staying part's first one don't change while split
+    (`unlocked!/2`).
   """
   def no_tree_twice!(%Batch{} = batch, indexes \\ :all, new \\ nil) do
     case tree_twice(batch, indexes, new) do
@@ -843,9 +845,6 @@ defmodule RockcutApi.Production.BatchChanges do
           stayer && changed.id == p.id ->
             {:part, p.part_number, {:stays_there, name.(t), stayer.part_number}}
 
-          stayer && changed.id == stayer.id ->
-            {:part, stayer.part_number, {:goes_there, name.(t), p.part_number}}
-
           true ->
             {:part, p.part_number, {:same_tank, name.(t)}}
         end
@@ -869,29 +868,21 @@ defmodule RockcutApi.Production.BatchChanges do
   end
 
   @doc """
-  The part that stays continues in its parent's tank (D48 DEV QA fix cycle
-  4, X2): after a change to the parent's last vessel (the tank, or a
-  transfer added or removed before the Split), that part's first tank is
-  the parent's again; after a change to that part's first tank (`k` 0), the
-  parent's last tank follows it.
+  While a batch is split (D48 DEV QA fix cycle 4, Matt), the parent's tanks
+  and the first tank of the part that stays are locked: `:split` ("Undo the
+  split first.") for a tank change there (`k` its vessel), or for a transfer
+  added or removed on the parent (`k` nil). A part's later tanks, and the
+  first tank of a part that leaves, still change under the tree rule.
   """
-  def keep_stayer!(%Batch{id: id}, k \\ nil) do
+  def unlocked!(%Batch{id: id}, k \\ nil) do
     batch = Repo.get!(Batch, id)
 
-    cond do
-      batch.split_parent_id && batch.split_stays && k == 0 ->
-        parent = batch.split_parent_id
-        set_tank!(parent, last_vessel(parent), vessel_tank(batch.id, 0))
+    locked =
+      if batch.split_parent_id,
+        do: batch.split_stays and k == 0,
+        else: parts_of(batch) != []
 
-      is_nil(batch.split_parent_id) ->
-        case Enum.find(parts_of(batch), & &1.split_stays) do
-          nil -> :ok
-          part -> set_tank!(part.id, 0, vessel_tank(batch.id, last_vessel(batch.id)))
-        end
-
-      true ->
-        :ok
-    end
+    if locked, do: Repo.rollback(:split), else: :ok
   end
 
   defp parts_of(%Batch{id: id}),
@@ -910,13 +901,6 @@ defmodule RockcutApi.Production.BatchChanges do
           where: v.batch_id == ^batch_id and v.vessel_index == ^k,
           select: v.tank_id
         )
-      )
-
-  defp set_tank!(batch_id, k, tank_id),
-    do:
-      Repo.update_all(
-        from(v in BatchVessel, where: v.batch_id == ^batch_id and v.vessel_index == ^k),
-        set: [tank_id: tank_id]
       )
 
   defp parent_split(%Batch{split_parent_id: nil}), do: nil
