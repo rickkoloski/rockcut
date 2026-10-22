@@ -29,7 +29,7 @@ three-environment workflow on its own branch.
 |---|---|---|---|---|
 | **What** | Tanks and out-of-service periods (§3.2); phases and step types, brewer-editable (§3.3); process templates and their editor (§3.4); Brewery → Production nav | Planning batches from a template; the Gantt (§3.6); moving steps with the move prompt (§3.7); checking steps off; P-numbers and the brew-day batch number (§3.5); tank status (§3.8); flags and sign-off (§3.9); standalone CIP & Sanitize (§3.10); assignee and notes on steps; the batch dialog without §3.11's actions | Add/remove steps (and Set temp ramps), add/remove transfers and filters, split and undo split, change a planned batch's template and brand, multi-select (§3.11) | Steps on the Brewery task board, two-way (§3.12); the Gantt's task list panel; planned-batch tasks and their toggle; the brewhouse tablet on the schedule (§3.13) |
 | **Data** | `tanks`, `tank_outages`, `production_phases`, `production_step_types`, `process_templates`, `template_steps`, `template_links` | `batches` changes; `batch_vessels`, `production_steps`, `production_step_links`, `flag_signoffs` | (columns on D47's tables: `split_parent_id`, `part_number`, `ramp_group`) | `production_steps.task_id`; `tasks.production_step_id` |
-| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113–P119 | P90–P108 |
+| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113–P120 | P90–P108 |
 | **DEV seed** | Tanks FV1–FV7, Serving 1–2; `[SEED]` templates; an outage | `[SEED]` batches in every state; a signed-off flag; assigned steps | A transferred and a split batch | Linked tasks on the Brewery board; `breweryDevice` writes |
 
 - **Order:** D46 → D47 → D48 → D49, each branch cut from `develop` after the previous one merges.
@@ -260,6 +260,8 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
   - The unlabeled middle ("Your own selection" in its tooltip and `aria-label`) is the person's own mix of open and closed tanks. Opening or closing one tank's caret selects it, and clicking it restores the last mix. It's disabled until a mix exists.
   - The switch reflects the real state: all open → Expand all; all closed → Collapse all.
   - The mix and the switch position are remembered per person in this browser.
+- **Zoom** is one button showing the current zoom ("6 weeks ▾"). It opens a menu of **2 weeks / 6 weeks / 12 weeks**, with a check mark on the current one, and replaces the three separate buttons.
+- **Add process ▾** replaces the separate **Plan batch** and **Add CIP & Sanitize** buttons. Its menu offers **Plan batch…** and **CIP & Sanitize…**, which open the same dialogs. The empty-spot menu is unchanged.
 
 **Grid:** a sticky tank column and a sticky date header (months, day numbers, weekday initials when wide enough). Weekends shaded, a today line, day gridlines.
 
@@ -559,6 +561,7 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P117 | `brewer1` | ⋯ panel → History → Remove a mark | | The mark is gone and the status goes back to what the exits and CIPs say. |
 | P118 | `brewer1` | scroll the Gantt sideways, then **Today** | zoom 6 weeks | The range runs from a week before today to 6 weeks after it; the view scrolls back to a week before today. Switching to 2 weeks and pressing Today: a week back plus 2 weeks. |
 | P119 | `brewer1` | open FV2 and FV4 by their carets → switch to **Collapse all** → the middle | | The switch moved to the middle when FV2 opened. Collapse all closes every tank; the middle reopens exactly FV2 and FV4. Remembered after a reload. Opening every tank by caret moves the switch to Expand all. |
+| P120 | `brewer1` | toolbar → "6 weeks ▾" → 12 weeks; then **Add process ▾** → Plan batch… and → CIP & Sanitize… | | The zoom button reads "12 weeks ▾" and the range follows; each menu item opens its dialog. No separate 2/6/12, Plan batch or Add CIP buttons remain. Works by keyboard (Enter, arrows, Escape) and at phone width. |
 | P110 | `brewer1` | Split - Filter Galactic #40 on Nov 3: #40.1 12 bbl stays in FV2; #40.2 8 bbl → Serving 1 | | "Split - Filter" on the schedule; FV2 keeps #40.1 (no CIP); Serving 1 fills with #40.2. |
 
 **D49: task list linkage and the tablet**
