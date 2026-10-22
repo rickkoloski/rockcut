@@ -372,6 +372,61 @@ export interface DragHintInput {
   parts: Part[]
 }
 
+/**
+ * D48 DEV QA fix cycle 4 (X2): the API's rule over a split batch's whole
+ * tree, for putting vessel `k` of `batch` (the parent or a part) in
+ * `tankId`. The part that stays moves with its parent's last tank (and
+ * back); no two vessels in a row in one tank along any path; the parts that
+ * leave start neither in the tank the beer is in at the Split nor in
+ * another part's. The refusal the API gives ("Part 2: The beer is already
+ * in FV9.", "Part 2 can't go into FV1: part 1 stays there."), or null: fine,
+ * or `batch` isn't split.
+ */
+export function treeRefusal(batches: SchedBatch[], batch: SchedBatch, k: number, tankId: number | null, tanks: Tank[]): string | null {
+  const root = batch.split_parent_id != null ? batches.find((b) => b.id === batch.split_parent_id) : batch
+  const parts = root ? batches.filter((b) => b.split_parent_id === root.id).sort((x, y) => (x.part_number ?? 0) - (y.part_number ?? 0)) : []
+  if (!root || !parts.length) return null
+  const last = Math.max(...root.vessels.map((v) => v.vessel_index))
+  const stayer = parts.find((p) => p.split_stays)
+  const tree = [root, ...parts]
+  const tanksOf = new Map(tree.map((b) => [b.id, new Map(b.vessels.map((v) => [v.vessel_index, v.tank_id]))]))
+  tanksOf.get(batch.id)?.set(k, tankId)
+  if (stayer && batch.id === stayer.id && k === 0) tanksOf.get(root.id)!.set(last, tankId)
+  if (stayer && batch.id === root.id && k === last) tanksOf.get(stayer.id)!.set(0, tankId)
+  const name = (id: number) => tanks.find((t) => t.id === id)?.name ?? 'that tank'
+  const n = (b: SchedBatch) => b.part_number ?? 0
+
+  for (const b of tree) {
+    const m = tanksOf.get(b.id)!
+    const j = [...m.keys()].sort((x, y) => x - y).find((i) => m.get(i) != null && m.get(i) === m.get(i - 1))
+    if (j === undefined) continue
+    const t = m.get(j)!
+    const label = b.id === root.id ? '' : `Part ${n(b)}: `
+    if (b.id === batch.id && j === k) return `${label}The beer is already in ${name(t)}.`
+    const fill = b.steps.filter((s) => s.behavior === 'transfer' && s.vessel_index === j).sort((x, y) => x.due_on.localeCompare(y.due_on))[0]
+    return `${label}The beer goes into ${name(t)} next${fill ? `, on ${dayLabel(fill.due_on)}` : ''}.`
+  }
+
+  const here = tanksOf.get(root.id)!.get(last) ?? null
+  const first = (p: SchedBatch) => tanksOf.get(p.id)!.get(0) ?? null
+  const leaving = parts.filter((p) => !p.split_stays)
+  for (const p of leaving) {
+    const t = first(p)
+    if (t == null || t !== here) continue
+    if (stayer && batch.id === p.id) return `Part ${n(p)} can't go into ${name(t)}: part ${n(stayer)} stays there.`
+    if (stayer && batch.id === stayer.id) return `Part ${n(stayer)} can't go into ${name(t)}: part ${n(p)} goes there.`
+    return `Part ${n(p)}: The beer is already in ${name(t)}.`
+  }
+  for (const [i, p] of leaving.entries())
+    for (const q of leaving.slice(i + 1)) {
+      const t = first(p)
+      if (t == null || t !== first(q)) continue
+      const [a, b] = batch.id === p.id ? [p, q] : [q, p]
+      return `Part ${n(a)} can't go into ${name(t)}: part ${n(b)} goes there.`
+    }
+  return null
+}
+
 const signedDays = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'}`
 
 /**
@@ -405,7 +460,11 @@ export function dragHint(a: DragHintInput): DragHint | null {
       const nextFill = part.batch.steps
         .filter((s) => s.behavior === 'transfer' && s.vessel_index === part.vessel + 1)
         .sort((x, y) => x.due_on.localeCompare(y.due_on))[0]
-      if (to && part.vessel > 0 && tankOf(part.vessel - 1) === to.id) reasons.push(`the beer is already in ${to.name}`)
+      // A split batch: the rule over its whole tree (fix cycle 4, X2).
+      const batches = [...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()]
+      const tree = treeRefusal(batches, part.batch, part.vessel, to?.id ?? null, a.tanks)
+      if (tree) reasons.push(tree.replace(/\.$/, ''))
+      else if (to && part.vessel > 0 && tankOf(part.vessel - 1) === to.id) reasons.push(`the beer is already in ${to.name}`)
       else if (to && nextFill && tankOf(part.vessel + 1) === to.id) reasons.push(`the beer goes into ${to.name} next, on ${dayLabel(nextFill.due_on)}`)
       outIn(a.toRow, part.start, part.end)
       overlapIn(a.toRow, part, part.start, part.end)

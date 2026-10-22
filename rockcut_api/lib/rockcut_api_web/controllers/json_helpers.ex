@@ -442,6 +442,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       brew_two_days: b.brew_two_days,
       split_parent_id: b.split_parent_id,
       part_number: b.part_number,
+      # D48 DEV QA fix cycle 4: the part that stays in its parent's tank.
+      split_stays: b.split_stays,
       # D48: a part's fill is its parent's Split step.
       split_step_id: entry[:origin] && entry.origin.fill && entry.origin.fill.id,
       vessels: Enum.map(entry.vessels, &%{vessel_index: &1.vessel_index, tank_id: &1.tank_id}),

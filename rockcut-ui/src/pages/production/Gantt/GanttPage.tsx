@@ -469,6 +469,7 @@ function GanttScreen() {
           phases={data.phases}
           brewers={data.brewers}
           parts={data.batches.filter((b) => b.split_parent_id === openBatch.id)}
+          batches={data.batches}
           focusFlags={batchOpen.flags}
           onOpenStep={(s) => setStepOpen(s.id)}
           onClose={() => setBatchOpen(null)}

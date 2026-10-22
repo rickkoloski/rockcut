@@ -533,7 +533,18 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
   const hereId = day ? (batch.vessels.find((v) => v.vessel_index === k)?.tank_id ?? null) : null
   // With nothing staying, part 1 keeps the later tanks, so it can't fill the one the beer goes into next (DEV QA R3).
   const nextId = batch.vessels.find((v) => v.vessel_index === k + 1)?.tank_id ?? null
-  const keepsLater = (i: number) => i === 0 && !parts.some((q) => q.tank === 'stay')
+  // Asked of part 1's own picker as if it didn't stay: picking a tank there is what makes nothing stay (DEV QA X4).
+  const keepsLater = (i: number) => i === 0 && !parts.some((q, j) => j !== i && q.tank === 'stay')
+  const nextName = nextId ? (tanks.find((t) => t.id === nextId)?.name ?? 'that tank') : ''
+  const nextOn = stayOf(batch, k + 1).fill
+  const picked = parts.flatMap((p) => (typeof p.tank === 'number' ? [p.tank] : []))
+  // The API's refusals, shown before Split as the transfer preview does (DEV QA X4).
+  const refusal =
+    nextId != null && keepsLater(0) && parts[0].tank === nextId
+      ? `Part 1: The beer goes into ${nextName} next${nextOn ? `, on ${dayLabel(nextOn)}` : ''}.`
+      : new Set(picked).size < picked.length
+        ? 'Two parts can’t go into the same tank.'
+        : null
   const total = parts.reduce((t, p) => t + (Number(p.volume) || 0), 0)
   const adds = Math.abs(total - volume) < 0.001
   const set = (i: number, change: Partial<PartRow>) => setParts((ps) => ps.map((p, j) => (j === i ? { ...p, ...change } : p)))
@@ -623,6 +634,11 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
           </Button>
         </Box>
       ))}
+      {refusal && (
+        <Typography variant="body2" color="error" role="alert" data-testid="split-preview">
+          {refusal}
+        </Typography>
+      )}
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         <Button size="small" onClick={() => setParts((ps) => [...ps, { tank: null, volume: '' }])} data-testid="split-add-part">
           Add part

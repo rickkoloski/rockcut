@@ -200,6 +200,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       await refresh()
     } catch (err) {
       notify(prodError(err))
+      // A refused Undo ("Something changed since."): show what the server has now (DEV QA X5).
+      await refresh()
     } finally {
       setUndoing(false)
     }

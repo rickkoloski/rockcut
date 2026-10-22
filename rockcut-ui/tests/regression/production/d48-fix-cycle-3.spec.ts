@@ -121,18 +121,27 @@ test('R3: with nothing staying, part 1’s picker leaves out the next tank, and 
   await page.getByTestId('batch-split').click()
   await page.getByTestId('split-day').fill(addDays(transfer, -2))
 
-  // Part 2 into d; part 1 (staying) may take b, and once it does nothing stays.
+  // Part 2 stays, so part 1 may take b; then part 2 goes into d and nothing
+  // stays. Part 1's own picker no longer offers b while it stays (fix cycle 4, X4).
+  await page.getByTestId('split-tank-0').click()
+  await expect(page.getByTestId(`split-tank-0-${b.id}`)).toHaveCount(0)
+  await page.keyboard.press('Escape')
   await page.getByTestId('split-tank-1').click()
-  await page.getByTestId(`split-tank-1-${d.id}`).click()
+  await page.getByTestId('split-tank-1-stay').click()
   await page.getByTestId('split-tank-0').click()
   await page.getByTestId(`split-tank-0-${b.id}`).click()
+  await page.getByTestId('split-tank-1').click()
+  await page.getByTestId(`split-tank-1-${d.id}`).click()
+  const refused = `Part 1: The beer goes into ${b.name} next, on ${dayLabel(transfer)}.`
+  await expect(page.getByTestId('split-preview')).toHaveText(refused)
   await page.getByTestId('split-dialog-save').click()
-  await expect(page.getByTestId('split-dialog-error')).toHaveText(`Part 1: The beer goes into ${b.name} next, on ${dayLabel(transfer)}.`)
+  await expect(page.getByTestId('split-dialog-error')).toHaveText(refused)
 
   // Into c instead: b isn't offered to part 1 any more; part 2 is offered it.
   await page.getByTestId('split-tank-0').click()
   await page.getByTestId(`split-tank-0-${c.id}`).click()
   await expect(page.getByTestId('split-dialog-error')).toHaveCount(0)
+  await expect(page.getByTestId('split-preview')).toHaveCount(0)
   await page.getByTestId('split-tank-0').click()
   await expect(page.getByTestId(`split-tank-0-${b.id}`)).toHaveCount(0)
   await page.keyboard.press('Escape')

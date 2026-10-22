@@ -325,8 +325,10 @@ defmodule RockcutApi.Production.BatchChanges do
 
         "transfer" ->
           remove_transfer!(step)
-          # D48 DEV QA N1: the tanks either side of it now meet.
-          no_tank_twice!(%Batch{id: step.batch_id}, [step.vessel_index])
+          # D48 DEV QA N1: the tanks either side of it now meet (on a split,
+          # over the whole tree; fix cycle 4).
+          keep_stayer!(%Batch{id: step.batch_id})
+          no_tree_twice!(%Batch{id: step.batch_id}, [step.vessel_index])
 
         _ ->
           StepGraph.pass_through!(StepGraph.batch(step.batch_id), step)
@@ -389,8 +391,6 @@ defmodule RockcutApi.Production.BatchChanges do
 
     shift_vessels!(batch, k, +1)
     Repo.insert!(%BatchVessel{batch_id: batch.id, vessel_index: k + 1, tank_id: tank_id})
-    # D48 QA M3, DEV QA N1: not the tank the beer is in, nor the one it goes into next.
-    no_tank_twice!(batch, [k + 1, k + 2], k + 1)
 
     ids = Enum.map(moving, & &1.id)
     Repo.update_all(from(s in Step, where: s.id in ^ids), set: [vessel_index: k + 1])
@@ -444,6 +444,12 @@ defmodule RockcutApi.Production.BatchChanges do
     # step that moves (D48 DEV QA N1).
     {_, exit} = stay(batch, steps, k)
     exit_cips = Enum.count(moving, &(Steps.behavior(&1) == "cip" and &1.due_on == exit))
+
+    # D48 QA M3, DEV QA N1: not the tank the beer is in, nor the one it goes
+    # into next; on a split, over the whole tree (fix cycle 4: a transfer
+    # before the Split takes the part that stays with it).
+    keep_stayer!(batch)
+    no_tree_twice!(batch, [k + 1, k + 2], k + 1)
 
     %{
       batch_ids: [batch.id],
@@ -767,6 +773,151 @@ defmodule RockcutApi.Production.BatchChanges do
         {:same_tank, Repo.get!(Tank, tanks[j]).name, fill && fill.due_on}
     end
   end
+
+  ## Split trees (D48 DEV QA fix cycle 4: X1, X2)
+
+  @doc """
+  The N1 rule over a split batch's whole tree: the parent's vessels up to
+  the Split, then each part's. `batch` may be the parent or a part; one that
+  isn't split gets `no_tank_twice!/3` as before.
+
+  - **No repeats along a path:** `tank_twice/3` on the parent and on each
+    part (on `batch` with `indexes` and `new`, the others `:all`). A part's
+    refusal names it: `{:part, n, reason}`.
+  - **The parts that leave** don't start in the tank the beer is in at the
+    Split (`{:part, n, {:same_tank, name}}`, or `{:stays_there, name, m}`
+    when the change was on that part and part m stays there), nor in one
+    another part starts in (`{:goes_there, name, m}`, named on the part the
+    change was on when it's one of them, else the later one). The part that
+    stays continues in the parent's tank (`keep_stayer!/2`).
+  """
+  def no_tree_twice!(%Batch{} = batch, indexes \\ :all, new \\ nil) do
+    case tree_twice(batch, indexes, new) do
+      :ok -> :ok
+      reason -> Repo.rollback(reason)
+    end
+  end
+
+  @doc "`no_tree_twice!/3`'s check: `:ok` or the reason, without rolling back."
+  def tree_twice(%Batch{id: id}, indexes \\ :all, new \\ nil) do
+    batch = Repo.get!(Batch, id)
+    root = if batch.split_parent_id, do: Repo.get!(Batch, batch.split_parent_id), else: batch
+    parts = parts_of(root)
+
+    if parts == [] do
+      tank_twice(batch, indexes, new)
+    else
+      paths =
+        Enum.find_value([root | parts], :ok, fn b ->
+          reason =
+            if b.id == batch.id,
+              do: tank_twice(b, indexes, new),
+              else: tank_twice(b, :all)
+
+          case reason do
+            :ok -> nil
+            r when b.id == root.id -> r
+            r -> {:part, b.part_number, r}
+          end
+        end)
+
+      if paths == :ok, do: parts_twice(root, parts, batch), else: paths
+    end
+  end
+
+  defp parts_twice(root, parts, changed) do
+    here = vessel_tank(root.id, last_vessel(root.id))
+    stayer = Enum.find(parts, & &1.split_stays)
+    first = Map.new(parts, &{&1.id, vessel_tank(&1.id, 0)})
+    leaving = Enum.reject(parts, & &1.split_stays)
+    name = fn id -> Repo.get!(Tank, id).name end
+
+    into_here =
+      Enum.find_value(leaving, fn p ->
+        t = first[p.id]
+
+        cond do
+          is_nil(t) or t != here ->
+            nil
+
+          stayer && changed.id == p.id ->
+            {:part, p.part_number, {:stays_there, name.(t), stayer.part_number}}
+
+          stayer && changed.id == stayer.id ->
+            {:part, stayer.part_number, {:goes_there, name.(t), p.part_number}}
+
+          true ->
+            {:part, p.part_number, {:same_tank, name.(t)}}
+        end
+      end)
+
+    shared =
+      for(
+        p <- leaving,
+        q <- leaving,
+        p.part_number < q.part_number,
+        first[p.id] != nil,
+        first[p.id] == first[q.id],
+        do: {p, q}
+      )
+      |> Enum.find_value(fn {p, q} ->
+        {a, b} = if changed.id == p.id, do: {p, q}, else: {q, p}
+        {:part, a.part_number, {:goes_there, name.(first[p.id]), b.part_number}}
+      end)
+
+    into_here || shared || :ok
+  end
+
+  @doc """
+  The part that stays continues in its parent's tank (D48 DEV QA fix cycle
+  4, X2): after a change to the parent's last vessel (the tank, or a
+  transfer added or removed before the Split), that part's first tank is
+  the parent's again; after a change to that part's first tank (`k` 0), the
+  parent's last tank follows it.
+  """
+  def keep_stayer!(%Batch{id: id}, k \\ nil) do
+    batch = Repo.get!(Batch, id)
+
+    cond do
+      batch.split_parent_id && batch.split_stays && k == 0 ->
+        parent = batch.split_parent_id
+        set_tank!(parent, last_vessel(parent), vessel_tank(batch.id, 0))
+
+      is_nil(batch.split_parent_id) ->
+        case Enum.find(parts_of(batch), & &1.split_stays) do
+          nil -> :ok
+          part -> set_tank!(part.id, 0, vessel_tank(batch.id, last_vessel(batch.id)))
+        end
+
+      true ->
+        :ok
+    end
+  end
+
+  defp parts_of(%Batch{id: id}),
+    do: Repo.all(from(b in Batch, where: b.split_parent_id == ^id, order_by: b.part_number))
+
+  defp last_vessel(batch_id),
+    do:
+      Repo.one(
+        from(v in BatchVessel, where: v.batch_id == ^batch_id, select: max(v.vessel_index))
+      )
+
+  defp vessel_tank(batch_id, k),
+    do:
+      Repo.one(
+        from(v in BatchVessel,
+          where: v.batch_id == ^batch_id and v.vessel_index == ^k,
+          select: v.tank_id
+        )
+      )
+
+  defp set_tank!(batch_id, k, tank_id),
+    do:
+      Repo.update_all(
+        from(v in BatchVessel, where: v.batch_id == ^batch_id and v.vessel_index == ^k),
+        set: [tank_id: tank_id]
+      )
 
   defp parent_split(%Batch{split_parent_id: nil}), do: nil
 

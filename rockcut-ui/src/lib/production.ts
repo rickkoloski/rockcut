@@ -183,6 +183,8 @@ export interface SchedBatch {
   split_parent_id: number | null
   part_number: number | null
   split_step_id: number | null
+  /** A part that stays in its parent's tank (DEV QA fix cycle 4). */
+  split_stays: boolean
   vessels: { vessel_index: number; tank_id: number | null }[]
   steps: SchedStep[]
   links: SchedLink[]

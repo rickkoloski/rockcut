@@ -18,9 +18,10 @@ defmodule RockcutApi.Production.Undo do
   on every write.
 
   **Vessels** (D48 DEV QA R1): a write that changed a batch's vessels also
-  records that batch's whole vessel list as it left it. Its Undo is stale
-  when any of them changed since, not only the rows it changed, and what it
-  puts back must pass `BatchChanges.no_tank_twice!/3` (`:same_tank`).
+  records that batch's whole vessel list as it left it, and on a split (or
+  one it undid) every vessel list in the tree (fix cycle 4, X1). Its Undo is
+  stale when any of them changed since, not only the rows it changed, and
+  what it puts back must pass `BatchChanges.no_tree_twice!/3` (`:same_tank`).
   """
   import Ecto.Query, only: [from: 2]
 
@@ -102,10 +103,15 @@ defmodule RockcutApi.Production.Undo do
       for e <- Enum.sort_by(back, &{rank(&1["table"]), &1["id"]}),
           do: put_row!(e["table"], e["before"])
 
-      # What it puts back follows the N1 rule, as any other change does.
-      for {id, _} <- vessels,
-          batch = Repo.get(Batch, String.to_integer(id)),
-          do: BatchChanges.no_tank_twice!(batch, :all)
+      # What it puts back follows the N1 rule, over a split's whole tree, as
+      # any other change does (fix cycle 4).
+      roots =
+        for id <- touched(entries, vessels),
+            batch = Repo.get(Batch, id),
+            uniq: true,
+            do: batch.split_parent_id || batch.id
+
+      for id <- roots, do: BatchChanges.no_tree_twice!(%Batch{id: id})
 
       Repo.delete!(record)
 
@@ -130,7 +136,9 @@ defmodule RockcutApi.Production.Undo do
 
   defp rows(scope) do
     # D48: a batch's split parts always come with it (a split inserts them,
-    # Undo split deletes them, the Split's check-off changes them).
+    # Undo split deletes them, the Split's check-off changes them), and a
+    # part brings its parent and the other parts (a tank change on the part
+    # that stays changes its parent's; fix cycle 4).
     batch_ids = with_parts(Map.get(scope, :batches, []))
     step_ids = Map.get(scope, :steps, [])
 
@@ -160,8 +168,12 @@ defmodule RockcutApi.Production.Undo do
   defp with_parts([]), do: []
 
   defp with_parts(ids) do
-    parts = select("batches", "split_parent_id", ids) |> Enum.map(& &1["id"])
-    Enum.uniq(ids ++ parts)
+    parents =
+      for b <- select("batches", "id", ids), b["split_parent_id"], do: b["split_parent_id"]
+
+    roots = Enum.uniq(ids ++ parents)
+    parts = select("batches", "split_parent_id", roots) |> Enum.map(& &1["id"])
+    Enum.uniq(roots ++ parts)
   end
 
   defp select(_table, _column, []), do: []
@@ -206,14 +218,44 @@ defmodule RockcutApi.Production.Undo do
     end
   end
 
-  # The batches whose vessels the write changed, each with its whole vessel
-  # list as the write left it.
+  # The batches whose vessels the write changed, and every other batch of
+  # their split trees (as they were or as the write left them: X1, an Undo
+  # split's parent), each with its whole vessel list as the write left it.
   defp vessels(entries, after_) do
-    entries
-    |> Enum.filter(&(&1["table"] == "batch_vessels"))
-    |> Enum.map(&(&1["before"] || after_[{"batch_vessels", &1["id"]}])["batch_id"])
+    ids =
+      entries
+      |> Enum.filter(&(&1["table"] == "batch_vessels"))
+      |> Enum.map(&(&1["before"] || after_[{"batch_vessels", &1["id"]}])["batch_id"])
+      |> Enum.uniq()
+
+    before =
+      for e <- entries,
+          e["table"] == "batches",
+          e["before"],
+          into: %{},
+          do: {e["id"], e["before"]}
+
+    roots =
+      for id <- ids,
+          uniq: true,
+          do: (after_[{"batches", id}] || before[id] || %{})["split_parent_id"] || id
+
+    parts = select("batches", "split_parent_id", roots) |> Enum.map(& &1["id"])
+
+    (ids ++ roots ++ parts)
     |> Enum.uniq()
     |> Map.new(&{to_string(&1), vessels_hash(&1)})
+  end
+
+  # The batches an Undo puts vessels back in, or batch rows (a split's parts).
+  defp touched(entries, vessels) do
+    from_rows =
+      for e <- entries,
+          e["table"] in ["batches", "batch_vessels"],
+          id = if(e["table"] == "batches", do: e["id"], else: (e["before"] || %{})["batch_id"]),
+          do: id
+
+    Enum.uniq(Enum.map(Map.keys(vessels), &String.to_integer/1) ++ from_rows)
   end
 
   defp vessels_hash(batch_id) do

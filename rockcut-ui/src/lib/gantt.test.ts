@@ -20,6 +20,7 @@ import {
   phaseAt,
   rangeForZoom,
   scheduleParts,
+  treeRefusal,
   readPrefs,
   segments,
   shiftRange,
@@ -76,6 +77,7 @@ const batch = (b: Partial<SchedBatch>): SchedBatch => ({
   split_parent_id: null,
   part_number: null,
   split_step_id: null,
+  split_stays: false,
   vessels: [{ vessel_index: 0, tank_id: 7 }],
   steps: [],
   links: [],
@@ -471,5 +473,35 @@ describe('split lanes (D48 lead decisions 1)', () => {
 
     const [busy] = layoutRows([tank(9, 'FV2')], scheduleParts([parent, other]), [], new Set())
     expect(busy.tracks).toBe(2)
+  })
+})
+
+describe('a split tree (DEV QA fix cycle 4, X2)', () => {
+  const tanks = [tank(1, 'FV1'), tank(9, 'FV9'), tank(10, 'FV10')]
+  const parent = batch({ id: 40, vessels: [{ vessel_index: 0, tank_id: 1 }] })
+  const part = (id: number, n: number, tankId: number, stays = false) =>
+    batch({ id, split_parent_id: 40, part_number: n, split_stays: stays, vessels: [{ vessel_index: 0, tank_id: tankId }] })
+  const stays = [parent, part(41, 1, 1, true), part(42, 2, 9)]
+
+  it('the parent into part 2’s tank: the part that stays would go with it', () => {
+    expect(treeRefusal(stays, parent, 0, 9, tanks)).toBe('Part 2: The beer is already in FV9.')
+    expect(treeRefusal(stays, parent, 0, 10, tanks)).toBeNull()
+  })
+
+  it('part 2 into the tank part 1 stays in; part 1 into part 2’s', () => {
+    expect(treeRefusal(stays, stays[2], 0, 1, tanks)).toBe("Part 2 can't go into FV1: part 1 stays there.")
+    expect(treeRefusal(stays, stays[1], 0, 9, tanks)).toBe("Part 1 can't go into FV9: part 2 goes there.")
+    expect(treeRefusal(stays, stays[2], 0, 10, tanks)).toBeNull()
+  })
+
+  it('nothing stays: no shared tank, not back into the parent’s', () => {
+    const none = [parent, part(41, 1, 9), part(42, 2, 10)]
+    expect(treeRefusal(none, none[2], 0, 9, tanks)).toBe("Part 2 can't go into FV9: part 1 goes there.")
+    expect(treeRefusal(none, none[2], 0, 1, tanks)).toBe('Part 2: The beer is already in FV1.')
+    expect(treeRefusal(none, none[2], 0, null, tanks)).toBeNull()
+  })
+
+  it('a batch that isn’t split: nothing to say', () => {
+    expect(treeRefusal([parent], parent, 0, 9, tanks)).toBeNull()
   })
 })

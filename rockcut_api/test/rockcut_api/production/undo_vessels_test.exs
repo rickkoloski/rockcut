@@ -115,11 +115,14 @@ defmodule RockcutApi.Production.UndoVesselsTest do
 
     assert vessels(ctx.lager) == %{0 => ctx.fv1.id}
     assert vessels(Repo.get!(RockcutApi.Brewing.Batch, p1)) == %{0 => ctx.fv1.id, 1 => ctx.bbt.id}
-    # Put back, the parent would be BBT1, then BBT1.
-    set_tank(ctx.other, ctx.lager, 0, ctx.bbt)
+    # BBT1 is refused now (part 1, which stays, would go from BBT1 into
+    # BBT1; fix cycle 4), so another tank: part 1 moves with the parent.
+    fv10 = tank!("FV10")
+    set_tank(ctx.other, ctx.lager, 0, fv10)
+    assert vessels(Repo.get!(RockcutApi.Brewing.Batch, p1)) == %{0 => fv10.id, 1 => ctx.bbt.id}
 
     assert {:error, :undo_stale} = Undo.undo(ctx.owner, token)
-    assert vessels(ctx.lager) == %{0 => ctx.bbt.id}
+    assert vessels(ctx.lager) == %{0 => fv10.id}
     assert length(Splits.parts_of(ctx.lager)) == 2
   end
 

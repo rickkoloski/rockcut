@@ -149,6 +149,14 @@ defmodule RockcutApiWeb.ProductionErrors do
   # D48 DEV QA M3, N1: a transfer or a part into the tank the beer is
   # already in, or goes into next ("…next, on Fri Dec 18."). R3: a split
   # names the part ("Part 1: …").
+  # Fix cycle 4: on a split's tree, "Part 2 can't go into Q1TA: part 1 stays
+  # there." / "… part 2 goes there."
+  def handle({:error, {:part, n, {:stays_there, name, m}}}, conn),
+    do: same_tank(conn, "Part #{n} can't go into #{name}: part #{m} stays there.")
+
+  def handle({:error, {:part, n, {:goes_there, name, m}}}, conn),
+    do: same_tank(conn, "Part #{n} can't go into #{name}: part #{m} goes there.")
+
   def handle({:error, {:part, n, reason}}, conn)
       when is_tuple(reason) and elem(reason, 0) == :same_tank,
       do: same_tank(conn, "Part #{n}: " <> same_tank_message(reason))

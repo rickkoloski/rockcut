@@ -435,4 +435,55 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
              "message" => "Part 1: The beer goes into FV9 next, on Thu Nov 12."
            }
   end
+
+  test "DEV QA fix cycle 4: a split's tree over HTTP; Undo of an Undo split is a 409", ctx do
+    [owner, other] = [ctx["brewer1"], ctx["brewer2"]]
+    [fv1, fv9] = Enum.map(~w(FV1 FV9), &tank!/1)
+    ale = plan!(brand!("Enos"), ale_template!("Ale 2"), ~D[2026-11-02], %{"tank_ids" => [fv1.id]})
+    path = "/api/production/batches/#{ale.id}"
+
+    split =
+      call(owner, :post, "#{path}/split", %{
+        due_on: "2026-11-05",
+        parts: [%{stays: true, volume_bbl: 12}, %{tank_id: fv9.id, volume_bbl: 8}]
+      })
+
+    assert split.status == 201
+    [p1, p2] = body(split)["data"]["part_ids"]
+    parts = Enum.filter(body(split)["data"]["batches"], &(&1["split_parent_id"] == ale.id))
+    assert Enum.map(parts, & &1["split_stays"]) == [true, false]
+
+    # X2: the parent into part 2's tank; part 2 into the tank part 1 stays in.
+    assert body(call(owner, :patch, "#{path}/vessels/0", %{tank_id: fv9.id})) == %{
+             "error" => "same_tank",
+             "message" => "Part 2: The beer is already in FV9."
+           }
+
+    assert body(
+             call(owner, :patch, "/api/production/batches/#{p2}/vessels/0", %{tank_id: fv1.id})
+           ) ==
+             %{
+               "error" => "same_tank",
+               "message" => "Part 2 can't go into FV1: part 1 stays there."
+             }
+
+    assert body(
+             call(owner, :patch, "/api/production/batches/#{p1}/vessels/0", %{tank_id: fv9.id})
+           ) ==
+             %{
+               "error" => "same_tank",
+               "message" => "Part 1 can't go into FV9: part 2 goes there."
+             }
+
+    # X1: Undo split, another user moves the merged batch, then the Undo.
+    unsplit = call(owner, :delete, "#{path}/split")
+    assert unsplit.status == 200
+    assert call(other, :patch, "#{path}/vessels/0", %{tank_id: fv9.id}).status == 200
+
+    stale = undo(owner, unsplit)
+    assert stale.status == 409
+    assert body(stale)["error"] == "undo_stale"
+    assert RockcutApi.Production.Splits.parts_of(ale) == []
+    assert vessels(ale) == %{0 => fv9.id}
+  end
 end

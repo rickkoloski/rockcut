@@ -5,7 +5,7 @@ import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import api from '../../../lib/api'
-import { buildParts, dayLabel, daysBetween, dotState, firstBrew } from '../../../lib/gantt'
+import { buildParts, dayLabel, daysBetween, dotState, firstBrew, treeRefusal } from '../../../lib/gantt'
 import {
   plainBatchNumber,
   prodPath,
@@ -41,6 +41,8 @@ interface Props {
   brewers: Person[]
   /** D48: its split parts (on the schedule now). */
   parts?: SchedBatch[]
+  /** Every batch on the schedule: a split's parent and parts, for the tank pickers (fix cycle 4). */
+  batches?: SchedBatch[]
   /** Scroll to the flags (opened from a bar's badge). */
   focusFlags?: boolean
   onOpenStep: (step: SchedStep) => void
@@ -225,7 +227,7 @@ function BrandTemplate({ batch, run }: { batch: SchedBatch; run: (call: () => Pr
  * filter…, Remove on each unfinished step, "Added" chips, and a planned
  * batch's brand and template.
  */
-export default function BatchDialog({ batch, tanks, flags, today, types, phases, brewers, parts: splitParts = [], focusFlags, onOpenStep, onClose }: Props) {
+export default function BatchDialog({ batch, tanks, flags, today, types, phases, brewers, parts: splitParts = [], batches = [], focusFlags, onOpenStep, onClose }: Props) {
   const flows = useFlows()
   usePhoneBackCloses(true, onClose)
   const planned = batch.status === 'planned'
@@ -243,6 +245,12 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
   const brew = firstBrew(batch.steps)
   const myFlags = flags.filter((f) => f.batch_ids.includes(batch.id))
   const steps = [...batch.steps].sort((a, b) => a.due_on.localeCompare(b.due_on) || a.position - b.position || a.id - b.id)
+  // Undo split merges back the part that stays, else part 1 (DEV QA X3).
+  const parentId = batch.split_parent_id ?? batch.id
+  const keeper = batches.find((b) => b.split_parent_id === parentId && b.split_stays)?.part_number ?? 1
+  // On a split, a picker leaves out the tanks the tree rule refuses; the tank it has stays shown (DEV QA X2).
+  const pickable = (vessel: number, current: number | null) =>
+    split ? tanks.filter((t) => t.id === current || !treeRefusal(batches, batch, vessel, t.id, tanks)) : tanks
 
   const openAdd = (what: typeof adding) => {
     setError(null)
@@ -336,7 +344,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
             <TankSelect
               key={p.key}
               label={p.vessel === 0 ? 'Ferment in' : `Transfer to (${vesselLabel(p.vessel).toLowerCase()})`}
-              tanks={tanks}
+              tanks={pickable(p.vessel, p.tankId)}
               value={p.tankId}
               from={p.start}
               to={p.end}
@@ -443,10 +451,10 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
         onConfirm={async () => {
           setUnsplitting(false)
           const parent = batch.split_parent_id != null ? batch.label.replace(/\.\d+$/, '') : batch.label
-          if (await run(() => flows.write(() => api.delete(prodPath('batches', batch.id, 'split')), `Split undone: ${parent} is one batch again, with part 1’s schedule.`))) onClose()
+          if (await run(() => flows.write(() => api.delete(prodPath('batches', batch.id, 'split')), `Split undone: ${parent} is one batch again, with part ${keeper}’s schedule.`))) onClose()
         }}
         title="Undo split"
-        message="Merge the parts back into one batch? The beer stays in the tank it was split from, with part 1’s schedule; the other parts are deleted."
+        message={`Merge the parts back into one batch? The beer stays in the tank it was split from, with part ${keeper}’s schedule; the other parts are deleted.`}
         confirmLabel="Undo split"
         confirmColor="primary"
       />

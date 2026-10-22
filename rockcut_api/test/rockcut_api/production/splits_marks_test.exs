@@ -207,7 +207,8 @@ defmodule RockcutApi.Production.SplitsMarksTest do
       assert vessels(Repo.get!(Batch, p1)) == %{0 => fv7.id, 1 => bbt.id}
       assert vessels(Repo.get!(Batch, p2)) == %{0 => bbt.id, 1 => nil}
 
-      assert {:error, {:same_tank, "BBT1", ~D[2026-11-12]}} =
+      # Named on the part (fix cycle 4).
+      assert {:error, {:part, 1, {:same_tank, "BBT1", ~D[2026-11-12]}}} =
                RockcutApi.Production.BatchChanges.add_transfer(Repo.get!(Batch, p1), %{
                  "due_on" => "2026-11-08",
                  "tank_id" => bbt.id

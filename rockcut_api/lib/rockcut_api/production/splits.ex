@@ -98,6 +98,17 @@ defmodule RockcutApi.Production.Splits do
           )
         )
 
+      # The parent's links into and out of the steps that move: Undo split
+      # puts them back (D48 DEV QA X3).
+      edge =
+        Repo.all(
+          from(l in StepLink,
+            where:
+              (l.from_step_id in ^moving_ids and l.to_step_id not in ^moving_ids) or
+                (l.to_step_id in ^moving_ids and l.from_step_id not in ^moving_ids)
+          )
+        )
+
       split_step = insert_split!(batch, k, day, method, steps, moving_ids)
       keeper = Enum.find_index(parts, & &1.stays) || 0
       last = vessels |> Enum.map(& &1.vessel_index) |> Enum.max()
@@ -113,7 +124,8 @@ defmodule RockcutApi.Production.Splits do
               volume_bbl: p.volume,
               notes: batch.notes,
               split_parent_id: batch.id,
-              part_number: i
+              part_number: i,
+              split_stays: p.stays
             })
 
           for j <- 0..(last - k) do
@@ -132,7 +144,7 @@ defmodule RockcutApi.Production.Splits do
             Repo.insert!(%BatchVessel{batch_id: part.id, vessel_index: j, tank_id: tank})
           end
 
-          copy_steps!(moving, links, part.id, -k)
+          copied = copy_steps!(moving, links, part.id, -k)
           # D48 DEV QA N1: a part doesn't fill the tank its copied steps go
           # into next; each part is checked on its own and named (R3).
           case BatchChanges.tank_twice(part, :all) do
@@ -140,8 +152,26 @@ defmodule RockcutApi.Production.Splits do
             reason -> Repo.rollback({:part, i, reason})
           end
 
-          part.id
+          {part.id, copied}
         end
+
+      # The edge links, with the moved ends as the keeper's copies.
+      kept = part_ids |> Enum.at(keeper) |> elem(1)
+      to_kept = &Map.get(kept, &1, &1)
+
+      batch
+      |> Ecto.Changeset.change(
+        split_links: %{
+          "links" =>
+            Enum.map(
+              edge,
+              &[to_kept.(&1.from_step_id), to_kept.(&1.to_step_id), &1.default_answer]
+            )
+        }
+      )
+      |> Repo.update!()
+
+      part_ids = Enum.map(part_ids, &elem(&1, 0))
 
       Repo.delete_all(from(s in Step, where: s.id in ^moving_ids))
 
@@ -166,16 +196,21 @@ defmodule RockcutApi.Production.Splits do
         put_link!(split_step.id, cip.id, "move_all")
       end
 
+      # D48 DEV QA fix cycle 4: the whole tree, as every later change checks it.
+      BatchChanges.no_tree_twice!(batch)
       %{batch_ids: [batch.id | part_ids], part_ids: part_ids}
     end)
   end
 
   @doc """
-  Undo split (§3.11, P80–P81): part 1's steps go back to the parent (in
-  the parent's tank, its later tanks with them), the other parts are
-  deleted, and the Split (with the CIP it set up) is removed. `batch` may be
-  the parent or a part. `:not_split`; `:part_step_done` once a part has a
-  finished step; `:step_done` once the Split is done.
+  Undo split (§3.11, P80–P81): the steps of the part that stays (else part
+  1's, the part that kept the later tanks; D48 DEV QA X3) go back to the
+  parent (in the parent's tank, its later tanks with them), with the
+  parent's links into and out of them as they were before the split; the
+  other parts are deleted, and the Split (with the CIP it set up) is
+  removed. `batch` may be the parent or a part. `:not_split`;
+  `:part_step_done` once a part has a finished step; `:step_done` once the
+  Split is done.
   """
   def undo_split(%Batch{} = batch) do
     Repo.transaction(fn ->
@@ -194,7 +229,7 @@ defmodule RockcutApi.Production.Splits do
 
       if split_step.done_on, do: Repo.rollback(:step_done)
       k = split_step.vessel_index
-      first = hd(parts)
+      first = Enum.find(parts, hd(parts), & &1.split_stays)
       graph = StepGraph.batch(parent.id)
 
       for cip <- set_up_cips(split_step), do: StepGraph.pass_through!(graph, cip)
@@ -220,12 +255,28 @@ defmodule RockcutApi.Production.Splits do
               tank_id: v.tank_id
             })
 
-      case back |> Enum.min_by(&Parts.order/1, fn -> nil end) do
-        nil -> :ok
-        s -> for l <- into, do: put_link!(l.from_step_id, new_ids[s.id], l.default_answer)
+      case {parent.split_links, Enum.min_by(back, &Parts.order/1, fn -> nil end)} do
+        {_, nil} ->
+          :ok
+
+        # Split before the links were kept: the steps follow what led into the Split.
+        {nil, s} ->
+          for l <- into, do: put_link!(l.from_step_id, new_ids[s.id], l.default_answer)
+
+        {%{"links" => edge}, _} ->
+          here =
+            MapSet.new(Repo.all(from(s in Step, where: s.batch_id == ^parent.id, select: s.id)))
+
+          id = &(new_ids[&1] || (MapSet.member?(here, &1) && &1))
+
+          for [from_id, to_id, answer] <- edge,
+              a = id.(from_id),
+              b = id.(to_id),
+              do: put_link!(a, b, answer)
       end
 
       Repo.delete_all(from(b in Batch, where: b.id in ^part_ids))
+      parent |> Ecto.Changeset.change(split_links: nil) |> Repo.update!()
       BatchChanges.no_tank_twice!(parent, [k + 1])
       %{batch_ids: [parent.id]}
     end)
