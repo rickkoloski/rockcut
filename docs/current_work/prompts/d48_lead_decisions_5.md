@@ -48,3 +48,10 @@ Refuse with `same_tank`, and name the part when a part is involved ("Part 2: The
 ## Close-out rule (Matt, 2026-10-22)
 
 After fix cycle 4: the full local and DEV suites, then a **final, split-focused QA pass**. If it finds only minors, D48 closes, and those minors become D49's first fix items. A must-fix still blocks close-out.
+
+## Matt's answers to the builder's cycle-4 questions (2026-10-22)
+
+1. **Lock the tanks while split.** On a split batch, the parent's tanks and the staying part's tank can't be changed: the pickers are read-only with "Undo the split first to change it", the API refuses with `split`, and a bar drag onto another row is refused with the same message in the hint. This replaces the "staying part follows the parent" behavior built in `e30b788`. Remove that code and its tests, and add tests for the lock.
+   - **Still allowed while split:** a leaving part's own later vessels (its transfers and their tanks) can still change, under the tree rule.
+   - **Not allowed while split:** a transfer added on the parent before the Split.
+2. **Undo split after the parts were edited:** keep it as built. It merges the staying part as it is now; the snackbar Undo right after a split stays exact.
