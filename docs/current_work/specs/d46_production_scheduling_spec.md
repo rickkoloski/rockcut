@@ -406,13 +406,13 @@ Computed server-side by one function, returned with the schedule.
 - **Recurring tasks** don't apply to linked tasks.
 - **Task list panel** on the Gantt (toolbar **Task list**): today through the next 6 days of linked tasks, grouped Late / Today / each day. Each has a checkbox, the title, notes (two lines), "Move to [date]", an assignee picker, and **Open** (the step dialog). Same rules as the board.
 
-### 3.12a Clean, not sanitized (D49; Matt, 2026-10-22)
+### 3.12a CIP - no sani, and Sanitize (D49; Matt, 2026-10-22)
 
 Sometimes a tank is CIP'd but not sanitized, and there's no shelf life on "Sani" (§3.8). So a brewer can say so by hand. **Nothing expires on its own** (Matt).
 
 - **The mark dialog** (tank ⋯ menu, empty tanks only) becomes one **Mark…** item with three states. These replace the separate Mark clean… / Mark dirty… items:
   - **Clean & sanitized** (`clean`, D48's Mark clean);
-  - **Clean, not sanitized** (`cleaned`, new);
+  - **CIP - no sani** (`cleaned`, new; named like the process, Matt);
   - **Dirty** (`dirty`).
   Each takes a date and an optional note, as in D48. The current state isn't offered.
 - **`tank_condition_marks.state`** gains `cleaned`. The latest-wins rule from §3.8 is unchanged.
@@ -421,13 +421,13 @@ Sometimes a tank is CIP'd but not sanitized, and there's no shelf life on "Sani"
   - it clears "Filling a dirty tank" and "Dirty, no CIP planned" for what follows;
   - a later fill raises a new **soft flag**, **Filling a tank that isn't sanitized**, which can be signed off under D47's rules;
   - a later done CIP & Sanitize (batch or standalone), or a Clean & sanitized mark, returns the tank to "Sani N days".
-- **Manual expiry:** marking a long-sanitized tank "Clean, not sanitized" is how a brewer asks for a fresh sanitize before the next fill.
+- **Manual expiry:** marking a long-sanitized tank "CIP - no sani" is how a brewer asks for a fresh sanitize before the next fill.
 - **"CIP - no sani" and "Sanitize" processes** (Matt, 2026-10-22): the `cip` step type gets three variants, the way Package has Full / Partial and Split has Transfer / Filter: **CIP & Sanitize** (as today), **CIP - no sani** and **Sanitize**.
   - **Choosing it:**
     - Add process ▾ → **CIP…** and the empty-spot menu's **Add CIP…** open the standalone CIP dialog, which has the variant choice;
     - the step dialog switches an unfinished CIP between the two, renaming it;
     - a template's CIP entries can be set to either.
-  - **Done → "CIP'd · no sani N days":** the same effect as the Clean, not sanitized mark, including the soft flag on a later fill.
+  - **Done → "CIP'd · no sani N days":** the same effect as the CIP - no sani mark, including the soft flag on a later fill.
   - **Not done:** it counts as a planned CIP for "Dirty, no CIP planned" and "Filling a dirty tank", like CIP & Sanitize. But a fill after it raises the soft "Filling a tank that isn't sanitized" flag in place of the dirty one.
   - **Board titles (§3.12):** "FV6 · CIP - no sani", "FV6 · Sanitize".
   - **Sanitize** sanitizes a tank that's already clean:
@@ -621,9 +621,9 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P106 | `breweryDevice` | Set up menu | | No Tanks / Templates / Phases & steps editing. |
 | P107 | `taproomDevice` | typed `/brewery/production` | | Not available; API 403. |
 | P108 | `brewer1` | Board → recurring options on a linked task | | Not offered. |
-| P122 | `brewer1` | Serving 1 ("Sani 40 days") → ⋯ → Mark… → **Clean, not sanitized**, today | | "CIP'd · no sani 0 days" in amber; a marker on today; Undo puts it back. |
+| P122 | `brewer1` | Serving 1 ("Sani 40 days") → ⋯ → Mark… → **CIP - no sani**, today | | "CIP'd · no sani 0 days" in amber; a marker on today; Undo puts it back. |
 | P123 | `brewer1` | Plan a batch into Serving 1 next week | P122 | A "Filling a tank that isn't sanitized" flag (soft; no dirty flags). Sign off → muted. A done CIP & Sanitize, or Mark… → Clean & sanitized, before the fill clears it. |
-| P124 | `brewer1` | a dirty tank → Mark… → Clean, not sanitized | | The dirty flags clear; the status is "CIP'd · no sani 0 days". |
+| P124 | `brewer1` | a dirty tank → Mark… → CIP - no sani | | The dirty flags clear; the status is "CIP'd · no sani 0 days". |
 | P125 | `brewer1` | Add process ▾ → CIP… → **CIP - no sani**, Serving 1, today, Already done | Serving 1 dirty | "CIP'd · no sani 0 days"; the dirty flags clear; on the board as "Serving 1 · CIP - no sani". |
 | P126 | `brewer1` | a batch's exit CIP → step dialog → switch to **CIP - no sani**; plan the next batch into that tank | | The step is renamed. The next fill gets "Filling a tank that isn't sanitized", not "Filling a dirty tank". |
 | P127 | `brewer1` | Serving 1 "CIP'd · no sani 2 days" → Add process ▾ → CIP… → **Sanitize**, today, Already done | P125 | "Sani 0 days"; a fill planned after it has no flags. |
