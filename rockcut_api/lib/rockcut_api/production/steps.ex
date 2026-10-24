@@ -287,7 +287,7 @@ defmodule RockcutApi.Production.Steps do
         |> Enum.map(& &1.batch_id)
         |> Enum.reject(&is_nil/1)
         |> Enum.uniq()
-        |> Enum.map(&%{id: &1, label: batch_label(&1, pnums)}),
+        |> Enum.map(&batch_brief(&1, pnums)),
       moved: Enum.map(plan.moved, &brief(&1, plan.days)),
       # D48 DEV QA Y1: a moved Split's parts, which go with it either way.
       carried: Enum.map(plan.carried, &brief(&1, plan.days)),
@@ -306,6 +306,13 @@ defmodule RockcutApi.Production.Steps do
       due_on: s.due_on,
       new_due_on: Date.add(s.due_on, days)
     }
+  end
+
+  # A batch in the prompt's groups; `split_parent_id` lets it say "P5 and
+  # its 2 parts" (Matt, fix cycle 5).
+  defp batch_brief(batch_id, pnums) do
+    batch = Repo.get!(Batch, batch_id) |> Repo.preload(:brand)
+    %{id: batch.id, label: Batches.label(batch, pnums), split_parent_id: batch.split_parent_id}
   end
 
   defp batch_label(nil, _pnums), do: nil

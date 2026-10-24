@@ -1,6 +1,6 @@
 # D48 DEV QA fix cycle 5: status, 2026-10-22
 
-Branch `d48-batch-changes`, on top of `4e77b83`. One commit, `fix: D48 DEV QA fix cycle 5 (…)`, **not pushed**.
+Branch `d48-batch-changes`, on top of `4e77b83`. Two commits (`4caa431`, then Matt's answer 4), `fix: D48 DEV QA fix cycle 5 (…)`, **not pushed**.
 
 **Inputs:**
 - `prompts/d48_lead_decisions_6.md` (Y1, Y2 must-fix; Y3 minor);
@@ -49,12 +49,22 @@ No migration, so no restart: the running API's code reloader picked up the chang
   - **Run 2:** d48-toolbar, d48-batch-changes, batches, d47-qa-fixes, steps and gantt. **56 passed** (5.7 min).
   - Every spec's seed check passed.
 
-## Questions for Matt (my readings; say if any should change)
+## Matt's answers (2026-10-24, decisions 6)
 
-1. **"The same refusal a done following step gives today":** there isn't one. Today a done following step just doesn't move, and the walk stops there. So I added a part-named refusal, `part_step_done`: "… P5.2: Carb is already done, so the split can't move. Mark it not done first.".
-2. **Brew day un-check is refused** while a Split, Transfer/Filter or Package is done (`exit_done`). That's new behaviour beyond the letter of Y2. Without it, un-checking brew day would leave a planned, deletable batch with a done Package or Split, which the rule "never a status its steps don't support" forbids. It also applies to unsplit brewed batches: un-check the Transfer or Package first.
-3. **The audit refuses all three exits before brew day:** Transfer/Filter, and Package both full and partial. A partial Package changes no status, but it's just as impossible before brew day. Other steps (PDH, FDH, a part's Carb) can still be checked off early, as before.
-4. **The prompt's heading** for Move all from a split parent's Brew day is the multi-batch one, "3 batches · Brew day moved 7 days later", with the steps grouped under P5, P5.1 and P5.2.
+1–3. **Kept as built:** the `part_step_done` refusal for moving a split, the `exit_done` refusal on un-checking brew day (every batch), and the partial Package waiting for brew day.
+
+4. **Changed.** Move all from a split parent's Brew day now titles the prompt "Galactic P5 and its 2 parts · Brew day moved 7 days later", not "3 batches · …".
+   - The preview's `batches` entries now carry `split_parent_id`.
+   - The prompt uses that wording when the batches are exactly one split parent and its parts.
+   - Anything else is still "N batches · …", including a move that only touches parts, or a family plus another batch.
+   - **Tests:**
+     - ExUnit `split_moves_test`: the preview's `split_parent_id`s.
+     - Playwright `d48-fix-cycle-5`: the new heading.
+     - `d48-fix-cycle-1`'s "2 batches · 2 steps moved 1 day later" is unchanged and still passes.
+   - **Rerun** after the lead's Oct 24 reseed:
+     - ExUnit: `split_moves_test` (13) and the batch-changes controller test (14), 0 failures; compile clean.
+     - tsc and ESLint: clean.
+     - Playwright (`--workers=1`): d48-fix-cycle-5, d48-fix-cycle-1 and d48-split-select, **15 passed** (1.9 min).
 
 ## LEAD:
 

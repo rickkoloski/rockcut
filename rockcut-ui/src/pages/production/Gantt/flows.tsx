@@ -35,8 +35,8 @@ export interface MovePreview {
   days: number
   batch_id: number | null
   batch_label: string | null
-  /** D48 QA minor 10: every batch the move touches. */
-  batches?: { id: number; label: string }[]
+  /** D48 QA minor 10: every batch the move touches (a split part has its parent's id). */
+  batches?: { id: number; label: string; split_parent_id?: number | null }[]
   moved: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   /** D48 DEV QA Y1: a moved Split's parts' steps, which go with it whatever the answer. */
   carried?: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
@@ -314,6 +314,9 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
   // Steps in several batches: say how many, and list what follows under each batch (QA minor 10).
   const batches = preview.batches ?? []
   const many = batches.length > 1
+  // One split batch and its parts only: "Galactic P5 and its 2 parts" (Matt, fix cycle 5).
+  const root = batches.find((b) => !b.split_parent_id)
+  const family = many && !!root && batches.every((b) => b === root || b.split_parent_id === root.id)
   const line = (s: MovePreview['following'][number]) => (
     <li key={s.id}>
       {s.name} → {dayLabel(s.new_due_on)}
@@ -326,7 +329,7 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
         {title}
         {many ? (
           <Typography variant="body2" color="text.secondary" data-testid="move-prompt-sub">
-            {batches.length} batches · {title}
+            {family ? `${root!.label} and its ${plural(batches.length - 1, 'part')}` : `${batches.length} batches`} · {title}
           </Typography>
         ) : (
           preview.batch_label && (

@@ -70,6 +70,9 @@ defmodule RockcutApi.Production.SplitMovesTest do
                "Galactic P1.2"
              ]
 
+      # The prompt says "Galactic P1 and its 2 parts" from these.
+      assert Enum.map(pre.batches, & &1.split_parent_id) == [nil, ctx.batch.id, ctx.batch.id]
+
       by_batch = Enum.group_by(pre.following, & &1.batch_id, & &1.name)
       assert by_batch[ctx.batch.id] == ["FDH", "Set temp - 58°", "Split - Transfer"]
 

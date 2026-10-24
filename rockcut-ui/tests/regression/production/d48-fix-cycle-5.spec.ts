@@ -49,6 +49,8 @@ test('Y1: Move all on the parent’s Brew day lists the parts under their labels
   await date.press('Enter')
   await expect(page.getByTestId('move-prompt')).toBeVisible()
   await expect(page.getByTestId('move-default-move_all')).toBeVisible()
+  // One batch and its parts, not "3 batches" (Matt); separate batches keep "N batches" (d48-fix-cycle-1).
+  await expect(page.getByTestId('move-prompt-sub')).toHaveText(`${b.label} and its 2 parts · Brew day moved 7 days later`)
   for (const p of [p1, p2]) {
     const group = page.getByTestId(`move-following-batch-${p.id}`)
     await expect(group).toContainText(p.label)
