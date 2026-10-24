@@ -29,3 +29,10 @@ Fix everything below, with tests at the level each fix lives. Commit as `fix: D4
 ## Minor
 
 - **Y3.** The Brand and Template pickers are locked on a split parent (and its parts): read-only, showing "Undo the split first to change it", like the tanks and volume. The API already refuses Template; make it refuse Brand too, with `split`. Today Brand saves for the whole family. Lock it, for consistency with the rest of the split locks.
+
+## Matt's answers to the builder's cycle-5 questions (2026-10-24)
+
+1. **Keep** the new refusal for moving a split when a part step is done ("… P5.2: Carb is already done, so the split can't move. Mark it not done first.").
+2. **Keep** the rule that brew day can't be un-checked while an exit (Split, Transfer/Filter or Package) is done, for every batch.
+3. **Keep** the rule that a partial Package waits for brew day too.
+4. **Change** the heading for Move all from a split parent's brew day: "Galactic P5 and its 2 parts · Brew day moved 7 days later", not "3 batches · …". It's still "N batches · …" when the move really spans separate batches.
