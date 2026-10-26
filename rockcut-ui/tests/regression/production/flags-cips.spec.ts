@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs } from './helpers'
-import { addDays, batchOf, dragBy, Made, openGantt, schedule, snack, stepOf, today, undo } from './schedule'
+import { apiAs, succeeds } from './helpers'
+import { addDays, addProcess, batchOf, dragBy, Made, openGantt, schedule, snack, stepOf, today, undo } from './schedule'
 
 // D47 §3.9 flags and sign-off, §3.10 standalone CIPs, and two people at
 // once: P52, P55–P59, P61.
@@ -12,7 +12,7 @@ const made = new Made()
 const seedCips: number[] = []
 test.afterAll(async () => {
   const api = await apiAs('brewer1')
-  for (const id of seedCips) await api.delete(`/api/production/cips/${id}`)
+  for (const id of seedCips) await succeeds(api.delete(`/api/production/cips/${id}`), `delete seed CIP ${id}`, [404])
   await made.cleanup()
 })
 
@@ -23,7 +23,7 @@ test('P52: Add CIP & Sanitize, already done, on Serving 1: "Sani 0 days", the di
   const s1 = before.tanks.find((t) => t.name === 'Serving 1')!
   expect(before.statuses.find((s) => s.tank_id === s1.id)!.line).toMatch(/^Empty · dirty \d+ days · no CIP planned$/)
   await openGantt(page)
-  await page.getByTestId('gantt-add-cip').click()
+  await addProcess(page, 'cip')
   await page.getByTestId('cip-tank').click()
   await page.getByTestId(`cip-tank-${s1.id}`).click()
   await expect(page.getByTestId('cip-day')).toHaveValue(today())
@@ -80,7 +80,7 @@ test('P58, P59: a CIP while beer is in the tank is flagged; dragging a standalon
   const b = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), -5), tank_ids: [tank.id] })
   await made.checkOff(stepOf(b, 'Brew day'), `T${Date.now().toString(36).slice(-5)}`)
   await openGantt(page)
-  await page.getByTestId('gantt-add-cip').click()
+  await addProcess(page, 'cip')
   await page.getByTestId('cip-tank').click()
   await page.getByTestId(`cip-tank-${tank.id}`).click()
   await page.getByTestId('cip-day').fill(addDays(today(), 1))

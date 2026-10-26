@@ -89,7 +89,7 @@ function StepPicker({
   )
 }
 
-function AnswerPicker({ value, onChange, testId }: { value: Answer; onChange: (a: Answer) => void; testId: string }) {
+export function AnswerPicker({ value, onChange, testId }: { value: Answer; onChange: (a: Answer) => void; testId: string }) {
   return (
     <TextField select label="When it moves" value={value} onChange={(e) => onChange(e.target.value as Answer)} slotProps={selectTestId(testId)}>
       {ANSWERS.map((a) => (
@@ -146,7 +146,7 @@ const onOrBefore = (steps: TemplateStep[], day: number | null) => (day == null ?
 const onOrAfter = (steps: TemplateStep[], day: number | null) =>
   steps.filter((s) => s.behavior !== 'brew' && (day == null || s.day_offset >= day))
 
-function DialogShell({
+export function DialogShell({
   title,
   testId,
   error,

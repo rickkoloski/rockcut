@@ -26,6 +26,8 @@ defmodule RockcutApi.Production do
   alias RockcutApi.Production.{
     Outage,
     Phase,
+    Ramp,
+    StepGraph,
     StepType,
     Tank,
     Template,
@@ -93,8 +95,11 @@ defmodule RockcutApi.Production do
         from(v in BatchVessel,
           join: s in Step,
           on: s.batch_id == v.batch_id and s.vessel_index == v.vessel_index,
-          # Markers can't be checked off (D47), so they don't hold a tank.
-          where: v.tank_id == ^tank_id and is_nil(s.done_on) and not is_nil(s.step_type_id),
+          # Markers can't be checked off (D47), so they don't hold a tank; a
+          # custom step (no type, a name; D48) does.
+          where:
+            v.tank_id == ^tank_id and is_nil(s.done_on) and
+              (not is_nil(s.step_type_id) or not is_nil(s.name)),
           distinct: true,
           select: v.batch_id
         )
@@ -329,7 +334,7 @@ defmodule RockcutApi.Production do
         |> Enum.map(& &1.ramp_group)
         |> Enum.reject(&is_nil/1)
         |> Enum.uniq()
-        |> Map.new(&{&1, new_ramp_group()})
+        |> Map.new(&{&1, Ramp.new_group()})
 
       ids =
         Map.new(source.steps, fn s ->
@@ -410,7 +415,7 @@ defmodule RockcutApi.Production do
       check_vessel!(template, type, fields, nil)
 
       step = insert_step!(template, type, fields)
-      link_into_chain!(template, step, step, attrs)
+      StepGraph.slot_in!(StepGraph.template(template.id), step, step, attrs)
 
       if behavior_of(type) == "transfer" do
         cip = behavior_type!("cip")
@@ -422,7 +427,7 @@ defmodule RockcutApi.Production do
             on_task_list: cip.on_task_list
           })
 
-        insert_link!(template, step, cip_step, "move_all")
+        StepGraph.insert_link!(StepGraph.template(template.id), step, cip_step, "move_all")
       end
 
       load(template)
@@ -499,12 +504,14 @@ defmodule RockcutApi.Production do
     if behavior_of(step.step_type) == "brew" do
       {:error, :brew_day_fixed}
     else
+      graph = StepGraph.template(template.id)
+
       Repo.transaction(fn ->
         if behavior_of(step.step_type) == "transfer" do
-          for cip <- set_up_cips(step), do: remove_one!(template, cip)
+          for cip <- set_up_cips(step), do: StepGraph.pass_through!(graph, cip)
         end
 
-        remove_one!(template, step)
+        StepGraph.pass_through!(graph, step)
         result = load(template)
         if opts[:preview], do: Repo.rollback({:preview, result.issues}), else: result
       end)
@@ -541,29 +548,6 @@ defmodule RockcutApi.Production do
     )
   end
 
-  defp remove_one!(template, %TemplateStep{} = step) do
-    into = Repo.all(from(l in TemplateLink, where: l.to_step_id == ^step.id))
-    out = Repo.all(from(l in TemplateLink, where: l.from_step_id == ^step.id))
-
-    for a <- into, b <- out, a.from_step_id != b.to_step_id do
-      answer =
-        if a.default_answer == "move_all" and b.default_answer == "move_all",
-          do: "move_all",
-          else: "move_only"
-
-      unless link_between(a.from_step_id, b.to_step_id) do
-        Repo.insert!(%TemplateLink{
-          template_id: template.id,
-          from_step_id: a.from_step_id,
-          to_step_id: b.to_step_id,
-          default_answer: answer
-        })
-      end
-    end
-
-    Repo.delete!(step)
-  end
-
   ## Links
 
   @doc """
@@ -575,9 +559,10 @@ defmodule RockcutApi.Production do
     attrs = stringify(attrs)
 
     Repo.transaction(fn ->
-      from = template_step!(template, attrs["from_step_id"])
-      to = template_step!(template, attrs["to_step_id"])
-      insert_link!(template, from, to, attrs["default_answer"] || "move_all")
+      graph = StepGraph.template(template.id)
+      from = StepGraph.entry!(graph, attrs["from_step_id"])
+      to = StepGraph.entry!(graph, attrs["to_step_id"])
+      StepGraph.insert_link!(graph, from, to, attrs["default_answer"] || "move_all")
       load(template)
     end)
   end
@@ -627,14 +612,8 @@ defmodule RockcutApi.Production do
   """
   def add_ramp(%Template{} = template, attrs) do
     attrs = stringify(attrs)
-    range = TemplateStep.temperatures()
 
-    with {:ok, start} <- int_in(attrs["start"], range),
-         {:ok, target} <- int_in(attrs["target"], range),
-         true <- start != target || {:error, :ramp_flat},
-         gap = abs(start - target),
-         {:ok, change} <- ramp_change(attrs["change_per_day"], gap),
-         {:ok, temps} <- ramp_temperatures(start, target, change),
+    with {:ok, %{temps: temps}} <- Ramp.parse(attrs),
          first_day = to_int(attrs["first_day"]) || 0,
          vessel = to_int(attrs["vessel_index"]) || 0,
          true <- vessel in 0..9 || {:error, :ramp_invalid},
@@ -654,7 +633,8 @@ defmodule RockcutApi.Production do
             else: type.on_task_list
 
         check_vessel!(template, type, %{vessel_index: vessel, day_offset: first_day}, nil)
-        group = new_ramp_group()
+        group = Ramp.new_group()
+        graph = StepGraph.template(template.id)
 
         steps =
           temps
@@ -672,45 +652,19 @@ defmodule RockcutApi.Production do
 
         steps
         |> Enum.chunk_every(2, 1, :discard)
-        |> Enum.each(fn [a, b] -> insert_link!(template, a, b, "move_all") end)
+        |> Enum.each(fn [a, b] -> StepGraph.insert_link!(graph, a, b, "move_all") end)
 
-        link_into_chain!(template, List.first(steps), List.last(steps), attrs)
+        StepGraph.slot_in!(graph, List.first(steps), List.last(steps), attrs)
         load(template)
       end)
     end
   end
 
-  @doc "The temperatures of a ramp: `start` stepping by `change` toward `target`, ending on it."
-  def ramp_temperatures(start, start, _change), do: {:error, :ramp_flat}
+  @doc "The temperatures of a ramp (`Ramp.temperatures/3`)."
+  defdelegate ramp_temperatures(start, target, change), to: Ramp, as: :temperatures
 
-  def ramp_temperatures(start, target, change) when change > 0 do
-    dir = if target < start, do: -1, else: 1
-
-    temps =
-      start
-      |> Stream.iterate(&(&1 + dir * change))
-      |> Enum.take_while(&(dir * (target - &1) > 0))
-
-    {:ok, temps ++ [target]}
-  end
-
-  def ramp_temperatures(_start, _target, _change), do: {:error, :ramp_invalid}
-
-  defp int_in(value, range) do
-    case to_int(value) do
-      n when is_integer(n) -> if n in range, do: {:ok, n}, else: {:error, :ramp_invalid}
-      nil -> {:error, :ramp_invalid}
-    end
-  end
-
-  defp ramp_change(value, gap) do
-    case to_int(value) do
-      n when is_integer(n) and n >= 1 and n <= gap -> {:ok, n}
-      _ -> {:error, {:ramp_change, gap}}
-    end
-  end
-
-  defp default_crash_phase_id do
+  @doc "The active phase named Crash (a ramp's default phase), or nil."
+  def default_crash_phase_id do
     Repo.one(
       from(p in Phase,
         where: fragment("lower(?)", p.name) == "crash" and is_nil(p.retired_at),
@@ -718,8 +672,6 @@ defmodule RockcutApi.Production do
       )
     )
   end
-
-  defp new_ramp_group, do: "ramp-" <> Base.encode16(:crypto.strong_rand_bytes(6), case: :lower)
 
   ## Issues
 
@@ -1031,81 +983,6 @@ defmodule RockcutApi.Production do
          select: max(s.position)
        )
      ) || 0) + 1
-  end
-
-  # `comes_after_id` links into `first`, `leads_to_id` out of `last`; with
-  # both, the direct link between them goes (the new entries slot in).
-  defp link_into_chain!(template, first, last, attrs) do
-    after_step =
-      blank_to_nil(attrs["comes_after_id"]) && template_step!(template, attrs["comes_after_id"])
-
-    lead_step =
-      blank_to_nil(attrs["leads_to_id"]) && template_step!(template, attrs["leads_to_id"])
-
-    if after_step && lead_step do
-      case link_between(after_step.id, lead_step.id) do
-        nil -> :ok
-        direct -> Repo.delete!(direct)
-      end
-    end
-
-    if after_step,
-      do: insert_link!(template, after_step, first, attrs["comes_after_answer"] || "move_all")
-
-    if lead_step,
-      do: insert_link!(template, last, lead_step, attrs["leads_to_answer"] || "move_all")
-
-    :ok
-  end
-
-  defp template_step!(template, id) do
-    get_template_step(template, id) || Repo.rollback(:not_found)
-  end
-
-  defp insert_link!(template, %TemplateStep{} = from, %TemplateStep{} = to, answer) do
-    cond do
-      from.id == to.id or reachable?(template.id, to.id, from.id) -> Repo.rollback(:link_cycle)
-      to.day_offset < from.day_offset -> Repo.rollback(:link_order)
-      link_between(from.id, to.id) -> Repo.rollback(:link_exists)
-      true -> :ok
-    end
-
-    %TemplateLink{template_id: template.id, from_step_id: from.id, to_step_id: to.id}
-    |> TemplateLink.changeset(%{"default_answer" => answer})
-    |> Repo.insert()
-    |> case do
-      {:ok, link} -> link
-      {:error, cs} -> Repo.rollback(cs)
-    end
-  end
-
-  defp link_between(from_id, to_id) do
-    Repo.one(
-      from(l in TemplateLink, where: l.from_step_id == ^from_id and l.to_step_id == ^to_id)
-    )
-  end
-
-  # Whether `target` can be reached from `start` along the template's links.
-  defp reachable?(tid, start, target) do
-    edges =
-      Repo.all(
-        from(l in TemplateLink,
-          where: l.template_id == ^tid,
-          select: {l.from_step_id, l.to_step_id}
-        )
-      )
-      |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
-
-    walk([start], MapSet.new(), edges, target)
-  end
-
-  defp walk([], _seen, _edges, _target), do: false
-  defp walk([target | _], _seen, _edges, target), do: true
-
-  defp walk([id | rest], seen, edges, target) do
-    if MapSet.member?(seen, id),
-      do: walk(rest, seen, edges, target),
-      else: walk(Map.get(edges, id, []) ++ rest, MapSet.put(seen, id), edges, target)
   end
 
   # After a step's day changes, every link into and out of it must still run

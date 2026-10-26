@@ -30,9 +30,16 @@ defmodule RockcutApi.Brewing.Batch do
     # planned one has no number yet (its P-number is computed).
     field :volume_bbl, :decimal
     field :brew_two_days, :boolean, default: false
+    # D48: a split's part (spec §3.11), numbered 1…n under its parent.
+    field :part_number, :integer
+    # D48 DEV QA fix cycle 4: the part that stays in the parent's tank (X1,
+    # X2), and on the parent its links into and out of the moved steps (X3).
+    field :split_stays, :boolean, default: false
+    field :split_links, :map
 
     belongs_to :brand, RockcutApi.Brewing.Brand
     belongs_to :template, RockcutApi.Production.Template
+    belongs_to :split_parent, RockcutApi.Brewing.Batch
     has_many :vessels, RockcutApi.Production.BatchVessel
     has_many :steps, RockcutApi.Production.Step
     has_many :brew_turns, RockcutApi.Brewing.BrewTurn

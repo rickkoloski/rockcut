@@ -31,3 +31,24 @@ export interface Renumber {
 /** "Batch numbers updated: Enos P2 → P1." */
 export const renumberText = (r: Renumber[]) =>
   r.length ? `Batch numbers updated: ${r.map((x) => `${x.brand} ${x.from} → ${x.to}`).join(', ')}.` : ''
+
+// ── D48: removing a step (§3.11, P70–P71, P74) ──
+
+/** Unfinished, and not Brew day or a Split (it fills the parts: Undo split instead). */
+export const removable = (s: SchedStep) => !s.done_on && s.batch_id != null && s.behavior !== 'brew' && s.behavior !== 'split'
+
+const tankName = (batch: SchedBatch, tanks: Tank[], k: number) => {
+  const id = batch.vessels.find((v) => v.vessel_index === k)?.tank_id
+  return id ? (tanks.find((t) => t.id === id)?.name ?? 'the tank') : 'the unassigned tank'
+}
+
+export function removeQuestion(s: SchedStep, batch: SchedBatch, tanks: Tank[]): string {
+  if (s.behavior === 'transfer')
+    return `Remove the ${s.name} on ${dayLabel(s.due_on)}? The beer stays in ${tankName(batch, tanks, s.vessel_index - 1)} with the steps after it, and the CIP & Sanitize it set up goes.`
+  return `Remove ${s.name} (${dayLabel(s.due_on)}) from ${batch.label}? The steps before and after it stay linked.`
+}
+
+export function removeMessage(s: SchedStep, batch: SchedBatch, tanks: Tank[]): string {
+  if (s.behavior === 'transfer') return `${s.name} removed: ${batch.label} stays in ${tankName(batch, tanks, s.vessel_index - 1)}.`
+  return `${s.name} removed from ${batch.label}.`
+}

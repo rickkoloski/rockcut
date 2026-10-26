@@ -406,8 +406,23 @@ defmodule RockcutApiWeb.JSONHelpers do
       cips: Enum.map(sched.cips, &production_step(&1, [])),
       statuses: sched.statuses,
       flags: sched.flags,
+      condition_marks: Enum.map(sched.marks, &production_condition_mark/1),
       next_batch_number: sched.next_batch_number,
       brewers: sched.brewers
+    }
+  end
+
+  @doc "D48: a tank's clean / dirty mark, with who made it."
+  def production_condition_mark(m) do
+    %{
+      id: m.id,
+      tank_id: m.tank_id,
+      state: m.state,
+      marked_on: m.marked_on,
+      note: m.note,
+      user_id: m.user_id,
+      user_name: m.user && m.user.name,
+      inserted_at: m.inserted_at
     }
   end
 
@@ -425,6 +440,12 @@ defmodule RockcutApiWeb.JSONHelpers do
       template_id: b.template_id,
       template_name: b.template && b.template.name,
       brew_two_days: b.brew_two_days,
+      split_parent_id: b.split_parent_id,
+      part_number: b.part_number,
+      # D48 DEV QA fix cycle 4: the part that stays in its parent's tank.
+      split_stays: b.split_stays,
+      # D48: a part's fill is its parent's Split step.
+      split_step_id: entry[:origin] && entry.origin.fill && entry.origin.fill.id,
       vessels: Enum.map(entry.vessels, &%{vessel_index: &1.vessel_index, tank_id: &1.tank_id}),
       steps: Enum.map(entry.steps, &production_step(&1, entry.steps)),
       links:
@@ -452,7 +473,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       batch_id: s.batch_id,
       tank_id: s.tank_id,
       step_type_id: s.step_type_id,
-      marker: is_nil(s.step_type_id),
+      marker: RockcutApi.Production.Step.marker?(s),
       name: RockcutApi.Production.Steps.name(s),
       type_name: type && type.name,
       full_name: type && type.full_name,
@@ -472,7 +493,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       done_by: s.done_by && %{id: s.done_by.id, name: s.done_by.name},
       assignee_id: s.assignee_id,
       assignee: s.assignee && %{id: s.assignee.id, name: s.assignee.name},
-      added: s.added
+      added: s.added,
+      ramp_group: s.ramp_group
     }
   end
 

@@ -30,7 +30,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     template_incomplete: "That template is incomplete. Finish it under Set up → Templates first.",
     tank_invalid: "That tank isn't available. Pick another or leave it unassigned.",
     volume_invalid: "Enter a volume more than 0 and under 10,000 bbl.",
-    not_planned: "Only a planned batch can be deleted.",
+    not_planned: "Only a planned batch can be changed that way.",
     not_brewed: "A planned batch gets its number when brew day is checked off.",
     batch_number_required: "Enter the batch number.",
     batch_number_invalid: "A batch number is 1 to 20 characters.",
@@ -41,7 +41,37 @@ defmodule RockcutApiWeb.ProductionErrors do
     done_on_invalid: "Enter the day it was done.",
     done_on_future: "A step can't be done in the future.",
     assignee_invalid: "Steps can be assigned to Brewery members only.",
-    undo_expired: "It's too late to undo that."
+    undo_expired: "It's too late to undo that.",
+    # D48: changing a batch.
+    name_required: "Give the step a name.",
+    name_too_long: "A step name is up to 40 characters.",
+    due_on_invalid: "Pick the day.",
+    brew_day: "Brew day can't be added or removed.",
+    use_split: "Use Split… to split the batch.",
+    not_ramp: "That step isn't part of a ramp.",
+    step_done_after: "Some steps after that date are already done. Pick a later date.",
+    split: "Undo the split first.",
+    brand_invalid: "Pick a brand.",
+    # D48: splits and clean / dirty marks.
+    split_part: "That's a part of a split. Undo the split to change it that way.",
+    split_fill: "The Split fills the parts. Use Undo split to take it out.",
+    split_method_invalid: "Pick Transfer or Filter.",
+    parts_required: "Split into two parts or more.",
+    one_stays: "Only one part can stay in the tank.",
+    same_tank: "Two parts can’t go into the same tank.",
+    not_split: "That batch isn't split.",
+    part_step_done: "Some steps on the parts are already done, so the split can't be undone.",
+    tank_in_use: "There's beer in this tank: its state comes from the batch.",
+    date_invalid: "Pick a day from the tank's last emptying through today.",
+    # D48 DEV QA fix cycle 1.
+    before_fill: "The beer isn't in that tank on that day.",
+    after_exit: "The beer isn't in that tank on that day.",
+    before_brew_day: "A step can't come before brew day.",
+    split_before_brew: "The split has to be after brew day.",
+    # D48 DEV QA fix cycle 2.
+    before_split: "A step can't come before the split.",
+    # D48 DEV QA Z3: the step PATCH doesn't change dates.
+    date_not_here: "To change a step's date, move it (or check it off on the day it was done)."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
@@ -118,6 +148,62 @@ defmodule RockcutApiWeb.ProductionErrors do
     })
   end
 
+  # D48 DEV QA M3, N1: a transfer or a part into the tank the beer is
+  # already in, or goes into next ("…next, on Fri Dec 18."). R3: a split
+  # names the part ("Part 1: …").
+  # Fix cycle 4: on a split's tree, "Part 2 can't go into Q1TA: part 1 stays
+  # there." / "… part 2 goes there."
+  def handle({:error, {:part, n, {:stays_there, name, m}}}, conn),
+    do: same_tank(conn, "Part #{n} can't go into #{name}: part #{m} stays there.")
+
+  def handle({:error, {:part, n, {:goes_there, name, m}}}, conn),
+    do: same_tank(conn, "Part #{n} can't go into #{name}: part #{m} goes there.")
+
+  def handle({:error, {:part, n, reason}}, conn)
+      when is_tuple(reason) and elem(reason, 0) == :same_tank,
+      do: same_tank(conn, "Part #{n}: " <> same_tank_message(reason))
+
+  def handle({:error, {:same_tank, name}}, conn),
+    do: same_tank(conn, same_tank_message({:same_tank, name}))
+
+  def handle({:error, {:same_tank, _, _} = reason}, conn),
+    do: same_tank(conn, same_tank_message(reason))
+
+  # D48 (P76): "The parts add up to 18 bbl, but Galactic #40 is 20 bbl."
+  def handle({:error, {:volumes_must_add_up, total, volume, label}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "volumes_must_add_up",
+      message: "The parts add up to #{bbl(total)} bbl, but #{label} is #{bbl(volume)} bbl."
+    })
+  end
+
+  # D48 DEV QA Y2: a Split, Transfer/Filter or Package waits for brew day,
+  # and brew day stays done while one of them is.
+  def handle({:error, {:before_brew_day, :check_off}}, conn),
+    do: refused(conn, "before_brew_day", "Check off brew day first.")
+
+  def handle({:error, {:exit_done, name}}, conn),
+    do: refused(conn, "exit_done", "Mark #{name} not done first.")
+
+  # D48 DEV QA Z1: a part's exit waits for its parent's Split, and the Split
+  # stays done while a part's exit is.
+  def handle({:error, {:before_split, :check_off, name}}, conn),
+    do: refused(conn, "before_split", "Check off #{name} first.")
+
+  def handle({:error, {:part_exit_done, label, name}}, conn),
+    do: refused(conn, "part_exit_done", "Mark #{label}: #{name} not done first.")
+
+  # D48 DEV QA Y1: a split moves with its parts, so not while a part's step is done.
+  def handle({:error, {:part_done, label, name}}, conn),
+    do:
+      refused(
+        conn,
+        "part_step_done",
+        "#{label}: #{name} is already done, so the split can't move. Mark it not done first."
+      )
+
   # D47 plan decision 5.
   def handle({:error, :undo_stale}, conn) do
     conn
@@ -130,4 +216,25 @@ defmodule RockcutApiWeb.ProductionErrors do
     |> put_status(:unprocessable_entity)
     |> json(%{error: Atom.to_string(code), message: Map.fetch!(@messages, code)})
   end
+
+  defp refused(conn, code, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: code, message: message})
+  end
+
+  defp same_tank(conn, message) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "same_tank", message: message})
+  end
+
+  defp same_tank_message({:same_tank, name}), do: "The beer is already in #{name}."
+  defp same_tank_message({:same_tank, name, nil}), do: "The beer goes into #{name} next."
+
+  defp same_tank_message({:same_tank, name, day}),
+    do: "The beer goes into #{name} next, on #{Calendar.strftime(day, "%a %b %-d")}."
+
+  defp bbl(nil), do: "0"
+  defp bbl(%Decimal{} = d), do: d |> Decimal.normalize() |> Decimal.to_string(:normal)
 end

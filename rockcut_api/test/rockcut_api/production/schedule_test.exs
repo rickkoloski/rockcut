@@ -493,6 +493,8 @@ defmodule RockcutApi.Production.ScheduleTest do
            brewer: brewer
          } do
       batch |> Ecto.Changeset.change(status: "fermenting", batch_number: "40") |> Repo.update!()
+      # A Package waits for brew day (DEV QA Y2).
+      named(batch, "Brew day") |> Ecto.Changeset.change(done_on: @brew) |> Repo.update!()
       package = named(batch, "Package")
 
       # Switched to partial first: checking it off changes nothing.
@@ -561,6 +563,7 @@ defmodule RockcutApi.Production.ScheduleTest do
       tank = tank!("FV3")
       {batch, _} = plan!(brand!("Galactic"), ale_template!(), @brew, %{"tank_ids" => [tank.id]})
       batch |> Ecto.Changeset.change(status: "fermenting", batch_number: "40") |> Repo.update!()
+      named(batch, "Brew day") |> Ecto.Changeset.change(done_on: @brew) |> Repo.update!()
       package = named(batch, "Package")
       today = ~D[2026-11-14]
 

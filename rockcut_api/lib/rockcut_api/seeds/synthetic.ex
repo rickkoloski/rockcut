@@ -31,6 +31,10 @@ defmodule RockcutApi.Seeds.Synthetic do
   order, each setup), their out-of-service periods rebuilt (Serving 2: one
   coming up and one past), and three `[SEED]` process templates.
   `[TEST-TEMP]` tanks, templates, step types and phases are cleaned up.
+  D48: tanks FV8–FV9 and Serving 3–4 for a `[SEED]` batch with an added
+  filter and a `[SEED]` split batch (one part stays), a clean mark on
+  Serving 3 and a dirty one on Serving 4; `[TEST-TEMP]` parts and marks
+  are cleaned up.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -55,13 +59,17 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Production
 
   alias RockcutApi.Production.{
+    BatchChanges,
     BatchVessel,
     Batches,
+    ConditionMark,
+    ConditionMarks,
     FlagSignoff,
     Outage,
     Phase,
     Schedule,
     Signoffs,
+    Splits,
     Step,
     StepType,
     Tank,
@@ -236,6 +244,16 @@ defmodule RockcutApi.Seeds.Synthetic do
     brand_ids = Repo.all(from(b in Brand, where: like(b.name, ^"#{@temp_tag}%"), select: b.id))
     recipe_ids = Repo.all(from(r in Recipe, where: r.brand_id in ^brand_ids, select: r.id))
     Repo.delete_all(from(t in BrewTurn, where: t.recipe_id in ^recipe_ids))
+    # D48: split parts first (the parent restricts, row by row in SQLite).
+    Repo.delete_all(
+      from(b in Batch,
+        where:
+          b.split_parent_id in subquery(
+            from(p in Batch, where: p.brand_id in ^brand_ids, select: p.id)
+          )
+      )
+    )
+
     Repo.delete_all(from(b in Batch, where: b.brand_id in ^brand_ids))
     Repo.delete_all(from(r in Recipe, where: r.id in ^recipe_ids))
     Repo.delete_all(from(b in Brand, where: b.id in ^brand_ids))
@@ -260,7 +278,11 @@ defmodule RockcutApi.Seeds.Synthetic do
     # went above; steps, vessels and links cascade), standalone CIPs on
     # temporary tanks or tagged, and the sign-offs of flags about them.
     temp_batch_ids = Repo.all(from(b in Batch, where: like(b.notes, ^tag), select: b.id))
+
+    # D48: parts first (the parent restricts), then tagged clean / dirty marks.
+    Repo.delete_all(from(b in Batch, where: b.split_parent_id in ^temp_batch_ids))
     Repo.delete_all(from(b in Batch, where: b.id in ^temp_batch_ids))
+    Repo.delete_all(from(m in ConditionMark, where: like(m.note, ^tag)))
     temp_tanks = from(t in Tank, where: like(t.name, ^tag), select: t.id)
 
     Repo.delete_all(
@@ -799,8 +821,13 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"FV5", "unitank", 20, "brewhouse"},
     {"FV6", "unitank", 20, "brewhouse"},
     {"FV7", "unitank", 30, "brewhouse"},
+    # D48: the split and added-filter batches and the marks use these.
+    {"FV8", "unitank", 20, "brewhouse"},
+    {"FV9", "unitank", 20, "brewhouse"},
     {"Serving 1", "serving", 30, "walk_in"},
-    {"Serving 2", "serving", 30, "walk_in"}
+    {"Serving 2", "serving", 30, "walk_in"},
+    {"Serving 3", "serving", 30, "walk_in"},
+    {"Serving 4", "serving", 30, "walk_in"}
   ]
 
   # {tank, first day, last day (offsets from today), reason}
@@ -898,7 +925,18 @@ defmodule RockcutApi.Seeds.Synthetic do
     # P36: Altruism P1, then a later planned batch.
     {:altruism, "Altruism", "Standard ale", 2, ["FV3"], nil, nil,
      assign: [{"Brew day", "brewer2"}]},
-    {:enos, "Enos", "Lager with transfer", 9, ["FV1", nil], nil, nil, volume: 35}
+    {:enos, "Enos", "Lager with transfer", 9, ["FV1", nil], nil, nil, volume: 35},
+    # D48: a Filter added in 3 days into Serving 4 (marked dirty: flagged).
+    {:fest37, "Fest", "Standard ale", -14, ["FV9"], "37", -1, filter: {3, "Serving 4"}},
+    # D48: split in 4 days, #39.1 stays in FV8, #39.2 to Serving 3 (marked clean).
+    {:altruism39, "Altruism", "Standard ale", -10, ["FV8"], "39", -1,
+     split: {4, [{:stays, 10}, {"Serving 3", 10}]}}
+  ]
+
+  # D48: {tank, state, day (offset from today), note}, marked by brewer1.
+  @condition_marks [
+    {"Serving 3", "clean", -2, "Hosed and sanitized after the gasket job"},
+    {"Serving 4", "dirty", -1, "Valve leaked; needs a CIP"}
   ]
 
   # Plan decision 2: batches not on the schedule (the D1-era rows) go, with
@@ -910,7 +948,10 @@ defmodule RockcutApi.Seeds.Synthetic do
       from(b in Batch, where: b.id not in subquery(from(v in BatchVessel, select: v.batch_id)))
     )
 
-    Repo.delete_all(from(b in Batch, where: like(b.notes, ^"#{@seed_tag}%")))
+    # Parts before their parents (D48: the parent restricts).
+    seeded = from(b in Batch, where: like(b.notes, ^"#{@seed_tag}%"))
+    Repo.delete_all(from(b in seeded, where: not is_nil(b.split_parent_id)))
+    Repo.delete_all(from(b in seeded, where: is_nil(b.split_parent_id)))
 
     Repo.delete_all(
       from(s in Step, where: is_nil(s.batch_id) and like(s.notes, ^"#{@seed_tag}%"))
@@ -972,8 +1013,31 @@ defmodule RockcutApi.Seeds.Synthetic do
           step |> Ecto.Changeset.change(assignee_id: u[persona].id) |> Repo.update!()
         end
 
+        with {day, tank} <- opts[:filter] do
+          {:ok, _} =
+            BatchChanges.add_transfer(Repo.get!(Batch, batch.id), %{
+              "step_type_id" => Repo.get_by!(StepType, name: "Filter").id,
+              "due_on" => Date.add(today, day),
+              "tank_id" => tanks[tank]
+            })
+        end
+
+        with {day, parts} <- opts[:split] do
+          {:ok, _} =
+            Splits.split(Repo.get!(Batch, batch.id), %{
+              "due_on" => Date.add(today, day),
+              "parts" =>
+                Enum.map(parts, fn
+                  {:stays, v} -> %{"stays" => true, "volume_bbl" => v}
+                  {tank, v} -> %{"tank_id" => tanks[tank], "volume_bbl" => v}
+                end)
+            })
+        end
+
         {key, batch}
       end
+
+    seed_condition_marks(u, today, tanks)
 
     # One signed-off flag: Enos (35 bbl) is bigger than FV1 (30 bbl).
     {:ok, sched} = Schedule.load(Date.add(today, -7), Date.add(today, 84), today)
@@ -996,6 +1060,26 @@ defmodule RockcutApi.Seeds.Synthetic do
     end
 
     :ok
+  end
+
+  # D48: the seeded tanks' marks start over each setup.
+  defp seed_condition_marks(u, today, tanks) do
+    seeded_tanks = for {name, _, _, _} <- @tanks, do: tanks[name]
+    Repo.delete_all(from(m in ConditionMark, where: m.tank_id in ^seeded_tanks))
+
+    for {tank, state, day, note} <- @condition_marks do
+      {:ok, _} =
+        ConditionMarks.create(
+          Repo.get!(Tank, tanks[tank]),
+          %{
+            "state" => state,
+            "marked_on" => Date.add(today, day),
+            "note" => "#{@seed_tag} #{note}"
+          },
+          u["brewer1"],
+          today
+        )
+    end
   end
 
   defp seed_batch(brand, template_id, brew_on, tank_ids, opts) do

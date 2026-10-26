@@ -9,6 +9,7 @@ import { fieldErrors, prodPath, templateKey, TEMPLATES_KEY, vesselLabel, type Ta
 import type { Brand } from '../../../lib/types'
 import TankSelect from './TankSelect'
 import { useFlows } from './flowsContext'
+import { useRefusal } from '../../../hooks/useRefusal'
 
 interface Props {
   tanks: Tank[]
@@ -35,7 +36,8 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
   const [twoDays, setTwoDays] = useState(false)
   const [tankIds, setTankIds] = useState<(number | null)[]>([initialTankId])
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [error, setError] = useState<string | null>(null)
+  // A refusal clears when anything picked changes (DEV QA R2).
+  const [error, setError] = useRefusal([brandId, templateId, brewOn, volume, twoDays, tankIds])
   const [busy, setBusy] = useState(false)
   // Enter and a click on Save in the same moment would both submit before
   // `busy` disables the button (QA: two "planned" snackbars once).

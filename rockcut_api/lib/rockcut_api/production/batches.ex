@@ -120,7 +120,18 @@ defmodule RockcutApi.Production.Batches do
     "#{brand} #{number_label(batch, pnums)}"
   end
 
-  @doc ~S|"#40" or "P2" ("" for a planned batch that isn't scheduled).|
+  @doc ~S|"#40" or "P2" ("" for a planned batch that isn't scheduled); a split's part "#40.1" or "P2.1" (D48).|
+  def number_label(%Batch{split_parent_id: parent_id, part_number: n} = part, pnums)
+      when not is_nil(parent_id) do
+    parent =
+      case part.split_parent do
+        %Batch{} = parent -> parent
+        _ -> Repo.get!(Batch, parent_id)
+      end
+
+    "#{number_label(parent, pnums)}.#{n}"
+  end
+
   def number_label(%Batch{batch_number: n}, _pnums) when is_binary(n), do: "##{n}"
 
   def number_label(%Batch{id: id}, pnums) do
@@ -250,6 +261,8 @@ defmodule RockcutApi.Production.Batches do
                   })
 
             copy_steps!(batch, template, fields.brew_on, fields.brew_two_days)
+            # D48 DEV QA N1: no tank twice in a row among the tanks picked.
+            RockcutApi.Production.BatchChanges.no_tank_twice!(batch, :all)
             batch
           end)
 
@@ -271,7 +284,8 @@ defmodule RockcutApi.Production.Batches do
 
   defp volume_ok?(_), do: false
 
-  defp plannable_template!(id) do
+  @doc false
+  def plannable_template!(id) do
     case Production.get_template(id) do
       %Template{retired_at: nil, issues: []} = t -> t
       %Template{retired_at: nil} -> Repo.rollback(:template_incomplete)
@@ -311,7 +325,12 @@ defmodule RockcutApi.Production.Batches do
     end
   end
 
-  defp copy_steps!(batch, template, brew_on, two_days) do
+  @doc """
+  Copy `template`'s entries into `batch` from `brew_on` (plan, and D48's
+  Change template): the steps and links, a two-day brew's "2 of 2", and a
+  CIP after a full Package.
+  """
+  def copy_steps!(batch, template, brew_on, two_days) do
     ids =
       Map.new(template.steps, fn %TemplateStep{} = s ->
         brew? = Steps.behavior(%Step{step_type: s.step_type}) == "brew"
@@ -330,7 +349,8 @@ defmodule RockcutApi.Production.Batches do
             on_task_list: s.on_task_list,
             position: s.position,
             due_on: Date.add(brew_on, s.day_offset),
-            template_step_id: s.id
+            template_step_id: s.id,
+            ramp_group: s.ramp_group
           })
 
         {s.id, step}
@@ -401,31 +421,47 @@ defmodule RockcutApi.Production.Batches do
   ## Changing
 
   @doc """
-  Delete a planned batch with its steps, links and vessels
-  (`:not_planned` once brewed). `{:ok, renumbered}`.
+  Delete a planned batch with its steps, links and vessels (`:not_planned`
+  once brewed; `:split` while it's split and `:split_part` for a part: Undo
+  split first). `{:ok, renumbered}`.
   """
+  def delete_planned(%Batch{split_parent_id: id}) when not is_nil(id), do: {:error, :split_part}
+
   def delete_planned(%Batch{status: "planned"} = batch) do
-    Repo.transaction(fn ->
-      {_, renumbered} = with_renumbering(fn -> Repo.delete!(batch) end)
-      renumbered
-    end)
+    # D48 DEV QA M2: not while it's split.
+    if split_parent?(batch) do
+      {:error, :split}
+    else
+      Repo.transaction(fn ->
+        {_, renumbered} = with_renumbering(fn -> Repo.delete!(batch) end)
+        renumbered
+      end)
+    end
   end
 
   def delete_planned(%Batch{}), do: {:error, :not_planned}
 
+  @doc "Whether `batch` has split parts."
+  def split_parent?(%Batch{id: id}),
+    do: Repo.exists?(from(b in Batch, where: b.split_parent_id == ^id))
+
   @doc """
   Move a batch in time by `days`: a planned batch's every step, a brewed
-  one's unfinished steps (finished ones keep their dates). No prompt.
+  one's unfinished steps (finished ones keep their dates). No prompt. A
+  split parent whose Split isn't done takes its parts' steps along (D48 DEV
+  QA Y1), refused (`:part_done`) while one of them is done.
   `{:ok, %{moved, kept, renumbered}}`.
   """
   def shift(%Batch{} = batch, days) do
     case to_int(days) do
       d when is_integer(d) and d != 0 and abs(d) <= @max_shift ->
         Repo.transaction(fn ->
-          steps = Repo.all(from(s in Step, where: s.batch_id == ^batch.id))
+          steps = Repo.all(from(s in Step, where: s.batch_id == ^batch.id, preload: :step_type))
 
           {open, done} =
             Enum.split_with(steps, &(batch.status == "planned" or is_nil(&1.done_on)))
+
+          open = open ++ carried_parts!(batch, steps)
 
           {_, renumbered} =
             with_renumbering(fn ->
@@ -441,10 +477,44 @@ defmodule RockcutApi.Production.Batches do
     end
   end
 
+  # A split parent's parts' steps, while its Split isn't done (D48 DEV QA Y1).
+  defp carried_parts!(batch, steps) do
+    split = Enum.find(steps, &(Steps.behavior(&1) == "split"))
+
+    if split && is_nil(split.done_on) do
+      parts =
+        Repo.all(
+          from(s in Step, where: s.batch_id in subquery(parts_q(batch)), preload: :step_type)
+        )
+
+      case Enum.find(parts, & &1.done_on) do
+        nil ->
+          parts
+
+        step ->
+          part = Repo.get!(Batch, step.batch_id) |> Repo.preload(:brand)
+
+          Repo.rollback(
+            {:part_done, label(part, p_numbers()), Steps.name(Repo.preload(step, :phase))}
+          )
+      end
+    else
+      []
+    end
+  end
+
+  defp parts_q(%Batch{id: id}),
+    do: from(b in Batch, where: b.split_parent_id == ^id, select: b.id)
+
   @doc """
   Put vessel `index` of `batch` in `tank_id` (nil = Unassigned); only that
   part changes. `:not_found` for a vessel the batch doesn't have,
-  `:tank_invalid` for a retired or unknown tank.
+  `:tank_invalid` for a retired or unknown tank, and `same_tank` when it
+  would be the tank before or after it (`BatchChanges.no_tank_twice!/3`;
+  D48 DEV QA N1, checked on the vessels after the change). On a split, the
+  parent's tanks and the staying part's first one are locked (`:split`), and
+  a part's change is checked over the whole tree
+  (`BatchChanges.no_tree_twice!/3`; fix cycle 4).
   """
   def set_vessel_tank(%Batch{} = batch, index, tank_id) do
     Repo.transaction(fn ->
@@ -452,7 +522,13 @@ defmodule RockcutApi.Production.Batches do
         Repo.get_by(BatchVessel, batch_id: batch.id, vessel_index: to_int(index) || -1) ||
           Repo.rollback(:not_found)
 
-      vessel |> Changeset.change(tank_id: active_tank_id!(tank_id)) |> Repo.update!()
+      # D48 DEV QA fix cycle 4 (X2, Matt): locked while split, else checked
+      # over the whole tree.
+      RockcutApi.Production.BatchChanges.unlocked!(batch, vessel.vessel_index)
+      vessel = vessel |> Changeset.change(tank_id: active_tank_id!(tank_id)) |> Repo.update!()
+      k = vessel.vessel_index
+      RockcutApi.Production.BatchChanges.no_tree_twice!(batch, [k, k + 1], k)
+      vessel
     end)
   end
 
@@ -467,6 +543,9 @@ defmodule RockcutApi.Production.Batches do
       changes =
         Enum.reduce(attrs, %{}, fn
           {"volume_bbl", v}, acc ->
+            # D48 DEV QA minor 6, N3: the parts' volumes add up to the parent's.
+            if batch.split_parent_id || split_parent?(batch), do: Repo.rollback(:split)
+
             case Decimal.cast(v) do
               {:ok, d} ->
                 if volume_ok?(d),
@@ -478,6 +557,8 @@ defmodule RockcutApi.Production.Batches do
             end
 
           {"batch_number", raw}, acc ->
+            # D48: a part's number is its parent's.
+            if batch.split_parent_id, do: Repo.rollback(:split_part)
             if batch.status == "planned", do: Repo.rollback(:not_brewed)
 
             case check_number(raw, batch) do

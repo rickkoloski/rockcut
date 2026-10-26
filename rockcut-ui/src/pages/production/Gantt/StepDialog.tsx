@@ -17,7 +17,8 @@ import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import api from '../../../lib/api'
 import { dayLabel, daysBetween } from '../../../lib/gantt'
-import { dayN, stepStatus } from './scheduleText'
+import { dayN, removable, removeMessage, removeQuestion, stepStatus } from './scheduleText'
+import { ChangeRampDialog } from './BatchChangeDialogs'
 import { answerLabel, prodPath, type Person, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
 import ErrorAlert from '../ErrorAlert'
 import { useFlows } from './flowsContext'
@@ -43,7 +44,7 @@ const tankOf = (step: SchedStep, batch: SchedBatch | null, tanks: Tank[]) => {
  * when, its status and links; edit its temperature, Full / Partial, the
  * addition to its name, assignee, notes and task-list switch; check it off,
  * move it, or mark it not done. Typed changes are saved when it closes or a
- * button is pressed.
+ * button is pressed. D48: Remove step, and Change ramp… on a ramp's step.
  */
 export default function StepDialog({ step, batch, tanks, brewers, today, onClose }: Props) {
   const flows = useFlows()
@@ -59,6 +60,9 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  // D48: Remove step and Change ramp….
+  const [removing, setRemoving] = useState(false)
+  const [changingRamp, setChangingRamp] = useState(false)
   const closing = useRef(false)
   const byId = new Map((batch?.steps ?? []).map((s) => [s.id, s]))
   const after = (batch?.links ?? []).filter((l) => l.from_step_id === step.id)
@@ -172,6 +176,16 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
           </Box>
         )}
         <Divider />
+        {step.behavior === 'set_temp' && step.ramp_group && batch && !done && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ flex: 1 }}>
+              Part of a ramp: {batch.steps.filter((s) => s.ramp_group === step.ramp_group).length} Set temp steps.
+            </Typography>
+            <Button size="small" disabled={busy} onClick={() => setChangingRamp(true)} data-testid="step-change-ramp">
+              Change ramp…
+            </Button>
+          </Box>
+        )}
         {step.behavior === 'set_temp' && (
           <TextField
             label="Temperature (°F)"
@@ -278,6 +292,11 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
             Delete
           </Button>
         )}
+        {!cip && batch && removable(step) && (
+          <Button color="error" sx={{ mr: 'auto' }} disabled={busy} onClick={() => setRemoving(true)} data-testid="step-remove">
+            Remove step
+          </Button>
+        )}
         <Button onClick={close} disabled={busy} data-testid="step-dialog-close">
           Close
         </Button>
@@ -295,6 +314,26 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
         title="Delete CIP & Sanitize"
         message={`Delete the CIP & Sanitize in ${tankOf(step, null, tanks)} on ${dayLabel(step.due_on)}?`}
       />
+      {batch && (
+        <ConfirmDialog
+          open={removing}
+          onClose={() => setRemoving(false)}
+          onConfirm={() => {
+            setRemoving(false)
+            // Unsaved typing goes with the step: nothing to save first.
+            setBusy(true)
+            flows.write(() => api.delete(prodPath('steps', step.id)), removeMessage(step, batch, tanks)).then((r) => {
+              setBusy(false)
+              if (r.ok) onClose()
+              else setError(r.error)
+            })
+          }}
+          title="Remove step"
+          message={removeQuestion(step, batch, tanks)}
+          confirmLabel="Remove"
+        />
+      )}
+      {changingRamp && batch && <ChangeRampDialog step={step} batch={batch} onClose={() => setChangingRamp(false)} onDone={onClose} />}
     </Dialog>
   )
 }

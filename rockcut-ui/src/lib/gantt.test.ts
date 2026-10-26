@@ -7,8 +7,10 @@ import {
   dayLabel,
   dayWidth,
   daysBetween,
+  defaultRange,
   dotState,
   dragHint,
+  expandMode,
   flagChip,
   layoutRows,
   monthLabels,
@@ -16,12 +18,16 @@ import {
   partFlags,
   partLabel,
   phaseAt,
-  rangeAroundToday,
+  rangeForZoom,
+  scheduleParts,
+  splitLocked,
+  treeRefusal,
   readPrefs,
   segments,
   shiftRange,
   showInitials,
   STEP_ROW_H,
+  STEP_ROW_H_FINE,
   TRACK_H,
   writePref,
 } from './gantt'
@@ -53,6 +59,7 @@ const step = (s: Partial<SchedStep>): SchedStep => ({
   assignee_id: null,
   assignee: null,
   added: false,
+  ramp_group: null,
   ...s,
 })
 
@@ -68,6 +75,10 @@ const batch = (b: Partial<SchedBatch>): SchedBatch => ({
   template_id: 1,
   template_name: 'Lager',
   brew_two_days: false,
+  split_parent_id: null,
+  part_number: null,
+  split_step_id: null,
+  split_stays: false,
   vessels: [{ vessel_index: 0, tank_id: 7 }],
   steps: [],
   links: [],
@@ -125,7 +136,25 @@ describe('range and zoom', () => {
     expect(clampRange({ from: '2026-10-21', to: '2026-10-22' })).toEqual({ from: '2026-10-21', to: '2026-10-27' })
     expect(clampRange({ from: '2026-01-01', to: '2029-01-01' })).toEqual({ from: '2026-01-01', to: '2027-12-31' })
     expect(shiftRange({ from: '2026-10-14', to: '2027-01-06' }, -28)).toEqual({ from: '2026-09-16', to: '2026-12-09' })
-    expect(rangeAroundToday({ from: '2026-01-01', to: '2026-01-31' }, '2026-10-21')).toEqual({ from: '2026-10-14', to: '2026-11-13' })
+  })
+
+  it('Today: a week back plus the zoom’s weeks; a new zoom keeps the start (P118)', () => {
+    expect(defaultRange('2026-10-21', 6)).toEqual({ from: '2026-10-14', to: '2026-12-02' })
+    expect(defaultRange('2026-10-21', 2)).toEqual({ from: '2026-10-14', to: '2026-11-04' })
+    expect(defaultRange('2026-10-21', 12)).toEqual({ from: '2026-10-14', to: '2027-01-13' })
+    // The same as Today after switching: start kept, a week plus the zoom.
+    expect(rangeForZoom(defaultRange('2026-10-21', 6), 2)).toEqual(defaultRange('2026-10-21', 2))
+    expect(rangeForZoom({ from: '2026-09-01', to: '2026-09-10' }, 12)).toEqual({ from: '2026-09-01', to: '2026-12-01' })
+  })
+
+  it('the expand switch follows the open rows (P119)', () => {
+    const keys = ['7', '9', 'unassigned']
+    expect(expandMode(keys, new Set())).toBe('collapse')
+    expect(expandMode(keys, new Set(['7']))).toBe('mine')
+    expect(expandMode(keys, new Set(['7', '9', 'unassigned']))).toBe('expand')
+    // A retired tank's key left in the set doesn't count.
+    expect(expandMode(keys, new Set(['42']))).toBe('collapse')
+    expect(expandMode([], new Set())).toBe('collapse')
   })
 
   it('fits the zoom’s weeks into the width; initials need 14 px', () => {
@@ -261,6 +290,12 @@ describe('drag hint (lead decisions 4, addition)', () => {
     })
   })
 
+  it('another row: red when it is the tank the beer comes from or goes into next (D48 DEV QA N1)', () => {
+    expect(dragHint({ ...base, kind: 'bar', days: 0, part: second, toRow: fv7 })).toMatchObject({ text: '→ FV7 · the beer is already in FV7', warn: true })
+    const transfer = linked.steps.find((s) => s.behavior === 'transfer')!
+    expect(dragHint({ ...base, kind: 'bar', days: 0, part: first, toRow: s2 })).toMatchObject({ text: `→ Serving 2 · the beer goes into Serving 2 next, on ${dayLabel(transfer.due_on)}`, warn: true })
+  })
+
   it('a completed part holds its tank only to its exit: no overlap for a batch before its leftover CIP (N4)', () => {
     // Fest's Package done Oct 21 in Serving 2, its CIP still planned Oct 25; Enos dragged to Oct 23.
     const done = buildParts(batch({ ...fest, status: 'completed', steps: fest.steps.filter((s) => s.id !== 5).map((s) => (s.id === 3 ? { ...s, done_on: s.due_on } : s.id === 6 ? { ...s, due_on: '2026-10-21', done_on: '2026-10-21' } : s)) }))
@@ -329,6 +364,10 @@ describe('stacking and rows', () => {
     // Serving 2: the CIP block on Oct 22 overlaps Fest's part there.
     expect(rows[1]).toMatchObject({ tracks: 2, top: TRACK_H + 4 * STEP_ROW_H, height: 2 * TRACK_H })
     expect(rows[2].parts.map((p) => p.key)).toEqual(['2.0'])
+    // With a mouse, step rows are 20 px (P121).
+    const fine = layoutRows([tank(7, 'FV7'), tank(9, 'Serving 2')], [...parts, ...unassigned], [cip], new Set(['7']), STEP_ROW_H_FINE)
+    expect(fine[0].height).toBe(TRACK_H + 4 * 20)
+    expect(fine[1].top).toBe(TRACK_H + 4 * 20)
   })
 })
 
@@ -371,14 +410,15 @@ describe('remembered per person', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('defaults to 6 weeks, names-only on a phone; keeps each user’s own', () => {
-    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, expanded: [] })
+    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, expanded: [], mix: [] })
     expect(readPrefs(4, true).collapsed).toBe(true)
     writePref(4, 'zoom', 12)
     writePref(4, 'collapsed', false)
     writePref(4, 'range', { from: '2026-10-01', to: '2026-10-02' })
     writePref(4, 'expanded', ['7', 'unassigned'])
+    writePref(4, 'mix', ['7'])
     expect(store.get('rockcut.production.4.zoom')).toBe('12')
-    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, expanded: ['7', 'unassigned'] })
+    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, expanded: ['7', 'unassigned'], mix: ['7'] })
     expect(readPrefs(5, false).zoom).toBe(6)
     store.set('rockcut.production.4.range', 'not json')
     expect(readPrefs(4, false).range).toBeNull()
@@ -395,5 +435,78 @@ describe('remembered per person', () => {
     })
     expect(readPrefs(4, false).zoom).toBe(6)
     expect(() => writePref(4, 'zoom', 2)).not.toThrow()
+  })
+})
+
+describe('split lanes (D48 lead decisions 1)', () => {
+  // Galactic in FV2 (tank 9): Brew day Oct 1, Split Oct 10. Part 1 stays in FV2 from the Split; another batch fills FV2 that day too.
+  const parent = batch({
+    id: 40,
+    label: 'Galactic #40',
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [
+      step({ id: 401, batch_id: 40, behavior: 'brew', first_brew: true, due_on: '2026-10-01' }),
+      step({ id: 402, batch_id: 40, behavior: 'split', split_method: 'transfer', due_on: '2026-10-10' }),
+    ],
+  })
+  const part = batch({
+    id: 41,
+    label: 'Galactic #40.1',
+    split_parent_id: 40,
+    part_number: 1,
+    split_step_id: 402,
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [step({ id: 411, batch_id: 41, due_on: '2026-10-14' })],
+  })
+  const other = batch({
+    id: 50,
+    label: 'Enos #41',
+    vessels: [{ vessel_index: 0, tank_id: 9 }],
+    steps: [step({ id: 501, batch_id: 50, behavior: 'brew', first_brew: true, due_on: '2026-10-10' })],
+  })
+
+  it('the part that stays shares its parent’s lane; a different batch filling that day does not', () => {
+    const parts = scheduleParts([parent, part])
+    expect(parts.find((p) => p.batch.id === 41)!.start).toBe('2026-10-10')
+    const [row] = layoutRows([tank(9, 'FV2')], parts, [], new Set())
+    expect(row.tracks).toBe(1)
+    expect(row.height).toBe(TRACK_H)
+
+    const [busy] = layoutRows([tank(9, 'FV2')], scheduleParts([parent, other]), [], new Set())
+    expect(busy.tracks).toBe(2)
+  })
+})
+
+describe('a split tree (DEV QA fix cycle 4, X2)', () => {
+  const tanks = [tank(1, 'FV1'), tank(9, 'FV9'), tank(10, 'FV10')]
+  const parent = batch({ id: 40, vessels: [{ vessel_index: 0, tank_id: 1 }] })
+  const part = (id: number, n: number, tankId: number, stays = false) =>
+    batch({ id, split_parent_id: 40, part_number: n, split_stays: stays, vessels: [{ vessel_index: 0, tank_id: tankId }, { vessel_index: 1, tank_id: null }] })
+  const stays = [parent, part(41, 1, 1, true), part(42, 2, 9)]
+
+  it('the parent’s tanks and the staying part’s first one are locked (Matt)', () => {
+    expect(splitLocked(stays, parent, 0)).toBe(true)
+    expect(splitLocked(stays, stays[1], 0)).toBe(true)
+    expect(splitLocked(stays, stays[1], 1)).toBe(false)
+    expect(splitLocked(stays, stays[2], 0)).toBe(false)
+    expect(treeRefusal(stays, parent, 0, 10, tanks)).toBe('Undo the split first to change it.')
+    expect(splitLocked([parent], parent, 0)).toBe(false)
+  })
+
+  it('part 2 into the tank part 1 stays in; its later tank along its own path', () => {
+    expect(treeRefusal(stays, stays[2], 0, 1, tanks)).toBe("Part 2 can't go into FV1: part 1 stays there.")
+    expect(treeRefusal(stays, stays[2], 0, 10, tanks)).toBeNull()
+    expect(treeRefusal(stays, stays[2], 1, 9, tanks)).toBe('Part 2: The beer is already in FV9.')
+  })
+
+  it('nothing stays: no shared tank, not back into the parent’s', () => {
+    const none = [parent, part(41, 1, 9), part(42, 2, 10)]
+    expect(treeRefusal(none, none[2], 0, 9, tanks)).toBe("Part 2 can't go into FV9: part 1 goes there.")
+    expect(treeRefusal(none, none[2], 0, 1, tanks)).toBe('Part 2: The beer is already in FV1.')
+    expect(treeRefusal(none, none[2], 0, null, tanks)).toBeNull()
+  })
+
+  it('a batch that isn’t split: nothing to say', () => {
+    expect(treeRefusal([parent], parent, 0, 9, tanks)).toBeNull()
   })
 })

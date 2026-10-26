@@ -1,6 +1,6 @@
 import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test'
 import { addDays, apiAs, denverToday, tempTag } from '../scheduler/helpers'
-import { createTank, retireTanks, shortTag, templates } from './helpers'
+import { createTank, retireTanks, shortTag, succeeds, templates } from './helpers'
 
 // D47 helpers: the schedule through the API, and the Gantt in the page.
 // Every spec makes its own [TEST-TEMP] brand, tanks and batches and removes
@@ -15,6 +15,7 @@ export interface SStep {
   name: string
   type_name: string | null
   behavior: string | null
+  marker: boolean
   first_brew: boolean
   vessel_index: number
   due_on: string
@@ -24,6 +25,8 @@ export interface SStep {
   temperature: number | null
   detail: string | null
   package_partial: boolean
+  added: boolean
+  ramp_group: string | null
 }
 
 export interface SBatch {
@@ -33,6 +36,8 @@ export interface SBatch {
   p_number: string | null
   batch_number: string | null
   status: string
+  split_parent_id: number | null
+  part_number: number | null
   vessels: { vessel_index: number; tank_id: number | null }[]
   steps: SStep[]
   links: { id: number; from_step_id: number; to_step_id: number; default_answer: string }[]
@@ -87,13 +92,40 @@ export async function templateId(name: string): Promise<number> {
 }
 
 /** What a spec made; `cleanup()` in afterAll removes it (brewed batches are un-checked first). */
+/**
+ * The seed batches (no `[TEST-TEMP]` in the label) as one line per vessel and
+ * step: what a spec must never change (BRIEF rule 4; DEV run 5 found one
+ * moved). Compared before and after each test by `Made`.
+ */
+export async function seedState(): Promise<string[]> {
+  const sched = await schedule()
+  return sched.batches
+    .filter((b) => !b.label.includes('[TEST-TEMP]'))
+    // By id, not label: a spec's planned batch may shift the seed's P-numbers (allowed).
+    .flatMap((b) => {
+      const name = `${b.label.replace(/ P\d+(\.\d+)?$/, '')} (batch ${b.id})`
+      return [
+        ...b.vessels.map((v) => `${name} vessel ${v.vessel_index}: tank ${v.tank_id}`),
+        ...b.steps.map((st) => `${name} ${st.name} (step ${st.id}): due ${st.due_on}, done ${st.done_on}`),
+      ]
+    })
+    .sort()
+}
+
 export class Made {
   brands: number[] = []
   tanks: number[] = []
   batches: number[] = []
   cips: number[] = []
+  /** The seed as the test found it: taken at its first write through `Made`, checked by `cleanup()`. */
+  private seed: string[] | null = null
+
+  private async before() {
+    this.seed ??= await seedState()
+  }
 
   async brand(label: string): Promise<{ id: number; name: string }> {
+    await this.before()
     const name = tempTag(label)
     const b = (await ok<{ data: { id: number; name: string } }>(await (await apiAs('brewer1')).post('/api/brands', { data: { name } }), 201)).data
     this.brands.push(b.id)
@@ -101,12 +133,14 @@ export class Made {
   }
 
   async tank(label: string, capacity = 20) {
+    await this.before()
     const t = await createTank(shortTag(label), capacity)
     this.tanks.push(t.id)
     return t
   }
 
   async plan(attrs: { brand_id: number; template: string; brew_on: string; volume?: number; tank_ids?: (number | null)[]; two_days?: boolean }): Promise<SBatch> {
+    await this.before()
     const body = await ok<{ data: { batches: SBatch[] } }>(
       await (await apiAs('brewer1')).post(`${P}/batches`, {
         data: {
@@ -130,22 +164,56 @@ export class Made {
     return ok(await (await apiAs('brewer1')).post(`${P}/steps/${step.id}/complete`, { data: { done_on: step.due_on, batch_number: number, answer: 'move_only' } }))
   }
 
+  /**
+   * Split parents are un-split first (a part's finished steps and the Split
+   * are un-checked; D48 M2 refuses to delete a split parent), and every
+   * request has to succeed, so a leak fails the spec instead of the next one.
+   */
   async cleanup() {
+    await this.removeMine()
+    // The seed is read-only for specs: a change fails the test that made it, by name.
+    const seed = this.seed
+    this.seed = null
+    if (seed) {
+      const now = await seedState()
+      const changed = [...now.filter((l) => !seed.includes(l)).map((l) => `now:  ${l}`), ...seed.filter((l) => !now.includes(l)).map((l) => `was:  ${l}`)]
+      expect(changed, 'this test changed the seed schedule').toEqual([])
+    }
+  }
+
+  private async removeMine() {
     const api = await apiAs('brewer1')
     const sched = await schedule()
-    for (const id of this.batches.splice(0)) {
+    // Batches the spec planned, and any it planned through the page under its brands (parts go with their parent).
+    const ids = new Set(this.batches.splice(0))
+    for (const b of sched.batches) if (this.brands.includes(b.brand_id) && !b.split_parent_id) ids.add(b.id)
+    for (const id of ids) {
       const b = sched.batches.find((x) => x.id === id)
-      if (b && b.status !== 'planned') {
-        const brew = b.steps.find((s) => s.first_brew && s.done_on)
-        if (brew) await api.post(`${P}/steps/${brew.id}/uncomplete`)
+      if (!b) continue
+      const parts = sched.batches.filter((x) => x.split_parent_id === id)
+      if (parts.length) {
+        const done = parts.flatMap((p) => p.steps).filter((s) => s.done_on)
+        done.sort((x, y) => y.done_on!.localeCompare(x.done_on!))
+        for (const s of done) await succeeds(api.post(`${P}/steps/${s.id}/uncomplete`), `un-check step ${s.id} of a part of batch ${id}`)
+        const split = b.steps.find((s) => s.behavior === 'split' && s.done_on)
+        if (split) await succeeds(api.post(`${P}/steps/${split.id}/uncomplete`), `un-check the Split of batch ${id}`)
+        await succeeds(api.delete(`${P}/batches/${id}/split`), `undo the split of batch ${id}`)
       }
-      await api.delete(`${P}/batches/${id}`)
+      if (b.status !== 'planned') {
+        // Brew day stays done while a Transfer/Filter or Package is (DEV QA Y2): those first, latest first.
+        const exits = b.steps.filter((s) => (s.behavior === 'transfer' || s.behavior === 'package') && s.done_on)
+        exits.sort((x, y) => y.done_on!.localeCompare(x.done_on!))
+        for (const s of exits) await succeeds(api.post(`${P}/steps/${s.id}/uncomplete`), `un-check step ${s.id} of batch ${id}`)
+        const brew = b.steps.find((s) => s.first_brew && s.done_on)
+        if (brew) await succeeds(api.post(`${P}/steps/${brew.id}/uncomplete`), `un-check brew day of batch ${id}`)
+      }
+      await succeeds(api.delete(`${P}/batches/${id}`), `delete batch ${id}`)
     }
-    for (const id of this.cips.splice(0)) await api.delete(`${P}/cips/${id}`)
-    // Standalone CIPs a spec added through the page, on its tanks.
-    for (const c of sched.cips.filter((c) => c.tank_id && this.tanks.includes(c.tank_id))) await api.delete(`${P}/cips/${c.id}`)
+    // Standalone CIPs: the spec's own, and any it added through the page on its tanks. A 404 is one the spec already deleted.
+    const cips = new Set([...this.cips.splice(0), ...sched.cips.filter((c) => c.tank_id && this.tanks.includes(c.tank_id)).map((c) => c.id)])
+    for (const id of cips) await succeeds(api.delete(`${P}/cips/${id}`), `delete CIP ${id}`, [404])
     await retireTanks(this.tanks.splice(0))
-    for (const id of this.brands.splice(0)) await api.delete(`/api/brands/${id}`)
+    for (const id of this.brands.splice(0)) await succeeds(api.delete(`/api/brands/${id}`), `delete brand ${id}`)
   }
 }
 
@@ -156,6 +224,12 @@ export const gantt = (page: Page) => page.getByTestId('gantt')
 export async function openGantt(page: Page) {
   await page.goto('/brewery/production')
   await expect(page.getByTestId('gantt-inner')).toBeVisible()
+}
+
+/** Toolbar → Add process ▾ → Plan batch… or CIP & Sanitize… (D48 §3.6). */
+export async function addProcess(page: Page, which: 'plan' | 'cip') {
+  await page.getByTestId('gantt-add-process').click()
+  await page.getByTestId(which === 'plan' ? 'gantt-plan' : 'gantt-add-cip').click()
 }
 
 /** Pixels per day in the page now. */
@@ -179,6 +253,54 @@ export async function dragBy(page: Page, el: Locator, days: number, dy = 0, at?:
   await page.mouse.move(x + days * px, y + dy, { steps: 12 })
   await page.waitForTimeout(100)
   await page.mouse.up()
+}
+
+/**
+ * Press `el` (at `x` px into it) and move to the middle of the row
+ * `gantt-lane-…` named by `laneId`. When it's off the grid, the pointer waits
+ * in the grid's edge zone and the grid scrolls itself (D48 auto-scroll). The
+ * button stays down: the caller checks the hint or drop row, then releases.
+ * `tick` runs while it waits: with `page.clock` installed, the scrolling
+ * frames only come when the clock moves.
+ */
+export async function dragToLane(page: Page, el: Locator, laneId: string, x = 20, tick?: () => Promise<void>) {
+  await el.scrollIntoViewIfNeeded()
+  const box = (await el.boundingBox())!
+  const [px, py] = [box.x + x, box.y + box.height / 2]
+  await page.mouse.move(px, py)
+  await page.mouse.down()
+  await page.mouse.move(px, py + 6, { steps: 3 })
+  await followToLane(page, px, laneId, py, tick)
+}
+
+/** During a drag: move to the middle of the row `laneId`, waiting in the edge zone while the grid scrolls to it. */
+export async function followToLane(page: Page, px: number, laneId: string, startY?: number, tick?: () => Promise<void>) {
+  const grid = (await gantt(page).boundingBox())!
+  const from = startY ?? grid.y + grid.height / 2
+  const [top, bottom] = [grid.y + 47 + 45, grid.y + grid.height - 45]
+  for (let i = 0; i < 200; i++) {
+    const lane = (await page.getByTestId(laneId).boundingBox())!
+    const mid = lane.y + Math.min(lane.height, 54) / 2
+    if (mid > top && mid < bottom) {
+      await page.mouse.move(px, mid, { steps: 6 })
+      return
+    }
+    // The last (or first) row can't leave the edge zone: once the grid
+    // can't scroll further that way, aim at the part of the row in view.
+    const scroll = await gantt(page).evaluate((e) => ({ at: e.scrollTop, max: e.scrollHeight - e.clientHeight, view: e.clientHeight }))
+    if ((mid >= bottom && scroll.at >= scroll.max - 1) || (mid <= top && scroll.at <= 0)) {
+      const [lo, hi] = [Math.max(lane.y, grid.y + 48), Math.min(lane.y + lane.height, grid.y + scroll.view - 2)]
+      if (hi - lo < 8) throw new Error(`${laneId} is out of the grid's reach`)
+      await page.mouse.move(px, (lo + hi) / 2, { steps: 6 })
+      return
+    }
+    // In the edge zone, and far enough from the press to count as heading there.
+    const y = mid >= bottom ? Math.max(grid.y + grid.height - 8, from + 20) : Math.min(grid.y + 47 + 8, from - 20)
+    await page.mouse.move(px, y, { steps: 3 })
+    if (tick) await tick()
+    else await page.waitForTimeout(40)
+  }
+  throw new Error(`${laneId} never scrolled into the grid`)
 }
 
 /** The last message shown (the Undo snackbar). */

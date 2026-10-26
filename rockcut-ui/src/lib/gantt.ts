@@ -53,8 +53,8 @@ export interface Range {
   to: string
 }
 
-/** The default view: a week back, then 12 weeks on. */
-export const defaultRange = (today: string): Range => ({ from: addDaysKey(today, -7), to: addDaysKey(today, 77) })
+/** The first visit and "Today" (D48 §3.6, P118): a week before today through the zoom's weeks after it. */
+export const defaultRange = (today: string, zoom: Zoom): Range => ({ from: addDaysKey(today, -7), to: addDaysKey(today, zoom * 7) })
 
 /** A range kept to 7–730 days (counting both ends), `to` moving to fit. */
 export function clampRange(r: Range): Range {
@@ -67,12 +67,8 @@ export function clampRange(r: Range): Range {
 /** ‹ 4 wks / 4 wks ›: the same length, moved. */
 export const shiftRange = (r: Range, days: number): Range => ({ from: addDaysKey(r.from, days), to: addDaysKey(r.to, days) })
 
-/** "Today": the same length, starting a week back. */
-export function rangeAroundToday(r: Range, today: string): Range {
-  const len = daysBetween(r.from, r.to)
-  const from = addDaysKey(today, -7)
-  return { from, to: addDaysKey(from, len) }
-}
+/** A new zoom keeps the start and sets the length to match: a week plus the zoom's weeks (D48 §3.6). */
+export const rangeForZoom = (r: Range, zoom: Zoom): Range => ({ from: r.from, to: addDaysKey(r.from, 7 + zoom * 7) })
 
 /** Pixels per day: the zoom's weeks across the timeline's width, never under 10 (narrower, it scrolls). */
 export const dayWidth = (timelineWidth: number, zoom: Zoom) => Math.max(10, Math.floor(timelineWidth / (zoom * 7)))
@@ -116,11 +112,15 @@ export function firstBrew(steps: SchedStep[]): SchedStep | null {
   return steps.filter((s) => s.behavior === 'brew').sort((a, b) => a.id - b.id)[0] ?? null
 }
 
-export function buildParts(batch: SchedBatch): Part[] {
+/**
+ * A batch's parts, one per tank. D48: a split's part (`origin`, its
+ * parent's Split step) is filled by that Split, so its bar starts there.
+ */
+export function buildParts(batch: SchedBatch, origin: SchedStep | null = null): Part[] {
   const brew = firstBrew(batch.steps)
   return batch.vessels.map(({ vessel_index: k, tank_id }) => {
     const own = batch.steps.filter((s) => s.vessel_index === k)
-    const fill = k === 0 ? brew : (batch.steps.filter((s) => s.behavior === 'transfer' && s.vessel_index === k).sort(order)[0] ?? null)
+    const fill = k === 0 ? (origin ?? brew) : (batch.steps.filter((s) => s.behavior === 'transfer' && s.vessel_index === k).sort(order)[0] ?? null)
     const exit =
       batch.steps
         .filter(
@@ -152,6 +152,12 @@ export function buildParts(batch: SchedBatch): Part[] {
       planned: batch.status === 'planned',
     }
   })
+}
+
+/** D48: every batch's parts, a split part's filled by its parent's Split (when the parent is loaded). */
+export function scheduleParts(batches: SchedBatch[]): Part[] {
+  const steps = new Map(batches.flatMap((b) => b.steps.map((s) => [s.id, s] as const)))
+  return batches.flatMap((b) => buildParts(b, b.split_step_id != null ? (steps.get(b.split_step_id) ?? null) : null))
 }
 
 /** "Galactic #40 · 20 bbl", "· after transfer" for a later tank. */
@@ -209,16 +215,23 @@ export function segments(part: Part, viewFrom: string, viewDays: number, phase: 
 // ── Stacking (§3.6: nothing draws on top of anything else) ──
 
 /** A track for each item (inclusive days), the first free one, by start; and how many tracks. */
-export function assignTracks<T extends { start: string; end: string }>(items: T[]): { tracks: Map<T, number>; count: number } {
-  const ends: string[] = []
+export function assignTracks<T extends { start: string; end: string; fill?: number | null; exit?: number | null }>(
+  items: T[],
+): { tracks: Map<T, number>; count: number } {
+  const last: T[] = []
   const tracks = new Map<T, number>()
+  // D48 (lead decisions 1): an item filled by the step that ends the one
+  // before it (a split part that stays, a hand-off in the same tank) shares
+  // its lane: that day is the exit's for the leaver and the fill's for the
+  // one that stays, as the occupancy rule has it (D47 cycle 2).
+  const fits = (prev: T, item: T) => prev.end < item.start || (prev.end === item.start && prev.exit != null && prev.exit === item.fill)
   for (const item of [...items].sort((a, b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end))) {
-    let t = ends.findIndex((end) => end < item.start)
-    if (t < 0) t = ends.length
-    ends[t] = item.end
+    let t = last.findIndex((prev) => fits(prev, item))
+    if (t < 0) t = last.length
+    last[t] = item
     tracks.set(item, t)
   }
-  return { tracks, count: Math.max(1, ends.length) }
+  return { tracks, count: Math.max(1, last.length) }
 }
 
 // ── Dots ──
@@ -270,7 +283,9 @@ export function flagChip(flags: Flag[]): string {
 // ── Rows ──
 
 export const TRACK_H = 54
+/** An expanded tank's step rows: 28 px for a finger, 20 px with a mouse (D48 §3.6, P121). */
 export const STEP_ROW_H = 28
+export const STEP_ROW_H_FINE = 20
 /** In a track: the bar, the initials under it, the dots under them. */
 export const BAR_TOP = 4
 export const BAR_H = 26
@@ -292,21 +307,23 @@ export interface Row {
 }
 
 /** The tanks in order, then Unassigned, with their tracks, step rows and place. */
-export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expanded: Set<string>): Row[] {
+export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expanded: Set<string>, stepRowH = STEP_ROW_H): Row[] {
   const keys: (Tank | null)[] = [...tanks, null]
   let top = 0
   return keys.map((tank) => {
     const mine = parts.filter((p) => p.tankId === (tank?.id ?? null))
     const myCips = tank ? cips.filter((c) => c.tank_id === tank.id) : []
     const items: (Part | SchedStep)[] = [...mine, ...myCips]
-    const spans = items.map((x) => ('key' in x ? { x, start: x.start, end: x.reach } : { x, start: x.due_on, end: x.due_on }))
+    const spans = items.map((x) =>
+      'key' in x ? { x, start: x.start, end: x.reach, fill: x.fill?.id, exit: x.exit?.id } : { x, start: x.due_on, end: x.due_on },
+    )
     const { tracks, count } = assignTracks(spans)
     const track = new Map<Part | SchedStep, number>(spans.map((s) => [s.x, tracks.get(s)!]))
     const open = expanded.has(rowKey(tank))
     const stepRows = open
       ? [...mine].sort((a, b) => a.start.localeCompare(b.start)).flatMap((part) => part.steps.map((step) => ({ part, step })))
       : []
-    const height = count * TRACK_H + stepRows.length * STEP_ROW_H
+    const height = count * TRACK_H + stepRows.length * stepRowH
     const row = { tank, parts: mine, cips: myCips, track, tracks: count, stepRows, top, height }
     top += height
     return row
@@ -314,6 +331,19 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
 }
 
 export const rowKey = (tank: Tank | null) => (tank ? String(tank.id) : 'unassigned')
+
+/**
+ * Collapse all | ● | Expand all (D48 §3.6, P119): where the switch sits for
+ * the open rows. All open → expand, none → collapse, anything else is the
+ * person's own mix.
+ */
+export type ExpandMode = 'collapse' | 'mine' | 'expand'
+
+export function expandMode(keys: string[], expanded: Set<string>): ExpandMode {
+  const open = keys.filter((k) => expanded.has(k)).length
+  if (keys.length && open === keys.length) return 'expand'
+  return open ? 'mine' : 'collapse'
+}
 
 // ── Live feedback while dragging (lead decisions 4, addition) ──
 
@@ -340,6 +370,70 @@ export interface DragHintInput {
   tanks: Tank[]
   /** Every part on the chart, for overlaps. */
   parts: Part[]
+}
+
+/**
+ * D48 DEV QA fix cycle 4 (Matt): while a batch is split, the parent's tanks
+ * and the first tank of the part that stays don't change ("Undo the split
+ * first to change it"; the API answers `split`).
+ */
+export function splitLocked(batches: SchedBatch[], batch: SchedBatch, k: number): boolean {
+  if (batch.split_parent_id != null) return batch.split_stays && k === 0
+  return batches.some((b) => b.split_parent_id === batch.id)
+}
+
+export const SPLIT_LOCKED = 'Undo the split first to change it'
+
+/**
+ * D48 DEV QA fix cycle 4 (X2): the API's rule over a split batch's whole
+ * tree, for putting vessel `k` of `batch` (the parent or a part) in
+ * `tankId`: locked (`splitLocked`); no two vessels in a row in one tank
+ * along any path; the parts that leave start neither in the tank the beer
+ * is in at the Split nor in another part's. The refusal ("Part 2: The beer
+ * is already in FV9.", "Part 2 can't go into FV1: part 1 stays there."), or
+ * null: fine, or `batch` isn't split.
+ */
+export function treeRefusal(batches: SchedBatch[], batch: SchedBatch, k: number, tankId: number | null, tanks: Tank[]): string | null {
+  const root = batch.split_parent_id != null ? batches.find((b) => b.id === batch.split_parent_id) : batch
+  const parts = root ? batches.filter((b) => b.split_parent_id === root.id).sort((x, y) => (x.part_number ?? 0) - (y.part_number ?? 0)) : []
+  if (!root || !parts.length) return null
+  if (splitLocked(batches, batch, k)) return `${SPLIT_LOCKED}.`
+  const last = Math.max(...root.vessels.map((v) => v.vessel_index))
+  const stayer = parts.find((p) => p.split_stays)
+  const tree = [root, ...parts]
+  const tanksOf = new Map(tree.map((b) => [b.id, new Map(b.vessels.map((v) => [v.vessel_index, v.tank_id]))]))
+  tanksOf.get(batch.id)?.set(k, tankId)
+  const name = (id: number) => tanks.find((t) => t.id === id)?.name ?? 'that tank'
+  const n = (b: SchedBatch) => b.part_number ?? 0
+
+  for (const b of tree) {
+    const m = tanksOf.get(b.id)!
+    const j = [...m.keys()].sort((x, y) => x - y).find((i) => m.get(i) != null && m.get(i) === m.get(i - 1))
+    if (j === undefined) continue
+    const t = m.get(j)!
+    const label = b.id === root.id ? '' : `Part ${n(b)}: `
+    if (b.id === batch.id && j === k) return `${label}The beer is already in ${name(t)}.`
+    const fill = b.steps.filter((s) => s.behavior === 'transfer' && s.vessel_index === j).sort((x, y) => x.due_on.localeCompare(y.due_on))[0]
+    return `${label}The beer goes into ${name(t)} next${fill ? `, on ${dayLabel(fill.due_on)}` : ''}.`
+  }
+
+  const here = tanksOf.get(root.id)!.get(last) ?? null
+  const first = (p: SchedBatch) => tanksOf.get(p.id)!.get(0) ?? null
+  const leaving = parts.filter((p) => !p.split_stays)
+  for (const p of leaving) {
+    const t = first(p)
+    if (t == null || t !== here) continue
+    if (stayer && batch.id === p.id) return `Part ${n(p)} can't go into ${name(t)}: part ${n(stayer)} stays there.`
+    return `Part ${n(p)}: The beer is already in ${name(t)}.`
+  }
+  for (const [i, p] of leaving.entries())
+    for (const q of leaving.slice(i + 1)) {
+      const t = first(p)
+      if (t == null || t !== first(q)) continue
+      const [a, b] = batch.id === p.id ? [p, q] : [q, p]
+      return `Part ${n(a)} can't go into ${name(t)}: part ${n(b)} goes there.`
+    }
+  return null
 }
 
 const signedDays = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'}`
@@ -369,6 +463,18 @@ export function dragHint(a: DragHintInput): DragHint | null {
     const part = a.part
     if (a.toRow !== undefined && a.toRow?.id !== (part.tankId ?? undefined)) {
       text = `→ ${a.toRow?.name ?? 'Unassigned'}`
+      // Not the tank the beer comes from or goes into next: the API refuses it (D48 DEV QA N1).
+      const to = a.toRow
+      const tankOf = (k: number) => part.batch.vessels.find((v) => v.vessel_index === k)?.tank_id ?? null
+      const nextFill = part.batch.steps
+        .filter((s) => s.behavior === 'transfer' && s.vessel_index === part.vessel + 1)
+        .sort((x, y) => x.due_on.localeCompare(y.due_on))[0]
+      // A split batch: locked, or the rule over its whole tree (fix cycle 4, X2).
+      const batches = [...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()]
+      const tree = treeRefusal(batches, part.batch, part.vessel, to?.id ?? null, a.tanks)
+      if (tree) reasons.push(tree.replace(/\.$/, ''))
+      else if (to && part.vessel > 0 && tankOf(part.vessel - 1) === to.id) reasons.push(`the beer is already in ${to.name}`)
+      else if (to && nextFill && tankOf(part.vessel + 1) === to.id) reasons.push(`the beer goes into ${to.name} next, on ${dayLabel(nextFill.due_on)}`)
       outIn(a.toRow, part.start, part.end)
       overlapIn(a.toRow, part, part.start, part.end)
     } else {
@@ -422,6 +528,8 @@ export interface GanttPrefs {
   zoom: Zoom
   collapsed: boolean
   expanded: string[]
+  /** The last mix of open tanks, for the switch's middle (D48 §3.6). */
+  mix: string[]
 }
 
 const prefKey = (userId: number | string, name: string) => `rockcut.production.${userId}.${name}`
@@ -455,18 +563,20 @@ export function readPrefs(userId: number | string, phone: boolean): GanttPrefs {
   }
   const zoom = Number(read(prefKey(userId, 'zoom')))
   const collapsed = read(prefKey(userId, 'collapsed'))
-  let expanded: string[] = []
-  try {
-    const e = JSON.parse(read(prefKey(userId, 'expanded')) ?? '[]')
-    if (Array.isArray(e)) expanded = e.filter((x) => typeof x === 'string')
-  } catch {
-    expanded = []
+  const keys = (name: string): string[] => {
+    try {
+      const e = JSON.parse(read(prefKey(userId, name)) ?? '[]')
+      return Array.isArray(e) ? e.filter((x) => typeof x === 'string') : []
+    } catch {
+      return []
+    }
   }
   return {
     range,
     zoom: (ZOOMS as readonly number[]).includes(zoom) ? (zoom as Zoom) : 6,
     collapsed: collapsed === null ? phone : collapsed === 'true',
-    expanded,
+    expanded: keys('expanded'),
+    mix: keys('mix'),
   }
 }
 

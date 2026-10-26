@@ -385,11 +385,13 @@ Computed server-side by one function, returned with the schedule.
 - **Split:** date, **Transfer or Filter** (one choice for the whole split, default Transfer; Matt, 2026-10-21: it applies to every part that leaves; it behaves the same either way and names the step "Split - Transfer" / "Split - Filter"), two or more parts (add/remove), each with a tank (one may stay in the current tank, marked "(stays here)") and a volume.
   - Volumes must add up to the batch's. Two parts can't share a tank.
   - The parent keeps its history up to the split. Each part is its own batch (`split_parent_id`, `part_number`) with its own copy of the remaining steps; numbered #40.1, #40.2 (P2.1 while planned), following the parent's number.
-  - If no part stays, the tank left behind gets a CIP that day. Checking off the split fills each part.
+  - If no part stays, the tank left behind gets a CIP that day. Checking off the split fills each part. Like a Transfer/Filter and a Package, it can't be checked off before brew day ("Check off brew day first."; lead decisions 6, Y2).
+  - A part follows its Split (lead decisions 7, Z1): a part's Transfer/Filter or Package can't be checked off before its parent's Split ("Check off Split - Transfer first."; brew day first wins), and the Split can't be marked not done while a part's one is done ("Mark Galactic #40.2: Package not done first."). With the Split not done, every part is planned. A late or early check-off of the Split names the parts that moved with it (Z2). Undo keeps the same order (lead decisions 8, AA1): an Undo that marks a step done or not done is refused, with that rule's own message, when checking it off or un-checking it directly would be. Brew day's refusal names the part when the done exit is a part's ("Mark Galactic #40.2: Transfer not done first."; AA2).
+  - A split batch moves as one (lead decisions 6, Y1): **Move all** on a parent step on or before the Split, and any move of the Split itself, move the parts' unfinished steps by the same days (listed under each part in the move prompt). A done step on a part refuses those moves. A part step dated before the Split is flagged "Steps out of order".
   - **Undo split** merges back (beer stays in the parent's tank, part 1's schedule kept) unless a part has finished steps.
   - Splitting a part again and blending are out of scope.
 - **Change template** (planned, not split): rebuilds the steps from the new template, keeping brew day, two-day brew, tanks and added steps (added transfers aren't kept). Switching to a template with a transfer adds an Unassigned later vessel; switching away drops it.
-- **Change brand** (planned): parts follow.
+- **Change brand** (planned, not split): locked while split, like the tanks and volume (lead decisions 6, Y3).
 - **Multi-select:** §3.6.
 
 ### 3.12 Task list linkage (D49)
@@ -405,6 +407,69 @@ Computed server-side by one function, returned with the schedule.
 - **Planned batches:** their tasks show with a **Planned batch** pill. A per-person toggle on the Brewery board, "Show planned batches", hides them (remembered on the server with the other board settings).
 - **Recurring tasks** don't apply to linked tasks.
 - **Task list panel** on the Gantt (toolbar **Task list**): today through the next 6 days of linked tasks, grouped Late / Today / each day. Each has a checkbox, the title, notes (two lines), "Move to [date]", an assignee picker, and **Open** (the step dialog). Same rules as the board.
+
+### 3.12a Clean not sanitized: the mark and the CIP variants (D49; Matt, 2026-10-22)
+
+Sometimes a tank is CIP'd but not sanitized, and there's no shelf life on "Sani" (§3.8). So a brewer can say so by hand. **Nothing expires on its own** (Matt).
+
+- **The mark dialog** (tank ⋯ menu, empty tanks only) becomes one **Mark…** item with three states. These replace the separate Mark clean… / Mark dirty… items:
+  - **Clean & sanitized** (`clean`, D48's Mark clean);
+  - **Clean not sanitized** (`cleaned`, new);
+  - **Dirty** (`dirty`).
+  Each takes a date and an optional note, as in D48.
+- **Layout: a vertical list in the tank ⋯ dialog** (Matt, 2026-10-22; mockup B, https://claude.ai/artifact/V8DLwX5dfcYZ19h6iZ198V):
+  - a "MARK THE TANK AS" heading;
+  - three large tappable rows (at least 56 px tall), each with a radio dot, the state's name in its color (Clean & sanitized green, Clean not sanitized amber, Dirty red) and a one-line hint;
+  - the **current state's row is greyed out and reads "Current state"**, so it can't be picked;
+  - the Day and Note (optional) fields sit under the list, and the dialog's bottom row has **Save mark** next to Mark out of service… and Close;
+  - no second dialog;
+  - the rows are hidden while beer is in the tank, as in D48.
+- **`tank_condition_marks.state`** gains `cleaned`. The latest-wins rule from §3.8 is unchanged.
+- **Status line:** "Clean no sani N days", in amber.
+- **Effect:**
+  - it clears "Filling a dirty tank" and "Dirty, no CIP planned" for what follows;
+  - a later fill raises a new **soft flag**, **Filling a tank that isn't sanitized**, which can be signed off under D47's rules;
+  - a later done CIP & Sanitize (batch or standalone), or a Clean & sanitized mark, returns the tank to "Sani N days".
+- **Manual expiry:** marking a long-sanitized tank "Clean not sanitized" is how a brewer asks for a fresh sanitize before the next fill.
+- **"CIP - no sani" and "Sanitize" processes** (Matt, 2026-10-22): the `cip` step type gets three variants, the way Package has Full / Partial and Split has Transfer / Filter: **CIP & Sanitize** (as today), **CIP - no sani** and **Sanitize**.
+  - **Choosing it:**
+    - Add process ▾ → **CIP…** and the empty-spot menu's **Add CIP…** open the standalone CIP dialog, which has the variant choice;
+    - the step dialog switches an unfinished CIP between the two, renaming it;
+    - a template's CIP entries can be set to either.
+  - **Done → "Clean no sani N days":** the same effect as the Clean not sanitized mark, including the soft flag on a later fill.
+  - **Not done:** it counts as a planned CIP for "Dirty, no CIP planned" and "Filling a dirty tank", like CIP & Sanitize. But a fill after it raises the soft "Filling a tank that isn't sanitized" flag in place of the dirty one.
+  - **Board titles (§3.12):** "FV6 · CIP - no sani", "FV6 · Sanitize".
+  - **Sanitize** sanitizes a tank that's already clean:
+    - **done on a "Clean no sani" or "Sani" tank** → "Sani 0 days", and it clears the soft flag for the fill after it;
+    - **done on a dirty tank:** the tank stays dirty, since sanitizing doesn't clean it, and the step shows "The tank was dirty: run a CIP first.";
+    - **planned:** it doesn't count as a planned CIP for the dirty flags. A planned CIP - no sani followed by a planned Sanitize before the fill raises no flag.
+  - The variant choice and the switch in the step dialog cover all three.
+
+### 3.12b Pencilled batches (D49; Matt, 2026-10-22)
+
+**Why:** to see where a batch fits the tanks without giving staff tasks yet, and to track batches we know we'll make, so ordering can use them later. A pencilled batch is a planned batch that isn't committed.
+- **States:** **Pencilled** → **Scheduled** (today's planned) → brewed.
+  - A pencilled batch has a brew day and may have tanks or be Unassigned, like any planned batch.
+  - There's no dateless "idea" state: a rough date serves that purpose (Matt, 2026-10-22).
+- **Numbers:** **X1, X2…** by brew date, a separate sequence from P-numbers and renumbered the same way. Scheduling gives it the next P-number in date order, and pencilling it in again gives it an X-number back. The batch dialog title shows "Oktoberfest X1".
+- **Plan batch:** gets a choice, **Pencil in** or **Schedule** (default Schedule).
+- **The batch dialog:**
+  - **Schedule this batch** on a pencilled batch;
+  - **Pencil in** on a scheduled planned batch, while none of its steps is done;
+  - both can be undone.
+- **On the Gantt:** drawn faded or hatched, with a "Pencilled" label, in any row. Drag, move, split, add steps and every other D48 change work as for a planned batch.
+- **The board (§3.12):**
+  - a pencilled batch's steps never become tasks;
+  - Schedule creates its task-list tasks in the same transaction, and Pencil in removes its unfinished ones;
+  - "Show planned batches" doesn't show them.
+  - The Task list panel leaves them out too.
+- **Flags:**
+  - they show **muted**, aren't in the flag chip's count, and can't be signed off;
+  - they unmute when the batch is scheduled;
+  - "No tank assigned within 3 days" doesn't apply.
+  - A scheduled batch that overlaps a pencilled one still gets its own (unmuted) overlap flag.
+- **Brewing:** checking off brew day on a pencilled batch asks "Schedule this batch first." with a Schedule button.
+- **Not in D49:** linking a batch to a recipe, and materials ordering (Matt, 2026-10-22: "We need to flesh out that whole system later"). Ordering will count pencilled batches when it comes.
 
 ### 3.13 Who can do what (`Authz`) and the brewhouse tablet
 
@@ -591,6 +656,20 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P106 | `breweryDevice` | Set up menu | | No Tanks / Templates / Phases & steps editing. |
 | P107 | `taproomDevice` | typed `/brewery/production` | | Not available; API 403. |
 | P108 | `brewer1` | Board → recurring options on a linked task | | Not offered. |
+| P122 | `brewer1` | Serving 1 ("Sani 40 days") → ⋯ → Mark… → **Clean not sanitized**, today | | "Clean no sani 0 days" in amber; a marker on today; Undo puts it back. |
+| P123 | `brewer1` | Plan a batch into Serving 1 next week | P122 | A "Filling a tank that isn't sanitized" flag (soft; no dirty flags). Sign off → muted. A done CIP & Sanitize, or Mark… → Clean & sanitized, before the fill clears it. |
+| P124 | `brewer1` | a dirty tank → Mark… → Clean not sanitized | | The dirty flags clear; the status is "Clean no sani 0 days". |
+| P125 | `brewer1` | Add process ▾ → CIP… → **CIP - no sani**, Serving 1, today, Already done | Serving 1 dirty | "Clean no sani 0 days"; the dirty flags clear; on the board as "Serving 1 · CIP - no sani". |
+| P126 | `brewer1` | a batch's exit CIP → step dialog → switch to **CIP - no sani**; plan the next batch into that tank | | The step is renamed. The next fill gets "Filling a tank that isn't sanitized", not "Filling a dirty tank". |
+| P127 | `brewer1` | Serving 1 "Clean no sani 2 days" → Add process ▾ → CIP… → **Sanitize**, today, Already done | P125 | "Sani 0 days"; a fill planned after it has no flags. |
+| P128 | `brewer1` | plan CIP - no sani on Mon and Sanitize on Tue into a dirty tank, then a batch on Wed | | No flags on the fill. Remove the Sanitize → "Filling a tank that isn't sanitized". |
+| P129 | `brewer1` | Sanitize, Already done, on a dirty tank | | Still "Empty · dirty"; the step shows "The tank was dirty: run a CIP first." |
+| P130 | `brewer1` | Plan batch → **Pencil in**: Oktoberfest, Lager with transfer, Mar 9, Unassigned | | "Oktoberfest X1" faded in the Unassigned row, labeled Pencilled; no board tasks; no "no tank within 3 days" flag. |
+| P131 | `brewer1` | drag X1 into FV6, overlapping a scheduled batch | P130 | It moves; a muted "Tank overlap" flag; the flag chip's count doesn't include it. |
+| P132 | `brewer1` | X1 → batch dialog → **Schedule this batch** | P131 | Becomes the next P-number by date (others renumber); drawn normally; its task-list steps appear on the Brewery board; the flags are no longer muted. Undo reverses it. |
+| P133 | `brewer1` | a scheduled planned batch → **Pencil in** | nothing done | Back to an X-number; its board tasks are removed; drawn faded. Refused once a step is done. |
+| P134 | `brewer1` | check off brew day on a pencilled batch | | "Schedule this batch first." with a Schedule button; nothing is checked off until it is. |
+| P135 | `brewer1` | Brewery board → "Show planned batches" on | P130 | Pencilled batches never show on the board, whatever the toggle. |
 
 ## 5. Out of Scope
 

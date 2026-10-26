@@ -35,8 +35,12 @@ export interface MovePreview {
   days: number
   batch_id: number | null
   batch_label: string | null
-  moved: { id: number; name: string; due_on: string; new_due_on: string }[]
-  following: { id: number; name: string; due_on: string; new_due_on: string }[]
+  /** D48 QA minor 10: every batch the move touches (a split part has its parent's id). */
+  batches?: { id: number; label: string; split_parent_id?: number | null }[]
+  moved: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
+  /** D48 DEV QA Y1: a moved Split's parts' steps, which go with it whatever the answer. */
+  carried?: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
+  following: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   default_answer: Answer | null
   out_of_order: Record<Answer, { from_name: string; to_name: string }[]>
   renumbered: Record<Answer, Renumber[]>
@@ -54,6 +58,17 @@ export type Result<T = Record<string, unknown>> = { ok: true; data: T } | Failur
 
 const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
 const daysWord = (days: number) => `${plural(Math.abs(days), 'day')} ${days > 0 ? 'later' : 'earlier'}`
+const andList = (items: string[]) => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
+
+/** The parts a moved Split takes along ("Galactic P5.1 and Galactic P5.2"), or null. */
+const carriedLabels = (pre: MovePreview) => {
+  const ids = new Set((pre.carried ?? []).map((s) => s.batch_id))
+  return (pre.batches ?? []).filter((b) => ids.has(b.id)).map((b) => b.label)
+}
+const carriedText = (pre: MovePreview) => {
+  const labels = carriedLabels(pre)
+  return labels.length ? andList(labels) : null
+}
 
 
 const bodyOf = (err: unknown) => (err as { response?: { data?: Record<string, unknown>; status?: number } })?.response
@@ -123,7 +138,10 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       }
       const r = await write<{ out_of_order?: unknown[] }>(
         () => api.post(prodPath('steps', 'move'), { ids, days, answer }),
-        () => (answer === 'move_all' ? `${title}, with ${plural(pre.following.length, 'following step')}.` : `${title}.`),
+        () => {
+          const withParts = [answer === 'move_all' && plural(pre.following.length, 'following step'), carriedText(pre)].filter(Boolean)
+          return withParts.length ? `${title}, with ${andList(withParts as string[])}.` : `${title}.`
+        },
       )
       if (!r.ok) notify(r.error)
       return r
@@ -155,10 +173,18 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         answer = a
       }
       // "FDH done · 8 following steps moved 2 days later" when it moved them.
-      const doneText = () =>
-        answer === 'move_all' && move?.following.length
-          ? `${step.name} done · ${plural(move.following.length, 'following step')} moved ${daysWord(move.days)}`
-          : `${step.name} done`
+      // A Split done late or early names the parts it carries (DEV QA Z2):
+      // "Split - Transfer done, 2 days late. … P6.1 and … P6.2 moved with it".
+      const doneText = () => {
+        const following = answer === 'move_all' && move?.following.length ? plural(move.following.length, 'following step') : null
+        const parts = move ? carriedLabels(move) : []
+        if (move && parts.length) {
+          const off = move.days
+          const moved = following ? [...parts, following] : parts
+          return `${step.name} done, ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}. ${andList(moved)} moved with it`
+        }
+        return following ? `${step.name} done · ${following} moved ${daysWord(move!.days)}` : `${step.name} done`
+      }
       for (;;) {
         const r = await write<Record<string, unknown>>(
           () => api.post(path, { done_on: doneOn, batch_number: number, answer }),
@@ -198,6 +224,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       await refresh()
     } catch (err) {
       notify(prodError(err))
+      // A refused Undo ("Something changed since."): show what the server has now (DEV QA X5).
+      await refresh()
     } finally {
       setUndoing(false)
     }
@@ -293,18 +321,41 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
   const pill = (a: Answer) =>
     preview.default_answer === a ? <Chip label="Default" size="small" color="primary" variant="outlined" sx={{ ml: 1, height: 20 }} data-testid={`move-default-${a}`} /> : null
   const renum = renumberText(preview.renumbered[answer] ?? [])
+  const carried = carriedText(preview)
+  // Steps in several batches: say how many, and list what follows under each batch (QA minor 10).
+  const batches = preview.batches ?? []
+  const many = batches.length > 1
+  // One split batch and its parts only: "Galactic P5 and its 2 parts" (Matt, fix cycle 5).
+  const root = batches.find((b) => !b.split_parent_id)
+  const family = many && !!root && batches.every((b) => b === root || b.split_parent_id === root.id)
+  const line = (s: MovePreview['following'][number]) => (
+    <li key={s.id}>
+      {s.name} → {dayLabel(s.new_due_on)}
+    </li>
+  )
 
   return (
     <Dialog open onClose={onCancel} maxWidth="sm" fullWidth data-testid="move-prompt">
       <DialogTitle>
         {title}
-        {preview.batch_label && (
+        {many ? (
           <Typography variant="body2" color="text.secondary" data-testid="move-prompt-sub">
-            {preview.batch_label} · now {dayLabel(first.new_due_on)}
+            {family ? `${root!.label} and its ${plural(batches.length - 1, 'part')}` : `${batches.length} batches`} · {title}
           </Typography>
+        ) : (
+          preview.batch_label && (
+            <Typography variant="body2" color="text.secondary" data-testid="move-prompt-sub">
+              {preview.batch_label} · now {dayLabel(first.new_due_on)}
+            </Typography>
+          )
         )}
       </DialogTitle>
       <DialogContent>
+        {carried && (
+          <Typography variant="body2" sx={{ mb: 1 }} data-testid="move-carried">
+            {carried} move{carried.includes(' and ') ? '' : 's'} with it either way.
+          </Typography>
+        )}
         <RadioGroup value={answer} onChange={(e) => setAnswer(e.target.value as Answer)}>
           <FormControlLabel
             value="move_all"
@@ -317,11 +368,20 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
             }
           />
           <Box component="ul" sx={{ m: 0, mb: 1.5, pl: 6, color: 'text.secondary', fontSize: 14 }} data-testid="move-following">
-            {preview.following.map((s) => (
-              <li key={s.id}>
-                {s.name} → {dayLabel(s.new_due_on)}
-              </li>
-            ))}
+            {many
+              ? batches
+                  .filter((b) => preview.following.some((s) => s.batch_id === b.id))
+                  .map((b) => (
+                    <li key={`b-${b.id}`} data-testid={`move-following-batch-${b.id}`}>
+                      <Box component="span" sx={{ fontWeight: 600, color: 'text.primary' }}>
+                        {b.label}
+                      </Box>
+                      <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                        {preview.following.filter((s) => s.batch_id === b.id).map(line)}
+                      </Box>
+                    </li>
+                  ))
+              : preview.following.map(line)}
           </Box>
           <FormControlLabel
             value="move_only"

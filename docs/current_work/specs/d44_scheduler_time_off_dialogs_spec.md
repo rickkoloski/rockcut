@@ -13,6 +13,7 @@
 |---|---|---|---|
 | 1 | Clicking **approved** time off in the Scheduler's week grid opens a dialog with its details | Matt, 2026-10-14 | UI |
 | 2 | Clicking **pending** time off opens a dialog with the request and its notes, and **Approve** / **Deny** | Matt, 2026-10-14 | UI |
+| 0 | **Do this first: split `Schedule.tsx`** (625 lines; both routes render it with `forceView`) into `ViewSchedule.tsx` (`/schedule`) and `Scheduler.tsx` (`/scheduler`). The shared loading (shifts, events, time off, availability, conflicts) moves into one hook, and the shift and event dialogs stay shared. It's a refactor with no behavior change: the existing Scheduler and View Schedule Playwright specs must pass unchanged. It also replaces task 4707's interim `key` fix. | Matt, 2026-10-22 (from task 4707) | UI |
 
 No new API. The dialogs use D25's endpoints: `GET /api/time_off` (the
 Scheduler already loads the week's requests, every status),

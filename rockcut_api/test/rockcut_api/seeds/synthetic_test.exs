@@ -866,7 +866,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       {tanks, templates}
     end
 
-    test "seeds nine tanks, Serving 2's periods and three complete [SEED] templates" do
+    test "seeds thirteen tanks, Serving 2's periods and three complete [SEED] templates" do
       {:ok, _} = Synthetic.setup()
       today = Tasks.today()
       tanks = Production.list_tanks()
@@ -882,11 +882,15 @@ defmodule RockcutApi.Seeds.SyntheticTest do
                {"FV5", "unitank", 20, "brewhouse"},
                {"FV6", "unitank", 20, "brewhouse"},
                {"FV7", "unitank", 30, "brewhouse"},
+               {"FV8", "unitank", 20, "brewhouse"},
+               {"FV9", "unitank", 20, "brewhouse"},
                {"Serving 1", "serving", 30, "walk_in"},
-               {"Serving 2", "serving", 30, "walk_in"}
+               {"Serving 2", "serving", 30, "walk_in"},
+               {"Serving 3", "serving", 30, "walk_in"},
+               {"Serving 4", "serving", 30, "walk_in"}
              ]
 
-      serving2 = List.last(tanks)
+      serving2 = Enum.find(tanks, &(&1.name == "Serving 2"))
 
       assert Enum.map(serving2.outages, &{&1.starts_on, &1.ends_on, &1.reason}) == [
                {Date.add(today, -30), Date.add(today, -28), "Pressure relief valve"},
@@ -1093,6 +1097,40 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert "Riley Wort" in assigned
     end
 
+    test "D48: a split batch, an added filter, a clean and a dirty mark" do
+      {:ok, _} = Synthetic.setup(@today)
+      sched = schedule()
+      labels = Enum.map(sched.batches, & &1.label)
+      assert "Altruism #39" in labels
+      assert "Altruism #39.1" in labels
+      assert "Altruism #39.2" in labels
+
+      fest = Enum.find(sched.batches, &(&1.label == "Fest #37"))
+      filter = Enum.find(fest.steps, &(RockcutApi.Production.Steps.name(&1) == "Filter"))
+      assert filter.added and filter.due_on == Date.add(@today, 3)
+      serving4 = Enum.find(sched.tanks, &(&1.name == "Serving 4")).id
+      assert Enum.find(fest.vessels, &(&1.vessel_index == 1)).tank_id == serving4
+
+      assert %{batch_label: "Altruism #39", state: "in_use"} = line(sched, "FV8")
+      # The part that stays isn't "filling a dirty tank".
+      refute Enum.any?(
+               sched.flags,
+               &(&1.kind == "dirty_fill" and &1.tank_id == line(sched, "FV8").tank_id)
+             )
+
+      assert %{line: "Sani 2 days"} = line(sched, "Serving 3")
+      assert %{line: "Empty · dirty 1 day · no CIP planned"} = line(sched, "Serving 4")
+
+      assert Enum.any?(
+               sched.flags,
+               &(&1.kind == "dirty_fill" and
+                   &1.message =~
+                     "Fest #37 (after transfer 1) fills Serving 4, which was marked dirty")
+             )
+
+      assert [_, _] = Enum.filter(sched.marks, &String.starts_with?(&1.note, "[SEED] "))
+    end
+
     test "setup twice gives the same schedule" do
       {:ok, _} = Synthetic.setup(@today)
       first = schedule()
@@ -1129,12 +1167,56 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       {:ok, _} = Signoffs.sign_off(%{"key" => "no_tank:#{temp.id}.0", "signature" => "x"}, brewer)
 
+      # D48: a split's parts and a tagged mark go too.
+      {:ok, %{part_ids: part_ids}} =
+        RockcutApi.Production.Splits.split(Repo.get!(Batch, temp.id), %{
+          "due_on" => "2026-11-10",
+          "parts" => [%{"stays" => true, "volume_bbl" => 10}, %{"volume_bbl" => 10}]
+        })
+
+      {:ok, mark} =
+        RockcutApi.Production.ConditionMarks.create(
+          Repo.get_by!(RockcutApi.Production.Tank, name: "FV6"),
+          %{"state" => "clean", "note" => "[TEST-TEMP] P114"},
+          brewer,
+          @today
+        )
+
       :ok = Synthetic.cleanup_temp()
+      refute Enum.any?(part_ids, &Repo.get(Batch, &1))
+      refute Repo.get(RockcutApi.Production.ConditionMark, mark.id)
 
       refute Repo.get(Batch, temp.id)
       refute Repo.get(Step, cip.id)
       refute Signoffs.get_by_key("no_tank:#{temp.id}.0")
       assert Enum.any?(Signoffs.list(), &String.starts_with?(&1.flag_key, "too_big"))
+    end
+
+    test "cleanup_temp removes a [TEST-TEMP] brand's split batch and its parts" do
+      {:ok, _} = Synthetic.setup(@today)
+      [template | _] = Production.list_templates()
+      brand = Repo.insert!(%Brand{name: "[TEST-TEMP] Split brand"})
+      fv = Repo.get_by!(RockcutApi.Production.Tank, name: "FV6")
+
+      {:ok, {batch, _}} =
+        Batches.plan(%{
+          "brand_id" => brand.id,
+          "template_id" => template.id,
+          "brew_on" => "2026-11-02",
+          "volume_bbl" => 20,
+          "tank_ids" => [fv.id]
+        })
+
+      {:ok, %{part_ids: part_ids}} =
+        RockcutApi.Production.Splits.split(Repo.get!(Batch, batch.id), %{
+          "due_on" => "2026-11-10",
+          "parts" => [%{"stays" => true, "volume_bbl" => 10}, %{"volume_bbl" => 10}]
+        })
+
+      :ok = Synthetic.cleanup_temp()
+      refute Repo.get(Batch, batch.id)
+      refute Enum.any?(part_ids, &Repo.get(Batch, &1))
+      refute Repo.get(Brand, brand.id)
     end
   end
 end

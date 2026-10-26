@@ -36,6 +36,13 @@ export interface ApiTemplate {
 
 const P = '/api/production'
 
+/** A cleanup request: anything but 2xx (or a status in `allow`) fails with the status and body, so a leak can't pass silently. */
+export async function succeeds(req: ReturnType<APIRequestContext['get']>, what: string, allow: number[] = []) {
+  const res = await req
+  if (!res.ok() && !allow.includes(res.status())) throw new Error(`Cleanup: ${what} returned ${res.status()} ${await res.text()}`)
+  return res
+}
+
 async function ok<T>(res: Awaited<ReturnType<APIRequestContext['get']>>, status = 200): Promise<T> {
   expect(res.status(), await res.text()).toBe(status)
   return ((await res.json()) as { data: T }).data
@@ -58,11 +65,11 @@ export async function addOutage(tankId: number, starts_on: string, ends_on: stri
 /** Retire tanks a spec made (and put the active order back if given). */
 export async function retireTanks(ids: number[], order?: number[]) {
   const api = await apiAs('brewer1')
-  for (const id of ids) await api.delete(`${P}/tanks/${id}`)
+  for (const id of ids) await succeeds(api.delete(`${P}/tanks/${id}`), `retire tank ${id}`)
   if (order) {
     const active = await activeTankIds()
     const kept = order.filter((id) => active.includes(id))
-    await api.post(`${P}/tanks/reorder`, { data: { ids: [...kept, ...active.filter((id) => !kept.includes(id))] } })
+    await succeeds(api.post(`${P}/tanks/reorder`, { data: { ids: [...kept, ...active.filter((id) => !kept.includes(id))] } }), 'put the tank order back')
   }
 }
 
@@ -93,7 +100,7 @@ export async function addTemplateStep(id: number, attrs: Record<string, unknown>
 /** Retire whatever these specs made, by kind. */
 export async function retireAll(kind: 'templates' | 'step_types' | 'phases', ids: number[]) {
   const api = await apiAs('brewer1')
-  for (const id of ids) await api.delete(`${P}/${kind}/${id}`)
+  for (const id of ids) await succeeds(api.delete(`${P}/${kind}/${id}`), `retire ${kind} ${id}`)
 }
 
 /** The id at the end of a `data-testid` such as `tank-name-12`. */

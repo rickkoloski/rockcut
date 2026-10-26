@@ -25,9 +25,11 @@ defmodule RockcutApi.Production.Steps do
   alias RockcutApi.{Accounts, Authz, Repo, Tasks}
   alias RockcutApi.Accounts.User
   alias RockcutApi.Brewing.Batch
-  alias RockcutApi.Production.{Batches, Phase, Step, StepLink, StepType}
+  alias RockcutApi.Production.{Batches, Parts, Phase, Step, StepLink, StepType}
 
   @answers ~w(move_all move_only)
+  # What empties a tank (D48 DEV QA Y2).
+  @exits ~w(split transfer package)
   @max_days 365
 
   ## Names
@@ -37,6 +39,8 @@ defmodule RockcutApi.Production.Steps do
   "Package - Partial - kegs", "Brew day - 1 of 2", a custom step's own name,
   or a marker's phase. Needs `step_type` and `phase` preloaded.
   """
+  def name(%Step{step_type_id: nil, name: name}) when is_binary(name), do: name
+
   def name(%Step{step_type: nil} = s) do
     case s.phase do
       %Phase{name: name} -> name
@@ -77,6 +81,9 @@ defmodule RockcutApi.Production.Steps do
 
   # Every step of the batches the steps `ids` belong to (standalone CIPs:
   # just themselves), with their links. `:not_found` if any id is missing.
+  # D48 DEV QA Y1: a split batch comes with its whole family (the parent and
+  # every part), and the parent's Split links to each part's first steps
+  # (`Parts.split_links/3`), so a move walks on into the parts.
   defp graph!(ids) do
     rows = Repo.all(from(s in Step, where: s.id in ^ids, select: {s.id, s.batch_id}))
     if length(rows) != length(Enum.uniq(ids)), do: Repo.rollback(:not_found)
@@ -84,22 +91,55 @@ defmodule RockcutApi.Production.Steps do
     batch_ids = rows |> Enum.map(&elem(&1, 1)) |> Enum.reject(&is_nil/1) |> Enum.uniq()
     standalone = for {id, nil} <- rows, do: id
 
+    roots =
+      Repo.all(
+        from(b in Batch, where: b.id in ^batch_ids, select: coalesce(b.split_parent_id, b.id))
+      )
+      |> Enum.uniq()
+
+    family =
+      Repo.all(
+        from(b in Batch,
+          where: b.id in ^roots or b.split_parent_id in ^roots,
+          select: {b.id, b.split_parent_id}
+        )
+      )
+
     steps =
       Repo.all(
         from(s in Step,
-          where: s.batch_id in ^batch_ids or s.id in ^standalone,
+          where: s.batch_id in ^Enum.map(family, &elem(&1, 0)) or s.id in ^standalone,
           preload: [:step_type, :phase]
         )
       )
 
     step_ids = Enum.map(steps, & &1.id)
     links = Repo.all(from(l in StepLink, where: l.from_step_id in ^step_ids))
+    by_batch = Enum.group_by(steps, & &1.batch_id)
+    links = links ++ split_links(family, by_batch, links)
 
     %{
       steps: Map.new(steps, &{&1.id, &1}),
       out: Enum.group_by(links, & &1.from_step_id),
-      links: links
+      links: links,
+      parts:
+        for({id, parent} <- family, parent, do: {parent, id})
+        |> Enum.group_by(&elem(&1, 0), &elem(&1, 1))
     }
+  end
+
+  defp split_links(family, by_batch, links) do
+    for {part, parent} <- family,
+        parent,
+        split = by_batch |> Map.get(parent, []) |> Enum.find(&(behavior(&1) == "split")),
+        split,
+        l <- Parts.split_links(split, Map.get(by_batch, part, []), links),
+        do: l
+  end
+
+  # A batch's Split step in `graph`, or nil.
+  defp split_parts(graph, %Step{} = split) do
+    if behavior(split) == "split", do: Map.get(graph.parts, split.batch_id, []), else: []
   end
 
   @doc false
@@ -124,13 +164,17 @@ defmodule RockcutApi.Production.Steps do
   end
 
   # The move: the steps moved, the following ones, and the default answer.
+  # D48 DEV QA Y1: a moved Split carries its parts' steps whatever the
+  # answer (`carried`); the parts are only reached as following steps
+  # through a Split that follows.
   defp plan(graph, moved, days) do
     first = Enum.min_by(moved, &{Date.to_gregorian_days(&1.due_on), &1.id})
     ids = Enum.map(moved, & &1.id)
+    carried = Enum.flat_map(moved, &part_steps!(graph, &1)) |> Enum.reject(&(&1.id in ids))
 
     following =
       graph
-      |> following_ids(ids)
+      |> following_ids(ids ++ Enum.map(carried, & &1.id))
       |> Enum.map(&graph.steps[&1])
       |> Enum.sort_by(&{Date.to_gregorian_days(&1.due_on), &1.position, &1.id})
 
@@ -147,12 +191,55 @@ defmodule RockcutApi.Production.Steps do
         true -> "move_all"
       end
 
-    %{days: days, first: first, moved: moved, following: following, default: default}
+    %{
+      days: days,
+      first: first,
+      moved: moved,
+      carried: carried,
+      following: following,
+      default: default
+    }
   end
+
+  # The steps of `split`'s parts (none for another step), refused while one
+  # of them is done (`:part_done`): the parts move with their split as one.
+  defp part_steps!(graph, %Step{} = split) do
+    case split_parts(graph, split) do
+      [] ->
+        []
+
+      parts ->
+        steps =
+          graph.steps
+          |> Map.values()
+          |> Enum.filter(&(&1.batch_id in parts))
+          |> Enum.sort_by(&{Date.to_gregorian_days(&1.due_on), &1.position, &1.id})
+
+        case Enum.find(steps, & &1.done_on) do
+          nil ->
+            steps
+
+          done ->
+            batch = Repo.get!(Batch, done.batch_id) |> Repo.preload(:brand)
+            Repo.rollback({:part_done, Batches.label(batch, Batches.p_numbers()), name(done)})
+        end
+    end
+  end
+
+  # Move all takes a following Split's parts too (they're among the
+  # following steps); refused as for a moved Split while one is done.
+  defp parts_follow!(graph, plan, "move_all"),
+    do: Enum.each(plan.following, &part_steps!(graph, &1))
+
+  defp parts_follow!(_graph, _plan, _answer), do: :ok
 
   # `%{step_id => new date}` for an answer.
   defp changes(plan, answer) do
-    steps = if answer == "move_all", do: plan.moved ++ plan.following, else: plan.moved
+    steps =
+      if answer == "move_all",
+        do: plan.moved ++ plan.carried ++ plan.following,
+        else: plan.moved ++ plan.carried
+
     Map.new(steps, &{&1.id, Date.add(&1.due_on, plan.days)})
   end
 
@@ -194,7 +281,16 @@ defmodule RockcutApi.Production.Steps do
       days: plan.days,
       batch_id: plan.first.batch_id,
       batch_label: batch_label(plan.first.batch_id, pnums),
+      # D48 DEV QA minor 10: every batch the move touches, for the prompt's groups.
+      batches:
+        (plan.moved ++ plan.carried ++ plan.following)
+        |> Enum.map(& &1.batch_id)
+        |> Enum.reject(&is_nil/1)
+        |> Enum.uniq()
+        |> Enum.map(&batch_brief(&1, pnums)),
       moved: Enum.map(plan.moved, &brief(&1, plan.days)),
+      # D48 DEV QA Y1: a moved Split's parts, which go with it either way.
+      carried: Enum.map(plan.carried, &brief(&1, plan.days)),
       following: Enum.map(plan.following, &brief(&1, plan.days)),
       default_answer: plan.default,
       out_of_order: per_answer.(&out_of_order(graph, &1, done)),
@@ -203,7 +299,20 @@ defmodule RockcutApi.Production.Steps do
   end
 
   defp brief(%Step{} = s, days) do
-    %{id: s.id, name: name(s), due_on: s.due_on, new_due_on: Date.add(s.due_on, days)}
+    %{
+      id: s.id,
+      batch_id: s.batch_id,
+      name: name(s),
+      due_on: s.due_on,
+      new_due_on: Date.add(s.due_on, days)
+    }
+  end
+
+  # A batch in the prompt's groups; `split_parent_id` lets it say "P5 and
+  # its 2 parts" (Matt, fix cycle 5).
+  defp batch_brief(batch_id, pnums) do
+    batch = Repo.get!(Batch, batch_id) |> Repo.preload(:brand)
+    %{id: batch.id, label: Batches.label(batch, pnums), split_parent_id: batch.split_parent_id}
   end
 
   defp batch_label(nil, _pnums), do: nil
@@ -247,6 +356,7 @@ defmodule RockcutApi.Production.Steps do
           Repo.rollback({:answer_required, preview(graph, plan)})
 
         true ->
+          parts_follow!(graph, plan, answer)
           changes = changes(plan, answer || "move_only")
           {_, renumbered} = Batches.with_renumbering(fn -> write_dates!(graph, changes) end)
 
@@ -267,7 +377,8 @@ defmodule RockcutApi.Production.Steps do
   (`Batches.check_number/2`; the batch becomes `fermenting`). Done on
   another day than planned, the step moves to that day and `answer` says
   what happens to the following steps, as in `move/3`. A full Package
-  completes the batch; a partial one changes nothing.
+  completes the batch; a partial one changes nothing. A Split (D48)
+  completes the parent and the parts become `fermenting`.
 
   `preview: true` returns `{:ok, {:preview, %{move, done_on,
   needs_batch_number, next_batch_number}}}` (`move` nil when it's done on
@@ -284,6 +395,8 @@ defmodule RockcutApi.Production.Steps do
       done_on = done_on!(attrs["done_on"], today)
       answer = answer!(attrs["answer"])
       batch = step.batch_id && Repo.get!(Batch, step.batch_id)
+
+      check_off_order!(graph, step, batch)
 
       numbering? =
         batch != nil and batch.status == "planned" and first_brew?(step, Map.values(graph.steps))
@@ -312,6 +425,7 @@ defmodule RockcutApi.Production.Steps do
         if plan && plan.following != [] && is_nil(answer),
           do: Repo.rollback({:answer_required, preview(graph, plan, [step.id], leaving)})
 
+        if plan, do: parts_follow!(graph, plan, answer)
         changes = if plan, do: changes(plan, answer || "move_only"), else: %{}
 
         {_, renumbered} =
@@ -335,6 +449,11 @@ defmodule RockcutApi.Production.Steps do
 
               batch && behavior(step) == "package" && not step.package_partial ->
                 batch |> Changeset.change(status: "completed") |> Repo.update!()
+
+              # D48: the Split ends the parent's part and fills the parts.
+              batch && behavior(step) == "split" ->
+                batch |> Changeset.change(status: "completed") |> Repo.update!()
+                set_parts_status(batch, "fermenting")
 
               true ->
                 :ok
@@ -364,6 +483,8 @@ defmodule RockcutApi.Production.Steps do
       batch = step.batch_id && Repo.get!(Batch, step.batch_id) |> Repo.preload(:brand)
       first_brew? = batch != nil and first_brew?(step, Map.values(graph.steps))
 
+      uncheck_order!(graph, step, batch)
+
       {message, renumbered} =
         Batches.with_renumbering(fn ->
           step
@@ -379,19 +500,97 @@ defmodule RockcutApi.Production.Steps do
                 do: "#{label} is planned again; its number is freed.",
                 else: "#{label} is planned again."
 
+            # D48 DEV QA Y2: back to what its steps support, never a brewed
+            # status without brew day.
             batch && batch.status == "completed" && behavior(step) == "package" &&
                 not step.package_partial ->
-              batch |> Changeset.change(status: "fermenting") |> Repo.update!()
+              batch |> Changeset.change(open_status(graph, batch)) |> Repo.update!()
+              nil
+
+            # D48: the parts aren't filled any more (`unfill_parts/3`).
+            batch && behavior(step) == "split" ->
+              if batch.status == "completed",
+                do: batch |> Changeset.change(open_status(graph, batch)) |> Repo.update!()
+
               nil
 
             true ->
               nil
           end
+          |> tap(fn _ -> unfill_parts(graph, batch, step) end)
         end)
 
       %{batch_ids: batch_ids([step.id], graph), renumbered: renumbered, message: message}
     end)
   end
+
+  ## The order rules
+
+  @doc """
+  D48 DEV QA AA1: an Undo that changes steps' done state obeys the same
+  order rules as checking them off or un-checking them. `done_ids`: the
+  steps it marks done, `undone_ids`: the ones it marks not done, each
+  checked against the schedule as the Undo leaves it. Inside a transaction;
+  a refusal rolls it back with the rule's own reason.
+  """
+  def order_after_undo!(done_ids, undone_ids) do
+    case done_ids ++ undone_ids do
+      [] ->
+        :ok
+
+      ids ->
+        graph = graph!(ids)
+        batch = &(&1.batch_id && Repo.get!(Batch, &1.batch_id))
+        for id <- done_ids, s = graph.steps[id], do: check_off_order!(graph, s, batch.(s))
+        for id <- undone_ids, s = graph.steps[id], do: uncheck_order!(graph, s, batch.(s))
+        :ok
+    end
+  end
+
+  # D48 DEV QA Y2: what empties a tank (a Split, a Transfer/Filter, a
+  # Package) waits for brew day (a part's: its parent's), as the batch
+  # number does. Z1: a part's exit waits for its parent's Split too.
+  defp check_off_order!(graph, step, batch) do
+    if batch && behavior(step) in @exits && not brewed?(graph, batch),
+      do: Repo.rollback({:before_brew_day, :check_off})
+
+    case batch && behavior(step) in @exits && parent_split(graph, batch) do
+      %Step{done_on: nil} = split -> Repo.rollback({:before_split, :check_off, name(split)})
+      _ -> :ok
+    end
+  end
+
+  # Y2: brew day stays done while anything after it that empties a tank is
+  # done, in the batch or its parts (AA2: a part's named). Z1: and the Split
+  # stays done while a part's exit is.
+  defp uncheck_order!(graph, step, batch) do
+    if batch != nil and first_brew?(step, Map.values(graph.steps)) do
+      case Enum.find(Map.values(graph.steps), &(&1.done_on && behavior(&1) in @exits)) do
+        nil ->
+          :ok
+
+        %Step{batch_id: id} = done when id == step.batch_id ->
+          Repo.rollback({:exit_done, name(done)})
+
+        done ->
+          Repo.rollback({:exit_done, "#{part_label(done)}: #{name(done)}"})
+      end
+    end
+
+    if behavior(step) == "split" do
+      parts = split_parts(graph, step)
+
+      case Enum.find(Map.values(graph.steps), fn s ->
+             s.batch_id in parts and s.done_on != nil and behavior(s) in @exits
+           end) do
+        nil -> :ok
+        done -> Repo.rollback({:part_exit_done, part_label(done), name(done)})
+      end
+    end
+  end
+
+  defp part_label(%Step{batch_id: id}),
+    do: Repo.get!(Batch, id) |> Repo.preload(:brand) |> Batches.label(Batches.p_numbers())
 
   ## The step dialog
 
@@ -399,7 +598,9 @@ defmodule RockcutApi.Production.Steps do
   Edit a step: `detail`, `temperature` (Set temp, required there; Brew
   day's starting temperature), `package_partial` (an unfinished Package;
   `:step_done` once done), `notes`, `on_task_list`, `assignee_id` (a Brewery
-  member, or nil). Other fields are ignored.
+  member, or nil). A date (`due_on`, `done_on`, `completed_at`) is refused
+  with `:date_not_here` (D48 DEV QA Z3): dates change by moving the step or
+  checking it off. Other fields are ignored.
   """
   def update(%Step{} = step, attrs) do
     step = Repo.preload(step, :step_type)
@@ -411,20 +612,26 @@ defmodule RockcutApi.Production.Steps do
       |> then(&if(b in ["set_temp", "brew"], do: &1, else: Map.delete(&1, "temperature")))
       |> then(&if(b == "package", do: &1, else: Map.delete(&1, "package_partial")))
 
-    if Map.has_key?(attrs, "package_partial") and step.done_on != nil and
-         truthy?(attrs["package_partial"]) != step.package_partial do
-      {:error, :step_done}
-    else
-      step
-      |> Step.edit_changeset(attrs)
-      |> then(
-        &if(b == "set_temp",
-          do: Changeset.validate_required(&1, [:temperature], message: "Enter the temperature."),
-          else: &1
+    cond do
+      Enum.any?(~w(due_on done_on completed_at), &Map.has_key?(attrs, &1)) ->
+        {:error, :date_not_here}
+
+      Map.has_key?(attrs, "package_partial") and step.done_on != nil and
+          truthy?(attrs["package_partial"]) != step.package_partial ->
+        {:error, :step_done}
+
+      true ->
+        step
+        |> Step.edit_changeset(attrs)
+        |> then(
+          &if(b == "set_temp",
+            do:
+              Changeset.validate_required(&1, [:temperature], message: "Enter the temperature."),
+            else: &1
+          )
         )
-      )
-      |> validate_assignee()
-      |> Repo.update()
+        |> validate_assignee()
+        |> Repo.update()
     end
   end
 
@@ -460,6 +667,63 @@ defmodule RockcutApi.Production.Steps do
     do: Authz.can_take_task?(Accounts.get_user(id), "brewery")
 
   ## Helpers
+
+  # Whether `batch`'s brew day (a part's: its parent's first Brew day) is
+  # done; a batch without one counts as brewed.
+  defp brewed?(graph, %Batch{} = batch) do
+    root = batch.split_parent_id || batch.id
+
+    brew =
+      graph.steps |> Map.values() |> Enum.filter(&(&1.batch_id == root)) |> Parts.first_brew()
+
+    brew == nil or brew.done_on != nil
+  end
+
+  # A batch whose exit is no longer done: fermenting once brewed (a part:
+  # once filled), else planned without a number.
+  defp open_status(graph, %Batch{split_parent_id: nil} = batch) do
+    if brewed?(graph, batch),
+      do: [status: "fermenting"],
+      else: [status: "planned", batch_number: nil]
+  end
+
+  # D48 DEV QA Z1: a part is filled by its parent's Split, so it's planned
+  # until that's done.
+  defp open_status(graph, %Batch{} = part) do
+    case parent_split(graph, part) do
+      %Step{done_on: nil} -> [status: "planned"]
+      _ -> [status: "fermenting"]
+    end
+  end
+
+  # A part's parent's Split (nil for a batch that isn't a part).
+  defp parent_split(_graph, %Batch{split_parent_id: nil}), do: nil
+
+  defp parent_split(graph, %Batch{split_parent_id: parent}),
+    do:
+      graph.steps
+      |> Map.values()
+      |> Enum.find(&(&1.batch_id == parent and behavior(&1) == "split"))
+
+  # D48 DEV QA Z1: after any un-check in a split family whose Split isn't
+  # done (or is the step un-checked), every part is planned, whatever its
+  # own steps; this also puts right a part left fermenting before the fix.
+  defp unfill_parts(_graph, nil, _step), do: :ok
+
+  defp unfill_parts(graph, %Batch{} = batch, %Step{} = step) do
+    root = batch.split_parent_id || batch.id
+
+    case Enum.find(Map.values(graph.steps), &(&1.batch_id == root and behavior(&1) == "split")) do
+      %Step{} = split when split.id == step.id or is_nil(split.done_on) ->
+        set_parts_status(%Batch{id: root}, "planned")
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp set_parts_status(%Batch{id: id}, status),
+    do: Repo.update_all(from(b in Batch, where: b.split_parent_id == ^id), set: [status: status])
 
   defp batch_ids(step_ids, graph) do
     step_ids
