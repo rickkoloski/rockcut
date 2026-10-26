@@ -97,8 +97,12 @@ defmodule RockcutApiWeb.ProductionControllerTest do
                  "outage_not_current"
       end
 
+      # On another tank, so it can't overlap the Oct 27 period whatever today is.
+      other =
+        call(b, :post, "/api/production/tanks", %{name: "Serving 9", capacity_bbl: 30}) |> body()
+
       now =
-        call(b, :post, "/api/production/tanks/#{id}/outages", %{
+        call(b, :post, "/api/production/tanks/#{other["data"]["id"]}/outages", %{
           starts_on: Date.to_iso8601(Date.add(today, -3)),
           ends_on: Date.to_iso8601(Date.add(today, 2))
         })

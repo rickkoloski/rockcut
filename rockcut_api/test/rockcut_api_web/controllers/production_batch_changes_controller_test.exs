@@ -540,4 +540,45 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
                "Galactic P1.2: Carb is already done, so the split can't move. Mark it not done first."
            }
   end
+
+  test "DEV QA fix cycle 6 (Z1): a part's exit waits for the Split, which stays done", ctx do
+    b = ctx["brewer1"]
+
+    {:ok, %{part_ids: [_, p2]}} =
+      RockcutApi.Production.Splits.split(ctx.batch, %{
+        "due_on" => "2026-11-13",
+        "parts" => [
+          %{"stays" => true, "volume_bbl" => "12"},
+          %{"tank_id" => tank!("FV6").id, "volume_bbl" => "8"}
+        ]
+      })
+
+    part = Repo.get!(RockcutApi.Brewing.Batch, p2)
+    done!(named(ctx.batch, "Brew day"))
+    package = named(part, "Package")
+
+    for preview <- [true, false] do
+      refused =
+        call(b, :post, "/api/production/steps/#{package.id}/complete", %{
+          done_on: "2026-10-20",
+          answer: "move_only",
+          preview: preview
+        })
+
+      assert {refused.status, body(refused)} ==
+               {422,
+                %{"error" => "before_split", "message" => "Check off Split - Transfer first."}}
+    end
+
+    split = done!(named(ctx.batch, "Split - Transfer"))
+    done!(package)
+    refused = call(b, :post, "/api/production/steps/#{split.id}/uncomplete")
+
+    assert {refused.status, body(refused)} ==
+             {422,
+              %{
+                "error" => "part_exit_done",
+                "message" => "Mark Galactic P1.2: Package not done first."
+              }}
+  end
 end

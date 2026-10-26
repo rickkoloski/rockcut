@@ -386,6 +386,7 @@ Computed server-side by one function, returned with the schedule.
   - Volumes must add up to the batch's. Two parts can't share a tank.
   - The parent keeps its history up to the split. Each part is its own batch (`split_parent_id`, `part_number`) with its own copy of the remaining steps; numbered #40.1, #40.2 (P2.1 while planned), following the parent's number.
   - If no part stays, the tank left behind gets a CIP that day. Checking off the split fills each part. Like a Transfer/Filter and a Package, it can't be checked off before brew day ("Check off brew day first."; lead decisions 6, Y2).
+  - A part follows its Split (lead decisions 7, Z1): a part's Transfer/Filter or Package can't be checked off before its parent's Split ("Check off Split - Transfer first."; brew day first wins), and the Split can't be marked not done while a part's one is done ("Mark Galactic #40.2: Package not done first."). With the Split not done, every part is planned. A late or early check-off of the Split names the parts that moved with it (Z2).
   - A split batch moves as one (lead decisions 6, Y1): **Move all** on a parent step on or before the Split, and any move of the Split itself, move the parts' unfinished steps by the same days (listed under each part in the move prompt). A done step on a part refuses those moves. A part step dated before the Split is flagged "Steps out of order".
   - **Undo split** merges back (beer stays in the parent's tank, part 1's schedule kept) unless a part has finished steps.
   - Splitting a part again and blending are out of scope.

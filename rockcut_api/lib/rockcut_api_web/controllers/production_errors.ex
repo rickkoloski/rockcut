@@ -69,7 +69,9 @@ defmodule RockcutApiWeb.ProductionErrors do
     before_brew_day: "A step can't come before brew day.",
     split_before_brew: "The split has to be after brew day.",
     # D48 DEV QA fix cycle 2.
-    before_split: "A step can't come before the split."
+    before_split: "A step can't come before the split.",
+    # D48 DEV QA Z3: the step PATCH doesn't change dates.
+    date_not_here: "To change a step's date, move it (or check it off on the day it was done)."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
@@ -184,6 +186,14 @@ defmodule RockcutApiWeb.ProductionErrors do
 
   def handle({:error, {:exit_done, name}}, conn),
     do: refused(conn, "exit_done", "Mark #{name} not done first.")
+
+  # D48 DEV QA Z1: a part's exit waits for its parent's Split, and the Split
+  # stays done while a part's exit is.
+  def handle({:error, {:before_split, :check_off, name}}, conn),
+    do: refused(conn, "before_split", "Check off #{name} first.")
+
+  def handle({:error, {:part_exit_done, label, name}}, conn),
+    do: refused(conn, "part_exit_done", "Mark #{label}: #{name} not done first.")
 
   # D48 DEV QA Y1: a split moves with its parts, so not while a part's step is done.
   def handle({:error, {:part_done, label, name}}, conn),

@@ -61,9 +61,12 @@ const daysWord = (days: number) => `${plural(Math.abs(days), 'day')} ${days > 0 
 const andList = (items: string[]) => (items.length < 2 ? (items[0] ?? '') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`)
 
 /** The parts a moved Split takes along ("Galactic P5.1 and Galactic P5.2"), or null. */
-const carriedText = (pre: MovePreview) => {
+const carriedLabels = (pre: MovePreview) => {
   const ids = new Set((pre.carried ?? []).map((s) => s.batch_id))
-  const labels = (pre.batches ?? []).filter((b) => ids.has(b.id)).map((b) => b.label)
+  return (pre.batches ?? []).filter((b) => ids.has(b.id)).map((b) => b.label)
+}
+const carriedText = (pre: MovePreview) => {
+  const labels = carriedLabels(pre)
   return labels.length ? andList(labels) : null
 }
 
@@ -170,10 +173,18 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         answer = a
       }
       // "FDH done · 8 following steps moved 2 days later" when it moved them.
-      const doneText = () =>
-        answer === 'move_all' && move?.following.length
-          ? `${step.name} done · ${plural(move.following.length, 'following step')} moved ${daysWord(move.days)}`
-          : `${step.name} done`
+      // A Split done late or early names the parts it carries (DEV QA Z2):
+      // "Split - Transfer done, 2 days late. … P6.1 and … P6.2 moved with it".
+      const doneText = () => {
+        const following = answer === 'move_all' && move?.following.length ? plural(move.following.length, 'following step') : null
+        const parts = move ? carriedLabels(move) : []
+        if (move && parts.length) {
+          const off = move.days
+          const moved = following ? [...parts, following] : parts
+          return `${step.name} done, ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}. ${andList(moved)} moved with it`
+        }
+        return following ? `${step.name} done · ${following} moved ${daysWord(move!.days)}` : `${step.name} done`
+      }
       for (;;) {
         const r = await write<Record<string, unknown>>(
           () => api.post(path, { done_on: doneOn, batch_number: number, answer }),

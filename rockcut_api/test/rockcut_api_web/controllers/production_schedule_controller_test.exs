@@ -148,6 +148,25 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
     assert bad.status == 422
     assert body(bad)["errors"]["assignee_id"] == ["must be a Brewery member"]
 
+    # D48 DEV QA Z3: a date isn't changed here, so it's refused, not ignored;
+    # nothing else in the request is saved either.
+    for field <- ~w(due_on done_on completed_at) do
+      dated =
+        call(b, :patch, "/api/production/steps/#{fdh["id"]}", %{field => "2026-11-12", notes: "x"})
+
+      assert {dated.status, body(dated)} ==
+               {422,
+                %{
+                  "error" => "date_not_here",
+                  "message" =>
+                    "To change a step's date, move it (or check it off on the day it was done)."
+                }}
+    end
+
+    fdh_now = Repo.get!(RockcutApi.Production.Step, fdh["id"])
+    assert fdh_now.due_on == Date.from_iso8601!(fdh["due_on"])
+    assert fdh_now.notes == "Watch the glycol"
+
     unassigned =
       call(b, :patch, "/api/production/batches/#{batch["id"]}/vessels/0", %{tank_id: nil})
 

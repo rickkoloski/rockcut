@@ -1,7 +1,8 @@
 defmodule RockcutApi.Production.SplitMovesTest do
   @moduledoc """
   D48 DEV QA fix cycle 5: a split batch moves as one tree (Y1), and what
-  empties a tank waits for brew day (Y2).
+  empties a tank waits for brew day (Y2). Fix cycle 6 (Z1): a part's exit
+  waits for its parent's Split, and the Split stays done while one is.
   """
   use RockcutApi.DataCase
 
@@ -290,6 +291,127 @@ defmodule RockcutApi.Production.SplitMovesTest do
       assert Batches.p_numbers()[ctx.batch.id]
       assert {:ok, _} = Splits.undo_split(reload(ctx.batch))
       assert {:ok, _} = Batches.delete_planned(reload(ctx.batch))
+    end
+  end
+
+  describe "Z1: a split part can't get ahead of its parent's Split" do
+    defp brew!(ctx) do
+      brew = named(ctx.batch, "Brew day")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+      brew
+    end
+
+    defp check!(step, ctx, today),
+      do: Steps.complete(step.id, %{"answer" => "move_only"}, ctx.brewer, today: today)
+
+    test "a part's Package waits for the Split, on either part (QA's route 2)", ctx do
+      brew!(ctx)
+      refusal = {:error, {:before_split, :check_off, "Split - Transfer"}}
+
+      # Part 1 stays in the tank, part 2 goes to FV6: both wait.
+      for part <- [ctx.p1, ctx.p2] do
+        package = named(part, "Package")
+
+        assert refusal ==
+                 Steps.complete(package.id, %{}, ctx.brewer, today: ~D[2026-11-22], preview: true)
+
+        assert refusal == check!(package, ctx, ~D[2026-11-22])
+        assert is_nil(named(part, "Package").done_on)
+        assert reload(part).status == "planned"
+      end
+
+      # Control: a part's Carb (not an exit) can still be checked off before the Split.
+      assert {:ok, _} = check!(named(ctx.p2, "Carb"), ctx, ~D[2026-11-16])
+      assert reload(ctx.p2).status == "planned"
+      assert {:ok, _} = Steps.uncomplete(named(ctx.p2, "Carb").id)
+      assert reload(ctx.p2).status == "planned"
+    end
+
+    test "before_brew_day wins over before_split", ctx do
+      package = named(ctx.p2, "Package")
+
+      assert {:error, {:before_brew_day, :check_off}} =
+               Steps.complete(package.id, %{}, ctx.brewer, today: ~D[2026-11-22], preview: true)
+    end
+
+    test "the Split stays done while a part's exit is (QA's route 1)", ctx do
+      brew = brew!(ctx)
+      split = split_step(ctx)
+      assert {:ok, _} = check!(split, ctx, ~D[2026-11-13])
+      assert {:ok, _} = check!(named(ctx.p2, "Package"), ctx, ~D[2026-11-22])
+      assert reload(ctx.p2).status == "completed"
+
+      assert {:error, {:part_exit_done, "Galactic #40.2", "Package"}} =
+               Steps.uncomplete(split.id)
+
+      assert split_step(ctx).done_on
+
+      # In order: the part's Package, then the Split, then brew day.
+      assert {:ok, _} = Steps.uncomplete(named(ctx.p2, "Package").id)
+      assert reload(ctx.p2).status == "fermenting"
+      assert {:ok, _} = Steps.uncomplete(split.id)
+      assert reload(ctx.p1).status == "planned"
+      assert reload(ctx.p2).status == "planned"
+      assert {:ok, _} = Steps.uncomplete(brew.id)
+      assert reload(ctx.batch).status == "planned"
+      assert reload(ctx.p2).status == "planned"
+    end
+
+    test "un-checking the Split makes every part planned, a part with a done step too", ctx do
+      brew!(ctx)
+      split = split_step(ctx)
+      assert {:ok, _} = check!(split, ctx, ~D[2026-11-13])
+      assert {:ok, _} = check!(named(ctx.p2, "Carb"), ctx, ~D[2026-11-16])
+      assert reload(ctx.p2).status == "fermenting"
+
+      assert {:ok, _} = Steps.uncomplete(split.id)
+      assert reload(ctx.p1).status == "planned"
+      assert reload(ctx.p2).status == "planned"
+    end
+
+    test "a part left fermenting before the fix is put right by the next un-check", ctx do
+      brew = brew!(ctx)
+      reload(ctx.p2) |> Ecto.Changeset.change(status: "fermenting") |> Repo.update!()
+
+      assert {:ok, _} = Steps.uncomplete(brew.id)
+      assert reload(ctx.p2).status == "planned"
+    end
+
+    test "a part's Transfer waits for the Split; an unsplit lager's order is unchanged", ctx do
+      t = lager_template!()
+      lager = plan!(brand!("Pils"), t, ~D[2026-09-01], %{"tank_ids" => [tank!("FV3").id]})
+      transfer = Enum.find(steps_of(lager), &(Steps.behavior(&1) == "transfer"))
+      package = named(lager, "Package")
+      lager_brew = named(lager, "Brew day")
+
+      {:ok, _} =
+        Steps.complete(lager_brew.id, %{"batch_number" => "41"}, ctx.brewer,
+          today: lager_brew.due_on
+        )
+
+      # Unsplit: Package before Transfer is still allowed, and un-checks to fermenting.
+      assert {:ok, _} = check!(package, ctx, package.due_on)
+      assert reload(lager).status == "completed"
+      assert {:ok, _} = Steps.uncomplete(package.id)
+      assert reload(lager).status == "fermenting"
+
+      # Split before the transfer: each part's Transfer waits for the Split.
+      split_on = Date.add(transfer.due_on, -3)
+
+      {:ok, %{part_ids: [q1, _]}} =
+        Splits.split(reload(lager), %{
+          "due_on" => Date.to_iso8601(split_on),
+          "parts" => [
+            %{"stays" => true, "volume_bbl" => "10"},
+            %{"tank_id" => tank!("FV7").id, "volume_bbl" => "10"}
+          ]
+        })
+
+      part_transfer =
+        Repo.get!(Batch, q1) |> steps_of() |> Enum.find(&(Steps.behavior(&1) == "transfer"))
+
+      assert {:error, {:before_split, :check_off, "Split - Transfer"}} =
+               check!(part_transfer, ctx, part_transfer.due_on)
     end
   end
 end
