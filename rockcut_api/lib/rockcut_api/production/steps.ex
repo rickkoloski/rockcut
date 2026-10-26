@@ -396,17 +396,7 @@ defmodule RockcutApi.Production.Steps do
       answer = answer!(attrs["answer"])
       batch = step.batch_id && Repo.get!(Batch, step.batch_id)
 
-      # D48 DEV QA Y2: what empties a tank (a Split, a Transfer/Filter, a
-      # Package) waits for brew day (a part's: its parent's), as the batch
-      # number does.
-      if batch && behavior(step) in @exits && not brewed?(graph, batch),
-        do: Repo.rollback({:before_brew_day, :check_off})
-
-      # D48 DEV QA Z1: a part's exit waits for its parent's Split too.
-      case batch && behavior(step) in @exits && parent_split(graph, batch) do
-        %Step{done_on: nil} = split -> Repo.rollback({:before_split, :check_off, name(split)})
-        _ -> :ok
-      end
+      check_off_order!(graph, step, batch)
 
       numbering? =
         batch != nil and batch.status == "planned" and first_brew?(step, Map.values(graph.steps))
@@ -493,31 +483,7 @@ defmodule RockcutApi.Production.Steps do
       batch = step.batch_id && Repo.get!(Batch, step.batch_id) |> Repo.preload(:brand)
       first_brew? = batch != nil and first_brew?(step, Map.values(graph.steps))
 
-      # D48 DEV QA Y2: brew day stays done while anything after it that
-      # empties a tank is done, in the batch or its parts.
-      if first_brew? do
-        case Enum.find(Map.values(graph.steps), &(&1.done_on && behavior(&1) in @exits)) do
-          nil -> :ok
-          done -> Repo.rollback({:exit_done, name(done)})
-        end
-      end
-
-      # D48 DEV QA Z1: and the Split stays done while a part's exit is.
-      if behavior(step) == "split" do
-        parts = split_parts(graph, step)
-
-        case Enum.find(Map.values(graph.steps), fn s ->
-               s.batch_id in parts and s.done_on != nil and behavior(s) in @exits
-             end) do
-          nil ->
-            :ok
-
-          done ->
-            part = Repo.get!(Batch, done.batch_id) |> Repo.preload(:brand)
-            label = Batches.label(part, Batches.p_numbers())
-            Repo.rollback({:part_exit_done, label, name(done)})
-        end
-      end
+      uncheck_order!(graph, step, batch)
 
       {message, renumbered} =
         Batches.with_renumbering(fn ->
@@ -557,6 +523,74 @@ defmodule RockcutApi.Production.Steps do
       %{batch_ids: batch_ids([step.id], graph), renumbered: renumbered, message: message}
     end)
   end
+
+  ## The order rules
+
+  @doc """
+  D48 DEV QA AA1: an Undo that changes steps' done state obeys the same
+  order rules as checking them off or un-checking them. `done_ids`: the
+  steps it marks done, `undone_ids`: the ones it marks not done, each
+  checked against the schedule as the Undo leaves it. Inside a transaction;
+  a refusal rolls it back with the rule's own reason.
+  """
+  def order_after_undo!(done_ids, undone_ids) do
+    case done_ids ++ undone_ids do
+      [] ->
+        :ok
+
+      ids ->
+        graph = graph!(ids)
+        batch = &(&1.batch_id && Repo.get!(Batch, &1.batch_id))
+        for id <- done_ids, s = graph.steps[id], do: check_off_order!(graph, s, batch.(s))
+        for id <- undone_ids, s = graph.steps[id], do: uncheck_order!(graph, s, batch.(s))
+        :ok
+    end
+  end
+
+  # D48 DEV QA Y2: what empties a tank (a Split, a Transfer/Filter, a
+  # Package) waits for brew day (a part's: its parent's), as the batch
+  # number does. Z1: a part's exit waits for its parent's Split too.
+  defp check_off_order!(graph, step, batch) do
+    if batch && behavior(step) in @exits && not brewed?(graph, batch),
+      do: Repo.rollback({:before_brew_day, :check_off})
+
+    case batch && behavior(step) in @exits && parent_split(graph, batch) do
+      %Step{done_on: nil} = split -> Repo.rollback({:before_split, :check_off, name(split)})
+      _ -> :ok
+    end
+  end
+
+  # Y2: brew day stays done while anything after it that empties a tank is
+  # done, in the batch or its parts (AA2: a part's named). Z1: and the Split
+  # stays done while a part's exit is.
+  defp uncheck_order!(graph, step, batch) do
+    if batch != nil and first_brew?(step, Map.values(graph.steps)) do
+      case Enum.find(Map.values(graph.steps), &(&1.done_on && behavior(&1) in @exits)) do
+        nil ->
+          :ok
+
+        %Step{batch_id: id} = done when id == step.batch_id ->
+          Repo.rollback({:exit_done, name(done)})
+
+        done ->
+          Repo.rollback({:exit_done, "#{part_label(done)}: #{name(done)}"})
+      end
+    end
+
+    if behavior(step) == "split" do
+      parts = split_parts(graph, step)
+
+      case Enum.find(Map.values(graph.steps), fn s ->
+             s.batch_id in parts and s.done_on != nil and behavior(s) in @exits
+           end) do
+        nil -> :ok
+        done -> Repo.rollback({:part_exit_done, part_label(done), name(done)})
+      end
+    end
+  end
+
+  defp part_label(%Step{batch_id: id}),
+    do: Repo.get!(Batch, id) |> Repo.preload(:brand) |> Batches.label(Batches.p_numbers())
 
   ## The step dialog
 

@@ -28,7 +28,7 @@ defmodule RockcutApi.Production.Undo do
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.User
   alias RockcutApi.Brewing.Batch
-  alias RockcutApi.Production.{BatchChanges, UndoRecord}
+  alias RockcutApi.Production.{BatchChanges, Steps, UndoRecord}
 
   @ttl_seconds 120
 
@@ -100,8 +100,23 @@ defmodule RockcutApi.Production.Undo do
       for e <- Enum.sort_by(gone, &{-rank(&1["table"]), -&1["id"]}),
           do: Repo.query!("DELETE FROM #{e["table"]} WHERE id = ?", [e["id"]])
 
+      # The steps it marks done or not done, against how they are now (a
+      # step it puts back counts as not done now).
+      flips =
+        for e <- back,
+            e["table"] == "production_steps",
+            done?(row(e["table"], e["id"])) != done?(e["before"]),
+            do: {e["id"], done?(e["before"])}
+
       for e <- Enum.sort_by(back, &{rank(&1["table"]), &1["id"]}),
           do: put_row!(e["table"], e["before"])
+
+      # D48 DEV QA AA1: and those follow the order rules a check-off or an
+      # un-check does (brew day, then the Split, then a part's exits).
+      Steps.order_after_undo!(
+        for({id, true} <- flips, do: id),
+        for({id, false} <- flips, do: id)
+      )
 
       # What it puts back follows the N1 rule, over a split's whole tree, as
       # any other change does (fix cycle 4).
@@ -310,6 +325,8 @@ defmodule RockcutApi.Production.Undo do
   end
 
   defp merge(a, b), do: Map.merge(a, b, fn _k, x, y -> Enum.uniq(x ++ y) end)
+
+  defp done?(row), do: (row || %{})["done_on"] != nil
 
   defp rank(table), do: Enum.find_index(@order, &(&1 == table))
 end

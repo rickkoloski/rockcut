@@ -3,6 +3,7 @@ defmodule RockcutApi.Production.SplitMovesTest do
   D48 DEV QA fix cycle 5: a split batch moves as one tree (Y1), and what
   empties a tank waits for brew day (Y2). Fix cycle 6 (Z1): a part's exit
   waits for its parent's Split, and the Split stays done while one is.
+  Fix cycle 7 (AA1, AA2): Undo obeys the same order.
   """
   use RockcutApi.DataCase
 
@@ -412,6 +413,159 @@ defmodule RockcutApi.Production.SplitMovesTest do
 
       assert {:error, {:before_split, :check_off, "Split - Transfer"}} =
                check!(part_transfer, ctx, part_transfer.due_on)
+    end
+  end
+
+  describe "AA1: Undo obeys the order rules" do
+    # Brew day done; part 2 gets a Transfer on Nov 18 into FV8.
+    setup ctx do
+      brew = named(ctx.batch, "Brew day")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+
+      {:ok, _} =
+        RockcutApi.Production.BatchChanges.add_transfer(reload(ctx.p2), %{
+          "due_on" => "2026-11-18",
+          "tank_id" => tank!("FV8").id
+        })
+
+      %{brew: brew, other: user_with_role("employee", "brewery")}
+    end
+
+    defp tracked(ctx, fun), do: Undo.track(ctx.brewer, %{batches: [ctx.batch.id]}, fun)
+
+    defp check(step, user, today),
+      do: Steps.complete(step.id, %{"answer" => "move_only"}, user, today: today)
+
+    defp transfer(ctx), do: named(ctx.p2, "Transfer")
+
+    defp done_ids(ctx),
+      do: for(b <- [ctx.batch, ctx.p1, ctx.p2], s <- steps_of(b), s.done_on, do: s.id)
+
+    test "path A: Undo of the Split's check-off after another user checks off a part's Transfer",
+         ctx do
+      {:ok, {_, token}} =
+        tracked(ctx, fn -> check(split_step(ctx), ctx.brewer, ~D[2026-11-13]) end)
+
+      assert {:ok, _} = check(transfer(ctx), ctx.other, ~D[2026-11-18])
+      before = done_ids(ctx)
+
+      assert {:error, {:part_exit_done, "Galactic #40.2", "Transfer"}} =
+               Undo.undo(ctx.brewer, token)
+
+      assert done_ids(ctx) == before
+      assert reload(ctx.p2).status == "fermenting"
+
+      # Still available: once the Transfer is not done, the same Undo works.
+      assert {:ok, _} = Steps.uncomplete(transfer(ctx).id)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert is_nil(split_step(ctx).done_on)
+      assert reload(ctx.p2).status == "planned"
+    end
+
+    test "path B: Undo of the Split's check-off after a part's Package - Partial", ctx do
+      {:ok, _} = Steps.update(named(ctx.p2, "Package"), %{"package_partial" => true})
+
+      {:ok, {_, token}} =
+        tracked(ctx, fn -> check(split_step(ctx), ctx.brewer, ~D[2026-11-13]) end)
+
+      partial = named(ctx.p2, "Package - Partial")
+      assert {:ok, _} = check(partial, ctx.brewer, ~D[2026-11-22])
+
+      assert {:error, {:part_exit_done, "Galactic #40.2", "Package - Partial"}} =
+               Undo.undo(ctx.brewer, token)
+
+      assert split_step(ctx).done_on
+
+      assert {:ok, _} = Steps.uncomplete(partial.id)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert is_nil(split_step(ctx).done_on)
+    end
+
+    test "path C: Undo of a part's Transfer un-check after the Split is un-checked", ctx do
+      assert {:ok, _} = check(split_step(ctx), ctx.brewer, ~D[2026-11-13])
+      assert {:ok, _} = check(transfer(ctx), ctx.brewer, ~D[2026-11-18])
+      {:ok, {_, token}} = tracked(ctx, fn -> Steps.uncomplete(transfer(ctx).id) end)
+      assert {:ok, _} = Steps.uncomplete(split_step(ctx).id)
+
+      assert {:error, {:before_split, :check_off, "Split - Transfer"}} =
+               Undo.undo(ctx.brewer, token)
+
+      assert is_nil(transfer(ctx).done_on)
+      assert reload(ctx.p2).status == "planned"
+
+      # The Split done again: the Undo puts the Transfer back.
+      assert {:ok, _} = check(split_step(ctx), ctx.brewer, ~D[2026-11-13])
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert transfer(ctx).done_on
+    end
+
+    test "brew day: Undo of an exit's un-check after brew day is un-checked; Undo of brew day's check-off",
+         ctx do
+      t = lager_template!()
+      lager = plan!(brand!("Pils"), t, ~D[2026-09-01], %{"tank_ids" => [tank!("FV3").id]})
+      lager_brew = named(lager, "Brew day")
+      {:ok, _} = Steps.update(named(lager, "Package"), %{"package_partial" => true})
+      partial = named(lager, "Package - Partial")
+      track = &Undo.track(ctx.brewer, %{batches: [lager.id]}, &1)
+
+      {:ok, {_, brew_token}} =
+        track.(fn ->
+          Steps.complete(lager_brew.id, %{"batch_number" => "41"}, ctx.brewer,
+            today: lager_brew.due_on
+          )
+        end)
+
+      assert {:ok, _} = check(partial, ctx.brewer, partial.due_on)
+
+      # Undoing the check-off is an un-check: brew day stays done while an exit is.
+      assert {:error, {:exit_done, "Package - Partial"}} = Undo.undo(ctx.brewer, brew_token)
+      assert named(lager, "Brew day").done_on
+
+      # Undoing an un-check is a check-off: the exit waits for brew day.
+      {:ok, {_, token}} = track.(fn -> Steps.uncomplete(partial.id) end)
+      assert {:ok, _} = Steps.uncomplete(lager_brew.id)
+      assert {:error, {:before_brew_day, :check_off}} = Undo.undo(ctx.brewer, token)
+      assert is_nil(named(lager, "Package - Partial").done_on)
+      assert reload(lager).status == "planned"
+    end
+
+    test "controls: plain Undos still work; a full Package is still caught as stale", ctx do
+      carb = named(ctx.p2, "Carb")
+      {:ok, {_, token}} = tracked(ctx, fn -> check(carb, ctx.brewer, ~D[2026-11-16]) end)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert is_nil(named(ctx.p2, "Carb").done_on)
+
+      assert {:ok, _} = check(split_step(ctx), ctx.brewer, ~D[2026-11-13])
+      {:ok, {_, token}} = tracked(ctx, fn -> Steps.uncomplete(split_step(ctx).id) end)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert split_step(ctx).done_on
+      assert reload(ctx.p2).status == "fermenting"
+
+      # Recheck 6's caught case: the full Package changes the part, so stale.
+      {:ok, {_, token}} = tracked(ctx, fn -> Steps.uncomplete(split_step(ctx).id) end)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      {:ok, _} = Steps.uncomplete(split_step(ctx).id)
+
+      {:ok, {_, token}} =
+        tracked(ctx, fn -> check(split_step(ctx), ctx.brewer, ~D[2026-11-13]) end)
+
+      assert {:ok, _} = check(named(ctx.p1, "Package"), ctx.brewer, ~D[2026-11-22])
+      assert {:error, :undo_stale} = Undo.undo(ctx.brewer, token)
+    end
+  end
+
+  describe "AA2: exit_done names the part" do
+    test "a part's done exit is named with the part; the parent's own isn't", ctx do
+      brew = named(ctx.batch, "Brew day")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+
+      # AA1's state, written directly: a part's Package done, the Split not.
+      package = done!(named(ctx.p2, "Package"))
+      assert {:error, {:exit_done, "Galactic #40.2: Package"}} = Steps.uncomplete(brew.id)
+
+      package |> Ecto.Changeset.change(done_on: nil) |> Repo.update!()
+      assert {:ok, _} = Steps.complete(split_step(ctx).id, %{}, ctx.brewer, today: ~D[2026-11-13])
+      assert {:error, {:exit_done, "Split - Transfer"}} = Steps.uncomplete(brew.id)
     end
   end
 end

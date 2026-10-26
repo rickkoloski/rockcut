@@ -581,4 +581,57 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
                 "message" => "Mark Galactic P1.2: Package not done first."
               }}
   end
+
+  test "DEV QA fix cycle 7 (AA1): Undo obeys the order rules, with the rule's own message", ctx do
+    # Brewed 30 days ago, split 20 days ago, each checked off on its own day.
+    today = RockcutApi.Tasks.today()
+    day = &Date.to_iso8601(Date.add(today, &1))
+
+    batch =
+      plan!(brand!("Enos"), ctx.template, Date.add(today, -30), %{"tank_ids" => [tank!("FV3").id]})
+
+    {:ok, %{part_ids: [_, p2]}} =
+      RockcutApi.Production.Splits.split(batch, %{
+        "due_on" => day.(-20),
+        "parts" => [
+          %{"stays" => true, "volume_bbl" => "12"},
+          %{"tank_id" => tank!("FV6").id, "volume_bbl" => "8"}
+        ]
+      })
+
+    {:ok, _} =
+      RockcutApi.Production.BatchChanges.add_transfer(Repo.get!(RockcutApi.Brewing.Batch, p2), %{
+        "due_on" => day.(-14),
+        "tank_id" => tank!("FV8").id
+      })
+
+    done!(named(batch, "Brew day"))
+
+    complete =
+      &call(&1, :post, "/api/production/steps/#{&2.id}/complete", %{done_on: &2.due_on})
+
+    # QA's path A: brewer1 checks off the Split, brewer2 a part's Transfer.
+    checked = complete.(ctx["brewer1"], named(batch, "Split - Transfer"))
+    assert checked.status == 200
+    transfer = named(Repo.get!(RockcutApi.Brewing.Batch, p2), "Transfer")
+    assert complete.(ctx["brewer2"], transfer).status == 200
+
+    refused = undo(ctx["brewer1"], checked)
+
+    assert {refused.status, body(refused)} ==
+             {422,
+              %{
+                "error" => "part_exit_done",
+                "message" => "Mark Enos P1.2: Transfer not done first."
+              }}
+
+    assert named(batch, "Split - Transfer").done_on
+
+    # The Undo is still there once the Transfer isn't done.
+    assert call(ctx["brewer2"], :post, "/api/production/steps/#{transfer.id}/uncomplete").status ==
+             200
+
+    assert undo(ctx["brewer1"], checked).status == 200
+    assert is_nil(named(batch, "Split - Transfer").done_on)
+  end
 end
