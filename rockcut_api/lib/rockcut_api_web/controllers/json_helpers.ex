@@ -229,7 +229,8 @@ defmodule RockcutApiWeb.JSONHelpers do
 
   # D49 §3.12: a task made from a production step (nil for the board's own):
   # the step, its batch (nil for a standalone CIP) and whether that batch is
-  # planned (the Planned batch pill and "Show planned batches").
+  # planned (the Planned batch pill and "Show planned batches"), and what the
+  # board's prompts name (`TaskLink.describe/1`; lead decisions 8.2).
   defp task_production(%{production_step_id: nil}), do: nil
 
   defp task_production(t) do
@@ -243,7 +244,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       step_id: t.production_step_id,
       batch_id: batch && batch.id,
       batch_status: batch && batch.status,
-      planned: batch != nil and batch.status == "planned"
+      planned: batch != nil and batch.status == "planned",
+      step_name: t.step_name,
+      batch_label: t.batch_label
     }
   end
 

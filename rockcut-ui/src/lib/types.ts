@@ -656,6 +656,9 @@ export interface TaskProduction {
   batch_id: number | null
   batch_status: string | null
   planned: boolean
+  /** What the prompts name: "FDH", "Galactic P1" (null for a standalone CIP). */
+  step_name: string
+  batch_label: string | null
 }
 
 /** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */

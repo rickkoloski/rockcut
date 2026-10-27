@@ -101,7 +101,6 @@ defmodule RockcutApi.Production.TaskLink do
   end
 
   defp sync!(touched, brewery_id) do
-
     steps =
       Repo.all(
         from(s in Step,
@@ -167,6 +166,36 @@ defmodule RockcutApi.Production.TaskLink do
     # The days tasks left close up (a day's list stays 1, 2, 3, …).
     if days != [], do: Tasks.renumber_days(ctx.brewery_id, days)
     counts
+  end
+
+  @doc """
+  The linked tasks among `tasks` (a list, or one task) with their step's
+  name and batch label ("FDH", "Galactic P1"; nil for a standalone CIP) in
+  `step_name` / `batch_label`, for the board's prompts. One P-number read
+  for the whole list; the board's own tasks pass through.
+  """
+  def describe(%Task{} = task), do: hd(describe([task]))
+
+  def describe(tasks) when is_list(tasks) do
+    if Enum.any?(tasks, &Task.linked?/1) do
+      pnums = Batches.p_numbers()
+
+      tasks
+      |> Repo.preload(production_step: [:step_type, :phase, batch: [:brand, :split_parent]])
+      |> Enum.map(fn
+        %Task{production_step: %Step{} = step} = t ->
+          %{
+            t
+            | step_name: Steps.name(step),
+              batch_label: step.batch && Batches.label(step.batch, pnums)
+          }
+
+        t ->
+          t
+      end)
+    else
+      tasks
+    end
   end
 
   @doc """

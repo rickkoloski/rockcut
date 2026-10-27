@@ -170,6 +170,7 @@ defmodule RockcutApi.Tasks do
       dept.id
       |> board_tasks(List.first(days), List.last(days), today)
       |> Enum.filter(&(not linked? or Task.linked?(&1)))
+      |> RockcutApi.Production.TaskLink.describe()
       |> Series.mark_last()
 
     %{
@@ -354,9 +355,11 @@ defmodule RockcutApi.Tasks do
   @doc "The task with assignee, completer and creator loaded, for its JSON."
   def with_names(%Task{} = task),
     do:
-      Repo.preload(task, [:assignee, :completed_by, :created_by, production_step: :batch],
+      task
+      |> Repo.preload([:assignee, :completed_by, :created_by, production_step: :batch],
         force: true
       )
+      |> RockcutApi.Production.TaskLink.describe()
 
   @doc """
   Add a task at the bottom of its day, or of the Future list when `due_on` is

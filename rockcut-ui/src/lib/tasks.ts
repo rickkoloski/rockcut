@@ -15,18 +15,17 @@ export function boardPath(dept: string, ...segments: (string | number | undefine
 export const BOARD_QUERY_KEY = 'task-board'
 
 /**
- * D49 §3.12: a linked task's step, from its title ("FV3 · Galactic P1 ·
- * FDH"; "FV6 · CIP & Sanitize" for a standalone CIP): what the schedule's
- * prompts name. Null for the board's own tasks.
+ * D49 §3.12: a linked task's step as the schedule's prompts name it ("FDH",
+ * "Galactic P1"; no batch for a standalone CIP), from the API, never the
+ * title (lead decisions 8.2). Null for the board's own tasks.
  */
-export function linkedStep(card: Pick<TaskCardData, 'title' | 'production'>) {
+export function linkedStep(card: Pick<TaskCardData, 'production'>) {
   if (!card.production) return null
-  const parts = card.title.split(' · ')
   return {
     id: card.production.step_id,
     batch_id: card.production.batch_id,
-    name: parts[parts.length - 1],
-    batchLabel: parts.length > 2 ? parts.slice(1, -1).join(' · ') : null,
+    name: card.production.step_name,
+    batchLabel: card.production.batch_label,
   }
 }
 

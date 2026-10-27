@@ -40,6 +40,9 @@ defmodule RockcutApi.Tasks.Task do
     # D49 §3.12: a task made from a production step (`Production.TaskLink`
     # keeps it in step; never cast).
     belongs_to :production_step, RockcutApi.Production.Step
+    # D49: what the board's prompts name, set by `Production.TaskLink.describe/1`.
+    field :step_name, :string, virtual: true
+    field :batch_label, :string, virtual: true
 
     timestamps(type: :utc_datetime)
   end

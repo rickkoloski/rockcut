@@ -85,7 +85,10 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
                "step_id" => fdh.id,
                "batch_id" => batch.id,
                "batch_status" => "planned",
-               "planned" => true
+               "planned" => true,
+               # Lead decisions 8.2: what the board's prompts name, not parsed from the title.
+               "step_name" => "FDH",
+               "batch_label" => "Galactic P1"
              }
 
       assert Enum.find(cards, &(&1["id"] == own.id))["production"] == nil
@@ -236,6 +239,15 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
 
       task = Repo.get_by!(Task, production_step_id: id)
       assert task.title == "FV4 · CIP & Sanitize"
+
+      board =
+        call(ctx.p["brewer1"], :get, "/api/boards/brewery/tasks", %{from: iso(0), to: iso(0)})
+        |> json_response(200)
+
+      [%{"cards" => cards}] = board["data"]["days"]
+
+      assert %{"step_name" => "CIP & Sanitize", "batch_label" => nil, "batch_id" => nil} =
+               Enum.find(cards, &(&1["id"] == task.id))["production"]
 
       call(ctx.p["brewer1"], :post, task_url(task, "/complete")) |> json_response(200)
       assert Repo.get!(Step, id).done_on == day(0)
