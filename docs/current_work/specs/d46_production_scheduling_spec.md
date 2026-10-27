@@ -12,9 +12,9 @@
 - D30: synthetic personas and DEV.
 
 **Process:** `docs/process/three_environment_workflow.md` (spec with persona scenarios → local gate → DEV gate → release)
-**Split:** four deliverables, one spec. See "Delivery split" below.
+**Split:** five deliverables, one spec (D50, the brewhouse tablet, split out of D49 by Matt on 2026-10-26). See "Delivery split" below.
 **Concept:** new concept folder `11_production_scheduling` at close-out.
-**Backlog:** PortableMind project 254: D46 = task 4629, D47 = 4630, D48 = 4631, D49 = 4632
+**Backlog:** PortableMind project 254: D46 = task 4629, D47 = 4630, D48 = 4631, D49 = 4632, D50 = the brewhouse tablet (task to be created)
 **Branches:** one per deliverable, each cut from `develop` after the previous one merges: `d46-tanks-templates`, `d47-batch-schedule-gantt`, `d48-batch-changes`, `d49-schedule-task-list`
 **Reference:** the clickable mockup, https://claude.ai/artifact/SU9STudcjNJZKf13hGQ3z8 (version 36, private to Matt). Its source and the design notes are in `docs/current_work/reference/` (git-excluded, local only). Everything decided there is restated in this spec; the spec is the source of truth.
 
@@ -25,16 +25,16 @@
 The feature is too large for one PR. Each deliverable runs the whole
 three-environment workflow on its own branch.
 
-| | **D46: Tanks, lists, templates** | **D47: Batch schedule and Gantt** | **D48: Changing a batch** | **D49: Task list linkage** |
-|---|---|---|---|---|
-| **What** | Tanks and out-of-service periods (§3.2); phases and step types, brewer-editable (§3.3); process templates and their editor (§3.4); Brewery → Production nav | Planning batches from a template; the Gantt (§3.6); moving steps with the move prompt (§3.7); checking steps off; P-numbers and the brew-day batch number (§3.5); tank status (§3.8); flags and sign-off (§3.9); standalone CIP & Sanitize (§3.10); assignee and notes on steps; the batch dialog without §3.11's actions | Add/remove steps (and Set temp ramps), add/remove transfers and filters, split and undo split, change a planned batch's template and brand, multi-select (§3.11) | Steps on the Brewery task board, two-way (§3.12); the Gantt's task list panel; planned-batch tasks and their toggle; the brewhouse tablet on the schedule (§3.13) |
-| **Data** | `tanks`, `tank_outages`, `production_phases`, `production_step_types`, `process_templates`, `template_steps`, `template_links` | `batches` changes; `batch_vessels`, `production_steps`, `production_step_links`, `flag_signoffs` | (columns on D47's tables: `split_parent_id`, `part_number`, `ramp_group`) | `production_steps.task_id`; `tasks.production_step_id` |
-| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113–P121 | P90–P108 |
-| **DEV seed** | Tanks FV1–FV7, Serving 1–2; `[SEED]` templates; an outage | `[SEED]` batches in every state; a signed-off flag; assigned steps | A transferred and a split batch | Linked tasks on the Brewery board; `breweryDevice` writes |
+| | **D46: Tanks, lists, templates** | **D47: Batch schedule and Gantt** | **D48: Changing a batch** | **D49: Task list linkage** | **D50: Brewhouse tablet** |
+|---|---|---|---|---|---|
+| **What** | Tanks and out-of-service periods (§3.2); phases and step types, brewer-editable (§3.3); process templates and their editor (§3.4); Brewery → Production nav | Planning batches from a template; the Gantt (§3.6); moving steps with the move prompt (§3.7); checking steps off; P-numbers and the brew-day batch number (§3.5); tank status (§3.8); flags and sign-off (§3.9); standalone CIP & Sanitize (§3.10); assignee and notes on steps; the batch dialog without §3.11's actions | Add/remove steps (and Set temp ramps), add/remove transfers and filters, split and undo split, change a planned batch's template and brand, multi-select (§3.11) | Steps on the Brewery task board, two-way (§3.12); the Gantt's task list panel; planned-batch tasks and their toggle; Clean not sanitized and the CIP variants (§3.12a); pencilled batches (§3.12b); D48's minors BB1 / BB2 | The brewhouse tablet on the schedule (§3.13), including writes to linked tasks on the Brewery board |
+| **Data** | `tanks`, `tank_outages`, `production_phases`, `production_step_types`, `process_templates`, `template_steps`, `template_links` | `batches` changes; `batch_vessels`, `production_steps`, `production_step_links`, `flag_signoffs` | (columns on D47's tables: `split_parent_id`, `part_number`, `ramp_group`) | `tasks.production_step_id` (see the D49 plan); `tank_condition_marks.state` `cleaned`; the CIP variant on steps and template steps; `batches.pencilled`; the person's "Show planned batches" setting | (`Authz.Device` and the routes only) |
+| **Scenarios** | P1–P19 | P20–P64, P109, P111–P112 | P65–P89, P110, P113–P121 | P90–P103, P108, P122–P135 | P104–P107 |
+| **DEV seed** | Tanks FV1–FV7, Serving 1–2; `[SEED]` templates; an outage | `[SEED]` batches in every state; a signed-off flag; assigned steps | A transferred and a split batch | Linked tasks on the Brewery board; a `cleaned` mark, a CIP - no sani, a pencilled batch | `breweryDevice` writes on the schedule |
 
-- **Order:** D46 → D47 → D48 → D49, each branch cut from `develop` after the previous one merges.
+- **Order:** D46 → D47 → D48 → D49 → D50, each branch cut from `develop` after the previous one merges.
 - **Ahead of task 3994** (Matt, 2026-10-20): D46–D49 come before task 3994 (`decimal` advisories, + `bandit` if it folds in), even though 3994 is due 2026-10-30.
-- **One prod release after D49** (Matt, 2026-10-20). D46, D47 and D48 each pass their DEV gate, merge to `develop` and wait; the whole feature goes to prod in the first release after D49 merges, so the brewhouse tablet and the task board linkage are there from day one. Each deliverable still gets its own PR and gates.
+- **One prod release after D49** (Matt, 2026-10-20; confirmed 2026-10-26 when the tablet moved to D50: D49 goes live, the tablet follows as its own deliverable). D46, D47 and D48 each pass their DEV gate, merge to `develop` and wait; the whole feature goes to prod in the first release after D49 merges, so the task board linkage is there from day one. Each deliverable still gets its own PR and gates.
 - **The prod data clean-up** (§3.14) runs with that release.
 
 ## 1. Problem Statement
@@ -404,8 +404,9 @@ Computed server-side by one function, returned with the schedule.
   - **Notes and assignee:** one value; editing either side updates both. New tasks are unassigned unless the step already has an assignee.
   - **Delete on the board:** "Take this off the task list? It stays on the production schedule." → `on_task_list` off; the step is kept (Matt, 2026-10-20).
 - Turning "Show on the Brewery task list" off deletes the task; on creates it.
-- **Planned batches:** their tasks show with a **Planned batch** pill. A per-person toggle on the Brewery board, "Show planned batches", hides them (remembered on the server with the other board settings).
+- **Planned batches:** their tasks show with a **Planned batch** pill. A per-person toggle on the Brewery board, "Show planned batches", hides them. It's remembered **on the server, per person** (Matt, 2026-10-26), so it follows the person across devices and a tablet's "Sign in as me"; the board's other toggles stay in the browser.
 - **Recurring tasks** don't apply to linked tasks.
+- **On the brewhouse tablet, until D50** (Matt, 2026-10-26): linked tasks show on the Brewery board, but the tablet can't check them off, un-check, move, assign, edit or delete them, even with a staff code ("Do this on the production schedule."; the API refuses as well). There's no Open in schedule there. D50 brings production writes to the tablet, the board's linked tasks included. A person signed in on the tablet ("Sign in as me") is a person, not the device, and can do all of it.
 - **Task list panel** on the Gantt (toolbar **Task list**): today through the next 6 days of linked tasks, grouped Late / Today / each day. Each has a checkbox, the title, notes (two lines), "Move to [date]", an assignee picker, and **Open** (the step dialog). Same rules as the board.
 
 ### 3.12a Clean not sanitized: the mark and the CIP variants (D49; Matt, 2026-10-22)
@@ -481,7 +482,7 @@ Sometimes a tank is CIP'd but not sanitized, and there's no shelf life on "Sani"
 
 - New areas in `Authz.can?/3`: `{:production, :read}`, `{:production, :write}`, `{:production, :setup}`. Nothing checks owner or role directly (D31's boundary test).
 - Other departments' managers and members: no nav entry, 403 from the API, a typed URL goes Home.
-- **The tablet:** `Authz.Device` gains read and write on production for a device whose home department is the Brewery. Writes need a staff code and are decided for that person (`StaffCodeActing`, D40); the 5-minute "Acting as" window is shared with the board. The Taproom tablet gets 403. The production routes join a `device_allowed` scope.
+- **The tablet (D50):** `Authz.Device` gains read and write on production for a device whose home department is the Brewery. Writes need a staff code and are decided for that person (`StaffCodeActing`, D40); the 5-minute "Acting as" window is shared with the board. The Taproom tablet gets 403. The production routes join a `device_allowed` scope.
 
 ### 3.14 Prod data clean-up (the release after D49)
 
@@ -633,7 +634,7 @@ Personas from `tests/config/test-env.ts`. "Today" in DEV seed terms; `[SEED]` ta
 | P121 | `brewer1` | expand FV4 (desktop, then phone width) | | Desktop: step rows 20 px tall; phase labels indented a little, step labels more. Touch / phone: rows stay 28 px, with the same indents. Diamonds, links and initials line up with their rows. |
 | P110 | `brewer1` | Split - Filter Galactic #40 on Nov 3: #40.1 12 bbl stays in FV2; #40.2 8 bbl → Serving 1 | | "Split - Filter" on the schedule; FV2 keeps #40.1 (no CIP); Serving 1 fills with #40.2. |
 
-**D49: task list linkage and the tablet**
+**D49: task list linkage** (P104–P107 are **D50**, the brewhouse tablet)
 
 | # | Persona | Entry point | Mode / state | Expected |
 |---|---|---|---|---|
