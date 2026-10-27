@@ -1,5 +1,5 @@
 import type { KeyboardEvent, MouseEvent } from 'react'
-import { Avatar, Box, Checkbox, Paper, Tooltip, Typography } from '@mui/material'
+import { Avatar, Box, Checkbox, Chip, Paper, Tooltip, Typography } from '@mui/material'
 import { NotesOutlined, Repeat } from '@mui/icons-material'
 import { firstName, formatTaskDay, initials } from '../../lib/tasks'
 import type { TaskCardData } from '../../lib/types'
@@ -19,6 +19,10 @@ interface Props {
    * (click or Enter) to `onOpen`.
    */
   readOnly?: boolean
+  /** D49: no checkbox (a linked task on a shared tablet, read-only until D50). */
+  noCheck?: boolean
+  /** Can't be dragged (the board's rule; defaults to the server's `locked`). */
+  locked?: boolean
 }
 
 /**
@@ -27,7 +31,7 @@ interface Props {
  * anywhere but the checkbox opens the task menu (Enter does too, through
  * SortableLists).
  */
-export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly }: Props) {
+export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly, noCheck, locked = card.locked }: Props) {
   const open = (e: MouseEvent<HTMLElement>) => onOpen?.(card, e.currentTarget)
   const tags = [
     card.planned_on && !showDate && { id: 'planned', label: `planned ${formatTaskDay(card.planned_on)}` },
@@ -40,7 +44,7 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
       variant="outlined"
       data-testid={`task-${card.key}`}
       data-done={card.done}
-      data-locked={card.locked}
+      data-locked={locked}
       data-overdue={card.overdue}
       onClick={open}
       {...(readOnly && {
@@ -52,11 +56,11 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
       sx={{
         py: 0.5,
         pr: 0.75,
-        pl: readOnly ? 0.75 : 0,
+        pl: readOnly || noCheck ? 0.75 : 0,
         display: 'flex',
         alignItems: 'flex-start',
         gap: 0.25,
-        cursor: card.locked || readOnly ? 'pointer' : 'grab',
+        cursor: locked || readOnly ? 'pointer' : 'grab',
         // A done card dims its title, not the whole card: the "✓ name" line and
         // the initials stay readable (D43 QA G3).
         opacity: dragging ? 0.4 : 1,
@@ -67,7 +71,7 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
         '&:hover': { borderColor: 'primary.light' },
       }}
     >
-      {!readOnly && (
+      {!readOnly && !noCheck && (
         <Checkbox
           size="small"
           checked={card.done}
@@ -111,6 +115,10 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
             </Tooltip>
           )}
         </Box>
+        {card.production?.planned && (
+          // D49 §3.12: a planned batch's step ("Show planned batches" hides these).
+          <Chip label="Planned batch" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: 11, mt: 0.25 }} data-testid={`task-planned-${card.key}`} />
+        )}
         {(card.done || tags.length > 0) && (
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.25, alignItems: 'center' }}>
             {card.done && (

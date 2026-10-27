@@ -117,13 +117,15 @@ A human (Matt) decides *when*. The agent can prepare and run the commands on his
 1. **Release PR** `develop → main`: its body lists every deliverable in the release, **every migration**, and any new secret or config.
 2. **Merge, then tag** `vYYYY.MM.DD` (add `-2` for a second release that day). Push the tag.
 3. **Deploy from a clean checkout of the tag**, never from a working tree. Follow the prod runbook order: staged secrets → volume/scale unchanged → `fly deploy` API → start the machine if stopped → `Release.migrate()` if there are migrations → `fly deploy` UI.
+   - **Secret format check (Rick's review, 2026-10-21; Ben, 87210):** before staging any fixed-shape secret, check it against its pattern, for example a 32-byte base64 key such as `STAFF_CODE_KEY` must match `^[A-Za-z0-9+/]{43}=$`. A truncated key caused the Oct 7 outage; this check catches it before the deploy.
 4. **Record** the new `fly releases` versions (API vN, UI vN) and the **previous** ones (the rollback target) in the release PR.
 5. **Prod smoke** (the runbook's step 7):
    - health 200, UI 200, `sw.js` is `no-cache`;
    - **dependency check (task 3999):** `pnpm audit --prod` (in `rockcut-ui`) and `mix hex.audit` (in `rockcut_api`) at the tag show nothing new beyond accepted advisories, and `node rockcut-ui/scripts/check-bundle-versions.mjs https://rockcut-ui.fly.dev` passes (the shipped bundle's axios and react-router match `pnpm-lock.yaml`). Run the same script against `https://rockcut-ui-dev.fly.dev` after each DEV deploy;
    - **synthetic login → 401** and **0 synthetic users**;
    - **Matt** logs in as himself. The agent never does.
-6. **Rollback** if the smoke fails: `fly deploy --image <previous ref>` for the affected app. Migrations are forward-only; a migration that has to be undone needs a new forward migration plus a volume-snapshot restore as the last resort. Say which you did in conv 80.
+6. **Hotfixes before close-out (Rick's review, 2026-10-21):** when a hotfix lands on `main`, merge it into `develop` with a normal merge **before** the next `-s ours` close-out sync. `-s ours` discards any change that exists only on `main`.
+7. **Rollback** if the smoke fails: `fly deploy --image <previous ref>` for the affected app. Migrations are forward-only; a migration that has to be undone needs a new forward migration plus a volume-snapshot restore as the last resort. Say which you did in conv 80.
 
 ### Prod gate
 - [ ] Deployed SHA == tag on `main` · smoke green · release versions recorded · CLAUDE.md "Completed Deliverables" + `stepwise_results/…_COMPLETE.md` updated · session handoff written
@@ -154,7 +156,7 @@ From Matt's walkthrough (81853), as backlog tasks:
 
 ## 8 · Small infrastructure worth adding
 
-- **Build SHA on `/api/health`, and in the DEV ribbon.** Pass `GIT_SHA` as a Docker build arg and return `{status, app, env, sha}`. Then "what's on DEV/prod?" is answered by asking the system, not by remembering it.
+- **Build SHA on `/api/health`, and in the DEV ribbon** (task 4669). Pass `GIT_SHA` as a Docker build arg and return `{status, app, env, sha}`. Then "what's on DEV/prod?" is answered by asking the system, not by remembering it.
 - **No debug routes without auth.** This is a standing rule across Rick's projects, after an open debug endpoint was found on another product's prod. Never expose Swoosh's mailbox preview or any inspection route on DEV or prod without authentication; keep it off by default.
 - **CI token minting:** if a CI runner later needs persona tokens, give it a **DEV-app-scoped** Fly token (`fly tokens create deploy -a rockcut-api-dev`) and keep using `fly ssh … mint_token`. Don't add an HTTP mint endpoint.
 

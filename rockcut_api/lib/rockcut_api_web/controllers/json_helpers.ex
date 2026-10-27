@@ -58,7 +58,8 @@ defmodule RockcutApiWeb.JSONHelpers do
         staff_codes: false,
         beer_board_manage: false,
         task_boards: [],
-        color_mode: "light"
+        color_mode: "light",
+        show_planned_batches: true
       },
       flags
     )
@@ -220,8 +221,32 @@ defmodule RockcutApiWeb.JSONHelpers do
       series_date: t.series_date,
       series_exception: t.series_exception,
       series_last: t.series_last,
+      production: task_production(t),
       inserted_at: t.inserted_at,
       updated_at: t.updated_at
+    }
+  end
+
+  # D49 §3.12: a task made from a production step (nil for the board's own):
+  # the step, its batch (nil for a standalone CIP) and whether that batch is
+  # planned (the Planned batch pill and "Show planned batches"), and what the
+  # board's prompts name (`TaskLink.describe/1`; lead decisions 8.2).
+  defp task_production(%{production_step_id: nil}), do: nil
+
+  defp task_production(t) do
+    batch =
+      case t.production_step do
+        %{batch: %RockcutApi.Brewing.Batch{} = b} -> b
+        _ -> nil
+      end
+
+    %{
+      step_id: t.production_step_id,
+      batch_id: batch && batch.id,
+      batch_status: batch && batch.status,
+      planned: batch != nil and batch.status == "planned",
+      step_name: t.step_name,
+      batch_label: t.batch_label
     }
   end
 
@@ -288,6 +313,223 @@ defmodule RockcutApiWeb.JSONHelpers do
 
   defp name_of(nil), do: nil
   defp name_of(u), do: u.name
+
+  # ── Production setup (D46) ─────────────────────────────────────────
+
+  @doc "A tank with its out-of-service periods, each with `state` (now / coming / past) for `today`."
+  def production_tank(t, today) do
+    %{
+      id: t.id,
+      name: t.name,
+      kind: t.kind,
+      capacity_bbl: decimal_number(t.capacity_bbl),
+      location: t.location,
+      position: t.position,
+      notes: t.notes,
+      retired_at: t.retired_at,
+      outages: maybe_render(t, :outages, &Enum.map(&1, fn o -> tank_outage(o, today) end))
+    }
+  end
+
+  def tank_outage(o, today) do
+    %{
+      id: o.id,
+      tank_id: o.tank_id,
+      starts_on: o.starts_on,
+      ends_on: o.ends_on,
+      reason: o.reason,
+      state: RockcutApi.Production.outage_state(o, today),
+      label: RockcutApi.Production.period_label(o)
+    }
+  end
+
+  def production_phase(p) do
+    %{id: p.id, name: p.name, color: p.color, position: p.position, retired_at: p.retired_at}
+  end
+
+  def production_step_type(t) do
+    %{
+      id: t.id,
+      name: t.name,
+      full_name: t.full_name,
+      behavior: t.behavior,
+      built_in: t.built_in,
+      starts_phase_id: t.starts_phase_id,
+      on_task_list: t.on_task_list,
+      position: t.position,
+      retired_at: t.retired_at
+    }
+  end
+
+  @doc "A template in the list: no entries, with `step_count` and `issues`."
+  def process_template_summary(t) do
+    %{
+      id: t.id,
+      name: t.name,
+      notes: t.notes,
+      position: t.position,
+      retired_at: t.retired_at,
+      step_count: t.step_count,
+      issues: t.issues
+    }
+  end
+
+  @doc "A template with its entries (day order) and links."
+  def process_template(t) do
+    Map.merge(process_template_summary(t), %{
+      steps: Enum.map(t.steps, &template_step/1),
+      links: Enum.map(t.links, &template_link/1)
+    })
+  end
+
+  def template_step(s) do
+    type = s.step_type
+
+    %{
+      id: s.id,
+      step_type_id: s.step_type_id,
+      marker: is_nil(s.step_type_id),
+      name: RockcutApi.Production.step_name(s),
+      type_name: type && type.name,
+      full_name: type && type.full_name,
+      behavior: type && type.behavior,
+      phase_id: s.phase_id,
+      day_offset: s.day_offset,
+      vessel_index: s.vessel_index,
+      detail: s.detail,
+      temperature: s.temperature,
+      split_method: s.split_method,
+      cip_method: if(type && type.behavior == "cip", do: s.cip_method || "sanitize_full"),
+      package_partial: s.package_partial,
+      notes: s.notes,
+      on_task_list: s.on_task_list,
+      position: s.position,
+      ramp_group: s.ramp_group
+    }
+  end
+
+  def template_link(l) do
+    %{
+      id: l.id,
+      from_step_id: l.from_step_id,
+      to_step_id: l.to_step_id,
+      default_answer: l.default_answer
+    }
+  end
+
+  # ── Production schedule (D47) ──────────────────────────────────────
+
+  @doc "`GET /api/production/schedule`: see `Production.Schedule.load/3`."
+  def production_schedule(sched) do
+    %{
+      from: sched.from,
+      to: sched.to,
+      today: sched.today,
+      tanks: Enum.map(sched.tanks, &production_tank(&1, sched.today)),
+      phases: Enum.map(sched.phases, &production_phase/1),
+      step_types: Enum.map(sched.step_types, &production_step_type/1),
+      batches: Enum.map(sched.batches, &production_batch/1),
+      cips: Enum.map(sched.cips, &production_step(&1, [])),
+      statuses: sched.statuses,
+      flags: sched.flags,
+      condition_marks: Enum.map(sched.marks, &production_condition_mark/1),
+      sanitize_on_dirty: sched.sanitize_on_dirty,
+      next_batch_number: sched.next_batch_number,
+      brewers: sched.brewers
+    }
+  end
+
+  @doc "D48: a tank's clean / dirty mark, with who made it."
+  def production_condition_mark(m) do
+    %{
+      id: m.id,
+      tank_id: m.tank_id,
+      state: m.state,
+      marked_on: m.marked_on,
+      note: m.note,
+      user_id: m.user_id,
+      user_name: m.user && m.user.name,
+      inserted_at: m.inserted_at
+    }
+  end
+
+  @doc "A scheduled batch from `Production.Schedule.batches/1`, with its vessels, steps and links."
+  def production_batch(%{batch: b} = entry) do
+    %{
+      id: b.id,
+      brand_id: b.brand_id,
+      brand_name: b.brand && b.brand.name,
+      batch_number: b.batch_number,
+      p_number: entry.p_number,
+      label: entry.label,
+      status: b.status,
+      pencilled: b.pencilled,
+      volume_bbl: decimal_number(b.volume_bbl),
+      template_id: b.template_id,
+      template_name: b.template && b.template.name,
+      brew_two_days: b.brew_two_days,
+      split_parent_id: b.split_parent_id,
+      part_number: b.part_number,
+      # D48 DEV QA fix cycle 4: the part that stays in its parent's tank.
+      split_stays: b.split_stays,
+      # D48: a part's fill is its parent's Split step.
+      split_step_id: entry[:origin] && entry.origin.fill && entry.origin.fill.id,
+      vessels: Enum.map(entry.vessels, &%{vessel_index: &1.vessel_index, tank_id: &1.tank_id}),
+      steps: Enum.map(entry.steps, &production_step(&1, entry.steps)),
+      links:
+        Enum.map(
+          entry.links,
+          &%{
+            id: &1.id,
+            from_step_id: &1.from_step_id,
+            to_step_id: &1.to_step_id,
+            default_answer: &1.default_answer
+          }
+        )
+    }
+  end
+
+  @doc """
+  A batch step or a standalone CIP (`batch_steps`: the batch's steps, to
+  mark its first Brew day). Needs type, phase, assignee and done-by loaded.
+  """
+  def production_step(s, batch_steps) do
+    type = s.step_type
+
+    %{
+      id: s.id,
+      batch_id: s.batch_id,
+      tank_id: s.tank_id,
+      step_type_id: s.step_type_id,
+      marker: RockcutApi.Production.Step.marker?(s),
+      name: RockcutApi.Production.Steps.name(s),
+      type_name: type && type.name,
+      full_name: type && type.full_name,
+      behavior: type && type.behavior,
+      first_brew: s.batch_id != nil and RockcutApi.Production.Steps.first_brew?(s, batch_steps),
+      phase_id: s.phase_id,
+      vessel_index: s.vessel_index,
+      detail: s.detail,
+      temperature: s.temperature,
+      split_method: s.split_method,
+      cip_method: if(type && type.behavior == "cip", do: s.cip_method || "sanitize_full"),
+      package_partial: s.package_partial,
+      notes: s.notes,
+      on_task_list: s.on_task_list,
+      position: s.position,
+      due_on: s.due_on,
+      done_on: s.done_on,
+      done_by: s.done_by && %{id: s.done_by.id, name: s.done_by.name},
+      assignee_id: s.assignee_id,
+      assignee: s.assignee && %{id: s.assignee.id, name: s.assignee.name},
+      added: s.added,
+      ramp_group: s.ramp_group
+    }
+  end
+
+  defp decimal_number(nil), do: nil
+  defp decimal_number(%Decimal{} = d), do: Decimal.to_float(d)
+  defp decimal_number(n), do: n
 
   # ── Shared devices (D33) ───────────────────────────────────────────
 

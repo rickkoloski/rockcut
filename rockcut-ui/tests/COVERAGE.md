@@ -451,3 +451,254 @@ DEV QA pass 1 fixes (`stepwise_results/d43_dev_qa_report.md`):
 | G4 | a click elsewhere ends Move; arrows in an open dialog move nothing | Playwright `ui/schedule` (G4) |
 | G5 | a theme save that fails offline or never answers reverts and says so (Escape and a click don't hide it) | Playwright `ui/theme` (offline; never answers; refused) |
 | obs | User change log page title | Playwright `ui/layout` (S153 block) |
+
+## D46 — Tanks, phases & step types, templates (`specs/d46_production_scheduling_spec.md` §3.1–§3.4; `planning/d46_tanks_templates_plan.md`)
+
+Playwright specs are in `regression/production/`, project `production` (one worker: the lists are shared and a reorder names every active row). Lead decision 1: the Gantt parts of P6–P10 come with D47; out-of-service periods are tested on the Tanks page here.
+
+| # | Scenario | Layer |
+|---|---|---|
+| P1 | brewer1 adds a tank: listed last, persists | Playwright `production/tanks` (P1: through the hub, fields checked through the API after a reload); ExUnit `production_test` (order), `production_controller_test`. The Gantt row → D47 |
+| P2 | drag a tank above FV1: order persists, for brewer2 too | Playwright `production/tanks` (P2: arrow up once, then a drag by the handle; reload; brewer2's browser); ExUnit `production_test` (reorder takes exactly the active ids). Gantt order → D47 |
+| P3 | Add "fv1": "A tank named FV1 already exists." | Playwright `production/tanks` (P3); ExUnit `production_test` (case-insensitive, retired names too), `production_controller_test` |
+| P4 | Retire a tank with unfinished steps: refused, listing the batches | Playwright `production/tanks` (P4: since D47 a real planned batch in the tank; the page names it); ExUnit `undo_cips_test` (refused, a marker doesn't hold the tank), `seeds/synthetic_test` |
+| P5 | Retire an empty tank; Retired list; Restore | Playwright `production/tanks` (P5: the spec's confirm text, reload, Restore puts it last); ExUnit `production_test`. "Gone from the Gantt and pickers" → D47 |
+| P6 | Serving 2 out Oct 27–Nov 2 over a planned batch: preview, band, tag, flag | **D47** (Gantt, batches, flags). The period itself: P9's and the out-of-service specs |
+| P7 | Until further notice from today, "Valve repair" | Playwright `production/out-of-service` (P7: Now group, "Out from <today>" chip, reload, API state `now`). Status line and band → D47 |
+| P8 | Back in service today | Playwright `production/out-of-service` (P8: yesterday becomes the last day, under Past; a period that started today is deleted; only a current period offers it); ExUnit `production_test` |
+| P9 | an overlapping period is refused, naming the other | Playwright `production/out-of-service` (P9: exact message, nothing saved); ExUnit `production_test`, `production_controller_test` |
+| P10 | Delete a period; its flags clear; Undo | Playwright `production/out-of-service` (Delete on the Tanks page). Flags and Undo → D47 |
+| P11 | Add step type "Hop stand check": in the editor's picker | Playwright `production/lists` (P11); ExUnit `production_test` (always `plain`) |
+| P12 | Retire a type a template uses: hidden from pickers, the template keeps its step | Playwright `production/lists` (P12, a `[TEST-TEMP]` stand-in for Fining so the seed list stays as it is); ExUnit `production_test` (retired type refused when adding; the step stays) |
+| P13 | Transfer: no Retire, rename only | Playwright `production/lists` (P13: Edit with the built-in note, rename and back; API retire 422); ExUnit `production_test`, `production_controller_test` |
+| P14 | build "Lager with transfer": day order, CIP for the first tank on day 35, preview in color | Playwright `production/templates` (P14: every entry through Add step / Add phase start, notes on Diacetyl test, after a reload; preview phases by day, CIP hatched, task-list dots); ExUnit `production_test` (transfer adds the CIP), `seeds/synthetic_test` (the `[SEED]` copy) |
+| P15 | ramp 58° → 32°, 10°/day, from day 18 after FDH | Playwright `production/templates` (P15: the dialog's preview line, days 18–21, chained `move_all`, the last links to Conditioning, the direct FDH link replaced, Crash on the first); ExUnit `production_test` |
+| P16 | link Carb → Package "move only": "stays by default" | Playwright `production/templates` (P16: the row shows "after Carb · stays" after a reload; a loop is refused in the dialog); ExUnit `production_test` (cycle, order, exists) |
+| P17 | remove the Package: allowed, the banner (lead decision 3; the wording "The first tank has no Package, Split or Transfer.") | Playwright `production/templates` (P17: banner after a reload, Incomplete badge in the list; Brew day has no Remove); ExUnit `production_test` (`issues`) |
+| P18 | brewer2 duplicates "Standard ale", renames: independent copy | Playwright `production/templates` (P18, `[SEED] Standard ale`; the copy is renamed `[TEST-TEMP]` and retired); ExUnit `production_test` (deep copy, "Copy of … (2)") |
+| P19 | bartender1 / barMgr: Home, API 403; breweryDevice read-only | Playwright `production/access` (bartender1 and barMgr: no nav entry, every setup URL goes Home, API 403; owner and floater open every page; breweryDevice API 403 until D49); ExUnit `authz_parity/production_test` (12 personas), `authz_test`, `device_route_matrix_test`. Read-only tablet pages → D49 |
+
+Also covered: the hub's counts (`production/tanks`); a period's first day carries its last along, and the order check before saving (`production/out-of-service`); a new phase's palette color, recolor and duplicate name (`production/lists`); the 12 colors readable (≥ 4.5:1) in both modes and the preview model (Vitest `src/lib/production.test.ts`).
+
+Not automated (accepted at Task 2): drag on touch (the shared layer's long-press; by hand on the Pixel/Samsung at the DEV gate). Display limits: Brew day's starting temperature shows only in its Edit dialog; the preview's CIP hatch covers that day's phase color; no "Will be flagged" preview until D47.
+
+DEV gate fix cycle 2 (`stepwise_results/d46_qa_report.md`, `prompts/d46_lead_decisions_3.md`):
+
+| Gap | What | Layer |
+|---|---|---|
+| M1 | a Transfer/Filter goes into a new tank only (422 `transfer_not_new_tank`); its CIP on the tank it leaves; "Into tank" offers only the next new tank and isn't changed by switching the type | ExUnit `production_test` (into the same tank, skipping one, before the first, a change back, two the same day), `production_controller_test` (the message); Playwright `production/qa-fixes` (M1 ×2); Vitest `production.test` (`newTankFor`, `existingTanks`). Revert-and-rerun: with the check removed, 3 ExUnit tests fail; restored, 39/39 pass |
+| 1 | link pickers offer only reachable steps (day order, no loops, not already linked) | Playwright `production/qa-fixes` (Add step and the links editor), `production/templates` P16 (no loop offered); Vitest (`reachable`) |
+| 2 | dialogs that save at once say Close; removing a link and deleting a period ask first | Playwright `production/qa-fixes` (minor 2), `production/out-of-service` (P10 and the tank dialog's Close) |
+| 3 | a 404 on a row someone else removed: "This was removed by someone else. Reload to see the latest." + Reload | Playwright `production/qa-fixes` (a step removed by brewer2, then edited); Vitest (`prodError`) |
+| 4 | a step or ramp in a tank no Transfer/Filter starts: 422 `no_such_tank` | ExUnit `production_test`, `production_controller_test` |
+| 5 | ramp preview keeps to 28–80°F, whole degrees, ≥ 1°/day; inline error, nothing added | Playwright `production/qa-fixes` (minor 5); Vitest (`rampPlan`) |
+| 6 | Out chips, the Now chip, the Incomplete badge ≥ 4.5:1 in both themes | Playwright `production/qa-fixes` (minor 6, light and dark, `ui/contrast.ts`; the theme set for the page only) |
+| 7 | phone preview: tank labels stay in view while scrolling; fades where there's more | Playwright `production/qa-fixes` (390 px, `[SEED] Lager with transfer`) |
+| 8 | capacity ≥ 10,000: "Capacity must be under 10,000 bbl."; names NFKC-normalized ("Ｆv1" = FV1) | ExUnit `production_test`; Playwright `production/qa-fixes` (the capacity message) |
+| 9 | Add phase start's help text: Comes after only | Playwright `production/qa-fixes` (minor 9) |
+
+## D47 — Batch schedule and Gantt (`specs/d46_production_scheduling_spec.md` §3.5–§3.10; `planning/d47_batch_schedule_gantt_plan.md`)
+
+Playwright specs are in `regression/production/` (project `production`, one worker). Each test makes its own `[TEST-TEMP]` brand, tanks and batches (`schedule.ts` `Made`) and removes them; brewed batches are un-checked first. P-number assertions are relative (read before, compare after). P49–P51 read the `[SEED]` schedule; P52 changes Serving 1 and puts it back with Undo. ExUnit: `production/schedule_test` (batches, numbers, moves, check-off), `production/status_flags_test` (pure status and flags), `production/undo_cips_test` (Undo, CIPs, sign-offs, P4, performance), `production_schedule_controller_test` (HTTP, authz), `seeds/synthetic_test` (the D47 seed). Vitest: `src/lib/gantt.test.ts` (layout, ranges, stacking, prefs).
+
+| # | Scenario | Layer |
+|---|---|---|
+| P1, P2 (Gantt) | a new tank is the last row before Unassigned; the rows follow the Tanks order, for brewer2 too | Playwright `production/tanks` (Set up menu, row order), `production/gantt` (P2 as brewer2) |
+| P4 | Retire a tank in use: refused, naming the batch | Playwright `production/tanks` (real batch); ExUnit `undo_cips_test` |
+| P6 | ⋯ → Mark out of service over a planned batch: named before saving; band, Out tag, the batch's flag badge | Playwright `production/gantt-outages`; ExUnit `status_flags_test` (`out_of_service`) |
+| P7 | empty spot → Mark out of service, until further notice | Playwright `production/gantt-outages` (status "Out of service · Valve repair", "Out from …", band) |
+| P8 | the band → Back in service today; under Past | Playwright `production/gantt-outages` |
+| P9 | an overlapping period from the Gantt is refused | Playwright `production/gantt-outages` |
+| P10 | Delete a period: the flag clears; Undo | Playwright `production/gantt-outages`; ExUnit `undo_cips_test`, `production_schedule_controller_test` (outage Undo) |
+| P20 | rows, today line, 6 weeks, every status line | Playwright `production/gantt` (status lines compared with the API) |
+| P21 | Plan batch: ghosted, P-number, renumbering named | Playwright `production/batches`; ExUnit `schedule_test` (planning, P-numbers) |
+| P22 | empty spot → Plan a batch with an Unassigned transfer: two bars, the arrow | Playwright `production/batches` |
+| P23, P24 | same brew day: the first keeps the lower P; two-day brew names | Playwright `production/batches`; ExUnit `schedule_test` |
+| P25–P28 | the move prompt: default all (listed), move only (warning, flag), Carb's default only, Undo | Playwright `production/steps`; ExUnit `schedule_test` (`following`, default, out of order, previews) |
+| P29 | a date in the batch dialog runs the prompt; the dialog stays | Playwright `production/steps` |
+| P30, P31 | drag a bar: planned every step, brewed only unfinished; no prompt; Undo | Playwright `production/batches`; ExUnit `schedule_test` (`shift`) |
+| P32, P33 | drag a part to another tank or Unassigned; No tank flag near its fill | Playwright `production/batches`; ExUnit `schedule_test`, `status_flags_test` (`no_tank`) |
+| P34 | check off Set temp due today: the status line's temperature | Playwright `production/steps`; ExUnit `status_flags_test` |
+| P35 | check off 2 days late: moves, then the prompt | Playwright `production/steps`; ExUnit `schedule_test` (off-plan) |
+| P36–P39 | the brew-day number: suggestion, taken, non-plain note, duplicate ignoring case, un-check frees it, API 422 | Playwright `production/batches`; ExUnit `schedule_test`, `production_schedule_controller_test` |
+| P40 | change a brewed batch's number; a taken one refused | Playwright `production/batches`; ExUnit `schedule_test` |
+| P41–P44 | addition, temperature, assignee (initials), notes | Playwright `production/steps`; ExUnit `schedule_test` (step edits, Brewery members only) |
+| P45 | + Note opens the step; closing returns, Note ✎ | Playwright `production/steps` |
+| P46 | expand: step rows, diamonds, links solid/dashed; remembered; Expand/Collapse all | Playwright `production/gantt` |
+| P47 | « names only, status on hover; remembered | Playwright `production/gantt`; Vitest (`readPrefs`) |
+| P48 | zoom, 4 weeks back, From/To; remembered; 7–730 days | Playwright `production/gantt`; Vitest (`clampRange`, `dayWidth`) |
+| P49–P51 | the seed's FV4, FV5 (red) and Serving 1 status lines and flag | Playwright `production/gantt`; ExUnit `status_flags_test` (every §3.8 row), `seeds/synthetic_test` |
+| P52 | Add CIP & Sanitize already done: Sani 0 days, the flag clears | Playwright `production/flags-cips` (Undo restores the seed); ExUnit `undo_cips_test` |
+| P53, P54 | overlap + dirty fill (!2); bigger than the tank | Playwright `production/batches`; ExUnit `status_flags_test` |
+| P55–P57 | sign off with a note; a change reopens it; Remove sign-off | Playwright `production/flags-cips`; ExUnit `status_flags_test` (signatures), `undo_cips_test` |
+| P58, P59 | a CIP while beer is in the tank; drag a standalone CIP, Undo | Playwright `production/flags-cips`; ExUnit `undo_cips_test` |
+| P60 | Delete planned batch; renumbering | Playwright `production/batches`; ExUnit `schedule_test` |
+| P61 | brewer1 and brewer2 move steps in one batch at once | Playwright `production/flags-cips` (two contexts, reload: both agree) |
+| P62–P64 | owner and floater full access; office1 Home and 403 | Playwright `production/gantt`, `production/access`; ExUnit `production_schedule_controller_test` |
+| P109 | Split - Transfer / Split - Filter in templates; planning copies the method | Playwright `production/followups-4650` (editor), `production/batches` (planned batch); ExUnit `production_test`, `production_schedule_controller_test` |
+| P111 | Package - Partial in templates: not an exit, no CIP | Playwright `production/followups-4650`; ExUnit `production_test` |
+| P112 | a partial Package done: the batch and the tank carry on; Partial in the step dialog renames it | Playwright `production/batches`; ExUnit `schedule_test`, `status_flags_test` |
+
+Task 4650 (D46 recheck N1–N4, item 10) and lead decisions 1 item 1: Playwright `production/followups-4650` (N1 day order, N2 the Remove warning, N3 the ramp cap, N4a–b messages, P109, P111, the handle and keyboard reorder, a Transfer's CIP follows its day); ExUnit `production_test` ("D47 task 0"), `production_controller_test`.
+
+Also covered: Undo (restore, stale 409, expiry, another person, a delete and a plan undone) in ExUnit `undo_cips_test` and `production_schedule_controller_test`; the old Batches page and Brewery Dashboard skip schedule batches (`undo_cips_test`); the schedule loads in ~10 ms for 12 weeks, 10 tanks and 30 batches (`undo_cips_test`, logged).
+
+DEV gate fix cycle 1 (`stepwise_results/d47_qa_report.md`, lead decisions 4):
+
+| # | Finding | Test |
+|---|---|---|
+| M1 | typing a date opens the move prompt mid-typing | Playwright `production/d47-qa-fixes` (types 12152026: no request until Enter, then one preview for Dec 15; again, committed by leaving the field). `DateField` is used for every date that moves or checks off (batch dialog, step dialog Done on / Or move to, CIP, out of service) |
+| M2 | "#40" gets around the duplicate check | ExUnit `schedule_test` (check_number, the brew-day check-off and the batch dialog's edit); Playwright `production/d47-qa-fixes` (brew day and batch dialog refuse "#&lt;taken&gt;"; " #n " saved as n, the field shows it) |
+| M3 | a full Package done early: bar, stranded steps, flags, overlap | ExUnit `status_flags_test` (a done step before an unfinished one it follows; `Steps.out_of_order?/2` shared with the preview; the part ends at the done exit, its CIP still to come included; stranded steps; held to the exit, a done standalone CIP ends the dirty fill, no overlap), `schedule_test` (the preview's warning and the flag agree); Vitest `gantt` (end, reach, stranded, no phase after the exit, tracks); Playwright `production/d47-qa-fixes` (red dot, flag, badge, the bar ends before Carb, the batch dialog's note) |
+| 1 | "Bigger than tank" ignores dates | ExUnit `status_flags_test` (moving the batch changes the signature) |
+| 2 | the Unassigned header is see-through | Playwright `production/gantt` (P20: opaque background) |
+| 3 | empty spot → out of service ignores the tapped day | Playwright `production/d47-qa-fixes` |
+| 4 | double-clicking Apply clicks through | Playwright `production/batches` (minor 4: nothing opens) |
+| 5 | a bar dropped over the tank column still moves | Playwright `production/batches` (minor 5: a bar over the tank names, a dot below the chart: no prompt, nothing moved) |
+| 6 | names only cuts long names, no tooltip | Playwright `production/gantt` (P47: the name's title; the tooltip starts with the full name) |
+| 7 | the API takes 1-day and 731-day ranges | ExUnit `schedule_test`, `production_schedule_controller_test` (422 `range_invalid`) |
+| 8 | the Remove-Transfer warning names no tank | Playwright `production/followups-4650` (N2: "After transfer 1 depends on it.") |
+| 9 | trimmed number in the field; duplicate "planned"; check-off message | Playwright `production/d47-qa-fixes` (M2 field; "FDH done · 8 following steps moved 2 days later."). The plan dialog ignores a second submit while saving (not reproducible as a test) |
+| 10 | a done standalone CIP while beer is in the tank isn't flagged | ExUnit `status_flags_test` |
+| P32 | a refetch mid-drag | Playwright `production/batches` ("P32 on DEV": the minute's refetch arrives mid-drag with a new tank; the drop still lands, by tank id). The P32 spec measures the lane after scrolling |
+| P5 | Restore "last" with tanks added meanwhile | Playwright `production/tanks` (P5 checks it's after every tank active before; the handle test in `followups-4650` is relative to its neighbour too) |
+| Addition | live feedback while dragging (the hint that follows the pointer) | Vitest `gantt` (`dragHint`: day and ±days, → tank / Unassigned, out of service, overlap, before the step it follows, Move only past a follower, outside the chart); Playwright `production/d47-qa-fixes` (mid-drag: a sideways drag, a row change into an out-of-service tank in red, outside the chart; nothing moved). Touch places it above the finger: by hand at the DEV gate with the long-press |
+
+DEV gate fix cycle 2 (`stepwise_results/d47_qa_recheck.md`, lead decisions 5):
+
+| # | Finding | Test |
+|---|---|---|
+| N1 | the brew-day check-off preview announced renumbering that doesn't happen | ExUnit `schedule_test` ("brew-day check-off preview": the preview's `renumbered` equals the write's, with and without a change) |
+| N2 | the bar's hover tooltip covers the drag hint | Playwright `production/d47-qa-fixes` (N7, N2: hidden through the drag, back only once the pointer moves) |
+| N3 | the drag hint clipped at the right edge | Playwright `production/d47-qa-fixes` (N3: flipped left, inside the window) |
+| N4 | a completed part's leftover CIP | ExUnit `status_flags_test` (the stay ends at the exit; `leftover_cip`; no overlap; the leftover CIP in another stay is "CIP while beer is in the tank"; on the exit day it cleans after it, "Sani 0 days"); Vitest `gantt` (bar ends at the exit, the CIP dot holds no lane, the drag hint sees no overlap past the exit) |
+| N5 | after an Escape-cancelled drag the next CIP drag did nothing (its release clicked through and opened the empty-spot menu) | Playwright `production/d47-qa-fixes` (N5: Esc a dot and a CIP drag, then the CIP moves) |
+| N6 | a dot's out-of-service hint | Vitest `gantt` (a fill or exit dot checks the new stay; any other dot its own day) |
+| N7 | a drag back to its start opened the dialog | Playwright `production/d47-qa-fixes` (N7: nothing opens, nothing sent) |
+| Remove-Transfer | Remove before the preview; every dependent tank named | Playwright `production/followups-4650` (N2: the preview held back, Remove disabled with a spinner, Cancel works; "After transfer 1 and After transfer 2 depend on it.") |
+| Seed sign-off | showed as reopened on DEV | ExUnit `seeds/synthetic_test` (a fresh seed reads as signed off; still so days later and after another batch renumbers Enos) |
+| Plan "Ferment in" | FV7 after picking QR1 while tanks were added | Playwright `production/d47-qa-fixes` (the menu's rows hold while it's open through a refetch that adds a tank; picked by id) |
+
+Fix cycle 3 (lead decisions 6):
+
+| # | Item | Test |
+|---|---|---|
+| 1 | flag signatures differed between nodes (`term_to_binary`) | ExUnit `status_flags_test` (a canonical pipe-joined string, pinned; 30 and 30.0, a `Date` built three ways: one signature; too-big with a 20.0 capacity), `seeds/synthetic_test` (the seeded sign-off reads as signed off) |
+| 2 | a fill or exit dot's hint checks the stay as the default answer leaves it | Vitest `gantt` (an outage just after the stay, the fill +2 days: red with "move all", clear with "move only") |
+| 3 | a reason that applies only to the other answer is a neutral second line | Vitest `gantt` ("If you move only this step: after Carb, which follows it"; red only when "move only" is the default) |
+| 4 | Remove-Transfer while loading: `aria-label="Remove"`, `aria-busy="true"` | Playwright `production/followups-4650` (N2) |
+
+Not automated (LIMITATIONS, lead decisions 3): touch long-press drag (450 ms) — by hand on the tablet or the Pixel at the DEV gate; the "Label by" picker when batches share a track is deferred (lines show "step · batch"); links between tanks aren't drawn in an expanded tank (the transfer arrow covers the hand-off).
+
+## D48 — Changing a batch (`specs/d46_production_scheduling_spec.md` §3.11, §3.6 D48 toolbar, §3.8 marks; `planning/d48_batch_changes_plan.md`)
+
+Playwright specs are in `regression/production/` (project `production`, one worker), each on its own `[TEST-TEMP]` data with relative P-number checks.
+
+| # | Scenario | Layer |
+|---|---|---|
+| P65–P66 | Add step: an addition after FDH, slotted before Set temp 58°; Added; the template unchanged; Undo | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, `production_batch_changes_controller_test` |
+| P67 | Something else with no name: "Give the step a name." | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test |
+| P68 | Add a ramp 60° → 40° at 10°/day: three chained Set temp steps | Playwright `d48-batch-changes`; ExUnit `batch_changes_test` |
+| P69 | Change ramp…: only unfinished steps rebuilt, from the last finished temperature | Playwright `d48-batch-changes`; ExUnit `batch_changes_test` |
+| P70–P71 | Remove a step: links pass through; Brew day has no Remove (API `brew_day`) | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test |
+| P72, P74 | Add a Filter into a tank (CIP for the first tank, transfer arrow); remove it from the step dialog | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test (both routes, Undo) |
+| P73 | A transfer before a done step: "Some steps after that date are already done. Pick a later date." | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test |
+| P75, P110 | Split - Transfer / Split - Filter: 12 bbl stays, 8 bbl to another tank; labels, own steps, gold arrows; the staying part shares its parent's lane (row doesn't grow) | Playwright `d48-split-select`; ExUnit `splits_marks_test`; Vitest `gantt` (split lanes) |
+| P76–P78 | Volumes must add up (the spec's message); two parts can't share a tank; no part staying adds a CIP | Playwright `d48-split-select`; ExUnit `splits_marks_test`, controller test |
+| P79 | Parts move on their own | Playwright `d48-split-select`; ExUnit `splits_marks_test` |
+| P80–P81 | Undo split merges with part 1's schedule; refused once a part step is done | Playwright `d48-split-select`; ExUnit `splits_marks_test` |
+| P82 | A planned split: parts P-numbered from the parent, then its number at brew day; the Split's check-off fills them | Playwright `d48-split-select`; ExUnit `splits_marks_test` |
+| P83–P84 | Change a planned batch's template (added step kept, added transfers dropped, the message) and brand (parts follow) | Playwright `d48-batch-changes`; ExUnit `batch_changes_test`, controller test (Undo) |
+| P85, P88 | Ctrl-click select and drag together (the prompt about what follows); Shift-click range in one tank | Playwright `d48-split-select` |
+| P86 | Assign to… "4 steps assigned to Riley Wort." | Playwright `d48-split-select` |
+| P87 | Pixel: long-press starts selection mode, taps add, drag moves all; a swipe still scrolls | **Manual** at the DEV gate |
+| P89 | Undo after a split | Playwright `d48-split-select` (P75); ExUnit `splits_marks_test` (Undo of split and of Undo split) |
+| P113 | Shift-drag: move only, no prompt, "(only this step)" with Undo | Playwright `d48-split-select` |
+| P114–P117 | Mark dirty / Mark clean (note, marker tooltip), the flags they raise and clear; none on a tank in use (API `tank_in_use`); History → Remove; Undo | Playwright `d48-split-select`; ExUnit `splits_marks_test`, controller test |
+| P118 | Today: a week back plus the zoom's weeks, always scrolls back (the D47 no-op); a new zoom keeps the start | Playwright `d48-toolbar`; Vitest `gantt` (`defaultRange`, `rangeForZoom`) |
+| P119 | Collapse all \| ● \| Expand all follows the carets; the middle restores the mix; remembered | Playwright `d48-toolbar`; Vitest `gantt` (`expandMode`, the `mix` pref) |
+| P120 | "6 weeks ▾" zoom menu and Add process ▾ (Plan batch…, CIP & Sanitize…), mouse and keyboard; old buttons gone | Playwright `d48-toolbar` (the other production specs open the dialogs through the menu) |
+| P121 | 20 px step rows with a mouse, 28 px on touch and at phone width; phases at 16 px, steps at 28 px; diamonds and links on their rows | Playwright `d48-toolbar` (desktop, phone width, `hasTouch`); Vitest `gantt` (`layoutRows` with 20 px) |
+| — | Drags auto-scroll the grid near its edges (rows below the fold, dates past the right edge); a press in an edge zone doesn't scroll until it heads that way | Playwright `d48-batch-changes` ("a short window"); the P32/P33 and drag-hint specs drag to off-screen rows |
+| — | Flag signatures start with the recipe version `v1|`; a current sign-off stays signed off | ExUnit `status_flags_test`, `seeds/synthetic_test` |
+| — | DEV seed: a split batch (one part stays), an added filter, a clean and a dirty mark; `[TEST-TEMP]` parts and marks cleaned up | ExUnit `seeds/synthetic_test` |
+| — | Brewery members and owners only (403 for others); the new routes people-only until D49 | ExUnit controller test, `device_route_matrix_test` |
+
+| DEV QA M1 | Transfers, filters and splits only while the beer is in that tank (`before_fill`, `after_exit`, "The split has to be after brew day."); added steps and ramps from brew day; dialogs default to the first valid day | ExUnit `batch_changes_test`, `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
+| DEV QA M2, minors 6, 8 | A split parent can't be deleted or resized until Undo split (a note in place of Delete); a part shows "P5.2 · …" and has no Delete; Undo of a delete restores vessels, steps, links and a ramp | ExUnit `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
+| DEV QA M3 | No transfer or part into the tank the beer is in: "The beer is already in FV2."; Into leaves that tank out | ExUnit `batch_changes_test`, `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
+| DEV QA 7a, 7b | Template change names a dropped added transfer; kept ramps and steps (one checked off before brew day too) stay linked in | ExUnit `batch_changes_test`; Playwright `d48-fix-cycle-1` (7a) |
+| DEV QA 9, 10, 11 | Zoom tooltip "Weeks on screen"; a two-batch move: "2 batches · 2 steps moved 1 day later", following steps under each batch; Ctrl/Cmd+Space selects, Escape clears | Playwright `d48-fix-cycle-1`; ExUnit controller test (preview batches) |
+| Pixel | Auto-scroll down on a phone: the edge zone is the part of the grid on screen; the page scrolls once the grid is at its end | Playwright `d48-fix-cycle-1` (412×915); Matt rechecks on the Pixel |
+| DEV QA N1 | No two vessels in a row in one tank (Unassigned never matches) after Add transfer / filter, a part's own transfer, Remove transfer, a template change, a split or Undo split: "The beer goes into Q1RC next, on Fri Dec 18."; Into leaves out the next tank and the preview refuses it; the old exit's CIP isn't counted as moving (it goes on with that exit) | ExUnit `batch_changes_test`, `splits_marks_test`, controller test; Playwright `d48-fix-cycle-2` |
+| DEV QA N2, N3 | A brewed part reads "#44.2 · the parent's number"; a part's volume is locked like the parent's (`split`) | ExUnit `splits_marks_test`, controller test; Playwright `d48-fix-cycle-2` |
+| DEV QA N4, N6 | A part's steps and ramps start on its Split (`before_split`, "A step can't come before the split."); added steps and ramps end on or before the tank's exit (`after_exit`; a ramp refused whole) | ExUnit `batch_changes_test`, `splits_marks_test`, controller test |
+| DEV QA N5 | The split dialog clears its refusal when the day, the method or a part changes | Playwright `d48-fix-cycle-2` |
+| DEV QA check | A brewed split's part 2 (own tank) opens on a click: not reproduced | Playwright `d48-fix-cycle-2` |
+| DEV QA addendum 1 | Setting a vessel's tank (batch dialog pickers, drag onto another row) and Plan batch's tanks: the same `same_tank` refusals, on the vessels after the save; the drag hint names it in red | ExUnit `batch_changes_test`, controller test; Vitest `gantt` (drag hint); Playwright `d48-fix-cycle-2` |
+| DEV QA addendum 2 | Change ramp… refused (`after_exit`) when a regenerated step would be after the tank's exit | ExUnit `batch_changes_test` |
+| DEV QA R1 | An Undo of a change to a batch's vessels is stale (409 `undo_stale`) once any of that batch's vessels changed since: tank change, add / remove transfer, template change, split, Undo split, Plan batch; a move's Undo isn't affected; what an Undo puts back passes the N1 rule (`same_tank`) | ExUnit `undo_vessels_test` (the two-user sequence, one test per kind), controller test (409) |
+| DEV QA R2 | Add step, Add a ramp, Change ramp, Add transfer / filter, Split and Plan batch clear a refusal when their input changes (`useRefusal`); the batch dialog's banner clears on a new change or when another dialog opens from it | Playwright `d48-fix-cycle-3` |
+| DEV QA R3 | A split where nothing stays names the part ("Part 1: The beer goes into Q1RB next, on …"); part 1's picker leaves out the next tank then | ExUnit `splits_marks_test`, controller test; Playwright `d48-fix-cycle-3` |
+| DEV QA R4 | A Move only that puts a batch's transfers out of date order is allowed and flagged `transfer_order` ("P7's transfers are out of order: on Thu Dec 17 the beer goes into Q1SB, which it's already in."), in place of the same batch's `dirty_fill`; it clears on a move back, Undo or Move all | ExUnit `batch_changes_test`; Playwright `d48-fix-cycle-3` |
+| DEV QA X1 | Undo of an Undo split is stale (409 `undo_stale`) once any vessel of the split's tree changed since (the merged batch's included), and what it puts back passes the tree rule | ExUnit `split_tree_test` (QA's sequence, an unused tank, nothing changed, the tree rule without the stale check), controller test (409) |
+| DEV QA X2 | On a split, a part's tank change, a transfer added or removed on a part, a split and every Undo follow the rule over the whole tree (`same_tank`, named on the part: "Part 2: The beer is already in FV9.", "Part 2 can't go into FV1: part 1 stays there."); the pickers leave those tanks out and a bar drag's hint names the reason | ExUnit `split_tree_test`, controller test; Vitest `gantt.test` (`treeRefusal`); Playwright `d48-fix-cycle-4` |
+| Lock while split (Matt) | The parent's tanks and the staying part's first tank can't change while split (`split`, "Undo the split first."): read-only pickers with "Undo the split first to change it", Add transfer / filter off on the parent, a bar drag's hint and drop refused; no transfer added or removed on the parent | ExUnit `split_tree_test`, controller test; Vitest `gantt.test` (`splitLocked`); Playwright `d48-fix-cycle-4` |
+| DEV QA X3 | Undo split puts the batch back as it was (steps, links, tanks), whether part 1 or part 2 stayed or nothing did: it merges the part that stays (else part 1) and puts back the parent's links into and out of the moved steps | ExUnit `split_tree_test` |
+| DEV QA X4 | With nothing staying, part 1's picker leaves out the next tank (also while part 1 is still "(stays here)"); the split dialog shows the refusal before Split | Playwright `d48-fix-cycle-4`, `d48-fix-cycle-3` |
+| DEV QA X5 | A refused Undo refetches the schedule: the chart and the batch dialog show the server's tanks at once | Playwright `d48-fix-cycle-4` |
+| DEV QA Y1 | A split batch moves as one tree: Move all from any parent step on or before the Split (Brew day, FDH, the Split) moves the Split and every part's unfinished steps by the same days, listed in the prompt under each part's label, titled "P5 and its 2 parts · …" ("N batches · …" stays for separate batches); moving the Split itself (drag, dialog, API, a late check-off) or shifting the parent's bar carries the parts with either answer; a done part step refuses those moves (`part_step_done`); a part step before its Split raises "Steps out of order" for the part; Undo reverses the whole tree | ExUnit `split_moves_test` (Brew day, FDH, the Split with each answer and +20, Shift, Move only, the flag and its clearing, the done-step refusal, Undo), `splits_marks_test` (updated), controller test (preview groups, carried, the refusal's message); Playwright `d48-fix-cycle-5` (the prompt's groups, the Split's snackbar, Undo) |
+| DEV QA Y2 | A Split, Transfer/Filter or Package (on a part: its parent's) can't be checked off before brew day (`before_brew_day`, "Check off brew day first."), in the preview and the write; brew day can't be un-checked while one of them is done (`exit_done`); un-checking a Split or Package without a done brew day gives planned, with no number | ExUnit `split_moves_test` (QA's sequence, a part's Package, a lager's Transfer and Package, the brewed control, an old bad state put right), `schedule_test` (updated), controller test (the message); Playwright `d48-fix-cycle-5` (the step dialog's refusal) |
+| DEV QA Y3 | Brand and Template are read-only on a split parent and its parts ("Undo the split first to change it"); the API refuses the parent's brand with `split` | ExUnit `batch_changes_test` (updated), controller test (422); Playwright `d48-fix-cycle-5` |
+| DEV QA Z1 | A split part can't get ahead of its parent's Split: a part's Transfer/Filter or Package (staying part too) is refused while the Split isn't done (`before_split`, "Check off Split - Transfer first."; `before_brew_day` wins), in the preview and the write; the Split can't be un-checked while a part's exit is done (`part_exit_done`, "Mark … P1.2: Package not done first."); with the Split not done every part is planned (a part with a done FDH/Carb too; a part already left fermenting is put right by the next un-check in its family) | ExUnit `split_moves_test` (both of QA's routes, the staying part, the precedence, the order back, a part's Transfer, the lager control, an old bad state put right), controller test (both messages); Playwright `d48-fix-cycle-6` (the step dialog's two refusals) |
+| DEV QA Z2 | A late or early check-off of the Split names the parts it carries: "Split - Transfer done, 5 days late. … P6.1 and … P6.2 moved with it." | Playwright `d48-fix-cycle-6` (the wording, Undo) |
+| DEV QA Z3 | `PATCH /api/production/steps/:id` refuses `due_on`, `done_on` and `completed_at` (`date_not_here`, 422) instead of ignoring them | Controller test `production_schedule_controller_test` |
+| DEV QA AA1 | Undo obeys the order rules: an Undo that marks a step done runs the check-off rules (`before_brew_day`, `before_split`), one that marks it not done the un-check rules (`exit_done`, `part_exit_done`), against the schedule as the Undo leaves it; refused with the rule's own code and message, nothing undone, and the same Undo works once the blocker is cleared; the stale check is unchanged (a full Package is still `undo_stale`) | ExUnit `split_moves_test` (QA's paths A, B and C, brew day both ways, controls), controller test (path A over HTTP with two users, the 422); Playwright `d48-fix-cycle-7` (path A with owner and breweryMgr: the Undo's refusal, part 2 unchanged) |
+| DEV QA AA2 | Brew day's `exit_done` names the part when the done exit is a part's ("Mark … #44.2: Transfer not done first."); a parent's own exit keeps "Mark Split - Transfer not done first." | ExUnit `split_moves_test` |
+
+Not automated: P87 (touch long-press selection on the Pixel) and a touch drag's auto-scroll, by hand at the DEV gate.
+
+## D49 — Task list linkage, Clean not sanitized, Pencilled batches (`specs/d46_production_scheduling_spec.md` §3.12–§3.12b; `planning/d49_schedule_task_list_plan.md`)
+
+Playwright specs are in `regression/production/` (project `production`) and, for the board, `regression/tasks/task-board-linked` (project `brewery-board`, after `production`), each on its own `[TEST-TEMP]` data.
+
+| # | Scenario | Layer |
+|---|---|---|
+| P90 | Plan a batch: each task-list step a task on its day ("TANK · Brand P1 · FDH"), Planned batch pill; no marker has one | Playwright `task-board-linked`; ExUnit `task_link_test`, `task_board_linked_test` |
+| P91 | Show planned batches off: hidden, still off after a reload; brewer2's board unaffected | Playwright `task-board-linked`; ExUnit `task_board_linked_test` (`/api/me`, PUT) |
+| P92 | Drag a linked task 2 days later: the move prompt on the board; Apply moves the step and the following ones; Cancel puts the card back | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P93 | Check off a step due today on the board: done on the Gantt, no "where should it show" | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P94 | Check off a step planned 3 days ago: moves to today with the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P95 | Check off a planned batch's brew day on the board: the batch number prompt; the title then has "#N" | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P96 | Edit a linked task: "This task comes from the production schedule" + Open in schedule (the step dialog on the Gantt); no title or day fields | Playwright `task-board-linked` |
+| P97 | Assign a linked task to brewer2: the step's assignee (the Gantt's initials come from it, D47's rendering tests) | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `task_link_test` |
+| P98 | The step's notes changed on the schedule show on the board | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| P99 | Delete a linked task: "Take this off the task list? …"; the step stays, off the list; the schedule's Undo brings it back | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `task_link_test` |
+| P100 | The step dialog's "Show on the Brewery task list" on: the task comes back on its day | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| P101 | Into another tank / its batch number: the titles follow | Playwright `task-board-linked` (tank), P95 (number); ExUnit `task_link_test` (renumbering, renames) |
+| P102 | Gantt → Task list: Late / Today / the next days; check off, Move to [date], assign, Open; follows Show planned batches | Playwright `d49-task-list` |
+| P103 | A standalone CIP: "TANK · CIP & Sanitize" on the board; checked off there, the tank is sanitized | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| P104–P107 | The brewhouse tablet on the schedule | **D50**, not D49 (Matt, 2026-10-26). Until then the tablet sees linked tasks read-only: the tablet row below |
+| P108 | No recurring options on a linked task; Change day… has no Future and runs the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` (`linked_task`) |
+| — | The brewhouse tablet: linked tasks read-only (no checkbox, no drag, no actions, "Do this on the production schedule."); the API refuses every write (`linked_task_device`); "Sign in as me" can | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `device_route_matrix_test` |
+| — | A phase marker has no task-list switch (step dialog, template row, Add phase start) (decision 6.1) | Playwright `d49-task-list` |
+| — | The Dashboard's Today's tasks card: a linked brew day (batch number) opens its step on the schedule, nothing checked off; a CIP checks off in the card (decision 8.3) | Playwright `task-board-linked` |
+| — | Move all to today leaves linked tasks; shift-end reminders list them | Playwright `task-board-range` (S20); ExUnit `task_board_linked_test`, `task_shift_end_reminder_test` |
+| BB1 | A refused snackbar Undo keeps its button until the token runs out; the same Undo works once another user clears the blocker | Playwright `d49-undo-retry` |
+| BB2 | The Split's Undo after a part's full Package, brew day's in a split family, a Split un-check's after brew day, a late Split's: refused with the rule's own code, then undone once it's cleared (the late Split's parts get their dates back); a real change since is still `undo_stale` | ExUnit `split_moves_test` |
+| P122 | Sani 40 days → Mark… → Clean not sanitized: "Clean no sani 0 days" (amber), a marker, rows ≥ 56 px, the current state greyed; Undo | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P123 | A fill after it: "isn't sanitized" (soft), signed off in the Flags list; a done CIP & Sanitize (or a planned one, a Sanitize, a Clean & sanitized mark) clears it | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P124 | Dirty → Clean not sanitized: the dirty flags clear; History names it | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P125 | Add process ▾ → CIP… → CIP - no sani, already done: Clean no sani, no dirty flags (the board title "TANK · CIP - no sani": `task-board-linked`) | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P126 | Step dialog switches an exit CIP to CIP - no sani (renamed); the next fill gets "isn't sanitized", not dirty; a done CIP can't switch | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P127 | Sanitize on a Clean no sani tank: Sani 0 days; a fill after it has no flags | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P128 | Planned CIP - no sani, then Sanitize, then a fill: no flags; delete the Sanitize → "isn't sanitized" | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P129 | Sanitize done on a dirty tank (empty-spot menu's Add CIP…): still dirty, "no CIP planned"; the step dialog says "The tank was dirty: run a CIP first." | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| — | A template's CIP entry takes the variant and passes it to planned batches | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P130 | Plan batch → Pencil in (Unassigned): an X-number, faded, hatched, labeled Pencilled; no "No tank assigned"; no board tasks | Playwright `d49-pencilled`, `task-board-linked` (board); ExUnit `pencilled_test`, controller test |
+| P131 | Dragged over a scheduled batch: its overlap flag muted (no Mark OK, not in the chip or the badge); the scheduled batch keeps its own, open; `flag_muted` | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test; Vitest `gantt` (`flagChip`, `badgeText`) |
+| P132 | Schedule this batch: a P-number by date (others renumber), drawn normally, flags open; Undo; its tasks on the board | Playwright `d49-pencilled`, `task-board-linked` (board); ExUnit `pencilled_test` |
+| P133 | Pencil in a scheduled planned batch: an X-number, faded; not offered (and `step_done`) once a step is done; its tasks leave the board | Playwright `d49-pencilled`, `task-board-linked` (board); ExUnit `pencilled_test` |
+| P134 | Brew day on a pencilled batch: "Schedule this batch first." (`schedule_first`); Cancel leaves it; Schedule, then the number prompt and the check-off | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test |
+| P135 | Show planned batches on: a pencilled batch's steps never show on the board | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| — | X-numbers by brew date, renumbered both ways; split parts follow their parent (X1.2), scheduled together | ExUnit `pencilled_test` |

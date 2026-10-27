@@ -27,6 +27,18 @@ defmodule RockcutApi.Seeds.Synthetic do
   2 days ago, one on Future) and one Office task; Sales starts empty, and only
   the Brewery has Daily items. Tagged tasks, series and Daily items go from
   every board; `reset/0` also deletes the other boards' Daily items.
+  D46: tanks FV1–FV7 and Serving 1–2 (restored to their canonical fields and
+  order, each setup), their out-of-service periods rebuilt (Serving 2: one
+  coming up and one past), and three `[SEED]` process templates.
+  `[TEST-TEMP]` tanks, templates, step types and phases are cleaned up.
+  D48: tanks FV8–FV9 and Serving 3–4 for a `[SEED]` batch with an added
+  filter and a `[SEED]` split batch (one part stays), a clean mark on
+  Serving 3 and a dirty one on Serving 4; `[TEST-TEMP]` parts and marks
+  are cleaned up.
+  D49: a Clean not sanitized mark on FV1 (Enos fills it later: the soft
+  flag), a `[SEED]` CIP - no sani on FV7 tomorrow, a pencilled Oktoberfest
+  (X1) in Unassigned, and the Brewery board's linked tasks for every seeded
+  step (`TaskLink.sync!/1`), Altruism P1's with the Planned batch pill.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -48,6 +60,29 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.BeerBoard.Entry
   alias RockcutApi.Tasks
   alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}
+  alias RockcutApi.Production
+
+  alias RockcutApi.Production.{
+    BatchChanges,
+    BatchVessel,
+    Batches,
+    Cips,
+    ConditionMark,
+    ConditionMarks,
+    FlagSignoff,
+    Outage,
+    Phase,
+    Schedule,
+    Signoffs,
+    Splits,
+    Step,
+    StepType,
+    Tank,
+    TaskLink,
+    Template,
+    TemplateStep,
+    UndoRecord
+  }
 
   @domain "@rockcut-test.com"
   @seed_tag "[SEED]"
@@ -215,9 +250,59 @@ defmodule RockcutApi.Seeds.Synthetic do
     brand_ids = Repo.all(from(b in Brand, where: like(b.name, ^"#{@temp_tag}%"), select: b.id))
     recipe_ids = Repo.all(from(r in Recipe, where: r.brand_id in ^brand_ids, select: r.id))
     Repo.delete_all(from(t in BrewTurn, where: t.recipe_id in ^recipe_ids))
+    # D48: split parts first (the parent restricts, row by row in SQLite).
+    Repo.delete_all(
+      from(b in Batch,
+        where:
+          b.split_parent_id in subquery(
+            from(p in Batch, where: p.brand_id in ^brand_ids, select: p.id)
+          )
+      )
+    )
+
     Repo.delete_all(from(b in Batch, where: b.brand_id in ^brand_ids))
     Repo.delete_all(from(r in Recipe, where: r.id in ^recipe_ids))
     Repo.delete_all(from(b in Brand, where: b.id in ^brand_ids))
+
+    # D46: production setup rows agents created. Entries that use a
+    # temporary step type or phase go first (template steps restrict both);
+    # a step type's starts phase nilifies itself.
+    temp_types = from(t in StepType, where: like(t.name, ^tag), select: t.id)
+    temp_phases = from(p in Phase, where: like(p.name, ^tag), select: p.id)
+    Repo.delete_all(from(t in Template, where: like(t.name, ^tag)))
+
+    Repo.delete_all(
+      from(s in TemplateStep,
+        where: s.step_type_id in subquery(temp_types) or s.phase_id in subquery(temp_phases)
+      )
+    )
+
+    Repo.delete_all(from(t in StepType, where: like(t.name, ^tag)))
+    Repo.delete_all(from(p in Phase, where: like(p.name, ^tag)))
+
+    # D47: schedule rows agents made: batches tagged on notes (brands tagged
+    # went above; steps, vessels and links cascade), standalone CIPs on
+    # temporary tanks or tagged, and the sign-offs of flags about them.
+    temp_batch_ids = Repo.all(from(b in Batch, where: like(b.notes, ^tag), select: b.id))
+
+    # D48: parts first (the parent restricts), then tagged clean / dirty marks.
+    Repo.delete_all(from(b in Batch, where: b.split_parent_id in ^temp_batch_ids))
+    Repo.delete_all(from(b in Batch, where: b.id in ^temp_batch_ids))
+    Repo.delete_all(from(m in ConditionMark, where: like(m.note, ^tag)))
+    temp_tanks = from(t in Tank, where: like(t.name, ^tag), select: t.id)
+
+    Repo.delete_all(
+      from(s in Step,
+        where: is_nil(s.batch_id) and (s.tank_id in subquery(temp_tanks) or like(s.notes, ^tag))
+      )
+    )
+
+    delete_orphan_signoffs()
+    Repo.delete_all(from(t in Tank, where: like(t.name, ^tag)))
+
+    # D49: the Brewery board's linked tasks went with their steps; the rest
+    # may have changed P-numbers.
+    TaskLink.sync!()
 
     # D34: throwaway people a spec created to change or reset a password
     # without touching a persona (sessions, memberships, audit rows cascade).
@@ -228,6 +313,20 @@ defmodule RockcutApi.Seeds.Synthetic do
             like(u.email, ^"%#{@domain}")
       )
     )
+
+    :ok
+  end
+
+  # A sign-off whose flag names a batch that's gone (keys hold "batchId.vessel").
+  defp delete_orphan_signoffs do
+    live = MapSet.new(Repo.all(from(b in Batch, select: b.id)))
+
+    for s <- Repo.all(FlagSignoff),
+        ids =
+          Regex.scan(~r/(?:^|:)(\d+)\.\d+/, s.flag_key)
+          |> Enum.map(fn [_, id] -> String.to_integer(id) end),
+        Enum.any?(ids, &(not MapSet.member?(live, &1))),
+        do: Repo.delete!(s)
 
     :ok
   end
@@ -673,6 +772,7 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     seed_brewery_board(u, monday, today, now)
     seed_other_boards(u, today, now)
+    seed_production(u, today)
 
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
@@ -718,6 +818,481 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(s in TaskSeries, where: s.id in ^series_ids))
     Repo.delete_all(from(i in DailyItem, where: like(i.name, ^pattern)))
     for dept <- Repo.all(Department), do: Tasks.compact_lists(dept)
+  end
+
+  ## Production setup (D46)
+
+  # {name, kind, capacity bbl, location}, in display order.
+  @tanks [
+    {"FV1", "unitank", 30, "brewhouse"},
+    {"FV2", "unitank", 20, "brewhouse"},
+    {"FV3", "unitank", 20, "brewhouse"},
+    {"FV4", "unitank", 30, "brewhouse"},
+    {"FV5", "unitank", 20, "brewhouse"},
+    {"FV6", "unitank", 20, "brewhouse"},
+    {"FV7", "unitank", 30, "brewhouse"},
+    # D48: the split and added-filter batches and the marks use these.
+    {"FV8", "unitank", 20, "brewhouse"},
+    {"FV9", "unitank", 20, "brewhouse"},
+    {"Serving 1", "serving", 30, "walk_in"},
+    {"Serving 2", "serving", 30, "walk_in"},
+    {"Serving 3", "serving", 30, "walk_in"},
+    {"Serving 4", "serving", 30, "walk_in"}
+  ]
+
+  # {tank, first day, last day (offsets from today), reason}
+  @outages [
+    {"Serving 2", 7, 13, "Replace door gasket"},
+    {"Serving 2", -30, -28, "Pressure relief valve"}
+  ]
+
+  @diacetyl_notes "Forced test: hold a sample at 140°F for 20 minutes, cool it, then smell for butter. Crash only if clean."
+
+  # The mockup's templates. Each entry: {key, type name | {:marker, phase},
+  # day, opts}; opts: vessel, temperature, phase, notes, after
+  # ([{key, answer}]). `{:ramp, key, first day, start, target, change, after}`
+  # adds a Set temp ramp whose steps are `key1`, `key2`, … and `key` (the
+  # last). Brew day comes with the template; `{:brew, temperature}` sets its
+  # starting temperature.
+  defp seed_templates do
+    ale = fn pdh, amylo, fdh, ramp, cond ->
+      [
+        {:brew, 68},
+        {:lag, {:marker, "Lag"}, 1, after: [brew: "move_all"]},
+        {:ferm, {:marker, "Fermentation"}, 2, after: [lag: "move_all"]},
+        {:pdh, "PDH", pdh, after: [brew: "move_all"]}
+      ] ++
+        if(amylo, do: [{:amylo, "Amylo", amylo, after: [brew: "move_all"]}], else: []) ++
+        [
+          {:fdh, "FDH", fdh, after: [brew: "move_all"]},
+          {:ramp, :crash, ramp, 58, 32, 10, [fdh: "move_all"]},
+          {:cond, {:marker, "Conditioning"}, cond, after: [crash: "move_all"]},
+          {:carb, "Carb", cond + 1, after: [cond: "move_all"]},
+          {:pack, "Package", cond + 3, after: [carb: "move_only"]},
+          {:cip, "CIP & Sanitize", cond + 3, after: [pack: "move_all"]}
+        ]
+    end
+
+    lager = [
+      {:brew, 50},
+      {:lag, {:marker, "Lag"}, 1, after: [brew: "move_all"]},
+      {:ferm, {:marker, "Fermentation"}, 2, after: [lag: "move_all"]},
+      {:dr, "Set temp", 12, temperature: 65, phase: "Diacetyl rest", after: [brew: "move_all"]},
+      {:dt, "Diacetyl test", 15, notes: @diacetyl_notes, after: [dr: "move_all"]},
+      {:c1, "Set temp", 16, temperature: 40, phase: "Crash", after: [dt: "move_all"]},
+      {:lagm, {:marker, "Lagering"}, 17, after: [c1: "move_all"]},
+      {:c2, "Set temp", 31, temperature: 30, phase: "Crash", after: [lagm: "move_all"]},
+      {:cond, {:marker, "Conditioning"}, 33, after: [c2: "move_all"]},
+      {:xfer, "Transfer", 35, vessel: 1, after: [cond: "move_all"]},
+      {:carb, "Carb", 36, vessel: 1, after: [xfer: "move_all"]},
+      {:cond2, {:marker, "Conditioning"}, 38, vessel: 1, after: [carb: "move_all"]},
+      {:pack, "Package", 40, vessel: 1, after: [cond2: "move_only"]},
+      {:cip, "CIP & Sanitize", 40, vessel: 1, after: [pack: "move_all"]}
+    ]
+
+    [
+      {"#{@seed_tag} Standard ale", ale.(7, nil, 13, 18, 22)},
+      {"#{@seed_tag} Hazy with AMG", ale.(5, 9, 11, 16, 20)},
+      {"#{@seed_tag} Lager with transfer", lager}
+    ]
+  end
+
+  defp seed_production(u, today) do
+    seed_tanks(today)
+
+    Repo.delete_all(from(t in Template, where: like(t.name, ^"#{@seed_tag}%")))
+    ids = for {name, entries} <- seed_templates(), do: build_template(name, entries).id
+
+    # The [SEED] templates first, then whatever else is active.
+    others =
+      Production.list_templates()
+      |> Enum.filter(&(is_nil(&1.retired_at) and &1.id not in ids))
+      |> Enum.map(& &1.id)
+
+    {:ok, _} = Production.reorder_templates(ids ++ others)
+    seed_batches(u, today)
+    :ok
+  end
+
+  ## Production schedule (D47)
+
+  # {key, brand, template, brew day (offset from today), tanks per vessel,
+  # number | nil (planned), steps done through (offset), opts}. Every typed
+  # step due on or before "done through" is checked off on its day.
+  @batches [
+    # P49: brewed 18 days ago, Fermentation, 68°, "Set temp - 58°" due today.
+    {:crusher, "Crusher", "Standard ale", -18, ["FV4"], "42", -1,
+     assign: [{"Set temp - 58°", "brewer1"}]},
+    # P50: its 32° step was due yesterday.
+    {:enos41, "Enos", "Standard ale", -22, ["FV5"], "41", -2, []},
+    {:galactic, "Galactic", "Hazy with AMG", -12, ["FV2"], "40", -1,
+     assign: [{"Set temp - 58°", "brewer2"}]},
+    # Transferred from FV7 into Serving 2 two days ago.
+    {:fest, "Fest", "Lager with transfer", -37, ["FV7", "Serving 2"], "38", -1, []},
+    # P51: emptied (packaged) 8 days ago from Serving 1, its CIP removed: dirty, no CIP planned.
+    {:crusher43, "Crusher", "Lager with transfer", -48, ["FV6", "Serving 1"], "43", -1,
+     drop_cip: 1},
+    # P36: Altruism P1, then a later planned batch.
+    {:altruism, "Altruism", "Standard ale", 2, ["FV3"], nil, nil,
+     assign: [{"Brew day", "brewer2"}]},
+    {:enos, "Enos", "Lager with transfer", 9, ["FV1", nil], nil, nil, volume: 35},
+    # D48: a Filter added in 3 days into Serving 4 (marked dirty: flagged).
+    {:fest37, "Fest", "Standard ale", -14, ["FV9"], "37", -1, filter: {3, "Serving 4"}},
+    # D48: split in 4 days, #39.1 stays in FV8, #39.2 to Serving 3 (marked clean).
+    {:altruism39, "Altruism", "Standard ale", -10, ["FV8"], "39", -1,
+     split: {4, [{:stays, 10}, {"Serving 3", 10}]}},
+    # D49 (P130): pencilled in, Unassigned: X1, no board tasks.
+    {:oktoberfest, "Oktoberfest", "Lager with transfer", 20, [nil, nil], nil, nil,
+     pencilled: true}
+  ]
+
+  # D48: {tank, state, day (offset from today), note}, marked by brewer1.
+  @condition_marks [
+    {"Serving 3", "clean", -2, "Hosed and sanitized after the gasket job"},
+    {"Serving 4", "dirty", -1, "Valve leaked; needs a CIP"},
+    # D49 §3.12a: CIP'd, not sanitized (Enos fills FV1 later: the soft flag).
+    {"FV1", "cleaned", -1, "CIP'd after the gasket job, not sanitized yet"}
+  ]
+
+  # D49 §3.12a: standalone CIPs {tank, variant, day (offset from today)}.
+  @cips [
+    {"FV7", "no_sani", 1}
+  ]
+
+  # Plan decision 2: batches not on the schedule (the D1-era rows) go, with
+  # their brew turns and log entries (cascade), so DEV matches prod after
+  # the clean-up. Then the [SEED] batches (tagged on notes), rebuilt around
+  # today, and one signed-off flag (Enos is bigger than FV1).
+  defp seed_batches(u, today) do
+    Repo.delete_all(
+      from(b in Batch, where: b.id not in subquery(from(v in BatchVessel, select: v.batch_id)))
+    )
+
+    # Parts before their parents (D48: the parent restricts).
+    seeded = from(b in Batch, where: like(b.notes, ^"#{@seed_tag}%"))
+    Repo.delete_all(from(b in seeded, where: not is_nil(b.split_parent_id)))
+    Repo.delete_all(from(b in seeded, where: is_nil(b.split_parent_id)))
+
+    Repo.delete_all(
+      from(s in Step, where: is_nil(s.batch_id) and like(s.notes, ^"#{@seed_tag}%"))
+    )
+
+    Repo.delete_all(FlagSignoff)
+    Repo.delete_all(UndoRecord)
+
+    tanks = Map.new(Repo.all(from(t in Tank, where: is_nil(t.retired_at))), &{&1.name, &1.id})
+    templates = Map.new(Repo.all(Template), &{&1.name, &1.id})
+
+    batches =
+      for {key, brand, template, brew, vessels, number, done_through, opts} <- @batches,
+          into: %{} do
+        batch =
+          seed_batch(
+            brand!(brand),
+            templates["#{@seed_tag} #{template}"],
+            Date.add(today, brew),
+            Enum.map(vessels, &(&1 && tanks[&1])),
+            opts
+          )
+
+        if done_through, do: check_off_through(batch, Date.add(today, done_through), u["brewer1"])
+
+        if number do
+          last_exit_done =
+            Repo.exists?(
+              from(s in Step,
+                join: t in StepType,
+                on: t.id == s.step_type_id,
+                where:
+                  s.batch_id == ^batch.id and t.behavior == "package" and not is_nil(s.done_on)
+              )
+            )
+
+          batch
+          |> Ecto.Changeset.change(
+            batch_number: number,
+            status: if(last_exit_done, do: "completed", else: "fermenting")
+          )
+          |> Repo.update!()
+        end
+
+        if k = opts[:drop_cip] do
+          cip_types = from(t in StepType, where: t.behavior == "cip", select: t.id)
+
+          Repo.delete_all(
+            from(s in Step,
+              where:
+                s.batch_id == ^batch.id and s.vessel_index == ^k and
+                  s.step_type_id in subquery(cip_types)
+            )
+          )
+        end
+
+        for {name, persona} <- Keyword.get(opts, :assign, []) do
+          step = batch |> batch_steps() |> Enum.find(&(Production.Steps.name(&1) == name))
+          step |> Ecto.Changeset.change(assignee_id: u[persona].id) |> Repo.update!()
+        end
+
+        with {day, tank} <- opts[:filter] do
+          {:ok, _} =
+            BatchChanges.add_transfer(Repo.get!(Batch, batch.id), %{
+              "step_type_id" => Repo.get_by!(StepType, name: "Filter").id,
+              "due_on" => Date.add(today, day),
+              "tank_id" => tanks[tank]
+            })
+        end
+
+        with {day, parts} <- opts[:split] do
+          {:ok, _} =
+            Splits.split(Repo.get!(Batch, batch.id), %{
+              "due_on" => Date.add(today, day),
+              "parts" =>
+                Enum.map(parts, fn
+                  {:stays, v} -> %{"stays" => true, "volume_bbl" => v}
+                  {tank, v} -> %{"tank_id" => tanks[tank], "volume_bbl" => v}
+                end)
+            })
+        end
+
+        {key, batch}
+      end
+
+    seed_condition_marks(u, today, tanks)
+
+    for {tank, method, day} <- @cips do
+      {:ok, _} =
+        Cips.create(
+          %{
+            "tank_id" => tanks[tank],
+            "due_on" => Date.to_iso8601(Date.add(today, day)),
+            "cip_method" => method,
+            "notes" => "#{@seed_tag} Rinse and caustic only"
+          },
+          u["brewer1"],
+          today
+        )
+    end
+
+    # One signed-off flag: Enos (35 bbl) is bigger than FV1 (30 bbl).
+    {:ok, sched} = Schedule.load(Date.add(today, -7), Date.add(today, 84), today)
+    enos = batches[:enos]
+
+    case Enum.find(sched.flags, &(&1.kind == "too_big" and enos.id in &1.batch_ids)) do
+      nil ->
+        :ok
+
+      flag ->
+        {:ok, _} =
+          Signoffs.sign_off(
+            %{
+              "key" => flag.key,
+              "signature" => flag.signature,
+              "note" => "We'll top up FV1 from the second turn."
+            },
+            u["brewer1"]
+          )
+    end
+
+    # D49 §3.12: every seeded step's task on the Brewery board, the done
+    # ones too (as if they'd been on the board all along).
+    TaskLink.sync!(Repo.all(from(s in Step, select: s.id)))
+    # The last setup's linked tasks went with their batches (a cascade, so
+    # their days didn't close up): the same positions every setup.
+    Tasks.compact_lists(Repo.get_by!(Department, key: "brewery"))
+    :ok
+  end
+
+  # D48: the seeded tanks' marks start over each setup.
+  defp seed_condition_marks(u, today, tanks) do
+    seeded_tanks = for {name, _, _, _} <- @tanks, do: tanks[name]
+    Repo.delete_all(from(m in ConditionMark, where: m.tank_id in ^seeded_tanks))
+
+    for {tank, state, day, note} <- @condition_marks do
+      {:ok, _} =
+        ConditionMarks.create(
+          Repo.get!(Tank, tanks[tank]),
+          %{
+            "state" => state,
+            "marked_on" => Date.add(today, day),
+            "note" => "#{@seed_tag} #{note}"
+          },
+          u["brewer1"],
+          today
+        )
+    end
+  end
+
+  defp seed_batch(brand, template_id, brew_on, tank_ids, opts) do
+    {:ok, {batch, _}} =
+      Batches.plan(%{
+        "brand_id" => brand.id,
+        "template_id" => template_id,
+        "brew_on" => brew_on,
+        "volume_bbl" => Keyword.get(opts, :volume, 20),
+        "tank_ids" => tank_ids,
+        "pencilled" => Keyword.get(opts, :pencilled, false)
+      })
+
+    batch |> Ecto.Changeset.change(notes: "#{@seed_tag} #{brand.name}") |> Repo.update!()
+  end
+
+  # Typed steps due on or before `through` are checked off on their day.
+  defp check_off_through(batch, through, by) do
+    now = now()
+
+    Repo.update_all(
+      from(s in Step,
+        where: s.batch_id == ^batch.id and not is_nil(s.step_type_id) and s.due_on <= ^through,
+        update: [set: [done_on: s.due_on, done_by_id: ^by.id, completed_at: ^now]]
+      ),
+      []
+    )
+  end
+
+  defp batch_steps(batch),
+    do: Repo.all(from(s in Step, where: s.batch_id == ^batch.id, preload: [:step_type, :phase]))
+
+  # A real brand by name (case-insensitive), made if it's missing.
+  defp brand!(name) do
+    lowered = String.downcase(name)
+
+    Repo.one(from(b in Brand, where: fragment("lower(?)", b.name) == ^lowered, limit: 1)) ||
+      Repo.insert!(%Brand{name: name, status: "active"})
+  end
+
+  # The nine tanks with their canonical fields, first in display order and
+  # active; their out-of-service periods rebuilt around today.
+  defp seed_tanks(today) do
+    now = now()
+
+    seeded =
+      for {name, kind, capacity, location} <- @tanks do
+        fields = %{
+          kind: kind,
+          capacity_bbl: Decimal.new(capacity),
+          location: location,
+          notes: nil,
+          retired_at: nil
+        }
+
+        lowered = String.downcase(name)
+
+        case Repo.one(from(t in Tank, where: fragment("lower(?)", t.name) == ^lowered)) do
+          nil ->
+            Repo.insert!(struct(Tank, Map.merge(fields, %{name: name, position: 0})))
+
+          tank ->
+            tank |> Ecto.Changeset.change(Map.put(fields, :name, name)) |> Repo.update!()
+        end
+      end
+
+    seeded_ids = Enum.map(seeded, & &1.id)
+
+    others =
+      Repo.all(
+        from(t in Tank,
+          where: is_nil(t.retired_at) and t.id not in ^seeded_ids,
+          order_by: [t.position, t.id],
+          select: t.id
+        )
+      )
+
+    {:ok, _} = Production.reorder_tanks(seeded_ids ++ others)
+
+    by_name = Map.new(seeded, &{&1.name, &1})
+    Repo.delete_all(from(o in Outage, where: o.tank_id in ^seeded_ids))
+
+    for {tank, from, to, reason} <- @outages do
+      Repo.insert!(%Outage{
+        tank_id: by_name[tank].id,
+        starts_on: Date.add(today, from),
+        ends_on: Date.add(today, to),
+        reason: reason,
+        inserted_at: now,
+        updated_at: now
+      })
+    end
+
+    :ok
+  end
+
+  defp build_template(name, entries) do
+    {:ok, template} = Production.create_template(%{"name" => name})
+    [brew] = template.steps
+    types = Map.new(Production.list_step_types(), &{&1.name, &1})
+    phases = Map.new(Production.list_phases(), &{&1.name, &1.id})
+
+    Enum.reduce(entries, {template, %{brew: brew.id}}, fn
+      {:brew, temperature}, {t, keys} ->
+        {:ok, t} = Production.update_step(t, brew, %{"temperature" => temperature})
+        {t, keys}
+
+      {:ramp, key, first_day, start, target, change, [{after_key, answer}]}, {t, keys} ->
+        before = MapSet.new(t.steps, & &1.id)
+
+        {:ok, t} =
+          Production.add_ramp(t, %{
+            "start" => start,
+            "target" => target,
+            "change_per_day" => change,
+            "first_day" => first_day,
+            "comes_after_id" => keys[after_key],
+            "comes_after_answer" => answer
+          })
+
+        new =
+          t.steps |> Enum.reject(&MapSet.member?(before, &1.id)) |> Enum.sort_by(& &1.day_offset)
+
+        {t, Map.put(keys, key, List.last(new).id)}
+
+      {key, what, day, opts}, {t, keys} ->
+        before = MapSet.new(t.steps, & &1.id)
+        [{after_key, answer} | more] = Keyword.get(opts, :after, [])
+
+        attrs =
+          %{
+            "day_offset" => day,
+            "vessel_index" => Keyword.get(opts, :vessel, 0),
+            "temperature" => opts[:temperature],
+            "notes" => opts[:notes],
+            "comes_after_id" => keys[after_key],
+            "comes_after_answer" => answer
+          }
+          |> Map.merge(
+            case what do
+              {:marker, phase} -> %{"phase_id" => phases[phase]}
+              type -> %{"step_type_id" => types[type].id}
+            end
+          )
+          |> Map.merge(if opts[:phase], do: %{"phase_id" => phases[opts[:phase]]}, else: %{})
+
+        {:ok, t} = Production.add_step(t, attrs)
+
+        # A Transfer adds its CIP too: the new entry is the one of this kind.
+        step =
+          Enum.find(t.steps, fn s ->
+            not MapSet.member?(before, s.id) and
+              case what do
+                {:marker, _} -> is_nil(s.step_type_id)
+                type -> s.step_type_id == types[type].id
+              end
+          end)
+
+        t =
+          Enum.reduce(more, t, fn {k, a}, t ->
+            {:ok, t} =
+              Production.add_link(t, %{
+                "from_step_id" => keys[k],
+                "to_step_id" => step.id,
+                "default_answer" => a
+              })
+
+            t
+          end)
+
+        {t, Map.put(keys, key, step.id)}
+    end)
+    |> elem(0)
   end
 
   ## Brewery task board (D38)

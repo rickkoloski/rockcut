@@ -7,6 +7,7 @@ import {
   Delete,
   Edit,
   EventRepeat,
+  Factory,
   NotesOutlined,
   Repeat,
   StopCircleOutlined,
@@ -15,7 +16,7 @@ import { useBackCloses } from '../../hooks/useBackCloses'
 import { formatTaskDay } from '../../lib/tasks'
 import type { TaskCardData } from '../../lib/types'
 
-export type TaskAction = 'edit' | 'edit-series' | 'stop-repeating' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete'
+export type TaskAction = 'edit' | 'edit-series' | 'stop-repeating' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete' | 'open-schedule'
 
 interface Props {
   anchor: HTMLElement
@@ -24,6 +25,8 @@ interface Props {
   canMoveDown: boolean
   /** Phone width: a sheet from the bottom of the screen instead of a menu by the card. */
   sheet?: boolean
+  /** D49: a linked task on a shared tablet: the header and why, no actions (until D50). */
+  linkedReadOnly?: boolean
   onClose: () => void
   onAction: (action: TaskAction) => void
 }
@@ -36,7 +39,7 @@ interface Props {
  * the sheet (DEV pass 2, B). D39: an occurrence of a recurring task adds
  * Edit series… and Stop repeating (not on the last one once it has stopped).
  */
-export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, onClose, onAction }: Props) {
+export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, linkedReadOnly, onClose, onAction }: Props) {
   const pick = (action: TaskAction) => () => {
     onClose()
     onAction(action)
@@ -51,8 +54,11 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
   // Android's back gesture closes the sheet, and only the sheet.
   useBackCloses(!!sheet, dismiss)
 
+  const linked = !!card.production
+  // D49: a finished step stays on its day, as a task finished elsewhere does.
+  const fixed = card.locked || (linked && card.done)
   // An array, not a fragment: Menu and MenuList walk their children for focus.
-  const items = [
+  const header = [
     <Box key="header" sx={{ px: 2, py: 1, maxWidth: sheet ? undefined : 280 }} data-testid="task-menu-header">
       <Typography variant="subtitle2" sx={{ wordBreak: 'break-word' }}>
         {card.title}
@@ -61,6 +67,8 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
         {card.due_on ? formatTaskDay(card.due_on) : 'Future'} · {card.assignee_name ?? 'Anyone'}
       </Typography>
     </Box>,
+  ]
+  const actions = [
     <Divider key="divider-top" />,
     <MenuItem key="edit" onClick={pick('edit')} data-testid="task-menu-edit">
       <ListItemIcon><Edit fontSize="small" /></ListItemIcon>
@@ -87,19 +95,26 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
       <ListItemIcon>{card.done ? <CheckBoxOutlineBlank fontSize="small" /> : <CheckBox fontSize="small" />}</ListItemIcon>
       <ListItemText>{card.done ? 'Mark not done' : 'Mark completed'}</ListItemText>
     </MenuItem>,
-    <MenuItem key="change-day" onClick={pick('change-day')} disabled={card.locked} data-testid="task-menu-change-day">
+    <MenuItem key="change-day" onClick={pick('change-day')} disabled={fixed} data-testid="task-menu-change-day">
       <ListItemIcon><EventRepeat fontSize="small" /></ListItemIcon>
       <ListItemText>Change day…</ListItemText>
     </MenuItem>,
-    <MenuItem key="up" onClick={pick('up')} disabled={card.locked || !canMoveUp} data-testid="task-menu-up">
+    <MenuItem key="up" onClick={pick('up')} disabled={fixed || !canMoveUp} data-testid="task-menu-up">
       <ListItemIcon><ArrowUpward fontSize="small" /></ListItemIcon>
       <ListItemText>Move up</ListItemText>
     </MenuItem>,
-    <MenuItem key="down" onClick={pick('down')} disabled={card.locked || !canMoveDown} data-testid="task-menu-down">
+    <MenuItem key="down" onClick={pick('down')} disabled={fixed || !canMoveDown} data-testid="task-menu-down">
       <ListItemIcon><ArrowDownward fontSize="small" /></ListItemIcon>
       <ListItemText>Move down</ListItemText>
     </MenuItem>,
-    card.locked && (
+    // D49: a linked task opens its step on the production schedule.
+    linked && (
+      <MenuItem key="open-schedule" onClick={pick('open-schedule')} data-testid="task-menu-open-schedule">
+        <ListItemIcon><Factory fontSize="small" /></ListItemIcon>
+        <ListItemText>Open in schedule</ListItemText>
+      </MenuItem>
+    ),
+    fixed && (
       <Typography key="locked" variant="caption" color="text.secondary" sx={{ px: 2, display: 'block' }} data-testid="task-menu-locked-hint">
         Mark not done first to move it
       </Typography>
@@ -110,6 +125,25 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
       <ListItemText>Delete</ListItemText>
     </MenuItem>,
   ]
+  const items = linkedReadOnly
+    ? [
+        ...header,
+        // D49 QA 5: the notes, which the tablet has nowhere else to read.
+        card.notes && (
+          <Typography
+            key="linked-notes"
+            variant="body2"
+            sx={{ px: 2, pb: 1, maxWidth: 280, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}
+            data-testid="task-menu-notes-text"
+          >
+            {card.notes}
+          </Typography>
+        ),
+        <Typography key="linked-device" variant="body2" color="text.secondary" sx={{ px: 2, pb: 1, maxWidth: 280 }} data-testid="task-menu-linked-device">
+          From the production schedule. Do this on the production schedule.
+        </Typography>,
+      ]
+    : [...header, ...actions]
 
   if (sheet)
     return (

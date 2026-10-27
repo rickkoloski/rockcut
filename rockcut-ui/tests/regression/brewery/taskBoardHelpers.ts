@@ -16,6 +16,8 @@ export interface ApiTask {
   assignee_id: number | null
   notes: string | null
   completed_display: string | null
+  /** D49: made from a production step (the schedule owns it; null for the board's own). */
+  production: { step_id: number; batch_id: number | null; planned: boolean } | null
 }
 
 export interface ApiCard extends ApiTask {
@@ -62,7 +64,9 @@ export async function futureTitles(api: APIRequestContext): Promise<string[]> {
 /**
  * Delete every `[TEST-TEMP]` task this spec could have left (a recurring
  * one with its later occurrences): the ids it created, plus a sweep of the Unfinished card, the Future list and a month
- * either side of today.
+ * either side of today. D49: not the linked tasks (a `[TEST-TEMP]` tank's or
+ * brand's): deleting one takes a production spec's step off the task list,
+ * and they go with their batches in the production specs' own clean-up.
  */
 export async function cleanupTasks(ids: number[]) {
   const api = await apiAs('breweryMgr')
@@ -74,7 +78,7 @@ export async function cleanupTasks(ids: number[]) {
   ]) {
     const board = await getBoard(api, from, to)
     for (const c of [...board.unfinished, ...board.future, ...board.days.flatMap((d) => d.cards)]) {
-      if (c.title.startsWith('[TEST-TEMP]')) seen.add(c.id)
+      if (c.title.startsWith('[TEST-TEMP]') && !c.production) seen.add(c.id)
     }
   }
   for (const id of seen) {
@@ -292,9 +296,13 @@ export async function touchDrag(page: Page, source: Locator, list: Locator, befo
   await touch('touchEnd', [])
 }
 
-/** Move a task back to a day through the API (to put shared data back after a spec). */
+/**
+ * Move a task back to a day through the API (to put shared data back after a
+ * spec). D49: a linked task moves its step, "move only" (the board's own
+ * tasks ignore the answer).
+ */
 export async function moveTask(api: APIRequestContext, id: number, dueOn: string | null, beforeId: number | null = null) {
-  const res = await api.post(`/api/boards/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId } })
+  const res = await api.post(`/api/boards/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId, answer: 'move_only' } })
   expect(res.status(), await res.text()).toBe(200)
 }
 

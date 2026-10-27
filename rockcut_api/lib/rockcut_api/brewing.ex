@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing do
   import Ecto.Query
   alias RockcutApi.Repo
+
   alias RockcutApi.Brewing.{
     IngredientCategory,
     CategoryFieldDefinition,
@@ -89,7 +90,10 @@ defmodule RockcutApi.Brewing do
   def get_ingredient!(id) do
     Ingredient
     |> Repo.get!(id)
-    |> Repo.preload([:category, lots: from(l in IngredientLot, order_by: [desc: l.received_date])])
+    |> Repo.preload([
+      :category,
+      lots: from(l in IngredientLot, order_by: [desc: l.received_date])
+    ])
   end
 
   def create_ingredient(attrs) do
@@ -164,9 +168,12 @@ defmodule RockcutApi.Brewing do
   end
 
   def update_brand(%Brand{} = brand, attrs) do
-    brand
-    |> Brand.changeset(attrs)
-    |> Repo.update()
+    # D49: a rename retitles its batches' Brewery board tasks.
+    RockcutApi.Production.TaskLink.with_sync(fn ->
+      brand
+      |> Brand.changeset(attrs)
+      |> Repo.update()
+    end)
   end
 
   def delete_brand(%Brand{} = brand) do
@@ -179,7 +186,7 @@ defmodule RockcutApi.Brewing do
     Recipe
     |> maybe_filter_by(:brand_id, params)
     |> maybe_filter_by(:status, params)
-    |> order_by([r], [desc: r.version_major, desc: r.version_minor])
+    |> order_by([r], desc: r.version_major, desc: r.version_minor)
     |> preload(:brand)
     |> Repo.all()
   end
@@ -190,7 +197,9 @@ defmodule RockcutApi.Brewing do
     |> Repo.preload([
       :brand,
       :water_profile,
-      recipe_ingredients: {from(ri in RecipeIngredient, order_by: ri.sort_order), lot: {from(l in IngredientLot), ingredient: :category}},
+      recipe_ingredients:
+        {from(ri in RecipeIngredient, order_by: ri.sort_order),
+         lot: {from(l in IngredientLot), ingredient: :category}},
       mash_steps: from(ms in MashStep, order_by: ms.step_number),
       process_steps: from(ps in RecipeProcessStep, order_by: ps.step_number)
     ])
@@ -322,10 +331,22 @@ defmodule RockcutApi.Brewing do
 
   # ── Batches ────────────────────────────────────────────────────────
 
-  @batch_preloads [:brand, brew_turns: {from(t in BrewTurn, order_by: t.turn_number), recipe: :brand}]
+  @batch_preloads [
+    :brand,
+    brew_turns: {from(t in BrewTurn, order_by: t.turn_number), recipe: :brand}
+  ]
 
+  @doc """
+  The batches for the old Batches page and the Brewery Dashboard. Batches on
+  the production schedule (D47, with `batch_vessels`) aren't listed: those
+  pages are on their way out (lead decisions 2).
+  """
   def list_batches(params \\ %{}) do
     Batch
+    |> where(
+      [b],
+      b.id not in subquery(from(v in RockcutApi.Production.BatchVessel, select: v.batch_id))
+    )
     |> maybe_filter_by(:brand_id, params)
     |> maybe_filter_by(:status, params)
     |> order_by([b], desc: b.inserted_at)

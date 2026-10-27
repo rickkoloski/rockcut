@@ -27,16 +27,28 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//],
+      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//],
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
     // D38: the Brewery task board is one shared board, and "Move all to today"
-    // moves every open past task, so its specs run one at a time (beside the
-    // rest of the suite, which never touches the board).
+    // moves every open past task, so its specs run one at a time (beside
+    // `chromium`, which never touches the board). D49: production steps are
+    // tasks on that board, so the production specs' batches would land on it
+    // mid-spec; it runs after `production` (`--no-deps` to run it alone).
     {
       name: 'brewery-board',
       testMatch: /task-board-.*\.spec\.ts/,
+      dependencies: ['setup', 'production'],
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // D46: tanks, phases, step types and templates are shared lists, and a
+    // reorder names every active row, so the production specs run one at a
+    // time (beside the rest of the suite, which never touches them).
+    {
+      name: 'production',
+      testMatch: /regression\/production\/.*\.spec\.ts/,
       dependencies: ['setup'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },

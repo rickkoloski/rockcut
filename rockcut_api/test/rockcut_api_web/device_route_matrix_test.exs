@@ -66,6 +66,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/session/password"},
     {:delete, "/api/sessions/others"},
     {:put, "/api/me/color_mode"},
+    {:put, "/api/me/show_planned_batches"},
     {:patch, "/api/departments/:id"},
     {:post, "/api/roster/order"},
     {:get, "/api/users"},
@@ -225,7 +226,79 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:put, "/api/boards/:dept/daily_items/order"},
     {:patch, "/api/boards/:dept/daily_items/:id"},
     {:post, "/api/boards/:dept/daily_items/:id/restore"},
-    {:delete, "/api/boards/:dept/daily_items/:id"}
+    {:delete, "/api/boards/:dept/daily_items/:id"},
+    # D46: production setup, people only until D49 brings the brewhouse tablet.
+    {:get, "/api/production/tanks"},
+    {:post, "/api/production/tanks"},
+    {:post, "/api/production/tanks/reorder"},
+    {:patch, "/api/production/tanks/:id"},
+    {:delete, "/api/production/tanks/:id"},
+    {:post, "/api/production/tanks/:id/restore"},
+    {:post, "/api/production/tanks/:id/outages"},
+    {:patch, "/api/production/outages/:id"},
+    {:delete, "/api/production/outages/:id"},
+    {:post, "/api/production/outages/:id/end_today"},
+    {:get, "/api/production/phases"},
+    {:post, "/api/production/phases"},
+    {:post, "/api/production/phases/reorder"},
+    {:patch, "/api/production/phases/:id"},
+    {:delete, "/api/production/phases/:id"},
+    {:post, "/api/production/phases/:id/restore"},
+    {:get, "/api/production/step_types"},
+    {:post, "/api/production/step_types"},
+    {:post, "/api/production/step_types/reorder"},
+    {:patch, "/api/production/step_types/:id"},
+    {:delete, "/api/production/step_types/:id"},
+    {:post, "/api/production/step_types/:id/restore"},
+    {:get, "/api/production/templates"},
+    {:post, "/api/production/templates"},
+    {:post, "/api/production/templates/reorder"},
+    {:get, "/api/production/templates/:id"},
+    {:patch, "/api/production/templates/:id"},
+    {:delete, "/api/production/templates/:id"},
+    {:post, "/api/production/templates/:id/restore"},
+    {:post, "/api/production/templates/:id/duplicate"},
+    {:post, "/api/production/templates/:id/steps"},
+    {:patch, "/api/production/templates/:id/steps/:step_id"},
+    {:delete, "/api/production/templates/:id/steps/:step_id"},
+    {:post, "/api/production/templates/:id/links"},
+    {:patch, "/api/production/templates/:id/links/:link_id"},
+    {:delete, "/api/production/templates/:id/links/:link_id"},
+    {:post, "/api/production/templates/:id/ramp"},
+    # D47: the schedule, batches and steps; people only until D49.
+    {:get, "/api/production/schedule"},
+    {:post, "/api/production/batches"},
+    {:patch, "/api/production/batches/:id"},
+    {:delete, "/api/production/batches/:id"},
+    {:post, "/api/production/batches/:id/shift"},
+    {:patch, "/api/production/batches/:id/vessels/:index"},
+    # D49: pencilled batches, people only.
+    {:post, "/api/production/batches/:id/schedule"},
+    {:post, "/api/production/batches/:id/pencil"},
+    # D48: changing a batch, people only like D47's.
+    {:post, "/api/production/batches/:id/steps"},
+    {:post, "/api/production/batches/:id/ramp"},
+    {:post, "/api/production/batches/:id/transfers"},
+    {:delete, "/api/production/batches/:id/transfers/:step_id"},
+    {:delete, "/api/production/steps/:id"},
+    {:post, "/api/production/steps/:id/ramp"},
+    {:post, "/api/production/batches/:id/split"},
+    {:delete, "/api/production/batches/:id/split"},
+    {:post, "/api/production/tanks/:id/condition"},
+    {:delete, "/api/production/condition_marks/:id"},
+    {:post, "/api/production/steps/move"},
+    {:post, "/api/production/steps/assign"},
+    {:post, "/api/production/steps/:id/complete"},
+    {:post, "/api/production/steps/:id/uncomplete"},
+    {:patch, "/api/production/steps/:id"},
+    {:post, "/api/production/cips"},
+    {:patch, "/api/production/cips/:id"},
+    {:delete, "/api/production/cips/:id"},
+    {:post, "/api/production/cips/:id/complete"},
+    {:post, "/api/production/cips/:id/uncomplete"},
+    {:post, "/api/production/flags/signoff"},
+    {:delete, "/api/production/flags/signoff/:key"},
+    {:post, "/api/production/undo/:token"}
   ]
 
   defp app_routes do
@@ -253,6 +326,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
 
   describe "as taproomDevice" do
     setup do
+      # The staff-code limiter is keyed by token id, and the test DB reuses
+      # ids after a rollback: a lock another test left would answer 429 here.
+      RockcutApi.StaffCodes.RateLimiter.reset()
       {device, token} = taproom_device()
       shift = shift_fixture(%{status: "published"})
       %{device: device, token: token, shift: shift, task: repeating_task()}
@@ -297,6 +373,69 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
       assert failures == []
     end
   end
+
+  # D49 decision 8: on its home board, a tablet's writes to a task made from
+  # a production step are refused before any staff code (until D50); the
+  # series read is `linked_task` for anyone.
+  describe "as breweryDevice, on a linked task (D49)" do
+    setup do
+      RockcutApi.StaffCodes.RateLimiter.reset()
+      p = personas(~w(breweryMgr brewer1))
+      {:ok, _} = RockcutApi.StaffCodes.set(p["brewer1"], "1111", p["breweryMgr"])
+      device = RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse"})
+      token = RockcutApi.AccountsFixtures.device_token_fixture(device, "Brewhouse Tab")
+
+      batch =
+        RockcutApi.ProductionFixtures.plan!(
+          RockcutApi.ProductionFixtures.brand!("Matrix"),
+          RockcutApi.ProductionFixtures.ale_template!(),
+          RockcutApi.Tasks.today()
+        )
+
+      RockcutApi.Production.TaskLink.sync!()
+      fdh = RockcutApi.ProductionFixtures.named(batch, "FDH")
+      task = RockcutApi.Repo.get_by!(RockcutApi.Tasks.Task, production_step_id: fdh.id)
+      %{token: token, task: task}
+    end
+
+    test "every write on it is 403 linked_task_device, with a code or without", %{
+      token: token,
+      task: task
+    } do
+      routes = Enum.filter(@device_with_code, fn {_, path} -> path =~ "/tasks/:id" end)
+      # update, delete, move, complete, uncomplete, stop_repeating
+      assert length(routes) == 6
+
+      failures =
+        for {verb, path} <- routes,
+            code <- [nil, "1111"],
+            params = if(code, do: %{staff_code: code}, else: %{}),
+            conn = call_device(token, verb, fill_linked(path, task), params),
+            conn.status != 403 or
+              Jason.decode!(conn.resp_body)["error"] != "linked_task_device" do
+          {verb, path, code, conn.status}
+        end
+
+      assert failures == []
+    end
+
+    test "the board reads it; its series is linked_task", %{token: token, task: task} do
+      today = Date.to_iso8601(RockcutApi.Tasks.today())
+
+      assert call_device(token, :get, "/api/boards/brewery/tasks", %{from: today, to: today}).status ==
+               200
+
+      conn = call_device(token, :get, "/api/boards/brewery/tasks/#{task.id}/series")
+      assert conn.status == 422
+      assert Jason.decode!(conn.resp_body)["error"] == "linked_task"
+    end
+  end
+
+  defp fill_linked(path, task),
+    do:
+      path
+      |> String.replace(":dept", "brewery")
+      |> String.replace(":id", to_string(task.id))
 
   describe "no staff email or other personal fields (DEV G8, Q6)" do
     setup do

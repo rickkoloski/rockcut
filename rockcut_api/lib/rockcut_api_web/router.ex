@@ -103,6 +103,8 @@ defmodule RockcutApiWeb.Router do
     # D43: the person's own theme. Not for devices (a manager sets a tablet's
     # on Shared devices); a "Sign in as me" session may set its person's.
     put "/me/color_mode", MeController, :update_color_mode
+    # D49: the Brewery board's "Show planned batches", per person.
+    put "/me/show_planned_batches", MeController, :update_show_planned_batches
 
     # Departments (update) and roster order; reads are in the scope above
     patch "/departments/:id", DepartmentController, :update
@@ -266,6 +268,88 @@ defmodule RockcutApiWeb.Router do
     patch "/daily_items/:id", DailyController, :update_item
     post "/daily_items/:id/restore", DailyController, :restore_item
     delete "/daily_items/:id", DailyController, :delete_item
+  end
+
+  # D46 production setup (spec §3.2–§3.4): Brewery members and owners
+  # (`Authz` `:production`; each action asks). People only until D49 brings
+  # the brewhouse tablet.
+  scope "/api/production", RockcutApiWeb do
+    pipe_through [:api, :authenticated]
+
+    get "/tanks", ProductionTankController, :index
+    post "/tanks", ProductionTankController, :create
+    post "/tanks/reorder", ProductionTankController, :reorder
+    patch "/tanks/:id", ProductionTankController, :update
+    delete "/tanks/:id", ProductionTankController, :retire
+    post "/tanks/:id/restore", ProductionTankController, :restore
+    post "/tanks/:id/outages", ProductionTankController, :create_outage
+    patch "/outages/:id", ProductionTankController, :update_outage
+    delete "/outages/:id", ProductionTankController, :delete_outage
+    post "/outages/:id/end_today", ProductionTankController, :end_outage_today
+
+    get "/phases", ProductionListController, :phases
+    post "/phases", ProductionListController, :create_phase
+    post "/phases/reorder", ProductionListController, :reorder_phases
+    patch "/phases/:id", ProductionListController, :update_phase
+    delete "/phases/:id", ProductionListController, :retire_phase
+    post "/phases/:id/restore", ProductionListController, :restore_phase
+
+    get "/step_types", ProductionListController, :step_types
+    post "/step_types", ProductionListController, :create_step_type
+    post "/step_types/reorder", ProductionListController, :reorder_step_types
+    patch "/step_types/:id", ProductionListController, :update_step_type
+    delete "/step_types/:id", ProductionListController, :retire_step_type
+    post "/step_types/:id/restore", ProductionListController, :restore_step_type
+
+    get "/templates", ProductionTemplateController, :index
+    post "/templates", ProductionTemplateController, :create
+    post "/templates/reorder", ProductionTemplateController, :reorder
+    get "/templates/:id", ProductionTemplateController, :show
+    patch "/templates/:id", ProductionTemplateController, :update
+    delete "/templates/:id", ProductionTemplateController, :retire
+    post "/templates/:id/restore", ProductionTemplateController, :restore
+    post "/templates/:id/duplicate", ProductionTemplateController, :duplicate
+    post "/templates/:id/steps", ProductionTemplateController, :add_step
+    patch "/templates/:id/steps/:step_id", ProductionTemplateController, :update_step
+    delete "/templates/:id/steps/:step_id", ProductionTemplateController, :remove_step
+    post "/templates/:id/links", ProductionTemplateController, :add_link
+    patch "/templates/:id/links/:link_id", ProductionTemplateController, :update_link
+    delete "/templates/:id/links/:link_id", ProductionTemplateController, :remove_link
+    post "/templates/:id/ramp", ProductionTemplateController, :add_ramp
+
+    # D47: the schedule, batches and their steps.
+    get "/schedule", ProductionScheduleController, :show
+    post "/batches", ProductionScheduleController, :create_batch
+    patch "/batches/:id", ProductionScheduleController, :update_batch
+    delete "/batches/:id", ProductionScheduleController, :delete_batch
+    post "/batches/:id/shift", ProductionScheduleController, :shift_batch
+    post "/batches/:id/schedule", ProductionScheduleController, :schedule_batch
+    post "/batches/:id/pencil", ProductionScheduleController, :pencil_batch
+    patch "/batches/:id/vessels/:index", ProductionScheduleController, :update_vessel
+    # D48: changing a batch (§3.11).
+    post "/batches/:id/steps", ProductionScheduleController, :add_step
+    post "/batches/:id/ramp", ProductionScheduleController, :add_ramp
+    post "/batches/:id/transfers", ProductionScheduleController, :add_transfer
+    delete "/batches/:id/transfers/:step_id", ProductionScheduleController, :remove_transfer
+    post "/batches/:id/split", ProductionScheduleController, :split
+    delete "/batches/:id/split", ProductionScheduleController, :undo_split
+    post "/tanks/:id/condition", ProductionScheduleController, :mark_condition
+    delete "/condition_marks/:id", ProductionScheduleController, :remove_condition_mark
+    post "/steps/move", ProductionScheduleController, :move_steps
+    post "/steps/assign", ProductionScheduleController, :assign_steps
+    post "/steps/:id/complete", ProductionScheduleController, :complete_step
+    post "/steps/:id/uncomplete", ProductionScheduleController, :uncomplete_step
+    patch "/steps/:id", ProductionScheduleController, :update_step
+    delete "/steps/:id", ProductionScheduleController, :remove_step
+    post "/steps/:id/ramp", ProductionScheduleController, :change_ramp
+    post "/cips", ProductionScheduleController, :create_cip
+    patch "/cips/:id", ProductionScheduleController, :update_cip
+    delete "/cips/:id", ProductionScheduleController, :delete_cip
+    post "/cips/:id/complete", ProductionScheduleController, :complete_cip
+    post "/cips/:id/uncomplete", ProductionScheduleController, :uncomplete_cip
+    post "/flags/signoff", ProductionScheduleController, :sign_off
+    delete "/flags/signoff/:key", ProductionScheduleController, :remove_signoff
+    post "/undo/:token", ProductionScheduleController, :undo
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

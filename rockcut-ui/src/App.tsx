@@ -39,8 +39,8 @@ import HomeIcon from '@mui/icons-material/Home'
 import DashboardIcon from '@mui/icons-material/Dashboard'
 import ChecklistIcon from '@mui/icons-material/Checklist'
 import ScienceIcon from '@mui/icons-material/Science'
+import FactoryIcon from '@mui/icons-material/Factory'
 import InventoryIcon from '@mui/icons-material/Inventory'
-import AssignmentIcon from '@mui/icons-material/Assignment'
 import SettingsIcon from '@mui/icons-material/Settings'
 import PeopleIcon from '@mui/icons-material/People'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
@@ -83,6 +83,11 @@ import type { Channel, Department } from './lib/types'
 // Pages
 import Home from './pages/Home'
 import BreweryDashboard from './pages/brewery/BreweryDashboard'
+import GanttPage from './pages/production/Gantt/GanttPage'
+import TanksPage from './pages/production/TanksPage'
+import ListsPage from './pages/production/ListsPage'
+import TemplatesPage from './pages/production/TemplatesPage'
+import TemplateEditor from './pages/production/TemplateEditor'
 import { OldTaskBoardRedirect, TaskBoardPage, TasksIndex } from './pages/tasks/TaskBoardRoutes'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
@@ -132,9 +137,9 @@ interface NavSection {
 // headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
+  { label: 'Production', path: '/brewery/production', icon: <FactoryIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
   { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
-  { label: 'Batches', path: '/batches', icon: <AssignmentIcon /> },
   { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
 ]
 
@@ -768,6 +773,11 @@ function App() {
             {hasBrewery && (
               <>
                 <Route path="/brewery" element={<BreweryDashboard />} />
+                <Route path="/brewery/production" element={<GanttPage />} />
+                <Route path="/brewery/production/tanks" element={<TanksPage />} />
+                <Route path="/brewery/production/lists" element={<ListsPage />} />
+                <Route path="/brewery/production/templates" element={<TemplatesPage />} />
+                <Route path="/brewery/production/templates/:id" element={<TemplateEditor />} />
                 <Route path="/brands" element={<BrandsList />} />
                 <Route path="/brands/:id" element={<BrandDetail />} />
                 <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />

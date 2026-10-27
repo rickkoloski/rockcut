@@ -185,6 +185,13 @@ defmodule RockcutApi.Accounts do
     user |> User.color_mode_changeset(%{color_mode: mode}) |> Repo.update()
   end
 
+  @doc "D49: a person's \"Show planned batches\" (`true` / `false`)."
+  def set_show_planned_batches(%User{} = user, value) do
+    user
+    |> User.show_planned_batches_changeset(%{show_planned_batches: value})
+    |> Repo.update()
+  end
+
   @doc """
   D43: the theme `/api/me` reports. A "Sign in as me" session on a tablet
   (`session.device_token`) uses the tablet's device account's setting, so the
