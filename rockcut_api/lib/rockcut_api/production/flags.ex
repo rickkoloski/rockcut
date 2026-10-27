@@ -208,8 +208,7 @@ defmodule RockcutApi.Production.Flags do
         not Enum.any?(
           Enum.flat_map(Enum.reject(parts, &(&1.id == p.id)), &cleaning_cips/1) ++
             Enum.filter(cips, &Parts.cleans?/1),
-          &(Date.compare(&1.due_on, m.marked_on) != :lt and
-              Date.compare(&1.due_on, p.fill.due_on) != :gt)
+          &(planned_after?(&1, m) and Date.compare(&1.due_on, p.fill.due_on) != :gt)
         ) do
       flag(:dirty_fill, [p.id, "mark#{m.id}"], [p.tank_id, p.fill.due_on, m.marked_on],
         message:
@@ -251,6 +250,12 @@ defmodule RockcutApi.Production.Flags do
     do: RockcutApi.Production.cip_name("CIP & Sanitize", Steps.cip_method(c))
 
   defp cleaning_cips(part), do: part |> Parts.own_cips() |> Enum.filter(&Parts.cleans?/1)
+
+  # A CIP still to come on or after a dirty mark's day. A done one is in the
+  # timeline already, and the mark (the latest) came after it, also on the
+  # same day (D49 QA 2: by time, as the status reads it).
+  defp planned_after?(cip, mark),
+    do: is_nil(cip.done_on) and Date.compare(cip.due_on, mark.marked_on) != :lt
 
   # A tank's last emptying with no CIP dated on or after it, unless a clean
   # mark (D48) came after it.
@@ -311,7 +316,7 @@ defmodule RockcutApi.Production.Flags do
         not Enum.any?(
           Enum.flat_map(Enum.filter(parts, &Parts.filled?/1), &cleaning_cips/1) ++
             Enum.filter(cips, &Parts.cleans?/1),
-          &(Date.compare(&1.due_on, m.marked_on) != :lt)
+          &planned_after?(&1, m)
         ) do
       flag(:dirty_no_cip, [tank_id, "mark#{m.id}"], [tank_id, m.marked_on],
         message: "#{tank.name} was marked dirty and has no CIP planned.",

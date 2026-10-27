@@ -167,6 +167,29 @@ defmodule RockcutApi.Production.CleanNotSanitizedTest do
       assert status(schedule(), fv3).line == "Clean no sani 1 day"
     end
 
+    test "QA 2: Dirty after a same-day done CIP: dirty, no CIP planned, and a fill is flagged",
+         ctx do
+      fv = tank!("FV7")
+      c = cip(fv, @today, ctx, "sanitize_full", true)
+      # Done a minute before the mark (both are stored to the second).
+      c
+      |> Ecto.Changeset.change(completed_at: DateTime.add(c.completed_at, -60))
+      |> Repo.update!()
+
+      {:ok, _} = mark(fv, "dirty", @today, ctx)
+
+      sched = schedule()
+      assert status(sched, fv).line == "Empty · dirty 0 days · no CIP planned"
+      assert kinds(sched, fv) == ["dirty_no_cip"]
+
+      fill!(fv, Date.add(@today, 6), "Fest")
+      assert Enum.sort(kinds(schedule(), fv)) == ["dirty_fill", "dirty_no_cip"]
+
+      # A CIP planned after the mark still clears both, as before.
+      cip(fv, Date.add(@today, 2), ctx, "sanitize_full")
+      assert kinds(schedule(), fv) == []
+    end
+
     test "the state is checked", ctx do
       assert {:error, %Ecto.Changeset{errors: [state: {msg, _}]}} =
                mark(tank!("FV9"), "shiny", @today, ctx)

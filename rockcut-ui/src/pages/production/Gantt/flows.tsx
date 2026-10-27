@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Box,
   Button,
@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  Portal,
   Radio,
   RadioGroup,
   Snackbar,
@@ -83,7 +84,7 @@ function failure(err: unknown): Failure {
 const UNDO_TTL_MS = 120_000
 
 /** The snackbar: `refused` is a refused Undo, shown until its token runs out (D49 BB1). */
-type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean }
+type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean; overDialog?: boolean }
 
 type Prompt =
   | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
@@ -105,8 +106,18 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback((snack: Omit<Snack, 'key'>) => {
     counter.current += 1
-    setSnack({ ...snack, key: counter.current })
+    // D49 QA 4: over an open dialog it shows at the top, clear of the dialog's buttons.
+    setSnack({ ...snack, key: counter.current, overDialog: !!document.querySelector('[role="dialog"]') })
   }, [])
+
+  // D49 QA 4: it goes when its Undo does (a hovered snackbar's timer stops,
+  // so it could outlive the token).
+  useEffect(() => {
+    if (!snack?.token) return
+    const key = snack.key
+    const t = setTimeout(() => setSnack((s) => (s?.key === key ? null : s)), Math.max(snack.expiresAt - Date.now(), 0))
+    return () => clearTimeout(t)
+  }, [snack])
 
   const notify = useCallback(
     (message: string, token: string | null = null) => show({ message, token, expiresAt: Date.now() + UNDO_TTL_MS }),
@@ -326,32 +337,35 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           }}
         />
       )}
-      <Snackbar
-        key={snack?.key}
-        open={!!snack}
-        autoHideDuration={snack?.refused ? Math.max(snack.expiresAt - Date.now(), 0) : 6000}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
-        message={<span data-testid="gantt-snack-text">{snack?.message}</span>}
-        data-testid="gantt-snack"
-        action={
-          snack?.token ? (
-            <Button
-              color="secondary"
-              size="small"
-              disabled={undoing}
-              onClick={() => {
-                const { token, expiresAt } = snack
-                setSnack(null)
-                undo({ token: token!, expiresAt })
-              }}
-              data-testid="gantt-undo"
-            >
-              Undo
-            </Button>
-          ) : undefined
-        }
-      />
+      {/* D49 QA 4: in a portal, beside the app root (an open dialog hides that from screen readers). */}
+      <Portal>
+        <Snackbar
+          key={snack?.key}
+          open={!!snack}
+          autoHideDuration={snack?.refused ? Math.max(snack.expiresAt - Date.now(), 0) : 6000}
+          anchorOrigin={{ vertical: snack?.overDialog ? 'top' : 'bottom', horizontal: 'center' }}
+          onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
+          message={<span data-testid="gantt-snack-text">{snack?.message}</span>}
+          data-testid="gantt-snack"
+          action={
+            snack?.token ? (
+              <Button
+                color="secondary"
+                size="small"
+                disabled={undoing}
+                onClick={() => {
+                  const { token, expiresAt } = snack
+                  setSnack(null)
+                  undo({ token: token!, expiresAt })
+                }}
+                data-testid="gantt-undo"
+              >
+                Undo
+              </Button>
+            ) : undefined
+          }
+        />
+      </Portal>
     </FlowsContext.Provider>
   )
 }

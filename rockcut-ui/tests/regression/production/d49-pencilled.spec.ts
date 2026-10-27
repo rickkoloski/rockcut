@@ -154,6 +154,26 @@ test('P133: a scheduled planned batch → Pencil in: back to an X-number; refuse
   await expect(page.getByTestId('batch-pencil')).toHaveCount(0)
 })
 
+test('QA 4: the Undo snackbar keeps clear of the open batch dialog\'s buttons, and goes when its Undo runs out', async ({ page }) => {
+  await page.clock.install()
+  const brand = await made.brand('Crusher')
+  const b = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 4) })
+  await openGantt(page)
+  await page.getByTestId(`gantt-bar-${b.id}-0`).click()
+  await page.getByTestId('batch-pencil').click()
+  await expect(snack(page)).toContainText('is pencilled in.')
+  // The dialog stays open with Schedule this batch: the snackbar isn't on it, and it can be clicked.
+  const button = page.getByTestId('batch-schedule')
+  const [bar, btn] = [(await page.getByTestId('gantt-snack').boundingBox())!, (await button.boundingBox())!]
+  const overlaps = bar.x < btn.x + btn.width && btn.x < bar.x + bar.width && bar.y < btn.y + btn.height && btn.y < bar.y + bar.height
+  expect(overlaps).toBe(false)
+  await button.click({ trial: true })
+  // Hovered (its own timer stops), it still goes once the 2-minute Undo is over.
+  await page.getByTestId('gantt-snack').hover()
+  await page.clock.fastForward(125_000)
+  await expect(page.getByTestId('gantt-snack')).toHaveCount(0)
+})
+
 test('P134: checking off brew day on a pencilled batch: "Schedule this batch first."; Cancel does nothing; Schedule, then it\'s checked off', async ({ page }) => {
   const x = await pencilled('Fest', 0)
   const brew = stepOf(x, 'Brew day')

@@ -424,6 +424,32 @@ defmodule RockcutApi.Production.TaskLinkTest do
     end
   end
 
+  describe "QA 8: a phase marker can't go on the task list (decision 6.1)" do
+    test "a batch's marker step and a template's marker entry refuse it", ctx do
+      batch = plan(ctx, brand!("Galactic"), ~D[2026-11-02], %{"tank_ids" => [nil]})
+      lag = Repo.get_by!(RockcutApi.Production.Phase, name: "Lag")
+      marker = Repo.insert!(%Step{batch_id: batch.id, phase_id: lag.id, due_on: ~D[2026-11-03]})
+
+      assert {:error, :marker_task_list} = Steps.update(marker, %{"on_task_list" => true})
+      assert {:ok, %Step{on_task_list: false}} = Steps.update(marker, %{"on_task_list" => false})
+      assert {:ok, _} = Steps.update(named(batch, "FDH"), %{"on_task_list" => true})
+
+      assert {:error, :marker_task_list} =
+               Production.add_step(ctx.template, %{
+                 "phase_id" => lag.id,
+                 "day_offset" => 1,
+                 "on_task_list" => true
+               })
+
+      {:ok, t} = Production.add_step(ctx.template, %{"phase_id" => lag.id, "day_offset" => 1})
+      entry = Enum.find(t.steps, &(is_nil(&1.step_type_id) and &1.phase_id == lag.id))
+      refute entry.on_task_list
+
+      assert {:error, :marker_task_list} =
+               Production.update_step(t, entry, %{"on_task_list" => true})
+    end
+  end
+
   @tag timeout: 120_000
   test "performance: a move with 30 batches syncs within the 500 ms budget", ctx do
     today = ~D[2026-10-21]

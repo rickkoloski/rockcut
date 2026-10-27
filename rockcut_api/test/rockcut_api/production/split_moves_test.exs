@@ -663,6 +663,69 @@ defmodule RockcutApi.Production.SplitMovesTest do
       assert {dates(ctx.batch), dates(ctx.p1), dates(ctx.p2)} == planned
     end
 
+    test "QA 1: a part's Package checked off early, then not done: the Split's Undo works",
+         ctx do
+      brew_day!(ctx)
+      planned = {dates(ctx.batch), dates(ctx.p1), dates(ctx.p2)}
+
+      # The Split 2 days early (the parts move with it), as the owner.
+      {:ok, {_, token}} =
+        tracked(ctx, fn ->
+          Steps.complete(split_step(ctx).id, %{"answer" => "move_all"}, ctx.brewer,
+            today: ~D[2026-11-11]
+          )
+        end)
+
+      assert dates(ctx.p2) == part_dates(-2)
+
+      # Part 2's Package 8 days early, its CIP moving with it, as breweryMgr.
+      package = full_package(ctx)
+
+      assert {:ok, _} =
+               Steps.complete(package.id, %{"answer" => "move_all"}, ctx.brewer,
+                 today: Date.add(package.due_on, -8)
+               )
+
+      assert {:error, {:part_exit_done, "Galactic #40.2", "Package"}} =
+               Undo.undo(ctx.brewer, token)
+
+      # Not done: the Package and its CIP go back to where the Split put them.
+      assert {:ok, _} = Steps.uncomplete(package.id)
+      assert dates(ctx.p2) == part_dates(-2)
+      assert is_nil(full_package(ctx).checkoff_move)
+
+      later!(ctx)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert is_nil(split_step(ctx).done_on)
+      assert {dates(ctx.batch), dates(ctx.p1), dates(ctx.p2)} == planned
+    end
+
+    test "QA 1: Mark not done puts back only what the check-off moved, and only where it left it",
+         ctx do
+      brew_day!(ctx)
+      fdh = named(ctx.batch, "FDH")
+      ramp = named(ctx.batch, "Set temp - 58°")
+
+      # FDH done 2 days late; its Set temp moved with it, then by hand.
+      {:ok, _} =
+        Steps.complete(fdh.id, %{"answer" => "move_all"}, ctx.brewer,
+          today: Date.add(fdh.due_on, 2)
+        )
+
+      assert named(ctx.batch, "Set temp - 58°").due_on == Date.add(ramp.due_on, 2)
+      {:ok, _} = Steps.move([ramp.id], 1, answer: "move_only")
+
+      assert {:ok, _} = Steps.uncomplete(fdh.id)
+      assert named(ctx.batch, "FDH").due_on == fdh.due_on
+      assert named(ctx.batch, "Set temp - 58°").due_on == Date.add(ramp.due_on, 3)
+
+      # Done on its day: nothing recorded, nothing moves on Mark not done.
+      {:ok, _} = Steps.complete(fdh.id, %{}, ctx.brewer, today: fdh.due_on)
+      assert is_nil(named(ctx.batch, "FDH").checkoff_move)
+      assert {:ok, _} = Steps.uncomplete(fdh.id)
+      assert named(ctx.batch, "FDH").due_on == fdh.due_on
+    end
+
     test "the rule comes first; a real change since is still stale once it's cleared", ctx do
       brew_day!(ctx)
 

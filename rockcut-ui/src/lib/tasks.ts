@@ -505,9 +505,10 @@ export const DASHBOARD_TASKS = 5
  * today, board order) — the first DASHBOARD_TASKS and how many more — and
  * the Unfinished count.
  */
-export function todaysTasks(board: TaskBoardData) {
+export function todaysTasks(board: TaskBoardData, showPlanned = true) {
   const day = board.days.find((d) => d.date === board.today)
-  const open = (day?.cards ?? []).filter((c) => !c.done && c.due_on === board.today)
+  // D49 QA 3: "Show planned batches" off hides planned batches' tasks here too.
+  const open = (day?.cards ?? []).filter((c) => !c.done && c.due_on === board.today && (showPlanned || !c.production?.planned))
   return {
     daily: day ? { done: day.daily.done, total: day.daily.total, unticked: day.daily.items.filter((i) => !i.checked) } : null,
     tasks: open.slice(0, DASHBOARD_TASKS),

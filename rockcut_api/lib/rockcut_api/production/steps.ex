@@ -453,7 +453,8 @@ defmodule RockcutApi.Production.Steps do
               due_on: done_on,
               done_on: done_on,
               done_by_id: actor.id,
-              completed_at: DateTime.utc_now() |> DateTime.truncate(:second)
+              completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
+              checkoff_move: checkoff_move(graph, step, done_on, changes)
             )
             |> Repo.update!()
 
@@ -488,7 +489,10 @@ defmodule RockcutApi.Production.Steps do
   @doc """
   Un-check `step` (`:not_done` if it isn't done). Its first Brew day makes
   the batch planned again and frees its number (`message` says so); a full
-  Package makes a completed batch `fermenting` again. The step keeps its date.
+  Package makes a completed batch `fermenting` again. D49 QA 1 (Matt,
+  option a): a step its own check-off moved goes back to its planned day,
+  with the steps that moved with it (`checkoff_move`) that are still where
+  it put them and not done; otherwise it keeps its date.
   `{:ok, %{batch_ids, renumbered, message}}`.
   """
   def uncomplete(id) do
@@ -503,8 +507,17 @@ defmodule RockcutApi.Production.Steps do
 
       {message, renumbered} =
         Batches.with_renumbering(fn ->
+          # D49 QA 1 (Matt, option a): what its own check-off moved goes back.
+          due_on = put_back_checkoff_move!(graph, step)
+
           step
-          |> Changeset.change(done_on: nil, done_by_id: nil, completed_at: nil)
+          |> Changeset.change(
+            done_on: nil,
+            done_by_id: nil,
+            completed_at: nil,
+            checkoff_move: nil,
+            due_on: due_on
+          )
           |> Repo.update!()
 
           cond do
@@ -539,6 +552,45 @@ defmodule RockcutApi.Production.Steps do
       %{batch_ids: batch_ids([step.id], graph), renumbered: renumbered, message: message}
     end)
   end
+
+  ## A check-off's move (D49 QA 1)
+
+  # What checking `step` off on `done_on` moves: itself from its planned
+  # day, and `changes` (the following steps under the answer, a Split's
+  # parts), each `[from, to]`. Nil when it was done on its planned day.
+  defp checkoff_move(_graph, %Step{due_on: same}, same, _changes), do: nil
+
+  defp checkoff_move(graph, step, done_on, changes) do
+    changes
+    |> Map.delete(step.id)
+    |> Map.new(fn {id, to} -> {to_string(id), [iso(graph.steps[id].due_on), iso(to)]} end)
+    |> Map.put(to_string(step.id), [iso(step.due_on), iso(done_on)])
+    |> Jason.encode!()
+  end
+
+  # Mark not done: the steps the check-off moved that are still where it
+  # put them, and not done, go back to their dates; the step's own planned
+  # day is returned for it. Without a record, it keeps its date (D47).
+  defp put_back_checkoff_move!(_graph, %Step{checkoff_move: nil} = step), do: step.due_on
+
+  defp put_back_checkoff_move!(graph, %Step{checkoff_move: json} = step) do
+    moved = Jason.decode!(json)
+
+    for {id, [from, to]} <- moved,
+        id = String.to_integer(id),
+        id != step.id,
+        s = graph.steps[id],
+        s && is_nil(s.done_on) && iso(s.due_on) == to do
+      s |> Changeset.change(due_on: Date.from_iso8601!(from)) |> Repo.update!()
+    end
+
+    case moved[to_string(step.id)] do
+      [from, _] -> Date.from_iso8601!(from)
+      _ -> step.due_on
+    end
+  end
+
+  defp iso(%Date{} = d), do: Date.to_iso8601(d)
 
   ## The order rules
 
@@ -615,7 +667,8 @@ defmodule RockcutApi.Production.Steps do
   day's starting temperature), `package_partial` (an unfinished Package;
   `:step_done` once done), `cip_method` (an unfinished CIP's variant, D49;
   `:step_done` once done), `notes`, `on_task_list`, `assignee_id` (a Brewery
-  member, or nil). A date (`due_on`, `done_on`, `completed_at`) is refused
+  member, or nil; a phase marker can't go on the task list:
+  `:marker_task_list`, D49 QA 8). A date (`due_on`, `done_on`, `completed_at`) is refused
   with `:date_not_here` (D48 DEV QA Z3): dates change by moving the step or
   checking it off. Other fields are ignored.
   """
@@ -637,6 +690,10 @@ defmodule RockcutApi.Production.Steps do
       Map.has_key?(attrs, "package_partial") and step.done_on != nil and
           truthy?(attrs["package_partial"]) != step.package_partial ->
         {:error, :step_done}
+
+      # D49 decision 6.1 (QA 8): a phase marker never goes on the task list.
+      Step.marker?(step) and truthy?(attrs["on_task_list"]) ->
+        {:error, :marker_task_list}
 
       # D49 §3.12a: only an unfinished CIP switches its variant.
       Map.has_key?(attrs, "cip_method") and step.done_on != nil and

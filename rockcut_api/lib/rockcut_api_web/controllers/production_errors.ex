@@ -74,6 +74,8 @@ defmodule RockcutApiWeb.ProductionErrors do
     # D49 §3.12b: pencilled batches.
     schedule_first: "Schedule this batch first.",
     flag_muted: "This flag is on a pencilled batch. Schedule the batch to sign it off.",
+    # D49 decision 6.1 (QA 8).
+    marker_task_list: "A phase marker can't go on the Brewery task list.",
     # D48 DEV QA Z3: the step PATCH doesn't change dates.
     date_not_here: "To change a step's date, move it (or check it off on the day it was done)."
   }

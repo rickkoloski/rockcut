@@ -376,12 +376,33 @@ test("decision 8.3: on the Dashboard's Today's tasks card, brew day opens its st
   expect((await step(brew.id)).done_on).toBeNull()
 })
 
+test("QA 3: the Dashboard's Today's tasks card follows Show planned batches, with the Planned batch pill", async ({ page }) => {
+  const { batch } = await ale('Galactic', 0)
+  const api = await apiAs('brewer1')
+  const brewTask = (await linked(stepOf(batch, 'Brew day').id))!
+  const first = (await getBoard(api, today(), today())).days[0].cards[0]
+  expect((await api.post(`/api/boards/brewery/tasks/${brewTask.id}/move`, { data: { due_on: today(), before_id: first.id } })).status()).toBe(200)
+
+  await page.goto('/brewery')
+  await expect(page.getByTestId('todays-tasks-list')).toContainText(brewTask.title)
+  await expect(page.getByTestId(`todays-task-planned-${brewTask.id}`)).toHaveText('Planned batch')
+
+  // Off (the afterEach puts it back on): gone from the card, after a reload too.
+  expect((await api.put('/api/me/show_planned_batches', { data: { show_planned_batches: false } })).status()).toBe(200)
+  await page.reload()
+  await expect(page.getByTestId('todays-tasks-card')).toBeVisible()
+  await expect(page.getByTestId(`todays-task-planned-${brewTask.id}`)).toHaveCount(0)
+  await expect(page.getByText(brewTask.title, { exact: true })).toHaveCount(0)
+})
+
 test.describe('the brewhouse tablet (decision 8: read-only until D50)', () => {
   test.use({ storageState: authFile('breweryDevice') })
 
   test('a linked task has no checkbox and no actions, and says where to do it', async ({ page }) => {
     const { batch } = await ale('Crusher', 2)
-    const c = (await linked(stepOf(batch, 'FDH').id))!
+    const fdh = stepOf(batch, 'FDH')
+    await (await apiAs('brewer1')).patch(`${P}/steps/${fdh.id}`, { data: { notes: 'Bring the Citra up from the cooler' } })
+    const c = (await linked(fdh.id))!
     await openAround(page, c.due_on!)
     const key = `${c.id}:${c.due_on}`
     await expect(page.getByTestId(`task-${key}`)).toBeVisible()
@@ -391,6 +412,8 @@ test.describe('the brewhouse tablet (decision 8: read-only until D50)', () => {
     await page.getByTestId(`task-${key}`).click()
     const menu = page.getByTestId('task-menu')
     await expect(menu.getByTestId('task-menu-linked-device')).toHaveText('From the production schedule. Do this on the production schedule.')
+    // QA 5: its notes, which the tablet can't read anywhere else.
+    await expect(menu.getByTestId('task-menu-notes-text')).toHaveText('Bring the Citra up from the cooler')
     for (const id of ['task-menu-edit', 'task-menu-complete', 'task-menu-change-day', 'task-menu-delete', 'task-menu-open-schedule']) await expect(menu.getByTestId(id)).toHaveCount(0)
   })
 })

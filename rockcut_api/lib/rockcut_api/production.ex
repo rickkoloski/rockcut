@@ -849,6 +849,9 @@ defmodule RockcutApi.Production do
   defp entry_fields!(type, attrs, step \\ nil) do
     base = step || %TemplateStep{}
 
+    # D49 decision 6.1 (QA 8): a phase marker never goes on the task list.
+    if is_nil(type) and truthy?(attrs["on_task_list"]), do: Repo.rollback(:marker_task_list)
+
     defaults =
       if step,
         do: %{},

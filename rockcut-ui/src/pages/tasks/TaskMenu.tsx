@@ -128,6 +128,17 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
   const items = linkedReadOnly
     ? [
         ...header,
+        // D49 QA 5: the notes, which the tablet has nowhere else to read.
+        card.notes && (
+          <Typography
+            key="linked-notes"
+            variant="body2"
+            sx={{ px: 2, pb: 1, maxWidth: 280, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}
+            data-testid="task-menu-notes-text"
+          >
+            {card.notes}
+          </Typography>
+        ),
         <Typography key="linked-device" variant="body2" color="text.secondary" sx={{ px: 2, pb: 1, maxWidth: 280 }} data-testid="task-menu-linked-device">
           From the production schedule. Do this on the production schedule.
         </Typography>,

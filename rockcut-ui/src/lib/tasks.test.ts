@@ -463,6 +463,18 @@ describe('todaysTasks', () => {
     expect(s.more).toBe(2)
     expect(s.unfinished).toBe(1)
   })
+
+  it('D49 QA 3: Show planned batches off leaves out planned batches\' tasks (not a scheduled one\'s or a CIP)', () => {
+    const production = (planned: boolean) => ({ step_id: 1, batch_id: planned ? 1 : null, batch_status: planned ? 'planned' : null, planned, step_name: 'FDH', batch_label: null })
+    const cards = [card(1, { production: production(true) }), card(2), card(3, { production: production(false) })]
+    const board = {
+      today: '2026-10-14',
+      days: [{ date: '2026-10-14', cards, daily: { done: 0, total: 0, items: [] } }],
+      unfinished: [],
+    } as unknown as TaskBoardData
+    expect(todaysTasks(board).tasks.map((t) => t.id)).toEqual([1, 2, 3])
+    expect(todaysTasks(board, false).tasks.map((t) => t.id)).toEqual([2, 3])
+  })
 })
 
 describe('Hide shifts (D45 §3.3)', () => {

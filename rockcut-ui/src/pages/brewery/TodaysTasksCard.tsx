@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useApiQuery } from '../../hooks/useApiQuery'
+import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { boardPath, coloradoToday, initials, taskError, todaysTasks } from '../../lib/tasks'
 import type { DailyCardItem, TaskBoardData, TaskCardData } from '../../lib/types'
@@ -23,6 +24,8 @@ export default function TodaysTasksCard() {
   const qc = useQueryClient()
   const navigate = useNavigate()
   const today = coloradoToday()
+  // D49 QA 3: as on the board.
+  const showPlanned = useAuth((s) => s.showPlannedBatches)
   const { data: board, isLoading, isError, error } = useApiQuery<TaskBoardData>(
     [BOARD_KEY, DEPT, today, today],
     boardPath(DEPT, 'tasks'),
@@ -65,7 +68,7 @@ export default function TodaysTasksCard() {
   const tick = (item: DailyCardItem) =>
     write(`daily:${item.daily_item_id}`, () => api.put(boardPath(DEPT, 'daily_checks', board!.today, item.daily_item_id)))
 
-  const summary = board ? todaysTasks(board) : null
+  const summary = board ? todaysTasks(board, showPlanned) : null
 
   return (
     <Card variant="outlined" sx={{ mb: 4 }} data-testid="todays-tasks-card">
@@ -129,6 +132,9 @@ export default function TodaysTasksCard() {
                     <Typography variant="body2" sx={{ flexGrow: 1 }}>
                       {card.title}
                     </Typography>
+                    {card.production?.planned && (
+                      <Chip label="Planned batch" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: 11, mr: 0.5 }} data-testid={`todays-task-planned-${card.id}`} />
+                    )}
                     {card.assignee_name && (
                       <Chip size="small" variant="outlined" label={initials(card.assignee_name)} title={card.assignee_name} />
                     )}

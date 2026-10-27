@@ -29,6 +29,11 @@ defmodule RockcutApi.Production.Step do
     field :added, :boolean, default: false
     # D48: the Set temp steps of one ramp share it (copied from the template).
     field :ramp_group, :string
+    # D49 QA 1: what this step's check-off moved, while it's done, as JSON
+    # `{"<id>": [from, to]}` (ISO dates); Mark not done puts them back. Text,
+    # not :map: a nil map is stored as "null" on SQLite, and Undo compares
+    # rows (`Steps.checkoff_move/4`).
+    field :checkoff_move, :string
 
     belongs_to :batch, RockcutApi.Brewing.Batch
     belongs_to :tank, RockcutApi.Production.Tank

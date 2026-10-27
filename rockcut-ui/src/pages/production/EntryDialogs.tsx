@@ -299,7 +299,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       day_offset: Number(day),
       vessel_index: tankValue,
       phase_id: phaseId === '' ? null : phaseId,
-      on_task_list: onTaskList,
+      // D49 decision 6.1: a marker is never on the task list (the API refuses true).
+      on_task_list: marker ? false : onTaskList,
       notes: notes.trim() || null,
     }
     if (!marker) body.detail = detail.trim() || null
