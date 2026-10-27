@@ -169,8 +169,13 @@ test('P134: checking off brew day on a pencilled batch: "Schedule this batch fir
   expect(stepOf(await fresh(x.id), 'Brew day').done_on).toBeNull()
 
   await page.getByTestId('step-check-off').click()
+  // Schedule sends its POST after the prompt closes: read the batch only once
+  // it has answered (reading at once raced it on DEV and saw X1).
+  const scheduling = page.waitForResponse((r) => new URL(r.url()).pathname === `${P}/batches/${x.id}/schedule` && r.request().method() === 'POST')
   await page.getByTestId('schedule-prompt-ok').click()
+  expect((await scheduling).status()).toBe(200)
   // Scheduled; then brew day's number prompt, with the new label.
+  await expect(page.getByTestId('number-prompt')).toBeVisible()
   const scheduled = await fresh(x.id)
   expect(scheduled.p_number).toMatch(/^P\d+$/)
   await expect(page.getByTestId('number-prompt')).toContainText(`Brew day for ${scheduled.label}`)
