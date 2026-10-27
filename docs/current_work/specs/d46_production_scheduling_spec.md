@@ -68,7 +68,7 @@ Production scheduling moves this into Rockcut:
 **Phases** (Matt's list): Brew day → Lag → Fermentation → Diacetyl rest → Crash (stepped or a single drop) → optionally Lagering → optionally a second Crash → Conditioning (normally before any transfer) → Carbonating (in the first tank or after a transfer) → optionally Conditioning again → Packaging.
 - Phases aren't a fixed sequence. A template puts them in order and a phase can appear more than once.
 - A transfer or filter does **not** start a phase.
-- Phases with no natural task (Lag, Fermentation, Lagering, Conditioning) start from a **phase marker**: a template entry on a day, not a task unless someone turns that on. A marker takes effect on its day once the steps before it are done.
+- Phases with no natural task (Lag, Fermentation, Lagering, Conditioning) start from a **phase marker**: a template entry on a day, never a task (Matt, 2026-10-26). A marker takes effect on its day once the steps before it are done.
 
 **Step types** (Matt's list): Brew day, PDH (Primary Dry Hop), FDH (Final Dry Hop), Dry hop, Amylo (AMG), Set temp, Diacetyl test, Plug dump, Yeast harvest, Rouse, Addition, Fining, Gravity check, Carb, Transfer, **Filter** (behaves exactly like Transfer), Split (**Split - Transfer** or **Split - Filter**: how the parts that leave get out; Matt, 2026-10-21), CIP & Sanitize, Package (**Full** or **Partial**: "Package - Partial" packages some and leaves the rest in the tank; Matt, 2026-10-21). Plus a free-text custom step. "Hold" is not used. "Keg / Package" is "Package".
 - **Names:** a step always keeps its type name; a brewer can **add to it** ("Dry hop - #2"). Set temp shows its temperature ("Set temp - 52°"). The addition is edited in the template, the step dialog (from the Gantt or the task list) and the batch dialog's step list.
@@ -178,7 +178,7 @@ Seeded: Brew day (`brew`), PDH, FDH, Dry hop, Amylo, Set temp (`set_temp`), Diac
 | `split_method` | `transfer` / `filter`, Split only (required there, default `transfer`); the name shows "Split - Transfer" / "Split - Filter" before any addition ("Split - Filter - #2") (D47, Matt 2026-10-21) |
 | `package_partial` | boolean, Package only (default false). A partial Package shows "Package - Partial" before any addition ("Package - Partial - kegs"); it isn't the tank's exit (D47, Matt 2026-10-21) |
 | `notes` | text ≤ 2000 |
-| `on_task_list` | default from the type; markers default off |
+| `on_task_list` | default from the type; always off for markers (they never get a task) |
 | `position` | ordering within a day |
 
 **`template_links`**: `from_step_id`, `to_step_id`, `default_answer` (`move_all` / `move_only`). No cycles (422 `link_cycle`). The "to" step's offset must be ≥ the "from" step's.
@@ -396,7 +396,7 @@ Computed server-side by one function, returned with the schedule.
 
 ### 3.12 Task list linkage (D49)
 
-- **One task per step** with `on_task_list` (including phase markers turned on, and standalone CIPs), on the **Brewery** board. `production_steps.task_id` and `tasks.production_step_id` link them.
+- **One task per step** with `on_task_list` (including standalone CIPs; phase markers never get a task, Matt 2026-10-26), on the **Brewery** board. `production_steps.task_id` and `tasks.production_step_id` link them.
 - **The step is the source**, and the task row is kept in sync **in the same transaction** for every change from either side:
   - **Title:** "FV3 · Galactic #33 · Set temp - 48°" ("FV6 · CIP & Sanitize" for a standalone CIP; "No tank · …" when unassigned). Recomputed when the tank, batch number, P-number, name or temperature changes. **Not editable on the board**; the board's Edit shows "This task comes from the production schedule" with **Open in schedule**.
   - **Due date:** moving the task on the board (drag or Change day) moves the step **and runs the move prompt** on the board. Reordering within a day is board-only.
