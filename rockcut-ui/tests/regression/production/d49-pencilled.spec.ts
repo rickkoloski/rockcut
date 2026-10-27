@@ -156,6 +156,8 @@ test('P133: a scheduled planned batch → Pencil in: back to an X-number; refuse
 
 test('QA 4: the Undo snackbar keeps clear of the open batch dialog\'s buttons, and goes when its Undo runs out', async ({ page }) => {
   await page.clock.install()
+  // QA's screen: at this height the dialog's buttons are where a bottom snackbar sits.
+  await page.setViewportSize({ width: 1440, height: 900 })
   const brand = await made.brand('Crusher')
   const b = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 4) })
   await openGantt(page)

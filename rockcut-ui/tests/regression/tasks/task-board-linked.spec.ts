@@ -389,8 +389,11 @@ test("QA 3: the Dashboard's Today's tasks card follows Show planned batches, wit
 
   // Off (the afterEach puts it back on): gone from the card, after a reload too.
   expect((await api.put('/api/me/show_planned_batches', { data: { show_planned_batches: false } })).status()).toBe(200)
+  // Read once the card's board is in (before that it lists nothing either way).
+  const loaded = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/boards/brewery/tasks' && r.ok())
   await page.reload()
-  await expect(page.getByTestId('todays-tasks-card')).toBeVisible()
+  await loaded
+  await expect(page.getByTestId('todays-tasks-list').or(page.getByText('Nothing open today.'))).toBeVisible()
   await expect(page.getByTestId(`todays-task-planned-${brewTask.id}`)).toHaveCount(0)
   await expect(page.getByText(brewTask.title, { exact: true })).toHaveCount(0)
 })
