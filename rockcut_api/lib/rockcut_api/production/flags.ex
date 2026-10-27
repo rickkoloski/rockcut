@@ -20,6 +20,12 @@ defmodule RockcutApi.Production.Flags do
   for the dirty flags, but a fill after it is "Filling a tank that isn't
   sanitized" (`unsanitized_fill`, soft: it can be signed off) unless a
   Sanitize or CIP & Sanitize comes first. A Sanitize never counts as a CIP.
+
+  D49 §3.12b: a flag about a pencilled batch (its first batch) is `muted`:
+  listed last, not counted, and it can't be signed off (`Signoffs`). Tank
+  overlap between a scheduled and a pencilled batch is two flags: the
+  scheduled one's, as before, and the pencilled one's, muted (its key ends
+  in `:pencilled`). "No tank assigned" doesn't apply to a pencilled batch.
   """
   alias RockcutApi.Production.{Parts, Steps}
 
@@ -69,9 +75,34 @@ defmodule RockcutApi.Production.Flags do
        out_of_service(live, loose_cips, tanks) ++
        cip_with_beer(live, loose_cips, tanks))
     |> Enum.uniq_by(& &1.key)
+    |> Enum.flat_map(&mute(&1, pencilled(world.parts)))
     |> Enum.map(&with_signoff(&1, signed[&1.key]))
-    |> Enum.sort_by(&{&1.signed_off, &1.key})
+    |> Enum.sort_by(&{&1.muted, &1.signed_off, &1.key})
   end
+
+  defp pencilled(parts), do: for(p <- parts, p.pencilled, into: MapSet.new(), do: p.batch_id)
+
+  # D49 §3.12b: muted when it's about a pencilled batch (its first batch);
+  # an overlap of a scheduled and a pencilled batch is one flag each.
+  defp mute(%{kind: "tank_overlap", batch_ids: [a, b]} = flag, pencilled) do
+    case {MapSet.member?(pencilled, a), MapSet.member?(pencilled, b)} do
+      {x, x} ->
+        [Map.put(flag, :muted, x)]
+
+      {a_pencilled, _} ->
+        {pen, sched} = if a_pencilled, do: {a, b}, else: {b, a}
+
+        [
+          Map.merge(flag, %{batch_ids: [sched], muted: false}),
+          Map.merge(flag, %{key: flag.key <> ":pencilled", batch_ids: [pen], muted: true})
+        ]
+    end
+  end
+
+  defp mute(%{batch_ids: [first | _]} = flag, pencilled),
+    do: [Map.put(flag, :muted, MapSet.member?(pencilled, first))]
+
+  defp mute(flag, _pencilled), do: [Map.put(flag, :muted, false)]
 
   # Two parts in one tank overlap: they share more than a boundary day (a
   # CIP and the next fill on the same day is normal).
@@ -371,6 +402,7 @@ defmodule RockcutApi.Production.Flags do
   defp no_tank(live, today) do
     for p <- live,
         is_nil(p.tank_id) and p.fill != nil and is_nil(p.fill.done_on),
+        not p.pencilled,
         Date.diff(p.fill.due_on, today) <= @no_tank_days do
       flag(:no_tank, [p.id], [p.fill.due_on],
         message:

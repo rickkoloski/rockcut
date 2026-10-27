@@ -125,7 +125,8 @@ defmodule RockcutApi.Production.Splits do
               notes: batch.notes,
               split_parent_id: batch.id,
               part_number: i,
-              split_stays: p.stays
+              split_stays: p.stays,
+              pencilled: batch.pencilled
             })
 
           for j <- 0..(last - k) do

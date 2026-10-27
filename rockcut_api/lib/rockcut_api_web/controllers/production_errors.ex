@@ -71,6 +71,9 @@ defmodule RockcutApiWeb.ProductionErrors do
     split_before_brew: "The split has to be after brew day.",
     # D48 DEV QA fix cycle 2.
     before_split: "A step can't come before the split.",
+    # D49 §3.12b: pencilled batches.
+    schedule_first: "Schedule this batch first.",
+    flag_muted: "This flag is on a pencilled batch. Schedule the batch to sign it off.",
     # D48 DEV QA Z3: the step PATCH doesn't change dates.
     date_not_here: "To change a step's date, move it (or check it off on the day it was done)."
   }

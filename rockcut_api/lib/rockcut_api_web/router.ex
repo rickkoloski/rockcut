@@ -321,6 +321,8 @@ defmodule RockcutApiWeb.Router do
     patch "/batches/:id", ProductionScheduleController, :update_batch
     delete "/batches/:id", ProductionScheduleController, :delete_batch
     post "/batches/:id/shift", ProductionScheduleController, :shift_batch
+    post "/batches/:id/schedule", ProductionScheduleController, :schedule_batch
+    post "/batches/:id/pencil", ProductionScheduleController, :pencil_batch
     patch "/batches/:id/vessels/:index", ProductionScheduleController, :update_vessel
     # D48: changing a batch (§3.11).
     post "/batches/:id/steps", ProductionScheduleController, :add_step

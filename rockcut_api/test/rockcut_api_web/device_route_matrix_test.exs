@@ -271,6 +271,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:delete, "/api/production/batches/:id"},
     {:post, "/api/production/batches/:id/shift"},
     {:patch, "/api/production/batches/:id/vessels/:index"},
+    # D49: pencilled batches, people only.
+    {:post, "/api/production/batches/:id/schedule"},
+    {:post, "/api/production/batches/:id/pencil"},
     # D48: changing a batch, people only like D47's.
     {:post, "/api/production/batches/:id/steps"},
     {:post, "/api/production/batches/:id/ramp"},

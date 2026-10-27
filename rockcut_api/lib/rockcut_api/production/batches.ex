@@ -13,7 +13,9 @@ defmodule RockcutApi.Production.Batches do
 
   **P-numbers** are computed, never stored: the planned scheduled batches by
   their first Brew day's date, then id, numbered 1, 2, 3, …. A write that can
-  change them returns `renumbered` (`with_renumbering/1`).
+  change them returns `renumbered` (`with_renumbering/1`). D49 §3.12b:
+  pencilled batches get **X-numbers**, a sequence of their own counted the
+  same way (`schedule/1`, `pencil/1`).
 
   **The first Brew day** is the batch's Brew day with the lowest id: the one
   copied from the template (a two-day brew's "2 of 2" is added after it).
@@ -59,10 +61,11 @@ defmodule RockcutApi.Production.Batches do
   end
 
   @doc """
-  The P-numbers: `%{batch_id => n}` for every planned scheduled batch, by
-  the first Brew day's date (with `overrides`, `%{step_id => date}`, in
-  place of the stored dates: a preview), then id. `leaving`: batch ids that
-  won't be planned any more (a brew-day check-off's preview).
+  The P- and X-numbers: `%{batch_id => "P1" | "X1"}` for every planned
+  scheduled batch, P for scheduled ones and X for pencilled ones (D49), each
+  sequence by the first Brew day's date (with `overrides`, `%{step_id =>
+  date}`, in place of the stored dates: a preview), then id. `leaving`:
+  batch ids that won't be planned any more (a brew-day check-off's preview).
   """
   def p_numbers(overrides \\ %{}, leaving \\ []) do
     Repo.all(
@@ -72,24 +75,31 @@ defmodule RockcutApi.Production.Batches do
         join: t in StepType,
         on: t.id == s.step_type_id,
         where: b.status == "planned" and t.behavior == "brew",
-        select: {s.batch_id, s.id, s.due_on}
+        select: {s.batch_id, s.id, s.due_on, b.pencilled}
       )
     )
     |> Enum.reject(&(elem(&1, 0) in leaving))
     |> Enum.group_by(&elem(&1, 0))
     |> Enum.map(fn {batch_id, brews} ->
-      {_, step_id, due_on} = Enum.min_by(brews, &elem(&1, 1))
-      {batch_id, Map.get(overrides, step_id, due_on)}
+      {_, step_id, due_on, pencilled} = Enum.min_by(brews, &elem(&1, 1))
+      {batch_id, Map.get(overrides, step_id, due_on), pencilled}
     end)
-    |> Enum.sort_by(fn {batch_id, due_on} -> {Date.to_gregorian_days(due_on), batch_id} end)
-    |> Enum.with_index(1)
-    |> Map.new(fn {{batch_id, _}, n} -> {batch_id, n} end)
+    |> Enum.group_by(&elem(&1, 2))
+    |> Enum.flat_map(fn {pencilled, list} ->
+      letter = if pencilled, do: "X", else: "P"
+
+      list
+      |> Enum.sort_by(fn {batch_id, due_on, _} -> {Date.to_gregorian_days(due_on), batch_id} end)
+      |> Enum.with_index(1)
+      |> Enum.map(fn {{batch_id, _, _}, n} -> {batch_id, "#{letter}#{n}"} end)
+    end)
+    |> Map.new()
   end
 
   @doc """
   The P-numbers that differ between `before` and `after` (`p_numbers/1`
   maps), for batches planned in both: `[%{batch_id, brand, from, to}]` with
-  `from`/`to` as "P2", by the new number.
+  `from`/`to` as "P2" (or "X1"), by the new number.
   """
   def renumbered(before, after_) do
     changed =
@@ -98,10 +108,10 @@ defmodule RockcutApi.Production.Batches do
     brands = brand_names(Enum.map(changed, &elem(&1, 0)))
 
     changed
-    |> Enum.sort_by(&elem(&1, 2))
-    |> Enum.map(fn {id, from, to} ->
-      %{batch_id: id, brand: brands[id], from: "P#{from}", to: "P#{to}"}
+    |> Enum.sort_by(fn {_, _, to} ->
+      {String.first(to), String.to_integer(String.slice(to, 1..-1//1))}
     end)
+    |> Enum.map(fn {id, from, to} -> %{batch_id: id, brand: brands[id], from: from, to: to} end)
   end
 
   @doc """
@@ -120,7 +130,7 @@ defmodule RockcutApi.Production.Batches do
     "#{brand} #{number_label(batch, pnums)}"
   end
 
-  @doc ~S|"#40" or "P2" ("" for a planned batch that isn't scheduled); a split's part "#40.1" or "P2.1" (D48).|
+  @doc ~S|"#40", "P2" or "X1" ("" for a planned batch that isn't scheduled); a split's part "#40.1", "P2.1" or "X1.2" (D48).|
   def number_label(%Batch{split_parent_id: parent_id, part_number: n} = part, pnums)
       when not is_nil(parent_id) do
     parent =
@@ -135,10 +145,7 @@ defmodule RockcutApi.Production.Batches do
   def number_label(%Batch{batch_number: n}, _pnums) when is_binary(n), do: "##{n}"
 
   def number_label(%Batch{id: id}, pnums) do
-    case pnums[id] do
-      nil -> ""
-      n -> "P#{n}"
-    end
+    pnums[id] || ""
   end
 
   @doc """
@@ -198,8 +205,8 @@ defmodule RockcutApi.Production.Batches do
 
   @doc """
   Plan a batch (§3.5): `brand_id`, `template_id`, `brew_on`, `volume_bbl`,
-  `brew_two_days`, and `tank_ids` (one per vessel, in order; nil or missing =
-  Unassigned). The template must be active and complete
+  `brew_two_days`, `tank_ids` (one per vessel, in order; nil or missing =
+  Unassigned) and `pencilled` (D49: pencilled in, not scheduled). The template must be active and complete
   (`:template_incomplete`); each tank active (`:tank_invalid`).
 
   Copies every template entry with `due_on` = brew day + its day; a two-day
@@ -217,11 +224,12 @@ defmodule RockcutApi.Production.Batches do
       template_id: :integer,
       brew_on: :date,
       volume_bbl: :decimal,
-      brew_two_days: :boolean
+      brew_two_days: :boolean,
+      pencilled: :boolean
     }
 
     changeset =
-      {%{brew_two_days: false}, types}
+      {%{brew_two_days: false, pencilled: false}, types}
       |> Changeset.cast(attrs, Map.keys(types))
       |> Changeset.validate_required([:brand_id], message: "Pick a brand.")
       |> Changeset.validate_required([:template_id], message: "Pick a template.")
@@ -249,7 +257,8 @@ defmodule RockcutApi.Production.Batches do
                 template_id: template.id,
                 status: "planned",
                 volume_bbl: fields.volume_bbl,
-                brew_two_days: fields.brew_two_days
+                brew_two_days: fields.brew_two_days,
+                pencilled: fields.pencilled
               })
 
             for k <- 0..vessels,
@@ -269,6 +278,46 @@ defmodule RockcutApi.Production.Batches do
         {batch, renumbered}
       end)
     end
+  end
+
+  ## Pencilled or scheduled (D49 §3.12b)
+
+  @doc """
+  Schedule a pencilled batch (a part: its whole split): it gets the next
+  P-number by date and its flags count. `{:ok, {batch, renumbered}}`, or
+  `:not_planned`. Already scheduled: nothing changes.
+  """
+  def schedule(%Batch{} = batch), do: set_pencilled(batch, false)
+
+  @doc """
+  Pencil in a scheduled planned batch (a part: its whole split): back to an
+  X-number. `:step_done` once any step of the split is done.
+  """
+  def pencil(%Batch{} = batch), do: set_pencilled(batch, true)
+
+  defp set_pencilled(batch, value) do
+    Repo.transaction(fn ->
+      root = Repo.get!(Batch, batch.split_parent_id || batch.id)
+
+      ids = [
+        root.id | Repo.all(from(b in Batch, where: b.split_parent_id == ^root.id, select: b.id))
+      ]
+
+      if root.status != "planned", do: Repo.rollback(:not_planned)
+
+      if value and
+           Repo.exists?(from(s in Step, where: s.batch_id in ^ids and not is_nil(s.done_on))),
+         do: Repo.rollback(:step_done)
+
+      {_, renumbered} =
+        with_renumbering(fn ->
+          Repo.update_all(from(b in Batch, where: b.id in ^ids and b.pencilled != ^value),
+            set: [pencilled: value, updated_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+          )
+        end)
+
+      {Repo.get!(Batch, batch.id), renumbered}
+    end)
   end
 
   defp validate_volume(changeset) do

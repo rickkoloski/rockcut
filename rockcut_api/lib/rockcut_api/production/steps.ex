@@ -403,6 +403,11 @@ defmodule RockcutApi.Production.Steps do
       step = graph.steps[to_int(id)]
       if step.done_on, do: Repo.rollback(:step_done)
       today = opts[:today] || Tasks.today()
+
+      # D49 §3.12b: nothing on a pencilled batch is done until it's scheduled.
+      if step.batch_id && Repo.get!(Batch, step.batch_id).pencilled,
+        do: Repo.rollback(:schedule_first)
+
       done_on = done_on!(attrs["done_on"], today)
       answer = answer!(attrs["answer"])
       batch = step.batch_id && Repo.get!(Batch, step.batch_id)

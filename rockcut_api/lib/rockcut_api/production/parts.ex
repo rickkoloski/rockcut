@@ -84,6 +84,8 @@ defmodule RockcutApi.Production.Parts do
       label: entry.label,
       volume: entry.batch.volume_bbl,
       status: entry.batch.status,
+      # D49 §3.12b: its flags are muted.
+      pencilled: Map.get(entry.batch, :pencilled, false) == true,
       fill: fill,
       exit: exit,
       cip: cip,
