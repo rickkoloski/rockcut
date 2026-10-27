@@ -18,6 +18,7 @@ defmodule RockcutApi.Production.Step do
     field :detail, :string
     field :temperature, :integer
     field :split_method, :string
+    field :cip_method, :string
     field :package_partial, :boolean, default: false
     field :notes, :string
     field :on_task_list, :boolean, default: true
@@ -46,16 +47,28 @@ defmodule RockcutApi.Production.Step do
 
   @doc """
   What the step dialog edits: the addition to the name, the temperature (Set
-  temp), Full / Partial (a Package; `Steps` checks it's unfinished), notes,
+  temp), Full / Partial (a Package; `Steps` checks it's unfinished), the
+  variant of a CIP (D49; `Steps` checks that too), notes,
   the task-list switch and the assignee (`Steps` checks Brewery membership).
   """
   def edit_changeset(step, attrs) do
     step
-    |> cast(attrs, [:detail, :temperature, :package_partial, :notes, :on_task_list, :assignee_id])
+    |> cast(attrs, [
+      :detail,
+      :temperature,
+      :package_partial,
+      :cip_method,
+      :notes,
+      :on_task_list,
+      :assignee_id
+    ])
     |> update_change(:detail, &blank_to_nil/1)
     |> update_change(:notes, &blank_to_nil/1)
     |> validate_length(:detail, max: 40)
     |> validate_length(:notes, max: 2_000)
+    |> validate_inclusion(:cip_method, TemplateStep.cip_methods(),
+      message: TemplateStep.cip_message()
+    )
     |> validate_number(:temperature,
       greater_than_or_equal_to: TemplateStep.temperatures().first,
       less_than_or_equal_to: TemplateStep.temperatures().last,

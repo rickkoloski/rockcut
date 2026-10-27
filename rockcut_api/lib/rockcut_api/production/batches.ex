@@ -344,6 +344,7 @@ defmodule RockcutApi.Production.Batches do
             detail: if(brew? and two_days, do: "1 of 2", else: s.detail),
             temperature: s.temperature,
             split_method: s.split_method,
+            cip_method: s.cip_method,
             package_partial: s.package_partial,
             notes: s.notes,
             on_task_list: s.on_task_list,

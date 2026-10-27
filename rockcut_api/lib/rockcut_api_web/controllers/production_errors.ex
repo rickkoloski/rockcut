@@ -56,6 +56,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     split_part: "That's a part of a split. Undo the split to change it that way.",
     split_fill: "The Split fills the parts. Use Undo split to take it out.",
     split_method_invalid: "Pick Transfer or Filter.",
+    cip_method_invalid: "Pick CIP & Sanitize, CIP - no sani or Sanitize.",
     parts_required: "Split into two parts or more.",
     one_stays: "Only one part can stay in the tank.",
     same_tank: "Two parts can’t go into the same tank.",

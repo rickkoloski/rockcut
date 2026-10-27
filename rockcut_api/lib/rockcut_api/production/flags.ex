@@ -15,8 +15,13 @@ defmodule RockcutApi.Production.Flags do
   only to the exit (`Parts.occupied_until/1`). "Dirty, no CIP planned" looks at each tank's
   last emptying. D48: clean / dirty marks (`world.marks`) count as cleaning
   and emptying, through the one rule in `Parts.latest_condition/1`.
+
+  D49 §3.12a: a CIP - no sani or a Clean not sanitized mark cleans the tank
+  for the dirty flags, but a fill after it is "Filling a tank that isn't
+  sanitized" (`unsanitized_fill`, soft: it can be signed off) unless a
+  Sanitize or CIP & Sanitize comes first. A Sanitize never counts as a CIP.
   """
-  alias RockcutApi.Production.Parts
+  alias RockcutApi.Production.{Parts, Steps}
 
   @no_tank_days 3
 
@@ -55,6 +60,7 @@ defmodule RockcutApi.Production.Flags do
        too_big(live, tanks) ++
        dirty_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) ++
        marked_dirty_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) ++
+       unsanitized_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) ++
        dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) ++
        marked_dirty_no_cip(by_tank, cips_by_tank, marks_by_tank, tanks) ++
        out_of_order(world.parts) ++
@@ -121,18 +127,19 @@ defmodule RockcutApi.Production.Flags do
         not (prev.batch_id == p.batch_id and prev.exit != nil and
                Date.compare(p.fill.due_on, prev.exit.due_on) != :gt),
         # A generator, not `prev_cip = …`: in `for` a binding is also a
-        # filter, and a missing CIP (nil) would drop the flag.
-        prev_cip <- [prev.cip],
+        # filter, and a missing CIP (nil) would drop the flag. A Sanitize
+        # doesn't clean (D49).
+        prev_cip <- [prev |> cleaning_cips() |> Enum.max_by(&Parts.order/1, fn -> nil end)],
         is_nil(prev_cip) or Date.compare(prev_cip.due_on, p.fill.due_on) == :gt,
         emptied = (prev.exit && prev.exit.due_on) || prev.end,
         not Enum.any?(
           Map.get(cips_by_tank, p.tank_id, []),
-          &(Date.compare(&1.due_on, emptied) != :lt and
+          &(Parts.cleans?(&1) and Date.compare(&1.due_on, emptied) != :lt and
               Date.compare(&1.due_on, p.fill.due_on) != :gt)
         ),
         not Enum.any?(
           Map.get(marks_by_tank, p.tank_id, []),
-          &(&1.state == "clean" and Date.compare(&1.marked_on, emptied) != :lt and
+          &(&1.state in ["clean", "cleaned"] and Date.compare(&1.marked_on, emptied) != :lt and
               Date.compare(&1.marked_on, p.fill.due_on) != :gt)
         ) do
       flag(:dirty_fill, [p.id, prev.id], [p.tank_id, p.fill.due_on, prev_cip && prev_cip.due_on],
@@ -168,7 +175,8 @@ defmodule RockcutApi.Production.Flags do
           |> Parts.latest_condition()
         ],
         not Enum.any?(
-          Enum.flat_map(Enum.reject(parts, &(&1.id == p.id)), &Parts.own_cips/1) ++ cips,
+          Enum.flat_map(Enum.reject(parts, &(&1.id == p.id)), &cleaning_cips/1) ++
+            Enum.filter(cips, &Parts.cleans?/1),
           &(Date.compare(&1.due_on, m.marked_on) != :lt and
               Date.compare(&1.due_on, p.fill.due_on) != :gt)
         ) do
@@ -180,6 +188,38 @@ defmodule RockcutApi.Production.Flags do
       )
     end
   end
+
+  # D49 §3.12a: a planned fill into a tank that's clean but not sanitized
+  # by then: what's done and what's planned in the tank before the fill, as
+  # one timeline (`Parts.condition_events/4`), ends cleaned. A dirty end is
+  # the dirty flags' (they don't both show).
+  defp unsanitized_fills(live, by_tank, cips_by_tank, marks_by_tank, tanks) do
+    for p <- live,
+        p.tank_id && p.fill && is_nil(p.fill.done_on),
+        others = Enum.reject(Map.get(by_tank, p.tank_id, []), &(&1.id == p.id)),
+        %{state: :cleaned} = e <- [
+          others
+          |> Parts.condition_events(
+            Map.get(cips_by_tank, p.tank_id, []),
+            Map.get(marks_by_tank, p.tank_id, []),
+            planned: true
+          )
+          |> Enum.filter(&(Date.compare(&1.on, p.fill.due_on) != :gt))
+          |> Parts.latest_condition()
+        ] do
+      flag(:unsanitized_fill, [p.id], [p.tank_id, p.fill.due_on, e.on],
+        message: "#{Parts.label(p)} fills #{tanks[p.tank_id].name}, which isn't sanitized.",
+        batch_ids: [p.batch_id],
+        tank_id: p.tank_id
+      )
+    end
+  end
+
+  # "CIP & Sanitize", "CIP - no sani" or "Sanitize" (D49).
+  defp cip_label(c),
+    do: RockcutApi.Production.cip_name("CIP & Sanitize", Steps.cip_method(c))
+
+  defp cleaning_cips(part), do: part |> Parts.own_cips() |> Enum.filter(&Parts.cleans?/1)
 
   # A tank's last emptying with no CIP dated on or after it, unless a clean
   # mark (D48) came after it.
@@ -200,9 +240,9 @@ defmodule RockcutApi.Production.Flags do
         ),
         cips =
           Enum.filter(
-            last.steps,
-            &(Parts.behavior(&1) == "cip" and &1.vessel_index == last.vessel_index)
-          ) ++ Map.get(cips_by_tank, tank_id, []),
+            cleaning_cips(last) ++ Map.get(cips_by_tank, tank_id, []),
+            &Parts.cleans?/1
+          ),
         not Enum.any?(cips, &(Date.compare(&1.due_on, emptied) != :lt)),
         match?(
           %{state: :dirty},
@@ -238,7 +278,8 @@ defmodule RockcutApi.Production.Flags do
           &(Parts.filled?(&1) and Date.compare(&1.fill.done_on, m.marked_on) != :lt)
         ),
         not Enum.any?(
-          Enum.flat_map(Enum.filter(parts, &Parts.filled?/1), &Parts.own_cips/1) ++ cips,
+          Enum.flat_map(Enum.filter(parts, &Parts.filled?/1), &cleaning_cips/1) ++
+            Enum.filter(cips, &Parts.cleans?/1),
           &(Date.compare(&1.due_on, m.marked_on) != :lt)
         ) do
       flag(:dirty_no_cip, [tank_id, "mark#{m.id}"], [tank_id, m.marked_on],
@@ -364,7 +405,7 @@ defmodule RockcutApi.Production.Flags do
           overlaps?(c.due_on, c.due_on, o) do
         flag(:out_of_service, ["cip#{c.id}", o.id], [c.due_on, o.starts_on, o.ends_on],
           message:
-            "The CIP & Sanitize in #{tank.name} on #{Calendar.strftime(c.due_on, "%b %-d")} is while it's out of service (#{period(o)}).",
+            "The #{cip_label(c)} in #{tank.name} on #{Calendar.strftime(c.due_on, "%b %-d")} is while it's out of service (#{period(o)}).",
           batch_ids: [],
           tank_id: tank.id
         )
@@ -384,7 +425,7 @@ defmodule RockcutApi.Production.Flags do
         Date.compare(c.due_on, p.fill.due_on) == :gt and Date.compare(c.due_on, beer_until) == :lt do
       flag(:cip_with_beer, ["cip#{c.id}", p.id], [c.due_on, p.fill.due_on, beer_until],
         message:
-          "A CIP & Sanitize in #{tanks[c.tank_id].name} on #{Calendar.strftime(c.due_on, "%b %-d")} while #{Parts.label(p)} is in it.",
+          "A #{cip_label(c)} in #{tanks[c.tank_id].name} on #{Calendar.strftime(c.due_on, "%b %-d")} while #{Parts.label(p)} is in it.",
         batch_ids: [p.batch_id],
         tank_id: c.tank_id
       )

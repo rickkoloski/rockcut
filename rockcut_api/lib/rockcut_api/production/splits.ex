@@ -42,7 +42,7 @@ defmodule RockcutApi.Production.Splits do
   }
 
   @methods ~w(transfer filter)
-  @copied ~w(step_type_id name phase_id detail temperature split_method package_partial notes
+  @copied ~w(step_type_id name phase_id detail temperature split_method cip_method package_partial notes
              on_task_list position due_on assignee_id added template_step_id ramp_group)a
 
   @doc """

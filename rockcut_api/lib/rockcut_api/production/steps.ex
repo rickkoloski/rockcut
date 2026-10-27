@@ -50,7 +50,11 @@ defmodule RockcutApi.Production.Steps do
 
   def name(%Step{step_type: %StepType{} = type} = s) do
     [
-      if(type.behavior == "plain" and s.name, do: s.name, else: type.name),
+      cond do
+        type.behavior == "plain" and s.name -> s.name
+        type.behavior == "cip" -> RockcutApi.Production.cip_name(type.name, s.cip_method)
+        true -> type.name
+      end,
       if(type.behavior == "set_temp" and s.temperature, do: "#{s.temperature}°"),
       if(type.behavior == "split", do: RockcutApi.Production.split_method_label(s.split_method)),
       if(type.behavior == "package" and s.package_partial, do: "Partial"),
@@ -59,6 +63,13 @@ defmodule RockcutApi.Production.Steps do
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" - ")
   end
+
+  @doc """
+  D49 §3.12a: a CIP's variant, `sanitize_full` (also when it has none),
+  `no_sani` or `sanitize`.
+  """
+  def cip_method(%{cip_method: m}) when m in ["no_sani", "sanitize"], do: m
+  def cip_method(_), do: "sanitize_full"
 
   @doc "The step's behavior (\"brew\", \"cip\", …), nil for a marker. Needs `step_type`."
   def behavior(%Step{step_type: %StepType{behavior: b}}), do: b
@@ -597,6 +608,7 @@ defmodule RockcutApi.Production.Steps do
   @doc """
   Edit a step: `detail`, `temperature` (Set temp, required there; Brew
   day's starting temperature), `package_partial` (an unfinished Package;
+  `:step_done` once done), `cip_method` (an unfinished CIP's variant, D49;
   `:step_done` once done), `notes`, `on_task_list`, `assignee_id` (a Brewery
   member, or nil). A date (`due_on`, `done_on`, `completed_at`) is refused
   with `:date_not_here` (D48 DEV QA Z3): dates change by moving the step or
@@ -611,6 +623,7 @@ defmodule RockcutApi.Production.Steps do
       attrs
       |> then(&if(b in ["set_temp", "brew"], do: &1, else: Map.delete(&1, "temperature")))
       |> then(&if(b == "package", do: &1, else: Map.delete(&1, "package_partial")))
+      |> then(&if(b == "cip", do: &1, else: Map.delete(&1, "cip_method")))
 
     cond do
       Enum.any?(~w(due_on done_on completed_at), &Map.has_key?(attrs, &1)) ->
@@ -618,6 +631,11 @@ defmodule RockcutApi.Production.Steps do
 
       Map.has_key?(attrs, "package_partial") and step.done_on != nil and
           truthy?(attrs["package_partial"]) != step.package_partial ->
+        {:error, :step_done}
+
+      # D49 §3.12a: only an unfinished CIP switches its variant.
+      Map.has_key?(attrs, "cip_method") and step.done_on != nil and
+          attrs["cip_method"] != cip_method(step) ->
         {:error, :step_done}
 
       true ->

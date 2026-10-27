@@ -374,6 +374,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       detail: s.detail,
       temperature: s.temperature,
       split_method: s.split_method,
+      cip_method: if(type && type.behavior == "cip", do: s.cip_method || "sanitize_full"),
       package_partial: s.package_partial,
       notes: s.notes,
       on_task_list: s.on_task_list,
@@ -407,6 +408,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       statuses: sched.statuses,
       flags: sched.flags,
       condition_marks: Enum.map(sched.marks, &production_condition_mark/1),
+      sanitize_on_dirty: sched.sanitize_on_dirty,
       next_batch_number: sched.next_batch_number,
       brewers: sched.brewers
     }
@@ -484,6 +486,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       detail: s.detail,
       temperature: s.temperature,
       split_method: s.split_method,
+      cip_method: if(type && type.behavior == "cip", do: s.cip_method || "sanitize_full"),
       package_partial: s.package_partial,
       notes: s.notes,
       on_task_list: s.on_task_list,
