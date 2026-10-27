@@ -283,6 +283,8 @@ export interface Me {
   task_boards?: TaskBoardEntry[]
   // D43: the theme that applies here (a shared tablet's own, also during "Sign in as me").
   color_mode?: ColorMode
+  // D49: the Brewery board's "Show planned batches" (per person).
+  show_planned_batches?: boolean
 }
 
 /**

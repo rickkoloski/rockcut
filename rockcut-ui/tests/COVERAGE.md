@@ -660,24 +660,43 @@ Not automated: P87 (touch long-press selection on the Pixel) and a touch drag's 
 
 ## D49 — Task list linkage, Clean not sanitized, Pencilled batches (`specs/d46_production_scheduling_spec.md` §3.12–§3.12b; `planning/d49_schedule_task_list_plan.md`)
 
-Playwright specs are in `regression/production/` (project `production`), each on its own `[TEST-TEMP]` data.
+Playwright specs are in `regression/production/` (project `production`) and, for the board, `regression/tasks/task-board-linked` (project `brewery-board`, after `production`), each on its own `[TEST-TEMP]` data.
 
 | # | Scenario | Layer |
 |---|---|---|
+| P90 | Plan a batch: each task-list step a task on its day ("TANK · Brand P1 · FDH"), Planned batch pill; no marker has one | Playwright `task-board-linked`; ExUnit `task_link_test`, `task_board_linked_test` |
+| P91 | Show planned batches off: hidden, still off after a reload; brewer2's board unaffected | Playwright `task-board-linked`; ExUnit `task_board_linked_test` (`/api/me`, PUT) |
+| P92 | Drag a linked task 2 days later: the move prompt on the board; Apply moves the step and the following ones; Cancel puts the card back | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P93 | Check off a step due today on the board: done on the Gantt, no "where should it show" | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P94 | Check off a step planned 3 days ago: moves to today with the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P95 | Check off a planned batch's brew day on the board: the batch number prompt; the title then has "#N" | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
+| P96 | Edit a linked task: "This task comes from the production schedule" + Open in schedule (the step dialog on the Gantt); no title or day fields | Playwright `task-board-linked` |
+| P97 | Assign a linked task to brewer2: the step's assignee | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `task_link_test` |
+| P98 | The step's notes changed on the schedule show on the board | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| P99 | Delete a linked task: "Take this off the task list? …"; the step stays, off the list; the schedule's Undo brings it back | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `task_link_test` |
+| P100 | The step dialog's "Show on the Brewery task list" on: the task comes back on its day | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| P101 | Into another tank / its batch number: the titles follow | Playwright `task-board-linked` (tank), P95 (number); ExUnit `task_link_test` (renumbering, renames) |
+| P102 | Gantt → Task list: Late / Today / the next days; check off, Move to [date], assign, Open; follows Show planned batches | Playwright `d49-task-list` |
+| P103 | A standalone CIP: "TANK · CIP & Sanitize" on the board; checked off there, the tank is sanitized | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| P108 | No recurring options on a linked task; Change day… has no Future and runs the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` (`linked_task`) |
+| — | The brewhouse tablet: linked tasks read-only (no checkbox, no drag, no actions, "Do this on the production schedule."); the API refuses every write (`linked_task_device`); "Sign in as me" can | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `device_route_matrix_test` |
+| — | A phase marker has no task-list switch (step dialog, template row, Add phase start) (decision 6.1) | Playwright `d49-task-list` |
+| — | Move all to today leaves linked tasks; shift-end reminders list them | Playwright `task-board-range` (S20); ExUnit `task_board_linked_test`, `task_shift_end_reminder_test` |
 | BB1 | A refused snackbar Undo keeps its button until the token runs out; the same Undo works once another user clears the blocker | Playwright `d49-undo-retry` |
 | BB2 | The Split's Undo after a part's full Package, brew day's in a split family, a Split un-check's after brew day, a late Split's: refused with the rule's own code, then undone once it's cleared (the late Split's parts get their dates back); a real change since is still `undo_stale` | ExUnit `split_moves_test` |
 | P122 | Sani 40 days → Mark… → Clean not sanitized: "Clean no sani 0 days" (amber), a marker, rows ≥ 56 px, the current state greyed; Undo | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | P123 | A fill after it: "isn't sanitized" (soft), signed off in the Flags list; a done CIP & Sanitize (or a planned one, a Sanitize, a Clean & sanitized mark) clears it | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | P124 | Dirty → Clean not sanitized: the dirty flags clear; History names it | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
-| P125 | Add process ▾ → CIP… → CIP - no sani, already done: Clean no sani, no dirty flags (the board title: task 3) | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P125 | Add process ▾ → CIP… → CIP - no sani, already done: Clean no sani, no dirty flags (the board title "TANK · CIP - no sani": `task-board-linked`) | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | P126 | Step dialog switches an exit CIP to CIP - no sani (renamed); the next fill gets "isn't sanitized", not dirty; a done CIP can't switch | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | P127 | Sanitize on a Clean no sani tank: Sani 0 days; a fill after it has no flags | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | P128 | Planned CIP - no sani, then Sanitize, then a fill: no flags; delete the Sanitize → "isn't sanitized" | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | P129 | Sanitize done on a dirty tank (empty-spot menu's Add CIP…): still dirty, "no CIP planned"; the step dialog says "The tank was dirty: run a CIP first." | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | — | A template's CIP entry takes the variant and passes it to planned batches | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
-| P130 | Plan batch → Pencil in (Unassigned): an X-number, faded, hatched, labeled Pencilled; no "No tank assigned" (board: task 3) | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test |
+| P130 | Plan batch → Pencil in (Unassigned): an X-number, faded, hatched, labeled Pencilled; no "No tank assigned"; no board tasks | Playwright `d49-pencilled`, `task-board-linked` (board); ExUnit `pencilled_test`, controller test |
 | P131 | Dragged over a scheduled batch: its overlap flag muted (no Mark OK, not in the chip or the badge); the scheduled batch keeps its own, open; `flag_muted` | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test; Vitest `gantt` (`flagChip`, `badgeText`) |
-| P132 | Schedule this batch: a P-number by date (others renumber), drawn normally, flags open; Undo (board: task 3) | Playwright `d49-pencilled`; ExUnit `pencilled_test` |
-| P133 | Pencil in a scheduled planned batch: an X-number, faded; not offered (and `step_done`) once a step is done (board: task 3) | Playwright `d49-pencilled`; ExUnit `pencilled_test` |
+| P132 | Schedule this batch: a P-number by date (others renumber), drawn normally, flags open; Undo; its tasks on the board | Playwright `d49-pencilled`, `task-board-linked` (board); ExUnit `pencilled_test` |
+| P133 | Pencil in a scheduled planned batch: an X-number, faded; not offered (and `step_done`) once a step is done; its tasks leave the board | Playwright `d49-pencilled`, `task-board-linked` (board); ExUnit `pencilled_test` |
 | P134 | Brew day on a pencilled batch: "Schedule this batch first." (`schedule_first`); Cancel leaves it; Schedule, then the number prompt and the check-off | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test |
+| P135 | Show planned batches on: a pencilled batch's steps never show on the board | Playwright `task-board-linked`; ExUnit `task_link_test` |
 | — | X-numbers by brew date, renumbered both ways; split parts follow their parent (X1.2), scheduled together | ExUnit `pencilled_test` |

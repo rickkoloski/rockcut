@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import { Box, Button, Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
-import { Add, ArrowDropDown, Check, ChevronLeft, ChevronRight, FiberManualRecord, Flag as FlagIcon, Today, UnfoldLess, UnfoldMore } from '@mui/icons-material'
+import { Add, ArrowDropDown, Check, ChecklistRtl, ChevronLeft, ChevronRight, FiberManualRecord, Flag as FlagIcon, Today, UnfoldLess, UnfoldMore } from '@mui/icons-material'
 import { clampRange, flagChip, MAX_DAYS, MIN_DAYS, daysBetween, ZOOMS, type ExpandMode, type Range, type Zoom } from '../../../lib/gantt'
 import type { Flag } from '../../../lib/production'
 
@@ -21,6 +21,8 @@ interface Props {
   /** Add process ▾ (D48 §3.6): Plan batch… and CIP… (D49: with the variant). */
   onPlan?: () => void
   onAddCip?: () => void
+  /** D49 §3.12: the Task list panel. */
+  onTaskList?: () => void
 }
 
 /** "6 weeks ▾": the zoom menu, a check on the current one (D48 §3.6, P120). */
@@ -127,7 +129,7 @@ export function SetupMenu() {
  * From – To · 4 wks › (7–730 days), Collapse all | ● | Expand all, the flag
  * chip, Add process ▾ and Set up ▾.
  */
-export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onToday, onZoom, expandMode, hasMix, onExpandMode, onFlags, onPlan, onAddCip }: Props) {
+export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onToday, onZoom, expandMode, hasMix, onExpandMode, onFlags, onPlan, onAddCip, onTaskList }: Props) {
   const [error, setError] = useState<string | null>(null)
   const open = flags.filter((f) => !f.signed_off && !f.muted).length
 
@@ -219,6 +221,11 @@ export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onT
         data-testid="gantt-flags"
       />
       <Box sx={{ flex: 1 }} />
+      {onTaskList && (
+        <Button size="small" variant="outlined" startIcon={<ChecklistRtl />} onClick={onTaskList} data-testid="gantt-task-list">
+          Task list
+        </Button>
+      )}
       <AddProcessMenu onPlan={onPlan} onAddCip={onAddCip} />
       <SetupMenu />
     </Box>

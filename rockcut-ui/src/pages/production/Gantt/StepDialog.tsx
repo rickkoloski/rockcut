@@ -92,7 +92,7 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
     if (!cip && (detail.trim() || null) !== step.detail) c.detail = detail.trim() || null
     if ((assignee === '' ? null : assignee) !== step.assignee_id) c.assignee_id = assignee === '' ? null : assignee
     if ((notes.trim() || null) !== (step.notes ?? null)) c.notes = notes.trim() || null
-    if (!cip && onList !== step.on_task_list) c.on_task_list = onList
+    if (!cip && !step.marker && onList !== step.on_task_list) c.on_task_list = onList
     return c
   }
 
@@ -282,7 +282,8 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
           onChange={(e) => setNotes(e.target.value)}
           slotProps={{ htmlInput: { maxLength: 2000, 'data-testid': 'step-notes' } }}
         />
-        {!cip && (
+        {/* D49 decision 6.1: a phase marker never has a task. */}
+        {!cip && !step.marker && (
           <FormControlLabel
             control={<Switch checked={onList} onChange={(e) => setOnList(e.target.checked)} slotProps={{ input: { 'data-testid': 'step-task-list' } as object }} />}
             label="Show on the Brewery task list"

@@ -186,15 +186,18 @@ export default function TemplateEditor() {
           {links.join('; ')}
         </Typography>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-          <Tooltip title="Show on the Brewery task list">
-            <Switch
-              size="small"
-              checked={s.on_task_list}
-              disabled={busy}
-              onChange={(e) => run(() => api.patch(stepPath(s), { on_task_list: e.target.checked }))}
-              slotProps={{ input: { 'aria-label': `${s.name} on the task list`, 'data-testid': `entry-task-list-${s.id}` } as object }}
-            />
-          </Tooltip>
+          {/* D49 decision 6.1: a phase marker never has a task. */}
+          {!s.marker && (
+            <Tooltip title="Show on the Brewery task list">
+              <Switch
+                size="small"
+                checked={s.on_task_list}
+                disabled={busy}
+                onChange={(e) => run(() => api.patch(stepPath(s), { on_task_list: e.target.checked }))}
+                slotProps={{ input: { 'aria-label': `${s.name} on the task list`, 'data-testid': `entry-task-list-${s.id}` } as object }}
+              />
+            </Tooltip>
+          )}
           <Tooltip title="Edit">
             <IconButton size="small" aria-label={`Edit ${s.name}`} onClick={() => setEditing({ kind: s.marker ? 'marker' : 'step', entry: s })} data-testid={`entry-edit-${s.id}`}>
               <Edit fontSize="small" />

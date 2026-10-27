@@ -12,13 +12,16 @@ export interface Flows {
   /** Move steps by `days` (the move prompt when steps follow). Null when cancelled. */
   moveSteps: (ids: number[], days: number) => Promise<Result | null>
   /** Check a step off on `doneOn` (the number prompt, then the move prompt). */
-  checkOff: (step: SchedStep, doneOn: string, batchLabel: string | null) => Promise<Result | null>
-  uncheck: (step: SchedStep) => Promise<Result>
+  checkOff: (step: StepRef, doneOn: string, batchLabel: string | null) => Promise<Result | null>
+  uncheck: (step: StepRef) => Promise<Result>
   /** Show a message with no Undo. */
   notify: (message: string) => void
   /** A write made elsewhere (the out-of-service dialog): refetch and offer its Undo. */
   saved: (message: string, token: string | null) => Promise<void>
 }
+
+/** What a check-off needs of a step: the Gantt's, or a linked board task's (D49). */
+export type StepRef = Pick<SchedStep, 'id' | 'name' | 'batch_id'>
 
 export const FlowsContext = createContext<Flows | null>(null)
 

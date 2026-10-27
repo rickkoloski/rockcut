@@ -19,10 +19,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { AxiosResponse } from 'axios'
 import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
-import { plainBatchNumber, prodError, prodPath, SCHEDULE_KEY, type Answer, type SchedStep } from '../../../lib/production'
+import { plainBatchNumber, prodError, prodPath, SCHEDULE_KEY, type Answer } from '../../../lib/production'
+import { BOARD_QUERY_KEY } from '../../../lib/tasks'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { renumberText, type Renumber } from './scheduleText'
-import { FlowsContext } from './flowsContext'
+import { FlowsContext, type StepRef } from './flowsContext'
 
 // D47 §3.7: every schedule write goes through here. It refetches the
 // schedule, says what happened with Undo for 6 seconds (plan decision 5),
@@ -96,7 +97,11 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   const [undoing, setUndoing] = useState(false)
   const counter = useRef(0)
 
-  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: SCHEDULE_KEY }), [qc])
+  // D49: production steps are tasks on the Brewery board (and the Task list panel), so those follow too.
+  const refresh = useCallback(
+    () => Promise.all([qc.invalidateQueries({ queryKey: SCHEDULE_KEY }), qc.invalidateQueries({ queryKey: [BOARD_QUERY_KEY] })]),
+    [qc],
+  )
 
   const show = useCallback((snack: Omit<Snack, 'key'>) => {
     counter.current += 1
@@ -164,7 +169,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   )
 
   const checkOff = useCallback(
-    async (step: SchedStep, doneOn: string, batchLabel: string | null): Promise<Result | null> => {
+    async (step: StepRef, doneOn: string, batchLabel: string | null): Promise<Result | null> => {
       const path = prodPath('steps', step.id, 'complete')
       let pre: CompletePreview
       try {
@@ -239,7 +244,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   )
 
   const uncheck = useCallback(
-    (step: SchedStep) =>
+    (step: StepRef) =>
       write<{ message?: string | null }>(() => api.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`),
     [write],
   )

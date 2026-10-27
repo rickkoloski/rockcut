@@ -12,7 +12,10 @@ interface Props {
   onMove: (dueOn: string | null) => void
 }
 
-/** D38 §3.8 Change day…: any date, or Move to Future. Mount with a `key`. */
+/**
+ * D38 §3.8 Change day…: any date, or Move to Future. Mount with a `key`.
+ * D49: a linked task has no Future; its move runs the schedule's move prompt.
+ */
 export default function ChangeDayDialog({ card, today, onCancel, onMove }: Props) {
   usePhoneBackCloses(true, onCancel)
   const [day, setDay] = useState(card.due_on ?? today)
@@ -33,7 +36,8 @@ export default function ChangeDayDialog({ card, today, onCancel, onMove }: Props
         />
       </DialogContent>
       <DialogActions>
-        {!onFuture && (
+        {/* D49: a production step is always on a day. */}
+        {!onFuture && !card.production && (
           <Tooltip title={card.done ? 'Mark not done first to move it' : ''}>
             {/* A finished task can't go to Future (lead, 2026-10-11). */}
             <span style={{ marginRight: 'auto' }}>

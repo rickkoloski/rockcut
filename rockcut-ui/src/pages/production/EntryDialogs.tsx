@@ -498,10 +498,13 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           </Typography>
         </>
       )}
-      <FormControlLabel
-        control={<Switch checked={onTaskList} onChange={(e) => setOnTaskList(e.target.checked)} slotProps={{ input: { 'data-testid': 'entry-task-list' } as object }} />}
-        label="Show on the Brewery task list"
-      />
+      {/* D49 decision 6.1: a phase marker never has a task; its switch stays off. */}
+      {!marker && (
+        <FormControlLabel
+          control={<Switch checked={onTaskList} onChange={(e) => setOnTaskList(e.target.checked)} slotProps={{ input: { 'data-testid': 'entry-task-list' } as object }} />}
+          label="Show on the Brewery task list"
+        />
+      )}
       <TextField
         label="Notes (copied into every batch)"
         multiline

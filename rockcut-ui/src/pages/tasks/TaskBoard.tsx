@@ -14,6 +14,7 @@ import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
 import { deleteWithCode, isActingCancelled, withCode } from '../../lib/acting'
 import {
+  BOARD_QUERY_KEY as BOARD_KEY,
   DAILY_ITEMS_KEY,
   FUTURE,
   UNFINISHED,
@@ -22,6 +23,7 @@ import {
   coloradoToday,
   formatTaskDay,
   boardMoveRule,
+  linkedStep,
   taskError,
   writeBoard,
   type TaskFilter,
@@ -42,9 +44,12 @@ import TaskCard from './TaskCard'
 import TaskDialog, { type TaskDialogMode } from './TaskDialog'
 import TaskMenu, { type TaskAction } from './TaskMenu'
 import UnfinishedCard from './UnfinishedCard'
+import LinkedTaskDialog from './LinkedTaskDialog'
 import { scrollToStop, useBoardView } from './useBoardView'
+import { FlowsProvider } from '../production/Gantt/flows'
+import { useFlows } from '../production/Gantt/flowsContext'
+import { daysBetween } from '../../lib/gantt'
 
-const BOARD_KEY = 'task-board'
 
 interface Props {
   /** The board showing (D41: one per department, from the URL). */
@@ -63,7 +68,17 @@ interface Props {
  * Unfinished card into today). D41: `?day=` opens it at that day (the All
  * departments view's links).
  */
-export default function TaskBoard({ board: boardEntry, boards }: Props) {
+export default function TaskBoard(props: Props) {
+  // D49 §3.12: a linked task's writes run the production schedule's prompts and Undo.
+  return (
+    <FlowsProvider>
+      <BoardScreen {...props} />
+    </FlowsProvider>
+  )
+}
+
+function BoardScreen({ board: boardEntry, boards }: Props) {
+  const flows = useFlows()
   const dept = boardEntry.key
   const qc = useQueryClient()
   const navigate = useNavigate()
@@ -71,6 +86,9 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   // History and Edit Daily items (the department's managers and owners, never a device).
   const isDevice = user?.kind === 'device'
   const canManage = boardEntry.manage && !isDevice
+  // D49: "Show planned batches", per person on the server (a tablet has none of its own).
+  const showPlanned = useAuth((s) => s.showPlannedBatches) || isDevice
+  const setShowPlanned = useAuth((s) => s.setShowPlannedBatches)
   // Who a change shows as at once: the person, or on a tablet who it's acting as.
   const actingName = useActing((s) => s.session?.name ?? null)
   const myName = isDevice ? actingName : (user?.name ?? null)
@@ -127,15 +145,23 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     if (!board) return { cards, source }
     const list = (id: string, items: TaskCardData[]) => {
       items.forEach((c) => cards.set(c.key, c))
-      source.push({ id, itemIds: items.filter((c) => cardShown(c, filter, hideCompleted, user?.id)).map((c) => c.key) })
+      const shown = (c: TaskCardData) => cardShown(c, filter, hideCompleted, user?.id) && (showPlanned || !c.production?.planned)
+      source.push({ id, itemIds: items.filter(shown).map((c) => c.key) })
     }
     list(UNFINISHED, board.unfinished)
     board.days.forEach((d) => list(d.date, d.cards))
     list(FUTURE, board.future)
     return { cards, source }
-  }, [board, filter, hideCompleted, user?.id])
+  }, [board, filter, hideCompleted, user?.id, showPlanned])
 
-  const isLocked = useCallback((key: string) => cards.get(key)?.locked ?? false, [cards])
+  // D49: a linked task can't be dragged on a tablet (read-only until D50), nor once it's done (its step is).
+  const isLocked = useCallback(
+    (key: string) => {
+      const card = cards.get(key)
+      return !!card && (card.locked || (!!card.production && (isDevice || card.done)))
+    },
+    [cards, isDevice],
+  )
   // Finished on a day away from their planned one: the server lists them after the day's own tasks.
   const staysLast = useCallback((key: string) => {
     const card = cards.get(key)
@@ -225,6 +251,13 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     // Ahead of a card that stays last means the end of the day's own tasks.
     const before = m.beforeId && !staysLast(m.beforeId) ? cards.get(m.beforeId) : null
     const beforeId = before && before.id !== card.id ? before.id : null
+    // D49: a linked task on another day moves its step, with the move prompt;
+    // cancelling it puts the card back. Within its day it's the board's order.
+    if (card.production && dueOn !== card.due_on) {
+      if (dueOn === null) return setToast({ message: 'A task from the production schedule stays on a day', error: true })
+      move(m, () => moveLinked(card, dueOn)).catch(() => undefined)
+      return
+    }
     // D40: on a tablet the card moves only once the code is in (each try moves
     // it, and a refused try puts it back).
     actingRun((code) =>
@@ -232,6 +265,12 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     )
       .catch(fail)
       .finally(refresh)
+  }
+
+  /** D49: move a linked task's step to `dueOn` (the move prompt); rejects when cancelled or refused (the prompt says why). */
+  const moveLinked = async (card: TaskCardData, dueOn: string) => {
+    const r = await flows.moveSteps([card.production!.step_id], daysBetween(card.due_on!, dueOn))
+    if (!r?.ok) throw new Error('not moved')
   }
 
   /** The cards in a list that are planned there (not the ones finished there from elsewhere). */
@@ -260,6 +299,10 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
       return
     }
     // Out of the range: nothing to show it moving to.
+    if (card.production) {
+      if (dueOn) moveLinked(card, dueOn).catch(() => undefined)
+      return
+    }
     run((code) => api.post(boardPath(dept, 'tasks', card.id, 'move'), withCode({ due_on: dueOn, before_id: null }, code))).then(
       (ok) => ok && setToast({ message: `Moved "${card.title}" to ${dueOn ? formatTaskDay(dueOn) : 'Future'}` }),
     )
@@ -283,7 +326,19 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const uncomplete = (card: TaskCardData) =>
     run((code) => api.post(boardPath(dept, 'tasks', card.id, 'uncomplete'), withCode({}, code)), setDone(card.id, false))
 
+  /**
+   * D49: a linked task checks off its step: the batch-number and off-plan
+   * move prompts, never "where should it show" (it shows on the day it was
+   * done). Refusals say why in the schedule's snackbar.
+   */
+  const toggleLinked = async (card: TaskCardData) => {
+    const step = linkedStep(card)!
+    const r = card.done ? await flows.uncheck(step) : await flows.checkOff(step, today, step.batchLabel)
+    if (r && !r.ok) flows.notify(r.error)
+  }
+
   const toggle = (card: TaskCardData) => {
+    if (card.production) return void toggleLinked(card)
     if (card.done) {
       // Shown on the day it was finished: reopening moves it back, so ask (§3.8).
       const elsewhere = card.due_on !== null && card.completed_display !== 'planned_day' && card.completed_on !== card.due_on
@@ -334,6 +389,12 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
   const menuContainer = menu ? containerOf(containers, menu.key) : null
   const menuOwn = menuContainer ? ownKeys(menuContainer) : []
 
+  /** D49: the step dialog on the Gantt, around the step's day. */
+  const openInSchedule = (card: TaskCardData | null) => {
+    if (!card?.production) return
+    navigate(`/brewery/production?step=${card.production.step_id}&day=${card.due_on}`)
+  }
+
   const onAction = (action: TaskAction) => {
     if (!menuCard) return
     switch (action) {
@@ -353,10 +414,22 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         return menuContainer && moveStep(menuCard, menuContainer, action)
       case 'delete':
         return startDelete(menuCard)
+      case 'open-schedule':
+        return openInSchedule(menuCard)
     }
   }
 
   const startDelete = (card: TaskCardData) => (card.series_id != null ? setDeletingSeries(card) : setDeleting(card))
+
+  /** D49: off the task list (200 with the schedule's Undo); the step stays. */
+  const takeOffList = async (card: TaskCardData) => {
+    setBusy(true)
+    const r = await flows.write(() => api.delete(boardPath(dept, 'tasks', card.id)), `"${card.title}" is off the task list. It stays on the production schedule.`)
+    setBusy(false)
+    if (!r.ok) return flows.notify(r.error)
+    setDeleting(null)
+    setDialog(null)
+  }
 
   const deleteTask = async (card: TaskCardData, params?: { scope: SeriesScope; changed?: Changed }) => {
     setBusy(true)
@@ -495,6 +568,9 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         onHideCompleted={toggleHide}
         hideShifts={hideShifts}
         onHideShifts={toggleHideShifts}
+        // D49: only the Brewery board has the schedule's tasks; a tablet shows them all.
+        showPlanned={dept === 'brewery' && !isDevice ? showPlanned : undefined}
+        onShowPlanned={(show) => setShowPlanned(show).catch((err) => setToast({ message: taskError(err), error: true }))}
         onHistory={canManage ? () => setHistory({}) : undefined}
         onEditDailyItems={canManage && dailyItems ? () => setEditingDaily(true) : undefined}
         setUpDaily={!hasDailyItems}
@@ -522,6 +598,8 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
                 overlay={state.overlay}
                 dragging={state.dragging}
                 showDate={card.day === UNFINISHED}
+                noCheck={isDevice && !!card.production}
+                locked={state.locked}
                 onToggle={toggle}
                 onOpen={(c, anchor) => setMenu({ key: c.key, anchor })}
               />
@@ -540,11 +618,23 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
           canMoveUp={menuOwn.indexOf(menuCard.key) > 0}
           canMoveDown={menuOwn.indexOf(menuCard.key) > -1 && menuOwn.indexOf(menuCard.key) < menuOwn.length - 1}
           sheet={phone}
+          linkedReadOnly={isDevice && !!menuCard.production}
           onClose={() => setMenu(null)}
           onAction={onAction}
         />
       )}
-      {dialog && (
+      {dialog && dialog.mode.kind === 'edit' && dialog.mode.card.production ? (
+        <LinkedTaskDialog
+          key={dialog.n}
+          card={dialog.mode.card}
+          board={boardEntry}
+          members={members}
+          focusNotes={dialog.mode.focusNotes}
+          onClose={() => setDialog(null)}
+          onDelete={startDelete}
+          onOpenSchedule={() => openInSchedule(dialog.mode.kind === 'edit' ? dialog.mode.card : null)}
+        />
+      ) : dialog && (
         <TaskDialog
           key={dialog.n}
           mode={dialog.mode}
@@ -601,9 +691,10 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
       <ConfirmDialog
         open={!!deleting}
         onClose={() => setDeleting(null)}
-        onConfirm={() => deleting && deleteTask(deleting)}
-        title="Delete task"
-        message={deleting ? `Delete '${deleting.title}'?` : ''}
+        onConfirm={() => deleting && (deleting.production ? takeOffList(deleting) : deleteTask(deleting))}
+        title={deleting?.production ? 'Take off the task list' : 'Delete task'}
+        message={deleting ? (deleting.production ? 'Take this off the task list? It stays on the production schedule.' : `Delete '${deleting.title}'?`) : ''}
+        confirmLabel={deleting?.production ? 'Take off' : undefined}
         loading={busy}
       />
       {deletingSeries && (

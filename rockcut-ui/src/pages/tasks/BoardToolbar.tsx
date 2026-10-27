@@ -40,6 +40,9 @@ interface Props {
   /** D45: Hide shifts in the day headers. Left out where there are no headers (All departments). */
   hideShifts?: boolean
   onHideShifts?: (on: boolean) => void
+  /** D49 §3.12: "Show planned batches" (the Brewery board, people only); left out elsewhere. */
+  showPlanned?: boolean
+  onShowPlanned?: (on: boolean) => void
   /** D41 All departments view: All and Unassigned only ("My tasks" is left out). */
   noMine?: boolean
   /** History (managers and owners). */
@@ -210,6 +213,18 @@ export default function BoardToolbar(props: Props) {
             />
           }
           label="Hide shifts"
+        />
+      )}
+      {props.showPlanned !== undefined && (
+        <FormControlLabel
+          control={
+            <Switch
+              checked={props.showPlanned}
+              onChange={(e) => props.onShowPlanned?.(e.target.checked)}
+              slotProps={{ input: { 'data-testid': 'board-show-planned' } as object }}
+            />
+          }
+          label="Show planned batches"
         />
       )}
       {(props.onHistory || props.onEditDailyItems) && (

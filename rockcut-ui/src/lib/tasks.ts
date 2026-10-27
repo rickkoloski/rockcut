@@ -11,6 +11,25 @@ export function boardPath(dept: string, ...segments: (string | number | undefine
   return ['/api/boards', dept, ...segments.map(String)].join('/')
 }
 
+/** The query key of every board read (`[BOARD_QUERY_KEY, dept, from, to]`); the dashboard card's too. */
+export const BOARD_QUERY_KEY = 'task-board'
+
+/**
+ * D49 §3.12: a linked task's step, from its title ("FV3 · Galactic P1 ·
+ * FDH"; "FV6 · CIP & Sanitize" for a standalone CIP): what the schedule's
+ * prompts name. Null for the board's own tasks.
+ */
+export function linkedStep(card: Pick<TaskCardData, 'title' | 'production'>) {
+  if (!card.production) return null
+  const parts = card.title.split(' · ')
+  return {
+    id: card.production.step_id,
+    batch_id: card.production.batch_id,
+    name: parts[parts.length - 1],
+    batchLabel: parts.length > 2 ? parts.slice(1, -1).join(' · ') : null,
+  }
+}
+
 /** The query key of a board's Daily items (with the retired ones), with its department. */
 export const DAILY_ITEMS_KEY = 'daily-items'
 

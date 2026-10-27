@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, Button, ListSubheader, Menu, MenuItem, Paper, Typography, useMediaQuery } from '@mui/material'
 import api from '../../../lib/api'
 import PageHeader from '../../../components/PageHeader'
@@ -37,6 +38,7 @@ import GanttToolbar from './GanttToolbar'
 import PlanBatchDialog from './PlanBatchDialog'
 import StepDialog from './StepDialog'
 import TankPanel from './TankPanel'
+import TaskListPanel from './TaskListPanel'
 import { FlowsProvider } from './flows'
 import { useFlows } from './flowsContext'
 import { useTimelineDrag } from './useTimelineDrag'
@@ -109,7 +111,7 @@ function GanttScreen() {
     writePref(userId, 'mix', [...keys])
   }
 
-  const { data, isLoading, error } = useApiQuery<Schedule>(
+  const { data, isLoading, error, isPlaceholderData } = useApiQuery<Schedule>(
     scheduleKey(range.from, range.to),
     prodPath('schedule'),
     { from: range.from, to: range.to },
@@ -160,6 +162,29 @@ function GanttScreen() {
   const findStep = (id: number): SchedStep | undefined =>
     data?.cips.find((c) => c.id === id) ?? data?.batches.flatMap((b) => b.steps).find((s) => s.id === id)
   const openStep = stepOpen != null ? findStep(stepOpen) : undefined
+  const [taskList, setTaskList] = useState(false)
+
+  // D49 §3.12: `?step=&day=` (the board's and the Task list's Open): show
+  // that day (not saved as the person's range) and open the step's dialog.
+  const [params, setParams] = useSearchParams()
+  const wantStep = Number(params.get('step')) || null
+  const wantDay = params.get('day')
+  const showDay = (day: string) => {
+    if (day < range.from || day > range.to) setRangeState(clampRange(defaultRange(day, zoom)))
+  }
+  useEffect(() => {
+    if (wantDay) showDay(wantDay)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantDay])
+  useEffect(() => {
+    // Not the last range's data while the step's day loads.
+    if (!wantStep || !data || isPlaceholderData) return
+    const inRange = !wantDay || (wantDay >= range.from && wantDay <= range.to)
+    if (findStep(wantStep)) setStepOpen(wantStep)
+    else if (!inRange) return
+    setParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantStep, data, isPlaceholderData])
   const openBatch = batchOpen ? data?.batches.find((b) => b.id === batchOpen.id) : undefined
   const tankById = (id: number) => data?.tanks.find((t) => t.id === id)
 
@@ -317,6 +342,7 @@ function GanttScreen() {
         onFlags={() => setOpen({ kind: 'flags' })}
         onPlan={() => setOpen({ kind: 'plan', tankId: null, day: data?.today ?? today })}
         onAddCip={() => setOpen({ kind: 'cip', tankId: null, day: data?.today ?? today })}
+        onTaskList={() => setTaskList(true)}
       />
       {(selected.size > 0 || selecting) && (
         <Paper
@@ -473,6 +499,18 @@ function GanttScreen() {
           focusFlags={batchOpen.flags}
           onOpenStep={(s) => setStepOpen(s.id)}
           onClose={() => setBatchOpen(null)}
+        />
+      )}
+      {taskList && (
+        <TaskListPanel
+          today={data?.today ?? today}
+          brewers={data?.brewers ?? []}
+          onOpenStep={(id, day) => {
+            setTaskList(false)
+            if (findStep(id)) setStepOpen(id)
+            else setParams({ step: String(id), day }, { replace: true })
+          }}
+          onClose={() => setTaskList(false)}
         />
       )}
       {data && openStep && (
