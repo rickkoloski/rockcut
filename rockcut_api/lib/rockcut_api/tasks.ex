@@ -84,10 +84,15 @@ defmodule RockcutApi.Tasks do
     * `future`: the Future list.
 
   Names are preloaded once. One query per kind for the whole range.
+
+  D49: `linked: true` keeps only the tasks made from production steps (the
+  Gantt's Task list panel); the header and Daily cards are as usual.
   """
-  def board(%Department{} = dept, %Date{} = from, %Date{} = to, today \\ today()) do
+  def board(%Department{} = dept, %Date{} = from, %Date{} = to, today \\ today(), opts \\ []) do
     with {:ok, days} <- range_days(from, to) do
-      %{cards: cards, daily: daily, unfinished: unfinished} = board_parts(dept, days, today)
+      %{cards: cards, daily: daily, unfinished: unfinished} =
+        board_parts(dept, days, today, opts[:linked] == true)
+
       headers = headers(dept, days)
 
       {:ok,
@@ -160,8 +165,12 @@ defmodule RockcutApi.Tasks do
 
   # A board's cards (each day's and `:future`, through `Placement`), its Daily
   # cards and its Unfinished list: everything but the header.
-  defp board_parts(%Department{} = dept, days, today) do
-    tasks = dept.id |> board_tasks(List.first(days), List.last(days), today) |> Series.mark_last()
+  defp board_parts(%Department{} = dept, days, today, linked? \\ false) do
+    tasks =
+      dept.id
+      |> board_tasks(List.first(days), List.last(days), today)
+      |> Enum.filter(&(not linked? or Task.linked?(&1)))
+      |> Series.mark_last()
 
     %{
       cards: Placement.cards(tasks, days, today),
@@ -180,7 +189,7 @@ defmodule RockcutApi.Tasks do
             ((t.due_on >= ^from and t.due_on <= ^to) or
                (t.completed_on >= ^from and t.completed_on <= ^to) or
                (is_nil(t.completed_at) and (is_nil(t.due_on) or t.due_on < ^today))),
-        preload: [:assignee, :completed_by, :created_by]
+        preload: [:assignee, :completed_by, :created_by, production_step: :batch]
     )
   end
 
@@ -344,7 +353,10 @@ defmodule RockcutApi.Tasks do
 
   @doc "The task with assignee, completer and creator loaded, for its JSON."
   def with_names(%Task{} = task),
-    do: Repo.preload(task, [:assignee, :completed_by, :created_by], force: true)
+    do:
+      Repo.preload(task, [:assignee, :completed_by, :created_by, production_step: :batch],
+        force: true
+      )
 
   @doc """
   Add a task at the bottom of its day, or of the Future list when `due_on` is
@@ -492,14 +504,18 @@ defmodule RockcutApi.Tasks do
   @doc """
   Move every open task planned before `today` to the bottom of today, oldest
   day first, keeping each day's order (S20). One `moved` event per task.
-  Returns `{:ok, count}`.
+  Returns `{:ok, count}`. D49: not the linked tasks (their steps move with
+  the move prompt, one at a time).
   """
   def move_overdue_to_today(%Department{} = dept, %User{} = actor, today \\ today()) do
     Repo.transaction(fn ->
       overdue =
         Repo.all(
           from t in Task,
-            where: t.department_id == ^dept.id and is_nil(t.completed_at) and t.due_on < ^today
+            # D49: a linked task moves with its step, on the schedule's terms.
+            where:
+              t.department_id == ^dept.id and is_nil(t.completed_at) and t.due_on < ^today and
+                is_nil(t.production_step_id)
         )
         |> Placement.unfinished(today)
 
@@ -673,6 +689,17 @@ defmodule RockcutApi.Tasks do
         from(s in TaskSeries, where: s.assignee_id == ^user_id and s.department_id == ^dept.id),
         set: [assignee_id: nil, updated_at: now()]
       )
+
+      # D49: and the unfinished production steps assigned to them, so the
+      # Brewery board's linked tasks (which follow their steps) agree.
+      if dept.key == "brewery" do
+        Repo.update_all(
+          from(s in RockcutApi.Production.Step,
+            where: s.assignee_id == ^user_id and is_nil(s.done_on)
+          ),
+          set: [assignee_id: nil, updated_at: now()]
+        )
+      end
 
       Repo.all(
         from t in Task,

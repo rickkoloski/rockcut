@@ -493,18 +493,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
          do: {:ok, result, token}
   end
 
-  # The rows a step write may touch: the steps' batches, or the standalone steps.
-  defp step_scope(ids) when is_list(ids) do
-    ids = ids |> Enum.map(&Batches.to_int/1) |> Enum.reject(&is_nil/1)
-    rows = Repo.all(from(s in Step, where: s.id in ^ids, select: {s.id, s.batch_id}))
-
-    %{
-      batches: for({_, b} <- rows, b != nil, uniq: true, do: b),
-      steps: for({id, nil} <- rows, do: id)
-    }
-  end
-
-  defp step_scope(_), do: %{}
+  defp step_scope(ids), do: Undo.step_scope(ids)
 
   defp existing_batches(ids),
     do: Repo.all(from(b in RockcutApi.Brewing.Batch, where: b.id in ^ids, select: b.id))

@@ -35,6 +35,10 @@ defmodule RockcutApi.Seeds.Synthetic do
   filter and a `[SEED]` split batch (one part stays), a clean mark on
   Serving 3 and a dirty one on Serving 4; `[TEST-TEMP]` parts and marks
   are cleaned up.
+  D49: a Clean not sanitized mark on FV1 (Enos fills it later: the soft
+  flag), a `[SEED]` CIP - no sani on FV7 tomorrow, a pencilled Oktoberfest
+  (X1) in Unassigned, and the Brewery board's linked tasks for every seeded
+  step (`TaskLink.sync!/1`), Altruism P1's with the Planned batch pill.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -62,6 +66,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     BatchChanges,
     BatchVessel,
     Batches,
+    Cips,
     ConditionMark,
     ConditionMarks,
     FlagSignoff,
@@ -73,6 +78,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     Step,
     StepType,
     Tank,
+    TaskLink,
     Template,
     TemplateStep,
     UndoRecord
@@ -293,6 +299,10 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     delete_orphan_signoffs()
     Repo.delete_all(from(t in Tank, where: like(t.name, ^tag)))
+
+    # D49: the Brewery board's linked tasks went with their steps; the rest
+    # may have changed P-numbers.
+    TaskLink.sync!()
 
     # D34: throwaway people a spec created to change or reset a password
     # without touching a persona (sessions, memberships, audit rows cascade).
@@ -930,13 +940,23 @@ defmodule RockcutApi.Seeds.Synthetic do
     {:fest37, "Fest", "Standard ale", -14, ["FV9"], "37", -1, filter: {3, "Serving 4"}},
     # D48: split in 4 days, #39.1 stays in FV8, #39.2 to Serving 3 (marked clean).
     {:altruism39, "Altruism", "Standard ale", -10, ["FV8"], "39", -1,
-     split: {4, [{:stays, 10}, {"Serving 3", 10}]}}
+     split: {4, [{:stays, 10}, {"Serving 3", 10}]}},
+    # D49 (P130): pencilled in, Unassigned: X1, no board tasks.
+    {:oktoberfest, "Oktoberfest", "Lager with transfer", 20, [nil, nil], nil, nil,
+     pencilled: true}
   ]
 
   # D48: {tank, state, day (offset from today), note}, marked by brewer1.
   @condition_marks [
     {"Serving 3", "clean", -2, "Hosed and sanitized after the gasket job"},
-    {"Serving 4", "dirty", -1, "Valve leaked; needs a CIP"}
+    {"Serving 4", "dirty", -1, "Valve leaked; needs a CIP"},
+    # D49 §3.12a: CIP'd, not sanitized (Enos fills FV1 later: the soft flag).
+    {"FV1", "cleaned", -1, "CIP'd after the gasket job, not sanitized yet"}
+  ]
+
+  # D49 §3.12a: standalone CIPs {tank, variant, day (offset from today)}.
+  @cips [
+    {"FV7", "no_sani", 1}
   ]
 
   # Plan decision 2: batches not on the schedule (the D1-era rows) go, with
@@ -1039,6 +1059,20 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     seed_condition_marks(u, today, tanks)
 
+    for {tank, method, day} <- @cips do
+      {:ok, _} =
+        Cips.create(
+          %{
+            "tank_id" => tanks[tank],
+            "due_on" => Date.to_iso8601(Date.add(today, day)),
+            "cip_method" => method,
+            "notes" => "#{@seed_tag} Rinse and caustic only"
+          },
+          u["brewer1"],
+          today
+        )
+    end
+
     # One signed-off flag: Enos (35 bbl) is bigger than FV1 (30 bbl).
     {:ok, sched} = Schedule.load(Date.add(today, -7), Date.add(today, 84), today)
     enos = batches[:enos]
@@ -1059,6 +1093,12 @@ defmodule RockcutApi.Seeds.Synthetic do
           )
     end
 
+    # D49 §3.12: every seeded step's task on the Brewery board, the done
+    # ones too (as if they'd been on the board all along).
+    TaskLink.sync!(Repo.all(from(s in Step, select: s.id)))
+    # The last setup's linked tasks went with their batches (a cascade, so
+    # their days didn't close up): the same positions every setup.
+    Tasks.compact_lists(Repo.get_by!(Department, key: "brewery"))
     :ok
   end
 
@@ -1089,7 +1129,8 @@ defmodule RockcutApi.Seeds.Synthetic do
         "template_id" => template_id,
         "brew_on" => brew_on,
         "volume_bbl" => Keyword.get(opts, :volume, 20),
-        "tank_ids" => tank_ids
+        "tank_ids" => tank_ids,
+        "pencilled" => Keyword.get(opts, :pencilled, false)
       })
 
     batch |> Ecto.Changeset.change(notes: "#{@seed_tag} #{brand.name}") |> Repo.update!()

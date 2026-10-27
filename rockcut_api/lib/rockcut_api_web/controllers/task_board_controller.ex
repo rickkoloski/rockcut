@@ -21,6 +21,24 @@ defmodule RockcutApiWeb.TaskBoardController do
   `DELETE` on an occurrence take `scope` (`this` | `following`) and
   `changed` (`keep`, the default, | `remove`), in the query or the body;
   `GET …/series` and `POST …/stop_repeating`.
+
+  D49 §3.12 (plan decision 7): a **linked task** (made from a production
+  step, `Production.TaskLink`) is the step's, so its writes go to
+  Production, each also needing `:write` on `:production`: move / Change
+  day → `Steps.move/3` (no `answer` with steps following → 422
+  `answer_required` with the prompt's preview, as `POST
+  /api/production/steps/move`; same day → the board's reorder), complete →
+  `Steps.complete/4` (the batch-number and off-plan prompts; never
+  "where should it show"), uncomplete → `Steps.uncomplete/1`, notes and
+  assignee → `Steps.update/2`, delete → the step's `on_task_list` off. A
+  title or repeat change, Future, `stop_repeating` and the series read are
+  422 `linked_task`. Move and complete take `preview: true`. Responses
+  carry the production `undo_token` (`POST /api/production/undo/:token`)
+  and the write's `result` (`renumbered`, `out_of_order`, `message`). A
+  shared tablet gets 403 `linked_task_device` on every one (decision 8,
+  until D50), with a staff code or without; "Sign in as me" is a person.
+
+  `GET …/tasks?linked=true`: only the linked tasks (the Gantt's Task list).
   """
   use RockcutApiWeb, :controller
 
@@ -34,8 +52,10 @@ defmodule RockcutApiWeb.TaskBoardController do
       for_viewer: 2
     ]
 
-  alias RockcutApi.{Authz, Tasks}
-  alias RockcutApiWeb.{StaffCodeActing, TaskErrors}
+  alias RockcutApi.{Authz, Repo, Tasks}
+  alias RockcutApi.Production.{Step, Steps, Undo}
+  alias RockcutApi.Tasks.{Series, Task}
+  alias RockcutApiWeb.{ProductionErrors, StaffCodeActing, TaskErrors}
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -44,7 +64,8 @@ defmodule RockcutApiWeb.TaskBoardController do
     with :ok <- allow(conn, :read),
          {:ok, from} <- date_param(params["from"]),
          {:ok, to} <- date_param(params["to"]),
-         {:ok, board} <- Tasks.board(board(conn), from, to) do
+         {:ok, board} <-
+           Tasks.board(board(conn), from, to, Tasks.today(), linked: params["linked"] == "true") do
       reply(conn, %{data: task_board(board)})
     end
     |> TaskErrors.handle(conn)
@@ -73,6 +94,13 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def update(conn, %{"id" => id} = params) do
+    case linked(conn, id) do
+      {:linked, task} -> linked_write(conn, task, &linked_update(&1, &2, &3, params))
+      :board -> board_update(conn, id, params)
+    end
+  end
+
+  defp board_update(conn, id, params) do
     with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
@@ -90,6 +118,13 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/move: `{ due_on, before_id? }`; `due_on: null` = Future."
   def move(conn, %{"id" => id} = params) do
+    case linked(conn, id) do
+      {:linked, task} -> linked_write(conn, task, &linked_move(&1, &2, &3, params))
+      :board -> board_move(conn, id, params)
+    end
+  end
+
+  defp board_move(conn, id, params) do
     with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <-
@@ -109,6 +144,13 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/complete: `{ display? }` (required off its own day)."
   def complete(conn, %{"id" => id} = params) do
+    case linked(conn, id) do
+      {:linked, task} -> linked_write(conn, task, &linked_complete(&1, &2, &3, params))
+      :board -> board_complete(conn, id, params)
+    end
+  end
+
+  defp board_complete(conn, id, params) do
     with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.complete(board(conn), task, params["display"], actor) do
@@ -118,6 +160,13 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def uncomplete(conn, %{"id" => id}) do
+    case linked(conn, id) do
+      {:linked, task} -> linked_write(conn, task, &linked_uncomplete/3)
+      :board -> board_uncomplete(conn, id)
+    end
+  end
+
+  defp board_uncomplete(conn, id) do
     with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.uncomplete(board(conn), task, actor) do
@@ -127,6 +176,13 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   def delete(conn, %{"id" => id} = params) do
+    case linked(conn, id) do
+      {:linked, task} -> linked_write(conn, task, &linked_delete/3)
+      :board -> board_delete(conn, id, params)
+    end
+  end
+
+  defp board_delete(conn, id, params) do
     with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, :deleted} <- Tasks.delete(board(conn), task, actor, series_opts(params)) do
@@ -145,6 +201,7 @@ defmodule RockcutApiWeb.TaskBoardController do
   def series(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :read),
          {:ok, task} <- fetch(conn, id),
+         :ok <- not_linked(task),
          {:ok, {series, preview}} <- Tasks.series_info(board(conn), task),
          {:ok, change} <- change_preview(conn, task, params) do
       data = task_series(series, preview)
@@ -162,6 +219,13 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "POST /api/boards/:dept/tasks/:id/stop_repeating: `{ changed? }`. Ends the series on this one."
   def stop_repeating(conn, %{"id" => id} = params) do
+    case linked(conn, id) do
+      {:linked, task} -> linked_write(conn, task, fn _, _, _ -> {:error, :linked_task} end)
+      :board -> board_stop_repeating(conn, id, params)
+    end
+  end
+
+  defp board_stop_repeating(conn, id, params) do
     with {:ok, actor} <- writer(conn),
          {:ok, task} <- fetch(conn, id),
          {:ok, task} <- Tasks.stop_repeating(board(conn), task, actor, series_opts(params)) do
@@ -169,6 +233,180 @@ defmodule RockcutApiWeb.TaskBoardController do
     end
     |> TaskErrors.handle(conn)
   end
+
+  ## Linked tasks (D49 §3.12)
+
+  # A task on this board made from a production step, or `:board` (anything
+  # else, a missing id included: the board's own path answers it).
+  defp linked(conn, id) do
+    case Tasks.get_task(board(conn), id) do
+      %Task{production_step_id: step_id} = task when not is_nil(step_id) -> {:linked, task}
+      _ -> :board
+    end
+  end
+
+  defp not_linked(%Task{} = task),
+    do: if(Task.linked?(task), do: {:error, :linked_task}, else: :ok)
+
+  # The board's write access first (another board's tablet: 403), then a
+  # shared tablet is refused whatever it sends (decision 8), then
+  # Production's. `fun.(person, task, step)` returns `{:ok, {result, token}}`,
+  # `{:preview, preview}`, `{:board, conn}` or an error.
+  defp linked_write(conn, %Task{} = task, fun) do
+    person = current_user(conn)
+
+    with :ok <- allow(conn, :write),
+         :ok <- if(Authz.device?(person), do: {:error, :linked_task_device}, else: :ok),
+         :ok <- if(Authz.can?(person, :write, :production), do: :ok, else: {:error, :forbidden}),
+         %Step{} = step <- Repo.get(Step, task.production_step_id) || {:error, :not_found} do
+      case fun.(person, task, step) do
+        {:ok, {result, token}} -> render_linked(conn, task, result, token)
+        {:preview, preview} -> json(conn, %{data: %{preview: preview}})
+        {:board, %Plug.Conn{} = conn} -> conn
+        other -> other
+      end
+    end
+    |> linked_errors(conn)
+  end
+
+  # The board's own refusals (a reorder's, `linked_task`) as the board
+  # answers them; the schedule's as the schedule does.
+  defp linked_errors({:error, code} = error, conn) when is_atom(code) do
+    if TaskErrors.known?(code),
+      do: TaskErrors.handle(error, conn),
+      else: ProductionErrors.handle(error, conn)
+  end
+
+  defp linked_errors(other, conn), do: ProductionErrors.handle(other, conn)
+
+  # Notes and assignee go to the step; a new day is a move; a title or a
+  # repeat is refused.
+  defp linked_update(person, task, step, params) do
+    cond do
+      Series.repeat?(params) ->
+        {:error, :linked_task}
+
+      Map.has_key?(params, "title") and String.trim(to_string(params["title"])) != task.title ->
+        {:error, :linked_task}
+
+      Map.has_key?(params, "due_on") and params["due_on"] != Date.to_iso8601(task.due_on) ->
+        with {:ok, days} <- linked_days(task, params["due_on"]) do
+          tracked(person, step, fn ->
+            Repo.transaction(fn ->
+              edit_step!(step, params)
+              ok!(Steps.move([step.id], days, answer: params["answer"]))
+            end)
+          end)
+        end
+
+      true ->
+        tracked(person, step, fn ->
+          with {:ok, _} <- Steps.update(step, Map.take(params, ~w(notes assignee_id))),
+               do: {:ok, %{}}
+        end)
+    end
+  end
+
+  defp edit_step!(step, params) do
+    case Map.take(params, ~w(notes assignee_id)) do
+      edits when edits == %{} -> :ok
+      edits -> ok!(Steps.update(step, edits))
+    end
+  end
+
+  # Another day moves the step (the move prompt); the same day is the
+  # board's reorder.
+  defp linked_move(person, task, step, params) do
+    case linked_days(task, params["due_on"]) do
+      {:ok, 0} ->
+        with {:ok, task} <-
+               Tasks.move(board_of(task), task, params["due_on"], params["before_id"], person),
+             do: {:ok, {%{task: task}, nil}}
+
+      {:ok, days} ->
+        if truthy?(params["preview"]) do
+          with {:ok, {:preview, preview}} <- Steps.move([step.id], days, preview: true),
+               do: {:preview, preview}
+        else
+          tracked(person, step, fn -> Steps.move([step.id], days, answer: params["answer"]) end)
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp linked_days(%Task{due_on: due_on}, value) do
+    case value && Date.from_iso8601(to_string(value)) do
+      {:ok, day} -> {:ok, Date.diff(day, due_on)}
+      # A linked task is always on a day: no Future.
+      v when v in [nil, ""] -> {:error, :linked_task}
+      _ -> {:error, :invalid_date}
+    end
+  end
+
+  # Today unless `done_on` says otherwise; the batch number and the
+  # off-plan answer as on the schedule. Already done: a no-op, as on the board.
+  defp linked_complete(person, task, step, params) do
+    attrs = Map.take(params, ~w(done_on batch_number answer))
+
+    cond do
+      step.done_on != nil ->
+        {:ok, {%{task: task}, nil}}
+
+      truthy?(params["preview"]) ->
+        with {:ok, {:preview, preview}} <-
+               Steps.complete(step.id, attrs, person, preview: true),
+             do: {:preview, preview}
+
+      true ->
+        tracked(person, step, fn -> Steps.complete(step.id, attrs, person) end)
+    end
+  end
+
+  defp linked_uncomplete(person, task, step) do
+    if step.done_on == nil,
+      do: {:ok, {%{task: task}, nil}},
+      else: tracked(person, step, fn -> Steps.uncomplete(step.id) end)
+  end
+
+  # Off the task list; the step stays on the schedule.
+  defp linked_delete(person, _task, step) do
+    tracked(person, step, fn ->
+      with {:ok, _} <- Steps.update(step, %{"on_task_list" => false}), do: {:ok, %{}}
+    end)
+  end
+
+  defp tracked(person, %Step{id: id}, fun), do: Undo.track(person, Undo.step_scope([id]), fun)
+
+  # The task as the write left it (`data`: nil once it's gone), the write's
+  # `result` and its Undo token.
+  defp render_linked(conn, %Task{id: id}, result, token) do
+    task =
+      case result do
+        %{task: %Task{} = t} -> t
+        _ -> Repo.get(Task, id)
+      end
+
+    json(
+      conn,
+      for_viewer(
+        %{
+          data: task && task |> Tasks.with_names() |> task(),
+          result: Map.take(result, [:renumbered, :out_of_order, :message]),
+          undo_token: token
+        },
+        current_user(conn)
+      )
+    )
+  end
+
+  defp board_of(%Task{department_id: id}), do: RockcutApi.Accounts.get_department!(id)
+
+  defp ok!({:ok, result}), do: result
+  defp ok!({:error, reason}), do: Repo.rollback(reason)
+
+  defp truthy?(v), do: v in [true, "true", 1, "1"]
 
   @doc "GET /api/boards/:dept/tasks/history?task_id=&page=: this board's, newest first, 50 a page."
   def history(conn, params) do

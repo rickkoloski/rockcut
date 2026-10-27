@@ -23,13 +23,16 @@ defmodule RockcutApi.Production.Undo do
   one it undid) every vessel list in the tree (fix cycle 4, X1). Its Undo is
   stale when any of them changed since, not only the rows it changed, and
   what it puts back must pass `BatchChanges.no_tree_twice!/3` (`:same_tank`).
+
+  **Linked tasks** (D49 §3.12): both end with `TaskLink.sync!/1` in the same
+  transaction. Tasks aren't tracked; they follow the steps.
   """
   import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.User
   alias RockcutApi.Brewing.Batch
-  alias RockcutApi.Production.{BatchChanges, Steps, UndoRecord}
+  alias RockcutApi.Production.{BatchChanges, Steps, TaskLink, UndoRecord}
 
   @ttl_seconds 120
 
@@ -51,6 +54,8 @@ defmodule RockcutApi.Production.Undo do
         {:ok, result} ->
           after_ = rows(merge(scope, after_scope.(result)))
           entries = entries(before, after_)
+          # D49 §3.12: the Brewery board's linked tasks follow, in this transaction.
+          TaskLink.sync!(step_ids(Map.keys(before) ++ Map.keys(after_)))
 
           {result,
            if(entries == [], do: nil, else: save!(user, entries, vessels(entries, after_)))}
@@ -64,6 +69,26 @@ defmodule RockcutApi.Production.Undo do
       result -> result
     end
   end
+
+  @doc """
+  The scope of a write to the steps `ids` (`track/4`): their batches, or the
+  standalone steps themselves. Ids that aren't steps are left out.
+  """
+  def step_scope(ids) when is_list(ids) do
+    ids = ids |> Enum.map(&RockcutApi.Production.Batches.to_int/1) |> Enum.reject(&is_nil/1)
+
+    rows =
+      Repo.all(
+        from(s in RockcutApi.Production.Step, where: s.id in ^ids, select: {s.id, s.batch_id})
+      )
+
+    %{
+      batches: for({_, b} <- rows, b != nil, uniq: true, do: b),
+      steps: for({id, nil} <- rows, do: id)
+    }
+  end
+
+  def step_scope(_), do: %{}
 
   @doc """
   Undo `token` for `user`: `{:ok, %{batch_ids}}` (the batches it touched),
@@ -111,6 +136,9 @@ defmodule RockcutApi.Production.Undo do
             do: batch.split_parent_id || batch.id
 
       for id <- roots, do: BatchChanges.no_tree_twice!(%Batch{id: id})
+
+      # D49: the linked tasks follow what was put back (they aren't tracked).
+      TaskLink.sync!(step_ids(Enum.map(entries, &{&1["table"], &1["id"]})))
 
       Repo.delete!(record)
 
@@ -361,6 +389,8 @@ defmodule RockcutApi.Production.Undo do
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     Repo.delete_all(from(u in UndoRecord, where: u.expires_at < ^now))
   end
+
+  defp step_ids(keys), do: for({"production_steps", id} <- keys, uniq: true, do: id)
 
   defp merge(a, b), do: Map.merge(a, b, fn _k, x, y -> Enum.uniq(x ++ y) end)
 

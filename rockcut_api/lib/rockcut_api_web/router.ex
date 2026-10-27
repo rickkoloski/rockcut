@@ -103,6 +103,8 @@ defmodule RockcutApiWeb.Router do
     # D43: the person's own theme. Not for devices (a manager sets a tablet's
     # on Shared devices); a "Sign in as me" session may set its person's.
     put "/me/color_mode", MeController, :update_color_mode
+    # D49: the Brewery board's "Show planned batches", per person.
+    put "/me/show_planned_batches", MeController, :update_show_planned_batches
 
     # Departments (update) and roster order; reads are in the scope above
     patch "/departments/:id", DepartmentController, :update

@@ -114,6 +114,29 @@ defmodule RockcutApi.TaskShiftEndReminderTest do
     assert length(reminders(b1)) == 1
   end
 
+  test "D49 decision 11: a linked task (a production step) is listed like any other", %{
+    p: p,
+    day: day,
+    depts: depts
+  } do
+    b1 = p["brewer1"]
+    shift(depts, b1, day, {7, 0}, {15, 0})
+    {:ok, fv6} = RockcutApi.Production.create_tank(%{"name" => "FV6", "capacity_bbl" => "20"})
+
+    {:ok, {_, _}} =
+      RockcutApi.Production.Undo.track(b1, %{}, fn ->
+        RockcutApi.Production.Cips.create(
+          %{"tank_id" => fv6.id, "due_on" => Date.to_iso8601(day), "assignee_id" => b1.id},
+          b1
+        )
+      end)
+
+    assert Reminders.run_shift_end(at(day, 14, 0)) == 1
+    [n] = reminders(b1)
+    assert n.body == "FV6 · CIP & Sanitize"
+    assert n.title =~ ~r/^Still open today: 1 task, /
+  end
+
   test "S32: other people's tasks carry their initials", %{
     p: p,
     brewery: brewery,

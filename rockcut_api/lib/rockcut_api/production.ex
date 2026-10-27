@@ -59,10 +59,13 @@ defmodule RockcutApi.Production do
   end
 
   def update_tank(%Tank{} = tank, attrs) do
-    tank
-    |> Tank.changeset(attrs)
-    |> unique_name(Tank, "tank")
-    |> Repo.update()
+    # D49: a rename retitles the tank's Brewery board tasks.
+    RockcutApi.Production.TaskLink.with_sync(fn ->
+      tank
+      |> Tank.changeset(attrs)
+      |> unique_name(Tank, "tank")
+      |> Repo.update()
+    end)
     |> preload_ok(:outages, force: true)
   end
 
@@ -238,7 +241,10 @@ defmodule RockcutApi.Production do
   end
 
   def update_step_type(%StepType{} = type, attrs) do
-    type |> step_type_changeset(attrs) |> unique_name(StepType, "step type") |> Repo.update()
+    # D49: a rename retitles its steps' Brewery board tasks.
+    RockcutApi.Production.TaskLink.with_sync(fn ->
+      type |> step_type_changeset(attrs) |> unique_name(StepType, "step type") |> Repo.update()
+    end)
   end
 
   def reorder_step_types(ids), do: reorder(StepType, ids)

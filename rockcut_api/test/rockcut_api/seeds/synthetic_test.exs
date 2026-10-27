@@ -591,8 +591,11 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       {:ok, board} = Tasks.board(brewery_board(), Date.add(today, -3), Date.add(today, 13), today)
 
       assert length(seed_tasks()) == 17
-      # D38's two, plus Keg Wash's two past Wednesdays (D39).
-      assert length(board.unfinished) == 4
+      # D38's two, plus Keg Wash's two past Wednesdays (D39); D49: and the
+      # linked tasks (Enos #41's step due yesterday, P50).
+      {linked, own} = Enum.split_with(board.unfinished, &Task.linked?(&1.task))
+      assert length(own) == 4
+      assert linked != []
       assert length(board.future) == 2
 
       displays = for {_, _, _, on, d} <- seed_tasks(), on, uniq: true, do: d
@@ -1128,7 +1131,36 @@ defmodule RockcutApi.Seeds.SyntheticTest do
                      "Fest #37 (after transfer 1) fills Serving 4, which was marked dirty")
              )
 
-      assert [_, _] = Enum.filter(sched.marks, &String.starts_with?(&1.note, "[SEED] "))
+      assert [_, _, _] = Enum.filter(sched.marks, &String.starts_with?(&1.note, "[SEED] "))
+    end
+
+    test "D49: a Clean not sanitized mark, a CIP - no sani, a pencilled X1, linked tasks" do
+      {:ok, _} = Synthetic.setup(@today)
+      sched = schedule()
+
+      assert %{state: "cleaned", line: "Clean no sani 1 day"} = line(sched, "FV1")
+      assert Enum.any?(sched.flags, &(&1.kind == "unsanitized_fill"))
+
+      okto = Enum.find(sched.batches, &(&1.label == "Oktoberfest X1"))
+      assert okto.batch.pencilled
+      assert Enum.all?(okto.vessels, &is_nil(&1.tank_id))
+
+      linked =
+        Repo.all(
+          from(t in RockcutApi.Tasks.Task,
+            where: not is_nil(t.production_step_id),
+            preload: [production_step: :batch]
+          )
+        )
+
+      titles = Enum.map(linked, & &1.title)
+      assert "FV7 · CIP - no sani" in titles
+      assert "FV3 · Altruism P1 · Brew day" in titles
+      assert "FV4 · Crusher #42 · Set temp - 58°" in titles
+      refute Enum.any?(titles, &(&1 =~ "Oktoberfest"))
+
+      # Done steps have their tasks too, checked off on their day.
+      assert Enum.any?(linked, &(&1.completed_on != nil and &1.completed_on == &1.due_on))
     end
 
     test "setup twice gives the same schedule" do
