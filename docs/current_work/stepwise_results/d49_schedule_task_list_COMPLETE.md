@@ -1,6 +1,6 @@
 # D49: Task List Linkage, Clean Not Sanitized, Pencilled Batches — Completion Record
 
-**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-27 (PR #36). **Not on prod:** D46–D49 go to prod in one release next.
+**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-27 (PR #36). **On prod** in `v2026.10.27` (2026-10-27, PR #38, with D46–D49).
 **Spec:** `specs/d46_production_scheduling_spec.md` (§3.12 task list linkage, §3.12a Clean not sanitized, §3.12b Pencilled batches; scenarios P90–P103, P108, P122–P135; D48's BB1 / BB2)
 **Plan:** `planning/d49_schedule_task_list_plan.md`
 **Brief / lead decisions:** `prompts/d49_builder_brief.md`, `prompts/d49_lead_decisions_1.md` … `_10.md`

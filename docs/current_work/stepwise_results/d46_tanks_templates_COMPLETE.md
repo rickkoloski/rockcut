@@ -1,6 +1,6 @@
 # D46: Production Setup (Tanks, Out of Service, Phases & Step Types, Templates) — Completion Record
 
-**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-21 (PR #32, merge `600a7cf`). **Not on prod:** per the spec, D46–D49 go to prod in a single release after D49.
+**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-21 (PR #32, merge `600a7cf`). **On prod** in `v2026.10.27` (2026-10-27, PR #38, with D46–D49).
 **Spec:** `specs/d46_production_scheduling_spec.md` (§3.1–§3.4, scenarios P1–P19)
 **Plan:** `planning/d46_tanks_templates_plan.md`
 **Brief / lead decisions:** `prompts/d46_builder_brief.md`, `prompts/d46_lead_decisions_1.md`, `_2.md`, `_3.md`

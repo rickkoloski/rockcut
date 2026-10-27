@@ -1,7 +1,7 @@
 # Release plan: D46–D49 to prod (production scheduling)
 
-**Status:** PLANNED 2026-10-27. Prod pre-check done 2026-10-27: **0 old batches**, so the §3.14 clean-up has nothing to delete (§4). Waiting on Matt's go for the release (§5).
-**Tag:** `v2026.10.DD` (the release day) · **Prod volume:** `vol_vden5mz7qg3d2864` (check `fly volumes list -a rockcut-api` on the day)
+**Status:** RELEASED 2026-10-27 ~08:10 Colorado (14:07 UTC): API v28 / UI v25 (build id `v2026.10.27`), snapshot `vs_QeGMQlYOLoayhmbw3Dm2ZKO6`, 16 migrations up, 9 phases and 19 step types seeded, no §3.14 clean-up needed (0 old batches), smoke green, Matt's checks passed. PR #38 (squash `957dadf`).
+**Tag:** `v2026.10.27` · **Prod volume:** `vol_vden5mz7qg3d2864` (check `fly volumes list -a rockcut-api` on the day)
 **Prod now:** `v2026.10.22`: API v27, UI v24.
 
 ## 1. What ships
