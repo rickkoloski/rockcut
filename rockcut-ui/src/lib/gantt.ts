@@ -265,8 +265,12 @@ export function partFlags(part: Part, flags: Flag[]): Flag[] {
   return flags.filter((f) => f.batch_ids.includes(part.batch.id) && (f.tank_id == null || f.tank_id === part.tankId))
 }
 
+/** D49 §3.12b: the flags that count (a pencilled batch's are muted: listed, never counted). */
+export const counted = (flags: Flag[]) => flags.filter((f) => !f.muted)
+
 /** "!", "!3", "✓" (all signed off), or null. */
-export function badgeText(flags: Flag[]): string | null {
+export function badgeText(all: Flag[]): string | null {
+  const flags = counted(all)
   if (!flags.length) return null
   const open = flags.filter((f) => !f.signed_off).length
   if (!open) return '✓'
@@ -274,7 +278,8 @@ export function badgeText(flags: Flag[]): string | null {
 }
 
 /** The toolbar chip: "6 flags · 1 signed off". */
-export function flagChip(flags: Flag[]): string {
+export function flagChip(all: Flag[]): string {
+  const flags = counted(all)
   const signed = flags.filter((f) => f.signed_off).length
   const n = flags.length
   return `${n} flag${n === 1 ? '' : 's'}${signed ? ` · ${signed} signed off` : ''}`

@@ -185,11 +185,13 @@ export interface SchedBatch {
   brand_id: number
   brand_name: string | null
   batch_number: string | null
-  /** "P2" while planned. */
+  /** "P2" while planned; "X1" while pencilled (D49). */
   p_number: string | null
-  /** "Galactic #40" / "Altruism P1" */
+  /** "Galactic #40" / "Altruism P1" / "Oktoberfest X1" */
   label: string
   status: BatchStatus
+  /** D49 §3.12b: pencilled in, not scheduled (planned only; a part follows its parent). */
+  pencilled: boolean
   volume_bbl: number | null
   template_id: number | null
   template_name: string | null
@@ -225,6 +227,8 @@ export interface Flag {
   batch_ids: number[]
   tank_id: number | null
   signed_off: boolean
+  /** D49 §3.12b: about a pencilled batch: shown muted, not counted, can't be signed off. */
+  muted: boolean
   was_signed_off: boolean
   signoff: { user_id: number | null; user_name: string | null; note: string | null; signed_at: string } | null
 }

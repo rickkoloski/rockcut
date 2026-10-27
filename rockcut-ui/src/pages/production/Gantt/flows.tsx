@@ -86,6 +86,7 @@ type Snack = { message: string; token: string | null; key: number; expiresAt: nu
 
 type Prompt =
   | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
+  | { kind: 'schedule'; label: string; resolve: (ok: boolean) => void }
   | { kind: 'number'; label: string; value: string; error: string | null; suggestion: string; resolve: (n: string | null) => void }
 
 export function FlowsProvider({ children }: { children: ReactNode }) {
@@ -127,6 +128,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   const askMove = (preview: MovePreview, title: string) =>
     new Promise<Answer | null>((resolve) => setPrompt({ kind: 'move', preview, title, resolve }))
 
+  const askSchedule = (label: string) => new Promise<boolean>((resolve) => setPrompt({ kind: 'schedule', label, resolve }))
+
   const askNumber = (label: string, value: string, suggestion: string, error: string | null = null) =>
     new Promise<string | null>((resolve) => setPrompt({ kind: 'number', label, value, error, suggestion, resolve }))
 
@@ -167,7 +170,21 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       try {
         pre = (await api.post(path, { done_on: doneOn, preview: true })).data.data.preview
       } catch (err) {
-        return failure(err)
+        const f = failure(err)
+        // D49 §3.12b (P134): a pencilled batch is scheduled first, then the check-off goes on.
+        if (f.code !== 'schedule_first' || step.batch_id == null) return f
+        if (!(await askSchedule(batchLabel ?? 'This batch'))) return null
+        const s = await write<{ batches: { id: number; label: string }[] }>(
+          () => api.post(prodPath('batches', step.batch_id!, 'schedule')),
+          (d) => `${d.batches.find((b) => b.id === step.batch_id)?.label ?? 'The batch'} is scheduled.`,
+        )
+        if (!s.ok) return s
+        batchLabel = s.data.batches.find((b) => b.id === step.batch_id)?.label ?? batchLabel
+        try {
+          pre = (await api.post(path, { done_on: doneOn, preview: true })).data.data.preview
+        } catch (again) {
+          return failure(again)
+        }
       }
       let number: string | undefined
       if (pre.needs_batch_number) {
@@ -249,6 +266,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   const close = (value: null) => {
     if (!prompt) return
     if (prompt.kind === 'move') prompt.resolve(value)
+    else if (prompt.kind === 'schedule') prompt.resolve(false)
     else prompt.resolve(value)
     setPrompt(null)
   }
@@ -275,6 +293,16 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           onCancel={() => close(null)}
           onApply={(a) => {
             prompt.resolve(a)
+            setPrompt(null)
+          }}
+        />
+      )}
+      {prompt?.kind === 'schedule' && (
+        <SchedulePrompt
+          label={prompt.label}
+          onCancel={() => close(null)}
+          onSchedule={() => {
+            prompt.resolve(true)
             setPrompt(null)
           }}
         />
@@ -436,6 +464,27 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
 }
 
 /** §3.5 checking off a planned batch's brew day asks for its number. */
+/** D49 §3.12b (P134): "Schedule this batch first." with a Schedule button. */
+function SchedulePrompt({ label, onCancel, onSchedule }: { label: string; onCancel: () => void; onSchedule: () => void }) {
+  usePhoneBackCloses(true, onCancel)
+  return (
+    <Dialog open onClose={onCancel} maxWidth="xs" fullWidth data-testid="schedule-prompt">
+      <DialogTitle>Schedule this batch first.</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2">{label} is pencilled in. Schedule it to check off its steps; it gets a P-number and its steps can go on the task list.</Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onCancel} data-testid="schedule-prompt-cancel">
+          Cancel
+        </Button>
+        <Button variant="contained" autoFocus onClick={onSchedule} data-testid="schedule-prompt-ok">
+          Schedule
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
 function NumberPrompt({
   label,
   initial,

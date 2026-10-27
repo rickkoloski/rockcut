@@ -129,7 +129,7 @@ export function SetupMenu() {
  */
 export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onToday, onZoom, expandMode, hasMix, onExpandMode, onFlags, onPlan, onAddCip }: Props) {
   const [error, setError] = useState<string | null>(null)
-  const open = flags.filter((f) => !f.signed_off).length
+  const open = flags.filter((f) => !f.signed_off && !f.muted).length
 
   const pick = (which: 'from' | 'to', value: string) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return

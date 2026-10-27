@@ -70,6 +70,7 @@ const batch = (b: Partial<SchedBatch>): SchedBatch => ({
   brand_name: 'Fest',
   batch_number: '38',
   p_number: null,
+  pencilled: false,
   label: 'Fest #38',
   status: 'fermenting',
   volume_bbl: 20,
@@ -381,6 +382,7 @@ describe('flags', () => {
     batch_ids: [1],
     tank_id: null,
     signed_off: false,
+    muted: false,
     was_signed_off: false,
     signoff: null,
     ...f,
@@ -396,6 +398,13 @@ describe('flags', () => {
     expect(badgeText(partFlags(second, flags))).toBe('!')
     expect(flagChip(flags)).toBe('4 flags · 1 signed off')
     expect(flagChip([flags[0]])).toBe('1 flag')
+  })
+
+  it('D49: muted flags (a pencilled batch’s) are left out of the chip and the badge', () => {
+    const flags = [flag({ key: 'a' }), flag({ key: 'b', muted: true }), flag({ key: 'c', muted: true, signed_off: true })]
+    expect(flagChip(flags)).toBe('1 flag')
+    expect(badgeText([flags[1]])).toBeNull()
+    expect(badgeText(flags)).toBe('!')
   })
 })
 

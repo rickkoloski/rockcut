@@ -675,3 +675,9 @@ Playwright specs are in `regression/production/` (project `production`), each on
 | P128 | Planned CIP - no sani, then Sanitize, then a fill: no flags; delete the Sanitize → "isn't sanitized" | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | P129 | Sanitize done on a dirty tank (empty-spot menu's Add CIP…): still dirty, "no CIP planned"; the step dialog says "The tank was dirty: run a CIP first." | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
 | — | A template's CIP entry takes the variant and passes it to planned batches | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P130 | Plan batch → Pencil in (Unassigned): an X-number, faded, hatched, labeled Pencilled; no "No tank assigned" (board: task 3) | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test |
+| P131 | Dragged over a scheduled batch: its overlap flag muted (no Mark OK, not in the chip or the badge); the scheduled batch keeps its own, open; `flag_muted` | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test; Vitest `gantt` (`flagChip`, `badgeText`) |
+| P132 | Schedule this batch: a P-number by date (others renumber), drawn normally, flags open; Undo (board: task 3) | Playwright `d49-pencilled`; ExUnit `pencilled_test` |
+| P133 | Pencil in a scheduled planned batch: an X-number, faded; not offered (and `step_done`) once a step is done (board: task 3) | Playwright `d49-pencilled`; ExUnit `pencilled_test` |
+| P134 | Brew day on a pencilled batch: "Schedule this batch first." (`schedule_first`); Cancel leaves it; Schedule, then the number prompt and the check-off | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test |
+| — | X-numbers by brew date, renumbered both ways; split parts follow their parent (X1.2), scheduled together | ExUnit `pencilled_test` |

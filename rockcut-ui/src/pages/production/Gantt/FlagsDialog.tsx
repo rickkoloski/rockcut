@@ -12,7 +12,8 @@ const signedDay = (iso: string) =>
 /**
  * D47 §3.9 one flag: its text, and either a note box with Mark OK, or (signed
  * off) who and when with the note, muted, and Remove sign-off. A flag that
- * changed since its sign-off says so.
+ * changed since its sign-off says so. D49 §3.12b: a pencilled batch's flag
+ * is muted, with no Mark OK.
  */
 export function FlagRow({ flag }: { flag: Flag }) {
   const flows = useFlows()
@@ -28,12 +29,22 @@ export function FlagRow({ flag }: { flag: Flag }) {
   const by = flag.signoff?.user_name ?? 'someone'
 
   return (
-    <Paper variant="outlined" sx={{ p: 1.5, opacity: flag.signed_off ? 0.75 : 1 }} data-testid={`flag-${flag.key}`} data-signed={flag.signed_off || undefined}>
+    <Paper
+      variant="outlined"
+      sx={{ p: 1.5, opacity: flag.muted ? 0.6 : flag.signed_off ? 0.75 : 1 }}
+      data-testid={`flag-${flag.key}`}
+      data-signed={flag.signed_off || undefined}
+      data-muted={flag.muted || undefined}
+    >
       <ErrorAlert error={error} testId="flag-error" />
-      <Typography variant="body2" sx={{ fontWeight: flag.signed_off ? 400 : 600 }}>
+      <Typography variant="body2" sx={{ fontWeight: flag.signed_off || flag.muted ? 400 : 600 }}>
         {flag.message}
       </Typography>
-      {flag.signed_off && flag.signoff ? (
+      {flag.muted ? (
+        <Typography variant="caption" color="text.secondary" component="div" data-testid="flag-muted">
+          Pencilled batch: this counts once it’s scheduled.
+        </Typography>
+      ) : flag.signed_off && flag.signoff ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
           <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} data-testid="flag-signed-by">
             Signed off by {by} · {signedDay(flag.signoff.signed_at)}
@@ -75,10 +86,10 @@ export function FlagRow({ flag }: { flag: Flag }) {
   )
 }
 
-/** D47 §3.9 the Flags list (the toolbar chip): open flags first, then the signed-off ones. */
+/** D47 §3.9 the Flags list (the toolbar chip): open flags first, then the signed-off ones, then muted ones (D49). */
 export default function FlagsDialog({ flags, onClose }: { flags: Flag[]; onClose: () => void }) {
   usePhoneBackCloses(true, onClose)
-  const sorted = [...flags].sort((a, b) => Number(a.signed_off) - Number(b.signed_off))
+  const sorted = [...flags].sort((a, b) => Number(a.muted) - Number(b.muted) || Number(a.signed_off) - Number(b.signed_off))
   return (
     <Dialog open onClose={onClose} maxWidth="sm" fullWidth data-testid="flags-dialog">
       <DialogTitle>Flags</DialogTitle>
