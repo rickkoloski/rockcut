@@ -1,6 +1,6 @@
 # D47: Batch Schedule and Gantt — Completion Record
 
-**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-21 (PR #33, merge `5e0a4ed`). **Not on prod:** D46–D49 go to prod in one release after D49.
+**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-21 (PR #33, merge `5e0a4ed`). **On prod** in `v2026.10.27` (2026-10-27, PR #38, with D46–D49).
 **DEV now:** `develop` at `5e0a4ed` (API v50, UI v53), reseeded.
 **Spec:** `specs/d46_production_scheduling_spec.md` (§3.5–§3.10; scenarios P20–P64, P109, P111, P112, plus the Gantt parts of P1/P2, P4, P6–P10)
 **Plan:** `planning/d47_batch_schedule_gantt_plan.md`
