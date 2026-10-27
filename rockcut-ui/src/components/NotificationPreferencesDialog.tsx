@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Box,
@@ -58,14 +58,15 @@ const CHANNELS = [
   { key: 'push', label: 'Push', enabled: true, def: false },
 ]
 const SHOWN = CHANNELS.filter((c) => !c.hidden)
+const PREFS_KEY = ['notification_preferences']
 
 export default function NotificationPreferencesDialog({ open, onClose }: Props) {
   const qc = useQueryClient()
   const { user } = useAuth()
   const breweryMember = !!user?.memberships?.some((m) => m.department_key === 'brewery')
   const events = EVENTS.filter((e) => !e.brewery || breweryMember)
-  const { data: prefs = {} } = useQuery({
-    queryKey: ['notification_preferences'],
+  const { data: prefs = {}, isSuccess: loaded } = useQuery({
+    queryKey: PREFS_KEY,
     queryFn: async () => (await api.get<{ data: NotificationPrefs }>('/api/notification_preferences')).data.data,
     enabled: open,
   })
@@ -80,14 +81,28 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
   const isOn = (event: string, ch: (typeof CHANNELS)[number]) =>
     prefs[event]?.[ch.key] ?? EVENT_DEFAULTS[event]?.[ch.key] ?? ch.def
 
-  const writePrefs = async (next: NotificationPrefs) => {
-    qc.setQueryData(['notification_preferences'], next) // optimistic
-    await api.put('/api/notification_preferences', { prefs: next })
-    qc.invalidateQueries({ queryKey: ['notification_preferences'] })
+  // The PUT replaces the whole map, so every change starts from the latest
+  // cache (not this render's `prefs`), a fetch in flight can't land on top of
+  // it, and the saves go one at a time; the refetch waits for the last one
+  // (D49 DEV: a second switch flipped the first back with DEV's latency).
+  const saving = useRef<Promise<unknown>>(Promise.resolve())
+  const pending = useRef(0)
+  const writePrefs = async (change: (cur: NotificationPrefs) => NotificationPrefs) => {
+    void qc.cancelQueries({ queryKey: PREFS_KEY })
+    qc.setQueryData<NotificationPrefs>(PREFS_KEY, (cur) => change(cur ?? {})) // optimistic
+    pending.current += 1
+    const save = saving.current.then(() => api.put('/api/notification_preferences', { prefs: qc.getQueryData(PREFS_KEY) ?? {} }))
+    saving.current = save.catch(() => undefined)
+    try {
+      await save
+    } finally {
+      pending.current -= 1
+      if (pending.current === 0) qc.invalidateQueries({ queryKey: PREFS_KEY })
+    }
   }
 
   const toggle = (event: string, chKey: string, value: boolean) =>
-    writePrefs({ ...prefs, [event]: { ...(prefs[event] ?? {}), [chKey]: value } })
+    writePrefs((cur) => ({ ...cur, [event]: { ...(cur[event] ?? {}), [chKey]: value } }))
 
   const enablePush = async () => {
     setPushBusy(true)
@@ -96,9 +111,11 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
       setPushState(state)
       if (state === 'subscribed') {
         // Turn the Push column on for every event so it works right away.
-        const next: NotificationPrefs = { ...prefs }
-        for (const e of events) next[e.event] = { ...(next[e.event] ?? {}), push: true }
-        await writePrefs(next)
+        await writePrefs((cur) => {
+          const next: NotificationPrefs = { ...cur }
+          for (const e of events) next[e.event] = { ...(next[e.event] ?? {}), push: true }
+          return next
+        })
       }
     } finally {
       setPushBusy(false)
@@ -148,7 +165,7 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
             <Typography variant="body2" sx={{ flexGrow: 1 }}>
               Get push notifications on this device.
             </Typography>
-            <Button size="small" variant="contained" onClick={enablePush} disabled={pushBusy}>
+            <Button size="small" variant="contained" onClick={enablePush} disabled={pushBusy || !loaded}>
               Enable push
             </Button>
           </Stack>
@@ -183,6 +200,8 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
                       <Switch
                         size="small"
                         checked={isOn(e.event, c)}
+                        // Until the saved prefs are in: a change would replace them with the defaults.
+                        disabled={!loaded}
                         onChange={(ev) => toggle(e.event, c.key, ev.target.checked)}
                         slotProps={{ input: { 'aria-label': `${e.label}: ${c.label}` } }}
                       />

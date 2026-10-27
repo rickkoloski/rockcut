@@ -119,7 +119,13 @@ test.describe('the Daily card (brewer1)', () => {
     await openBoard(page)
     const card = page.getByTestId(`daily-${today}`)
     await expect(card).toHaveAttribute('data-complete', 'false')
-    for (const id of savedToday.all) await setBoardCheck(page.getByTestId(`daily-check-${today}-${id}`), true)
+    // Each tick's PUT has landed before the reload below (the box shows ticked
+    // before it does; DEV latency).
+    for (const id of savedToday.all) {
+      const saved = page.waitForResponse((r) => r.url().endsWith(`/daily_checks/${today}/${id}`) && r.request().method() === 'PUT')
+      await setBoardCheck(page.getByTestId(`daily-check-${today}-${id}`), true)
+      expect((await saved).ok()).toBe(true)
+    }
 
     // Ticking the last item doesn't snap it shut.
     await expect(card).toHaveAttribute('data-complete', 'true')

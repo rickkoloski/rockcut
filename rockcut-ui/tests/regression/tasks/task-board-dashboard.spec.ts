@@ -95,6 +95,57 @@ test.describe('as brewer1', () => {
   })
 })
 
+test.describe('as brewer1, with the first read answering late (DEV latency)', () => {
+  test.use({ storageState: authFile('brewer1') })
+
+  // D49 DEV run 1: the PUT sends the whole map. A switch clicked before the
+  // dialog's first read answered: the read then landed on top of the change
+  // with the old prefs, and the next switch saved those (In-app back on).
+  // Here the first read answers, with what the server had, just after the
+  // first save is sent, as it did on DEV.
+  test("S35: the dialog's first read can't undo a switch; the next one keeps it", async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const before = (await (await api.get('/api/notification_preferences')).json()).data
+    let putSent: () => void = () => undefined
+    const firstPut = new Promise<void>((r) => (putSent = r))
+    let firstGet = true
+    let firstPutHeld = true
+    await page.route('**/api/notification_preferences', async (route) => {
+      const method = route.request().method()
+      if (method === 'GET' && firstGet) {
+        firstGet = false
+        const res = await route.fetch()
+        // Until the first save is sent (or 1.5 s: a dialog that waits for it).
+        await Promise.race([firstPut, new Promise((r) => setTimeout(r, 1_500))])
+        return route.fulfill({ response: res })
+      }
+      if (method === 'PUT' && firstPutHeld) {
+        firstPutHeld = false
+        putSent()
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      return route.continue()
+    })
+    try {
+      await openPrefs(page)
+      const row = page.getByTestId('notification-pref-task_shift_end')
+      const putDone = () => page.waitForResponse((r) => r.url().endsWith('/api/notification_preferences') && r.request().method() === 'PUT')
+      let put = putDone()
+      await row.getByLabel(/In-app/).click()
+      expect((await put).ok()).toBe(true)
+      put = putDone()
+      await row.getByLabel(/Push/).click()
+      expect((await put).ok()).toBe(true)
+      const saved = (await (await api.get('/api/notification_preferences')).json()).data
+      expect(saved.task_shift_end).toMatchObject({ in_app: false, push: false })
+      // Nothing else was lost.
+      for (const [event, value] of Object.entries(before as Record<string, object>)) if (event !== 'task_shift_end') expect(saved[event]).toEqual(value)
+    } finally {
+      await api.put('/api/notification_preferences', { data: { prefs: before } })
+    }
+  })
+})
+
 test.describe('as bartender1', () => {
   test.use({ storageState: authFile('bartender1') })
 
