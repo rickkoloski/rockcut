@@ -26,6 +26,9 @@ defmodule RockcutApi.Accounts.User do
     # applies on its tablets, also while someone uses "Sign in as me" there.
     field :color_mode, :string, default: "light"
 
+    # D49 §3.12: "Show planned batches" on the Brewery board, per person.
+    field :show_planned_batches, :boolean, default: true
+
     belongs_to :home_department, RockcutApi.Accounts.Department
 
     field :password, :string, virtual: true, redact: true
@@ -116,6 +119,13 @@ defmodule RockcutApi.Accounts.User do
     # "" would otherwise be cast to the default and saved as "light".
     |> cast(attrs, [:color_mode], empty_values: [])
     |> validate_color_mode()
+  end
+
+  @doc "D49: the person's \"Show planned batches\" (the Brewery board's menu)."
+  def show_planned_batches_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:show_planned_batches], empty_values: [])
+    |> validate_required([:show_planned_batches])
   end
 
   defp validate_color_mode(changeset) do

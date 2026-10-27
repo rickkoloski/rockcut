@@ -46,6 +46,66 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
     })
   end
 
+  test "D49 pencilled: plan pencilled (X1), schedule, pencil in, schedule_first, flag_muted",
+       ctx do
+    b = ctx["brewer1"]
+
+    res =
+      call(b, :post, "/api/production/batches", %{
+        brand_id: ctx.brand.id,
+        template_id: ctx.template.id,
+        brew_on: "2026-11-02",
+        volume_bbl: 20,
+        tank_ids: [nil],
+        pencilled: true
+      })
+
+    assert res.status == 201
+    [batch] = body(res)["data"]["batches"]
+    assert %{"p_number" => "X1", "label" => "Galactic X1", "pencilled" => true} = batch
+    brew = Enum.find(batch["steps"], & &1["first_brew"])
+
+    refused =
+      call(b, :post, "/api/production/steps/#{brew["id"]}/complete", %{preview: true})
+
+    assert refused.status == 422
+
+    assert %{"error" => "schedule_first", "message" => "Schedule this batch first."} =
+             body(refused)
+
+    scheduled = call(b, :post, "/api/production/batches/#{batch["id"]}/schedule", %{})
+    assert scheduled.status == 200
+    assert [%{"p_number" => "P1", "pencilled" => false}] = body(scheduled)["data"]["batches"]
+    assert body(scheduled)["undo_token"]
+
+    pencilled = call(b, :post, "/api/production/batches/#{batch["id"]}/pencil", %{})
+    assert [%{"p_number" => "X1", "pencilled" => true}] = body(pencilled)["data"]["batches"]
+
+    # Its overlap with a scheduled batch in FV3: the muted one can't be signed off.
+    call(b, :patch, "/api/production/batches/#{batch["id"]}/vessels/0", %{tank_id: ctx.tank.id})
+    plan(b, ctx, "2026-11-05")
+
+    flags =
+      body(call(b, :get, "/api/production/schedule?from=2026-10-26&to=2026-12-06"))["data"][
+        "flags"
+      ]
+
+    muted = Enum.find(flags, & &1["muted"])
+    assert muted["kind"] == "tank_overlap"
+
+    res =
+      call(b, :post, "/api/production/flags/signoff", %{
+        key: muted["key"],
+        signature: muted["signature"]
+      })
+
+    assert res.status == 422
+    assert body(res)["error"] == "flag_muted"
+
+    assert call(ctx["bartender1"], :post, "/api/production/batches/#{batch["id"]}/schedule", %{}).status ==
+             403
+  end
+
   test "plan a batch, read the schedule, move a step with a preview, check off brew day", ctx do
     b = ctx["brewer1"]
     planned = plan(b, ctx)

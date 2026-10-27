@@ -37,7 +37,8 @@ npx playwright test tests/smoke/roles.spec.ts
 |---|---|---|
 | `setup` | `auth.setup.ts` | Mints persona tokens; every other project depends on it. |
 | `chromium` | every spec except Replace | Parallel. |
-| `brewery-board` | `regression/brewery/task-board-*.spec.ts` (D38) | One worker, beside `chromium`. "Move all to today" moves every open past task on the one shared board, so these specs mustn't overlap. Drag specs use a tall viewport so no drag has to scroll. |
+| `production` | `regression/production/*.spec.ts` (D46–D49) | One worker, beside `chromium`. Tanks, step types and templates are shared lists, and a reorder names every active row. |
+| `brewery-board` | `task-board-*.spec.ts` (D38–D43) | One worker, beside `chromium`, **after `production`** (D49: the schedule's steps are tasks on the Brewery board, so a production spec's batches would change the board under a board spec). "Move all to today" moves every open past task on the one shared board, so these specs mustn't overlap. Drag specs use a tall viewport so no drag has to scroll. Their clean-up leaves linked tasks alone; those go with their batches. If a `production` test fails, Playwright doesn't run this project: rerun it with `--no-deps`. |
 | `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
 | `pwa-update` | `pwa-update/*.spec.ts` (D45 S170–S177, S189) | **Only with `PWA_UPDATE=1`**, so not in the default run. One worker. Builds the app twice and serves it with `vite preview` on :4173. See below. |
 
@@ -49,6 +50,7 @@ the suite:
 ```bash
 npx playwright test tests/regression/taproom --project=chromium   # the folder, without Replace
 npx playwright test --project=board-replace --no-deps              # Replace only (auth files must exist)
+npx playwright test --project=brewery-board --no-deps              # the board specs without production first
 ```
 
 Never run `beer-board-replace.spec.ts` alongside other specs: anything they

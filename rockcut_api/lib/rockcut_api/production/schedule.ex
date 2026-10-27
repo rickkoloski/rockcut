@@ -6,7 +6,8 @@ defmodule RockcutApi.Production.Schedule do
   whose steps reach into the range (with vessels, steps and links), the
   standalone CIPs in it, the Brewery members (assignee pickers), the
   P-numbers and the next batch number, each tank's status line and the
-  flags, and the tanks' clean / dirty marks (D48).
+  flags, and the tanks' clean / dirty marks (D48), and the done Sanitize
+  steps that found their tank dirty (D49 §3.12a).
 
   Everything is loaded in a fixed number of queries, whatever the range.
   `batches/1` loads given batches the same way, for write responses.
@@ -111,6 +112,7 @@ defmodule RockcutApi.Production.Schedule do
              Signoffs.list()
            ),
          marks: marks,
+         sanitize_on_dirty: sanitize_on_dirty(tanks, parts, cips, marks),
          p_numbers: pnums,
          next_batch_number: Batches.next_batch_number(),
          brewers: brewers()
@@ -134,6 +136,26 @@ defmodule RockcutApi.Production.Schedule do
         Map.get(marks_by_tank, t.id, [])
       )
     end)
+  end
+
+  # D49 §3.12a: the ids of done Sanitize steps done on a dirty tank ("The
+  # tank was dirty: run a CIP first."), from each tank's timeline.
+  defp sanitize_on_dirty(tanks, parts, cips, marks) do
+    parts_by_tank = Enum.group_by(parts, & &1.tank_id)
+    cips_by_tank = Enum.group_by(cips, & &1.tank_id)
+    marks_by_tank = Enum.group_by(marks, & &1.tank_id)
+
+    for t <- tanks,
+        step <-
+          Map.get(parts_by_tank, t.id, [])
+          |> Parts.condition_events(
+            Map.get(cips_by_tank, t.id, []),
+            Map.get(marks_by_tank, t.id, [])
+          )
+          |> Parts.condition()
+          |> elem(1),
+        uniq: true,
+        do: step.id
   end
 
   @doc """

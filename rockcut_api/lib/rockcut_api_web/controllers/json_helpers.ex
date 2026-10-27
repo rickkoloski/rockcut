@@ -58,7 +58,8 @@ defmodule RockcutApiWeb.JSONHelpers do
         staff_codes: false,
         beer_board_manage: false,
         task_boards: [],
-        color_mode: "light"
+        color_mode: "light",
+        show_planned_batches: true
       },
       flags
     )
@@ -220,8 +221,32 @@ defmodule RockcutApiWeb.JSONHelpers do
       series_date: t.series_date,
       series_exception: t.series_exception,
       series_last: t.series_last,
+      production: task_production(t),
       inserted_at: t.inserted_at,
       updated_at: t.updated_at
+    }
+  end
+
+  # D49 §3.12: a task made from a production step (nil for the board's own):
+  # the step, its batch (nil for a standalone CIP) and whether that batch is
+  # planned (the Planned batch pill and "Show planned batches"), and what the
+  # board's prompts name (`TaskLink.describe/1`; lead decisions 8.2).
+  defp task_production(%{production_step_id: nil}), do: nil
+
+  defp task_production(t) do
+    batch =
+      case t.production_step do
+        %{batch: %RockcutApi.Brewing.Batch{} = b} -> b
+        _ -> nil
+      end
+
+    %{
+      step_id: t.production_step_id,
+      batch_id: batch && batch.id,
+      batch_status: batch && batch.status,
+      planned: batch != nil and batch.status == "planned",
+      step_name: t.step_name,
+      batch_label: t.batch_label
     }
   end
 
@@ -374,6 +399,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       detail: s.detail,
       temperature: s.temperature,
       split_method: s.split_method,
+      cip_method: if(type && type.behavior == "cip", do: s.cip_method || "sanitize_full"),
       package_partial: s.package_partial,
       notes: s.notes,
       on_task_list: s.on_task_list,
@@ -407,6 +433,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       statuses: sched.statuses,
       flags: sched.flags,
       condition_marks: Enum.map(sched.marks, &production_condition_mark/1),
+      sanitize_on_dirty: sched.sanitize_on_dirty,
       next_batch_number: sched.next_batch_number,
       brewers: sched.brewers
     }
@@ -433,9 +460,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       brand_id: b.brand_id,
       brand_name: b.brand && b.brand.name,
       batch_number: b.batch_number,
-      p_number: entry.p_number && "P#{entry.p_number}",
+      p_number: entry.p_number,
       label: entry.label,
       status: b.status,
+      pencilled: b.pencilled,
       volume_bbl: decimal_number(b.volume_bbl),
       template_id: b.template_id,
       template_name: b.template && b.template.name,
@@ -484,6 +512,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       detail: s.detail,
       temperature: s.temperature,
       split_method: s.split_method,
+      cip_method: if(type && type.behavior == "cip", do: s.cip_method || "sanitize_full"),
       package_partial: s.package_partial,
       notes: s.notes,
       on_task_list: s.on_task_list,

@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { addDays, apiAs, cleanupTasks, createTask, denverToday, getBoard, tempTag } from '../brewery/taskBoardHelpers'
+import { seedState } from '../production/schedule'
+import { addDays, apiAs, cleanupTasks, createTask, denverToday, getBoard, moveTask, tempTag } from '../brewery/taskBoardHelpers'
 
 // D40 (spec §3.8): the Brewery Dashboard's Today's tasks card (S50) and the
 // "Unfinished tasks before shift end" notification toggle (S35 UI, S37).
@@ -10,8 +11,14 @@ import { addDays, apiAs, cleanupTasks, createTask, denverToday, getBoard, tempTa
 test.use({ viewport: { width: 1600, height: 1100 } })
 
 const made: number[] = []
+// D49: a Brewery task can be a production step; no test here may change the seed's schedule.
+let seed: string[] = []
+test.beforeEach(async () => {
+  seed = await seedState()
+})
 test.afterEach(async () => {
   await cleanupTasks(made.splice(0))
+  expect(await seedState(), 'this test changed the seed schedule').toEqual(seed)
 })
 
 test.describe('as brewer1', () => {
@@ -22,6 +29,10 @@ test.describe('as brewer1', () => {
     const today = denverToday()
     for (let i = 1; i <= 7; i++) made.push((await createTask(api, { title: tempTag(`S50 task ${i}`), due_on: today })).id)
     made.push((await createTask(api, { title: tempTag('S50 earlier'), due_on: addDays(today, -2) })).id)
+    // The task it ticks is its own, first on today: the first open one may be
+    // the seed's (D49: a production step, which ticking would check off).
+    const top = (await getBoard(api, today, today)).days[0].cards[0]
+    if (top.id !== made[0]) await moveTask(api, made[0], today, top.id)
 
     const board = await getBoard(api, today, today)
     const day = board.days[0]
@@ -38,8 +49,9 @@ test.describe('as brewer1', () => {
     await expect(page.getByTestId('todays-tasks-more')).toHaveText(`+${open.length - 5} more`)
     await expect(page.getByTestId('todays-tasks-unfinished')).toHaveText(`${board.unfinished.length} unfinished from earlier days`)
 
-    // Ticking the first listed task there completes it on the board.
+    // Ticking the first listed task (this spec's) completes it on the board.
     const first = open[0]
+    expect(first.id).toBe(made[0])
     const done = page.waitForResponse((r) => r.url().includes(`/tasks/${first.id}/complete`) && r.ok())
     await page.getByRole('checkbox', { name: `Mark "${first.title}" done` }).click()
     await done
@@ -77,6 +89,57 @@ test.describe('as brewer1', () => {
       await expect(page.getByTestId('notification-pref-task_shift_end').getByLabel(/In-app/)).not.toBeChecked()
       const saved = (await (await api.get('/api/notification_preferences')).json()).data
       expect(saved.task_shift_end).toMatchObject({ in_app: false, push: false })
+    } finally {
+      await api.put('/api/notification_preferences', { data: { prefs: before } })
+    }
+  })
+})
+
+test.describe('as brewer1, with the first read answering late (DEV latency)', () => {
+  test.use({ storageState: authFile('brewer1') })
+
+  // D49 DEV run 1: the PUT sends the whole map. A switch clicked before the
+  // dialog's first read answered: the read then landed on top of the change
+  // with the old prefs, and the next switch saved those (In-app back on).
+  // Here the first read answers, with what the server had, just after the
+  // first save is sent, as it did on DEV.
+  test("S35: the dialog's first read can't undo a switch; the next one keeps it", async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const before = (await (await api.get('/api/notification_preferences')).json()).data
+    let putSent: () => void = () => undefined
+    const firstPut = new Promise<void>((r) => (putSent = r))
+    let firstGet = true
+    let firstPutHeld = true
+    await page.route('**/api/notification_preferences', async (route) => {
+      const method = route.request().method()
+      if (method === 'GET' && firstGet) {
+        firstGet = false
+        const res = await route.fetch()
+        // Until the first save is sent (or 1.5 s: a dialog that waits for it).
+        await Promise.race([firstPut, new Promise((r) => setTimeout(r, 1_500))])
+        return route.fulfill({ response: res })
+      }
+      if (method === 'PUT' && firstPutHeld) {
+        firstPutHeld = false
+        putSent()
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      return route.continue()
+    })
+    try {
+      await openPrefs(page)
+      const row = page.getByTestId('notification-pref-task_shift_end')
+      const putDone = () => page.waitForResponse((r) => r.url().endsWith('/api/notification_preferences') && r.request().method() === 'PUT')
+      let put = putDone()
+      await row.getByLabel(/In-app/).click()
+      expect((await put).ok()).toBe(true)
+      put = putDone()
+      await row.getByLabel(/Push/).click()
+      expect((await put).ok()).toBe(true)
+      const saved = (await (await api.get('/api/notification_preferences')).json()).data
+      expect(saved.task_shift_end).toMatchObject({ in_app: false, push: false })
+      // Nothing else was lost.
+      for (const [event, value] of Object.entries(before as Record<string, object>)) if (event !== 'task_shift_end') expect(saved[event]).toEqual(value)
     } finally {
       await api.put('/api/notification_preferences', { data: { prefs: before } })
     }

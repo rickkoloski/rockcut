@@ -56,6 +56,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     split_part: "That's a part of a split. Undo the split to change it that way.",
     split_fill: "The Split fills the parts. Use Undo split to take it out.",
     split_method_invalid: "Pick Transfer or Filter.",
+    cip_method_invalid: "Pick CIP & Sanitize, CIP - no sani or Sanitize.",
     parts_required: "Split into two parts or more.",
     one_stays: "Only one part can stay in the tank.",
     same_tank: "Two parts can’t go into the same tank.",
@@ -70,6 +71,11 @@ defmodule RockcutApiWeb.ProductionErrors do
     split_before_brew: "The split has to be after brew day.",
     # D48 DEV QA fix cycle 2.
     before_split: "A step can't come before the split.",
+    # D49 §3.12b: pencilled batches.
+    schedule_first: "Schedule this batch first.",
+    flag_muted: "This flag is on a pencilled batch. Schedule the batch to sign it off.",
+    # D49 decision 6.1 (QA 8).
+    marker_task_list: "A phase marker can't go on the Brewery task list.",
     # D48 DEV QA Z3: the step PATCH doesn't change dates.
     date_not_here: "To change a step's date, move it (or check it off on the day it was done)."
   }

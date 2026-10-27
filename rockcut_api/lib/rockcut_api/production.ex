@@ -59,10 +59,13 @@ defmodule RockcutApi.Production do
   end
 
   def update_tank(%Tank{} = tank, attrs) do
-    tank
-    |> Tank.changeset(attrs)
-    |> unique_name(Tank, "tank")
-    |> Repo.update()
+    # D49: a rename retitles the tank's Brewery board tasks.
+    RockcutApi.Production.TaskLink.with_sync(fn ->
+      tank
+      |> Tank.changeset(attrs)
+      |> unique_name(Tank, "tank")
+      |> Repo.update()
+    end)
     |> preload_ok(:outages, force: true)
   end
 
@@ -238,7 +241,10 @@ defmodule RockcutApi.Production do
   end
 
   def update_step_type(%StepType{} = type, attrs) do
-    type |> step_type_changeset(attrs) |> unique_name(StepType, "step type") |> Repo.update()
+    # D49: a rename retitles its steps' Brewery board tasks.
+    RockcutApi.Production.TaskLink.with_sync(fn ->
+      type |> step_type_changeset(attrs) |> unique_name(StepType, "step type") |> Repo.update()
+    end)
   end
 
   def reorder_step_types(ids), do: reorder(StepType, ids)
@@ -348,6 +354,7 @@ defmodule RockcutApi.Production do
               detail: s.detail,
               temperature: s.temperature,
               split_method: s.split_method,
+              cip_method: s.cip_method,
               package_partial: s.package_partial,
               notes: s.notes,
               on_task_list: s.on_task_list,
@@ -778,7 +785,7 @@ defmodule RockcutApi.Production do
 
   def step_name(%TemplateStep{step_type: %StepType{} = type} = s) do
     [
-      type.name,
+      if(type.behavior == "cip", do: cip_name(type.name, s.cip_method), else: type.name),
       if(type.behavior == "set_temp" and s.temperature, do: "#{s.temperature}°"),
       if(type.behavior == "split", do: split_method_label(s.split_method)),
       if(type.behavior == "package" and s.package_partial, do: "Partial"),
@@ -787,6 +794,14 @@ defmodule RockcutApi.Production do
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" - ")
   end
+
+  @doc ~S"""
+  A CIP's name by its variant (D49 §3.12a): "CIP - no sani", "Sanitize", or
+  the type's own name ("CIP & Sanitize").
+  """
+  def cip_name(_type_name, "no_sani"), do: "CIP - no sani"
+  def cip_name(_type_name, "sanitize"), do: "Sanitize"
+  def cip_name(type_name, _), do: type_name
 
   @doc ~S|"Transfer" / "Filter": how a Split's parts leave (D47).|
   def split_method_label("filter"), do: "Filter"
@@ -834,13 +849,17 @@ defmodule RockcutApi.Production do
   defp entry_fields!(type, attrs, step \\ nil) do
     base = step || %TemplateStep{}
 
+    # D49 decision 6.1 (QA 8): a phase marker never goes on the task list.
+    if is_nil(type) and truthy?(attrs["on_task_list"]), do: Repo.rollback(:marker_task_list)
+
     defaults =
       if step,
         do: %{},
         else: %{
           "phase_id" => type && type.starts_phase_id,
           "on_task_list" => if(type, do: type.on_task_list, else: false),
-          "split_method" => if(behavior_of(type) == "split", do: "transfer")
+          "split_method" => if(behavior_of(type) == "split", do: "transfer"),
+          "cip_method" => if(behavior_of(type) == "cip", do: "sanitize_full")
         }
 
     changeset =
@@ -876,6 +895,12 @@ defmodule RockcutApi.Production do
           ),
         else: Ecto.Changeset.put_change(changeset, :split_method, nil)
 
+    # Only a CIP has a variant (D49 §3.12a).
+    changeset =
+      if behavior_of(type) == "cip",
+        do: changeset,
+        else: Ecto.Changeset.put_change(changeset, :cip_method, nil)
+
     changeset =
       if behavior_of(type) == "package",
         do: Ecto.Changeset.validate_required(changeset, [:package_partial]),
@@ -890,6 +915,7 @@ defmodule RockcutApi.Production do
           :detail,
           :temperature,
           :split_method,
+          :cip_method,
           :package_partial,
           :notes,
           :on_task_list

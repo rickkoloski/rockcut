@@ -59,7 +59,8 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc """
   POST /api/production/batches: `{ brand_id, template_id, brew_on,
-  volume_bbl, brew_two_days?, tank_ids? }` (one tank id or null per vessel).
+  volume_bbl, brew_two_days?, tank_ids?, pencilled? }` (one tank id or null
+  per vessel; D49: `pencilled` pencils it in).
   """
   def create_batch(conn, params) do
     with :ok <- allow(conn, :write),
@@ -247,6 +248,33 @@ defmodule RockcutApiWeb.ProductionScheduleController do
         data: %{deleted_id: batch.id, batches: [], renumbered: renumbered},
         undo_token: token
       })
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  @doc """
+  POST /api/production/batches/:id/schedule and /pencil (D49 §3.12b): a
+  pencilled batch scheduled, or a scheduled planned one pencilled in (the
+  whole split; `step_done` once a step is done).
+  """
+  def schedule_batch(conn, %{"id" => id}), do: pencil_write(conn, id, &Batches.schedule/1)
+  def pencil_batch(conn, %{"id" => id}), do: pencil_write(conn, id, &Batches.pencil/1)
+
+  defp pencil_write(conn, id, fun) do
+    with :ok <- allow(conn, :write),
+         {:ok, batch} <- fetch_batch(id),
+         {:ok, {{_, renumbered}, token}} <-
+           Undo.track(user(conn), %{batches: [batch.id]}, fn -> fun.(batch) end) do
+      root = batch.split_parent_id || batch.id
+
+      ids = [
+        root
+        | Repo.all(
+            from(b in RockcutApi.Brewing.Batch, where: b.split_parent_id == ^root, select: b.id)
+          )
+      ]
+
+      render_write(conn, ids, %{renumbered: renumbered}, token)
     end
     |> ProductionErrors.handle(conn)
   end
@@ -465,18 +493,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
          do: {:ok, result, token}
   end
 
-  # The rows a step write may touch: the steps' batches, or the standalone steps.
-  defp step_scope(ids) when is_list(ids) do
-    ids = ids |> Enum.map(&Batches.to_int/1) |> Enum.reject(&is_nil/1)
-    rows = Repo.all(from(s in Step, where: s.id in ^ids, select: {s.id, s.batch_id}))
-
-    %{
-      batches: for({_, b} <- rows, b != nil, uniq: true, do: b),
-      steps: for({id, nil} <- rows, do: id)
-    }
-  end
-
-  defp step_scope(_), do: %{}
+  defp step_scope(ids), do: Undo.step_scope(ids)
 
   defp existing_batches(ids),
     do: Repo.all(from(b in RockcutApi.Brewing.Batch, where: b.id in ^ids, select: b.id))

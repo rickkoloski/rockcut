@@ -36,6 +36,9 @@ defmodule RockcutApi.Brewing.Batch do
     # X2), and on the parent its links into and out of the moved steps (X3).
     field :split_stays, :boolean, default: false
     field :split_links, :map
+    # D49 §3.12b: pencilled in, not scheduled yet (only while planned; a
+    # split's parts carry their parent's value).
+    field :pencilled, :boolean, default: false
 
     belongs_to :brand, RockcutApi.Brewing.Brand
     belongs_to :template, RockcutApi.Production.Template

@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { FormControlLabel, MenuItem, Switch, TextField, Typography } from '@mui/material'
+import { FormControlLabel, MenuItem, Radio, RadioGroup, Switch, TextField, Typography } from '@mui/material'
 import FormDialog from '../../../components/FormDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { useApiQuery } from '../../../hooks/useApiQuery'
@@ -22,7 +22,8 @@ interface Props {
 /**
  * D47 §3.5 Plan batch: brand, template, brew day, volume, "Brew over two
  * days", the first tank and a "Transfer to" tank for each later one (any may
- * be Unassigned). The new batch gets a P-number.
+ * be Unassigned). The new batch gets a P-number. D49 §3.12b: or Pencil in
+ * (an X-number; not committed yet).
  */
 export default function PlanBatchDialog({ tanks, initialTankId = null, initialDay, onClose }: Props) {
   const flows = useFlows()
@@ -34,6 +35,7 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
   const [brewOn, setBrewOn] = useState(initialDay)
   const [volume, setVolume] = useState('')
   const [twoDays, setTwoDays] = useState(false)
+  const [pencilled, setPencilled] = useState(false)
   const [tankIds, setTankIds] = useState<(number | null)[]>([initialTankId])
   const [errors, setErrors] = useState<Record<string, string>>({})
   // A refusal clears when anything picked changes (DEV QA R2).
@@ -70,8 +72,9 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
           volume_bbl: Number(volume),
           brew_two_days: twoDays,
           tank_ids: Array.from({ length: vessels }, (_, k) => tankIds[k] ?? null),
+          pencilled,
         }),
-      (d) => `${d.batches[0]?.label ?? 'The batch'} planned.`,
+      (d) => `${d.batches[0]?.label ?? 'The batch'} ${pencilled ? 'pencilled in' : 'planned'}.`,
     )
     saving.current = false
     setBusy(false)
@@ -85,6 +88,15 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
 
   return (
     <FormDialog open onClose={onClose} title="Plan batch" onSubmit={save} loading={busy} error={error} testId="plan-dialog" cancelLabel="Cancel">
+      <RadioGroup row value={pencilled ? 'pencil' : 'schedule'} onChange={(e) => setPencilled(e.target.value === 'pencil')} aria-label="Schedule or pencil in">
+        <FormControlLabel value="schedule" control={<Radio slotProps={{ input: { 'data-testid': 'plan-schedule' } as object }} />} label="Schedule" />
+        <FormControlLabel value="pencil" control={<Radio slotProps={{ input: { 'data-testid': 'plan-pencil' } as object }} />} label="Pencil in" />
+      </RadioGroup>
+      {pencilled && (
+        <Typography variant="body2" color="text.secondary" sx={{ mt: -1 }}>
+          Shows where it fits without giving anyone tasks. It gets an X-number until it’s scheduled.
+        </Typography>
+      )}
       <TextField
         select
         label="Brand"

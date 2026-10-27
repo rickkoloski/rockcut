@@ -42,7 +42,7 @@ defmodule RockcutApi.Production.Splits do
   }
 
   @methods ~w(transfer filter)
-  @copied ~w(step_type_id name phase_id detail temperature split_method package_partial notes
+  @copied ~w(step_type_id name phase_id detail temperature split_method cip_method package_partial notes
              on_task_list position due_on assignee_id added template_step_id ramp_group)a
 
   @doc """
@@ -125,7 +125,8 @@ defmodule RockcutApi.Production.Splits do
               notes: batch.notes,
               split_parent_id: batch.id,
               part_number: i,
-              split_stays: p.stays
+              split_stays: p.stays,
+              pencilled: batch.pencilled
             })
 
           for j <- 0..(last - k) do

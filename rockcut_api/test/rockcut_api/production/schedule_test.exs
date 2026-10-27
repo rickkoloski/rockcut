@@ -219,10 +219,10 @@ defmodule RockcutApi.Production.ScheduleTest do
       {late, []} = plan!(brand!("Enos"), t, ~D[2026-11-20])
       {later, []} = plan!(brand!("Fest"), t, ~D[2026-11-25])
       {same_day, []} = plan!(brand!("Altruism"), t, ~D[2026-11-25])
-      assert Batches.p_numbers() == %{late.id => 1, later.id => 2, same_day.id => 3}
+      assert Batches.p_numbers() == %{late.id => "P1", later.id => "P2", same_day.id => "P3"}
 
       {galactic, renumbered} = plan!(brand!("Galactic"), t, ~D[2026-10-22])
-      assert Batches.p_numbers()[galactic.id] == 1
+      assert Batches.p_numbers()[galactic.id] == "P1"
 
       assert renumbered == [
                %{batch_id: late.id, brand: "Enos", from: "P1", to: "P2"},
@@ -323,7 +323,7 @@ defmodule RockcutApi.Production.ScheduleTest do
                Steps.uncomplete(brew.id)
 
       assert %Batch{status: "planned", batch_number: nil} = reload(altruism)
-      assert Batches.p_numbers()[altruism.id] == 1
+      assert Batches.p_numbers()[altruism.id] == "P1"
     end
 
     test "a brewed batch's number changes with the same rules; a planned one's can't (P40)" do
@@ -527,7 +527,7 @@ defmodule RockcutApi.Production.ScheduleTest do
       {late, _} = plan!(brand!("Galactic"), t, ~D[2026-11-26])
       {a, _} = plan!(brand!("Altruism"), t, ~D[2026-10-25])
       {e, _} = plan!(brand!("Enos"), t, ~D[2026-11-01])
-      assert Batches.p_numbers() == %{a.id => 1, e.id => 2, late.id => 3}
+      assert Batches.p_numbers() == %{a.id => "P1", e.id => "P2", late.id => "P3"}
       brew = named(late, "Brew day")
       attrs = %{"done_on" => "2026-09-28", "batch_number" => "77", "answer" => "move_all"}
 
@@ -539,7 +539,7 @@ defmodule RockcutApi.Production.ScheduleTest do
       # Nobody else moves: the brewed batch just leaves the list.
       assert previewed["move_all"] == written
       assert written == []
-      assert Batches.p_numbers() == %{a.id => 1, e.id => 2}
+      assert Batches.p_numbers() == %{a.id => "P1", e.id => "P2"}
     end
 
     test "and when it does renumber, both say the same", %{brewer: brewer} do

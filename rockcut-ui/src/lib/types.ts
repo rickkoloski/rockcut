@@ -283,6 +283,8 @@ export interface Me {
   task_boards?: TaskBoardEntry[]
   // D43: the theme that applies here (a shared tablet's own, also during "Sign in as me").
   color_mode?: ColorMode
+  // D49: the Brewery board's "Show planned batches" (per person).
+  show_planned_batches?: boolean
 }
 
 /**
@@ -642,8 +644,21 @@ export interface TaskCardData {
   series_exception: boolean
   /** D39 G2: the series has ended here and nothing open comes after it (no Stop repeating). */
   series_last: boolean
+  /** D49 §3.12: made from a production step (null for the board's own tasks). */
+  production: TaskProduction | null
   inserted_at: string
   updated_at: string
+}
+
+/** D49: a linked task's step and batch (`batch_id` null for a standalone CIP). */
+export interface TaskProduction {
+  step_id: number
+  batch_id: number | null
+  batch_status: string | null
+  planned: boolean
+  /** What the prompts name: "FDH", "Galactic P1" (null for a standalone CIP). */
+  step_name: string
+  batch_label: string | null
 }
 
 /** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */

@@ -1,7 +1,8 @@
 defmodule RockcutApi.Production.ConditionMarks do
   @moduledoc """
   D48 §3.8, "Marking a tank clean or dirty": a brewer records that an empty
-  tank is clean or dirty from a day (`ConditionMark`). Only while no beer is
+  tank is clean or dirty from a day (`ConditionMark`); D49 §3.12a adds clean
+  not sanitized. Only while no beer is
   in it (`:tank_in_use`), on a day from its last emptying through today
   (`:date_invalid`). Tank status and flags take the latest of its done
   exits, done CIPs and marks (`Parts.latest_condition/1`).
@@ -25,7 +26,7 @@ defmodule RockcutApi.Production.ConditionMarks do
   end
 
   @doc """
-  Mark `tank` `state` (`clean` / `dirty`) on `marked_on` (default today)
+  Mark `tank` `state` (`clean` / `cleaned` / `dirty`) on `marked_on` (default today)
   with an optional `note` (≤ 500), as `actor`.
   """
   def create(%Tank{} = tank, attrs, %User{} = actor, today \\ Tasks.today()) do

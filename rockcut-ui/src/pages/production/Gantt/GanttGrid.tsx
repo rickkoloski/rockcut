@@ -35,6 +35,8 @@ import {
 import {
   CIP_COLOR,
   headlineOutage,
+  MARK_STATES,
+  markLabel,
   phaseFill,
   shortPeriod,
   type ConditionMark,
@@ -434,7 +436,7 @@ export default function GanttGrid(props: Props) {
         variant="caption"
         component="div"
         noWrap
-        sx={{ color: status?.alert ? 'error.main' : status?.state === 'dirty' ? 'warning.main' : status?.state === 'in_use' ? 'text.primary' : 'text.secondary', fontWeight: status?.alert ? 600 : 400 }}
+        sx={{ color: status?.alert ? 'error.main' : status?.state === 'dirty' || status?.state === 'cleaned' ? 'warning.main' : status?.state === 'in_use' ? 'text.primary' : 'text.secondary', fontWeight: status?.alert ? 600 : 400 }}
         data-testid={`gantt-status-${tank.id}`}
         title={status?.line}
       >
@@ -556,8 +558,8 @@ export default function GanttGrid(props: Props) {
     (props.marks ?? [])
       .filter((m) => row.tank && m.tank_id === row.tank.id && m.marked_on >= from && m.marked_on <= to)
       .map((m) => {
-        const tip = `Marked ${m.state} by ${m.user_name ?? 'someone'} · ${dayLabel(m.marked_on)}${m.note ? ` · “${m.note}”` : ''}`
-        const Icon = m.state === 'clean' ? CleaningServices : WarningAmber
+        const tip = `Marked ${markLabel(m.state).toLowerCase()} by ${m.user_name ?? 'someone'} · ${dayLabel(m.marked_on)}${m.note ? ` · “${m.note}”` : ''}`
+        const Icon = m.state === 'dirty' ? WarningAmber : CleaningServices
         return (
           <Tooltip key={`mark-${m.id}`} title={hover(tip)}>
             <Box
@@ -577,7 +579,8 @@ export default function GanttGrid(props: Props) {
                 justifyContent: 'center',
                 borderRadius: '50%',
                 bgcolor: 'background.paper',
-                color: m.state === 'clean' ? 'success.main' : 'warning.main',
+                // D49: the Mark… list's colors (green, amber, red).
+                color: MARK_STATES.find((s) => s.key === m.state)!.color,
                 boxShadow: `0 0 0 1px ${theme.palette.divider}`,
                 '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 1 },
               }}
@@ -598,13 +601,15 @@ export default function GanttGrid(props: Props) {
     const myFlags = partFlags(part, flags)
     const badge = badgeText(myFlags)
     const cut = part.start < from
-    const label = `${cut ? '‹ ' : ''}${partLabel(part)}`
+    // D49 §3.12b: a pencilled batch is drawn fainter and hatched, labeled Pencilled.
+    const pencilled = part.planned && part.batch.pencilled
+    const label = `${cut ? '‹ ' : ''}${partLabel(part)}${pencilled ? ' · Pencilled' : ''}`
     const textColor = mode === 'dark' ? '#F1F4EE' : '#172014'
     const showI = showInitials(dayPx)
     return (
       <Box key={part.key} sx={{ position: 'absolute', left: 0, top, width: '100%', height: TRACK_H, pointerEvents: 'none' }}>
         {segs.length > 0 && (
-          <Tooltip title={hover(`${part.batch.label}${part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`)}>
+          <Tooltip title={hover(`${part.batch.label}${pencilled ? ' · pencilled in' : part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`)}>
             <Box
               {...activate(props.onBar ? () => props.onBar!(part) : undefined, drag)}
               {...bindDrag(`bar:${part.key}`, (d) => {
@@ -613,9 +618,10 @@ export default function GanttGrid(props: Props) {
                 if (target && rowKey(target.tank) !== rowKey(row.tank)) props.onMoveBar?.(part, target.tank?.id ?? null)
                 else if (snap(d.dx)) props.onShiftBar?.(part, snap(d.dx))
               })}
-              aria-label={`${partLabel(part)}${part.planned ? ', planned' : ''}`}
+              aria-label={`${partLabel(part)}${pencilled ? ', pencilled in' : part.planned ? ', planned' : ''}`}
               data-testid={`gantt-bar-${part.batch.id}-${part.vessel}`}
               data-planned={part.planned || undefined}
+              data-pencilled={pencilled || undefined}
               sx={{
                 position: 'absolute',
                 top: BAR_TOP,
@@ -632,7 +638,7 @@ export default function GanttGrid(props: Props) {
                 boxShadow: part.planned ? `0 0 0 1.5px ${theme.palette.text.secondary} inset` : `0 0 0 1px ${alpha('#000', 0.08)} inset`,
                 outline: part.planned ? `1.5px dashed ${theme.palette.text.secondary}` : 'none',
                 outlineOffset: -1.5,
-                opacity: part.planned ? 0.62 : 1,
+                opacity: pencilled ? 0.45 : part.planned ? 0.62 : 1,
                 '&:focus-visible': { outline: `2px solid ${theme.palette.primary.main}`, outlineOffset: 1, opacity: 1 },
                 ...(drag?.active?.key === `bar:${part.key}` ? { boxShadow: '0 4px 14px rgba(0,0,0,.25)' } : {}),
               }}
@@ -640,6 +646,12 @@ export default function GanttGrid(props: Props) {
               {segs.map((s) => (
                 <Box key={s.from} sx={{ position: 'absolute', top: 0, bottom: 0, left: s.from * dayPx - left, width: (s.to - s.from + 1) * dayPx, background: fillColor(s.fill) }} />
               ))}
+              {pencilled && (
+                <Box
+                  aria-hidden
+                  sx={{ position: 'absolute', inset: 0, background: `repeating-linear-gradient(45deg, ${alpha(theme.palette.text.primary, 0.22)} 0 2px, transparent 2px 7px)` }}
+                />
+              )}
               <Typography
                 component="span"
                 sx={{ position: 'relative', zIndex: 1, px: 1, fontWeight: 600, fontSize: 12, lineHeight: `${BAR_H}px`, whiteSpace: 'nowrap', color: textColor, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis' }}
@@ -740,7 +752,7 @@ export default function GanttGrid(props: Props) {
   const cipBlock = (row: Row, cip: SchedStep) => {
     if (cip.due_on < from || cip.due_on > to) return null
     const state = dotState(cip, today)
-    const tip = ['CIP & Sanitize', dayLabel(cip.due_on), STATE_WORDS[state], cip.assignee?.name, cip.notes].filter(Boolean).join(' · ')
+    const tip = [cip.name, dayLabel(cip.due_on), STATE_WORDS[state], cip.assignee?.name, cip.notes].filter(Boolean).join(' · ')
     return (
       <Tooltip key={`cip-${cip.id}`} title={hover(tip)}>
         <Box

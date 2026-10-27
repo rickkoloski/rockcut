@@ -232,7 +232,9 @@ function BrandTemplate({ batch, locked, run }: { batch: SchedBatch; locked: bool
  * per vessel, volume, its flags with sign-off, every step in date order,
  * and Delete planned batch. D48: Add step…, Add a ramp…, Add transfer /
  * filter…, Remove on each unfinished step, "Added" chips, and a planned
- * batch's brand and template.
+ * batch's brand and template. D49 §3.12b: Schedule this batch on a
+ * pencilled one; Pencil in on a scheduled planned one while nothing in its
+ * split is done.
  */
 export default function BatchDialog({ batch, tanks, flags, today, types, phases, brewers, parts: splitParts = [], batches = [], focusFlags, onOpenStep, onClose }: Props) {
   const flows = useFlows()
@@ -261,6 +263,9 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
     split ? tanks.filter((t) => t.id === current || !treeRefusal(batches, batch, vessel, t.id, tanks)) : tanks
   const locked = (vessel: number) => splitLocked(batches, batch, vessel)
   const parentSplit = !part && splitParts.length > 0
+  // The whole split is pencilled or scheduled together.
+  const tree = batches.filter((b) => b.id === parentId || b.split_parent_id === parentId)
+  const anyDone = (tree.length ? tree : [batch, ...splitParts]).some((b) => b.steps.some((s) => s.done_on))
 
   const openAdd = (what: typeof adding) => {
     setError(null)
@@ -284,7 +289,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
       <DialogTitle>
         <span data-testid="batch-dialog-title">{batch.label}</span>
         <Typography variant="body2" color="text.secondary" data-testid="batch-dialog-sub">
-          {[batch.template_name, batch.volume_bbl != null && `${batch.volume_bbl} bbl`, brew && (brew.done_on ? `brewed ${dayLabel(brew.done_on)}` : `brew day ${dayLabel(brew.due_on)}`), planned && 'planned']
+          {[batch.template_name, batch.volume_bbl != null && `${batch.volume_bbl} bbl`, brew && (brew.done_on ? `brewed ${dayLabel(brew.done_on)}` : `brew day ${dayLabel(brew.due_on)}`), planned && (batch.pencilled ? 'pencilled in' : 'planned')]
             .filter(Boolean)
             .join(' · ')}
         </Typography>
@@ -307,7 +312,9 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
             </Typography>
           ) : planned ? (
             <Typography variant="body2" data-testid="batch-dialog-pnumber">
-              {batch.p_number} · the real number is set when brew day is checked off
+              {batch.pencilled
+                ? `${batch.p_number} · pencilled in: it gets a P-number when it’s scheduled`
+                : `${batch.p_number} · the real number is set when brew day is checked off`}
             </Typography>
           ) : (
             <Box sx={{ display: 'flex', gap: 1 }}>
@@ -438,6 +445,23 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
             setDeleting(true)
           }} data-testid="batch-delete">
             Delete planned batch
+          </Button>
+        )}
+        {planned && batch.pencilled && (
+          <Button
+            variant="contained"
+            onClick={() => run(() => flows.write(() => api.post(prodPath('batches', batch.id, 'schedule')), `${batch.label.replace(/ X[\d.]+$/, '')} is scheduled.`))}
+            data-testid="batch-schedule"
+          >
+            Schedule this batch
+          </Button>
+        )}
+        {planned && !batch.pencilled && !anyDone && (
+          <Button
+            onClick={() => run(() => flows.write(() => api.post(prodPath('batches', batch.id, 'pencil')), `${batch.label.replace(/ P[\d.]+$/, '')} is pencilled in.`))}
+            data-testid="batch-pencil"
+          >
+            Pencil in
           </Button>
         )}
         <Button onClick={onClose} data-testid="batch-dialog-close">

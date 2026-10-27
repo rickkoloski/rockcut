@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, Button, ListSubheader, Menu, MenuItem, Paper, Typography, useMediaQuery } from '@mui/material'
 import api from '../../../lib/api'
 import PageHeader from '../../../components/PageHeader'
@@ -37,6 +38,7 @@ import GanttToolbar from './GanttToolbar'
 import PlanBatchDialog from './PlanBatchDialog'
 import StepDialog from './StepDialog'
 import TankPanel from './TankPanel'
+import TaskListPanel from './TaskListPanel'
 import { FlowsProvider } from './flows'
 import { useFlows } from './flowsContext'
 import { useTimelineDrag } from './useTimelineDrag'
@@ -109,7 +111,7 @@ function GanttScreen() {
     writePref(userId, 'mix', [...keys])
   }
 
-  const { data, isLoading, error } = useApiQuery<Schedule>(
+  const { data, isLoading, error, isPlaceholderData } = useApiQuery<Schedule>(
     scheduleKey(range.from, range.to),
     prodPath('schedule'),
     { from: range.from, to: range.to },
@@ -160,6 +162,29 @@ function GanttScreen() {
   const findStep = (id: number): SchedStep | undefined =>
     data?.cips.find((c) => c.id === id) ?? data?.batches.flatMap((b) => b.steps).find((s) => s.id === id)
   const openStep = stepOpen != null ? findStep(stepOpen) : undefined
+  const [taskList, setTaskList] = useState(false)
+
+  // D49 §3.12: `?step=&day=` (the board's and the Task list's Open): show
+  // that day (not saved as the person's range) and open the step's dialog.
+  const [params, setParams] = useSearchParams()
+  const wantStep = Number(params.get('step')) || null
+  const wantDay = params.get('day')
+  const showDay = (day: string) => {
+    if (day < range.from || day > range.to) setRangeState(clampRange(defaultRange(day, zoom)))
+  }
+  useEffect(() => {
+    if (wantDay) showDay(wantDay)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantDay])
+  useEffect(() => {
+    // Not the last range's data while the step's day loads.
+    if (!wantStep || !data || isPlaceholderData) return
+    const inRange = !wantDay || (wantDay >= range.from && wantDay <= range.to)
+    if (findStep(wantStep)) setStepOpen(wantStep)
+    else if (!inRange) return
+    setParams({}, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantStep, data, isPlaceholderData])
   const openBatch = batchOpen ? data?.batches.find((b) => b.id === batchOpen.id) : undefined
   const tankById = (id: number) => data?.tanks.find((t) => t.id === id)
 
@@ -266,7 +291,7 @@ function GanttScreen() {
     onSpot: (tank: Tank | null, day: string, at: { x: number; y: number }) => setSpot({ tank, day, ...at }),
     onMoveStep: (s: SchedStep, days: number, only?: boolean) => void moveStep(s, days, only),
     onMoveCip: async (c: SchedStep, days: number) =>
-      report(await flows.write(() => api.post(prodPath('steps', 'move'), { ids: [c.id], days }), `CIP & Sanitize moved ${daysWord(days)}.`)),
+      report(await flows.write(() => api.post(prodPath('steps', 'move'), { ids: [c.id], days }), `${c.name} moved ${daysWord(days)}.`)),
     onShiftBar: async (p: Part, days: number) =>
       report(
         await flows.write<{ moved: number; kept: number }>(
@@ -317,6 +342,7 @@ function GanttScreen() {
         onFlags={() => setOpen({ kind: 'flags' })}
         onPlan={() => setOpen({ kind: 'plan', tankId: null, day: data?.today ?? today })}
         onAddCip={() => setOpen({ kind: 'cip', tankId: null, day: data?.today ?? today })}
+        onTaskList={() => setTaskList(true)}
       />
       {(selected.size > 0 || selecting) && (
         <Paper
@@ -419,7 +445,7 @@ function GanttScreen() {
             }}
             data-testid="spot-cip"
           >
-            Add CIP & Sanitize
+            Add CIP…
           </MenuItem>
         )}
         {spot?.tank && (
@@ -475,6 +501,18 @@ function GanttScreen() {
           onClose={() => setBatchOpen(null)}
         />
       )}
+      {taskList && (
+        <TaskListPanel
+          today={data?.today ?? today}
+          brewers={data?.brewers ?? []}
+          onOpenStep={(id, day) => {
+            setTaskList(false)
+            if (findStep(id)) setStepOpen(id)
+            else setParams({ step: String(id), day }, { replace: true })
+          }}
+          onClose={() => setTaskList(false)}
+        />
+      )}
       {data && openStep && (
         <StepDialog
           key={openStep.id}
@@ -483,6 +521,7 @@ function GanttScreen() {
           tanks={data.tanks}
           brewers={data.brewers}
           today={data.today}
+          sanitizedDirty={(data.sanitize_on_dirty ?? []).includes(openStep.id)}
           onClose={() => setStepOpen(null)}
         />
       )}

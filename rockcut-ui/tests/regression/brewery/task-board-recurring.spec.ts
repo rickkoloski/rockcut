@@ -546,7 +546,8 @@ test.describe('S65: Move all to today', () => {
     const t = today()
     const start = addDays(t, -21)
     const first = await createSeries(api, weekly(tempTag('S65 Keg Wash'), start))
-    restore = (await getBoard(api, t, t)).unfinished
+    // D49: Move all leaves the linked tasks where they are.
+    restore = (await getBoard(api, t, t)).unfinished.filter((c) => !c.production)
 
     await openBoard(page)
     const missed = (await getBoard(api, t, t)).unfinished.filter((c) => (c as ApiOccurrence).series_id === first.series_id)

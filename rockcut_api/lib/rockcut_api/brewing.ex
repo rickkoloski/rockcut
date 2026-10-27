@@ -168,9 +168,12 @@ defmodule RockcutApi.Brewing do
   end
 
   def update_brand(%Brand{} = brand, attrs) do
-    brand
-    |> Brand.changeset(attrs)
-    |> Repo.update()
+    # D49: a rename retitles its batches' Brewery board tasks.
+    RockcutApi.Production.TaskLink.with_sync(fn ->
+      brand
+      |> Brand.changeset(attrs)
+      |> Repo.update()
+    end)
   end
 
   def delete_brand(%Brand{} = brand) do

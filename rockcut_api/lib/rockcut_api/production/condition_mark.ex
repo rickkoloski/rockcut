@@ -1,13 +1,15 @@
 defmodule RockcutApi.Production.ConditionMark do
   @moduledoc """
-  D48 §3.8: a brewer's mark that an empty tank is `clean` or `dirty` from
-  `marked_on`, with an optional note. Not a step and not a task; it counts
-  alongside done exits (dirty) and done CIPs (clean) for the tank's state.
+  D48 §3.8: a brewer's mark that an empty tank is `clean` (Clean &
+  sanitized) or `dirty` from `marked_on`, with an optional note; D49 §3.12a
+  adds `cleaned` (Clean not sanitized). Not a step and not a task; it counts
+  alongside done exits (dirty) and done CIPs for the tank's state.
   """
   use Ecto.Schema
   import Ecto.Changeset
 
-  @states ~w(clean dirty)
+  @states ~w(clean cleaned dirty)
+  @state_message "Pick Clean & sanitized, Clean not sanitized or Dirty."
   @max_note 500
 
   schema "tank_condition_marks" do
@@ -28,8 +30,8 @@ defmodule RockcutApi.Production.ConditionMark do
     mark
     |> cast(attrs, [:state, :marked_on, :note])
     |> update_change(:note, &trim/1)
-    |> validate_required([:state], message: "Pick clean or dirty.")
-    |> validate_inclusion(:state, @states, message: "Pick clean or dirty.")
+    |> validate_required([:state], message: @state_message)
+    |> validate_inclusion(:state, @states, message: @state_message)
     |> validate_required([:marked_on], message: "Pick the day.")
     |> validate_length(:note, max: @max_note)
   end

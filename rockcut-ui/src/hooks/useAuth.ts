@@ -25,6 +25,8 @@ interface AuthState {
   taskBoards: TaskBoardEntry[]
   /** D43: the theme that applies here (a tablet's own during "Sign in as me"); null until /api/me answers. */
   colorMode: ColorMode | null
+  /** D49: the Brewery board's "Show planned batches", saved per person on the server. */
+  showPlannedBatches: boolean
   isAuthenticated: boolean
   bootstrapped: boolean
   isLoading: boolean
@@ -37,6 +39,8 @@ interface AuthState {
   loadMe: (opts?: { force?: boolean }) => Promise<void>
   /** D43: save the person's theme. Applied at once; put back (and rethrown) if the server refuses. */
   setColorMode: (mode: ColorMode) => Promise<void>
+  /** D49: save "Show planned batches". Applied at once; put back (and rethrown) if the server refuses. */
+  setShowPlannedBatches: (show: boolean) => Promise<void>
   // D33 — shared tablets
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
@@ -76,6 +80,7 @@ const useAuth = create<AuthState>((set, get) => ({
   beerBoardManage: false,
   taskBoards: [],
   colorMode: null,
+  showPlannedBatches: true,
   isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
   bootstrapped: false,
   isLoading: false,
@@ -156,6 +161,7 @@ const useAuth = create<AuthState>((set, get) => ({
           beerBoardManage: !!data.beer_board_manage,
           taskBoards: Array.isArray(data.task_boards) ? data.task_boards : [],
           colorMode,
+          showPlannedBatches: data.show_planned_batches !== false,
           isAuthenticated: true,
           bootstrapped: true,
           unreachable: false,
@@ -202,6 +208,17 @@ const useAuth = create<AuthState>((set, get) => ({
     } catch (err) {
       set({ colorMode: before })
       if (before) cacheColorMode(before)
+      throw err
+    }
+  },
+
+  setShowPlannedBatches: async (show) => {
+    const before = get().showPlannedBatches
+    set({ showPlannedBatches: show })
+    try {
+      await api.put('/api/me/show_planned_batches', { show_planned_batches: show }, { timeout: 10_000 })
+    } catch (err) {
+      set({ showPlannedBatches: before })
       throw err
     }
   },

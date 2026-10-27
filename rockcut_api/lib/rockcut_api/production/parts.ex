@@ -9,7 +9,7 @@ defmodule RockcutApi.Production.Parts do
   **filled** by its first Brew day (the first tank) or that Transfer/Filter,
   and **emptied** by its exit: a full Package or a Split in it, or the next
   Transfer/Filter (a partial Package isn't an exit). Its CIP is its
-  vessel's latest CIP & Sanitize. It runs from its fill (or first step) to
+  vessel's latest CIP (any variant, D49). It runs from its fill (or first step) to
   its last step, its CIP included: the bar on the Gantt.
 
   **Occupancy** (lead decisions 5, N4), the one definition every place
@@ -84,6 +84,8 @@ defmodule RockcutApi.Production.Parts do
       label: entry.label,
       volume: entry.batch.volume_bbl,
       status: entry.batch.status,
+      # D49 §3.12b: its flags are muted.
+      pencilled: Map.get(entry.batch, :pencilled, false) == true,
       fill: fill,
       exit: exit,
       cip: cip,
@@ -147,61 +149,118 @@ defmodule RockcutApi.Production.Parts do
   @doc "A step's place in time: its date, then its position in the day, then id."
   def order(step), do: {Date.to_gregorian_days(step.due_on), step.position, step.id}
 
-  ## Clean or dirty (D48 §3.8)
+  ## Clean or dirty (D48 §3.8; D49 §3.12a)
 
   @doc """
-  A tank's cleanliness record: each done exit of `parts` (the parts that
-  were in it) leaves it dirty, each done CIP & Sanitize (the filled parts'
-  own and the standalone `cips`) leaves it clean, and each mark
-  (`ConditionMark`) leaves it as marked. `[%{on, state, source, at, mark}]`
-  in order (`latest_condition/1`); `state` is `:clean` or `:dirty`, `source`
-  `:exit`, `:cip` or `:mark`.
+  A tank's cleanliness record, the one timeline every place uses: each
+  done exit of `parts` (the parts that were in it) leaves it dirty, each
+  done CIP (the filled parts' own and the standalone `cips`) by its variant
+  (D49): CIP & Sanitize leaves it `:sanitized`, CIP - no sani `:cleaned`,
+  and a Sanitize (`:sanitize`) sanitizes it only if it's clean
+  (`condition/1`); each mark (`ConditionMark`) leaves it as marked
+  (`clean` is sanitized). `[%{on, state, source, at, mark, step}]` in order;
+  `source` is `:exit`, `:cip` or `:mark`.
+
+  `planned: true` (D49, for a fill that's still to come) counts what's
+  planned as well, on its due day: every part's exit and own CIPs.
   """
-  def condition_events(parts, cips, marks \\ []) do
+  def condition_events(parts, cips, marks \\ [], opts \\ []) do
+    planned? = opts[:planned] == true
+    on = fn s -> s.done_on || (planned? && s.due_on) end
+
     exits =
       for p <- parts,
-          emptied?(p),
+          p.exit,
+          day = on.(p.exit),
           do: %{
-            on: p.exit.done_on,
+            on: day,
             state: :dirty,
             source: :exit,
             at: p.exit.completed_at,
-            mark: nil
+            mark: nil,
+            step: p.exit
           }
 
+    own = if planned?, do: parts, else: Enum.filter(parts, &filled?/1)
+
     cleans =
-      for c <- Enum.flat_map(Enum.filter(parts, &filled?/1), &own_cips/1) ++ cips,
-          c.done_on,
-          do: %{on: c.done_on, state: :clean, source: :cip, at: c.completed_at, mark: nil}
+      for c <- Enum.flat_map(own, &own_cips/1) ++ cips,
+          day = on.(c),
+          do: %{
+            on: day,
+            state: cip_state(c),
+            source: :cip,
+            at: c.completed_at,
+            mark: nil,
+            step: c
+          }
 
     marked =
       for m <- marks,
           do: %{
             on: m.marked_on,
-            state: String.to_existing_atom(m.state),
+            state: mark_state(m.state),
             source: :mark,
             at: m.inserted_at,
-            mark: m
+            mark: m,
+            step: nil
           }
 
     Enum.sort_by(exits ++ cleans ++ marked, &condition_order/1)
   end
 
   @doc """
-  The last of `events` (`condition_events/3`), or nil: by date; on the same
-  day a CIP or a mark counts after an exit (lead decisions 5, N4), and
-  otherwise the later recorded one wins.
+  Where `events` (`condition_events/4`) leave the tank, or nil (never
+  used): the latest that counts, by date; on the same day a CIP or a mark
+  counts after an exit (lead decisions 5, N4), and otherwise the later
+  recorded one wins. A Sanitize counts on a clean tank (`:cleaned`,
+  `:sanitized` or never used) and makes it `:sanitized`; on a dirty one it
+  doesn't count. Its `state` is `:dirty`, `:cleaned` or `:sanitized`.
   """
-  def latest_condition(events), do: Enum.max_by(events, &condition_order/1, fn -> nil end)
+  def latest_condition(events), do: events |> condition() |> elem(0)
+
+  @doc """
+  `{latest_condition, sanitized_dirty}`: also the Sanitize steps done on a
+  dirty tank, which leave it dirty ("The tank was dirty: run a CIP first.").
+  """
+  def condition(events) do
+    events
+    |> Enum.sort_by(&condition_order/1)
+    |> Enum.reduce({nil, []}, fn
+      %{state: :sanitize} = e, {%{state: :dirty} = now, wasted} -> {now, [e.step | wasted]}
+      %{state: :sanitize} = e, {_, wasted} -> {%{e | state: :sanitized}, wasted}
+      e, {_, wasted} -> {e, wasted}
+    end)
+    |> then(fn {now, wasted} -> {now, Enum.reverse(wasted)} end)
+  end
 
   defp condition_order(e) do
     at = if e.at, do: DateTime.to_unix(e.at), else: 0
-    {Date.to_gregorian_days(e.on), if(e.source == :exit, do: 0, else: 1), at}
+    seq = (e.step && e.step.id) || (e.mark && e.mark.id) || 0
+    {Date.to_gregorian_days(e.on), if(e.source == :exit, do: 0, else: 1), at, seq}
   end
 
-  @doc "A part's own CIP & Sanitize steps (in its vessel)."
+  defp cip_state(step) do
+    case Steps.cip_method(step) do
+      "no_sani" -> :cleaned
+      "sanitize" -> :sanitize
+      _ -> :sanitized
+    end
+  end
+
+  defp mark_state("clean"), do: :sanitized
+  defp mark_state("cleaned"), do: :cleaned
+  defp mark_state("dirty"), do: :dirty
+
+  @doc "A part's own CIP steps (in its vessel), every variant."
   def own_cips(part),
     do: Enum.filter(part.steps, &(behavior(&1) == "cip" and &1.vessel_index == part.vessel_index))
+
+  @doc """
+  D49 §3.12a: a CIP that cleans the tank, CIP & Sanitize or CIP - no sani,
+  not a Sanitize: what counts as a planned CIP for the dirty flags.
+  """
+  def cleans?(step), do: behavior(step) == "cip" and Steps.cip_method(step) != "sanitize"
 
   defp after?(a, b), do: Date.compare(a, b) == :gt
 

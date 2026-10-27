@@ -66,6 +66,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/session/password"},
     {:delete, "/api/sessions/others"},
     {:put, "/api/me/color_mode"},
+    {:put, "/api/me/show_planned_batches"},
     {:patch, "/api/departments/:id"},
     {:post, "/api/roster/order"},
     {:get, "/api/users"},
@@ -271,6 +272,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:delete, "/api/production/batches/:id"},
     {:post, "/api/production/batches/:id/shift"},
     {:patch, "/api/production/batches/:id/vessels/:index"},
+    # D49: pencilled batches, people only.
+    {:post, "/api/production/batches/:id/schedule"},
+    {:post, "/api/production/batches/:id/pencil"},
     # D48: changing a batch, people only like D47's.
     {:post, "/api/production/batches/:id/steps"},
     {:post, "/api/production/batches/:id/ramp"},
@@ -369,6 +373,69 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
       assert failures == []
     end
   end
+
+  # D49 decision 8: on its home board, a tablet's writes to a task made from
+  # a production step are refused before any staff code (until D50); the
+  # series read is `linked_task` for anyone.
+  describe "as breweryDevice, on a linked task (D49)" do
+    setup do
+      RockcutApi.StaffCodes.RateLimiter.reset()
+      p = personas(~w(breweryMgr brewer1))
+      {:ok, _} = RockcutApi.StaffCodes.set(p["brewer1"], "1111", p["breweryMgr"])
+      device = RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse"})
+      token = RockcutApi.AccountsFixtures.device_token_fixture(device, "Brewhouse Tab")
+
+      batch =
+        RockcutApi.ProductionFixtures.plan!(
+          RockcutApi.ProductionFixtures.brand!("Matrix"),
+          RockcutApi.ProductionFixtures.ale_template!(),
+          RockcutApi.Tasks.today()
+        )
+
+      RockcutApi.Production.TaskLink.sync!()
+      fdh = RockcutApi.ProductionFixtures.named(batch, "FDH")
+      task = RockcutApi.Repo.get_by!(RockcutApi.Tasks.Task, production_step_id: fdh.id)
+      %{token: token, task: task}
+    end
+
+    test "every write on it is 403 linked_task_device, with a code or without", %{
+      token: token,
+      task: task
+    } do
+      routes = Enum.filter(@device_with_code, fn {_, path} -> path =~ "/tasks/:id" end)
+      # update, delete, move, complete, uncomplete, stop_repeating
+      assert length(routes) == 6
+
+      failures =
+        for {verb, path} <- routes,
+            code <- [nil, "1111"],
+            params = if(code, do: %{staff_code: code}, else: %{}),
+            conn = call_device(token, verb, fill_linked(path, task), params),
+            conn.status != 403 or
+              Jason.decode!(conn.resp_body)["error"] != "linked_task_device" do
+          {verb, path, code, conn.status}
+        end
+
+      assert failures == []
+    end
+
+    test "the board reads it; its series is linked_task", %{token: token, task: task} do
+      today = Date.to_iso8601(RockcutApi.Tasks.today())
+
+      assert call_device(token, :get, "/api/boards/brewery/tasks", %{from: today, to: today}).status ==
+               200
+
+      conn = call_device(token, :get, "/api/boards/brewery/tasks/#{task.id}/series")
+      assert conn.status == 422
+      assert Jason.decode!(conn.resp_body)["error"] == "linked_task"
+    end
+  end
+
+  defp fill_linked(path, task),
+    do:
+      path
+      |> String.replace(":dept", "brewery")
+      |> String.replace(":id", to_string(task.id))
 
   describe "no staff email or other personal fields (DEV G8, Q6)" do
     setup do

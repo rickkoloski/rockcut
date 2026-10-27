@@ -216,11 +216,12 @@ test('P115, P114, P117: Mark dirty, a fill flags it; Mark clean with a note clea
   const tank = await made.tank('Serving 3', 30)
   const status = page.getByTestId(`gantt-status-${tank.id}`)
   await openGantt(page)
+  // D49 §3.12a: the Mark… list in the panel; the current state's row can't be picked.
   await page.getByTestId(`gantt-tank-menu-${tank.id}`).click()
-  await expect(page.getByTestId('tank-panel-mark-clean')).toHaveCount(0)
-  await page.getByTestId('tank-panel-mark-dirty').click()
+  await expect(page.getByTestId('tank-panel-mark-as-clean')).toBeDisabled()
+  await page.getByTestId('tank-panel-mark-as-dirty').click()
   await page.getByTestId('mark-day').fill(addDays(today(), -1))
-  await page.getByTestId('mark-dialog').getByRole('button', { name: 'Save' }).click()
+  await page.getByTestId('tank-panel-mark-save').click()
   await expect(snack(page)).toContainText(`${tank.name} marked dirty`)
   await expect(status).toHaveText('Empty · dirty 1 day · no CIP planned')
   await page.keyboard.press('Escape')
@@ -234,10 +235,11 @@ test('P115, P114, P117: Mark dirty, a fill flags it; Mark clean with a note clea
 
   // P114: Mark clean today, with a note.
   await page.getByTestId(`gantt-tank-menu-${tank.id}`).click()
-  await expect(page.getByTestId('tank-panel-mark-dirty')).toHaveCount(0)
-  await page.getByTestId('tank-panel-mark-clean').click()
+  await expect(page.getByTestId('tank-panel-mark-as-dirty')).toBeDisabled()
+  await expect(page.getByTestId('tank-panel-mark-as-dirty')).toContainText('Current state')
+  await page.getByTestId('tank-panel-mark-as-clean').click()
   await page.getByTestId('mark-note').fill('Hosed and sanitized after the gasket job')
-  await page.getByTestId('mark-dialog').getByRole('button', { name: 'Save' }).click()
+  await page.getByTestId('tank-panel-mark-save').click()
   await expect(status).toHaveText('Sani 0 days')
   expect(await flags()).toEqual([])
   const marks = (await (await apiAs('brewer1')).get(`${P}/schedule`).then((r) => r.json())).data.condition_marks.filter((m: { tank_id: number }) => m.tank_id === tank.id)
@@ -248,7 +250,7 @@ test('P115, P114, P117: Mark dirty, a fill flags it; Mark clean with a note clea
   await expect(marker).toHaveAttribute('data-state', 'clean')
   await marker.hover()
   // By its text: the pointer may pass over a bar on its way and leave that tooltip open too.
-  await expect(page.getByRole('tooltip').filter({ hasText: /^Marked clean/ })).toHaveText(/^Marked clean by Jake Brewer · .* · “Hosed and sanitized after the gasket job”$/)
+  await expect(page.getByRole('tooltip').filter({ hasText: /^Marked clean/ })).toHaveText(/^Marked clean & sanitized by Jake Brewer · .* · “Hosed and sanitized after the gasket job”$/)
 
   // P117: Remove it from History: back to dirty; Undo brings it back.
   await page.getByTestId(`gantt-tank-menu-${tank.id}`).click()
@@ -260,15 +262,15 @@ test('P115, P114, P117: Mark dirty, a fill flags it; Mark clean with a note clea
   await expect(status).toHaveText('Sani 0 days')
 })
 
-test('P116: a tank with beer in it offers no Mark clean / Mark dirty', async ({ page }) => {
+test('P116: a tank with beer in it offers no Mark… list', async ({ page }) => {
   const fv = await made.tank('FV8')
   const b = await planned('Altruism', [fv.id], -3)
   await made.checkOff(stepOf(b, 'Brew day'), `T${Date.now() % 1_000_000}`)
   await openGantt(page)
   await page.getByTestId(`gantt-tank-menu-${fv.id}`).click()
   await expect(page.getByTestId('tank-panel')).toBeVisible()
-  await expect(page.getByTestId('tank-panel-mark-clean')).toHaveCount(0)
-  await expect(page.getByTestId('tank-panel-mark-dirty')).toHaveCount(0)
+  await expect(page.getByTestId('tank-panel-mark-list')).toHaveCount(0)
+  await expect(page.getByTestId('tank-panel-mark-save')).toHaveCount(0)
   const res = await (await apiAs('brewer1')).post(`${P}/tanks/${fv.id}/condition`, { data: { state: 'clean' } })
   expect(res.status()).toBe(422)
   expect((await res.json()).error).toBe('tank_in_use')

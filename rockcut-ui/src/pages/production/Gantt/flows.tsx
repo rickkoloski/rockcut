@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   Box,
   Button,
@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  Portal,
   Radio,
   RadioGroup,
   Snackbar,
@@ -19,10 +20,11 @@ import { useQueryClient } from '@tanstack/react-query'
 import type { AxiosResponse } from 'axios'
 import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
-import { plainBatchNumber, prodError, prodPath, SCHEDULE_KEY, type Answer, type SchedStep } from '../../../lib/production'
+import { plainBatchNumber, prodError, prodPath, SCHEDULE_KEY, type Answer } from '../../../lib/production'
+import { BOARD_QUERY_KEY } from '../../../lib/tasks'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { renumberText, type Renumber } from './scheduleText'
-import { FlowsContext } from './flowsContext'
+import { FlowsContext, type StepRef } from './flowsContext'
 
 // D47 §3.7: every schedule write goes through here. It refetches the
 // schedule, says what happened with Undo for 6 seconds (plan decision 5),
@@ -78,23 +80,49 @@ function failure(err: unknown): Failure {
   return { ok: false, error: prodError(err), code: res?.data?.error as string | undefined, body: res?.data }
 }
 
+// The server keeps an Undo token for 2 minutes (Undo's @ttl_seconds).
+const UNDO_TTL_MS = 120_000
+
+/** The snackbar: `refused` is a refused Undo, shown until its token runs out (D49 BB1). */
+type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean; overDialog?: boolean }
+
 type Prompt =
   | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
+  | { kind: 'schedule'; label: string; resolve: (ok: boolean) => void }
   | { kind: 'number'; label: string; value: string; error: string | null; suggestion: string; resolve: (n: string | null) => void }
 
 export function FlowsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
-  const [snack, setSnack] = useState<{ message: string; token: string | null; key: number } | null>(null)
+  const [snack, setSnack] = useState<Snack | null>(null)
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [undoing, setUndoing] = useState(false)
   const counter = useRef(0)
 
-  const refresh = useCallback(() => qc.invalidateQueries({ queryKey: SCHEDULE_KEY }), [qc])
+  // D49: production steps are tasks on the Brewery board (and the Task list panel), so those follow too.
+  const refresh = useCallback(
+    () => Promise.all([qc.invalidateQueries({ queryKey: SCHEDULE_KEY }), qc.invalidateQueries({ queryKey: [BOARD_QUERY_KEY] })]),
+    [qc],
+  )
 
-  const notify = useCallback((message: string, token: string | null = null) => {
+  const show = useCallback((snack: Omit<Snack, 'key'>) => {
     counter.current += 1
-    setSnack({ message, token, key: counter.current })
+    // D49 QA 4: over an open dialog it shows at the top, clear of the dialog's buttons.
+    setSnack({ ...snack, key: counter.current, overDialog: !!document.querySelector('[role="dialog"]') })
   }, [])
+
+  // D49 QA 4: it goes when its Undo does (a hovered snackbar's timer stops,
+  // so it could outlive the token).
+  useEffect(() => {
+    if (!snack?.token) return
+    const key = snack.key
+    const t = setTimeout(() => setSnack((s) => (s?.key === key ? null : s)), Math.max(snack.expiresAt - Date.now(), 0))
+    return () => clearTimeout(t)
+  }, [snack])
+
+  const notify = useCallback(
+    (message: string, token: string | null = null) => show({ message, token, expiresAt: Date.now() + UNDO_TTL_MS }),
+    [show],
+  )
 
   const write = useCallback(
     async <T,>(call: () => Promise<AxiosResponse>, message: string | ((data: T) => string)): Promise<Result<T>> => {
@@ -115,6 +143,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const askMove = (preview: MovePreview, title: string) =>
     new Promise<Answer | null>((resolve) => setPrompt({ kind: 'move', preview, title, resolve }))
+
+  const askSchedule = (label: string) => new Promise<boolean>((resolve) => setPrompt({ kind: 'schedule', label, resolve }))
 
   const askNumber = (label: string, value: string, suggestion: string, error: string | null = null) =>
     new Promise<string | null>((resolve) => setPrompt({ kind: 'number', label, value, error, suggestion, resolve }))
@@ -150,13 +180,27 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   )
 
   const checkOff = useCallback(
-    async (step: SchedStep, doneOn: string, batchLabel: string | null): Promise<Result | null> => {
+    async (step: StepRef, doneOn: string, batchLabel: string | null): Promise<Result | null> => {
       const path = prodPath('steps', step.id, 'complete')
       let pre: CompletePreview
       try {
         pre = (await api.post(path, { done_on: doneOn, preview: true })).data.data.preview
       } catch (err) {
-        return failure(err)
+        const f = failure(err)
+        // D49 §3.12b (P134): a pencilled batch is scheduled first, then the check-off goes on.
+        if (f.code !== 'schedule_first' || step.batch_id == null) return f
+        if (!(await askSchedule(batchLabel ?? 'This batch'))) return null
+        const s = await write<{ batches: { id: number; label: string }[] }>(
+          () => api.post(prodPath('batches', step.batch_id!, 'schedule')),
+          (d) => `${d.batches.find((b) => b.id === step.batch_id)?.label ?? 'The batch'} is scheduled.`,
+        )
+        if (!s.ok) return s
+        batchLabel = s.data.batches.find((b) => b.id === step.batch_id)?.label ?? batchLabel
+        try {
+          pre = (await api.post(path, { done_on: doneOn, preview: true })).data.data.preview
+        } catch (again) {
+          return failure(again)
+        }
       }
       let number: string | undefined
       if (pre.needs_batch_number) {
@@ -211,19 +255,23 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   )
 
   const uncheck = useCallback(
-    (step: SchedStep) =>
+    (step: StepRef) =>
       write<{ message?: string | null }>(() => api.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`),
     [write],
   )
 
-  const undo = async (token: string) => {
+  const undo = async ({ token, expiresAt }: { token: string; expiresAt: number }) => {
     setUndoing(true)
     try {
       await api.post(prodPath('undo', token))
       notify('Undone.')
       await refresh()
     } catch (err) {
-      notify(prodError(err))
+      // D49 BB1: a refused Undo keeps its button while the token lasts, so
+      // it works once the blocker is cleared; only a token that's gone drops it.
+      const code = failure(err).code
+      const gone = code === 'undo_expired' || code === 'not_found' || expiresAt <= Date.now()
+      show({ message: prodError(err), token: gone ? null : token, expiresAt, refused: !gone })
       // A refused Undo ("Something changed since."): show what the server has now (DEV QA X5).
       await refresh()
     } finally {
@@ -234,6 +282,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   const close = (value: null) => {
     if (!prompt) return
     if (prompt.kind === 'move') prompt.resolve(value)
+    else if (prompt.kind === 'schedule') prompt.resolve(false)
     else prompt.resolve(value)
     setPrompt(null)
   }
@@ -264,6 +313,16 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           }}
         />
       )}
+      {prompt?.kind === 'schedule' && (
+        <SchedulePrompt
+          label={prompt.label}
+          onCancel={() => close(null)}
+          onSchedule={() => {
+            prompt.resolve(true)
+            setPrompt(null)
+          }}
+        />
+      )}
       {prompt?.kind === 'number' && (
         <NumberPrompt
           key={`${prompt.value}-${prompt.error}`}
@@ -278,32 +337,35 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           }}
         />
       )}
-      <Snackbar
-        key={snack?.key}
-        open={!!snack}
-        autoHideDuration={6000}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
-        onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
-        message={<span data-testid="gantt-snack-text">{snack?.message}</span>}
-        data-testid="gantt-snack"
-        action={
-          snack?.token ? (
-            <Button
-              color="secondary"
-              size="small"
-              disabled={undoing}
-              onClick={() => {
-                const t = snack.token!
-                setSnack(null)
-                undo(t)
-              }}
-              data-testid="gantt-undo"
-            >
-              Undo
-            </Button>
-          ) : undefined
-        }
-      />
+      {/* D49 QA 4: in a portal, beside the app root (an open dialog hides that from screen readers). */}
+      <Portal>
+        <Snackbar
+          key={snack?.key}
+          open={!!snack}
+          autoHideDuration={snack?.refused ? Math.max(snack.expiresAt - Date.now(), 0) : 6000}
+          anchorOrigin={{ vertical: snack?.overDialog ? 'top' : 'bottom', horizontal: 'center' }}
+          onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
+          message={<span data-testid="gantt-snack-text">{snack?.message}</span>}
+          data-testid="gantt-snack"
+          action={
+            snack?.token ? (
+              <Button
+                color="secondary"
+                size="small"
+                disabled={undoing}
+                onClick={() => {
+                  const { token, expiresAt } = snack
+                  setSnack(null)
+                  undo({ token: token!, expiresAt })
+                }}
+                data-testid="gantt-undo"
+              >
+                Undo
+              </Button>
+            ) : undefined
+          }
+        />
+      </Portal>
     </FlowsContext.Provider>
   )
 }
@@ -421,6 +483,27 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
 }
 
 /** §3.5 checking off a planned batch's brew day asks for its number. */
+/** D49 §3.12b (P134): "Schedule this batch first." with a Schedule button. */
+function SchedulePrompt({ label, onCancel, onSchedule }: { label: string; onCancel: () => void; onSchedule: () => void }) {
+  usePhoneBackCloses(true, onCancel)
+  return (
+    <Dialog open onClose={onCancel} maxWidth="xs" fullWidth data-testid="schedule-prompt">
+      <DialogTitle>Schedule this batch first.</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2">{label} is pencilled in. Schedule it to check off its steps; it gets a P-number and its steps can go on the task list.</Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onCancel} data-testid="schedule-prompt-cancel">
+          Cancel
+        </Button>
+        <Button variant="contained" autoFocus onClick={onSchedule} data-testid="schedule-prompt-ok">
+          Schedule
+        </Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
+
 function NumberPrompt({
   label,
   initial,

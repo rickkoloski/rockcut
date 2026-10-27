@@ -16,13 +16,15 @@ defmodule RockcutApi.Production.TankStatus do
   - **Emptied**, cleaned since: "Sani 6 days"; not cleaned: "Empty · dirty 3
     days", plus "no CIP planned" (`alert`) when no CIP is dated after. D48:
     a brewer's clean / dirty mark counts too (`Parts.latest_condition/1`).
+    D49 §3.12a: cleaned but not sanitized (a CIP - no sani, or a Clean not
+    sanitized mark): "Clean no sani 2 days", amber (`state` `cleaned`).
   - **Never used**: "Empty · clean" ("Sani N days" after a standalone CIP).
   """
   alias RockcutApi.Production.Parts
 
   @doc """
   `%{tank_id, state, line, alert, batch_id, batch_label}`; `state` is
-  `out`, `in_use`, `sani`, `dirty` or `clean`. `batch_*` name the batch in
+  `out`, `in_use`, `sani`, `cleaned` (D49), `dirty` or `clean`. `batch_*` name the batch in
   the tank (also while it's out of service).
   """
   def for(tank, parts, cips, today, phase_names, marks \\ []) do
@@ -171,13 +173,16 @@ defmodule RockcutApi.Production.TankStatus do
     case Parts.latest_condition(Parts.condition_events(parts, cips, marks)) do
       %{state: :dirty, on: since} ->
         # The CIPs that clean up after beer that was here (the filled parts'
-        # own; a planned batch's comes after its own beer) and the standalone ones.
+        # own; a planned batch's comes after its own beer) and the standalone
+        # ones; a Sanitize doesn't clean (D49).
         planned? =
           parts
           |> Enum.filter(&Parts.filled?/1)
           |> Enum.flat_map(&Parts.own_cips/1)
           |> Kernel.++(cips)
-          |> Enum.any?(&(is_nil(&1.done_on) and Date.compare(&1.due_on, since) != :lt))
+          |> Enum.any?(
+            &(Parts.cleans?(&1) and is_nil(&1.done_on) and Date.compare(&1.due_on, since) != :lt)
+          )
 
         line = "Empty · dirty #{days(Date.diff(today, since))}"
 
@@ -185,8 +190,11 @@ defmodule RockcutApi.Production.TankStatus do
           do: %{state: "dirty", line: line},
           else: %{state: "dirty", line: line <> " · no CIP planned", alert: true}
 
-      %{state: :clean, on: since} ->
+      %{state: :sanitized, on: since} ->
         %{state: "sani", line: "Sani #{days(Date.diff(today, since))}"}
+
+      %{state: :cleaned, on: since} ->
+        %{state: "cleaned", line: "Clean no sani #{days(Date.diff(today, since))}"}
 
       nil ->
         %{state: "clean", line: "Empty · clean"}
