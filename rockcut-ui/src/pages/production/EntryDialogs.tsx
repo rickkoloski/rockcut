@@ -34,7 +34,10 @@ import {
   vesselLabel,
   vesselPhrase,
   SPLIT_METHODS,
+  CIP_METHODS,
+  cipLabel,
   type Answer,
+  type CipMethod,
   type Phase,
   type SplitMethod,
   type StepType,
@@ -227,6 +230,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const [temperature, setTemperature] = useState(entry?.temperature != null ? String(entry.temperature) : '')
   const [splitMethod, setSplitMethod] = useState<SplitMethod>(entry?.split_method ?? 'transfer')
   const [packagePartial, setPackagePartial] = useState(entry?.package_partial ?? false)
+  const [cipMethod, setCipMethod] = useState<CipMethod>(entry?.cip_method ?? 'sanitize_full')
   const [day, setDay] = useState(String(entry?.day_offset ?? ''))
   const [vessel, setVessel] = useState(entry?.vessel_index ?? 0)
   const [phaseId, setPhaseId] = useState<number | ''>(entry ? (entry.phase_id ?? '') : '')
@@ -250,10 +254,13 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const dayNum = day === '' ? null : Number(day)
   const intoTank = entry && transfer ? entry.vessel_index : newTankFor(template, dayNum ?? 0, entry?.id)
   const orderError = transfer ? transferOrderError(template, dayNum, entry) : null
-  // D47: "Split - Filter", "Package - Partial": the fixed part of the name.
+  // D47: "Split - Filter", "Package - Partial": the fixed part of the name;
+  // D49: "CIP - no sani", "Sanitize".
   const typeName = type?.name ?? entry?.type_name ?? 'Step'
   const fixedName =
-    behavior === 'split'
+    behavior === 'cip' && cipMethod !== 'sanitize_full'
+      ? cipLabel(cipMethod)
+      : behavior === 'split'
       ? `${typeName} - ${SPLIT_METHODS.find((m) => m.key === splitMethod)!.label}`
       : behavior === 'package' && packagePartial
         ? `${typeName} - Partial`
@@ -273,6 +280,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       setOnTaskList(t.on_task_list)
       setSplitMethod('transfer')
       setPackagePartial(false)
+      setCipMethod('sanitize_full')
     }
   }
 
@@ -298,6 +306,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     if (showTemp) body.temperature = temperature === '' ? null : Number(temperature)
     if (behavior === 'split') body.split_method = splitMethod
     if (behavior === 'package') body.package_partial = packagePartial
+    if (behavior === 'cip') body.cip_method = cipMethod
     if (isBrew) {
       delete body.day_offset
       delete body.vessel_index
@@ -362,6 +371,22 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
         >
           {SPLIT_METHODS.map((m) => (
             <MenuItem key={m.key} value={m.key} data-testid={`entry-split-method-${m.key}`}>
+              {m.label}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
+      {behavior === 'cip' && (
+        <TextField
+          select
+          label="Process"
+          value={cipMethod}
+          onChange={(e) => setCipMethod(e.target.value as CipMethod)}
+          helperText={CIP_METHODS.find((m) => m.key === cipMethod)!.hint}
+          slotProps={selectTestId('entry-cip-method')}
+        >
+          {CIP_METHODS.map((m) => (
+            <MenuItem key={m.key} value={m.key} data-testid={`entry-cip-method-${m.key}`}>
               {m.label}
             </MenuItem>
           ))}

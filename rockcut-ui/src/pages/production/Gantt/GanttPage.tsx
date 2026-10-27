@@ -266,7 +266,7 @@ function GanttScreen() {
     onSpot: (tank: Tank | null, day: string, at: { x: number; y: number }) => setSpot({ tank, day, ...at }),
     onMoveStep: (s: SchedStep, days: number, only?: boolean) => void moveStep(s, days, only),
     onMoveCip: async (c: SchedStep, days: number) =>
-      report(await flows.write(() => api.post(prodPath('steps', 'move'), { ids: [c.id], days }), `CIP & Sanitize moved ${daysWord(days)}.`)),
+      report(await flows.write(() => api.post(prodPath('steps', 'move'), { ids: [c.id], days }), `${c.name} moved ${daysWord(days)}.`)),
     onShiftBar: async (p: Part, days: number) =>
       report(
         await flows.write<{ moved: number; kept: number }>(
@@ -419,7 +419,7 @@ function GanttScreen() {
             }}
             data-testid="spot-cip"
           >
-            Add CIP & Sanitize
+            Add CIP…
           </MenuItem>
         )}
         {spot?.tank && (
@@ -483,6 +483,7 @@ function GanttScreen() {
           tanks={data.tanks}
           brewers={data.brewers}
           today={data.today}
+          sanitizedDirty={(data.sanitize_on_dirty ?? []).includes(openStep.id)}
           onClose={() => setStepOpen(null)}
         />
       )}

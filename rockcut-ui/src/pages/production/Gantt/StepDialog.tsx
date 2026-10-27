@@ -19,7 +19,7 @@ import api from '../../../lib/api'
 import { dayLabel, daysBetween } from '../../../lib/gantt'
 import { dayN, removable, removeMessage, removeQuestion, stepStatus } from './scheduleText'
 import { ChangeRampDialog } from './BatchChangeDialogs'
-import { answerLabel, prodPath, type Person, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
+import { answerLabel, CIP_METHODS, prodPath, type CipMethod, type Person, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
 import ErrorAlert from '../ErrorAlert'
 import { useFlows } from './flowsContext'
 import DateField from '../DateField'
@@ -31,6 +31,8 @@ interface Props {
   tanks: Tank[]
   brewers: Person[]
   today: string
+  /** D49 §3.12a: a done Sanitize that found the tank dirty. */
+  sanitizedDirty?: boolean
   onClose: () => void
 }
 
@@ -45,12 +47,15 @@ const tankOf = (step: SchedStep, batch: SchedBatch | null, tanks: Tank[]) => {
  * addition to its name, assignee, notes and task-list switch; check it off,
  * move it, or mark it not done. Typed changes are saved when it closes or a
  * button is pressed. D48: Remove step, and Change ramp… on a ramp's step.
+ * D49 §3.12a: an unfinished CIP switches between CIP & Sanitize, CIP - no
+ * sani and Sanitize; a Sanitize done on a dirty tank says so.
  */
-export default function StepDialog({ step, batch, tanks, brewers, today, onClose }: Props) {
+export default function StepDialog({ step, batch, tanks, brewers, today, sanitizedDirty, onClose }: Props) {
   const flows = useFlows()
   const cip = step.batch_id == null
   const [temperature, setTemperature] = useState(step.temperature != null ? String(step.temperature) : '')
   const [partial, setPartial] = useState(step.package_partial)
+  const [method, setMethod] = useState<CipMethod>(step.cip_method ?? 'sanitize_full')
   const [detail, setDetail] = useState(step.detail ?? '')
   const [assignee, setAssignee] = useState<number | ''>(step.assignee_id ?? '')
   const [notes, setNotes] = useState(step.notes ?? '')
@@ -73,6 +78,7 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
     const c: Record<string, unknown> = {}
     if (step.behavior === 'set_temp' && temperature !== '' && Number(temperature) !== step.temperature) c.temperature = Number(temperature)
     if (step.behavior === 'package' && !done && partial !== step.package_partial) c.package_partial = partial
+    if (step.behavior === 'cip' && !done && method !== (step.cip_method ?? 'sanitize_full')) c.cip_method = method
     if (!cip && (detail.trim() || null) !== step.detail) c.detail = detail.trim() || null
     if ((assignee === '' ? null : assignee) !== step.assignee_id) c.assignee_id = assignee === '' ? null : assignee
     if ((notes.trim() || null) !== (step.notes ?? null)) c.notes = notes.trim() || null
@@ -125,7 +131,7 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
   return (
     <Dialog open onClose={close} maxWidth="sm" fullWidth data-testid="step-dialog">
       <DialogTitle>
-        <span data-testid="step-dialog-name">{cip ? `CIP & Sanitize · ${tankOf(step, null, tanks)}` : step.name}</span>
+        <span data-testid="step-dialog-name">{cip ? `${step.name} · ${tankOf(step, null, tanks)}` : step.name}</span>
         {step.full_name && (
           <Typography variant="body2" color="text.secondary">
             {step.full_name}
@@ -211,6 +217,27 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
             <MenuItem value="partial" data-testid="step-package-partial">
               Partial
             </MenuItem>
+          </TextField>
+        )}
+        {sanitizedDirty && (
+          <Typography variant="body2" color="warning.main" data-testid="step-sanitize-dirty">
+            The tank was dirty: run a CIP first.
+          </Typography>
+        )}
+        {step.behavior === 'cip' && !done && (
+          <TextField
+            select
+            label="Process"
+            value={method}
+            onChange={(e) => setMethod(e.target.value as CipMethod)}
+            helperText={CIP_METHODS.find((m) => m.key === method)!.hint}
+            slotProps={{ select: { SelectDisplayProps: { 'data-testid': 'step-cip-method' } as object } }}
+          >
+            {CIP_METHODS.map((m) => (
+              <MenuItem key={m.key} value={m.key} data-testid={`step-cip-method-${m.key}`}>
+                {m.label}
+              </MenuItem>
+            ))}
           </TextField>
         )}
         {!cip && !step.marker && (
@@ -309,10 +336,10 @@ export default function StepDialog({ step, batch, tanks, brewers, today, onClose
         onClose={() => setDeleting(false)}
         onConfirm={() => {
           setDeleting(false)
-          act(() => flows.write(() => api.delete(prodPath('cips', step.id)), 'CIP & Sanitize deleted.'))
+          act(() => flows.write(() => api.delete(prodPath('cips', step.id)), `${step.name} deleted.`))
         }}
-        title="Delete CIP & Sanitize"
-        message={`Delete the CIP & Sanitize in ${tankOf(step, null, tanks)} on ${dayLabel(step.due_on)}?`}
+        title={`Delete ${step.name}`}
+        message={`Delete the ${step.name} in ${tankOf(step, null, tanks)} on ${dayLabel(step.due_on)}?`}
       />
       {batch && (
         <ConfirmDialog

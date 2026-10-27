@@ -657,3 +657,21 @@ Playwright specs are in `regression/production/` (project `production`, one work
 | DEV QA AA2 | Brew day's `exit_done` names the part when the done exit is a part's ("Mark … #44.2: Transfer not done first."); a parent's own exit keeps "Mark Split - Transfer not done first." | ExUnit `split_moves_test` |
 
 Not automated: P87 (touch long-press selection on the Pixel) and a touch drag's auto-scroll, by hand at the DEV gate.
+
+## D49 — Task list linkage, Clean not sanitized, Pencilled batches (`specs/d46_production_scheduling_spec.md` §3.12–§3.12b; `planning/d49_schedule_task_list_plan.md`)
+
+Playwright specs are in `regression/production/` (project `production`), each on its own `[TEST-TEMP]` data.
+
+| # | Scenario | Layer |
+|---|---|---|
+| BB1 | A refused snackbar Undo keeps its button until the token runs out; the same Undo works once another user clears the blocker | Playwright `d49-undo-retry` |
+| BB2 | The Split's Undo after a part's full Package, brew day's in a split family, a Split un-check's after brew day, a late Split's: refused with the rule's own code, then undone once it's cleared (the late Split's parts get their dates back); a real change since is still `undo_stale` | ExUnit `split_moves_test` |
+| P122 | Sani 40 days → Mark… → Clean not sanitized: "Clean no sani 0 days" (amber), a marker, rows ≥ 56 px, the current state greyed; Undo | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P123 | A fill after it: "isn't sanitized" (soft), signed off in the Flags list; a done CIP & Sanitize (or a planned one, a Sanitize, a Clean & sanitized mark) clears it | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P124 | Dirty → Clean not sanitized: the dirty flags clear; History names it | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P125 | Add process ▾ → CIP… → CIP - no sani, already done: Clean no sani, no dirty flags (the board title: task 3) | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P126 | Step dialog switches an exit CIP to CIP - no sani (renamed); the next fill gets "isn't sanitized", not dirty; a done CIP can't switch | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P127 | Sanitize on a Clean no sani tank: Sani 0 days; a fill after it has no flags | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P128 | Planned CIP - no sani, then Sanitize, then a fill: no flags; delete the Sanitize → "isn't sanitized" | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| P129 | Sanitize done on a dirty tank (empty-spot menu's Add CIP…): still dirty, "no CIP planned"; the step dialog says "The tank was dirty: run a CIP first." | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |
+| — | A template's CIP entry takes the variant and passes it to planned batches | Playwright `d49-clean-not-sanitized`; ExUnit `clean_not_sanitized_test` |

@@ -49,6 +49,7 @@ const step = (s: Partial<SchedStep>): SchedStep => ({
   detail: null,
   temperature: null,
   split_method: null,
+  cip_method: null,
   package_partial: false,
   notes: null,
   on_task_list: true,

@@ -68,7 +68,7 @@ defmodule RockcutApi.Production.Cips do
     end)
   end
 
-  @doc "Change its `tank_id`, `notes` or `assignee_id`."
+  @doc "Change its `tank_id`, `notes`, `assignee_id` or (unfinished: `:step_done`) `cip_method` (D49)."
   def update(%Step{batch_id: nil} = cip, attrs) do
     attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
 
@@ -81,7 +81,7 @@ defmodule RockcutApi.Production.Cips do
           cip
         end
 
-      case Steps.update(cip, Map.take(attrs, ["notes", "assignee_id"])) do
+      case Steps.update(cip, Map.take(attrs, ["notes", "assignee_id", "cip_method"])) do
         {:ok, cip} -> cip
         {:error, cs} -> Repo.rollback(cs)
       end

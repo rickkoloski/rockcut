@@ -272,6 +272,15 @@ defmodule RockcutApi.Production.CleanNotSanitizedTest do
       assert "dirty_fill" in kinds(schedule(), fv5)
     end
 
+    test "a standalone CIP switches its variant while unfinished", ctx do
+      fv9 = tank!("FV9")
+      c = cip(fv9, ~D[2026-10-25], ctx, nil)
+      {:ok, c} = Cips.update(c, %{"cip_method" => "sanitize"})
+      assert Steps.name(Repo.preload(c, [:step_type, :phase])) == "Sanitize"
+      done = cip(fv9, @today, ctx, "no_sani", true)
+      assert {:error, :step_done} = Cips.update(done, %{"cip_method" => "sanitize_full"})
+    end
+
     test "a standalone CIP's variant is checked", ctx do
       assert {:error, :cip_method_invalid} =
                Cips.create(

@@ -86,6 +86,8 @@ export interface TemplateStep {
   temperature: number | null
   /** How a Split's parts leave (D47): "Split - Transfer" / "Split - Filter". Null for anything else. */
   split_method: SplitMethod | null
+  /** A CIP's variant (D49 §3.12a); null for anything else. */
+  cip_method: CipMethod | null
   /** A Package that takes only some of the beer (D47): not the tank's exit. */
   package_partial: boolean
   notes: string | null
@@ -100,6 +102,17 @@ export const SPLIT_METHODS: { key: SplitMethod; label: string }[] = [
   { key: 'transfer', label: 'Transfer' },
   { key: 'filter', label: 'Filter' },
 ]
+
+/** D49 §3.12a: a CIP's variant. */
+export type CipMethod = 'sanitize_full' | 'no_sani' | 'sanitize'
+
+export const CIP_METHODS: { key: CipMethod; label: string; hint: string }[] = [
+  { key: 'sanitize_full', label: 'CIP & Sanitize', hint: 'Cleans and sanitizes the tank.' },
+  { key: 'no_sani', label: 'CIP - no sani', hint: 'Cleans it; it needs a Sanitize before the next fill.' },
+  { key: 'sanitize', label: 'Sanitize', hint: 'Sanitizes a tank that’s already clean.' },
+]
+
+export const cipLabel = (m: CipMethod | null | undefined) => CIP_METHODS.find((c) => c.key === (m ?? 'sanitize_full'))!.label
 
 export type Answer = 'move_all' | 'move_only'
 
@@ -143,6 +156,8 @@ export interface SchedStep {
   detail: string | null
   temperature: number | null
   split_method: SplitMethod | null
+  /** A CIP's variant (D49 §3.12a); null for anything else. */
+  cip_method: CipMethod | null
   package_partial: boolean
   notes: string | null
   on_task_list: boolean
@@ -192,7 +207,8 @@ export interface SchedBatch {
 
 export interface TankStatusLine {
   tank_id: number
-  state: 'out' | 'in_use' | 'sani' | 'dirty' | 'clean'
+  /** `cleaned` (D49): clean, not sanitized ("Clean no sani 2 days", amber). */
+  state: 'out' | 'in_use' | 'sani' | 'cleaned' | 'dirty' | 'clean'
   /** "Day 18 · Fermentation · 68° · set to 58° today" */
   line: string
   /** Red: a late temperature change, or dirty with no CIP planned. */
@@ -203,7 +219,7 @@ export interface TankStatusLine {
 
 export interface Flag {
   key: string
-  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'transfer_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer'
+  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'transfer_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer' | 'unsanitized_fill'
   message: string
   signature: string
   batch_ids: number[]
@@ -228,12 +244,25 @@ export interface Schedule {
   brewers: Person[]
   /** D48 §3.8: brewers' clean / dirty marks on tanks. */
   condition_marks: ConditionMark[]
+  /** D49 §3.12a: done Sanitize steps that found their tank dirty ("The tank was dirty: run a CIP first."). */
+  sanitize_on_dirty: number[]
 }
+
+/** D48 §3.8, D49 §3.12a: `clean` is Clean & sanitized, `cleaned` Clean not sanitized. */
+export type MarkState = 'clean' | 'cleaned' | 'dirty'
+
+export const MARK_STATES: { key: MarkState; label: string; color: string; hint: string }[] = [
+  { key: 'clean', label: 'Clean & sanitized', color: 'success.main', hint: 'Ready to fill.' },
+  { key: 'cleaned', label: 'Clean not sanitized', color: 'warning.main', hint: 'Cleaned; sanitize it before the next fill.' },
+  { key: 'dirty', label: 'Dirty', color: 'error.main', hint: 'Needs a CIP before the next fill.' },
+]
+
+export const markLabel = (s: MarkState) => MARK_STATES.find((m) => m.key === s)!.label
 
 export interface ConditionMark {
   id: number
   tank_id: number
-  state: 'clean' | 'dirty'
+  state: MarkState
   marked_on: string
   note: string | null
   user_id: number | null

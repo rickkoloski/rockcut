@@ -18,7 +18,7 @@ interface Props {
   hasMix: boolean
   onExpandMode: (m: ExpandMode) => void
   onFlags?: () => void
-  /** Add process ▾ (D48 §3.6): Plan batch… and CIP & Sanitize…. */
+  /** Add process ▾ (D48 §3.6): Plan batch… and CIP… (D49: with the variant). */
   onPlan?: () => void
   onAddCip?: () => void
 }
@@ -66,7 +66,7 @@ function ZoomMenu({ zoom, onZoom }: { zoom: Zoom; onZoom: (z: Zoom) => void }) {
   )
 }
 
-/** "Add process ▾": Plan batch… and CIP & Sanitize… (D48 §3.6, P120). The empty-spot menu is unchanged. */
+/** "Add process ▾": Plan batch… and CIP… (D48 §3.6, P120; D49 §3.12a). */
 function AddProcessMenu({ onPlan, onAddCip }: { onPlan?: () => void; onAddCip?: () => void }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const pick = (fn?: () => void) => () => {
@@ -91,7 +91,7 @@ function AddProcessMenu({ onPlan, onAddCip }: { onPlan?: () => void; onAddCip?: 
           Plan batch…
         </MenuItem>
         <MenuItem onClick={pick(onAddCip)} data-testid="gantt-add-cip">
-          CIP & Sanitize…
+          CIP…
         </MenuItem>
       </Menu>
     </>
