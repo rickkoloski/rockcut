@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
 import {
   Box,
   Button,
@@ -69,6 +69,16 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
   const [removing, setRemoving] = useState(false)
   const [changingRamp, setChangingRamp] = useState(false)
   const closing = useRef(false)
+  // The button an action started from: it's disabled while busy, which
+  // drops focus to the page, and the dialog's focus trap only looks every
+  // 50 ms, so Escape pressed as the refusal shows went nowhere. Focus goes
+  // back to it as soon as it's enabled again.
+  const trigger = useRef<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    if (busy || !trigger.current) return
+    if (document.activeElement === document.body && trigger.current.isConnected) trigger.current.focus()
+    trigger.current = null
+  }, [busy])
   const byId = new Map((batch?.steps ?? []).map((s) => [s.id, s]))
   const after = (batch?.links ?? []).filter((l) => l.from_step_id === step.id)
   const before = (batch?.links ?? []).filter((l) => l.to_step_id === step.id)
@@ -113,6 +123,7 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
   usePhoneBackCloses(true, close)
 
   const act = async (fn: () => Promise<{ ok: boolean; error?: string } | null>) => {
+    trigger.current = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null
     setBusy(true)
     setError(null)
     try {
