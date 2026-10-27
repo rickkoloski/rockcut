@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { addDays, apiAs, cleanupTasks, createTask, denverToday, getBoard, tempTag } from '../brewery/taskBoardHelpers'
+import { seedState } from '../production/schedule'
+import { addDays, apiAs, cleanupTasks, createTask, denverToday, getBoard, moveTask, tempTag } from '../brewery/taskBoardHelpers'
 
 // D40 (spec §3.8): the Brewery Dashboard's Today's tasks card (S50) and the
 // "Unfinished tasks before shift end" notification toggle (S35 UI, S37).
@@ -10,8 +11,14 @@ import { addDays, apiAs, cleanupTasks, createTask, denverToday, getBoard, tempTa
 test.use({ viewport: { width: 1600, height: 1100 } })
 
 const made: number[] = []
+// D49: a Brewery task can be a production step; no test here may change the seed's schedule.
+let seed: string[] = []
+test.beforeEach(async () => {
+  seed = await seedState()
+})
 test.afterEach(async () => {
   await cleanupTasks(made.splice(0))
+  expect(await seedState(), 'this test changed the seed schedule').toEqual(seed)
 })
 
 test.describe('as brewer1', () => {
@@ -22,6 +29,10 @@ test.describe('as brewer1', () => {
     const today = denverToday()
     for (let i = 1; i <= 7; i++) made.push((await createTask(api, { title: tempTag(`S50 task ${i}`), due_on: today })).id)
     made.push((await createTask(api, { title: tempTag('S50 earlier'), due_on: addDays(today, -2) })).id)
+    // The task it ticks is its own, first on today: the first open one may be
+    // the seed's (D49: a production step, which ticking would check off).
+    const top = (await getBoard(api, today, today)).days[0].cards[0]
+    if (top.id !== made[0]) await moveTask(api, made[0], today, top.id)
 
     const board = await getBoard(api, today, today)
     const day = board.days[0]
@@ -38,8 +49,9 @@ test.describe('as brewer1', () => {
     await expect(page.getByTestId('todays-tasks-more')).toHaveText(`+${open.length - 5} more`)
     await expect(page.getByTestId('todays-tasks-unfinished')).toHaveText(`${board.unfinished.length} unfinished from earlier days`)
 
-    // Ticking the first listed task there completes it on the board.
+    // Ticking the first listed task (this spec's) completes it on the board.
     const first = open[0]
+    expect(first.id).toBe(made[0])
     const done = page.waitForResponse((r) => r.url().includes(`/tasks/${first.id}/complete`) && r.ok())
     await page.getByRole('checkbox', { name: `Mark "${first.title}" done` }).click()
     await done

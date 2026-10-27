@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
-import { Box, Button, Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip } from '@mui/material'
+import { Box, Button, Chip, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, TextField, ToggleButton, ToggleButtonGroup, Tooltip, useMediaQuery } from '@mui/material'
 import { Add, ArrowDropDown, Check, ChecklistRtl, ChevronLeft, ChevronRight, FiberManualRecord, Flag as FlagIcon, Today, UnfoldLess, UnfoldMore } from '@mui/icons-material'
 import { clampRange, flagChip, MAX_DAYS, MIN_DAYS, daysBetween, ZOOMS, type ExpandMode, type Range, type Zoom } from '../../../lib/gantt'
 import type { Flag } from '../../../lib/production'
@@ -131,6 +131,8 @@ export function SetupMenu() {
  */
 export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onToday, onZoom, expandMode, hasMix, onExpandMode, onFlags, onPlan, onAddCip, onTaskList }: Props) {
   const [error, setError] = useState<string | null>(null)
+  // At phone width the Task list button is an icon after Set up, so the toolbar keeps its rows.
+  const phone = useMediaQuery('(max-width:559.95px)')
   const open = flags.filter((f) => !f.signed_off && !f.muted).length
 
   const pick = (which: 'from' | 'to', value: string) => {
@@ -221,13 +223,21 @@ export default function GanttToolbar({ range, zoom, flags, onRange, onShift, onT
         data-testid="gantt-flags"
       />
       <Box sx={{ flex: 1 }} />
-      {onTaskList && (
+      {onTaskList && !phone && (
         <Button size="small" variant="outlined" startIcon={<ChecklistRtl />} onClick={onTaskList} data-testid="gantt-task-list">
           Task list
         </Button>
       )}
       <AddProcessMenu onPlan={onPlan} onAddCip={onAddCip} />
       <SetupMenu />
+      {/* At phone width an icon after Set up, in the row the toolbar already has. */}
+      {onTaskList && phone && (
+        <Tooltip title="Task list">
+          <IconButton size="small" onClick={onTaskList} aria-label="Task list" data-testid="gantt-task-list">
+            <ChecklistRtl />
+          </IconButton>
+        </Tooltip>
+      )}
     </Box>
   )
 }
