@@ -77,6 +77,12 @@ test('BB1: a refused Undo keeps its button; once breweryMgr un-checks the Transf
     await expect(snack(page)).toHaveText('Undone.')
     expect(stepOf(await batchOf(b.id), 'Split - Transfer').done_on).toBeNull()
     expect((await part2()).status).toBe('planned')
+    // Persisted: after a reload the Split is open again (Check off, not Mark not done).
+    await page.reload()
+    await openBatch(page, b)
+    await page.getByTestId(`batch-step-note-${stepOf(b, 'Split - Transfer').id}`).click()
+    await expect(page.getByTestId('step-check-off')).toBeVisible()
+    await expect(page.getByTestId('step-uncheck')).toHaveCount(0)
   } finally {
     await owner.close()
   }

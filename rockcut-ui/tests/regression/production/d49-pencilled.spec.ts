@@ -71,6 +71,9 @@ test('P130: Plan batch → Pencil in, Unassigned: an X-number, faded and labeled
   await page.getByTestId(`gantt-bar-${b.id}-0`).click()
   await expect(page.getByTestId('batch-dialog-title')).toHaveText(b.label)
   await expect(page.getByTestId('batch-dialog-sub')).toContainText('pencilled in')
+  // Persisted: still pencilled after a reload.
+  await page.reload()
+  await expect(page.getByTestId('gantt-row-unassigned').getByTestId(`gantt-bar-${b.id}-0`)).toHaveAttribute('data-pencilled', 'true')
 })
 
 test('P131, P132: dragged into a tank over a scheduled batch: a muted overlap, not counted; Schedule this batch; Undo', async ({ page }) => {
@@ -117,6 +120,9 @@ test('P131, P132: dragged into a tank over a scheduled batch: a muted overlap, n
   // Undo reverses it.
   await undo(page)
   expect((await fresh(x.id)).pencilled).toBe(true)
+  await expect(page.getByTestId(`gantt-bar-${x.id}-0`)).toHaveAttribute('data-pencilled', 'true')
+  // The Undo persisted: pencilled, in FV6, after a reload.
+  await page.reload()
   await expect(page.getByTestId(`gantt-bar-${x.id}-0`)).toHaveAttribute('data-pencilled', 'true')
 })
 
@@ -175,4 +181,7 @@ test('P134: checking off brew day on a pencilled batch: "Schedule this batch fir
   const done = await fresh(x.id)
   expect(stepOf(done, 'Brew day').done_on).toBe(today())
   expect(done.status).toBe('fermenting')
+  // Persisted: scheduled (not pencilled) after a reload.
+  await page.reload()
+  await expect(page.getByTestId(`gantt-bar-${x.id}-0`)).not.toHaveAttribute('data-pencilled', 'true')
 })

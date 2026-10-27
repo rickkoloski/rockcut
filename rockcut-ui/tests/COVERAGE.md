@@ -671,13 +671,14 @@ Playwright specs are in `regression/production/` (project `production`) and, for
 | P94 | Check off a step planned 3 days ago: moves to today with the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
 | P95 | Check off a planned batch's brew day on the board: the batch number prompt; the title then has "#N" | Playwright `task-board-linked`; ExUnit `task_board_linked_test` |
 | P96 | Edit a linked task: "This task comes from the production schedule" + Open in schedule (the step dialog on the Gantt); no title or day fields | Playwright `task-board-linked` |
-| P97 | Assign a linked task to brewer2: the step's assignee | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `task_link_test` |
+| P97 | Assign a linked task to brewer2: the step's assignee (the Gantt's initials come from it, D47's rendering tests) | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `task_link_test` |
 | P98 | The step's notes changed on the schedule show on the board | Playwright `task-board-linked`; ExUnit `task_link_test` |
 | P99 | Delete a linked task: "Take this off the task list? …"; the step stays, off the list; the schedule's Undo brings it back | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `task_link_test` |
 | P100 | The step dialog's "Show on the Brewery task list" on: the task comes back on its day | Playwright `task-board-linked`; ExUnit `task_link_test` |
 | P101 | Into another tank / its batch number: the titles follow | Playwright `task-board-linked` (tank), P95 (number); ExUnit `task_link_test` (renumbering, renames) |
 | P102 | Gantt → Task list: Late / Today / the next days; check off, Move to [date], assign, Open; follows Show planned batches | Playwright `d49-task-list` |
 | P103 | A standalone CIP: "TANK · CIP & Sanitize" on the board; checked off there, the tank is sanitized | Playwright `task-board-linked`; ExUnit `task_link_test` |
+| P104–P107 | The brewhouse tablet on the schedule | **D50**, not D49 (Matt, 2026-10-26). Until then the tablet sees linked tasks read-only: the tablet row below |
 | P108 | No recurring options on a linked task; Change day… has no Future and runs the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` (`linked_task`) |
 | — | The brewhouse tablet: linked tasks read-only (no checkbox, no drag, no actions, "Do this on the production schedule."); the API refuses every write (`linked_task_device`); "Sign in as me" can | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `device_route_matrix_test` |
 | — | A phase marker has no task-list switch (step dialog, template row, Add phase start) (decision 6.1) | Playwright `d49-task-list` |

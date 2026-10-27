@@ -53,6 +53,12 @@ async function brewed(label: string, ago: number) {
 /** The board on the week around `day` (one row: every drag stays on screen). */
 const openAround = (page: Page, day = today()) => openBoard(page, { from: addDays(day, -3), to: addDays(day, 3) })
 
+/** Persist-verified (local gate): the board reloaded from the server. */
+async function reloadBoard(page: Page) {
+  await page.reload()
+  await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
+}
+
 const title = (tank: string, batch: SBatch, step: string) => `${tank} · ${batch.label} · ${step}`
 const step = async (id: number) => (await schedule()).batches.flatMap((b) => b.steps).concat((await schedule()).cips).find((s) => s.id === id) as SStep
 
@@ -116,6 +122,9 @@ test('P92: dragging a linked task two days later runs the move prompt; Apply mov
   await expect.poll(async () => (await step(fdh.id)).due_on).toBe(to)
   expect((await step(ramp.id)).due_on).toBe(addDays(ramp.due_on, 2))
   await expect(card(page, c.id, to)).toBeVisible()
+  await reloadBoard(page)
+  await expect(card(page, c.id, to)).toBeVisible()
+  await expect(card(page, c.id, fdh.due_on)).toHaveCount(0)
 })
 
 test('the move prompt cancelled puts the card back; nothing moves', async ({ page }) => {
@@ -129,6 +138,8 @@ test('the move prompt cancelled puts the card back; nothing moves', async ({ pag
   await expect(card(page, c.id, fdh.due_on)).toHaveCount(1)
   await expect(card(page, c.id, fdh.due_on)).toBeVisible()
   expect((await step(fdh.id)).due_on).toBe(fdh.due_on)
+  await reloadBoard(page)
+  await expect(card(page, c.id, fdh.due_on)).toBeVisible()
 })
 
 test('P93: a step due today checks off with no question, and is done on the Gantt', async ({ page }) => {
@@ -142,6 +153,8 @@ test('P93: a step due today checks off with no question, and is done on the Gant
   await expect(snack(page)).toHaveText('FDH done.')
   await expect(page.getByTestId('finish-dialog')).toHaveCount(0)
   expect((await step(fdh.id)).done_on).toBe(today())
+  await reloadBoard(page)
+  await expect(page.getByTestId(`task-check-${c.id}:${today()}`)).toBeChecked()
 })
 
 test('P94: a step planned 3 days ago checks off today with the move prompt, never "where should it show"', async ({ page }) => {
@@ -159,6 +172,9 @@ test('P94: a step planned 3 days ago checks off today with the move prompt, neve
   const s = await step(fdh.id)
   expect([s.due_on, s.done_on]).toEqual([today(), today()])
   await expect(page.getByTestId(`task-check-${c.id}:${today()}`)).toBeChecked()
+  await reloadBoard(page)
+  await expect(page.getByTestId(`task-check-${c.id}:${today()}`)).toBeChecked()
+  await expect(card(page, c.id, 'unfinished')).toHaveCount(0)
 })
 
 test('P95: brew day of a planned batch asks for the batch number on the board', async ({ page }) => {
@@ -172,7 +188,11 @@ test('P95: brew day of a planned batch asks for the batch number on the board', 
   await page.getByTestId('number-input').fill(number)
   await page.getByTestId('number-save').click()
   await expect(snack(page)).toContainText(`is #${number}.`)
-  expect((await linked(brew.id))!.title).toBe(`${tank} · ${batch.label.replace(/ P\d+$/, '')} #${number} · Brew day`)
+  const done = `${tank} · ${batch.label.replace(/ P\d+$/, '')} #${number} · Brew day`
+  expect((await linked(brew.id))!.title).toBe(done)
+  await reloadBoard(page)
+  await expect(page.getByTestId(`task-title-${c.id}:${today()}`)).toHaveText(done)
+  await expect(page.getByTestId(`task-check-${c.id}:${today()}`)).toBeChecked()
 })
 
 test('P96–P98: Edit says where it comes from; notes and assignee go to the step, and back', async ({ page }) => {
@@ -200,8 +220,9 @@ test('P96–P98: Edit says where it comes from; notes and assignee go to the ste
   await (await apiAs('brewer1')).patch(`${P}/steps/${fdh.id}`, { data: { notes: 'From the Gantt' } })
   expect((await linked(fdh.id))!.notes).toBe('From the Gantt')
 
-  // Open in schedule: the step's dialog on the Gantt.
-  await page.reload()
+  // Open in schedule: the step's dialog on the Gantt. After the reload the card has brewer2's initials.
+  await reloadBoard(page)
+  await expect(page.getByTestId(`task-assignee-${c.id}:${c.due_on}`)).toBeVisible()
   await card(page, c.id, c.due_on!).click()
   await page.getByTestId('task-menu-edit').click()
   await page.getByTestId('task-dialog-open-schedule').click()
@@ -225,6 +246,8 @@ test('P99, P100: Delete takes it off the task list (the step stays; Undo brings 
 
   await page.getByTestId('gantt-undo').click()
   await expect.poll(async () => (await linked(fdh.id))?.title).toBe(c.title)
+  await reloadBoard(page)
+  await expect(page.getByText(c.title, { exact: true })).toBeVisible()
 
   // P100: off again, then on from the step dialog (the schedule's Open link).
   await (await apiAs('brewer1')).patch(`${P}/steps/${fdh.id}`, { data: { on_task_list: false } })
@@ -234,6 +257,9 @@ test('P99, P100: Delete takes it off the task list (the step stays; Undo brings 
   await page.keyboard.press('Escape')
   await expect(page.getByTestId('step-dialog')).toBeHidden()
   await expect.poll(async () => (await linked(fdh.id))?.due_on).toBe(fdh.due_on)
+  // On the board after navigating there.
+  await openAround(page, fdh.due_on)
+  await expect(page.getByText(c.title, { exact: true })).toBeVisible()
 })
 
 test('P101: into another tank and with its batch number, the titles follow', async () => {
@@ -261,6 +287,8 @@ test('P103, P125: standalone CIPs on the board; checking one off there marks the
   await expect(page.getByTestId(`task-planned-${c.id}:${today()}`)).toHaveCount(0)
   await setBoardCheck(page.getByTestId(`task-check-${c.id}:${today()}`), true)
   await expect.poll(async () => (await step(cip.id)).done_on).toBe(today())
+  await reloadBoard(page)
+  await expect(page.getByTestId(`task-check-${c.id}:${today()}`)).toBeChecked()
   const status = (await schedule()).statuses.find((s) => s.tank_id === tank.id)!
   expect(status.line).toMatch(/^Sani 0 days/)
 })
@@ -288,6 +316,8 @@ test('P108: no recurring options on a linked task; Change day has no Future and 
   await page.getByTestId('move-only').check()
   await page.getByTestId('move-apply').click()
   await expect.poll(async () => (await step(fdh.id)).due_on).toBe(addDays(fdh.due_on, 1))
+  await reloadBoard(page)
+  await expect(card(page, c.id, addDays(fdh.due_on, 1))).toBeVisible()
 })
 
 test('P130, P132, P133, P135: a pencilled batch has no tasks, whatever the toggle; Schedule adds them, Pencil in removes them', async ({ page }) => {
@@ -334,6 +364,9 @@ test("decision 8.3: on the Dashboard's Today's tasks card, brew day opens its st
   await page.getByRole('checkbox', { name: `Mark "${cipTask.title}" done` }).click()
   await expect(list).not.toContainText(cipTask.title)
   expect((await step(cip.id)).done_on).toBe(today())
+  await page.reload()
+  await expect(list).toContainText(brewTask.title)
+  await expect(list).not.toContainText(cipTask.title)
 
   // Brew day needs the batch number: the step on the schedule, nothing checked off.
   await page.getByRole('checkbox', { name: `Mark "${brewTask.title}" done` }).click()

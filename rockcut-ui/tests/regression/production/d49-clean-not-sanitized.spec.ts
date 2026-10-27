@@ -39,6 +39,12 @@ async function fill(tankId: number, brewIn: number, label = 'Fest'): Promise<SBa
 const tankFlags = async (tankId: number) => (await schedule()).flags.filter((f) => f.tank_id === tankId && !f.signed_off).map((f) => f.kind).sort()
 const status = (page: Page, tankId: number) => page.getByTestId(`gantt-status-${tankId}`)
 
+/** Persist-verified (local gate): the Gantt reloaded from the server still shows `line` for the tank. */
+async function afterReload(page: Page, tankId: number, line: string) {
+  await page.reload()
+  await expect(status(page, tankId)).toHaveText(line)
+}
+
 async function openPanel(page: Page, tankId: number) {
   await page.getByTestId(`gantt-tank-menu-${tankId}`).click()
   await expect(page.getByTestId('tank-panel')).toBeVisible()
@@ -86,6 +92,8 @@ test('P122: Sani 40 days → Mark… → Clean not sanitized: "Clean no sani 0 d
 
   await undo(page)
   await expect(status(page, s1.id)).toHaveText('Sani 40 days')
+  // The mark was read back from the server above; the Undo is too.
+  await afterReload(page, s1.id, 'Sani 40 days')
 })
 
 test('P123: a fill after it is flagged "isn\'t sanitized" (soft): sign off; a done CIP & Sanitize before it clears it', async ({ page }) => {
@@ -109,6 +117,7 @@ test('P123: a fill after it is flagged "isn\'t sanitized" (soft): sign off; a do
   await expect(snack(page)).toHaveText(`CIP & Sanitize recorded in ${s1.name}.`)
   await expect(status(page, s1.id)).toHaveText('Sani 0 days')
   expect((await schedule()).flags.filter((f) => f.tank_id === s1.id)).toEqual([])
+  await afterReload(page, s1.id, 'Sani 0 days')
 })
 
 test('P124: a dirty tank → Mark… → Clean not sanitized: the dirty flags clear', async ({ page }) => {
@@ -126,6 +135,7 @@ test('P124: a dirty tank → Mark… → Clean not sanitized: the dirty flags cl
   await expect(status(page, fv.id)).toHaveText('Clean no sani 0 days')
   await expect(page.getByTestId('tank-panel-history')).toContainText('Clean not sanitized')
   expect(await tankFlags(fv.id)).toEqual([])
+  await afterReload(page, fv.id, 'Clean no sani 0 days')
 })
 
 test('P125: Add process ▾ → CIP… → CIP - no sani, already done, on a dirty tank: Clean no sani, no dirty flags', async ({ page }) => {
@@ -138,6 +148,7 @@ test('P125: Add process ▾ → CIP… → CIP - no sani, already done, on a dir
   expect(await tankFlags(s1.id)).toEqual([])
   const c = (await schedule()).cips.find((x) => x.tank_id === s1.id)!
   expect(c.name).toBe('CIP - no sani')
+  await afterReload(page, s1.id, 'Clean no sani 0 days')
 })
 
 test('P126: a batch\'s exit CIP switched to CIP - no sani in the step dialog; the next fill isn\'t sanitized, not dirty', async ({ page }) => {
@@ -160,6 +171,11 @@ test('P126: a batch\'s exit CIP switched to CIP - no sani in the step dialog; th
   const after = (await schedule()).batches.find((b) => b.id === first.id)!
   expect(after.steps.find((s) => s.id === exitCip.id)!.name).toBe('CIP - no sani')
   expect(await tankFlags(fv.id)).toEqual(['unsanitized_fill'])
+  // After a reload, the step dialog still has the variant.
+  await page.reload()
+  await page.getByTestId(`gantt-bar-${first.id}-0`).click()
+  await page.getByTestId(`batch-step-note-${exitCip.id}`).click()
+  await expect(page.getByTestId('step-cip-method')).toContainText('CIP - no sani')
 })
 
 test('P127: Clean no sani 2 days → Add process ▾ → CIP… → Sanitize, done: Sani 0 days; a fill after it has no flags', async ({ page }) => {
@@ -172,6 +188,7 @@ test('P127: Clean no sani 2 days → Add process ▾ → CIP… → Sanitize, do
   await addCipDone(page, s1.id, 'sanitize')
   await expect(snack(page)).toHaveText(`Sanitize recorded in ${s1.name}.`)
   await expect(status(page, s1.id)).toHaveText('Sani 0 days')
+  await afterReload(page, s1.id, 'Sani 0 days')
   await fill(s1.id, 3)
   expect((await schedule()).flags.filter((f) => f.tank_id === s1.id)).toEqual([])
 })
@@ -215,7 +232,7 @@ test('P129: a Sanitize done on a dirty tank (empty-spot menu): still dirty; the 
   await page.getByTestId('cip-add-dialog').getByRole('button', { name: 'Save' }).click()
   await expect(snack(page)).toHaveText(`Sanitize recorded in ${fv.name}.`)
 
-  await expect(status(page, fv.id)).toHaveText('Empty · dirty 1 day · no CIP planned')
+  await afterReload(page, fv.id, 'Empty · dirty 1 day · no CIP planned')
   const s = (await schedule()).cips.find((c) => c.tank_id === fv.id)!
   await page.getByTestId(`gantt-cip-${s.id}`).click()
   await expect(page.getByTestId('step-sanitize-dirty')).toHaveText('The tank was dirty: run a CIP first.')

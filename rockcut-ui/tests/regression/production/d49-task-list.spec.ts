@@ -61,6 +61,13 @@ test('P102: the Task list: Late and Today; check off, move, assign and Open', as
   await expect(panel.getByTestId('task-list-group-late').getByTestId(`task-list-row-${pdhTask}`)).toHaveCount(0)
   await expect(panel.getByTestId(`task-list-group-${addDays(today(), 1)}`).getByTestId(`task-list-row-${pdhTask}`)).toBeVisible()
 
+  // Persisted: after a reload the panel has FDH done, and PDH tomorrow with brewer2.
+  await page.reload()
+  await page.getByTestId('gantt-task-list').click()
+  await expect(panel.getByTestId(`task-list-check-${fdhTask}`)).toBeChecked()
+  await expect(panel.getByTestId(`task-list-group-${addDays(today(), 1)}`).getByTestId(`task-list-row-${pdhTask}`)).toBeVisible()
+  await expect(panel.getByTestId(`task-list-assignee-${pdhTask}`)).toContainText('Riley')
+
   // Open: the step dialog.
   await panel.getByTestId(`task-list-open-${pdhTask}`).click()
   await expect(panel).toBeHidden()
