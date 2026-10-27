@@ -125,6 +125,8 @@ test('the move prompt cancelled puts the card back; nothing moves', async ({ pag
   await openAround(page, fdh.due_on)
   await mouseDrag(page, card(page, c.id, fdh.due_on), page.getByTestId(`day-list-${addDays(fdh.due_on, 1)}`))
   await page.getByTestId('move-cancel').click()
+  // One card, back on its day (the drag's overlay copy may still be leaving).
+  await expect(card(page, c.id, fdh.due_on)).toHaveCount(1)
   await expect(card(page, c.id, fdh.due_on)).toBeVisible()
   expect((await step(fdh.id)).due_on).toBe(fdh.due_on)
 })
@@ -309,6 +311,36 @@ test('P130, P132, P133, P135: a pencilled batch has no tasks, whatever the toggl
   // P133: pencilled in again, they go.
   expect((await api.post(`${P}/batches/${batch.id}/pencil`)).status()).toBe(200)
   expect(await linked(fdh.id)).toBeUndefined()
+})
+
+test("decision 8.3: on the Dashboard's Today's tasks card, brew day opens its step on the schedule; a CIP checks off there", async ({ page }) => {
+  const { batch } = await ale('Galactic', 0)
+  const brew = stepOf(batch, 'Brew day')
+  const tank = await made.tank('FV')
+  const api = await apiAs('brewer1')
+  const cip = (await (await api.post(`${P}/cips`, { data: { tank_id: tank.id, due_on: today() } })).json()).data.cip as SStep
+  made.cips.push(cip.id)
+  // The card lists today's first five open tasks: put these two first.
+  const [brewTask, cipTask] = [(await linked(brew.id))!, (await linked(cip.id))!]
+  for (const t of [cipTask, brewTask]) {
+    const first = (await getBoard(api, today(), today())).days[0].cards[0]
+    expect((await api.post(`/api/boards/brewery/tasks/${t.id}/move`, { data: { due_on: today(), before_id: first.id } })).status()).toBe(200)
+  }
+
+  await page.goto('/brewery')
+  const list = page.getByTestId('todays-tasks-list')
+  await expect(list).toContainText(cipTask.title)
+  // No prompt needed: checked off in the card.
+  await page.getByRole('checkbox', { name: `Mark "${cipTask.title}" done` }).click()
+  await expect(list).not.toContainText(cipTask.title)
+  expect((await step(cip.id)).done_on).toBe(today())
+
+  // Brew day needs the batch number: the step on the schedule, nothing checked off.
+  await page.getByRole('checkbox', { name: `Mark "${brewTask.title}" done` }).click()
+  await expect(page).toHaveURL(/\/brewery\/production/)
+  await expect(page.getByTestId('step-dialog')).toBeVisible()
+  await expect(page.getByTestId('step-dialog')).toContainText('Brew day')
+  expect((await step(brew.id)).done_on).toBeNull()
 })
 
 test.describe('the brewhouse tablet (decision 8: read-only until D50)', () => {

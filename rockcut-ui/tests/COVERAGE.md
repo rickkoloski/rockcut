@@ -681,6 +681,7 @@ Playwright specs are in `regression/production/` (project `production`) and, for
 | P108 | No recurring options on a linked task; Change day… has no Future and runs the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` (`linked_task`) |
 | — | The brewhouse tablet: linked tasks read-only (no checkbox, no drag, no actions, "Do this on the production schedule."); the API refuses every write (`linked_task_device`); "Sign in as me" can | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `device_route_matrix_test` |
 | — | A phase marker has no task-list switch (step dialog, template row, Add phase start) (decision 6.1) | Playwright `d49-task-list` |
+| — | The Dashboard's Today's tasks card: a linked brew day (batch number) opens its step on the schedule, nothing checked off; a CIP checks off in the card (decision 8.3) | Playwright `task-board-linked` |
 | — | Move all to today leaves linked tasks; shift-end reminders list them | Playwright `task-board-range` (S20); ExUnit `task_board_linked_test`, `task_shift_end_reminder_test` |
 | BB1 | A refused snackbar Undo keeps its button until the token runs out; the same Undo works once another user clears the blocker | Playwright `d49-undo-retry` |
 | BB2 | The Split's Undo after a part's full Package, brew day's in a split family, a Split un-check's after brew day, a late Split's: refused with the rule's own code, then undone once it's cleared (the late Split's parts get their dates back); a real change since is still `undo_stale` | ExUnit `split_moves_test` |

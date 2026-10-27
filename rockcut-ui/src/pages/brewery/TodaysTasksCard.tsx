@@ -1,7 +1,7 @@
 import { Alert, Box, Card, CardContent, Checkbox, Chip, CircularProgress, Link, List, ListItem, Stack, Typography } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import api from '../../lib/api'
 import { boardPath, coloradoToday, initials, taskError, todaysTasks } from '../../lib/tasks'
@@ -16,10 +16,12 @@ const DEPT = 'brewery'
  * 2/4" with the unticked items, today's first five open tasks with assignee
  * initials and "+N more", "N unfinished from earlier days". The boxes tick
  * and complete as on the board (today's own tasks: no "where should it
- * show" question); the title opens the board.
+ * show" question); the title opens the board. D49: a linked task that needs
+ * the schedule's prompts opens its step there (decision 8.3).
  */
 export default function TodaysTasksCard() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const today = coloradoToday()
   const { data: board, isLoading, isError, error } = useApiQuery<TaskBoardData>(
     [BOARD_KEY, DEPT, today, today],
@@ -44,7 +46,21 @@ export default function TodaysTasksCard() {
   }
 
   const complete = (card: TaskCardData) =>
-    write(`task:${card.id}`, () => api.post(boardPath(DEPT, 'tasks', card.id, 'complete'), {}))
+    write(`task:${card.id}`, async () => {
+      const path = boardPath(DEPT, 'tasks', card.id, 'complete')
+      // D49 decision 8.3: a linked task that needs a prompt (brew day's batch
+      // number, or steps to move when done off plan) opens its step on the
+      // schedule instead; the rest check off here.
+      if (card.production) {
+        const { data } = await api.post<{ data: { preview: { needs_batch_number: boolean; move: { following: unknown[] } | null } } }>(path, {
+          preview: true,
+        })
+        const { needs_batch_number, move } = data.data.preview
+        if (needs_batch_number || (move && move.following.length > 0))
+          return navigate(`/brewery/production?step=${card.production.step_id}&day=${card.due_on}`)
+      }
+      await api.post(path, {})
+    })
 
   const tick = (item: DailyCardItem) =>
     write(`daily:${item.daily_item_id}`, () => api.put(boardPath(DEPT, 'daily_checks', board!.today, item.daily_item_id)))
