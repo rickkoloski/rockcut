@@ -134,9 +134,11 @@ test.describe('Move all to today', () => {
     const t1 = await createTask(api, { title: tempTag('S20 yesterday'), due_on: addDays(today(), -1) })
     created.push(t3.id, t2.id, t1.id)
     const before = await getBoard(api, today(), today())
-    restore = before.unfinished
+    // D49: the linked tasks (the seed's steps) stay; they move with their steps.
+    const [movable, linked] = [before.unfinished.filter((c) => !c.production), before.unfinished.filter((c) => c.production)]
+    restore = movable
     const ownToday = before.days[0].cards.filter((c) => c.due_on === today())
-    const n = before.unfinished.length
+    const n = movable.length
 
     await openBoard(page)
     await page.getByTestId('unfinished-move-all').click()
@@ -147,10 +149,15 @@ test.describe('Move all to today', () => {
     expect((await (await moved).json()).moved).toBe(n)
     await page.reload()
     await expect(page.getByTestId(`day-${today()}`)).toBeVisible()
-    await expect(page.getByTestId('unfinished-card')).toHaveCount(0) // S21
+    // S21: the card goes away, unless linked tasks are still on it (then Move all does).
+    if (linked.length === 0) await expect(page.getByTestId('unfinished-card')).toHaveCount(0)
+    else {
+      await expect.poll(() => listKeys(page, 'unfinished-list')).toEqual(linked.map((c) => c.key))
+      await expect(page.getByTestId('unfinished-move-all')).toHaveCount(0)
+    }
 
     const after = (await getBoard(api, today(), today())).days[0].cards.filter((c) => c.due_on === today())
-    expect(titlesIn(after)).toEqual([...titlesIn(ownToday), ...titlesIn(before.unfinished)])
+    expect(titlesIn(after)).toEqual([...titlesIn(ownToday), ...titlesIn(movable)])
     const mine = titlesIn(after).filter((t) => [t3.title, t2.title, t1.title].includes(t))
     expect(mine).toEqual([t3.title, t2.title, t1.title])
 

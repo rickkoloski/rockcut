@@ -3,8 +3,10 @@ import { Today } from '@mui/icons-material'
 import type { ContainerSlot } from '../../components/dnd/SortableLists'
 
 interface Props {
-  /** Every open task before today, whatever the filter (what Move all moves). */
+  /** Every open task before today, whatever the filter. */
   total: number
+  /** What Move all moves: not the linked tasks (D49), which move with their steps. 0 hides the button. */
+  movable: number
   slot: ContainerSlot
   onMoveAll: () => void
 }
@@ -13,7 +15,7 @@ interface Props {
  * D38 §3.8 Unfinished card: open tasks from earlier days, oldest first. Tasks
  * can be dragged out of it onto a day, not into it.
  */
-export default function UnfinishedCard({ total, slot: { setNodeRef, items }, onMoveAll }: Props) {
+export default function UnfinishedCard({ total, movable, slot: { setNodeRef, items }, onMoveAll }: Props) {
   return (
     <Paper
       variant="outlined"
@@ -26,9 +28,11 @@ export default function UnfinishedCard({ total, slot: { setNodeRef, items }, onM
       <Box ref={setNodeRef} data-testid="unfinished-list" sx={{ display: 'flex', flexDirection: 'column', gap: 0.5, minHeight: 48 }}>
         {items}
       </Box>
-      <Button size="small" variant="outlined" color="warning" startIcon={<Today />} onClick={onMoveAll} data-testid="unfinished-move-all">
-        Move all to today
-      </Button>
+      {movable > 0 && (
+        <Button size="small" variant="outlined" color="warning" startIcon={<Today />} onClick={onMoveAll} data-testid="unfinished-move-all">
+          Move all to today
+        </Button>
+      )}
     </Paper>
   )
 }

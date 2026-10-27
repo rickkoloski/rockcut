@@ -32,12 +32,14 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     // D38: the Brewery task board is one shared board, and "Move all to today"
-    // moves every open past task, so its specs run one at a time (beside the
-    // rest of the suite, which never touches the board).
+    // moves every open past task, so its specs run one at a time (beside
+    // `chromium`, which never touches the board). D49: production steps are
+    // tasks on that board, so the production specs' batches would land on it
+    // mid-spec; it runs after `production` (`--no-deps` to run it alone).
     {
       name: 'brewery-board',
       testMatch: /task-board-.*\.spec\.ts/,
-      dependencies: ['setup'],
+      dependencies: ['setup', 'production'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },
     },

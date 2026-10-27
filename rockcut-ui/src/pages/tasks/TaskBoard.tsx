@@ -399,6 +399,9 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
     }
   }
 
+  // D49: Move all leaves the linked tasks (their steps move with the move prompt).
+  const movableCount = (board?.unfinished ?? []).filter((c) => !c.production).length
+
   const moveAllToToday = async () => {
     setBusy(true)
     let moved = 0
@@ -421,7 +424,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
 
   const renderContainer = (container: ListContainer, slot: ContainerSlot): ReactNode => {
     if (container.id === UNFINISHED)
-      return <UnfinishedCard total={board?.unfinished.length ?? 0} slot={slot} onMoveAll={() => setMovingAll(true)} />
+      return <UnfinishedCard total={board?.unfinished.length ?? 0} movable={movableCount} slot={slot} onMoveAll={() => setMovingAll(true)} />
     if (container.id === FUTURE)
       return (
         <FutureList
@@ -639,7 +642,7 @@ export default function TaskBoard({ board: boardEntry, boards }: Props) {
         onClose={() => setMovingAll(false)}
         onConfirm={moveAllToToday}
         title="Move all to today"
-        message={`Move ${board?.unfinished.length ?? 0} unfinished ${board?.unfinished.length === 1 ? 'task' : 'tasks'} to today?`}
+        message={`Move ${movableCount} unfinished ${movableCount === 1 ? 'task' : 'tasks'} to today?`}
         confirmLabel="Move"
         confirmColor="primary"
         loading={busy}

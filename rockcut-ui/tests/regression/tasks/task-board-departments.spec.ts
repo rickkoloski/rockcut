@@ -1,6 +1,6 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
-import { addDays, apiAs, denverToday, denverUtc, tempTag, userId } from '../brewery/taskBoardHelpers'
+import { addDays, apiAs, denverToday, denverUtc, setBoardCheck, tempTag, userId } from '../brewery/taskBoardHelpers'
 import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
 import { openUser } from '../taproom/helpers'
 
@@ -509,7 +509,7 @@ test.describe('owner: All departments', () => {
     await expect(page.getByTestId('board-title')).toHaveText('Taproom tasks')
     const onBoard = page.getByTestId(`task-${pour.id}:${today}`)
     await expect(onBoard).toBeInViewport()
-    await page.getByTestId(`task-check-${pour.id}:${today}`).check()
+    await setBoardCheck(page.getByTestId(`task-check-${pour.id}:${today}`), true)
     // Persisted: the API has it done, and so does the board after a reload.
     await expect.poll(async () => ((await getTask(owner, 'bar', pour.id)) as { done?: boolean } | undefined)?.done).toBe(true)
     await page.reload()

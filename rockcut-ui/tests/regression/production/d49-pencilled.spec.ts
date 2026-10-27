@@ -50,13 +50,18 @@ test('P130: Plan batch → Pencil in, Unassigned: an X-number, faded and labeled
   await page.getByTestId('plan-volume').fill('20')
   await page.getByTestId('plan-dialog').getByRole('button', { name: 'Save' }).click()
   await expect(page.getByTestId('plan-dialog')).toBeHidden()
-  await expect(snack(page)).toHaveText(/^\[TEST-TEMP\] Oktoberfest .* X\d+ pencilled in\.$/)
+  // Other pencilled batches (the seed's X1) may renumber after it.
+  await expect(snack(page)).toHaveText(/^\[TEST-TEMP\] Oktoberfest .* X\d+ pencilled in\.( Batch numbers updated: .*)?$/)
+  const text = (await snack(page).textContent())!
 
   const b = (await schedule()).batches.find((x) => x.brand_id === brand.id)! as Batch
   made.batches.push(b.id)
   expect(b.pencilled).toBe(true)
   expect(b.p_number).toMatch(/^X\d+$/)
   expect(b.label.endsWith(` ${b.p_number}`)).toBe(true)
+  // The snackbar names it, and any pencilled batch brewed later moves up one X-number.
+  expect(text.startsWith(`${b.label} pencilled in.`)).toBe(true)
+  for (const [, from, to] of text.matchAll(/X(\d+) → X(\d+)/g)) expect(Number(to)).toBe(Number(from) + 1)
   const bar = page.getByTestId('gantt-row-unassigned').getByTestId(`gantt-bar-${b.id}-0`)
   await expect(bar).toHaveAttribute('data-pencilled', 'true')
   await expect(bar).toContainText('Pencilled')

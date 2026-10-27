@@ -41,20 +41,20 @@ test.describe('S151: owner, board layers', () => {
 // about 2:1 on dark boards (the whole card was faded). Text needs 4.5:1.
 test.describe('owner, a done task card', () => {
   test.use({ storageState: authFile('owner') })
+  // Each test makes its own: another board spec's clean-up may run between them.
   let taskId: number | null = null
-  test.afterAll(async () => {
+  test.afterEach(async () => {
     await setOwnerMode('light')
     if (taskId) await cleanupTasks([taskId])
+    taskId = null
   })
 
   for (const mode of ['light', 'dark'] as const) {
     test(`"✓ name" and the initials are readable (${mode})`, async ({ page }) => {
       const today = denverToday()
-      if (!taskId) {
-        const t = await createTask(await apiAs('breweryMgr'), { title: tempTag('G3 done card'), due_on: today, assignee_id: await userId(await apiAs('brewer1')) })
-        taskId = t.id
-        await completeTask(await apiAs('brewer1'), t.id)
-      }
+      const t = await createTask(await apiAs('breweryMgr'), { title: tempTag('G3 done card'), due_on: today, assignee_id: await userId(await apiAs('brewer1')) })
+      taskId = t.id
+      await completeTask(await apiAs('brewer1'), t.id)
       await setOwnerMode(mode)
       await openBoard(page)
       const key = `${taskId}:${today}`

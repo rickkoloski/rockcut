@@ -20,7 +20,9 @@ import {
 // D38 §3.8 Future list, scenarios S23c–S23i (S23j, the phone day strip's
 // Future stop, is in task-board-phone.spec.ts).
 
-test.use({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
+// Tall enough for a day's list and the Future list together on screen (mouseDrag),
+// with the production schedule's tasks on the days too (D49).
+test.use({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 2200 } })
 
 const created: number[] = []
 // Shared tasks a test moved out of the way, and where they were.

@@ -642,8 +642,18 @@ export interface TaskCardData {
   series_exception: boolean
   /** D39 G2: the series has ended here and nothing open comes after it (no Stop repeating). */
   series_last: boolean
+  /** D49 §3.12: made from a production step (null for the board's own tasks). */
+  production: TaskProduction | null
   inserted_at: string
   updated_at: string
+}
+
+/** D49: a linked task's step and batch (`batch_id` null for a standalone CIP). */
+export interface TaskProduction {
+  step_id: number
+  batch_id: number | null
+  batch_status: string | null
+  planned: boolean
 }
 
 /** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */
