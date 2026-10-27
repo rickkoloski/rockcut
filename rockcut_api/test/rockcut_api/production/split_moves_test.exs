@@ -296,7 +296,7 @@ defmodule RockcutApi.Production.SplitMovesTest do
   end
 
   describe "Z1: a split part can't get ahead of its parent's Split" do
-    defp brew!(ctx) do
+    defp brew_day!(ctx) do
       brew = named(ctx.batch, "Brew day")
       {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
       brew
@@ -306,7 +306,7 @@ defmodule RockcutApi.Production.SplitMovesTest do
       do: Steps.complete(step.id, %{"answer" => "move_only"}, ctx.brewer, today: today)
 
     test "a part's Package waits for the Split, on either part (QA's route 2)", ctx do
-      brew!(ctx)
+      brew_day!(ctx)
       refusal = {:error, {:before_split, :check_off, "Split - Transfer"}}
 
       # Part 1 stays in the tank, part 2 goes to FV6: both wait.
@@ -336,7 +336,7 @@ defmodule RockcutApi.Production.SplitMovesTest do
     end
 
     test "the Split stays done while a part's exit is (QA's route 1)", ctx do
-      brew = brew!(ctx)
+      brew = brew_day!(ctx)
       split = split_step(ctx)
       assert {:ok, _} = check!(split, ctx, ~D[2026-11-13])
       assert {:ok, _} = check!(named(ctx.p2, "Package"), ctx, ~D[2026-11-22])
@@ -359,7 +359,7 @@ defmodule RockcutApi.Production.SplitMovesTest do
     end
 
     test "un-checking the Split makes every part planned, a part with a done step too", ctx do
-      brew!(ctx)
+      brew_day!(ctx)
       split = split_step(ctx)
       assert {:ok, _} = check!(split, ctx, ~D[2026-11-13])
       assert {:ok, _} = check!(named(ctx.p2, "Carb"), ctx, ~D[2026-11-16])
@@ -371,7 +371,7 @@ defmodule RockcutApi.Production.SplitMovesTest do
     end
 
     test "a part left fermenting before the fix is put right by the next un-check", ctx do
-      brew = brew!(ctx)
+      brew = brew_day!(ctx)
       reload(ctx.p2) |> Ecto.Changeset.change(status: "fermenting") |> Repo.update!()
 
       assert {:ok, _} = Steps.uncomplete(brew.id)
@@ -529,7 +529,7 @@ defmodule RockcutApi.Production.SplitMovesTest do
       assert reload(lager).status == "planned"
     end
 
-    test "controls: plain Undos still work; a full Package is still caught as stale", ctx do
+    test "controls: plain Undos still work; a full Package is refused by the rule (BB2)", ctx do
       carb = named(ctx.p2, "Carb")
       {:ok, {_, token}} = tracked(ctx, fn -> check(carb, ctx.brewer, ~D[2026-11-16]) end)
       assert {:ok, _} = Undo.undo(ctx.brewer, token)
@@ -541,7 +541,8 @@ defmodule RockcutApi.Production.SplitMovesTest do
       assert split_step(ctx).done_on
       assert reload(ctx.p2).status == "fermenting"
 
-      # Recheck 6's caught case: the full Package changes the part, so stale.
+      # Recheck 6's caught case: the full Package. D49 BB2: the rule's own
+      # refusal now, as the direct un-check (was `undo_stale`).
       {:ok, {_, token}} = tracked(ctx, fn -> Steps.uncomplete(split_step(ctx).id) end)
       assert {:ok, _} = Undo.undo(ctx.brewer, token)
       {:ok, _} = Steps.uncomplete(split_step(ctx).id)
@@ -550,7 +551,133 @@ defmodule RockcutApi.Production.SplitMovesTest do
         tracked(ctx, fn -> check(split_step(ctx), ctx.brewer, ~D[2026-11-13]) end)
 
       assert {:ok, _} = check(named(ctx.p1, "Package"), ctx.brewer, ~D[2026-11-22])
+
+      assert {:error, {:part_exit_done, "Galactic #40.1", "Package"}} =
+               Undo.undo(ctx.brewer, token)
+    end
+  end
+
+  describe "BB2: every Undo route refuses with the rule, and comes back once it's cleared" do
+    # The blocker was cleared a while after the write: in real time the
+    # rows it touched since carry a later `updated_at`.
+    defp later!(ctx) do
+      ids = [ctx.batch.id, ctx.p1.id, ctx.p2.id]
+      at = DateTime.utc_now() |> DateTime.add(60) |> DateTime.truncate(:second)
+      Repo.update_all(from(b in Batch, where: b.id in ^ids), set: [updated_at: at])
+
+      Repo.update_all(
+        from(s in RockcutApi.Production.Step, where: s.batch_id in ^ids),
+        set: [updated_at: at]
+      )
+    end
+
+    defp full_package(ctx), do: named(ctx.p2, "Package")
+
+    test "the Split's Undo after a part's full Package: part_exit_done", ctx do
+      brew_day!(ctx)
+
+      {:ok, {_, token}} =
+        tracked(ctx, fn -> check(split_step(ctx), ctx.brewer, ~D[2026-11-13]) end)
+
+      assert {:ok, _} = check(full_package(ctx), ctx.brewer, ~D[2026-11-22])
+      assert reload(ctx.p2).status == "completed"
+
+      assert {:error, {:part_exit_done, "Galactic #40.2", "Package"}} =
+               Undo.undo(ctx.brewer, token)
+
+      assert split_step(ctx).done_on
+      assert full_package(ctx).done_on
+
+      assert {:ok, _} = Steps.uncomplete(full_package(ctx).id)
+      later!(ctx)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert is_nil(split_step(ctx).done_on)
+      assert reload(ctx.batch).status == "fermenting"
+      assert Enum.map([ctx.p1, ctx.p2], &reload(&1).status) == ["planned", "planned"]
+    end
+
+    test "brew day's Undo in a split family after the Split: exit_done", ctx do
+      {:ok, {_, token}} =
+        tracked(ctx, fn ->
+          Steps.complete(named(ctx.batch, "Brew day").id, %{"batch_number" => "40"}, ctx.brewer,
+            today: @brew
+          )
+        end)
+
+      assert {:ok, _} = check(split_step(ctx), ctx.brewer, ~D[2026-11-13])
+
+      assert {:error, {:exit_done, "Split - Transfer"}} = Undo.undo(ctx.brewer, token)
+      assert named(ctx.batch, "Brew day").done_on
+      assert reload(ctx.batch).batch_number == "40"
+
+      assert {:ok, _} = Steps.uncomplete(split_step(ctx).id)
+      later!(ctx)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert is_nil(named(ctx.batch, "Brew day").done_on)
+      assert %{status: "planned", batch_number: nil} = reload(ctx.batch)
+    end
+
+    test "a Split un-check's Undo after brew day is un-checked: before_brew_day", ctx do
+      brew_day!(ctx)
+      assert {:ok, _} = check(split_step(ctx), ctx.brewer, ~D[2026-11-13])
+      {:ok, {_, token}} = tracked(ctx, fn -> Steps.uncomplete(split_step(ctx).id) end)
+      assert {:ok, _} = Steps.uncomplete(named(ctx.batch, "Brew day").id)
+
+      assert {:error, {:before_brew_day, :check_off}} = Undo.undo(ctx.brewer, token)
+      assert is_nil(split_step(ctx).done_on)
+
+      brew_day!(ctx)
+      later!(ctx)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert split_step(ctx).done_on
+      assert Enum.map([ctx.p1, ctx.p2], &reload(&1).status) == ["fermenting", "fermenting"]
+    end
+
+    test "a late Split's Undo after a part's exit: part_exit_done, then the dates come back",
+         ctx do
+      brew_day!(ctx)
+      planned = {dates(ctx.batch), dates(ctx.p1), dates(ctx.p2)}
+
+      {:ok, {_, token}} =
+        tracked(ctx, fn ->
+          Steps.complete(split_step(ctx).id, %{"answer" => "move_all"}, ctx.brewer,
+            today: ~D[2026-11-16]
+          )
+        end)
+
+      assert dates(ctx.p2) == part_dates(3)
+      package = full_package(ctx)
+      assert {:ok, _} = check(package, ctx.brewer, package.due_on)
+
+      assert {:error, {:part_exit_done, "Galactic #40.2", "Package"}} =
+               Undo.undo(ctx.brewer, token)
+
+      assert split_step(ctx).done_on
+      assert full_package(ctx).done_on
+      assert dates(ctx.p2) == part_dates(3)
+
+      assert {:ok, _} = Steps.uncomplete(package.id)
+      later!(ctx)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert is_nil(split_step(ctx).done_on)
+      assert {dates(ctx.batch), dates(ctx.p1), dates(ctx.p2)} == planned
+    end
+
+    test "the rule comes first; a real change since is still stale once it's cleared", ctx do
+      brew_day!(ctx)
+
+      {:ok, {_, token}} =
+        tracked(ctx, fn -> check(split_step(ctx), ctx.brewer, ~D[2026-11-13]) end)
+
+      assert {:ok, _} = check(full_package(ctx), ctx.brewer, ~D[2026-11-22])
+      {:ok, _} = Steps.update(split_step(ctx), %{"notes" => "Moved by hand"})
+
+      assert {:error, {:part_exit_done, _, _}} = Undo.undo(ctx.brewer, token)
+
+      assert {:ok, _} = Steps.uncomplete(full_package(ctx).id)
       assert {:error, :undo_stale} = Undo.undo(ctx.brewer, token)
+      assert split_step(ctx).done_on
+      assert split_step(ctx).notes == "Moved by hand"
     end
   end
 

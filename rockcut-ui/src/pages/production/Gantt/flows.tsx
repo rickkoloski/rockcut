@@ -78,23 +78,34 @@ function failure(err: unknown): Failure {
   return { ok: false, error: prodError(err), code: res?.data?.error as string | undefined, body: res?.data }
 }
 
+// The server keeps an Undo token for 2 minutes (Undo's @ttl_seconds).
+const UNDO_TTL_MS = 120_000
+
+/** The snackbar: `refused` is a refused Undo, shown until its token runs out (D49 BB1). */
+type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean }
+
 type Prompt =
   | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
   | { kind: 'number'; label: string; value: string; error: string | null; suggestion: string; resolve: (n: string | null) => void }
 
 export function FlowsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
-  const [snack, setSnack] = useState<{ message: string; token: string | null; key: number } | null>(null)
+  const [snack, setSnack] = useState<Snack | null>(null)
   const [prompt, setPrompt] = useState<Prompt | null>(null)
   const [undoing, setUndoing] = useState(false)
   const counter = useRef(0)
 
   const refresh = useCallback(() => qc.invalidateQueries({ queryKey: SCHEDULE_KEY }), [qc])
 
-  const notify = useCallback((message: string, token: string | null = null) => {
+  const show = useCallback((snack: Omit<Snack, 'key'>) => {
     counter.current += 1
-    setSnack({ message, token, key: counter.current })
+    setSnack({ ...snack, key: counter.current })
   }, [])
+
+  const notify = useCallback(
+    (message: string, token: string | null = null) => show({ message, token, expiresAt: Date.now() + UNDO_TTL_MS }),
+    [show],
+  )
 
   const write = useCallback(
     async <T,>(call: () => Promise<AxiosResponse>, message: string | ((data: T) => string)): Promise<Result<T>> => {
@@ -216,14 +227,18 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     [write],
   )
 
-  const undo = async (token: string) => {
+  const undo = async ({ token, expiresAt }: { token: string; expiresAt: number }) => {
     setUndoing(true)
     try {
       await api.post(prodPath('undo', token))
       notify('Undone.')
       await refresh()
     } catch (err) {
-      notify(prodError(err))
+      // D49 BB1: a refused Undo keeps its button while the token lasts, so
+      // it works once the blocker is cleared; only a token that's gone drops it.
+      const code = failure(err).code
+      const gone = code === 'undo_expired' || code === 'not_found' || expiresAt <= Date.now()
+      show({ message: prodError(err), token: gone ? null : token, expiresAt, refused: !gone })
       // A refused Undo ("Something changed since."): show what the server has now (DEV QA X5).
       await refresh()
     } finally {
@@ -281,7 +296,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       <Snackbar
         key={snack?.key}
         open={!!snack}
-        autoHideDuration={6000}
+        autoHideDuration={snack?.refused ? Math.max(snack.expiresAt - Date.now(), 0) : 6000}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
         onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
         message={<span data-testid="gantt-snack-text">{snack?.message}</span>}
@@ -293,9 +308,9 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
               size="small"
               disabled={undoing}
               onClick={() => {
-                const t = snack.token!
+                const { token, expiresAt } = snack
                 setSnack(null)
-                undo(t)
+                undo({ token: token!, expiresAt })
               }}
               data-testid="gantt-undo"
             >

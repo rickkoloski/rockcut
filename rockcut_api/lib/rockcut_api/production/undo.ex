@@ -13,7 +13,8 @@ defmodule RockcutApi.Production.Undo do
 
   `undo/2` puts every row back in one transaction, if each still matches
   its after-hash (`:undo_stale` otherwise: "Something changed since. Nothing
-  was undone."). Tokens last 2 minutes (`:undo_expired`), belong to the
+  was undone."; `updated_at` doesn't count). What it marks done or not done
+  follows the order rules first, with the rule's own refusal (D49 BB2). Tokens last 2 minutes (`:undo_expired`), belong to the
   person who made the change (anyone else gets `:not_found`) and are pruned
   on every write.
 
@@ -85,38 +86,21 @@ defmodule RockcutApi.Production.Undo do
     vessels = Map.get(record.entries, "vessels", %{})
 
     Repo.transaction(fn ->
-      for e <- entries do
-        if hash(row(e["table"], e["id"])) != e["after"], do: Repo.rollback(:undo_stale)
+      # D49 BB2: the order rules come first, so a refusal says what to clear
+      # and the same Undo works once it's cleared; the stale check follows.
+      stale? =
+        Enum.any?(entries, &(hash(row(&1["table"], &1["id"])) != &1["after"])) or
+          Enum.any?(vessels, fn {id, h} -> vessels_hash(String.to_integer(id)) != h end)
+
+      try do
+        put_back!(entries)
+      rescue
+        # Putting rows back over changed ones can fail on a key; that's stale.
+        e in Exqlite.Error ->
+          if stale?, do: Repo.rollback(:undo_stale), else: reraise(e, __STACKTRACE__)
       end
 
-      for {id, h} <- vessels,
-          vessels_hash(String.to_integer(id)) != h,
-          do: Repo.rollback(:undo_stale)
-
-      {gone, back} = Enum.split_with(entries, &is_nil(&1["before"]))
-
-      # Children before parents, and within a table the later rows first (a
-      # split's parts before their parent); put back the other way (D48 QA M2).
-      for e <- Enum.sort_by(gone, &{-rank(&1["table"]), -&1["id"]}),
-          do: Repo.query!("DELETE FROM #{e["table"]} WHERE id = ?", [e["id"]])
-
-      # The steps it marks done or not done, against how they are now (a
-      # step it puts back counts as not done now).
-      flips =
-        for e <- back,
-            e["table"] == "production_steps",
-            done?(row(e["table"], e["id"])) != done?(e["before"]),
-            do: {e["id"], done?(e["before"])}
-
-      for e <- Enum.sort_by(back, &{rank(&1["table"]), &1["id"]}),
-          do: put_row!(e["table"], e["before"])
-
-      # D48 DEV QA AA1: and those follow the order rules a check-off or an
-      # un-check does (brew day, then the Split, then a part's exits).
-      Steps.order_after_undo!(
-        for({id, true} <- flips, do: id),
-        for({id, false} <- flips, do: id)
-      )
+      if stale?, do: Repo.rollback(:undo_stale)
 
       # What it puts back follows the N1 rule, over a split's whole tree, as
       # any other change does (fix cycle 4).
@@ -145,6 +129,46 @@ defmodule RockcutApi.Production.Undo do
           |> Enum.uniq()
       }
     end)
+  end
+
+  # Put every row back, then check the order rules on the result.
+  defp put_back!(entries) do
+    {gone, back} = Enum.split_with(entries, &is_nil(&1["before"]))
+
+    # Children before parents, and within a table the later rows first (a
+    # split's parts before their parent); put back the other way (D48 QA M2).
+    for e <- Enum.sort_by(gone, &{-rank(&1["table"]), -&1["id"]}),
+        do: Repo.query!("DELETE FROM #{e["table"]} WHERE id = ?", [e["id"]])
+
+    # A step whose done state the write didn't change keeps how it is now
+    # (D49 BB2: a late Split's carried dates). Only what the write marked
+    # done or not done flips, against how it is now (a step it puts back
+    # counts as not done now); if anything else changed, it's stale.
+    {back, flips} =
+      back
+      |> Enum.map(fn e ->
+        now = if e["table"] == "production_steps", do: row(e["table"], e["id"])
+
+        cond do
+          now == nil -> {e, []}
+          done?(e["before"]) == Map.get(e, "done", done?(now)) -> {keep_done(e, now), []}
+          done?(now) != done?(e["before"]) -> {e, [{e["id"], done?(e["before"])}]}
+          true -> {e, []}
+        end
+      end)
+      |> Enum.unzip()
+
+    flips = List.flatten(flips)
+
+    for e <- Enum.sort_by(back, &{rank(&1["table"]), &1["id"]}),
+        do: put_row!(e["table"], e["before"])
+
+    # D48 DEV QA AA1: and those follow the order rules a check-off or an
+    # un-check does (brew day, then the Split, then a part's exits).
+    Steps.order_after_undo!(
+      for({id, true} <- flips, do: id),
+      for({id, false} <- flips, do: id)
+    )
   end
 
   ## Rows
@@ -284,15 +308,29 @@ defmodule RockcutApi.Production.Undo do
     for key <- Enum.uniq(Map.keys(before) ++ Map.keys(after_)),
         before[key] != after_[key] do
       {table, id} = key
-      %{"table" => table, "id" => id, "before" => before[key], "after" => hash(after_[key])}
+
+      entry = %{
+        "table" => table,
+        "id" => id,
+        "before" => before[key],
+        "after" => hash(after_[key])
+      }
+
+      # A step's done state as the write left it (`put_back!/1`).
+      if table == "production_steps",
+        do: Map.put(entry, "done", done?(after_[key])),
+        else: entry
     end
   end
 
-  # Rows go through JSON in the record, so hash what JSON keeps.
+  # Rows go through JSON in the record, so hash what JSON keeps. Not
+  # `updated_at` (D49 BB2): a row changed and changed back since is as the
+  # write left it, so the Undo comes back once a blocker is cleared.
   defp hash(nil), do: nil
 
   defp hash(row) do
     row
+    |> Map.delete("updated_at")
     |> Jason.encode!()
     |> Jason.decode!()
     |> Enum.sort()
@@ -327,6 +365,11 @@ defmodule RockcutApi.Production.Undo do
   defp merge(a, b), do: Map.merge(a, b, fn _k, x, y -> Enum.uniq(x ++ y) end)
 
   defp done?(row), do: (row || %{})["done_on"] != nil
+
+  @done_columns ~w(done_on done_by_id completed_at)
+
+  defp keep_done(e, now),
+    do: %{e | "before" => Map.merge(e["before"], Map.take(now, @done_columns))}
 
   defp rank(table), do: Enum.find_index(@order, &(&1 == table))
 end
