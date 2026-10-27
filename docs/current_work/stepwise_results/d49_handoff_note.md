@@ -1,4 +1,4 @@
-# D49 handoff note (PR description) — DRAFT
+# D49 handoff note (PR description)
 
 **Deliverable:** D49, production scheduling part 4: task list linkage
 (§3.12), Clean not sanitized (§3.12a), pencilled batches (§3.12b), and
@@ -60,7 +60,7 @@ the migrations.
 ## Tests
 
 - **ExUnit (full, the lead, at `57f9718`; no API change since): 1782 passed.**
-- **Full Playwright, every project (the lead, `--workers=4`, at `9f4539e`, after a local reseed): 563 passed**; G4 failed (flake 4933) and S71 (`task-board-phone:508`) failed once and passed 3 of 3 alone. Final run at the gate SHA: see the PR.
+- **Full Playwright, every project (the lead, `--workers=4`, at `9f4539e`, after a local reseed): 563 passed**; G4 failed (flake 4933) and S71 (`task-board-phone:508`) failed once and passed 3 of 3 alone. **Final gate run (the lead, `1c09258`, after a local reseed): ExUnit 1782 passed; Playwright every project 564 passed, G4 failed (flake 4933), S71 passed; `tsc` clean; `vite build` clean; lint as below.**
 - **New specs:** `regression/tasks/task-board-linked.spec.ts` (15: P90–P101, P103, P108, P125, P130/P132/P133/P135, the tablet, decision 8.3), `regression/production/d49-task-list.spec.ts` (3: P102, Show planned batches, markers), `d49-clean-not-sanitized` (9), `d49-pencilled` (4), `d49-undo-retry` (BB1). Every UI write in them is checked again after a reload or a navigation. ExUnit: `task_link_test` (want/1, sync! after every kind of write, one transaction, the move cost), `task_board_linked_test` (the dispatch, the tablet, `show_planned_batches`), `clean_not_sanitized_test`, `pencilled_test`, the BB2 block in `split_moves_test`, device route matrix cases.
 - **Revert runs (2026-10-26, local):**
 
