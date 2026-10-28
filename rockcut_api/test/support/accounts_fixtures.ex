@@ -102,10 +102,6 @@ defmodule RockcutApi.AccountsFixtures do
     token
   end
 
-  @doc "A pre-D34 sign-in token (a signed `Phoenix.Token`), still accepted until it expires."
-  def legacy_token_fixture(%User{} = user),
-    do: Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", user.id)
-
   @doc "Pair a tablet to `device` directly; returns the plain `dev_` token."
   def device_token_fixture(%User{} = device, name \\ "Taproom iPad 1", paired_by_id \\ nil) do
     {token, _row} = RockcutApi.Devices.issue_token(device, name, paired_by_id)

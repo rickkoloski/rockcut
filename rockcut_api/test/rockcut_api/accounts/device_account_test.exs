@@ -207,7 +207,7 @@ defmodule RockcutApi.Accounts.DeviceAccountTest do
 
   describe "API refusals" do
     setup %{owner: o} do
-      token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", o.id)
+      token = session_token_fixture(o)
       %{authed: build_conn() |> put_req_header("authorization", "Bearer #{token}")}
     end
 

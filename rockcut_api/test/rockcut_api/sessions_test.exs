@@ -185,7 +185,7 @@ defmodule RockcutApi.SessionsTest do
   end
 
   describe "revoke_all/3" do
-    test "revokes every other session, keeps the one named, and cuts off legacy tokens" do
+    test "revokes every other session and keeps the one named" do
       user = user_fixture()
       other = user_fixture()
       {keep, keep_row} = Sessions.create(user, [], @t0)
@@ -199,8 +199,6 @@ defmodule RockcutApi.SessionsTest do
       assert :error = Sessions.authenticate(a, at(6))
       assert :error = Sessions.authenticate(b, at(6))
       assert {:ok, _, _} = Sessions.authenticate(theirs, at(6))
-      assert Sessions.legacy_tokens_revoked?(Repo.reload!(user))
-      refute Sessions.legacy_tokens_revoked?(Repo.reload!(other))
     end
 
     test "with no session to keep, revokes them all" do

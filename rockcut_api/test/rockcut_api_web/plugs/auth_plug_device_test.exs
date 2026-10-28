@@ -50,7 +50,7 @@ defmodule RockcutApiWeb.AuthPlugDeviceTest do
   end
 
   test "a signed session token for a device user is refused (lead decision 2)", %{device: d} do
-    token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", d.id)
+    token = session_token_fixture(d)
     conn = build_conn() |> put_req_header("authorization", "Bearer #{token}") |> get("/api/me")
     assert conn.status == 401
   end
