@@ -9,6 +9,7 @@ import {
   completeTask,
   createTask,
   denverToday,
+  fitViewportToBoard,
   getBoard,
   listKeys,
   mouseDrag,
@@ -64,9 +65,9 @@ test('S19: dragging a task out of the Unfinished card onto day 2 moves it there'
   created.push(task.id)
   const day2 = addDays(today(), 1)
 
-  // Tall, as the other drag specs: other tasks on a shared board make the days taller.
-  await page.setViewportSize({ width: 1600, height: 2200 })
+  // Other tasks on a shared board make the days taller: size the viewport to the board.
   await openBoard(page)
+  await fitViewportToBoard(page, 2200)
   const moved = boardWrite(page, new RegExp(`/${task.id}/move$`))
   await mouseDrag(page, card(page, task.id, 'unfinished'), page.getByTestId(`day-list-${day2}`))
   expect((await moved).request().postDataJSON()).toMatchObject({ due_on: day2 })
@@ -82,9 +83,9 @@ test('a task dragged over the Unfinished card gets no spot there, and stays on i
   const task = await createTask(api, { title: tempTag('Drag over Unfinished'), due_on: today() })
   created.push(late.id, task.id)
 
-  // Tall, as the other drag specs, so an extra card or two can't push today's card off screen.
-  await page.setViewportSize({ width: 1600, height: 2200 })
+  // Sized to the board, as the other drag specs, so extra cards can't push today's card off screen.
   await openBoard(page)
+  await fitViewportToBoard(page, 2200)
   const lifted = '[aria-roledescription="sortable"][aria-pressed="true"]'
   const unfinished = page.getByTestId('unfinished-list')
   let moves = 0
