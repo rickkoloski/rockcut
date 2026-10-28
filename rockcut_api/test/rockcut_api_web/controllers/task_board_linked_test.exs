@@ -15,11 +15,9 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
 
   alias RockcutApi.{AccountsFixtures, Devices, Repo, Sessions, StaffCodes, Tasks}
   alias RockcutApi.Production.Step
-  alias RockcutApi.StaffCodes.RateLimiter
   alias RockcutApi.Tasks.Task
 
   setup do
-    RateLimiter.reset()
     p = personas(~w(owner breweryMgr brewer1 brewer2 bartender1))
     {:ok, _} = StaffCodes.set(p["brewer1"], "1111", p["breweryMgr"])
     fv4 = tank!("FV4")

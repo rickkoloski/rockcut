@@ -7,7 +7,6 @@ defmodule RockcutApiWeb.DeviceControllerTest do
 
   alias RockcutApi.{Devices, Repo}
   alias RockcutApi.Accounts.AuditEntry
-  alias RockcutApi.Devices.PairingRateLimiter
 
   setup do
     p = personas(~w(owner barMgr breweryMgr bartender1 dualMgr))
