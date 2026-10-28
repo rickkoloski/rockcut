@@ -96,8 +96,8 @@ Specs that end, revoke or change a person's session use a throwaway `[TEST-TEMP]
 | S9 | Owner reset revokes all | ExUnit `session_revocation_test` |
 | S10 | Deactivation unchanged | ExUnit `session_revocation_test`, `sessions_test` |
 | S11 | Made-up `ses_` → 401; stale/garbage device header → normal 30-day sign-in | ExUnit `session_revocation_test` |
-| S12 | Pre-D34 token still accepted | ExUnit `session_revocation_test` |
-| S13 | Pre-D34 token refused after reset / own change / sign-out-others | ExUnit `session_revocation_test` |
+| S12 | ~~Pre-D34 token still accepted~~ Retired in D51 (4058): pre-D34 tokens are refused, see D51 S2 | — |
+| S13 | ~~Pre-D34 token refused after reset / own change / sign-out-others~~ Retired in D51 (4058): refused always | — |
 | S14 | Profile → Sign out of all other devices | ExUnit `session_revocation_test` (audit); Playwright `auth/session_revocation` |
 | S15 | No profile during a personal sign-in on a tablet | Playwright `personal_signin_revoke` |
 | S16 | Device → `DELETE /api/sessions/others` 403 | ExUnit `session_revocation_test`, `device_route_matrix_test` |
@@ -702,3 +702,14 @@ Playwright specs are in `regression/production/` (project `production`) and, for
 | P134 | Brew day on a pencilled batch: "Schedule this batch first." (`schedule_first`); Cancel leaves it; Schedule, then the number prompt and the check-off | Playwright `d49-pencilled`; ExUnit `pencilled_test`, controller test |
 | P135 | Show planned batches on: a pencilled batch's steps never show on the board | Playwright `task-board-linked`; ExUnit `task_link_test` |
 | — | X-numbers by brew date, renumbered both ways; split parts follow their parent (X1.2), scheduled together | ExUnit `pencilled_test` |
+
+## D51 part 2 — Auth cleanup, build commit (`specs/d51_security_cleanup_spec.md` Part 2)
+
+| # | Scenario | Coverage |
+|---|----------|----------|
+| S1 | `owner` signs in on the web; pages load; sign out (sessions only) | Playwright full suite (every spec signs in with `ses_` sessions); ExUnit `session_revocation_test` |
+| S2 | A pre-D34-style token gets 401 and the UI shows the sign-in page | ExUnit `session_revocation_test` ("pre-D34 tokens (D51, task 4058)": correctly signed `"user auth"` and `"synthetic auth"` tokens → 401); Playwright `auth/pre_d34_token` (stale token in `localStorage` → sign-in page, `rockcut_token` cleared) |
+| S3 | A paired tablet keeps working; "Sign in as me" works | Playwright `devices/*`; ExUnit `auth_plug_device_test`, `device_session_api_test` |
+| S4 | Minted persona tokens work locally and on DEV | Playwright `auth.setup.ts` (every run); ExUnit `synthetic_test` |
+| S5 | `barMgr` adds a person: the temporary password shows once; they sign in with it and must set their own | ExUnit `user_controller_test` (a typed `password` is ignored, never echoed, generated one signs in; `filter_parameters`), `password_reset_gate_test`; Playwright `auth/helpers.createTempPerson` uses the returned `temp_password` |
+| S6 | `/api/health` on DEV shows the deployed SHA; the DEV ribbon shows the same short SHA | ExUnit `health_controller_test`; **manual** on DEV (pre-flight, `RUNNING.md`) |
