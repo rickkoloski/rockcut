@@ -8,6 +8,7 @@ only, allowlisted hosts only, tokens instead of passwords.
 | Check | Local | DEV |
 |-------|-------|-----|
 | API up | `curl -s localhost:4002/api/health` | `curl -s https://rockcut-api-dev.fly.dev/api/health` |
+| Deployed SHA == tested SHA (D51, task 4669) | n/a (`"sha":"unknown"` locally) | `curl -s https://rockcut-api-dev.fly.dev/api/health` → `"sha"` == the SHA under test; the DEV ribbon shows its first 7 |
 | UI up | `curl -sI localhost:5174` | `curl -sI https://rockcut-ui-dev.fly.dev` |
 | Personas seeded | `cd rockcut_api && mix rockcut.synthetic.status` | `fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.synthetic_status()'"` |
 

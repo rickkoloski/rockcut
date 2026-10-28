@@ -58,6 +58,10 @@ RUN mkdir -p /data && chown nobody /data
 
 ENV MIX_ENV="prod"
 
+# D51 (task 4669): the commit being deployed, for /api/health.
+ARG GIT_SHA
+ENV GIT_SHA=${GIT_SHA}
+
 # Copy the compiled release from builder
 COPY --from=builder --chown=nobody:root /app/_build/${MIX_ENV}/rel/rockcut_api ./
 

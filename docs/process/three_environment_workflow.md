@@ -88,9 +88,9 @@ feature branch dNN-slug ──PR──▶ develop ──release PR──▶ main
 
 DEV is **shared**, so only one change is on it at a time.
 1. **Claim DEV:** post "DEV: deploying `<sha>` (Dnn)" in conv 80. Release it when you're done ("DEV: free, `develop` restored").
-2. **Deploy the SHA:** a clean checkout of that SHA, then `fly deploy -c fly.dev.toml --remote-only` in `rockcut_api`, then `rockcut-ui`. Start the machine if it came up `stopped`.
+2. **Deploy the SHA:** a clean checkout of that SHA, then `fly deploy -c fly.dev.toml --remote-only --build-arg GIT_SHA=$(git rev-parse HEAD)` in `rockcut_api`, then `fly deploy -c fly.dev.toml --remote-only --build-arg VITE_GIT_SHA=$(git rev-parse HEAD)` in `rockcut-ui` (task 4669: the build records the commit). Start the machine if it came up `stopped`.
 3. **Pre-flight** (the `RUNNING.md` table), *plus* **run `synthetic_status`, then `seed_synthetic()`**. Setup heals personas, rebuilds `[SEED]` scenario data *relative to this week* and deletes `[TEST-TEMP]` rows. **Always run it before a DEV session**; that's what keeps the data from being a week old.
-4. **Confirm what's actually on DEV:** `fly releases -a rockcut-api-dev` and `fly releases -a rockcut-ui-dev` show the image you just built. Don't trust memory or a doc (see §8, build SHA).
+4. **Confirm what's actually on DEV:** `curl -s https://rockcut-api-dev.fly.dev/api/health` shows `"sha"` == the SHA under test (the full 40 characters), and the DEV ribbon shows its first 7 (`DEV · 4a5921c`). `fly releases -a rockcut-api-dev` and `fly releases -a rockcut-ui-dev` show the image you just built. Don't trust memory or a doc (§8, build SHA).
 5. **Automated:** `E2E_TARGET=dev npx playwright test`, the full regression suite, not just smoke.
 6. **Independent pass:** the author doesn't grade their own work. Start a **fresh** agent (a new Claude Code session, or a sub-agent) and give it **only**:
    - the persona keys;
@@ -116,11 +116,12 @@ DEV is **shared**, so only one change is on it at a time.
 A human (Matt) decides *when*. The agent can prepare and run the commands on his go.
 1. **Release PR** `develop → main`: its body lists every deliverable in the release, **every migration**, and any new secret or config.
 2. **Merge, then tag** `vYYYY.MM.DD` (add `-2` for a second release that day). Push the tag.
-3. **Deploy from a clean checkout of the tag**, never from a working tree. Follow the prod runbook order: staged secrets → volume/scale unchanged → `fly deploy` API → start the machine if stopped → `Release.migrate()` if there are migrations → `fly deploy` UI.
+3. **Deploy from a clean checkout of the tag**, never from a working tree. Follow the prod runbook order: staged secrets → volume/scale unchanged → `fly deploy --remote-only -a rockcut-api --build-arg GIT_SHA=$(git rev-parse HEAD)` → start the machine if stopped → `Release.migrate()` if there are migrations → `fly deploy --remote-only -a rockcut-ui --build-arg VITE_GIT_SHA=$(git rev-parse HEAD)`.
    - **Secret format check (Rick's review, 2026-10-21; Ben, 87210):** before staging any fixed-shape secret, check it against its pattern, for example a 32-byte base64 key such as `STAFF_CODE_KEY` must match `^[A-Za-z0-9+/]{43}=$`. A truncated key caused the Oct 7 outage; this check catches it before the deploy.
 4. **Record** the new `fly releases` versions (API vN, UI vN) and the **previous** ones (the rollback target) in the release PR.
 5. **Prod smoke** (the runbook's step 7):
    - health 200, UI 200, `sw.js` is `no-cache`;
+   - **deployed SHA == the tag (task 4669):** `curl -s https://rockcut-api.fly.dev/api/health` shows `"env":"prod"` and `"sha"` == `git rev-parse <tag>^{commit}`, and `<html data-sha>` on `https://rockcut-ui.fly.dev` is the same commit;
    - **dependency check (task 3999):** `pnpm audit --prod` (in `rockcut-ui`) and `mix hex.audit` (in `rockcut_api`) at the tag show nothing new beyond accepted advisories, and `node rockcut-ui/scripts/check-bundle-versions.mjs https://rockcut-ui.fly.dev` passes (the shipped bundle's axios and react-router match `pnpm-lock.yaml`). Run the same script against `https://rockcut-ui-dev.fly.dev` after each DEV deploy;
    - **synthetic login → 401** and **0 synthetic users**;
    - **Matt** logs in as himself. The agent never does.
@@ -156,7 +157,7 @@ From Matt's walkthrough (81853), as backlog tasks:
 
 ## 8 · Small infrastructure worth adding
 
-- **Build SHA on `/api/health`, and in the DEV ribbon** (task 4669). Pass `GIT_SHA` as a Docker build arg and return `{status, app, env, sha}`. Then "what's on DEV/prod?" is answered by asking the system, not by remembering it.
+- **Build SHA on `/api/health`, and in the DEV ribbon** (task 4669, done in D51). The API takes `--build-arg GIT_SHA=…` and `/api/health` returns `{status, app, env, sha}` (`sha` is `"unknown"` when the build didn't pass it); the UI takes `--build-arg VITE_GIT_SHA=…`, sets `<html data-sha>` and shows the short SHA in the DEV ribbon. Then "what's on DEV/prod?" is answered by asking the system, not by remembering it. §4.4 and §5.5 check it.
 - **No debug routes without auth.** This is a standing rule across Rick's projects, after an open debug endpoint was found on another product's prod. Never expose Swoosh's mailbox preview or any inspection route on DEV or prod without authentication; keep it off by default.
 - **CI token minting:** if a CI runner later needs persona tokens, give it a **DEV-app-scoped** Fly token (`fly tokens create deploy -a rockcut-api-dev`) and keep using `fly ssh … mint_token`. Don't add an HTTP mint endpoint.
 

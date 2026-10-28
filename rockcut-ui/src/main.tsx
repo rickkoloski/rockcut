@@ -12,6 +12,8 @@ import ThemeRoot from './ThemeRoot.tsx'
 
 // D45: which build this is (VITE_BUILD_ID, if the build set one), for the update tests and devtools.
 if (import.meta.env.VITE_BUILD_ID) document.documentElement.dataset.build = import.meta.env.VITE_BUILD_ID
+// D51 (task 4669): the commit it was built from (VITE_GIT_SHA), the same way.
+if (import.meta.env.VITE_GIT_SHA) document.documentElement.dataset.sha = import.meta.env.VITE_GIT_SHA
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
