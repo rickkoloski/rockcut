@@ -38,6 +38,12 @@ defmodule RockcutApi.DataCase do
   def setup_sandbox(tags) do
     pid = Ecto.Adapters.SQL.Sandbox.start_owner!(RockcutApi.Repo, shared: not tags[:async])
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
+
+    # Task 4060: the pairing limiter's counters are global (per IP and a
+    # global cap per 10-minute window), so one test's wrong codes could make
+    # a later test's pairing a 429. Every sync test starts with none. Async
+    # tests run alongside each other, so they don't reset (none pairs).
+    unless tags[:async], do: RockcutApi.Devices.PairingRateLimiter.reset()
   end
 
   @doc """

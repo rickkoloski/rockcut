@@ -10,7 +10,6 @@ defmodule RockcutApi.DevicesTest do
   alias RockcutApi.Devices.{DeviceToken, PairingCode, PairingRateLimiter}
 
   setup do
-    PairingRateLimiter.reset()
     %{device: device_fixture(), owner: owner_fixture()}
   end
 

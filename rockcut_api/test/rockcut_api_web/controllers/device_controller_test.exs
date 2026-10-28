@@ -10,7 +10,6 @@ defmodule RockcutApiWeb.DeviceControllerTest do
   alias RockcutApi.Devices.PairingRateLimiter
 
   setup do
-    PairingRateLimiter.reset()
     p = personas(~w(owner barMgr breweryMgr bartender1 dualMgr))
     {device, token} = taproom_device()
     %{p: p, device: device, token: token}

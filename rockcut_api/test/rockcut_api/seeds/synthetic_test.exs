@@ -342,9 +342,6 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "a pairing code for it works in the real exchange", %{conn: conn} do
-      # The limiter's counters are global; another module's wrong codes in the
-      # same 10-minute window would make this exchange a 429.
-      RockcutApi.Devices.PairingRateLimiter.reset()
       {:ok, _} = Synthetic.setup()
       code = Synthetic.pairing_code("taproomDevice")
 
