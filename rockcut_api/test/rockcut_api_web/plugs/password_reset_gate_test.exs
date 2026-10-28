@@ -84,18 +84,19 @@ defmodule RockcutApiWeb.PasswordResetGateTest do
       call(p["barMgr"], :post, "/api/users", %{
         email: "temp-person@rockcut-test.com",
         name: "[TEST-TEMP] New person",
-        password: "temporary-pw",
         memberships: [%{department: "bar", role: "employee"}]
       })
 
-    assert json_response(conn, 201)["data"]["must_reset_password"]
-    token = sign_in("temp-person@rockcut-test.com", "temporary-pw")
+    body = json_response(conn, 201)
+    assert body["data"]["must_reset_password"]
+    temp = body["temp_password"]
+    token = sign_in("temp-person@rockcut-test.com", temp)
 
     assert refused?(call_device(token, :get, "/api/boards/bar/tasks?#{@range}"))
     assert call_device(token, :get, "/api/me") |> json_response(200)
 
     call_device(token, :post, "/api/session/password", %{
-      current_password: "temporary-pw",
+      current_password: temp,
       new_password: "my-own-password"
     })
     |> json_response(200)

@@ -71,17 +71,18 @@ export async function createTempPerson(
 ): Promise<TempPerson> {
   const owner = await apiAs('owner')
   const suffix = randomSuffix()
-  const temp = throwawayPassword()
+  // D51 (4231): the server generates the temporary password and returns it once.
   const res = await owner.post('/api/users', {
     data: {
       email: `temp-${suffix}@rockcut-test.com`,
       name: `[TEST-TEMP] ${label} ${suffix}`,
-      password: temp,
       memberships: opts.memberships ?? [{ department: 'bar', role: 'employee' }],
     },
   })
   expect(res.status(), await res.text()).toBe(201)
-  const user = (await res.json()).data as { id: number; email: string; name: string }
+  const body = (await res.json()) as { data: { id: number; email: string; name: string }; temp_password: string }
+  const user = body.data
+  const temp = body.temp_password
   const person: TempPerson = { id: user.id, email: user.email, name: user.name, password: temp }
 
   if (opts.ready ?? true) {
