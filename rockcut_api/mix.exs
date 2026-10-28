@@ -41,7 +41,7 @@ defmodule RockcutApi.MixProject do
     [
       {:phoenix, "~> 1.8.1"},
       {:phoenix_ecto, "~> 4.5"},
-      {:ecto_sql, "~> 3.13"},
+      {:ecto_sql, "~> 3.14"},
       {:ecto_sqlite3, ">= 0.0.0"},
       {:phoenix_live_dashboard, "~> 0.8.3"},
       {:swoosh, "~> 1.16"},
@@ -51,7 +51,7 @@ defmodule RockcutApi.MixProject do
       {:gettext, "~> 0.26"},
       {:jason, "~> 1.2"},
       {:dns_cluster, "~> 0.2.0"},
-      {:bandit, "~> 1.5"},
+      {:bandit, "~> 1.14"},
       {:cors_plug, "~> 3.0"},
       {:argon2_elixir, "~> 4.0"},
       {:web_push_ex, "~> 0.2"},
