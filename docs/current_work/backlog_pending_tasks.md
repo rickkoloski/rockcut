@@ -1,0 +1,18 @@
+# Backlog items waiting for a PortableMind task
+
+PortableMind's Rock Cut workspace hit its 75-task limit on 2026-10-28 (completed tasks count). Matt asked Rick about it (discussion 80, msg 100296). Until there's room, new backlog items live here. **When a slot opens, file each as a task and delete it from this list.**
+
+QA reports (outside the repo): part 1 `~/src/rockcut-d51-qa/results/d51_qa_report.md`, part 2 `~/src/rockcut-d51p2-qa/results/d51p2_qa_report.md`.
+
+## From D51 (2026-10-28), all pre-existing
+
+1. **Add recipe ingredient with Sort Order blank → 500.** Recipe → Grain bill → Add ingredient, leave Sort Order empty → `POST /api/recipe_ingredients` with `"sort_order":null` → 500; the dialog stays open with no message (console `i.join is not a function`: the error handler can't render a 500). `PUT … {sort_order: null}` → 500 too. Leaving the key out → 201. Fix: treat `null` as the default (0) or as "end of list", and make `parseApiError` cope with a 500 body. (D51 part 2 QA #1)
+2. **Comma decimals in brewing number boxes.** Chromium (en-US) drops the `,` in `type=number` inputs as you type: ABV `5,2` saves **52**, batch volume `5,25` saves 525, ferm temp `6,8` saves 68. D51's ranges refuse only results that land out of range. Fix: `type=text inputMode=decimal` with app-side parsing (accept `,` as a decimal point or refuse it), across the ~30 brewing inputs. **Do with the brewing-side work (°Plato too).** (part 1 G5, part 2 QA #2)
+3. **`POST /api/users` with malformed `memberships` → 500** (a map, a string, `[null]`, form-encoded `memberships[0][department]=bar`), owner and manager alike; nothing saved. Should be 422. Crafted requests only. (part 2 QA #3)
+4. **A manager can create a person with no department** (`memberships` omitted, or "— None —" in the dialog); that person then isn't in the manager's own user list, so they can't fix it. Decide: refuse for managers, or require one of the manager's departments. (part 2 QA #4)
+5. **Parser errors carry no CORS headers.** 400 (malformed JSON, `1e999`) and 413 (too large) from `Plug.Parsers` have no `access-control-allow-origin`, so the UI sees "Failed to fetch". Likely fix: `CORSPlug` before the parsers. Repro: `curl -D - -X PUT -H 'origin: https://rockcut-ui-dev.fly.dev' -H 'content-type: application/json' --data '{bad' https://rockcut-api-dev.fly.dev/api/brands/1`. (part 1 G2, part 2 QA #8)
+6. **Batch log timestamp saved without Denver conversion.** Typed `10:00` is stored as `10:00:00Z` and shown as raw ISO; shifts and time off convert. **Brewing-side work.** (part 1 G4)
+7. **°Plato for gravity fields.** Gravity is SG-only (0.950–1.200) since D51; brewers will record °Plato when the brewing side is picked up again (Matt). **Brewing-side work.**
+8. **Old device token alone → confusing tablet sign-in.** `localStorage` with only a stale `rockcut_device_token` shows "Sign in as yourself" without checking the device; correct credentials then end on "This tablet was unpaired" (clean, but looks like the password failed). Check the device first. (part 2 QA #6)
+9. **Small brewing-form items:** the Water tab sends before the browser's min/max check (server refuses correctly); `min=0` on "more than 0" fields lets 0 through to the server; Mash step Temperature/Duration are required but not starred; non-numeric strings get "is invalid" instead of the range message; Brew turn recipe picker shows `vv1.0`; error alerts render twice; `/batches/new` (any non-numeric id) is a blank page; `/batches` isn't in the nav. (part 2 QA #5, #7, #9, #10)
+10. **Test message on DEV:** `[TEST-TEMP] D51 QA message — please ignore` (All-staff, id 478) can't be deleted; messages have no delete. Consider a delete for owners. (part 1 G6)
