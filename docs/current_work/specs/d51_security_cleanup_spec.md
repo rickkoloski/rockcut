@@ -99,3 +99,7 @@ Report: `~/src/rockcut-d51-qa/results/d51_qa_report.md` (outside the repo). All 
   - **G2:** 400/413 from `Plug.Parsers` carry no CORS headers, so the UI shows "Failed to fetch". Likely fix: `CORSPlug` before the parsers. Repro: `curl -D - -X PUT -H 'origin: https://rockcut-ui-dev.fly.dev' -H 'content-type: application/json' --data '{bad' https://rockcut-api-dev.fly.dev/api/brands/1`.
   - **G4:** batch log timestamps: the typed Denver time is stored as UTC (`10:00` → `10:00:00Z`) and shown as raw ISO. Convert with the shifts' helper.
 - G3 is task 4319. G6: QA's `[TEST-TEMP]` message in All-staff can't be deleted (messages have no delete).
+
+### Gravity unit (Matt, 2026-10-28)
+
+Gravity fields accept specific gravity only (0.950–1.200) for now. **When work returns to the brewing side of the app, brewers will record °Plato**, so the gravity fields (batch `actual_og`/`actual_fg`, brew turn `actual_og`, batch log `gravity`) will need a unit choice or °Plato support then. Not filed as a task yet (PortableMind's 75-task limit).
