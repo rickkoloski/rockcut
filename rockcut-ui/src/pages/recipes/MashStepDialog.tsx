@@ -98,6 +98,7 @@ export default function MashStepDialog({ open, onClose, recipeId, step }: MashSt
         value={temperature}
         onChange={(e) => setTemperature(e.target.value)}
         type="number"
+        slotProps={{ htmlInput: { min: 32, max: 212, step: 'any' } }}
         fullWidth
         margin="normal"
       />

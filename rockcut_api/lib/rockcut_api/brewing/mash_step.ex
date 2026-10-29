@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.MashStep do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "mash_steps" do
     field :step_number, :integer
@@ -22,7 +23,7 @@ defmodule RockcutApi.Brewing.MashStep do
     |> cast(attrs, [:recipe_id, :step_number, :name, :temperature, :duration, :type, :notes])
     |> validate_required([:recipe_id, :step_number, :name, :temperature, :duration])
     |> validate_inclusion(:type, @valid_types)
-    |> validate_number(:temperature, greater_than: 0)
+    |> validate_range(:temperature, 32, 212)
     |> validate_number(:duration, greater_than: 0)
     |> unique_constraint([:recipe_id, :step_number])
     |> foreign_key_constraint(:recipe_id)

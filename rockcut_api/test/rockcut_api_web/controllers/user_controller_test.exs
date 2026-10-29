@@ -4,7 +4,7 @@ defmodule RockcutApiWeb.UserControllerTest do
   import RockcutApi.AccountsFixtures
 
   defp bearer(conn, user) do
-    token = Phoenix.Token.sign(@endpoint, "user auth", user.id)
+    token = session_token_fixture(user)
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 
@@ -66,6 +66,43 @@ defmodule RockcutApiWeb.UserControllerTest do
 
       assert [%{"role" => "employee", "department_key" => "brewery"}] =
                body["data"]["memberships"]
+    end
+
+    test "a password in the request is ignored; a generated one comes back (4231)", %{
+      conn: conn
+    } do
+      manager = user_with_role("manager", "brewery")
+
+      conn =
+        conn
+        |> bearer(manager)
+        |> post(~p"/api/users", %{
+          email: "typed@rockcut.com",
+          password: "typed-secret",
+          memberships: [%{department: "brewery", role: "employee"}]
+        })
+
+      body = json_response(conn, 201)
+      temp = body["temp_password"]
+      assert is_binary(temp) and byte_size(temp) >= 8
+      assert temp != "typed-secret"
+      refute conn.resp_body =~ "typed-secret"
+
+      assert RockcutApi.Accounts.get_user_by_email_and_password("typed@rockcut.com", temp)
+
+      refute RockcutApi.Accounts.get_user_by_email_and_password(
+               "typed@rockcut.com",
+               "typed-secret"
+             )
+    end
+
+    test "both passwords are masked in request logs (4231)" do
+      assert %{"password" => "[FILTERED]", "temp_password" => "[FILTERED]", "email" => "e"} =
+               Phoenix.Logger.filter_values(%{
+                 "password" => "typed-secret",
+                 "temp_password" => "x",
+                 "email" => "e"
+               })
     end
 
     test "manager cannot assign a role in another department", %{conn: conn} do

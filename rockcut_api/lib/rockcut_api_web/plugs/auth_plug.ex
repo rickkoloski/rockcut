@@ -11,12 +11,11 @@ defmodule RockcutApiWeb.AuthPlug do
   user is refused.
 
   D34: a `ses_` token is a person's revocable session, looked up on every
-  request; it also assigns `:current_session`. Any other token is a pre-D34
-  `Phoenix.Token`, accepted until it expires unless the user's legacy tokens
-  were cut off (password change or reset, "Sign out of all other devices").
+  request; it also assigns `:current_session`. Any other token is refused
+  (D51: pre-D34 `Phoenix.Token` sign-ins are no longer accepted).
   """
   import Plug.Conn
-  alias RockcutApi.{Accounts, Authz, Devices, Sessions}
+  alias RockcutApi.{Devices, Sessions}
 
   def init(opts), do: opts
 
@@ -24,7 +23,6 @@ defmodule RockcutApiWeb.AuthPlug do
     case get_req_header(conn, "authorization") do
       ["Bearer " <> "dev_" <> _rest = "Bearer " <> token] -> device_auth(conn, token)
       ["Bearer " <> "ses_" <> _rest = "Bearer " <> token] -> session_auth(conn, token)
-      ["Bearer " <> token] -> legacy_auth(conn, token)
       _ -> unauthorized(conn)
     end
   end
@@ -46,17 +44,6 @@ defmodule RockcutApiWeb.AuthPlug do
 
       :error ->
         unauthorized(conn)
-    end
-  end
-
-  defp legacy_auth(conn, token) do
-    with {:ok, user_id} <- RockcutApiWeb.SessionController.verify_token(token),
-         %{active: true} = user <- Accounts.get_user(user_id),
-         false <- Authz.device?(user),
-         false <- Sessions.legacy_tokens_revoked?(user) do
-      assign(conn, :current_user, user)
-    else
-      _ -> unauthorized(conn)
     end
   end
 

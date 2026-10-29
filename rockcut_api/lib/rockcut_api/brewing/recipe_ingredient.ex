@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.RecipeIngredient do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "recipe_ingredients" do
     field :amount, :decimal
@@ -25,7 +26,7 @@ defmodule RockcutApi.Brewing.RecipeIngredient do
     |> validate_required([:recipe_id, :lot_id, :amount, :unit])
     |> validate_inclusion(:unit, @valid_units)
     |> validate_inclusion(:use, @valid_uses)
-    |> validate_number(:amount, greater_than: 0)
+    |> validate_positive_up_to(:amount, 1_000_000)
     |> foreign_key_constraint(:recipe_id)
     |> foreign_key_constraint(:lot_id)
   end

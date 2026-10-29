@@ -52,8 +52,8 @@ cd rockcut_api && mix phx.server    # http://localhost:4002
 cd rockcut-ui && pnpm dev           # http://localhost:5174
 
 # Deploy
-cd rockcut_api && fly deploy --remote-only
-cd rockcut-ui && fly deploy --remote-only
+cd rockcut_api && fly deploy --remote-only --build-arg GIT_SHA=$(git rev-parse HEAD)
+cd rockcut-ui && fly deploy --remote-only --build-arg VITE_GIT_SHA=$(git rev-parse HEAD)
 
 # Seed prod
 fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"

@@ -88,7 +88,6 @@ defmodule RockcutApi.Seeds.Synthetic do
   @seed_tag "[SEED]"
   @temp_tag "[TEST-TEMP]"
 
-  @token_salt "synthetic auth"
   @token_max_age 8 * 60 * 60
 
   # {key, email local part, name, memberships [{dept_key, role}], user flags}
@@ -161,9 +160,6 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   def synthetic_email?(email) when is_binary(email), do: String.ends_with?(email, @domain)
   def synthetic_email?(_), do: false
-
-  def token_salt, do: @token_salt
-  def token_max_age, do: @token_max_age
 
   ## Setup / reset
 

@@ -11,6 +11,10 @@ ENV VITE_ENV_LABEL=${VITE_ENV_LABEL}
 # <html data-build>; a different id also makes a new service worker.
 ARG VITE_BUILD_ID
 ENV VITE_BUILD_ID=${VITE_BUILD_ID}
+# D51 (task 4669): the commit being deployed (`--build-arg VITE_GIT_SHA=$(git
+# rev-parse HEAD)`), shown as <html data-sha> and in the DEV ribbon.
+ARG VITE_GIT_SHA
+ENV VITE_GIT_SHA=${VITE_GIT_SHA}
 
 WORKDIR /app
 

@@ -96,7 +96,7 @@ export default function BrandDetail() {
         title={brand.name}
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
-            <Tooltip title="Edit Brand"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
+            <Tooltip title="Edit Brand"><IconButton data-testid="brand-edit-button" onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
             <Tooltip title="Delete Brand"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
           </Box>
         }

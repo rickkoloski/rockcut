@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.Brand do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "brands" do
     field :name, :string
@@ -24,6 +25,9 @@ defmodule RockcutApi.Brewing.Brand do
     |> cast(attrs, [:name, :style, :description, :target_abv, :target_ibu, :target_srm, :status])
     |> validate_required([:name])
     |> validate_inclusion(:status, @valid_statuses)
+    |> validate_range(:target_abv, 0, 100)
+    |> validate_range(:target_ibu, 0, 300)
+    |> validate_range(:target_srm, 0, 200)
     |> unique_constraint(:name)
   end
 end

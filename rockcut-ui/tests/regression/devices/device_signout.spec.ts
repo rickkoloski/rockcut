@@ -98,9 +98,18 @@ test.describe('a paired [TEST-TEMP] tablet', () => {
     await expect(a.getByTestId('device-chip')).toBeVisible()
 
     // The stale tab's Logout: the tablet stays paired, and B re-syncs to it.
-    await expect(b.getByTestId('personal-session-banner')).toBeVisible()
+    // Task 4933: B still holds the person in memory, but App.tsx reads the
+    // set-aside tablet token from storage on every render, so any re-render
+    // after A's Logout swaps B's banner Sign out for the account menu's Log
+    // out. Both call the same logout(), the path G4 is about, so press
+    // whichever B shows: exactly one of the two matches in either state, and
+    // the click finds it again if B re-renders in between. B is frozen until
+    // just before, so nothing but its own Logout can re-sync it.
     frozen = false
-    await b.getByTestId('logout-button').click()
+    await b.getByTestId('logout-button').or(b.getByTestId('account-menu')).click()
+    const menuLogout = b.getByRole('menu').getByTestId('logout-button')
+    await expect(menuLogout.or(b.getByTestId('device-chip'))).toBeVisible()
+    if (await menuLogout.isVisible()) await menuLogout.click()
     await expect(b.getByTestId('device-chip')).toBeVisible()
     expect(await b.evaluate(() => localStorage.getItem('rockcut_token'))).toBe(deviceToken)
     const t = (await getDevice(owner, device.id))!.tokens[0]
