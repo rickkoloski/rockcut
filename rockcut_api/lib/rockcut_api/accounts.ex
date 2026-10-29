@@ -140,14 +140,16 @@ defmodule RockcutApi.Accounts do
   ## User & role management (writes)
 
   @doc """
-  Create a user with a temporary password and `must_reset_password: true`.
-  `attrs` may include `"password"` (else one is generated) and `"memberships"`
-  (a declarative list of `%{"department" => key|id, "role" => role}`), which is
-  applied under `actor`'s authority. Returns `{:ok, user, temp_password}`.
+  Create a user with a generated temporary password and
+  `must_reset_password: true`. A `"password"` in `attrs` is ignored (D51, task
+  4231: the response never hands back a password the caller typed). `attrs`
+  may include `"memberships"` (a declarative list of
+  `%{"department" => key|id, "role" => role}`), which is applied under
+  `actor`'s authority. Returns `{:ok, user, temp_password}`.
   """
   def create_user(attrs, %User{} = actor) do
     attrs = stringify(attrs)
-    temp_password = attrs["password"] || generate_temp_password()
+    temp_password = generate_temp_password()
     desired = attrs["memberships"] || []
 
     reg_attrs = %{

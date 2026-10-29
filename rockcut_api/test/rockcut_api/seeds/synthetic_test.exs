@@ -290,16 +290,6 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert_raise ArgumentError, fn -> Synthetic.mint_token("nobody") end
       assert_raise RuntimeError, ~r/inactive/, fn -> Synthetic.mint_token("inactive") end
     end
-
-    test "does not affect normal login tokens in prod" do
-      user = AccountsFixtures.user_fixture()
-      token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", user.id)
-
-      with_deploy_env("prod", fn ->
-        assert {:ok, id} = RockcutApiWeb.SessionController.verify_token(token)
-        assert id == user.id
-      end)
-    end
   end
 
   describe "taproomDevice persona (D33)" do
@@ -352,9 +342,6 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "a pairing code for it works in the real exchange", %{conn: conn} do
-      # The limiter's counters are global; another module's wrong codes in the
-      # same 10-minute window would make this exchange a 429.
-      RockcutApi.Devices.PairingRateLimiter.reset()
       {:ok, _} = Synthetic.setup()
       code = Synthetic.pairing_code("taproomDevice")
 

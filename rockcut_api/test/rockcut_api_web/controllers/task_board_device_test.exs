@@ -12,11 +12,9 @@ defmodule RockcutApiWeb.TaskBoardDeviceTest do
   import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.{AccountsFixtures, Repo, StaffCodes, Tasks}
-  alias RockcutApi.StaffCodes.RateLimiter
   alias RockcutApi.Tasks.Event
 
   setup do
-    RateLimiter.reset()
     p = personas(~w(owner breweryMgr brewer1 brewer2 barMgr bartender1 floater))
     {:ok, _} = StaffCodes.set(p["brewer1"], "1111", p["breweryMgr"])
     {:ok, _} = StaffCodes.set(p["bartender1"], "2222", p["barMgr"])

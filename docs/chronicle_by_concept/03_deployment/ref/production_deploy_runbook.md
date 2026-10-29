@@ -135,7 +135,7 @@ fly machines list -a rockcut-api        # confirm 1 app machine
 
 ```bash
 cd rockcut_api
-fly deploy --remote-only -a rockcut-api
+fly deploy --remote-only -a rockcut-api --build-arg GIT_SHA=$(git rev-parse HEAD)   # D51: records the commit for /api/health
 ```
 
 **After deploy, the machine may be `stopped`** (because `auto_start_machines=false`).
@@ -173,7 +173,7 @@ fly ssh console -a rockcut-api -C '/app/bin/rockcut_api rpc "IO.inspect(RockcutA
 
 ```bash
 cd ../rockcut-ui
-fly deploy --remote-only -a rockcut-ui
+fly deploy --remote-only -a rockcut-ui --build-arg VITE_GIT_SHA=$(git rev-parse HEAD)   # D51: <html data-sha>
 ```
 
 The UI Dockerfile installs from the real `package.json` and `pnpm-lock.yaml`
@@ -188,7 +188,9 @@ D28's `package.docker.json` + shim). After the deploy, run
 
 ```bash
 # API health
-curl -sS https://rockcut-api.fly.dev/api/health           # {"status":"ok",...}
+curl -sS https://rockcut-api.fly.dev/api/health           # {"status":"ok","env":"prod","sha":"<commit>",...}
+# D51: "sha" must be the tag's commit
+git rev-parse <tag>^{commit}
 
 # UI serves (auto-starts its machine)
 curl -sS -o /dev/null -w "%{http_code}\n" https://rockcut-ui.fly.dev/   # 200
@@ -239,12 +241,12 @@ fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval 'RockcutApi.Release
 Once org/secrets/volume exist and the app is at 1 machine:
 
 ```bash
-cd rockcut_api && fly deploy --remote-only -a rockcut-api
+cd rockcut_api && fly deploy --remote-only -a rockcut-api --build-arg GIT_SHA=$(git rev-parse HEAD)
 fly machine start <id> -a rockcut-api          # only if it came up stopped
 # run migrate if there are new migrations:
 fly ssh console -a rockcut-api -C "/app/bin/rockcut_api eval RockcutApi.Release.migrate()"
 
-cd ../rockcut-ui && fly deploy --remote-only -a rockcut-ui
+cd ../rockcut-ui && fly deploy --remote-only -a rockcut-ui --build-arg VITE_GIT_SHA=$(git rev-parse HEAD)
 # smoke tests (step 7)
 ```
 
@@ -289,7 +291,7 @@ fly secrets set -a rockcut-api-dev --stage \
 ### Deploy and seed
 
 ```bash
-cd rockcut_api && fly deploy -c fly.dev.toml --remote-only
+cd rockcut_api && fly deploy -c fly.dev.toml --remote-only --build-arg GIT_SHA=$(git rev-parse HEAD)
 fly machine list -a rockcut-api-dev          # start it if stopped (gotcha: auto_start is off)
 # Boot migrates once the machine runs; running it explicitly is harmless and
 # covers a machine that came up stopped.
@@ -297,16 +299,16 @@ fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Rel
 fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.seed()'"
 #   (seed() also runs the synthetic setup on DEV when SEED_PASSWORD is set)
 fly ssh console -a rockcut-api-dev -C "/app/bin/rockcut_api eval 'RockcutApi.Release.synthetic_status()'"
-cd ../rockcut-ui && fly deploy -c fly.dev.toml --remote-only
+cd ../rockcut-ui && fly deploy -c fly.dev.toml --remote-only --build-arg VITE_GIT_SHA=$(git rev-parse HEAD)
 ```
 
-Smoke: `/api/health` 200; `synthetic_status` shows 16 personas authenticating
-(`inactive` rejected); the UI shows the orange **DEV** ribbon;
+Smoke: `/api/health` 200 with `"sha"` == the commit you deployed; `synthetic_status` shows 16 personas authenticating
+(`inactive` rejected); the UI shows the orange **DEV** ribbon with the same short SHA (`DEV · 4a5921c`);
 `E2E_TARGET=dev npx playwright test` in `rockcut-ui` passes.
 
 ### Routine DEV redeploy
 
-Same two `fly deploy -c fly.dev.toml --remote-only` commands. Migrations run at
+Same two `fly deploy -c fly.dev.toml --remote-only` commands, with the `GIT_SHA` / `VITE_GIT_SHA` build args. Migrations run at
 boot. Re-run `seed_synthetic()` if personas or scenario data changed.
 
 ### Reset DEV

@@ -10,8 +10,7 @@ defmodule RockcutApi.Sessions do
     * A tablet session also ends when its tablet's token is revoked, and is
       deleted with it.
     * Signing out revokes one session; `revoke_all/2` (password change or
-      reset, "Sign out of all other devices") revokes the rest and also cuts
-      off the user's pre-D34 tokens via `users.legacy_tokens_revoked_at`.
+      reset, "Sign out of all other devices") revokes the rest.
   """
   import Ecto.Query
   alias RockcutApi.{Accounts, Authz, Repo, Tokens}
@@ -129,9 +128,8 @@ defmodule RockcutApi.Sessions do
   end
 
   @doc """
-  Revoke every session of `user` except `except` (a `UserSession` or nil),
-  and refuse their pre-D34 tokens from now on. Returns how many sessions
-  were revoked.
+  Revoke every session of `user` except `except` (a `UserSession` or nil).
+  Returns how many sessions were revoked.
   """
   def revoke_all(%User{} = user, except, now \\ now()) do
     keep_id = except && except.id
@@ -140,9 +138,6 @@ defmodule RockcutApi.Sessions do
     query = if keep_id, do: where(query, [s], s.id != ^keep_id), else: query
 
     {count, _} = Repo.update_all(query, set: [revoked_at: now, updated_at: now])
-
-    from(u in User, where: u.id == ^user.id)
-    |> Repo.update_all(set: [legacy_tokens_revoked_at: now])
 
     count
   end
@@ -158,9 +153,6 @@ defmodule RockcutApi.Sessions do
 
     count
   end
-
-  @doc "True when `user`'s pre-D34 tokens have been cut off (D34 §3.7)."
-  def legacy_tokens_revoked?(%User{legacy_tokens_revoked_at: at}), do: not is_nil(at)
 
   # Housekeeping (§3.8): drop the user's rows that ended over a week ago.
   defp prune(%User{id: id}, now) do

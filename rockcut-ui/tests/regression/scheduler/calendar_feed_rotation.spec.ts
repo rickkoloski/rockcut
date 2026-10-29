@@ -1,7 +1,7 @@
 import { test, expect as baseExpect, type APIRequestContext } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
-import { anonApi, createTempPerson, retireTempPerson, throwawayPassword, type TempPerson } from '../auth/helpers'
+import { anonApi, createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
 
 // D35: when someone who could see a shared calendar feed leaves, its link is
 // reset and everyone still using it is told to re-subscribe (S2, S10, Q3).
@@ -126,7 +126,6 @@ test.describe('one Users & Roles save that changes the owner flag and department
       data: {
         email: `a-d35-${suffix}@rockcut-test.com`,
         name: `[TEST-TEMP] D35 combined ${suffix}`,
-        password: throwawayPassword(),
         memberships: [{ department: 'office', role: 'manager' }],
       },
     })

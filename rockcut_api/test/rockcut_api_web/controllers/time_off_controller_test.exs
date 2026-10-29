@@ -7,7 +7,7 @@ defmodule RockcutApiWeb.TimeOffControllerTest do
   @finish "2026-10-03T00:00:00Z"
 
   defp bearer(conn, user) do
-    token = Phoenix.Token.sign(@endpoint, "user auth", user.id)
+    token = session_token_fixture(user)
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 

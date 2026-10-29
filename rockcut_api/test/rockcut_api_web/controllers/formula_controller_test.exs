@@ -8,7 +8,7 @@ defmodule RockcutApiWeb.FormulaControllerTest do
   defp auth_conn(conn) do
     # Owner bypasses the Brewery module gate that now guards the formula routes.
     user = RockcutApi.AccountsFixtures.owner_fixture()
-    token = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", user.id)
+    token = RockcutApi.AccountsFixtures.session_token_fixture(user)
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 
@@ -155,7 +155,9 @@ defmodule RockcutApiWeb.FormulaControllerTest do
     test "returns 401 without auth token", %{conn: conn, ingredient: ingredient} do
       conn =
         post(conn, ~p"/api/formulas/execute", %{
-          "calls" => [%{"function" => "inventory_on_hand", "args" => %{"ingredient_id" => ingredient.id}}]
+          "calls" => [
+            %{"function" => "inventory_on_hand", "args" => %{"ingredient_id" => ingredient.id}}
+          ]
         })
 
       assert json_response(conn, 401)
@@ -223,7 +225,11 @@ defmodule RockcutApiWeb.FormulaControllerTest do
       assert Map.has_key?(ok_result, "value")
     end
 
-    test "results are positionally matched to calls", %{conn: conn, ingredient: ingredient, recipe: recipe} do
+    test "results are positionally matched to calls", %{
+      conn: conn,
+      ingredient: ingredient,
+      recipe: recipe
+    } do
       conn =
         conn
         |> auth_conn()

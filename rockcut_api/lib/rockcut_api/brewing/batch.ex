@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.Batch do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "batches" do
     field :batch_number, :string
@@ -68,6 +69,10 @@ defmodule RockcutApi.Brewing.Batch do
     |> validate_inclusion(:status, @valid_statuses)
     |> validate_inclusion(:package_type, @valid_package_types)
     |> validate_number(:rating, greater_than_or_equal_to: 1, less_than_or_equal_to: 5)
+    |> validate_gravity([:actual_og, :actual_fg])
+    |> validate_range(:actual_abv, 0, 100)
+    |> validate_range(:actual_volume, 0, 10_000)
+    |> validate_range(:ferm_temp, 25, 110)
     |> unique_constraint(:batch_number, name: :batches_lower_batch_number_index)
     |> foreign_key_constraint(:brand_id)
   end

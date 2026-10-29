@@ -200,48 +200,15 @@ defmodule RockcutApiWeb.SessionRevocationTest do
     end
   end
 
-  describe "pre-D34 tokens (S12, S13, §3.7)" do
-    test "S12 still accepted", %{p: p} do
-      assert code(legacy_token_fixture(p["bartender1"])) == 200
-    end
-
-    test "S13 refused after an owner's reset", %{p: p} do
-      old = legacy_token_fixture(p["bartender1"])
-      call(p["owner"], :post, "/api/users/#{p["bartender1"].id}/reset_password")
+  describe "pre-D34 tokens (D51, task 4058)" do
+    test "a correctly signed old-style token gets 401", %{p: p} do
+      old = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "user auth", p["bartender1"].id)
       assert code(old) == 401
     end
 
-    test "refused after the person changes their password", %{p: p} do
-      old = legacy_token_fixture(p["bartender1"])
-      here = sign_in(p["bartender1"])
-
-      call_device(here, :post, "/api/session/password", %{
-        current_password: @password,
-        new_password: "a-new-password"
-      })
-
+    test "a correctly signed old synthetic-persona token gets 401 here too", %{p: p} do
+      old = Phoenix.Token.sign(RockcutApiWeb.Endpoint, "synthetic auth", p["bartender1"].id)
       assert code(old) == 401
-      assert code(here) == 200
-    end
-
-    test "refused after Sign out of all other devices", %{p: p} do
-      old = legacy_token_fixture(p["bartender1"])
-      here = sign_in(p["bartender1"])
-      call_device(here, :delete, "/api/sessions/others")
-      assert code(old) == 401
-    end
-
-    test "signing out with one is harmless and doesn't revoke anything else", %{p: p} do
-      old = legacy_token_fixture(p["bartender1"])
-      other = sign_in(p["bartender1"])
-      assert call_device(old, :delete, "/api/session") |> json_response(200)
-      assert code(other) == 200
-    end
-
-    test "another person's cutoff doesn't touch yours", %{p: p} do
-      mine = legacy_token_fixture(p["barMgr"])
-      call(p["owner"], :post, "/api/users/#{p["bartender1"].id}/reset_password")
-      assert code(mine) == 200
     end
   end
 
@@ -263,18 +230,6 @@ defmodule RockcutApiWeb.SessionRevocationTest do
                action: "user.signed_out_everywhere",
                target_id: p["bartender1"].id
              )
-    end
-
-    test "a pre-D34 caller is signed out too (no session to keep)", %{p: p} do
-      old = legacy_token_fixture(p["bartender1"])
-      other = sign_in(p["bartender1"])
-
-      assert call_device(old, :delete, "/api/sessions/others") |> json_response(200) == %{
-               "revoked" => 1
-             }
-
-      assert code(other) == 401
-      assert code(old) == 401
     end
 
     test "S16 a tablet gets 403", %{tablet_token: t} do

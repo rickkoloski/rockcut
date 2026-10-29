@@ -127,6 +127,7 @@ export default function BrewTurnDialog({ open, onClose, batchId, brandId, turn }
         margin="dense"
         label="Actual OG"
         type="number"
+        slotProps={{ htmlInput: { min: 0.95, max: 1.2, step: 'any' } }}
         value={actualOg}
         onChange={(e) => setActualOg(e.target.value)}
       />
@@ -135,6 +136,7 @@ export default function BrewTurnDialog({ open, onClose, batchId, brandId, turn }
         margin="dense"
         label="Actual Volume"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 10000, step: 'any' } }}
         value={actualVolume}
         onChange={(e) => setActualVolume(e.target.value)}
       />
@@ -143,6 +145,7 @@ export default function BrewTurnDialog({ open, onClose, batchId, brandId, turn }
         margin="dense"
         label="Actual Efficiency"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
         value={actualEfficiency}
         onChange={(e) => setActualEfficiency(e.target.value)}
       />

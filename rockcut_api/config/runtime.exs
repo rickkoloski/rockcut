@@ -40,6 +40,10 @@ deploy_env =
 
 config :rockcut_api, :deploy_env, deploy_env
 
+# D51 (task 4669): the commit this release was built from (`fly deploy
+# --build-arg GIT_SHA=$(git rev-parse HEAD)`), shown on /api/health.
+config :rockcut_api, :git_sha, System.get_env("GIT_SHA", "")
+
 if config_env() == :prod do
   database_path =
     System.get_env("DATABASE_PATH") ||

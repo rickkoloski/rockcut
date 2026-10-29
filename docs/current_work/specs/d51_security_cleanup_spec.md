@@ -11,7 +11,7 @@
 | 4669 | Build commit on `/api/health` and in the DEV ribbon | 2 |
 | 4060, 4064, 4057 | Flaky tests in the synthetic-token and sign-in suites that 4058 rewrites | 2 |
 
-**Two releases.** Part 1 is a hotfix (branch `hotfix-d51-deps` from `main`, merged to `main` and `develop`), because the `bandit` advisories are HIGH on an internet-facing server. Part 2 is a normal deliverable branch (`d51-auth-cleanup` from `develop`); it can be built now but **must not deploy to prod before 2026-11-05** (pre-D34 tokens, issued up to the D34 deploy on 2026-10-05 UTC with a 30-day max age, can be valid until 2026-11-04).
+**Two releases.** Part 1 is a hotfix (branch `hotfix-d51-deps` from `main`, merged to `main` and `develop`), because the `bandit` advisories are HIGH on an internet-facing server. Part 2 is a normal deliverable branch (`d51-auth-cleanup` from `develop`); it ships when its gates pass. Pre-D34 tokens (30-day max age, issued up to the D34 deploy on 2026-10-05 UTC) can be valid until 2026-11-04; anyone still on one is signed out and signs in again. **Matt, 2026-10-28:** a few employees, a re-sign-in is fine; don't wait for Nov 5.
 
 ## Part 1: dependency advisories
 
@@ -60,9 +60,9 @@ Local: `mix test` green; `tsc`, `vite build`, unit tests green; lint no worse th
 
 - `AuthPlug`: drop `legacy_auth`; only `ses_` sessions and `dev_` device tokens authenticate. Anything else is 401 as today for an unknown token.
 - `SessionController.verify_token/1`: drop the `Phoenix.Token` `"user auth"` verify and the synthetic-salt verify (personas mint sessions via `Sessions.create`).
-- `Sessions`: drop `legacy_tokens_revoked?` and the `legacy_tokens_revoked_at` writes; a migration removes the column.
+- `Sessions`: drop `legacy_tokens_revoked?` and the `legacy_tokens_revoked_at` writes; the `User` schema stops mapping the column, which stays in the database (see Migration).
 - Tests: move the 22 test files that sign legacy tokens to sessions (`PersonaFixtures`). Add a test that a validly signed old-style `Phoenix.Token` is refused (401).
-- **Before the prod deploy:** confirm the date is 2026-11-05 or later. Legacy tokens aren't stored, so there is nothing to query; the date is the check.
+- **No date hold** (Matt, 2026-10-28). Legacy tokens aren't stored, so nothing can show who still holds one; anyone who does gets the sign-in page once.
 
 ### 4231: never return a password the caller typed
 
@@ -88,4 +88,18 @@ Pass `GIT_SHA` as a Docker build arg to both apps (`fly deploy --build-arg GIT_S
 
 ### Migration
 
-One: drop `users.legacy_tokens_revoked_at` (SQLite table rebuild via Ecto; reversible by re-adding the nullable column).
+None. The column stays, unused; a follow-up task drops it after part 2 is stable on prod. (Lead decision 1, item 5: a rollback to the previous image still selects `users.legacy_tokens_revoked_at`, so dropping it now would break every user query after a rollback. The `User` schema no longer maps it, and Ecto ignores an unmapped column.)
+
+## From the part 1 QA pass (2026-10-28)
+
+Report: `~/src/rockcut-d51-qa/results/d51_qa_report.md` (outside the repo). All pre-existing; the same on decimal 2.4.1.
+
+- **G1 + G5, in part 2 (Matt, 2026-10-28):** brewing decimals. A JSON *number* is cast through a float and saved rounded (a 40-digit ABV, `1e308`; `-1e-9999` → 0), and nothing checks ranges (ABV `-5`, `1000`; Chromium turns `5,25` into 525). Fix: refuse more than 34 significant digits or an exponent outside decimal128 for number input too, and per-field ranges. See part 2 §G1/G5.
+- **Not filed yet (PortableMind's 75-task limit, 2026-10-28):**
+  - **G2:** 400/413 from `Plug.Parsers` carry no CORS headers, so the UI shows "Failed to fetch". Likely fix: `CORSPlug` before the parsers. Repro: `curl -D - -X PUT -H 'origin: https://rockcut-ui-dev.fly.dev' -H 'content-type: application/json' --data '{bad' https://rockcut-api-dev.fly.dev/api/brands/1`.
+  - **G4:** batch log timestamps: the typed Denver time is stored as UTC (`10:00` → `10:00:00Z`) and shown as raw ISO. Convert with the shifts' helper.
+- G3 is task 4319. G6: QA's `[TEST-TEMP]` message in All-staff can't be deleted (messages have no delete).
+
+### Gravity unit (Matt, 2026-10-28)
+
+Gravity fields accept specific gravity only (0.950–1.200) for now. **When work returns to the brewing side of the app, brewers will record °Plato**, so the gravity fields (batch `actual_og`/`actual_fg`, brew turn `actual_og`, batch log `gravity`) will need a unit choice or °Plato support then. Not filed as a task yet (PortableMind's 75-task limit).

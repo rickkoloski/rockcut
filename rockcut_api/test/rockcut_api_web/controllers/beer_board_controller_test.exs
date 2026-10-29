@@ -6,10 +6,8 @@ defmodule RockcutApiWeb.BeerBoardControllerTest do
   import Phoenix.ConnTest
 
   alias RockcutApi.{BeerBoard, StaffCodes}
-  alias RockcutApi.StaffCodes.RateLimiter
 
   setup do
-    RateLimiter.reset()
     p = personas(~w(owner barMgr breweryMgr bartender1 bartender2 brewer1 office1 floater))
     {:ok, _} = StaffCodes.set(p["bartender2"], "2468", p["barMgr"])
     {:ok, _} = StaffCodes.set(p["barMgr"], "1357", p["barMgr"])

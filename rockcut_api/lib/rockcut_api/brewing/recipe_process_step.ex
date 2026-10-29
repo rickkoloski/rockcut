@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.RecipeProcessStep do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "recipe_process_steps" do
     field :step_number, :integer
@@ -24,6 +25,7 @@ defmodule RockcutApi.Brewing.RecipeProcessStep do
     |> validate_required([:recipe_id, :step_number, :name])
     |> validate_inclusion(:duration_unit, @valid_duration_units)
     |> validate_number(:day, greater_than_or_equal_to: 0)
+    |> validate_range(:temperature, 20, 212)
     |> unique_constraint([:recipe_id, :step_number])
     |> foreign_key_constraint(:recipe_id)
   end

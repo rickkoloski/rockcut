@@ -1,6 +1,8 @@
 // D30: a fixed ribbon on non-prod builds (VITE_ENV_LABEL, e.g. "DEV") so no human
 // or agent mistakes the DEV server for production. Prod builds leave it unset.
 const label = import.meta.env.VITE_ENV_LABEL as string | undefined
+// D51 (task 4669): the build's commit, shortened, after the label ("DEV · 4a5921c").
+const sha = (import.meta.env.VITE_GIT_SHA as string | undefined)?.slice(0, 7)
 
 export default function EnvBanner() {
   if (!label) return null
@@ -23,7 +25,7 @@ export default function EnvBanner() {
         letterSpacing: '0.04em',
       }}
     >
-      {label} — fictional test data only
+      {sha ? `${label} · ${sha}` : label} — fictional test data only
     </div>
   )
 }

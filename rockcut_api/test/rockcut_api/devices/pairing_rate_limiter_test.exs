@@ -8,10 +8,6 @@ defmodule RockcutApi.Devices.PairingRateLimiterTest do
   alias RockcutApi.Devices.PairingRateLimiter, as: Limiter
 
   setup do
-    Limiter.reset()
-    # The global-cap test fills the current window for every client; don't
-    # leave that for the next module.
-    on_exit(&Limiter.reset/0)
     %{device: device_fixture(), owner: owner_fixture()}
   end
 

@@ -326,9 +326,6 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
 
   describe "as taproomDevice" do
     setup do
-      # The staff-code limiter is keyed by token id, and the test DB reuses
-      # ids after a rollback: a lock another test left would answer 429 here.
-      RockcutApi.StaffCodes.RateLimiter.reset()
       {device, token} = taproom_device()
       shift = shift_fixture(%{status: "published"})
       %{device: device, token: token, shift: shift, task: repeating_task()}
@@ -379,7 +376,6 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   # series read is `linked_task` for anyone.
   describe "as breweryDevice, on a linked task (D49)" do
     setup do
-      RockcutApi.StaffCodes.RateLimiter.reset()
       p = personas(~w(breweryMgr brewer1))
       {:ok, _} = RockcutApi.StaffCodes.set(p["brewer1"], "1111", p["breweryMgr"])
       device = RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse"})

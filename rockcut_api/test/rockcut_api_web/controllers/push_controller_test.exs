@@ -5,7 +5,7 @@ defmodule RockcutApiWeb.PushControllerTest do
   alias RockcutApi.Notifications.WebPush
 
   defp bearer(conn, user) do
-    token = Phoenix.Token.sign(@endpoint, "user auth", user.id)
+    token = session_token_fixture(user)
     put_req_header(conn, "authorization", "Bearer #{token}")
   end
 

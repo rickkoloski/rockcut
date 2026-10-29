@@ -1,6 +1,6 @@
 # D48: Changing a Batch — Completion Record
 
-**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-26 (PR #34). **Not on prod:** D46–D49 go to prod in one release after D49.
+**Status:** COMPLETE on DEV. Merged to `develop` 2026-10-26 (PR #34). **On prod** in `v2026.10.27` (2026-10-27, PR #38, with D46–D49).
 **Spec:** `specs/d46_production_scheduling_spec.md` (§3.11, the Shift-drag row and "Toolbar changes in D48" in §3.6, "Marking a tank clean or dirty" in §3.8; scenarios P65–P89, P110, P113–P121)
 **Plan:** `planning/d48_batch_changes_plan.md`
 **Brief / lead decisions:** `prompts/d48_builder_brief.md`, `prompts/d48_lead_decisions_1.md` … `_8.md`; fix-cycle status in `prompts/d48_fix_cycle_1_status.md` … `_7.md`

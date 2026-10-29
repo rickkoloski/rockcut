@@ -94,6 +94,27 @@ export async function openBoard(page: Page, range?: { from: string; to: string }
   await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
 }
 
+/**
+ * D51 (DEV S13): make the viewport tall enough for the whole board, at least
+ * `min`. Call it after `openBoard`. On a shared board (DEV) old tasks in the
+ * Unfinished card and other people's tasks make the days taller, so a fixed
+ * height can leave a target list below `mouseDrag`'s 80% line. It measures the
+ * board grid's bottom, not `scrollHeight`, which a full-height layout keeps at
+ * least the viewport's, so each resize would grow it. The grid ends by 75% of
+ * the new height. It measures again after each resize, because the layout can
+ * reflow.
+ */
+export async function fitViewportToBoard(page: Page, min = 2600) {
+  const width = page.viewportSize()!.width
+  for (let i = 0; i < 3; i++) {
+    const bottom = await page.getByTestId('board-grid').evaluate((e) => e.getBoundingClientRect().bottom + window.scrollY)
+    const height = Math.max(min, Math.ceil(bottom / 0.75))
+    if (height === page.viewportSize()!.height) return
+    await page.setViewportSize({ width, height })
+    await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))))
+  }
+}
+
 /** A task's card on a day (`date`), the Future list (`future`) or the Unfinished card (`unfinished`). */
 export const card = (page: Page, id: number, where: string) => page.getByTestId(`task-${id}:${where}`)
 
