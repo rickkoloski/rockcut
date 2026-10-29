@@ -246,3 +246,94 @@ It didn't reproduce, so I didn't change anything.
 2. **4064 and 4057:** OK to close both, with the trace guidance above?
 3. **Your local dev DB:** I changed it by hand (column re-added, migration row removed). If you'd rather rebuild it from scratch, `mix ecto.reset` followed by `mix rockcut.synthetic.setup` gives the same schema.
 4. The brief, the lead decisions, the spec (edited for item 5) and this status file are still untracked.
+
+---
+
+# Lead decisions 2: status (step 1, ranges proposed; stopped for OK)
+
+2026-10-28 · builder → lead, after `d51_lead_decisions_2.md`. Done: the 4933 test fix (`9b0b36a`). Proposed: the brewing ranges (table below). **Stopped here for your OK** before coding them, as asked. The full gate on the merged branch comes after the ranges.
+
+## 4933 (G4): test fixed
+
+- **Change** (`device_signout.spec.ts`, G4).
+  - The banner precondition is gone.
+  - B is unfrozen just before its own Logout, as before.
+  - The test presses `logout-button.or(account-menu)`. Exactly one of the two exists in either state: the banner's Sign out while B still sees the set-aside token, or the account menu once a re-render has dropped the banner. Playwright finds it again if B flips in between.
+  - If that click opened the menu, the test presses its Log out.
+  - The assertions about G4 itself are unchanged: B ends on the device chip, `rockcut_token` is the tablet's token, and the tablet token's `revoked_at` is null. A Logout that unpaired the tablet would still fail the test.
+- **Runs**, Mac awake (`caffeinate -ims` on the whole chain, no `pmset` sleep between 19:37 and the end of the runs), 1 worker, fresh setup before each batch:
+
+  | Version | Result |
+  |---|---|
+  | old | **15/20**, all 5 failures at line 101 (banner not found) |
+  | first rewrite (`toPass` with a 1 s click) | 19/20 |
+  | final | **20/20**; whole `device_signout.spec.ts` 3/3 |
+
+  The first rewrite's failure was a test bug, not the app: B's Logout did happen, but the 1 s click timed out on the navigation it started, `toPass` retried, and no control was left to press. The final version has no short click timeout and no retry loop.
+- **Logs:** `/tmp/claude-501/pwlogs/d51_g4_old20.log`, `d51_g4_new2_20.log`.
+
+## G1 + G5: proposed ranges (not coded yet)
+
+**Units, where they come from:**
+- **Gravity is SG** (1.0xx): D1 data model spec (OG 1.061 etc.), `formulas/functions/brewing_calcs.ex` (`OG = 1.000 + points/1000`), the UI's sample rows.
+- **Temperatures are °F**: D1 spec "(F)"; the recipe dialogs say "Temperature (°F)"; the production API already limits step temperatures to 28–80 °F.
+- **Water is ppm** (D1 spec). **Percentages** are labelled "%" in the UI.
+- **Volumes have no unit column** on batches or brew turns. The D1 examples are bbl ("7 bbl"). `recipes.batch_size` has its own unit (bbls, gallons or liters).
+- **No real values to check:** neither seeds nor the local DB have any brewing numbers. Prod not checked.
+
+**Behaviour of the checks:**
+- Bounds are inclusive unless marked ">".
+- A field left empty (`nil`) is still allowed.
+- `validate_number` only checks a field that is being changed, so an existing out-of-range value never blocks editing other fields.
+- Message: "must be between X and Y" (for ">" bounds: "must be more than X and at most Y").
+
+| Schema · field (UI label) | Unit | Range | Why |
+|---|---|---|---|
+| **Brand** `target_abv` (Target ABV) | % | 0–100 | as asked; real beers 0–20 |
+| `target_ibu` (Target IBU) | IBU | 0–300 | the biggest IPAs claim 100–150 |
+| `target_srm` (Target SRM) | SRM | 0–200 | imperial stouts 40–80+ |
+| **Batch** `actual_og` (Actual OG) | SG | 0.950–1.200 | barleywine ≤ 1.150 |
+| `actual_fg` (Actual FG) | SG | 0.950–1.200 | dry beers go below 1.000 (0.996) |
+| `actual_abv` (Actual ABV) | % | 0–100 | as asked |
+| `actual_volume` (Actual Volume) | bbl (assumed) | 0–10,000 | the same cap as production's `volume_bbl` / `capacity_bbl` (under 10,000 bbl) |
+| `ferm_temp` (Ferm Temp) | °F | 25–110 | crash ~28–34, kveik up to ~100; wider than production's 28–80 on purpose, because this is a measured or actual value |
+| **BrewTurn** `actual_og` (Actual OG) | SG | 0.950–1.200 | as Batch |
+| `actual_volume` (Actual Volume) | bbl (assumed) | 0–10,000 | as Batch |
+| `actual_efficiency` (Actual Efficiency) | % | 0–100 | |
+| **BatchLogEntry** `gravity` (Gravity) | SG | 0.950–1.200 | readings during fermentation sit between OG and FG |
+| `temperature` (Temperature) | °F | 20–220 | covers tank readings and hot-side readings (knockout, whirlpool; boiling at Estes Park is ~201 °F) |
+| `ph` (pH) | pH | 0–14 | as asked |
+| **IngredientLot** `alpha_acid` (Alpha Acid %) | % | 0–100 | hops 2–20; extracts higher |
+| `color_lovibond` (Color, Lovibond) | °L | 0–1,000 | roasted malts ~300–600 |
+| `attenuation` (Attenuation %) | % | 0–100 | |
+| `extract_potential_fgdb` (Extract % FGDB) | % | 0–100 | |
+| `protein_perc` (Protein %) | % | 0–100 | |
+| `moisture_perc` (Moisture %) | % | 0–100 | |
+| `diastatic_power_linter` (Diastatic Power, °Lintner) | °L | 0–1,000 | real malts ≤ ~200 |
+| **MashStep** `temperature` (Temperature °F) | °F | 32–212 (now `> 0`) | mash 95–170 |
+| **RecipeProcessStep** `temperature` (Temperature °F) | °F | 20–212 | crash to whirlpool |
+| **Recipe** `batch_size` (Batch Size) | bbls / gallons / liters | > 0 and ≤ 10,000 (now `> 0`) | 30 bbl = 930 gal = 3,520 L |
+| `efficiency_target` (Efficiency Target %) | % | 0–100 | |
+| **RecipeIngredient** `amount` (Amount) | lb / oz / g / kg / pkg / each | > 0 and ≤ 1,000,000 (now `> 0`) | the unit can be `g`: a 30 bbl grain bill is ~600,000 g |
+| **WaterProfile** `calcium`, `magnesium`, `sodium`, `sulfate`, `chloride`, `bicarbonate` | ppm | 0–2,000 | Burton sulfate ~800 |
+| `ph_target` | pH | 0–14 | as asked |
+
+**Not in the table:**
+- `Batch.volume_bbl` and `Tank.capacity_bbl`: the production code already limits them (> 0 and under 10,000 bbl, with its own messages). The brewing `Batch.changeset` doesn't cast `volume_bbl`.
+- No other `:decimal` fields exist outside `brewing/` and `production/`.
+
+**What this catches:**
+- The 40-digit number (about 1.2e39 after the float cast) and `1e308` are above every upper bound → 422.
+- ABV `1000`, `525` (Chromium's `5,25`) and `-5` → 422.
+- `-1e-9999` casts to 0, which is valid, so it's accepted, as you said.
+- **What it can't catch:** inside 0–100, `52.5` typed for `5.25` still saves.
+
+## LEAD (for the OK)
+
+1. **The table:** OK as is, or adjust any row? These four are the judgement calls:
+   - ABV stays 0–100 as you asked; 0–20 would also catch `52.5`.
+   - Log temperature 20–220 °F allows hot-side readings.
+   - `ferm_temp` 25–110 °F, wider than production's 28–80.
+   - The 10,000 cap on volumes and batch size.
+2. **Gravity is SG only:** a brewer who records °Plato (12.5) would be refused. Is that right for Matt? The spec and the formulas are SG.
+3. **Prod values:** should I run a read-only count of existing prod values outside these ranges? They'd only matter when someone edits that same field.
