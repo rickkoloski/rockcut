@@ -109,6 +109,7 @@ export default function ProcessStepDialog({ open, onClose, recipeId, step }: Pro
         value={temperature}
         onChange={(e) => setTemperature(e.target.value)}
         type="number"
+        slotProps={{ htmlInput: { min: 20, max: 212, step: 'any' } }}
         fullWidth
         margin="normal"
       />

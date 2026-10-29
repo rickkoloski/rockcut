@@ -143,6 +143,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
       <TextField
         label="Color (Lovibond)"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 1000, step: 'any' } }}
         value={colorLovibond}
         onChange={(e) => setColorLovibond(e.target.value)}
         fullWidth
@@ -151,6 +152,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
       <TextField
         label="Extract % FGDB"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
         value={extractPotentialFgdb}
         onChange={(e) => setExtractPotentialFgdb(e.target.value)}
         fullWidth
@@ -166,6 +168,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
       <TextField
         label="Protein %"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
         value={proteinPerc}
         onChange={(e) => setProteinPerc(e.target.value)}
         fullWidth
@@ -174,6 +177,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
       <TextField
         label="Moisture %"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
         value={moisturePerc}
         onChange={(e) => setMoisturePerc(e.target.value)}
         fullWidth
@@ -182,6 +186,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
       <TextField
         label="Diastatic Power (°Lintner)"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 1000, step: 'any' } }}
         value={diastaticPower}
         onChange={(e) => setDiastaticPower(e.target.value)}
         fullWidth
@@ -205,6 +210,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
         <TextField
           label="Alpha Acid (%)"
           type="number"
+          slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
           value={alphaAcid}
           onChange={(e) => setAlphaAcid(e.target.value)}
           fullWidth
@@ -215,6 +221,7 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
         <TextField
           label="Attenuation (%)"
           type="number"
+          slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
           value={attenuation}
           onChange={(e) => setAttenuation(e.target.value)}
           fullWidth

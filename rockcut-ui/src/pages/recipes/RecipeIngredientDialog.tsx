@@ -183,6 +183,7 @@ export default function RecipeIngredientDialog({
         value={amount}
         onChange={(e) => setAmount(e.target.value)}
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 1000000, step: 'any' } }}
         fullWidth
         margin="normal"
       />

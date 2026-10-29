@@ -152,6 +152,7 @@ export default function BatchFormDialog({ open, onClose, batch }: BatchFormDialo
           margin="dense"
           label="Actual OG"
           type="number"
+          slotProps={{ htmlInput: { min: 0.95, max: 1.2, step: 'any' } }}
           value={actualOg}
           onChange={(e) => setActualOg(e.target.value)}
         />
@@ -160,6 +161,7 @@ export default function BatchFormDialog({ open, onClose, batch }: BatchFormDialo
           margin="dense"
           label="Actual FG"
           type="number"
+          slotProps={{ htmlInput: { min: 0.95, max: 1.2, step: 'any' } }}
           value={actualFg}
           onChange={(e) => setActualFg(e.target.value)}
         />
@@ -170,6 +172,7 @@ export default function BatchFormDialog({ open, onClose, batch }: BatchFormDialo
           margin="dense"
           label="Actual ABV"
           type="number"
+          slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
           value={actualAbv}
           onChange={(e) => setActualAbv(e.target.value)}
         />
@@ -178,6 +181,7 @@ export default function BatchFormDialog({ open, onClose, batch }: BatchFormDialo
           margin="dense"
           label="Actual Volume"
           type="number"
+          slotProps={{ htmlInput: { min: 0, max: 10000, step: 'any' } }}
           value={actualVolume}
           onChange={(e) => setActualVolume(e.target.value)}
         />
@@ -209,6 +213,7 @@ export default function BatchFormDialog({ open, onClose, batch }: BatchFormDialo
         margin="dense"
         label="Ferm Temp"
         type="number"
+        slotProps={{ htmlInput: { min: 25, max: 110, step: 'any' } }}
         value={fermTemp}
         onChange={(e) => setFermTemp(e.target.value)}
       />

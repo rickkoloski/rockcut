@@ -75,6 +75,7 @@ export default function BrandFormDialog({ open, onClose, brand }: BrandFormDialo
       open={open}
       onClose={onClose}
       title={brand ? 'Edit Brand' : 'Add Brand'}
+      testId="brand-form-dialog"
       onSubmit={handleSubmit}
       loading={loading}
       error={error}
@@ -110,13 +111,14 @@ export default function BrandFormDialog({ open, onClose, brand }: BrandFormDialo
         type="number"
         fullWidth
         margin="normal"
-        slotProps={{ htmlInput: { step: 0.1 } }}
+        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
       />
       <TextField
         label="Target IBU"
         value={targetIbu}
         onChange={(e) => setTargetIbu(e.target.value)}
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 300, step: 'any' } }}
         fullWidth
         margin="normal"
       />
@@ -125,6 +127,7 @@ export default function BrandFormDialog({ open, onClose, brand }: BrandFormDialo
         value={targetSrm}
         onChange={(e) => setTargetSrm(e.target.value)}
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 200, step: 'any' } }}
         fullWidth
         margin="normal"
       />

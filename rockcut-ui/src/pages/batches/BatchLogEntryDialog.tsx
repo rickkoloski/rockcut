@@ -108,6 +108,7 @@ export default function BatchLogEntryDialog({ open, onClose, batchId, entry }: B
         margin="dense"
         label="Gravity"
         type="number"
+        slotProps={{ htmlInput: { min: 0.95, max: 1.2, step: 'any' } }}
         value={gravity}
         onChange={(e) => setGravity(e.target.value)}
       />
@@ -116,6 +117,7 @@ export default function BatchLogEntryDialog({ open, onClose, batchId, entry }: B
         margin="dense"
         label="Temperature"
         type="number"
+        slotProps={{ htmlInput: { min: 20, max: 220, step: 'any' } }}
         value={temperature}
         onChange={(e) => setTemperature(e.target.value)}
       />
@@ -124,6 +126,7 @@ export default function BatchLogEntryDialog({ open, onClose, batchId, entry }: B
         margin="dense"
         label="pH"
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 14, step: 'any' } }}
         value={ph}
         onChange={(e) => setPh(e.target.value)}
       />

@@ -108,6 +108,7 @@ export default function RecipeFormDialog({ open, onClose, brandId, recipe }: Rec
         value={batchSize}
         onChange={(e) => setBatchSize(e.target.value)}
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 10000, step: 'any' } }}
         fullWidth
         margin="normal"
         required
@@ -139,6 +140,7 @@ export default function RecipeFormDialog({ open, onClose, brandId, recipe }: Rec
         value={efficiencyTarget}
         onChange={(e) => setEfficiencyTarget(e.target.value)}
         type="number"
+        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
         fullWidth
         margin="normal"
       />

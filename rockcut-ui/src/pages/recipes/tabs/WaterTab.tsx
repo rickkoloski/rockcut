@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import {
+  Alert,
   Box,
   Button,
   Grid,
@@ -9,19 +10,21 @@ import {
 } from '@mui/material';
 import { useApiCreate, useApiUpdate } from '../../../hooks/useApiMutation';
 import type { Recipe, WaterProfile } from '../../../lib/types';
+import parseApiError from '../../../lib/parseApiError';
 
 interface WaterTabProps {
   recipe: Recipe;
 }
 
-const FIELDS: { key: keyof WaterProfile; label: string }[] = [
-  { key: 'calcium', label: 'Calcium (ppm)' },
-  { key: 'magnesium', label: 'Magnesium (ppm)' },
-  { key: 'sodium', label: 'Sodium (ppm)' },
-  { key: 'sulfate', label: 'Sulfate (ppm)' },
-  { key: 'chloride', label: 'Chloride (ppm)' },
-  { key: 'bicarbonate', label: 'Bicarbonate (ppm)' },
-  { key: 'ph_target', label: 'pH Target' },
+// D51: the API's ranges, so the browser flags obvious typos first.
+const FIELDS: { key: keyof WaterProfile; label: string; max: number }[] = [
+  { key: 'calcium', label: 'Calcium (ppm)', max: 2000 },
+  { key: 'magnesium', label: 'Magnesium (ppm)', max: 2000 },
+  { key: 'sodium', label: 'Sodium (ppm)', max: 2000 },
+  { key: 'sulfate', label: 'Sulfate (ppm)', max: 2000 },
+  { key: 'chloride', label: 'Chloride (ppm)', max: 2000 },
+  { key: 'bicarbonate', label: 'Bicarbonate (ppm)', max: 2000 },
+  { key: 'ph_target', label: 'pH Target', max: 14 },
 ];
 
 export default function WaterTab({ recipe }: WaterTabProps) {
@@ -29,6 +32,7 @@ export default function WaterTab({ recipe }: WaterTabProps) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const createMutation = useApiCreate<WaterProfile>('/api/water_profiles', {
     invalidateKeys: [['recipe', recipe.id]],
@@ -63,12 +67,17 @@ export default function WaterTab({ recipe }: WaterTabProps) {
     }
     payload.notes = notes || null;
 
-    if (profile) {
-      await updateMutation.mutateAsync({ id: profile.id, ...payload });
-    } else {
-      await createMutation.mutateAsync(payload);
+    setError(null);
+    try {
+      if (profile) {
+        await updateMutation.mutateAsync({ id: profile.id, ...payload });
+      } else {
+        await createMutation.mutateAsync(payload);
+      }
+      setEditing(false);
+    } catch (err) {
+      setError(parseApiError(err));
     }
-    setEditing(false);
   };
 
   const loading = createMutation.isPending || updateMutation.isPending;
@@ -98,7 +107,7 @@ export default function WaterTab({ recipe }: WaterTabProps) {
                 onChange={(e) => setForm((prev) => ({ ...prev, [f.key]: e.target.value }))}
                 type="number"
                 fullWidth
-                slotProps={{ htmlInput: { step: 0.1 } }}
+                slotProps={{ htmlInput: { min: 0, max: f.max, step: 'any' } }}
               />
             </Grid>
           ))}
@@ -113,8 +122,9 @@ export default function WaterTab({ recipe }: WaterTabProps) {
             />
           </Grid>
         </Grid>
+        {error && <Alert severity="error" sx={{ mt: 2 }}>{error}</Alert>}
         <Box sx={{ display: 'flex', gap: 1, mt: 2, justifyContent: 'flex-end' }}>
-          <Button onClick={() => setEditing(false)} disabled={loading}>
+          <Button onClick={() => { setError(null); setEditing(false); }} disabled={loading}>
             Cancel
           </Button>
           <Button variant="contained" onClick={handleSave} disabled={loading}>
