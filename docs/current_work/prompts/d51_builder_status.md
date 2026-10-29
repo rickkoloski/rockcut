@@ -337,3 +337,90 @@ It didn't reproduce, so I didn't change anything.
    - The 10,000 cap on volumes and batch size.
 2. **Gravity is SG only:** a brewer who records °Plato (12.5) would be refused. Is that right for Matt? The spec and the formulas are SG.
 3. **Prod values:** should I run a read-only count of existing prod values outside these ranges? They'd only matter when someone edits that same field.
+
+---
+
+# Lead decisions 2, part 2: status (ranges built; full gate green)
+
+2026-10-28 · builder → lead, after the ranges were approved. Done and committed locally (not pushed). HEAD is `d4ab9ed` plus this status commit.
+
+| Commit | What |
+|---|---|
+| `8d0c5a6` | API: ranges on every brewing number + ExUnit |
+| `d4ab9ed` | UI: `min`/`max`/`step="any"` on the brewing inputs, Water tab shows a refused save, Playwright `brewery/brand-ranges`, COVERAGE.md |
+
+## API
+
+- **New `RockcutApi.Brewing.Ranges`** with three helpers. Each runs `validate_number` with one message that names the range:
+  - `validate_range/4`: "must be between 0 and 100" (thousands get a comma: "10,000");
+  - `validate_positive_up_to/3`: "must be more than 0 and at most 10,000";
+  - `validate_gravity/2`: "must be a specific gravity between 0.950 and 1.200", as you worded it. The bounds are `Decimal`s, so 0.950 is exact.
+- Ten changesets use the helpers, with the table as approved: Brand, Batch, BrewTurn, BatchLogEntry, IngredientLot, MashStep, RecipeProcessStep, Recipe, RecipeIngredient, WaterProfile.
+- Three existing checks are replaced, because the new range includes them:
+  - `MashStep.temperature > 0` → 32–212;
+  - `Recipe.batch_size > 0` → more than 0 and at most 10,000;
+  - `RecipeIngredient.amount > 0` → more than 0 and at most 1,000,000.
+- As before, a check only runs when that field changes, and an empty field is allowed.
+- **Formatting:** only the lines I added. A first `mix format` on the brewing glob had reformatted unrelated lines, including `ingredient_category.ex`, which I hadn't touched. I restored those files from HEAD and re-applied my edits by hand. The lib diff is 40 lines added and 3 removed in 10 files, plus the new `ranges.ex`.
+- **Tests**
+  - `test/rockcut_api/brewing/ranges_test.exs`, one describe per schema and one test per field (33 fields):
+    - both bounds pass;
+    - just below and just above are refused with the exact message.
+  - The same file also checks:
+    - an empty field is still allowed;
+    - a 40-digit float and `1.0e308` are refused;
+    - `-0.0` (what Jason makes of `-1e-9999`) is allowed.
+  - `test/rockcut_api_web/controllers/brewing_ranges_controller_test.exs` posts raw JSON bodies, so the numbers go through Jason as JSON numbers, as the UI sends them:
+    - for each of the 10 resources: a 40-digit number gets 422 with the range message and no row is created; then an in-range value gets 201 and is saved exactly;
+    - an update of a brand's ABV to `1000`, `1e308` or `-5` gets 422, and 5.25 stays.
+- **Revert check** (lib diff reversed and `ranges.ex` moved aside): the two new files go to **1/37**; only "an empty field is still allowed" passes. Restored: **37/37**.
+
+## UI
+
+- `slotProps.htmlInput = { min, max, step: 'any' }` on all 30 brewing number inputs, using the table's bounds. For the "more than 0" fields (batch size, amount) the browser minimum is 0 and the API refuses 0 itself.
+  - Brand: Target ABV, IBU, SRM
+  - Batch: Actual OG, FG, ABV, Volume, Ferm Temp
+  - Brew turn: OG, Volume, Efficiency
+  - Log entry: Gravity, Temperature, pH
+  - Ingredient lot: all 7 fields
+  - Mash and process step: Temperature
+  - Recipe: Batch Size, Efficiency Target
+  - Recipe ingredient: Amount
+  - Water tab: the six ppm fields up to 2,000, pH Target up to 14
+- The old `step: 0.1` on Target ABV and the Water fields became `'any'`. Inputs that aren't brewing values (step numbers, durations, version, rating) are unchanged.
+- **Error display:**
+  - The dialogs already showed the API's 422 through `parseApiError` in the FormDialog Alert, for example "target abv: must be between 0 and 100".
+  - The **Water tab didn't**: its Save had no catch, so a refused save did nothing visible. It now catches the error and shows `parseApiError`'s message in an Alert, the same pattern as the dialogs. Cancel clears it. Nothing else in the form changed.
+  - FormDialog has a `<form>`, so the browser's own range check now runs first and blocks Save with its bubble. The Water tab has no `<form>`, so there the API check is what refuses.
+- **Test ids added** for the spec: `brand-edit-button` on Brand detail, and `testId="brand-form-dialog"` on the brand dialog.
+- **Playwright** `tests/regression/brewery/brand-ranges.spec.ts`. As breweryMgr, on a `[TEST-TEMP]` brand made with ABV 5.25:
+  1. Edit, set Target ABV to 1000, Save: the input reports `rangeOverflow`, the dialog stays open and no PUT is sent.
+  2. With the browser's check switched off (`form.noValidate = true`, as an older page or a browser without constraint validation would behave), Save: the PUT gets 422 and the dialog's alert shows "must be between 0 and 100".
+  3. After a reload the page shows 5.25, and the API returns 5.25.
+  4. The owner deletes the brand in `afterEach`.
+- **Spec results:** **3/3** with `--repeat-each 3`. With the brand's API range and the dialog's `max` both removed it **fails** (at step 1, `rangeOverflow` false); restored it **passes**.
+
+## Full gate (merged branch, on the new deps)
+
+The chain ran under one `caffeinate -ims`, from 20:12 to 20:47. The last `pmset` sleep was at 19:37, so no sleep during the run.
+
+| Check | Result |
+|---|---|
+| Reseed (`mix rockcut.synthetic.setup`) | OK |
+| `MIX_ENV=test mix test`, run 1 (seed 690485) | **1823 passed** |
+| `MIX_ENV=test mix test`, run 2 (seed 906393) | **1823 passed** |
+| `tsc --noEmit -p tsconfig.app.json` | OK |
+| `vite build` | OK |
+| vitest | **176/176** |
+| lint | 26 errors / 1 warning, same as `develop` |
+| **Full local Playwright** | **572 passed, 1 skipped, 0 failed**; `board-replace` ran |
+
+- The ExUnit total is 1823, up from 1786: 37 new range tests.
+- The one skipped Playwright test is `smoke/roles` "DEV shows the banner", which is DEV-only.
+- The Playwright log is `/tmp/claude-501/pwlogs/d51p2_local2.log`.
+
+## For the DEV run (LIMITATIONS to consider)
+
+- I never built the Docker images (no Docker here). The `GIT_SHA` / `VITE_GIT_SHA` build args get their first real build on DEV, and the DEV ribbon SHA and `/api/health` `sha` need checking there.
+- The brewing ranges were exercised locally for Brand in the browser, and for all resources through the API in ExUnit. The other dialogs' `min`/`max` were only type-checked and checked in the diff, not clicked through.
+- The S13 viewport fix (`fitViewportToBoard`) hasn't run on DEV yet; locally it was checked by recreating DEV's taller board.

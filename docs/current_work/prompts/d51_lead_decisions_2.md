@@ -26,3 +26,11 @@ From the part 1 QA pass (spec, "From the part 1 QA pass"; report `~/src/rockcut-
 - Full `mix test` twice and the UI checks on the merged branch.
 - Full local Playwright once more (reseed first; `caffeinate -ims` on the whole chain).
 - Update the status file and stop.
+
+## Lead OK on the ranges (2026-10-28, after `f4656d0`)
+
+- **4933:** accepted (old 15/20 → new 20/20).
+- **Table: OK as proposed**, all rows, including the four judgement calls (ABV 0–100; log temperature 20–220 °F; `ferm_temp` 25–110 °F; the 10,000 caps).
+- **Gravity: SG only** (0.950–1.200), as the spec and formulas use. The lead is asking Matt about °Plato; if he wants it, it's a later change of one range. Make the message say the unit: "must be a specific gravity between 0.950 and 1.200".
+- **Prod values (lead, read-only):** prod has 6 batches and 10 brands with **no** brewing numbers set (all gravity/ABV/temperature/lot/recipe values nil; no log entries, brew turns, lots or recipes). Nothing to migrate.
+- Go: code the ranges, UI `min`/`max`/`step="any"`, the tests, then the full gate (ExUnit twice, UI checks, full local Playwright after a reseed, `caffeinate -ims` on the chain). Update the status file and stop.
