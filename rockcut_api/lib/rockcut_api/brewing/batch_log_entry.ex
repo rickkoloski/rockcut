@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.BatchLogEntry do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "batch_log_entries" do
     field :timestamp, :utc_datetime
@@ -22,6 +23,9 @@ defmodule RockcutApi.Brewing.BatchLogEntry do
     |> cast(attrs, [:batch_id, :timestamp, :event_type, :gravity, :temperature, :ph, :notes])
     |> validate_required([:batch_id, :timestamp, :event_type])
     |> validate_inclusion(:event_type, @valid_event_types)
+    |> validate_gravity(:gravity)
+    |> validate_range(:temperature, 20, 220)
+    |> validate_range(:ph, 0, 14)
     |> foreign_key_constraint(:batch_id)
   end
 end

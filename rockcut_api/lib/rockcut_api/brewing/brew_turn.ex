@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.BrewTurn do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "brew_turns" do
     field :turn_number, :integer
@@ -24,6 +25,9 @@ defmodule RockcutApi.Brewing.BrewTurn do
     |> cast(attrs, [:batch_id, :recipe_id, :turn_number, :brew_date, :actual_og, :actual_volume, :actual_efficiency, :notes])
     |> validate_required([:batch_id, :recipe_id, :turn_number])
     |> validate_number(:turn_number, greater_than: 0)
+    |> validate_gravity(:actual_og)
+    |> validate_range(:actual_volume, 0, 10_000)
+    |> validate_range(:actual_efficiency, 0, 100)
     |> unique_constraint([:batch_id, :turn_number])
     |> foreign_key_constraint(:batch_id)
     |> foreign_key_constraint(:recipe_id)

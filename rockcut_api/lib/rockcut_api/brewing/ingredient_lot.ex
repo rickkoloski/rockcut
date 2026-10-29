@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.IngredientLot do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "ingredient_lots" do
     field :lot_number, :string
@@ -44,6 +45,12 @@ defmodule RockcutApi.Brewing.IngredientLot do
     ])
     |> validate_required([:ingredient_id])
     |> validate_inclusion(:status, @valid_statuses)
+    |> validate_range(
+      [:alpha_acid, :attenuation, :extract_potential_fgdb, :protein_perc, :moisture_perc],
+      0,
+      100
+    )
+    |> validate_range([:color_lovibond, :diastatic_power_linter], 0, 1_000)
     |> foreign_key_constraint(:ingredient_id)
   end
 end

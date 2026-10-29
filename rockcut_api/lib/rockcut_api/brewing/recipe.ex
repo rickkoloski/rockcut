@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.Recipe do
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "recipes" do
     field :version_major, :integer, default: 1
@@ -34,7 +35,8 @@ defmodule RockcutApi.Brewing.Recipe do
     |> validate_required([:brand_id, :batch_size])
     |> validate_inclusion(:status, @valid_statuses)
     |> validate_inclusion(:batch_size_unit, @valid_units)
-    |> validate_number(:batch_size, greater_than: 0)
+    |> validate_positive_up_to(:batch_size, 10_000)
+    |> validate_range(:efficiency_target, 0, 100)
     |> validate_number(:boil_time, greater_than_or_equal_to: 0)
     |> unique_constraint([:brand_id, :version_major, :version_minor])
     |> foreign_key_constraint(:brand_id)
