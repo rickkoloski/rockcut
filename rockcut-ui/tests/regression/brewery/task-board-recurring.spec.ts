@@ -9,6 +9,7 @@ import {
   completeTask,
   createTask,
   denverToday,
+  fitViewportToBoard,
   getBoard,
   moveTask,
   mouseDrag,
@@ -288,6 +289,8 @@ test('S59: dragging one to another day moves only that one; no second copy', asy
   const tomorrow = addDays(t, 1)
   const first = await createSeries(api, weekly(tempTag('S59 Keg Wash'), t))
   await openBoard(page)
+  // A busy shared board (DEV) pushes a new card below the window: size it to the board, as the other drag specs do.
+  await fitViewportToBoard(page, 2200)
   const moved = boardWrite(page, new RegExp(`/${first.id}/move$`))
   await mouseDrag(page, card(page, first.id, t), page.getByTestId(`day-list-${tomorrow}`))
   expect((await moved).request().postDataJSON()).toMatchObject({ due_on: tomorrow })
