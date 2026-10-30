@@ -112,9 +112,10 @@ export function ActingBanner() {
         alignItems: 'center',
         gap: 1,
         // D43: solid (it sits over the board when scrolled), muted in dark.
+        // D52 (task 4298): the dark info blue in Light; white on info.light was 2.6:1.
         ...(t.palette.mode === 'dark'
           ? { bgcolor: darken(t.palette.info.main, 0.6), color: t.palette.info.light }
-          : { bgcolor: 'info.light', color: 'info.contrastText' }),
+          : { bgcolor: 'info.dark', color: 'info.contrastText' }),
       })}
     >
       <Typography variant="body2" sx={{ fontWeight: 600 }} data-testid="acting-name">

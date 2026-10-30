@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
 import { addDays, batchOf, dragBy, gantt, Made, openGantt, snack, stepOf, today, type SBatch } from './schedule'
+import { closeSettings, openSettings } from '../settingsMenu'
 
 // D48 DEV gate fix cycle 1 (lead decisions 2): days outside the beer's stay
 // (M1), split parents and parts (M2, minors 6 and 8), the current tank (M3),
@@ -107,8 +108,12 @@ test('minors 9, 10, 11: the zoom tooltip; a two-batch move names both; Ctrl+Spac
   const a = await planned('Altruism', [fv.id], 2)
   const c = await planned('Crusher', [fw.id], 4)
   await openGantt(page)
-  await page.getByTestId('gantt-zoom').hover()
-  await expect(page.getByRole('tooltip')).toHaveText('Weeks on screen')
+  // D52: the zoom is "Weeks on screen" in the settings gear.
+  await page.getByTestId('gantt-settings').hover()
+  await expect(page.getByRole('tooltip')).toHaveText('Production settings')
+  await openSettings(page, 'gantt-settings')
+  await expect(page.getByTestId('gantt-zoom')).toContainText('Weeks on screen')
+  await closeSettings(page)
 
   // Keyboard: Ctrl+Space on focused steps, then Escape.
   const dot = (b: SBatch, name: string) => page.getByTestId(`gantt-step-${stepOf(b, name).id}`)
@@ -136,7 +141,9 @@ test('minors 9, 10, 11: the zoom tooltip; a two-batch move names both; Ctrl+Spac
 test.describe('a phone', () => {
   test.use({ viewport: { width: 412, height: 915 } })
 
-  test('a drag toward the bottom of the screen scrolls the grid down, though the grid runs on below the screen (Matt, Pixel)', async ({ page }) => {
+  // D52: the chart now runs to just above the bottom of the window (it used to run on
+  // below the screen, the case this guarded); a drag to its bottom edge still scrolls it.
+  test('a drag toward the bottom of the grid scrolls the grid down; the grid ends on screen (Matt, Pixel; D52)', async ({ page }) => {
     const fv = await made.tank('FV')
     const b = await planned('Galactic', [fv.id], 2)
     // More rows, so there's somewhere to scroll to.
@@ -144,7 +151,7 @@ test.describe('a phone', () => {
     await openGantt(page)
     const grid = gantt(page)
     const box = (await grid.boundingBox())!
-    expect(box.y + box.height).toBeGreaterThan(915)
+    expect(box.y + box.height).toBeLessThanOrEqual(915)
     const bar = page.getByTestId(`gantt-bar-${b.id}-0`)
     await bar.scrollIntoViewIfNeeded()
     // Room to scroll: the grid a little up from its end, the bar still on screen.
@@ -157,15 +164,13 @@ test.describe('a phone', () => {
     await page.mouse.move(x, y)
     await page.mouse.down()
     await page.mouse.move(x, y + 6, { steps: 3 })
-    // Inside the edge zone of the part of the grid on screen, but more than
-    // 40 px above the grid's real bottom (off screen): the old zone missed it.
-    const target = 915 - 25
+    // Inside the edge zone at the grid's bottom, which is on screen now.
     const g = (await grid.boundingBox())!
-    expect(g.y + g.height - target).toBeGreaterThanOrEqual(40)
+    const target = g.y + g.height - 15
     await page.mouse.move(x, target, { steps: 10 })
-    // The grid scrolls down to its end, then the page takes over.
+    // The grid scrolls down; the page has nothing more to scroll.
     await expect.poll(() => grid.evaluate((e) => e.scrollTop), { timeout: 5000 }).toBeGreaterThan(top + 20)
-    await expect.poll(() => page.evaluate(() => window.scrollY), { timeout: 5000 }).toBeGreaterThan(0)
+    expect(await page.evaluate(() => window.scrollY)).toBe(0)
     await page.keyboard.press('Escape')
     await page.mouse.up()
   })

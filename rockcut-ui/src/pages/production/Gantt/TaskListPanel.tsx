@@ -1,20 +1,17 @@
-import { useState } from 'react'
-import { Alert, Box, Button, Checkbox, Drawer, IconButton, MenuItem, TextField, Typography, useMediaQuery } from '@mui/material'
+import { useEffect, useState } from 'react'
+import { Alert, Box, Checkbox, Drawer, IconButton, Paper, Typography, useMediaQuery } from '@mui/material'
 import { Close } from '@mui/icons-material'
-import api from '../../../lib/api'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import useAuth from '../../../hooks/useAuth'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { addDaysKey } from '../../../lib/datetime'
-import { daysBetween } from '../../../lib/gantt'
-import { prodPath, type Person } from '../../../lib/production'
 import { BOARD_QUERY_KEY, boardPath, formatTaskDay, linkedStep, taskError } from '../../../lib/tasks'
 import type { TaskBoardData, TaskCardData } from '../../../lib/types'
 import { useFlows } from './flowsContext'
+import { HEAD_H } from './GanttGrid'
 
 interface Props {
   today: string
-  brewers: Person[]
   onOpenStep: (stepId: number, day: string) => void
   onClose: () => void
 }
@@ -23,10 +20,12 @@ interface Props {
  * D49 §3.12 (P102): the Gantt's Task list. The Brewery board's linked tasks
  * (`linked=true`) for today through the next 6 days, Late from the board's
  * Unfinished list (decision 6.7), following "Show planned batches" as the
- * board does. Each row: check off, the title, notes (two lines), Move to
- * [date], the assignee and Open; the same writes and prompts as the board.
+ * board does. Each row: check off, the title (D52: a click opens the step),
+ * notes (two lines) and who has it; moving and assigning are in the step.
+ * D52: it sits over the Gantt (the page renders it inside the chart's box),
+ * so the toolbar stays in reach; at phone width it's still a full-screen drawer.
  */
-export default function TaskListPanel({ today, brewers, onOpenStep, onClose }: Props) {
+export default function TaskListPanel({ today, onOpenStep, onClose }: Props) {
   usePhoneBackCloses(true, onClose)
   const phone = useMediaQuery('(max-width:559.95px)')
   const showPlanned = useAuth((s) => s.showPlannedBatches)
@@ -45,19 +44,23 @@ export default function TaskListPanel({ today, brewers, onOpenStep, onClose }: P
       ].filter((g) => g.key === today || g.cards.length > 0)
     : []
 
-  return (
-    <Drawer
-      anchor="right"
-      open
-      onClose={onClose}
-      slotProps={{ paper: { sx: { width: phone ? '100%' : 440 }, 'data-testid': 'task-list-panel' } as object }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', px: 2, py: 1, borderBottom: 1, borderColor: 'divider' }}>
+  // Over the Gantt there's no backdrop to click, so Escape closes it as the drawer did.
+  useEffect(() => {
+    if (phone) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [phone, onClose])
+
+  const body = (
+    <>
+      {/* D52: lines up with the chart's date header beside it (+1 for the chart's top border). */}
+      <Box sx={{ display: 'flex', alignItems: 'center', flex: 'none', height: HEAD_H + 1, boxSizing: 'border-box', px: 2, borderBottom: 1, borderColor: 'divider' }}>
         <Typography variant="h6" sx={{ flex: 1 }}>
           Task list
         </Typography>
-        <IconButton aria-label="Close" onClick={onClose} data-testid="task-list-close">
-          <Close />
+        <IconButton size="small" edge="end" aria-label="Close" onClick={onClose} data-testid="task-list-close">
+          <Close fontSize="small" />
         </IconButton>
       </Box>
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 2, overflowY: 'auto' }}>
@@ -74,19 +77,45 @@ export default function TaskListPanel({ today, brewers, onOpenStep, onClose }: P
               </Typography>
             )}
             {g.cards.map((c) => (
-              <TaskRow key={c.key} card={c} today={today} brewers={brewers} onOpen={() => onOpenStep(c.production!.step_id, c.due_on!)} />
+              <TaskRow key={c.key} card={c} today={today} onOpen={() => onOpenStep(c.production!.step_id, c.due_on!)} />
             ))}
           </Box>
         ))}
       </Box>
+    </>
+  )
+
+  return phone ? (
+    <Drawer anchor="right" open onClose={onClose} slotProps={{ paper: { sx: { width: '100%' }, 'data-testid': 'task-list-panel' } as object }}>
+      {body}
     </Drawer>
+  ) : (
+    <Paper
+      elevation={8}
+      data-testid="task-list-panel"
+      sx={{
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        bottom: 0,
+        width: 317,
+        maxWidth: '100%',
+        // Above the chart's sticky date header (9) and corner (10).
+        zIndex: 11,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        borderRadius: '0 20px 20px 0',
+      }}
+    >
+      {body}
+    </Paper>
   )
 }
 
-function TaskRow({ card, today, brewers, onOpen }: { card: TaskCardData; today: string; brewers: Person[]; onOpen: () => void }) {
+function TaskRow({ card, today, onOpen }: { card: TaskCardData; today: string; onOpen: () => void }) {
   const flows = useFlows()
   const step = linkedStep(card)!
-  const [moveTo, setMoveTo] = useState(card.due_on ?? today)
   const [busy, setBusy] = useState(false)
   const run = async (fn: () => Promise<{ ok: boolean; error?: string } | null>) => {
     setBusy(true)
@@ -97,8 +126,6 @@ function TaskRow({ card, today, brewers, onOpen }: { card: TaskCardData; today: 
       setBusy(false)
     }
   }
-  const options = card.assignee_id && !brewers.some((b) => b.id === card.assignee_id) ? [...brewers, { id: card.assignee_id, name: card.assignee_name ?? 'Unknown' }] : brewers
-  const days = card.due_on ? daysBetween(card.due_on, moveTo) : 0
 
   return (
     <Box sx={{ display: 'flex', gap: 1, py: 1, borderBottom: 1, borderColor: 'divider' }} data-testid={`task-list-row-${card.id}`}>
@@ -111,9 +138,23 @@ function TaskRow({ card, today, brewers, onOpen }: { card: TaskCardData; today: 
         slotProps={{ input: { 'aria-label': card.done ? `Mark ${card.title} not done` : `Mark ${card.title} completed`, 'data-testid': `task-list-check-${card.id}` } as object }}
       />
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+        {/* D52: the title opens the step (it replaced the Open button). */}
         <Typography
           variant="body2"
-          sx={{ fontWeight: 600, textDecoration: card.done ? 'line-through' : undefined, color: card.done ? 'text.secondary' : undefined }}
+          component="button"
+          type="button"
+          onClick={onOpen}
+          sx={{
+            fontWeight: 600,
+            textDecoration: card.done ? 'line-through' : undefined,
+            color: card.done ? 'text.secondary' : 'text.primary',
+            textAlign: 'left',
+            p: 0,
+            border: 0,
+            bgcolor: 'transparent',
+            cursor: 'pointer',
+            '&:hover, &:focus-visible': { color: 'primary.main', textDecorationLine: 'underline' },
+          }}
           data-testid={`task-list-title-${card.id}`}
         >
           {card.title}
@@ -133,54 +174,12 @@ function TaskRow({ card, today, brewers, onOpen }: { card: TaskCardData; today: 
             {card.notes}
           </Typography>
         )}
-        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-          {!card.done && (
-            <>
-              <TextField
-                size="small"
-                type="date"
-                label="Move to"
-                value={moveTo}
-                onChange={(e) => setMoveTo(e.target.value)}
-                sx={{ width: 150 }}
-                slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': `task-list-move-date-${card.id}` } }}
-              />
-              <Button
-                size="small"
-                variant="outlined"
-                disabled={busy || !days || !/^\d{4}-\d{2}-\d{2}$/.test(moveTo)}
-                onClick={() => run(() => flows.moveSteps([step.id], days))}
-                data-testid={`task-list-move-${card.id}`}
-              >
-                Move
-              </Button>
-            </>
-          )}
-          <TextField
-            select
-            size="small"
-            label="Assigned to"
-            value={card.assignee_id ?? ''}
-            disabled={busy}
-            onChange={(e) => {
-              const id = e.target.value === '' ? null : Number(e.target.value)
-              const name = options.find((p) => p.id === id)?.name ?? 'nobody'
-              run(() => flows.write(() => api.post(prodPath('steps', 'assign'), { ids: [step.id], assignee_id: id }), `${step.name} assigned to ${name}.`))
-            }}
-            sx={{ minWidth: 140 }}
-            slotProps={{ select: { displayEmpty: true, SelectDisplayProps: { 'data-testid': `task-list-assignee-${card.id}` } as object }, inputLabel: { shrink: true } }}
-          >
-            <MenuItem value="">Nobody</MenuItem>
-            {options.map((p) => (
-              <MenuItem key={p.id} value={p.id} data-testid={`task-list-assignee-${card.id}-${p.id}`}>
-                {p.name}
-              </MenuItem>
-            ))}
-          </TextField>
-          <Button size="small" onClick={onOpen} sx={{ ml: 'auto' }} data-testid={`task-list-open-${card.id}`}>
-            Open
-          </Button>
-        </Box>
+        {/* D52: moving and assigning are in the step; the row just says who has it. */}
+        {card.assignee_name && (
+          <Typography variant="caption" color="text.secondary" data-testid={`task-list-assignee-${card.id}`}>
+            {card.assignee_name}
+          </Typography>
+        )}
       </Box>
     </Box>
   )

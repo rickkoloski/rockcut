@@ -10,7 +10,8 @@ const ROUTES = [
   { path: '/brands', addButton: 'brands-add-button' },
   { path: '/ingredients', addButton: 'ingredients-add-button' },
   { path: '/batches', addButton: 'batches-add-button' },
-  { path: '/settings', addButton: 'settings-add-button' },
+  // D52: the ingredient categories (formerly /settings) live under the library.
+  { path: '/ingredients/categories', addButton: 'settings-add-button' },
 ]
 
 const DENIED: PersonaKey[] = ['bartender1', 'barMgr'] // S1, S2

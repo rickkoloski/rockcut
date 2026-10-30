@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { activeTankIds, createTank, openBreweryNav, retireTanks, shortTag, tanks } from './helpers'
 import { addDays, Made, today } from './schedule'
+import { settingsItem } from '../settingsMenu'
 
 const madeSchedule = new Made()
 
@@ -27,8 +28,7 @@ test.describe('as brewer1', () => {
   test('P1: Add a tank; it is listed last and persists', async ({ page }) => {
     const name = shortTag('FV8')
     await page.goto('/brewery/production')
-    await page.getByTestId('gantt-setup').click()
-    await page.getByTestId('gantt-setup-tanks').click()
+    await settingsItem(page, 'gantt-settings', 'gantt-setup-tanks')
     await expect(page).toHaveURL(/\/brewery\/production\/tanks$/)
     await page.getByTestId('tank-add').click()
     await page.getByTestId('tank-name').fill(name)
@@ -168,8 +168,7 @@ test.describe('the Gantt and its Set up menu (D47)', () => {
       ['gantt-setup-lists', /\/lists$/],
     ] as const) {
       await page.goto('/brewery/production')
-      await page.getByTestId('gantt-setup').click()
-      await page.getByTestId(item).click()
+      await settingsItem(page, 'gantt-settings', item)
       await expect(page).toHaveURL(url)
     }
   })

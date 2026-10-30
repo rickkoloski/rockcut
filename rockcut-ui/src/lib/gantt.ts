@@ -258,6 +258,23 @@ export function partDots(part: Part): { step: SchedStep; slot: number; of: numbe
   })
 }
 
+/**
+ * D52 (task 4949): where each dot sits among every dot on the same track and
+ * day in a tank row, across its parts (a Split and a part's step on one day
+ * used to land on one spot, so only the top one could be clicked).
+ */
+export function rowDotSlots(parts: Part[], trackOf: (p: Part) => number): Map<number, { slot: number; of: number }> {
+  const groups = new Map<string, SchedStep[]>()
+  for (const p of parts)
+    for (const { step } of partDots(p)) {
+      const k = `${trackOf(p)}:${step.due_on}`
+      groups.set(k, [...(groups.get(k) ?? []), step])
+    }
+  const out = new Map<number, { slot: number; of: number }>()
+  for (const list of groups.values()) list.forEach((s, i) => out.set(s.id, { slot: i, of: list.length }))
+  return out
+}
+
 // ── Flags on a bar (§3.6 badge) ──
 
 /** The flags about a part: about its batch, and its tank (or no tank). */

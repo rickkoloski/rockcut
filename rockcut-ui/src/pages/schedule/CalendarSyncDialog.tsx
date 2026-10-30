@@ -15,7 +15,7 @@ import {
 import ContentCopyIcon from '@mui/icons-material/ContentCopy'
 import AutorenewIcon from '@mui/icons-material/Autorenew'
 import { useQueryClient } from '@tanstack/react-query'
-import { useApiQuery } from '../../hooks/useApiQuery'
+import { useApiList } from '../../hooks/useApiQuery'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import api from '../../lib/api'
 import type { CalendarFeed } from '../../lib/types'
@@ -27,7 +27,7 @@ interface Props {
 
 export default function CalendarSyncDialog({ open, onClose }: Props) {
   const qc = useQueryClient()
-  const { data: feeds = [] } = useApiQuery<CalendarFeed[]>(['calendar_feeds'], '/api/calendar_feeds', undefined, { enabled: open })
+  const { data: feeds = [] } = useApiList<CalendarFeed>(['calendar_feeds'], '/api/calendar_feeds', undefined, { enabled: open })
   const [copied, setCopied] = useState<string | null>(null)
   // D35: resetting a shared link signs everyone else out of it, so ask first.
   const [confirmReset, setConfirmReset] = useState<CalendarFeed | null>(null)

@@ -1,18 +1,25 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, addProcess, gantt, openGantt, schedule, today } from './schedule'
+import { choiceOptions, pickSetting, settingValue } from '../settingsMenu'
 
 // D48 Task 0 (§3.6 "Toolbar changes in D48"): Today, the zoom menu, the
 // Collapse all | ● | Expand all switch, Add process ▾ and the compact
 // expanded rows (P118–P121). Read-only against the [SEED] schedule; the
 // view is remembered per browser, so each test starts in a fresh context.
+// D52: the zoom and the tanks switch are choices in the settings gear
+// ("Weeks on screen", "Tanks"); "Your selection" is offered once there's a mix.
+
+const GEAR = 'gantt-settings'
+const MODE = { collapse: 'Collapse all', mine: 'Your selection', expand: 'Expand all' } as const
+const tanksMode = (page: Page) => settingValue(page, GEAR, 'gantt-expand')
+const setTanks = (page: Page, mode: keyof typeof MODE) => pickSetting(page, GEAR, 'gantt-expand', mode)
 
 const range = async (page: Page) => ({ from: await page.getByTestId('gantt-from').inputValue(), to: await page.getByTestId('gantt-to').inputValue() })
 
 async function pickZoom(page: Page, weeks: number) {
-  await page.getByTestId('gantt-zoom').click()
-  await page.getByTestId(`gantt-zoom-${weeks}`).click()
-  await expect(page.getByTestId('gantt-zoom')).toHaveText(`${weeks} weeks`)
+  await pickSetting(page, GEAR, 'gantt-zoom', weeks)
+  expect(await settingValue(page, GEAR, 'gantt-zoom')).toBe(`${weeks} weeks`)
 }
 
 test.describe('brewer1', () => {
@@ -45,45 +52,43 @@ test.describe('brewer1', () => {
     expect(await range(page)).toEqual({ from: addDays(today(), -7), to: addDays(today(), 14) })
   })
 
-  test('P119: Collapse all | ● | Expand all follows the carets; the middle restores the mix; remembered', async ({ page }) => {
+  test('P119: the Tanks setting follows the carets; Your selection restores the mix; remembered', async ({ page }) => {
     await openGantt(page)
     const sched = await schedule()
     const [a, b] = sched.tanks.slice(0, 2).map((t) => t.id)
-    const sw = page.getByTestId('gantt-expand')
     const caret = (id: number) => page.getByTestId(`gantt-caret-${id}`)
 
-    await page.getByTestId('gantt-collapse-all').click()
-    await expect(sw).toHaveAttribute('data-mode', 'collapse')
-    // No mix yet: the middle is disabled, and says what it is.
-    await expect(page.getByTestId('gantt-expand-mine')).toBeDisabled()
-    await expect(page.getByTestId('gantt-expand-mine')).toHaveAttribute('aria-label', 'Your own selection')
+    await setTanks(page, 'collapse')
+    expect(await tanksMode(page)).toBe(MODE.collapse)
+    // No mix yet: Your selection isn't offered.
+    expect(await choiceOptions(page, GEAR, 'gantt-expand')).not.toContain('gantt-expand-mine')
 
     await caret(a).click()
-    await expect(sw).toHaveAttribute('data-mode', 'mine')
-    await expect(page.getByTestId('gantt-expand-mine')).toHaveAttribute('aria-pressed', 'true')
+    await expect(caret(a)).toHaveAttribute('aria-expanded', 'true')
+    expect(await tanksMode(page)).toBe(MODE.mine)
     await caret(b).click()
 
-    await page.getByTestId('gantt-collapse-all').click()
+    await setTanks(page, 'collapse')
     await expect(page.locator('[data-testid^="gantt-step-row-"]')).toHaveCount(0)
-    await expect(sw).toHaveAttribute('data-mode', 'collapse')
+    expect(await tanksMode(page)).toBe(MODE.collapse)
 
-    await page.getByTestId('gantt-expand-mine').click()
-    await expect(sw).toHaveAttribute('data-mode', 'mine')
+    await setTanks(page, 'mine')
+    expect(await tanksMode(page)).toBe(MODE.mine)
     for (const t of sched.tanks) await expect(caret(t.id)).toHaveAttribute('aria-expanded', String(t.id === a || t.id === b))
 
     await page.reload()
-    await expect(sw).toHaveAttribute('data-mode', 'mine')
+    expect(await tanksMode(page)).toBe(MODE.mine)
     await expect(caret(a)).toHaveAttribute('aria-expanded', 'true')
-    // After Expand all and back, the middle still reopens exactly the mix.
-    await page.getByTestId('gantt-expand-all').click()
-    await expect(sw).toHaveAttribute('data-mode', 'expand')
-    await page.getByTestId('gantt-expand-mine').click()
+    // After Expand all and back, Your selection still reopens exactly the mix.
+    await setTanks(page, 'expand')
+    expect(await tanksMode(page)).toBe(MODE.expand)
+    await setTanks(page, 'mine')
     for (const t of sched.tanks) await expect(caret(t.id)).toHaveAttribute('aria-expanded', String(t.id === a || t.id === b))
 
-    // Opening every tank by its caret moves the switch to Expand all (Unassigned has no caret).
+    // Opening every tank by its caret moves the setting to Expand all (Unassigned has no caret).
     for (const t of sched.tanks) if (t.id !== a && t.id !== b) await caret(t.id).click()
-    await expect(sw).toHaveAttribute('data-mode', 'expand')
-    await page.getByTestId('gantt-collapse-all').click()
+    expect(await tanksMode(page)).toBe(MODE.expand)
+    await setTanks(page, 'collapse')
   })
 
   test('P120: the zoom menu and Add process ▾, by mouse and keyboard; the old buttons are gone', async ({ page }) => {
@@ -91,11 +96,6 @@ test.describe('brewer1', () => {
     const from = (await range(page)).from
     await pickZoom(page, 12)
     expect(await range(page)).toEqual({ from, to: addDays(from, 91) })
-    await page.getByTestId('gantt-zoom').click()
-    await expect(page.getByTestId('gantt-zoom-12')).toHaveAttribute('aria-checked', 'true')
-    await expect(page.getByTestId('gantt-zoom-6')).toHaveAttribute('aria-checked', 'false')
-    await page.keyboard.press('Escape')
-    await expect(page.getByTestId('gantt-zoom-12')).toHaveCount(0)
 
     // No separate 2/6/12, Plan batch or Add CIP buttons in the toolbar.
     const toolbar = page.getByTestId('gantt-toolbar')
@@ -109,14 +109,21 @@ test.describe('brewer1', () => {
     await expect(page.getByTestId('cip-add-dialog')).toBeVisible()
     await page.keyboard.press('Escape')
 
-    // Keyboard: Enter opens, arrows move, Enter picks, Escape closes.
-    await page.getByTestId('gantt-zoom').focus()
+    // Keyboard: Enter opens the gear on its first setting; Enter opens the weeks,
+    // arrows move, Enter picks (focus back on the heading), Escape closes.
+    await page.getByTestId(GEAR).focus()
     await page.keyboard.press('Enter')
-    await expect(page.getByTestId('gantt-zoom-12')).toBeFocused()
-    await page.keyboard.press('ArrowUp')
+    await expect(page.getByTestId('gantt-zoom')).toBeFocused()
+    await page.keyboard.press('Enter')
+    await page.keyboard.press('ArrowDown')
+    await expect(page.getByTestId('gantt-zoom-2')).toBeFocused()
+    await page.keyboard.press('ArrowDown')
     await expect(page.getByTestId('gantt-zoom-6')).toBeFocused()
     await page.keyboard.press('Enter')
-    await expect(page.getByTestId('gantt-zoom')).toHaveText('6 weeks')
+    await expect(page.getByTestId('gantt-zoom')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('menu')).toBeHidden()
+    expect(await settingValue(page, GEAR, 'gantt-zoom')).toBe('6 weeks')
     await page.getByTestId('gantt-add-process').focus()
     await page.keyboard.press('Enter')
     await expect(page.getByTestId('gantt-plan')).toBeFocused()

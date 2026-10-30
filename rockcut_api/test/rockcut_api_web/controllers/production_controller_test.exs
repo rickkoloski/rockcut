@@ -51,6 +51,25 @@ defmodule RockcutApiWeb.ProductionControllerTest do
       assert call(b, :patch, "/api/production/tanks/999999", %{name: "X"}).status == 404
     end
 
+    test "D52: an optional abbreviation, up to 4 characters, blank clears it", %{brewer: b} do
+      tank =
+        call(b, :post, "/api/production/tanks", %{name: "Serving 1", capacity_bbl: 10})
+        |> body()
+
+      assert tank["data"]["abbreviation"] == nil
+      id = tank["data"]["id"]
+
+      set = call(b, :patch, "/api/production/tanks/#{id}", %{abbreviation: " SV1 "}) |> body()
+      assert set["data"]["abbreviation"] == "SV1"
+
+      long = call(b, :patch, "/api/production/tanks/#{id}", %{abbreviation: "SERV1"})
+      assert long.status == 422
+      assert body(long)["errors"]["abbreviation"] == ["Use up to 4 characters."]
+
+      cleared = call(b, :patch, "/api/production/tanks/#{id}", %{abbreviation: "  "}) |> body()
+      assert cleared["data"]["abbreviation"] == nil
+    end
+
     test "out-of-service periods: add, overlap (P9), change, end today, delete", %{brewer: b} do
       tank =
         call(b, :post, "/api/production/tanks", %{name: "Serving 2", capacity_bbl: 30}) |> body()

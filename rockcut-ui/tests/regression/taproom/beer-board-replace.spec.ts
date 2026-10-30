@@ -15,6 +15,7 @@ import {
   rowsAfterReload,
   today,
 } from './helpers'
+import { settingsItem } from '../settingsMenu'
 
 // D37 §3.6: Import → Replace as barMgr (S25, S28).
 //
@@ -88,7 +89,7 @@ test.describe('Replace (clears the shared board; restored after)', () => {
 
     await openBoard(page)
     const { text } = await downloadBoard(page)
-    await page.getByTestId('board-import').click()
+    await settingsItem(page, 'board-settings', 'board-import')
     await page.getByTestId('import-file').setInputFiles({ name: 'export.csv', mimeType: 'text/csv', buffer: Buffer.from(text) })
     await page.getByTestId('import-mode-replace').check()
     await page.getByTestId('import-preview').click()

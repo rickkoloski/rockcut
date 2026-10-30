@@ -1,15 +1,15 @@
 import { Box, Card, CardActionArea, CardContent, Grid, Stack, Typography } from '@mui/material'
 import { type ReactNode } from 'react'
 import { useNavigate } from 'react-router-dom'
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
-import GridViewIcon from '@mui/icons-material/GridView'
-import EventBusyIcon from '@mui/icons-material/EventBusy'
-import EventAvailableIcon from '@mui/icons-material/EventAvailable'
-import ForumIcon from '@mui/icons-material/Forum'
-import SportsBarIcon from '@mui/icons-material/SportsBar'
-import PeopleIcon from '@mui/icons-material/People'
-import ChecklistIcon from '@mui/icons-material/Checklist'
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonthOutlined'
+import GridViewIcon from '@mui/icons-material/GridViewOutlined'
+import EventBusyIcon from '@mui/icons-material/EventBusyOutlined'
+import EventAvailableIcon from '@mui/icons-material/EventAvailableOutlined'
+import ForumIcon from '@mui/icons-material/ForumOutlined'
+import PeopleIcon from '@mui/icons-material/PeopleOutlined'
+import ChecklistIcon from '@mui/icons-material/ChecklistOutlined'
 import useAuth from '../hooks/useAuth'
+import { FermenterIcon } from '../components/NavIcons'
 
 interface QuickLink {
   label: string
@@ -50,7 +50,7 @@ export default function Home() {
     { label: 'Availability', description: 'Set when you can work', path: '/availability', icon: <EventAvailableIcon /> },
     { label: 'Messages', description: 'Team channels', path: '/messages', icon: <ForumIcon /> },
     ...(hasBrewery
-      ? [{ label: 'Brewery', description: 'Batches, recipes & brands', path: '/brewery', icon: <SportsBarIcon /> }]
+      ? [{ label: 'Brewery', description: 'Batches, recipes & brands', path: '/brewery', icon: <FermenterIcon /> }]
       : []),
     ...(canManageUsers
       ? [{ label: 'Users & Roles', description: 'Manage staff access', path: '/users', icon: <PeopleIcon /> }]

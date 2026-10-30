@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { Box, Button, Chip, IconButton, Menu, MenuItem, Stack, Tooltip, Typography } from '@mui/material'
+import { Box, Button, Chip, IconButton, Menu, MenuItem, Stack, Tooltip, Typography, alpha, getLuminance } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward'
 import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward'
@@ -13,6 +13,19 @@ import type { ShiftConflict } from '../../lib/conflicts'
 import type { OffMarker } from '../../lib/timeoff'
 import { eventDayKeys, eventDayLabel } from '../../lib/events'
 import type { AvailabilitySlot, Department, RosterEntry, ScheduleEvent, Shift } from '../../lib/types'
+
+// D52: a draft keeps its department/position color, striped. The stripes lean
+// away from the text color (light stripes under dark text, dark under white),
+// so they cost the text no contrast; a very dark color (Bar-close navy) hides
+// dark stripes, so it gets faint light ones, which white text reads over fine.
+const draftSx = (bg: string, fg: string, conflicted: boolean) => {
+  const stripe =
+    getLuminance(bg) < 0.08 ? alpha('#fff', 0.18) : getLuminance(fg) > 0.5 ? alpha('#000', 0.16) : alpha('#fff', 0.3)
+  return {
+    backgroundImage: `repeating-linear-gradient(135deg, transparent 0 7px, ${stripe} 7px 10px)`,
+    border: conflicted ? '2px solid' : `1px dashed ${fg}`,
+  }
+}
 
 interface Props {
   mondayKey: string
@@ -257,13 +270,14 @@ export default function WeekGrid({
         sx={{
           px: 0.75, py: 0.5, borderRadius: 1,
           cursor: draggable ? 'grab' : 'pointer',
-          opacity: dragShift?.id === s.id ? 0.4 : draft ? 0.85 : 1,
-          bgcolor: draft ? 'transparent' : bg,
-          color: draft ? 'text.primary' : fg,
-          border: conflicted ? '2px solid' : draft ? '1px dashed' : '1px solid',
+          opacity: dragShift?.id === s.id ? 0.4 : 1,
+          bgcolor: bg,
+          color: fg,
+          border: conflicted ? '2px solid' : '1px solid',
           borderColor: conflicted ? 'error.main' : bg,
           fontSize: 12, lineHeight: 1.3,
           display: 'flex', justifyContent: 'space-between', gap: 0.5,
+          ...(draft && draftSx(bg, fg, conflicted)),
         }}
       >
         <Box sx={{ minWidth: 0 }}>

@@ -25,7 +25,7 @@ async function brewed(label: string, ago: number): Promise<SBatch> {
   return batchOf(b.id)
 }
 
-test('P102: the Task list: Late and Today; check off, move, assign and Open', async ({ page }) => {
+test('P102: the Task list: Late and Today; check off, who has it, and the title opens the step', async ({ page }) => {
   // Brewed 13 days ago: PDH (day 7) is 6 days late, FDH (day 13) is today.
   const batch = await brewed('Crusher', 13)
   const pdh = stepOf(batch, 'PDH')
@@ -51,25 +51,29 @@ test('P102: the Task list: Late and Today; check off, move, assign and Open', as
   await expect(panel.getByTestId(`task-list-check-${fdhTask}`)).toBeChecked()
   await expect.poll(async () => (await step(fdh.id)).done_on).toBe(today())
 
-  // Assign PDH, then move it to tomorrow (nothing follows it: no prompt).
-  await panel.getByTestId(`task-list-assignee-${pdhTask}`).click()
-  await page.getByTestId(`task-list-assignee-${pdhTask}-${brewer2}`).click()
-  await expect.poll(async () => (await step(pdh.id)).assignee_id).toBe(brewer2)
-  await panel.getByTestId(`task-list-move-date-${pdhTask}`).fill(addDays(today(), 1))
-  await panel.getByTestId(`task-list-move-${pdhTask}`).click()
-  await expect.poll(async () => (await step(pdh.id)).due_on).toBe(addDays(today(), 1))
-  await expect(panel.getByTestId('task-list-group-late').getByTestId(`task-list-row-${pdhTask}`)).toHaveCount(0)
-  await expect(panel.getByTestId(`task-list-group-${addDays(today(), 1)}`).getByTestId(`task-list-row-${pdhTask}`)).toBeVisible()
+  // D52: no Move or assign controls in the row; moving and assigning are in the step.
+  await expect(panel.getByTestId(`task-list-move-${pdhTask}`)).toHaveCount(0)
+  await expect(panel.getByTestId(`task-list-move-date-${pdhTask}`)).toHaveCount(0)
+  await expect(panel.getByTestId(`task-list-open-${pdhTask}`)).toHaveCount(0)
+  // Assigned elsewhere (the API, as the step dialog does): the row names who has it.
+  expect((await (await apiAs('brewer1')).post(`${P}/steps/assign`, { data: { ids: [pdh.id], assignee_id: brewer2 } })).status()).toBe(200)
 
-  // Persisted: after a reload the panel has FDH done, and PDH tomorrow with brewer2.
+  // Persisted: after a reload the panel has FDH done, and PDH with brewer2.
   await page.reload()
   await page.getByTestId('gantt-task-list').click()
   await expect(panel.getByTestId(`task-list-check-${fdhTask}`)).toBeChecked()
-  await expect(panel.getByTestId(`task-list-group-${addDays(today(), 1)}`).getByTestId(`task-list-row-${pdhTask}`)).toBeVisible()
-  await expect(panel.getByTestId(`task-list-assignee-${pdhTask}`)).toContainText('Riley')
+  await expect(panel.getByTestId(`task-list-assignee-${pdhTask}`)).toHaveText('Riley Wort')
 
-  // Open: the step dialog.
-  await panel.getByTestId(`task-list-open-${pdhTask}`).click()
+  // D52: the panel sits over the chart (not the whole page), its title bar level with the date header.
+  const chart = (await page.getByTestId('gantt').boundingBox())!
+  const box = (await panel.boundingBox())!
+  expect(Math.round(box.y)).toBe(Math.round(chart.y))
+  expect(Math.round(box.y + box.height)).toBe(Math.round(chart.y + chart.height))
+  expect(Math.round(box.x + box.width)).toBe(Math.round(chart.x + chart.width))
+  expect(Math.round(box.width)).toBe(317)
+
+  // The title opens the step dialog (it replaced Open).
+  await panel.getByTestId(`task-list-title-${pdhTask}`).click()
   await expect(panel).toBeHidden()
   await expect(page.getByTestId('step-dialog')).toBeVisible()
   await expect(page.getByTestId('step-dialog')).toContainText('PDH')

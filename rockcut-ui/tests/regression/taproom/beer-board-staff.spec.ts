@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { addEntry, cleanEntries, historyFor } from './helpers'
+import { settingsItem } from '../settingsMenu'
 
 // D37 §3.5: the Buy-a-Beer Board for people (S5, S6, S14, S15, S17, S18, S19, S31).
 
@@ -19,8 +20,9 @@ test.describe('as bartender1', () => {
     await page.getByRole('button', { name: 'Taproom' }).click()
     await page.getByRole('button', { name: 'Buy-a-Beer Board' }).click()
     await expect(page).toHaveURL(/\/taproom\/beer-board$/)
+    // D52: no settings gear for staff, so no History or CSV files (managers only).
+    await expect(page.getByTestId('board-settings')).toHaveCount(0)
     await expect(page.getByTestId('board-tab-history')).toHaveCount(0)
-    // No CSV files for staff (managers only).
     await expect(page.getByTestId('board-add')).toBeVisible()
     await expect(page.getByTestId('board-export')).toHaveCount(0)
     await expect(page.getByTestId('board-import')).toHaveCount(0)
@@ -155,7 +157,7 @@ test.describe('as barMgr', () => {
     const e = await addEntry(3, 'S6')
     created.push(e.id)
     await page.goto('/taproom/beer-board')
-    await page.getByTestId('board-tab-history').click()
+    await settingsItem(page, 'board-settings', 'board-tab-history')
     await page.getByTestId('board-history-search').fill(e.recipient_name)
     const row = page.getByTestId('board-history').getByRole('row').filter({ hasText: e.recipient_name })
     await expect(row).toHaveCount(1)
@@ -170,7 +172,7 @@ test.describe('as floater', () => {
   test('S14: a Taproom + Brewery member has the board', async ({ page }) => {
     await page.goto('/taproom/beer-board')
     await expect(page.getByTestId('board-grid')).toBeVisible()
-    await expect(page.getByTestId('board-tab-history')).toHaveCount(0)
+    await expect(page.getByTestId('board-settings')).toHaveCount(0)
   })
 })
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Alert, Box, Button, InputAdornment, Paper, TextField } from '@mui/material'
-import { Download, Search } from '@mui/icons-material'
+import { Alert, Button, InputAdornment, Paper, TextField } from '@mui/material'
+import { ChevronLeft, Download, Search } from '@mui/icons-material'
+import { PageToolbar } from '../../components/SettingsMenu'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
@@ -60,7 +61,8 @@ interface Page {
 }
 
 /** D37: the board's change log (owners and Taproom managers), newest first. */
-export default function BeerBoardHistory() {
+/** D52: `onBack` returns to the board (the Board / History tabs are gone). */
+export default function BeerBoardHistory({ onBack }: { onBack: () => void }) {
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(0)
@@ -92,7 +94,16 @@ export default function BeerBoardHistory() {
 
   return (
     <>
-      <Box sx={{ display: 'flex', gap: 2, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+      <PageToolbar
+        end={
+          <Button variant="outlined" startIcon={<Download />} onClick={exportHistory} data-testid="board-history-export">
+            Export CSV
+          </Button>
+        }
+      >
+        <Button startIcon={<ChevronLeft />} onClick={onBack} data-testid="board-tab-board">
+          Board
+        </Button>
         <TextField
           placeholder="Search For or Bought by"
           value={search}
@@ -104,10 +115,7 @@ export default function BeerBoardHistory() {
             input: { startAdornment: <InputAdornment position="start"><Search /></InputAdornment> },
           }}
         />
-        <Button variant="outlined" startIcon={<Download />} onClick={exportHistory} data-testid="board-history-export">
-          Export CSV
-        </Button>
-      </Box>
+      </PageToolbar>
       {exportError && <Alert severity="error">Export failed: {exportError}</Alert>}
       {isError && <Alert severity="error">Couldn't load the history.</Alert>}
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }} data-testid="board-history">

@@ -13,17 +13,22 @@ test.use({ viewport: { width: 1600, height: 1000 } })
 const bg = (page: Page, selector: string) =>
   page.locator(selector).first().evaluate((el) => getComputedStyle(el).backgroundColor)
 
-async function setOwnerMode(mode: string) {
-  expect((await (await apiAs('owner')).put('/api/me/color_mode', { data: { color_mode: mode } })).status()).toBe(200)
+// Task 4706 (D52): these set their persona's color mode, so they use one no other
+// spec changes. theme.spec and position-menu.spec set owner's (and brewer1's),
+// and running beside them the board could load in the other theme.
+const MODE_PERSONA = 'breweryMgr' as const
+
+async function setMode(mode: string) {
+  expect((await (await apiAs(MODE_PERSONA)).put('/api/me/color_mode', { data: { color_mode: mode } })).status()).toBe(200)
 }
 
-test.describe('S151: owner, board layers', () => {
-  test.use({ storageState: authFile('owner') })
-  test.afterAll(() => setOwnerMode('light'))
+test.describe('S151: board layers', () => {
+  test.use({ storageState: authFile(MODE_PERSONA) })
+  test.afterAll(() => setMode('light'))
 
   for (const mode of ['light', 'dark'] as const) {
     test(`page, columns, today's column and cards are distinct shades (${mode})`, async ({ page }) => {
-      await setOwnerMode(mode)
+      await setMode(mode)
       await openBoard(page)
       const today = denverToday()
       const page_ = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
@@ -39,12 +44,12 @@ test.describe('S151: owner, board layers', () => {
 
 // DEV QA G3: a done card's "✓ name" line and the assignee's initials were
 // about 2:1 on dark boards (the whole card was faded). Text needs 4.5:1.
-test.describe('owner, a done task card', () => {
-  test.use({ storageState: authFile('owner') })
+test.describe('a done task card', () => {
+  test.use({ storageState: authFile(MODE_PERSONA) })
   // Each test makes its own: another board spec's clean-up may run between them.
   let taskId: number | null = null
   test.afterEach(async () => {
-    await setOwnerMode('light')
+    await setMode('light')
     if (taskId) await cleanupTasks([taskId])
     taskId = null
   })
@@ -55,7 +60,7 @@ test.describe('owner, a done task card', () => {
       const t = await createTask(await apiAs('breweryMgr'), { title: tempTag('G3 done card'), due_on: today, assignee_id: await userId(await apiAs('brewer1')) })
       taskId = t.id
       await completeTask(await apiAs('brewer1'), t.id)
-      await setOwnerMode(mode)
+      await setMode(mode)
       await openBoard(page)
       const key = `${taskId}:${today}`
       await expect(page.getByTestId(`task-done-by-${key}`)).toHaveText('✓ Jake')

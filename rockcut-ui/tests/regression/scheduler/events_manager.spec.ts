@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { addDays, apiAs, cleanupTemp, createEvent, denverUtc, listEvents, openScheduler, tempTag, weekMonday } from './helpers'
+import { addDays, apiAs, cleanupTemp, createEvent, denverUtc, listEvents, openScheduler, publishWeek, tempTag, weekMonday } from './helpers'
 
 // D32 S1–S3, S9: a taproom manager adds events in the Scheduler grid. Each test
 // works in its own week (2–6 weeks out) so parallel tests and Publish week don't
@@ -54,7 +54,7 @@ test.describe('barMgr in the Scheduler', () => {
     await openScheduler(page, 3)
     await expect(page.getByTestId(`event-chip-${event.id}`)).toContainText('draft')
     const published = page.waitForResponse((r) => r.url().endsWith('/api/schedule_events/publish'))
-    await page.getByRole('button', { name: /publish week/i }).click()
+    await publishWeek(page)
     expect((await published).status()).toBe(200)
 
     await page.reload()
@@ -96,7 +96,7 @@ test.describe('barMgr in the Scheduler', () => {
       page.waitForResponse((r) => r.url().endsWith('/api/shifts/publish')),
       page.waitForResponse((r) => r.url().endsWith('/api/schedule_events/publish')),
     ])
-    await page.getByRole('button', { name: /publish week/i }).click()
+    await publishWeek(page)
     await both
 
     const shift = (await (await api.get(`/api/shifts/${shiftId}`)).json()).data

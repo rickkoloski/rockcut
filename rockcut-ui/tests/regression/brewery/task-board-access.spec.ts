@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
 import { apiAs, card, cleanupTasks, createTask, denverToday, openBoard, tempTag } from './taskBoardHelpers'
+import { boardManagerItems, openSettings, settingsItem } from '../settingsMenu'
 
 // D38 §3.8 access, scenarios S38–S41: who gets the task board, History and
 // Edit Daily items. Since D41 every department has a board, so someone outside
@@ -108,7 +109,7 @@ test.describe('floater (Brewery + Taproom)', () => {
     await page.reload()
     await expect(card(page, task.id, today)).toBeVisible()
 
-    await expect(page.getByTestId('board-menu')).toHaveCount(0)
+    expect(await boardManagerItems(page)).toEqual([])
     await expect(page.getByTestId(`daily-menu-${today}`)).toHaveCount(0)
     const api = await apiAs('floater')
     expect((await api.get('/api/boards/brewery/tasks/history')).status()).toBe(403)
@@ -130,15 +131,14 @@ test.describe('owner (no memberships)', () => {
     await openBoard(page)
     await expect(card(page, task.id, today)).toBeVisible()
 
-    await page.getByTestId('board-menu').click()
+    await openSettings(page, 'board-settings')
     await expect(page.getByTestId('board-menu-daily-items')).toBeVisible()
     await page.getByTestId('board-menu-history').click()
     const history = page.getByTestId('history-dialog')
     await expect(history.locator(`li[data-task-id="${task.id}"]`)).toHaveText(new RegExp(`^Added ${task.title.replace(/[[\]]/g, '\\$&')} to `))
     await history.getByTestId('history-close').click()
 
-    await page.getByTestId('board-menu').click()
-    await page.getByTestId('board-menu-daily-items').click()
+    await settingsItem(page, 'board-settings', 'board-menu-daily-items')
     await expect(page.getByTestId('daily-items-dialog')).toBeVisible()
   })
 })

@@ -9,17 +9,23 @@ import TaskBoard from './TaskBoard'
  * otherwise their first board, or Home with none (S102, S109, S114). The
  * range (`?from=&to=`) comes along. `/tasks/all` is the All departments view
  * for owners (§3.6); anyone else goes to their first board.
+ * D52 (task 4318): a board's name works as well as its key, so `/tasks/taproom`
+ * opens the Taproom board (key `bar` since D32's rename) instead of another one.
  */
 export function TaskBoardPage() {
   const { dept = '' } = useParams()
   const { search } = useLocation()
   const { taskBoards } = useAuth()
   const board = taskBoards.find((b) => b.key === dept)
+  const byName = board ? undefined : taskBoards.find((b) => b.key !== ALL_BOARDS && slug(b.name) === slug(dept))
+  if (byName) return <Navigate to={`/tasks/${byName.key}${search}`} replace />
   if (board?.key === ALL_BOARDS) return <AllBoard board={board} boards={taskBoards} />
   if (board) return <TaskBoard key={board.key} board={board} boards={taskBoards} />
   const target = boardTarget(taskBoards, dept, null)
   return <Navigate to={target ? `/tasks/${target}${search}` : '/'} replace />
 }
+
+const slug = (s: string) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
 
 /** `/tasks`: the board this browser last opened, else the first. */
 export function TasksIndex() {

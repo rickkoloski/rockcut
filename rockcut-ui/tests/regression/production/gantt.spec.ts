@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
 import { apiAs, tanks } from './helpers'
 import { addDays, addProcess, dayPx, gantt, openGantt, schedule, today } from './schedule'
+import { pickSetting, settingValue } from '../settingsMenu'
 
 // D47 §3.6/§3.8 the Gantt as a view: P20, P46–P51, P62–P64, and the Gantt
 // side of P1/P2 (row order). Read-only against the [SEED] schedule (the
@@ -22,7 +23,7 @@ test.describe('brewer1', () => {
     const bg = await page.getByTestId('gantt-unassigned-head').evaluate((e) => getComputedStyle(e).backgroundColor)
     expect(bg).toMatch(/^rgb\(|^rgba\(.*, 1\)$/)
     await expect(page.getByTestId('gantt-today-line')).toBeVisible()
-    await expect(page.getByTestId('gantt-zoom')).toHaveText('6 weeks')
+    expect(await settingValue(page, 'gantt-settings', 'gantt-zoom')).toBe('6 weeks')
     expect(await page.getByTestId('gantt-from').inputValue()).toBe(addDays(today(), -7))
 
     const sched = await schedule()
@@ -65,11 +66,11 @@ test.describe('brewer1', () => {
 
     await page.reload()
     await expect(page.getByTestId(`gantt-caret-${fv4}`)).toHaveAttribute('aria-expanded', 'true')
-    await page.getByTestId('gantt-collapse-all').click()
+    await pickSetting(page, 'gantt-settings', 'gantt-expand', 'collapse')
     await expect(page.locator('[data-testid^="gantt-step-row-"]')).toHaveCount(0)
-    await page.getByTestId('gantt-expand-all').click()
+    await pickSetting(page, 'gantt-settings', 'gantt-expand', 'expand')
     for (const t of sched.tanks) await expect(page.getByTestId(`gantt-caret-${t.id}`)).toHaveAttribute('aria-expanded', 'true')
-    await page.getByTestId('gantt-collapse-all').click()
+    await pickSetting(page, 'gantt-settings', 'gantt-expand', 'collapse')
   })
 
   test('P47: « shows names only, the full name and status on hover; remembered', async ({ page }) => {
@@ -94,15 +95,14 @@ test.describe('brewer1', () => {
   test('P48: zoom 12 weeks, 4 weeks back, From/To; the view is remembered', async ({ page }) => {
     await openGantt(page)
     const wide = await dayPx(page)
-    await page.getByTestId('gantt-zoom').click()
-    await page.getByTestId('gantt-zoom-12').click()
+    await pickSetting(page, 'gantt-settings', 'gantt-zoom', 12)
     expect(await dayPx(page)).toBeLessThan(wide)
     const from = await page.getByTestId('gantt-from').inputValue()
     await page.getByTestId('gantt-back').click()
     await expect(page.getByTestId('gantt-from')).toHaveValue(addDays(from, -28))
     await page.getByTestId('gantt-to').fill(addDays(from, 120))
     await page.reload()
-    await expect(page.getByTestId('gantt-zoom')).toHaveText('12 weeks')
+    expect(await settingValue(page, 'gantt-settings', 'gantt-zoom')).toBe('12 weeks')
     await expect(page.getByTestId('gantt-from')).toHaveValue(addDays(from, -28))
     await expect(page.getByTestId('gantt-to')).toHaveValue(addDays(from, 120))
     // Out of range: refused inline, the range kept to 730 days.

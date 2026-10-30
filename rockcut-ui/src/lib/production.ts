@@ -24,6 +24,8 @@ export interface Outage {
 export interface Tank {
   id: number
   name: string
+  /** D52: the Gantt's names-only column shows this (up to 4 characters), else the name. */
+  abbreviation: string | null
   kind: TankKind
   capacity_bbl: number
   location: TankLocation
