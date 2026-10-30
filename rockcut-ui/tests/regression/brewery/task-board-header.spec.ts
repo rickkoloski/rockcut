@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, denverToday, denverUtc, openBoard, tempTag, userId } from './taskBoardHelpers'
+import { settingValue } from '../settingsMenu'
 
 // D38 §3.2, scenarios S1–S5: each day's header is read from the published
 // Brewery schedule. Tests use days 9–13 from today (the second row of the
@@ -63,7 +64,7 @@ test('S1: two rows of seven days; a published shift shows as "name · position �
 
   await openBoard(page)
   await expect(page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(14)
-  await expect(page.getByTestId('board-span-14')).toHaveAttribute('aria-pressed', 'true')
+  expect(await settingValue(page, 'board-settings', 'board-span')).toBe('2 weeks')
   await expect(page.getByTestId(`day-${denverToday()}`)).toHaveAttribute('data-today', 'true')
   // Day 7 starts the second row.
   const first = await page.getByTestId(`day-${denverToday()}`).boundingBox()

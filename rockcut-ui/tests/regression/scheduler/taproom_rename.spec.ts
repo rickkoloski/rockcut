@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
+import { settingsItem } from '../settingsMenu'
 
 // D32 S10: the Bar department shows as "Taproom" everywhere; the key stays `bar`
 // and position names are unchanged.
@@ -8,7 +9,7 @@ import { apiAs } from './helpers'
 test.describe('owner', () => {
   test.use({ storageState: authFile('owner') })
 
-  test('S10: nav, channels, legend and Manage positions say Taproom', async ({ page }) => {
+  test('S10: nav, channels and Manage positions say Taproom (D52: no legend on the Scheduler now)', async ({ page }) => {
     const departments = (await (await (await apiAs('owner')).get('/api/departments')).json()).data as { key: string; name: string }[]
     expect(departments.find((d) => d.key === 'bar')?.name).toBe('Taproom')
 
@@ -19,7 +20,7 @@ test.describe('owner', () => {
     const channels = (await (await (await apiAs('owner')).get('/api/channels')).json()).data as { key: string; name: string }[]
     expect(channels.find((c) => c.key === 'dept:bar')?.name).toBe('Taproom')
 
-    await page.getByRole('button', { name: 'Positions' }).click()
+    await settingsItem(page, 'scheduler-settings', 'scheduler-positions')
     const dialog = page.getByRole('dialog')
     await expect(dialog).toContainText('Taproom')
     for (const name of ['Bar-open', 'Bar-mid', 'Bar-close', 'Event-bar']) await expect(dialog).toContainText(name)

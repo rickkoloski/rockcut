@@ -67,17 +67,17 @@ test.describe('S153: owner — the title is in the top bar', () => {
     await expect(page.locator('header h1')).toHaveText('User change log')
   })
 
-  test('a Settings category: "‹ Settings" back link, no breadcrumbs', async ({ page }) => {
+  test('an ingredient category (D52: under the library): "‹ Categories" back link, no breadcrumbs', async ({ page }) => {
     const res = await (await apiAs('owner')).post('/api/ingredient_categories', { data: { name: tempTag('S153 category') } })
     expect(res.status(), await res.text()).toBe(201)
     categoryId = (await res.json()).data.id
-    await page.goto(`/settings/categories/${categoryId}`)
+    await page.goto(`/ingredients/categories/${categoryId}`)
     const back = page.getByTestId('page-back')
-    await expect(back).toContainText('Settings')
-    await expect(back).toHaveAttribute('href', '/settings')
+    await expect(back).toContainText('Categories')
+    await expect(back).toHaveAttribute('href', '/ingredients/categories')
     await expect(page.locator('.MuiBreadcrumbs-root')).toHaveCount(0)
     await back.click()
-    await expect(page).toHaveURL(/\/settings$/)
+    await expect(page).toHaveURL(/\/ingredients\/categories$/)
   })
 })
 

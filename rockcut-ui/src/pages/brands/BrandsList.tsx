@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Box, InputAdornment, Paper, TextField } from '@mui/material';
+import { Button, InputAdornment, MenuItem, Paper, TextField } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
 import SearchIcon from '@mui/icons-material/Search';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
 import PageHeader from '../../components/PageHeader';
+import { PageToolbar, SettingsGear } from '../../components/SettingsMenu';
 import StatusChip from '../../components/StatusChip';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import BrandFormDialog from './BrandFormDialog';
@@ -46,10 +48,26 @@ export default function BrandsList() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Brands & Recipes' }]}
         title="Brands & Recipes"
-        action={{ label: 'Add Brand', onClick: () => setDialogOpen(true), testId: 'brands-add-button' }}
       />
 
-      <Box sx={{ mb: 2 }}>
+      {/* D52: search on the left; Add and the settings gear on the right. */}
+      <PageToolbar
+        end={
+          <>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setDialogOpen(true)} data-testid="brands-add-button">
+              Add Brand
+            </Button>
+            {/* Nothing to set up for brands yet; the gear is here so every page reads the same. */}
+            <SettingsGear label="Brand settings" testid="brands-settings">
+              {() => (
+                <MenuItem disabled data-testid="brands-settings-empty">
+                  No settings yet
+                </MenuItem>
+              )}
+            </SettingsGear>
+          </>
+        }
+      >
         <TextField
           size="small"
           placeholder="Search..."
@@ -58,7 +76,7 @@ export default function BrandsList() {
           slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
           sx={{ minWidth: 260 }}
         />
-      </Box>
+      </PageToolbar>
 
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
         <DataGridExtended

@@ -54,7 +54,7 @@ export default function CategoryDetail() {
 
   const handleDeleteCategory = async () => {
     await deleteCategoryMutation.mutateAsync(category.id);
-    navigate('/settings');
+    navigate('/ingredients/categories');
   };
 
   const handleDeleteField = async () => {
@@ -101,7 +101,8 @@ export default function CategoryDetail() {
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
-          { label: 'Settings', to: '/settings' },
+          { label: 'Ingredient Library', to: '/ingredients' },
+          { label: 'Categories', to: '/ingredients/categories' },
           { label: category.name },
         ]}
         title={category.name}

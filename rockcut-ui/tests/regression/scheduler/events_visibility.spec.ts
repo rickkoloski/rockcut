@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { addDays, apiAs, cleanupTemp, createEvent, denverUtc, listEvents, openScheduler, tempTag, weekMonday } from './helpers'
+import { addDays, apiAs, cleanupTemp, createEvent, denverUtc, listEvents, openScheduler, publishWeek, tempTag, weekMonday } from './helpers'
 
 // D32 S4–S8: who sees and changes events. Each test uses its own week (7–10 out).
 
@@ -104,7 +104,7 @@ test.describe('dualMgr (manages Taproom and Office)', () => {
 
     await openScheduler(page, 9)
     const published = page.waitForResponse((r) => r.url().endsWith('/api/schedule_events/publish'))
-    await page.getByRole('button', { name: /publish week/i }).click()
+    await publishWeek(page)
     await published
 
     const statuses = Object.fromEntries((await listEvents(api, week, addDays(week, 6))).map((e) => [e.id, e.status]))

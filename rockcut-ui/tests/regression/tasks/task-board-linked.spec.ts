@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, card, getBoard, mouseDrag, openBoard, setBoardCheck, type ApiCard } from '../brewery/taskBoardHelpers'
 import { batchOf, Made, schedule, snack, stepOf, today, type SBatch, type SStep } from '../production/schedule'
+import { setSetting, settingOn } from '../settingsMenu'
 
 // D49 §3.12: production steps on the Brewery board (P90–P101, P103, P108,
 // P125, and the board side of P130/P132/P133/P135). Named task-board-* so it
@@ -87,18 +88,18 @@ test('P91: Show planned batches off hides them, after a reload too; brewer2 stil
   await openAround(page, c.due_on!)
   await expect(card(page, c.id, c.due_on!)).toBeVisible()
   const saved = page.waitForResponse((r) => r.url().endsWith('/api/me/show_planned_batches') && r.ok())
-  await page.getByTestId('board-show-planned').click()
+  await setSetting(page, 'board-settings', 'board-hide-planned', true)
   await saved
   await expect(card(page, c.id, c.due_on!)).toHaveCount(0)
   await page.reload()
-  await expect(page.getByTestId('board-show-planned')).not.toBeChecked()
+  expect(await settingOn(page, 'board-settings', 'board-hide-planned')).toBe(true)
   await expect(card(page, c.id, c.due_on!)).toHaveCount(0)
 
   const ctx = await browser.newContext({ storageState: authFile('brewer2'), viewport: { width: 1600, height: 2200 } })
   try {
     const other = await ctx.newPage()
     await openBoard(other, { from: addDays(c.due_on!, -3), to: addDays(c.due_on!, 3) })
-    await expect(other.getByTestId('board-show-planned')).toBeChecked()
+    expect(await settingOn(other, 'board-settings', 'board-hide-planned')).toBe(false)
     await expect(card(other, c.id, c.due_on!)).toBeVisible()
   } finally {
     await ctx.close()
@@ -329,7 +330,7 @@ test('P130, P132, P133, P135: a pencilled batch has no tasks, whatever the toggl
 
   // P135: Show planned batches on; still nothing from it.
   await openAround(page)
-  await expect(page.getByTestId('board-show-planned')).toBeChecked()
+  expect(await settingOn(page, 'board-settings', 'board-hide-planned')).toBe(false)
   await expect(page.getByText(batch.label.replace(/ P\d+$/, ''), { exact: false })).toHaveCount(0)
 
   // P132: scheduled, its tasks come, with its new P-number.

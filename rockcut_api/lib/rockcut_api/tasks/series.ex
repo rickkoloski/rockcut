@@ -940,29 +940,41 @@ defmodule RockcutApi.Tasks.Series do
 
   @doc """
   Mark the occurrences that end their chain (G2), for the board: the series
-  has ended on or before the occurrence (`until_date`) and nothing open comes
-  after it in the chain, so Stop repeating would do nothing. One query for the
-  series; the chain is looked at only for the ones that ended.
+  has ended on or before the occurrence, and nothing open comes after it in
+  the chain, so Stop repeating would do nothing (D52: and Extend is offered).
+  A series ends by its `until_date`, or (D52) by its `count`: an occurrence
+  is the last when the rule has `count` dates through it, skipped ones
+  included, as `Recurrence.dates/2` counts them. One query for the series;
+  the chain is looked at only for the ones that ended.
   """
   def mark_last(tasks) do
     ids = tasks |> Enum.map(& &1.series_id) |> Enum.reject(&is_nil/1) |> Enum.uniq()
 
-    untils =
+    ending =
       Repo.all(
         from s in TaskSeries,
-          where: s.id in ^ids and not is_nil(s.until_date),
-          select: {s.id, s.until_date}
+          where: s.id in ^ids and (not is_nil(s.until_date) or not is_nil(s.count))
       )
-      |> Map.new()
+      |> Map.new(&{&1.id, &1})
 
     Enum.map(tasks, fn t ->
-      until = if t.series_id, do: untils[t.series_id]
+      series = if t.series_id, do: ending[t.series_id]
 
-      if until != nil and Date.compare(until, t.series_date) != :gt and not open_later?(t),
+      if series != nil and ended_by?(series, t.series_date) and not open_later?(t),
         do: %{t | series_last: true},
         else: t
     end)
   end
+
+  defp ended_by?(%TaskSeries{until_date: %Date{} = until}, date),
+    do: Date.compare(until, date) != :gt
+
+  defp ended_by?(%TaskSeries{count: count} = series, date) when is_integer(count) do
+    every = %{TaskSeries.rule(series) | until_date: nil, count: nil, skipped_dates: []}
+    length(Recurrence.dates(every, date)) >= count
+  end
+
+  defp ended_by?(_series, _date), do: false
 
   defp open_later?(%Task{series_id: id, series_date: date}) do
     ids = [id | chain_ids(id)]

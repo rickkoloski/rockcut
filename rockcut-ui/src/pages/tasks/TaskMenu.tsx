@@ -7,16 +7,17 @@ import {
   Delete,
   Edit,
   EventRepeat,
-  Factory,
   NotesOutlined,
   Repeat,
   StopCircleOutlined,
+  Update,
 } from '@mui/icons-material'
+import { FermentersIcon } from '../../components/NavIcons'
 import { useBackCloses } from '../../hooks/useBackCloses'
 import { formatTaskDay } from '../../lib/tasks'
 import type { TaskCardData } from '../../lib/types'
 
-export type TaskAction = 'edit' | 'edit-series' | 'stop-repeating' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete' | 'open-schedule'
+export type TaskAction = 'edit' | 'edit-series' | 'stop-repeating' | 'extend' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete' | 'open-schedule'
 
 interface Props {
   anchor: HTMLElement
@@ -27,6 +28,8 @@ interface Props {
   sheet?: boolean
   /** D49: a linked task on a shared tablet: the header and why, no actions (until D50). */
   linkedReadOnly?: boolean
+  /** D52: the series' last occurrence, for someone who can edit the series: "Extend series…". */
+  canExtend?: boolean
   onClose: () => void
   onAction: (action: TaskAction) => void
 }
@@ -39,7 +42,7 @@ interface Props {
  * the sheet (DEV pass 2, B). D39: an occurrence of a recurring task adds
  * Edit series… and Stop repeating (not on the last one once it has stopped).
  */
-export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, linkedReadOnly, onClose, onAction }: Props) {
+export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, linkedReadOnly, canExtend, onClose, onAction }: Props) {
   const pick = (action: TaskAction) => () => {
     onClose()
     onAction(action)
@@ -87,6 +90,12 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
         <ListItemText>Stop repeating</ListItemText>
       </MenuItem>
     ),
+    canExtend && (
+      <MenuItem key="extend" onClick={pick('extend')} data-testid="task-menu-extend">
+        <ListItemIcon><Update fontSize="small" /></ListItemIcon>
+        <ListItemText primary="Extend series…" secondary="Last in series" />
+      </MenuItem>
+    ),
     <MenuItem key="notes" onClick={pick('notes')} data-testid="task-menu-notes">
       <ListItemIcon><NotesOutlined fontSize="small" /></ListItemIcon>
       <ListItemText>{card.notes ? 'Edit notes' : 'Add notes'}</ListItemText>
@@ -110,7 +119,7 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
     // D49: a linked task opens its step on the production schedule.
     linked && (
       <MenuItem key="open-schedule" onClick={pick('open-schedule')} data-testid="task-menu-open-schedule">
-        <ListItemIcon><Factory fontSize="small" /></ListItemIcon>
+        <ListItemIcon><FermentersIcon fontSize="small" /></ListItemIcon>
         <ListItemText>Open in schedule</ListItemText>
       </MenuItem>
     ),

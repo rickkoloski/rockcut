@@ -1,23 +1,26 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from '../scheduler/helpers'
+import { openSettings, pickSetting, settingsItem, settingsItems } from '../settingsMenu'
 
-// D43 §1.8–§1.10, S156–S162: header buttons by page and role, week totals,
-// and the Move mode for the staff order.
+// D43 §1.8–§1.10, S156–S162: buttons by page and role, week totals, and the
+// Move mode for the staff order. D52: one top row per page; Templates,
+// Positions and Delete week moved into the Scheduler's gear, and Calendar sync
+// into View Schedule's.
 
-const SETUP_BUTTONS = ['Templates', 'Positions', 'Add event', 'Add shift']
-const WEEK_BUTTONS = ['Publish week', 'Copy last week', 'Delete week']
+const BAR_BUTTONS = ['Add shift', 'Add event', 'Copy last week', 'Publish week']
+const GEAR_ITEMS = ['scheduler-templates', 'scheduler-positions', 'scheduler-delete-week']
 
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true })
 
 test.describe('S156: brewer1, View Schedule', () => {
   test.use({ storageState: authFile('brewer1') })
 
-  test('no header buttons; Calendar sync only opens its dialog', async ({ page }) => {
+  test('none of the Scheduler\'s buttons; Calendar sync (in the gear) only opens its dialog', async ({ page }) => {
     await page.goto('/schedule')
     await expect(page.locator('header h1')).toHaveText('Schedule')
-    for (const name of [...SETUP_BUTTONS, ...WEEK_BUTTONS]) await expect(button(page, name)).toHaveCount(0)
-    await page.getByRole('button', { name: /calendar sync/i }).click()
+    for (const name of BAR_BUTTONS) await expect(button(page, name)).toHaveCount(0)
+    await settingsItem(page, 'schedule-settings', 'schedule-calendar-sync')
     await expect(page.getByRole('dialog', { name: 'Calendar sync' })).toBeVisible()
     await expect(page).toHaveURL(/\/schedule/)
   })
@@ -26,27 +29,32 @@ test.describe('S156: brewer1, View Schedule', () => {
 test.describe('S157: breweryMgr', () => {
   test.use({ storageState: authFile('breweryMgr') })
 
-  test('View Schedule: no Templates / Positions / Add event / Add shift', async ({ page }) => {
+  test('View Schedule: Calendar sync in the gear; none of the Scheduler\'s buttons', async ({ page }) => {
     await page.goto('/schedule')
-    await expect(page.getByRole('button', { name: /calendar sync/i })).toBeVisible()
-    for (const name of SETUP_BUTTONS) await expect(button(page, name)).toHaveCount(0)
+    expect(await settingsItems(page, 'schedule-settings')).toContain('schedule-calendar-sync')
+    for (const name of BAR_BUTTONS) await expect(button(page, name)).toHaveCount(0)
   })
 
-  test('Scheduler: those plus Publish / Copy / Delete week; no Calendar sync', async ({ page }) => {
+  test('Scheduler: Add shift, Add event, Copy last week, Publish week in the row; Templates, Positions, Delete week in the gear; no Calendar sync', async ({ page }) => {
     await page.goto('/scheduler')
-    for (const name of [...WEEK_BUTTONS, ...SETUP_BUTTONS]) await expect(button(page, name)).toBeVisible()
-    await expect(page.getByRole('button', { name: /calendar sync/i })).toHaveCount(0)
+    for (const name of BAR_BUTTONS) await expect(button(page, name)).toBeVisible()
+    const items = await settingsItems(page, 'scheduler-settings')
+    for (const id of GEAR_ITEMS) expect(items).toContain(id)
+    expect(items).not.toContain('schedule-calendar-sync')
   })
 })
 
 test.describe('S158: taproomDevice, View Schedule', () => {
   test.use({ storageState: authFile('taproomDevice') })
 
-  test('no Calendar sync', async ({ page }) => {
+  test('no Calendar sync or My shifts in the gear', async ({ page }) => {
     await page.goto('/schedule')
     await expect(page.getByTestId('device-chip')).toBeVisible()
     await expect(page.locator('header h1')).toHaveText('Schedule')
-    await expect(page.getByRole('button', { name: /calendar sync/i })).toHaveCount(0)
+    await openSettings(page, 'schedule-settings')
+    await expect(page.getByTestId('schedule-open')).toBeVisible()
+    await expect(page.getByTestId('schedule-calendar-sync')).toHaveCount(0)
+    await expect(page.getByTestId('schedule-mine')).toHaveCount(0)
   })
 })
 
@@ -89,8 +97,9 @@ test.describe('owner, the Scheduler', () => {
     await expect.poll(async () => JSON.stringify(round(await rowSums(page)))).toBe(JSON.stringify(round(await weekTotals(page))))
     const all = await weekTotals(page)
 
-    await page.getByLabel('Department').click()
-    await page.getByRole('option', { name: 'Brewery' }).click()
+    // D52: the Department filter is in the Scheduler's gear (by id: departments are picked by id).
+    const brewery_ = ((await (await (await apiAs('owner')).get('/api/departments')).json()).data as { id: number; key: string }[]).find((d) => d.key === 'brewery')!
+    await pickSetting(page, 'scheduler-settings', 'scheduler-department', brewery_.id)
     await expect.poll(async () => JSON.stringify(round(await rowSums(page)))).toBe(JSON.stringify(round(await weekTotals(page))))
     const brewery = await weekTotals(page)
     expect(brewery.pub + brewery.draft).toBeLessThan(all.pub + all.draft)

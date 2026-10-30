@@ -45,6 +45,7 @@ import TaskDialog, { type TaskDialogMode } from './TaskDialog'
 import TaskMenu, { type TaskAction } from './TaskMenu'
 import UnfinishedCard from './UnfinishedCard'
 import LinkedTaskDialog from './LinkedTaskDialog'
+import ExtendSeriesDialog from './ExtendSeriesDialog'
 import { scrollToStop, useBoardView } from './useBoardView'
 import { FlowsProvider } from '../production/Gantt/flows'
 import { useFlows } from '../production/Gantt/flowsContext'
@@ -101,7 +102,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
   }
   const {
     from, to, highlighted, hideCompleted, hideShifts, phoneView, phone, wide, focus, clearFocus,
-    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, toggleHideShifts, setPhoneView, firstDay, pickFirstDay,
+    setBoardEl, step, showToday, pickSpan, toggleHide, toggleHideShifts, setPhoneView, firstDay, pickFirstDay,
   } = useBoardView(dept)
   const [filter, setFilter] = useState<TaskFilter>('all')
 
@@ -183,6 +184,8 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
     null,
   )
   const [movingAll, setMovingAll] = useState(false)
+  // D52: "Extend the series?" for a series' last occurrence (after its check-off, or from its menu).
+  const [extending, setExtending] = useState<{ card: TaskCardData; justDone: boolean } | null>(null)
   const [editingDaily, setEditingDaily] = useState(false)
   // History: the whole board's, or one task's (from its dialog).
   const [history, setHistory] = useState<{ task?: { id: number; title: string } } | null>(null)
@@ -323,6 +326,15 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
   const complete = (card: TaskCardData, display?: CompletedDisplay) =>
     run((code) => api.post(boardPath(dept, 'tasks', card.id, 'complete'), withCode(display ? { display } : {}, code)), setDone(card.id, true))
 
+  // D52: anyone who can edit the series is offered to extend it; a shared tablet isn't.
+  const canExtend = (card: TaskCardData) => !isDevice && card.series_id != null && card.series_last && !card.production
+
+  /** Checking off a series' last occurrence asks whether to extend the series. */
+  const completeAndOffer = async (card: TaskCardData, display?: CompletedDisplay) => {
+    const ok = await complete(card, display)
+    if (ok && canExtend(card)) setExtending({ card, justDone: true })
+  }
+
   const uncomplete = (card: TaskCardData) =>
     run((code) => api.post(boardPath(dept, 'tasks', card.id, 'uncomplete'), withCode({}, code)), setDone(card.id, false))
 
@@ -345,7 +357,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
       if (elsewhere) setReopening(card)
       else uncomplete(card)
     } else if (card.due_on === null || card.due_on === today) {
-      complete(card)
+      completeAndOffer(card)
     } else {
       setFinishing(card)
     }
@@ -403,6 +415,8 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
         return setDialog({ mode: { kind: 'edit', card: menuCard, focusNotes: action === 'notes' }, n: Date.now() })
       case 'edit-series':
         return setDialog({ mode: { kind: 'edit', card: menuCard, series: true }, n: Date.now() })
+      case 'extend':
+        return setExtending({ card: menuCard, justDone: false })
       case 'stop-repeating':
         return askRemoveLater(menuCard, 'stop')
       case 'toggle':
@@ -547,8 +561,6 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
         <BoardSwitcher board={boardEntry} boards={boards} onSwitch={switchBoard} compact />
       </PageTitle>
       <BoardToolbar
-        from={from}
-        to={to}
         span={highlighted}
         firstDay={firstDay}
         onFirstDay={pickFirstDay}
@@ -561,7 +573,6 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
           showToday()
         }}
         onSpan={pickSpan}
-        onRange={showRange}
         onFilter={setFilter}
         // D40: a shared tablet has no "My tasks" (plan decision 1).
         noMine={isDevice}
@@ -602,6 +613,8 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
                 locked={state.locked}
                 onToggle={toggle}
                 onOpen={(c, anchor) => setMenu({ key: c.key, anchor })}
+                // As the menu's Edit notes; a tablet can't edit a linked step's task (D49).
+                onNotes={isDevice && card.production ? undefined : (c) => setDialog({ mode: { kind: 'edit', card: c, focusNotes: true }, n: Date.now() })}
               />
             ) : null
           }}
@@ -619,6 +632,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
           canMoveDown={menuOwn.indexOf(menuCard.key) > -1 && menuOwn.indexOf(menuCard.key) < menuOwn.length - 1}
           sheet={phone}
           linkedReadOnly={isDevice && !!menuCard.production}
+          canExtend={canExtend(menuCard)}
           onClose={() => setMenu(null)}
           onAction={onAction}
         />
@@ -663,7 +677,25 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
           onCancel={() => setFinishing(null)}
           onConfirm={(display) => {
             setFinishing(null)
-            complete(finishing, display)
+            completeAndOffer(finishing, display)
+          }}
+        />
+      )}
+      {extending && (
+        <ExtendSeriesDialog
+          board={boardEntry}
+          card={extending.card}
+          justDone={extending.justDone}
+          onClose={() => setExtending(null)}
+          onPickEnd={(c) => {
+            setExtending(null)
+            // The card as the board now has it (it may have just been checked off).
+            setDialog({ mode: { kind: 'edit', card: cards.get(c.key) ?? c, series: true }, n: Date.now() })
+          }}
+          onExtended={(message) => {
+            setExtending(null)
+            refresh()
+            setToast({ message })
           }}
         />
       )}

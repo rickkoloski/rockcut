@@ -51,7 +51,7 @@ export default function AllBoard({ board: entry, boards }: Props) {
   const navigate = useNavigate()
   const {
     from, to, highlighted, hideCompleted, phoneView, phone, wide,
-    setBoardEl, step, showToday, pickSpan, showRange, toggleHide, setPhoneView, firstDay, pickFirstDay,
+    setBoardEl, step, showToday, pickSpan, toggleHide, setPhoneView, firstDay, pickFirstDay,
   } = useBoardView(ALL_BOARDS)
   // "My tasks" isn't offered here; the board's own filter isn't remembered, so nothing to keep.
   const [filter, setFilter] = useState<TaskFilter>('all')
@@ -163,8 +163,6 @@ export default function AllBoard({ board: entry, boards }: Props) {
       {/* D43: the board's title and switcher sit in the top bar. */}
       <PageTitle>{switcher(true)}</PageTitle>
       <BoardToolbar
-        from={from}
-        to={to}
         span={highlighted}
         firstDay={firstDay}
         onFirstDay={pickFirstDay}
@@ -177,7 +175,6 @@ export default function AllBoard({ board: entry, boards }: Props) {
           showToday()
         }}
         onSpan={pickSpan}
-        onRange={showRange}
         onFilter={setFilter}
         onHideCompleted={toggleHide}
         noMine

@@ -120,3 +120,17 @@ export async function createEvent(api: APIRequestContext, deptKey: string, attrs
 export async function listEvents(api: APIRequestContext, from: string, to: string): Promise<ApiEvent[]> {
   return (await (await api.get('/api/schedule_events', { params: { from, to } })).json()).data
 }
+
+/**
+ * D52 (task 4232): Publish week asks first ("Publish N draft shifts … for <week>?
+ * Staff will be notified."); this clicks it and confirms. Returns the question asked.
+ */
+export async function publishWeek(page: Page): Promise<string> {
+  await page.getByTestId('publish-week').click()
+  const dialog = page.getByRole('dialog').filter({ hasText: 'Publish this week?' })
+  await expect(dialog).toBeVisible()
+  const question = (await dialog.innerText()).trim()
+  await dialog.getByRole('button', { name: 'Publish' }).click()
+  await expect(dialog).toBeHidden()
+  return question
+}

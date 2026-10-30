@@ -15,6 +15,7 @@ import {
   layoutRows,
   monthLabels,
   partDots,
+  rowDotSlots,
   partFlags,
   partLabel,
   phaseAt,
@@ -90,6 +91,7 @@ const batch = (b: Partial<SchedBatch>): SchedBatch => ({
 const tank = (id: number, name: string): Tank => ({
   id,
   name,
+  abbreviation: null,
   kind: 'unitank',
   capacity_bbl: 20,
   location: 'brewhouse',
@@ -220,6 +222,23 @@ describe('parts', () => {
     expect(dotState(step({ due_on: '2026-10-20' }), '2026-10-21')).toBe('late')
     expect(dotState(step({ due_on: '2026-10-21' }), '2026-10-21')).toBe('today')
     expect(dotState(step({ due_on: '2026-10-22' }), '2026-10-21')).toBe('planned')
+  })
+
+  it('row dots (D52, task 4949): same-day dots on one track spread across parts; other tracks don’t count', () => {
+    const [a] = buildParts(batch({ id: 2, steps: [step({ id: 21, batch_id: 2, behavior: 'brew', due_on: '2026-10-05' })] }))
+    const [b] = buildParts(batch({ id: 3, steps: [step({ id: 31, batch_id: 3, behavior: 'brew', due_on: '2026-10-05' })] }))
+    expect(rowDotSlots([a, b], () => 0)).toEqual(
+      new Map([
+        [21, { slot: 0, of: 2 }],
+        [31, { slot: 1, of: 2 }],
+      ]),
+    )
+    expect(rowDotSlots([a, b], (p) => (p === a ? 0 : 1))).toEqual(
+      new Map([
+        [21, { slot: 0, of: 1 }],
+        [31, { slot: 0, of: 1 }],
+      ]),
+    )
   })
 })
 

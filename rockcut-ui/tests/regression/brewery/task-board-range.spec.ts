@@ -18,10 +18,14 @@ import {
   tempTag,
   type ApiCard,
 } from './taskBoardHelpers'
+import { pickSetting, settingValue } from '../settingsMenu'
 
 // D38 §3.8, scenarios S18–S23b: the Unfinished card, Move all to today, the
-// range (URL, Previous / Today / Next, the date range selector, 1 week /
-// 2 weeks) and the narrow layout.
+// range (URL, Previous / Today / Next, 1 week / 2 weeks) and the narrow layout.
+// D52: the From / To picker is gone (a custom range still comes from the URL),
+// and Days shown is in the board's settings gear; S23 (its 31-day message) went with it.
+
+const GEAR = 'board-settings'
 
 test.use({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
 
@@ -173,16 +177,12 @@ test('S22: an all-past range shows open tasks with the amber edge; Previous / Ne
   const task = await createTask(await apiAs('brewer1'), { title: tempTag('S22 old'), due_on: addDays(today(), -8) })
   created.push(task.id)
 
-  await openBoard(page)
-  await page.getByTestId('board-range-from').fill(from)
-  await page.getByTestId('board-range-to').fill(to)
-  await page.getByTestId('board-range-apply').click()
-  await expect(page).toHaveURL(new RegExp(`from=${from}&to=${to}`))
+  await page.goto(`/tasks/brewery?from=${from}&to=${to}`)
+  await expect(page.getByTestId('board-grid')).toBeVisible()
   await expect(card(page, task.id, addDays(today(), -8))).toHaveAttribute('data-overdue', 'true')
   await expect(card(page, task.id, addDays(today(), -8))).toHaveCSS('border-left-width', '4px')
   await expect(card(page, task.id, 'unfinished')).toBeVisible()
-  await expect(page.getByTestId('board-span-7')).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.getByTestId('board-span-14')).toHaveAttribute('aria-pressed', 'false')
+  expect(await settingValue(page, GEAR, 'board-span')).toBe('Custom')
 
   await page.getByTestId('board-prev').click()
   await expect(page).toHaveURL(new RegExp(`from=${addDays(from, -10)}&to=${addDays(to, -10)}`))
@@ -194,17 +194,6 @@ test('S22: an all-past range shows open tasks with the amber edge; Previous / Ne
   await expect(page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(14)
 })
 
-test('S23: a range over 31 days says "Up to 31 days" and isn\'t applied', async ({ page }) => {
-  await openBoard(page)
-  const url = page.url()
-  await page.getByTestId('board-range-from').fill(today())
-  await page.getByTestId('board-range-to').fill(addDays(today(), 40))
-  await page.getByTestId('board-range-apply').click()
-  await expect(page.getByTestId('board-range-error')).toHaveText('Up to 31 days')
-  expect(page.url()).toBe(url)
-  await expect(page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(14)
-})
-
 test('D41: an old /brewery/tasks link lands on /tasks/brewery with its range, replacing the old entry', async ({ page }) => {
   const from = addDays(today(), 3)
   const to = addDays(today(), 9)
@@ -213,8 +202,6 @@ test('D41: an old /brewery/tasks link lands on /tasks/brewery with its range, re
   await page.goto(`/brewery/tasks?from=${from}&to=${to}`)
   await expect(page).toHaveURL(new RegExp(`/tasks/brewery\\?from=${from}&to=${to}$`))
   await expect(page.getByTestId('board-grid')).toBeVisible()
-  await expect(page.getByTestId('board-range-from')).toHaveValue(from)
-  await expect(page.getByTestId('board-range-to')).toHaveValue(to)
   await expect(page.getByTestId(`day-${from}`)).toBeVisible()
   await expect(page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(7)
   // Replaced: Back goes to the page before, not through the old URL again.
@@ -224,8 +211,8 @@ test('D41: an old /brewery/tasks link lands on /tasks/brewery with its range, re
 
 test('S23a: 1 week becomes this browser\'s default (after a reload and Today); another browser still opens on 2 weeks', async ({ page, browser }) => {
   await openBoard(page)
-  await page.getByTestId('board-span-7').click()
-  await expect(page.getByTestId('board-span-7')).toHaveAttribute('aria-pressed', 'true')
+  await pickSetting(page, GEAR, 'board-span', 7)
+  expect(await settingValue(page, GEAR, 'board-span')).toBe('1 week')
   const days = page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')
   await expect(days).toHaveCount(7)
   // One row.
@@ -237,7 +224,7 @@ test('S23a: 1 week becomes this browser\'s default (after a reload and Today); a
   await expect(days).toHaveCount(7)
   await page.getByTestId('board-today').click()
   await expect(days).toHaveCount(7)
-  await expect(page.getByTestId('board-span-7')).toHaveAttribute('aria-pressed', 'true')
+  expect(await settingValue(page, GEAR, 'board-span')).toBe('1 week')
 
   const ctx = await browser.newContext({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
   const other = await ctx.newPage()
@@ -246,32 +233,27 @@ test('S23a: 1 week becomes this browser\'s default (after a reload and Today); a
   await ctx.close()
 })
 
-test('S23b: a custom range highlights neither side; Today uses the default; picking 2 weeks starts from From and becomes the default', async ({ page }) => {
+test('S23b: a custom range (from the URL) shows as Custom; Today uses the default; picking 2 weeks starts from From and becomes the default', async ({ page }) => {
   const from = addDays(today(), -10)
   const to = addDays(today(), 9)
   await openBoard(page)
-  await page.getByTestId('board-span-7').click()
-  await page.getByTestId('board-range-from').fill(from)
-  await page.getByTestId('board-range-to').fill(to)
-  await page.getByTestId('board-range-apply').click()
+  await pickSetting(page, GEAR, 'board-span', 7)
+  await page.goto(`/tasks/brewery?from=${from}&to=${to}`)
   const days = page.getByTestId('board-grid').locator('[data-testid^="day-title-"]')
   await expect(days).toHaveCount(20)
-  await expect(page.getByTestId('board-span-7')).toHaveAttribute('aria-pressed', 'false')
-  await expect(page.getByTestId('board-span-14')).toHaveAttribute('aria-pressed', 'false')
+  expect(await settingValue(page, GEAR, 'board-span')).toBe('Custom')
 
   await page.getByTestId('board-today').click()
   await expect(days).toHaveCount(7)
 
-  await page.getByTestId('board-range-from').fill(from)
-  await page.getByTestId('board-range-to').fill(to)
-  await page.getByTestId('board-range-apply').click()
+  await page.goto(`/tasks/brewery?from=${from}&to=${to}`)
   await expect(days).toHaveCount(20)
-  await page.getByTestId('board-span-14').click()
+  await pickSetting(page, GEAR, 'board-span', 14)
   await expect(page).toHaveURL(new RegExp(`from=${from}&to=${addDays(from, 13)}`))
   await expect(days).toHaveCount(14)
   await page.goto('/tasks/brewery')
   await expect(days).toHaveCount(14)
-  await expect(page.getByTestId('board-span-14')).toHaveAttribute('aria-pressed', 'true')
+  expect(await settingValue(page, GEAR, 'board-span')).toBe('2 weeks')
 })
 
 test.describe('narrow screens', () => {

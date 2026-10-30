@@ -17,7 +17,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
-import { useApiQuery } from '../../hooks/useApiQuery'
+import { useApiList } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
@@ -69,8 +69,8 @@ export default function TimeOff() {
   const managedKeys = capabilities?.manages_departments ?? []
   const canManageOthers = isOwner || managedKeys.length > 0
 
-  const { data: requests = [] } = useApiQuery<TimeOffRequest[]>(['time_off'], '/api/time_off')
-  const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster', undefined, { enabled: canManageOthers })
+  const { data: requests = [] } = useApiList<TimeOffRequest>(['time_off'], '/api/time_off')
+  const { data: roster = [] } = useApiList<RosterEntry>(['roster'], '/api/roster', undefined, { enabled: canManageOthers })
 
   // Employees this manager/owner may enter time off for (owner: everyone).
   const manageable = roster.filter(
