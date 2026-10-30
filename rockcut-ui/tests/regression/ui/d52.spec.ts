@@ -164,7 +164,7 @@ for (const persona of ['owner', 'barMgr'] as const) {
 
     test('4707: Scheduler → View Schedule (from the nav) shows today and the next six days', async ({ page }) => {
       await page.goto('/scheduler')
-      await expect(page.getByTestId('scheduler-settings')).toBeVisible({ timeout: 20_000 })
+      await expect(page.getByTestId('events-row')).toBeVisible({ timeout: 20_000 })
       await page.locator('.MuiDrawer-paper').first().getByRole('button', { name: 'View Schedule' }).click()
       await expect(page).toHaveURL(/\/schedule$/)
       expect(await range(page)).toEqual({ from: today(), to: addDays(today(), 6) })
@@ -198,7 +198,8 @@ test.describe('barMgr', () => {
       ends_at: denverUtc(addDays(week, 1), '11:00'),
     })
     await openScheduler(page, 4)
-    await page.getByTestId('publish-week').click()
+    // By its name, so the check runs against a build without the confirm too (it then publishes).
+    await page.getByRole('button', { name: 'Publish week' }).click()
     const dialog = page.getByRole('dialog').filter({ hasText: 'Publish this week?' })
     await expect(dialog).toContainText(/Publish .*draft event.* for .*\? Staff will be notified\./)
     await dialog.getByRole('button', { name: 'Cancel' }).click()
