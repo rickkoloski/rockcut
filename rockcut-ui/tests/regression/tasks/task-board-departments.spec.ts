@@ -3,6 +3,7 @@ import { authFile, type PersonaKey } from '../../config/test-env'
 import { addDays, apiAs, denverToday, denverUtc, setBoardCheck, tempTag, userId } from '../brewery/taskBoardHelpers'
 import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
 import { openUser } from '../taproom/helpers'
+import { boardManagerItems, choiceOptions, closeSettings, openSettings, settingOn, settingValue, settingsItem } from '../settingsMenu'
 
 // D41 §4, scenarios S101–S115 and S118–S120: a task board per department. Who sees which
 // board (nav, switcher, typed URLs), manager tools per board, the hidden Daily
@@ -82,15 +83,12 @@ async function switcherEntries(page: Page) {
   return names.map((n) => n.trim())
 }
 
-/** Board ⋮ entries (History, Edit Daily items / Set up Daily checks), or [] with no menu. */
+/** The board's manager entries in the settings gear (D52 order: Edit Daily items / Set up Daily checks, then History), or []. */
 async function boardMenu(page: Page) {
-  if ((await page.getByTestId('board-menu').count()) === 0) return []
-  await page.getByTestId('board-menu').click()
-  const items = page.getByRole('menu').getByRole('menuitem')
-  await expect(items.first()).toBeVisible()
+  await openSettings(page, 'board-settings')
+  const items = page.getByRole('menu').locator('[data-testid^="board-menu-"]')
   const names = await items.allInnerTexts()
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('menu')).toBeHidden()
+  await closeSettings(page)
   return names.map((n) => n.trim())
 }
 
@@ -135,7 +133,7 @@ test.describe('bartender1 (Taproom only)', () => {
     await expect(page.getByTestId(`header-person-${day}-${me}`)).toHaveText('Sam Pour · Bar-open · 8:00a–4:00p · 8h')
     // The Taproom has no Daily items (D41 Decision 5), so no Daily card.
     await expect(page.getByTestId(`daily-${denverToday()}`)).toHaveCount(0)
-    await expect(page.getByTestId('board-menu')).toHaveCount(0)
+    expect(await boardManagerItems(page)).toEqual([])
   })
 
   test('S102: a typed /tasks/brewery goes to /tasks/bar; the Brewery API answers 403', async ({ page }) => {
@@ -220,11 +218,11 @@ test.describe('owner (no memberships)', () => {
     await openBoard(page, '/tasks/brewery')
     // Then the All departments view, last (S118).
     expect(await switcherEntries(page)).toEqual(['Brewery', 'Taproom', 'Office', 'Sales', 'All departments'])
-    expect(await boardMenu(page)).toEqual(['History', 'Edit Daily items'])
+    expect(await boardMenu(page)).toEqual(['Edit Daily items', 'History'])
     for (const key of ['bar', 'office', 'sales']) {
       await openBoard(page, `/tasks/${key}`)
       // No Daily items yet on these boards (S107).
-      expect(await boardMenu(page)).toEqual(['History', 'Set up Daily checks'])
+      expect(await boardMenu(page)).toEqual(['Set up Daily checks', 'History'])
     }
   })
 
@@ -252,8 +250,7 @@ test.describe('owner (no memberships)', () => {
 
     // Logged on the Taproom board, in the department's words.
     await openBoard(page, '/tasks/bar')
-    await page.getByTestId('board-menu').click()
-    await page.getByTestId('board-menu-history').click()
+    await settingsItem(page, 'board-settings', 'board-menu-history')
     await expect(page.getByTestId('history-dialog').locator(`li[data-task-id="${pour.id}"]`).first()).toContainText('(left the Taproom)')
   })
 })
@@ -270,7 +267,7 @@ test.describe('barMgr (Taproom manager)', () => {
 
     await openBoard(page, '/tasks/bar')
     await expect(page.getByTestId(`daily-${today}`)).toHaveCount(0)
-    await page.getByTestId('board-menu').click()
+    await openSettings(page, 'board-settings')
     await expect(page.getByTestId('board-menu-daily-items')).toHaveText('Set up Daily checks')
     await page.getByTestId('board-menu-daily-items').click()
     const dialog = page.getByTestId('daily-items-dialog')
@@ -287,7 +284,7 @@ test.describe('barMgr (Taproom manager)', () => {
     await expect(page.getByTestId(`daily-count-${today}`)).toHaveText('Daily 0/1')
     await page.reload()
     await expect(page.getByTestId(`daily-count-${today}`)).toHaveText('Daily 0/1')
-    await page.getByTestId('board-menu').click()
+    await openSettings(page, 'board-settings')
     await expect(page.getByTestId('board-menu-daily-items')).toHaveText('Edit Daily items')
     // The Brewery's card still has its own items.
     expect(((await (await brewery.get('/api/boards/brewery/daily_items')).json()).data as unknown[]).length).toBe(breweryItems.length)
@@ -316,7 +313,7 @@ test.describe('splitRole (Taproom manager, Brewery employee)', () => {
 
   test('S110: manager tools on the Taproom board, none on the Brewery board', async ({ page }) => {
     await openBoard(page, '/tasks/bar')
-    expect((await boardMenu(page))[0]).toBe('History')
+    expect((await boardMenu(page)).at(-1)).toBe('History')
     expect(await boardMenu(page)).toHaveLength(2)
     await openBoard(page, '/tasks/brewery')
     expect(await boardMenu(page)).toEqual([])
@@ -331,14 +328,14 @@ test.describe('dualMgr (Taproom + Office manager)', () => {
     await openBoard(page, '/tasks')
     await expect(page).toHaveURL(/\/tasks\/bar$/)
     expect(await switcherEntries(page)).toEqual(['Taproom', 'Office'])
-    expect((await boardMenu(page))[0]).toBe('History')
+    expect((await boardMenu(page)).at(-1)).toBe('History')
     const officeItems = page.waitForResponse((r) => r.url().includes('/api/boards/office/daily_items'))
     await page.getByTestId('board-switcher').click()
     await page.getByTestId('board-switch-office').click()
     await expect(page).toHaveURL(/\/tasks\/office$/)
     await expect(page.getByTestId('board-title')).toHaveText('Office tasks')
     await officeItems
-    expect(await boardMenu(page)).toEqual(['History', 'Set up Daily checks'])
+    expect(await boardMenu(page)).toEqual(['Set up Daily checks', 'History'])
   })
 
   test('S111: while the Office Daily items load, the ⋮ menu claims neither Daily state', async ({ page }) => {
@@ -359,7 +356,7 @@ test.describe('dualMgr (Taproom + Office manager)', () => {
     const officeItems = page.waitForResponse((r) => r.url().includes('/api/boards/office/daily_items'))
     release()
     await officeItems
-    await expect(async () => expect(await boardMenu(page)).toEqual(['History', 'Set up Daily checks'])).toPass()
+    await expect(async () => expect(await boardMenu(page)).toEqual(['Set up Daily checks', 'History'])).toPass()
   })
 })
 
@@ -376,8 +373,8 @@ test.describe('brewer1 (old bookmark)', () => {
     await page.goto('/brewery/tasks')
     await expect(page).toHaveURL(/\/tasks\/brewery$/)
     await expect(page.getByTestId('board-grid')).toBeVisible()
-    await expect(page.getByTestId('board-span-7')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('board-hide-completed')).toBeChecked()
+    expect(await settingValue(page, 'board-settings', 'board-span')).toBe('1 week')
+    expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
     expect(await page.evaluate(() => [localStorage.getItem('rockcut.tasks.span'), localStorage.getItem('rockcut.tasks.hideCompleted')])).toEqual([
       '7',
       'true',
@@ -500,9 +497,11 @@ test.describe('owner: All departments', () => {
     await expect(card).toBeVisible()
     await expect(page.locator('[data-testid^="task-check-"]')).toHaveCount(0)
     await expect(page.locator('[aria-roledescription="sortable"], [draggable="true"]')).toHaveCount(0)
-    for (const id of ['board-menu', 'unfinished-move-all', 'future-add']) await expect(page.getByTestId(id)).toHaveCount(0)
+    for (const id of ['unfinished-move-all', 'future-add']) await expect(page.getByTestId(id)).toHaveCount(0)
     await expect(page.locator('[data-testid^="day-add-"]')).toHaveCount(0)
-    await expect(page.getByTestId('board-filter-mine')).toHaveCount(0)
+    // D52: the gear has no History / Daily items and no My tasks here.
+    expect(await boardManagerItems(page)).toEqual([])
+    expect(await choiceOptions(page, 'board-settings', 'board-filter')).not.toContain('board-filter-mine')
 
     await card.click()
     await expect(page).toHaveURL(/\/tasks\/bar$/)

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams } from 'react-router-dom'
 import {
   Alert,
   AppBar,
@@ -30,38 +30,34 @@ import {
   Snackbar,
   useTheme,
   darken,
+  alpha,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft'
 import ExpandLess from '@mui/icons-material/ExpandLess'
 import ExpandMore from '@mui/icons-material/ExpandMore'
-import HomeIcon from '@mui/icons-material/Home'
-import DashboardIcon from '@mui/icons-material/Dashboard'
-import ChecklistIcon from '@mui/icons-material/Checklist'
-import ScienceIcon from '@mui/icons-material/Science'
-import FactoryIcon from '@mui/icons-material/Factory'
-import InventoryIcon from '@mui/icons-material/Inventory'
-import SettingsIcon from '@mui/icons-material/Settings'
-import PeopleIcon from '@mui/icons-material/People'
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth'
-import EventBusyIcon from '@mui/icons-material/EventBusy'
-import EventAvailableIcon from '@mui/icons-material/EventAvailable'
-import ViewAgendaIcon from '@mui/icons-material/ViewAgenda'
-import GridViewIcon from '@mui/icons-material/GridView'
-import SportsBarIcon from '@mui/icons-material/SportsBar'
-import RedeemIcon from '@mui/icons-material/Redeem'
-import LocalBarIcon from '@mui/icons-material/LocalBar'
-import BusinessIcon from '@mui/icons-material/Business'
-import PointOfSaleIcon from '@mui/icons-material/PointOfSale'
-import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings'
-import ForumIcon from '@mui/icons-material/Forum'
-import TagIcon from '@mui/icons-material/Tag'
-import HistoryIcon from '@mui/icons-material/History'
+import HomeIcon from '@mui/icons-material/HomeOutlined'
+import DashboardIcon from '@mui/icons-material/DashboardOutlined'
+import ChecklistIcon from '@mui/icons-material/ChecklistOutlined'
+import ScienceIcon from '@mui/icons-material/ScienceOutlined'
+import PeopleIcon from '@mui/icons-material/PeopleOutlined'
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonthOutlined'
+import EventBusyIcon from '@mui/icons-material/EventBusyOutlined'
+import EventAvailableIcon from '@mui/icons-material/EventAvailableOutlined'
+import ViewAgendaIcon from '@mui/icons-material/ViewAgendaOutlined'
+import GridViewIcon from '@mui/icons-material/GridViewOutlined'
+import SportsBarOutlinedIcon from '@mui/icons-material/SportsBarOutlined'
+import BusinessIcon from '@mui/icons-material/BusinessOutlined'
+import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettingsOutlined'
+import ForumIcon from '@mui/icons-material/ForumOutlined'
+import TagIcon from '@mui/icons-material/TagOutlined'
+import HistoryIcon from '@mui/icons-material/HistoryOutlined'
 import LogoutIcon from '@mui/icons-material/Logout'
 import LoginIcon from '@mui/icons-material/Login'
-import TabletIcon from '@mui/icons-material/TabletMac'
+import TabletIcon from '@mui/icons-material/TabletMacOutlined'
 import AccountCircle from '@mui/icons-material/AccountCircle'
 import PersonIcon from '@mui/icons-material/Person'
+import { BarleyIcon, DeliveryVanIcon, FermenterIcon, FermentersIcon, GiftMugIcon } from './components/NavIcons'
 import { PageTitleProvider, PageTitleSlot } from './components/PageTitle'
 import Check from '@mui/icons-material/Check'
 import { COLOR_MODES, type ColorMode } from './lib/colorMode'
@@ -101,7 +97,8 @@ import CategoryDetail from './pages/settings/CategoryDetail'
 import BeerBoard from './pages/taproom/BeerBoard'
 import UserManagement from './pages/users/UserManagement'
 import OwnerActivity from './pages/activity/OwnerActivity'
-import Schedule from './pages/schedule/Schedule'
+import ViewSchedule from './pages/schedule/ViewSchedule'
+import Scheduler from './pages/schedule/Scheduler'
 import TimeOff from './pages/timeoff/TimeOff'
 import Availability from './pages/availability/Availability'
 import Messages from './pages/messages/Messages'
@@ -118,7 +115,20 @@ interface NavLeaf {
   label: string
   path: string
   icon: ReactNode
+  /** D52: the collapsed rail's icon, where the label isn't beside it. */
+  railIcon?: ReactNode
 }
+
+// D52: a short word in place of an icon in the collapsed rail (the "all" and "mngr" channels).
+const railWord = (word: string) => (
+  <Box component="span" sx={{ fontSize: 10, fontWeight: 700, lineHeight: '20px', width: 24, textAlign: 'center', display: 'block' }}>
+    {word}
+  </Box>
+)
+
+// The Messages entry for a channel: its department's icon, else #.
+const channelIcon = (c: Channel) =>
+  (c.kind === 'department' && DEPT_META[c.key.replace(/^dept:/, '')]?.icon) || <TagIcon />
 
 interface NavSection {
   key: string
@@ -137,27 +147,32 @@ interface NavSection {
 // headings with a "coming soon" placeholder until they get pages.
 const BREWERY_PAGES: NavLeaf[] = [
   { label: 'Dashboard', path: '/brewery', icon: <DashboardIcon /> },
-  { label: 'Production', path: '/brewery/production', icon: <FactoryIcon /> },
+  { label: 'Production', path: '/brewery/production', icon: <FermentersIcon /> },
   { label: 'Brands & Recipes', path: '/brands', icon: <ScienceIcon /> },
-  { label: 'Ingredient Library', path: '/ingredients', icon: <InventoryIcon /> },
-  { label: 'Settings', path: '/settings', icon: <SettingsIcon /> },
+  { label: 'Ingredient Library', path: '/ingredients', icon: <BarleyIcon /> },
 ]
 
 // Per-department heading metadata, keyed by the department key from capabilities.modules.
 // The label shown is the department's name from /api/departments (D32: an owner's
 // rename, e.g. Bar → Taproom, needs no code change); `label` is only the fallback.
 const TAPROOM_PAGES: NavLeaf[] = [
-  { label: 'Buy-a-Beer Board', path: '/taproom/beer-board', icon: <RedeemIcon /> },
+  { label: 'Buy-a-Beer Board', path: '/taproom/beer-board', icon: <GiftMugIcon /> },
 ]
 
 // D40: the department pages a shared tablet can open (its Tasks board is the top-level Tasks).
 const DEVICE_PAGES = ['/taproom/beer-board']
 
 const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavLeaf[] }> = {
-  bar: { label: 'Taproom', icon: <LocalBarIcon />, children: TAPROOM_PAGES },
-  brewery: { label: 'Brewery', icon: <SportsBarIcon />, children: BREWERY_PAGES },
+  bar: { label: 'Taproom', icon: <SportsBarOutlinedIcon />, children: TAPROOM_PAGES },
+  brewery: { label: 'Brewery', icon: <FermenterIcon />, children: BREWERY_PAGES },
   office: { label: 'Office', icon: <BusinessIcon />, children: [] },
-  sales: { label: 'Sales', icon: <PointOfSaleIcon />, children: [] },
+  sales: { label: 'Sales', icon: <DeliveryVanIcon />, children: [] },
+}
+
+/** D52: `/settings/categories/:id` (before the move) → `/ingredients/categories/:id`. */
+function OldCategoryRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/ingredients/categories/${id}`} replace />
 }
 
 function LoadingScreen({ unreachable, onRetry }: { unreachable?: boolean; onRetry?: () => void }) {
@@ -363,9 +378,15 @@ function App() {
         path: `/messages/${c.key}`,
         icon: (
           <Badge badgeContent={c.unread} color="error">
-            <TagIcon />
+            {channelIcon(c)}
           </Badge>
         ),
+        railIcon:
+          c.kind === 'department' ? undefined : (
+            <Badge badgeContent={c.unread} color="error">
+              {railWord(c.kind === 'all' ? 'all' : 'mngr')}
+            </Badge>
+          ),
       })),
       emptyLabel: 'No channels',
     },
@@ -442,7 +463,8 @@ function App() {
         </Box>
 
         {rail ? (
-          // Collapsed rail: section icons only; a click reopens the drawer + section.
+          // Collapsed rail: section icons only. D52: a click opens the section's
+          // pages as icons right below it, and the rail stays narrow.
           <List sx={{ flexGrow: 1 }}>
             <Tooltip title="Home" placement="right" arrow>
               <ListItemButton
@@ -453,23 +475,74 @@ function App() {
                 <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}><HomeIcon /></ListItemIcon>
               </ListItemButton>
             </Tooltip>
-            {sections.map((s) => (
-              <Tooltip key={s.key} title={s.label} placement="right" arrow>
-                <ListItemButton
-                  selected={!!s.path && isSelected(s.path)}
-                  onClick={() => {
-                    if (s.path) return go(s.path, isMobile)
-                    setCollapsed(false)
-                    setOpenOverride((o) => ({ ...o, [s.key]: true }))
-                  }}
-                  sx={{ mx: 0.5, borderRadius: 1, justifyContent: 'center', px: 1.5 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}>
-                    {sectionIcon(s)}
-                  </ListItemIcon>
-                </ListItemButton>
-              </Tooltip>
-            ))}
+            {sections.map((s) => {
+              if (s.path)
+                return (
+                  <Tooltip key={s.key} title={s.label} placement="right" arrow>
+                    <ListItemButton
+                      selected={isSelected(s.path)}
+                      onClick={() => go(s.path!, isMobile)}
+                      sx={{ mx: 0.5, borderRadius: 1, justifyContent: 'center', px: 1.5 }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}>{sectionIcon(s)}</ListItemIcon>
+                    </ListItemButton>
+                  </Tooltip>
+                )
+              const open = sectionOpen(s)
+              const Caret = open ? ExpandLess : ExpandMore
+              return (
+                <Box key={s.key}>
+                  <Tooltip title={s.label} placement="right" arrow>
+                    <ListItemButton
+                      // A closed section holding the current page stays lit.
+                      selected={!open && s.children.some((c) => isSelected(c.path))}
+                      onClick={() => toggleSection(s)}
+                      aria-expanded={open}
+                      sx={{ mx: 0.5, borderRadius: 1, justifyContent: 'center', px: 1.5, position: 'relative' }}
+                    >
+                      <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center' }}>{sectionIcon(s)}</ListItemIcon>
+                      <Caret sx={{ position: 'absolute', right: 0, bottom: 2, fontSize: 14, opacity: 0.7 }} />
+                    </ListItemButton>
+                  </Tooltip>
+                  <Collapse in={open} timeout="auto" unmountOnExit>
+                    <List
+                      disablePadding
+                      sx={{
+                        mx: 0.5,
+                        mb: 0.5,
+                        py: 0.25,
+                        bgcolor: (t) => alpha(t.palette.primary.main, 0.08),
+                        borderLeft: 3,
+                        borderColor: 'primary.main',
+                        borderRadius: '0 8px 8px 0',
+                      }}
+                    >
+                      {s.children.length === 0 ? (
+                        <Tooltip title={s.emptyLabel ?? 'Nothing here yet'} placement="right" arrow>
+                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', textAlign: 'center', py: 0.5 }}>
+                            —
+                          </Typography>
+                        </Tooltip>
+                      ) : (
+                        s.children.map((c) => (
+                          <Tooltip key={c.path} title={c.label} placement="right" arrow>
+                            <ListItemButton
+                              selected={isSelected(c.path)}
+                              onClick={() => go(c.path, isMobile)}
+                              sx={{ mx: 0.25, borderRadius: 1, justifyContent: 'center', px: 1, py: 0.75 }}
+                            >
+                              <ListItemIcon sx={{ minWidth: 0, justifyContent: 'center', '& svg': { fontSize: 20 } }}>
+                                {c.railIcon ?? c.icon}
+                              </ListItemIcon>
+                            </ListItemButton>
+                          </Tooltip>
+                        ))
+                      )}
+                    </List>
+                  </Collapse>
+                </Box>
+              )
+            })}
           </List>
         ) : (
           <List sx={{ flexGrow: 1 }}>
@@ -756,7 +829,7 @@ function App() {
                 path="/"
                 element={capabilities.home_department === 'brewery' ? <Navigate to="/tasks/brewery" replace /> : <Home />}
               />
-              <Route path="/schedule" element={<Schedule forceView="agenda" />} />
+              <Route path="/schedule" element={<ViewSchedule />} />
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:key" element={<Messages />} />
               {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
@@ -782,11 +855,16 @@ function App() {
                 <Route path="/brands/:id" element={<BrandDetail />} />
                 <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
                 <Route path="/ingredients" element={<IngredientsList />} />
+                {/* D52: the categories moved from Brewery → Settings into the library's settings menu. */}
+                <Route path="/ingredients/categories" element={<SettingsPage />} />
+                <Route path="/ingredients/categories/:id" element={<CategoryDetail />} />
                 <Route path="/ingredients/:id" element={<IngredientDetail />} />
                 <Route path="/batches" element={<BatchesList />} />
                 <Route path="/batches/:id" element={<BatchDetail />} />
-                <Route path="/settings" element={<SettingsPage />} />
-                <Route path="/settings/categories/:id" element={<CategoryDetail />} />
+                {/* Old Settings bookmarks. */}
+                <Route path="/settings" element={<Navigate to="/ingredients/categories" replace />} />
+                <Route path="/settings/categories" element={<Navigate to="/ingredients/categories" replace />} />
+                <Route path="/settings/categories/:id" element={<OldCategoryRedirect />} />
               </>
             )}
             {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
@@ -795,8 +873,8 @@ function App() {
             <Route path="/tasks" element={<TasksIndex />} />
             <Route path="/tasks/:dept" element={<TaskBoardPage />} />
             <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
-            <Route path="/schedule" element={<Schedule forceView="agenda" />} />
-            {canManageSchedule && <Route path="/scheduler" element={<Schedule forceView="week" />} />}
+            <Route path="/schedule" element={<ViewSchedule />} />
+            {canManageSchedule && <Route path="/scheduler" element={<Scheduler />} />}
             <Route path="/time_off" element={<TimeOff />} />
             <Route path="/availability" element={<Availability />} />
             {/* D34: not on a shared tablet, even for a person signed in on it. */}

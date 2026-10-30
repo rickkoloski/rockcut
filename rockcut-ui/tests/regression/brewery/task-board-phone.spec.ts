@@ -17,6 +17,7 @@ import {
   touchDrag,
   userId,
 } from './taskBoardHelpers'
+import { pickSetting, settingsItem } from '../settingsMenu'
 
 // D38 §3.8 "Phone width" (plan step 9): one day at a time, the day strip with
 // its Future stop, arrows and swipe, the calendar button, and the task menu as
@@ -108,9 +109,9 @@ test('each strip stop shows its open count, and the counts follow the filter', a
   // My tasks: the day counts only what's assigned to brewer1.
   const board = await getBoard(api, day, day)
   const myOpen = board.days[0].cards.filter((c) => !c.done && c.assignee_id === me).length
-  await page.getByTestId('board-filter-mine').click()
+  await pickSetting(page, 'board-settings', 'board-filter', 'mine')
   await expect(page.getByTestId(`phone-stop-count-${day}`)).toHaveText(String(myOpen))
-  await page.getByTestId('board-filter-unassigned').click()
+  await pickSetting(page, 'board-settings', 'board-filter', 'unassigned')
   const unassigned = board.days[0].cards.filter((c) => !c.done && c.assignee_id === null).length
   await expect(page.getByTestId(`phone-stop-count-${day}`)).toHaveText(String(unassigned))
 })
@@ -418,55 +419,37 @@ test('S23j: the strip\'s Future stop shows the Future list, and its + Add a task
   await expect(page.getByTestId('phone-stop-count-future')).toHaveText(String((await openCounts(today(), today())).future))
 })
 
-test('the 1 week / 2 weeks toggle and the date range sit behind the calendar button', async ({ page }) => {
+test('D52: on a phone, Days shown and the filters are in the settings gear; a custom range still comes from the URL', async ({ page }) => {
   await openBoard(page)
-  await expect(page.getByTestId('board-span-7')).toHaveCount(0)
-  await expect(page.getByTestId('board-range-from')).toHaveCount(0)
-  // Hide completed and the filter stay on the toolbar.
-  await expect(page.getByTestId('board-hide-completed')).toBeAttached()
-  await expect(page.getByTestId('board-filter-mine')).toBeVisible()
+  // No calendar button or range picker any more; the gear holds the settings.
+  await expect(page.getByTestId('board-calendar')).toHaveCount(0)
+  await expect(page.getByTestId('board-settings')).toBeVisible()
 
-  await page.getByTestId('board-calendar').click()
-  await expect(page.getByTestId('board-calendar-dialog')).toBeVisible()
-  await page.getByTestId('board-span-7').click()
-  await expect(page.getByTestId('board-calendar-dialog')).toHaveCount(0)
+  await pickSetting(page, 'board-settings', 'board-span', 7)
   await expect(page).toHaveURL(new RegExp(`from=${today()}&to=${addDays(today(), 6)}`))
   await expect(page.getByTestId('phone-strip').locator('[data-stop]')).toHaveCount(8)
 
   // A custom range: the strip follows it, and the day starts on its first day.
   const from = addDays(today(), 20)
   const to = addDays(today(), 24)
-  await page.getByTestId('board-calendar').click()
-  await page.getByTestId('board-range-from').fill(from)
-  await page.getByTestId('board-range-to').fill(to)
-  await page.getByTestId('board-range-apply').click()
-  await expect(page).toHaveURL(new RegExp(`from=${from}&to=${to}`))
+  await page.goto(`/tasks/brewery?from=${from}&to=${to}`)
   await expect(page.getByTestId('phone-strip').locator('[data-stop]')).toHaveCount(6)
   await expect(phoneDay(page)).toHaveAttribute('data-stop', from)
-
-  // Too long a range keeps the dialog open with the message.
-  await page.getByTestId('board-calendar').click()
-  await page.getByTestId('board-range-to').fill(addDays(from, 40))
-  await page.getByTestId('board-range-apply').click()
-  await expect(page.getByTestId('board-range-error')).toHaveText('Up to 31 days')
-  await expect(page.getByTestId('board-calendar-dialog')).toBeVisible()
 })
 
-test('as breweryMgr, the ⋮ menu, Daily items and History fit the phone screen', async ({ browser }) => {
+test('as breweryMgr, the settings menu, Daily items and History fit the phone screen', async ({ browser }) => {
   const ctx = await browser.newContext({ storageState: authFile('breweryMgr'), viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true })
   const page = await ctx.newPage()
   const widest = () => page.evaluate(() => Math.max(...[...document.querySelectorAll('.MuiDialog-paper, .MuiDialog-paper *')].map((e) => e.getBoundingClientRect().right)))
   try {
     await openBoard(page)
-    await page.getByTestId('board-menu').click()
-    await page.getByTestId('board-menu-daily-items').click()
+    await settingsItem(page, 'board-settings', 'board-menu-daily-items')
     await expect(page.getByRole('dialog', { name: 'Daily items' })).toBeVisible()
     expect(await widest()).toBeLessThanOrEqual(360)
     await page.getByRole('dialog', { name: 'Daily items' }).getByRole('button', { name: 'Done' }).click()
     await expect(page.getByRole('dialog')).toHaveCount(0)
 
-    await page.getByTestId('board-menu').click()
-    await page.getByTestId('board-menu-history').click()
+    await settingsItem(page, 'board-settings', 'board-menu-history')
     await expect(page.getByRole('dialog', { name: 'History' })).toBeVisible()
     expect(await widest()).toBeLessThanOrEqual(360)
   } finally {
@@ -530,8 +513,7 @@ test.describe(VERTICAL, () => {
     const ctx = await browser.newContext({ storageState: authFile('breweryMgr'), viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true })
     const mgr = await ctx.newPage()
     await openBoard(mgr)
-    await mgr.getByTestId('board-menu').click()
-    await mgr.getByTestId('board-menu-history').click()
+    await settingsItem(mgr, 'board-settings', 'board-menu-history')
     const label = (key: string) =>
       new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })
         .format(new Date(`${key}T12:00:00Z`))

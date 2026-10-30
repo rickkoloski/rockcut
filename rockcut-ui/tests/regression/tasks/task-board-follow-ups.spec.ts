@@ -2,6 +2,7 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, card, dailyItems, denverToday, restoreDailyItems, setCheck, tempTag, type ApiDailyItem } from '../brewery/taskBoardHelpers'
 import { contextWith, createTempPerson, retireTempPerson, signIn, throwawayPassword, type TempPerson } from '../auth/helpers'
+import { pickSetting, setSetting, settingOn, settingValue, settingsItem } from '../settingsMenu'
 
 // D42 §4, scenarios S121–S140: the required password reset (API and UI), a
 // foreign before_id, the "No one scheduled" header key, deleting a retired
@@ -86,8 +87,7 @@ async function openBoard(page: Page, path: string) {
 }
 
 async function openDailyItems(page: Page) {
-  await page.getByTestId('board-menu').click()
-  await page.getByTestId('board-menu-daily-items').click()
+  await settingsItem(page, 'board-settings', 'board-menu-daily-items')
   await expect(page.getByTestId('daily-items-dialog')).toBeVisible()
 }
 
@@ -198,8 +198,7 @@ test.describe('as barMgr', () => {
     expect(await dailyTotal(api, 'bar', today())).toBe(before)
 
     await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
-    await page.getByTestId('board-menu').click()
-    await page.getByTestId('board-menu-history').click()
+    await settingsItem(page, 'board-settings', 'board-menu-history')
     await expect(page.getByTestId('history-list').getByText(`Deleted the Daily item '${name}'`)).toBeVisible()
   })
 })
@@ -336,21 +335,21 @@ test.describe('as floater', () => {
 
   test('S134: Brewery 2 weeks + Hide completed; Taproom keeps its own; back on Brewery they hold', async ({ page }) => {
     await openBoard(page, '/tasks/bar')
-    await page.getByTestId('board-span-7').click()
+    await pickSetting(page, 'board-settings', 'board-span', 7)
     await openBoard(page, '/tasks/brewery')
-    await expect(page.getByTestId('board-span-14')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('board-hide-completed')).not.toBeChecked()
-    await page.getByTestId('board-span-14').click()
-    await page.getByTestId('board-hide-completed').check()
+    expect(await settingValue(page, 'board-settings', 'board-span')).toBe('2 weeks')
+    expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(false)
+    await pickSetting(page, 'board-settings', 'board-span', 14)
+    await setSetting(page, 'board-settings', 'board-hide-completed', true)
 
     await openBoard(page, '/tasks/bar')
-    await expect(page.getByTestId('board-span-7')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('board-hide-completed')).not.toBeChecked()
+    expect(await settingValue(page, 'board-settings', 'board-span')).toBe('1 week')
+    expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(false)
     await expect.poll(async () => (await shownDays(page)).length).toBe(7)
 
     await openBoard(page, '/tasks/brewery')
-    await expect(page.getByTestId('board-span-14')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('board-hide-completed')).toBeChecked()
+    expect(await settingValue(page, 'board-settings', 'board-span')).toBe('2 weeks')
+    expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
     await expect.poll(async () => (await shownDays(page)).length).toBe(14)
   })
 })
@@ -368,16 +367,16 @@ test.describe('as brewer1', () => {
       localStorage.setItem('rockcut.tasks.phoneView', 'day')
     })
     await openBoard(page, '/tasks/brewery')
-    await expect(page.getByTestId('board-span-7')).toHaveAttribute('aria-pressed', 'true')
-    await expect(page.getByTestId('board-hide-completed')).toBeChecked()
+    expect(await settingValue(page, 'board-settings', 'board-span')).toBe('1 week')
+    expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
     expect(await page.evaluate(() => localStorage.getItem('rockcut.tasks.phoneView.brewery'))).toBe('day')
   })
 
   test('S136: First day → Monday: Mon–Sun of this week, the days before today dimmed and usable; Next → next Monday', async ({ page }) => {
     const mon = mondayOf(today())
     await openBoard(page, '/tasks/brewery')
-    await page.getByTestId('board-span-7').click()
-    await page.getByTestId('board-first-day').selectOption('monday')
+    await pickSetting(page, 'board-settings', 'board-span', 7)
+    await pickSetting(page, 'board-settings', 'board-first-day', 'monday')
     await expect(page.getByTestId(`day-${mon}`)).toBeVisible()
     await expect.poll(() => shownDays(page)).toEqual(range(mon, 7))
     for (const d of range(mon, 7)) await expect(page.getByTestId(`day-${d}`)).toHaveAttribute('data-past', String(d < today()))
@@ -390,7 +389,7 @@ test.describe('as brewer1', () => {
     }
     // Remembered after a reload.
     await page.reload()
-    await expect(page.getByTestId('board-first-day')).toHaveValue('monday')
+    expect(await settingValue(page, 'board-settings', 'board-first-day')).toBe('Monday')
     await expect.poll(() => shownDays(page)).toEqual(range(mon, 7))
 
     await page.getByTestId('board-next').click()
@@ -401,8 +400,8 @@ test.describe('as brewer1', () => {
   test('S137: First day → Sunday, 2 weeks: this Sunday through next Saturday; Today returns there', async ({ page }) => {
     const sun = sundayOf(today())
     await openBoard(page, '/tasks/brewery')
-    await page.getByTestId('board-span-14').click()
-    await page.getByTestId('board-first-day').selectOption('sunday')
+    await pickSetting(page, 'board-settings', 'board-span', 14)
+    await pickSetting(page, 'board-settings', 'board-first-day', 'sunday')
     await expect(page.getByTestId(`day-${sun}`)).toBeVisible()
     await expect.poll(() => shownDays(page)).toEqual(range(sun, 14))
     await page.getByTestId('board-next').click()
@@ -414,12 +413,11 @@ test.describe('as brewer1', () => {
 
   test('S140: First day → Monday, then a typed range shows as typed', async ({ page }) => {
     await openBoard(page, '/tasks/brewery')
-    await page.getByTestId('board-first-day').selectOption('monday')
+    await pickSetting(page, 'board-settings', 'board-first-day', 'monday')
     const from = addDays(today(), 2)
     const to = addDays(today(), 4)
-    await page.getByTestId('board-range-from').fill(from)
-    await page.getByTestId('board-range-to').fill(to)
-    await page.getByTestId('board-range-apply').click()
+    // D52: a range through the URL (no picker on the toolbar now).
+    await page.goto(`/tasks/brewery?from=${from}&to=${to}`)
     await expect(page.getByTestId(`day-${from}`)).toBeVisible()
     await expect.poll(() => shownDays(page)).toEqual(range(from, 3))
   })
@@ -430,8 +428,7 @@ test.describe('as brewer1', () => {
     test('S139: First day → Monday: the vertical view starts Monday, scrolled to today; one-day opens on today', async ({ page }) => {
       const mon = mondayOf(today())
       await openBoard(page, '/tasks/brewery')
-      await page.getByTestId('board-calendar').click()
-      await page.getByTestId('board-first-day').selectOption('monday')
+      await pickSetting(page, 'board-settings', 'board-first-day', 'monday')
       await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'vertical')
       await expect(page.getByTestId(`day-${mon}`)).toBeAttached()
       await expect.poll(async () => (await shownDays(page))[0]).toBe(mon)
@@ -455,17 +452,17 @@ test.describe('as owner', () => {
     const task = await createTask(await apiAs('owner'), 'brewery', { title: tempTag('S138'), due_on: tue })
 
     await openBoard(page, '/tasks/all')
-    await page.getByTestId('board-span-7').click()
-    await page.getByTestId('board-first-day').selectOption('monday')
+    await pickSetting(page, 'board-settings', 'board-span', 7)
+    await pickSetting(page, 'board-settings', 'board-first-day', 'monday')
     await expect(page.getByTestId(`day-${mon}`)).toBeVisible()
     await expect.poll(() => shownDays(page)).toEqual(range(mon, 7))
 
     await openBoard(page, '/tasks/brewery')
-    await expect(page.getByTestId('board-first-day')).toHaveValue('today')
+    expect(await settingValue(page, 'board-settings', 'board-first-day')).toBe('Today')
     await expect.poll(async () => (await shownDays(page))[0]).toBe(today())
 
     await openBoard(page, '/tasks/all')
-    await expect(page.getByTestId('board-first-day')).toHaveValue('monday')
+    expect(await settingValue(page, 'board-settings', 'board-first-day')).toBe('Monday')
     await page.getByTestId(`task-title-${task.id}:${tue}`).click()
     await expect(page).toHaveURL(/\/tasks\/brewery/)
     await expect(page.getByTestId(`day-${tue}`)).toBeVisible({ timeout: 20_000 })

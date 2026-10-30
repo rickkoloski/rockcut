@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent } from 'react'
+import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import { Avatar, Box, Checkbox, Chip, Paper, Tooltip, Typography } from '@mui/material'
 import { NotesOutlined, Repeat } from '@mui/icons-material'
 import { firstName, formatTaskDay, initials } from '../../lib/tasks'
@@ -23,20 +23,25 @@ interface Props {
   noCheck?: boolean
   /** Can't be dragged (the board's rule; defaults to the server's `locked`). */
   locked?: boolean
+  /** D52: a click on the notes icon (or its popup) edits the notes; left out where notes can't be edited. */
+  onNotes?: (card: TaskCardData) => void
 }
 
 /**
- * D38 §3.8 task card: checkbox, title, initials, notes icon and tags (D39: a
+ * D38 §3.8 task card: checkbox, title, initials, notes icon (D52: hover shows
+ * the notes, a click edits them) and tags (D39: a
  * ↻ on an occurrence of a recurring task). A click
  * anywhere but the checkbox opens the task menu (Enter does too, through
  * SortableLists).
  */
-export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly, noCheck, locked = card.locked }: Props) {
+export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly, noCheck, locked = card.locked, onNotes }: Props) {
   const open = (e: MouseEvent<HTMLElement>) => onOpen?.(card, e.currentTarget)
   const tags = [
     card.planned_on && !showDate && { id: 'planned', label: `planned ${formatTaskDay(card.planned_on)}` },
     card.done_on && { id: 'done', label: `done ${formatTaskDay(card.done_on)}` },
     card.from_future && { id: 'from-future', label: 'from Future' },
+    // D52: the last of a series that ends; checking it off offers to extend it.
+    card.series_last && !card.done && { id: 'series-last', label: 'last in series' },
   ].filter(Boolean) as { id: string; label: string }[]
 
   return (
@@ -103,8 +108,55 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
             </Tooltip>
           )}
           {card.notes && (
-            <Tooltip title="Has notes">
-              <NotesOutlined sx={{ fontSize: 16, mt: 0.25 }} color="action" data-testid={`task-notes-icon-${card.key}`} />
+            // D52: the hover shows the notes; a click on the icon or the popup edits them.
+            // The popup is portalled, but its clicks still bubble to the card in React, hence
+            // stopPropagation; and the dialog opens a frame later, once the click has settled
+            // focus on the card, so the notes field keeps the cursor.
+            <Tooltip
+              title={
+                <Box
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    if (onNotes) requestAnimationFrame(() => onNotes(card))
+                  }}
+                  sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'break-word', cursor: onNotes ? 'pointer' : 'default' }}
+                  data-testid={`task-notes-popup-${card.key}`}
+                >
+                  {card.notes}
+                </Box>
+              }
+              slotProps={{ tooltip: { sx: { maxWidth: 320, fontSize: 13 } } }}
+            >
+              <NotesOutlined
+                sx={{ fontSize: 16, mt: 0.25, cursor: onNotes ? 'pointer' : undefined }}
+                color="action"
+                // The press stays off the card (its drag and focus), so the dialog keeps focus.
+                onPointerDown={onNotes && ((e: PointerEvent) => e.stopPropagation())}
+                onMouseDown={onNotes && ((e: MouseEvent) => e.preventDefault())}
+                onClick={
+                  onNotes &&
+                  ((e: MouseEvent) => {
+                    e.stopPropagation()
+                    requestAnimationFrame(() => onNotes(card))
+                  })
+                }
+                // QA gap 4: reachable by keyboard; focus shows the notes (the tooltip), Enter or Space edits them.
+                tabIndex={onNotes ? 0 : undefined}
+                role={onNotes ? 'button' : undefined}
+                aria-hidden={onNotes ? undefined : true}
+                aria-label={onNotes ? `Notes: ${card.notes}` : undefined}
+                onKeyDown={
+                  onNotes &&
+                  ((e: KeyboardEvent<SVGSVGElement>) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    // A frame later, as the click: the key's own handling settles focus first.
+                    requestAnimationFrame(() => onNotes(card))
+                  })
+                }
+                data-testid={`task-notes-icon-${card.key}`}
+              />
             </Tooltip>
           )}
           {card.assignee_name && (

@@ -28,8 +28,8 @@ test('S7: redeem with a staff code; recorded as that person on Shared Device', a
   const e = await addEntry(3, 'S7')
   created.push(e.id)
   await page.goto('/taproom/beer-board')
-  await expect(page.getByTestId('board-tab-history')).toHaveCount(0)
-  // S11: no CSV files on the tablet, whoever's code is typed later.
+  // S11 (D52: no settings gear): no History or CSV files on the tablet, whoever's code is typed later.
+  await expect(page.getByTestId('board-settings')).toHaveCount(0)
   await expect(page.getByTestId('board-add')).toBeVisible()
   await expect(page.getByTestId('board-export')).toHaveCount(0)
   await expect(page.getByTestId('board-import')).toHaveCount(0)

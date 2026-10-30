@@ -16,6 +16,7 @@ import {
   tempTag,
   userId,
 } from './taskBoardHelpers'
+import { boardManagerItems, settingsItem } from '../settingsMenu'
 
 // D38 §3.8 "Change log", scenarios S10 and S11, and History filtered to one
 // task from its dialog. History is read-only; the writes it lists are made
@@ -43,8 +44,7 @@ async function entries(page: Page, taskId: number | null) {
 }
 
 async function openHistory(page: Page) {
-  await page.getByTestId('board-menu').click()
-  await page.getByTestId('board-menu-history').click()
+  await settingsItem(page, 'board-settings', 'board-menu-history')
   await expect(page.getByTestId('history-dialog')).toBeVisible()
   await expect(page.getByTestId('history-list').locator('li').first()).toBeVisible()
 }
@@ -167,7 +167,7 @@ test.describe('brewer1', () => {
     created.push(task.id)
 
     await openBoard(page)
-    await expect(page.getByTestId('board-menu')).toHaveCount(0)
+    expect(await boardManagerItems(page)).toEqual([])
     await card(page, task.id, today).getByTestId(`task-title-${task.id}:${today}`).click()
     await page.getByTestId('task-menu-edit').click()
     await expect(page.getByTestId('task-dialog')).toBeVisible()

@@ -35,6 +35,7 @@ interface Props {
  */
 export default function TankDialog({ tank, onClose, onSaved, onOutage }: Props) {
   const [name, setName] = useState(tank?.name ?? '')
+  const [abbreviation, setAbbreviation] = useState(tank?.abbreviation ?? '')
   const [kind, setKind] = useState<TankKind>(tank?.kind ?? 'unitank')
   const [capacity, setCapacity] = useState(tank ? String(tank.capacity_bbl) : '')
   const [location, setLocation] = useState<TankLocation>(tank?.location ?? 'brewhouse')
@@ -52,7 +53,7 @@ export default function TankDialog({ tank, onClose, onSaved, onOutage }: Props) 
     if (Object.keys(local).length) return
     setBusy(true)
     setError(null)
-    const body = { name: name.trim(), kind, capacity_bbl: capacity, location, notes: notes.trim() || null }
+    const body = { name: name.trim(), abbreviation: abbreviation.trim() || null, kind, capacity_bbl: capacity, location, notes: notes.trim() || null }
     try {
       if (tank) await api.patch(prodPath('tanks', tank.id), body)
       else await api.post(prodPath('tanks'), body)
@@ -76,6 +77,15 @@ export default function TankDialog({ tank, onClose, onSaved, onOutage }: Props) 
         error={!!errors.name}
         helperText={errors.name}
         slotProps={{ htmlInput: { maxLength: 30, 'data-testid': 'tank-name' }, formHelperText: { role: 'alert' } as object }}
+      />
+      {/* D52: the short name for the Gantt's names-only column. */}
+      <TextField
+        label="Abbreviation (optional)"
+        value={abbreviation}
+        onChange={(e) => setAbbreviation(e.target.value)}
+        error={!!errors.abbreviation}
+        helperText={errors.abbreviation ?? 'Up to 4 characters, for the narrow tank column on the schedule. Blank shows the full name.'}
+        slotProps={{ htmlInput: { maxLength: 4, 'data-testid': 'tank-abbreviation' }, formHelperText: { role: errors.abbreviation ? 'alert' : undefined } as object }}
       />
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr 1fr' }, gap: 2 }}>
         <TextField select label="Type" value={kind} onChange={(e) => setKind(e.target.value as TankKind)} slotProps={{ select: { SelectDisplayProps: { 'data-testid': 'tank-kind' } as object } }}>

@@ -15,6 +15,7 @@ import {
   rowsAfterReload,
   today,
 } from './helpers'
+import { settingsItem } from '../settingsMenu'
 
 // D37 §3.6: CSV import and export as barMgr (S20–S24, S26, S27, S29, S30).
 // Replace (S25, S28) clears the shared board, so it lives in
@@ -67,7 +68,7 @@ test('S20: History → Export CSV downloads the change log', async ({ page }) =>
   const t = tag('S20h')
   await add(`${t} Pat`, 'Chris', 2)
   await openBoard(page)
-  await page.getByTestId('board-tab-history').click()
+  await settingsItem(page, 'board-settings', 'board-tab-history')
   const dl = page.waitForEvent('download')
   await page.getByTestId('board-history-export').click()
   const file = await dl

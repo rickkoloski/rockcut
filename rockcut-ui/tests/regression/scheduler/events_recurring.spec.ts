@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { addDays, apiAs, cleanupTemp, createEvent, denverToday, denverUtc, listEvents, openScheduler, tempTag, weekMonday, weeksAhead } from './helpers'
+import { addDays, apiAs, cleanupTemp, createEvent, denverToday, denverUtc, listEvents, openScheduler, publishWeek, tempTag, weekMonday, weeksAhead } from './helpers'
 
 // D32 S13–S18: repeating events. Series live 11+ weeks out, apart from the other
 // scheduler specs' weeks. Occurrence times are checked in Colorado time.
@@ -66,7 +66,7 @@ test.describe('barMgr', () => {
     const firstChip = page.getByTestId(`events-cell-${tuesday}`).locator('[data-testid^="event-chip-"]', { hasText: tag })
     await expect(firstChip.getByRole('img', { name: 'Repeats' })).toBeVisible()
     const published = page.waitForResponse((r) => r.url().endsWith('/api/schedule_events/publish'))
-    await page.getByRole('button', { name: /publish week/i }).click()
+    await publishWeek(page)
     await published
 
     const after = (await listEvents(await apiAs('barMgr'), week, addDays(week, 70))).filter((e) => e.title === tag)

@@ -14,6 +14,7 @@ import {
   setCheck,
   type ApiDailyItem,
 } from './taskBoardHelpers'
+import { boardManagerItems, settingsItem } from '../settingsMenu'
 
 // D38 §3.8 Edit Daily items, scenarios S28–S31. The items are shared, so
 // after each test the four defaults are put back (names, order, active) and
@@ -41,8 +42,7 @@ const itemWrite = (page: Page, method: string, path = /\/api\/boards\/brewery\/d
   page.waitForResponse((r) => path.test(new URL(r.url()).pathname) && r.request().method() === method && r.ok())
 
 async function openItems(page: Page) {
-  await page.getByTestId('board-menu').click()
-  await page.getByTestId('board-menu-daily-items').click()
+  await settingsItem(page, 'board-settings', 'board-menu-daily-items')
   await expect(page.getByTestId('daily-items-dialog')).toBeVisible()
 }
 
@@ -222,7 +222,7 @@ test.describe('as brewer1', () => {
     const today = denverToday()
     await openBoard(page)
     await expect(page.getByTestId(`daily-${today}`)).toBeVisible()
-    await expect(page.getByTestId('board-menu')).toHaveCount(0)
+    expect(await boardManagerItems(page)).toEqual([])
     await expect(page.getByTestId(`daily-menu-${today}`)).toHaveCount(0)
     const res = await (await apiAs('brewer1')).post('/api/boards/brewery/daily_items', { data: { name: '[TEST-TEMP] S30' } })
     expect(res.status()).toBe(403)

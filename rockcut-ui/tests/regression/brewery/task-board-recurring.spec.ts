@@ -9,6 +9,7 @@ import {
   completeTask,
   createTask,
   denverToday,
+  fitViewportToBoard,
   getBoard,
   moveTask,
   mouseDrag,
@@ -18,6 +19,7 @@ import {
   userId,
   type ApiCard,
 } from './taskBoardHelpers'
+import { settingsItem } from '../settingsMenu'
 
 // D39 spec §3.10, scenarios S52–S65, S67, S69 and S78: recurring tasks on the
 // board. Dates are relative to today; every write is checked again after a
@@ -151,13 +153,11 @@ test('S52, S67: a weekly task from a day; No day disables Repeat; ↻ on every w
   const nextWeek = await on(api, first.series_id!, addDays(t, 7))
   await expect(page.getByTestId(`task-repeat-icon-${nextWeek!.id}:${addDays(t, 7)}`)).toBeVisible()
 
-  // 11 months out, through the date range selector (31 days).
+  // 11 months out, through a range in the URL (31 days; D52 took the picker off the toolbar).
   const from = addDays(t, 308)
   const to = addDays(from, 30)
-  await page.getByTestId('board-range-from').fill(from)
-  await page.getByTestId('board-range-to').fill(to)
-  await page.getByTestId('board-range-apply').click()
-  await expect(page).toHaveURL(new RegExp(`from=${from}&to=${to}`))
+  await page.goto(`/tasks/brewery?from=${from}&to=${to}`)
+  await expect(page.getByTestId('board-grid')).toBeVisible()
   const far = await occurrences(api, first.series_id!, from, to)
   expect(far.length).toBeGreaterThanOrEqual(4)
   for (const o of far) await expect(page.getByTestId(`task-repeat-icon-${o.id}:${o.due_on}`)).toBeVisible()
@@ -289,6 +289,8 @@ test('S59: dragging one to another day moves only that one; no second copy', asy
   const tomorrow = addDays(t, 1)
   const first = await createSeries(api, weekly(tempTag('S59 Keg Wash'), t))
   await openBoard(page)
+  // A busy shared board (DEV) pushes a new card below the window: size it to the board, as the other drag specs do.
+  await fitViewportToBoard(page, 2200)
   const moved = boardWrite(page, new RegExp(`/${first.id}/move$`))
   await mouseDrag(page, card(page, first.id, t), page.getByTestId(`day-list-${tomorrow}`))
   expect((await moved).request().postDataJSON()).toMatchObject({ due_on: tomorrow })
@@ -583,8 +585,7 @@ test.describe('as breweryMgr', () => {
     expect(res.status()).toBe(200)
 
     await openBoard(page)
-    await page.getByTestId('board-menu').click()
-    await page.getByTestId('board-menu-history').click()
+    await settingsItem(page, 'board-settings', 'board-menu-history')
     const list = page.getByTestId('history-list')
     await expect(list).toContainText(
       `Created recurring task ${title} on ${new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' }).format(new Date(`${t}T12:00:00Z`)).replace(',', '')} (Repeats every week on ${WEEKDAY_SHORT[isoWeekday(t) - 1]})`,
@@ -640,8 +641,7 @@ test.describe('as breweryMgr', () => {
     expect((await seriesInfo(api, oneOff.id)).later_open).toBeGreaterThanOrEqual(51)
 
     // History: one entry for it, none for the occurrences.
-    await page.getByTestId('board-menu').click()
-    await page.getByTestId('board-menu-history').click()
+    await settingsItem(page, 'board-settings', 'board-menu-history')
     const list = page.getByTestId('history-list')
     await expect(list.getByText(`Made ${title} repeat from`)).toHaveCount(1)
     await expect(list.getByText(title)).toHaveCount(2) // Added …, Made … repeat

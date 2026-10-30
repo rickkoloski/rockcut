@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -10,18 +11,17 @@ import {
   MenuItem,
   Paper,
   Snackbar,
-  Tab,
-  Tabs,
   TextField,
   Tooltip,
   useMediaQuery,
   useTheme,
 } from '@mui/material'
-import { Add, Delete, Download, Edit, LocalBar, MoreVert, Search, UploadFile } from '@mui/icons-material'
+import { Add, Delete, Download, Edit, History, LocalBar, MoreVert, Search, UploadFile } from '@mui/icons-material'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
 import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
+import { PageToolbar, SettingsGear } from '../../components/SettingsMenu'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import { download } from '../../lib/api'
@@ -47,7 +47,11 @@ export default function BeerBoard() {
   const canManage = beerBoardManage && user?.kind !== 'device'
   const { data: entries = [], isLoading, isError } = useApiQuery<BeerBoardEntry[]>(['beer_board'], '/api/beer_board')
 
-  const [tab, setTab] = useState<'board' | 'history'>('board')
+  // D52 (QA gap 7): History has its own address (?view=history): a reload stays on it,
+  // and Back (Android's gesture too) returns to the board.
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('view') === 'history' ? 'history' : 'board'
+  const setTab = (view: 'board' | 'history') => setParams(view === 'history' ? { view } : {})
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<BeerBoardEntry | null>(null)
   const [adding, setAdding] = useState(false)
@@ -159,59 +163,74 @@ export default function BeerBoard() {
 
   return (
     <>
-      <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Buy-a-Beer Board' }]}
-        title="Buy-a-Beer Board"
-        toolbar={
-          tab === 'board' ? (
-            <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-              {canManage && (
-                <>
-                  <Button variant="outlined" startIcon={<Download />} onClick={exportBoard} data-testid="board-export">
-                    Export CSV
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    startIcon={<UploadFile />}
-                    onClick={() => setImporting((n) => n + 1)}
-                    data-testid="board-import"
-                  >
-                    Import CSV
-                  </Button>
-                </>
-              )}
-              <Button variant="contained" startIcon={<Add />} onClick={() => setAdding(true)} data-testid="board-add">
-                Add from chalkboard
-              </Button>
-            </Box>
-          ) : (
-            <span />
-          )
-        }
-      />
+      <PageHeader breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Buy-a-Beer Board' }]} title="Buy-a-Beer Board" />
 
-      {canManage && (
-        <Tabs value={tab} onChange={(_e, v) => setTab(v)} sx={{ mb: 2 }}>
-          <Tab label="Board" value="board" data-testid="board-tab-board" />
-          <Tab label="History" value="history" data-testid="board-tab-history" />
-        </Tabs>
-      )}
-
+      {/* D52: no Board / History tabs. Search on the left; Add and the settings gear
+          (Export, Import, History for managers) on the right. History has a way back. */}
       {tab === 'history' && canManage ? (
-        <BeerBoardHistory />
+        <BeerBoardHistory onBack={() => setTab('board')} />
       ) : (
         <>
-          <TextField
-            placeholder="Search For or Bought by"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            size="small"
-            sx={{ mb: 2, width: { xs: '100%', sm: 360 } }}
-            slotProps={{
-              htmlInput: { 'data-testid': 'board-search' },
-              input: { startAdornment: <InputAdornment position="start"><Search /></InputAdornment> },
-            }}
-          />
+          <PageToolbar
+            end={
+              <>
+                <Button variant="contained" startIcon={<Add />} onClick={() => setAdding(true)} data-testid="board-add">
+                  Add from chalkboard
+                </Button>
+                {canManage && (
+                  <SettingsGear label="Board settings" testid="board-settings">
+                    {(close) => [
+                      <MenuItem
+                        key="export"
+                        onClick={() => {
+                          close()
+                          exportBoard()
+                        }}
+                        data-testid="board-export"
+                      >
+                        <ListItemIcon><Download fontSize="small" /></ListItemIcon>
+                        Export CSV
+                      </MenuItem>,
+                      <MenuItem
+                        key="import"
+                        onClick={() => {
+                          close()
+                          setImporting((n) => n + 1)
+                        }}
+                        data-testid="board-import"
+                      >
+                        <ListItemIcon><UploadFile fontSize="small" /></ListItemIcon>
+                        Import CSV
+                      </MenuItem>,
+                      <MenuItem
+                        key="history"
+                        onClick={() => {
+                          close()
+                          setTab('history')
+                        }}
+                        data-testid="board-tab-history"
+                      >
+                        <ListItemIcon><History fontSize="small" /></ListItemIcon>
+                        History
+                      </MenuItem>,
+                    ]}
+                  </SettingsGear>
+                )}
+              </>
+            }
+          >
+            <TextField
+              placeholder="Search For or Bought by"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              size="small"
+              sx={{ width: { xs: '100%', sm: 360 } }}
+              slotProps={{
+                htmlInput: { 'data-testid': 'board-search' },
+                input: { startAdornment: <InputAdornment position="start"><Search /></InputAdornment> },
+              }}
+            />
+          </PageToolbar>
           {isError && <Alert severity="error">Couldn't load the board.</Alert>}
           <Paper sx={{ border: '1px solid', borderColor: 'divider' }} data-testid="board-grid">
             <DataGridExtended

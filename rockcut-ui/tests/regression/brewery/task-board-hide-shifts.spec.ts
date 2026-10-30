@@ -1,6 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, denverToday, denverUtc, openBoard, tempTag, userId } from './taskBoardHelpers'
+import { closeSettings, openSettings, setSetting, settingOn } from '../settingsMenu'
 
 // D45 §3.3, S184–S188: "Hide shifts" beside Hide completed drops the people,
 // open shifts and "No one scheduled" from each day's header; events stay, and
@@ -54,7 +55,10 @@ async function createEvent(api: APIRequestContext, deptKey: string, title: strin
   return id
 }
 
-const toggle = (page: Page) => page.getByTestId('board-hide-shifts')
+// D52: Hide shifts is a switch in the board's settings gear.
+const GEAR = 'board-settings'
+const hideShifts = (page: Page, on: boolean) => setSetting(page, GEAR, 'board-hide-shifts', on)
+const shiftsHidden = (page: Page) => settingOn(page, GEAR, 'board-hide-shifts')
 
 async function expectShiftsShown(page: Page) {
   await expect(page.getByTestId(`header-person-${day(SHIFT_DAY)}-${brewer1Id}`)).toBeVisible()
@@ -77,16 +81,16 @@ test.describe('brewer1', () => {
 
   test('S184: Hide shifts keeps events only; a day without one has no header', async ({ page }) => {
     await openBoard(page)
-    await expect(toggle(page)).not.toBeChecked()
+    expect(await shiftsHidden(page)).toBe(false)
     await expectShiftsShown(page)
     await expect(page.getByTestId(`header-none-${day(EMPTY_DAY)}`)).toBeVisible()
 
-    await toggle(page).check()
+    await hideShifts(page, true)
     await expectShiftsHidden(page)
     // Day columns, Daily cards and tasks are untouched.
     await expect(page.getByTestId(`day-${day(SHIFT_DAY)}`)).toBeVisible()
 
-    await toggle(page).uncheck()
+    await hideShifts(page, false)
     await expectShiftsShown(page)
   })
 })
@@ -96,25 +100,29 @@ test.describe('owner', () => {
 
   test('S185: remembered after a reload; the Taproom board has its own (off)', async ({ page }) => {
     await openBoard(page)
-    await toggle(page).check()
+    await hideShifts(page, true)
     await page.reload()
-    await expect(toggle(page)).toBeChecked()
+    expect(await shiftsHidden(page)).toBe(true)
     await expectShiftsHidden(page)
 
     await page.goto('/tasks/bar')
     await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
-    await expect(toggle(page)).not.toBeChecked()
+    expect(await shiftsHidden(page)).toBe(false)
     await expect(page.locator('[data-testid^="day-header-"]').first()).toBeVisible()
 
     await page.goto('/tasks/brewery')
-    await expect(toggle(page)).toBeChecked()
+    await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
+    expect(await shiftsHidden(page)).toBe(true)
     await expectShiftsHidden(page)
   })
 
   test('S187: All departments has no day headers, so no Hide shifts', async ({ page }) => {
     await page.goto('/tasks/all')
-    await expect(page.getByTestId('board-hide-completed')).toBeVisible({ timeout: 20_000 })
-    await expect(toggle(page)).toHaveCount(0)
+    await expect(page.getByTestId('board-settings')).toBeVisible({ timeout: 20_000 })
+    await openSettings(page, GEAR)
+    await expect(page.getByTestId('board-hide-completed')).toBeVisible()
+    await expect(page.getByTestId('board-hide-shifts')).toHaveCount(0)
+    await closeSettings(page)
     await expect(page.locator('[data-testid^="day-header-"]')).toHaveCount(0)
   })
 })
@@ -122,10 +130,10 @@ test.describe('owner', () => {
 test.describe('S186: brewer1 at phone width', () => {
   test.use({ storageState: authFile('brewer1'), viewport: { width: 412, height: 915 } })
 
-  test('the same switch in the phone toolbar; both phone views', async ({ page }) => {
+  test('the same switch in the settings gear; both phone views', async ({ page }) => {
     await page.goto('/tasks/brewery')
-    await expect(toggle(page)).toBeVisible({ timeout: 20_000 })
-    await toggle(page).check()
+    await expect(page.getByTestId(GEAR)).toBeVisible({ timeout: 20_000 })
+    await hideShifts(page, true)
     // Every day stacked (the default).
     await expectShiftsHidden(page)
 
@@ -146,12 +154,13 @@ test.describe('S188: taproomDevice', () => {
 
   test('remembered on the tablet; no staff code asked', async ({ page }) => {
     await page.goto('/tasks/bar')
-    await expect(toggle(page)).toBeVisible({ timeout: 20_000 })
-    await toggle(page).check()
+    await expect(page.getByTestId(GEAR)).toBeVisible({ timeout: 20_000 })
+    await hideShifts(page, true)
     await expect(page.getByTestId('acting-code-dialog')).toHaveCount(0)
     await expect(page.locator('[data-testid^="header-person-"], [data-testid^="header-none-"]')).toHaveCount(0)
     await page.reload()
-    await expect(toggle(page)).toBeChecked()
+    await expect(page.getByTestId(GEAR)).toBeVisible({ timeout: 20_000 })
+    expect(await shiftsHidden(page)).toBe(true)
     expect(await page.evaluate(() => localStorage.getItem('rockcut.tasks.hideShifts.bar'))).toBe('true')
   })
 })

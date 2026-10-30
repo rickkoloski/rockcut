@@ -40,8 +40,8 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Settings' }]}
-        title="Settings"
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'Categories' }]}
+        title="Ingredient categories"
         action={{ label: 'Add Category', onClick: () => setFormOpen(true), testId: 'settings-add-button' }}
       />
 
@@ -63,7 +63,7 @@ export default function SettingsPage() {
           autoHeight
           disableRowSelectionOnClick
           sx={{ cursor: 'pointer' }}
-          onRowClick={(params) => navigate(`/settings/categories/${params.id}`)}
+          onRowClick={(params) => navigate(`/ingredients/categories/${params.id}`)}
         />
       </Paper>
 

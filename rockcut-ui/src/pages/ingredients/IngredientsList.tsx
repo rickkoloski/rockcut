@@ -1,10 +1,13 @@
 import { useState, useMemo, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
   Box, Chip, Collapse, FormControl, IconButton, InputAdornment,
-  InputLabel, MenuItem, Paper, Select, Table, TableBody,
+  Button, InputLabel, ListItemIcon, ListItemText, MenuItem, Paper, Select, Table, TableBody,
   TableCell, TableHead, TableRow, TextField, Typography,
 } from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
+import CategoryIcon from '@mui/icons-material/Category'
+import { PageToolbar, SettingsGear } from '../../components/SettingsMenu'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import SearchIcon from '@mui/icons-material/Search'
@@ -155,32 +158,49 @@ export default function IngredientsList() {
       <PageHeader
         breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library' }]}
         title="Ingredient Library"
-        action={{ label: 'Add Ingredient', onClick: () => setFormOpen(true), testId: 'ingredients-add-button' }}
       />
 
-      <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-        <TextField
-          size="small"
-          placeholder="Search..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
-          sx={{ minWidth: 260 }}
-        />
-        <FormControl sx={{ minWidth: 220 }} size="small">
-          <InputLabel>Category</InputLabel>
-          <Select
-            value={categoryId}
-            label="Category"
-            onChange={(e) => setCategoryId(e.target.value as number | '')}
-          >
-            <MenuItem value="">All Categories</MenuItem>
-            {categories.map((cat) => (
-              <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-      </Box>
+      {/* D52: search and category on the left; Add and the settings gear on the right. */}
+      <PageToolbar
+        end={
+          <>
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setFormOpen(true)} data-testid="ingredients-add-button">
+              Add Ingredient
+            </Button>
+            {/* The library's setup: the categories (formerly Brewery → Settings). */}
+            <SettingsGear label="Ingredient settings" testid="ingredients-settings">
+              {(close) => (
+                <MenuItem component={RouterLink} to="/ingredients/categories" onClick={close} data-testid="ingredients-settings-categories">
+                  <ListItemIcon><CategoryIcon fontSize="small" /></ListItemIcon>
+                  <ListItemText primary="Ingredient categories" secondary="Categories and their fields" />
+                </MenuItem>
+              )}
+            </SettingsGear>
+          </>
+        }
+      >
+          <TextField
+            size="small"
+            placeholder="Search..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
+            sx={{ minWidth: 260 }}
+          />
+          <FormControl sx={{ minWidth: 220 }} size="small">
+            <InputLabel>Category</InputLabel>
+            <Select
+              value={categoryId}
+              label="Category"
+              onChange={(e) => setCategoryId(e.target.value as number | '')}
+            >
+              <MenuItem value="">All Categories</MenuItem>
+              {categories.map((cat) => (
+                <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+      </PageToolbar>
 
       <Paper variant="outlined">
         <Table size="small">

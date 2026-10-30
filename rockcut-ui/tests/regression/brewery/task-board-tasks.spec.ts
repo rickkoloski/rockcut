@@ -16,6 +16,7 @@ import {
   tempTag,
   userId,
 } from './taskBoardHelpers'
+import { pickSetting, setSetting, settingOn } from '../settingsMenu'
 
 // D38 §3.8, scenarios S6–S9b, S9d, S9f, S16, S17: tasks on the board, the task
 // menu and the add/edit dialog. Every write is checked again after a reload.
@@ -77,16 +78,16 @@ test.describe('as brewer2', () => {
     await expect(page.getByTestId(`task-assignee-${task.id}:${today}`)).toHaveText('JB')
 
     // brewer2's My tasks doesn't show it.
-    await page.getByTestId('board-filter-mine').click()
+    await pickSetting(page, 'board-settings', 'board-filter', 'mine')
     await expect(card(page, task.id, today)).toHaveCount(0)
-    await page.getByTestId('board-filter-unassigned').click()
+    await pickSetting(page, 'board-settings', 'board-filter', 'unassigned')
     await expect(card(page, task.id, today)).toHaveCount(0)
 
     // brewer1's My tasks does.
     const ctx = await browser.newContext({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
     const other = await ctx.newPage()
     await openBoard(other)
-    await other.getByTestId('board-filter-mine').click()
+    await pickSetting(other, 'board-settings', 'board-filter', 'mine')
     await expect(card(other, task.id, today)).toBeVisible()
     await expect(other.locator(`[data-testid^="task-"][data-done]`).filter({ hasNot: other.getByTestId(/^task-assignee-/) })).toHaveCount(0)
     await ctx.close()
@@ -187,10 +188,9 @@ test('S9b: Change day… to six weeks out takes it out of the range; that day sh
   await expect(page.getByTestId(`day-${today}`)).toBeVisible()
   await expect(page.getByTestId('task-board').getByText(title)).toHaveCount(0)
 
-  await page.getByTestId('board-range-from').fill(target)
-  await page.getByTestId('board-range-to').fill(target)
-  await page.getByTestId('board-range-apply').click()
-  await expect(page).toHaveURL(new RegExp(`from=${target}&to=${target}`))
+  // D52: a one-day range through the URL (no picker on the toolbar now).
+  await page.goto(`/tasks/brewery?from=${target}&to=${target}`)
+  await expect(page.getByTestId(`day-${target}`)).toBeVisible()
   // Only ours: a shared board (DEV) can hold other tasks on that day too.
   const ours = [`${already.id}:${target}`, `${task.id}:${target}`]
   await expect.poll(async () => (await listKeys(page, `day-list-${target}`)).filter((k) => ours.includes(k))).toEqual(ours)
@@ -260,18 +260,18 @@ test('S9f: Hide completed hides finished tasks on every day and is remembered af
   await openBoard(page)
   await expect(card(page, done.id, addDays(today, 1))).toBeVisible()
   await expect(card(page, elsewhere.id, today)).toBeVisible()
-  await page.getByTestId('board-hide-completed').check()
+  await setSetting(page, 'board-settings', 'board-hide-completed', true)
   await page.reload()
-  await expect(page.getByTestId('board-hide-completed')).toBeChecked()
+  expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
   await expect(card(page, open.id, addDays(today, 1))).toBeVisible()
   await expect(card(page, done.id, addDays(today, 1))).toHaveCount(0)
   await expect(card(page, elsewhere.id, today)).toHaveCount(0)
 
-  await page.getByTestId('board-hide-completed').uncheck()
+  await setSetting(page, 'board-settings', 'board-hide-completed', false)
   await expect(card(page, done.id, addDays(today, 1))).toBeVisible()
   await expect(card(page, elsewhere.id, today)).toBeVisible()
   await page.reload()
-  await expect(page.getByTestId('board-hide-completed')).not.toBeChecked()
+  expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(false)
 })
 
 test('S16: two people move the same task at once; both succeed, the last wins, and both boards agree', async ({ page, browser }) => {

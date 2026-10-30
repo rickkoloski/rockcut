@@ -321,6 +321,7 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{
       id: t.id,
       name: t.name,
+      abbreviation: t.abbreviation,
       kind: t.kind,
       capacity_bbl: decimal_number(t.capacity_bbl),
       location: t.location,

@@ -841,8 +841,9 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       tanks =
         for t <- Production.list_tanks(),
             do:
-              {t.name, t.kind, Decimal.to_string(t.capacity_bbl), t.location, t.position,
-               t.retired_at, Enum.map(t.outages, &{&1.starts_on, &1.ends_on, &1.reason})}
+              {t.name, t.abbreviation, t.kind, Decimal.to_string(t.capacity_bbl), t.location,
+               t.position, t.retired_at,
+               Enum.map(t.outages, &{&1.starts_on, &1.ends_on, &1.reason})}
 
       templates =
         for t <- Production.list_templates() do
@@ -879,6 +880,15 @@ defmodule RockcutApi.Seeds.SyntheticTest do
                {"Serving 3", "serving", 30, "walk_in"},
                {"Serving 4", "serving", 30, "walk_in"}
              ]
+
+      # D52: the Serving tanks are abbreviated for the Gantt's names-only column.
+      assert Map.new(tanks, &{&1.name, &1.abbreviation}) |> Map.reject(fn {_, a} -> is_nil(a) end) ==
+               %{
+                 "Serving 1" => "SV1",
+                 "Serving 2" => "SV2",
+                 "Serving 3" => "SV3",
+                 "Serving 4" => "SV4"
+               }
 
       serving2 = Enum.find(tanks, &(&1.name == "Serving 2"))
 
@@ -937,6 +947,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       fv3 = Repo.get_by!(Tank, name: "FV3")
       {:ok, _} = Production.update_tank(fv3, %{"capacity_bbl" => 99, "name" => "fv3"})
+      # D52: an abbreviation added to an FV tank, and one changed on a Serving tank.
+      {:ok, _} = Production.update_tank(fv3, %{"abbreviation" => "F3"})
+
+      {:ok, _} =
+        Production.update_tank(Repo.get_by!(Tank, name: "Serving 1"), %{"abbreviation" => "S1"})
+
       # D47: FV6 only holds finished steps, so it can be retired (FV1 has Enos P2).
       {:ok, _} = Production.retire_tank(Repo.get_by!(Tank, name: "FV6"))
 

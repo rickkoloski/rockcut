@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, Button, ListSubheader, Menu, MenuItem, Paper, Typography, useMediaQuery } from '@mui/material'
 import api from '../../../lib/api'
@@ -33,7 +33,6 @@ import BatchDialog from './BatchDialog'
 import CipAddDialog from './CipAddDialog'
 import FlagsDialog from './FlagsDialog'
 import GanttGrid, { HEAD_H, LEFT_W, LEFT_W_COMPACT, type StepClick } from './GanttGrid'
-import GanttLegend from './GanttLegend'
 import GanttToolbar from './GanttToolbar'
 import PlanBatchDialog from './PlanBatchDialog'
 import StepDialog from './StepDialog'
@@ -72,6 +71,26 @@ function GanttScreen() {
   const flows = useFlows()
   // The grid scrolls under a drag near its edges (D48), below the date header and right of the tank column.
   const scroller = useRef<HTMLDivElement>(null)
+  // D52: the chart runs to the bottom of the window (the legend under it is gone), less
+  // the page's 24px padding. Re-fit when the window or anything above it (the selection
+  // bar) changes size.
+  useLayoutEffect(() => {
+    const el = scroller.current
+    const page = el?.parentElement?.parentElement
+    if (!el || !page) return
+    const fit = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY
+      el.style.maxHeight = `${Math.max(320, window.innerHeight - top - 24)}px`
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(page)
+    window.addEventListener('resize', fit)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', fit)
+    }
+  }, [])
   const drag = useTimelineDrag({ scroller, insets: () => ({ top: HEAD_H + 1, left: leftW }) })
   const userId = useAuth((s) => s.user?.id) ?? 'anon'
   const phone = useMediaQuery('(max-width:559.95px)')
@@ -376,11 +395,14 @@ function GanttScreen() {
           {prodError(error)}
         </Alert>
       )}
+      {/* D52: the Task list opens over this box (the chart), not the whole page. */}
+      <Box sx={{ position: 'relative' }}>
       <Box
         ref={scroller}
         sx={{
           position: 'relative',
           overflow: 'auto',
+          // Until the fit above runs.
           maxHeight: { xs: '70vh', md: '72vh' },
           minHeight: 320,
           border: 1,
@@ -418,7 +440,18 @@ function GanttScreen() {
           />
         ) : null}
       </Box>
-      {data && <GanttLegend phases={data.phases} />}
+      {taskList && (
+        <TaskListPanel
+          today={data?.today ?? today}
+          onOpenStep={(id, day) => {
+            setTaskList(false)
+            if (findStep(id)) setStepOpen(id)
+            else setParams({ step: String(id), day }, { replace: true })
+          }}
+          onClose={() => setTaskList(false)}
+        />
+      )}
+      </Box>
 
       <Menu
         open={!!spot}
@@ -499,18 +532,6 @@ function GanttScreen() {
           focusFlags={batchOpen.flags}
           onOpenStep={(s) => setStepOpen(s.id)}
           onClose={() => setBatchOpen(null)}
-        />
-      )}
-      {taskList && (
-        <TaskListPanel
-          today={data?.today ?? today}
-          brewers={data?.brewers ?? []}
-          onOpenStep={(id, day) => {
-            setTaskList(false)
-            if (findStep(id)) setStepOpen(id)
-            else setParams({ step: String(id), day }, { replace: true })
-          }}
-          onClose={() => setTaskList(false)}
         />
       )}
       {data && openStep && (

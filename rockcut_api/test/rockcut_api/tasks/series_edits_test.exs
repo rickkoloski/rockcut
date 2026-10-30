@@ -38,6 +38,13 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
 
   # The occurrence the rule made for the nth Wednesday from today.
   defp week(%Task{series_id: id}, n), do: on(id, Date.add(@today, 7 * n))
+
+  defp card_for(%Task{id: id}, from, to) do
+    {:ok, board} = Tasks.board(brewery_board(), from, to, @today)
+    [card] = for d <- board.days, c <- d.cards, c.task.id == id, do: c
+    card
+  end
+
   defp on(series_id, date), do: Repo.get_by(Task, series_id: series_id, series_date: date)
 
   defp reload(%Task{id: id}), do: Repo.get(Task, id)
@@ -1274,5 +1281,41 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       from t in Task,
         where: t.series_id in ^ids and t.series_date > ^date and is_nil(t.completed_at)
     )
+  end
+
+  describe "D52: the last occurrence of a series that ends after N times" do
+    test "is marked last (Extend is offered on it), and only it; one with a skipped date counts it",
+         ctx do
+      w0 = keg_wash!(ctx.brewer, %{repeat_count: 3})
+      [w1, w2] = [week(w0, 1), week(w0, 2)]
+      assert week(w0, 3) == nil
+
+      refute card_for(w0, @today, Date.add(@today, 6)).task.series_last
+      refute card_for(w1, Date.add(@today, 7), Date.add(@today, 13)).task.series_last
+      assert card_for(w2, Date.add(@today, 14), Date.add(@today, 20)).task.series_last
+
+      # A deleted middle date still counts toward the 3, as Recurrence.dates counts it.
+      assert {:ok, _} = Tasks.delete(brewery_board(), w1, ctx.brewer, scope: "this")
+      assert card_for(w2, Date.add(@today, 14), Date.add(@today, 20)).task.series_last
+    end
+
+    test "Same again (an Ends-only change to twice the count) moves the last one on", ctx do
+      w0 = keg_wash!(ctx.brewer, %{repeat_count: 2})
+      w1 = week(w0, 1)
+      assert card_for(w1, Date.add(@today, 7), Date.add(@today, 13)).task.series_last
+
+      assert {:ok, _} =
+               Tasks.update(
+                 brewery_board(),
+                 w1,
+                 %{repeat: "weekly", repeat_weekdays: [3], repeat_count: 4},
+                 ctx.brewer,
+                 scope: "following",
+                 today: @today
+               )
+
+      refute card_for(w1, Date.add(@today, 7), Date.add(@today, 13)).task.series_last
+      assert card_for(week(w0, 3), Date.add(@today, 21), Date.add(@today, 27)).task.series_last
+    end
   end
 end

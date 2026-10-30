@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { Alert, Box, Button, Divider, IconButton, Stack, TextField, Typography, Paper } from '@mui/material'
 import SendIcon from '@mui/icons-material/Send'
 import { useQueryClient } from '@tanstack/react-query'
-import { useApiQuery } from '../../hooks/useApiQuery'
+import { useApiList } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import PageHeader from '../../components/PageHeader'
@@ -22,7 +22,13 @@ export default function Messages() {
   const qc = useQueryClient()
   const { user } = useAuth()
 
-  const { data: channels = [], isSuccess: channelsLoaded } = useApiQuery<Channel[]>(['channels'], '/api/channels', undefined, {
+  const {
+    data: channels = [],
+    isSuccess: channelsLoaded,
+    isError: channelsFailed,
+    refetch: retryChannels,
+    isFetching: channelsFetching,
+  } = useApiList<Channel>(['channels'], '/api/channels', undefined, {
     refetchInterval: 15000,
   })
   const selected = useMemo(() => channels.find((c) => c.key === selectedKey), [channels, selectedKey])
@@ -39,7 +45,7 @@ export default function Messages() {
 
   // Only fetch (and poll) a channel that's in the user's list, so an unknown
   // key never polls into 403s (3939).
-  const { data: messages = [] } = useApiQuery<ChatMessage[]>(
+  const { data: messages = [] } = useApiList<ChatMessage>(
     ['messages', selectedKey],
     `/api/channels/${selectedKey}/messages`,
     undefined,
@@ -176,7 +182,22 @@ export default function Messages() {
           )}
         </Paper>
       ) : (
-        <Typography color="text.secondary">{channelsLoaded ? 'Select a channel from the Messages menu.' : 'Loading…'}</Typography>
+        channelsFailed && !channelsLoaded ? (
+          // D52 (task 4062): a failed channel list says so, with Retry (it also keeps polling).
+          <Alert
+            severity="error"
+            data-testid="channels-error"
+            action={
+              <Button color="inherit" size="small" disabled={channelsFetching} onClick={() => retryChannels()} data-testid="channels-retry">
+                Retry
+              </Button>
+            }
+          >
+            Couldn't load the channels.
+          </Alert>
+        ) : (
+          <Typography color="text.secondary">{channelsLoaded ? 'Select a channel from the Messages menu.' : 'Loading…'}</Typography>
+        )
       )}
     </>
   )

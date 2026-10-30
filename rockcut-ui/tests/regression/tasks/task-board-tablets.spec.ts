@@ -15,6 +15,8 @@ import {
   tempTag,
 } from '../brewery/taskBoardHelpers'
 import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
+import { boardManagerItems, choiceOptions } from '../settingsMenu'
+import { contrastOf } from '../ui/contrast'
 
 // D40 (D38 spec §3.4, D41 item 6, plan decisions 1–4): the shared tablets on
 // their department's board. S9g, S42–S46 and S68 on the brewhouse tablet;
@@ -72,9 +74,9 @@ test.describe('the brewhouse tablet', () => {
     await expect(page).toHaveURL(/\/tasks\/brewery/)
     await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('board-switcher')).toHaveCount(0)
-    await expect(page.getByTestId('board-filter-mine')).toHaveCount(0)
-    await expect(page.getByTestId('board-menu-history')).toHaveCount(0)
-    await expect(page.getByTestId('board-menu-daily-items')).toHaveCount(0)
+    // D52: the settings gear offers no My tasks, History or Daily items here.
+    expect(await choiceOptions(page, 'board-settings', 'board-filter')).not.toContain('board-filter-mine')
+    expect(await boardManagerItems(page)).toEqual([])
     // Another board, or All departments, goes back to its own.
     await page.goto('/tasks/bar')
     await expect(page).toHaveURL(/\/tasks\/brewery/)
@@ -111,6 +113,9 @@ test.describe('the brewhouse tablet', () => {
       await page.getByTestId(`daily-check-${today}-${temps.id}`).click()
       await enterCode(page, brewer!.code)
       await expect(page.getByTestId('acting-banner')).toBeVisible()
+      // Task 4298 (D52): the bar's text reads at 4.5:1 or better, in whichever mode the
+      // tablet is in (other specs switch it), so Light's info blue (2.6:1) is gone.
+      expect(await contrastOf(page.getByTestId('acting-name'))).toBeGreaterThanOrEqual(4.5)
       await expect(page.getByTestId(`daily-check-${today}-${temps.id}`)).toBeChecked()
 
       // Within the 5 minutes: no dialog.

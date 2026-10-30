@@ -22,6 +22,7 @@ import {
   minKey,
   monthLabels,
   partDots,
+  rowDotSlots,
   partFlags,
   partLabel,
   phaseAt,
@@ -51,7 +52,8 @@ import {
 import type { DropInfo, DragState } from './useTimelineDrag'
 
 export const LEFT_W = 240
-export const LEFT_W_COMPACT = 124
+// D52: 40% narrower than before (124); tanks show their abbreviation here.
+export const LEFT_W_COMPACT = 74
 /** The date header, sticky over the grid (D48: drags auto-scroll below it). */
 export const HEAD_H = 46
 
@@ -346,9 +348,12 @@ export default function GanttGrid(props: Props) {
           pb: 0.5,
         }}
       >
-        <Typography variant="caption" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: 'text.secondary' }}>
-          Tanks
-        </Typography>
+        {/* D52: the narrow column has room for the toggle only. */}
+        {!compact && (
+          <Typography variant="caption" sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.06em', color: 'text.secondary' }}>
+            Tanks
+          </Typography>
+        )}
         <Tooltip title={compact ? 'Show status' : 'Names only'}>
           <IconButton size="small" onClick={onToggleCompact} aria-label={compact ? 'Show the tank status column' : 'Show tank names only'} data-testid="gantt-compact">
             {compact ? <KeyboardDoubleArrowRight fontSize="small" /> : <KeyboardDoubleArrowLeft fontSize="small" />}
@@ -402,7 +407,8 @@ export default function GanttGrid(props: Props) {
         sx={{
           position: 'absolute',
           inset: 0,
-          backgroundImage: `linear-gradient(to right, ${alpha(theme.palette.divider, 0.6)} 1px, transparent 1px)`,
+          // D52: alpha() sets the opacity, so on light's rgba(0,0,0,.12) divider 0.6 meant 60% black; lighter there.
+          backgroundImage: `linear-gradient(to right, ${theme.palette.mode === 'light' ? alpha('#000', 0.35) : alpha(theme.palette.divider, 0.6)} 1px, transparent 1px)`,
           backgroundSize: `${dayPx}px 100%`,
         }}
       />
@@ -420,7 +426,9 @@ export default function GanttGrid(props: Props) {
       const n = row.parts.length
       return (
         <Box sx={{ minWidth: 0 }}>
-          <Typography sx={{ fontWeight: 700, fontSize: 14 }}>Unassigned</Typography>
+          <Typography sx={{ fontWeight: 700, fontSize: 14 }} title={compact ? 'Unassigned' : undefined}>
+            {compact ? 'None' : 'Unassigned'}
+          </Typography>
           {!compact && (
             <Typography variant="caption" color="text.secondary" component="div" data-testid="gantt-unassigned-line">
               {n ? `${n} part${n === 1 ? '' : 's'} with no tank` : 'Drag a batch here to unassign it'}
@@ -451,7 +459,7 @@ export default function GanttGrid(props: Props) {
           title={compact ? undefined : tank.name}
           data-testid={`gantt-tank-name-${tank.id}`}
         >
-          {tank.name}
+          {compact ? tank.abbreviation || tank.name : tank.name}
         </Typography>
         {!compact && status?.batch_label && (
           <Typography noWrap sx={{ fontSize: 13, fontWeight: 600, color: 'primary.main', minWidth: 0, flex: '0 1 auto' }} data-testid={`gantt-tank-batch-${tank.id}`}>
@@ -461,10 +469,10 @@ export default function GanttGrid(props: Props) {
       </Box>
     )
     return (
-      <Box sx={{ display: 'grid', gridTemplateColumns: '24px minmax(0, 1fr)', columnGap: 0.5, alignItems: 'start', minWidth: 0, pr: compact ? 0 : 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: `${compact ? 18 : 24}px minmax(0, 1fr)`, columnGap: compact ? 0.25 : 0.5, alignItems: 'start', minWidth: 0, pr: compact ? 0 : 3 }}>
         <IconButton
           size="small"
-          sx={{ p: 0, width: 24, height: 24, '& svg': { transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none' } }}
+          sx={{ p: 0, width: compact ? 18 : 24, height: 24, '& svg': { transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none' } }}
           aria-expanded={open}
           aria-label={`${open ? 'Collapse' : 'Expand'} ${tank.name}`}
           onClick={() => onToggleRow(key)}
@@ -591,6 +599,13 @@ export default function GanttGrid(props: Props) {
         )
       })
 
+  // D52 (task 4949): same-day dots spread across a row's parts, not just within one.
+  const dotSlots = useMemo(() => {
+    const m = new Map<number, { slot: number; of: number }>()
+    for (const row of rows) for (const [id, v] of rowDotSlots(row.parts, (p) => row.track.get(p)!)) m.set(id, v)
+    return m
+  }, [rows])
+
   const bar = (row: Row, part: Part) => {
     if (part.reach < from || part.start > to) return null
     const segs = segments(part, from, days, phaseFns.get(part.batch.id)!)
@@ -609,7 +624,11 @@ export default function GanttGrid(props: Props) {
     return (
       <Box key={part.key} sx={{ position: 'absolute', left: 0, top, width: '100%', height: TRACK_H, pointerEvents: 'none' }}>
         {segs.length > 0 && (
-          <Tooltip title={hover(`${part.batch.label}${pencilled ? ' · pencilled in' : part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`)}>
+          <Tooltip
+            title={hover(`${part.batch.label}${pencilled ? ' · pencilled in' : part.planned ? ' · planned' : ''} · ${dayLabel(part.start)} – ${dayLabel(part.end)}`)}
+            // D52: shown as low as a step's, under the dot row, so it doesn't cover the steps.
+            slotProps={{ popper: { modifiers: [{ name: 'offset', options: { offset: [0, DOT_TOP + DOT - (BAR_TOP + BAR_H)] } }] } }}
+          >
             <Box
               {...activate(props.onBar ? () => props.onBar!(part) : undefined, drag)}
               {...bindDrag(`bar:${part.key}`, (d) => {
@@ -693,8 +712,9 @@ export default function GanttGrid(props: Props) {
             </Box>
           </Tooltip>
         )}
-        {partDots(part).map(({ step, slot, of }) => {
+        {partDots(part).map(({ step, ...own }) => {
           if (step.due_on < from || step.due_on > to) return null
+          const { slot, of } = dotSlots.get(step.id) ?? own
           const state = dotState(step, today, part)
           const center = x(step.due_on) + dayPx / 2 + (slot - (of - 1) / 2) * Math.min(DOT + 2, dayPx / of)
           const who = step.assignee?.name
@@ -791,6 +811,9 @@ export default function GanttGrid(props: Props) {
     const who = step.assignee?.name
     const visible = step.due_on >= from && step.due_on <= to
     const text = `${step.name}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
+    // D52: no line between a tank's steps, only under its last one (the line between tanks).
+    // Transparent rather than removed, so every row keeps its height.
+    const rule = i === row.stepRows.length - 1 ? 'divider' : 'transparent'
     return (
       <Box key={`${part.key}-${step.id}`} sx={{ display: 'flex', height: stepRowH }} data-testid={`gantt-step-row-${step.id}`}>
         <Box
@@ -804,6 +827,7 @@ export default function GanttGrid(props: Props) {
             borderRight: 1,
             borderBottom: 1,
             borderColor: 'divider',
+            borderBottomColor: rule,
             // An outline under the tank's name (8 px in): phases a little further, steps more (D48 §3.6).
             pl: `${8 + (step.marker ? 8 : 20)}px`,
             pr: 1,
@@ -826,7 +850,7 @@ export default function GanttGrid(props: Props) {
             </Box>
           )}
         </Box>
-        <Box sx={{ position: 'relative', flex: 'none', width, borderBottom: 1, borderColor: 'divider', borderTop: i === 0 ? `1px dashed ${theme.palette.divider}` : undefined }}>
+        <Box sx={{ position: 'relative', flex: 'none', width, borderBottom: 1, borderColor: rule, borderTop: i === 0 ? `1px dashed ${theme.palette.divider}` : undefined }}>
           {visible && (
             <Tooltip title={hover([step.name, part.batch.label, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · '))}>
               <Box
@@ -990,7 +1014,8 @@ export default function GanttGrid(props: Props) {
                   borderRight: 1,
                   borderBottom: 1,
                   borderColor: 'divider',
-                  px: 1,
+                  // D52: the names-only column is tight; 4px a side leaves room for a 4-letter abbreviation.
+                  px: compact ? 0.5 : 1,
                   py: 0.75,
                   minWidth: 0,
                 }}

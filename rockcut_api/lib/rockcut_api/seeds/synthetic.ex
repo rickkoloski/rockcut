@@ -28,7 +28,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   the Brewery has Daily items. Tagged tasks, series and Daily items go from
   every board; `reset/0` also deletes the other boards' Daily items.
   D46: tanks FV1–FV7 and Serving 1–2 (restored to their canonical fields and
-  order, each setup), their out-of-service periods rebuilt (Serving 2: one
+  order, each setup; D52: Serving 1–4 abbreviated SV1–SV4), their out-of-service periods rebuilt (Serving 2: one
   coming up and one past), and three `[SEED]` process templates.
   `[TEST-TEMP]` tanks, templates, step types and phases are cleaned up.
   D48: tanks FV8–FV9 and Serving 3–4 for a `[SEED]` batch with an added
@@ -836,6 +836,14 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Serving 4", "serving", 30, "walk_in"}
   ]
 
+  # D52: the Gantt's names-only column shows these; the FV tanks are short already.
+  @tank_abbreviations %{
+    "Serving 1" => "SV1",
+    "Serving 2" => "SV2",
+    "Serving 3" => "SV3",
+    "Serving 4" => "SV4"
+  }
+
   # {tank, first day, last day (offsets from today), reason}
   @outages [
     {"Serving 2", 7, 13, "Replace door gasket"},
@@ -1164,6 +1172,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     seeded =
       for {name, kind, capacity, location} <- @tanks do
         fields = %{
+          abbreviation: @tank_abbreviations[name],
           kind: kind,
           capacity_bbl: Decimal.new(capacity),
           location: location,

@@ -3,6 +3,7 @@ import { expect, type Page } from '@playwright/test'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { createTempPerson, type TempPerson } from '../auth/helpers'
 import type { PersonaKey } from '../../config/test-env'
+import { settingsItem } from '../settingsMenu'
 
 // Shared helpers for the D37 Buy-a-Beer Board specs.
 
@@ -121,7 +122,8 @@ export async function openBoard(page: Page) {
 /** Board → Import CSV → choose the file (and mode) → Preview. */
 export async function previewImport(page: Page, file: Buffer, mode: 'add' | 'replace' = 'add') {
   await openBoard(page)
-  await page.getByTestId('board-import').click()
+  // D52: Import CSV is in the board's settings gear.
+  await settingsItem(page, 'board-settings', 'board-import')
   await page.getByTestId('import-file').setInputFiles({ name: 'board.csv', mimeType: 'text/csv', buffer: file })
   if (mode === 'replace') await page.getByTestId('import-mode-replace').check()
   const done = page.waitForResponse((r) => r.url().endsWith('/api/beer_board/import/preview'))
@@ -139,7 +141,7 @@ export async function confirmImport(page: Page) {
 /** Board → Export CSV; returns the downloaded file's name and text. */
 export async function downloadBoard(page: Page) {
   const dl = page.waitForEvent('download')
-  await page.getByTestId('board-export').click()
+  await settingsItem(page, 'board-settings', 'board-export')
   const file = await dl
   return { name: file.suggestedFilename(), text: readFileSync((await file.path())!, 'utf8') }
 }
