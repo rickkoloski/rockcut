@@ -1,6 +1,6 @@
 # D52: Refinements — Spec
 
-**Status:** BUILT locally on `d52-ui-refinements` (2026-10-28/29); local gate in progress. Not on DEV yet.
+**Status:** COMPLETE (on prod as `v2026.10.30`, 2026-10-30). Record: `stepwise_results/d52_refinements_COMPLETE.md`.
 **Backlog:** 4707, 4232, 4949, 4318, 4298, 4706, 4063, 4062; D44 item 0
 **Concept:** 02_scaffold_ui
 **Way of working:** iterated with Matt in the running local app, then written up
