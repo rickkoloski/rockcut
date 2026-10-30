@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, Button, Checkbox, CircularProgress, FormControlLabel, MenuItem, TextField } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
@@ -93,6 +93,21 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
   // Asking before a save or a delete on an occurrence.
   const [asking, setAsking] = useState<{ body: Record<string, unknown> } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<{ body: Record<string, unknown> } | null>(null)
+  // Opened to edit the notes (menu, or the card's notes icon by click or key): focus Notes with
+  // the cursor after them. Not autoFocus: the dialog's focus trap takes focus after it when the
+  // dialog opens from a key (D52). The field mounts a render after the dialog (its portal), so a
+  // callback ref, focusing a frame later, once the trap has settled.
+  const focusNotes = mode.kind === 'edit' && !!mode.focusNotes
+  const notesFocused = useRef(false)
+  const notesRef = (el: HTMLTextAreaElement | null) => {
+    if (!focusNotes || !el || notesFocused.current) return
+    notesFocused.current = true
+    requestAnimationFrame(() => {
+      el.focus()
+      el.setSelectionRange(el.value.length, el.value.length)
+    })
+  }
+
   // D42: an Ends-only change, with what saving it does.
   const [confirmEnds, setConfirmEnds] = useState<{ body: Record<string, unknown>; change: SeriesChange } | null>(null)
 
@@ -266,7 +281,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
           onChange={(e) => setNotes(e.target.value)}
           multiline
           minRows={2}
-          autoFocus={mode.kind === 'edit' && mode.focusNotes}
+          inputRef={notesRef}
           helperText={notes.length > NOTES_MAX * 0.9 ? `${notes.length}/${NOTES_MAX}` : undefined}
           slotProps={{ htmlInput: { 'data-testid': 'task-notes-input' } }}
         />

@@ -140,6 +140,21 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
                     requestAnimationFrame(() => onNotes(card))
                   })
                 }
+                // QA gap 4: reachable by keyboard; focus shows the notes (the tooltip), Enter or Space edits them.
+                tabIndex={onNotes ? 0 : undefined}
+                role={onNotes ? 'button' : undefined}
+                aria-hidden={onNotes ? undefined : true}
+                aria-label={onNotes ? `Notes: ${card.notes}` : undefined}
+                onKeyDown={
+                  onNotes &&
+                  ((e: KeyboardEvent<SVGSVGElement>) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return
+                    e.preventDefault()
+                    e.stopPropagation()
+                    // A frame later, as the click: the key's own handling settles focus first.
+                    requestAnimationFrame(() => onNotes(card))
+                  })
+                }
                 data-testid={`task-notes-icon-${card.key}`}
               />
             </Tooltip>

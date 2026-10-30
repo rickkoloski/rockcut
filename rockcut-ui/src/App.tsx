@@ -863,6 +863,7 @@ function App() {
                 <Route path="/batches/:id" element={<BatchDetail />} />
                 {/* Old Settings bookmarks. */}
                 <Route path="/settings" element={<Navigate to="/ingredients/categories" replace />} />
+                <Route path="/settings/categories" element={<Navigate to="/ingredients/categories" replace />} />
                 <Route path="/settings/categories/:id" element={<OldCategoryRedirect />} />
               </>
             )}

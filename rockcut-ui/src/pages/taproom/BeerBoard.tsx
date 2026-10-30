@@ -1,4 +1,5 @@
 import { useMemo, useState, type MouseEvent } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -46,7 +47,11 @@ export default function BeerBoard() {
   const canManage = beerBoardManage && user?.kind !== 'device'
   const { data: entries = [], isLoading, isError } = useApiQuery<BeerBoardEntry[]>(['beer_board'], '/api/beer_board')
 
-  const [tab, setTab] = useState<'board' | 'history'>('board')
+  // D52 (QA gap 7): History has its own address (?view=history): a reload stays on it,
+  // and Back (Android's gesture too) returns to the board.
+  const [params, setParams] = useSearchParams()
+  const tab = params.get('view') === 'history' ? 'history' : 'board'
+  const setTab = (view: 'board' | 'history') => setParams(view === 'history' ? { view } : {})
   const [search, setSearch] = useState('')
   const [editing, setEditing] = useState<BeerBoardEntry | null>(null)
   const [adding, setAdding] = useState(false)

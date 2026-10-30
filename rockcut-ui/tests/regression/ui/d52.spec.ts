@@ -82,6 +82,9 @@ test.describe('owner', () => {
     await expect(page).toHaveURL(/\/ingredients\/categories$/)
     await page.goto('/settings/categories/1')
     await expect(page).toHaveURL(/\/ingredients\/categories\/1$/)
+    // QA gap 5: the list's old address too.
+    await page.goto('/settings/categories')
+    await expect(page).toHaveURL(/\/ingredients\/categories$/)
   })
 
   test('Ingredient Library: Add left of the gear in the search row; the gear opens the categories', async ({ page }) => {
@@ -227,6 +230,16 @@ test.describe('barMgr', () => {
     await page.getByTestId('board-tab-history').click()
     await expect(page.getByTestId('board-history')).toBeVisible()
     await page.getByTestId('board-tab-board').click()
+    await expect(page.getByTestId('board-grid')).toBeVisible()
+
+    // QA gap 7: History has its own address; a reload stays there and Back returns to the board.
+    await openSettings(page, 'board-settings')
+    await page.getByTestId('board-tab-history').click()
+    await expect(page).toHaveURL(/\/taproom\/beer-board\?view=history$/)
+    await page.reload()
+    await expect(page.getByTestId('board-history')).toBeVisible()
+    await page.goBack()
+    await expect(page).toHaveURL(/\/taproom\/beer-board$/)
     await expect(page.getByTestId('board-grid')).toBeVisible()
   })
 })

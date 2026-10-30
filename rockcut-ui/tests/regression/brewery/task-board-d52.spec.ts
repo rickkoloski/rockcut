@@ -24,11 +24,12 @@ test.afterEach(async () => {
   await cleanupTasks(created.splice(0))
 })
 
-/** A weekly series from today that ends a week later: two occurrences, the second its last. */
-async function twoWeekSeries(api: APIRequestContext, label: string) {
+/** A weekly series from today with two occurrences, the second its last: ending a week later, or (QA gap 1) after 2 times. */
+async function twoWeekSeries(api: APIRequestContext, label: string, ends: 'date' | 'count' = 'date') {
   const title = tempTag(label)
+  const end = ends === 'date' ? { repeat_until: addDays(today(), 7) } : { repeat_count: 2 }
   const res = await api.post('/api/boards/brewery/tasks', {
-    data: { title, due_on: today(), repeat: 'weekly', repeat_weekdays: [isoWeekday(today())], repeat_until: addDays(today(), 7) },
+    data: { title, due_on: today(), repeat: 'weekly', repeat_weekdays: [isoWeekday(today())], ...end },
   })
   expect(res.status(), await res.text()).toBe(201)
   const first = (await res.json()).data as ApiCard & { series_id: number }
@@ -102,6 +103,39 @@ test.describe('brewer1', () => {
     expect(await seriesEnd(api, first.id)).toBe(addDays(today(), 14))
     const next = (await getBoard(api, addDays(today(), 14), addDays(today(), 14))).days[0].cards.filter((c) => c.title === title)
     expect(next).toHaveLength(1)
+  })
+
+  test('extend (QA gap 1): a series that ends after 2 times: its last is tagged; checking it off asks; Same again makes it 4', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const { first, last, title } = await twoWeekSeries(api, 'D52 count', 'count')
+    const lastDay = addDays(today(), 7)
+    await openBoard(page)
+    await expect(card(page, last.id, lastDay)).toContainText('last in series')
+    await card(page, last.id, lastDay).getByRole('checkbox').click()
+    await page.getByRole('dialog').filter({ hasText: 'show as done' }).getByRole('radio').first().check()
+    await page.getByTestId('finish-confirm').click()
+    await expect(page.getByTestId('extend-series-text')).toHaveText(`That was the last “${title}” in its series (it ends after 2 times).`)
+    await expect(page.getByTestId('extend-series-again')).toContainText('another 2 times')
+    await page.getByTestId('extend-series-again').click()
+    await expect(page.getByTestId('extend-series-dialog')).toHaveCount(0)
+    const res = await api.get(`/api/boards/brewery/tasks/${first.id}/series`)
+    expect((await res.json()).data.count).toBe(4)
+  })
+
+  test('notes by keyboard (QA gap 4): Tab reaches the icon (focus shows the notes); Enter opens Edit with the cursor after them', async ({ page }) => {
+    const notes = 'Rinse twice'
+    const task = await createTask(await apiAs('brewer1'), { title: tempTag('D52 notes kbd'), due_on: today(), notes })
+    created.push(task.id)
+    await openBoard(page)
+    const key = `${task.id}:${today()}`
+    const icon = page.getByTestId(`task-notes-icon-${key}`)
+    await expect(icon).toHaveAttribute('tabindex', '0')
+    await icon.focus()
+    await expect(page.getByTestId(`task-notes-popup-${key}`)).toHaveText(notes)
+    await page.keyboard.press('Enter')
+    const input = page.getByTestId('task-notes-input')
+    await expect(input).toBeFocused()
+    expect(await input.evaluate((el: HTMLTextAreaElement) => [el.selectionStart, el.selectionEnd])).toEqual([notes.length, notes.length])
   })
 
   test('extend: Not now leaves the series as it was; Pick a new end… opens Edit series', async ({ page }) => {
