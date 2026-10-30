@@ -77,8 +77,9 @@ test.describe('brewer1', () => {
     for (const t of sched.tanks) await expect(caret(t.id)).toHaveAttribute('aria-expanded', String(t.id === a || t.id === b))
 
     await page.reload()
-    expect(await tanksMode(page)).toBe(MODE.mine)
+    // The rows load first (slower on DEV); with none yet the setting reads Collapse all.
     await expect(caret(a)).toHaveAttribute('aria-expanded', 'true')
+    expect(await tanksMode(page)).toBe(MODE.mine)
     // After Expand all and back, Your selection still reopens exactly the mix.
     await setTanks(page, 'expand')
     expect(await tanksMode(page)).toBe(MODE.expand)

@@ -78,6 +78,11 @@ test('M2, minors 6 and 8: a split parent can’t be deleted or resized; a part s
   await expect(page.getByTestId('batch-volume')).toHaveAttribute('readonly', '')
   await expect(page.getByTestId('batch-dialog')).toContainText('Undo the split first to change it')
   await page.getByTestId('batch-dialog-close').click()
+  // The grid swallows a click within 500 ms and 6 px of a press in a dialog (the second half of a
+  // double-click, useTimelineDrag CLICK_THROUGH_MS). With a tall chart the part's bar can sit right
+  // under where Close was (DEV, D52), so let that window pass before clicking it.
+  await expect(page.getByTestId('batch-dialog')).toHaveCount(0)
+  await page.waitForTimeout(600)
 
   await page.getByTestId(`gantt-bar-${p2}-0`).click()
   const pn = (await batchOf(b.id)).p_number
