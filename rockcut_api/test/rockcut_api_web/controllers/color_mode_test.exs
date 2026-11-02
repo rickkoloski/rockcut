@@ -5,7 +5,7 @@ defmodule RockcutApiWeb.ColorModeTest do
   import RockcutApi.PersonaFixtures
   import Ecto.Query, only: [from: 2]
 
-  alias RockcutApi.{Accounts, Devices, Repo, Sessions}
+  alias RockcutApi.{Accounts, Repo}
   alias RockcutApi.Accounts.{AuditEntry, User}
   alias RockcutApi.AccountsFixtures
 
@@ -71,14 +71,6 @@ defmodule RockcutApiWeb.ColorModeTest do
 
     test "unauthenticated is 401" do
       assert put(build_conn(), "/api/me/color_mode", %{color_mode: "dark"}).status == 401
-    end
-
-    test "a Sign in as me session sets its person's, not the tablet's",
-         %{p: p, token: t, device: device} do
-      {ses, _} = Sessions.create(p["brewer1"], device_token: Devices.live_token(t))
-      assert call_device(ses, :put, "/api/me/color_mode", %{color_mode: "dark"}).status == 200
-      assert stored(p["brewer1"]) == "dark"
-      assert stored(device) == "light"
     end
   end
 
@@ -153,18 +145,6 @@ defmodule RockcutApiWeb.ColorModeTest do
 
       assert call(p["brewer1"], :get, "/api/me") |> me() == "device"
       assert call_device(t, :get, "/api/me") |> me() == "dark"
-    end
-
-    test "Sign in as me on a tablet returns the tablet's (S148)",
-         %{p: p, device: device, token: t} do
-      {:ok, _} = Accounts.set_color_mode(device, "dark")
-      # brewer1 is Light everywhere else.
-      {ses, _} = Sessions.create(p["brewer1"], device_token: Devices.live_token(t))
-
-      body = call_device(ses, :get, "/api/me") |> json_response(200)
-      assert body["user"]["email"] == p["brewer1"].email
-      assert body["color_mode"] == "dark"
-      assert call(p["brewer1"], :get, "/api/me") |> me() == "light"
     end
   end
 end

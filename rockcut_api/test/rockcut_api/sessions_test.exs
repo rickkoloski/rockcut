@@ -25,16 +25,12 @@ defmodule RockcutApi.SessionsTest do
       assert row.token_hash == RockcutApi.Tokens.hash(token)
       refute row.token_hash == token
       assert row.expires_at == at(30 * 24 * 3600)
-      assert is_nil(row.device_token_id)
     end
 
-    test "a tablet session: marked, 12 hours" do
+    test "D54: a tablet's device token is no longer an option" do
       user = user_fixture()
       {_device, dt} = tablet()
-      {_token, row} = Sessions.create(user, [device_token: dt], @t0)
-
-      assert row.device_token_id == dt.id
-      assert row.expires_at == at(12 * 3600)
+      assert_raise ArgumentError, fn -> Sessions.create(user, [device_token: dt], @t0) end
     end
 
     test "prunes the user's rows that ended over a week ago, and no one else's" do
@@ -64,22 +60,6 @@ defmodule RockcutApi.SessionsTest do
       assert is_nil(Repo.get!(UserSession, row.id).last_seen_at)
     end
 
-    test "accepts a tablet session and touches last_seen_at at most once a minute" do
-      user = user_fixture()
-      {_device, dt} = tablet()
-      {token, row} = Sessions.create(user, [device_token: dt], @t0)
-
-      assert {:ok, %{id: id}, _} = Sessions.authenticate(token, at(10))
-      assert id == user.id
-      assert Repo.get!(UserSession, row.id).last_seen_at == at(10)
-
-      Sessions.authenticate(token, at(40))
-      assert Repo.get!(UserSession, row.id).last_seen_at == at(10)
-
-      Sessions.authenticate(token, at(70))
-      assert Repo.get!(UserSession, row.id).last_seen_at == at(70)
-    end
-
     test "refuses unknown, non-ses_, revoked and expired tokens" do
       user = user_fixture()
       {token, row} = Sessions.create(user, [max_age: 100], @t0)
@@ -106,81 +86,10 @@ defmodule RockcutApi.SessionsTest do
       assert :error = Sessions.authenticate(token, at(1))
     end
 
-    test "a tablet session dies after 15 minutes without a request (Q2)" do
-      user = user_fixture()
-      {_device, dt} = tablet()
-      {token, _} = Sessions.create(user, [device_token: dt], @t0)
-
-      assert {:ok, _, _} = Sessions.authenticate(token, at(14 * 60))
-      # Seen at 14:00, so it lives until 29:00.
-      assert {:ok, _, _} = Sessions.authenticate(token, at(28 * 60 + 59))
-      assert :error = Sessions.authenticate(token, at(28 * 60 + 59 + 15 * 60))
-    end
-
-    test "an unused tablet session dies 15 minutes after sign-in" do
-      user = user_fixture()
-      {_device, dt} = tablet()
-      {token, _} = Sessions.create(user, [device_token: dt], @t0)
-      assert :error = Sessions.authenticate(token, at(15 * 60))
-    end
-
-    test "a tablet session never outlives 12 hours, even when busy" do
-      user = user_fixture()
-      {_device, dt} = tablet()
-      {token, _} = Sessions.create(user, [device_token: dt], @t0)
-
-      for minute <- 1..(12 * 60 - 1)//10,
-          do: assert({:ok, _, _} = Sessions.authenticate(token, at(minute * 60)))
-
-      assert :error = Sessions.authenticate(token, at(12 * 3600))
-    end
-
     test "a normal session has no idle limit" do
       user = user_fixture()
       {token, _} = Sessions.create(user, [], @t0)
       assert {:ok, _, _} = Sessions.authenticate(token, at(20 * 24 * 3600))
-    end
-  end
-
-  describe "tablet revocation ends its sessions (A5)" do
-    setup do
-      user = user_fixture()
-      owner = owner_fixture()
-      {device, dt} = tablet()
-      # Real time here: the D33 revoke paths stamp the current time.
-      {on_tablet, row} = Sessions.create(user, device_token: dt)
-      {on_phone, _} = Sessions.create(user)
-      assert {:ok, _, _} = Sessions.authenticate(on_tablet)
-      %{owner: owner, device: device, dt: dt, on_tablet: on_tablet, row: row, on_phone: on_phone}
-    end
-
-    test "revoking the tablet token", c do
-      {:ok, _} = Devices.revoke_token(c.dt, c.owner)
-      assert :error = Sessions.authenticate(c.on_tablet)
-      assert Repo.get!(UserSession, c.row.id).revoked_at
-      assert {:ok, _, _} = Sessions.authenticate(c.on_phone)
-    end
-
-    test "deactivating the device", c do
-      {:ok, _} = Devices.update_device(c.device, %{active: false}, c.owner)
-      assert :error = Sessions.authenticate(c.on_tablet)
-      assert Repo.get!(UserSession, c.row.id).revoked_at
-      assert {:ok, _, _} = Sessions.authenticate(c.on_phone)
-    end
-
-    test "deleting the device", c do
-      {:ok, _} = Devices.delete_device(c.device, c.owner)
-      assert :error = Sessions.authenticate(c.on_tablet)
-      refute Repo.get(UserSession, c.row.id)
-      assert {:ok, _, _} = Sessions.authenticate(c.on_phone)
-    end
-
-    test "a token revoked behind the context's back still ends the session", c do
-      Repo.update!(
-        Ecto.Changeset.change(c.dt, revoked_at: DateTime.truncate(DateTime.utc_now(), :second))
-      )
-
-      assert :error = Sessions.authenticate(c.on_tablet)
     end
   end
 

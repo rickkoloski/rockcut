@@ -14,7 +14,7 @@ defmodule RockcutApi.Devices do
       control, and `AuthPlug` checks both on every request.
   """
   import Ecto.Query
-  alias RockcutApi.{Accounts, Authz, Repo, Sessions}
+  alias RockcutApi.{Accounts, Authz, Repo}
   alias RockcutApi.Accounts.User
   alias RockcutApi.Devices.{DeviceToken, PairingCode, PairingRateLimiter}
 
@@ -118,7 +118,6 @@ defmodule RockcutApi.Devices do
     now = now()
 
     live = from(t in DeviceToken, where: t.user_id == ^id and is_nil(t.revoked_at))
-    Sessions.revoke_for_device_tokens(Repo.all(select(live, [t], t.id)), now)
     {revoked, _} = Repo.update_all(live, set: [revoked_at: now, updated_at: now])
 
     from(pc in PairingCode, where: pc.user_id == ^id and is_nil(pc.used_at)) |> Repo.delete_all()
@@ -320,8 +319,6 @@ defmodule RockcutApi.Devices do
   def revoke_token(%DeviceToken{} = row, %User{} = actor, now \\ now()) do
     Repo.transaction(fn ->
       updated = row |> Ecto.Changeset.change(revoked_at: row.revoked_at || now) |> Repo.update!()
-      # D34 A5: personal sessions started on this tablet end with it.
-      Sessions.revoke_for_device_tokens([row.id], now)
       device = Repo.get!(User, row.user_id)
       action = if actor.id == device.id, do: "device.signed_out", else: "device.revoked"
 
