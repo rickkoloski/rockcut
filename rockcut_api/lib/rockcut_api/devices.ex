@@ -300,7 +300,7 @@ defmodule RockcutApi.Devices do
 
   @doc """
   The unrevoked `DeviceToken` row for a live tablet token, or nil. No side
-  effects: used to mark a "Sign in as me" session (D34), not to authenticate.
+  effects: the login refusal on a paired tablet (D54), not to authenticate.
   """
   def live_token(@token_prefix <> _ = token) do
     with %DeviceToken{revoked_at: nil} = row <-
