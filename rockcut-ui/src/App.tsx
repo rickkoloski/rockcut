@@ -29,7 +29,6 @@ import {
   ListSubheader,
   Snackbar,
   useTheme,
-  darken,
   alpha,
 } from '@mui/material'
 import MenuIcon from '@mui/icons-material/Menu'
@@ -53,7 +52,6 @@ import ForumIcon from '@mui/icons-material/ForumOutlined'
 import TagIcon from '@mui/icons-material/TagOutlined'
 import HistoryIcon from '@mui/icons-material/HistoryOutlined'
 import LogoutIcon from '@mui/icons-material/Logout'
-import LoginIcon from '@mui/icons-material/Login'
 import TabletIcon from '@mui/icons-material/TabletMacOutlined'
 import AccountCircle from '@mui/icons-material/AccountCircle'
 import PersonIcon from '@mui/icons-material/Person'
@@ -66,11 +64,9 @@ import Login from './pages/Login'
 import ForcePasswordReset from './pages/auth/ForcePasswordReset'
 import Profile from './pages/profile/Profile'
 import useAuth from './hooks/useAuth'
-import useIdleReturn from './hooks/useIdleReturn'
-import useDeviceTokenWatch from './hooks/useDeviceTokenWatch'
 import useAuthStorageSync from './hooks/useAuthStorageSync'
 import useReconnect from './hooks/useReconnect'
-import { PERSONAL_IDLE_MS, asideDeviceToken, flushSignOuts } from './lib/device'
+import { flushSignOuts } from './lib/device'
 import parseApiError from './lib/parseApiError'
 import { realBoards } from './lib/tasks'
 import { useApiQuery } from './hooks/useApiQuery'
@@ -104,6 +100,7 @@ import Availability from './pages/availability/Availability'
 import Messages from './pages/messages/Messages'
 import SharedDevices from './pages/devices/SharedDevices'
 import DeviceNotAvailable from './pages/devices/DeviceNotAvailable'
+import SharedDeviceLoginRefused from './pages/devices/SharedDeviceLoginRefused'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
 import { ActingCodeDialog } from './components/ActingCode'
@@ -233,8 +230,6 @@ function App() {
     loadMe,
     logout,
     signOutDevice,
-    startPersonalSignIn,
-    endPersonalSession,
   } = useAuth()
   const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
   const [themeError, setThemeError] = useState<string | null>(null)
@@ -246,12 +241,7 @@ function App() {
   }
   const [deviceSignOutError, setDeviceSignOutError] = useState<string | null>(null)
   const [deviceSigningOut, setDeviceSigningOut] = useState(false)
-  // D33: a person signed in on a shared tablet (the tablet's token is set aside).
-  const personalOnTablet = isAuthenticated && !!asideDeviceToken()
-  useIdleReturn(personalOnTablet, PERSONAL_IDLE_MS, endPersonalSession)
-  // DEV G2: the tablet may be revoked or deactivated while a person is on it.
-  useDeviceTokenWatch(personalOnTablet)
-  // DEV G3: another tab changed the session (sign-out, "Sign in as me", unpaired).
+  // DEV G3: another tab changed the session (sign-in, sign-out, paired, unpaired).
   useAuthStorageSync()
   // D36-H (task 4051): sign-outs that couldn't reach the server, retried at
   // start-up and whenever the device comes back online.
@@ -685,8 +675,8 @@ function App() {
             {isDevice ? (
               <>
                 {/* D36-C (task 4002): at phone width the pill drops the
-                    department and the button shortens, so the header stays on
-                    one line and nothing overlaps the logo. */}
+                    department, so the header stays on one line and nothing
+                    overlaps the logo. */}
                 <Chip
                   data-testid="device-chip"
                   icon={<TabletIcon />}
@@ -702,18 +692,6 @@ function App() {
                   variant="outlined"
                   sx={{ mr: 1, minWidth: 0 }}
                 />
-                <Button
-                  data-testid="personal-signin"
-                  aria-label="Sign in as me"
-                  size="small"
-                  variant="contained"
-                  onClick={startPersonalSignIn}
-                  startIcon={<LoginIcon />}
-                  sx={{ mr: 1, whiteSpace: 'nowrap', flexShrink: 0 }}
-                >
-                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Sign in as me</Box>
-                  <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>Sign in</Box>
-                </Button>
                 <Button
                   data-testid="device-signout"
                   size="small"
@@ -731,68 +709,47 @@ function App() {
               <>
                 <NotificationBell />
 
-                {personalOnTablet ? (
-                  <>
-                    {/* A shared tablet keeps a visible Sign out: the next person shouldn't hunt for it. */}
-                    <Typography variant="body2" color="text.secondary" sx={{ display: { xs: 'none', sm: 'block' } }}>
+                {/* D43: your account, Profile and Log out in one menu. */}
+                <IconButton
+                  aria-label="Account"
+                  data-testid="account-menu"
+                  size="small"
+                  onClick={(e) => setAccountAnchor(e.currentTarget)}
+                >
+                  <AccountCircle />
+                </IconButton>
+                <Menu
+                  anchorEl={accountAnchor}
+                  open={!!accountAnchor}
+                  onClose={() => setAccountAnchor(null)}
+                  anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+                  transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+                >
+                  <Box sx={{ px: 2, py: 1, maxWidth: 280 }}>
+                    <Typography variant="subtitle2" noWrap>{user.name || user.email}</Typography>
+                    <Typography variant="body2" color="text.secondary" noWrap>
                       {user.email}
+                      {isOwner ? ' · Owner' : ''}
                     </Typography>
-                    <Button
-                      data-testid="logout-button"
-                      size="small"
-                      color="inherit"
-                      onClick={logout}
-                      startIcon={<LogoutIcon />}
-                      sx={{ color: 'text.secondary' }}
-                    >
-                      Sign out
-                    </Button>
-                  </>
-                ) : (
-                  <>
-                    {/* D43: your account, Profile and Log out in one menu. */}
-                    <IconButton
-                      aria-label="Account"
-                      data-testid="account-menu"
-                      size="small"
-                      onClick={(e) => setAccountAnchor(e.currentTarget)}
-                    >
-                      <AccountCircle />
-                    </IconButton>
-                    <Menu
-                      anchorEl={accountAnchor}
-                      open={!!accountAnchor}
-                      onClose={() => setAccountAnchor(null)}
-                      anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
-                      transformOrigin={{ vertical: 'top', horizontal: 'right' }}
-                    >
-                      <Box sx={{ px: 2, py: 1, maxWidth: 280 }}>
-                        <Typography variant="subtitle2" noWrap>{user.name || user.email}</Typography>
-                        <Typography variant="body2" color="text.secondary" noWrap>
-                          {user.email}
-                          {isOwner ? ' · Owner' : ''}
-                        </Typography>
-                      </Box>
-                      <Divider />
-                      <MenuItem component={RouterLink} to="/profile" data-testid="profile-link" onClick={() => setAccountAnchor(null)}>
-                        <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
-                        Profile
-                      </MenuItem>
-                      {themeMenuItems(colorMode, pickTheme)}
-                      <Divider />
-                      <MenuItem
-                        data-testid="logout-button"
-                        onClick={() => {
-                          setAccountAnchor(null)
-                          logout()
-                        }}
-                      >
-                        <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
-                        Log out
-                      </MenuItem>
-                    </Menu>
-                  </>
-                )}
+                  </Box>
+                  <Divider />
+                  <MenuItem component={RouterLink} to="/profile" data-testid="profile-link" onClick={() => setAccountAnchor(null)}>
+                    <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
+                    Profile
+                  </MenuItem>
+                  {themeMenuItems(colorMode, pickTheme)}
+                  <Divider />
+                  <MenuItem
+                    data-testid="logout-button"
+                    onClick={() => {
+                      setAccountAnchor(null)
+                      logout()
+                    }}
+                  >
+                    <ListItemIcon><LogoutIcon fontSize="small" /></ListItemIcon>
+                    Log out
+                  </MenuItem>
+                </Menu>
               </>
             )}
           </Toolbar>
@@ -800,24 +757,6 @@ function App() {
 
         {/* D40: the task board's staff-code dialog (the "Acting as" banner is the board's own). */}
         {isDevice && <ActingCodeDialog />}
-
-        {personalOnTablet && (
-          <Box
-            data-testid="personal-session-banner"
-            sx={(t) => ({
-              px: 3,
-              py: 1,
-              fontSize: 14,
-              // D43: a muted band in dark; the bright one glared.
-              ...(t.palette.mode === 'dark'
-                ? { bgcolor: darken(t.palette.warning.main, 0.65), color: t.palette.warning.light }
-                : { bgcolor: 'warning.light', color: 'warning.contrastText' }),
-            })}
-          >
-            Signed in as {user.name || user.email} on a shared tablet. It returns to the shared screen after 5 minutes without
-            activity.
-          </Box>
-        )}
 
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           {isDevice ? (
@@ -836,6 +775,8 @@ function App() {
               {/* D40: its home board only (/api/me lists just that one; any other goes there). */}
               <Route path="/tasks" element={<TasksIndex />} />
               <Route path="/tasks/:dept" element={<TaskBoardPage />} />
+              {/* D54: no personal logins on a shared tablet. */}
+              <Route path="/login" element={<SharedDeviceLoginRefused />} />
               <Route path="*" element={<DeviceNotAvailable />} />
             </Routes>
           ) : (
@@ -877,8 +818,7 @@ function App() {
             {canManageSchedule && <Route path="/scheduler" element={<Scheduler />} />}
             <Route path="/time_off" element={<TimeOff />} />
             <Route path="/availability" element={<Availability />} />
-            {/* D34: not on a shared tablet, even for a person signed in on it. */}
-            {!personalOnTablet && <Route path="/profile" element={<Profile />} />}
+            <Route path="/profile" element={<Profile />} />
             <Route path="/messages" element={<Messages />} />
             <Route path="/messages/:key" element={<Messages />} />
             {canManageUsers && <Route path="/users" element={<UserManagement />} />}

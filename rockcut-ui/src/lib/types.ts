@@ -281,7 +281,7 @@ export interface Me {
   beer_board_manage?: boolean
   // D41: the task boards this person can open, in department order.
   task_boards?: TaskBoardEntry[]
-  // D43: the theme that applies here (a shared tablet's own, also during "Sign in as me").
+  // D43: the theme that applies here (the person's, or a shared tablet's own).
   color_mode?: ColorMode
   // D49: the Brewery board's "Show planned batches" (per person).
   show_planned_batches?: boolean

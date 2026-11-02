@@ -147,7 +147,7 @@ export default useActing
 /** Run a task-board write, with a staff code on a shared tablet (see `useActing`). */
 export const actingRun = <T,>(write: (code: string | undefined) => Promise<T>) => useActing.getState().run(write)
 
-// Whoever is signed in changed (a sign-out, "Sign in as me" and back): forget the code.
+// Whoever is signed in changed (a sign-out, another tab): forget the code.
 useAuth.subscribe((s, prev) => {
   if (s.user?.id !== prev.user?.id && useActing.getState().session) useActing.setState({ session: null })
 })

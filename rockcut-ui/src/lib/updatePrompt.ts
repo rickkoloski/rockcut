@@ -13,8 +13,6 @@ export const TABLET_RECHECK_MS = 30 * 1000
 export interface TabletState {
   /** The session is a shared tablet's own (not a person's). */
   isDevice: boolean
-  /** "Sign in as me": a person's session, or its sign-in form, with the tablet's token set aside. */
-  personalSession: boolean
   /** An "Acting as" window, or the staff-code dialog asking for a code. */
   acting: boolean
   /** A dialog, menu or drawer is open. */
@@ -24,7 +22,7 @@ export interface TabletState {
 }
 
 /** Q1: a shared tablet reloads by itself only when nobody is using it. */
-export const tabletMayReload = (s: TabletState) => s.isDevice && !s.personalSession && !s.acting && !s.dialogOpen && !s.typing
+export const tabletMayReload = (s: TabletState) => s.isDevice && !s.acting && !s.dialogOpen && !s.typing
 
 /** An open MUI modal (Dialog, Menu, Drawer, bottom sheet); closed kept-mounted ones are hidden. */
 export function dialogOpen(doc: Document = document): boolean {
