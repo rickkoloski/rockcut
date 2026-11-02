@@ -4,10 +4,30 @@ defmodule RockcutApiWeb.SessionController do
   import RockcutApiWeb.JSONHelpers, only: [user: 1, for_viewer: 2]
   alias RockcutApi.{Accounts, Devices, Sessions}
 
-  def create(conn, %{"email" => email, "password" => password}) do
+  @shared_device_refusal "This device is already set as a shared device. Personal logins not accepted."
+
+  # D54: a paired tablet takes no personal logins. Checked before the password,
+  # so the answer never says whether it was right.
+  def create(conn, %{"email" => _, "password" => _} = params) do
+    if signing_in_on(conn) do
+      conn
+      |> put_status(:forbidden)
+      |> json(%{error: @shared_device_refusal})
+    else
+      sign_in(conn, params)
+    end
+  end
+
+  def create(conn, _params) do
+    conn
+    |> put_status(:bad_request)
+    |> json(%{error: "Email and password required"})
+  end
+
+  defp sign_in(conn, %{"email" => email, "password" => password}) do
     case Accounts.get_user_by_email_and_password(email, password) do
       %{active: true} = user ->
-        {token, _row} = Sessions.create(user, device_token: signing_in_on(conn))
+        {token, _row} = Sessions.create(user)
         json(conn, %{token: token, user: user(user)})
 
       %{active: false} ->
@@ -22,20 +42,14 @@ defmodule RockcutApiWeb.SessionController do
     end
   end
 
-  def create(conn, _params) do
-    conn
-    |> put_status(:bad_request)
-    |> json(%{error: "Email and password required"})
-  end
-
   def show(conn, _params) do
     viewer = conn.assigns.current_user
     json(conn, for_viewer(%{user: user(viewer)}, viewer))
   end
 
-  # D34 §3.3: "Sign in as me" on a paired tablet sends the tablet's token in
-  # X-Rockcut-Device. A live one marks the session as a tablet sign-in; anything
-  # else is ignored (a stale header never refuses a sign-in).
+  # The login form on a paired tablet sends the tablet's token in
+  # X-Rockcut-Device. Only a live one refuses; anything else is ignored, so a
+  # browser that used to be a tablet can sign in normally.
   defp signing_in_on(conn) do
     case get_req_header(conn, "x-rockcut-device") do
       [token | _] -> Devices.live_token(token)
