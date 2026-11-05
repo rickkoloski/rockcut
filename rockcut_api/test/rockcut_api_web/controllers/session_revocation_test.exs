@@ -64,7 +64,7 @@ defmodule RockcutApiWeb.SessionRevocationTest do
     assert code(b) == 200
   end
 
-  describe "no personal logins on a paired tablet (D54 S246–S248)" do
+  describe "no personal logins on a paired tablet (D54 S246–S248, S253)" do
     @refusal "This device is already set as a shared device. Personal logins not accepted."
 
     test "S246 a live device header: 403 for the right and a wrong password, no session",
@@ -103,6 +103,45 @@ defmodule RockcutApiWeb.SessionRevocationTest do
       for header <- [revoked, "dev_made-up", person_token, "garbage"] do
         token = sign_in(p["bartender1"], [{"x-rockcut-device", header}])
         assert code(token) == 200, "header #{inspect(header)} refused a sign-in"
+      end
+    end
+
+    test "S253 a live tablet token in Authorization only: 403 for the right and a wrong password, no session",
+         %{p: p, tablet_token: t} do
+      set_password(p["bartender1"], @password)
+      before = Repo.aggregate(UserSession, :count)
+
+      for password <- [@password, "wrong-password"] do
+        conn = post_session(p["bartender1"].email, password, [{"authorization", "Bearer #{t}"}])
+        assert json_response(conn, 403) == %{"error" => @refusal}
+      end
+
+      assert Repo.aggregate(UserSession, :count) == before
+      assert code(t) == 200
+    end
+
+    test "S253 a live token in Authorization refuses even with a stale X-Rockcut-Device",
+         %{p: p, tablet_token: t} do
+      set_password(p["bartender1"], @password)
+
+      conn =
+        post_session(p["bartender1"].email, @password, [
+          {"authorization", "Bearer #{t}"},
+          {"x-rockcut-device", "dev_made-up"}
+        ])
+
+      assert json_response(conn, 403) == %{"error" => @refusal}
+    end
+
+    test "S253 a revoked, made-up or person token in Authorization: a normal sign-in",
+         %{p: p} = c do
+      revoked = c.tablet_token
+      {:ok, _} = Devices.revoke_token(tablet_row(revoked), p["owner"])
+      person_token = sign_in(p["barMgr"])
+
+      for token <- [revoked, "dev_made-up", person_token, "garbage"] do
+        new_token = sign_in(p["bartender1"], [{"authorization", "Bearer #{token}"}])
+        assert code(new_token) == 200, "Authorization #{inspect(token)} refused a sign-in"
       end
     end
 

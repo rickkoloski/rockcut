@@ -48,13 +48,12 @@ defmodule RockcutApiWeb.SessionController do
   end
 
   # The login form on a paired tablet sends the tablet's token in
-  # X-Rockcut-Device. Only a live one refuses; anything else is ignored, so a
-  # browser that used to be a tablet can sign in normally.
+  # X-Rockcut-Device; a tablet's other requests carry it in Authorization (DEV
+  # QA G1). Only a live one refuses; anything else is ignored, so a browser that
+  # used to be a tablet can sign in normally.
   defp signing_in_on(conn) do
-    case get_req_header(conn, "x-rockcut-device") do
-      [token | _] -> Devices.live_token(token)
-      _ -> nil
-    end
+    bearer = for "Bearer " <> token <- get_req_header(conn, "authorization"), do: token
+    Enum.find_value(get_req_header(conn, "x-rockcut-device") ++ bearer, &Devices.live_token/1)
   end
 
   # A person's sign-out revokes their session (D34; a pre-D34 token is only
