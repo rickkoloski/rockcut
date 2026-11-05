@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 
 // D36-C (task 4002): a shared device's header fits at phone width.
+// D54: no "Sign in as me" in it; Sign out is the one button.
 test.use({ storageState: authFile('taproomDevice') })
 
 for (const [w, h] of [
@@ -12,9 +13,10 @@ for (const [w, h] of [
     await page.setViewportSize({ width: w, height: h })
     await page.goto('/')
     const chip = page.getByTestId('device-chip')
-    const button = page.getByRole('button', { name: 'Sign in as me' })
+    const button = page.getByTestId('device-signout')
     await expect(chip).toBeVisible()
     await expect(button).toBeVisible()
+    await expect(page.getByTestId('personal-signin')).toHaveCount(0)
 
     const header = (await page.getByRole('banner').boundingBox())!
     const btn = (await button.boundingBox())!

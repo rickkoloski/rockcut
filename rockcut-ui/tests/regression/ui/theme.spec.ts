@@ -2,11 +2,10 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { activeProfile } from '../../config/targets'
 import { apiAs } from '../scheduler/helpers'
-import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
 import { contrastOf, iconButtonContrasts } from './contrast'
 
 // D43 §1.2, S143–S149, S169: the color mode (`users.color_mode`). It follows
-// the person; a shared tablet has its own, kept during "Sign in as me". Every
+// the person; a shared tablet has its own. Every
 // test puts brewer1 and the Brewhouse tablet back to Light.
 
 const LIGHT_BG = 'rgb(238, 242, 232)' // Hop Field background.default
@@ -197,37 +196,6 @@ test.describe('the Brewhouse tablet', () => {
     await expect(tp.getByTestId('device-chip')).toBeVisible()
     await expect.poll(() => bodyBg(tp)).toBe(DARK_BG)
     await tablet.close()
-  })
-
-  test.describe('S148: Sign in as me keeps the tablet dark', () => {
-    test.use({ storageState: authFile('breweryDevice') })
-    let person: TempPerson | null = null
-    test.afterAll(() => retireTempPerson(person))
-
-    test('a Light person signs in; the tablet stays dark with a visible Sign out', async ({ page }) => {
-      await setDeviceMode('dark')
-      person = await createTempPerson('D43 S148', { memberships: [{ department: 'brewery', role: 'employee' }] })
-      await page.goto('/')
-      await expect(page.getByTestId('device-chip')).toBeVisible()
-      await expect.poll(() => bodyBg(page)).toBe(DARK_BG)
-
-      await page.getByTestId('personal-signin').click()
-      await expect(page.getByTestId('login-email')).toBeVisible()
-      expect(await bodyBg(page)).toBe(DARK_BG)
-      await page.getByTestId('login-email').locator('input').fill(person.email)
-      await page.getByTestId('login-password').locator('input').fill(person.password)
-      await page.getByTestId('login-submit').click()
-      await expect(page.getByTestId('personal-session-banner')).toContainText(person.name)
-
-      expect(await bodyBg(page)).toBe(DARK_BG)
-      await expect(page.getByText(person.email)).toBeVisible()
-      await expect(page.getByTestId('logout-button')).toBeVisible()
-      await expect(page.getByTestId('logout-button')).toHaveText(/Sign out/)
-      await expect(page.getByTestId('account-menu')).toHaveCount(0)
-
-      await page.getByTestId('logout-button').click()
-      await expect(page.getByTestId('device-chip')).toBeVisible()
-    })
   })
 })
 

@@ -3,14 +3,11 @@ import api, { PASSWORD_RESET_EVENT } from '../lib/api'
 import type { Me, User, Capabilities, TaskBoardEntry } from '../lib/types'
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
 import {
+  SHARED_DEVICE_LOGIN_REFUSED,
   TOKEN_KEY,
-  asideDeviceToken,
   clearUnpaired,
   isDeviceToken,
   markUnpaired,
-  restoreDeviceToken,
-  revokePersonalToken,
-  setDeviceTokenAside,
   signOutOnServer,
 } from '../lib/device'
 
@@ -23,7 +20,7 @@ interface AuthState {
   beerBoardManage: boolean
   /** D41: the task boards this person can open (D40: a device, its home board). */
   taskBoards: TaskBoardEntry[]
-  /** D43: the theme that applies here (a tablet's own during "Sign in as me"); null until /api/me answers. */
+  /** D43: the theme that applies here; null until /api/me answers. */
   colorMode: ColorMode | null
   /** D49: the Brewery board's "Show planned batches", saved per person on the server. */
   showPlannedBatches: boolean
@@ -44,8 +41,6 @@ interface AuthState {
   // D33 — shared tablets
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
-  startPersonalSignIn: () => void
-  endPersonalSession: () => Promise<void>
 }
 
 /** True when the server refused the session. Anything else (offline, a timeout, a 5xx, a proxy's 4xx) isn't about it. */
@@ -90,8 +85,9 @@ const useAuth = create<AuthState>((set, get) => ({
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null })
     try {
-      // D34: "Sign in as me" on a paired tablet says so, for the short tablet lifetime.
-      const device = asideDeviceToken()
+      // D54: a paired tablet says so, and the API refuses the login.
+      const current = localStorage.getItem(TOKEN_KEY)
+      const device = isDeviceToken(current) ? current : null
       const { data } = await api.post<{ token: string }>(
         '/api/session',
         { email, password },
@@ -103,16 +99,12 @@ const useAuth = create<AuthState>((set, get) => ({
       await get().loadMe()
       set({ isLoading: false })
     } catch (err: unknown) {
-      set({ error: errorMessage(err, 'Login failed'), isLoading: false })
+      const refused = (err as { response?: { status?: number } })?.response?.status === 403
+      set({ error: refused ? SHARED_DEVICE_LOGIN_REFUSED : errorMessage(err, 'Login failed'), isLoading: false })
     }
   },
 
   logout: () => {
-    // A person signed in on a shared tablet goes back to the tablet's session.
-    if (asideDeviceToken()) {
-      void get().endPersonalSession()
-      return
-    }
     const { token } = get()
     // DEV G4: a person's Logout never unpairs a tablet. If storage holds a
     // tablet token (another tab already ended this person's session), re-sync.
@@ -148,8 +140,8 @@ const useAuth = create<AuthState>((set, get) => ({
         if (superseded()) return
         // DEV pass 2 G4: a captive Wi-Fi page answers 200 with HTML.
         if (!data?.user || !data?.capabilities) throw new Error('Not an /api/me answer')
-        // The token changed while this was in flight (e.g. "Sign in as me" set a
-        // tablet's token aside): this answer is for a session that's gone (D33).
+        // The token changed while this was in flight (another tab signed in or
+        // out): this answer is for a session that's gone (D33).
         if (localStorage.getItem(TOKEN_KEY) !== token) return
         const colorMode = isColorMode(data.color_mode) ? data.color_mode : 'light'
         cacheColorMode(colorMode)
@@ -230,10 +222,9 @@ const useAuth = create<AuthState>((set, get) => ({
       const { data } = await api.post<{ token: string }>('/api/device_tokens', { code, name })
       localStorage.setItem(TOKEN_KEY, data.token)
       clearUnpaired()
-      set({ token: data.token, isAuthenticated: true })
-      // loadMe sets bootstrapped, or leaves it unset to retry if the server can't be reached.
-      await get().loadMe()
-      set({ isLoading: false })
+      // DEV QA G5: the tablet's Home, from whatever URL it was paired on. The
+      // form stays on "Setting up..." until the page reloads.
+      window.location.assign('/')
     } catch (err: unknown) {
       set({ error: errorMessage(err, 'Could not set up this tablet'), isLoading: false })
     }
@@ -247,20 +238,6 @@ const useAuth = create<AuthState>((set, get) => ({
     await api.delete('/api/session')
     markUnpaired()
     window.location.assign('/')
-  },
-
-  // "Sign in as me" on a tablet: keep the device token aside and show the login form.
-  startPersonalSignIn: () => {
-    setDeviceTokenAside()
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], colorMode: null, isAuthenticated: false, error: null })
-  },
-
-  // Back to the tablet's session: revoke the personal token on the server
-  // (D34; best effort), restore the device token and reload so nothing
-  // personal stays in memory. Sign out and the idle return both come here.
-  endPersonalSession: async () => {
-    await revokePersonalToken()
-    if (restoreDeviceToken()) window.location.assign('/')
   },
 }))
 

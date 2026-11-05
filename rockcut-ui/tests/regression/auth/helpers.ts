@@ -30,12 +30,9 @@ export async function anonApi(): Promise<APIRequestContext> {
 }
 
 /** Sign in through the API; resolves to the new `ses_` token. */
-export async function signIn(person: Pick<TempPerson, 'email' | 'password'>, deviceToken?: string): Promise<string> {
+export async function signIn(person: Pick<TempPerson, 'email' | 'password'>): Promise<string> {
   const api = await anonApi()
-  const res = await api.post('/api/session', {
-    data: { email: person.email, password: person.password },
-    headers: deviceToken ? { 'X-Rockcut-Device': deviceToken } : undefined,
-  })
+  const res = await api.post('/api/session', { data: { email: person.email, password: person.password } })
   expect(res.status(), await res.text()).toBe(200)
   const token = (await res.json()).token as string
   await api.dispose()
@@ -115,7 +112,7 @@ export async function contextWith(browser: Browser, token: string): Promise<{ co
   return { context, page: await context.newPage() }
 }
 
-/** D43: Logout lives in the account menu (a personal session on a tablet keeps a visible Sign out). */
+/** D43: Logout lives in the account menu. */
 export async function logOut(page: Page) {
   await page.getByTestId('account-menu').click()
   await page.getByTestId('logout-button').click()

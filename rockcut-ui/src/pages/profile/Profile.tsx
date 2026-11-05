@@ -15,8 +15,7 @@ function sessionsLabel(n: number): string {
 
 /**
  * Your own account (D34 §3.5): details (read-only), Change password, and
- * Sign out of all other devices. Not routed for a shared device or a personal
- * sign-in on a tablet.
+ * Sign out of all other devices. Not routed for a shared device.
  */
 export default function Profile() {
   const { user } = useAuth()

@@ -94,8 +94,7 @@ defmodule RockcutApi.AccountsFixtures do
   end
 
   @doc """
-  Sign `user` in directly; returns the plain `ses_` token (D34). Pass
-  `device_token: row` for a "Sign in as me" session on a tablet.
+  Sign `user` in directly; returns the plain `ses_` token (D34).
   """
   def session_token_fixture(%User{} = user, opts \\ []) do
     {token, _row} = RockcutApi.Sessions.create(user, opts)

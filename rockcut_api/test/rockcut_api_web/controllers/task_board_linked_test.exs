@@ -3,8 +3,7 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
   D49 task 3 (§3.12, plan decisions 7–9): linked tasks on the Brewery board.
   Their writes go to Production with the schedule's prompts and an undo
   token; a shared tablet is refused every one until D50 (with or without a
-  staff code), and "Sign in as me" is a person. `linked=true` and "Show
-  planned batches" (`/api/me`).
+  staff code). `linked=true` and "Show planned batches" (`/api/me`).
   """
   use RockcutApiWeb.ConnCase, async: false
 
@@ -13,7 +12,7 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
   import Phoenix.ConnTest
   import Ecto.Query, only: [from: 2]
 
-  alias RockcutApi.{AccountsFixtures, Devices, Repo, Sessions, StaffCodes, Tasks}
+  alias RockcutApi.{AccountsFixtures, Repo, StaffCodes, Tasks}
   alias RockcutApi.Production.Step
   alias RockcutApi.Tasks.Task
 
@@ -363,14 +362,6 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
 
       assert step(named(Repo.get!(RockcutApi.Brewing.Batch, task_batch(task)), "FDH")).notes ==
                nil
-
-      # "Sign in as me" there is a person (D34).
-      {ses, _} = Sessions.create(ctx.p["brewer1"], device_token: Devices.live_token(token))
-
-      assert call_device(ses, :patch, task_url(task), %{notes: "From the tablet"})
-             |> json_response(200)
-
-      assert Repo.get!(Task, task.id).notes == "From the tablet"
     end
   end
 
