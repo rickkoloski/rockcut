@@ -200,3 +200,80 @@ The plan's list, plus specs it doesn't name that still reference the removed UI:
    in the plan's step 2 list.
 5. **Ready for step 7.** Please start the API (4002) and UI (5174) servers from
    this worktree (the dev DB is migrated and seeded) and tell me when they're up.
+
+---
+
+# Stop point 2: step 7 (2026-11-04)
+
+Run against the lead's servers from `~/src/rockcut-d54` (API :4002, UI :5174),
+following `d54_lead_decisions_1.md`. Commit `65dba37`
+(test: D54 Playwright for no personal logins on shared tablets). Not pushed.
+I didn't run the full suite; the lead runs it.
+
+## What changed
+
+**New spec** `tests/regression/devices/shared_device_no_personal_login.spec.ts`
+(11 tests). People are `[TEST-TEMP]` and tablets are `[TEST-TEMP]` devices
+paired through the API. The shared `taproomDevice` token is only read, never revoked.
+
+| Test | Covers |
+|---|---|
+| S244 | `taproomDevice` header: pill + Sign out, no `personal-signin`, no "Sign in…" button, no banner |
+| S245 | typed `/login`: `shared-device-login-refused` with the exact text; no email, password or submit; still paired |
+| S246 | API: live `taproomDevice` header, right and wrong password → 403 `{error: REFUSAL}`. Persist-verified: signed in normally, *Sign out of all other devices* revokes 0, so no row was made. The tablet still answers 200. |
+| S248 | API: the header refuses while the temp tablet is live, then it's revoked → normal 200 login, and the token works |
+| S249 | seeded pre-D54 storage (person `ses_` in the slot, live device token aside, last-activity, email): opens on the tablet view; the keys are cleared; the person's token turns 401 on the server; the device token stays 200; still the tablet after a reload |
+| S251 (4988) | only a revoked `rockcut_device_token` in storage → "This tablet was unpaired" setup screen, no sign-in form |
+| S251 | a paired temp tablet revoked by the owner → unpaired on reload |
+| refused form | the login form, with the API's 403 mocked → the refusal replaces the form |
+| D33 G3 (decision 2) | a temp person in two tabs; tab A logs out → tab B reloads to the sign-in page, its token gone, the session 401 |
+
+**Deleted:**
+- `devices/personal_signin.spec.ts` and `devices/personal_signin_revoke.spec.ts` (plan).
+- `devices/tablet_idle.spec.ts`. Both of its tests (D36-G: another tab's activity keeps a Sign in as me session; D36-I: an abandoned Sign in as me form returns) were personal-session only, so nothing was left to trim.
+
+**Trimmed:**
+
+| Spec | Change | Why |
+|---|---|---|
+| `devices/device_header` | measures `device-signout` instead of the Sign in as me button; asserts the button is gone | the button no longer exists |
+| `devices/device_signout` | removed "G4: a stale tab's person Logout never unpairs the tablet" | it needed a personal session on the tablet |
+| `devices/device_session` | S6 now expects `personal-signin` to have count 0 | S244 |
+| `pwa-update/update_prompt` | removed S176 ("Sign in as me gets the prompt and no reload"); dropped the unused `claimSpare` import | `personalSession` left `tabletMayReload` |
+| `ui/theme` | removed S148 and the now-unused temp-person import; header comment fixed | the theme handover is removed |
+| `taproom/beer-board-device` | removed S13 (Sign in as me → Redeem); the mocked 429 text and its assertion now match the new lockout text | decisions 1 and 5 |
+| `tasks/task-board-tablets` | the mocked 429 text matches the new text | decision 1 |
+| `auth/helpers.ts` | `signIn` lost its `deviceToken` parameter (only S13 used it); `logOut` comment fixed | |
+
+`tests/COVERAGE.md`: the D54 rows now point to the actual tests, D33 G3 points
+to the new two-tab case, and no "(step 7)" placeholders are left.
+
+## Runs (all with `caffeinate -ims`)
+
+| Run | Result |
+|---|---|
+| `npx playwright test --project setup` | 1 passed |
+| `--project=chromium --no-deps`: the new spec, `device_header`, `device_signout`, `device_session`, `ui/theme`, `taproom/beer-board-device` | **44 passed** (1.2 m) |
+| `--project=brewery-board --no-deps tests/regression/tasks/task-board-tablets.spec.ts` | **10 passed** |
+| `PWA_UPDATE=1 --project=pwa-update --no-deps tests/pwa-update/update_prompt.spec.ts` | **8 passed** (3.3 m) |
+| `tsc -p tsconfig.e2e.json` | no errors in touched files. Two errors in untouched files (`brewery/task-board-phone.spec.ts:443`, `taproom/beer-board-import.spec.ts:40`); I didn't check whether `develop` has them too |
+
+**Revert check (4988 / S249, the bug-fix part).** I reverted the shim
+(`if (!device) return` made unconditional) against the running dev server and
+ran `-g "S249|S251"`:
+- Reverted: **2 failed, 1 passed**. "S251 (4988)" didn't show the unpaired notice, and "S249" didn't reach the tablet view. The owner-revoke S251 passed, which is expected because it doesn't depend on the shim.
+- Restored: **3 passed**. `git diff` on the shim was empty afterwards.
+
+## Notes for the full run / DEV
+
+- `shared_device_no_personal_login` pairs four `[TEST-TEMP]` tablets per run
+  through `POST /api/device_tokens` from 127.0.0.1. Locally the limit is raised
+  (`config/dev.exs`), but on DEV it adds to the per-network pairing limiter
+  (5 wrong codes / 10 min only counts *wrong* codes, so this should be fine).
+- The S249 Playwright test fakes the leftover state. The real path still
+  needs the DEV check in the plan's LIMITATIONS (start a personal session on
+  `develop`, then deploy the branch).
+
+## LEAD:
+
+None. Ready for the full local suite.
