@@ -4,9 +4,9 @@ import { authFile } from '../../config/test-env'
 import { activeProfile } from '../../config/targets'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { anonApi, apiWith, contextWith, createTempPerson, logOut, meStatus, retireTempPerson, signIn, type TempPerson } from '../auth/helpers'
-import { createDevice, deleteDevices, expectUnpaired, getDevice, pairingCode } from './helpers'
+import { blankTablet, createDevice, deleteDevices, expectUnpaired, getDevice, pairingCode } from './helpers'
 
-// D54: a paired tablet takes no personal logins (S244–S251), and a tablet left
+// D54: a paired tablet takes no personal logins (S244–S254), and a tablet left
 // mid "Sign in as me" at the release goes back to its shared screen. People
 // are [TEST-TEMP] (D34: never a persona's session); the shared taproomDevice
 // token is only read, never revoked.
@@ -217,6 +217,32 @@ test.describe('a browser that was a tablet', () => {
     await expect(page.getByTestId('login-email')).toHaveCount(0)
     await expect(page.getByTestId('login-submit')).toHaveCount(0)
   })
+})
+
+test.describe('S254: pairing ends on the tablet\'s Home (DEV QA G5)', () => {
+  for (const start of ['/login', '/schedule']) {
+    test(`from a typed ${start}: Home, not the refusal`, async ({ browser }) => {
+      tag = tempTag('D54 S254')
+      const owner = await apiAs('owner')
+      const device = await createDevice(owner, tag)
+      const { context, page } = await blankTablet(browser)
+      await page.goto(start)
+      await page.getByTestId('device-setup-link').click()
+      await page.getByTestId('device-code').fill(await pairingCode(owner, device.id))
+      await page.getByTestId('device-name').fill(`${tag} iPad`)
+      await page.getByTestId('device-submit').click()
+
+      await expect(page.getByTestId('device-chip')).toBeVisible()
+      await expect.poll(() => new URL(page.url()).pathname).toBe('/')
+      await expect(page.getByTestId('shared-device-login-refused')).toHaveCount(0)
+      // Persist-verify: still the tablet, still Home, after a reload.
+      await page.reload()
+      await expect(page.getByTestId('device-chip')).toBeVisible()
+      expect(new URL(page.url()).pathname).toBe('/')
+      await expect(page.getByTestId('shared-device-login-refused')).toHaveCount(0)
+      await context.close()
+    })
+  }
 })
 
 test.describe('D33 G3: other tabs follow a sign-out', () => {

@@ -222,10 +222,9 @@ const useAuth = create<AuthState>((set, get) => ({
       const { data } = await api.post<{ token: string }>('/api/device_tokens', { code, name })
       localStorage.setItem(TOKEN_KEY, data.token)
       clearUnpaired()
-      set({ token: data.token, isAuthenticated: true })
-      // loadMe sets bootstrapped, or leaves it unset to retry if the server can't be reached.
-      await get().loadMe()
-      set({ isLoading: false })
+      // DEV QA G5: the tablet's Home, from whatever URL it was paired on. The
+      // form stays on "Setting up..." until the page reloads.
+      window.location.assign('/')
     } catch (err: unknown) {
       set({ error: errorMessage(err, 'Could not set up this tablet'), isLoading: false })
     }

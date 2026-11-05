@@ -730,4 +730,6 @@ Retired with it: D33 S13, G2; D34 S4–S7, S15; D37 S13; D43 S148 (marked above)
 | S250 | Staff codes unchanged: Acting as for 5 minutes, Buy-a-Beer | Existing Playwright `tasks/task-board-tablets`, `taproom/beer-board-device`; ExUnit `task_board_device_test`, `beer_board_controller_test` |
 | S251 | Tablet revoked: "This tablet was unpaired" straight away (4988), never a sign-in form | Vitest `leftoverTabletSession` (stale set-aside token restored); Playwright `devices/shared_device_no_personal_login` (stale set-aside token only, revert-and-rerun recorded; a paired tablet revoked by the owner) |
 | S252 | `breweryMgr` Profile → Change password; Sign out of all other devices | ExUnit `session_revocation_test` (S8, S14); Playwright `auth/profile`, `auth/session_revocation` |
+| S253 | `POST /api/session` with a live tablet token in `Authorization` only (DEV QA G1): 403 for the right and a wrong password, no session; a revoked, made-up or person token there: normal login | ExUnit `session_revocation_test` (revert-and-rerun recorded) |
+| S254 | Blank browser, typed `/login` (or another URL) → Set up as a shared device: ends on the tablet's Home, not the refusal (DEV QA G5) | Playwright `devices/shared_device_no_personal_login` (revert-and-rerun recorded) |
 | — | `Sessions.create/3` refuses `:device_token` | ExUnit `sessions_test` |
