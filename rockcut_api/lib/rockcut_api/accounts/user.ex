@@ -22,7 +22,7 @@ defmodule RockcutApi.Accounts.User do
     field :staff_code_set_at, :utc_datetime
 
     # D43: "light" | "dark" | "device" (follow the browser). A device account's
-    # applies on its tablets, also while someone uses "Sign in as me" there.
+    # applies on its tablets.
     field :color_mode, :string, default: "light"
 
     # D49 §3.12: "Show planned batches" on the Brewery board, per person.

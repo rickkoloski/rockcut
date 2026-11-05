@@ -16,8 +16,7 @@ defmodule RockcutApiWeb.MeController do
         staff_codes: StaffCodes.can_manage?(user),
         # D37: the board's History tab, import and export.
         beer_board_manage: Authz.can?(user, :history, :beer_board),
-        # D43: the tablet's own setting during "Sign in as me".
-        color_mode: Accounts.effective_color_mode(user, conn.assigns[:current_session]),
+        color_mode: user.color_mode,
         # D49: the Brewery board's "Show planned batches".
         show_planned_batches: user.show_planned_batches,
         # D41: the boards this person can open, in nav order.

@@ -8,7 +8,6 @@ import { useRegisterSW } from 'virtual:pwa-register/react'
 import useAuth from '../hooks/useAuth'
 import useActing from '../hooks/useActing'
 import { actingExpired } from '../lib/acting'
-import { asideDeviceToken } from '../lib/device'
 import { TABLET_RECHECK_MS, TABLET_RELOAD_DELAY_MS, UPDATE_CHECK_MS, dialogOpen, tabletMayReload, typing } from '../lib/updatePrompt'
 
 // D45 (spec §3.1): a new build waits (prompt mode) and the app says so.
@@ -83,7 +82,6 @@ export default function UpdatePrompt() {
       const acting = useActing.getState()
       const idle = tabletMayReload({
         isDevice: useAuth.getState().user?.kind === 'device',
-        personalSession: !!asideDeviceToken(),
         acting: !!acting.asking || (!!acting.session && !actingExpired(acting.session, Date.now())),
         dialogOpen: dialogOpen(),
         typing: typing(),

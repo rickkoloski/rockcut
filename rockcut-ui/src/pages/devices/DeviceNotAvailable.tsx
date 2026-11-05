@@ -14,7 +14,7 @@ export default function DeviceNotAvailable() {
           Not available on a shared device
         </Typography>
         <Typography color="text.secondary" sx={{ mb: 3 }}>
-          This page needs your own account. Use “Sign in as me” at the top of the screen.
+          This page needs your own account. Use your own phone or computer.
         </Typography>
         <Button variant="contained" onClick={() => navigate('/')}>
           Go to Home

@@ -1,12 +1,12 @@
 import { useEffect } from 'react'
 import useAuth from './useAuth'
-import { DEVICE_TOKEN_KEY, TOKEN_KEY, UNPAIRED_KEY, readStorage } from '../lib/device'
+import { TOKEN_KEY, UNPAIRED_KEY, readStorage } from '../lib/device'
 
-const AUTH_KEYS: (string | null)[] = [TOKEN_KEY, DEVICE_TOKEN_KEY, UNPAIRED_KEY, null]
+const AUTH_KEYS: (string | null)[] = [TOKEN_KEY, UNPAIRED_KEY, null]
 
 /**
  * Keep every tab of the app on the same session (DEV G3). When another tab
- * signs in, signs out, starts or ends "Sign in as me", or unpairs a tablet,
+ * signs in, signs out, pairs or unpairs a tablet,
  * this tab's token no longer matches storage: reload from `/`, so nothing
  * from the previous session stays on screen or in memory.
  * (`storage` events fire only in the other tabs; `key` is null on clear().)

@@ -1,5 +1,5 @@
 // D43: the theme setting (`users.color_mode`). `/api/me` sends the one that
-// applies here: a shared tablet's own, also while someone uses "Sign in as me".
+// applies here: the person's own, or a shared tablet's.
 export type ColorMode = 'light' | 'dark' | 'device'
 
 export const COLOR_MODES: { key: ColorMode; label: string }[] = [

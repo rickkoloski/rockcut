@@ -4,13 +4,12 @@ import { TABLET_RECHECK_MS, TABLET_RELOAD_DELAY_MS, UPDATE_CHECK_MS, tabletMayRe
 // D45 Q1: a shared tablet reloads into a new build by itself only when idle
 // on its shared screen; anyone using it gets the prompt instead.
 describe('the shared tablet idle rule', () => {
-  const idle: TabletState = { isDevice: true, personalSession: false, acting: false, dialogOpen: false, typing: false }
+  const idle: TabletState = { isDevice: true, acting: false, dialogOpen: false, typing: false }
 
   it('reloads a tablet idle on its shared screen', () => expect(tabletMayReload(idle)).toBe(true))
 
   it.each([
     ['a person (not a tablet)', { isDevice: false }],
-    ['"Sign in as me"', { personalSession: true }],
     ['an "Acting as" window or the staff-code dialog', { acting: true }],
     ['an open dialog or menu', { dialogOpen: true }],
     ['a message being typed', { typing: true }],

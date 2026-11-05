@@ -87,7 +87,7 @@ defmodule RockcutApiWeb.StaffCodeActing do
       error: "staff_code_locked",
       retry_after_minutes: minutes,
       message:
-        "Too many wrong codes. Try again in #{minutes} #{if minutes == 1, do: "minute", else: "minutes"}, or use Sign in as me."
+        "Too many wrong codes. Try again in #{minutes} #{if minutes == 1, do: "minute", else: "minutes"}."
     })
   end
 

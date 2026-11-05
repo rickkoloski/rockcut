@@ -36,7 +36,7 @@ defmodule RockcutApiWeb.TaskBoardController do
   carry the production `undo_token` (`POST /api/production/undo/:token`)
   and the write's `result` (`renumbered`, `out_of_order`, `message`). A
   shared tablet gets 403 `linked_task_device` on every one (decision 8,
-  until D50), with a staff code or without; "Sign in as me" is a person.
+  until D50), with a staff code or without.
 
   `GET …/tasks?linked=true`: only the linked tasks (the Gantt's Task list).
   """

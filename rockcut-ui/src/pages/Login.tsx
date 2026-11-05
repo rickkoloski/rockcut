@@ -2,8 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { Box, Button, TextField, Typography, Paper, Alert, Link, useTheme } from '@mui/material'
 import useAuth from '../hooks/useAuth'
 import PasswordField from '../components/PasswordField'
-import { PERSONAL_IDLE_MS, UNPAIRED_KEY, asideDeviceToken, clearUnpaired, readStorage } from '../lib/device'
-import useIdleReturn from '../hooks/useIdleReturn'
+import { SHARED_DEVICE_LOGIN_REFUSED, TOKEN_KEY, UNPAIRED_KEY, clearUnpaired, isDeviceToken, readStorage } from '../lib/device'
 
 // "abcd efgh" → "ABCD-EFGH" as it's typed (D33 pairing codes: 8 characters).
 function formatCode(raw: string): string {
@@ -20,13 +19,10 @@ export default function Login() {
   const [deviceSetup, setDeviceSetup] = useState(unpaired)
   const [code, setCode] = useState('')
   const [tabletName, setTabletName] = useState('')
-  const { login, pairDevice, endPersonalSession, isLoading, error } = useAuth()
-  // D33: a staff member chose "Sign in as me" on a shared tablet.
-  const onSharedTablet = !!asideDeviceToken()
-  // D36-I (task 4052): a form left open goes back to the shared screen after the
-  // same 5 idle minutes as a personal session (Cancel's path; the reload clears
-  // the typed email). Typing or tapping restarts the timer.
-  useIdleReturn(onSharedTablet, PERSONAL_IDLE_MS, endPersonalSession)
+  const { login, pairDevice, isLoading, error } = useAuth()
+  // D54: a paired tablet takes no personal logins. The form isn't shown, and
+  // if the API refuses one anyway (pairing in another tab), it goes too.
+  const refused = isDeviceToken(readStorage(TOKEN_KEY)) || error === SHARED_DEVICE_LOGIN_REFUSED
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -69,7 +65,7 @@ export default function Login() {
         />
 
         <Typography variant="h6" color="text.secondary">
-          {deviceSetup ? 'Set up as a shared device' : onSharedTablet ? 'Sign in as yourself' : 'Sign in to continue'}
+          {deviceSetup ? 'Set up as a shared device' : refused ? 'Shared device' : 'Sign in to continue'}
         </Typography>
 
         {deviceSetup && unpaired && (
@@ -84,13 +80,17 @@ export default function Login() {
           </Typography>
         )}
 
-        {error && (
+        {error && !refused && (
           <Alert severity="error" sx={{ width: '100%' }}>
             {error}
           </Alert>
         )}
 
-        {deviceSetup ? (
+        {refused && !deviceSetup ? (
+          <Alert data-testid="shared-device-login-refused" severity="info" sx={{ width: '100%' }}>
+            {SHARED_DEVICE_LOGIN_REFUSED}
+          </Alert>
+        ) : deviceSetup ? (
           <Box component="form" onSubmit={handlePair} sx={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 2 }}>
             <TextField
               label="Pairing code"
@@ -160,15 +160,9 @@ export default function Login() {
           >
             {isLoading ? 'Signing in...' : 'Sign In'}
           </Button>
-          {onSharedTablet ? (
-            <Button data-testid="back-to-shared" variant="text" onClick={endPersonalSession}>
-              Cancel — back to the shared screen
-            </Button>
-          ) : (
-            <Link data-testid="device-setup-link" component="button" type="button" variant="body2" onClick={() => setDeviceSetup(true)}>
-              Set up as a shared device
-            </Link>
-          )}
+          <Link data-testid="device-setup-link" component="button" type="button" variant="body2" onClick={() => setDeviceSetup(true)}>
+            Set up as a shared device
+          </Link>
         </Box>
         )}
       </Paper>

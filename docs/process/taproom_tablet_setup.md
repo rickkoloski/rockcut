@@ -14,7 +14,8 @@ the name if a path doesn't match.
   All-staff and Taproom channels.
 - **Can't:** post messages, claim or change shifts, see time off, change
   anything, or reach Admin, Brewery, or anyone's personal pages. Typing one
-  of those addresses shows "Not available on a shared device".
+  of those addresses shows "Not available on a shared device". Nobody can
+  sign in as themselves on it (section 6).
 - **Assume customers can read the screen.** Everything the tablet shows is
   something a customer at the bar could see.
 
@@ -90,13 +91,19 @@ it's better if it stays up:
   bar. For a tablet that's always on a charger, **Developer options** →
   **Stay awake** keeps the screen on while charging (leave USB debugging off).
 
-## 6. A staff member using their own account on the tablet
+## 6. Personal use: on your own phone or computer
 
-Tap **Sign in as me** at the top and sign in with your own email and password,
-for example to request time off. A banner shows who is signed in. When you
-tap **Sign out**, or after **5 minutes** without anyone touching the screen,
-the tablet goes back to the shared screen by itself — also if the tablet went
-to sleep in between: it's back on the shared screen as soon as it wakes. It doesn't need pairing again.
+A shared tablet doesn't take personal sign-ins (D54). For your schedule, time
+off, availability, messages, notifications or your profile, use Rockcut on
+your own phone or computer. At the bar and in the brewhouse, your **staff
+code** is what records who ticked a task or redeemed a beer, as before.
+
+If someone opens the sign-in page on a paired tablet, it says: *"This device
+is already set as a shared device. Personal logins not accepted."* and has no
+form.
+
+To use a tablet as someone's own device again, sign it out first (below);
+after that it signs in like any browser.
 
 ## 7. Signing a tablet out, and a lost or stolen tablet
 
