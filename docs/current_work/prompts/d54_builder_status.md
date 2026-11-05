@@ -277,3 +277,73 @@ ran `-g "S249|S251"`:
 ## LEAD:
 
 None. Ready for the full local suite.
+
+---
+
+# Fix cycle 1 (2026-11-04)
+
+Following `d54_lead_decisions_2.md`, from the DEV QA report (build `ca5d9be`).
+Run against the local servers from `~/src/rockcut-d54`, after
+`mix rockcut.synthetic.setup` and `npx playwright test --project setup`. Not pushed.
+
+| SHA | Fix | Message |
+|---|---|---|
+| `4536d76` | G1 | fix: D54 refuse a live tablet token in Authorization too |
+| `e28d27c` | G5 | fix: D54 pairing ends on the tablet's Home |
+
+## G1: live tablet token in `Authorization`
+
+- `SessionController.signing_in_on/1` now checks `X-Rockcut-Device` and the
+  `Authorization: Bearer` token through `Devices.live_token/1`. A live token in
+  either one refuses, still before the password. Stale, revoked, made-up and
+  person tokens stay ignored in both.
+- **Tests added** (`session_revocation_test`, S253):
+  - A live token in `Authorization` only: 403 with the refusal text for the right and a wrong password, no `user_sessions` row, and the tablet still answers 200.
+  - A live token in `Authorization` with a made-up `X-Rockcut-Device`: 403. (Not in the decisions; it stops a junk header from hiding a live token.)
+  - A revoked device token, `dev_made-up`, a person's `ses_` token or garbage in `Authorization`: normal login.
+- **Revert check** (tests written before the fix, against the old controller):
+  - Without the fix: 20/22 passed. Both 403 tests failed.
+  - With the fix: 22/22 passed.
+
+**The QA report's open question (what did the old shell send?):** I read the
+code on `develop` and didn't run an old shell. "Sign in as me" removes the
+device token from `rockcut_token` (`setDeviceTokenAside`), so `Authorization`
+isn't sent, and `login` sends the set-aside token in `X-Rockcut-Device`. The API
+already refused that request before this fix, so an old cached shell never
+reaches the G1 path. G1 stays fixed as decided, but it wasn't an old-shell hole.
+
+## G5: pairing ends on Home
+
+- `useAuth.pairDevice` now calls `window.location.assign('/')` once the token is
+  stored, replacing the in-page `set` + `loadMe`. Tablet sign-out and the
+  other-tab sync reload the same way. The form stays on "Setting up..." until the
+  page reloads, so the refusal never flashes. A failed pairing still shows its
+  error on the form.
+- Pairing from any other URL now also ends on Home. Before, it stayed on that
+  URL (the spec says "from any URL").
+- **Tests added** (`shared_device_no_personal_login`, S254): a blank browser
+  types `/login`, or `/schedule`, then pairs with a valid code. It ends on `/`
+  with the device chip and no refusal, and is the same after a reload.
+- **Revert check** (spec written before the fix):
+  - Without the fix: 2 failed, on the pathname staying off `/`.
+  - With the fix: 2 passed.
+- `tests/COVERAGE.md`: S253 and S254 rows added (committed with G5).
+
+## Gate
+
+| Check | Result |
+|---|---|
+| `MIX_ENV=test mix test` (once) | 1817 passed |
+| `npx tsc --noEmit -p tsconfig.app.json` | clean |
+| `pnpm exec vite build` | OK (`dist/sw.js`, 19 precache entries) |
+| `pnpm exec vitest run` | 180 passed (11 files) |
+| `pnpm lint` | 26 errors, 1 warning: no worse than the limit of 26 |
+| `--project=chromium --no-deps tests/regression/devices tests/regression/auth` | **55 passed** (38 devices, 17 auth; 1.1 m) |
+
+Not run: the wider Playwright suites (the lead runs them). The fixes haven't been
+deployed to DEV. Nothing else was changed: G2, G3, G4, G6, G7 and the single-401
+unpairing are untouched, as decided.
+
+## LEAD:
+
+None. Ready for the wider suites and DEV.
