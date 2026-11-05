@@ -2,7 +2,6 @@ import { test, expect as baseExpect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { blankTablet, createDevice, deleteDevices, getDevice, pairingCode, setUpTablet } from './helpers'
-import { claimSpare } from '../auth/spares'
 
 // DEV G4: signing a tablet out always asks first, and never drops the tablet's
 // token unless the server revoked it. Full page loads on a busy local API.
@@ -59,61 +58,5 @@ test.describe('a paired [TEST-TEMP] tablet', () => {
     const t = (await getDevice(owner, device.id))!.tokens[0]
     expect(t.revoked_at).not.toBeNull()
     await tablet.context.close()
-  })
-
-  test('G4: a stale tab’s person Logout never unpairs the tablet', async ({ browser }) => {
-    tag = tempTag('G4 stale')
-    const owner = await apiAs('owner')
-    const device = await createDevice(owner, tag)
-    const { context, page: a } = await blankTablet(browser)
-    await setUpTablet(a, await pairingCode(owner, device.id), `${tag} iPad`)
-    const deviceToken = await a.evaluate(() => localStorage.getItem('rockcut_token'))
-
-    // D34: a spare session of its own (signing out revokes it).
-    await a.getByTestId('personal-signin').click()
-    await a.evaluate((t) => localStorage.setItem('rockcut_token', t), claimSpare())
-    await a.reload()
-    await expect(a.getByTestId('personal-session-banner')).toBeVisible()
-
-    // Tab B misses storage events (as if the browser didn't deliver them), so it stays stale.
-    const b = await context.newPage()
-    await b.addInitScript(() => {
-      const add = window.addEventListener.bind(window)
-      window.addEventListener = ((type: string, ...rest: unknown[]) =>
-        type === 'storage' ? undefined : (add as (...x: unknown[]) => void)(type, ...rest)) as typeof window.addEventListener
-    })
-    // B is frozen while A logs out: any API read B sends then is held, never
-    // answered. Otherwise a read in flight across A's revoke (B's own page
-    // load, or a poll) gets a real 401 and B rightly falls back to the tablet
-    // before its Logout (DEV run 1, D43: /api/time_off still loading on DEV).
-    // Only B's own Logout may move it.
-    let frozen = false
-    await b.route('**/api/**', (route) => (frozen ? undefined : route.continue()))
-    await b.goto('/time_off')
-    await expect(b.getByTestId('personal-session-banner')).toBeVisible()
-    await b.waitForLoadState('networkidle')
-    frozen = true
-
-    await a.getByTestId('logout-button').click()
-    await expect(a.getByTestId('device-chip')).toBeVisible()
-
-    // The stale tab's Logout: the tablet stays paired, and B re-syncs to it.
-    // Task 4933: B still holds the person in memory, but App.tsx reads the
-    // set-aside tablet token from storage on every render, so any re-render
-    // after A's Logout swaps B's banner Sign out for the account menu's Log
-    // out. Both call the same logout(), the path G4 is about, so press
-    // whichever B shows: exactly one of the two matches in either state, and
-    // the click finds it again if B re-renders in between. B is frozen until
-    // just before, so nothing but its own Logout can re-sync it.
-    frozen = false
-    await b.getByTestId('logout-button').or(b.getByTestId('account-menu')).click()
-    const menuLogout = b.getByRole('menu').getByTestId('logout-button')
-    await expect(menuLogout.or(b.getByTestId('device-chip'))).toBeVisible()
-    if (await menuLogout.isVisible()) await menuLogout.click()
-    await expect(b.getByTestId('device-chip')).toBeVisible()
-    expect(await b.evaluate(() => localStorage.getItem('rockcut_token'))).toBe(deviceToken)
-    const t = (await getDevice(owner, device.id))!.tokens[0]
-    expect(t.revoked_at).toBeNull()
-    await context.close()
   })
 })

@@ -24,7 +24,8 @@ test.afterEach(async () => {
 test('S6: the tablet’s nav and app bar', async ({ page }) => {
   await page.goto('/')
   await expect(page.getByTestId('device-chip')).toContainText('Shared device · Taproom')
-  await expect(page.getByTestId('personal-signin')).toBeVisible()
+  // D54: no "Sign in as me".
+  await expect(page.getByTestId('personal-signin')).toHaveCount(0)
 
   const nav = page.locator('.MuiDrawer-paper').filter({ visible: true })
   await expect(nav.getByRole('button', { name: 'Home' })).toBeVisible()

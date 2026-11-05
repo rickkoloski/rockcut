@@ -70,7 +70,7 @@ Known gaps:
 |---|---|
 | G1 deactivate revokes tablets; reactivation needs new pairings | ExUnit `devices_test`, `auth_plug_device_test` |
 | ~~G2 a personal session ends when its tablet is revoked/deactivated~~ Retired in D54 (no personal sign-in on a tablet) | — |
-| G3 other tabs re-sync; Availability load error | Playwright `devices/availability_errors`; the two-tab re-sync went with `personal_signin` in D54 (see D54 notes) |
+| G3 other tabs re-sync; Availability load error | Playwright `devices/shared_device_no_personal_login` (D54: a person's sign-out in tab A, tab B leaves the app), `devices/availability_errors` |
 | G4 sign-out only after a server revoke; stale tab can't unpair | Playwright `devices/device_signout` |
 | G5 Deactivate confirmation | Playwright `shared_devices_admin`, `device_permissions` (S12) |
 | G6 no Calendar sync; no refused requests on device pages | Playwright `device_session` |
@@ -717,17 +717,17 @@ Playwright specs are in `regression/production/` (project `production`) and, for
 
 ## D54 — Remove "Sign in as me" from shared tablets (`specs/d54_remove_tablet_sign_in_as_me_spec.md`)
 
-Retired with it: D33 S13, G2; D34 S4–S7, S15; D37 S13; D43 S148 (marked above). Playwright `devices/personal_signin` and `devices/personal_signin_revoke` are deleted; the personal-session cases in `tablet_idle`, `device_header`, `device_signout`, `device_session`, `pwa-update/update_prompt`, `ui/theme` and `taproom/beer-board-device` go with them (plan step 7).
+Retired with it: D33 S13, G2; D34 S4–S7, S15; D37 S13; D43 S148 (marked above). Playwright `devices/personal_signin`, `devices/personal_signin_revoke` and `devices/tablet_idle` (both its tests were D36-G/I personal-session idle) are deleted; the personal-session cases in `device_header`, `device_signout` (G4 stale tab), `device_session` (S6 now expects no button), `pwa-update/update_prompt` (S176), `ui/theme` (S148) and `taproom/beer-board-device` (S13) go with them. The mocked staff-code lockout messages in `beer-board-device` and `tasks/task-board-tablets` match the new text.
 
 | # | Scenario | Coverage |
 |---|---|---|
-| S244 | Tablet header: no Sign in as me; device pill, theme, Sign out | Playwright `devices/shared_device_no_personal_login` (step 7) |
-| S245 | Paired tablet types `/login`: the refusal, no form | Playwright `devices/shared_device_no_personal_login` (step 7) |
-| S246 | `POST /api/session` with a live `X-Rockcut-Device`: 403 for the right and a wrong password (and an unknown email), no session row | ExUnit `session_revocation_test` (revert-and-rerun recorded); Playwright `devices/shared_device_no_personal_login` (API, step 7) |
+| S244 | Tablet header: no Sign in as me; device pill, theme, Sign out | Playwright `devices/shared_device_no_personal_login`, `devices/device_header` (both widths), `devices/device_session` (S6) |
+| S245 | Paired tablet types `/login`: the refusal, no form; the login form shows the refusal in place of the form when the API refuses | Playwright `devices/shared_device_no_personal_login` |
+| S246 | `POST /api/session` with a live `X-Rockcut-Device`: 403 for the right and a wrong password (and an unknown email), no session row | ExUnit `session_revocation_test` (revert-and-rerun recorded); Playwright `devices/shared_device_no_personal_login` (API; persist-verified: Sign out of all other devices revokes 0) |
 | S247 | `bartender1` signs in normally without the header (30 days) | ExUnit `session_revocation_test`; Playwright `auth/*` |
-| S248 | A revoked, made-up or person token in the header: normal login | ExUnit `session_revocation_test`; Playwright `devices/shared_device_no_personal_login` (step 7) |
-| S249 | Release migration revokes tablet sessions only; the tablet returns to its shared screen | ExUnit `migrations/revoke_tablet_personal_sessions_test` (revert-and-rerun recorded); Vitest `leftoverTabletSession` (start-up shim, revert-and-rerun recorded); Playwright seeded leftover state (step 7); **manual** on DEV (a personal session started on `develop` before the deploy) |
+| S248 | A revoked, made-up or person token in the header: normal login | ExUnit `session_revocation_test`; Playwright `devices/shared_device_no_personal_login` (revoked `[TEST-TEMP]` tablet) |
+| S249 | Release migration revokes tablet sessions only; the tablet returns to its shared screen | ExUnit `migrations/revoke_tablet_personal_sessions_test` (revert-and-rerun recorded); Vitest `leftoverTabletSession` (start-up shim, revert-and-rerun recorded); Playwright `devices/shared_device_no_personal_login` (seeded pre-D54 storage: tablet view, keys gone, person's token 401; revert-and-rerun recorded); **manual** on DEV (a personal session started on `develop` before the deploy) |
 | S250 | Staff codes unchanged: Acting as for 5 minutes, Buy-a-Beer | Existing Playwright `tasks/task-board-tablets`, `taproom/beer-board-device`; ExUnit `task_board_device_test`, `beer_board_controller_test` |
-| S251 | Tablet revoked: "This tablet was unpaired" straight away (4988), never a sign-in form | Vitest `leftoverTabletSession` (stale set-aside token restored); Playwright `devices/shared_device_no_personal_login` (step 7) |
+| S251 | Tablet revoked: "This tablet was unpaired" straight away (4988), never a sign-in form | Vitest `leftoverTabletSession` (stale set-aside token restored); Playwright `devices/shared_device_no_personal_login` (stale set-aside token only, revert-and-rerun recorded; a paired tablet revoked by the owner) |
 | S252 | `breweryMgr` Profile → Change password; Sign out of all other devices | ExUnit `session_revocation_test` (S8, S14); Playwright `auth/profile`, `auth/session_revocation` |
 | — | `Sessions.create/3` refuses `:device_token` | ExUnit `sessions_test` |

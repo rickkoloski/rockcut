@@ -209,7 +209,7 @@ test.describe('the brewhouse tablet', () => {
       route.fulfill({
         status: 429,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'staff_code_locked', retry_after_minutes: 7, message: 'Too many wrong codes. Try again in 7 minutes, or use Sign in as me.' }),
+        body: JSON.stringify({ error: 'staff_code_locked', retry_after_minutes: 7, message: 'Too many wrong codes. Try again in 7 minutes.' }),
       }),
     )
     await page.goto('/tasks/brewery')

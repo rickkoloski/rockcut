@@ -1,7 +1,6 @@
 import { test, expect } from '@playwright/test'
 import type { ChildProcess } from 'node:child_process'
 import { addDays, apiAs, cleanupTasks, denverToday, tempTag } from '../regression/brewery/taskBoardHelpers'
-import { claimSpare } from '../regression/auth/spares'
 import { createTempPerson, retireTempPerson, type TempPerson } from '../regression/auth/helpers'
 import { buildBoth, buildOld, deployBAndLook, openOnA, previewState, prompt, runningBuild, serve, startPreview, stopPreview, writePreviewStates } from './helpers'
 
@@ -112,24 +111,6 @@ test.describe('taproomDevice', () => {
     await expect(prompt(page)).toBeVisible()
     await expect.poll(() => runningBuild(page), { timeout: 20_000 }).toBe('B')
     await expect(page.getByTestId('device-chip')).toBeVisible()
-  })
-
-  test('S176: "Sign in as me" gets the prompt and no reload; signed out and idle, it reloads', async ({ page }) => {
-    await openOnA(page, '/')
-    await page.getByTestId('personal-signin').click()
-    // A spare session stands in for typing the person's password.
-    await page.evaluate((t) => localStorage.setItem('rockcut_token', t), claimSpare())
-    await page.reload()
-    await expect(page.getByTestId('personal-session-banner')).toBeVisible()
-
-    await deployBAndLook(page)
-    await expect(prompt(page)).toBeVisible()
-    await page.waitForTimeout(15_000)
-    expect(await runningBuild(page)).toBe('A')
-
-    await page.getByTestId('logout-button').click()
-    await expect(page.getByTestId('device-chip')).toBeVisible()
-    await expect.poll(() => runningBuild(page), { timeout: 25_000 }).toBe('B')
   })
 })
 
