@@ -36,7 +36,8 @@ session code.
 - **`POST /api/sessions` refuses a live tablet.** When the request carries
   `X-Rockcut-Device` with a **live** device token, answer **403** with
   `{error: "This device is already set as a shared device. Personal logins
-  not accepted."}` and create nothing. This is checked **before** the
+  not accepted."}` and create nothing. A live device token in
+  `Authorization: Bearer` is refused the same way (DEV QA G1). This is checked **before** the
   password, so the answer never reveals whether a password was right.
 - A **stale or revoked** device token in the header is ignored, as today: a
   browser that used to be a tablet can be used for a normal login (that's
@@ -64,7 +65,9 @@ old code just sees those sessions as revoked.
 ### 3.3 UI
 
 - **Tablet header:** the **Sign in as me** button goes. The header keeps the
-  device pill, theme and Sign out (which unpairs, as today).
+  device pill and Sign out (which unpairs, as today). The tablet's theme is
+  set in Admin → Shared devices and still applies; the header never had a
+  theme control.
 - **Login page on a paired tablet** (someone types `/login`): shows the
   refusal message instead of the form, with no way to submit. If the API
   refuses anyway (e.g. a race with pairing), the same message shows.
@@ -77,6 +80,8 @@ old code just sees those sessions as revoked.
 - **After deploy, a tablet that had someone signed in** finds the session
   revoked and goes back to the tablet view (the existing "session ended"
   path), not to a login form.
+- **Pairing from any URL ends on the tablet's Home,** including from `/login`
+  (DEV QA G5).
 - **Fold in task 4988:** with only a stale `rockcut_device_token` the app
   checks the device first and shows "This tablet was unpaired" straight
   away, instead of a sign-in that ends there.
@@ -104,7 +109,7 @@ old code just sees those sessions as revoked.
 
 | # | Persona | Entry point | Mode / state | Expected |
 |---|---|---|---|---|
-| S244 | `taproomDevice` | tablet header | paired | No **Sign in as me**. Device pill, theme and Sign out still there. |
+| S244 | `taproomDevice` | tablet header | paired | No **Sign in as me**. Device pill and Sign out still there. |
 | S245 | `taproomDevice` | typed `/login` | paired | The refusal message, no form. |
 | S246 | — | `POST /api/sessions` with `bartender1`'s right password and the Taproom tablet's live `X-Rockcut-Device` | | 403 with the refusal message; no session row. Same with a **wrong** password (no hint which). |
 | S247 | `bartender1` | phone/laptop login | no device header | Signs in normally. |
@@ -112,6 +117,8 @@ old code just sees those sessions as revoked.
 | S249 | — | release migration | a personal session started on a tablet before deploy | Revoked; the tablet goes back to its tablet view on the next request; the person's sessions on their own devices are untouched. |
 | S250 | `breweryDevice` | Brewery board → tick a task with a staff code; Buy-a-Beer on `taproomDevice` | | Unchanged: "Acting as" for 5 minutes (D40). |
 | S251 | `taproomDevice` | owner revokes the tablet in Admin → Shared devices | | Tablet shows "This tablet was unpaired" straight away (4988), never a sign-in form. |
+| S253 | — | `POST /api/sessions` with a live tablet token in `Authorization: Bearer`, no `X-Rockcut-Device` | right password | 403 with the refusal message; no session (DEV QA G1). |
+| S254 | blank browser | typed `/login` → Set up as a shared device → valid code | | Ends on the tablet's Home, not the refusal (DEV QA G5). |
 | S252 | `breweryMgr` | Profile → Change password; Sign out of all other devices | own laptop | Unchanged. |
 
 ## 5. Out of scope
