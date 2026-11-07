@@ -1,6 +1,6 @@
 # D54: Remove "Sign in as me" from shared tablets — Spec
 
-**Status:** APPROVED by Matt 2026-11-02
+**Status:** COMPLETE, on prod in `v2026.11.04`; approved by Matt 2026-11-02; Matt's tablet checks open (task 5164)
 **Backlog:** PortableMind project 254, task 5064
 **Order:** ships **before** D53 (Idea Boards), in its own release. D53's
 review item 16 ("Sign in as me" on Idea Boards) goes away with it.
