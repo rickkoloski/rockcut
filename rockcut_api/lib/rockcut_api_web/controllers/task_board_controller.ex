@@ -284,17 +284,29 @@ defmodule RockcutApiWeb.TaskBoardController do
   # Notes and assignee go to the step; a new day is a move; a title or a
   # repeat is refused.
   defp linked_update(person, task, step, params) do
-    with {:ok, params} <- one_assignee(params), do: linked_edit(person, task, step, params)
+    with {:ok, params} <- one_assignee(task, params),
+         do: linked_edit(person, task, step, params)
   end
 
   # D53 §3.1: steps stay single-assignee, so `assignee_ids` is one id or none,
-  # which the step takes as its `assignee_id`.
-  defp one_assignee(params) do
+  # which the step takes as its `assignee_id`. Someone who can't take it is
+  # refused as on any other task: by name, under `assignee_ids`.
+  defp one_assignee(task, params) do
     case Assignees.given(params) do
-      nil -> {:ok, params}
-      [] -> {:ok, Map.put(params, "assignee_id", nil)}
-      [id] -> {:ok, Map.put(params, "assignee_id", id)}
-      _ -> {:error, :linked_task_assignees}
+      nil ->
+        {:ok, params}
+
+      [] ->
+        {:ok, Map.put(params, "assignee_id", nil)}
+
+      [id] ->
+        checked =
+          task |> Ecto.Changeset.change() |> Assignees.validate(params, Assignees.ids(task))
+
+        if checked.valid?, do: {:ok, Map.put(params, "assignee_id", id)}, else: {:error, checked}
+
+      _ ->
+        {:error, :linked_task_assignees}
     end
   end
 

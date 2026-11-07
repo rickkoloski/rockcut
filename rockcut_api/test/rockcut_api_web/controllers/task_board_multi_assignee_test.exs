@@ -327,6 +327,29 @@ defmodule RockcutApiWeb.TaskBoardMultiAssigneeTest do
       assert Assignees.ids(task) == []
     end
 
+    test "QA gap 7: someone who can't take it is refused by name, under assignee_ids", ctx do
+      %{p: p, step: step, task: task} = ctx
+      bartender = p["bartender1"]
+
+      assert %{"errors" => errors} =
+               call(p["brewer1"], :patch, "/api/boards/brewery/tasks/#{task.id}", %{
+                 assignee_ids: [bartender.id]
+               })
+               |> json_response(422)
+
+      assert errors == %{"assignee_ids" => ["#{bartender.name} must be a Brewery member"]}
+
+      # A UI tab on the old version, and the single picker, send the lone id.
+      assert %{"errors" => ^errors} =
+               call(p["brewer1"], :patch, "/api/boards/brewery/tasks/#{task.id}", %{
+                 assignee_id: bartender.id
+               })
+               |> json_response(422)
+
+      assert Repo.get!(Step, step.id).assignee_id == nil
+      assert Assignees.ids(task) == []
+    end
+
     test "one person goes to the step, and the task follows", %{p: p, step: step, task: task} do
       b2 = p["brewer2"]
 
