@@ -120,6 +120,31 @@ describe('describeEvent: made_repeating (Decision 6)', () => {
   })
 })
 
+describe('describeEvent: a rule change (D53)', () => {
+  const ev = (detail: Record<string, unknown>): TaskEvent => ({
+    id: 1,
+    task_id: 7,
+    action: 'edited',
+    title: 'Keg Wash',
+    actor_id: 1,
+    actor_name: 'Kate',
+    on_shared_device: false,
+    detail,
+    inserted_at: '2026-10-14T18:00:00Z',
+  })
+  const names = { users: { '5': 'Sam Brewer', '6': 'Riley Wort' }, items: {} }
+  const repeat = { to: { frequency: 'weekly', interval: 1, weekdays: [1, 3] } }
+
+  it('reads as the rule alone when only the rule changed', () => {
+    expect(describeEvent(ev({ scope: 'following', repeat, removed: 4, kept: 0 }), names)).toMatch(/^Changed how Keg Wash repeats \(this and following\): .+; removed 4$/)
+  })
+
+  it('names the people when the same save changed them', () => {
+    const text = describeEvent(ev({ scope: 'following', repeat, removed: 4, kept: 0, from: { assignee_ids: [5] }, to: { assignee_ids: [6] } }), names)
+    expect(text).toMatch(/^Changed how Keg Wash repeats .+; removed 4; Assigned Riley Wort to Keg Wash; removed Sam Brewer$/)
+  })
+})
+
 describe('describeEvent: assignees, old and new shapes (D53)', () => {
   const ev = (action: TaskEvent['action'], detail: Record<string, unknown>): TaskEvent => ({
     id: 1,

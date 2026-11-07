@@ -345,10 +345,6 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
     case 'edited': {
       const scope = scopeNote(d.scope)
       const rule = d.repeat as { from?: Record<string, unknown>; to?: Record<string, unknown> } | undefined
-      if (rule?.to) {
-        const removed = Number(d.removed ?? 0) + Number(d.kept ?? 0) > 0 ? `; ${removedNote(d)}` : ''
-        return `Changed how ${t} repeats${scope}: ${summaryFromDetail(rule.to, null)}${removed}`
-      }
       const from = (d.from ?? {}) as { title?: string; notes?: string | null; assignee_ids?: number[] }
       const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null; assignee_ids?: number[] }
       const parts: string[] = []
@@ -358,6 +354,11 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
       if ('assignee_id' in to) {
         const who = person(to.assignee_id)
         parts.push(who ? `Assigned ${t} to ${who}` : `Unassigned ${t}`)
+      }
+      if (rule?.to) {
+        const removed = Number(d.removed ?? 0) + Number(d.kept ?? 0) > 0 ? `; ${removedNote(d)}` : ''
+        const also = parts.length ? `; ${parts.join('; ')}` : ''
+        return `Changed how ${t} repeats${scope}: ${summaryFromDetail(rule.to, null)}${removed}${also}`
       }
       return (parts.join('; ') || `Edited ${t}`) + scope
     }

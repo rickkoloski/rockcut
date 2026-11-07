@@ -7,7 +7,7 @@ import { actingRun } from '../../hooks/useActing'
 import api from '../../lib/api'
 import { isActingCancelled, withCode } from '../../lib/acting'
 import { boardPath, cardPeople, samePeople, taskError, taskGone, taskSaveError } from '../../lib/tasks'
-import { defaultRule, endsOnlyChange, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
+import { defaultRule, endsOnlyChange, reseed, ruleChangeNote, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
 import type { RosterEntry, SeriesChange, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
 import RepeatFields from './RepeatFields'
 import { ExtendDialog, RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
@@ -386,6 +386,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
             title={confirmEnds.change.kind === 'ends' ? 'Change when it ends' : 'Change the repeat'}
             laterOpen={confirmEnds.change.removes_open}
             laterChanged={confirmEnds.change.removes_changed}
+            note={confirmEnds.change.kind === 'rule' ? ruleChangeNote('assignee_ids' in confirmEnds.body) : undefined}
             loading={saving}
             onConfirm={(changed) => send(confirmEnds.body, 'following', changed)}
             onCancel={() => setConfirmEnds(null)}
@@ -398,6 +399,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
           title="Change the repeat"
           laterOpen={series.later_open}
           laterChanged={series.later_changed}
+          note={ruleChangeNote('assignee_ids' in confirmRemove.body)}
           loading={saving}
           onConfirm={(changed) => send(confirmRemove.body, 'following', changed)}
           onCancel={() => setConfirmRemove(null)}

@@ -213,3 +213,10 @@ export function removeLaterWording(laterOpen: number, laterChanged: number) {
     }
   return { message: `Removes ${occ(laterOpen)}.`, keep: null, removeAll: 'Remove' }
 }
+
+/** D53: what a rule change does to the people on the occurrences it remakes. */
+export function ruleChangeNote(peopleChanged: boolean) {
+  return peopleChanged
+    ? 'The new pattern remakes them with the people you picked.'
+    : 'The new pattern remakes them: dates that stay keep their people, and a new date takes the people of the one before it.'
+}
