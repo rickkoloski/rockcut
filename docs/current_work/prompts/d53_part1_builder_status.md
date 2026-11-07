@@ -270,3 +270,80 @@ Nothing below has been confirmed in a browser. These are where I'd look first:
 2. **`--warnings-as-errors` fails on `reminders.ex:12`.** D42's handoff recorded this check as
    clean, so it broke since then. It isn't D53's change, and I left it alone. Fix it here, or
    file a task?
+
+---
+
+# Stop point 3
+
+2026-11-07 · builder → lead, answering `d53_part1_lead_decisions_2.md`. First run in a
+browser done. Everything you asked me to run passes, after three layout fixes. The full
+suite is still yours. Not pushed. `E2E_TARGET=dev` was never set.
+
+## Results
+
+Run one at a time, with `caffeinate -ims`, against this worktree's servers.
+
+| Run | Result |
+|---|---|
+| `--project setup` | 1 passed |
+| New spec `task-board-multi-assignee` | **19 passed**, on its first run |
+| Changed specs (`recurring`, `tasks`, `history`, `phone`, `departments`) | **78 passed** |
+| `--project brewery-board --no-deps` | **222 passed** (16.9 min) |
+| `--project production --no-deps` | **157 passed** (12.3 min) |
+| `mix test` | 1893 passed |
+| `vitest` | 187 passed |
+| `tsc` (app), `vite build` | clean |
+| `tsc` (e2e) | the same 2 errors already on `develop` |
+| `pnpm lint` | 26 errors, 1 warning (limit is 26 errors) |
+
+No test failed in these runs, so no existing test needed changing. Afterwards: no
+`[TEST-TEMP]` tasks in the dev DB, and every task's `assignee_id` matches its first person.
+
+## What I fixed
+
+The screenshots found all three. The specs I wrote at stop point 2 had no check that would
+have caught them. All are in `7bc4b4f`.
+
+1. **Card, title crushed (real bug).** In a day column about 115 px wide, the avatars sat
+   beside the title and squeezed it to one letter per line, and "+2" ran off the card. Now
+   one person stays beside the title, as before, and two or more get their own row under it.
+2. **Card, initials clipped (real bug).** My 4 px overlap cut second letters, so "MM" read as
+   "MV". I removed the overlap.
+3. **Phone Dashboard, chips (real bug).** Five chips squeezed the title to 8 lines, then, on
+   my first fix, split around it. They now move below the title as one group.
+
+**Tests added:** a layout check in the "+N" test, and a new test for the Dashboard card,
+which had no multi-person coverage. With the old layout restored, both failed; with the fix,
+both passed.
+
+## Screenshots
+
+In `/tmp/claude-501/pwlogs/d53shots/`, all taken after the fixes, as `brewer1` with
+`[TEST-TEMP]` tasks that were deleted afterwards. The script is `shots.cjs` in the same folder.
+
+| What | Files |
+|---|---|
+| Dialog, list open | `dialog-desktop-list-open.png`, `dialog-phone-list-open.png` |
+| Dialog, chips | `dialog-desktop-chips.png`, `dialog-phone-chips.png` |
+| Cards with 2, 3 and 5 people | `board-desktop-1600.png`, `board-desktop-1280.png`, `board-phone.png`, and `board-desktop-*-card-{0,1,2}.png` (0 is five people) |
+| Task menu | `menu-desktop.png`, `menu-phone.png` |
+| Brewery Dashboard card | `dashboard-card.png`, `dashboard-phone-card.png` |
+
+## Worth a look
+
+- **"+2" wraps at the narrowest board.** At 1600 px with Unfinished and Future showing, a card
+  with four or more people puts "+N" on a second row (the row has 77 px and needs 83). It's
+  readable, so I left it.
+- **Console errors on the board:** `<h6>` nested inside `<h1>`, on every board page I opened.
+  `src/components` and `App.tsx` are unchanged on this branch, so it's probably older than
+  D53, but I didn't check it on `develop` or trace it. No other console errors or sideways
+  scrolling showed up.
+- **Only one color mode was looked at.** I didn't check Hop Field Night.
+
+## Handoff note and coverage
+
+Both are updated. In the handoff note, the SHA and the full-suite result are still blank.
+
+## LEAD: questions
+
+None. Over to you for the full suite.

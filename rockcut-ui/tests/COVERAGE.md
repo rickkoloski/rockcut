@@ -736,7 +736,7 @@ Retired with it: D33 S13, G2; D34 S4–S7, S15; D37 S13; D43 S148 (marked above)
 
 ## D53 Part 1 — Multiple assignees on tasks (`specs/d53_idea_boards_spec.md` §3; `planning/d53_part1_multi_assignees_plan.md`; `prompts/d53_part1_lead_decisions_1.md`)
 
-ExUnit files are under `rockcut_api/test/`: `tasks/assignees_test` (the one writer), `tasks/multi_assignees_test` (the context, series, leaving, History names), controller `task_board_multi_assignee_test` (the API, linked tasks, the tablet, the route matrix, S221), `migrations/create_task_assignees_test` (the backfill), `seeds/synthetic_test`. Vitest `tasks.test`. Playwright `regression/brewery/task-board-multi-assignee.spec.ts` (written; first run is the lead's, stop point 2).
+ExUnit files are under `rockcut_api/test/`: `tasks/assignees_test` (the one writer), `tasks/multi_assignees_test` (the context, series, leaving, History names), controller `task_board_multi_assignee_test` (the API, linked tasks, the tablet, the route matrix, S221), `migrations/create_task_assignees_test` (the backfill), `seeds/synthetic_test`. Vitest `tasks.test`. Playwright `regression/brewery/task-board-multi-assignee.spec.ts` (19 tests; passing locally at stop point 3).
 
 | # | Scenario | Layer |
 |---|---|---|
@@ -751,5 +751,6 @@ ExUnit files are under `rockcut_api/test/`: `tasks/assignees_test` (the one writ
 | — | §3.1: `assignee_id` always equals the first; backfill; rows go with the task | ExUnit `assignees_test`, `multi_assignees_test` (`assert_in_step`), `migrations/create_task_assignees_test`, `seeds/synthetic_test` |
 | — | §3.3: a lone `assignee_id` from a UI tab on the old version; a refusal names the person | ExUnit `task_board_multi_assignee_test`, `assignees_test`; Playwright (old tab, refusal); Vitest `tasks.test` (`taskSaveError`) |
 | — | Old single-assignee History rows read as before | ExUnit `multi_assignees_test` (stored rows); Vitest `tasks.test` (exact wording) |
-| — | Up to three initials then "+N"; tooltip names everyone; a person who left stays visible until removed; phone back closes the list, then the dialog | Playwright (one test each) |
+| — | Up to three initials then "+N"; tooltip names everyone; the title keeps its room and nothing runs off the card; a person who left stays visible until removed; phone back closes the list, then the dialog | Playwright (one test each; the layout check was confirmed failing on the old layout) |
+| — | Dashboard Today's tasks shows everyone, chips together, the title keeps its room at phone width | Playwright (at phone width; confirmed failing on the old layout) |
 | — | Rollback API: the board reads one person when `assignees` is absent | Vitest `tasks.test` (`cardPeople`). Not run against an old API: **GAP** |

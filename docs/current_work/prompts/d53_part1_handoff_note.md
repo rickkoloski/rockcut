@@ -1,8 +1,8 @@
 # D53 Part 1 handoff note (PR description, draft)
 
-**Status: draft at stop point 2.** The local gate isn't complete: Playwright hasn't
-run, and nobody has opened this UI in a browser. Fill in the SHA and the Playwright
-results before this goes in the PR.
+**Status: draft at stop point 3.** The builder has run the new spec, the changed specs,
+`brewery-board` and `production`. The full Playwright suite is still the lead's. Fill in
+the SHA and the full-suite result before this goes in the PR.
 
 **Deliverable:** D53 Part 1, multiple assignees on tasks (PortableMind task 5063).
 **Spec:** `docs/current_work/specs/d53_idea_boards_spec.md` §3, S216–S222.
@@ -21,7 +21,7 @@ Scenario → test is in `rockcut-ui/tests/COVERAGE.md` (D53 Part 1).
 | Data | `task_assignees` and `task_series_assignees`, with `position`. Backfilled from `assignee_id`, which stays, kept equal to the first person | §3.1 |
 | One writer | `Tasks.Assignees` is the only code that writes assignees | §3.1 |
 | Task dialog | "Assigned to" is a multi-select with chips. People who stay keep their order, new ones go last. Someone who left stays visible until removed | S216 |
-| Card, menu, Today's tasks | Up to three initials then "+N", with a tooltip; the others show everyone | S216 |
+| Card, menu, Today's tasks | One person stays beside the title; two or more get their own row under it. Up to three initials then "+N", with a tooltip. The menu and Today's tasks show everyone | S216 |
 | View filter, `open_work` | Mine = I'm on the list; Unassigned = nobody | S217 |
 | Leaving a department | Removes only that person from open tasks and series on that board; the next person becomes first | S218 |
 | Repeats | The series carries the list; this, following, splits, Ends-only, one-off → repeat and top-up all follow it | S219 |
@@ -46,15 +46,18 @@ exactly as before.
 backfills them. Down drops the tables and keeps `assignee_id`. No new routes, secrets or
 config. The new error code is `linked_task_assignees`.
 
-## Tests at stop point 2
+## Tests at stop point 3
 
-- ExUnit: 1893 passed, twice (baseline 1817).
+- ExUnit: 1893 passed, three runs (baseline 1817).
 - Vitest: 187 passed. `tsc` and `vite build` clean. Lint: 26 errors, no worse.
 - `tsc -p tsconfig.e2e.json`: 2 errors, both already on `develop` and in lines this
   branch doesn't touch (`task-board-phone.spec.ts:443`, `beer-board-import.spec.ts:40`).
 - `mix compile --warnings-as-errors` fails on `reminders.ex:12` (unused `require
   Logger`), which is also already on `develop`.
-- **Playwright: not run.** _Fill in._
+- Playwright, local, one project at a time: new spec
+  `task-board-multi-assignee` 19/19, changed specs 78/78, `brewery-board` 222/222,
+  `production` 157/157.
+- **Full Playwright suite: not run by the builder.** _The lead fills this in._
 
 Tests were confirmed able to fail by breaking the code on purpose (13 breaks; see the
 status file).
@@ -62,9 +65,9 @@ status file).
 ## ⚠ LIMITATIONS: what local could NOT tell us
 
 **Not exercised anywhere yet:**
-- **The UI has never rendered.** No servers were allowed, so the dialog, card and phone
-  layout are untested until the first Playwright run. Check by eye: three initials plus
-  "+N" on a narrow day column, chips wrapping in the dialog at 360 px.
+- **The other themes and real devices:** the layout was checked in screenshots as
+  `brewer1` at 1600, 1280 and 360 px, in one color mode, in headless Chromium. Hop Field
+  Night and a real tablet or phone weren't looked at.
 - **Android back on a real phone:** the spec uses `page.goBack()`.
 - **S221's push on a device:** ExUnit only, through an injected clock.
 
