@@ -1,15 +1,11 @@
 # D53 Part 1 handoff note (PR description, draft)
 
-**Status: draft at stop point 3.** The builder has run the new spec, the changed specs,
-`brewery-board` and `production`. The full Playwright suite is still the lead's. Fill in
-the SHA and the full-suite result before this goes in the PR.
-
 **Deliverable:** D53 Part 1, multiple assignees on tasks (PortableMind task 5063).
 **Spec:** `docs/current_work/specs/d53_idea_boards_spec.md` §3, S216–S222.
 **Plan:** `docs/current_work/planning/d53_part1_multi_assignees_plan.md`, changed by
 `docs/current_work/prompts/d53_part1_lead_decisions_1.md`.
 **Branch:** `d53-part1-multi-assignees`, from `develop` @ `b3670d0`.
-**SHA for DEV:** _to fill in after the local gate._
+**SHA for DEV:** __SHA__
 **Release:** merges to `develop` after its DEV gate. Not released until Part 2 passes.
 
 ## What changed
@@ -46,7 +42,7 @@ exactly as before.
 backfills them. Down drops the tables and keeps `assignee_id`. No new routes, secrets or
 config. The new error code is `linked_task_assignees`.
 
-## Tests at stop point 3
+## Tests
 
 - ExUnit: 1893 passed, three runs (baseline 1817).
 - Vitest: 187 passed. `tsc` and `vite build` clean. Lint: 26 errors, no worse.
@@ -57,7 +53,7 @@ config. The new error code is `linked_task_assignees`.
 - Playwright, local, one project at a time: new spec
   `task-board-multi-assignee` 19/19, changed specs 78/78, `brewery-board` 222/222,
   `production` 157/157.
-- **Full Playwright suite: not run by the builder.** _The lead fills this in._
+- **Full Playwright suite (lead, with the hotfix merged in, `83097ca`):** 599 passed, 1 skipped. ExUnit on that commit: 1893 passed. `pwa-update` not rerun.
 
 Tests were confirmed able to fail by breaking the code on purpose (13 breaks; see the
 status file).
@@ -102,3 +98,5 @@ the series takes them but the later occurrences don't. The title behaves the sam
 `brewer1`, `brewer2`, `floater`, `breweryMgr`, `owner`, `breweryDevice`, `barMgr`,
 `bartender1`: S216–S222, plus Taproom's seeded shared task. S221 needs a by-hand check on
 a device.
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
