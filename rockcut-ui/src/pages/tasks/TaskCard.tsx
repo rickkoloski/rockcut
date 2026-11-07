@@ -39,6 +39,23 @@ interface Props {
  */
 export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly, noCheck, locked = card.locked, onNotes }: Props) {
   const people = cardPeople(card)
+  // D53: up to three, then "+N"; the tooltip names everyone.
+  const assignees = (
+    <Tooltip title={people.map((p) => p.name).join(', ')}>
+      <Box sx={{ display: 'inline-flex', flexWrap: 'wrap', gap: '1px', flexShrink: 0, verticalAlign: 'top' }} data-testid={`task-assignees-${card.key}`}>
+        {people.slice(0, MAX_INITIALS).map((p, i) => (
+          <Avatar key={p.id} sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={i === 0 ? `task-assignee-${card.key}` : `task-assignee-${card.key}-${i}`}>
+            {initials(p.name)}
+          </Avatar>
+        ))}
+        {people.length > MAX_INITIALS && (
+          <Avatar sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={`task-assignee-more-${card.key}`}>
+            +{people.length - MAX_INITIALS}
+          </Avatar>
+        )}
+      </Box>
+    </Tooltip>
+  )
   const open = (e: MouseEvent<HTMLElement>) => onOpen?.(card, e.currentTarget)
   const tags = [
     card.planned_on && !showDate && { id: 'planned', label: `planned ${formatTaskDay(card.planned_on)}` },
@@ -163,24 +180,10 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
               />
             </Tooltip>
           )}
-          {people.length > 0 && (
-            // D53: up to three, then "+N"; the tooltip names everyone. They overlap a little to leave the title room.
-            <Tooltip title={people.map((p) => p.name).join(', ')}>
-              <Box sx={{ display: 'flex', flexShrink: 0, '& > * + *': { ml: '-4px' } }} data-testid={`task-assignees-${card.key}`}>
-                {people.slice(0, MAX_INITIALS).map((p, i) => (
-                  <Avatar key={p.id} sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={i === 0 ? `task-assignee-${card.key}` : `task-assignee-${card.key}-${i}`}>
-                    {initials(p.name)}
-                  </Avatar>
-                ))}
-                {people.length > MAX_INITIALS && (
-                  <Avatar sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={`task-assignee-more-${card.key}`}>
-                    +{people.length - MAX_INITIALS}
-                  </Avatar>
-                )}
-              </Box>
-            </Tooltip>
-          )}
+          {people.length === 1 && assignees}
         </Box>
+        {/* D53: two or more get their own row; beside the title they'd leave it no room in a day column. */}
+        {people.length > 1 && <Box sx={{ mt: 0.25 }}>{assignees}</Box>}
         {card.production?.planned && (
           // D49 §3.12: a planned batch's step ("Show planned batches" hides these).
           <Chip label="Planned batch" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: 11, mt: 0.25 }} data-testid={`task-planned-${card.key}`} />

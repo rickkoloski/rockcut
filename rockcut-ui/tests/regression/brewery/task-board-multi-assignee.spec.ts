@@ -105,6 +105,11 @@ test.describe('as brewer1', () => {
     await expect(page.getByTestId(`task-assignee-${key}-2`)).toHaveText('JF')
     await expect(page.getByTestId(`task-assignee-${key}-3`)).toHaveCount(0)
     await expect(page.getByTestId(`task-assignee-more-${key}`)).toHaveText('+1')
+    // First browser run: beside the title they squeezed it to a letter per line and ran off the card.
+    const box = async (id: string) => (await page.getByTestId(id).boundingBox())!
+    const [whole, words, more] = [await box(`task-${key}`), await box(`task-title-${key}`), await box(`task-assignee-more-${key}`)]
+    expect(words.width).toBeGreaterThan(whole.width * 0.5)
+    expect(more.x + more.width).toBeLessThanOrEqual(whole.x + whole.width)
     await page.getByTestId(`task-assignees-${key}`).hover()
     await expect(page.getByRole('tooltip')).toHaveText('Jake Brewer, Riley Wort, Jordan Float, Morgan Mash')
   })
@@ -468,6 +473,28 @@ test.describe('at phone width', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.addInitScript(() => localStorage.setItem('rockcut.tasks.phoneView', 'day'))
+  })
+
+  test("the Dashboard's Today's tasks shows everyone, together, and leaves the title its room", async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const day = denverToday()
+    const people = await Promise.all((['brewer1', 'brewer2', 'floater', 'breweryMgr'] as const).map(async (p) => userId(await apiAs(p))))
+    const task = await createTask(api, { title: tempTag('Dashboard'), due_on: day, assignee_ids: people })
+    created.push(task.id)
+    // The card lists the day's first five open tasks.
+    const top = (await getBoard(api, day, day)).days[0].cards[0].id
+    expect((await api.post(`/api/boards/brewery/tasks/${task.id}/move`, { data: { due_on: day, before_id: top } })).status()).toBe(200)
+
+    await page.goto('/brewery')
+    const chips = page.getByTestId(`todays-task-people-${task.id}`)
+    await expect(chips.locator('[data-testid^="todays-task-person-"]')).toHaveCount(4)
+    await expect(page.getByTestId(`todays-task-person-${task.id}-${people[0]}`)).toHaveText('JB')
+    // First browser run: the chips took the row and split around a title squeezed to 8 lines.
+    const row = (await page.getByTestId(`todays-task-person-${task.id}-${people[0]}`).boundingBox())!
+    const last = (await page.getByTestId(`todays-task-person-${task.id}-${people[3]}`).boundingBox())!
+    expect(last.y).toBe(row.y)
+    const words = (await page.getByText(task.title).boundingBox())!
+    expect(words.width).toBeGreaterThan(140)
   })
 
   test('back closes the list first, then the dialog; the dialog stays usable', async ({ page }) => {
