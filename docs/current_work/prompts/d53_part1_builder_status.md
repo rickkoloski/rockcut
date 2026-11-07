@@ -347,3 +347,156 @@ Both are updated. In the handoff note, the SHA and the full-suite result are sti
 ## LEAD: questions
 
 None. Over to you for the full suite.
+
+---
+
+# Fix cycle 1
+
+2026-11-07 · builder → lead, answering `d53_part1_lead_decisions_3.md`. Gaps 1, 2, 3, 7 and
+10 are fixed, P61 and P83–P84 are changed, and the gate passes. Gaps 4, 5, 6, 8, 9 and 11
+weren't touched. Not pushed. DEV wasn't touched and `E2E_TARGET=dev` was never set.
+
+## Is it new?
+
+**No: gaps 1 and 2 are both on `develop` before Part 1.** I read the code and ran a throwaway
+test at `b3670d0`, using the hotfix's `mix.lock` so the deps matched. The worktree is removed.
+
+| Repro | `assignee_id` | `title` | `notes` |
+|---|---|---|---|
+| Gap 1: 11/20 after a rule-only split at 11/18 | **Bug:** Morgan's id → Jordan's | **Bug:** T1 → T2 | Not in this repro: 11/20 counts as changed and is kept |
+| Gap 2: 11/13 after this-only, split, following | **Bug:** flag cleared, overwritten | **Bug:** flag cleared, overwritten | Not in this repro: notes alone never set the flag, and own notes are skipped |
+
+For the PR: Part 1 didn't introduce these, but it does raise the cost, because several people
+can now be replaced at once.
+
+**`title` and `notes`:** they share the same lines, so I fixed them with people. `notes` did
+have a gap 1 case, which the table's repro doesn't reach: a part's notes were lost when the rule
+changed from an earlier part.
+
+## Results
+
+Run one at a time, with `caffeinate -ims`, against this worktree's servers.
+
+| Check | Result |
+|---|---|
+| `mix test`, twice (seeds 573102, 921585) | **1922 passed**, 0 failed |
+| `mix format --check-formatted`, changed files | clean |
+| `tsc -p tsconfig.app.json` | clean |
+| `tsc -p tsconfig.e2e.json` | the same 2 errors already on `develop` |
+| `vitest` | 190 passed |
+| `vite build` | builds |
+| `pnpm lint` | 26 errors, 1 warning (limit is 26 errors) |
+| `--project setup` | 1 passed |
+| `task-board-multi-assignee` | 21 passed |
+| `flags-cips`, `d48-batch-changes` | 12 passed |
+| P61 and P83–P84, `--repeat-each 5` | 10 passed |
+| `--project brewery-board --no-deps` | **224 passed** (17.1 min) |
+| `--project production --no-deps` | **157 passed** (12.4 min) |
+
+Afterwards, in the dev DB: 0 `[TEST-TEMP]` tasks, and 0 tasks whose `assignee_id` differs from
+their first person. The gap 10 test leaves its temp person deactivated, as the other specs do.
+
+## Fixes
+
+### Gap 1 (`1332c1f`, `50d2e89`)
+- **Files:** `tasks/series.ex`, `lib/repeat.ts`, `lib/tasks.ts`, `SeriesDialogs.tsx`,
+  `TaskDialog.tsx`.
+- **Dates:** before the split removes anything, `held_from/4` records what each occurrence
+  holds. `carry_over/4` then gives each date in the new rule:
+  - its own people, title and notes, if the date survives;
+  - otherwise the people of the last occurrence before it, including one the rule drops;
+  - after everything already generated, the series' own values, as a top-up does.
+- **Series' own list:** it comes from the chain's current part (`latest_part/1`), not the
+  acted-on one, so a later part's people aren't lost.
+- **What counts as a change:** compared with the occurrence the person had open, not the
+  series. Naming the people 11/18 already has isn't a people change. A real change reaches
+  every remade occurrence; ones kept as changed on their own keep theirs.
+- **Confirm:** "Removes N later occurrences." stays, with a line under it:
+  - "The new pattern remakes them: dates that stay keep their people, and a new date takes the
+    people of the one before it."
+  - With a people change: "The new pattern remakes them with the people you picked."
+- **History:** a rule-only change reads as before. A people, title or notes change in the same
+  save is now stored and shown; it used to go unrecorded.
+
+### Gap 2 (`1e3dddb`)
+- The reused anchor keeps its flag: `series_exception: task.series_exception or task.due_on != date`.
+- **I found no reason to clear it.** The old line only looked at the day. `following_content`
+  already keeps the flag on an exception it's edited from (S61), so a split now matches.
+- A flagged anchor that also takes a people change in the same save takes it and stays flagged.
+- A flagged anchor whose date the rule drops is still removed, as before.
+
+### Gap 3 (`e237053`)
+- **Over 100 distinct ids:** one 422, "A task can have at most 100 people", before any person
+  lookup. Copies of one id count once.
+- **100 or fewer:** the first five refusals name the person, then "95 more can't be assigned".
+- **Found while testing:** a rule split silently ignored a list it couldn't read and went on to
+  succeed. `Assignees.refused?/1` now refuses it there too.
+- **Also changed:** several refusals now come back in the order given. They were reversed.
+
+### Gap 7 (`932a67e`)
+- `one_assignee` checks the person through `Assignees.validate/3`, so the refusal reads
+  `{"errors":{"assignee_ids":["Sam Pour must be a Brewery member"]}}`. The single picker's lone
+  `assignee_id` gets the same answer. The step's own route is unchanged.
+
+### Gap 10 (`798fae8`)
+- Long names wrap, so the whole name stays readable. I checked this in a 360 px screenshot, in
+  light mode only.
+
+### P61 and P83–P84 (`d9c7671`)
+- **P61:** polls for the date, as you specified.
+- **P83–P84 (`d48-batch-changes.spec.ts`, the brand step at line 199):** the same shape, with a
+  different trigger. Picking a brand starts the save, and the next line read the batch with
+  nothing waiting on the write. It now polls for `brand_id`.
+- **That cause is inferred from the code.** I had no DEV failure log, and neither test failed
+  locally before the change, so the five clean repeats don't prove it. Watch these on the next
+  DEV run.
+- **Other reads in those two files:** the rest come after a snackbar that only shows once the
+  save is done, or use retrying assertions. I changed nothing else.
+
+## Tests fail with the fix reverted
+
+| Fix reverted | Tests run | With the fix | Reverted |
+|---|---|---|---|
+| Gap 3 and gap 7 together | `task_board_multi_assignee_test`, `assignees_test` | 43 passed | **4 failed:** gap 3 ×3, gap 7 ×1 |
+| Gap 1 and gap 2 together (`series.ex`) | `multi_assignees_test`, `task_board_multi_assignee_test` | 90 passed | **16 failed** |
+| Gap 2's line only | same | 90 passed | **4 failed:** the repro, the API repro, the title version, the flagged anchor |
+| Gap 10's styling only | the Playwright case | passed | **failed:** 802 px wide in a 328 px item |
+
+- **Gap 1 wasn't reverted on its own:** the split was gap 1 and gap 2 together, then gap 2 alone.
+  The gap 1 repros are among the 16 failures, and they pass with gap 2's line in place.
+- **Not every new test can fail this way:** the 100-people and "up to five" cases, for example,
+  pass either way. They hold the limits in place.
+- **The Playwright gap 1 case** was run with the fix only. The ExUnit repros are the proof.
+
+**Combination tests added (ExUnit):** exception, split, following; people changed over time,
+split; a split from before and from after the latest change, and across a later part with its
+own people; Remove all; a dropped date as the one before; title and notes.
+
+## LEAD: questions
+
+1. **Should an exception pass its people to the next new date?** I followed your rule as
+   written: "the last occurrence before it", so Sam on a just-this-one 11/23 also lands on the
+   new Tuesday 11/24, unflagged. Finished occurrences count too. It's pinned by a test ("may be
+   one changed on its own"). Title and notes do skip occurrences changed on their own, because a
+   one-off note on the next date looked plainly wrong, and your rule doesn't cover them. If people
+   should skip them as well, it's a small change in `carry_over/4`.
+2. **Is "Removes N" good enough?** Surviving dates are still deleted and remade, so N counts
+   those too: adding a Tuesday can say "Removes 151" when no date goes away. The new line explains
+   it, but an exact "removes X, adds Y" means `change_preview` working out the dates, and the
+   dialog asking it for every rule change. I left that out.
+3. **Remade occurrences still get new ids.** As on `develop`, a surviving date keeps its people,
+   title and notes, but its History stays under the old id and it goes to the bottom of its day.
+   Moving those occurrences into the new series would fix that, but it's a redesign of the split,
+   so I didn't do it.
+
+## Corners left as they are
+
+- "The chain" here is the acted-on series and what continues it, as everywhere else in
+  `series.ex`. A kept occurrence left in an older part isn't seen as "the one before".
+- If an occurrence changed on its own was moved to another day and kept, a new occurrence on its
+  old date takes its people, because lookups go by `series_date`.
+
+## Also on the branch
+
+`98d3bee` (docs: Part 1 QA follow-ups go in Part 2) landed on this branch during the cycle. It
+isn't from this work, and it only changes the spec.
