@@ -316,7 +316,7 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
     if (added.length && removed.length) return `Assigned ${people(added)} to ${t}; removed ${people(removed)}`
     if (added.length) return `Assigned ${people(added)} to ${t}`
     if (removed.length) return `Removed ${people(removed)} from ${t}`
-    return `Changed the order of people on ${t}`
+    return `Edited ${t}`
   }
   switch (ev.action) {
     case 'created': {

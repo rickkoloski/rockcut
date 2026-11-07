@@ -10,6 +10,10 @@ defmodule RockcutApi.Tasks.Assignees do
   `[id]` and a blank one `[]`; neither means no change. Duplicates are dropped
   and the order given is kept: the first is the one `assignee_id` shows.
 
+  **What's a change** (`changed/2`): different people. The same people in
+  another order isn't one (lead decision 3): no write, no event, no scope
+  question, no exception, and `assignee_id` stays put.
+
   **Who** (`validate/3`): only the people being added are checked, so someone
   who has since left doesn't block an unrelated edit.
   """
@@ -42,10 +46,13 @@ defmodule RockcutApi.Tasks.Assignees do
 
   def given(_attrs), do: nil
 
-  @doc "The new list when `attrs` ask for a different one than `current`, else nil."
+  @doc """
+  The new list when `attrs` ask for different people than `current`, else nil.
+  Compared as sets: the same people in another order is nil.
+  """
   def changed(attrs, current) do
     case given(attrs) do
-      ids when is_list(ids) and ids != current -> ids
+      ids when is_list(ids) -> if Enum.sort(ids) != Enum.sort(current), do: ids
       _ -> nil
     end
   end

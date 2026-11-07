@@ -104,15 +104,32 @@ defmodule RockcutApi.Tasks.MultiAssigneesTest do
       assert detail == %{"from" => [ctx.a.id], "to" => [ctx.a.id, ctx.b.id]}
     end
 
-    test "the same list logs nothing; a new order is a change", ctx do
+    test "the same list logs nothing", ctx do
       task = add!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
 
       {:ok, _} = Tasks.update(ctx.board, task, %{assignee_ids: [ctx.a.id, ctx.b.id]}, ctx.mgr)
       assert events(task, "assigned") == []
+    end
 
-      {:ok, _} = Tasks.update(ctx.board, task, %{assignee_ids: [ctx.b.id, ctx.a.id]}, ctx.mgr)
+    test "the same people in another order isn't a change (lead decision 3)", ctx do
+      task = add!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+
+      {:ok, updated} =
+        Tasks.update(ctx.board, task, %{assignee_ids: [ctx.b.id, ctx.a.id]}, ctx.mgr)
+
+      assert updated.assignee_id == ctx.a.id
+      assert ids(task) == [ctx.a.id, ctx.b.id]
+      assert assert_in_step(task).assignee_id == ctx.a.id
+      assert events(task, "assigned") == []
+    end
+
+    test "different people in a new order is a change, in the order given", ctx do
+      task = add!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+
+      {:ok, _} = Tasks.update(ctx.board, task, %{assignee_ids: [ctx.b.id, ctx.c.id]}, ctx.mgr)
+
+      assert ids(task) == [ctx.b.id, ctx.c.id]
       assert [%Event{}] = events(task, "assigned")
-      assert assert_in_step(task).assignee_id == ctx.b.id
     end
 
     test "an edit that doesn't mention people leaves them", ctx do
@@ -391,6 +408,66 @@ defmodule RockcutApi.Tasks.MultiAssigneesTest do
 
       assert {:ok, 1} = Series.top_up(Date.add(@today, 7))
       assert ids(week(first, 53)) == [ctx.b.id, ctx.a.id]
+    end
+
+    test "a reorder isn't a change: no scope question, no exception, no event", ctx do
+      first = keg_wash!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+      occurrence = week(first, 2)
+      shuffled = %{assignee_ids: [ctx.b.id, ctx.a.id]}
+
+      # No scope asked.
+      assert {:ok, same} = Tasks.update(ctx.board, occurrence, shuffled, ctx.mgr)
+      refute same.series_exception
+
+      # "This" doesn't make it changed on its own.
+      assert {:ok, this} = Tasks.update(ctx.board, occurrence, shuffled, ctx.mgr, scope: "this")
+      refute this.series_exception
+      assert ids(this) == [ctx.a.id, ctx.b.id]
+
+      # "Following" touches nothing and logs nothing.
+      assert {:ok, _} = Tasks.update(ctx.board, occurrence, shuffled, ctx.mgr, scope: "following")
+      assert ids(series_of(first)) == [ctx.a.id, ctx.b.id]
+      assert assert_in_step(series_of(first)).assignee_id == ctx.a.id
+      assert ids(week(first, 3)) == [ctx.a.id, ctx.b.id]
+      assert assert_in_step(week(first, 3)).assignee_id == ctx.a.id
+      assert Repo.all(from e in Event, where: e.action in ["assigned", "edited"]) == []
+    end
+
+    test "a split or a new repeat given the same people keeps the source's order", ctx do
+      first = keg_wash!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+
+      {:ok, split} =
+        Tasks.update(
+          ctx.board,
+          week(first, 2),
+          %{
+            repeat: "weekly",
+            repeat_weekdays: [3],
+            repeat_interval: 2,
+            assignee_ids: [ctx.b.id, ctx.a.id]
+          },
+          ctx.mgr,
+          scope: "following",
+          today: @today
+        )
+
+      assert ids(series_of(split)) == [ctx.a.id, ctx.b.id]
+      assert ids(split) == [ctx.a.id, ctx.b.id]
+
+      task = add!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+
+      {:ok, repeating} =
+        Tasks.update(
+          ctx.board,
+          task,
+          %{repeat: "weekly", repeat_weekdays: [3], assignee_ids: [ctx.b.id, ctx.a.id]},
+          ctx.mgr,
+          today: @today
+        )
+
+      assert ids(series_of(repeating)) == [ctx.a.id, ctx.b.id]
+      assert ids(week(repeating, 1)) == [ctx.a.id, ctx.b.id]
+      assert ids(repeating) == [ctx.a.id, ctx.b.id]
     end
 
     test "a rule split carries the list to the new series; earlier parts keep theirs", ctx do

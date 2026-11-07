@@ -321,10 +321,13 @@ defmodule RockcutApi.Tasks.Series do
       Enum.any?(Map.keys(@rule_params), &Map.has_key?(attrs, &1))
   end
 
-  # The list a new series takes: what `attrs` ask for, else `current`. All of it
-  # is checked, since all of it is being added to the new series.
+  # The list a new series takes: what `attrs` ask for if that's different people
+  # (or isn't valid, so it's refused), else `current`, in its own order. All of
+  # it is checked, since all of it is being added to the new series.
   defp people_attrs(attrs, current) do
-    if Assignees.given(attrs), do: attrs, else: %{"assignee_ids" => current}
+    if Assignees.given(attrs) == :invalid or Assignees.changed(attrs, current),
+      do: attrs,
+      else: %{"assignee_ids" => current}
   end
 
   # An `edited`/`made_repeating` event's `{from, to}` per field gains the people.

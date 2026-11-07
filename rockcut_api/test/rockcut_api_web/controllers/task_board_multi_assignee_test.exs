@@ -72,6 +72,48 @@ defmodule RockcutApiWeb.TaskBoardMultiAssigneeTest do
       assert task["assignee_name"] == nil
     end
 
+    test "the same people in another order changes nothing (lead decision 3)", %{p: p} do
+      {b1, b2} = {p["brewer1"], p["brewer2"]}
+
+      %{"data" => %{"id" => id}} =
+        add(b1, %{assignee_ids: [b1.id, b2.id]}) |> json_response(201)
+
+      %{"data" => task} =
+        call(b1, :patch, "/api/boards/brewery/tasks/#{id}", %{assignee_ids: [b2.id, b1.id]})
+        |> json_response(200)
+
+      assert people(task) == [b1.id, b2.id]
+      assert task["assignee_id"] == b1.id
+
+      history =
+        call(p["breweryMgr"], :get, "/api/boards/brewery/tasks/history", %{task_id: id})
+        |> json_response(200)
+
+      assert Enum.map(history["data"], & &1["action"]) == ["created"]
+    end
+
+    test "a series occurrence given another order needs no scope", %{p: p} do
+      {b1, b2} = {p["brewer1"], p["brewer2"]}
+
+      %{"data" => task} =
+        add(b1, %{
+          due_on: today(),
+          repeat: "weekly",
+          repeat_weekdays: [Date.day_of_week(Tasks.today())],
+          assignee_ids: [b1.id, b2.id]
+        })
+        |> json_response(201)
+
+      %{"data" => same} =
+        call(b1, :patch, "/api/boards/brewery/tasks/#{task["id"]}", %{
+          assignee_ids: [b2.id, b1.id]
+        })
+        |> json_response(200)
+
+      refute same["series_exception"]
+      assert people(same) == [b1.id, b2.id]
+    end
+
     test "422 names the person who can't be assigned", %{p: p} do
       bartender = p["bartender1"]
 

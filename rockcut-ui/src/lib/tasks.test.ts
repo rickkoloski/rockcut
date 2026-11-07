@@ -137,7 +137,6 @@ describe('describeEvent: assignees, old and new shapes (D53)', () => {
     expect(describeEvent(ev('assigned', { from: [], to: [5, 6] }), names)).toBe('Assigned Sam Pour, Jake Brewer to Keg Wash')
     expect(describeEvent(ev('assigned', { from: [5, 6], to: [5] }), names)).toBe('Removed Jake Brewer from Keg Wash')
     expect(describeEvent(ev('assigned', { from: [5], to: [6] }), names)).toBe('Assigned Jake Brewer to Keg Wash; removed Sam Pour')
-    expect(describeEvent(ev('assigned', { from: [5, 6], to: [6, 5] }), names)).toBe('Changed the order of people on Keg Wash')
     expect(describeEvent(ev('assigned', { from: [5], to: [5, 6], scope: 'this' }), names)).toBe('Assigned Jake Brewer to Keg Wash (just this one)')
     expect(describeEvent(ev('created', { due_on: null, assignee_ids: [5, 6] }), names)).toBe('Added Keg Wash to Future, assigned to Sam Pour, Jake Brewer')
     expect(describeEvent(ev('created', { due_on: null, assignee_ids: [] }), names)).toBe('Added Keg Wash to Future')
