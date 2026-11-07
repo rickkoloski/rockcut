@@ -33,7 +33,7 @@ decision), unless Matt says otherwise.
    (drop the tables). Check up, down and up on a copy of a DEV-shaped DB.
 2. **`Tasks.Assignees` and schemas.** `has_many` / preload order by position.
 3. **`Tasks` context** (`tasks.ex`, 37 mentions):
-   - create and update (`assignees` compared as lists; only a real change logs);
+   - create and update (`assignees` compared **as sets**, lead decision 3; only a real change logs);
    - `open_work`: mine = in the list; unassigned = empty; preload through the join;
    - `remove_from_department` path (~line 678): remove only that person from open
      tasks and series on that board, recompute `assignee_id`, log per task;

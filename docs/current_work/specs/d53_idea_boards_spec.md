@@ -86,7 +86,7 @@ one person, though real jobs are often shared.
 | Leaving a department (D41 S112) | Removes that person from the open tasks and series on that board; others stay assigned. |
 | Brewery shift-end push (D40) | Each assignee hears about their open work, as today. |
 | Dashboard Today's tasks card, All departments view | Show all assignees. |
-| History / change log | "Assigned Sam, Jake" / "Removed Jake"; old single-assignee events still read correctly. |
+| History / change log | "Assigned Sam Pour, Jake Brewer" / "Removed Jake Brewer"; old single-assignee events still read correctly. |
 | Tablet with a staff code (D40) | Can set several assignees, decided for the acting person as today. |
 | Sorting "mine first" (`Tasks.open_work`) | Mine = I'm in the list. |
 
@@ -270,7 +270,7 @@ From the card dialog, **Send to task list** opens a dialog:
 
 | # | Persona | Entry point | Mode / state | Expected |
 |---|---|---|---|---|
-| S216 | `brewer1` | Brewery board → task dialog → add `brewer2` and `floater` | | The card shows two sets of initials; reload: both still assigned. History: "Assigned Riley, Jordan". |
+| S216 | `brewer1` | Brewery board → task dialog → add `brewer2` and `floater` | | The card shows two sets of initials; reload: both still assigned. History: "Assigned Riley Wort, Jordan Float to <title>". |
 | S217 | `brewer2` | Brewery board → View → My tasks | assigned with `brewer1` | The shared task shows for both `brewer1` and `brewer2`. |
 | S218 | `owner` | Users & Roles → remove `floater` from Brewery | `floater` + `brewer1` on an open Brewery task | `floater` removed; `brewer1` stays. |
 | S219 | `brewer1` | Brewery board, weekly series with two assignees | | New occurrences carry both; "following" edit changes both for later ones. |
