@@ -164,3 +164,109 @@ files named under steps 3, 4 and 6:
 
 The worktree's dev DB has been migrated and reseeded. It's this worktree's own file,
 and nothing outside the worktree was touched. No servers or Playwright were started.
+
+---
+
+# Stop point 2
+
+2026-11-06 · builder → lead, answering `d53_part1_lead_decisions_1.md`. The decision 3
+change and plan steps 8–10 are done, and the non-Playwright gate passes. **Playwright
+specs are written but have never run, and no browser has opened this UI.** No servers
+were started. Not pushed.
+
+## Results
+
+| Check | Result |
+|---|---|
+| `mix test`, twice (different seeds) | **1893 passed**, 0 failed |
+| `tsc -p tsconfig.app.json` | clean |
+| `tsc -p tsconfig.e2e.json` | 2 errors, both already on `develop`, in lines I didn't touch (`task-board-phone.spec.ts:443`, `beer-board-import.spec.ts:40`) |
+| `vitest` | 187 passed |
+| `vite build` | builds |
+| `pnpm lint` | 26 errors, 1 warning (limit is 26 errors) |
+| `mix format --check-formatted` on every changed file | clean |
+| `mix compile --warnings-as-errors` | **fails** on `reminders.ex:12` (unused `require Logger`), a file this branch doesn't touch |
+| Playwright | **not run**, per the brief |
+
+## Per step
+
+### Decision 3: a reorder isn't a change (`5ab2fa7`)
+- **Files:** `tasks/assignees.ex`, `tasks/series.ex`, `src/lib/tasks.ts`, plus tests.
+- `Assignees.changed/2` compares as sets. "Changed the order of people on …" is gone.
+- **Beyond the decision:** a split or one-off → repeat given the same people in another
+  order now keeps the source's order (`people_attrs`). Otherwise the new series would
+  disagree with the task it came from.
+- **Tests added:** context, series and API levels.
+- **Test whose meaning changed, as the decision requires:** "the same list logs nothing;
+  a new order is a change" is split in two, and a new order is no longer a change.
+- **Broken on purpose:** comparing as lists again fails 5 tests, at all three levels. The
+  `people_attrs` break fails 1.
+
+### 8. UI (`c627b84`)
+- **Files:** `types.ts`, `lib/tasks.ts`, `TaskDialog.tsx`, `TaskCard.tsx`, `TaskMenu.tsx`,
+  `TodaysTasksCard.tsx`, `tasks.test.ts`.
+- **Dialog:** "Assigned to" is a multi-select with chips and a checkbox per person. MUI
+  keeps the order of people who stay and adds new ones last. "Anyone" clears the list and
+  closes it. Save sends `assignee_ids` only when the people differ. Phone back closes the
+  list first (`usePhoneBackCloses`).
+- **Card:** the first avatar keeps `task-assignee-<key>`; others are `-1`, `-2`, plus
+  `task-assignee-more-<key>` and `task-assignees-<key>` on the wrapper. The avatars
+  overlap by 4 px to leave the title room.
+- `LinkedTaskDialog` and `TaskListPanel` are unchanged. `AllBoard` needed nothing: it uses
+  `TaskCard` and `cardShown`.
+- **Added, not in the plan:** `cardPeople` falls back to the old fields when `assignees` is
+  absent, so new UI on a rolled-back API doesn't crash the board. `assignees` is therefore
+  optional in the type.
+- **Broken on purpose:** My tasks reading only the first person, `samePeople` comparing
+  order, and the refusal not naming the person each fail 1 Vitest test.
+
+### 9. Seed (`9f5ac15`)
+- `[SEED] Scrub the cold room floor` (`brewer1`, `brewer2`) and `[SEED] Deep clean the back
+  bar` (`bartender1`, `bartender2`).
+- **Tests changed:** seed counts in `synthetic_test.exs` went up with the rows (Brewery
+  17 → 18, Taproom 5 → 6, 6 → 7 with a kept real task, bartender1 2 → 3). New test: the two
+  shared rows, and `assignee_id` agreeing on every seeded task.
+- Reseeded this worktree's DB: 20 join rows, 0 mismatches.
+
+### 10. Tests (`fa73f54`)
+- **ExUnit:** the plan's list is covered (most of it since stop point 1).
+- **New spec, never run:** `tests/regression/brewery/task-board-multi-assignee.spec.ts`
+  covers S216–S220, S222, decision 3, +N, the old-tab and refusal API cases, someone who
+  left, and phone back. S221 stays ExUnit only, because its clock is injected.
+- **Existing specs, shape only:** `taskBoardHelpers.ts` (`toggleAssignees`, `assignees` on
+  `ApiTask`), `task-board-recurring` (2 flows, 2 request bodies), `task-board-tasks`,
+  `task-board-history` (the new wording), `task-board-departments` (error shape),
+  `task-board-phone`.
+- `tests/COVERAGE.md` has a D53 Part 1 section.
+
+**Tests deleted or weakened:** none. The only change of meaning is the one decision 3 asks for.
+
+## Handoff note
+
+Drafted at `docs/current_work/prompts/d53_part1_handoff_note.md`, with your decision 1 note
+and my carry list. The SHA and Playwright results are blanks to fill in.
+
+## What to expect from the first Playwright run
+
+Nothing below has been confirmed in a browser. These are where I'd look first:
+
+- **The multi-select:** `toggleAssignees` assumes Escape closes only the list, and "Anyone"
+  assumes MUI hands the `''` value to `changeAssignees`. Both come from reading the code.
+- **Card layout:** three avatars plus "+N" may crowd a narrow day column. `ml: -4px` was my
+  guess, with no visual check.
+- **The two new seed rows:** a spec that assumes exact counts on the Brewery or Taproom
+  board could fail. I found none by grep, but I didn't read every spec.
+- **`task-board-history`:** `Assigned ${title} to Jake Brewer` became `Assigned Jake Brewer
+  to ${title}`. I updated the one place grep found.
+- **S220:** it uses `Made` and `stepOf` from the production helpers, and typechecks, but it's
+  the most moving parts in the file.
+
+## LEAD: questions
+
+1. **Reorder plus a change through the API.** If a raw request both reorders and changes the
+   people, the order given wins, so the first person can change even though they stayed.
+   The dialog can't send this. The plan says "order is the order given", so I left it. Should
+   the API keep the existing order for people who stay, or is the dialog's guarantee enough?
+2. **`--warnings-as-errors` fails on `reminders.ex:12`.** D42's handoff recorded this check as
+   clean, so it broke since then. It isn't D53's change, and I left it alone. Fix it here, or
+   file a task?
