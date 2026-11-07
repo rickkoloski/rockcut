@@ -56,7 +56,7 @@ config. The new error code is `linked_task_assignees`.
   Logger`), which is also already on `develop`.
 - **Playwright: not run.** _Fill in._
 
-Tests were confirmed able to fail by breaking the code on purpose (11 breaks; see the
+Tests were confirmed able to fail by breaking the code on purpose (13 breaks; see the
 status file).
 
 ## ⚠ LIMITATIONS: what local could NOT tell us
