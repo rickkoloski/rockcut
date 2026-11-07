@@ -266,6 +266,22 @@ From the card dialog, **Send to task list** opens a dialog:
 - A card can be sent again (warns "Already on the task list"). Non-managers
   can't send a locked card; managers can.
 
+### 4.8 Task board follow-ups from Part 1's DEV QA
+
+Matt put these in Part 2 (2026-11-07). Report:
+`stepwise_results/d53_part1_dev_qa_report.md`. They go in the Part 2 plan; repros are there.
+
+- **Gap 4: History on a "following" edit** records what really changed on later
+  occurrences, not only the edited occurrence's people.
+- **Gap 5: leaving a department** writes one History row per series (with a count), not
+  one per occurrence.
+- **Gap 6: Mark not done** doesn't put a former member back on the open task.
+- **Gap 9: deactivation** History says the person was deactivated, not "left the Brewery".
+- **Gap 11: narrow cards:** one person, a repeat icon and a notes icon don't crush the title.
+
+Gap 8 (the API accepts an owner on a department board) needs no change: it's deliberate
+since D41 (S105).
+
 ## 5. Scenarios
 
 | # | Persona | Entry point | Mode / state | Expected |
