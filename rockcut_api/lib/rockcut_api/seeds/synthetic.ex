@@ -1302,7 +1302,7 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   ## Brewery task board (D38)
 
-  # {title, day offset from today | nil (Future), assignee key | nil, done}
+  # {title, day offset from today | nil (Future), assignee key(s) | nil, done}
   # where done is nil (open) or {display, completed day offset, completer key}.
   @board_tasks [
     {"Carb FV3", -3, "brewer1", nil},
@@ -1316,6 +1316,8 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Yeast pitch FV4", 1, "brewer2", nil},
     {"CIP the brite tanks", 1, nil, nil},
     {"Keg BBT1", 2, "brewer1", nil},
+    # D53: a job two people share.
+    {"Scrub the cold room floor", 3, ["brewer1", "brewer2"], nil},
     {"Gravity check FV1", 4, nil, nil},
     {"Package FV3", 7, "brewer1", nil},
     {"Brew Pale Ale into FV2", 9, "brewer2", nil},
@@ -1330,6 +1332,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Clean lines", 0, "bartender1", nil},
     {"Restock glassware", 1, "bartender1", nil},
     {"Change the tap list board", 2, nil, nil},
+    {"Deep clean the back bar", 3, ["bartender1", "bartender2"], nil},
     {"Order more coasters", nil, nil, nil}
   ]
 
@@ -1438,7 +1441,7 @@ defmodule RockcutApi.Seeds.Synthetic do
           )
         )
 
-      if who, do: Assignees.put!(task, [u[who].id])
+      if who, do: Assignees.put!(task, who |> List.wrap() |> Enum.map(&u[&1].id))
     end
 
     Tasks.compact_lists(dept)
