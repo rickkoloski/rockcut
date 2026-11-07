@@ -64,8 +64,348 @@ defmodule RockcutApi.Tasks.MultiAssigneesTest do
 
   defp series_of(%Task{series_id: id}), do: Repo.get!(TaskSeries, id)
 
+  defp reload!(%Task{id: id}), do: Repo.get!(Task, id)
+
   defp events(%Task{id: id}, action),
     do: Repo.all(from e in Event, where: e.task_id == ^id and e.action == ^action, order_by: e.id)
+
+  describe "QA gaps 1 and 2: a rule change never changes people on a date that survives" do
+    # A Saturday. Mon/Wed/Fri from Mon Nov 9, as in the QA report.
+    @sat ~D[2026-11-07]
+    @mwf [1, 3, 5]
+    @add_tue [1, 2, 3, 5]
+
+    defp mwf!(ctx, attrs) do
+      {:ok, first} =
+        Tasks.create(
+          ctx.board,
+          Map.merge(
+            %{title: "Keg Wash", due_on: ~D[2026-11-09], repeat: "weekly", repeat_weekdays: @mwf},
+            attrs
+          ),
+          ctx.mgr,
+          @sat
+        )
+
+      first
+    end
+
+    # What's on the board that day (there's one).
+    defp on(day) do
+      [task] = Repo.all(from t in Task, where: t.due_on == ^day)
+      assert_in_step(task)
+    end
+
+    defp people_on(day), do: ids(on(day))
+
+    defp this!(ctx, day, attrs) do
+      {:ok, t} = Tasks.update(ctx.board, on(day), attrs, ctx.mgr, scope: "this", today: @sat)
+      t
+    end
+
+    defp following!(ctx, day, attrs, opts \\ []) do
+      {:ok, t} =
+        Tasks.update(
+          ctx.board,
+          on(day),
+          attrs,
+          ctx.mgr,
+          opts ++ [scope: "following", today: @sat, changed: :keep]
+        )
+
+      t
+    end
+
+    # Riley and Jordan, then Sam from 11/16, then Kate from 11/23.
+    defp changed_over_time!(ctx) do
+      first = mwf!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+      following!(ctx, ~D[2026-11-16], %{assignee_ids: [ctx.c.id]})
+      following!(ctx, ~D[2026-11-23], %{assignee_ids: [ctx.mgr.id]})
+      first
+    end
+
+    test "gap 1 repro: rule-only from before the latest change keeps each date's people", ctx do
+      changed_over_time!(ctx)
+
+      assert %{later_open: later} =
+               Series.preview(on(~D[2026-11-18]))
+
+      new = following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue})
+
+      # Dates that survive, on either side of the latest change.
+      assert people_on(~D[2026-11-13]) == [ctx.a.id, ctx.b.id]
+      assert people_on(~D[2026-11-16]) == [ctx.c.id]
+      assert people_on(~D[2026-11-18]) == [ctx.c.id]
+      assert people_on(~D[2026-11-20]) == [ctx.c.id]
+      assert people_on(~D[2026-11-23]) == [ctx.mgr.id]
+      assert people_on(~D[2026-11-25]) == [ctx.mgr.id]
+
+      # Dates it adds take the one before.
+      assert people_on(~D[2026-11-24]) == [ctx.mgr.id]
+      assert on(~D[2026-11-24]).series_id == new.series_id
+      refute on(~D[2026-11-24]).series_exception
+
+      # History is the rule change, and no people change.
+      assert [event] = events(new, "edited") |> Enum.filter(& &1.detail["repeat"])
+      assert event.detail["removed"] == later
+      refute Map.has_key?(event.detail, "from")
+
+      # The series' own list goes on from the latest people.
+      assert ids(%TaskSeries{id: new.series_id}) == [ctx.mgr.id]
+      assert {:ok, added} = Series.top_up(Date.add(@sat, 14))
+      assert added > 0
+      assert people_on(Date.add(@sat, 366)) == [ctx.mgr.id]
+    end
+
+    test "gap 1 repro: a new date inside the earlier people's stretch takes theirs", ctx do
+      changed_over_time!(ctx)
+      following!(ctx, ~D[2026-11-16], %{repeat_weekdays: @add_tue})
+
+      assert people_on(~D[2026-11-17]) == [ctx.c.id]
+      assert people_on(~D[2026-11-24]) == [ctx.mgr.id]
+    end
+
+    test "gap 1, API version: the split before the change keeps the first people", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+      following!(ctx, ~D[2026-11-16], %{assignee_ids: [ctx.c.id]})
+
+      following!(ctx, ~D[2026-11-11], %{repeat_weekdays: @add_tue})
+
+      assert people_on(~D[2026-11-13]) == [ctx.a.id, ctx.b.id]
+      assert people_on(~D[2026-11-16]) == [ctx.c.id]
+      assert people_on(~D[2026-11-17]) == [ctx.c.id]
+    end
+
+    test "a date the rule drops still passes its people on to the next new date", ctx do
+      changed_over_time!(ctx)
+
+      # Tue/Thu from Wed 11/18: 11/18 itself isn't kept, and nothing survives.
+      new = following!(ctx, ~D[2026-11-18], %{repeat_weekdays: [2, 4]})
+
+      assert new.series_date == ~D[2026-11-19]
+      assert people_on(~D[2026-11-19]) == [ctx.c.id]
+      assert people_on(~D[2026-11-24]) == [ctx.mgr.id]
+    end
+
+    test "changing people with the rule reaches them all, but not those kept", ctx do
+      changed_over_time!(ctx)
+      this!(ctx, ~D[2026-11-25], %{assignee_ids: [ctx.a.id]})
+
+      new =
+        following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue, assignee_ids: [ctx.b.id]})
+
+      assert people_on(~D[2026-11-18]) == [ctx.b.id]
+      assert people_on(~D[2026-11-20]) == [ctx.b.id]
+      assert people_on(~D[2026-11-23]) == [ctx.b.id]
+      assert people_on(~D[2026-11-24]) == [ctx.b.id]
+      assert people_on(~D[2026-11-25]) == [ctx.a.id]
+      assert ids(%TaskSeries{id: new.series_id}) == [ctx.b.id]
+
+      # History says who, as a rule change and a people change.
+      [event] = events(new, "edited") |> Enum.filter(& &1.detail["repeat"])
+      assert event.detail["from"] == %{"assignee_ids" => [ctx.c.id]}
+      assert event.detail["to"] == %{"assignee_ids" => [ctx.b.id]}
+    end
+
+    test "naming the people the occurrence already has isn't a change", ctx do
+      changed_over_time!(ctx)
+
+      new =
+        following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue, assignee_ids: [ctx.c.id]})
+
+      assert people_on(~D[2026-11-23]) == [ctx.mgr.id]
+      assert ids(%TaskSeries{id: new.series_id}) == [ctx.mgr.id]
+    end
+
+    test "from after the latest change, and again from before it", ctx do
+      changed_over_time!(ctx)
+
+      # After: a part whose list is already the latest.
+      following!(ctx, ~D[2026-11-25], %{repeat_weekdays: @add_tue})
+      assert people_on(~D[2026-11-27]) == [ctx.mgr.id]
+      assert people_on(~D[2026-11-23]) == [ctx.mgr.id]
+
+      # Before: from the first part, across the split, with Thursdays too.
+      new = following!(ctx, ~D[2026-11-18], %{repeat_weekdays: [1, 2, 3, 4, 5]})
+
+      assert people_on(~D[2026-11-19]) == [ctx.c.id]
+      assert people_on(~D[2026-11-20]) == [ctx.c.id]
+      assert people_on(~D[2026-11-23]) == [ctx.mgr.id]
+      assert people_on(~D[2026-11-26]) == [ctx.mgr.id]
+      assert ids(%TaskSeries{id: new.series_id}) == [ctx.mgr.id]
+    end
+
+    test "the latest people are the chain's, when a later part took its own", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      following!(ctx, ~D[2026-11-23], %{repeat_weekdays: @add_tue, assignee_ids: [ctx.b.id]})
+
+      # From the first part, whose own list is still Riley.
+      new = following!(ctx, ~D[2026-11-13], %{repeat_weekdays: @mwf ++ [6]})
+
+      assert people_on(~D[2026-11-14]) == [ctx.a.id]
+      assert people_on(~D[2026-11-23]) == [ctx.b.id]
+      assert ids(%TaskSeries{id: new.series_id}) == [ctx.b.id]
+    end
+
+    test "Remove all: an occurrence changed on its own goes, and its people with it", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      this!(ctx, ~D[2026-11-20], %{assignee_ids: [ctx.c.id]})
+
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue}, changed: :remove)
+
+      assert people_on(~D[2026-11-20]) == [ctx.a.id]
+      refute on(~D[2026-11-20]).series_exception
+    end
+
+    test "the last occurrence before a new date may be one changed on its own", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      this!(ctx, ~D[2026-11-23], %{assignee_ids: [ctx.c.id]})
+
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue})
+
+      assert people_on(~D[2026-11-23]) == [ctx.c.id]
+      assert people_on(~D[2026-11-24]) == [ctx.c.id]
+      assert people_on(~D[2026-11-25]) == [ctx.a.id]
+    end
+
+    test "gap 2 repro: this-only, rule split from it, then following leaves it alone", ctx do
+      first = mwf!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+      own = [ctx.a.id, ctx.c.id]
+
+      this!(ctx, ~D[2026-11-13], %{assignee_ids: own})
+      split = following!(ctx, ~D[2026-11-13], %{repeat_weekdays: @add_tue})
+
+      assert split.series_exception
+      assert on(~D[2026-11-13]).series_exception
+      assert people_on(~D[2026-11-13]) == own
+
+      {:ok, _} =
+        Tasks.update(ctx.board, reload!(first), %{assignee_ids: [ctx.b.id]}, ctx.mgr,
+          scope: "following",
+          today: @sat
+        )
+
+      assert people_on(~D[2026-11-09]) == [ctx.b.id]
+      assert people_on(~D[2026-11-13]) == own
+      assert on(~D[2026-11-13]).series_exception
+      assert people_on(~D[2026-11-16]) == [ctx.b.id]
+    end
+
+    test "the control: without the split it was already left alone", ctx do
+      first = mwf!(ctx, %{assignee_ids: [ctx.a.id, ctx.b.id]})
+      own = [ctx.a.id, ctx.c.id]
+      this!(ctx, ~D[2026-11-13], %{assignee_ids: own})
+
+      {:ok, _} =
+        Tasks.update(ctx.board, reload!(first), %{assignee_ids: [ctx.b.id]}, ctx.mgr,
+          scope: "following",
+          today: @sat
+        )
+
+      assert people_on(~D[2026-11-13]) == own
+    end
+
+    test "an exception left behind by a split isn't reached by a later following", ctx do
+      first = mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      this!(ctx, ~D[2026-11-20], %{assignee_ids: [ctx.c.id]})
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue})
+
+      {:ok, _} =
+        Tasks.update(ctx.board, reload!(first), %{assignee_ids: [ctx.b.id]}, ctx.mgr,
+          scope: "following",
+          today: @sat
+        )
+
+      assert people_on(~D[2026-11-20]) == [ctx.c.id]
+      assert on(~D[2026-11-20]).series_exception
+      assert people_on(~D[2026-11-18]) == [ctx.b.id]
+    end
+
+    test "a flagged anchor can still take a change made from it, and stays flagged", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      this!(ctx, ~D[2026-11-13], %{assignee_ids: [ctx.c.id]})
+
+      split =
+        following!(ctx, ~D[2026-11-13], %{repeat_weekdays: @add_tue, assignee_ids: [ctx.b.id]})
+
+      assert split.series_exception
+      assert people_on(~D[2026-11-13]) == [ctx.b.id]
+      assert people_on(~D[2026-11-16]) == [ctx.b.id]
+    end
+
+    test "a flagged anchor the rule drops is removed as before", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      this!(ctx, ~D[2026-11-13], %{assignee_ids: [ctx.c.id]})
+
+      following!(ctx, ~D[2026-11-13], %{repeat_weekdays: [2, 4]})
+
+      assert Repo.all(from t in Task, where: t.due_on == ^~D[2026-11-13]) == []
+      assert people_on(~D[2026-11-17]) == [ctx.a.id]
+    end
+
+    test "title: gap 1, each date keeps its own, and the series goes on from the latest", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      following!(ctx, ~D[2026-11-16], %{title: "Wash One"})
+      following!(ctx, ~D[2026-11-23], %{title: "Wash Two"})
+
+      new = following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue})
+
+      assert on(~D[2026-11-13]).title == "Keg Wash"
+      assert on(~D[2026-11-18]).title == "Wash One"
+      assert on(~D[2026-11-20]).title == "Wash One"
+      assert on(~D[2026-11-23]).title == "Wash Two"
+      assert on(~D[2026-11-24]).title == "Wash Two"
+      assert Repo.get!(TaskSeries, new.series_id).title == "Wash Two"
+    end
+
+    test "title: changed with the rule, it reaches every date", ctx do
+      mwf!(ctx, %{})
+      following!(ctx, ~D[2026-11-23], %{title: "Wash Two"})
+
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue, title: "Wash Three"})
+
+      assert on(~D[2026-11-20]).title == "Wash Three"
+      assert on(~D[2026-11-24]).title == "Wash Three"
+    end
+
+    test "title: gap 2, a retitled anchor stays changed on its own", ctx do
+      first = mwf!(ctx, %{})
+      this!(ctx, ~D[2026-11-13], %{title: "Mine"})
+      following!(ctx, ~D[2026-11-13], %{repeat_weekdays: @add_tue})
+
+      {:ok, _} =
+        Tasks.update(ctx.board, reload!(first), %{title: "Theirs"}, ctx.mgr,
+          scope: "following",
+          today: @sat
+        )
+
+      assert on(~D[2026-11-13]).title == "Mine"
+      assert on(~D[2026-11-16]).title == "Theirs"
+    end
+
+    test "notes: a part's notes survive a rule change from before it", ctx do
+      mwf!(ctx, %{notes: "A"})
+      following!(ctx, ~D[2026-11-23], %{repeat_weekdays: @add_tue, notes: "B"})
+
+      new = following!(ctx, ~D[2026-11-13], %{repeat_weekdays: @mwf ++ [6]})
+
+      assert on(~D[2026-11-16]).notes == "A"
+      assert on(~D[2026-11-23]).notes == "B"
+      assert Repo.get!(TaskSeries, new.series_id).notes == "B"
+    end
+
+    test "notes: an occurrence's own note isn't copied to the new date after it", ctx do
+      mwf!(ctx, %{notes: "A"})
+
+      {:ok, _} =
+        Tasks.update(ctx.board, on(~D[2026-11-23]), %{notes: "Mine"}, ctx.mgr, scope: "this")
+
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue})
+
+      assert on(~D[2026-11-23]).notes == "Mine"
+      assert on(~D[2026-11-24]).notes == "A"
+    end
+  end
 
   describe "create and update" do
     test "S216: two people, in the order given, and a created event", ctx do

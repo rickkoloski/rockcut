@@ -178,6 +178,83 @@ defmodule RockcutApiWeb.TaskBoardMultiAssigneeTest do
     end
   end
 
+  describe "QA gaps 1 and 2, through the API" do
+    setup %{p: p} do
+      {b1, b2, f} = {p["brewer1"], p["brewer2"], p["floater"]}
+
+      %{"data" => %{"id" => id}} =
+        add(b1, %{
+          due_on: day(0),
+          repeat: "weekly",
+          repeat_weekdays: [1, 3, 5],
+          assignee_ids: [b1.id, b2.id]
+        })
+        |> json_response(201)
+
+      %{b1: b1, b2: b2, f: f, first: id}
+    end
+
+    # A Monday a week or more ahead, and the days after it.
+    defp day(n) do
+      Tasks.today()
+      |> Date.beginning_of_week()
+      |> Date.add(14 + n)
+      |> Date.to_iso8601()
+    end
+
+    # The occurrence on that day: the board's card.
+    defp card_on(who, day) do
+      %{"data" => %{"days" => [%{"cards" => [card]}]}} =
+        call(who, :get, "/api/boards/brewery/tasks", %{from: day, to: day}) |> json_response(200)
+
+      card
+    end
+
+    defp patch!(who, id, attrs) do
+      call(who, :patch, "/api/boards/brewery/tasks/#{id}", attrs) |> json_response(200)
+    end
+
+    test "gap 1: a rule-only change keeps the people on later dates", ctx do
+      %{b1: b1, b2: b2, f: f} = ctx
+
+      patch!(b1, card_on(b1, day(7))["id"], %{assignee_ids: [f.id], scope: "following"})
+      patch!(b1, card_on(b1, day(14))["id"], %{assignee_ids: [b2.id], scope: "following"})
+
+      patch!(b1, card_on(b1, day(9))["id"], %{
+        repeat: "weekly",
+        repeat_weekdays: [1, 2, 3, 5],
+        scope: "following",
+        changed: "keep"
+      })
+
+      assert people(card_on(b1, day(11))) == [f.id]
+      assert people(card_on(b1, day(14))) == [b2.id]
+      assert people(card_on(b1, day(15))) == [b2.id]
+      assert card_on(b1, day(11))["assignee_id"] == f.id
+    end
+
+    test "gap 2: this-only, a rule split from it, then following from earlier", ctx do
+      %{b1: b1, b2: b2, f: f, first: first} = ctx
+      day = card_on(b1, day(4))["id"]
+
+      patch!(b1, day, %{assignee_ids: [b1.id, f.id], scope: "this"})
+
+      patch!(b1, day, %{
+        repeat: "weekly",
+        repeat_weekdays: [1, 2, 3, 5],
+        scope: "following",
+        changed: "keep"
+      })
+
+      patch!(b1, first, %{assignee_ids: [b2.id], scope: "following"})
+
+      card = card_on(b1, day(4))
+      assert people(card) == [b1.id, f.id]
+      assert card["series_exception"]
+      assert people(card_on(b1, day(7))) == [b2.id]
+    end
+  end
+
   describe "QA gap 3: how many people one write can name" do
     defp unused_ids(n), do: Enum.map(1..n, &(5_000_000 + &1))
 
