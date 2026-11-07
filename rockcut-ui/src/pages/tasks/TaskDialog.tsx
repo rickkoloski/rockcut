@@ -336,8 +336,9 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
             Anyone
           </MenuItem>
           {options.map((b) => (
-            <MenuItem key={b.id} value={b.id} data-testid={`task-assignee-option-${b.id}`}>
-              <Checkbox size="small" checked={assigneeIds.includes(b.id)} tabIndex={-1} disableRipple sx={{ p: 0, mr: 1 }} />
+            // A long name wraps on a phone rather than running off the list.
+            <MenuItem key={b.id} value={b.id} data-testid={`task-assignee-option-${b.id}`} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+              <Checkbox size="small" checked={assigneeIds.includes(b.id)} tabIndex={-1} disableRipple sx={{ p: 0, mr: 1, flexShrink: 0 }} />
               {b.name}
             </MenuItem>
           ))}
