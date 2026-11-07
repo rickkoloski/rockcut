@@ -257,15 +257,101 @@ defmodule RockcutApi.Tasks.MultiAssigneesTest do
       refute on(~D[2026-11-20]).series_exception
     end
 
-    test "the last occurrence before a new date may be one changed on its own", ctx do
+    test "lead decisions 4: an exception doesn't pass its people to a new date", ctx do
       mwf!(ctx, %{assignee_ids: [ctx.a.id]})
       this!(ctx, ~D[2026-11-23], %{assignee_ids: [ctx.c.id]})
 
       following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue})
 
       assert people_on(~D[2026-11-23]) == [ctx.c.id]
-      assert people_on(~D[2026-11-24]) == [ctx.c.id]
+      assert on(~D[2026-11-23]).series_exception
+      assert people_on(~D[2026-11-24]) == [ctx.a.id]
       assert people_on(~D[2026-11-25]) == [ctx.a.id]
+    end
+
+    test "lead decisions 4: it goes back past exceptions to the people then, not the latest",
+         ctx do
+      changed_over_time!(ctx)
+      this!(ctx, ~D[2026-11-20], %{assignee_ids: [ctx.a.id]})
+
+      # Thursdays and Saturdays too: 11/21 comes right after the exception on 11/20.
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: [1, 3, 4, 5, 6]})
+
+      assert people_on(~D[2026-11-21]) == [ctx.c.id]
+      assert people_on(~D[2026-11-28]) == [ctx.mgr.id]
+    end
+
+    test "lead decisions 4: a flagged anchor doesn't pass its people on either", ctx do
+      changed_over_time!(ctx)
+      this!(ctx, ~D[2026-11-13], %{assignee_ids: [ctx.c.id]})
+
+      # Sat 11/14 is new; the anchor is the only one from the split on before it.
+      following!(ctx, ~D[2026-11-13], %{repeat_weekdays: [1, 3, 5, 6]})
+
+      assert people_on(~D[2026-11-13]) == [ctx.c.id]
+      assert people_on(~D[2026-11-14]) == [ctx.a.id, ctx.b.id]
+    end
+
+    test "lead decisions 4: only exceptions before it, so the series' own values", ctx do
+      first = mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+
+      following!(ctx, ~D[2026-11-16], %{assignee_ids: [ctx.b.id]})
+
+      {:ok, _} =
+        Tasks.update(ctx.board, reload!(first), %{assignee_ids: [ctx.c.id]}, ctx.mgr,
+          scope: "this"
+        )
+
+      # The first date is the only one before Tuesday 11/10, and it's an exception.
+      following!(ctx, ~D[2026-11-09], %{repeat_weekdays: @add_tue})
+
+      assert people_on(~D[2026-11-09]) == [ctx.c.id]
+      assert people_on(~D[2026-11-10]) == [ctx.b.id]
+    end
+
+    test "lead decisions 4: a finished occurrence still counts", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      following!(ctx, ~D[2026-11-20], %{assignee_ids: [ctx.b.id]})
+      following!(ctx, ~D[2026-11-23], %{assignee_ids: [ctx.c.id]})
+      {:ok, _} = Tasks.complete(ctx.board, on(~D[2026-11-20]), "planned_day", ctx.mgr, @sat)
+
+      # Saturdays too, from Wed 11/18: 11/21 comes right after the finished 11/20.
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: [1, 3, 5, 6]})
+
+      assert Task.done?(on(~D[2026-11-20]))
+      assert people_on(~D[2026-11-21]) == [ctx.b.id]
+    end
+
+    test "lead decisions 4: a finished exception doesn't pass its people on", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id]})
+      done = this!(ctx, ~D[2026-11-20], %{assignee_ids: [ctx.c.id]})
+      {:ok, _} = Tasks.complete(ctx.board, done, "planned_day", ctx.mgr, @sat)
+
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: [1, 3, 5, 6]})
+
+      assert people_on(~D[2026-11-20]) == [ctx.c.id]
+      assert people_on(~D[2026-11-21]) == [ctx.a.id]
+    end
+
+    test "lead decisions 4: older notes don't take an occurrence off the people's line", ctx do
+      mwf!(ctx, %{assignee_ids: [ctx.a.id], notes: "A"})
+      following!(ctx, ~D[2026-11-16], %{assignee_ids: [ctx.c.id]})
+      # From here on the series' notes are B, so 11/16 and 11/18 now differ from them.
+      following!(ctx, ~D[2026-11-23], %{assignee_ids: [ctx.mgr.id], notes: "B"})
+
+      following!(ctx, ~D[2026-11-16], %{repeat_weekdays: @add_tue})
+
+      assert people_on(~D[2026-11-17]) == [ctx.c.id]
+    end
+
+    test "lead decisions 4: an exception's title isn't passed on either", ctx do
+      mwf!(ctx, %{})
+      this!(ctx, ~D[2026-11-23], %{title: "Mine"})
+
+      following!(ctx, ~D[2026-11-18], %{repeat_weekdays: @add_tue})
+
+      assert on(~D[2026-11-23]).title == "Mine"
+      assert on(~D[2026-11-24]).title == "Keg Wash"
     end
 
     test "gap 2 repro: this-only, rule split from it, then following leaves it alone", ctx do

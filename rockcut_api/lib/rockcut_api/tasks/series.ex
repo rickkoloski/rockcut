@@ -57,7 +57,8 @@ defmodule RockcutApi.Tasks.Series do
   **A rule change and what's on a date (D53 lead decisions 3).** A split
   remakes the later open occurrences, but it changes nobody's people, title or
   notes on a date that survives it, and a new date takes the people of the last
-  occurrence before it in the chain (`carry_over/4`). Only what the edit itself
+  occurrence before it in the chain that wasn't changed on its own
+  (`carry_over/4`, lead decisions 4). Only what the edit itself
   changes, compared with the occurrence it was made from, reaches them all. The
   new series' own values, for later top-ups, are the chain's latest
   (`latest_part/1`).
@@ -733,7 +734,7 @@ defmodule RockcutApi.Tasks.Series do
 
     reuse? = hd(dates) == date and is_nil(task.completed_at)
 
-    held = held_from([series | continuing], date, opts[:changed], task.id)
+    held = held_from(series, continuing, date, opts[:changed], task.id)
 
     # The acted-on occurrence is reused or replaced, never kept as a changed one.
     {removed, kept} = remove_chain(series, continuing, date, opts[:changed], [task.id])
@@ -802,10 +803,11 @@ defmodule RockcutApi.Tasks.Series do
   end
 
   # What each occurrence from `date` on holds before a split removes any of it,
-  # oldest first. "Remove all": an open one changed on its own goes, and what it
-  # holds goes with it (the acted-on one, `task_id`, is the caller's).
-  defp held_from(parts, date, changed, task_id) do
-    by_id = Map.new(parts, &{&1.id, &1})
+  # oldest first, after the last one before `date` that a new date could take
+  # from. "Remove all": an open one changed on its own goes, and what it holds
+  # goes with it (the acted-on one, `task_id`, is the caller's).
+  defp held_from(series, continuing, date, changed, task_id) do
+    by_id = Map.new([series | continuing], &{&1.id, &1})
 
     tasks =
       Repo.all(
@@ -814,45 +816,70 @@ defmodule RockcutApi.Tasks.Series do
           order_by: [asc: t.series_date]
       )
 
-    people = tasks |> Enum.map(& &1.id) |> Assignees.ids_by_task()
+    kept =
+      Enum.reject(tasks, fn t ->
+        changed == :remove and changed?(t, by_id[t.series_id]) and is_nil(t.completed_at) and
+          t.id != task_id
+      end)
 
-    tasks
-    |> Enum.map(&{&1, changed?(&1, by_id[&1.series_id])})
-    |> Enum.reject(fn {t, own?} ->
-      changed == :remove and own? and is_nil(t.completed_at) and t.id != task_id
-    end)
-    |> Enum.map(fn {t, own?} ->
+    parts = series |> line() |> Map.new(&{&1.id, &1})
+
+    before =
+      Repo.all(
+        from t in Task,
+          where:
+            t.series_id in ^Map.keys(parts) and t.series_date < ^date and not t.series_exception,
+          order_by: [desc: t.series_date],
+          limit: 1
+      )
+
+    people = (before ++ kept) |> Enum.map(& &1.id) |> Assignees.ids_by_task()
+    parts = Map.merge(parts, by_id)
+
+    Enum.map(before ++ kept, fn t ->
       %{
         date: t.series_date,
         title: t.title,
         notes: t.notes,
         ids: Map.get(people, t.id, []),
-        own?: own?
+        exception?: t.series_exception,
+        own?: changed?(t, parts[t.series_id])
       }
     end)
   end
 
-  # What `insert_occurrences/3` puts on each of `dates`, a split's new occurrences:
-  # the date's own, if it had one; a new date the people of the last one before
-  # it (and the title and notes of the last one not changed on its own, since one
-  # person's note isn't the next date's). `made` is what the edit itself changes,
-  # for all of them. A date after everything already generated isn't here: it
-  # takes the series' own, as any top-up does.
+  # What `insert_occurrences/3` puts on each of `dates`, a split's new occurrences.
+  # A date that had an occurrence keeps what it held. A new date takes from the
+  # last one before it that wasn't changed on its own, since someone covering one
+  # Monday isn't on the new Tuesday too, or from the series if there's none. That
+  # means the flag for people and the title: an occurrence with only its own or
+  # older notes is still on the line. For notes it means `changed?/2`, so one
+  # person's note isn't copied. `made` is what the edit itself changes, for all of
+  # them. A date after everything already generated isn't here: it takes the
+  # series' own, as any top-up does.
   defp carry_over(held, dates, %TaskSeries{} = series, made) do
     last = held |> List.last() |> Map.fetch!(:date)
 
     for date <- dates, Date.compare(date, last) != :gt, into: %{} do
-      earlier = Enum.take_while(held, &(Date.compare(&1.date, date) != :gt))
-      prior = List.last(earlier)
+      earlier =
+        held |> Enum.take_while(&(Date.compare(&1.date, date) != :gt)) |> Enum.reverse()
 
-      text =
-        cond do
-          prior.date == date -> prior
-          plain = earlier |> Enum.reverse() |> Enum.find(&(not &1.own?)) -> plain
-          true -> Map.from_struct(series)
+      own =
+        case earlier do
+          [%{date: ^date} = held_here | _] ->
+            Map.take(held_here, [:ids, :title, :notes])
+
+          _ ->
+            on_line = Enum.find(earlier, &(not &1.exception?))
+
+            %{
+              ids: on_line && on_line.ids,
+              title: (on_line || series).title,
+              notes: (Enum.find(earlier, &(not &1.own?)) || series).notes
+            }
         end
 
-      {date, Map.merge(%{ids: prior.ids, title: text.title, notes: text.notes}, made)}
+      {date, Map.merge(own, made)}
     end
   end
 
