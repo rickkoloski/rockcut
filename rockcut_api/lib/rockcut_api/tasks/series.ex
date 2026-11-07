@@ -744,7 +744,7 @@ defmodule RockcutApi.Tasks.Series do
       |> Changeset.change(
         series_id: new_series.id,
         series_date: date,
-        series_exception: task.due_on != date
+        series_exception: task.series_exception or task.due_on != date
       )
       |> Repo.update!()
       |> Assignees.apply!(attrs)
