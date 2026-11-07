@@ -83,7 +83,7 @@ test('S10: History lists added, assigned, completed, uncompleted, moved and dele
     `Moved ${title} from ${day} to Future`,
     `Marked ${title} not done (was done ${day})`,
     `Completed ${title}`,
-    `Assigned ${title} to Jake Brewer`,
+    `Assigned Jake Brewer to ${title}`,
     `Added ${title} to ${day}`,
   ])
   for (const [, who] of rows) expect(who).toMatch(meta('Jake Brewer', today))

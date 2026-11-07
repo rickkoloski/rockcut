@@ -733,3 +733,24 @@ Retired with it: D33 S13, G2; D34 S4–S7, S15; D37 S13; D43 S148 (marked above)
 | S253 | `POST /api/session` with a live tablet token in `Authorization` only (DEV QA G1): 403 for the right and a wrong password, no session; a revoked, made-up or person token there: normal login | ExUnit `session_revocation_test` (revert-and-rerun recorded) |
 | S254 | Blank browser, typed `/login` (or another URL) → Set up as a shared device: ends on the tablet's Home, not the refusal (DEV QA G5) | Playwright `devices/shared_device_no_personal_login` (revert-and-rerun recorded) |
 | — | `Sessions.create/3` refuses `:device_token` | ExUnit `sessions_test` |
+
+## D53 Part 1 — Multiple assignees on tasks (`specs/d53_idea_boards_spec.md` §3; `planning/d53_part1_multi_assignees_plan.md`; `prompts/d53_part1_lead_decisions_1.md`)
+
+ExUnit files are under `rockcut_api/test/`: `tasks/assignees_test` (the one writer), `tasks/multi_assignees_test` (the context, series, leaving, History names), controller `task_board_multi_assignee_test` (the API, linked tasks, the tablet, the route matrix, S221), `migrations/create_task_assignees_test` (the backfill), `seeds/synthetic_test`. Vitest `tasks.test`. Playwright `regression/brewery/task-board-multi-assignee.spec.ts` (19 tests; passing locally at stop point 3).
+
+| # | Scenario | Layer |
+|---|---|---|
+| S216 | brewer1 adds brewer2 and floater: two sets of initials after a reload; History "Assigned Riley Wort, Jordan Float to …" (lead decision 2: full names) | Playwright `task-board-multi-assignee` (S216 ×2); ExUnit `multi_assignees_test`, `task_board_multi_assignee_test`; Vitest `tasks.test` (wording) |
+| S217 | My tasks shows a shared task for each person, in either place | Playwright (S217 ×2); ExUnit `multi_assignees_test` (`open_work`); Vitest `tasks.test` (`cardShown`) |
+| S218 | owner removes someone from the Brewery: off the open tasks, the other person stays, first recomputed, History "Removed …" | Playwright (S218); ExUnit `multi_assignees_test` (leaving, series, other board, done tasks keep the name) |
+| S219 | A weekly series with two people; new occurrences carry both; a "following" edit changes later ones | Playwright (S219); ExUnit `multi_assignees_test` (this, following, exceptions, finished, split, chain, Ends-only, one-off → repeat, top-up) |
+| S220 | Linked task: one person, the single picker, a change reaches the step; two through the API → 422 | Playwright (S220); ExUnit `task_board_multi_assignee_test` (one, none, two, schedule → task, leaving, tablet) |
+| S221 | Shift-end push: each person on a shared task hears once; it's theirs | ExUnit `task_board_multi_assignee_test` (S221; the scanner's clock is injected). No browser path: **DEV only by hand** |
+| S222 | Brewhouse tablet with a staff code adds two people; History names the acting person | Playwright (S222); ExUnit `task_board_multi_assignee_test` |
+| — | Lead decision 3: the same people in another order isn't a change (no write, event, scope question or exception); the dialog keeps the order of who stays and adds new ones last | ExUnit `multi_assignees_test` (context, series), `task_board_multi_assignee_test` (API); Playwright (decision 3 ×3); Vitest `tasks.test` (`samePeople`) |
+| — | §3.1: `assignee_id` always equals the first; backfill; rows go with the task | ExUnit `assignees_test`, `multi_assignees_test` (`assert_in_step`), `migrations/create_task_assignees_test`, `seeds/synthetic_test` |
+| — | §3.3: a lone `assignee_id` from a UI tab on the old version; a refusal names the person | ExUnit `task_board_multi_assignee_test`, `assignees_test`; Playwright (old tab, refusal); Vitest `tasks.test` (`taskSaveError`) |
+| — | Old single-assignee History rows read as before | ExUnit `multi_assignees_test` (stored rows); Vitest `tasks.test` (exact wording) |
+| — | Up to three initials then "+N"; tooltip names everyone; the title keeps its room and nothing runs off the card; a person who left stays visible until removed; phone back closes the list, then the dialog | Playwright (one test each; the layout check was confirmed failing on the old layout) |
+| — | Dashboard Today's tasks shows everyone, chips together, the title keeps its room at phone width | Playwright (at phone width; confirmed failing on the old layout) |
+| — | Rollback API: the board reads one person when `assignees` is absent | Vitest `tasks.test` (`cardPeople`). Not run against an old API: **GAP** |

@@ -577,7 +577,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       today = Tasks.today()
       {:ok, board} = Tasks.board(brewery_board(), Date.add(today, -3), Date.add(today, 13), today)
 
-      assert length(seed_tasks()) == 17
+      assert length(seed_tasks()) == 18
       # D38's two, plus Keg Wash's two past Wednesdays (D39); D49: and the
       # linked tasks (Enos #41's step due yesterday, P50).
       {linked, own} = Enum.split_with(board.unfinished, &Task.linked?(&1.task))
@@ -721,7 +721,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
       assert item_names() == Enum.with_index(DailyItem.defaults(), 1)
       assert Enum.map(checks(), &elem(&1, 0)) |> Enum.uniq() == [Date.add(today, -1), today]
-      assert length(seed_tasks()) == 17
+      assert length(seed_tasks()) == 18
       assert length(seed_series()) == 3
     end
   end
@@ -744,15 +744,15 @@ defmodule RockcutApi.Seeds.SyntheticTest do
 
     defp persona_id(key), do: Accounts.get_user_by_email(Synthetic.persona!(key).email).id
 
-    test "seeds the Taproom (two for bartender1, one unassigned, one 2 days ago, one on Future) and one Office task; Sales empty; Daily items only on the Brewery" do
+    test "seeds the Taproom (three for bartender1, one shared, one unassigned, one 2 days ago, one on Future) and one Office task; Sales empty; Daily items only on the Brewery" do
       {:ok, _} = Synthetic.setup()
       today = Tasks.today()
       bartender = persona_id("bartender1")
 
       taproom = board_titles("bar")
-      assert length(taproom) == 5
+      assert length(taproom) == 6
       assert Enum.all?(taproom, fn {title, _, _} -> String.starts_with?(title, "[SEED] ") end)
-      assert Enum.count(taproom, &(elem(&1, 2) == bartender)) == 2
+      assert Enum.count(taproom, &(elem(&1, 2) == bartender)) == 3
 
       {:ok, board} = Tasks.board(task_board("bar"), today, Date.add(today, 6), today)
       assert [%{planned_on: past}] = board.unfinished
@@ -810,12 +810,30 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       refute Repo.exists?(from(t in Task, where: t.series_id == ^series.series_id))
       refute Repo.get(DailyItem, item.id)
       assert Repo.get(Task, real.id)
-      assert length(board_titles("bar")) == 6
+      assert length(board_titles("bar")) == 7
 
       {:ok, board} = Tasks.board(bar, today, today, today)
 
       assert Enum.map(hd(board.days).cards, & &1.task.position) |> Enum.sort() ==
                Enum.to_list(1..length(hd(board.days).cards))
+    end
+
+    test "D53: one Brewery and one Taproom task have two people, and every task's copy agrees" do
+      {:ok, _} = Synthetic.setup()
+
+      shared = fn title ->
+        Repo.get_by!(Task, title: title) |> RockcutApi.Tasks.Assignees.ids()
+      end
+
+      assert shared.("[SEED] Scrub the cold room floor") ==
+               [persona_id("brewer1"), persona_id("brewer2")]
+
+      assert shared.("[SEED] Deep clean the back bar") ==
+               [persona_id("bartender1"), persona_id("bartender2")]
+
+      for t <- Repo.all(Task) do
+        assert t.assignee_id == List.first(RockcutApi.Tasks.Assignees.ids(t))
+      end
     end
 
     test "reset clears the other boards' Daily items and rebuilds their [SEED] tasks" do
@@ -827,7 +845,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       {:ok, _} = Synthetic.reset()
 
       assert Tasks.list_items(task_board("bar")) == []
-      assert length(board_titles("bar")) == 5
+      assert length(board_titles("bar")) == 6
       assert length(board_titles("office")) == 1
       assert Enum.map(Tasks.list_items(task_board("brewery")), & &1.name) == DailyItem.defaults()
     end

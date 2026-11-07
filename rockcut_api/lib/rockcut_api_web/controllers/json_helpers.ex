@@ -209,6 +209,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       position: t.position,
       assignee_id: t.assignee_id,
       assignee_name: maybe_render(t, :assignee, &name_of/1),
+      assignees: task_assignees(t),
       done: not is_nil(t.completed_at),
       completed_at: t.completed_at,
       completed_on: t.completed_on,
@@ -225,6 +226,15 @@ defmodule RockcutApiWeb.JSONHelpers do
       inserted_at: t.inserted_at,
       updated_at: t.updated_at
     }
+  end
+
+  # D53 §3.3: everyone on a task or series, first first. `assignee_id` and
+  # `assignee_name` above stay for one release (UI tabs on the old version).
+  defp task_assignees(record) do
+    case record.assignees do
+      %Ecto.Association.NotLoaded{} -> []
+      people -> Enum.map(people, &%{id: &1.id, name: &1.name})
+    end
   end
 
   # D49 §3.12: a task made from a production step (nil for the board's own):
@@ -257,6 +267,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       title: s.title,
       notes: s.notes,
       assignee_id: s.assignee_id,
+      assignees: task_assignees(s),
       frequency: s.frequency,
       month_rule: s.month_rule,
       interval: s.interval,

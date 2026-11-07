@@ -108,11 +108,11 @@ test('each strip stop shows its open count, and the counts follow the filter', a
 
   // My tasks: the day counts only what's assigned to brewer1.
   const board = await getBoard(api, day, day)
-  const myOpen = board.days[0].cards.filter((c) => !c.done && c.assignee_id === me).length
+  const myOpen = board.days[0].cards.filter((c) => !c.done && c.assignees.some((p) => p.id === me)).length
   await pickSetting(page, 'board-settings', 'board-filter', 'mine')
   await expect(page.getByTestId(`phone-stop-count-${day}`)).toHaveText(String(myOpen))
   await pickSetting(page, 'board-settings', 'board-filter', 'unassigned')
-  const unassigned = board.days[0].cards.filter((c) => !c.done && c.assignee_id === null).length
+  const unassigned = board.days[0].cards.filter((c) => !c.done && c.assignees.length === 0).length
   await expect(page.getByTestId(`phone-stop-count-${day}`)).toHaveText(String(unassigned))
 })
 

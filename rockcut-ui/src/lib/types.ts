@@ -612,6 +612,12 @@ export type CompletedDisplay = 'planned_day' | 'completed_day' | 'both'
  * ("<task_id>:<day>", "<task_id>:future" or "<task_id>:unfinished") is the
  * card's identity, not `id`.
  */
+/** D53: one person on a task or a series. */
+export interface TaskPerson {
+  id: number
+  name: string
+}
+
 export interface TaskCardData {
   key: string
   day: string // a date, "future" or "unfinished"
@@ -620,8 +626,11 @@ export interface TaskCardData {
   notes: string | null
   due_on: string | null
   position: number
+  /** The first of `assignees`, kept for one release (D53). Only a linked task's dialog reads them. */
   assignee_id: number | null
   assignee_name: string | null
+  /** D53: everyone on it, first first. Read it through `cardPeople` (an API on the old version has none). */
+  assignees?: TaskPerson[]
   done: boolean
   completed_at: string | null
   completed_on: string | null
@@ -667,6 +676,7 @@ export interface TaskSeriesData {
   title: string
   notes: string | null
   assignee_id: number | null
+  assignees?: TaskPerson[]
   frequency: 'weekly' | 'monthly' | 'quarterly' | 'annually'
   month_rule: 'day' | 'weekday' | null
   interval: number
