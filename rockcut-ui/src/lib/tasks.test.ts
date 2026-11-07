@@ -117,6 +117,46 @@ describe('describeEvent: made_repeating (Decision 6)', () => {
   })
 })
 
+describe('describeEvent: assignees, old and new shapes (D53)', () => {
+  const ev = (action: TaskEvent['action'], detail: Record<string, unknown>): TaskEvent => ({
+    id: 1,
+    task_id: 7,
+    action,
+    title: 'Keg Wash',
+    actor_id: 1,
+    actor_name: 'Kate',
+    on_shared_device: false,
+    detail,
+    inserted_at: '2026-10-14T18:00:00Z',
+  })
+  const names = { users: { '5': 'Sam Pour', '6': 'Jake Brewer' }, items: {} }
+  const taproom = { key: 'bar', name: 'Taproom' }
+  const repeat = { frequency: 'weekly', interval: 1, weekdays: [3] }
+
+  it('reads id lists', () => {
+    expect(describeEvent(ev('assigned', { from: [], to: [5, 6] }), names)).toBe('Assigned Sam Pour, Jake Brewer to Keg Wash')
+    expect(describeEvent(ev('assigned', { from: [5, 6], to: [5] }), names)).toBe('Removed Jake Brewer from Keg Wash')
+    expect(describeEvent(ev('assigned', { from: [5], to: [6] }), names)).toBe('Assigned Jake Brewer to Keg Wash; removed Sam Pour')
+    expect(describeEvent(ev('assigned', { from: [5, 6], to: [6, 5] }), names)).toBe('Changed the order of people on Keg Wash')
+    expect(describeEvent(ev('assigned', { from: [5], to: [5, 6], scope: 'this' }), names)).toBe('Assigned Jake Brewer to Keg Wash (just this one)')
+    expect(describeEvent(ev('created', { due_on: null, assignee_ids: [5, 6] }), names)).toBe('Added Keg Wash to Future, assigned to Sam Pour, Jake Brewer')
+    expect(describeEvent(ev('created', { due_on: null, assignee_ids: [] }), names)).toBe('Added Keg Wash to Future')
+    expect(describeEvent(ev('edited', { scope: 'following', from: { assignee_ids: [] }, to: { assignee_ids: [5, 6] } }), names)).toBe('Assigned Sam Pour, Jake Brewer to Keg Wash (this and following)')
+    expect(describeEvent(ev('unassigned', { from: [5, 6], to: [5], reason: 'left_bar' }), names, taproom)).toBe('Removed Jake Brewer from Keg Wash (left the Taproom)')
+    expect(describeEvent(ev('made_repeating', { due_on: '2026-10-14', repeat, from: { assignee_ids: [] }, to: { assignee_ids: [5, 6] } }), names)).toMatch(/; assigned to Sam Pour, Jake Brewer$/)
+  })
+
+  it('reads old single-assignee events exactly as before', () => {
+    expect(describeEvent(ev('assigned', { from: null, to: 5 }), names)).toBe('Assigned Keg Wash to Sam Pour')
+    expect(describeEvent(ev('assigned', { from: 5, to: 6 }), names)).toBe('Reassigned Keg Wash from Sam Pour to Jake Brewer')
+    expect(describeEvent(ev('assigned', { from: 5, to: null, scope: 'this' }), names)).toBe('Unassigned Keg Wash (was Sam Pour) (just this one)')
+    expect(describeEvent(ev('created', { due_on: null, assignee_id: 5 }), names)).toBe('Added Keg Wash to Future, assigned to Sam Pour')
+    expect(describeEvent(ev('edited', { scope: 'following', from: { assignee_id: null }, to: { assignee_id: 5 } }), names)).toBe('Assigned Keg Wash to Sam Pour (this and following)')
+    expect(describeEvent(ev('unassigned', { from: 6, to: null, reason: 'left_bar' }), names, taproom)).toBe('Unassigned Keg Wash from Jake Brewer (left the Taproom)')
+    expect(describeEvent(ev('assigned', { from: null, to: 99 }), names)).toBe('Assigned Keg Wash to someone no longer here')
+  })
+})
+
 describe('boardPath (D41)', () => {
   it('puts the department and the segments under /api/boards', () => {
     expect(boardPath('brewery', 'tasks')).toBe('/api/boards/brewery/tasks')

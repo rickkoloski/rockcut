@@ -1196,7 +1196,7 @@ defmodule RockcutApi.Tasks do
     %{events: events, page: page, total: Repo.aggregate(base, :count), names: event_names(events)}
   end
 
-  @user_detail_actions ~w(created assigned unassigned edited)
+  @user_detail_actions ~w(created assigned unassigned edited made_repeating)
 
   defp event_names(events) do
     user_ids =
@@ -1222,13 +1222,21 @@ defmodule RockcutApi.Tasks do
     }
   end
 
-  # Assignees an event mentions: `assignee_id`, or `from`/`to` as ids or (an
-  # `edited` event, D39) as maps with an `assignee_id`.
+  # Assignees an event mentions, in either shape. Before D53: `assignee_id`, or
+  # `from`/`to` as ids or (an `edited` event, D39) as maps with an `assignee_id`.
+  # Since D53: `assignee_ids`, or `from`/`to` as id lists or as maps with
+  # `assignee_ids`.
   defp detail_user_ids(detail) do
-    [detail["assignee_id"] | Enum.map([detail["from"], detail["to"]], &assignee_in/1)]
+    [
+      detail["assignee_id"],
+      detail["assignee_ids"],
+      assignee_in(detail["from"]),
+      assignee_in(detail["to"])
+    ]
+    |> List.flatten()
   end
 
-  defp assignee_in(%{} = values), do: values["assignee_id"]
+  defp assignee_in(%{} = values), do: [values["assignee_id"], values["assignee_ids"]]
   defp assignee_in(value), do: value
 
   ## Lists and positions
