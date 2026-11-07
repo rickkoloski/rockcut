@@ -153,7 +153,9 @@ defmodule RockcutApi.TasksTest do
                Tasks.update(brewery_board(), task, %{assignee_id: brewer.id}, brewer2)
 
       assert id == brewer.id
-      assert [%Event{action: "assigned", detail: %{"from" => [], "to" => [^id]}}, _] = events(task)
+
+      assert [%Event{action: "assigned", detail: %{"from" => [], "to" => [^id]}}, _] =
+               events(task)
     end
 
     test "a day change moves it to the bottom of that day", %{brewer: brewer} do

@@ -199,7 +199,9 @@ defmodule RockcutApiWeb.TaskBoardMultiAssigneeTest do
       b2 = p["brewer2"]
 
       %{"data" => updated} =
-        call(p["brewer1"], :patch, "/api/boards/brewery/tasks/#{task.id}", %{assignee_ids: [b2.id]})
+        call(p["brewer1"], :patch, "/api/boards/brewery/tasks/#{task.id}", %{
+          assignee_ids: [b2.id]
+        })
         |> json_response(200)
 
       assert Repo.get!(Step, step.id).assignee_id == b2.id
