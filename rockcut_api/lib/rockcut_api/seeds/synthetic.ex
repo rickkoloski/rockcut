@@ -59,7 +59,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
   alias RockcutApi.BeerBoard.Entry
   alias RockcutApi.Tasks
-  alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}
+  alias RockcutApi.Tasks.{Assignees, DailyCheck, DailyItem, Task, TaskSeries}
   alias RockcutApi.Production
 
   alias RockcutApi.Production.{
@@ -1421,22 +1421,24 @@ defmodule RockcutApi.Seeds.Synthetic do
             }
         end
 
-      Repo.insert!(
-        struct(
-          %Task{
-            department_id: dept.id,
-            title: "#{@seed_tag} #{title}",
-            due_on: due_on,
-            # After whatever is already on the day; compacted below.
-            position: 1_000 + index,
-            assignee_id: who && u[who].id,
-            created_by_id: mgr.id,
-            inserted_at: now,
-            updated_at: now
-          },
-          completion
+      task =
+        Repo.insert!(
+          struct(
+            %Task{
+              department_id: dept.id,
+              title: "#{@seed_tag} #{title}",
+              due_on: due_on,
+              # After whatever is already on the day; compacted below.
+              position: 1_000 + index,
+              created_by_id: mgr.id,
+              inserted_at: now,
+              updated_at: now
+            },
+            completion
+          )
         )
-      )
+
+      if who, do: Assignees.put!(task, [u[who].id])
     end
 
     Tasks.compact_lists(dept)

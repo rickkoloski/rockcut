@@ -159,9 +159,9 @@ defmodule RockcutApi.TaskBoardsTest do
       assert {:error, cs} =
                Tasks.create(ctx.bar, %{title: "Lines", assignee_id: ctx.brewer.id}, ctx.bar_mgr)
 
-      assert %{assignee_id: ["must be a Taproom member"]} = errors_on(cs)
+      assert %{assignee_ids: ["Kate Brewer must be a Taproom member"]} = errors_on(cs)
       assert {:error, cs} = Tasks.update(ctx.bar, t, %{assignee_id: ctx.brewer.id}, ctx.bar_mgr)
-      assert %{assignee_id: ["must be a Taproom member"]} = errors_on(cs)
+      assert %{assignee_ids: ["Kate Brewer must be a Taproom member"]} = errors_on(cs)
       assert Repo.get!(Task, t.id).assignee_id == ctx.owner.id
     end
 
@@ -176,7 +176,7 @@ defmodule RockcutApi.TaskBoardsTest do
                  @today
                )
 
-      assert %{assignee_id: ["must be a Taproom member"]} = errors_on(cs)
+      assert %{assignee_ids: ["Kate Brewer must be a Taproom member"]} = errors_on(cs)
 
       assert {:ok, first} =
                Tasks.create(

@@ -60,10 +60,10 @@ defmodule RockcutApi.Tasks.Task do
   @doc "D49: made from a production step."
   def linked?(%__MODULE__{production_step_id: id}), do: not is_nil(id)
 
-  @doc "Title, notes, assignee and day, as a person enters or edits them."
+  @doc "Title, notes and day, as a person enters or edits them (assignees: `Tasks.Assignees`)."
   def changeset(task, attrs) do
     task
-    |> cast(attrs, [:title, :notes, :assignee_id, :due_on])
+    |> cast(attrs, [:title, :notes, :due_on])
     |> update_change(:title, &trim/1)
     |> validate_required([:title], message: "can't be blank")
     |> validate_length(:title, max: @max_title)

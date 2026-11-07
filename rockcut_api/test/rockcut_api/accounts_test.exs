@@ -117,7 +117,7 @@ defmodule RockcutApi.AccountsTest do
                Repo.all(from e in Event, where: e.action == "unassigned")
 
       assert actor_id == ctx.mgr.id
-      assert detail == %{"from" => ctx.brewer2.id, "to" => nil, "reason" => "left_brewery"}
+      assert detail == %{"from" => [ctx.brewer2.id], "to" => [], "reason" => "left_brewery"}
     end
 
     test "S49 (D40): Brewery-only, removed from the Brewery → tasks as above, code cleared",

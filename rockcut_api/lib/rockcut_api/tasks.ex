@@ -29,6 +29,7 @@ defmodule RockcutApi.Tasks do
   alias RockcutApi.Accounts.{Department, User}
 
   alias RockcutApi.Tasks.{
+    Assignees,
     DailyCheck,
     DailyItem,
     Event,
@@ -190,7 +191,7 @@ defmodule RockcutApi.Tasks do
             ((t.due_on >= ^from and t.due_on <= ^to) or
                (t.completed_on >= ^from and t.completed_on <= ^to) or
                (is_nil(t.completed_at) and (is_nil(t.due_on) or t.due_on < ^today))),
-        preload: [:assignee, :completed_by, :created_by, production_step: :batch]
+        preload: [:assignee, :assignees, :completed_by, :created_by, production_step: :batch]
     )
   end
 
@@ -289,8 +290,8 @@ defmodule RockcutApi.Tasks do
   reminder (D38 spec §3.5):
 
     * `tasks`: every open task planned that day, whoever it's assigned to:
-      `user`'s first, then unassigned ones, then other people's, each in
-      board order, assignee preloaded;
+      `user`'s first (D53: they're one of its people), then unassigned ones,
+      then other people's, each in board order, assignees preloaded;
     * `daily`: that day's Daily card as the board shows it, `%{done, total,
       unticked}` with `unticked` the open items' names in card order.
 
@@ -302,12 +303,12 @@ defmodule RockcutApi.Tasks do
         from t in Task,
           where: t.department_id == ^dept.id and t.due_on == ^day and is_nil(t.completed_at),
           order_by: [asc: t.position, asc: t.id],
-          preload: :assignee
+          preload: :assignees
       )
       |> Enum.sort_by(fn t ->
         cond do
-          t.assignee_id == user_id -> 0
-          is_nil(t.assignee_id) -> 1
+          Enum.any?(t.assignees, &(&1.id == user_id)) -> 0
+          t.assignees == [] -> 1
           true -> 2
         end
       end)
@@ -352,18 +353,19 @@ defmodule RockcutApi.Tasks do
     end
   end
 
-  @doc "The task with assignee, completer and creator loaded, for its JSON."
+  @doc "The task with assignees, completer and creator loaded, for its JSON."
   def with_names(%Task{} = task),
     do:
       task
-      |> Repo.preload([:assignee, :completed_by, :created_by, production_step: :batch],
+      |> Repo.preload(
+        [:assignee, :assignees, :completed_by, :created_by, production_step: :batch],
         force: true
       )
       |> RockcutApi.Production.TaskLink.describe()
 
   @doc """
   Add a task at the bottom of its day, or of the Future list when `due_on` is
-  empty. `attrs`: title, notes, due_on, assignee_id.
+  empty. `attrs`: title, notes, due_on, assignee_ids (`Assignees.given/1`).
 
   With `repeat` (D39), it's a recurring task: `Series.create/4` makes every
   occurrence through today + 12 months and returns the first.
@@ -380,17 +382,19 @@ defmodule RockcutApi.Tasks do
     Repo.transaction(fn ->
       changeset =
         %Task{department_id: dept.id, created_by_id: actor.id}
-        |> Task.changeset(Map.take(attrs, ~w(title notes due_on assignee_id)))
-        |> validate_assignee()
+        |> Task.changeset(Map.take(attrs, ~w(title notes due_on)))
+        |> Assignees.validate(attrs)
 
       due_on = Ecto.Changeset.get_field(changeset, :due_on)
       changeset = Ecto.Changeset.put_change(changeset, :position, next_position(dept.id, due_on))
 
       case Repo.insert(changeset) do
         {:ok, task} ->
+          task = Assignees.apply!(task, attrs)
+
           log!(task, "created", actor, %{
             "due_on" => iso(task.due_on),
-            "assignee_id" => task.assignee_id
+            "assignee_ids" => Assignees.ids(task)
           })
 
           task
@@ -402,7 +406,7 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc """
-  Edit title, notes, assignee and day. A day change is a move to the bottom
+  Edit title, notes, assignees and day. A day change is a move to the bottom
   of that day (or of the Future list for `due_on: nil`). Logs `edited`,
   `assigned` and `moved` for what changed.
 
@@ -434,11 +438,12 @@ defmodule RockcutApi.Tasks do
 
     Repo.transaction(fn ->
       task = fetch!(id)
+      assignees = Assignees.ids(task)
 
       changeset =
         task
-        |> Task.changeset(Map.take(attrs, ~w(title notes assignee_id due_on)))
-        |> validate_assignee()
+        |> Task.changeset(Map.take(attrs, ~w(title notes due_on)))
+        |> Assignees.validate(attrs, assignees)
 
       if not changeset.valid?, do: Repo.rollback(changeset)
 
@@ -465,14 +470,23 @@ defmodule RockcutApi.Tasks do
         )
       end
 
-      if Map.has_key?(changeset.changes, :assignee_id) do
-        log!(
-          updated,
-          "assigned",
-          actor,
-          Map.merge(scoped, %{"from" => task.assignee_id, "to" => updated.assignee_id})
-        )
-      end
+      updated =
+        case Assignees.changed(attrs, assignees) do
+          nil ->
+            updated
+
+          ids ->
+            updated = Assignees.put!(updated, ids)
+
+            log!(
+              updated,
+              "assigned",
+              actor,
+              Map.merge(scoped, %{"from" => assignees, "to" => ids})
+            )
+
+            updated
+        end
 
       case day_change do
         :none -> updated
@@ -675,23 +689,25 @@ defmodule RockcutApi.Tasks do
   end
 
   @doc """
-  Clear `user_id` as assignee on **open** tasks on each board they can no
-  longer take tasks on (S49; per department since D41, S112): leaving the
-  Taproom doesn't touch their Brewery tasks, and deactivation clears every
-  board. Called inside `Accounts`' user and membership transactions, beside
-  `StaffCodes.clear_if_ineligible/2`. Done tasks keep the name. Each
-  unassigned task is logged on its board, with reason `left_<key>`. D39:
-  recurring task series assigned to them on that board are cleared too, so
-  the top-up doesn't assign them new occurrences.
+  Take `user_id` off **open** tasks on each board they can no longer take
+  tasks on (S49; per department since D41, S112): leaving the Taproom doesn't
+  touch their Brewery tasks, and deactivation clears every board. Others on
+  the task stay (D53 S218). Called inside `Accounts`' user and membership
+  transactions, beside `StaffCodes.clear_if_ineligible/2`. Done tasks keep the
+  name. Each task they came off is logged on its board, with reason
+  `left_<key>`. D39: recurring task series on that board lose them too, so the
+  top-up doesn't assign them new occurrences.
   """
   def unassign_if_ineligible(user_id, %User{} = actor) do
     user = Accounts.get_user!(user_id)
 
     for dept <- Accounts.list_departments(), not Authz.can_take_task?(user, dept) do
-      Repo.update_all(
-        from(s in TaskSeries, where: s.assignee_id == ^user_id and s.department_id == ^dept.id),
-        set: [assignee_id: nil, updated_at: now()]
+      Repo.all(
+        from s in TaskSeries,
+          join: a in assoc(s, :assignee_links),
+          where: a.user_id == ^user_id and s.department_id == ^dept.id
       )
+      |> Enum.each(&Assignees.remove!(&1, user_id))
 
       # D49: and the unfinished production steps assigned to them, so the
       # Brewery board's linked tasks (which follow their steps) agree.
@@ -706,15 +722,16 @@ defmodule RockcutApi.Tasks do
 
       Repo.all(
         from t in Task,
-          where:
-            t.assignee_id == ^user_id and t.department_id == ^dept.id and is_nil(t.completed_at)
+          join: a in assoc(t, :assignee_links),
+          where: a.user_id == ^user_id and t.department_id == ^dept.id and is_nil(t.completed_at)
       )
       |> Enum.each(fn task ->
-        task = task |> Ecto.Changeset.change(assignee_id: nil) |> Repo.update!()
+        before = Assignees.ids(task)
+        task = Assignees.remove!(task, user_id)
 
         log!(task, "unassigned", actor, %{
-          "from" => user_id,
-          "to" => nil,
+          "from" => before,
+          "to" => before -- [user_id],
           "reason" => "left_#{dept.key}"
         })
       end)
@@ -1345,35 +1362,6 @@ defmodule RockcutApi.Tasks do
   # (the list holds open tasks only).
   defp movable?(task, due_on),
     do: not locked?(task) and not (Task.done?(task) and is_nil(due_on))
-
-  ## Validation
-
-  @doc false
-  # The assignee must be able to take a task on the record's board (its
-  # `department_id`): an active member of that department, or an owner.
-  def validate_assignee(changeset) do
-    case Ecto.Changeset.get_change(changeset, :assignee_id) do
-      nil ->
-        changeset
-
-      id ->
-        dept_id = Ecto.Changeset.get_field(changeset, :department_id)
-
-        if assignable?(Accounts.get_user(id), dept_id),
-          do: changeset,
-          else: Ecto.Changeset.add_error(changeset, :assignee_id, assignee_error(dept_id))
-    end
-  end
-
-  defp assignable?(%User{} = user, dept_id), do: Authz.can_take_task?(user, dept_id)
-  defp assignable?(nil, _dept_id), do: false
-
-  defp assignee_error(dept_id) do
-    case Repo.get(Department, dept_id) do
-      %Department{name: name} -> "must be a #{name} member"
-      nil -> "must be a member"
-    end
-  end
 
   ## Helpers
 

@@ -63,13 +63,13 @@ defmodule RockcutApi.Tasks.TaskSeries do
   @doc """
   The content and rule, as a person enters them. Options that don't belong
   to the chosen rule are cleared, so a stored series only has its own.
+  Assignees go through `Tasks.Assignees`.
   """
   def changeset(series, attrs) do
     series
     |> cast(attrs, [
       :title,
       :notes,
-      :assignee_id,
       :frequency,
       :month_rule,
       :interval,
