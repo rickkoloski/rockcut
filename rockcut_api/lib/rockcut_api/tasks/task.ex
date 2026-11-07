@@ -33,7 +33,11 @@ defmodule RockcutApi.Tasks.Task do
     field :series_last, :boolean, virtual: true, default: false
 
     belongs_to :department, RockcutApi.Accounts.Department
+    # D53: `assignees` (through the join rows, in order) is the truth; `assignee`
+    # is a copy of the first for one release. Only `Tasks.Assignees` writes them.
     belongs_to :assignee, RockcutApi.Accounts.User
+    has_many :assignee_links, RockcutApi.Tasks.TaskAssignee, preload_order: [asc: :position]
+    has_many :assignees, through: [:assignee_links, :user]
     belongs_to :completed_by, RockcutApi.Accounts.User
     belongs_to :created_by, RockcutApi.Accounts.User
     belongs_to :series, RockcutApi.Tasks.TaskSeries

@@ -40,7 +40,15 @@ defmodule RockcutApi.Tasks.TaskSeries do
     field :internal_end, :boolean, default: false
 
     belongs_to :department, RockcutApi.Accounts.Department
+    # D53: `assignees` (through the join rows, in order) is the truth; `assignee`
+    # is a copy of the first for one release. Only `Tasks.Assignees` writes them.
     belongs_to :assignee, RockcutApi.Accounts.User
+
+    has_many :assignee_links, RockcutApi.Tasks.TaskSeriesAssignee,
+      foreign_key: :series_id,
+      preload_order: [asc: :position]
+
+    has_many :assignees, through: [:assignee_links, :user]
     belongs_to :created_by, RockcutApi.Accounts.User
     # G1: the series this one was split off (a rule change, "following").
     belongs_to :continues_series, __MODULE__
