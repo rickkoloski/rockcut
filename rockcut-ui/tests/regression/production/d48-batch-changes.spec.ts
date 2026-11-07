@@ -197,8 +197,9 @@ test('P83–P84: a planned batch changes template (keeping its added step) and b
   expect(after.steps.some((s) => s.name === 'Transfer')).toBe(true)
 
   await pick(page, 'batch-brand', `batch-brand-${other.id}`)
+  // Picking starts the save and nothing on screen has answered yet: wait for the brand.
+  await expect.poll(async () => (await batchOf(b.id)).brand_id).toBe(other.id)
   after = await batchOf(b.id)
-  expect(after.brand_id).toBe(other.id)
   await expect(snack(page)).toHaveText(`${b.label} is now ${after.label}.`)
 })
 

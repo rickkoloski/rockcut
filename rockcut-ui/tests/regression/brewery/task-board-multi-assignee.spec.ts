@@ -231,6 +231,48 @@ test.describe('as brewer1', () => {
     expect(ids(await on(w2))).toEqual([me, floater])
   })
 
+  test('QA gap 1: adding a day from the dialog leaves everyone on their own dates', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const [me, brewer2, floater] = [await userId(api), await userId(await apiAs('brewer2')), await userId(await apiAs('floater'))]
+    // A Monday more than a week ahead, so every date below is still open.
+    const today = denverToday()
+    const monday = addDays(today, 8 - isoWeekday(today) + 7)
+    const res = await api.post('/api/boards/brewery/tasks', {
+      data: { title: tempTag('Gap1'), due_on: monday, repeat: 'weekly', repeat_weekdays: [1, 3, 5], assignee_ids: [me, brewer2] },
+    })
+    expect(res.status(), await res.text()).toBe(201)
+    const first = (await res.json()).data
+    created.push(first.id)
+    const on = async (day: string) => (await getBoard(api, day, day)).days[0].cards.find((c) => c.title === first.title && c.due_on === day)!
+    const following = async (day: string, data: Record<string, unknown>) => {
+      const r = await api.patch(`/api/boards/brewery/tasks/${(await on(day)).id}`, { data: { ...data, scope: 'following' } })
+      expect(r.status(), await r.text()).toBe(200)
+    }
+    const [mon2, wed2, fri2, mon3, tue3] = [7, 9, 11, 14, 15].map((n) => addDays(monday, n))
+    await following(mon2, { assignee_ids: [floater] })
+    await following(mon3, { assignee_ids: [brewer2] })
+
+    // Wed of week 2 shows the floater. Add Tuesday and leave the people alone.
+    await openBoard(page, { from: wed2, to: wed2 })
+    const wed = await on(wed2)
+    await openEdit(page, wed.id, wed2)
+    await expect(page.getByTestId(`task-assignee-chip-${floater}`)).toBeVisible()
+    await page.getByTestId('task-repeat-day-2').click()
+    await saveDialog(page).click()
+    await expect(page.getByTestId('remove-later-note')).toHaveText('The new pattern remakes them: dates that stay keep their people, and a new date takes the people of the one before it.')
+    const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${wed.id}$`), 'PATCH')
+    await page.getByTestId('remove-later-confirm').click()
+    const write = await saved
+    expect(write.request().postDataJSON()).not.toHaveProperty('assignee_ids')
+    expect(write.status()).toBe(200)
+
+    expect(ids(await on(monday))).toEqual([me, brewer2])
+    expect(ids(await on(wed2))).toEqual([floater])
+    expect(ids(await on(fri2))).toEqual([floater])
+    expect(ids(await on(mon3))).toEqual([brewer2])
+    expect(ids(await on(tue3))).toEqual([brewer2])
+  })
+
   test('A UI tab on the old version: a lone assignee_id writes and reads back', async () => {
     const api = await apiAs('brewer1')
     const brewer2 = await userId(await apiAs('brewer2'))
@@ -495,6 +537,27 @@ test.describe('at phone width', () => {
     expect(last.y).toBe(row.y)
     const words = (await page.getByText(task.title).boundingBox())!
     expect(words.width).toBeGreaterThan(140)
+  })
+
+  test('QA gap 10: a long name wraps in the people list; nothing is cut off', async ({ page }) => {
+    const api = await apiAs('brewer1')
+    const day = denverToday()
+    const person = await createTempPerson('Maximiliana Featherstonehaugh-Cholmondeley Wolfeschlegelsteinhausen', { memberships: [{ department: 'brewery', role: 'employee' }] })
+    const task = await createTask(api, { title: tempTag('LongName'), due_on: day })
+    created.push(task.id)
+    try {
+      await page.goto('/')
+      await openBoard(page)
+      await openEdit(page, task.id, day)
+      await page.getByTestId('task-assignee-select').click()
+      const option = page.getByTestId(`task-assignee-option-${person.id}`)
+      await expect(option).toBeVisible()
+      const fit = await option.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right, wide: window.innerWidth }))
+      expect(fit.scroll).toBeLessThanOrEqual(fit.client)
+      expect(fit.right).toBeLessThanOrEqual(fit.wide)
+    } finally {
+      await retireTempPerson(person)
+    }
   })
 
   test('back closes the list first, then the dialog; the dialog stays usable', async ({ page }) => {
