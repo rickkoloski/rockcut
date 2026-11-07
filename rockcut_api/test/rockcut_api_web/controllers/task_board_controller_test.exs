@@ -217,8 +217,10 @@ defmodule RockcutApiWeb.TaskBoardControllerTest do
       assert %{"errors" => %{"title" => _}} =
                add(p["brewer1"], %{title: " "}) |> json_response(422)
 
-      assert %{"errors" => %{"assignee_id" => ["must be a Brewery member"]}} =
+      assert %{"errors" => %{"assignee_ids" => [message]}} =
                add(p["brewer1"], %{assignee_id: p["bartender1"].id}) |> json_response(422)
+
+      assert message == "#{p["bartender1"].name} must be a Brewery member"
     end
 
     test "complete off its own day needs a display; a moved finished task is locked", %{
