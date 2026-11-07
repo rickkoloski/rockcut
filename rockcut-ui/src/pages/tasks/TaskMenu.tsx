@@ -14,7 +14,7 @@ import {
 } from '@mui/icons-material'
 import { FermentersIcon } from '../../components/NavIcons'
 import { useBackCloses } from '../../hooks/useBackCloses'
-import { formatTaskDay } from '../../lib/tasks'
+import { cardPeople, formatTaskDay } from '../../lib/tasks'
 import type { TaskCardData } from '../../lib/types'
 
 export type TaskAction = 'edit' | 'edit-series' | 'stop-repeating' | 'extend' | 'notes' | 'toggle' | 'change-day' | 'up' | 'down' | 'delete' | 'open-schedule'
@@ -67,7 +67,7 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
         {card.title}
       </Typography>
       <Typography variant="caption" color="text.secondary" component="div">
-        {card.due_on ? formatTaskDay(card.due_on) : 'Future'} · {card.assignee_name ?? 'Anyone'}
+        {card.due_on ? formatTaskDay(card.due_on) : 'Future'} · {cardPeople(card).map((p) => p.name).join(', ') || 'Anyone'}
       </Typography>
     </Box>,
   ]

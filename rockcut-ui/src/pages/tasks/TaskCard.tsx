@@ -1,8 +1,11 @@
 import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import { Avatar, Box, Checkbox, Chip, Paper, Tooltip, Typography } from '@mui/material'
 import { NotesOutlined, Repeat } from '@mui/icons-material'
-import { firstName, formatTaskDay, initials } from '../../lib/tasks'
+import { cardPeople, firstName, formatTaskDay, initials } from '../../lib/tasks'
 import type { TaskCardData } from '../../lib/types'
+
+/** D53: how many people a card shows before "+N". */
+const MAX_INITIALS = 3
 
 interface Props {
   card: TaskCardData
@@ -35,6 +38,7 @@ interface Props {
  * SortableLists).
  */
 export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly, noCheck, locked = card.locked, onNotes }: Props) {
+  const people = cardPeople(card)
   const open = (e: MouseEvent<HTMLElement>) => onOpen?.(card, e.currentTarget)
   const tags = [
     card.planned_on && !showDate && { id: 'planned', label: `planned ${formatTaskDay(card.planned_on)}` },
@@ -159,11 +163,21 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
               />
             </Tooltip>
           )}
-          {card.assignee_name && (
-            <Tooltip title={card.assignee_name}>
-              <Avatar sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={`task-assignee-${card.key}`}>
-                {initials(card.assignee_name)}
-              </Avatar>
+          {people.length > 0 && (
+            // D53: up to three, then "+N"; the tooltip names everyone. They overlap a little to leave the title room.
+            <Tooltip title={people.map((p) => p.name).join(', ')}>
+              <Box sx={{ display: 'flex', flexShrink: 0, '& > * + *': { ml: '-4px' } }} data-testid={`task-assignees-${card.key}`}>
+                {people.slice(0, MAX_INITIALS).map((p, i) => (
+                  <Avatar key={p.id} sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={i === 0 ? `task-assignee-${card.key}` : `task-assignee-${card.key}-${i}`}>
+                    {initials(p.name)}
+                  </Avatar>
+                ))}
+                {people.length > MAX_INITIALS && (
+                  <Avatar sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={`task-assignee-more-${card.key}`}>
+                    +{people.length - MAX_INITIALS}
+                  </Avatar>
+                )}
+              </Box>
             </Tooltip>
           )}
         </Box>

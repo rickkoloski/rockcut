@@ -5,7 +5,7 @@ import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
-import { boardPath, coloradoToday, initials, taskError, todaysTasks } from '../../lib/tasks'
+import { boardPath, cardPeople, coloradoToday, initials, taskError, todaysTasks } from '../../lib/tasks'
 import type { DailyCardItem, TaskBoardData, TaskCardData } from '../../lib/types'
 
 // The board's own query key (TaskBoard), so a tick here refreshes the board too.
@@ -135,9 +135,9 @@ export default function TodaysTasksCard() {
                     {card.production?.planned && (
                       <Chip label="Planned batch" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: 11, mr: 0.5 }} data-testid={`todays-task-planned-${card.id}`} />
                     )}
-                    {card.assignee_name && (
-                      <Chip size="small" variant="outlined" label={initials(card.assignee_name)} title={card.assignee_name} />
-                    )}
+                    {cardPeople(card).map((p) => (
+                      <Chip key={p.id} size="small" variant="outlined" label={initials(p.name)} title={p.name} sx={{ ml: 0.25 }} />
+                    ))}
                   </ListItem>
                 ))}
               </List>

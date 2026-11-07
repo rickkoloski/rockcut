@@ -1,7 +1,7 @@
 import parseApiError from './parseApiError'
 import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
-import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage } from './types'
+import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage, TaskPerson } from './types'
 
 // D38: task board helpers shared by the board, its dialogs and the specs.
 // D41: one board per department, under `/api/boards/<dept>`.
@@ -219,11 +219,25 @@ export function initials(name: string | null): string {
 
 export const firstName = (name: string | null) => name?.trim().split(/\s+/)[0] ?? ''
 
+/**
+ * D53: everyone on a task, first first. A rolled-back API sends only the one
+ * person (spec §3.1), so the board keeps working on that too.
+ */
+export function cardPeople(card: Pick<TaskCardData, 'assignees' | 'assignee_id' | 'assignee_name'>): TaskPerson[] {
+  if (card.assignees) return card.assignees
+  return card.assignee_id ? [{ id: card.assignee_id, name: card.assignee_name ?? 'Unknown' }] : []
+}
+
+/** D53: the same people, whatever the order: another order isn't a change. */
+export function samePeople(a: number[], b: number[]) {
+  return a.length === b.length && a.every((id) => b.includes(id))
+}
+
 /** Does the card pass the toolbar's filter and Hide completed? */
 export function cardShown(card: TaskCardData, filter: TaskFilter, hideCompleted: boolean, userId: number | undefined) {
   if (hideCompleted && card.done) return false
-  if (filter === 'mine') return card.assignee_id != null && card.assignee_id === userId
-  if (filter === 'unassigned') return card.assignee_id == null
+  if (filter === 'mine') return cardPeople(card).some((p) => p.id === userId)
+  if (filter === 'unassigned') return cardPeople(card).length === 0
   return true
 }
 
@@ -248,10 +262,12 @@ export function taskError(err: unknown): string {
 /**
  * A refused add or edit in the dialog's words. D41: an assignee from outside
  * the board's department reads "Only members of the Taproom can be assigned"
- * (S105).
+ * (S105). D53: a task's refusal names the person ("Riley Wort must be a Taproom
+ * member"); the single wording stays for a linked task's step.
  */
 export function taskSaveError(err: unknown, board: Pick<TaskBoardEntry, 'name'>): string {
   const errors = (err as { response?: { data?: { errors?: Record<string, string[]> } } })?.response?.data?.errors
+  if (errors?.assignee_ids?.length) return errors.assignee_ids.join('; ')
   if (errors?.assignee_id) return `Only members of the ${board.name} can be assigned`
   return taskError(err)
 }

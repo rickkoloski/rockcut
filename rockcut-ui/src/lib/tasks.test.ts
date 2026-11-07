@@ -8,9 +8,12 @@ import {
   boardPath,
   boardTarget,
   boardTitle,
+  cardPeople,
+  cardShown,
   departmentSections,
   describeEvent,
   rangeForDay,
+  samePeople,
   coloradoToday,
   defaultRange,
   readBoard,
@@ -153,6 +156,41 @@ describe('describeEvent: assignees, old and new shapes (D53)', () => {
     expect(describeEvent(ev('edited', { scope: 'following', from: { assignee_id: null }, to: { assignee_id: 5 } }), names)).toBe('Assigned Keg Wash to Sam Pour (this and following)')
     expect(describeEvent(ev('unassigned', { from: 6, to: null, reason: 'left_bar' }), names, taproom)).toBe('Unassigned Keg Wash from Jake Brewer (left the Taproom)')
     expect(describeEvent(ev('assigned', { from: null, to: 99 }), names)).toBe('Assigned Keg Wash to someone no longer here')
+  })
+})
+
+describe('several people on a task (D53)', () => {
+  const on = (assignees: { id: number; name: string }[]) =>
+    ({ done: false, assignees, assignee_id: assignees[0]?.id ?? null, assignee_name: assignees[0]?.name ?? null }) as TaskCardData
+  const both = on([
+    { id: 5, name: 'Sam Pour' },
+    { id: 6, name: 'Jake Brewer' },
+  ])
+
+  it('My tasks is any task I am on, second place too (S217)', () => {
+    expect(cardShown(both, 'mine', false, 5)).toBe(true)
+    expect(cardShown(both, 'mine', false, 6)).toBe(true)
+    expect(cardShown(both, 'mine', false, 7)).toBe(false)
+    expect(cardShown(on([]), 'mine', false, undefined)).toBe(false)
+  })
+
+  it('Unassigned is nobody', () => {
+    expect(cardShown(both, 'unassigned', false, 5)).toBe(false)
+    expect(cardShown(on([]), 'unassigned', false, 5)).toBe(true)
+  })
+
+  it('an API on the old version sends one person: the board reads that', () => {
+    const old = { assignee_id: 5, assignee_name: 'Sam Pour' }
+    expect(cardPeople(old)).toEqual([{ id: 5, name: 'Sam Pour' }])
+    expect(cardPeople({ assignee_id: null, assignee_name: null })).toEqual([])
+    expect(cardShown({ ...old, done: false } as TaskCardData, 'mine', false, 5)).toBe(true)
+  })
+
+  it('the same people in another order are the same', () => {
+    expect(samePeople([5, 6], [6, 5])).toBe(true)
+    expect(samePeople([5, 6], [5])).toBe(false)
+    expect(samePeople([5], [6])).toBe(false)
+    expect(samePeople([], [])).toBe(true)
   })
 })
 
@@ -337,6 +375,11 @@ describe('the switcher’s words (D41)', () => {
     const refused = { response: { status: 422, data: { errors: { assignee_id: ['must be a Taproom member'] } } } }
     expect(taskSaveError(refused, { name: 'Taproom' })).toBe('Only members of the Taproom can be assigned')
     expect(taskSaveError(err(422, '/api/boards/bar/tasks', { message: 'Pick a day to repeat' }), { name: 'Taproom' })).toBe('Pick a day to repeat')
+  })
+
+  it('D53: a refused person is named, as the API says', () => {
+    const refused = { response: { status: 422, data: { errors: { assignee_ids: ['Riley Wort must be a Taproom member', 'Sam Mash must be a Taproom member'] } } } }
+    expect(taskSaveError(refused, { name: 'Taproom' })).toBe('Riley Wort must be a Taproom member; Sam Mash must be a Taproom member')
   })
 
   it('History says who left which department (`left_<key>`)', () => {
