@@ -178,6 +178,96 @@ defmodule RockcutApiWeb.TaskBoardMultiAssigneeTest do
     end
   end
 
+  describe "QA gap 3: how many people one write can name" do
+    defp unused_ids(n), do: Enum.map(1..n, &(5_000_000 + &1))
+
+    defp brewers(n) do
+      for i <- 1..n,
+          do: AccountsFixtures.user_with_role("employee", "brewery", %{name: "Brewer #{i}"})
+    end
+
+    test "100 people is accepted, and all 100 are on the task", %{p: p} do
+      ids = brewers(100) |> Enum.map(& &1.id)
+
+      %{"data" => task} = add(p["brewer1"], %{assignee_ids: ids}) |> json_response(201)
+
+      assert people(task) == ids
+    end
+
+    test "101 distinct ids is one message, for POST and PATCH", %{p: p} do
+      message = ["A task can have at most 100 people"]
+      ids = unused_ids(101)
+
+      assert %{"errors" => %{"assignee_ids" => ^message}} =
+               add(p["brewer1"], %{assignee_ids: ids}) |> json_response(422)
+
+      %{"data" => %{"id" => id}} = add(p["brewer1"], %{}) |> json_response(201)
+
+      assert %{"errors" => %{"assignee_ids" => ^message}} =
+               call(p["brewer1"], :patch, "/api/boards/brewery/tasks/#{id}", %{assignee_ids: ids})
+               |> json_response(422)
+    end
+
+    test "30,000 distinct ids is the same 422, quickly, on one-offs and repeats", %{p: p} do
+      ids = unused_ids(30_000)
+      message = ["A task can have at most 100 people"]
+      %{"data" => %{"id" => id}} = add(p["brewer1"], %{}) |> json_response(201)
+
+      %{"data" => %{"id" => occurrence}} =
+        add(p["brewer1"], %{
+          due_on: today(),
+          repeat: "weekly",
+          repeat_weekdays: [1, 2, 3, 4, 5, 6, 7]
+        })
+        |> json_response(201)
+
+      for {url, extra} <- [
+            {"/api/boards/brewery/tasks/#{id}", %{}},
+            {"/api/boards/brewery/tasks/#{occurrence}", %{scope: "this"}},
+            {"/api/boards/brewery/tasks/#{occurrence}", %{scope: "following"}},
+            {"/api/boards/brewery/tasks/#{occurrence}",
+             %{scope: "following", repeat: "weekly", repeat_weekdays: [1]}}
+          ] do
+        {micros, conn} =
+          :timer.tc(fn ->
+            call(p["brewer1"], :patch, url, Map.put(extra, :assignee_ids, ids))
+          end)
+
+        assert %{"errors" => %{"assignee_ids" => ^message}} = json_response(conn, 422)
+        # It was over 15 s (and a 500) when each id was looked up.
+        assert micros < 5_000_000
+      end
+    end
+
+    test "copies of one id count once", %{p: p} do
+      b2 = p["brewer2"]
+      ids = List.duplicate(b2.id, 30_000)
+
+      %{"data" => task} = add(p["brewer1"], %{assignee_ids: ids}) |> json_response(201)
+      assert people(task) == [b2.id]
+    end
+
+    test "below the cap: five refusals by name, then one count", %{p: p} do
+      ids = unused_ids(100)
+
+      assert %{"errors" => %{"assignee_ids" => messages}} =
+               add(p["brewer1"], %{assignee_ids: ids}) |> json_response(422)
+
+      assert messages ==
+               List.duplicate("That person must be a Brewery member", 5) ++
+                 ["95 more can't be assigned"]
+    end
+
+    test "up to five are all named", %{p: p} do
+      ids = unused_ids(5)
+
+      assert %{"errors" => %{"assignee_ids" => messages}} =
+               add(p["brewer1"], %{assignee_ids: ids}) |> json_response(422)
+
+      assert messages == List.duplicate("That person must be a Brewery member", 5)
+    end
+  end
+
   describe "a UI tab on the old version (lone assignee_id)" do
     test "writes it and reads it back as before", %{p: p} do
       b2 = p["brewer2"]

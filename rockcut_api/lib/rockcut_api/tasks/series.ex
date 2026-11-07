@@ -325,7 +325,7 @@ defmodule RockcutApi.Tasks.Series do
   # (or isn't valid, so it's refused), else `current`, in its own order. All of
   # it is checked, since all of it is being added to the new series.
   defp people_attrs(attrs, current) do
-    if Assignees.given(attrs) == :invalid or Assignees.changed(attrs, current),
+    if Assignees.refused?(attrs) or Assignees.changed(attrs, current),
       do: attrs,
       else: %{"assignee_ids" => current}
   end

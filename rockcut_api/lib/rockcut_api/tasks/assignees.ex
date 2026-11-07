@@ -15,7 +15,9 @@ defmodule RockcutApi.Tasks.Assignees do
   question, no exception, and `assignee_id` stays put.
 
   **Who** (`validate/3`): only the people being added are checked, so someone
-  who has since left doesn't block an unrelated edit.
+  who has since left doesn't block an unrelated edit. Over `max_people/0`
+  distinct ids is refused before anyone is looked up, with one message; below
+  it, the first `@named` refusals name the person and one more counts the rest.
   """
   import Ecto.Query, only: [from: 2]
 
@@ -24,13 +26,19 @@ defmodule RockcutApi.Tasks.Assignees do
   alias RockcutApi.Accounts.{Department, User}
   alias RockcutApi.Tasks.{Task, TaskAssignee, TaskSeries, TaskSeriesAssignee}
 
+  @max_people 100
+  @named 5
+
+  @doc "The most people one write can name."
+  def max_people, do: @max_people
+
   @doc """
-  What `attrs` (string keys) ask for: a list of ids, `nil` for no change, or
-  `:invalid` when an id isn't one.
+  What `attrs` (string keys) ask for: a list of ids, `nil` for no change,
+  `:invalid` when an id isn't one, or `:too_many` over `max_people/0`.
   """
   def given(%{"assignee_ids" => ids}) when is_list(ids) do
     parsed = Enum.map(ids, &to_id/1)
-    if Enum.any?(parsed, &is_nil/1), do: :invalid, else: Enum.uniq(parsed)
+    if Enum.any?(parsed, &is_nil/1), do: :invalid, else: parsed |> Enum.uniq() |> capped()
   end
 
   def given(%{"assignee_ids" => nil}), do: []
@@ -45,6 +53,12 @@ defmodule RockcutApi.Tasks.Assignees do
   end
 
   def given(_attrs), do: nil
+
+  defp capped(ids) when length(ids) > @max_people, do: :too_many
+  defp capped(ids), do: ids
+
+  @doc "True when `attrs` ask for something `validate/3` always refuses."
+  def refused?(attrs), do: given(attrs) in [:invalid, :too_many]
 
   @doc """
   The new list when `attrs` ask for different people than `current`, else nil.
@@ -101,30 +115,42 @@ defmodule RockcutApi.Tasks.Assignees do
       :invalid ->
         Changeset.add_error(changeset, :assignee_ids, "is invalid")
 
+      :too_many ->
+        Changeset.add_error(
+          changeset,
+          :assignee_ids,
+          "A task can have at most #{@max_people} people"
+        )
+
       ids ->
         dept_id = Changeset.get_field(changeset, :department_id)
 
-        Enum.reduce(ids -- current, changeset, fn id, changeset ->
-          user = Accounts.get_user(id)
-
-          if assignable?(user, dept_id),
-            do: changeset,
-            else: Changeset.add_error(changeset, :assignee_ids, refusal(user, dept_id))
-        end)
+        (ids -- current)
+        |> Enum.map(&Accounts.get_user/1)
+        |> Enum.reject(&assignable?(&1, dept_id))
+        |> refusals(dept_id)
+        |> Enum.reverse()
+        |> Enum.reduce(changeset, &Changeset.add_error(&2, :assignee_ids, &1))
     end
   end
 
   defp assignable?(%User{} = user, dept_id), do: Authz.can_take_task?(user, dept_id)
   defp assignable?(nil, _dept_id), do: false
 
-  defp refusal(user, dept_id) do
-    who = if user, do: user.name, else: "That person"
+  defp refusals([], _dept_id), do: []
 
-    case Repo.get(Department, dept_id) do
-      %Department{name: name} -> "#{who} must be a #{name} member"
-      nil -> "#{who} must be a member"
-    end
+  defp refusals(users, dept_id) do
+    dept = Repo.get(Department, dept_id)
+    {named, others} = Enum.split(users, @named)
+
+    Enum.map(named, fn user ->
+      who = if user, do: user.name, else: "That person"
+      if dept, do: "#{who} must be a #{dept.name} member", else: "#{who} must be a member"
+    end) ++ others_refused(length(others))
   end
+
+  defp others_refused(0), do: []
+  defp others_refused(n), do: ["#{n} more can't be assigned"]
 
   @doc "Give the record this list (first first); returns it with `assignee_id` set."
   def put!(%Task{id: id} = task, ids) do
