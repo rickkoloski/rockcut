@@ -213,8 +213,8 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       assert %Event{task_id: id, detail: detail} = List.last(events("edited"))
       assert id == w3.id
 
-      assert %{"scope" => "following", "from" => %{"assignee_id" => nil}, "to" => to} = detail
-      assert to == %{"assignee_id" => ctx.brewer2.id}
+      assert %{"scope" => "following", "from" => %{"assignee_ids" => []}, "to" => to} = detail
+      assert to == %{"assignee_ids" => [ctx.brewer2.id]}
 
       # History names the assignee.
       assert Tasks.list_events(brewery_board(), w3.id).names.users[ctx.brewer2.id] == "Sam Brewer"
