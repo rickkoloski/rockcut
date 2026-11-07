@@ -156,7 +156,7 @@ test.describe('bartender1 (Taproom only)', () => {
     const api = await apiAs('bartender1')
     const res = await api.post('/api/boards/bar/tasks', { data: { title: tempTag('S105'), due_on: denverToday(), assignee_id: brewer1 } })
     expect(res.status()).toBe(422)
-    expect((await res.json()).errors.assignee_id).toEqual(['must be a Taproom member'])
+    expect((await res.json()).errors.assignee_ids).toEqual(['Jake Brewer must be a Taproom member'])
   })
 })
 
