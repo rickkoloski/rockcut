@@ -500,3 +500,72 @@ own people; Remove all; a dropped date as the one before; title and notes.
 
 `98d3bee` (docs: Part 1 QA follow-ups go in Part 2) landed on this branch during the cycle. It
 isn't from this work, and it only changes the spec.
+
+---
+
+# Lead decisions 4
+
+2026-11-07 · builder → lead, answering `d53_part1_lead_decisions_4.md`. Decision 1 is done
+(`423fe00`). Decisions 2 and 3 needed no work: no `change_preview` change, and remade occurrences
+still get new ids. Not pushed. DEV wasn't touched. The wider suites weren't run, as you said.
+
+## What changed
+
+A new date now takes the people of the last occurrence before it that wasn't changed on its own.
+A finished occurrence still counts, unless it's also an exception. If there's none, it takes the
+series' own values. Surviving dates are unchanged: each keeps what it held, exception or not.
+
+## Where I went beyond or away from the decision
+
+1. **People go by the exception flag, not `changed?/2`, so they don't quite "match title and
+   notes".** `changed?/2` also counts an occurrence whose notes differ from its series part's, and
+   that includes every earlier occurrence once a "following" edit changes the notes. Using it for
+   people brings gap 1 back: Sam from 11/16, then Kate with new notes from 11/23, and a new 11/17
+   skips Sam's dates and gets Kate. A test pins this, and break B below shows it.
+2. **Title now goes by the flag too.** It had the same problem, and it's the same lookup. Notes
+   still use `changed?/2`, so one person's note isn't copied. This has a limit: a new date among
+   occurrences with older notes takes the series' current notes.
+3. **The search looks back past the split's date.** If the anchor is the exception, nothing from
+   the split on qualifies, and the series' own values would be the latest people, not those of that
+   time. So it also checks the last unflagged occurrence before the split, through the earlier parts
+   of the main line. "Only exceptions before it" therefore means none in the whole line.
+4. **The confirm's wording was now wrong, so I changed it:** "dates that stay keep their people, and
+   a new date takes the people of the last one before it not changed on its own." It's longer than
+   I'd like, so reword it if you prefer. Vitest and Playwright assert the exact text.
+
+## Tests
+
+The pinned test is now "an exception doesn't pass its people to a new date", with the opposite
+assertion. That's the one change of meaning, as the decision asks. No test was deleted or weakened.
+Added: going back past an exception, a flagged anchor, only exceptions before it, finished, finished
+exception, older notes, an exception's title.
+
+Broken on purpose, then restored, running `multi_assignees_test` and
+`task_board_multi_assignee_test` (97 pass with the code as it is):
+
+| Break | Tests failing |
+|---|---|
+| A: people from the last occurrence, exception or not (the old rule) | **5:** exception, going back, only exceptions, finished exception, flagged anchor |
+| B: skip by `changed?/2` instead of the flag | **1:** older notes |
+| C: no look back before the split | **1:** flagged anchor |
+| D: finished occurrences don't count | **1:** finished |
+
+## Gate
+
+| Check | Result |
+|---|---|
+| `mix test`, twice (seeds 23752, 535837) | **1929 passed**, 0 failed |
+| `mix format --check-formatted`, changed files | clean |
+| `tsc -p tsconfig.app.json` | clean |
+| `tsc -p tsconfig.e2e.json` | the same 2 errors already on `develop` |
+| `vitest` | 190 passed |
+| `vite build` | builds |
+| `pnpm lint` | 26 errors, 1 warning (limit is 26 errors) |
+| `task-board-multi-assignee` | **21 passed** |
+
+Afterwards, in the dev DB: 0 `[TEST-TEMP]` tasks, and 0 tasks whose `assignee_id` differs from their
+first person.
+
+## LEAD: questions
+
+None. Please check item 1, since it departs from your wording.
