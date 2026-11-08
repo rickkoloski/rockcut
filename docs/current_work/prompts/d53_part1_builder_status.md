@@ -569,3 +569,93 @@ first person.
 ## LEAD: questions
 
 None. Please check item 1, since it departs from your wording.
+
+---
+
+# Lead decisions 5
+
+2026-11-07 · builder → lead, answering `d53_part1_lead_decisions_5.md`. Fix `1bf7b25`, wording
+`b77bbbe`. Not pushed. DEV wasn't touched.
+
+## S139: the cause
+
+**The cause is in the app, but not in Part 1 or the board.** It's the settings menu (D52's
+`SettingsGear`), and the same code is on `develop`. When the menu closes, MUI's focus trap gives
+focus back to the gear with a plain `focus()`, with no `preventScroll`. The gear is at the top of
+the page, so the browser scrolls back up to it. Picking Monday re-renders the range while the menu
+is still open, and `PhoneVerticalView`'s one-time `scrollIntoView` moves today to the top. If that
+happens before the menu closes, closing it undoes the scroll. It's visible to users: someone who
+picks Monday and then closes the menu lands back at the top, not on today.
+
+Measured with a throwaway probe (6 runs of S139's steps, deleted afterwards). Each frame it logged
+`scrollY`, today's top, the page height and the focused element, and it wrapped `scrollIntoView`,
+`focus()` and `fetch`. A failing run:
+
+```
+2449 scrollIntoView day-2026-11-07
+2486 scrollY=2340 todayTop=0    h=5845 focus=board-first-day
+2509 focus() board-settings preventScroll=undefined        ← the menu closes
+2513 scrollY=0    todayTop=2340 h=5845 focus=board-settings
+```
+
+That happened in 5 of 6 runs. In the one that passed, the menu closed before the range
+re-rendered, so the scroll came last. Whatever the order, the board's height stayed the same
+(5800 → 5845 at the re-render, then steady), so nothing above today grew.
+
+Ruled out:
+- **The scroll before the data, or a refetch.** A cold load with Monday already saved (4 runs):
+  the grid renders only once its data has loaded, the scroll lands today at the top, and nothing
+  moves in the next 3 s. The second `scrollIntoView` in each run is StrictMode in dev.
+- **Part 1's extra height** (the seed row, the people row). The height doesn't change after the
+  scroll, and the scroll does put today at the top. Only the focus restore moves the page.
+- Why this branch failed more often than `develop`: the menu code is the same on both, so it's
+  timing (which comes first, the re-render or the close). I didn't measure `develop`.
+
+## The fix
+
+`SettingsGear` (`components/SettingsMenu.tsx`) turns off MUI's restore (`disableRestoreFocus`).
+When the menu closes, it focuses the gear itself with `{ preventScroll: true }`, but only when
+focus is still in the menu (or on the body). An item that closes the menu and opens a dialog
+leaves the dialog's focus alone. The keyboard behaves as before (Escape returns to the gear). No
+re-scroll was added, so nothing fights someone who has started to scroll. This covers all seven
+pages that use the gear.
+
+| S139, `--repeat-each 20 --workers 1` (Saturday 2026-11-07, Monday first) | Result |
+|---|---|
+| Before (fix reverted with `git apply -R`; this is the revert check) | **7 of 20 failed**, all `viewport ratio 0` |
+| After | **20 of 20 passed** |
+
+The lead's earlier numbers were 4 of 8 on this branch and 1 of 12 on `develop`. No new test: S139
+catches it once the menu's timing loses the race, which happened 7 times in 20.
+
+## The confirm's wording
+
+`ruleChangeNote(false)` now reads: "The new pattern remakes them. Dates that stay keep their
+people. New dates take them from the last regular occurrence." I kept the opening "The new pattern
+remakes them" and put your sentence where my item 4 text was. The Vitest
+(`repeat.test.ts`) and Playwright (`task-board-multi-assignee.spec.ts:262`) assertions are updated.
+
+## Tests
+
+None deleted or weakened. Two assertions changed text (the wording above).
+
+## Gate
+
+| Check | Result |
+|---|---|
+| `mix test` | **1929 passed**, 0 failed |
+| `tsc -p tsconfig.app.json` | clean |
+| `tsc -p tsconfig.e2e.json` | the same 2 errors already on `develop` |
+| `vitest` | 190 passed |
+| `vite build` (`pnpm build`) | builds |
+| `pnpm lint` | 26 errors, 1 warning (unchanged; the changed files are clean) |
+| `task-board-multi-assignee` + `task-board-phone` + `task-board-follow-ups` (`brewery-board`, one worker) | **59 passed** |
+
+The persona tokens had expired (minted at 11:49), so I re-ran the `setup` project before the
+Playwright runs. Afterwards, in the dev DB: 0 `[TEST-TEMP]` tasks, and 0 tasks whose `assignee_id`
+differs from their first person.
+
+## LEAD: questions
+
+None. The fix is in shared D52 code (the gear on all seven pages), not in the board. Tell me if
+you'd rather it went to `develop` separately.
