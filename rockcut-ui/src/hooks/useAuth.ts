@@ -43,11 +43,6 @@ interface AuthState {
   signOutDevice: () => Promise<void>
 }
 
-/** True when the server refused the session. Anything else (offline, a timeout, a 5xx, a proxy's 4xx) isn't about it. */
-function isRefused(err: unknown): boolean {
-  return (err as { response?: { status?: number } })?.response?.status === 401
-}
-
 /** How long start-up waits for /api/me before showing "Can't reach the server" (DEV pass 2 G4). */
 const ME_TIMEOUT_MS = 15_000
 
@@ -158,30 +153,16 @@ const useAuth = create<AuthState>((set, get) => ({
           bootstrapped: true,
           unreachable: false,
         })
-      } catch (err) {
+      } catch {
+        // A token that really ended is already gone: the axios interceptor
+        // signed out or unpaired before this request failed.
         if (superseded() || localStorage.getItem(TOKEN_KEY) !== token) return
-        // DEV pass 1 G1, pass 2 G1: only a 401 says the token is no good (the
-        // axios interceptor handles it). Offline, a timeout, a 5xx or a
-        // proxy's 404/408/429 say nothing about it: keep it (on a tablet it may
-        // be the pairing itself) and retry; App shows "Can't reach the server".
-        if (!isRefused(err)) {
-          set({ bootstrapped: false, unreachable: true })
-          return
-        }
-        localStorage.removeItem(TOKEN_KEY)
-        set({
-          token: null,
-          user: null,
-          capabilities: null,
-          sharedDevices: false,
-          staffCodes: false,
-          beerBoardManage: false,
-          taskBoards: [],
-          colorMode: null,
-          isAuthenticated: false,
-          bootstrapped: true,
-          unreachable: false,
-        })
+        // DEV pass 1 G1, pass 2 G1, D55 §2.1: so the token is still good.
+        // Offline, a timeout, a 5xx, a proxy's 404/408/429, or a 401 that
+        // GET /api/me's recheck didn't confirm say nothing about it: keep it
+        // (on a tablet it may be the pairing itself) and retry; App shows
+        // "Can't reach the server".
+        set({ bootstrapped: false, unreachable: true })
       } finally {
         if (loading === load) loading = null
       }
