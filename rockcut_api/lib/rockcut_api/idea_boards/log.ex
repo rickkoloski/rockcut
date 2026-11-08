@@ -6,7 +6,7 @@ defmodule RockcutApi.IdeaBoards.Log do
   """
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.User
-  alias RockcutApi.IdeaBoards.{Card, Event, IdeaList}
+  alias RockcutApi.IdeaBoards.{Card, Event, IdeaList, Watchers}
 
   import Ecto.Query, only: [from: 2]
 
@@ -15,8 +15,11 @@ defmodule RockcutApi.IdeaBoards.Log do
   are copied) or a list (its id and name), or `nil` for a board-wide change
   such as a label's.
   """
-  def log!(board_key, action, %User{id: actor_id}, subject, detail \\ %{}) do
+  def log!(board_key, action, %User{id: actor_id} = actor, subject, detail \\ %{}) do
     {card_id, list_id, title} = subject_fields(subject)
+
+    # D53 §4.6: the card's watchers hear about it (Watchers decides which actions).
+    if is_struct(subject, Card), do: Watchers.pending!(subject, action, actor, detail)
 
     Repo.insert!(%Event{
       board: board_key,

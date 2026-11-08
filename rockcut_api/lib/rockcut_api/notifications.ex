@@ -22,7 +22,9 @@ defmodule RockcutApi.Notifications do
     "message_posted" => %{in_app: false, email: true, push: false},
     "calendar_feed_rotated" => %{in_app: true, email: false, push: true},
     # D40 shift-end reminder (D38 spec §3.5): push and the bell, never email.
-    "task_shift_end" => %{in_app: true, email: false, push: true}
+    "task_shift_end" => %{in_app: true, email: false, push: true},
+    # D53 §4.6 Watch on an Idea Board card: as task_shift_end.
+    "idea_card_changed" => %{in_app: true, email: false, push: true}
   }
 
   ## Dispatch
@@ -238,6 +240,15 @@ defmodule RockcutApi.Notifications do
         }
       })
     end)
+  end
+
+  @doc """
+  D53 §4.6: changes to an Idea Board card `user` watches, batched by
+  `IdeaBoards.Watchers` ("Casey changed Taproom remodel" / "moved to Doing,
+  2 notes"). Tapping it opens the card.
+  """
+  def idea_card_changed(%User{} = user, %{title: _, body: _, data: _} = payload) do
+    safe(fn -> notify(user, :idea_card_changed, payload) end)
   end
 
   defp shift_end_counts(tasks, daily) do
