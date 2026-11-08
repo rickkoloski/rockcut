@@ -208,3 +208,24 @@ recorded. T5 and T10 note that their revert check waits for the Playwright run.
 
 Next: wait for the go-ahead to merge `develop` (D53), then `personRoutes` + the `/boards` routes on
 tablets, un-fixme the pending check, and the full local Playwright run.
+
+## Lead decisions 2 done
+
+- **Migration version clash fixed:** renamed to
+  `rockcut_api/priv/repo/migrations/20261108140001_drop_unread_session_columns.exs`, so it sorts after
+  D53 Part 2's `20261108120001` and `…120002`. The module name (`DropUnreadSessionColumns`) and
+  contents are unchanged. The version and `Code.require_file` path are updated in
+  `test/rockcut_api/migrations/drop_unread_session_columns_test.exs` and
+  `test/rockcut_api/migrations/revoke_tablet_personal_sessions_test.exs`. Nothing else names it; the
+  stop-2 notes above still say `…120001` as a record of what was there.
+- **Up/down/up again** on this worktree's dev DB, after rolling back the old version in both the dev
+  and the test DB:
+  - up: columns and index gone, `schema_migrations` has `20261108140001`;
+  - down: both columns and the index back;
+  - up again: gone.
+  
+  `integrity_check` ok and `foreign_key_check` empty each time; 19 users kept. The old
+  `20261108120001` entry no longer exists in either DB.
+- `MIX_ENV=test mix test` once: **1958 passed**.
+
+That's everything that can be done before D53 lands. Waiting for the go-ahead to merge `develop`.

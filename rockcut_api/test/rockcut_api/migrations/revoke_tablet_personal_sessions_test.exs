@@ -16,12 +16,12 @@ defmodule RockcutApi.Migrations.RevokeTabletPersonalSessionsTest do
   @version 20_261_102_120_001
   @migration RockcutApi.Repo.Migrations.RevokeTabletPersonalSessions
 
-  @d55_version 20_261_108_120_001
+  @d55_version 20_261_108_140_001
   @d55_migration RockcutApi.Repo.Migrations.DropUnreadSessionColumns
 
   setup_all do
     Code.require_file("priv/repo/migrations/20261102120001_revoke_tablet_personal_sessions.exs")
-    Code.require_file("priv/repo/migrations/20261108120001_drop_unread_session_columns.exs")
+    Code.require_file("priv/repo/migrations/20261108140001_drop_unread_session_columns.exs")
     :ok
   end
 

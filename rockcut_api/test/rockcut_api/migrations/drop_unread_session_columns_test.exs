@@ -10,11 +10,11 @@ defmodule RockcutApi.Migrations.DropUnreadSessionColumnsTest do
   import RockcutApi.AccountsFixtures
   alias RockcutApi.Sessions
 
-  @version 20_261_108_120_001
+  @version 20_261_108_140_001
   @migration RockcutApi.Repo.Migrations.DropUnreadSessionColumns
 
   setup_all do
-    Code.require_file("priv/repo/migrations/20261108120001_drop_unread_session_columns.exs")
+    Code.require_file("priv/repo/migrations/20261108140001_drop_unread_session_columns.exs")
     :ok
   end
 
