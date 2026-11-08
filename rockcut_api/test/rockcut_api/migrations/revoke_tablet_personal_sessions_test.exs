@@ -3,6 +3,9 @@ defmodule RockcutApi.Migrations.RevokeTabletPersonalSessionsTest do
   D54 §3.2 (`revoke_tablet_personal_sessions`): the release signs out every
   personal session started on a tablet and nothing else. Run down (a no-op)
   and up again inside the test's transaction, with rows written the D34 way.
+
+  D55 dropped `user_sessions.device_token_id`; each test first runs D55's
+  migration down (inside the same transaction) to have the column back.
   """
   use RockcutApi.DataCase, async: false
 
@@ -13,8 +16,18 @@ defmodule RockcutApi.Migrations.RevokeTabletPersonalSessionsTest do
   @version 20_261_102_120_001
   @migration RockcutApi.Repo.Migrations.RevokeTabletPersonalSessions
 
+  @d55_version 20_261_108_120_001
+  @d55_migration RockcutApi.Repo.Migrations.DropUnreadSessionColumns
+
   setup_all do
     Code.require_file("priv/repo/migrations/20261102120001_revoke_tablet_personal_sessions.exs")
+    Code.require_file("priv/repo/migrations/20261108120001_drop_unread_session_columns.exs")
+    :ok
+  end
+
+  # The schema as it was when this migration ran (before D55).
+  setup do
+    assert :ok = Ecto.Migrator.down(Repo, @d55_version, @d55_migration, log: false)
     :ok
   end
 
