@@ -294,12 +294,48 @@ defmodule RockcutApiWeb.Router do
     get "/cards/:id", IdeaBoardController, :card
   end
 
-  # A board's History and Archived: people only.
+  # A board's History, Archived, the people picker and every write: people
+  # only.
   scope "/api/idea_boards/:board", RockcutApiWeb do
     pipe_through [:api, :authenticated, :idea_board]
 
     get "/history", IdeaBoardController, :history
     get "/archived", IdeaBoardController, :archived
+    get "/people", IdeaBoardController, :people
+
+    post "/lists", IdeaListController, :create
+    patch "/lists/:id", IdeaListController, :update
+    delete "/lists/:id", IdeaListController, :delete
+    post "/lists/:id/move", IdeaListController, :move
+    post "/lists/:id/lock", IdeaListController, :lock
+    post "/lists/:id/unlock", IdeaListController, :unlock
+    post "/lists/:id/archive", IdeaListController, :archive
+    post "/lists/:id/restore", IdeaListController, :restore
+
+    post "/cards", IdeaCardController, :create
+    patch "/cards/:id", IdeaCardController, :update
+    delete "/cards/:id", IdeaCardController, :delete
+    post "/cards/:id/move", IdeaCardController, :move
+    post "/cards/:id/lock", IdeaCardController, :lock
+    post "/cards/:id/unlock", IdeaCardController, :unlock
+    post "/cards/:id/archive", IdeaCardController, :archive
+    post "/cards/:id/restore", IdeaCardController, :restore
+
+    post "/cards/:id/checklist", IdeaCardController, :add_item
+    put "/cards/:id/checklist/order", IdeaCardController, :order_items
+    patch "/cards/:id/checklist/:item_id", IdeaCardController, :update_item
+    delete "/cards/:id/checklist/:item_id", IdeaCardController, :delete_item
+
+    post "/cards/:id/notes", IdeaCardController, :add_note
+    patch "/cards/:id/notes/:note_id", IdeaCardController, :update_note
+    delete "/cards/:id/notes/:note_id", IdeaCardController, :delete_note
+
+    put "/cards/:id/watch", IdeaCardController, :watch
+    delete "/cards/:id/watch", IdeaCardController, :unwatch
+
+    post "/labels", IdeaLabelController, :create
+    patch "/labels/:id", IdeaLabelController, :update
+    delete "/labels/:id", IdeaLabelController, :delete
   end
 
   # D46 production setup (spec §3.2–§3.4): Brewery members and owners

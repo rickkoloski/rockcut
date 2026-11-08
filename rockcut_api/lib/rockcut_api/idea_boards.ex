@@ -62,13 +62,7 @@ defmodule RockcutApi.IdeaBoards do
   tablet its home board and Company.
   """
   def boards_for(%User{} = user) do
-    departments =
-      Accounts.list_departments()
-      |> Enum.filter(& &1.assignable)
-      |> Enum.sort_by(& &1.id)
-      |> Enum.map(&{:department, &1})
-
-    for board <- departments ++ [:company],
+    for board <- all_boards(),
         Authz.can?(user, :read, {:idea_board, board}) do
       %{
         key: board_key(board),
@@ -78,6 +72,17 @@ defmodule RockcutApi.IdeaBoards do
         history: Authz.can?(user, :history, {:idea_board, board})
       }
     end
+  end
+
+  @doc "Every board: the assignable departments' in department order (by id), then Company."
+  def all_boards do
+    departments =
+      Accounts.list_departments()
+      |> Enum.filter(& &1.assignable)
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map(&{:department, &1})
+
+    departments ++ [:company]
   end
 
   def board_name(:company), do: "Company"
@@ -208,7 +213,8 @@ defmodule RockcutApi.IdeaBoards do
   The board's change log, newest first, #{@history_page_size} per page
   (1-based), optionally for one card, with actors. Returns
   `%{events, page, total, names: %{users}}`: `names` maps the user ids the
-  page's `detail`s mention (assignees) to their current names.
+  page's `detail`s mention (assignees, a deleted note's author) to their
+  current names.
   """
   def list_events(board, card_id \\ nil, page \\ 1) do
     page = max(page, 1)
@@ -227,7 +233,7 @@ defmodule RockcutApi.IdeaBoards do
 
     user_ids =
       events
-      |> Enum.flat_map(&List.wrap(&1.detail["assignee_ids"]))
+      |> Enum.flat_map(&detail_user_ids(&1.detail))
       |> Enum.filter(&is_integer/1)
       |> Enum.uniq()
 
@@ -243,6 +249,18 @@ defmodule RockcutApi.IdeaBoards do
   end
 
   def history_page_size, do: @history_page_size
+
+  # The people an event names: a new card's `assignee_ids`, an edit's
+  # `fields.assignee_ids` from/to, someone taken off (`from`/`to`), a deleted
+  # note's `author_id`.
+  defp detail_user_ids(detail) do
+    edited = get_in(detail, ["fields", "assignee_ids"]) || %{}
+
+    List.wrap(detail["assignee_ids"]) ++
+      List.wrap(edited["from"]) ++
+      List.wrap(edited["to"]) ++
+      List.wrap(detail["from"]) ++ List.wrap(detail["to"]) ++ List.wrap(detail["author_id"])
+  end
 
   ## Card faces
 

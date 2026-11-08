@@ -60,6 +60,18 @@ defmodule RockcutApiWeb.IdeaBoardController do
     |> IdeaBoardErrors.handle(conn)
   end
 
+  @doc """
+  GET /api/idea_boards/:board/people: who can be put on a card here, for the
+  picker (§4.1: the department's active members; on Company, every active
+  person).
+  """
+  def people(conn, _params) do
+    with :ok <- allow(conn, :write) do
+      json(conn, %{data: IdeaBoards.People.pickable(board(conn))})
+    end
+    |> IdeaBoardErrors.handle(conn)
+  end
+
   @doc "GET /api/idea_boards/:board/archived: archived lists and cards."
   def archived(conn, _params) do
     with :ok <- allow(conn, :read) do

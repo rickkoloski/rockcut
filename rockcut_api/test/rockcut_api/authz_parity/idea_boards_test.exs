@@ -6,7 +6,8 @@ defmodule RockcutApi.AuthzParity.IdeaBoardsTest do
   archived, rename and delete labels) and see History. The Company board:
   every active person reads and writes; only owners manage it or see its
   History. Owners: everything everywhere. Locks (`:change`): `:write`, and
-  while locked (the list, or the card or its list) also `:manage`.
+  while locked (the list, or the card or its list) also `:manage`. Notes:
+  the author edits (owners included), the author or a manager deletes.
   Devices: `authz_device_test` and the route matrices.
   """
   use RockcutApiWeb.ConnCase
@@ -14,7 +15,7 @@ defmodule RockcutApi.AuthzParity.IdeaBoardsTest do
   import RockcutApi.PersonaFixtures
 
   alias RockcutApi.{Authz, IdeaBoards}
-  alias RockcutApi.IdeaBoards.{Card, IdeaList}
+  alias RockcutApi.IdeaBoards.{Card, IdeaList, Note}
 
   # {persona, %{board => :member | :manager}}, as the personas have them.
   @people [
@@ -73,6 +74,15 @@ defmodule RockcutApi.AuthzParity.IdeaBoardsTest do
             %Card{list: locked_list}
           ],
           do: assert(Authz.can?(user, :change, {:idea_board, board, locked_card}) == manage?)
+
+      # Notes: the author edits (owners too only their own); the author or a
+      # manager deletes.
+      own = %Note{author_id: user.id}
+      other = %Note{author_id: -1}
+      assert Authz.can?(user, :edit, {:idea_note, board, own}) == write?
+      refute Authz.can?(user, :edit, {:idea_note, board, other})
+      assert Authz.can?(user, :delete, {:idea_note, board, own}) == write?
+      assert Authz.can?(user, :delete, {:idea_note, board, other}) == manage?
     end
   end
 

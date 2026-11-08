@@ -111,3 +111,134 @@ a card and an added list, and up again adds nothing to a board that has lists.
 - **LEAD-2:** Judgment call 2 (unique label names per board): OK?
 - **Carry to stage 8:** `mix rockcut.synthetic.setup`'s DEV reseed doesn't clear Idea Board rows
   yet. I'll do that with the `[SEED]` data.
+
+## Stop 2 (2026-11-08): decision 4 and stage 3
+
+Gate so far: `MIX_ENV=test mix test` **2058 passed, 0 failures** (one full run). Still no UI
+changes. Formatted only the files I changed.
+
+### Stage 1 change for lead decisions 2 and 4 (commit `f75912c`)
+
+- `create_idea_boards` edited in place: `idea_card_tasks.card_id` is nullable with `nilify_all`,
+  plus `card_title` (not null). Deleting a card for good keeps the row, so the task can still show
+  "From idea: <title>" (stage 5 shows it without a link).
+- Label names: unique index on `[board, lower(name)]` (same index name), and the changeset trims.
+  The duplicate message is "There's already a label with that name". SQLite's `lower()` folds
+  ASCII only.
+- I rolled back both migrations and migrated again on the local dev DB and the test DB. Anyone
+  else's local DB on this branch needs `mix ecto.rollback --step 2 && mix ecto.migrate`.
+
+### Stage 3: write API (commit with "stop 2")
+
+**Context** (`lib/rockcut_api/idea_boards/`, each write in one transaction with its History row):
+- `Lists`: create (last), rename, move (`before_id`; nil or archived → last; another board's →
+  404), lock/unlock (no-op if already), archive (the rest close up), restore (last), delete for
+  good (archived only, else 422 `not_archived`; cascades to cards, notes, checklists, watches).
+- `Cards`: create (bottom of an unarchived list), edit (`title`, `description`, `due_on`,
+  `assignee_ids`, `label_ids`), move (`list_id` + `before_id`, both lists renumbered), lock/unlock,
+  archive, restore (last in its list; 422 `list_archived` if the list is archived), delete for good
+  (archived only).
+- `Labels` (create, rename/recolor, delete; the delete strips the label from every card, locked
+  ones too), `Checklist` (add, edit text, tick/untick with `done_by`, remove, reorder with every id
+  once or 422 `invalid_order`), `Notes` (add, author edit sets `edited_at`, delete), `Watches`
+  (idempotent on; off also clears that person's pending rows on the card).
+- `People`: the only writer of `idea_card_assignees`. It reuses `Tasks.Assignees.given/1` for
+  parsing (same 100 cap), checks only newly added people through the new
+  `Authz.can_take_idea_card?/2`, and returns 422 naming each person ("Jake Brewer must be a Bar
+  member"). `pickable/1` is the picker: the department's active members (owners only if they're
+  members), or every active person on Company.
+- **People leaving:** `People.drop_if_ineligible/2` runs in `Accounts`, right after
+  `Tasks.unassign_if_ineligible/2`, in both the user-update and membership transactions. On every
+  board the person can no longer open, it takes them off every card (archived cards too, so a
+  restored card doesn't bring back someone who left) and drops their watches and pending rows.
+  History gets `card_unassigned` with `reason` `left_<key>` or **`deactivated`** (the Idea Board
+  side of Gap 9 is already right). Notes stay.
+- `Log`: `log!/5` (one place for History rows, so stage 4 can add the watcher ledger there),
+  `place/3`, `renumber!/2`.
+- **History actions:** `list_created/renamed/moved/locked/unlocked/archived/restored/deleted`,
+  `card_created/edited/moved/locked/unlocked/archived/restored/deleted/unassigned`,
+  `label_created/updated/deleted`, `checklist_added/edited/ticked/unticked/removed`,
+  `note_added/edited/deleted`.
+  - `card_edited` is one row per save, listing each changed field old → new. The description is
+    only marked `true`, so 10,000 characters aren't stored twice.
+  - Reordering cards within a list and reordering the checklist aren't logged. Moving a card to
+    another list is.
+  - History's `names.users` now also covers edit, unassign and deleted-note ids.
+
+**Authz** (all decisions there; boundary test passes):
+- `can?(user, :archive, {:idea_board, board, %IdeaList{}})` = `:change`, and for non-managers no
+  unarchived locked card in the list (S257).
+- Notes, **above the owner clause** so they bind owners too: `:edit` = author and `:write`
+  (an owner can't edit someone else's note); `:delete` = `:edit`, or `:manage`.
+- `can_take_idea_card?/2`.
+
+**Web:** `IdeaBoardAccess` (shared checks in the spec's order: board 403 → id 404 → lock 423),
+`IdeaListController`, `IdeaCardController` (cards, checklist, notes, watch),
+`IdeaLabelController`, `IdeaBoardController.people`. `IdeaBoardErrors` adds 423 `locked` ("Locked
+by a manager") and 423 `holds_locked_card`, plus 422 `archived`, `list_archived`, `not_archived`,
+`invalid_order`. All 31 new routes are people-only (`:authenticated`):
+`GET …/people`; `POST …/lists`, `PATCH|DELETE …/lists/:id`,
+`POST …/lists/:id/{move,lock,unlock,archive,restore}`; `POST …/cards`, `PATCH|DELETE …/cards/:id`,
+`POST …/cards/:id/{move,lock,unlock,archive,restore}`; `POST …/cards/:id/checklist`,
+`PUT …/checklist/order`, `PATCH|DELETE …/checklist/:item_id`; `POST …/cards/:id/notes`,
+`PATCH|DELETE …/notes/:note_id`; `PUT|DELETE …/cards/:id/watch`; `POST …/labels`,
+`PATCH|DELETE …/labels/:id`. Card writes answer with the whole card.
+
+**Rules as built (§4.5):**
+- Adding a card is `:change` on its list. Editing, archiving, restoring and checklist writes are
+  `:change` on the card (its own lock or its list's).
+- Moving a card is `:change` on the card **and** on the target list, so cards can't move in or
+  out of a locked list. Moving a list is `:change` on that list only, so others reorder around a
+  locked one.
+- Notes and Watch are never blocked by a lock.
+- Lock, unlock and delete-for-good are `:manage` (403 for others, not 423).
+- Label rename, recolor and delete are `:manage`. I treated recolor like rename.
+
+**Tests added**
+- `test/rockcut_api_web/controllers/idea_board_write_test.exs` (31). Every write is read back
+  through the API.
+  - Scenarios: S224, edits/limits, S232 and the assignee rules (named 422, owner accepted, device,
+    junk, 101 people), the picker.
+  - Moves: dense positions, only moves between lists logged; lists left/right.
+  - **Lock matrix:** 12 non-manager writes in or into a locked list → 423 with nothing changed;
+    unlock is 403. barMgr edits without unlocking. Other lists reorder around a locked one. Plus
+    S229, S255, S257, and unlock.
+  - S230 and S231. S237 with delete for good (cascade; the task stays with `card_id` nil and
+    `card_title`).
+  - Cards archive/restore/delete, restore while the list is archived, nothing into an archived
+    list. S256 plus case-insensitive names.
+  - Checklist (ticked by, untick, edit, reorder, remove, bad order), S261 (newest first, edited
+    mark, bartender2 403, owner can't edit, barMgr deletes, 2,001 characters 422), a note from
+    another card 404, Watch.
+  - S243 (leaving the Taproom; Brewery and Company untouched), S260 (deactivation; notes stay;
+    reason `deactivated`).
+- `idea_board_route_matrix_test.exs` rewritten to cover all 34 board routes (5 reads + 29 writes;
+  `GET /api/idea_boards` separately) × 5 boards × 8 actors. Each call gets fresh records. Two more
+  tests: another board's list, label, `before_id` and card are 404 on writes too, and a foreign
+  label in `label_ids` is 422.
+
+**Tests changed (shape only):**
+- `device_route_matrix_test.exs`: all 31 new routes in `@denied` (the tablet gets 403 from
+  `DeviceGate`).
+- `authz_parity/idea_boards_test.exs`: note edit and delete rows per persona and board.
+- `idea_board_controller_test.exs`: `card_title` on sent-task fixtures (part of `f75912c`).
+
+**Nothing deleted or weakened.**
+
+### Judgment calls (tell me if any is wrong)
+
+1. **Leaving removes the person from archived cards too,** not only open ones. Otherwise
+   restoring an archived card would bring back someone who can't open the board.
+2. **Editing an archived card is allowed** (PATCH works on it); moving it is 422 `archived`. The
+   UI won't offer edits from Archived. Say if the API should refuse them.
+3. **No History for reordering within a list or reordering the checklist.** Watchers won't hear
+   about those either in stage 4.
+4. **Lock, unlock and delete-for-good return 403 for non-managers, not 423.** 423 means "the lock
+   stopped you". These actions were never theirs.
+5. **The checklist on a card inside a locked list** is frozen for non-managers, as §4.5 says.
+   Adding and removing items are frozen too, not only ticks.
+
+### LEAD:
+
+- None blocking. Please confirm judgment calls 1 and 2, since stage 4's notifications follow
+  whatever History logs.
