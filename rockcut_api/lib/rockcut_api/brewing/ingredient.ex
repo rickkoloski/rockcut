@@ -18,5 +18,6 @@ defmodule RockcutApi.Brewing.Ingredient do
     |> validate_required([:name, :category_id])
     |> unique_constraint([:name, :category_id])
     |> foreign_key_constraint(:category_id)
+    |> RockcutApi.Changeset.validate_parents([:category_id])
   end
 end

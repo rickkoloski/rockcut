@@ -29,5 +29,6 @@ defmodule RockcutApi.Brewing.RecipeIngredient do
     |> validate_positive_up_to(:amount, 1_000_000)
     |> foreign_key_constraint(:recipe_id)
     |> foreign_key_constraint(:lot_id)
+    |> RockcutApi.Changeset.validate_parents([:recipe_id, :lot_id])
   end
 end

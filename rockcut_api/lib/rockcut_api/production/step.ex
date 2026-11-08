@@ -79,6 +79,7 @@ defmodule RockcutApi.Production.Step do
       less_than_or_equal_to: TemplateStep.temperatures().last,
       message: "Enter #{TemplateStep.temperatures().first}–#{TemplateStep.temperatures().last}°F."
     )
+    |> RockcutApi.Changeset.validate_parents([:assignee_id])
   end
 
   defp blank_to_nil(nil), do: nil

@@ -23,5 +23,6 @@ defmodule RockcutApi.Brewing.CategoryFieldDefinition do
     |> validate_inclusion(:field_type, @valid_field_types)
     |> unique_constraint([:category_id, :field_name])
     |> foreign_key_constraint(:category_id)
+    |> RockcutApi.Changeset.validate_parents([:category_id])
   end
 end

@@ -27,5 +27,6 @@ defmodule RockcutApi.Accounts.Membership do
       # D33: a shared device never has memberships, whatever the insert path.
       if RockcutApi.Accounts.device_id?(id), do: [user_id: "can't be a shared device"], else: []
     end)
+    |> RockcutApi.Changeset.validate_parents([:user_id, :department_id])
   end
 end

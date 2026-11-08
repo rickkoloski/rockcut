@@ -28,5 +28,6 @@ defmodule RockcutApi.Brewing.RecipeProcessStep do
     |> validate_range(:temperature, 20, 212)
     |> unique_constraint([:recipe_id, :step_number])
     |> foreign_key_constraint(:recipe_id)
+    |> RockcutApi.Changeset.validate_parents([:recipe_id])
   end
 end

@@ -328,3 +328,95 @@ also check `data: []`. Nothing else was changed or weakened.
    before it, because both plugs sit after auth.
 
 Ready for the lead's full local Playwright run (T1–T13).
+
+## Lead decisions 4 done (§2.12 + T14)
+
+**Gate:** `mix compile --force --warnings-as-errors` clean; `MIX_ENV=test mix test` **2162 passed**
+(2157 + 5 new); `tsc -p tsconfig.app.json` clean; Vitest **230** passed. No `mix ecto.*` on the dev DB,
+no servers, no Playwright. Heads-up: `mix compile --force` rebuilt `_build/dev`, the build the lead's
+running server uses. The code is the same and it compiled cleanly, but it was a full rebuild.
+
+### The cause (confirmed first)
+
+The lead's correction is right; my stop-3 note was wrong. `Recipe.changeset` **does** declare
+`foreign_key_constraint(:brand_id)` (`recipes_brand_id_fkey`). A test inserting a recipe for brand
+12345 raised `Ecto.ConstraintError`: `* nil (foreign_key_constraint)`, against the declared
+`"recipes_brand_id_fkey"`. The raw SQLite error is just `FOREIGN KEY constraint failed`, with no
+constraint name. Ecto has nothing to match, so it raises: the 500. The plan didn't change.
+
+### The probe (built from the schemas)
+
+Every module with `__schema__/1` (68 schemas), every `belongs_to`, and every `*changeset*` function
+(arity 2, plus `User.device_create_changeset/1`): which changesets **cast** a parent id from input.
+All 45 have a DB foreign key, and none had a missing-parent check:
+
+- **Accounts:** `AuditEntry.changeset` (actor_id, target_id); `Membership.changeset` (user_id,
+  department_id); `User.device_create_changeset/1` and `device_update_changeset`
+  (home_department_id).
+- **Availability:** `Slot.changeset` (user_id).
+- **Brewing:** `Batch` (brand_id); `BatchLogEntry` (batch_id); `BrewTurn` (batch_id, recipe_id);
+  `CategoryFieldDefinition` (category_id); `Ingredient` (category_id); `IngredientLot`
+  (ingredient_id); `MashStep` (recipe_id); `Recipe` (brand_id); `RecipeIngredient` (recipe_id,
+  lot_id); `RecipeProcessStep` (recipe_id); `WaterProfile` (recipe_id).
+- **Messaging:** `ChannelRead`, `Message` (user_id).
+- **Notifications:** `Notification`, `PushSubscription` (user_id).
+- **Production:** `Step.edit_changeset` (assignee_id); `StepType` (starts_phase_id); `TemplateStep`
+  (phase_id).
+- **Reminders:** `ShiftReminder`, `TaskReminder` (shift_id).
+- **Scheduling:** `Position` (department_id); `ScheduleEvent` (department_id, created_by_id,
+  series_id); `ScheduleEventSeries` (department_id, created_by_id); `ScheduleTemplate`
+  (created_by_id); `ScheduleTemplateItem` (position_id, assignee_id); `Shift` (department_id,
+  position_id, assignee_id, created_by_id); `ShiftTemplate` (position_id).
+- **Tasks:** `Task.completion_changeset` (completed_by_id).
+- **Time off:** `Request.create_changeset` (user_id).
+
+**Not cast by any changeset** (so input can't name a missing parent): every other `belongs_to`,
+including all of the Boards (`IdeaBoards.*`), Buy-a-Beer (`BeerBoard.*`), the task tables
+(`Task.department_id/assignee_id/series_id/…`, `TaskSeries`, the assignee joins, `DailyCheck`,
+`DailyItem`, `Tasks.Event`), the production rows built by the context (`Step.batch_id/tank_id/…`,
+`StepLink`, `TemplateLink`, `TemplateStep.template_id/step_type_id`, `BatchVessel`, `Outage`,
+`ConditionMark`, `FlagSignoff`, `UndoRecord`), `Batch.template_id/split_parent_id`, devices and
+sessions. Those are set with `put_change`/`put_assoc` from rows the context has already loaded,
+and D53's `Ids` checks and lookups cover the Boards and task boards. Only
+`User.owner_flag_changeset` couldn't take the probe's attrs (a FunctionClauseError on its own
+arguments); it doesn't cast a parent id.
+
+Through the API (before the fix), the same 500 on: recipes, ingredients, lots, recipe ingredients,
+mash steps, field definitions, batches, positions, shift templates, shifts (assignee), devices,
+time off, schedule events, availability.
+
+### What changed
+
+- **`RockcutApi.Changeset.validate_parents/2`** (`lib/rockcut_api/changeset.ex`): for each named
+  `belongs_to` field that changed to a non-nil value and has no error yet, look the parent up (by
+  the association's `related_key`). If it's missing, add `{field, "does not exist"}` (validation
+  `:parent`). An id `Ids.parse` refuses (0, negative, past the range) doesn't exist, with no query.
+  An unknown field name raises `ArgumentError`, which is a programming error.
+- Called as the last step of each of the **34 changesets** above, with that changeset's fields.
+  The `foreign_key_constraint` calls stay.
+- **Formatting:** the diff is only the new lines (39 insertions, no deletions). Six legacy brewing
+  files weren't `mix format`-clean at HEAD (`batch`, `brew_turn`, `ingredient_lot`, `recipe`,
+  `recipe_process_step`, `water_profile`). I added the line there without running the formatter, so
+  their legacy layout is untouched. The other files were formatted.
+- **Routes that look the parent up first keep their answer:** a shift with a missing `position_id`
+  is still 403 (the context resolves the position for the access check), tested.
+- **0 and negative ids** (in range, so `ParamIds` lets them through): 422 "does not exist", in the
+  sweep and through the API.
+
+### T14
+
+- `test/rockcut_api/missing_parent_sweep_test.exs`: built from the schemas, as the probe was. Every
+  `{schema, changeset, belongs_to}` a changeset casts (45) × `12345`, `0`, `-1` must carry
+  `"does not exist"` on the field. A new `belongs_to` cast without the helper fails, and a guard
+  test asserts at least 40 are found. The sweep hands `device_update_changeset` a device struct,
+  because on a person's struct the D33 invariant already rejects `home_department_id` ("only shared
+  devices have one").
+- `test/rockcut_api_web/controllers/missing_parent_test.exs`: 14 create routes through the API ×
+  `12345`, `0`, `-1` → 422 `{"<field>": ["does not exist"]}`, nothing saved (counts). The shift
+  position case is still 403.
+- **Revert check**, done in a scratch copy of `rockcut_api` (its own test DB) so the lead's running
+  dev server never saw a disabled helper: with `validate_parents/2` a no-op, the sweep lists all 45
+  fields, and the API test fails with `Ecto.ConstraintError` (the 500). With the helper: 5/5.
+- `tests/COVERAGE.md`: T14 row.
+
+No existing tests changed. Ready for the lead.

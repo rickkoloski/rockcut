@@ -76,6 +76,7 @@ defmodule RockcutApi.Production.TemplateStep do
     )
     |> validate_inclusion(:split_method, @split_methods, message: "Pick Transfer or Filter.")
     |> validate_inclusion(:cip_method, @cip_methods, message: @cip_message)
+    |> RockcutApi.Changeset.validate_parents([:phase_id])
   end
 
   defp blank_to_nil(nil), do: nil
