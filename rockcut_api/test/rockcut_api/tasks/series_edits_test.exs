@@ -8,7 +8,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
   import RockcutApi.AccountsFixtures
 
   alias RockcutApi.{Accounts, Tasks}
-  alias RockcutApi.Tasks.{Event, Series, Task, TaskSeries}
+  alias RockcutApi.Tasks.{Assignees, Event, Series, Task, TaskSeries}
 
   # A Wednesday. "Keg Wash" every Wed: w0 = Oct 14, w1 = Oct 21, w2 = Oct 28, …
   @today ~D[2026-10-14]
@@ -352,33 +352,56 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       end
     end
 
-    test "a split offers to keep a notes-only one: keep keeps it with its notes, remove removes it",
-         ctx do
-      for {changed, kept?} <- [keep: true, remove: false] do
-        w0 = keg_wash!(ctx.brewer)
-        {:ok, _} = this!(week(w0, 5), %{notes: "Mine"}, ctx)
-        assert %{later_open: 50, later_changed: 1} = Series.preview(week(w0, 1))
+    # D53 lead decisions 6 (QA gap 12): a rule change goes by the flag alone. A
+    # notes-only one isn't counted or kept back; its date, if the new pattern
+    # keeps it, is remade with its people and notes, and "following" reaches it.
+    test "a split remakes a notes-only one like its neighbours, notes kept", ctx do
+      for changed <- [:keep, :remove] do
+        Repo.delete_all(Task)
+        Repo.delete_all(TaskSeries)
 
-        assert {:ok, fri} =
-                 Tasks.update(
-                   brewery_board(),
-                   week(w0, 1),
-                   %{repeat: "weekly", repeat_interval: 1, repeat_weekdays: [5]},
-                   ctx.brewer,
+        {:ok, w0} =
+          Tasks.create(
+            brewery_board(),
+            %{
+              title: "Rack kegs",
+              due_on: @today,
+              repeat: "weekly",
+              repeat_weekdays: [1, 3, 5],
+              assignee_ids: [ctx.brewer.id, ctx.brewer2.id]
+            },
+            ctx.brewer,
+            @today
+          )
+
+        id = w0.series_id
+        {:ok, _} = this!(on(id, ~D[2026-10-23]), %{notes: "Mine"}, ctx)
+        mon = on(id, ~D[2026-10-19])
+        no_wed = %{repeat: "weekly", repeat_interval: 1, repeat_weekdays: [1, 5]}
+
+        assert {:ok, %{kind: "rule", removes_changed: 0}} = Series.change_preview(mon, no_wed)
+
+        assert {:ok, split} =
+                 Tasks.update(brewery_board(), mon, no_wed, ctx.brewer,
                    scope: "following",
                    today: @today,
                    changed: changed
                  )
 
-        assert %Event{detail: %{"kept" => kept}} = List.last(events("edited"))
+        assert %Event{detail: %{"kept" => 0}} = List.last(events("edited"))
+        fri = on(split.series_id, ~D[2026-10-23])
+        assert {fri.notes, fri.series_exception} == {"Mine", false}
+        assert on(id, ~D[2026-10-23]) == nil
 
-        if kept? do
-          assert {week(w0, 5).notes, week(w0, 5).series_id, kept} == {"Mine", w0.series_id, 1}
-          # Its day is a Wednesday, so the Friday of that week is still made.
-          assert on(fri.series_id, ~D[2026-11-20])
-        else
-          assert {week(w0, 5), kept} == {nil, 0}
-        end
+        third = user_with_role("employee", "brewery", %{name: "Jordan #{changed}"})
+
+        assert {:ok, _} =
+                 following!(on(split.series_id, ~D[2026-10-19]), %{assignee_ids: [third.id]}, ctx)
+
+        for d <- [~D[2026-10-19], ~D[2026-10-23], ~D[2026-10-26]],
+            do: assert(Assignees.ids(on(split.series_id, d)) == [third.id])
+
+        assert reload(fri).notes == "Mine"
       end
     end
   end

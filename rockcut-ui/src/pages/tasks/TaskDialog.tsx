@@ -7,7 +7,7 @@ import { actingRun } from '../../hooks/useActing'
 import api from '../../lib/api'
 import { isActingCancelled, withCode } from '../../lib/acting'
 import { boardPath, cardPeople, samePeople, taskError, taskGone, taskSaveError } from '../../lib/tasks'
-import { defaultRule, endsOnlyChange, reseed, ruleChangeNote, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
+import { defaultRule, reseed, ruleChangeNote, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
 import type { RosterEntry, SeriesChange, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
 import RepeatFields from './RepeatFields'
 import { ExtendDialog, RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
@@ -100,7 +100,6 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
 
   // Asking before a save or a delete on an occurrence.
   const [asking, setAsking] = useState<{ body: Record<string, unknown> } | null>(null)
-  const [confirmRemove, setConfirmRemove] = useState<{ body: Record<string, unknown> } | null>(null)
   // Opened to edit the notes (menu, or the card's notes icon by click or key): focus Notes with
   // the cursor after them. Not autoFocus: the dialog's focus trap takes focus after it when the
   // dialog opens from a key (D52). The field mounts a render after the dialog (its portal), so a
@@ -153,7 +152,6 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
 
   const send = async (body: Record<string, unknown>, scope?: SeriesScope, changed?: Changed) => {
     setAsking(null)
-    setConfirmRemove(null)
     setConfirmEnds(null)
     setSaving(true)
     try {
@@ -175,8 +173,8 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     }
   }
 
-  /** D42 §2.6: what an Ends-only save does (the API works it out), then confirm. */
-  const askEnds = async (body: Record<string, unknown>) => {
+  /** D42 §2.6: what a rule or Ends save does (the API works it out), then confirm. */
+  const askChange = async (body: Record<string, unknown>) => {
     if (!card) return
     setSaving(true)
     try {
@@ -232,9 +230,10 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     // open ones: confirm first when there are any (Decision 2).
     if (repeating && original && !sameRule(rule, original)) {
       const full = { ...content, ...dayChange, ...taskRepeatParams(rule) }
-      if (endsOnlyChange(rule, original)) return askEnds(full)
-      if (series && series.later_open + series.later_changed > 0) return setConfirmRemove({ body: full })
-      return send(full, 'following')
+      // The API counts what a rule change removes (a notes-only one isn't
+      // changed on its own there, D53 lead decisions 6), and sends an Ends-only
+      // change to the Ends confirm.
+      return askChange(full)
     }
     if (Object.keys(content).length > 0) {
       const full = { ...content, ...dayChange }
@@ -395,17 +394,6 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
         ) : (
           <ExtendDialog loading={saving} onConfirm={() => send(confirmEnds.body, 'following')} onCancel={() => setConfirmEnds(null)} />
         ))}
-      {confirmRemove && series && (
-        <RemoveLaterDialog
-          title="Change the repeat"
-          laterOpen={series.later_open}
-          laterChanged={series.later_changed}
-          note={ruleChangeNote('assignee_ids' in confirmRemove.body)}
-          loading={saving}
-          onConfirm={(changed) => send(confirmRemove.body, 'following', changed)}
-          onCancel={() => setConfirmRemove(null)}
-        />
-      )}
     </>
   )
 }
