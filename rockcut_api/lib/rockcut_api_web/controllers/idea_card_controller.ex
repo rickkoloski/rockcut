@@ -12,6 +12,11 @@ defmodule RockcutApiWeb.IdeaCardController do
       author's, delete the author's or a manager's.
     * Watch: anyone who can open the board, locked or not.
 
+  An archived card, or any card in an archived list, is read-only until
+  it's restored (lead decision 2): edits, moves, locks, the checklist and
+  notes are 422 `archived`; Watch, restore and a manager's delete for good
+  still work.
+
   Card writes answer with the whole card, as `GET …/cards/:id`.
   """
   use RockcutApiWeb, :controller
@@ -68,8 +73,7 @@ defmodule RockcutApiWeb.IdeaCardController do
   def unlock(conn, %{"id" => id}), do: set_locked(conn, id, false)
 
   defp set_locked(conn, id, locked?) do
-    with :ok <- allow(conn, :write),
-         {:ok, card} <- IdeaBoards.fetch_card(board(conn), id),
+    with {:ok, card} <- live_card(conn, id),
          :ok <- allow(conn, :manage),
          {:ok, _card} <- Cards.set_locked(board(conn), card, locked?, current_user(conn)) do
       render_card(conn, card.id)
@@ -78,7 +82,7 @@ defmodule RockcutApiWeb.IdeaCardController do
   end
 
   def archive(conn, %{"id" => id}) do
-    with {:ok, card} <- changeable(conn, id),
+    with {:ok, card} <- lockable(conn, id),
          {:ok, _card} <- Cards.archive(board(conn), card, current_user(conn)) do
       render_card(conn, card.id)
     end
@@ -86,7 +90,7 @@ defmodule RockcutApiWeb.IdeaCardController do
   end
 
   def restore(conn, %{"id" => id}) do
-    with {:ok, card} <- changeable(conn, id),
+    with {:ok, card} <- lockable(conn, id),
          {:ok, _card} <- Cards.restore(board(conn), card, current_user(conn)) do
       render_card(conn, card.id)
     end
@@ -153,8 +157,7 @@ defmodule RockcutApiWeb.IdeaCardController do
   ## Notes
 
   def add_note(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
-         {:ok, card} <- IdeaBoards.fetch_card(board(conn), id),
+    with {:ok, card} <- live_card(conn, id),
          {:ok, note} <-
            Notes.add(board(conn), card, Map.take(params, ["body"]), current_user(conn)) do
       conn |> put_status(:created) |> json(%{data: idea_note(note)})
@@ -163,8 +166,7 @@ defmodule RockcutApiWeb.IdeaCardController do
   end
 
   def update_note(conn, %{"id" => id, "note_id" => note_id} = params) do
-    with :ok <- allow(conn, :write),
-         {:ok, card} <- IdeaBoards.fetch_card(board(conn), id),
+    with {:ok, card} <- live_card(conn, id),
          {:ok, note} <- Notes.fetch(card, note_id),
          :ok <- note(conn, :edit, note),
          {:ok, note} <-
@@ -175,8 +177,7 @@ defmodule RockcutApiWeb.IdeaCardController do
   end
 
   def delete_note(conn, %{"id" => id, "note_id" => note_id}) do
-    with :ok <- allow(conn, :write),
-         {:ok, card} <- IdeaBoards.fetch_card(board(conn), id),
+    with {:ok, card} <- live_card(conn, id),
          {:ok, note} <- Notes.fetch(card, note_id),
          :ok <- note(conn, :delete, note),
          {:ok, :deleted} <- Notes.delete(board(conn), card, note, current_user(conn)) do
@@ -205,8 +206,25 @@ defmodule RockcutApiWeb.IdeaCardController do
     |> IdeaBoardErrors.handle(conn)
   end
 
-  # The board, the card on it, then the lock: what every change to a card asks.
+  # The board, the card on it, archived or not, then the lock: what every
+  # change to a card asks.
   defp changeable(conn, id) do
+    with {:ok, card} <- live_card(conn, id),
+         :ok <- change(conn, card) do
+      {:ok, card}
+    end
+  end
+
+  # The board, then a card on it that isn't archived (nor its list).
+  defp live_card(conn, id) do
+    with :ok <- allow(conn, :write),
+         {:ok, card} <- IdeaBoards.fetch_card(board(conn), id) do
+      if IdeaBoards.archived?(card), do: {:error, :archived}, else: {:ok, card}
+    end
+  end
+
+  # Archive and restore ask for the lock but not for a live card.
+  defp lockable(conn, id) do
     with :ok <- allow(conn, :write),
          {:ok, card} <- IdeaBoards.fetch_card(board(conn), id),
          :ok <- change(conn, card) do

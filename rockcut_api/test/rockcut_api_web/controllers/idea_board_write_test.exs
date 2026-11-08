@@ -524,6 +524,61 @@ defmodule RockcutApiWeb.IdeaBoardWriteTest do
     end
   end
 
+  describe "archived cards are read-only (lead decision 2)" do
+    test "edits, moves, locks, checklist and notes are 422 archived; nothing changes", %{p: p} do
+      ideas = starter("bar", "Ideas")
+      archived = card!(ideas, "Shelved", %{archived_at: ~U[2026-11-05 12:00:00Z]})
+      old_list = list!("bar", "Old")
+      in_old = card!(old_list, "In an archived list")
+
+      Repo.update_all(from(l in IdeaList, where: l.id == ^old_list.id),
+        set: [archived_at: ~U[2026-11-05 12:00:00Z]]
+      )
+
+      for c <- [archived, in_old] do
+        item = item!(c, "Item", 1)
+        note = note!(c, p["bartender1"], "Mine")
+        base = "#{@bar}/cards/#{c.id}"
+
+        refused = [
+          {p["bartender1"], :patch, base, %{title: "X"}},
+          {p["bartender1"], :post, base <> "/move", %{list_id: ideas.id}},
+          {p["barMgr"], :post, base <> "/lock", %{}},
+          {p["bartender1"], :post, base <> "/checklist", %{text: "More"}},
+          {p["bartender1"], :patch, "#{base}/checklist/#{item.id}", %{done: true}},
+          {p["bartender1"], :delete, "#{base}/checklist/#{item.id}", %{}},
+          {p["bartender1"], :put, base <> "/checklist/order", %{ids: [item.id]}},
+          {p["bartender1"], :post, base <> "/notes", %{body: "New"}},
+          {p["bartender1"], :patch, "#{base}/notes/#{note.id}", %{body: "Edited"}},
+          {p["barMgr"], :delete, "#{base}/notes/#{note.id}", %{}}
+        ]
+
+        for {who, verb, path, params} <- refused do
+          assert {422, %{"error" => "archived"}} = req(who, verb, path, params), "#{verb} #{path}"
+        end
+
+        saved = card(p["barMgr"], c.id)
+        assert saved["title"] == c.title
+        assert saved["locked"] == false
+        assert [%{"text" => "Item", "done" => false}] = saved["checklist_items"]
+        assert [%{"body" => "Mine", "edited_at" => nil}] = saved["notes"]
+
+        # Watch still works.
+        ok!(p["bartender1"], :put, base <> "/watch")
+        assert card(p["bartender1"], c.id)["watching"]
+      end
+
+      # Restore (anyone) and delete for good (a manager) still work.
+      ok!(p["bartender1"], :post, "#{@bar}/cards/#{archived.id}/restore")
+      ok!(p["bartender1"], :patch, "#{@bar}/cards/#{archived.id}", %{title: "Back"})
+      assert card(p["bartender1"], archived.id)["title"] == "Back"
+
+      ok!(p["bartender1"], :post, "#{@bar}/cards/#{archived.id}/archive")
+      assert {204, _} = req(p["barMgr"], :delete, "#{@bar}/cards/#{archived.id}")
+      refute Repo.get(Card, archived.id)
+    end
+  end
+
   describe "labels (decision 16, S256)" do
     test "anyone adds; only managers rename or delete; delete strips locked cards too", %{p: p} do
       b1 = p["bartender1"]

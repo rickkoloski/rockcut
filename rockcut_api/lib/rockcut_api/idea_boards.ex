@@ -158,6 +158,13 @@ defmodule RockcutApi.IdeaBoards do
     end
   end
 
+  @doc """
+  Lead decision 2: an archived card, or any card in an archived list, is
+  read-only until it's restored (list preloaded).
+  """
+  def archived?(%Card{archived_at: at, list: %IdeaList{archived_at: list_at}}),
+    do: not is_nil(at) or not is_nil(list_at)
+
   @doc "A card on this board, with its list. `{:error, :not_found}` otherwise."
   def fetch_card(board, id) do
     key = board_key(board)
