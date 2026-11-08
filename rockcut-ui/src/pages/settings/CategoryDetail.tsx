@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Paper,
   Typography,
@@ -9,6 +9,7 @@ import {
   IconButton,
   CircularProgress,
   Tooltip,
+  Alert,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -21,14 +22,20 @@ import PageHeader from '../../components/PageHeader';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import CategoryFormDialog from './CategoryFormDialog';
 import FieldDefinitionDialog from './FieldDefinitionDialog';
+import parseApiError from '../../lib/parseApiError';
+
+const httpStatus = (err: unknown) => (err as { response?: { status?: number } } | null)?.response?.status;
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: category, isLoading } = useApiQuery<IngredientCategory>(
+  const { data: category, isLoading, error } = useApiQuery<IngredientCategory>(
     ['ingredient_category', Number(id)],
     `/api/ingredient_categories/${id}`,
+    undefined,
+    // A 404 won't change on a retry.
+    { retry: (count, err) => httpStatus(err) !== 404 && count < 1 },
   );
 
   const deleteCategoryMutation = useApiDelete(
@@ -47,6 +54,30 @@ export default function CategoryDetail() {
   const [selectedField, setSelectedField] = useState<CategoryFieldDefinition | undefined>();
   const [deleteFieldOpen, setDeleteFieldOpen] = useState(false);
   const [fieldToDelete, setFieldToDelete] = useState<CategoryFieldDefinition | undefined>();
+
+  // D55 §2.6 (task 4993): a category that doesn't exist (or an old link) says so
+  // instead of spinning.
+  if (!category && httpStatus(error) === 404) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
+        <Paper data-testid="category-not-found" variant="outlined" sx={{ p: 4, maxWidth: 440, textAlign: 'center' }}>
+          <Typography variant="h5" gutterBottom>
+            Category not found
+          </Typography>
+          <Typography color="text.secondary" sx={{ mb: 3 }}>
+            It doesn't exist, or it was deleted.
+          </Typography>
+          <Button variant="contained" component={RouterLink} to="/ingredients/categories">
+            Back to Ingredient categories
+          </Button>
+        </Paper>
+      </Box>
+    );
+  }
+
+  if (!category && error) {
+    return <Alert severity="error">{parseApiError(error)}</Alert>;
+  }
 
   if (isLoading || !category) {
     return <CircularProgress />;
