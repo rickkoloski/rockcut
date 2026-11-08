@@ -527,27 +527,39 @@ defmodule RockcutApi.Accounts do
     end
   end
 
-  # Resolve raw desired entries into {%Department{}, role} tuples.
+  # Resolve raw desired entries into {%Department{}, role} tuples. Anything but
+  # a list of objects (a map, a string, `[null]`, form-encoded) is a 422, not a
+  # crash (D55 §2.4, task 4983).
+  defp resolve_desired(entries) when not is_list(entries),
+    do: {:error, {:invalid_membership, "must be a list"}}
+
   defp resolve_desired(entries) do
-    Enum.reduce_while(entries, {:ok, []}, fn entry, {:ok, acc} ->
-      entry = stringify(entry)
-      role = entry["role"]
-      dept = resolve_department(entry["department"])
+    Enum.reduce_while(entries, {:ok, []}, fn
+      entry, {:ok, acc} when is_map(entry) ->
+        resolve_entry(stringify(entry), acc)
 
-      cond do
-        is_nil(dept) ->
-          {:halt, {:error, {:invalid_membership, "unknown department"}}}
-
-        not dept.assignable ->
-          {:halt, {:error, {:invalid_membership, "department is not assignable"}}}
-
-        role not in @roles ->
-          {:halt, {:error, {:invalid_membership, "invalid role"}}}
-
-        true ->
-          {:cont, {:ok, [{dept, role} | acc]}}
-      end
+      _entry, _acc ->
+        {:halt, {:error, {:invalid_membership, "each entry needs a department and a role"}}}
     end)
+  end
+
+  defp resolve_entry(entry, acc) do
+    role = entry["role"]
+    dept = resolve_department(entry["department"])
+
+    cond do
+      is_nil(dept) ->
+        {:halt, {:error, {:invalid_membership, "unknown department"}}}
+
+      not dept.assignable ->
+        {:halt, {:error, {:invalid_membership, "department is not assignable"}}}
+
+      role not in @roles ->
+        {:halt, {:error, {:invalid_membership, "invalid role"}}}
+
+      true ->
+        {:cont, {:ok, [{dept, role} | acc]}}
+    end
   end
 
   defp resolve_department(%Department{} = d), do: d
