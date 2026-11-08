@@ -15,6 +15,7 @@ import {
   tempCard,
   tempList,
   touchDropOn,
+  written,
 } from './helpers'
 
 // D53 Part 2 §5: S223–S243 and S255–S261 in the browser, as the personas.
@@ -51,12 +52,19 @@ test.describe('bartender1', () => {
     rememberLabel('bar', ((await (await created).json()).data as { id: number }).id)
     await expect(dialog.locator('[data-testid^="idea-card-label-"]')).toHaveText(['[TEST-TEMP] Big'])
 
+    const cardPath = new RegExp(`/cards/${card.id}$`)
     await dialog.getByTestId('idea-card-people-input').locator('input').fill('Alex')
+    let save = written(page, 'PATCH', cardPath)
     await page.getByRole('option', { name: 'Alex Draft' }).click()
+    await save
+    save = written(page, 'PATCH', cardPath)
     await dialog.getByTestId('idea-card-due-input').fill('2030-01-15')
+    await save
     for (const t of ['Measure', 'Quote']) {
       await dialog.getByTestId('idea-checklist-input').fill(t)
+      const added = written(page, 'POST', /\/checklist$/)
       await dialog.getByTestId('idea-checklist-add').click()
+      await added
     }
     await expect(dialog.locator('[data-testid^="idea-checklist-item-"]')).toHaveCount(2)
 
@@ -248,7 +256,9 @@ test.describe('bartender1', () => {
     const id = (await second.getAttribute('data-testid'))!.replace('idea-note-', '')
     await dialog.getByTestId(`idea-note-edit-${id}`).click()
     await dialog.getByTestId(`idea-note-edit-input-${id}`).fill('Second note, edited')
+    const edited = written(page, 'PATCH', new RegExp(`/notes/${id}$`))
     await dialog.getByTestId(`idea-note-save-${id}`).click()
+    await edited
     await page.reload()
     await expect(dialog.locator('[data-testid^="idea-note-body-"]')).toHaveText(['Second note, edited', 'First note'])
     await expect(dialog.getByTestId(`idea-note-meta-${id}`)).toContainText('edited')
@@ -263,7 +273,9 @@ test.describe('bartender1', () => {
     await expect(dialog.getByTestId('idea-card-locked')).toContainText('Notes stay open')
     await expect(dialog.getByTestId('idea-card-title-input')).toHaveCount(0)
     await dialog.getByTestId('idea-note-input').fill('Still a good idea')
+    const added = written(page, 'POST', /\/notes$/)
     await dialog.getByTestId('idea-note-add').click()
+    await added
     await page.reload()
     await expect(dialog.locator('[data-testid^="idea-note-body-"]')).toHaveText(['Still a good idea'])
   })
@@ -464,7 +476,9 @@ test.describe('other personas', () => {
       const card = await tempCard('office1', 'company', list.id, 'Holiday party')
       const dialog = await openCard(page, 'company', card.id)
       await dialog.getByTestId('idea-card-people-input').locator('input').fill('Sam')
+      const saved = written(page, 'PATCH', new RegExp(`/cards/${card.id}$`))
       await page.getByRole('option', { name: 'Sam Pour' }).click()
+      await saved
       await page.reload()
       await expect(dialog.getByTestId('idea-card-people-input')).toContainText('Sam Pour')
     })

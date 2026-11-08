@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { mouseDrag } from '../brewery/taskBoardHelpers'
-import { apiAs, board, cardFace, cleanupIdeas, listColumn, openIdeas, rememberList, rememberTask, tempCard, tempList } from './helpers'
+import { apiAs, board, cardFace, cleanupIdeas, listColumn, openIdeas, rememberList, rememberTask, tempCard, tempList, written } from './helpers'
 
 // D53 Part 2 stage 6: one smoke test per Idea Board screen (the board, the
 // card dialog, drag, locks, Send and "From idea", Archived, History, the
@@ -51,16 +51,31 @@ test.describe('bartender1', () => {
     await expect(page).toHaveURL(/\/boards\/bar\/cards\/\d+$/)
     const dialog = page.getByTestId('idea-card-dialog')
 
+    // Each write answered before the next and before the reload (a reload
+    // cancels a write still on its way).
+    const cardPath = /\/cards\/\d+$/
     await dialog.getByTestId('idea-card-description-input').fill('Walnut, seats 14')
+    let save = written(page, 'PATCH', cardPath)
     await dialog.getByTestId('idea-card-description-save').click()
+    await save
+    save = written(page, 'PATCH', cardPath)
     await dialog.getByTestId('idea-card-due-input').fill('2030-01-15')
+    await save
     await dialog.getByTestId('idea-checklist-input').fill('Measure')
+    save = written(page, 'POST', /\/checklist$/)
     await dialog.getByTestId('idea-checklist-add').click()
+    await save
+    save = written(page, 'PATCH', /\/checklist\/\d+$/)
     await dialog.locator('[data-testid^="idea-checklist-tick-"]').first().check()
+    await save
     await dialog.getByTestId('idea-note-input').fill('Quote came in')
+    save = written(page, 'POST', /\/notes$/)
     await dialog.getByTestId('idea-note-add').click()
+    await save
     await expect(dialog.locator('[data-testid^="idea-note-body-"]')).toHaveText(['Quote came in'])
+    save = written(page, 'PUT', /\/watch$/)
     await dialog.getByTestId('idea-card-watch').click()
+    await save
     await expect(dialog.getByTestId('idea-card-watch')).toHaveAttribute('aria-pressed', 'true')
 
     await page.reload()

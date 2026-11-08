@@ -13,6 +13,8 @@ import { apiWith, createTempPerson, retireTempPerson, signIn, type TempPerson } 
 // `[TEST-TEMP]` Brewery person made for this file, not brewer1. Personas are
 // shared, and the `brewery-board` project runs beside `chromium`: with
 // brewer1 in Dark, S26 there read the Daily count in the dark palette.
+// (Lead decisions 6) Not schedulable: S160 in schedule.spec reorders the
+// Scheduler roster on another worker, and a new row there moved its rows.
 
 const LIGHT_BG = 'rgb(238, 242, 232)' // Hop Field background.default
 const DARK_BG = 'rgb(21, 25, 21)' // Hop Field Night background.default
@@ -45,7 +47,7 @@ async function setDeviceMode(mode: string) {
 // Made at file level: inside the block below, the global request API would
 // take the block's storage state, which doesn't exist yet.
 test.beforeAll(async () => {
-  person = await createTempPerson('Theme', { memberships: [{ department: 'brewery', role: 'employee' }] })
+  person = await createTempPerson('Theme', { schedulable: false, memberships: [{ department: 'brewery', role: 'employee' }] })
   const token = await signIn(person)
   personApi = await apiWith(token)
   const origin = new URL(activeProfile().uiUrl).origin

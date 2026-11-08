@@ -642,3 +642,43 @@ restored. I reverted by reversing the diff; I checked by running the tests, not 
 
 **LEAD:** DEV may also have brewer1 stored as `dark` from earlier runs. A reseed (or one
 `PUT /api/me/color_mode` with light) clears it.
+
+## Lead decisions 6 (DEV suite): done
+
+Test-side only; no app changes.
+
+**1. S261 (and the same pattern elsewhere).** New helper `written(page, method, path)` in
+`tests/regression/ideas/helpers.ts`. It waits for the next Board write's answer and checks it's OK.
+Each one is started before the click and awaited before the reload. I checked every `page.reload()` in
+both ideas specs. These followed a UI write without waiting, and are fixed:
+- `boards-scenarios.spec.ts`:
+  - S261: the note's PATCH, the DEV failure.
+  - S255: the note's POST. It had no wait at all.
+  - S224: the people and due-date PATCHes, and both checklist POSTs.
+  - S232: the people PATCH.
+- `idea-boards-smoke.spec.ts` S224 smoke: the description and due PATCHes, the checklist POST and tick
+  PATCH, the note POST and the Watch PUT.
+
+The other reloads (S224's lock, S231, S242, S233/S234 at :453/:468) follow API calls that were already
+awaited. Nothing was weakened; every assertion is unchanged.
+
+**2. S160 vs the theme person: kept out of the roster (the preferred option).** The roster only lists
+`schedulable` people (`Accounts.list_roster`). `createTempPerson` gains `schedulable: false`, which
+PATCHes `/api/users/:id` right after the create and checks for 200. `ui/theme.spec.ts` uses it. S160 is
+unchanged. One gap remains: create always makes a schedulable person, so the person is on the roster
+for the milliseconds between the create and the PATCH. The S160 failure on DEV needed them to appear
+during S160's seconds-long read-reorder-read. Removing the gap entirely would need `schedulable` on
+create, which is an app change.
+
+**Runs (local, servers from this worktree, setup first, never `E2E_TARGET=dev`):**
+- `tsc` clean. `pnpm lint` shows 26 errors, the same as before, none in the changed files.
+- `idea-boards`, both ideas files `--repeat-each 3`: **120/120 passed**.
+- `chromium`, `ui/theme.spec.ts` with `ui/schedule.spec.ts`:
+  - `--repeat-each 3` at default workers: 2 failed, 7 did not run, 61 passed. Both failures came from
+    the repeat itself. The copies of the serial Move-mode block ran at once on different workers and
+    reordered the same roster: G4 copy #19 ran beside S160 copy #18. G1 ("owner has notifications to
+    show") failed once in three while other copies of the owner tests ran. This would happen on any
+    branch.
+  - `--repeat-each 3 --workers 1`: **70/70 passed**.
+  - The pair three separate times at default workers (4), so theme runs beside schedule as in the full
+    suite: **24/24, 24/24, 24/24 passed**.

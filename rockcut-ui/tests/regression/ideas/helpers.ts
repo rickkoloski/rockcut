@@ -72,6 +72,20 @@ export async function cleanupIdeas() {
   for (const [key, id] of made.labels.splice(0)) await owner.delete(`/api/idea_boards/${key}/labels/${id}`)
 }
 
+/**
+ * The answer to the next Board write (`method` on a path matching `path`),
+ * checked OK. Start it before the click and await it before a reload: a
+ * reload cancels a write still on its way (S261 on DEV, lead decisions 6).
+ */
+export function written(page: Page, method: string, path: RegExp) {
+  return page
+    .waitForResponse((r) => r.request().method() === method && path.test(new URL(r.url()).pathname))
+    .then((r) => {
+      expect(r.ok(), `${method} ${r.url()} answered ${r.status()}`).toBe(true)
+      return r
+    })
+}
+
 /** Open a board (or a card on it) and wait for its lists. */
 export async function openIdeas(page: Page, path: string) {
   await page.goto(path)
