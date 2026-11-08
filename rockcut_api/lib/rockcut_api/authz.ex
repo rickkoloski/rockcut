@@ -31,6 +31,7 @@ defmodule RockcutApi.Authz do
 
   alias RockcutApi.TimeOff.Request
   alias RockcutApi.Availability.Slot
+  alias RockcutApi.IdeaBoards.{Card, IdeaList}
 
   @doc "True if the account is a shared device (D33), not a person."
   def device?(%User{kind: "device"}), do: true
@@ -363,6 +364,31 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, :manage, {:daily_items, %Department{} = dept}),
     do: role_in(user, dept) == :manager
 
+  # D53 Part 2 Idea Boards (spec §4.2). A board is `{:department, dept}` or
+  # `:company`. A department's members, of any role, read and write its board;
+  # its managers also `:manage` it (lock and unlock, change locked things,
+  # delete archived things, rename and delete labels) and see `:history`.
+  # The Company board is every active person's, and only owners manage it or
+  # see its history (they pass above). Shared tablets are `Authz.Device`'s.
+  def can?(%User{} = user, action, {:idea_board, :company}) when action in [:read, :write],
+    do: user.active == true
+
+  def can?(%User{} = user, action, {:idea_board, {:department, %Department{} = dept}})
+      when action in [:read, :write],
+      do: member_of?(user, dept)
+
+  def can?(%User{} = user, action, {:idea_board, {:department, %Department{} = dept}})
+      when action in [:manage, :history],
+      do: role_in(user, dept) == :manager
+
+  # §4.5: changing a list or card is `:write`, and, while it's locked, also
+  # `:manage` (a lock binds non-managers only). A card is locked on its own or
+  # through its list (preloaded).
+  def can?(%User{} = user, :change, {:idea_board, board, thing}),
+    do:
+      can?(user, :write, {:idea_board, board}) and
+        (not idea_locked?(thing) or can?(user, :manage, {:idea_board, board}))
+
   # D46 production scheduling (spec §3.13): Brewery members of any role read
   # the setup and the schedule, work the schedule (`:write`: out-of-service
   # periods now, batches from D47) and change the setup (`:setup`: tanks,
@@ -423,6 +449,12 @@ defmodule RockcutApi.Authz do
   end
 
   defp channel_access?(_user, _key), do: false
+
+  @doc "D53 §4.5: locked on its own, or (a card) through its list."
+  def idea_locked?(%IdeaList{locked_at: at}), do: not is_nil(at)
+
+  def idea_locked?(%Card{locked_at: at, list: %IdeaList{} = list}),
+    do: not is_nil(at) or idea_locked?(list)
 
   defp memberships(%User{memberships: m}) when is_list(m), do: m
   defp memberships(_), do: []

@@ -4,8 +4,8 @@ defmodule RockcutApi.IdeaBoards.CardAssignee do
 
   @primary_key false
   schema "idea_card_assignees" do
-    belongs_to :card, RockcutApi.IdeaBoards.Card
-    belongs_to :user, RockcutApi.Accounts.User
+    belongs_to :card, RockcutApi.IdeaBoards.Card, primary_key: true
+    belongs_to :user, RockcutApi.Accounts.User, primary_key: true
     field :position, :integer, default: 0
     field :inserted_at, :utc_datetime
   end

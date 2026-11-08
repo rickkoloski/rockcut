@@ -17,6 +17,11 @@ defmodule RockcutApi.IdeaBoards.Card do
     field :position, :integer, default: 0
     field :locked_at, :utc_datetime
     field :archived_at, :utc_datetime
+    # Set by `IdeaBoards` for the card's face and dialog.
+    field :checklist_total, :integer, virtual: true, default: 0
+    field :checklist_done, :integer, virtual: true, default: 0
+    field :note_count, :integer, virtual: true, default: 0
+    field :watching, :boolean, virtual: true, default: false
 
     belongs_to :list, RockcutApi.IdeaBoards.IdeaList
     belongs_to :locked_by, RockcutApi.Accounts.User

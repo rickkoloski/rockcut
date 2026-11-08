@@ -30,6 +30,12 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.Plugs.TaskBoard
   end
 
+  # D53 Part 2: the Idea Board from `:board` (404 unless it's an assignable
+  # department's key or `company`).
+  pipeline :idea_board do
+    plug RockcutApiWeb.Plugs.IdeaBoard
+  end
+
   # D37: Taproom pages (members and owners; a Taproom tablet by its home module).
   pipeline :taproom do
     plug RockcutApiWeb.ModuleAccessPlug, module: :bar
@@ -268,6 +274,32 @@ defmodule RockcutApiWeb.Router do
     patch "/daily_items/:id", DailyController, :update_item
     post "/daily_items/:id/restore", DailyController, :restore_item
     delete "/daily_items/:id", DailyController, :delete_item
+  end
+
+  # D53 Part 2 Idea Boards (spec §4.3): the boards I can open, and each
+  # board's reads. A shared tablet reads its home department's board and the
+  # Company board (Authz.Device); every write is in the people-only scope
+  # below, so DeviceGate refuses it before any Idea Board code runs.
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :device_allowed]
+
+    get "/idea_boards", IdeaBoardController, :index
+  end
+
+  scope "/api/idea_boards/:board", RockcutApiWeb do
+    pipe_through [:api, :device_allowed, :idea_board]
+
+    get "/lists", IdeaBoardController, :lists
+    get "/labels", IdeaBoardController, :labels
+    get "/cards/:id", IdeaBoardController, :card
+  end
+
+  # A board's History and Archived: people only.
+  scope "/api/idea_boards/:board", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :idea_board]
+
+    get "/history", IdeaBoardController, :history
+    get "/archived", IdeaBoardController, :archived
   end
 
   # D46 production setup (spec §3.2–§3.4): Brewery members and owners

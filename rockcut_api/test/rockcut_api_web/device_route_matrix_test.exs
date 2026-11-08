@@ -39,7 +39,13 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     # D40: a tablet reads its home department's board (`:dept` = bar here).
     {:get, "/api/boards/:dept/tasks"},
     {:get, "/api/boards/:dept/tasks/:id/series"},
-    {:get, "/api/boards/:dept/daily_items"}
+    {:get, "/api/boards/:dept/daily_items"},
+    # D53 Part 2: a tablet reads its home department's Idea Board (`:board` =
+    # bar here) and the Company board, view only.
+    {:get, "/api/idea_boards"},
+    {:get, "/api/idea_boards/:board/lists"},
+    {:get, "/api/idea_boards/:board/labels"},
+    {:get, "/api/idea_boards/:board/cards/:id"}
   ]
 
   # D37: device-allowed writes that need a person's staff code. Without one
@@ -227,6 +233,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:patch, "/api/boards/:dept/daily_items/:id"},
     {:post, "/api/boards/:dept/daily_items/:id/restore"},
     {:delete, "/api/boards/:dept/daily_items/:id"},
+    # D53 Part 2: an Idea Board's History and Archived are people only.
+    {:get, "/api/idea_boards/:board/history"},
+    {:get, "/api/idea_boards/:board/archived"},
     # D46: production setup, people only until D49 brings the brewhouse tablet.
     {:get, "/api/production/tanks"},
     {:post, "/api/production/tanks"},
@@ -538,6 +547,21 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     task
   end
 
+  # D53: a card on the Taproom Idea Board, made when a path needs one.
+  defp fill_idea_card(path) do
+    if String.contains?(path, "/cards/:id") do
+      card =
+        RockcutApi.IdeaBoardFixtures.card!(
+          RockcutApi.IdeaBoardFixtures.starter("bar", "Ideas"),
+          "Matrix idea"
+        )
+
+      String.replace(path, "/cards/:id", "/cards/#{card.id}")
+    else
+      path
+    end
+  end
+
   defp query("/api/boards/:dept/tasks") do
     today = Date.to_iso8601(RockcutApi.Tasks.today())
     %{from: today, to: today}
@@ -545,11 +569,14 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
 
   defp query(_path), do: %{}
 
-  # `:dept` is the device's home (bar): another board is 403 for a device.
+  # `:dept` and `:board` are the device's home (bar): another board is 403
+  # for a device.
   defp fill(path, shift \\ nil, task \\ nil) do
     path
     |> String.replace(":key", "all")
     |> String.replace(":dept", "bar")
+    |> String.replace(":board", "bar")
+    |> fill_idea_card()
     |> String.replace("/tasks/:id", "/tasks/#{(task && task.id) || 1}")
     |> String.replace(":id", to_string((shift && shift.id) || 1))
     |> String.replace(~r/:[a-z_]+/, "1")

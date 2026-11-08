@@ -58,6 +58,7 @@ defmodule RockcutApiWeb.JSONHelpers do
         staff_codes: false,
         beer_board_manage: false,
         task_boards: [],
+        idea_boards: [],
         color_mode: "light",
         show_planned_batches: true
       },
@@ -69,6 +70,151 @@ defmodule RockcutApiWeb.JSONHelpers do
   @doc "One of `/api/me`'s `task_boards` (D41): `key`, `name`, `color`, `manage`."
   def task_board_entry(%{department: d, manage: manage}),
     do: %{key: d.key, name: d.name, color: d.color, manage: manage}
+
+  # ── Idea Boards (D53 Part 2) ──────────────────────────────────────
+
+  @doc "One of `/api/idea_boards` (and `/api/me`'s `idea_boards`): `key`, `name`, `color`, `manage`, `history`."
+  def idea_board_entry(%{key: _, name: _, color: _, manage: _, history: _} = entry), do: entry
+
+  @doc "The board `GET …/lists` (`IdeaBoards.board/2`): its lists with card faces, and its labels."
+  def idea_board(%{lists: lists, labels: labels}) do
+    %{lists: Enum.map(lists, &idea_list/1), labels: Enum.map(labels, &idea_label/1)}
+  end
+
+  def idea_list(l) do
+    %{
+      id: l.id,
+      name: l.name,
+      position: l.position,
+      locked: not is_nil(l.locked_at),
+      locked_at: l.locked_at,
+      locked_by: maybe_render(l, :locked_by, &person_ref/1),
+      archived_at: l.archived_at,
+      cards: maybe_render(l, :cards, &Enum.map(&1, fn c -> idea_card_face(c) end))
+    }
+  end
+
+  @doc "What a card's face shows (§4.4), from `IdeaBoards`' preloads."
+  def idea_card_face(c) do
+    %{
+      id: c.id,
+      list_id: c.list_id,
+      title: c.title,
+      due_on: c.due_on,
+      position: c.position,
+      locked: not is_nil(c.locked_at),
+      locked_at: c.locked_at,
+      locked_by: maybe_render(c, :locked_by, &person_ref/1),
+      archived_at: c.archived_at,
+      label_ids: maybe_render(c, :labels, &Enum.map(&1, fn l -> l.id end)),
+      assignee_ids: maybe_render(c, :assignees, &Enum.map(&1, fn u -> u.id end)),
+      assignees: maybe_render(c, :assignees, &Enum.map(&1, fn u -> person_ref(u) end)),
+      checklist: %{done: c.checklist_done, total: c.checklist_total},
+      note_count: c.note_count,
+      watching: c.watching,
+      sent_tasks: maybe_render(c, :sent_tasks, &Enum.map(&1, fn t -> idea_sent_task(t) end))
+    }
+  end
+
+  @doc "A card for its dialog (`IdeaBoards.get_card/3`): the face plus everything else."
+  def idea_card(c) do
+    c
+    |> idea_card_face()
+    |> Map.merge(%{
+      description: c.description,
+      list: maybe_render(c, :list, &Map.delete(idea_list(&1), :cards)),
+      labels: maybe_render(c, :labels, &Enum.map(&1, fn l -> idea_label(l) end)),
+      created_by: maybe_render(c, :created_by, &person_ref/1),
+      inserted_at: c.inserted_at,
+      updated_at: c.updated_at,
+      checklist_items:
+        maybe_render(c, :checklist_items, &Enum.map(&1, fn i -> idea_checklist_item(i) end)),
+      notes: maybe_render(c, :notes, &Enum.map(&1, fn n -> idea_note(n) end))
+    })
+  end
+
+  def idea_label(l), do: %{id: l.id, name: l.name, color: l.color, position: l.position}
+
+  def idea_checklist_item(i) do
+    %{
+      id: i.id,
+      text: i.text,
+      position: i.position,
+      done: not is_nil(i.done_at),
+      done_at: i.done_at,
+      done_by: maybe_render(i, :done_by, &person_ref/1)
+    }
+  end
+
+  def idea_note(n) do
+    %{
+      id: n.id,
+      body: n.body,
+      author: maybe_render(n, :author, &person_ref/1),
+      author_id: n.author_id,
+      inserted_at: n.inserted_at,
+      edited_at: n.edited_at
+    }
+  end
+
+  @doc """
+  A card's chip for a sent task (§4.7): `state` is `on_list`, `done`,
+  `repeating` or `removed` (`IdeaBoards.sent_state/1`); the department, the
+  task's day and finish day, and a repeat's rule.
+  """
+  def idea_sent_task(t) do
+    task = loaded(t.task)
+    series = loaded(t.task_series)
+
+    %{
+      id: t.id,
+      state: RockcutApi.IdeaBoards.sent_state(t),
+      task_id: t.task_id,
+      task_series_id: t.task_series_id,
+      task_title: t.task_title,
+      department: maybe_render(t, :department, &%{key: &1.key, name: &1.name}),
+      due_on: task && task.due_on,
+      completed_on: task && task.completed_on,
+      series: series && %{frequency: series.frequency, interval: series.interval},
+      sent_at: t.inserted_at,
+      removed_at: t.removed_at
+    }
+  end
+
+  @doc "\"Archived\" (`IdeaBoards.archived/1`): archived lists with card counts, and archived cards."
+  def idea_archived(%{lists: lists, cards: cards}) do
+    %{
+      lists: Enum.map(lists, fn l -> l |> idea_list() |> Map.put(:card_count, l.card_count) end),
+      cards:
+        Enum.map(cards, fn c ->
+          %{
+            id: c.id,
+            title: c.title,
+            archived_at: c.archived_at,
+            list: maybe_render(c, :list, &%{id: &1.id, name: &1.name})
+          }
+        end)
+    }
+  end
+
+  def idea_event(ev) do
+    %{
+      id: ev.id,
+      card_id: ev.card_id,
+      list_id: ev.list_id,
+      action: ev.action,
+      title: ev.title,
+      actor_id: ev.actor_id,
+      actor_name: maybe_render(ev, :actor, &name_of/1),
+      detail: ev.detail,
+      inserted_at: ev.inserted_at
+    }
+  end
+
+  defp person_ref(u), do: %{id: u.id, name: u.name}
+
+  defp loaded(%Ecto.Association.NotLoaded{}), do: nil
+  defp loaded(value), do: value
 
   # ── Buy-a-Beer Board (D37) ─────────────────────────────────────────
 

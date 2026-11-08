@@ -16,6 +16,8 @@ defmodule RockcutApi.IdeaBoards.IdeaList do
     field :position, :integer, default: 0
     field :locked_at, :utc_datetime
     field :archived_at, :utc_datetime
+    # "Archived" shows how many cards an archived list holds.
+    field :card_count, :integer, virtual: true
 
     belongs_to :locked_by, RockcutApi.Accounts.User
     has_many :cards, RockcutApi.IdeaBoards.Card, foreign_key: :list_id
