@@ -149,6 +149,10 @@ availability, notifications, production tanks and templates, brands, recipes, de
 **Change:** a URL id beyond the range is 404 on every route, and a body id beyond it is 422 (or 404 where
 the route already answers 404 for a missing reference). Prefer one plug over the router's `:id`-style
 params that answers 404 before any controller runs, plus `RockcutApi.Ids` where contexts parse body ids.
+**Also (D53 Part 2 recheck, gap 10):** a task-board History `task_id` that isn't a usable id (`1e20`,
+`abc`, `-1`) must not drop the filter and return the whole board's History: answer 422, or no rows.
+Same for the Boards History `card_id`. A huge History `page` gives an empty page, not page 1.
+`before_id` keeps D38's rule (unknown → end of the day).
 Never a 500. **Test:** a route-table sweep with an out-of-range id on every `:id`-style route.
 
 ## 3. Not in D55
