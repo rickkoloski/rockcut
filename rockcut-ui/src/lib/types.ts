@@ -719,6 +719,9 @@ export interface SeriesChange {
   kind: 'same' | 'ends' | 'rule'
   removes_open: number
   removes_changed: number
+  /** D53 §4.8: a rule change only. Removed ones holding their own notes; kept ones moved off their day. */
+  removes_noted?: number
+  keeps_moved?: number
 }
 
 export interface HeaderShift {

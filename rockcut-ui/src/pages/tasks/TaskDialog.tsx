@@ -400,7 +400,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
             title={confirmEnds.change.kind === 'ends' ? 'Change when it ends' : 'Change the repeat'}
             laterOpen={confirmEnds.change.removes_open}
             laterChanged={confirmEnds.change.removes_changed}
-            note={confirmEnds.change.kind === 'rule' ? ruleChangeNote('assignee_ids' in confirmEnds.body) : undefined}
+            note={confirmEnds.change.kind === 'rule' ? ruleChangeNote('assignee_ids' in confirmEnds.body, confirmEnds.change) : undefined}
             loading={saving}
             onConfirm={(changed) => send(confirmEnds.body, 'following', changed)}
             onCancel={() => setConfirmEnds(null)}

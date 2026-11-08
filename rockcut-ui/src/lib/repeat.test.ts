@@ -198,6 +198,16 @@ describe('ruleChangeNote (D53)', () => {
     expect(ruleChangeNote(false)).toBe('The new pattern remakes them. Dates that stay keep their people. New dates take them from the last regular occurrence.')
     expect(ruleChangeNote(true)).toBe('The new pattern remakes them with the people you picked.')
   })
+
+  it('D53 §4.8: says when removed ones had their own notes, and when kept ones were moved', () => {
+    expect(ruleChangeNote(true, { removes_noted: 1, keeps_moved: 0 })).toBe(
+      'The new pattern remakes them with the people you picked. 1 removed one has its own notes, which go too.',
+    )
+    expect(ruleChangeNote(true, { removes_noted: 2, keeps_moved: 1 })).toBe(
+      'The new pattern remakes them with the people you picked. 2 removed ones have their own notes, which go too. Kept, the one moved to another day stays there, and the new pattern can make its old day too.',
+    )
+    expect(ruleChangeNote(true, { removes_noted: 0, keeps_moved: 0 })).toBe('The new pattern remakes them with the people you picked.')
+  })
 })
 
 describe('endsOnlyChange (D42 §2.6)', () => {

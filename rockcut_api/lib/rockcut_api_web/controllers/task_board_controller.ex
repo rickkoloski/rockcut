@@ -198,7 +198,8 @@ defmodule RockcutApiWeb.TaskBoardController do
   @doc """
   GET /api/boards/:dept/tasks/:id/series: the rule, `later_open` and
   `later_changed`. With the dialog's `repeat*` params (D42), also `change`:
-  `{ kind: same | ends | rule, removes_open, removes_changed }`.
+  `{ kind: same | ends | rule, removes_open, removes_changed }`; a rule change
+  also has `removes_noted` and `keeps_moved` (D53 §4.8).
   """
   def series(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :read),
