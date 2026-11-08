@@ -440,8 +440,8 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   @doc "GET /api/boards/:dept/tasks/history?task_id=&page=: this board's, newest first, 50 a page."
   def history(conn, params) do
-    with :ok <- allow(conn, :history) do
-      task_id = RockcutApi.Ids.parse(params["task_id"])
+    with :ok <- allow(conn, :history),
+         {:ok, task_id} <- history_filter(conn, params, "task_id") do
       page = RockcutApi.Ids.page(params["page"])
 
       %{events: events, page: page, total: total, names: names} =
@@ -549,4 +549,18 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   defp date_param(_), do: {:error, :invalid_date}
+
+  # D55 §2.11 (gap 10): a `task_id` that isn't a usable id is a 422, so a bad
+  # link shows, instead of the whole board's History. Absent = no filter.
+  defp history_filter(conn, params, key) do
+    case RockcutApi.Ids.filter(params[key]) do
+      {:ok, id} ->
+        {:ok, id}
+
+      :error ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: %{key => ["is not a valid id"]}})
+    end
+  end
 end

@@ -568,16 +568,22 @@ defmodule RockcutApi.Accounts do
   end
 
   defp resolve_department(%Department{} = d), do: d
-  defp resolve_department(id) when is_integer(id), do: Repo.get(Department, id)
+
+  # D55 §2.11: an id past SQLite's range is an unknown department, not a 500.
+  defp resolve_department(id) when is_integer(id), do: get_department_by_id(id)
 
   defp resolve_department(key) when is_binary(key) do
     case Integer.parse(key) do
-      {id, ""} -> Repo.get(Department, id)
+      {id, ""} -> get_department_by_id(id)
       _ -> get_department_by_key(key)
     end
   end
 
   defp resolve_department(_), do: nil
+
+  defp get_department_by_id(id) do
+    if id = RockcutApi.Ids.parse(id), do: Repo.get(Department, id)
+  end
 
   defp current_membership_map(user) do
     user |> list_memberships() |> Map.new(fn m -> {m.department_id, m} end)

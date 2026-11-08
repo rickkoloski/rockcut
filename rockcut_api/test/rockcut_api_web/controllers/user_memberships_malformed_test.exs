@@ -94,4 +94,37 @@ defmodule RockcutApiWeb.UserMembershipsMalformedTest do
                Accounts.get_user!(target.id).memberships
     end
   end
+
+  # D55 §2.11: a department id past SQLite's range is an unknown department
+  # (422), not the driver's 500. `department` isn't an `*_id` key, so the
+  # ParamIds plug doesn't see it; `Accounts` checks it with `RockcutApi.Ids`.
+  for dept <- [99_999_999_999_999_999_999, "99999999999999999999"] do
+    @dept dept
+    test "memberships department #{inspect(dept)} -> 422 unknown department, nothing saved", %{
+      conn: conn
+    } do
+      owner = owner_fixture()
+      target = user_with_role("employee", "brewery", %{email: "keep@rockcut.com"})
+      shape = [%{department: @dept, role: "employee"}]
+
+      for {verb, path, body} <- [
+            {:put, "/api/users/#{target.id}/memberships", %{memberships: shape}},
+            {:post, "/api/users", %{email: "huge@rockcut.com", memberships: shape}}
+          ] do
+        resp =
+          conn
+          |> bearer(owner)
+          |> put_req_header("content-type", "application/json")
+          |> dispatch(@endpoint, verb, path, Jason.encode!(body))
+          |> json_response(422)
+
+        assert resp["errors"]["memberships"] == ["unknown department"]
+      end
+
+      refute email_saved?("huge@rockcut.com")
+
+      assert [%{role: "employee", department: %{key: "brewery"}}] =
+               Accounts.get_user!(target.id).memberships
+    end
+  end
 end
