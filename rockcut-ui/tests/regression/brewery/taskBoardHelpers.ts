@@ -13,7 +13,10 @@ export interface ApiTask {
   due_on: string | null
   position: number
   done: boolean
+  /** The first of `assignees`, kept for one release (D53). */
   assignee_id: number | null
+  /** D53: everyone on it, first first. */
+  assignees: { id: number; name: string }[]
   notes: string | null
   completed_display: string | null
   /** D49: made from a production step (the schedule owns it; null for the board's own). */
@@ -33,7 +36,7 @@ export interface ApiBoard {
 }
 
 /** Create a task as `api` (a Brewery member); returns it. */
-export async function createTask(api: APIRequestContext, attrs: { title: string; due_on?: string | null; assignee_id?: number | null; notes?: string }) {
+export async function createTask(api: APIRequestContext, attrs: { title: string; due_on?: string | null; assignee_id?: number | null; assignee_ids?: number[]; notes?: string }) {
   const res = await api.post('/api/boards/brewery/tasks', { data: attrs })
   expect(res.status(), await res.text()).toBe(201)
   return (await res.json()).data as ApiTask
@@ -142,6 +145,17 @@ export async function setBoardCheck(box: Locator, checked: boolean) {
   await expect(box).toBeChecked({ checked: !checked })
   await box.click()
   await expect(box).toBeChecked({ checked })
+}
+
+/**
+ * D53: in the task dialog's "Assigned to", click these people (on if off, off
+ * if on) and close the list: a multi-select stays open until it's dismissed.
+ */
+export async function toggleAssignees(page: Page, ids: number[]) {
+  await page.getByTestId('task-assignee-select').click()
+  for (const id of ids) await page.getByTestId(`task-assignee-option-${id}`).click()
+  await page.keyboard.press('Escape')
+  await expect(page.getByTestId(`task-assignee-option-${ids[0]}`)).toHaveCount(0)
 }
 
 /** The persona's user id, from /api/me. */

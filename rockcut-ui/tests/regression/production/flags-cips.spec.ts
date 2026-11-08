@@ -114,9 +114,10 @@ test('P61: brewer1 and brewer2 move steps in one batch at once: both succeed; bo
     await page2.getByTestId('move-apply').click()
     await expect(page2.getByTestId('move-prompt')).toBeHidden()
     await expect(snack(page)).toContainText('PDH moved 1 day later')
+    // The prompt closes before its save: wait for the date, not for the prompt.
+    await expect.poll(async () => stepOf(await batchOf(b.id), 'Carb').due_on).toBe(addDays(stepOf(b, 'Carb').due_on, 1))
     const after = await batchOf(b.id)
     expect(stepOf(after, 'PDH').due_on).toBe(addDays(stepOf(b, 'PDH').due_on, 1))
-    expect(stepOf(after, 'Carb').due_on).toBe(addDays(stepOf(b, 'Carb').due_on, 1))
     // Within a minute (a reload here): both show the same dates.
     await page.reload()
     await page2.reload()

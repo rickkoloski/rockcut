@@ -106,7 +106,8 @@ defmodule RockcutApi.TasksTest do
                    brewer
                  )
 
-        assert %{assignee_id: ["must be a Brewery member"]} = errors_on(cs)
+        assert %{assignee_ids: [message]} = errors_on(cs)
+        assert message == "#{bad.name} must be a Brewery member"
       end
 
       assert {:ok, %Task{assignee_id: id}} =
@@ -152,7 +153,9 @@ defmodule RockcutApi.TasksTest do
                Tasks.update(brewery_board(), task, %{assignee_id: brewer.id}, brewer2)
 
       assert id == brewer.id
-      assert [%Event{action: "assigned", detail: %{"from" => nil, "to" => ^id}}, _] = events(task)
+
+      assert [%Event{action: "assigned", detail: %{"from" => [], "to" => [^id]}}, _] =
+               events(task)
     end
 
     test "a day change moves it to the bottom of that day", %{brewer: brewer} do

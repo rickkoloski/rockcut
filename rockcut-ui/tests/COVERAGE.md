@@ -422,7 +422,7 @@ S9g, S32–S37a, S42–S50, S68. ExUnit files are under `rockcut_api/test/`: con
 | S149 | bartender1: no Shared devices page; PATCH 403 | Playwright `ui/theme` (S149); ExUnit `color_mode_test`, `authz_device_test` |
 | S150 | owner (Dark): every page and the main dialogs readable | **Manual** (Task 3 sweep, screenshots kept for the PR); QA's DEV pass |
 | S151 | board page, columns, today, cards: distinct in both themes | Playwright `ui/task-board-ui` (S151, light and dark) |
-| S152 | nav order Home, Tasks, Schedule; phone drawer the same | Playwright `ui/layout` (S152) |
+| S152 | nav order Home, Tasks, Schedule; phone drawer the same (D53: Home, Tasks, Boards, Schedule) | Playwright `ui/layout` (S152) |
 | S153 | title in the top bar; board switcher; "‹ Settings" back link; no breadcrumbs | Playwright `ui/layout` (S153, a temp category) |
 | S154 | phone: the title replaces the logo; Home keeps it | Playwright `ui/layout` (S154) |
 | S155 | account menu contents; Profile; Log out | Playwright `ui/layout` (S155; Log out with a spare session); `auth/profile`, `auth/session_revocation`, `auth/offline_logout` updated |
@@ -733,3 +733,75 @@ Retired with it: D33 S13, G2; D34 S4–S7, S15; D37 S13; D43 S148 (marked above)
 | S253 | `POST /api/session` with a live tablet token in `Authorization` only (DEV QA G1): 403 for the right and a wrong password, no session; a revoked, made-up or person token there: normal login | ExUnit `session_revocation_test` (revert-and-rerun recorded) |
 | S254 | Blank browser, typed `/login` (or another URL) → Set up as a shared device: ends on the tablet's Home, not the refusal (DEV QA G5) | Playwright `devices/shared_device_no_personal_login` (revert-and-rerun recorded) |
 | — | `Sessions.create/3` refuses `:device_token` | ExUnit `sessions_test` |
+
+## D53 Part 1 — Multiple assignees on tasks (`specs/d53_idea_boards_spec.md` §3; `planning/d53_part1_multi_assignees_plan.md`; `prompts/d53_part1_lead_decisions_1.md`)
+
+ExUnit files are under `rockcut_api/test/`: `tasks/assignees_test` (the one writer), `tasks/multi_assignees_test` (the context, series, leaving, History names), controller `task_board_multi_assignee_test` (the API, linked tasks, the tablet, the route matrix, S221), `migrations/create_task_assignees_test` (the backfill), `seeds/synthetic_test`. Vitest `tasks.test`. Playwright `regression/brewery/task-board-multi-assignee.spec.ts` (19 tests; passing locally at stop point 3).
+
+| # | Scenario | Layer |
+|---|---|---|
+| S216 | brewer1 adds brewer2 and floater: two sets of initials after a reload; History "Assigned Riley Wort, Jordan Float to …" (lead decision 2: full names) | Playwright `task-board-multi-assignee` (S216 ×2); ExUnit `multi_assignees_test`, `task_board_multi_assignee_test`; Vitest `tasks.test` (wording) |
+| S217 | My tasks shows a shared task for each person, in either place | Playwright (S217 ×2); ExUnit `multi_assignees_test` (`open_work`); Vitest `tasks.test` (`cardShown`) |
+| S218 | owner removes someone from the Brewery: off the open tasks, the other person stays, first recomputed, History "Removed …" | Playwright (S218); ExUnit `multi_assignees_test` (leaving, series, other board, done tasks keep the name) |
+| S219 | A weekly series with two people; new occurrences carry both; a "following" edit changes later ones | Playwright (S219); ExUnit `multi_assignees_test` (this, following, exceptions, finished, split, chain, Ends-only, one-off → repeat, top-up) |
+| S220 | Linked task: one person, the single picker, a change reaches the step; two through the API → 422 | Playwright (S220); ExUnit `task_board_multi_assignee_test` (one, none, two, schedule → task, leaving, tablet) |
+| S221 | Shift-end push: each person on a shared task hears once; it's theirs | ExUnit `task_board_multi_assignee_test` (S221; the scanner's clock is injected). No browser path: **DEV only by hand** |
+| S222 | Brewhouse tablet with a staff code adds two people; History names the acting person | Playwright (S222); ExUnit `task_board_multi_assignee_test` |
+| — | Lead decision 3: the same people in another order isn't a change (no write, event, scope question or exception); the dialog keeps the order of who stays and adds new ones last | ExUnit `multi_assignees_test` (context, series), `task_board_multi_assignee_test` (API); Playwright (decision 3 ×3); Vitest `tasks.test` (`samePeople`) |
+| — | §3.1: `assignee_id` always equals the first; backfill; rows go with the task | ExUnit `assignees_test`, `multi_assignees_test` (`assert_in_step`), `migrations/create_task_assignees_test`, `seeds/synthetic_test` |
+| — | §3.3: a lone `assignee_id` from a UI tab on the old version; a refusal names the person | ExUnit `task_board_multi_assignee_test`, `assignees_test`; Playwright (old tab, refusal); Vitest `tasks.test` (`taskSaveError`) |
+| — | Old single-assignee History rows read as before | ExUnit `multi_assignees_test` (stored rows); Vitest `tasks.test` (exact wording) |
+| — | Up to three initials then "+N"; tooltip names everyone; the title keeps its room and nothing runs off the card; a person who left stays visible until removed; phone back closes the list, then the dialog | Playwright (one test each; the layout check was confirmed failing on the old layout) |
+| — | Dashboard Today's tasks shows everyone, chips together, the title keeps its room at phone width | Playwright (at phone width; confirmed failing on the old layout) |
+| — | QA gap 1 (lead decisions 3): a rule change keeps people, title and notes on dates that survive; a new date takes the people of the last occurrence before it not changed on its own (lead decisions 4; a finished one counts; none, the series' own); later top-ups go on from the latest; the confirm and History say so | ExUnit `multi_assignees_test` ("QA gaps 1 and 2"), `task_board_multi_assignee_test` (through the API), both confirmed failing with the fix reverted; Playwright (QA gap 1, through the dialog); Vitest `repeat.test`, `tasks.test` |
+| — | QA gap 2: an occurrence changed on its own stays marked after a split, so a later "following" leaves it alone | ExUnit, as above, confirmed failing with the fix reverted |
+| — | QA gap 3: over 100 distinct ids is one quick 422; five refusals by name and a count below it | ExUnit `task_board_multi_assignee_test` (100, 101, 30,000), confirmed failing with the fix reverted |
+| — | QA gap 7: the linked-task refusal names the person under `assignee_ids` | ExUnit `task_board_multi_assignee_test`, confirmed failing with the fix reverted |
+| — | QA gap 10: a long name wraps in the phone people list | Playwright (at phone width), confirmed failing with the fix reverted |
+| — | Rollback API: the board reads one person when `assignees` is absent | Vitest `tasks.test` (`cardPeople`). Not run against an old API: **GAP** |
+
+## D53 Part 2 — Boards (Idea Boards in code) and the §4.8 follow-ups (`specs/d53_idea_boards_spec.md` §4, §5; `planning/d53_part2_idea_boards_plan.md`)
+
+ExUnit files are under `rockcut_api/test/`: `rockcut_api_web/idea_board_route_matrix_test` (every route × 5 boards × 8 actors), `authz_parity/idea_boards_test`, `authz_device_test`, `rockcut_api_web/device_route_matrix_test`, controller `idea_board_controller_test` (reads), `idea_board_write_test` (writes, the lock matrix), `idea_board_send_test` (§4.7), `idea_boards/watchers_test` (§4.6), `migrations/create_idea_boards_test`, `seeds/synthetic_test` ("Idea Boards"), `tasks/qa_followups_test` (§4.8). Vitest `ideas.test`, `tasks.test`, `repeat.test`. Playwright `regression/ideas/` in the one-worker `idea-boards` project (`idea-boards-smoke.spec.ts`, `boards-scenarios.spec.ts`), and `regression/tasks/task-board-qa-followups.spec.ts` in `brewery-board`.
+
+| # | Scenario | Layer |
+|---|---|---|
+| S223 | bartender1: nav → Boards opens `/boards/bar`, Ideas / Planned / Doing / Done; switcher Taproom, Company | Playwright smoke (S223); ExUnit route matrix (`/api/idea_boards`), `migrations/create_idea_boards_test` (starter lists) |
+| S224 | A list and a card with labels, checklist, due date and bartender2; kept after a reload; nobody watching | Playwright smoke (S224, through the UI) and scenarios (S224); ExUnit `idea_board_write_test` (S224), `watchers_test` (no rows) |
+| S225 | One notification naming both changes; none to the person who made them | ExUnit `watchers_test` (S225, clock pinned). Playwright (S225): the Watch toggle and the card's eye. The 10–15 minute timing and push: **DEV by hand** |
+| S226 | floater's switcher: Taproom, Brewery, Company (Company last) | Playwright scenarios (S226; boards in department order, as the task boards); ExUnit route matrix |
+| S227 | brewer1 → `/boards/bar` goes to `/boards/brewery`; API 403 | Playwright smoke and scenarios (S227); ExUnit route matrix |
+| S228 | barMgr locks a list; bartender1 can't add, edit, move or archive (423); barMgr keeps editing | Playwright smoke (S228) and scenarios (S228, crafted PATCH 423); ExUnit `idea_board_write_test` (lock matrix: 12 writes) |
+| S229 | A locked card: bartender1 can't edit or drag it; its neighbours still move | Playwright scenarios (S229, mouse drag); ExUnit `idea_board_write_test` |
+| S230 | splitRole: no Lock on Brewery, Lock on Taproom | Playwright scenarios (S230); ExUnit `idea_board_write_test`, parity |
+| S231 | Company lock: breweryMgr 403; owner locks; then 423 for breweryMgr and brewer1 | Playwright scenarios (S231); ExUnit `idea_board_write_test` |
+| S232 | office1 assigns bartender1 on a Company card | Playwright scenarios (S232); ExUnit `idea_board_write_test` |
+| S233 | Send: one task with both people, ☐ notes, From link, chip with the day | Playwright smoke (S233, to the task dialog's "From the … board" link and back) and scenarios (S233); ExUnit `idea_board_send_test` |
+| S234 | One task per item, then the card moves to Done | Playwright scenarios (S234); ExUnit `idea_board_send_test` |
+| S235 | Ticked on the task board → "✓ Done" | Playwright scenarios (S235); ExUnit `idea_board_send_test` |
+| S236 | office1's Company card sends to Office; brewer1 "not in Office, left off" | Playwright scenarios (S236); ExUnit `idea_board_send_test` |
+| S237 | Archive a list, find it with Archived's search (name, card title or description, ignoring case; "Nothing archived matches"), restore it with its cards; only barMgr deletes for good | Playwright smoke (S237) and scenarios (S237 search, S237 delete); Vitest `ideas.test` (`archivedMatching`); ExUnit `idea_board_write_test` |
+| S238 | noDept: only Company, full use; `/boards/bar` → `/boards/company` | Playwright scenarios (S238); ExUnit route matrix |
+| S239 | Phone: tabs, a card URL, back closes it, a long press drops a card on another list's tab | Playwright smoke (S239) and scenarios (S239, touch drop on a tab) |
+| S240 | barMgr: Taproom History only; bartender1 403; barMgr 403 on Company History | Playwright smoke (S240) and scenarios (S240); ExUnit route matrix |
+| S241 | taproomDevice: Taproom and Company, view only; writes 403; Brewery 403 | Playwright smoke (S241) and scenarios (S241); ExUnit route matrices, `authz_device_test` |
+| S242 | Two notifications for changes 15 minutes apart; none after Watch off; the Watching filter | ExUnit `watchers_test` (S242); Playwright scenarios (S242: the filter). Real timing: **DEV by hand** |
+| S243 | floater removed from Taproom: no more notifications; the watch is gone | ExUnit `watchers_test` (S243), `idea_board_write_test` (S243). Not in Playwright (it changes a shared persona's memberships) |
+| S255 | A note on a locked card saves; the rest stays read-only | Playwright scenarios (S255); ExUnit `idea_board_write_test` (S255), `watchers_test` (watchers hear of it) |
+| S256 | bartender1 adds a label but can't rename or delete (403); barMgr's delete strips it from a locked card | Playwright scenarios (S256 ×2); ExUnit `idea_board_write_test` |
+| S257 | A non-manager can't archive an unlocked list holding a locked card, and is told why | Playwright scenarios (S257); ExUnit `idea_board_write_test` |
+| S258 | A past due date sends for Today; no Repeat per item; a locked card has no Send for bartender1, barMgr sends it | Playwright scenarios (S258 ×2); ExUnit `idea_board_send_test` |
+| S259 | A deleted sent task → "Removed", title kept | Playwright scenarios (S235 and S259); ExUnit `idea_board_send_test` |
+| S260 | Deactivating a `[TEST-TEMP]` person: off cards and watches; notes stay under their name | Playwright scenarios (S260); ExUnit `idea_board_write_test` (S260) |
+| S261 | Notes newest first, author and time, "edited"; bartender2 403; barMgr deletes | Playwright scenarios (S261 ×2); ExUnit `idea_board_write_test` |
+| — | Archived cards are read-only (lead decisions 2) | ExUnit `idea_board_write_test` |
+| — | Seed and reseed: `[SEED]` data on Brewery, Taproom, Company; `[TEST-TEMP]` lists, cards and labels removed on every board | ExUnit `seeds/synthetic_test` ("Idea Boards") |
+| §4.8 gap 4 | A following edit's History names everyone it took off later occurrences | ExUnit `qa_followups_test`, Vitest `tasks.test`, Playwright `task-board-qa-followups` (gap 4); all confirmed failing with the fix reverted |
+| §4.8 gap 5 | Leaving: one History row per series, with its count | ExUnit `qa_followups_test`, Vitest `tasks.test`; confirmed failing reverted |
+| §4.8 gap 6 | Mark not done doesn't put a former member back | ExUnit `qa_followups_test`; confirmed failing reverted |
+| §4.8 gap 9 | Deactivation reads "(deactivated)" | ExUnit `qa_followups_test`, Vitest `tasks.test`; confirmed failing reverted |
+| §4.8 gap 11 | One person, a repeat and notes: the initials go under the title | Playwright `task-board-qa-followups` (gap 11); confirmed failing reverted |
+| §4.8 gap 13 | A rule change from the first occurrence with keep: kept ones join the new series | ExUnit `qa_followups_test` (×2); confirmed failing reverted |
+| §4.8 gap 14 | A kept occurrence moved off its day: the confirm says its old day can be made again (`keeps_moved`) | ExUnit `qa_followups_test`, Vitest `repeat.test`; confirmed failing reverted |
+| Recheck 2 obs. 1 | Removed occurrences with their own notes: the confirm and History say so | ExUnit `qa_followups_test` (×2), Vitest `repeat.test`, `tasks.test`; confirmed failing reverted |
+| Recheck 2 obs. 2 | The Ends "After N times" error reads as a sentence (no `count:`) | Vitest `tasks.test` (`taskSaveError`); confirmed failing reverted |

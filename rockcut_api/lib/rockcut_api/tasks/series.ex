@@ -24,7 +24,7 @@ defmodule RockcutApi.Tasks.Series do
   "Following" is decided by `series_date`, and never changes a finished
   occurrence. Removing later occurrences (a rule split, delete "following",
   `stop/3`) keeps the ones changed on their own (`series_exception`, or
-  their own notes since D42) unless
+  their own notes since D42; a rule split goes by the flag alone, D53) unless
   `changed: :remove` (Decision 2). A day change always applies to one
   occurrence and makes it an exception; onto the Future list it makes it a
   one-off (`Tasks` moves). One History event per series action
@@ -54,6 +54,15 @@ defmodule RockcutApi.Tasks.Series do
   back, so every part shows the person's N (D42 R2). A part stored as a
   date before D42 stays a date.
 
+  **A rule change and what's on a date (D53 lead decisions 3).** A split
+  remakes the later open occurrences, but it changes nobody's people, title or
+  notes on a date that survives it, and a new date takes the people of the last
+  occurrence before it in the chain that wasn't changed on its own
+  (`carry_over/4`, lead decisions 4). Only what the edit itself
+  changes, compared with the occurrence it was made from, reaches them all. The
+  new series' own values, for later top-ups, are the chain's latest
+  (`latest_part/1`).
+
   **Ends only (D42).** A "following" edit that changes only Ends moves the
   chain's end (`move_end/5`): no part's rule changes, and occurrences are
   added or removed only at the end. `change_preview/2` tells the confirm
@@ -61,7 +70,11 @@ defmodule RockcutApi.Tasks.Series do
   """
   import Ecto.Query, only: [from: 2]
 
-  @content_fields ~w(title notes assignee_id)
+  # D53: the people are `assignee_ids`, or a lone `assignee_id` from a UI tab on
+  # the old version (`Assignees.given/1`). They're written apart from the
+  # changeset's fields, always through `Assignees`.
+  @text_fields ~w(title notes)
+  @content_fields @text_fields ++ ~w(assignee_ids assignee_id)
   @rule_params %{
     "repeat" => "frequency",
     "repeat_month_rule" => "month_rule",
@@ -78,7 +91,7 @@ defmodule RockcutApi.Tasks.Series do
   alias Ecto.Changeset
   alias RockcutApi.{Tasks, Repo}
   alias RockcutApi.Accounts.{Department, User}
-  alias RockcutApi.Tasks.{Event, Task, TaskSeries}
+  alias RockcutApi.Tasks.{Assignees, Event, Task, TaskSeries}
   alias RockcutApi.Scheduling.Recurrence
 
   @doc "True when `attrs` (string keys) ask for a recurring task."
@@ -102,9 +115,10 @@ defmodule RockcutApi.Tasks.Series do
         series =
           %TaskSeries{department_id: dept.id, created_by_id: actor.id, skipped_dates: []}
           |> TaskSeries.changeset(series_attrs(attrs))
-          |> Tasks.validate_assignee()
+          |> Assignees.validate(attrs)
           |> Repo.insert()
           |> ok_or_rollback()
+          |> Assignees.apply!(attrs)
 
         through = Recurrence.rolling_horizon(series, today)
 
@@ -122,7 +136,7 @@ defmodule RockcutApi.Tasks.Series do
 
             log!(first, "created", actor, %{
               "due_on" => Date.to_iso8601(first.due_on),
-              "assignee_id" => first.assignee_id,
+              "assignee_ids" => Assignees.ids(first),
               "repeat" => describe(series)
             })
 
@@ -184,7 +198,7 @@ defmodule RockcutApi.Tasks.Series do
   and the later ones are made as on create, through today + 12 months. When
   the rule's first date isn't that day (a weekly rule on other weekdays), the
   task moves to the bottom of the first date, as a new series' first
-  occurrence would be there. Title, notes and assignee in `attrs` apply too.
+  occurrence would be there. Title, notes and assignees in `attrs` apply too.
 
   Logs one `made_repeating` event, with the rule and any content change
   (`from`/`to`); none for the occurrences or the move.
@@ -199,8 +213,11 @@ defmodule RockcutApi.Tasks.Series do
       if task.series_id, do: Repo.rollback(:already_repeats)
       if Task.done?(task), do: Repo.rollback(:repeat_finished)
 
-      content = Task.changeset(task, Map.take(attrs, @content_fields))
+      content = Task.changeset(task, Map.take(attrs, @text_fields))
       if not content.valid?, do: Repo.rollback(content)
+
+      assignees = Assignees.ids(task)
+      people = people_attrs(attrs, assignees)
 
       due_on =
         if Map.has_key?(attrs, "due_on"), do: blank_nil(attrs["due_on"]), else: task.due_on
@@ -210,7 +227,7 @@ defmodule RockcutApi.Tasks.Series do
       merged =
         content
         |> Changeset.apply_changes()
-        |> Map.take([:title, :notes, :assignee_id])
+        |> Map.take([:title, :notes])
         |> Map.new(fn {k, v} -> {to_string(k), v} end)
         |> Map.merge(Map.take(attrs, Map.keys(@rule_params)))
         |> Map.put("due_on", due_on)
@@ -218,9 +235,10 @@ defmodule RockcutApi.Tasks.Series do
       series =
         %TaskSeries{department_id: task.department_id, created_by_id: actor.id, skipped_dates: []}
         |> TaskSeries.changeset(series_attrs(merged))
-        |> Tasks.validate_assignee()
+        |> Assignees.validate(people)
         |> Repo.insert()
         |> ok_or_rollback()
+        |> Assignees.apply!(people)
 
       through = Recurrence.rolling_horizon(series, today)
 
@@ -249,11 +267,11 @@ defmodule RockcutApi.Tasks.Series do
           series_exception: false,
           title: series.title,
           notes: series.notes,
-          assignee_id: series.assignee_id,
           due_on: first,
           position: position
         )
         |> Repo.update!()
+        |> Assignees.apply!(people)
 
       if task.due_on != first, do: Tasks.renumber_days(task.department_id, [task.due_on])
       insert_occurrences(series, later)
@@ -261,6 +279,7 @@ defmodule RockcutApi.Tasks.Series do
 
       edited =
         Map.new(content.changes, fn {k, v} -> {to_string(k), {Map.get(task, k), v}} end)
+        |> with_assignee_change(assignees, Assignees.changed(attrs, assignees))
 
       log!(updated, "made_repeating", actor, %{
         "due_on" => Date.to_iso8601(first),
@@ -280,7 +299,7 @@ defmodule RockcutApi.Tasks.Series do
 
     * `"this"`: the D38 edit, and the occurrence becomes an exception (S60)
       unless only its notes changed (D42). Repeat params are ignored.
-    * `"following"`, content only (title, notes, assignee): the series and
+    * `"following"`, content only (title, notes, assignees): the series and
       every open, non-exception occurrence from this `series_date` on take
       it, notes only where they were the series' (D42); this occurrence
       takes it even if it's an exception (S61).
@@ -306,14 +325,32 @@ defmodule RockcutApi.Tasks.Series do
   end
 
   defp content_change?(task, attrs) do
-    Task.changeset(task, Map.take(attrs, @content_fields)).changes != %{} or
+    Task.changeset(task, Map.take(attrs, @text_fields)).changes != %{} or
+      Assignees.changed(attrs, Assignees.ids(task)) != nil or
       Enum.any?(Map.keys(@rule_params), &Map.has_key?(attrs, &1))
   end
+
+  # The list a new series takes: what `attrs` ask for if that's different people
+  # from `current` (or isn't valid, so it's refused), else `otherwise`, in its
+  # own order. All of it is checked, since all of it is being added to the new
+  # series.
+  defp people_attrs(attrs, current, otherwise \\ nil) do
+    if Assignees.refused?(attrs) or Assignees.changed(attrs, current),
+      do: attrs,
+      else: %{"assignee_ids" => otherwise || current}
+  end
+
+  # An `edited`/`made_repeating` event's `{from, to}` per field gains the people.
+  defp with_assignee_change(edited, _from, nil), do: edited
+
+  defp with_assignee_change(edited, from, to),
+    do: Map.put(edited, "assignee_ids", {from, to})
 
   defp update_this(task, attrs, actor) do
     write_transaction(fn ->
       task = fetch!(task.id)
-      content = Task.changeset(task, Map.take(attrs, @content_fields)).changes
+      content = Task.changeset(task, Map.take(attrs, @text_fields)).changes
+      people? = Assignees.changed(attrs, Assignees.ids(task)) != nil
 
       updated =
         task
@@ -321,7 +358,7 @@ defmodule RockcutApi.Tasks.Series do
         |> ok_or_rollback()
 
       # D42 §2.5: a notes-only change doesn't make it changed on its own.
-      if Map.delete(content, :notes) != %{} and updated.series_id do
+      if (Map.delete(content, :notes) != %{} or people?) and updated.series_id do
         updated |> Changeset.change(series_exception: true) |> Repo.update!()
       else
         updated
@@ -401,16 +438,17 @@ defmodule RockcutApi.Tasks.Series do
   # Content to this occurrence and the later open, non-exception ones; the day
   # (if it changed) to this one only. D42 §2.5: new notes skip an occurrence
   # whose notes differ from its series' notes before the edit (its own notes
-  # stay); title and assignee still reach it.
+  # stay); title and assignees still reach it.
   # `ends`: an Ends-only change's History detail (`move_end/5`), logged in the
   # same `edited` event (one per series action, Decision 3).
   defp following_content(task, series, attrs, actor, ends \\ nil) do
-    content = Map.take(attrs, @content_fields)
+    content = Map.take(attrs, @text_fields)
+    assignees = Assignees.ids(task)
 
     this_cs =
       task
       |> Task.changeset(content)
-      |> Tasks.validate_assignee()
+      |> Assignees.validate(attrs, assignees)
 
     if not this_cs.valid?, do: Repo.rollback(this_cs)
 
@@ -419,14 +457,16 @@ defmodule RockcutApi.Tasks.Series do
     Enum.each(parts, fn s ->
       s
       |> TaskSeries.changeset(content)
-      |> Tasks.validate_assignee()
+      |> Assignees.validate(attrs, Assignees.ids(s))
       |> Repo.update()
       |> ok_or_rollback()
+      |> Assignees.apply!(attrs)
     end)
 
-    changes = Map.take(this_cs.changes, [:title, :notes, :assignee_id])
+    changes = Map.take(this_cs.changes, [:title, :notes])
+    new_assignees = Assignees.changed(attrs, assignees)
 
-    if changes != %{} do
+    if changes != %{} or new_assignees do
       Repo.update!(this_cs)
 
       later =
@@ -438,11 +478,25 @@ defmodule RockcutApi.Tasks.Series do
         )
 
       {notes, others} = Map.split(changes, [:notes])
-      others_ids = if others == %{}, do: [], else: Repo.all(from t in later, select: t.id)
+
+      others_ids =
+        if others == %{} and is_nil(new_assignees),
+          do: [],
+          else: Repo.all(from t in later, select: t.id)
+
       notes_ids = if notes == %{}, do: [], else: same_notes_ids(later, parts)
 
-      set_on(others_ids, others)
+      # Gap 4 (D53 Part 1 QA): who really came off and went on, across every
+      # occurrence the edit reaches, not only this one's people.
+      people = if new_assignees, do: people_change([task.id | others_ids], new_assignees)
+
+      if others != %{}, do: set_on(others_ids, others)
       set_on(notes_ids, notes)
+      if new_assignees, do: Assignees.put_all!(Task, [task.id | others_ids], new_assignees)
+
+      edited =
+        Map.new(changes, fn {k, v} -> {to_string(k), {Map.get(task, k), v}} end)
+        |> with_assignee_change(assignees, new_assignees)
 
       log!(
         task,
@@ -450,10 +504,11 @@ defmodule RockcutApi.Tasks.Series do
         actor,
         %{
           "scope" => "following",
-          "from" => Map.new(changes, fn {k, _} -> {to_string(k), Map.get(task, k)} end),
-          "to" => Map.new(changes, fn {k, v} -> {to_string(k), v} end),
+          "from" => Map.new(edited, fn {k, {from, _}} -> {k, from} end),
+          "to" => Map.new(edited, fn {k, {_, to}} -> {k, to} end),
           "count" => length(Enum.uniq(others_ids ++ notes_ids)) + 1
         }
+        |> Map.merge(if people, do: %{"people" => people}, else: %{})
         |> Map.merge(ends || %{})
       )
     else
@@ -461,6 +516,19 @@ defmodule RockcutApi.Tasks.Series do
     end
 
     move_this(fetch!(task.id), attrs, actor)
+  end
+
+  # The people a "following" edit takes off and puts on, over all of
+  # `task_ids` (before the edit): `removed` were on at least one of them and
+  # aren't in `to`; `added` are in `to` and missing from at least one.
+  defp people_change(task_ids, to) do
+    before = Assignees.ids_by_task(task_ids)
+    lists = Enum.map(task_ids, &Map.get(before, &1, []))
+
+    %{
+      "removed" => lists |> List.flatten() |> Enum.uniq() |> Enum.reject(&(&1 in to)),
+      "added" => Enum.filter(to, fn id -> Enum.any?(lists, &(id not in &1)) end)
+    }
   end
 
   # The ids in `query` whose notes are their series part's (as loaded, before
@@ -626,18 +694,33 @@ defmodule RockcutApi.Tasks.Series do
   # gives its date, so it keeps its id and History. Otherwise the new rule
   # doesn't include its date: if open it's removed with the others (History
   # stays under its id), and the new series' first occurrence is a new task.
-  # A finished occurrence is never changed or removed.
+  # A finished occurrence is never changed or removed. An occurrence changed on
+  # its own stays that way when it's reused: nothing about a new rule undoes
+  # that, and a later "following" edit has to go on leaving it alone.
+  #
+  # What the edit changes is measured against this occurrence, the one the person
+  # had open; anything else stays as it is on each date (`carry_over/4`).
   defp split(task, series, rule, attrs, actor, opts) do
     date = task.series_date
     today = opts[:today] || Tasks.today()
 
     used = used_before(series, date)
+    continuing = continuations(series)
+    latest = latest_part([series | continuing])
+
+    text = Task.changeset(task, Map.take(attrs, @text_fields))
+    if not text.valid?, do: Repo.rollback(text)
+    new_text = Map.take(text.changes, [:title, :notes])
 
     content =
-      series
-      |> Map.take([:title, :notes, :assignee_id])
+      latest
+      |> Map.take([:title, :notes])
+      |> Map.merge(new_text)
       |> Map.new(fn {k, v} -> {to_string(k), v} end)
-      |> Map.merge(Map.take(attrs, @content_fields))
+
+    assignees = Assignees.ids(task)
+    new_assignees = Assignees.changed(attrs, assignees)
+    people = people_attrs(attrs, assignees, Assignees.ids(latest))
 
     new_attrs =
       content
@@ -652,9 +735,10 @@ defmodule RockcutApi.Tasks.Series do
         skipped_dates: []
       }
       |> TaskSeries.changeset(new_attrs)
-      |> Tasks.validate_assignee()
+      |> Assignees.validate(people)
       |> Repo.insert()
       |> ok_or_rollback()
+      |> Assignees.apply!(people)
 
     through = Recurrence.rolling_horizon(new_series, today)
     dates = new_series |> TaskSeries.rule() |> Recurrence.dates(through)
@@ -668,19 +752,22 @@ defmodule RockcutApi.Tasks.Series do
 
     reuse? = hd(dates) == date and is_nil(task.completed_at)
 
+    held = held_from(series, continuing, date, opts[:changed], task.id)
+    noted = removed_with_notes(series, continuing, date, opts[:changed], task.id)
+
     # The acted-on occurrence is reused or replaced, never kept as a changed one.
-    continuing = continuations(series)
-    {removed, kept} = remove_chain(series, continuing, date, opts[:changed], [task.id])
+    {removed, kept} = remove_chain(series, continuing, date, opts[:changed], [task.id], :flag)
 
     if reuse? do
       task
-      |> Task.changeset(Map.take(attrs, @content_fields))
+      |> Task.changeset(Map.take(attrs, @text_fields))
       |> Changeset.change(
         series_id: new_series.id,
         series_date: date,
-        series_exception: task.due_on != date
+        series_exception: task.series_exception or task.due_on != date
       )
       |> Repo.update!()
+      |> Assignees.apply!(attrs)
     else
       if is_nil(task.completed_at) do
         Repo.delete!(task)
@@ -690,6 +777,17 @@ defmodule RockcutApi.Tasks.Series do
 
     chain_ids = [series.id | Enum.map(continuing, & &1.id)]
     {new_series, dates} = skip_kept_days(new_series, chain_ids, date, through, dates, reuse?)
+
+    # Gap 13 (D53 Part 1 QA): from the series' first date there's nothing
+    # left for the old series to hold. What stays (kept exceptions, finished
+    # ones) joins the new series as it is, flag, people, title and notes,
+    # instead of becoming one-offs; the new series already skips their days.
+    if not dates_before?(series, date) do
+      Repo.update_all(from(t in Task, where: t.series_id == ^series.id),
+        set: [series_id: new_series.id]
+      )
+    end
+
     head = series |> end_series_before(date, true) |> head_id(series)
 
     new_series =
@@ -698,10 +796,17 @@ defmodule RockcutApi.Tasks.Series do
       |> Repo.update!()
 
     settle(continuing, new_series.id)
-    insert_occurrences(new_series, dates)
+
+    made =
+      if(new_assignees, do: %{ids: new_assignees}, else: %{})
+      |> Map.merge(new_text)
+
+    insert_occurrences(new_series, dates, carry_over(held, dates, new_series, made))
     mark_generated(new_series, through)
 
     first = first_occurrence(new_series)
+    edited = Map.new(new_text, fn {k, v} -> {to_string(k), {Map.get(task, k), v}} end)
+    edited = with_assignee_change(edited, assignees, new_assignees)
 
     log!(
       first,
@@ -713,15 +818,108 @@ defmodule RockcutApi.Tasks.Series do
         "removed" => removed,
         "kept" => kept
       }
+      |> Map.merge(if noted > 0, do: %{"removed_with_notes" => noted}, else: %{})
       |> Map.merge(if reuse?, do: %{}, else: %{"replaced_task_id" => task.id})
+      |> Map.merge(
+        if edited == %{},
+          do: %{},
+          else: %{
+            "from" => Map.new(edited, fn {k, {from, _}} -> {k, from} end),
+            "to" => Map.new(edited, fn {k, {_, to}} -> {k, to} end)
+          }
+      )
     )
 
     if reuse?, do: move_this(first, attrs, actor), else: first
   end
 
+  # What each occurrence from `date` on holds before a split removes any of it,
+  # oldest first, after the last one before `date` that a new date could take
+  # from. "Remove all": an open one changed on its own goes, and what it holds
+  # goes with it (the acted-on one, `task_id`, is the caller's).
+  defp held_from(series, continuing, date, changed, task_id) do
+    by_id = Map.new([series | continuing], &{&1.id, &1})
+
+    tasks =
+      Repo.all(
+        from t in Task,
+          where: t.series_id in ^Map.keys(by_id) and t.series_date >= ^date,
+          order_by: [asc: t.series_date]
+      )
+
+    kept =
+      Enum.reject(tasks, fn t ->
+        changed == :remove and changed?(t, by_id[t.series_id], :flag) and is_nil(t.completed_at) and
+          t.id != task_id
+      end)
+
+    parts = series |> line() |> Map.new(&{&1.id, &1})
+
+    before =
+      Repo.all(
+        from t in Task,
+          where:
+            t.series_id in ^Map.keys(parts) and t.series_date < ^date and not t.series_exception,
+          order_by: [desc: t.series_date],
+          limit: 1
+      )
+
+    people = (before ++ kept) |> Enum.map(& &1.id) |> Assignees.ids_by_task()
+    parts = Map.merge(parts, by_id)
+
+    Enum.map(before ++ kept, fn t ->
+      %{
+        date: t.series_date,
+        title: t.title,
+        notes: t.notes,
+        ids: Map.get(people, t.id, []),
+        exception?: t.series_exception,
+        own?: changed?(t, parts[t.series_id])
+      }
+    end)
+  end
+
+  # What `insert_occurrences/3` puts on each of `dates`, a split's new occurrences.
+  # A date that had an occurrence keeps what it held. A new date takes from the
+  # last one before it that wasn't changed on its own, since someone covering one
+  # Monday isn't on the new Tuesday too, or from the series if there's none. That
+  # means the flag for people and the title: an occurrence with only its own or
+  # older notes is still on the line. For notes it means `changed?/2`, so one
+  # person's note isn't copied. `made` is what the edit itself changes, for all of
+  # them. A date after everything already generated isn't here: it takes the
+  # series' own, as any top-up does.
+  defp carry_over(held, dates, %TaskSeries{} = series, made) do
+    last = held |> List.last() |> Map.fetch!(:date)
+
+    for date <- dates, Date.compare(date, last) != :gt, into: %{} do
+      earlier =
+        held |> Enum.take_while(&(Date.compare(&1.date, date) != :gt)) |> Enum.reverse()
+
+      own =
+        case earlier do
+          [%{date: ^date} = held_here | _] ->
+            Map.take(held_here, [:ids, :title, :notes])
+
+          _ ->
+            on_line = Enum.find(earlier, &(not &1.exception?))
+
+            %{
+              ids: on_line && on_line.ids,
+              title: (on_line || series).title,
+              notes: (Enum.find(earlier, &(not &1.own?)) || series).notes
+            }
+        end
+
+      {date, Map.merge(own, made)}
+    end
+  end
+
   # The chain's occurrences that stay from `date` on (kept exceptions and
   # finished ones) already hold their days: the new series skips those days
   # (their current `due_on`), now and in every top-up, so no day shows two.
+  # A kept one moved to another day doesn't hold its old day: the new rule can
+  # make that date again (D39). Gap 14 (D53 Part 1 QA): the confirm says so
+  # (`change_preview/2`'s `keeps_moved`).
   defp skip_kept_days(new_series, chain_ids, date, through, dates, reuse?) do
     days =
       Repo.all(
@@ -874,10 +1072,15 @@ defmodule RockcutApi.Tasks.Series do
   # Changed on its own (Decision 2): an exception, or an occurrence with its
   # own notes, different from its series part's (D42; notes alone don't make
   # an exception, but the person's notes are kept like one).
+  # A rule change (`split/6`, and its confirm) goes by the flag alone (D53 lead
+  # decisions 6): a notes-only occurrence is remade like its neighbours, and its
+  # date, if the new pattern keeps it, keeps its notes (`carry_over/4`).
   defp changed?(%Task{} = t, %TaskSeries{} = s), do: t.series_exception or t.notes != s.notes
+  defp changed?(%Task{} = t, %TaskSeries{}, :flag), do: t.series_exception
+  defp changed?(%Task{} = t, %TaskSeries{} = s, :notes), do: changed?(t, s)
 
   # `{plain, changed}` counts of the occurrences `query` finds.
-  defp changed_counts(query) do
+  defp changed_counts(query, by \\ :notes) do
     Repo.all(
       from t in query,
         join: s in TaskSeries,
@@ -885,7 +1088,9 @@ defmodule RockcutApi.Tasks.Series do
         select: {t.series_exception, t.notes, s.notes}
     )
     |> Enum.reduce({0, 0}, fn {exception, notes, own}, {plain, changed} ->
-      if exception or notes != own, do: {plain, changed + 1}, else: {plain + 1, changed}
+      if exception or (by == :notes and notes != own),
+        do: {plain, changed + 1},
+        else: {plain + 1, changed}
     end)
   end
 
@@ -912,8 +1117,45 @@ defmodule RockcutApi.Tasks.Series do
             {:ok, %{kind: "same", removes_open: 0, removes_changed: 0}}
 
           {:changed, _rule} ->
-            %{later_open: open, later_changed: changed} = preview(task)
-            {:ok, %{kind: "rule", removes_open: open, removes_changed: changed}}
+            {open, changed} =
+              changed_counts(
+                from(t in Task,
+                  where:
+                    t.series_id in ^[id | chain_ids(id)] and t.series_date > ^task.series_date and
+                      is_nil(t.completed_at)
+                ),
+                :flag
+              )
+
+            noted =
+              removed_with_notes(
+                Repo.get!(TaskSeries, id),
+                Enum.map(chain_ids(id), &Repo.get!(TaskSeries, &1)),
+                Date.add(task.series_date, 1),
+                :keep,
+                task.id
+              )
+
+            # Gap 14: kept ones moved off their date, whose old day the new
+            # pattern may make again.
+            moved =
+              Repo.aggregate(
+                from(t in Task,
+                  where:
+                    t.series_id in ^[id | chain_ids(id)] and t.series_date > ^task.series_date and
+                      is_nil(t.completed_at) and t.series_exception and t.due_on != t.series_date
+                ),
+                :count
+              )
+
+            {:ok,
+             %{
+               kind: "rule",
+               removes_open: open,
+               removes_changed: changed,
+               removes_noted: noted,
+               keeps_moved: moved
+             }}
 
           {:ends, rule} ->
             with {:ok, plan} <- end_plan(task, series, rule) do
@@ -995,7 +1237,7 @@ defmodule RockcutApi.Tasks.Series do
   def info(%Task{series_id: id} = task) do
     case Repo.get(TaskSeries, id) do
       nil -> {:error, :not_in_series}
-      series -> {:ok, {with_chain_ends(series), preview(task)}}
+      series -> {:ok, {series |> Repo.preload(:assignees) |> with_chain_ends(), preview(task)}}
     end
   end
 
@@ -1009,8 +1251,8 @@ defmodule RockcutApi.Tasks.Series do
 
   # Remove the open occurrences with `series_date >= from`, except the `except`
   # ids (the acted-on one, handled by the caller); the ones changed on their
-  # own (`changed?/2`) are kept unless `changed` is `:remove`. Finished ones stay. Returns `{removed, kept}`.
-  defp remove_later(series, from, changed, except) do
+  # own (`changed?/3`, `by`) are kept unless `changed` is `:remove`. Finished ones stay. Returns `{removed, kept}`.
+  defp remove_later(series, from, changed, except, by) do
     open =
       Repo.all(
         from t in Task,
@@ -1019,7 +1261,7 @@ defmodule RockcutApi.Tasks.Series do
               t.id not in ^except
       )
 
-    {changed_ones, plain} = Enum.split_with(open, &changed?(&1, series))
+    {changed_ones, plain} = Enum.split_with(open, &changed?(&1, series, by))
     doomed = if changed == :remove, do: open, else: plain
     ids = Enum.map(doomed, & &1.id)
 
@@ -1029,6 +1271,29 @@ defmodule RockcutApi.Tasks.Series do
     {length(doomed), if(changed == :remove, do: 0, else: length(changed_ones))}
   end
 
+  # Whether the series' rule has a date before `date` (skipped ones count).
+  defp dates_before?(series, date),
+    do: Recurrence.dates(%{TaskSeries.rule(series) | skipped_dates: []}, Date.add(date, -1)) != []
+
+  # The D53 recheck 2 observation: how many open occurrences a split removes
+  # that hold their own notes (notes that aren't their series'), so the
+  # confirm and History can say so. Matches `remove_chain/6` with `:flag`.
+  defp removed_with_notes(series, continuing, date, changed, task_id) do
+    Enum.reduce([series | continuing], 0, fn s, acc ->
+      acc +
+        Repo.aggregate(
+          from(t in Task,
+            where:
+              t.series_id == ^s.id and t.series_date >= ^date and is_nil(t.completed_at) and
+                t.id != ^task_id and not is_nil(t.notes) and
+                (is_nil(^s.notes) or t.notes != ^(s.notes || "")) and
+                (^(changed == :remove) or not t.series_exception)
+          ),
+          :count
+        )
+    end)
+  end
+
   # The series ends the day before `date`, or is deleted when the rule has no
   # date before it (`date` is its first; the start may be earlier, as a
   # "last Friday" rule started on a Monday). What's left of a deleted one,
@@ -1036,9 +1301,7 @@ defmodule RockcutApi.Tasks.Series do
   # `internal?`: a split's old part (the end only stops the top-up), not the
   # person's end (delete "following").
   defp end_series_before(series, date, internal?) do
-    before = Recurrence.dates(%{TaskSeries.rule(series) | skipped_dates: []}, Date.add(date, -1))
-
-    if before != [] do
+    if dates_before?(series, date) do
       series
       |> Changeset.change(until_date: Date.add(date, -1), count: nil, internal_end: internal?)
       |> Repo.update!()
@@ -1080,9 +1343,9 @@ defmodule RockcutApi.Tasks.Series do
 
   # `remove_later/4` over the acted-on series and its continuations; the
   # counts are the whole chain's.
-  defp remove_chain(series, continuing, from, changed, except) do
+  defp remove_chain(series, continuing, from, changed, except, by \\ :notes) do
     Enum.reduce([series | continuing], {0, 0}, fn s, {removed, kept} ->
-      {r, k} = remove_later(s, from, changed, except)
+      {r, k} = remove_later(s, from, changed, except, by)
       {removed + r, kept + k}
     end)
   end
@@ -1127,6 +1390,14 @@ defmodule RockcutApi.Tasks.Series do
     end
   end
 
+  # The chain's current part, whose own values the top-up goes on from: the
+  # latest-starting one whose end isn't internal, as `chain_ends/1` finds it.
+  defp latest_part([series | _] = chain) do
+    chain
+    |> Enum.reject(& &1.internal_end)
+    |> Enum.max_by(& &1.start_date, Date, fn -> series end)
+  end
+
   defp with_chain_ends(series) do
     {until, count} = chain_ends(series)
     %{series | until_date: until, count: count}
@@ -1159,9 +1430,12 @@ defmodule RockcutApi.Tasks.Series do
   # Each date's occurrence at the bottom of its day. The bottom positions come
   # from one query over the dates' span. A date already made (a concurrent
   # run) is skipped by the unique index. Returns how many were inserted.
-  defp insert_occurrences(_series, []), do: 0
+  # `carried`: a split's `carry_over/4`, for the dates that don't take the series'
+  # own title, notes and people.
+  defp insert_occurrences(series, dates, carried \\ %{})
+  defp insert_occurrences(_series, [], _carried), do: 0
 
-  defp insert_occurrences(%TaskSeries{} = series, dates) do
+  defp insert_occurrences(%TaskSeries{} = series, dates, carried) do
     {first, last} = Enum.min_max_by(dates, &Date.to_gregorian_days/1)
 
     bottoms =
@@ -1179,14 +1453,15 @@ defmodule RockcutApi.Tasks.Series do
 
     rows =
       Enum.map(dates, fn date ->
+        own = Map.get(carried, date, %{})
+
         %{
           department_id: series.department_id,
           series_id: series.id,
           series_date: date,
           series_exception: false,
-          title: series.title,
-          notes: series.notes,
-          assignee_id: series.assignee_id,
+          title: Map.get(own, :title, series.title),
+          notes: Map.get(own, :notes, series.notes),
           due_on: date,
           position: Map.get(bottoms, date, 0) + 1,
           created_by_id: series.created_by_id,
@@ -1195,11 +1470,22 @@ defmodule RockcutApi.Tasks.Series do
         }
       end)
 
-    {n, _} =
+    {n, inserted} =
       Repo.insert_all(Task, rows,
         on_conflict: :nothing,
-        conflict_target: [:series_id, :series_date]
+        conflict_target: [:series_id, :series_date],
+        returning: [:id, :series_date]
       )
+
+    # D53: each new occurrence carries the series' people, or those carried over
+    # to its date. A date already made keeps its own.
+    own = Assignees.ids(series)
+
+    inserted
+    |> Enum.group_by(&get_in(carried, [&1.series_date, :ids]))
+    |> Enum.each(fn {ids, tasks} ->
+      Assignees.put_all!(Task, Enum.map(tasks, & &1.id), ids || own)
+    end)
 
     n
   end
@@ -1224,7 +1510,6 @@ defmodule RockcutApi.Tasks.Series do
     %{
       "title" => attrs["title"],
       "notes" => attrs["notes"],
-      "assignee_id" => attrs["assignee_id"],
       "start_date" => attrs["due_on"],
       "frequency" => attrs["repeat"],
       "month_rule" => blank_nil(attrs["repeat_month_rule"]),

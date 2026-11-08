@@ -59,7 +59,22 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
   alias RockcutApi.BeerBoard.Entry
   alias RockcutApi.Tasks
-  alias RockcutApi.Tasks.{DailyCheck, DailyItem, Task, TaskSeries}
+  alias RockcutApi.Tasks.{Assignees, DailyCheck, DailyItem, Task, TaskSeries}
+  alias RockcutApi.IdeaBoards
+
+  alias RockcutApi.IdeaBoards.{
+    Card,
+    CardTask,
+    Cards,
+    Checklist,
+    IdeaList,
+    Label,
+    Labels,
+    Lists,
+    Notes,
+    Send
+  }
+
   alias RockcutApi.Production
 
   alias RockcutApi.Production.{
@@ -768,6 +783,7 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     seed_brewery_board(u, monday, today, now)
     seed_other_boards(u, today, now)
+    seed_idea_boards(u, today)
     seed_production(u, today)
 
     # One notification per persona so the bell has something in it (no push/email).
@@ -814,6 +830,26 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(s in TaskSeries, where: s.id in ^series_ids))
     Repo.delete_all(from(i in DailyItem, where: like(i.name, ^pattern)))
     for dept <- Repo.all(Department), do: Tasks.compact_lists(dept)
+
+    # D53 Part 2 (lead decisions 1.6): Idea Board lists (with their cards),
+    # cards and labels tagged on their name or title, on every board; then
+    # the lists and cards close up. Tasks sent from them went above.
+    # A tagged card's sent-task rows go with it (the tasks went above).
+    Repo.delete_all(from(t in CardTask, where: like(t.card_title, ^pattern)))
+    Repo.delete_all(from(c in Card, where: like(c.title, ^pattern)))
+    Repo.delete_all(from(l in IdeaList, where: like(l.name, ^pattern)))
+    Repo.delete_all(from(l in Label, where: like(l.name, ^pattern)))
+    compact_idea_boards()
+  end
+
+  # Every board's lists, and every list's cards, numbered 1, 2, 3, … again.
+  defp compact_idea_boards do
+    for board <- IdeaBoards.all_boards() do
+      key = IdeaBoards.board_key(board)
+      lists = Lists.active_ids(key)
+      IdeaBoards.Log.renumber!(IdeaList, lists)
+      for id <- lists, do: IdeaBoards.Log.renumber!(Card, Cards.active_ids(id))
+    end
   end
 
   ## Production setup (D46)
@@ -1302,7 +1338,7 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   ## Brewery task board (D38)
 
-  # {title, day offset from today | nil (Future), assignee key | nil, done}
+  # {title, day offset from today | nil (Future), assignee key(s) | nil, done}
   # where done is nil (open) or {display, completed day offset, completer key}.
   @board_tasks [
     {"Carb FV3", -3, "brewer1", nil},
@@ -1316,6 +1352,8 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Yeast pitch FV4", 1, "brewer2", nil},
     {"CIP the brite tanks", 1, nil, nil},
     {"Keg BBT1", 2, "brewer1", nil},
+    # D53: a job two people share.
+    {"Scrub the cold room floor", 3, ["brewer1", "brewer2"], nil},
     {"Gravity check FV1", 4, nil, nil},
     {"Package FV3", 7, "brewer1", nil},
     {"Brew Pale Ale into FV2", 9, "brewer2", nil},
@@ -1330,12 +1368,182 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Clean lines", 0, "bartender1", nil},
     {"Restock glassware", 1, "bartender1", nil},
     {"Change the tap list board", 2, nil, nil},
+    {"Deep clean the back bar", 3, ["bartender1", "bartender2"], nil},
     {"Order more coasters", nil, nil, nil}
   ]
 
   @office_tasks [
     {"Run payroll", 1, "office1", nil}
   ]
+
+  ## Idea Boards (D53 Part 2)
+
+  # `[SEED]` lists, cards and labels on the Brewery, Taproom and Company
+  # boards, around the starter lists: labels, a checklist, notes, people, a
+  # locked list and card, a watched card, and a card sent to the Taproom
+  # task list. Rebuilt on every setup (delete_tagged takes the old ones and
+  # their sent task).
+  defp seed_idea_boards(u, today) do
+    bar = IdeaBoards.board_for_key("bar")
+    brewery = IdeaBoards.board_for_key("brewery")
+    company = IdeaBoards.board_for_key("company")
+
+    if bar && brewery do
+      starter = fn board, name ->
+        key = IdeaBoards.board_key(board)
+
+        Repo.one!(
+          from(l in IdeaList,
+            where: l.board == ^key and l.name == ^name and is_nil(l.archived_at),
+            limit: 1
+          )
+        )
+      end
+
+      ok = fn {:ok, value} -> value end
+
+      label = fn board, name, color, by ->
+        ok.(Labels.create(board, %{"name" => "#{@seed_tag} #{name}", "color" => color}, by))
+      end
+
+      card = fn board, list, title, attrs, by ->
+        ok.(Cards.create(board, list, Map.put(attrs, "title", "#{@seed_tag} #{title}"), by))
+      end
+
+      items = fn board, c, texts, by ->
+        for {text, done?} <- texts do
+          item = ok.(Checklist.add(board, c, %{"text" => text}, by))
+          if done?, do: ok.(Checklist.update(board, c, item, %{"done" => true}, by))
+        end
+      end
+
+      note = fn board, c, body, by -> ok.(Notes.add(board, c, %{"body" => body}, by)) end
+      ids = fn keys -> Enum.map(keys, &u[&1].id) end
+
+      # Taproom: a list of its own (locked), cards with everything, a locked
+      # card, and one sent to the task list.
+      b1 = u["bartender1"]
+      big = label.(bar, "Big job", "red", b1)
+      quick = label.(bar, "Quick win", "green", b1)
+
+      remodel = ok.(Lists.create(bar, %{"name" => "#{@seed_tag} Taproom remodel"}, b1))
+
+      top =
+        card.(
+          bar,
+          remodel,
+          "New bar top",
+          %{
+            "description" => "Walnut instead of the laminate. Seats 14 instead of 10.",
+            "due_on" => Date.add(today, 10),
+            "assignee_ids" => ids.(~w(bartender1 bartender2)),
+            "label_ids" => [big.id]
+          },
+          b1
+        )
+
+      items.(
+        bar,
+        top,
+        [{"Measure the bar", true}, {"Get three quotes", false}, {"Book the closure", false}],
+        b1
+      )
+
+      note.(bar, top, "Quote 1 came in at $8,400.", b1)
+      note.(bar, top, "Let's decide at Thursday's meeting.", u["barMgr"])
+      IdeaBoards.Watches.watch(top, b1)
+      card.(bar, remodel, "Paint the back wall", %{}, b1)
+      ok.(Lists.set_locked(remodel, true, u["barMgr"]))
+
+      prices =
+        card.(
+          bar,
+          starter.(bar, "Planned"),
+          "Raise tap prices",
+          %{"label_ids" => [big.id]},
+          u["barMgr"]
+        )
+
+      ok.(Cards.set_locked(bar, prices, true, u["barMgr"]))
+
+      card.(
+        bar,
+        starter.(bar, "Ideas"),
+        "Patio heaters for fall",
+        %{"due_on" => Date.add(today, -3), "label_ids" => [quick.id]},
+        b1
+      )
+
+      lines =
+        card.(
+          bar,
+          starter.(bar, "Doing"),
+          "Deep clean the lines",
+          %{"assignee_ids" => ids.(~w(bartender2))},
+          b1
+        )
+
+      items.(bar, lines, [{"Order cleaner", false}, {"Pull the kegs", false}], b1)
+      {:ok, lines} = IdeaBoards.fetch_card(bar, lines.id)
+
+      ok.(
+        Send.send(
+          bar,
+          lines,
+          Repo.get_by!(Department, key: "bar"),
+          %{"due_on" => Date.to_iso8601(Date.add(today, 2))},
+          nil,
+          b1,
+          today
+        )
+      )
+
+      # Brewery: a card with a label, people, a checklist and a note.
+      equipment = label.(brewery, "Equipment", "blue", u["breweryMgr"])
+
+      canning =
+        card.(
+          brewery,
+          starter.(brewery, "Ideas"),
+          "New canning line",
+          %{
+            "description" => "A two-head filler for 16 oz cans.",
+            "assignee_ids" => ids.(~w(breweryMgr brewer1)),
+            "label_ids" => [equipment.id]
+          },
+          u["breweryMgr"]
+        )
+
+      items.(
+        brewery,
+        canning,
+        [{"Get quotes", true}, {"Check the power", false}],
+        u["breweryMgr"]
+      )
+
+      note.(brewery, canning, "The Wild Goose rep can visit in December.", u["brewer1"])
+
+      # Company: a card for everyone.
+      events = label.(company, "Events", "purple", u["owner"])
+
+      party =
+        card.(
+          company,
+          starter.(company, "Planned"),
+          "Holiday party",
+          %{
+            "due_on" => Date.add(today, 30),
+            "assignee_ids" => ids.(~w(office1 bartender1)),
+            "label_ids" => [events.id]
+          },
+          u["owner"]
+        )
+
+      note.(company, party, "The back room holds 40.", u["office1"])
+    end
+
+    :ok
+  end
 
   defp seed_other_boards(u, today, now) do
     seed_board_tasks("bar", @taproom_tasks, u["barMgr"], u, today, now)
@@ -1421,22 +1629,24 @@ defmodule RockcutApi.Seeds.Synthetic do
             }
         end
 
-      Repo.insert!(
-        struct(
-          %Task{
-            department_id: dept.id,
-            title: "#{@seed_tag} #{title}",
-            due_on: due_on,
-            # After whatever is already on the day; compacted below.
-            position: 1_000 + index,
-            assignee_id: who && u[who].id,
-            created_by_id: mgr.id,
-            inserted_at: now,
-            updated_at: now
-          },
-          completion
+      task =
+        Repo.insert!(
+          struct(
+            %Task{
+              department_id: dept.id,
+              title: "#{@seed_tag} #{title}",
+              due_on: due_on,
+              # After whatever is already on the day; compacted below.
+              position: 1_000 + index,
+              created_by_id: mgr.id,
+              inserted_at: now,
+              updated_at: now
+            },
+            completion
+          )
         )
-      )
+
+      if who, do: Assignees.put!(task, who |> List.wrap() |> Enum.map(&u[&1].id))
     end
 
     Tasks.compact_lists(dept)

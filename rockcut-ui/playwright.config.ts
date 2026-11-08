@@ -27,7 +27,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//],
+      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//],
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
@@ -49,6 +49,15 @@ export default defineConfig({
     {
       name: 'production',
       testMatch: /regression\/production\/.*\.spec\.ts/,
+      dependencies: ['setup'],
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // D53: the Idea Boards are shared, and a list's position counts every list
+    // on its board, so their specs run one at a time (beside `chromium`).
+    {
+      name: 'idea-boards',
+      testMatch: /regression\/ideas\/.*\.spec\.ts/,
       dependencies: ['setup'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },

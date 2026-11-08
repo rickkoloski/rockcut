@@ -29,7 +29,8 @@ defmodule RockcutApiWeb.TaskErrors do
     scope_required: "Choose Just this one or This and all following",
     not_in_series: "That task doesn't repeat",
     not_retired: "Retire the Daily item first",
-    has_ticks: "That Daily item was ticked, so it can only be restored"
+    has_ticks: "That Daily item was ticked, so it can only be restored",
+    linked_task_assignees: "A task from the production schedule can have only one person"
   }
 
   @doc "D49: whether `handle/2` answers `{:error, code}` itself (not a staff-code error)."

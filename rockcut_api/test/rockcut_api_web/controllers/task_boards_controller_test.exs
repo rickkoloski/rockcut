@@ -190,16 +190,16 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
           assignee_id: p["brewer1"].id
         })
 
-      assert %{"errors" => %{"assignee_id" => ["must be a Taproom member"]}} =
-               json_response(conn, 422)
+      assert %{"errors" => %{"assignee_ids" => [message]}} = json_response(conn, 422)
+      assert message == "#{p["brewer1"].name} must be a Taproom member"
 
       conn =
         call(p["barMgr"], :patch, "/api/boards/bar/tasks/#{ok["id"]}", %{
           assignee_id: p["brewer1"].id
         })
 
-      assert %{"errors" => %{"assignee_id" => ["must be a Taproom member"]}} =
-               json_response(conn, 422)
+      assert %{"errors" => %{"assignee_ids" => [message]}} = json_response(conn, 422)
+      assert message == "#{p["brewer1"].name} must be a Taproom member"
 
       assert Repo.get!(Task, ok["id"]).assignee_id == p["bartender1"].id
     end

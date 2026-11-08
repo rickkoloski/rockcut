@@ -64,7 +64,7 @@ export async function meStatus(token: string): Promise<number> {
  */
 export async function createTempPerson(
   label: string,
-  opts: { ready?: boolean; memberships?: { department: string; role: 'employee' | 'manager' }[] } = {},
+  opts: { ready?: boolean; schedulable?: boolean; memberships?: { department: string; role: 'employee' | 'manager' }[] } = {},
 ): Promise<TempPerson> {
   const owner = await apiAs('owner')
   const suffix = randomSuffix()
@@ -81,6 +81,12 @@ export async function createTempPerson(
   const user = body.data
   const temp = body.temp_password
   const person: TempPerson = { id: user.id, email: user.email, name: user.name, password: temp }
+  // Create always makes a schedulable person; this takes them off the
+  // Scheduler roster at once, out of the way of specs that reorder it.
+  if (opts.schedulable === false) {
+    const off = await owner.patch(`/api/users/${user.id}`, { data: { schedulable: false } })
+    expect(off.status(), await off.text()).toBe(200)
+  }
 
   if (opts.ready ?? true) {
     const token = await signIn(person)

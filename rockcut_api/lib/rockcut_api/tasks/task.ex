@@ -33,7 +33,11 @@ defmodule RockcutApi.Tasks.Task do
     field :series_last, :boolean, virtual: true, default: false
 
     belongs_to :department, RockcutApi.Accounts.Department
+    # D53: `assignees` (through the join rows, in order) is the truth; `assignee`
+    # is a copy of the first for one release. Only `Tasks.Assignees` writes them.
     belongs_to :assignee, RockcutApi.Accounts.User
+    has_many :assignee_links, RockcutApi.Tasks.TaskAssignee, preload_order: [asc: :position]
+    has_many :assignees, through: [:assignee_links, :user]
     belongs_to :completed_by, RockcutApi.Accounts.User
     belongs_to :created_by, RockcutApi.Accounts.User
     belongs_to :series, RockcutApi.Tasks.TaskSeries
@@ -56,10 +60,10 @@ defmodule RockcutApi.Tasks.Task do
   @doc "D49: made from a production step."
   def linked?(%__MODULE__{production_step_id: id}), do: not is_nil(id)
 
-  @doc "Title, notes, assignee and day, as a person enters or edits them."
+  @doc "Title, notes and day, as a person enters or edits them (assignees: `Tasks.Assignees`)."
   def changeset(task, attrs) do
     task
-    |> cast(attrs, [:title, :notes, :assignee_id, :due_on])
+    |> cast(attrs, [:title, :notes, :due_on])
     |> update_change(:title, &trim/1)
     |> validate_required([:title], message: "can't be blank")
     |> validate_length(:title, max: @max_title)

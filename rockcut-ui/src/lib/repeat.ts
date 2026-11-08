@@ -213,3 +213,22 @@ export function removeLaterWording(laterOpen: number, laterChanged: number) {
     }
   return { message: `Removes ${occ(laterOpen)}.`, keep: null, removeAll: 'Remove' }
 }
+
+/** D53: what a rule change does to the people on the occurrences it remakes. */
+export function ruleChangeNote(peopleChanged: boolean, change?: { removes_noted?: number; keeps_moved?: number }) {
+  const base = peopleChanged
+    ? 'The new pattern remakes them with the people you picked.'
+    : 'The new pattern remakes them. Dates that stay keep their people. New dates take them from the last regular occurrence.'
+  // D53 §4.8 (recheck 2, observation 1): notes typed on a date that goes, go with it.
+  const noted = change?.removes_noted ?? 0
+  const notes = noted === 1 ? ' 1 removed one has its own notes, which go too.' : noted > 1 ? ` ${noted} removed ones have their own notes, which go too.` : ''
+  // Gap 14: a kept one moved to another day doesn't hold its old day (D39).
+  const moved = change?.keeps_moved ?? 0
+  const kept =
+    moved === 1
+      ? ' Kept, the one moved to another day stays there, and the new pattern can make its old day too.'
+      : moved > 1
+        ? ` Kept, the ${moved} moved to other days stay there, and the new pattern can make their old days too.`
+        : ''
+  return base + notes + kept
+}

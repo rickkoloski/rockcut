@@ -30,7 +30,9 @@ defmodule RockcutApiWeb.TaskBoardController do
   /api/production/steps/move`; same day → the board's reorder), complete →
   `Steps.complete/4` (the batch-number and off-plan prompts; never
   "where should it show"), uncomplete → `Steps.uncomplete/1`, notes and
-  assignee → `Steps.update/2`, delete → the step's `on_task_list` off. A
+  assignee → `Steps.update/2` (D53: one person at most; more through
+  `assignee_ids` is 422 `linked_task_assignees`), delete → the step's
+  `on_task_list` off. A
   title or repeat change, Future, `stop_repeating` and the series read are
   422 `linked_task`. Move and complete take `preview: true`. Responses
   carry the production `undo_token` (`POST /api/production/undo/:token`)
@@ -54,7 +56,7 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   alias RockcutApi.{Authz, Repo, Tasks}
   alias RockcutApi.Production.{Step, Steps, Undo}
-  alias RockcutApi.Tasks.{Series, Task}
+  alias RockcutApi.Tasks.{Assignees, Series, Task}
   alias RockcutApiWeb.{ProductionErrors, StaffCodeActing, TaskErrors}
 
   action_fallback RockcutApiWeb.FallbackController
@@ -66,7 +68,7 @@ defmodule RockcutApiWeb.TaskBoardController do
          {:ok, to} <- date_param(params["to"]),
          {:ok, board} <-
            Tasks.board(board(conn), from, to, Tasks.today(), linked: params["linked"] == "true") do
-      reply(conn, %{data: task_board(board)})
+      reply(conn, %{data: with_from_idea(task_board(board), current_user(conn))})
     end
     |> TaskErrors.handle(conn)
   end
@@ -80,7 +82,7 @@ defmodule RockcutApiWeb.TaskBoardController do
          {:ok, from} <- date_param(params["from"]),
          {:ok, to} <- date_param(params["to"]),
          {:ok, boards} <- Tasks.all_boards(from, to) do
-      json(conn, %{data: all_task_boards(boards)})
+      json(conn, %{data: with_from_idea(all_task_boards(boards), current_user(conn))})
     end
     |> TaskErrors.handle(conn)
   end
@@ -196,7 +198,8 @@ defmodule RockcutApiWeb.TaskBoardController do
   @doc """
   GET /api/boards/:dept/tasks/:id/series: the rule, `later_open` and
   `later_changed`. With the dialog's `repeat*` params (D42), also `change`:
-  `{ kind: same | ends | rule, removes_open, removes_changed }`.
+  `{ kind: same | ends | rule, removes_open, removes_changed }`; a rule change
+  also has `removes_noted` and `keeps_moved` (D53 §4.8).
   """
   def series(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :read),
@@ -282,6 +285,33 @@ defmodule RockcutApiWeb.TaskBoardController do
   # Notes and assignee go to the step; a new day is a move; a title or a
   # repeat is refused.
   defp linked_update(person, task, step, params) do
+    with {:ok, params} <- one_assignee(task, params),
+         do: linked_edit(person, task, step, params)
+  end
+
+  # D53 §3.1: steps stay single-assignee, so `assignee_ids` is one id or none,
+  # which the step takes as its `assignee_id`. Someone who can't take it is
+  # refused as on any other task: by name, under `assignee_ids`.
+  defp one_assignee(task, params) do
+    case Assignees.given(params) do
+      nil ->
+        {:ok, params}
+
+      [] ->
+        {:ok, Map.put(params, "assignee_id", nil)}
+
+      [id] ->
+        checked =
+          task |> Ecto.Changeset.change() |> Assignees.validate(params, Assignees.ids(task))
+
+        if checked.valid?, do: {:ok, Map.put(params, "assignee_id", id)}, else: {:error, checked}
+
+      _ ->
+        {:error, :linked_task_assignees}
+    end
+  end
+
+  defp linked_edit(person, task, step, params) do
     cond do
       Series.repeat?(params) ->
         {:error, :linked_task}
@@ -411,8 +441,8 @@ defmodule RockcutApiWeb.TaskBoardController do
   @doc "GET /api/boards/:dept/tasks/history?task_id=&page=: this board's, newest first, 50 a page."
   def history(conn, params) do
     with :ok <- allow(conn, :history) do
-      task_id = int_param(params["task_id"], nil)
-      page = max(int_param(params["page"], 1), 1)
+      task_id = RockcutApi.Ids.parse(params["task_id"])
+      page = RockcutApi.Ids.page(params["page"])
 
       %{events: events, page: page, total: total, names: names} =
         Tasks.list_events(board(conn), task_id, page)
@@ -477,8 +507,30 @@ defmodule RockcutApiWeb.TaskBoardController do
     end
   end
 
-  defp render_task(conn, task, actor),
-    do: reply(conn, %{data: task |> Tasks.with_names() |> task()}, actor)
+  defp render_task(conn, task, actor) do
+    [data] = put_from_idea([task |> Tasks.with_names() |> task()], current_user(conn))
+    reply(conn, %{data: data}, actor)
+  end
+
+  # D53 §4.7: each card's "From idea: …" for this viewer (a link only when
+  # they can open that Idea Board).
+  defp with_from_idea(%{days: days, unfinished: unfinished, future: future} = board, viewer) do
+    all = Enum.flat_map(days, & &1.cards) ++ unfinished ++ future
+    ideas = RockcutApi.IdeaBoards.from_idea(all, viewer)
+    put = fn cards -> Enum.map(cards, &Map.put(&1, :from_idea, ideas[&1.id])) end
+
+    %{
+      board
+      | days: Enum.map(days, &%{&1 | cards: put.(&1.cards)}),
+        unfinished: put.(unfinished),
+        future: put.(future)
+    }
+  end
+
+  defp put_from_idea(tasks, viewer) do
+    ideas = RockcutApi.IdeaBoards.from_idea(tasks, viewer)
+    Enum.map(tasks, &Map.put(&1, :from_idea, ideas[&1.id]))
+  end
 
   # A write's response from a shared tablet names the person it was recorded
   # as (D37's `recorded_as`), so the tablet can show "Acting as …".
@@ -497,14 +549,4 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   defp date_param(_), do: {:error, :invalid_date}
-
-  defp int_param(nil, default), do: default
-  defp int_param("", default), do: default
-
-  defp int_param(value, default) do
-    case Integer.parse(to_string(value)) do
-      {n, ""} -> n
-      _ -> default
-    end
-  end
 end

@@ -31,6 +31,7 @@ defmodule RockcutApi.Authz do
 
   alias RockcutApi.TimeOff.Request
   alias RockcutApi.Availability.Slot
+  alias RockcutApi.IdeaBoards.{Card, IdeaList, Note}
 
   @doc "True if the account is a shared device (D33), not a person."
   def device?(%User{kind: "device"}), do: true
@@ -56,6 +57,18 @@ defmodule RockcutApi.Authz do
     do: member_of?(user, department)
 
   def can_take_task?(_, _department), do: false
+
+  @doc """
+  True if `user` may be on a card on this Idea Board (D53 §4.1): an active
+  person in that department (owners count); on the Company board, any active
+  person. Never a device. Expects memberships preloaded with departments.
+  """
+  def can_take_idea_card?(%User{kind: "person", active: true}, :company), do: true
+
+  def can_take_idea_card?(%User{kind: "person", active: true} = user, {:department, dept}),
+    do: member_of?(user, dept)
+
+  def can_take_idea_card?(_, _board), do: false
 
   @doc "True if the user is a global owner."
   def owner?(%User{is_owner: owner}), do: owner == true
@@ -227,6 +240,17 @@ defmodule RockcutApi.Authz do
     end
   end
 
+  # D53 §4.2: a note is edited only by its author, owners included, and only
+  # while they can still write on the board. Its author deletes it too, and
+  # so does whoever manages the board.
+  def can?(%User{} = user, :edit, {:idea_note, board, %Note{author_id: author_id}}),
+    do: user.id == author_id and can?(user, :write, {:idea_board, board})
+
+  def can?(%User{} = user, :delete, {:idea_note, board, %Note{} = note}),
+    do:
+      can?(user, :edit, {:idea_note, board, note}) or
+        can?(user, :manage, {:idea_board, board})
+
   def can?(%User{is_owner: true}, _action, _resource), do: true
 
   # Scheduling — shifts: global read of published; department-scoped write;
@@ -363,6 +387,45 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, :manage, {:daily_items, %Department{} = dept}),
     do: role_in(user, dept) == :manager
 
+  # D53 Part 2 Idea Boards (spec §4.2). A board is `{:department, dept}` or
+  # `:company`. A department's members, of any role, read and write its board;
+  # its managers also `:manage` it (lock and unlock, change locked things,
+  # delete archived things, rename and delete labels) and see `:history`.
+  # The Company board is every active person's, and only owners manage it or
+  # see its history (they pass above). Shared tablets are `Authz.Device`'s.
+  def can?(%User{} = user, action, {:idea_board, :company}) when action in [:read, :write],
+    do: user.active == true
+
+  def can?(%User{} = user, action, {:idea_board, {:department, %Department{} = dept}})
+      when action in [:read, :write],
+      do: member_of?(user, dept)
+
+  def can?(%User{} = user, action, {:idea_board, {:department, %Department{} = dept}})
+      when action in [:manage, :history],
+      do: role_in(user, dept) == :manager
+
+  # §4.5: changing a list or card is `:write`, and, while it's locked, also
+  # `:manage` (a lock binds non-managers only). A card is locked on its own or
+  # through its list (preloaded).
+  def can?(%User{} = user, :change, {:idea_board, board, thing}),
+    do:
+      can?(user, :write, {:idea_board, board}) and
+        (not idea_locked?(thing) or can?(user, :manage, {:idea_board, board}))
+
+  # §4.5: archiving a list also hides its cards, so a non-manager can't
+  # archive one that holds a locked card (archived cards don't count).
+  # Restoring brings them back, so the same rule (fix cycle 1, gap 4).
+  def can?(%User{} = user, action, {:idea_board, board, %IdeaList{id: id} = list})
+      when action in [:archive, :restore],
+      do:
+        can?(user, :change, {:idea_board, board, list}) and
+          (can?(user, :manage, {:idea_board, board}) or
+             not Repo.exists?(
+               from(c in Card,
+                 where: c.list_id == ^id and is_nil(c.archived_at) and not is_nil(c.locked_at)
+               )
+             ))
+
   # D46 production scheduling (spec §3.13): Brewery members of any role read
   # the setup and the schedule, work the schedule (`:write`: out-of-service
   # periods now, batches from D47) and change the setup (`:setup`: tanks,
@@ -423,6 +486,12 @@ defmodule RockcutApi.Authz do
   end
 
   defp channel_access?(_user, _key), do: false
+
+  @doc "D53 §4.5: locked on its own, or (a card) through its list."
+  def idea_locked?(%IdeaList{locked_at: at}), do: not is_nil(at)
+
+  def idea_locked?(%Card{locked_at: at, list: %IdeaList{} = list}),
+    do: not is_nil(at) or idea_locked?(list)
 
   defp memberships(%User{memberships: m}) when is_list(m), do: m
   defp memberships(_), do: []
