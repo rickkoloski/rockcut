@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Routes, Route, Navigate, useParams } from 'react-router-dom'
+import { Routes, Route, Navigate, useParams, createRoutesFromChildren, matchRoutes } from 'react-router-dom'
 import {
   Alert,
   AppBar,
@@ -100,6 +100,7 @@ import Availability from './pages/availability/Availability'
 import Messages from './pages/messages/Messages'
 import SharedDevices from './pages/devices/SharedDevices'
 import DeviceNotAvailable from './pages/devices/DeviceNotAvailable'
+import NotFound from './pages/NotFound'
 import SharedDeviceLoginRefused from './pages/devices/SharedDeviceLoginRefused'
 import NotificationBell from './components/NotificationBell'
 import InstallPrompt from './components/InstallPrompt'
@@ -206,6 +207,87 @@ function themeMenuItems(current: ColorMode | null, onPick: (mode: ColorMode) => 
       </MenuItem>
     )),
   ]
+}
+
+/** Which gated pages a person's routes include. */
+interface PersonRouteFlags {
+  hasBrewery: boolean
+  hasTaproom: boolean
+  canManageSchedule: boolean
+  canManageUsers: boolean
+  isOwner: boolean
+  sharedDevices: boolean
+}
+
+/** A person's routes. A shared tablet has its own (in App). */
+function personRoutes({ hasBrewery, hasTaproom, canManageSchedule, canManageUsers, isOwner, sharedDevices }: PersonRouteFlags) {
+  return (
+    <Routes>
+      <Route path="/" element={<Home />} />
+      {/* Brewery pages exist only for Brewery members (and owners); anyone
+          else falls through to the catch-all redirect to Home (D31). */}
+      {hasBrewery && (
+        <>
+          <Route path="/brewery" element={<BreweryDashboard />} />
+          <Route path="/brewery/production" element={<GanttPage />} />
+          <Route path="/brewery/production/tanks" element={<TanksPage />} />
+          <Route path="/brewery/production/lists" element={<ListsPage />} />
+          <Route path="/brewery/production/templates" element={<TemplatesPage />} />
+          <Route path="/brewery/production/templates/:id" element={<TemplateEditor />} />
+          <Route path="/brands" element={<BrandsList />} />
+          <Route path="/brands/:id" element={<BrandDetail />} />
+          <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
+          <Route path="/ingredients" element={<IngredientsList />} />
+          {/* D52: the categories moved from Brewery → Settings into the library's settings menu. */}
+          <Route path="/ingredients/categories" element={<SettingsPage />} />
+          <Route path="/ingredients/categories/:id" element={<CategoryDetail />} />
+          <Route path="/ingredients/:id" element={<IngredientDetail />} />
+          <Route path="/batches" element={<BatchesList />} />
+          <Route path="/batches/:id" element={<BatchDetail />} />
+          {/* Old Settings bookmarks. */}
+          <Route path="/settings" element={<Navigate to="/ingredients/categories" replace />} />
+          <Route path="/settings/categories" element={<Navigate to="/ingredients/categories" replace />} />
+          <Route path="/settings/categories/:id" element={<OldCategoryRedirect />} />
+        </>
+      )}
+      {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
+      {/* D41: a board per department; each page sends a person who can't
+          open it to their own board, or Home. */}
+      <Route path="/tasks" element={<TasksIndex />} />
+      <Route path="/tasks/:dept" element={<TaskBoardPage />} />
+      <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
+      <Route path="/schedule" element={<ViewSchedule />} />
+      {canManageSchedule && <Route path="/scheduler" element={<Scheduler />} />}
+      <Route path="/time_off" element={<TimeOff />} />
+      <Route path="/availability" element={<Availability />} />
+      <Route path="/profile" element={<Profile />} />
+      <Route path="/messages" element={<Messages />} />
+      <Route path="/messages/:key" element={<Messages />} />
+      {canManageUsers && <Route path="/users" element={<UserManagement />} />}
+      {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
+      {sharedDevices && <Route path="/devices" element={<SharedDevices />} />}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
+
+// D55 §2.2 (task 5119): every page a person can have, read from the route table
+// above with all gates open (the catch-all left out).
+const PERSON_PAGES = createRoutesFromChildren(
+  personRoutes({
+    hasBrewery: true,
+    hasTaproom: true,
+    canManageSchedule: true,
+    canManageUsers: true,
+    isOwner: true,
+    sharedDevices: true,
+  }).props.children,
+).filter((r) => r.path !== '*')
+
+/** A shared tablet's catch-all: a real page it can't use, or no page at all. */
+function TabletFallback() {
+  const location = useLocation()
+  return matchRoutes(PERSON_PAGES, location) ? <DeviceNotAvailable /> : <NotFound />
 }
 
 function App() {
@@ -760,8 +842,9 @@ function App() {
 
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
           {isDevice ? (
-            // D33: a shared tablet's routes. Anything else shows the device-only
-            // "Not available" page (lead decision 1); people keep the redirect below.
+            // D33: a shared tablet's routes. Any other real page shows the
+            // device-only "Not available" page (lead decision 1), an unknown URL
+            // "Page not found" (D55); people keep the redirect to Home.
             <Routes>
               {/* D40: the brewhouse tablet opens to its board; the Taproom's keeps Home. */}
               <Route
@@ -777,55 +860,10 @@ function App() {
               <Route path="/tasks/:dept" element={<TaskBoardPage />} />
               {/* D54: no personal logins on a shared tablet. */}
               <Route path="/login" element={<SharedDeviceLoginRefused />} />
-              <Route path="*" element={<DeviceNotAvailable />} />
+              <Route path="*" element={<TabletFallback />} />
             </Routes>
           ) : (
-          <Routes>
-            <Route path="/" element={<Home />} />
-            {/* Brewery pages exist only for Brewery members (and owners); anyone
-                else falls through to the catch-all redirect to Home (D31). */}
-            {hasBrewery && (
-              <>
-                <Route path="/brewery" element={<BreweryDashboard />} />
-                <Route path="/brewery/production" element={<GanttPage />} />
-                <Route path="/brewery/production/tanks" element={<TanksPage />} />
-                <Route path="/brewery/production/lists" element={<ListsPage />} />
-                <Route path="/brewery/production/templates" element={<TemplatesPage />} />
-                <Route path="/brewery/production/templates/:id" element={<TemplateEditor />} />
-                <Route path="/brands" element={<BrandsList />} />
-                <Route path="/brands/:id" element={<BrandDetail />} />
-                <Route path="/brands/:brandId/recipes/:id" element={<RecipeDetail />} />
-                <Route path="/ingredients" element={<IngredientsList />} />
-                {/* D52: the categories moved from Brewery → Settings into the library's settings menu. */}
-                <Route path="/ingredients/categories" element={<SettingsPage />} />
-                <Route path="/ingredients/categories/:id" element={<CategoryDetail />} />
-                <Route path="/ingredients/:id" element={<IngredientDetail />} />
-                <Route path="/batches" element={<BatchesList />} />
-                <Route path="/batches/:id" element={<BatchDetail />} />
-                {/* Old Settings bookmarks. */}
-                <Route path="/settings" element={<Navigate to="/ingredients/categories" replace />} />
-                <Route path="/settings/categories" element={<Navigate to="/ingredients/categories" replace />} />
-                <Route path="/settings/categories/:id" element={<OldCategoryRedirect />} />
-              </>
-            )}
-            {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
-            {/* D41: a board per department; each page sends a person who can't
-                open it to their own board, or Home. */}
-            <Route path="/tasks" element={<TasksIndex />} />
-            <Route path="/tasks/:dept" element={<TaskBoardPage />} />
-            <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
-            <Route path="/schedule" element={<ViewSchedule />} />
-            {canManageSchedule && <Route path="/scheduler" element={<Scheduler />} />}
-            <Route path="/time_off" element={<TimeOff />} />
-            <Route path="/availability" element={<Availability />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/messages" element={<Messages />} />
-            <Route path="/messages/:key" element={<Messages />} />
-            {canManageUsers && <Route path="/users" element={<UserManagement />} />}
-            {isOwner && <Route path="/activity" element={<OwnerActivity />} />}
-            {sharedDevices && <Route path="/devices" element={<SharedDevices />} />}
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          personRoutes({ hasBrewery, hasTaproom, canManageSchedule, canManageUsers, isOwner, sharedDevices })
           )}
         </Box>
       </Box>
