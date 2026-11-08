@@ -279,6 +279,16 @@ Matt put these in Part 2 (2026-11-07). Report:
 - **Gap 9: deactivation** History says the person was deactivated, not "left the Brewery".
 - **Gap 11: narrow cards:** one person, a repeat icon and a notes icon don't crush the title.
 
+From the QA recheck (`stepwise_results/d53_part1_dev_qa_recheck_report.md`), both already on `develop`:
+
+- **Gap 13: a rule change from a series' first occurrence, with "keep"** turns the kept occurrences
+  into one-offs (`series_id: null`). They lose Edit series… and Stop repeating, and series-wide
+  Delete/Stop no longer reach them. Proposed: move them into the new series (they keep their flag,
+  people, title and notes, and the new series skips their days).
+- **Gap 14: a moved occurrence gets a twin** after a rule change with "keep": it stays on its new
+  day, and the new pattern also makes its original date. Decide whether the new series skips the
+  kept one's `series_date` too, or the confirm says so.
+
 Gap 8 (the API accepts an owner on a department board) needs no change: it's deliberate
 since D41 (S105).
 
