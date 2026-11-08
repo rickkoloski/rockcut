@@ -422,7 +422,7 @@ S9g, S32–S37a, S42–S50, S68. ExUnit files are under `rockcut_api/test/`: con
 | S149 | bartender1: no Shared devices page; PATCH 403 | Playwright `ui/theme` (S149); ExUnit `color_mode_test`, `authz_device_test` |
 | S150 | owner (Dark): every page and the main dialogs readable | **Manual** (Task 3 sweep, screenshots kept for the PR); QA's DEV pass |
 | S151 | board page, columns, today, cards: distinct in both themes | Playwright `ui/task-board-ui` (S151, light and dark) |
-| S152 | nav order Home, Tasks, Schedule; phone drawer the same | Playwright `ui/layout` (S152) |
+| S152 | nav order Home, Tasks, Schedule; phone drawer the same (D53: Home, Tasks, Boards, Schedule) | Playwright `ui/layout` (S152) |
 | S153 | title in the top bar; board switcher; "‹ Settings" back link; no breadcrumbs | Playwright `ui/layout` (S153, a temp category) |
 | S154 | phone: the title replaces the logo; Home keeps it | Playwright `ui/layout` (S154) |
 | S155 | account menu contents; Profile; Log out | Playwright `ui/layout` (S155; Log out with a spare session); `auth/profile`, `auth/session_revocation`, `auth/offline_logout` updated |

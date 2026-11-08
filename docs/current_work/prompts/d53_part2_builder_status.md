@@ -618,3 +618,27 @@ restored. I reverted by reversing the diff; I checked by running the tests, not 
 ### LEAD:
 
 - **LEAD-6:** Is judgment call 1 (gap 14 confirm, not skip) acceptable?
+
+## Stop 5b (2026-11-08): lead decisions 5
+
+1. **S152's nav order (a change of meaning, required by spec §4.4).** `ui/layout.spec.ts` now expects
+   Home, Tasks, **Boards**, Schedule on desktop and in the phone drawer. D43's spec row for S152 and
+   `tests/COVERAGE.md` note the D53 order.
+2. **S26's dark colour.** None of my specs or screenshot runs changed a theme; the screenshot script
+   only rewrites `/api/me` inside its own browser. The cause is D43's `ui/theme.spec.ts`:
+   - It put **brewer1** in Dark during its tests and back to Light in `afterAll`. `brewery-board`
+     runs beside `chromium`, so S26 (brewer1) could load in the dark palette.
+   - On this machine brewer1 was also **still stored as `dark`**, from an interrupted earlier run.
+     That made S26 fail 5 of 5 even run on its own.
+   - **Fix:** `theme.spec.ts` now creates and signs in a `[TEST-TEMP]` Brewery person in a
+     file-level `beforeAll`, gives it to its person-theme tests through a `storageState` fixture,
+     and retires it in `afterAll`. No shared persona's theme is touched; the owner and device tests
+     are unchanged. S26 itself is unchanged.
+   - I reset brewer1 to Light on the local DB (`PUT /api/me/color_mode`).
+3. **Reruns, one at a time:**
+   - `--project chromium --no-deps tests/regression/ui`: **49 passed**.
+   - `--project idea-boards --no-deps`: **40 passed**.
+   - S26 with `--repeat-each 5`: **5 passed**, after the reset. Before it, 0 of 5.
+
+**LEAD:** DEV may also have brewer1 stored as `dark` from earlier runs. A reseed (or one
+`PUT /api/me/color_mode` with light) clears it.

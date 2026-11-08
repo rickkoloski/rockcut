@@ -1,12 +1,18 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { activeProfile } from '../../config/targets'
 import { apiAs } from '../scheduler/helpers'
 import { contrastOf, iconButtonContrasts } from './contrast'
+import { apiWith, createTempPerson, retireTempPerson, signIn, type TempPerson } from '../auth/helpers'
 
 // D43 §1.2, S143–S149, S169: the color mode (`users.color_mode`). It follows
 // the person; a shared tablet has its own. Every
-// test puts brewer1 and the Brewhouse tablet back to Light.
+// test puts its person and the Brewhouse tablet back to Light.
+//
+// D53 Part 2 (lead decisions 5): the person whose theme these change is a
+// `[TEST-TEMP]` Brewery person made for this file, not brewer1. Personas are
+// shared, and the `brewery-board` project runs beside `chromium`: with
+// brewer1 in Dark, S26 there read the Daily count in the dark palette.
 
 const LIGHT_BG = 'rgb(238, 242, 232)' // Hop Field background.default
 const DARK_BG = 'rgb(21, 25, 21)' // Hop Field Night background.default
@@ -16,8 +22,14 @@ test.describe.configure({ mode: 'serial', timeout: 60_000 })
 const bodyBg = (page: Page) => page.evaluate(() => getComputedStyle(document.body).backgroundColor)
 const navLogo = (page: Page) => page.locator('img[alt="Rockcut Brewing Co"]').first()
 
+// The [TEST-TEMP] person: signed in once; its session is each test's storage state.
+type State = { cookies: []; origins: { origin: string; localStorage: { name: string; value: string }[] }[] }
+let personState: State | null = null
+let person: TempPerson | null = null
+let personApi: APIRequestContext | null = null
+
 async function setPersonMode(mode: string) {
-  const res = await (await apiAs('brewer1')).put('/api/me/color_mode', { data: { color_mode: mode } })
+  const res = await personApi!.put('/api/me/color_mode', { data: { color_mode: mode } })
   expect(res.status()).toBe(200)
 }
 
@@ -30,13 +42,29 @@ async function setDeviceMode(mode: string) {
   expect(res.status()).toBe(200)
 }
 
-test.afterAll(async () => {
-  await setPersonMode('light')
-  await setDeviceMode('light')
+// Made at file level: inside the block below, the global request API would
+// take the block's storage state, which doesn't exist yet.
+test.beforeAll(async () => {
+  person = await createTempPerson('Theme', { memberships: [{ department: 'brewery', role: 'employee' }] })
+  const token = await signIn(person)
+  personApi = await apiWith(token)
+  const origin = new URL(activeProfile().uiUrl).origin
+  personState = { cookies: [], origins: [{ origin, localStorage: [{ name: 'rockcut_token', value: token }] }] }
 })
 
-test.describe('brewer1', () => {
-  test.use({ storageState: authFile('brewer1') })
+test.afterAll(async () => {
+  await setDeviceMode('light')
+  await personApi?.dispose()
+  await retireTempPerson(person)
+  person = null
+})
+
+test.describe('a Brewery person ([TEST-TEMP], in place of brewer1)', () => {
+  // Read when each test's context is made, after beforeAll has signed the
+  // person in. Until then (the hooks' own API contexts, which send their
+  // token themselves) it's empty.
+  // eslint-disable-next-line no-empty-pattern
+  test.use({ storageState: async ({}, provide) => provide(personState ?? { cookies: [], origins: [] }) })
   test.beforeEach(() => setPersonMode('light'))
 
   test('S143: Light by default; nothing asks to choose', async ({ page }) => {
@@ -65,7 +93,7 @@ test.describe('brewer1', () => {
     await page.keyboard.press('Escape')
 
     // S145: a fresh browser (nothing cached) for the same person.
-    const other = await browser.newContext({ storageState: authFile('brewer1') })
+    const other = await browser.newContext({ storageState: personState! })
     const p2 = await other.newPage()
     await p2.goto('/')
     await expect(p2.getByTestId('account-menu')).toBeVisible()
@@ -121,7 +149,7 @@ test.describe('brewer1', () => {
     await expect(page.getByTestId('theme-light')).toHaveClass(/Mui-selected/)
     await page.keyboard.press('Escape')
     await context.setOffline(false)
-    expect((await (await (await apiAs('brewer1')).get('/api/me')).json()).color_mode).toBe('light')
+    expect((await (await personApi!.get('/api/me')).json()).color_mode).toBe('light')
   })
 })
 
