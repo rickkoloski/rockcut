@@ -225,8 +225,9 @@ assigned or mentioned.
 - **Never about your own change.**
 - **Batched:** the first change starts a 10-minute window, and one notification
   goes out when it closes ("Casey changed *Taproom remodel*: moved to Doing, 2
-  notes"). A small pending-changes ledger, flushed by the D22 minute scanner.
-  So a notification can be up to about 10 minutes late. Tapping it opens the card.
+  notes"). A small pending-changes ledger, flushed by the existing D22 scanner (every 5
+  minutes), so a notification arrives **10–15 minutes** after the first change (Matt, 2026-11-08:
+  keep one background job). Tapping it opens the card.
 - **Delivery:** one new event type `idea_card_changed`. Defaults: in-app on,
   push on, email off, like `task_shift_end`; it gets a row in the Notification
   preferences dialog, and the UI's `EVENT_DEFAULTS` must match.
