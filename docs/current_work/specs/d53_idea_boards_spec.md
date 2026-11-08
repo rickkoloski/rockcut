@@ -289,6 +289,12 @@ From the QA recheck (`stepwise_results/d53_part1_dev_qa_recheck_report.md`), bot
   day, and the new pattern also makes its original date. Decide whether the new series skips the
   kept one's `series_date` too, or the confirm says so.
 
+From the second recheck (`stepwise_results/d53_part1_dev_qa_recheck2_report.md`, observations):
+
+- **Notes on a dropped date vanish without a mention.** The rule-change confirm and History should
+  say when occurrences with their own notes are removed.
+- **The Ends "After N times" error shows a raw `count:` prefix.**
+
 Gap 8 (the API accepts an owner on a department board) needs no change: it's deliberate
 since D41 (S105).
 
