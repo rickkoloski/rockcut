@@ -9,7 +9,6 @@ defmodule RockcutApi.Reminders do
   open on the Brewery board that day. Ledger: `task_reminders`.
   """
   import Ecto.Query
-  require Logger
   alias RockcutApi.{Accounts, Repo, Notifications, Tasks}
   alias RockcutApi.Scheduling.Shift
   alias RockcutApi.Reminders.{ShiftReminder, TaskReminder}
