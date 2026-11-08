@@ -36,6 +36,28 @@ write, event, scope question or exception, and `assignee_id` stays put.
 because its names were never loaded. It now shows the real name. Other old events read
 exactly as before.
 
+## Fix cycle 1 (from the DEV QA pass on `6d7811c`)
+
+Report: `docs/current_work/stepwise_results/d53_part1_dev_qa_report.md`. Decisions:
+`d53_part1_lead_decisions_3.md` to `_5.md`.
+
+- **Repeats keep people when the rule changes (QA gaps 1 and 2).** These bugs were **already on
+  `develop`/prod** for the single assignee and for titles; Part 1 only made them cost more.
+  - A rule change never changes anyone's people, title or notes on a date that survives it.
+  - A new date takes them from the last occurrence before it that wasn't changed on its own.
+  - An occurrence changed on its own stays marked after a split.
+  - The confirm and History now say what happens.
+- **At most 100 people per task (gap 3):** a quick 422 instead of a 500 after 15 s.
+- **The linked-task refusal names the person (gap 7).**
+- **Long names wrap in the phone list (gap 10).**
+- **The settings gear no longer scrolls the page back to the top on closing.** Found through S139.
+  It's in D52's `SettingsGear`, so it fixes all seven pages that use it.
+- **Tests:** P61 and P83–P84 wait for the save; their reads raced the prompt and the brand pick.
+- **QA gaps 4, 5, 6, 9 and 11 move to Part 2 (spec §4.8, Matt).** Gap 8 is deliberate (D41).
+- **Unchanged from `develop`:** remade occurrences get new ids, so they move to the bottom of their
+  day and their History stays with the old id. "Removes N" counts remade dates too; a line under it
+  explains.
+
 ## Migrations
 
 **Yes, reversible:** `20261106120001_create_task_assignees` creates the two tables and
@@ -44,7 +66,7 @@ config. The new error code is `linked_task_assignees`.
 
 ## Tests
 
-- ExUnit: 1893 passed, three runs (baseline 1817).
+- ExUnit: 1929 passed after fix cycle 1 (baseline 1817).
 - Vitest: 187 passed. `tsc` and `vite build` clean. Lint: 26 errors, no worse.
 - `tsc -p tsconfig.e2e.json`: 2 errors, both already on `develop` and in lines this
   branch doesn't touch (`task-board-phone.spec.ts:443`, `beer-board-import.spec.ts:40`).
@@ -53,7 +75,7 @@ config. The new error code is `linked_task_assignees`.
 - Playwright, local, one project at a time: new spec
   `task-board-multi-assignee` 19/19, changed specs 78/78, `brewery-board` 222/222,
   `production` 157/157.
-- **Full Playwright suite (lead, with the hotfix merged in, `83097ca`):** 599 passed, 1 skipped. ExUnit on that commit: 1893 passed. `pwa-update` not rerun.
+- **Full Playwright suite (lead):** 601 passed, 1 skipped, at `dc0594d` after fix cycle 1 (599 at `83097ca` before it). ExUnit: 1929 passed. `pwa-update` not rerun.
 
 Tests were confirmed able to fail by breaking the code on purpose (13 breaks; see the
 status file).
