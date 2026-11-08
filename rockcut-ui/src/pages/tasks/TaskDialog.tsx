@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Box, Button, Checkbox, Chip, CircularProgress, FormControlLabel, MenuItem, TextField } from '@mui/material'
+import { Alert, Box, Button, Checkbox, Chip, CircularProgress, FormControlLabel, Link, MenuItem, TextField, Typography } from '@mui/material'
+import { Link as RouterLink } from 'react-router-dom'
 import FormDialog from '../../components/FormDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
@@ -276,6 +277,19 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
           <Alert severity="info" sx={{ py: 0 }} data-testid="task-dialog-following">
             Changes apply to this one and every later open one that wasn't changed on its own.
           </Alert>
+        )}
+        {/* D53 §4.7: the card it was sent from; a link only when this person can open that board. */}
+        {card?.from_idea && (
+          <Typography variant="body2" color="text.secondary" data-testid="task-dialog-from-idea">
+            From idea:{' '}
+            {card.from_idea.link && card.from_idea.board && card.from_idea.card_id ? (
+              <Link component={RouterLink} to={`/ideas/${card.from_idea.board}/cards/${card.from_idea.card_id}`} data-testid="task-dialog-from-idea-link">
+                {card.from_idea.title}
+              </Link>
+            ) : (
+              card.from_idea.title
+            )}
+          </Typography>
         )}
         {card?.series_exception && (
           <Alert severity="info" sx={{ py: 0 }} data-testid="task-dialog-exception">

@@ -281,6 +281,8 @@ export interface Me {
   beer_board_manage?: boolean
   // D41: the task boards this person can open, in department order.
   task_boards?: TaskBoardEntry[]
+  // D53 Part 2: the Idea Boards this person can open, departments then Company.
+  idea_boards?: IdeaBoardEntry[]
   // D43: the theme that applies here (the person's, or a shared tablet's own).
   color_mode?: ColorMode
   // D49: the Brewery board's "Show planned batches" (per person).
@@ -655,8 +657,22 @@ export interface TaskCardData {
   series_last: boolean
   /** D49 §3.12: made from a production step (null for the board's own tasks). */
   production: TaskProduction | null
+  /** D53 §4.7: made by Send to task list (null otherwise; absent on an API before D53 Part 2). */
+  from_idea?: FromIdea | null
   inserted_at: string
   updated_at: string
+}
+
+/**
+ * D53 §4.7: the card a task came from. `link` is false (and `board`,
+ * `card_id` null) when the card was deleted for good or this person can't
+ * open its board; the title still shows.
+ */
+export interface FromIdea {
+  title: string
+  board: string | null
+  card_id: number | null
+  link: boolean
 }
 
 /** D49: a linked task's step and batch (`batch_id` null for a standalone CIP). */
@@ -820,4 +836,132 @@ export interface AllBoardData {
   days: { date: string; cards: AllBoardCard[]; daily_counts: DailyCount[] }[]
   unfinished: AllBoardCard[]
   future: AllBoardCard[]
+}
+
+// ── Idea Boards (D53 Part 2) ────────────────────────────────────────
+
+/** One of `/api/me`'s `idea_boards`: `manage` = lock, delete for good, labels; `history` = History. */
+export interface IdeaBoardEntry {
+  key: string
+  name: string
+  color?: string | null
+  manage: boolean
+  history: boolean
+}
+
+export interface IdeaPerson {
+  id: number
+  name: string
+}
+
+export interface IdeaLabel {
+  id: number
+  name: string
+  color: string
+  position: number
+}
+
+/** A card's chip for a task sent from it (§4.7). */
+export interface IdeaSentTask {
+  id: number
+  state: 'on_list' | 'done' | 'repeating' | 'removed'
+  task_id: number | null
+  task_series_id: number | null
+  task_title: string
+  department: { key: string; name: string } | null
+  due_on: string | null
+  completed_on: string | null
+  series: { frequency: string; interval: number } | null
+  sent_at: string
+}
+
+/** What a card's face shows. */
+export interface IdeaCardFace {
+  id: number
+  list_id: number
+  title: string
+  due_on: string | null
+  position: number
+  locked: boolean
+  locked_at: string | null
+  locked_by: IdeaPerson | null
+  archived_at: string | null
+  label_ids: number[]
+  assignee_ids: number[]
+  assignees: IdeaPerson[]
+  checklist: { done: number; total: number }
+  note_count: number
+  watching: boolean
+  sent_tasks: IdeaSentTask[]
+}
+
+export interface IdeaChecklistItem {
+  id: number
+  text: string
+  position: number
+  done: boolean
+  done_at: string | null
+  done_by: IdeaPerson | null
+}
+
+export interface IdeaNote {
+  id: number
+  body: string
+  author: IdeaPerson | null
+  author_id: number | null
+  inserted_at: string
+  edited_at: string | null
+}
+
+export interface IdeaListData {
+  id: number
+  name: string
+  position: number
+  locked: boolean
+  locked_at: string | null
+  locked_by: IdeaPerson | null
+  archived_at: string | null
+  cards: IdeaCardFace[] | null
+}
+
+/** A card for its dialog: the face plus everything else. */
+export interface IdeaCard extends IdeaCardFace {
+  description: string | null
+  list: Omit<IdeaListData, 'cards'>
+  labels: IdeaLabel[]
+  created_by: IdeaPerson | null
+  inserted_at: string
+  updated_at: string
+  checklist_items: IdeaChecklistItem[]
+  notes: IdeaNote[]
+}
+
+export interface IdeaBoardData {
+  lists: IdeaListData[]
+  labels: IdeaLabel[]
+}
+
+export interface IdeaArchived {
+  lists: (Omit<IdeaListData, 'cards'> & { card_count: number })[]
+  cards: { id: number; title: string; archived_at: string; list: { id: number; name: string } }[]
+}
+
+export interface IdeaEvent {
+  id: number
+  card_id: number | null
+  list_id: number | null
+  action: string
+  title: string | null
+  actor_id: number | null
+  actor_name: string | null
+  detail: Record<string, unknown>
+  inserted_at: string
+}
+
+/** `GET …/cards/:id/send_to_tasks`: what the Send dialog offers. */
+export interface IdeaSendOptions {
+  departments: { key: string; name: string; assignee_ids: number[]; left_off: IdeaPerson[] }[]
+  due_on: string | null
+  checklist: { total: number; open: number }
+  already_sent: boolean
 }
