@@ -229,3 +229,102 @@ tablets, un-fixme the pending check, and the full local Playwright run.
 - `MIX_ENV=test mix test` once: **1958 passed**.
 
 That's everything that can be done before D53 lands. Waiting for the go-ahead to merge `develop`.
+
+## Lead decisions 3 done (§2.11 + T13, after the D53 merge)
+
+Started from `564015c`. The code is in `f5bf748`; this status and `COVERAGE.md` follow in the next commit.
+
+**Gate:** `mix compile --force --warnings-as-errors` clean; `MIX_ENV=test mix test` **2157 passed**
+(2141 after the merge, plus 16 new); `tsc -p tsconfig.app.json` clean; Vitest **230** passed.
+No servers, no Playwright.
+
+### What changed
+
+1. **URL ids: `RockcutApiWeb.Plugs.PathIds`** (`lib/rockcut_api_web/plugs/path_ids.ex`). Every
+   `path_params` entry named `id` or ending in `_id` must pass `RockcutApi.Ids.parse/1`, else the plug
+   halts with 404 `{"errors":{"detail":"Not found"}}` (FallbackController's JSON).
+   - **Placement:** last in both signed-in pipelines (`:authenticated` and `:device_allowed`), not in
+     `:api`. That way 401 (not signed in), the password-reset gate and D33's tablet 403 still come
+     first, and every scope that reaches a controller with an id goes through it. The public `:api`
+     scope has no id params (health, session, device_tokens, `calendar/:token`).
+   - **Params checked:** `id` (175 routes), `daily_item_id`, `item_id`, `link_id`, `note_id`,
+     `step_id`, `user_id`.
+   - **Left alone (keys, not ids):** `dept`, `board`, `key`, `token`, `on_date`, and the vessel
+     `index`, a list position.
+   - **Exceptions list (`@not_ids`): empty.** Every `*_id` URL param is a numeric row id.
+   - D53's own `Ids` calls in the Boards and the task boards are untouched.
+   - Junk in the URL (`abc`, `0`, `-1`) is now 404 too; no existing test expected anything else.
+2. **Body and query ids: `RockcutApiWeb.Plugs.ParamIds`** (`plugs/param_ids.ex`), placed right after
+   `PathIds`. Any key `id`, `ids`, `*_id` or `*_ids`, at any depth in the query or the JSON/form
+   body, whose value (or list element) is an out-of-range number (an integer, or a string of
+   digits) → **422 `{"errors":{"<key>":["is out of range"]}}`**, before the controller.
+   - Only out-of-range numbers are refused. Junk keeps the route's own answer (changeset 422, 404),
+     and an in-range id that names no row is the route's business, as before.
+   - `before_id` is exempt (D38: unknown → end of the day; tested).
+   - **Why a plug rather than per-context fixes:** a probe before the change showed the driver's 500
+     on every area named in item 2, in both bodies and queries: shift `position_id`, time off
+     `user_id`, devices `home_department_id`, recipes `brand_id`, `GET /api/shifts?department_id=`,
+     `GET /api/recipe_ingredients?recipe_id=`. A per-context fix would have to find every cast and
+     every query. This is the "one plug" approach applied to bodies.
+   - **This means 422 even where a route answers 404 for a missing reference.** For an out-of-range
+     value that's a malformed input, not a missing row. LEAD: say if you want specific routes to
+     answer 404 instead.
+   - Buy-a-Beer has no body ids; its URL `:id` is covered by `PathIds`.
+3. **Ids under other key names**, fixed where they're read with `RockcutApi.Ids`:
+   - memberships `department` (an id or a key) past the range → 422 "unknown department"
+     (`accounts.ex`, `get_department_by_id/1`). It was a 500 on POST and PUT.
+   - messages `before` (the page cursor) → 422 `before` for anything `Ids.filter` refuses
+     (`message_controller.ex`). It was a 500 for both junk (`String.to_integer/1`) and range.
+4. **History filters (gap 10):** `Ids.filter/1` returns `{:ok, nil}` for an absent or empty value,
+   `{:ok, id}`, or `:error`. Task-board History `task_id` and Boards History `card_id` → **422** on
+   that param for `1e20`, `abc`, `-1`, `0` and out-of-range values. **Absent or empty
+   (`?task_id=`) is still the whole History.** I treated empty as absent, since that's what an empty
+   form field sends.
+5. **`Ids.page/1`:** a positive string of digits (or integer) is capped at `@max_page`, so a huge
+   page is the last, empty page. Junk (`abc`, `-1`, `0`, empty, `1e3`, floats) is page 1.
+
+### Tests
+
+- **T13** `test/rockcut_api_web/plugs/out_of_range_ids_sweep_test.exs`: built from
+  `Router.__routes__()` (no hand list). Every route with an id param (**178**, `/dev` excluded) gets
+  `99999999999999999999` there and real keys for the rest (`bar`, `all`, …).
+  - As the owner: all 404.
+  - As `taproomDevice`: 404 or exactly DeviceGate's 403; at least 14 reach the id check and are 404
+    (shifts, production steps and CIPs, Boards card reads, the tablet's task board).
+  - A new route is swept automatically; one outside the plugs' pipelines would 500 and fail the
+    test. A guard test asserts there are at least 178 routes, so the sweep can't go empty.
+- `plugs/param_ids_test.exs`: body ids on 10 routes, 422 on the key and nothing saved
+  (persist-verified by counts); query ids on 3 routes; junk not the plug's; `before_id` past the
+  range moves the task last.
+- `ids_test.exs` (`parse`, `filter`, `page`); `controllers/history_filter_test.exs` (both
+  Histories, absent/empty/junk, huge page empty; messages `before`).
+- `user_memberships_malformed_test.exs`: 2 new tests (department past the range, as an integer and
+  as a string).
+
+**Revert checks:**
+
+| Reverted | Result |
+|---|---|
+| `PathIds` removed from the router | sweep 1/3 passed; both T13 tests fail with `Exqlite.Error argument error: 99999999999999999999` (the 500) |
+| `ParamIds` removed from the router | `param_ids_test` 2/4 passed; body and query tests fail with the same driver error |
+| `ids.ex`, both History controllers, `message_controller.ex`, `accounts.ex` back to `f5bf748~1` (plugs on) | 7 fail (`page`, `filter`, messages `before`, both History filters, both memberships `department`); the 16 that pass check behaviour that hasn't changed (`parse`, junk pages) |
+
+### Existing tests changed
+
+`test/rockcut_api_web/controllers/idea_board_fix_cycle_1_test.exs` (D53) asserted the old rule: a
+History `card_id` / `task_id` past the range was **ignored** (200, whole History). Lead decisions 3
+item 3 changes that to 422, so those two assertions now expect 422. The `page=<huge>` assertions now
+also check `data: []`. Nothing else was changed or weakened.
+
+### LEAD questions and observations
+
+1. **Body ids answer 422 everywhere, never 404** (item 2 above). Keep, or name the routes that should
+   answer 404?
+2. **Spotted, outside §2.11:** a recipe with an **in-range id that names no brand** (`brand_id: 12345`,
+   `-1`, `0`) still 500s (`Ecto.ConstraintError`). `Recipe.changeset` has no
+   `foreign_key_constraint(:brand_id)`. Other legacy brewing schemas may have the same gap. That's
+   "a missing reference", not "out of range", so I didn't fix it. A new task, or into D55?
+3. Anonymous requests still get 401 before any id check, and tablets get 403 on people-only routes
+   before it, because both plugs sit after auth.
+
+Ready for the lead's full local Playwright run (T1–T13).
