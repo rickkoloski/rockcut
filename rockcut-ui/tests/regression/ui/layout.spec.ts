@@ -20,19 +20,20 @@ async function navLabels(page: Page): Promise<string[]> {
     .allInnerTexts()
 }
 
+// D53 spec §4.4 puts Boards after Tasks (a change to S152's order, D53 Part 2).
 test.describe('S152: brewer1 nav order', () => {
   test.use({ storageState: authFile('brewer1') })
 
-  test('desktop: Home, Tasks, Schedule, …', async ({ page }) => {
+  test('desktop: Home, Tasks, Boards, Schedule, …', async ({ page }) => {
     await page.goto('/')
-    expect((await navLabels(page)).slice(0, 3)).toEqual(['Home', 'Tasks', 'Schedule'])
+    expect((await navLabels(page)).slice(0, 4)).toEqual(['Home', 'Tasks', 'Boards', 'Schedule'])
   })
 
   test('phone drawer: the same', async ({ page }) => {
     await page.setViewportSize(PHONE)
     await page.goto('/')
     await page.getByRole('button', { name: 'Open navigation' }).click()
-    expect((await navLabels(page)).slice(0, 3)).toEqual(['Home', 'Tasks', 'Schedule'])
+    expect((await navLabels(page)).slice(0, 4)).toEqual(['Home', 'Tasks', 'Boards', 'Schedule'])
   })
 })
 

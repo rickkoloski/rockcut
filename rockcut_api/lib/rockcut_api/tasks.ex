@@ -632,10 +632,36 @@ defmodule RockcutApi.Tasks do
           "display" => task.completed_display
         })
 
-        reopened
+        drop_departed(dept, reopened, actor)
       else
         task
       end
+    end)
+  end
+
+  # Gap 6 (D53 Part 1 QA): a finished task keeps the people who did it, but
+  # reopened it's open work, and someone who has left the department (or
+  # was deactivated) comes off it, as `unassign_if_ineligible/2` does.
+  defp drop_departed(dept, %Task{} = task, actor) do
+    before = Assignees.ids(task)
+
+    gone =
+      before
+      |> Enum.map(&Accounts.get_user/1)
+      |> Enum.reject(&(&1 && Authz.can_take_task?(&1, dept)))
+
+    Enum.reduce(gone, task, fn user, task ->
+      id = if user, do: user.id
+      now = Assignees.ids(task)
+      task = Assignees.remove!(task, id)
+
+      log!(task, "unassigned", actor, %{
+        "from" => now,
+        "to" => now -- [id],
+        "reason" => if(user, do: leave_reason(user, dept), else: "left_#{dept.key}")
+      })
+
+      task
     end)
   end
 
@@ -720,25 +746,39 @@ defmodule RockcutApi.Tasks do
         )
       end
 
+      reason = leave_reason(user, dept)
+
       Repo.all(
         from t in Task,
           join: a in assoc(t, :assignee_links),
-          where: a.user_id == ^user_id and t.department_id == ^dept.id and is_nil(t.completed_at)
+          where: a.user_id == ^user_id and t.department_id == ^dept.id and is_nil(t.completed_at),
+          order_by: [asc: t.series_date, asc: t.id]
       )
-      |> Enum.each(fn task ->
+      |> Enum.map(fn task ->
         before = Assignees.ids(task)
-        task = Assignees.remove!(task, user_id)
+        {Assignees.remove!(task, user_id), before}
+      end)
+      # Gap 5 (D53 Part 1 QA): one row per series (on its first open
+      # occurrence, with `count`), not one per occurrence; one-offs as before.
+      |> Enum.group_by(fn {task, _} -> task.series_id || {:task, task.id} end)
+      |> Enum.each(fn {_key, [{first, before} | _] = rows} ->
+        detail = %{"from" => before, "to" => before -- [user_id], "reason" => reason}
 
-        log!(task, "unassigned", actor, %{
-          "from" => before,
-          "to" => before -- [user_id],
-          "reason" => "left_#{dept.key}"
-        })
+        detail =
+          if first.series_id,
+            do: Map.merge(detail, %{"from" => [user_id], "to" => [], "count" => length(rows)}),
+            else: detail
+
+        log!(first, "unassigned", actor, detail)
       end)
     end
 
     :ok
   end
+
+  # Gap 9 (D53 Part 1 QA): deactivation says so, rather than "left the Brewery".
+  defp leave_reason(%User{active: false}, _dept), do: "deactivated"
+  defp leave_reason(%User{}, %Department{key: key}), do: "left_#{key}"
 
   ## Daily card
 
@@ -1231,12 +1271,16 @@ defmodule RockcutApi.Tasks do
       detail["assignee_id"],
       detail["assignee_ids"],
       assignee_in(detail["from"]),
-      assignee_in(detail["to"])
+      assignee_in(detail["to"]),
+      # D53 §4.8 gap 4: a following edit's people over every occurrence.
+      assignee_in(detail["people"])
     ]
     |> List.flatten()
   end
 
-  defp assignee_in(%{} = values), do: [values["assignee_id"], values["assignee_ids"]]
+  defp assignee_in(%{} = values),
+    do: [values["assignee_id"], values["assignee_ids"], values["added"], values["removed"]]
+
   defp assignee_in(value), do: value
 
   ## Lists and positions
@@ -1435,16 +1479,8 @@ defmodule RockcutApi.Tasks do
 
   defp cast_date(_), do: {:error, :invalid_date}
 
-  defp to_int(i) when is_integer(i), do: i
-
-  defp to_int(s) when is_binary(s) do
-    case Integer.parse(s) do
-      {i, ""} -> i
-      _ -> nil
-    end
-  end
-
-  defp to_int(_), do: nil
+  # An id from params (`RockcutApi.Ids`): nil when it can't be a row.
+  defp to_int(id), do: RockcutApi.Ids.parse(id)
 
   defp iso(nil), do: nil
   defp iso(%Date{} = d), do: Date.to_iso8601(d)

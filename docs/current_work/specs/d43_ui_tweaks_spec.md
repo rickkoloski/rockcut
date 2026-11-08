@@ -264,7 +264,7 @@ Desktop is 1366×860, tablet 1280×800 (landscape, Samsung / Chrome PWA), phone
 | S149 | `bartender1` | Shared devices page, API `PATCH` of a device's setting | Not available / 403 (managers and owners only, as other device edits) |
 | S150 | `owner` (Dark) | walk every page in the nav, plus dialogs (Add shift, Add event, task edit, Buy-a-Beer redeem, notification preferences, Templates, Positions) | No white panels, unreadable text or near-invisible controls; unselected toggle buttons readable |
 | S151 | `owner` (Light, then Dark) | Brewery board | Page, columns (and today's column) and cards are three distinct shades in both |
-| S152 | `brewer1` | Home, desktop and phone | Nav order Home, **Tasks**, Schedule, …; phone drawer the same |
+| S152 | `brewer1` | Home, desktop and phone | Nav order Home, **Tasks**, Schedule, …; phone drawer the same. *D53 (spec §4.4) puts Boards after Tasks: Home, Tasks, Boards, Schedule, …* |
 | S153 | `owner` | Brewery board, Scheduler, Settings → a category | Title in the top bar (h1); board switcher (dot, name, ▾) in the bar; "‹ Settings" back link on the category; no breadcrumbs |
 | S154 | `brewer1` at 412×915 | Brewery board, Schedule | Title replaces the small logo in the bar; Home (no title) keeps the logo |
 | S155 | `owner` | account icon | Menu: name, email · Owner, Profile, Theme (3), Log out; Profile opens `/profile`; Log out signs out |

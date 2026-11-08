@@ -203,16 +203,7 @@ defmodule RockcutApi.Tasks.Assignees do
   defp join_of(Task), do: {TaskAssignee, :task_id}
   defp join_of(TaskSeries), do: {TaskSeriesAssignee, :series_id}
 
-  defp to_id(id) when is_integer(id) and id > 0, do: id
-
-  defp to_id(s) when is_binary(s) do
-    case Integer.parse(s) do
-      {id, ""} when id > 0 -> id
-      _ -> nil
-    end
-  end
-
-  defp to_id(_), do: nil
+  defp to_id(id), do: RockcutApi.Ids.parse(id)
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

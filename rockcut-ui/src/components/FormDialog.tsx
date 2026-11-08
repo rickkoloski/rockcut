@@ -23,9 +23,11 @@ interface FormDialogProps {
   testId?: string
   /** The dismiss button's label: "Close" when parts of the dialog save at once (D46). */
   cancelLabel?: string
+  /** The submit button's label (default "Save"). */
+  submitLabel?: string
 }
 
-export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children, secondaryAction, testId, cancelLabel = 'Cancel' }: FormDialogProps) {
+export default function FormDialog({ open, onClose, title, onSubmit, loading, error, children, secondaryAction, testId, cancelLabel = 'Cancel', submitLabel = 'Save' }: FormDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth data-testid={testId}>
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); onSubmit() }}>
@@ -38,7 +40,7 @@ export default function FormDialog({ open, onClose, title, onSubmit, loading, er
           {secondaryAction && <Box sx={{ mr: 'auto' }}>{secondaryAction}</Box>}
           <Button onClick={onClose} disabled={loading}>{cancelLabel}</Button>
           <Button type="submit" variant="contained" disabled={loading}>
-            {loading ? <CircularProgress size={20} /> : 'Save'}
+            {loading ? <CircularProgress size={20} /> : submitLabel}
           </Button>
         </DialogActions>
       </form>

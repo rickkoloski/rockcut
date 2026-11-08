@@ -3,8 +3,10 @@ defmodule RockcutApiWeb.MeController do
 
   action_fallback RockcutApiWeb.FallbackController
 
-  import RockcutApiWeb.JSONHelpers, only: [me: 3, for_viewer: 2, task_board_entry: 1]
-  alias RockcutApi.{Accounts, Authz, StaffCodes, Tasks}
+  import RockcutApiWeb.JSONHelpers,
+    only: [me: 3, for_viewer: 2, task_board_entry: 1, idea_board_entry: 1]
+
+  alias RockcutApi.{Accounts, Authz, IdeaBoards, StaffCodes, Tasks}
 
   def show(conn, _params) do
     user = conn.assigns.current_user
@@ -26,7 +28,10 @@ defmodule RockcutApiWeb.MeController do
             if(Authz.can?(user, :read, {:tasks, :all}),
               do: [%{key: "all", name: "All departments", manage: false}],
               else: []
-            )
+            ),
+        # D53 Part 2: the Idea Boards this person (or tablet) can open,
+        # departments then Company.
+        idea_boards: Enum.map(IdeaBoards.boards_for(user), &idea_board_entry/1)
       })
       |> for_viewer(user)
     )

@@ -13,7 +13,9 @@ defmodule RockcutApi.Authz.Device do
     * read and write its home department's task board (D40): tasks, moves
       and Daily ticks. Never another board, the All departments view, History
       or the Daily items list's changes. Every write also needs a person's
-      staff code and is decided for that person (`StaffCodeActing`).
+      staff code and is decided for that person (`StaffCodeActing`);
+    * read its home department's Idea Board and the Company board (D53),
+      nothing else there.
 
   When roles become data (RBAC roadmap Phases 2–6), this list becomes the
   system role for device accounts; `authz_device_test.exs` pins it.
@@ -52,6 +54,14 @@ defmodule RockcutApi.Authz.Device do
   def can?(%User{} = device, action, {:tasks, %Department{key: key}})
       when action in [:read, :write],
       do: key == home_key(device)
+
+  # D53 Part 2 §4.2: a tablet reads its home department's Idea Board and the
+  # Company board, view only. Every write, Watch, History and every other
+  # board fall through to the catch-all.
+  def can?(%User{} = _device, :read, {:idea_board, :company}), do: true
+
+  def can?(%User{} = device, :read, {:idea_board, {:department, %Department{key: key}}}),
+    do: key == home_key(device)
 
   def can?(_device, _action, _resource), do: false
 

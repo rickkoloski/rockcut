@@ -173,6 +173,23 @@ describe('describeEvent: assignees, old and new shapes (D53)', () => {
     expect(describeEvent(ev('made_repeating', { due_on: '2026-10-14', repeat, from: { assignee_ids: [] }, to: { assignee_ids: [5, 6] } }), names)).toMatch(/; assigned to Sam Pour, Jake Brewer$/)
   })
 
+  it('D53 §4.8: a following edit names everyone it took off (gap 4); leaving is one row per series (gap 5); deactivation says so (gap 9)', () => {
+    const names3 = { users: { '5': 'Sam Pour', '6': 'Jake Brewer', '7': 'Morgan Mash' }, items: {} }
+    expect(
+      describeEvent(
+        ev('edited', { scope: 'following', from: { assignee_ids: [6, 5] }, to: { assignee_ids: [5] }, people: { removed: [6, 7], added: [5] } }),
+        names3,
+      ),
+    ).toBe('Assigned Sam Pour to Keg Wash; removed Jake Brewer, Morgan Mash (this and following)')
+    expect(describeEvent(ev('unassigned', { from: [6], to: [], reason: 'left_bar', count: 52 }), names, taproom)).toBe(
+      'Removed Jake Brewer from Keg Wash (left the Taproom) (52 occurrences)',
+    )
+    expect(describeEvent(ev('unassigned', { from: [5, 6], to: [5], reason: 'deactivated' }), names, taproom)).toBe('Removed Jake Brewer from Keg Wash (deactivated)')
+    expect(describeEvent(ev('edited', { scope: 'following', repeat: { to: repeat }, removed: 4, removed_with_notes: 1 }), names)).toMatch(
+      /removed 4 \(1 with their own notes\)$/,
+    )
+  })
+
   it('reads old single-assignee events exactly as before', () => {
     expect(describeEvent(ev('assigned', { from: null, to: 5 }), names)).toBe('Assigned Keg Wash to Sam Pour')
     expect(describeEvent(ev('assigned', { from: 5, to: 6 }), names)).toBe('Reassigned Keg Wash from Sam Pour to Jake Brewer')
@@ -400,6 +417,11 @@ describe('the switcher’s words (D41)', () => {
     const refused = { response: { status: 422, data: { errors: { assignee_id: ['must be a Taproom member'] } } } }
     expect(taskSaveError(refused, { name: 'Taproom' })).toBe('Only members of the Taproom can be assigned')
     expect(taskSaveError(err(422, '/api/boards/bar/tasks', { message: 'Pick a day to repeat' }), { name: 'Taproom' })).toBe('Pick a day to repeat')
+  })
+
+  it('D53 §4.8: a repeat refusal reads as a sentence, without the field name', () => {
+    const refused = { response: { status: 422, data: { errors: { count: ['the series already has 3 dates before this one; choose a larger number'] } } } }
+    expect(taskSaveError(refused, { name: 'Brewery' })).toBe('The series already has 3 dates before this one; choose a larger number')
   })
 
   it('D53: a refused person is named, as the API says', () => {

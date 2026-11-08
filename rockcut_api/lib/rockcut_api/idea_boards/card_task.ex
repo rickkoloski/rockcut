@@ -1,0 +1,22 @@
+defmodule RockcutApi.IdeaBoards.CardTask do
+  @moduledoc """
+  D53 Part 2 §4.7: a task (or repeating series) made from a card by Send to
+  task list. `task_id` and `task_series_id` are nulled when the task or
+  series is deleted (the chip then reads "Removed", lead decisions 3); the
+  `task_title` and `department_id` copies keep it readable. `card_id` is nulled when the card is
+  deleted for good; `card_title` keeps the task's "From idea: <title>".
+  """
+  use Ecto.Schema
+
+  schema "idea_card_tasks" do
+    field :task_title, :string
+    field :card_title, :string
+
+    belongs_to :card, RockcutApi.IdeaBoards.Card
+    belongs_to :task, RockcutApi.Tasks.Task
+    belongs_to :task_series, RockcutApi.Tasks.TaskSeries
+    belongs_to :department, RockcutApi.Accounts.Department
+
+    timestamps(type: :utc_datetime)
+  end
+end
