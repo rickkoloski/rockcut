@@ -67,7 +67,12 @@ defmodule RockcutApiWeb.IdeaBoardControllerTest do
           position: 1
         })
 
-      sent!(remodel, %{task_id: task.id, department_id: d["bar"].id, task_title: task.title})
+      sent!(remodel, %{
+        task_id: task.id,
+        department_id: d["bar"].id,
+        task_title: task.title,
+        card_title: remodel.title
+      })
 
       %{"data" => %{"lists" => lists, "labels" => labels}} =
         get_json(p["bartender1"], "/api/idea_boards/bar/lists")
@@ -148,16 +153,27 @@ defmodule RockcutApiWeb.IdeaBoardControllerTest do
           start_date: ~D[2026-11-11]
         })
 
-      sent!(card, %{task_id: done.id, department_id: bar, task_title: "Done one"})
+      sent!(card, %{
+        task_id: done.id,
+        department_id: bar,
+        task_title: "Done one",
+        card_title: card.title
+      })
 
       sent!(card, %{
         task_id: nil,
         department_id: bar,
         task_title: "Deleted one",
+        card_title: card.title,
         removed_at: ~U[2026-11-07 12:00:00Z]
       })
 
-      sent!(card, %{task_series_id: series.id, department_id: bar, task_title: "Weekly"})
+      sent!(card, %{
+        task_series_id: series.id,
+        department_id: bar,
+        task_title: "Weekly",
+        card_title: card.title
+      })
 
       %{"data" => %{"lists" => lists}} = get_json(p["bartender1"], "/api/idea_boards/bar/lists")
       chips = card_in(lists, card.id)["sent_tasks"]

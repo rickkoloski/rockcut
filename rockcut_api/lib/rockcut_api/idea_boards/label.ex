@@ -2,7 +2,8 @@ defmodule RockcutApi.IdeaBoards.Label do
   @moduledoc """
   D53 Part 2: a board's label. Anyone on the board creates one; renaming and
   deleting are for managers (`Authz`). `color` is a key from a fixed
-  palette; the UI maps it to a color in each theme.
+  palette; the UI maps it to a color in each theme. Names are unique on a
+  board, ignoring case, and trimmed.
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -29,6 +30,9 @@ defmodule RockcutApi.IdeaBoards.Label do
     |> validate_required([:name, :color], message: "can't be blank")
     |> validate_length(:name, max: @max_name)
     |> validate_inclusion(:color, @colors)
-    |> unique_constraint(:name, name: :idea_labels_board_name_index)
+    |> unique_constraint(:name,
+      name: :idea_labels_board_name_index,
+      message: "There's already a label with that name"
+    )
   end
 end

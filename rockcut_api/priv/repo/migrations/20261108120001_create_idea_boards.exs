@@ -6,11 +6,14 @@ defmodule RockcutApi.Repo.Migrations.CreateIdeaBoards do
   # `position` is dense (1, 2, 3, …) within a board's lists and within a
   # list's cards, as on the task boards. Archived lists and cards keep their
   # rows (`archived_at`) until a manager deletes them for good, which
-  # cascades to the card's assignees, labels, checklist, notes and watches.
+  # cascades to the card's assignees, labels, checklist, notes and watches
+  # (not to `idea_card_tasks`: the tasks already sent stay).
   #
   # `idea_card_tasks` records Send to task list (§4.7): `task_id` and
   # `task_series_id` are nulled if the task or series is deleted, and
   # `task_title` and `department_id` keep the chip readable ("Removed").
+  # `card_id` is nulled if the card is deleted for good, and `card_title`
+  # keeps the task's "From idea: <title>" (without a link).
   # `idea_events` is the per-board change log, like `task_events`: `card_id`
   # and `list_id` have no foreign key and `title` is a copy, so a deleted
   # card's history still reads. `idea_watches` and `idea_watch_pending` are
@@ -64,7 +67,10 @@ defmodule RockcutApi.Repo.Migrations.CreateIdeaBoards do
       timestamps(type: :utc_datetime)
     end
 
-    create unique_index(:idea_labels, [:board, :name])
+    # One label per name on a board, ignoring case ("Equipment" = "equipment").
+    create unique_index(:idea_labels, [:board, "lower(name)"],
+             name: :idea_labels_board_name_index
+           )
 
     create table(:idea_card_labels, primary_key: false) do
       add :card_id, references(:idea_cards, on_delete: :delete_all), null: false
@@ -98,7 +104,8 @@ defmodule RockcutApi.Repo.Migrations.CreateIdeaBoards do
     create index(:idea_notes, [:card_id])
 
     create table(:idea_card_tasks) do
-      add :card_id, references(:idea_cards, on_delete: :delete_all), null: false
+      add :card_id, references(:idea_cards, on_delete: :nilify_all)
+      add :card_title, :string, null: false
       add :task_id, references(:tasks, on_delete: :nilify_all)
       add :task_series_id, references(:task_series, on_delete: :nilify_all)
       add :department_id, references(:departments, on_delete: :restrict), null: false
