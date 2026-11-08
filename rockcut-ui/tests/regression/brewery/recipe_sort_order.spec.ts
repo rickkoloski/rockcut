@@ -121,3 +121,93 @@ test('T12: a field definition with Sort Order empty is saved at the end', async 
     ['Flocculation', 4],
   ])
 })
+
+// D55 lead decisions 6, gap 8: Add Category with Sort Order empty (the dialog
+// sends null) was a 500. It saves at the end of the categories; clearing Sort
+// Order on an existing category moves it to the end too.
+test('gap 8: a category with Sort Order empty is saved at the end, on add and on edit', async ({ page }) => {
+  const api = await apiAs('owner')
+  const tag = tempTag('D55 gap8')
+  const made: number[] = []
+  cleanup = async () => {
+    for (const id of made) await api.delete(`/api/ingredient_categories/${id}`)
+  }
+  type Cat = { id: number; name: string; sort_order: number }
+  const all = async () => (await (await api.get('/api/ingredient_categories')).json()).data as Cat[]
+
+  await page.goto('/ingredients/categories')
+  await page.getByTestId('settings-add-button').click()
+  let dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Name').fill(tag)
+  await expect(dialog.getByLabel('Sort Order')).toHaveValue('')
+  const created = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().endsWith('/api/ingredient_categories'),
+  )
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  const res = await created
+  expect(res.status()).toBe(201)
+  const cat = (await res.json()).data as Cat
+  made.push(cat.id)
+  await expect(dialog).toHaveCount(0)
+
+  // Persist-verify: after a reload it's listed, stored after every other category.
+  await page.reload()
+  await expect(page.getByText(tag, { exact: true })).toBeVisible()
+  let cats = await all()
+  let mine = cats.find((c) => c.id === cat.id)!
+  for (const c of cats) if (c.id !== cat.id) expect(c.sort_order).toBeLessThan(mine.sort_order)
+
+  // Edit: put it at 0, then clear Sort Order: back to the end.
+  expect((await api.put(`/api/ingredient_categories/${cat.id}`, { data: { sort_order: 0 } })).status()).toBe(200)
+  await page.goto(`/ingredients/categories/${cat.id}`)
+  await page.getByRole('button', { name: 'Edit Category' }).click()
+  dialog = page.getByRole('dialog')
+  await expect(dialog.getByLabel('Sort Order')).toHaveValue('0')
+  await dialog.getByLabel('Sort Order').fill('')
+  const updated = page.waitForResponse(
+    (r) => r.request().method() === 'PUT' && r.url().endsWith(`/api/ingredient_categories/${cat.id}`),
+  )
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  expect((await updated).status()).toBe(200)
+  await expect(dialog).toHaveCount(0)
+
+  await page.reload()
+  cats = await all()
+  mine = cats.find((c) => c.id === cat.id)!
+  for (const c of cats) if (c.id !== cat.id) expect(c.sort_order).toBeLessThan(mine.sort_order)
+})
+
+// D55 lead decisions 6, gap 10: a brand, recipe, ingredient or batch URL that
+// names nothing says "<thing> not found" with a link back, as T10 does for
+// categories (it spun forever).
+test('gap 10: a missing brand, recipe, ingredient or batch says "not found" with a link back', async ({ page }) => {
+  const api = await apiAs('owner')
+  const tag = tempTag('D55 gap10')
+  const res = await api.post('/api/brands', { data: { name: tag } })
+  expect(res.status(), await res.text()).toBe(201)
+  const brand = (await res.json()).data as { id: number }
+  cleanup = async () => {
+    await api.delete(`/api/brands/${brand.id}`)
+  }
+
+  for (const [path, testId, text, link, back] of [
+    ['/brands/999999', 'brand-not-found', 'Brand not found', 'Back to Brands', /\/brands$/],
+    ['/brands/99999999999999999999', 'brand-not-found', 'Brand not found', 'Back to Brands', /\/brands$/],
+    ['/brands/abc', 'brand-not-found', 'Brand not found', 'Back to Brands', /\/brands$/],
+    [
+      `/brands/${brand.id}/recipes/999999`,
+      'recipe-not-found',
+      'Recipe not found',
+      'Back to the brand',
+      new RegExp(`/brands/${brand.id}$`),
+    ],
+    ['/ingredients/999999', 'ingredient-not-found', 'Ingredient not found', 'Back to Ingredients', /\/ingredients$/],
+    ['/batches/999999', 'batch-not-found', 'Batch not found', 'Back to Batches', /\/batches$/],
+  ] as const) {
+    await page.goto(path)
+    const box = page.getByTestId(testId)
+    await expect(box, path).toContainText(text)
+    await box.getByRole('link', { name: link }).click()
+    await expect(page).toHaveURL(back)
+  }
+})

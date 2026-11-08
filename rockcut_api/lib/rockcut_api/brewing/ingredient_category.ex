@@ -14,7 +14,7 @@ defmodule RockcutApi.Brewing.IngredientCategory do
 
   def changeset(category, attrs) do
     category
-    |> cast(attrs, [:name, :sort_order])
+    |> cast(RockcutApi.Changeset.blank_to_nil(attrs, :sort_order), [:name, :sort_order])
     |> validate_required([:name])
     |> unique_constraint(:name)
   end

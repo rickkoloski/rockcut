@@ -11,7 +11,9 @@ defmodule RockcutApi.MissingParentSweepTest do
   fails here. A field no changeset casts is set by the context from a row it
   already loaded, so input can't name a missing parent there.
   """
-  use RockcutApi.DataCase, async: true
+  # Not async: "a parent that exists" inserts a department, and SQLite's one
+  # writer can be busy with another async test ("Database busy").
+  use RockcutApi.DataCase, async: false
 
   @missing [12_345, 0, -1]
 
@@ -86,6 +88,19 @@ defmodule RockcutApi.MissingParentSweepTest do
     assert failures == [],
            "No \"does not exist\" error (the write would 500 on SQLite):\n" <>
              Enum.join(failures, "\n")
+  end
+
+  # Lead decisions 6, gap 11: the wrong type is an error on the field (the
+  # cast's "is invalid"), never a raise, and validate_parents leaves it be.
+  test "a wrong-typed parent is an error on that field, for every writable belongs_to" do
+    failures =
+      for {schema, {fun, arity}, field} <- writable(),
+          value <- ["abc", "12abc", 1.5, true, [], %{}],
+          cs = run(schema, {fun, arity}, %{field => value}),
+          not Keyword.has_key?(cs.errors, field),
+          do: "#{inspect(schema)}.#{fun}/#{arity} #{field}=#{inspect(value)}"
+
+    assert failures == [], "No error on the field:\n" <> Enum.join(failures, "\n")
   end
 
   test "a parent that exists passes" do

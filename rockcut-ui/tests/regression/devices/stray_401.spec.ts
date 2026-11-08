@@ -22,6 +22,20 @@ async function stray401(page: Page) {
   return done
 }
 
+/**
+ * goto that tolerates the app's own navigation winning the race (lead
+ * decisions 6, the T4 flake): with an ended token, a background poll can 401
+ * first and the app moves to the login or unpaired page, which aborts this
+ * goto (`net::ERR_ABORTED`). The test then checks where the page ended up.
+ */
+async function gotoEnded(page: Page, path: string) {
+  try {
+    await page.goto(path)
+  } catch (e) {
+    if (!/ERR_ABORTED|frame was detached|interrupted by another navigation/i.test(String(e))) throw e
+  }
+}
+
 const storedToken = (page: Page) => page.evaluate(() => localStorage.getItem('rockcut_token'))
 
 test.describe('taproomDevice', () => {
@@ -50,6 +64,57 @@ test.describe('taproomDevice', () => {
     await page.reload()
     await expect(page.getByTestId('device-chip')).toContainText('Shared device · Taproom')
     await expect(page.getByRole('heading', { name: 'All-staff' })).toBeVisible()
+  })
+})
+
+// Lead decisions 6, gap 2: mid-session, when the 401's /api/me recheck can't
+// reach the server, the tablet stays paired, shows "Can't reach the server,
+// retrying…", rechecks, and when /api/me answers again the failed view loads
+// with no navigation. Route-mocked in this page only (QA's q2d), no writes.
+test.describe('taproomDevice, server down mid-session', () => {
+  test.use({ storageState: authFile('taproomDevice') })
+
+  test('gap 2: /api/beer_board 401 with /api/me 503, then 200: banner, then the board loads', async ({ page }) => {
+    test.setTimeout(90_000)
+    await page.goto('/')
+    await expect(page.getByTestId('device-chip')).toBeVisible()
+    const token = await storedToken(page)
+
+    let meCalls = 0
+    await page.route('**/api/beer_board', (route) =>
+      route.fulfill({ status: 401, contentType: 'application/json', body: '{"error":"Unauthorized"}' }),
+    )
+    await page.route('**/api/me', (route) => {
+      meCalls++
+      return route.fulfill({ status: 503, contentType: 'application/json', body: '{"errors":{"detail":"Service Unavailable"}}' })
+    })
+
+    // Client-side, so the start-up /api/me isn't involved (the nav's Taproom
+    // section opens first if it's closed).
+    const navLink = page.getByRole('button', { name: 'Buy-a-Beer Board' })
+    if (!(await navLink.isVisible())) await page.getByRole('button', { name: 'Taproom', exact: true }).click()
+    await navLink.click()
+    await expect(page).toHaveURL(/\/taproom\/beer-board$/)
+    await expect(page.getByTestId('server-unreachable')).toContainText('Can’t reach the server, retrying…')
+    await expect(page.getByText("Couldn't load the board.")).toBeVisible()
+    // It rechecks on start-up's schedule (every 10 s), still paired.
+    const before = meCalls
+    await expect.poll(() => meCalls, { timeout: 25_000 }).toBeGreaterThan(before)
+    expect(await storedToken(page)).toBe(token)
+    await expect(page.getByTestId('device-unpaired-notice')).toHaveCount(0)
+
+    // The server's back: the next recheck clears the banner and the board loads.
+    await page.unroute('**/api/beer_board')
+    await page.unroute('**/api/me')
+    const board = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/beer_board' && r.status() === 200, {
+      timeout: 25_000,
+    })
+    await board
+    await expect(page.getByTestId('server-unreachable')).toHaveCount(0)
+    await expect(page.getByText("Couldn't load the board.")).toHaveCount(0)
+    await expect(page.getByTestId('board-grid')).toBeVisible()
+    await expect(page).toHaveURL(/\/taproom\/beer-board$/)
+    expect(await storedToken(page)).toBe(token)
   })
 })
 
@@ -93,7 +158,7 @@ test.describe('the token really ended', () => {
     const tokenId = (await getDevice(owner, device.id))!.tokens[0].id
     expect((await owner.delete(`/api/device_tokens/${tokenId}`)).status()).toBe(204)
 
-    await tablet.page.goto('/messages/all')
+    await gotoEnded(tablet.page, '/messages/all')
     await expectUnpaired(tablet.page)
     // Persist-verify: still unpaired after a reload.
     await tablet.page.reload()
@@ -110,7 +175,7 @@ test.describe('the token really ended', () => {
     const owner = await apiAs('owner')
     expect((await owner.patch(`/api/users/${person.id}`, { data: { active: false } })).status()).toBe(200)
 
-    await page.goto('/messages/all')
+    await gotoEnded(page, '/messages/all')
     await expect(page.getByTestId('login-password')).toBeVisible()
     expect(await storedToken(page)).toBeNull()
     await context.close()

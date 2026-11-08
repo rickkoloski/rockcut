@@ -31,6 +31,18 @@ test.describe('taproomDevice', () => {
     })
   }
 
+  // Lead decisions 6, gap 4: an unknown channel is "Page not found"; a real
+  // channel the Taproom tablet can't open stays "Not available".
+  test('gap 4: /messages/nope is "Page not found"; /messages/dept:brewery is "Not available"', async ({ page }) => {
+    await page.goto('/messages/nope')
+    await expect(page.getByTestId('page-not-found')).toContainText('Page not found')
+    await expect(page.getByTestId('device-not-available')).toHaveCount(0)
+
+    await page.goto('/messages/dept:brewery')
+    await expect(page.getByTestId('device-not-available')).toBeVisible()
+    await expect(page.getByTestId('page-not-found')).toHaveCount(0)
+  })
+
   // Lead decisions 1, item 2: D53's Boards are in the tablet's routes (view
   // only: its home board and Company). A seeded card, read with the tablet's
   // own token, so nothing is written.

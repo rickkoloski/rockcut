@@ -150,7 +150,8 @@ defmodule RockcutApi.Accounts do
   def create_user(attrs, %User{} = actor) do
     attrs = stringify(attrs)
     temp_password = generate_temp_password()
-    desired = attrs["memberships"] || []
+    # Left out = no roles; `null` is malformed, as on update (lead decisions 6, gap 7).
+    desired = Map.get(attrs, "memberships", [])
 
     reg_attrs = %{
       "email" => attrs["email"],
@@ -539,14 +540,26 @@ defmodule RockcutApi.Accounts do
     do: {:error, {:invalid_membership, "must be a list"}}
 
   defp resolve_desired(entries) do
-    Enum.reduce_while(entries, {:ok, []}, fn
+    entries
+    |> Enum.reduce_while({:ok, []}, fn
       entry, {:ok, acc} when is_map(entry) ->
         resolve_entry(stringify(entry), acc)
 
       _entry, _acc ->
         {:halt, {:error, {:invalid_membership, "each entry needs a department and a role"}}}
     end)
+    |> refuse_duplicates()
   end
+
+  # One department named twice (by key or id, any roles) is malformed: which
+  # role was meant? It was silently the first (lead decisions 6, gap 6).
+  defp refuse_duplicates({:ok, desired}) do
+    if Enum.uniq_by(desired, fn {dept, _role} -> dept.id end) == desired,
+      do: {:ok, desired},
+      else: {:error, {:invalid_membership, "names a department more than once"}}
+  end
+
+  defp refuse_duplicates(error), do: error
 
   defp resolve_entry(entry, acc) do
     role = entry["role"]

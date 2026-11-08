@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Paper,
   Typography,
@@ -23,8 +23,8 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import CategoryFormDialog from './CategoryFormDialog';
 import FieldDefinitionDialog from './FieldDefinitionDialog';
 import parseApiError from '../../lib/parseApiError';
-
-const httpStatus = (err: unknown) => (err as { response?: { status?: number } } | null)?.response?.status;
+import ItemNotFound from '../../components/ItemNotFound';
+import { httpStatus, retryUnless404 } from '../../lib/notFound';
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -34,8 +34,7 @@ export default function CategoryDetail() {
     ['ingredient_category', Number(id)],
     `/api/ingredient_categories/${id}`,
     undefined,
-    // A 404 won't change on a retry.
-    { retry: (count, err) => httpStatus(err) !== 404 && count < 1 },
+    { retry: retryUnless404 },
   );
 
   const deleteCategoryMutation = useApiDelete(
@@ -59,19 +58,12 @@ export default function CategoryDetail() {
   // instead of spinning.
   if (!category && httpStatus(error) === 404) {
     return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
-        <Paper data-testid="category-not-found" variant="outlined" sx={{ p: 4, maxWidth: 440, textAlign: 'center' }}>
-          <Typography variant="h5" gutterBottom>
-            Category not found
-          </Typography>
-          <Typography color="text.secondary" sx={{ mb: 3 }}>
-            It doesn't exist, or it was deleted.
-          </Typography>
-          <Button variant="contained" component={RouterLink} to="/ingredients/categories">
-            Back to Ingredient categories
-          </Button>
-        </Paper>
-      </Box>
+      <ItemNotFound
+        what="Category"
+        backTo="/ingredients/categories"
+        backLabel="Back to Ingredient categories"
+        testId="category-not-found"
+      />
     );
   }
 

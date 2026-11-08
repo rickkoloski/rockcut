@@ -34,6 +34,24 @@ defmodule RockcutApi.Changeset do
     end)
   end
 
+  @doc """
+  D55 lead decisions 6 (gap 9): `attrs` with a blank string under `field`
+  (atom or string key) replaced by nil. Ecto casts a blank string to the
+  field's schema default (`sort_order` 0, the top), but `""` means "not set",
+  like `null`.
+  """
+  def blank_to_nil(attrs, field) when is_map(attrs) and is_atom(field) do
+    key = Atom.to_string(field)
+
+    Map.new(attrs, fn
+      {k, v} when (k == field or k == key) and is_binary(v) ->
+        if String.trim(v) == "", do: {k, nil}, else: {k, v}
+
+      kv ->
+        kv
+    end)
+  end
+
   defp parent_exists?(%Changeset{data: %schema{}}, field, value) do
     %BelongsTo{related: related, related_key: key} = parent(schema, field)
 

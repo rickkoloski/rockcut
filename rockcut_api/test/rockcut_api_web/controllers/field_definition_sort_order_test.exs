@@ -69,4 +69,17 @@ defmodule RockcutApiWeb.FieldDefinitionSortOrderTest do
 
     assert stored(a["id"]) == 1
   end
+
+  # Lead decisions 6, gap 9: "" is "not set", like null (it saved 0, the top).
+  test "\"\" is the end too, on create and update", c do
+    a = create(c, "Attenuation", %{sort_order: 3})["data"]
+    blank = create(c, "Flocculation", %{sort_order: ""})["data"]
+    assert stored(blank["id"]) == 4
+
+    c.conn
+    |> put("/api/category_field_definitions/#{a["id"]}", Jason.encode!(%{sort_order: ""}))
+    |> json_response(200)
+
+    assert stored(a["id"]) == 5
+  end
 end

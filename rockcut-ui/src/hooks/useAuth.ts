@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import api, { PASSWORD_RESET_EVENT } from '../lib/api'
+import api, { PASSWORD_RESET_EVENT, SERVER_BACK_EVENT, SERVER_DOWN_EVENT } from '../lib/api'
+import queryClient from '../lib/queryClient'
 import type { Me, User, Capabilities, IdeaBoardEntry, TaskBoardEntry } from '../lib/types'
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
 import {
@@ -32,6 +33,8 @@ interface AuthState {
   error: string | null
   /** /api/me failed on the network or with a 5xx: the token is kept and loadMe is retried (DEV pass 1 G1). */
   unreachable: boolean
+  /** D55 gap 2: mid-session, a 401's /api/me recheck couldn't reach the server; App rechecks and shows a banner. */
+  serverDown: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   /** `force` (Try now, back online) replaces a check that's still waiting on a stalled connection. */
@@ -79,6 +82,7 @@ const useAuth = create<AuthState>((set, get) => ({
   isLoading: false,
   error: null,
   unreachable: false,
+  serverDown: false,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null })
@@ -231,6 +235,16 @@ const useAuth = create<AuthState>((set, get) => ({
 window.addEventListener(PASSWORD_RESET_EVENT, () => {
   const { user } = useAuth.getState()
   if (user && !user.must_reset_password) useAuth.setState({ user: { ...user, must_reset_password: true } })
+})
+
+// D55 lead decisions 6 (gap 2): a 401's /api/me recheck couldn't reach the
+// server. App shows "Can't reach the server, retrying…" and rechecks; when it
+// answers again, the banner goes and every query on screen loads again (the
+// failed view recovers without navigating).
+window.addEventListener(SERVER_DOWN_EVENT, () => useAuth.setState({ serverDown: true }))
+window.addEventListener(SERVER_BACK_EVENT, () => {
+  useAuth.setState({ serverDown: false })
+  void queryClient.invalidateQueries()
 })
 
 export default useAuth

@@ -1,8 +1,9 @@
 defmodule RockcutApiWeb.ParamIdsTest do
   @moduledoc """
   D55 §2.11 item 2: an out-of-range id in the body or the query is 422 on that
-  key (it was a 500 from the database driver), and nothing is saved. Junk
-  (`"abc"`) keeps the route's own answer; `before_id` keeps D38's rule.
+  key (it was a 500 from the database driver), and nothing is saved. Lead
+  decisions 6 (gap 11): a wrong-typed one (`"abc"`, `1.5`, `true`, `[]`, `{}`)
+  is 422 "is invalid". `before_id` keeps D38's rule.
   """
   use RockcutApiWeb.ConnCase, async: false
 
@@ -68,9 +69,9 @@ defmodule RockcutApiWeb.ParamIdsTest do
           {:post, "/api/production/batches", %{template_id: @huge}, "template_id"},
           {:post, "/api/production/cips", %{tank_id: @huge, on: "2026-11-10"}, "tank_id"},
           {:post, "/api/production/steps/move", %{ids: [1, @huge], days: 1}, "ids"},
+          # Lead decisions 6, gap 7: nested, so on the top-level key.
           {:post, "/api/users",
-           %{email: "n@rockcut-test.com", memberships: [%{department_id: @huge}]},
-           "department_id"}
+           %{email: "n@rockcut-test.com", memberships: [%{department_id: @huge}]}, "memberships"}
         ] do
       assert {422, %{"errors" => %{^key => ["is out of range"]}}} = req(owner, verb, path, body),
              "#{verb} #{path} #{key}"
@@ -89,11 +90,29 @@ defmodule RockcutApiWeb.ParamIdsTest do
     end
   end
 
-  test "junk and in-range ids aren't the plug's: the route answers as before", %{owner: owner} do
-    for body <- [%{brand_id: "abc"}, %{brand_id: "12abc"}] do
-      {status, resp} = req(owner, :post, "/api/recipes", Map.put(body, :batch_size, 15))
-      assert status == 422, inspect(body)
-      refute resp["errors"]["brand_id"] == ["is out of range"]
+  # Lead decisions 6, gap 11: the wrong type is the plug's 422 "is invalid"
+  # (it was a 500 where a controller read the id first, or silently ignored).
+  # An in-range integer, however odd, is still the route's.
+  test "a wrong-typed id is 422 \"is invalid\"; in-range integers are the route's",
+       %{owner: owner} do
+    for bad <- ["abc", "12abc", 1.5, true, [], %{}, [1]] do
+      assert {422, %{"errors" => %{"brand_id" => ["is invalid"]}}} =
+               req(owner, :post, "/api/recipes", %{brand_id: bad, batch_size: 15}),
+             inspect(bad)
+    end
+
+    for good <- [0, -1, 12_345, "12345"] do
+      {status, resp} = req(owner, :post, "/api/recipes", %{brand_id: good, batch_size: 15})
+      assert status == 422, inspect(good)
+      assert resp["errors"]["brand_id"] == ["does not exist"], inspect(good)
+    end
+  end
+
+  test "ids keys take a list of ids", %{owner: owner} do
+    for bad <- ["1,2", 5, %{}, [1, "x"], [[1]]] do
+      assert {422, %{"errors" => %{"ids" => ["is invalid"]}}} =
+               req(owner, :post, "/api/shifts/publish", %{ids: bad}),
+             inspect(bad)
     end
   end
 

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
   Button,
+  Alert,
   CircularProgress,
   Grid,
   IconButton,
@@ -23,6 +24,9 @@ import { useFormulaFunctions } from '../../hooks/useFormulaFunctions';
 import BrandFormDialog from './BrandFormDialog';
 import RecipeFormDialog from '../recipes/RecipeFormDialog';
 import type { Brand, Recipe } from '../../lib/types';
+import ItemNotFound from '../../components/ItemNotFound';
+import { httpStatus, retryUnless404 } from '../../lib/notFound';
+import parseApiError from '../../lib/parseApiError';
 
 const recipeColumns: ExtendedGridColDef[] = [
   { field: 'version', headerName: 'Version', width: 100, valueGetter: (_value: unknown, row: Recipe) => `${row.version_major}.${row.version_minor}` },
@@ -44,9 +48,11 @@ export default function BrandDetail() {
   const navigate = useNavigate();
   const brandId = Number(id);
 
-  const { data: brand, isLoading: brandLoading } = useApiQuery<Brand>(
+  const { data: brand, isLoading: brandLoading, error: brandError } = useApiQuery<Brand>(
     ['brand', brandId],
     `/api/brands/${id}`,
+    undefined,
+    { retry: retryUnless404 },
   );
 
   const { data: recipes = [], isLoading: recipesLoading } = useApiQuery<Recipe[]>(
@@ -65,6 +71,15 @@ export default function BrandDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // D55 lead decisions 6 (gap 10): a brand that doesn't exist says so.
+  if (!brand && httpStatus(brandError) === 404) {
+    return <ItemNotFound what="Brand" backTo="/brands" backLabel="Back to Brands" testId="brand-not-found" />;
+  }
+
+  if (!brand && brandError) {
+    return <Alert severity="error">{parseApiError(brandError)}</Alert>;
+  }
 
   if (brandLoading || !brand) {
     return <CircularProgress />;

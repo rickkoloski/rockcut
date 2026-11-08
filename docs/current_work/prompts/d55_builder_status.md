@@ -489,3 +489,203 @@ files.
 - `tests/regression/app/parser_errors.spec.ts:14` (T7, 400) and `:32` (T7, 413; same cause)
 - `tests/regression/brewery/recipe_sort_order.spec.ts:16` (T9), `:71` (T10), `:83` (T12)
 - `tests/regression/devices/device_signout.spec.ts:21` (G4)
+
+## Lead decisions 6 done (DEV fix cycle 1)
+
+Every item in `d55_lead_decisions_6.md` "Fix in this cycle". Revert checks for API fixes ran in a
+scratch copy (`rsync` of `rockcut_api`, test DB migrated there, deleted after); the UI one in a
+scratch copy of `rockcut-ui` with `node_modules` linked. The dev servers never saw reverted code. No
+servers, no Playwright, no `mix ecto.*` on the dev DB, no `mix compile --force`.
+
+### Gate
+
+- `mix test`: **2182 passed** (was 2163; +19).
+- `mix compile --warnings-as-errors` (incremental): clean. `mix format --check-formatted` on every
+  changed file: clean. `ingredient_category.ex` is legacy-unformatted: one line edited, not formatted.
+- Vitest **242** (was 232; +10), `tsc -b` clean, lint 26 errors + 1 warning (unchanged).
+
+### 1. Gaps 8 and 9: Sort Order on categories; `""` everywhere
+
+- **Cause (gap 8):** `IngredientCategory` had no end rule. `sort_order: null` cast to nil and hit
+  the NOT NULL column: `Ecto.ConstraintError`, a 500.
+- **Cause (gap 9):** Ecto casts a blank string to the field's **schema default** (`sort_order` 0),
+  not to nil. So `""` saved 0 on create, and on update it was a change to 0.
+- **Fix:**
+  - New `RockcutApi.Changeset.blank_to_nil(attrs, field)`: a blank string under the field becomes
+    nil before the cast. Used for `sort_order` in `IngredientCategory`, `RecipeIngredient` and
+    `CategoryFieldDefinition`.
+  - `Brewing.create/update_ingredient_category` use the shared `put_end_sort_order`, with a nil
+    parent meaning the whole table. Create starts from `sort_order: nil`, as for the other two.
+  - The rule is now the same in all three: null, `""` or left out on create = the end; null or `""`
+    on update = the end; left out of an update = stays.
+- **The UI** already sent `null` for an empty field (Add and Edit). No change needed.
+- **Tests:**
+  - New `controllers/ingredient_category_sort_order_test.exs` (5 tests).
+  - A `""` test in each of `field_definition_sort_order_test` and `recipe_ingredient_sort_order_test`.
+  - Playwright `brewery/recipe_sort_order.spec.ts:128`: Add Category with Sort Order empty, then
+    set it to 0 and clear it in Edit Category; both persist-verified to be after every other category.
+- **Revert** (the four lib files back to HEAD): 5 of 18 fail. These are the three category tests
+  that use null or `""`, and the two `""` tests.
+
+### 2. Gap 11: a wrong-typed id is 422, never 500, never ignored
+
+- **Cause:** some controllers read an id before any changeset:
+  - `Scheduling.department_for_position/1` called `String.to_integer("abc")` and had no clause for
+    `1.5`, `true`, `[]` or `{}`. That raised, a 500.
+  - `TimeOff`/`Availability` `to_user_id/1` had no clause for those shapes either (a 500), and read
+    `"abc"` as nil, so the request was created for the caller.
+  - `CalendarFeedController.normalize_id` raised the same way.
+- **Fix, where it holds for every id field:** the `ParamIds` plug, which already sat at the end of
+  both signed-in pipelines.
+  - A value under `id`, `*_id`, `ids` or `*_ids`, at any depth, must be nil, `""`, an integer, or a
+    string of digits. `ids`/`*_ids` must be a list of those.
+  - Anything else is **422 `{"<key>": ["is invalid"]}`** before a controller runs.
+  - Out of range is still "is out of range".
+  - In-range integers (`0`, `-1`, a missing row) are still the route's, e.g. 422 "does not exist"
+    (T14). `before_id` is still exempt.
+- **Changed (gap 7, 2nd half):** an id nested inside another value is reported on the **top-level
+  key**. So `memberships: [{department_id: <huge>}]` is now `{"memberships": ["is out of range"]}`.
+- **Tests:**
+  - New `wrong_type_ids_sweep_test.exs` (the new sweep the lead asked for):
+    - Every signed-in write route from the router (≥150), × the 5 shapes, with every
+      schema-derived parent key in the body. As the owner, and as `taproomDevice` (DeviceGate's 403
+      excepted). Always 422 "is invalid".
+    - Every parent key (schemas' `belongs_to` plus `user_id`, `id`, `ids`) × the 5 shapes alone →
+      422 on that key.
+    - QA's cases (shift `position_id`; time off and availability `user_id`, `"abc"` included), with
+      nothing saved.
+    - A new route or `*_id` field is swept the day it's added.
+  - `missing_parent_sweep_test`: a new test, every writable `belongs_to` changeset given the wrong
+    shapes gives an error on the field, no raise. It passes with or without the fix; it guards the
+    changeset layer.
+  - `param_ids_test`: new "ids keys take a list of ids" test.
+- **Revert** (old `ParamIds`): 6 fail:
+  - all three sweep tests
+  - "ids keys take a list of ids"
+  - the out-of-range body test (memberships key)
+  - the new memberships `department_id` test
+- **Existing tests changed (shape, as the lead's decisions 6 asks):**
+  - `param_ids_test` "body ids past the range": the memberships case now expects the key
+    `memberships` (was `department_id`). Gap 7.
+  - `param_ids_test` "junk and in-range ids aren't the plug's" is rewritten as "a wrong-typed id is
+    422 'is invalid'; in-range integers are the route's" (`"abc"`, `"12abc"`, `1.5`, `true`, `[]`,
+    `{}`, `[1]` → "is invalid"; `0`, `-1`, `12345`, `"12345"` → "does not exist"). Its old meaning
+    was "junk isn't the plug's", which decisions 6 reverses.
+  - `missing_parent_sweep_test` is now `async: false`. Its one insert hit SQLite "Database busy"
+    against another async writer in the full run. Same meaning.
+- The controller-side `String.to_integer` calls are left as they are: the plug now refuses
+  anything they'd raise on. **LEAD:** say if you'd also like them hardened (belt and braces).
+
+### 3. Gap 2: `/api/me` down mid-session
+
+- **Cause:** after a stray 401, `askMe` reduced every answer to "401 or not". A 5xx, offline or
+  timeout was "not ended" and nothing more. Only start-up's `loadMe` had the banner and the retry.
+- **Fix:**
+  - `src/lib/api.ts`: `askMe` returns `'ended' | 'unreachable' | 'ok'`. Unreachable means a network
+    error, a timeout or a 5xx; any other answer (200, 404, 403, …) still keeps the token, as QA
+    checked.
+  - When `checkTokenEnded` gets "unreachable", it dispatches `SERVER_DOWN_EVENT` once. The first
+    check after that which gets an answer dispatches `SERVER_BACK_EVENT`. A 401 still unpairs or
+    signs out.
+  - New `recheckServer()` re-asks with the current token.
+  - `useAuth` holds `serverDown`. On BACK it clears it and calls `queryClient.invalidateQueries()`,
+    so the failed view refetches with no navigation and no reload.
+  - `App.tsx` shows a warning banner over the page ("Can’t reach the server, retrying…", same
+    `data-testid="server-unreachable"` as start-up, with Try now). It calls `recheckServer` through
+    the same `useReconnect` as start-up: every 10 s, and at once when the browser comes back online.
+- **Tests:**
+  - Vitest `lib/api.test.ts`, 5 new tests:
+    - network and 503: DOWN once; still down; 200 → BACK; then nothing.
+    - a 401 while down still unpairs.
+    - 404 or 403 is an answer, not "down".
+    - no token, no check.
+  - Playwright `devices/stray_401.spec.ts:77` (taproomDevice):
+    - Route-mocks `/api/beer_board` 401 and `/api/me` 503, then opens Buy-a-Beer client-side.
+    - Expects the banner and "Couldn't load the board.", at least one more `/api/me` within 25 s,
+      and the token kept.
+    - Then unroutes both: the board's 200 arrives, the banner and the error go, and the URL stays
+      the same.
+- **Revert** (`api.ts` at HEAD, scratch copy): 4 of the 5 new Vitest tests fail. The 404/403 one is
+  a guard and passes either way.
+
+### 4. Gaps 6 and 7: memberships
+
+- **Gap 6:** `resolve_desired` now ends with `refuse_duplicates`. One department named twice, by key
+  or by id and with any roles, is `{:invalid_membership, "names a department more than once"}`, a
+  422 on `memberships` on both create and update. The UI never sends one: it builds one entry per
+  department.
+- **Gap 7:**
+  - `create_user` takes `Map.get(attrs, "memberships", [])`, so `null` reaches the "must be a list"
+    check, as on update. Left out is still no roles.
+  - The out-of-range `department_id` is the `ParamIds` change (item 2).
+- **Tests** (`user_memberships_malformed_test`):
+  - `null` is added to the POST shapes, as owner and as manager.
+  - New: "memberships left out → 201, no roles".
+  - New: "a department named twice" (3 shapes × PUT and POST, nothing saved, existing role kept).
+  - New: "an out-of-range department_id inside memberships → 422 on memberships".
+- **Revert** (`accounts.ex` at HEAD): the 2 null-on-POST tests and the twice test fail (3 of 21).
+
+### 5. Gap 10: missing brand, recipe, ingredient or batch
+
+- **Cause:** each detail page showed a spinner until the row arrived; the ingredient page showed
+  nothing at all. A 404 was retried, then left as an error nobody rendered.
+- **Fix:**
+  - New `src/components/ItemNotFound.tsx`: the "Category not found" panel, made general.
+  - New `src/lib/notFound.ts`: `httpStatus` and `retryUnless404`, which never retries a 404 and
+    retries anything else once, as before.
+  - `CategoryDetail` now uses both (same text, same test id). `BrandDetail`, `RecipeDetail`,
+    `IngredientDetail` and `BatchDetail` follow the same pattern:
+    - a 404 shows "<Brand|Recipe|Ingredient|Batch> not found" with a link back (Brands, the brand,
+      Ingredients, Batches).
+    - any other error shows its `parseApiError` alert.
+    - a load still shows the spinner.
+  - Lots have no page of their own (only a dialog on the ingredient), so there was nothing to fix
+    there.
+- **Tests:**
+  - Vitest `lib/notFound.test.ts` (3 tests).
+  - Playwright `brewery/recipe_sort_order.spec.ts:183`: `/brands/999999`, the 20-digit id,
+    `/brands/abc`, a real brand's `/recipes/999999`, `/ingredients/999999` and `/batches/999999`.
+    Each says "not found" and its link goes back.
+  - Vitest runs in node with no component rendering here, so the pages' wiring is checked by the
+    Playwright case only. Its revert check waits for your run.
+
+### 6. Gap 4: tablet, unknown channel
+
+- `Messages.tsx`: on a tablet, an unknown channel key shows `<NotFound />` ("Page not found") unless
+  it has a real channel's shape, which keeps "Not available". New `src/lib/channels.ts`
+  `isChannelKey` defines the shape as `all`, `managers` or `dept:<lowercase key>`.
+- The tablet can't list departments, and the API answers 403 for an unknown channel and a forbidden
+  one alike. So a well-formed `dept:nope` still says "Not available". **LEAD:** fine, or should the
+  API 404 unknown keys? That would change the D36 answer for people too.
+- **Tests:**
+  - Vitest `lib/channels.test.ts` (2 tests).
+  - Playwright `devices/unknown_url.spec.ts:36`: `/messages/nope` shows "Page not found";
+    `/messages/dept:brewery` on the Taproom tablet shows "Not available".
+
+### 7. Gap 13 (part): notification read
+
+- `Notifications.mark_read/2` returns `{:error, :not_found}` unless it updated exactly one of the
+  caller's own rows. The controller answers 404 `{"errors":{"detail":"Not found"}}`, the fallback's
+  body.
+- Someone else's notification is also 404, and it stays unread.
+- `NotificationBell` no longer leaves an unhandled rejection if a read 404s; it refreshes the list
+  either way.
+- **Test:** `notification_controller_test` "missing or someone else's → 404", with 3 missing ids
+  (including 2³¹ and 2⁶³−1) and another person's notification. **Revert:** it fails (1 of 4).
+
+### 8. The T4 flake (and T3)
+
+- **Cause:** with an ended token, a background poll on the page could 401 first. The app then
+  navigated to the login page (or the unpaired one) while the test's `page.goto('/messages/all')`
+  was still in flight, which aborted it (`net::ERR_ABORTED`).
+- **Fix:** `stray_401.spec.ts` gains `gotoEnded(page, path)`. It ignores only an aborted, detached or
+  interrupted navigation, and the test then asserts where the page ended up, as before. T3 (`:151`)
+  had the same race and uses it too.
+
+### For the lead to rerun
+
+- `tests/regression/brewery/recipe_sort_order.spec.ts:128` (gap 8), `:183` (gap 10)
+- `tests/regression/devices/stray_401.spec.ts:77` (gap 2), `:151` (T3), `:169` (T4)
+- `tests/regression/devices/unknown_url.spec.ts:36` (gap 4)
+- Worth a full `devices/` and `brewery/` pass. The `ParamIds` change affects every write, though the
+  sweep found no route that sends a non-numeric id, and neither did a search of the UI.

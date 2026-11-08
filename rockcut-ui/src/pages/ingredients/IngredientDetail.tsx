@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Paper, Typography, Grid, Box, Button, IconButton, Tooltip } from '@mui/material'
+import { Paper, Typography, Grid, Box, Button, IconButton, Tooltip, Alert, CircularProgress } from '@mui/material'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import type { GridColDef } from '@mui/x-data-grid'
@@ -13,6 +13,9 @@ import StatusChip from '../../components/StatusChip'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import IngredientFormDialog from './IngredientFormDialog'
 import IngredientLotDialog from './IngredientLotDialog'
+import ItemNotFound from '../../components/ItemNotFound'
+import { httpStatus, retryUnless404 } from '../../lib/notFound'
+import parseApiError from '../../lib/parseApiError'
 
 export default function IngredientDetail() {
   const { id } = useParams()
@@ -24,9 +27,11 @@ export default function IngredientDetail() {
 
   const ingredientId = Number(id)
 
-  const { data: ingredient } = useApiQuery<Ingredient>(
+  const { data: ingredient, error } = useApiQuery<Ingredient>(
     ['ingredient', ingredientId],
-    `/api/ingredients/${id}`
+    `/api/ingredients/${id}`,
+    undefined,
+    { retry: retryUnless404 }
   )
 
   const deleteIngredient = useApiDelete(
@@ -64,7 +69,21 @@ export default function IngredientDetail() {
     { field: 'attenuation', headerName: 'Attenuation', flex: 1 },
   ]
 
-  if (!ingredient) return null
+  // D55 lead decisions 6 (gap 10): an ingredient that doesn't exist says so.
+  if (!ingredient && httpStatus(error) === 404) {
+    return (
+      <ItemNotFound
+        what="Ingredient"
+        backTo="/ingredients"
+        backLabel="Back to Ingredients"
+        testId="ingredient-not-found"
+      />
+    )
+  }
+
+  if (!ingredient && error) return <Alert severity="error">{parseApiError(error)}</Alert>
+
+  if (!ingredient) return <CircularProgress />
 
   return (
     <>

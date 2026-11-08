@@ -68,6 +68,7 @@ import useAuth from './hooks/useAuth'
 import useAuthStorageSync from './hooks/useAuthStorageSync'
 import useReconnect from './hooks/useReconnect'
 import { flushSignOuts } from './lib/device'
+import { recheckServer } from './lib/api'
 import parseApiError, { endSentence } from './lib/parseApiError'
 import { realBoards } from './lib/tasks'
 import { useApiQuery } from './hooks/useApiQuery'
@@ -289,6 +290,9 @@ const PERSON_PAGES = createRoutesFromChildren(
   }).props.children,
 ).filter((r) => r.path !== '*')
 
+/** D55 gap 2: ask GET /api/me again while the server is down (stable, for useReconnect). */
+const recheckNow = () => void recheckServer()
+
 /** A shared tablet's catch-all: a real page it can't use, or no page at all. */
 function TabletFallback() {
   const location = useLocation()
@@ -308,6 +312,7 @@ function App() {
     isAuthenticated,
     bootstrapped,
     unreachable,
+    serverDown,
     user,
     capabilities,
     sharedDevices,
@@ -345,6 +350,8 @@ function App() {
   }, [isAuthenticated, bootstrapped, loadMe])
   // DEV pass 1 G1: offline at start-up keeps the token and tries again.
   useReconnect(isAuthenticated && !bootstrapped && unreachable, loadMe)
+  // D55 gap 2: the same, mid-session, after a 401's /api/me recheck failed.
+  useReconnect(isAuthenticated && bootstrapped && serverDown, recheckNow)
 
   // Channels the user can see — listed individually under Messages in the nav.
   // D36-J (task 4053): a malformed reply (`data: null`) is an empty list, not a crash.
@@ -849,6 +856,20 @@ function App() {
         {isDevice && <ActingCodeDialog />}
 
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
+          {serverDown && (
+            <Alert
+              severity="warning"
+              sx={{ mb: 2 }}
+              data-testid="server-unreachable"
+              action={
+                <Button color="inherit" size="small" onClick={() => recheckNow()}>
+                  Try now
+                </Button>
+              }
+            >
+              Can’t reach the server, retrying…
+            </Alert>
+          )}
           {isDevice ? (
             // D33: a shared tablet's routes. Any other real page shows the
             // device-only "Not available" page (lead decision 1), an unknown URL

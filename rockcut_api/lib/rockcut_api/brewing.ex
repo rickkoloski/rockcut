@@ -32,15 +32,19 @@ defmodule RockcutApi.Brewing do
     |> Repo.preload(field_definitions: from(d in CategoryFieldDefinition, order_by: d.sort_order))
   end
 
+  # D55 lead decisions 6 (gap 8): a `sort_order` that is null or "" (or
+  # missing on create) puts the category at the end, as for fields (§2.10).
   def create_ingredient_category(attrs) do
-    %IngredientCategory{}
+    %IngredientCategory{sort_order: nil}
     |> IngredientCategory.changeset(attrs)
+    |> put_end_sort_order(IngredientCategory, nil)
     |> Repo.insert()
   end
 
   def update_ingredient_category(%IngredientCategory{} = category, attrs) do
     category
     |> IngredientCategory.changeset(attrs)
+    |> put_end_sort_order(IngredientCategory, nil)
     |> Repo.update()
   end
 
@@ -262,16 +266,19 @@ defmodule RockcutApi.Brewing do
   end
 
   # A nil `sort_order` becomes one after the last row with the same `parent`
-  # (not counting the row itself), or 0 for the first.
+  # (not counting the row itself), or 0 for the first. A nil `parent` means
+  # every row of `schema` (ingredient categories have no parent).
   defp put_end_sort_order(changeset, schema, parent) do
-    parent_id = Ecto.Changeset.get_field(changeset, parent)
+    parent_id = if parent, do: Ecto.Changeset.get_field(changeset, parent)
 
-    if is_nil(Ecto.Changeset.get_field(changeset, :sort_order)) and parent_id do
+    if is_nil(Ecto.Changeset.get_field(changeset, :sort_order)) and (parent_id || !parent) do
       id = Ecto.Changeset.get_field(changeset, :id)
 
       last =
         schema
-        |> where([r], field(r, ^parent) == ^parent_id)
+        |> then(fn q ->
+          if parent, do: where(q, [r], field(r, ^parent) == ^parent_id), else: q
+        end)
         |> then(fn q -> if id, do: where(q, [r], r.id != ^id), else: q end)
         |> select([r], max(r.sort_order))
         |> Repo.one()

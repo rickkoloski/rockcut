@@ -40,7 +40,8 @@ export default function NotificationBell() {
 
   const markRead = async (n: AppNotification) => {
     if (!n.read_at) {
-      await api.post(`/api/notifications/${n.id}/read`, {})
+      // A notification that's gone is 404 (D55): refresh the list either way.
+      await api.post(`/api/notifications/${n.id}/read`, {}).catch(() => undefined)
       invalidate()
     }
   }
