@@ -218,5 +218,5 @@ export function removeLaterWording(laterOpen: number, laterChanged: number) {
 export function ruleChangeNote(peopleChanged: boolean) {
   return peopleChanged
     ? 'The new pattern remakes them with the people you picked.'
-    : 'The new pattern remakes them: dates that stay keep their people, and a new date takes the people of the last one before it not changed on its own.'
+    : 'The new pattern remakes them. Dates that stay keep their people. New dates take them from the last regular occurrence.'
 }

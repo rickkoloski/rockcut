@@ -195,7 +195,7 @@ describe('removeLaterWording (Decision 2)', () => {
 
 describe('ruleChangeNote (D53)', () => {
   it('says who ends up on the dates', () => {
-    expect(ruleChangeNote(false)).toBe('The new pattern remakes them: dates that stay keep their people, and a new date takes the people of the last one before it not changed on its own.')
+    expect(ruleChangeNote(false)).toBe('The new pattern remakes them. Dates that stay keep their people. New dates take them from the last regular occurrence.')
     expect(ruleChangeNote(true)).toBe('The new pattern remakes them with the people you picked.')
   })
 })

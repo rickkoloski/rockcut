@@ -259,7 +259,7 @@ test.describe('as brewer1', () => {
     await expect(page.getByTestId(`task-assignee-chip-${floater}`)).toBeVisible()
     await page.getByTestId('task-repeat-day-2').click()
     await saveDialog(page).click()
-    await expect(page.getByTestId('remove-later-note')).toHaveText('The new pattern remakes them: dates that stay keep their people, and a new date takes the people of the last one before it not changed on its own.')
+    await expect(page.getByTestId('remove-later-note')).toHaveText('The new pattern remakes them. Dates that stay keep their people. New dates take them from the last regular occurrence.')
     const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${wed.id}$`), 'PATCH')
     await page.getByTestId('remove-later-confirm').click()
     const write = await saved
