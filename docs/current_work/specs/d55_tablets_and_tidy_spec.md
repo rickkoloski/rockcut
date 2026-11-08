@@ -138,6 +138,19 @@ of an update, the position stays.
 **Tests:** create and update with `null`, missing on create, missing on update (ExUnit); T12
 (Playwright).
 
+### 2.11 Out-of-range ids are 404, not 500, everywhere (found in D53's DEV gate)
+
+D53 added `RockcutApi.Ids` (`parse/1`: a positive integer within SQLite's range, else nil) and used it
+on the Boards and the task boards. The rest of the app still answers 500 (`Exqlite.Error`) to an id
+like `99999999999999999999` in the URL: shifts, users, Buy-a-Beer, schedule events, time off,
+availability, notifications, production tanks and templates, brands, recipes, departments, devices
+(13 of 13 routes sampled).
+
+**Change:** a URL id beyond the range is 404 on every route, and a body id beyond it is 422 (or 404 where
+the route already answers 404 for a missing reference). Prefer one plug over the router's `:id`-style
+params that answers 404 before any controller runs, plus `RockcutApi.Ids` where contexts parse body ids.
+Never a 500. **Test:** a route-table sweep with an out-of-range id on every `:id`-style route.
+
 ## 3. Not in D55
 
 - Task-board settings and the View filter (4994, 4991), the manager/no-department person (4984), the
@@ -159,6 +172,7 @@ of an update, the position stays.
 | T9 | Add a grain bill ingredient with Sort Order empty → saved at the end of the list |
 | T10 | A missing ingredient category → "Category not found" |
 | T11 | The browser tab and a fresh PWA install say "Rock Cut Brewing"; an installed tablet shows the new name after the update |
+| T13 | An out-of-range id on any route → 404, never 500 |
 | T12 | Add a field to an ingredient category with Sort Order empty → saved at the end of its fields |
 
 ## 5. Gate
