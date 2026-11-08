@@ -1,6 +1,6 @@
 # D53: Idea Boards + multiple assignees on tasks — Spec
 
-**Status:** APPROVED by Matt 2026-11-06. Part 1 in progress.
+**Status:** COMPLETE, on prod in `v2026.11.08` (2026-11-08); approved by Matt 2026-11-06. Matt's prod and tablet checks: task 5164 (2026-11-09).
 **Backlog:** PortableMind project 254, task 5063
 **Builds on:** D41 (department task boards), D42, D40 (staff codes on boards),
 D49 (production-linked tasks)
