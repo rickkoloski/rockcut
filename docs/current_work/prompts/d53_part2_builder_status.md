@@ -365,3 +365,139 @@ Gate so far:
   `removed_at` is never set.
 - For stage 6: the UI's `Task` type needs `from_idea`, and the Send dialog reads
   `GET …/send_to_tasks`.
+
+## Stop 4 (2026-11-08): decision 2 and stage 6 (the UI)
+
+### Gate (non-Playwright), all passing
+
+- `MIX_ENV=test mix test` twice: **2089 passed** both runs.
+- `tsc -p tsconfig.app.json`: clean. `vite build`: OK. `vitest`: **196 passed** (6 new, `src/lib/ideas.test.ts`).
+- `pnpm lint`: **26 errors, 1 warning**, the same as before; none are in files I touched.
+- `tsc -p tsconfig.e2e.json`: clean for `tests/regression/ideas/`. Three errors in other spec files
+  (`task-board-phone`, `beer-board-import`) were already there.
+- **New Playwright: `npx playwright test --project idea-boards` → 11 passed** (local servers from this
+  worktree; `E2E_TARGET` not set).
+
+### Lead decisions 3, item 2 (commit `f900d21`)
+
+- `idea_card_tasks.removed_at` is gone from the migration (edited in place), the schema, the JSON
+  and `sent_state/1`. Spec §4.1's table now lists `card_title` and says "Removed" comes from the
+  nulled task or series.
+- I rolled back and re-migrated the local dev and test DBs (both migrations). The dev DB had no
+  Idea Board data that mattered.
+
+### Stage 6: the UI (commit `a20d93c`)
+
+**New files** (`src/pages/ideas/`, `src/lib/ideas.ts`):
+- `IdeaBoardRoutes.tsx`: `/ideas` opens the remembered board. `/ideas/:board` and
+  `/ideas/:board/cards/:cardId` fall back to the first board the person has (S227: `/ideas/brewery`
+  → `/ideas/bar`; S238: → `/ideas/company`).
+- `IdeaBoard.tsx`, the board:
+  - Lists side by side with sideways scroll and "+ Add a list" at the end.
+  - Cards drag within and between lists through the shared `SortableLists` / `useOptimisticLists`.
+  - A non-manager can't drag a locked card or into a locked list.
+  - Refetch on focus and every 60 s, as the task boards.
+  - The gear holds Show (All / My cards / Watching / each label), Archived (people) and History
+    (`history` flag). A "Showing: … · Show all" button appears while a filter is on.
+  - **Phone:** one list at a time under scrollable tabs (name and count). Each tab is a
+    `DropTarget`, so a long-pressed card can be dropped on another list's tab.
+- `IdeaListColumn.tsx`: name (click to rename), count ("3", or "2/3" under a filter), lock icon
+  and "Locked by Casey · Nov 8", ⋮ menu (Rename, Move left/right, Lock/Unlock for managers,
+  Archive), inline "+ Add a card". Controls a person can't use are hidden, not refused (§4.5).
+- `IdeaCardFace.tsx`: label bars, title, due date (red and bold when past), checklist "2/5"
+  (green when done), note count, a small eye when you watch it, the lock (when it's the card's own),
+  up to 3 initials then "+N", and the latest send's chip ("On the task list" / "✓ Done Nov 12" /
+  "Repeats on the task list" / "Removed from the task list").
+- `IdeaCardDialog.tsx`, the card at its own URL:
+  - Title (saved on Enter or blur), description (Save/Cancel), People (autocomplete), Due date,
+    Labels (pick, or type to "Add the label …"; managers also get "Edit labels").
+  - Checklist: tick (optimistic), click text to edit, ↑/↓, remove, add.
+  - Notes: the add box on top, entries newest first ("Casey Tap · Nov 6, 2:14 PM · edited");
+    edit for the author, delete for the author or a manager.
+  - Watch / Watching toggle, Send to task list, Lock/Unlock (managers), Archive, Restore, Delete
+    for good (managers, archived), the sent chips, and History for this card (`history` flag).
+  - **Read-only:** on a tablet; for a non-manager when the card or its list is locked (a banner
+    names who locked it, and notes stay open); for everyone while archived (decision 2; Watch and
+    Restore stay).
+  - Closing returns to the board: `navigate(-1)` when opened from the board, so Android back does
+    the same; `/ideas/<board>` when opened from a link.
+  - **Phone:** full screen. Watch sits under the title, and People, date, labels and actions come
+    before the checklist and notes.
+- `SendDialog.tsx` (`GET …/send_to_tasks` for defaults):
+  - Task board (fixed for a department card, a pick for Company), Assigned to with "X: not in
+    Office, left off".
+  - Day with No day (Future), and a note when the card was due before today.
+  - Checklist radios (only with a checklist). Repeat (the task dialog's `RepeatFields`; hidden in
+    per-item mode).
+  - Then (stay / move to a list, Done preselected / archive). An "Already on the task list"
+    warning when it was sent before.
+- `ArchivedDialog.tsx` (lists with card counts, cards; Restore; Delete for good for managers, with
+  a confirm), `IdeaHistoryDialog.tsx` (paged, `describeIdeaEvent`), `LabelsDialog.tsx` (managers:
+  recolor, rename, delete with confirm).
+- `lib/ideas.ts`: paths, the remembered board, `ideaBoardTarget`, the label palette (one color
+  per theme for each of the API's 10 keys), the filter, date formats, `sentChipText`,
+  `ideaError`, and `describeIdeaEvent` (History in words).
+
+**Changed files:**
+- `App.tsx`: "Idea Boards" (lightbulb) in the nav after Tasks, and the three routes for people and
+  for tablets.
+- `useAuth`: `ideaBoards` from `/api/me`.
+- `types.ts`: Idea Board types, plus `TaskCardData.from_idea` / `FromIdea`.
+- `TaskDialog.tsx`: the **"From idea: <title>"** line; a link to the card only when `link` is
+  true.
+- `BoardSwitcher.tsx`: an optional `titleOf` ("Taproom ideas"); the task boards are unchanged.
+- `FormDialog.tsx`: an optional `submitLabel` (the Send dialog's "Send"); default "Save".
+- `playwright.config.ts`: a one-worker `idea-boards` project. `chromium` ignores
+  `regression/ideas/`, as it does for production.
+
+**Screenshots:** `/tmp/claude-501/pwlogs/d53p2shots/*.png` (42 files: each screen × light/dark ×
+1280/390). The throwaway script is `shots.mjs` in the same folder. It seeds `[TEST-TEMP]` lists,
+cards, labels and one sent task through the API, and cleans up after (checked: 0 `[TEST-TEMP]`
+cards, lists, labels or tasks left).
+- `board-*`: several lists; labels; 4 people (+1); past and future due dates; a checklist 2/5; 6
+  notes; a watched card; a locked card; a sent card's chip.
+- `card-*`, `card-notes-*`: the dialog with a 6-note timeline. `card-sent-mgr-*`: the manager's
+  view with the task-list chip, Lock and History.
+- `send-dept-*` (bartender1), `send-company-*` (owner: four boards, "left off" line).
+- `archived-*`, `history-*` (barMgr), `tablet-*`, `tablet-card-*` (taproomDevice), and
+  `phone-tab-remodel-390-*` (the phone tabs on a locked list).
+- **Fixed after looking:**
+  - Phone card dialog: the Watch button crowded the title (it moved under it); People and
+    labels sat below a long notes timeline (now right after the description).
+  - Phone tabs: upper-case, clipped names (now normal case, ellipsis, the count always shown).
+
+**Playwright smoke** (`tests/regression/ideas/idea-boards-smoke.spec.ts`, helpers in `helpers.ts`;
+11 tests, each in its own `[TEST-TEMP]` list):
+- S223 (nav, four lists, switcher Taproom + Company) and S227 (`/ideas/brewery` → `/ideas/bar`).
+- S224 smoke, all through the UI: list, card, description, due date, checklist tick, note, Watch;
+  reload keeps everything; Close goes to the board, and back closes a card opened from the board.
+- Mouse drag between lists (persisted through the API).
+- S233 smoke: Send → chip → task board → task dialog "From idea" → the link opens the card.
+- S237 smoke: archive a list from ⋮, Archived shows "1 card" (no Delete for bartender1), Restore.
+- S228 smoke: bartender1 sees "Locked by Casey", no add, no menu; barMgr keeps add and has Unlock.
+- S240 smoke: History for barMgr, not for bartender1.
+- S241 smoke: the tablet sees no add or menu; the card dialog has no inputs, Watch, notes box or
+  Send; its switcher shows Taproom and Company.
+- S239 smoke: 390 px tabs, one list showing, the card URL, back closes.
+
+### Not done, or done differently
+
+1. **Lists don't drag; they move with ⋮ → Move left / Move right.** Spec §4.4 says lists drag
+   left and right. The cards already drag inside `SortableLists` (one vertical-list `DndContext`),
+   and the list columns render inside it. Dragging columns needs a second, horizontal sortable
+   around them: either restructuring `SortableLists` to accept an outer container sortable, or a
+   separate `DndContext` with the card layer nested inside it. I didn't want to change the shared
+   layer the task boards use without asking. → **LEAD-5**
+2. **Checklist reorder** uses ↑/↓ buttons, not drag. The spec says "reorder" without saying how.
+3. The phone's long-press drop onto another list's tab is built but not in a spec yet (stage 8,
+   S239 in full, with `touchDrag`).
+4. `tests/COVERAGE.md` isn't updated yet (stage 8).
+5. The Send dialog's assignee picker reads `/api/roster` (schedulable people), as the task
+   dialog does. A department member who isn't schedulable can't be picked there, the same as on
+   the task board.
+
+### LEAD:
+
+- **LEAD-5:** Drag lists left and right: build it in stage 6 (a change to the shared drag layer,
+  with the task-board drag specs re-run), or keep Move left/right and note the difference in the
+  spec?
