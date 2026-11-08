@@ -420,3 +420,72 @@ time off, schedule events, availability.
 - `tests/COVERAGE.md`: T14 row.
 
 No existing tests changed. Ready for the lead.
+
+## Lead decisions 5 done (three local Playwright failures)
+
+**Gate:** `mix compile --warnings-as-errors` clean (incremental, not `--force`); `MIX_ENV=test mix test`
+**2163 passed** (+1); `tsc -p tsconfig.app.json` clean; Vitest **232** (+2); lint 26 errors + 1 warning
+(unchanged). No `mix ecto.*` on the dev DB, no servers, no Playwright. Both revert checks ran in a
+scratch copy of `rockcut_api` (its own test DB), so the running dev server only ever saw the final
+files.
+
+### 1. T7: dev's HTML debug page instead of the 400
+
+- **Cause:** `RockcutApiWeb.Parsers` re-raised the parser's errors (wrapped, to keep the CORS
+  headers). In dev, `debug_errors: true` puts `Plug.Debugger` around the whole endpoint. It catches
+  any raise first and answers its HTML page, so D55's JSON never got rendered.
+- **Fix** (`lib/rockcut_api_web/plugs/parsers.ex`): the plug now **answers** the parser's own errors
+  instead of raising them. The status comes from `Plug.Exception.status/1` and the body is
+  `RockcutApiWeb.ErrorJSON.render("<status>.json")`, the same JSON Phoenix renders in test and prod
+  (`{"errors":{"detail":"Bad Request"}}`, `"Request Entity Too Large"`). It keeps the conn, so the
+  CORS headers stay. Every env gets the same answer; `debug_errors` stays on for everything else.
+  Still only the parser's errors (decisions 1).
+- **How I verified dev without a server:** `test/rockcut_api_web/endpoint/parser_cors_test.exs`
+  now reads the responses directly (no `assert_error_sent`, since nothing raises), and adds a
+  `DevLike` pipeline that does `use Plug.Debugger` (what `debug_errors: true` adds) in front of
+  the endpoint's own `CORSPlug` and parser options. Through it, malformed JSON gets a 400 with
+  `content-type: application/json`, the JSON body and the CORS header.
+- **Revert** (the old re-raising plug, scratch copy): 0/4. In `DevLike` the parse error escapes
+  through the debugger, which sends its page and re-raises: the failure the lead saw. The endpoint
+  tests fail the same way.
+
+### 2. T9: `getByLabel('Category')` matched nothing
+
+- **An accessibility bug in the dialog:** the Add Ingredient dialog's `Select`s had an `<InputLabel>`
+  with no `id` and no `labelId`. Assistive tech, and `getByLabel`, couldn't tie Category, Ingredient
+  or Lot to their label. Fixed in `src/pages/recipes/RecipeIngredientDialog.tsx` (an `id` on each
+  `InputLabel` and the same `labelId` on its `Select`). The test is unchanged.
+- **T10:** uses a test id and a link role; nothing to fix.
+- **T12:** uses `getByLabel('Field Name')` (a `TextField`, already labelled). I gave the same dialog's
+  Field Type select (`src/pages/settings/FieldDefinitionDialog.tsx`) its label tie too.
+- **LEAD:** the same unlabelled pattern is in 9 more places in the older brewing UI, none touched
+  by a D55 spec:
+  - `IngredientLotDialog` Status
+  - `IngredientsList` Category filter
+  - `IngredientFormDialog` Category
+  - `BatchLogEntryDialog` Event Type
+  - `BatchFormDialog` Brand, Status and Package Type
+  - `BatchesList` Status Filter
+  - `BrewTurnDialog` Recipe
+
+  (plus `ComponentShowcase`, a dev page). Same two-attribute fix each. Fold into D55, or a task?
+
+### 3. G4: "Please try again.. It's still paired"
+
+- **The bug:** `App.tsx` wrote `{deviceSignOutError}. It's still paired`, and D55's
+  `SERVER_ERROR_MESSAGE` ends in a period. New `endSentence(text)` in `src/lib/parseApiError.ts`
+  adds a period unless the text already ends in `.`, `!` or `?`; the sign-out alert uses it. I
+  checked the other places that put an error message in front of a period: this was the only one
+  (the other `}. ` texts in the UI aren't error messages). Vitest: `endSentence` (2 tests; with the
+  old join the doubled period is the case they catch).
+- **The test** (`tests/regression/devices/device_signout.spec.ts:21`) now asserts the whole
+  sentence, "Couldn't sign this tablet out: Something went wrong on the server. Please try again.
+  It's still paired; try again.", and that the alert never contains `..`. The mocked 500's
+  `{"error":"Server error"}` is no longer shown: since D55, a 5xx reads as the general server
+  message.
+
+### For the lead to rerun
+
+- `tests/regression/app/parser_errors.spec.ts:14` (T7, 400) and `:32` (T7, 413; same cause)
+- `tests/regression/brewery/recipe_sort_order.spec.ts:16` (T9), `:71` (T10), `:83` (T12)
+- `tests/regression/devices/device_signout.spec.ts:21` (G4)

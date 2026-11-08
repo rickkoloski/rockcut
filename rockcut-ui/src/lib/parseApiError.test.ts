@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import parseApiError, { SERVER_ERROR_MESSAGE } from './parseApiError'
+import parseApiError, { SERVER_ERROR_MESSAGE, endSentence } from './parseApiError'
 
 // D55 §2.5 (task 4981): any error body gives a message; nothing throws.
 const fail = (status: number, data: unknown, message = `Request failed with status code ${status}`) => ({
@@ -54,4 +54,17 @@ describe('parseApiError', () => {
       expect(parseApiError(err)).toBe('An unexpected error occurred')
     })
   }
+})
+
+describe('endSentence', () => {
+  it('adds a period to text without one', () => {
+    expect(endSentence('Server error')).toBe('Server error.')
+  })
+
+  it("doesn't double a period, or follow ! or ?", () => {
+    expect(endSentence(SERVER_ERROR_MESSAGE)).toBe(SERVER_ERROR_MESSAGE)
+    expect(endSentence('Try again!')).toBe('Try again!')
+    expect(endSentence('Paired?')).toBe('Paired?')
+    expect(endSentence('Done.  ')).toBe('Done.')
+  })
 })

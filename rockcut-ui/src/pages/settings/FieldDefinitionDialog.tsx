@@ -90,8 +90,13 @@ export default function FieldDefinitionDialog({ open, onClose, categoryId, defin
         onChange={(e) => setFieldName(e.target.value)}
       />
       <FormControl fullWidth margin="dense">
-        <InputLabel>Field Type</InputLabel>
-        <Select value={fieldType} label="Field Type" onChange={(e) => setFieldType(e.target.value)}>
+        <InputLabel id="field-definition-type-label">Field Type</InputLabel>
+        <Select
+          labelId="field-definition-type-label"
+          value={fieldType}
+          label="Field Type"
+          onChange={(e) => setFieldType(e.target.value)}
+        >
           <MenuItem value="text">Text</MenuItem>
           <MenuItem value="number">Number</MenuItem>
           <MenuItem value="dropdown">Dropdown</MenuItem>

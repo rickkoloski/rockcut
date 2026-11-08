@@ -1,13 +1,19 @@
 defmodule RockcutApiWeb.Parsers do
   @moduledoc """
-  D55 §2.3 (task 4985): `Plug.Parsers`, but its errors (malformed JSON 400,
-  oversize body 413, …) keep the response headers already set, CORS among them.
+  D55 §2.3 (task 4985): `Plug.Parsers`, but its own errors (malformed JSON
+  400, oversize body 413, …) are answered here, as JSON, with the response
+  headers already set (CORS among them), so the browser shows the error
+  instead of "Failed to fetch".
 
-  Phoenix renders an endpoint error from the conn the endpoint was called with
-  unless the error comes wrapped with a later conn, so a bare `Plug.Parsers`
-  after `CORSPlug` would still answer without CORS headers.
+  Answered, not raised: Phoenix renders an endpoint error from the conn the
+  endpoint was called with (no CORS headers), and in dev `debug_errors`
+  (`Plug.Debugger`) catches any raise first and answers its HTML page (D55
+  lead decisions 5, T7). The body is what `ErrorJSON` renders for the status
+  everywhere else (`{"errors": {"detail": "Bad Request"}}`), in every env.
   """
   @behaviour Plug
+
+  import Plug.Conn
 
   @impl true
   def init(opts), do: Plug.Parsers.init(opts)
@@ -25,6 +31,12 @@ defmodule RockcutApiWeb.Parsers do
       Plug.BadRequestError,
       Plug.TimeoutError
     ] ->
-      Plug.Conn.WrapperError.reraise(conn, :error, e, __STACKTRACE__)
+      status = Plug.Exception.status(e)
+      body = RockcutApiWeb.ErrorJSON.render("#{status}.json", %{})
+
+      conn
+      |> put_resp_content_type("application/json")
+      |> send_resp(status, Jason.encode!(body))
+      |> halt()
   end
 end

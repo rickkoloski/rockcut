@@ -821,7 +821,7 @@ ExUnit files are under `rockcut_api/test/`; Vitest under `rockcut-ui/src/`. Play
 | T6 | Tablet, real personal page → "Not available on a shared device" | Playwright `devices/unknown_url` (T6), `devices/device_session` (S9) |
 | — | A person's unknown URL still goes Home | Playwright `devices/unknown_url` |
 | — | A tablet opens Boards (`/boards`, a board, a card), not "Page not found" | Playwright `devices/unknown_url` |
-| T7 | Malformed JSON / an oversize body from the UI's origin: readable 400/413, not "Failed to fetch"; a disallowed origin still gets no CORS header | ExUnit `endpoint/parser_cors_test` (revert); Playwright `app/parser_errors` (T7, cross-origin `fetch`) |
+| T7 | Malformed JSON / an oversize body from the UI's origin: readable 400/413 JSON, not "Failed to fetch" and not dev's HTML debug page; a disallowed origin still gets no CORS header | ExUnit `endpoint/parser_cors_test` (revert; a `Plug.Debugger` pipeline stands in for dev's `debug_errors`, lead decisions 5); Playwright `app/parser_errors` (T7, cross-origin `fetch`) |
 | T8 | Malformed `memberships` (map, string, `[null]`, `["x"]`, form-encoded) → 422 on `memberships`, nothing saved; `PUT …/memberships` the same (and `null` there) | ExUnit `controllers/user_memberships_malformed_test` (owner and manager, revert); Playwright `app/parser_errors` (T8) |
 | T9 | Grain bill ingredient with Sort Order empty → saved at the end; null on update → end; left out of an update → stays | ExUnit `controllers/recipe_ingredient_sort_order_test` (revert); Playwright `brewery/recipe_sort_order` (T9, persist-verified) |
 | — | `parseApiError` copes with any body (500, HTML, empty, odd shapes) | Vitest `lib/parseApiError.test` (revert) |

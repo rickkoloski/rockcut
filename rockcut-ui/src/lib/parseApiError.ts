@@ -39,3 +39,13 @@ export default function parseApiError(err: unknown): string {
   const message = isRecord(err) ? err.message : undefined
   return typeof message === 'string' && message ? message : GENERAL_MESSAGE
 }
+
+/**
+ * `text` as a sentence inside a longer message: a period added unless it
+ * already ends in one (or `!`/`?`). D55: SERVER_ERROR_MESSAGE ends in "." and
+ * "…: {message}. It's still paired" read "Please try again.." (G4).
+ */
+export function endSentence(text: string): string {
+  const t = text.trimEnd()
+  return /[.!?]$/.test(t) ? t : `${t}.`
+}

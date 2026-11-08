@@ -68,7 +68,7 @@ import useAuth from './hooks/useAuth'
 import useAuthStorageSync from './hooks/useAuthStorageSync'
 import useReconnect from './hooks/useReconnect'
 import { flushSignOuts } from './lib/device'
-import parseApiError from './lib/parseApiError'
+import parseApiError, { endSentence } from './lib/parseApiError'
 import { realBoards } from './lib/tasks'
 import { useApiQuery } from './hooks/useApiQuery'
 import type { Channel, Department } from './lib/types'
@@ -888,7 +888,7 @@ function App() {
           <DialogContentText>A manager will need to pair this tablet again.</DialogContentText>
           {deviceSignOutError && (
             <Alert data-testid="device-signout-error" severity="error" sx={{ mt: 2 }}>
-              Couldn't sign this tablet out: {deviceSignOutError}. It's still paired; try again.
+              Couldn't sign this tablet out: {endSentence(deviceSignOutError)} It's still paired; try again.
             </Alert>
           )}
         </DialogContent>
