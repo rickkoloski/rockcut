@@ -659,7 +659,7 @@ both ideas specs. These followed a UI write without waiting, and are fixed:
 - `idea-boards-smoke.spec.ts` S224 smoke: the description and due PATCHes, the checklist POST and tick
   PATCH, the note POST and the Watch PUT.
 
-The other reloads (S224's lock, S231, S242, S233/S234 at :453/:468) follow API calls that were already
+The other reloads (S258 after the lock, S242, S231) follow API calls that were already
 awaited. Nothing was weakened; every assertion is unchanged.
 
 **2. S160 vs the theme person: kept out of the roster (the preferred option).** The roster only lists
