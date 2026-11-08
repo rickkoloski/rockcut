@@ -24,7 +24,7 @@ defmodule RockcutApi.IdeaBoards.Note do
   def changeset(note, attrs) do
     note
     |> cast(attrs, [:body])
-    |> update_change(:body, &String.trim/1)
+    |> update_change(:body, &RockcutApi.IdeaBoards.Log.trim/1)
     |> validate_required([:body], message: "can't be blank")
     |> validate_length(:body, max: @max_body)
   end

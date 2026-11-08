@@ -26,7 +26,7 @@ defmodule RockcutApi.IdeaBoards.Label do
   def changeset(label, attrs) do
     label
     |> cast(attrs, [:name, :color])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &RockcutApi.IdeaBoards.Log.trim/1)
     |> validate_required([:name, :color], message: "can't be blank")
     |> validate_length(:name, max: @max_name)
     |> validate_inclusion(:color, @colors)

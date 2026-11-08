@@ -23,7 +23,7 @@ defmodule RockcutApi.IdeaBoards.ChecklistItem do
   def changeset(item, attrs) do
     item
     |> cast(attrs, [:text])
-    |> update_change(:text, &String.trim/1)
+    |> update_change(:text, &RockcutApi.IdeaBoards.Log.trim/1)
     |> validate_required([:text], message: "can't be blank")
     |> validate_length(:text, max: @max_text)
   end

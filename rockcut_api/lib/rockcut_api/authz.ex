@@ -414,15 +414,17 @@ defmodule RockcutApi.Authz do
 
   # §4.5: archiving a list also hides its cards, so a non-manager can't
   # archive one that holds a locked card (archived cards don't count).
-  def can?(%User{} = user, :archive, {:idea_board, board, %IdeaList{id: id} = list}),
-    do:
-      can?(user, :change, {:idea_board, board, list}) and
-        (can?(user, :manage, {:idea_board, board}) or
-           not Repo.exists?(
-             from(c in Card,
-               where: c.list_id == ^id and is_nil(c.archived_at) and not is_nil(c.locked_at)
-             )
-           ))
+  # Restoring brings them back, so the same rule (fix cycle 1, gap 4).
+  def can?(%User{} = user, action, {:idea_board, board, %IdeaList{id: id} = list})
+      when action in [:archive, :restore],
+      do:
+        can?(user, :change, {:idea_board, board, list}) and
+          (can?(user, :manage, {:idea_board, board}) or
+             not Repo.exists?(
+               from(c in Card,
+                 where: c.list_id == ^id and is_nil(c.archived_at) and not is_nil(c.locked_at)
+               )
+             ))
 
   # D46 production scheduling (spec §3.13): Brewery members of any role read
   # the setup and the schedule, work the schedule (`:write`: out-of-service

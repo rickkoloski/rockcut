@@ -4,9 +4,9 @@ defmodule RockcutApiWeb.IdeaListController do
   `/api/idea_boards/:board/lists`. People only (the routes are behind
   `DeviceGate`). Checks as `IdeaBoardAccess`: the board (403), the id
   (404), the lock (423). Adding a list is `:write`; renaming, moving,
-  archiving and restoring one are `:change` on it (archiving also refuses a
+  archiving and restoring one are `:change` on it (both also refuse a
   non-manager when the list holds a locked card); locking, unlocking and
-  deleting for good are `:manage`.
+  deleting for good are `:manage`. An archived list can't be renamed.
   """
   use RockcutApiWeb, :controller
 
@@ -74,7 +74,7 @@ defmodule RockcutApiWeb.IdeaListController do
   def restore(conn, %{"id" => id}) do
     with :ok <- allow(conn, :write),
          {:ok, list} <- Lists.fetch(board(conn), id),
-         :ok <- change(conn, list),
+         :ok <- archive_list(conn, list, :restore),
          {:ok, list} <- Lists.restore(list, current_user(conn)) do
       render_list(conn, list)
     end

@@ -25,12 +25,16 @@ defmodule RockcutApiWeb.IdeaBoardAccess do
   """
   def change(conn, thing), do: decide(conn, :change, thing)
 
-  @doc "As `change/2`, for archiving a list: also refuses a list holding a locked card."
-  def archive_list(conn, list) do
+  @doc """
+  As `change/2`, for archiving (`:archive`) or restoring (`:restore`) a
+  list: also refuses a non-manager when the list holds a locked card.
+  """
+  def archive_list(conn, list, action \\ :archive) do
     with :ok <- change(conn, list) do
-      case decide(conn, :archive, list) do
+      case decide(conn, action, list) do
         :ok -> :ok
-        {:error, :locked} -> {:error, :holds_locked_card}
+        {:error, :locked} when action == :archive -> {:error, :holds_locked_card}
+        {:error, :locked} -> {:error, :restore_holds_locked_card}
         error -> error
       end
     end

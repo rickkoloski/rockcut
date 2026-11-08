@@ -169,7 +169,7 @@ defmodule RockcutApi.IdeaBoards do
   def fetch_card(board, id) do
     key = board_key(board)
 
-    with {id, ""} <- Integer.parse(to_string(id)),
+    with id when is_integer(id) <- RockcutApi.Ids.parse(id),
          %Card{} = card <-
            Repo.one(
              from c in Card,

@@ -37,6 +37,7 @@ import {
 } from '@mui/icons-material'
 import { useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import { useBackCloses } from '../../hooks/useBackCloses'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
@@ -108,6 +109,12 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
   const [editingLabels, setEditingLabels] = useState(false)
   const [history, setHistory] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  // Fix cycle 1 gap 2: a description typed but not saved is asked about
+  // before the card closes (✕, Escape, the backdrop, back).
+  const [descriptionDirty, setDescriptionDirty] = useState(false)
+  const [askDiscard, setAskDiscard] = useState(false)
+  const requestClose = () => (descriptionDirty ? setAskDiscard(true) : onClose())
+  useBackCloses(descriptionDirty && !askDiscard, () => setAskDiscard(true))
 
   /** A write. A card in the reply replaces the cached one; anything else refetches it. */
   const save = async (write: () => Promise<{ data?: { data?: unknown } } | unknown>, done?: string) => {
@@ -154,7 +161,7 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
   const lockedAt = card.locked ? card.locked_at : card.list.locked_at
 
   return (
-    <Dialog open onClose={onClose} fullWidth maxWidth="md" fullScreen={fullScreen} data-testid="idea-card-dialog" data-card-id={card.id}>
+    <Dialog open onClose={requestClose} fullWidth maxWidth="md" fullScreen={fullScreen} data-testid="idea-card-dialog" data-card-id={card.id}>
       <DialogTitle sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, pb: 1 }}>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <TitleField key={card.title} title={card.title} disabled={!canEdit || busy} onSave={(title) => patch({ title })} />
@@ -181,7 +188,7 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
             )}
           </Box>
         </Box>
-        <IconButton aria-label="Close" onClick={onClose} data-testid="idea-card-close" sx={{ mt: -0.5 }}>
+        <IconButton aria-label="Close" onClick={requestClose} data-testid="idea-card-close" sx={{ mt: -0.5 }}>
           <Close />
         </IconButton>
       </DialogTitle>
@@ -219,7 +226,13 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
           }}
         >
           <Box sx={{ gridArea: 'desc', minWidth: 0 }}>
-            <DescriptionField key={card.description ?? ''} value={card.description ?? ''} disabled={!canEdit || busy} onSave={(description) => patch({ description: description || null })} />
+            <DescriptionField
+              key={card.description ?? ''}
+              value={card.description ?? ''}
+              disabled={!canEdit || busy}
+              onSave={(description) => patch({ description: description || null })}
+              onDirty={setDescriptionDirty}
+            />
           </Box>
           <Box sx={{ gridArea: 'main', minWidth: 0 }}>
             <Checklist
@@ -394,6 +407,19 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
           if (ok) onClose()
         }}
       />
+      <ConfirmDialog
+        open={askDiscard}
+        title="Discard your changes to the description?"
+        message="What you typed in the description isn't saved."
+        confirmLabel="Discard"
+        cancelLabel="Keep editing"
+        onClose={() => setAskDiscard(false)}
+        onConfirm={() => {
+          setAskDiscard(false)
+          setDescriptionDirty(false)
+          onClose()
+        }}
+      />
     </Dialog>
   )
 }
@@ -434,9 +460,24 @@ function TitleField({ title, disabled, onSave }: { title: string; disabled: bool
   )
 }
 
-function DescriptionField({ value, disabled, onSave }: { value: string; disabled: boolean; onSave: (value: string) => Promise<boolean> }) {
+function DescriptionField({
+  value,
+  disabled,
+  onSave,
+  onDirty,
+}: {
+  value: string
+  disabled: boolean
+  onSave: (value: string) => Promise<boolean>
+  /** Whether there's typing not saved yet (the dialog asks before closing). */
+  onDirty: (dirty: boolean) => void
+}) {
   const [draft, setDraft] = useState(value)
   const dirty = draft !== value
+  const change = (next: string) => {
+    setDraft(next)
+    onDirty(next !== value)
+  }
   return (
     <Box sx={{ mb: 3 }}>
       <Typography variant="overline" color="text.secondary" component="h3">
@@ -450,7 +491,7 @@ function DescriptionField({ value, disabled, onSave }: { value: string; disabled
         <>
           <TextField
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={(e) => change(e.target.value)}
             placeholder="What's the idea?"
             multiline
             minRows={3}
@@ -460,10 +501,17 @@ function DescriptionField({ value, disabled, onSave }: { value: string; disabled
           />
           {dirty && (
             <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-              <Button size="small" variant="contained" onClick={() => onSave(draft.trim())} data-testid="idea-card-description-save">
+              <Button
+                size="small"
+                variant="contained"
+                onClick={async () => {
+                  if (await onSave(draft.trim())) onDirty(false)
+                }}
+                data-testid="idea-card-description-save"
+              >
                 Save
               </Button>
-              <Button size="small" onClick={() => setDraft(value)}>
+              <Button size="small" onClick={() => change(value)}>
                 Cancel
               </Button>
             </Box>
@@ -569,6 +617,8 @@ function LabelsField({
           getOptionLabel={(o) => ('create' in o ? `Add the label "${o.inputValue}"` : o.name)}
           isOptionEqualToValue={(a, b) => !('create' in a) && !('create' in b) && a.id === b.id}
           filterSelectedOptions
+          // Fix cycle 1 gap 3: Enter takes the highlighted option, "Add the label" included.
+          autoHighlight
           filterOptions={(options, state) => {
             const typed = state.inputValue.trim()
             const shown = options.filter((o) => !('create' in o) && o.name.toLowerCase().includes(typed.toLowerCase()))

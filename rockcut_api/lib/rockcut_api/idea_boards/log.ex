@@ -60,17 +60,15 @@ defmodule RockcutApi.IdeaBoards.Log do
     end)
   end
 
-  @doc "Parse an id param (integer or digits); nil otherwise."
-  def to_id(id) when is_integer(id) and id > 0, do: id
+  @doc "Parse an id param; nil when it isn't one (`RockcutApi.Ids`)."
+  defdelegate to_id(id), to: RockcutApi.Ids, as: :parse
 
-  def to_id(s) when is_binary(s) do
-    case Integer.parse(s) do
-      {id, ""} when id > 0 -> id
-      _ -> nil
-    end
-  end
-
-  def to_id(_), do: nil
+  @doc """
+  Trim a text change; `nil` stays `nil` (`cast` makes a blank string `nil`,
+  and `validate_required` then says "can't be blank": fix cycle 1, gap 6).
+  """
+  def trim(nil), do: nil
+  def trim(text) when is_binary(text), do: String.trim(text)
 
   def now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

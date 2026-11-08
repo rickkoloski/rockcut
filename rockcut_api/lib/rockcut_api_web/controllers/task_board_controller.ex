@@ -441,8 +441,8 @@ defmodule RockcutApiWeb.TaskBoardController do
   @doc "GET /api/boards/:dept/tasks/history?task_id=&page=: this board's, newest first, 50 a page."
   def history(conn, params) do
     with :ok <- allow(conn, :history) do
-      task_id = int_param(params["task_id"], nil)
-      page = max(int_param(params["page"], 1), 1)
+      task_id = RockcutApi.Ids.parse(params["task_id"])
+      page = RockcutApi.Ids.page(params["page"])
 
       %{events: events, page: page, total: total, names: names} =
         Tasks.list_events(board(conn), task_id, page)
@@ -549,14 +549,4 @@ defmodule RockcutApiWeb.TaskBoardController do
   end
 
   defp date_param(_), do: {:error, :invalid_date}
-
-  defp int_param(nil, default), do: default
-  defp int_param("", default), do: default
-
-  defp int_param(value, default) do
-    case Integer.parse(to_string(value)) do
-      {n, ""} -> n
-      _ -> default
-    end
-  end
 end

@@ -581,3 +581,99 @@ test.describe('phone width', () => {
     await expect(cardFace(page, card.id)).toBeVisible()
   })
 })
+
+// Fix cycle 1 (lead decisions 7): the DEV QA report's UI gaps, each its repro.
+test.describe('fix cycle 1 (DEV QA)', () => {
+  test.use({ storageState: authFile('bartender1'), viewport: desk })
+
+  test('gap 1: list ⋮ → Rename opens the name field, and the rename saves', async ({ page }) => {
+    const list = await tempList('bartender1', 'bar', 'G1')
+    await openIdeas(page, BAR)
+    await page.getByTestId(`idea-list-menu-${list.id}`).click()
+    await page.getByTestId('idea-list-rename').click()
+    const input = page.getByTestId(`idea-list-name-input-${list.id}`)
+    await expect(input).toBeFocused()
+    // Still there once the menu has gone (DEV QA: it closed by itself).
+    await page.waitForTimeout(800)
+    await expect(input).toBeFocused()
+    await input.fill('[TEST-TEMP] G1 renamed')
+    const saved = written(page, 'PATCH', new RegExp(`/lists/${list.id}$`))
+    await input.press('Enter')
+    await saved
+    await page.reload()
+    await expect(page.getByTestId(`idea-list-name-${list.id}`)).toHaveText('[TEST-TEMP] G1 renamed')
+  })
+
+  test('gap 2: closing with an unsaved description asks first (✕, Escape, back); nothing unsaved closes at once', async ({ page }) => {
+    const list = await tempList('bartender1', 'bar', 'G2')
+    const card = await tempCard('bartender1', 'bar', list.id, 'Unsaved')
+    await openIdeas(page, BAR)
+    const dialog = page.getByTestId('idea-card-dialog')
+    const ask = page.getByRole('dialog', { name: 'Discard your changes to the description?' })
+    const description = dialog.getByTestId('idea-card-description-input')
+
+    // Nothing typed: ✕ closes.
+    await cardFace(page, card.id).click()
+    await dialog.getByTestId('idea-card-close').click()
+    await expect(dialog).toBeHidden()
+
+    // ✕ with typing: asked; Keep editing keeps it.
+    await cardFace(page, card.id).click()
+    await description.fill('Half a thought')
+    await dialog.getByTestId('idea-card-close').click()
+    await expect(ask).toBeVisible()
+    await ask.getByRole('button', { name: 'Keep editing' }).click()
+    await expect(ask).toBeHidden()
+    await expect(description).toHaveValue('Half a thought')
+
+    // Escape: asked too.
+    await description.press('Escape')
+    await expect(ask).toBeVisible()
+    await ask.getByRole('button', { name: 'Keep editing' }).click()
+
+    // Back (Android's gesture): asked, and the card stays open.
+    await page.goBack()
+    await expect(ask).toBeVisible()
+    await expect(page).toHaveURL(new RegExp(`/boards/bar/cards/${card.id}$`))
+    await ask.getByRole('button', { name: 'Discard' }).click()
+    await expect(dialog).toBeHidden()
+    await expect(page).toHaveURL(/\/boards\/bar$/)
+    expect((await (await (await apiAs('bartender1')).get(`/api/idea_boards/bar/cards/${card.id}`)).json()).data.description).toBeNull()
+  })
+
+  test('gap 3: Enter on "Add the label" creates the label and puts it on the card', async ({ page }) => {
+    const list = await tempList('bartender1', 'bar', 'G3')
+    const card = await tempCard('bartender1', 'bar', list.id, 'Labelled by Enter')
+    const dialog = await openCard(page, 'bar', card.id)
+    const input = dialog.getByTestId('idea-card-labels-input').locator('input')
+    await input.fill('[TEST-TEMP] G3')
+    await expect(page.getByRole('option', { name: 'Add the label "[TEST-TEMP] G3"' })).toBeVisible()
+    const created = written(page, 'POST', /\/labels$/)
+    await input.press('Enter')
+    rememberLabel('bar', ((await (await created).json()).data as { id: number }).id)
+    await expect(dialog.locator('[data-testid^="idea-card-label-"]')).toHaveText(['[TEST-TEMP] G3'])
+    await page.reload()
+    await expect(dialog.locator('[data-testid^="idea-card-label-"]')).toHaveText(['[TEST-TEMP] G3'])
+  })
+
+  test('gap 5: per item, one of two tasks deleted: the face still says "On the task list"; both deleted: "Removed"', async ({ page }) => {
+    const list = await tempList('bartender1', 'bar', 'G5')
+    const card = await tempCard('bartender1', 'bar', list.id, 'Two items')
+    const api = await apiAs('bartender1')
+    for (const text of ['item one', 'item two'])
+      expect((await api.post(`/api/idea_boards/bar/cards/${card.id}/checklist`, { data: { text } })).status()).toBe(201)
+    const res = await api.post(`/api/idea_boards/bar/cards/${card.id}/send_to_tasks`, { data: { checklist: 'per_item', due_on: null } })
+    expect(res.status(), await res.text()).toBe(201)
+    const tasks = (await res.json()).tasks as { id: number }[]
+    expect(tasks).toHaveLength(2)
+    // The later one deleted: the old face read only the latest send.
+    expect((await api.delete(`/api/boards/bar/tasks/${tasks[1].id}`)).status()).toBe(204)
+    rememberTask('bar', tasks[0].id)
+
+    await openIdeas(page, BAR)
+    await expect(page.getByTestId(`idea-card-sent-${card.id}`)).toHaveText('On the task list')
+    expect((await api.delete(`/api/boards/bar/tasks/${tasks[0].id}`)).status()).toBe(204)
+    await page.reload()
+    await expect(page.getByTestId(`idea-card-sent-${card.id}`)).toHaveText('Removed from the task list')
+  })
+})

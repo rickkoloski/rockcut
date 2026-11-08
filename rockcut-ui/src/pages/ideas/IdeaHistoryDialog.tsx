@@ -57,7 +57,7 @@ export default function IdeaHistoryDialog({ board, card, onClose }: Props) {
         <List dense disablePadding data-testid="idea-history-list">
           {entries.map(({ ev, names }) => (
             <ListItem key={ev.id} divider data-testid={`idea-history-entry-${ev.id}`} data-action={ev.action}>
-              <ListItemText primary={describeIdeaEvent(ev, names)} secondary={`${ev.actor_name ?? 'Someone'} · ${formatIdeaTime(ev.inserted_at)}`} />
+              <ListItemText primary={describeIdeaEvent(ev, names, board)} secondary={`${ev.actor_name ?? 'Someone'} · ${formatIdeaTime(ev.inserted_at)}`} />
             </ListItem>
           ))}
         </List>

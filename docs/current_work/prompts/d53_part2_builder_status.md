@@ -682,3 +682,100 @@ create, which is an app change.
   - `--repeat-each 3 --workers 1`: **70/70 passed**.
   - The pair three separate times at default workers (4), so theme runs beside schedule as in the full
     suite: **24/24, 24/24, 24/24 passed**.
+
+## Lead decisions 7: fix cycle 1 (DEV QA), done
+
+All nine gaps are fixed. Each has a test built from the report's repro, and I checked that each test
+fails with its fix reverted:
+- API: I reverse-applied all `lib/` changes. 8 of the 9 new ExUnit tests failed. The ninth is the
+  "no locked card, anyone restores" guard, which should pass either way.
+- UI: I reverse-applied one file at a time. Gaps 1, 2, 3 and 5 each failed.
+- Gap 9 is a vitest test.
+
+New tests:
+- `test/rockcut_api_web/controllers/idea_board_fix_cycle_1_test.exs`: 9 tests.
+- A "fix cycle 1 (DEV QA)" block in `ideas/boards-scenarios.spec.ts`: 4 tests.
+- `sentFaceChip` and the gap 9 wording in `ideas.test.ts`.
+
+No existing test was deleted or weakened.
+
+**Must-fix**
+- **Gap 6 (blank title or name → 500).** `cast` turns `""` and `"   "` into `nil`, and
+  `update_change(&String.trim/1)` then crashed on `nil`. The new `Log.trim/1` keeps `nil`, so
+  `validate_required` answers 422 "can't be blank". The checklist item and note changesets had the same
+  line and use it too: editing a note to blank was the same crash. Covered: card title, list name and
+  label name, each with `""`, `"   "` and `null`, on create and update; the record is unchanged afterwards.
+- **Gap 7 (out-of-range ids → 500).**
+  - New module `RockcutApi.Ids`. `parse/1` accepts only a positive integer up to SQLite's maximum, or
+    digits for one. `page/1` returns 1 for junk and caps the page at 1,000,000.
+  - Boards: `Log.to_id` delegates to it, and `IdeaBoards.fetch_card` and the `card_id` filter use it.
+    Every row in the report's table is now 404 for a URL id and 404 or 422 for a body id. No tasks are
+    made, and nothing moves.
+  - A float such as `1e20` was already nil. Only the oversized integers reached SQLite.
+  - **Part 1 task boards had the same 500, and the same helper fixes them:**
+    - `Tasks.to_int` (task and Daily item URL ids, `before_id`).
+    - `Tasks.Assignees.to_id` (`assignee_ids`, `assignee_id`).
+    - History `task_id`.
+    - Covered by a test. The D38 Daily items and checks go through `Tasks.to_int`, so they're fixed too.
+  - An out-of-range `before_id` on a task move is 200, last in the day. That's D38's rule for a
+    `before_id` that names no task.
+  - **A huge History `page` was also a 500** (the offset overflowed) on both History endpoints. It's now
+    capped through `Ids.page/1`. The two now-unused `int_param` helpers are removed.
+
+**Should-fix**
+- **Gap 1 (⋮ → Rename).** The menu handed focus back to ⋮, which blurred the new name field and ended
+  the rename. The field now opens in the menu's `onExited`.
+- **Gap 5 (face chip).** `sentFaceChip` in `lib/ideas.ts` replaces the face's latest-send-only logic:
+  - Anything still on a list wins: "On the task list", "2 on the task list", or "Repeats on the task
+    list" when every live one repeats.
+  - Then the latest "✓ Done <day>".
+  - "Removed from the task list" only when every task is gone.
+  - I kept the spec's "On the task list" wording rather than naming the department.
+
+**Minor**
+- **Gap 2 (unsaved description).**
+  - `DescriptionField` reports unsaved typing. While there is some, ✕, Escape and the backdrop ask
+    "Discard your changes to the description?" (Discard / Keep editing).
+  - Back asks too: `useBackCloses` holds a history entry while unsaved. Back pops it, the confirm shows,
+    and the URL stays on the card.
+  - With nothing unsaved, the dialog closes at once.
+  - `ConfirmDialog` gains an optional `cancelLabel` (default "Cancel").
+- **Gap 3 (Enter on "Add the label").** Added `autoHighlight`, so Enter takes the highlighted option.
+  When the typed name matches nothing, that's "Add the label …".
+- **Gap 4 (restore a list holding a locked card).** The `Authz` rule that guarded `:archive` now covers
+  `:restore`. A non-manager gets **423 `holds_locked_card`**, the same code as archiving, with the
+  message "This list holds a locked card, so only a manager can restore it". A manager restores it.
+- **Gap 8 (rename an archived list).** `Lists.rename` returns 422 `archived` "That's archived. Restore it
+  first", like `Lists.move`.
+- **Gap 9 (History names the department).** `describeIdeaEvent` takes the board and says "(left the
+  Taproom)". It never shows the key; without the board it says "(left the department)". The task boards'
+  History already said "(left the Taproom)" from the board's name (`lib/tasks.ts`), so nothing there
+  changed.
+
+**Gate (local; servers from this worktree; setup first; never `E2E_TARGET=dev`)**
+- `mix test` twice: **2112 passed** both times.
+- `tsc` clean. Vitest **202 passed**. `vite build` OK.
+- Lint: 26 errors, the same as before, none in the changed files.
+- Playwright `idea-boards`, both ideas files `--repeat-each 2`: **89 passed** (44 tests × 2, plus setup).
+- I changed no task-board specs. The task-board API changes are covered by ExUnit.
+
+**LEAD: out-of-range URL ids return 500 across the app.** I sampled 13 routes outside the Boards and
+the task boards, as owner, with id `99999999999999999999`. All 13 returned 500 (`Exqlite.Error`):
+- `GET /api/shifts/:id`
+- `PATCH /api/users/:id`
+- `PATCH /api/beer_board/:id`
+- `GET /api/schedule_events/:id`
+- `POST /api/time_off/:id/cancel`
+- `DELETE /api/availability/:id`
+- `POST /api/notifications/:id/read`
+- `PATCH /api/production/tanks/:id`
+- `GET /api/production/templates/:id`
+- `GET /api/brands/:id`
+- `GET /api/recipes/:id`
+- `PATCH /api/departments/:id`
+- `PATCH /api/devices/:id`
+
+Many contexts parse ids themselves with `Integer.parse` or `Repo.get`. Not fixed here, as you asked.
+Two possible fixes, if wanted later:
+- One plug that turns an out-of-range `:id`-style path param into 404.
+- Moving those contexts onto `RockcutApi.Ids`.

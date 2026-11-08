@@ -83,8 +83,8 @@ defmodule RockcutApiWeb.IdeaBoardController do
   @doc "GET /api/idea_boards/:board/history?page=&card_id=: the change log, newest first."
   def history(conn, params) do
     with :ok <- allow(conn, :history) do
-      card_id = int_param(params["card_id"], nil)
-      page = max(int_param(params["page"], 1), 1)
+      card_id = RockcutApi.Ids.parse(params["card_id"])
+      page = RockcutApi.Ids.page(params["page"])
 
       %{events: events, page: page, total: total, names: names} =
         IdeaBoards.list_events(board(conn), card_id, page)
@@ -110,13 +110,4 @@ defmodule RockcutApiWeb.IdeaBoardController do
 
   defp board(conn), do: conn.assigns.idea_board
   defp current_user(conn), do: conn.assigns.current_user
-
-  defp int_param(nil, default), do: default
-
-  defp int_param(value, default) do
-    case Integer.parse(to_string(value)) do
-      {n, ""} -> n
-      _ -> default
-    end
-  end
 end

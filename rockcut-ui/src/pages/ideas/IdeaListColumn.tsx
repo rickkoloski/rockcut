@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import { Box, Button, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material'
 import { Add, ArchiveOutlined, ChevronLeft, ChevronRight, DriveFileRenameOutline, LockOpenOutlined, LockOutlined, MoreVert } from '@mui/icons-material'
 import type { ContainerSlot } from '../../components/dnd/SortableLists'
@@ -48,11 +48,19 @@ export default function IdeaListColumn(props: Props) {
   const [title, setTitle] = useState('')
   const [busy, setBusy] = useState(false)
 
+  // ⋮ → Rename opens the field once the menu has closed (fix cycle 1 gap 1):
+  // opened at once, the menu handing focus back to ⋮ blurred it, which ended
+  // the rename before it began.
+  const renameAfterMenu = useRef(false)
+  const startRename = () => {
+    setName(list.name)
+    setRenaming(true)
+  }
   const act = (action: ListAction) => {
     setAnchor(null)
     if (action === 'rename') {
-      setName(list.name)
-      setRenaming(true)
+      if (anchor) renameAfterMenu.current = true
+      else startRename()
     } else props.onAction(action)
   }
 
@@ -182,7 +190,21 @@ export default function IdeaListColumn(props: Props) {
         </Box>
       )}
       {props.footer}
-      <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)} data-testid={`idea-list-menu-items-${list.id}`}>
+      <Menu
+        anchorEl={anchor}
+        open={!!anchor}
+        onClose={() => setAnchor(null)}
+        slotProps={{
+          transition: {
+            onExited: () => {
+              if (!renameAfterMenu.current) return
+              renameAfterMenu.current = false
+              startRename()
+            },
+          },
+        }}
+        data-testid={`idea-list-menu-items-${list.id}`}
+      >
         {canChange && (
           <MenuItem onClick={() => act('rename')} data-testid="idea-list-rename">
             <ListItemIcon>

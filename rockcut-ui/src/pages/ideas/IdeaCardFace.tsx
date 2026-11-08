@@ -1,7 +1,7 @@
 import { Avatar, Box, Chip, Paper, Tooltip, Typography, useTheme } from '@mui/material'
 import { ChecklistRtl, ChatBubbleOutline, LockOutlined, VisibilityOutlined, EventOutlined } from '@mui/icons-material'
 import type { IdeaCardFace as Face, IdeaLabel } from '../../lib/types'
-import { formatIdeaDate, formatIdeaDay, isPastDue, labelColor } from '../../lib/ideas'
+import { formatIdeaDate, formatIdeaDay, isPastDue, labelColor, sentFaceChip } from '../../lib/ideas'
 import { initials } from '../../lib/tasks'
 
 interface Props {
@@ -18,22 +18,6 @@ interface Props {
   onOpen?: (card: Face) => void
 }
 
-/** The face's chip for the latest send (§4.4): "On the task list", "✓ Done", "Repeats", "Removed". */
-function sentFace(card: Face): { text: string; color: 'default' | 'success' | 'info' } | null {
-  const last = card.sent_tasks.at(-1)
-  if (!last) return null
-  switch (last.state) {
-    case 'done':
-      return { text: last.completed_on ? `✓ Done ${formatIdeaDay(last.completed_on)}` : '✓ Done', color: 'success' }
-    case 'repeating':
-      return { text: 'Repeats on the task list', color: 'info' }
-    case 'removed':
-      return { text: 'Removed from the task list', color: 'default' }
-    default:
-      return { text: 'On the task list', color: 'info' }
-  }
-}
-
 /**
  * D53 §4.4 card face: label bars, title, then a row of what's on it (due date,
  * red when past; checklist "2/5"; notes; a small eye when you watch it; the
@@ -44,7 +28,7 @@ export default function IdeaCardFace({ card, labels, listLocked, today, dragging
   const mode = theme.palette.mode
   const cardLabels = card.label_ids.map((id) => labels.get(id)).filter((l): l is IdeaLabel => !!l)
   const past = isPastDue(card.due_on, today)
-  const sent = sentFace(card)
+  const sent = sentFaceChip(card.sent_tasks)
   const people = card.assignees
   const shown = people.slice(0, 3)
   const more = people.length - shown.length

@@ -33,7 +33,7 @@ defmodule RockcutApi.IdeaBoards.IdeaList do
   def changeset(list, attrs) do
     list
     |> cast(attrs, [:name])
-    |> update_change(:name, &String.trim/1)
+    |> update_change(:name, &RockcutApi.IdeaBoards.Log.trim/1)
     |> validate_required([:name], message: "can't be blank")
     |> validate_length(:name, max: @max_name)
   end

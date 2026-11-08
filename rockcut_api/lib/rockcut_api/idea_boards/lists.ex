@@ -43,7 +43,10 @@ defmodule RockcutApi.IdeaBoards.Lists do
     end)
   end
 
-  @doc "Rename a list."
+  @doc "Rename a list. An archived one is `{:error, :archived}` (fix cycle 1, gap 8)."
+  def rename(%IdeaList{archived_at: at}, _attrs, _actor) when not is_nil(at),
+    do: {:error, :archived}
+
   def rename(%IdeaList{} = list, attrs, %User{} = actor) do
     Repo.transaction(fn ->
       case Repo.update(IdeaList.changeset(list, attrs)) do

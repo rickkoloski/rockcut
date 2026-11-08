@@ -1479,16 +1479,8 @@ defmodule RockcutApi.Tasks do
 
   defp cast_date(_), do: {:error, :invalid_date}
 
-  defp to_int(i) when is_integer(i), do: i
-
-  defp to_int(s) when is_binary(s) do
-    case Integer.parse(s) do
-      {i, ""} -> i
-      _ -> nil
-    end
-  end
-
-  defp to_int(_), do: nil
+  # An id from params (`RockcutApi.Ids`): nil when it can't be a row.
+  defp to_int(id), do: RockcutApi.Ids.parse(id)
 
   defp iso(nil), do: nil
   defp iso(%Date{} = d), do: Date.to_iso8601(d)

@@ -13,6 +13,7 @@ defmodule RockcutApiWeb.IdeaBoardErrors do
   @messages %{
     locked: "Locked by a manager",
     holds_locked_card: "This list holds a locked card, so only a manager can archive it",
+    restore_holds_locked_card: "This list holds a locked card, so only a manager can restore it",
     archived: "That's archived. Restore it first",
     list_archived: "Its list is archived. Restore the list first",
     not_archived: "Archive it first",
@@ -37,6 +38,13 @@ defmodule RockcutApiWeb.IdeaBoardErrors do
 
   def handle({:error, code}, conn) when code in [:locked, :holds_locked_card],
     do: conn |> put_status(:locked) |> json(%{error: to_string(code), message: @messages[code]})
+
+  # Restoring such a list (fix cycle 1, gap 4): the same code, its own words.
+  def handle({:error, :restore_holds_locked_card}, conn) do
+    conn
+    |> put_status(:locked)
+    |> json(%{error: "holds_locked_card", message: @messages[:restore_holds_locked_card]})
+  end
 
   def handle({:error, code}, conn) when is_map_key(@messages, code) do
     conn

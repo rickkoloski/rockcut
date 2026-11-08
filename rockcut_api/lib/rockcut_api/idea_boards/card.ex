@@ -50,7 +50,7 @@ defmodule RockcutApi.IdeaBoards.Card do
   def changeset(card, attrs) do
     card
     |> cast(attrs, [:title, :description, :due_on])
-    |> update_change(:title, &String.trim/1)
+    |> update_change(:title, &RockcutApi.IdeaBoards.Log.trim/1)
     |> validate_required([:title], message: "can't be blank")
     |> validate_length(:title, max: @max_title)
     |> validate_length(:description, max: @max_description)

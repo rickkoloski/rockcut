@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { archivedMatching, boardUrl, cardShown, describeIdeaEvent, ideaBoardTarget, ideaBoardTitle, isPastDue, sentChipText } from './ideas'
+import { archivedMatching, boardUrl, cardShown, describeIdeaEvent, ideaBoardTarget, ideaBoardTitle, isPastDue, sentChipText, sentFaceChip } from './ideas'
 import type { IdeaCardFace, IdeaEvent, IdeaSentTask } from './types'
 
 const card = (over: Partial<IdeaCardFace> = {}): IdeaCardFace => ({
@@ -78,6 +78,19 @@ describe('sentChipText (§4.7)', () => {
   })
 })
 
+describe('sentFaceChip (fix cycle 1 gap 5)', () => {
+  it('says what is still on the list before Removed', () => {
+    const removed = chip({ id: 2, state: 'removed', task_id: null })
+    expect(sentFaceChip([])).toBeNull()
+    // Per item, one of two deleted: still on the list, not "Removed".
+    expect(sentFaceChip([chip({}), removed])?.text).toBe('On the task list')
+    expect(sentFaceChip([chip({}), chip({ id: 3 }), removed])?.text).toBe('2 on the task list')
+    expect(sentFaceChip([chip({ state: 'repeating' })])?.text).toBe('Repeats on the task list')
+    expect(sentFaceChip([chip({ state: 'done', completed_on: '2026-11-13' }), removed])?.text).toBe('✓ Done Nov 13')
+    expect(sentFaceChip([removed, chip({ id: 3, state: 'removed' })])?.text).toBe('Removed from the task list')
+  })
+})
+
 describe('isPastDue', () => {
   it('compares with today', () => {
     expect(isPastDue('2026-11-07', '2026-11-08')).toBe(true)
@@ -110,6 +123,10 @@ describe('describeIdeaEvent', () => {
     expect(describeIdeaEvent(ev('card_unassigned', { from: [5, 6], to: [6], reason: 'deactivated' }), { '5': 'Alex Draft' })).toBe(
       'Took Alex Draft off Taproom remodel (deactivated)',
     )
+    // Fix cycle 1 gap 9: the department's name, never its key.
+    const left = ev('card_unassigned', { from: [5], to: [], reason: 'left_bar' })
+    expect(describeIdeaEvent(left, { '5': 'Alex Draft' }, { key: 'bar', name: 'Taproom' })).toBe('Took Alex Draft off Taproom remodel (left the Taproom)')
+    expect(describeIdeaEvent(left, { '5': 'Alex Draft' })).toBe('Took Alex Draft off Taproom remodel (left the department)')
     expect(describeIdeaEvent(ev('card_sent', { department: 'Taproom', count: 3 }))).toBe(
       'Sent Taproom remodel to the Taproom task list (3 tasks)',
     )

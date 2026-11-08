@@ -140,6 +140,28 @@ export function sentChipText(chip: IdeaSentTask): string {
   }
 }
 
+/**
+ * The card face's one chip for everything sent from it (§4.4): what's still
+ * on a task list wins ("On the task list", "2 on the task list", "Repeats
+ * on the task list"), then the latest "✓ Done"; "Removed from the task
+ * list" only when every one is gone (fix cycle 1 gap 5: the dialog lists
+ * each).
+ */
+export function sentFaceChip(sent: IdeaSentTask[]): { text: string; color: 'default' | 'success' | 'info' } | null {
+  if (!sent.length) return null
+  const live = sent.filter((s) => s.state === 'on_list' || s.state === 'repeating')
+  if (live.length) {
+    if (live.every((s) => s.state === 'repeating')) return { text: 'Repeats on the task list', color: 'info' }
+    return { text: live.length > 1 ? `${live.length} on the task list` : 'On the task list', color: 'info' }
+  }
+  const done = sent.filter((s) => s.state === 'done').map((s) => s.completed_on)
+  if (done.length) {
+    const last = done.reduce<string | null>((a, b) => (b && (!a || b > a) ? b : a), null)
+    return { text: last ? `✓ Done ${formatIdeaDay(last)}` : '✓ Done', color: 'success' }
+  }
+  return { text: 'Removed from the task list', color: 'default' }
+}
+
 /** A refused write in plain words: the API's message (423 "Locked by a manager"), else the field errors. */
 export function ideaError(err: unknown): string {
   const data = (err as { response?: { data?: { message?: string } } })?.response?.data
@@ -159,9 +181,11 @@ const FIELD_WORDS: Record<string, string> = {
 
 /**
  * One History row in words: "Moved Taproom remodel from Ideas to Doing".
- * `names` maps user ids in `detail` to names (the API's `names.users`).
+ * `names` maps user ids in `detail` to names (the API's `names.users`);
+ * `board` names the department someone left ("left the Taproom", fix cycle
+ * 1 gap 9: never the key), as the task boards' History does.
  */
-export function describeIdeaEvent(ev: IdeaEvent, names: Record<string, string> = {}): string {
+export function describeIdeaEvent(ev: IdeaEvent, names: Record<string, string> = {}, board?: Pick<IdeaBoardEntry, 'key' | 'name'>): string {
   const d = ev.detail as Record<string, unknown>
   const title = ev.title ?? ''
   const people = (ids: unknown) =>
@@ -223,7 +247,8 @@ export function describeIdeaEvent(ev: IdeaEvent, names: Record<string, string> =
       const before = Array.isArray(d.from) ? (d.from as number[]) : []
       const after = Array.isArray(d.to) ? (d.to as number[]) : []
       const who = people(before.filter((id) => !after.includes(id)))
-      const why = d.reason === 'deactivated' ? 'deactivated' : `left the ${String(d.reason ?? '').replace(/^left_/, '')} board`
+      const why =
+        d.reason === 'deactivated' ? 'deactivated' : board && d.reason === `left_${board.key}` ? `left the ${board.name}` : 'left the department'
       return `Took ${who} off ${title} (${why})`
     }
     case 'card_sent':
