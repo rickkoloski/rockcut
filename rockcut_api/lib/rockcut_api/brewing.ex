@@ -61,15 +61,19 @@ defmodule RockcutApi.Brewing do
     Repo.get!(CategoryFieldDefinition, id)
   end
 
+  # D55 §2.10: a `sort_order` that is null (or missing on create) puts the
+  # field at the end of its category's list, as for recipe ingredients.
   def create_category_field_definition(attrs) do
-    %CategoryFieldDefinition{}
+    %CategoryFieldDefinition{sort_order: nil}
     |> CategoryFieldDefinition.changeset(attrs)
+    |> put_end_sort_order(CategoryFieldDefinition, :category_id)
     |> Repo.insert()
   end
 
   def update_category_field_definition(%CategoryFieldDefinition{} = definition, attrs) do
     definition
     |> CategoryFieldDefinition.changeset(attrs)
+    |> put_end_sort_order(CategoryFieldDefinition, :category_id)
     |> Repo.update()
   end
 
@@ -244,7 +248,7 @@ defmodule RockcutApi.Brewing do
   def create_recipe_ingredient(attrs) do
     %RecipeIngredient{sort_order: nil}
     |> RecipeIngredient.changeset(attrs)
-    |> put_end_sort_order()
+    |> put_end_sort_order(RecipeIngredient, :recipe_id)
     |> Repo.insert()
     |> preload_on_ok(lot: [ingredient: :category])
   end
@@ -252,22 +256,24 @@ defmodule RockcutApi.Brewing do
   def update_recipe_ingredient(%RecipeIngredient{} = ri, attrs) do
     ri
     |> RecipeIngredient.changeset(attrs)
-    |> put_end_sort_order()
+    |> put_end_sort_order(RecipeIngredient, :recipe_id)
     |> Repo.update()
     |> preload_on_ok(lot: [ingredient: :category])
   end
 
-  defp put_end_sort_order(changeset) do
-    recipe_id = Ecto.Changeset.get_field(changeset, :recipe_id)
+  # A nil `sort_order` becomes one after the last row with the same `parent`
+  # (not counting the row itself), or 0 for the first.
+  defp put_end_sort_order(changeset, schema, parent) do
+    parent_id = Ecto.Changeset.get_field(changeset, parent)
 
-    if is_nil(Ecto.Changeset.get_field(changeset, :sort_order)) and recipe_id do
+    if is_nil(Ecto.Changeset.get_field(changeset, :sort_order)) and parent_id do
       id = Ecto.Changeset.get_field(changeset, :id)
 
       last =
-        RecipeIngredient
-        |> where([ri], ri.recipe_id == ^recipe_id)
-        |> then(fn q -> if id, do: where(q, [ri], ri.id != ^id), else: q end)
-        |> select([ri], max(ri.sort_order))
+        schema
+        |> where([r], field(r, ^parent) == ^parent_id)
+        |> then(fn q -> if id, do: where(q, [r], r.id != ^id), else: q end)
+        |> select([r], max(r.sort_order))
         |> Repo.one()
 
       Ecto.Changeset.put_change(changeset, :sort_order, if(last, do: last + 1, else: 0))

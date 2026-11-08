@@ -126,6 +126,18 @@ change.
 
 **Test:** the built manifest and the page title (Playwright, PWA project).
 
+### 2.10 Field definition with no sort order saves (added at stop 1, lead decisions 1)
+
+**Today:** Ingredient categories → a category → Add Field with Sort Order empty sends
+`"sort_order": null` → 500 (`NOT NULL constraint failed: category_field_definitions.sort_order`,
+confirmed by a test before the fix). Same for `PUT … {sort_order: null}`.
+
+**Change:** as §2.5: `null` (or missing on create) means the end of the category's fields; left out
+of an update, the position stays.
+
+**Tests:** create and update with `null`, missing on create, missing on update (ExUnit); T12
+(Playwright).
+
 ## 3. Not in D55
 
 - Task-board settings and the View filter (4994, 4991), the manager/no-department person (4984), the
@@ -147,6 +159,7 @@ change.
 | T9 | Add a grain bill ingredient with Sort Order empty → saved at the end of the list |
 | T10 | A missing ingredient category → "Category not found" |
 | T11 | The browser tab and a fresh PWA install say "Rock Cut Brewing"; an installed tablet shows the new name after the update |
+| T12 | Add a field to an ingredient category with Sort Order empty → saved at the end of its fields |
 
 ## 5. Gate
 

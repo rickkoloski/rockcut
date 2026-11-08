@@ -77,3 +77,47 @@ test('T10: a missing ingredient category says "Category not found" with a link b
     await expect(page).toHaveURL(/\/ingredients\/categories$/)
   }
 })
+
+// D55 §2.10, T12: Ingredient categories → a category → Add Field with Sort
+// Order empty saves at the end of the category's fields.
+test('T12: a field definition with Sort Order empty is saved at the end', async ({ page }) => {
+  const api = await apiAs('owner')
+  const tag = tempTag('D55 T12')
+  const res = await api.post('/api/ingredient_categories', { data: { name: tag } })
+  expect(res.status(), await res.text()).toBe(201)
+  const category = (await res.json()).data as { id: number }
+  // Deleting the category takes its field definitions with it, or they go first.
+  cleanup = async () => {
+    const defs = (await (await api.get(`/api/ingredient_categories/${category.id}`)).json()).data?.field_definitions ?? []
+    for (const d of defs as { id: number }[]) await api.delete(`/api/category_field_definitions/${d.id}`)
+    await api.delete(`/api/ingredient_categories/${category.id}`)
+  }
+  const first = await api.post('/api/category_field_definitions', {
+    data: { category_id: category.id, field_name: 'Attenuation', field_type: 'text', sort_order: 3 },
+  })
+  expect(first.status(), await first.text()).toBe(201)
+
+  await page.goto(`/ingredients/categories/${category.id}`)
+  await page.getByRole('button', { name: 'Add Field' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByLabel('Field Name').fill('Flocculation')
+  await expect(dialog.getByLabel('Sort Order')).toHaveValue('')
+  const created = page.waitForResponse(
+    (r) => r.request().method() === 'POST' && r.url().endsWith('/api/category_field_definitions'),
+  )
+  await dialog.getByRole('button', { name: 'Save' }).click()
+  expect((await created).status()).toBe(201)
+  await expect(dialog).toHaveCount(0)
+
+  // Persist-verify: after a reload it's listed, and stored after the first (3 → 4).
+  await page.reload()
+  await expect(page.getByText('Flocculation')).toBeVisible()
+  const defs = (await (await api.get(`/api/ingredient_categories/${category.id}`)).json()).data.field_definitions as {
+    field_name: string
+    sort_order: number
+  }[]
+  expect(defs.map((d) => [d.field_name, d.sort_order])).toEqual([
+    ['Attenuation', 3],
+    ['Flocculation', 4],
+  ])
+})
