@@ -189,6 +189,8 @@ defmodule RockcutApiWeb.JSONHelpers do
           %{
             id: c.id,
             title: c.title,
+            # Archived's search (Matt, 2026-11-08) matches it too.
+            description: c.description,
             archived_at: c.archived_at,
             list: maybe_render(c, :list, &%{id: &1.id, name: &1.name})
           }

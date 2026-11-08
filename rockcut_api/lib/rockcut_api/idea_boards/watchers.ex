@@ -126,7 +126,7 @@ defmodule RockcutApi.IdeaBoards.Watchers do
       title: "#{actors(changes)} changed #{card.title}",
       body: changes |> phrases() |> Enum.join(", "),
       data: %{
-        "url" => "/ideas/#{card.list.board}/cards/#{card.id}",
+        "url" => "/boards/#{card.list.board}/cards/#{card.id}",
         "board" => card.list.board,
         "card_id" => card.id
       }

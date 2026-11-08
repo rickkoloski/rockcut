@@ -80,6 +80,7 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
 
       assert task["from_idea"] == %{
                "title" => "Taproom remodel",
+               "board_name" => "Bar",
                "board" => "bar",
                "card_id" => card.id,
                "link" => true
@@ -344,6 +345,7 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
 
       assert board_tasks(p["bartender1"], "bar")[id]["from_idea"] == %{
                "title" => "Taproom remodel",
+               "board_name" => nil,
                "board" => nil,
                "card_id" => nil,
                "link" => false
@@ -354,7 +356,15 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
       card = taproom_card(p, Date.add(today(), 2))
       {:ok, [task]} = send_as(p["bartender1"], card)
 
-      assert %{task.id => %{link: false, title: "Taproom remodel", card_id: nil, board: nil}} ==
+      assert %{
+               task.id => %{
+                 link: false,
+                 title: "Taproom remodel",
+                 board_name: "Bar",
+                 card_id: nil,
+                 board: nil
+               }
+             } ==
                IdeaBoards.from_idea([task], p["brewer1"])
 
       assert %{link: true} = IdeaBoards.from_idea([task], p["bartender2"])[task.id]
@@ -404,7 +414,7 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
       notes = Send.notes(String.duplicate("word ", 1_000), items(lines))
 
       assert String.length(notes) <= 2_000
-      assert notes =~ "… see the Idea Board card\n\n☐ Item 1\n"
+      assert notes =~ "… see the card on the board\n\n☐ Item 1\n"
       assert String.ends_with?(notes, "☐ Item 20")
     end
 
@@ -413,7 +423,7 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
       notes = Send.notes("Desc", items(lines))
 
       assert String.length(notes) <= 2_000
-      assert String.ends_with?(notes, "\n… see the Idea Board card")
+      assert String.ends_with?(notes, "\n… see the card on the board")
       refute notes =~ "Desc"
 
       assert notes
@@ -425,7 +435,7 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
     test "a long description alone is cut with the pointer" do
       notes = Send.notes(String.duplicate("y", 5_000), [])
       assert String.length(notes) == 2_000
-      assert String.ends_with?(notes, "… see the Idea Board card")
+      assert String.ends_with?(notes, "… see the card on the board")
     end
   end
 end

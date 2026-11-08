@@ -501,3 +501,120 @@ cards, lists, labels or tasks left).
 - **LEAD-5:** Drag lists left and right: build it in stage 6 (a change to the shared drag layer,
   with the task-board drag specs re-run), or keep Move left/right and note the difference in the
   spec?
+
+## Stop 5 (2026-11-08): stages 7 and 8, plus Matt's three changes
+
+### Gate
+
+- `MIX_ENV=test mix test` twice: **2103 passed** both runs.
+- `tsc -p tsconfig.app.json`: clean. `vite build`: OK. `vitest`: **201 passed**.
+- `pnpm lint`: **26 errors, 1 warning**, the same as before.
+- `tsc -p tsconfig.e2e.json`: 2 errors, both in specs I didn't touch (`task-board-phone`,
+  `beer-board-import`).
+- **Playwright** (local, one project at a time, `E2E_TARGET` unset):
+  - `--project idea-boards --no-deps`: **40 passed**.
+  - `--project brewery-board --no-deps` after stage 7: **226 passed** (17 min), and again after
+    the rename and `/boards` changes: **226 passed** (18 min).
+- I reseeded the local dev DB (`mix rockcut.synthetic.setup`) for the new `[SEED]` data.
+
+### Stage 7: §4.8 follow-ups (commit `d61e6a3`)
+
+Each item has a test from its repro, and each failed with the fix reverted and passed with it
+restored. I reverted by reversing the diff; I checked by running the tests, not by reading.
+
+| Item | Fix | Test |
+|---|---|---|
+| Gap 4 | A "following" edit logs `people: {removed, added}` over every occurrence it reaches (before the edit), and History names them ("Assigned Riley Wort to …; removed Jake Brewer, Morgan Mash (this and following)"). `from`/`to` stay as they were. | ExUnit `tasks/qa_followups_test` (gap 4 ×2); Vitest `tasks.test`; Playwright `task-board-qa-followups` (gap 4, History through the UI) |
+| Gap 5 | Leaving: one `unassigned` row per series, on its first open occurrence, with `count`; one-offs as before. "… (left the Brewery) (52 occurrences)". | ExUnit, Vitest |
+| Gap 6 | Mark not done takes off anyone who can no longer take the task (left, or deactivated), logged `unassigned` with the reason. A finished task still keeps who did it. | ExUnit (fix + control) |
+| Gap 9 | Reason `deactivated` when the person is inactive (`Tasks` and the Idea Boards); History "(deactivated)". | ExUnit, Vitest |
+| Gap 11 | `TaskCard`: one person sits beside the title only when there's no repeat or notes icon; otherwise the initials get their own row, as for two or more people. | Playwright `task-board-qa-followups` (gap 11: the initials sit below the title at 1440 px) |
+| Gap 13 | A split from the series' **first** date: what stays (kept exceptions, finished ones) joins the new series as it is (flag, people, title, notes). It doesn't become one-offs. The new series already skips their days. Series Delete following now reaches them. | ExUnit (gap 13 ×2) |
+| Gap 14 | **Behaviour unchanged; the confirm says so.** `change_preview` gains `keeps_moved`, and the rule-change confirm adds "Kept, the one moved to another day stays there, and the new pattern can make its old day too." See judgment call 1. | ExUnit (gap 14), Vitest `repeat.test` |
+| Recheck 2 obs. 1 | `change_preview` gains `removes_noted`. The confirm adds "N removed ones have their own notes, which go too." History `removed_with_notes` reads "removed 4 (1 with their own notes)". | ExUnit (×2), Vitest |
+| Recheck 2 obs. 2 | `taskSaveError`: a repeat field's error (`count`, `until_date`, …) reads as a sentence with no `count:` prefix. | Vitest `tasks.test` |
+
+**Tests changed (meaning kept):** none of the existing ones.
+
+### Stage 8: seed, specs, COVERAGE
+
+**Seed** (`seeds/synthetic.ex`, `seed_idea_boards/2`, rebuilt on every setup):
+- **Taproom:**
+  - "[SEED] Big job" and "Quick win" labels.
+  - A **locked** "[SEED] Taproom remodel" list. Its "[SEED] New bar top" card has a description,
+    due date, bartender1 and bartender2, a 1/3 checklist and 2 notes, and bartender1 watches it.
+  - A **locked** "[SEED] Raise tap prices" card in Planned.
+  - An overdue "[SEED] Patio heaters for fall".
+  - "[SEED] Deep clean the lines", **sent** to the Taproom task list (its task is titled `[SEED]`
+    too).
+- **Brewery:** "[SEED] Equipment" label; "[SEED] New canning line" with people, a checklist and a
+  note.
+- **Company:** "[SEED] Events" label; "[SEED] Holiday party" with office1 and bartender1, and a
+  note.
+- **Clean-up:**
+  - `delete_tagged/1` (used by `cleanup_temp` for `[TEST-TEMP]` and by setup for `[SEED]`)
+    removes tagged lists (with their cards), cards and labels on **every board**, and the sent-task
+    rows of tagged cards. Then it renumbers every board's lists and every list's cards.
+  - The starter lists are never touched.
+- **Tests:**
+  - Added to `seeds/synthetic_test` ("Idea Boards" ×3): the contents; setup twice gives the same
+    data with the starter lists unchanged; `cleanup_temp` on all five boards.
+  - Changed: D41's `board_titles` helper leaves out the one task sent from a card, so its counts
+    (6 and 7 Taproom tasks) keep their meaning. That task is checked with the Idea Boards.
+
+**Playwright:**
+- `regression/ideas/boards-scenarios.spec.ts` (new, 29 tests) covers S224–S243 and S255–S261 as
+  the personas, with S239's long press dropped onto a list's tab. `helpers.ts` gains `touchDropOn`
+  and `cardListId`. Together with the 11 smoke tests that's 40 in the `idea-boards` project.
+- What a browser can't show in a spec's time stays in ExUnit:
+  - Watch's 10-minute batching (S225's and S242's notifications), and S243, which would change a
+    shared persona's memberships.
+  - The browser specs check the parts they can: the Watch toggle, the eye, the Watching filter.
+- `tests/COVERAGE.md`: a D53 Part 2 section covering every scenario and every §4.8 item.
+
+### Matt's changes (lead decisions 4, later sections)
+
+- **No list dragging:** Move left/right stays.
+- **Search in Archived:**
+  - A search box at the top narrows lists by name and cards by title or description, ignoring
+    case, as you type. "Nothing archived matches" when nothing does.
+  - `…/archived` returns everything, so it filters in the browser (`archivedMatching`). The API
+    only adds `description` to archived cards.
+  - Tests: Vitest; Playwright S237 (description, list name, no match, restore).
+  - Screenshots `archived-search-{1280,390}-{light,dark}.png` and `archived-search-none-*`.
+- **"Boards":**
+  - **Board names:** nav "Boards" with `ViewKanbanOutlined`; titles and switcher "Taproom
+    board"; "History: Taproom board".
+  - **Notification preferences:** "Changes to board cards you watch".
+  - **Send's cut-off text:** "… see the card on the board".
+  - **Task dialog:** "From the Taproom board: <title>". The API's `from_idea` gains `board_name`;
+    with no name (card deleted for good) it reads "From a board: <title>".
+  - The starter list "Ideas" keeps its name. Code names and `/api/idea_boards` are unchanged.
+- **`/boards` URLs:**
+  - `/boards`, `/boards/:board` and `/boards/:board/cards/:id` for people and tablets, built by
+    `boardUrl()` everywhere (board, routes, task dialog link).
+  - The Watch notification's `url` is now `/boards/<board>/cards/<id>`. No `/ideas` redirect.
+- **No auto-watch:** already the case (S224's spec checks bartender2 isn't watching).
+- **Screenshots** re-taken in both themes at 1280 and 390, with the new names and URLs:
+  `/tmp/claude-501/pwlogs/d53p2shots/*.png`. Clean-up checked: no `[TEST-TEMP]` cards, lists,
+  labels or tasks left.
+
+### Judgment calls (tell me if any is wrong)
+
+1. **Gap 14: I took the spec's second option ("the confirm says so").** D39 pins the opposite
+   choice in an existing test ("Its old Wednesday is free, so the new series makes one there",
+   `series_edits_test`). Skipping the date would have reversed a pinned decision and changed that
+   test's meaning. If Matt prefers no twin, it's a one-line change in `skip_kept_days/6` (skip
+   `series_date` as well as `due_on`) plus that test.
+2. **Gap 6:** reopening takes off anyone who can't take the task now, including someone
+   deactivated, with History saying why.
+3. **Gap 13** applies only to a rule change (split). Delete following and Stop repeating from a
+   series' first date behave as before. They delete the series, and anything finished there becomes
+   a one-off, as D39 says.
+4. **S226's order:** the switcher lists boards in department order, Brewery before Taproom (as the
+   task boards do). The spec's row lists Taproom first. The spec asserts the three boards, with
+   Company last.
+
+### LEAD:
+
+- **LEAD-6:** Is judgment call 1 (gap 14 confirm, not skip) acceptable?

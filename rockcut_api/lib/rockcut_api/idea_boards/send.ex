@@ -31,7 +31,7 @@ defmodule RockcutApi.IdeaBoards.Send do
 
   import Ecto.Query, only: [from: 2]
 
-  @cut_suffix "… see the Idea Board card"
+  @cut_suffix "… see the card on the board"
   @repeat_keys ~w(repeat repeat_interval repeat_weekdays repeat_month_rule repeat_day_of_month
                   repeat_week_of_month repeat_weekday repeat_until repeat_count)
 

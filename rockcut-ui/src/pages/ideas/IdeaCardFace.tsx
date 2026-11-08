@@ -12,6 +12,8 @@ interface Props {
   today: string
   dragging?: boolean
   overlay?: boolean
+  /** It can't be dragged here (`data-locked`, as task cards mark it). */
+  locked?: boolean
   /** A click opens it; Enter on the focused card is the drag layer's `onItemActivate`. */
   onOpen?: (card: Face) => void
 }
@@ -37,7 +39,7 @@ function sentFace(card: Face): { text: string; color: 'default' | 'success' | 'i
  * red when past; checklist "2/5"; notes; a small eye when you watch it; the
  * lock), people's initials, and the "On the task list" chip after a Send.
  */
-export default function IdeaCardFace({ card, labels, listLocked, today, dragging, overlay, onOpen }: Props) {
+export default function IdeaCardFace({ card, labels, listLocked, today, dragging, overlay, locked, onOpen }: Props) {
   const theme = useTheme()
   const mode = theme.palette.mode
   const cardLabels = card.label_ids.map((id) => labels.get(id)).filter((l): l is IdeaLabel => !!l)
@@ -52,6 +54,7 @@ export default function IdeaCardFace({ card, labels, listLocked, today, dragging
       variant="outlined"
       onClick={() => onOpen?.(card)}
       data-testid={`idea-card-${card.id}`}
+      data-locked={locked ? 'true' : 'false'}
       sx={{
         p: 1,
         mb: 1,

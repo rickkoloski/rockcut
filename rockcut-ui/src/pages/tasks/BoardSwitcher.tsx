@@ -10,7 +10,7 @@ interface Props {
   onSwitch: (key: string) => void
   /** Phone width: a smaller title for the toolbar row. */
   compact?: boolean
-  /** D53: the Idea Boards' titles ("Taproom ideas"); default "Taproom tasks". */
+  /** D53: the Idea Boards' titles ("Taproom board"); default "Taproom tasks". */
   titleOf?: (board: TaskBoardEntry) => string
 }
 

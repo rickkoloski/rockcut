@@ -14,24 +14,25 @@ test.afterEach(cleanupIdeas)
 test.describe('bartender1', () => {
   test.use({ storageState: authFile('bartender1'), viewport: { width: 1600, height: 1000 } })
 
-  test('S223: nav → Idea Boards opens the Taproom board with its four lists; the switcher has Taproom and Company', async ({ page }) => {
+  test('S223: nav → Boards opens the Taproom board with its four lists; the switcher has Taproom and Company', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('button', { name: 'Idea Boards', exact: true }).click()
-    await expect(page).toHaveURL(/\/ideas\/bar$/)
-    await expect(page.getByTestId('board-title')).toHaveText('Taproom ideas')
+    await page.getByRole('button', { name: 'Boards', exact: true }).click()
+    await expect(page).toHaveURL(/\/boards\/bar$/)
+    await expect(page.getByTestId('board-title')).toHaveText('Taproom board')
+    await expect(page.locator('[data-testid^="idea-list-name-"]').first()).toHaveText('Ideas')
     const names = await page.locator('[data-testid^="idea-list-name-"]').allInnerTexts()
     expect(names.slice(0, 4)).toEqual(['Ideas', 'Planned', 'Doing', 'Done'])
     await page.getByTestId('board-switcher').click()
     await expect(page.getByTestId('board-switcher-menu').getByRole('menuitem')).toHaveText(['Taproom', 'Company'])
   })
 
-  test('S227: /ideas/brewery goes to the Taproom board', async ({ page }) => {
-    await page.goto('/ideas/brewery')
-    await expect(page).toHaveURL(/\/ideas\/bar$/)
+  test('S227: /boards/brewery goes to the Taproom board', async ({ page }) => {
+    await page.goto('/boards/brewery')
+    await expect(page).toHaveURL(/\/boards\/bar$/)
   })
 
   test('S224 smoke: a list and a card from the board; the card dialog saves; reload keeps it all; back closes it', async ({ page }) => {
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     // The list, through the UI; its id from the reply so clean-up finds it.
     await page.getByTestId('idea-add-list').click()
     const name = `[TEST-TEMP] Remodel ${Date.now().toString(36)}`
@@ -47,7 +48,7 @@ test.describe('bartender1', () => {
     const face = listColumn(page, list.id).locator('[data-testid^="idea-card-title-"]')
     await expect(face).toHaveText(['[TEST-TEMP] New bar top'])
     await face.click()
-    await expect(page).toHaveURL(/\/ideas\/bar\/cards\/\d+$/)
+    await expect(page).toHaveURL(/\/boards\/bar\/cards\/\d+$/)
     const dialog = page.getByTestId('idea-card-dialog')
 
     await dialog.getByTestId('idea-card-description-input').fill('Walnut, seats 14')
@@ -71,20 +72,20 @@ test.describe('bartender1', () => {
 
     // Opened by URL (a reload): Close goes to the board.
     await dialog.getByTestId('idea-card-close').click()
-    await expect(page).toHaveURL(/\/ideas\/bar$/)
+    await expect(page).toHaveURL(/\/boards\/bar$/)
     // Opened from the board: back closes it.
     await face.click()
     await expect(dialog).toBeVisible()
     await page.goBack()
     await expect(dialog).toBeHidden()
-    await expect(page).toHaveURL(/\/ideas\/bar$/)
+    await expect(page).toHaveURL(/\/boards\/bar$/)
   })
 
   test('drag a card to another list (mouse)', async ({ page }) => {
     const a = await tempList('bartender1', 'bar', 'Drag from')
     const b = await tempList('bartender1', 'bar', 'Drag to')
     const card = await tempCard('bartender1', 'bar', a.id, 'Dragged')
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     await mouseDrag(page, cardFace(page, card.id), listColumn(page, b.id))
     await expect(listColumn(page, b.id).getByTestId(`idea-card-${card.id}`)).toBeVisible()
     await expect
@@ -95,7 +96,7 @@ test.describe('bartender1', () => {
   test('S233 smoke: Send → the chip; the task dialog says "From idea" and links back', async ({ page }) => {
     const list = await tempList('bartender1', 'bar', 'Send')
     const card = await tempCard('bartender1', 'bar', list.id, 'Deep clean the lines')
-    await openIdeas(page, `/ideas/bar/cards/${card.id}`)
+    await openIdeas(page, `/boards/bar/cards/${card.id}`)
     const dialog = page.getByTestId('idea-card-dialog')
     await dialog.getByTestId('idea-card-send').click()
     const send = page.getByTestId('idea-send-dialog')
@@ -109,16 +110,16 @@ test.describe('bartender1', () => {
     await page.goto('/tasks/bar')
     await page.getByTestId(`task-${task.id}:future`).click()
     await page.getByTestId('task-menu-edit').click()
-    await expect(page.getByTestId('task-dialog-from-idea')).toContainText('From idea:')
+    await expect(page.getByTestId('task-dialog-from-idea')).toContainText(`From the ${await deptName()} board:`)
     await page.getByTestId('task-dialog-from-idea-link').click()
-    await expect(page).toHaveURL(new RegExp(`/ideas/bar/cards/${card.id}$`))
+    await expect(page).toHaveURL(new RegExp(`/boards/bar/cards/${card.id}$`))
     await expect(page.getByTestId('idea-card-dialog')).toBeVisible()
   })
 
   test('S237 smoke: archive a list from its menu; Archived restores it', async ({ page }) => {
     const list = await tempList('bartender1', 'bar', 'Archive me')
     await tempCard('bartender1', 'bar', list.id, 'Inside')
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     await page.getByTestId(`idea-list-menu-${list.id}`).click()
     await page.getByTestId('idea-list-archive').click()
     await expect(listColumn(page, list.id)).toBeHidden()
@@ -137,14 +138,14 @@ test.describe('bartender1', () => {
     const list = await tempList('bartender1', 'bar', 'Locked')
     const mgr = await apiAs('barMgr')
     expect((await mgr.post(`/api/idea_boards/bar/lists/${list.id}/lock`)).status()).toBe(200)
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     await expect(page.getByTestId(`idea-list-locked-by-${list.id}`)).toContainText('Locked by Casey')
     await expect(page.getByTestId(`idea-add-card-${list.id}`)).toHaveCount(0)
     await expect(page.getByTestId(`idea-list-menu-${list.id}`)).toHaveCount(0)
   })
 
   test('S240 smoke: no History in the menu', async ({ page }) => {
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     await page.getByTestId('idea-settings').click()
     await expect(page.getByTestId('idea-menu-archived')).toBeVisible()
     await expect(page.getByTestId('idea-menu-history')).toHaveCount(0)
@@ -157,7 +158,7 @@ test.describe('barMgr', () => {
   test('S228/S240 smoke: a manager keeps the locked list\'s controls, and has History', async ({ page }) => {
     const list = await tempList('barMgr', 'bar', 'Locked')
     await (await apiAs('barMgr')).post(`/api/idea_boards/bar/lists/${list.id}/lock`)
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     await expect(page.getByTestId(`idea-add-card-${list.id}`)).toBeVisible()
     await page.getByTestId(`idea-list-menu-${list.id}`).click()
     await expect(page.getByTestId('idea-list-unlock')).toBeVisible()
@@ -175,7 +176,7 @@ test.describe('taproomDevice', () => {
   test('S241 smoke: the board and a card, view only', async ({ page }) => {
     const list = await tempList('bartender1', 'bar', 'Tablet')
     const card = await tempCard('bartender1', 'bar', list.id, 'Read only')
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     await expect(listColumn(page, list.id)).toBeVisible()
     await expect(page.getByTestId('idea-add-list')).toHaveCount(0)
     await expect(page.getByTestId(`idea-add-card-${list.id}`)).toHaveCount(0)
@@ -197,13 +198,13 @@ test.describe('phone width', () => {
   test('S239 smoke: one list at a time under tabs; a card opens at its URL and back closes it', async ({ page }) => {
     const list = await tempList('bartender1', 'bar', 'Phone')
     const card = await tempCard('bartender1', 'bar', list.id, 'On a phone')
-    await openIdeas(page, '/ideas/bar')
+    await openIdeas(page, '/boards/bar')
     await expect(page.getByTestId('idea-list-tabs')).toBeVisible()
     await page.getByTestId(`idea-list-tab-${list.id}`).click()
     await expect(listColumn(page, list.id)).toBeVisible()
     await expect(page.locator('[data-testid^="idea-list-"][data-list-name]')).toHaveCount(1)
     await cardFace(page, card.id).click()
-    await expect(page).toHaveURL(new RegExp(`/ideas/bar/cards/${card.id}$`))
+    await expect(page).toHaveURL(new RegExp(`/boards/bar/cards/${card.id}$`))
     await expect(page.getByTestId('idea-card-dialog')).toBeVisible()
     await page.goBack()
     await expect(page.getByTestId('idea-card-dialog')).toBeHidden()

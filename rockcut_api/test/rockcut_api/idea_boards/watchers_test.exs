@@ -55,7 +55,7 @@ defmodule RockcutApi.IdeaBoards.WatchersTest do
     assert n.body == "1 note, ticked 1 item"
 
     assert n.data == %{
-             "url" => "/ideas/bar/cards/#{card.id}",
+             "url" => "/boards/bar/cards/#{card.id}",
              "board" => "bar",
              "card_id" => card.id
            }

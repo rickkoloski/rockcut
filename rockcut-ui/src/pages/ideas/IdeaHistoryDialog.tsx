@@ -37,7 +37,7 @@ export default function IdeaHistoryDialog({ board, card, onClose }: Props) {
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="md" fullScreen={fullScreen} data-testid="idea-history-dialog">
-      <DialogTitle>{card ? `History: ${card.title}` : `History: ${board.name} ideas`}</DialogTitle>
+      <DialogTitle>{card ? `History: ${card.title}` : `History: ${board.name} board`}</DialogTitle>
       <DialogContent dividers sx={{ p: 0 }}>
         {isLoading && (
           <Box sx={{ p: 3, textAlign: 'center' }}>

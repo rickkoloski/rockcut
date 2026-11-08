@@ -7,6 +7,7 @@ import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { actingRun } from '../../hooks/useActing'
 import api from '../../lib/api'
 import { isActingCancelled, withCode } from '../../lib/acting'
+import { boardUrl } from '../../lib/ideas'
 import { boardPath, cardPeople, samePeople, taskError, taskGone, taskSaveError } from '../../lib/tasks'
 import { defaultRule, reseed, ruleChangeNote, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
 import type { RosterEntry, SeriesChange, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
@@ -278,12 +279,12 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
             Changes apply to this one and every later open one that wasn't changed on its own.
           </Alert>
         )}
-        {/* D53 §4.7: the card it was sent from; a link only when this person can open that board. */}
+        {/* D53 §4.7: the card it was sent from ("From the Taproom board: …"); a link only when this person can open that board. */}
         {card?.from_idea && (
           <Typography variant="body2" color="text.secondary" data-testid="task-dialog-from-idea">
-            From idea:{' '}
+            {card.from_idea.board_name ? `From the ${card.from_idea.board_name} board:` : 'From a board:'}{' '}
             {card.from_idea.link && card.from_idea.board && card.from_idea.card_id ? (
-              <Link component={RouterLink} to={`/ideas/${card.from_idea.board}/cards/${card.from_idea.card_id}`} data-testid="task-dialog-from-idea-link">
+              <Link component={RouterLink} to={boardUrl(card.from_idea.board, card.from_idea.card_id)} data-testid="task-dialog-from-idea-link">
                 {card.from_idea.title}
               </Link>
             ) : (

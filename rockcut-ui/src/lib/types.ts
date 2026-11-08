@@ -670,6 +670,8 @@ export interface TaskCardData {
  */
 export interface FromIdea {
   title: string
+  /** The card's board ("Taproom"); null once the card is deleted for good. */
+  board_name: string | null
   board: string | null
   card_id: number | null
   link: boolean
@@ -946,7 +948,7 @@ export interface IdeaBoardData {
 
 export interface IdeaArchived {
   lists: (Omit<IdeaListData, 'cards'> & { card_count: number })[]
-  cards: { id: number; title: string; archived_at: string; list: { id: number; name: string } }[]
+  cards: { id: number; title: string; description?: string | null; archived_at: string; list: { id: number; name: string } }[]
 }
 
 export interface IdeaEvent {

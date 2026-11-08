@@ -80,3 +80,31 @@ export async function openIdeas(page: Page, path: string) {
 
 export const listColumn = (page: Page, id: number) => page.getByTestId(`idea-list-${id}`)
 export const cardFace = (page: Page, id: number) => page.getByTestId(`idea-card-${id}`)
+
+/**
+ * D53 S239: a long press on `source` (a card) lifts it; the finger slides
+ * onto `target` (another list's tab, a drop zone) and lets go there.
+ */
+export async function touchDropOn(page: Page, source: import('@playwright/test').Locator, target: import('@playwright/test').Locator) {
+  const cdp = await page.context().newCDPSession(page)
+  const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd', points: [number, number][]) =>
+    cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y]) => ({ x, y })) })
+  await source.scrollIntoViewIfNeeded()
+  const s = (await source.boundingBox())!
+  let [x, y] = [s.x + Math.min(30, s.width / 2), s.y + s.height / 2]
+  await touch('touchStart', [[x, y]])
+  // The long press (250 ms) lifts it.
+  await expect(page.locator('[aria-roledescription="sortable"][aria-pressed="true"]')).toHaveCount(1, { timeout: 5_000 })
+  const t = (await target.boundingBox())!
+  const [tx, ty] = [t.x + t.width / 2, t.y + t.height / 2]
+  for (let i = 1; i <= 12; i++) await touch('touchMove', [[x + ((tx - x) * i) / 12, y + ((ty - y) * i) / 12]])
+  ;[x, y] = [tx, ty]
+  await touch('touchMove', [[x + 1, y]])
+  await touch('touchEnd', [])
+}
+
+/** The card's place: its list id, from the API. */
+export async function cardListId(persona: PersonaKey, key: string, cardId: number) {
+  const b = await board(await apiAs(persona), key)
+  return b.lists.find((l) => l.cards?.some((c) => c.id === cardId))?.id ?? null
+}

@@ -1,12 +1,12 @@
 import { Navigate, useParams } from 'react-router-dom'
 import useAuth from '../../hooks/useAuth'
-import { ideaBoardTarget, readIdeaBoard } from '../../lib/ideas'
+import { boardUrl, ideaBoardTarget, readIdeaBoard } from '../../lib/ideas'
 import IdeaBoard from './IdeaBoard'
 
 /**
- * D53 §4.4: `/ideas/:board` (and `/ideas/:board/cards/:cardId`, a card open
+ * D53 §4.4: `/boards/:board` (and `/boards/:board/cards/:cardId`, a card open
  * on it) shows that board when the person can open it; otherwise their first
- * board (S227: `/ideas/bar` → `/ideas/brewery`; S238: → `/ideas/company`),
+ * board (S227: `/boards/bar` → `/boards/brewery`; S238: → `/boards/company`),
  * or Home with none.
  */
 export function IdeaBoardPage() {
@@ -15,12 +15,12 @@ export function IdeaBoardPage() {
   const board = ideaBoards.find((b) => b.key === key)
   if (board) return <IdeaBoard key={board.key} board={board} boards={ideaBoards} cardId={cardId ? Number(cardId) : null} />
   const target = ideaBoardTarget(ideaBoards, key, null)
-  return <Navigate to={target ? `/ideas/${target}` : '/'} replace />
+  return <Navigate to={target ? boardUrl(target) : '/'} replace />
 }
 
-/** `/ideas`: the board this browser last opened, else the first. */
+/** `/boards`: the board this browser last opened, else the first. */
 export function IdeasIndex() {
   const { ideaBoards } = useAuth()
   const target = ideaBoardTarget(ideaBoards, null, readIdeaBoard())
-  return <Navigate to={target ? `/ideas/${target}` : '/'} replace />
+  return <Navigate to={target ? boardUrl(target) : '/'} replace />
 }

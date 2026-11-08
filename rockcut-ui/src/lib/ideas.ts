@@ -1,9 +1,10 @@
-// D53 Part 2: Idea Boards. Paths, the remembered board, label colors, the
+// D53 Part 2: Idea Boards ("Boards" to the people using them, Matt 2026-11-08).
+// Paths, the remembered board, label colors, the
 // filter, and the words for chips and History. No React here.
 import parseApiError from './parseApiError'
 import { coloradoToday } from './tasks'
 import { TZ } from './datetime'
-import type { IdeaBoardEntry, IdeaCardFace, IdeaEvent, IdeaSentTask } from './types'
+import type { IdeaArchived, IdeaBoardEntry, IdeaCardFace, IdeaEvent, IdeaSentTask } from './types'
 
 export const IDEA_BOARD_KEY = 'idea-board'
 export const IDEA_CARD_KEY = 'idea-card'
@@ -13,10 +14,13 @@ export const COMPANY = 'company'
 export const ideaPath = (board: string, ...parts: (string | number | undefined)[]) =>
   ['/api/idea_boards', board, ...parts.filter((p) => p !== undefined)].join('/')
 
-/** "Taproom ideas", "Company ideas": a board's title. */
-export const ideaBoardTitle = (board: Pick<IdeaBoardEntry, 'name'>) => `${board.name} ideas`
+/** "Taproom board", "Company board": a board's title. */
+export const ideaBoardTitle = (board: Pick<IdeaBoardEntry, 'name'>) => `${board.name} board`
 
-// The board last opened: `/ideas` opens it.
+/** The page's URL: `/boards/<board>`, or a card open on it (`/boards/<board>/cards/<id>`). */
+export const boardUrl = (board: string, cardId?: number) => (cardId === undefined ? `/boards/${board}` : `/boards/${board}/cards/${cardId}`)
+
+// The board last opened: `/boards` opens it.
 const BOARD_KEY = 'rockcut.ideas.board'
 
 export function readIdeaBoard(): string | null {
@@ -37,7 +41,7 @@ export function writeIdeaBoard(key: string) {
 
 /**
  * The board an Ideas URL should show (§4.4): the one asked for if this
- * person can open it; for `/ideas`, the remembered one; else their first
+ * person can open it; for `/boards`, the remembered one; else their first
  * department's board, else Company (S227, S238). Null with no boards.
  */
 export function ideaBoardTarget(boards: Pick<IdeaBoardEntry, 'key'>[], wanted: string | null, remembered: string | null): string | null {
@@ -95,6 +99,20 @@ export const formatIdeaTime = (iso: string) => dateTimeFmt.format(new Date(iso))
 
 /** "Nov 2" in Colorado time ("Locked by Casey · Nov 2"). */
 export const formatIdeaDate = (iso: string) => dateOnlyFmt.format(new Date(iso))
+
+/**
+ * Archived's search (Matt, 2026-11-08): what still shows for `q`, ignoring
+ * case: lists by name, cards by title or description. A blank `q` keeps all.
+ */
+export function archivedMatching(archived: IdeaArchived, q: string): IdeaArchived {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return archived
+  const has = (text: string | null | undefined) => !!text && text.toLowerCase().includes(needle)
+  return {
+    lists: archived.lists.filter((l) => has(l.name)),
+    cards: archived.cards.filter((c) => has(c.title) || has(c.description)),
+  }
+}
 
 /** A due date before today (the card face shows it red). */
 export const isPastDue = (dueOn: string | null, today = coloradoToday()) => !!dueOn && dueOn < today

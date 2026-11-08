@@ -229,8 +229,8 @@ defmodule RockcutApi.IdeaBoards do
   end
 
   @doc """
-  "From idea" for task JSON (§4.7): `%{task_id => %{title, board, card_id,
-  link}}` for the tasks in `tasks` (maps or structs with `id` and
+  "From the <board> board" for task JSON (§4.7): `%{task_id => %{title,
+  board_name, board, card_id, link}}` for the tasks in `tasks` (maps or structs with `id` and
   `series_id`) that came from a card, directly or as an occurrence of a
   sent series. `link` is false when the card was deleted for good or
   `viewer` can't open its board; the title is still there.
@@ -273,9 +273,13 @@ defmodule RockcutApi.IdeaBoards do
 
         {ct, title, key} ->
           linked? = ct.card_id != nil and Map.get(readable, key, false)
+          card_board = key && board_for_key(key)
 
           Map.put(acc, id, %{
             title: title || ct.card_title,
+            # "From the Taproom board: …" (Matt, 2026-11-08); nil once the
+            # card is deleted for good.
+            board_name: card_board && board_name(card_board),
             board: if(linked?, do: key),
             card_id: if(linked?, do: ct.card_id),
             link: linked?

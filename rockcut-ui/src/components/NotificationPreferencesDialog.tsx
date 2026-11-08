@@ -38,8 +38,8 @@ const EVENTS = [
   { event: 'calendar_feed_rotated', label: 'Calendar link changed' },
   // D40 (spec §3.5): Brewery members only; push and the bell, never email.
   { event: 'task_shift_end', label: 'Unfinished tasks before shift end', brewery: true },
-  // D53 §4.6: changes to an Idea Board card you watch; push and the bell, never email.
-  { event: 'idea_card_changed', label: 'Changes to Idea Board cards you watch' },
+  // D53 §4.6: changes to a board card you watch; push and the bell, never email.
+  { event: 'idea_card_changed', label: 'Changes to board cards you watch' },
 ]
 // Per-event default overrides (must match the backend). New messages skip the
 // in-app bell by default (unread badges cover it). A changed calendar link

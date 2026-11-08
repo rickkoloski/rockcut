@@ -8,19 +8,22 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  InputAdornment,
   List,
   ListItem,
   ListItemText,
+  TextField,
   Typography,
   useMediaQuery,
   useTheme,
 } from '@mui/material'
+import { Search } from '@mui/icons-material'
 import { useQueryClient } from '@tanstack/react-query'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
-import { formatIdeaDate, ideaError, ideaPath } from '../../lib/ideas'
+import { archivedMatching, formatIdeaDate, ideaError, ideaPath } from '../../lib/ideas'
 import type { IdeaArchived, IdeaBoardEntry } from '../../lib/types'
 
 interface Props {
@@ -32,7 +35,9 @@ interface Props {
 
 /**
  * D53 §4.1 "Archived" (the board's ⋮ menu): archived lists, with their card
- * counts, and archived cards. Anyone on the board restores; the board's
+ * counts, and archived cards. A search box narrows both as you type (list
+ * name, card title or description, ignoring case; Matt, 2026-11-08); the
+ * API returns them all, so it filters here. Anyone on the board restores; the board's
  * managers (owners on Company) also delete for good.
  */
 export default function ArchivedDialog({ board, onClose, onChanged, onOpenCard }: Props) {
@@ -40,7 +45,9 @@ export default function ArchivedDialog({ board, onClose, onChanged, onOpenCard }
   const fullScreen = useMediaQuery(useTheme().breakpoints.down('sm'))
   const qc = useQueryClient()
   const queryKey = ['idea-archived', board.key]
-  const { data, isLoading, isError, error } = useApiQuery<IdeaArchived>(queryKey, ideaPath(board.key, 'archived'), undefined, { staleTime: 0 })
+  const { data: all, isLoading, isError, error } = useApiQuery<IdeaArchived>(queryKey, ideaPath(board.key, 'archived'), undefined, { staleTime: 0 })
+  const [q, setQ] = useState('')
+  const data = all && archivedMatching(all, q)
   const [problem, setProblem] = useState<string | null>(null)
   const [deleting, setDeleting] = useState<{ kind: 'lists' | 'cards'; id: number; name: string; extra: string } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -59,7 +66,8 @@ export default function ArchivedDialog({ board, onClose, onChanged, onOpenCard }
     }
   }
 
-  const empty = data && data.lists.length === 0 && data.cards.length === 0
+  const nothing = all && all.lists.length === 0 && all.cards.length === 0
+  const noMatch = !nothing && data && data.lists.length === 0 && data.cards.length === 0
 
   return (
     <Dialog open onClose={onClose} fullWidth maxWidth="sm" fullScreen={fullScreen} data-testid="idea-archived-dialog">
@@ -72,7 +80,33 @@ export default function ArchivedDialog({ board, onClose, onChanged, onOpenCard }
             {problem}
           </Alert>
         )}
-        {empty && <Typography color="text.secondary">Nothing archived.</Typography>}
+        {!nothing && all && (
+          <TextField
+            size="small"
+            fullWidth
+            autoFocus
+            placeholder="Search archived lists and cards"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            sx={{ mb: 1 }}
+            slotProps={{
+              htmlInput: { 'aria-label': 'Search archived', 'data-testid': 'idea-archived-search' },
+              input: {
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Search fontSize="small" />
+                  </InputAdornment>
+                ),
+              },
+            }}
+          />
+        )}
+        {nothing && <Typography color="text.secondary">Nothing archived.</Typography>}
+        {noMatch && (
+          <Typography color="text.secondary" data-testid="idea-archived-none">
+            Nothing archived matches
+          </Typography>
+        )}
         {data && data.lists.length > 0 && (
           <>
             <Typography variant="overline" color="text.secondary">

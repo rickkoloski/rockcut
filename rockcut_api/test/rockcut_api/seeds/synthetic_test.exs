@@ -730,12 +730,20 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     alias RockcutApi.Tasks
     alias RockcutApi.Tasks.{DailyItem, Task, TaskSeries}
 
+    # D41's own tasks on a board. D53 Part 2's seed also sends one Idea Board
+    # card to the Taproom task list; that one is checked with the Idea Boards.
     defp board_titles(key) do
       dept = task_board(key)
 
+      sent =
+        from(ct in RockcutApi.IdeaBoards.CardTask,
+          where: not is_nil(ct.task_id),
+          select: ct.task_id
+        )
+
       Repo.all(
         from(t in Task,
-          where: t.department_id == ^dept.id,
+          where: t.department_id == ^dept.id and t.id not in subquery(sent),
           order_by: [t.title],
           select: {t.title, t.due_on, t.assignee_id}
         )
@@ -1270,6 +1278,140 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       refute Repo.get(Batch, batch.id)
       refute Enum.any?(part_ids, &Repo.get(Batch, &1))
       refute Repo.get(Brand, brand.id)
+    end
+  end
+
+  describe "Idea Boards (D53 Part 2)" do
+    alias RockcutApi.IdeaBoards
+    alias RockcutApi.IdeaBoards.{Card, CardTask, IdeaList, Label, Lists}
+
+    defp seeded do
+      %{
+        lists:
+          Repo.all(from(l in IdeaList, where: like(l.name, "[SEED]%"), select: {l.board, l.name})),
+        cards:
+          Repo.all(
+            from(c in Card,
+              join: l in assoc(c, :list),
+              where: like(c.title, "[SEED]%"),
+              order_by: [l.board, c.title],
+              select: {l.board, c.title, not is_nil(c.locked_at)}
+            )
+          ),
+        labels:
+          Repo.all(
+            from(l in Label,
+              where: like(l.name, "[SEED]%"),
+              order_by: l.name,
+              select: {l.board, l.name}
+            )
+          )
+      }
+    end
+
+    test "seeds lists, cards and labels on Brewery, Taproom and Company, with a locked list and card and a sent card" do
+      {:ok, _} = Synthetic.setup()
+      %{lists: lists, cards: cards, labels: labels} = seeded()
+
+      assert lists == [{"bar", "[SEED] Taproom remodel"}]
+      assert Repo.get_by!(IdeaList, name: "[SEED] Taproom remodel").locked_at
+      assert {"bar", "[SEED] Raise tap prices", true} in cards
+
+      assert Enum.map(cards, &elem(&1, 0)) |> Enum.uniq() |> Enum.sort() ==
+               ~w(bar brewery company)
+
+      assert length(labels) == 4
+
+      top =
+        Repo.get_by!(Card, title: "[SEED] New bar top")
+        |> Repo.preload([:checklist_items, :notes, :assignees])
+
+      assert length(top.checklist_items) == 3
+      assert length(top.notes) == 2
+      assert length(top.assignees) == 2
+
+      lines = Repo.get_by!(Card, title: "[SEED] Deep clean the lines")
+
+      assert [%CardTask{task_id: task_id}] =
+               Repo.all(from(t in CardTask, where: t.card_id == ^lines.id))
+
+      assert Repo.get!(RockcutApi.Tasks.Task, task_id).title == "[SEED] Deep clean the lines"
+    end
+
+    test "setup twice gives the same Idea Board data, the starter lists untouched" do
+      {:ok, _} = Synthetic.setup()
+      first = seeded()
+
+      starters =
+        Repo.all(
+          from(l in IdeaList,
+            where: l.name in ~w(Ideas Planned Doing Done),
+            select: {l.board, l.name, l.position}
+          )
+        )
+
+      {:ok, _} = Synthetic.setup()
+      assert seeded() == first
+      assert Repo.aggregate(from(c in CardTask), :count) == 1
+
+      assert Repo.all(
+               from(l in IdeaList,
+                 where: l.name in ~w(Ideas Planned Doing Done),
+                 select: {l.board, l.name, l.position}
+               )
+             ) ==
+               starters
+    end
+
+    test "cleanup_temp removes [TEST-TEMP] lists, cards and labels on every board; the rest stay dense" do
+      {:ok, _} = Synthetic.setup()
+      owner = Accounts.get_user_by_email(Synthetic.persona!("owner").email)
+
+      for key <- ~w(brewery bar office sales company) do
+        board = IdeaBoards.board_for_key(key)
+        {:ok, list} = Lists.create(board, %{"name" => "[TEST-TEMP] list"}, owner)
+        {:ok, _} = RockcutApi.IdeaBoards.Cards.create(board, list, %{"title" => "inside"}, owner)
+        ideas = Repo.one!(from(l in IdeaList, where: l.board == ^key and l.name == "Ideas"))
+
+        {:ok, _} =
+          RockcutApi.IdeaBoards.Cards.create(
+            board,
+            ideas,
+            %{"title" => "[TEST-TEMP] card"},
+            owner
+          )
+
+        {:ok, _} =
+          RockcutApi.IdeaBoards.Labels.create(
+            board,
+            %{"name" => "[TEST-TEMP] label", "color" => "red"},
+            owner
+          )
+      end
+
+      :ok = Synthetic.cleanup_temp()
+
+      refute Repo.exists?(from(l in IdeaList, where: like(l.name, "[TEST-TEMP]%")))
+
+      refute Repo.exists?(
+               from(c in Card, where: like(c.title, "[TEST-TEMP]%") or c.title == "inside")
+             )
+
+      refute Repo.exists?(from(l in Label, where: like(l.name, "[TEST-TEMP]%")))
+      assert seeded().cards != []
+
+      for key <- ~w(brewery bar office sales company) do
+        positions =
+          Repo.all(
+            from(l in IdeaList,
+              where: l.board == ^key and is_nil(l.archived_at),
+              order_by: l.position,
+              select: l.position
+            )
+          )
+
+        assert positions == Enum.to_list(1..length(positions))
+      end
     end
   end
 end

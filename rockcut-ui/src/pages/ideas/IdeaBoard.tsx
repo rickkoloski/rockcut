@@ -13,7 +13,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { coloradoToday } from '../../lib/tasks'
-import { IDEA_BOARD_KEY, cardShown, ideaBoardTitle, ideaError, ideaPath, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
+import { IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, ideaError, ideaPath, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
 import type { IdeaBoardData, IdeaBoardEntry, IdeaCardFace as Face, IdeaLabel, IdeaListData, IdeaPerson } from '../../lib/types'
 import BoardSwitcher from '../tasks/BoardSwitcher'
 import IdeaListColumn, { type ListAction } from './IdeaListColumn'
@@ -25,7 +25,7 @@ import IdeaHistoryDialog from './IdeaHistoryDialog'
 interface Props {
   board: IdeaBoardEntry
   boards: IdeaBoardEntry[]
-  /** `/ideas/:board/cards/:id`: the card open in its dialog. */
+  /** `/boards/:board/cards/:id`: the card open in its dialog. */
   cardId: number | null
 }
 
@@ -164,16 +164,16 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     if (ok) setNewList('')
   }
 
-  const openCard = (id: number) => navigate(`/ideas/${key}/cards/${id}`, { state: { fromBoard: true } })
+  const openCard = (id: number) => navigate(boardUrl(key, id), { state: { fromBoard: true } })
   const closeCard = () => {
     // Opened from the board: back to it (Android back does the same). From a shared link: the board.
     if ((location.state as { fromBoard?: boolean } | null)?.fromBoard) navigate(-1)
-    else navigate(`/ideas/${key}`, { replace: true })
+    else navigate(boardUrl(key), { replace: true })
   }
 
   const switchBoard = (next: string) => {
     writeIdeaBoard(next)
-    navigate(`/ideas/${next}`)
+    navigate(boardUrl(next))
   }
 
   const filters: Choice<IdeaFilter>[] = [
@@ -379,6 +379,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
                 today={today}
                 dragging={state.dragging}
                 overlay={state.overlay}
+                locked={state.locked}
                 onOpen={(c) => openCard(c.id)}
               />
             ) : null

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cardShown, describeIdeaEvent, ideaBoardTarget, isPastDue, sentChipText } from './ideas'
+import { archivedMatching, boardUrl, cardShown, describeIdeaEvent, ideaBoardTarget, ideaBoardTitle, isPastDue, sentChipText } from './ideas'
 import type { IdeaCardFace, IdeaEvent, IdeaSentTask } from './types'
 
 const card = (over: Partial<IdeaCardFace> = {}): IdeaCardFace => ({
@@ -43,7 +43,7 @@ describe('ideaBoardTarget (S227, S238)', () => {
     expect(ideaBoardTarget(boards, 'brewery', 'company')).toBe('bar')
     expect(ideaBoardTarget([{ key: 'company' }], 'bar', null)).toBe('company')
   })
-  it('/ideas opens the remembered board when it can', () => {
+  it('/boards opens the remembered board when it can', () => {
     expect(ideaBoardTarget(boards, null, 'company')).toBe('company')
     expect(ideaBoardTarget(boards, null, 'office')).toBe('bar')
     expect(ideaBoardTarget([], null, 'bar')).toBeNull()
@@ -114,5 +114,29 @@ describe('describeIdeaEvent', () => {
       'Sent Taproom remodel to the Taproom task list (3 tasks)',
     )
     expect(describeIdeaEvent(ev('list_renamed', { from: 'Ideas', to: 'Someday' }, 'Someday'))).toBe('Renamed the list Ideas to Someday')
+  })
+})
+
+describe('Boards (Matt, 2026-11-08)', () => {
+  it('titles and URLs', () => {
+    expect(ideaBoardTitle({ name: 'Taproom' })).toBe('Taproom board')
+    expect(boardUrl('bar')).toBe('/boards/bar')
+    expect(boardUrl('bar', 42)).toBe('/boards/bar/cards/42')
+  })
+
+  it('Archived search: list name, card title or description, ignoring case', () => {
+    const archived = {
+      lists: [{ id: 1, name: 'Fall releases', card_count: 2 }],
+      cards: [
+        { id: 2, title: 'Shelved stout', description: 'Too dark for summer', archived_at: '', list: { id: 3, name: 'Ideas' } },
+        { id: 4, title: 'Patio heaters', description: null, archived_at: '', list: { id: 3, name: 'Ideas' } },
+      ],
+    } as unknown as Parameters<typeof archivedMatching>[0]
+    expect(archivedMatching(archived, '  ')).toBe(archived)
+    expect(archivedMatching(archived, 'FALL').lists.map((l) => l.id)).toEqual([1])
+    expect(archivedMatching(archived, 'fall').cards).toEqual([])
+    expect(archivedMatching(archived, 'too DARK').cards.map((c) => c.id)).toEqual([2])
+    expect(archivedMatching(archived, 'patio').cards.map((c) => c.id)).toEqual([4])
+    expect(archivedMatching(archived, 'nope')).toEqual({ lists: [], cards: [] })
   })
 })

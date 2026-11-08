@@ -76,7 +76,7 @@ type Created = { inputValue: string; create: true }
 type LabelOption = IdeaLabel | Created
 
 /**
- * D53 §4.4 card dialog, at `/ideas/<board>/cards/<id>`. Every field saves on
+ * D53 §4.4 card dialog, at `/boards/<board>/cards/<id>`. Every field saves on
  * its own (title on Enter or leaving it, description with Save, people,
  * due date and labels as they change). Beside them: Watch, Lock (managers),
  * Archive / Restore, Delete for good (managers, archived), Send to task list,
