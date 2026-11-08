@@ -48,7 +48,7 @@ worktree yourself, resolve, commit, then hand over.
   model for D55's brief, incl. `BRIEF2.md`'s no-temporary-passwords rule).
 - Can be removed: `~/src/rockcut-d53`, `~/src/rockcut-d53p2`, `~/src/rockcut-d53p2-deploy`,
   `~/src/rockcut-release-20261108`, `~/src/rockcut-d53p1-qa`.
-- QA progress panel: `/tmp/claude-501/pwlogs/qawatch.sh <log>` (in `/tmp`, may not survive a reboot;
+- QA progress panel: `~/.config/herdr/scripts/qawatch.sh <log>` (copy of the `/tmp/claude-501/pwlogs/` one; `pwwatch.sh` too;
   it reads `[n/N] X# START|PASS|FAIL|PARTIAL`, `GAP k severity X# …`, `DONE …` lines).
 
 ## Backlog touched today
