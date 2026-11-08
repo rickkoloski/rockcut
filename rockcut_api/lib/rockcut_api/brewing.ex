@@ -239,9 +239,12 @@ defmodule RockcutApi.Brewing do
     |> Repo.preload(lot: [ingredient: :category])
   end
 
+  # D55 §2.5 (task 4981): a `sort_order` that is null (or missing on create)
+  # puts the ingredient at the end of its recipe's list.
   def create_recipe_ingredient(attrs) do
-    %RecipeIngredient{}
+    %RecipeIngredient{sort_order: nil}
     |> RecipeIngredient.changeset(attrs)
+    |> put_end_sort_order()
     |> Repo.insert()
     |> preload_on_ok(lot: [ingredient: :category])
   end
@@ -249,8 +252,28 @@ defmodule RockcutApi.Brewing do
   def update_recipe_ingredient(%RecipeIngredient{} = ri, attrs) do
     ri
     |> RecipeIngredient.changeset(attrs)
+    |> put_end_sort_order()
     |> Repo.update()
     |> preload_on_ok(lot: [ingredient: :category])
+  end
+
+  defp put_end_sort_order(changeset) do
+    recipe_id = Ecto.Changeset.get_field(changeset, :recipe_id)
+
+    if is_nil(Ecto.Changeset.get_field(changeset, :sort_order)) and recipe_id do
+      id = Ecto.Changeset.get_field(changeset, :id)
+
+      last =
+        RecipeIngredient
+        |> where([ri], ri.recipe_id == ^recipe_id)
+        |> then(fn q -> if id, do: where(q, [ri], ri.id != ^id), else: q end)
+        |> select([ri], max(ri.sort_order))
+        |> Repo.one()
+
+      Ecto.Changeset.put_change(changeset, :sort_order, if(last, do: last + 1, else: 0))
+    else
+      changeset
+    end
   end
 
   def delete_recipe_ingredient(%RecipeIngredient{} = ri) do
