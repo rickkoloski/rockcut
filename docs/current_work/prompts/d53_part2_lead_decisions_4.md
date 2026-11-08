@@ -50,3 +50,14 @@ paths and the `/ideas` URLs stay as they are. Spec §2.1 is updated.
 - Grep the UI and the API's user-facing strings (notifications, errors) for "Idea Board", "Idea
   Boards" and "ideas" in visible text, and update tests that assert them.
 - **The starter list named "Ideas" stays** (it's a list, not the board).
+
+## Matt (2026-11-08, later still): URLs and auto-watch
+
+- **URLs become `/boards`:** `/boards`, `/boards/:board`, `/boards/:board/cards/:id`, everywhere the UI
+  builds or matches them (`lib/ideas.ts` paths, `App.tsx` routes for people and tablets,
+  `IdeaBoardRoutes`, links in the task dialog, Messages-shareable card URLs) and in the API's
+  notification `url` (`Watchers`: `/boards/<board>/cards/<id>`). No `/ideas` redirect is needed,
+  since nothing has shipped. The UI route `/boards` doesn't clash with anything (the task boards are
+  `/tasks`; `/api/boards` is the API's). Code names and API paths (`/api/idea_boards`) stay.
+  Spec updated.
+- **No auto-watch when someone is added to a card** (confirmed; as the spec already says).
