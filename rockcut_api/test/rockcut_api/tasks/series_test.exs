@@ -260,7 +260,7 @@ defmodule RockcutApi.Tasks.SeriesTest do
                  @today
                )
 
-      assert :assignee_id in errors(cs)
+      assert :assignee_ids in errors(cs)
     end
   end
 

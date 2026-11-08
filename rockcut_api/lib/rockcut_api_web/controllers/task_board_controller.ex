@@ -30,7 +30,9 @@ defmodule RockcutApiWeb.TaskBoardController do
   /api/production/steps/move`; same day → the board's reorder), complete →
   `Steps.complete/4` (the batch-number and off-plan prompts; never
   "where should it show"), uncomplete → `Steps.uncomplete/1`, notes and
-  assignee → `Steps.update/2`, delete → the step's `on_task_list` off. A
+  assignee → `Steps.update/2` (D53: one person at most; more through
+  `assignee_ids` is 422 `linked_task_assignees`), delete → the step's
+  `on_task_list` off. A
   title or repeat change, Future, `stop_repeating` and the series read are
   422 `linked_task`. Move and complete take `preview: true`. Responses
   carry the production `undo_token` (`POST /api/production/undo/:token`)
@@ -54,7 +56,7 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   alias RockcutApi.{Authz, Repo, Tasks}
   alias RockcutApi.Production.{Step, Steps, Undo}
-  alias RockcutApi.Tasks.{Series, Task}
+  alias RockcutApi.Tasks.{Assignees, Series, Task}
   alias RockcutApiWeb.{ProductionErrors, StaffCodeActing, TaskErrors}
 
   action_fallback RockcutApiWeb.FallbackController
@@ -282,6 +284,33 @@ defmodule RockcutApiWeb.TaskBoardController do
   # Notes and assignee go to the step; a new day is a move; a title or a
   # repeat is refused.
   defp linked_update(person, task, step, params) do
+    with {:ok, params} <- one_assignee(task, params),
+         do: linked_edit(person, task, step, params)
+  end
+
+  # D53 §3.1: steps stay single-assignee, so `assignee_ids` is one id or none,
+  # which the step takes as its `assignee_id`. Someone who can't take it is
+  # refused as on any other task: by name, under `assignee_ids`.
+  defp one_assignee(task, params) do
+    case Assignees.given(params) do
+      nil ->
+        {:ok, params}
+
+      [] ->
+        {:ok, Map.put(params, "assignee_id", nil)}
+
+      [id] ->
+        checked =
+          task |> Ecto.Changeset.change() |> Assignees.validate(params, Assignees.ids(task))
+
+        if checked.valid?, do: {:ok, Map.put(params, "assignee_id", id)}, else: {:error, checked}
+
+      _ ->
+        {:error, :linked_task_assignees}
+    end
+  end
+
+  defp linked_edit(person, task, step, params) do
     cond do
       Series.repeat?(params) ->
         {:error, :linked_task}

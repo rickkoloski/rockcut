@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Checkbox, CircularProgress, FormControlLabel, MenuItem, TextField } from '@mui/material'
+import { Alert, Box, Button, Checkbox, Chip, CircularProgress, FormControlLabel, MenuItem, TextField } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { actingRun } from '../../hooks/useActing'
 import api from '../../lib/api'
 import { isActingCancelled, withCode } from '../../lib/acting'
-import { boardPath, taskError, taskGone, taskSaveError } from '../../lib/tasks'
-import { defaultRule, endsOnlyChange, reseed, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
+import { boardPath, cardPeople, samePeople, taskError, taskGone, taskSaveError } from '../../lib/tasks'
+import { defaultRule, reseed, ruleChangeNote, ruleFromTaskSeries, ruleProblem, sameRule, taskRepeatParams, type TaskRule } from '../../lib/repeat'
 import type { RosterEntry, SeriesChange, TaskBoardEntry, TaskCardData, TaskSeriesData } from '../../lib/types'
 import RepeatFields from './RepeatFields'
 import { ExtendDialog, RemoveLaterDialog, ScopeDialog, type Changed, type SeriesScope } from './SeriesDialogs'
@@ -37,7 +37,7 @@ interface Props {
 }
 
 /**
- * D38 §3.8 add/edit dialog: title, notes, assignee and Day (or No day,
+ * D38 §3.8 add/edit dialog: title, notes, assignees and Day (or No day,
  * Future). Mount it with a `key` per task so it starts from that task. Save
  * sends only the fields that changed; with none, it just closes.
  *
@@ -53,6 +53,11 @@ interface Props {
  * D39 Decision 6: an open one-off shows Repeat too (from Never; a Future one
  * needs a day first). Saving a rule makes it the first occurrence of a new
  * series. A finished one-off has no Repeat.
+ *
+ * D53 §3.2: "Assigned to" is a multi-select with chips; empty is unassigned.
+ * People who stay keep their order and new ones go last, so the first person
+ * changes only when they're removed. On a phone, back closes the open list
+ * before the dialog.
  */
 export default function TaskDialog({ mode, board, members, today, onClose, onSaved, onStale, onDelete, onHistory }: Props) {
   // S76: the phone's back gesture closes the dialog, not the board.
@@ -63,7 +68,10 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
   const presetFollowing = mode.kind === 'edit' && !!mode.series
   const [title, setTitle] = useState(card?.title ?? '')
   const [notes, setNotes] = useState(card?.notes ?? '')
-  const [assigneeId, setAssigneeId] = useState<number | ''>(card?.assignee_id ?? '')
+  const startPeople = card ? cardPeople(card) : []
+  const [assigneeIds, setAssigneeIds] = useState<number[]>(startPeople.map((p) => p.id))
+  const [assigneesOpen, setAssigneesOpen] = useState(false)
+  usePhoneBackCloses(assigneesOpen, () => setAssigneesOpen(false))
   const startDay = card ? card.due_on : mode.kind === 'add' ? mode.dueOn : null
   const [noDay, setNoDay] = useState(startDay === null)
   const [day, setDay] = useState(startDay ?? today)
@@ -92,7 +100,6 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
 
   // Asking before a save or a delete on an occurrence.
   const [asking, setAsking] = useState<{ body: Record<string, unknown> } | null>(null)
-  const [confirmRemove, setConfirmRemove] = useState<{ body: Record<string, unknown> } | null>(null)
   // Opened to edit the notes (menu, or the card's notes icon by click or key): focus Notes with
   // the cursor after them. Not autoFocus: the dialog's focus trap takes focus after it when the
   // dialog opens from a key (D52). The field mounts a render after the dialog (its portal), so a
@@ -116,10 +123,22 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
   const dayLocked = !!card?.locked
   const futureLocked = !!card?.done
   // Someone who left the department stays selectable on a task that still names them.
-  const options =
-    card?.assignee_id && !members.some((b) => b.id === card.assignee_id)
-      ? [...members, { id: card.assignee_id, name: card.assignee_name ?? 'Unknown', departments: [] }]
-      : members
+  const options = [
+    ...members,
+    ...startPeople.filter((p) => !members.some((b) => b.id === p.id)).map((p) => ({ ...p, departments: [] })),
+  ]
+  const nameOf = (id: number) => options.find((b) => b.id === id)?.name ?? 'Unknown'
+
+  const changeAssignees = (value: unknown) => {
+    const picked = value as (number | '')[]
+    // "Anyone" clears the list, and there's nothing more to pick.
+    if (picked.includes('')) {
+      setAssigneeIds([])
+      setAssigneesOpen(false)
+    } else {
+      setAssigneeIds(picked as number[])
+    }
+  }
 
   const changeDay = (value: string) => {
     setDay(value)
@@ -133,7 +152,6 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
 
   const send = async (body: Record<string, unknown>, scope?: SeriesScope, changed?: Changed) => {
     setAsking(null)
-    setConfirmRemove(null)
     setConfirmEnds(null)
     setSaving(true)
     try {
@@ -155,8 +173,8 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     }
   }
 
-  /** D42 §2.6: what an Ends-only save does (the API works it out), then confirm. */
-  const askEnds = async (body: Record<string, unknown>) => {
+  /** D42 §2.6: what a rule or Ends save does (the API works it out), then confirm. */
+  const askChange = async (body: Record<string, unknown>) => {
     if (!card) return
     setSaving(true)
     try {
@@ -188,7 +206,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     setTitleError(null)
     setError(null)
     const dueOn = noDay ? null : day
-    const body: Record<string, unknown> = { title: trimmed, notes: notes.trim() || null, assignee_id: assigneeId === '' ? null : assigneeId }
+    const body: Record<string, unknown> = { title: trimmed, notes: notes.trim() || null, assignee_ids: assigneeIds }
 
     if (!card) return send({ ...body, due_on: dueOn, ...(repeating ? taskRepeatParams(rule) : {}) })
 
@@ -197,7 +215,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     const content: Record<string, unknown> = {}
     if (body.title !== card.title) content.title = body.title
     if (body.notes !== (card.notes?.trim() || null)) content.notes = body.notes
-    if (body.assignee_id !== (card.assignee_id ?? null)) content.assignee_id = body.assignee_id
+    if (!samePeople(assigneeIds, startPeople.map((p) => p.id))) content.assignee_ids = assigneeIds
     const dayChange: Record<string, unknown> = !dayLocked && dueOn !== card.due_on ? { due_on: dueOn } : {}
 
     if (!inSeries) {
@@ -212,9 +230,10 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
     // open ones: confirm first when there are any (Decision 2).
     if (repeating && original && !sameRule(rule, original)) {
       const full = { ...content, ...dayChange, ...taskRepeatParams(rule) }
-      if (endsOnlyChange(rule, original)) return askEnds(full)
-      if (series && series.later_open + series.later_changed > 0) return setConfirmRemove({ body: full })
-      return send(full, 'following')
+      // The API counts what a rule change removes (a notes-only one isn't
+      // changed on its own there, D53 lead decisions 6), and sends an Ends-only
+      // change to the Ends confirm.
+      return askChange(full)
     }
     if (Object.keys(content).length > 0) {
       const full = { ...content, ...dayChange }
@@ -287,16 +306,38 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
         />
         <TextField
           select
-          label="Assign to"
-          value={assigneeId}
-          onChange={(e) => setAssigneeId(e.target.value === '' ? '' : Number(e.target.value))}
-          slotProps={{ select: { displayEmpty: true, SelectDisplayProps: { 'data-testid': 'task-assignee-select' } as object }, inputLabel: { shrink: true } }}
+          label="Assigned to"
+          value={assigneeIds}
+          onChange={(e) => changeAssignees(e.target.value)}
+          slotProps={{
+            select: {
+              multiple: true,
+              displayEmpty: true,
+              open: assigneesOpen,
+              onOpen: () => setAssigneesOpen(true),
+              onClose: () => setAssigneesOpen(false),
+              renderValue: (selected) =>
+                (selected as number[]).length === 0 ? (
+                  'Anyone'
+                ) : (
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {(selected as number[]).map((id) => (
+                      <Chip key={id} size="small" label={nameOf(id)} data-testid={`task-assignee-chip-${id}`} />
+                    ))}
+                  </Box>
+                ),
+              SelectDisplayProps: { 'data-testid': 'task-assignee-select' } as object,
+            },
+            inputLabel: { shrink: true },
+          }}
         >
           <MenuItem value="" data-testid="task-assignee-anyone">
             Anyone
           </MenuItem>
           {options.map((b) => (
-            <MenuItem key={b.id} value={b.id} data-testid={`task-assignee-option-${b.id}`}>
+            // A long name wraps on a phone rather than running off the list.
+            <MenuItem key={b.id} value={b.id} data-testid={`task-assignee-option-${b.id}`} sx={{ whiteSpace: 'normal', overflowWrap: 'anywhere' }}>
+              <Checkbox size="small" checked={assigneeIds.includes(b.id)} tabIndex={-1} disableRipple sx={{ p: 0, mr: 1, flexShrink: 0 }} />
               {b.name}
             </MenuItem>
           ))}
@@ -345,6 +386,7 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
             title={confirmEnds.change.kind === 'ends' ? 'Change when it ends' : 'Change the repeat'}
             laterOpen={confirmEnds.change.removes_open}
             laterChanged={confirmEnds.change.removes_changed}
+            note={confirmEnds.change.kind === 'rule' ? ruleChangeNote('assignee_ids' in confirmEnds.body) : undefined}
             loading={saving}
             onConfirm={(changed) => send(confirmEnds.body, 'following', changed)}
             onCancel={() => setConfirmEnds(null)}
@@ -352,16 +394,6 @@ export default function TaskDialog({ mode, board, members, today, onClose, onSav
         ) : (
           <ExtendDialog loading={saving} onConfirm={() => send(confirmEnds.body, 'following')} onCancel={() => setConfirmEnds(null)} />
         ))}
-      {confirmRemove && series && (
-        <RemoveLaterDialog
-          title="Change the repeat"
-          laterOpen={series.later_open}
-          laterChanged={series.later_changed}
-          loading={saving}
-          onConfirm={(changed) => send(confirmRemove.body, 'following', changed)}
-          onCancel={() => setConfirmRemove(null)}
-        />
-      )}
     </>
   )
 }

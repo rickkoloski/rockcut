@@ -14,6 +14,7 @@ import {
   openBoard,
   setBoardCheck,
   tempTag,
+  toggleAssignees,
   userId,
 } from './taskBoardHelpers'
 import { pickSetting, setSetting, settingOn } from '../settingsMenu'
@@ -68,9 +69,8 @@ test.describe('as brewer2', () => {
     await openBoard(page)
     await openMenu(page, task.id, today)
     await page.getByTestId('task-menu-edit').click()
-    await page.getByTestId('task-assignee-select').click()
     const brewer1Id = await userId(await apiAs('brewer1'))
-    await page.getByTestId(`task-assignee-option-${brewer1Id}`).click()
+    await toggleAssignees(page, [brewer1Id])
     const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${task.id}$`), 'PATCH')
     await saveDialog(page).click()
     await saved

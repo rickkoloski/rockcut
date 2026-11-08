@@ -16,6 +16,7 @@ import {
   openBoard,
   setBoardCheck,
   tempTag,
+  toggleAssignees,
   userId,
   type ApiCard,
 } from './taskBoardHelpers'
@@ -334,11 +335,11 @@ test('S60, S69, S61: "Just this one" and "This and all following"; ones changed 
   await openMenu(page, w2.id, w2.due_on!)
   await page.getByTestId('task-menu-edit').click()
   const brewer2 = await userId(await apiAs('brewer2'))
-  await pick(page, 'task-assignee-select', `task-assignee-option-${brewer2}`)
+  await toggleAssignees(page, [brewer2])
   await saveDialog(page).click()
   const following = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w2.id}$`), 'PATCH')
   await page.getByTestId('series-scope-following').click()
-  expect((await following).request().postDataJSON()).toEqual({ assignee_id: brewer2, scope: 'following' })
+  expect((await following).request().postDataJSON()).toEqual({ assignee_ids: [brewer2], scope: 'following' })
   await page.reload()
 
   const after = await occurrences(api, first.series_id!, t, addDays(t, 42))
@@ -451,10 +452,10 @@ test('G1: Edit series… from before a split reaches the occurrences after it', 
   await openBoard(page)
   await openMenu(page, w1.id, w1.due_on!)
   await page.getByTestId('task-menu-edit-series').click()
-  await pick(page, 'task-assignee-select', `task-assignee-option-${me}`)
+  await toggleAssignees(page, [me])
   const saved = boardWrite(page, new RegExp(`^/api/boards/brewery/tasks/${w1.id}$`), 'PATCH')
   await saveDialog(page).click()
-  expect((await saved).request().postDataJSON()).toEqual({ assignee_id: me, scope: 'following' })
+  expect((await saved).request().postDataJSON()).toEqual({ assignee_ids: [me], scope: 'following' })
   await expect(page.getByTestId('task-dialog')).toHaveCount(0)
 
   // Every open one from w1 on, past the split too, is brewer1's.

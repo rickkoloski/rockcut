@@ -1,8 +1,11 @@
 import type { KeyboardEvent, MouseEvent, PointerEvent } from 'react'
 import { Avatar, Box, Checkbox, Chip, Paper, Tooltip, Typography } from '@mui/material'
 import { NotesOutlined, Repeat } from '@mui/icons-material'
-import { firstName, formatTaskDay, initials } from '../../lib/tasks'
+import { cardPeople, firstName, formatTaskDay, initials } from '../../lib/tasks'
 import type { TaskCardData } from '../../lib/types'
+
+/** D53: how many people a card shows before "+N". */
+const MAX_INITIALS = 3
 
 interface Props {
   card: TaskCardData
@@ -35,6 +38,24 @@ interface Props {
  * SortableLists).
  */
 export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly, noCheck, locked = card.locked, onNotes }: Props) {
+  const people = cardPeople(card)
+  // D53: up to three, then "+N"; the tooltip names everyone.
+  const assignees = (
+    <Tooltip title={people.map((p) => p.name).join(', ')}>
+      <Box sx={{ display: 'inline-flex', flexWrap: 'wrap', gap: '1px', flexShrink: 0, verticalAlign: 'top' }} data-testid={`task-assignees-${card.key}`}>
+        {people.slice(0, MAX_INITIALS).map((p, i) => (
+          <Avatar key={p.id} sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={i === 0 ? `task-assignee-${card.key}` : `task-assignee-${card.key}-${i}`}>
+            {initials(p.name)}
+          </Avatar>
+        ))}
+        {people.length > MAX_INITIALS && (
+          <Avatar sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={`task-assignee-more-${card.key}`}>
+            +{people.length - MAX_INITIALS}
+          </Avatar>
+        )}
+      </Box>
+    </Tooltip>
+  )
   const open = (e: MouseEvent<HTMLElement>) => onOpen?.(card, e.currentTarget)
   const tags = [
     card.planned_on && !showDate && { id: 'planned', label: `planned ${formatTaskDay(card.planned_on)}` },
@@ -159,14 +180,10 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
               />
             </Tooltip>
           )}
-          {card.assignee_name && (
-            <Tooltip title={card.assignee_name}>
-              <Avatar sx={{ width: 20, height: 20, fontSize: 10 }} data-testid={`task-assignee-${card.key}`}>
-                {initials(card.assignee_name)}
-              </Avatar>
-            </Tooltip>
-          )}
+          {people.length === 1 && assignees}
         </Box>
+        {/* D53: two or more get their own row; beside the title they'd leave it no room in a day column. */}
+        {people.length > 1 && <Box sx={{ mt: 0.25 }}>{assignees}</Box>}
         {card.production?.planned && (
           // D49 §3.12: a planned batch's step ("Show planned batches" hides these).
           <Chip label="Planned batch" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: 11, mt: 0.25 }} data-testid={`task-planned-${card.key}`} />

@@ -1,7 +1,7 @@
 import parseApiError from './parseApiError'
 import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
-import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage } from './types'
+import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage, TaskPerson } from './types'
 
 // D38: task board helpers shared by the board, its dialogs and the specs.
 // D41: one board per department, under `/api/boards/<dept>`.
@@ -219,11 +219,25 @@ export function initials(name: string | null): string {
 
 export const firstName = (name: string | null) => name?.trim().split(/\s+/)[0] ?? ''
 
+/**
+ * D53: everyone on a task, first first. A rolled-back API sends only the one
+ * person (spec §3.1), so the board keeps working on that too.
+ */
+export function cardPeople(card: Pick<TaskCardData, 'assignees' | 'assignee_id' | 'assignee_name'>): TaskPerson[] {
+  if (card.assignees) return card.assignees
+  return card.assignee_id ? [{ id: card.assignee_id, name: card.assignee_name ?? 'Unknown' }] : []
+}
+
+/** D53: the same people, whatever the order: another order isn't a change. */
+export function samePeople(a: number[], b: number[]) {
+  return a.length === b.length && a.every((id) => b.includes(id))
+}
+
 /** Does the card pass the toolbar's filter and Hide completed? */
 export function cardShown(card: TaskCardData, filter: TaskFilter, hideCompleted: boolean, userId: number | undefined) {
   if (hideCompleted && card.done) return false
-  if (filter === 'mine') return card.assignee_id != null && card.assignee_id === userId
-  if (filter === 'unassigned') return card.assignee_id == null
+  if (filter === 'mine') return cardPeople(card).some((p) => p.id === userId)
+  if (filter === 'unassigned') return cardPeople(card).length === 0
   return true
 }
 
@@ -248,10 +262,12 @@ export function taskError(err: unknown): string {
 /**
  * A refused add or edit in the dialog's words. D41: an assignee from outside
  * the board's department reads "Only members of the Taproom can be assigned"
- * (S105).
+ * (S105). D53: a task's refusal names the person ("Riley Wort must be a Taproom
+ * member"); the single wording stays for a linked task's step.
  */
 export function taskSaveError(err: unknown, board: Pick<TaskBoardEntry, 'name'>): string {
   const errors = (err as { response?: { data?: { errors?: Record<string, string[]> } } })?.response?.data?.errors
+  if (errors?.assignee_ids?.length) return errors.assignee_ids.join('; ')
   if (errors?.assignee_id) return `Only members of the ${board.name} can be assigned`
   return taskError(err)
 }
@@ -297,14 +313,30 @@ const removedNote = (d: Record<string, unknown>) =>
  * Wed)", "… (this and following)", "Deleted … this and following (removed
  * 40, kept 2)", "Stopped repeating … (removed 40)", "… to Future (no longer
  * repeats)", "Made Keg Wash repeat from Wed 10/14 (Repeats every week on Wed)".
+ *
+ * D53: events since multiple assignees store id lists (`assignee_ids`, or
+ * `from`/`to` as lists): "Assigned Riley Wort, Jordan Float to Keg Wash",
+ * "Removed Jake Brewer from Keg Wash". Older events keep their one-person
+ * wording.
  */
 export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], board?: Pick<TaskBoardEntry, 'key' | 'name'>): string {
   const d = ev.detail
   const t = ev.title
   const person = (id: unknown) => (id == null ? null : (names.users[String(id)] ?? 'someone no longer here'))
+  const people = (ids: unknown[]) => ids.map(person).join(', ')
+  const listChange = (from: unknown, to: unknown) => {
+    const was = (from ?? []) as unknown[]
+    const now = (to ?? []) as unknown[]
+    const added = now.filter((id) => !was.includes(id))
+    const removed = was.filter((id) => !now.includes(id))
+    if (added.length && removed.length) return `Assigned ${people(added)} to ${t}; removed ${people(removed)}`
+    if (added.length) return `Assigned ${people(added)} to ${t}`
+    if (removed.length) return `Removed ${people(removed)} from ${t}`
+    return `Edited ${t}`
+  }
   switch (ev.action) {
     case 'created': {
-      const who = person(d.assignee_id)
+      const who = Array.isArray(d.assignee_ids) ? people(d.assignee_ids) : person(d.assignee_id)
       const assigned = who ? `, assigned to ${who}` : ''
       if (d.repeat)
         return `Created recurring task ${t} on ${dayOrFuture(d.due_on)}${assigned} (${summaryFromDetail(d.repeat as Record<string, unknown>, d.due_on as string)})`
@@ -313,35 +345,39 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
     case 'edited': {
       const scope = scopeNote(d.scope)
       const rule = d.repeat as { from?: Record<string, unknown>; to?: Record<string, unknown> } | undefined
-      if (rule?.to) {
-        const removed = Number(d.removed ?? 0) + Number(d.kept ?? 0) > 0 ? `; ${removedNote(d)}` : ''
-        return `Changed how ${t} repeats${scope}: ${summaryFromDetail(rule.to, null)}${removed}`
-      }
-      const from = (d.from ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
-      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
+      const from = (d.from ?? {}) as { title?: string; notes?: string | null; assignee_ids?: number[] }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null; assignee_ids?: number[] }
       const parts: string[] = []
       if ('title' in to) parts.push(`Renamed ${from.title} to ${to.title}`)
       if ('notes' in to) parts.push(`${to.notes ? (from.notes ? 'Changed' : 'Added') : 'Removed'} the notes on ${t}`)
+      if ('assignee_ids' in to) parts.push(listChange(from.assignee_ids, to.assignee_ids))
       if ('assignee_id' in to) {
         const who = person(to.assignee_id)
         parts.push(who ? `Assigned ${t} to ${who}` : `Unassigned ${t}`)
       }
+      if (rule?.to) {
+        const removed = Number(d.removed ?? 0) + Number(d.kept ?? 0) > 0 ? `; ${removedNote(d)}` : ''
+        const also = parts.length ? `; ${parts.join('; ')}` : ''
+        return `Changed how ${t} repeats${scope}: ${summaryFromDetail(rule.to, null)}${removed}${also}`
+      }
       return (parts.join('; ') || `Edited ${t}`) + scope
     }
     case 'assigned': {
+      const scope = scopeNote(d.scope)
+      if (Array.isArray(d.to)) return `${listChange(d.from, d.to)}${scope}`
       const from = person(d.from)
       const to = person(d.to)
-      const scope = scopeNote(d.scope)
       if (from && to) return `Reassigned ${t} from ${from} to ${to}${scope}`
       if (to) return `Assigned ${t} to ${to}${scope}`
       return `Unassigned ${t}${from ? ` (was ${from})` : ''}${scope}`
     }
     case 'made_repeating': {
       const from = (d.from ?? {}) as { title?: string }
-      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null }
+      const to = (d.to ?? {}) as { title?: string; notes?: string | null; assignee_id?: number | null; assignee_ids?: number[] }
       const parts = [`Made ${t} repeat from ${dayOrFuture(d.due_on)} (${summaryFromDetail(d.repeat as Record<string, unknown>, d.due_on as string)})`]
       if ('title' in to) parts.push(`renamed from ${from.title}`)
       if ('notes' in to) parts.push(to.notes ? 'notes changed' : 'notes removed')
+      if (to.assignee_ids) parts.push(to.assignee_ids.length ? `assigned to ${people(to.assignee_ids)}` : 'unassigned')
       if ('assignee_id' in to) {
         const who = person(to.assignee_id)
         parts.push(who ? `assigned to ${who}` : 'unassigned')
@@ -350,9 +386,15 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
     }
     case 'stopped_repeating':
       return `Stopped repeating ${t} after ${dayOrFuture(d.series_date)} (${removedNote(d)})`
-    case 'unassigned':
+    case 'unassigned': {
       // D41: `left_<key>`, logged on that department's board.
-      return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${board && d.reason === `left_${board.key}` ? ` (left the ${board.name})` : ''}`
+      const left = board && d.reason === `left_${board.key}` ? ` (left the ${board.name})` : ''
+      if (Array.isArray(d.from)) {
+        const stay = (d.to ?? []) as unknown[]
+        return `Removed ${people(d.from.filter((id) => !stay.includes(id)))} from ${t}${left}`
+      }
+      return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${left}`
+    }
     case 'moved': {
       const from = (d.from ?? {}) as { due_on?: string | null; position?: number }
       const to = (d.to ?? {}) as { due_on?: string | null; position?: number }

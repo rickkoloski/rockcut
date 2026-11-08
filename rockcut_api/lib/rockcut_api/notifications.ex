@@ -222,7 +222,8 @@ defmodule RockcutApi.Notifications do
   The shift-end reminder (D40, D38 spec §3.5): what's still open on the
   Brewery board on `day` (`Tasks.open_work/4`), for the shift's assignee.
   Title "Still open today: 3 tasks, Daily 2/4"; the body lists up to three
-  task titles (other people's with their initials), then "+N more". Tapping
+  task titles (other people's with their initials; a task `user` is on is
+  theirs, D53), then "+N more". Tapping
   it opens the board on that day.
   """
   def task_shift_end(%User{} = user, %Date{} = day, %{tasks: tasks, daily: daily}) do
@@ -260,9 +261,9 @@ defmodule RockcutApi.Notifications do
       tasks
       |> Enum.take(@shift_end_titles)
       |> Enum.map(fn t ->
-        if t.assignee_id && t.assignee_id != user.id,
-          do: "#{t.title} (#{initials(t.assignee && t.assignee.name)})",
-          else: t.title
+        if t.assignees == [] or Enum.any?(t.assignees, &(&1.id == user.id)),
+          do: t.title,
+          else: "#{t.title} (#{Enum.map_join(t.assignees, ", ", &initials(&1.name))})"
       end)
 
     more = length(tasks) - @shift_end_titles

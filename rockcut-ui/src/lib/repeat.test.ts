@@ -4,6 +4,7 @@ import {
   ordinal,
   endsOnlyChange,
   removeLaterWording,
+  ruleChangeNote,
   reseed,
   ruleFromTaskSeries,
   ruleProblem,
@@ -189,6 +190,13 @@ describe('removeLaterWording (Decision 2)', () => {
 
   it('a plain confirm otherwise', () => {
     expect(removeLaterWording(40, 0)).toEqual({ message: 'Removes 40 later occurrences.', keep: null, removeAll: 'Remove' })
+  })
+})
+
+describe('ruleChangeNote (D53)', () => {
+  it('says who ends up on the dates', () => {
+    expect(ruleChangeNote(false)).toBe('The new pattern remakes them. Dates that stay keep their people. New dates take them from the last regular occurrence.')
+    expect(ruleChangeNote(true)).toBe('The new pattern remakes them with the people you picked.')
   })
 })
 

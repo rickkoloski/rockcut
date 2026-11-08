@@ -54,6 +54,8 @@ interface RemoveProps {
   title: string
   laterOpen: number
   laterChanged: number
+  /** A line under the count: a rule change's `ruleChangeNote`. */
+  note?: string
   loading?: boolean
   onConfirm: (changed: Changed) => void
   onCancel: () => void
@@ -64,7 +66,7 @@ interface RemoveProps {
  * repeating, Delete "This and all following", a rule change). With some
  * changed on their own, the person chooses whether those go too.
  */
-export function RemoveLaterDialog({ title, laterOpen, laterChanged, loading, onConfirm, onCancel }: RemoveProps) {
+export function RemoveLaterDialog({ title, laterOpen, laterChanged, note, loading, onConfirm, onCancel }: RemoveProps) {
   usePhoneBackCloses(true, onCancel)
   const w = removeLaterWording(laterOpen, laterChanged)
   return (
@@ -74,6 +76,11 @@ export function RemoveLaterDialog({ title, laterOpen, laterChanged, loading, onC
         <Typography variant="body2" data-testid="remove-later-message">
           {w.message}
         </Typography>
+        {note && (
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }} data-testid="remove-later-note">
+            {note}
+          </Typography>
+        )}
       </DialogContent>
       <DialogActions sx={{ flexDirection: 'column', alignItems: 'stretch', gap: 1, px: 3, pb: 2 }}>
         {w.keep && (

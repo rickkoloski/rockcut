@@ -26,9 +26,9 @@ defmodule RockcutApi.Production.TaskLink do
   alias RockcutApi.Accounts.Department
   alias RockcutApi.Brewing.Batch
   alias RockcutApi.Production.{BatchVessel, Batches, Step, Steps, Tank}
-  alias RockcutApi.Tasks.Task
+  alias RockcutApi.Tasks.{Assignees, Task}
 
-  @fields ~w(department_id title due_on notes assignee_id completed_at completed_on completed_by_id completed_display)a
+  @fields ~w(department_id title due_on notes completed_at completed_on completed_by_id completed_display)a
 
   @doc """
   The task `step` should have, as a map of `Task` fields, or nil:
@@ -37,7 +37,9 @@ defmodule RockcutApi.Production.TaskLink do
       pencilled batch (a standalone CIP always qualifies);
     * the title is "FV3 · Galactic #33 · Set temp - 48°" ("FV6 · CIP &
       Sanitize" for a standalone CIP, "No tank · …" when unassigned);
-    * the day, notes, assignee and done state are the step's;
+    * the day, notes, assignee and done state are the step's: `assignee_ids`
+      is the step's one person or nobody (D53: steps stay single-assignee), and
+      `Tasks.Assignees` writes it;
     * the board is the Brewery's.
   """
   def want(%Step{} = step) do
@@ -78,7 +80,7 @@ defmodule RockcutApi.Production.TaskLink do
       title: String.slice(title, 0, Task.max_title()),
       due_on: step.due_on,
       notes: step.notes,
-      assignee_id: step.assignee_id,
+      assignee_ids: List.wrap(step.assignee_id),
       completed_on: step.done_on,
       completed_by_id: if(done?, do: step.done_by_id),
       completed_at: if(done?, do: step.completed_at || noon(step.done_on)),
@@ -116,6 +118,8 @@ defmodule RockcutApi.Production.TaskLink do
       Repo.all(from(t in Task, where: t.production_step_id in ^step_ids))
       |> Map.new(&{&1.production_step_id, &1})
 
+    people = existing |> Map.values() |> Enum.map(& &1.id) |> Assignees.ids_by_task()
+
     {counts, days} =
       Enum.reduce(steps, {%{created: 0, updated: 0, deleted: 0}, []}, fn step, {counts, days} ->
         case {want(step, ctx), existing[step.id]} do
@@ -127,24 +131,29 @@ defmodule RockcutApi.Production.TaskLink do
             {bump(counts, :deleted), [task.due_on | days]}
 
           {wanted, nil} ->
-            Repo.insert!(
-              struct(
-                %Task{
-                  production_step_id: step.id,
-                  position: Tasks.next_position(ctx.brewery_id, wanted.due_on)
-                },
-                wanted
+            task =
+              Repo.insert!(
+                struct(
+                  %Task{
+                    production_step_id: step.id,
+                    position: Tasks.next_position(ctx.brewery_id, wanted.due_on)
+                  },
+                  wanted
+                )
               )
-            )
 
+            if wanted.assignee_ids != [], do: Assignees.put!(task, wanted.assignee_ids)
             {bump(counts, :created), days}
 
           {wanted, %Task{} = task} ->
             changes =
               for k <- @fields, Map.get(task, k) != wanted[k], into: %{}, do: {k, wanted[k]}
 
+            people_changed? = Map.get(people, task.id, []) != wanted.assignee_ids
+            if people_changed?, do: Assignees.put!(task, wanted.assignee_ids)
+
             cond do
-              changes == %{} ->
+              changes == %{} and not people_changed? ->
                 {counts, days}
 
               Map.has_key?(changes, :due_on) ->

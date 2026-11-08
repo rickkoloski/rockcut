@@ -2,7 +2,7 @@
 // and a settings gear on the right, straight on the page background. Used by
 // the task boards, View Schedule, the Scheduler, the Gantt, Brands & Recipes,
 // the Ingredient Library and the Buy-a-Beer Board.
-import { Children, Fragment, isValidElement, useRef, useState, type ReactElement, type ReactNode } from 'react'
+import { Children, Fragment, isValidElement, useEffect, useRef, useState, type ReactElement, type ReactNode } from 'react'
 import { Badge, Box, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Switch, Tooltip } from '@mui/material'
 import { Check, ExpandLess, ExpandMore, Settings } from '@mui/icons-material'
 
@@ -37,10 +37,26 @@ export function SettingsGear({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const close = () => setAnchor(null)
+  // Focus goes back to the gear without scrolling the page to it: a choice can
+  // scroll the page while the menu is open (the phone board scrolls to today
+  // on a new first day, D53), and MUI's own restore would undo that. Only when
+  // focus is still in the menu, so a dialog opened from it keeps its focus.
+  const gear = useRef<HTMLButtonElement>(null)
+  const wasOpen = useRef(false)
+  useEffect(() => {
+    if (anchor) {
+      wasOpen.current = true
+      return
+    }
+    if (!wasOpen.current) return
+    wasOpen.current = false
+    const active = document.activeElement
+    if (!active || active === document.body || active.closest('[role="menu"]')) gear.current?.focus({ preventScroll: true })
+  }, [anchor])
   return (
     <>
       <Tooltip title={label}>
-        <IconButton aria-label={label} onClick={(e) => setAnchor(e.currentTarget)} data-testid={testid}>
+        <IconButton ref={gear} aria-label={label} onClick={(e) => setAnchor(e.currentTarget)} data-testid={testid}>
           <Badge variant="dot" color="secondary" invisible={!dot}>
             <Settings />
           </Badge>
@@ -50,6 +66,7 @@ export function SettingsGear({
         anchorEl={anchor}
         open={!!anchor}
         onClose={close}
+        disableRestoreFocus
         anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
         transformOrigin={{ vertical: 'top', horizontal: 'right' }}
         slotProps={{ paper: { sx: { minWidth } } }}

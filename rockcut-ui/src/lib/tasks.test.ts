@@ -8,9 +8,12 @@ import {
   boardPath,
   boardTarget,
   boardTitle,
+  cardPeople,
+  cardShown,
   departmentSections,
   describeEvent,
   rangeForDay,
+  samePeople,
   coloradoToday,
   defaultRange,
   readBoard,
@@ -114,6 +117,105 @@ describe('describeEvent: made_repeating (Decision 6)', () => {
   it('adds what else the save changed', () => {
     const text = describeEvent(ev({ due_on: '2026-10-14', repeat, from: { title: 'Keg Wash', assignee_id: null }, to: { title: 'Keg Wash FV1', assignee_id: 5 } }), names)
     expect(text).toMatch(/; renamed from Keg Wash; assigned to Sam Brewer$/)
+  })
+})
+
+describe('describeEvent: a rule change (D53)', () => {
+  const ev = (detail: Record<string, unknown>): TaskEvent => ({
+    id: 1,
+    task_id: 7,
+    action: 'edited',
+    title: 'Keg Wash',
+    actor_id: 1,
+    actor_name: 'Kate',
+    on_shared_device: false,
+    detail,
+    inserted_at: '2026-10-14T18:00:00Z',
+  })
+  const names = { users: { '5': 'Sam Brewer', '6': 'Riley Wort' }, items: {} }
+  const repeat = { to: { frequency: 'weekly', interval: 1, weekdays: [1, 3] } }
+
+  it('reads as the rule alone when only the rule changed', () => {
+    expect(describeEvent(ev({ scope: 'following', repeat, removed: 4, kept: 0 }), names)).toMatch(/^Changed how Keg Wash repeats \(this and following\): .+; removed 4$/)
+  })
+
+  it('names the people when the same save changed them', () => {
+    const text = describeEvent(ev({ scope: 'following', repeat, removed: 4, kept: 0, from: { assignee_ids: [5] }, to: { assignee_ids: [6] } }), names)
+    expect(text).toMatch(/^Changed how Keg Wash repeats .+; removed 4; Assigned Riley Wort to Keg Wash; removed Sam Brewer$/)
+  })
+})
+
+describe('describeEvent: assignees, old and new shapes (D53)', () => {
+  const ev = (action: TaskEvent['action'], detail: Record<string, unknown>): TaskEvent => ({
+    id: 1,
+    task_id: 7,
+    action,
+    title: 'Keg Wash',
+    actor_id: 1,
+    actor_name: 'Kate',
+    on_shared_device: false,
+    detail,
+    inserted_at: '2026-10-14T18:00:00Z',
+  })
+  const names = { users: { '5': 'Sam Pour', '6': 'Jake Brewer' }, items: {} }
+  const taproom = { key: 'bar', name: 'Taproom' }
+  const repeat = { frequency: 'weekly', interval: 1, weekdays: [3] }
+
+  it('reads id lists', () => {
+    expect(describeEvent(ev('assigned', { from: [], to: [5, 6] }), names)).toBe('Assigned Sam Pour, Jake Brewer to Keg Wash')
+    expect(describeEvent(ev('assigned', { from: [5, 6], to: [5] }), names)).toBe('Removed Jake Brewer from Keg Wash')
+    expect(describeEvent(ev('assigned', { from: [5], to: [6] }), names)).toBe('Assigned Jake Brewer to Keg Wash; removed Sam Pour')
+    expect(describeEvent(ev('assigned', { from: [5], to: [5, 6], scope: 'this' }), names)).toBe('Assigned Jake Brewer to Keg Wash (just this one)')
+    expect(describeEvent(ev('created', { due_on: null, assignee_ids: [5, 6] }), names)).toBe('Added Keg Wash to Future, assigned to Sam Pour, Jake Brewer')
+    expect(describeEvent(ev('created', { due_on: null, assignee_ids: [] }), names)).toBe('Added Keg Wash to Future')
+    expect(describeEvent(ev('edited', { scope: 'following', from: { assignee_ids: [] }, to: { assignee_ids: [5, 6] } }), names)).toBe('Assigned Sam Pour, Jake Brewer to Keg Wash (this and following)')
+    expect(describeEvent(ev('unassigned', { from: [5, 6], to: [5], reason: 'left_bar' }), names, taproom)).toBe('Removed Jake Brewer from Keg Wash (left the Taproom)')
+    expect(describeEvent(ev('made_repeating', { due_on: '2026-10-14', repeat, from: { assignee_ids: [] }, to: { assignee_ids: [5, 6] } }), names)).toMatch(/; assigned to Sam Pour, Jake Brewer$/)
+  })
+
+  it('reads old single-assignee events exactly as before', () => {
+    expect(describeEvent(ev('assigned', { from: null, to: 5 }), names)).toBe('Assigned Keg Wash to Sam Pour')
+    expect(describeEvent(ev('assigned', { from: 5, to: 6 }), names)).toBe('Reassigned Keg Wash from Sam Pour to Jake Brewer')
+    expect(describeEvent(ev('assigned', { from: 5, to: null, scope: 'this' }), names)).toBe('Unassigned Keg Wash (was Sam Pour) (just this one)')
+    expect(describeEvent(ev('created', { due_on: null, assignee_id: 5 }), names)).toBe('Added Keg Wash to Future, assigned to Sam Pour')
+    expect(describeEvent(ev('edited', { scope: 'following', from: { assignee_id: null }, to: { assignee_id: 5 } }), names)).toBe('Assigned Keg Wash to Sam Pour (this and following)')
+    expect(describeEvent(ev('unassigned', { from: 6, to: null, reason: 'left_bar' }), names, taproom)).toBe('Unassigned Keg Wash from Jake Brewer (left the Taproom)')
+    expect(describeEvent(ev('assigned', { from: null, to: 99 }), names)).toBe('Assigned Keg Wash to someone no longer here')
+  })
+})
+
+describe('several people on a task (D53)', () => {
+  const on = (assignees: { id: number; name: string }[]) =>
+    ({ done: false, assignees, assignee_id: assignees[0]?.id ?? null, assignee_name: assignees[0]?.name ?? null }) as TaskCardData
+  const both = on([
+    { id: 5, name: 'Sam Pour' },
+    { id: 6, name: 'Jake Brewer' },
+  ])
+
+  it('My tasks is any task I am on, second place too (S217)', () => {
+    expect(cardShown(both, 'mine', false, 5)).toBe(true)
+    expect(cardShown(both, 'mine', false, 6)).toBe(true)
+    expect(cardShown(both, 'mine', false, 7)).toBe(false)
+    expect(cardShown(on([]), 'mine', false, undefined)).toBe(false)
+  })
+
+  it('Unassigned is nobody', () => {
+    expect(cardShown(both, 'unassigned', false, 5)).toBe(false)
+    expect(cardShown(on([]), 'unassigned', false, 5)).toBe(true)
+  })
+
+  it('an API on the old version sends one person: the board reads that', () => {
+    const old = { assignee_id: 5, assignee_name: 'Sam Pour' }
+    expect(cardPeople(old)).toEqual([{ id: 5, name: 'Sam Pour' }])
+    expect(cardPeople({ assignee_id: null, assignee_name: null })).toEqual([])
+    expect(cardShown({ ...old, done: false } as TaskCardData, 'mine', false, 5)).toBe(true)
+  })
+
+  it('the same people in another order are the same', () => {
+    expect(samePeople([5, 6], [6, 5])).toBe(true)
+    expect(samePeople([5, 6], [5])).toBe(false)
+    expect(samePeople([5], [6])).toBe(false)
+    expect(samePeople([], [])).toBe(true)
   })
 })
 
@@ -298,6 +400,11 @@ describe('the switcher’s words (D41)', () => {
     const refused = { response: { status: 422, data: { errors: { assignee_id: ['must be a Taproom member'] } } } }
     expect(taskSaveError(refused, { name: 'Taproom' })).toBe('Only members of the Taproom can be assigned')
     expect(taskSaveError(err(422, '/api/boards/bar/tasks', { message: 'Pick a day to repeat' }), { name: 'Taproom' })).toBe('Pick a day to repeat')
+  })
+
+  it('D53: a refused person is named, as the API says', () => {
+    const refused = { response: { status: 422, data: { errors: { assignee_ids: ['Riley Wort must be a Taproom member', 'Sam Mash must be a Taproom member'] } } } }
+    expect(taskSaveError(refused, { name: 'Taproom' })).toBe('Riley Wort must be a Taproom member; Sam Mash must be a Taproom member')
   })
 
   it('History says who left which department (`left_<key>`)', () => {
