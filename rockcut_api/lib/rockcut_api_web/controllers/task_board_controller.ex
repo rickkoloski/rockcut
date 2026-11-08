@@ -68,7 +68,7 @@ defmodule RockcutApiWeb.TaskBoardController do
          {:ok, to} <- date_param(params["to"]),
          {:ok, board} <-
            Tasks.board(board(conn), from, to, Tasks.today(), linked: params["linked"] == "true") do
-      reply(conn, %{data: task_board(board)})
+      reply(conn, %{data: with_from_idea(task_board(board), current_user(conn))})
     end
     |> TaskErrors.handle(conn)
   end
@@ -82,7 +82,7 @@ defmodule RockcutApiWeb.TaskBoardController do
          {:ok, from} <- date_param(params["from"]),
          {:ok, to} <- date_param(params["to"]),
          {:ok, boards} <- Tasks.all_boards(from, to) do
-      json(conn, %{data: all_task_boards(boards)})
+      json(conn, %{data: with_from_idea(all_task_boards(boards), current_user(conn))})
     end
     |> TaskErrors.handle(conn)
   end
@@ -506,8 +506,30 @@ defmodule RockcutApiWeb.TaskBoardController do
     end
   end
 
-  defp render_task(conn, task, actor),
-    do: reply(conn, %{data: task |> Tasks.with_names() |> task()}, actor)
+  defp render_task(conn, task, actor) do
+    [data] = put_from_idea([task |> Tasks.with_names() |> task()], current_user(conn))
+    reply(conn, %{data: data}, actor)
+  end
+
+  # D53 §4.7: each card's "From idea: …" for this viewer (a link only when
+  # they can open that Idea Board).
+  defp with_from_idea(%{days: days, unfinished: unfinished, future: future} = board, viewer) do
+    all = Enum.flat_map(days, & &1.cards) ++ unfinished ++ future
+    ideas = RockcutApi.IdeaBoards.from_idea(all, viewer)
+    put = fn cards -> Enum.map(cards, &Map.put(&1, :from_idea, ideas[&1.id])) end
+
+    %{
+      board
+      | days: Enum.map(days, &%{&1 | cards: put.(&1.cards)}),
+        unfinished: put.(unfinished),
+        future: put.(future)
+    }
+  end
+
+  defp put_from_idea(tasks, viewer) do
+    ideas = RockcutApi.IdeaBoards.from_idea(tasks, viewer)
+    Enum.map(tasks, &Map.put(&1, :from_idea, ideas[&1.id]))
+  end
 
   # A write's response from a shared tablet names the person it was recorded
   # as (D37's `recorded_as`), so the tablet can show "Acting as …".

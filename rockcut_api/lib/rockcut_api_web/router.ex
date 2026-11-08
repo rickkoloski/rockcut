@@ -330,6 +330,9 @@ defmodule RockcutApiWeb.Router do
     patch "/cards/:id/notes/:note_id", IdeaCardController, :update_note
     delete "/cards/:id/notes/:note_id", IdeaCardController, :delete_note
 
+    get "/cards/:id/send_to_tasks", IdeaCardController, :send_options
+    post "/cards/:id/send_to_tasks", IdeaCardController, :send_to_tasks
+
     put "/cards/:id/watch", IdeaCardController, :watch
     delete "/cards/:id/watch", IdeaCardController, :unwatch
 

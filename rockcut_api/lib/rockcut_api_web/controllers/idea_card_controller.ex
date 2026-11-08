@@ -11,6 +11,8 @@ defmodule RockcutApiWeb.IdeaCardController do
     * Notes: `:write` only (they stay open on locked things); edit is the
       author's, delete the author's or a manager's.
     * Watch: anyone who can open the board, locked or not.
+    * Send to task list: `:change` on the card, and `:write` on the target
+      task board (`IdeaBoards.send_departments/2`).
 
   An archived card, or any card in an archived list, is read-only until
   it's restored (lead decision 2): edits, moves, locks, the checklist and
@@ -27,7 +29,9 @@ defmodule RockcutApiWeb.IdeaCardController do
   import RockcutApiWeb.IdeaBoardAccess
 
   alias RockcutApi.IdeaBoards
-  alias RockcutApi.IdeaBoards.{Cards, Checklist, Lists, Notes, Watches}
+  alias RockcutApi.IdeaBoards.{Cards, Checklist, Lists, Notes, Send, Watches}
+
+  import Ecto.Query, only: [from: 2]
   alias RockcutApiWeb.IdeaBoardErrors
 
   action_fallback RockcutApiWeb.FallbackController
@@ -185,6 +189,100 @@ defmodule RockcutApiWeb.IdeaCardController do
     end
     |> IdeaBoardErrors.handle(conn)
   end
+
+  ## Send to task list (§4.7)
+
+  @doc """
+  GET …/cards/:id/send_to_tasks: what the Send dialog offers this person:
+  the task boards they can send to (`departments`, each with its assignee
+  defaults `assignee_ids` and `left_off`), the default `due_on`, the
+  checklist's counts, and whether it's `already_sent` (the dialog warns).
+  """
+  def send_options(conn, %{"id" => id}) do
+    with {:ok, card} <- changeable(conn, id) do
+      items = RockcutApi.Repo.preload(card, :checklist_items).checklist_items
+
+      json(conn, %{
+        data: %{
+          departments:
+            for dept <- IdeaBoards.send_departments(board(conn), current_user(conn)) do
+              defaults = Send.default_assignees(card, dept)
+
+              %{
+                key: dept.key,
+                name: dept.name,
+                assignee_ids: defaults.on,
+                left_off: defaults.left_off
+              }
+            end,
+          due_on: Send.default_day(card.due_on, RockcutApi.Tasks.today()),
+          checklist: %{total: length(items), open: Enum.count(items, &is_nil(&1.done_at))},
+          already_sent:
+            RockcutApi.Repo.exists?(
+              from(ct in RockcutApi.IdeaBoards.CardTask, where: ct.card_id == ^card.id)
+            )
+        }
+      })
+    end
+    |> IdeaBoardErrors.handle(conn)
+  end
+
+  @doc """
+  POST …/cards/:id/send_to_tasks: `department` (a key; a department
+  board's own when omitted), and `Send`'s params. 201 with the card and the
+  new `tasks`. A department the person can't send to is 403; a locked card
+  is a manager's (423).
+  """
+  def send_to_tasks(conn, %{"id" => id} = params) do
+    user = current_user(conn)
+
+    with {:ok, card} <- changeable(conn, id),
+         {:ok, dept} <- send_department(conn, params["department"]),
+         {:ok, then_list} <- then_list(conn, params),
+         {:ok, tasks} <- Send.send(board(conn), card, dept, params, then_list, user) do
+      {:ok, card} = IdeaBoards.get_card(board(conn), card.id, user)
+
+      conn
+      |> put_status(:created)
+      |> json(%{
+        data: idea_card(card),
+        tasks:
+          Enum.map(
+            tasks,
+            &%{id: &1.id, title: &1.title, due_on: &1.due_on, series_id: &1.series_id}
+          )
+      })
+    end
+    |> IdeaBoardErrors.handle(conn)
+  end
+
+  defp send_department(conn, key) do
+    allowed = IdeaBoards.send_departments(board(conn), current_user(conn))
+
+    case {board(conn), key} do
+      {{:department, dept}, k} when k in [nil, ""] ->
+        if allowed == [], do: {:error, :forbidden}, else: {:ok, dept}
+
+      {:company, k} when k in [nil, ""] ->
+        {:error, :department_required}
+
+      {_board, key} ->
+        case Enum.find(allowed, &(&1.key == key)) do
+          nil -> {:error, :forbidden}
+          dept -> {:ok, dept}
+        end
+    end
+  end
+
+  # "Then: move it to a list": a list on this board the person may change.
+  defp then_list(conn, %{"then" => "move"} = params) do
+    with {:ok, list} <- Lists.fetch(board(conn), params["then_list_id"]),
+         :ok <- change(conn, list) do
+      {:ok, list}
+    end
+  end
+
+  defp then_list(_conn, _params), do: {:ok, nil}
 
   ## Watch
 

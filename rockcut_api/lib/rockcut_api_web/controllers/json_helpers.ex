@@ -369,6 +369,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       series_exception: t.series_exception,
       series_last: t.series_last,
       production: task_production(t),
+      # D53 §4.7: "From idea: …", filled in per viewer by the task board
+      # controller (`IdeaBoards.from_idea/2`).
+      from_idea: nil,
       inserted_at: t.inserted_at,
       updated_at: t.updated_at
     }

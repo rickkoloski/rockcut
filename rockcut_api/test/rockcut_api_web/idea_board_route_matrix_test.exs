@@ -14,6 +14,8 @@ defmodule RockcutApiWeb.IdeaBoardRouteMatrixTest do
       (on unlocked things). As `:read`, but people only (`DeviceGate`).
     * `:manage`: lock, unlock, delete for good, rename and delete labels;
       and `:history`. The department's managers and owners; Company: owners.
+    * `:send`: Send to task list. As `:write`, but on Company the person
+      also needs a task board to send to (`noDept` has none: 403).
 
   Locks are the lock matrix's (`idea_board_write_test`).
   """
@@ -60,6 +62,8 @@ defmodule RockcutApiWeb.IdeaBoardRouteMatrixTest do
     {:patch, "/api/idea_boards/:board/cards/:id/notes/:note_id"} =>
       {:write, :own_note, %{body: "Edited"}},
     {:delete, "/api/idea_boards/:board/cards/:id/notes/:note_id"} => {:write, :own_note, %{}},
+    {:get, "/api/idea_boards/:board/cards/:id/send_to_tasks"} => {:write, :card, %{}},
+    {:post, "/api/idea_boards/:board/cards/:id/send_to_tasks"} => {:send, :send, %{}},
     {:put, "/api/idea_boards/:board/cards/:id/watch"} => {:write, :card, %{}},
     {:delete, "/api/idea_boards/:board/cards/:id/watch"} => {:write, :card, %{}},
     {:post, "/api/idea_boards/:board/labels"} => {:write, :card, %{name: "L", color: "red"}},
@@ -136,6 +140,21 @@ defmodule RockcutApiWeb.IdeaBoardRouteMatrixTest do
     {%{id: card.id, item_id: item.id}, %{ids: [item.id]}}
   end
 
+  # Company cards name a task board the actor can use (their first, or the
+  # Brewery for an owner); department cards go to their own.
+  defp fixture(:send, board, actor) do
+    {ids, _} = fixture(:card, board, actor)
+
+    dept =
+      case actor do
+        %{is_owner: true} -> "brewery"
+        %{memberships: [m | _]} -> m.department.key
+        _ -> "brewery"
+      end
+
+    {ids, if(board == "company", do: %{department: dept}, else: %{})}
+  end
+
   defp fixture(:own_note, board, actor) do
     card = card!(starter(board, "Ideas"), "C")
     {%{id: card.id, note_id: note!(card, actor, "Mine").id}, %{}}
@@ -156,6 +175,8 @@ defmodule RockcutApiWeb.IdeaBoardRouteMatrixTest do
     do: if(board in [home, "company"], do: :ok, else: 403)
 
   defp expected({:device, _}, _board, _kind), do: 403
+  defp expected(roles, "company", :send), do: if(roles == %{}, do: 403, else: :ok)
+  defp expected(roles, board, :send), do: expected(roles, board, :write)
   defp expected(_roles, "company", kind) when kind in [:read, :write], do: :ok
   defp expected(_roles, "company", :manage), do: 403
 

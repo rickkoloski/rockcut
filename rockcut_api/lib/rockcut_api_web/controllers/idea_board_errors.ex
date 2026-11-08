@@ -16,7 +16,13 @@ defmodule RockcutApiWeb.IdeaBoardErrors do
     archived: "That's archived. Restore it first",
     list_archived: "Its list is archived. Restore the list first",
     not_archived: "Archive it first",
-    invalid_order: "The list changed. Reload and try again"
+    invalid_order: "The list changed. Reload and try again",
+    department_required: "Choose a task board",
+    repeat_per_item: "Repeat works with one task only",
+    no_open_items: "The checklist has no open items",
+    invalid_checklist_mode: "Choose how the checklist goes",
+    invalid_then: "Choose what happens to the card",
+    repeat_needs_day: "Pick a day to repeat"
   }
 
   @doc "Pass a conn through; turn `{:error, reason}` into a response."

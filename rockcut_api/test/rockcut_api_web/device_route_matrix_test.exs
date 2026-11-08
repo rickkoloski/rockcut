@@ -261,6 +261,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/idea_boards/:board/cards/:id/notes"},
     {:patch, "/api/idea_boards/:board/cards/:id/notes/:note_id"},
     {:delete, "/api/idea_boards/:board/cards/:id/notes/:note_id"},
+    {:get, "/api/idea_boards/:board/cards/:id/send_to_tasks"},
+    {:post, "/api/idea_boards/:board/cards/:id/send_to_tasks"},
     {:put, "/api/idea_boards/:board/cards/:id/watch"},
     {:delete, "/api/idea_boards/:board/cards/:id/watch"},
     {:post, "/api/idea_boards/:board/labels"},

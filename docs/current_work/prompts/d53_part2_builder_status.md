@@ -242,3 +242,126 @@ by a manager") and 423 `holds_locked_card`, plus 422 `archived`, `list_archived`
 
 - None blocking. Please confirm judgment calls 1 and 2, since stage 4's notifications follow
   whatever History logs.
+
+## Stop 3 (2026-11-08): decision 2, stages 4 and 5
+
+Gate so far:
+- `MIX_ENV=test mix test`: **2089 passed, 0 failures** (one full run).
+- UI: `tsc` clean; eslint clean on the one file changed.
+- The suite now prints "older migration … has already run" warnings. They come from the existing
+  migration tests running older migrations down and up while ours (20261108…) are newer. They
+  don't affect results.
+
+### Lead decision 2: archived cards are read-only (commit `5ef6dd0`)
+
+- In `IdeaCardController`, every card write first checks the card is live:
+  `IdeaBoards.archived?/1` (the card or its list is archived) → 422 `archived`. This runs before
+  the lock check.
+- Refused: edit, move, lock/unlock, all checklist writes, and adding, editing or deleting a note.
+  I counted deleting a note as "changing" a read-only card. Say if a manager should still be able
+  to delete one.
+- Still allowed: Watch on/off, restore (`:change` only, so a locked one stays a manager's), and a
+  manager's delete for good.
+- Test: `idea_board_write_test.exs` "archived cards are read-only". It covers an archived card and
+  a card in an archived list, 10 refused writes each, nothing changed, Watch still works, then
+  restore → edit, and delete for good.
+
+### Stage 4: Watch notifications (commit `44a78b7`)
+
+- `IdeaBoards.Watchers`:
+  - **Ledger:** `pending!/4` runs from `Log.log!/5`, inside the write's transaction. Each watcher
+    except the actor gets one `idea_watch_pending` row. Only these card actions count: edit, move,
+    lock/unlock, archive/restore, unassign (leaving), send, checklist add/edit/tick/untick/remove,
+    note add/edit/delete. Reorders within a list and of the checklist aren't History, so they
+    aren't here either.
+  - **Flush:** `flush/1` finds cards whose oldest pending row is ≥ 600 s old. Each watcher gets
+    one `idea_card_changed` notification, then the rows covered are deleted. A watcher who has
+    lost the board, been deactivated or stopped watching gets nothing.
+  - **Wording:** "Casey changed Taproom remodel" / "2 notes, moved to Doing, locked". Two people
+    read "Casey and Sam"; more read "Casey and 2 others". Phrases follow the order the changes
+    happened. An edit's fields follow the dialog's order: renamed, description, due date, people,
+    labels.
+  - **Data:** `url` `/ideas/<board>/cards/<id>`, plus `board` and `card_id`.
+- `Reminders.Scheduler` calls `Watchers.flush/0` on its 5-minute tick, in its own `try`, so a
+  notification arrives 10–15 minutes after the first change.
+- `Notifications`: `idea_card_changed` defaults in-app on, push on, email off, and
+  `Notifications.idea_card_changed/2`.
+- **UI** `NotificationPreferencesDialog.tsx`: a row "Changes to Idea Board cards you watch",
+  `EVENT_DEFAULTS` `{email: false, push: true}`, and email in `NOT_SENT` (shown "—"), as
+  `task_shift_end`. The diff is 4 lines added, 1 changed.
+- Tests: `test/rockcut_api/idea_boards/watchers_test.exs` (8).
+  - S225: one notification naming both changes, nothing inside 9 minutes, none to the actor.
+  - Your own change makes no rows.
+  - S242: two notifications 15 minutes apart, none after Watch off.
+  - Several people and kinds; the card's window carrying a late change.
+  - S243: leaving drops the watch and pending rows.
+  - Access lost before the flush: nothing sent.
+  - The defaults.
+
+### Stage 5: Send to task list (commit with "stop 3")
+
+- `IdeaBoards.Send.send/7` runs in one immediate transaction. Each task goes through
+  `Tasks.create/4`, and so through `Tasks.Assignees` and, for a repeat, `Tasks.Series`. There is no
+  second writer. The transaction also writes an `idea_card_tasks` row per task (with `card_title`),
+  the `card_sent` History row (which watchers hear about: "sent to the Taproom task list"), and
+  the "Then" step (stay, `Cards.move`, `Cards.archive`). Any failure rolls back everything: no
+  tasks, no rows, no History.
+- **Params:**
+  - `checklist`: `notes` (default) or `per_item`, which makes one task per **open** item, with no
+    notes.
+  - `due_on`: absent → the card's date, Today if it's past, Future if none. `nil`/`""` → Future.
+  - `assignee_ids`: absent → the card's people who can take a task there.
+  - `repeat*`: one-task mode only, else 422 `repeat_per_item`.
+  - `then`: `stay`, `move` + `then_list_id`, or `archive`.
+  - `department`: a department card goes to its own board; a Company card must name a board
+    (422 `department_required`), and one the person can't write on is 403.
+- **Notes:** the description, a blank line, then `☐`/`☑` lines. Over 2,000 characters, the
+  description is cut with "… see the Idea Board card" so the checklist survives. If the checklist
+  alone doesn't fit, it's cut at a whole line with the same pointer on its own line, and the
+  description is dropped.
+- `GET …/cards/:id/send_to_tasks` (new, people-only) gives the dialog its defaults: `departments`
+  (each with `assignee_ids` and `left_off` `[{id, name}]`), `due_on`, checklist `{total, open}`,
+  and `already_sent`. It's guarded like a card change, so it's 423 for a non-manager on a locked
+  card and 422 on an archived one.
+- **Who:** `IdeaBoards.send_departments/2` (Authz `:write` on `{:tasks, dept}`). Owners get all
+  four boards for a Company card; `noDept` gets none.
+- **"From idea":**
+  - Task JSON has `from_idea` (`nil` by default in `JSONHelpers.task/1`).
+  - `TaskBoardController` fills it per viewer for the board, the All departments view and every
+    task write response, using `IdeaBoards.from_idea/2`: `{title, board, card_id, link}`.
+  - It matches the task, or any occurrence of a sent series.
+  - `link` is false (board and card id nil, title kept) when the card was deleted for good or the
+    viewer can't open its board.
+- **Chips:** `on_list` → `done` (task completed, with `completed_on`); `repeating` (series still
+  there); `removed` once the foreign key nulls the task or series.
+  - **`removed_at` stays unused.** The state is derived from the nulled ids, which covers every
+    delete path (single task, series, following) without touching `Tasks`.
+  - The cost: no "removed on" date. Say if you want it set; that means a hook in `Tasks`' delete
+    paths.
+- Tests: `idea_board_send_test.exs` (22).
+  - S233 (task, people, notes, From idea, chip, History); ☑ lines.
+  - S234 (per item, then move to Done); S235 (completed → Done).
+  - S236 (dialog defaults, `left_off`, Office only; Brewery 403; none named 422; `noDept`; owner
+    all four).
+  - S258 (past → Today; Future and explicit days; repeat per item 422; locked card 423 for
+    bartender1 and 201 for barMgr; archived card; archived "Then" list; a bad assignee rolls back
+    everything; Then archive).
+  - S259 (deleted task → Removed, title kept).
+  - A repeating send (series chip; From idea on every occurrence); watchers hear about a send.
+  - From idea: after the card is deleted for good; a viewer who can't open the board; a plain task
+    has none; write responses carry it.
+  - The 2,000-character rule (4 cases).
+- **Matrices:** both new routes are in `idea_board_route_matrix_test.exs`. The new kind `:send`
+  is like `:write`, except that on Company a person with no department gets 403. Both routes are
+  in the device matrix's `@denied`.
+
+**Nothing deleted or weakened.** Every task JSON gained a `from_idea` key.
+
+### LEAD:
+
+- **LEAD-3:** On an archived card, should a manager still be able to delete a note? I refuse it
+  now (read-only).
+- **LEAD-4:** Should the chip show a "Removed <date>"? Today it's just "Removed", and
+  `removed_at` is never set.
+- For stage 6: the UI's `Task` type needs `from_idea`, and the Send dialog reads
+  `GET …/send_to_tasks`.

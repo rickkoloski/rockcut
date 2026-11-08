@@ -214,6 +214,78 @@ defmodule RockcutApi.IdeaBoards do
     %{lists: lists, cards: cards}
   end
 
+  ## Send to task list (§4.7)
+
+  @doc """
+  The task boards `user` may send a card on `board` to: its own
+  department's (for a department board), or every department whose task
+  board they can write on (Company). In department order.
+  """
+  def send_departments({:department, dept}, %User{} = user),
+    do: if(Authz.can?(user, :write, {:tasks, dept}), do: [dept], else: [])
+
+  def send_departments(:company, %User{} = user) do
+    for {:department, dept} <- all_boards(), Authz.can?(user, :write, {:tasks, dept}), do: dept
+  end
+
+  @doc """
+  "From idea" for task JSON (§4.7): `%{task_id => %{title, board, card_id,
+  link}}` for the tasks in `tasks` (maps or structs with `id` and
+  `series_id`) that came from a card, directly or as an occurrence of a
+  sent series. `link` is false when the card was deleted for good or
+  `viewer` can't open its board; the title is still there.
+  """
+  def from_idea([], _viewer), do: %{}
+
+  def from_idea(tasks, %User{} = viewer) do
+    task_ids = Enum.map(tasks, &get(&1, :id))
+    series_ids = tasks |> Enum.map(&get(&1, :series_id)) |> Enum.reject(&is_nil/1)
+
+    links =
+      Repo.all(
+        from ct in CardTask,
+          left_join: c in assoc(ct, :card),
+          left_join: l in assoc(c, :list),
+          where: ct.task_id in ^task_ids or ct.task_series_id in ^series_ids,
+          order_by: [desc: ct.id],
+          select: {ct, c.title, l.board}
+      )
+
+    readable =
+      links
+      |> Enum.map(fn {_, _, key} -> key end)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Map.new(fn key ->
+        board = board_for_key(key)
+        {key, board != nil and Authz.can?(viewer, :read, {:idea_board, board})}
+      end)
+
+    Enum.reduce(tasks, %{}, fn task, acc ->
+      id = get(task, :id)
+      series_id = get(task, :series_id)
+
+      case Enum.find(links, fn {ct, _, _} ->
+             ct.task_id == id or (series_id != nil and ct.task_series_id == series_id)
+           end) do
+        nil ->
+          acc
+
+        {ct, title, key} ->
+          linked? = ct.card_id != nil and Map.get(readable, key, false)
+
+          Map.put(acc, id, %{
+            title: title || ct.card_title,
+            board: if(linked?, do: key),
+            card_id: if(linked?, do: ct.card_id),
+            link: linked?
+          })
+      end
+    end)
+  end
+
+  defp get(%{} = task, key), do: Map.get(task, key)
+
   ## History
 
   @doc """
