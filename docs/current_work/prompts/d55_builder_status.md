@@ -119,3 +119,92 @@ No existing test was deleted, weakened or changed.
 
 Next: stage 3 (§2.8 migration; `leftoverTabletSession.ts` removal as its own commit), `COVERAGE.md`
 rows, then stop 2.
+
+## Stop 2 (lead decisions 1, stage 3, §2.10)
+
+**Non-Playwright gate (all passing):** `mix compile --force --warnings-as-errors` clean;
+`MIX_ENV=test mix test` green **twice** (1958 tests: 1952 + 5 for §2.10 + 1 migration test);
+`tsc -p tsconfig.app.json` clean; `vite build` OK; vitest 218/218 (222 at stop 1, minus the 4 shim
+tests removed in 3b); `pnpm lint` 26 errors + 1 warning (the ceiling, none in D55's files).
+`tsc -p tsconfig.e2e.json` has only the 2 errors that were already there. Playwright: written, not run.
+
+### Lead decisions 1
+
+- **1. Parser wrapper:** `RockcutApiWeb.Parsers` now rescues only the parser's own errors
+  (`Plug.Parsers.ParseError`, `RequestTooLargeError`, `UnsupportedMediaTypeError`,
+  `BadEncodingError`, and `Plug.BadRequestError` / `Plug.TimeoutError`, which the JSON parser
+  raises while reading the body). Anything else is raised as before. `parser_cors_test` still passes.
+- **2. Idea Boards on tablets:** a `test.fixme` in `tests/regression/devices/unknown_url.spec.ts`
+  ("after the D53 merge: a tablet opens Idea Boards, not 'Page not found'") checks `/boards`,
+  `/boards/1` and `/boards/1/cards/1`, with a note on what to do at the merge. I haven't merged
+  `develop`.
+- **5. A session that really ended ends on the first try at start-up:** covered by
+  `src/hooks/useAuth.test.ts`, "a revoked tablet: recheck 401 unpairs on the first try" and "a
+  deactivated person: recheck 401 signs out on the first try". Each asserts exactly one `/api/me`
+  recheck, `unreachable` false (no "retrying" screen), the token gone and one reload. After the
+  reload there is no token, so the login or setup screen shows; nothing loops. On the page:
+  Playwright `stray_401` T3/T4.
+
+### §2.10 field definition sort order (T12)
+
+- **The 500 was real.** A test was written first and failed with `Exqlite.Error NOT NULL constraint
+  failed: category_field_definitions.sort_order` (3 of 5 failing: null on create, missing on create,
+  null on update). Those failing runs before the fix are the revert evidence.
+- Fix: `brewing.ex`. The §2.5 helper is now `put_end_sort_order(changeset, schema, parent)`, used by
+  both recipe ingredients (`:recipe_id`) and field definitions (`:category_id`). It works the same
+  way: null or missing on create → end; null on update → end; left out of an update → stays.
+- Tests: `test/rockcut_api_web/controllers/field_definition_sort_order_test.exs` (5);
+  `recipe_ingredient_sort_order_test.exs` still passes after the helper change. Playwright T12 is in
+  `tests/regression/brewery/recipe_sort_order.spec.ts` (Add Field with Sort Order empty,
+  persist-verified through the API).
+- Spec: added §2.10 and scenario T12.
+
+### Stage 3a: column migration (commit `8a53bec`)
+
+- `priv/repo/migrations/20261108120001_drop_unread_session_columns.exs`: `up` drops the
+  `user_sessions_device_token_id_index`, then `user_sessions.device_token_id` and
+  `users.legacy_tokens_revoked_at`. `down` adds both back, empty, with the foreign key and the index.
+  The `UserSession` schema comment that named the column is gone. Nothing else in `lib`, the
+  seeds or the UI named either column.
+- **Up, down, up on this worktree's dev DB, by hand:** after up, both columns and the index are gone;
+  after down, they're back (FK `REFERENCES device_tokens ON DELETE CASCADE` and the index);
+  after up again, gone. `pragma integrity_check` ok and `foreign_key_check` empty each time;
+  the 19 users are kept.
+- New test: `test/rockcut_api/migrations/drop_unread_session_columns_test.exs` (up → down → up
+  inside the test's transaction; columns and index; a live sign-in still authenticates throughout).
+- **Changed existing test (shape, not meaning):**
+  `test/rockcut_api/migrations/revoke_tablet_personal_sessions_test.exs` (D54) writes
+  `device_token_id`, which no longer exists. Its `setup` now runs D55's migration down first,
+  inside the same transaction, so it tests D54's migration against the schema it ran on. The
+  assertions are unchanged.
+- **Rollback note for the release PR:** rolling the API back past D55 needs the pre-deploy snapshot,
+  because an older image selects these columns. Running this migration's `down` also works; the
+  columns come back empty, which is all an older image needs.
+
+### Stage 3b: shim removal (commit `35c6c7b`, can be dropped on its own)
+
+- Deleted `src/lib/leftoverTabletSession.ts` and `src/lib/leftoverTabletSession.test.ts` (4 Vitest
+  tests), and the import in `src/main.tsx`.
+- **Deleted Playwright cases**, because they test only the shim: in
+  `tests/regression/devices/shared_device_no_personal_login.spec.ts`, "S249: left mid 'Sign in as
+  me' at the release…" and "S251 (4988): only a stale set-aside tablet token…". Both seed the
+  pre-D54 `rockcut_device_token` storage that only the shim reads. The live-revoke S251 case stays.
+  A comment marks where they were.
+- `tests/COVERAGE.md`: the D54 S249 and S251 rows now say what was removed and what still covers them.
+
+### `tests/COVERAGE.md`
+
+New D55 section: T1–T12 plus the extra cases (burst, `parseApiError`, a person's unknown URL,
+the pending Idea Boards check, §2.7, §2.8), each with its layer and whether a revert check was
+recorded. T5 and T10 note that their revert check waits for the Playwright run.
+
+### LEAD questions
+
+1. **Still open from stop 1:** the T5/T10 revert checks (Playwright only) and all of T1–T12 in a
+   browser wait for servers. Tell me when D53 frees :4002/:5174, or run them yourself.
+2. The migration date `20261108120001` sorts after D53 Part 1's `20261106120001`. If D53 Part 2
+   adds a migration dated after 2026-11-08, the order still works (they don't touch the same tables).
+   No action, just noting it for the merge.
+
+Next: wait for the go-ahead to merge `develop` (D53), then `personRoutes` + the `/boards` routes on
+tablets, un-fixme the pending check, and the full local Playwright run.

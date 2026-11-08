@@ -759,3 +759,28 @@ ExUnit files are under `rockcut_api/test/`: `tasks/assignees_test` (the one writ
 | — | QA gap 7: the linked-task refusal names the person under `assignee_ids` | ExUnit `task_board_multi_assignee_test`, confirmed failing with the fix reverted |
 | — | QA gap 10: a long name wraps in the phone people list | Playwright (at phone width), confirmed failing with the fix reverted |
 | — | Rollback API: the board reads one person when `assignees` is absent | Vitest `tasks.test` (`cardPeople`). Not run against an old API: **GAP** |
+
+## D55 — Tablets and tidy-up (`specs/d55_tablets_and_tidy_spec.md`; `planning/d55_tablets_and_tidy_plan.md`; `prompts/d55_lead_decisions_1.md`)
+
+ExUnit files are under `rockcut_api/test/`; Vitest under `rockcut-ui/src/`. Playwright specs written; **not yet run** (stop 2: servers belong to D53). "Revert" = confirmed failing with the fix reverted.
+
+| # | Scenario | Coverage |
+|---|---|---|
+| T1 | Tablet: a 401 on one route, `/api/me` fine → stays paired and working | Vitest `lib/api.test` (revert), `hooks/useAuth.test` (401 on `/api/me` itself, revert); Playwright `devices/stray_401` (T1) |
+| T2 | Person: a 401 on one route, `/api/me` fine → stays signed in | Vitest `lib/api.test`, `hooks/useAuth.test` (revert); Playwright `devices/stray_401` (T2) |
+| T3 | A revoked tablet still unpairs on its next request (and at start-up, on the first try) | Vitest `lib/api.test`, `hooks/useAuth.test` (one recheck, no "retrying"); Playwright `devices/stray_401` (T3, temp device), `devices/shared_device_no_personal_login` (S251) |
+| T4 | A deactivated person is still signed out (and at start-up, on the first try) | Vitest `lib/api.test`, `hooks/useAuth.test`; Playwright `devices/stray_401` (T4, temp person) |
+| — | §2.1: a burst of 401s makes one `/api/me` call; 5xx/network keeps the token; an older token or none, and a failed sign-in, make no check; D42's 403 unchanged | Vitest `lib/api.test` (revert) |
+| T5 | Tablet, unknown URL → "Page not found" with Go to Home | Playwright `devices/unknown_url` (T5). No unit test (App can't load under Vitest); revert check waits for the Playwright run |
+| T6 | Tablet, real personal page → "Not available on a shared device" | Playwright `devices/unknown_url` (T6), `devices/device_session` (S9) |
+| — | A person's unknown URL still goes Home | Playwright `devices/unknown_url` |
+| — | After the D53 merge: a tablet opens Idea Boards (`/boards…`), not "Page not found" | Playwright `devices/unknown_url` (`test.fixme` until the merge) |
+| T7 | Malformed JSON / an oversize body from the UI's origin: readable 400/413, not "Failed to fetch"; a disallowed origin still gets no CORS header | ExUnit `endpoint/parser_cors_test` (revert); Playwright `app/parser_errors` (T7, cross-origin `fetch`) |
+| T8 | Malformed `memberships` (map, string, `[null]`, `["x"]`, form-encoded) → 422 on `memberships`, nothing saved; `PUT …/memberships` the same (and `null` there) | ExUnit `controllers/user_memberships_malformed_test` (owner and manager, revert); Playwright `app/parser_errors` (T8) |
+| T9 | Grain bill ingredient with Sort Order empty → saved at the end; null on update → end; left out of an update → stays | ExUnit `controllers/recipe_ingredient_sort_order_test` (revert); Playwright `brewery/recipe_sort_order` (T9, persist-verified) |
+| — | `parseApiError` copes with any body (500, HTML, empty, odd shapes) | Vitest `lib/parseApiError.test` (revert) |
+| T10 | Missing ingredient category (new and old URL) → "Category not found" + link back | Playwright `brewery/recipe_sort_order` (T10). No unit test; revert check waits for the Playwright run |
+| T11 | Tab title, manifest name/short_name/description, Apple title say Rock Cut; the manifest an installed app reads after the update | Playwright `pwa-update/app_name` (`PWA_UPDATE=1`). Installed Android label: **manual** on the Pixel |
+| T12 | Field definition with Sort Order empty → saved at the end (§2.10) | ExUnit `controllers/field_definition_sort_order_test` (the 500 confirmed first: NOT NULL); Playwright `brewery/recipe_sort_order` (T12, persist-verified) |
+| — | §2.7: `mix compile --warnings-as-errors` clean | The gate |
+| — | §2.8: the two unread columns dropped; down brings them back; up again; rows and sign-ins kept | ExUnit `migrations/drop_unread_session_columns_test`; up/down/up on the dev DB by hand (stop 2 status) |
