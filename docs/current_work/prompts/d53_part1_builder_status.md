@@ -659,3 +659,105 @@ differs from their first person.
 
 None. The fix is in shared D52 code (the gear on all seven pages), not in the board. Tell me if
 you'd rather it went to `develop` separately.
+
+# Fix cycle 2
+
+2026-11-07 · from `d53_part1_lead_decisions_6.md` (QA recheck gaps 12, 13, 14). Fix commit `64ce6fc`.
+
+## Gap 12: one meaning for "changed on its own"
+
+**Does `develop` (`b3670d0`) do the same?** Yes. `changed?/2`
+(`t.series_exception or t.notes != s.notes`) and `changed_counts/1` are the same on `develop`, so
+its rule-change confirm counts a notes-only occurrence as "changed on its own", and "keep" leaves
+it in the old series. On `develop` a later "following" edit from the split date skips it the same
+way, for the title (one person then, not several).
+
+**The fix** (`rockcut_api/lib/rockcut_api/tasks/series.ex`):
+- `changed?/3` and `changed_counts/2` take `:flag` (only `series_exception`) or `:notes` (the D42
+  meaning, the default).
+- A rule change uses `:flag` everywhere: `change_preview/2` for `kind: "rule"`,
+  `remove_chain`/`remove_later` in `split/6`, and `held_from/5`'s "remove all". So a notes-only
+  occurrence isn't counted, isn't kept back, and is remade with the new pattern. If its date
+  survives, `carry_over/4` gives it what it held: its own people, title **and notes**. It's in the
+  new series, unmarked, so "following" edits reach it from either side of the split.
+- A new date still doesn't copy a neighbour's notes-only note (`own?` in `held_from/5` keeps the
+  D42 meaning, which is about copying, not about keeping).
+- If the new pattern drops its date, it goes like its neighbours, and so do its notes.
+
+**UI** (`rockcut-ui/src/pages/tasks/TaskDialog.tsx`): the rule-change confirm took its counts from
+the series info (`later_open`/`later_changed`, `preview/1`), which Stop and Delete also use. It now
+asks the API's change preview (the same call the Ends confirm already made; `askEnds` is renamed
+`askChange`), which says `rule`, `ends` or `same` and gives the flag-only counts for a rule. The
+separate `confirmRemove` dialog is gone; the `confirmEnds` one already rendered "Change the repeat"
+with the rule note. The client-side `endsOnlyChange` check is no longer used by the dialog (the
+API decides); it stays in `lib/repeat.ts`, which still has its tests.
+
+**Not changed:** Stop repeating, Delete "following" and an Ends-only change still keep a notes-only
+occurrence as D42 decided (`series_edits_test.exs` "Stop repeating offers to keep a notes-only
+one" is unchanged). Those keep it in its own series, so "following" edits still reach it and
+there's no silent skip. See LEAD question 1.
+
+## Gap 13 (split from the first occurrence detaches kept exceptions): already on `develop`
+
+Not fixed; for Part 2 (spec §4.8). `end_series_before/3` is the same on `develop`: when the split
+is from the series' first date, nothing is before it, so the old series is **deleted**, and its
+kept exceptions (and finished ones) are left with `series_id: null` (the moduledoc says so: "What's
+left of a deleted one ... become one-offs"). `split/6` then makes the new series continue the old
+one's `continues_series_id` (nil for a first part). Part 1 didn't touch either.
+
+Write-up for §4.8: *A rule change from a series' first occurrence, with "keep", turns the kept
+occurrences into one-offs: no Edit series… or Stop repeating, and series-wide Delete/Stop no longer
+reach them. Proposed: move them into the new series (they keep their flag, people, title and
+notes, and the new series skips their days), instead of deleting the old series out from under
+them.*
+
+## Gap 14 (a moved occurrence gets a twin after a split): already on `develop`
+
+Not fixed; for Part 2 (spec §4.8). `skip_kept_days/6` is the same on `develop`: the new series
+skips the **days** the kept occurrences are on now (`due_on`), not the dates they were made for
+(`series_date`). A Friday moved to Saturday holds Saturday, so the new pattern's Friday is made.
+
+Write-up for §4.8: *After a rule change with "keep", an occurrence that was moved to another day
+stays on its new day, and the new pattern also makes its original date. Decide whether the new
+series should skip the kept one's `series_date` too (one per original date), or the confirm should
+say that moved ones keep their day and the pattern's date is made as well.*
+
+## Tests
+
+- **Replaced** (`series_edits_test.exs`, "notes only (D42 §2.5)"): "a split offers to keep a
+  notes-only one: keep keeps it with its notes, remove removes it". It asserted the meaning lead
+  decisions 6 reverses (counted, and kept in the old series).
+- **Added in its place:** "a split remakes a notes-only one like its neighbours, notes kept", the
+  report's repro, for both `keep` and `remove`: Mon/Wed/Fri with two people, notes on Fri 10/23,
+  rule change from Mon 10/19 dropping Wed → `change_preview` gives `removes_changed: 0`, History
+  `kept: 0`; 10/23 is in the new series, unmarked, notes "Mine"; then "following" people from
+  10/19 → 10/19, 10/23 and 10/26 all get the new person, and 10/23 keeps its notes.
+- **Fails with the fix reverted:** yes, at the `change_preview` assertion (`removes_changed: 1`);
+  with that line also removed, it fails at `kept: 0` (the split kept it back).
+- Nothing else deleted or weakened.
+
+## Gate
+
+| Check | Result |
+|---|---|
+| `mix test` (twice) | **1929 passed** both times, 0 failed |
+| `tsc -b` | clean (`tsc -p tsconfig.e2e.json`: the same 2 errors already on `develop`) |
+| `vite build` | builds |
+| `vitest` | 190 passed |
+| `pnpm lint` | 26 errors, 1 warning (unchanged, none in changed files; `TaskDialog.tsx` is clean) |
+| `npx playwright test --project setup` | passed (tokens re-minted) |
+| `task-board-multi-assignee` (`--no-deps`) | **21 passed** |
+| `--project brewery-board --no-deps` | **224 passed** (17.0 min) |
+| `--project production --no-deps` | **157 passed** (12.4 min) |
+
+Run one at a time against the local servers in `~/src/rockcut-d53`. DEV not touched.
+
+## LEAD: questions
+
+1. **Stop and Delete still use the D42 meaning.** Lead decisions 6 says the flag is the only
+   meaning, but its bullets are about the rule change, and `series_edits_test.exs` has a D42 test
+   that Stop repeating offers to keep a notes-only occurrence. I left Stop, Delete "following" and
+   Ends-only changes alone: what they keep stays in its own series, so later "following" edits
+   still reach it and nothing is skipped silently. Changing them is a one-word change per call
+   (`:flag` in `remove_chain`, and in `preview/1`), plus that test. Say if you want it.
+2. Gaps 13 and 14 are written up above for spec §4.8.
