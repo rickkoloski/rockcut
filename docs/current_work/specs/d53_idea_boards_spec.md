@@ -170,7 +170,8 @@ restore), `cards` (CRUD, move, reorder, lock, archive, restore),
   the end. Each list: name (click to rename), card count, ⋮ (rename,
   lock/unlock, archive), "+ Add a card" at the bottom.
 - **Drag** (the shared `@dnd-kit` layer): cards within and between lists,
-  lists left/right. Phone width: one list at a time with list tabs;
+  lists move with ⋮ → Move left / Move right (Matt, 2026-11-08: no list dragging in D53;
+  a follow-up task). Phone width: one list at a time with list tabs;
   long-press to drag, the same as the phone task board.
 - **Card face:** labels (color bars), title, due date (red when past),
   checklist count "2/5", note count, assignee initials, lock icon,
@@ -182,6 +183,8 @@ restore), `cards` (CRUD, move, reorder, lock, archive, restore),
   with the author and time ("Casey Tap · Nov 6, 2:14 PM"). Only notes: card
   changes such as moves stay in History, not in this timeline.
 - **Filter:** All / My cards / Watching / by label; Show archived is in ⋮.
+- **Archived** (the gear) lists archived lists and cards with a **search box** (Matt, 2026-11-08)
+  that narrows both as you type, by list name, card title and description, ignoring case.
 - **Watch:** an eye toggle in the card dialog; a small eye on the card
   face when you watch it.
 - **Tablet:** the same board without any add, edit, drag, lock, Watch or
@@ -324,7 +327,7 @@ since D41 (S105).
 | S234 | `bartender1` | same, "One task per checklist item", then move card to Done | | Three tasks, each with "From idea"; the card is in Done. |
 | S235 | `bartender2` | S233's task on the Taproom board → tick done | | The card chip shows "✓ Done <date>". |
 | S236 | `office1` | Company card → Send | assignees `office1`, `brewer1` | Picks Office (their only board); `brewer1` shown as "not in Office, left off". |
-| S237 | `bartender1` | Taproom list ⋮ → Archive; ⋮ → Archived → Restore | | Gone, then back with its cards. `bartender1` can't delete for good; `barMgr` can. |
+| S237 | `bartender1` | Taproom list ⋮ → Archive; ⋮ → Archived → Restore | | Gone, then back with its cards. `bartender1` can't delete for good; `barMgr` can. Searching Archived for part of the list's name, or a card title or description, ignoring case, narrows to it; no match says so. |
 | S238 | `noDept` | nav → Idea Boards | no departments | Only the Company board; full use of it. `/ideas/bar` goes to `/ideas/company`. |
 | S239 | `bartender1` | open `/ideas/bar/cards/<id>` on phone width | | Opens the card; Android back closes it. One list at a time with tabs; long-press drags a card to another list. |
 | S240 | `barMgr`; `bartender1`; `barMgr` on Company | Taproom ⋮ → History | after S224–S237 | `barMgr`: Taproom events only. `bartender1`: no History; API 403. Company History: owners only, `barMgr` gets 403. |

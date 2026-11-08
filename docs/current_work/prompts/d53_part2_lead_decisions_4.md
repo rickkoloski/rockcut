@@ -20,3 +20,13 @@ Then stage 8:
 Run the specs you touch and `--project brewery-board --no-deps` (stage 7 changes the task boards),
 one project at a time. Stop 5: the non-Playwright gate passing and your specs passing. Commit with a
 message containing `stop 5`, then stop.
+
+## Matt's answers (2026-11-08, added after this file was sent)
+
+- **LEAD-5:** keep Move left/right. No list dragging in D53. The lead files a follow-up task.
+  Spec §4.4 updated.
+- **New: search in Archived.** A search box at the top of the Archived dialog narrows archived
+  lists and cards as you type: list name, card title and card description, ignoring case. Show
+  "Nothing archived matches" when nothing does. If `…/archived` returns everything, filter on the
+  client; if it pages or caps, add a `q` param on the API instead. S237 now includes this. Add it
+  to stage 8's specs, with a screenshot of the dialog searching, light and dark.
