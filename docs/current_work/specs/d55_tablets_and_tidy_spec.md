@@ -155,6 +155,18 @@ Same for the Boards History `card_id`. A huge History `page` gives an empty page
 `before_id` keeps D38's rule (unknown → end of the day).
 Never a 500. **Test:** a route-table sweep with an out-of-range id on every `:id`-style route.
 
+### 2.12 A parent id that names no row is 422, not 500 (found at stop 3; added by Matt 2026-11-08)
+
+A create or update whose parent id is in range but names no row (a recipe's `brand_id: 12345`, `0`,
+`-1`) answers 500 (`Ecto.ConstraintError`). The schemas declare `foreign_key_constraint`, but
+SQLite's foreign-key error doesn't name the constraint, so Ecto can't map it to the field (cause to be
+confirmed first).
+
+**Change:** every write that takes a parent id answers 422 on that field ("does not exist") when the
+parent is missing. One shared changeset helper (look the parent up; add the error), not a fix per
+schema. Never a 500. **Test:** a sweep over the writable schemas' `belongs_to` fields with a missing
+parent (T14), plus a revert check.
+
 ## 3. Not in D55
 
 - Task-board settings and the View filter (4994, 4991), the manager/no-department person (4984), the
@@ -178,6 +190,7 @@ Never a 500. **Test:** a route-table sweep with an out-of-range id on every `:id
 | T11 | The browser tab and a fresh PWA install say "Rock Cut Brewing"; an installed tablet shows the new name after the update |
 | T13 | An out-of-range id on any route → 404, never 500 |
 | T12 | Add a field to an ingredient category with Sort Order empty → saved at the end of its fields |
+| T14 | A write naming a parent that doesn't exist (e.g. a recipe for brand 12345) → 422 on that field, never 500 |
 
 ## 5. Gate
 
