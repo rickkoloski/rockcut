@@ -16,6 +16,15 @@ defmodule RockcutApiWeb.Parsers do
   def call(conn, opts) do
     Plug.Parsers.call(conn, opts)
   rescue
-    e -> Plug.Conn.WrapperError.reraise(conn, :error, e, __STACKTRACE__)
+    # The parser's own errors only; anything else is raised as it was.
+    e in [
+      Plug.Parsers.ParseError,
+      Plug.Parsers.RequestTooLargeError,
+      Plug.Parsers.UnsupportedMediaTypeError,
+      Plug.Parsers.BadEncodingError,
+      Plug.BadRequestError,
+      Plug.TimeoutError
+    ] ->
+      Plug.Conn.WrapperError.reraise(conn, :error, e, __STACKTRACE__)
   end
 end

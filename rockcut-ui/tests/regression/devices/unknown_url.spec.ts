@@ -29,6 +29,18 @@ test.describe('taproomDevice', () => {
       await expect(page.getByTestId('page-not-found')).toHaveCount(0)
     })
   }
+
+  // Lead decisions 1, item 2: D53 Part 2 adds Idea Boards, which a tablet can
+  // open (view only). After merging develop, `/boards`, `/boards/:board` and
+  // `/boards/:board/cards/:id` must be in both the person routes and the
+  // tablet's routes. Un-fixme this then, with a real board and card id.
+  test.fixme('after the D53 merge: a tablet opens Idea Boards, not "Page not found"', async ({ page }) => {
+    for (const path of ['/boards', '/boards/1', '/boards/1/cards/1']) {
+      await page.goto(path)
+      await expect(page.getByTestId('page-not-found')).toHaveCount(0)
+      await expect(page.getByTestId('device-not-available')).toHaveCount(0)
+    }
+  })
 })
 
 test.describe('bartender1', () => {

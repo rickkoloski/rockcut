@@ -52,17 +52,23 @@ describe('useAuth.loadMe after a 401', () => {
     })
   }
 
-  it('a revoked tablet: recheck 401 unpairs', async () => {
+  // Lead decisions 1, item 5: a session that really ended ends on the first
+  // try: one /api/me recheck, one reload, no "retrying" state.
+  it('a revoked tablet: recheck 401 unpairs on the first try', async () => {
     meStatus = 401
-    await load('dev_tablet')
+    const state = await load('dev_tablet')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(state.unreachable).toBe(false)
     expect(store.has('rockcut_token')).toBe(false)
     expect(store.get('rockcut_device_unpaired')).toBe('1')
     expect(reload).toHaveBeenCalledTimes(1)
   })
 
-  it('a deactivated person: recheck 401 signs out', async () => {
+  it('a deactivated person: recheck 401 signs out on the first try', async () => {
     meStatus = 401
-    await load('ses_person')
+    const state = await load('ses_person')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(state.unreachable).toBe(false)
     expect(store.has('rockcut_token')).toBe(false)
     expect(reload).toHaveBeenCalledTimes(1)
   })
