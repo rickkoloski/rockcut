@@ -39,6 +39,10 @@ interface Props {
  */
 export default function TaskCard({ card, overlay, dragging, showDate, onToggle, onOpen, readOnly, noCheck, locked = card.locked, onNotes }: Props) {
   const people = cardPeople(card)
+  // D53 §4.8 gap 11: one person sits beside the title only when no repeat or
+  // notes icon does too; with them, a narrow day column left the title a few
+  // letters a line.
+  const beside = people.length === 1 && card.series_id == null && !card.notes
   // D53: up to three, then "+N"; the tooltip names everyone.
   const assignees = (
     <Tooltip title={people.map((p) => p.name).join(', ')}>
@@ -180,10 +184,10 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
               />
             </Tooltip>
           )}
-          {people.length === 1 && assignees}
+          {beside && assignees}
         </Box>
         {/* D53: two or more get their own row; beside the title they'd leave it no room in a day column. */}
-        {people.length > 1 && <Box sx={{ mt: 0.25 }}>{assignees}</Box>}
+        {people.length > 0 && !beside && <Box sx={{ mt: 0.25 }}>{assignees}</Box>}
         {card.production?.planned && (
           // D49 §3.12: a planned batch's step ("Show planned batches" hides these).
           <Chip label="Planned batch" size="small" variant="outlined" color="info" sx={{ height: 18, fontSize: 11, mt: 0.25 }} data-testid={`task-planned-${card.key}`} />

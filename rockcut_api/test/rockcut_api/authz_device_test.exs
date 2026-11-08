@@ -335,4 +335,24 @@ defmodule RockcutApi.AuthzDeviceTest do
     assert {:error, :device_account} =
              Accounts.set_memberships(d, [%{"department" => "bar", "role" => "manager"}], owner)
   end
+
+  describe "D53 Part 2 Idea Boards" do
+    test "reads its home board and Company; nothing else, no writes", %{d: d, depts: depts} do
+      for key <- ~w(brewery office sales),
+          do: refute(Authz.can?(d, :read, {:idea_board, {:department, depts[key]}}), key)
+
+      for board <- [{:department, depts["bar"]}, :company] do
+        assert Authz.can?(d, :read, {:idea_board, board})
+
+        for action <- [:write, :manage, :history],
+            do: refute(Authz.can?(d, action, {:idea_board, board}), "#{action}")
+
+        refute Authz.can?(
+                 d,
+                 :change,
+                 {:idea_board, board, %RockcutApi.IdeaBoards.IdeaList{board: "bar"}}
+               )
+      end
+    end
+  end
 end

@@ -38,6 +38,8 @@ const EVENTS = [
   { event: 'calendar_feed_rotated', label: 'Calendar link changed' },
   // D40 (spec §3.5): Brewery members only; push and the bell, never email.
   { event: 'task_shift_end', label: 'Unfinished tasks before shift end', brewery: true },
+  // D53 §4.6: changes to a board card you watch; push and the bell, never email.
+  { event: 'idea_card_changed', label: 'Changes to board cards you watch' },
 ]
 // Per-event default overrides (must match the backend). New messages skip the
 // in-app bell by default (unread badges cover it). A changed calendar link
@@ -46,9 +48,10 @@ const EVENT_DEFAULTS: Record<string, Record<string, boolean>> = {
   message_posted: { in_app: false },
   calendar_feed_rotated: { email: false, push: true },
   task_shift_end: { email: false, push: true },
+  idea_card_changed: { email: false, push: true },
 }
 // Channels an event is never sent on (shown as "—").
-const NOT_SENT: Record<string, string[]> = { task_shift_end: ['email'] }
+const NOT_SENT: Record<string, string[]> = { task_shift_end: ['email'], idea_card_changed: ['email'] }
 const CHANNELS = [
   { key: 'in_app', label: 'In-app', enabled: true, def: true },
   // D43: email (a no-op on prod since D28) and SMS (never built) aren't offered.

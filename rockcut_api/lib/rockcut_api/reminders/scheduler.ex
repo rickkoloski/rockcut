@@ -9,6 +9,8 @@ defmodule RockcutApi.Reminders.Scheduler do
   is rescued on its own, so one failing never stops the others.
 
   D40: and sends the shift-end reminders (`Reminders.run_shift_end/1`).
+
+  D53: and the Idea Board Watch notifications (`IdeaBoards.Watchers.flush/1`).
   """
   use GenServer
   require Logger
@@ -41,6 +43,13 @@ defmodule RockcutApi.Reminders.Scheduler do
       Reminders.run_shift_end()
     rescue
       e -> Logger.error("shift-end reminder scan failed: #{inspect(e)}")
+    end
+
+    # D53: Idea Board Watch notifications whose 10-minute window has closed.
+    try do
+      RockcutApi.IdeaBoards.Watchers.flush()
+    rescue
+      e -> Logger.error("idea watch flush failed: #{inspect(e)}")
     end
 
     try do

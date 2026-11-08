@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import api, { PASSWORD_RESET_EVENT } from '../lib/api'
-import type { Me, User, Capabilities, TaskBoardEntry } from '../lib/types'
+import type { Me, User, Capabilities, IdeaBoardEntry, TaskBoardEntry } from '../lib/types'
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
 import {
   SHARED_DEVICE_LOGIN_REFUSED,
@@ -20,6 +20,8 @@ interface AuthState {
   beerBoardManage: boolean
   /** D41: the task boards this person can open (D40: a device, its home board). */
   taskBoards: TaskBoardEntry[]
+  /** D53 Part 2: the Idea Boards this person can open (`/api/me`), Company last. */
+  ideaBoards: IdeaBoardEntry[]
   /** D43: the theme that applies here; null until /api/me answers. */
   colorMode: ColorMode | null
   /** D49: the Brewery board's "Show planned batches", saved per person on the server. */
@@ -69,6 +71,7 @@ const useAuth = create<AuthState>((set, get) => ({
   staffCodes: false,
   beerBoardManage: false,
   taskBoards: [],
+  ideaBoards: [],
   colorMode: null,
   showPlannedBatches: true,
   isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
@@ -113,7 +116,7 @@ const useAuth = create<AuthState>((set, get) => ({
       void signOutOnServer(token)
     }
     localStorage.removeItem(TOKEN_KEY)
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], colorMode: null, isAuthenticated: false })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], ideaBoards: [], colorMode: null, isAuthenticated: false })
   },
 
   loadMe: (opts) => {
@@ -147,6 +150,7 @@ const useAuth = create<AuthState>((set, get) => ({
           staffCodes: !!data.staff_codes,
           beerBoardManage: !!data.beer_board_manage,
           taskBoards: Array.isArray(data.task_boards) ? data.task_boards : [],
+          ideaBoards: Array.isArray(data.idea_boards) ? data.idea_boards : [],
           colorMode,
           showPlannedBatches: data.show_planned_batches !== false,
           isAuthenticated: true,

@@ -1,6 +1,6 @@
 # D53: Idea Boards + multiple assignees on tasks — Spec
 
-**Status:** APPROVED by Matt 2026-11-06. Part 1 in progress.
+**Status:** COMPLETE, on prod in `v2026.11.08` (2026-11-08); approved by Matt 2026-11-06. Matt's prod and tablet checks: task 5164 (2026-11-09).
 **Backlog:** PortableMind project 254, task 5063
 **Builds on:** D41 (department task boards), D42, D40 (staff codes on boards),
 D49 (production-linked tasks)
@@ -17,7 +17,9 @@ one person, though real jobs are often shared.
 
 ## 2. Decisions (Matt, 2026-11-02)
 
-1. **Name:** Idea Boards.
+1. **Name:** **Boards** in the nav; each board is the "Brewery board", "Taproom board", "Company
+   board" and so on (Matt, 2026-11-08, replacing "Idea Boards" / "Brewery ideas"). Code, tables and
+   API keep the `idea_` names.
 2. **One board per department** (Brewery, Taproom, Office, Sales) **plus
    one Company board.** Boards are fixed, like the task boards: nobody
    creates or deletes a board. "Other" gets none.
@@ -112,7 +114,7 @@ one person, though real jobs are often shared.
 | `idea_card_labels` | `card_id`, `label_id` |
 | `idea_checklist_items` | `card_id`, `text` (≤ 200), `done_at`, `done_by_id`, `position` |
 | `idea_notes` | `card_id`, `author_id`, `body` (≤ 2,000), `edited_at`, timestamps |
-| `idea_card_tasks` | `card_id`, `task_id` (nulled if the task is deleted), `task_series_id` (nullable), `department_id`, `task_title`, `removed_at` (§4.7) |
+| `idea_card_tasks` | `card_id`, `task_id` (nulled if the task is deleted), `task_series_id` (nullable), `department_id`, `task_title`, `card_title` (§4.7). No `removed_at`: "Removed" is read from the nulled task or series (lead decisions 3), and `card_id` is nulled when the card is deleted for good, keeping `card_title` (lead decisions 1) |
 | `idea_events` | per-board change log, like `task_events` |
 
 - A board is a key, not a table: `brewery`, `bar`, `office`, `sales`,
@@ -162,26 +164,29 @@ restore), `cards` (CRUD, move, reorder, lock, archive, restore),
 
 ### 4.4 Board UI
 
-- **Nav:** top-level **Idea Boards** after Tasks, at `/ideas/:board`
-  (`/ideas/brewery`, `/ideas/company`, …). `/ideas` opens the remembered
+- **Nav:** top-level **Boards** after Tasks, at `/boards/:board`
+  (`/boards/brewery`, `/boards/company`, …). `/boards` opens the remembered
   board. A switcher like the task boards' lists your boards with Company
   last.
 - **Layout:** lists side by side, scrolling sideways; "+ Add a list" at
   the end. Each list: name (click to rename), card count, ⋮ (rename,
   lock/unlock, archive), "+ Add a card" at the bottom.
 - **Drag** (the shared `@dnd-kit` layer): cards within and between lists,
-  lists left/right. Phone width: one list at a time with list tabs;
+  lists move with ⋮ → Move left / Move right (Matt, 2026-11-08: no list dragging in D53;
+  a follow-up task). Phone width: one list at a time with list tabs;
   long-press to drag, the same as the phone task board.
 - **Card face:** labels (color bars), title, due date (red when past),
   checklist count "2/5", note count, assignee initials, lock icon,
   "On the task list" chip after Send.
 - **Card dialog:** title, description, assignees, due date, labels (pick or
   create), checklist (add, tick, reorder, remove), notes, and its Send / Lock / Archive actions. Opening a card puts it in the URL
-  (`/ideas/bar/cards/42`) so it can be shared in Messages.
+  (`/boards/bar/cards/42`) so it can be shared in Messages.
 - **Notes timeline:** the add box on top, then entries **newest first**, each
   with the author and time ("Casey Tap · Nov 6, 2:14 PM"). Only notes: card
   changes such as moves stay in History, not in this timeline.
 - **Filter:** All / My cards / Watching / by label; Show archived is in ⋮.
+- **Archived** (the gear) lists archived lists and cards with a **search box** (Matt, 2026-11-08)
+  that narrows both as you type, by list name, card title and description, ignoring case.
 - **Watch:** an eye toggle in the card dialog; a small eye on the card
   face when you watch it.
 - **Tablet:** the same board without any add, edit, drag, lock, Watch or
@@ -218,15 +223,16 @@ assigned or mentioned.
 - **Cards only:** Watch is a per-person flag on a card (`idea_watches`:
   `user_id`, `card_id`, unique on the pair). No list or board watching.
 - **Nothing is watched automatically.** Creating or being assigned to a
-  card doesn't turn Watch on.
+  card doesn't turn Watch on. (Matt confirmed 2026-11-08: no auto-watch when added.)
 - **Any change counts:** title, description, due date, labels, assignees,
   checklist (add, tick, remove), notes, moves between lists, lock and
   unlock, archive and restore, Send to task list.
 - **Never about your own change.**
 - **Batched:** the first change starts a 10-minute window, and one notification
   goes out when it closes ("Casey changed *Taproom remodel*: moved to Doing, 2
-  notes"). A small pending-changes ledger, flushed by the D22 minute scanner.
-  So a notification can be up to about 10 minutes late. Tapping it opens the card.
+  notes"). A small pending-changes ledger, flushed by the existing D22 scanner (every 5
+  minutes), so a notification arrives **10–15 minutes** after the first change (Matt, 2026-11-08:
+  keep one background job). Tapping it opens the card.
 - **Delivery:** one new event type `idea_card_changed`. Defaults: in-app on,
   push on, email off, like `task_shift_end`; it gets a row in the Notification
   preferences dialog, and the UI's `EVENT_DEFAULTS` must match.
@@ -250,7 +256,7 @@ From the card dialog, **Send to task list** opens a dialog:
 - One task: the card's title becomes the task's title, and its description
   goes in the task's notes; open checklist items appended as
   `☐ item` lines (ticked ones as `☑`). Over 2,000 characters, the description
-  is cut with "… see the Idea Board card" so the checklist lines survive (and
+  is cut with "… see the card on the board" so the checklist lines survive (and
   the checklist itself is cut only if it alone exceeds the limit).
 - **Link back:** task notes are plain text, so the link isn't in them. The task
   dialog shows **"From idea: Taproom remodel"**, driven by `idea_card_tasks`.
@@ -309,11 +315,11 @@ since D41 (S105).
 | S220 | `breweryMgr` | Gantt → step with assignee → Brewery board | linked task | One assignee. The linked task's dialog keeps its single picker and a change there reaches the step, as before; two assignees through the API → 422. |
 | S221 | — | Brewery shift-end scan | a task with two assignees, both on shift | Each gets the push once. |
 | S222 | `breweryDevice` | brewhouse tablet → task → add two people with a staff code | | Saved; History names the acting person. |
-| S223 | `bartender1` | nav → **Idea Boards** | first ever open | `/ideas/bar`, lists Ideas / Planned / Doing / Done. Switcher: Taproom, Company. |
+| S223 | `bartender1` | nav → **Boards** | first ever open | `/boards/bar`, lists Ideas / Planned / Doing / Done. Switcher: Taproom, Company. |
 | S224 | `bartender1` | Taproom board → + Add a list "Taproom remodel" → add a card, labels, checklist, due date, `bartender2` | nobody watching | All persist after reload. Nobody is notified (`bartender2` isn't watching). |
 | S225 | `bartender1` | the card → Watch on; then `bartender2` adds a note and ticks a checklist item | | `bartender1` gets **one** notification naming both changes; `bartender2` gets none. |
 | S226 | `floater` | switcher | Taproom + Brewery | Taproom, Brewery, Company. |
-| S227 | `brewer1` | typed `/ideas/bar`; `GET /api/idea_boards/bar/lists` | not Taproom | Goes to `/ideas/brewery`; API 403. |
+| S227 | `brewer1` | typed `/boards/bar`; `GET /api/idea_boards/bar/lists` | not Taproom | Goes to `/boards/brewery`; API 403. |
 | S228 | `barMgr` | Taproom list ⋮ → **Lock** | | Lock icon and "Locked by Casey"; `bartender1` can't add, edit, move or archive in it; a crafted `PATCH` → 423. `barMgr` still renames the list and edits a card in it without unlocking. |
 | S229 | `barMgr` | a card ⋮ → Lock | card in an unlocked list | `bartender1` can't edit or drag it; other cards in the list still work. |
 | S230 | `splitRole` | Brewery Idea Board | Brewery employee, Taproom manager | No Lock on the Brewery board; Lock on the Taproom board. |
@@ -323,11 +329,11 @@ since D41 (S105).
 | S234 | `bartender1` | same, "One task per checklist item", then move card to Done | | Three tasks, each with "From idea"; the card is in Done. |
 | S235 | `bartender2` | S233's task on the Taproom board → tick done | | The card chip shows "✓ Done <date>". |
 | S236 | `office1` | Company card → Send | assignees `office1`, `brewer1` | Picks Office (their only board); `brewer1` shown as "not in Office, left off". |
-| S237 | `bartender1` | Taproom list ⋮ → Archive; ⋮ → Archived → Restore | | Gone, then back with its cards. `bartender1` can't delete for good; `barMgr` can. |
-| S238 | `noDept` | nav → Idea Boards | no departments | Only the Company board; full use of it. `/ideas/bar` goes to `/ideas/company`. |
-| S239 | `bartender1` | open `/ideas/bar/cards/<id>` on phone width | | Opens the card; Android back closes it. One list at a time with tabs; long-press drags a card to another list. |
+| S237 | `bartender1` | Taproom list ⋮ → Archive; ⋮ → Archived → Restore | | Gone, then back with its cards. `bartender1` can't delete for good; `barMgr` can. Searching Archived for part of the list's name, or a card title or description, ignoring case, narrows to it; no match says so. |
+| S238 | `noDept` | nav → Boards | no departments | Only the Company board; full use of it. `/boards/bar` goes to `/boards/company`. |
+| S239 | `bartender1` | open `/boards/bar/cards/<id>` on phone width | | Opens the card; Android back closes it. One list at a time with tabs; long-press drags a card to another list. |
 | S240 | `barMgr`; `bartender1`; `barMgr` on Company | Taproom ⋮ → History | after S224–S237 | `barMgr`: Taproom events only. `bartender1`: no History; API 403. Company History: owners only, `barMgr` gets 403. |
-| S241 | `taproomDevice` | tablet → Idea Boards | | Taproom and Company boards, view only: no add/edit/drag/Watch controls; a card opens read-only. `POST …/bar/cards` → 403; `GET …/brewery/lists` → 403. |
+| S241 | `taproomDevice` | tablet → Boards | | Taproom and Company boards, view only: no add/edit/drag/Watch controls; a card opens read-only. `POST …/bar/cards` → 403; `GET …/brewery/lists` → 403. |
 | S242 | `brewer1` | Brewery card → Watch on; `breweryMgr` moves it, later `brewer2` edits it | changes 15 minutes apart | `brewer1` gets two notifications; after turning Watch off, a further change sends none. Watching filter lists the card while on. |
 | S243 | `floater` | watches a Taproom card → removed from Taproom by `owner` | | No more notifications for it; the watch is gone. |
 | S255 | `bartender1` | a locked Taproom card → add a note | | The note saves and watchers hear of it; the card's other fields stay read-only. |

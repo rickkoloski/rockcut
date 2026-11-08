@@ -17,6 +17,8 @@ interface ConfirmDialogProps {
   loading?: boolean
   confirmLabel?: string
   confirmColor?: 'error' | 'primary'
+  /** The other button's words ("Keep editing"); Cancel by default. */
+  cancelLabel?: string
   /** More under the message (a list of consequences). */
   children?: React.ReactNode
   /** Still finding out what confirming would do: the confirm button waits, with a spinner (Cancel still works). */
@@ -25,7 +27,7 @@ interface ConfirmDialogProps {
 
 export default function ConfirmDialog({
   open, onClose, onConfirm, title, message, loading,
-  confirmLabel = 'Delete', confirmColor = 'error', children, pending,
+  confirmLabel = 'Delete', confirmColor = 'error', cancelLabel = 'Cancel', children, pending,
 }: ConfirmDialogProps) {
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
@@ -35,7 +37,7 @@ export default function ConfirmDialog({
         {children}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={loading}>Cancel</Button>
+        <Button onClick={onClose} disabled={loading}>{cancelLabel}</Button>
         {/* A spinner in place of the label: the button keeps its name and says it's busy. */}
         <Button
           onClick={onConfirm}

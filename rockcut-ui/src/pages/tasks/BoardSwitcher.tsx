@@ -10,6 +10,8 @@ interface Props {
   onSwitch: (key: string) => void
   /** Phone width: a smaller title for the toolbar row. */
   compact?: boolean
+  /** D53: the Idea Boards' titles ("Taproom board"); default "Taproom tasks". */
+  titleOf?: (board: TaskBoardEntry) => string
 }
 
 // A department's color; All departments (D41 §3.6, no color) gets a grid icon.
@@ -25,13 +27,13 @@ const Swatch = ({ board }: { board: TaskBoardEntry }) =>
  * ("Taproom tasks ▾"), each department with its color; with one, plain text.
  * Owners get All departments last (D41 §3.6).
  */
-export default function BoardSwitcher({ board, boards, onSwitch, compact }: Props) {
+export default function BoardSwitcher({ board, boards, onSwitch, compact, titleOf = boardTitle }: Props) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const variant = compact ? 'h6' : 'h4'
   if (boards.length < 2)
     return (
       <Typography variant={variant} data-testid="board-title">
-        {boardTitle(board)}
+        {titleOf(board)}
       </Typography>
     )
   return (
@@ -41,13 +43,13 @@ export default function BoardSwitcher({ board, boards, onSwitch, compact }: Prop
         onClick={(e) => setAnchor(e.currentTarget)}
         endIcon={<ArrowDropDown />}
         aria-haspopup="menu"
-        aria-label={`${boardTitle(board)}, switch board`}
+        aria-label={`${titleOf(board)}, switch board`}
         data-testid="board-switcher"
         sx={{ textTransform: 'none', px: 1, ml: -1, minWidth: 0 }}
       >
         <Swatch board={board} />
         <Typography variant={variant} component="span" data-testid="board-title" sx={{ ml: 1 }}>
-          {boardTitle(board)}
+          {titleOf(board)}
         </Typography>
       </Button>
       <Menu anchorEl={anchor} open={!!anchor} onClose={() => setAnchor(null)} data-testid="board-switcher-menu">

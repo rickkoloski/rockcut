@@ -269,8 +269,15 @@ export function taskSaveError(err: unknown, board: Pick<TaskBoardEntry, 'name'>)
   const errors = (err as { response?: { data?: { errors?: Record<string, string[]> } } })?.response?.data?.errors
   if (errors?.assignee_ids?.length) return errors.assignee_ids.join('; ')
   if (errors?.assignee_id) return `Only members of the ${board.name} can be assigned`
+  // D53 §4.8 (recheck 2, observation 2): a repeat's refusal reads as a
+  // sentence ("The series already has 3 dates…"), not "count: the series…".
+  const repeat = errors ? REPEAT_ERROR_FIELDS.flatMap((f) => errors[f] ?? []) : []
+  if (repeat.length) return repeat.map((m) => m.replace(/^./, (c) => c.toUpperCase())).join('; ')
   return taskError(err)
 }
+
+/** The series fields whose errors the Repeat field explains (D39 `TaskSeries`). */
+const REPEAT_ERROR_FIELDS = ['repeat', 'count', 'until_date', 'interval', 'weekdays', 'day_of_month', 'week_of_month', 'weekday', 'month_rule', 'start_date']
 
 /** The most active Daily items (the API's cap). */
 export const MAX_DAILY_ITEMS = 12
@@ -303,7 +310,10 @@ const scopeNote = (scope: unknown) =>
 
 /** D39: "removed 40, kept 2" (kept only when some were). */
 const removedNote = (d: Record<string, unknown>) =>
-  `removed ${Number(d.removed ?? 0)}${Number(d.kept ?? 0) > 0 ? `, kept ${Number(d.kept)}` : ''}`
+  `removed ${Number(d.removed ?? 0)}${Number(d.removed_with_notes ?? 0) > 0 ? ` (${Number(d.removed_with_notes)} with their own notes)` : ''}${Number(d.kept ?? 0) > 0 ? `, kept ${Number(d.kept)}` : ''}`
+
+/** D53 §4.8 gap 5: a series' row when someone left ("(12 occurrences)"). */
+const occurrences = (d: Record<string, unknown>) => (Number(d.count ?? 0) > 1 ? ` (${Number(d.count)} occurrences)` : '')
 
 /**
  * One change-log entry in plain words, old → new: "Moved Package FV6 from
@@ -350,7 +360,12 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
       const parts: string[] = []
       if ('title' in to) parts.push(`Renamed ${from.title} to ${to.title}`)
       if ('notes' in to) parts.push(`${to.notes ? (from.notes ? 'Changed' : 'Added') : 'Removed'} the notes on ${t}`)
-      if ('assignee_ids' in to) parts.push(listChange(from.assignee_ids, to.assignee_ids))
+      // D53 §4.8 gap 4: a following edit says who it took off (and put on)
+      // across every occurrence it reached, not only the edited one.
+      const across = d.people as { added?: number[]; removed?: number[] } | undefined
+      // `listChange(was, now)` with was = removed and now = added (they don't overlap).
+      if (across && 'assignee_ids' in to) parts.push(listChange(across.removed ?? [], across.added ?? []))
+      else if ('assignee_ids' in to) parts.push(listChange(from.assignee_ids, to.assignee_ids))
       if ('assignee_id' in to) {
         const who = person(to.assignee_id)
         parts.push(who ? `Assigned ${t} to ${who}` : `Unassigned ${t}`)
@@ -388,10 +403,12 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
       return `Stopped repeating ${t} after ${dayOrFuture(d.series_date)} (${removedNote(d)})`
     case 'unassigned': {
       // D41: `left_<key>`, logged on that department's board.
-      const left = board && d.reason === `left_${board.key}` ? ` (left the ${board.name})` : ''
+      // D53 §4.8 gap 9: deactivation says so.
+      const left =
+        d.reason === 'deactivated' ? ' (deactivated)' : board && d.reason === `left_${board.key}` ? ` (left the ${board.name})` : ''
       if (Array.isArray(d.from)) {
         const stay = (d.to ?? []) as unknown[]
-        return `Removed ${people(d.from.filter((id) => !stay.includes(id)))} from ${t}${left}`
+        return `Removed ${people(d.from.filter((id) => !stay.includes(id)))} from ${t}${left}${occurrences(d)}`
       }
       return `Unassigned ${t} from ${person(d.from) ?? 'someone'}${left}`
     }

@@ -242,6 +242,9 @@ defmodule RockcutApi.Accounts do
               RockcutApi.StaffCodes.clear_if_ineligible(user.id, actor)
               # D38: and they come off open Brewery tasks.
               RockcutApi.Tasks.unassign_if_ineligible(user.id, actor)
+              # D53: and off Idea Board cards, and their watches, on the
+              # boards they can no longer open.
+              RockcutApi.IdeaBoards.People.drop_if_ineligible(user.id, actor)
 
               {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
 
@@ -317,6 +320,8 @@ defmodule RockcutApi.Accounts do
           RockcutApi.StaffCodes.clear_if_ineligible(user.id, actor)
           # D38: leaving the Brewery takes them off open Brewery tasks.
           RockcutApi.Tasks.unassign_if_ineligible(user.id, actor)
+          # D53: and off that board's Idea Board cards and watches.
+          RockcutApi.IdeaBoards.People.drop_if_ineligible(user.id, actor)
           {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
 
         {:error, reason} ->

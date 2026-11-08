@@ -30,6 +30,12 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.Plugs.TaskBoard
   end
 
+  # D53 Part 2: the Idea Board from `:board` (404 unless it's an assignable
+  # department's key or `company`).
+  pipeline :idea_board do
+    plug RockcutApiWeb.Plugs.IdeaBoard
+  end
+
   # D37: Taproom pages (members and owners; a Taproom tablet by its home module).
   pipeline :taproom do
     plug RockcutApiWeb.ModuleAccessPlug, module: :bar
@@ -268,6 +274,71 @@ defmodule RockcutApiWeb.Router do
     patch "/daily_items/:id", DailyController, :update_item
     post "/daily_items/:id/restore", DailyController, :restore_item
     delete "/daily_items/:id", DailyController, :delete_item
+  end
+
+  # D53 Part 2 Idea Boards (spec §4.3): the boards I can open, and each
+  # board's reads. A shared tablet reads its home department's board and the
+  # Company board (Authz.Device); every write is in the people-only scope
+  # below, so DeviceGate refuses it before any Idea Board code runs.
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :device_allowed]
+
+    get "/idea_boards", IdeaBoardController, :index
+  end
+
+  scope "/api/idea_boards/:board", RockcutApiWeb do
+    pipe_through [:api, :device_allowed, :idea_board]
+
+    get "/lists", IdeaBoardController, :lists
+    get "/labels", IdeaBoardController, :labels
+    get "/cards/:id", IdeaBoardController, :card
+  end
+
+  # A board's History, Archived, the people picker and every write: people
+  # only.
+  scope "/api/idea_boards/:board", RockcutApiWeb do
+    pipe_through [:api, :authenticated, :idea_board]
+
+    get "/history", IdeaBoardController, :history
+    get "/archived", IdeaBoardController, :archived
+    get "/people", IdeaBoardController, :people
+
+    post "/lists", IdeaListController, :create
+    patch "/lists/:id", IdeaListController, :update
+    delete "/lists/:id", IdeaListController, :delete
+    post "/lists/:id/move", IdeaListController, :move
+    post "/lists/:id/lock", IdeaListController, :lock
+    post "/lists/:id/unlock", IdeaListController, :unlock
+    post "/lists/:id/archive", IdeaListController, :archive
+    post "/lists/:id/restore", IdeaListController, :restore
+
+    post "/cards", IdeaCardController, :create
+    patch "/cards/:id", IdeaCardController, :update
+    delete "/cards/:id", IdeaCardController, :delete
+    post "/cards/:id/move", IdeaCardController, :move
+    post "/cards/:id/lock", IdeaCardController, :lock
+    post "/cards/:id/unlock", IdeaCardController, :unlock
+    post "/cards/:id/archive", IdeaCardController, :archive
+    post "/cards/:id/restore", IdeaCardController, :restore
+
+    post "/cards/:id/checklist", IdeaCardController, :add_item
+    put "/cards/:id/checklist/order", IdeaCardController, :order_items
+    patch "/cards/:id/checklist/:item_id", IdeaCardController, :update_item
+    delete "/cards/:id/checklist/:item_id", IdeaCardController, :delete_item
+
+    post "/cards/:id/notes", IdeaCardController, :add_note
+    patch "/cards/:id/notes/:note_id", IdeaCardController, :update_note
+    delete "/cards/:id/notes/:note_id", IdeaCardController, :delete_note
+
+    get "/cards/:id/send_to_tasks", IdeaCardController, :send_options
+    post "/cards/:id/send_to_tasks", IdeaCardController, :send_to_tasks
+
+    put "/cards/:id/watch", IdeaCardController, :watch
+    delete "/cards/:id/watch", IdeaCardController, :unwatch
+
+    post "/labels", IdeaLabelController, :create
+    patch "/labels/:id", IdeaLabelController, :update
+    delete "/labels/:id", IdeaLabelController, :delete
   end
 
   # D46 production setup (spec §3.2–§3.4): Brewery members and owners

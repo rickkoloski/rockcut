@@ -38,6 +38,7 @@ import ExpandMore from '@mui/icons-material/ExpandMore'
 import HomeIcon from '@mui/icons-material/HomeOutlined'
 import DashboardIcon from '@mui/icons-material/DashboardOutlined'
 import ChecklistIcon from '@mui/icons-material/ChecklistOutlined'
+import ViewKanbanIcon from '@mui/icons-material/ViewKanbanOutlined'
 import ScienceIcon from '@mui/icons-material/ScienceOutlined'
 import PeopleIcon from '@mui/icons-material/PeopleOutlined'
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonthOutlined'
@@ -81,6 +82,7 @@ import ListsPage from './pages/production/ListsPage'
 import TemplatesPage from './pages/production/TemplatesPage'
 import TemplateEditor from './pages/production/TemplateEditor'
 import { OldTaskBoardRedirect, TaskBoardPage, TasksIndex } from './pages/tasks/TaskBoardRoutes'
+import { IdeaBoardPage, IdeasIndex } from './pages/ideas/IdeaBoardRoutes'
 import BrandsList from './pages/brands/BrandsList'
 import BrandDetail from './pages/brands/BrandDetail'
 import RecipeDetail from './pages/recipes/RecipeDetail'
@@ -256,6 +258,9 @@ function personRoutes({ hasBrewery, hasTaproom, canManageSchedule, canManageUser
       <Route path="/tasks" element={<TasksIndex />} />
       <Route path="/tasks/:dept" element={<TaskBoardPage />} />
       <Route path="/brewery/tasks" element={<OldTaskBoardRedirect />} />
+      <Route path="/boards" element={<IdeasIndex />} />
+      <Route path="/boards/:board" element={<IdeaBoardPage />} />
+      <Route path="/boards/:board/cards/:cardId" element={<IdeaBoardPage />} />
       <Route path="/schedule" element={<ViewSchedule />} />
       {canManageSchedule && <Route path="/scheduler" element={<Scheduler />} />}
       <Route path="/time_off" element={<TimeOff />} />
@@ -307,6 +312,7 @@ function App() {
     capabilities,
     sharedDevices,
     taskBoards,
+    ideaBoards,
     colorMode,
     setColorMode,
     loadMe,
@@ -396,6 +402,8 @@ function App() {
     // D41: Tasks opens the person's own board (a switcher when there are more).
     // D43: first, beside Home, so the plain links sit above the expandable headings.
     ...(realBoards(taskBoards).length > 0 ? [{ key: 'tasks', label: 'Tasks', icon: <ChecklistIcon />, children: [], path: '/tasks' }] : []),
+    // D53 §4.4: Boards (the Idea Boards), after Tasks (everyone has at least the Company board).
+    ...(ideaBoards.length > 0 ? [{ key: 'ideas', label: 'Boards', icon: <ViewKanbanIcon />, children: [], path: '/boards' }] : []),
     {
       key: 'schedule',
       label: 'Schedule',
@@ -858,6 +866,10 @@ function App() {
               {/* D40: its home board only (/api/me lists just that one; any other goes there). */}
               <Route path="/tasks" element={<TasksIndex />} />
               <Route path="/tasks/:dept" element={<TaskBoardPage />} />
+              {/* D53: its home department's board and Company, view only. */}
+              <Route path="/boards" element={<IdeasIndex />} />
+              <Route path="/boards/:board" element={<IdeaBoardPage />} />
+              <Route path="/boards/:board/cards/:cardId" element={<IdeaBoardPage />} />
               {/* D54: no personal logins on a shared tablet. */}
               <Route path="/login" element={<SharedDeviceLoginRefused />} />
               <Route path="*" element={<TabletFallback />} />
