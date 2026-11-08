@@ -58,6 +58,18 @@ Report: `docs/current_work/stepwise_results/d53_part1_dev_qa_report.md`. Decisio
   day and their History stays with the old id. "Removes N" counts remade dates too; a line under it
   explains.
 
+## Fix cycle 2 (from the QA recheck on `1be89fb`)
+
+Report: `docs/current_work/stepwise_results/d53_part1_dev_qa_recheck_report.md`. Every fix-cycle-1
+fix passed it.
+
+- **One meaning for "changed on its own" in a rule change (gap 12; also on `develop`):** only the
+  flag counts. A notes-only occurrence is no longer counted or kept back in the old series. It's
+  remade like its neighbours and keeps its own notes, so later "following" edits reach it. The
+  rule-change confirm takes its counts from the API's change preview. Stop, Delete "following" and
+  Ends-only changes keep D42's meaning; nothing is skipped silently there.
+- **Gaps 13 and 14 were already on `develop`** and go in Part 2 (spec §4.8).
+
 ## Migrations
 
 **Yes, reversible:** `20261106120001_create_task_assignees` creates the two tables and
@@ -75,7 +87,7 @@ config. The new error code is `linked_task_assignees`.
 - Playwright, local, one project at a time: new spec
   `task-board-multi-assignee` 19/19, changed specs 78/78, `brewery-board` 222/222,
   `production` 157/157.
-- **Full Playwright suite (lead):** 601 passed, 1 skipped, at `dc0594d` after fix cycle 1 (599 at `83097ca` before it). ExUnit: 1929 passed. `pwa-update` not rerun.
+- **Full Playwright suite (lead):** 601 passed, 1 skipped, at `f9a32c8` after fix cycle 2 (601 at `dc0594d` after fix cycle 1; 599 at `83097ca` before it). ExUnit: 1929 passed. `pwa-update` not rerun.
 
 Tests were confirmed able to fail by breaking the code on purpose (13 breaks; see the
 status file).
