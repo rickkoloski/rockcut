@@ -84,7 +84,7 @@ self.addEventListener('push', (event: PushEvent) => {
     payload = { title: event.data?.text() }
   }
 
-  const title = payload.title || 'Rockcut'
+  const title = payload.title || 'Rock Cut Brewing'
   const options: NotificationOptions = {
     body: payload.body || '',
     icon: '/pwa-192x192.png',
