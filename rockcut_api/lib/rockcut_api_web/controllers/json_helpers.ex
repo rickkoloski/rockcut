@@ -176,8 +176,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       due_on: task && task.due_on,
       completed_on: task && task.completed_on,
       series: series && %{frequency: series.frequency, interval: series.interval},
-      sent_at: t.inserted_at,
-      removed_at: t.removed_at
+      sent_at: t.inserted_at
     }
   end
 

@@ -400,8 +400,6 @@ defmodule RockcutApi.IdeaBoards do
   gone, `repeating` for a series still there, `done` once its task is
   checked off, otherwise `on_list`.
   """
-  def sent_state(%CardTask{removed_at: at}) when not is_nil(at), do: "removed"
-
   def sent_state(%CardTask{task_series_id: id, task_series: s})
       when not is_nil(id) and not is_nil(s),
       do: "repeating"

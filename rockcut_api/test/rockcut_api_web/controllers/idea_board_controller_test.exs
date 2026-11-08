@@ -164,8 +164,7 @@ defmodule RockcutApiWeb.IdeaBoardControllerTest do
         task_id: nil,
         department_id: bar,
         task_title: "Deleted one",
-        card_title: card.title,
-        removed_at: ~U[2026-11-07 12:00:00Z]
+        card_title: card.title
       })
 
       sent!(card, %{
@@ -187,7 +186,7 @@ defmodule RockcutApiWeb.IdeaBoardControllerTest do
       assert Enum.at(chips, 0)["completed_on"] == "2026-11-12"
       assert Enum.at(chips, 2)["series"] == %{"frequency" => "weekly", "interval" => 1}
 
-      # A task deleted by the database's nilify (no removed_at yet) reads as removed too.
+      # A task deleted later (the database nulls `task_id`) reads as removed too.
       Repo.delete!(done)
       %{"data" => %{"lists" => lists}} = get_json(p["bartender1"], "/api/idea_boards/bar/lists")
 

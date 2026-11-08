@@ -112,7 +112,7 @@ one person, though real jobs are often shared.
 | `idea_card_labels` | `card_id`, `label_id` |
 | `idea_checklist_items` | `card_id`, `text` (≤ 200), `done_at`, `done_by_id`, `position` |
 | `idea_notes` | `card_id`, `author_id`, `body` (≤ 2,000), `edited_at`, timestamps |
-| `idea_card_tasks` | `card_id`, `task_id` (nulled if the task is deleted), `task_series_id` (nullable), `department_id`, `task_title`, `removed_at` (§4.7) |
+| `idea_card_tasks` | `card_id`, `task_id` (nulled if the task is deleted), `task_series_id` (nullable), `department_id`, `task_title`, `card_title` (§4.7). No `removed_at`: "Removed" is read from the nulled task or series (lead decisions 3), and `card_id` is nulled when the card is deleted for good, keeping `card_title` (lead decisions 1) |
 | `idea_events` | per-board change log, like `task_events` |
 
 - A board is a key, not a table: `brewery`, `bar`, `office`, `sales`,

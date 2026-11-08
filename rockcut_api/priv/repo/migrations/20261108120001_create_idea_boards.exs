@@ -110,7 +110,6 @@ defmodule RockcutApi.Repo.Migrations.CreateIdeaBoards do
       add :task_series_id, references(:task_series, on_delete: :nilify_all)
       add :department_id, references(:departments, on_delete: :restrict), null: false
       add :task_title, :string, null: false
-      add :removed_at, :utc_datetime
 
       timestamps(type: :utc_datetime)
     end
