@@ -30,3 +30,23 @@ message containing `stop 5`, then stop.
   "Nothing archived matches" when nothing does. If `…/archived` returns everything, filter on the
   client; if it pages or caps, add a `q` param on the API instead. S237 now includes this. Add it
   to stage 8's specs, with a screenshot of the dialog searching, light and dark.
+
+## Matt (2026-11-08, later): the name
+
+**Every user-visible "Idea Board(s)" / "… ideas" becomes "Board(s)" / "… board".** Code, tables, API
+paths and the `/ideas` URLs stay as they are. Spec §2.1 is updated.
+
+| Where | Now | New |
+|---|---|---|
+| Nav (`App.tsx`) | Idea Boards | **Boards** |
+| Board title (`ideaBoardTitle`) and the switcher | Taproom ideas | **Taproom board** (Company board, Brewery board…) |
+| History title | History: Taproom ideas | History: Taproom board |
+| Notification preferences | Changes to Idea Board cards you watch | **Changes to board cards you watch** |
+| Send's cut-off text | … see the Idea Board card | **… see the card on the board** |
+| Task dialog | From idea: Patio heaters | **From the Taproom board: Patio heaters** (link as before; plain title when no link) |
+| Notification and any other text | "Idea Board" | "board" |
+
+- **Icon:** use a board/columns icon (MUI `ViewKanbanOutlined`) instead of the lightbulb.
+- Grep the UI and the API's user-facing strings (notifications, errors) for "Idea Board", "Idea
+  Boards" and "ideas" in visible text, and update tests that assert them.
+- **The starter list named "Ideas" stays** (it's a list, not the board).
