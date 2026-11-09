@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Alert, Box, Button, ListSubheader, Menu, MenuItem, Paper, Typography, useMediaQuery } from '@mui/material'
-import api from '../../../lib/api'
 import PageHeader from '../../../components/PageHeader'
 import { useApiQuery } from '../../../hooks/useApiQuery'
 import useAuth from '../../../hooks/useAuth'
+import useIsDevice from '../../../hooks/useIsDevice'
+import { ActingBanner } from '../../../components/ActingCode'
 import { coloradoToday } from '../../../lib/tasks'
-import {
+import { splitTree,
   scheduleParts,
   clampRange,
   dayLabel,
@@ -93,6 +94,7 @@ function GanttScreen() {
   }, [])
   const drag = useTimelineDrag({ scroller, insets: () => ({ top: HEAD_H + 1, left: leftW }) })
   const userId = useAuth((s) => s.user?.id) ?? 'anon'
+  const isDevice = useIsDevice()
   const phone = useMediaQuery('(max-width:559.95px)')
   // Compact step rows with a mouse; a finger (the tablet, phones) keeps 28 px (D48 §3.6, P121).
   const fine = useMediaQuery('(pointer: fine)') && !phone
@@ -280,7 +282,7 @@ function GanttScreen() {
     const title = ids.length === 1 ? `${s.name} moved ${daysWord(days)}` : `${plural(ids.length, 'step')} moved ${daysWord(days)}`
     report(
       await flows.write(
-        () => api.post(prodPath('steps', 'move'), { ids, days, answer: 'move_only' }),
+        (a) => a.post(prodPath('steps', 'move'), { ids, days, answer: 'move_only' }),
         `${title} (only ${ids.length === 1 ? 'this step' : 'these steps'}).`,
       ),
     )
@@ -290,7 +292,7 @@ function GanttScreen() {
     const ids = [...selected]
     report(
       await flows.write(
-        () => api.post(prodPath('steps', 'assign'), { ids, assignee_id: person?.id ?? null }),
+        (a) => a.post(prodPath('steps', 'assign'), { ids, assignee_id: person?.id ?? null }),
         `${plural(ids.length, 'step')} assigned to ${person?.name ?? 'nobody'}.`,
       ),
     )
@@ -310,11 +312,11 @@ function GanttScreen() {
     onSpot: (tank: Tank | null, day: string, at: { x: number; y: number }) => setSpot({ tank, day, ...at }),
     onMoveStep: (s: SchedStep, days: number, only?: boolean) => void moveStep(s, days, only),
     onMoveCip: async (c: SchedStep, days: number) =>
-      report(await flows.write(() => api.post(prodPath('steps', 'move'), { ids: [c.id], days }), `${c.name} moved ${daysWord(days)}.`)),
+      report(await flows.write((a) => a.post(prodPath('steps', 'move'), { ids: [c.id], days }), `${c.name} moved ${daysWord(days)}.`)),
     onShiftBar: async (p: Part, days: number) =>
       report(
         await flows.write<{ moved: number; kept: number }>(
-          () => api.post(prodPath('batches', p.batch.id, 'shift'), { days }),
+          (a) => a.post(prodPath('batches', p.batch.id, 'shift'), { days }),
           (d) =>
             d.kept
               ? `${plural(d.moved, 'unfinished step')} ${daysWord(days)} (finished steps keep their dates).`
@@ -324,7 +326,7 @@ function GanttScreen() {
     onMoveBar: async (p: Part, tankId: number | null) =>
       report(
         await flows.write(
-          () => api.patch(prodPath('batches', p.batch.id, 'vessels', p.vessel), { tank_id: tankId }),
+          (a) => a.patch(prodPath('batches', p.batch.id, 'vessels', p.vessel), { tank_id: tankId }),
           `${p.batch.label}${p.vessel ? ' (after transfer)' : ''} → ${tankId ? (tankById(tankId)?.name ?? 'tank') : 'Unassigned'}.`,
         ),
       ),
@@ -347,6 +349,8 @@ function GanttScreen() {
   return (
     <Box>
       <PageHeader breadcrumbs={[{ label: 'Production' }]} title="Production" />
+      {/* D50: the brewhouse device's "Acting as", shared with the Brewery board's. */}
+      {isDevice && <ActingBanner />}
       <GanttToolbar
         range={range}
         zoom={zoom}
@@ -539,6 +543,7 @@ function GanttScreen() {
           key={openStep.id}
           step={openStep}
           batch={openStep.batch_id ? (data.batches.find((b) => b.id === openStep.batch_id) ?? null) : null}
+          tree={splitTree(data.batches, openStep.batch_id)}
           tanks={data.tanks}
           brewers={data.brewers}
           today={data.today}

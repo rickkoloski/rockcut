@@ -6,6 +6,7 @@ import {
   Chip,
   Dialog,
   DialogActions,
+  FormControlLabel,
   DialogContent,
   DialogTitle,
   IconButton,
@@ -17,6 +18,7 @@ import {
   TableCell,
   TableHead,
   TableRow,
+  Switch,
   TextField,
   Tooltip,
   Typography,
@@ -167,6 +169,9 @@ export default function SharedDevices() {
   // D43: the home department's managers may set this too (theme only), so it
   // sits in the row rather than the owner-only edit form.
   const setColorMode = (d: SharedDevice, color_mode: ColorMode) => run(() => api.patch(`/api/devices/${d.id}`, { color_mode }))
+  // D50 decision 5: the brewhouse device's own "Show planned batches" (owners: `:manage_device`).
+  const setShowPlanned = (d: SharedDevice, show_planned_batches: boolean) =>
+    run(() => api.patch(`/api/devices/${d.id}`, { show_planned_batches }))
 
   return (
     <>
@@ -223,6 +228,20 @@ export default function SharedDevices() {
                     </MenuItem>
                   ))}
                 </TextField>
+                {isOwner && d.home_department?.key === 'brewery' && (
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        size="small"
+                        checked={d.show_planned_batches !== false}
+                        disabled={busy}
+                        onChange={(e) => setShowPlanned(d, e.target.checked)}
+                        slotProps={{ input: { 'data-testid': `device-show-planned-${d.id}` } as object }}
+                      />
+                    }
+                    label="Show planned batches"
+                  />
+                )}
                 {/* DEV G9: a deactivated device can't get codes (the API says 422 too). */}
                 {d.active && (
                   <Button

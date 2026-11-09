@@ -4,11 +4,16 @@
 import { createContext, useContext } from 'react'
 import type { AxiosResponse } from 'axios'
 import type { SchedStep } from '../../../lib/production'
+import type { CodedApi } from '../../../lib/codedApi'
 import type { Result } from './flows'
 
 export interface Flows {
-  /** Run a write; on success refetch, show `message` (with renumbering) and Undo. */
-  write: <T = Record<string, unknown>>(call: () => Promise<AxiosResponse>, message: string | ((data: T) => string)) => Promise<Result<T>>
+  /**
+   * Run a write; on success refetch, show `message` (with renumbering) and Undo.
+   * `call` makes the request through `a` (D50: the device's staff code goes in
+   * its body; a cancelled code dialog is a Failure with code `cancelled`).
+   */
+  write: <T = Record<string, unknown>>(call: (a: CodedApi) => Promise<AxiosResponse>, message: string | ((data: T) => string)) => Promise<Result<T>>
   /** Move steps by `days` (the move prompt when steps follow). Null when cancelled. */
   moveSteps: (ids: number[], days: number) => Promise<Result | null>
   /** Check a step off on `doneOn` (the number prompt, then the move prompt). */

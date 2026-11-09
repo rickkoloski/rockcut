@@ -320,6 +320,8 @@ export interface SharedDevice {
   home_department: Department | null
   // D43: the theme its tablets show.
   color_mode: ColorMode
+  // D50: the device's own "Show planned batches" (the Brewery board and the Gantt's Task list).
+  show_planned_batches?: boolean
   tokens: DeviceTablet[] | null
   inserted_at: string
 }

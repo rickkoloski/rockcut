@@ -1,7 +1,6 @@
 import { useState } from 'react'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, Paper, TextField, Typography } from '@mui/material'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import api from '../../../lib/api'
 import { prodPath, type Flag } from '../../../lib/production'
 import ErrorAlert from '../ErrorAlert'
 import { useFlows } from './flowsContext'
@@ -47,10 +46,11 @@ export function FlagRow({ flag }: { flag: Flag }) {
       ) : flag.signed_off && flag.signoff ? (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5, flexWrap: 'wrap' }}>
           <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }} data-testid="flag-signed-by">
-            Signed off by {by} · {signedDay(flag.signoff.signed_at)}
+            Signed off by {by}
+            {flag.signoff.device_name ? ` · on ${flag.signoff.device_name}` : ''} · {signedDay(flag.signoff.signed_at)}
             {flag.signoff.note ? ` · “${flag.signoff.note}”` : ''}
           </Typography>
-          <Button size="small" disabled={busy} onClick={() => run(() => flows.write(() => api.delete(prodPath('flags', 'signoff', encodeURIComponent(flag.key))), 'Sign-off removed.'))} data-testid="flag-remove-signoff">
+          <Button size="small" disabled={busy} onClick={() => run(() => flows.write((a) => a.delete(prodPath('flags', 'signoff', encodeURIComponent(flag.key))), 'Sign-off removed.'))} data-testid="flag-remove-signoff">
             Remove sign-off
           </Button>
         </Box>
@@ -73,7 +73,7 @@ export function FlagRow({ flag }: { flag: Flag }) {
             <Button
               variant="contained"
               disabled={busy}
-              onClick={() => run(() => flows.write(() => api.post(prodPath('flags', 'signoff'), { key: flag.key, signature: flag.signature, note: note.trim() || null }), 'Marked OK.'))}
+              onClick={() => run(() => flows.write((a) => a.post(prodPath('flags', 'signoff'), { key: flag.key, signature: flag.signature, note: note.trim() || null }), 'Marked OK.'))}
               data-testid="flag-ok"
               sx={{ whiteSpace: 'nowrap' }}
             >

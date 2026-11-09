@@ -4,7 +4,6 @@ import { Add, CallSplit, DeleteOutline, EditNote, NoteAddOutlined } from '@mui/i
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { useApiQuery } from '../../../hooks/useApiQuery'
-import api from '../../../lib/api'
 import { buildParts, dayLabel, daysBetween, dotState, firstBrew, SPLIT_LOCKED, splitLocked, treeRefusal } from '../../../lib/gantt'
 import {
   plainBatchNumber,
@@ -71,7 +70,7 @@ function StepLine({
   const [temp, setTemp] = useState(step.temperature != null ? String(step.temperature) : '')
   const state = dotState(step, today, buildParts(batch).find((p) => p.stranded.has(step.id)))
   const done = !!step.done_on
-  const patch = (body: Record<string, unknown>) => flows.write(() => api.patch(prodPath('steps', step.id), body), 'Saved.')
+  const patch = (body: Record<string, unknown>) => flows.write((a) => a.patch(prodPath('steps', step.id), body), 'Saved.')
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
 
@@ -149,7 +148,7 @@ function StepLine({
         onClose={() => setRemoving(false)}
         onConfirm={async () => {
           setRemoving(false)
-          const r = await flows.write(() => api.delete(prodPath('steps', step.id)), removeMessage(step, batch, tanks))
+          const r = await flows.write((a) => a.delete(prodPath('steps', step.id)), removeMessage(step, batch, tanks))
           setRemoveError(r.ok ? null : r.error)
         }}
         title="Remove step"
@@ -180,7 +179,7 @@ function BrandTemplate({ batch, locked, run }: { batch: SchedBatch; locked: bool
         value={brands.some((b) => b.id === batch.brand_id) ? batch.brand_id : ''}
         onChange={(e) =>
           run(() =>
-            flows.write<Changed>(() => api.patch(prodPath('batches', batch.id), { brand_id: Number(e.target.value) }), (d) => `${batch.label} is now ${d.batches?.[0]?.label ?? 'changed'}.`),
+            flows.write<Changed>((a) => a.patch(prodPath('batches', batch.id), { brand_id: Number(e.target.value) }), (d) => `${batch.label} is now ${d.batches?.[0]?.label ?? 'changed'}.`),
           )
         }
         disabled={locked}
@@ -216,7 +215,7 @@ function BrandTemplate({ batch, locked, run }: { batch: SchedBatch; locked: bool
         onConfirm={async () => {
           const t = template!
           setTemplate(null)
-          await run(() => flows.write<Changed>(() => api.patch(prodPath('batches', batch.id), { template_id: t.id }), (d) => d.message ?? `Now ${t.name}.`))
+          await run(() => flows.write<Changed>((a) => a.patch(prodPath('batches', batch.id), { template_id: t.id }), (d) => d.message ?? `Now ${t.name}.`))
         }}
         title="Change template"
         message={`Rebuild ${batch.label}’s steps from ${template?.name ?? ''}, from the same brew day? Steps you added are kept; added transfers are dropped.`}
@@ -330,7 +329,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
                 onClick={async () => {
                   const n = plainBatchNumber(number)
                   // Saved: the field shows the number as saved (trimmed, no #).
-                  if (await run(() => flows.write(() => api.patch(prodPath('batches', batch.id), { batch_number: n }), `Batch number is now #${n}.`))) setNumber(n)
+                  if (await run(() => flows.write((a) => a.patch(prodPath('batches', batch.id), { batch_number: n }), `Batch number is now #${n}.`))) setNumber(n)
                 }}
                 data-testid="batch-number-save"
               >
@@ -351,7 +350,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
             />
             <Button
               disabled={split || volume === '' || Number(volume) === batch.volume_bbl}
-              onClick={() => run(() => flows.write(() => api.patch(prodPath('batches', batch.id), { volume_bbl: Number(volume) }), 'Volume saved.'))}
+              onClick={() => run(() => flows.write((a) => a.patch(prodPath('batches', batch.id), { volume_bbl: Number(volume) }), 'Volume saved.'))}
               data-testid="batch-volume-save"
             >
               Save
@@ -368,7 +367,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
               onChange={(id) =>
                 run(() =>
                   flows.write(
-                    () => api.patch(prodPath('batches', batch.id, 'vessels', p.vessel), { tank_id: id }),
+                    (a) => a.patch(prodPath('batches', batch.id, 'vessels', p.vessel), { tank_id: id }),
                     `${batch.label}${p.vessel ? ' (after transfer)' : ''} → ${id ? (tanks.find((t) => t.id === id)?.name ?? 'tank') : 'Unassigned'}.`,
                   ),
                 )
@@ -450,7 +449,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
         {planned && batch.pencilled && (
           <Button
             variant="contained"
-            onClick={() => run(() => flows.write(() => api.post(prodPath('batches', batch.id, 'schedule')), `${batch.label.replace(/ X[\d.]+$/, '')} is scheduled.`))}
+            onClick={() => run(() => flows.write((a) => a.post(prodPath('batches', batch.id, 'schedule')), `${batch.label.replace(/ X[\d.]+$/, '')} is scheduled.`))}
             data-testid="batch-schedule"
           >
             Schedule this batch
@@ -458,7 +457,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
         )}
         {planned && !batch.pencilled && !anyDone && (
           <Button
-            onClick={() => run(() => flows.write(() => api.post(prodPath('batches', batch.id, 'pencil')), `${batch.label.replace(/ P[\d.]+$/, '')} is pencilled in.`))}
+            onClick={() => run(() => flows.write((a) => a.post(prodPath('batches', batch.id, 'pencil')), `${batch.label.replace(/ P[\d.]+$/, '')} is pencilled in.`))}
             data-testid="batch-pencil"
           >
             Pencil in
@@ -473,7 +472,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
         onClose={() => setDeleting(false)}
         onConfirm={async () => {
           setDeleting(false)
-          if (await run(() => flows.write(() => api.delete(prodPath('batches', batch.id)), `${batch.label} deleted.`))) onClose()
+          if (await run(() => flows.write((a) => a.delete(prodPath('batches', batch.id)), `${batch.label} deleted.`))) onClose()
         }}
         title="Delete planned batch"
         message={`Delete ${batch.label} and all its planned steps? Other planned batches may renumber.`}
@@ -488,7 +487,7 @@ export default function BatchDialog({ batch, tanks, flags, today, types, phases,
         onConfirm={async () => {
           setUnsplitting(false)
           const parent = batch.split_parent_id != null ? batch.label.replace(/\.\d+$/, '') : batch.label
-          if (await run(() => flows.write(() => api.delete(prodPath('batches', batch.id, 'split')), `Split undone: ${parent} is one batch again, with part ${keeper}’s schedule.`))) onClose()
+          if (await run(() => flows.write((a) => a.delete(prodPath('batches', batch.id, 'split')), `Split undone: ${parent} is one batch again, with part ${keeper}’s schedule.`))) onClose()
         }}
         title="Undo split"
         message={`Merge the parts back into one batch? The beer stays in the tank it was split from, with part ${keeper}’s schedule; the other parts are deleted.`}

@@ -15,11 +15,22 @@ import {
 } from '@mui/material'
 import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import api from '../../../lib/api'
 import { dayLabel, daysBetween } from '../../../lib/gantt'
 import { dayN, removable, removeMessage, removeQuestion, stepStatus } from './scheduleText'
 import { ChangeRampDialog } from './BatchChangeDialogs'
-import { answerLabel, CIP_METHODS, prodPath, type CipMethod, type Person, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
+import {
+  CIP_METHODS,
+  linkChoices,
+  pickedLinks,
+  prodPath,
+  type CipMethod,
+  type Person,
+  type SchedBatch,
+  type SchedLink,
+  type SchedStep,
+  type Tank,
+} from '../../../lib/production'
+import StepLinks, { type LinkPicks } from './StepLinks'
 import ErrorAlert from '../ErrorAlert'
 import { useFlows } from './flowsContext'
 import DateField from '../DateField'
@@ -28,6 +39,8 @@ interface Props {
   step: SchedStep
   /** Its batch; null for a standalone CIP & Sanitize. */
   batch: SchedBatch | null
+  /** D50 §2.7: its batch's split (parent and parts) when it has one; its links stay within it. */
+  tree?: SchedBatch[]
   tanks: Tank[]
   brewers: Person[]
   today: string
@@ -48,9 +61,11 @@ const tankOf = (step: SchedStep, batch: SchedBatch | null, tanks: Tank[]) => {
  * move it, or mark it not done. Typed changes are saved when it closes or a
  * button is pressed. D48: Remove step, and Change ramp… on a ramp's step.
  * D49 §3.12a: an unfinished CIP switches between CIP & Sanitize, CIP - no
- * sani and Sanitize; a Sanitize done on a dirty tank says so.
+ * sani and Sanitize; a Sanitize done on a dirty tank says so. D50 §2.7: a
+ * batch step's links are edited here (`StepLinks`); what the link pickers
+ * hold is linked on Save or Close, after the other changes.
  */
-export default function StepDialog({ step, batch, tanks, brewers, today, sanitizedDirty, onClose }: Props) {
+export default function StepDialog({ step, batch, tree, tanks, brewers, today, sanitizedDirty, onClose }: Props) {
   const flows = useFlows()
   const cip = step.batch_id == null
   const [temperature, setTemperature] = useState(step.temperature != null ? String(step.temperature) : '')
@@ -79,9 +94,12 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
     if (document.activeElement === document.body && trigger.current.isConnected) trigger.current.focus()
     trigger.current = null
   }, [busy])
-  const byId = new Map((batch?.steps ?? []).map((s) => [s.id, s]))
-  const after = (batch?.links ?? []).filter((l) => l.from_step_id === step.id)
-  const before = (batch?.links ?? []).filter((l) => l.to_step_id === step.id)
+  const family = batch ? (tree?.length ? tree : [batch]) : []
+  // A split's links can sit on the parent and on a part: each once.
+  const links = [...new Map(family.flatMap((b) => b.links).map((l) => [l.id, l] as const)).values()] as SchedLink[]
+  const choices = linkChoices(family.flatMap((b) => b.steps), links, step, (s) => s.due_on)
+  const [picks, setPicks] = useState<LinkPicks>({ after: '', leads: '' })
+  const picked = pickedLinks(step.id, picks.after, picks.leads, choices)
   const done = !!step.done_on
 
   const changes = (): Record<string, unknown> => {
@@ -96,16 +114,30 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
     return c
   }
 
-  /** Save what's been typed; false (with the error shown) if it was refused. */
+  /**
+   * Save what's been typed, then (D50 §2.7) link what the link pickers hold;
+   * false (with the error shown) if either was refused. A refused save links
+   * nothing.
+   */
   const save = async (): Promise<boolean> => {
     const c = changes()
-    if (!Object.keys(c).length) return true
-    const path = cip ? prodPath('cips', step.id) : prodPath('steps', step.id)
-    const r = await flows.write(() => api.patch(path, c), 'Saved.')
-    if (!r.ok) {
-      const fields = (r.body?.errors ?? {}) as Record<string, string[]>
-      setError(Object.values(fields)[0]?.[0] ?? r.error)
-      return false
+    if (Object.keys(c).length) {
+      const path = cip ? prodPath('cips', step.id) : prodPath('steps', step.id)
+      const r = await flows.write((a) => a.patch(path, c), 'Saved.')
+      if (!r.ok) {
+        const fields = (r.body?.errors ?? {}) as Record<string, string[]>
+        setError(Object.values(fields)[0]?.[0] ?? (r.error || null))
+        return false
+      }
+    }
+    for (const l of picked) {
+      const body = l.from_step_id === step.id ? { leads_to_id: l.to_step_id } : { comes_after_id: l.from_step_id }
+      const r = await flows.write((a) => a.post(prodPath('steps', step.id, 'links'), body), 'Saved.')
+      if (!r.ok) {
+        setError(r.error || null)
+        return false
+      }
+      setPicks((p) => (l.from_step_id === step.id ? { ...p, leads: '' } : { ...p, after: '' }))
     }
     return true
   }
@@ -114,7 +146,7 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
     if (closing.current) return
     closing.current = true
     // Typed notes (and the rest) are kept when the dialog closes.
-    if (Object.keys(changes()).length && !(await save())) {
+    if ((Object.keys(changes()).length || picked.length) && !(await save())) {
       closing.current = false
       return
     }
@@ -166,31 +198,8 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
             {stepStatus(step, today)}
           </Typography>
         </Box>
-        {(after.length > 0 || before.length > 0) && (
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1 }} data-testid="step-dialog-links">
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                Before this
-              </Typography>
-              {before.map((l) => (
-                <Typography key={l.id} variant="body2">
-                  {byId.get(l.from_step_id)?.name ?? '?'}
-                </Typography>
-              ))}
-              {!before.length && <Typography variant="body2">Nothing</Typography>}
-            </Box>
-            <Box>
-              <Typography variant="caption" color="text.secondary">
-                After this
-              </Typography>
-              {after.map((l) => (
-                <Typography key={l.id} variant="body2">
-                  {byId.get(l.to_step_id)?.name ?? '?'} · {answerLabel(l.default_answer) === 'moves with it' ? 'Moves with it by default' : 'Stays by default'}
-                </Typography>
-              ))}
-              {!after.length && <Typography variant="body2">Nothing</Typography>}
-            </Box>
-          </Box>
+        {batch && (
+          <StepLinks step={step} tree={family} links={links} choices={choices} picks={picks} onPicks={setPicks} busy={busy} onError={setError} />
         )}
         <Divider />
         {step.behavior === 'set_temp' && step.ramp_group && batch && !done && (
@@ -348,7 +357,7 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
         onClose={() => setDeleting(false)}
         onConfirm={() => {
           setDeleting(false)
-          act(() => flows.write(() => api.delete(prodPath('cips', step.id)), `${step.name} deleted.`))
+          act(() => flows.write((a) => a.delete(prodPath('cips', step.id)), `${step.name} deleted.`))
         }}
         title={`Delete ${step.name}`}
         message={`Delete the ${step.name} in ${tankOf(step, null, tanks)} on ${dayLabel(step.due_on)}?`}
@@ -361,7 +370,7 @@ export default function StepDialog({ step, batch, tanks, brewers, today, sanitiz
             setRemoving(false)
             // Unsaved typing goes with the step: nothing to save first.
             setBusy(true)
-            flows.write(() => api.delete(prodPath('steps', step.id)), removeMessage(step, batch, tanks)).then((r) => {
+            flows.write((a) => a.delete(prodPath('steps', step.id)), removeMessage(step, batch, tanks)).then((r) => {
               setBusy(false)
               if (r.ok) onClose()
               else setError(r.error)

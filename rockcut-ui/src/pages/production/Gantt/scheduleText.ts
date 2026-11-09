@@ -4,7 +4,9 @@ import { dayLabel, daysBetween, firstBrew } from '../../../lib/gantt'
 import type { SchedBatch, SchedStep, Tank } from '../../../lib/production'
 
 export function stepStatus(step: SchedStep, today: string): string {
-  if (step.done_on) return `Done ${dayLabel(step.done_on)}${step.done_by ? ` by ${step.done_by.name}` : ''}`
+  // D50: "Done Tue Nov 10 by Jake Brewer · on Brewhouse".
+  if (step.done_on)
+    return `Done ${dayLabel(step.done_on)}${step.done_by ? ` by ${step.done_by.name}` : ''}${step.done_on_device ? ` · on ${step.done_on_device.name}` : ''}`
   if (step.due_on === today) return 'Due today'
   if (step.due_on < today) return `Late (planned ${dayLabel(step.due_on)})`
   return 'Planned'

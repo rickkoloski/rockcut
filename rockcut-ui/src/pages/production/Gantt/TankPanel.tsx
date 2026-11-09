@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Radio, TextField, Tooltip, Typography } from '@mui/material'
 import { DeleteOutline } from '@mui/icons-material'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
 import { MARK_STATES, markLabel, OUTAGE_GROUPS, prodPath, type ConditionMark, type MarkState, type Outage, type Tank, type TankStatusLine } from '../../../lib/production'
 import { useFlows } from './flowsContext'
@@ -42,7 +41,7 @@ export default function TankPanel({ tank, status, marks, today, onOpen, onClose 
   const history = [...marks].sort((a, b) => b.marked_on.localeCompare(a.marked_on) || b.id - a.id)
 
   const remove = async (m: ConditionMark) => {
-    const r = await flows.write(() => api.delete(prodPath('condition_marks', m.id)), `Mark removed: ${tank.name} ${m.state} ${dayLabel(m.marked_on)}.`)
+    const r = await flows.write((a) => a.delete(prodPath('condition_marks', m.id)), `Mark removed: ${tank.name} ${m.state} ${dayLabel(m.marked_on)}.`)
     setError(r.ok ? null : r.error)
   }
 
@@ -52,7 +51,7 @@ export default function TankPanel({ tank, status, marks, today, onOpen, onClose 
     if (day > today) return setError('Pick today or an earlier day.')
     setBusy(true)
     const r = await flows.write(
-      () => api.post(prodPath('tanks', tank.id, 'condition'), { state: marking, marked_on: day, note: note.trim() || null }),
+      (a) => a.post(prodPath('tanks', tank.id, 'condition'), { state: marking, marked_on: day, note: note.trim() || null }),
       `${tank.name} marked ${markLabel(marking).toLowerCase()} (${dayLabel(day)}).`,
     )
     setBusy(false)

@@ -39,6 +39,8 @@ import {
   type StepType,
 } from '../../lib/production'
 import OrderedList from './OrderedList'
+import SetupReadOnlyNote from './SetupReadOnlyNote'
+import useIsDevice from '../../hooks/useIsDevice'
 
 const NO_PHASES: Phase[] = []
 const NO_TYPES: StepType[] = []
@@ -259,10 +261,11 @@ function RetiredSection<T extends { id: number; name: string }>({
  * D46 §3.3 Phases & steps (`/brewery/production/lists`): two lists with Add,
  * Edit (rename, color, full name, starting phase, task list), reorder and
  * retire/restore. Built-in step types have no Retire. Retiring hides one
- * from the pickers; templates keep it.
+ * from the pickers; templates keep it. D50: read-only on the brewhouse device.
  */
 export default function ListsPage() {
   const qc = useQueryClient()
+  const readOnly = useIsDevice()
   const { data: phases = NO_PHASES } = useApiQuery<Phase[]>(PHASES_KEY, prodPath('phases'))
   const { data: types = NO_TYPES } = useApiQuery<StepType[]>(STEP_TYPES_KEY, prodPath('step_types'))
   const activePhases = phases.filter((p) => !p.retired_at)
@@ -303,7 +306,8 @@ export default function ListsPage() {
     }
   }
 
-  const actions = (kind: 'phases' | 'step_types', item: Phase | StepType, onEdit: () => void, canRetire: boolean) => (
+  const actions = (kind: 'phases' | 'step_types', item: Phase | StepType, onEdit: () => void, canRetire: boolean) =>
+    readOnly ? null : (
     <Box sx={{ display: 'flex' }}>
       <Tooltip title="Edit">
         <IconButton size="small" aria-label={`Edit ${item.name}`} onClick={onEdit} data-testid={`${kind}-edit-${item.id}`}>
@@ -323,6 +327,7 @@ export default function ListsPage() {
   return (
     <Box>
       <PageHeader breadcrumbs={[{ label: 'Production', to: '/brewery/production' }, { label: 'Phases & steps' }]} title="Phases & steps" />
+      {readOnly && <SetupReadOnlyNote />}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)} data-testid="lists-error">
           {error}
@@ -334,13 +339,16 @@ export default function ListsPage() {
             <Typography variant="h6" sx={{ flex: 1 }}>
               Phases
             </Typography>
-            <Button startIcon={<Add />} onClick={() => setEditPhase('new')} data-testid="phase-add">
-              Add phase
-            </Button>
+            {!readOnly && (
+              <Button startIcon={<Add />} onClick={() => setEditPhase('new')} data-testid="phase-add">
+                Add phase
+              </Button>
+            )}
           </Box>
           <OrderedList
             items={activePhases}
             testId="phases"
+            readOnly={readOnly}
             label={(p) => p.name}
             onReorder={(ids) => api.post(prodPath('phases', 'reorder'), { ids }).finally(refresh)}
             render={(p) => (
@@ -352,7 +360,7 @@ export default function ListsPage() {
               </Box>
             )}
           />
-          <RetiredSection items={phases.filter((p) => p.retired_at)} testId="phases" onRestore={(p) => act(() => api.post(prodPath('phases', p.id, 'restore')), `${p.name} restored.`)} />
+          {!readOnly && <RetiredSection items={phases.filter((p) => p.retired_at)} testId="phases" onRestore={(p) => act(() => api.post(prodPath('phases', p.id, 'restore')), `${p.name} restored.`)} />}
         </Box>
 
         <Box data-testid="step-types-section">
@@ -360,13 +368,16 @@ export default function ListsPage() {
             <Typography variant="h6" sx={{ flex: 1 }}>
               Step types
             </Typography>
-            <Button startIcon={<Add />} onClick={() => setEditType('new')} data-testid="step-type-add">
-              Add step type
-            </Button>
+            {!readOnly && (
+              <Button startIcon={<Add />} onClick={() => setEditType('new')} data-testid="step-type-add">
+                Add step type
+              </Button>
+            )}
           </Box>
           <OrderedList
             items={activeTypes}
             testId="step_types"
+            readOnly={readOnly}
             label={(t) => t.name}
             onReorder={(ids) => api.post(prodPath('step_types', 'reorder'), { ids }).finally(refresh)}
             render={(t) => {
@@ -389,11 +400,13 @@ export default function ListsPage() {
               )
             }}
           />
-          <RetiredSection
-            items={types.filter((t) => t.retired_at)}
-            testId="step_types"
-            onRestore={(t) => act(() => api.post(prodPath('step_types', t.id, 'restore')), `${t.name} restored.`)}
-          />
+          {!readOnly && (
+            <RetiredSection
+              items={types.filter((t) => t.retired_at)}
+              testId="step_types"
+              onRestore={(t) => act(() => api.post(prodPath('step_types', t.id, 'restore')), `${t.name} restored.`)}
+            />
+          )}
         </Box>
       </Box>
 

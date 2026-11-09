@@ -116,3 +116,34 @@ after that it signs in like any browser.
   pair again, to bring them back.
 
 Every create, pair, revoke and deactivate shows in the owner's User change log.
+
+## 8. The brewhouse device (D50)
+
+The brewhouse device is a shared device whose **home is the Brewery**. It
+opens on the Brewery task board and has **Brewery → Production**: the
+production schedule, worked from the brewhouse floor.
+
+**What it does.** Anyone in the Brewery (and owners) can plan a batch, move
+and check off steps, sign off flags, change batches, add CIPs, mark tanks
+clean or dirty and add out-of-service periods, all with their **staff code**,
+and the Brewery board's production tasks work the same way. Each change is
+recorded as that person, "on" the device. The code is remembered for 5
+minutes ("Acting as …", shared by the board and the schedule; **Done** ends
+it). Undo works only for the person who made the change. Tanks, templates
+and phases & steps open **read-only**: set those up on a personal account.
+
+**Which hardware.** Any device with a current Chrome (version 107 or later),
+1280 px wide or more, with touch or a mouse/trackpad: a tablet or a
+Chromebook. Check `chrome://version` before using an older device: an ASUS
+Chromebit (updates ended in November 2020, about Chrome 87) can't run the app.
+
+**Setting it up.**
+
+1. An owner creates it under Admin → Shared devices with home **Brewery**
+   (step 1), then pairs it (step 3).
+2. Install the app (step 2), and open it at login.
+3. Keep it awake on power (step 5). On a laptop or Chromebook: the lid open,
+   or docked. A managed kiosk mode isn't needed.
+4. Shared devices → the brewhouse device → **Show planned batches**: whether
+   the board and the schedule's Task list show planned batches' tasks on this
+   device (on by default). It's the device's setting, not the person's.

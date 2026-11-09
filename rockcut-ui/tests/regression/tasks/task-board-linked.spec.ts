@@ -3,6 +3,7 @@ import { authFile } from '../../config/test-env'
 import { addDays, apiAs, card, getBoard, mouseDrag, openBoard, setBoardCheck, type ApiCard } from '../brewery/taskBoardHelpers'
 import { batchOf, Made, schedule, snack, stepOf, today, type SBatch, type SStep } from '../production/schedule'
 import { setSetting, settingOn } from '../settingsMenu'
+import { enterCode, firstName, retireCoded, staffWithCode, type Coded } from '../production/device'
 
 // D49 §3.12: production steps on the Brewery board (P90–P101, P103, P108,
 // P125, and the board side of P130/P132/P133/P135). Named task-board-* so it
@@ -399,25 +400,57 @@ test("QA 3: the Dashboard's Today's tasks card follows Show planned batches, wit
   await expect(page.getByText(brewTask.title, { exact: true })).toHaveCount(0)
 })
 
-test.describe('the brewhouse tablet (decision 8: read-only until D50)', () => {
+// D50 §2.5 (was D49 decision 8, read-only): on the brewhouse tablet a linked
+// task works as on a person's board, behind a staff code (a [TEST-TEMP]
+// Brewery member's, as in task-board-tablets).
+test.describe('the brewhouse tablet (D50: with a staff code)', () => {
   test.use({ storageState: authFile('breweryDevice') })
+  let coded: Coded | null = null
+  test.beforeAll(async () => {
+    coded = await staffWithCode('D50 board')
+  })
+  test.afterAll(async () => {
+    await retireCoded([coded])
+  })
 
-  test('a linked task has no checkbox and no actions, and says where to do it', async ({ page }) => {
+  test('a linked task has its checkbox and every action, with Open in schedule', async ({ page }) => {
     const { batch } = await ale('Crusher', 2)
-    const fdh = stepOf(batch, 'FDH')
-    await (await apiAs('brewer1')).patch(`${P}/steps/${fdh.id}`, { data: { notes: 'Bring the Citra up from the cooler' } })
-    const c = (await linked(fdh.id))!
+    const c = (await linked(stepOf(batch, 'FDH').id))!
     await openAround(page, c.due_on!)
     const key = `${c.id}:${c.due_on}`
-    await expect(page.getByTestId(`task-${key}`)).toBeVisible()
-    await expect(page.getByTestId(`task-check-${key}`)).toHaveCount(0)
-    // It can't be dragged.
-    await expect(page.getByTestId(`task-${key}`)).toHaveAttribute('data-locked', 'true')
+    await expect(page.getByTestId(`task-check-${key}`)).toBeVisible()
+    await expect(page.getByTestId(`task-${key}`)).not.toHaveAttribute('data-locked', 'true')
     await page.getByTestId(`task-${key}`).click()
     const menu = page.getByTestId('task-menu')
-    await expect(menu.getByTestId('task-menu-linked-device')).toHaveText('From the production schedule. Do this on the production schedule.')
-    // QA 5: its notes, which the tablet can't read anywhere else.
-    await expect(menu.getByTestId('task-menu-notes-text')).toHaveText('Bring the Citra up from the cooler')
-    for (const id of ['task-menu-edit', 'task-menu-complete', 'task-menu-change-day', 'task-menu-delete', 'task-menu-open-schedule']) await expect(menu.getByTestId(id)).toHaveCount(0)
+    await expect(menu.getByTestId('task-menu-linked-device')).toHaveCount(0)
+    for (const id of ['task-menu-edit', 'task-menu-complete', 'task-menu-change-day', 'task-menu-delete', 'task-menu-open-schedule']) await expect(menu.getByTestId(id)).toBeVisible()
+    await menu.getByTestId('task-menu-open-schedule').click()
+    await expect(page).toHaveURL(/\/brewery\/production\?step=/)
+    await expect(page.getByTestId('gantt-inner')).toBeVisible()
+  })
+
+  test('D4: check off brew day with a code: the batch-number prompt, done on the Gantt too, as that person', async ({ page }) => {
+    const { batch } = await ale('Galactic', 0)
+    const brew = stepOf(batch, 'Brew day')
+    const c = (await linked(brew.id))!
+    await openAround(page, c.due_on!)
+    const key = `${c.id}:${c.due_on}`
+    await page.getByTestId(`task-check-${key}`).click()
+    await enterCode(page, coded!.code)
+    const number = `9${Math.floor(Math.random() * 1e6)}`
+    await page.getByTestId('number-input').fill(number)
+    await page.getByTestId('number-save').click()
+    await expect(snack(page)).toContainText('Brew day done.')
+    await expect(page.getByTestId('acting-name')).toHaveText(`Acting as ${firstName(coded!)}`)
+
+    const done = stepOf(await batchOf(batch.id), 'Brew day')
+    expect(done.done_on).toBe(today())
+    const sched = await (await apiAs('brewer1')).get(`${P}/schedule?from=${addDays(today(), -1)}&to=${addDays(today(), 1)}`)
+    const step = ((await sched.json()).data.batches as SBatch[]).find((b) => b.id === batch.id)!.steps.find((s) => s.id === brew.id) as SStep & {
+      done_by: { name: string } | null
+      done_on_device: { name: string } | null
+    }
+    expect(step.done_by?.name).toBe(coded!.person.name)
+    expect(step.done_on_device?.name).toBe('Brewhouse tablet')
   })
 })

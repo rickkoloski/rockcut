@@ -10,6 +10,8 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import api from '../../lib/api'
 import type { ApiResponse } from '../../lib/types'
+import useIsDevice from '../../hooks/useIsDevice'
+import SetupReadOnlyNote from './SetupReadOnlyNote'
 import { TEMPLATES_KEY, fieldErrors, prodError, prodPath, type Template, type TemplateSummary } from '../../lib/production'
 
 const NO_TEMPLATES: TemplateSummary[] = []
@@ -99,10 +101,12 @@ export function TemplateNameDialog({
 /**
  * D46 §3.4 Templates (`/brewery/production/templates`): every template with
  * its step count and an Incomplete badge, New, Duplicate, Retire, and a
- * Retired section with Restore. A name opens the editor.
+ * Retired section with Restore. A name opens the editor. D50: read-only on
+ * the brewhouse device (the editor too).
  */
 export default function TemplatesPage() {
   const qc = useQueryClient()
+  const readOnly = useIsDevice()
   const navigate = useNavigate()
   const { data: all = NO_TEMPLATES, isLoading } = useApiQuery<TemplateSummary[]>(TEMPLATES_KEY, prodPath('templates'))
   const active = all.filter((t) => !t.retired_at)
@@ -143,6 +147,7 @@ export default function TemplatesPage() {
         </Typography>
       </Box>
       <IncompleteChip template={t} />
+      {!readOnly && (
       <Box sx={{ display: 'flex' }}>
         <Tooltip title="Duplicate">
           <IconButton
@@ -167,6 +172,7 @@ export default function TemplatesPage() {
           </Tooltip>
         )}
       </Box>
+      )}
     </Paper>
   )
 
@@ -175,8 +181,9 @@ export default function TemplatesPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Production', to: '/brewery/production' }, { label: 'Templates' }]}
         title="Templates"
-        action={{ label: 'New template', onClick: () => setCreating(true), testId: 'template-new' }}
+        action={readOnly ? undefined : { label: 'New template', onClick: () => setCreating(true), testId: 'template-new' }}
       />
+      {readOnly && <SetupReadOnlyNote />}
       <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         A template describes a process once. Each batch gets its own copy, so editing a template never changes existing batches.
       </Typography>
