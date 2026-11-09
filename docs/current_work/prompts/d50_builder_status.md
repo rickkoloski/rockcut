@@ -129,3 +129,163 @@ fix.
    readable message"). Wording OK?
 3. **Device Show planned batches** is owner-only (`:manage_device`, as the plan says); a Brewery
    manager can't flip it, though they can set the device's theme. Keep it owner-only?
+
+## Stop 2 (stage 2: UI)
+
+Commits `3cb5b03` (UI and specs) and `15abc95` (brands route and spec fixes from the local run).
+
+**Gate so far:**
+- `tsc -p tsconfig.app.json` clean; `vite build` OK; vitest 17 files / 250 tests.
+- `pnpm lint`: 26 errors + 1 warning (the ceiling; none in files D50 touches).
+- `tsc -p tsconfig.e2e.json`: only the two errors that were already there (`task-board-phone`, `beer-board-import`).
+- `mix compile --warnings-as-errors` clean; `MIX_ENV=test mix test` green after the brands change (2214).
+
+**Playwright (my specs only, local servers, logs in `/tmp/claude-501/pwlogs/d50_*.log`):**
+- `production/d50-brewhouse-device` 14/14;
+- `production/d50-brewhouse-touch` 3/3;
+- `production/d50-links` 4/4;
+- `production/access` 5/5 (P19 updated);
+- `tasks/task-board-linked` 17/17;
+- `devices/brewhouse_show_planned` 1/1.
+
+I did not run the full suite (the lead's, stage 3).
+
+**Revert check (§2.6, the one bug fix):** with the Save-links loop disabled (`.slice(0, 0)`), L1
+"pick Leads to FDH and press Save" **fails** (no "after PDH" after the reload); restored, it
+**passes** (`d50_revert_L1.log`, `d50_restore_L1.log`).
+
+### What changed
+
+- **Every schedule write through `useActing.run`.**
+  - `flows.write(call, message)` now hands `call` a `codedApi(code)` (`src/lib/codedApi.ts`:
+    post/patch/delete with `staff_code` in the JSON body, never the URL). For a person `code` is
+    undefined and nothing changes.
+  - The move and check-off previews and Undo go through it too, so on the device the code dialog
+    opens before the prompt (lead decisions 1). The window is the board's, so a second write doesn't
+    ask again.
+  - A cancelled code dialog is a Failure `cancelled` with no message: nothing shows, and a cancelled
+    preview returns null like a cancelled prompt.
+  - A refused Undo (`undo_not_yours`) keeps its button while the token lasts, so the right person
+    can press it.
+  - `OutageDialog` does the same. Every Gantt write site was converted: `grep "=> api\."` under
+    `Gantt/` finds none.
+  - `codedApi` lives apart from `lib/production.ts` because two Playwright specs import that file and
+    it mustn't load the axios client.
+- **Nav and routes.** `DEVICE_PAGES` adds `/brewery/production`, so a Brewery-home device's Brewery
+  heading has Production. The device routes add the five production pages for a Brewery home. A
+  Taproom device's typed URL still reaches `TabletFallback` → `DeviceNotAvailable` (P107).
+- **Setup read-only on a device:**
+  - Tanks, Phases & steps, Templates and the template editor show "Read only on a shared device. Set
+    up on a personal account." (`SetupReadOnlyNote`, `useIsDevice`).
+  - There's no add, edit, retire, restore, rename or reorder (`OrderedList` `readOnly`), and the
+    editor's task-list switches are disabled.
+- **The Gantt:** `ActingBanner` under the header on a device.
+- **The Brewery board on a device:** linked cards have their checkbox, drag, Edit notes and every
+  menu action, Open in schedule included. D49's `linkedReadOnly` / "Do this on the production
+  schedule" is gone from `TaskMenu`, and so are `TaskBoard`'s `isDevice` branches for linked cards.
+- **Show planned batches:**
+  - Shared devices has a switch on a Brewery-home device (owners: `:manage_device`).
+  - `TaskBoard` no longer forces it on for a device: it reads `/api/me`, which is the device's own
+    row. The Gantt's Task list panel already read the same field.
+- **§2.6 (template editor):**
+  - The Links pickers' values moved up into `EntryDialog`. Save PATCHes the entry, then links each
+    pick (`pickedLinks`).
+  - A refused PATCH links nothing and shows the error. A refused link keeps the dialog open with the
+    entry as saved.
+  - Links sits above Notes. The pickers' filter is now the shared `linkChoices` (lib).
+- **§2.7 (step dialog):**
+  - The new `StepLinks` component has "Comes after" / "Leads to" lists, each link with its default
+    answer and Remove, and a picker plus Link button for each. Choices come from `linkChoices` over
+    the split's tree (`splitTree`, lib/gantt).
+  - What the pickers hold is linked on Save or Close, after the other changes.
+  - Every change goes through `flows.write` (Undo; a code on the device).
+- **"· on Brewhouse":** the step status ("Done Tue Nov 10 by Jake Brewer · on Brewhouse tablet") and
+  the flag sign-off line.
+- **Docs:** `docs/process/taproom_tablet_setup.md` §8, the brewhouse device (spec §2.1).
+- **API addition (found by D1's spec):** the Plan batch and batch dialogs list brands from `GET
+  /api/brands`, which was people-only, so the device couldn't plan a batch.
+  - `GET /api/brands` (index only) moved to a `[:api, :device_allowed, :brewery]` scope. The module
+    plug, which asks `Authz.Device` `:access`, lets in the brewhouse device; a Taproom device and
+    non-Brewery people get 403 as before. The rest of `/brands` stays people-only.
+  - In the route matrix it's in `@brewery_device_ok`, so the no-email check covers it. See LEAD 1.
+
+### Files
+
+- New:
+  - `src/lib/codedApi.ts`, `src/hooks/useIsDevice.ts`, `src/lib/links.test.ts`;
+  - `src/pages/production/SetupReadOnlyNote.tsx`, `src/pages/production/Gantt/StepLinks.tsx`;
+  - `tests/regression/production/{device.ts, d50-brewhouse-device.spec.ts, d50-brewhouse-touch.spec.ts, d50-links.spec.ts}`;
+  - `tests/regression/devices/brewhouse_show_planned.spec.ts`.
+- Changed:
+  - `App.tsx`, `lib/{production,gantt,types}.ts`;
+  - `pages/production/{EntryDialogs,ListsPage,OrderedList,OutageDialog,TanksPage,TemplateEditor,TemplatesPage}.tsx`;
+  - `pages/production/Gantt/{BatchChangeDialogs,BatchDialog,CipAddDialog,FlagsDialog,GanttPage,PlanBatchDialog,StepDialog,TankPanel,flows}.tsx`,
+    `flowsContext.ts`, `scheduleText.ts`;
+  - `pages/tasks/{LinkedTaskDialog,TaskBoard,TaskMenu}.tsx`, `pages/devices/SharedDevices.tsx`;
+  - API: `router.ex`, `device_route_matrix_test.exs`;
+  - docs: `taproom_tablet_setup.md`.
+
+### Tests
+
+- **Vitest** `src/lib/links.test.ts` (8): `linkChoices` (earlier/later, already linked, loops, never
+  Brew day as leads-to, ISO dates as day offsets), `pickedLinks` (what Save links; a stale pick
+  links nothing), `splitTree`, `stepStatus` with the device.
+- **Playwright, mouse at 1366×768** (`d50-brewhouse-device`):
+  - P104: nav, Gantt, Check off asks for a code; cancel changes nothing.
+  - P105: a drag asks once; the prompt; "Acting as"; the second drag asks nothing.
+  - D6 mouse (Ctrl-click three, drag), P106 (all four setup pages read-only), D1 (Plan batch via the
+    dialog: P-number, linked tasks on the board).
+  - D2 (Mark OK: "Signed off by … · on Brewhouse tablet"), D3 (a Taproom member's code: "That staff
+    code isn't right", the dialog stays, nothing moves).
+  - D5: B's code on A's Undo shows "Only [first name] can undo this."; the Undo button stays, and A's
+    code undoes it.
+  - D7 (Add step), D8 (stubbed 429 message in the dialog), L4 (step dialog Link with a code).
+  - P107 (taproomDevice: typed URLs show "Not available", no Production in nav), and a person sees
+    no code dialog or banner.
+- **Playwright, touch at 1280×800** (`d50-brewhouse-touch`, CDP touch events): P105 by long-press
+  drag, D6 by long-press selection + taps + touch drag, a tap opens the step dialog and Check off
+  (with the batch number) works with a code.
+- **`d50-links`** (breweryMgr):
+  - L1: picked + Save is kept after a reload; Links is above Notes; a refused Save (stubbed 422)
+    links nothing.
+  - L2: add with Save → Undo removes it; Remove → Undo puts it back.
+  - L3: a loop and a later-day comes-after aren't offered; Brew day and earlier steps aren't offered
+    as leads-to.
+- **`task-board-linked`:** the D49 describe "a linked task has no checkbox and no actions" (the
+  read-only tablet) is **replaced**, as the brief said, by two D50 tests:
+  - a linked task has its checkbox and every action, and Open in schedule opens the Gantt;
+  - D4: brewer's code checks off brew day on the board (batch-number prompt; done on the Gantt with
+    `done_by` and `done_on_device`).
+- **`production/access`:** "P19: breweryDevice (until D49) – the API refuses the shared tablet"
+  became "the device reads the setup; its setup changes are refused (`Not available on a shared
+  device`)". The meaning changes per D50.
+- **`devices/brewhouse_show_planned`:** D9. The owner turns it off on a `[TEST-TEMP]` Brewery device
+  (the Taproom device has no switch); it's off after a reload; a tablet paired to it gets
+  `show_planned_batches: false` from `/api/me`; brewer1's own setting is unchanged.
+
+Nothing else deleted or weakened.
+
+### Not covered, or for stage 3
+
+- **Full suite not run.** Shared code changed under these existing specs, which are the ones to
+  watch:
+  - `flows.write`'s call signature (every Gantt spec);
+  - `EntryDialogs` links (`production/templates`, P16);
+  - `OrderedList`, `TaskBoard`, `TaskMenu` (the board specs).
+- **D7 in the UI** covers Add step only. A transfer and a split with a code are ExUnit's
+  (`production_device_test`), and so is the shared counter's actual lock (D8).
+- **`tests/COVERAGE.md`** still has the D49 rows (P19, line 683 "linked tasks read-only"). Stage 3
+  rewrites them with the D50 rows.
+- **Indentation:** new `{!readOnly && (` blocks in the setup pages aren't re-indented (the UI has no
+  formatter config). Cosmetic.
+
+### LEAD:
+
+1. **`GET /api/brands` for the brewhouse device** (above): the plan's route list missed it, and
+   without it D1 can't work. It's read-only and Brewery-gated, with no new `Authz.Device` clause (the
+   module plug's `:access` is the decision, as for any `:brewery` route). OK, or would you rather
+   have an explicit `:read, :brands` clause?
+2. **Spec D9 wording.** "The device's Gantt and board hide pencilled batches", but "Show planned
+   batches" (D49) hides the *planned* batches' linked tasks on the board and the Gantt's Task list.
+   The Gantt itself always shows pencilled batches, as it does for people. I kept D49's meaning, now
+   per device. OK?
