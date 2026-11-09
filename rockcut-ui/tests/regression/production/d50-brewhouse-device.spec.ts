@@ -41,7 +41,10 @@ test('P104: Brewery → Production is in the nav; the Gantt reads; Check off ask
   const b = await ale('Galactic', 2)
   const fdh = stepOf(b, 'FDH')
   await page.goto('/tasks/brewery')
-  await page.locator('.MuiDrawer-paper:visible').getByText('Production', { exact: true }).click()
+  // The Brewery heading opens to its one page.
+  const nav = page.locator('.MuiDrawer-paper:visible')
+  await nav.getByText('Brewery', { exact: true }).click()
+  await nav.getByText('Production', { exact: true }).click()
   await expect(page).toHaveURL(/\/brewery\/production$/)
   await expect(page.getByTestId('gantt-inner')).toBeVisible()
 
@@ -148,7 +151,8 @@ test('D1: Plan batch with a code; its P-number and its linked tasks on the Brewe
 })
 
 test('D2: Mark OK on a flag with a code: signed off by that person, on the device', async ({ page }) => {
-  const b = await ale('Crusher', 4, [null])
+  // No tank, filling within 3 days: a "no tank" flag.
+  const b = await ale('Crusher', 2, [null])
   const flag = (await schedule()).flags.find((f) => f.kind === 'no_tank' && f.batch_ids.includes(b.id))!
   await openGantt(page)
   await page.getByTestId('gantt-flags').click()

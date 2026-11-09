@@ -215,8 +215,8 @@ defmodule RockcutApiWeb.Router do
     resources "/ingredients", IngredientController, except: [:new, :edit]
     resources "/ingredient_lots", IngredientLotController, except: [:new, :edit]
 
-    # Recipe management
-    resources "/brands", BrandController, except: [:new, :edit]
+    # Recipe management (D50: the brands list is in the scope below)
+    resources "/brands", BrandController, except: [:new, :edit, :index]
     resources "/recipes", RecipeController, except: [:new, :edit]
     resources "/recipe_ingredients", RecipeIngredientController, except: [:new, :edit]
     resources "/mash_steps", MashStepController, except: [:new, :edit]
@@ -406,6 +406,14 @@ defmodule RockcutApiWeb.Router do
     post "/flags/signoff", ProductionScheduleController, :sign_off
     delete "/flags/signoff/:key", ProductionScheduleController, :remove_signoff
     post "/undo/:token", ProductionScheduleController, :undo
+  end
+
+  # D50: the brands list for the brewhouse device's Plan batch and batch
+  # dialogs (read only; brands are changed on a personal account).
+  scope "/api", RockcutApiWeb do
+    pipe_through [:api, :device_allowed, :brewery]
+
+    get "/brands", BrandController, :index
   end
 
   # D46 setup changes (tanks, phases, step types, templates): people only

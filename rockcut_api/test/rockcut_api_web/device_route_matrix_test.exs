@@ -169,7 +169,6 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:patch, "/api/ingredient_lots/:id"},
     {:put, "/api/ingredient_lots/:id"},
     {:delete, "/api/ingredient_lots/:id"},
-    {:get, "/api/brands"},
     {:get, "/api/brands/:id"},
     {:post, "/api/brands"},
     {:patch, "/api/brands/:id"},
@@ -304,6 +303,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   # D50: the production schedule and its setup, read by the brewhouse device
   # (home: Brewery). Any other device gets the `:brewery` module plug's 403.
   @brewery_device_ok [
+    # D50: the Plan batch and batch dialogs' brand list.
+    {:get, "/api/brands"},
     {:get, "/api/production/tanks"},
     {:get, "/api/production/phases"},
     {:get, "/api/production/step_types"},

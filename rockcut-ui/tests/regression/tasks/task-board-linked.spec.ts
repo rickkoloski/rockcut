@@ -445,8 +445,7 @@ test.describe('the brewhouse tablet (D50: with a staff code)', () => {
 
     const done = stepOf(await batchOf(batch.id), 'Brew day')
     expect(done.done_on).toBe(today())
-    const sched = await (await apiAs('brewer1')).get(`${P}/schedule?from=${addDays(today(), -1)}&to=${addDays(today(), 1)}`)
-    const step = ((await sched.json()).data.batches as SBatch[]).find((b) => b.id === batch.id)!.steps.find((s) => s.id === brew.id) as SStep & {
+    const step = (await schedule()).batches.find((b) => b.id === batch.id)!.steps.find((s) => s.id === brew.id) as SStep & {
       done_by: { name: string } | null
       done_on_device: { name: string } | null
     }

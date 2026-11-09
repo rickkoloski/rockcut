@@ -45,10 +45,13 @@ for (const persona of ['owner', 'floater'] as PersonaKey[]) {
   })
 }
 
-test.describe('P19: breweryDevice (until D49)', () => {
-  test('the API refuses the shared tablet', async () => {
+// D50 (was D46's "the API refuses the shared tablet" until the brewhouse
+// device came): it reads the setup; every setup change stays people-only (P106).
+test.describe('P19, P106: breweryDevice', () => {
+  test('the API lets the brewhouse device read the setup, and refuses its setup changes', async () => {
     const api = await apiAs('breweryDevice')
-    const res = await api.get('/api/production/templates')
+    expect((await api.get('/api/production/templates')).status()).toBe(200)
+    const res = await api.post('/api/production/templates', { data: { name: '[TEST-TEMP] never made' } })
     expect(res.status()).toBe(403)
     expect((await res.json()).error).toBe('Not available on a shared device')
   })
