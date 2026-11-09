@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Box,
+  Alert,
   CircularProgress,
   IconButton,
   Paper,
@@ -23,6 +24,9 @@ import MashTab from './tabs/MashTab';
 import ProcessTab from './tabs/ProcessTab';
 import WaterTab from './tabs/WaterTab';
 import type { Recipe } from '../../lib/types';
+import ItemNotFound from '../../components/ItemNotFound';
+import { httpStatus, retryUnless404 } from '../../lib/notFound';
+import parseApiError from '../../lib/parseApiError';
 
 export default function RecipeDetail() {
   const { brandId, id } = useParams<{ brandId: string; id: string }>();
@@ -30,9 +34,11 @@ export default function RecipeDetail() {
   const recipeId = Number(id);
   const numericBrandId = Number(brandId);
 
-  const { data: recipe, isLoading } = useApiQuery<Recipe>(
+  const { data: recipe, isLoading, error } = useApiQuery<Recipe>(
     ['recipe', recipeId],
     `/api/recipes/${id}`,
+    undefined,
+    { retry: retryUnless404 },
   );
 
   const deleteMutation = useApiDelete(
@@ -43,6 +49,22 @@ export default function RecipeDetail() {
   const [tabIndex, setTabIndex] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+
+  // D55 lead decisions 6 (gap 10): a recipe that doesn't exist says so.
+  if (!recipe && httpStatus(error) === 404) {
+    return (
+      <ItemNotFound
+        what="Recipe"
+        backTo={`/brands/${brandId}`}
+        backLabel="Back to the brand"
+        testId="recipe-not-found"
+      />
+    );
+  }
+
+  if (!recipe && error) {
+    return <Alert severity="error">{parseApiError(error)}</Alert>;
+  }
 
   if (isLoading || !recipe) {
     return <CircularProgress />;

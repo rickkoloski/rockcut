@@ -82,8 +82,8 @@ defmodule RockcutApiWeb.IdeaBoardController do
 
   @doc "GET /api/idea_boards/:board/history?page=&card_id=: the change log, newest first."
   def history(conn, params) do
-    with :ok <- allow(conn, :history) do
-      card_id = RockcutApi.Ids.parse(params["card_id"])
+    with :ok <- allow(conn, :history),
+         {:ok, card_id} <- history_filter(conn, params, "card_id") do
       page = RockcutApi.Ids.page(params["page"])
 
       %{events: events, page: page, total: total, names: names} =
@@ -110,4 +110,18 @@ defmodule RockcutApiWeb.IdeaBoardController do
 
   defp board(conn), do: conn.assigns.idea_board
   defp current_user(conn), do: conn.assigns.current_user
+
+  # D55 §2.11 (gap 10): a `card_id` that isn't a usable id is a 422, so a bad
+  # link shows, instead of the whole board's History. Absent = no filter.
+  defp history_filter(conn, params, key) do
+    case RockcutApi.Ids.filter(params[key]) do
+      {:ok, id} ->
+        {:ok, id}
+
+      :error ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: %{key => ["is not a valid id"]}})
+    end
+  end
 end

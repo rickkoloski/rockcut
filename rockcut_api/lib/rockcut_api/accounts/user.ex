@@ -98,6 +98,7 @@ defmodule RockcutApi.Accounts.User do
     |> put_change(:must_reset_password, false)
     |> put_change(:password_hash, Argon2.hash_pwd_salt(random_hex(32)))
     |> device_common()
+    |> RockcutApi.Changeset.validate_parents([:home_department_id])
   end
 
   @doc "Rename a device, move it to another home department, (de)activate it, or set its theme."
@@ -107,6 +108,7 @@ defmodule RockcutApi.Accounts.User do
     |> cast(attrs, [:color_mode], empty_values: [])
     |> validate_color_mode()
     |> device_common()
+    |> RockcutApi.Changeset.validate_parents([:home_department_id])
   end
 
   @color_modes ~w(light dark device)

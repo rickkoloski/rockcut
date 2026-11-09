@@ -17,5 +17,6 @@ defmodule RockcutApi.Messaging.ChannelRead do
     |> cast(attrs, [:user_id, :channel_key, :last_read_message_id])
     |> validate_required([:user_id, :channel_key])
     |> unique_constraint([:user_id, :channel_key])
+    |> RockcutApi.Changeset.validate_parents([:user_id])
   end
 end

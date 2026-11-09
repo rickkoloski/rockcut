@@ -22,9 +22,37 @@ defmodule RockcutApi.Ids do
 
   def parse(_), do: nil
 
+  @doc """
+  An optional id filter from a query (D55 §2.11, History `task_id` and
+  `card_id`): absent or empty is `{:ok, nil}` (no filter), a usable id
+  `{:ok, id}`, anything else `:error`, so a bad link is a 422, not the
+  whole History.
+  """
+  def filter(value) when value in [nil, ""], do: {:ok, nil}
+
+  def filter(value) do
+    case parse(value) do
+      nil -> :error
+      id -> {:ok, id}
+    end
+  end
+
   # A History page past this is empty anyway; its offset must still fit.
   @max_page 1_000_000
 
-  @doc "A page number from params: 1 for junk, at most #{@max_page}."
-  def page(value), do: value |> parse() |> Kernel.||(1) |> min(@max_page)
+  @doc """
+  A page number from params: 1 for junk (`abc`, `-1`, `0`, empty), at most
+  #{@max_page}. A string of digits past SQLite's range is #{@max_page} too
+  (D55 §2.11): a huge page is an empty page, not page 1.
+  """
+  def page(value) when is_integer(value) and value > 0, do: min(value, @max_page)
+
+  def page(value) when is_binary(value) do
+    case Integer.parse(value) do
+      {n, ""} when n > 0 -> min(n, @max_page)
+      _ -> 1
+    end
+  end
+
+  def page(_), do: 1
 end

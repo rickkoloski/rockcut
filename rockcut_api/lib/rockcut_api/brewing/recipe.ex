@@ -40,6 +40,7 @@ defmodule RockcutApi.Brewing.Recipe do
     |> validate_number(:boil_time, greater_than_or_equal_to: 0)
     |> unique_constraint([:brand_id, :version_major, :version_minor])
     |> foreign_key_constraint(:brand_id)
+    |> RockcutApi.Changeset.validate_parents([:brand_id])
   end
 
   def version_string(%__MODULE__{version_major: maj, version_minor: min}) do

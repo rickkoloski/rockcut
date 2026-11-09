@@ -1,0 +1,707 @@
+# D55: builder status
+
+2026-11-08 · builder → lead. Branch `d55-tablets-and-tidy` in `~/src/rockcut-d55`, not pushed.
+
+## Stop 1 (stages 1 and 2)
+
+Gate so far: `mix compile --warnings-as-errors` clean; `MIX_ENV=test mix test` green twice (1952 tests);
+`tsc -p tsconfig.app.json` clean; `vite build` OK; vitest 222/222; `pnpm lint` 26 errors + 1 warning
+(the ceiling; none in files D55 touches). Playwright: specs written, **not run** (no servers, per the brief).
+`tsc -p tsconfig.e2e.json` has two errors that were already there (`task-board-phone.spec.ts`,
+`beer-board-import.spec.ts`), none in the new specs.
+
+No existing test was deleted, weakened or changed.
+
+**Revert checks.** For each one, the fix was reverted and the new tests run again.
+
+| Fix | Tests failing with the fix reverted |
+|---|---|
+| §2.3 CORS on parser errors | `parser_cors_test.exs`: 2/3 fail (the 400 and 413 cases; "disallowed origin" passes either way) |
+| §2.4 memberships | `user_memberships_malformed_test.exs`: 14/14 fail |
+| §2.5 sort order (API) | `recipe_ingredient_sort_order_test.exs`: 4/6 fail (the 2 that pass check behaviour that hasn't changed: explicit value, update without the key) |
+| §2.1 401 recheck (`api.ts`) | `api.test.ts`: 8/13 fail (the 5 that pass check behaviour that hasn't changed: T3, T4, older token, login 401, D42 403) |
+| §2.1 (`useAuth.loadMe`) | `useAuth.test.ts`: 2/4 fail (the keep-token cases; revoke and deactivate pass either way) |
+| §2.5 `parseApiError` | `parseApiError.test.ts`: 7/15 fail |
+| §2.2 tablet not-found, §2.6 category 404 | No unit test: `App.tsx` and the pages can't be imported under vitest (the data grid pulls in CSS). Covered by Playwright T5/T6/T10; **their revert check waits for the Playwright run.** |
+| §2.7 Logger | `mix compile --warnings-as-errors` (it failed on `develop`) |
+
+### Stage 1: API
+
+- **§2.3 (4985)** `endpoint.ex`: `CORSPlug` now runs before the parsers. **Moving it alone wasn't enough.**
+  When `Plug.Parsers` raises, Phoenix renders the error from the conn the endpoint was *called*
+  with, so the CORS headers were still missing (test showed it). New `RockcutApiWeb.Parsers`
+  (`lib/rockcut_api_web/plugs/parsers.ex`) wraps `Plug.Parsers` and re-raises its errors as
+  `Plug.Conn.WrapperError` carrying the conn, so the headers survive. Origins unchanged.
+  Test: `test/rockcut_api_web/endpoint/parser_cors_test.exs` (400 and 413 with
+  `access-control-allow-origin` for an allowed origin; none for another).
+- **§2.4 (4983)** `accounts.ex` `resolve_desired/1`: anything but a list of objects (a map, a string,
+  `[null]`, `["x"]`, form-encoded either way) → `{:invalid_membership, …}` → 422 on `memberships`.
+  It's shared by `POST /api/users` and `PUT /api/users/:id/memberships` (`PATCH /api/users/:id`
+  doesn't read memberships). Authorization is unchanged (`Authz` as before). Test:
+  `test/rockcut_api_web/controllers/user_memberships_malformed_test.exs` (owner and manager, each
+  shape, nothing saved; PUT keeps the existing membership).
+- **§2.5 (4981, API)** `brewing.ex`: `create_recipe_ingredient` / `update_recipe_ingredient` put a nil
+  `sort_order` after the recipe's last ingredient (max + 1, not counting itself; 0 on an empty
+  list). Test: `test/rockcut_api_web/controllers/recipe_ingredient_sort_order_test.exs`
+  (persist-verified from the DB).
+- **§2.7 (5165)** `reminders.ex`: removed `require Logger`.
+
+### Stage 2: UI
+
+- **§2.1 (5120)** `src/lib/api.ts`: a 401 for the current token (not the login request) calls
+  `checkTokenEnded(token)`. That asks `GET /api/me` once with `fetch`, so the check's own 401 doesn't
+  come back through the interceptor. A burst of 401s shares one in-flight check. Only a 401
+  from `/api/me` unpairs (tablet) or signs out (person), and only if the token in storage is still
+  the one checked. A 200, 5xx, network error or timeout (10 s) keeps it. The original request
+  rejects with its own error. D33's older-token rule and D42's 403 are unchanged.
+  `src/hooks/useAuth.ts` `loadMe`: it used to drop the token on any 401 from `/api/me` on its
+  own, which would have undone the fix when the stray 401 hits `/api/me` itself. Now a real end
+  is handled by the interceptor before `loadMe`'s catch runs. If the token is still stored there,
+  the check found it alive: "Can't reach the server, retrying…" and retry.
+  Tests: `src/lib/api.test.ts` (tablet and person: 200 keeps, 5xx/network keep and the next 401
+  checks again, revoked tablet unpairs, deactivated person signed out, a burst makes one call
+  and one reload, older token / no token / login make no check, a token changed during the
+  check stands, D42 event) and `src/hooks/useAuth.test.ts`.
+- **§2.2 (5119)** `src/App.tsx`: the person `<Routes>` moved into `personRoutes(flags)` (same routes,
+  same gates). `PERSON_PAGES` is read from that table with all gates open
+  (`createRoutesFromChildren`, catch-all dropped), so there's no hand-kept list. The tablet's
+  catch-all `TabletFallback`: a URL that matches a person page shows `DeviceNotAvailable` as today;
+  anything else shows the new `src/pages/NotFound.tsx` ("Page not found", Go to Home). A person's
+  unknown URL still redirects Home.
+- **§2.5 (4981, UI)** `src/lib/parseApiError.ts`: never throws. It handles `errors` values that are
+  arrays or strings, shows `{errors: {detail}}` without the field name (`Bad Request`), gives any
+  5xx or unreadable body "Something went wrong on the server. Please try again.", and anything
+  else its message or a general one. 422 output is unchanged. Test:
+  `src/lib/parseApiError.test.ts`.
+- **§2.6 (4993)** `src/pages/settings/CategoryDetail.tsx`: on a 404, "Category not found" with a
+  link (`Back to Ingredient categories`); the 404 isn't retried. Any other error shows an alert
+  instead of spinning.
+- **§2.9 rename**: exactly the spec's table (`index.html` title and Apple title, `vite.config.ts`
+  manifest name/short_name/description, `sw.ts` push fallback, `Home.tsx`). Checked: no existing
+  Playwright spec asserts the old strings.
+- **Playwright specs (written, not run):**
+  - `tests/regression/devices/stray_401.spec.ts`: T1–T4. The forced 401 comes from `page.route`
+    on `/api/channels`. T1/T2 use the shared personas (only that page's localStorage is at risk,
+    never the server token). T3 uses a temp device and revokes it; T4 a temp person, deactivated.
+  - `tests/regression/devices/unknown_url.spec.ts`: T5, T6, and a person's unknown URL.
+  - `tests/regression/app/parser_errors.spec.ts`: T7 (cross-origin `fetch` from the page to the API,
+    400 and 413 readable), T8.
+  - `tests/regression/brewery/recipe_sort_order.spec.ts`: T9 (UI add with Sort Order empty,
+    persist-verified through the API), T10 (both URLs).
+  - `tests/pwa-update/app_name.spec.ts`: T11 in the `pwa-update` project (`PWA_UPDATE=1`): the
+    built manifest and title; then the old release's manifest → this one's.
+
+### LEAD questions
+
+1. **§2.3:** the reorder alone doesn't do it (see above). I kept the reorder and added a small
+   `RockcutApiWeb.Parsers` wrapper instead of redesigning anything. OK, or would you rather
+   put the CORS headers on in `ErrorJSON`/the endpoint some other way?
+2. **§2.2:** the spec says "the app's normal not-found page", but there isn't one: people get
+   redirected Home. I added a small `NotFound` page, used only on tablets. The spec also says
+   "no new screens", so: OK, or would you rather the tablet redirect Home like a person?
+3. **§2.2 merge:** moving the person routes into `personRoutes()` re-indents the whole route block in
+   `App.tsx`. The overlap with D53 is now that whole block, not just the lines with new routes.
+   D53's new routes go inside `personRoutes()` when merging.
+4. **§2.5:** I read "null (or a missing value) means the end" as: null → end on create and update;
+   **missing → end on create, unchanged on update.** Otherwise a partial update (amount only)
+   would move the row. The UI always sends the key. OK?
+5. **§2.4:** `memberships: null` on **create** stays "no memberships" (it was before, and the UI may
+   rely on it), so it isn't a 422. On **PUT** it is now a 422 (it was a 500), because treating it
+   as `[]` would remove every membership.
+6. **§2.1:** while `/api/me`'s own 401 isn't confirmed, start-up shows "Can't reach the server,
+   retrying…" (D34's screen). Fine for a blip?
+7. **Spotted, out of scope:** `FieldDefinitionDialog.tsx` also sends `sort_order: null`, and
+   `category_field_definitions.sort_order` is NOT NULL, so it probably 500s the same way. New task?
+8. Spec §5 mentions "Playwright's tablet projects". There aren't any: the tablet specs run in
+   `chromium` with the device personas' storage state. T1–T3 on the Pixel would be the real check,
+   and so would T11's "installed tablet shows the new name": Playwright can only check the
+   manifest it's served.
+
+Next: stage 3 (§2.8 migration; `leftoverTabletSession.ts` removal as its own commit), `COVERAGE.md`
+rows, then stop 2.
+
+## Stop 2 (lead decisions 1, stage 3, §2.10)
+
+**Non-Playwright gate (all passing):** `mix compile --force --warnings-as-errors` clean;
+`MIX_ENV=test mix test` green **twice** (1958 tests: 1952 + 5 for §2.10 + 1 migration test);
+`tsc -p tsconfig.app.json` clean; `vite build` OK; vitest 218/218 (222 at stop 1, minus the 4 shim
+tests removed in 3b); `pnpm lint` 26 errors + 1 warning (the ceiling, none in D55's files).
+`tsc -p tsconfig.e2e.json` has only the 2 errors that were already there. Playwright: written, not run.
+
+### Lead decisions 1
+
+- **1. Parser wrapper:** `RockcutApiWeb.Parsers` now rescues only the parser's own errors
+  (`Plug.Parsers.ParseError`, `RequestTooLargeError`, `UnsupportedMediaTypeError`,
+  `BadEncodingError`, and `Plug.BadRequestError` / `Plug.TimeoutError`, which the JSON parser
+  raises while reading the body). Anything else is raised as before. `parser_cors_test` still passes.
+- **2. Idea Boards on tablets:** a `test.fixme` in `tests/regression/devices/unknown_url.spec.ts`
+  ("after the D53 merge: a tablet opens Idea Boards, not 'Page not found'") checks `/boards`,
+  `/boards/1` and `/boards/1/cards/1`, with a note on what to do at the merge. I haven't merged
+  `develop`.
+- **5. A session that really ended ends on the first try at start-up:** covered by
+  `src/hooks/useAuth.test.ts`, "a revoked tablet: recheck 401 unpairs on the first try" and "a
+  deactivated person: recheck 401 signs out on the first try". Each asserts exactly one `/api/me`
+  recheck, `unreachable` false (no "retrying" screen), the token gone and one reload. After the
+  reload there is no token, so the login or setup screen shows; nothing loops. On the page:
+  Playwright `stray_401` T3/T4.
+
+### §2.10 field definition sort order (T12)
+
+- **The 500 was real.** A test was written first and failed with `Exqlite.Error NOT NULL constraint
+  failed: category_field_definitions.sort_order` (3 of 5 failing: null on create, missing on create,
+  null on update). Those failing runs before the fix are the revert evidence.
+- Fix: `brewing.ex`. The §2.5 helper is now `put_end_sort_order(changeset, schema, parent)`, used by
+  both recipe ingredients (`:recipe_id`) and field definitions (`:category_id`). It works the same
+  way: null or missing on create → end; null on update → end; left out of an update → stays.
+- Tests: `test/rockcut_api_web/controllers/field_definition_sort_order_test.exs` (5);
+  `recipe_ingredient_sort_order_test.exs` still passes after the helper change. Playwright T12 is in
+  `tests/regression/brewery/recipe_sort_order.spec.ts` (Add Field with Sort Order empty,
+  persist-verified through the API).
+- Spec: added §2.10 and scenario T12.
+
+### Stage 3a: column migration (commit `8a53bec`)
+
+- `priv/repo/migrations/20261108120001_drop_unread_session_columns.exs`: `up` drops the
+  `user_sessions_device_token_id_index`, then `user_sessions.device_token_id` and
+  `users.legacy_tokens_revoked_at`. `down` adds both back, empty, with the foreign key and the index.
+  The `UserSession` schema comment that named the column is gone. Nothing else in `lib`, the
+  seeds or the UI named either column.
+- **Up, down, up on this worktree's dev DB, by hand:** after up, both columns and the index are gone;
+  after down, they're back (FK `REFERENCES device_tokens ON DELETE CASCADE` and the index);
+  after up again, gone. `pragma integrity_check` ok and `foreign_key_check` empty each time;
+  the 19 users are kept.
+- New test: `test/rockcut_api/migrations/drop_unread_session_columns_test.exs` (up → down → up
+  inside the test's transaction; columns and index; a live sign-in still authenticates throughout).
+- **Changed existing test (shape, not meaning):**
+  `test/rockcut_api/migrations/revoke_tablet_personal_sessions_test.exs` (D54) writes
+  `device_token_id`, which no longer exists. Its `setup` now runs D55's migration down first,
+  inside the same transaction, so it tests D54's migration against the schema it ran on. The
+  assertions are unchanged.
+- **Rollback note for the release PR:** rolling the API back past D55 needs the pre-deploy snapshot,
+  because an older image selects these columns. Running this migration's `down` also works; the
+  columns come back empty, which is all an older image needs.
+
+### Stage 3b: shim removal (commit `35c6c7b`, can be dropped on its own)
+
+- Deleted `src/lib/leftoverTabletSession.ts` and `src/lib/leftoverTabletSession.test.ts` (4 Vitest
+  tests), and the import in `src/main.tsx`.
+- **Deleted Playwright cases**, because they test only the shim: in
+  `tests/regression/devices/shared_device_no_personal_login.spec.ts`, "S249: left mid 'Sign in as
+  me' at the release…" and "S251 (4988): only a stale set-aside tablet token…". Both seed the
+  pre-D54 `rockcut_device_token` storage that only the shim reads. The live-revoke S251 case stays.
+  A comment marks where they were.
+- `tests/COVERAGE.md`: the D54 S249 and S251 rows now say what was removed and what still covers them.
+
+### `tests/COVERAGE.md`
+
+New D55 section: T1–T12 plus the extra cases (burst, `parseApiError`, a person's unknown URL,
+the pending Idea Boards check, §2.7, §2.8), each with its layer and whether a revert check was
+recorded. T5 and T10 note that their revert check waits for the Playwright run.
+
+### LEAD questions
+
+1. **Still open from stop 1:** the T5/T10 revert checks (Playwright only) and all of T1–T12 in a
+   browser wait for servers. Tell me when D53 frees :4002/:5174, or run them yourself.
+2. The migration date `20261108120001` sorts after D53 Part 1's `20261106120001`. If D53 Part 2
+   adds a migration dated after 2026-11-08, the order still works (they don't touch the same tables).
+   No action, just noting it for the merge.
+
+Next: wait for the go-ahead to merge `develop` (D53), then `personRoutes` + the `/boards` routes on
+tablets, un-fixme the pending check, and the full local Playwright run.
+
+## Lead decisions 2 done
+
+- **Migration version clash fixed:** renamed to
+  `rockcut_api/priv/repo/migrations/20261108140001_drop_unread_session_columns.exs`, so it sorts after
+  D53 Part 2's `20261108120001` and `…120002`. The module name (`DropUnreadSessionColumns`) and
+  contents are unchanged. The version and `Code.require_file` path are updated in
+  `test/rockcut_api/migrations/drop_unread_session_columns_test.exs` and
+  `test/rockcut_api/migrations/revoke_tablet_personal_sessions_test.exs`. Nothing else names it; the
+  stop-2 notes above still say `…120001` as a record of what was there.
+- **Up/down/up again** on this worktree's dev DB, after rolling back the old version in both the dev
+  and the test DB:
+  - up: columns and index gone, `schema_migrations` has `20261108140001`;
+  - down: both columns and the index back;
+  - up again: gone.
+  
+  `integrity_check` ok and `foreign_key_check` empty each time; 19 users kept. The old
+  `20261108120001` entry no longer exists in either DB.
+- `MIX_ENV=test mix test` once: **1958 passed**.
+
+That's everything that can be done before D53 lands. Waiting for the go-ahead to merge `develop`.
+
+## Lead decisions 3 done (§2.11 + T13, after the D53 merge)
+
+Started from `564015c`. The code is in `f5bf748`; this status and `COVERAGE.md` follow in the next commit.
+
+**Gate:** `mix compile --force --warnings-as-errors` clean; `MIX_ENV=test mix test` **2157 passed**
+(2141 after the merge, plus 16 new); `tsc -p tsconfig.app.json` clean; Vitest **230** passed.
+No servers, no Playwright.
+
+### What changed
+
+1. **URL ids: `RockcutApiWeb.Plugs.PathIds`** (`lib/rockcut_api_web/plugs/path_ids.ex`). Every
+   `path_params` entry named `id` or ending in `_id` must pass `RockcutApi.Ids.parse/1`, else the plug
+   halts with 404 `{"errors":{"detail":"Not found"}}` (FallbackController's JSON).
+   - **Placement:** last in both signed-in pipelines (`:authenticated` and `:device_allowed`), not in
+     `:api`. That way 401 (not signed in), the password-reset gate and D33's tablet 403 still come
+     first, and every scope that reaches a controller with an id goes through it. The public `:api`
+     scope has no id params (health, session, device_tokens, `calendar/:token`).
+   - **Params checked:** `id` (175 routes), `daily_item_id`, `item_id`, `link_id`, `note_id`,
+     `step_id`, `user_id`.
+   - **Left alone (keys, not ids):** `dept`, `board`, `key`, `token`, `on_date`, and the vessel
+     `index`, a list position.
+   - **Exceptions list (`@not_ids`): empty.** Every `*_id` URL param is a numeric row id.
+   - D53's own `Ids` calls in the Boards and the task boards are untouched.
+   - Junk in the URL (`abc`, `0`, `-1`) is now 404 too; no existing test expected anything else.
+2. **Body and query ids: `RockcutApiWeb.Plugs.ParamIds`** (`plugs/param_ids.ex`), placed right after
+   `PathIds`. Any key `id`, `ids`, `*_id` or `*_ids`, at any depth in the query or the JSON/form
+   body, whose value (or list element) is an out-of-range number (an integer, or a string of
+   digits) → **422 `{"errors":{"<key>":["is out of range"]}}`**, before the controller.
+   - Only out-of-range numbers are refused. Junk keeps the route's own answer (changeset 422, 404),
+     and an in-range id that names no row is the route's business, as before.
+   - `before_id` is exempt (D38: unknown → end of the day; tested).
+   - **Why a plug rather than per-context fixes:** a probe before the change showed the driver's 500
+     on every area named in item 2, in both bodies and queries: shift `position_id`, time off
+     `user_id`, devices `home_department_id`, recipes `brand_id`, `GET /api/shifts?department_id=`,
+     `GET /api/recipe_ingredients?recipe_id=`. A per-context fix would have to find every cast and
+     every query. This is the "one plug" approach applied to bodies.
+   - **This means 422 even where a route answers 404 for a missing reference.** For an out-of-range
+     value that's a malformed input, not a missing row. LEAD: say if you want specific routes to
+     answer 404 instead.
+   - Buy-a-Beer has no body ids; its URL `:id` is covered by `PathIds`.
+3. **Ids under other key names**, fixed where they're read with `RockcutApi.Ids`:
+   - memberships `department` (an id or a key) past the range → 422 "unknown department"
+     (`accounts.ex`, `get_department_by_id/1`). It was a 500 on POST and PUT.
+   - messages `before` (the page cursor) → 422 `before` for anything `Ids.filter` refuses
+     (`message_controller.ex`). It was a 500 for both junk (`String.to_integer/1`) and range.
+4. **History filters (gap 10):** `Ids.filter/1` returns `{:ok, nil}` for an absent or empty value,
+   `{:ok, id}`, or `:error`. Task-board History `task_id` and Boards History `card_id` → **422** on
+   that param for `1e20`, `abc`, `-1`, `0` and out-of-range values. **Absent or empty
+   (`?task_id=`) is still the whole History.** I treated empty as absent, since that's what an empty
+   form field sends.
+5. **`Ids.page/1`:** a positive string of digits (or integer) is capped at `@max_page`, so a huge
+   page is the last, empty page. Junk (`abc`, `-1`, `0`, empty, `1e3`, floats) is page 1.
+
+### Tests
+
+- **T13** `test/rockcut_api_web/plugs/out_of_range_ids_sweep_test.exs`: built from
+  `Router.__routes__()` (no hand list). Every route with an id param (**178**, `/dev` excluded) gets
+  `99999999999999999999` there and real keys for the rest (`bar`, `all`, …).
+  - As the owner: all 404.
+  - As `taproomDevice`: 404 or exactly DeviceGate's 403; at least 14 reach the id check and are 404
+    (shifts, production steps and CIPs, Boards card reads, the tablet's task board).
+  - A new route is swept automatically; one outside the plugs' pipelines would 500 and fail the
+    test. A guard test asserts there are at least 178 routes, so the sweep can't go empty.
+- `plugs/param_ids_test.exs`: body ids on 10 routes, 422 on the key and nothing saved
+  (persist-verified by counts); query ids on 3 routes; junk not the plug's; `before_id` past the
+  range moves the task last.
+- `ids_test.exs` (`parse`, `filter`, `page`); `controllers/history_filter_test.exs` (both
+  Histories, absent/empty/junk, huge page empty; messages `before`).
+- `user_memberships_malformed_test.exs`: 2 new tests (department past the range, as an integer and
+  as a string).
+
+**Revert checks:**
+
+| Reverted | Result |
+|---|---|
+| `PathIds` removed from the router | sweep 1/3 passed; both T13 tests fail with `Exqlite.Error argument error: 99999999999999999999` (the 500) |
+| `ParamIds` removed from the router | `param_ids_test` 2/4 passed; body and query tests fail with the same driver error |
+| `ids.ex`, both History controllers, `message_controller.ex`, `accounts.ex` back to `f5bf748~1` (plugs on) | 7 fail (`page`, `filter`, messages `before`, both History filters, both memberships `department`); the 16 that pass check behaviour that hasn't changed (`parse`, junk pages) |
+
+### Existing tests changed
+
+`test/rockcut_api_web/controllers/idea_board_fix_cycle_1_test.exs` (D53) asserted the old rule: a
+History `card_id` / `task_id` past the range was **ignored** (200, whole History). Lead decisions 3
+item 3 changes that to 422, so those two assertions now expect 422. The `page=<huge>` assertions now
+also check `data: []`. Nothing else was changed or weakened.
+
+### LEAD questions and observations
+
+1. **Body ids answer 422 everywhere, never 404** (item 2 above). Keep, or name the routes that should
+   answer 404?
+2. **Spotted, outside §2.11:** a recipe with an **in-range id that names no brand** (`brand_id: 12345`,
+   `-1`, `0`) still 500s (`Ecto.ConstraintError`). `Recipe.changeset` has no
+   `foreign_key_constraint(:brand_id)`. Other legacy brewing schemas may have the same gap. That's
+   "a missing reference", not "out of range", so I didn't fix it. A new task, or into D55?
+3. Anonymous requests still get 401 before any id check, and tablets get 403 on people-only routes
+   before it, because both plugs sit after auth.
+
+Ready for the lead's full local Playwright run (T1–T13).
+
+## Lead decisions 4 done (§2.12 + T14)
+
+**Gate:** `mix compile --force --warnings-as-errors` clean; `MIX_ENV=test mix test` **2162 passed**
+(2157 + 5 new); `tsc -p tsconfig.app.json` clean; Vitest **230** passed. No `mix ecto.*` on the dev DB,
+no servers, no Playwright. Heads-up: `mix compile --force` rebuilt `_build/dev`, the build the lead's
+running server uses. The code is the same and it compiled cleanly, but it was a full rebuild.
+
+### The cause (confirmed first)
+
+The lead's correction is right; my stop-3 note was wrong. `Recipe.changeset` **does** declare
+`foreign_key_constraint(:brand_id)` (`recipes_brand_id_fkey`). A test inserting a recipe for brand
+12345 raised `Ecto.ConstraintError`: `* nil (foreign_key_constraint)`, against the declared
+`"recipes_brand_id_fkey"`. The raw SQLite error is just `FOREIGN KEY constraint failed`, with no
+constraint name. Ecto has nothing to match, so it raises: the 500. The plan didn't change.
+
+### The probe (built from the schemas)
+
+Every module with `__schema__/1` (68 schemas), every `belongs_to`, and every `*changeset*` function
+(arity 2, plus `User.device_create_changeset/1`): which changesets **cast** a parent id from input.
+All 45 have a DB foreign key, and none had a missing-parent check:
+
+- **Accounts:** `AuditEntry.changeset` (actor_id, target_id); `Membership.changeset` (user_id,
+  department_id); `User.device_create_changeset/1` and `device_update_changeset`
+  (home_department_id).
+- **Availability:** `Slot.changeset` (user_id).
+- **Brewing:** `Batch` (brand_id); `BatchLogEntry` (batch_id); `BrewTurn` (batch_id, recipe_id);
+  `CategoryFieldDefinition` (category_id); `Ingredient` (category_id); `IngredientLot`
+  (ingredient_id); `MashStep` (recipe_id); `Recipe` (brand_id); `RecipeIngredient` (recipe_id,
+  lot_id); `RecipeProcessStep` (recipe_id); `WaterProfile` (recipe_id).
+- **Messaging:** `ChannelRead`, `Message` (user_id).
+- **Notifications:** `Notification`, `PushSubscription` (user_id).
+- **Production:** `Step.edit_changeset` (assignee_id); `StepType` (starts_phase_id); `TemplateStep`
+  (phase_id).
+- **Reminders:** `ShiftReminder`, `TaskReminder` (shift_id).
+- **Scheduling:** `Position` (department_id); `ScheduleEvent` (department_id, created_by_id,
+  series_id); `ScheduleEventSeries` (department_id, created_by_id); `ScheduleTemplate`
+  (created_by_id); `ScheduleTemplateItem` (position_id, assignee_id); `Shift` (department_id,
+  position_id, assignee_id, created_by_id); `ShiftTemplate` (position_id).
+- **Tasks:** `Task.completion_changeset` (completed_by_id).
+- **Time off:** `Request.create_changeset` (user_id).
+
+**Not cast by any changeset** (so input can't name a missing parent): every other `belongs_to`,
+including all of the Boards (`IdeaBoards.*`), Buy-a-Beer (`BeerBoard.*`), the task tables
+(`Task.department_id/assignee_id/series_id/…`, `TaskSeries`, the assignee joins, `DailyCheck`,
+`DailyItem`, `Tasks.Event`), the production rows built by the context (`Step.batch_id/tank_id/…`,
+`StepLink`, `TemplateLink`, `TemplateStep.template_id/step_type_id`, `BatchVessel`, `Outage`,
+`ConditionMark`, `FlagSignoff`, `UndoRecord`), `Batch.template_id/split_parent_id`, devices and
+sessions. Those are set with `put_change`/`put_assoc` from rows the context has already loaded,
+and D53's `Ids` checks and lookups cover the Boards and task boards. Only
+`User.owner_flag_changeset` couldn't take the probe's attrs (a FunctionClauseError on its own
+arguments); it doesn't cast a parent id.
+
+Through the API (before the fix), the same 500 on: recipes, ingredients, lots, recipe ingredients,
+mash steps, field definitions, batches, positions, shift templates, shifts (assignee), devices,
+time off, schedule events, availability.
+
+### What changed
+
+- **`RockcutApi.Changeset.validate_parents/2`** (`lib/rockcut_api/changeset.ex`): for each named
+  `belongs_to` field that changed to a non-nil value and has no error yet, look the parent up (by
+  the association's `related_key`). If it's missing, add `{field, "does not exist"}` (validation
+  `:parent`). An id `Ids.parse` refuses (0, negative, past the range) doesn't exist, with no query.
+  An unknown field name raises `ArgumentError`, which is a programming error.
+- Called as the last step of each of the **34 changesets** above, with that changeset's fields.
+  The `foreign_key_constraint` calls stay.
+- **Formatting:** the diff is only the new lines (39 insertions, no deletions). Six legacy brewing
+  files weren't `mix format`-clean at HEAD (`batch`, `brew_turn`, `ingredient_lot`, `recipe`,
+  `recipe_process_step`, `water_profile`). I added the line there without running the formatter, so
+  their legacy layout is untouched. The other files were formatted.
+- **Routes that look the parent up first keep their answer:** a shift with a missing `position_id`
+  is still 403 (the context resolves the position for the access check), tested.
+- **0 and negative ids** (in range, so `ParamIds` lets them through): 422 "does not exist", in the
+  sweep and through the API.
+
+### T14
+
+- `test/rockcut_api/missing_parent_sweep_test.exs`: built from the schemas, as the probe was. Every
+  `{schema, changeset, belongs_to}` a changeset casts (45) × `12345`, `0`, `-1` must carry
+  `"does not exist"` on the field. A new `belongs_to` cast without the helper fails, and a guard
+  test asserts at least 40 are found. The sweep hands `device_update_changeset` a device struct,
+  because on a person's struct the D33 invariant already rejects `home_department_id` ("only shared
+  devices have one").
+- `test/rockcut_api_web/controllers/missing_parent_test.exs`: 14 create routes through the API ×
+  `12345`, `0`, `-1` → 422 `{"<field>": ["does not exist"]}`, nothing saved (counts). The shift
+  position case is still 403.
+- **Revert check**, done in a scratch copy of `rockcut_api` (its own test DB) so the lead's running
+  dev server never saw a disabled helper: with `validate_parents/2` a no-op, the sweep lists all 45
+  fields, and the API test fails with `Ecto.ConstraintError` (the 500). With the helper: 5/5.
+- `tests/COVERAGE.md`: T14 row.
+
+No existing tests changed. Ready for the lead.
+
+## Lead decisions 5 done (three local Playwright failures)
+
+**Gate:** `mix compile --warnings-as-errors` clean (incremental, not `--force`); `MIX_ENV=test mix test`
+**2163 passed** (+1); `tsc -p tsconfig.app.json` clean; Vitest **232** (+2); lint 26 errors + 1 warning
+(unchanged). No `mix ecto.*` on the dev DB, no servers, no Playwright. Both revert checks ran in a
+scratch copy of `rockcut_api` (its own test DB), so the running dev server only ever saw the final
+files.
+
+### 1. T7: dev's HTML debug page instead of the 400
+
+- **Cause:** `RockcutApiWeb.Parsers` re-raised the parser's errors (wrapped, to keep the CORS
+  headers). In dev, `debug_errors: true` puts `Plug.Debugger` around the whole endpoint. It catches
+  any raise first and answers its HTML page, so D55's JSON never got rendered.
+- **Fix** (`lib/rockcut_api_web/plugs/parsers.ex`): the plug now **answers** the parser's own errors
+  instead of raising them. The status comes from `Plug.Exception.status/1` and the body is
+  `RockcutApiWeb.ErrorJSON.render("<status>.json")`, the same JSON Phoenix renders in test and prod
+  (`{"errors":{"detail":"Bad Request"}}`, `"Request Entity Too Large"`). It keeps the conn, so the
+  CORS headers stay. Every env gets the same answer; `debug_errors` stays on for everything else.
+  Still only the parser's errors (decisions 1).
+- **How I verified dev without a server:** `test/rockcut_api_web/endpoint/parser_cors_test.exs`
+  now reads the responses directly (no `assert_error_sent`, since nothing raises), and adds a
+  `DevLike` pipeline that does `use Plug.Debugger` (what `debug_errors: true` adds) in front of
+  the endpoint's own `CORSPlug` and parser options. Through it, malformed JSON gets a 400 with
+  `content-type: application/json`, the JSON body and the CORS header.
+- **Revert** (the old re-raising plug, scratch copy): 0/4. In `DevLike` the parse error escapes
+  through the debugger, which sends its page and re-raises: the failure the lead saw. The endpoint
+  tests fail the same way.
+
+### 2. T9: `getByLabel('Category')` matched nothing
+
+- **An accessibility bug in the dialog:** the Add Ingredient dialog's `Select`s had an `<InputLabel>`
+  with no `id` and no `labelId`. Assistive tech, and `getByLabel`, couldn't tie Category, Ingredient
+  or Lot to their label. Fixed in `src/pages/recipes/RecipeIngredientDialog.tsx` (an `id` on each
+  `InputLabel` and the same `labelId` on its `Select`). The test is unchanged.
+- **T10:** uses a test id and a link role; nothing to fix.
+- **T12:** uses `getByLabel('Field Name')` (a `TextField`, already labelled). I gave the same dialog's
+  Field Type select (`src/pages/settings/FieldDefinitionDialog.tsx`) its label tie too.
+- **LEAD:** the same unlabelled pattern is in 9 more places in the older brewing UI, none touched
+  by a D55 spec:
+  - `IngredientLotDialog` Status
+  - `IngredientsList` Category filter
+  - `IngredientFormDialog` Category
+  - `BatchLogEntryDialog` Event Type
+  - `BatchFormDialog` Brand, Status and Package Type
+  - `BatchesList` Status Filter
+  - `BrewTurnDialog` Recipe
+
+  (plus `ComponentShowcase`, a dev page). Same two-attribute fix each. Fold into D55, or a task?
+
+### 3. G4: "Please try again.. It's still paired"
+
+- **The bug:** `App.tsx` wrote `{deviceSignOutError}. It's still paired`, and D55's
+  `SERVER_ERROR_MESSAGE` ends in a period. New `endSentence(text)` in `src/lib/parseApiError.ts`
+  adds a period unless the text already ends in `.`, `!` or `?`; the sign-out alert uses it. I
+  checked the other places that put an error message in front of a period: this was the only one
+  (the other `}. ` texts in the UI aren't error messages). Vitest: `endSentence` (2 tests; with the
+  old join the doubled period is the case they catch).
+- **The test** (`tests/regression/devices/device_signout.spec.ts:21`) now asserts the whole
+  sentence, "Couldn't sign this tablet out: Something went wrong on the server. Please try again.
+  It's still paired; try again.", and that the alert never contains `..`. The mocked 500's
+  `{"error":"Server error"}` is no longer shown: since D55, a 5xx reads as the general server
+  message.
+
+### For the lead to rerun
+
+- `tests/regression/app/parser_errors.spec.ts:14` (T7, 400) and `:32` (T7, 413; same cause)
+- `tests/regression/brewery/recipe_sort_order.spec.ts:16` (T9), `:71` (T10), `:83` (T12)
+- `tests/regression/devices/device_signout.spec.ts:21` (G4)
+
+## Lead decisions 6 done (DEV fix cycle 1)
+
+Every item in `d55_lead_decisions_6.md` "Fix in this cycle". Revert checks for API fixes ran in a
+scratch copy (`rsync` of `rockcut_api`, test DB migrated there, deleted after); the UI one in a
+scratch copy of `rockcut-ui` with `node_modules` linked. The dev servers never saw reverted code. No
+servers, no Playwright, no `mix ecto.*` on the dev DB, no `mix compile --force`.
+
+### Gate
+
+- `mix test`: **2182 passed** (was 2163; +19).
+- `mix compile --warnings-as-errors` (incremental): clean. `mix format --check-formatted` on every
+  changed file: clean. `ingredient_category.ex` is legacy-unformatted: one line edited, not formatted.
+- Vitest **242** (was 232; +10), `tsc -b` clean, lint 26 errors + 1 warning (unchanged).
+
+### 1. Gaps 8 and 9: Sort Order on categories; `""` everywhere
+
+- **Cause (gap 8):** `IngredientCategory` had no end rule. `sort_order: null` cast to nil and hit
+  the NOT NULL column: `Ecto.ConstraintError`, a 500.
+- **Cause (gap 9):** Ecto casts a blank string to the field's **schema default** (`sort_order` 0),
+  not to nil. So `""` saved 0 on create, and on update it was a change to 0.
+- **Fix:**
+  - New `RockcutApi.Changeset.blank_to_nil(attrs, field)`: a blank string under the field becomes
+    nil before the cast. Used for `sort_order` in `IngredientCategory`, `RecipeIngredient` and
+    `CategoryFieldDefinition`.
+  - `Brewing.create/update_ingredient_category` use the shared `put_end_sort_order`, with a nil
+    parent meaning the whole table. Create starts from `sort_order: nil`, as for the other two.
+  - The rule is now the same in all three: null, `""` or left out on create = the end; null or `""`
+    on update = the end; left out of an update = stays.
+- **The UI** already sent `null` for an empty field (Add and Edit). No change needed.
+- **Tests:**
+  - New `controllers/ingredient_category_sort_order_test.exs` (5 tests).
+  - A `""` test in each of `field_definition_sort_order_test` and `recipe_ingredient_sort_order_test`.
+  - Playwright `brewery/recipe_sort_order.spec.ts:128`: Add Category with Sort Order empty, then
+    set it to 0 and clear it in Edit Category; both persist-verified to be after every other category.
+- **Revert** (the four lib files back to HEAD): 5 of 18 fail. These are the three category tests
+  that use null or `""`, and the two `""` tests.
+
+### 2. Gap 11: a wrong-typed id is 422, never 500, never ignored
+
+- **Cause:** some controllers read an id before any changeset:
+  - `Scheduling.department_for_position/1` called `String.to_integer("abc")` and had no clause for
+    `1.5`, `true`, `[]` or `{}`. That raised, a 500.
+  - `TimeOff`/`Availability` `to_user_id/1` had no clause for those shapes either (a 500), and read
+    `"abc"` as nil, so the request was created for the caller.
+  - `CalendarFeedController.normalize_id` raised the same way.
+- **Fix, where it holds for every id field:** the `ParamIds` plug, which already sat at the end of
+  both signed-in pipelines.
+  - A value under `id`, `*_id`, `ids` or `*_ids`, at any depth, must be nil, `""`, an integer, or a
+    string of digits. `ids`/`*_ids` must be a list of those.
+  - Anything else is **422 `{"<key>": ["is invalid"]}`** before a controller runs.
+  - Out of range is still "is out of range".
+  - In-range integers (`0`, `-1`, a missing row) are still the route's, e.g. 422 "does not exist"
+    (T14). `before_id` is still exempt.
+- **Changed (gap 7, 2nd half):** an id nested inside another value is reported on the **top-level
+  key**. So `memberships: [{department_id: <huge>}]` is now `{"memberships": ["is out of range"]}`.
+- **Tests:**
+  - New `wrong_type_ids_sweep_test.exs` (the new sweep the lead asked for):
+    - Every signed-in write route from the router (≥150), × the 5 shapes, with every
+      schema-derived parent key in the body. As the owner, and as `taproomDevice` (DeviceGate's 403
+      excepted). Always 422 "is invalid".
+    - Every parent key (schemas' `belongs_to` plus `user_id`, `id`, `ids`) × the 5 shapes alone →
+      422 on that key.
+    - QA's cases (shift `position_id`; time off and availability `user_id`, `"abc"` included), with
+      nothing saved.
+    - A new route or `*_id` field is swept the day it's added.
+  - `missing_parent_sweep_test`: a new test, every writable `belongs_to` changeset given the wrong
+    shapes gives an error on the field, no raise. It passes with or without the fix; it guards the
+    changeset layer.
+  - `param_ids_test`: new "ids keys take a list of ids" test.
+- **Revert** (old `ParamIds`): 6 fail:
+  - all three sweep tests
+  - "ids keys take a list of ids"
+  - the out-of-range body test (memberships key)
+  - the new memberships `department_id` test
+- **Existing tests changed (shape, as the lead's decisions 6 asks):**
+  - `param_ids_test` "body ids past the range": the memberships case now expects the key
+    `memberships` (was `department_id`). Gap 7.
+  - `param_ids_test` "junk and in-range ids aren't the plug's" is rewritten as "a wrong-typed id is
+    422 'is invalid'; in-range integers are the route's" (`"abc"`, `"12abc"`, `1.5`, `true`, `[]`,
+    `{}`, `[1]` → "is invalid"; `0`, `-1`, `12345`, `"12345"` → "does not exist"). Its old meaning
+    was "junk isn't the plug's", which decisions 6 reverses.
+  - `missing_parent_sweep_test` is now `async: false`. Its one insert hit SQLite "Database busy"
+    against another async writer in the full run. Same meaning.
+- The controller-side `String.to_integer` calls are left as they are: the plug now refuses
+  anything they'd raise on. **LEAD:** say if you'd also like them hardened (belt and braces).
+
+### 3. Gap 2: `/api/me` down mid-session
+
+- **Cause:** after a stray 401, `askMe` reduced every answer to "401 or not". A 5xx, offline or
+  timeout was "not ended" and nothing more. Only start-up's `loadMe` had the banner and the retry.
+- **Fix:**
+  - `src/lib/api.ts`: `askMe` returns `'ended' | 'unreachable' | 'ok'`. Unreachable means a network
+    error, a timeout or a 5xx; any other answer (200, 404, 403, …) still keeps the token, as QA
+    checked.
+  - When `checkTokenEnded` gets "unreachable", it dispatches `SERVER_DOWN_EVENT` once. The first
+    check after that which gets an answer dispatches `SERVER_BACK_EVENT`. A 401 still unpairs or
+    signs out.
+  - New `recheckServer()` re-asks with the current token.
+  - `useAuth` holds `serverDown`. On BACK it clears it and calls `queryClient.invalidateQueries()`,
+    so the failed view refetches with no navigation and no reload.
+  - `App.tsx` shows a warning banner over the page ("Can’t reach the server, retrying…", same
+    `data-testid="server-unreachable"` as start-up, with Try now). It calls `recheckServer` through
+    the same `useReconnect` as start-up: every 10 s, and at once when the browser comes back online.
+- **Tests:**
+  - Vitest `lib/api.test.ts`, 5 new tests:
+    - network and 503: DOWN once; still down; 200 → BACK; then nothing.
+    - a 401 while down still unpairs.
+    - 404 or 403 is an answer, not "down".
+    - no token, no check.
+  - Playwright `devices/stray_401.spec.ts:77` (taproomDevice):
+    - Route-mocks `/api/beer_board` 401 and `/api/me` 503, then opens Buy-a-Beer client-side.
+    - Expects the banner and "Couldn't load the board.", at least one more `/api/me` within 25 s,
+      and the token kept.
+    - Then unroutes both: the board's 200 arrives, the banner and the error go, and the URL stays
+      the same.
+- **Revert** (`api.ts` at HEAD, scratch copy): 4 of the 5 new Vitest tests fail. The 404/403 one is
+  a guard and passes either way.
+
+### 4. Gaps 6 and 7: memberships
+
+- **Gap 6:** `resolve_desired` now ends with `refuse_duplicates`. One department named twice, by key
+  or by id and with any roles, is `{:invalid_membership, "names a department more than once"}`, a
+  422 on `memberships` on both create and update. The UI never sends one: it builds one entry per
+  department.
+- **Gap 7:**
+  - `create_user` takes `Map.get(attrs, "memberships", [])`, so `null` reaches the "must be a list"
+    check, as on update. Left out is still no roles.
+  - The out-of-range `department_id` is the `ParamIds` change (item 2).
+- **Tests** (`user_memberships_malformed_test`):
+  - `null` is added to the POST shapes, as owner and as manager.
+  - New: "memberships left out → 201, no roles".
+  - New: "a department named twice" (3 shapes × PUT and POST, nothing saved, existing role kept).
+  - New: "an out-of-range department_id inside memberships → 422 on memberships".
+- **Revert** (`accounts.ex` at HEAD): the 2 null-on-POST tests and the twice test fail (3 of 21).
+
+### 5. Gap 10: missing brand, recipe, ingredient or batch
+
+- **Cause:** each detail page showed a spinner until the row arrived; the ingredient page showed
+  nothing at all. A 404 was retried, then left as an error nobody rendered.
+- **Fix:**
+  - New `src/components/ItemNotFound.tsx`: the "Category not found" panel, made general.
+  - New `src/lib/notFound.ts`: `httpStatus` and `retryUnless404`, which never retries a 404 and
+    retries anything else once, as before.
+  - `CategoryDetail` now uses both (same text, same test id). `BrandDetail`, `RecipeDetail`,
+    `IngredientDetail` and `BatchDetail` follow the same pattern:
+    - a 404 shows "<Brand|Recipe|Ingredient|Batch> not found" with a link back (Brands, the brand,
+      Ingredients, Batches).
+    - any other error shows its `parseApiError` alert.
+    - a load still shows the spinner.
+  - Lots have no page of their own (only a dialog on the ingredient), so there was nothing to fix
+    there.
+- **Tests:**
+  - Vitest `lib/notFound.test.ts` (3 tests).
+  - Playwright `brewery/recipe_sort_order.spec.ts:183`: `/brands/999999`, the 20-digit id,
+    `/brands/abc`, a real brand's `/recipes/999999`, `/ingredients/999999` and `/batches/999999`.
+    Each says "not found" and its link goes back.
+  - Vitest runs in node with no component rendering here, so the pages' wiring is checked by the
+    Playwright case only. Its revert check waits for your run.
+
+### 6. Gap 4: tablet, unknown channel
+
+- `Messages.tsx`: on a tablet, an unknown channel key shows `<NotFound />` ("Page not found") unless
+  it has a real channel's shape, which keeps "Not available". New `src/lib/channels.ts`
+  `isChannelKey` defines the shape as `all`, `managers` or `dept:<lowercase key>`.
+- The tablet can't list departments, and the API answers 403 for an unknown channel and a forbidden
+  one alike. So a well-formed `dept:nope` still says "Not available". **LEAD:** fine, or should the
+  API 404 unknown keys? That would change the D36 answer for people too.
+- **Tests:**
+  - Vitest `lib/channels.test.ts` (2 tests).
+  - Playwright `devices/unknown_url.spec.ts:36`: `/messages/nope` shows "Page not found";
+    `/messages/dept:brewery` on the Taproom tablet shows "Not available".
+
+### 7. Gap 13 (part): notification read
+
+- `Notifications.mark_read/2` returns `{:error, :not_found}` unless it updated exactly one of the
+  caller's own rows. The controller answers 404 `{"errors":{"detail":"Not found"}}`, the fallback's
+  body.
+- Someone else's notification is also 404, and it stays unread.
+- `NotificationBell` no longer leaves an unhandled rejection if a read 404s; it refreshes the list
+  either way.
+- **Test:** `notification_controller_test` "missing or someone else's → 404", with 3 missing ids
+  (including 2³¹ and 2⁶³−1) and another person's notification. **Revert:** it fails (1 of 4).
+
+### 8. The T4 flake (and T3)
+
+- **Cause:** with an ended token, a background poll on the page could 401 first. The app then
+  navigated to the login page (or the unpaired one) while the test's `page.goto('/messages/all')`
+  was still in flight, which aborted it (`net::ERR_ABORTED`).
+- **Fix:** `stray_401.spec.ts` gains `gotoEnded(page, path)`. It ignores only an aborted, detached or
+  interrupted navigation, and the test then asserts where the page ended up, as before. T3 (`:151`)
+  had the same race and uses it too.
+
+### For the lead to rerun
+
+- `tests/regression/brewery/recipe_sort_order.spec.ts:128` (gap 8), `:183` (gap 10)
+- `tests/regression/devices/stray_401.spec.ts:77` (gap 2), `:151` (T3), `:169` (T4)
+- `tests/regression/devices/unknown_url.spec.ts:36` (gap 4)
+- Worth a full `devices/` and `brewery/` pass. The `ParamIds` change affects every write, though the
+  sweep found no route that sends a non-numeric id, and neither did a search of the UI.
+
+## Lead decisions 6b done (gap 8 test race)
+
+- **Answers noted:** no controller-side id hardening (the API-wide check is enough); `dept:nope`
+  stays "Not available", no API change; the 9 unlabelled dropdowns are backlog task 5203.
+- **Cause:** `recipe_sort_order.spec.ts` gap 8 compared the new category's `sort_order` with **every**
+  category. Specs running in parallel (layout S153, T9, T12) create categories, each at the end, so
+  one could be added after this test's and sort later (9 > 8 on DEV).
+- **Fix (test only):** the test snapshots the category ids before it starts and compares only with
+  those, after Add and after clearing Sort Order in Edit (`expectAfterTheOthers`). No other spec
+  moves an existing category, so the snapshot can't go stale. The snapshot also has to be
+  non-empty.
+- **Same race elsewhere?** No. T9 (grain bill) and T12 (field definitions) assert the exact rows of
+  the recipe or category the test created for itself, which no other spec writes to.
+- **Gate:** `tsc -b` clean; lint unchanged on the spec. No app code changed.
+- **Rerun:** `tests/regression/brewery/recipe_sort_order.spec.ts:128` (gap 8), in the full run.

@@ -17,5 +17,6 @@ defmodule RockcutApi.Scheduling.ShiftTemplate do
     |> cast(attrs, [:position_id, :name, :start_time, :end_time])
     |> validate_required([:position_id, :name, :start_time, :end_time])
     |> foreign_key_constraint(:position_id)
+    |> RockcutApi.Changeset.validate_parents([:position_id])
   end
 end

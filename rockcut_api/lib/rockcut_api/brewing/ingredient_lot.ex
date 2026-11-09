@@ -52,5 +52,6 @@ defmodule RockcutApi.Brewing.IngredientLot do
     )
     |> validate_range([:color_lovibond, :diastatic_power_linter], 0, 1_000)
     |> foreign_key_constraint(:ingredient_id)
+    |> RockcutApi.Changeset.validate_parents([:ingredient_id])
   end
 end

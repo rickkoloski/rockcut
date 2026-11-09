@@ -125,8 +125,9 @@ export default function RecipeIngredientDialog({
       error={error}
     >
       <FormControl fullWidth margin="normal">
-        <InputLabel>Category</InputLabel>
+        <InputLabel id="recipe-ingredient-category-label">Category</InputLabel>
         <Select
+          labelId="recipe-ingredient-category-label"
           value={categoryId}
           label="Category"
           onChange={(e) => {
@@ -143,8 +144,9 @@ export default function RecipeIngredientDialog({
       </FormControl>
 
       <FormControl fullWidth margin="normal">
-        <InputLabel>Ingredient</InputLabel>
+        <InputLabel id="recipe-ingredient-ingredient-label">Ingredient</InputLabel>
         <Select
+          labelId="recipe-ingredient-ingredient-label"
           value={ingredientId}
           label="Ingredient"
           onChange={(e) => {
@@ -161,8 +163,9 @@ export default function RecipeIngredientDialog({
       </FormControl>
 
       <FormControl fullWidth margin="normal">
-        <InputLabel>Lot</InputLabel>
+        <InputLabel id="recipe-ingredient-lot-label">Lot</InputLabel>
         <Select
+          labelId="recipe-ingredient-lot-label"
           value={lotId}
           label="Lot"
           onChange={(e) => setLotId(e.target.value as string)}

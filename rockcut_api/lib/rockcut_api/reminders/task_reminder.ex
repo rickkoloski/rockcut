@@ -19,5 +19,6 @@ defmodule RockcutApi.Reminders.TaskReminder do
     |> cast(attrs, [:shift_id, :sent_at])
     |> validate_required([:shift_id, :sent_at])
     |> unique_constraint(:shift_id)
+    |> RockcutApi.Changeset.validate_parents([:shift_id])
   end
 end

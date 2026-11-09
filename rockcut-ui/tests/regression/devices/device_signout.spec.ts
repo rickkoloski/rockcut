@@ -30,7 +30,13 @@ test.describe('taproomDevice (server call mocked; the shared persona token is ne
     await expect(page.getByRole('dialog')).toContainText('A manager will need to pair this tablet again.')
     await page.getByTestId('device-signout-confirm').click()
 
-    await expect(page.getByTestId('device-signout-error')).toContainText('Server error')
+    // D55: a 500 reads as parseApiError's server message, joined without a
+    // doubled period (it was "Please try again.. It's still paired").
+    const error = page.getByTestId('device-signout-error')
+    await expect(error).toContainText(
+      "Couldn't sign this tablet out: Something went wrong on the server. Please try again. It's still paired; try again.",
+    )
+    await expect(error).not.toContainText('..')
     expect(await page.evaluate(() => localStorage.getItem('rockcut_token'))).toBe(before)
     await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
     await page.reload()

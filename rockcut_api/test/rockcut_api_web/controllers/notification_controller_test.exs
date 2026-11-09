@@ -57,4 +57,22 @@ defmodule RockcutApiWeb.NotificationControllerTest do
     got = conn |> bearer(emp) |> get(~p"/api/notification_preferences") |> json_response(200)
     assert got["data"]["open_shift"]["email"] == false
   end
+
+  # D55 lead decisions 6, gap 13: a missing id, or someone else's, is 404 (it
+  # was 200 {"ok": true}); the other person's stays unread.
+  test "marking a missing or someone else's notification read is 404", %{conn: conn} do
+    emp = user_with_role("employee", "bar")
+    other = user_with_role("employee", "bar")
+    Notifications.notify(other, :open_shift, %{title: "a", body: "b", data: %{}})
+    [theirs] = Notifications.list(other)
+
+    for id <- [12_345_678, 2_147_483_648, 9_223_372_036_854_775_807, theirs.id] do
+      assert conn
+             |> bearer(emp)
+             |> post(~p"/api/notifications/#{id}/read")
+             |> json_response(404) == %{"errors" => %{"detail" => "Not found"}}
+    end
+
+    assert Notifications.unread_count(other) == 1
+  end
 end

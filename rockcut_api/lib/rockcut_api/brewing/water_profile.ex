@@ -30,5 +30,6 @@ defmodule RockcutApi.Brewing.WaterProfile do
     |> validate_range(:ph_target, 0, 14)
     |> unique_constraint(:recipe_id)
     |> foreign_key_constraint(:recipe_id)
+    |> RockcutApi.Changeset.validate_parents([:recipe_id])
   end
 end

@@ -27,5 +27,6 @@ defmodule RockcutApi.Brewing.BatchLogEntry do
     |> validate_range(:temperature, 20, 220)
     |> validate_range(:ph, 0, 14)
     |> foreign_key_constraint(:batch_id)
+    |> RockcutApi.Changeset.validate_parents([:batch_id])
   end
 end

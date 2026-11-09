@@ -18,5 +18,6 @@ defmodule RockcutApi.Messaging.Message do
     |> update_change(:body, &String.trim/1)
     |> validate_required([:channel_key, :user_id, :body])
     |> validate_length(:body, min: 1, max: 4000)
+    |> RockcutApi.Changeset.validate_parents([:user_id])
   end
 end

@@ -32,6 +32,7 @@ defmodule RockcutApi.Availability.Slot do
     |> validate_inclusion(:kind, @kinds)
     |> normalize_window()
     |> foreign_key_constraint(:user_id)
+    |> RockcutApi.Changeset.validate_parents([:user_id])
   end
 
   # All-day slots carry no times; timed slots require both, end after start.

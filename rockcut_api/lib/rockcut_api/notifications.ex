@@ -105,11 +105,14 @@ defmodule RockcutApi.Notifications do
     |> Repo.aggregate(:count)
   end
 
+  # D55 lead decisions 6 (gap 13): a notification that isn't the user's (or
+  # doesn't exist) is `{:error, :not_found}`, not a quiet `:ok`.
   def mark_read(%User{} = user, id) do
-    from(n in Notification, where: n.id == ^id and n.user_id == ^user.id)
-    |> Repo.update_all(set: [read_at: now()])
+    {count, _} =
+      from(n in Notification, where: n.id == ^id and n.user_id == ^user.id)
+      |> Repo.update_all(set: [read_at: now()])
 
-    :ok
+    if count == 1, do: :ok, else: {:error, :not_found}
   end
 
   def mark_all_read(%User{} = user) do

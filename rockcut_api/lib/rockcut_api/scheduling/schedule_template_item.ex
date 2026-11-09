@@ -28,5 +28,6 @@ defmodule RockcutApi.Scheduling.ScheduleTemplateItem do
         do: [assignee_id: "can't be a shared device"],
         else: []
     end)
+    |> RockcutApi.Changeset.validate_parents([:position_id, :assignee_id])
   end
 end

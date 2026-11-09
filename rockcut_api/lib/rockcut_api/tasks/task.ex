@@ -75,6 +75,7 @@ defmodule RockcutApi.Tasks.Task do
     task
     |> cast(attrs, [:completed_at, :completed_by_id, :completed_on, :completed_display])
     |> validate_inclusion(:completed_display, @displays)
+    |> RockcutApi.Changeset.validate_parents([:completed_by_id])
   end
 
   defp trim(nil), do: nil

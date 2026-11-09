@@ -7,6 +7,7 @@ import {
   Box,
   Button,
   Chip,
+  Alert,
   CircularProgress,
   IconButton,
   Tooltip,
@@ -24,6 +25,9 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import BatchFormDialog from './BatchFormDialog';
 import BrewTurnDialog from './BrewTurnDialog';
 import BatchLogEntryDialog from './BatchLogEntryDialog';
+import ItemNotFound from '../../components/ItemNotFound';
+import { httpStatus, retryUnless404 } from '../../lib/notFound';
+import parseApiError from '../../lib/parseApiError';
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -66,9 +70,11 @@ export default function BatchDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: batch, isLoading } = useApiQuery<Batch>(
+  const { data: batch, isLoading, error } = useApiQuery<Batch>(
     ['batch', Number(id)],
     `/api/batches/${id}`,
+    undefined,
+    { retry: retryUnless404 },
   );
 
   const { data: logEntries = [] } = useApiQuery<BatchLogEntry[]>(
@@ -88,6 +94,15 @@ export default function BatchDetail() {
   const [selectedTurn, setSelectedTurn] = useState<BrewTurn | undefined>();
   const [logDialogOpen, setLogDialogOpen] = useState(false);
   const [selectedEntry, setSelectedEntry] = useState<BatchLogEntry | undefined>();
+
+  // D55 lead decisions 6 (gap 10): a batch that doesn't exist says so.
+  if (!batch && httpStatus(error) === 404) {
+    return <ItemNotFound what="Batch" backTo="/batches" backLabel="Back to Batches" testId="batch-not-found" />;
+  }
+
+  if (!batch && error) {
+    return <Alert severity="error">{parseApiError(error)}</Alert>;
+  }
 
   if (isLoading || !batch) {
     return <CircularProgress />;

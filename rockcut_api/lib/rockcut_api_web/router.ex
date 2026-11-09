@@ -5,6 +5,9 @@ defmodule RockcutApiWeb.Router do
     plug :accepts, ["json"]
   end
 
+  # Both signed-in pipelines end with D55's id checks: a URL id that isn't a
+  # usable id is 404 (PathIds), an out-of-range body or query id 422 (ParamIds).
+
   # Signed-in people only: shared devices get 403 here (D33 gate 1, deny by default).
   # Both people pipelines refuse all but the reset flow while a password reset
   # is required (D42, PasswordResetGate).
@@ -12,6 +15,8 @@ defmodule RockcutApiWeb.Router do
     plug RockcutApiWeb.AuthPlug
     plug RockcutApiWeb.PasswordResetGate
     plug RockcutApiWeb.DeviceGate
+    plug RockcutApiWeb.Plugs.PathIds
+    plug RockcutApiWeb.Plugs.ParamIds
   end
 
   # Signed-in people and shared devices. Only the D33 allowlist routes use it;
@@ -19,6 +24,8 @@ defmodule RockcutApiWeb.Router do
   pipeline :device_allowed do
     plug RockcutApiWeb.AuthPlug
     plug RockcutApiWeb.PasswordResetGate
+    plug RockcutApiWeb.Plugs.PathIds
+    plug RockcutApiWeb.Plugs.ParamIds
   end
 
   pipeline :brewery do

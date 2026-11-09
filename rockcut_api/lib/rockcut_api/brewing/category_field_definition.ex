@@ -18,10 +18,18 @@ defmodule RockcutApi.Brewing.CategoryFieldDefinition do
 
   def changeset(definition, attrs) do
     definition
-    |> cast(attrs, [:category_id, :field_name, :field_type, :options, :required, :sort_order])
+    |> cast(RockcutApi.Changeset.blank_to_nil(attrs, :sort_order), [
+      :category_id,
+      :field_name,
+      :field_type,
+      :options,
+      :required,
+      :sort_order
+    ])
     |> validate_required([:category_id, :field_name, :field_type])
     |> validate_inclusion(:field_type, @valid_field_types)
     |> unique_constraint([:category_id, :field_name])
     |> foreign_key_constraint(:category_id)
+    |> RockcutApi.Changeset.validate_parents([:category_id])
   end
 end

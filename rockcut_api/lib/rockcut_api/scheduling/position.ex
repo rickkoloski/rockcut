@@ -22,5 +22,6 @@ defmodule RockcutApi.Scheduling.Position do
     |> update_change(:name, &String.trim/1)
     |> unique_constraint(:name)
     |> foreign_key_constraint(:department_id)
+    |> RockcutApi.Changeset.validate_parents([:department_id])
   end
 end

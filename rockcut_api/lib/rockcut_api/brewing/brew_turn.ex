@@ -31,5 +31,6 @@ defmodule RockcutApi.Brewing.BrewTurn do
     |> unique_constraint([:batch_id, :turn_number])
     |> foreign_key_constraint(:batch_id)
     |> foreign_key_constraint(:recipe_id)
+    |> RockcutApi.Changeset.validate_parents([:batch_id, :recipe_id])
   end
 end

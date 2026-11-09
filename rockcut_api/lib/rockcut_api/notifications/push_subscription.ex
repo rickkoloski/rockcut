@@ -19,5 +19,6 @@ defmodule RockcutApi.Notifications.PushSubscription do
     |> cast(attrs, [:user_id, :endpoint, :p256dh, :auth, :user_agent])
     |> validate_required([:user_id, :endpoint, :p256dh, :auth])
     |> unique_constraint(:endpoint)
+    |> RockcutApi.Changeset.validate_parents([:user_id])
   end
 end

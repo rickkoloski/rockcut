@@ -21,9 +21,9 @@ export default defineConfig({
       registerType: 'prompt',
       includeAssets: ['favicon-32x32.png', 'apple-touch-icon.png', 'rockcut-logo.png'],
       manifest: {
-        name: 'Rockcut Scheduler',
-        short_name: 'Rockcut',
-        description: 'Rockcut Brewing Co — staff scheduling',
+        name: 'Rock Cut Brewing',
+        short_name: 'Rock Cut',
+        description: 'Rock Cut Brewing Co — brewery and staff app',
         start_url: '/',
         scope: '/',
         display: 'standalone',

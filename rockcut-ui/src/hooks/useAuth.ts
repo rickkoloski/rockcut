@@ -1,5 +1,6 @@
 import { create } from 'zustand'
-import api, { PASSWORD_RESET_EVENT } from '../lib/api'
+import api, { PASSWORD_RESET_EVENT, SERVER_BACK_EVENT, SERVER_DOWN_EVENT } from '../lib/api'
+import queryClient from '../lib/queryClient'
 import type { Me, User, Capabilities, IdeaBoardEntry, TaskBoardEntry } from '../lib/types'
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
 import {
@@ -32,6 +33,8 @@ interface AuthState {
   error: string | null
   /** /api/me failed on the network or with a 5xx: the token is kept and loadMe is retried (DEV pass 1 G1). */
   unreachable: boolean
+  /** D55 gap 2: mid-session, a 401's /api/me recheck couldn't reach the server; App rechecks and shows a banner. */
+  serverDown: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
   /** `force` (Try now, back online) replaces a check that's still waiting on a stalled connection. */
@@ -43,11 +46,6 @@ interface AuthState {
   // D33 — shared tablets
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
-}
-
-/** True when the server refused the session. Anything else (offline, a timeout, a 5xx, a proxy's 4xx) isn't about it. */
-function isRefused(err: unknown): boolean {
-  return (err as { response?: { status?: number } })?.response?.status === 401
 }
 
 /** How long start-up waits for /api/me before showing "Can't reach the server" (DEV pass 2 G4). */
@@ -84,6 +82,7 @@ const useAuth = create<AuthState>((set, get) => ({
   isLoading: false,
   error: null,
   unreachable: false,
+  serverDown: false,
 
   login: async (email: string, password: string) => {
     set({ isLoading: true, error: null })
@@ -162,31 +161,16 @@ const useAuth = create<AuthState>((set, get) => ({
           bootstrapped: true,
           unreachable: false,
         })
-      } catch (err) {
+      } catch {
+        // A token that really ended is already gone: the axios interceptor
+        // signed out or unpaired before this request failed.
         if (superseded() || localStorage.getItem(TOKEN_KEY) !== token) return
-        // DEV pass 1 G1, pass 2 G1: only a 401 says the token is no good (the
-        // axios interceptor handles it). Offline, a timeout, a 5xx or a
-        // proxy's 404/408/429 say nothing about it: keep it (on a tablet it may
-        // be the pairing itself) and retry; App shows "Can't reach the server".
-        if (!isRefused(err)) {
-          set({ bootstrapped: false, unreachable: true })
-          return
-        }
-        localStorage.removeItem(TOKEN_KEY)
-        set({
-          token: null,
-          user: null,
-          capabilities: null,
-          sharedDevices: false,
-          staffCodes: false,
-          beerBoardManage: false,
-          taskBoards: [],
-          ideaBoards: [],
-          colorMode: null,
-          isAuthenticated: false,
-          bootstrapped: true,
-          unreachable: false,
-        })
+        // DEV pass 1 G1, pass 2 G1, D55 §2.1: so the token is still good.
+        // Offline, a timeout, a 5xx, a proxy's 404/408/429, or a 401 that
+        // GET /api/me's recheck didn't confirm say nothing about it: keep it
+        // (on a tablet it may be the pairing itself) and retry; App shows
+        // "Can't reach the server".
+        set({ bootstrapped: false, unreachable: true })
       } finally {
         if (loading === load) loading = null
       }
@@ -251,6 +235,16 @@ const useAuth = create<AuthState>((set, get) => ({
 window.addEventListener(PASSWORD_RESET_EVENT, () => {
   const { user } = useAuth.getState()
   if (user && !user.must_reset_password) useAuth.setState({ user: { ...user, must_reset_password: true } })
+})
+
+// D55 lead decisions 6 (gap 2): a 401's /api/me recheck couldn't reach the
+// server. App shows "Can't reach the server, retrying…" and rechecks; when it
+// answers again, the banner goes and every query on screen loads again (the
+// failed view recovers without navigating).
+window.addEventListener(SERVER_DOWN_EVENT, () => useAuth.setState({ serverDown: true }))
+window.addEventListener(SERVER_BACK_EVENT, () => {
+  useAuth.setState({ serverDown: false })
+  void queryClient.invalidateQueries()
 })
 
 export default useAuth
