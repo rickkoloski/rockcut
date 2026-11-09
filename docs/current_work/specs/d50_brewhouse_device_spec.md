@@ -1,6 +1,6 @@
 # D50: The brewhouse device on the production schedule — Spec
 
-**Status:** DRAFT for Matt's review (2026-11-08).
+**Status:** APPROVED by Matt 2026-11-08 (§5 answered: yes to all four).
 **Backlog:** PortableMind project 254, task 4934. Also the template link bug found 2026-11-08 (§2.6).
 **Order:** after D55 is on prod. Branches from `develop`. Its own release.
 **Base:** the D46 spec (`specs/d46_production_scheduling_spec.md`) planned D50 as its fifth part
@@ -147,13 +147,12 @@ Personas: `breweryDevice` (home Brewery), `taproomDevice`, `brewer1`, `brewer2`,
 | L3 | `breweryMgr` | Try a link that would loop, or a "comes after" on a later day | Not offered; the API refuses it if forced. |
 | L4 | `breweryDevice` | L2 with `brewer1`'s code | As L2, recorded as `brewer1`. |
 
-## 5. Questions for Matt
+## 5. Decisions (Matt, 2026-11-08)
 
-1. **Owners' codes on the brewhouse device:** allowed (as Brewery members), or Brewery members only?
-2. **Undo across people** (D5): only the person who made the change. OK?
-3. **Show planned batches** on the device: a per-device setting, default **on**. OK?
-4. **Out-of-service periods** are listed with the schedule (D46 §3.13), so the device can add them
-   with a code. Or should they stay with setup (read-only on the device)?
+1. **Owners' codes** work on the brewhouse device, as Brewery members' do.
+2. **Undo** only by the person who made the change (today's rule).
+3. **Show planned batches** on the device is a per-device setting, default **on**.
+4. **Out-of-service periods** stay with the schedule: the device adds and edits them with a code.
 
 ## 6. Gate
 
