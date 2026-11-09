@@ -15,9 +15,11 @@ import {
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import ErrorAlert from './ErrorAlert'
-import api from '../../lib/api'
+import { actingRun } from '../../hooks/useActing'
+import { isActingCancelled } from '../../lib/acting'
 import { addDaysKey } from '../../lib/datetime'
 import { prodError, prodPath, shortPeriod, type Outage, type Tank } from '../../lib/production'
+import { codedApi, type CodedApi } from '../../lib/codedApi'
 import { coloradoToday } from '../../lib/tasks'
 import DateField from './DateField'
 
@@ -68,14 +70,15 @@ export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn
     return null
   }
 
-  const run = async (call: () => Promise<{ data?: { undo_token?: string | null } }>, message: string) => {
+  // D50: a schedule change, so the brewhouse device makes it with a staff code (`useActing`).
+  const run = async (call: (a: CodedApi) => Promise<{ data?: { undo_token?: string | null } }>, message: string) => {
     setBusy(true)
     setError(null)
     try {
-      const res = await call()
+      const res = await actingRun((code) => call(codedApi(code)))
       onSaved(message, res.data?.undo_token ?? null)
     } catch (err) {
-      setError(prodError(err))
+      if (!isActingCancelled(err)) setError(prodError(err))
     } finally {
       setBusy(false)
     }
@@ -87,7 +90,7 @@ export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn
     const body = { starts_on: from, ends_on: open ? null : to, reason: reason.trim() || null }
     const period = shortPeriod({ starts_on: from, ends_on: open ? null : to })
     run(
-      () => (outage ? api.patch(prodPath('outages', outage.id), body) : api.post(prodPath('tanks', tank.id, 'outages'), body)),
+      (a) => (outage ? a.patch(prodPath('outages', outage.id), body) : a.post(prodPath('tanks', tank.id, 'outages'), body)),
       `${tank.name} out of service ${period}.`,
     )
   }
@@ -149,7 +152,7 @@ export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn
         {outage?.state === 'now' && (
           <Button
             disabled={busy}
-            onClick={() => run(() => api.post(prodPath('outages', outage.id, 'end_today')), `${tank.name} is back in service today.`)}
+            onClick={() => run((a) => a.post(prodPath('outages', outage.id, 'end_today')), `${tank.name} is back in service today.`)}
             data-testid="outage-end-today"
           >
             Back in service today
@@ -169,7 +172,7 @@ export default function OutageDialog({ tank, outage, onClose, onSaved, plannedIn
           onClose={() => setDeleting(false)}
           onConfirm={() => {
             setDeleting(false)
-            run(() => api.delete(prodPath('outages', outage.id)), 'Out-of-service period deleted.')
+            run((a) => a.delete(prodPath('outages', outage.id)), 'Out-of-service period deleted.')
           }}
           title="Delete period"
           message={`Delete the out-of-service period ${outage.label}?`}

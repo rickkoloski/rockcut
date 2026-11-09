@@ -202,7 +202,9 @@ defmodule RockcutApiWeb.BeerBoardControllerTest do
                201
     end
 
-    test "S12: a code of someone who left the Taproom is just wrong", %{p: p, token: token} do
+    # D50 lead decisions 3 (gap 1): a real person who isn't in the Taproom now
+    # is told the code can't do this here (was "just wrong"), and isn't counted.
+    test "S12: a code of someone who left the Taproom can't do this here", %{p: p, token: token} do
       {:ok, _} =
         RockcutApi.Accounts.set_memberships(
           p["bartender2"],
@@ -210,7 +212,7 @@ defmodule RockcutApiWeb.BeerBoardControllerTest do
           p["owner"]
         )
 
-      assert %{"error" => "staff_code_invalid"} =
+      assert %{"error" => "staff_code_not_allowed"} =
                call_device(token, :post, "/api/beer_board", %{
                  recipient_name: "P",
                  purchaser_name: "C",
@@ -218,6 +220,30 @@ defmodule RockcutApiWeb.BeerBoardControllerTest do
                  staff_code: "2468"
                })
                |> json_response(422)
+
+      assert BeerBoard.list_entries() == []
+    end
+
+    test "D50 gap 1: a Brewery person's code can't do this here; five tries don't lock", %{
+      p: p,
+      token: token
+    } do
+      {:ok, _} = StaffCodes.set(p["brewer1"], "8642", p["owner"])
+      body = %{recipient_name: "P", purchaser_name: "C", beers: 1}
+
+      for _ <- 1..5 do
+        assert call_device(token, :post, "/api/beer_board", Map.put(body, :staff_code, "8642"))
+               |> json_response(422) == %{
+                 "error" => "staff_code_not_allowed",
+                 "message" => "That staff code can't do this here"
+               }
+      end
+
+      assert BeerBoard.list_entries() == []
+
+      # Not locked: a Taproom member's code still works.
+      assert call_device(token, :post, "/api/beer_board", Map.put(body, :staff_code, "2468")).status ==
+               201
     end
 
     test "S11: a manager's code doesn't open History on the tablet", %{token: token} do

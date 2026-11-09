@@ -16,6 +16,8 @@ interface Props<T extends { id: number }> {
   /** The row's content after the drag handle (name, details, actions). */
   render: (item: T) => ReactNode
   testId: string
+  /** D50: the brewhouse device's view: rows in order, no handle or arrows. */
+  readOnly?: boolean
 }
 
 /**
@@ -25,7 +27,7 @@ interface Props<T extends { id: number }> {
  * it back. Only the handle is the drag button, so the row's own buttons
  * aren't nested inside one (D47 task 0, item 10).
  */
-export default function OrderedList<T extends { id: number }>({ items, onReorder, label, render, testId }: Props<T>) {
+export default function OrderedList<T extends { id: number }>({ items, onReorder, label, render, testId, readOnly }: Props<T>) {
   const byKey = useMemo(() => new Map(items.map((i) => [String(i.id), i])), [items])
   const source = useMemo<ListContainer[]>(() => [{ id: LIST, itemIds: items.map((i) => String(i.id)) }], [items])
   const { containers, move } = useOptimisticLists(source)
@@ -104,6 +106,17 @@ export default function OrderedList<T extends { id: number }>({ items, onReorder
       </Paper>
     )
   }
+
+  if (readOnly)
+    return (
+      <Box data-testid={testId}>
+        {items.map((item) => (
+          <Paper key={item.id} variant="outlined" data-testid={`${testId}-row-${item.id}`} sx={{ px: 2, py: 0.75, mb: 0.75 }}>
+            {render(item)}
+          </Paper>
+        ))}
+      </Box>
+    )
 
   return (
     <>

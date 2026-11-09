@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Alert, Button, MenuItem, TextField, Typography } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
-import api from '../../lib/api'
 import { boardPath, formatTaskDay } from '../../lib/tasks'
 import type { RosterEntry, TaskBoardEntry, TaskCardData } from '../../lib/types'
 import { useFlows } from '../production/Gantt/flowsContext'
@@ -47,7 +46,7 @@ export default function LinkedTaskDialog({ card, board, members, focusNotes, onC
     if (assignee !== (card.assignee_id ?? null)) body.assignee_id = assignee
     if (!Object.keys(body).length) return onClose()
     setSaving(true)
-    const r = await flows.write(() => api.patch(boardPath(board.key, 'tasks', card.id), body), 'Saved.')
+    const r = await flows.write((a) => a.patch(boardPath(board.key, 'tasks', card.id), body), 'Saved.')
     setSaving(false)
     if (!r.ok) {
       const fields = (r.body?.errors ?? {}) as Record<string, string[]>

@@ -9,6 +9,11 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   refetches the schedule. Every write also answers `undo_token` (top level,
   `POST /undo/:token` for 2 minutes; `Production.Undo`). Move and complete
   take `preview: true` and answer `{ data: { preview } }` without writing.
+
+  D50: the brewhouse device (a shared device at home in the Brewery) reads
+  and writes all of it. Each write needs a person's `staff_code` and is
+  made as that person (`StaffCodeActing`), with the device recorded beside
+  them; the answer carries `recorded_as`. Undo is that person's only.
   """
   use RockcutApiWeb, :controller
 
@@ -19,7 +24,8 @@ defmodule RockcutApiWeb.ProductionScheduleController do
       production_schedule: 1,
       production_batch: 1,
       production_step: 2,
-      production_condition_mark: 1
+      production_condition_mark: 1,
+      for_viewer: 2
     ]
 
   alias RockcutApi.{Authz, Repo, Tasks}
@@ -34,11 +40,12 @@ defmodule RockcutApiWeb.ProductionScheduleController do
     Signoffs,
     Splits,
     Step,
+    StepLinks,
     Steps,
     Undo
   }
 
-  alias RockcutApiWeb.ProductionErrors
+  alias RockcutApiWeb.{ProductionErrors, StaffCodeActing}
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -50,7 +57,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
          {:ok, from} <- date(params["from"], Date.add(today, -7)),
          {:ok, to} <- date(params["to"], Date.add(today, 35)),
          {:ok, sched} <- Schedule.load(from, to, today) do
-      json(conn, %{data: production_schedule(sched)})
+      reply(conn, %{data: production_schedule(sched)})
     end
     |> ProductionErrors.handle(conn)
   end
@@ -63,9 +70,9 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   per vessel; D49: `pencilled` pencils it in).
   """
   def create_batch(conn, params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, {{batch, renumbered}, token}} <-
-           Undo.track(user(conn), %{}, fn -> Batches.plan(params) end, fn {b, _} ->
+           Undo.track(actor(conn), %{}, fn -> Batches.plan(params) end, fn {b, _} ->
              %{batches: [b.id]}
            end) do
       conn
@@ -81,10 +88,10 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   rebuilt; `message` says what was kept).
   """
   def update_batch(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
          {:ok, {extra, token}} <-
-           Undo.track(user(conn), %{batches: [batch.id]}, fn ->
+           Undo.track(actor(conn), %{batches: [batch.id]}, fn ->
              change_batch(batch, params)
            end) do
       render_write(conn, [batch.id], extra, token)
@@ -141,7 +148,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "DELETE /api/production/batches/:id/transfers/:step_id: the beer stays in the tank before it."
   def remove_transfer(conn, %{"id" => id, "step_id" => step_id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
          {:ok, step} <- fetch_step(step_id),
          true <- (step.batch_id == batch.id and transfer?(step)) || {:error, :not_found} do
@@ -152,7 +159,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "DELETE /api/production/steps/:id: an unfinished step (not Brew day); links pass through."
   def remove_step(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, step} <- fetch_step(id),
          {:ok, result, token} <-
            tracked(conn, step_scope([step.id]), false, fn _ -> BatchChanges.remove_step(step) end) do
@@ -163,7 +170,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "POST /api/production/steps/:id/ramp: `{ target?, change_per_day? }` (Change ramp…)."
   def change_ramp(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, step} <- fetch_step(id),
          {:ok, result, token} <-
            tracked(conn, step_scope([step.id]), false, fn _ ->
@@ -196,38 +203,38 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   one before its last emptying.
   """
   def mark_condition(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          %{} = tank <- Production.get_tank(id) || {:error, :not_found},
          {:ok, {mark, token}} <-
            Undo.track(
-             user(conn),
+             actor(conn),
              %{},
-             fn -> ConditionMarks.create(tank, Map.drop(params, ["id"]), user(conn)) end,
+             fn -> ConditionMarks.create(tank, Map.drop(params, ["id"]), actor(conn)) end,
              &%{marks: [&1.id]}
            ) do
       conn
       |> put_status(:created)
-      |> json(%{data: %{mark: production_condition_mark(mark), batches: []}, undo_token: token})
+      |> reply(%{data: %{mark: production_condition_mark(mark), batches: []}, undo_token: token})
     end
     |> ProductionErrors.handle(conn)
   end
 
   @doc "DELETE /api/production/condition_marks/:id: History → Remove."
   def remove_condition_mark(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          %{} = mark <- ConditionMarks.get(id) || {:error, :not_found},
          {:ok, {_, token}} <-
-           Undo.track(user(conn), %{marks: [mark.id]}, fn -> ConditionMarks.delete(mark) end) do
-      json(conn, %{data: %{deleted_id: mark.id, batches: []}, undo_token: token})
+           Undo.track(actor(conn), %{marks: [mark.id]}, fn -> ConditionMarks.delete(mark) end) do
+      reply(conn, %{data: %{deleted_id: mark.id, batches: []}, undo_token: token})
     end
     |> ProductionErrors.handle(conn)
   end
 
   defp batch_write(conn, id, fun, status) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
          {:ok, {result, token}} <-
-           Undo.track(user(conn), %{batches: [batch.id]}, fn -> fun.(batch) end) do
+           Undo.track(actor(conn), %{batches: [batch.id]}, fn -> fun.(batch) end) do
       conn
       |> put_status(status)
       |> render_result(Map.put(result, :renumbered, []), token)
@@ -240,11 +247,11 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "DELETE /api/production/batches/:id: a planned batch only (`not_planned`)."
   def delete_batch(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
          {:ok, {renumbered, token}} <-
-           Undo.track(user(conn), %{batches: [batch.id]}, fn -> Batches.delete_planned(batch) end) do
-      json(conn, %{
+           Undo.track(actor(conn), %{batches: [batch.id]}, fn -> Batches.delete_planned(batch) end) do
+      reply(conn, %{
         data: %{deleted_id: batch.id, batches: [], renumbered: renumbered},
         undo_token: token
       })
@@ -261,10 +268,10 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   def pencil_batch(conn, %{"id" => id}), do: pencil_write(conn, id, &Batches.pencil/1)
 
   defp pencil_write(conn, id, fun) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
          {:ok, {{_, renumbered}, token}} <-
-           Undo.track(user(conn), %{batches: [batch.id]}, fn -> fun.(batch) end) do
+           Undo.track(actor(conn), %{batches: [batch.id]}, fn -> fun.(batch) end) do
       root = batch.split_parent_id || batch.id
 
       ids = [
@@ -281,10 +288,10 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "POST /api/production/batches/:id/shift: `{ days }`."
   def shift_batch(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
          {:ok, {result, token}} <-
-           Undo.track(user(conn), %{batches: [batch.id]}, fn ->
+           Undo.track(actor(conn), %{batches: [batch.id]}, fn ->
              Batches.shift(batch, params["days"])
            end) do
       render_write(conn, [batch.id], result, token)
@@ -294,10 +301,10 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "PATCH /api/production/batches/:id/vessels/:index: `{ tank_id }` (null = Unassigned)."
   def update_vessel(conn, %{"id" => id, "index" => index} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
          {:ok, {_, token}} <-
-           Undo.track(user(conn), %{batches: [batch.id]}, fn ->
+           Undo.track(actor(conn), %{batches: [batch.id]}, fn ->
              Batches.set_vessel_tank(batch, index, params["tank_id"])
            end) do
       render_write(conn, [batch.id], %{renumbered: []}, token)
@@ -309,7 +316,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "POST /api/production/steps/move: `{ ids, days, answer?, preview? }`."
   def move_steps(conn, params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, result, token} <-
            tracked(conn, step_scope(params["ids"]), truthy?(params["preview"]), fn preview ->
              Steps.move(params["ids"], params["days"],
@@ -327,13 +334,13 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   answer?, preview? }`.
   """
   def complete_step(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, result, token} <-
            tracked(conn, step_scope([id]), truthy?(params["preview"]), fn preview ->
              Steps.complete(
                id,
                Map.take(params, ["done_on", "batch_number", "answer"]),
-               user(conn),
+               actor(conn),
                preview: preview
              )
            end) do
@@ -343,7 +350,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   end
 
   def uncomplete_step(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, result, token} <-
            tracked(conn, step_scope([id]), false, fn _ -> Steps.uncomplete(id) end) do
       render_result(conn, result, token)
@@ -357,10 +364,10 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   CIP answers `step`.
   """
   def update_step(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, step} <- fetch_step(id),
          {:ok, {step, token}} <-
-           Undo.track(user(conn), step_scope([step.id]), fn ->
+           Undo.track(actor(conn), step_scope([step.id]), fn ->
              Steps.update(step, Map.drop(params, ["id"]))
            end) do
       if step.batch_id,
@@ -372,11 +379,50 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "POST /api/production/steps/assign: `{ ids, assignee_id }` (null = nobody)."
   def assign_steps(conn, params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, result, token} <-
            tracked(conn, step_scope(params["ids"]), false, fn _ ->
              Steps.assign(params["ids"], params["assignee_id"])
            end) do
+      render_result(conn, Map.put(result, :renumbered, []), token)
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  ## Links on a batch's steps (D50 §2.7)
+
+  @doc """
+  POST /api/production/steps/:id/links: `{ comes_after_id | leads_to_id,
+  answer? }` (one of the two; `answer` `move_all`, the default, or
+  `move_only`). The template rules, within the step's batch or split.
+  """
+  def add_link(conn, %{"id" => id} = params) do
+    with {:ok, conn} <- writer(conn),
+         {:ok, step} <- fetch_step(id),
+         {:ok, result, token} <-
+           tracked(conn, step_scope([step.id]), false, fn _ ->
+             StepLinks.add(step, Map.take(params, ~w(comes_after_id leads_to_id answer)))
+           end) do
+      conn
+      |> put_status(:created)
+      |> render_result(Map.put(result, :renumbered, []), token)
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  @doc "PATCH /api/production/step_links/:id: `{ default_answer }`."
+  def update_link(conn, %{"id" => id} = params) do
+    link_write(conn, id, &StepLinks.update(&1, Map.take(params, ["default_answer"])))
+  end
+
+  @doc "DELETE /api/production/step_links/:id: Remove."
+  def remove_link(conn, %{"id" => id}), do: link_write(conn, id, &StepLinks.remove/1)
+
+  defp link_write(conn, id, fun) do
+    with {:ok, conn} <- writer(conn),
+         %{} = link <- StepLinks.get(id) || {:error, :not_found},
+         {:ok, result, token} <-
+           tracked(conn, step_scope(StepLinks.step_ids(link)), false, fn _ -> fun.(link) end) do
       render_result(conn, Map.put(result, :renumbered, []), token)
     end
     |> ProductionErrors.handle(conn)
@@ -390,12 +436,12 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   follows it); checking off `POST /cips/:id/complete` or the steps route.
   """
   def create_cip(conn, params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, {cip, token}} <-
            Undo.track(
-             user(conn),
+             actor(conn),
              %{},
-             fn -> Cips.create(params, user(conn)) end,
+             fn -> Cips.create(params, actor(conn)) end,
              &%{steps: [&1.id]}
            ) do
       conn |> put_status(:created) |> render_cip(cip, token)
@@ -405,28 +451,28 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "PATCH /api/production/cips/:id: `tank_id`, `notes`, `assignee_id`."
   def update_cip(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, cip} <- fetch_cip(id),
          {:ok, {cip, token}} <-
-           Undo.track(user(conn), %{steps: [cip.id]}, fn -> Cips.update(cip, params) end) do
+           Undo.track(actor(conn), %{steps: [cip.id]}, fn -> Cips.update(cip, params) end) do
       render_cip(conn, cip, token)
     end
     |> ProductionErrors.handle(conn)
   end
 
   def delete_cip(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, cip} <- fetch_cip(id),
          {:ok, {_, token}} <-
-           Undo.track(user(conn), %{steps: [cip.id]}, fn -> Cips.delete(cip) end) do
-      json(conn, %{data: %{deleted_id: cip.id, batches: []}, undo_token: token})
+           Undo.track(actor(conn), %{steps: [cip.id]}, fn -> Cips.delete(cip) end) do
+      reply(conn, %{data: %{deleted_id: cip.id, batches: []}, undo_token: token})
     end
     |> ProductionErrors.handle(conn)
   end
 
   @doc "POST /api/production/cips/:id/complete: `{ done_on? }`."
   def complete_cip(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, _} <- fetch_cip(id) do
       complete_step(conn, params)
     end
@@ -434,7 +480,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   end
 
   def uncomplete_cip(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, _} <- fetch_cip(id) do
       uncomplete_step(conn, params)
     end
@@ -445,23 +491,23 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc "POST /api/production/flags/signoff: `{ key, signature, note? }` (Mark OK)."
   def sign_off(conn, params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, {_, token}} <-
-           Undo.track(user(conn), %{signoffs: [params["key"]]}, fn ->
-             Signoffs.sign_off(params, user(conn))
+           Undo.track(actor(conn), %{signoffs: [params["key"]]}, fn ->
+             Signoffs.sign_off(params, actor(conn))
            end) do
-      json(conn, %{data: %{key: params["key"]}, undo_token: token})
+      reply(conn, %{data: %{key: params["key"]}, undo_token: token})
     end
     |> ProductionErrors.handle(conn)
   end
 
   @doc "DELETE /api/production/flags/signoff/:key: Remove sign-off."
   def remove_signoff(conn, %{"key" => key}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          %{} = signoff <- Signoffs.get_by_key(key) || {:error, :not_found},
          {:ok, {_, token}} <-
-           Undo.track(user(conn), %{signoffs: [key]}, fn -> Signoffs.remove(signoff) end) do
-      json(conn, %{data: %{key: key}, undo_token: token})
+           Undo.track(actor(conn), %{signoffs: [key]}, fn -> Signoffs.remove(signoff) end) do
+      reply(conn, %{data: %{key: key}, undo_token: token})
     end
     |> ProductionErrors.handle(conn)
   end
@@ -474,8 +520,8 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   changed since; 422 `undo_expired`.
   """
   def undo(conn, %{"token" => token}) do
-    with :ok <- allow(conn, :write),
-         {:ok, %{batch_ids: ids}} <- Undo.undo(user(conn), token) do
+    with {:ok, conn} <- writer(conn),
+         {:ok, %{batch_ids: ids}} <- Undo.undo(actor(conn), token) do
       render_write(conn, existing_batches(ids), %{renumbered: []}, nil)
     end
     |> ProductionErrors.handle(conn)
@@ -489,7 +535,7 @@ defmodule RockcutApiWeb.ProductionScheduleController do
   end
 
   defp tracked(conn, scope, false, fun) do
-    with {:ok, {result, token}} <- Undo.track(user(conn), scope, fn -> fun.(false) end),
+    with {:ok, {result, token}} <- Undo.track(actor(conn), scope, fn -> fun.(false) end),
          do: {:ok, result, token}
   end
 
@@ -499,20 +545,21 @@ defmodule RockcutApiWeb.ProductionScheduleController do
     do: Repo.all(from(b in RockcutApi.Brewing.Batch, where: b.id in ^ids, select: b.id))
 
   defp render_result(conn, {:preview, preview}, _token),
-    do: json(conn, %{data: %{preview: preview}})
+    do: reply(conn, %{data: %{preview: preview}})
 
   defp render_result(conn, %{batch_ids: ids} = result, token),
     do: render_write(conn, ids, Map.delete(result, :batch_ids), token)
 
   defp render_write(conn, batch_ids, extra, token) do
     batches = batch_ids |> Schedule.batches() |> Enum.map(&production_batch/1)
-    json(conn, %{data: Map.put(extra, :batches, batches), undo_token: token})
+    reply(conn, %{data: Map.put(extra, :batches, batches), undo_token: token})
   end
 
   defp render_cip(conn, cip, token) do
-    cip = Repo.preload(cip, [:step_type, :phase, :assignee, :done_by], force: true)
+    cip =
+      Repo.preload(cip, [:step_type, :phase, :assignee, :done_by, :done_on_device], force: true)
 
-    json(conn, %{
+    reply(conn, %{
       data: %{batches: [], cip: production_step(cip, []), renumbered: []},
       undo_token: token
     })
@@ -524,8 +571,6 @@ defmodule RockcutApiWeb.ProductionScheduleController do
       cip -> {:ok, cip}
     end
   end
-
-  defp user(conn), do: conn.assigns.current_user
 
   defp fetch_batch(id) do
     case Batches.get(id) do
@@ -557,5 +602,30 @@ defmodule RockcutApiWeb.ProductionScheduleController do
     if Authz.can?(conn.assigns.current_user, action, :production),
       do: :ok,
       else: {:error, :forbidden}
+  end
+
+  # D50: who a write is for, once per request (an action that hands over to
+  # another, such as `complete_cip/2`, doesn't check the code twice): the
+  # signed-in person, or on the brewhouse device the person whose staff code
+  # came with it (`StaffCodeActing`, the device in `on_device_id`).
+  defp writer(%Plug.Conn{assigns: %{actor: _}} = conn), do: {:ok, conn}
+
+  defp writer(conn) do
+    with {:ok, actor} <- StaffCodeActing.actor(conn, :production),
+         do: {:ok, assign(conn, :actor, actor)}
+  end
+
+  defp actor(conn), do: conn.assigns.actor
+
+  # Every answer as the viewer may see it (no emails on a device), and on a
+  # device write the person it was recorded as (D40's `recorded_as`).
+  defp reply(conn, body) do
+    body =
+      case conn.assigns[:actor] do
+        %{on_device_id: id, name: name} when not is_nil(id) -> Map.put(body, :recorded_as, name)
+        _ -> body
+      end
+
+    json(conn, for_viewer(body, conn.assigns.current_user))
   end
 end

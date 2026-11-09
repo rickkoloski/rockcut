@@ -27,14 +27,19 @@ export const actingExpired = (s: ActingSession, now: number, idleMs = ACTING_IDL
 export const touchActing = (s: ActingSession, now: number, idleMs = ACTING_IDLE_MS): ActingSession | null =>
   actingExpired(s, now, idleMs) ? null : { ...s, lastActivity: now }
 
-export type StaffCodeFailure = 'staff_code_required' | 'staff_code_invalid' | 'staff_code_locked'
+export type StaffCodeFailure = 'staff_code_required' | 'staff_code_invalid' | 'staff_code_not_allowed' | 'staff_code_locked'
 
-/** A write refused for its staff code (D37's errors), with the API's message; else null. */
+/**
+ * A write refused for its staff code (D37's errors; D50 gap 1: a real person
+ * who can't make this change here, `staff_code_not_allowed`), with the API's
+ * message; else null. Each keeps the dialog open with the message.
+ */
 export function staffCodeFailure(err: unknown): { error: StaffCodeFailure; message: string } | null {
   const data = (err as { response?: { data?: { error?: string; message?: string } } })?.response?.data
   switch (data?.error) {
     case 'staff_code_required':
     case 'staff_code_invalid':
+    case 'staff_code_not_allowed':
     case 'staff_code_locked':
       return { error: data.error, message: data.message ?? data.error }
     default:

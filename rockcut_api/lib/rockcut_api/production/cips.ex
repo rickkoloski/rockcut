@@ -58,6 +58,7 @@ defmodule RockcutApi.Production.Cips do
           on_task_list: type.on_task_list,
           done_on: if(done?, do: due_on),
           done_by_id: if(done?, do: actor.id),
+          done_on_device_id: if(done?, do: actor.on_device_id),
           completed_at: if(done?, do: DateTime.utc_now() |> DateTime.truncate(:second))
         })
 

@@ -174,14 +174,36 @@ defmodule RockcutApiWeb.TaskBoardDeviceTest do
       assert add(token, %{staff_code: "1111"}).status == 201
     end
 
-    test "S45: a Taproom member's code is a wrong code here, and counts", %{token: token} do
-      assert %{"error" => "staff_code_invalid"} =
-               add(token, %{staff_code: "2222"}) |> json_response(422)
+    # D50 lead decisions 3 (gap 1; was "a wrong code here, and counts"): a
+    # real person who may not write here is told so, and it isn't counted.
+    test "S45: a Taproom member's code can't do this here; not counted toward the lock", %{
+      token: token
+    } do
+      before = RockcutApi.Repo.aggregate(RockcutApi.Tasks.Task, :count)
 
-      for _ <- 1..3, do: add(token, %{staff_code: "0000"})
-      # The 5th wrong code (bartender1's counted as the 1st) locks the tablet.
+      for _ <- 1..5 do
+        assert add(token, %{staff_code: "2222"}) |> json_response(422) == %{
+                 "error" => "staff_code_not_allowed",
+                 "message" => "That staff code can't do this here"
+               }
+      end
+
+      assert RockcutApi.Repo.aggregate(RockcutApi.Tasks.Task, :count) == before
+
+      # Five of those didn't lock it: four wrong codes still answer 422, the 5th locks.
+      for _ <- 1..4,
+          do:
+            assert(
+              %{"error" => "staff_code_invalid"} =
+                add(token, %{staff_code: "0000"}) |> json_response(422)
+            )
+
       assert %{"error" => "staff_code_locked"} =
                add(token, %{staff_code: "0000"}) |> json_response(429)
+
+      # Locked: even a real person's code from elsewhere gets the lock, not "can't do this here".
+      assert %{"error" => "staff_code_locked"} =
+               add(token, %{staff_code: "2222"}) |> json_response(429)
     end
 
     test "a member of two departments (floater) is accepted on either tablet", %{
@@ -317,9 +339,10 @@ defmodule RockcutApiWeb.TaskBoardDeviceTest do
   end
 
   describe "the Taproom tablet (D41 item 6)" do
-    test "uses /api/boards/bar with a Taproom member's code; Brewery's code is wrong there", %{
-      p: p
-    } do
+    test "uses /api/boards/bar with a Taproom member's code; Brewery's code can't do this there",
+         %{
+           p: p
+         } do
       {_device, token} = taproom_device()
 
       assert %{"recorded_as" => name} =
@@ -327,7 +350,8 @@ defmodule RockcutApiWeb.TaskBoardDeviceTest do
 
       assert name == p["bartender1"].name
 
-      assert %{"error" => "staff_code_invalid"} =
+      # D50 gap 1: a Brewery person's code can't do this here (was `staff_code_invalid`).
+      assert %{"error" => "staff_code_not_allowed"} =
                add(token, %{staff_code: "1111"}, "bar") |> json_response(422)
 
       assert call_device(token, :get, "/api/boards/brewery/tasks", %{from: today(), to: today()}).status ==

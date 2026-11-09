@@ -29,7 +29,8 @@ import {
   newTankFor,
   prodPath,
   rampPlan,
-  reachable,
+  linkChoices,
+  pickedLinks,
   transferOrderError,
   vesselLabel,
   vesselPhrase,
@@ -216,7 +217,8 @@ interface EntryProps {
  * D46 §3.4 Add step / Add phase start, and Edit for either. Adding a step
  * can link it in: "comes after" and "leads to" (both = slot it in between).
  * Editing shows the entry's links, each with its default answer and Remove,
- * and adds new ones; those save at once.
+ * and adds new ones: the Link button saves one at once, and (D50 §2.6) Save
+ * links whatever is picked, after the entry's own changes are saved.
  */
 export function EntryDialog({ template, types, phases, kind, entry, onClose, onDone }: EntryProps) {
   const marker = kind === 'marker'
@@ -240,6 +242,10 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const [afterAnswer, setAfterAnswer] = useState<Answer>('move_all')
   const [leads, setLeads] = useState<number | ''>('')
   const [leadsAnswer, setLeadsAnswer] = useState<Answer>('move_all')
+  // D50 §2.6: an existing entry's "Add: comes after" / "Add: leads to" picks.
+  const [linkAfter, setLinkAfter] = useState<number | ''>('')
+  const [linkLeads, setLinkLeads] = useState<number | ''>('')
+  const linkPick = entry ? linkChoices(template.steps, template.links, entry, (s) => s.day_offset) : null
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -316,6 +322,16 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       let res
       if (entry) {
         res = await api.patch<ApiResponse<Template>>(prodPath('templates', template.id, 'steps', entry.id), body)
+        // D50 §2.6: then what the link pickers hold. A refusal keeps the dialog
+        // open with the entry as saved, and says why.
+        const saved = res
+        try {
+          for (const l of pickedLinks(entry.id, linkAfter, linkLeads, linkPick!))
+            res = await api.post<ApiResponse<Template>>(prodPath('templates', template.id, 'links'), l)
+        } catch (err) {
+          onDone((res ?? saved).data.data)
+          throw err
+        }
       } else {
         if (!marker) body.step_type_id = typeId
         if (afterValue !== '') Object.assign(body, { comes_after_id: afterValue, comes_after_answer: afterAnswer })
@@ -506,6 +522,20 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           label="Show on the Brewery task list"
         />
       )}
+      {/* D50 §2.6: above Notes, so it isn't below the fold. */}
+      {entry && linkPick && (
+        <LinksEditor
+          template={template}
+          entry={entry}
+          onDone={onDone}
+          choices={linkPick}
+          after={linkAfter}
+          onAfter={setLinkAfter}
+          leads={linkLeads}
+          onLeads={setLinkLeads}
+          busy={busy}
+        />
+      )}
       <TextField
         label="Notes (copied into every batch)"
         multiline
@@ -514,32 +544,48 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
         onChange={(e) => setNotes(e.target.value)}
         slotProps={{ htmlInput: { maxLength: 2000, 'data-testid': 'entry-notes' } }}
       />
-      {entry && <LinksEditor template={template} entry={entry} onDone={onDone} />}
     </DialogShell>
   )
 }
 
-/** An entry's links in and out, each with its default answer; changes save at once. */
-function LinksEditor({ template, entry, onDone }: { template: Template; entry: TemplateStep; onDone: OnTemplate }) {
+/**
+ * An entry's links in and out, each with its default answer; changes save at
+ * once. The pickers' values are the dialog's (D50 §2.6: Save links them too);
+ * they offer only what the server takes (`linkChoices`, QA minor 1).
+ */
+function LinksEditor({
+  template,
+  entry,
+  onDone,
+  choices,
+  after: newAfter,
+  onAfter: setNewAfter,
+  leads: newLeads,
+  onLeads: setNewLeads,
+  busy: saving,
+}: {
+  template: Template
+  entry: TemplateStep
+  onDone: OnTemplate
+  choices: { after: TemplateStep[]; leads: TemplateStep[] }
+  after: number | ''
+  onAfter: (id: number | '') => void
+  leads: number | ''
+  onLeads: (id: number | '') => void
+  busy: boolean
+}) {
   const byId = new Map(template.steps.map((s) => [s.id, s]))
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [newAfter, setNewAfter] = useState<number | ''>('')
-  const [newLeads, setNewLeads] = useState<number | ''>('')
+  const [linking, setLinking] = useState(false)
+  const busy = linking || saving
   const [removing, setRemoving] = useState<(typeof template.links)[number] | null>(null)
-  const others = template.steps.filter((s) => s.id !== entry.id)
-  // QA minor 1: only links the server would take. "Comes after": the same day
-  // or earlier, not already linked, nothing that follows this entry (a loop);
-  // "Leads to": the same day or later, the same the other way round.
-  const after = new Set(template.links.filter((l) => l.to_step_id === entry.id).map((l) => l.from_step_id))
-  const leads = new Set(template.links.filter((l) => l.from_step_id === entry.id).map((l) => l.to_step_id))
-  const below = reachable(template, entry.id, 'down')
-  const above = reachable(template, entry.id, 'up')
-  const afterChoices = onOrBefore(others, entry.day_offset).filter((s) => !after.has(s.id) && !below.has(s.id))
-  const leadsChoices = onOrAfter(others, entry.day_offset).filter((s) => !leads.has(s.id) && !above.has(s.id))
+  const afterChoices = choices.after
+  const leadsChoices = choices.leads
+  const afterValue = newAfter !== '' && afterChoices.some((s) => s.id === newAfter) ? newAfter : ''
+  const leadsValue = newLeads !== '' && leadsChoices.some((s) => s.id === newLeads) ? newLeads : ''
 
   const call = async (fn: () => Promise<{ data: ApiResponse<Template> }>) => {
-    setBusy(true)
+    setLinking(true)
     setError(null)
     try {
       const res = await fn()
@@ -549,7 +595,7 @@ function LinksEditor({ template, entry, onDone }: { template: Template; entry: T
       setError(prodError(err))
       return false
     } finally {
-      setBusy(false)
+      setLinking(false)
     }
   }
 
@@ -604,14 +650,14 @@ function LinksEditor({ template, entry, onDone }: { template: Template; entry: T
       {list('Leads to (“moves with it” = the step after follows when this one moves)', template.links.filter((l) => l.from_step_id === entry.id), (l) => l.to_step_id)}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-          <StepPicker label="Add: comes after" steps={afterChoices} value={newAfter} onChange={setNewAfter} testId="link-new-after" />
-          <Button disabled={newAfter === '' || busy} onClick={async () => newAfter !== '' && (await add(newAfter, entry.id)) && setNewAfter('')} data-testid="link-new-after-add">
+          <StepPicker label="Add: comes after" steps={afterChoices} value={afterValue} onChange={setNewAfter} testId="link-new-after" />
+          <Button disabled={afterValue === '' || busy} onClick={async () => afterValue !== '' && (await add(afterValue, entry.id)) && setNewAfter('')} data-testid="link-new-after-add">
             Link
           </Button>
         </Box>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-          <StepPicker label="Add: leads to" steps={leadsChoices} value={newLeads} onChange={setNewLeads} testId="link-new-leads" />
-          <Button disabled={newLeads === '' || busy} onClick={async () => newLeads !== '' && (await add(entry.id, newLeads)) && setNewLeads('')} data-testid="link-new-leads-add">
+          <StepPicker label="Add: leads to" steps={leadsChoices} value={leadsValue} onChange={setNewLeads} testId="link-new-leads" />
+          <Button disabled={leadsValue === '' || busy} onClick={async () => leadsValue !== '' && (await add(entry.id, leadsValue)) && setNewLeads('')} data-testid="link-new-leads-add">
             Link
           </Button>
         </Box>

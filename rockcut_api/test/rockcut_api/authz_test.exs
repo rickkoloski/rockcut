@@ -325,12 +325,19 @@ defmodule RockcutApi.AuthzTest do
       refute Authz.can?(p["brewer1"], :delete_everything, :production)
     end
 
-    test "a shared device gets nothing yet, even at home in the Brewery (D49)" do
+    # D50 decision 1 (was D49's "nothing yet"): the brewhouse device reads and
+    # works the schedule, never the setup; any other device gets nothing.
+    test "a shared device: read and write at home in the Brewery, never setup (D50)" do
       departments()
-      device = device_fixture(%{name: "Brewhouse tablet", home: "brewery"})
+      brewhouse = device_fixture(%{name: "Brewhouse tablet", home: "brewery"})
+      taproom = device_fixture(%{name: "Taproom tablet", home: "bar"})
+
+      assert Authz.can?(brewhouse, :read, :production)
+      assert Authz.can?(brewhouse, :write, :production)
+      refute Authz.can?(brewhouse, :setup, :production)
 
       for action <- [:read, :write, :setup],
-          do: refute(Authz.can?(device, action, :production))
+          do: refute(Authz.can?(taproom, action, :production))
     end
   end
 end

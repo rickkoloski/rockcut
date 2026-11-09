@@ -18,9 +18,11 @@ import {
 } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
 import type { AxiosResponse } from 'axios'
-import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
+import { isActingCancelled } from '../../../lib/acting'
 import { plainBatchNumber, prodError, prodPath, SCHEDULE_KEY, type Answer } from '../../../lib/production'
+import { codedApi, type CodedApi } from '../../../lib/codedApi'
+import { actingRun } from '../../../hooks/useActing'
 import { BOARD_QUERY_KEY } from '../../../lib/tasks'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { renumberText, type Renumber } from './scheduleText'
@@ -30,6 +32,11 @@ import { FlowsContext, type StepRef } from './flowsContext'
 // schedule, says what happened with Undo for 6 seconds (plan decision 5),
 // and runs the prompts a move or check-off needs, from the server's preview
 // (decision 4): the brew-day number, then the move prompt.
+//
+// D50: on the brewhouse device each request goes through `useActing.run`, so
+// the staff-code dialog opens before the first one (a preview included) and
+// the code goes in every body while the "Acting as" window is open. Cancelling
+// the dialog is a Failure with code `cancelled` and no message.
 
 export type { Renumber }
 
@@ -76,12 +83,16 @@ const carriedText = (pre: MovePreview) => {
 const bodyOf = (err: unknown) => (err as { response?: { data?: Record<string, unknown>; status?: number } })?.response
 
 function failure(err: unknown): Failure {
+  if (isActingCancelled(err)) return { ok: false, error: '', code: 'cancelled' }
   const res = bodyOf(err)
   return { ok: false, error: prodError(err), code: res?.data?.error as string | undefined, body: res?.data }
 }
 
 // The server keeps an Undo token for 2 minutes (Undo's @ttl_seconds).
 const UNDO_TTL_MS = 120_000
+
+/** One request, with the device's staff code when it's the brewhouse device (`useActing`). */
+const coded = <T,>(call: (a: CodedApi) => Promise<T>) => actingRun((code) => call(codedApi(code)))
 
 /** The snackbar: `refused` is a refused Undo, shown until its token runs out (D49 BB1). */
 type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean; overDialog?: boolean }
@@ -119,15 +130,18 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t)
   }, [snack])
 
+  // An empty message (a cancelled staff-code dialog) shows nothing.
   const notify = useCallback(
-    (message: string, token: string | null = null) => show({ message, token, expiresAt: Date.now() + UNDO_TTL_MS }),
+    (message: string, token: string | null = null) => {
+      if (message) show({ message, token, expiresAt: Date.now() + UNDO_TTL_MS })
+    },
     [show],
   )
 
   const write = useCallback(
-    async <T,>(call: () => Promise<AxiosResponse>, message: string | ((data: T) => string)): Promise<Result<T>> => {
+    async <T,>(call: (a: CodedApi) => Promise<AxiosResponse>, message: string | ((data: T) => string)): Promise<Result<T>> => {
       try {
-        const res = await call()
+        const res = await coded(call)
         const data = (res.data?.data ?? {}) as T
         const renumbered = ((data as { renumbered?: Renumber[] }).renumbered ?? []) as Renumber[]
         const text = typeof message === 'function' ? message(data) : message
@@ -153,9 +167,10 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     async (ids: number[], days: number): Promise<Result | null> => {
       let pre: MovePreview
       try {
-        pre = (await api.post(prodPath('steps', 'move'), { ids, days, preview: true })).data.data.preview
+        pre = (await coded((a) => a.post<{ data: { preview: MovePreview } }>(prodPath('steps', 'move'), { ids, days, preview: true }))).data.data.preview
       } catch (err) {
         const f = failure(err)
+        if (f.code === 'cancelled') return null
         notify(f.error)
         return f
       }
@@ -167,7 +182,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         if (!answer) return null
       }
       const r = await write<{ out_of_order?: unknown[] }>(
-        () => api.post(prodPath('steps', 'move'), { ids, days, answer }),
+        (a) => a.post(prodPath('steps', 'move'), { ids, days, answer }),
         () => {
           const withParts = [answer === 'move_all' && plural(pre.following.length, 'following step'), carriedText(pre)].filter(Boolean)
           return withParts.length ? `${title}, with ${andList(withParts as string[])}.` : `${title}.`
@@ -183,21 +198,24 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     async (step: StepRef, doneOn: string, batchLabel: string | null): Promise<Result | null> => {
       const path = prodPath('steps', step.id, 'complete')
       let pre: CompletePreview
+      const preview = async () =>
+        (await coded((a) => a.post<{ data: { preview: CompletePreview } }>(path, { done_on: doneOn, preview: true }))).data.data.preview
       try {
-        pre = (await api.post(path, { done_on: doneOn, preview: true })).data.data.preview
+        pre = await preview()
       } catch (err) {
         const f = failure(err)
+        if (f.code === 'cancelled') return null
         // D49 §3.12b (P134): a pencilled batch is scheduled first, then the check-off goes on.
         if (f.code !== 'schedule_first' || step.batch_id == null) return f
         if (!(await askSchedule(batchLabel ?? 'This batch'))) return null
         const s = await write<{ batches: { id: number; label: string }[] }>(
-          () => api.post(prodPath('batches', step.batch_id!, 'schedule')),
+          (a) => a.post(prodPath('batches', step.batch_id!, 'schedule')),
           (d) => `${d.batches.find((b) => b.id === step.batch_id)?.label ?? 'The batch'} is scheduled.`,
         )
         if (!s.ok) return s
         batchLabel = s.data.batches.find((b) => b.id === step.batch_id)?.label ?? batchLabel
         try {
-          pre = (await api.post(path, { done_on: doneOn, preview: true })).data.data.preview
+          pre = await preview()
         } catch (again) {
           return failure(again)
         }
@@ -231,7 +249,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       }
       for (;;) {
         const r = await write<Record<string, unknown>>(
-          () => api.post(path, { done_on: doneOn, batch_number: number, answer }),
+          (a) => a.post(path, { done_on: doneOn, batch_number: number, answer }),
           () => (number ? `${doneText()}. ${batchLabel?.replace(/ P\d+$/, '') ?? 'The batch'} is #${plainBatchNumber(number)}.` : `${doneText()}.`),
         )
         if (r.ok) return r
@@ -256,17 +274,23 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const uncheck = useCallback(
     (step: StepRef) =>
-      write<{ message?: string | null }>(() => api.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`),
+      write<{ message?: string | null }>((a) => a.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`),
     [write],
   )
 
   const undo = async ({ token, expiresAt }: { token: string; expiresAt: number }) => {
     setUndoing(true)
     try {
-      await api.post(prodPath('undo', token))
+      // D50: on the device, the person whose change it was (their code; another's is refused).
+      await coded((a) => a.post(prodPath('undo', token)))
       notify('Undone.')
       await refresh()
     } catch (err) {
+      // A cancelled staff-code dialog: the Undo is still there to press.
+      if (isActingCancelled(err)) {
+        show({ message: 'Not undone.', token, expiresAt })
+        return
+      }
       // D49 BB1: a refused Undo keeps its button while the token lasts, so
       // it works once the blocker is cleared; only a token that's gone drops it.
       const code = failure(err).code

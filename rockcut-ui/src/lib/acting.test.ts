@@ -46,6 +46,11 @@ describe('staff-code responses', () => {
       message: 'Enter your staff code',
     })
     expect(staffCodeFailure(refused('staff_code_invalid'))?.error).toBe('staff_code_invalid')
+    // D50 gap 1: a real person who can't do this here, shown the same way.
+    expect(staffCodeFailure(refused('staff_code_not_allowed', "That staff code can't do this here"))).toEqual({
+      error: 'staff_code_not_allowed',
+      message: "That staff code can't do this here",
+    })
     expect(staffCodeFailure({ response: { status: 429, data: { error: 'staff_code_locked', message: 'Too many' } } })?.message).toBe(
       'Too many',
     )

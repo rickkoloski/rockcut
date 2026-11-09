@@ -167,6 +167,8 @@ export interface SchedStep {
   due_on: string
   done_on: string | null
   done_by: Person | null
+  /** D50: the shared device it was checked off on (`done_by` is the person). */
+  done_on_device?: Person | null
   assignee_id: number | null
   assignee: Person | null
   /** D48: added to the batch (not from its template). */
@@ -232,7 +234,8 @@ export interface Flag {
   /** D49 §3.12b: about a pencilled batch: shown muted, not counted, can't be signed off. */
   muted: boolean
   was_signed_off: boolean
-  signoff: { user_id: number | null; user_name: string | null; note: string | null; signed_at: string } | null
+  /** D50: `device_name` when it was signed off on a shared device. */
+  signoff: { user_id: number | null; user_name: string | null; device_name?: string | null; note: string | null; signed_at: string } | null
 }
 
 export interface Schedule {
@@ -280,6 +283,7 @@ export interface ConditionMark {
 
 export const PROD = '/api/production'
 export const prodPath = (...parts: (string | number)[]) => [PROD, ...parts].join('/')
+
 
 export const TANKS_KEY = ['production', 'tanks']
 export const PHASES_KEY = ['production', 'phases']
@@ -485,12 +489,16 @@ export function transferOrderError(t: Template, day: number | null, entry?: Temp
 export const vesselPhrase = (k: number) => (k === 0 ? 'the first tank' : `the tank after transfer ${k}`)
 
 /** Every entry reachable along links from `id` (`dir` "down" = what follows it). */
-export function reachable(t: Template, id: number, dir: 'down' | 'up'): Set<number> {
+export const reachable = (t: Template, id: number, dir: 'down' | 'up'): Set<number> => reachableIn(t.links, id, dir)
+
+type LinkEnds = { from_step_id: number; to_step_id: number }
+
+function reachableIn(links: LinkEnds[], id: number, dir: 'down' | 'up'): Set<number> {
   const seen = new Set<number>()
   const todo = [id]
   while (todo.length) {
     const at = todo.pop()!
-    for (const l of t.links) {
+    for (const l of links) {
       const [from, to] = dir === 'down' ? [l.from_step_id, l.to_step_id] : [l.to_step_id, l.from_step_id]
       if (from === at && !seen.has(to)) {
         seen.add(to)
@@ -499,6 +507,48 @@ export function reachable(t: Template, id: number, dir: 'down' | 'up'): Set<numb
     }
   }
   return seen
+}
+
+/**
+ * The Links pickers' choices for `entry` (a template's entries, or since D50
+ * §2.7 a batch's steps): only links the API takes (QA minor 1). "Comes
+ * after": the same day or earlier, not already linked, nothing that follows
+ * `entry` (a loop). "Leads to": the same day or later, never Brew day, the
+ * same the other way round. `dayOf` is a day offset or an ISO date.
+ */
+export function linkChoices<S extends { id: number; behavior: Behavior | null }>(
+  steps: S[],
+  links: LinkEnds[],
+  entry: S,
+  dayOf: (s: S) => number | string,
+): { after: S[]; leads: S[] } {
+  const day = dayOf(entry)
+  const others = steps.filter((s) => s.id !== entry.id)
+  const linkedAfter = new Set(links.filter((l) => l.to_step_id === entry.id).map((l) => l.from_step_id))
+  const linkedLeads = new Set(links.filter((l) => l.from_step_id === entry.id).map((l) => l.to_step_id))
+  const below = reachableIn(links, entry.id, 'down')
+  const above = reachableIn(links, entry.id, 'up')
+  return {
+    after: others.filter((s) => dayOf(s) <= day && !linkedAfter.has(s.id) && !below.has(s.id)),
+    leads: others.filter((s) => s.behavior !== 'brew' && dayOf(s) >= day && !linkedLeads.has(s.id) && !above.has(s.id)),
+  }
+}
+
+/**
+ * D50 §2.6: the links a dialog's "Add: comes after" / "Add: leads to"
+ * pickers hold, as `{ from_step_id, to_step_id }` (what Save links). A pick
+ * that's no longer offered (`choices`) is dropped.
+ */
+export function pickedLinks(
+  entryId: number,
+  after: number | '',
+  leads: number | '',
+  choices: { after: { id: number }[]; leads: { id: number }[] },
+): LinkEnds[] {
+  const out: LinkEnds[] = []
+  if (after !== '' && choices.after.some((s) => s.id === after)) out.push({ from_step_id: after, to_step_id: entryId })
+  if (leads !== '' && choices.leads.some((s) => s.id === leads)) out.push({ from_step_id: entryId, to_step_id: leads })
+  return out
 }
 
 /**

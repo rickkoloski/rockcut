@@ -36,9 +36,10 @@ defmodule RockcutApiWeb.TaskBoardController do
   title or repeat change, Future, `stop_repeating` and the series read are
   422 `linked_task`. Move and complete take `preview: true`. Responses
   carry the production `undo_token` (`POST /api/production/undo/:token`)
-  and the write's `result` (`renumbered`, `out_of_order`, `message`). A
-  shared tablet gets 403 `linked_task_device` on every one (decision 8,
-  until D50), with a staff code or without.
+  and the write's `result` (`renumbered`, `out_of_order`, `message`). D50
+  §2.5: the brewhouse device makes them as on the Gantt, with a staff code
+  and as that person (`StaffCodeActing` on `:production`, the same
+  wrong-code counter as the board's), answering `recorded_as`.
 
   `GET …/tasks?linked=true`: only the linked tasks (the Gantt's Task list).
   """
@@ -251,19 +252,17 @@ defmodule RockcutApiWeb.TaskBoardController do
   defp not_linked(%Task{} = task),
     do: if(Task.linked?(task), do: {:error, :linked_task}, else: :ok)
 
-  # The board's write access first (another board's tablet: 403), then a
-  # shared tablet is refused whatever it sends (decision 8), then
-  # Production's. `fun.(person, task, step)` returns `{:ok, {result, token}}`,
+  # The board's write access first (another board's tablet: 403), then
+  # Production's: the signed-in person, or on the brewhouse device the person
+  # whose staff code came with it (D50, `on_device_id` set).
+  # `fun.(person, task, step)` returns `{:ok, {result, token}}`,
   # `{:preview, preview}`, `{:board, conn}` or an error.
   defp linked_write(conn, %Task{} = task, fun) do
-    person = current_user(conn)
-
     with :ok <- allow(conn, :write),
-         :ok <- if(Authz.device?(person), do: {:error, :linked_task_device}, else: :ok),
-         :ok <- if(Authz.can?(person, :write, :production), do: :ok, else: {:error, :forbidden}),
+         {:ok, person} <- StaffCodeActing.actor(conn, :production),
          %Step{} = step <- Repo.get(Step, task.production_step_id) || {:error, :not_found} do
       case fun.(person, task, step) do
-        {:ok, {result, token}} -> render_linked(conn, task, result, token)
+        {:ok, {result, token}} -> render_linked(conn, task, result, token, person)
         {:preview, preview} -> json(conn, %{data: %{preview: preview}})
         {:board, %Plug.Conn{} = conn} -> conn
         other -> other
@@ -411,23 +410,21 @@ defmodule RockcutApiWeb.TaskBoardController do
 
   # The task as the write left it (`data`: nil once it's gone), the write's
   # `result` and its Undo token.
-  defp render_linked(conn, %Task{id: id}, result, token) do
+  defp render_linked(conn, %Task{id: id}, result, token, person) do
     task =
       case result do
         %{task: %Task{} = t} -> t
         _ -> Repo.get(Task, id)
       end
 
-    json(
+    reply(
       conn,
-      for_viewer(
-        %{
-          data: task && task |> Tasks.with_names() |> task(),
-          result: Map.take(result, [:renumbered, :out_of_order, :message]),
-          undo_token: token
-        },
-        current_user(conn)
-      )
+      %{
+        data: task && task |> Tasks.with_names() |> task(),
+        result: Map.take(result, [:renumbered, :out_of_order, :message]),
+        undo_token: token
+      },
+      person
     )
   end
 

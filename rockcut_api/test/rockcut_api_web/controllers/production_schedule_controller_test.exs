@@ -248,7 +248,7 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
     end
   end
 
-  test "undo over HTTP: a move back, 409 when stale, 404 for someone else; CIPs, sign-offs, outages",
+  test "undo over HTTP: a move back, 409 when stale, 403 for someone else; CIPs, sign-offs, outages",
        ctx do
     b = ctx["brewer1"]
     [batch] = body(plan(b, ctx))["data"]["batches"]
@@ -264,7 +264,16 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
 
     token = moved["undo_token"]
     assert is_binary(token)
-    assert call(ctx["brewer2"], :post, "/api/production/undo/#{token}").status == 404
+    # D50 decision 3 (was 404): someone else's change is theirs to undo.
+    other = call(ctx["brewer2"], :post, "/api/production/undo/#{token}")
+    assert other.status == 403
+
+    assert body(other) == %{
+             "error" => "undo_not_yours",
+             "message" => "Only #{hd(String.split(b.name))} can undo this."
+           }
+
+    assert call(b, :post, "/api/production/undo/nope").status == 404
 
     undone = call(b, :post, "/api/production/undo/#{token}")
     assert undone.status == 200

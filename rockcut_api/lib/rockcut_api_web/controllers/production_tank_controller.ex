@@ -2,15 +2,16 @@ defmodule RockcutApiWeb.ProductionTankController do
   @moduledoc """
   D46 §3.2: tanks (`:setup` on `:production`) and their out-of-service
   periods (`:write`, a schedule change). Reads are `:read`. Lists carry
-  `today` (Colorado) and each period's `state` for it.
+  `today` (Colorado) and each period's `state` for it. D50: the brewhouse
+  device reads tanks and changes periods (with a staff code), never tanks.
   """
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [production_tank: 2, tank_outage: 2]
+  import RockcutApiWeb.JSONHelpers, only: [production_tank: 2, tank_outage: 2, for_viewer: 2]
 
   alias RockcutApi.{Authz, Production, Tasks}
   alias RockcutApi.Production.Undo
-  alias RockcutApiWeb.ProductionErrors
+  alias RockcutApiWeb.{ProductionErrors, StaffCodeActing}
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -73,7 +74,7 @@ defmodule RockcutApiWeb.ProductionTankController do
   period. Answers the tank.
   """
   def create_outage(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, tank} <- fetch(&Production.get_tank/1, id),
          {:ok, {outage, token}} <-
            Undo.track(
@@ -88,7 +89,7 @@ defmodule RockcutApiWeb.ProductionTankController do
   end
 
   def update_outage(conn, %{"id" => id} = params) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, outage} <- fetch(&Production.get_outage/1, id),
          {:ok, {outage, token}} <-
            Undo.track(actor(conn), %{outages: [outage.id]}, fn ->
@@ -100,7 +101,7 @@ defmodule RockcutApiWeb.ProductionTankController do
   end
 
   def delete_outage(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, outage} <- fetch(&Production.get_outage/1, id),
          {:ok, {:deleted, token}} <-
            Undo.track(actor(conn), %{outages: [outage.id]}, fn ->
@@ -116,7 +117,7 @@ defmodule RockcutApiWeb.ProductionTankController do
   period ends yesterday, or goes if it started today). Answers the tank.
   """
   def end_outage_today(conn, %{"id" => id}) do
-    with :ok <- allow(conn, :write),
+    with {:ok, conn} <- writer(conn),
          {:ok, outage} <- fetch(&Production.get_outage/1, id),
          {:ok, {_, token}} <-
            Undo.track(actor(conn), %{outages: [outage.id]}, fn ->
@@ -129,17 +130,17 @@ defmodule RockcutApiWeb.ProductionTankController do
 
   defp render_tanks(conn, tanks) do
     today = Tasks.today()
-    json(conn, %{data: Enum.map(tanks, &production_tank(&1, today)), today: today})
+    reply(conn, %{data: Enum.map(tanks, &production_tank(&1, today)), today: today})
   end
 
   # `undo_token` (D47): the write can be undone for 2 minutes.
   defp render_tank(conn, tank, token \\ nil),
-    do: json(conn, %{data: production_tank(tank, Tasks.today()), undo_token: token})
+    do: reply(conn, %{data: production_tank(tank, Tasks.today()), undo_token: token})
 
   defp render_outage(conn, outage, token) do
     today = Tasks.today()
 
-    json(conn, %{
+    reply(conn, %{
       data: tank_outage(outage, today),
       tank: production_tank(Production.get_tank(outage.tank_id), today),
       undo_token: token
@@ -147,7 +148,16 @@ defmodule RockcutApiWeb.ProductionTankController do
   end
 
   defp allow(conn, action) do
-    if Authz.can?(actor(conn), action, :production), do: :ok, else: {:error, :forbidden}
+    if Authz.can?(conn.assigns.current_user, action, :production),
+      do: :ok,
+      else: {:error, :forbidden}
+  end
+
+  # D50: an out-of-service period is a schedule change, so the brewhouse
+  # device makes it with a staff code, as that person (`StaffCodeActing`).
+  defp writer(conn) do
+    with {:ok, actor} <- StaffCodeActing.actor(conn, :production),
+         do: {:ok, assign(conn, :actor, actor)}
   end
 
   defp fetch(get, id) do
@@ -157,5 +167,16 @@ defmodule RockcutApiWeb.ProductionTankController do
     end
   end
 
-  defp actor(conn), do: conn.assigns.current_user
+  defp actor(conn), do: conn.assigns.actor
+
+  # As the viewer may see it, with D40's `recorded_as` on a device write.
+  defp reply(conn, body) do
+    body =
+      case conn.assigns[:actor] do
+        %{on_device_id: id, name: name} when not is_nil(id) -> Map.put(body, :recorded_as, name)
+        _ -> body
+      end
+
+    json(conn, for_viewer(body, conn.assigns.current_user))
+  end
 end

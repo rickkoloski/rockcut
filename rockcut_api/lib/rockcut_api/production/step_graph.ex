@@ -44,6 +44,19 @@ defmodule RockcutApi.Production.StepGraph do
       day: :due_on
     }
 
+  @doc """
+  A split's steps and links: its parent and every part (D50 §2.7, a step
+  links only within its own tree). A batch that isn't split is `batch/1`.
+  """
+  def tree(batch_ids) when is_list(batch_ids),
+    do: %__MODULE__{
+      step: Step,
+      link: StepLink,
+      owner: :batch_id,
+      owner_id: batch_ids,
+      day: :due_on
+    }
+
   @doc "One of the graph's entries by id (`:not_found` otherwise)."
   def entry!(%__MODULE__{} = g, id) do
     case to_int(id) do
@@ -51,8 +64,7 @@ defmodule RockcutApi.Production.StepGraph do
         Repo.rollback(:not_found)
 
       id ->
-        Repo.one(from(s in g.step, where: s.id == ^id and field(s, ^g.owner) == ^g.owner_id)) ||
-          Repo.rollback(:not_found)
+        Repo.one(from(s in owned(g), where: s.id == ^id)) || Repo.rollback(:not_found)
     end
   end
 
@@ -143,7 +155,7 @@ defmodule RockcutApi.Production.StepGraph do
 
   @doc "Whether `target` can be reached from `start` along the graph's links."
   def reachable?(%__MODULE__{} = g, start, target) do
-    ids = from(s in g.step, where: field(s, ^g.owner) == ^g.owner_id, select: s.id)
+    ids = from(s in owned(g), select: s.id)
 
     edges =
       Repo.all(
@@ -165,6 +177,12 @@ defmodule RockcutApi.Production.StepGraph do
       do: walk(rest, seen, edges, target),
       else: walk(Map.get(edges, id, []) ++ rest, MapSet.put(seen, id), edges, target)
   end
+
+  defp owned(%__MODULE__{owner_id: ids} = g) when is_list(ids),
+    do: from(s in g.step, where: field(s, ^g.owner) in ^ids)
+
+  defp owned(%__MODULE__{} = g),
+    do: from(s in g.step, where: field(s, ^g.owner) == ^g.owner_id)
 
   defp link_owner(%__MODULE__{link: TemplateLink, owner_id: tid}), do: %{template_id: tid}
   defp link_owner(%__MODULE__{}), do: %{}

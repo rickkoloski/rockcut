@@ -82,7 +82,7 @@ defmodule RockcutApi.Production.Schedule do
           from(s in Step,
             where: is_nil(s.batch_id) and (s.due_on >= ^since or is_nil(s.done_on)),
             order_by: [s.due_on, s.id],
-            preload: [:step_type, :phase, :assignee, :done_by]
+            preload: [:step_type, :phase, :assignee, :done_by, :done_on_device]
           )
         )
 
@@ -182,7 +182,7 @@ defmodule RockcutApi.Production.Schedule do
         from(s in Step,
           where: s.batch_id in ^ids,
           order_by: [s.due_on, s.position, s.id],
-          preload: [:step_type, :phase, :assignee, :done_by]
+          preload: [:step_type, :phase, :assignee, :done_by, :done_on_device]
         )
       )
       |> Enum.group_by(& &1.batch_id)

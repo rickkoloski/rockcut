@@ -432,8 +432,15 @@ test.describe('as brewer1', () => {
       await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'vertical')
       await expect(page.getByTestId(`day-${mon}`)).toBeAttached()
       await expect.poll(async () => (await shownDays(page))[0]).toBe(mon)
-      await expect(page.getByTestId(`day-${today()}`)).toBeInViewport()
-      if (mon < today()) await expect(page.getByTestId(`day-${mon}`)).not.toBeInViewport()
+      if (mon < today()) {
+        await expect(page.getByTestId(`day-${today()}`)).toBeInViewport()
+        await expect(page.getByTestId(`day-${mon}`)).not.toBeInViewport()
+      } else {
+        // On a Monday, today is the first day: the board opens at the top, the
+        // Unfinished card (if any) first, so a long one can push today below
+        // the fold (D42 §2.9 scrolls only for a range that starts before today).
+        await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+      }
 
       await page.getByTestId('board-view-day').click()
       await expect(page.getByTestId(`phone-stop-${today()}`)).toHaveAttribute('aria-selected', 'true')

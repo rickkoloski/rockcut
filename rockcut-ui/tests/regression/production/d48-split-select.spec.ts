@@ -255,6 +255,8 @@ test('P115, P114, P117: Mark dirty, a fill flags it; Mark clean with a note clea
   // P117: Remove it from History: back to dirty; Undo brings it back.
   await page.getByTestId(`gantt-tank-menu-${tank.id}`).click()
   await page.getByTestId(`tank-panel-mark-remove-${clean.id}`).click()
+  // D50 gap 4: it asks first.
+  await page.getByTestId('mark-remove-confirm').getByRole('button', { name: 'Remove', exact: true }).click()
   await expect(status).toHaveText('Empty · dirty 1 day · no CIP planned')
   // Close, not Escape: Escape also dismisses the message with Undo.
   await page.getByTestId('tank-panel').getByRole('button', { name: 'Close' }).click()

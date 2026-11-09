@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { FormControl, FormControlLabel, FormLabel, Radio, RadioGroup, Switch } from '@mui/material'
 import FormDialog from '../../../components/FormDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
-import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
 import { CIP_METHODS, prodPath, type CipMethod, type Tank } from '../../../lib/production'
 import TankSelect from './TankSelect'
@@ -32,7 +31,7 @@ export default function CipAddDialog({ tanks, initialTankId, initialDay, today, 
     const tank = tanks.find((t) => t.id === tankId)?.name ?? 'the tank'
     const name = CIP_METHODS.find((m) => m.key === method)!.label
     const r = await flows.write(
-      () => api.post(prodPath('cips'), { tank_id: tankId, due_on: day, already_done: done, cip_method: method }),
+      (a) => a.post(prodPath('cips'), { tank_id: tankId, due_on: day, already_done: done, cip_method: method }),
       done ? `${name} recorded in ${tank}.` : `${name} added in ${tank} on ${dayLabel(day)}.`,
     )
     setBusy(false)
