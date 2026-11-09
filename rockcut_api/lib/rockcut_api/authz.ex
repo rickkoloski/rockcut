@@ -429,8 +429,8 @@ defmodule RockcutApi.Authz do
   # D46 production scheduling (spec §3.13): Brewery members of any role read
   # the setup and the schedule, work the schedule (`:write`: out-of-service
   # periods now, batches from D47) and change the setup (`:setup`: tanks,
-  # phases, step types, templates). Owners pass above; the brewhouse tablet
-  # is `Authz.Device`'s (D49; nothing yet).
+  # phases, step types, templates). Owners pass above; the brewhouse device
+  # is `Authz.Device`'s (D50: read and write, never setup).
   def can?(%User{} = user, action, :production) when action in [:read, :write, :setup],
     do: member_of?(user, "brewery")
 

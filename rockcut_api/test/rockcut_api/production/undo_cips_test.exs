@@ -143,7 +143,9 @@ defmodule RockcutApi.Production.UndoCipsTest do
       {:ok, {_, token}} =
         Undo.track(b, %{batches: [batch.id]}, fn -> Steps.update(fdh, %{"notes" => "One"}) end)
 
-      assert {:error, :not_found} = Undo.undo(o, token)
+      # D50 decision 3: someone else's change names its author (was :not_found).
+      assert {:error, {:undo_not_yours, first}} = Undo.undo(o, token)
+      assert first == b.name |> String.split() |> hd()
       assert {:error, :undo_expired} = Undo.undo(b, token, DateTime.add(DateTime.utc_now(), 121))
 
       {:ok, _} = Steps.update(step_of(batch, "FDH"), %{"notes" => "Two"})

@@ -26,8 +26,6 @@ interface Props {
   canMoveDown: boolean
   /** Phone width: a sheet from the bottom of the screen instead of a menu by the card. */
   sheet?: boolean
-  /** D49: a linked task on a shared tablet: the header and why, no actions (until D50). */
-  linkedReadOnly?: boolean
   /** D52: the series' last occurrence, for someone who can edit the series: "Extend series…". */
   canExtend?: boolean
   onClose: () => void
@@ -42,7 +40,7 @@ interface Props {
  * the sheet (DEV pass 2, B). D39: an occurrence of a recurring task adds
  * Edit series… and Stop repeating (not on the last one once it has stopped).
  */
-export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, linkedReadOnly, canExtend, onClose, onAction }: Props) {
+export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, canExtend, onClose, onAction }: Props) {
   const pick = (action: TaskAction) => () => {
     onClose()
     onAction(action)
@@ -134,25 +132,7 @@ export default function TaskMenu({ anchor, card, canMoveUp, canMoveDown, sheet, 
       <ListItemText>Delete</ListItemText>
     </MenuItem>,
   ]
-  const items = linkedReadOnly
-    ? [
-        ...header,
-        // D49 QA 5: the notes, which the tablet has nowhere else to read.
-        card.notes && (
-          <Typography
-            key="linked-notes"
-            variant="body2"
-            sx={{ px: 2, pb: 1, maxWidth: 280, whiteSpace: 'pre-wrap', overflowWrap: 'break-word' }}
-            data-testid="task-menu-notes-text"
-          >
-            {card.notes}
-          </Typography>
-        ),
-        <Typography key="linked-device" variant="body2" color="text.secondary" sx={{ px: 2, pb: 1, maxWidth: 280 }} data-testid="task-menu-linked-device">
-          From the production schedule. Do this on the production schedule.
-        </Typography>,
-      ]
-    : [...header, ...actions]
+  const items = [...header, ...actions]
 
   if (sheet)
     return (

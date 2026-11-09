@@ -108,6 +108,17 @@ export interface Part {
 
 const order = (a: SchedStep, b: SchedStep) => a.due_on.localeCompare(b.due_on) || a.position - b.position || a.id - b.id
 
+/**
+ * D50 §2.7: a batch and, when it's split, its parent and every part (in the
+ * schedule loaded); [] for a standalone step.
+ */
+export function splitTree(batches: SchedBatch[], batchId: number | null): SchedBatch[] {
+  const batch = batchId == null ? undefined : batches.find((b) => b.id === batchId)
+  if (!batch) return []
+  const root = batch.split_parent_id ?? batch.id
+  return batches.filter((b) => b.id === root || b.split_parent_id === root)
+}
+
 export function firstBrew(steps: SchedStep[]): SchedStep | null {
   return steps.filter((s) => s.behavior === 'brew').sort((a, b) => a.id - b.id)[0] ?? null
 }

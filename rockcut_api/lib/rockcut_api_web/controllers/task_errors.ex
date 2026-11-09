@@ -35,7 +35,7 @@ defmodule RockcutApiWeb.TaskErrors do
 
   @doc "D49: whether `handle/2` answers `{:error, code}` itself (not a staff-code error)."
   def known?(code),
-    do: is_map_key(@messages, code) or code in [:linked_task, :linked_task_device, :deleted]
+    do: is_map_key(@messages, code) or code in [:linked_task, :deleted]
 
   @doc """
   Pass a conn through; turn `{:error, reason}` into a response. A changeset
@@ -55,12 +55,6 @@ defmodule RockcutApiWeb.TaskErrors do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: "linked_task", message: "This task comes from the production schedule."})
-  end
-
-  def handle({:error, :linked_task_device}, conn) do
-    conn
-    |> put_status(:forbidden)
-    |> json(%{error: "linked_task_device", message: "Do this on the production schedule."})
   end
 
   def handle({:error, :deleted}, conn),

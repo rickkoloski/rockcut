@@ -13,6 +13,8 @@ defmodule RockcutApi.Production.FlagSignoff do
     field :signed_at, :utc_datetime
 
     belongs_to :user, RockcutApi.Accounts.User
+    # D50: the shared device it was signed off on (`user` is the person).
+    belongs_to :device, RockcutApi.Accounts.User
 
     timestamps(type: :utc_datetime)
   end

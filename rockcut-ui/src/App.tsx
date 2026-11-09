@@ -160,8 +160,10 @@ const TAPROOM_PAGES: NavLeaf[] = [
   { label: 'Buy-a-Beer Board', path: '/taproom/beer-board', icon: <GiftMugIcon /> },
 ]
 
-// D40: the department pages a shared tablet can open (its Tasks board is the top-level Tasks).
-const DEVICE_PAGES = ['/taproom/beer-board']
+// D40: the department pages a shared tablet can open (its Tasks board is the
+// top-level Tasks). D50: the brewhouse device's Production; only a device at
+// home in the Brewery has the Brewery heading at all.
+const DEVICE_PAGES = ['/taproom/beer-board', '/brewery/production']
 
 const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavLeaf[] }> = {
   bar: { label: 'Taproom', icon: <SportsBarOutlinedIcon />, children: TAPROOM_PAGES },
@@ -399,7 +401,7 @@ function App() {
       label,
       icon: meta.icon,
       // D40: a shared tablet lists only the pages it can open (the Taproom's
-      // Buy-a-Beer Board); the Brewery's pages are people-only.
+      // Buy-a-Beer Board; D50: the Brewery's Production).
       children: isDevice ? meta.children.filter((c) => DEVICE_PAGES.includes(c.path)) : meta.children,
       emptyLabel: 'Coming soon',
     }))
@@ -852,7 +854,7 @@ function App() {
           </Toolbar>
         </AppBar>
 
-        {/* D40: the task board's staff-code dialog (the "Acting as" banner is the board's own). */}
+        {/* D40: the staff-code dialog (the task board's and, D50, the schedule's; each shows its own "Acting as" banner). */}
         {isDevice && <ActingCodeDialog />}
 
         <Box component="main" sx={{ flexGrow: 1, p: 3 }}>
@@ -884,6 +886,16 @@ function App() {
               <Route path="/messages" element={<Messages />} />
               <Route path="/messages/:key" element={<Messages />} />
               {hasTaproom && <Route path="/taproom/beer-board" element={<BeerBoard />} />}
+              {/* D50: the brewhouse device works the schedule; its setup pages are read-only. */}
+              {capabilities.home_department === 'brewery' && (
+                <>
+                  <Route path="/brewery/production" element={<GanttPage />} />
+                  <Route path="/brewery/production/tanks" element={<TanksPage />} />
+                  <Route path="/brewery/production/lists" element={<ListsPage />} />
+                  <Route path="/brewery/production/templates" element={<TemplatesPage />} />
+                  <Route path="/brewery/production/templates/:id" element={<TemplateEditor />} />
+                </>
+              )}
               {/* D40: its home board only (/api/me lists just that one; any other goes there). */}
               <Route path="/tasks" element={<TasksIndex />} />
               <Route path="/tasks/:dept" element={<TaskBoardPage />} />

@@ -87,8 +87,9 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
   // History and Edit Daily items (the department's managers and owners, never a device).
   const isDevice = user?.kind === 'device'
   const canManage = boardEntry.manage && !isDevice
-  // D49: "Show planned batches", per person on the server (a tablet has none of its own).
-  const showPlanned = useAuth((s) => s.showPlannedBatches) || isDevice
+  // D49: "Show planned batches", per person on the server; D50: a tablet's own
+  // (Shared devices), from the same `/api/me` field.
+  const showPlanned = useAuth((s) => s.showPlannedBatches)
   const setShowPlanned = useAuth((s) => s.setShowPlannedBatches)
   // Who a change shows as at once: the person, or on a tablet who it's acting as.
   const actingName = useActing((s) => s.session?.name ?? null)
@@ -155,13 +156,13 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
     return { cards, source }
   }, [board, filter, hideCompleted, user?.id, showPlanned])
 
-  // D49: a linked task can't be dragged on a tablet (read-only until D50), nor once it's done (its step is).
+  // D49: a linked task can't be dragged once it's done (its step is). D50: a tablet drags it as anyone does.
   const isLocked = useCallback(
     (key: string) => {
       const card = cards.get(key)
-      return !!card && (card.locked || (!!card.production && (isDevice || card.done)))
+      return !!card && (card.locked || (!!card.production && card.done))
     },
-    [cards, isDevice],
+    [cards],
   )
   // Finished on a day away from their planned one: the server lists them after the day's own tasks.
   const staysLast = useCallback((key: string) => {
@@ -438,7 +439,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
   /** D49: off the task list (200 with the schedule's Undo); the step stays. */
   const takeOffList = async (card: TaskCardData) => {
     setBusy(true)
-    const r = await flows.write(() => api.delete(boardPath(dept, 'tasks', card.id)), `"${card.title}" is off the task list. It stays on the production schedule.`)
+    const r = await flows.write((a) => a.delete(boardPath(dept, 'tasks', card.id)), `"${card.title}" is off the task list. It stays on the production schedule.`)
     setBusy(false)
     if (!r.ok) return flows.notify(r.error)
     setDeleting(null)
@@ -609,12 +610,11 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
                 overlay={state.overlay}
                 dragging={state.dragging}
                 showDate={card.day === UNFINISHED}
-                noCheck={isDevice && !!card.production}
                 locked={state.locked}
                 onToggle={toggle}
                 onOpen={(c, anchor) => setMenu({ key: c.key, anchor })}
-                // As the menu's Edit notes; a tablet can't edit a linked step's task (D49).
-                onNotes={isDevice && card.production ? undefined : (c) => setDialog({ mode: { kind: 'edit', card: c, focusNotes: true }, n: Date.now() })}
+                // As the menu's Edit notes.
+                onNotes={(c) => setDialog({ mode: { kind: 'edit', card: c, focusNotes: true }, n: Date.now() })}
               />
             ) : null
           }}
@@ -631,7 +631,6 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
           canMoveUp={menuOwn.indexOf(menuCard.key) > 0}
           canMoveDown={menuOwn.indexOf(menuCard.key) > -1 && menuOwn.indexOf(menuCard.key) < menuOwn.length - 1}
           sheet={phone}
-          linkedReadOnly={isDevice && !!menuCard.production}
           canExtend={canExtend(menuCard)}
           onClose={() => setMenu(null)}
           onAction={onAction}

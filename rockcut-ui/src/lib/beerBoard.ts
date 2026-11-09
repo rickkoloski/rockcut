@@ -29,7 +29,8 @@ export function matchesSearch(entry: BeerBoardEntry, q: string): boolean {
   )
 }
 
-const STAFF_CODE_ERRORS = ['staff_code_required', 'staff_code_invalid', 'staff_code_locked']
+// D50 gap 1: `staff_code_not_allowed` (a real person from another department) too.
+const STAFF_CODE_ERRORS = ['staff_code_required', 'staff_code_invalid', 'staff_code_not_allowed', 'staff_code_locked']
 
 /**
  * A failed board write as the dialogs show it: staff-code problems go under

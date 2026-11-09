@@ -653,7 +653,8 @@ defmodule RockcutApiWeb.JSONHelpers do
 
   @doc """
   A batch step or a standalone CIP (`batch_steps`: the batch's steps, to
-  mark its first Brew day). Needs type, phase, assignee and done-by loaded.
+  mark its first Brew day). Needs type, phase, assignee, done-by and (D50)
+  done-on-device loaded.
   """
   def production_step(s, batch_steps) do
     type = s.step_type
@@ -682,6 +683,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       due_on: s.due_on,
       done_on: s.done_on,
       done_by: s.done_by && %{id: s.done_by.id, name: s.done_by.name},
+      # D50: "· on Brewhouse" when it was checked off on a shared device.
+      done_on_device: s.done_on_device && %{id: s.done_on_device.id, name: s.done_on_device.name},
       assignee_id: s.assignee_id,
       assignee: s.assignee && %{id: s.assignee.id, name: s.assignee.name},
       added: s.added,
@@ -720,6 +723,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: d.name,
       active: d.active,
       color_mode: d.color_mode,
+      # D50: the device's own "Show planned batches" (the board and the Gantt).
+      show_planned_batches: d.show_planned_batches,
       home_department_id: d.home_department_id,
       home_department: maybe_render(d, :home_department, &department/1),
       tokens: maybe_render(d, :device_tokens, &Enum.map(&1, fn t -> device_token(t) end)),

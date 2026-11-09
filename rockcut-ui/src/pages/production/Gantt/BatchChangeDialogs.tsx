@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { Box, Button, FormControlLabel, MenuItem, Switch, TextField, Typography } from '@mui/material'
-import api from '../../../lib/api'
 import { dayLabel } from '../../../lib/gantt'
 import { addDaysKey } from '../../../lib/datetime'
 import {
@@ -217,7 +216,7 @@ export function AddStepDialog({ batch, types, tanks, brewers, today, onClose }: 
     if (vessel !== '') body.vessel_index = vessel
     if (type?.behavior === 'set_temp') body.temperature = Number(temperature)
     if (type?.behavior === 'package') body.package_partial = partial
-    const r = await flows.write<Written>(() => api.post(prodPath('batches', batch.id, 'steps'), body), (d) => `${newNames(d)[0] ?? 'Step'} added to ${batch.label}.`)
+    const r = await flows.write<Written>((a) => a.post(prodPath('batches', batch.id, 'steps'), body), (d) => `${newNames(d)[0] ?? 'Step'} added to ${batch.label}.`)
     setBusy(false)
     if (r.ok) return onClose()
     const f = fieldError(r.body)
@@ -353,7 +352,7 @@ export function AddRampDialog({ batch, phases, tanks, today, onClose }: { batch:
       ...linkBody(links),
     }
     if (vessel !== '') body.vessel_index = vessel
-    const r = await flows.write<Written>(() => api.post(prodPath('batches', batch.id, 'ramp'), body), `Ramp added to ${batch.label}: ${temps.map((t) => `${t}°`).join(', ')}.`)
+    const r = await flows.write<Written>((a) => a.post(prodPath('batches', batch.id, 'ramp'), body), `Ramp added to ${batch.label}: ${temps.map((t) => `${t}°`).join(', ')}.`)
     setBusy(false)
     if (r.ok) onClose()
     else setError(r.error)
@@ -417,7 +416,7 @@ export function ChangeRampDialog({ step, batch, onClose, onDone }: { step: Sched
     setBusy(true)
     setError(null)
     const r = await flows.write(
-      () => api.post(prodPath('steps', step.id, 'ramp'), { target: Number(target), change_per_day: Number(change) }),
+      (a) => a.post(prodPath('steps', step.id, 'ramp'), { target: Number(target), change_per_day: Number(change) }),
       `Ramp changed: ${temps.map((t) => `${t}°`).join(', ')}.`,
     )
     setBusy(false)
@@ -479,7 +478,7 @@ export function AddTransferDialog({ batch, types, tanks, today, onClose }: { bat
     setBusy(true)
     setError(null)
     const r = await flows.write<Written>(
-      () => api.post(prodPath('batches', batch.id, 'transfers'), { step_type_id: typeId === '' ? null : typeId, due_on: day, tank_id: tankId }),
+      (a) => a.post(prodPath('batches', batch.id, 'transfers'), { step_type_id: typeId === '' ? null : typeId, due_on: day, tank_id: tankId }),
       (d) => `${kind} on ${dayLabel(day)}: ${plural(d.moved ?? 0, 'step')} of ${batch.label} move to ${tankName}; ${vesselName(batch, tanks, k)} gets a CIP & Sanitize that day.`,
     )
     setBusy(false)
@@ -560,7 +559,7 @@ export function SplitDialog({ batch, tanks, today, onClose }: { batch: SchedBatc
       parts: parts.map((p) => ({ stays: p.tank === 'stay', tank_id: p.tank === 'stay' ? null : p.tank, volume_bbl: Number(p.volume) })),
     }
     const r = await flows.write<{ batches?: SchedBatch[]; part_ids?: number[] }>(
-      () => api.post(prodPath('batches', batch.id, 'split'), body),
+      (a) => a.post(prodPath('batches', batch.id, 'split'), body),
       (d) => {
         const label = (id: number) => d.batches?.find((b) => b.id === id)?.label ?? 'A part'
         const each = (d.part_ids ?? []).map((id, i) => `${label(id)} (${Number(parts[i].volume)} bbl) ${parts[i].tank === 'stay' ? `stays in ${here}` : `→ ${tankName(parts[i])}`}`)

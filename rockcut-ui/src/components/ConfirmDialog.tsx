@@ -23,14 +23,16 @@ interface ConfirmDialogProps {
   children?: React.ReactNode
   /** Still finding out what confirming would do: the confirm button waits, with a spinner (Cancel still works). */
   pending?: boolean
+  /** The dialog's `data-testid`. */
+  testId?: string
 }
 
 export default function ConfirmDialog({
   open, onClose, onConfirm, title, message, loading,
-  confirmLabel = 'Delete', confirmColor = 'error', cancelLabel = 'Cancel', children, pending,
+  confirmLabel = 'Delete', confirmColor = 'error', cancelLabel = 'Cancel', children, pending, testId,
 }: ConfirmDialogProps) {
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth data-testid={testId}>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         <DialogContentText>{message}</DialogContentText>

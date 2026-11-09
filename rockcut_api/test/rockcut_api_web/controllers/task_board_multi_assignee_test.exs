@@ -483,18 +483,33 @@ defmodule RockcutApiWeb.TaskBoardMultiAssigneeTest do
       assert Assignees.ids(task) == []
     end
 
-    test "a tablet is refused, whatever it sends", %{p: p, task: task} do
+    # D50 §2.5 (was "a tablet is refused, whatever it sends"): with a code,
+    # one person as on a person's board; several are still refused.
+    test "a tablet with a code sets one person; two are refused", %{
+      p: p,
+      task: task,
+      step: step
+    } do
       device = AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
       token = AccountsFixtures.device_token_fixture(device, "Brewhouse Tab")
+      url = "/api/boards/brewery/tasks/#{task.id}"
 
       body =
-        call_device(token, :patch, "/api/boards/brewery/tasks/#{task.id}", %{
-          staff_code: "1111",
-          assignee_ids: [p["brewer1"].id]
-        })
-        |> json_response(403)
+        call_device(token, :patch, url, %{staff_code: "1111", assignee_ids: [p["brewer2"].id]})
+        |> json_response(200)
 
-      assert body["error"] == "linked_task_device"
+      assert body["recorded_as"] == p["brewer1"].name
+      assert Repo.get!(Step, step.id).assignee_id == p["brewer2"].id
+
+      body =
+        call_device(token, :patch, url, %{
+          staff_code: "1111",
+          assignee_ids: [p["brewer1"].id, p["brewer2"].id]
+        })
+        |> json_response(422)
+
+      assert body["error"] == "linked_task_assignees"
+      assert Repo.get!(Step, step.id).assignee_id == p["brewer2"].id
     end
   end
 

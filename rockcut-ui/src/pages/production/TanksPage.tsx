@@ -20,6 +20,8 @@ import {
 import OrderedList from './OrderedList'
 import TankDialog from './TankDialog'
 import OutageDialog from './OutageDialog'
+import SetupReadOnlyNote from './SetupReadOnlyNote'
+import useIsDevice from '../../hooks/useIsDevice'
 
 const NO_TANKS: Tank[] = []
 
@@ -52,10 +54,11 @@ export function OutageChip({ tank }: { tank: Tank }) {
 /**
  * D46 §3.2 Tanks (`/brewery/production/tanks`): the active tanks in display
  * order (drag or arrows), Add / Edit with out-of-service periods, Retire,
- * and a Retired section with Restore.
+ * and a Retired section with Restore. D50: read-only on the brewhouse device.
  */
 export default function TanksPage() {
   const qc = useQueryClient()
+  const readOnly = useIsDevice()
   const { data: all = NO_TANKS, isLoading, error: loadError } = useApiQuery<Tank[]>(TANKS_KEY, prodPath('tanks'))
   const active = all.filter((t) => !t.retired_at)
   const retired = all.filter((t) => t.retired_at)
@@ -104,11 +107,15 @@ export default function TanksPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Production', to: '/brewery/production' }, { label: 'Tanks' }]}
         title="Tanks"
-        action={{ label: 'Add tank', onClick: () => setEditing('new'), testId: 'tank-add' }}
+        action={readOnly ? undefined : { label: 'Add tank', onClick: () => setEditing('new'), testId: 'tank-add' }}
       />
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-        The schedule shows tanks in this order. Drag a tank, or use the arrows, to move it.
-      </Typography>
+      {readOnly ? (
+        <SetupReadOnlyNote />
+      ) : (
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          The schedule shows tanks in this order. Drag a tank, or use the arrows, to move it.
+        </Typography>
+      )}
       {loadError && <Alert severity="error">{prodError(loadError)}</Alert>}
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)} data-testid="tanks-error">
@@ -125,6 +132,7 @@ export default function TanksPage() {
         <OrderedList
           items={active}
           testId="tanks-list"
+          readOnly={readOnly}
           label={(t) => t.name}
           onReorder={(ids) => api.post(prodPath('tanks', 'reorder'), { ids }).finally(refresh)}
           render={(t) => (
@@ -138,6 +146,7 @@ export default function TanksPage() {
                 </Typography>
               </Box>
               <OutageChip tank={t} />
+              {!readOnly && (
               <Box sx={{ display: 'flex' }}>
                 <Tooltip title="Edit and out of service">
                   <IconButton size="small" aria-label={`Edit ${t.name}`} onClick={() => setEditing(t.id)} data-testid={`tank-edit-${t.id}`}>
@@ -150,6 +159,7 @@ export default function TanksPage() {
                   </IconButton>
                 </Tooltip>
               </Box>
+              )}
             </Box>
           )}
         />
@@ -172,9 +182,11 @@ export default function TanksPage() {
                   <Typography sx={{ flex: 1 }} color="text.secondary">
                     {t.name} · {kindLabel(t.kind)} · {t.capacity_bbl} bbl
                   </Typography>
-                  <Button size="small" startIcon={<Restore />} onClick={() => restore(t)} data-testid={`tank-restore-${t.id}`}>
-                    Restore
-                  </Button>
+                  {!readOnly && (
+                    <Button size="small" startIcon={<Restore />} onClick={() => restore(t)} data-testid={`tank-restore-${t.id}`}>
+                      Restore
+                    </Button>
+                  )}
                 </Paper>
               ))}
             </Box>

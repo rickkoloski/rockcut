@@ -3,12 +3,15 @@ defmodule RockcutApiWeb.ProductionErrors do
   D46: how the production controllers answer a refused action. A rule the
   setup enforces is a 422 `{error, message}`; a missing row 404; a
   changeset goes to `FallbackController`. An overlapping out-of-service
-  period names the other one (`other_id`, `message`).
+  period names the other one (`other_id`, `message`). D50: a staff-code
+  refusal on the brewhouse device answers as on the task board
+  (`StaffCodeActing.render_error/2`).
   """
   import Plug.Conn, only: [put_status: 2]
   import Phoenix.Controller, only: [json: 2]
 
   alias RockcutApi.Production
+  alias RockcutApiWeb.StaffCodeActing
 
   @messages %{
     invalid_order: "The list changed. Reload and try again.",
@@ -22,6 +25,9 @@ defmodule RockcutApiWeb.ProductionErrors do
     link_cycle: "That link would go in a circle.",
     link_order: "A step can't come before the step it follows.",
     link_exists: "Those steps are already linked.",
+    # D50 §2.7: links on a batch's steps.
+    link_pick: "Pick one step to link.",
+    link_other_batch: "A step links only to steps of its own batch (or its split).",
     ramp_invalid: "Start and target are whole degrees from 28 to 80°F.",
     ramp_days: "The first day is 0 or later, and the ramp ends by day 365.",
     ramp_flat: "The start and target temperatures are the same.",
@@ -82,6 +88,12 @@ defmodule RockcutApiWeb.ProductionErrors do
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
   def handle({:error, %Ecto.Changeset{}} = error, _conn), do: error
+
+  def handle({:error, code} = refusal, conn)
+      when code in [:staff_code_required, :staff_code_invalid, :staff_code_not_allowed],
+      do: StaffCodeActing.render_error(refusal, conn)
+
+  def handle({:locked, _seconds} = refusal, conn), do: StaffCodeActing.render_error(refusal, conn)
 
   def handle({:error, :forbidden}, conn),
     do: conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})
@@ -209,6 +221,16 @@ defmodule RockcutApiWeb.ProductionErrors do
         "part_step_done",
         "#{label}: #{name} is already done, so the split can't move. Mark it not done first."
       )
+
+  # D50 decision 3: someone else's change, people and the device alike.
+  def handle({:error, {:undo_not_yours, name}}, conn) do
+    conn
+    |> put_status(:forbidden)
+    |> json(%{
+      error: "undo_not_yours",
+      message: "Only #{name || "the person who made it"} can undo this."
+    })
+  end
 
   # D47 plan decision 5.
   def handle({:error, :undo_stale}, conn) do

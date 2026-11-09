@@ -73,6 +73,21 @@ describe('useActing', () => {
     await expect(p).resolves.toEqual(ok())
   })
 
+  it('D50 gap 1: "can’t do this here" keeps the dialog open with the message and a cleared field; nothing remembered', async () => {
+    const write = vi.fn(async (code?: string) => {
+      if (code === '2222') throw refused('staff_code_not_allowed')
+      return ok()
+    })
+    const p = useActing.getState().run(write)
+    const before = useActing.getState().asking!.attempt
+    await useActing.getState().submit('2222')
+    // A new attempt: the dialog's form (and its field) is fresh.
+    expect(useActing.getState().asking).toMatchObject({ error: 'msg staff_code_not_allowed', attempt: before + 1 })
+    expect(useActing.getState().session).toBeNull()
+    await useActing.getState().submit('1111')
+    await expect(p).resolves.toEqual(ok())
+  })
+
   it('a write refused for its remembered code forgets it and asks again', async () => {
     useActing.setState({ session: { code: '1111', name: 'Jake', lastActivity: Date.now() } })
     let calls = 0

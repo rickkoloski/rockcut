@@ -40,6 +40,8 @@ import { EntryDialog, RampDialog } from './EntryDialogs'
 import TemplatePreview from './TemplatePreview'
 import ErrorAlert from './ErrorAlert'
 import { TemplateNameDialog } from './TemplatesPage'
+import SetupReadOnlyNote from './SetupReadOnlyNote'
+import useIsDevice from '../../hooks/useIsDevice'
 
 const NO_PHASES: Phase[] = []
 const NO_TYPES: StepType[] = []
@@ -58,10 +60,12 @@ function dependents(template: Template, transfer: TemplateStep): string {
  * D46 §3.4 the template editor (`/brewery/production/templates/:id`): name and
  * notes, what keeps it from being complete, its entries in day order, Add
  * step / Add phase start / Add a ramp, and a preview. Every change saves at
- * once and the page redraws from the template the API answers.
+ * once and the page redraws from the template the API answers. D50: read-only
+ * on the brewhouse device (the entries, links and preview; no changes).
  */
 export default function TemplateEditor() {
   const { id = '' } = useParams()
+  const readOnly = useIsDevice()
   const qc = useQueryClient()
   const { data: template, isLoading, error: loadError } = useApiQuery<Template>(templateKey(id), prodPath('templates', id))
   const { data: phases = NO_PHASES } = useApiQuery<Phase[]>(PHASES_KEY, prodPath('phases'))
@@ -192,18 +196,20 @@ export default function TemplateEditor() {
               <Switch
                 size="small"
                 checked={s.on_task_list}
-                disabled={busy}
+                disabled={busy || readOnly}
                 onChange={(e) => run(() => api.patch(stepPath(s), { on_task_list: e.target.checked }))}
                 slotProps={{ input: { 'aria-label': `${s.name} on the task list`, 'data-testid': `entry-task-list-${s.id}` } as object }}
               />
             </Tooltip>
           )}
-          <Tooltip title="Edit">
-            <IconButton size="small" aria-label={`Edit ${s.name}`} onClick={() => setEditing({ kind: s.marker ? 'marker' : 'step', entry: s })} data-testid={`entry-edit-${s.id}`}>
-              <Edit fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {!brew && (
+          {!readOnly && (
+            <Tooltip title="Edit">
+              <IconButton size="small" aria-label={`Edit ${s.name}`} onClick={() => setEditing({ kind: s.marker ? 'marker' : 'step', entry: s })} data-testid={`entry-edit-${s.id}`}>
+                <Edit fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {!brew && !readOnly && (
             <Tooltip title="Remove">
               <IconButton size="small" aria-label={`Remove ${s.name}`} onClick={() => setRemoving(s)} data-testid={`entry-remove-${s.id}`}>
                 <DeleteOutline fontSize="small" />
@@ -231,6 +237,7 @@ export default function TemplateEditor() {
         breadcrumbs={[{ label: 'Templates', to: '/brewery/production/templates' }, { label: template.name }]}
         title={template.name}
         toolbar={
+          readOnly ? undefined : (
           <>
             {template.retired_at && (
               <Button
@@ -245,6 +252,7 @@ export default function TemplateEditor() {
               Rename
             </Button>
           </>
+          )
         }
       />
       {template.retired_at && (
@@ -266,6 +274,8 @@ export default function TemplateEditor() {
         </Alert>
       )}
       <ErrorAlert error={error} onClose={() => setError(null)} sx={{ mb: 2 }} testId="template-error" />
+      {readOnly && <SetupReadOnlyNote />}
+      {!readOnly && (
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
         <Button variant="contained" startIcon={<Add />} onClick={() => setEditing({ kind: 'step', entry: null })} data-testid="template-add-step">
           Add step
@@ -277,6 +287,7 @@ export default function TemplateEditor() {
           Add a ramp
         </Button>
       </Box>
+      )}
       <Box data-testid="template-entries">{template.steps.map(row)}</Box>
 
       <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>

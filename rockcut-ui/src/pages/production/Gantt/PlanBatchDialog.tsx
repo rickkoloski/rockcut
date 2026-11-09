@@ -3,7 +3,6 @@ import { FormControlLabel, MenuItem, Radio, RadioGroup, Switch, TextField, Typog
 import FormDialog from '../../../components/FormDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { useApiQuery } from '../../../hooks/useApiQuery'
-import api from '../../../lib/api'
 import { addDaysKey } from '../../../lib/datetime'
 import { fieldErrors, prodPath, templateKey, TEMPLATES_KEY, vesselLabel, type Tank, type Template, type TemplateSummary } from '../../../lib/production'
 import type { Brand } from '../../../lib/types'
@@ -64,8 +63,8 @@ export default function PlanBatchDialog({ tanks, initialTankId = null, initialDa
     setBusy(true)
     setError(null)
     const r = await flows.write<{ batches: { label: string }[] }>(
-      () =>
-        api.post(prodPath('batches'), {
+      (a) =>
+        a.post(prodPath('batches'), {
           brand_id: brandId,
           template_id: templateId,
           brew_on: brewOn,

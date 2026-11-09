@@ -8,6 +8,8 @@ defmodule RockcutApi.Production.UndoRecord do
     field :entries, :map
 
     belongs_to :user, RockcutApi.Accounts.User
+    # D50: the shared device the change was made on (`user` is the person).
+    belongs_to :device, RockcutApi.Accounts.User
 
     timestamps(type: :utc_datetime, updated_at: false)
   end

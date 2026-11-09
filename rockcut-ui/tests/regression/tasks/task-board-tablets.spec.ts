@@ -177,7 +177,8 @@ test.describe('the brewhouse tablet', () => {
     expect(titles).toEqual(expect.arrayContaining([first, second]))
   })
 
-  test('S45: a Taproom member’s code is a wrong code here; the dialog stays open', async ({ page }) => {
+  // D50 gap 1 (was "a wrong code here"): a real Taproom person can't do this here.
+  test('S45: a Taproom member’s code can’t do this here; the dialog stays open', async ({ page }) => {
     const bartender = await staffWithCode('D40 S45 taproom', 'bar')
     try {
       const today = denverToday()
@@ -190,7 +191,7 @@ test.describe('the brewhouse tablet', () => {
       await expect(page.getByTestId('acting-code-dialog')).toBeVisible()
       await expect(box).not.toBeChecked()
       await enterCode(page, bartender.code)
-      await expect(page.getByTestId('acting-code-dialog')).toContainText("That staff code isn't right")
+      await expect(page.getByTestId('acting-code-dialog')).toContainText("That staff code can't do this here")
       await expect(page.getByTestId('acting-staff-code')).toHaveValue('')
       await expect(box).not.toBeChecked()
       await page.getByTestId('acting-cancel').click()

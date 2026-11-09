@@ -453,6 +453,7 @@ defmodule RockcutApi.Production.Steps do
               due_on: done_on,
               done_on: done_on,
               done_by_id: actor.id,
+              done_on_device_id: actor.on_device_id,
               completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
               checkoff_move: checkoff_move(graph, step, done_on, changes)
             )
@@ -514,6 +515,7 @@ defmodule RockcutApi.Production.Steps do
           |> Changeset.change(
             done_on: nil,
             done_by_id: nil,
+            done_on_device_id: nil,
             completed_at: nil,
             checkoff_move: nil,
             due_on: due_on

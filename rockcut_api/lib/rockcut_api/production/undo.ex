@@ -15,8 +15,10 @@ defmodule RockcutApi.Production.Undo do
   its after-hash (`:undo_stale` otherwise: "Something changed since. Nothing
   was undone."; `updated_at` doesn't count). What it marks done or not done
   follows the order rules first, with the rule's own refusal (D49 BB2). Tokens last 2 minutes (`:undo_expired`), belong to the
-  person who made the change (anyone else gets `:not_found`) and are pruned
-  on every write.
+  person who made the change (anyone else gets `{:undo_not_yours, name}`,
+  D50 decision 3) and are pruned on every write. A change made on a shared
+  device is the person's (their staff code), with the device recorded
+  beside them (`device_id`, D50).
 
   **Vessels** (D48 DEV QA R1): a write that changed a batch's vessels also
   records that batch's whole vessel list as it left it, and on a split (or
@@ -92,17 +94,28 @@ defmodule RockcutApi.Production.Undo do
 
   @doc """
   Undo `token` for `user`: `{:ok, %{batch_ids}}` (the batches it touched),
-  or `{:error, :not_found | :undo_expired | :undo_stale}`.
+  or `{:error, :not_found | :undo_expired | :undo_stale}`. Someone else's
+  change is `{:error, {:undo_not_yours, first_name}}` (D50 decision 3; an
+  expired one is still `:undo_expired`).
   """
   def undo(%User{id: user_id}, token, now \\ DateTime.utc_now()) do
     case is_binary(token) && Repo.get_by(UndoRecord, token: token) do
-      %UndoRecord{user_id: ^user_id} = record ->
-        if DateTime.compare(record.expires_at, now) == :lt,
-          do: {:error, :undo_expired},
-          else: restore(record)
+      %UndoRecord{} = record ->
+        cond do
+          DateTime.compare(record.expires_at, now) == :lt -> {:error, :undo_expired}
+          record.user_id != user_id -> {:error, {:undo_not_yours, first_name(record)}}
+          true -> restore(record)
+        end
 
       _ ->
         {:error, :not_found}
+    end
+  end
+
+  defp first_name(record) do
+    case Repo.preload(record, :user).user do
+      %User{name: name} when is_binary(name) -> name |> String.split() |> List.first()
+      _ -> nil
     end
   end
 
@@ -378,6 +391,7 @@ defmodule RockcutApi.Production.Undo do
     Repo.insert!(%UndoRecord{
       token: token,
       user_id: user.id,
+      device_id: user.on_device_id,
       expires_at: DateTime.utc_now() |> DateTime.add(@ttl_seconds) |> DateTime.truncate(:second),
       entries: %{"rows" => entries, "vessels" => vessels}
     })
@@ -396,7 +410,7 @@ defmodule RockcutApi.Production.Undo do
 
   defp done?(row), do: (row || %{})["done_on"] != nil
 
-  @done_columns ~w(done_on done_by_id completed_at)
+  @done_columns ~w(done_on done_by_id done_on_device_id completed_at)
 
   defp keep_done(e, now),
     do: %{e | "before" => Map.merge(e["before"], Map.take(now, @done_columns))}
