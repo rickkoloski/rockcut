@@ -12,6 +12,27 @@ works, and Boards open view only (home board + Company). **It gates the D55 rele
 `35c6c7b` on a branch from `develop` before releasing. While he's at it: create and pair the
 brewhouse tablet on prod (Admin → Shared devices, home Brewery), which D50 needs.
 
+## NEXT (Matt said go, 2026-11-08 evening): start D50 now
+
+D55 waits only on Matt's check and the release; D50 can build in parallel. Steps:
+1. Branch `d50-brewhouse-device` from `origin/develop` in a new worktree `~/src/rockcut-d50`
+   (`git branch --unset-upstream`, push with an explicit refspec). Copy the gitignored
+   `rockcut_api/.env.synthetic` and `rockcut-ui/.env.test.local`; `mix ecto.setup` +
+   `mix rockcut.synthetic.setup`; `pnpm install`.
+2. Write `planning/d50_brewhouse_device_plan.md` and `prompts/d50_builder_brief.md` from the approved
+   spec (`specs/d50_brewhouse_device_spec.md`). Suggested stops: (1) API: `Authz.Device` production
+   read/write for a Brewery-home device, production routes into the device pipeline,
+   `StaffCodeActing` on every production write (owners' codes OK), setup writes refused, the
+   per-device Show planned batches, batch-link add/remove routes + Undo (§2.7), template edit-Save
+   links (§2.6, UI). (2) UI on the device: nav, Gantt + dialogs + Acting-as, board linked tasks,
+   setup read-only, step-dialog Links. (3) the local Playwright run.
+3. Start a fresh `builder50` in a new tab (cwd `~/src/rockcut-d50`, the workflow doc's builder
+   `--disallowedTools`; servers and Playwright allowed once the lead moves the servers there). Close
+   `builder55`'s tab first; `qa55`'s too.
+4. **Don't merge D50 to `develop` until D55 is released** (it would ride along). If Matt's check
+   forces the `35c6c7b` revert on `develop`, merge `develop` into D50 afterwards.
+5. Watcher: `read ST SQ <<< "$R"` (zsh), not `set -- $R`.
+
 ## State
 
 | | |
