@@ -9,8 +9,6 @@ defmodule RockcutApi.Sessions.UserSession do
     field :revoked_at, :utc_datetime
 
     belongs_to :user, RockcutApi.Accounts.User
-    # D54: the `device_token_id` column (D34's "Sign in as me") stays, unread,
-    # for one release so a rolled-back image still works; dropped later.
 
     timestamps(type: :utc_datetime)
   end

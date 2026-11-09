@@ -22,12 +22,22 @@ defmodule RockcutApi.Brewing.RecipeIngredient do
 
   def changeset(recipe_ingredient, attrs) do
     recipe_ingredient
-    |> cast(attrs, [:recipe_id, :lot_id, :amount, :unit, :use, :time_minutes, :sort_order, :notes])
+    |> cast(RockcutApi.Changeset.blank_to_nil(attrs, :sort_order), [
+      :recipe_id,
+      :lot_id,
+      :amount,
+      :unit,
+      :use,
+      :time_minutes,
+      :sort_order,
+      :notes
+    ])
     |> validate_required([:recipe_id, :lot_id, :amount, :unit])
     |> validate_inclusion(:unit, @valid_units)
     |> validate_inclusion(:use, @valid_uses)
     |> validate_positive_up_to(:amount, 1_000_000)
     |> foreign_key_constraint(:recipe_id)
     |> foreign_key_constraint(:lot_id)
+    |> RockcutApi.Changeset.validate_parents([:recipe_id, :lot_id])
   end
 end

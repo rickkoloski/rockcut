@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { test, expect as baseExpect, type APIRequestContext } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { activeProfile } from '../../config/targets'
 import { apiAs, tempTag } from '../scheduler/helpers'
 import { anonApi, apiWith, contextWith, createTempPerson, logOut, meStatus, retireTempPerson, signIn, type TempPerson } from '../auth/helpers'
 import { blankTablet, createDevice, deleteDevices, expectUnpaired, getDevice, pairingCode } from './helpers'
@@ -122,72 +121,9 @@ test.describe('the API', () => {
 test.describe('a browser that was a tablet', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('S249: left mid "Sign in as me" at the release, it opens on the shared screen and the person is signed out', async ({ browser }) => {
-    tag = tempTag('D54 S249')
-    person = await createTempPerson('D54 S249')
-    const owner = await apiAs('owner')
-    const { token: device } = await pairedTempTablet(owner, tag)
-    const personal = await signIn(person)
-
-    // The pre-D54 state: the person's token in the slot, the tablet's set aside.
-    const origin = new URL(activeProfile().uiUrl).origin
-    const context = await browser.newContext({
-      baseURL: activeProfile().uiUrl,
-      storageState: {
-        cookies: [],
-        origins: [
-          {
-            origin,
-            localStorage: [
-              { name: 'rockcut_token', value: personal },
-              { name: 'rockcut_device_token', value: device },
-              { name: 'rockcut_personal_last_activity', value: String(Date.now()) },
-              { name: 'rockcut_email', value: person.email },
-            ],
-          },
-        ],
-      },
-    })
-    const page = await context.newPage()
-    await page.goto('/')
-    await expect(page.getByTestId('device-chip')).toBeVisible()
-    await expect(page.getByTestId('login-email')).toHaveCount(0)
-    expect(
-      await page.evaluate(() => [
-        localStorage.getItem('rockcut_token'),
-        localStorage.getItem('rockcut_device_token'),
-        localStorage.getItem('rockcut_personal_last_activity'),
-        localStorage.getItem('rockcut_email'),
-      ]),
-    ).toEqual([device, null, null, null])
-
-    // Persist-verify: the person's session is over on the server; the tablet's isn't.
-    await expect.poll(() => meStatus(personal)).toBe(401)
-    expect(await meStatus(device)).toBe(200)
-    await page.reload()
-    await expect(page.getByTestId('device-chip')).toBeVisible()
-    await context.close()
-  })
-
-  test('S251 (4988): only a stale set-aside tablet token: "This tablet was unpaired" straight away', async ({ browser }) => {
-    tag = tempTag('D54 S251')
-    const owner = await apiAs('owner')
-    const { deviceId, token: device } = await pairedTempTablet(owner, tag)
-    await revokeTablet(owner, deviceId)
-
-    const origin = new URL(activeProfile().uiUrl).origin
-    const context = await browser.newContext({
-      baseURL: activeProfile().uiUrl,
-      storageState: { cookies: [], origins: [{ origin, localStorage: [{ name: 'rockcut_device_token', value: device }] }] },
-    })
-    const page = await context.newPage()
-    await page.goto('/')
-    // The setup form with the notice, not a sign-in form (before D54 it stopped on "Sign in as yourself").
-    await expectUnpaired(page)
-    await expect(page.getByTestId('login-email')).toHaveCount(0)
-    expect(await page.evaluate(() => localStorage.getItem('rockcut_device_token'))).toBeNull()
-    await context.close()
-  })
+  // D55 §2.8: S249 and S251 (4988), a tablet left mid "Sign in as me" at the
+  // D54 release, went with D54's start-up shim (every tablet has started the
+  // D54 app since, task 5164).
 
   test('S251: a paired tablet revoked by the owner shows "This tablet was unpaired" on its next request', async ({ browser }) => {
     tag = tempTag('D54 S251 live')

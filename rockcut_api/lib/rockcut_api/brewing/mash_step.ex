@@ -27,5 +27,6 @@ defmodule RockcutApi.Brewing.MashStep do
     |> validate_number(:duration, greater_than: 0)
     |> unique_constraint([:recipe_id, :step_number])
     |> foreign_key_constraint(:recipe_id)
+    |> RockcutApi.Changeset.validate_parents([:recipe_id])
   end
 end

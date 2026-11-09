@@ -8,6 +8,8 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import PageHeader from '../../components/PageHeader'
 import DeviceNotAvailable from '../devices/DeviceNotAvailable'
+import NotFound from '../NotFound'
+import { isChannelKey } from '../../lib/channels'
 import parseApiError from '../../lib/parseApiError'
 import type { Channel, ChatMessage } from '../../lib/types'
 
@@ -93,8 +95,9 @@ export default function Messages() {
   }
 
   if (unknownChannel) {
-    // A shared tablet gets its usual page; a person gets "not found".
-    if (user?.kind === 'device') return <DeviceNotAvailable />
+    // A shared tablet gets its usual page for a real channel, "Page not found"
+    // for anything else (D55 gap 4); a person gets "Channel not found".
+    if (user?.kind === 'device') return isChannelKey(selectedKey) ? <DeviceNotAvailable /> : <NotFound />
     return (
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 6 }}>
         <Paper data-testid="channel-not-found" variant="outlined" sx={{ p: 4, maxWidth: 440, textAlign: 'center' }}>

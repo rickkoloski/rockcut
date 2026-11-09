@@ -75,6 +75,7 @@ defmodule RockcutApi.Brewing.Batch do
     |> validate_range(:ferm_temp, 25, 110)
     |> unique_constraint(:batch_number, name: :batches_lower_batch_number_index)
     |> foreign_key_constraint(:brand_id)
+    |> RockcutApi.Changeset.validate_parents([:brand_id])
   end
 
   # D47: only a planned batch may be without a number.

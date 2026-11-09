@@ -41,6 +41,7 @@ defmodule RockcutApi.Production.StepType do
       name: :production_step_types_lower_name_index,
       message: "A step type with that name already exists."
     )
+    |> RockcutApi.Changeset.validate_parents([:starts_phase_id])
   end
 
   defp blank_to_nil(nil), do: nil

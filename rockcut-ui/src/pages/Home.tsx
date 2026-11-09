@@ -60,7 +60,7 @@ export default function Home() {
   return (
     <Box>
       <Typography variant="h4" gutterBottom>
-        {isDevice ? user?.name || 'Rockcut' : firstName ? `Welcome back, ${firstName}` : 'Welcome to Rockcut'}
+        {isDevice ? user?.name || 'Rock Cut Brewing' : firstName ? `Welcome back, ${firstName}` : 'Welcome to Rock Cut Brewing'}
       </Typography>
       <Typography color="text.secondary" sx={{ mb: 4 }}>
         Quick links to get you where you're going. More at-a-glance info is coming to this page soon.

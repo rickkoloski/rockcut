@@ -18,8 +18,13 @@ defmodule RockcutApiWeb.NotificationController do
   end
 
   def read(conn, %{"id" => id}) do
-    Notifications.mark_read(conn.assigns.current_user, id)
-    json(conn, %{ok: true})
+    case Notifications.mark_read(conn.assigns.current_user, id) do
+      :ok ->
+        json(conn, %{ok: true})
+
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{errors: %{detail: "Not found"}})
+    end
   end
 
   def read_all(conn, _params) do

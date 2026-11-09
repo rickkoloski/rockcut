@@ -20,5 +20,6 @@ defmodule RockcutApi.Scheduling.ScheduleTemplate do
     |> validate_required([:name, :kind])
     |> validate_inclusion(:kind, @kinds)
     |> cast_assoc(:items, with: &RockcutApi.Scheduling.ScheduleTemplateItem.changeset/2)
+    |> RockcutApi.Changeset.validate_parents([:created_by_id])
   end
 end

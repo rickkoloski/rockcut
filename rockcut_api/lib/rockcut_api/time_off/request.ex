@@ -32,6 +32,7 @@ defmodule RockcutApi.TimeOff.Request do
     |> validate_end_after_start()
     |> put_change(:status, "pending")
     |> foreign_key_constraint(:user_id)
+    |> RockcutApi.Changeset.validate_parents([:user_id])
   end
 
   defp validate_end_after_start(changeset) do

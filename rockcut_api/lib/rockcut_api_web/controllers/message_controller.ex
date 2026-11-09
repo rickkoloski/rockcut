@@ -25,8 +25,20 @@ defmodule RockcutApiWeb.MessageController do
   end
 
   def index(conn, %{"key" => key} = params) do
-    opts = if b = params["before"], do: [before: String.to_integer(b)], else: []
+    # D55 §2.11: `before` (a message id, the page cursor) that isn't a usable
+    # id is a 422; it was a 500 (`String.to_integer/1`, or the driver).
+    case RockcutApi.Ids.filter(params["before"]) do
+      {:ok, before} ->
+        list(conn, key, if(before, do: [before: before], else: []))
 
+      :error ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{errors: %{before: ["is not a valid id"]}})
+    end
+  end
+
+  defp list(conn, key, opts) do
     case Messaging.list_messages(conn.assigns.current_user, key, opts) do
       {:ok, messages} ->
         json(conn, for_viewer(%{data: Enum.map(messages, &message/1)}, conn.assigns.current_user))

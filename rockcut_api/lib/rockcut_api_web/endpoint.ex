@@ -44,16 +44,18 @@ defmodule RockcutApiWeb.Endpoint do
   plug Plug.RequestId
   plug Plug.Telemetry, event_prefix: [:phoenix, :endpoint]
 
-  plug Plug.Parsers,
-    parsers: [:urlencoded, :multipart, :json],
-    pass: ["*/*"],
-    json_decoder: Phoenix.json_library()
-
+  # Before the parsers, so their 400/413 answers carry CORS headers too and the
+  # browser shows the error instead of "Failed to fetch" (D55 §2.3, task 4985).
   plug CORSPlug,
     origin: &RockcutApiWeb.Endpoint.cors_origins/0,
     credentials: true,
     # X-Rockcut-Device marks a sign-in made on a paired tablet (D34 §3.3).
     headers: ["Authorization", "Content-Type", "Accept", "X-Rockcut-Device"]
+
+  plug RockcutApiWeb.Parsers,
+    parsers: [:urlencoded, :multipart, :json],
+    pass: ["*/*"],
+    json_decoder: Phoenix.json_library()
 
   def cors_origins do
     Application.get_env(:rockcut_api, :cors_origins, [

@@ -44,6 +44,12 @@ defmodule RockcutApi.Scheduling.Shift do
         do: [assignee_id: "can't be a shared device"],
         else: []
     end)
+    |> RockcutApi.Changeset.validate_parents([
+      :department_id,
+      :position_id,
+      :assignee_id,
+      :created_by_id
+    ])
   end
 
   defp validate_end_after_start(changeset) do

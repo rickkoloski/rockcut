@@ -96,8 +96,9 @@ defmodule RockcutApiWeb.IdeaBoardFixCycle1Test do
         assert {404, _} = req(user, verb, path, params), "#{verb} #{path}"
       end
 
-      # A History filter that can't be a card is ignored, as junk is.
-      assert {200, _} = req(p["barMgr"], :get, "#{@bar}/history?card_id=#{@huge}")
+      # D55 lead decisions 3 (gap 10): a History filter that can't be a card
+      # is a 422 now, not ignored (it was the whole board's History).
+      assert {422, _} = req(p["barMgr"], :get, "#{@bar}/history?card_id=#{@huge}")
     end
 
     test "in the body is 422 or 404, and nothing changes", %{p: p, list: list, card: card} do
@@ -170,12 +171,15 @@ defmodule RockcutApiWeb.IdeaBoardFixCycle1Test do
                  before_id: @huge
                })
 
+      # D55 lead decisions 3 (gap 10): a bad `task_id` is a 422, not ignored;
+      # a huge page is an empty page.
+      assert {422, _} = req(mgr, :get, "#{t}/tasks/history?task_id=#{@huge}")
+
       for path <- [
-            "#{t}/tasks/history?task_id=#{@huge}",
             "#{t}/tasks/history?page=#{@huge}",
             "#{@bar}/history?page=#{@huge}"
           ],
-          do: assert({200, _} = req(mgr, :get, path), path)
+          do: assert({200, %{"data" => []}} = req(mgr, :get, path), path)
 
       assert Repo.aggregate(RockcutApi.Tasks.Task, :count) == 1
     end

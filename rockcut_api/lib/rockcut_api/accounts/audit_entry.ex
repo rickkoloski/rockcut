@@ -18,5 +18,6 @@ defmodule RockcutApi.Accounts.AuditEntry do
     entry
     |> cast(attrs, [:actor_id, :target_id, :action, :detail])
     |> validate_required([:action])
+    |> RockcutApi.Changeset.validate_parents([:actor_id, :target_id])
   end
 end

@@ -9,6 +9,7 @@ import {
   IconButton,
   CircularProgress,
   Tooltip,
+  Alert,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
@@ -21,14 +22,19 @@ import PageHeader from '../../components/PageHeader';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import CategoryFormDialog from './CategoryFormDialog';
 import FieldDefinitionDialog from './FieldDefinitionDialog';
+import parseApiError from '../../lib/parseApiError';
+import ItemNotFound from '../../components/ItemNotFound';
+import { httpStatus, retryUnless404 } from '../../lib/notFound';
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
-  const { data: category, isLoading } = useApiQuery<IngredientCategory>(
+  const { data: category, isLoading, error } = useApiQuery<IngredientCategory>(
     ['ingredient_category', Number(id)],
     `/api/ingredient_categories/${id}`,
+    undefined,
+    { retry: retryUnless404 },
   );
 
   const deleteCategoryMutation = useApiDelete(
@@ -47,6 +53,23 @@ export default function CategoryDetail() {
   const [selectedField, setSelectedField] = useState<CategoryFieldDefinition | undefined>();
   const [deleteFieldOpen, setDeleteFieldOpen] = useState(false);
   const [fieldToDelete, setFieldToDelete] = useState<CategoryFieldDefinition | undefined>();
+
+  // D55 §2.6 (task 4993): a category that doesn't exist (or an old link) says so
+  // instead of spinning.
+  if (!category && httpStatus(error) === 404) {
+    return (
+      <ItemNotFound
+        what="Category"
+        backTo="/ingredients/categories"
+        backLabel="Back to Ingredient categories"
+        testId="category-not-found"
+      />
+    );
+  }
+
+  if (!category && error) {
+    return <Alert severity="error">{parseApiError(error)}</Alert>;
+  }
 
   if (isLoading || !category) {
     return <CircularProgress />;

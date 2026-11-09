@@ -19,5 +19,6 @@ defmodule RockcutApi.Notifications.Notification do
     |> cast(attrs, [:user_id, :event, :title, :body, :data])
     |> validate_required([:user_id, :event, :title])
     |> foreign_key_constraint(:user_id)
+    |> RockcutApi.Changeset.validate_parents([:user_id])
   end
 end
