@@ -40,6 +40,8 @@ defmodule RockcutApi.Production.Step do
     belongs_to :step_type, RockcutApi.Production.StepType
     belongs_to :phase, RockcutApi.Production.Phase
     belongs_to :done_by, RockcutApi.Accounts.User
+    # D50: the shared device it was checked off on (`done_by` is the person).
+    belongs_to :done_on_device, RockcutApi.Accounts.User
     belongs_to :assignee, RockcutApi.Accounts.User
     belongs_to :template_step, RockcutApi.Production.TemplateStep
 

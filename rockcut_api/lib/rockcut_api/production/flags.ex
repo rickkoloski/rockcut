@@ -518,11 +518,16 @@ defmodule RockcutApi.Production.Flags do
       signoff: %{
         user_id: s.user_id,
         user_name: s.user && s.user.name,
+        # D50: "· on Brewhouse" when it was signed off on a shared device.
+        device_name: device_name(s.device),
         note: s.note,
         signed_at: s.signed_at
       }
     })
   end
+
+  defp device_name(%RockcutApi.Accounts.User{name: name}), do: name
+  defp device_name(_not_loaded_or_nil), do: nil
 
   defp pairs(list) do
     for {a, i} <- Enum.with_index(list), b <- Enum.drop(list, i + 1), do: [a, b]

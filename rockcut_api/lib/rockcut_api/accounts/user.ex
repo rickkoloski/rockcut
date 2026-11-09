@@ -101,12 +101,16 @@ defmodule RockcutApi.Accounts.User do
     |> RockcutApi.Changeset.validate_parents([:home_department_id])
   end
 
-  @doc "Rename a device, move it to another home department, (de)activate it, or set its theme."
+  @doc """
+  Rename a device, move it to another home department, (de)activate it, or
+  set its theme or (D50) its "Show planned batches".
+  """
   def device_update_changeset(%__MODULE__{} = device, attrs) do
     device
     |> cast(attrs, [:name, :home_department_id, :active])
-    |> cast(attrs, [:color_mode], empty_values: [])
+    |> cast(attrs, [:color_mode, :show_planned_batches], empty_values: [])
     |> validate_color_mode()
+    |> validate_required([:show_planned_batches])
     |> device_common()
     |> RockcutApi.Changeset.validate_parents([:home_department_id])
   end

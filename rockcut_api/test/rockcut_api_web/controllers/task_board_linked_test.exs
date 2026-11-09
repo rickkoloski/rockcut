@@ -2,8 +2,8 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
   @moduledoc """
   D49 task 3 (§3.12, plan decisions 7–9): linked tasks on the Brewery board.
   Their writes go to Production with the schedule's prompts and an undo
-  token; a shared tablet is refused every one until D50 (with or without a
-  staff code). `linked=true` and "Show planned batches" (`/api/me`).
+  token; D50: the brewhouse device makes them with a staff code, as that
+  person. `linked=true` and "Show planned batches" (`/api/me`).
   """
   use RockcutApiWeb.ConnCase, async: false
 
@@ -326,10 +326,11 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
                200
     end
 
-    test "decision 8: a shared tablet can't write a linked task, with a code or without", ctx do
+    # D50 §2.5 (was D49 decision 8, "refused with a code or without"): the
+    # brewhouse device writes a linked task with a staff code, as that person.
+    test "a shared tablet needs a staff code for every linked-task write", ctx do
       task = task_of(named(plan(ctx, "Crusher", 2), "FDH"))
-      device = AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
-      token = AccountsFixtures.device_token_fixture(device, "Brewhouse Tab")
+      {_device, token} = brewhouse()
 
       writes = [
         {:patch, task_url(task), %{notes: "x"}},
@@ -337,32 +338,176 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
         {:post, task_url(task, "/move"), %{due_on: iso(10), answer: "move_all"}},
         {:post, task_url(task, "/move"), %{due_on: iso(9)}},
         {:post, task_url(task, "/complete"), %{}},
-        {:post, task_url(task, "/uncomplete"), %{}},
-        {:post, task_url(task, "/stop_repeating"), %{}}
+        {:post, task_url(task, "/uncomplete"), %{}}
       ]
 
-      for {verb, url, params} <- writes, code <- [nil, "1111"] do
-        params = if code, do: Map.put(params, :staff_code, code), else: params
-        body = call_device(token, verb, url, params) |> json_response(403)
-
-        assert body == %{
-                 "error" => "linked_task_device",
-                 "message" => "Do this on the production schedule."
-               },
-               "#{verb} #{url} #{inspect(code)}"
+      for {verb, url, params} <- writes do
+        body = call_device(token, verb, url, params) |> json_response(422)
+        assert body["error"] == "staff_code_required", "#{verb} #{url}"
       end
 
-      # It still reads them.
+      # Nothing changed, and it still reads them.
+      fdh = step(named(Repo.get!(RockcutApi.Brewing.Batch, task_batch(task)), "FDH"))
+      assert {fdh.notes, fdh.done_on, fdh.on_task_list} == {nil, nil, true}
+
       board =
         call_device(token, :get, "/api/boards/brewery/tasks", %{from: iso(9), to: iso(9)})
         |> json_response(200)
 
       assert [%{"cards" => [%{"id" => id}]}] = board["data"]["days"]
       assert id == task.id
-
-      assert step(named(Repo.get!(RockcutApi.Brewing.Batch, task_batch(task)), "FDH")).notes ==
-               nil
     end
+
+    test "with a code: notes, move, check off, un-check and take off, as that person (D50)",
+         ctx do
+      # Brewed 8 days ago: FDH is yesterday.
+      batch = plan(ctx, "Crusher", -8)
+      fdh = named(batch, "FDH")
+      task = task_of(fdh)
+      {device, token} = brewhouse()
+      b1 = ctx.p["brewer1"]
+
+      body =
+        call_device(token, :patch, task_url(task), %{notes: "On the floor", staff_code: "1111"})
+        |> json_response(200)
+
+      assert body["recorded_as"] == b1.name
+      assert step(fdh).notes == "On the floor"
+
+      body =
+        call_device(token, :post, task_url(task, "/move"), %{
+          due_on: iso(0),
+          answer: "move_only",
+          staff_code: "1111"
+        })
+        |> json_response(200)
+
+      assert body["recorded_as"] == b1.name
+      assert step(fdh).due_on == day(0)
+
+      # Undo is the person's: the device sends their code again.
+      call_device(token, :post, "/api/production/undo/#{body["undo_token"]}", %{
+        staff_code: "1111"
+      })
+      |> json_response(200)
+
+      assert step(fdh).due_on == day(-1)
+
+      # Brew day first (the order rules), then FDH.
+      brew = named(batch, "Brew day")
+
+      call_device(token, :post, task_url(task_of(brew), "/complete"), %{
+        done_on: iso(-8),
+        batch_number: "51",
+        staff_code: "1111"
+      })
+      |> json_response(200)
+
+      call_device(token, :post, task_url(task, "/complete"), %{
+        done_on: iso(-1),
+        staff_code: "1111"
+      })
+      |> json_response(200)
+
+      done = step(fdh)
+      assert {done.done_by_id, done.done_on_device_id} == {b1.id, device.id}
+
+      call_device(token, :post, task_url(task, "/uncomplete"), %{staff_code: "1111"})
+      |> json_response(200)
+
+      assert %{done_on: nil, done_by_id: nil, done_on_device_id: nil} = step(fdh)
+
+      body =
+        call_device(token, :delete, task_url(task), %{staff_code: "1111"}) |> json_response(200)
+
+      assert body["recorded_as"] == b1.name
+      assert %{on_task_list: false} = step(fdh)
+      refute Repo.get(Task, task.id)
+    end
+
+    test "D4: brewer2's code checks off brew day; the batch-number prompt; the Gantt agrees",
+         ctx do
+      {:ok, _} = StaffCodes.set(ctx.p["brewer2"], "2222", ctx.p["breweryMgr"])
+      batch = plan(ctx, "Galactic", 0)
+      brew = named(batch, "Brew day")
+      {device, token} = brewhouse()
+
+      assert %{"error" => "batch_number_required"} =
+               call_device(token, :post, task_url(task_of(brew), "/complete"), %{
+                 staff_code: "2222"
+               })
+               |> json_response(422)
+
+      assert step(brew).done_on == nil
+
+      call_device(token, :post, task_url(task_of(brew), "/complete"), %{
+        batch_number: "61",
+        staff_code: "2222"
+      })
+      |> json_response(200)
+
+      done = step(brew)
+      assert {done.done_by_id, done.done_on_device_id} == {ctx.p["brewer2"].id, device.id}
+      assert RockcutApi.ProductionFixtures.reload(batch).batch_number == "61"
+
+      [gantt] =
+        call(ctx.p["brewer1"], :get, "/api/production/schedule")
+        |> json_response(200)
+        |> get_in(["data", "batches"])
+        |> Enum.filter(&(&1["id"] == batch.id))
+
+      step_json = Enum.find(gantt["steps"], &(&1["id"] == brew.id))
+      assert step_json["done_by"]["name"] == ctx.p["brewer2"].name
+      assert step_json["done_on_device"]["name"] == "Brewhouse tablet"
+    end
+
+    test "a same-day reorder with a code is the board's, logged with the device", ctx do
+      task = task_of(named(plan(ctx, "Crusher", 2), "FDH"))
+      {device, token} = brewhouse()
+
+      # Another card that day, so moving it to the bottom changes its place.
+      call(ctx.p["brewer1"], :post, "/api/boards/brewery/tasks", %{
+        title: "Keg wash",
+        due_on: iso(9)
+      })
+      |> json_response(201)
+
+      call_device(token, :post, task_url(task, "/move"), %{
+        due_on: iso(9),
+        staff_code: "1111"
+      })
+      |> json_response(200)
+
+      event =
+        Repo.one(
+          from(e in RockcutApi.Tasks.Event,
+            where: e.task_id == ^task.id,
+            order_by: [desc: e.id],
+            limit: 1
+          )
+        )
+
+      assert event.device_id == device.id
+      assert event.actor_id == ctx.p["brewer1"].id
+    end
+
+    test "a code from outside the Brewery is a wrong code; nothing changes (D3)", ctx do
+      {:ok, _} = StaffCodes.set(ctx.p["bartender1"], "3333", ctx.p["owner"])
+      fdh = named(plan(ctx, "Crusher", 2), "FDH")
+      {_device, token} = brewhouse()
+
+      body =
+        call_device(token, :patch, task_url(task_of(fdh)), %{notes: "x", staff_code: "3333"})
+        |> json_response(422)
+
+      assert body["error"] == "staff_code_invalid"
+      assert step(fdh).notes == nil
+    end
+  end
+
+  defp brewhouse do
+    device = AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
+    {device, AccountsFixtures.device_token_fixture(device, "Brewhouse Tab")}
   end
 
   test "leaving the Brewery unassigns the open steps too, so the tasks stay unassigned", ctx do

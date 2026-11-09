@@ -3,7 +3,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
   D33 §3.7: every route in the router × `taproomDevice`. The allowlist passes;
   everything else is refused by `DeviceGate` (403). D40: the tablet's home
   board (bar here) is on the allowlist; another board is `Authz.Device`'s
-  403 (task_board_device_test). Generated from the router:
+  403 (task_board_device_test). D50: the production routes are the
+  brewhouse device's (`breweryDevice`), the Taproom tablet's 403. Generated from the router:
   a new route fails "every route is classified" until someone puts it in one
   of the lists below. Put it in `@device_ok` only together with its
   `Authz.Device` entry and a scope change in the router.
@@ -268,33 +269,25 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/idea_boards/:board/labels"},
     {:patch, "/api/idea_boards/:board/labels/:id"},
     {:delete, "/api/idea_boards/:board/labels/:id"},
-    # D46: production setup, people only until D49 brings the brewhouse tablet.
-    {:get, "/api/production/tanks"},
+    # D46 production setup changes: people only (D50: the brewhouse device
+    # reads the setup, never changes it; P106).
     {:post, "/api/production/tanks"},
     {:post, "/api/production/tanks/reorder"},
     {:patch, "/api/production/tanks/:id"},
     {:delete, "/api/production/tanks/:id"},
     {:post, "/api/production/tanks/:id/restore"},
-    {:post, "/api/production/tanks/:id/outages"},
-    {:patch, "/api/production/outages/:id"},
-    {:delete, "/api/production/outages/:id"},
-    {:post, "/api/production/outages/:id/end_today"},
-    {:get, "/api/production/phases"},
     {:post, "/api/production/phases"},
     {:post, "/api/production/phases/reorder"},
     {:patch, "/api/production/phases/:id"},
     {:delete, "/api/production/phases/:id"},
     {:post, "/api/production/phases/:id/restore"},
-    {:get, "/api/production/step_types"},
     {:post, "/api/production/step_types"},
     {:post, "/api/production/step_types/reorder"},
     {:patch, "/api/production/step_types/:id"},
     {:delete, "/api/production/step_types/:id"},
     {:post, "/api/production/step_types/:id/restore"},
-    {:get, "/api/production/templates"},
     {:post, "/api/production/templates"},
     {:post, "/api/production/templates/reorder"},
-    {:get, "/api/production/templates/:id"},
     {:patch, "/api/production/templates/:id"},
     {:delete, "/api/production/templates/:id"},
     {:post, "/api/production/templates/:id/restore"},
@@ -305,24 +298,39 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/production/templates/:id/links"},
     {:patch, "/api/production/templates/:id/links/:link_id"},
     {:delete, "/api/production/templates/:id/links/:link_id"},
-    {:post, "/api/production/templates/:id/ramp"},
-    # D47: the schedule, batches and steps; people only until D49.
-    {:get, "/api/production/schedule"},
+    {:post, "/api/production/templates/:id/ramp"}
+  ]
+
+  # D50: the production schedule and its setup, read by the brewhouse device
+  # (home: Brewery). Any other device gets the `:brewery` module plug's 403.
+  @brewery_device_ok [
+    {:get, "/api/production/tanks"},
+    {:get, "/api/production/phases"},
+    {:get, "/api/production/step_types"},
+    {:get, "/api/production/templates"},
+    {:get, "/api/production/templates/:id"},
+    {:get, "/api/production/schedule"}
+  ]
+
+  # D50: every schedule write, from the brewhouse device with a person's staff
+  # code (production_device_test with one). Without one: 422
+  # `staff_code_required`; any other device: 403.
+  @brewery_device_with_code [
+    {:post, "/api/production/tanks/:id/outages"},
+    {:patch, "/api/production/outages/:id"},
+    {:delete, "/api/production/outages/:id"},
+    {:post, "/api/production/outages/:id/end_today"},
     {:post, "/api/production/batches"},
     {:patch, "/api/production/batches/:id"},
     {:delete, "/api/production/batches/:id"},
     {:post, "/api/production/batches/:id/shift"},
-    {:patch, "/api/production/batches/:id/vessels/:index"},
-    # D49: pencilled batches, people only.
     {:post, "/api/production/batches/:id/schedule"},
     {:post, "/api/production/batches/:id/pencil"},
-    # D48: changing a batch, people only like D47's.
+    {:patch, "/api/production/batches/:id/vessels/:index"},
     {:post, "/api/production/batches/:id/steps"},
     {:post, "/api/production/batches/:id/ramp"},
     {:post, "/api/production/batches/:id/transfers"},
     {:delete, "/api/production/batches/:id/transfers/:step_id"},
-    {:delete, "/api/production/steps/:id"},
-    {:post, "/api/production/steps/:id/ramp"},
     {:post, "/api/production/batches/:id/split"},
     {:delete, "/api/production/batches/:id/split"},
     {:post, "/api/production/tanks/:id/condition"},
@@ -332,6 +340,11 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/production/steps/:id/complete"},
     {:post, "/api/production/steps/:id/uncomplete"},
     {:patch, "/api/production/steps/:id"},
+    {:delete, "/api/production/steps/:id"},
+    {:post, "/api/production/steps/:id/ramp"},
+    {:post, "/api/production/steps/:id/links"},
+    {:patch, "/api/production/step_links/:id"},
+    {:delete, "/api/production/step_links/:id"},
     {:post, "/api/production/cips"},
     {:patch, "/api/production/cips/:id"},
     {:delete, "/api/production/cips/:id"},
@@ -352,7 +365,11 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     routes = app_routes()
     assert length(routes) == length(Enum.uniq(routes)), "a path+verb is declared twice"
 
-    classified = @public ++ @device_ok ++ @device_with_code ++ @denied
+    classified =
+      @public ++
+        @device_ok ++
+        @device_with_code ++ @brewery_device_ok ++ @brewery_device_with_code ++ @denied
+
     assert length(classified) == length(Enum.uniq(classified))
 
     unclassified = routes -- classified
@@ -398,6 +415,17 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
       assert failures == []
     end
 
+    test "every production route is the module plug's 403 (D50, P107)", %{token: token} do
+      failures =
+        for {verb, path} <- @brewery_device_ok ++ @brewery_device_with_code,
+            conn = call_device(token, verb, fill(path), %{staff_code: "1111"}),
+            conn.status != 403 or Jason.decode!(conn.resp_body)["error"] != "Forbidden" do
+          {verb, path, conn.status}
+        end
+
+      assert failures == []
+    end
+
     test "every allowlisted route answers 2xx", %{device: device, shift: shift, task: task} do
       failures =
         for {verb, path} <- @device_ok,
@@ -412,51 +440,93 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     end
   end
 
-  # D49 decision 8: on its home board, a tablet's writes to a task made from
-  # a production step are refused before any staff code (until D50); the
-  # series read is `linked_task` for anyone.
-  describe "as breweryDevice, on a linked task (D49)" do
+  # D50: the brewhouse device (home: Brewery) on the production routes.
+  describe "as breweryDevice (D50)" do
     setup do
       p = personas(~w(breweryMgr brewer1))
       {:ok, _} = RockcutApi.StaffCodes.set(p["brewer1"], "1111", p["breweryMgr"])
       device = RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse"})
       token = RockcutApi.AccountsFixtures.device_token_fixture(device, "Brewhouse Tab")
+      template = RockcutApi.ProductionFixtures.ale_template!()
 
       batch =
         RockcutApi.ProductionFixtures.plan!(
           RockcutApi.ProductionFixtures.brand!("Matrix"),
-          RockcutApi.ProductionFixtures.ale_template!(),
+          template,
           RockcutApi.Tasks.today()
         )
 
       RockcutApi.Production.TaskLink.sync!()
       fdh = RockcutApi.ProductionFixtures.named(batch, "FDH")
       task = RockcutApi.Repo.get_by!(RockcutApi.Tasks.Task, production_step_id: fdh.id)
-      %{token: token, task: task}
+      %{device: device, token: token, template: template, task: task}
     end
 
-    test "every write on it is 403 linked_task_device, with a code or without", %{
+    test "every production read answers 2xx, without an email anywhere (P104)", %{
       token: token,
-      task: task
+      template: template
     } do
+      results =
+        for {verb, path} <- @brewery_device_ok do
+          conn = call_device(token, verb, String.replace(path, ":id", "#{template.id}"))
+          {verb, path, conn.status, conn.resp_body}
+        end
+
+      assert for({v, p, status, _} <- results, status not in 200..299, do: {v, p, status}) == []
+
+      assert for(
+               {_, p, _, body} <- results,
+               key_paths(Jason.decode!(body), "email") != [],
+               do: p
+             ) == []
+    end
+
+    test "every schedule write without a code is 422 staff_code_required", %{token: token} do
+      failures =
+        for {verb, path} <- @brewery_device_with_code,
+            conn = call_device(token, verb, fill(path)),
+            conn.status != 422 or
+              Jason.decode!(conn.resp_body)["error"] != "staff_code_required" do
+          {verb, path, conn.status}
+        end
+
+      assert failures == []
+    end
+
+    test "every setup change is the router gate's 403, with a code or without (P106)", %{
+      token: token
+    } do
+      setup_routes = Enum.filter(@denied, fn {_, path} -> path =~ "/api/production/" end)
+      assert length(setup_routes) == 28
+
+      failures =
+        for {verb, path} <- setup_routes,
+            params <- [%{}, %{staff_code: "1111"}],
+            conn = call_device(token, verb, fill(path), params),
+            conn.status != 403 or
+              Jason.decode!(conn.resp_body)["error"] != "Not available on a shared device" do
+          {verb, path, conn.status}
+        end
+
+      assert failures == []
+    end
+
+    test "a linked task's writes need a code (D49's refusal ends); its series is linked_task",
+         %{token: token, task: task} do
       routes = Enum.filter(@device_with_code, fn {_, path} -> path =~ "/tasks/:id" end)
       # update, delete, move, complete, uncomplete, stop_repeating
       assert length(routes) == 6
 
       failures =
         for {verb, path} <- routes,
-            code <- [nil, "1111"],
-            params = if(code, do: %{staff_code: code}, else: %{}),
-            conn = call_device(token, verb, fill_linked(path, task), params),
-            conn.status != 403 or
-              Jason.decode!(conn.resp_body)["error"] != "linked_task_device" do
-          {verb, path, code, conn.status}
+            conn = call_device(token, verb, fill_linked(path, task)),
+            conn.status != 422 or
+              Jason.decode!(conn.resp_body)["error"] != "staff_code_required" do
+          {verb, path, conn.status}
         end
 
       assert failures == []
-    end
 
-    test "the board reads it; its series is linked_task", %{token: token, task: task} do
       today = Date.to_iso8601(RockcutApi.Tasks.today())
 
       assert call_device(token, :get, "/api/boards/brewery/tasks", %{from: today, to: today}).status ==
@@ -465,6 +535,17 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
       conn = call_device(token, :get, "/api/boards/brewery/tasks/#{task.id}/series")
       assert conn.status == 422
       assert Jason.decode!(conn.resp_body)["error"] == "linked_task"
+    end
+  end
+
+  test "the production routes still work for people; someone outside the Brewery gets 403" do
+    p = personas(~w(brewer1 bartender1))
+    template = RockcutApi.ProductionFixtures.ale_template!()
+
+    for {verb, path} <- @brewery_device_ok do
+      path = String.replace(path, ":id", "#{template.id}")
+      assert call(p["brewer1"], verb, path).status in 200..299, "#{verb} #{path}"
+      assert call(p["bartender1"], verb, path).status == 403, "#{verb} #{path}"
     end
   end
 

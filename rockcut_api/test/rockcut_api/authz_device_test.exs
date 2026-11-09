@@ -261,6 +261,30 @@ defmodule RockcutApi.AuthzDeviceTest do
     end
   end
 
+  describe "D50 production" do
+    test "the brewhouse device reads and works the schedule; never the setup" do
+      brewery =
+        RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse tablet"})
+        |> then(&Accounts.get_user!(&1.id))
+
+      assert Authz.can?(brewery, :read, :production)
+      assert Authz.can?(brewery, :write, :production)
+      refute Authz.can?(brewery, :setup, :production)
+      refute Authz.can?(brewery, :anything, :production)
+    end
+
+    test "a Taproom (or any other) device gets nothing", %{d: d} do
+      for action <- [:read, :write, :setup], do: refute(Authz.can?(d, action, :production))
+
+      office =
+        RockcutApi.AccountsFixtures.device_fixture(%{home: "office", name: "Office tablet"})
+        |> then(&Accounts.get_user!(&1.id))
+
+      for action <- [:read, :write, :setup],
+          do: refute(Authz.can?(office, action, :production))
+    end
+  end
+
   test "anything else is denied (catch-all)", %{d: d} do
     refute Authz.can?(d, :anything, :anything)
     refute Authz.can?(d, :read, %ShiftTemplate{})

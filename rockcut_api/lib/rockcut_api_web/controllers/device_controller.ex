@@ -30,7 +30,14 @@ defmodule RockcutApiWeb.DeviceController do
   end
 
   def update(conn, %{"id" => id} = params) do
-    attrs = Map.take(params, ["name", "home_department_id", "active", "color_mode"])
+    attrs =
+      Map.take(params, [
+        "name",
+        "home_department_id",
+        "active",
+        "color_mode",
+        "show_planned_batches"
+      ])
 
     # D43: the theme alone is the home department's managers' too (spec S147).
     action = if Map.keys(attrs) == ["color_mode"], do: :set_color_mode, else: :manage_device

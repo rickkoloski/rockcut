@@ -348,52 +348,26 @@ defmodule RockcutApiWeb.Router do
     delete "/labels/:id", IdeaLabelController, :delete
   end
 
-  # D46 production setup (spec §3.2–§3.4): Brewery members and owners
-  # (`Authz` `:production`; each action asks). People only until D49 brings
-  # the brewhouse tablet.
+  # D46 production (spec §3.2–§3.4, D47–D49): Brewery members and owners
+  # (`Authz` `:production`; each action asks). D50: the brewhouse device too
+  # (a shared device at home in the Brewery, `Authz.Device`): every read, and
+  # every schedule write with a person's staff code (`StaffCodeActing`). The
+  # `:brewery` module plug refuses any other device (403). See the route
+  # matrix test.
   scope "/api/production", RockcutApiWeb do
-    pipe_through [:api, :authenticated]
+    pipe_through [:api, :device_allowed, :brewery]
 
     get "/tanks", ProductionTankController, :index
-    post "/tanks", ProductionTankController, :create
-    post "/tanks/reorder", ProductionTankController, :reorder
-    patch "/tanks/:id", ProductionTankController, :update
-    delete "/tanks/:id", ProductionTankController, :retire
-    post "/tanks/:id/restore", ProductionTankController, :restore
+    get "/phases", ProductionListController, :phases
+    get "/step_types", ProductionListController, :step_types
+    get "/templates", ProductionTemplateController, :index
+    get "/templates/:id", ProductionTemplateController, :show
+
+    # Out-of-service periods are schedule changes (spec §5.4).
     post "/tanks/:id/outages", ProductionTankController, :create_outage
     patch "/outages/:id", ProductionTankController, :update_outage
     delete "/outages/:id", ProductionTankController, :delete_outage
     post "/outages/:id/end_today", ProductionTankController, :end_outage_today
-
-    get "/phases", ProductionListController, :phases
-    post "/phases", ProductionListController, :create_phase
-    post "/phases/reorder", ProductionListController, :reorder_phases
-    patch "/phases/:id", ProductionListController, :update_phase
-    delete "/phases/:id", ProductionListController, :retire_phase
-    post "/phases/:id/restore", ProductionListController, :restore_phase
-
-    get "/step_types", ProductionListController, :step_types
-    post "/step_types", ProductionListController, :create_step_type
-    post "/step_types/reorder", ProductionListController, :reorder_step_types
-    patch "/step_types/:id", ProductionListController, :update_step_type
-    delete "/step_types/:id", ProductionListController, :retire_step_type
-    post "/step_types/:id/restore", ProductionListController, :restore_step_type
-
-    get "/templates", ProductionTemplateController, :index
-    post "/templates", ProductionTemplateController, :create
-    post "/templates/reorder", ProductionTemplateController, :reorder
-    get "/templates/:id", ProductionTemplateController, :show
-    patch "/templates/:id", ProductionTemplateController, :update
-    delete "/templates/:id", ProductionTemplateController, :retire
-    post "/templates/:id/restore", ProductionTemplateController, :restore
-    post "/templates/:id/duplicate", ProductionTemplateController, :duplicate
-    post "/templates/:id/steps", ProductionTemplateController, :add_step
-    patch "/templates/:id/steps/:step_id", ProductionTemplateController, :update_step
-    delete "/templates/:id/steps/:step_id", ProductionTemplateController, :remove_step
-    post "/templates/:id/links", ProductionTemplateController, :add_link
-    patch "/templates/:id/links/:link_id", ProductionTemplateController, :update_link
-    delete "/templates/:id/links/:link_id", ProductionTemplateController, :remove_link
-    post "/templates/:id/ramp", ProductionTemplateController, :add_ramp
 
     # D47: the schedule, batches and their steps.
     get "/schedule", ProductionScheduleController, :show
@@ -420,6 +394,10 @@ defmodule RockcutApiWeb.Router do
     patch "/steps/:id", ProductionScheduleController, :update_step
     delete "/steps/:id", ProductionScheduleController, :remove_step
     post "/steps/:id/ramp", ProductionScheduleController, :change_ramp
+    # D50 §2.7: links on an existing batch's steps.
+    post "/steps/:id/links", ProductionScheduleController, :add_link
+    patch "/step_links/:id", ProductionScheduleController, :update_link
+    delete "/step_links/:id", ProductionScheduleController, :remove_link
     post "/cips", ProductionScheduleController, :create_cip
     patch "/cips/:id", ProductionScheduleController, :update_cip
     delete "/cips/:id", ProductionScheduleController, :delete_cip
@@ -428,6 +406,44 @@ defmodule RockcutApiWeb.Router do
     post "/flags/signoff", ProductionScheduleController, :sign_off
     delete "/flags/signoff/:key", ProductionScheduleController, :remove_signoff
     post "/undo/:token", ProductionScheduleController, :undo
+  end
+
+  # D46 setup changes (tanks, phases, step types, templates): people only
+  # (Matt, 2026-10-20: the brewhouse device sets nothing up).
+  scope "/api/production", RockcutApiWeb do
+    pipe_through [:api, :authenticated]
+
+    post "/tanks", ProductionTankController, :create
+    post "/tanks/reorder", ProductionTankController, :reorder
+    patch "/tanks/:id", ProductionTankController, :update
+    delete "/tanks/:id", ProductionTankController, :retire
+    post "/tanks/:id/restore", ProductionTankController, :restore
+
+    post "/phases", ProductionListController, :create_phase
+    post "/phases/reorder", ProductionListController, :reorder_phases
+    patch "/phases/:id", ProductionListController, :update_phase
+    delete "/phases/:id", ProductionListController, :retire_phase
+    post "/phases/:id/restore", ProductionListController, :restore_phase
+
+    post "/step_types", ProductionListController, :create_step_type
+    post "/step_types/reorder", ProductionListController, :reorder_step_types
+    patch "/step_types/:id", ProductionListController, :update_step_type
+    delete "/step_types/:id", ProductionListController, :retire_step_type
+    post "/step_types/:id/restore", ProductionListController, :restore_step_type
+
+    post "/templates", ProductionTemplateController, :create
+    post "/templates/reorder", ProductionTemplateController, :reorder
+    patch "/templates/:id", ProductionTemplateController, :update
+    delete "/templates/:id", ProductionTemplateController, :retire
+    post "/templates/:id/restore", ProductionTemplateController, :restore
+    post "/templates/:id/duplicate", ProductionTemplateController, :duplicate
+    post "/templates/:id/steps", ProductionTemplateController, :add_step
+    patch "/templates/:id/steps/:step_id", ProductionTemplateController, :update_step
+    delete "/templates/:id/steps/:step_id", ProductionTemplateController, :remove_step
+    post "/templates/:id/links", ProductionTemplateController, :add_link
+    patch "/templates/:id/links/:link_id", ProductionTemplateController, :update_link
+    delete "/templates/:id/links/:link_id", ProductionTemplateController, :remove_link
+    post "/templates/:id/ramp", ProductionTemplateController, :add_ramp
   end
 
   # Enable LiveDashboard and Swoosh mailbox preview in development

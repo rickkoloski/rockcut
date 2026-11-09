@@ -15,7 +15,11 @@ defmodule RockcutApi.Authz.Device do
       or the Daily items list's changes. Every write also needs a person's
       staff code and is decided for that person (`StaffCodeActing`);
     * read its home department's Idea Board and the Company board (D53),
-      nothing else there.
+      nothing else there;
+    * if it's the brewhouse device (home: Brewery), read and work the
+      production schedule (D50): `:read` and `:write` on `:production`, each
+      write with a person's staff code. Never `:setup` (tanks, phases, step
+      types, templates).
 
   When roles become data (RBAC roadmap Phases 2–6), this list becomes the
   system role for device accounts; `authz_device_test.exs` pins it.
@@ -62,6 +66,11 @@ defmodule RockcutApi.Authz.Device do
 
   def can?(%User{} = device, :read, {:idea_board, {:department, %Department{key: key}}}),
     do: key == home_key(device)
+
+  # D50 decision 1: the brewhouse device reads the schedule and its setup and
+  # works the schedule; `:setup` falls through to the catch-all.
+  def can?(%User{} = device, action, :production) when action in [:read, :write],
+    do: home_key(device) == "brewery"
 
   def can?(_device, _action, _resource), do: false
 

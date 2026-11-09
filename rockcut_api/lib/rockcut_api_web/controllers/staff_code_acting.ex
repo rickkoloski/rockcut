@@ -19,6 +19,9 @@ defmodule RockcutApiWeb.StaffCodeActing do
 
   The server keeps no "acting as" state: the tablet sends the code with every
   write (D40 plan decision 3).
+
+  D50: the brewhouse device's production writes use it too (`:production`),
+  so the board and the schedule share one wrong-code counter per tablet.
   """
   import Plug.Conn, only: [put_status: 2]
   import Phoenix.Controller, only: [json: 2]
@@ -47,6 +50,16 @@ defmodule RockcutApiWeb.StaffCodeActing do
         do: {:ok, user, nil},
         else: {:error, :forbidden}
     end
+  end
+
+  @doc """
+  `acting/2` as one person: `{:ok, person}` with `on_device_id` set to the
+  device when the write came from one (D40's change log, D50's production
+  rows), or `acting/2`'s refusal.
+  """
+  def actor(conn, resource) do
+    with {:ok, person, device} <- acting(conn, resource),
+         do: {:ok, %{person | on_device_id: device && device.id}}
   end
 
   # Only from the JSON body, never the query string: a URL ends up in proxy

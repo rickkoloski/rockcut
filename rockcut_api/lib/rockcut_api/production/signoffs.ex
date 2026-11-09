@@ -6,14 +6,14 @@ defmodule RockcutApi.Production.Signoffs do
   alias RockcutApi.Accounts.User
   alias RockcutApi.Production.FlagSignoff
 
-  def list, do: Repo.all(from(s in FlagSignoff, preload: :user))
+  def list, do: Repo.all(from(s in FlagSignoff, preload: [:user, :device]))
 
   def get_by_key(key), do: Repo.get_by(FlagSignoff, flag_key: key)
 
   @doc """
   Sign off `key` at `signature` as `user`, with an optional `note` (≤ 500);
   replaces any earlier one. D49: a muted flag (a pencilled batch's) can't be
-  (`:flag_muted`).
+  (`:flag_muted`). D50: `user.on_device_id` is recorded beside the person.
   """
   def sign_off(attrs, %User{} = user) do
     attrs = Map.new(attrs, fn {k, v} -> {to_string(k), v} end)
@@ -41,6 +41,7 @@ defmodule RockcutApi.Production.Signoffs do
       "note" => attrs["note"]
     })
     |> Ecto.Changeset.put_change(:user_id, user.id)
+    |> Ecto.Changeset.put_change(:device_id, user.on_device_id)
     |> Ecto.Changeset.put_change(:signed_at, DateTime.utc_now() |> DateTime.truncate(:second))
     |> Repo.insert_or_update()
   end
