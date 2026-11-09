@@ -689,3 +689,19 @@ servers, no Playwright, no `mix ecto.*` on the dev DB, no `mix compile --force`.
 - `tests/regression/devices/unknown_url.spec.ts:36` (gap 4)
 - Worth a full `devices/` and `brewery/` pass. The `ParamIds` change affects every write, though the
   sweep found no route that sends a non-numeric id, and neither did a search of the UI.
+
+## Lead decisions 6b done (gap 8 test race)
+
+- **Answers noted:** no controller-side id hardening (the API-wide check is enough); `dept:nope`
+  stays "Not available", no API change; the 9 unlabelled dropdowns are backlog task 5203.
+- **Cause:** `recipe_sort_order.spec.ts` gap 8 compared the new category's `sort_order` with **every**
+  category. Specs running in parallel (layout S153, T9, T12) create categories, each at the end, so
+  one could be added after this test's and sort later (9 > 8 on DEV).
+- **Fix (test only):** the test snapshots the category ids before it starts and compares only with
+  those, after Add and after clearing Sort Order in Edit (`expectAfterTheOthers`). No other spec
+  moves an existing category, so the snapshot can't go stale. The snapshot also has to be
+  non-empty.
+- **Same race elsewhere?** No. T9 (grain bill) and T12 (field definitions) assert the exact rows of
+  the recipe or category the test created for itself, which no other spec writes to.
+- **Gate:** `tsc -b` clean; lint unchanged on the spec. No app code changed.
+- **Rerun:** `tests/regression/brewery/recipe_sort_order.spec.ts:128` (gap 8), in the full run.

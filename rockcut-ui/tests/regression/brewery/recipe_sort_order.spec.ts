@@ -134,6 +134,17 @@ test('gap 8: a category with Sort Order empty is saved at the end, on add and on
   }
   type Cat = { id: number; name: string; sort_order: number }
   const all = async () => (await (await api.get('/api/ingredient_categories')).json()).data as Cat[]
+  // Compared only with the categories that existed before this test: other
+  // specs (layout S153, T9, T12) add their own in parallel, each at the end
+  // (lead decisions 6b). None of them moves an existing one.
+  const before = new Set((await all()).map((c) => c.id))
+  const expectAfterTheOthers = async () => {
+    const cats = await all()
+    const mine = cats.find((c) => c.id === made[0])!
+    const others = cats.filter((c) => before.has(c.id))
+    expect(others.length).toBeGreaterThan(0)
+    for (const c of others) expect(c.sort_order, c.name).toBeLessThan(mine.sort_order)
+  }
 
   await page.goto('/ingredients/categories')
   await page.getByTestId('settings-add-button').click()
@@ -150,12 +161,10 @@ test('gap 8: a category with Sort Order empty is saved at the end, on add and on
   made.push(cat.id)
   await expect(dialog).toHaveCount(0)
 
-  // Persist-verify: after a reload it's listed, stored after every other category.
+  // Persist-verify: after a reload it's listed, stored after the categories that were there.
   await page.reload()
   await expect(page.getByText(tag, { exact: true })).toBeVisible()
-  let cats = await all()
-  let mine = cats.find((c) => c.id === cat.id)!
-  for (const c of cats) if (c.id !== cat.id) expect(c.sort_order).toBeLessThan(mine.sort_order)
+  await expectAfterTheOthers()
 
   // Edit: put it at 0, then clear Sort Order: back to the end.
   expect((await api.put(`/api/ingredient_categories/${cat.id}`, { data: { sort_order: 0 } })).status()).toBe(200)
@@ -172,9 +181,7 @@ test('gap 8: a category with Sort Order empty is saved at the end, on add and on
   await expect(dialog).toHaveCount(0)
 
   await page.reload()
-  cats = await all()
-  mine = cats.find((c) => c.id === cat.id)!
-  for (const c of cats) if (c.id !== cat.id) expect(c.sort_order).toBeLessThan(mine.sort_order)
+  await expectAfterTheOthers()
 })
 
 // D55 lead decisions 6, gap 10: a brand, recipe, ingredient or batch URL that
