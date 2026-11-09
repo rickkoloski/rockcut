@@ -141,7 +141,7 @@ Personas: `breweryDevice` (home Brewery), `taproomDevice`, `brewer1`, `brewer2`,
 | D6 | `breweryDevice` | Multi-select three steps and drag, by touch at 1280×800 and by mouse at 1366×768 | They move as a block; the prompt runs; recorded as the acting person. |
 | D7 | `breweryDevice` | A batch change (add a step, a transfer, a split) with a code | As for a person; the split's parts move as one. |
 | D8 | `breweryDevice` | Five wrong codes on the Gantt | The D40 lockout; the board is locked too (shared counter). |
-| D9 | `owner` | Shared devices → Brewhouse → Show planned batches off | The device's Gantt and board hide pencilled batches; no person's setting changes. |
+| D9 | `owner` | Shared devices → Brewhouse → Show planned batches off | The device's Brewery board and the Gantt's Task list hide planned batches' tasks (D49's meaning, now per device; the Gantt still shows pencilled batches); no person's setting changes. |
 | L1 | `breweryMgr` | Template editor → edit PDH → pick "Leads to: FDH" → Save | The link exists after a reload (§2.6). |
 | L2 | `breweryMgr` | Step dialog on a batch → add "Comes after", Remove another | Saved; the move prompt uses the new link; Undo puts both back (§2.7). |
 | L3 | `breweryMgr` | Try a link that would loop, or a "comes after" on a later day | Not offered; the API refuses it if forced. |
