@@ -289,3 +289,15 @@ Nothing else deleted or weakened.
    batches" (D49) hides the *planned* batches' linked tasks on the board and the Gantt's Task list.
    The Gantt itself always shows pencilled batches, as it does for people. I kept D49's meaning, now
    per device. OK?
+
+## Stage 3 (in progress: waiting for the lead's full run)
+
+- `rockcut-ui/tests/COVERAGE.md`:
+  - D50 section: P104–P107, D1–D9, L1–L4 and the extra rows.
+  - D49's read-only-tablet row replaced, pointing to D50.
+  - D46 P19, D48's "people-only until D49" and D49's P104–P107 rows updated to D50's rule.
+- **D7 in the UI covers Add step only.** A transfer, a split and Undo split with a code are covered
+  in ExUnit (`production_device_test` D7), and so is the shared wrong-code lock (D8: four wrong
+  codes on the Gantt and one on the board). Playwright checks only the lock's message, with a
+  stubbed 429.
+- Not run, per lead decisions 2: Playwright, `vite build`, `mix compile --force`.

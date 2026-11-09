@@ -476,7 +476,7 @@ Playwright specs are in `regression/production/`, project `production` (one work
 | P16 | link Carb → Package "move only": "stays by default" | Playwright `production/templates` (P16: the row shows "after Carb · stays" after a reload; a loop is refused in the dialog); ExUnit `production_test` (cycle, order, exists) |
 | P17 | remove the Package: allowed, the banner (lead decision 3; the wording "The first tank has no Package, Split or Transfer.") | Playwright `production/templates` (P17: banner after a reload, Incomplete badge in the list; Brew day has no Remove); ExUnit `production_test` (`issues`) |
 | P18 | brewer2 duplicates "Standard ale", renames: independent copy | Playwright `production/templates` (P18, `[SEED] Standard ale`; the copy is renamed `[TEST-TEMP]` and retired); ExUnit `production_test` (deep copy, "Copy of … (2)") |
-| P19 | bartender1 / barMgr: Home, API 403; breweryDevice read-only | Playwright `production/access` (bartender1 and barMgr: no nav entry, every setup URL goes Home, API 403; owner and floater open every page; breweryDevice API 403 until D49); ExUnit `authz_parity/production_test` (12 personas), `authz_test`, `device_route_matrix_test`. Read-only tablet pages → D49 |
+| P19 | bartender1 / barMgr: Home, API 403; breweryDevice read-only | Playwright `production/access` (bartender1 and barMgr: no nav entry, every setup URL goes Home, API 403; owner and floater open every page; since D50 breweryDevice reads the setup and its setup changes are 403 "Not available on a shared device"); ExUnit `authz_parity/production_test` (12 personas), `authz_test`, `device_route_matrix_test`. The read-only pages on the device: D50 P106 |
 
 Also covered: the hub's counts (`production/tanks`); a period's first day carries its last along, and the order check before saving (`production/out-of-service`); a new phase's palette color, recolor and duplicate name (`production/lists`); the 12 colors readable (≥ 4.5:1) in both modes and the preview model (Vitest `src/lib/production.test.ts`).
 
@@ -622,7 +622,7 @@ Playwright specs are in `regression/production/` (project `production`, one work
 | — | Drags auto-scroll the grid near its edges (rows below the fold, dates past the right edge); a press in an edge zone doesn't scroll until it heads that way | Playwright `d48-batch-changes` ("a short window"); the P32/P33 and drag-hint specs drag to off-screen rows |
 | — | Flag signatures start with the recipe version `v1|`; a current sign-off stays signed off | ExUnit `status_flags_test`, `seeds/synthetic_test` |
 | — | DEV seed: a split batch (one part stays), an added filter, a clean and a dirty mark; `[TEST-TEMP]` parts and marks cleaned up | ExUnit `seeds/synthetic_test` |
-| — | Brewery members and owners only (403 for others); the new routes people-only until D49 | ExUnit controller test, `device_route_matrix_test` |
+| — | Brewery members and owners only (403 for others); the new routes people-only until D50 (now the brewhouse device's, with a staff code: D50) | ExUnit controller test, `device_route_matrix_test` |
 
 | DEV QA M1 | Transfers, filters and splits only while the beer is in that tank (`before_fill`, `after_exit`, "The split has to be after brew day."); added steps and ramps from brew day; dialogs default to the first valid day | ExUnit `batch_changes_test`, `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
 | DEV QA M2, minors 6, 8 | A split parent can't be deleted or resized until Undo split (a note in place of Delete); a part shows "P5.2 · …" and has no Delete; Undo of a delete restores vessels, steps, links and a ramp | ExUnit `splits_marks_test`, controller test; Playwright `d48-fix-cycle-1` |
@@ -678,9 +678,9 @@ Playwright specs are in `regression/production/` (project `production`) and, for
 | P101 | Into another tank / its batch number: the titles follow | Playwright `task-board-linked` (tank), P95 (number); ExUnit `task_link_test` (renumbering, renames) |
 | P102 | Gantt → Task list: Late / Today / the next days; check off, Move to [date], assign, Open; follows Show planned batches | Playwright `d49-task-list` |
 | P103 | A standalone CIP: "TANK · CIP & Sanitize" on the board; checked off there, the tank is sanitized | Playwright `task-board-linked`; ExUnit `task_link_test` |
-| P104–P107 | The brewhouse tablet on the schedule | **D50**, not D49 (Matt, 2026-10-26). Until then the tablet sees linked tasks read-only: the tablet row below |
+| P104–P107 | The brewhouse tablet on the schedule | **D50** (Matt, 2026-10-26): see the D50 section |
 | P108 | No recurring options on a linked task; Change day… has no Future and runs the move prompt | Playwright `task-board-linked`; ExUnit `task_board_linked_test` (`linked_task`) |
-| — | The brewhouse tablet: linked tasks read-only (no checkbox, no drag, no actions, "Do this on the production schedule."); the API refuses every write (`linked_task_device`) | Playwright `task-board-linked`; ExUnit `task_board_linked_test`, `device_route_matrix_test` |
+| — | ~~The brewhouse tablet: linked tasks read-only (`linked_task_device`)~~ Replaced by D50 §2.5: on the tablet they work with a staff code (D50 section, D4 and "linked tasks on the device") | — |
 | — | A phase marker has no task-list switch (step dialog, template row, Add phase start) (decision 6.1) | Playwright `d49-task-list` |
 | — | The Dashboard's Today's tasks card: a linked brew day (batch number) opens its step on the schedule, nothing checked off; a CIP checks off in the card (decision 8.3) | Playwright `task-board-linked` |
 | — | Move all to today leaves linked tasks; shift-end reminders list them | Playwright `task-board-range` (S20); ExUnit `task_board_linked_test`, `task_shift_end_reminder_test` |
@@ -844,3 +844,34 @@ ExUnit files are under `rockcut_api/test/`; Vitest under `rockcut-ui/src/`. Play
 | — | Gap 4: tablet, unknown channel URL → "Page not found"; a real channel it can't open → "Not available on a shared device" | Vitest `lib/channels.test`; Playwright `devices/unknown_url` (gap 4) |
 | — | §2.7: `mix compile --warnings-as-errors` clean | The gate |
 | — | §2.8: the two unread columns dropped; down brings them back; up again; rows and sign-ins kept | ExUnit `migrations/drop_unread_session_columns_test`; up/down/up on the dev DB by hand (stop 2 status) |
+
+## D50 — The brewhouse device on the production schedule (`specs/d50_brewhouse_device_spec.md`; `planning/d50_brewhouse_device_plan.md`; `prompts/d50_lead_decisions_1.md`, `_2.md`)
+
+ExUnit files are under `rockcut_api/test/`; Vitest under `rockcut-ui/src/`. Playwright specs: `regression/production/d50-*.spec.ts` (project `production`; the device spec at 1366×768 mouse, the touch spec at 1280×800 `hasTouch`), `tasks/task-board-linked` (project `brewery-board`), `devices/brewhouse_show_planned` (`chromium`). Staff codes belong to `[TEST-TEMP]` Brewery people (and one Taproom person), never the personas. "Revert" = confirmed failing with the fix reverted.
+
+| # | Scenario | Coverage |
+|---|---|---|
+| P104 | breweryDevice: Brewery → Production; the Gantt reads; Check off asks for a staff code first (cancel changes nothing) | Playwright `d50-brewhouse-device` (P104); ExUnit `production_device_test` (P104), `device_route_matrix_test` (every read 2xx with no email) |
+| P105 | A drag with brewer A's code: the move prompt, recorded as A on the device, "Acting as A" on the Gantt; the next write inside the window asks nothing | Playwright `d50-brewhouse-device` (mouse), `d50-brewhouse-touch` (long-press drag); ExUnit `production_device_test` (`recorded_as`, the Undo record's person and device) |
+| P106 | Tanks, Templates (and the editor), Phases & steps read-only on the device ("Set up on a personal account"); the API refuses every setup change | Playwright `d50-brewhouse-device` (P106), `production/access` (P19/P106); ExUnit `device_route_matrix_test` (all 28 setup writes 403 "Not available on a shared device", with a code or without) |
+| P107 | taproomDevice: a typed `/brewery/production…` is "Not available on a shared device", no Production in its nav; every production route 403 | Playwright `d50-brewhouse-device` (P107); ExUnit `device_route_matrix_test` (Taproom device × every production route, code or not), `authz_device_test` |
+| D1 | Plan batch from a template with a code: P-number, linked tasks on the Brewery board, recorded as the person | Playwright `d50-brewhouse-device` (D1, through the dialog; needs `GET /api/brands` on the device, lead decisions 2.1); ExUnit `production_device_test` (D1) |
+| D2 | Mark OK on a flag with a code: signed off by that person, "· on Brewhouse tablet" | Playwright `d50-brewhouse-device` (D2); ExUnit `production_device_test` (D2: `flag_signoffs.device_id`, the schedule's `device_name`) |
+| D3 | A Taproom member's code: "That staff code isn't right", the dialog stays, nothing changes | Playwright `d50-brewhouse-device` (D3); ExUnit `production_device_test` (four kinds of write), `task_board_linked_test` (on a linked task) |
+| D4 | Check off a linked brew day on the Brewery board with a code: the batch-number prompt; done on the Gantt by that person, on the device | Playwright `task-board-linked` (D4); ExUnit `task_board_linked_test` (D4) |
+| D5 | B's code on A's Undo: "Only A can undo this."; the Undo stays and A's code undoes it; A on their own login can too | Playwright `d50-brewhouse-device` (D5); ExUnit `production_device_test` (D5), `undo_cips_test`, `production_schedule_controller_test` (`undo_not_yours` for people; expired first, lead decisions 1) |
+| D6 | Multi-select three steps and drag: one block, the prompt, as the acting person — touch at 1280×800, mouse at 1366×768 | Playwright `d50-brewhouse-touch` (long-press, taps, touch drag), `d50-brewhouse-device` (Ctrl-click, mouse drag) |
+| D7 | Batch changes with a code | Playwright `d50-brewhouse-device` (**Add step only**); ExUnit `production_device_test` (add step, transfer, split, Undo split) |
+| D8 | Five wrong codes lock the device; the board is locked too (one counter) | ExUnit `production_device_test` (four on the Gantt + one on the board; a CIP check-off counts a wrong code once); Playwright `d50-brewhouse-device` (the lock message in the dialog, stubbed 429) |
+| D9 | Owner: Shared devices → Show planned batches off for a Brewery device (no switch on a Taproom one); stays off; the tablet's `/api/me` follows; no person's setting changes | Playwright `devices/brewhouse_show_planned`; ExUnit `production_device_test` (decision 5: owner only, null 422) |
+| L1 | Template editor: pick "Leads to: FDH" on PDH, Save → linked after a reload; Links above Notes; a refused Save links nothing | Playwright `d50-links` (L1, **revert**); Vitest `lib/links.test` (`pickedLinks`, `linkChoices`) |
+| L2 | Step dialog: add "Comes after" with Save, Remove another; the move prompt follows the new links; Undo puts each back | Playwright `d50-links` (L2); ExUnit `production_device_test` (L2, the move preview's `following`) |
+| L3 | A loop, a later-day "comes after", another batch, a duplicate: not offered; the API refuses them | Playwright `d50-links` (L3, pickers); ExUnit `production_device_test` (`link_cycle`, `link_order`, `link_other_batch`, `link_exists`, `link_pick`, 404); Vitest `lib/links.test` |
+| L4 | L2 on the device with a code, recorded as the person | Playwright `d50-brewhouse-device` (L4); ExUnit `production_device_test` (L4) |
+| — | A split's parts link within their tree, not to another batch | ExUnit `production_device_test`; Vitest `lib/links.test` (`splitTree`) |
+| — | Linked tasks on the device: checkbox, drag, every menu action, Open in schedule; every write needs a code (422 without), as the person; a same-day reorder logs the device | Playwright `task-board-linked` (D50 describe); ExUnit `task_board_linked_test`, `task_board_multi_assignee_test`, `device_route_matrix_test` |
+| — | Out-of-service periods and CIPs on the device with a code | ExUnit `production_device_test`; UI through the same `useActing` path (`OutageDialog`) |
+| — | Authz: a Brewery-home device `:read`/`:write` `:production`, never `:setup`; any other device nothing | ExUnit `authz_device_test`, `authz_test` |
+| — | "Done … by Jake · on Brewhouse tablet" in the step status | Vitest `lib/links.test` (`stepStatus`); ExUnit `production_device_test` (`done_on_device`) |
+| — | A person's Gantt: no code dialog, no "Acting as" | Playwright `d50-brewhouse-device` ("a person") |
+| — | Migration `add_production_device_ids`: up, down, up | By hand on the test DB (stop 1 status) |
