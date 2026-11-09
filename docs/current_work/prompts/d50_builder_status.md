@@ -290,7 +290,7 @@ Nothing else deleted or weakened.
    The Gantt itself always shows pencilled batches, as it does for people. I kept D49's meaning, now
    per device. OK?
 
-## Stage 3 (in progress: waiting for the lead's full run)
+## Stage 3 (doc work)
 
 - `rockcut-ui/tests/COVERAGE.md`:
   - D50 section: P104–P107, D1–D9, L1–L4 and the extra rows.
@@ -301,3 +301,19 @@ Nothing else deleted or weakened.
   codes on the Gantt and one on the board). Playwright checks only the lock's message, with a
   stubbed 429.
 - Not run, per lead decisions 2: Playwright, `vite build`, `mix compile --force`.
+
+## Stop 3 (local gate green)
+
+Final tree `6cf57e2` (code unchanged since `15abc95`; docs only after).
+
+| Check | Result |
+|---|---|
+| Full local Playwright (lead, its own tab) | **691 passed, 1 skipped** (the DEV-only banner spec), 36.4 min; `/tmp/claude-501/pwlogs/d50_local_full.log`. Nothing to fix. |
+| `MIX_ENV=test mix test` | 2214 passed, twice (104.4 s, 102.8 s) |
+| `mix compile --warnings-as-errors` | clean |
+| `tsc --noEmit -p tsconfig.app.json` | clean |
+| `vite build` | OK (`/tmp/claude-501/pwlogs/d50_vite_build.log`) |
+| vitest | 17 files, 250 tests passed |
+| `pnpm lint` | 26 errors + 1 warning: the ceiling, none in files D50 touches |
+
+The local DB was reseeded after the full run (lead). Not pushed; no PR yet.
