@@ -1,3 +1,5 @@
+// D54: first, so the auth store reads a settled token (remove after D54 + one release).
+import './lib/leftoverTabletSession'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
