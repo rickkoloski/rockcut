@@ -12,10 +12,15 @@ defmodule RockcutApiWeb.StaffCodeActing do
       token);
     * no code in the JSON body → 422 `staff_code_required` (a `staff_code`
       in the query string doesn't count: URLs end up in logs; D40 DEV qa);
-    * a code that resolves to nobody, or to someone who may not make this
-      write (`Authz.can?(person, :write, resource)`: on a task board, a
-      member of the tablet's home department), is a wrong code: 422
-      `staff_code_invalid`, counted toward the lock.
+    * a code that resolves to nobody is a wrong code: 422
+      `staff_code_invalid`, counted toward the lock;
+    * a code that resolves to someone who may not make this write
+      (`Authz.can?(person, :write, resource)`: on a task board, a member of
+      the tablet's home department) is 422 `staff_code_not_allowed`, "That
+      staff code can't do this here", **not** counted (D50 lead decisions 3,
+      gap 1: a Taproom person retrying their right code mustn't lock the
+      brewers out). The lock is checked first, so a locked tablet never says
+      whether a code is real.
 
   The server keeps no "acting as" state: the tablet sends the code with every
   write (D40 plan decision 3).
@@ -31,8 +36,8 @@ defmodule RockcutApiWeb.StaffCodeActing do
 
   @doc """
   `{:ok, person, device_or_nil}` for a write on `resource`, or
-  `{:error, :forbidden | :staff_code_required | :staff_code_invalid}`, or
-  `{:locked, seconds_left}`.
+  `{:error, :forbidden | :staff_code_required | :staff_code_invalid |
+  :staff_code_not_allowed}`, or `{:locked, seconds_left}`.
   """
   def acting(conn, resource) do
     user = conn.assigns.current_user
@@ -70,9 +75,12 @@ defmodule RockcutApiWeb.StaffCodeActing do
   defp resolve(code, key, resource) do
     case StaffCodes.resolve(code) do
       nil -> wrong(key)
-      person -> if Authz.can?(person, :write, resource), do: {:ok, person}, else: wrong(key)
+      person -> if Authz.can?(person, :write, resource), do: {:ok, person}, else: not_allowed()
     end
   end
+
+  # A real person who may not make this write: refused, not counted.
+  defp not_allowed, do: {:error, :staff_code_not_allowed}
 
   defp wrong(key) do
     case RateLimiter.failure(key) do
@@ -90,6 +98,9 @@ defmodule RockcutApiWeb.StaffCodeActing do
 
   def render_error({:error, :staff_code_invalid}, conn),
     do: error(conn, 422, "staff_code_invalid", "That staff code isn't right")
+
+  def render_error({:error, :staff_code_not_allowed}, conn),
+    do: error(conn, 422, "staff_code_not_allowed", "That staff code can't do this here")
 
   def render_error({:locked, seconds}, conn) do
     minutes = max(div(seconds + 59, 60), 1)

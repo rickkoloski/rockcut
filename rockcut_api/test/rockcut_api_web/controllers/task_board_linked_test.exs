@@ -491,7 +491,8 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
       assert event.actor_id == ctx.p["brewer1"].id
     end
 
-    test "a code from outside the Brewery is a wrong code; nothing changes (D3)", ctx do
+    # D50 gap 1 (was `staff_code_invalid`): a real person outside the Brewery.
+    test "a code from outside the Brewery can't do this here; nothing changes (D3)", ctx do
       {:ok, _} = StaffCodes.set(ctx.p["bartender1"], "3333", ctx.p["owner"])
       fdh = named(plan(ctx, "Crusher", 2), "FDH")
       {_device, token} = brewhouse()
@@ -500,7 +501,7 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
         call_device(token, :patch, task_url(task_of(fdh)), %{notes: "x", staff_code: "3333"})
         |> json_response(422)
 
-      assert body["error"] == "staff_code_invalid"
+      assert body["error"] == "staff_code_not_allowed"
       assert step(fdh).notes == nil
     end
   end

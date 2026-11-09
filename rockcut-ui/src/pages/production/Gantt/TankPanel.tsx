@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, List, ListItem, ListItemButton, ListItemText, Radio, TextField, Tooltip, Typography } from '@mui/material'
 import { DeleteOutline } from '@mui/icons-material'
+import ConfirmDialog from '../../../components/ConfirmDialog'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { dayLabel } from '../../../lib/gantt'
 import { MARK_STATES, markLabel, OUTAGE_GROUPS, prodPath, type ConditionMark, type MarkState, type Outage, type Tank, type TankStatusLine } from '../../../lib/production'
@@ -24,7 +25,9 @@ const markText = (m: ConditionMark) => `Marked ${markLabel(m.state).toLowerCase(
  * marks under History with Remove. D49 §3.12a (mockup B): "Mark the tank
  * as" Clean & sanitized / Clean not sanitized / Dirty, a list of large rows
  * (the current state's greyed out), with the day and a note under it and
- * Save mark at the bottom; hidden while beer is in the tank.
+ * Save mark at the bottom; hidden while beer is in the tank. D50 (DEV QA gap
+ * 4): Remove asks first, as deleting a period or a CIP does; on the
+ * brewhouse device the staff code comes after the confirm.
  */
 export default function TankPanel({ tank, status, marks, today, onOpen, onClose }: Props) {
   const flows = useFlows()
@@ -34,6 +37,7 @@ export default function TankPanel({ tank, status, marks, today, onOpen, onClose 
   const [note, setNote] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [removing, setRemoving] = useState<ConditionMark | null>(null)
   const state = status?.state
   // What the tank is now, as a mark (none while it's out of service).
   const current: MarkState | null = state === 'sani' || state === 'clean' ? 'clean' : state === 'cleaned' ? 'cleaned' : state === 'dirty' ? 'dirty' : null
@@ -154,7 +158,7 @@ export default function TankPanel({ tank, status, marks, today, onOpen, onClose 
                   data-testid={`tank-panel-mark-${m.id}`}
                   secondaryAction={
                     <Tooltip title="Remove">
-                      <IconButton edge="end" size="small" aria-label={`Remove: ${markText(m)}`} onClick={() => remove(m)} data-testid={`tank-panel-mark-remove-${m.id}`}>
+                      <IconButton edge="end" size="small" aria-label={`Remove: ${markText(m)}`} onClick={() => setRemoving(m)} data-testid={`tank-panel-mark-remove-${m.id}`}>
                         <DeleteOutline fontSize="small" />
                       </IconButton>
                     </Tooltip>
@@ -180,6 +184,19 @@ export default function TankPanel({ tank, status, marks, today, onOpen, onClose 
           Close
         </Button>
       </DialogActions>
+      <ConfirmDialog
+        open={!!removing}
+        onClose={() => setRemoving(null)}
+        onConfirm={() => {
+          const m = removing!
+          setRemoving(null)
+          void remove(m)
+        }}
+        title="Remove mark"
+        message={removing ? `Remove “${markText(removing)}” from ${tank.name}’s history? The tank’s state is worked out again without it.` : ''}
+        confirmLabel="Remove"
+        testId="mark-remove-confirm"
+      />
     </Dialog>
   )
 }

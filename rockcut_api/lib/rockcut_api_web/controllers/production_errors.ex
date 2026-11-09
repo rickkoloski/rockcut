@@ -90,7 +90,7 @@ defmodule RockcutApiWeb.ProductionErrors do
   def handle({:error, %Ecto.Changeset{}} = error, _conn), do: error
 
   def handle({:error, code} = refusal, conn)
-      when code in [:staff_code_required, :staff_code_invalid],
+      when code in [:staff_code_required, :staff_code_invalid, :staff_code_not_allowed],
       do: StaffCodeActing.render_error(refusal, conn)
 
   def handle({:locked, _seconds} = refusal, conn), do: StaffCodeActing.render_error(refusal, conn)

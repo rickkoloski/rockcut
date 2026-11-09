@@ -170,7 +170,8 @@ test('D3: a Taproom member’s code is refused; the dialog stays open and nothin
   await openGantt(page)
   await dragBy(page, dot(page, fdh.id), 1)
   await enterCode(page, bartender!.code)
-  await expect(page.getByTestId('acting-code-dialog')).toContainText("That staff code isn't right")
+  // Fix cycle 1, gap 1 (was "That staff code isn't right"): a real person from another department.
+  await expect(page.getByTestId('acting-code-dialog')).toContainText("That staff code can't do this here")
   await expect(page.getByTestId('acting-staff-code')).toHaveValue('')
   await page.getByTestId('acting-cancel').click()
   await expect(page.getByTestId('move-prompt')).toHaveCount(0)

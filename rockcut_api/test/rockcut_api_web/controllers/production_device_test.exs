@@ -167,7 +167,10 @@ defmodule RockcutApiWeb.ProductionDeviceTest do
     assert again["signoff"]["device_name"] == "Brewhouse"
   end
 
-  test "D3: bartender1's code is a wrong code on every kind of write; nothing changes", ctx do
+  # D50 lead decisions 3 (gap 1; was `staff_code_invalid`, counted): a real
+  # person outside the Brewery can't do this here, and it isn't counted.
+  test "D3: bartender1's code can't do this here on every kind of write; nothing changes; not counted",
+       ctx do
     batch = plan(ctx, "Galactic", 2, [nil])
     fdh = named(batch, "FDH")
     batches = Repo.aggregate(Batch, :count)
@@ -181,15 +184,15 @@ defmodule RockcutApiWeb.ProductionDeviceTest do
       {:post, "/api/production/flags/signoff", %{key: "no_tank:#{batch.id}.0", signature: "s"}}
     ]
 
-    # Four wrong codes: the fifth would lock the device (D8).
-    for {verb, path, params} <- writes |> Enum.take(4) do
+    # All five kinds, and none locks the device (five wrong codes would).
+    for {verb, path, params} <- writes do
       body =
         call_device(ctx.token, verb, path, Map.put(params, :staff_code, "3333"))
         |> json_response(422)
 
       assert body == %{
-               "error" => "staff_code_invalid",
-               "message" => "That staff code isn't right"
+               "error" => "staff_code_not_allowed",
+               "message" => "That staff code can't do this here"
              },
              "#{verb} #{path}"
     end
@@ -198,6 +201,39 @@ defmodule RockcutApiWeb.ProductionDeviceTest do
     assert due == day(9)
     assert Repo.aggregate(Batch, :count) == batches
     refute Repo.get_by(FlagSignoff, flag_key: "no_tank:#{batch.id}.0")
+  end
+
+  test "gap 1: five not-allowed codes on the Gantt and the board don't lock; five wrong codes still do",
+       ctx do
+    fdh = named(plan(ctx, "Galactic", 2), "FDH")
+    board = %{title: "Keg wash", staff_code: "3333"}
+
+    for _ <- 1..3,
+        do:
+          assert(
+            %{"error" => "staff_code_not_allowed"} = move(ctx, fdh, "3333") |> json_response(422)
+          )
+
+    for _ <- 1..2 do
+      assert %{"error" => "staff_code_not_allowed"} =
+               call_device(ctx.token, :post, "/api/boards/brewery/tasks", board)
+               |> json_response(422)
+    end
+
+    # Not locked: the right code still works (and nothing moved before it).
+    assert step(fdh).due_on == day(9)
+    assert move(ctx, fdh, "1111") |> json_response(200)
+    assert step(fdh).due_on == day(10)
+
+    for _ <- 1..4,
+        do:
+          assert(
+            %{"error" => "staff_code_invalid"} = move(ctx, fdh, "9999") |> json_response(422)
+          )
+
+    assert %{"error" => "staff_code_locked"} = move(ctx, fdh, "9999") |> json_response(429)
+    # Locked, a real outsider's code gets the lock too: it never says whether a code is real.
+    assert %{"error" => "staff_code_locked"} = move(ctx, fdh, "3333") |> json_response(429)
   end
 
   test "an owner's code works on the device (decision 5.1)", ctx do

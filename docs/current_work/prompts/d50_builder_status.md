@@ -317,3 +317,84 @@ Final tree `6cf57e2` (code unchanged since `15abc95`; docs only after).
 | `pnpm lint` | 26 errors + 1 warning: the ceiling, none in files D50 touches |
 
 The local DB was reseeded after the full run (lead). Not pushed; no PR yet.
+
+## Fix cycle 1 (DEV QA gaps 1 and 4; lead decisions 3)
+
+### Gap 1: a valid code from someone who may not make the change
+
+- **API.** `StaffCodeActing.resolve/3`: a code that resolves to a real person who fails
+  `Authz.can?(person, :write, resource)` now answers 422 `staff_code_not_allowed`, "That staff code
+  can't do this here".
+  - It doesn't call `RateLimiter.failure/1`, and nothing changes.
+  - A code that resolves to nobody is still `staff_code_invalid`, counted.
+  - The lock check still comes first, so a locked device answers 429 to any code.
+- **Where it applies.** Production renders it through `ProductionErrors`. The task boards (with
+  their linked tasks) and Buy-a-Beer already fall through to `StaffCodeActing.render_error/2`.
+- **UI.**
+  - `lib/acting.ts` `staffCodeFailure` treats the new error like the others: the dialog stays open
+    with the server's message, the field is cleared (a new attempt), and nothing is remembered.
+  - `lib/beerBoard.ts` puts it under the code field, as it does `staff_code_invalid`.
+- **Existing tests updated** (they expected `staff_code_invalid` for a real person's code from the
+  wrong department):
+  - ExUnit:
+    - `task_board_device_test` "S45" (was "a wrong code here, and counts") and "the Taproom tablet
+      (D41 item 6)" (the Brewery code on the bar board);
+    - `beer_board_controller_test` "S12: a code of someone who left the Taproom" (was "is just
+      wrong");
+    - `production_device_test` "D3" (now all five kinds of write, and none locks);
+    - `task_board_linked_test` "a code from outside the Brewery".
+  - Playwright:
+    - `task-board-tablets` S45;
+    - `d50-brewhouse-device` D3 (the message).
+  - Unchanged: `beer-board-device` S9 (a truly wrong code, still "isn't right").
+- **New tests.**
+  - ExUnit `production_device_test` "gap 1": five not-allowed codes on the Gantt and the board
+    don't lock, the right code then works, five wrong codes still lock, and a locked device answers
+    429 to a real outsider's code too.
+  - ExUnit `task_board_device_test` S45: five tries don't lock and no task is added; four wrong codes
+    are still 422 and the fifth locks.
+  - ExUnit `beer_board_controller_test`: a Brewery person's code on Buy-a-Beer, five tries, no lock.
+  - Vitest `acting.test` and `useActing.test`: the new error keeps the dialog with the message and a
+    new attempt (field cleared).
+  - Playwright `d50-fix1` gap 1: a TT-taproom code five times shows "can't do this here", the field
+    is cleared, there's no lock, and the brewer's code then works.
+- **Revert checks.**
+  - With the old `wrong(key)` put back, **7 ExUnit tests fail** (both beer board tests, both task
+    board device tests, the linked test, D3 and gap 1); restored, all pass.
+  - With the `case 'staff_code_not_allowed'` removed from `acting.ts`, **2 vitest tests fail**;
+    restored, they pass.
+
+### Gap 4: confirm before removing a condition mark
+
+- **What changed.** `TankPanel`: History → Remove opens a confirm, "Remove mark", which names the
+  mark (`Remove “Marked dirty by … · …” from FV9’s history? …`) and has Cancel and Remove.
+  - On the device the code dialog comes after the confirm, because the write goes through
+    `flows.write`.
+  - `ConfirmDialog` gets an optional `testId`.
+- **Tests.**
+  - Playwright `d50-fix1` gap 4, as a person and on the device (code after the confirm): Cancel
+    keeps the mark and Remove deletes it, both checked through the API. The confirm is clicked
+    inside `mark-remove-confirm` by its exact name.
+  - `d48-split-select` P117 now goes through the confirm (same rule).
+- **Revert check.** With the one-tap Remove put back, the person case **fails** (no confirm);
+  restored, it passes (`d50_fix1_revert_gap4.log`, `d50_fix1_restore_gap4.log`).
+
+### Gate
+
+| Check | Result |
+|---|---|
+| `MIX_ENV=test mix test` | 2216 passed, twice |
+| `mix compile --warnings-as-errors` | clean; `mix format --check-formatted` on changed files clean |
+| `tsc -p tsconfig.app.json` | clean; `tsconfig.e2e.json` only the two old errors |
+| `vite build` | OK (`d50_fix1_vite_build.log`) |
+| vitest | 18 files, 255 passed |
+| `pnpm lint` | 26 errors + 1 warning (the ceiling) |
+
+**Playwright (my new and changed specs, local servers):**
+- `d50-fix1` 3/3, `d50-brewhouse-device` 13/13, `d48-split-select` 7/7 (`d50_fix1_production.log`);
+- `task-board-tablets` S45 1/1 (`d50_fix1_board_s45.log`).
+
+The first attempt ran `--no-deps` with tokens from before the reseed (all 401). Re-run with
+`setup`, it was green.
+
+Gaps 2 and 3 untouched (backlog 5210, 5211). `COVERAGE.md`: two DEV QA rows in the D50 section.
