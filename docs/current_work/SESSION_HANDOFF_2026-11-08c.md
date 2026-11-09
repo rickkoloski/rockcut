@@ -51,14 +51,18 @@ memberships 422s; §2.5/§2.10 empty Sort Order = the end (grain bill, category 
 5203 (9 unlabelled brewing dropdowns), 5204 (shift assigned to a deactivated person), 5205 (blank page
 while `/api/me` hangs at start-up), 5206 (unknown Boards card URL shows the board silently).
 
-## Next after D55 (recommended to Matt; he hasn't chosen)
+## Next after D55 (decided by Matt, 2026-11-08)
 
-- **D56 = D50** (task 4934, the brewhouse tablet on the production schedule): needs the brewhouse
-  tablet paired on prod.
-- Or schedule events: 4055 (events in calendar feeds), 4056 (company-wide), with 4261.
-- A 15-minute decisions session with Matt: 4991, 4994, 4992, 4984, 5202.
-- Later bundles: brewing (4982, 4986, 4987 °Plato, 4989, 5203, maybe 3843); polish (5193, 5206, 4950,
-  4319, 4061, 4115/4116/4118, 4084, 4990, 5204, 5205).
+- **D50 next: spec APPROVED** (`specs/d50_brewhouse_device_spec.md`, task 4934). The brewhouse device
+  (any shared device with Chrome 107+, touch or mouse; the old Chromebit can't run the app) works the
+  whole schedule with a staff code, plans batches and signs off flags; setup stays read-only. Also the
+  template link bug (§2.6: picking a link and pressing Save silently drops it; reproduced locally) and
+  link editing on an existing batch's steps (§2.7). Next: branch from `develop` after D55 is released,
+  a plan, a builder brief. Matt pairs the brewhouse device on prod.
+- **D56** (task 5207): production timing, pre-brew (negative) days and multi-day steps.
+- **D57** (task 5208): test results and automatic retests (a failed D-test).
+- Also open: a 15-minute decisions session (4991, 4994, 4992, 4984, 5202); schedule events (4055,
+  4056, 4261); brewing and polish bundles.
 
 ## herdr, worktrees, folders
 
