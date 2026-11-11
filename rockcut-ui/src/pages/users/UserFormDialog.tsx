@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -20,7 +21,8 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import useAuth from '../../hooks/useAuth'
-import type { Department, Role, User } from '../../lib/types'
+import type { Department, User } from '../../lib/types'
+import { editableDepartments, membershipsPayload, readOnlyOwnersOnly, type RoleChoice } from '../../lib/userRoles'
 import StaffCodeSection from './StaffCodeSection'
 import { staffCodeError } from '../../lib/staffCode'
 
@@ -30,8 +32,6 @@ interface Props {
   editUser: User | null
   departments: Department[]
 }
-
-type RoleChoice = '' | Role
 
 function readError(err: unknown): string {
   const e = err as { response?: { data?: { error?: string } } }
@@ -44,12 +44,13 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const isOwnerActor = !!actor?.is_owner
   const isEdit = !!editUser
 
-  // Only assignable departments bear roles ("Other" is scheduling-only).
-  const assignableDepts = departments.filter((d) => d.assignable !== false)
+  // Only assignable departments bear roles ("Other" is scheduling-only). D59:
+  // only an owner changes Owners, and only as employee.
   const managedKeys = isOwnerActor
-    ? assignableDepts.map((d) => d.key)
+    ? departments.filter((d) => d.assignable !== false).map((d) => d.key)
     : capabilities?.manages_departments ?? []
-  const manageableDepts = assignableDepts.filter((d) => managedKeys.includes(d.key))
+  const manageableDepts = editableDepartments(departments, isOwnerActor, managedKeys)
+  const lockedDepts = readOnlyOwnersOnly(editUser?.memberships, departments, manageableDepts)
 
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -93,10 +94,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editUser])
 
-  const memberships = () =>
-    manageableDepts
-      .filter((d) => roles[d.key])
-      .map((d) => ({ department: d.key, role: roles[d.key] as Role }))
+  const memberships = () => membershipsPayload(manageableDepts, roles)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['users'] })
 
@@ -241,13 +239,24 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
                   value={roles[d.key] ?? ''}
                   onChange={(e) => setRoles((r) => ({ ...r, [d.key]: e.target.value as RoleChoice }))}
                   fullWidth
+                  helperText={d.owners_only ? `${d.name} has no managers.` : undefined}
                 >
                   <MenuItem value="">— None —</MenuItem>
-                  <MenuItem value="manager">Manager</MenuItem>
-                  <MenuItem value="employee">Employee</MenuItem>
+                  {!d.owners_only && <MenuItem value="manager">Manager</MenuItem>}
+                  <MenuItem value="employee">{d.owners_only ? 'Member' : 'Employee'}</MenuItem>
                 </TextField>
               ))}
             </Stack>
+            {lockedDepts.length > 0 && (
+              <Box>
+                {lockedDepts.map((d) => (
+                  <Chip key={d.key} label={`${d.name} member`} size="small" variant="outlined" sx={{ mr: 1 }} />
+                ))}
+                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
+                  Only owners change {lockedDepts.map((d) => d.name).join(', ')} membership.
+                </Typography>
+              </Box>
+            )}
 
             {showStaffCode && editUser && (
               <StaffCodeSection

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Box, Chip, Paper } from '@mui/material'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
@@ -6,15 +6,17 @@ import PageHeader from '../../components/PageHeader'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import UserFormDialog from './UserFormDialog'
 import type { Department, User } from '../../lib/types'
+import { sortMemberships } from '../../lib/userRoles'
 
-function rolesSummary(user: User): string {
+// D59 §4.4: in the API's department order, so Owners comes last.
+function rolesSummary(user: User, departments: Department[]): string {
   if (user.is_owner) return 'Owner — all departments'
-  const ms = user.memberships ?? []
+  const ms = sortMemberships(user.memberships ?? [], departments)
   if (ms.length === 0) return '—'
   return ms.map((m) => `${m.department_name}: ${m.role}`).join(', ')
 }
 
-const columns: GridColDef<User>[] = [
+const columnsFor = (departments: Department[]): GridColDef<User>[] => [
   { field: 'email', headerName: 'Email', flex: 1, minWidth: 200 },
   { field: 'name', headerName: 'Name', flex: 1, minWidth: 140 },
   {
@@ -23,7 +25,7 @@ const columns: GridColDef<User>[] = [
     flex: 2,
     minWidth: 220,
     sortable: false,
-    valueGetter: (_value, row) => rolesSummary(row),
+    valueGetter: (_value, row) => rolesSummary(row, departments),
   },
   {
     field: 'active',
@@ -41,6 +43,7 @@ const columns: GridColDef<User>[] = [
 export default function UserManagement() {
   const { data: users = [], isLoading } = useApiQuery<User[]>(['users'], '/api/users')
   const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments')
+  const columns = useMemo(() => columnsFor(departments), [departments])
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editUser, setEditUser] = useState<User | null>(null)
 
