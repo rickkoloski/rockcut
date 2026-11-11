@@ -152,3 +152,37 @@ synthetic personas incl. `ownersAsst`. Ask the lead (`LEAD:` in your reply) if t
 on `develop`), `pnpm build` all pass. Commits on the branch. Reply with: commits, files, what
 you checked in the browser per persona, and `LEAD:` notes. Playwright specs are Stage 4, so don't
 write them yet.
+
+---
+
+# Stage 4 (Playwright + coverage)
+
+2026-11-11 · lead → builder. Stages 1–3 and both lead decision files are in (through `7f209bb`). Do
+**plan Stage 4**, then stop and report. Same rules as before; servers are the lead's (API :4002,
+UI :5174).
+
+1. **Specs for O1–O13** (spec §5, plus decision 8: owners appear in the Owners pickers only), under
+   `rockcut-ui/tests/regression/owners/`, one file per persona group (`owner`, `ownersAsst`,
+   negatives: `dualMgr`, `office1`, `taproomDevice`). Follow `tests/RUNNING.md` and the existing
+   regression specs:
+   - every spec declares its persona with `test.use({ storageState: authFile('<key>') })`, and
+     no UI login;
+   - anything you create is `[TEST-TEMP]` and deleted by id in the spec's cleanup. Destructive
+     actions **only by exact id on your own `[TEST-TEMP]` rows**. Never touch `[SEED]` rows or
+     other personas' data. O2 adds then removes `office1`'s Owners membership; restore it in
+     `afterAll` even when the test fails;
+   - negative personas assert the **visible** refusal or absence (switcher, channel list, typed URL
+     result), and the API status where a UI path doesn't exist (O7, O8, O9's API half, O11's API
+     half);
+   - O10: assert via the API/in-app records, not push.
+2. **`tests/COVERAGE.md`:** a D59 section, scenario → layer (ExUnit file / Playwright file /
+   manual-only / GAP).
+3. **Run only the new specs** locally (`npx playwright test tests/regression/owners
+   --reporter=line`), twice, to show they're stable. Don't run the full suite: the lead runs it
+   in its own tab at the gate.
+
+## Done when
+
+The new specs pass twice, `tsc -p tsconfig.e2e.json` has no new errors (2 existing ones), and
+`pnpm lint` is no worse. Commits on the branch. Reply with: commits, files, the run results, any
+scenario left manual-only or GAP and why, and `LEAD:` notes.
