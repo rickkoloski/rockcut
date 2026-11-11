@@ -258,6 +258,10 @@ export interface Department {
   key: string
   color?: string | null
   assignable?: boolean
+  // D59: false for a department that isn't on the schedule (Owners).
+  scheduling?: boolean
+  // D59: only owners add or remove members; always employee.
+  owners_only?: boolean
 }
 
 export interface Capabilities {
@@ -811,7 +815,8 @@ export interface DailyCardData {
 
 export interface BoardDay {
   date: string
-  header: DayHeaderData
+  /** D59: null on a board that isn't on the schedule (Owners): no header at all. */
+  header: DayHeaderData | null
   cards: TaskCardData[]
   daily: DailyCardData
 }

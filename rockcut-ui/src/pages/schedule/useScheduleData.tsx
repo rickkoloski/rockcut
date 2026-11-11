@@ -64,7 +64,10 @@ export function useScheduleData(filters: ScheduleFilters, range: { from: string;
   const { data: loadedEvents } = useApiList<ScheduleEvent>(['schedule_events', eventParams], '/api/schedule_events', eventParams, { enabled: !eventsHidden })
   const events = useMemo(() => (eventsHidden || !loadedEvents ? [] : loadedEvents), [eventsHidden, loadedEvents])
   const { data: positions = [] } = useApiList<Position>(['positions'], '/api/positions')
-  const { data: departments = [] } = useApiList<Department>(['departments'], '/api/departments')
+  const { data: allDepartments } = useApiList<Department>(['departments'], '/api/departments')
+  // D59 §4.2: a department that isn't on the schedule (Owners) is left out of every
+  // scheduling surface here — rows, filters and the shift/event/positions dialogs.
+  const departments = useMemo(() => (allDepartments ?? []).filter((d) => d.scheduling !== false), [allDepartments])
   const { data: roster = [] } = useApiList<RosterEntry>(['roster'], '/api/roster')
   const { data: shiftTemplates = [] } = useApiList<ShiftTemplate>(['shift_templates'], '/api/shift_templates', undefined, { enabled: !isDevice })
   // Fetch all statuses in range; the grid shows approved + pending distinctly.
