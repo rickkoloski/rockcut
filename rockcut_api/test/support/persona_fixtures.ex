@@ -29,7 +29,10 @@ defmodule RockcutApi.PersonaFixtures do
     Map.new(selected, fn p -> {p.key, insert_persona(p)} end)
   end
 
-  @doc "Department structs by key: brewery, bar, office, sales, and `other` (not assignable)."
+  @doc """
+  Department structs by key: brewery, bar, office, sales, `other` (not
+  assignable) and `owners` (D59: made by its migration, so already there).
+  """
   def departments do
     assignable =
       Map.new(~w(brewery bar office sales), &{&1, AccountsFixtures.department_fixture(&1)})
@@ -38,7 +41,17 @@ defmodule RockcutApi.PersonaFixtures do
       Repo.get_by(Department, key: "other") ||
         Repo.insert!(%Department{key: "other", name: "Other", assignable: false})
 
-    Map.put(assignable, "other", other)
+    owners =
+      Repo.get_by(Department, key: "owners") ||
+        Repo.insert!(%Department{
+          key: "owners",
+          name: "Owners",
+          color: "#37474F",
+          scheduling: false,
+          owners_only: true
+        })
+
+    Map.merge(assignable, %{"other" => other, "owners" => owners})
   end
 
   @doc "A fresh conn authenticated as `user`, with a new `ses_` session (D34)."

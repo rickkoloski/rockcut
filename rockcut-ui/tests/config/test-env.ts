@@ -28,6 +28,7 @@ export type PersonaKey =
   | 'noDept'
   | 'owner2'
   | 'sales1'
+  | 'ownersAsst'
   | 'taproomDevice'
   | 'breweryDevice'
 
@@ -61,6 +62,8 @@ export const personas: Record<PersonaKey, Persona> = {
   noDept: { email: 'nodept@rockcut-test.com', name: 'Nico None', memberships: {} },
   owner2: { email: 'owner2@rockcut-test.com', name: 'Avery Owner', memberships: {}, isOwner: true },
   sales1: { email: 'sales1@rockcut-test.com', name: 'Robin Pitch', memberships: { sales: 'employee' } },
+  // D59: an Office employee the owners added to Owners.
+  ownersAsst: { email: 'owners.asst@rockcut-test.com', name: 'Ellis Assist', memberships: { office: 'employee', owners: 'employee' } },
   taproomDevice: { email: 'taproom.device@rockcut-test.com', name: 'Taproom tablets', memberships: {}, device: { home: 'bar' } },
   // D40: the brewhouse tablet (the Brewery's task board).
   breweryDevice: { email: 'brewery.device@rockcut-test.com', name: 'Brewhouse tablet', memberships: {}, device: { home: 'brewery' } },

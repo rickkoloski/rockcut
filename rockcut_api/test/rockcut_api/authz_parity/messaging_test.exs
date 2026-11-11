@@ -6,7 +6,7 @@ defmodule RockcutApi.AuthzParity.MessagingTest do
 
   alias RockcutApi.Messaging
 
-  @all_depts ~w(dept:bar dept:brewery dept:office dept:sales)
+  @all_depts ~w(dept:bar dept:brewery dept:office dept:sales dept:owners)
 
   setup do
     %{p: personas()}
@@ -36,6 +36,7 @@ defmodule RockcutApi.AuthzParity.MessagingTest do
           {"floater", ~w(all dept:bar dept:brewery)},
           {"bartender1", ~w(all dept:bar)},
           {"sales1", ~w(all dept:sales)},
+          {"ownersAsst", ~w(all dept:office dept:owners)},
           {"noDept", ~w(all)}
         ] do
       test "#28 #{who} sees channels #{Enum.join(keys, ", ")}", %{p: p} do
