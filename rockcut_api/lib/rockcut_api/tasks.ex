@@ -223,7 +223,12 @@ defmodule RockcutApi.Tasks do
 
   Drafts, shift notes and time off are never shown. One query each for shifts
   and events across the whole range.
+
+  D59 §4.2: a department that isn't on the schedule (Owners) has no header:
+  every day's is nil, and nothing is queried.
   """
+  def headers(%Department{scheduling: false}, days), do: Map.new(days, &{&1, nil})
+
   def headers(%Department{id: dept_id}, days) do
     case Enum.to_list(days) do
       [] ->

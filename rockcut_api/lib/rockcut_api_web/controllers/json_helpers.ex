@@ -305,6 +305,9 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  # D59: nil for a board whose department isn't on the schedule (Owners).
+  defp brewery_day_header(nil), do: nil
+
   defp brewery_day_header(h) do
     %{
       people:

@@ -318,6 +318,52 @@ defmodule RockcutApi.TaskBoardsTest do
     end
   end
 
+  describe "D59: no header on a board that isn't on the schedule" do
+    test "Owners' header is nil for every day and runs no shift or event query", ctx do
+      owners = Repo.get_by!(Accounts.Department, key: "owners")
+      at = fn h -> Recurrence.local_to_utc(@today, Time.new!(h, 0, 0)) end
+      # A published shift in Owners can't be made through the API; even so it isn't shown.
+      shift_fixture(%{
+        department: owners,
+        status: "published",
+        starts_at: at.(9),
+        ends_at: at.(17)
+      })
+
+      shift_fixture(%{
+        department: ctx.bar,
+        assignee_id: ctx.bartender.id,
+        status: "published",
+        starts_at: at.(9),
+        ends_at: at.(17)
+      })
+
+      ref = make_ref()
+      me = self()
+      handler = "d59-header-#{inspect(ref)}"
+
+      :telemetry.attach(
+        handler,
+        [:rockcut_api, :repo, :query],
+        fn _, _, meta, _ -> send(me, {ref, meta.source}) end,
+        nil
+      )
+
+      days = [@today, Date.add(@today, 1)]
+      headers = Tasks.headers(owners, days)
+      assert headers == %{@today => nil, Date.add(@today, 1) => nil}
+      refute_received {^ref, "shifts"}
+      refute_received {^ref, "schedule_events"}
+
+      # A normal board still queries and gets its header (and the probe works).
+      bar = Tasks.headers(ctx.bar, [@today])[@today]
+      :telemetry.detach(handler)
+      assert_received {^ref, "shifts"}
+      assert [%{user: %{id: id}}] = bar.people
+      assert id == ctx.bartender.id
+    end
+  end
+
   describe "the top-up covers every board (S116)" do
     test "a weekly series on the Taproom and one on the Brewery both reach 12 months, each on its own board",
          ctx do
