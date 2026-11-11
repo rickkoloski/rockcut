@@ -35,7 +35,15 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   def department(d) do
-    %{id: d.id, name: d.name, key: d.key, color: d.color, assignable: d.assignable}
+    %{
+      id: d.id,
+      name: d.name,
+      key: d.key,
+      color: d.color,
+      assignable: d.assignable,
+      scheduling: d.scheduling,
+      owners_only: d.owners_only
+    }
   end
 
   def message(m) do
