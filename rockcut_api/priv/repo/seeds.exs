@@ -141,23 +141,29 @@ acct_now = DateTime.utc_now() |> DateTime.truncate(:second)
 
 # Real departments are assignable (roles); "Other" is a scheduling-only
 # placeholder for cross-department positions (Training, Event-offsite).
+# Owners (D59) has tasks, an Idea Board and a channel but no schedule, and
+# only owners staff it; its migration makes it on prod, this keeps a fresh
+# local DB the same. {name, key, color, assignable, scheduling, owners_only}.
 [
-  {"Brewery", "brewery", "#B8742A", true},
-  {"Taproom", "bar", "#2E6DB4", true},
-  {"Office", "office", "#3F8F5B", true},
-  {"Sales", "sales", "#7A4FB0", true},
-  {"Other", "other", "#6B7280", false}
+  {"Brewery", "brewery", "#B8742A", true, true, false},
+  {"Taproom", "bar", "#2E6DB4", true, true, false},
+  {"Office", "office", "#3F8F5B", true, true, false},
+  {"Sales", "sales", "#7A4FB0", true, true, false},
+  {"Other", "other", "#6B7280", false, true, false},
+  {"Owners", "owners", "#37474F", true, false, true}
 ]
-|> Enum.each(fn {name, key, color, assignable} ->
+|> Enum.each(fn {name, key, color, assignable, scheduling, owners_only} ->
   case Repo.get_by(Department, key: key) do
     nil ->
-      Repo.insert!(%Department{name: name, key: key, color: color, assignable: assignable, inserted_at: acct_now, updated_at: acct_now})
+      Repo.insert!(%Department{name: name, key: key, color: color, assignable: assignable, scheduling: scheduling, owners_only: owners_only, inserted_at: acct_now, updated_at: acct_now})
 
     %Department{} = dept ->
       changes =
         []
         |> then(fn c -> if is_nil(dept.color), do: [{:color, color} | c], else: c end)
         |> then(fn c -> if dept.assignable != assignable, do: [{:assignable, assignable} | c], else: c end)
+        |> then(fn c -> if dept.scheduling != scheduling, do: [{:scheduling, scheduling} | c], else: c end)
+        |> then(fn c -> if dept.owners_only != owners_only, do: [{:owners_only, owners_only} | c], else: c end)
 
       if changes != [], do: dept |> Ecto.Changeset.change(changes) |> Repo.update!()
   end
