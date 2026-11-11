@@ -59,3 +59,55 @@ rebase. The lead owns the servers; Stage 1 needs only `mix test` / `mix ecto.*`.
 - Commits on the branch.
 - Reply with: commits (sha + subject), files touched, test counts, anything you weren't sure
   about prefixed `LEAD:`.
+
+---
+
+# Stage 2 (API rules)
+
+2026-11-11 · lead → builder. Stage 1 is in (`c036c0c`..`a99a107`). Do **plan Stage 2**
+(spec §4.2, §4.3), then stop and report. Same rules as Stage 1 (branch, commits, no UI, format
+only your files, no `CLAUDE.md`/spec/plan/handoff edits).
+
+Every rule gets ExUnit tests showing **both a refusal and an allowed case**.
+
+1. **Membership** (`accounts.ex`, `accounts/membership.ex`):
+   - `resolve_entry/2`: `role == "manager"` in an `owners_only` department →
+     `{:invalid_membership, "Owners has no managers"}` (422 through the existing path),
+     **owners included**. Use the department's name in the message, not a hard-coded "Owners".
+   - The same guard in `Membership.changeset` (an error on `:role`), so no other path makes one.
+   - Managers and Owners: `can?(:assign, {:memberships, id})` already needs `role_in == :manager`.
+     Test that a manager's create/update naming Owners is 403 `unauthorized_department`, and that a
+     request which **also** changes a department they do manage applies **nothing**.
+   - Test that a manager's update of a person who is **in** Owners, whose `memberships` leave Owners
+     out, keeps the Owners membership (the existing "only remove within the actor's authority" rule).
+     O6 depends on it.
+   - Owners add/remove Owners memberships (employee) fine, audited like the rest.
+2. **Device home** (`accounts/user.ex` `assignable_home/2`): `owners_only` → 422 on
+   `home_department_id`. Device create and update both.
+3. **Not scheduled:** `RockcutApi.Changeset.validate_scheduled_department/2`: a 422 on
+   `department_id`, "<name> isn't on the schedule", when the department has `scheduling: false`.
+   Wire it into the `Position`, `Shift`, `ScheduleEvent` and `ScheduleEventSeries` changesets
+   (create and any update that changes `department_id`). Then check every other way a
+   shift/position/event can get a department: shift and day/week templates, Copy previous week,
+   series extend/split. Test any that could reach Owners; if a path can't, note why in your report.
+4. **Calendar feeds** (`calendar_feeds.ex`): `entitlements/1` skips `scheduling: false` departments.
+   Rotating, or fetching a department feed for one, → 404, owners included. Remove the Stage 1
+   "Stage 2 removes it" expectation in the calendar-feed parity test.
+5. **Board schedule header:** on a `scheduling: false` board, the header payload is `nil` and no
+   shift query runs (`JSONHelpers` around `no_one_scheduled`, and wherever the header is built).
+   Test both the Owners board (`nil`) and a normal board (unchanged).
+6. **Privacy regression** (one test module, e.g. `test/rockcut_api_web/owners_privacy_test.exs`):
+   - `dualMgr` (or a manager fixture of two other departments) is refused, read **and** write, on
+     the Owners task board, the Idea Board (build on your route matrix) and the `dept:owners`
+     channel. They get no Owners entry in: the board list/switcher payload, `/api/channels`,
+     calendar-feed entitlements, `capabilities.modules`, task search/All departments, or
+     notifications for Owners messages.
+   - `ownersAsst` reads and writes the board, Idea Board and channel, but gets 403 on task-board
+     History, Daily items management, and Idea Board manage/history.
+   - `owner` passes everything, and sees Owners last in each list.
+   - A device (`taproomDevice`) is refused on the Owners board and Idea Board.
+
+## Done when
+
+`mix test` green twice, `mix compile --warnings-as-errors` clean, commits on the branch. Reply
+with: commits, files, test counts, the paths from item 3 you checked and how, and `LEAD:` notes.
