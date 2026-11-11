@@ -109,7 +109,8 @@ defmodule RockcutApi.Tasks do
              %{date: day, cards: cards[day], header: headers[day], daily: daily[day]}
            end),
          unfinished: unfinished,
-         future: cards[:future]
+         future: cards[:future],
+         owners: Assignees.pickable_owners(dept)
        }}
     end
   end

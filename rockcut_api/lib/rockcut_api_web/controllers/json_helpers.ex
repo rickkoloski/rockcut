@@ -268,7 +268,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       today: b.today,
       days: Enum.map(b.days, &task_board_day/1),
       unfinished: Enum.map(b.unfinished, &task_card/1),
-      future: Enum.map(b.future, &task_card/1)
+      future: Enum.map(b.future, &task_card/1),
+      # D59: owners the assignee picker offers too (owners-only boards; else []).
+      owners: b.owners
     }
   end
 

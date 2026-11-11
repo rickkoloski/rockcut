@@ -33,6 +33,23 @@ defmodule RockcutApi.Tasks.Assignees do
   def max_people, do: @max_people
 
   @doc """
+  D59 (lead decisions 2): the owners a picker offers beside the members on an
+  `owners_only` department's boards (task board and Idea Board), as `%{id,
+  name}` by name. Every other department: none (owners stay off its pickers,
+  though the API accepts them).
+  """
+  def pickable_owners(%Department{owners_only: true}) do
+    Repo.all(
+      from u in Accounts.persons_query(),
+        where: u.id in subquery(from(o in Authz.owners_audience_query(), select: o.id)),
+        order_by: [asc: u.name, asc: u.id],
+        select: %{id: u.id, name: u.name}
+    )
+  end
+
+  def pickable_owners(%Department{}), do: []
+
+  @doc """
   What `attrs` (string keys) ask for: a list of ids, `nil` for no change,
   `:invalid` when an id isn't one, or `:too_many` over `max_people/0`.
   """
