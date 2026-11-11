@@ -582,6 +582,10 @@ defmodule RockcutApi.Accounts do
       role not in @roles ->
         {:halt, {:error, {:invalid_membership, "invalid role"}}}
 
+      # D59 §4.3: nobody manages an owners-only department, owners included.
+      dept.owners_only and role == "manager" ->
+        {:halt, {:error, {:invalid_membership, "#{dept.name} has no managers"}}}
+
       true ->
         {:cont, {:ok, [{dept, role} | acc]}}
     end

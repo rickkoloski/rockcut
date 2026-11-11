@@ -28,5 +28,23 @@ defmodule RockcutApi.Accounts.Membership do
       if RockcutApi.Accounts.device_id?(id), do: [user_id: "can't be a shared device"], else: []
     end)
     |> RockcutApi.Changeset.validate_parents([:user_id, :department_id])
+    |> validate_no_owners_only_manager()
+  end
+
+  # D59 §4.3: an owners-only department has no managers, whatever the path
+  # (API, synthetic setup, console).
+  defp validate_no_owners_only_manager(changeset) do
+    with true <- changeset.valid?,
+         true <- changed?(changeset, :role) or changed?(changeset, :department_id),
+         "manager" <- get_field(changeset, :role),
+         %{owners_only: true, name: name} <-
+           RockcutApi.Repo.get(
+             RockcutApi.Accounts.Department,
+             get_field(changeset, :department_id)
+           ) do
+      add_error(changeset, :role, "#{name} has no managers")
+    else
+      _ -> changeset
+    end
   end
 end
