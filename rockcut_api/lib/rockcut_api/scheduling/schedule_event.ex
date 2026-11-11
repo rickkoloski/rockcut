@@ -57,6 +57,7 @@ defmodule RockcutApi.Scheduling.ScheduleEvent do
     |> foreign_key_constraint(:created_by_id)
     |> foreign_key_constraint(:series_id)
     |> RockcutApi.Changeset.validate_parents([:department_id, :created_by_id, :series_id])
+    |> RockcutApi.Changeset.validate_scheduled_department()
   end
 
   defp validate_end_after_start(changeset) do

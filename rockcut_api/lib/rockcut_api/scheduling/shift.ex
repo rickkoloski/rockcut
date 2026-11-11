@@ -50,6 +50,7 @@ defmodule RockcutApi.Scheduling.Shift do
       :assignee_id,
       :created_by_id
     ])
+    |> RockcutApi.Changeset.validate_scheduled_department()
   end
 
   defp validate_end_after_start(changeset) do
