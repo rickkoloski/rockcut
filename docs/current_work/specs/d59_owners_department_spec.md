@@ -27,6 +27,8 @@ their own **task list** (`/tasks/owners`) and **Idea Board**
 5. **It gets a Messages channel** (Owners), like the other departments.
 6. **Color slate `#37474F`.**
 7. **Owners is last** in every department list (§4.4).
+8. **Owners are offered as assignees on the Owners boards only** (task dialog and Idea Board
+   card people); other boards keep members only (Matt, 2026-11-11, at Stage 3).
 
 ## 3. What it gets for free
 
