@@ -15,7 +15,10 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
   import RockcutApi.PersonaFixtures
   import RockcutApi.IdeaBoardFixtures
 
-  alias RockcutApi.{Messaging, Tasks}
+  import Ecto.Query, only: [from: 2]
+
+  alias RockcutApi.{Messaging, Repo, Tasks}
+  alias RockcutApi.Notifications.Notification
 
   setup do
     p = personas(~w(owner owner2 dualMgr ownersAsst office1))
@@ -109,13 +112,6 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
                body(call(u, :get, "/api/calendar_feeds"))["data"],
                &(&1["subject_type"] == "department" and &1["subject_id"] == owners_id)
              )
-    end
-
-    test "isn't told about Owners messages", %{p: p} do
-      ids = Enum.map(Messaging.recipients("dept:owners"), & &1.id)
-      refute p["dualMgr"].id in ids
-      refute p["office1"].id in ids
-      assert p["ownersAsst"].id in ids
     end
   end
 
@@ -258,6 +254,73 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
       assert %{"people" => [], "open_shifts" => [], "no_one_scheduled" => true} =
                office_day["header"]
     end
+  end
+
+  describe "who's told about a channel post (lead decisions 1, item 1)" do
+    # message_posted skips the bell by default (email only); turn the bell on
+    # for everyone so the in-app rows show who was told.
+    setup %{p: p} do
+      for {_, u} <- p do
+        u
+        |> Ecto.Changeset.change(notification_prefs: %{"message_posted" => %{"in_app" => true}})
+        |> Repo.update!()
+      end
+
+      :ok
+    end
+
+    test "an Owners post tells owner and owner2, not dualMgr or office1", %{p: p} do
+      post!(p["ownersAsst"], "dept:owners")
+
+      assert notified_settled("dept:owners", [p["owner"], p["owner2"]]) ==
+               MapSet.new([p["owner"].id, p["owner2"].id])
+
+      ids = Enum.map(Messaging.recipients("dept:owners"), & &1.id)
+      refute p["dualMgr"].id in ids
+      refute p["office1"].id in ids
+    end
+
+    test "a post in another department's channel doesn't tell a non-member owner", %{p: p} do
+      post!(p["ownersAsst"], "dept:office")
+      notified = notified_settled("dept:office", [p["office1"], p["dualMgr"]])
+      assert notified == MapSet.new([p["office1"].id, p["dualMgr"].id])
+      refute p["owner"].id in notified
+    end
+  end
+
+  defp post!(user, key) do
+    assert call(user, :post, "/api/channels/#{key}/messages", %{body: "Agenda is up"})
+           |> json_response(201)
+  end
+
+  # Notifications go out from a background task: wait until everyone expected
+  # has one, then a moment more so an extra recipient would show up too.
+  defp notified_settled(key, expected, tries \\ 100) do
+    got = notified(key)
+
+    cond do
+      MapSet.subset?(MapSet.new(expected, & &1.id), got) ->
+        Process.sleep(100)
+        notified(key)
+
+      tries == 0 ->
+        got
+
+      true ->
+        Process.sleep(20)
+        notified_settled(key, expected, tries - 1)
+    end
+  end
+
+  defp notified(key) do
+    from(n in Notification,
+      where:
+        n.event == "message_posted" and
+          fragment("json_extract(?, '$.channel_key')", n.data) == ^key,
+      select: n.user_id
+    )
+    |> Repo.all()
+    |> MapSet.new()
   end
 
   describe "a shared device (taproomDevice)" do

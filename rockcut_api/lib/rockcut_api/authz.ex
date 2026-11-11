@@ -154,6 +154,11 @@ defmodule RockcutApi.Authz do
     )
   end
 
+  @doc "Active owners: D59 notifies them about an owners-only department's channel."
+  def owners_audience_query do
+    from(u in User, where: u.active == true and u.is_owner == true)
+  end
+
   @doc """
   The departments whose records `user` may act on at `level` in `module`
   (D29 §3.5), for scoping list queries. `:all` = no department restriction
