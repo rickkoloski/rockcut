@@ -111,3 +111,44 @@ Every rule gets ExUnit tests showing **both a refusal and an allowed case**.
 
 `mix test` green twice, `mix compile --warnings-as-errors` clean, commits on the branch. Reply
 with: commits, files, test counts, the paths from item 3 you checked and how, and `LEAD:` notes.
+
+---
+
+# Stage 3 (UI)
+
+2026-11-11 · lead → builder. Stages 1–2 are in (through `a12e93a`; see `d59_lead_decisions_1.md`).
+Do **plan Stage 3** (spec §4.2–§4.4), then stop and report. Same rules as before. The lead runs
+the servers from `~/src/rockcut`: API :4002, UI :5174. The local dev DB is migrated and has the
+synthetic personas incl. `ownersAsst`. Ask the lead (`LEAD:` in your reply) if they need a restart.
+
+1. **Types:** `Department` gains `scheduling: boolean` and `owners_only: boolean` (`lib/types.ts`).
+2. **Scheduling surfaces:** in `pages/schedule/useScheduleData.tsx`, filter `scheduling !== false` at
+   the source, so the grid, filters and the shift/event/positions dialogs lose Owners. Grep every
+   other `/api/departments` consumer under `pages/schedule/` and the calendar-sync UI. Owners must
+   be absent from all of them, and the owner's `manages_departments` (which includes `owners`; the
+   API keeps it, decision 2) must not bring it back anywhere.
+3. **Users & Roles** (`pages/users/UserFormDialog.tsx`, `UserManagement.tsx`):
+   - An owner sees Owners in the department list, with **no role choice**: it's always employee.
+   - A manager never gets Owners as something they can change. If the person is in Owners, show a
+     read-only chip. The save **must not send** Owners (the API would 403 the whole save). Follow how
+     unmanaged departments are handled today. Add a vitest for the payload builder if the logic
+     lives in a function, and extract one if that's simple.
+   - Department columns/lists follow the API order (Owners last).
+4. **Shared devices** (`pages/devices/SharedDevices.tsx`): the home picker leaves out `owners_only`.
+5. **Task board** (`pages/tasks/TaskBoard.tsx`): no schedule header when the day's `header` is `null`.
+   Nothing else on the board changes.
+6. **Ordering:** check that no UI list re-sorts departments or boards by name (the board switcher,
+   `/tasks`, `/boards`, Messages channel list, Users & Roles) and so undoes "Owners last". Fix any
+   that does.
+7. **Nav:** `App.tsx` `DEPT_META` has no `owners`, so there's no nav heading. Keep it that way and add a
+   one-line comment saying it's deliberate (D59 §4.4).
+8. **Look at it** in a browser as `owner`, `ownersAsst` and `dualMgr`, logged in by token
+   injection per `rockcut-ui/tests/RUNNING.md` (never type passwords). Check spec scenarios O1–O6,
+   O9 and O11 by hand, and note anything off.
+
+## Done when
+
+`pnpm tsc --noEmit` (or the project's tsc script), `pnpm vitest run`, `pnpm lint` (no worse than
+on `develop`), `pnpm build` all pass. Commits on the branch. Reply with: commits, files, what
+you checked in the browser per persona, and `LEAD:` notes. Playwright specs are Stage 4, so don't
+write them yet.
