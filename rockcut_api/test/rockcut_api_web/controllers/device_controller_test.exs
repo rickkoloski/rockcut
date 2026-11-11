@@ -71,6 +71,23 @@ defmodule RockcutApiWeb.DeviceControllerTest do
                422
     end
 
+    test "D59: Owners can't be a device's home, create or update", %{p: p, device: d} do
+      owners = departments()["owners"]
+
+      conn = call(p["owner"], :post, "/api/devices", %{name: "x", home_department_id: owners.id})
+      assert json_response(conn, 422)["errors"]["home_department_id"] == ["can't be Owners"]
+
+      conn = call(p["owner"], :patch, "/api/devices/#{d.id}", %{home_department_id: owners.id})
+      assert json_response(conn, 422)["errors"]["home_department_id"] == ["can't be Owners"]
+      assert Repo.reload!(d).home_department_id == departments()["bar"].id
+
+      # Allowed: moving it to another ordinary department.
+      office = departments()["office"]
+
+      assert call(p["owner"], :patch, "/api/devices/#{d.id}", %{home_department_id: office.id}).status ==
+               200
+    end
+
     test "managers can't create, rename or delete devices", %{p: p, device: d} do
       bar = departments()["bar"]
 
