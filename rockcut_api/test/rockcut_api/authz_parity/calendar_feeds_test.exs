@@ -25,8 +25,9 @@ defmodule RockcutApi.AuthzParity.CalendarFeedsTest do
 
   describe "entitlements" do
     for {who, depts, whole?} <- [
-          {"owner", ~w(brewery bar office sales other), true},
-          {"owner2", ~w(brewery bar office sales other), true},
+          # D59 Stage 2 takes Owners off (it isn't on the schedule).
+          {"owner", ~w(brewery bar office sales other owners), true},
+          {"owner2", ~w(brewery bar office sales other owners), true},
           {"barMgr", ~w(bar), false},
           {"dualMgr", ~w(bar office), false},
           {"splitRole", ~w(bar), false},

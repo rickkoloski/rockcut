@@ -67,10 +67,17 @@ defmodule RockcutApi.Accounts do
 
   ## Departments
 
-  @doc "All departments, ordered by name."
+  @doc "All departments, ordered by name, owners-only ones (Owners) last (D59 §4.4)."
   def list_departments do
-    Department |> order_by(:name) |> Repo.all()
+    Department |> Repo.all() |> sort_departments(:name)
   end
+
+  @doc """
+  D59 §4.4: the one department order. `by` (`:name` or `:id`) orders them,
+  except that owners-only departments (Owners) come after all the rest.
+  """
+  def sort_departments(departments, by) when by in [:name, :id],
+    do: Enum.sort_by(departments, &{&1.owners_only, Map.fetch!(&1, by)})
 
   @doc "Fetch a department by its key (e.g. \"brewery\"), or nil."
   def get_department_by_key(key) when is_binary(key) do

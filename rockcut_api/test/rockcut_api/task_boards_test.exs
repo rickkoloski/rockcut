@@ -399,7 +399,7 @@ defmodule RockcutApi.TaskBoardsTest do
   end
 
   describe "boards_for/1 (/api/me's task_boards)" do
-    test "the boards a person can open, in department order (by id); owners get all four",
+    test "the boards a person can open, in department order (by id), Owners last; owners get all five",
          ctx do
       department_fixture("office")
       department_fixture("sales")
@@ -412,7 +412,13 @@ defmodule RockcutApi.TaskBoardsTest do
       assert keys.(Accounts.get_user!(ctx.brewer.id)) == [{"brewery", false}]
 
       assert keys.(Accounts.get_user!(ctx.owner.id)) ==
-               [{"brewery", true}, {"bar", true}, {"office", true}, {"sales", true}]
+               [
+                 {"brewery", true},
+                 {"bar", true},
+                 {"office", true},
+                 {"sales", true},
+                 {"owners", true}
+               ]
     end
   end
 end

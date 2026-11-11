@@ -12,7 +12,7 @@ defmodule RockcutApi.Messaging do
   """
   import Ecto.Query
   require Logger
-  alias RockcutApi.{Repo, Authz, Notifications}
+  alias RockcutApi.{Repo, Accounts, Authz, Notifications}
   alias RockcutApi.Accounts.{User, Membership, Department}
   alias RockcutApi.Messaging.{Message, ChannelRead}
 
@@ -190,7 +190,9 @@ defmodule RockcutApi.Messaging do
   end
 
   defp assignable_departments do
-    from(d in Department, where: d.assignable == true, order_by: [asc: d.name]) |> Repo.all()
+    from(d in Department, where: d.assignable == true)
+    |> Repo.all()
+    |> Accounts.sort_departments(:name)
   end
 
   # People only: a shared device is never notified (D33 §3.1).

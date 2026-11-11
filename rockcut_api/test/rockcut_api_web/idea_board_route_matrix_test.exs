@@ -74,7 +74,7 @@ defmodule RockcutApiWeb.IdeaBoardRouteMatrixTest do
   # The board-less route: every actor, with the boards it lists.
   @index {:get, "/api/idea_boards"}
 
-  @boards ~w(brewery bar office sales company)
+  @boards ~w(brewery bar office sales owners company)
 
   # Each actor's standing on each department board: :member, :manager, or
   # absent; `:owner`; or `{:device, home}`.

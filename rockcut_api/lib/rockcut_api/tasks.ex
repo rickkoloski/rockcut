@@ -54,7 +54,7 @@ defmodule RockcutApi.Tasks do
 
   @doc """
   The boards `user` can open (D41), in department order (by id, the seed
-  order: Brewery, Taproom, Office, Sales), each `%{department, manage}`:
+  order: Brewery, Taproom, Office, Sales, then Owners), each `%{department, manage}`:
   `manage` is History and Edit Daily items. Every assignable department has a
   board; owners get all of them, a shared tablet its home board (D40).
   """
@@ -64,9 +64,12 @@ defmodule RockcutApi.Tasks do
         do: %{department: dept, manage: Authz.can?(user, :history, {:tasks, dept})}
   end
 
-  # Every department with a board (the assignable ones), in department order.
+  # Every department with a board (the assignable ones), in department order
+  # (Owners last, D59 §4.4).
   defp board_departments do
-    Accounts.list_departments() |> Enum.filter(& &1.assignable) |> Enum.sort_by(& &1.id)
+    Accounts.list_departments()
+    |> Enum.filter(& &1.assignable)
+    |> Accounts.sort_departments(:id)
   end
 
   ## The board

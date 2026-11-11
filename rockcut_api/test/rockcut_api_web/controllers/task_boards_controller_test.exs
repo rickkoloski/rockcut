@@ -354,6 +354,7 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
                    entry.("bar", true),
                    entry.("office", true),
                    entry.("sales", true),
+                   entry.("owners", true),
                    all
                  ]
                }
