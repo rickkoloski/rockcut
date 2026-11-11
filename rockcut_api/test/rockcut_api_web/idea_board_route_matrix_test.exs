@@ -85,6 +85,9 @@ defmodule RockcutApiWeb.IdeaBoardRouteMatrixTest do
     {"breweryMgr", %{"brewery" => :manager}},
     {"owner", :owner},
     {"noDept", %{}},
+    # D59: Owners is private to owners and its members; a member is never its manager.
+    {"dualMgr", %{"bar" => :manager, "office" => :manager}},
+    {"ownersAsst", %{"office" => :member, "owners" => :member}},
     {"taproomDevice", {:device, "bar"}},
     {"breweryDevice", {:device, "brewery"}}
   ]
@@ -99,7 +102,7 @@ defmodule RockcutApiWeb.IdeaBoardRouteMatrixTest do
   end
 
   setup do
-    p = personas(~w(bartender1 brewer1 barMgr breweryMgr owner noDept))
+    p = personas(~w(bartender1 brewer1 barMgr breweryMgr owner noDept dualMgr ownersAsst))
     taproom = AccountsFixtures.device_fixture(%{name: "Taproom tablets", home: "bar"})
     brewery = AccountsFixtures.device_fixture(%{name: "Brewhouse", home: "brewery"})
 
