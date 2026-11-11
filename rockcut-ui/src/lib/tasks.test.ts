@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ALL_BOARDS,
+  boardMembers,
   FUTURE,
   UNFINISHED,
   allBoardCardLink,
@@ -634,5 +635,25 @@ describe('Hide shifts (D45 §3.3)', () => {
     })
     expect(readHideShifts('bar')).toBe(false)
     expect(() => writeHideShifts('bar', true)).not.toThrow()
+  })
+})
+
+// D59 lead decisions 2: the Owners board offers its members and the owners;
+// every other board, members only.
+describe('boardMembers', () => {
+  const roster = [
+    { id: 1, name: 'Olivia Owner', departments: [] },
+    { id: 2, name: 'Ellis Assist', departments: ['office', 'owners'] },
+    { id: 3, name: 'Jake Brewer', departments: ['brewery'] },
+  ]
+
+  it('adds the board owners after the members, once each', () => {
+    const owners = [{ id: 4, name: 'Avery Owner' }, { id: 1, name: 'Olivia Owner' }, { id: 2, name: 'Ellis Assist' }]
+    expect(boardMembers(roster, 'owners', owners).map((p) => p.id)).toEqual([2, 4, 1])
+  })
+
+  it('members only without owners', () => {
+    expect(boardMembers(roster, 'brewery').map((p) => p.id)).toEqual([3])
+    expect(boardMembers(roster, 'brewery', []).map((p) => p.id)).toEqual([3])
   })
 })

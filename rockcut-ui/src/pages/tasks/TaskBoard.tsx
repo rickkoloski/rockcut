@@ -18,6 +18,7 @@ import {
   DAILY_ITEMS_KEY,
   FUTURE,
   UNFINISHED,
+  boardMembers,
   boardPath,
   cardShown,
   coloradoToday,
@@ -116,8 +117,8 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
     { refetchInterval: 60_000, refetchOnWindowFocus: 'always', placeholderData: keepPreviousData },
   )
   const { data: roster = [] } = useApiQuery<RosterEntry[]>(['roster'], '/api/roster')
-  // The board's department's members: the people a task can be assigned to.
-  const members = useMemo(() => roster.filter((r) => r.departments.includes(dept)), [roster, dept])
+  // The board's department's members (plus, on Owners, the owners): the people a task can be assigned to.
+  const members = useMemo(() => boardMembers(roster, dept, board?.owners), [roster, dept, board?.owners])
   // D41 S107: the Daily card hides until the board has an item, and a manager's
   // ⋮ menu says "Set up Daily checks" instead of "Edit Daily items" until then.
   // The entry waits for the board's items: while they load it would claim

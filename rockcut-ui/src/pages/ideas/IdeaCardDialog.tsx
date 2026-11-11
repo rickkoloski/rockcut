@@ -50,6 +50,7 @@ import {
   ideaError,
   ideaPath,
   labelColor,
+  lockHolder,
   sentChipText,
 } from '../../lib/ideas'
 import type { IdeaBoardEntry, IdeaCard, IdeaChecklistItem, IdeaLabel, IdeaListData, IdeaNote, IdeaPerson } from '../../lib/types'
@@ -211,7 +212,7 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
             {card.locked ? 'Locked' : `Its list is locked`}
             {lockedBy ? ` by ${lockedBy.name}` : ''}
             {lockedAt ? ` · ${formatIdeaDate(lockedAt)}` : ''}.{' '}
-            {manage ? 'You can still change it.' : 'Only a manager can change it. Notes stay open.'}
+            {manage ? 'You can still change it.' : `Only ${lockHolder(board)} can change it. Notes stay open.`}
           </Alert>
         )}
         {/* Phone: description, then people, date, labels and actions, then checklist and notes. */}

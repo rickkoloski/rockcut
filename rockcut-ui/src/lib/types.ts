@@ -828,6 +828,8 @@ export interface TaskBoardData {
   days: BoardDay[]
   unfinished: TaskCardData[]
   future: TaskCardData[]
+  /** D59: the owners the assignee picker offers too, on an owners-only board only (else empty). */
+  owners?: { id: number; name: string }[]
 }
 
 /** D41 §3.6: a card on the All departments view, with its board's key. */
@@ -859,6 +861,8 @@ export interface IdeaBoardEntry {
   color?: string | null
   manage: boolean
   history: boolean
+  /** D59: an owners-only department's board: its lock words say "an owner". */
+  owners_only?: boolean
 }
 
 export interface IdeaPerson {

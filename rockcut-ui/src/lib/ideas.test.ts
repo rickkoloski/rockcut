@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { archivedMatching, boardUrl, cardShown, describeIdeaEvent, ideaBoardTarget, ideaBoardTitle, isPastDue, sentChipText, sentFaceChip } from './ideas'
+import { archivedMatching, boardUrl, cardShown, describeIdeaEvent, ideaBoardTarget, ideaBoardTitle, isPastDue, lockHolder, sentChipText, sentFaceChip } from './ideas'
 import type { IdeaCardFace, IdeaEvent, IdeaSentTask } from './types'
 
 const card = (over: Partial<IdeaCardFace> = {}): IdeaCardFace => ({
@@ -155,5 +155,14 @@ describe('Boards (Matt, 2026-11-08)', () => {
     expect(archivedMatching(archived, 'too DARK').cards.map((c) => c.id)).toEqual([2])
     expect(archivedMatching(archived, 'patio').cards.map((c) => c.id)).toEqual([4])
     expect(archivedMatching(archived, 'nope')).toEqual({ lists: [], cards: [] })
+  })
+})
+
+// D59 lead decisions 2: no one manages an owners-only board.
+describe('lockHolder', () => {
+  it('says an owner on an owners-only board, a manager elsewhere', () => {
+    expect(lockHolder({ owners_only: true })).toBe('an owner')
+    expect(lockHolder({ owners_only: false })).toBe('a manager')
+    expect(lockHolder({})).toBe('a manager')
   })
 })
