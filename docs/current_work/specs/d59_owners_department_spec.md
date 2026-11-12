@@ -29,6 +29,10 @@ their own **task list** (`/tasks/owners`) and **Idea Board**
 7. **Owners is last** in every department list (§4.4).
 8. **Owners are offered as assignees on the Owners boards only** (task dialog and Idea Board
    card people); other boards keep members only (Matt, 2026-11-11, at Stage 3).
+9. **Non-members can't tell Owners exists** (Matt, 2026-11-11, DEV QA gap 5): the department list
+   and every person's department list leave Owners out for anyone who isn't an owner or member.
+   Managers keep the read-only membership chip (§4.3). A locked Owners card names who locked it
+   ("Locked by Olivia Owner"), like other boards; the API's 423 says "Locked by an owner".
 
 ## 3. What it gets for free
 
