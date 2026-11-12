@@ -587,7 +587,7 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       nov20 = ~D[2026-11-20]
       {:ok, moved} = Tasks.move(brewery_board(), week(w0, 5), nov20, nil, ctx.brewer)
 
-      {:ok, first} =
+      {:ok, _first} =
         Tasks.update(brewery_board(), week(w0, 2), %{repeat_weekdays: [3, 5]}, ctx.brewer,
           scope: "following",
           today: @today
@@ -596,11 +596,9 @@ defmodule RockcutApi.Tasks.SeriesEditsTest do
       assert [%Task{id: id}] = Repo.all(from t in Task, where: t.due_on == ^nov20)
       assert id == moved.id
 
-      # Its old Wednesday is free, so the new series makes one there.
-      assert [%Task{series_id: sid}] =
-               Repo.all(from t in Task, where: t.due_on == ^~D[2026-11-18])
-
-      assert sid == first.series_id
+      # D58 §3.5 (5202, decision 4): the moved one stands in for its old
+      # Wednesday, so the new series doesn't make one there (was: it did).
+      assert Repo.all(from t in Task, where: t.due_on == ^~D[2026-11-18]) == []
     end
 
     test "a count already used up is refused", ctx do
