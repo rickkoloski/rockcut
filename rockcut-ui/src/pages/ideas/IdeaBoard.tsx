@@ -13,7 +13,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { coloradoToday } from '../../lib/tasks'
-import { IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, ideaError, ideaPath, lockHolder, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
+import { CARD_NOT_FOUND, IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, ideaError, ideaPath, lockHolder, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
 import type { IdeaBoardData, IdeaBoardEntry, IdeaCardFace as Face, IdeaLabel, IdeaListData, IdeaPerson } from '../../lib/types'
 import BoardSwitcher from '../tasks/BoardSwitcher'
 import IdeaListColumn, { type ListAction } from './IdeaListColumn'
@@ -89,7 +89,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
   const listByKey = useCallback((containerId: string) => lists.find((l) => listKey(l.id) === containerId), [lists])
   const { containers, move } = useOptimisticLists(source, isLocked)
 
-  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null)
+  const [toast, setToast] = useState<{ message: string; error?: boolean; notice?: boolean } | null>(null)
   const [archivedOpen, setArchivedOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [addingList, setAddingList] = useState(false)
@@ -170,6 +170,15 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     if ((location.state as { fromBoard?: boolean } | null)?.fromBoard) navigate(-1)
     else navigate(boardUrl(key), { replace: true })
   }
+
+  // D58 §3.9 (5206): a card URL naming no card on this board shows the board
+  // with a notice, at the board's own URL.
+  const cardMissing = useCallback(() => navigate(boardUrl(key), { replace: true, state: { cardMissing: true } }), [navigate, key])
+  useEffect(() => {
+    if (!(location.state as { cardMissing?: boolean } | null)?.cardMissing) return
+    setToast({ message: CARD_NOT_FOUND, notice: true })
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   const switchBoard = (next: string) => {
     writeIdeaBoard(next)
@@ -400,13 +409,14 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
           onClose={closeCard}
           onChanged={refresh}
           onToast={(message) => setToast({ message })}
+          onMissing={cardMissing}
         />
       )}
       {archivedOpen && <ArchivedDialog board={board} onClose={() => setArchivedOpen(false)} onChanged={refresh} onOpenCard={openCard} />}
       {historyOpen && <IdeaHistoryDialog board={board} onClose={() => setHistoryOpen(false)} />}
-      <Snackbar open={!!toast} autoHideDuration={toast?.error ? 6000 : 4000} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+      <Snackbar open={!!toast} autoHideDuration={toast?.error || toast?.notice ? 6000 : 4000} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         {toast ? (
-          <Alert severity={toast.error ? 'error' : 'success'} onClose={() => setToast(null)} variant="filled" data-testid="idea-toast">
+          <Alert severity={toast.error ? 'error' : toast.notice ? 'info' : 'success'} onClose={() => setToast(null)} variant="filled" data-testid="idea-toast">
             {toast.message}
           </Alert>
         ) : undefined}
