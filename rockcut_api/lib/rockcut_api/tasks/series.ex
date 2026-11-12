@@ -917,16 +917,19 @@ defmodule RockcutApi.Tasks.Series do
   # The chain's occurrences that stay from `date` on (kept exceptions and
   # finished ones) already hold their days: the new series skips those days
   # (their current `due_on`), now and in every top-up, so no day shows two.
-  # A kept one moved to another day doesn't hold its old day: the new rule can
-  # make that date again (D39). Gap 14 (D53 Part 1 QA): the confirm says so
-  # (`change_preview/2`'s `keeps_moved`).
+  # D58 §3.5 (5202, gap 14): a kept one moved to another day still stands in
+  # for its old day, so that date is skipped too (no twin); the confirm says
+  # so (`change_preview/2`'s `keeps_moved`).
   defp skip_kept_days(new_series, chain_ids, date, through, dates, reuse?) do
     days =
       Repo.all(
         from t in Task,
-          where: t.series_id in ^chain_ids and t.series_date >= ^date and not is_nil(t.due_on),
-          select: t.due_on
+          where: t.series_id in ^chain_ids and t.series_date >= ^date,
+          select: {t.due_on, t.series_date}
       )
+      |> Enum.flat_map(fn {due_on, series_date} ->
+        Enum.reject([due_on, series_date], &is_nil/1)
+      end)
       |> Enum.uniq()
 
     if days == [] do
@@ -1136,8 +1139,8 @@ defmodule RockcutApi.Tasks.Series do
                 task.id
               )
 
-            # Gap 14: kept ones moved off their date, whose old day the new
-            # pattern may make again.
+            # Gap 14: kept ones moved off their date; their old days stay
+            # skipped (D58 §3.5).
             moved =
               Repo.aggregate(
                 from(t in Task,
