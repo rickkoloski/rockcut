@@ -47,3 +47,7 @@ export function boardError(err: unknown): { staffCode?: string; message?: string
 /** Today in Colorado as YYYY-MM-DD, for download file names. */
 export const boardFileDate = () =>
   new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date())
+
+/** D58 §3.14 (4116): History's Export CSV, filtered by the search shown (empty: everything). */
+export const historyExportPath = (q: string) =>
+  `/api/beer_board/history/export.csv${q ? `?q=${encodeURIComponent(q)}` : ''}`
