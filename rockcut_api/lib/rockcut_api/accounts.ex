@@ -502,9 +502,9 @@ defmodule RockcutApi.Accounts do
   ## Internal helpers
 
   defp apply_memberships(%User{} = user, desired_raw, %User{} = actor) do
-    with {:ok, desired} <- resolve_desired(desired_raw) do
-      authorized? = fn dept_id -> Authz.can?(actor, :assign, {:memberships, dept_id}) end
+    authorized? = fn dept_id -> Authz.can?(actor, :assign, {:memberships, dept_id}) end
 
+    with {:ok, desired} <- resolve_desired(desired_raw, authorized?) do
       case Enum.find(desired, fn {dept, _role} -> not authorized?.(dept.id) end) do
         {dept, _role} ->
           {:error, {:unauthorized_department, dept.key}}
@@ -561,14 +561,14 @@ defmodule RockcutApi.Accounts do
   # Resolve raw desired entries into {%Department{}, role} tuples. Anything but
   # a list of objects (a map, a string, `[null]`, form-encoded) is a 422, not a
   # crash (D55 §2.4, task 4983).
-  defp resolve_desired(entries) when not is_list(entries),
+  defp resolve_desired(entries, _authorized?) when not is_list(entries),
     do: {:error, {:invalid_membership, "must be a list"}}
 
-  defp resolve_desired(entries) do
+  defp resolve_desired(entries, authorized?) do
     entries
     |> Enum.reduce_while({:ok, []}, fn
       entry, {:ok, acc} when is_map(entry) ->
-        resolve_entry(stringify(entry), acc)
+        resolve_entry(stringify(entry), acc, authorized?)
 
       _entry, _acc ->
         {:halt, {:error, {:invalid_membership, "each entry needs a department and a role"}}}
@@ -586,7 +586,7 @@ defmodule RockcutApi.Accounts do
 
   defp refuse_duplicates(error), do: error
 
-  defp resolve_entry(entry, acc) do
+  defp resolve_entry(entry, acc, authorized?) do
     role = entry["role"]
     dept = resolve_department(entry["department"])
 
@@ -596,6 +596,11 @@ defmodule RockcutApi.Accounts do
 
       not dept.assignable ->
         {:halt, {:error, {:invalid_membership, "department is not assignable"}}}
+
+      # D59 gap 9: permission before role, so someone who can't assign in an
+      # owners-only department gets the neutral 403 whatever role they asked for.
+      dept.owners_only and not authorized?.(dept.id) ->
+        {:halt, {:error, {:unauthorized_department, dept.key}}}
 
       role not in @roles ->
         {:halt, {:error, {:invalid_membership, "invalid role"}}}

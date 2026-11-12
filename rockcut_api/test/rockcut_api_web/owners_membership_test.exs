@@ -204,6 +204,68 @@ defmodule RockcutApiWeb.OwnersMembershipTest do
       refute Accounts.get_user_by_email("sneaky@rockcut-test.com")
     end
 
+    # D59 gap 9: permission before role, so the manager role in Owners gets the
+    # same neutral 403 as the employee role and never names the department.
+    for actor <- ["breweryMgr", "dualMgr"] do
+      test "#{actor} asking for manager in Owners alone → neutral 403, nothing changed",
+           %{p: p} do
+        target = if unquote(actor) == "breweryMgr", do: p["brewer1"], else: p["office1"]
+        before = roles(target)
+
+        conn =
+          put_memberships(p[unquote(actor)], target, [
+            %{"department" => "owners", "role" => "manager"}
+          ])
+
+        assert json_response(conn, 403) == %{
+                 "error" => "You can't assign roles in that department"
+               }
+
+        assert roles(target) == before
+      end
+
+      test "#{actor} asking for manager in Owners with a managed department → neutral 403",
+           %{p: p} do
+        target = if unquote(actor) == "breweryMgr", do: p["brewer1"], else: p["office1"]
+        own = if unquote(actor) == "breweryMgr", do: "brewery", else: "office"
+        before = roles(target)
+
+        conn =
+          put_memberships(p[unquote(actor)], target, [
+            %{"department" => own, "role" => "manager"},
+            %{"department" => "owners", "role" => "manager"}
+          ])
+
+        assert json_response(conn, 403) == %{
+                 "error" => "You can't assign roles in that department"
+               }
+
+        assert roles(target) == before
+      end
+
+      test "#{actor} creating someone as an Owners manager → neutral 403, no user made",
+           %{p: p} do
+        own = if unquote(actor) == "breweryMgr", do: "brewery", else: "office"
+        email = "gap9.#{String.downcase(unquote(actor))}@rockcut-test.com"
+
+        conn =
+          call(p[unquote(actor)], :post, "/api/users", %{
+            "email" => email,
+            "name" => "Gap Nine",
+            "memberships" => [
+              %{"department" => own, "role" => "employee"},
+              %{"department" => "owners", "role" => "manager"}
+            ]
+          })
+
+        assert json_response(conn, 403) == %{
+                 "error" => "You can't assign roles in that department"
+               }
+
+        refute Accounts.get_user_by_email(email)
+      end
+    end
+
     test "O6: dualMgr edits ownersAsst's Office role; the Owners membership stays", %{p: p} do
       conn =
         put_memberships(p["dualMgr"], p["ownersAsst"], [
