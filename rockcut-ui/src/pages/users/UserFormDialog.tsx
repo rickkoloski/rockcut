@@ -34,7 +34,7 @@ import {
   type RoleChoice,
 } from '../../lib/userRoles'
 import StaffCodeSection from './StaffCodeSection'
-import { staffCodeError } from '../../lib/staffCode'
+import { staffCodeAction, staffCodeError } from '../../lib/staffCode'
 
 interface Props {
   open: boolean
@@ -77,6 +77,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [codeDraft, setCodeDraft] = useState('')
+  const [codeRemoving, setCodeRemoving] = useState(false)
   const [addDept, setAddDept] = useState('')
 
   // D37, every department since D40: owners and the managers of one of the
@@ -107,6 +108,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setTempPassword(null)
     setError(null)
     setCodeDraft('')
+    setCodeRemoving(false)
     setAddDept('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editUser])
@@ -159,9 +161,11 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
           await saveMemberships()
           await saveUser()
         }
-        if (showStaffCode && keepsCode && codeDraft !== '') {
+        const codeAction = showStaffCode ? staffCodeAction(keepsCode, codeDraft, codeRemoving) : null
+        if (codeAction) {
           try {
-            await api.put(`/api/users/${editUser.id}/staff_code`, { code: codeDraft })
+            if (codeAction === 'put') await api.put(`/api/users/${editUser.id}/staff_code`, { code: codeDraft })
+            else await api.delete(`/api/users/${editUser.id}/staff_code`)
           } catch (err) {
             // The rest is saved; keep the dialog open on the code's problem.
             invalidate()
@@ -336,7 +340,8 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
                 user={editUser}
                 draft={codeDraft}
                 onDraftChange={setCodeDraft}
-                onRemoved={invalidate}
+                removing={codeRemoving}
+                onRemovingChange={setCodeRemoving}
                 disabled={loading}
               />
             )}

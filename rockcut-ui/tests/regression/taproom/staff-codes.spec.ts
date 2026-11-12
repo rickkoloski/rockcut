@@ -124,12 +124,19 @@ test.describe('as barMgr', () => {
     expect((await none.json()).data.has_staff_code).toBe(false)
   })
 
-  test('Remove clears the code at once', async ({ page }) => {
+  test('D58 §3.8: Remove waits for Save, and Cancel keeps the code', async ({ page }) => {
     expect((await (await apiAs('barMgr')).put(`/api/users/${a!.id}/staff_code`, { data: { code: await freeCode() } })).status()).toBe(200)
     await openUser(page, a!.name)
     await page.getByTestId('staff-code-remove').click()
-    await expect(page.getByTestId('staff-code-section')).toContainText('No code yet')
+    await expect(page.getByTestId('staff-code-section')).toContainText('Removed when you press Save')
     await page.getByRole('button', { name: 'Cancel' }).click()
+    await page.reload()
+    await openUser(page, a!.name)
+    await expect(page.getByTestId('staff-code-section')).toContainText('Type 4 digits to change it')
+
+    await page.getByTestId('staff-code-remove').click()
+    await page.getByRole('button', { name: 'Save' }).click()
+    await expect(page.getByRole('dialog')).toBeHidden()
     await page.reload()
     await openUser(page, a!.name)
     await expect(page.getByTestId('staff-code-section')).toContainText('No code yet')

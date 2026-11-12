@@ -21,8 +21,9 @@ interface Props {
   /** Digits typed for a new code; the dialog's Save sends it (empty = no change). */
   draft: string
   onDraftChange: (draft: string) => void
-  /** Called after Remove, so the dialog can refresh the users list. */
-  onRemoved: () => void
+  /** D58 §3.8: Remove only marks the code; the dialog's Save sends the delete. */
+  removing: boolean
+  onRemovingChange: (removing: boolean) => void
   disabled?: boolean
 }
 
@@ -31,10 +32,11 @@ interface Props {
  * department since D40).
  * An existing code shows as •••• until the eye is pressed, which fetches it
  * (each reveal is audited). Typing 4 digits sets a new code on Save; Suggest
- * fills in an unused one; Remove clears it at once. Typed digits are masked
- * too, and the eye shows them without fetching anything.
+ * fills in an unused one; Remove marks it to go on Save (Keep takes that
+ * back, and Cancel drops it, D58 §3.8). Typed digits are masked too, and the
+ * eye shows them without fetching anything.
  */
-export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved, disabled }: Props) {
+export default function StaffCodeSection({ user, draft, onDraftChange, removing, onRemovingChange, disabled }: Props) {
   const [hasCode, setHasCode] = useState(!!user.has_staff_code)
   const [revealed, setRevealed] = useState<string | null>(null)
   const [showing, setShowing] = useState(false)
@@ -52,7 +54,8 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
   }, [user])
 
   const typing = draft !== ''
-  const value = typing ? draft : hasCode ? (showing && revealed ? revealed : MASK) : ''
+  const held = hasCode && !removing
+  const value = typing ? draft : held ? (showing && revealed ? revealed : MASK) : ''
   const shown = typing ? showTyped : showing
 
   const toggleShow = async () => {
@@ -88,21 +91,11 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
     }
   }
 
-  const remove = async () => {
+  const toggleRemove = () => {
     setError(null)
-    setBusy(true)
-    try {
-      await api.delete(`/api/users/${user.id}/staff_code`)
-      setHasCode(false)
-      setRevealed(null)
-      setShowing(false)
-      onDraftChange('')
-      onRemoved()
-    } catch (err) {
-      setError(staffCodeError(err))
-    } finally {
-      setBusy(false)
-    }
+    setShowing(false)
+    onDraftChange('')
+    onRemovingChange(!removing)
   }
 
   const helper =
@@ -111,9 +104,11 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
       ? draft.length === 4
         ? 'Saved when you press Save.'
         : 'A staff code is 4 digits.'
-      : hasCode
-        ? 'Type 4 digits to change it.'
-        : 'No code yet. Type 4 digits, or press Suggest.')
+      : removing
+        ? 'Removed when you press Save.'
+        : hasCode
+          ? 'Type 4 digits to change it.'
+          : 'No code yet. Type 4 digits, or press Suggest.')
 
   return (
     <Box data-testid="staff-code-section">
@@ -140,7 +135,7 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
             },
             input: {
               endAdornment:
-                hasCode || typing ? (
+                held || typing ? (
                   <InputAdornment position="end">
                     <IconButton
                       type="button"
@@ -164,13 +159,14 @@ export default function StaffCodeSection({ user, draft, onDraftChange, onRemoved
         </Button>
         {hasCode && (
           <Button
-            onClick={remove}
+            onClick={toggleRemove}
             disabled={disabled || busy}
             color="warning"
             data-testid="staff-code-remove"
+            aria-pressed={removing}
             sx={{ mt: 1 }}
           >
-            Remove
+            {removing ? 'Keep' : 'Remove'}
           </Button>
         )}
       </Box>
