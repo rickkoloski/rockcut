@@ -72,6 +72,8 @@ defmodule RockcutApiWeb.Router do
     get "/session", SessionController, :show
     delete "/session", SessionController, :delete
     get "/me", MeController, :show
+    # D58: the account's own board settings (a device: its home board only).
+    put "/me/board_settings/:board", MeController, :update_board_settings
     get "/departments", DepartmentController, :index
     get "/positions", PositionController, :index
     get "/roster", RosterController, :index

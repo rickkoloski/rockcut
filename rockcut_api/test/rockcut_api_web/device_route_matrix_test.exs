@@ -25,6 +25,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:get, "/api/session"},
     {:delete, "/api/session"},
     {:get, "/api/me"},
+    # D58: the tablet's own settings for its home board (`:board` = bar here).
+    {:put, "/api/me/board_settings/:board"},
     {:get, "/api/departments"},
     {:get, "/api/positions"},
     {:get, "/api/roster"},

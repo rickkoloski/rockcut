@@ -394,6 +394,11 @@ defmodule RockcutApi.Authz do
   # D41 §3.6: the All departments view is owners' only (they pass above).
   def can?(%User{}, :read, {:tasks, :all}), do: false
 
+  # D58 §3.1: a person saves their own settings for any board they can read
+  # (All departments: owners, who pass above). A device's are `Authz.Device`'s.
+  def can?(%User{} = user, :save, {:board_settings, board}),
+    do: can?(user, :read, {:tasks, board})
+
   def can?(%User{} = user, :history, {:tasks, %Department{} = dept}),
     do: role_in(user, dept) == :manager
 

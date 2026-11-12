@@ -7,7 +7,7 @@ defmodule RockcutApi.Accounts do
   import Ecto.Query
   alias RockcutApi.Repo
   alias RockcutApi.Authz
-  alias RockcutApi.Accounts.{User, Department, Membership, AuditEntry}
+  alias RockcutApi.Accounts.{User, Department, Membership, AuditEntry, BoardSettings}
 
   @preloads [memberships: :department]
   @roles ~w(manager employee)
@@ -218,6 +218,29 @@ defmodule RockcutApi.Accounts do
     user
     |> User.show_planned_batches_changeset(%{show_planned_batches: value})
     |> Repo.update()
+  end
+
+  @doc """
+  D58 §3.1: save some of a board's settings for this account (a person or a
+  device), keeping its other settings and boards. Answers the board's
+  settings with the defaults filled in. A display preference: no change-log
+  entry. Read fresh inside the transaction, so two quick changes both stay.
+  """
+  def save_board_settings(%User{id: id}, board_key, attrs) when is_binary(board_key) do
+    with {:ok, changes} <- BoardSettings.validate(board_key, attrs) do
+      Repo.transaction(fn ->
+        user = Repo.get!(User, id)
+        board = Map.merge(Map.get(user.board_settings, board_key, %{}), changes)
+
+        if changes != %{} do
+          user
+          |> Ecto.Changeset.change(board_settings: Map.put(user.board_settings, board_key, board))
+          |> Repo.update!()
+        end
+
+        BoardSettings.with_defaults(board)
+      end)
+    end
   end
 
   @doc """
