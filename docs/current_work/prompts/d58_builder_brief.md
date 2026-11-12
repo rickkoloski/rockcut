@@ -170,3 +170,31 @@ re-run, and say so.
 
 `mix test` twice, warnings-as-errors, tsc, vitest, lint ≤ 27, build. Commits. Reply with: commits,
 the revert checks, the 4261 finding, browser checks, `LEAD:` notes.
+
+---
+
+# Stage 3b (UI follow-ups added by Matt, 2026-11-11)
+
+2026-11-11 · lead → builder. The spec has decision 9 and §3.12–§3.16; the plan has Stage 3b. Do them
+after Stage 3, one commit per item, then stop and report. Same rules (revert checks for bug fixes,
+format only your files).
+
+1. **§3.12 (4118 items 2–6):** Buy-a-Beer import "Ignored columns" (blank → "(blank)", long ones
+   wrap, repeats once); Redeem after "already removed" closes the dialog and refreshes; Users &
+   Roles Taproom "— None —" shows as such, with the staff code note "cleared when you press Save".
+   The QA2 report has repros: `docs/current_work/stepwise_results/d37_dev_qa2_report.md`.
+2. **§3.13 (4118 item 7):** readable labels for `staff_code.set` / `.remove` / `.reveal` in the user
+   change log.
+3. **§3.14 (4115, 4116):** History `q` also matches the actor's name, and "Shared Device" matches
+   device changes; Export CSV passes the same `q`. ExUnit for the query; vitest if a helper.
+4. **§3.15 (4319):** catch the push subscribe failure (`src/lib/push.ts` /
+   `NotificationPreferencesDialog`) and show the message; vitest with a stubbed failing subscribe.
+5. **§3.16 (5193):** drag Idea Board list columns on desktop. Use an outer horizontal sortable with
+   the card layer nested; **don't change** `components/dnd/` (the task boards use it). Same rules
+   and History as ⋮ Move left/right. Phone unchanged. Re-run the task-board and Idea Board drag
+   Playwright specs locally (`--project=idea-boards --no-deps`, then `--project=brewery-board
+   --no-deps`, one at a time) and report.
+6. **Browser:** check 1, 3, 4 and 5 by hand.
+
+Done when: `mix test` twice, warnings-as-errors, tsc, vitest, lint ≤ 27, build, the two drag
+projects green. Reply with commits, revert checks, and `LEAD:` notes.
