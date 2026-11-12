@@ -28,7 +28,7 @@ decision 9 added five UI follow-ups (4118 2–7, 4115, 4116, 4319, 5193).
   run's two Gantt failures were stale local seed data after midnight; they passed after a reseed.
 - **Gate:** `mix test` green twice, warnings-as-errors clean, tsc, vitest, build, lint 27.
 
-## DEV gate (in progress, paused by Matt after run 2)
+## DEV gate
 
 - Matt chose the alternative for 4118 item 2: "(blank)" only when the column has data (`be7f764`).
 - Draft PR #68. DEV claimed in conv 80 (msg 104900). Pre-deploy snapshot `vs_Z7YonnZYMlki8gpNnn4n`.
@@ -38,16 +38,19 @@ decision 9 added five UI follow-ups (4118 2–7, 4115, 4116, 4319, 5193).
 - **Fix cycle 1 of 2, run 2 at `58c961c`** (API v84 / UI v87, reseeded): **759 passed**, 0 failed.
 - Deploy worktree: `~/src/rockcut-deploy` (detached at `58c961c`); remove after the gate.
 
+- **QA pass 1 at `58c961c`:** fail (`stepwise_results/d58_dev_qa_report.md`). Must-fix gaps 12/13 (Add department then reset/edit) and 7 (Owners in the memberships reply). Matt's decisions in `prompts/d58_lead_decisions_1.md`; the spec's decisions 10–15.
+- **Fix cycle 2 of 2 at `b59278e`** (API v85 / UI v88): builder items 1–9. The lead reverted gap 2's tooltip change (`a9d8388`): its test passed without the fix, and taps never showed the bug, only Escape did.
+  - Local full run: 764 passed, 1 skipped (D52's conditional, as before).
+  - DEV full run: 759 passed, 2 failed, both test-only and green on rerun. S16's 47 quick week clicks overloaded DEV's API for a few seconds (500s on every list). S160 was the roster order with a parallel `[TEST-TEMP]` person. The leftover S16 series 955/956 was deleted by id.
+- **QA recheck:** pass with gaps (`stepwise_results/d58_dev_qa_recheck_report.md`). Matt accepted R-1 (a manager can work out Owners from "View only", the same leftover as gap 6). R-2 is by design. R-3 (an empty `{}` per event) is harmless. DEV reseeded after QA.
+- Matt's other answers:
+  - gap 8 on task series accepted;
+  - the open-shift notification on deactivate kept;
+  - a manager editing their own name and email goes to backlog task 5789;
+  - the Gantt's "Label by" picker (deferred in D47, never filed) added to D56, task 5207.
+- **Verdict: pass.** PR #68 merged into `develop`.
+
 ## Next
 
-1. **Matt confirms the three builder choices:**
-   - 5193 clears half-typed "Add a card" text on add/archive list;
-   - "(blank)" for trailing empty import columns;
-   - "Rock Cut Brewing" under the start-up spinner.
-2. **The rest of the DEV gate** (on Matt's go; Playwright is done):
-   1. push, open a draft PR;
-   2. claim DEV (conv 80) and snapshot it;
-   3. deploy (two migrations), then `seed_synthetic()`;
-   4. full DEV Playwright;
-   5. an independent QA pass. QA brief: destructive actions by id on `[TEST-TEMP]` rows only; check
-      Owners privacy in the users payload as a non-managing manager.
+1. Redeploy `develop` to DEV, release the DEV claim in conv 80, remove `~/src/rockcut-deploy`.
+2. The prod release of D58, on Matt's go. Two migrations; follow the deploy plan memory.
