@@ -96,6 +96,67 @@ defmodule RockcutApi.SchedulingTest do
     end
   end
 
+  describe "D58 §3.7 (5204): a deactivated assignee" do
+    setup do
+      owner = owner_fixture()
+      bar = department_fixture("bar")
+      pos = position_fixture(%{department: bar})
+      gone = user_with_role("employee", "bar")
+      now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+      attrs = %{
+        "department_id" => bar.id,
+        "position_id" => pos.id,
+        "starts_at" => DateTime.add(now, 3600),
+        "ends_at" => DateTime.add(now, 7200)
+      }
+
+      %{owner: owner, gone: gone, attrs: attrs, now: now}
+    end
+
+    defp deactivate!(user),
+      do: user |> Ecto.Changeset.change(active: false) |> RockcutApi.Repo.update!()
+
+    test "can't be given a new shift", ctx do
+      deactivate!(ctx.gone)
+      attrs = Map.put(ctx.attrs, "assignee_id", ctx.gone.id)
+
+      assert {:error, cs} = Scheduling.create_shift(attrs, ctx.owner)
+      assert errors_on(cs).assignee_id == ["is not active"]
+    end
+
+    test "can't be put on a shift by an edit or a drag", ctx do
+      {:ok, shift} = Scheduling.create_shift(ctx.attrs, ctx.owner)
+      deactivate!(ctx.gone)
+
+      assert {:error, cs} = Scheduling.update_shift(shift, %{"assignee_id" => ctx.gone.id})
+      assert errors_on(cs).assignee_id == ["is not active"]
+
+      # A drag moves the time and the person together.
+      drag = %{
+        "assignee_id" => ctx.gone.id,
+        "starts_at" => DateTime.add(ctx.now, 86_400 + 3600),
+        "ends_at" => DateTime.add(ctx.now, 86_400 + 7200)
+      }
+
+      assert {:error, cs} = Scheduling.update_shift(shift, drag)
+      assert errors_on(cs).assignee_id == ["is not active"]
+    end
+
+    test "their existing shifts are untouched and still editable", ctx do
+      {:ok, shift} =
+        Scheduling.create_shift(Map.put(ctx.attrs, "assignee_id", ctx.gone.id), ctx.owner)
+
+      deactivate!(ctx.gone)
+
+      assert {:ok, edited} = Scheduling.update_shift(shift, %{"notes" => "Covering"})
+      assert edited.assignee_id == ctx.gone.id
+      assert {:ok, _} = Scheduling.publish_shift(edited)
+      # Taking them off is fine too.
+      assert {:ok, %{assignee_id: nil}} = Scheduling.update_shift(edited, %{"assignee_id" => nil})
+    end
+  end
+
   describe "positions" do
     test "a referenced position is deactivated, not deleted" do
       bar = department_fixture("bar")

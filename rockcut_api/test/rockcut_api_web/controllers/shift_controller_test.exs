@@ -117,6 +117,31 @@ defmodule RockcutApiWeb.ShiftControllerTest do
     end
   end
 
+  describe "D58 §3.7 (5204): a deactivated assignee" do
+    test "a create or a reassign to them is a 422 on assignee_id", %{conn: conn} do
+      bar = department_fixture("bar")
+      manager = user_with_role("manager", "bar")
+      gone = user_with_role("employee", "bar")
+      gone |> Ecto.Changeset.change(active: false) |> RockcutApi.Repo.update!()
+      pos = position_fixture(%{department: bar})
+      shift = shift_fixture(%{department: bar, position: pos})
+      body = %{position_id: pos.id, assignee_id: gone.id, starts_at: iso(24), ends_at: iso(30)}
+
+      errors =
+        conn |> bearer(manager) |> post(~p"/api/shifts", body) |> json_response(422)
+
+      assert errors["errors"]["assignee_id"] == ["is not active"]
+
+      errors =
+        build_conn()
+        |> bearer(manager)
+        |> patch(~p"/api/shifts/#{shift.id}", %{assignee_id: gone.id})
+        |> json_response(422)
+
+      assert errors["errors"]["assignee_id"] == ["is not active"]
+    end
+  end
+
   describe "POST /api/shifts/:id/publish" do
     test "manager publishes a draft", %{conn: conn} do
       bar = department_fixture("bar")

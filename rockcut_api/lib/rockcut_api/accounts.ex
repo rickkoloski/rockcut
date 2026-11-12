@@ -152,6 +152,13 @@ defmodule RockcutApi.Accounts do
     Repo.exists?(from(u in User, where: u.id == ^user_id and u.kind == "device"))
   end
 
+  @doc "D58 §3.7 (5204): true for a deactivated person (a shift can't go to them)."
+  def inactive_id?(nil), do: false
+
+  def inactive_id?(user_id) do
+    Repo.exists?(from(u in User, where: u.id == ^user_id and u.active == false))
+  end
+
   ## Memberships
 
   @doc "List a user's memberships with departments preloaded."
