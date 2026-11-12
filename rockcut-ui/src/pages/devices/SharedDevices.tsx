@@ -96,7 +96,8 @@ export default function SharedDevices() {
   const isOwner = !!user?.is_owner
   const { data: devices = [], isLoading } = useApiQuery<SharedDevice[]>(['devices'], '/api/devices')
   const { data: departments = [] } = useApiQuery<Department[]>(['departments'], '/api/departments', undefined, { enabled: isOwner })
-  const assignable = departments.filter((d) => d.assignable !== false)
+  // D59: an `owners_only` department (Owners) can't be a device's home.
+  const assignable = departments.filter((d) => d.assignable !== false && !d.owners_only)
 
   const [editing, setEditing] = useState<SharedDevice | 'new' | null>(null)
   const [name, setName] = useState('')

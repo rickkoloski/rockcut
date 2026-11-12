@@ -152,11 +152,15 @@ defmodule RockcutApi.Accounts.User do
 
   # D33 decision P6 (review item 6): a device's home is an assignable department,
   # so its department channel and nav section exist. A missing id is left to
-  # the foreign-key constraint.
+  # the foreign-key constraint. D59 §4.3: nor an owners-only department; no
+  # device ever sees the Owners board or channel.
   defp assignable_home(:home_department_id, id) do
     case RockcutApi.Repo.get(RockcutApi.Accounts.Department, id) do
       %{assignable: false} ->
         [home_department_id: "must be a department people can be assigned to"]
+
+      %{owners_only: true, name: name} ->
+        [home_department_id: "can't be #{name}"]
 
       _ ->
         []

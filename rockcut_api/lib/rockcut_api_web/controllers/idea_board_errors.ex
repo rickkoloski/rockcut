@@ -4,7 +4,8 @@ defmodule RockcutApiWeb.IdeaBoardErrors do
   board this person can't open (or a write a tablet tries) is 403; a list,
   card or other id not on this board is 404. A lock that stops a
   non-manager is 423 (`locked`, or `holds_locked_card` for archiving a list
-  with a locked card in it, §4.5). A rule the board enforces is 422 with a
+  with a locked card in it, §4.5); on an `owners_only` department's board
+  (D59) the lock words say "an owner", since no one manages it. A rule the board enforces is 422 with a
   code. A changeset goes to `FallbackController`.
   """
   import Plug.Conn, only: [put_status: 2]
@@ -37,18 +38,34 @@ defmodule RockcutApiWeb.IdeaBoardErrors do
     do: conn |> put_status(:not_found) |> json(%{error: "not_found", message: "Not found"})
 
   def handle({:error, code}, conn) when code in [:locked, :holds_locked_card],
-    do: conn |> put_status(:locked) |> json(%{error: to_string(code), message: @messages[code]})
+    do:
+      conn
+      |> put_status(:locked)
+      |> json(%{error: to_string(code), message: lock_message(code, conn)})
 
   # Restoring such a list (fix cycle 1, gap 4): the same code, its own words.
   def handle({:error, :restore_holds_locked_card}, conn) do
     conn
     |> put_status(:locked)
-    |> json(%{error: "holds_locked_card", message: @messages[:restore_holds_locked_card]})
+    |> json(%{
+      error: "holds_locked_card",
+      message: lock_message(:restore_holds_locked_card, conn)
+    })
   end
 
   def handle({:error, code}, conn) when is_map_key(@messages, code) do
     conn
     |> put_status(:unprocessable_entity)
     |> json(%{error: to_string(code), message: @messages[code]})
+  end
+
+  defp lock_message(code, conn) do
+    case conn.assigns[:idea_board] do
+      {:department, %{owners_only: true}} ->
+        String.replace(@messages[code], "a manager", "an owner")
+
+      _ ->
+        @messages[code]
+    end
   end
 end

@@ -165,6 +165,8 @@ const TAPROOM_PAGES: NavLeaf[] = [
 // home in the Brewery has the Brewery heading at all.
 const DEVICE_PAGES = ['/taproom/beer-board', '/brewery/production']
 
+// No `owners` entry on purpose (D59 §4.4): Owners has no nav heading; its board
+// and channel are reached through Tasks, Boards and Messages.
 const DEPT_META: Record<string, { label: string; icon: ReactNode; children: NavLeaf[] }> = {
   bar: { label: 'Taproom', icon: <SportsBarOutlinedIcon />, children: TAPROOM_PAGES },
   brewery: { label: 'Brewery', icon: <FermenterIcon />, children: BREWERY_PAGES },

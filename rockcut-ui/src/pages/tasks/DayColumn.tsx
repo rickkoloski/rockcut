@@ -51,7 +51,7 @@ export default function DayColumn({ day, today, openCount, hideShifts, slot: { s
         </Typography>
         <Chip size="small" label={openCount} data-testid={`day-count-${day.date}`} aria-label={`${openCount} open`} sx={{ height: 20 }} />
       </Box>
-      <DayHeader date={day.date} header={day.header} hideShifts={hideShifts} />
+      {day.header && <DayHeader date={day.date} header={day.header} hideShifts={hideShifts} />}
       {day.daily.items.length > 0 && (
         <DailyCard daily={day.daily} today={today} onToggle={onDailyToggle} onEditItems={onEditDailyItems} />
       )}

@@ -284,3 +284,8 @@ export function describeIdeaEvent(ev: IdeaEvent, names: Record<string, string> =
       return `${title}: ${ev.action.replace(/_/g, ' ')}`
   }
 }
+
+/** D59: who can change a locked thing on this board ("an owner" on an owners-only board). */
+export function lockHolder(board: Pick<IdeaBoardEntry, 'owners_only'>): string {
+  return board.owners_only ? 'an owner' : 'a manager'
+}

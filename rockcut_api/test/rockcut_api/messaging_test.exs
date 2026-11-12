@@ -23,6 +23,14 @@ defmodule RockcutApi.MessagingTest do
     assert "dept:bar" in owner_keys and "dept:brewery" in owner_keys
   end
 
+  # D59 §4.4: by name, but Owners last (by name it would sit before Sales).
+  test "department channels in name order, Owners last" do
+    for k <- ~w(sales office brewery bar), do: department_fixture(k)
+
+    assert keys(owner_fixture()) ==
+             ~w(all managers dept:bar dept:brewery dept:office dept:sales dept:owners)
+  end
+
   test "members see full history; non-members are forbidden" do
     _bar = department_fixture("bar")
     _brew = department_fixture("brewery")

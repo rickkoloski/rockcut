@@ -67,10 +67,25 @@ defmodule RockcutApi.Accounts do
 
   ## Departments
 
-  @doc "All departments, ordered by name."
+  @doc "All departments, ordered by name, owners-only ones (Owners) last (D59 §4.4)."
   def list_departments do
-    Department |> order_by(:name) |> Repo.all()
+    Department |> Repo.all() |> sort_departments(:name)
   end
+
+  @doc """
+  The departments `viewer` may know exist (D59 decision 9: an owners-only one
+  only for owners and its members), in `list_departments/0`'s order.
+  """
+  def list_departments_for(%User{} = viewer) do
+    Enum.filter(list_departments(), &Authz.can?(viewer, :see, {:department, &1}))
+  end
+
+  @doc """
+  D59 §4.4: the one department order. `by` (`:name` or `:id`) orders them,
+  except that owners-only departments (Owners) come after all the rest.
+  """
+  def sort_departments(departments, by) when by in [:name, :id],
+    do: Enum.sort_by(departments, &{&1.owners_only, Map.fetch!(&1, by)})
 
   @doc "Fetch a department by its key (e.g. \"brewery\"), or nil."
   def get_department_by_key(key) when is_binary(key) do
@@ -83,8 +98,14 @@ defmodule RockcutApi.Accounts do
     department |> Department.changeset(attrs) |> Repo.update()
   end
 
-  @doc "Minimal staff roster (active users) for schedule display — readable by anyone signed in."
-  def list_roster do
+  @doc """
+  Minimal staff roster (active users) for schedule display — readable by anyone
+  signed in. Each person's `departments` leave out those `viewer` can't see
+  (D59 decision 9).
+  """
+  def list_roster(%User{} = viewer) do
+    visible = viewer |> list_departments_for() |> MapSet.new(& &1.key)
+
     persons_query()
     |> where([u], u.active == true and u.schedulable == true)
     |> order_by([u], asc: u.schedule_order, asc: u.name, asc: u.email)
@@ -94,7 +115,11 @@ defmodule RockcutApi.Accounts do
       %{
         id: u.id,
         name: u.name || u.email,
-        departments: u.memberships |> Enum.map(& &1.department.key) |> Enum.uniq()
+        departments:
+          u.memberships
+          |> Enum.map(& &1.department.key)
+          |> Enum.filter(&MapSet.member?(visible, &1))
+          |> Enum.uniq()
       }
     end)
   end
@@ -477,9 +502,9 @@ defmodule RockcutApi.Accounts do
   ## Internal helpers
 
   defp apply_memberships(%User{} = user, desired_raw, %User{} = actor) do
-    with {:ok, desired} <- resolve_desired(desired_raw) do
-      authorized? = fn dept_id -> Authz.can?(actor, :assign, {:memberships, dept_id}) end
+    authorized? = fn dept_id -> Authz.can?(actor, :assign, {:memberships, dept_id}) end
 
+    with {:ok, desired} <- resolve_desired(desired_raw, authorized?) do
       case Enum.find(desired, fn {dept, _role} -> not authorized?.(dept.id) end) do
         {dept, _role} ->
           {:error, {:unauthorized_department, dept.key}}
@@ -536,14 +561,14 @@ defmodule RockcutApi.Accounts do
   # Resolve raw desired entries into {%Department{}, role} tuples. Anything but
   # a list of objects (a map, a string, `[null]`, form-encoded) is a 422, not a
   # crash (D55 §2.4, task 4983).
-  defp resolve_desired(entries) when not is_list(entries),
+  defp resolve_desired(entries, _authorized?) when not is_list(entries),
     do: {:error, {:invalid_membership, "must be a list"}}
 
-  defp resolve_desired(entries) do
+  defp resolve_desired(entries, authorized?) do
     entries
     |> Enum.reduce_while({:ok, []}, fn
       entry, {:ok, acc} when is_map(entry) ->
-        resolve_entry(stringify(entry), acc)
+        resolve_entry(stringify(entry), acc, authorized?)
 
       _entry, _acc ->
         {:halt, {:error, {:invalid_membership, "each entry needs a department and a role"}}}
@@ -561,7 +586,7 @@ defmodule RockcutApi.Accounts do
 
   defp refuse_duplicates(error), do: error
 
-  defp resolve_entry(entry, acc) do
+  defp resolve_entry(entry, acc, authorized?) do
     role = entry["role"]
     dept = resolve_department(entry["department"])
 
@@ -572,8 +597,17 @@ defmodule RockcutApi.Accounts do
       not dept.assignable ->
         {:halt, {:error, {:invalid_membership, "department is not assignable"}}}
 
+      # D59 gap 9: permission before role, so someone who can't assign in an
+      # owners-only department gets the neutral 403 whatever role they asked for.
+      dept.owners_only and not authorized?.(dept.id) ->
+        {:halt, {:error, {:unauthorized_department, dept.key}}}
+
       role not in @roles ->
         {:halt, {:error, {:invalid_membership, "invalid role"}}}
+
+      # D59 §4.3: nobody manages an owners-only department, owners included.
+      dept.owners_only and role == "manager" ->
+        {:halt, {:error, {:invalid_membership, "#{dept.name} has no managers"}}}
 
       true ->
         {:cont, {:ok, [{dept, role} | acc]}}

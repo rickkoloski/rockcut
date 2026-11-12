@@ -4,8 +4,8 @@ defmodule RockcutApi.IdeaBoards.People do
   someone can't any more. The only writer of `idea_card_assignees`.
 
   **Who:** `Authz.can_take_idea_card?/2`: an active member of the board's
-  department (owners count; the picker doesn't offer them, as on the task
-  boards), or any active person on the Company board. Only the people being
+  department (owners count; the picker offers them only on an
+  `owners_only` board, D59, as on the task boards), or any active person on the Company board. Only the people being
   added are checked, so someone who has since left doesn't block an
   unrelated edit. At most `Tasks.Assignees.max_people/0`, as tasks.
 
@@ -37,15 +37,20 @@ defmodule RockcutApi.IdeaBoards.People do
   end
 
   def pickable({:department, dept}) do
-    Repo.all(
-      from u in Accounts.persons_query(),
-        join: m in Membership,
-        on: m.user_id == u.id and m.department_id == ^dept.id,
-        where: u.active == true,
-        distinct: true,
-        order_by: [asc: u.name, asc: u.id],
-        select: %{id: u.id, name: u.name}
-    )
+    members =
+      Repo.all(
+        from u in Accounts.persons_query(),
+          join: m in Membership,
+          on: m.user_id == u.id and m.department_id == ^dept.id,
+          where: u.active == true,
+          distinct: true,
+          select: %{id: u.id, name: u.name}
+      )
+
+    # D59: an owners-only board offers every active owner too.
+    (members ++ Assignees.pickable_owners(dept))
+    |> Enum.uniq_by(& &1.id)
+    |> Enum.sort_by(&{&1.name, &1.id})
   end
 
   @doc "A card's people, first first."
@@ -100,14 +105,14 @@ defmodule RockcutApi.IdeaBoards.People do
 
   defp refusals(users, board) do
     {named, others} = Enum.split(users, @named)
-    where = IdeaBoards.board_name(board)
 
     Enum.map(named, fn user ->
       who = if user, do: user.name, else: "That person"
 
-      if board == :company,
-        do: "#{who} can't be assigned",
-        else: "#{who} must be a #{where} member"
+      case board do
+        {:department, dept} -> Assignees.not_a_member(who, dept)
+        :company -> "#{who} can't be assigned"
+      end
     end) ++ if(others == [], do: [], else: ["#{length(others)} more can't be assigned"])
   end
 

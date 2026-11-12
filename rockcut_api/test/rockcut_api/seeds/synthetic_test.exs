@@ -90,12 +90,12 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     end
 
     test "is idempotent" do
-      assert {:ok, 19} = Synthetic.setup()
+      assert {:ok, 20} = Synthetic.setup()
       first = counts()
-      assert {:ok, 19} = Synthetic.setup()
+      assert {:ok, 20} = Synthetic.setup()
       assert counts() == first
-      # 17 people + 2 tablets (D33, D40).
-      assert first[User] == 19
+      # 18 people + 2 tablets (D33, D40; D59's ownersAsst).
+      assert first[User] == 20
     end
 
     test "every active persona authenticates; inactive does not" do
@@ -242,7 +242,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       bartender = Accounts.get_user_by_email("bartender1@rockcut-test.com")
       Repo.insert!(%Message{channel_key: "all", user_id: bartender.id, body: "agent chatter"})
 
-      assert {:ok, 19} = Synthetic.reset()
+      assert {:ok, 20} = Synthetic.reset()
       assert counts() == baseline
     end
   end
@@ -270,9 +270,9 @@ defmodule RockcutApi.Seeds.SyntheticTest do
     test "mint_tokens/0 covers every active persona" do
       {:ok, _} = Synthetic.setup()
       tokens = Synthetic.mint_tokens()
-      # 16 active people + the taproomDevice and breweryDevice tablets (D33,
+      # 17 active people + the taproomDevice and breweryDevice tablets (D33,
       # D40) + D34's spare sessions.
-      assert map_size(tokens) == 19
+      assert map_size(tokens) == 20
       assert %{email: "bartender2@rockcut-test.com", tokens: spares} = tokens["spares"]
       assert length(spares) == 40 and length(Enum.uniq(spares)) == 40
       assert "dev_" <> _ = tokens["taproomDevice"].token
@@ -826,6 +826,23 @@ defmodule RockcutApi.Seeds.SyntheticTest do
                Enum.to_list(1..length(hd(board.days).cards))
     end
 
+    test "D59: one Owners task for owner, made by owner; ownersAsst is in Office and Owners" do
+      {:ok, _} = Synthetic.setup()
+      today = Tasks.today()
+      owner = persona_id("owner")
+
+      assert board_titles("owners") ==
+               [{"[SEED] Review the quarterly numbers", Date.add(today, 2), owner}]
+
+      assert Repo.get_by!(Task, title: "[SEED] Review the quarterly numbers").created_by_id ==
+               owner
+
+      asst = Accounts.get_user!(persona_id("ownersAsst"))
+
+      assert Enum.map(asst.memberships, &{&1.department.key, &1.role}) |> Enum.sort() ==
+               [{"office", "employee"}, {"owners", "employee"}]
+    end
+
     test "D53: one Brewery and one Taproom task have two people, and every task's copy agrees" do
       {:ok, _} = Synthetic.setup()
 
@@ -855,6 +872,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Tasks.list_items(task_board("bar")) == []
       assert length(board_titles("bar")) == 6
       assert length(board_titles("office")) == 1
+      assert length(board_titles("owners")) == 1
       assert Enum.map(Tasks.list_items(task_board("brewery")), & &1.name) == DailyItem.defaults()
     end
   end
@@ -1309,7 +1327,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       }
     end
 
-    test "seeds lists, cards and labels on Brewery, Taproom and Company, with a locked list and card and a sent card" do
+    test "seeds lists, cards and labels on Brewery, Taproom, Company and Owners, with a locked list and card and a sent card" do
       {:ok, _} = Synthetic.setup()
       %{lists: lists, cards: cards, labels: labels} = seeded()
 
@@ -1318,7 +1336,20 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert {"bar", "[SEED] Raise tap prices", true} in cards
 
       assert Enum.map(cards, &elem(&1, 0)) |> Enum.uniq() |> Enum.sort() ==
-               ~w(bar brewery company)
+               ~w(bar brewery company owners)
+
+      # D59: one Owners card, on its starter Ideas list, for owner and ownersAsst.
+      assert [{"owners", "[SEED] Second taproom location", false}] =
+               Enum.filter(cards, &(elem(&1, 0) == "owners"))
+
+      second =
+        Repo.get_by!(Card, title: "[SEED] Second taproom location")
+        |> Repo.preload([:list, :assignees])
+
+      assert second.list.name == "Ideas"
+
+      assert Enum.map(second.assignees, & &1.email) |> Enum.sort() ==
+               ["owner@rockcut-test.com", "owners.asst@rockcut-test.com"]
 
       assert length(labels) == 4
 
@@ -1367,7 +1398,7 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       {:ok, _} = Synthetic.setup()
       owner = Accounts.get_user_by_email(Synthetic.persona!("owner").email)
 
-      for key <- ~w(brewery bar office sales company) do
+      for key <- ~w(brewery bar office sales owners company) do
         board = IdeaBoards.board_for_key(key)
         {:ok, list} = Lists.create(board, %{"name" => "[TEST-TEMP] list"}, owner)
         {:ok, _} = RockcutApi.IdeaBoards.Cards.create(board, list, %{"title" => "inside"}, owner)

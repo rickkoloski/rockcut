@@ -12,7 +12,7 @@ defmodule RockcutApi.Messaging do
   """
   import Ecto.Query
   require Logger
-  alias RockcutApi.{Repo, Authz, Notifications}
+  alias RockcutApi.{Repo, Accounts, Authz, Notifications}
   alias RockcutApi.Accounts.{User, Membership, Department}
   alias RockcutApi.Messaging.{Message, ChannelRead}
 
@@ -148,7 +148,23 @@ defmodule RockcutApi.Messaging do
     Authz.managers_audience_query() |> Repo.all()
   end
 
+  # D59: an owners-only department's channel (Owners) also tells every active
+  # owner, member or not. Other department channels: members only.
   def recipients("dept:" <> dkey) do
+    members = department_members(dkey)
+
+    case Repo.get_by(Department, key: dkey) do
+      %Department{owners_only: true} ->
+        Enum.uniq_by(members ++ Repo.all(Authz.owners_audience_query()), & &1.id)
+
+      _ ->
+        members
+    end
+  end
+
+  def recipients(_), do: []
+
+  defp department_members(dkey) do
     from(u in User,
       join: m in Membership,
       on: m.user_id == u.id,
@@ -159,8 +175,6 @@ defmodule RockcutApi.Messaging do
     )
     |> Repo.all()
   end
-
-  def recipients(_), do: []
 
   ## Internal
 
@@ -190,7 +204,9 @@ defmodule RockcutApi.Messaging do
   end
 
   defp assignable_departments do
-    from(d in Department, where: d.assignable == true, order_by: [asc: d.name]) |> Repo.all()
+    from(d in Department, where: d.assignable == true)
+    |> Repo.all()
+    |> Accounts.sort_departments(:name)
   end
 
   # People only: a shared device is never notified (D33 §3.1).

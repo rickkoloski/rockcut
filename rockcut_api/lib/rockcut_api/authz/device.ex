@@ -6,7 +6,8 @@ defmodule RockcutApi.Authz.Device do
   Anything not listed below is denied by the catch-all at the bottom.
 
   A device may:
-    * read published shifts and events, positions, departments and the roster;
+    * read published shifts and events, positions, departments and the roster
+      (never an owners-only department, D59);
     * view (and mark read) the All-staff channel and its home department's channel;
     * access its home department's module;
     * read the Buy-a-Beer Board, if it's a Taproom tablet (D37);
@@ -32,6 +33,10 @@ defmodule RockcutApi.Authz.Device do
   def can?(%User{} = _device, :read, %ScheduleEvent{status: "published"}), do: true
   def can?(%User{} = _device, :read, %Position{}), do: true
   def can?(%User{} = _device, :read, %Department{}), do: true
+  # D59 decision 9: a device is never in an owners-only department (Owners).
+  def can?(%User{} = _device, :see, {:department, %Department{owners_only: owners_only}}),
+    do: not owners_only
+
   def can?(%User{} = _device, :read, :roster), do: true
 
   # No anonymous posting from a shared screen, in any channel. The catch-all

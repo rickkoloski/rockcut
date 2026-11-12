@@ -56,9 +56,10 @@ defmodule RockcutApi.IdeaBoards do
 
   @doc """
   The boards `user` can open, departments in department order (by id) then
-  Company, each `%{key, name, color, manage, history}`: `manage` is locking,
-  changing locked things and deleting archived ones (§4.2), `history` the
-  change log. Owners get all five, `noDept` the Company board, a shared
+  Company, each `%{key, name, color, manage, history, owners_only}`: `manage`
+  is locking, changing locked things and deleting archived ones (§4.2),
+  `history` the change log, `owners_only` (D59) an owners-only department's
+  board, where the lock words say "an owner". Owners get all of them, `noDept` the Company board, a shared
   tablet its home board and Company.
   """
   def boards_for(%User{} = user) do
@@ -69,17 +70,18 @@ defmodule RockcutApi.IdeaBoards do
         name: board_name(board),
         color: board_color(board),
         manage: Authz.can?(user, :manage, {:idea_board, board}),
-        history: Authz.can?(user, :history, {:idea_board, board})
+        history: Authz.can?(user, :history, {:idea_board, board}),
+        owners_only: match?({:department, %{owners_only: true}}, board)
       }
     end
   end
 
-  @doc "Every board: the assignable departments' in department order (by id), then Company."
+  @doc "Every board: the assignable departments' (by id, Owners last), then Company."
   def all_boards do
     departments =
       Accounts.list_departments()
       |> Enum.filter(& &1.assignable)
-      |> Enum.sort_by(& &1.id)
+      |> Accounts.sort_departments(:id)
       |> Enum.map(&{:department, &1})
 
     departments ++ [:company]

@@ -22,7 +22,19 @@ defmodule RockcutApi.CalendarFeeds do
 
   ## Feeds
 
-  def get_feed_by_token(token) when is_binary(token), do: Repo.get_by(Feed, token: token)
+  @doc """
+  The feed for a token. D59 §4.2: a department feed for a department that
+  isn't on the schedule (Owners) is nil, a 404, even if one was made earlier.
+  """
+  def get_feed_by_token(token) when is_binary(token) do
+    case Repo.get_by(Feed, token: token) do
+      %Feed{subject_type: "department", subject_id: id} = feed ->
+        if scheduled_department?(id), do: feed
+
+      feed ->
+        feed
+    end
+  end
 
   @doc "The feeds a user is entitled to (lazily created so tokens stay stable)."
   def feeds_for(%User{} = user) do
@@ -39,24 +51,42 @@ defmodule RockcutApi.CalendarFeeds do
   told to re-subscribe, as when someone leaves (D35 DEV pass G7).
   """
   def rotate(subject_type, subject_id, %User{} = actor) do
-    if Authz.can?(actor, :rotate, {:calendar_feed, subject_type, subject_id}) do
-      feed = ensure_feed(subject_type, subject_id, actor)
+    cond do
+      # D59 §4.2: no feed for a department that isn't on the schedule, owners included.
+      subject_type == "department" and not scheduled_department?(subject_id) ->
+        {:error, :not_found}
 
-      with {:ok, feed} <- feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update() do
-        target = if subject_type == "user", do: subject_id
-        key = {feed.subject_type, feed.subject_id}
+      Authz.can?(actor, :rotate, {:calendar_feed, subject_type, subject_id}) ->
+        do_rotate(subject_type, subject_id, actor)
 
-        Accounts.record_audit(actor.id, target, "calendar_feeds.rotated", %{
-          "reason" => "manual",
-          "feeds" => [%{"type" => feed.subject_type, "id" => feed.subject_id}],
-          "labels" => [feed_label(key)]
-        })
+      true ->
+        {:error, :forbidden}
+    end
+  end
 
-        if subject_type != "user", do: notify_rotated([key], {:manual, actor}, actor.id)
-        {:ok, feed}
-      end
-    else
-      {:error, :forbidden}
+  defp do_rotate(subject_type, subject_id, actor) do
+    feed = ensure_feed(subject_type, subject_id, actor)
+
+    with {:ok, feed} <- feed |> Ecto.Changeset.change(token: new_token()) |> Repo.update() do
+      target = if subject_type == "user", do: subject_id
+      key = {feed.subject_type, feed.subject_id}
+
+      Accounts.record_audit(actor.id, target, "calendar_feeds.rotated", %{
+        "reason" => "manual",
+        "feeds" => [%{"type" => feed.subject_type, "id" => feed.subject_id}],
+        "labels" => [feed_label(key)]
+      })
+
+      if subject_type != "user", do: notify_rotated([key], {:manual, actor}, actor.id)
+      {:ok, feed}
+    end
+  end
+
+  # A missing department isn't refused here (unchanged); only `scheduling: false`.
+  defp scheduled_department?(id) do
+    case RockcutApi.Ids.parse(id) do
+      nil -> true
+      id -> not match?(%{scheduling: false}, Repo.get(RockcutApi.Accounts.Department, id))
     end
   end
 
@@ -163,11 +193,14 @@ defmodule RockcutApi.CalendarFeeds do
   defp join_names(names), do: Enum.join(Enum.drop(names, -1), ", ") <> " and " <> List.last(names)
 
   defp entitlements(%User{} = user) do
+    # D59 §4.2: a department that isn't on the schedule has no feed.
+    scheduled = Enum.filter(Accounts.list_departments(), & &1.scheduling)
+
     departments =
       case Authz.scope(user, :calendar_feeds, :manage) do
-        :all -> Accounts.list_departments()
+        :all -> scheduled
         :none -> []
-        {:departments, ids} -> Enum.filter(Accounts.list_departments(), &(&1.id in ids))
+        {:departments, ids} -> Enum.filter(scheduled, &(&1.id in ids))
       end
 
     dept_entries = Enum.map(departments, fn d -> {"department", d.id, d.name} end)

@@ -193,7 +193,9 @@ defmodule RockcutApi.AuthzTest do
       assert Authz.member_ids_in(:none) == []
 
       ids = Authz.member_ids_in({:departments, [d["office"].id]})
-      assert Enum.sort(ids) == Enum.sort([p["office1"].id, p["hidden"].id, p["dualMgr"].id])
+
+      assert Enum.sort(ids) ==
+               Enum.sort([p["office1"].id, p["hidden"].id, p["dualMgr"].id, p["ownersAsst"].id])
     end
 
     test "counts_as_manager? and the managers audience", %{p: p} do

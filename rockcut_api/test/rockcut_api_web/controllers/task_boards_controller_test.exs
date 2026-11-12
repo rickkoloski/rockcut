@@ -328,7 +328,8 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
           "key" => key,
           "name" => depts[key].name,
           "color" => depts[key].color,
-          "manage" => manage
+          "manage" => manage,
+          "scheduling" => depts[key].scheduling
         }
       end
 
@@ -354,6 +355,7 @@ defmodule RockcutApiWeb.TaskBoardsControllerTest do
                    entry.("bar", true),
                    entry.("office", true),
                    entry.("sales", true),
+                   entry.("owners", true),
                    all
                  ]
                }

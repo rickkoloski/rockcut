@@ -66,6 +66,41 @@ defmodule RockcutApiWeb.CalendarFeedControllerTest do
     assert build_conn() |> get("/api/calendar/#{old}.ics") |> Map.get(:status) == 404
   end
 
+  test "D59: no Owners feed; an earlier Owners feed 404s, a Bar one still serves", %{conn: conn} do
+    owner = owner_fixture()
+    bar = department_fixture("bar")
+    owners = RockcutApi.Repo.get_by!(RockcutApi.Accounts.Department, key: "owners")
+
+    listed = feeds(conn, owner)
+
+    bar_feed =
+      Enum.find(listed, &(&1["subject_type"] == "department" and &1["subject_id"] == bar.id))
+
+    refute Enum.any?(
+             listed,
+             &(&1["subject_id"] == owners.id and &1["subject_type"] == "department")
+           )
+
+    # A feed made before D59 (or by hand) for Owners.
+    RockcutApi.Repo.insert!(%RockcutApi.CalendarFeeds.Feed{
+      token: "owners-legacy-token",
+      subject_type: "department",
+      subject_id: owners.id,
+      created_by_id: owner.id
+    })
+
+    assert build_conn() |> get("/api/calendar/owners-legacy-token.ics") |> response(404)
+    assert build_conn() |> get("/api/calendar/#{bar_feed["token"]}.ics") |> response(200)
+
+    assert conn
+           |> bearer(owner)
+           |> post(~p"/api/calendar_feeds/rotate", %{
+             subject_type: "department",
+             subject_id: owners.id
+           })
+           |> json_response(404)
+  end
+
   test "an employee cannot rotate a department feed", %{conn: conn} do
     emp = user_with_role("employee", "bar")
     bar = department_fixture("bar")

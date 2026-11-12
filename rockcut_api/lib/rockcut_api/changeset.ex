@@ -35,6 +35,26 @@ defmodule RockcutApi.Changeset do
   end
 
   @doc """
+  D59 §4.2: when `field` (a department id) changes to a department that isn't
+  on the schedule (`scheduling: false`, e.g. Owners), add
+  `{field, "That department isn't on the schedule"}` (no name: someone who
+  can't see Owners mustn't learn it from this, D59 gap 6). Positions, shifts
+  and schedule events can't be in one. An unknown id is left to `validate_parents/2`.
+  """
+  def validate_scheduled_department(%Changeset{} = changeset, field \\ :department_id) do
+    with {:ok, id} when not is_nil(id) <- Changeset.fetch_change(changeset, field),
+         false <- Keyword.has_key?(changeset.errors, field),
+         id when not is_nil(id) <- RockcutApi.Ids.parse(id),
+         %{scheduling: false} <- Repo.get(RockcutApi.Accounts.Department, id) do
+      Changeset.add_error(changeset, field, "That department isn't on the schedule",
+        validation: :scheduled_department
+      )
+    else
+      _ -> changeset
+    end
+  end
+
+  @doc """
   D55 lead decisions 6 (gap 9): `attrs` with a blank string under `field`
   (atom or string key) replaced by nil. Ecto casts a blank string to the
   field's schema default (`sort_order` 0, the top), but `""` means "not set",

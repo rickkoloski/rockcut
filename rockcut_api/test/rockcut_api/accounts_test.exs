@@ -68,6 +68,29 @@ defmodule RockcutApi.AccountsTest do
       assert "brewery" in keys
       assert "sales" in keys
     end
+
+    # D59 §4.4: Owners (made by its migration, so its id is the lowest here)
+    # is last, though "Owners" sorts between Office and Sales.
+    test "name order, Owners last" do
+      for k <- ~w(sales office brewery bar), do: department_fixture(k)
+
+      assert Accounts.list_departments() |> Enum.map(& &1.name) ==
+               ~w(Bar Brewery Office Sales Owners)
+    end
+  end
+
+  describe "sort_departments/2 (D59 §4.4)" do
+    defp dept(id, name, owners_only \\ false),
+      do: %RockcutApi.Accounts.Department{id: id, name: name, owners_only: owners_only}
+
+    test "by name or by id, owners-only departments after the rest" do
+      depts = [dept(1, "Owners", true), dept(2, "Taproom"), dept(3, "Brewery"), dept(4, "Office")]
+
+      assert Accounts.sort_departments(depts, :name) |> Enum.map(& &1.name) ==
+               ~w(Brewery Office Taproom Owners)
+
+      assert Accounts.sort_departments(depts, :id) |> Enum.map(& &1.id) == [2, 3, 4, 1]
+    end
   end
 
   describe "leaving the Brewery (D38 S49)" do

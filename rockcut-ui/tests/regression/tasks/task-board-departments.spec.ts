@@ -214,12 +214,12 @@ test.describe('floater (Taproom + Brewery)', () => {
 test.describe('owner (no memberships)', () => {
   test.use({ storageState: authFile('owner') })
 
-  test('S104: all four boards in the switcher, each with History and its Daily items entry', async ({ page }) => {
+  test('S104: every board in the switcher, each with History and its Daily items entry', async ({ page }) => {
     await openBoard(page, '/tasks/brewery')
-    // Then the All departments view, last (S118).
-    expect(await switcherEntries(page)).toEqual(['Brewery', 'Taproom', 'Office', 'Sales', 'All departments'])
+    // Then Owners (D59 §4.4) and the All departments view, last (S118).
+    expect(await switcherEntries(page)).toEqual(['Brewery', 'Taproom', 'Office', 'Sales', 'Owners', 'All departments'])
     expect(await boardMenu(page)).toEqual(['Edit Daily items', 'History'])
-    for (const key of ['bar', 'office', 'sales']) {
+    for (const key of ['bar', 'office', 'sales', 'owners']) {
       await openBoard(page, `/tasks/${key}`)
       // No Daily items yet on these boards (S107).
       expect(await boardMenu(page)).toEqual(['Set up Daily checks', 'History'])

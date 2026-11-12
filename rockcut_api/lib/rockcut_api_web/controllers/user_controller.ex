@@ -25,8 +25,9 @@ defmodule RockcutApiWeb.UserController do
         {:ok, u, temp_password} ->
           conn |> put_status(:created) |> json(%{data: user(u), temp_password: temp_password})
 
-        {:error, {:unauthorized_department, key}} ->
-          forbidden(conn, "Cannot assign roles in department: #{key}")
+        # D59 gap 6: no department key, so a manager isn't told Owners exists.
+        {:error, {:unauthorized_department, _key}} ->
+          forbidden(conn, "You can't assign roles in that department")
 
         {:error, {:invalid_membership, msg}} ->
           unprocessable(conn, %{memberships: [msg]})

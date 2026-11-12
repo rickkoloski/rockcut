@@ -231,6 +231,8 @@ export interface Membership {
   department_id: number
   department_key: string | null
   department_name: string | null
+  /** D59: Owners. Null when the department wasn't loaded. */
+  owners_only?: boolean | null
   role: Role
 }
 
@@ -258,6 +260,10 @@ export interface Department {
   key: string
   color?: string | null
   assignable?: boolean
+  // D59: false for a department that isn't on the schedule (Owners).
+  scheduling?: boolean
+  // D59: only owners add or remove members; always employee.
+  owners_only?: boolean
 }
 
 export interface Capabilities {
@@ -299,6 +305,8 @@ export interface TaskBoardEntry {
   name: string
   color?: string | null
   manage: boolean
+  /** D59: false on a board that isn't on the schedule (Owners); absent on All departments. */
+  scheduling?: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────
@@ -811,7 +819,8 @@ export interface DailyCardData {
 
 export interface BoardDay {
   date: string
-  header: DayHeaderData
+  /** D59: null on a board that isn't on the schedule (Owners): no header at all. */
+  header: DayHeaderData | null
   cards: TaskCardData[]
   daily: DailyCardData
 }
@@ -823,6 +832,8 @@ export interface TaskBoardData {
   days: BoardDay[]
   unfinished: TaskCardData[]
   future: TaskCardData[]
+  /** D59: the owners the assignee picker offers too, on an owners-only board only (else empty). */
+  owners?: { id: number; name: string }[]
 }
 
 /** D41 §3.6: a card on the All departments view, with its board's key. */
@@ -854,6 +865,8 @@ export interface IdeaBoardEntry {
   color?: string | null
   manage: boolean
   history: boolean
+  /** D59: an owners-only department's board: its lock words say "an owner". */
+  owners_only?: boolean
 }
 
 export interface IdeaPerson {
