@@ -59,6 +59,7 @@ import PersonIcon from '@mui/icons-material/Person'
 import { BarleyIcon, DeliveryVanIcon, FermenterIcon, FermentersIcon, GiftMugIcon } from './components/NavIcons'
 import { PageTitleProvider, PageTitleSlot } from './components/PageTitle'
 import Check from '@mui/icons-material/Check'
+import { loadingNotice, watchSlowStart } from './lib/startup'
 import { COLOR_MODES, type ColorMode } from './lib/colorMode'
 import { useNavigate, useLocation, Link as RouterLink } from 'react-router-dom'
 import Login from './pages/Login'
@@ -180,19 +181,47 @@ function OldCategoryRedirect() {
   return <Navigate to={`/ingredients/categories/${id}`} replace />
 }
 
+/**
+ * Start-up, while `/api/me` is pending. D58 §3.10 (5205): it shows at once,
+ * and after 4 seconds adds "Still connecting…" with Retry (which starts the
+ * 4 seconds again); a failure or timeout shows "Can't reach the server" as before.
+ */
 function LoadingScreen({ unreachable, onRetry }: { unreachable?: boolean; onRetry?: () => void }) {
+  const [slow, setSlow] = useState(false)
+  const [attempt, setAttempt] = useState(0)
+  useEffect(() => {
+    setSlow(false)
+    return watchSlowStart(() => setSlow(true))
+  }, [attempt])
+  const retry = () => {
+    setAttempt((a) => a + 1)
+    onRetry?.()
+  }
+  const notice = loadingNotice(slow, !!unreachable)
   return (
     <Box
       sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', px: 2 }}
+      data-testid="loading-screen"
     >
-      <CircularProgress />
-      {unreachable && (
+      <CircularProgress aria-label="Loading" />
+      <Typography color="text.secondary">Rock Cut Brewing</Typography>
+      {notice === 'unreachable' && (
         <>
           <Typography color="text.secondary" textAlign="center" data-testid="server-unreachable">
             Can’t reach the server, retrying…
           </Typography>
           <Button variant="outlined" onClick={onRetry}>
             Try now
+          </Button>
+        </>
+      )}
+      {notice === 'slow' && (
+        <>
+          <Typography color="text.secondary" textAlign="center" data-testid="still-connecting">
+            Still connecting…
+          </Typography>
+          <Button variant="outlined" onClick={retry} data-testid="still-connecting-retry">
+            Retry
           </Button>
         </>
       )}
