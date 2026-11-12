@@ -18,11 +18,15 @@ import {
   userId,
 } from './taskBoardHelpers'
 import { pickSetting, setSetting, settingOn } from '../settingsMenu'
+import { resetBoardSettingsAroundEach } from '../boardSettings'
 
 // D38 §3.8, scenarios S6–S9b, S9d, S9f, S16, S17: tasks on the board, the task
 // menu and the add/edit dialog. Every write is checked again after a reload.
 
 test.use({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
+// D58: the View filter and Hide completed are each persona's own, on the
+// server (S6b also opens brewer1's board beside brewer2's).
+resetBoardSettingsAroundEach(['brewer1'])
 
 const created: number[] = []
 test.afterEach(async () => {

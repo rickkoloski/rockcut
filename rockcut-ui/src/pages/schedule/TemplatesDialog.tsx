@@ -16,6 +16,7 @@ import {
   MenuItem,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -23,6 +24,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import { addDaysKey, formatDayColumn, localDayKey, localInputToUtc, utcToLocalInput } from '../../lib/datetime'
+import { canWriteTemplate } from '../../lib/positions'
 import type { ScheduleTemplate, Shift } from '../../lib/types'
 
 interface Props {
@@ -33,6 +35,7 @@ interface Props {
   mondayKey: string
   days: string[]
   canManageShift: (s: Shift) => boolean
+  canManageDepartment: (departmentId: number) => boolean
   onNotice: (msg: string) => void
 }
 
@@ -56,7 +59,7 @@ function shiftToItem(s: Shift) {
   }
 }
 
-export default function TemplatesDialog({ open, onClose, templates, weekShifts, mondayKey, days, canManageShift, onNotice }: Props) {
+export default function TemplatesDialog({ open, onClose, templates, weekShifts, mondayKey, days, canManageShift, canManageDepartment, onNotice }: Props) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [saveKind, setSaveKind] = useState<'week' | 'day'>('week')
@@ -171,9 +174,14 @@ export default function TemplatesDialog({ open, onClose, templates, weekShifts, 
                 secondaryAction={
                   <Stack direction="row" spacing={1} alignItems="center">
                     <Button size="small" variant="outlined" disabled={busy} onClick={() => apply(t)}>Apply</Button>
-                    <IconButton edge="end" size="small" disabled={busy} onClick={() => remove(t)}>
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                    {/* D58: only a manager of every department on it deletes a template. */}
+                    <Tooltip title={canWriteTemplate(t, canManageDepartment) ? '' : 'It has positions outside your departments.'}>
+                      <span>
+                        <IconButton edge="end" size="small" disabled={busy || !canWriteTemplate(t, canManageDepartment)} onClick={() => remove(t)} aria-label={`Delete ${t.name}`}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
                   </Stack>
                 }
               >

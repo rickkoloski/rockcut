@@ -20,6 +20,20 @@ export const ideaBoardTitle = (board: Pick<IdeaBoardEntry, 'name'>) => `${board.
 /** The page's URL: `/boards/<board>`, or a card open on it (`/boards/<board>/cards/<id>`). */
 export const boardUrl = (board: string, cardId?: number) => (cardId === undefined ? `/boards/${board}` : `/boards/${board}/cards/${cardId}`)
 
+/** D58 §3.9 (5206): what a card URL names that no card can be. */
+export const CARD_NOT_FOUND = 'That card wasn’t found (it may have been deleted).'
+
+/** The `:cardId` of a card URL: none, a card id, or `'bad'` (not a positive whole number). */
+export function parseCardId(raw: string | undefined): number | null | 'bad' {
+  if (raw === undefined) return null
+  if (!/^\d{1,15}$/.test(raw)) return 'bad'
+  const id = Number(raw)
+  return id > 0 ? id : 'bad'
+}
+
+/** A card fetch that says there's no such card on this board. */
+export const isCardMissing = (err: unknown) => (err as { response?: { status?: number } } | null)?.response?.status === 404
+
 // The board last opened: `/boards` opens it.
 const BOARD_KEY = 'rockcut.ideas.board'
 

@@ -72,6 +72,8 @@ defmodule RockcutApiWeb.Router do
     get "/session", SessionController, :show
     delete "/session", SessionController, :delete
     get "/me", MeController, :show
+    # D58: the account's own board settings (a device: its home board only).
+    put "/me/board_settings/:board", MeController, :update_board_settings
     get "/departments", DepartmentController, :index
     get "/positions", PositionController, :index
     get "/roster", RosterController, :index
@@ -127,6 +129,7 @@ defmodule RockcutApiWeb.Router do
     resources "/users", UserController, only: [:index, :create, :update]
     put "/users/:user_id/memberships", MembershipController, :update
     post "/users/:id/reset_password", UserController, :reset_password
+    get "/users/:id/future_shifts", UserController, :future_shifts
     # Staff codes (D37; every department since D40): the user edit dialog
     get "/users/:id/staff_code", StaffCodeController, :show
     put "/users/:id/staff_code", StaffCodeController, :update

@@ -1,13 +1,16 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, denverToday, denverUtc, openBoard, tempTag, userId } from './taskBoardHelpers'
-import { closeSettings, openSettings, setSetting, settingOn } from '../settingsMenu'
+import { boardSettingsSaved, closeSettings, openSettings, setSetting, settingOn } from '../settingsMenu'
+import { resetBoardSettingsAroundEach, storedBoardSettings } from '../boardSettings'
 
 // D45 §3.3, S184–S188: "Hide shifts" beside Hide completed drops the people,
 // open shifts and "No one scheduled" from each day's header; events stay, and
-// a day without one has no header box. Remembered per board, per browser
-// (each test starts from a fresh browser, so nothing needs restoring). Days
+// a day without one has no header box. Remembered per board; since D58 per
+// account on the server, so each test starts and ends with the defaults. Days
 // 11–13 from today, inside the default two weeks and past the seed's shifts.
+
+resetBoardSettingsAroundEach()
 
 const shiftIds: number[] = []
 const eventIds: number[] = []
@@ -138,7 +141,7 @@ test.describe('S186: brewer1 at phone width', () => {
     await expectShiftsHidden(page)
 
     // One day at a time, on the event day and on a day without one.
-    await page.getByTestId('board-view-day').click()
+    await boardSettingsSaved(page, () => page.getByTestId('board-view-day').click())
     await page.goto(`/tasks/brewery?day=${day(EVENT_DAY)}`)
     await expect(page.getByTestId('board-view-day')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId(`header-event-${day(EVENT_DAY)}-${eventId}`)).toBeVisible()
@@ -161,6 +164,7 @@ test.describe('S188: taproomDevice', () => {
     await page.reload()
     await expect(page.getByTestId(GEAR)).toBeVisible({ timeout: 20_000 })
     expect(await shiftsHidden(page)).toBe(true)
-    expect(await page.evaluate(() => localStorage.getItem('rockcut.tasks.hideShifts.bar'))).toBe('true')
+    // D58: the tablet's own setting, on the server.
+    expect((await storedBoardSettings('taproomDevice')).bar).toMatchObject({ hide_shifts: true })
   })
 })

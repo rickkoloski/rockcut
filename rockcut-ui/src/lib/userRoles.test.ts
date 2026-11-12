@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { editableDepartments, membershipLabel, membershipsPayload, readOnlyOwnersOnly, sortMemberships } from './userRoles'
-import type { Department, Membership } from './types'
+import { editableDepartments, membershipLabel, membershipsPayload, sortMemberships, userAccess } from './userRoles'
+import type { Department, Membership, User } from './types'
 
 // API order: by name, Owners last (D59 §4.4).
 const depts: Department[] = [
@@ -45,21 +45,6 @@ describe('membershipsPayload', () => {
   })
 })
 
-describe('readOnlyOwnersOnly', () => {
-  it("shows a manager the person's Owners membership, from the membership alone", () => {
-    // D59 decision 9: a manager's department list has no Owners.
-    const managerDepts = depts.filter((d) => !d.owners_only)
-    const editable = editableDepartments(managerDepts, false, ['office'])
-    expect(readOnlyOwnersOnly([m('office'), m('owners')], editable)).toEqual([{ key: 'owners', name: 'Owners' }])
-  })
-
-  it('nothing for an owner (they can change it) or a person not in Owners', () => {
-    expect(readOnlyOwnersOnly([m('owners')], editableDepartments(depts, true, []))).toEqual([])
-    expect(readOnlyOwnersOnly([m('office')], editableDepartments(depts, false, ['office']))).toEqual([])
-    expect(readOnlyOwnersOnly(null, [])).toEqual([])
-  })
-})
-
 describe('membershipLabel', () => {
   it('calls an Owners membership "member", others by role', () => {
     expect(membershipLabel(m('owners'))).toBe('Owners: member')
@@ -71,5 +56,20 @@ describe('membershipLabel', () => {
 describe('sortMemberships', () => {
   it('follows the department order, Owners last', () => {
     expect(sortMemberships([m('owners'), m('bar'), m('brewery', 'manager')], depts).map((x) => x.department_key)).toEqual(['brewery', 'bar', 'owners'])
+  })
+})
+
+describe('userAccess (D58)', () => {
+  const base = { id: 1, email: 'a@x', name: 'A', active: true, is_owner: false, must_reset_password: false, memberships: [], inserted_at: '', updated_at: '' } as User
+
+  it('reads the row the API sent', () => {
+    expect(
+      userAccess({ ...base, can_edit: false, can_deactivate: false, addable_departments: [{ key: 'brewery', name: 'Brewery' }] }),
+    ).toEqual({ canEdit: false, canDeactivate: false, addable: [{ key: 'brewery', name: 'Brewery' }] })
+  })
+
+  it('treats a row without them as editable, with nothing to add', () => {
+    expect(userAccess(base)).toEqual({ canEdit: true, canDeactivate: true, addable: [] })
+    expect(userAccess(null)).toEqual({ canEdit: true, canDeactivate: true, addable: [] })
   })
 })

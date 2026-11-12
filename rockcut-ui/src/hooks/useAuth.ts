@@ -3,6 +3,7 @@ import api, { PASSWORD_RESET_EVENT, SERVER_BACK_EVENT, SERVER_DOWN_EVENT } from 
 import queryClient from '../lib/queryClient'
 import type { Me, User, Capabilities, IdeaBoardEntry, TaskBoardEntry } from '../lib/types'
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
+import { cleanSettings, type BoardSettings } from '../lib/tasks'
 import {
   SHARED_DEVICE_LOGIN_REFUSED,
   TOKEN_KEY,
@@ -27,6 +28,8 @@ interface AuthState {
   colorMode: ColorMode | null
   /** D49: the Brewery board's "Show planned batches", saved per person on the server. */
   showPlannedBatches: boolean
+  /** D58: each board's settings saved on the server for this account (a tablet: its own), only what was changed. */
+  boardSettings: Record<string, Partial<BoardSettings>>
   isAuthenticated: boolean
   bootstrapped: boolean
   isLoading: boolean
@@ -43,6 +46,11 @@ interface AuthState {
   setColorMode: (mode: ColorMode) => Promise<void>
   /** D49: save "Show planned batches". Applied at once; put back (and rethrown) if the server refuses. */
   setShowPlannedBatches: (show: boolean) => Promise<void>
+  /**
+   * D58: save some of a board's settings. Applied at once; if the server
+   * refuses, the change stays for this page and the error is rethrown.
+   */
+  saveBoardSettings: (board: string, changes: Partial<BoardSettings>) => Promise<void>
   // D33 — shared tablets
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
@@ -77,6 +85,7 @@ const useAuth = create<AuthState>((set, get) => ({
   ideaBoards: [],
   colorMode: null,
   showPlannedBatches: true,
+  boardSettings: {},
   isAuthenticated: !!localStorage.getItem(TOKEN_KEY),
   bootstrapped: false,
   isLoading: false,
@@ -120,7 +129,7 @@ const useAuth = create<AuthState>((set, get) => ({
       void signOutOnServer(token)
     }
     localStorage.removeItem(TOKEN_KEY)
-    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], ideaBoards: [], colorMode: null, isAuthenticated: false })
+    set({ token: null, user: null, capabilities: null, sharedDevices: false, staffCodes: false, beerBoardManage: false, taskBoards: [], ideaBoards: [], colorMode: null, boardSettings: {}, isAuthenticated: false })
   },
 
   loadMe: (opts) => {
@@ -157,6 +166,7 @@ const useAuth = create<AuthState>((set, get) => ({
           ideaBoards: Array.isArray(data.idea_boards) ? data.idea_boards : [],
           colorMode,
           showPlannedBatches: data.show_planned_batches !== false,
+          boardSettings: Object.fromEntries(Object.entries(data.board_settings ?? {}).map(([k, v]) => [k, cleanSettings(v)])),
           isAuthenticated: true,
           bootstrapped: true,
           unreachable: false,
@@ -202,6 +212,11 @@ const useAuth = create<AuthState>((set, get) => ({
       set({ showPlannedBatches: before })
       throw err
     }
+  },
+
+  saveBoardSettings: async (board, changes) => {
+    set((s) => ({ boardSettings: { ...s.boardSettings, [board]: { ...s.boardSettings[board], ...changes } } }))
+    await api.put(`/api/me/board_settings/${encodeURIComponent(board)}`, changes, { timeout: 10_000 })
   },
 
   // Exchange a pairing code for this tablet's token (D33 §3.2).

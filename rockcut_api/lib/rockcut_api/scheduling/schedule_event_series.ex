@@ -31,6 +31,9 @@ defmodule RockcutApi.Scheduling.ScheduleEventSeries do
     field :count, :integer
     field :generated_through, :date
     field :skipped_dates, {:array, :date}, default: []
+    # D58 §3.6 (4261), D39's chain: set by `EventSeries` only, never cast.
+    field :internal_end, :boolean, default: false
+    belongs_to :continues_series, __MODULE__
 
     belongs_to :department, RockcutApi.Accounts.Department
     belongs_to :created_by, RockcutApi.Accounts.User

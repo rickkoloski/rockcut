@@ -7,7 +7,7 @@ import { DataGridExtended } from 'datagrid-extended'
 import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import api, { download } from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import { boardFileDate, formatBoardDateTime } from '../../lib/beerBoard'
+import { boardFileDate, formatBoardDateTime, historyExportPath } from '../../lib/beerBoard'
 import type { BeerBoardEvent } from '../../lib/types'
 
 const ACTION_LABEL: Record<BeerBoardEvent['action'], string> = {
@@ -71,7 +71,7 @@ export default function BeerBoardHistory({ onBack }: { onBack: () => void }) {
   const exportHistory = async () => {
     setExportError(null)
     try {
-      await download('/api/beer_board/history/export.csv', `buy-a-beer-board-history-${boardFileDate()}.csv`)
+      await download(historyExportPath(q), `buy-a-beer-board-history-${boardFileDate()}.csv`)
     } catch (err) {
       setExportError(parseApiError(err))
     }

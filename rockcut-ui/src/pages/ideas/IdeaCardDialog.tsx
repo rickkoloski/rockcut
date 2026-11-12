@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
   Alert,
   Autocomplete,
@@ -49,6 +49,7 @@ import {
   formatIdeaTime,
   ideaError,
   ideaPath,
+  isCardMissing,
   labelColor,
   lockHolder,
   sentChipText,
@@ -69,6 +70,8 @@ interface Props {
   /** Something on the card changed: the board refetches. */
   onChanged: () => void
   onToast: (message: string) => void
+  /** D58 §3.9: the card isn't on this board (a 404). */
+  onMissing: () => void
 }
 
 const DESCRIPTION_MAX = 10_000
@@ -89,7 +92,7 @@ type LabelOption = IdeaLabel | Created
  * is locked (notes stay open, decision 14); and for everyone while it's
  * archived (lead decisions 2), apart from Watch and Restore.
  */
-export default function IdeaCardDialog({ board, cardId, lists, labels, people, onClose, onChanged, onToast }: Props) {
+export default function IdeaCardDialog({ board, cardId, lists, labels, people, onClose, onChanged, onToast, onMissing }: Props) {
   const key = board.key
   const theme = useTheme()
   const mode = theme.palette.mode
@@ -102,7 +105,12 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
   const { data: card, isLoading, isError, error } = useApiQuery<IdeaCard>(queryKey, ideaPath(key, 'cards', cardId), undefined, {
     staleTime: 0,
     refetchOnWindowFocus: 'always',
+    retry: (failures, err) => !isCardMissing(err) && failures < 1,
   })
+  const missing = !card && isError && isCardMissing(error)
+  useEffect(() => {
+    if (missing) onMissing()
+  }, [missing, onMissing])
 
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)

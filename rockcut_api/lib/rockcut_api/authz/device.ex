@@ -15,6 +15,7 @@ defmodule RockcutApi.Authz.Device do
       and Daily ticks. Never another board, the All departments view, History
       or the Daily items list's changes. Every write also needs a person's
       staff code and is decided for that person (`StaffCodeActing`);
+    * save its own settings for its home board (D58), with no staff code;
     * read its home department's Idea Board and the Company board (D53),
       nothing else there;
     * if it's the brewhouse device (home: Brewery), read and work the
@@ -63,6 +64,12 @@ defmodule RockcutApi.Authz.Device do
   def can?(%User{} = device, action, {:tasks, %Department{key: key}})
       when action in [:read, :write],
       do: key == home_key(device)
+
+  # D58 §3.1: the tablet's own settings for its home board, and no other
+  # board or All departments. No staff code: it's the tablet's view, not a
+  # write anyone is recorded for.
+  def can?(%User{} = device, :save, {:board_settings, %Department{key: key}}),
+    do: key == home_key(device)
 
   # D53 Part 2 §4.2: a tablet reads its home department's Idea Board and the
   # Company board, view only. Every write, Watch, History and every other

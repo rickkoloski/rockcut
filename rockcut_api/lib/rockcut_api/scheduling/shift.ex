@@ -40,9 +40,12 @@ defmodule RockcutApi.Scheduling.Shift do
     |> foreign_key_constraint(:assignee_id)
     |> validate_change(:assignee_id, fn :assignee_id, id ->
       # D33: a shared device is never an assignee.
-      if RockcutApi.Accounts.device_id?(id),
-        do: [assignee_id: "can't be a shared device"],
-        else: []
+      cond do
+        RockcutApi.Accounts.device_id?(id) -> [assignee_id: "can't be a shared device"]
+        # D58 §3.7 (5204): only on a change, so shifts already theirs stay.
+        RockcutApi.Accounts.inactive_id?(id) -> [assignee_id: "is not active"]
+        true -> []
+      end
     end)
     |> RockcutApi.Changeset.validate_parents([
       :department_id,

@@ -13,10 +13,11 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { coloradoToday } from '../../lib/tasks'
-import { IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, ideaError, ideaPath, lockHolder, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
+import { CARD_NOT_FOUND, IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, ideaError, ideaPath, lockHolder, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
 import type { IdeaBoardData, IdeaBoardEntry, IdeaCardFace as Face, IdeaLabel, IdeaListData, IdeaPerson } from '../../lib/types'
 import BoardSwitcher from '../tasks/BoardSwitcher'
 import IdeaListColumn, { type ListAction } from './IdeaListColumn'
+import ListColumnsSortable, { type ColumnDrag } from './ListColumnsSortable'
 import IdeaCardFace from './IdeaCardFace'
 import IdeaCardDialog from './IdeaCardDialog'
 import ArchivedDialog from './ArchivedDialog'
@@ -89,7 +90,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
   const listByKey = useCallback((containerId: string) => lists.find((l) => listKey(l.id) === containerId), [lists])
   const { containers, move } = useOptimisticLists(source, isLocked)
 
-  const [toast, setToast] = useState<{ message: string; error?: boolean } | null>(null)
+  const [toast, setToast] = useState<{ message: string; error?: boolean; notice?: boolean } | null>(null)
   const [archivedOpen, setArchivedOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const [addingList, setAddingList] = useState(false)
@@ -157,6 +158,20 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     }
   }
 
+  // D58 §3.16 (5193): a list dragged by its header saves as ⋮ Move left/right
+  // does (`before_id`; the same rules and History). Its new place shows until
+  // the board's next read.
+  const [columnOrder, setColumnOrder] = useState<{ ids: string[]; data: IdeaBoardData } | null>(null)
+  const columnIds = columnOrder && columnOrder.data === data ? columnOrder.ids : lists.map((l) => listKey(l.id))
+  const columnLocked = (id: string) => {
+    const list = listByKey(id)
+    return phone || !list || !(canWrite && (manage || !list.locked))
+  }
+  const reorderList = (id: string, beforeId: string | null, ids: string[]) => {
+    if (data) setColumnOrder({ ids, data })
+    void run(() => api.post(ideaPath(key, 'lists', idOf(id), 'move'), { before_id: beforeId ? idOf(beforeId) : null }))
+  }
+
   const addList = async () => {
     const name = newList.trim()
     if (!name) return setAddingList(false)
@@ -170,6 +185,15 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     if ((location.state as { fromBoard?: boolean } | null)?.fromBoard) navigate(-1)
     else navigate(boardUrl(key), { replace: true })
   }
+
+  // D58 §3.9 (5206): a card URL naming no card on this board shows the board
+  // with a notice, at the board's own URL.
+  const cardMissing = useCallback(() => navigate(boardUrl(key), { replace: true, state: { cardMissing: true } }), [navigate, key])
+  useEffect(() => {
+    if (!(location.state as { cardMissing?: boolean } | null)?.cardMissing) return
+    setToast({ message: CARD_NOT_FOUND, notice: true })
+    navigate(location.pathname, { replace: true, state: null })
+  }, [location.state, location.pathname, navigate])
 
   const switchBoard = (next: string) => {
     writeIdeaBoard(next)
@@ -187,7 +211,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
   ]
   const labelFilters: Choice<IdeaFilter>[] = (data?.labels ?? []).map((l) => ({ value: `label:${l.id}` as IdeaFilter, label: l.name }))
 
-  const renderContainer = (container: ListContainer, slot: ContainerSlot): ReactNode => {
+  const renderContainer = (container: ListContainer, slot: ContainerSlot, drag?: ColumnDrag): ReactNode => {
     const list = listByKey(container.id)
     if (!list) return null
     const i = lists.indexOf(list)
@@ -206,6 +230,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
         isLast={i === lists.length - 1}
         readOnly={isDevice}
         full={phone}
+        drag={phone ? undefined : drag}
         onAction={(action) => void listAction(list, action)}
         onRename={(name) => run(() => api.patch(ideaPath(key, 'lists', list.id), { name }))}
         onAddCard={(title) => run(() => api.post(ideaPath(key, 'cards'), { list_id: list.id, title }))}
@@ -306,7 +331,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     }
     return (
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, overflowX: 'auto', pb: 2 }} data-testid="idea-lists">
-        {lists.map((l) => rendered[listKey(l.id)])}
+        {columnIds.map((id) => rendered[id])}
         {addListColumn}
       </Box>
     )
@@ -361,33 +386,37 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
       {isError && !data && <Alert severity="error">{ideaError(error)}</Alert>}
       {isLoading && !data && <CircularProgress />}
       {data && (
-        <SortableLists
-          containers={containers}
-          onMove={(m) => moveCard(m)}
-          isLocked={isLocked}
-          canMoveTo={canMoveTo}
-          itemLabel={(k) => cards.get(k)?.card.title ?? 'card'}
-          containerLabel={(id) => listByKey(id)?.name ?? 'list'}
-          onItemActivate={(k) => openCard(idOf(k))}
-          renderItem={(k, state) => {
-            const entry = cards.get(k)
-            return entry ? (
-              <IdeaCardFace
-                card={entry.card}
-                labels={labels}
-                listLocked={entry.list.locked}
-                today={today}
-                dragging={state.dragging}
-                overlay={state.overlay}
-                locked={state.locked}
-                onOpen={(c) => openCard(c.id)}
-              />
-            ) : null
-          }}
-          renderContainer={renderContainer}
-        >
-          {layout}
-        </SortableLists>
+        <ListColumnsSortable ids={columnIds} isDisabled={columnLocked} onReorder={reorderList}>
+          {(drags) => (
+            <SortableLists
+              containers={containers}
+              onMove={(m) => moveCard(m)}
+              isLocked={isLocked}
+              canMoveTo={canMoveTo}
+              itemLabel={(k) => cards.get(k)?.card.title ?? 'card'}
+              containerLabel={(id) => listByKey(id)?.name ?? 'list'}
+              onItemActivate={(k) => openCard(idOf(k))}
+              renderItem={(k, state) => {
+                const entry = cards.get(k)
+                return entry ? (
+                  <IdeaCardFace
+                    card={entry.card}
+                    labels={labels}
+                    listLocked={entry.list.locked}
+                    today={today}
+                    dragging={state.dragging}
+                    overlay={state.overlay}
+                    locked={state.locked}
+                    onOpen={(c) => openCard(c.id)}
+                  />
+                ) : null
+              }}
+              renderContainer={(container, slot) => renderContainer(container, slot, drags[container.id])}
+            >
+              {layout}
+            </SortableLists>
+          )}
+        </ListColumnsSortable>
       )}
       {cardId !== null && data && (
         <IdeaCardDialog
@@ -400,13 +429,14 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
           onClose={closeCard}
           onChanged={refresh}
           onToast={(message) => setToast({ message })}
+          onMissing={cardMissing}
         />
       )}
       {archivedOpen && <ArchivedDialog board={board} onClose={() => setArchivedOpen(false)} onChanged={refresh} onOpenCard={openCard} />}
       {historyOpen && <IdeaHistoryDialog board={board} onClose={() => setHistoryOpen(false)} />}
-      <Snackbar open={!!toast} autoHideDuration={toast?.error ? 6000 : 4000} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+      <Snackbar open={!!toast} autoHideDuration={toast?.error || toast?.notice ? 6000 : 4000} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
         {toast ? (
-          <Alert severity={toast.error ? 'error' : 'success'} onClose={() => setToast(null)} variant="filled" data-testid="idea-toast">
+          <Alert severity={toast.error ? 'error' : toast.notice ? 'info' : 'success'} onClose={() => setToast(null)} variant="filled" data-testid="idea-toast">
             {toast.message}
           </Alert>
         ) : undefined}

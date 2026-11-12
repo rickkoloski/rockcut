@@ -204,7 +204,10 @@ describe('ruleChangeNote (D53)', () => {
       'The new pattern remakes them with the people you picked. 1 removed one has its own notes, which go too.',
     )
     expect(ruleChangeNote(true, { removes_noted: 2, keeps_moved: 1 })).toBe(
-      'The new pattern remakes them with the people you picked. 2 removed ones have their own notes, which go too. Kept, the one moved to another day stays there, and the new pattern can make its old day too.',
+      'The new pattern remakes them with the people you picked. 2 removed ones have their own notes, which go too. If kept, the one moved to another day stays on its new day, and the new pattern doesn’t remake its old day.',
+    )
+    expect(ruleChangeNote(false, { keeps_moved: 3 })).toBe(
+      'The new pattern remakes them. Dates that stay keep their people. New dates take them from the last regular occurrence. If kept, the 3 moved to other days stay on their new days, and the new pattern doesn’t remake their old days.',
     )
     expect(ruleChangeNote(true, { removes_noted: 0, keeps_moved: 0 })).toBe('The new pattern remakes them with the people you picked.')
   })

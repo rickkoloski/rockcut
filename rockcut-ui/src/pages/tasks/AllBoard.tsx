@@ -24,6 +24,7 @@ import BoardLayout from './BoardLayout'
 import BoardSwitcher from './BoardSwitcher'
 import PageTitle from '../../components/PageTitle'
 import BoardToolbar from './BoardToolbar'
+import BoardViewNotices from './BoardViewNotices'
 import TaskCard from './TaskCard'
 import { useBoardView } from './useBoardView'
 
@@ -52,9 +53,10 @@ export default function AllBoard({ board: entry, boards }: Props) {
   const {
     from, to, highlighted, hideCompleted, phoneView, phone, wide,
     setBoardEl, step, showToday, pickSpan, toggleHide, setPhoneView, firstDay, pickFirstDay,
+    view, setView, rangeNotice, notSaved, clearNotSaved,
   } = useBoardView(ALL_BOARDS)
-  // "My tasks" isn't offered here; the board's own filter isn't remembered, so nothing to keep.
-  const [filter, setFilter] = useState<TaskFilter>('all')
+  // "My tasks" isn't offered here (nor saved, D58).
+  const filter: TaskFilter = view === 'mine' ? 'all' : view
   const [picked, setPicked] = useState<string | null>(null)
 
   const { data, isLoading, isError, error } = useApiQuery<AllBoardData>(
@@ -175,13 +177,14 @@ export default function AllBoard({ board: entry, boards }: Props) {
           showToday()
         }}
         onSpan={pickSpan}
-        onFilter={setFilter}
+        onFilter={setView}
         onHideCompleted={toggleHide}
         noMine
         compact={phone}
         phoneView={phoneView}
         onPhoneView={setPhoneView}
       />
+      <BoardViewNotices rangeNotice={rangeNotice} notSaved={notSaved} onNotSavedClose={clearNotSaved} />
       {isError && !data && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !data && <CircularProgress />}
       {data && (

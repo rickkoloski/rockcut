@@ -8,7 +8,7 @@ defmodule RockcutApiWeb.StaffCodeController do
   """
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [user: 1]
+  import RockcutApiWeb.JSONHelpers, only: [user_for: 2]
   alias RockcutApi.{Accounts, StaffCodes}
   alias RockcutApi.Accounts.User
 
@@ -29,7 +29,7 @@ defmodule RockcutApiWeb.StaffCodeController do
     with %User{} = target <- Accounts.get_user(id) || {:error, :not_found} do
       case StaffCodes.set(target, Map.get(params, "code"), conn.assigns.current_user) do
         {:ok, u} ->
-          json(conn, %{data: user(Accounts.get_user!(u.id))})
+          json(conn, %{data: user_for(Accounts.get_user!(u.id), conn.assigns.current_user)})
 
         {:error, :forbidden} ->
           forbidden(conn)
@@ -50,8 +50,11 @@ defmodule RockcutApiWeb.StaffCodeController do
   def delete(conn, %{"id" => id}) do
     with %User{} = target <- Accounts.get_user(id) || {:error, :not_found} do
       case StaffCodes.remove(target, conn.assigns.current_user) do
-        {:ok, u} -> json(conn, %{data: user(Accounts.get_user!(u.id))})
-        {:error, :forbidden} -> forbidden(conn)
+        {:ok, u} ->
+          json(conn, %{data: user_for(Accounts.get_user!(u.id), conn.assigns.current_user)})
+
+        {:error, :forbidden} ->
+          forbidden(conn)
       end
     end
   end

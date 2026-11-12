@@ -18,11 +18,14 @@ import {
   coloradoToday,
   defaultRange,
   readBoard,
-  readFirstDay,
-  readHideCompleted,
-  readHideShifts,
-  readPhoneView,
-  readSpan,
+  BOARD_DEFAULTS,
+  boardRange,
+  isDateKey,
+  boardSettings,
+  carryOver,
+  missingLocalSettings,
+  cleanSettings,
+  readLocalSettings,
   taskError,
   taskGone,
   switcherBoards,
@@ -30,11 +33,6 @@ import {
   todaysTasks,
   weekStart,
   writeBoard,
-  writeFirstDay,
-  writeHideCompleted,
-  writeHideShifts,
-  writePhoneView,
-  writeSpan,
 } from './tasks'
 import type { AllBoardCard, DailyCardItem, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent } from './types'
 
@@ -245,32 +243,138 @@ describe('boardPath (D41)', () => {
   })
 })
 
-describe('the board’s remembered choices (D41 storage keys)', () => {
+describe('board settings on the server (D58 §3.1)', () => {
+  it('the defaults: 2 weeks, nothing hidden, Today, All, every day stacked', () => {
+    expect(boardSettings(undefined)).toEqual({
+      span: 14,
+      hide_completed: false,
+      hide_shifts: false,
+      first_day: 'today',
+      view: 'all',
+      phone_view: 'vertical',
+    })
+    expect(boardSettings({ span: 7, view: 'mine' })).toEqual({ ...BOARD_DEFAULTS, span: 7, view: 'mine' })
+  })
+
+  it('anything that isn’t a setting or a valid value is dropped', () => {
+    expect(cleanSettings({ span: 30, hide_completed: 'yes', first_day: 'friday', view: 'nobody', phone_view: 'grid', colour: 'red' })).toEqual({})
+    expect(cleanSettings(null)).toEqual({})
+    expect(cleanSettings({ span: 7, hide_shifts: true, first_day: 'monday', phone_view: 'day' })).toEqual({
+      span: 7,
+      hide_shifts: true,
+      first_day: 'monday',
+      phone_view: 'day',
+    })
+  })
+})
+
+describe('the carry-over from this browser (D58 §3.1, S2)', () => {
   const stubStorage = (initial: Record<string, string>) => {
     const store = new Map(Object.entries(initial))
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
     })
     return store
   }
   afterEach(() => vi.unstubAllGlobals())
 
-  it('reads a choice saved under the old key once, and keeps it under the new one', () => {
+  it('local values and nothing on the server: one save, then the board’s keys are cleared', async () => {
     const store = stubStorage({
-      'rockcut.breweryTasks.span': '7',
+      'rockcut.tasks.span.brewery': '7',
+      'rockcut.tasks.hideCompleted.brewery': 'true',
+      'rockcut.tasks.hideShifts.brewery': 'true',
+      'rockcut.tasks.firstDay.brewery': 'monday',
+      'rockcut.tasks.phoneView.brewery': 'day',
+      'rockcut.tasks.board': 'brewery',
+    })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(await carryOver('brewery', undefined, save)).toBe('saved')
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith({ span: 7, hide_completed: true, hide_shifts: true, first_day: 'monday', phone_view: 'day' })
+    // The last board opened stays (navigation, not a setting).
+    expect([...store.keys()]).toEqual(['rockcut.tasks.board'])
+  })
+
+  // Lead decisions 1 (DEV QA gap 1): the server's entry may hold some keys only.
+  it('an empty entry on the server: every local value is saved, then cleared', async () => {
+    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7', 'rockcut.tasks.firstDay.brewery': 'monday' })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(await carryOver('brewery', {}, save)).toBe('saved')
+    expect(save).toHaveBeenCalledWith({ span: 7, first_day: 'monday' })
+    expect([...store.keys()]).toEqual([])
+  })
+
+  it('a partial entry: only the keys the server lacks are saved; its own values are never overwritten', async () => {
+    const store = stubStorage({
+      'rockcut.tasks.span.brewery': '7',
+      'rockcut.tasks.hideCompleted.brewery': 'true',
+      'rockcut.tasks.hideShifts.brewery': 'true',
+      'rockcut.tasks.firstDay.brewery': 'monday',
+    })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(missingLocalSettings('brewery', { view: 'all', hide_shifts: false })).toEqual({ span: 7, hide_completed: true, first_day: 'monday' })
+    expect(await carryOver('brewery', { view: 'all', hide_shifts: false }, save)).toBe('saved')
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith({ span: 7, hide_completed: true, first_day: 'monday' })
+    expect([...store.keys()]).toEqual([])
+  })
+
+  it('a full entry: no save, and the local keys are cleared', async () => {
+    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7', 'rockcut.tasks.board': 'brewery' })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(await carryOver('brewery', { span: 14 }, save)).toBe('server')
+    expect(save).not.toHaveBeenCalled()
+    expect([...store.keys()]).toEqual(['rockcut.tasks.board'])
+  })
+
+  it('a failed save of the missing keys keeps them all for next time', async () => {
+    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7', 'rockcut.tasks.firstDay.brewery': 'sunday' })
+    const save = vi.fn().mockRejectedValue(new Error('offline'))
+    expect(await carryOver('brewery', { span: 14 }, save)).toBe('failed')
+    expect(save).toHaveBeenCalledWith({ first_day: 'sunday' })
+    expect(store.get('rockcut.tasks.span.brewery')).toBe('7')
+    expect(store.get('rockcut.tasks.firstDay.brewery')).toBe('sunday')
+  })
+
+  it('a failed save keeps the local keys for next time', async () => {
+    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7', 'rockcut.tasks.firstDay.brewery': 'sunday' })
+    const save = vi.fn().mockRejectedValue(new Error('offline'))
+    expect(await carryOver('brewery', undefined, save)).toBe('failed')
+    expect(store.get('rockcut.tasks.span.brewery')).toBe('7')
+    expect(store.get('rockcut.tasks.firstDay.brewery')).toBe('sunday')
+  })
+
+  it('no local values: nothing to save (the defaults apply)', async () => {
+    stubStorage({ 'rockcut.tasks.board': 'bar' })
+    const save = vi.fn()
+    expect(await carryOver('bar', undefined, save)).toBe('none')
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('the shared value (D41) and the one before the rename count, as the board read them; they stay for other boards', async () => {
+    const store = stubStorage({
+      'rockcut.tasks.span': '7',
+      'rockcut.tasks.span.bar': '14',
       'rockcut.breweryTasks.hideCompleted': 'true',
       'rockcut.breweryTasks.phoneView': 'day',
     })
-    expect(readSpan('brewery')).toBe(7)
-    expect(readHideCompleted('brewery')).toBe(true)
-    expect(readPhoneView('brewery')).toBe('day')
+    expect(readLocalSettings('bar')).toEqual({ span: 14, hide_completed: true, phone_view: 'day' })
+    expect(readLocalSettings('office')).toEqual({ span: 7, hide_completed: true, phone_view: 'day' })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(await carryOver('bar', undefined, save)).toBe('saved')
+    expect(store.has('rockcut.tasks.span.bar')).toBe(false)
     expect(store.get('rockcut.tasks.span')).toBe('7')
-    expect(store.get('rockcut.tasks.hideCompleted')).toBe('true')
-    expect(store.get('rockcut.tasks.phoneView')).toBe('day')
+    expect(store.get('rockcut.breweryTasks.hideCompleted')).toBe('true')
   })
 
-  it('storage that throws gives the defaults', () => {
+  it('Hide shifts (D45) had no shared value; an unknown first day reads as Today', () => {
+    stubStorage({ 'rockcut.tasks.hideShifts': 'true', 'rockcut.tasks.firstDay.bar': 'friday' })
+    expect(readLocalSettings('bar')).toEqual({ first_day: 'today' })
+  })
+
+  it('storage that throws: nothing to carry, and no error', async () => {
     vi.stubGlobal('localStorage', {
       getItem: () => {
         throw new Error('blocked')
@@ -278,72 +382,63 @@ describe('the board’s remembered choices (D41 storage keys)', () => {
       setItem: () => {
         throw new Error('blocked')
       },
-    })
-    expect([readSpan('bar'), readHideCompleted('bar'), readPhoneView('bar'), readFirstDay('bar')]).toEqual([14, false, 'vertical', 'today'])
-    expect(() => writeSpan('bar', 7)).not.toThrow()
-    expect(() => writeFirstDay('bar', 'monday')).not.toThrow()
-  })
-
-  it('an old value is still read when writing the new key throws', () => {
-    vi.stubGlobal('localStorage', {
-      getItem: (k: string) => (k === 'rockcut.breweryTasks.span' ? '7' : null),
-      setItem: () => {
-        throw new Error('full')
+      removeItem: () => {
+        throw new Error('blocked')
       },
     })
-    expect(readSpan('brewery')).toBe(7)
+    expect(readLocalSettings('bar')).toBeNull()
+    expect(await carryOver('bar', undefined, vi.fn())).toBe('none')
+    expect(readBoard()).toBeNull()
   })
 })
 
-describe('the choices per board (D42 §2.8)', () => {
-  const stubStorage = (initial: Record<string, string>) => {
-    const store = new Map(Object.entries(initial))
-    vi.stubGlobal('localStorage', {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
+describe('the 31-day clamp (D58 §3.2)', () => {
+  const fallback = { from: '2026-11-11', to: '2026-11-24' }
+
+  it('no range in the URL: the default, nothing to fix', () => {
+    expect(boardRange('', '', fallback)).toEqual({ ...fallback, inUrl: false, clamped: false, invalid: false, fix: null })
+  })
+
+  it('up to 31 days shows as asked', () => {
+    expect(boardRange('2026-11-01', '2026-12-01', fallback)).toEqual({ from: '2026-11-01', to: '2026-12-01', inUrl: true, clamped: false, invalid: false, fix: null })
+    expect(boardRange('2026-11-05', '2026-11-05', fallback).fix).toBeNull()
+  })
+
+  it('S6: over 31 days shows From plus 30, and the URL gets that To', () => {
+    expect(boardRange('2026-11-01', '2026-12-10', fallback)).toEqual({
+      from: '2026-11-01',
+      to: '2026-12-01',
+      inUrl: true,
+      clamped: true,
+      invalid: false,
+      fix: { from: '2026-11-01', to: '2026-12-01' },
     })
-    return store
-  }
-  afterEach(() => vi.unstubAllGlobals())
-
-  it('S135: a board without its own choice starts from the shared one, then keeps it as its own', () => {
-    const store = stubStorage({
-      'rockcut.tasks.span': '7',
-      'rockcut.tasks.hideCompleted': 'true',
-      'rockcut.tasks.phoneView': 'day',
-    })
-    expect([readSpan('brewery'), readHideCompleted('brewery'), readPhoneView('brewery')]).toEqual([7, true, 'day'])
-    expect(store.get('rockcut.tasks.span.brewery')).toBe('7')
-    expect(store.get('rockcut.tasks.hideCompleted.brewery')).toBe('true')
-    expect(store.get('rockcut.tasks.phoneView.brewery')).toBe('day')
-    // The shared value isn't written again.
-    writeSpan('brewery', 14)
-    expect(store.get('rockcut.tasks.span')).toBe('7')
-    expect(readSpan('brewery')).toBe(14)
+    // 32 days, across a year.
+    expect(boardRange('2026-12-15', '2027-01-15', fallback).to).toBe('2027-01-14')
   })
 
-  it('S134: each board keeps its own, All departments included', () => {
-    const store = stubStorage({})
-    writeSpan('brewery', 7)
-    writeHideCompleted('brewery', true)
-    writeFirstDay(ALL_BOARDS, 'monday')
-    writePhoneView('bar', 'day')
-    expect([readSpan('brewery'), readHideCompleted('brewery'), readFirstDay('brewery')]).toEqual([7, true, 'today'])
-    expect([readSpan('bar'), readHideCompleted('bar'), readPhoneView('bar')]).toEqual([14, false, 'day'])
-    expect([readFirstDay(ALL_BOARDS), readPhoneView(ALL_BOARDS)]).toEqual(['monday', 'vertical'])
-    expect(store.get('rockcut.tasks.firstDay.all')).toBe('monday')
+  it('an invalid range shows the default, with the notice, and the URL loses it', () => {
+    const invalid = { ...fallback, inUrl: false, clamped: false, invalid: true, fix: { from: '', to: '' } }
+    expect(boardRange('2026-11-10', '2026-11-01', fallback)).toEqual(invalid)
+    expect(boardRange('2026-13-40', '2026-11-20', fallback)).toEqual(invalid)
+    expect(boardRange('soon', 'later', fallback)).toEqual(invalid)
+    expect(boardRange('2026-11-01', '', fallback)).toEqual(invalid)
   })
 
-  it('a board’s own value wins over the shared one; the D41 key before it still counts as shared', () => {
-    stubStorage({ 'rockcut.tasks.span': '7', 'rockcut.tasks.span.bar': '14', 'rockcut.breweryTasks.hideCompleted': 'true' })
-    expect(readSpan('bar')).toBe(14)
-    expect(readSpan('office')).toBe(7)
-    expect(readHideCompleted('sales')).toBe(true)
+  // Lead decisions 1 (DEV QA gap 4): dates the calendar doesn't have.
+  it('a date the calendar does not have is invalid, like garbage', () => {
+    const invalid = { ...fallback, inUrl: false, clamped: false, invalid: true, fix: { from: '', to: '' } }
+    expect(boardRange('2026-02-30', '2026-03-05', fallback)).toEqual(invalid)
+    expect(boardRange('2026-11-31', '2026-12-05', fallback)).toEqual(invalid)
+    expect(boardRange('2026-02-01', '2026-02-30', fallback)).toEqual(invalid)
+    expect(boardRange('2027-02-29', '2027-03-01', fallback)).toEqual(invalid)
+    // A leap day is a date.
+    expect(boardRange('2028-02-29', '2028-03-01', fallback).invalid).toBe(false)
   })
 
-  it('an unknown first day reads as Today', () => {
-    stubStorage({ 'rockcut.tasks.firstDay.bar': 'friday' })
-    expect(readFirstDay('bar')).toBe('today')
+  it('isDateKey: only YYYY-MM-DD dates the calendar has', () => {
+    for (const ok of ['2026-11-30', '2028-02-29', '2026-12-31']) expect(isDateKey(ok)).toBe(true)
+    for (const bad of ['2026-02-30', '2026-11-31', '2027-02-29', '2026-13-01', '2026-00-10', '2026-1-01', '', null]) expect(isDateKey(bad)).toBe(false)
   })
 })
 
@@ -604,37 +699,6 @@ describe('todaysTasks', () => {
     } as unknown as TaskBoardData
     expect(todaysTasks(board).tasks.map((t) => t.id)).toEqual([1, 2, 3])
     expect(todaysTasks(board, false).tasks.map((t) => t.id)).toEqual([2, 3])
-  })
-})
-
-describe('Hide shifts (D45 §3.3)', () => {
-  afterEach(() => vi.unstubAllGlobals())
-
-  it('is off by default and kept per board, under rockcut.tasks.hideShifts.<board>', () => {
-    const store = new Map<string, string>()
-    vi.stubGlobal('localStorage', {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
-    })
-    expect(readHideShifts('brewery')).toBe(false)
-    writeHideShifts('brewery', true)
-    expect(store.get('rockcut.tasks.hideShifts.brewery')).toBe('true')
-    expect([readHideShifts('brewery'), readHideShifts('bar')]).toEqual([true, false])
-    writeHideShifts('brewery', false)
-    expect(readHideShifts('brewery')).toBe(false)
-  })
-
-  it('storage that throws: off, and turning it on doesn’t throw', () => {
-    vi.stubGlobal('localStorage', {
-      getItem: () => {
-        throw new Error('blocked')
-      },
-      setItem: () => {
-        throw new Error('blocked')
-      },
-    })
-    expect(readHideShifts('bar')).toBe(false)
-    expect(() => writeHideShifts('bar', true)).not.toThrow()
   })
 })
 

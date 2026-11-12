@@ -17,7 +17,8 @@ import {
   touchDrag,
   userId,
 } from './taskBoardHelpers'
-import { pickSetting, settingsItem } from '../settingsMenu'
+import { boardSettingsSaved, pickSetting, settingsItem } from '../settingsMenu'
+import { putBoardSettings, resetBoardSettingsAroundEach } from '../boardSettings'
 
 // D38 §3.8 "Phone width" (plan step 9): one day at a time, the day strip with
 // its Future stop, arrows and swipe, the calendar button, and the task menu as
@@ -32,12 +33,14 @@ test.afterEach(async () => {
 })
 
 // D38's tests are about the one-day view; phones start in the vertical view
-// since D39, so they pick one day before each page load. The D39 tests start
-// with nothing saved, as a first visit does.
+// since D39, so they pick one day before each test. The D39 tests start from
+// the defaults, as a first visit does. D58: the phone layout is brewer1's own
+// setting, on the server, put back to the defaults around each test.
+resetBoardSettingsAroundEach()
 const VERTICAL = 'D39 vertical view'
-test.beforeEach(async ({ page }, testInfo) => {
-  if (testInfo.titlePath.includes(VERTICAL)) return
-  await page.addInitScript(() => localStorage.setItem('rockcut.tasks.phoneView', 'day'))
+test.beforeEach(async () => {
+  if (test.info().titlePath.includes(VERTICAL)) return
+  expect((await putBoardSettings('brewer1', 'brewery', { phone_view: 'day' })).status).toBe(200)
 })
 
 const today = () => denverToday()
@@ -478,12 +481,12 @@ test.describe(VERTICAL, () => {
     await expect(page.getByTestId('phone-strip')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
 
-    await page.getByTestId('board-view-day').click()
+    await boardSettingsSaved(page, () => page.getByTestId('board-view-day').click())
     await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'phone')
     await page.reload()
     await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'phone')
     await expect(page.getByTestId('board-view-day')).toHaveAttribute('aria-pressed', 'true')
-    await page.getByTestId('board-view-vertical').click()
+    await boardSettingsSaved(page, () => page.getByTestId('board-view-vertical').click())
     await page.reload()
     await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'vertical')
   })

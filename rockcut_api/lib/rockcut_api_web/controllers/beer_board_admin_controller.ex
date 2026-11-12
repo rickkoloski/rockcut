@@ -38,10 +38,10 @@ defmodule RockcutApiWeb.BeerBoardAdminController do
     end
   end
 
-  @doc "GET /api/beer_board/history/export.csv: the full change log."
-  def history_csv(conn, _params) do
+  @doc "GET /api/beer_board/history/export.csv: the change log; with `q`, what History's search shows."
+  def history_csv(conn, params) do
     with :ok <- allow(conn, :history) do
-      csv(conn, "buy-a-beer-board-history", Csv.events_csv(BeerBoard.all_events()))
+      csv(conn, "buy-a-beer-board-history", Csv.events_csv(BeerBoard.all_events(params["q"])))
     end
   end
 

@@ -222,13 +222,13 @@ export function ruleChangeNote(peopleChanged: boolean, change?: { removes_noted?
   // D53 §4.8 (recheck 2, observation 1): notes typed on a date that goes, go with it.
   const noted = change?.removes_noted ?? 0
   const notes = noted === 1 ? ' 1 removed one has its own notes, which go too.' : noted > 1 ? ` ${noted} removed ones have their own notes, which go too.` : ''
-  // Gap 14: a kept one moved to another day doesn't hold its old day (D39).
+  // Gap 14, D58 §3.5 (5202): a kept one moved to another day stands in for its old day.
   const moved = change?.keeps_moved ?? 0
   const kept =
     moved === 1
-      ? ' Kept, the one moved to another day stays there, and the new pattern can make its old day too.'
+      ? ' If kept, the one moved to another day stays on its new day, and the new pattern doesn’t remake its old day.'
       : moved > 1
-        ? ` Kept, the ${moved} moved to other days stay there, and the new pattern can make their old days too.`
+        ? ` If kept, the ${moved} moved to other days stay on their new days, and the new pattern doesn’t remake their old days.`
         : ''
   return base + notes + kept
 }

@@ -68,10 +68,11 @@ defmodule RockcutApi.NotificationsTest do
 
   test "preferences suppress the in-app channel" do
     emp = user_with_role("employee", "bar")
-    {:ok, _} = Notifications.update_prefs(emp, %{"shift_published" => %{"in_app" => false}})
+    # D58 lead decisions 1: a known event (shift_published was retired).
+    {:ok, _} = Notifications.update_prefs(emp, %{"shift_scheduled" => %{"in_app" => false}})
     emp = Accounts.get_user!(emp.id)
 
-    Notifications.notify(emp, :shift_published, %{title: "x", body: "y", data: %{}})
+    Notifications.notify(emp, :shift_scheduled, %{title: "x", body: "y", data: %{}})
 
     assert Notifications.list(emp) == []
   end

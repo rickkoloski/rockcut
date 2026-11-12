@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { archivedMatching, boardUrl, cardShown, describeIdeaEvent, ideaBoardTarget, ideaBoardTitle, isPastDue, lockHolder, sentChipText, sentFaceChip } from './ideas'
+import { archivedMatching, boardUrl, cardShown, describeIdeaEvent, ideaBoardTarget, ideaBoardTitle, isCardMissing, isPastDue, lockHolder, parseCardId, sentChipText, sentFaceChip } from './ideas'
 import type { IdeaCardFace, IdeaEvent, IdeaSentTask } from './types'
 
 const card = (over: Partial<IdeaCardFace> = {}): IdeaCardFace => ({
@@ -164,5 +164,23 @@ describe('lockHolder', () => {
     expect(lockHolder({ owners_only: true })).toBe('an owner')
     expect(lockHolder({ owners_only: false })).toBe('a manager')
     expect(lockHolder({})).toBe('a manager')
+  })
+})
+
+describe('parseCardId (D58 §3.9)', () => {
+  it('reads a card id, none, or a bad one', () => {
+    expect(parseCardId(undefined)).toBeNull()
+    expect(parseCardId('42')).toBe(42)
+    expect(parseCardId('abc')).toBe('bad')
+    expect(parseCardId('0')).toBe('bad')
+    expect(parseCardId('-3')).toBe('bad')
+    expect(parseCardId('1.5')).toBe('bad')
+    expect(parseCardId('99999999999999999999')).toBe('bad')
+  })
+
+  it('a 404 is a missing card; other failures aren’t', () => {
+    expect(isCardMissing({ response: { status: 404 } })).toBe(true)
+    expect(isCardMissing({ response: { status: 500 } })).toBe(false)
+    expect(isCardMissing(new Error('Network Error'))).toBe(false)
   })
 })

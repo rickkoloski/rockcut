@@ -250,6 +250,11 @@ export interface User {
   // D37: a staff code is set (the code itself comes only from GET /api/users/:id/staff_code).
   has_staff_code?: boolean
   memberships: Membership[] | null
+  // D58 §3.3, on `/api/users` rows (Users & Roles) only: what the signed-in
+  // owner or manager may do with this person.
+  can_edit?: boolean
+  can_deactivate?: boolean
+  addable_departments?: { key: string; name: string }[]
   inserted_at: string
   updated_at: string
 }
@@ -293,6 +298,8 @@ export interface Me {
   color_mode?: ColorMode
   // D49: the Brewery board's "Show planned batches" (per person).
   show_planned_batches?: boolean
+  // D58: each board's saved settings (`{ brewery: { span: 7 } }`), only what was changed.
+  board_settings?: Record<string, Record<string, unknown>>
 }
 
 /**

@@ -142,9 +142,9 @@ test('S17: two bartenders on the last beer — the second hears it is gone', asy
   await a.page.getByTestId('board-dialog-submit').click()
   await expect(a.page.getByTestId('board-notice')).toContainText('entry removed')
   await b.page.getByTestId('board-dialog-submit').click()
-  await expect(b.page.getByTestId('board-dialog-error')).toHaveText('This entry was already removed')
-  // The list behind the dialog refreshed.
-  await b.page.getByRole('button', { name: 'Cancel' }).click()
+  // D58 §3.12 (4118 item 5): the dialog closes, the board says why and refreshes.
+  await expect(b.page.getByTestId('board-notice')).toHaveText('This entry was already removed')
+  await expect(b.page.getByTestId('board-redeem-dialog')).toBeHidden()
   await expect(b.page.getByRole('gridcell', { name: e.recipient_name, exact: true })).toHaveCount(0)
   await a.context.close()
   await b.context.close()

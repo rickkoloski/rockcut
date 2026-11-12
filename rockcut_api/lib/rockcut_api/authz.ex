@@ -33,6 +33,9 @@ defmodule RockcutApi.Authz do
   alias RockcutApi.Availability.Slot
   alias RockcutApi.IdeaBoards.{Card, IdeaList, Note}
 
+  # Changing a person's account in Users & Roles (D58 lead decisions 1).
+  @account_actions [:update, :reset_password, :deactivate, :set_staff_code, :reveal_staff_code]
+
   @doc "True if the account is a shared device (D33), not a person."
   def device?(%User{kind: "device"}), do: true
   def device?(_), do: false
@@ -304,21 +307,42 @@ defmodule RockcutApi.Authz do
       when action in [:update, :delete, :extend],
       do: role_in(user, series.department_id) == :manager
 
-  # Scheduling — positions are company-wide: anyone reads; any manager/owner writes.
-  def can?(%User{} = user, action, %Position{}) do
+  # Scheduling — positions are company-wide: anyone reads. D58 (5769, D29 §6 C):
+  # only the managers of a position's department write it (owners pass above);
+  # moving one to another department is asked of both (`PositionController`).
+  # No department yet (a create without one) is "any manager", so the
+  # changeset answers 422.
+  def can?(%User{} = user, action, %Position{department_id: dept_id}) do
     case action do
       :read -> true
-      a when a in [:create, :update, :delete] -> counts_as_manager?(user)
+      a when a in [:create, :update, :delete] -> manages_department?(user, dept_id)
       _ -> false
     end
   end
 
-  # Shift templates, schedule templates, roster order: anyone reads; any
-  # manager writes (was shift_template_controller:47, schedule_template_controller:16,26,
-  # roster_controller:14).
+  # Shift templates and schedule templates: anyone reads. D58: a manager writes
+  # only those whose positions are all in departments they manage (positions
+  # preloaded; an unloaded one refuses). A position id that names nothing
+  # leaves the changeset to answer 422.
   def can?(%User{} = user, action, resource)
-      when is_struct(resource, ShiftTemplate) or is_struct(resource, ScheduleTemplate) or
-             resource == :roster do
+      when is_struct(resource, ShiftTemplate) or is_struct(resource, ScheduleTemplate) do
+    case action do
+      :read ->
+        true
+
+      a when a in [:create, :update, :delete] ->
+        case template_department_ids(resource) do
+          :unknown -> false
+          ids -> counts_as_manager?(user) and Enum.all?(ids, &manages_department?(user, &1))
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  # Roster order: anyone reads; any manager writes (was roster_controller:14).
+  def can?(%User{} = user, action, :roster) do
     case action do
       :read -> true
       a when a in [:create, :update, :delete, :reorder] -> counts_as_manager?(user)
@@ -356,14 +380,20 @@ defmodule RockcutApi.Authz do
       when action in [:view_device, :pair, :revoke_token, :set_color_mode],
       do: role_in(user, device.home_department_id) == :manager
 
-  # People: listing and creating users is "any manager"; changing a user needs
-  # a department in common that the actor manages (was user_controller:12,22,49,76,89;
-  # accounts.ex:266-270).
+  # People: listing and creating users is "any manager" (was
+  # user_controller:12,22); changing one is below.
   def can?(%User{} = user, action, %User{}) when action in [:list, :create],
     do: counts_as_manager?(user)
 
-  def can?(%User{} = user, action, %User{} = target) when action in [:update, :reset_password],
-    do: can_manage_user?(user, target)
+  # D58 §3.3 (decisions 3, 5) and lead decisions 1 (gaps 12, 13): a manager
+  # changes a person's account (details, password reset, Active, and the
+  # staff code, set, removed or shown) only when they manage every department
+  # the person is in (Owners included, which nobody manages), so any manager
+  # may for someone with none. Never an owner (owners pass above; the
+  # last-owner guard is Accounts'). Needs the target's memberships preloaded.
+  def can?(%User{} = user, action, %User{memberships: memberships} = target)
+      when action in @account_actions and is_list(memberships),
+      do: manages_all_departments_of?(user, target)
 
   # Memberships: set in a department only by its manager. Whether the department
   # is assignable at all is a data rule left in Accounts (was membership_controller:18,
@@ -393,6 +423,11 @@ defmodule RockcutApi.Authz do
 
   # D41 §3.6: the All departments view is owners' only (they pass above).
   def can?(%User{}, :read, {:tasks, :all}), do: false
+
+  # D58 §3.1: a person saves their own settings for any board they can read
+  # (All departments: owners, who pass above). A device's are `Authz.Device`'s.
+  def can?(%User{} = user, :save, {:board_settings, board}),
+    do: can?(user, :read, {:tasks, board})
 
   def can?(%User{} = user, :history, {:tasks, %Department{} = dept}),
     do: role_in(user, dept) == :manager
@@ -447,15 +482,12 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, :production) when action in [:read, :write, :setup],
     do: member_of?(user, "brewery")
 
-  # Staff codes (D37; every department since D40): owners (above) and the
-  # managers of a department the person belongs to set and see a person's
-  # code (needs the target's memberships preloaded). Whether the target may
-  # hold one is StaffCodes' check (can_hold_staff_code?/1). `:staff_codes`:
-  # whether someone sets codes at all (the suggest route, `/api/me`).
-  def can?(%User{} = user, action, %User{memberships: memberships} = target)
-      when action in [:set_staff_code, :reveal_staff_code] and is_list(memberships),
-      do: can_manage_user?(user, target)
-
+  # Staff codes (D37; every department since D40): owners (above) and, since
+  # D58 lead decisions 1, a manager of every department the person is in set,
+  # remove and see a person's code (`@account_actions`, above). Whether the
+  # target may hold one is StaffCodes' check (can_hold_staff_code?/1).
+  # `:staff_codes`: whether someone sets codes at all (the suggest route,
+  # `/api/me`).
   def can?(%User{} = user, :manage, :staff_codes), do: counts_as_manager?(user)
 
   # Departments: anyone reads; only owners (handled above) change them.
@@ -469,6 +501,29 @@ defmodule RockcutApi.Authz do
   def can?(_user, _action, _resource), do: false
 
   ## Helpers
+
+  # A manager of every department `target` is in (none counts), and `target`
+  # isn't an owner: who may change a person's account (`@account_actions`).
+  defp manages_all_departments_of?(user, %User{memberships: memberships} = target),
+    do:
+      counts_as_manager?(user) and not owner?(target) and not device?(target) and
+        Enum.all?(memberships, &(role_in(user, &1.department_id) == :manager))
+
+  # A manager of this department; with none yet, any manager (see positions).
+  defp manages_department?(user, nil), do: counts_as_manager?(user)
+  defp manages_department?(user, dept_id), do: role_in(user, dept_id) == :manager
+
+  # The departments of a template's positions; nil positions name nothing.
+  defp template_department_ids(%ShiftTemplate{position: %Position{department_id: id}}), do: [id]
+  defp template_department_ids(%ShiftTemplate{position: nil}), do: []
+
+  defp template_department_ids(%ScheduleTemplate{items: items}) when is_list(items) do
+    if Enum.all?(items, &(is_nil(&1.position) or is_struct(&1.position, Position))),
+      do: for(%{position: %Position{department_id: id}} <- items, uniq: true, do: id),
+      else: :unknown
+  end
+
+  defp template_department_ids(_), do: :unknown
 
   defp departments_or_none([]), do: :none
   defp departments_or_none(ids), do: {:departments, ids}

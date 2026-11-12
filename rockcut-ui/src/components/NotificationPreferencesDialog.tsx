@@ -22,7 +22,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import useAuth from '../hooks/useAuth'
 import api from '../lib/api'
 import type { NotificationPrefs } from '../lib/types'
-import { currentPushState, subscribePush, unsubscribePush, type PushState } from '../lib/push'
+import { currentPushState, pushErrorMessage, subscribePush, unsubscribePush, type PushState } from '../lib/push'
 
 interface Props {
   open: boolean
@@ -61,6 +61,20 @@ const CHANNELS = [
   { key: 'push', label: 'Push', enabled: true, def: false },
 ]
 const SHOWN = CHANNELS.filter((c) => !c.hidden)
+
+/**
+ * The stored preferences for the events and channels above only. D58 lead
+ * decisions 1: the API refuses anything else (422), and older preferences
+ * may name events that are gone (`shift_published`).
+ */
+function knownPrefs(prefs: NotificationPrefs): NotificationPrefs {
+  const out: NotificationPrefs = {}
+  for (const { event } of EVENTS) {
+    const values = Object.entries(prefs[event] ?? {}).filter(([ch, on]) => CHANNELS.some((c) => c.key === ch) && typeof on === 'boolean')
+    if (values.length > 0) out[event] = Object.fromEntries(values)
+  }
+  return out
+}
 const PREFS_KEY = ['notification_preferences']
 
 export default function NotificationPreferencesDialog({ open, onClose }: Props) {
@@ -76,6 +90,8 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
 
   const [pushState, setPushState] = useState<PushState>('unsubscribed')
   const [pushBusy, setPushBusy] = useState(false)
+  // D58 §3.15 (4319): why Enable push didn't work; the button stays usable.
+  const [pushError, setPushError] = useState<string | null>(null)
 
   useEffect(() => {
     if (open) currentPushState().then(setPushState)
@@ -94,7 +110,7 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
     void qc.cancelQueries({ queryKey: PREFS_KEY })
     qc.setQueryData<NotificationPrefs>(PREFS_KEY, (cur) => change(cur ?? {})) // optimistic
     pending.current += 1
-    const save = saving.current.then(() => api.put('/api/notification_preferences', { prefs: qc.getQueryData(PREFS_KEY) ?? {} }))
+    const save = saving.current.then(() => api.put('/api/notification_preferences', { prefs: knownPrefs(qc.getQueryData(PREFS_KEY) ?? {}) }))
     saving.current = save.catch(() => undefined)
     try {
       await save
@@ -109,6 +125,7 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
 
   const enablePush = async () => {
     setPushBusy(true)
+    setPushError(null)
     try {
       const state = await subscribePush()
       setPushState(state)
@@ -120,6 +137,8 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
           return next
         })
       }
+    } catch (err) {
+      setPushError(pushErrorMessage(err))
     } finally {
       setPushBusy(false)
     }
@@ -181,6 +200,11 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
       <DialogTitle>Notification preferences</DialogTitle>
       <DialogContent>
         {pushNotice()}
+        {pushError && (
+          <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setPushError(null)} data-testid="push-error">
+            {pushError}
+          </Alert>
+        )}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Choose how you're notified.
         </Typography>

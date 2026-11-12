@@ -10,9 +10,6 @@ defmodule RockcutApi.AuthzParity.PeopleTest do
 
   alias RockcutApi.Accounts
 
-  @bar_members ~w(barMgr bartender1 bartender2 floater newhire dualMgr splitRole)
-  @brewery_members ~w(breweryMgr brewer1 brewer2 floater splitRole)
-  @office_members ~w(office1 hidden dualMgr ownersAsst)
   @employees ~w(bartender1 brewer1 floater office1 sales1 noDept)
 
   setup do
@@ -30,16 +27,12 @@ defmodule RockcutApi.AuthzParity.PeopleTest do
   end
 
   describe "list" do
-    for {who, sees} <- [
-          {"barMgr", @bar_members},
-          {"splitRole", @bar_members},
-          {"dualMgr", Enum.uniq(@bar_members ++ @office_members)},
-          {"breweryMgr", @brewery_members}
-        ] do
-      test "#33 #{who} lists users → members of managed departments only", %{p: p} do
+    # D58 (decision 3): was the members of their managed departments only.
+    for who <- ~w(barMgr splitRole dualMgr breweryMgr) do
+      test "#33 #{who} lists users → everyone (D58)", %{p: p} do
         conn = call(p[unquote(who)], :get, "/api/users")
         assert conn.status == 200
-        assert user_keys(conn, p) == MapSet.new(unquote(sees))
+        assert user_keys(conn, p) == MapSet.new(Map.keys(p))
       end
     end
 
@@ -87,16 +80,22 @@ defmodule RockcutApi.AuthzParity.PeopleTest do
     for {who, target, code} <- [
           {"owner", "noDept", 200},
           {"owner2", "barMgr", 200},
-          {"barMgr", "floater", 200},
+          # D58 lead decisions 1: a manager changes a person's account only
+          # when they manage every department the person is in (floater is
+          # Taproom + Brewery, dualMgr Taproom + Office).
+          {"barMgr", "floater", 403},
           {"barMgr", "barMgr", 200},
-          {"barMgr", "dualMgr", 200},
+          # D58 lead decisions 1
+          {"barMgr", "dualMgr", 403},
           {"barMgr", "brewer1", 403},
-          {"barMgr", "noDept", 403},
+          # D58 lead decisions 1: no department, so any manager (as Active).
+          {"barMgr", "noDept", 200},
           {"barMgr", "owner", 403},
           {"splitRole", "brewer1", 403},
           {"splitRole", "bartender1", 200},
           {"dualMgr", "office1", 200},
-          {"breweryMgr", "splitRole", 200},
+          # D58 lead decisions 1: splitRole is Taproom + Brewery.
+          {"breweryMgr", "splitRole", 403},
           {"bartender1", "bartender2", 403},
           {"noDept", "noDept", 403}
         ] do

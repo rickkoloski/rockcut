@@ -1,9 +1,10 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
 import { addDays, apiAs, denverToday, denverUtc, setBoardCheck, tempTag, userId } from '../brewery/taskBoardHelpers'
-import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
+import { apiWith, contextWith, createTempPerson, retireTempPerson, signIn, type TempPerson } from '../auth/helpers'
 import { openUser } from '../taproom/helpers'
 import { boardManagerItems, choiceOptions, closeSettings, openSettings, settingOn, settingValue, settingsItem } from '../settingsMenu'
+import { putBoardSettings, resetBoardSettingsAroundEach } from '../boardSettings'
 
 // D41 §4, scenarios S101–S115 and S118–S120: a task board per department. Who sees which
 // board (nav, switcher, typed URLs), manager tools per board, the hidden Daily
@@ -13,6 +14,8 @@ import { boardManagerItems, choiceOptions, closeSettings, openSettings, settingO
 // The boards are shared, so this runs in the one-worker `brewery-board` project.
 
 test.use({ viewport: { width: 1600, height: 1100 } })
+// D58: board settings are the persona's own, on the server.
+resetBoardSettingsAroundEach()
 
 interface Made {
   dept: string
@@ -360,25 +363,32 @@ test.describe('dualMgr (Taproom + Office manager)', () => {
   })
 })
 
-test.describe('brewer1 (old bookmark)', () => {
-  test.use({ storageState: authFile('brewer1') })
-
-  test('S113: /brewery/tasks lands on /tasks/brewery with the 1 week / Hide completed choices kept', async ({ page }) => {
-    await page.goto('/')
-    await page.evaluate(() => {
-      for (const k of ['span', 'hideCompleted', 'phoneView', 'board']) localStorage.removeItem(`rockcut.tasks.${k}`)
-      localStorage.setItem('rockcut.breweryTasks.span', '7')
-      localStorage.setItem('rockcut.breweryTasks.hideCompleted', 'true')
-    })
-    await page.goto('/brewery/tasks')
-    await expect(page).toHaveURL(/\/tasks\/brewery$/)
-    await expect(page.getByTestId('board-grid')).toBeVisible()
-    expect(await settingValue(page, 'board-settings', 'board-span')).toBe('1 week')
-    expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
-    expect(await page.evaluate(() => [localStorage.getItem('rockcut.tasks.span'), localStorage.getItem('rockcut.tasks.hideCompleted')])).toEqual([
-      '7',
-      'true',
-    ])
+// D58: the browser's pre-D41 values carry over to the server once. A
+// `[TEST-TEMP]` Brewery person, so the server has nothing for their board yet.
+test.describe('a Brewery person (old bookmark)', () => {
+  test('S113: /brewery/tasks lands on /tasks/brewery with the 1 week / Hide completed choices kept', async ({ browser }) => {
+    person = await createTempPerson('S113', { schedulable: false, memberships: [{ department: 'brewery', role: 'employee' }] })
+    const token = await signIn(person)
+    const { context, page } = await contextWith(browser, token)
+    try {
+      await page.goto('/')
+      await page.evaluate(() => {
+        localStorage.setItem('rockcut.breweryTasks.span', '7')
+        localStorage.setItem('rockcut.breweryTasks.hideCompleted', 'true')
+      })
+      const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith('/api/me/board_settings/brewery'))
+      await page.goto('/brewery/tasks')
+      await expect(page).toHaveURL(/\/tasks\/brewery$/)
+      await expect(page.getByTestId('board-grid')).toBeVisible({ timeout: 20_000 })
+      expect((await saved).status()).toBe(200)
+      expect(await settingValue(page, 'board-settings', 'board-span')).toBe('1 week')
+      expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
+      const api = await apiWith(token)
+      expect((await (await api.get('/api/me')).json()).board_settings.brewery).toEqual({ span: 7, hide_completed: true })
+      await api.dispose()
+    } finally {
+      await context.close()
+    }
   })
 })
 
@@ -520,7 +530,9 @@ test.describe('owner: All departments', () => {
     const owner = await apiAs('owner')
     const payroll = await createTask(owner, 'office', { title: tempTag('S119 Payroll'), due_on: day })
     await page.setViewportSize({ width: 412, height: 915 })
-    await page.addInitScript(() => localStorage.setItem('rockcut.tasks.phoneView', 'day'))
+    // D58: the one-day view is a server setting per board (the old local key
+    // was one for every board): All departments and the Office board it opens.
+    for (const board of ['all', 'office']) expect((await putBoardSettings('owner', board, { phone_view: 'day' })).status).toBe(200)
 
     await openBoard(page, '/tasks/all')
     await page.getByTestId(`phone-stop-${day}`).click()

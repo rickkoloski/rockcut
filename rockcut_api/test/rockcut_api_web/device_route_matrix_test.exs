@@ -25,6 +25,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:get, "/api/session"},
     {:delete, "/api/session"},
     {:get, "/api/me"},
+    # D58: the tablet's own settings for its home board (`:board` = bar here).
+    {:put, "/api/me/board_settings/:board"},
     {:get, "/api/departments"},
     {:get, "/api/positions"},
     {:get, "/api/roster"},
@@ -82,6 +84,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:put, "/api/users/:id"},
     {:put, "/api/users/:user_id/memberships"},
     {:post, "/api/users/:id/reset_password"},
+    # D58 lead decisions 1: what a deactivate would leave open.
+    {:get, "/api/users/:id/future_shifts"},
     {:get, "/api/beer_board/history"},
     {:get, "/api/beer_board/history/export.csv"},
     {:get, "/api/beer_board/export.csv"},
