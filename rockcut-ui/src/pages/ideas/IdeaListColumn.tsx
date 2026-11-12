@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 import { Box, Button, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material'
 import { Add, ArchiveOutlined, ChevronLeft, ChevronRight, DriveFileRenameOutline, LockOpenOutlined, LockOutlined, MoreVert } from '@mui/icons-material'
 import type { ContainerSlot } from '../../components/dnd/SortableLists'
@@ -45,10 +45,15 @@ export default function IdeaListColumn(props: Props) {
   // Taken apart here: the linter reads `slot.x` beside a ref callback as a ref read.
   const { setNodeRef, isOver, items } = props.slot
   const drag = props.drag
-  const columnRef = (node: HTMLElement | null) => {
-    setNodeRef(node)
-    drag?.setNodeRef(node)
-  }
+  // Stable, so a re-render mid-drag doesn't detach the card layer's drop target.
+  const sortableRef = drag?.setNodeRef
+  const columnRef = useCallback(
+    (node: HTMLElement | null) => {
+      setNodeRef(node)
+      sortableRef?.(node)
+    },
+    [setNodeRef, sortableRef],
+  )
   const draggable = !!drag?.handle
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [renaming, setRenaming] = useState(false)
