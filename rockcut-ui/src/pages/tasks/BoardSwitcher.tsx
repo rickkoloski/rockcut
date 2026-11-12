@@ -45,7 +45,7 @@ export default function BoardSwitcher({ board, boards, onSwitch, compact, titleO
         aria-haspopup="menu"
         aria-label={`${titleOf(board)}, switch board`}
         data-testid="board-switcher"
-        sx={{ textTransform: 'none', px: 1, ml: -1, minWidth: 0, maxWidth: '100%' }}
+        sx={{ textTransform: 'none', px: 1, ml: -1, minWidth: 0 }}
       >
         <Swatch board={board} />
         {/* D58 §3.11: in the top bar the title stays on one line. */}
