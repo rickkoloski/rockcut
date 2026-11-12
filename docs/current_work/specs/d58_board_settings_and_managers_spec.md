@@ -1,6 +1,6 @@
 # D58: Board settings on the server, managers and everyone, and a backlog sweep — Spec
 
-**Status:** DRAFT, for Matt's review (2026-11-11)
+**Status:** APPROVED by Matt 2026-11-11; planning done
 **Backlog:** PortableMind project 254, tasks 4994, 4991, 4992, 4984, 5202, 4261, 5204, 4118 (item 1),
 5206, 5205, 4061, 5769
 **Order:** after D59 (on prod as `v2026.11.11`). It builds on D59 spec §4.3 and decision 9.
