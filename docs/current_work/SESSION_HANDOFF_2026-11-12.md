@@ -50,7 +50,28 @@ decision 9 added five UI follow-ups (4118 2–7, 4115, 4116, 4319, 5193).
   - the Gantt's "Label by" picker (deferred in D47, never filed) added to D56, task 5207.
 - **Verdict: pass.** PR #68 merged into `develop`.
 
+## After the merge
+
+Done: DEV runs `develop` at `fb09ab4`. The DEV claim is released in conv 80 (msg 105055), and the deploy worktree is removed.
+
+## Prod release
+
+- **`v2026.11.12` is live:** release PR #69 (squash `0813452`), tag `v2026.11.12`.
+  - API v38 (`deployment-01M78M4324RZMTH0SB29NT5DGF`), UI v34 (`deployment-01M78M5NY0V6A8ZRY0TG25EH7C`).
+  - Snapshot `vs_XvQBgGOL0JjlhPm3Y83l6q9`. Rollback: API v37 / UI v33, image only.
+- **Both migrations ran at boot.**
+- **Smoke checks green:**
+  - health and UI on `0813452`, build id `v2026.11.12`;
+  - `sw.js` no-cache;
+  - synthetic login 401, 0 synthetic users;
+  - pnpm audit clean.
+- Close-out PR (this one) syncs `main` into `develop` with `-s ours`.
+
 ## Next
 
-1. Redeploy `develop` to DEV, release the DEV claim in conv 80, remove `~/src/rockcut-deploy`.
-2. The prod release of D58, on Matt's go. Two migrations; follow the deploy plan memory.
+1. **Matt's prod check:**
+   - board settings follow him across browsers;
+   - Users & Roles as a manager;
+   - a tablet board's settings.
+   Then close the D58 tasks: 4994, 4991, 4992, 4984, 5202, 4261, 5204, 4118, 5206, 5205, 4061, 5769, 4115, 4116, 4319 and 5193.
+2. **D56** (5207), which now includes the "Label by" picker.
