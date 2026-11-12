@@ -27,6 +27,8 @@ defmodule RockcutApi.Scheduling.EventSeries do
   @timing_fields ~w(starts_at ends_at all_day)
 
   @frequencies ["weekly", "monthly_weekday"]
+  # The repeat rule a dialog shows, without its ends (`chain_view/1`).
+  @rule_fields [:frequency, :interval, :weekdays, :week_of_month, :weekday]
 
   @doc "True when `attrs` ask for a repeating event."
   def repeat?(attrs), do: Map.get(attrs, "repeat") in @frequencies
@@ -249,9 +251,11 @@ defmodule RockcutApi.Scheduling.EventSeries do
   ## The chain
 
   @doc """
-  `series` as the dialog shows it: the chain's `until_date` and `count` (the
-  latest part whose end isn't internal; a count is the chain's total) and how
-  far its latest part is generated. Not for saving.
+  `series` as the dialog shows it: the chain's current rule (lead decisions
+  1, DEV QA gap 8: "Every Wednesday" after a Thursday → Wednesday split, not
+  the first part's), `until_date` and `count`, all from the latest part whose
+  end isn't internal (a count is the chain's total), and how far that part is
+  generated. Not for saving.
   """
   def chain_view(%ScheduleEventSeries{internal_end: false, continues_series_id: nil} = s), do: s
 
@@ -266,7 +270,12 @@ defmodule RockcutApi.Scheduling.EventSeries do
           {latest.until_date,
            latest.count && latest.count + used_before(latest, latest.start_date)}
 
-    %{s | until_date: until, count: count, generated_through: latest.generated_through}
+    %{
+      Map.merge(s, Map.take(latest, @rule_fields))
+      | until_date: until,
+        count: count,
+        generated_through: latest.generated_through
+    }
   end
 
   # The series that continue `series`, transitively, oldest start first.

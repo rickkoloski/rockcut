@@ -120,6 +120,22 @@ defmodule RockcutApiWeb.ScheduleEventSeriesSplitTest do
       do:
         json_response(call(mgr, :get, "/api/schedule_events/#{event_id}"), 200)["data"]["series"]
 
+    # D58 lead decisions 1 (DEV QA gap 8): after the Tuesday → Thursday
+    # split, a Tuesday's dialog reads "Every Thursday", the chain's rule now.
+    test "an earlier part's dialog shows the chain's current rule", ctx do
+      old = series_of(ctx.mgr, ctx.second.id)
+      [thu | _] = after_(~D[2026-11-01])
+      latest = series_of(ctx.mgr, thu.id)
+
+      assert old["frequency"] == "weekly"
+      assert old["weekdays"] == [4]
+      assert old["interval"] == 1
+      assert old["until_date"] == nil
+      assert old["generated_through"] == latest["generated_through"]
+      # Its own part still holds Tuesdays.
+      assert Repo.get!(ScheduleEventSeries, ctx.second.series_id).weekdays == [2]
+    end
+
     test "Extend from an old part goes on in the latest one", ctx do
       old = Repo.get!(ScheduleEventSeries, ctx.second.series_id)
       thursdays = after_(~D[2026-11-01])
