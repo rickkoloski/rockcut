@@ -124,3 +124,49 @@ rules as Stage 1.
 
 `mix test` twice, warnings-as-errors, tsc, vitest, lint ≤ 27, build. Commits. Reply with: commits,
 files, the parity tests flipped (each named), test counts, browser checks, `LEAD:` notes.
+
+---
+
+# Stage 3 (Backlog sweep)
+
+2026-11-11 · lead → builder. Stages 1–2 are in (through `bfe0556`); your Stage 2 notes are accepted
+(Add department not forced to employee in the API; 404 for unknown ids). Do **plan Stage 3**
+(spec §3.5–§3.11), then stop and report. Same rules. Each item is its own commit. Each bug fix
+gets a test that **fails with the fix reverted and passes with it restored**: actually revert and
+re-run, and say so.
+
+1. **5202 repeat twin (§3.5):**
+   - when a rule change remakes a task series' dates, skip a date whose occurrence was moved away
+     ("Just this one" to another day); the moved one stands in for it;
+   - update the rule-change confirm text to say moved ones stay on their new days;
+   - ExUnit from the D53 Part 1 QA repro (`docs/current_work/stepwise_results/d53_part1_dev_qa*.md`,
+     gap 14).
+2. **4261 event-series split (§3.6):**
+   - reproduce D39's G1 ("following" from before a split stops at it) and R1 (a rule change from
+     before a split keeps the split's internal end) on `Scheduling.EventSeries` /
+     `schedule_event_series`, with ExUnit;
+   - if a gap shows, port D39's chain approach (`continues_series_id`, `internal_end`; a migration if
+     needed), with tests;
+   - if neither shows, keep the tests as proof and say so.
+3. **5204 (§3.7):** `Shift` changeset: an inactive assignee gets a 422 on `assignee_id`, "is not
+   active", on create, update and reassign/drag. Existing shifts untouched.
+4. **4118 item 1 (§3.8):** `UserFormDialog`: staff code **Remove** marks it ("Removed when you press
+   Save"), **Cancel** keeps it, and only Save sends the `DELETE`.
+5. **5206 (§3.9):** Idea Boards: a card URL naming a card that isn't on this board (missing, bad id)
+   shows the board plus "That card wasn't found (it may have been deleted)", and the URL is
+   replaced with the board's. People and tablets.
+6. **5205 (§3.10):** start-up in `App.tsx`: the loading screen at once while `/api/me` is pending;
+   after 4 s it adds "Still connecting…" with Retry. The existing failure/timeout banner is
+   unchanged. Vitest with fake timers.
+7. **4061 (§3.11):** the shared device header at 320/360/384 px stays one line:
+   - Sign out becomes an icon button with an aria-label;
+   - the device pill ellipsizes;
+   - the logo keeps its gap;
+   - unchanged at ≥412 px.
+8. **Tidy:** the greyed-out Active switch's tooltip in Users & Roles sits on the switch.
+9. **Browser:** check items 4–8 by hand (token injection).
+
+## Done when
+
+`mix test` twice, warnings-as-errors, tsc, vitest, lint ≤ 27, build. Commits. Reply with: commits,
+the revert checks, the 4261 finding, browser checks, `LEAD:` notes.
