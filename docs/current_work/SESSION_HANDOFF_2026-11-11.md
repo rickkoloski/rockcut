@@ -30,20 +30,27 @@ Supersedes `SESSION_HANDOFF_2026-11-10.md`. Prod and DEV are unchanged: prod is 
   - Gate so far: `mix test` 2284 green twice, warnings-as-errors clean, tsc, vitest 261, build,
     lint 27 (same as before).
 
-## Stop 2 reached
+## D59 DEV gate: PASSED, merged to `develop` (`058fc71`, PR #64)
 
-- **Full local Playwright: 712 passed, 1 skipped (the DEV-only banner test), 37.6 min**, log
-  `/tmp/claude-501/pwlogs/d59_full_1656.log`. Its tab is closed. The local gate is complete.
-- Local servers still run from `~/src/rockcut` in the lead tab (API `w1:p2`, UI `w1:p3`).
+- Run 1 `b660fd0`: Playwright 712/713 (S239 flake); QA **fail** (gaps 5, 6 must-fix: Owners leaked to
+  non-members via `/api/departments`, `/api/roster`, error texts).
+- Fix cycle 1 `f6c904f`: Owners hidden from non-members (`Authz.can?(:see, {:department, d})`, spec
+  decision 9), neutral errors, gaps 2/3/7. Playwright 714/714; QA recheck fail on gap 9.
+- Fix cycle 2 `dc54a18`: permission before role (gap 9). Playwright 714/714; targeted QA pass.
+- Accepted: gaps 1, 4, 8. Backlog: **task 5769** (gap 10, managers can manage positions in other
+  departments; predates D59). QA reports: `stepwise_results/d59_dev_qa_*.md`.
+- **DEV is free** (conv 80 msg 104710), running `058fc71` = `develop` (API v82 / UI v85), reseeded.
+  Pre-D59 DEV snapshot `vs_VxLXDDOL4votzbJee38g`.
 
 ## Next
 
-1. **The DEV gate needs Matt's go** (outward-facing): push the branch, claim DEV in PortableMind
-   discussion 80, deploy the branch to DEV, `seed_synthetic()`, then O1–O13 plus a regression sweep
-   (Scheduler, Users & Roles, Messages, the other boards), and an independent qa agent. QA
-   brief: destructive actions by exact id on its own `[TEST-TEMP]` rows only.
-2. Then the PR to `develop`, the release from a tag and the deploy. Rollback notes are in spec §6.
-3. After D59: the D56 spec (5207). D58 stays on hold until Matt lifts it.
+1. **D59 prod release** when Matt says (workflow §5): a release PR `develop → main`, tag
+   `v2026.11.1x`, deploy from a clean checkout of the tag (API, then `Release.migrate()` if the boot
+   didn't migrate, then UI), smoke, a close-out PR. Take a prod snapshot first. The rollback is the
+   image only once Owners is in use (spec §6). Matt should check: Owners appears for him, and he adds
+   whoever he wants as members.
+2. After D59: the D56 spec (5207). D58 stays on hold until Matt lifts it. D58's spec must cite D59
+   §4.3 and decision 9.
 
 ## Notes
 
