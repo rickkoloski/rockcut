@@ -17,7 +17,7 @@ import {
   touchDrag,
   userId,
 } from './taskBoardHelpers'
-import { pickSetting, settingsItem } from '../settingsMenu'
+import { boardSettingsSaved, pickSetting, settingsItem } from '../settingsMenu'
 import { putBoardSettings, resetBoardSettingsAroundEach } from '../boardSettings'
 
 // D38 §3.8 "Phone width" (plan step 9): one day at a time, the day strip with
@@ -481,12 +481,12 @@ test.describe(VERTICAL, () => {
     await expect(page.getByTestId('phone-strip')).toHaveCount(0)
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0)
 
-    await page.getByTestId('board-view-day').click()
+    await boardSettingsSaved(page, () => page.getByTestId('board-view-day').click())
     await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'phone')
     await page.reload()
     await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'phone')
     await expect(page.getByTestId('board-view-day')).toHaveAttribute('aria-pressed', 'true')
-    await page.getByTestId('board-view-vertical').click()
+    await boardSettingsSaved(page, () => page.getByTestId('board-view-vertical').click())
     await page.reload()
     await expect(page.getByTestId('board-grid')).toHaveAttribute('data-layout', 'vertical')
   })

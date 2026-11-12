@@ -1,7 +1,7 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, denverToday, denverUtc, openBoard, tempTag, userId } from './taskBoardHelpers'
-import { closeSettings, openSettings, setSetting, settingOn } from '../settingsMenu'
+import { boardSettingsSaved, closeSettings, openSettings, setSetting, settingOn } from '../settingsMenu'
 import { resetBoardSettingsAroundEach, storedBoardSettings } from '../boardSettings'
 
 // D45 §3.3, S184–S188: "Hide shifts" beside Hide completed drops the people,
@@ -141,7 +141,7 @@ test.describe('S186: brewer1 at phone width', () => {
     await expectShiftsHidden(page)
 
     // One day at a time, on the event day and on a day without one.
-    await page.getByTestId('board-view-day').click()
+    await boardSettingsSaved(page, () => page.getByTestId('board-view-day').click())
     await page.goto(`/tasks/brewery?day=${day(EVENT_DAY)}`)
     await expect(page.getByTestId('board-view-day')).toHaveAttribute('aria-pressed', 'true')
     await expect(page.getByTestId(`header-event-${day(EVENT_DAY)}-${eventId}`)).toBeVisible()
