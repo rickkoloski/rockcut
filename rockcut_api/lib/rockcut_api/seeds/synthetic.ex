@@ -199,6 +199,7 @@ defmodule RockcutApi.Seeds.Synthetic do
       devices = Map.new(device_personas(), fn d -> {d.key, upsert_device(d, depts)} end)
       sync_staff_codes(users)
       prune_device_tokens()
+      reset_board_settings()
       seed_scenario(users, today)
       Map.merge(users, devices)
     end)
@@ -333,6 +334,21 @@ defmodule RockcutApi.Seeds.Synthetic do
     :ok
   end
 
+  @doc """
+  D58: every synthetic account's task board settings (`users.board_settings`)
+  back to none, people and devices alike, so each board starts from its
+  defaults and the browser carry-over can run again.
+  """
+  def reset_board_settings do
+    Guard.guard!()
+
+    Repo.update_all(from(u in User, where: like(u.email, ^"%#{@domain}")),
+      set: [board_settings: %{}]
+    )
+
+    :ok
+  end
+
   # A sign-off whose flag names a batch that's gone (keys hold "batchId.vessel").
   defp delete_orphan_signoffs do
     live = MapSet.new(Repo.all(from(b in Batch, select: b.id)))
@@ -426,6 +442,9 @@ defmodule RockcutApi.Seeds.Synthetic do
   """
   def mint_tokens do
     Guard.guard!()
+    # D58: a test run starts from the default board settings (they're on the
+    # server now, so they would otherwise carry over from the last run).
+    reset_board_settings()
 
     persons =
       for p <- personas(), p.flags.active, into: %{} do
