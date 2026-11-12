@@ -61,6 +61,20 @@ const CHANNELS = [
   { key: 'push', label: 'Push', enabled: true, def: false },
 ]
 const SHOWN = CHANNELS.filter((c) => !c.hidden)
+
+/**
+ * The stored preferences for the events and channels above only. D58 lead
+ * decisions 1: the API refuses anything else (422), and older preferences
+ * may name events that are gone (`shift_published`).
+ */
+function knownPrefs(prefs: NotificationPrefs): NotificationPrefs {
+  const out: NotificationPrefs = {}
+  for (const { event } of EVENTS) {
+    const values = Object.entries(prefs[event] ?? {}).filter(([ch, on]) => CHANNELS.some((c) => c.key === ch) && typeof on === 'boolean')
+    if (values.length > 0) out[event] = Object.fromEntries(values)
+  }
+  return out
+}
 const PREFS_KEY = ['notification_preferences']
 
 export default function NotificationPreferencesDialog({ open, onClose }: Props) {
@@ -96,7 +110,7 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
     void qc.cancelQueries({ queryKey: PREFS_KEY })
     qc.setQueryData<NotificationPrefs>(PREFS_KEY, (cur) => change(cur ?? {})) // optimistic
     pending.current += 1
-    const save = saving.current.then(() => api.put('/api/notification_preferences', { prefs: qc.getQueryData(PREFS_KEY) ?? {} }))
+    const save = saving.current.then(() => api.put('/api/notification_preferences', { prefs: knownPrefs(qc.getQueryData(PREFS_KEY) ?? {}) }))
     saving.current = save.catch(() => undefined)
     try {
       await save

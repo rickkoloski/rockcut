@@ -79,11 +79,12 @@ defmodule RockcutApi.Notifications.WebPushTest do
 
   test "push channel is opt-in (default off), and on once enabled" do
     user = user_fixture()
-    refute Notifications.enabled?(user, :shift_published, :push)
+    # D58 lead decisions 1: a known event (shift_published was retired).
+    refute Notifications.enabled?(user, :shift_scheduled, :push)
 
-    {:ok, _} = Notifications.update_prefs(user, %{"shift_published" => %{"push" => true}})
+    {:ok, _} = Notifications.update_prefs(user, %{"shift_scheduled" => %{"push" => true}})
     user = Accounts.get_user!(user.id)
 
-    assert Notifications.enabled?(user, :shift_published, :push)
+    assert Notifications.enabled?(user, :shift_scheduled, :push)
   end
 end
