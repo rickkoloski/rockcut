@@ -19,6 +19,7 @@ import {
 import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/helpers'
 import { batchOf, Made, stepOf, today as productionToday } from '../production/schedule'
 import { pickSetting, settingsItem } from '../settingsMenu'
+import { putBoardSettings, resetBoardSettingsAroundEach } from '../boardSettings'
 import { openUser } from '../taproom/helpers'
 
 // D53 Part 1 (§3, S216–S220, S222, lead decision 3): several people on a task.
@@ -26,6 +27,8 @@ import { openUser } from '../taproom/helpers'
 // is injected there). Runs in the one-worker `brewery-board` project.
 
 test.use({ viewport: { width: 1600, height: 1100 } })
+// D58: the View filter and the phone layout are each persona's own, on the server.
+resetBoardSettingsAroundEach()
 
 const created: number[] = []
 test.afterEach(async () => {
@@ -513,8 +516,8 @@ test.describe('the brewhouse tablet', () => {
 test.describe('at phone width', () => {
   test.use({ storageState: authFile('brewer1'), viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true })
 
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem('rockcut.tasks.phoneView', 'day'))
+  test.beforeEach(async () => {
+    expect((await putBoardSettings('brewer1', 'brewery', { phone_view: 'day' })).status).toBe(200)
   })
 
   test("the Dashboard's Today's tasks shows everyone, together, and leaves the title its room", async ({ page }) => {

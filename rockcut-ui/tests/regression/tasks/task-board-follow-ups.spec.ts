@@ -1,8 +1,9 @@
 import { test, expect, type APIRequestContext, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, card, dailyItems, denverToday, restoreDailyItems, setCheck, tempTag, type ApiDailyItem } from '../brewery/taskBoardHelpers'
-import { contextWith, createTempPerson, retireTempPerson, signIn, throwawayPassword, type TempPerson } from '../auth/helpers'
+import { apiWith, contextWith, createTempPerson, retireTempPerson, signIn, throwawayPassword, type TempPerson } from '../auth/helpers'
 import { pickSetting, setSetting, settingOn, settingValue, settingsItem } from '../settingsMenu'
+import { resetBoardSettingsAroundEach } from '../boardSettings'
 
 // D42 §4, scenarios S121–S140: the required password reset (API and UI), a
 // foreign before_id, the "No one scheduled" header key, deleting a retired
@@ -12,6 +13,8 @@ import { pickSetting, setSetting, settingOn, settingValue, settingsItem } from '
 // The boards are shared, so this runs in the one-worker `brewery-board` project.
 
 test.use({ viewport: { width: 1600, height: 1100 } })
+// D58: the settings these change are the persona's own, on the server.
+resetBoardSettingsAroundEach()
 
 const today = () => denverToday()
 /** The Monday / Sunday of the week holding `day`. */
@@ -359,17 +362,32 @@ test.describe('as floater', () => {
 test.describe('as brewer1', () => {
   test.use({ storageState: authFile('brewer1') })
 
-  test('S135: the browser’s D41 settings carry over to the board after D42', async ({ page }) => {
-    await page.goto('/')
-    await page.evaluate(() => {
-      localStorage.setItem('rockcut.tasks.span', '7')
-      localStorage.setItem('rockcut.tasks.hideCompleted', 'true')
-      localStorage.setItem('rockcut.tasks.phoneView', 'day')
-    })
-    await openBoard(page, '/tasks/brewery')
-    expect(await settingValue(page, 'board-settings', 'board-span')).toBe('1 week')
-    expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
-    expect(await page.evaluate(() => localStorage.getItem('rockcut.tasks.phoneView.brewery'))).toBe('day')
+  // D58: the settings are on the server; a browser's D41 values carry over to
+  // it once. A `[TEST-TEMP]` Brewery person, so the server has nothing yet for
+  // their board (a persona's reset leaves the defaults saved).
+  test('S135: the browser’s D41 settings carry over to the board after D42', async ({ browser }) => {
+    person = await createTempPerson('S135', { schedulable: false, memberships: [{ department: 'brewery', role: 'employee' }] })
+    const token = await signIn(person)
+    const { context, page } = await contextWith(browser, token)
+    try {
+      await page.setViewportSize({ width: 1600, height: 1100 })
+      await page.goto('/')
+      await page.evaluate(() => {
+        localStorage.setItem('rockcut.tasks.span', '7')
+        localStorage.setItem('rockcut.tasks.hideCompleted', 'true')
+        localStorage.setItem('rockcut.tasks.phoneView', 'day')
+      })
+      const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith('/api/me/board_settings/brewery'))
+      await openBoard(page, '/tasks/brewery')
+      expect((await saved).status()).toBe(200)
+      expect(await settingValue(page, 'board-settings', 'board-span')).toBe('1 week')
+      expect(await settingOn(page, 'board-settings', 'board-hide-completed')).toBe(true)
+      const api = await apiWith(token)
+      expect((await (await api.get('/api/me')).json()).board_settings.brewery).toEqual({ span: 7, hide_completed: true, phone_view: 'day' })
+      await api.dispose()
+    } finally {
+      await context.close()
+    }
   })
 
   test('S136: First day → Monday: Mon–Sun of this week, the days before today dimmed and usable; Next → next Monday', async ({ page }) => {

@@ -18,6 +18,7 @@ import {
   userId,
 } from './taskBoardHelpers'
 import { pickSetting, settingsItem } from '../settingsMenu'
+import { putBoardSettings, resetBoardSettingsAroundEach } from '../boardSettings'
 
 // D38 §3.8 "Phone width" (plan step 9): one day at a time, the day strip with
 // its Future stop, arrows and swipe, the calendar button, and the task menu as
@@ -32,12 +33,14 @@ test.afterEach(async () => {
 })
 
 // D38's tests are about the one-day view; phones start in the vertical view
-// since D39, so they pick one day before each page load. The D39 tests start
-// with nothing saved, as a first visit does.
+// since D39, so they pick one day before each test. The D39 tests start from
+// the defaults, as a first visit does. D58: the phone layout is brewer1's own
+// setting, on the server, put back to the defaults around each test.
+resetBoardSettingsAroundEach()
 const VERTICAL = 'D39 vertical view'
-test.beforeEach(async ({ page }, testInfo) => {
-  if (testInfo.titlePath.includes(VERTICAL)) return
-  await page.addInitScript(() => localStorage.setItem('rockcut.tasks.phoneView', 'day'))
+test.beforeEach(async () => {
+  if (test.info().titlePath.includes(VERTICAL)) return
+  expect((await putBoardSettings('brewer1', 'brewery', { phone_view: 'day' })).status).toBe(200)
 })
 
 const today = () => denverToday()

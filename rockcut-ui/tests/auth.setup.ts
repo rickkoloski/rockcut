@@ -4,6 +4,7 @@ import { test as setup, expect } from '@playwright/test'
 import { activePersonaKeys, authFile, personas } from './config/test-env'
 import { activeProfile } from './config/targets'
 import { SPARE_CLAIMS_DIR, SPARES_FILE } from './regression/auth/spares'
+import { resetToken } from './regression/boardSettings'
 
 type Minted = Record<string, { email: string; token: string }> & { spares?: { email: string; tokens: string[] } }
 
@@ -51,6 +52,12 @@ setup('mint persona tokens', async ({ request }) => {
     // The token must be accepted by the target API before we rely on it.
     const me = await request.get(`${profile.apiUrl}/api/me`, { headers: { Authorization: `Bearer ${entry.token}` } })
     expect(me.status(), `token for ${key} rejected by ${profile.apiUrl}`).toBe(200)
+
+    // D58: board settings are on the server and would carry over from the
+    // last run. The mint clears them (mix and fly); pre-minted tokens
+    // (E2E_TOKENS_JSON) may be older than a run, so put any left back to the
+    // defaults through the API.
+    if (Object.keys((await me.json()).board_settings ?? {}).length > 0) await resetToken(entry.token)
 
     writeFileSync(
       authFile(key),
