@@ -1,6 +1,6 @@
 # D59: Owners department — Spec
 
-**Status:** APPROVED by Matt 2026-11-11; planning next
+**Status:** COMPLETE, on prod in `v2026.11.11` (release PR #65; D59 PR #64); approved by Matt 2026-11-11
 **Backlog:** PortableMind project 254, task 5764
 **Order:** independent of D56–D58. If D58 ships first, its manager rules
 (§4.3) already cover the Owners department; if D59 ships first, D58's spec

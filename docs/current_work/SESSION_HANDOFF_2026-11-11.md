@@ -42,15 +42,24 @@ Supersedes `SESSION_HANDOFF_2026-11-10.md`. Prod and DEV are unchanged: prod is 
 - **DEV is free** (conv 80 msg 104710), running `058fc71` = `develop` (API v82 / UI v85), reseeded.
   Pre-D59 DEV snapshot `vs_VxLXDDOL4votzbJee38g`.
 
+## Released: D59 on prod as `v2026.11.11`
+
+- **Release:**
+  - Release PR #65 (squash `a0fc6b3`), tag `v2026.11.11`.
+  - API v37 `…deployment-01M771CWBJM27QP78XFCQMXVKV`, UI v33 `…deployment-01M771EYYB08TRH65J0EE8AQH2`.
+  - **Rollback:** API v36 / UI v32, image only. Pre-release snapshot `vs_yeYvbA38gjQXh10oPopPLy8k`.
+- **Migration:** ran at boot; Owners is present.
+- **Smoke:** all green. Health, UI and bundle are on `a0fc6b3`; `sw.js` is `no-cache`; the audits are
+  clean; a synthetic login gets 401, and prod has 0 synthetic users.
+- **Close-out PR:** `closeout-v2026.11.11` (an `-s ours` sync plus these docs), so the next release
+  PR is conflict-free.
+- **Record:** `stepwise_results/d59_owners_department_COMPLETE.md`.
+
 ## Next
 
-1. **D59 prod release** when Matt says (workflow §5): a release PR `develop → main`, tag
-   `v2026.11.1x`, deploy from a clean checkout of the tag (API, then `Release.migrate()` if the boot
-   didn't migrate, then UI), smoke, a close-out PR. Take a prod snapshot first. The rollback is the
-   image only once Owners is in use (spec §6). Matt should check: Owners appears for him, and he adds
-   whoever he wants as members.
-2. After D59: the D56 spec (5207). D58 stays on hold until Matt lifts it. D58's spec must cite D59
-   §4.3 and decision 9.
+1. **Matt's prod check:** Owners appears for him (Tasks, Boards, Messages, last), and he adds
+   members in Users & Roles. Then close task 5764.
+2. The D56 spec (5207). D58 stays on hold until Matt lifts it.
 
 ## Notes
 
