@@ -30,24 +30,20 @@ Supersedes `SESSION_HANDOFF_2026-11-10.md`. Prod and DEV are unchanged: prod is 
   - Gate so far: `mix test` 2284 green twice, warnings-as-errors clean, tsc, vitest 261, build,
     lint 27 (same as before).
 
-## In flight
+## Stop 2 reached
 
-- **The full local Playwright run** (713 tests) was started at 16:56 in the herdr tab **"D59 playwright"**
-  (`w1:t23`; run pane `w1:p2S`, status split `w1:p2T`). Log:
-  `/tmp/claude-501/pwlogs/d59_full_1656.log`. It ends with a line `PWDONE-<exit code>`. Check the
-  summary at the end of the log. Failures outside `owners/` may be old flakes. Re-run them
-  alone before blaming D59. Close the tab when done.
-- Local servers run from `~/src/rockcut` in the lead tab (API `w1:p2`, UI `w1:p3`).
+- **Full local Playwright: 712 passed, 1 skipped (the DEV-only banner test), 37.6 min**, log
+  `/tmp/claude-501/pwlogs/d59_full_1656.log`. Its tab is closed. The local gate is complete.
+- Local servers still run from `~/src/rockcut` in the lead tab (API `w1:p2`, UI `w1:p3`).
 
 ## Next
 
-1. Read the Playwright result. If it's green, that's **Stop 2**: tell Matt.
-2. **The DEV gate needs Matt's go** (outward-facing): push the branch, claim DEV in PortableMind
+1. **The DEV gate needs Matt's go** (outward-facing): push the branch, claim DEV in PortableMind
    discussion 80, deploy the branch to DEV, `seed_synthetic()`, then O1–O13 plus a regression sweep
    (Scheduler, Users & Roles, Messages, the other boards), and an independent qa agent. QA
    brief: destructive actions by exact id on its own `[TEST-TEMP]` rows only.
-3. Then the PR to `develop`, the release from a tag and the deploy. Rollback notes are in spec §6.
-4. After D59: the D56 spec (5207). D58 stays on hold until Matt lifts it.
+2. Then the PR to `develop`, the release from a tag and the deploy. Rollback notes are in spec §6.
+3. After D59: the D56 spec (5207). D58 stays on hold until Matt lifts it.
 
 ## Notes
 
