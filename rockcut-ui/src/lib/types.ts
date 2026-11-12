@@ -293,6 +293,8 @@ export interface Me {
   color_mode?: ColorMode
   // D49: the Brewery board's "Show planned batches" (per person).
   show_planned_batches?: boolean
+  // D58: each board's saved settings (`{ brewery: { span: 7 } }`), only what was changed.
+  board_settings?: Record<string, Record<string, unknown>>
 }
 
 /**

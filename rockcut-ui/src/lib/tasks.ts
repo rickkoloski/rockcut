@@ -173,6 +173,28 @@ export function rangeError(from: string, to: string): string | null {
 
 export const spanEnd = (from: string, span: number) => addDaysKey(from, span - 1)
 
+/**
+ * D58 §3.2: the range a board shows for the URL's `from`/`to`. No range is the
+ * `fallback` (the default), as before. Over 31 days shows `from` plus 30
+ * (`clamped`); an invalid one (a bad date, To before From, one of the two
+ * missing) shows the fallback. `fix` is what the URL should become, replaced
+ * not pushed: the clamped range, or no range for an invalid one (the default,
+ * as Today leaves it); null when the URL is fine.
+ */
+export function boardRange(
+  urlFrom: string,
+  urlTo: string,
+  fallback: { from: string; to: string },
+): { from: string; to: string; inUrl: boolean; clamped: boolean; fix: { from: string; to: string } | null } {
+  if (!urlFrom && !urlTo) return { ...fallback, inUrl: false, clamped: false, fix: null }
+  if (isDateKey(urlFrom) && isDateKey(urlTo) && urlTo >= urlFrom) {
+    if (dayCount(urlFrom, urlTo) <= MAX_RANGE_DAYS) return { from: urlFrom, to: urlTo, inUrl: true, clamped: false, fix: null }
+    const to = spanEnd(urlFrom, MAX_RANGE_DAYS)
+    return { from: urlFrom, to, inUrl: true, clamped: true, fix: { from: urlFrom, to } }
+  }
+  return { ...fallback, inUrl: false, clamped: false, fix: { from: '', to: '' } }
+}
+
 const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })
 
 /** "Mon 10/12" for a date key. */
@@ -456,7 +478,52 @@ export function describeEvent(ev: TaskEvent, names: TaskEventPage['names'], boar
   }
 }
 
-// ── Per-browser preferences (spec §3.8). Storage can be missing or throw. ──
+/** D39 phone width: every day stacked (`vertical`, the default) or one day at a time. */
+export type PhoneView = 'vertical' | 'day'
+
+// ── Board settings (D58 §3.1): per account on the server ──
+
+/**
+ * A board's settings (`/api/me`'s `board_settings[<board>]`, a department key
+ * or `all`). The server stores only what someone changed; `boardSettings`
+ * fills in the rest.
+ */
+export interface BoardSettings {
+  span: Span
+  hide_completed: boolean
+  hide_shifts: boolean
+  first_day: FirstDay
+  view: TaskFilter
+  phone_view: PhoneView
+}
+
+/** 2 weeks, nothing hidden, Today, All, every day stacked. */
+export const BOARD_DEFAULTS: BoardSettings = {
+  span: 14,
+  hide_completed: false,
+  hide_shifts: false,
+  first_day: 'today',
+  view: 'all',
+  phone_view: 'vertical',
+}
+
+/** The settings in `raw` that are valid, as the API takes them; anything else is dropped. */
+export function cleanSettings(raw: unknown): Partial<BoardSettings> {
+  const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const out: Partial<BoardSettings> = {}
+  if (r.span === 7 || r.span === 14) out.span = r.span
+  if (typeof r.hide_completed === 'boolean') out.hide_completed = r.hide_completed
+  if (typeof r.hide_shifts === 'boolean') out.hide_shifts = r.hide_shifts
+  if (r.first_day === 'today' || r.first_day === 'sunday' || r.first_day === 'monday') out.first_day = r.first_day
+  if (r.view === 'all' || r.view === 'mine' || r.view === 'unassigned') out.view = r.view
+  if (r.phone_view === 'vertical' || r.phone_view === 'day') out.phone_view = r.phone_view
+  return out
+}
+
+/** A board's settings: the stored ones over the defaults. */
+export const boardSettings = (stored: unknown): BoardSettings => ({ ...BOARD_DEFAULTS, ...cleanSettings(stored) })
+
+// ── Before D58: per browser (D41/D42/D45). Read once for the carry-over. Storage can be missing or throw. ──
 
 const SPAN_KEY = 'rockcut.tasks.span'
 const PHONE_VIEW_KEY = 'rockcut.tasks.phoneView'
@@ -465,19 +532,14 @@ const HIDE_KEY = 'rockcut.tasks.hideCompleted'
 const HIDE_SHIFTS_KEY = 'rockcut.tasks.hideShifts'
 // D42: no shared value before it; Today until someone picks.
 const FIRST_DAY_KEY = 'rockcut.tasks.firstDay'
-// D41: the board last opened (no old key: there was one board).
+// D41: the board last opened (no old key: there was one board). Still per browser (D58).
 const BOARD_KEY = 'rockcut.tasks.board'
-// D41: the keys before the rename. A choice saved under the old key is read
-// once, then kept under the new one.
+// D41: the keys before the rename (one board then: the Brewery's).
 const OLD_PREFIX = 'rockcut.breweryTasks.'
 
-function read(key: string): string | null {
+function get(key: string): string | null {
   try {
-    const value = localStorage.getItem(key)
-    if (value !== null || key === BOARD_KEY) return value
-    const old = localStorage.getItem(OLD_PREFIX + key.slice('rockcut.tasks.'.length))
-    if (old !== null) write(key, old)
-    return old
+    return localStorage.getItem(key)
   } catch {
     return null
   }
@@ -487,57 +549,79 @@ function write(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
   } catch {
-    // Not remembered in this browser; the board still works.
+    // Not remembered in this browser.
   }
 }
 
 /**
- * D42 §2.8: a board's own choice (`<key>.<board>`, `all` for All
- * departments). A board without one starts from the browser's shared value
- * (D41's key, or the one before it), kept as its own from then on.
+ * A board's local choice as D42 read it: its own (`<key>.<board>`), else the
+ * browser's shared value (D41's key, or the one before the rename).
  */
 function readFor(key: string, board: string): string | null {
-  const own = `${key}.${board}`
-  try {
-    const value = localStorage.getItem(own)
-    if (value !== null) return value
-  } catch {
-    return null
+  return get(`${key}.${board}`) ?? get(key) ?? get(OLD_PREFIX + key.slice('rockcut.tasks.'.length))
+}
+
+/**
+ * D58 carry-over: this browser's old local settings for `board`, as the API
+ * takes them, or null when it has none. The View filter was never kept.
+ */
+export function readLocalSettings(board: string): Partial<BoardSettings> | null {
+  const span = readFor(SPAN_KEY, board)
+  const hide = readFor(HIDE_KEY, board)
+  // D45 never had a shared value.
+  const hideShifts = get(`${HIDE_SHIFTS_KEY}.${board}`)
+  const first = readFor(FIRST_DAY_KEY, board)
+  const phone = readFor(PHONE_VIEW_KEY, board)
+  if ([span, hide, hideShifts, first, phone].every((v) => v === null)) return null
+  return cleanSettings({
+    span: span === null ? undefined : span === '7' ? 7 : 14,
+    hide_completed: hide === null ? undefined : hide === 'true',
+    hide_shifts: hideShifts === null ? undefined : hideShifts === 'true',
+    first_day: first === 'sunday' || first === 'monday' ? first : first === null ? undefined : 'today',
+    phone_view: phone === null ? undefined : phone === 'day' ? 'day' : 'vertical',
+  })
+}
+
+/**
+ * Remove `board`'s own local keys once the server has them. The shared and
+ * pre-rename values stay: they still stand for boards not carried over yet.
+ */
+export function clearLocalSettings(board: string) {
+  for (const key of [SPAN_KEY, HIDE_KEY, HIDE_SHIFTS_KEY, FIRST_DAY_KEY, PHONE_VIEW_KEY]) {
+    try {
+      localStorage.removeItem(`${key}.${board}`)
+    } catch {
+      // Nothing to clear.
+    }
   }
-  const shared = read(key)
-  if (shared !== null) write(own, shared)
-  return shared
 }
 
-const writeFor = (key: string, board: string, value: string) => write(`${key}.${board}`, value)
-
-/** The default span: 2 weeks until someone picks. */
-export const readSpan = (board: string): Span => (readFor(SPAN_KEY, board) === '7' ? 7 : 14)
-export const writeSpan = (board: string, span: Span) => writeFor(SPAN_KEY, board, String(span))
-export const readHideCompleted = (board: string) => readFor(HIDE_KEY, board) === 'true'
-export const writeHideCompleted = (board: string, on: boolean) => writeFor(HIDE_KEY, board, String(on))
-/** D45 §3.3: Hide shifts, off until someone turns it on for this board. */
-export function readHideShifts(board: string): boolean {
+/**
+ * D58 §3.1 carry-over, once per board: when the server has nothing for
+ * `board` (`stored` is undefined) and this browser has old local values,
+ * `save` them, then clear the local keys. Only after the save succeeds: a
+ * failed one keeps them for next time. Never when the server already has the
+ * board. Answers what it did.
+ */
+export async function carryOver(
+  board: string,
+  stored: unknown,
+  save: (settings: Partial<BoardSettings>) => Promise<unknown>,
+): Promise<'server' | 'none' | 'saved' | 'failed'> {
+  if (stored !== undefined) return 'server'
+  const local = readLocalSettings(board)
+  if (!local || Object.keys(local).length === 0) return 'none'
   try {
-    return localStorage.getItem(`${HIDE_SHIFTS_KEY}.${board}`) === 'true'
+    await save(local)
   } catch {
-    return false
+    return 'failed'
   }
+  clearLocalSettings(board)
+  return 'saved'
 }
-export const writeHideShifts = (board: string, on: boolean) => writeFor(HIDE_SHIFTS_KEY, board, String(on))
-export function readFirstDay(board: string): FirstDay {
-  const value = readFor(FIRST_DAY_KEY, board)
-  return value === 'sunday' || value === 'monday' ? value : 'today'
-}
-export const writeFirstDay = (board: string, first: FirstDay) => writeFor(FIRST_DAY_KEY, board, first)
 
-export const readBoard = () => read(BOARD_KEY)
+export const readBoard = () => get(BOARD_KEY)
 export const writeBoard = (key: string) => write(BOARD_KEY, key)
-
-/** D39 phone width: every day stacked (`vertical`, the default) or one day at a time. */
-export type PhoneView = 'vertical' | 'day'
-export const readPhoneView = (board: string): PhoneView => (readFor(PHONE_VIEW_KEY, board) === 'day' ? 'day' : 'vertical')
-export const writePhoneView = (board: string, view: PhoneView) => writeFor(PHONE_VIEW_KEY, board, view)
 
 /**
  * Where a task may be dragged on the board (any width). Nothing lands on the
