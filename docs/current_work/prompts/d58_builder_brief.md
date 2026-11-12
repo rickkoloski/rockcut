@@ -61,3 +61,66 @@ servers (API :4002, UI :5174); ask with `LEAD:` if you need a restart or migrati
 `mix test` twice green, `mix compile --warnings-as-errors`, tsc, vitest, lint no worse than 27, build.
 Commits on the branch. Reply with: commits, files, test counts, what you checked in the browser,
 and `LEAD:` notes.
+
+---
+
+# Stage 2 (Managers and everyone)
+
+2026-11-11 · lead → builder. Stage 1 is in (`5933d34`, `d9c2509`); your five Stage 1 choices are
+accepted. Do **plan Stage 2** (spec §3.3, §3.4; decisions 3, 5, 6, 7), then stop and report. Same
+rules as Stage 1.
+
+1. **List:** `Accounts.list_users_for/1`: any manager gets every person (devices excluded). For a
+   manager, each user row adds:
+   - `can_edit`: shares a managed department, as today's `can_manage_user?`;
+   - `can_deactivate`: see 3;
+   - `addable_departments`: the departments the actor manages that the person isn't in, as keys
+     and names.
+   Owners get `true` / all assignable departments, as fits.
+2. **Owners stays hidden** (decision 7, D59 decision 9): on a row the actor **doesn't** manage, the
+   person's memberships/departments pass through `Authz.can?(actor, :see, {:department, d})`.
+   Owners is dropped for a non-member manager. Rows they manage keep D59's chip. Check every
+   payload a manager gets about a person (list, show, update/save replies, audit/activity if
+   shown). Test as `breweryMgr` on `ownersAsst`: no Owners in any response.
+3. **Deactivate** (`Authz.can?(actor, :deactivate, target)`; used by `update_user` whenever `active`
+   changes, both directions):
+   - owner → yes, with the last-owner guard kept;
+   - manager → yes if the target has **no** memberships, or the actor manages **every** department
+     the target is in (Owners included, which no one manages);
+   - otherwise → 403 "You can manage this person only in your departments" (or similar plain
+     text).
+4. **Read-only rows:** for a target the manager doesn't manage, every write except adding a
+   membership in a department they manage is 403: name, email, schedulable, roles, reset password,
+   staff code, deactivate. **Add department** adds an `employee` membership through the existing
+   membership path, which already checks `:assign` per department. Make sure a manager's
+   membership PUT on such a person only **adds** and never removes the departments they can't see
+   or manage.
+5. **Positions (5769):**
+   - `can?(action, %Position{})` writes (create/update/delete/reorder/retire/recolor) need
+     `role_in(user, position.department_id) == :manager`; create checks the requested department,
+     and moving a position needs both departments. Owners pass.
+   - Then look at shift templates and schedule/day/week templates: if they carry positions or
+     departments, a manager may write only those whose positions are all in departments they manage.
+     If not, note why in your report.
+   - **D31 parity tests:** flip only the expectations this deliberately changes (managers listing
+     everyone, positions and templates scoped). Each flip gets a `# D58: …` comment. Anything else
+     failing is a regression: fix it, don't flip it.
+6. **UI** (`pages/users/UserManagement.tsx`, `UserFormDialog.tsx`, the Positions dialog):
+   - read-only rows say so;
+   - **Add department** pull-down from `addable_departments`, hidden when empty;
+   - Deactivate greyed out with a tooltip when `can_deactivate` is false;
+   - no Owners on read-only rows (the API already leaves it out; don't reintroduce it from
+     `/api/departments`);
+   - the Positions dialog shows other departments' positions read-only for managers.
+   - Vitest for any helper.
+7. **Tests:** ExUnit for spec §5 S7–S14 as `breweryMgr`, `barMgr`, `dualMgr` and `owner`, each with
+   both refusal and allowed cases. Plus a check that S7's add keeps `bartender1`'s Taproom
+   membership. Use `[TEST-TEMP]` people in tests where a seeded persona would change.
+8. **Browser:** as `breweryMgr`, Users & Roles: everyone listed, `bartender1` read-only with Add
+   department (Brewery), `floater` Deactivate greyed out, `ownersAsst` with no Owners in the
+   network traffic. Undo any change you make to seeded personas on the dev DB.
+
+## Done when
+
+`mix test` twice, warnings-as-errors, tsc, vitest, lint ≤ 27, build. Commits. Reply with: commits,
+files, the parity tests flipped (each named), test counts, browser checks, `LEAD:` notes.
