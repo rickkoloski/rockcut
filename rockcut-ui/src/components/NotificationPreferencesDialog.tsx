@@ -22,7 +22,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import useAuth from '../hooks/useAuth'
 import api from '../lib/api'
 import type { NotificationPrefs } from '../lib/types'
-import { currentPushState, subscribePush, unsubscribePush, type PushState } from '../lib/push'
+import { currentPushState, pushErrorMessage, subscribePush, unsubscribePush, type PushState } from '../lib/push'
 
 interface Props {
   open: boolean
@@ -76,6 +76,8 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
 
   const [pushState, setPushState] = useState<PushState>('unsubscribed')
   const [pushBusy, setPushBusy] = useState(false)
+  // D58 §3.15 (4319): why Enable push didn't work; the button stays usable.
+  const [pushError, setPushError] = useState<string | null>(null)
 
   useEffect(() => {
     if (open) currentPushState().then(setPushState)
@@ -109,6 +111,7 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
 
   const enablePush = async () => {
     setPushBusy(true)
+    setPushError(null)
     try {
       const state = await subscribePush()
       setPushState(state)
@@ -120,6 +123,8 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
           return next
         })
       }
+    } catch (err) {
+      setPushError(pushErrorMessage(err))
     } finally {
       setPushBusy(false)
     }
@@ -181,6 +186,11 @@ export default function NotificationPreferencesDialog({ open, onClose }: Props) 
       <DialogTitle>Notification preferences</DialogTitle>
       <DialogContent>
         {pushNotice()}
+        {pushError && (
+          <Alert severity="warning" sx={{ mb: 2 }} onClose={() => setPushError(null)} data-testid="push-error">
+            {pushError}
+          </Alert>
+        )}
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
           Choose how you're notified.
         </Typography>
