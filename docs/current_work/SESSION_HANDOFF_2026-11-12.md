@@ -28,13 +28,23 @@ decision 9 added five UI follow-ups (4118 2–7, 4115, 4116, 4319, 5193).
   run's two Gantt failures were stale local seed data after midnight; they passed after a reseed.
 - **Gate:** `mix test` green twice, warnings-as-errors clean, tsc, vitest, build, lint 27.
 
+## DEV gate (in progress, paused by Matt after run 2)
+
+- Matt chose the alternative for 4118 item 2: "(blank)" only when the column has data (`be7f764`).
+- Draft PR #68. DEV claimed in conv 80 (msg 104900). Pre-deploy snapshot `vs_Z7YonnZYMlki8gpNnn4n`.
+- **Run 1 at `be7f764`** (API v83 / UI v86): 707 passed, 11 failed, 40 did not run (the `d58` project waits on `brewery-board`).
+  - 6 owners failures, one real bug: a manager's Users & Roles Save sent no memberships when the dialog opened before `/api/departments` loaded (removed Ellis's Office). Fixed `ea3b895` (late departments filled in; Save off until loaded), revert-and-rerun test in `d58/managers.spec.ts`.
+  - 5 board-settings failures: tests reloaded before the settings PUT finished (cancelled, status -1). Helpers wait for the PUT (`58c961c`).
+- **Fix cycle 1 of 2, run 2 at `58c961c`** (API v84 / UI v87, reseeded): **759 passed**, 0 failed.
+- Deploy worktree: `~/src/rockcut-deploy` (detached at `58c961c`); remove after the gate.
+
 ## Next
 
 1. **Matt confirms the three builder choices:**
    - 5193 clears half-typed "Add a card" text on add/archive list;
    - "(blank)" for trailing empty import columns;
    - "Rock Cut Brewing" under the start-up spinner.
-2. **The DEV gate, on Matt's go:**
+2. **The rest of the DEV gate** (on Matt's go; Playwright is done):
    1. push, open a draft PR;
    2. claim DEV (conv 80) and snapshot it;
    3. deploy (two migrations), then `seed_synthetic()`;
