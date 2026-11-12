@@ -1,12 +1,16 @@
 defmodule RockcutApiWeb.MembershipController do
   use RockcutApiWeb, :controller
 
-  import RockcutApiWeb.JSONHelpers, only: [user: 1]
+  import RockcutApiWeb.JSONHelpers, only: [user_for: 2]
   alias RockcutApi.{Accounts, Authz}
 
   action_fallback RockcutApiWeb.FallbackController
 
-  @doc "Declaratively set a user's memberships (PUT /api/users/:user_id/memberships)."
+  @doc """
+  Declaratively set a user's memberships (PUT /api/users/:user_id/memberships).
+  A manager changes only departments they manage; the person's others stay
+  (D58 §3.3: Add department on someone they don't manage only adds).
+  """
   def update(conn, %{"user_id" => id} = params) do
     actor = conn.assigns.current_user
 
@@ -20,7 +24,7 @@ defmodule RockcutApiWeb.MembershipController do
 
           case Accounts.set_memberships(target, desired, actor) do
             {:ok, u} ->
-              json(conn, %{data: user(u)})
+              json(conn, %{data: user_for(u, actor)})
 
             {:error, :device_account} = error ->
               error

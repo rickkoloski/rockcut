@@ -276,6 +276,11 @@ defmodule RockcutApi.Accounts do
               do: Ecto.Changeset.put_change(changeset, :is_owner, truthy(attrs["is_owner"])),
               else: changeset
 
+          # D58 §3.3: deactivating or reactivating is its own permission.
+          if Ecto.Changeset.get_change(changeset, :active) != nil and
+               not Authz.can?(actor, :deactivate, target),
+             do: Repo.rollback(:cannot_deactivate)
+
           case Repo.update(changeset) do
             {:ok, user} ->
               log_audit(actor.id, user.id, "user.updated", %{"fields" => Map.keys(base)})
@@ -426,23 +431,59 @@ defmodule RockcutApi.Accounts do
 
   ## User queries & capabilities
 
-  @doc "Users visible to the actor: all for an owner; a manager's departments' members otherwise."
+  @doc """
+  Users & Roles: every person (devices excluded) for an owner or any manager
+  (D58 §3.3, decision 3); nobody else lists users. What the actor may do with
+  each is `user_access/2`.
+  """
   def list_users_for(%User{} = actor) do
-    case Authz.scope(actor, :people, :manage) |> Authz.member_ids_in() do
-      [] ->
-        []
-
-      ids ->
-        persons_query()
-        |> only_ids(ids)
-        |> order_by(:email)
-        |> Repo.all()
-        |> Repo.preload(@preloads)
+    if Authz.can?(actor, :list, %User{}) do
+      persons_query()
+      |> order_by(:email)
+      |> Repo.all()
+      |> Repo.preload(@preloads)
+    else
+      []
     end
   end
 
-  defp only_ids(query, :all), do: query
-  defp only_ids(query, ids), do: where(query, [u], u.id in ^ids)
+  @doc """
+  D58 §3.3: what `actor` may do with `target` in Users & Roles, for the UI:
+  `can_edit` (they share a managed department, or an owner), `can_deactivate`
+  (`Authz` `:deactivate`), `addable_departments` (the departments the actor
+  can add the person to that they aren't in, `%{key, name}`), and
+  `hidden_department_ids`: on a row the actor doesn't manage, the person's
+  departments the actor can't see (decision 7: Owners), left out of every
+  payload about them. Expects memberships preloaded with departments;
+  `departments` saves a query per row in a list.
+  """
+  def user_access(%User{} = actor, %User{} = target, departments \\ list_departments()) do
+    can_edit = Authz.can?(actor, :update, target)
+    current = MapSet.new(target.memberships, & &1.department_id)
+
+    %{
+      can_edit: can_edit,
+      can_deactivate: Authz.can?(actor, :deactivate, target),
+      addable_departments:
+        for(
+          d <- departments,
+          d.assignable,
+          not MapSet.member?(current, d.id),
+          Authz.can?(actor, :assign, {:memberships, d.id}),
+          do: %{key: d.key, name: d.name}
+        ),
+      hidden_department_ids:
+        if(can_edit,
+          do: [],
+          else:
+            for(
+              m <- target.memberships,
+              not Authz.can?(actor, :see, {:department, m.department}),
+              do: m.department_id
+            )
+        )
+    }
+  end
 
   @doc "Capabilities payload for the UI (modules, management scope, owner review count)."
   def capabilities(%User{} = user) do

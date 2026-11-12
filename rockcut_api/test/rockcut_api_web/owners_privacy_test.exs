@@ -401,15 +401,16 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
                Enum.find(asst["memberships"], &(&1["department_key"] == "office"))
     end
 
+    # D58 (5769): a manager now gets a plain 403 for any department they don't
+    # manage (was this 422); an owner still gets the 422, which names no department.
     test "a not-scheduled refusal doesn't name Owners (gap 6)", %{p: p, d: d} do
-      conn =
-        call(p["breweryMgr"], :post, "/api/positions", %{
-          name: "X",
-          department_id: d["owners"].id,
-          group: "X"
-        })
+      params = %{name: "X", department_id: d["owners"].id, group: "X"}
 
-      assert json_response(conn, 422) == %{
+      assert json_response(call(p["breweryMgr"], :post, "/api/positions", params), 403) == %{
+               "error" => "Forbidden"
+             }
+
+      assert json_response(call(p["owner"], :post, "/api/positions", params), 422) == %{
                "errors" => %{"department_id" => ["That department isn't on the schedule"]}
              }
     end

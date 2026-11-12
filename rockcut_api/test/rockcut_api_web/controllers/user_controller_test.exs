@@ -14,21 +14,28 @@ defmodule RockcutApiWeb.UserControllerTest do
       assert conn |> bearer(employee) |> get(~p"/api/users") |> json_response(403)
     end
 
-    test "manager sees only their department's members", %{conn: conn} do
+    # D58 (decision 3): was only their departments' members; now everyone,
+    # with what the manager may do on each row.
+    test "manager sees everyone, editable only in their departments", %{conn: conn} do
       manager = user_with_role("manager", "brewery")
       _brewery_emp = user_with_role("employee", "brewery", %{email: "b@rockcut.com"})
       _sales_emp = user_with_role("employee", "sales", %{email: "s@rockcut.com"})
 
-      emails =
+      rows =
         conn
         |> bearer(manager)
         |> get(~p"/api/users")
         |> json_response(200)
         |> Map.fetch!("data")
-        |> Enum.map(& &1["email"])
+        |> Map.new(&{&1["email"], &1})
 
-      assert "b@rockcut.com" in emails
-      refute "s@rockcut.com" in emails
+      assert %{"can_edit" => true, "addable_departments" => []} = rows["b@rockcut.com"]
+
+      assert %{
+               "can_edit" => false,
+               "can_deactivate" => false,
+               "addable_departments" => [%{"key" => "brewery"}]
+             } = rows["s@rockcut.com"]
     end
 
     test "owner sees everyone", %{conn: conn} do

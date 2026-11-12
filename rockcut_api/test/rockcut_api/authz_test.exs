@@ -4,7 +4,7 @@ defmodule RockcutApi.AuthzTest do
   alias RockcutApi.{Authz, Repo, TimeOff}
   alias RockcutApi.Accounts.User
   alias RockcutApi.Availability.Slot
-  alias RockcutApi.Scheduling.{ShiftTemplate, ScheduleTemplate}
+  alias RockcutApi.Scheduling.{Position, ShiftTemplate, ScheduleTemplate, ScheduleTemplateItem}
   import RockcutApi.AccountsFixtures
   import RockcutApi.PersonaFixtures, only: [personas: 0, departments: 0]
 
@@ -78,12 +78,33 @@ defmodule RockcutApi.AuthzTest do
       %{p: personas(), d: departments()}
     end
 
-    test "templates and roster: anyone reads, any manager writes", %{p: p} do
+    # D58: templates were "any manager writes"; now the managers of their
+    # positions' departments (positions loaded; an unloaded one refuses).
+    test "templates and roster: anyone reads; templates by their departments' managers",
+         %{p: p, d: d} do
+      bar = %Position{department_id: d["bar"].id}
+      brewery = %Position{department_id: d["brewery"].id}
+
       for r <- [%ShiftTemplate{}, %ScheduleTemplate{}, :roster] do
         assert Authz.can?(p["noDept"], :read, r)
-        assert Authz.can?(p["splitRole"], :create, r)
         refute Authz.can?(p["floater"], :delete, r)
       end
+
+      assert Authz.can?(p["splitRole"], :create, :roster)
+      refute Authz.can?(p["splitRole"], :create, %ShiftTemplate{})
+      assert Authz.can?(p["splitRole"], :create, %ShiftTemplate{position: bar})
+      refute Authz.can?(p["splitRole"], :create, %ShiftTemplate{position: brewery})
+
+      mixed = %ScheduleTemplate{
+        items: [%ScheduleTemplateItem{position: bar}, %ScheduleTemplateItem{position: brewery}]
+      }
+
+      refute Authz.can?(p["splitRole"], :create, mixed)
+      assert Authz.can?(p["owner"], :create, mixed)
+
+      assert Authz.can?(p["splitRole"], :delete, %ScheduleTemplate{
+               items: [%ScheduleTemplateItem{position: bar}]
+             })
 
       assert Authz.can?(p["dualMgr"], :reorder, :roster)
       refute Authz.can?(p["bartender1"], :reorder, :roster)

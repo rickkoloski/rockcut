@@ -25,6 +25,30 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  @doc """
+  D58 §3.3: a person in Users & Roles as `viewer` (an owner or a manager) may
+  see them: `user/1`, without the departments `viewer` can't see on a row they
+  don't manage (decision 7: Owners), plus `can_edit`, `can_deactivate` and
+  `addable_departments` (`Accounts.user_access/3`). Every Users & Roles reply
+  about a person uses this.
+  """
+  def user_for(user, viewer, departments \\ nil) do
+    access =
+      if departments,
+        do: RockcutApi.Accounts.user_access(viewer, user, departments),
+        else: RockcutApi.Accounts.user_access(viewer, user)
+
+    {hidden, access} = Map.pop(access, :hidden_department_ids)
+
+    user
+    |> user()
+    |> Map.update!(:memberships, fn
+      nil -> nil
+      ms -> Enum.reject(ms, &(&1.department_id in hidden))
+    end)
+    |> Map.merge(access)
+  end
+
   def membership(m) do
     %{
       department_id: m.department_id,

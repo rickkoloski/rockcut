@@ -38,6 +38,14 @@ defmodule RockcutApi.Scheduling do
 
   def get_position!(id), do: Repo.get!(Position, id)
 
+  @doc """
+  D58: the position a write names, for `Authz` (5769): the row, or nil when
+  the id names none (the changeset then answers 422).
+  """
+  def position_named(id) do
+    if id = RockcutApi.Ids.parse(id), do: Repo.get(Position, id)
+  end
+
   def create_position(attrs) do
     %Position{} |> Position.changeset(attrs) |> Repo.insert()
   end
@@ -218,7 +226,11 @@ defmodule RockcutApi.Scheduling do
     |> Repo.all()
   end
 
-  def get_shift_template!(id), do: Repo.get!(ShiftTemplate, id)
+  def get_shift_template!(id), do: ShiftTemplate |> Repo.get!(id) |> Repo.preload(:position)
+
+  @doc "D58: a shift template as `attrs` would make it, its position loaded, for `Authz`."
+  def proposed_shift_template(attrs),
+    do: %ShiftTemplate{position: position_named(stringify(attrs)["position_id"])}
 
   def create_shift_template(attrs) do
     %ShiftTemplate{} |> ShiftTemplate.changeset(attrs) |> Repo.insert()
@@ -241,6 +253,24 @@ defmodule RockcutApi.Scheduling do
 
   def get_schedule_template!(id) do
     ScheduleTemplate |> Repo.get!(id) |> Repo.preload(items: :position)
+  end
+
+  @doc """
+  D58: a schedule template as `attrs` would make it, its items' positions
+  loaded, for `Authz`. Malformed items are the changeset's (422).
+  """
+  def proposed_schedule_template(attrs) do
+    items =
+      case stringify(attrs)["items"] do
+        items when is_list(items) ->
+          for item when is_map(item) <- items,
+              do: %ScheduleTemplateItem{position: position_named(stringify(item)["position_id"])}
+
+        _ ->
+          []
+      end
+
+    %ScheduleTemplate{items: items}
   end
 
   def create_schedule_template(attrs, %User{} = actor) do

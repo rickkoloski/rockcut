@@ -304,21 +304,42 @@ defmodule RockcutApi.Authz do
       when action in [:update, :delete, :extend],
       do: role_in(user, series.department_id) == :manager
 
-  # Scheduling — positions are company-wide: anyone reads; any manager/owner writes.
-  def can?(%User{} = user, action, %Position{}) do
+  # Scheduling — positions are company-wide: anyone reads. D58 (5769, D29 §6 C):
+  # only the managers of a position's department write it (owners pass above);
+  # moving one to another department is asked of both (`PositionController`).
+  # No department yet (a create without one) is "any manager", so the
+  # changeset answers 422.
+  def can?(%User{} = user, action, %Position{department_id: dept_id}) do
     case action do
       :read -> true
-      a when a in [:create, :update, :delete] -> counts_as_manager?(user)
+      a when a in [:create, :update, :delete] -> manages_department?(user, dept_id)
       _ -> false
     end
   end
 
-  # Shift templates, schedule templates, roster order: anyone reads; any
-  # manager writes (was shift_template_controller:47, schedule_template_controller:16,26,
-  # roster_controller:14).
+  # Shift templates and schedule templates: anyone reads. D58: a manager writes
+  # only those whose positions are all in departments they manage (positions
+  # preloaded; an unloaded one refuses). A position id that names nothing
+  # leaves the changeset to answer 422.
   def can?(%User{} = user, action, resource)
-      when is_struct(resource, ShiftTemplate) or is_struct(resource, ScheduleTemplate) or
-             resource == :roster do
+      when is_struct(resource, ShiftTemplate) or is_struct(resource, ScheduleTemplate) do
+    case action do
+      :read ->
+        true
+
+      a when a in [:create, :update, :delete] ->
+        case template_department_ids(resource) do
+          :unknown -> false
+          ids -> counts_as_manager?(user) and Enum.all?(ids, &manages_department?(user, &1))
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  # Roster order: anyone reads; any manager writes (was roster_controller:14).
+  def can?(%User{} = user, action, :roster) do
     case action do
       :read -> true
       a when a in [:create, :update, :delete, :reorder] -> counts_as_manager?(user)
@@ -364,6 +385,17 @@ defmodule RockcutApi.Authz do
 
   def can?(%User{} = user, action, %User{} = target) when action in [:update, :reset_password],
     do: can_manage_user?(user, target)
+
+  # D58 §3.3 (decisions 3, 5): a manager deactivates or reactivates a person
+  # only when they manage every department the person is in (Owners included,
+  # which nobody manages), so any manager may for someone with none. Never an
+  # owner (owners pass above; the last-owner guard is Accounts'). Needs the
+  # target's memberships preloaded.
+  def can?(%User{} = user, :deactivate, %User{memberships: memberships} = target)
+      when is_list(memberships),
+      do:
+        counts_as_manager?(user) and not owner?(target) and
+          Enum.all?(memberships, &(role_in(user, &1.department_id) == :manager))
 
   # Memberships: set in a department only by its manager. Whether the department
   # is assignable at all is a data rule left in Accounts (was membership_controller:18,
@@ -474,6 +506,22 @@ defmodule RockcutApi.Authz do
   def can?(_user, _action, _resource), do: false
 
   ## Helpers
+
+  # A manager of this department; with none yet, any manager (see positions).
+  defp manages_department?(user, nil), do: counts_as_manager?(user)
+  defp manages_department?(user, dept_id), do: role_in(user, dept_id) == :manager
+
+  # The departments of a template's positions; nil positions name nothing.
+  defp template_department_ids(%ShiftTemplate{position: %Position{department_id: id}}), do: [id]
+  defp template_department_ids(%ShiftTemplate{position: nil}), do: []
+
+  defp template_department_ids(%ScheduleTemplate{items: items}) when is_list(items) do
+    if Enum.all?(items, &(is_nil(&1.position) or is_struct(&1.position, Position))),
+      do: for(%{position: %Position{department_id: id}} <- items, uniq: true, do: id),
+      else: :unknown
+  end
+
+  defp template_department_ids(_), do: :unknown
 
   defp departments_or_none([]), do: :none
   defp departments_or_none(ids), do: {:departments, ids}

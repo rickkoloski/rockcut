@@ -10,9 +10,6 @@ defmodule RockcutApi.AuthzParity.PeopleTest do
 
   alias RockcutApi.Accounts
 
-  @bar_members ~w(barMgr bartender1 bartender2 floater newhire dualMgr splitRole)
-  @brewery_members ~w(breweryMgr brewer1 brewer2 floater splitRole)
-  @office_members ~w(office1 hidden dualMgr ownersAsst)
   @employees ~w(bartender1 brewer1 floater office1 sales1 noDept)
 
   setup do
@@ -30,16 +27,12 @@ defmodule RockcutApi.AuthzParity.PeopleTest do
   end
 
   describe "list" do
-    for {who, sees} <- [
-          {"barMgr", @bar_members},
-          {"splitRole", @bar_members},
-          {"dualMgr", Enum.uniq(@bar_members ++ @office_members)},
-          {"breweryMgr", @brewery_members}
-        ] do
-      test "#33 #{who} lists users → members of managed departments only", %{p: p} do
+    # D58 (decision 3): was the members of their managed departments only.
+    for who <- ~w(barMgr splitRole dualMgr breweryMgr) do
+      test "#33 #{who} lists users → everyone (D58)", %{p: p} do
         conn = call(p[unquote(who)], :get, "/api/users")
         assert conn.status == 200
-        assert user_keys(conn, p) == MapSet.new(unquote(sees))
+        assert user_keys(conn, p) == MapSet.new(Map.keys(p))
       end
     end
 
