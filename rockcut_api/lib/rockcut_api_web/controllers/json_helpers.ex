@@ -30,6 +30,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       department_id: m.department_id,
       department_key: maybe_render(m, :department, & &1.key),
       department_name: maybe_render(m, :department, & &1.name),
+      # D59 decision 9: a manager's Users & Roles shows an Owners membership as
+      # a read-only chip from this, since `/api/departments` leaves Owners out.
+      owners_only: maybe_render(m, :department, & &1.owners_only),
       role: m.role
     }
   end
@@ -75,9 +78,12 @@ defmodule RockcutApiWeb.JSONHelpers do
     |> Map.merge(%{user: user(user), capabilities: capabilities})
   end
 
-  @doc "One of `/api/me`'s `task_boards` (D41): `key`, `name`, `color`, `manage`."
+  @doc """
+  One of `/api/me`'s `task_boards` (D41): `key`, `name`, `color`, `manage`, and
+  `scheduling` (D59 gap 2: false on Owners, whose board has no shifts to hide).
+  """
   def task_board_entry(%{department: d, manage: manage}),
-    do: %{key: d.key, name: d.name, color: d.color, manage: manage}
+    do: %{key: d.key, name: d.name, color: d.color, manage: manage, scheduling: d.scheduling}
 
   # ── Idea Boards (D53 Part 2) ──────────────────────────────────────
 

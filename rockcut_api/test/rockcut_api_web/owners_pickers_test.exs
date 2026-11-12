@@ -111,4 +111,46 @@ defmodule RockcutApiWeb.OwnersPickersTest do
                |> json_response(423)
     end
   end
+
+  describe "the assignee refusal (gap 7)" do
+    defp refusal(conn), do: conn |> json_response(422) |> get_in(["errors", "assignee_ids"])
+
+    test "Owners: an Owners member or an owner, on the task board and the Idea Board", %{p: p} do
+      brewer = p["brewer1"]
+      want = ["#{brewer.name} must be an Owners member or an owner"]
+
+      assert call(p["owner"], :post, "/api/boards/owners/tasks", %{
+               title: "Not theirs",
+               due_on: today(),
+               assignee_ids: [brewer.id]
+             })
+             |> refusal() == want
+
+      card = card!(starter("owners", "Ideas"), "Private idea")
+
+      assert call(p["owner"], :patch, "/api/idea_boards/owners/cards/#{card.id}", %{
+               assignee_ids: [brewer.id]
+             })
+             |> refusal() == want
+    end
+
+    test "the article follows the name: an Office member, a Brewery member", %{p: p} do
+      brewer = p["brewer1"]
+      asst = p["ownersAsst"]
+
+      assert call(p["owner"], :post, "/api/boards/office/tasks", %{
+               title: "X",
+               due_on: today(),
+               assignee_ids: [brewer.id]
+             })
+             |> refusal() == ["#{brewer.name} must be an Office member"]
+
+      assert call(p["owner"], :post, "/api/boards/brewery/tasks", %{
+               title: "X",
+               due_on: today(),
+               assignee_ids: [asst.id]
+             })
+             |> refusal() == ["#{asst.name} must be a Brewery member"]
+    end
+  end
 end

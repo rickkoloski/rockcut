@@ -6,14 +6,14 @@ import PageHeader from '../../components/PageHeader'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import UserFormDialog from './UserFormDialog'
 import type { Department, User } from '../../lib/types'
-import { sortMemberships } from '../../lib/userRoles'
+import { membershipLabel, sortMemberships } from '../../lib/userRoles'
 
 // D59 §4.4: in the API's department order, so Owners comes last.
 function rolesSummary(user: User, departments: Department[]): string {
   if (user.is_owner) return 'Owner — all departments'
   const ms = sortMemberships(user.memberships ?? [], departments)
   if (ms.length === 0) return '—'
-  return ms.map((m) => `${m.department_name}: ${m.role}`).join(', ')
+  return ms.map(membershipLabel).join(', ')
 }
 
 const columnsFor = (departments: Department[]): GridColDef<User>[] => [

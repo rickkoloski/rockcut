@@ -21,7 +21,7 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
   alias RockcutApi.Notifications.Notification
 
   setup do
-    p = personas(~w(owner owner2 dualMgr ownersAsst office1))
+    p = personas(~w(owner owner2 dualMgr ownersAsst office1 breweryMgr))
     {_device, token} = taproom_device()
     %{p: p, d: departments(), token: token}
   end
@@ -337,6 +337,81 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
       channels = body(call_device(token, :get, "/api/channels"))["data"]
       refute "dept:owners" in Enum.map(channels, & &1["key"])
       assert call_device(token, :get, "/api/channels/dept:owners/messages").status == 403
+    end
+  end
+
+  describe "who knows Owners exists (decision 9, gap 5)" do
+    defp dept_keys(conn),
+      do: conn |> json_response(200) |> Map.fetch!("data") |> Enum.map(& &1["key"])
+
+    defp roster_departments(conn, user_id) do
+      conn
+      |> json_response(200)
+      |> Map.fetch!("data")
+      |> Enum.find(&(&1["id"] == user_id))
+      |> Map.fetch!("departments")
+    end
+
+    test "/api/departments leaves Owners out for office1, dualMgr and taproomDevice", ctx do
+      for u <- [ctx.p["office1"], ctx.p["dualMgr"]] do
+        keys = dept_keys(call(u, :get, "/api/departments"))
+        assert "office" in keys
+        refute "owners" in keys, "#{u.email} sees Owners"
+      end
+
+      keys = dept_keys(call_device(ctx.token, :get, "/api/departments"))
+      assert "bar" in keys
+      refute "owners" in keys
+    end
+
+    test "/api/departments has Owners, last, for ownersAsst and owner", %{p: p} do
+      for u <- [p["ownersAsst"], p["owner"]] do
+        assert call(u, :get, "/api/departments") |> dept_keys() |> List.last() == "owners"
+      end
+    end
+
+    test "/api/roster leaves Owners out of each person's departments for non-members", ctx do
+      asst = ctx.p["ownersAsst"]
+
+      for u <- [ctx.p["office1"], ctx.p["dualMgr"]] do
+        assert roster_departments(call(u, :get, "/api/roster"), asst.id) == ["office"]
+      end
+
+      assert roster_departments(call_device(ctx.token, :get, "/api/roster"), asst.id) == [
+               "office"
+             ]
+    end
+
+    test "/api/roster names Owners for ownersAsst and owner", %{p: p} do
+      asst = p["ownersAsst"]
+
+      for u <- [p["ownersAsst"], p["owner"]] do
+        assert "owners" in roster_departments(call(u, :get, "/api/roster"), asst.id)
+      end
+    end
+
+    test "dualMgr's Users & Roles keeps the Owners membership (read-only chip), named", %{p: p} do
+      users = call(p["dualMgr"], :get, "/api/users") |> json_response(200) |> Map.fetch!("data")
+      asst = Enum.find(users, &(&1["id"] == p["ownersAsst"].id))
+
+      assert %{"department_name" => "Owners", "owners_only" => true, "role" => "employee"} =
+               Enum.find(asst["memberships"], &(&1["department_key"] == "owners"))
+
+      assert %{"owners_only" => false} =
+               Enum.find(asst["memberships"], &(&1["department_key"] == "office"))
+    end
+
+    test "a not-scheduled refusal doesn't name Owners (gap 6)", %{p: p, d: d} do
+      conn =
+        call(p["breweryMgr"], :post, "/api/positions", %{
+          name: "X",
+          department_id: d["owners"].id,
+          group: "X"
+        })
+
+      assert json_response(conn, 422) == %{
+               "errors" => %{"department_id" => ["That department isn't on the schedule"]}
+             }
     end
   end
 end

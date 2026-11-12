@@ -161,7 +161,7 @@ defmodule RockcutApiWeb.OwnersMembershipTest do
           %{"department" => "owners", "role" => "employee"}
         ])
 
-      assert json_response(conn, 403) == %{"error" => "Cannot manage department: owners"}
+      assert json_response(conn, 403) == %{"error" => "You can't assign roles in that department"}
       assert roles(p["dualMgr"]) == before
     end
 
@@ -200,7 +200,7 @@ defmodule RockcutApiWeb.OwnersMembershipTest do
           ]
         })
 
-      assert json_response(conn, 403) == %{"error" => "Cannot assign roles in department: owners"}
+      assert json_response(conn, 403) == %{"error" => "You can't assign roles in that department"}
       refute Accounts.get_user_by_email("sneaky@rockcut-test.com")
     end
 

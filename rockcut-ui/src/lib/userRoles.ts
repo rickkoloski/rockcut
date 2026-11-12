@@ -26,12 +26,20 @@ export function membershipsPayload(editable: Department[], roles: Record<string,
     .map((d) => ({ department: d.key, role: d.owners_only ? 'employee' : (roles[d.key] as Role) }))
 }
 
-/** The person's `owners_only` departments the actor can't change: shown as read-only chips. */
-export function readOnlyOwnersOnly(memberships: Membership[] | null | undefined, departments: Department[], editable: Department[]): Department[] {
-  const keys = new Set((memberships ?? []).map((m) => m.department_key))
+/**
+ * The person's `owners_only` memberships the actor can't change: shown as
+ * read-only chips. From the membership itself (D59 decision 9): a manager's
+ * `/api/departments` leaves Owners out.
+ */
+export function readOnlyOwnersOnly(memberships: Membership[] | null | undefined, editable: Department[]): { key: string; name: string }[] {
   const editableKeys = new Set(editable.map((d) => d.key))
-  return departments.filter((d) => d.owners_only && keys.has(d.key) && !editableKeys.has(d.key))
+  return (memberships ?? [])
+    .filter((m) => m.owners_only && m.department_key && !editableKeys.has(m.department_key))
+    .map((m) => ({ key: m.department_key as string, name: m.department_name ?? m.department_key as string }))
 }
+
+/** "Brewery: manager", "Owners: member" (D59 gap 3: an `owners_only` membership is a member, as in the dialog). */
+export const membershipLabel = (m: Membership): string => `${m.department_name}: ${m.owners_only ? 'member' : m.role}`
 
 /** Memberships in the API's department order (Owners last); unknown departments at the end. */
 export function sortMemberships(memberships: Membership[], departments: Department[]): Membership[] {

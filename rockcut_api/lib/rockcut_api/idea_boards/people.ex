@@ -105,14 +105,14 @@ defmodule RockcutApi.IdeaBoards.People do
 
   defp refusals(users, board) do
     {named, others} = Enum.split(users, @named)
-    where = IdeaBoards.board_name(board)
 
     Enum.map(named, fn user ->
       who = if user, do: user.name, else: "That person"
 
-      if board == :company,
-        do: "#{who} can't be assigned",
-        else: "#{who} must be a #{where} member"
+      case board do
+        {:department, dept} -> Assignees.not_a_member(who, dept)
+        :company -> "#{who} can't be assigned"
+      end
     end) ++ if(others == [], do: [], else: ["#{length(others)} more can't be assigned"])
   end
 

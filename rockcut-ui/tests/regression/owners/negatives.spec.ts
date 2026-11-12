@@ -15,6 +15,20 @@ test.describe.configure({ mode: 'default', timeout: 60_000 })
 
 const range = `from=${denverToday()}&to=${denverToday()}`
 
+/**
+ * Decision 9 (gap 5): the API's department list and every person's roster
+ * departments leave Owners out, so a non-member can't tell it exists.
+ */
+async function noOwnersInLists(persona: PersonaKey) {
+  const api = await apiAs(persona)
+  const depts = (await (await api.get('/api/departments')).json()).data as { key: string }[]
+  expect(depts.map((d) => d.key)).not.toContain(OWNERS)
+  expect(depts.length).toBeGreaterThan(0)
+  const roster = (await (await api.get('/api/roster')).json()).data as { name: string; departments: string[] }[]
+  expect(roster.find((r) => r.name === 'Ellis Assist')?.departments).toEqual(['office'])
+  expect(roster.flatMap((r) => r.departments)).not.toContain(OWNERS)
+}
+
 /** What a non-member sees and gets: no Owners in any list, typed URLs go elsewhere, the API refuses. */
 async function refusedEverywhere(page: Page, persona: PersonaKey, home: string, boards: string[], ideaBoards: string[]) {
   await openTaskBoard(page, `/tasks/${home}`)
@@ -45,6 +59,7 @@ async function refusedEverywhere(page: Page, persona: PersonaKey, home: string, 
   expect(await status(persona, 'POST', '/api/channels/dept:owners/messages', { body: '[TEST-TEMP] never' })).toBe(403)
   const channels = (await (await (await apiAs(persona)).get('/api/channels')).json()).data as { key: string }[]
   expect(channels.map((c) => c.key)).not.toContain('dept:owners')
+  await noOwnersInLists(persona)
 }
 
 test.describe('dualMgr', () => {
@@ -131,6 +146,8 @@ test.describe('dualMgr', () => {
       ]) {
         const res = await api.put(`/api/users/${me}/memberships`, { data: { memberships } })
         expect(res.status(), await res.text()).toBe(403)
+        // Gap 6: the refusal doesn't name the department.
+        expect(await res.json()).toEqual({ error: "You can't assign roles in that department" })
         expect(await membershipsOf('dualMgr')).toEqual(before)
       }
     } finally {
@@ -170,5 +187,6 @@ test.describe('taproomDevice', () => {
     expect(await status('taproomDevice', 'GET', '/api/channels/dept:owners/messages')).toBe(403)
     // The same answer as another non-home board.
     expect(await status('taproomDevice', 'GET', `/api/boards/brewery/tasks?${range}`)).toBe(403)
+    await noOwnersInLists('taproomDevice')
   })
 })

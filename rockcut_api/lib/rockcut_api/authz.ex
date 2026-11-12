@@ -258,6 +258,14 @@ defmodule RockcutApi.Authz do
 
   def can?(%User{is_owner: true}, _action, _resource), do: true
 
+  # D59 decision 9: an owners-only department (Owners) exists, in any list or
+  # person's departments, only for owners (above) and its members. Every other
+  # department is seen by everyone.
+  def can?(%User{} = user, :see, {:department, %Department{owners_only: true} = dept}),
+    do: member_of?(user, dept)
+
+  def can?(%User{}, :see, {:department, %Department{}}), do: true
+
   # Scheduling — shifts: global read of published; department-scoped write;
   # employees may claim open published shifts in their own department.
   def can?(%User{} = user, action, %Shift{} = shift) do

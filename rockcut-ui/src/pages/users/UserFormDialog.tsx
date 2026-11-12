@@ -50,7 +50,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     ? departments.filter((d) => d.assignable !== false).map((d) => d.key)
     : capabilities?.manages_departments ?? []
   const manageableDepts = editableDepartments(departments, isOwnerActor, managedKeys)
-  const lockedDepts = readOnlyOwnersOnly(editUser?.memberships, departments, manageableDepts)
+  const lockedDepts = readOnlyOwnersOnly(editUser?.memberships, manageableDepts)
 
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')

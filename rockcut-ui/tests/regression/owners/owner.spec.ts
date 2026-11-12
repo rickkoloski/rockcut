@@ -5,7 +5,7 @@ import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/hel
 import { createDevice, deleteDevices } from '../devices/helpers'
 import { denverUtc, openScheduler } from '../scheduler/helpers'
 import { openUser } from '../taproom/helpers'
-import { choiceOptions, settingsItem } from '../settingsMenu'
+import { choiceOptions, closeSettings, openSettings, settingsItem } from '../settingsMenu'
 import {
   OWNERS,
   addDays,
@@ -229,7 +229,7 @@ test.describe('O9: Owners is not on the schedule', () => {
   test('O9 (API): a position or event in Owners → 422; no Owners calendar feed, and rotating one → 404', async () => {
     const owner = await apiAs('owner')
     const ownersId = await deptId(owner, OWNERS)
-    const refused = { department_id: ["Owners isn't on the schedule"] }
+    const refused = { department_id: ["That department isn't on the schedule"] }
 
     const pos = await owner.post('/api/positions', { data: { name: tempTag('O9 Chair').slice(0, 60), department_id: ownersId } })
     if (pos.status() === 201) await owner.delete(`/api/positions/${(await pos.json()).data.id}`)
@@ -316,5 +316,19 @@ test('§4.4: Owners last in the Idea Boards (before Company), Messages and Users
   // ownersAsst's roles: Office, then Owners.
   await page.goto('/users')
   const row = page.getByRole('row').filter({ hasText: 'Ellis Assist' })
-  await expect(row).toContainText('Office: employee, Owners: employee')
+  // Gap 3: an Owners membership reads "member", as in the dialog.
+  await expect(row).toContainText('Office: employee, Owners: member')
+})
+
+test('Gap 2: the Owners board settings have no Hide shifts (no shifts); Brewery keeps it', async ({ page }) => {
+  await openTaskBoard(page, '/tasks/owners')
+  await openSettings(page, 'board-settings')
+  await expect(page.getByTestId('board-hide-completed')).toBeVisible()
+  await expect(page.getByTestId('board-hide-shifts')).toHaveCount(0)
+  await closeSettings(page)
+
+  await openTaskBoard(page, '/tasks/brewery')
+  await openSettings(page, 'board-settings')
+  await expect(page.getByTestId('board-hide-shifts')).toBeVisible()
+  await closeSettings(page)
 })

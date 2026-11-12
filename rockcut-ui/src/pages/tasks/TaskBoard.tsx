@@ -580,7 +580,8 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
         noMine={isDevice}
         onHideCompleted={toggleHide}
         hideShifts={hideShifts}
-        onHideShifts={toggleHideShifts}
+        // D59: Owners isn't on the schedule, so it has no shifts to hide.
+        onHideShifts={boardEntry.scheduling === false ? undefined : toggleHideShifts}
         // D49: only the Brewery board has the schedule's tasks; a tablet shows them all.
         showPlanned={dept === 'brewery' && !isDevice ? showPlanned : undefined}
         onShowPlanned={(show) => setShowPlanned(show).catch((err) => setToast({ message: taskError(err), error: true }))}

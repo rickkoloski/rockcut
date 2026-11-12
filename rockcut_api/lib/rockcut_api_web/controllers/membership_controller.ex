@@ -25,8 +25,11 @@ defmodule RockcutApiWeb.MembershipController do
             {:error, :device_account} = error ->
               error
 
-            {:error, {:unauthorized_department, key}} ->
-              conn |> put_status(:forbidden) |> json(%{error: "Cannot manage department: #{key}"})
+            # D59 gap 6: no department key, so a manager isn't told Owners exists.
+            {:error, {:unauthorized_department, _key}} ->
+              conn
+              |> put_status(:forbidden)
+              |> json(%{error: "You can't assign roles in that department"})
 
             {:error, {:invalid_membership, msg}} ->
               conn |> put_status(:unprocessable_entity) |> json(%{errors: %{memberships: [msg]}})

@@ -19,7 +19,7 @@ defmodule RockcutApiWeb.OwnersNotScheduledTest do
   alias RockcutApi.Repo
   alias RockcutApi.Scheduling.{Position, ScheduleEvent, ScheduleEventSeries, Shift}
 
-  @refused %{"department_id" => ["Owners isn't on the schedule"]}
+  @refused %{"department_id" => ["That department isn't on the schedule"]}
 
   setup do
     %{p: personas(~w(owner barMgr)), d: departments()}
@@ -107,7 +107,7 @@ defmodule RockcutApiWeb.OwnersNotScheduledTest do
 
     test "Shift.changeset refuses department_id Owners directly", %{d: d} do
       cs = Shift.changeset(%Shift{}, %{department_id: d["owners"].id})
-      assert {"Owners isn't on the schedule", _} = cs.errors[:department_id]
+      assert {"That department isn't on the schedule", _} = cs.errors[:department_id]
     end
   end
 
@@ -201,7 +201,7 @@ defmodule RockcutApiWeb.OwnersNotScheduledTest do
 
     test "ScheduleEventSeries.changeset refuses Owners directly", %{d: d} do
       cs = ScheduleEventSeries.changeset(%ScheduleEventSeries{}, %{department_id: d["owners"].id})
-      assert {"Owners isn't on the schedule", _} = cs.errors[:department_id]
+      assert {"That department isn't on the schedule", _} = cs.errors[:department_id]
     end
   end
 end

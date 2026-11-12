@@ -231,6 +231,8 @@ export interface Membership {
   department_id: number
   department_key: string | null
   department_name: string | null
+  /** D59: Owners. Null when the department wasn't loaded. */
+  owners_only?: boolean | null
   role: Role
 }
 
@@ -303,6 +305,8 @@ export interface TaskBoardEntry {
   name: string
   color?: string | null
   manage: boolean
+  /** D59: false on a board that isn't on the schedule (Owners); absent on All departments. */
+  scheduling?: boolean
 }
 
 // ── Shared devices (D33) ────────────────────────────────────────────

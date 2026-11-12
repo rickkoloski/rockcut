@@ -37,15 +37,16 @@ defmodule RockcutApi.Changeset do
   @doc """
   D59 §4.2: when `field` (a department id) changes to a department that isn't
   on the schedule (`scheduling: false`, e.g. Owners), add
-  `{field, "<name> isn't on the schedule"}`. Positions, shifts and schedule
-  events can't be in one. An unknown id is left to `validate_parents/2`.
+  `{field, "That department isn't on the schedule"}` (no name: someone who
+  can't see Owners mustn't learn it from this, D59 gap 6). Positions, shifts
+  and schedule events can't be in one. An unknown id is left to `validate_parents/2`.
   """
   def validate_scheduled_department(%Changeset{} = changeset, field \\ :department_id) do
     with {:ok, id} when not is_nil(id) <- Changeset.fetch_change(changeset, field),
          false <- Keyword.has_key?(changeset.errors, field),
          id when not is_nil(id) <- RockcutApi.Ids.parse(id),
-         %{scheduling: false, name: name} <- Repo.get(RockcutApi.Accounts.Department, id) do
-      Changeset.add_error(changeset, field, "#{name} isn't on the schedule",
+         %{scheduling: false} <- Repo.get(RockcutApi.Accounts.Department, id) do
+      Changeset.add_error(changeset, field, "That department isn't on the schedule",
         validation: :scheduled_department
       )
     else

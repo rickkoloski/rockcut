@@ -73,6 +73,14 @@ defmodule RockcutApi.Accounts do
   end
 
   @doc """
+  The departments `viewer` may know exist (D59 decision 9: an owners-only one
+  only for owners and its members), in `list_departments/0`'s order.
+  """
+  def list_departments_for(%User{} = viewer) do
+    Enum.filter(list_departments(), &Authz.can?(viewer, :see, {:department, &1}))
+  end
+
+  @doc """
   D59 §4.4: the one department order. `by` (`:name` or `:id`) orders them,
   except that owners-only departments (Owners) come after all the rest.
   """
@@ -90,8 +98,14 @@ defmodule RockcutApi.Accounts do
     department |> Department.changeset(attrs) |> Repo.update()
   end
 
-  @doc "Minimal staff roster (active users) for schedule display — readable by anyone signed in."
-  def list_roster do
+  @doc """
+  Minimal staff roster (active users) for schedule display — readable by anyone
+  signed in. Each person's `departments` leave out those `viewer` can't see
+  (D59 decision 9).
+  """
+  def list_roster(%User{} = viewer) do
+    visible = viewer |> list_departments_for() |> MapSet.new(& &1.key)
+
     persons_query()
     |> where([u], u.active == true and u.schedulable == true)
     |> order_by([u], asc: u.schedule_order, asc: u.name, asc: u.email)
@@ -101,7 +115,11 @@ defmodule RockcutApi.Accounts do
       %{
         id: u.id,
         name: u.name || u.email,
-        departments: u.memberships |> Enum.map(& &1.department.key) |> Enum.uniq()
+        departments:
+          u.memberships
+          |> Enum.map(& &1.department.key)
+          |> Enum.filter(&MapSet.member?(visible, &1))
+          |> Enum.uniq()
       }
     end)
   end
