@@ -188,17 +188,15 @@ function OldCategoryRedirect() {
  * 4 seconds again); a failure or timeout shows "Can't reach the server" as before.
  */
 function LoadingScreen({ unreachable, onRetry }: { unreachable?: boolean; onRetry?: () => void }) {
-  const [slow, setSlow] = useState(false)
   const [attempt, setAttempt] = useState(0)
-  useEffect(() => {
-    setSlow(false)
-    return watchSlowStart(() => setSlow(true))
-  }, [attempt])
+  // The attempt that has been slow; a Retry is a new attempt, not yet slow.
+  const [slowAttempt, setSlowAttempt] = useState<number | null>(null)
+  useEffect(() => watchSlowStart(() => setSlowAttempt(attempt)), [attempt])
   const retry = () => {
     setAttempt((a) => a + 1)
     onRetry?.()
   }
-  const notice = loadingNotice(slow, !!unreachable)
+  const notice = loadingNotice(slowAttempt === attempt, !!unreachable)
   return (
     <Box
       sx={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center', justifyContent: 'center', px: 2 }}
