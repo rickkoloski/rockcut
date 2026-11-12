@@ -173,8 +173,9 @@ Nothing changes at 412 px and above.
 
 ### 3.12 Buy-a-Beer import and dialog follow-ups (4118 items 2–6)
 
-- **Blank extra header:** a column with a blank header is listed as "(blank)" in "Ignored
-  columns".
+- **Blank extra header:** a column with a blank header and data in at least one row is listed as
+  "(blank)" in "Ignored columns". Empty columns (a spreadsheet's trailing ones) aren't listed
+  (Matt, 2026-11-12).
 - **Long ignored headers** wrap inside the import dialog, so it doesn't overflow.
 - **Repeated extra columns** are listed once.
 - **Redeem after the entry was removed:** after "This entry was already removed", the Redeem

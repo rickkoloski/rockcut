@@ -104,15 +104,20 @@ defmodule RockcutApi.BeerBoardCsvTest do
                Csv.parse("For,Bought by,Notes\nPat,Chris,x\n")
     end
 
-    test "D58 §3.12: a blank header is listed as (blank), and a repeated one once" do
-      assert {:ok, [_], ["(blank)"]} = Csv.parse("For,Bought by,Beers,\nPat,Chris,1,\n")
+    test "D58 §3.12: a blank header with data is listed as (blank), and a repeated one once" do
       assert {:ok, [_], ["(blank)"]} = Csv.parse("For,,Bought by,Beers\nPat,x,Chris,1\n")
+      assert {:ok, [_], ["(blank)"]} = Csv.parse("For,Bought by,Beers,\nPat,Chris,1,x\n")
 
       assert {:ok, [_], ["Notes"]} =
                Csv.parse("For,Bought by,Beers,Notes,Notes\nPat,Chris,1,a,b\n")
 
       assert {:ok, [_], ["Notes", "(blank)"]} =
-               Csv.parse("For,Bought by,Beers,Notes,, notes ,\nPat,Chris,1,a,,b,\n")
+               Csv.parse("For,Bought by,Beers,Notes,, notes ,\nPat,Chris,1,a,,b,c\n")
+    end
+
+    test "D58 §3.12: a spreadsheet's empty trailing columns aren't listed" do
+      assert {:ok, [_], []} = Csv.parse("For,Bought by,Beers,,,\nPat,Chris,1,,,\n")
+      assert {:ok, [_, _], []} = Csv.parse("For,Bought by,Beers,\nPat,Chris,1, \nLee,Sam,2,\n")
     end
 
     test "a bad date, an over-long name" do

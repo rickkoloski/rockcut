@@ -22,12 +22,12 @@ test.afterAll(async () => {
 test.describe('barMgr', () => {
   test.use({ storageState: authFile('barMgr') })
 
-  test('S22: import: a blank header is "(blank)", a repeated one is listed once, a long one wraps', async ({ page }) => {
+  test('S22: import: a blank header with data is "(blank)", an empty one is quiet, a repeated one is listed once, a long one wraps', async ({ page }) => {
     // Preview and Cancel only: nothing is written.
     const long = 'X'.repeat(600)
-    await previewImport(page, csvFile(['[TEST-TEMP] Pat,Lee,1,a,,b,c,d'], `For,Bought by,Beers,Notes,,Notes,${long},`))
+    await previewImport(page, csvFile(['[TEST-TEMP] Pat,Lee,1,a,,b,c,d,'], `For,Bought by,Beers,Notes,,Notes,${long},,`))
     const ignored = page.getByTestId('import-ignored-columns')
-    await expect(ignored).toHaveText(`Ignored columns: Notes, (blank), ${long}`)
+    await expect(ignored).toHaveText(`Ignored columns: Notes, ${long}, (blank)`)
     const box = (await ignored.boundingBox())!
     const frame = (await page.locator('.MuiDialog-paper').filter({ has: ignored }).boundingBox())!
     expect(box.x + box.width).toBeLessThanOrEqual(frame.x + frame.width)

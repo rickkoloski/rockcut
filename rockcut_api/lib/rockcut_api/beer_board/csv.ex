@@ -48,7 +48,7 @@ defmodule RockcutApi.BeerBoard.Csv do
     with :ok <- check_size(binary),
          {:ok, text} <- decode(binary),
          {:ok, [header | lines]} <- split(text),
-         {:ok, columns, ignored} <- map_header(header),
+         {:ok, columns, ignored} <- map_header(header, lines),
          {:ok, rows} <-
            lines
            |> Enum.with_index(2)
@@ -83,8 +83,9 @@ defmodule RockcutApi.BeerBoard.Csv do
 
   # Column index → field, plus the headers of the columns it doesn't know
   # (ignored: hand-kept sheets often have a Notes column). D58 §3.12 (4118
-  # item 2): a blank header is listed as "(blank)", and a repeated one once.
-  defp map_header(header) do
+  # item 2): a blank header is listed as "(blank)" when its column has data
+  # (a spreadsheet's trailing empty columns stay quiet), and a repeated one once.
+  defp map_header(header, lines) do
     all =
       header
       |> Enum.with_index()
@@ -93,7 +94,12 @@ defmodule RockcutApi.BeerBoard.Csv do
     named = Enum.reject(all, fn {name, _} -> name == "" end)
 
     ignored =
-      for({name, _} <- all, not Map.has_key?(@headers, normalize_header(name)), do: name)
+      for(
+        {name, i} <- all,
+        not Map.has_key?(@headers, normalize_header(name)),
+        name != "" or column_has_data?(lines, i),
+        do: name
+      )
       |> Enum.map(&if(&1 == "", do: "(blank)", else: &1))
       |> Enum.uniq_by(&normalize_header/1)
 
@@ -126,6 +132,9 @@ defmodule RockcutApi.BeerBoard.Csv do
         {:error, errors}
     end
   end
+
+  defp column_has_data?(lines, i),
+    do: Enum.any?(lines, &(String.trim(Enum.at(&1, i) || "") != ""))
 
   defp normalize_header(name), do: name |> String.replace(~r/\s+/u, " ") |> String.downcase()
 
