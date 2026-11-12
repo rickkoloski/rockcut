@@ -20,6 +20,7 @@ import {
   readBoard,
   BOARD_DEFAULTS,
   boardRange,
+  isDateKey,
   boardSettings,
   carryOver,
   missingLocalSettings,
@@ -395,11 +396,11 @@ describe('the 31-day clamp (D58 §3.2)', () => {
   const fallback = { from: '2026-11-11', to: '2026-11-24' }
 
   it('no range in the URL: the default, nothing to fix', () => {
-    expect(boardRange('', '', fallback)).toEqual({ ...fallback, inUrl: false, clamped: false, fix: null })
+    expect(boardRange('', '', fallback)).toEqual({ ...fallback, inUrl: false, clamped: false, invalid: false, fix: null })
   })
 
   it('up to 31 days shows as asked', () => {
-    expect(boardRange('2026-11-01', '2026-12-01', fallback)).toEqual({ from: '2026-11-01', to: '2026-12-01', inUrl: true, clamped: false, fix: null })
+    expect(boardRange('2026-11-01', '2026-12-01', fallback)).toEqual({ from: '2026-11-01', to: '2026-12-01', inUrl: true, clamped: false, invalid: false, fix: null })
     expect(boardRange('2026-11-05', '2026-11-05', fallback).fix).toBeNull()
   })
 
@@ -409,18 +410,35 @@ describe('the 31-day clamp (D58 §3.2)', () => {
       to: '2026-12-01',
       inUrl: true,
       clamped: true,
+      invalid: false,
       fix: { from: '2026-11-01', to: '2026-12-01' },
     })
     // 32 days, across a year.
     expect(boardRange('2026-12-15', '2027-01-15', fallback).to).toBe('2027-01-14')
   })
 
-  it('an invalid range shows the default, and the URL loses it', () => {
-    const invalid = { ...fallback, inUrl: false, clamped: false, fix: { from: '', to: '' } }
+  it('an invalid range shows the default, with the notice, and the URL loses it', () => {
+    const invalid = { ...fallback, inUrl: false, clamped: false, invalid: true, fix: { from: '', to: '' } }
     expect(boardRange('2026-11-10', '2026-11-01', fallback)).toEqual(invalid)
     expect(boardRange('2026-13-40', '2026-11-20', fallback)).toEqual(invalid)
     expect(boardRange('soon', 'later', fallback)).toEqual(invalid)
     expect(boardRange('2026-11-01', '', fallback)).toEqual(invalid)
+  })
+
+  // Lead decisions 1 (DEV QA gap 4): dates the calendar doesn't have.
+  it('a date the calendar does not have is invalid, like garbage', () => {
+    const invalid = { ...fallback, inUrl: false, clamped: false, invalid: true, fix: { from: '', to: '' } }
+    expect(boardRange('2026-02-30', '2026-03-05', fallback)).toEqual(invalid)
+    expect(boardRange('2026-11-31', '2026-12-05', fallback)).toEqual(invalid)
+    expect(boardRange('2026-02-01', '2026-02-30', fallback)).toEqual(invalid)
+    expect(boardRange('2027-02-29', '2027-03-01', fallback)).toEqual(invalid)
+    // A leap day is a date.
+    expect(boardRange('2028-02-29', '2028-03-01', fallback).invalid).toBe(false)
+  })
+
+  it('isDateKey: only YYYY-MM-DD dates the calendar has', () => {
+    for (const ok of ['2026-11-30', '2028-02-29', '2026-12-31']) expect(isDateKey(ok)).toBe(true)
+    for (const bad of ['2026-02-30', '2026-11-31', '2027-02-29', '2026-13-01', '2026-00-10', '2026-1-01', '', null]) expect(isDateKey(bad)).toBe(false)
   })
 })
 

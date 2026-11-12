@@ -1,21 +1,25 @@
 import { Alert, Snackbar } from '@mui/material'
-import { MAX_RANGE_DAYS } from '../../lib/tasks'
+import { MAX_RANGE_DAYS, type RangeNotice } from '../../lib/tasks'
 
 interface Props {
-  /** D58 §3.2: the URL asked for more than 31 days. */
-  clamped: boolean
+  rangeNotice: RangeNotice | null
   /** D58 §3.1: a board setting didn't save. */
   notSaved: boolean
   onNotSavedClose: () => void
 }
 
-/** A board's notes about its view (`useBoardView`): the 31-day clamp, and a quiet "Not saved". */
-export default function BoardViewNotices({ clamped, notSaved, onNotSavedClose }: Props) {
+/** A board's notes about its view (`useBoardView`): a corrected range, and a quiet "Not saved". */
+export default function BoardViewNotices({ rangeNotice, notSaved, onNotSavedClose }: Props) {
   return (
     <>
-      {clamped && (
+      {rangeNotice === 'clamped' && (
         <Alert severity="info" sx={{ mb: 1 }} data-testid="range-clamped">
           Showing {MAX_RANGE_DAYS} days (the most a board shows)
+        </Alert>
+      )}
+      {rangeNotice === 'invalid' && (
+        <Alert severity="info" sx={{ mb: 1 }} data-testid="range-invalid">
+          That date range wasn't valid, so the board shows the default.
         </Alert>
       )}
       <Snackbar

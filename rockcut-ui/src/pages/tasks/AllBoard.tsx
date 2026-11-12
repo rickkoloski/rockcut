@@ -53,7 +53,7 @@ export default function AllBoard({ board: entry, boards }: Props) {
   const {
     from, to, highlighted, hideCompleted, phoneView, phone, wide,
     setBoardEl, step, showToday, pickSpan, toggleHide, setPhoneView, firstDay, pickFirstDay,
-    view, setView, clampNotice, notSaved, clearNotSaved,
+    view, setView, rangeNotice, notSaved, clearNotSaved,
   } = useBoardView(ALL_BOARDS)
   // "My tasks" isn't offered here (nor saved, D58).
   const filter: TaskFilter = view === 'mine' ? 'all' : view
@@ -184,7 +184,7 @@ export default function AllBoard({ board: entry, boards }: Props) {
         phoneView={phoneView}
         onPhoneView={setPhoneView}
       />
-      <BoardViewNotices clamped={clampNotice} notSaved={notSaved} onNotSavedClose={clearNotSaved} />
+      <BoardViewNotices rangeNotice={rangeNotice} notSaved={notSaved} onNotSavedClose={clearNotSaved} />
       {isError && !data && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !data && <CircularProgress />}
       {data && (

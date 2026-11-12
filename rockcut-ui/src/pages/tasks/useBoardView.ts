@@ -21,6 +21,7 @@ import {
   type BoardSettings,
   type FirstDay,
   type PhoneView,
+  type RangeNotice,
   type Span,
   type TaskFilter,
 } from '../../lib/tasks'
@@ -48,7 +49,8 @@ const carried = new Set<string>()
  * account (`/api/me`'s `board_settings`); a failed save keeps the change for
  * this page and sets `notSaved`. A board this account has nothing saved for
  * takes this browser's old local choices, saved once (`carryOver`). A URL
- * range over 31 days shows 31 (`clampNotice`), and the URL is corrected.
+ * range over 31 days shows 31, an invalid one the default, and the URL is
+ * corrected, with a notice (`rangeNotice`).
  */
 export function useBoardView(board: string) {
   const [params, setParams] = useSearchParams()
@@ -122,8 +124,9 @@ export function useBoardView(board: string) {
   }, [day])
 
   // D58 §3.2: a range over 31 days, or an invalid one, is corrected in the
-  // URL (replace). `?day=` goes first: it sets its own range.
-  const [clamped, setClamped] = useState<string | null>(null)
+  // URL (replace), with a notice while the corrected range shows. `?day=`
+  // goes first: it sets its own range.
+  const [corrected, setCorrected] = useState<{ notice: RangeNotice; at: string } | null>(null)
   useEffect(() => {
     if (day !== null || !range.fix) return
     const next = new URLSearchParams(params)
@@ -134,13 +137,14 @@ export function useBoardView(board: string) {
       next.delete('from')
       next.delete('to')
     }
-    if (range.clamped) setClamped(`${range.fix.from}/${range.fix.to}`)
+    if (range.clamped) setCorrected({ notice: 'clamped', at: `${range.fix.from}/${range.fix.to}` })
+    if (range.invalid) setCorrected({ notice: 'invalid', at: `${range.from}/${range.to}` })
     setParams(next, { replace: true })
     // Once per URL range.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlFrom, urlTo, day])
-  /** "Showing 31 days (the most a board shows)", while the clamped range shows. */
-  const clampNotice = clamped === `${from}/${to}`
+  /** Why the URL's range was corrected, while the corrected range shows. */
+  const rangeNotice: RangeNotice | null = corrected?.at === `${from}/${to}` ? corrected.notice : null
 
   const showRange = (f: string, t: string) => setParams({ from: f, to: t })
   /**
@@ -187,7 +191,7 @@ export function useBoardView(board: string) {
     toggleHideShifts: (on: boolean) => save({ hide_shifts: on }),
     setPhoneView: (v: PhoneView) => save({ phone_view: v }),
     setView: (v: TaskFilter) => save({ view: v }),
-    clampNotice,
+    rangeNotice,
     /** D58: a setting didn't save (it stays for this page): a quiet "Not saved". */
     notSaved,
     clearNotSaved: () => setNotSaved(false),

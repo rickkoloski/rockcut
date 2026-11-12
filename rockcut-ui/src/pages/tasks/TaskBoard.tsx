@@ -106,7 +106,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
   const {
     from, to, highlighted, hideCompleted, hideShifts, phoneView, phone, wide, focus, clearFocus,
     setBoardEl, step, showToday, pickSpan, toggleHide, toggleHideShifts, setPhoneView, firstDay, pickFirstDay,
-    view, setView, clampNotice, notSaved, clearNotSaved,
+    view, setView, rangeNotice, notSaved, clearNotSaved,
   } = useBoardView(dept)
   // D40: a shared tablet has no "My tasks".
   const filter: TaskFilter = isDevice && view === 'mine' ? 'all' : view
@@ -595,7 +595,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
         phoneView={phoneView}
         onPhoneView={setPhoneView}
       />
-      <BoardViewNotices clamped={clampNotice} notSaved={notSaved} onNotSavedClose={clearNotSaved} />
+      <BoardViewNotices rangeNotice={rangeNotice} notSaved={notSaved} onNotSavedClose={clearNotSaved} />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}
       {board && (

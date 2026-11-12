@@ -160,7 +160,10 @@ export function dayCount(from: string, to: string): number {
 
 /** A valid "YYYY-MM-DD" date key. */
 export function isDateKey(value: string | null): value is string {
-  return !!value && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T12:00:00Z`))
+  if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  // A date the calendar has: 2026-02-30 would roll over to March 2 (DEV QA gap 4).
+  const date = new Date(`${value}T12:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === value
 }
 
 /** Why a From–To pair can't be shown, or null when it can. */
@@ -174,25 +177,34 @@ export function rangeError(from: string, to: string): string | null {
 export const spanEnd = (from: string, span: number) => addDaysKey(from, span - 1)
 
 /**
+ * D58 §3.2: why a board URL's range was corrected: more than 31 days, or
+ * (lead decisions 1) a range that wasn't valid.
+ */
+export type RangeNotice = 'clamped' | 'invalid'
+
+/**
  * D58 §3.2: the range a board shows for the URL's `from`/`to`. No range is the
  * `fallback` (the default), as before. Over 31 days shows `from` plus 30
- * (`clamped`); an invalid one (a bad date, To before From, one of the two
- * missing) shows the fallback. `fix` is what the URL should become, replaced
- * not pushed: the clamped range, or no range for an invalid one (the default,
- * as Today leaves it); null when the URL is fine.
+ * (`clamped`); an invalid one (a bad date or one the calendar doesn't have,
+ * To before From, one of the two missing) shows the fallback (`invalid`).
+ * `fix` is what the URL should become, replaced not pushed: the clamped
+ * range, or no range for an invalid one (the default, as Today leaves it);
+ * null when the URL is fine.
  */
 export function boardRange(
   urlFrom: string,
   urlTo: string,
   fallback: { from: string; to: string },
-): { from: string; to: string; inUrl: boolean; clamped: boolean; fix: { from: string; to: string } | null } {
-  if (!urlFrom && !urlTo) return { ...fallback, inUrl: false, clamped: false, fix: null }
+): { from: string; to: string; inUrl: boolean; clamped: boolean; invalid: boolean; fix: { from: string; to: string } | null } {
+  if (!urlFrom && !urlTo) return { ...fallback, inUrl: false, clamped: false, invalid: false, fix: null }
   if (isDateKey(urlFrom) && isDateKey(urlTo) && urlTo >= urlFrom) {
-    if (dayCount(urlFrom, urlTo) <= MAX_RANGE_DAYS) return { from: urlFrom, to: urlTo, inUrl: true, clamped: false, fix: null }
+    if (dayCount(urlFrom, urlTo) <= MAX_RANGE_DAYS) return { from: urlFrom, to: urlTo, inUrl: true, clamped: false, invalid: false, fix: null }
     const to = spanEnd(urlFrom, MAX_RANGE_DAYS)
-    return { from: urlFrom, to, inUrl: true, clamped: true, fix: { from: urlFrom, to } }
+    return { from: urlFrom, to, inUrl: true, clamped: true, invalid: false, fix: { from: urlFrom, to } }
   }
-  return { ...fallback, inUrl: false, clamped: false, fix: { from: '', to: '' } }
+  // Garbage, a date the calendar doesn't have, reversed, or half a range
+  // (lead decisions 1, DEV QA gaps 4, 5): the default, with a notice.
+  return { ...fallback, inUrl: false, clamped: false, invalid: true, fix: { from: '', to: '' } }
 }
 
 const dayFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })

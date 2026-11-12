@@ -257,11 +257,24 @@ test.describe('breweryMgr', () => {
     await expect(page.getByTestId('range-clamped')).toHaveCount(0)
   })
 
-  test('S6: an invalid range (To before From) shows the default two weeks and drops it from the URL', async ({ page }) => {
-    await openBoard(page, `/tasks/brewery?from=${addDays(today(), 5)}&to=${today()}`)
-    await expect.poll(() => new URL(page.url()).search).toBe('')
-    await expect.poll(async () => (await shownDays(page))[0]).toBe(today())
-    expect((await shownDays(page)).length).toBe(14)
-    await expect(page.getByTestId('range-clamped')).toHaveCount(0)
-  })
+  // Lead decisions 1 (DEV QA gaps 4, 5): reversed, garbage and dates the
+  // calendar doesn't have all say so.
+  for (const [label, query] of [
+    ['To before From', () => `from=${addDays(today(), 5)}&to=${today()}`],
+    ['garbage', () => 'from=banana&to=2026-13-45'],
+    ['Feb 30', () => 'from=2026-02-30&to=2026-03-05'],
+    ['Nov 31', () => 'from=2026-11-31&to=2026-12-05'],
+  ] as const) {
+    test(`S6: an invalid range (${label}) shows the default two weeks, says so, and drops it from the URL`, async ({ page }) => {
+      await openBoard(page, `/tasks/brewery?${query()}`)
+      await expect.poll(() => new URL(page.url()).search).toBe('')
+      await expect.poll(async () => (await shownDays(page))[0]).toBe(today())
+      expect((await shownDays(page)).length).toBe(14)
+      await expect(page.getByTestId('range-invalid')).toHaveText("That date range wasn't valid, so the board shows the default.")
+      await expect(page.getByTestId('range-clamped')).toHaveCount(0)
+      // The notice goes once the range changes.
+      await page.getByTestId('board-next').click()
+      await expect(page.getByTestId('range-invalid')).toHaveCount(0)
+    })
+  }
 })
