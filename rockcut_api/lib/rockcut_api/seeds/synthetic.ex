@@ -27,6 +27,8 @@ defmodule RockcutApi.Seeds.Synthetic do
   2 days ago, one on Future) and one Office task; Sales starts empty, and only
   the Brewery has Daily items. Tagged tasks, series and Daily items go from
   every board; `reset/0` also deletes the other boards' Daily items.
+  D59: persona `ownersAsst` (Office + Owners employee), a `[SEED]` Owners
+  task for `owner` and a `[SEED]` Owners Idea Board card.
   D46: tanks FV1–FV7 and Serving 1–2 (restored to their canonical fields and
   order, each setup; D52: Serving 1–4 abbreviated SV1–SV4), their out-of-service periods rebuilt (Serving 2: one
   coming up and one past), and three `[SEED]` process templates.
@@ -124,7 +126,10 @@ defmodule RockcutApi.Seeds.Synthetic do
      %{}},
     {"noDept", "nodept", "Nico None", [], %{}},
     {"owner2", "owner2", "Avery Owner", [], %{is_owner: true}},
-    {"sales1", "sales1", "Robin Pitch", [{"sales", "employee"}], %{}}
+    {"sales1", "sales1", "Robin Pitch", [{"sales", "employee"}], %{}},
+    # D59: an Office employee the owners added to Owners.
+    {"ownersAsst", "owners.asst", "Ellis Assist",
+     [{"office", "employee"}, {"owners", "employee"}], %{}}
   ]
 
   # Shared-device personas (D33): {key, email local part, name, home department key}.
@@ -1376,10 +1381,15 @@ defmodule RockcutApi.Seeds.Synthetic do
     {"Run payroll", 1, "office1", nil}
   ]
 
+  # D59: Olivia's task on the Owners board.
+  @owners_tasks [
+    {"Review the quarterly numbers", 2, "owner", nil}
+  ]
+
   ## Idea Boards (D53 Part 2)
 
   # `[SEED]` lists, cards and labels on the Brewery, Taproom and Company
-  # boards, around the starter lists: labels, a checklist, notes, people, a
+  # boards (and one card on Owners, D59), around the starter lists: labels, a checklist, notes, people, a
   # locked list and card, a watched card, and a card sent to the Taproom
   # task list. Rebuilt on every setup (delete_tagged takes the old ones and
   # their sent task).
@@ -1540,6 +1550,17 @@ defmodule RockcutApi.Seeds.Synthetic do
         )
 
       note.(company, party, "The back room holds 40.", u["office1"])
+
+      # Owners (D59): one card, if the migration made the board.
+      if owners = IdeaBoards.board_for_key("owners") do
+        card.(
+          owners,
+          starter.(owners, "Ideas"),
+          "Second taproom location",
+          %{"assignee_ids" => ids.(~w(owner ownersAsst))},
+          u["owner"]
+        )
+      end
     end
 
     :ok
@@ -1548,6 +1569,7 @@ defmodule RockcutApi.Seeds.Synthetic do
   defp seed_other_boards(u, today, now) do
     seed_board_tasks("bar", @taproom_tasks, u["barMgr"], u, today, now)
     seed_board_tasks("office", @office_tasks, u["dualMgr"], u, today, now)
+    seed_board_tasks("owners", @owners_tasks, u["owner"], u, today, now)
   end
 
   defp brewery_id do

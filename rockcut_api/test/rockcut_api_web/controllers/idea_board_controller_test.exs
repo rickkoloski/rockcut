@@ -301,13 +301,13 @@ defmodule RockcutApiWeb.IdeaBoardControllerTest do
   end
 
   describe "the boards I can open" do
-    test "GET /api/idea_boards and /api/me agree; Company last", %{p: p} do
+    test "GET /api/idea_boards and /api/me agree; Owners, then Company last", %{p: p} do
       for {who, keys} <- [
             {"bartender1", ~w(bar company)},
             {"barMgr", ~w(bar company)},
             {"brewer1", ~w(brewery company)},
             {"noDept", ~w(company)},
-            {"owner", ~w(brewery bar office sales company)}
+            {"owner", ~w(brewery bar office sales owners company)}
           ] do
         %{"data" => boards} = get_json(p[who], "/api/idea_boards")
         assert Enum.map(boards, & &1["key"]) == keys, who

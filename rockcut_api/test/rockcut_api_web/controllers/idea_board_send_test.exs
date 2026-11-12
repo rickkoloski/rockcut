@@ -177,7 +177,7 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
              ]
     end
 
-    test "another department's board is 403; none named is 422; owners get all four", %{p: p} do
+    test "another department's board is 403; none named is 422; owners get all five", %{p: p} do
       card = card!(starter("company", "Ideas"), "Holiday party")
       path = "#{@company}/cards/#{card.id}/send_to_tasks"
 
@@ -188,7 +188,7 @@ defmodule RockcutApiWeb.IdeaBoardSendTest do
       refute Repo.exists?(CardTask)
 
       keys = ok!(p["owner"], :get, path)["data"]["departments"] |> Enum.map(& &1["key"])
-      assert keys == ~w(brewery bar office sales)
+      assert keys == ~w(brewery bar office sales owners)
     end
   end
 

@@ -27,7 +27,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//],
+      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//, /regression\/owners\//],
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
@@ -58,6 +58,16 @@ export default defineConfig({
     {
       name: 'idea-boards',
       testMatch: /regression\/ideas\/.*\.spec\.ts/,
+      dependencies: ['setup'],
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // D59: the Owners department. One worker: O2 puts office1 in Owners for a
+    // while (the other files assert office1 isn't), and the Owners boards are
+    // shared by every file here.
+    {
+      name: 'owners',
+      testMatch: /regression\/owners\/.*\.spec\.ts/,
       dependencies: ['setup'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },

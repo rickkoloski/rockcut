@@ -33,6 +33,23 @@ defmodule RockcutApi.Tasks.Assignees do
   def max_people, do: @max_people
 
   @doc """
+  D59 (lead decisions 2): the owners a picker offers beside the members on an
+  `owners_only` department's boards (task board and Idea Board), as `%{id,
+  name}` by name. Every other department: none (owners stay off its pickers,
+  though the API accepts them).
+  """
+  def pickable_owners(%Department{owners_only: true}) do
+    Repo.all(
+      from u in Accounts.persons_query(),
+        where: u.id in subquery(from(o in Authz.owners_audience_query(), select: o.id)),
+        order_by: [asc: u.name, asc: u.id],
+        select: %{id: u.id, name: u.name}
+    )
+  end
+
+  def pickable_owners(%Department{}), do: []
+
+  @doc """
   What `attrs` (string keys) ask for: a list of ids, `nil` for no change,
   `:invalid` when an id isn't one, or `:too_many` over `max_people/0`.
   """
@@ -145,8 +162,19 @@ defmodule RockcutApi.Tasks.Assignees do
 
     Enum.map(named, fn user ->
       who = if user, do: user.name, else: "That person"
-      if dept, do: "#{who} must be a #{dept.name} member", else: "#{who} must be a member"
+      if dept, do: not_a_member(who, dept), else: "#{who} must be a member"
     end) ++ others_refused(length(others))
+  end
+
+  @doc """
+  The refusal for someone who can't be on `dept`'s board (task board and Idea
+  Board): "<who> must be a Brewery member", "an Office member" (the article
+  by the name's first letter, D59 gap 7); on an owners-only board (Owners),
+  where owners can be too, "… must be an Owners member or an owner".
+  """
+  def not_a_member(who, %Department{name: name, owners_only: owners_only}) do
+    article = if String.match?(name, ~r/^[aeiou]/i), do: "an", else: "a"
+    "#{who} must be #{article} #{name} member" <> if(owners_only, do: " or an owner", else: "")
   end
 
   defp others_refused(0), do: []

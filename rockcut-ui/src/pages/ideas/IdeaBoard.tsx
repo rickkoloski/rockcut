@@ -13,7 +13,7 @@ import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { coloradoToday } from '../../lib/tasks'
-import { IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, ideaError, ideaPath, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
+import { IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, ideaError, ideaPath, lockHolder, writeIdeaBoard, type IdeaFilter } from '../../lib/ideas'
 import type { IdeaBoardData, IdeaBoardEntry, IdeaCardFace as Face, IdeaLabel, IdeaListData, IdeaPerson } from '../../lib/types'
 import BoardSwitcher from '../tasks/BoardSwitcher'
 import IdeaListColumn, { type ListAction } from './IdeaListColumn'
@@ -137,7 +137,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     const from = containerOf(containers, itemKey)
     const target = lists.find((l) => l.id === listId)
     if (!from || !target || listKey(listId) === from) return
-    if (target.locked && !manage) return setToast({ message: 'Locked by a manager', error: true })
+    if (target.locked && !manage) return setToast({ message: `Locked by ${lockHolder(board)}`, error: true })
     moveCard({ itemId: itemKey, fromContainer: from, toContainer: listKey(listId), beforeId: null }, listId)
   }
 

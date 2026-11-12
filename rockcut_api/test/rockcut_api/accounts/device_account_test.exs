@@ -134,9 +134,9 @@ defmodule RockcutApi.Accounts.DeviceAccountTest do
   end
 
   describe "the four listing fixes" do
-    test "list_roster excludes devices", %{device: d} do
+    test "list_roster excludes devices", %{device: d, owner: o} do
       p = user_fixture(%{name: "Roster Person"})
-      ids = Accounts.list_roster() |> Enum.map(& &1.id)
+      ids = Accounts.list_roster(o) |> Enum.map(& &1.id)
       assert p.id in ids
       refute d.id in ids
     end

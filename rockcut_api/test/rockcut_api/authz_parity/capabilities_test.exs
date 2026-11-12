@@ -10,7 +10,7 @@ defmodule RockcutApi.AuthzParity.CapabilitiesTest do
 
   alias RockcutApi.Accounts
 
-  @all ~w(bar brewery office sales)
+  @all ~w(bar brewery office sales owners)
 
   # {persona, modules (without "schedule"), manages_departments, can_manage_users}
   @expected [
@@ -29,6 +29,7 @@ defmodule RockcutApi.AuthzParity.CapabilitiesTest do
     {"office1", ~w(office), [], false},
     {"hidden", ~w(office), [], false},
     {"sales1", ~w(sales), [], false},
+    {"ownersAsst", ~w(office owners), [], false},
     {"noDept", [], [], false}
   ]
 

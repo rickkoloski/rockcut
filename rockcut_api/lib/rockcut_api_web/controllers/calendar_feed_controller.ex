@@ -25,6 +25,9 @@ defmodule RockcutApiWeb.CalendarFeedController do
       {:error, :forbidden} ->
         conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})
 
+      {:error, :not_found} ->
+        conn |> put_status(:not_found) |> json(%{errors: %{detail: "Not found"}})
+
       {:error, _} ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: "Could not rotate"})
     end

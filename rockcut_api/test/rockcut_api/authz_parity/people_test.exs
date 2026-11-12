@@ -12,7 +12,7 @@ defmodule RockcutApi.AuthzParity.PeopleTest do
 
   @bar_members ~w(barMgr bartender1 bartender2 floater newhire dualMgr splitRole)
   @brewery_members ~w(breweryMgr brewer1 brewer2 floater splitRole)
-  @office_members ~w(office1 hidden dualMgr)
+  @office_members ~w(office1 hidden dualMgr ownersAsst)
   @employees ~w(bartender1 brewer1 floater office1 sales1 noDept)
 
   setup do

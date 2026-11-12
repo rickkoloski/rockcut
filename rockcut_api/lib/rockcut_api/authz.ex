@@ -154,6 +154,11 @@ defmodule RockcutApi.Authz do
     )
   end
 
+  @doc "Active owners: D59 notifies them about an owners-only department's channel."
+  def owners_audience_query do
+    from(u in User, where: u.active == true and u.is_owner == true)
+  end
+
   @doc """
   The departments whose records `user` may act on at `level` in `module`
   (D29 §3.5), for scoping list queries. `:all` = no department restriction
@@ -252,6 +257,14 @@ defmodule RockcutApi.Authz do
         can?(user, :manage, {:idea_board, board})
 
   def can?(%User{is_owner: true}, _action, _resource), do: true
+
+  # D59 decision 9: an owners-only department (Owners) exists, in any list or
+  # person's departments, only for owners (above) and its members. Every other
+  # department is seen by everyone.
+  def can?(%User{} = user, :see, {:department, %Department{owners_only: true} = dept}),
+    do: member_of?(user, dept)
+
+  def can?(%User{}, :see, {:department, %Department{}}), do: true
 
   # Scheduling — shifts: global read of published; department-scoped write;
   # employees may claim open published shifts in their own department.

@@ -8,7 +8,9 @@ defmodule RockcutApiWeb.DepartmentController do
   action_fallback RockcutApiWeb.FallbackController
 
   def index(conn, _params) do
-    json(conn, %{data: Enum.map(Accounts.list_departments(), &department/1)})
+    json(conn, %{
+      data: Enum.map(Accounts.list_departments_for(conn.assigns.current_user), &department/1)
+    })
   end
 
   # Owner-only: set a department's palette color (or other fields).

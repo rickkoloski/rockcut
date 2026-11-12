@@ -1,7 +1,7 @@
 import parseApiError from './parseApiError'
 import { summaryFromDetail } from './repeat'
 import { TZ, addDaysKey, localDayKey } from './datetime'
-import type { AllBoardCard, DailyCount, DayHeaderData, HeaderShift, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage, TaskPerson } from './types'
+import type { AllBoardCard, RosterEntry, DailyCount, DayHeaderData, HeaderShift, TaskBoardData, TaskBoardEntry, TaskCardData, TaskEvent, TaskEventPage, TaskPerson } from './types'
 
 // D38: task board helpers shared by the board, its dialogs and the specs.
 // D41: one board per department, under `/api/boards/<dept>`.
@@ -574,4 +574,15 @@ export function todaysTasks(board: TaskBoardData, showPlanned = true) {
     more: Math.max(open.length - DASHBOARD_TASKS, 0),
     unfinished: board.unfinished.length,
   }
+}
+
+/**
+ * The people a task on `dept`'s board can be assigned to: its members, in
+ * roster order, then the board's `owners` (D59: an owners-only board's; empty
+ * elsewhere) who aren't members, by name as the API sends them.
+ */
+export function boardMembers(roster: RosterEntry[], dept: string, owners: { id: number; name: string }[] = []): RosterEntry[] {
+  const members = roster.filter((r) => r.departments.includes(dept))
+  const extra = owners.filter((o) => !members.some((m) => m.id === o.id)).map((o) => ({ id: o.id, name: o.name, departments: [] }))
+  return [...members, ...extra]
 }
