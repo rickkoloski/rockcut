@@ -5,7 +5,8 @@
 **Tasks:** 4994, 4991, 4992, 4984, 5202, 4261, 5204, 4118, 5206, 5205, 4061, 5769, 4115, 4116, 4319,
 5193
 **Completed:** 2026-11-12 (on prod as `v2026.11.12`, release PR #69; D58 PR #68). Matt's prod check
-is next.
+passed 2026-11-12, and the 16 tasks are closed. Found in it: settings reach a second device only
+after the app restarts, so a refresh when the app returns to the screen is added to D56 (task 5207).
 
 ---
 
