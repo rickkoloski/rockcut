@@ -217,6 +217,8 @@ test.describe('taproomDevice', () => {
     expect((await putBoardSettings('breweryDevice', 'bar', { span: 7 })).status).toBe(403)
     expect((await putBoardSettings('taproomDevice', 'nope', { span: 7 })).status).toBe(404)
     expect((await putBoardSettings('taproomDevice', 'bar', { span: 30 as 7 })).status).toBe(422)
+    // Lead decisions 1 (DEV QA gap 3): no tasks of its own, so no My tasks.
+    expect((await putBoardSettings('taproomDevice', 'bar', { view: 'mine' })).status).toBe(422)
     expect(await putBoardSettings('taproomDevice', 'bar', { span: 7 })).toMatchObject({ status: 200, body: { span: 7, view: 'all' } })
     expect((await storedBoardSettings('taproomDevice')).brewery).toBeUndefined()
   })

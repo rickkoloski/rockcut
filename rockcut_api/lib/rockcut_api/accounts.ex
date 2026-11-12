@@ -233,8 +233,9 @@ defmodule RockcutApi.Accounts do
   settings with the defaults filled in. A display preference: no change-log
   entry. Read fresh inside the transaction, so two quick changes both stay.
   """
-  def save_board_settings(%User{id: id}, board_key, attrs) when is_binary(board_key) do
-    with {:ok, changes} <- BoardSettings.validate(board_key, attrs) do
+  def save_board_settings(%User{id: id, kind: kind}, board_key, attrs)
+      when is_binary(board_key) do
+    with {:ok, changes} <- BoardSettings.validate(board_key, attrs, kind) do
       Repo.transaction(fn ->
         user = Repo.get!(User, id)
         board = Map.merge(Map.get(user.board_settings, board_key, %{}), changes)

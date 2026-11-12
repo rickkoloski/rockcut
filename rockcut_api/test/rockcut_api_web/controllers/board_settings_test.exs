@@ -191,6 +191,22 @@ defmodule RockcutApiWeb.BoardSettingsTest do
       assert stored(p["bartender1"]) == %{"bar" => %{"view" => "mine"}}
     end
 
+    # D58 lead decisions 1 (DEV QA gap 3): a device has no tasks of its own.
+    test "My tasks isn't a view for a device (422); nothing is saved", %{
+      device: device,
+      token: token
+    } do
+      assert %{"errors" => %{"view" => [_]}} =
+               call_device(token, :put, "/api/me/board_settings/bar", %{view: "mine", span: 7})
+               |> json_response(422)
+
+      assert stored(device) == %{}
+
+      assert %{"view" => "all"} =
+               call_device(token, :put, "/api/me/board_settings/bar", %{view: "all"})
+               |> json_response(200)
+    end
+
     test "S4: another department's board is 403", %{device: device, token: token} do
       assert call_device(token, :put, "/api/me/board_settings/brewery", %{span: 7})
              |> json_response(403)

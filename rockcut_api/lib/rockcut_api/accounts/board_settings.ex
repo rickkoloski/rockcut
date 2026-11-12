@@ -11,7 +11,8 @@ defmodule RockcutApi.Accounts.BoardSettings do
     * `span` — 7 or 14 days;
     * `hide_completed`, `hide_shifts` — booleans;
     * `first_day` — "today", "sunday" or "monday";
-    * `view` — "all", "mine" or "unassigned" ("mine" isn't on All departments);
+    * `view` — "all", "mine" or "unassigned" ("mine" isn't on All departments,
+      nor for a shared device, which has no tasks of its own);
     * `phone_view` — "vertical" (every day stacked) or "day" (one at a time).
 
   Who may save a board's settings is `Authz`'s (`{:board_settings, board}`).
@@ -47,10 +48,11 @@ defmodule RockcutApi.Accounts.BoardSettings do
 
   @doc """
   Validate the settings in `attrs` (string keys, as JSON sends them) for
-  `board_key`. `{:ok, map}` holds only the given settings, string-keyed;
-  otherwise `{:error, changeset}` with an error per bad field.
+  `board_key`, saved by an account of `kind` ("person" or "device").
+  `{:ok, map}` holds only the given settings, string-keyed; otherwise
+  `{:error, changeset}` with an error per bad field.
   """
-  def validate(board_key, attrs) when is_map(attrs) do
+  def validate(board_key, attrs, kind \\ "person") when is_map(attrs) do
     unknown = Map.keys(attrs) -- @names
 
     changeset =
@@ -59,7 +61,7 @@ defmodule RockcutApi.Accounts.BoardSettings do
       |> validate_given(Map.keys(attrs) -- unknown)
       |> validate_inclusion(:span, [7, 14])
       |> validate_inclusion(:first_day, ~w(today sunday monday))
-      |> validate_inclusion(:view, views(board_key))
+      |> validate_inclusion(:view, views(board_key, kind))
       |> validate_inclusion(:phone_view, ~w(vertical day))
       |> unknown_errors(unknown)
 
@@ -70,8 +72,10 @@ defmodule RockcutApi.Accounts.BoardSettings do
     end
   end
 
-  defp views("all"), do: ~w(all unassigned)
-  defp views(_board), do: ~w(all mine unassigned)
+  # D58 lead decisions 1 (DEV QA gap 3): a device has no tasks of its own.
+  defp views("all", _kind), do: ~w(all unassigned)
+  defp views(_board, "device"), do: ~w(all unassigned)
+  defp views(_board, _kind), do: ~w(all mine unassigned)
 
   # A setting sent as null is refused, not stored.
   defp validate_given(changeset, names) do
