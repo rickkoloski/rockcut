@@ -27,6 +27,13 @@ defmodule RockcutApi.Notifications do
     "idea_card_changed" => %{in_app: true, email: false, push: true}
   }
 
+  # Every event a person may set a preference for (the UI's EVENTS), and the
+  # channels a preference names: the delivered ones, and "sms", which the UI
+  # still lists (never sent).
+  @events ~w(shift_scheduled shift_changed shift_reminder open_shift message_posted
+             calendar_feed_rotated task_shift_end idea_card_changed)
+  @pref_channels ~w(in_app email push sms)
+
   ## Dispatch
 
   @doc "Deliver `event` to `user` over each enabled channel. Payload: %{title, body, data}."
@@ -126,8 +133,23 @@ defmodule RockcutApi.Notifications do
 
   def get_prefs(%User{} = user), do: user.notification_prefs || %{}
 
+  @doc """
+  Replace the person's preferences. D58 lead decisions 1 (DEV QA gap 10):
+  `prefs` is `%{event => %{channel => boolean}}` with known events and
+  channels only; anything else is `{:error, :invalid_prefs}` and nothing is
+  stored.
+  """
   def update_prefs(%User{} = user, prefs) when is_map(prefs) do
-    user |> Ecto.Changeset.change(notification_prefs: prefs) |> Repo.update()
+    if valid_prefs?(prefs),
+      do: user |> Ecto.Changeset.change(notification_prefs: prefs) |> Repo.update(),
+      else: {:error, :invalid_prefs}
+  end
+
+  defp valid_prefs?(prefs) do
+    Enum.all?(prefs, fn {event, channels} ->
+      event in @events and is_map(channels) and
+        Enum.all?(channels, fn {channel, on} -> channel in @pref_channels and is_boolean(on) end)
+    end)
   end
 
   ## Event helpers (called from Scheduling) — never raise.

@@ -27,7 +27,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//, /regression\/owners\//],
+      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//, /regression\/owners\//, /regression\/d58\//],
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
@@ -69,6 +69,17 @@ export default defineConfig({
       name: 'owners',
       testMatch: /regression\/owners\/.*\.spec\.ts/,
       dependencies: ['setup'],
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // D58: board settings are per account on the server, and these specs
+    // change the personas' own (brewer1, owner, the tablets) and the Brewery
+    // board, as `brewery-board` does: one worker, after it (`--no-deps` to
+    // run it alone).
+    {
+      name: 'd58',
+      testMatch: /regression\/d58\/.*\.spec\.ts/,
+      dependencies: ['setup', 'brewery-board'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },
     },

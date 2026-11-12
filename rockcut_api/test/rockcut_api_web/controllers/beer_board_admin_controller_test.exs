@@ -70,6 +70,52 @@ defmodule RockcutApiWeb.BeerBoardAdminControllerTest do
     assert row =~ ~r/,Sam Pour,no,created,,Pat,Chris,0,2$/
   end
 
+  describe "D58 §3.14 (4115, 4116): History search by who made the change; export follows it" do
+    setup %{p: p} do
+      device = RockcutApi.Repo.get_by!(RockcutApi.Accounts.User, kind: "device")
+      add(p, "Pat", "Chris", 2)
+
+      {:ok, _} =
+        BeerBoard.create(
+          %{"recipient_name" => "Ana", "purchaser_name" => "Bo", "beers" => 1},
+          p["barMgr"],
+          device
+        )
+
+      :ok
+    end
+
+    defp names(p, q) do
+      call(p["barMgr"], :get, "/api/beer_board/history?q=#{URI.encode_www_form(q)}")
+      |> json_response(200)
+      |> Map.fetch!("data")
+      |> Enum.map(& &1["recipient_name"])
+    end
+
+    test "q matches the actor's name, and Shared Device matches tablet changes", %{p: p} do
+      assert names(p, "sam pour") == ["Pat"]
+      assert names(p, p["barMgr"].name) == ["Ana"]
+      assert names(p, "Shared Device") == ["Ana"]
+      assert names(p, "#{p["barMgr"].name} on shared") == ["Ana"]
+      # Names still match as before.
+      assert names(p, "chris") == ["Pat"]
+      assert names(p, "") == ["Ana", "Pat"]
+    end
+
+    test "Export CSV sends the same q; empty exports everything", %{p: p} do
+      rows = fn q ->
+        call(p["owner"], :get, "/api/beer_board/history/export.csv?q=#{URI.encode_www_form(q)}")
+        |> Map.fetch!(:resp_body)
+        |> String.split("\r\n", trim: true)
+        |> tl()
+      end
+
+      assert [only] = rows.("shared device")
+      assert only =~ ",yes,created,,Ana,Bo,"
+      assert length(rows.("")) == 2
+    end
+  end
+
   test "S21/S22: preview groups, then confirm applies the choices", %{p: p} do
     add(p, "Pat", "Chris", 2)
     data = preview(p, "duplicates.csv")

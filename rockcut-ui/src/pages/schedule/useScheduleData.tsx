@@ -92,6 +92,8 @@ export function useScheduleData(filters: ScheduleFilters, range: { from: string;
   const managedDepartments = isOwner ? departments : departments.filter((d) => managedKeys.includes(d.key))
   const deptById = useMemo(() => new Map(departments.map((d) => [d.id, d])), [departments])
 
+  // D58 (5769): positions and templates are changed by their department's managers.
+  const canManageDepartment = (id: number) => isOwner || managedKeys.includes(deptById.get(id)?.key ?? '')
   const canManageShift = (s: Shift) => isOwner || (s.department?.key ? managedKeys.includes(s.department.key) : false)
   const canManageEvent = (e: ScheduleEvent) => isOwner || (e.department?.key ? managedKeys.includes(e.department.key) : false)
   const canClaim = (s: Shift) => !isDevice && !s.assignee_id && s.status === 'published' && !!s.department?.key && myModules.includes(s.department.key)
@@ -123,6 +125,7 @@ export function useScheduleData(filters: ScheduleFilters, range: { from: string;
     unavailability,
     conflicts,
     managedDepartments,
+    canManageDepartment,
     deptById,
     canManageShift,
     canManageEvent,

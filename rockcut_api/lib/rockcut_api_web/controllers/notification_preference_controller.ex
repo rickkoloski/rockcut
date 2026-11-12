@@ -12,6 +12,13 @@ defmodule RockcutApiWeb.NotificationPreferenceController do
       {:ok, user} ->
         json(conn, %{data: user.notification_prefs})
 
+      {:error, :invalid_prefs} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{
+          error: "Preferences are on/off (true or false) for known notifications and channels"
+        })
+
       {:error, _} ->
         conn |> put_status(:unprocessable_entity) |> json(%{error: "Could not save preferences"})
     end

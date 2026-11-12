@@ -18,3 +18,15 @@ export const staffCodeDigits = (text: string) => text.replace(/\D/g, '').slice(0
  * may ignore inputMode on password fields and show letters.
  */
 export const maskedCodeSx = { '& input': { WebkitTextSecurity: 'disc' } } as const
+
+/**
+ * D58 §3.8 (4118 item 1): what the Users & Roles dialog's Save does with the
+ * staff code. Typed digits set a new one (`put`); Remove only marks it, and
+ * Save sends the `delete`. Nothing when the save clears the code anyway
+ * (deactivated, or no department left: `keepsCode` false).
+ */
+export function staffCodeAction(keepsCode: boolean, draft: string, removing: boolean): 'put' | 'delete' | null {
+  if (!keepsCode) return null
+  if (draft !== '') return 'put'
+  return removing ? 'delete' : null
+}

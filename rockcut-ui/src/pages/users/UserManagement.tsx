@@ -6,7 +6,7 @@ import PageHeader from '../../components/PageHeader'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import UserFormDialog from './UserFormDialog'
 import type { Department, User } from '../../lib/types'
-import { membershipLabel, sortMemberships } from '../../lib/userRoles'
+import { membershipLabel, sortMemberships, userAccess } from '../../lib/userRoles'
 
 // D59 §4.4: in the API's department order, so Owners comes last.
 function rolesSummary(user: User, departments: Department[]): string {
@@ -30,13 +30,18 @@ const columnsFor = (departments: Department[]): GridColDef<User>[] => [
   {
     field: 'active',
     headerName: 'Status',
-    width: 110,
-    renderCell: (params) =>
-      params.row.active ? (
-        <Chip label="Active" size="small" color="success" variant="outlined" />
-      ) : (
-        <Chip label="Disabled" size="small" color="default" variant="outlined" />
-      ),
+    width: 200,
+    renderCell: (params) => (
+      <>
+        {params.row.active ? (
+          <Chip label="Active" size="small" color="success" variant="outlined" />
+        ) : (
+          <Chip label="Disabled" size="small" color="default" variant="outlined" />
+        )}
+        {/* D58 §3.3: someone outside the actor's departments. */}
+        {!userAccess(params.row).canEdit && <Chip label="View only" size="small" variant="outlined" sx={{ ml: 0.5 }} data-testid="user-view-only" />}
+      </>
+    ),
   },
 ]
 

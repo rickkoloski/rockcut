@@ -51,17 +51,21 @@ defmodule RockcutApi.AuthzSchedulingTest do
   end
 
   describe "position authorization" do
-    test "employees read; any manager or owner writes" do
+    # D58 (5769): was "any manager writes"; now its department's managers.
+    test "employees read; its department's manager or an owner writes" do
       owner = owner_fixture()
       manager = user_with_role("manager", "bar")
       employee = user_with_role("employee", "bar")
-      pos = %Position{}
+      pos = %Position{department_id: department_fixture("bar").id}
+      elsewhere = %Position{department_id: department_fixture("sales").id}
 
       assert Authz.can?(employee, :read, pos)
       assert Authz.can?(manager, :create, pos)
       assert Authz.can?(owner, :delete, pos)
       refute Authz.can?(employee, :create, pos)
       refute Authz.can?(employee, :delete, pos)
+      refute Authz.can?(manager, :update, elsewhere)
+      assert Authz.can?(owner, :update, elsewhere)
     end
   end
 end

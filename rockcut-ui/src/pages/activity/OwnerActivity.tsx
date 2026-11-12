@@ -6,30 +6,9 @@ import PageHeader from '../../components/PageHeader'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
+import { actionLabel } from '../../lib/activity'
 import type { AuditEntry } from '../../lib/types'
 
-const ACTION_LABELS: Record<string, string> = {
-  'user.created': 'User created',
-  'user.updated': 'User updated',
-  'user.password_reset': 'Password reset',
-  'user.signed_out_everywhere': 'Signed out of other devices',
-  'calendar_feeds.rotated': 'Calendar links reset',
-  'user.owner_granted': 'Owner access granted',
-  'user.owner_removed': 'Owner access removed',
-  'membership.added': 'Role added',
-  'membership.changed': 'Role changed',
-  'membership.removed': 'Role removed',
-  // D33 shared devices
-  'device.created': 'Shared device created',
-  'device.updated': 'Shared device updated',
-  'device.deactivated': 'Shared device deactivated',
-  'device.reactivated': 'Shared device reactivated',
-  'device.deleted': 'Shared device deleted',
-  'device.pairing_code': 'Pairing code issued',
-  'device.paired': 'Tablet paired',
-  'device.revoked': 'Tablet revoked',
-  'device.signed_out': 'Tablet signed out',
-}
 
 // Device accounts have a generated, undeliverable email; show their name (D33).
 function who(u: AuditEntry['actor']): string {
@@ -46,6 +25,7 @@ function detailText(row: AuditEntry): string {
     const why = d.reason === 'departed' ? 'left' : d.reason === 'manual' ? 'reset by hand' : 'lost access'
     return [labels, why].filter(Boolean).join(' · ')
   }
+  if (row.action === 'user.shifts_unassigned') return d.count === 1 ? '1 shift' : `${d.count} shifts`
   if (!row.action.startsWith('device.')) return ''
   return [d.name, d.tablet].filter(Boolean).join(' · ')
 }
@@ -61,7 +41,7 @@ const columns: GridColDef<AuditEntry>[] = [
     field: 'action',
     headerName: 'Action',
     width: 160,
-    valueGetter: (value) => ACTION_LABELS[value as string] ?? value,
+    valueGetter: (value) => actionLabel(value as string),
   },
   {
     field: 'actor',

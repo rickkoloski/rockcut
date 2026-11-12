@@ -1,9 +1,10 @@
 defmodule RockcutApi.AuthzParity.ScheduleSetupTest do
   @moduledoc """
   D31 parity — D29 Appendix A rows 8–15 (positions, shift templates, schedule
-  templates, roster). Today: anyone reads; **any** manager (of any department)
-  or owner writes. D29 §6 C narrows writes to managed departments in Phase 2;
-  these tests pin the pre-change behavior and will be flipped then, not in D31.
+  templates, roster). Anyone reads; **any** manager (of any department) or
+  owner reorders the roster. D58 (5769, D29 §6 C) narrows positions and
+  templates to the managers of their departments; those tests are flipped,
+  each marked `# D58:`.
   """
   use RockcutApiWeb.ConnCase
 
@@ -11,6 +12,10 @@ defmodule RockcutApi.AuthzParity.ScheduleSetupTest do
   import RockcutApi.SchedulingFixtures
 
   @writers ~w(owner owner2 barMgr breweryMgr dualMgr splitRole)
+  # D58: Brewery positions and templates are written by its manager and owners.
+  @brewery_writers ~w(owner owner2 breweryMgr)
+  # D58: managers of other departments only (splitRole is a Brewery employee).
+  @other_managers ~w(barMgr dualMgr splitRole)
   @non_writers ~w(bartender1 brewer1 floater office1 sales1 noDept)
 
   setup do
@@ -72,7 +77,8 @@ defmodule RockcutApi.AuthzParity.ScheduleSetupTest do
   end
 
   describe "positions write" do
-    for who <- @writers do
+    # D58: was every manager (@writers); now the department's managers.
+    for who <- @brewery_writers do
       test "#9 #{who} creates, updates and deletes a Brewery position → allowed",
            %{p: p, d: d, brewery_pos: pos, spare_pos: spare} do
         user = p[unquote(who)]
@@ -86,10 +92,32 @@ defmodule RockcutApi.AuthzParity.ScheduleSetupTest do
         assert status(user, :patch, "/api/positions/#{pos.id}", %{color_shade: 0.4}) == 200
         assert status(user, :delete, "/api/positions/#{spare.id}") == 200
       end
+    end
 
-      test "#9 #{who} edits a position in Other → allowed", %{p: p, other_pos: pos} do
+    # D58: managers of other departments were allowed; now 403.
+    for who <- @other_managers do
+      test "#9 #{who} creates, updates or deletes a Brewery position → 403 (D58)",
+           %{p: p, d: d, brewery_pos: pos, spare_pos: spare} do
+        user = p[unquote(who)]
+
+        assert status(user, :post, "/api/positions", %{
+                 name: "New",
+                 department_id: d["brewery"].id
+               }) ==
+                 403
+
+        assert status(user, :patch, "/api/positions/#{pos.id}", %{color_shade: 0.4}) == 403
+        assert status(user, :delete, "/api/positions/#{spare.id}") == 403
+      end
+    end
+
+    # D58: nobody manages Other, so only owners edit its positions (was every manager).
+    for {who, code} <-
+          Enum.map(~w(owner owner2), &{&1, 200}) ++
+            Enum.map(~w(barMgr breweryMgr dualMgr splitRole), &{&1, 403}) do
+      test "#9 #{who} edits a position in Other → #{code}", %{p: p, other_pos: pos} do
         assert status(p[unquote(who)], :patch, "/api/positions/#{pos.id}", %{color_shade: 0.4}) ==
-                 200
+                 unquote(code)
       end
     end
 
@@ -111,8 +139,10 @@ defmodule RockcutApi.AuthzParity.ScheduleSetupTest do
   end
 
   describe "shift templates write" do
+    # D58: other departments' managers were 201/200/200; now 403.
     for {who, create, change} <-
-          Enum.map(@writers, &{&1, 201, 200}) ++ Enum.map(@non_writers, &{&1, 403, 403}) do
+          Enum.map(@brewery_writers, &{&1, 201, 200}) ++
+            Enum.map(@other_managers ++ @non_writers, &{&1, 403, 403}) do
       test "#11 #{who} creates / updates / deletes a Brewery shift template → #{create}/#{change}/#{change}",
            %{p: p, brewery_pos: pos, shift_template: t} do
         user = p[unquote(who)]
@@ -133,8 +163,10 @@ defmodule RockcutApi.AuthzParity.ScheduleSetupTest do
   end
 
   describe "schedule templates write" do
+    # D58: other departments' managers were 201/200; now 403.
     for {who, create, delete} <-
-          Enum.map(@writers, &{&1, 201, 200}) ++ Enum.map(@non_writers, &{&1, 403, 403}) do
+          Enum.map(@brewery_writers, &{&1, 201, 200}) ++
+            Enum.map(@other_managers ++ @non_writers, &{&1, 403, 403}) do
       test "#13 #{who} creates / deletes a Brewery schedule template → #{create}/#{delete}",
            %{p: p, brewery_pos: pos, schedule_template: t} do
         user = p[unquote(who)]

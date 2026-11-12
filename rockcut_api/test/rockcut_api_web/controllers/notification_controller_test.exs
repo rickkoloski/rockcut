@@ -58,6 +58,55 @@ defmodule RockcutApiWeb.NotificationControllerTest do
     assert got["data"]["open_shift"]["email"] == false
   end
 
+  # D58 lead decisions 1 (DEV QA gap 10): the shape is checked, and a bad
+  # one stores nothing.
+  test "preferences other than known event → known channel → boolean are 422; nothing stored",
+       %{conn: conn} do
+    emp = user_with_role("employee", "bar")
+    good = %{"open_shift" => %{"push" => true}, "message_posted" => %{"in_app" => false}}
+
+    assert conn
+           |> bearer(emp)
+           |> put(~p"/api/notification_preferences", %{prefs: good})
+           |> json_response(200)
+
+    for bad <- [
+          %{"shift_scheduled" => nil},
+          %{"shift_scheduled" => true},
+          %{"shift_scheduled" => %{"push" => nil}},
+          %{"shift_scheduled" => %{"push" => "yes"}},
+          %{"shift_scheduled" => %{"fax" => true}},
+          %{"shift_published" => %{"push" => true}},
+          %{"open_shift" => %{"push" => true}, "nope" => %{}}
+        ] do
+      assert %{"error" => _} =
+               conn
+               |> bearer(emp)
+               |> put(~p"/api/notification_preferences", %{prefs: bad})
+               |> json_response(422),
+             inspect(bad)
+    end
+
+    assert RockcutApi.Accounts.get_user!(emp.id).notification_prefs == good
+
+    # Every event the UI lists, on every channel it names, is fine.
+    all =
+      for e <- ~w(shift_scheduled shift_changed shift_reminder open_shift message_posted
+                  calendar_feed_rotated task_shift_end idea_card_changed),
+          into: %{},
+          do: {e, %{"in_app" => true, "email" => false, "push" => true, "sms" => false}}
+
+    assert conn
+           |> bearer(emp)
+           |> put(~p"/api/notification_preferences", %{prefs: all})
+           |> json_response(200)
+
+    assert conn
+           |> bearer(emp)
+           |> put(~p"/api/notification_preferences", %{prefs: %{}})
+           |> json_response(200)
+  end
+
   # D55 lead decisions 6, gap 13: a missing id, or someone else's, is 404 (it
   # was 200 {"ok": true}); the other person's stays unread.
   test "marking a missing or someone else's notification read is 404", %{conn: conn} do

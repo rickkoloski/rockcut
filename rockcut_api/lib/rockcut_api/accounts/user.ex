@@ -28,6 +28,10 @@ defmodule RockcutApi.Accounts.User do
     # D49 §3.12: "Show planned batches" on the Brewery board, per person.
     field :show_planned_batches, :boolean, default: true
 
+    # D58 §3.1: task board settings, `%{board_key => %{setting => value}}`
+    # (`RockcutApi.Accounts.BoardSettings`). A device's are its tablet's own.
+    field :board_settings, :map, default: %{}
+
     belongs_to :home_department, RockcutApi.Accounts.Department
 
     field :password, :string, virtual: true, redact: true

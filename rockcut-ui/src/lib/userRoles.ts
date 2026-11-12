@@ -1,7 +1,9 @@
 // Users & Roles: which departments the actor can change on a person, and the
 // memberships a save sends. D59 §4.3: only owners add or remove Owners
-// (`owners_only`) members, and every member there is an employee.
-import type { Department, Membership, Role } from './types'
+// (`owners_only`) members, and every member there is an employee. D58 lead
+// decisions 1: a manager never sees an Owners membership (the API leaves it
+// out), so there's no read-only chip.
+import type { Department, Membership, Role, User } from './types'
 
 export type RoleChoice = '' | Role
 
@@ -26,18 +28,6 @@ export function membershipsPayload(editable: Department[], roles: Record<string,
     .map((d) => ({ department: d.key, role: d.owners_only ? 'employee' : (roles[d.key] as Role) }))
 }
 
-/**
- * The person's `owners_only` memberships the actor can't change: shown as
- * read-only chips. From the membership itself (D59 decision 9): a manager's
- * `/api/departments` leaves Owners out.
- */
-export function readOnlyOwnersOnly(memberships: Membership[] | null | undefined, editable: Department[]): { key: string; name: string }[] {
-  const editableKeys = new Set(editable.map((d) => d.key))
-  return (memberships ?? [])
-    .filter((m) => m.owners_only && m.department_key && !editableKeys.has(m.department_key))
-    .map((m) => ({ key: m.department_key as string, name: m.department_name ?? m.department_key as string }))
-}
-
 /** "Brewery: manager", "Owners: member" (D59 gap 3: an `owners_only` membership is a member, as in the dialog). */
 export const membershipLabel = (m: Membership): string => `${m.department_name}: ${m.owners_only ? 'member' : m.role}`
 
@@ -47,3 +37,27 @@ export function sortMemberships(memberships: Membership[], departments: Departme
   const at = (m: Membership) => index.get(m.department_key ?? '') ?? departments.length
   return [...memberships].sort((a, b) => at(a) - at(b))
 }
+
+/**
+ * D58 §3.3: what the actor may do with a person in Users & Roles, from the
+ * API's row (`can_edit`, `can_deactivate`, `addable_departments`). A row
+ * without them (an older API, or a person just created) is editable, as
+ * before; the API still decides.
+ */
+export function userAccess(user: User | null | undefined): {
+  canEdit: boolean
+  canDeactivate: boolean
+  addable: { key: string; name: string }[]
+} {
+  return {
+    canEdit: user?.can_edit ?? true,
+    canDeactivate: user?.can_deactivate ?? true,
+    addable: user?.addable_departments ?? [],
+  }
+}
+
+/**
+ * Why Active is greyed out (D58 decisions 3, 5). Lead decisions 1: neutral,
+ * so it doesn't hint at a department the manager can't see.
+ */
+export const DEACTIVATE_HINT = "You can't change Active for this person."

@@ -163,7 +163,9 @@ defmodule RockcutApi.AccountsTest do
     end
 
     test "D40: leaving the Brewery but staying in the Taproom keeps the code", ctx do
-      {:ok, _} = RockcutApi.StaffCodes.set(ctx.brewer2, "4821", ctx.mgr)
+      # D58 lead decisions 1: brewer2 is also in the Taproom, so the Brewery
+      # manager no longer sets the code; an owner does.
+      {:ok, _} = RockcutApi.StaffCodes.set(ctx.brewer2, "4821", owner_fixture())
       assert {:ok, _} = Accounts.set_memberships(ctx.brewer2, [], ctx.mgr)
 
       assert Repo.get!(Task, ctx.open.id).assignee_id == nil

@@ -7,6 +7,7 @@ defmodule RockcutApiWeb.MeController do
     only: [me: 3, for_viewer: 2, task_board_entry: 1, idea_board_entry: 1]
 
   alias RockcutApi.{Accounts, Authz, IdeaBoards, StaffCodes, Tasks}
+  alias RockcutApi.Accounts.Department
 
   def show(conn, _params) do
     user = conn.assigns.current_user
@@ -21,6 +22,8 @@ defmodule RockcutApiWeb.MeController do
         color_mode: user.color_mode,
         # D49: the Brewery board's "Show planned batches".
         show_planned_batches: user.show_planned_batches,
+        # D58 §3.1: the stored board settings; the UI fills in the defaults.
+        board_settings: user.board_settings,
         # D41: the boards this person can open, in nav order.
         # Owners also get the All departments view, last.
         task_boards:
@@ -53,5 +56,39 @@ defmodule RockcutApiWeb.MeController do
            ) do
       json(conn, %{show_planned_batches: user.show_planned_batches})
     end
+  end
+
+  @doc """
+  D58 §3.1: `PUT /api/me/board_settings/:board` — some of a board's settings
+  (`span`, `hide_completed`, `hide_shifts`, `first_day`, `view`,
+  `phone_view`) for this account, merged into the rest. Answers the board's
+  settings with the defaults filled in. `:board` is a department's key or
+  `all`; an unknown one is 404, one this account can't save 403 (a device:
+  its home board only, no staff code).
+  """
+  def update_board_settings(conn, %{"board" => key}) do
+    user = conn.assigns.current_user
+
+    with {:ok, board} <- settings_board(key),
+         :ok <- allow_settings(user, board),
+         {:ok, settings} <- Accounts.save_board_settings(user, key, conn.body_params) do
+      json(conn, settings)
+    else
+      {:error, :forbidden} -> conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})
+      error -> error
+    end
+  end
+
+  defp settings_board("all"), do: {:ok, :all}
+
+  defp settings_board(key) do
+    case Accounts.get_department_by_key(key) do
+      %Department{assignable: true} = dept -> {:ok, dept}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp allow_settings(user, board) do
+    if Authz.can?(user, :save, {:board_settings, board}), do: :ok, else: {:error, :forbidden}
   end
 end

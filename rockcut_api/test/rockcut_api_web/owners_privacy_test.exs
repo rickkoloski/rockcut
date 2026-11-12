@@ -390,26 +390,53 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
       end
     end
 
-    test "dualMgr's Users & Roles keeps the Owners membership (read-only chip), named", %{p: p} do
+    # D58 lead decisions 1 (reverses spec decision 7): no read-only Owners
+    # chip; a manager who isn't in Owners never sees the membership.
+    test "dualMgr's Users & Roles doesn't show the Owners membership", %{p: p} do
       users = call(p["dualMgr"], :get, "/api/users") |> json_response(200) |> Map.fetch!("data")
       asst = Enum.find(users, &(&1["id"] == p["ownersAsst"].id))
 
-      assert %{"department_name" => "Owners", "owners_only" => true, "role" => "employee"} =
-               Enum.find(asst["memberships"], &(&1["department_key"] == "owners"))
+      refute Enum.find(asst["memberships"], &(&1["department_key"] == "owners"))
 
       assert %{"owners_only" => false} =
                Enum.find(asst["memberships"], &(&1["department_key"] == "office"))
     end
 
-    test "a not-scheduled refusal doesn't name Owners (gap 6)", %{p: p, d: d} do
-      conn =
-        call(p["breweryMgr"], :post, "/api/positions", %{
-          name: "X",
-          department_id: d["owners"].id,
-          group: "X"
+    # D58 (5769): a manager now gets a plain 403 for any department they don't
+    # manage (was this 422); an owner still gets the 422, which names no department.
+    # D58 lead decisions 1, DEV QA gap 7: Add department on an Owners member
+    # doesn't reveal Owners, in the reply or on the row afterwards.
+    test "breweryMgr's Add department on ownersAsst: no Owners in the reply or the row", %{p: p} do
+      id = p["ownersAsst"].id
+
+      reply =
+        call(p["breweryMgr"], :put, "/api/users/#{id}/memberships", %{
+          memberships: [%{department: "brewery", role: "employee"}]
         })
 
-      assert json_response(conn, 422) == %{
+      assert json_response(reply, 200)
+      refute reply.resp_body =~ ~r/"owners"|"Owners"|"owners_only":true/
+
+      list = call(p["breweryMgr"], :get, "/api/users") |> json_response(200) |> Map.fetch!("data")
+      asst = Enum.find(list, &(&1["id"] == id))
+
+      assert asst["memberships"] |> Enum.map(& &1["department_key"]) |> Enum.sort() ==
+               ~w(brewery office)
+
+      # It's still there for an owner.
+      list = call(p["owner"], :get, "/api/users") |> json_response(200) |> Map.fetch!("data")
+      asst = Enum.find(list, &(&1["id"] == id))
+      assert "owners" in Enum.map(asst["memberships"], & &1["department_key"])
+    end
+
+    test "a not-scheduled refusal doesn't name Owners (gap 6)", %{p: p, d: d} do
+      params = %{name: "X", department_id: d["owners"].id, group: "X"}
+
+      assert json_response(call(p["breweryMgr"], :post, "/api/positions", params), 403) == %{
+               "error" => "Forbidden"
+             }
+
+      assert json_response(call(p["owner"], :post, "/api/positions", params), 422) == %{
                "errors" => %{"department_id" => ["That department isn't on the schedule"]}
              }
     end

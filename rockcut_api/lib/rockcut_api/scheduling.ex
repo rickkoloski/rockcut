@@ -38,6 +38,14 @@ defmodule RockcutApi.Scheduling do
 
   def get_position!(id), do: Repo.get!(Position, id)
 
+  @doc """
+  D58: the position a write names, for `Authz` (5769): the row, or nil when
+  the id names none (the changeset then answers 422).
+  """
+  def position_named(id) do
+    if id = RockcutApi.Ids.parse(id), do: Repo.get(Position, id)
+  end
+
   def create_position(attrs) do
     %Position{} |> Position.changeset(attrs) |> Repo.insert()
   end
@@ -145,6 +153,34 @@ defmodule RockcutApi.Scheduling do
     end
   end
 
+  @doc """
+  D58 lead decisions 1 (DEV QA gap 9): how many of the person's shifts start
+  after now, any status or department: what deactivating them leaves open.
+  """
+  def count_future_shifts(user_id), do: user_id |> future_shifts() |> Repo.aggregate(:count)
+
+  @doc """
+  Take the person off every shift that starts after now (they're being
+  deactivated). Drafts stay drafts; published ones become open shifts.
+  Answers `{count, opened}`: `opened` the published ones, for the open-shift
+  notification once the change is committed (`Notifications.shifts_published/1`).
+  Past and current shifts keep their assignee.
+  """
+  def unassign_future_shifts(user_id) do
+    shifts = user_id |> future_shifts() |> Repo.all()
+    ids = Enum.map(shifts, & &1.id)
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    from(s in Shift, where: s.id in ^ids)
+    |> Repo.update_all(set: [assignee_id: nil, updated_at: now])
+
+    opened = for s <- shifts, s.status == "published", do: %{s | assignee_id: nil}
+    {length(shifts), opened}
+  end
+
+  defp future_shifts(user_id),
+    do: from(s in Shift, where: s.assignee_id == ^user_id and s.starts_at > ^DateTime.utc_now())
+
   @doc "The department id a position belongs to (a shift inherits its position's department)."
   def department_for_position(nil), do: nil
 
@@ -218,7 +254,11 @@ defmodule RockcutApi.Scheduling do
     |> Repo.all()
   end
 
-  def get_shift_template!(id), do: Repo.get!(ShiftTemplate, id)
+  def get_shift_template!(id), do: ShiftTemplate |> Repo.get!(id) |> Repo.preload(:position)
+
+  @doc "D58: a shift template as `attrs` would make it, its position loaded, for `Authz`."
+  def proposed_shift_template(attrs),
+    do: %ShiftTemplate{position: position_named(stringify(attrs)["position_id"])}
 
   def create_shift_template(attrs) do
     %ShiftTemplate{} |> ShiftTemplate.changeset(attrs) |> Repo.insert()
@@ -243,6 +283,24 @@ defmodule RockcutApi.Scheduling do
     ScheduleTemplate |> Repo.get!(id) |> Repo.preload(items: :position)
   end
 
+  @doc """
+  D58: a schedule template as `attrs` would make it, its items' positions
+  loaded, for `Authz`. Malformed items are the changeset's (422).
+  """
+  def proposed_schedule_template(attrs) do
+    items =
+      case stringify(attrs)["items"] do
+        items when is_list(items) ->
+          for item when is_map(item) <- items,
+              do: %ScheduleTemplateItem{position: position_named(stringify(item)["position_id"])}
+
+        _ ->
+          []
+      end
+
+    %ScheduleTemplate{items: items}
+  end
+
   def create_schedule_template(attrs, %User{} = actor) do
     attrs = Map.put(stringify(attrs), "created_by_id", actor.id)
 
@@ -262,9 +320,30 @@ defmodule RockcutApi.Scheduling do
   # Series links are set by the server only, never from request params.
   @server_only ~w(series_id series_exception created_by_id)
 
-  def get_event(id), do: ScheduleEvent |> Repo.get(id) |> Repo.preload(@event_preloads)
+  def get_event(id),
+    do: ScheduleEvent |> Repo.get(id) |> Repo.preload(@event_preloads) |> with_chain_views()
 
-  def get_event!(id), do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(@event_preloads)
+  def get_event!(id),
+    do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(@event_preloads) |> with_chain_views()
+
+  # D58 §3.6 (4261): a split part's series as the dialog shows it
+  # (`EventSeries.chain_view/1`), worked out once per series.
+  defp with_chain_views(nil), do: nil
+  defp with_chain_views(%ScheduleEvent{} = e), do: hd(with_chain_views([e]))
+
+  defp with_chain_views(events) when is_list(events) do
+    views =
+      events
+      |> Enum.map(& &1.series)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq_by(& &1.id)
+      |> Map.new(&{&1.id, EventSeries.chain_view(&1)})
+
+    Enum.map(events, fn
+      %{series: %ScheduleEventSeries{id: id}} = e -> %{e | series: views[id]}
+      e -> e
+    end)
+  end
 
   def get_series(id), do: Repo.get(ScheduleEventSeries, id)
 
@@ -289,6 +368,7 @@ defmodule RockcutApi.Scheduling do
     |> order_by([e], asc: e.starts_at)
     |> preload(^@event_preloads)
     |> Repo.all()
+    |> with_chain_views()
   end
 
   @doc """

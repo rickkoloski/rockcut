@@ -11,7 +11,8 @@ defmodule RockcutApi.Tasks.QaFollowupsTest do
     * gap 13: a rule change from a series' first occurrence, with keep, moves
       the kept ones into the new series instead of cutting them loose;
     * gap 14: a kept occurrence moved off its day: the confirm counts it
-      (`keeps_moved`), since its old day can be made again (D39 keeps that);
+      (`keeps_moved`), and since D58 (§3.5, 5202) it stands in for its old
+      day, which the new pattern doesn't make again;
     * recheck 2, observation 1: the rule-change confirm and History count the
       removed occurrences that held their own notes.
 
@@ -297,7 +298,7 @@ defmodule RockcutApi.Tasks.QaFollowupsTest do
   end
 
   describe "gap 14: a kept occurrence moved off its day" do
-    test "the confirm counts it; D39's behaviour (its old day can be made again) stays", ctx do
+    test "the confirm counts it", ctx do
       first = keg_wash!(ctx, %{})
       w5 = week(first, 5)
       {:ok, _} = Tasks.move(ctx.board, w5, Date.add(w5.due_on, 1), nil, ctx.mgr)
@@ -308,6 +309,51 @@ defmodule RockcutApi.Tasks.QaFollowupsTest do
       # Not moved: nothing to say.
       assert {:ok, %{keeps_moved: 0}} =
                Series.change_preview(week(first, 6), %{"repeat_weekdays" => [3, 5]})
+    end
+  end
+
+  describe "D58 §3.5 (5202): no twin for a kept occurrence moved off its day" do
+    defp on_day(%Task{series_id: id}, day) do
+      chain = [id | Series.chain_ids(id)]
+      Repo.all(from t in Task, where: t.series_id in ^chain and t.due_on == ^day)
+    end
+
+    # The QA repro: Mon/Wed/Fri from Mon 11/2, Fri 11/20 moved to Sat 11/21,
+    # then 11/2 changed to every other week, Mon/Fri, keeping the changed one.
+    test "a split from the first date doesn't remake the moved one's old day", ctx do
+      first = keg_wash!(ctx, %{due_on: ~D[2026-11-02], repeat_weekdays: [1, 3, 5]})
+      fri = Repo.get_by!(Task, series_id: first.series_id, series_date: ~D[2026-11-20])
+      {:ok, _} = Tasks.move(ctx.board, fri, ~D[2026-11-21], nil, ctx.mgr)
+
+      new_first =
+        following!(ctx, first, %{repeat_interval: 2, repeat_weekdays: [1, 5]}, changed: :keep)
+
+      assert on_day(new_first, ~D[2026-11-20]) == []
+      assert [moved] = on_day(new_first, ~D[2026-11-21])
+      assert moved.id == fri.id
+      # The pattern still makes the other dates of that week, and the next.
+      assert [_] = on_day(new_first, ~D[2026-11-16])
+      assert [_] = on_day(new_first, ~D[2026-11-30])
+      assert [_] = on_day(new_first, ~D[2026-12-04])
+
+      # A top-up doesn't bring it back either.
+      Series.top_up(~D[2026-11-25])
+      assert on_day(new_first, ~D[2026-11-20]) == []
+    end
+
+    test "a split later in the series doesn't either", ctx do
+      first = keg_wash!(ctx, %{})
+      w5 = week(first, 5)
+      {:ok, _} = Tasks.move(ctx.board, w5, Date.add(w5.due_on, 1), nil, ctx.mgr)
+
+      following!(ctx, week(first, 2), %{repeat_weekdays: [3, 5]}, changed: :keep)
+
+      # The moved one stays in the old part; `first` sees the whole chain.
+      assert on_day(first, w5.series_date) == []
+      assert [moved] = on_day(first, Date.add(w5.series_date, 1))
+      assert moved.id == w5.id
+      assert [_] = on_day(first, Date.add(w5.series_date, 2))
+      assert [_] = on_day(first, Date.add(w5.series_date, 7))
     end
   end
 

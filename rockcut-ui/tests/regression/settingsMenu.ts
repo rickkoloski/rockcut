@@ -10,6 +10,21 @@ import { expect, type Page } from '@playwright/test'
 
 const menu = (page: Page) => page.getByRole('menu')
 
+/**
+ * D58: a task board saves its settings on the server. A reload or `goto` right
+ * after a pick cancels that save (DEV gate: ~75 ms on DEV, instant locally), so
+ * a pick on a task board waits for its PUT. A pick that changes nothing sends
+ * none; that wait gives up after 2 s.
+ */
+export async function boardSettingsSaved(page: Page, act: () => Promise<void>) {
+  if (!new URL(page.url()).pathname.startsWith('/tasks/')) return act()
+  const saved = page
+    .waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/api/me/board_settings/'), { timeout: 2000 })
+    .catch(() => null)
+  await act()
+  await saved
+}
+
 export async function openSettings(page: Page, gear: string) {
   if (await menu(page).isVisible()) return
   await page.getByTestId(gear).click()
@@ -34,7 +49,7 @@ export async function pickSetting(page: Page, gear: string, choice: string, valu
   await openSettings(page, gear)
   const option = page.getByTestId(`${choice}-${value}`)
   if (!(await option.isVisible())) await page.getByTestId(choice).click()
-  await option.click()
+  await boardSettingsSaved(page, () => option.click())
   if (opts.close !== false) await closeSettings(page)
 }
 
@@ -50,7 +65,7 @@ export async function settingValue(page: Page, gear: string, choice: string): Pr
 export async function setSetting(page: Page, gear: string, toggle: string, on: boolean, opts: { close?: boolean } = {}) {
   await openSettings(page, gear)
   const input = page.getByTestId(toggle)
-  if ((await input.isChecked()) !== on) await input.locator('xpath=ancestor::li[1]').click()
+  if ((await input.isChecked()) !== on) await boardSettingsSaved(page, () => input.locator('xpath=ancestor::li[1]').click())
   await expect(input).toBeChecked({ checked: on })
   if (opts.close !== false) await closeSettings(page)
 }

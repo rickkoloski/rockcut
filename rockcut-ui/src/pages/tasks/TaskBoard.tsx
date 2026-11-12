@@ -34,6 +34,7 @@ import BoardLayout from './BoardLayout'
 import BoardSwitcher from './BoardSwitcher'
 import PageTitle from '../../components/PageTitle'
 import BoardToolbar from './BoardToolbar'
+import BoardViewNotices from './BoardViewNotices'
 import ChangeDayDialog from './ChangeDayDialog'
 import DailyItemsDialog from './DailyItemsDialog'
 import HistoryDialog from './HistoryDialog'
@@ -105,8 +106,10 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
   const {
     from, to, highlighted, hideCompleted, hideShifts, phoneView, phone, wide, focus, clearFocus,
     setBoardEl, step, showToday, pickSpan, toggleHide, toggleHideShifts, setPhoneView, firstDay, pickFirstDay,
+    view, setView, rangeNotice, notSaved, clearNotSaved,
   } = useBoardView(dept)
-  const [filter, setFilter] = useState<TaskFilter>('all')
+  // D40: a shared tablet has no "My tasks".
+  const filter: TaskFilter = isDevice && view === 'mine' ? 'all' : view
 
   const { data: board, isLoading, isError, error, dataUpdatedAt } = useApiQuery<TaskBoardData>(
     [BOARD_KEY, dept, from, to],
@@ -575,7 +578,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
           showToday()
         }}
         onSpan={pickSpan}
-        onFilter={setFilter}
+        onFilter={setView}
         // D40: a shared tablet has no "My tasks" (plan decision 1).
         noMine={isDevice}
         onHideCompleted={toggleHide}
@@ -592,6 +595,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
         phoneView={phoneView}
         onPhoneView={setPhoneView}
       />
+      <BoardViewNotices rangeNotice={rangeNotice} notSaved={notSaved} onNotSavedClose={clearNotSaved} />
       {isError && !board && <Alert severity="error">{taskError(error)}</Alert>}
       {isLoading && !board && <CircularProgress />}
       {board && (

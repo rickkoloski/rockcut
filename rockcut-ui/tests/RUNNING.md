@@ -41,6 +41,7 @@ npx playwright test tests/smoke/roles.spec.ts
 | `production` | `regression/production/*.spec.ts` (D46–D49) | One worker, beside `chromium`. Tanks, step types and templates are shared lists, and a reorder names every active row. |
 | `brewery-board` | `task-board-*.spec.ts` (D38–D43) | One worker, beside `chromium`, **after `production`** (D49: the schedule's steps are tasks on the Brewery board, so a production spec's batches would change the board under a board spec). "Move all to today" moves every open past task on the one shared board, so these specs mustn't overlap. Drag specs use a tall viewport so no drag has to scroll. Their clean-up leaves linked tasks alone; those go with their batches. If a `production` test fails, Playwright doesn't run this project: rerun it with `--no-deps`. |
 | `owners` | `regression/owners/*.spec.ts` (D59 O1–O13) | One worker, beside `chromium`. O2 puts `office1` in Owners for a while (restored in `afterAll`), which the other files assert against, and the Owners boards are shared. |
+| `d58` | `regression/d58/*.spec.ts` (D58 S1–S27) | One worker, beside `chromium`, **after `brewery-board`**: board settings are per account on the server (D58), and these specs change the same personas' boards and add a repeat task on the Brewery board. Run alone with `--no-deps`. |
 | `board-replace` | `regression/taproom/beer-board-replace.spec.ts` (D37 S25, S28) | Import → Replace clears the **whole shared board**. One worker, and it starts only after `chromium` has finished. Each test snapshots the board and restores it after. |
 | `pwa-update` | `pwa-update/*.spec.ts` (D45 S170–S177, S189) | **Only with `PWA_UPDATE=1`**, so not in the default run. One worker. Builds the app twice and serves it with `vite preview` on :4173. See below. |
 
@@ -80,7 +81,10 @@ one `[TEST-TEMP]` task to the Brewery board and removes it, so don't run it
 beside the `brewery-board` project.
 
 `tests/auth.setup.ts` mints a token for every active persona in one call and
-writes `tests/.playwright-auth/<persona>.json`. Specs switch user with
+writes `tests/.playwright-auth/<persona>.json`.
+The mint also clears every synthetic account's task board settings (D58:
+they're on the server, so they'd carry over from the last run); a spec that
+changes them calls `resetBoardSettingsAroundEach()` (`regression/boardSettings.ts`). Specs switch user with
 `test.use({ storageState: authFile('barMgr') })`. No UI login.
 
 No `mix`/`fly` access (for example a browser agent)? Have a human mint tokens

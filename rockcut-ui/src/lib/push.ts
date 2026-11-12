@@ -2,6 +2,7 @@
 // The service worker only runs in the built app (vite preview / deploy), not the
 // dev server, so these calls no-op gracefully when no SW registration exists.
 import api from './api'
+import parseApiError from './parseApiError'
 
 export type PushState = 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'
 
@@ -41,7 +42,24 @@ export async function currentPushState(): Promise<PushState> {
   return sub ? 'subscribed' : 'unsubscribed'
 }
 
-/** Prompt for permission (if needed) and subscribe this device. */
+/** D58 §3.15 (4319): what a browser that refuses the subscription (e.g. a private window) shows. */
+export const PUSH_SUBSCRIBE_FAILED = 'Push can’t be turned on in this browser (private windows don’t support it).'
+
+/** The browser refused `pushManager.subscribe`. */
+export class PushSubscribeError extends Error {
+  constructor() {
+    super(PUSH_SUBSCRIBE_FAILED)
+    this.name = 'PushSubscribeError'
+  }
+}
+
+/** What Enable push says when it fails: the browser's refusal, or the API's error. */
+export const pushErrorMessage = (err: unknown) => (err instanceof PushSubscribeError ? err.message : parseApiError(err))
+
+/**
+ * Prompt for permission (if needed) and subscribe this device. Throws
+ * `PushSubscribeError` when the browser refuses the subscription.
+ */
 export async function subscribePush(): Promise<PushState> {
   if (!pushSupported()) return 'unsupported'
   const reg = await registration()
@@ -54,12 +72,17 @@ export async function subscribePush(): Promise<PushState> {
   if (!data.public_key) return 'unsupported'
 
   const existing = await reg.pushManager.getSubscription()
-  const sub =
-    existing ??
-    (await reg.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: urlBase64ToUint8Array(data.public_key),
-    }))
+  let sub = existing
+  if (!sub) {
+    try {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(data.public_key),
+      })
+    } catch {
+      throw new PushSubscribeError()
+    }
+  }
 
   const json = sub.toJSON()
   await api.post('/api/push/subscriptions', { endpoint: sub.endpoint, keys: json.keys })

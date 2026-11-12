@@ -285,6 +285,29 @@ defmodule RockcutApi.Seeds.SyntheticTest do
                RockcutApi.Sessions.authenticate(tokens["owner"].token)
     end
 
+    test "D58: setup and mint_tokens/0 clear every persona's and device's board settings" do
+      {:ok, _} = Synthetic.setup()
+      emails = ~w(brewer1@rockcut-test.com taproom.device@rockcut-test.com)
+
+      saved = fn ->
+        for email <- emails do
+          user = Accounts.get_user_by_email(email)
+          {:ok, _} = Accounts.save_board_settings(user, "bar", %{"span" => 7})
+        end
+      end
+
+      settings = fn -> Enum.map(emails, &Accounts.get_user_by_email(&1).board_settings) end
+
+      saved.()
+      assert settings.() == [%{"bar" => %{"span" => 7}}, %{"bar" => %{"span" => 7}}]
+      Synthetic.mint_tokens()
+      assert settings.() == [%{}, %{}]
+
+      saved.()
+      {:ok, _} = Synthetic.setup()
+      assert settings.() == [%{}, %{}]
+    end
+
     test "refuses unknown and inactive personas" do
       {:ok, _} = Synthetic.setup()
       assert_raise ArgumentError, fn -> Synthetic.mint_token("nobody") end

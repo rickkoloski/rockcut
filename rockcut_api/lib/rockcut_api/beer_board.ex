@@ -45,18 +45,30 @@ defmodule RockcutApi.BeerBoard do
     %{events: events, page: page, total: Repo.aggregate(base, :count)}
   end
 
-  @doc "The whole change log, newest first, actor preloaded (the History export)."
-  def all_events do
-    Repo.all(from ev in Event, order_by: [desc: ev.id], preload: [:actor])
+  @doc """
+  The change log, newest first, actor preloaded (the History export); with
+  `q`, only what the History search shows (D58 §3.14, 4116).
+  """
+  def all_events(q \\ nil) do
+    Repo.all(from ev in search(from(ev in Event), q), order_by: [desc: ev.id], preload: [:actor])
   end
 
+  # For, Bought by, or who made the change as History shows it: "<name>", or
+  # "<name> on Shared Device" for a change on a tablet (D58 §3.14, 4115).
   defp search(query, q) when is_binary(q) and q != "" do
     like = "%" <> escape_like(normalize_name(q)) <> "%"
 
     from ev in query,
+      left_join: a in assoc(ev, :actor),
       where:
         fragment("lower(?) LIKE ? ESCAPE '\\'", ev.recipient_name, ^like) or
-          fragment("lower(?) LIKE ? ESCAPE '\\'", ev.purchaser_name, ^like)
+          fragment("lower(?) LIKE ? ESCAPE '\\'", ev.purchaser_name, ^like) or
+          fragment(
+            "lower(coalesce(?, '') || CASE WHEN ? IS NULL THEN '' ELSE ' on shared device' END) LIKE ? ESCAPE '\\'",
+            a.name,
+            ev.device_id,
+            ^like
+          )
   end
 
   defp search(query, _), do: query

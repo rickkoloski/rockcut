@@ -1,32 +1,35 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMediaQuery, useTheme } from '@mui/material'
+import useAuth from '../../hooks/useAuth'
 import { addDaysKey } from '../../lib/datetime'
 import {
   FUTURE,
+  boardRange,
+  boardSettings,
+  carryOver,
+  cleanSettings,
+  clearLocalSettings,
   coloradoToday,
   dayCount,
   defaultRange,
   isDateKey,
   rangeError,
   rangeForDay,
-  readFirstDay,
-  readHideCompleted,
-  readHideShifts,
-  readPhoneView,
-  readSpan,
+  missingLocalSettings,
   spanEnd,
-  writeFirstDay,
-  writeHideCompleted,
-  writeHideShifts,
-  writePhoneView,
-  writeSpan,
+  type BoardSettings,
   type FirstDay,
   type PhoneView,
+  type RangeNotice,
   type Span,
+  type TaskFilter,
 } from '../../lib/tasks'
 
 const WIDE_BOARD_PX = 1200
+
+// D58: the boards whose carry-over this page has started (`<user>:<board>`), so it runs once.
+const carried = new Set<string>()
 
 /**
  * The view a task board and the All departments view share (D38 §3.8, D41
@@ -38,19 +41,43 @@ const WIDE_BOARD_PX = 1200
  * day (`rangeForDay`) and drops the param; `focus` is that day until the
  * board has scrolled to it (`clearFocus`).
  *
- * D42: the choices are remembered per board (`board`: a department key, or
- * `all`), and the range starts on the first day (Today, Sunday or Monday) of
- * the week holding today.
+ * D42: the choices are per board (`board`: a department key, or `all`), and
+ * the range starts on the first day (Today, Sunday or Monday) of the week
+ * holding today.
+ *
+ * D58: the choices, the View filter with them, are saved on the server per
+ * account (`/api/me`'s `board_settings`); a failed save keeps the change for
+ * this page and sets `notSaved`. A board this account has nothing saved for
+ * takes this browser's old local choices, saved once (`carryOver`). A URL
+ * range over 31 days shows 31, an invalid one the default, and the URL is
+ * corrected, with a notice (`rangeNotice`).
  */
 export function useBoardView(board: string) {
   const [params, setParams] = useSearchParams()
-  const [span, setSpan] = useState<Span>(() => readSpan(board))
-  const [hideCompleted, setHideCompleted] = useState(() => readHideCompleted(board))
-  // D45: the day headers without who's working and open shifts (events stay).
-  const [hideShifts, setHideShifts] = useState(() => readHideShifts(board))
-  // D39: at phone width, every day stacked (the default) or one at a time.
-  const [phoneView, setPhoneViewState] = useState<PhoneView>(() => readPhoneView(board))
-  const [firstDay, setFirstDayState] = useState<FirstDay>(() => readFirstDay(board))
+  const userId = useAuth((s) => s.user?.id)
+  const stored = useAuth((s) => s.boardSettings[board])
+  const saveBoardSettings = useAuth((s) => s.saveBoardSettings)
+  // Until the server has them, this browser's old choices show (D58
+  // carry-over), under whatever the server already has.
+  const local = useMemo(() => missingLocalSettings(board, stored), [board, stored])
+  const settings = boardSettings({ ...local, ...cleanSettings(stored) })
+  const { span, hide_completed: hideCompleted, hide_shifts: hideShifts, phone_view: phoneView, first_day: firstDay, view } = settings
+  const [notSaved, setNotSaved] = useState(false)
+
+  useEffect(() => {
+    if (userId === undefined || carried.has(`${userId}:${board}`)) return
+    carried.add(`${userId}:${board}`)
+    void carryOver(board, useAuth.getState().boardSettings[board], (s) => useAuth.getState().saveBoardSettings(board, s))
+  }, [userId, board])
+
+  /** Save some settings; the local ones the server lacks go along. */
+  const save = (changes: Partial<BoardSettings>) => {
+    const carry = missingLocalSettings(board, stored)
+    saveBoardSettings(board, { ...carry, ...changes })
+      .then(() => carry && clearLocalSettings(board))
+      .catch(() => setNotSaved(true))
+  }
+
   // Nine columns (Unfinished, seven days, Future) need about 1,200px of board,
   // which a 1280px screen beside the nav doesn't have (spec §3.8).
   const [boardEl, setBoardEl] = useState<HTMLElement | null>(null)
@@ -66,13 +93,11 @@ export function useBoardView(board: string) {
   const phone = useMediaQuery(theme.breakpoints.down('sm'), { noSsr: true })
 
   // The range lives in the URL; without a valid one it's the default span
-  // from the first day of the week holding today.
+  // from the first day of the week holding today. Over 31 days, 31.
   const urlFrom = params.get('from') ?? ''
   const urlTo = params.get('to') ?? ''
-  const urlValid = rangeError(urlFrom, urlTo) === null
-  const fallback = defaultRange(coloradoToday(), span, firstDay)
-  const from = urlValid ? urlFrom : fallback.from
-  const to = urlValid ? urlTo : fallback.to
+  const range = boardRange(urlFrom, urlTo, defaultRange(coloradoToday(), span, firstDay))
+  const { from, to, inUrl: urlValid } = range
   const length = dayCount(from, to)
   const highlighted: Span | null = urlValid ? (length === 7 || length === 14 ? length : null) : span
 
@@ -98,6 +123,29 @@ export function useBoardView(board: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [day])
 
+  // D58 §3.2: a range over 31 days, or an invalid one, is corrected in the
+  // URL (replace), with a notice while the corrected range shows. `?day=`
+  // goes first: it sets its own range.
+  const [corrected, setCorrected] = useState<{ notice: RangeNotice; at: string } | null>(null)
+  useEffect(() => {
+    if (day !== null || !range.fix) return
+    const next = new URLSearchParams(params)
+    if (range.fix.from) {
+      next.set('from', range.fix.from)
+      next.set('to', range.fix.to)
+    } else {
+      next.delete('from')
+      next.delete('to')
+    }
+    if (range.clamped) setCorrected({ notice: 'clamped', at: `${range.fix.from}/${range.fix.to}` })
+    if (range.invalid) setCorrected({ notice: 'invalid', at: `${range.from}/${range.to}` })
+    setParams(next, { replace: true })
+    // Once per URL range.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlFrom, urlTo, day])
+  /** Why the URL's range was corrected, while the corrected range shows. */
+  const rangeNotice: RangeNotice | null = corrected?.at === `${from}/${to}` ? corrected.notice : null
+
   const showRange = (f: string, t: string) => setParams({ from: f, to: t })
   /**
    * Previous / Next by the range's own length. They read the address bar, not
@@ -111,27 +159,13 @@ export function useBoardView(board: string) {
     showRange(addDaysKey(f, n), addDaysKey(t, n))
   }
   const pickSpan = (s: Span) => {
-    writeSpan(board, s)
-    setSpan(s)
+    save({ span: s })
     showRange(from, spanEnd(from, s))
   }
   /** D42: a new first day shows the week holding today from it (the default range). */
   const pickFirstDay = (first: FirstDay) => {
-    writeFirstDay(board, first)
-    setFirstDayState(first)
+    save({ first_day: first })
     setParams({})
-  }
-  const toggleHide = (on: boolean) => {
-    writeHideCompleted(board, on)
-    setHideCompleted(on)
-  }
-  const toggleHideShifts = (on: boolean) => {
-    writeHideShifts(board, on)
-    setHideShifts(on)
-  }
-  const setPhoneView = (view: PhoneView) => {
-    writePhoneView(board, view)
-    setPhoneViewState(view)
   }
 
   return {
@@ -142,6 +176,8 @@ export function useBoardView(board: string) {
     hideCompleted,
     hideShifts,
     phoneView,
+    /** D58: the View filter (All / My tasks / Unassigned), saved with the rest. */
+    view,
     phone,
     wide,
     setBoardEl,
@@ -151,9 +187,14 @@ export function useBoardView(board: string) {
     step,
     pickSpan,
     pickFirstDay,
-    toggleHide,
-    toggleHideShifts,
-    setPhoneView,
+    toggleHide: (on: boolean) => save({ hide_completed: on }),
+    toggleHideShifts: (on: boolean) => save({ hide_shifts: on }),
+    setPhoneView: (v: PhoneView) => save({ phone_view: v }),
+    setView: (v: TaskFilter) => save({ view: v }),
+    rangeNotice,
+    /** D58: a setting didn't save (it stays for this page): a quiet "Not saved". */
+    notSaved,
+    clearNotSaved: () => setNotSaved(false),
     /** Today: the default range, the week holding today (the URL loses its range). */
     showToday: () => setParams({}),
   }

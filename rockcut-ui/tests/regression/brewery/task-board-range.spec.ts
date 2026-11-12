@@ -19,6 +19,7 @@ import {
   type ApiCard,
 } from './taskBoardHelpers'
 import { pickSetting, settingValue } from '../settingsMenu'
+import { resetBoardSettingsAroundEach } from '../boardSettings'
 
 // D38 §3.8, scenarios S18–S23b: the Unfinished card, Move all to today, the
 // range (URL, Previous / Today / Next, 1 week / 2 weeks) and the narrow layout.
@@ -28,6 +29,8 @@ import { pickSetting, settingValue } from '../settingsMenu'
 const GEAR = 'board-settings'
 
 test.use({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
+// D58: Days shown is brewer1's own setting, on the server.
+resetBoardSettingsAroundEach()
 
 const created: number[] = []
 test.afterEach(async () => {
@@ -209,7 +212,9 @@ test('D41: an old /brewery/tasks link lands on /tasks/brewery with its range, re
   await expect(page).toHaveURL(/\/$/)
 })
 
-test('S23a: 1 week becomes this browser\'s default (after a reload and Today); another browser still opens on 2 weeks', async ({ page, browser }) => {
+// D58 (decision 1): the setting is brewer1's, on the server, so another
+// browser opens on 1 week too (before D58 it stayed on 2 weeks there).
+test('S23a: 1 week becomes the default (after a reload and Today); another browser opens on 1 week too (D58)', async ({ page, browser }) => {
   await openBoard(page)
   await pickSetting(page, GEAR, 'board-span', 7)
   expect(await settingValue(page, GEAR, 'board-span')).toBe('1 week')
@@ -229,7 +234,7 @@ test('S23a: 1 week becomes this browser\'s default (after a reload and Today); a
   const ctx = await browser.newContext({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1000 } })
   const other = await ctx.newPage()
   await openBoard(other)
-  await expect(other.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(14)
+  await expect(other.getByTestId('board-grid').locator('[data-testid^="day-title-"]')).toHaveCount(7)
   await ctx.close()
 })
 

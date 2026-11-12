@@ -46,7 +46,7 @@ export default function Scheduler() {
   const data = useScheduleData(filters, range, mondayKey)
   const {
     user, isOwner, managedKeys, canManageSchedule, shifts, isLoading, events, positions, departments, roster,
-    shiftTemplates, availability, offMarkers, conflicts, managedDepartments, canManageShift, canManageEvent, canClaim, claim,
+    shiftTemplates, availability, offMarkers, conflicts, canManageDepartment, canManageShift, canManageEvent, canClaim, claim,
   } = data
   const { openCreate, openEdit, openCreateEvent, openEvent, dialogs } = useScheduleDialogs(data)
   const conflictCount = conflicts.size
@@ -365,7 +365,15 @@ export default function Scheduler() {
       )}
 
       {dialogs}
-      <PositionsDialog open={positionsDialog} onClose={() => setPositionsDialog(false)} positions={positions} departments={managedDepartments} shiftTemplates={shiftTemplates} canEditColors={isOwner} />
+      <PositionsDialog
+        open={positionsDialog}
+        onClose={() => setPositionsDialog(false)}
+        positions={positions}
+        departments={departments}
+        shiftTemplates={shiftTemplates}
+        canEditColors={isOwner}
+        canManageDepartment={canManageDepartment}
+      />
       <ConfirmDialog
         open={pendingCell !== null}
         onClose={() => setPendingCell(null)}
@@ -385,6 +393,7 @@ export default function Scheduler() {
         open={templatesOpen}
         onClose={() => setTemplatesOpen(false)}
         templates={scheduleTemplates}
+        canManageDepartment={canManageDepartment}
         weekShifts={shifts}
         mondayKey={mondayKey}
         days={weekDayKeys(mondayKey)}
