@@ -113,6 +113,27 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editUser])
 
+  // D58 DEV gate: `/api/departments` can arrive after the dialog opens. Fill
+  // in the departments that weren't there yet, keeping any role already
+  // chosen; until then Save is off, or it would send no memberships and the
+  // API would remove them all.
+  const manageableKey = manageableDepts.map((d) => d.key).join(',')
+  useEffect(() => {
+    if (!open) return
+    setRoles((prev) => {
+      const missing = manageableDepts.filter((d) => !(d.key in prev))
+      if (missing.length === 0) return prev
+      const next = { ...prev }
+      for (const d of missing) {
+        const m = editUser?.memberships?.find((mm) => mm.department_key === d.key)
+        next[d.key] = (m?.role as RoleChoice) ?? ''
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, editUser, manageableKey])
+  const departmentsReady = departments.length > 0
+
   const memberships = () => membershipsPayload(manageableDepts, roles)
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['users'] })
@@ -371,7 +392,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
             {tempPassword ? 'Done' : 'Cancel'}
           </Button>
           {!tempPassword && (
-            <Button onClick={save} variant="contained" disabled={loading} sx={{ ml: 1 }}>
+            <Button onClick={save} variant="contained" disabled={loading || !departmentsReady} sx={{ ml: 1 }}>
               {loading ? <CircularProgress size={20} /> : 'Save'}
             </Button>
           )}

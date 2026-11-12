@@ -260,6 +260,35 @@ test.describe('dualMgr', () => {
     expect(await status('dualMgr', 'PATCH', `/api/users/${temp.id}`, { active: false })).toBe(403)
     expect((await rowOf('owner', temp.id)).active).toBe(true)
   })
+
+  // DEV gate (O6 on DEV): the dialog opened before `/api/departments` came
+  // back, Save sent no memberships, and the API removed Office.
+  test('a slow department list: Save waits for it and keeps the person’s departments', async ({ page }) => {
+    const temp = await tempIn('slow depts', ['bar', 'office'])
+    let release!: () => void
+    const held = new Promise<void>((r) => (release = r))
+    await page.route('**/api/departments', async (route) => {
+      await held
+      await route.continue()
+    })
+
+    await openUser(page, temp.name)
+    const dialog = page.getByRole('dialog')
+    await dialog.getByLabel('Name').fill(`${temp.name} edited`)
+    await expect(dialog.getByRole('button', { name: 'Save' })).toBeDisabled()
+    release()
+
+    const put = page.waitForRequest((r) => r.method() === 'PUT' && r.url().endsWith(`/api/users/${temp.id}/memberships`))
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    expect((await put).postDataJSON().memberships).toEqual(
+      expect.arrayContaining([
+        { department: 'bar', role: 'employee' },
+        { department: 'office', role: 'employee' },
+      ]),
+    )
+    await expect(dialog).toBeHidden()
+    expect(await departmentsOf(temp.id)).toEqual(['bar', 'office'])
+  })
 })
 
 test.describe('barMgr', () => {
