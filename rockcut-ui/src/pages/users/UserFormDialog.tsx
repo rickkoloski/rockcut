@@ -240,15 +240,20 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
             )}
 
             {isEdit && (
-              <Tooltip title={access.canDeactivate ? '' : DEACTIVATE_HINT}>
-                <FormControlLabel
-                  control={<Switch checked={active} onChange={(e) => setActive(e.target.checked)} />}
-                  label="Active"
-                  disabled={!access.canDeactivate}
-                  data-testid="user-active"
-                  sx={{ alignSelf: 'flex-start' }}
-                />
-              </Tooltip>
+              <FormControlLabel
+                control={
+                  // D58: the greyed-out switch's hint sits on the switch (a span, as a disabled one gets no hover).
+                  <Tooltip title={access.canDeactivate ? '' : DEACTIVATE_HINT} placement="top-start">
+                    <Box component="span" sx={{ display: 'inline-flex' }} data-testid="user-active-switch">
+                      <Switch checked={active} onChange={(e) => setActive(e.target.checked)} disabled={!access.canDeactivate} />
+                    </Box>
+                  </Tooltip>
+                }
+                label="Active"
+                disabled={!access.canDeactivate}
+                data-testid="user-active"
+                sx={{ alignSelf: 'flex-start' }}
+              />
             )}
             {isEdit && (
               <FormControlLabel
