@@ -84,6 +84,8 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:put, "/api/users/:id"},
     {:put, "/api/users/:user_id/memberships"},
     {:post, "/api/users/:id/reset_password"},
+    # D58 lead decisions 1: what a deactivate would leave open.
+    {:get, "/api/users/:id/future_shifts"},
     {:get, "/api/beer_board/history"},
     {:get, "/api/beer_board/history/export.csv"},
     {:get, "/api/beer_board/export.csv"},
