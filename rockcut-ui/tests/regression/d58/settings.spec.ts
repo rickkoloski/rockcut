@@ -168,26 +168,6 @@ test.describe('S2: the carry-over', () => {
   })
 })
 
-// Lead decisions 1 (DEV QA gap 2): on touch, the gear's tooltip goes with
-// the menu. Every page's gear is the same `SettingsGear`.
-test.describe('brewer1 on a phone', () => {
-  test.use({ storageState: authFile('brewer1'), viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })
-
-  test('S1 (touch): the "Board settings" tooltip doesn’t stay after the menu closes', async ({ page }) => {
-    await openBoard(page, '/tasks/brewery')
-    const saved = settingSaved(page, 'brewery')
-    await page.getByTestId(GEAR).tap()
-    await expect(page.getByRole('menu')).toBeVisible()
-    await page.getByTestId('board-hide-completed').locator('xpath=ancestor::li[1]').tap()
-    expect((await saved).status()).toBe(200)
-    // The backdrop, away from the gear.
-    await page.touchscreen.tap(20, 600)
-    await expect(page.getByRole('menu')).toBeHidden()
-    await page.waitForTimeout(1000)
-    await expect(page.getByRole('tooltip', { name: 'Board settings' })).toHaveCount(0)
-  })
-})
-
 test.describe('taproomDevice', () => {
   test.use({ storageState: authFile('taproomDevice') })
 

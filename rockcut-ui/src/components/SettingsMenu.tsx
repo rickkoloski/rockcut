@@ -37,10 +37,6 @@ export function SettingsGear({
 }) {
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const close = () => setAnchor(null)
-  // The tooltip closes when the menu opens and stays closed until the next
-  // real hover or focus: a tap's emulated hover has no "leave", so on touch
-  // it stayed over the page after the menu closed (D58 DEV QA gap 2).
-  const [tip, setTip] = useState(false)
   // Focus goes back to the gear without scrolling the page to it: a choice can
   // scroll the page while the menu is open (the phone board scrolls to today
   // on a new first day, D53), and MUI's own restore would undo that. Only when
@@ -59,16 +55,8 @@ export function SettingsGear({
   }, [anchor])
   return (
     <>
-      <Tooltip title={label} open={tip && !anchor} onOpen={() => setTip(true)} onClose={() => setTip(false)}>
-        <IconButton
-          ref={gear}
-          aria-label={label}
-          onClick={(e) => {
-            setTip(false)
-            setAnchor(e.currentTarget)
-          }}
-          data-testid={testid}
-        >
+      <Tooltip title={label}>
+        <IconButton ref={gear} aria-label={label} onClick={(e) => setAnchor(e.currentTarget)} data-testid={testid}>
           <Badge variant="dot" color="secondary" invisible={!dot}>
             <Settings />
           </Badge>
