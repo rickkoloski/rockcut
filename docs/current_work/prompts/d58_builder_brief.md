@@ -198,3 +198,44 @@ format only your files).
 
 Done when: `mix test` twice, warnings-as-errors, tsc, vitest, lint ≤ 27, build, the two drag
 projects green. Reply with commits, revert checks, and `LEAD:` notes.
+
+---
+
+# Stage 4 (Playwright + coverage)
+
+2026-11-12 · lead → builder. Stages 1–3b are in (through `0fb9b6a`). Do **plan Stage 4**, then stop
+and report. Same rules; servers are the lead's.
+
+1. **Reset board settings in the Playwright setup:** board settings live on the server now and leak
+   between specs and runs. In the setup project (`tests/auth.setup.ts` or a fixture beside it),
+   clear every persona's and both devices' `board_settings` before a run, through the API or the
+   synthetic setup path that works on local **and** DEV (no DB access from tests on DEV). Also make
+   `mix rockcut.synthetic.setup` / `seed_synthetic()` reset `board_settings` for personas and
+   synthetic devices, so DEV starts clean.
+2. **Update the old specs** that read or set the D41/D42/D45 local board keys:
+   `tasks/task-board-follow-ups.spec.ts:365`, `tasks/task-board-departments.spec.ts:369` and `:523`,
+   `brewery/task-board-hide-shifts.spec.ts:164`. They now go through the server settings (and the
+   carry-over where that's what they test).
+3. **Specs for S1–S28** (spec §5) under `tests/regression/d58/`, one file per theme (settings,
+   managers, sweep, follow-ups). Fold in the specs you already wrote in Stage 3/3b rather than
+   duplicating them.
+   - Every spec declares its persona with `test.use({ storageState: authFile('<key>') })`, and no UI
+     login.
+   - Negative personas assert the **visible** refusal (greyed control, tooltip, read-only note), plus
+     the API status where there's no UI path.
+   - Anything created is `[TEST-TEMP]` and removed **by exact id** in cleanup. People are deactivated
+     by id. Settings changed on a persona are reset in `afterAll`, even on failure.
+   - S8–S11 and S24 use `[TEST-TEMP]` people where a seeded persona would change.
+   - S12 asserts no Owners in the `/api/users` response as `breweryMgr`.
+   - S16 covers the 4261 chain.
+   - If specs share personas' settings or memberships, give them their own project with one worker,
+     as D59's `owners` project does.
+4. **`tests/COVERAGE.md`:** a D58 section, scenario → layer (ExUnit / Playwright / vitest /
+   manual-only / GAP).
+5. **Run** the D58 specs twice, then the projects whose specs you changed
+   (`--project=<name> --no-deps`, one at a time). Don't run the full suite: the lead does that at
+   Stop 2.
+
+Done when: the D58 specs pass twice, the changed projects are green, `tsc -p tsconfig.e2e.json`
+shows no new errors, lint ≤ 27. Commits. Reply with: commits, files, run results, any manual-only
+or GAP rows and why, `LEAD:` notes.
