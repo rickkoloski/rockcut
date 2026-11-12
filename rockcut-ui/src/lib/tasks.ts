@@ -597,22 +597,38 @@ export function clearLocalSettings(board: string) {
 }
 
 /**
- * D58 §3.1 carry-over, once per board: when the server has nothing for
- * `board` (`stored` is undefined) and this browser has old local values,
- * `save` them, then clear the local keys. Only after the save succeeds: a
- * failed one keeps them for next time. Never when the server already has the
- * board. Answers what it did.
+ * This browser's old local settings for `board` that the server's entry
+ * (`stored`, undefined when it has none) lacks: what the carry-over may
+ * still save. Null when the browser has none at all.
+ */
+export function missingLocalSettings(board: string, stored: unknown): Partial<BoardSettings> | null {
+  const local = readLocalSettings(board)
+  if (!local) return null
+  const have = cleanSettings(stored)
+  return Object.fromEntries(Object.entries(local).filter(([key]) => !(key in have))) as Partial<BoardSettings>
+}
+
+/**
+ * D58 §3.1 carry-over, once per board: `save` this browser's old local
+ * values for `board` that the server's entry (`stored`) lacks, never one it
+ * has (lead decisions 1, DEV QA gap 1: a partial entry), then clear the
+ * board's local keys. Only after the save succeeds: a failed one keeps them
+ * for next time. With nothing missing, they're cleared without a save.
+ * Answers what it did.
  */
 export async function carryOver(
   board: string,
   stored: unknown,
   save: (settings: Partial<BoardSettings>) => Promise<unknown>,
 ): Promise<'server' | 'none' | 'saved' | 'failed'> {
-  if (stored !== undefined) return 'server'
-  const local = readLocalSettings(board)
-  if (!local || Object.keys(local).length === 0) return 'none'
+  const missing = missingLocalSettings(board, stored)
+  if (!missing) return 'none'
+  if (Object.keys(missing).length === 0) {
+    clearLocalSettings(board)
+    return 'server'
+  }
   try {
-    await save(local)
+    await save(missing)
   } catch {
     return 'failed'
   }

@@ -22,6 +22,7 @@ import {
   boardRange,
   boardSettings,
   carryOver,
+  missingLocalSettings,
   cleanSettings,
   readLocalSettings,
   taskError,
@@ -295,13 +296,45 @@ describe('the carry-over from this browser (D58 §3.1, S2)', () => {
     expect([...store.keys()]).toEqual(['rockcut.tasks.board'])
   })
 
-  it('the server already has the board: no save, and the local keys stay', async () => {
-    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7' })
+  // Lead decisions 1 (DEV QA gap 1): the server's entry may hold some keys only.
+  it('an empty entry on the server: every local value is saved, then cleared', async () => {
+    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7', 'rockcut.tasks.firstDay.brewery': 'monday' })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(await carryOver('brewery', {}, save)).toBe('saved')
+    expect(save).toHaveBeenCalledWith({ span: 7, first_day: 'monday' })
+    expect([...store.keys()]).toEqual([])
+  })
+
+  it('a partial entry: only the keys the server lacks are saved; its own values are never overwritten', async () => {
+    const store = stubStorage({
+      'rockcut.tasks.span.brewery': '7',
+      'rockcut.tasks.hideCompleted.brewery': 'true',
+      'rockcut.tasks.hideShifts.brewery': 'true',
+      'rockcut.tasks.firstDay.brewery': 'monday',
+    })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(missingLocalSettings('brewery', { view: 'all', hide_shifts: false })).toEqual({ span: 7, hide_completed: true, first_day: 'monday' })
+    expect(await carryOver('brewery', { view: 'all', hide_shifts: false }, save)).toBe('saved')
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith({ span: 7, hide_completed: true, first_day: 'monday' })
+    expect([...store.keys()]).toEqual([])
+  })
+
+  it('a full entry: no save, and the local keys are cleared', async () => {
+    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7', 'rockcut.tasks.board': 'brewery' })
     const save = vi.fn().mockResolvedValue(undefined)
     expect(await carryOver('brewery', { span: 14 }, save)).toBe('server')
-    expect(await carryOver('brewery', {}, save)).toBe('server')
     expect(save).not.toHaveBeenCalled()
+    expect([...store.keys()]).toEqual(['rockcut.tasks.board'])
+  })
+
+  it('a failed save of the missing keys keeps them all for next time', async () => {
+    const store = stubStorage({ 'rockcut.tasks.span.brewery': '7', 'rockcut.tasks.firstDay.brewery': 'sunday' })
+    const save = vi.fn().mockRejectedValue(new Error('offline'))
+    expect(await carryOver('brewery', { span: 14 }, save)).toBe('failed')
+    expect(save).toHaveBeenCalledWith({ first_day: 'sunday' })
     expect(store.get('rockcut.tasks.span.brewery')).toBe('7')
+    expect(store.get('rockcut.tasks.firstDay.brewery')).toBe('sunday')
   })
 
   it('a failed save keeps the local keys for next time', async () => {

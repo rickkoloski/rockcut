@@ -8,6 +8,7 @@ import {
   boardRange,
   boardSettings,
   carryOver,
+  cleanSettings,
   clearLocalSettings,
   coloradoToday,
   dayCount,
@@ -15,7 +16,7 @@ import {
   isDateKey,
   rangeError,
   rangeForDay,
-  readLocalSettings,
+  missingLocalSettings,
   spanEnd,
   type BoardSettings,
   type FirstDay,
@@ -54,10 +55,10 @@ export function useBoardView(board: string) {
   const userId = useAuth((s) => s.user?.id)
   const stored = useAuth((s) => s.boardSettings[board])
   const saveBoardSettings = useAuth((s) => s.saveBoardSettings)
-  // Until the server has the board, this browser's old choices show (D58 carry-over).
-  const hasStored = stored !== undefined
-  const local = useMemo(() => (hasStored ? null : readLocalSettings(board)), [board, hasStored])
-  const settings = boardSettings(stored ?? local)
+  // Until the server has them, this browser's old choices show (D58
+  // carry-over), under whatever the server already has.
+  const local = useMemo(() => missingLocalSettings(board, stored), [board, stored])
+  const settings = boardSettings({ ...local, ...cleanSettings(stored) })
   const { span, hide_completed: hideCompleted, hide_shifts: hideShifts, phone_view: phoneView, first_day: firstDay, view } = settings
   const [notSaved, setNotSaved] = useState(false)
 
@@ -67,9 +68,9 @@ export function useBoardView(board: string) {
     void carryOver(board, useAuth.getState().boardSettings[board], (s) => useAuth.getState().saveBoardSettings(board, s))
   }, [userId, board])
 
-  /** Save some settings; a board not on the server yet takes its local ones along. */
+  /** Save some settings; the local ones the server lacks go along. */
   const save = (changes: Partial<BoardSettings>) => {
-    const carry = hasStored ? null : readLocalSettings(board)
+    const carry = missingLocalSettings(board, stored)
     saveBoardSettings(board, { ...carry, ...changes })
       .then(() => carry && clearLocalSettings(board))
       .catch(() => setNotSaved(true))

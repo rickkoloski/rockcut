@@ -125,11 +125,42 @@ test.describe('S2: the carry-over', () => {
         await page.evaluate(() => ['span', 'hideShifts', 'firstDay', 'board'].map((k) => localStorage.getItem(`rockcut.tasks.${k}${k === 'board' ? '' : '.brewery'}`))),
       ).toEqual([null, null, null, 'brewery'])
 
-      // A stale local value on a board the server has: never sent.
+      // A stale local value on a board the server has: never sent, and
+      // cleared (lead decisions 1).
       await page.evaluate(() => localStorage.setItem('rockcut.tasks.span.brewery', '14'))
       await openBoard(page, '/tasks/brewery')
       expect(await settingValue(page, GEAR, 'board-span')).toBe('1 week')
+      await expect.poll(() => page.evaluate(() => localStorage.getItem('rockcut.tasks.span.brewery'))).toBeNull()
       expect(puts).toHaveLength(1)
+    } finally {
+      await api.dispose()
+      await context.close()
+    }
+  })
+
+  // Lead decisions 1 (DEV QA gap 1): a partial entry on the server.
+  test('a partial server entry: only the local values it lacks are saved; its own stay', async ({ browser }) => {
+    person = await createTempPerson('D58 S2 partial', { schedulable: false, memberships: [{ department: 'brewery', role: 'employee' }] })
+    const token = await signIn(person)
+    const { context, page } = await contextWith(browser, token)
+    const api = await apiWith(token)
+    try {
+      expect((await api.put('/api/me/board_settings/brewery', { data: { hide_shifts: false } })).status()).toBe(200)
+      await page.setViewportSize({ width: 1600, height: 1100 })
+      await page.goto('/')
+      await page.evaluate(() => {
+        localStorage.setItem('rockcut.tasks.span.brewery', '7')
+        localStorage.setItem('rockcut.tasks.hideShifts.brewery', 'true')
+      })
+      const sent = page.waitForRequest((r) => r.method() === 'PUT' && r.url().endsWith('/api/me/board_settings/brewery'))
+      const saved = settingSaved(page, 'brewery')
+      await openBoard(page, '/tasks/brewery')
+      expect((await sent).postDataJSON()).toEqual({ span: 7 })
+      expect((await saved).status()).toBe(200)
+      expect(await settingValue(page, GEAR, 'board-span')).toBe('1 week')
+      expect(await settingOn(page, GEAR, 'board-hide-shifts')).toBe(false)
+      expect((await (await api.get('/api/me')).json()).board_settings).toEqual({ brewery: { hide_shifts: false, span: 7 } })
+      expect(await page.evaluate(() => [localStorage.getItem('rockcut.tasks.span.brewery'), localStorage.getItem('rockcut.tasks.hideShifts.brewery')])).toEqual([null, null])
     } finally {
       await api.dispose()
       await context.close()
