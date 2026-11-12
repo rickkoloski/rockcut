@@ -32,7 +32,7 @@ export default function BoardSwitcher({ board, boards, onSwitch, compact, titleO
   const variant = compact ? 'h6' : 'h4'
   if (boards.length < 2)
     return (
-      <Typography variant={variant} data-testid="board-title">
+      <Typography variant={variant} noWrap={compact} data-testid="board-title">
         {titleOf(board)}
       </Typography>
     )
@@ -45,10 +45,11 @@ export default function BoardSwitcher({ board, boards, onSwitch, compact, titleO
         aria-haspopup="menu"
         aria-label={`${titleOf(board)}, switch board`}
         data-testid="board-switcher"
-        sx={{ textTransform: 'none', px: 1, ml: -1, minWidth: 0 }}
+        sx={{ textTransform: 'none', px: 1, ml: -1, minWidth: 0, maxWidth: '100%' }}
       >
         <Swatch board={board} />
-        <Typography variant={variant} component="span" data-testid="board-title" sx={{ ml: 1 }}>
+        {/* D58 §3.11: in the top bar the title stays on one line. */}
+        <Typography variant={variant} component="span" noWrap={compact} data-testid="board-title" sx={{ ml: 1, minWidth: 0 }}>
           {titleOf(board)}
         </Typography>
       </Button>

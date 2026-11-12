@@ -28,6 +28,7 @@ import {
   MenuItem,
   ListSubheader,
   Snackbar,
+  useMediaQuery,
   useTheme,
   alpha,
 } from '@mui/material'
@@ -358,6 +359,8 @@ function App() {
     signOutDevice,
   } = useAuth()
   const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
+  // D58 §3.11 (4061): a shared device's header below 412 px.
+  const narrowHeader = useMediaQuery('(max-width: 411.98px)', { noSsr: true })
   const [themeError, setThemeError] = useState<string | null>(null)
   // D43: the theme changes at once; the save follows and is undone if refused.
   const pickTheme = (mode: ColorMode) => {
@@ -794,7 +797,7 @@ function App() {
               </IconButton>
             )}
 
-            <Box className="phone-logo" sx={{ display: { xs: 'flex', md: 'none' } }}>
+            <Box className="phone-logo" sx={{ display: { xs: 'flex', md: 'none' }, flexShrink: 0 }}>
               <img src={logoSrc} alt="Rockcut Brewing Co" style={{ height: 32 }} />
             </Box>
 
@@ -806,34 +809,57 @@ function App() {
               <>
                 {/* D36-C (task 4002): at phone width the pill drops the
                     department, so the header stays on one line and nothing
-                    overlaps the logo. */}
+                    overlaps the logo. D58 §3.11 (4061): below 412 px it shows
+                    the device's name, cut with an ellipsis, and Sign out is
+                    an icon. */}
                 <Chip
                   data-testid="device-chip"
                   icon={<TabletIcon />}
                   label={
-                    <>
-                      Shared device
-                      <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
-                        {` · ${departments.find((d) => d.key === capabilities.home_department)?.name ?? DEPT_META[capabilities.home_department ?? '']?.label ?? ''}`}
-                      </Box>
-                    </>
+                    narrowHeader ? (
+                      user.name || 'Shared device'
+                    ) : (
+                      <>
+                        Shared device
+                        <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+                          {` · ${departments.find((d) => d.key === capabilities.home_department)?.name ?? DEPT_META[capabilities.home_department ?? '']?.label ?? ''}`}
+                        </Box>
+                      </>
+                    )
                   }
+                  title={narrowHeader ? `Shared device: ${user.name}` : undefined}
                   size="small"
                   variant="outlined"
-                  sx={{ mr: 1, minWidth: 0 }}
+                  sx={{ mr: narrowHeader ? 0 : 1, minWidth: 0, flexShrink: 1 }}
                 />
-                <Button
-                  data-testid="device-signout"
-                  size="small"
-                  color="inherit"
-                  onClick={() => {
-                    setDeviceSignOutError(null)
-                    setConfirmDeviceSignOut(true)
-                  }}
-                  sx={{ color: 'text.secondary' }}
-                >
-                  Sign out
-                </Button>
+                {narrowHeader ? (
+                  <IconButton
+                    data-testid="device-signout"
+                    aria-label="Sign out"
+                    size="small"
+                    edge="end"
+                    onClick={() => {
+                      setDeviceSignOutError(null)
+                      setConfirmDeviceSignOut(true)
+                    }}
+                    sx={{ color: 'text.secondary', flexShrink: 0 }}
+                  >
+                    <LogoutIcon fontSize="small" />
+                  </IconButton>
+                ) : (
+                  <Button
+                    data-testid="device-signout"
+                    size="small"
+                    color="inherit"
+                    onClick={() => {
+                      setDeviceSignOutError(null)
+                      setConfirmDeviceSignOut(true)
+                    }}
+                    sx={{ color: 'text.secondary' }}
+                  >
+                    Sign out
+                  </Button>
+                )}
               </>
             ) : (
               <>
