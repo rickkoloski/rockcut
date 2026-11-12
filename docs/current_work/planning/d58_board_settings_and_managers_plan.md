@@ -78,7 +78,12 @@ work; this plan names the code and the order.
      4 s while `/api/me` is pending.
    - **4061:** the tablet header in `App.tsx` at ≤384 px: icon Sign out with an aria-label, and the
      pill ellipsized.
-4. **Playwright + coverage.**
+3b. **UI follow-ups added 2026-11-11** (spec §3.12–§3.16; decision 9): 4118 items 2–7 (Buy-a-Beer
+   import headers, stale Redeem dialog, Taproom "— None —", readable staff-code activity), 4115/4116
+   (History search matches the actor; export sends `q`), 4319 (push subscribe failure message), 5193
+   (drag Idea Board lists: an outer horizontal sortable, with the shared `components/dnd/` layer
+   unchanged; re-run the task-board and Idea Board drag specs). Each item gets its own commit.
+4. **Playwright + coverage.** (Specs for S22–S28 too.)
    - Specs for S1–S21 under `tests/regression/d58/`, one file per theme.
    - Negative personas assert visible refusals. Destructive actions only by id on `[TEST-TEMP]` rows.
    - S8–S11 use `[TEST-TEMP]` people where a seeded persona would change.

@@ -2,7 +2,7 @@
 
 **Status:** APPROVED by Matt 2026-11-11; planning done
 **Backlog:** PortableMind project 254, tasks 4994, 4991, 4992, 4984, 5202, 4261, 5204, 4118 (item 1),
-5206, 5205, 4061, 5769
+5206, 5205, 4061, 5769; added 2026-11-11: 4118 items 2–7, 4115, 4116, 4319, 5193
 **Order:** after D59 (on prod as `v2026.11.11`). It builds on D59 spec §4.3 and decision 9.
 
 ## 1. Why
@@ -40,6 +40,9 @@ Three themes, all from QA backlogs:
    where D59 already showed it: on people they manage (a shared department). On anyone else, Owners
    isn't shown (D59 decision 9).
 8. **The phone layout is a server setting too** (all days stacked / one day at a time).
+9. **Five small UI follow-ups join D58** (Matt, 2026-11-11, during Stage 3): 4118 items 2–7, 4115,
+   4116, 4319, 5193 (§3.12–§3.16). 4084 (lint), 4238 (Scheduler drag) and 4990 (message delete)
+   stay out.
 
 ## 3. Requirements
 
@@ -168,11 +171,49 @@ At 320–384 px, the shared device's header stays on one line:
 
 Nothing changes at 412 px and above.
 
+### 3.12 Buy-a-Beer import and dialog follow-ups (4118 items 2–6)
+
+- **Blank extra header:** a column with a blank header is listed as "(blank)" in "Ignored
+  columns".
+- **Long ignored headers** wrap inside the import dialog, so it doesn't overflow.
+- **Repeated extra columns** are listed once.
+- **Redeem after the entry was removed:** after "This entry was already removed", the Redeem
+  dialog closes and the board refreshes.
+- **Users & Roles, Taproom set to "— None —":** the select shows "— None —". The Staff code section
+  says "The staff code is cleared when you press Save" instead of "Saved when you press Save".
+
+### 3.13 Readable staff-code activity (4118 item 7)
+
+In the user change log, `staff_code.set`, `staff_code.remove` and `staff_code.reveal` read as "Staff
+code set", "Staff code removed" and "Staff code shown", like the other events.
+
+### 3.14 Buy-a-Beer History search and export (4115, 4116)
+
+- **Search matches who made the change:** `q` also matches the actor's name, and "Shared Device"
+  matches device changes. It's still one box.
+- **Export follows the search:** Export CSV sends the same `q`. With an empty box it exports
+  everything, as now, and the button keeps its label.
+
+### 3.15 Enable push in a browser that can't (4319)
+
+When subscribing fails (e.g. a private window), the notification preferences show "Push can't be
+turned on in this browser (private windows don't support it)". The button stays usable, and no error
+goes unhandled.
+
+### 3.16 Drag Idea Board lists (5193)
+
+- **Desktop:** a list column drags left or right by its header. The new order saves like ⋮ → Move
+  left / Move right, with the same rules (locked lists, `:write` / `:manage`) and History entry.
+- **Phone:** unchanged (the ⋮ menu).
+- **Approach:** an outer horizontal sortable around the columns, with the card drag layer nested
+  inside. The shared `components/dnd/` layer the task boards use isn't changed. The task-board and
+  Idea Board drag specs must still pass.
+
 ## 4. Not in D58
 
 - D56 production timing (5207), D57 test results (5208).
 - RBAC phases 3849–3853; positions are the only D29 §6 C change taken here.
-- Other Buy-a-Beer follow-ups: 4118 items 2–7, 4115, 4116.
+- 4084 (old lint errors), 4238 (Scheduler drag), 4990 (message delete).
 
 ## 5. Persona scenarios
 
@@ -199,6 +240,13 @@ Nothing changes at 412 px and above.
 | S19 | `bartender1`, `taproomDevice` | `/boards/bar/cards/99999999` | Opens it | Board + "That card wasn't found", URL corrected |
 | S20 | `brewer1` | start-up with `/api/me` delayed | Loads | Loading at once; "Still connecting…" + Retry at 4 s |
 | S21 | `taproomDevice` | 320 / 360 / 384 px | Header | One line, no overlap |
+| S22 | `barMgr` | Buy-a-Beer → History → Import | CSV with a blank, a long and a repeated extra header | "(blank)" listed, long one wraps, repeats once |
+| S23 | `bartender1` | Buy-a-Beer | Redeem an entry another session just removed | "already removed", the dialog closes, the board refreshes |
+| S24 | `owner` | Users & Roles → a `[TEST-TEMP]` Taproom person | Taproom → "— None —" | Shows "— None —"; staff code "cleared when you press Save" |
+| S25 | `owner` | Users & Roles → change log | After set/remove/reveal of a staff code | Readable labels |
+| S26 | `barMgr` | Buy-a-Beer → History | Search "Sam Pour", then "Shared Device"; Export CSV | Their changes only; the export matches the search |
+| S27 | `brewer1` | Notification preferences in a private window | Enable push | The "can't be turned on" message; no unhandled error |
+| S28 | `bartender1` | Boards → Taproom (desktop) | Drag a list to the right; reload | New order kept; History entry; a locked list follows the lock rules |
 
 ## 6. Rollout
 
