@@ -57,8 +57,7 @@ Supersedes `SESSION_HANDOFF_2026-11-10.md`. Prod and DEV are unchanged: prod is 
 
 ## Next
 
-1. **Matt's prod check:** Owners appears for him (Tasks, Boards, Messages, last), and he adds
-   members in Users & Roles. Then close task 5764.
+1. Matt's prod check **passed** (2026-11-11), and task 5764 is closed. D59 is done.
 2. The D56 spec (5207). D58 stays on hold until Matt lifts it.
 
 ## Notes

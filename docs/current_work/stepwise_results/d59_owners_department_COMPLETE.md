@@ -3,8 +3,8 @@
 **Spec:** `specs/d59_owners_department_spec.md` (decisions 1–9)
 **Plan:** `planning/d59_owners_department_plan.md`
 **Task:** 5764
-**Completed:** 2026-11-11 (on prod as `v2026.11.11`, release PR #65; D59 PR #64). Matt's prod check:
-open.
+**Completed:** 2026-11-11 (on prod as `v2026.11.11`, release PR #65; D59 PR #64). Matt's prod check
+passed 2026-11-11; task 5764 closed.
 
 ---
 
@@ -88,6 +88,4 @@ list.
 
 ## Open
 
-- **Matt's check on prod:** Owners appears for him (Tasks, Boards, Messages, last), and he adds
-  members in Users & Roles.
-- Close task 5764 after it.
+Nothing. Matt's prod check passed 2026-11-11, and task 5764 is closed.
