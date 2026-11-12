@@ -69,7 +69,9 @@ Done: DEV runs `develop` at `fb09ab4`. The DEV claim is released in conv 80 (msg
 
 ## Next
 
-1. **Matt's prod check:**
+1. **Done: Matt's prod check passed**, and the D58 tasks are closed. He found that settings reach a
+   second device only after the app restarts; a refresh when the app returns to the screen is added to D56 (5207).
+   What he checked:
    - board settings follow him across browsers;
    - Users & Roles as a manager;
    - a tablet board's settings.
