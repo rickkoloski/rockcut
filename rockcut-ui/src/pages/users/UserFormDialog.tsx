@@ -117,16 +117,17 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ['users'] })
 
+  // Deactivating, or leaving every department, clears the code on the
+  // server, so a typed code isn't sent. Departments this manager doesn't
+  // manage aren't in `roles` and stay as they are.
+  const keepsCode =
+    active &&
+    (Object.values(roles).some(Boolean) ||
+      savedKeys.some((k) => !managedKeys.includes(k)) ||
+      (isOwnerActor ? isOwner : !!editUser?.is_owner))
+
   const save = async () => {
     setError(null)
-    // Deactivating, or leaving every department, clears the code on the
-    // server, so a typed code isn't sent. Departments this manager doesn't
-    // manage aren't in `roles` and stay as they are.
-    const keepsCode =
-      active &&
-      (Object.values(roles).some(Boolean) ||
-        savedKeys.some((k) => !managedKeys.includes(k)) ||
-        (isOwnerActor ? isOwner : !!editUser?.is_owner))
     if (showStaffCode && keepsCode && codeDraft !== '' && !/^\d{4}$/.test(codeDraft)) {
       setError('A staff code is 4 digits.')
       return
@@ -321,6 +322,9 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
                     onChange={(e) => setRoles((r) => ({ ...r, [d.key]: e.target.value as RoleChoice }))}
                     fullWidth
                     helperText={d.owners_only ? `${d.name} has no managers.` : undefined}
+                    // D58 §3.12 (4118 item 6): "— None —" shows as such.
+                    slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+                    data-testid={`user-role-${d.key}`}
                   >
                     <MenuItem value="">— None —</MenuItem>
                     {!d.owners_only && <MenuItem value="manager">Manager</MenuItem>}
@@ -347,6 +351,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
                 onDraftChange={setCodeDraft}
                 removing={codeRemoving}
                 onRemovingChange={setCodeRemoving}
+                clearing={!keepsCode}
                 disabled={loading}
               />
             )}

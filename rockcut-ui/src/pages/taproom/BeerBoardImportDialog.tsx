@@ -277,7 +277,7 @@ function PreviewBody({ preview, resolutions, choose, setResolution, replaceText,
   return (
     <>
       {preview.ignored_columns.length > 0 && (
-        <Typography variant="body2" color="text.secondary" data-testid="import-ignored-columns">
+        <Typography variant="body2" color="text.secondary" data-testid="import-ignored-columns" sx={{ overflowWrap: 'anywhere' }}>
           Ignored columns: {preview.ignored_columns.join(', ')}
         </Typography>
       )}

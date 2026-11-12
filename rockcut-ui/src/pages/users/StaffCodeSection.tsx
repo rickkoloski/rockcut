@@ -24,6 +24,8 @@ interface Props {
   /** D58 §3.8: Remove only marks the code; the dialog's Save sends the delete. */
   removing: boolean
   onRemovingChange: (removing: boolean) => void
+  /** D58 §3.12: this Save clears the code (deactivated, or no department left). */
+  clearing?: boolean
   disabled?: boolean
 }
 
@@ -36,7 +38,7 @@ interface Props {
  * back, and Cancel drops it, D58 §3.8). Typed digits are masked too, and the
  * eye shows them without fetching anything.
  */
-export default function StaffCodeSection({ user, draft, onDraftChange, removing, onRemovingChange, disabled }: Props) {
+export default function StaffCodeSection({ user, draft, onDraftChange, removing, onRemovingChange, clearing, disabled }: Props) {
   const [hasCode, setHasCode] = useState(!!user.has_staff_code)
   const [revealed, setRevealed] = useState<string | null>(null)
   const [showing, setShowing] = useState(false)
@@ -100,15 +102,17 @@ export default function StaffCodeSection({ user, draft, onDraftChange, removing,
 
   const helper =
     error ??
-    (typing
-      ? draft.length === 4
-        ? 'Saved when you press Save.'
-        : 'A staff code is 4 digits.'
-      : removing
-        ? 'Removed when you press Save.'
-        : hasCode
-          ? 'Type 4 digits to change it.'
-          : 'No code yet. Type 4 digits, or press Suggest.')
+    (clearing && (typing || held)
+      ? 'The staff code is cleared when you press Save.'
+      : typing
+        ? draft.length === 4
+          ? 'Saved when you press Save.'
+          : 'A staff code is 4 digits.'
+        : removing
+          ? 'Removed when you press Save.'
+          : hasCode
+            ? 'Type 4 digits to change it.'
+            : 'No code yet. Type 4 digits, or press Suggest.')
 
   return (
     <Box data-testid="staff-code-section">

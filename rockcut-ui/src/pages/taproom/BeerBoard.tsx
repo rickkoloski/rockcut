@@ -96,6 +96,13 @@ export default function BeerBoard() {
   // An entry that's already gone (someone else poured the last beer): refresh
   // the list while the dialog says so (S17).
   const refresh = () => qc.invalidateQueries({ queryKey: ['beer_board'] })
+  // D58 §3.12 (4118 item 5): nothing is left to redeem, so the dialog closes
+  // and the board says why.
+  const redeemGone = () => {
+    void refresh()
+    setRedeeming(null)
+    setNotice('This entry was already removed')
+  }
 
   const columns: GridColDef<BeerBoardEntry>[] = [
     { field: 'recipient_name', headerName: 'For', flex: 1.2, minWidth: isPhone ? 90 : 140 },
@@ -287,7 +294,7 @@ export default function BeerBoard() {
         onDone={done}
         onGone={refresh}
       />
-      <RedeemDialog key={redeeming?.id ?? 'none'} entry={redeeming} onClose={() => setRedeeming(null)} onDone={done} onGone={refresh} />
+      <RedeemDialog key={redeeming?.id ?? 'none'} entry={redeeming} onClose={() => setRedeeming(null)} onDone={done} onGone={redeemGone} />
       {importing > 0 && (
         <BeerBoardImportDialog
           key={importing}

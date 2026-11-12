@@ -82,17 +82,20 @@ defmodule RockcutApi.BeerBoard.Csv do
   end
 
   # Column index → field, plus the headers of the columns it doesn't know
-  # (ignored: hand-kept sheets often have a Notes column). Blank header cells
-  # (a spreadsheet's trailing empty columns) are skipped.
+  # (ignored: hand-kept sheets often have a Notes column). D58 §3.12 (4118
+  # item 2): a blank header is listed as "(blank)", and a repeated one once.
   defp map_header(header) do
-    named =
+    all =
       header
       |> Enum.with_index()
       |> Enum.map(fn {name, i} -> {unguard(name) |> String.trim(), i} end)
-      |> Enum.reject(fn {name, _} -> name == "" end)
+
+    named = Enum.reject(all, fn {name, _} -> name == "" end)
 
     ignored =
-      for {name, _} <- named, not Map.has_key?(@headers, normalize_header(name)), do: name
+      for({name, _} <- all, not Map.has_key?(@headers, normalize_header(name)), do: name)
+      |> Enum.map(&if(&1 == "", do: "(blank)", else: &1))
+      |> Enum.uniq_by(&normalize_header/1)
 
     fields =
       for {name, i} <- named,
