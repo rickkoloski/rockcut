@@ -44,6 +44,26 @@ Three themes, all from QA backlogs:
    4116, 4319, 5193 (§3.12–§3.16). 4084 (lint), 4238 (Scheduler drag) and 4990 (message delete)
    stay out.
 
+2026-11-12, after DEV QA (`stepwise_results/d58_dev_qa_report.md`, lead decisions 1):
+
+10. **A manager changes a person's account only when they manage every department the person is
+    in** (gaps 12, 13). That covers name, email, schedulable, password reset, and staff code set,
+    remove or reveal, by the same rule as Deactivate (decisions 3, 5). Never an owner. Roles in the
+    manager's own departments and Add department are unchanged. This replaces "staff codes stay with
+    a manager of one of the person's departments" (decision 3).
+11. **Owners is hidden from managers everywhere** (gaps 6, 7). This reverses decision 7: there's no
+    read-only Owners chip, even on people they manage. The greyed-out Active tooltip is neutral:
+    "You can't change Active for this person."
+12. **Deactivating someone unassigns their future shifts** (gap 9). Drafts stay drafts. Published
+    shifts become open shifts and send the open-shift notification. Users & Roles asks first.
+13. **The carry-over fills only the keys the server lacks** (gap 1).
+14. **Accepted as built:**
+    - A list lock stops only that list's own move (gap 11).
+    - After a split, the task series dialog still shows the first part's rule (gap 8, task side;
+      the event side is fixed).
+15. **Backlog:** a manager in a department they don't manage can't edit their own name or email
+    (task 5789).
+
 ## 3. Requirements
 
 ### 3.1 Board settings on the server (4994, 4991; decisions 1, 8)
@@ -85,7 +105,11 @@ board says "Showing 31 days (the most a board shows)". The URL is replaced (not 
 clamped `to`. An invalid range (to before from, a bad date) keeps today's behavior: the default
 range, and the URL is corrected the same way. The same applies to All departments.
 
-### 3.3 Managers and everyone (4984; decisions 3, 5, 7)
+### 3.3 Managers and everyone (4984; decisions 3, 5, 10–12)
+
+> **2026-11-12 (decisions 10–12):** details, password reset and staff codes follow the Deactivate
+> rule; Owners is never shown to a manager; deactivating unassigns future shifts. They override the
+> bullets below where they differ.
 
 - **List:** `GET /api/users` for any manager returns every person (devices excluded, as now). Each
   row says what the actor may do with that person (e.g. `can_edit`, `can_deactivate`,
@@ -109,7 +133,7 @@ range, and the URL is corrected the same way. The same applies to All department
     tooltip.
 - **Create:** unchanged. A manager may create a person with no department, or in departments they
   manage.
-- **Staff codes:** unchanged, a manager of one of the person's departments.
+- **Staff codes:** a manager of every department the person is in (decision 10).
 - **Calendar feeds, notifications:** unchanged. Adding a department is an ordinary membership
   change, audited.
 
@@ -142,7 +166,10 @@ that note.
 ### 3.7 Shifts: not on a deactivated person (5204)
 
 Creating or updating a shift (including a drag that reassigns it) with a deactivated assignee gets a
-422 on `assignee_id`: "is not active". Existing shifts on someone later deactivated are unchanged.
+422 on `assignee_id`: "is not active". Deactivating someone takes them off every shift that starts
+after now (decision 12). Users & Roles first asks "N future shifts will become open shifts.
+Deactivate?" (`GET /api/users/:id/future_shifts`). One change-log entry records the count, and
+reactivating doesn't reassign the shifts.
 
 ### 3.8 Staff code Remove waits for Save (4118 item 1)
 
