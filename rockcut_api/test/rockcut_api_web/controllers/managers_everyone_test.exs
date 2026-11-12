@@ -68,8 +68,8 @@ defmodule RockcutApiWeb.ManagersEveryoneTest do
 
       assert conn.status == 200
       assert dept_keys(p["bartender1"]) == ["bar", "brewery"]
-      # Now a person they manage.
-      assert %{"can_edit" => true} = body(conn)["data"]
+      # D58 lead decisions 1: the Taproom isn't theirs, so still read-only.
+      assert %{"can_edit" => false} = body(conn)["data"]
     end
 
     test "an empty membership PUT on someone not managed removes nothing", %{p: p} do
@@ -119,17 +119,23 @@ defmodule RockcutApiWeb.ManagersEveryoneTest do
   describe "S8 deactivate needs every department managed" do
     test "breweryMgr can't deactivate floater (Taproom + Brewery)", %{p: p} do
       conn = call(p["breweryMgr"], :get, "/api/users")
-      assert %{"can_edit" => true, "can_deactivate" => false} = row(conn, p["floater"])
+      # D58 lead decisions 1: not every department, so no other change either.
+      assert %{"can_edit" => false, "can_deactivate" => false} = row(conn, p["floater"])
 
       conn = set_active(p["breweryMgr"], p["floater"], false)
       assert conn.status == 403
       assert body(conn)["error"] =~ "only in your departments"
       assert reload(p["floater"]).active
 
-      # Other changes on a managed person still work.
+      # D58 lead decisions 1
       assert status(p["breweryMgr"], :patch, "/api/users/#{p["floater"].id}", %{
                name: "Jordan Float",
                active: true
+             }) == 403
+
+      # Their role in the Brewery is still breweryMgr's to change.
+      assert status(p["breweryMgr"], :put, "/api/users/#{p["floater"].id}/memberships", %{
+               memberships: [%{department: "brewery", role: "manager"}]
              }) == 200
     end
 
@@ -161,22 +167,22 @@ defmodule RockcutApiWeb.ManagersEveryoneTest do
   end
 
   describe "S10 a person with no department" do
-    test "barMgr deactivates and reactivates noDept, and edits nothing else", %{p: p} do
+    test "barMgr deactivates and reactivates noDept, and edits them", %{p: p} do
       conn = call(p["barMgr"], :get, "/api/users")
 
-      assert %{"can_edit" => false, "can_deactivate" => true} = row(conn, p["noDept"])
+      # D58 lead decisions 1: no department, so any manager edits them too.
+      assert %{"can_edit" => true, "can_deactivate" => true} = row(conn, p["noDept"])
 
       assert set_active(p["barMgr"], p["noDept"], false).status == 200
       refute reload(p["noDept"]).active
       assert set_active(p["barMgr"], p["noDept"], true).status == 200
       assert reload(p["noDept"]).active
 
-      assert status(p["barMgr"], :patch, "/api/users/#{p["noDept"].id}", %{
-               active: false,
-               name: "Renamed"
-             }) == 403
+      # D58 lead decisions 1
+      assert status(p["barMgr"], :patch, "/api/users/#{p["noDept"].id}", %{name: "Renamed"}) ==
+               200
 
-      assert reload(p["noDept"]).name == "Nico None"
+      assert reload(p["noDept"]).name == "Renamed"
     end
 
     test "no manager deactivates an owner, even one with no department", %{p: p} do
@@ -200,15 +206,26 @@ defmodule RockcutApiWeb.ManagersEveryoneTest do
   end
 
   describe "S11 dualMgr on ownersAsst (Office + Owners)" do
-    test "Office edits work and Owners shows; Deactivate is refused", %{p: p} do
+    # D58 lead decisions 1: nobody manages Owners, so dualMgr changes only
+    # ownersAsst's Office role; details, password and Active are refused,
+    # and Owners doesn't show.
+    test "the Office role only; Owners hidden; details and Deactivate refused", %{p: p} do
       conn = call(p["dualMgr"], :get, "/api/users")
 
-      assert %{"can_edit" => true, "can_deactivate" => false} = asst = row(conn, p["ownersAsst"])
-      assert keys(asst) == ["office", "owners"]
+      assert %{"can_edit" => false, "can_deactivate" => false} = asst = row(conn, p["ownersAsst"])
+      assert keys(asst) == ["office"]
 
-      conn = call(p["dualMgr"], :patch, "/api/users/#{p["ownersAsst"].id}", %{name: "Ellis A."})
+      assert status(p["dualMgr"], :patch, "/api/users/#{p["ownersAsst"].id}", %{name: "Ellis A."}) ==
+               403
+
+      conn =
+        call(p["dualMgr"], :put, "/api/users/#{p["ownersAsst"].id}/memberships", %{
+          memberships: [%{department: "office", role: "manager"}]
+        })
+
       assert conn.status == 200
-      assert keys(body(conn)["data"]) == ["office", "owners"]
+      assert keys(body(conn)["data"]) == ["office"]
+      assert dept_keys(p["ownersAsst"]) == ["office", "owners"]
 
       assert set_active(p["dualMgr"], p["ownersAsst"], false).status == 403
       assert reload(p["ownersAsst"]).active
@@ -238,13 +255,16 @@ defmodule RockcutApiWeb.ManagersEveryoneTest do
       for conn <- replies, do: refute(conn.resp_body =~ ~r/"owners"|"Owners"/, conn.resp_body)
     end
 
-    test "after Add department the row is managed and Owners shows (D59)", %{p: p} do
+    # D58 lead decisions 1 (gap 7): Add department doesn't make the row
+    # managed, so Owners stays hidden.
+    test "after Add department the row is still read-only and Owners stays hidden", %{p: p} do
       conn =
         call(p["breweryMgr"], :put, "/api/users/#{p["ownersAsst"].id}/memberships", %{
           memberships: [%{department: "brewery", role: "employee"}]
         })
 
-      assert keys(body(conn)["data"]) == ["brewery", "office", "owners"]
+      assert %{"can_edit" => false} = data = body(conn)["data"]
+      assert keys(data) == ["brewery", "office"]
     end
   end
 
@@ -275,6 +295,71 @@ defmodule RockcutApiWeb.ManagersEveryoneTest do
       id = p["bartender1"].id
       assert status(p["barMgr"], :patch, "/api/users/#{id}", %{name: "Sam P."}) == 200
       assert status(p["barMgr"], :post, "/api/users/#{id}/reset_password") == 200
+    end
+  end
+
+  describe "D58 lead decisions 1 (gaps 12, 13): Add department doesn't open the account" do
+    defp refuses_account_writes(mgr, target) do
+      id = target.id
+
+      for params <- [%{name: "X"}, %{email: "x@rockcut-test.com"}, %{schedulable: false}] do
+        assert status(mgr, :patch, "/api/users/#{id}", params) == 403, inspect(params)
+      end
+
+      assert status(mgr, :post, "/api/users/#{id}/reset_password") == 403
+      assert status(mgr, :get, "/api/users/#{id}/staff_code") == 403
+      assert status(mgr, :put, "/api/users/#{id}/staff_code", %{code: "4826"}) == 403
+      assert status(mgr, :delete, "/api/users/#{id}/staff_code") == 403
+    end
+
+    defp add_brewery(mgr, target) do
+      conn =
+        call(mgr, :put, "/api/users/#{target.id}/memberships", %{
+          memberships: [%{department: "brewery", role: "employee"}]
+        })
+
+      assert conn.status == 200
+      body(conn)["data"]
+    end
+
+    test "an owner: Add department, then details, staff code and reset → 403", %{p: p} do
+      owner = AccountsFixtures.owner_fixture(%{name: "[TEST-TEMP] D58 owner"})
+      mgr = p["breweryMgr"]
+
+      conn = call(mgr, :get, "/api/users")
+      assert %{"can_edit" => false} = row(conn, owner)
+
+      assert %{"can_edit" => false} = add_brewery(mgr, owner)
+      refuses_account_writes(mgr, owner)
+
+      u = reload(owner)
+      assert {u.name, u.is_owner, u.staff_code_digest} == {"[TEST-TEMP] D58 owner", true, nil}
+    end
+
+    test "an Office + Owners person: Add department, then details, staff code and reset → 403",
+         %{p: p} do
+      person = temp_person(~w(office owners))
+      mgr = p["breweryMgr"]
+
+      assert %{"can_edit" => false} = data = add_brewery(mgr, person)
+      assert keys(data) == ["brewery", "office"]
+      refuses_account_writes(mgr, person)
+      assert reload(person).name == person.name
+    end
+
+    test "a person the manager fully manages still works", %{p: p} do
+      person = temp_person(~w(brewery))
+      mgr = p["breweryMgr"]
+      id = person.id
+
+      conn = call(mgr, :get, "/api/users")
+      assert %{"can_edit" => true, "can_deactivate" => true} = row(conn, person)
+
+      assert status(mgr, :patch, "/api/users/#{id}", %{name: "[TEST-TEMP] Renamed"}) == 200
+      assert status(mgr, :post, "/api/users/#{id}/reset_password") == 200
+      assert status(mgr, :put, "/api/users/#{id}/staff_code", %{code: "4826"}) == 200
+      assert status(mgr, :get, "/api/users/#{id}/staff_code") == 200
+      assert status(mgr, :delete, "/api/users/#{id}/staff_code") == 200
     end
   end
 
@@ -435,12 +520,13 @@ defmodule RockcutApiWeb.ManagersEveryoneTest do
     end
   end
 
-  test "Accounts.user_access/2 hides Owners only on rows the actor doesn't manage", %{p: p} do
+  test "Accounts.user_access/2 hides Owners from managers", %{p: p} do
     asst = reload(p["ownersAsst"])
     owners_id = Enum.find(asst.memberships, & &1.department.owners_only).department_id
 
     assert Accounts.user_access(p["breweryMgr"], asst).hidden_department_ids == [owners_id]
-    assert Accounts.user_access(p["dualMgr"], asst).hidden_department_ids == []
+    # D58 lead decisions 1: dualMgr no longer manages the whole row.
+    assert Accounts.user_access(p["dualMgr"], asst).hidden_department_ids == [owners_id]
     assert Accounts.user_access(p["owner"], asst).hidden_department_ids == []
   end
 end

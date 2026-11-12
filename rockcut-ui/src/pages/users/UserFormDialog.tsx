@@ -53,9 +53,10 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const { user: actor, capabilities, staffCodes } = useAuth()
   const isOwnerActor = !!actor?.is_owner
   const isEdit = !!editUser
-  // D58 §3.3: someone outside the actor's departments is read-only, except
-  // Active (when they manage every department the person is in) and Add
-  // department.
+  // D58 §3.3 and lead decisions 1: a manager changes a person's details,
+  // password, staff code and Active only when they manage every department
+  // the person is in. Anyone else is read-only, except their role in the
+  // manager's own departments they're in, and Add department.
   const access = userAccess(editUser)
   const readOnly = isEdit && !access.canEdit
 
@@ -66,6 +67,11 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     : capabilities?.manages_departments ?? []
   const manageableDepts = editableDepartments(departments, isOwnerActor, managedKeys)
   const lockedDepts = readOnlyOwnersOnly(editUser?.memberships, manageableDepts)
+  const savedKeys = (editUser?.memberships ?? []).flatMap((m) => (m.department_key ? [m.department_key] : []))
+  // On a read-only row: the manager's departments the person is in (their
+  // role there stays the manager's to change), and the person's others.
+  const sharedDepts = readOnly ? manageableDepts.filter((d) => savedKeys.includes(d.key)) : []
+  const otherMemberships = (editUser?.memberships ?? []).filter((m) => !sharedDepts.some((d) => d.key === m.department_key))
 
   const [email, setEmail] = useState('')
   const [name, setName] = useState('')
@@ -80,16 +86,15 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [codeRemoving, setCodeRemoving] = useState(false)
   const [addDept, setAddDept] = useState('')
 
-  // D37, every department since D40: owners and the managers of one of the
-  // person's departments see their staff code. Only active people with a
+  // D37, every department since D40: owners and (lead decisions 1) whoever
+  // may change the person see their staff code. Only active people with a
   // department (as saved) can hold one; owners count, as in the API.
-  const savedKeys = (editUser?.memberships ?? []).flatMap((m) => (m.department_key ? [m.department_key] : []))
   const showStaffCode =
     isEdit &&
     staffCodes &&
     !!editUser?.active &&
     (savedKeys.length > 0 || !!editUser?.is_owner) &&
-    (isOwnerActor || savedKeys.some((k) => managedKeys.includes(k)))
+    (isOwnerActor || access.canEdit)
 
   useEffect(() => {
     if (!open) return
@@ -156,11 +161,16 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setLoading(true)
     try {
       if (readOnly && editUser) {
-        // Only what this row allows: Active, then the added department (an
-        // employee; the API keeps every other department as it is).
-        if (active !== editUser.active) await api.patch(`/api/users/${editUser.id}`, { active })
-        if (addDept) {
-          await api.put(`/api/users/${editUser.id}/memberships`, { memberships: [{ department: addDept, role: 'employee' }] })
+        // Only what this row allows: their roles in the manager's departments
+        // and the added department (an employee). The API keeps every other
+        // department as it is.
+        const sent = memberships()
+        const changed =
+          addDept !== '' ||
+          sharedDepts.some((d) => (roles[d.key] ?? '') !== (editUser.memberships?.find((m) => m.department_key === d.key)?.role ?? ''))
+        if (changed) {
+          const added = addDept ? [{ department: addDept, role: 'employee' as const }] : []
+          await api.put(`/api/users/${editUser.id}/memberships`, { memberships: [...sent, ...added] })
         }
         invalidate()
         onClose()
@@ -256,8 +266,10 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
 
             {readOnly && (
               <Alert severity="info" data-testid="user-read-only">
-                {editUser?.name || editUser?.email} isn't in a department you manage, so you can view them here but not
-                change them.{access.addable.length > 0 ? ' You can add them to one of your departments.' : ''}
+                {sharedDepts.length > 0
+                  ? `${editUser?.name || editUser?.email} is also in a department you don't manage, so you can change only their role in yours.`
+                  : `${editUser?.name || editUser?.email} isn't in a department you manage, so you can view them here but not change them.`}
+                {access.addable.length > 0 ? ' You can add them to one of your departments.' : ''}
               </Alert>
             )}
 
@@ -295,14 +307,34 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
               <Typography variant="overline">Department roles</Typography>
             </Divider>
 
-            {readOnly && editUser && (
+            {readOnly && sharedDepts.length > 0 && (
+              <Stack spacing={2}>
+                {sharedDepts.map((d) => (
+                  <TextField
+                    key={d.key}
+                    select
+                    label={d.name}
+                    value={roles[d.key] ?? ''}
+                    onChange={(e) => setRoles((r) => ({ ...r, [d.key]: e.target.value as RoleChoice }))}
+                    fullWidth
+                    slotProps={{ select: { displayEmpty: true }, inputLabel: { shrink: true } }}
+                    data-testid={`user-role-${d.key}`}
+                  >
+                    <MenuItem value="">— None —</MenuItem>
+                    <MenuItem value="manager">Manager</MenuItem>
+                    <MenuItem value="employee">Employee</MenuItem>
+                  </TextField>
+                ))}
+              </Stack>
+            )}
+            {readOnly && editUser && (sharedDepts.length === 0 || otherMemberships.length > 0) && (
               <Box data-testid="user-departments">
-                {(editUser.memberships ?? []).length === 0 ? (
+                {otherMemberships.length === 0 ? (
                   <Typography variant="body2" color="text.secondary">
                     No departments.
                   </Typography>
                 ) : (
-                  sortMemberships(editUser.memberships ?? [], departments).map((m) => (
+                  sortMemberships(otherMemberships, departments).map((m) => (
                     <Chip key={m.department_id} label={membershipLabel(m)} size="small" variant="outlined" sx={{ mr: 1, mb: 0.5 }} />
                   ))
                 )}

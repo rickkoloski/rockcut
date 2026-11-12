@@ -58,7 +58,7 @@ defmodule RockcutApiWeb.UserController do
       target ->
         attrs = params |> Map.drop(["id"]) |> maybe_drop_owner_flag(actor, target)
 
-        if may_update?(actor, target, attrs) do
+        if Authz.can?(actor, :update, target) do
           case Accounts.update_user(target, attrs, actor) do
             {:ok, u} ->
               json(conn, %{data: user_for(u, actor)})
@@ -103,17 +103,6 @@ defmodule RockcutApiWeb.UserController do
         else
           not_yours(conn, actor)
         end
-    end
-  end
-
-  # D58 §3.3: a person the actor manages (a shared managed department) is
-  # theirs to change; on anyone else, only Active, and only where `Authz`
-  # allows deactivating (which `Accounts.update_user/3` checks again).
-  defp may_update?(actor, target, attrs) do
-    cond do
-      Authz.can?(actor, :update, target) -> true
-      Map.keys(attrs) == ["active"] -> Authz.can?(actor, :deactivate, target)
-      true -> false
     end
   end
 

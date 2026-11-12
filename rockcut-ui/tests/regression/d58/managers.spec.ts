@@ -5,11 +5,13 @@ import { createTempPerson, retireTempPerson, type TempPerson } from '../auth/hel
 import { openUser } from '../taproom/helpers'
 import { settingsItem } from '../settingsMenu'
 
-// D58 §3.3–§3.4, S7–S14: every manager sees every employee in Users & Roles;
-// outside their departments a person is read-only except Add department;
-// Deactivate only when they manage every department the person is in (any
-// manager for someone with none); Owners stays hidden on rows they don't
-// manage; positions stop at the manager's departments.
+// D58 §3.3–§3.4, S7–S14: every manager sees every employee in Users & Roles.
+// Lead decisions 1: a person's details, password, staff code and Active are
+// a manager's only when they manage every department the person is in (any
+// manager for someone with none, never an owner); otherwise the row is
+// read-only except their role in the manager's departments and Add
+// department. Owners stays hidden from managers; positions stop at the
+// manager's departments.
 // Writes go to `[TEST-TEMP]` people and positions only (removed by id); the
 // seeded personas are only looked at, and refusals that would change one are
 // tried on a `[TEST-TEMP]` stand-in.
@@ -115,14 +117,22 @@ test.describe('breweryMgr', () => {
     expect((await added).status()).toBe(200)
     await expect(dialog).toBeHidden()
     expect(await departmentsOf(temp.id)).toEqual(['bar', 'brewery'])
-    // Now theirs to manage, though Taproom still isn't.
-    expect(await rowOf('breweryMgr', temp.id)).toMatchObject({ can_edit: true, can_deactivate: false, addable_departments: [] })
+    // D58 lead decisions 1: Taproom still isn't theirs, so still read-only.
+    expect(await rowOf('breweryMgr', temp.id)).toMatchObject({ can_edit: false, can_deactivate: false, addable_departments: [] })
   })
 
-  test('S8: Deactivate is greyed out on floater (Taproom + Brewery); the API refuses it (403)', async ({ page }) => {
+  test('S8: floater (Taproom + Brewery): only the Brewery role changes; Deactivate greyed out (403)', async ({ page }) => {
     await openUser(page, personas.floater.name)
-    await expect(page.getByRole('dialog').getByTestId('user-read-only')).toHaveCount(0)
+    const dialog = page.getByRole('dialog')
+    // D58 lead decisions 1: details, password and staff code aren't breweryMgr's.
+    await expect(dialog.getByTestId('user-read-only')).toContainText('you can change only their role in yours')
+    await expect(dialog.getByLabel('Name')).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Reset password' })).toHaveCount(0)
+    await expect(dialog.getByTestId('staff-code-section')).toHaveCount(0)
+    await expect(dialog.getByTestId('user-role-brewery')).toBeVisible()
+    await expect(dialog.getByTestId('user-departments')).toHaveText(/Taproom/)
     await expectActiveGreyed(page)
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
     expect((await rowOf('breweryMgr', await userId(await apiAs('floater')))).can_deactivate).toBe(false)
 
     // The refusal itself on a [TEST-TEMP] stand-in in the same two departments.
@@ -130,7 +140,67 @@ test.describe('breweryMgr', () => {
     const res = await (await apiAs('breweryMgr')).patch(`/api/users/${temp.id}`, { data: { active: false } })
     expect(res.status()).toBe(403)
     expect((await res.json()).error).toMatch(/only in your departments/i)
+    // D58 lead decisions 1: nor any other account change.
+    expect(await status('breweryMgr', 'PATCH', `/api/users/${temp.id}`, { name: tempTag('S8') })).toBe(403)
+    expect(await status('breweryMgr', 'POST', `/api/users/${temp.id}/reset_password`)).toBe(403)
     expect((await rowOf('owner', temp.id)).active).toBe(true)
+
+    // Their Brewery role is still breweryMgr's, through the dialog.
+    await openUser(page, temp.name)
+    await dialog.getByTestId('user-role-brewery').getByRole('combobox').click()
+    await page.getByRole('option', { name: 'Manager' }).click()
+    const put = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`/api/users/${temp.id}/memberships`))
+    await dialog.getByRole('button', { name: 'Save' }).click()
+    expect((await put).status()).toBe(200)
+    await expect(dialog).toBeHidden()
+    expect((await rowOf('owner', temp.id)).memberships.map((m) => [m.department_key, m.role]).sort()).toEqual([
+      ['bar', 'employee'],
+      ['brewery', 'manager'],
+    ])
+  })
+
+  // D58 lead decisions 1 (DEV QA gaps 12, 13): Add department on an owner or
+  // an Owners member doesn't make their account the manager's.
+  test('gaps 12, 13: after Add department, Reset password is not offered and the API refuses it (403)', async ({ page }) => {
+    const owner = await apiAs('owner')
+    const tempOwner = await tempIn('gap12 owner', [])
+    const flag = await owner.patch(`/api/users/${tempOwner.id}`, { data: { is_owner: true } })
+    expect(flag.status(), await flag.text()).toBe(200)
+    const member = await tempIn('gap13 office member', ['office'])
+    const set = await owner.put(`/api/users/${member.id}/memberships`, {
+      data: { memberships: [{ department: 'office', role: 'employee' }, { department: 'owners', role: 'employee' }] },
+    })
+    expect(set.status(), await set.text()).toBe(200)
+
+    try {
+      const dialog = page.getByRole('dialog')
+      for (const person of [tempOwner, member]) {
+        await openUser(page, person.name)
+        await dialog.getByTestId('user-add-department').getByRole('combobox').click()
+        await page.getByRole('option', { name: 'Brewery' }).click()
+        const added = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`/api/users/${person.id}/memberships`))
+        await dialog.getByRole('button', { name: 'Save' }).click()
+        const res = await added
+        expect(res.status()).toBe(200)
+        expect(await res.text()).not.toContain('"owners"')
+        await expect(dialog).toBeHidden()
+
+        await openUser(page, person.name)
+        await expect(dialog.getByTestId('user-read-only')).toBeVisible()
+        await expect(dialog.getByLabel('Name')).toBeDisabled()
+        await expect(dialog.getByRole('button', { name: 'Reset password' })).toHaveCount(0)
+        await expect(dialog.getByTestId('staff-code-section')).toHaveCount(0)
+        await expect(dialog).not.toContainText('Owners')
+        await dialog.getByRole('button', { name: 'Cancel' }).click()
+
+        expect(await status('breweryMgr', 'POST', `/api/users/${person.id}/reset_password`)).toBe(403)
+        expect(await status('breweryMgr', 'PATCH', `/api/users/${person.id}`, { name: tempTag('gap12') })).toBe(403)
+        expect(await status('breweryMgr', 'PUT', `/api/users/${person.id}/staff_code`, { code: '8642' })).toBe(403)
+        expect((await rowOf('owner', person.id)).name).toBe(person.name)
+      }
+    } finally {
+      await owner.patch(`/api/users/${tempOwner.id}`, { data: { is_owner: false } })
+    }
   })
 
   test('S12: ownersAsst shows Office only; no Owners anywhere in the Users & Roles traffic', async ({ page }) => {
@@ -232,7 +302,9 @@ test.describe('dualMgr', () => {
     expect((await rowOf('owner', temp.id)).active).toBe(true)
   })
 
-  test('S11: Office + Owners: Office details edit, the Owners chip shows, Deactivate greyed out (403)', async ({ page }) => {
+  // D58 lead decisions 1: nobody manages Owners, so only the Office role is
+  // dualMgr's, and Owners doesn't show (reverses spec decision 7's chip).
+  test('S11: Office + Owners: only the Office role changes, no Owners chip, details and Deactivate refused (403)', async ({ page }) => {
     const temp = await tempIn('S11', ['office'])
     const set = await (await apiAs('owner')).put(`/api/users/${temp.id}/memberships`, {
       data: { memberships: [{ department: 'office', role: 'employee' }, { department: 'owners', role: 'employee' }] },
@@ -241,17 +313,18 @@ test.describe('dualMgr', () => {
 
     await openUser(page, temp.name)
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByTestId('user-read-only')).toHaveCount(0)
-    await expect(dialog).toContainText('Owners member')
+    await expect(dialog.getByTestId('user-read-only')).toContainText('you can change only their role in yours')
+    await expect(dialog).not.toContainText('Owners')
+    await expect(dialog.getByLabel('Name')).toBeDisabled()
+    await expect(dialog.getByRole('button', { name: 'Reset password' })).toHaveCount(0)
     await expectActiveGreyed(page)
-    const renamed = `${temp.name} edited`
-    await dialog.getByLabel('Name').fill(renamed)
     await dialog.getByTestId('user-role-office').getByRole('combobox').click()
     await page.getByRole('option', { name: 'Manager' }).click()
     await dialog.getByRole('button', { name: 'Save' }).click()
     await expect(dialog).toBeHidden()
     const row = await rowOf('owner', temp.id)
-    expect(row.name).toBe(renamed)
+    expect(row.name).toBe(temp.name)
+    expect(await status('dualMgr', 'PATCH', `/api/users/${temp.id}`, { name: tempTag('S11') })).toBe(403)
     expect(row.memberships.map((m) => [m.department_key, m.role]).sort()).toEqual([
       ['office', 'manager'],
       ['owners', 'employee'],
@@ -296,7 +369,8 @@ test.describe('barMgr', () => {
 
   test('S10: a [TEST-TEMP] person with no department: Deactivate and reactivate', async ({ page }) => {
     const temp = await tempIn('S10', [])
-    expect(await rowOf('barMgr', temp.id)).toMatchObject({ can_edit: false, can_deactivate: true })
+    // D58 lead decisions 1: no department, so barMgr edits them as well.
+    expect(await rowOf('barMgr', temp.id)).toMatchObject({ can_edit: true, can_deactivate: true })
     // noDept (seeded) reads the same, untouched.
     expect((await rowOf('barMgr', await userId(await apiAs('noDept')))).can_deactivate).toBe(true)
     await toggleActive(page, temp.name, false)

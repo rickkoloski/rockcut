@@ -80,16 +80,22 @@ defmodule RockcutApi.AuthzParity.PeopleTest do
     for {who, target, code} <- [
           {"owner", "noDept", 200},
           {"owner2", "barMgr", 200},
-          {"barMgr", "floater", 200},
+          # D58 lead decisions 1: a manager changes a person's account only
+          # when they manage every department the person is in (floater is
+          # Taproom + Brewery, dualMgr Taproom + Office).
+          {"barMgr", "floater", 403},
           {"barMgr", "barMgr", 200},
-          {"barMgr", "dualMgr", 200},
+          # D58 lead decisions 1
+          {"barMgr", "dualMgr", 403},
           {"barMgr", "brewer1", 403},
-          {"barMgr", "noDept", 403},
+          # D58 lead decisions 1: no department, so any manager (as Active).
+          {"barMgr", "noDept", 200},
           {"barMgr", "owner", 403},
           {"splitRole", "brewer1", 403},
           {"splitRole", "bartender1", 200},
           {"dualMgr", "office1", 200},
-          {"breweryMgr", "splitRole", 200},
+          # D58 lead decisions 1: splitRole is Taproom + Brewery.
+          {"breweryMgr", "splitRole", 403},
           {"bartender1", "bartender2", 403},
           {"noDept", "noDept", 403}
         ] do

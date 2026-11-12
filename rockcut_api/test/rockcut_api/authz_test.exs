@@ -172,7 +172,10 @@ defmodule RockcutApi.AuthzTest do
       assert Authz.can?(p["splitRole"], :create, %User{})
       refute Authz.can?(p["floater"], :list, %User{})
 
-      assert Authz.can?(p["barMgr"], :update, p["floater"])
+      # D58 lead decisions 1: floater is Taproom + Brewery; barMgr manages
+      # only the Taproom.
+      refute Authz.can?(p["barMgr"], :update, p["floater"])
+      assert Authz.can?(p["barMgr"], :update, p["bartender1"])
       refute Authz.can?(p["splitRole"], :reset_password, p["brewer1"])
       assert Authz.can?(p["owner"], :set_owner, p["brewer1"])
       refute Authz.can?(p["barMgr"], :set_owner, p["bartender1"])

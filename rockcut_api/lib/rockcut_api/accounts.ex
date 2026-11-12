@@ -456,8 +456,8 @@ defmodule RockcutApi.Accounts do
 
   @doc """
   D58 §3.3: what `actor` may do with `target` in Users & Roles, for the UI:
-  `can_edit` (they share a managed department, or an owner), `can_deactivate`
-  (`Authz` `:deactivate`), `addable_departments` (the departments the actor
+  `can_edit` (`Authz` `:update`: an owner, or a manager of every department
+  the person is in), `can_deactivate` (`Authz` `:deactivate`, the same rule), `addable_departments` (the departments the actor
   can add the person to that they aren't in, `%{key, name}`), and
   `hidden_department_ids`: on a row the actor doesn't manage, the person's
   departments the actor can't see (decision 7: Owners), left out of every

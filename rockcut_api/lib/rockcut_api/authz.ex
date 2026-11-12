@@ -33,6 +33,9 @@ defmodule RockcutApi.Authz do
   alias RockcutApi.Availability.Slot
   alias RockcutApi.IdeaBoards.{Card, IdeaList, Note}
 
+  # Changing a person's account in Users & Roles (D58 lead decisions 1).
+  @account_actions [:update, :reset_password, :deactivate, :set_staff_code, :reveal_staff_code]
+
   @doc "True if the account is a shared device (D33), not a person."
   def device?(%User{kind: "device"}), do: true
   def device?(_), do: false
@@ -377,25 +380,20 @@ defmodule RockcutApi.Authz do
       when action in [:view_device, :pair, :revoke_token, :set_color_mode],
       do: role_in(user, device.home_department_id) == :manager
 
-  # People: listing and creating users is "any manager"; changing a user needs
-  # a department in common that the actor manages (was user_controller:12,22,49,76,89;
-  # accounts.ex:266-270).
+  # People: listing and creating users is "any manager" (was
+  # user_controller:12,22); changing one is below.
   def can?(%User{} = user, action, %User{}) when action in [:list, :create],
     do: counts_as_manager?(user)
 
-  def can?(%User{} = user, action, %User{} = target) when action in [:update, :reset_password],
-    do: can_manage_user?(user, target)
-
-  # D58 §3.3 (decisions 3, 5): a manager deactivates or reactivates a person
-  # only when they manage every department the person is in (Owners included,
-  # which nobody manages), so any manager may for someone with none. Never an
-  # owner (owners pass above; the last-owner guard is Accounts'). Needs the
-  # target's memberships preloaded.
-  def can?(%User{} = user, :deactivate, %User{memberships: memberships} = target)
-      when is_list(memberships),
-      do:
-        counts_as_manager?(user) and not owner?(target) and
-          Enum.all?(memberships, &(role_in(user, &1.department_id) == :manager))
+  # D58 §3.3 (decisions 3, 5) and lead decisions 1 (gaps 12, 13): a manager
+  # changes a person's account (details, password reset, Active, and the
+  # staff code, set, removed or shown) only when they manage every department
+  # the person is in (Owners included, which nobody manages), so any manager
+  # may for someone with none. Never an owner (owners pass above; the
+  # last-owner guard is Accounts'). Needs the target's memberships preloaded.
+  def can?(%User{} = user, action, %User{memberships: memberships} = target)
+      when action in @account_actions and is_list(memberships),
+      do: manages_all_departments_of?(user, target)
 
   # Memberships: set in a department only by its manager. Whether the department
   # is assignable at all is a data rule left in Accounts (was membership_controller:18,
@@ -484,15 +482,12 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, :production) when action in [:read, :write, :setup],
     do: member_of?(user, "brewery")
 
-  # Staff codes (D37; every department since D40): owners (above) and the
-  # managers of a department the person belongs to set and see a person's
-  # code (needs the target's memberships preloaded). Whether the target may
-  # hold one is StaffCodes' check (can_hold_staff_code?/1). `:staff_codes`:
-  # whether someone sets codes at all (the suggest route, `/api/me`).
-  def can?(%User{} = user, action, %User{memberships: memberships} = target)
-      when action in [:set_staff_code, :reveal_staff_code] and is_list(memberships),
-      do: can_manage_user?(user, target)
-
+  # Staff codes (D37; every department since D40): owners (above) and, since
+  # D58 lead decisions 1, a manager of every department the person is in set,
+  # remove and see a person's code (`@account_actions`, above). Whether the
+  # target may hold one is StaffCodes' check (can_hold_staff_code?/1).
+  # `:staff_codes`: whether someone sets codes at all (the suggest route,
+  # `/api/me`).
   def can?(%User{} = user, :manage, :staff_codes), do: counts_as_manager?(user)
 
   # Departments: anyone reads; only owners (handled above) change them.
@@ -506,6 +501,13 @@ defmodule RockcutApi.Authz do
   def can?(_user, _action, _resource), do: false
 
   ## Helpers
+
+  # A manager of every department `target` is in (none counts), and `target`
+  # isn't an owner: who may change a person's account (`@account_actions`).
+  defp manages_all_departments_of?(user, %User{memberships: memberships} = target),
+    do:
+      counts_as_manager?(user) and not owner?(target) and not device?(target) and
+        Enum.all?(memberships, &(role_in(user, &1.department_id) == :manager))
 
   # A manager of this department; with none yet, any manager (see positions).
   defp manages_department?(user, nil), do: counts_as_manager?(user)
