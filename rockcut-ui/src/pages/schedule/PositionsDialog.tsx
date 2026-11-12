@@ -28,6 +28,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import { departmentColor, departmentShades, shiftColor } from '../../lib/colors'
+import { positionGroups } from '../../lib/positions'
 import type { Department, Position, ShiftTemplate } from '../../lib/types'
 
 interface Props {
@@ -37,6 +38,8 @@ interface Props {
   departments: Department[]
   shiftTemplates: ShiftTemplate[]
   canEditColors: boolean // owner: may set department colors + position shades
+  // D58 (5769): the departments whose positions the actor changes; the rest are read-only.
+  canManageDepartment: (departmentId: number) => boolean
 }
 
 function readError(err: unknown): string {
@@ -44,7 +47,7 @@ function readError(err: unknown): string {
   return e?.response?.data?.error || parseApiError(err)
 }
 
-export default function PositionsDialog({ open, onClose, positions, departments, shiftTemplates, canEditColors }: Props) {
+export default function PositionsDialog({ open, onClose, positions, departments, shiftTemplates, canEditColors, canManageDepartment }: Props) {
   const qc = useQueryClient()
   const [name, setName] = useState('')
   const [departmentId, setDepartmentId] = useState<number | ''>('')
@@ -57,7 +60,8 @@ export default function PositionsDialog({ open, onClose, positions, departments,
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const deptId = departmentId || departments[0]?.id || ''
+  const editableDepartments = departments.filter((d) => canManageDepartment(d.id))
+  const deptId = departmentId || editableDepartments[0]?.id || ''
   const colorFor = (dep: Department) => colorDrafts[dep.id] ?? departmentColor(dep)
   const shadeFor = (pos: Position): number | null => shadeDrafts[pos.id] ?? pos.color_shade
 
@@ -108,10 +112,9 @@ export default function PositionsDialog({ open, onClose, positions, departments,
 
   const templatesFor = (posId: number) => shiftTemplates.filter((t) => t.position_id === posId)
 
-  // Owner sees every department (so any can be colored); others see only those with positions.
-  const groups = departments
-    .map((d) => [d, positions.filter((p) => p.department_id === d.id)] as const)
-    .filter(([, list]) => canEditColors || list.length > 0)
+  // Owner sees every department (so any can be colored); a manager sees theirs,
+  // plus other departments' positions read-only (D58).
+  const groups = positionGroups(departments, positions, canManageDepartment)
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -122,7 +125,7 @@ export default function PositionsDialog({ open, onClose, positions, departments,
         <Stack direction="row" spacing={1} alignItems="center">
           <TextField label="New position" size="small" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
           <TextField select label="Department" size="small" value={deptId} onChange={(e) => setDepartmentId(Number(e.target.value))} sx={{ minWidth: 140 }}>
-            {departments.map((d) => (
+            {editableDepartments.map((d) => (
               <MenuItem key={d.id} value={d.id}>{d.name}</MenuItem>
             ))}
           </TextField>
@@ -136,10 +139,10 @@ export default function PositionsDialog({ open, onClose, positions, departments,
         )}
 
         <List dense>
-          {groups.map(([dep, list]) => {
+          {groups.map(({ department: dep, positions: list, editable }) => {
             const base = colorFor(dep)
             return (
-              <Box key={dep.id}>
+              <Box key={dep.id} data-testid={`positions-group-${dep.key}`}>
                 <ListSubheader disableSticky sx={{ bgcolor: 'transparent' }}>
                   <Stack direction="row" spacing={1} alignItems="center">
                     {canEditColors && (
@@ -154,6 +157,11 @@ export default function PositionsDialog({ open, onClose, positions, departments,
                       />
                     )}
                     <span>{dep.name}</span>
+                    {!editable && (
+                      <Typography variant="caption" color="text.secondary">
+                        (view only: not your department)
+                      </Typography>
+                    )}
                   </Stack>
                 </ListSubheader>
 
@@ -171,14 +179,18 @@ export default function PositionsDialog({ open, onClose, positions, departments,
                               {expanded === p.id ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
                             </IconButton>
                           </Tooltip>
-                          <Button size="small" disabled={busy} onClick={() => run(() => api.patch(`/api/positions/${p.id}`, { active: !p.active }), [['positions']])}>
-                            {p.active ? 'Deactivate' : 'Activate'}
-                          </Button>
-                          <Tooltip title="Delete (or deactivate if in use)">
-                            <IconButton edge="end" size="small" disabled={busy} onClick={() => run(() => api.delete(`/api/positions/${p.id}`), [['positions']])}>
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
+                          {editable && (
+                            <>
+                              <Button size="small" disabled={busy} onClick={() => run(() => api.patch(`/api/positions/${p.id}`, { active: !p.active }), [['positions']])}>
+                                {p.active ? 'Deactivate' : 'Activate'}
+                              </Button>
+                              <Tooltip title="Delete (or deactivate if in use)">
+                                <IconButton edge="end" size="small" disabled={busy} onClick={() => run(() => api.delete(`/api/positions/${p.id}`), [['positions']])}>
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                            </>
+                          )}
                         </Stack>
                       }
                     >
@@ -186,7 +198,7 @@ export default function PositionsDialog({ open, onClose, positions, departments,
                       {!p.active && <Chip label="inactive" size="small" sx={{ ml: 1 }} />}
                     </ListItem>
 
-                    {canEditColors && (
+                    {canEditColors && editable && (
                       <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" sx={{ pl: 2, pb: 0.75 }}>
                         <Box
                           sx={{
@@ -228,17 +240,19 @@ export default function PositionsDialog({ open, onClose, positions, departments,
                             <Typography variant="body2" sx={{ flexGrow: 1 }}>
                               {t.name} · {t.start_time.slice(0, 5)}–{t.end_time.slice(0, 5)}
                             </Typography>
-                            <IconButton size="small" disabled={busy} onClick={() => run(() => api.delete(`/api/shift_templates/${t.id}`), [['shift_templates']])}>
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
+                            {editable && (
+                              <IconButton size="small" disabled={busy} onClick={() => run(() => api.delete(`/api/shift_templates/${t.id}`), [['shift_templates']])}>
+                                <DeleteIcon fontSize="small" />
+                              </IconButton>
+                            )}
                           </Stack>
                         ))}
-                        <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1 }} alignItems={{ sm: 'center' }}>
+                        {editable && <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} sx={{ mt: 1 }} alignItems={{ sm: 'center' }}>
                           <TextField size="small" label="Name" value={presetName} onChange={(e) => setPresetName(e.target.value)} />
                           <TextField size="small" label="Start" type="time" value={presetStart} onChange={(e) => setPresetStart(e.target.value)} slotProps={{ htmlInput: { step: 900 }, inputLabel: { shrink: true } }} />
                           <TextField size="small" label="End" type="time" value={presetEnd} onChange={(e) => setPresetEnd(e.target.value)} slotProps={{ htmlInput: { step: 900 }, inputLabel: { shrink: true } }} />
                           <Button size="small" variant="outlined" disabled={busy} onClick={() => addPreset(p.id)}>Add</Button>
-                        </Stack>
+                        </Stack>}
                       </Box>
                     </Collapse>
                   </Box>

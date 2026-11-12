@@ -1,7 +1,7 @@
 // Users & Roles: which departments the actor can change on a person, and the
 // memberships a save sends. D59 §4.3: only owners add or remove Owners
 // (`owners_only`) members, and every member there is an employee.
-import type { Department, Membership, Role } from './types'
+import type { Department, Membership, Role, User } from './types'
 
 export type RoleChoice = '' | Role
 
@@ -47,3 +47,24 @@ export function sortMemberships(memberships: Membership[], departments: Departme
   const at = (m: Membership) => index.get(m.department_key ?? '') ?? departments.length
   return [...memberships].sort((a, b) => at(a) - at(b))
 }
+
+/**
+ * D58 §3.3: what the actor may do with a person in Users & Roles, from the
+ * API's row (`can_edit`, `can_deactivate`, `addable_departments`). A row
+ * without them (an older API, or a person just created) is editable, as
+ * before; the API still decides.
+ */
+export function userAccess(user: User | null | undefined): {
+  canEdit: boolean
+  canDeactivate: boolean
+  addable: { key: string; name: string }[]
+} {
+  return {
+    canEdit: user?.can_edit ?? true,
+    canDeactivate: user?.can_deactivate ?? true,
+    addable: user?.addable_departments ?? [],
+  }
+}
+
+/** Why Active is greyed out (D58 decisions 3, 5). */
+export const DEACTIVATE_HINT = 'Only a manager of every department this person is in can change Active.'

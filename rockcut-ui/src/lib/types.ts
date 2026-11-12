@@ -250,6 +250,11 @@ export interface User {
   // D37: a staff code is set (the code itself comes only from GET /api/users/:id/staff_code).
   has_staff_code?: boolean
   memberships: Membership[] | null
+  // D58 §3.3, on `/api/users` rows (Users & Roles) only: what the signed-in
+  // owner or manager may do with this person.
+  can_edit?: boolean
+  can_deactivate?: boolean
+  addable_departments?: { key: string; name: string }[]
   inserted_at: string
   updated_at: string
 }

@@ -15,6 +15,7 @@ import {
   Stack,
   Switch,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
@@ -22,7 +23,16 @@ import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import useAuth from '../../hooks/useAuth'
 import type { Department, User } from '../../lib/types'
-import { editableDepartments, membershipsPayload, readOnlyOwnersOnly, type RoleChoice } from '../../lib/userRoles'
+import {
+  DEACTIVATE_HINT,
+  editableDepartments,
+  membershipLabel,
+  membershipsPayload,
+  readOnlyOwnersOnly,
+  sortMemberships,
+  userAccess,
+  type RoleChoice,
+} from '../../lib/userRoles'
 import StaffCodeSection from './StaffCodeSection'
 import { staffCodeError } from '../../lib/staffCode'
 
@@ -43,6 +53,11 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const { user: actor, capabilities, staffCodes } = useAuth()
   const isOwnerActor = !!actor?.is_owner
   const isEdit = !!editUser
+  // D58 §3.3: someone outside the actor's departments is read-only, except
+  // Active (when they manage every department the person is in) and Add
+  // department.
+  const access = userAccess(editUser)
+  const readOnly = isEdit && !access.canEdit
 
   // Only assignable departments bear roles ("Other" is scheduling-only). D59:
   // only an owner changes Owners, and only as employee.
@@ -62,6 +77,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [codeDraft, setCodeDraft] = useState('')
+  const [addDept, setAddDept] = useState('')
 
   // D37, every department since D40: owners and the managers of one of the
   // person's departments see their staff code. Only active people with a
@@ -91,6 +107,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setTempPassword(null)
     setError(null)
     setCodeDraft('')
+    setAddDept('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editUser])
 
@@ -114,7 +131,16 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     }
     setLoading(true)
     try {
-      if (isEdit && editUser) {
+      if (readOnly && editUser) {
+        // Only what this row allows: Active, then the added department (an
+        // employee; the API keeps every other department as it is).
+        if (active !== editUser.active) await api.patch(`/api/users/${editUser.id}`, { active })
+        if (addDept) {
+          await api.put(`/api/users/${editUser.id}/memberships`, { memberships: [{ department: addDept, role: 'employee' }] })
+        }
+        invalidate()
+        onClose()
+      } else if (isEdit && editUser) {
         const body: Record<string, unknown> = { name, active, schedulable }
         if (isOwnerActor) body.is_owner = isOwner
         // D35: each call resets the calendar links the person loses. Deactivating
@@ -200,18 +226,31 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
               fullWidth
               disabled={isEdit}
             />
-            <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth />
+            <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} fullWidth disabled={readOnly} />
+
+            {readOnly && (
+              <Alert severity="info" data-testid="user-read-only">
+                {editUser?.name || editUser?.email} isn't in a department you manage, so you can view them here but not
+                change them.{access.addable.length > 0 ? ' You can add them to one of your departments.' : ''}
+              </Alert>
+            )}
 
             {isEdit && (
-              <FormControlLabel
-                control={<Switch checked={active} onChange={(e) => setActive(e.target.checked)} />}
-                label="Active"
-              />
+              <Tooltip title={access.canDeactivate ? '' : DEACTIVATE_HINT}>
+                <FormControlLabel
+                  control={<Switch checked={active} onChange={(e) => setActive(e.target.checked)} />}
+                  label="Active"
+                  disabled={!access.canDeactivate}
+                  data-testid="user-active"
+                  sx={{ alignSelf: 'flex-start' }}
+                />
+              </Tooltip>
             )}
             {isEdit && (
               <FormControlLabel
                 control={<Switch checked={schedulable} onChange={(e) => setSchedulable(e.target.checked)} />}
                 label="Show on schedule"
+                disabled={readOnly}
               />
             )}
             {isOwnerActor && (
@@ -225,29 +264,63 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
               <Typography variant="overline">Department roles</Typography>
             </Divider>
 
-            {manageableDepts.length === 0 && (
+            {readOnly && editUser && (
+              <Box data-testid="user-departments">
+                {(editUser.memberships ?? []).length === 0 ? (
+                  <Typography variant="body2" color="text.secondary">
+                    No departments.
+                  </Typography>
+                ) : (
+                  sortMemberships(editUser.memberships ?? [], departments).map((m) => (
+                    <Chip key={m.department_id} label={membershipLabel(m)} size="small" variant="outlined" sx={{ mr: 1, mb: 0.5 }} />
+                  ))
+                )}
+              </Box>
+            )}
+            {readOnly && access.addable.length > 0 && (
+              <TextField
+                select
+                label="Add department"
+                value={addDept}
+                onChange={(e) => setAddDept(e.target.value)}
+                fullWidth
+                helperText="Adds them as an employee."
+                data-testid="user-add-department"
+              >
+                <MenuItem value="">— None —</MenuItem>
+                {access.addable.map((d) => (
+                  <MenuItem key={d.key} value={d.key}>
+                    {d.name}
+                  </MenuItem>
+                ))}
+              </TextField>
+            )}
+
+            {!readOnly && manageableDepts.length === 0 && (
               <Typography variant="body2" color="text.secondary">
                 You have no departments to assign.
               </Typography>
             )}
-            <Stack spacing={2}>
-              {manageableDepts.map((d) => (
-                <TextField
-                  key={d.key}
-                  select
-                  label={d.name}
-                  value={roles[d.key] ?? ''}
-                  onChange={(e) => setRoles((r) => ({ ...r, [d.key]: e.target.value as RoleChoice }))}
-                  fullWidth
-                  helperText={d.owners_only ? `${d.name} has no managers.` : undefined}
-                >
-                  <MenuItem value="">— None —</MenuItem>
-                  {!d.owners_only && <MenuItem value="manager">Manager</MenuItem>}
-                  <MenuItem value="employee">{d.owners_only ? 'Member' : 'Employee'}</MenuItem>
-                </TextField>
-              ))}
-            </Stack>
-            {lockedDepts.length > 0 && (
+            {!readOnly && (
+              <Stack spacing={2}>
+                {manageableDepts.map((d) => (
+                  <TextField
+                    key={d.key}
+                    select
+                    label={d.name}
+                    value={roles[d.key] ?? ''}
+                    onChange={(e) => setRoles((r) => ({ ...r, [d.key]: e.target.value as RoleChoice }))}
+                    fullWidth
+                    helperText={d.owners_only ? `${d.name} has no managers.` : undefined}
+                  >
+                    <MenuItem value="">— None —</MenuItem>
+                    {!d.owners_only && <MenuItem value="manager">Manager</MenuItem>}
+                    <MenuItem value="employee">{d.owners_only ? 'Member' : 'Employee'}</MenuItem>
+                  </TextField>
+                ))}
+              </Stack>
+            )}
+            {!readOnly && lockedDepts.length > 0 && (
               <Box>
                 {lockedDepts.map((d) => (
                   <Chip key={d.key} label={`${d.name} member`} size="small" variant="outlined" sx={{ mr: 1 }} />
@@ -272,7 +345,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
       </DialogContent>
       <DialogActions sx={{ justifyContent: 'space-between' }}>
         <Box>
-          {isEdit && !tempPassword && (
+          {isEdit && !readOnly && !tempPassword && (
             <Button onClick={resetPassword} disabled={loading} color="warning">
               Reset password
             </Button>
