@@ -2,6 +2,7 @@ import { useRef, useState, type ReactNode } from 'react'
 import { Box, Button, IconButton, ListItemIcon, ListItemText, Menu, MenuItem, Paper, TextField, Tooltip, Typography } from '@mui/material'
 import { Add, ArchiveOutlined, ChevronLeft, ChevronRight, DriveFileRenameOutline, LockOpenOutlined, LockOutlined, MoreVert } from '@mui/icons-material'
 import type { ContainerSlot } from '../../components/dnd/SortableLists'
+import type { ColumnDrag } from './ListColumnsSortable'
 import { formatIdeaDate } from '../../lib/ideas'
 import type { IdeaListData } from '../../lib/types'
 
@@ -29,6 +30,8 @@ interface Props {
   /** Phone width: the column fills the screen. */
   full?: boolean
   footer?: ReactNode
+  /** D58 §3.16: desktop, dragged left or right by its header. */
+  drag?: ColumnDrag
 }
 
 /**
@@ -41,6 +44,12 @@ export default function IdeaListColumn(props: Props) {
   const { list, shown, total, canChange, canAdd, canLock, readOnly, full } = props
   // Taken apart here: the linter reads `slot.x` beside a ref callback as a ref read.
   const { setNodeRef, isOver, items } = props.slot
+  const drag = props.drag
+  const columnRef = (node: HTMLElement | null) => {
+    setNodeRef(node)
+    drag?.setNodeRef(node)
+  }
+  const draggable = !!drag?.handle
   const [anchor, setAnchor] = useState<HTMLElement | null>(null)
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState(list.name)
@@ -89,11 +98,14 @@ export default function IdeaListColumn(props: Props) {
 
   return (
     <Paper
-      ref={setNodeRef}
+      ref={columnRef}
       variant="outlined"
       data-testid={`idea-list-${list.id}`}
       data-list-name={list.name}
+      data-dragging={drag?.dragging || undefined}
+      style={drag?.style}
       sx={{
+        boxShadow: drag?.dragging ? 6 : undefined,
         width: full ? '100%' : 280,
         flexShrink: 0,
         display: 'flex',
@@ -104,7 +116,11 @@ export default function IdeaListColumn(props: Props) {
         outlineColor: 'primary.main',
       }}
     >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, pt: 1, pb: 0.5 }}>
+      <Box
+        {...(draggable && !renaming ? drag?.handle : {})}
+        sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1, pt: 1, pb: 0.5, cursor: draggable && !renaming ? 'grab' : undefined }}
+        data-testid={`idea-list-header-${list.id}`}
+      >
         {renaming ? (
           <TextField
             size="small"

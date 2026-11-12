@@ -17,6 +17,7 @@ import { CARD_NOT_FOUND, IDEA_BOARD_KEY, boardUrl, cardShown, ideaBoardTitle, id
 import type { IdeaBoardData, IdeaBoardEntry, IdeaCardFace as Face, IdeaLabel, IdeaListData, IdeaPerson } from '../../lib/types'
 import BoardSwitcher from '../tasks/BoardSwitcher'
 import IdeaListColumn, { type ListAction } from './IdeaListColumn'
+import ListColumnsSortable, { type ColumnDrag } from './ListColumnsSortable'
 import IdeaCardFace from './IdeaCardFace'
 import IdeaCardDialog from './IdeaCardDialog'
 import ArchivedDialog from './ArchivedDialog'
@@ -157,6 +158,20 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     }
   }
 
+  // D58 §3.16 (5193): a list dragged by its header saves as ⋮ Move left/right
+  // does (`before_id`; the same rules and History). Its new place shows until
+  // the board's next read.
+  const [columnOrder, setColumnOrder] = useState<{ ids: string[]; data: IdeaBoardData } | null>(null)
+  const columnIds = columnOrder && columnOrder.data === data ? columnOrder.ids : lists.map((l) => listKey(l.id))
+  const columnLocked = (id: string) => {
+    const list = listByKey(id)
+    return phone || !list || !(canWrite && (manage || !list.locked))
+  }
+  const reorderList = (id: string, beforeId: string | null, ids: string[]) => {
+    if (data) setColumnOrder({ ids, data })
+    void run(() => api.post(ideaPath(key, 'lists', idOf(id), 'move'), { before_id: beforeId ? idOf(beforeId) : null }))
+  }
+
   const addList = async () => {
     const name = newList.trim()
     if (!name) return setAddingList(false)
@@ -196,7 +211,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
   ]
   const labelFilters: Choice<IdeaFilter>[] = (data?.labels ?? []).map((l) => ({ value: `label:${l.id}` as IdeaFilter, label: l.name }))
 
-  const renderContainer = (container: ListContainer, slot: ContainerSlot): ReactNode => {
+  const renderContainer = (container: ListContainer, slot: ContainerSlot, drag?: ColumnDrag): ReactNode => {
     const list = listByKey(container.id)
     if (!list) return null
     const i = lists.indexOf(list)
@@ -215,6 +230,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
         isLast={i === lists.length - 1}
         readOnly={isDevice}
         full={phone}
+        drag={phone ? undefined : drag}
         onAction={(action) => void listAction(list, action)}
         onRename={(name) => run(() => api.patch(ideaPath(key, 'lists', list.id), { name }))}
         onAddCard={(title) => run(() => api.post(ideaPath(key, 'cards'), { list_id: list.id, title }))}
@@ -315,7 +331,7 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
     }
     return (
       <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.5, overflowX: 'auto', pb: 2 }} data-testid="idea-lists">
-        {lists.map((l) => rendered[listKey(l.id)])}
+        {columnIds.map((id) => rendered[id])}
         {addListColumn}
       </Box>
     )
@@ -370,33 +386,37 @@ export default function IdeaBoard({ board, boards, cardId }: Props) {
       {isError && !data && <Alert severity="error">{ideaError(error)}</Alert>}
       {isLoading && !data && <CircularProgress />}
       {data && (
-        <SortableLists
-          containers={containers}
-          onMove={(m) => moveCard(m)}
-          isLocked={isLocked}
-          canMoveTo={canMoveTo}
-          itemLabel={(k) => cards.get(k)?.card.title ?? 'card'}
-          containerLabel={(id) => listByKey(id)?.name ?? 'list'}
-          onItemActivate={(k) => openCard(idOf(k))}
-          renderItem={(k, state) => {
-            const entry = cards.get(k)
-            return entry ? (
-              <IdeaCardFace
-                card={entry.card}
-                labels={labels}
-                listLocked={entry.list.locked}
-                today={today}
-                dragging={state.dragging}
-                overlay={state.overlay}
-                locked={state.locked}
-                onOpen={(c) => openCard(c.id)}
-              />
-            ) : null
-          }}
-          renderContainer={renderContainer}
-        >
-          {layout}
-        </SortableLists>
+        <ListColumnsSortable ids={columnIds} isDisabled={columnLocked} onReorder={reorderList}>
+          {(drags) => (
+            <SortableLists
+              containers={containers}
+              onMove={(m) => moveCard(m)}
+              isLocked={isLocked}
+              canMoveTo={canMoveTo}
+              itemLabel={(k) => cards.get(k)?.card.title ?? 'card'}
+              containerLabel={(id) => listByKey(id)?.name ?? 'list'}
+              onItemActivate={(k) => openCard(idOf(k))}
+              renderItem={(k, state) => {
+                const entry = cards.get(k)
+                return entry ? (
+                  <IdeaCardFace
+                    card={entry.card}
+                    labels={labels}
+                    listLocked={entry.list.locked}
+                    today={today}
+                    dragging={state.dragging}
+                    overlay={state.overlay}
+                    locked={state.locked}
+                    onOpen={(c) => openCard(c.id)}
+                  />
+                ) : null
+              }}
+              renderContainer={(container, slot) => renderContainer(container, slot, drags[container.id])}
+            >
+              {layout}
+            </SortableLists>
+          )}
+        </ListColumnsSortable>
       )}
       {cardId !== null && data && (
         <IdeaCardDialog
