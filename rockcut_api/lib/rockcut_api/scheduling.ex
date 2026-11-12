@@ -292,9 +292,30 @@ defmodule RockcutApi.Scheduling do
   # Series links are set by the server only, never from request params.
   @server_only ~w(series_id series_exception created_by_id)
 
-  def get_event(id), do: ScheduleEvent |> Repo.get(id) |> Repo.preload(@event_preloads)
+  def get_event(id),
+    do: ScheduleEvent |> Repo.get(id) |> Repo.preload(@event_preloads) |> with_chain_views()
 
-  def get_event!(id), do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(@event_preloads)
+  def get_event!(id),
+    do: ScheduleEvent |> Repo.get!(id) |> Repo.preload(@event_preloads) |> with_chain_views()
+
+  # D58 §3.6 (4261): a split part's series as the dialog shows it
+  # (`EventSeries.chain_view/1`), worked out once per series.
+  defp with_chain_views(nil), do: nil
+  defp with_chain_views(%ScheduleEvent{} = e), do: hd(with_chain_views([e]))
+
+  defp with_chain_views(events) when is_list(events) do
+    views =
+      events
+      |> Enum.map(& &1.series)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq_by(& &1.id)
+      |> Map.new(&{&1.id, EventSeries.chain_view(&1)})
+
+    Enum.map(events, fn
+      %{series: %ScheduleEventSeries{id: id}} = e -> %{e | series: views[id]}
+      e -> e
+    end)
+  end
 
   def get_series(id), do: Repo.get(ScheduleEventSeries, id)
 
@@ -319,6 +340,7 @@ defmodule RockcutApi.Scheduling do
     |> order_by([e], asc: e.starts_at)
     |> preload(^@event_preloads)
     |> Repo.all()
+    |> with_chain_views()
   end
 
   @doc """

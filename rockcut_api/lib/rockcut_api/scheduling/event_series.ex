@@ -8,6 +8,12 @@ defmodule RockcutApi.Scheduling.EventSeries do
   the rule with `"following"` ends the old series the day before and starts a
   new one. Never notifies anyone.
 
+  **The chain** (D58 §3.6, 4261; D39's G1 and R1 for tasks): the new series
+  records the one it continues (`continues_series_id`), and the old part's end
+  is `internal_end` (it stops the dates; it isn't the person's "Ends"). Every
+  `"following"` action covers the acted-on series and the parts that continue
+  it, and the dialog is shown the chain's own end (`chain_view/1`).
+
   Repeat params are flat: `repeat` (`weekly` | `monthly_weekday`),
   `repeat_interval`, `repeat_weekdays`, `repeat_week_of_month`,
   `repeat_weekday`, `repeat_until` (a date) or `repeat_count`.
@@ -76,7 +82,10 @@ defmodule RockcutApi.Scheduling.EventSeries do
   def delete(%ScheduleEvent{} = event, "following") do
     write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
-      end_series_before(series, event)
+      drop_all(continuations(series))
+      head = series |> end_series_before(event, false) |> head_id(series)
+      # Deleted from its first date: what it continued now ends the event.
+      if head && head != series.id, do: real_end!(head)
       event
     end)
   end
@@ -96,6 +105,8 @@ defmodule RockcutApi.Scheduling.EventSeries do
   end. Idempotent. Returns `{:ok, added_count}`.
   """
   def extend(%ScheduleEventSeries{} = series, %Date{} = today) do
+    # The chain goes on from its latest part (an old part's end is internal).
+    series = latest_part([series | continuations(series)])
     through = Recurrence.extend_horizon(series, today)
     from = series.generated_through
 
@@ -147,11 +158,14 @@ defmodule RockcutApi.Scheduling.EventSeries do
   #
   # A count is the whole series' total (it's what the dialog shows), so the new
   # part gets what's left after the dates before the split.
+  #
+  # The parts that continued this one (a later split) go: the new rule covers
+  # their dates now (G1, R1).
   defp split(event, attrs) do
     write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
       {date, _} = Recurrence.to_local(event.starts_at)
-      used = length(Recurrence.dates(%{series | skipped_dates: []}, Date.add(date, -1)))
+      used = used_before(series, date)
 
       merged =
         event
@@ -161,8 +175,10 @@ defmodule RockcutApi.Scheduling.EventSeries do
         |> remaining_count(used)
 
       with {:ok, merged} <- merged,
-           _ <- end_series_before(series, event),
-           {:ok, _new, [first | _]} <- insert_series(merged, series.created_by_id) do
+           :ok <- drop_all(continuations(series)),
+           head = series |> end_series_before(event, true) |> head_id(series),
+           {:ok, new, [first | _]} <- insert_series(merged, series.created_by_id) do
+        new |> Changeset.change(continues_series_id: head) |> Repo.update!()
         first
       else
         {:error, changeset} -> Repo.rollback(changeset)
@@ -189,7 +205,9 @@ defmodule RockcutApi.Scheduling.EventSeries do
     end
   end
 
-  defp end_series_before(series, event) do
+  # `internal?`: a split's old part (the end only stops the dates), not the
+  # person's end (delete "following").
+  defp end_series_before(series, event, internal?) do
     {date, _} = Recurrence.to_local(event.starts_at)
 
     from(e in ScheduleEvent,
@@ -199,11 +217,96 @@ defmodule RockcutApi.Scheduling.EventSeries do
 
     if Date.compare(date, series.start_date) == :gt do
       series
-      |> Changeset.change(until_date: Date.add(date, -1), count: nil)
+      |> Changeset.change(until_date: Date.add(date, -1), count: nil, internal_end: internal?)
       |> Repo.update!()
+
+      :ended
     else
       Repo.delete!(series)
+      :deleted
     end
+  end
+
+  # What a new part continues: the acted-on series, or what it continued when
+  # it was deleted.
+  defp head_id(:ended, series), do: series.id
+  defp head_id(:deleted, series), do: series.continues_series_id
+
+  defp real_end!(id) do
+    from(s in ScheduleEventSeries, where: s.id == ^id)
+    |> Repo.update_all(set: [internal_end: false])
+  end
+
+  # Parts that continue a series start after every date it has, so a
+  # "following" delete or split from it takes them whole.
+  defp drop_all(parts) do
+    ids = Enum.map(parts, & &1.id)
+    from(e in ScheduleEvent, where: e.series_id in ^ids) |> Repo.delete_all()
+    from(s in ScheduleEventSeries, where: s.id in ^ids) |> Repo.delete_all()
+    :ok
+  end
+
+  ## The chain
+
+  @doc """
+  `series` as the dialog shows it: the chain's `until_date` and `count` (the
+  latest part whose end isn't internal; a count is the chain's total) and how
+  far its latest part is generated. Not for saving.
+  """
+  def chain_view(%ScheduleEventSeries{internal_end: false, continues_series_id: nil} = s), do: s
+
+  def chain_view(%ScheduleEventSeries{} = s) do
+    chain = [s | continuations(s)]
+    latest = latest_part(chain)
+
+    {until, count} =
+      if latest.internal_end,
+        do: {nil, nil},
+        else:
+          {latest.until_date,
+           latest.count && latest.count + used_before(latest, latest.start_date)}
+
+    %{s | until_date: until, count: count, generated_through: latest.generated_through}
+  end
+
+  # The series that continue `series`, transitively, oldest start first.
+  defp continuations(%ScheduleEventSeries{id: id}), do: continuations([id], MapSet.new([id]), [])
+
+  defp continuations([], _seen, acc), do: Enum.sort_by(acc, & &1.start_date, Date)
+
+  defp continuations(ids, seen, acc) do
+    next =
+      Repo.all(from s in ScheduleEventSeries, where: s.continues_series_id in ^ids)
+      |> Enum.reject(&MapSet.member?(seen, &1.id))
+
+    continuations(
+      Enum.map(next, & &1.id),
+      Enum.reduce(next, seen, &MapSet.put(&2, &1.id)),
+      acc ++ next
+    )
+  end
+
+  # The chain's current part: the latest-starting one whose end isn't internal.
+  defp latest_part([series | _] = chain) do
+    chain
+    |> Enum.reject(& &1.internal_end)
+    |> Enum.max_by(& &1.start_date, Date, fn -> series end)
+  end
+
+  # The chain's dates before `date`, for "after N times": the series' own and
+  # those of the parts it continues, each through its internal end (a split
+  # that moved the day starts the new part after that end, not on the next day).
+  defp used_before(series, date, seen \\ MapSet.new()) do
+    own = length(Recurrence.dates(%{series | skipped_dates: []}, Date.add(date, -1)))
+    seen = MapSet.put(seen, series.id)
+
+    parent =
+      series.continues_series_id && !MapSet.member?(seen, series.continues_series_id) &&
+        Repo.get(ScheduleEventSeries, series.continues_series_id)
+
+    if parent && parent.internal_end && parent.until_date,
+      do: own + used_before(parent, Date.add(parent.until_date, 1), seen),
+      else: own
   end
 
   ## Update
@@ -236,29 +339,23 @@ defmodule RockcutApi.Scheduling.EventSeries do
   end
 
   # Content and time changes apply to this occurrence and every later one,
-  # overwriting ones changed individually. Each keeps its own status and date.
+  # overwriting ones changed individually, through the parts that continue the
+  # series (G1). Each keeps its own status and date.
   defp update_following(event, attrs) do
     write_transaction(fn ->
       series = Repo.get!(ScheduleEventSeries, event.series_id)
       probe = ScheduleEvent.changeset(event, attrs)
 
       with {:ok, edited} <- Changeset.apply_action(probe, :update),
-           {:ok, series} <-
-             series
-             |> ScheduleEventSeries.changeset(
-               Map.merge(
-                 Map.take(attrs, @content_fields),
-                 edited
-                 |> timing_attrs(Map.take(attrs, @timing_fields) != %{}, series)
-                 |> Map.new(fn {k, v} -> {to_string(k), v} end)
-               )
-             )
-             |> Repo.update() do
+           {:ok, chain} <- update_chain([series | continuations(series)], attrs, edited) do
+        by_id = Map.new(chain, &{&1.id, &1})
+
         from(e in ScheduleEvent,
-          where: e.series_id == ^series.id and e.starts_at >= ^event.starts_at
+          where: e.series_id in ^Map.keys(by_id) and e.starts_at >= ^event.starts_at
         )
         |> Repo.all()
         |> Enum.each(fn occ ->
+          series = by_id[occ.series_id]
           {date, _} = Recurrence.to_local(occ.starts_at)
           {starts_at, ends_at} = Recurrence.occurrence_times(series, date)
 
@@ -278,6 +375,22 @@ defmodule RockcutApi.Scheduling.EventSeries do
         Repo.get!(ScheduleEvent, event.id)
       else
         {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
+  end
+
+  defp update_chain(chain, attrs, edited) do
+    timing =
+      edited
+      |> timing_attrs(Map.take(attrs, @timing_fields) != %{}, nil)
+      |> Map.new(fn {k, v} -> {to_string(k), v} end)
+
+    changes = Map.merge(Map.take(attrs, @content_fields), timing)
+
+    Enum.reduce_while(chain, {:ok, []}, fn s, {:ok, done} ->
+      case s |> ScheduleEventSeries.changeset(changes) |> Repo.update() do
+        {:ok, s} -> {:cont, {:ok, done ++ [s]}}
+        error -> {:halt, error}
       end
     end)
   end
