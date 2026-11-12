@@ -27,8 +27,7 @@ defmodule RockcutApiWeb.JSONHelpers do
 
   @doc """
   D58 §3.3: a person in Users & Roles as `viewer` (an owner or a manager) may
-  see them: `user/1`, without the departments `viewer` can't see on a row they
-  don't manage (decision 7: Owners), plus `can_edit`, `can_deactivate` and
+  see them: `user/1`, without the departments `viewer` can't see (Owners), plus `can_edit`, `can_deactivate` and
   `addable_departments` (`Accounts.user_access/3`). Every Users & Roles reply
   about a person uses this.
   """

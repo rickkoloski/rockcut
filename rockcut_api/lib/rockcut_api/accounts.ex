@@ -459,9 +459,9 @@ defmodule RockcutApi.Accounts do
   `can_edit` (`Authz` `:update`: an owner, or a manager of every department
   the person is in), `can_deactivate` (`Authz` `:deactivate`, the same rule), `addable_departments` (the departments the actor
   can add the person to that they aren't in, `%{key, name}`), and
-  `hidden_department_ids`: on a row the actor doesn't manage, the person's
-  departments the actor can't see (decision 7: Owners), left out of every
-  payload about them. Expects memberships preloaded with departments;
+  `hidden_department_ids`: the person's departments the actor can't see
+  (Owners, to anyone but owners and its members; lead decisions 1 reverses
+  decision 7's read-only chip), left out of every payload about them. Expects memberships preloaded with departments;
   `departments` saves a query per row in a list.
   """
   def user_access(%User{} = actor, %User{} = target, departments \\ list_departments()) do
@@ -480,14 +480,10 @@ defmodule RockcutApi.Accounts do
           do: %{key: d.key, name: d.name}
         ),
       hidden_department_ids:
-        if(can_edit,
-          do: [],
-          else:
-            for(
-              m <- target.memberships,
-              not Authz.can?(actor, :see, {:department, m.department}),
-              do: m.department_id
-            )
+        for(
+          m <- target.memberships,
+          not Authz.can?(actor, :see, {:department, m.department}),
+          do: m.department_id
         )
     }
   end

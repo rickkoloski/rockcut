@@ -1,6 +1,8 @@
 // Users & Roles: which departments the actor can change on a person, and the
 // memberships a save sends. D59 §4.3: only owners add or remove Owners
-// (`owners_only`) members, and every member there is an employee.
+// (`owners_only`) members, and every member there is an employee. D58 lead
+// decisions 1: a manager never sees an Owners membership (the API leaves it
+// out), so there's no read-only chip.
 import type { Department, Membership, Role, User } from './types'
 
 export type RoleChoice = '' | Role
@@ -24,18 +26,6 @@ export function membershipsPayload(editable: Department[], roles: Record<string,
   return editable
     .filter((d) => roles[d.key])
     .map((d) => ({ department: d.key, role: d.owners_only ? 'employee' : (roles[d.key] as Role) }))
-}
-
-/**
- * The person's `owners_only` memberships the actor can't change: shown as
- * read-only chips. From the membership itself (D59 decision 9): a manager's
- * `/api/departments` leaves Owners out.
- */
-export function readOnlyOwnersOnly(memberships: Membership[] | null | undefined, editable: Department[]): { key: string; name: string }[] {
-  const editableKeys = new Set(editable.map((d) => d.key))
-  return (memberships ?? [])
-    .filter((m) => m.owners_only && m.department_key && !editableKeys.has(m.department_key))
-    .map((m) => ({ key: m.department_key as string, name: m.department_name ?? m.department_key as string }))
 }
 
 /** "Brewery: manager", "Owners: member" (D59 gap 3: an `owners_only` membership is a member, as in the dialog). */
@@ -66,5 +56,8 @@ export function userAccess(user: User | null | undefined): {
   }
 }
 
-/** Why Active is greyed out (D58 decisions 3, 5). */
-export const DEACTIVATE_HINT = 'Only a manager of every department this person is in can change Active.'
+/**
+ * Why Active is greyed out (D58 decisions 3, 5). Lead decisions 1: neutral,
+ * so it doesn't hint at a department the manager can't see.
+ */
+export const DEACTIVATE_HINT = "You can't change Active for this person."

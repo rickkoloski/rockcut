@@ -16,7 +16,8 @@ import { settingsItem } from '../settingsMenu'
 // seeded personas are only looked at, and refusals that would change one are
 // tried on a `[TEST-TEMP]` stand-in.
 
-const DEACTIVATE_HINT = 'Only a manager of every department this person is in can change Active.'
+// Lead decisions 1: neutral for everyone (DEV QA gap 6).
+const DEACTIVATE_HINT = "You can't change Active for this person."
 
 interface Row {
   id: number

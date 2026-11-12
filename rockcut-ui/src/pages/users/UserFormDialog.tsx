@@ -28,7 +28,6 @@ import {
   editableDepartments,
   membershipLabel,
   membershipsPayload,
-  readOnlyOwnersOnly,
   sortMemberships,
   userAccess,
   type RoleChoice,
@@ -66,7 +65,6 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     ? departments.filter((d) => d.assignable !== false).map((d) => d.key)
     : capabilities?.manages_departments ?? []
   const manageableDepts = editableDepartments(departments, isOwnerActor, managedKeys)
-  const lockedDepts = readOnlyOwnersOnly(editUser?.memberships, manageableDepts)
   const savedKeys = (editUser?.memberships ?? []).flatMap((m) => (m.department_key ? [m.department_key] : []))
   // On a read-only row: the manager's departments the person is in (their
   // role there stays the manager's to change), and the person's others.
@@ -385,16 +383,6 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
                   </TextField>
                 ))}
               </Stack>
-            )}
-            {!readOnly && lockedDepts.length > 0 && (
-              <Box>
-                {lockedDepts.map((d) => (
-                  <Chip key={d.key} label={`${d.name} member`} size="small" variant="outlined" sx={{ mr: 1 }} />
-                ))}
-                <Typography variant="caption" color="text.secondary" display="block" sx={{ mt: 0.5 }}>
-                  Only owners change {lockedDepts.map((d) => d.name).join(', ')} membership.
-                </Typography>
-              </Box>
             )}
 
             {showStaffCode && editUser && (

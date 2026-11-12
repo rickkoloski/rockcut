@@ -404,6 +404,31 @@ defmodule RockcutApiWeb.OwnersPrivacyTest do
 
     # D58 (5769): a manager now gets a plain 403 for any department they don't
     # manage (was this 422); an owner still gets the 422, which names no department.
+    # D58 lead decisions 1, DEV QA gap 7: Add department on an Owners member
+    # doesn't reveal Owners, in the reply or on the row afterwards.
+    test "breweryMgr's Add department on ownersAsst: no Owners in the reply or the row", %{p: p} do
+      id = p["ownersAsst"].id
+
+      reply =
+        call(p["breweryMgr"], :put, "/api/users/#{id}/memberships", %{
+          memberships: [%{department: "brewery", role: "employee"}]
+        })
+
+      assert json_response(reply, 200)
+      refute reply.resp_body =~ ~r/"owners"|"Owners"|"owners_only":true/
+
+      list = call(p["breweryMgr"], :get, "/api/users") |> json_response(200) |> Map.fetch!("data")
+      asst = Enum.find(list, &(&1["id"] == id))
+
+      assert asst["memberships"] |> Enum.map(& &1["department_key"]) |> Enum.sort() ==
+               ~w(brewery office)
+
+      # It's still there for an owner.
+      list = call(p["owner"], :get, "/api/users") |> json_response(200) |> Map.fetch!("data")
+      asst = Enum.find(list, &(&1["id"] == id))
+      assert "owners" in Enum.map(asst["memberships"], & &1["department_key"])
+    end
+
     test "a not-scheduled refusal doesn't name Owners (gap 6)", %{p: p, d: d} do
       params = %{name: "X", department_id: d["owners"].id, group: "X"}
 

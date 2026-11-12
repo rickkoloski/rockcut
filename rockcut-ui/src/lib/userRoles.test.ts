@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { editableDepartments, membershipLabel, membershipsPayload, readOnlyOwnersOnly, sortMemberships, userAccess } from './userRoles'
+import { editableDepartments, membershipLabel, membershipsPayload, sortMemberships, userAccess } from './userRoles'
 import type { Department, Membership, User } from './types'
 
 // API order: by name, Owners last (D59 §4.4).
@@ -42,21 +42,6 @@ describe('membershipsPayload', () => {
   it("a manager's save never sends Owners", () => {
     const editable = editableDepartments(depts, false, ['office'])
     expect(membershipsPayload(editable, { office: 'employee', owners: 'employee' })).toEqual([{ department: 'office', role: 'employee' }])
-  })
-})
-
-describe('readOnlyOwnersOnly', () => {
-  it("shows a manager the person's Owners membership, from the membership alone", () => {
-    // D59 decision 9: a manager's department list has no Owners.
-    const managerDepts = depts.filter((d) => !d.owners_only)
-    const editable = editableDepartments(managerDepts, false, ['office'])
-    expect(readOnlyOwnersOnly([m('office'), m('owners')], editable)).toEqual([{ key: 'owners', name: 'Owners' }])
-  })
-
-  it('nothing for an owner (they can change it) or a person not in Owners', () => {
-    expect(readOnlyOwnersOnly([m('owners')], editableDepartments(depts, true, []))).toEqual([])
-    expect(readOnlyOwnersOnly([m('office')], editableDepartments(depts, false, ['office']))).toEqual([])
-    expect(readOnlyOwnersOnly(null, [])).toEqual([])
   })
 })
 

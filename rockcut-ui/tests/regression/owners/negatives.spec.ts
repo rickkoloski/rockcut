@@ -72,7 +72,10 @@ test.describe('dualMgr', () => {
     expect(me.idea_boards.map((b) => b.key)).not.toContain(OWNERS)
   })
 
-  test('O6: editing ownersAsst shows Owners as a read-only chip; Save sends Office only; Owners stays', async ({ page }) => {
+  // D58 lead decisions 1 (reverses D59's read-only chip): a manager never
+  // sees an Owners membership, and since nobody manages Owners, only
+  // ownersAsst's Office role is dualMgr's.
+  test('O6: editing ownersAsst shows no Owners; only the Office role can change; Owners stays', async ({ page }) => {
     const before = await membershipsOf('ownersAsst')
     expect(before).toEqual([
       { department: 'office', role: 'employee' },
@@ -82,14 +85,9 @@ test.describe('dualMgr', () => {
     const dialog = page.getByRole('dialog')
     await expect(dialog.getByRole('combobox', { name: 'Office' })).toBeVisible()
     await expect(dialog.getByRole('combobox', { name: 'Owners' })).toHaveCount(0)
-    await expect(dialog.getByText('Owners member', { exact: true })).toBeVisible()
-    await expect(dialog.getByText('Only owners change Owners membership.')).toBeVisible()
-
-    const put = page.waitForResponse((r) => /\/api\/users\/\d+\/memberships$/.test(r.url()) && r.request().method() === 'PUT')
-    await dialog.getByRole('button', { name: 'Save' }).click()
-    const res = await put
-    expect(res.status(), await res.text()).toBe(200)
-    expect(res.request().postDataJSON().memberships).toEqual([{ department: 'office', role: 'employee' }])
+    await expect(dialog).not.toContainText('Owners')
+    await expect(dialog.getByLabel('Name')).toBeDisabled()
+    await dialog.getByRole('button', { name: 'Cancel' }).click()
     await expect(dialog).toBeHidden()
     expect(await membershipsOf('ownersAsst')).toEqual(before)
   })
@@ -109,7 +107,7 @@ test.describe('dualMgr', () => {
       })
       await openUser(page, person.name)
       const dialog = page.getByRole('dialog')
-      await expect(dialog.getByText('Owners member', { exact: true })).toBeVisible()
+      await expect(dialog).not.toContainText('Owners')
       await dialog.getByRole('combobox', { name: 'Office' }).click()
       await page.getByRole('option', { name: 'Manager' }).click()
       const put = page.waitForResponse((r) => /\/api\/users\/\d+\/memberships$/.test(r.url()) && r.request().method() === 'PUT')
