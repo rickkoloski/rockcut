@@ -50,7 +50,7 @@ decision 9 added five UI follow-ups (4118 2–7, 4115, 4116, 4319, 5193).
   - the Gantt's "Label by" picker (deferred in D47, never filed) added to D56, task 5207.
 - **Verdict: pass.** PR #68 merged into `develop`.
 
-## Next
+## After the merge
 
 Done: DEV runs `develop` at `fb09ab4`. The DEV claim is released in conv 80 (msg 105055), and the deploy worktree is removed.
 
