@@ -72,7 +72,7 @@ returns 404/403 like any department's board they aren't in.
 
 ### 4.2 Not scheduled (`scheduling: false`)
 
-API refuses (422 on `department_id`, "Owners isn't on the schedule"):
+API refuses (422 on `department_id`, "That department isn't on the schedule", without the name; DEV QA gap 6):
 
 - creating or moving a **position**, **shift**, **schedule event / event
   series**, or **schedule template item** into the department;
