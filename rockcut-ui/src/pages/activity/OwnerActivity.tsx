@@ -25,6 +25,7 @@ function detailText(row: AuditEntry): string {
     const why = d.reason === 'departed' ? 'left' : d.reason === 'manual' ? 'reset by hand' : 'lost access'
     return [labels, why].filter(Boolean).join(' · ')
   }
+  if (row.action === 'user.shifts_unassigned') return d.count === 1 ? '1 shift' : `${d.count} shifts`
   if (!row.action.startsWith('device.')) return ''
   return [d.name, d.tablet].filter(Boolean).join(' · ')
 }

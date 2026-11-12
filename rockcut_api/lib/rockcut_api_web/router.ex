@@ -129,6 +129,7 @@ defmodule RockcutApiWeb.Router do
     resources "/users", UserController, only: [:index, :create, :update]
     put "/users/:user_id/memberships", MembershipController, :update
     post "/users/:id/reset_password", UserController, :reset_password
+    get "/users/:id/future_shifts", UserController, :future_shifts
     # Staff codes (D37; every department since D40): the user edit dialog
     get "/users/:id/staff_code", StaffCodeController, :show
     put "/users/:id/staff_code", StaffCodeController, :update

@@ -307,16 +307,45 @@ defmodule RockcutApi.Accounts do
               # D53: and off Idea Board cards, and their watches, on the
               # boards they can no longer open.
               RockcutApi.IdeaBoards.People.drop_if_ineligible(user.id, actor)
+              # D58 lead decisions 1 (gap 9): and off their future shifts.
+              opened = unassign_future_shifts(target, user, actor)
 
-              {get_user!(user.id), rotate_lost_feeds(before, user.id, actor)}
+              {get_user!(user.id), rotate_lost_feeds(before, user.id, actor), opened}
 
             {:error, cs} ->
               Repo.rollback(cs)
           end
       end
     end)
+    |> notify_opened_shifts()
     |> notify_rotated_feeds()
   end
+
+  # D58 lead decisions 1 (DEV QA gap 9): deactivating someone takes them off
+  # every shift that starts after now (drafts stay drafts, published ones
+  # become open shifts), with one change-log entry. Reactivating gives none
+  # back. Answers the shifts that became open, for after the commit.
+  defp unassign_future_shifts(%User{active: true}, %User{active: false} = user, actor) do
+    case RockcutApi.Scheduling.unassign_future_shifts(user.id) do
+      {0, _} ->
+        []
+
+      {count, opened} ->
+        log_audit(actor.id, user.id, "user.shifts_unassigned", %{"count" => count})
+        opened
+    end
+  end
+
+  defp unassign_future_shifts(_before, _user, _actor), do: []
+
+  # After commit: the open-shift notification, as publishing an open shift
+  # sends it (D18).
+  defp notify_opened_shifts({:ok, {user, rotated, opened}}) do
+    if opened != [], do: RockcutApi.Notifications.shifts_published(opened)
+    {:ok, {user, rotated}}
+  end
+
+  defp notify_opened_shifts(other), do: other
 
   # D35: when someone leaves, or a change takes shared calendar feeds away
   # from them, those feeds get new tokens and everyone who still uses them is

@@ -83,6 +83,8 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
   const [codeDraft, setCodeDraft] = useState('')
   const [codeRemoving, setCodeRemoving] = useState(false)
   const [addDept, setAddDept] = useState('')
+  // D58 lead decisions 1 (DEV QA gap 9): the future shifts a deactivate leaves open, asked about first.
+  const [openingShifts, setOpeningShifts] = useState<number | null>(null)
 
   // D37, every department since D40: owners and (lead decisions 1) whoever
   // may change the person see their staff code. Only active people with a
@@ -113,6 +115,7 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
     setCodeDraft('')
     setCodeRemoving(false)
     setAddDept('')
+    setOpeningShifts(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, editUser])
 
@@ -150,8 +153,28 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
       savedKeys.some((k) => !managedKeys.includes(k)) ||
       (isOwnerActor ? isOwner : !!editUser?.is_owner))
 
+  /**
+   * Save, but first, when it turns Active off, ask about the person's future
+   * shifts (they become open shifts); no question when there are none.
+   */
+  const onSaveClick = async () => {
+    setError(null)
+    if (!(isEdit && editUser?.active && !active)) return save()
+    setLoading(true)
+    try {
+      const { data } = await api.get<{ data: { count: number } }>(`/api/users/${editUser.id}/future_shifts`)
+      if (data.data.count === 0) return save()
+      setOpeningShifts(data.data.count)
+    } catch (err) {
+      setError(readError(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const save = async () => {
     setError(null)
+    setOpeningShifts(null)
     if (showStaffCode && keepsCode && codeDraft !== '' && !/^\d{4}$/.test(codeDraft)) {
       setError('A staff code is 4 digits.')
       return
@@ -412,12 +435,25 @@ export default function UserFormDialog({ open, onClose, editUser, departments }:
             {tempPassword ? 'Done' : 'Cancel'}
           </Button>
           {!tempPassword && (
-            <Button onClick={save} variant="contained" disabled={loading || !departmentsReady} sx={{ ml: 1 }}>
+            <Button onClick={onSaveClick} variant="contained" disabled={loading || !departmentsReady} sx={{ ml: 1 }}>
               {loading ? <CircularProgress size={20} /> : 'Save'}
             </Button>
           )}
         </Box>
       </DialogActions>
+      <Dialog open={openingShifts !== null} onClose={() => setOpeningShifts(null)} maxWidth="xs" fullWidth data-testid="deactivate-shifts-confirm">
+        <DialogContent>
+          <Typography>
+            {openingShifts === 1 ? '1 future shift will become an open shift.' : `${openingShifts} future shifts will become open shifts.`} Deactivate?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpeningShifts(null)}>Cancel</Button>
+          <Button onClick={save} variant="contained" color="warning">
+            Deactivate
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   )
 }

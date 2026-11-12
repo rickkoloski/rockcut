@@ -153,6 +153,34 @@ defmodule RockcutApi.Scheduling do
     end
   end
 
+  @doc """
+  D58 lead decisions 1 (DEV QA gap 9): how many of the person's shifts start
+  after now, any status or department: what deactivating them leaves open.
+  """
+  def count_future_shifts(user_id), do: user_id |> future_shifts() |> Repo.aggregate(:count)
+
+  @doc """
+  Take the person off every shift that starts after now (they're being
+  deactivated). Drafts stay drafts; published ones become open shifts.
+  Answers `{count, opened}`: `opened` the published ones, for the open-shift
+  notification once the change is committed (`Notifications.shifts_published/1`).
+  Past and current shifts keep their assignee.
+  """
+  def unassign_future_shifts(user_id) do
+    shifts = user_id |> future_shifts() |> Repo.all()
+    ids = Enum.map(shifts, & &1.id)
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    from(s in Shift, where: s.id in ^ids)
+    |> Repo.update_all(set: [assignee_id: nil, updated_at: now])
+
+    opened = for s <- shifts, s.status == "published", do: %{s | assignee_id: nil}
+    {length(shifts), opened}
+  end
+
+  defp future_shifts(user_id),
+    do: from(s in Shift, where: s.assignee_id == ^user_id and s.starts_at > ^DateTime.utc_now())
+
   @doc "The department id a position belongs to (a shift inherits its position's department)."
   def department_for_position(nil), do: nil
 

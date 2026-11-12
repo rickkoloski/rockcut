@@ -106,6 +106,24 @@ defmodule RockcutApiWeb.UserController do
     end
   end
 
+  @doc """
+  GET /api/users/:id/future_shifts: how many shifts deactivating the person
+  would leave open (D58 lead decisions 1), for whoever may deactivate them.
+  """
+  def future_shifts(conn, %{"id" => id}) do
+    actor = conn.assigns.current_user
+
+    case Accounts.get_user(id) do
+      nil ->
+        {:error, :not_found}
+
+      target ->
+        if Authz.can?(actor, :deactivate, target),
+          do: json(conn, %{data: %{count: RockcutApi.Scheduling.count_future_shifts(target.id)}}),
+          else: not_yours(conn, actor)
+    end
+  end
+
   # A manager is told why; anyone else just "Forbidden".
   defp not_yours(conn, actor) do
     if Authz.can?(actor, :list, %User{}), do: forbidden(conn, @not_yours), else: forbidden(conn)

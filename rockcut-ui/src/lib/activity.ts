@@ -7,6 +7,8 @@ export const ACTION_LABELS: Record<string, string> = {
   'calendar_feeds.rotated': 'Calendar links reset',
   'user.owner_granted': 'Owner access granted',
   'user.owner_removed': 'Owner access removed',
+  // D58 lead decisions 1 (DEV QA gap 9): deactivating opens their future shifts.
+  'user.shifts_unassigned': 'Future shifts made open',
   'membership.added': 'Role added',
   'membership.changed': 'Role changed',
   'membership.removed': 'Role removed',

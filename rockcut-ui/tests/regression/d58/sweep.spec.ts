@@ -2,6 +2,8 @@ import { test, expect, type APIRequestContext, type Page } from '@playwright/tes
 import { authFile, personas } from '../../config/test-env'
 import { addDays, apiAs, card, denverToday, getBoard, moveTask, openBoard, tempTag } from '../brewery/taskBoardHelpers'
 import { cleanupTemp, createEvent, denverUtc, listEvents, openScheduler, weekMonday } from '../scheduler/helpers'
+import { createTempPerson, retireTempPerson } from '../auth/helpers'
+import { openUser } from '../taproom/helpers'
 
 // D58 §3.5–§3.11, the backlog sweep: S15 (5202 repeat twin), S16 (4261 event
 // series split chain), S17 (5204 shifts on a deactivated person), S19 (5206
@@ -161,6 +163,52 @@ test.describe('S17: barMgr', () => {
     const moved = await api.patch(`/api/shifts/${id}`, { data: { assignee_id: gone.id } })
     expect(moved.status()).toBe(422)
     expect((await moved.json()).errors.assignee_id).toEqual(['is not active'])
+  })
+
+  // Lead decisions 1 (DEV QA gap 9): deactivating someone opens their future
+  // shifts, after a question; past ones keep them.
+  test('deactivating a [TEST-TEMP] person asks, then their future shifts lose them (draft stays draft, published is open)', async ({ page }) => {
+    const api = await apiAs('barMgr')
+    const person = await createTempPerson('D58 gap9', { ready: false, schedulable: false, memberships: [{ department: 'bar', role: 'employee' }] })
+    try {
+      const positions = (await (await api.get('/api/positions')).json()).data as { id: number; name: string }[]
+      const position = positions.find((p) => p.name === 'Bar-open')!.id
+      const at = (day: string) => ({ position_id: position, starts_at: denverUtc(day, '10:00'), ends_at: denverUtc(day, '16:00'), assignee_id: person.id, notes: tempTag('D58 gap9') })
+      const ids: Record<string, number> = {}
+      for (const [key, day, status] of [
+        ['draft', addDays(denverToday(), 1), 'draft'],
+        ['published', addDays(denverToday(), 2), 'published'],
+        ['past', addDays(denverToday(), -2), 'published'],
+      ] as const) {
+        const res = await api.post('/api/shifts', { data: { ...at(day), status } })
+        expect(res.status(), await res.text()).toBe(201)
+        ids[key] = (await res.json()).data.id
+        shifts.push(ids[key])
+      }
+
+      await openUser(page, person.name)
+      const dialog = page.getByRole('dialog', { name: `Edit ${person.email}` })
+      await dialog.getByTestId('user-active-switch').getByRole('switch').click()
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      const confirm = page.getByTestId('deactivate-shifts-confirm')
+      await expect(confirm).toContainText('2 future shifts will become open shifts. Deactivate?')
+      // Cancel sends nothing.
+      await confirm.getByRole('button', { name: 'Cancel' }).click()
+      expect((await (await api.get(`/api/shifts/${ids.draft}`)).json()).data.assignee_id).toBe(person.id)
+
+      await dialog.getByRole('button', { name: 'Save' }).click()
+      const saved = page.waitForResponse((r) => r.request().method() === 'PATCH' && r.url().endsWith(`/api/users/${person.id}`))
+      await confirm.getByRole('button', { name: 'Deactivate' }).click()
+      expect((await saved).status()).toBe(200)
+      await expect(dialog).toBeHidden()
+
+      const shift = async (id: number) => (await (await api.get(`/api/shifts/${id}`)).json()).data as { assignee_id: number | null; status: string }
+      expect(await shift(ids.draft)).toMatchObject({ assignee_id: null, status: 'draft' })
+      expect(await shift(ids.published)).toMatchObject({ assignee_id: null, status: 'published' })
+      expect((await shift(ids.past)).assignee_id).toBe(person.id)
+    } finally {
+      await retireTempPerson(person)
+    }
   })
 })
 

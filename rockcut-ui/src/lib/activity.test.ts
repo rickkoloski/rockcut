@@ -8,6 +8,10 @@ describe('actionLabel', () => {
     expect(actionLabel('staff_code.reveal')).toBe('Staff code shown')
   })
 
+  it('lead decisions 1: a deactivate that opened future shifts', () => {
+    expect(actionLabel('user.shifts_unassigned')).toBe('Future shifts made open')
+  })
+
   it('keeps known labels and shows an unknown action as it is', () => {
     expect(actionLabel('user.created')).toBe('User created')
     expect(actionLabel('something.new')).toBe('something.new')
