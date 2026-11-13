@@ -77,6 +77,12 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 19. **The Tanks screen's "Your selection" is saved on the account too** (Matt, 2026-11-13), the
     same way as decision 18, with the same one-time carry-over from the browser.
 
+**From DEV QA** (Matt, 2026-11-13)
+20. **Mark not done or Fail → Pass of a test puts the following steps back to their dates before
+    the Fail,** even if they were moved since (e.g. with the retest). Undo already does this.
+21. **Brew day can't be moved earlier than a finished pre-brew step** (on or before its done day):
+    refused with "<step> was done <day>; brew day can't be before it."
+
 ## 3. Requirements
 
 ### 3.1 Pre-brew steps (decisions 1, 2)

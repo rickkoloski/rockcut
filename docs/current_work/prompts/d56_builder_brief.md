@@ -400,3 +400,23 @@ Same rules as before. Each fix gets a test that fails without it (revert-and-rer
 
 The four fixes committed; ExUnit and Vitest for each; tsc, lint, build; the Playwright specs for the
 touched areas. Report commits, counts, revert-and-rerun, and gap 4's cause. Then stop.
+
+---
+
+# DEV fix cycle 1, part 2: gaps 4 and 3 (Matt: spec decisions 20, 21)
+
+2026-11-13 · lead → builder. Cycle 1's four fixes are in (`2e96fde`…`9bc352d`, pushed).
+
+1. **Gap 4 (decision 20):** Mark not done and Fail → Pass on a failed test put every following
+   step the Fail moved back to its date **before the Fail** (from `checkoff_move`'s "before"
+   dates), even if it was moved since. Done followers stay. Keep the D49 QA 1 behavior for ordinary
+   off-plan check-offs unchanged (only the retest path changes). The confirm text then matches.
+   Tests: QA's repro (Fail → retest → drag the retest +1 Move all → Mark not done → back to the
+   pre-Fail dates), the same through Fail → Pass, and a done follower staying. Revert-and-rerun.
+2. **Gap 3 (decision 21):** a brew-day move (any path: drag, date box, multi-select, an off-plan
+   brew-day check-off) that would put the first Brew day on or before a **finished** pre-brew
+   step's done day is refused: 422 `before_brew_day` (or a new code; tell me), "<step> was done
+   <Thu Nov 13>; brew day can't be before it." The preview carries it so the drag hint and the move
+   prompt show it. ExUnit per path, Vitest for the hint, Playwright for QA's date-box repro.
+   Revert-and-rerun.
+3. Same gate as cycle 1. Report commits, counts, revert-and-rerun. Then stop.
