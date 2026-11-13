@@ -533,12 +533,12 @@ export function followingIds(steps: SchedStep[], links: SchedLink[], ids: number
  * API's message, or null.
  */
 /**
- * D56 decision 21 (DEV gap 3): brew day (`brew`, of `steps`' batch) moved to
- * `brewOn` can't be on or before a finished pre-brew step's done day. The
- * API's message, or null.
+ * D56 decision 21 (DEV gaps 3, 9): brew day (`brew`, of `steps`' batch) moved
+ * to `brewOn` can't be before a finished pre-brew step's done day; the same
+ * day is fine. The API's message, or null.
  */
 export function finishedPreBrewRefusal(steps: SchedStep[], brew: SchedStep, brewOn: string): string | null {
-  const finished = steps.find((s) => s.id !== brew.id && s.batch_id === brew.batch_id && s.done_on && s.due_on < brew.due_on && brewOn <= s.done_on)
+  const finished = steps.find((s) => s.id !== brew.id && s.batch_id === brew.batch_id && s.done_on && s.due_on < brew.due_on && brewOn < s.done_on)
   return finished ? `${finished.name} was done ${dayLabel(finished.done_on!)}; brew day can't be before it.` : null
 }
 

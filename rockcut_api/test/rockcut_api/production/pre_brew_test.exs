@@ -389,7 +389,7 @@ defmodule RockcutApi.Production.PreBrewTest do
     end
   end
 
-  describe "brew day not on or before a finished pre-brew step (decision 21, DEV gap 3)" do
+  describe "brew day not before a finished pre-brew step (decision 21, DEV gaps 3, 9)" do
     # Order yeast (Nov 28) done on its day; brew day Dec 2.
     defp yeast_done(ctx) do
       batch = plan(ctx)
@@ -407,21 +407,23 @@ defmodule RockcutApi.Production.PreBrewTest do
              }
     end
 
-    test "the date box or a drag of brew day: on its done day refused, under both answers and in the preview; the day after works",
+    test "the date box or a drag of brew day: the day before its done day refused, under both answers and in the preview; the same day works (gap 9)",
          ctx do
       batch = yeast_done(ctx)
       brew = named(batch, "Brew day")
 
       for answer <- ~w(move_all move_only) do
-        assert {:error, @refused} = Steps.move([brew.id], -4, answer: answer)
+        assert {:error, @refused} = Steps.move([brew.id], -5, answer: answer)
       end
 
-      assert {:error, @refused} = Steps.move([brew.id], -4, preview: true)
+      assert {:error, @refused} = Steps.move([brew.id], -5, preview: true)
       assert {:error, @refused} = Steps.move([brew.id], -6, answer: "move_only")
       assert due(batch, "Brew day") == @brew
 
-      assert {:ok, _} = Steps.move([brew.id], -3, answer: "move_only")
-      assert due(batch, "Brew day") == ~D[2026-11-29]
+      assert {:ok, {:preview, %{refused: refused}}} = Steps.move([brew.id], -4, preview: true)
+      assert Enum.all?(Map.values(refused), &is_nil/1)
+      assert {:ok, _} = Steps.move([brew.id], -4, answer: "move_only")
+      assert due(batch, "Brew day") == ~D[2026-11-28]
       assert due(batch, "Order yeast") == ~D[2026-11-28]
     end
 
@@ -432,12 +434,13 @@ defmodule RockcutApi.Production.PreBrewTest do
       assert due(batch, "Brew day") == @brew
     end
 
-    test "brew day checked off on or before that day (off-plan); the preview too", ctx do
+    test "brew day checked off before that day (off-plan) refused, the preview too; on it works (gap 9)",
+         ctx do
       batch = yeast_done(ctx)
       brew = named(batch, "Brew day")
 
       assert {:error, @refused} =
-               Steps.complete(brew.id, %{"done_on" => "2026-11-28"}, ctx.brewer,
+               Steps.complete(brew.id, %{"done_on" => "2026-11-27"}, ctx.brewer,
                  preview: true,
                  today: ~D[2026-11-28]
                )
@@ -445,20 +448,87 @@ defmodule RockcutApi.Production.PreBrewTest do
       assert {:error, @refused} =
                Steps.complete(
                  brew.id,
-                 %{"done_on" => "2026-11-28", "answer" => "move_only", "batch_number" => "40"},
+                 %{"done_on" => "2026-11-27", "answer" => "move_only", "batch_number" => "40"},
                  ctx.brewer,
                  today: ~D[2026-11-28]
                )
 
       assert named(batch, "Brew day").done_on == nil
+
+      assert {:ok, {:preview, _}} =
+               Steps.complete(brew.id, %{"done_on" => "2026-11-28"}, ctx.brewer,
+                 preview: true,
+                 today: ~D[2026-11-28]
+               )
+
+      assert {:ok, _} =
+               Steps.complete(
+                 brew.id,
+                 %{"done_on" => "2026-11-28", "answer" => "move_only", "batch_number" => "40"},
+                 ctx.brewer,
+                 today: ~D[2026-11-28]
+               )
+
+      assert %{due_on: ~D[2026-11-28], done_on: ~D[2026-11-28]} = named(batch, "Brew day")
     end
 
-    test "the whole-batch drag", ctx do
+    # QA's gap 9: brew day overdue, the pre-brew step ticked late (it stays
+    # on its day, decision 11), then brew day done the same day. Either
+    # order works.
+    test "gap 9: a pre-brew step ticked late and brew day done that same day, in either order",
+         ctx do
+      for {ticks, brand, tank} <- [
+            {[:pre_brew, :brew], "Galactic", "FV4"},
+            {[:brew, :pre_brew], "Altruism", "FV5"}
+          ] do
+        batch = plan!(brand!(brand), ctx.template, @brew, %{"tank_ids" => [tank!(tank).id]})
+        brew = named(batch, "Brew day")
+        late = ~D[2026-12-09]
+        attrs = %{"done_on" => "2026-12-09", "answer" => "move_all"}
+
+        for tick <- ticks do
+          case tick do
+            :pre_brew ->
+              for name <- ["Order yeast", "Prepare grain"] do
+                assert {:ok, _} =
+                         Steps.complete(named(batch, name).id, attrs, ctx.brewer, today: late)
+              end
+
+            :brew ->
+              assert {:ok, {:preview, _}} =
+                       Steps.complete(brew.id, attrs, ctx.brewer, preview: true, today: late)
+
+              number = to_string(Batches.next_batch_number())
+
+              assert {:ok, _} =
+                       Steps.complete(
+                         brew.id,
+                         Map.put(attrs, "batch_number", number),
+                         ctx.brewer,
+                         today: late
+                       )
+          end
+        end
+
+        assert %{due_on: ^late, done_on: ^late} = named(batch, "Brew day")
+        assert named(batch, "Prepare grain").done_on == late
+        assert named(batch, "Order yeast").done_on == late
+      end
+    end
+
+    test "the whole-batch drag: the day before refused, the same day works (gap 9); its preview writes nothing",
+         ctx do
       batch = yeast_done(ctx)
-      assert {:error, @refused} = Batches.shift(reload(batch), -4)
+      assert {:error, @refused} = Batches.shift(reload(batch), -5)
+      assert {:error, @refused} = Batches.shift(reload(batch), -5, preview: true)
       assert due(batch, "Brew day") == @brew
-      assert {:ok, _} = Batches.shift(reload(batch), -3)
-      assert due(batch, "Brew day") == ~D[2026-11-29]
+
+      assert {:ok, {:preview, %{moved: 7, kept: 1}}} =
+               Batches.shift(reload(batch), -4, preview: true)
+
+      assert due(batch, "Brew day") == @brew
+      assert {:ok, %{moved: 7}} = Batches.shift(reload(batch), -4)
+      assert due(batch, "Brew day") == ~D[2026-11-28]
     end
 
     test "later is fine, and an unfinished pre-brew step keeps its own rule", ctx do

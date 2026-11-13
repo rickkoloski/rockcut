@@ -503,9 +503,10 @@ defmodule RockcutApi.Production.Batches do
   (finished ones keep their dates). No prompt. A
   split parent whose Split isn't done takes its parts' steps along (D48 DEV
   QA Y1), refused (`:part_done`) while one of them is done.
-  `{:ok, %{moved, kept, renumbered}}`.
+  `{:ok, %{moved, kept, renumbered}}`; `preview: true` (D56 DEV QA) writes
+  nothing, refused the same way, `{:ok, {:preview, %{moved, kept}}}`.
   """
-  def shift(%Batch{} = batch, days) do
+  def shift(%Batch{} = batch, days, opts \\ []) do
     case to_int(days) do
       d when is_integer(d) and d != 0 and abs(d) <= @max_shift ->
         Repo.transaction(fn ->
@@ -523,18 +524,21 @@ defmodule RockcutApi.Production.Batches do
               &((batch.status == "planned" and not pre_brew_done?.(&1)) or is_nil(&1.done_on))
             )
 
-          # D56 decision 21 (DEV gap 3): brew day not on or before a
+          # D56 decision 21 (DEV gaps 3, 9): brew day not before a
           # finished pre-brew step's done day.
           finished = brew && Enum.find(steps, pre_brew_done?)
 
           if finished && Enum.any?(open, &(&1.id == brew.id)) &&
-               Date.compare(Date.add(brew.due_on, d), finished.done_on) != :gt,
+               Date.compare(Date.add(brew.due_on, d), finished.done_on) == :lt,
              do:
                Repo.rollback(
                  {:before_brew_day, {:pre_brew_done, Steps.name(finished), finished.done_on}}
                )
 
           open = open ++ carried_parts!(batch, steps)
+
+          if opts[:preview],
+            do: Repo.rollback({:preview, %{moved: length(open), kept: length(done)}})
 
           {_, renumbered} =
             with_renumbering(fn ->
@@ -544,6 +548,10 @@ defmodule RockcutApi.Production.Batches do
 
           %{moved: length(open), kept: length(done), renumbered: renumbered}
         end)
+        |> case do
+          {:error, {:preview, preview}} -> {:ok, {:preview, preview}}
+          other -> other
+        end
 
       _ ->
         {:error, :days_invalid}

@@ -758,23 +758,37 @@ describe('D56 pre-brew steps', () => {
     expect(setTemp.id).toBe(53)
   })
 
-  it('brew day not on or before a finished pre-brew step (decision 21, DEV gap 3)', () => {
+  it('brew day not before a finished pre-brew step; the same day is fine (decision 21, DEV gaps 3, 9)', () => {
     // Prepare grain ticked early: done (and due) Mon Nov 30.
     const done = { ...galactic, steps: galactic.steps.map((x) => (x.id === 51 ? { ...x, due_on: '2026-11-30', done_on: '2026-11-30' } : x)) }
     const msg = "Prepare grain was done Mon Nov 30; brew day can't be before it."
     for (const answer of ['move_all', 'move_only'] as const) {
-      expect(moveRefusal([done], [50], -2, answer)).toBe(msg)
-      expect(moveRefusal([done], [50], -1, answer)).toBeNull()
+      expect(moveRefusal([done], [50], -3, answer)).toBe(msg)
+      expect(moveRefusal([done], [50], -2, answer)).toBeNull()
     }
-    expect(moveRefusal([done], [50, 52], -3, 'move_only')).toBe(msg)
-    expect(finishedPreBrewRefusal(done.steps, done.steps[1], '2026-12-01')).toBeNull()
+    expect(moveRefusal([done], [50, 52], -4, 'move_only')).toBe(msg)
+    expect(finishedPreBrewRefusal(done.steps, done.steps[1], '2026-11-29')).toBe(msg)
+    expect(finishedPreBrewRefusal(done.steps, done.steps[1], '2026-11-30')).toBeNull()
     // The hints: brew day's dot, and the whole bar.
     const [dpart] = buildParts(done)
     const dparts = [...buildParts(altruism), dpart]
     const hint = { over: true, tanks: [fv7], parts: dparts }
-    expect(dragHint({ ...hint, kind: 'dot', days: -2, part: dpart, step: done.steps[1] })).toMatchObject({ warn: true, text: expect.stringContaining("Prepare grain was done Mon Nov 30; brew day can't be before it") })
-    expect(dragHint({ ...hint, kind: 'bar', days: -2, part: dpart })).toMatchObject({ warn: true, text: expect.stringContaining("Prepare grain was done Mon Nov 30; brew day can't be before it") })
-    expect(dragHint({ ...hint, kind: 'bar', days: -1, part: dpart })?.text).not.toContain('was done')
+    expect(dragHint({ ...hint, kind: 'dot', days: -3, part: dpart, step: done.steps[1] })).toMatchObject({ warn: true, text: expect.stringContaining(msg.slice(0, -1)) })
+    expect(dragHint({ ...hint, kind: 'dot', days: -2, part: dpart, step: done.steps[1] })?.text ?? '').not.toContain('was done')
+    expect(dragHint({ ...hint, kind: 'bar', days: -3, part: dpart })).toMatchObject({ warn: true, text: expect.stringContaining(msg.slice(0, -1)) })
+    expect(dragHint({ ...hint, kind: 'bar', days: -2, part: dpart })?.text ?? '').not.toContain('was done')
+  })
+
+  it('gap 9: a pre-brew step ticked late (after brew day, kept on its day): brew day can move to that day, not short of it', () => {
+    // Prepare grain due Tue Dec 1, done Fri Dec 4; brew day Wed Dec 2.
+    const late = { ...galactic, steps: galactic.steps.map((x) => (x.id === 51 ? { ...x, done_on: '2026-12-04' } : x)) }
+    const msg = "Prepare grain was done Fri Dec 4; brew day can't be before it."
+    expect(moveRefusal([late], [50], 1, 'move_all')).toBe(msg)
+    expect(moveRefusal([late], [50], 2, 'move_all')).toBeNull()
+    const [lpart] = buildParts(late)
+    const hint = { over: true, tanks: [fv7], parts: [...buildParts(altruism), lpart] }
+    expect(dragHint({ ...hint, kind: 'bar', days: 1, part: lpart })).toMatchObject({ warn: true, text: expect.stringContaining(msg.slice(0, -1)) })
+    expect(dragHint({ ...hint, kind: 'bar', days: 2, part: lpart })?.text ?? '').not.toContain('was done')
   })
 
   it('moveRefusal: brew day moved past a Set temp works only with Move all; it takes the pre-brew step', () => {

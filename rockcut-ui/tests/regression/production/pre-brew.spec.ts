@@ -165,7 +165,7 @@ test('S4: the batch dialog moves brew day by the date box, "Move only": the pre-
   expect(stepOf(now, 'PDH').due_on).toBe(pdh.due_on)
 })
 
-test('DEV gap 3 (decision 21): the pre-brew task ticked today, then brew day set to today in the date box: refused with why; nothing moved', async ({ page }) => {
+test('DEV gaps 3, 9 (decision 21): the pre-brew task ticked today, then brew day set to yesterday in the date box: refused with why; today is fine', async ({ page }) => {
   const { batch, prep } = await preBrewBatch('Gap 3', addDays(today(), 3))
   const [brew, pre] = [stepOf(batch, 'Brew day'), stepOf(batch, prep)]
   // Ticked today, a day early: done (and due) today.
@@ -177,10 +177,17 @@ test('DEV gap 3 (decision 21): the pre-brew task ticked today, then brew day set
   await page.getByTestId(`gantt-bar-${batch.id}-0`).click()
   await expect(page.getByTestId('batch-dialog')).toBeVisible()
   const date = page.getByTestId(`batch-step-date-${brew.id}`)
-  await date.fill(today())
+  await date.fill(addDays(today(), -1))
   await date.blur()
   await expect(page.getByText(msg)).toBeVisible()
   await expect(page.getByTestId('move-prompt')).toHaveCount(0)
+
+  // Gap 9: the same day as the pre-brew step is allowed: the move prompt asks.
+  await date.fill(today())
+  await date.blur()
+  await expect(page.getByTestId('move-prompt')).toBeVisible()
+  await page.getByTestId('move-cancel').click()
+  await expect(page.getByTestId('move-prompt')).toBeHidden()
 
   await page.reload()
   await expect(page.getByTestId(`gantt-bar-${batch.id}-0`)).toBeVisible()
