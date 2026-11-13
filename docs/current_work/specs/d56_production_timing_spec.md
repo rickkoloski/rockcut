@@ -80,8 +80,13 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 **From DEV QA** (Matt, 2026-11-13)
 20. **Mark not done or Fail → Pass of a test puts the following steps back to their dates before
     the Fail,** even if they were moved since (e.g. with the retest). Undo already does this.
-21. **Brew day can't be moved earlier than a finished pre-brew step** (on or before its done day):
-    refused with "<step> was done <day>; brew day can't be before it."
+    *Lead, from the QA recheck:* "before the Fail" is relative to the test: a move of the whole
+    batch since (the test moved with it) is kept, so the steps go back to their pre-Fail distance
+    from the test. A done follower's "planned" day is put back the same way, so a later Mark not
+    done of it lands in order.
+21. **Brew day can't be moved earlier than a finished pre-brew step's done day:** refused with
+    "<step> was done <day>; brew day can't be before it." *Lead, from the QA recheck:* the same
+    day is allowed (prep and brew on one day).
 
 ## 3. Requirements
 

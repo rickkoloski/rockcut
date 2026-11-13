@@ -420,3 +420,34 @@ touched areas. Report commits, counts, revert-and-rerun, and gap 4's cause. Then
    prompt show it. ExUnit per path, Vitest for the hint, Playwright for QA's date-box repro.
    Revert-and-rerun.
 3. Same gate as cycle 1. Report commits, counts, revert-and-rerun. Then stop.
+
+---
+
+# DEV fix cycle 2 (QA recheck)
+
+2026-11-13 · lead → builder. DEV at `9f5fa20`: full Playwright green (gap 4 spec's reload race
+fixed test-only, `740605b`). QA recheck: gaps 1–6 fixed; **fail** on new gaps 7–9. Report:
+`docs/current_work/stepwise_results/d56_dev_qa_recheck_report.md`. Spec decisions 20 and 21 now
+carry the lead's clarifications. This is the last fix cycle in the budget, so test the edges hard.
+
+1. **Gap 8 (must-fix; decision 20 clarified):** Mark not done / Fail → Pass restore the Fail's
+   followers **relative to the test**: each goes to its pre-Fail date + D, where D = the test's
+   planned date now − its planned date at the Fail (a whole-batch shift or a date-box Move all
+   since then moves the test; dragging the retest doesn't). The test stays where it is. After the
+   restore, the decision 13 / pre-brew rules must hold; if they can't, refuse with the usual 422
+   and message rather than leave a non-plain step before brew day. ExUnit: QA's repro (Fail →
+   retest → bar shift +10 → Mark not done, and → Change to Pass), the date-box Move all variant,
+   and gap 4's repro still passing.
+2. **Gap 7 (should-fix):** a follower done while the retest had shifted it: when the test's Mark
+   not done / Fail → Pass restores the others, also put back that done follower's recorded
+   "before" date (its `checkoff_move`, same D rule), so a later Mark not done of it goes to its
+   pre-Fail date (QA: FDH → Nov 13, not Nov 16). ExUnit with QA's 5-step repro.
+3. **Gap 9 (should-fix; decision 21 clarified):** brew day **on** the finished pre-brew step's done
+   day is allowed; only strictly before is refused. Check every path from cycle 1 (drag, bar,
+   date box, multi-select, brew-day check-off), the preview and the hints. ExUnit + Vitest for the
+   same-day case, both tick orders.
+4. **QA observation:** `POST /batches/:id/shift` ignores `preview: true` and writes. Make it honor
+   preview (no write, same refusal shape as other previews). ExUnit.
+5. Revert-and-rerun for 1–3. Gate: ExUnit twice, Vitest, tsc, lint, build, Playwright production +
+   brewery-board projects. Update `d56_pr_notes.md` (fix cycles 1–2, decisions 20–21). Report
+   commits, counts, revert-and-rerun. Then stop.
