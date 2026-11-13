@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  GlobalStyles,
   Portal,
   Radio,
   RadioGroup,
@@ -161,6 +162,24 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role'] })
     return () => watch.disconnect()
   }, [snack])
+
+  // D56 lead decisions (QA 4 with 4950 C): over a dialog the snackbar sits at
+  // the bottom, and the dialog gets that much room below it, so its buttons
+  // stay clear and clickable. `room` is the snackbar's top from the bottom.
+  const [snackEl, setSnackEl] = useState<HTMLDivElement | null>(null)
+  const [room, setRoom] = useState(0)
+  useEffect(() => {
+    if (!snackEl || !overDialog) return setRoom(0)
+    const measure = () => setRoom(Math.ceil(window.innerHeight - snackEl.getBoundingClientRect().top) + 8)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(snackEl)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [snackEl, overDialog])
 
   // D49 QA 4: it goes when its Undo does (a hovered snackbar's timer stops,
   // so it could outlive the token).
@@ -528,12 +547,15 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         />
       )}
       {/* D49 QA 4: in a portal, beside the app root (an open dialog hides that from screen readers). */}
+      {snack && room > 0 && <GlobalStyles styles={{ '.MuiDialog-container': { paddingBottom: room, boxSizing: 'border-box' } }} />}
       <Portal>
         <Snackbar
+          ref={setSnackEl}
           key={snack?.key}
           open={!!snack}
           autoHideDuration={snack ? snackAutoHide(snack, overDialog, Date.now()) : null}
-          // D56 §3.7 C: at the bottom, clear of a dialog's title (D49 QA 4 had it at the top).
+          // D56 §3.7 C: at the bottom, clear of a dialog's title (D49 QA 4 had it at
+          // the top); a dialog under it makes room for it (above).
           anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
           onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
           message={
