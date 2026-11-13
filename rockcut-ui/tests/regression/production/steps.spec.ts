@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, batchOf, dragBy, Made, openGantt, schedule, snack, stepOf, today, type SBatch } from './schedule'
+import { resetGanttView } from './d56'
 
 // D47 §3.5/§3.7 moving and checking off steps, and the step dialog: P25–P29,
 // P34, P35, P41–P45. "[SEED] Standard ale": Brew day 0, PDH 7, FDH 13 (after
@@ -11,6 +12,8 @@ test.use({ storageState: authFile('brewer1'), viewport: { width: 1440, height: 1
 
 const made = new Made()
 test.afterAll(() => made.cleanup())
+// D56 decisions 18, 19: the open tanks are on brewer1's account; none left behind.
+test.afterEach(() => resetGanttView())
 
 const ALE = '[SEED] Standard ale'
 const tag = () => `T${Date.now().toString(36).slice(-5)}`

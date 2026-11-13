@@ -65,9 +65,9 @@ const daysWord = (d: number) => `${plural(Math.abs(d), 'day')} ${d > 0 ? 'later'
  * D47 §3.6 Brewery → Production (`/brewery/production`): the tank schedule.
  * One request loads the range (refetched on focus and every minute); the
  * view (range, zoom, names-only column) is remembered per person in this
- * browser (plan decision 6). D56 decision 18: the expanded tanks and "Label
- * by" are on the account (`board_settings.production`), carried over once
- * from this browser.
+ * browser (plan decision 6). D56 decisions 18, 19: the expanded tanks,
+ * "Label by" and the Tanks setting's "Your selection" are on the account
+ * (`board_settings.production`), carried over once from this browser.
  */
 export default function GanttPage() {
   return (
@@ -116,7 +116,6 @@ function GanttScreen() {
   const [range, setRangeState] = useState<Range>(() => prefs.range ?? defaultRange(today, prefs.zoom))
   const [zoom, setZoomState] = useState<Zoom>(prefs.zoom)
   const [compact, setCompactState] = useState(prefs.collapsed)
-  const [mix, setMixState] = useState(() => new Set(prefs.mix))
   // D56 decision 18: on the account, over this browser's old values until they're carried over.
   const signedIn = useAuth((s) => s.user?.id)
   const stored = useAuth((s) => s.boardSettings[GANTT_BOARD])
@@ -125,6 +124,7 @@ function GanttScreen() {
   const view = useMemo(() => ganttView(stored, local), [stored, local])
   const expanded = useMemo(() => new Set(view.expanded), [view])
   const labelBy = view.labelBy
+  const mix = useMemo(() => new Set(view.mix), [view])
   const [notSaved, setNotSaved] = useState(false)
   useEffect(() => {
     if (signedIn === undefined || carried.has(String(signedIn))) return
@@ -158,10 +158,8 @@ function GanttScreen() {
   const setExpanded = (keys: Set<string>) => saveView({ expanded: [...keys] })
   // D56 §3.3: an expanded tank's "Label by" batch, remembered beside the expanded tanks.
   const setLabelBy = (key: string, batchId: number) => saveView({ label_by: { ...labelBy, [key]: batchId } })
-  const setMix = (keys: Set<string>) => {
-    setMixState(keys)
-    writePref(userId, 'mix', [...keys])
-  }
+  // D56 decision 19: the Tanks setting's "Your selection", on the account with the expanded tanks.
+  const setMix = (keys: Set<string>) => saveView({ mix: [...keys] })
 
   const { data, isLoading, error, isPlaceholderData } = useApiQuery<Schedule>(
     scheduleKey(range.from, range.to),

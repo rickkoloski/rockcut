@@ -458,14 +458,13 @@ describe('remembered per person', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('defaults to 6 weeks, names-only on a phone; keeps each user’s own', () => {
-    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, mix: [] })
+    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false })
     expect(readPrefs(4, true).collapsed).toBe(true)
     writePref(4, 'zoom', 12)
     writePref(4, 'collapsed', false)
     writePref(4, 'range', { from: '2026-10-01', to: '2026-10-02' })
-    writePref(4, 'mix', ['7'])
     expect(store.get('rockcut.production.4.zoom')).toBe('12')
-    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, mix: ['7'] })
+    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false })
     expect(readPrefs(5, false).zoom).toBe(6)
     store.set('rockcut.production.4.range', 'not json')
     expect(readPrefs(4, false).range).toBeNull()
@@ -496,25 +495,28 @@ describe('expanded tanks and Label by on the account (D56 decision 18)', () => {
     })
   })
   afterEach(() => vi.unstubAllGlobals())
-  const old = (expanded?: unknown, labelBy?: unknown) => {
+  const old = (expanded?: unknown, labelBy?: unknown, mix?: unknown) => {
     if (expanded !== undefined) store.set('rockcut.production.4.expanded', JSON.stringify(expanded))
     if (labelBy !== undefined) store.set('rockcut.production.4.labelBy', JSON.stringify(labelBy))
+    if (mix !== undefined) store.set('rockcut.production.4.mix', JSON.stringify(mix))
   }
 
   it('reads the server’s settings, keeping only rows and batch ids the API takes', () => {
     expect(GANTT_BOARD).toBe('production')
-    expect(ganttView(undefined)).toEqual({ expanded: [], labelBy: {} })
-    expect(ganttView({ expanded: ['7', 'unassigned'], label_by: { '7': 3007 } })).toEqual({ expanded: ['7', 'unassigned'], labelBy: { '7': 3007 } })
-    expect(cleanGanttSettings({ expanded: ['7', 'FV3', 8], label_by: { '7': 3007, x: 1, '8': '2', '9': 0 }, span: 7 })).toEqual({
+    expect(ganttView(undefined)).toEqual({ expanded: [], labelBy: {}, mix: [] })
+    expect(ganttView({ expanded: ['7', 'unassigned'], label_by: { '7': 3007 }, mix: ['7'] })).toEqual({ expanded: ['7', 'unassigned'], labelBy: { '7': 3007 }, mix: ['7'] })
+    expect(cleanGanttSettings({ expanded: ['7', 'FV3', 8], label_by: { '7': 3007, x: 1, '8': '2', '9': 0 }, mix: ['8', 'FV1', null], span: 7 })).toEqual({
       expanded: ['7'],
       label_by: { '7': 3007 },
+      mix: ['8'],
     })
-    expect(cleanGanttSettings({ expanded: 'x', label_by: [1] })).toEqual({})
+    expect(cleanGanttSettings({ expanded: 'x', label_by: [1], mix: 'x' })).toEqual({})
     expect(cleanGanttSettings(null)).toEqual({})
   })
 
   it('the server’s value wins over this browser’s old one; the old one fills what it lacks', () => {
-    expect(ganttView({ expanded: ['1'] }, { expanded: ['7'], label_by: { '7': 3 } })).toEqual({ expanded: ['1'], labelBy: { '7': 3 } })
+    expect(ganttView({ expanded: ['1'] }, { expanded: ['7'], label_by: { '7': 3 }, mix: ['7'] })).toEqual({ expanded: ['1'], labelBy: { '7': 3 }, mix: ['7'] })
+    expect(ganttView({ mix: ['2'] }, { mix: ['7'] }).mix).toEqual(['2'])
     expect(ganttView({ expanded: [] }, { expanded: ['7'] }).expanded).toEqual([])
   })
 
@@ -525,6 +527,21 @@ describe('expanded tanks and Label by on the account (D56 decision 18)', () => {
     expect(readLocalGanttView(5)).toBeNull()
     store.set('rockcut.production.4.labelBy', 'not json')
     expect(readLocalGanttView(4)).toEqual({ expanded: ['7', 'unassigned'], label_by: {} })
+  })
+
+  it('Your selection carries over too, on its own (decision 19)', async () => {
+    old(undefined, undefined, ['7', '9'])
+    expect(readLocalGanttView(4)).toEqual({ mix: ['7', '9'] })
+    const save = vi.fn().mockResolvedValue(undefined)
+    // The server has the expanded tanks but no mix: only the mix goes.
+    expect(await ganttCarryOver(4, { expanded: ['1'] }, save)).toBe('saved')
+    expect(save).toHaveBeenCalledWith({ mix: ['7', '9'] })
+    expect(store.has('rockcut.production.4.mix')).toBe(false)
+    // Already on the server: cleared without a save.
+    old(undefined, undefined, ['3'])
+    expect(await ganttCarryOver(4, { mix: [] }, save)).toBe('server')
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(store.size).toBe(0)
   })
 
   it('carries over only what the server lacks, then stops using local storage', async () => {
@@ -553,8 +570,8 @@ describe('expanded tanks and Label by on the account (D56 decision 18)', () => {
     expect(readLocalGanttView(4)).toEqual({ expanded: ['7'], label_by: {} })
   })
 
-  it('other Gantt prefs stay in the browser', () => {
-    old(['7'])
+  it('range, zoom and names-only stay in the browser', () => {
+    old(['7'], undefined, ['7'])
     writePref(4, 'zoom', 12)
     clearLocalGanttView(4)
     expect(store.get('rockcut.production.4.zoom')).toBe('12')

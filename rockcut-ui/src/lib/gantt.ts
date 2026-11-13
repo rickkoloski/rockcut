@@ -654,14 +654,12 @@ export function dragHint(a: DragHintInput): DragHint | null {
 }
 
 // ── Remembered per person, in this browser (plan decision 6) ──
-// The expanded tanks and "Label by" moved to the account (D56 decision 18, below).
+// The expanded tanks, "Label by" and Your selection moved to the account (D56 decisions 18, 19, below).
 
 export interface GanttPrefs {
   range: Range | null
   zoom: Zoom
   collapsed: boolean
-  /** The last mix of open tanks, for the switch's middle (D48 §3.6). */
-  mix: string[]
 }
 
 const prefKey = (userId: number | string, name: string) => `rockcut.production.${userId}.${name}`
@@ -703,19 +701,10 @@ export function readPrefs(userId: number | string, phone: boolean): GanttPrefs {
   }
   const zoom = Number(read(prefKey(userId, 'zoom')))
   const collapsed = read(prefKey(userId, 'collapsed'))
-  const keys = (name: string): string[] => {
-    try {
-      const e = JSON.parse(read(prefKey(userId, name)) ?? '[]')
-      return Array.isArray(e) ? e.filter((x) => typeof x === 'string') : []
-    } catch {
-      return []
-    }
-  }
   return {
     range,
     zoom: (ZOOMS as readonly number[]).includes(zoom) ? (zoom as Zoom) : 6,
     collapsed: collapsed === null ? phone : collapsed === 'true',
-    mix: keys('mix'),
   }
 }
 
@@ -723,21 +712,27 @@ export function writePref<K extends keyof GanttPrefs>(userId: number | string, n
   write(prefKey(userId, name), typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : JSON.stringify(value))
 }
 
-// ── D56 decision 18: the expanded tanks and "Label by", on the account ──
+// ── D56 decisions 18, 19: the expanded tanks, "Label by" and Your selection, on the account ──
 
 /** The board-settings key the Gantt's view is saved under (`PUT /api/me/board_settings/production`). */
 export const GANTT_BOARD = 'production'
 
-/** The Gantt's view as the API stores it (only what was changed): row keys, and row key → batch id. */
+/**
+ * The Gantt's view as the API stores it (only what was changed): row keys,
+ * row key → batch id, and the last mix of open tanks (the Tanks setting's
+ * "Your selection", D48 §3.6).
+ */
 export interface GanttSettings {
   expanded: string[]
   label_by: Record<string, number>
+  mix: string[]
 }
 
-/** The view to draw: the stored settings over the defaults (nothing expanded). */
+/** The view to draw: the stored settings over the defaults (nothing expanded, no mix). */
 export interface GanttView {
   expanded: string[]
   labelBy: Record<string, number>
+  mix: string[]
 }
 
 // As the API takes them: a tank id or "unassigned", at most 200.
@@ -750,8 +745,9 @@ const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v =
 export function cleanGanttSettings(raw: unknown): Partial<GanttSettings> {
   const r = isRecord(raw) ? raw : {}
   const out: Partial<GanttSettings> = {}
-  if (Array.isArray(r.expanded))
-    out.expanded = r.expanded.filter((k): k is string => typeof k === 'string' && ROW_KEY.test(k)).slice(0, MAX_ROWS)
+  const rows = (v: unknown[]) => v.filter((k): k is string => typeof k === 'string' && ROW_KEY.test(k)).slice(0, MAX_ROWS)
+  if (Array.isArray(r.expanded)) out.expanded = rows(r.expanded)
+  if (Array.isArray(r.mix)) out.mix = rows(r.mix)
   if (isRecord(r.label_by))
     out.label_by = Object.fromEntries(
       Object.entries(r.label_by)
@@ -764,18 +760,20 @@ export function cleanGanttSettings(raw: unknown): Partial<GanttSettings> {
 /** The view: the server's settings over this browser's old ones (`local`, until carried over). */
 export function ganttView(stored: unknown, local: Partial<GanttSettings> | null = null): GanttView {
   const s = { ...local, ...cleanGanttSettings(stored) }
-  return { expanded: s.expanded ?? [], labelBy: s.label_by ?? {} }
+  return { expanded: s.expanded ?? [], labelBy: s.label_by ?? {}, mix: s.mix ?? [] }
 }
 
 /**
- * The carry-over: this browser's expanded tanks and "Label by" from before
- * D56 decision 18 (`rockcut.production.<user>.expanded` / `.labelBy`), as the
- * API takes them, or null when it has neither.
+ * The carry-over: this browser's expanded tanks, "Label by" and Your
+ * selection from before D56 decisions 18 and 19
+ * (`rockcut.production.<user>.expanded` / `.labelBy` / `.mix`), as the API
+ * takes them, or null when it has none.
  */
 export function readLocalGanttView(userId: number | string): Partial<GanttSettings> | null {
   const expanded = read(prefKey(userId, 'expanded'))
   const labelBy = read(prefKey(userId, 'labelBy'))
-  if (expanded === null && labelBy === null) return null
+  const mix = read(prefKey(userId, 'mix'))
+  if (expanded === null && labelBy === null && mix === null) return null
   const parse = (v: string | null) => {
     try {
       return v === null ? undefined : JSON.parse(v)
@@ -783,11 +781,12 @@ export function readLocalGanttView(userId: number | string): Partial<GanttSettin
       return undefined
     }
   }
-  const raw = { expanded: parse(expanded), label_by: parse(labelBy) }
+  const raw = { expanded: parse(expanded), label_by: parse(labelBy), mix: parse(mix) }
   const out = cleanGanttSettings(raw)
   // A stored value that didn't read still counts as there (it carries over as empty).
   if (expanded !== null && !out.expanded) out.expanded = []
   if (labelBy !== null && !out.label_by) out.label_by = {}
+  if (mix !== null && !out.mix) out.mix = []
   return out
 }
 
@@ -803,6 +802,7 @@ export function missingLocalGanttView(userId: number | string, stored: unknown):
 export function clearLocalGanttView(userId: number | string) {
   remove(prefKey(userId, 'expanded'))
   remove(prefKey(userId, 'labelBy'))
+  remove(prefKey(userId, 'mix'))
 }
 
 /**

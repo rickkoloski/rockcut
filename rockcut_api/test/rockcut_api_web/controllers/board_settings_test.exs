@@ -243,15 +243,22 @@ defmodule RockcutApiWeb.BoardSettingsTest do
     end
   end
 
-  describe "the production Gantt (D56 decision 18)" do
-    test "a brewer saves expanded tanks and Label by; /api/me has them", %{p: p} do
+  describe "the production Gantt (D56 decisions 18, 19)" do
+    test "a brewer saves expanded tanks, Label by and Your selection; /api/me has them", %{
+      p: p
+    } do
       assert put_settings(p["brewer1"], "production", %{expanded: ["12", "unassigned"]})
-             |> json_response(200) == %{"expanded" => ["12", "unassigned"], "label_by" => %{}}
-
-      assert put_settings(p["brewer1"], "production", %{label_by: %{"12" => 40}})
              |> json_response(200) == %{
                "expanded" => ["12", "unassigned"],
-               "label_by" => %{"12" => 40}
+               "label_by" => %{},
+               "mix" => []
+             }
+
+      assert put_settings(p["brewer1"], "production", %{label_by: %{"12" => 40}, mix: ["12"]})
+             |> json_response(200) == %{
+               "expanded" => ["12", "unassigned"],
+               "label_by" => %{"12" => 40},
+               "mix" => ["12"]
              }
 
       assert call(p["brewer1"], :get, "/api/me")
@@ -260,7 +267,8 @@ defmodule RockcutApiWeb.BoardSettingsTest do
                %{
                  "production" => %{
                    "expanded" => ["12", "unassigned"],
-                   "label_by" => %{"12" => 40}
+                   "label_by" => %{"12" => 40},
+                   "mix" => ["12"]
                  }
                }
     end
@@ -292,7 +300,11 @@ defmodule RockcutApiWeb.BoardSettingsTest do
             %{label_by: %{"12" => 0}},
             %{label_by: %{"FV3" => 40}},
             %{label_by: ["12"]},
-            %{label_by: nil}
+            %{label_by: nil},
+            %{mix: ["FV3"]},
+            %{mix: "12"},
+            %{mix: nil},
+            %{mix: Enum.map(1..201, &to_string/1)}
           ] do
         assert %{"errors" => errors} =
                  put_settings(p["brewer1"], "production", bad) |> json_response(422),
@@ -322,7 +334,11 @@ defmodule RockcutApiWeb.BoardSettingsTest do
                expanded: ["3"],
                label_by: %{"3" => 9}
              })
-             |> json_response(200) == %{"expanded" => ["3"], "label_by" => %{"3" => 9}}
+             |> json_response(200) == %{
+               "expanded" => ["3"],
+               "label_by" => %{"3" => 9},
+               "mix" => []
+             }
 
       assert stored(device) == %{
                "production" => %{"expanded" => ["3"], "label_by" => %{"3" => 9}}

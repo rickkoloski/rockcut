@@ -69,5 +69,12 @@ describe('merging what another device saved', () => {
     const done = log.begin(boardKey('production', 'label_by'))
     expect(mergeRefresh(here, there, log.since(log.mark())).boardSettings.production).toEqual({ expanded: ['7', '9'], label_by: { '7': 1 } })
     done()
+    // Your selection (decision 19) the same way.
+    const mixHere: Refreshed = { ...local, boardSettings: { production: { mix: ['7'] } } }
+    const mixThere: Refreshed = { ...server, boardSettings: { production: { mix: ['7', '9'] } } }
+    const saving = log.begin(boardKey('production', 'mix'))
+    expect(mergeRefresh(mixHere, mixThere, log.since(log.mark())).boardSettings.production).toEqual({ mix: ['7'] })
+    saving()
+    expect(mergeRefresh(mixHere, mixThere, log.since(log.mark())).boardSettings.production).toEqual({ mix: ['7', '9'] })
   })
 })

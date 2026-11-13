@@ -20,7 +20,9 @@ defmodule RockcutApi.Accounts.BoardSettings do
 
     * `expanded` — the expanded tanks' row keys (a tank id, or
       "unassigned");
-    * `label_by` — each expanded tank's "Label by" batch (row key → batch id).
+    * `label_by` — each expanded tank's "Label by" batch (row key → batch id);
+    * `mix` — the Tanks setting's "Your selection": the last mix of open tanks'
+      row keys (decision 19).
 
   Who may save a board's settings is `Authz`'s (`{:board_settings, board}`).
   """
@@ -48,8 +50,8 @@ defmodule RockcutApi.Accounts.BoardSettings do
   @names Enum.map(@fields, &Atom.to_string/1)
 
   @gantt "production"
-  @gantt_types %{expanded: {:array, :string}, label_by: :map}
-  @gantt_defaults %{"expanded" => [], "label_by" => %{}}
+  @gantt_types %{expanded: {:array, :string}, label_by: :map, mix: {:array, :string}}
+  @gantt_defaults %{"expanded" => [], "label_by" => %{}, "mix" => []}
   @gantt_fields Map.keys(@gantt_types)
   @gantt_names Enum.map(@gantt_fields, &Atom.to_string/1)
   # More tanks than any brewery has; keeps a stored list bounded.
@@ -82,10 +84,8 @@ defmodule RockcutApi.Accounts.BoardSettings do
     {%{}, @gantt_types}
     |> cast(attrs, @gantt_fields, empty_values: [])
     |> validate_given(Map.keys(attrs) -- unknown)
-    |> validate_length(:expanded, max: @max_rows)
-    |> validate_change(:expanded, fn :expanded, keys ->
-      if Enum.all?(keys, &(&1 =~ @row_key)), do: [], else: [expanded: "has an unknown row"]
-    end)
+    |> validate_rows(:expanded)
+    |> validate_rows(:mix)
     |> validate_change(:label_by, fn :label_by, map -> label_by_errors(map) end)
     |> unknown_errors(unknown)
     |> answer()
@@ -111,6 +111,15 @@ defmodule RockcutApi.Accounts.BoardSettings do
     else
       {:error, changeset}
     end
+  end
+
+  # A bounded list of row keys.
+  defp validate_rows(changeset, field) do
+    changeset
+    |> validate_length(field, max: @max_rows)
+    |> validate_change(field, fn ^field, keys ->
+      if Enum.all?(keys, &(&1 =~ @row_key)), do: [], else: [{field, "has an unknown row"}]
+    end)
   end
 
   # Row key → batch id, a bounded map.

@@ -17,7 +17,7 @@ const made = new Made()
 test.afterEach(async () => {
   const api = await apiAs('brewer1')
   await api.put('/api/me/show_planned_batches', { data: { show_planned_batches: true } })
-  await api.put('/api/me/board_settings/production', { data: { expanded: [], label_by: {} } })
+  await api.put('/api/me/board_settings/production', { data: { expanded: [], label_by: {}, mix: [] } })
   await made.cleanup()
 })
 

@@ -2,9 +2,12 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs } from './helpers'
 import { batchOf, Made, openGantt, snack, stepOf, today, type SBatch } from './schedule'
+import { pickSetting } from '../settingsMenu'
+import { resetGanttView } from './d56'
 
 // D56 on the Gantt: S16 (§3.3 "Label by", on the account by decision 18, so
-// a second browser has it) and S20 (§3.7, 4950: Ctrl/Cmd+Z over a dialog,
+// a second browser has it; with the Tanks setting's "Your selection",
+// decision 19) and S20 (§3.7, 4950: Ctrl/Cmd+Z over a dialog,
 // the snackbar staying, clear of the dialog's title). Batches are [TEST-TEMP]
 // ones in the spec's own tanks.
 
@@ -13,9 +16,10 @@ test.use({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1
 const ALE = '[SEED] Standard ale'
 const P = '/api/production'
 const made = new Made()
+// brewer1's Gantt view starts and ends with nothing expanded (it's on the account now).
+test.beforeEach(() => resetGanttView())
 test.afterEach(async () => {
-  // brewer1's Gantt view back to nothing expanded (it's on the account now).
-  await (await apiAs('brewer1')).put('/api/me/board_settings/production', { data: { expanded: [], label_by: {} } })
+  await resetGanttView()
   await made.cleanup()
 })
 
@@ -54,11 +58,18 @@ test('S16: two batches in FV3; expand it and pick one in "Label by": its rows by
   const me = (await (await (await apiAs('brewer1')).get('/api/me')).json()).board_settings.production
   expect(me.expanded).toContain(String(tank.id))
   expect(me.label_by).toMatchObject({ [String(tank.id)]: b.id })
+  // Opening one tank by its caret made it "Your selection" (decision 19).
+  expect(me.mix).toEqual([String(tank.id)])
 
   const other = await browser.newContext({ storageState: authFile('brewer1'), viewport: { width: 1600, height: 1200 } })
   try {
     const p2 = await other.newPage()
     await openGantt(p2)
+    await check(p2, b, a, bStep.id, aStep.id)
+    // Decision 19: Collapse all, then "Your selection" there reopens the mix saved here.
+    await pickSetting(p2, 'gantt-settings', 'gantt-expand', 'collapse')
+    await expect(p2.getByTestId(`gantt-caret-${tank.id}`)).toHaveAttribute('aria-expanded', 'false')
+    await pickSetting(p2, 'gantt-settings', 'gantt-expand', 'mine')
     await check(p2, b, a, bStep.id, aStep.id)
     // Picking A there comes back here on a reload.
     saved = viewSaved(p2)

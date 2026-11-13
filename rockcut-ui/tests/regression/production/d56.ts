@@ -54,6 +54,12 @@ export class Setup {
   }
 }
 
+/** D56 decisions 18, 19: a persona's Gantt view on the account back to nothing expanded, no Label by, no mix. */
+export async function resetGanttView(persona: Parameters<typeof apiAs>[0] = 'brewer1') {
+  const res = await (await apiAs(persona)).put('/api/me/board_settings/production', { data: { expanded: [], label_by: {}, mix: [] } })
+  expect(res.status(), await res.text()).toBe(200)
+}
+
 /** Check a step off through the API with a result (and an answer to the move prompt). */
 export async function checkOffResult(step: SStep, body: Record<string, unknown>, persona: Parameters<typeof apiAs>[0] = 'brewer1') {
   const res = await (await apiAs(persona)).post(`${P}/steps/${step.id}/complete`, { data: { done_on: step.due_on, answer: 'move_all', ...body } })

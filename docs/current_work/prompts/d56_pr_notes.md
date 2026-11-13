@@ -3,7 +3,7 @@
 **Deliverable:** D56, production timing: pre-brew steps, test results and retests (was D57,
 task 5208), and the small items (5207 "Label by" and the settings refresh, 5210, 5211, 4950).
 5791 (Boards due date) ships with it.
-**Spec:** `docs/current_work/specs/d56_production_timing_spec.md`, decisions 1–18, S1–S21.
+**Spec:** `docs/current_work/specs/d56_production_timing_spec.md`, decisions 1–19, S1–S21.
 **Plan:** `docs/current_work/planning/d56_production_timing_plan.md`; brief
 `docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5).
 **Branch:** `d56-production-timing`, from `develop`.
@@ -23,7 +23,7 @@ Scenario → test is in `rockcut-ui/tests/COVERAGE.md` (D56).
 | Mark not done | On a failed test whose retest is open: asks first, and the retest goes. A done retest refuses ("Mark the retest not done first.") | decision 8 |
 | Move prompt after a retest | "<test> failed · retest <day>", "<batch> · retest <day>", "Move them with the retest, N days later" / "Keep the following steps' dates". Ordinary moves read as before | S8 (Stage 5 A2) |
 | Label by (5207) | An expanded tank with two or more batches in range gets a picker on its first step row: that batch's rows by name only, the others "step · batch" | S16 |
-| Gantt view on the account | The expanded tanks and Label by are saved in D58's board settings under `production` (`PUT /api/me/board_settings/production`, `expanded`, `label_by`), for anyone who reads the schedule and the brewhouse device. A browser's old local values carry over once (only what the server lacks), then local storage isn't used for them. Range, zoom, names-only and the Tanks "Your selection" mix stay per browser | S16, decision 18 |
+| Gantt view on the account | The expanded tanks, Label by and the Tanks setting's "Your selection" mix are saved in D58's board settings under `production` (`PUT /api/me/board_settings/production`, `expanded`, `label_by`, `mix`), for anyone who reads the schedule and the brewhouse device. A browser's old local values carry over once (only what the server lacks), then local storage isn't used for them. Range, zoom and names-only stay per browser | S16, decisions 18, 19 |
 | Settings refresh (5207) | Back on the screen, `/api/me` is re-read at most once a minute: board settings, theme, Show planned batches, the Gantt view. A setting being saved here keeps this page's value; a failure is silent | S17 |
 | Template Save (5210) | A template step and its new links save in one PATCH, each link in a savepoint; a refused link saves nothing and names itself ("Leads to Carb: …") | S18 |
 | Batch dialog (5211) | A step's name opens its step dialog, so a step taken off the task list is reachable and can be put back | S19 |
@@ -34,7 +34,7 @@ Scenario → test is in `rockcut-ui/tests/COVERAGE.md` (D56).
 schedule steps `result`, `retest_of_id`; previews `needs_result`, `retest_days`,
 `retest_allowed`, `retest_on`; `PATCH /api/production/steps/:id/result`; the board task's
 `production` gains `result`, `retest_on`, `retest_done`; flag kind `failed_tests`;
-`board_settings.production`. New errors: `result_required`, `retest_not_here`,
+`board_settings.production` (`expanded`, `label_by`, `mix`). New errors: `result_required`, `retest_not_here`,
 `not_before_brew`, `before_brew_day`, `link_invalid`, and the template link refusals with
 `link`.
 
@@ -77,7 +77,18 @@ previous image leaves the columns, which it ignores.
 - `production/d48-fix-cycle-1.spec.ts` M3: a custom step a day before brew day is accepted now
   (decision 13); a Set temp there is `not_before_brew`.
 
+- `production/d48-toolbar.spec.ts`, `gantt.spec.ts`, `steps.spec.ts` (decision 19): the open
+  tanks and the mix are on brewer1's account now, so they put them back to none
+  (`resetGanttView`; `d48-toolbar` before and after each test, since P119 starts with "no mix
+  yet").
+
 No other spec expected the snackbar at the top or hiding over a dialog.
+
+**Decision 19 follow-up** (after the gate above): `mix test` 2443 passed twice; Vitest 336;
+tsc, build clean; lint 27 as before. Playwright `production` project: 198 passed, 1 failed
+(S20, the snackbar gone before 7 s once; then 4/4 alone and 3/3 with its file: flaky). The
+`pickSetting` specs elsewhere and `task-board-d56`: brewery-board 83, d58 `settings` 13,
+`ui/schedule` 9, all passed.
 
 ## LIMITATIONS (what local can't tell)
 
@@ -96,8 +107,8 @@ Found in the build:
 
 - **Ctrl/Cmd+Z works only while the snackbar shows its Undo:** 6 seconds with no dialog open,
   though the server keeps the Undo for 2 minutes (lead: accepted).
-- **The Tanks "Your selection" mix, range, zoom and names-only stay per browser.** Decision 18
-  moved only the expanded tanks and Label by.
+- **Range, zoom and names-only stay per browser.** Decisions 18 and 19 moved the expanded tanks,
+  Label by and Your selection.
 - **The brewhouse device's Gantt view is the device's,** shared by everyone using it.
 - **The carry-over runs once per person per browser.** A second browser with older local values
   fills only what the server still lacks.

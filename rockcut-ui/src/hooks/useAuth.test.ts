@@ -106,7 +106,7 @@ describe('useAuth: the Gantt view on the account', () => {
               capabilities: {},
               board_settings: {
                 brewery: { span: 7, expanded: ['1'] },
-                production: { expanded: ['7', 'FV3'], label_by: { '7': 3007 }, span: 7 },
+                production: { expanded: ['7', 'FV3'], label_by: { '7': 3007 }, mix: ['7'], span: 7 },
               },
             }
           : {}
@@ -116,11 +116,11 @@ describe('useAuth: the Gantt view on the account', () => {
     await useAuth.getState().loadMe()
     expect(useAuth.getState().boardSettings).toEqual({
       brewery: { span: 7 },
-      production: { expanded: ['7'], label_by: { '7': 3007 } },
+      production: { expanded: ['7'], label_by: { '7': 3007 }, mix: ['7'] },
     })
 
-    await useAuth.getState().saveBoardSettings('production', { expanded: ['7', '8'] })
-    expect(calls.at(-1)).toEqual({ method: 'put', url: '/api/me/board_settings/production', data: { expanded: ['7', '8'] } })
-    expect(useAuth.getState().boardSettings.production).toEqual({ expanded: ['7', '8'], label_by: { '7': 3007 } })
+    await useAuth.getState().saveBoardSettings('production', { expanded: ['7', '8'], mix: ['7', '8'] })
+    expect(calls.at(-1)).toEqual({ method: 'put', url: '/api/me/board_settings/production', data: { expanded: ['7', '8'], mix: ['7', '8'] } })
+    expect(useAuth.getState().boardSettings.production).toEqual({ expanded: ['7', '8'], label_by: { '7': 3007 }, mix: ['7', '8'] })
   })
 })
