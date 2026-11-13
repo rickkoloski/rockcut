@@ -282,7 +282,10 @@ test('DEV gap 4 (decision 20): Fail → Retest, the retest moved a day later (Mo
   const confirm = page.getByTestId('flows-confirm')
   await expect(confirm).toContainText(`Its retest on ${dayLabel(addDays(retest.due_on, 1))}`)
   await expect(confirm).toContainText('the steps after it go back to their dates')
+  // Wait for the write itself before reloading (DEV's API is slower than the dialog closing).
+  const done = page.waitForResponse((r) => r.url().includes(`/steps/${t.id}/uncomplete`) && r.request().method() === 'POST')
   await confirm.getByRole('button', { name: 'Mark not done' }).click()
+  expect((await done).status()).toBe(200)
   await expect(confirm).toBeHidden()
 
   await page.reload()
