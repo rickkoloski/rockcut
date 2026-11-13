@@ -331,7 +331,9 @@ defmodule RockcutApiWeb.ProductionScheduleController do
 
   @doc """
   POST /api/production/steps/:id/complete: `{ done_on?, batch_number?,
-  answer?, preview? }`.
+  answer?, result?, fail_action?, retest_days?, preview? }` (D56: `result`
+  `pass` / `fail` on a step whose type has one; a Fail's `fail_action`
+  `retest` / `continue`, `retest_days` 1–30).
   """
   def complete_step(conn, %{"id" => id} = params) do
     with {:ok, conn} <- writer(conn),
@@ -339,8 +341,27 @@ defmodule RockcutApiWeb.ProductionScheduleController do
            tracked(conn, step_scope([id]), truthy?(params["preview"]), fn preview ->
              Steps.complete(
                id,
-               Map.take(params, ["done_on", "batch_number", "answer"]),
+               Map.take(params, Steps.complete_fields()),
                actor(conn),
+               preview: preview
+             )
+           end) do
+      render_result(conn, result, token)
+    end
+    |> ProductionErrors.handle(conn)
+  end
+
+  @doc """
+  PATCH /api/production/steps/:id/result: `{ result, fail_action?,
+  retest_days?, answer?, preview? }` (D56 §3.2, a done step's Pass / Fail).
+  """
+  def change_result(conn, %{"id" => id} = params) do
+    with {:ok, conn} <- writer(conn),
+         {:ok, result, token} <-
+           tracked(conn, step_scope([id]), truthy?(params["preview"]), fn preview ->
+             Steps.change_result(
+               id,
+               Map.take(params, ~w(result fail_action retest_days answer)),
                preview: preview
              )
            end) do

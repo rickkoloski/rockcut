@@ -26,6 +26,11 @@ defmodule RockcutApi.Production.Flags do
   overlap between a scheduled and a pencilled batch is two flags: the
   scheduled one's, as before, and the pencilled one's, muted (its key ends
   in `:pencilled`). "No tank assigned" doesn't apply to a pencilled batch.
+
+  D56 §3.2: a test that failed three times or more in a row (the original
+  and its retests, `retest_of_id`) is "3 failed Diacetyl tests"
+  (`failed_tests`); the count is in the signature, so another Fail brings a
+  signed-off flag back.
   """
   alias RockcutApi.Production.{Parts, Steps}
 
@@ -73,7 +78,8 @@ defmodule RockcutApi.Production.Flags do
        transfer_order(world.parts, tanks) ++
        no_tank(live, world.today) ++
        out_of_service(live, loose_cips, tanks) ++
-       cip_with_beer(live, loose_cips, tanks))
+       cip_with_beer(live, loose_cips, tanks) ++
+       failed_tests(world.parts))
     |> Enum.uniq_by(& &1.key)
     |> Enum.flat_map(&mute(&1, pencilled(world.parts)))
     |> Enum.map(&with_signoff(&1, signed[&1.key]))
@@ -466,6 +472,42 @@ defmodule RockcutApi.Production.Flags do
         batch_ids: [p.batch_id],
         tank_id: c.tank_id
       )
+    end
+  end
+
+  # D56 §3.2: per retest chain, the Fails in a row up to its latest
+  # recorded result; three or more is a flag, keyed by the chain's first test.
+  defp failed_tests(parts) do
+    for {batch_id, [p | _]} <- Enum.group_by(parts, & &1.batch_id),
+        by_id = Map.new(p.batch_steps, &{&1.id, &1}),
+        retested = MapSet.new(p.batch_steps, & &1.retest_of_id),
+        last <- p.batch_steps,
+        not MapSet.member?(retested, last.id),
+        chain = chain(last, by_id),
+        length(chain) >= 3,
+        fails =
+          chain
+          |> Enum.reverse()
+          |> Enum.drop_while(&is_nil(&1.result))
+          |> Enum.take_while(&(&1.result == "fail"))
+          |> length(),
+        fails >= 3 do
+      first = hd(chain)
+      type = (first.step_type && first.step_type.name) || Steps.name(first)
+
+      flag(:failed_tests, [first.id], [first.id, fails],
+        message: "#{fails} failed #{type}s",
+        batch_ids: [batch_id],
+        tank_id: nil
+      )
+    end
+  end
+
+  # The retest chain ending at `step`, first test first.
+  defp chain(step, by_id) do
+    case step.retest_of_id && by_id[step.retest_of_id] do
+      nil -> [step]
+      prev -> chain(prev, by_id) ++ [step]
     end
   end
 

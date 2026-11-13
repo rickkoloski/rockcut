@@ -21,6 +21,8 @@ defmodule RockcutApi.Production.TemplateStep do
   # D56 decision 10: pre-brew steps up to 30 days before brew day.
   @days -30..365
   @temperatures 28..80
+  # D56 decision 10: a retest up to 30 days out.
+  @retest_days 1..30
   @split_methods ~w(transfer filter)
   @cip_methods ~w(sanitize_full no_sani sanitize)
   @cip_message "Pick CIP & Sanitize, CIP - no sani or Sanitize."
@@ -37,6 +39,8 @@ defmodule RockcutApi.Production.TemplateStep do
     field :on_task_list, :boolean, default: true
     field :position, :integer, default: 0
     field :ramp_group, :string
+    # D56 §3.2: "Retest after [2] days", used when the type has a result.
+    field :retest_days, :integer, default: 2
 
     belongs_to :template, RockcutApi.Production.Template
     belongs_to :step_type, RockcutApi.Production.StepType
@@ -49,6 +53,20 @@ defmodule RockcutApi.Production.TemplateStep do
   def split_methods, do: @split_methods
   def cip_methods, do: @cip_methods
   def cip_message, do: @cip_message
+  def retest_days, do: @retest_days
+
+  @doc "D56: validate `retest_days` (1–30), shared with `Step`."
+  def validate_retest_days(changeset) do
+    changeset
+    |> validate_required([:retest_days], message: retest_message())
+    |> validate_number(:retest_days,
+      greater_than_or_equal_to: @retest_days.first,
+      less_than_or_equal_to: @retest_days.last,
+      message: retest_message()
+    )
+  end
+
+  defp retest_message, do: "Enter #{@retest_days.first}–#{@retest_days.last} days."
 
   @doc "The fields a brewer edits; `Production` sets the type, template and position."
   def changeset(step, attrs) do
@@ -63,7 +81,8 @@ defmodule RockcutApi.Production.TemplateStep do
       :cip_method,
       :package_partial,
       :notes,
-      :on_task_list
+      :on_task_list,
+      :retest_days
     ])
     |> update_change(:detail, &blank_to_nil/1)
     |> update_change(:notes, &blank_to_nil/1)
@@ -83,6 +102,7 @@ defmodule RockcutApi.Production.TemplateStep do
     )
     |> validate_inclusion(:split_method, @split_methods, message: "Pick Transfer or Filter.")
     |> validate_inclusion(:cip_method, @cip_methods, message: @cip_message)
+    |> validate_retest_days()
     |> RockcutApi.Changeset.validate_parents([:phase_id])
   end
 

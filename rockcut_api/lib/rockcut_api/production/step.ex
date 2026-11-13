@@ -34,6 +34,10 @@ defmodule RockcutApi.Production.Step do
     # not :map: a nil map is stored as "null" on SQLite, and Undo compares
     # rows (`Steps.checkoff_move/4`).
     field :checkoff_move, :string
+    # D56 §3.2: a has-result step's Pass / Fail once done (`pass` / `fail`),
+    # the days to its retest, and the failed step a retest retests.
+    field :result, :string
+    field :retest_days, :integer, default: 2
 
     belongs_to :batch, RockcutApi.Brewing.Batch
     belongs_to :tank, RockcutApi.Production.Tank
@@ -44,6 +48,7 @@ defmodule RockcutApi.Production.Step do
     belongs_to :done_on_device, RockcutApi.Accounts.User
     belongs_to :assignee, RockcutApi.Accounts.User
     belongs_to :template_step, RockcutApi.Production.TemplateStep
+    belongs_to :retest_of, __MODULE__
 
     timestamps(type: :utc_datetime)
   end
@@ -67,7 +72,8 @@ defmodule RockcutApi.Production.Step do
       :cip_method,
       :notes,
       :on_task_list,
-      :assignee_id
+      :assignee_id,
+      :retest_days
     ])
     |> update_change(:detail, &blank_to_nil/1)
     |> update_change(:notes, &blank_to_nil/1)
@@ -81,6 +87,7 @@ defmodule RockcutApi.Production.Step do
       less_than_or_equal_to: TemplateStep.temperatures().last,
       message: "Enter #{TemplateStep.temperatures().first}–#{TemplateStep.temperatures().last}°F."
     )
+    |> TemplateStep.validate_retest_days()
     |> RockcutApi.Changeset.validate_parents([:assignee_id])
   end
 

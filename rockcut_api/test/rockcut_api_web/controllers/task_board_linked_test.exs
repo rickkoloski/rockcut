@@ -85,7 +85,8 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
                "planned" => true,
                # Lead decisions 8.2: what the board's prompts name, not parsed from the title.
                "step_name" => "FDH",
-               "batch_label" => "Galactic P1"
+               "batch_label" => "Galactic P1",
+               "result" => nil
              }
 
       assert Enum.find(cards, &(&1["id"] == own.id))["production"] == nil

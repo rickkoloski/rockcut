@@ -401,7 +401,8 @@ defmodule RockcutApi.Production.Batches do
             position: s.position,
             due_on: Date.add(brew_on, s.day_offset),
             template_step_id: s.id,
-            ramp_group: s.ramp_group
+            ramp_group: s.ramp_group,
+            retest_days: s.retest_days
           })
 
         {s.id, step}

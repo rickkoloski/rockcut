@@ -927,7 +927,8 @@ defmodule RockcutApi.Production do
           :cip_method,
           :package_partial,
           :notes,
-          :on_task_list
+          :on_task_list,
+          :retest_days
         ])
 
       invalid ->

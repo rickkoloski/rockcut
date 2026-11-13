@@ -83,7 +83,16 @@ defmodule RockcutApiWeb.ProductionErrors do
     # D49 decision 6.1 (QA 8).
     marker_task_list: "A phase marker can't go on the Brewery task list.",
     # D48 DEV QA Z3: the step PATCH doesn't change dates.
-    date_not_here: "To change a step's date, move it (or check it off on the day it was done)."
+    date_not_here: "To change a step's date, move it (or check it off on the day it was done).",
+    # D56 §3.2: test results and retests.
+    result_required: "Record Pass or Fail.",
+    result_invalid: "Pick Pass or Fail.",
+    result_not_here: "That step doesn't record a result.",
+    fail_action_required: "Choose Retest or Continue as planned.",
+    fail_action_invalid: "Choose Retest or Continue as planned.",
+    retest_days_invalid: "Retest in 1 to 30 days.",
+    retest_not_here: "That step can't be retested. Continue as planned instead.",
+    retest_done: "Mark the retest not done first."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn

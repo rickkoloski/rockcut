@@ -344,6 +344,7 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/production/steps/assign"},
     {:post, "/api/production/steps/:id/complete"},
     {:post, "/api/production/steps/:id/uncomplete"},
+    {:patch, "/api/production/steps/:id/result"},
     {:patch, "/api/production/steps/:id"},
     {:delete, "/api/production/steps/:id"},
     {:post, "/api/production/steps/:id/ramp"},

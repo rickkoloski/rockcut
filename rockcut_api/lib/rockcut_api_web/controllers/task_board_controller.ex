@@ -374,10 +374,10 @@ defmodule RockcutApiWeb.TaskBoardController do
     end
   end
 
-  # Today unless `done_on` says otherwise; the batch number and the
-  # off-plan answer as on the schedule. Already done: a no-op, as on the board.
+  # Today unless `done_on` says otherwise; the batch number, the off-plan
+  # answer and a test's result (D56) as on the schedule. Already done: a no-op, as on the board.
   defp linked_complete(person, task, step, params) do
-    attrs = Map.take(params, ~w(done_on batch_number answer))
+    attrs = Map.take(params, Steps.complete_fields())
 
     cond do
       step.done_on != nil ->
@@ -421,7 +421,7 @@ defmodule RockcutApiWeb.TaskBoardController do
       conn,
       %{
         data: task && task |> Tasks.with_names() |> task(),
-        result: Map.take(result, [:renumbered, :out_of_order, :message]),
+        result: Map.take(result, [:renumbered, :out_of_order, :message, :retest_id]),
         undo_token: token
       },
       person
