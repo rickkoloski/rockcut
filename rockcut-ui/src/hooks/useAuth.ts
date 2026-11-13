@@ -4,6 +4,7 @@ import queryClient from '../lib/queryClient'
 import type { Me, User, Capabilities, IdeaBoardEntry, TaskBoardEntry } from '../lib/types'
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
 import { cleanSettings, type BoardSettings } from '../lib/tasks'
+import { boardKey, mergeRefresh, refreshDue, writeLog } from '../lib/meRefresh'
 import {
   SHARED_DEVICE_LOGIN_REFUSED,
   TOKEN_KEY,
@@ -42,6 +43,12 @@ interface AuthState {
   logout: () => void
   /** `force` (Try now, back online) replaces a check that's still waiting on a stalled connection. */
   loadMe: (opts?: { force?: boolean }) => Promise<void>
+  /**
+   * D56 §3.4: re-read /api/me (at most once a minute) and take the board
+   * settings, theme and Show planned batches from it. Settings being saved
+   * here keep this page's value; a failure is silent.
+   */
+  refreshMe: (now?: number) => Promise<void>
   /** D43: save the person's theme. Applied at once; put back (and rethrown) if the server refuses. */
   setColorMode: (mode: ColorMode) => Promise<void>
   /** D49: save "Show planned batches". Applied at once; put back (and rethrown) if the server refuses. */
@@ -67,6 +74,16 @@ interface Load {
   promise: Promise<void>
 }
 let loading: Load | null = null
+
+// D56 §3.4: the settings saved from this page, and when /api/me was last re-read.
+const writes = writeLog()
+let lastRefresh: number | null = null
+
+const serverSettings = (data: Me) => ({
+  colorMode: isColorMode(data.color_mode) ? data.color_mode : ('light' as ColorMode),
+  showPlannedBatches: data.show_planned_batches !== false,
+  boardSettings: Object.fromEntries(Object.entries(data.board_settings ?? {}).map(([k, v]) => [k, cleanSettings(v)])),
+})
 
 function errorMessage(err: unknown, fallback: string): string {
   return err && typeof err === 'object' && 'response' in err
@@ -154,8 +171,9 @@ const useAuth = create<AuthState>((set, get) => ({
         // The token changed while this was in flight (another tab signed in or
         // out): this answer is for a session that's gone (D33).
         if (localStorage.getItem(TOKEN_KEY) !== token) return
-        const colorMode = isColorMode(data.color_mode) ? data.color_mode : 'light'
+        const { colorMode, showPlannedBatches, boardSettings } = serverSettings(data)
         cacheColorMode(colorMode)
+        lastRefresh = Date.now()
         set({
           user: data.user,
           capabilities: data.capabilities,
@@ -165,8 +183,8 @@ const useAuth = create<AuthState>((set, get) => ({
           taskBoards: Array.isArray(data.task_boards) ? data.task_boards : [],
           ideaBoards: Array.isArray(data.idea_boards) ? data.idea_boards : [],
           colorMode,
-          showPlannedBatches: data.show_planned_batches !== false,
-          boardSettings: Object.fromEntries(Object.entries(data.board_settings ?? {}).map(([k, v]) => [k, cleanSettings(v)])),
+          showPlannedBatches,
+          boardSettings,
           isAuthenticated: true,
           bootstrapped: true,
           unreachable: false,
@@ -189,10 +207,34 @@ const useAuth = create<AuthState>((set, get) => ({
     return load.promise
   },
 
+  refreshMe: async (now = Date.now()) => {
+    const { token, user, bootstrapped } = get()
+    // Start-up's /api/me (or its retries) is in charge until it has answered.
+    if (!token || !user || !bootstrapped || loading || !refreshDue(lastRefresh, now)) return
+    lastRefresh = now
+    const mark = writes.mark()
+    try {
+      const { data } = await api.get<Me>('/api/me', { timeout: ME_TIMEOUT_MS })
+      if (!data?.user || localStorage.getItem(TOKEN_KEY) !== token || get().token !== token) return
+      const s = get()
+      const merged = mergeRefresh(
+        { colorMode: s.colorMode, showPlannedBatches: s.showPlannedBatches, boardSettings: s.boardSettings },
+        serverSettings(data),
+        writes.since(mark),
+      )
+      if (merged.colorMode) cacheColorMode(merged.colorMode)
+      set(merged)
+    } catch {
+      // Silent: the app is working; a token that really ended is handled by
+      // the axios interceptor, and the next return to the screen tries again.
+    }
+  },
+
   setColorMode: async (mode) => {
     const before = get().colorMode
     set({ colorMode: mode })
     cacheColorMode(mode)
+    const done = writes.begin('color_mode')
     try {
       // A stalled connection fails too, rather than leaving an unsaved theme showing.
       await api.put('/api/me/color_mode', { color_mode: mode }, { timeout: 10_000 })
@@ -200,23 +242,33 @@ const useAuth = create<AuthState>((set, get) => ({
       set({ colorMode: before })
       if (before) cacheColorMode(before)
       throw err
+    } finally {
+      done()
     }
   },
 
   setShowPlannedBatches: async (show) => {
     const before = get().showPlannedBatches
     set({ showPlannedBatches: show })
+    const done = writes.begin('show_planned_batches')
     try {
       await api.put('/api/me/show_planned_batches', { show_planned_batches: show }, { timeout: 10_000 })
     } catch (err) {
       set({ showPlannedBatches: before })
       throw err
+    } finally {
+      done()
     }
   },
 
   saveBoardSettings: async (board, changes) => {
     set((s) => ({ boardSettings: { ...s.boardSettings, [board]: { ...s.boardSettings[board], ...changes } } }))
-    await api.put(`/api/me/board_settings/${encodeURIComponent(board)}`, changes, { timeout: 10_000 })
+    const done = writes.begin(...Object.keys(changes).map((k) => boardKey(board, k)))
+    try {
+      await api.put(`/api/me/board_settings/${encodeURIComponent(board)}`, changes, { timeout: 10_000 })
+    } finally {
+      done()
+    }
   },
 
   // Exchange a pairing code for this tablet's token (D33 §3.2).
@@ -260,6 +312,12 @@ window.addEventListener(SERVER_DOWN_EVENT, () => useAuth.setState({ serverDown: 
 window.addEventListener(SERVER_BACK_EVENT, () => {
   useAuth.setState({ serverDown: false })
   void queryClient.invalidateQueries()
+})
+
+// D56 §3.4: back on the screen (another tab, the tablet waking, the PWA
+// brought back), pick up settings changed elsewhere. Shared tablets too.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') void useAuth.getState().refreshMe()
 })
 
 export default useAuth
