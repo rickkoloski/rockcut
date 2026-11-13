@@ -29,6 +29,13 @@ import {
   splitLocked,
   treeRefusal,
   readPrefs,
+  GANTT_BOARD,
+  cleanGanttSettings,
+  clearLocalGanttView,
+  ganttCarryOver,
+  ganttView,
+  missingLocalGanttView,
+  readLocalGanttView,
   segments,
   shiftRange,
   showInitials,
@@ -445,21 +452,20 @@ describe('remembered per person', () => {
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => store.get(k) ?? null,
       setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
     })
   })
   afterEach(() => vi.unstubAllGlobals())
 
   it('defaults to 6 weeks, names-only on a phone; keeps each user’s own', () => {
-    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, expanded: [], mix: [], labelBy: {} })
+    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, mix: [] })
     expect(readPrefs(4, true).collapsed).toBe(true)
     writePref(4, 'zoom', 12)
     writePref(4, 'collapsed', false)
     writePref(4, 'range', { from: '2026-10-01', to: '2026-10-02' })
-    writePref(4, 'expanded', ['7', 'unassigned'])
     writePref(4, 'mix', ['7'])
-    writePref(4, 'labelBy', { '7': 3007 })
     expect(store.get('rockcut.production.4.zoom')).toBe('12')
-    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, expanded: ['7', 'unassigned'], mix: ['7'], labelBy: { '7': 3007 } })
+    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, mix: ['7'] })
     expect(readPrefs(5, false).zoom).toBe(6)
     store.set('rockcut.production.4.range', 'not json')
     expect(readPrefs(4, false).range).toBeNull()
@@ -476,6 +482,83 @@ describe('remembered per person', () => {
     })
     expect(readPrefs(4, false).zoom).toBe(6)
     expect(() => writePref(4, 'zoom', 2)).not.toThrow()
+  })
+})
+
+describe('expanded tanks and Label by on the account (D56 decision 18)', () => {
+  let store: Map<string, string>
+  beforeEach(() => {
+    store = new Map()
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    })
+  })
+  afterEach(() => vi.unstubAllGlobals())
+  const old = (expanded?: unknown, labelBy?: unknown) => {
+    if (expanded !== undefined) store.set('rockcut.production.4.expanded', JSON.stringify(expanded))
+    if (labelBy !== undefined) store.set('rockcut.production.4.labelBy', JSON.stringify(labelBy))
+  }
+
+  it('reads the server’s settings, keeping only rows and batch ids the API takes', () => {
+    expect(GANTT_BOARD).toBe('production')
+    expect(ganttView(undefined)).toEqual({ expanded: [], labelBy: {} })
+    expect(ganttView({ expanded: ['7', 'unassigned'], label_by: { '7': 3007 } })).toEqual({ expanded: ['7', 'unassigned'], labelBy: { '7': 3007 } })
+    expect(cleanGanttSettings({ expanded: ['7', 'FV3', 8], label_by: { '7': 3007, x: 1, '8': '2', '9': 0 }, span: 7 })).toEqual({
+      expanded: ['7'],
+      label_by: { '7': 3007 },
+    })
+    expect(cleanGanttSettings({ expanded: 'x', label_by: [1] })).toEqual({})
+    expect(cleanGanttSettings(null)).toEqual({})
+  })
+
+  it('the server’s value wins over this browser’s old one; the old one fills what it lacks', () => {
+    expect(ganttView({ expanded: ['1'] }, { expanded: ['7'], label_by: { '7': 3 } })).toEqual({ expanded: ['1'], labelBy: { '7': 3 } })
+    expect(ganttView({ expanded: [] }, { expanded: ['7'] }).expanded).toEqual([])
+  })
+
+  it('reads this browser’s old values, per person; none is null', () => {
+    expect(readLocalGanttView(4)).toBeNull()
+    old(['7', 'unassigned'], { '7': 3007 })
+    expect(readLocalGanttView(4)).toEqual({ expanded: ['7', 'unassigned'], label_by: { '7': 3007 } })
+    expect(readLocalGanttView(5)).toBeNull()
+    store.set('rockcut.production.4.labelBy', 'not json')
+    expect(readLocalGanttView(4)).toEqual({ expanded: ['7', 'unassigned'], label_by: {} })
+  })
+
+  it('carries over only what the server lacks, then stops using local storage', async () => {
+    old(['7'], { '7': 3007 })
+    const save = vi.fn().mockResolvedValue(undefined)
+    expect(missingLocalGanttView(4, { label_by: { '9': 1 } })).toEqual({ expanded: ['7'] })
+    expect(await ganttCarryOver(4, { label_by: { '9': 1 } }, save)).toBe('saved')
+    expect(save).toHaveBeenCalledWith({ expanded: ['7'] })
+    expect(store.has('rockcut.production.4.expanded')).toBe(false)
+    expect(store.has('rockcut.production.4.labelBy')).toBe(false)
+    expect(await ganttCarryOver(4, {}, save)).toBe('none')
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('with the server holding both, clears without a save', async () => {
+    old(['7'])
+    const save = vi.fn()
+    expect(await ganttCarryOver(4, { expanded: [] }, save)).toBe('server')
+    expect(save).not.toHaveBeenCalled()
+    expect(store.size).toBe(0)
+  })
+
+  it('a failed save keeps the old values for next time', async () => {
+    old(['7'], {})
+    expect(await ganttCarryOver(4, undefined, () => Promise.reject(new Error('offline')))).toBe('failed')
+    expect(readLocalGanttView(4)).toEqual({ expanded: ['7'], label_by: {} })
+  })
+
+  it('other Gantt prefs stay in the browser', () => {
+    old(['7'])
+    writePref(4, 'zoom', 12)
+    clearLocalGanttView(4)
+    expect(store.get('rockcut.production.4.zoom')).toBe('12')
+    expect(readLocalGanttView(4)).toBeNull()
   })
 })
 

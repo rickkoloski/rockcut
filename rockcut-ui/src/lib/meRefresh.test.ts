@@ -60,4 +60,14 @@ describe('merging what another device saved', () => {
     done()
     expect(mergeRefresh(local, server, log.since(log.mark())).boardSettings.brewery.first_day).toBe('monday')
   })
+
+  it('takes the Gantt view from another browser, keeping one being saved here (decision 18)', () => {
+    const here: Refreshed = { ...local, boardSettings: { production: { expanded: ['7'], label_by: { '7': 1 } } } }
+    const there: Refreshed = { ...server, boardSettings: { production: { expanded: ['7', '9'], label_by: { '7': 2 } } } }
+    const log = writeLog()
+    expect(mergeRefresh(here, there, log.since(log.mark())).boardSettings.production).toEqual({ expanded: ['7', '9'], label_by: { '7': 2 } })
+    const done = log.begin(boardKey('production', 'label_by'))
+    expect(mergeRefresh(here, there, log.since(log.mark())).boardSettings.production).toEqual({ expanded: ['7', '9'], label_by: { '7': 1 } })
+    done()
+  })
 })

@@ -6,16 +6,20 @@
 
 import type { ColorMode } from './colorMode'
 import type { BoardSettings } from './tasks'
+import type { GanttSettings } from './gantt'
 
 export const REFRESH_GAP_MS = 60_000
 
 /** At most one refresh a minute (the first always goes). */
 export const refreshDue = (last: number | null, now: number, gap = REFRESH_GAP_MS) => last == null || now - last >= gap
 
+/** A board's stored settings: a task board's, or the Gantt's (`production`, D56 decision 18). */
+export type StoredSettings = Partial<BoardSettings> & Partial<GanttSettings>
+
 export interface Refreshed {
   colorMode: ColorMode | null
   showPlannedBatches: boolean
-  boardSettings: Record<string, Partial<BoardSettings>>
+  boardSettings: Record<string, StoredSettings>
 }
 
 /** The key a local write is recorded under: `color_mode`, `show_planned_batches`, `board:<board>:<setting>`. */
@@ -27,12 +31,12 @@ export const boardKey = (board: string, setting: string) => `board:${board}:${se
  */
 export function mergeRefresh(local: Refreshed, server: Refreshed, written: (key: string) => boolean): Refreshed {
   const boards = new Set([...Object.keys(local.boardSettings), ...Object.keys(server.boardSettings)])
-  const boardSettings: Record<string, Partial<BoardSettings>> = {}
+  const boardSettings: Record<string, StoredSettings> = {}
   for (const board of boards) {
     const mine = local.boardSettings[board] ?? {}
     const merged: Record<string, unknown> = { ...(server.boardSettings[board] ?? {}) }
     for (const [k, v] of Object.entries(mine)) if (written(boardKey(board, k))) merged[k] = v
-    if (Object.keys(merged).length) boardSettings[board] = merged as Partial<BoardSettings>
+    if (Object.keys(merged).length) boardSettings[board] = merged as StoredSettings
   }
   return {
     colorMode: written('color_mode') ? local.colorMode : server.colorMode,

@@ -654,16 +654,14 @@ export function dragHint(a: DragHintInput): DragHint | null {
 }
 
 // ── Remembered per person, in this browser (plan decision 6) ──
+// The expanded tanks and "Label by" moved to the account (D56 decision 18, below).
 
 export interface GanttPrefs {
   range: Range | null
   zoom: Zoom
   collapsed: boolean
-  expanded: string[]
   /** The last mix of open tanks, for the switch's middle (D48 §3.6). */
   mix: string[]
-  /** D56 §3.3: each expanded tank's "Label by" batch (row key → batch id), beside `expanded`. */
-  labelBy: Record<string, number>
 }
 
 const prefKey = (userId: number | string, name: string) => `rockcut.production.${userId}.${name}`
@@ -681,6 +679,14 @@ function write(key: string, value: string) {
     localStorage.setItem(key, value)
   } catch {
     // Private windows and full storage: it just isn't remembered.
+  }
+}
+
+function remove(key: string) {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // Nothing to clear.
   }
 }
 
@@ -709,20 +715,118 @@ export function readPrefs(userId: number | string, phone: boolean): GanttPrefs {
     range,
     zoom: (ZOOMS as readonly number[]).includes(zoom) ? (zoom as Zoom) : 6,
     collapsed: collapsed === null ? phone : collapsed === 'true',
-    expanded: keys('expanded'),
     mix: keys('mix'),
-    labelBy: (() => {
-      try {
-        const m = JSON.parse(read(prefKey(userId, 'labelBy')) ?? '{}')
-        if (!m || typeof m !== 'object' || Array.isArray(m)) return {}
-        return Object.fromEntries(Object.entries(m).filter(([, v]) => Number.isInteger(v))) as Record<string, number>
-      } catch {
-        return {}
-      }
-    })(),
   }
 }
 
 export function writePref<K extends keyof GanttPrefs>(userId: number | string, name: K, value: GanttPrefs[K]) {
   write(prefKey(userId, name), typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : JSON.stringify(value))
+}
+
+// ── D56 decision 18: the expanded tanks and "Label by", on the account ──
+
+/** The board-settings key the Gantt's view is saved under (`PUT /api/me/board_settings/production`). */
+export const GANTT_BOARD = 'production'
+
+/** The Gantt's view as the API stores it (only what was changed): row keys, and row key → batch id. */
+export interface GanttSettings {
+  expanded: string[]
+  label_by: Record<string, number>
+}
+
+/** The view to draw: the stored settings over the defaults (nothing expanded). */
+export interface GanttView {
+  expanded: string[]
+  labelBy: Record<string, number>
+}
+
+// As the API takes them: a tank id or "unassigned", at most 200.
+const ROW_KEY = /^(\d{1,18}|unassigned)$/
+const MAX_ROWS = 200
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** The Gantt settings in `raw` that are valid, as the API takes them; anything else is dropped. */
+export function cleanGanttSettings(raw: unknown): Partial<GanttSettings> {
+  const r = isRecord(raw) ? raw : {}
+  const out: Partial<GanttSettings> = {}
+  if (Array.isArray(r.expanded))
+    out.expanded = r.expanded.filter((k): k is string => typeof k === 'string' && ROW_KEY.test(k)).slice(0, MAX_ROWS)
+  if (isRecord(r.label_by))
+    out.label_by = Object.fromEntries(
+      Object.entries(r.label_by)
+        .filter(([k, v]) => ROW_KEY.test(k) && Number.isInteger(v) && (v as number) > 0)
+        .slice(0, MAX_ROWS),
+    ) as Record<string, number>
+  return out
+}
+
+/** The view: the server's settings over this browser's old ones (`local`, until carried over). */
+export function ganttView(stored: unknown, local: Partial<GanttSettings> | null = null): GanttView {
+  const s = { ...local, ...cleanGanttSettings(stored) }
+  return { expanded: s.expanded ?? [], labelBy: s.label_by ?? {} }
+}
+
+/**
+ * The carry-over: this browser's expanded tanks and "Label by" from before
+ * D56 decision 18 (`rockcut.production.<user>.expanded` / `.labelBy`), as the
+ * API takes them, or null when it has neither.
+ */
+export function readLocalGanttView(userId: number | string): Partial<GanttSettings> | null {
+  const expanded = read(prefKey(userId, 'expanded'))
+  const labelBy = read(prefKey(userId, 'labelBy'))
+  if (expanded === null && labelBy === null) return null
+  const parse = (v: string | null) => {
+    try {
+      return v === null ? undefined : JSON.parse(v)
+    } catch {
+      return undefined
+    }
+  }
+  const raw = { expanded: parse(expanded), label_by: parse(labelBy) }
+  const out = cleanGanttSettings(raw)
+  // A stored value that didn't read still counts as there (it carries over as empty).
+  if (expanded !== null && !out.expanded) out.expanded = []
+  if (labelBy !== null && !out.label_by) out.label_by = {}
+  return out
+}
+
+/** This browser's old settings that the server's entry (`stored`) lacks; null when it has none at all. */
+export function missingLocalGanttView(userId: number | string, stored: unknown): Partial<GanttSettings> | null {
+  const local = readLocalGanttView(userId)
+  if (!local) return null
+  const have = cleanGanttSettings(stored)
+  return Object.fromEntries(Object.entries(local).filter(([key]) => !(key in have))) as Partial<GanttSettings>
+}
+
+/** Stop using this browser's old values once the server has them. */
+export function clearLocalGanttView(userId: number | string) {
+  remove(prefKey(userId, 'expanded'))
+  remove(prefKey(userId, 'labelBy'))
+}
+
+/**
+ * As D58's carry-over (`carryOver` in tasks.ts), once per person: save this
+ * browser's old values the server lacks, never one it has, then clear them;
+ * a failed save keeps them for next time. With nothing missing they're
+ * cleared without a save.
+ */
+export async function ganttCarryOver(
+  userId: number | string,
+  stored: unknown,
+  save: (settings: Partial<GanttSettings>) => Promise<unknown>,
+): Promise<'server' | 'none' | 'saved' | 'failed'> {
+  const missing = missingLocalGanttView(userId, stored)
+  if (!missing) return 'none'
+  if (Object.keys(missing).length === 0) {
+    clearLocalGanttView(userId)
+    return 'server'
+  }
+  try {
+    await save(missing)
+  } catch {
+    return 'failed'
+  }
+  clearLocalGanttView(userId)
+  return 'saved'
 }

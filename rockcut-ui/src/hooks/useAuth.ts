@@ -3,8 +3,9 @@ import api, { PASSWORD_RESET_EVENT, SERVER_BACK_EVENT, SERVER_DOWN_EVENT } from 
 import queryClient from '../lib/queryClient'
 import type { Me, User, Capabilities, IdeaBoardEntry, TaskBoardEntry } from '../lib/types'
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
-import { cleanSettings, type BoardSettings } from '../lib/tasks'
-import { boardKey, mergeRefresh, refreshDue, writeLog } from '../lib/meRefresh'
+import { cleanSettings } from '../lib/tasks'
+import { GANTT_BOARD, cleanGanttSettings } from '../lib/gantt'
+import { boardKey, mergeRefresh, refreshDue, writeLog, type StoredSettings } from '../lib/meRefresh'
 import {
   SHARED_DEVICE_LOGIN_REFUSED,
   TOKEN_KEY,
@@ -29,8 +30,12 @@ interface AuthState {
   colorMode: ColorMode | null
   /** D49: the Brewery board's "Show planned batches", saved per person on the server. */
   showPlannedBatches: boolean
-  /** D58: each board's settings saved on the server for this account (a tablet: its own), only what was changed. */
-  boardSettings: Record<string, Partial<BoardSettings>>
+  /**
+   * D58: each board's settings saved on the server for this account (a
+   * tablet: its own), only what was changed. D56 decision 18: `production`
+   * holds the Gantt's expanded tanks and "Label by".
+   */
+  boardSettings: Record<string, StoredSettings>
   isAuthenticated: boolean
   bootstrapped: boolean
   isLoading: boolean
@@ -57,7 +62,7 @@ interface AuthState {
    * D58: save some of a board's settings. Applied at once; if the server
    * refuses, the change stays for this page and the error is rethrown.
    */
-  saveBoardSettings: (board: string, changes: Partial<BoardSettings>) => Promise<void>
+  saveBoardSettings: (board: string, changes: StoredSettings) => Promise<void>
   // D33 — shared tablets
   pairDevice: (code: string, name: string) => Promise<void>
   signOutDevice: () => Promise<void>
@@ -82,7 +87,9 @@ let lastRefresh: number | null = null
 const serverSettings = (data: Me) => ({
   colorMode: isColorMode(data.color_mode) ? data.color_mode : ('light' as ColorMode),
   showPlannedBatches: data.show_planned_batches !== false,
-  boardSettings: Object.fromEntries(Object.entries(data.board_settings ?? {}).map(([k, v]) => [k, cleanSettings(v)])),
+  boardSettings: Object.fromEntries(
+    Object.entries(data.board_settings ?? {}).map(([k, v]) => [k, k === GANTT_BOARD ? cleanGanttSettings(v) : cleanSettings(v)]),
+  ) as Record<string, StoredSettings>,
 })
 
 function errorMessage(err: unknown, fallback: string): string {
