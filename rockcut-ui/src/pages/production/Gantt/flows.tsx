@@ -44,7 +44,7 @@ import {
 } from '../../../lib/testResults'
 import { FlowsContext, type StepRef } from './flowsContext'
 import ConfirmDialog from '../../../components/ConfirmDialog'
-import { isUndoShortcut, snackAutoHide, undoHint } from '../../../lib/undoSnack'
+import { fitAbove, isUndoShortcut, snackAutoHide, undoHint } from '../../../lib/undoSnack'
 
 // D47 §3.7: every schedule write goes through here. It refetches the
 // schedule, says what happened with Undo for 6 seconds (plan decision 5),
@@ -168,6 +168,26 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   // stay clear and clickable. `room` is the snackbar's top from the bottom.
   const [snackEl, setSnackEl] = useState<HTMLDivElement | null>(null)
   const [room, setRoom] = useState(0)
+
+  // DEV gap 1: a menu or popover opened while the snackbar shows (a dialog's
+  // Step picker, the settings gear) ends above it, moved up or scrolling.
+  useEffect(() => {
+    if (!snackEl) return
+    const fit = () => {
+      const limit = snackEl.getBoundingClientRect().top - 8
+      document.querySelectorAll<HTMLElement>('.MuiPopover-paper').forEach((paper) => {
+        const r = paper.getBoundingClientRect()
+        const placed = fitAbove({ top: r.top, height: r.height }, limit)
+        if (!placed) return
+        paper.style.top = `${placed.top}px`
+        paper.style.maxHeight = `${placed.maxHeight}px`
+      })
+    }
+    fit()
+    const watch = new MutationObserver(fit)
+    watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] })
+    return () => watch.disconnect()
+  }, [snackEl])
   useEffect(() => {
     if (!snackEl || !overDialog) return setRoom(0)
     const measure = () => setRoom(Math.ceil(window.innerHeight - snackEl.getBoundingClientRect().top) + 8)

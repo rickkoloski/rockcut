@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inTextField, isUndoShortcut, snackAutoHide, undoHint, type UndoKey } from './undoSnack'
+import { fitAbove, inTextField, isUndoShortcut, snackAutoHide, undoHint, type UndoKey } from './undoSnack'
 
 const key = (k: Partial<UndoKey>): UndoKey => ({ key: 'z', ctrlKey: true, metaKey: false, shiftKey: false, altKey: false, target: null, ...k })
 const el = (tagName: string, extra: Record<string, unknown> = {}) => ({ tagName, ...extra }) as unknown as EventTarget
@@ -51,5 +51,21 @@ describe('the hint', () => {
     expect(undoHint(true, false)).toBe('Ctrl+Z')
     expect(undoHint(true, true)).toBe('⌘Z')
     expect(undoHint(false, false)).toBe('')
+  })
+})
+
+describe('a menu over the snackbar (DEV gap 1)', () => {
+  it('leaves one that ends above it', () => {
+    expect(fitAbove({ top: 100, height: 300 }, 600)).toBeNull()
+    expect(fitAbove({ top: 300, height: 300 }, 600)).toBeNull()
+  })
+
+  it('moves one up that would reach under it, keeping its height when there is room', () => {
+    expect(fitAbove({ top: 400, height: 300 }, 600)).toEqual({ top: 300, maxHeight: 300 })
+  })
+
+  it('stops at the margin and shortens it (the list scrolls)', () => {
+    expect(fitAbove({ top: 200, height: 700 }, 600)).toEqual({ top: 16, maxHeight: 584 })
+    expect(fitAbove({ top: 10, height: 700 }, 600, 16)).toEqual({ top: 10, maxHeight: 590 })
   })
 })

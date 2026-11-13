@@ -111,3 +111,35 @@ test('S20 (4950): Pencil in from the batch dialog, then Ctrl/Cmd+Z with the dial
   await expect(page.getByTestId('batch-dialog-sub')).toContainText('planned')
   await expect(page.getByTestId('batch-dialog-sub')).not.toContainText('pencilled')
 })
+
+test('DEV gap 1: with the Undo snackbar up, the batch dialog’s Add step → Step menu ends above it; its last option is clickable', async ({ page }) => {
+  // QA's screen.
+  await page.setViewportSize({ width: 1366, height: 768 })
+  const tank = await made.tank('FV')
+  const b = await batchOf((await made.plan({ brand_id: (await made.brand('Gap 1')).id, template: ALE, brew_on: addDays(today(), 10), tank_ids: [tank.id] })).id)
+  await openGantt(page)
+  await page.getByTestId(`gantt-bar-${b.id}-0`).click()
+  await page.getByTestId('batch-add-step').click()
+  await page.getByTestId('add-step-type').click()
+  await page.getByRole('option', { name: 'Addition', exact: true }).click()
+  await page.getByTestId('add-step-day').fill(addDays(today(), 12))
+  await page.getByTestId('add-step-dialog-save').click()
+  await expect(snack(page)).toContainText('added to')
+
+  await page.getByTestId('batch-add-step').click()
+  await page.getByTestId('add-step-type').click()
+  const last = page.getByTestId('add-step-type-custom')
+  await expect(last).toBeVisible()
+  // Measured once the menu has finished growing open.
+  await expect(page.locator('.MuiPopover-paper')).toHaveCSS('transform', 'none')
+  const bar = (await page.getByTestId('gantt-snack').boundingBox())!
+  const opt = (await last.boundingBox())!
+  expect(opt.y + opt.height).toBeLessThanOrEqual(bar.y)
+  // What's under the option's centre is the option, not the snackbar.
+  const box = (await last.boundingBox())!
+  expect(await page.evaluate(([x, y]) => !!document.elementFromPoint(x, y)?.closest('[data-testid="add-step-type-custom"]'), [box.x + box.width / 2, box.y + box.height / 2])).toBe(true)
+  await last.click()
+  await expect(page.getByTestId('add-step-name')).toBeVisible()
+  // The Undo is still there to use.
+  await expect(page.getByTestId('gantt-undo')).toBeVisible()
+})

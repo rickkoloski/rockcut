@@ -44,3 +44,16 @@ export function undoHint(finePointer: boolean, mac: boolean): string {
   if (!finePointer) return ''
   return mac ? '⌘Z' : 'Ctrl+Z'
 }
+
+/**
+ * DEV gap 1: an open menu or popover kept above the snackbar. `rect` is the
+ * paper's place on screen, `limit` the y it must end above (the snackbar's
+ * top less a gap). Null when it already does; otherwise its new top (moved
+ * up, not past `margin`, never down) and a max height that ends at `limit` (the list
+ * scrolls).
+ */
+export function fitAbove(rect: { top: number; height: number }, limit: number, margin = 16): { top: number; maxHeight: number } | null {
+  if (rect.top + rect.height <= limit) return null
+  const top = Math.max(Math.min(margin, rect.top), Math.min(rect.top, limit - rect.height))
+  return { top, maxHeight: Math.max(limit - top, 0) }
+}
