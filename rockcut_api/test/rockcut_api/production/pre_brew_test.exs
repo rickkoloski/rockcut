@@ -12,7 +12,18 @@ defmodule RockcutApi.Production.PreBrewTest do
   import RockcutApi.ProductionFixtures
 
   alias RockcutApi.Production
-  alias RockcutApi.Production.{Batches, Parts, Phase, Schedule, Splits, Steps, TaskLink, Undo}
+
+  alias RockcutApi.Production.{
+    BatchChanges,
+    Batches,
+    Parts,
+    Phase,
+    Schedule,
+    Splits,
+    Steps,
+    TaskLink,
+    Undo
+  }
 
   # Brew Wed Dec 2: Prepare grain Dec 1 (day −1), Order yeast Nov 28
   # (day −4); FDH Dec 9, Set temp 58° Dec 12, Carb Dec 16, Package and CIP
@@ -502,6 +513,212 @@ defmodule RockcutApi.Production.PreBrewTest do
       TaskLink.sync!()
       task = Repo.get_by!(RockcutApi.Tasks.Task, production_step_id: grain.id)
       assert %{step_name: "Prepare grain", batch_label: "Galactic P1"} = TaskLink.describe(task)
+    end
+  end
+
+  describe "Change template keeps a finished pre-brew step (decision 12)" do
+    defp done_on_day!(ctx, step),
+      do: {:ok, _} = Steps.complete(step.id, %{}, ctx.brewer, today: step.due_on)
+
+    test "the new template's step of its type: it takes its place, entry and links", ctx do
+      batch = plan(ctx)
+      done_on_day!(ctx, named(batch, "Prepare grain"))
+      linked = linked_template()
+
+      {:ok, _} = BatchChanges.change_template(reload(batch), linked.id)
+
+      assert [grain] = Enum.filter(steps_of(batch), &(Steps.name(&1) == "Prepare grain"))
+      assert %{due_on: ~D[2026-12-01], done_on: ~D[2026-12-01], added: false} = grain
+      assert grain.template_step_id == entry(linked, "Prepare grain").id
+      assert {"Prepare grain", "Brew day", "move_all"} in links(batch)
+      # Order yeast wasn't done: rebuilt, and the new template has none.
+      refute named(batch, "Order yeast")
+    end
+
+    test "no step of its type: an added step with no links", ctx do
+      batch = plan(ctx)
+      done_on_day!(ctx, named(batch, "Prepare grain"))
+
+      {:ok, _} = BatchChanges.change_template(reload(batch), ale_template!("Plain").id)
+
+      grain = named(batch, "Prepare grain")
+      assert %{done_on: ~D[2026-12-01], added: true, template_step_id: nil} = grain
+      refute Enum.any?(links(batch), fn {from, to, _} -> "Prepare grain" in [from, to] end)
+    end
+
+    test "two finished of one type against one entry: the earliest takes it", ctx do
+      batch = plan(ctx)
+      grain = named(batch, "Prepare grain")
+
+      {:ok, %{step_ids: [extra]}} =
+        BatchChanges.add_step(batch, %{"step_type_id" => ctx.grain.id, "due_on" => "2026-11-29"})
+
+      done_on_day!(ctx, Repo.get!(RockcutApi.Production.Step, extra))
+      done_on_day!(ctx, grain)
+      linked = linked_template()
+
+      {:ok, _} = BatchChanges.change_template(reload(batch), linked.id)
+
+      assert [first, second] =
+               Enum.filter(steps_of(batch), &(Steps.name(&1) == "Prepare grain"))
+
+      assert %{id: ^extra, due_on: ~D[2026-11-29], added: false} = first
+      assert first.template_step_id == entry(linked, "Prepare grain").id
+      assert %{due_on: ~D[2026-12-01], added: true, template_step_id: nil} = second
+      assert second.done_on == ~D[2026-12-01]
+
+      assert Enum.filter(links(batch), fn {from, _, _} -> from == "Prepare grain" end) == [
+               {"Prepare grain", "Brew day", "move_all"}
+             ]
+    end
+
+    test "Undo puts the whole change back", ctx do
+      batch = plan(ctx)
+      done_on_day!(ctx, named(batch, "Prepare grain"))
+      before = {layout(batch), links(batch), Enum.map(steps_of(batch), &{&1.done_on, &1.added})}
+
+      {:ok, {_, token}} =
+        Undo.track(ctx.brewer, %{batches: [batch.id]}, fn ->
+          BatchChanges.change_template(reload(batch), linked_template().id)
+        end)
+
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+
+      assert {layout(batch), links(batch), Enum.map(steps_of(batch), &{&1.done_on, &1.added})} ==
+               before
+    end
+  end
+
+  describe "only plain and custom steps before brew day, on batches too (decision 13)" do
+    test "a move of another type, alone or several, is refused; the preview too", ctx do
+      batch = plan(ctx)
+      set_temp = named(batch, "Set temp - 58°")
+
+      assert {:error, {:not_before_brew, "Set temp"}} =
+               Steps.move([set_temp.id], -11, preview: true)
+
+      assert {:error, {:not_before_brew, "Set temp"}} =
+               Steps.move([set_temp.id], -11, answer: "move_only")
+
+      fdh = named(batch, "FDH")
+
+      assert {:error, {:not_before_brew, "Set temp"}} =
+               Steps.move([fdh.id, set_temp.id], -11, answer: "move_only")
+
+      # A plain step may go there (it's now a pre-brew step); so may a custom one.
+      assert {:ok, _} = Steps.move([fdh.id], -9, answer: "move_only")
+
+      {:ok, %{step_ids: [custom]}} =
+        BatchChanges.add_step(batch, %{"name" => "Check the mill", "due_on" => "2026-12-05"})
+
+      assert {:ok, _} = Steps.move([custom], -4)
+    end
+
+    test "Move all carrying a follower before brew day: only Move only works", ctx do
+      batch = plan(ctx)
+      fdh = named(batch, "FDH")
+
+      assert {:ok, {:preview, pre}} = Steps.move([fdh.id], -12, preview: true)
+
+      assert pre.refused == %{
+               "move_all" => %{
+                 error: "not_before_brew",
+                 message: "A Set temp can't be before brew day."
+               },
+               "move_only" => nil
+             }
+
+      assert {:error, {:not_before_brew, "Set temp"}} =
+               Steps.move([fdh.id], -12, answer: "move_all")
+
+      assert {:ok, _} = Steps.move([fdh.id], -12, answer: "move_only")
+    end
+
+    test "brew day moved past one with Move only is refused; Move all works", ctx do
+      batch = plan(ctx)
+      brew = named(batch, "Brew day")
+
+      assert {:ok, {:preview, %{refused: refused}}} = Steps.move([brew.id], 11, preview: true)
+      assert refused["move_only"].error == "not_before_brew"
+      assert refused["move_all"] == nil
+
+      assert {:error, {:not_before_brew, "Set temp"}} =
+               Steps.move([brew.id], 11, answer: "move_only")
+
+      assert {:ok, _} = Steps.move([brew.id], 11, answer: "move_all")
+    end
+
+    test "a phase marker counts as not plain", ctx do
+      batch = plan(ctx)
+      lag = Repo.get_by!(Phase, name: "Lag")
+
+      marker =
+        Repo.insert!(%RockcutApi.Production.Step{
+          batch_id: batch.id,
+          phase_id: lag.id,
+          due_on: ~D[2026-12-05]
+        })
+
+      assert {:error, {:not_before_brew, "phase marker"}} = Steps.move([marker.id], -4)
+    end
+
+    test "an off-plan check-off before brew day; the preview too", ctx do
+      batch = plan(ctx)
+      set_temp = named(batch, "Set temp - 58°")
+
+      for preview <- [true, false] do
+        assert {:error, {:not_before_brew, "Set temp"}} =
+                 Steps.complete(
+                   set_temp.id,
+                   %{"done_on" => "2026-12-01", "answer" => "move_only"},
+                   ctx.brewer,
+                   preview: preview,
+                   today: ~D[2026-12-10]
+                 )
+      end
+    end
+
+    test "a split part's step counts against its parent's brew day", ctx do
+      batch = plan(ctx)
+
+      {:ok, %{part_ids: [_, p2]}} =
+        Splits.split(reload(batch), %{
+          "due_on" => "2026-12-13",
+          "parts" => [
+            %{"stays" => true, "volume_bbl" => "12"},
+            %{"tank_id" => tank!("FV6").id, "volume_bbl" => "8"}
+          ]
+        })
+
+      package = named(%{id: p2}, "Package")
+
+      assert {:error, {:not_before_brew, "Package"}} =
+               Steps.move([package.id], -25, answer: "move_only")
+    end
+
+    test "Add step: plain and custom before brew day (first tank, no phase); others refused",
+         ctx do
+      batch = plan(ctx)
+      lag = Repo.get_by!(Phase, name: "Lag")
+      {:ok, mill} = Production.create_step_type(%{"name" => "Mill", "starts_phase_id" => lag.id})
+
+      {:ok, %{step_ids: [id]}} =
+        BatchChanges.add_step(batch, %{"step_type_id" => mill.id, "due_on" => "2026-11-30"})
+
+      assert %{vessel_index: 0, phase_id: nil, added: true} =
+               Repo.get!(RockcutApi.Production.Step, id)
+
+      assert {:ok, _} =
+               BatchChanges.add_step(batch, %{
+                 "name" => "Clean the mill",
+                 "due_on" => "2026-11-30"
+               })
+
+      assert {:error, {:not_before_brew, "Package"}} =
+               BatchChanges.add_step(batch, %{
+                 "step_type_id" => type!("Package").id,
+                 "due_on" => "2026-11-30"
+               })
     end
   end
 end

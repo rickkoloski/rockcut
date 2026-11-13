@@ -300,32 +300,91 @@ defmodule RockcutApi.Production.Steps do
         do: {s.id, Date.add(s.due_on, days)}
   end
 
-  # D56 §3.1: after `changes`, an unfinished pre-brew step (`done`: checked
-  # off by the change) on its first Brew day or later.
-  defp pre_brew_late?(graph, changes, done) do
-    Enum.any?(by_batch(graph), fn {_batch, steps} ->
-      brew = Parts.first_brew(steps)
-      due = &Map.get(changes, &1.id, &1.due_on)
+  # D56 §3.1 and decision 13: what's wrong before a first Brew day after
+  # `changes` (`done`: checked off by the change), or nil. An unfinished
+  # pre-brew step on brew day or later (`{:before_brew_day, :pre_brew}`);
+  # a step that isn't plain or custom, changed by it or by its brew day's
+  # move, now before brew day (`{:not_before_brew, type name}`). A split
+  # part's steps count against its parent's brew day.
+  defp brew_refusal(graph, changes, done) do
+    due = &Map.get(changes, &1.id, &1.due_on)
 
-      brew != nil and
-        Enum.any?(
-          pre_brew(steps),
-          &(&1.id not in done and Date.compare(due.(&1), due.(brew)) != :lt)
-        )
+    graph
+    |> by_root()
+    |> Enum.find_value(fn {root, steps} ->
+      brew = steps |> Enum.filter(&(&1.batch_id == root)) |> Parts.first_brew()
+      moved_brew? = brew != nil and Map.has_key?(changes, brew.id)
+
+      before? = &(Date.compare(due.(&1), due.(brew)) == :lt)
+
+      cond do
+        brew == nil ->
+          nil
+
+        Enum.any?(pre_brew(steps), &(&1.id not in done and not before?.(&1))) ->
+          {:before_brew_day, :pre_brew}
+
+        late =
+            Enum.find(
+              steps,
+              &(is_nil(&1.done_on) and not pre_brew_kind?(&1) and behavior(&1) != "brew" and
+                  (moved_brew? or Map.has_key?(changes, &1.id)) and before?.(&1) and
+                    Date.compare(&1.due_on, brew.due_on) != :lt)
+            ) ->
+          {:not_before_brew, kind_name(late)}
+
+        true ->
+          nil
+      end
     end)
   end
 
-  # D56 §3.1: refused under every answer, so the preview says so too.
-  defp pre_brew_order!(graph, plan, done \\ []) do
-    if Enum.all?(@answers, &pre_brew_late?(graph, changes(graph, plan, &1), done)),
-      do: Repo.rollback({:before_brew_day, :pre_brew})
+  # Per answer, the refusal (nil when it works); refused under every answer,
+  # the preview is refused too (the default answer's reason).
+  defp refusals!(graph, plan, done \\ []) do
+    refused = Map.new(@answers, &{&1, brew_refusal(graph, changes(graph, plan, &1), done)})
+
+    if Enum.all?(Map.values(refused)),
+      do: Repo.rollback(refused[plan.default || "move_only"])
+
+    refused
   end
+
+  @doc """
+  D56 decision 13: whether a step may go before brew day: a plain step or a
+  custom one (phase markers may not).
+  """
+  def pre_brew_kind?(%Step{step_type_id: nil, name: name}), do: is_binary(name)
+  def pre_brew_kind?(%Step{} = s), do: behavior(s) == "plain"
+
+  # "Set temp", "Transfer", "phase marker": the template's wording (D56).
+  defp kind_name(%Step{step_type: %StepType{name: name}}), do: name
+  defp kind_name(_), do: "phase marker"
+
+  @doc "D56: a move refusal as the API words it (`ProductionErrors`, the preview's `refused`)."
+  def refusal({:before_brew_day, :pre_brew}),
+    do: %{error: "before_brew_day", message: "A pre-brew step stays before brew day."}
+
+  def refusal({:not_before_brew, name}),
+    do: %{error: "not_before_brew", message: "A #{name} can't be before brew day."}
+
+  def refusal(nil), do: nil
 
   defp by_batch(graph) do
     graph.steps
     |> Map.values()
     |> Enum.reject(&is_nil(&1.batch_id))
     |> Enum.group_by(& &1.batch_id)
+  end
+
+  # A split family's steps under its parent's id.
+  defp by_root(graph) do
+    root = for {parent, ids} <- graph.parts, id <- ids, into: %{}, do: {id, parent}
+
+    graph.steps
+    |> Map.values()
+    |> Enum.reject(&is_nil(&1.batch_id))
+    |> Enum.group_by(&Map.get(root, &1.batch_id, &1.batch_id))
   end
 
   @doc """
@@ -389,6 +448,8 @@ defmodule RockcutApi.Production.Steps do
            |> Enum.map(&brief(&1, plan.days))}
         end),
       default_answer: plan.default,
+      # D56: why an answer can't be used (nil when it can).
+      refused: per_answer.(&refusal(brew_refusal(graph, &1, done))),
       out_of_order: per_answer.(&out_of_order(graph, &1, done)),
       renumbered: per_answer.(&Batches.renumbered(pnums, Batches.p_numbers(&1, leaving)))
     }
@@ -431,7 +492,10 @@ defmodule RockcutApi.Production.Steps do
   (`{:answer_required, preview}`). A finished step can't move
   (`:step_done`). A moved first Brew day takes its pre-brew steps along,
   and a pre-brew step can't land on brew day or later
-  (`{:before_brew_day, :pre_brew}`, the preview too; D56 §3.1).
+  (`{:before_brew_day, :pre_brew}`); nor can a step that isn't plain or
+  custom land before it (`{:not_before_brew, name}`, decision 13). Refused
+  under every answer, the preview is too; else it says per answer
+  (`refused`).
 
   `preview: true` returns `{:ok, {:preview, preview}}` and writes nothing.
   Otherwise `{:ok, %{batch_ids, renumbered, out_of_order}}`.
@@ -445,7 +509,7 @@ defmodule RockcutApi.Production.Steps do
       moved = Enum.map(ids, &graph.steps[&1])
       if Enum.any?(moved, & &1.done_on), do: Repo.rollback(:step_done)
       plan = plan(graph, moved, days)
-      pre_brew_order!(graph, plan)
+      refusals!(graph, plan)
 
       cond do
         opts[:preview] ->
@@ -458,8 +522,7 @@ defmodule RockcutApi.Production.Steps do
           parts_follow!(graph, plan, answer)
           changes = changes(graph, plan, answer || "move_only")
 
-          if pre_brew_late?(graph, changes, []),
-            do: Repo.rollback({:before_brew_day, :pre_brew})
+          if reason = brew_refusal(graph, changes, []), do: Repo.rollback(reason)
 
           {_, renumbered} = Batches.with_renumbering(fn -> write_dates!(graph, changes) end)
 
@@ -517,7 +580,7 @@ defmodule RockcutApi.Production.Steps do
       due_on = if late_pre_brew?(graph, step, done_on), do: step.due_on, else: done_on
       days = Date.diff(due_on, step.due_on)
       plan = if days != 0, do: plan(graph, [step], days)
-      if plan, do: pre_brew_order!(graph, plan, [step.id])
+      if plan, do: refusals!(graph, plan, [step.id])
       leaving = if numbering?, do: [batch.id], else: []
 
       if opts[:preview] do
@@ -543,8 +606,7 @@ defmodule RockcutApi.Production.Steps do
         if plan, do: parts_follow!(graph, plan, answer)
         changes = if plan, do: changes(graph, plan, answer || "move_only"), else: %{}
 
-        if pre_brew_late?(graph, changes, [step.id]),
-          do: Repo.rollback({:before_brew_day, :pre_brew})
+        if reason = plan && brew_refusal(graph, changes, [step.id]), do: Repo.rollback(reason)
 
         {_, renumbered} =
           Batches.with_renumbering(fn ->

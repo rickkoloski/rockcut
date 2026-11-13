@@ -11,6 +11,7 @@ defmodule RockcutApiWeb.ProductionErrors do
   import Phoenix.Controller, only: [json: 2]
 
   alias RockcutApi.Production
+  alias RockcutApi.Production.Steps
   alias RockcutApiWeb.StaffCodeActing
 
   @messages %{
@@ -73,7 +74,6 @@ defmodule RockcutApiWeb.ProductionErrors do
     # D48 DEV QA fix cycle 1.
     before_fill: "The beer isn't in that tank on that day.",
     after_exit: "The beer isn't in that tank on that day.",
-    before_brew_day: "A step can't come before brew day.",
     split_before_brew: "The split has to be after brew day.",
     # D48 DEV QA fix cycle 2.
     before_split: "A step can't come before the split.",
@@ -203,12 +203,12 @@ defmodule RockcutApiWeb.ProductionErrors do
     do: refused(conn, "before_brew_day", "Check off brew day first.")
 
   # D56 §3.1: a pre-brew step stays before its batch's first Brew day.
-  def handle({:error, {:before_brew_day, :pre_brew}}, conn),
-    do: refused(conn, "before_brew_day", "A pre-brew step stays before brew day.")
+  def handle({:error, {:before_brew_day, :pre_brew} = reason}, conn),
+    do: refused(conn, Steps.refusal(reason))
 
   # D56 §3.1 (decision 7): only a plain step goes before brew day.
-  def handle({:error, {:not_before_brew, type_name}}, conn),
-    do: refused(conn, "not_before_brew", "A #{type_name} can't be before brew day.")
+  def handle({:error, {:not_before_brew, _} = reason}, conn),
+    do: refused(conn, Steps.refusal(reason))
 
   def handle({:error, {:exit_done, name}}, conn),
     do: refused(conn, "exit_done", "Mark #{name} not done first.")
@@ -252,6 +252,8 @@ defmodule RockcutApiWeb.ProductionErrors do
     |> put_status(:unprocessable_entity)
     |> json(%{error: Atom.to_string(code), message: Map.fetch!(@messages, code)})
   end
+
+  defp refused(conn, %{error: code, message: message}), do: refused(conn, code, message)
 
   defp refused(conn, code, message) do
     conn
