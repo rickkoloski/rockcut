@@ -51,6 +51,8 @@ with the question of part-day work), so "Brew over two days" stays as it is.
    puts the following steps back, as §3.2 "Undo" says (Q2).
 9. **4950: all three of A, B and C** (Q3).
 10. **Limits:** pre-brew up to 30 days before brew day; a retest up to 30 days out (Q4).
+11. **A pre-brew step checked off on or after brew day is allowed** (Matt, 2026-11-12, from Stage
+    1). It stays on its planned day, records the real done day, and asks no move question.
 
 ## 3. Requirements
 
@@ -77,6 +79,8 @@ with the question of part-day work), so "Brew over two days" stays as it is.
   off until it's scheduled, as D49 §3.12b says for every step (`schedule_first`). It doesn't ask for the batch
   number, and checking it off doesn't fill the tank. The "nothing empties a tank before brew day"
   rule is unaffected (pre-brew steps never empty anything).
+  Checked off on or after brew day, it's allowed (decision 11): it stays on its planned day,
+  `done_on` is the real day, and there's no move prompt.
 - **Shown as:**
   - The batch and step dialogs: "day −1".
   - The Brewery board task: worded like other steps ("FV3 · Galactic P2 · Prepare grain"; the
