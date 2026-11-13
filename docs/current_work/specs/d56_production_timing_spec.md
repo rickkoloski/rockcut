@@ -74,6 +74,8 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 18. **The Gantt's expanded tanks and "Label by" are saved on the account** (Matt, 2026-11-13, from
     Stage 4), in D58's board settings, so they follow the person to every device. Until now the
     expanded tanks were kept only in the browser.
+19. **The Tanks screen's "Your selection" is saved on the account too** (Matt, 2026-11-13), the
+    same way as decision 18, with the same one-time carry-over from the browser.
 
 ## 3. Requirements
 

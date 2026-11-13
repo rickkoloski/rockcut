@@ -346,3 +346,21 @@ The local gate is green. Reply with: commits, files, every count (ExUnit, Vitest
 Playwright pass/skip/fail), the revert-and-rerun results, the existing specs you changed, and
 `LEAD:` notes. Also draft the PR's handoff notes and LIMITATIONS (plan's list plus anything you
 found) in `docs/current_work/prompts/d56_pr_notes.md`.
+
+---
+
+# Stage 5 follow-up: "Your selection" on the account (decision 19)
+
+2026-11-13 · lead → builder. Local gate accepted (`d51b86c`). Matt: the Tanks screen's "Your
+selection" goes on the account too.
+
+1. Store it beside `expanded` / `label_by` in `board_settings.production` (or the key the Tanks
+   pick already uses, whichever fits D58's per-board shape), through the same `useAuth` save path,
+   refresh skip and one-time carry-over (fill only what the server lacks). Range, zoom and
+   names-only stay per browser.
+2. ExUnit if the API's accepted keys change; Vitest for the carry-over and read path; extend S16
+   or S17 (Playwright) so a second browser context sees the selection.
+3. Update `d56_pr_notes.md` (the "Gantt view on the account" row, and decision 19).
+4. Gate: `mix test` twice if the API changed, tsc, Vitest, lint, build, and Playwright for the
+   `production` project plus any spec that uses `pickSetting` (not the full run; DEV runs it).
+   Report counts and commits, then stop.
