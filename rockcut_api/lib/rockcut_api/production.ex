@@ -862,6 +862,12 @@ defmodule RockcutApi.Production do
           "cip_method" => if(behavior_of(type) == "cip", do: "sanitize_full")
         }
 
+    # D56 §3.1: a pre-brew step has no phase; the type's default doesn't apply.
+    defaults =
+      if negative_day?(attrs["day_offset"]) and not Map.has_key?(attrs, "phase_id"),
+        do: Map.put(defaults, "phase_id", nil),
+        else: defaults
+
     changeset =
       base
       |> TemplateStep.changeset(Map.merge(defaults, attrs))
@@ -908,7 +914,10 @@ defmodule RockcutApi.Production do
 
     case changeset do
       %{valid?: true} ->
-        Map.take(Ecto.Changeset.apply_changes(changeset), [
+        changeset
+        |> Ecto.Changeset.apply_changes()
+        |> pre_brew!(type)
+        |> Map.take([
           :phase_id,
           :day_offset,
           :vessel_index,
@@ -923,6 +932,25 @@ defmodule RockcutApi.Production do
 
       invalid ->
         Repo.rollback(invalid)
+    end
+  end
+
+  # D56 §3.1 (decision 7): only a plain step, with no phase, in the first
+  # tank, goes before brew day.
+  defp pre_brew!(%TemplateStep{day_offset: day} = entry, type) when day < 0 do
+    if behavior_of(type) != "plain" or entry.phase_id != nil or entry.vessel_index != 0,
+      do: Repo.rollback({:not_before_brew, (type && type.name) || "phase marker"})
+
+    entry
+  end
+
+  defp pre_brew!(entry, _type), do: entry
+
+  defp negative_day?(day) do
+    case day do
+      d when is_integer(d) -> d < 0
+      d when is_binary(d) -> match?({n, ""} when n < 0, Integer.parse(d))
+      _ -> false
     end
   end
 
