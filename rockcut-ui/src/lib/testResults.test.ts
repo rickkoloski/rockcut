@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { SchedStep } from './production'
 import {
   failQuestion,
+  moveWords,
   needsMovePrompt,
   needsRepreview,
   outcomeBody,
@@ -102,5 +103,43 @@ describe('result words', () => {
     expect(outcomeWords({ result: 'pass' }, null)).toBe('Pass')
     expect(outcomeWords({ result: 'fail', action: 'continue' }, null)).toBe('Fail · continued as planned')
     expect(outcomeWords({ result: 'fail', action: 'retest', days: 2 }, '2026-12-16')).toBe('Fail · retest Wed Dec 16')
+  })
+})
+
+describe('the move prompt’s words', () => {
+  const preview = (days: number, following: number, moved = [{ name: 'Dry hop', new_due_on: '2026-12-16' }]) => ({
+    days,
+    moved,
+    following: Array.from({ length: following }, (_, i) => ({ id: i })),
+  })
+
+  it('keeps today’s wording for an ordinary move', () => {
+    expect(moveWords(preview(2, 3))).toEqual({
+      now: 'now Wed Dec 16',
+      all: 'Move all following steps 2 days later',
+      only: 'Move only Dry hop',
+      onlyNote: 'The 3 following steps keep their dates.',
+    })
+    const two = [
+      { name: 'Dry hop', new_due_on: '2026-12-13' },
+      { name: 'Crash', new_due_on: '2026-12-14' },
+    ]
+    expect(moveWords(preview(-1, 1, two))).toMatchObject({
+      now: 'now Sun Dec 13',
+      all: 'Move all following steps 1 day earlier',
+      only: 'Move only 2 steps',
+      onlyNote: 'The 1 following step keeps its date.',
+    })
+  })
+
+  it('after a retest, says what happens to the following steps and names the retest’s day', () => {
+    const w = moveWords(preview(2, 3, [{ name: 'Diacetyl test', new_due_on: '2026-12-14' }]), '2026-12-16')
+    expect(w).toEqual({
+      now: 'retest Wed Dec 16',
+      all: 'Move them with the retest, 2 days later',
+      only: 'Keep the following steps’ dates',
+      onlyNote: null,
+    })
+    expect(Object.values(w).join(' ')).not.toContain('Diacetyl test')
   })
 })

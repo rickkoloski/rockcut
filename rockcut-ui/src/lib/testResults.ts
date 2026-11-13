@@ -98,3 +98,38 @@ export function outcomeWords(o: Outcome, retestOn: string | null | undefined): s
   if (o.result === 'pass') return 'Pass'
   return resultWords('fail', o.action === 'retest' ? retestOn : null)!
 }
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
+const daysWord = (days: number) => `${plural(Math.abs(days), 'day')} ${days > 0 ? 'later' : 'earlier'}`
+
+/** The parts of a move preview the prompt's words read. */
+export interface MoveWordsPreview {
+  days: number
+  moved: { name: string; new_due_on: string }[]
+  following: unknown[]
+}
+
+/**
+ * The move prompt's words. An ordinary move: "now <day>", "Move all
+ * following steps 2 days later", "Move only Dry hop" and what the following
+ * steps do. After a Fail with a retest (`retestOn`) the test itself doesn't
+ * move, so the line names the retest's day and the answers say what happens
+ * to the following steps.
+ */
+export function moveWords(preview: MoveWordsPreview, retestOn: string | null = null) {
+  const n = preview.following.length
+  if (retestOn)
+    return {
+      now: `retest ${dayLabel(retestOn)}`,
+      all: `Move them with the retest, ${daysWord(preview.days)}`,
+      only: 'Keep the following steps’ dates',
+      onlyNote: null,
+    }
+  const first = preview.moved[0]
+  return {
+    now: `now ${dayLabel(first.new_due_on)}`,
+    all: `Move all following steps ${daysWord(preview.days)}`,
+    only: `Move only ${preview.moved.length === 1 ? first.name : plural(preview.moved.length, 'step')}`,
+    onlyNote: `The ${plural(n, 'following step')} keep${n === 1 ? 's' : ''} ${n === 1 ? 'its date' : 'their dates'}.`,
+  }
+}

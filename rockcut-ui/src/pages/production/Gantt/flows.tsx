@@ -28,6 +28,7 @@ import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { renumberText, type Renumber } from './scheduleText'
 import {
   failQuestion,
+  moveWords,
   needsMovePrompt,
   needsRepreview,
   outcomeBody,
@@ -126,7 +127,7 @@ const HINT = undoHint(
 )
 
 type Prompt =
-  | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
+  | { kind: 'move'; preview: MovePreview; title: string; retestOn: string | null; resolve: (a: Answer | null) => void }
   | { kind: 'schedule'; label: string; resolve: (ok: boolean) => void }
   | { kind: 'number'; label: string; value: string; error: string | null; suggestion: string; resolve: (n: string | null) => void }
   | { kind: 'result'; name: string; question: ResultQuestion; failOnly: boolean; resolve: (o: Outcome | null) => void }
@@ -195,8 +196,8 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     [notify, refresh],
   )
 
-  const askMove = (preview: MovePreview, title: string) =>
-    new Promise<Answer | null>((resolve) => setPrompt({ kind: 'move', preview, title, resolve }))
+  const askMove = (preview: MovePreview, title: string, retestOn: string | null = null) =>
+    new Promise<Answer | null>((resolve) => setPrompt({ kind: 'move', preview, title, retestOn, resolve }))
 
   const askSchedule = (label: string) => new Promise<boolean>((resolve) => setPrompt({ kind: 'schedule', label, resolve }))
 
@@ -303,7 +304,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       if (needsMovePrompt(pre.move)) {
         const off = pre.move!.days
         const title = retestOn ? `${step.name} failed · retest ${dayLabel(retestOn)}` : `${step.name} done ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}`
-        const a = await askMove(pre.move!, title)
+        const a = await askMove(pre.move!, title, retestOn)
         if (!a) return null
         answer = a
       }
@@ -386,7 +387,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       let move = pre.move
       for (;;) {
         if (!answer && needsMovePrompt(move)) {
-          const a = await askMove(move!, `${step.name} failed${retestOn ? ` · retest ${dayLabel(retestOn)}` : ''}`)
+          const a = await askMove(move!, `${step.name} failed${retestOn ? ` · retest ${dayLabel(retestOn)}` : ''}`, retestOn)
           if (!a) return null
           answer = a
         }
@@ -467,6 +468,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         <MovePrompt
           preview={prompt.preview}
           title={prompt.title}
+          retestOn={prompt.retestOn}
           onCancel={() => close(null)}
           onApply={(a) => {
             prompt.resolve(a)
@@ -572,7 +574,20 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
  * §3.7 the move prompt: one question. Move all following steps (listed with
  * their new dates) or only the moved ones; the default carries a pill.
  */
-function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePreview; title: string; onCancel: () => void; onApply: (a: Answer) => void }) {
+function MovePrompt({
+  preview,
+  title,
+  retestOn,
+  onCancel,
+  onApply,
+}: {
+  preview: MovePreview
+  title: string
+  /** D56: after a Fail with a retest, the words say what happens to the following steps. */
+  retestOn: string | null
+  onCancel: () => void
+  onApply: (a: Answer) => void
+}) {
   // D56: an answer the API would refuse can't be picked; the prompt says why.
   const refused = (a: Answer) => preview.refused?.[a] ?? null
   const preferred = preview.default_answer ?? 'move_all'
@@ -585,9 +600,7 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
       </Typography>
     )
   usePhoneBackCloses(true, onCancel)
-  const days = preview.days
-  const first = preview.moved[0]
-  const onlyName = preview.moved.length === 1 ? first.name : plural(preview.moved.length, 'step')
+  const words = moveWords(preview, retestOn)
   const pill = (a: Answer) =>
     preview.default_answer === a ? <Chip label="Default" size="small" color="primary" variant="outlined" sx={{ ml: 1, height: 20 }} data-testid={`move-default-${a}`} /> : null
   const renum = renumberText(preview.renumbered[answer] ?? [])
@@ -615,7 +628,7 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
         ) : (
           preview.batch_label && (
             <Typography variant="body2" color="text.secondary" data-testid="move-prompt-sub">
-              {preview.batch_label} · now {dayLabel(first.new_due_on)}
+              {preview.batch_label} · {words.now}
             </Typography>
           )
         )}
@@ -638,7 +651,7 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
             control={<Radio slotProps={{ input: { 'data-testid': 'move-all' } as object }} />}
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                Move all following steps {daysWord(days)}
+                {words.all}
                 {pill('move_all')}
               </Box>
             }
@@ -666,14 +679,16 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
             control={<Radio slotProps={{ input: { 'data-testid': 'move-only' } as object }} />}
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                Move only {onlyName}
+                {words.only}
                 {pill('move_only')}
               </Box>
             }
           />
-          <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
-            The {plural(preview.following.length, 'following step')} keep{preview.following.length === 1 ? 's' : ''} {preview.following.length === 1 ? 'its date' : 'their dates'}.
-          </Typography>
+          {words.onlyNote && (
+            <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
+              {words.onlyNote}
+            </Typography>
+          )}
           {why('move_only')}
           {preview.out_of_order.move_only.length > 0 && (
             <Typography variant="body2" color="warning.main" sx={{ pl: 4, mt: 0.5 }} data-testid="move-only-warning">
