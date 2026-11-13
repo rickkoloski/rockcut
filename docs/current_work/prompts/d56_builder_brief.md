@@ -176,10 +176,10 @@ and migrations on the dev DB). **API only. Stop after this stage and report** (p
      plan/changes and Stage 1–2's refusals (`refusal/1`). Don't build a second move engine.
    - The retest is inserted inside the same `Undo.track`, so Undo removes it. Confirm the scope
      includes inserted steps and the repointed links, with a test.
-   - A has-result step on a pencilled batch still gets `schedule_first`; a pre-brew step can't
-     have a result-type (it's plain, but a plain type can now have `has_result`). If a pre-brew
-     step's type has a result, it works the same way, but its retest and followers obey the
-     pre-brew rules. Test one case; if the rules collide, stop and `LEAD:`.
+   - A has-result step on a pencilled batch still gets `schedule_first`.
+   - A pre-brew step can be a has-result type (plain types can have `has_result`). It works the
+     same way, but its retest and followers obey the pre-brew rules. Test one case; if the rules
+     collide, stop and `LEAD:`.
 4. **Mark not done / change result** (decision 8) per spec §3.2 "Undo" and "Changing a recorded
    result": `retest_done` 422 with "Mark the retest not done first.". Through `Undo.track`.
 5. **`failed_tests` flag** in `Flags.compute` per the plan. Flag text: "3 failed Diacetyl tests"
