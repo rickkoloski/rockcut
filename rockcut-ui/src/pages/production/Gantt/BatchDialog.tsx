@@ -91,7 +91,27 @@ function StepLine({
         {dayN(step, batch)}
       </Typography>
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', minWidth: 0, gridColumn: { xs: '1 / -1', sm: 'auto' }, flexWrap: 'wrap' }}>
-        <Typography variant="body2" sx={{ fontWeight: step.marker ? 400 : 600, fontStyle: step.marker ? 'italic' : 'normal' }} data-testid={`batch-step-name-${step.id}`}>
+        {/* D56 §3.6 (5211): the name opens the step dialog, so a step off the task list stays reachable. */}
+        <Typography
+          variant="body2"
+          component="button"
+          type="button"
+          onClick={() => onOpenStep(step)}
+          sx={{
+            font: 'inherit',
+            fontSize: 14,
+            fontWeight: step.marker ? 400 : 600,
+            fontStyle: step.marker ? 'italic' : 'normal',
+            border: 0,
+            p: 0,
+            bgcolor: 'transparent',
+            color: 'text.primary',
+            textAlign: 'left',
+            cursor: 'pointer',
+            '&:hover': { textDecoration: 'underline' },
+          }}
+          data-testid={`batch-step-name-${step.id}`}
+        >
           {fixedName(step)}
         </Typography>
         {!step.marker && (
