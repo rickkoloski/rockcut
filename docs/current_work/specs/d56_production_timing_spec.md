@@ -232,3 +232,5 @@ Included in the DEV runs and QA.
   `retest_of_id`. The day-offset range change is validation only. Rollback is image only.
 - **No new secrets.**
 - **Existing done tests** on prod have no result (null): shown as done with no ✓/✗.
+- **The `has_result` migration finds the two types by their seeded names.** If either was renamed
+  on prod, it stays off, and Matt switches it on in Phases & steps.
