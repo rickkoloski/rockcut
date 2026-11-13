@@ -1,21 +1,22 @@
 // D47: words the Gantt's dialogs share (plain functions, no components).
 
 import { dayLabel, daysBetween, firstBrew } from '../../../lib/gantt'
-import type { SchedBatch, SchedStep, Tank } from '../../../lib/production'
+import { dayWord, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
 
 export function stepStatus(step: SchedStep, today: string): string {
   // D50: "Done Tue Nov 10 by Jake Brewer · on Brewhouse".
+  // D56 decision 11: a pre-brew step done late stays on its planned day.
   if (step.done_on)
-    return `Done ${dayLabel(step.done_on)}${step.done_by ? ` by ${step.done_by.name}` : ''}${step.done_on_device ? ` · on ${step.done_on_device.name}` : ''}`
+    return `Done ${dayLabel(step.done_on)}${step.due_on !== step.done_on ? ` (planned ${dayLabel(step.due_on)})` : ''}${step.done_by ? ` by ${step.done_by.name}` : ''}${step.done_on_device ? ` · on ${step.done_on_device.name}` : ''}`
   if (step.due_on === today) return 'Due today'
   if (step.due_on < today) return `Late (planned ${dayLabel(step.due_on)})`
   return 'Planned'
 }
 
-/** "day 12": days after the end of the first brew day. */
+/** "day 12": days after the end of the first brew day; "day −1" before it (D56). */
 export function dayN(step: SchedStep, batch: SchedBatch | null): string | null {
   const brew = batch && firstBrew(batch.steps)
-  return brew ? `day ${daysBetween(brew.done_on ?? brew.due_on, step.due_on)}` : null
+  return brew ? dayWord(daysBetween(brew.done_on ?? brew.due_on, step.due_on)) : null
 }
 
 /** The out-of-service periods of `tank` that touch `from`…`to` (or are going on, without dates). */

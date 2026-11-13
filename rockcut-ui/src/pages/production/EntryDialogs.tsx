@@ -37,6 +37,8 @@ import {
   SPLIT_METHODS,
   CIP_METHODS,
   cipLabel,
+  dayWord,
+  templateDayLabel,
   type Answer,
   type CipMethod,
   type Phase,
@@ -54,7 +56,7 @@ const ANSWERS: { key: Answer; label: string }[] = [
   { key: 'move_only', label: 'Stays by default' },
 ]
 
-const stepLabel = (s: TemplateStep) => `${s.name} · day ${s.day_offset}${s.vessel_index ? ` · ${vesselLabel(s.vessel_index)}` : ''}`
+const stepLabel = (s: TemplateStep) => `${s.name} · ${dayWord(s.day_offset)}${s.vessel_index ? ` · ${vesselLabel(s.vessel_index)}` : ''}`
 
 const selectTestId = (id: string) => ({ select: { SelectDisplayProps: { 'data-testid': id } as object } })
 
@@ -199,6 +201,10 @@ export function DialogShell({
   )
 }
 
+/** D56 decision 7: the API's refusal of an entry before brew day (null when it may go there). */
+const notBeforeBrew = (behavior: string | null, name: string) =>
+  behavior === 'plain' ? null : `A ${behavior == null ? 'phase marker' : name} can't be before brew day.`
+
 const grid2 = { display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 } as const
 
 interface EntryProps {
@@ -258,6 +264,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   // before an existing transfer offers no tank and says why.
   const transfer = behavior === 'transfer'
   const dayNum = day === '' ? null : Number(day)
+  // D56 §3.1: a pre-brew step is in the first tank with no phase.
+  const preBrew = dayNum != null && dayNum < 0
   const intoTank = entry && transfer ? entry.vessel_index : newTankFor(template, dayNum ?? 0, entry?.id)
   const orderError = transfer ? transferOrderError(template, dayNum, entry) : null
   // D47: "Split - Filter", "Package - Partial": the fixed part of the name;
@@ -294,7 +302,12 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     const local: Record<string, string> = {}
     if (!marker && !entry && typeId === '') local.step_type_id = 'Pick a step type.'
     if (marker && phaseId === '') local.phase_id = 'Pick a phase.'
-    if (day === '' || Number(day) < 0) local.day_offset = 'Pick a day (0 or later).'
+    if (day === '' || !Number.isInteger(Number(day)) || Number(day) < -30 || Number(day) > 365)
+      local.day_offset = 'Pick a day from −30 to 365.'
+    else if (preBrew) {
+      const refused = notBeforeBrew(marker ? null : behavior, typeName)
+      if (refused) local.day_offset = refused
+    }
     if (behavior === 'set_temp' && temperature === '') local.temperature = 'Enter the temperature.'
     if (orderError) local.vessel_index = orderError
     setErrors(local)
@@ -303,8 +316,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     setError(null)
     const body: Record<string, unknown> = {
       day_offset: Number(day),
-      vessel_index: tankValue,
-      phase_id: phaseId === '' ? null : phaseId,
+      vessel_index: preBrew ? 0 : tankValue,
+      phase_id: phaseId === '' || preBrew ? null : phaseId,
       // D49 decision 6.1: a marker is never on the task list (the API refuses true).
       on_task_list: marker ? false : onTaskList,
       notes: notes.trim() || null,
@@ -369,12 +382,23 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
             helperText={errors.step_type_id ?? type?.full_name}
             slotProps={selectTestId('entry-type')}
           >
-            {typeChoices.map((t) => (
-              <MenuItem key={t.id} value={t.id} data-testid={`entry-type-${t.id}`}>
-                {t.name}
-                {t.full_name ? ` (${t.full_name})` : ''}
-              </MenuItem>
-            ))}
+            {typeChoices.map((t) => {
+              // D56: before brew day only plain steps; the others say why.
+              const refused = preBrew ? notBeforeBrew(t.behavior, t.name) : null
+              return (
+                <MenuItem key={t.id} value={t.id} disabled={!!refused} data-testid={`entry-type-${t.id}`} sx={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <span>
+                    {t.name}
+                    {t.full_name ? ` (${t.full_name})` : ''}
+                  </span>
+                  {refused && (
+                    <Typography variant="caption" color="text.secondary" data-testid={`entry-type-refused-${t.id}`}>
+                      {refused}
+                    </Typography>
+                  )}
+                </MenuItem>
+              )
+            })}
           </TextField>
         ))}
       {behavior === 'split' && (
@@ -450,16 +474,23 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       )}
       <Box sx={grid2}>
         <TextField
-          label="Day (after brew day)"
+          label="Day (0 = brew day)"
           type="number"
           value={day}
           disabled={isBrew}
           onChange={(e) => setDay(e.target.value)}
           error={!!errors.day_offset}
-          helperText={errors.day_offset ?? (isBrew ? 'Brew day stays on day 0 in the first tank.' : undefined)}
-          slotProps={{ htmlInput: { min: 0, max: 365, 'data-testid': 'entry-day' } }}
+          helperText={
+            errors.day_offset ??
+            (isBrew ? 'Brew day stays on day 0 in the first tank.' : dayNum != null && Number.isInteger(dayNum) ? templateDayLabel(dayNum) : 'Before brew day: −1 to −30.')
+          }
+          slotProps={{ htmlInput: { min: -30, max: 365, 'data-testid': 'entry-day' }, formHelperText: { 'data-testid': 'entry-day-label' } as object }}
         />
-        {transfer && orderError ? (
+        {preBrew && !marker ? (
+          <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }} data-testid="entry-pre-brew-note">
+            Before brew day: in the first tank, with no phase.
+          </Typography>
+        ) : transfer && orderError ? (
           <TextField
             label="Into tank"
             value=""
@@ -481,6 +512,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           <TankPicker choices={tankChoices(template, vessel)} value={vessel} onChange={setVessel} disabled={isBrew} testId="entry-tank" />
         )}
       </Box>
+      {!(preBrew && !marker) && (
       <TextField
         select
         label={marker ? 'Phase' : 'Starts a phase'}
@@ -497,6 +529,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           </MenuItem>
         ))}
       </TextField>
+      )}
       {!entry && (
         <>
           <Box sx={grid2}>

@@ -25,6 +25,7 @@ import {
   STEP_TYPES_KEY,
   TEMPLATES_KEY,
   linkSummary,
+  dayWord,
   prodError,
   prodPath,
   templateKey,
@@ -163,7 +164,7 @@ export default function TemplateEditor() {
         }}
       >
         <Typography variant="body2" color="text.secondary" data-testid={`entry-day-${s.id}`}>
-          Day {s.day_offset}
+          {dayWord(s.day_offset, true)}
         </Typography>
         <Box sx={{ minWidth: 0 }}>
           <Typography sx={{ fontWeight: s.marker ? 400 : 600, fontStyle: s.marker ? 'italic' : 'normal' }} data-testid={`entry-name-${s.id}`}>

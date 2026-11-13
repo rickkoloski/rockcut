@@ -360,6 +360,16 @@ const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const parts = (key: string) => key.split('-').map(Number) as [number, number, number]
 
+/** "day 12", "day −1" (D56: a pre-brew step); "Day …" with `cap`. */
+export function dayWord(n: number, cap = false): string {
+  return `${cap ? 'Day' : 'day'} ${n < 0 ? `−${-n}` : n}`
+}
+
+/** D56 §3.1: "Day −1 (before brew day)", "Day 0 (brew day)", "Day 7". */
+export function templateDayLabel(n: number): string {
+  return n < 0 ? `${dayWord(n, true)} (before brew day)` : n === 0 ? 'Day 0 (brew day)' : dayWord(n, true)
+}
+
 /** "Oct 27" */
 export function monthDay(key: string): string {
   const [, m, d] = parts(key)

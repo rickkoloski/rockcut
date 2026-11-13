@@ -607,7 +607,8 @@ export default function GanttGrid(props: Props) {
   }, [rows])
 
   const bar = (row: Row, part: Part) => {
-    if (part.reach < from || part.start > to) return null
+    // D56: a part whose pre-brew dots are in view, its bar not yet.
+    if (part.reach < from || part.first > to) return null
     const segs = segments(part, from, days, phaseFns.get(part.batch.id)!)
     // Only stranded dots in view (the bar ended before it): just the dots.
     const left = segs.length ? segs[0].from * dayPx : 0

@@ -3,7 +3,7 @@
 // is its index from the view's first day.
 
 import { addDaysKey } from './datetime'
-import { shortPeriod, type Flag, type SchedBatch, type SchedStep, type Tank } from './production'
+import { shortPeriod, type Answer, type Flag, type SchedBatch, type SchedLink, type SchedStep, type Tank } from './production'
 
 // ── Days ──
 
@@ -99,6 +99,8 @@ export interface Part {
   end: string
   /** The last day anything of it is drawn (its stranded steps past `end`). */
   reach: string
+  /** D56 §3.1: the first day anything of it is drawn (its pre-brew steps before `start`). */
+  first: string
   /** Its vessel's steps, plus the step that empties it. */
   steps: SchedStep[]
   /** Unfinished steps dated after its done exit: still dots, drawn red, flagged out of order. */
@@ -158,6 +160,7 @@ export function buildParts(batch: SchedBatch, origin: SchedStep | null = null): 
       start: fill?.due_on ?? days[0],
       end,
       reach: [end, ...stranded.map((s) => s.due_on)].sort().at(-1)!,
+      first: [fill?.due_on ?? days[0], ...days].sort()[0],
       steps,
       stranded: new Set(stranded.map((s) => s.id)),
       planned: batch.status === 'planned',
@@ -469,6 +472,60 @@ export function treeRefusal(batches: SchedBatch[], batch: SchedBatch, k: number,
   return null
 }
 
+// ── D56: before brew day ──
+
+/** D56 decision 13: a step that may go before brew day: a plain step or a custom one (not a phase marker). */
+export const preBrewKind = (s: SchedStep) => s.behavior === 'plain' || (s.step_type_id == null && !s.marker)
+
+/** The unfinished steps reachable from `ids` along `links`, not through a finished step (the API's following steps). */
+export function followingIds(steps: SchedStep[], links: SchedLink[], ids: number[]): Set<number> {
+  const byId = new Map(steps.map((s) => [s.id, s]))
+  const seen = new Set<number>()
+  const todo = [...ids]
+  while (todo.length) {
+    const id = todo.pop()!
+    for (const l of links)
+      if (l.from_step_id === id && !seen.has(l.to_step_id) && byId.get(l.to_step_id) && !byId.get(l.to_step_id)!.done_on) {
+        seen.add(l.to_step_id)
+        todo.push(l.to_step_id)
+      }
+  }
+  for (const id of ids) seen.delete(id)
+  return seen
+}
+
+/**
+ * D56 §3.1 and decision 13, as the API decides them: moving the steps `ids`
+ * of a split tree (or one batch) by `days` under `answer`. A pre-brew step
+ * can't land on brew day or later; a step that isn't plain or custom can't
+ * land before it. The first Brew day takes its pre-brew steps along. The
+ * API's message, or null.
+ */
+export function moveRefusal(tree: SchedBatch[], ids: number[], days: number, answer: Answer): string | null {
+  const root = tree.find((b) => b.split_parent_id == null) ?? tree[0]
+  const brew = root && firstBrew(root.steps)
+  if (!brew || !days) return null
+  const steps = tree.flatMap((b) => b.steps)
+  const links = tree.flatMap((b) => b.links)
+  const moving = new Set(ids)
+  if (answer === 'move_all') for (const id of followingIds(steps, links, ids)) moving.add(id)
+  const preBrew = root.steps.filter((s) => !s.done_on && s.due_on < brew.due_on)
+  if (moving.has(brew.id)) for (const s of preBrew) moving.add(s.id)
+  const due = (s: SchedStep) => (moving.has(s.id) ? addDaysKey(s.due_on, days) : s.due_on)
+  const brewOn = due(brew)
+  if (preBrew.some((s) => due(s) >= brewOn)) return 'A pre-brew step stays before brew day.'
+  const wrong = steps.find(
+    (s) =>
+      !s.done_on &&
+      s.behavior !== 'brew' &&
+      !preBrewKind(s) &&
+      (moving.has(s.id) || moving.has(brew.id)) &&
+      s.due_on >= brew.due_on &&
+      due(s) < brewOn,
+  )
+  return wrong ? `A ${wrong.marker ? 'phase marker' : (wrong.type_name ?? wrong.name)} can't be before brew day.` : null
+}
+
 const signedDays = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'}`
 
 /**
@@ -547,7 +604,20 @@ export function dragHint(a: DragHintInput): DragHint | null {
       // Past a step that follows it: a problem only if that step stays put.
       if (after && !after.done_on && day > after.due_on) (moveAll ? onlyIf : reasons).push(`after ${after.name}, which follows it`)
     }
-    const note = onlyIf.length ? `If you move only this step: ${onlyIf.join(' · ')}` : undefined
+    // D56: before brew day, as the API refuses it under each answer.
+    let alsoNote: string | undefined
+    if (a.kind === 'dot' && batch) {
+      const tree = splitTree([...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()], batch.id)
+      const refusal = (answer: Answer) => moveRefusal(tree.length ? tree : [batch], [step.id], a.days, answer)
+      const byDefault = refusal(moveAll ? 'move_all' : 'move_only')
+      const other = following ? refusal(moveAll ? 'move_only' : 'move_all') : byDefault
+      const plain = (m: string) => m.replace(/\.$/, '')
+      if (byDefault && other) reasons.push(plain(byDefault))
+      else if (byDefault) reasons.push(`${plain(byDefault)} (${moveAll ? 'Move only' : 'Move all'} works)`)
+      else if (other && moveAll) onlyIf.push(plain(other))
+      else if (other) alsoNote = `If you move the following steps too: ${plain(other)}`
+    }
+    const note = onlyIf.length ? `If you move only this step: ${onlyIf.join(' · ')}` : alsoNote
     return { text: [text, ...reasons].join(' · '), warn: reasons.length > 0, ...(note ? { note } : {}) }
   } else return null
 

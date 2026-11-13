@@ -51,6 +51,10 @@ export interface MovePreview {
   carried?: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   following: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   default_answer: Answer | null
+  /** D56 §3.1: the pre-brew steps that go with a moved brew day, per answer. */
+  pre_brew?: Record<Answer, { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]>
+  /** D56: why an answer can't be used (the API's refusal), or null. */
+  refused?: Record<Answer, { error: string; message: string } | null>
   out_of_order: Record<Answer, { from_name: string; to_name: string }[]>
   renumbered: Record<Answer, Renumber[]>
 }
@@ -184,7 +188,12 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       const r = await write<{ out_of_order?: unknown[] }>(
         (a) => a.post(prodPath('steps', 'move'), { ids, days, answer }),
         () => {
-          const withParts = [answer === 'move_all' && plural(pre.following.length, 'following step'), carriedText(pre)].filter(Boolean)
+          const preBrew = (pre.pre_brew?.[answer ?? 'move_only'] ?? []).map((s) => s.name)
+          const withParts = [
+            answer === 'move_all' && plural(pre.following.length, 'following step'),
+            carriedText(pre),
+            preBrew.length > 0 && andList(preBrew),
+          ].filter(Boolean)
           return withParts.length ? `${title}, with ${andList(withParts as string[])}.` : `${title}.`
         },
       )
@@ -399,7 +408,17 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
  * their new dates) or only the moved ones; the default carries a pill.
  */
 function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePreview; title: string; onCancel: () => void; onApply: (a: Answer) => void }) {
-  const [answer, setAnswer] = useState<Answer>(preview.default_answer ?? 'move_all')
+  // D56: an answer the API would refuse can't be picked; the prompt says why.
+  const refused = (a: Answer) => preview.refused?.[a] ?? null
+  const preferred = preview.default_answer ?? 'move_all'
+  const [answer, setAnswer] = useState<Answer>(refused(preferred) ? (preferred === 'move_all' ? 'move_only' : 'move_all') : preferred)
+  const preBrew = preview.pre_brew?.[answer] ?? []
+  const why = (a: Answer) =>
+    refused(a) && (
+      <Typography variant="body2" color="warning.main" sx={{ pl: 4, mb: 1 }} data-testid={`move-refused-${a}`}>
+        Not possible: {refused(a)!.message}
+      </Typography>
+    )
   usePhoneBackCloses(true, onCancel)
   const days = preview.days
   const first = preview.moved[0]
@@ -442,9 +461,15 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
             {carried} move{carried.includes(' and ') ? '' : 's'} with it either way.
           </Typography>
         )}
+        {preBrew.length > 0 && (
+          <Typography variant="body2" sx={{ mb: 1 }} data-testid="move-pre-brew">
+            {andList(preBrew.map((s) => `${s.name} (→ ${dayLabel(s.new_due_on)})`))} move{preBrew.length === 1 ? 's' : ''} with brew day either way.
+          </Typography>
+        )}
         <RadioGroup value={answer} onChange={(e) => setAnswer(e.target.value as Answer)}>
           <FormControlLabel
             value="move_all"
+            disabled={!!refused('move_all')}
             control={<Radio slotProps={{ input: { 'data-testid': 'move-all' } as object }} />}
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -469,8 +494,10 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
                   ))
               : preview.following.map(line)}
           </Box>
+          {why('move_all')}
           <FormControlLabel
             value="move_only"
+            disabled={!!refused('move_only')}
             control={<Radio slotProps={{ input: { 'data-testid': 'move-only' } as object }} />}
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
@@ -482,6 +509,7 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
           <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
             The {plural(preview.following.length, 'following step')} keep{preview.following.length === 1 ? 's' : ''} {preview.following.length === 1 ? 'its date' : 'their dates'}.
           </Typography>
+          {why('move_only')}
           {preview.out_of_order.move_only.length > 0 && (
             <Typography variant="body2" color="warning.main" sx={{ pl: 4, mt: 0.5 }} data-testid="move-only-warning">
               Some of them would then come before the step they follow. They’ll be flagged.

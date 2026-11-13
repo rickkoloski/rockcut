@@ -12,6 +12,9 @@ import {
   dragHint,
   expandMode,
   flagChip,
+  followingIds,
+  moveRefusal,
+  preBrewKind,
   layoutRows,
   monthLabels,
   partDots,
@@ -32,7 +35,8 @@ import {
   TRACK_H,
   writePref,
 } from './gantt'
-import type { Flag, SchedBatch, SchedStep, Tank } from './production'
+import { dayWord, templateDayLabel, type Flag, type SchedBatch, type SchedStep, type Tank } from './production'
+import { dayN, stepStatus } from '../pages/production/Gantt/scheduleText'
 
 const step = (s: Partial<SchedStep>): SchedStep => ({
   id: 0,
@@ -537,5 +541,104 @@ describe('a split tree (DEV QA fix cycle 4, X2)', () => {
 
   it('a batch that isn’t split: nothing to say', () => {
     expect(treeRefusal([parent], parent, 0, 9, tanks)).toBeNull()
+  })
+})
+
+describe('D56 pre-brew steps', () => {
+  const fv7 = tank(7, 'FV7')
+  // Galactic: Prepare grain Tue Dec 1, brew day Wed Dec 2 in FV7, FDH Dec 9,
+  // Set temp Dec 12, Package Dec 22 (stays by default).
+  const galactic = batch({
+    id: 5,
+    label: 'Galactic P1',
+    status: 'planned',
+    batch_number: null,
+    steps: [
+      step({ id: 51, batch_id: 5, name: 'Prepare grain', type_name: 'Prepare grain', due_on: '2026-12-01' }),
+      step({ id: 50, batch_id: 5, name: 'Brew day', type_name: 'Brew day', behavior: 'brew', first_brew: true, due_on: '2026-12-02' }),
+      step({ id: 52, batch_id: 5, name: 'FDH', type_name: 'FDH', due_on: '2026-12-09' }),
+      step({ id: 53, batch_id: 5, name: 'Set temp - 58°', type_name: 'Set temp', behavior: 'set_temp', due_on: '2026-12-12' }),
+      step({ id: 54, batch_id: 5, name: 'Package', type_name: 'Package', behavior: 'package', due_on: '2026-12-22' }),
+    ],
+    links: [
+      { id: 1, from_step_id: 50, to_step_id: 52, default_answer: 'move_all' },
+      { id: 2, from_step_id: 52, to_step_id: 53, default_answer: 'move_all' },
+      { id: 3, from_step_id: 53, to_step_id: 54, default_answer: 'move_only' },
+    ],
+  })
+  // Altruism leaves FV7 the day before: Package and its CIP on Dec 1.
+  const altruism = batch({
+    id: 6,
+    label: 'Altruism #12',
+    steps: [
+      step({ id: 60, batch_id: 6, behavior: 'brew', first_brew: true, due_on: '2026-11-11', done_on: '2026-11-11' }),
+      step({ id: 61, batch_id: 6, behavior: 'package', due_on: '2026-12-01' }),
+      step({ id: 62, batch_id: 6, behavior: 'cip', due_on: '2026-12-01' }),
+    ],
+  })
+  const [part] = buildParts(galactic)
+  const parts = [...buildParts(altruism), part]
+
+  it('the bar starts on brew day; the dot is before it', () => {
+    expect(part).toMatchObject({ start: '2026-12-02', first: '2026-12-01' })
+    expect(partDots(part).map((d) => d.step.id)).toContain(51)
+  })
+
+  it('no tank time: one track with the batch leaving the day before; that day’s dots share slots', () => {
+    const [row] = layoutRows([fv7], parts, [], new Set())
+    expect(row.tracks).toBe(1)
+    const slots = rowDotSlots(row.parts, (p) => row.track.get(p)!)
+    expect([61, 62, 51].map((id) => slots.get(id))).toEqual([
+      { slot: 0, of: 3 },
+      { slot: 1, of: 3 },
+      { slot: 2, of: 3 },
+    ])
+  })
+
+  it('no first tank: on the Unassigned row; expanded rows list it first', () => {
+    const [unassigned] = buildParts({ ...galactic, vessels: [{ vessel_index: 0, tank_id: null }] })
+    const rows = layoutRows([fv7], [unassigned], [], new Set(['unassigned']))
+    expect(rows[1].parts).toEqual([unassigned])
+    expect(rows[1].stepRows[0].step.id).toBe(51)
+  })
+
+  it('day labels', () => {
+    expect(dayWord(-1)).toBe('day −1')
+    expect(dayWord(7, true)).toBe('Day 7')
+    expect(templateDayLabel(-2)).toBe('Day −2 (before brew day)')
+    expect(templateDayLabel(0)).toBe('Day 0 (brew day)')
+    expect(dayN(galactic.steps[0], galactic)).toBe('day −1')
+  })
+
+  it('a late check-off says the planned day (decision 11)', () => {
+    expect(stepStatus({ ...galactic.steps[0], done_on: '2026-12-02' }, '2026-12-05')).toBe('Done Wed Dec 2 (planned Tue Dec 1)')
+  })
+
+  const base = { over: true, tanks: [fv7], parts }
+
+  it('drag hint: a pre-brew step stays before brew day', () => {
+    const grain = galactic.steps[0]
+    expect(dragHint({ ...base, kind: 'dot', days: 1, part, step: grain })).toEqual({ text: 'Wed Dec 2 · +1 day · A pre-brew step stays before brew day', warn: true })
+    expect(dragHint({ ...base, kind: 'dot', days: -2, part, step: grain })).toEqual({ text: 'Sun Nov 29 · −2 days', warn: false })
+  })
+
+  it('drag hint: only plain and custom steps before brew day (decision 13)', () => {
+    const setTemp = galactic.steps[3]
+    expect(dragHint({ ...base, kind: 'dot', days: -11, part, step: setTemp })).toMatchObject({ text: "Tue Dec 1 · −11 days · before FDH, the step it follows · A Set temp can't be before brew day", warn: true })
+    // FDH alone may go there; Move all (its default) takes Set temp along.
+    const fdh = galactic.steps[2]
+    expect(dragHint({ ...base, kind: 'dot', days: -12, part, step: fdh })).toMatchObject({
+      text: "Fri Nov 27 · −12 days · before Brew day, the step it follows · A Set temp can't be before brew day (Move only works)",
+      warn: true,
+    })
+  })
+
+  it('moveRefusal: brew day moved past a Set temp works only with Move all; it takes the pre-brew step', () => {
+    expect(moveRefusal([galactic], [50], 11, 'move_only')).toBe("A Set temp can't be before brew day.")
+    expect(moveRefusal([galactic], [50], 11, 'move_all')).toBeNull()
+    expect(moveRefusal([galactic], [50], -3, 'move_only')).toBeNull()
+    expect(followingIds(galactic.steps, galactic.links, [50])).toEqual(new Set([52, 53, 54]))
+    expect(preBrewKind(step({ step_type_id: null, behavior: null, name: 'Mill' }))).toBe(true)
+    expect(preBrewKind(step({ step_type_id: null, behavior: null, marker: true }))).toBe(false)
   })
 })
