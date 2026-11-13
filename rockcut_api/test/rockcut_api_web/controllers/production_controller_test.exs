@@ -287,6 +287,74 @@ defmodule RockcutApiWeb.ProductionControllerTest do
     end
   end
 
+  describe "D56 §3.5 (5210): a template step's Save is all-or-nothing" do
+    test "a refused second link saves nothing and names the link; a retry saves both" do
+      b = personas(~w(breweryMgr))["breweryMgr"]
+      t = call(b, :post, "/api/production/templates", %{name: "Atomic"}) |> body()
+      base = "/api/production/templates/#{t["data"]["id"]}"
+
+      add = fn type, day ->
+        call(b, :post, base <> "/steps", %{step_type_id: type_id(type), day_offset: day})
+      end
+
+      add.("FDH", 5)
+      add.("Diacetyl test", 10)
+      steps = add.("Carb", 15) |> body() |> get_in(["data", "steps"])
+      id = fn name -> Enum.find(steps, &(&1["name"] == name))["id"] end
+      [brew, fdh, dt, carb] = Enum.map(["Brew day", "FDH", "Diacetyl test", "Carb"], id)
+
+      refused =
+        call(b, :patch, base <> "/steps/#{dt}", %{
+          notes: "Changed",
+          links: [
+            %{from_step_id: fdh, to_step_id: dt},
+            %{from_step_id: dt, to_step_id: brew}
+          ]
+        })
+
+      assert refused.status == 422
+
+      assert body(refused) == %{
+               "error" => "link_order",
+               "message" => "Leads to Brew day: A step can't come before the step it follows.",
+               "link" => "Leads to Brew day"
+             }
+
+      after_refusal = call(b, :get, base) |> body()
+      assert Enum.find(after_refusal["data"]["steps"], &(&1["id"] == dt))["notes"] == nil
+      refute Enum.any?(after_refusal["data"]["links"], &(&1["to_step_id"] == dt))
+
+      saved =
+        call(b, :patch, base <> "/steps/#{dt}", %{
+          notes: "Changed",
+          links: [
+            %{from_step_id: fdh, to_step_id: dt},
+            %{from_step_id: dt, to_step_id: carb, default_answer: "move_only"}
+          ]
+        })
+        |> body()
+
+      assert Enum.find(saved["data"]["steps"], &(&1["id"] == dt))["notes"] == "Changed"
+
+      links =
+        Enum.map(
+          saved["data"]["links"],
+          &{&1["from_step_id"], &1["to_step_id"], &1["default_answer"]}
+        )
+
+      assert {fdh, dt, "move_all"} in links
+      assert {dt, carb, "move_only"} in links
+
+      # A link that doesn't touch the step is refused as a whole.
+      other =
+        call(b, :patch, base <> "/steps/#{dt}", %{
+          links: [%{from_step_id: fdh, to_step_id: carb}]
+        })
+
+      assert body(other)["error"] == "link_invalid"
+    end
+  end
+
   describe "D47 task 0" do
     test "transfer order, ramp cap, remove preview, Split method and partial Package", %{
       brewer: b

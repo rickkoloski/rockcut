@@ -340,17 +340,11 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     try {
       let res
       if (entry) {
+        // D56 §3.5 (5210): the entry and what the link pickers hold in one
+        // call; a refused link saves nothing, and the error names it.
+        const links = pickedLinks(entry.id, linkAfter, linkLeads, linkPick!)
+        if (links.length) body.links = links
         res = await api.patch<ApiResponse<Template>>(prodPath('templates', template.id, 'steps', entry.id), body)
-        // D50 §2.6: then what the link pickers hold. A refusal keeps the dialog
-        // open with the entry as saved, and says why.
-        const saved = res
-        try {
-          for (const l of pickedLinks(entry.id, linkAfter, linkLeads, linkPick!))
-            res = await api.post<ApiResponse<Template>>(prodPath('templates', template.id, 'links'), l)
-        } catch (err) {
-          onDone((res ?? saved).data.data)
-          throw err
-        }
       } else {
         if (!marker) body.step_type_id = typeId
         if (afterValue !== '') Object.assign(body, { comes_after_id: afterValue, comes_after_answer: afterAnswer })

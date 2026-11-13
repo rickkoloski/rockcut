@@ -449,6 +449,11 @@ defmodule RockcutApi.Production do
   keeps its tank (`:transfer_not_new_tank`); a new day that takes it past another transfer is
   `{:transfer_order, :before | :after, day}` (D47 task 0, N1). The CIP &
   Sanitize it set up moves to its new day too, unless it was moved apart.
+
+  D56 §3.5 (5210): `links` (a list of `%{from_step_id, to_step_id,
+  default_answer}`, one end the entry) are added in the same transaction,
+  after the change. A refused link saves nothing and is
+  `{:link_refused, reason, "Comes after Crash"}`.
   """
   def update_step(%Template{} = template, %TemplateStep{} = step, attrs) do
     attrs = stringify(attrs)
@@ -495,9 +500,47 @@ defmodule RockcutApi.Production do
       end
 
       check_link_order!(step.id)
+      add_links!(template, step, attrs["links"])
       load(template)
     end)
   end
+
+  # Each link in a savepoint, so a refusal can name the link before the
+  # whole Save rolls back.
+  defp add_links!(_template, _step, nil), do: :ok
+
+  defp add_links!(template, step, links) when is_list(links) do
+    graph = StepGraph.template(template.id)
+
+    for link <- links do
+      link = if is_map(link), do: stringify(link), else: Repo.rollback(:link_invalid)
+      from_id = to_int(link["from_step_id"])
+      to_id = to_int(link["to_step_id"])
+      unless step.id in [from_id, to_id], do: Repo.rollback(:link_invalid)
+      other_id = if from_id == step.id, do: to_id, else: from_id
+      other = StepGraph.entry!(graph, other_id)
+
+      label =
+        if(from_id == step.id, do: "Leads to ", else: "Comes after ") <>
+          step_name(Repo.preload(other, [:step_type, :phase]))
+
+      Repo.transaction(fn ->
+        {from, to} =
+          if from_id == step.id,
+            do: {Repo.reload!(step), other},
+            else: {other, Repo.reload!(step)}
+
+        StepGraph.insert_link!(graph, from, to, link["default_answer"] || "move_all")
+      end)
+      |> case do
+        {:ok, _} -> :ok
+        {:error, %Ecto.Changeset{}} -> Repo.rollback({:link_refused, :link_invalid, label})
+        {:error, reason} -> Repo.rollback({:link_refused, reason, label})
+      end
+    end
+  end
+
+  defp add_links!(_template, _step, _other), do: Repo.rollback(:link_invalid)
 
   @doc """
   Remove an entry; Brew day can't go (`:brew_day_fixed`). Its links pass

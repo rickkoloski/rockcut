@@ -26,6 +26,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     link_cycle: "That link would go in a circle.",
     link_order: "A step can't come before the step it follows.",
     link_exists: "Those steps are already linked.",
+    link_invalid: "That link can't be added.",
     # D50 §2.7: links on a batch's steps.
     link_pick: "Pick one step to link.",
     link_other_batch: "A step links only to steps of its own batch (or its split).",
@@ -141,6 +142,17 @@ defmodule RockcutApiWeb.ProductionErrors do
       message:
         "Transfers stay in day order: this one would come #{side} the transfer on day #{day}.",
       day: day
+    })
+  end
+
+  # D56 §3.5 (5210): a link refused in a template step's Save names the link.
+  def handle({:error, {:link_refused, code, label}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: Atom.to_string(code),
+      message: "#{label}: #{Map.get(@messages, code, "That link can't be added.")}",
+      link: label
     })
   end
 
