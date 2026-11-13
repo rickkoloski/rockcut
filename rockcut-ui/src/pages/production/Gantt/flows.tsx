@@ -42,6 +42,7 @@ import {
 } from '../../../lib/testResults'
 import { FlowsContext, type StepRef } from './flowsContext'
 import ConfirmDialog from '../../../components/ConfirmDialog'
+import { isUndoShortcut, snackAutoHide, undoHint } from '../../../lib/undoSnack'
 
 // D47 §3.7: every schedule write goes through here. It refetches the
 // schedule, says what happened with Undo for 6 seconds (plan decision 5),
@@ -114,7 +115,15 @@ const UNDO_TTL_MS = 120_000
 const coded = <T,>(call: (a: CodedApi) => Promise<T>) => actingRun((code) => call(codedApi(code)))
 
 /** The snackbar: `refused` is a refused Undo, shown until its token runs out (D49 BB1). */
-type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean; overDialog?: boolean }
+type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean }
+
+const dialogOpen = () => typeof document !== 'undefined' && !!document.querySelector('[role="dialog"]')
+
+// D56 §3.7 A: the hint shows on a device with a mouse (and so a keyboard).
+const HINT = undoHint(
+  typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches,
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? ''),
+)
 
 type Prompt =
   | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
@@ -138,9 +147,19 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback((snack: Omit<Snack, 'key'>) => {
     counter.current += 1
-    // D49 QA 4: over an open dialog it shows at the top, clear of the dialog's buttons.
-    setSnack({ ...snack, key: counter.current, overDialog: !!document.querySelector('[role="dialog"]') })
+    setSnack({ ...snack, key: counter.current })
   }, [])
+
+  // D56 §3.7 B: whether a dialog is open while the snackbar shows (it stays
+  // up over one, and hides as before once the dialog closes).
+  const [overDialog, setOverDialog] = useState(false)
+  useEffect(() => {
+    if (!snack) return
+    setOverDialog(dialogOpen())
+    const watch = new MutationObserver(() => setOverDialog(dialogOpen()))
+    watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role'] })
+    return () => watch.disconnect()
+  }, [snack])
 
   // D49 QA 4: it goes when its Undo does (a hovered snackbar's timer stops,
   // so it could outlive the token).
@@ -404,6 +423,22 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // D56 §3.7 A: Ctrl/Cmd+Z runs the Undo the snackbar offers, dialogs open or not.
+  const undoRef = useRef(undo)
+  undoRef.current = undo
+  useEffect(() => {
+    if (!snack?.token || snack.refused) return
+    const { token, expiresAt } = snack
+    const onKey = (e: KeyboardEvent) => {
+      if (!isUndoShortcut(e) || undoing || expiresAt <= Date.now()) return
+      e.preventDefault()
+      setSnack(null)
+      undoRef.current({ token: token!, expiresAt })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [snack, undoing])
+
   const close = (value: null) => {
     if (!prompt) return
     if (prompt.kind === 'move') prompt.resolve(value)
@@ -495,10 +530,20 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         <Snackbar
           key={snack?.key}
           open={!!snack}
-          autoHideDuration={snack?.refused ? Math.max(snack.expiresAt - Date.now(), 0) : 6000}
-          anchorOrigin={{ vertical: snack?.overDialog ? 'top' : 'bottom', horizontal: 'center' }}
+          autoHideDuration={snack ? snackAutoHide(snack, overDialog, Date.now()) : null}
+          // D56 §3.7 C: at the bottom, clear of a dialog's title (D49 QA 4 had it at the top).
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
           onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
-          message={<span data-testid="gantt-snack-text">{snack?.message}</span>}
+          message={
+            <>
+              <span data-testid="gantt-snack-text">{snack?.message}</span>
+              {snack?.token && !snack.refused && HINT && (
+                <Box component="span" sx={{ opacity: 0.7 }} data-testid="gantt-snack-hint">
+                  {` · ${HINT} to undo`}
+                </Box>
+              )}
+            </>
+          }
           data-testid="gantt-snack"
           action={
             snack?.token ? (
