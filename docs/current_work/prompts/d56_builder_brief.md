@@ -149,3 +149,61 @@ and report.
 `npx tsc --noEmit -p tsconfig.app.json`, vitest, `pnpm lint` (no worse than today; give the
 count), and `pnpm exec vite build`. Commits on the branch. Reply with: commits, files, test
 counts, what you checked in the browser, and `LEAD:` notes.
+
+---
+
+# Stage 3 (Test results and retests, API)
+
+2026-11-12 · lead → builder (fresh context). Stages 1–2 are in (`d3f8bad`, `00ecabc`, `599db9d`,
+`93f7a8f`). **Read first:** spec §2 decisions 3–5 and 8–10, spec §3.2 (all of it), and **plan
+Stage 3**. This brief adds only what the plan doesn't say. Same rules as Stage 1 (branch,
+commits staged by name, no push/merge/rebase, `mix format` only your files, `LEAD:` for servers
+and migrations on the dev DB). **API only. Stop after this stage and report** (plan Stop 1).
+
+## Do
+
+1. **Migration** as in plan Stage 3, additive and reversible. `has_result` true for the types
+   named "Diacetyl test" and "Gravity check" (case-insensitive), in the migration. Also make
+   `mix rockcut.synthetic.setup`'s seed types match, if they're seeded separately.
+2. **Schemas and JSON** per the plan. `has_result` is editable for built-in types too (it isn't
+   `behavior`). The template step API accepts `retest_days`.
+3. **`Steps.complete/4` with results** per spec §3.2 and the plan:
+   - Retest detail: "retest", then "retest 2", "retest 3"… counted along the `retest_of_id`
+     chain.
+   - One move prompt, not two: shift = retest day − the failed step's planned day before the
+     check-off. `answer_required` when followers exist. The preview carries `needs_result`,
+     `retest_days`, and for a fail with retest the followers it would move. Reuse `Steps.move`'s
+     plan/changes and Stage 1–2's refusals (`refusal/1`). Don't build a second move engine.
+   - The retest is inserted inside the same `Undo.track`, so Undo removes it. Confirm the scope
+     includes inserted steps and the repointed links, with a test.
+   - A has-result step on a pencilled batch still gets `schedule_first`; a pre-brew step can't
+     have a result-type (it's plain, but a plain type can now have `has_result`). If a pre-brew
+     step's type has a result, it works the same way, but its retest and followers obey the
+     pre-brew rules. Test one case; if the rules collide, stop and `LEAD:`.
+4. **Mark not done / change result** (decision 8) per spec §3.2 "Undo" and "Changing a recorded
+   result": `retest_done` 422 with "Mark the retest not done first.". Through `Undo.track`.
+5. **`failed_tests` flag** in `Flags.compute` per the plan. Flag text: "3 failed Diacetyl tests"
+   (the type's name; the count is the fails in a row). Signature includes the count, so a 4th
+   Fail brings it back after a sign-off. Muted on pencilled batches.
+6. **Linked tasks:** a retest gets its task through `TaskLink.sync!` (it's `added: true`). The
+   task JSON exposes the step's `result` so Stage 4 can show ✓ / ✗ on the board.
+7. **Board check-off path:** a linked task ticked on the Brewery board goes through
+   `Steps.complete`. Confirm the task-tick endpoint passes `result` / `fail_action` /
+   `retest_days` through and gets `result_required` without them. The same goes for the
+   `StaffCodeActing` device path: test one Fail → Retest as `breweryDevice`.
+8. **History:** the change-log entry for a check-off carries the result and the action, so Stage
+   4 can word it as the spec says.
+9. **ExUnit** for every bullet above and spec §6 S8–S15's API side (403 for `office1`, the 422s,
+   Undo, retest of a retest, Fail → Pass removing the retest, the flag and its sign-off coming
+   back).
+
+## Don't
+
+- No UI (Stage 4), no Playwright (Stage 5). Don't touch `CLAUDE.md`, the spec, the plan or the
+  handoffs.
+
+## Done when
+
+`MIX_ENV=test mix test` green twice, `mix compile --warnings-as-errors`. Commits on the branch.
+Reply with: commits, files, test counts, the API shapes Stage 4 will use (request fields and
+the preview's new keys), and `LEAD:` notes.
