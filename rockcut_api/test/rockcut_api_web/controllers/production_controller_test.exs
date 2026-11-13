@@ -353,6 +353,60 @@ defmodule RockcutApiWeb.ProductionControllerTest do
 
       assert body(other)["error"] == "link_invalid"
     end
+
+    test "DEV gap 6: Add step with Comes after and Leads to; the refused one is named, nothing added" do
+      b = personas(~w(breweryMgr))["breweryMgr"]
+      t = call(b, :post, "/api/production/templates", %{name: "Add atomic"}) |> body()
+      base = "/api/production/templates/#{t["data"]["id"]}"
+
+      add = fn attrs -> call(b, :post, base <> "/steps", attrs) end
+      add.(%{step_type_id: type_id("FDH"), day_offset: 5})
+
+      steps =
+        add.(%{step_type_id: type_id("Carb"), day_offset: 8})
+        |> body()
+        |> get_in(["data", "steps"])
+
+      id = fn name -> Enum.find(steps, &(&1["name"] == name))["id"] end
+      [fdh, carb] = Enum.map(["FDH", "Carb"], id)
+
+      # The race: Carb moved before the new step's day while the dialog was open.
+      new = %{
+        step_type_id: type_id("Diacetyl test"),
+        day_offset: 10,
+        comes_after_id: fdh,
+        leads_to_id: carb
+      }
+
+      refused = add.(new)
+      assert refused.status == 422
+
+      assert body(refused) == %{
+               "error" => "link_order",
+               "message" => "Leads to Carb: A step can't come before the step it follows.",
+               "link" => "Leads to Carb"
+             }
+
+      after_refusal = call(b, :get, base) |> body()
+      refute Enum.any?(after_refusal["data"]["steps"], &(&1["name"] == "Diacetyl test"))
+
+      refute Enum.any?(
+               after_refusal["data"]["links"],
+               &(&1["from_step_id"] == fdh and &1["to_step_id"] != carb)
+             )
+
+      # Comes after a later step: named too.
+      late = add.(%{new | comes_after_id: carb, leads_to_id: nil, day_offset: 6})
+      assert body(late)["link"] == "Comes after Carb"
+
+      # An unknown step is still a 404; a fitting day adds the step and both links.
+      assert add.(%{new | comes_after_id: 999_999_999}).status == 404
+      saved = add.(%{new | day_offset: 7}) |> body()
+      dt = Enum.find(saved["data"]["steps"], &(&1["name"] == "Diacetyl test"))["id"]
+      links = Enum.map(saved["data"]["links"], &{&1["from_step_id"], &1["to_step_id"]})
+      assert {fdh, dt} in links
+      assert {dt, carb} in links
+    end
   end
 
   describe "D47 task 0" do

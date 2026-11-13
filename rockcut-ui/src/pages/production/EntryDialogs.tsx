@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   Button,
@@ -34,6 +35,7 @@ import {
   transferOrderError,
   vesselLabel,
   vesselPhrase,
+  templateKey,
   SPLIT_METHODS,
   CIP_METHODS,
   cipLabel,
@@ -230,6 +232,7 @@ interface EntryProps {
 export function EntryDialog({ template, types, phases, kind, entry, onClose, onDone }: EntryProps) {
   const marker = kind === 'marker'
   const isBrew = entry?.behavior === 'brew'
+  const queryClient = useQueryClient()
   // Pickers offer active types (no second Brew day) and active phases, plus the entry's own.
   const typeChoices = types.filter((t) => (!t.retired_at && t.behavior !== 'brew') || t.id === entry?.step_type_id)
   const phaseChoices = phases.filter((p) => !p.retired_at || p.id === entry?.phase_id)
@@ -356,6 +359,9 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       const f = fieldErrors(err)
       setErrors(f)
       if (!Object.keys(f).length) setError(prodError(err))
+      // DEV gap 6: a refusal may come from a change made elsewhere (a step
+      // moved since the dialog opened): show the template as it is now.
+      void queryClient.invalidateQueries({ queryKey: templateKey(template.id) })
     } finally {
       setBusy(false)
     }

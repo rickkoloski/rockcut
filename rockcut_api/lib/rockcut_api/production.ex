@@ -422,7 +422,7 @@ defmodule RockcutApi.Production do
       check_vessel!(template, type, fields, nil)
 
       step = insert_step!(template, type, fields)
-      StepGraph.slot_in!(StepGraph.template(template.id), step, step, attrs)
+      slot_in_named!(template, step, step, attrs)
 
       if behavior_of(type) == "transfer" do
         cip = behavior_type!("cip")
@@ -505,6 +505,58 @@ defmodule RockcutApi.Production do
     end)
   end
 
+  # D56 §3.5 (DEV gap 6): Add step's and Add a ramp's `comes_after_id` /
+  # `leads_to_id`, as `StepGraph.slot_in!/4` (with both, the direct link
+  # between them goes), each link named if it's refused, as Save's are.
+  defp slot_in_named!(template, first, last, attrs) do
+    graph = StepGraph.template(template.id)
+    entry = fn id -> if id in [nil, ""], do: nil, else: StepGraph.entry!(graph, id) end
+    after_step = entry.(attrs["comes_after_id"])
+    lead_step = entry.(attrs["leads_to_id"])
+
+    if after_step && lead_step do
+      case StepGraph.link_between(graph, after_step.id, lead_step.id) do
+        nil -> :ok
+        direct -> Repo.delete!(direct)
+      end
+    end
+
+    if after_step,
+      do:
+        insert_named_link!(
+          graph,
+          after_step,
+          first,
+          attrs["comes_after_answer"] || "move_all",
+          "Comes after " <> link_name(after_step)
+        )
+
+    if lead_step,
+      do:
+        insert_named_link!(
+          graph,
+          last,
+          lead_step,
+          attrs["leads_to_answer"] || "move_all",
+          "Leads to " <> link_name(lead_step)
+        )
+
+    :ok
+  end
+
+  defp link_name(step), do: step_name(Repo.preload(step, [:step_type, :phase]))
+
+  # One link in a savepoint, so a refusal names it before the whole call
+  # rolls back: `{:link_refused, reason, label}`.
+  defp insert_named_link!(graph, from, to, answer, label) do
+    Repo.transaction(fn -> StepGraph.insert_link!(graph, from, to, answer) end)
+    |> case do
+      {:ok, _} -> :ok
+      {:error, %Ecto.Changeset{}} -> Repo.rollback({:link_refused, :link_invalid, label})
+      {:error, reason} -> Repo.rollback({:link_refused, reason, label})
+    end
+  end
+
   # Each link in a savepoint, so a refusal can name the link before the
   # whole Save rolls back.
   defp add_links!(_template, _step, nil), do: :ok
@@ -520,23 +572,14 @@ defmodule RockcutApi.Production do
       other_id = if from_id == step.id, do: to_id, else: from_id
       other = StepGraph.entry!(graph, other_id)
 
-      label =
-        if(from_id == step.id, do: "Leads to ", else: "Comes after ") <>
-          step_name(Repo.preload(other, [:step_type, :phase]))
+      label = if(from_id == step.id, do: "Leads to ", else: "Comes after ") <> link_name(other)
 
-      Repo.transaction(fn ->
-        {from, to} =
-          if from_id == step.id,
-            do: {Repo.reload!(step), other},
-            else: {other, Repo.reload!(step)}
+      {from, to} =
+        if from_id == step.id,
+          do: {Repo.reload!(step), other},
+          else: {other, Repo.reload!(step)}
 
-        StepGraph.insert_link!(graph, from, to, link["default_answer"] || "move_all")
-      end)
-      |> case do
-        {:ok, _} -> :ok
-        {:error, %Ecto.Changeset{}} -> Repo.rollback({:link_refused, :link_invalid, label})
-        {:error, reason} -> Repo.rollback({:link_refused, reason, label})
-      end
+      insert_named_link!(graph, from, to, link["default_answer"] || "move_all", label)
     end
   end
 
@@ -704,7 +747,7 @@ defmodule RockcutApi.Production do
         |> Enum.chunk_every(2, 1, :discard)
         |> Enum.each(fn [a, b] -> StepGraph.insert_link!(graph, a, b, "move_all") end)
 
-        StepGraph.slot_in!(graph, List.first(steps), List.last(steps), attrs)
+        slot_in_named!(template, List.first(steps), List.last(steps), attrs)
         load(template)
       end)
     end
