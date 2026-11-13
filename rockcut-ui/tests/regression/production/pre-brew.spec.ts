@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, apiAs, stepTypes, template } from './helpers'
-import { addProcess, batchOf, dragBy, Made, openGantt, schedule, snack, stepOf, today, undo } from './schedule'
+import { addProcess, batchOf, dayPx, dragBy, Made, openGantt, schedule, snack, stepOf, today, undo } from './schedule'
 import { Setup } from './d56'
 import { getBoard, openBoard, setBoardCheck } from '../brewery/taskBoardHelpers'
 
@@ -181,6 +181,31 @@ test('S5: drag the pre-brew dot onto brew day: refused, and the hint says why', 
   await page.reload()
   await expect(dot).toBeVisible()
   expect(stepOf(await batchOf(batch.id), prep).due_on).toBe(pre.due_on)
+})
+
+test('DEV gap 2: Cmd-click the pre-brew dot and PDH, drag PDH 2 days later: the hint says why; refused on drop, nothing moved', async ({ page }) => {
+  const { batch, prep } = await preBrewBatch('Gap 2', addDays(today(), 7))
+  const [pre, pdh] = [stepOf(batch, prep), stepOf(batch, 'PDH')]
+  await openGantt(page)
+  await page.getByTestId(`gantt-step-${pre.id}`).click({ modifiers: ['ControlOrMeta'] })
+  await page.getByTestId(`gantt-step-${pdh.id}`).click({ modifiers: ['ControlOrMeta'] })
+  await expect(page.getByTestId(`gantt-step-${pre.id}`)).toHaveAttribute('data-selected', 'true')
+  await expect(page.getByTestId(`gantt-step-${pdh.id}`)).toHaveAttribute('data-selected', 'true')
+  const dot = page.getByTestId(`gantt-step-${pdh.id}`)
+  await dot.scrollIntoViewIfNeeded()
+  const box = (await dot.boundingBox())!
+  const { x, y } = { x: box.x + box.width / 2, y: box.y + box.height / 2 }
+  const px = await dayPx(page)
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x + 6, y, { steps: 3 })
+  await page.mouse.move(x + 2 * px, y, { steps: 10 })
+  await expect(page.getByTestId('gantt-drag-hint')).toContainText('+2 days · A pre-brew step stays before brew day')
+  await page.mouse.up()
+  await page.reload()
+  await expect(page.getByTestId(`gantt-step-${pre.id}`)).toBeVisible()
+  const now = await batchOf(batch.id)
+  expect([stepOf(now, prep).due_on, stepOf(now, 'PDH').due_on]).toEqual([pre.due_on, pdh.due_on])
 })
 
 test('S6: tick the pre-brew task of a planned batch on the board: done, no batch number prompt, still planned (P-number)', async ({ page }) => {

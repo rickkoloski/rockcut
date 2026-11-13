@@ -741,6 +741,22 @@ describe('D56 pre-brew steps', () => {
     })
   })
 
+  it('drag hint for a selection: the reason a selected step is refused, whichever dot is dragged (DEV gap 2)', () => {
+    const [grain, , , setTemp, pkg] = galactic.steps
+    // Package dragged +2 with the pre-brew dot selected: the pre-brew step lands after brew day.
+    expect(dragHint({ ...base, kind: 'dot', days: 2, part, step: pkg })).toEqual({ text: 'Thu Dec 24 · +2 days', warn: false })
+    expect(dragHint({ ...base, kind: 'dot', days: 2, part, step: pkg, selection: [51, 54] })).toEqual({
+      text: 'Thu Dec 24 · +2 days · A pre-brew step stays before brew day',
+      warn: true,
+    })
+    // The pre-brew dot dragged −11 with Set temp selected: Set temp lands before brew day.
+    expect(dragHint({ ...base, kind: 'dot', days: -11, part, step: grain, selection: [51, 53] }).text).toContain("A Set temp can't be before brew day")
+    expect(dragHint({ ...base, kind: 'dot', days: -11, part, step: grain }).warn).toBe(false)
+    // Nothing selected but the dot: as before.
+    expect(dragHint({ ...base, kind: 'dot', days: 1, part, step: grain, selection: [51] })).toEqual(dragHint({ ...base, kind: 'dot', days: 1, part, step: grain }))
+    expect(setTemp.id).toBe(53)
+  })
+
   it('moveRefusal: brew day moved past a Set temp works only with Move all; it takes the pre-brew step', () => {
     expect(moveRefusal([galactic], [50], 11, 'move_only')).toBe("A Set temp can't be before brew day.")
     expect(moveRefusal([galactic], [50], 11, 'move_all')).toBeNull()

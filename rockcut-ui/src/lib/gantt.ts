@@ -430,6 +430,8 @@ export interface DragHintInput {
   part?: Part
   /** A dot or a CIP block: the step. */
   step?: SchedStep
+  /** D56 DEV gap 2: a dot dragged with others selected: every selected step's id (the dot's too). */
+  selection?: number[]
   /** A bar dropped on another row: that row's tank (null = Unassigned). Undefined: same row. */
   toRow?: Tank | null
   tanks: Tank[]
@@ -636,8 +638,21 @@ export function dragHint(a: DragHintInput): DragHint | null {
     // D56: before brew day, as the API refuses it under each answer.
     let alsoNote: string | undefined
     if (a.kind === 'dot' && batch) {
-      const tree = splitTree([...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()], batch.id)
-      const refusal = (answer: Answer) => moveRefusal(tree.length ? tree : [batch], [step.id], a.days, answer)
+      const all = [...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()]
+      // The dot alone, or (DEV gap 2) every selected step, each checked in its batch's split tree.
+      const ids = a.selection?.length ? a.selection : [step.id]
+      const treeOf = (b: SchedBatch) => (splitTree(all, b.id).length ? splitTree(all, b.id) : [b])
+      const rootOf = (tree: SchedBatch[]) => (tree.find((t) => t.split_parent_id == null) ?? tree[0]).id
+      const trees = new Map<number, SchedBatch[]>()
+      for (const b of [batch, ...all.filter((x) => x.steps.some((s) => ids.includes(s.id)))]) trees.set(rootOf(treeOf(b)), treeOf(b))
+      const refusal = (answer: Answer) => {
+        for (const tree of trees.values()) {
+          const mine = tree.flatMap((b) => b.steps.filter((s) => ids.includes(s.id)).map((s) => s.id))
+          const r = mine.length ? moveRefusal(tree, mine, a.days, answer) : null
+          if (r) return r
+        }
+        return null
+      }
       const byDefault = refusal(moveAll ? 'move_all' : 'move_only')
       const other = following ? refusal(moveAll ? 'move_only' : 'move_all') : byDefault
       const plain = (m: string) => m.replace(/\.$/, '')

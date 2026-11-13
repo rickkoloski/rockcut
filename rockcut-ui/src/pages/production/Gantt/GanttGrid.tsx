@@ -313,7 +313,7 @@ export default function GanttGrid(props: Props) {
     if (kind === 'dot') {
       const part = parts.find((p) => p.steps.some((s) => s.id === Number(id)))
       const step = part?.steps.find((s) => s.id === Number(id))
-      return step ? dragHint({ ...base, kind: 'dot', part, step }) : null
+      return step ? dragHint({ ...base, kind: 'dot', part, step, selection: groupDrag ? [...selected] : undefined }) : null
     }
     const cip = rows.flatMap((r) => r.cips).find((c) => c.id === Number(id))
     return cip ? dragHint({ ...base, kind: 'cip', step: cip }) : null
