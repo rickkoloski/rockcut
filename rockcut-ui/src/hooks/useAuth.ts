@@ -316,8 +316,9 @@ window.addEventListener(SERVER_BACK_EVENT, () => {
 
 // D56 §3.4: back on the screen (another tab, the tablet waking, the PWA
 // brought back), pick up settings changed elsewhere. Shared tablets too.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') void useAuth.getState().refreshMe()
-})
+if (typeof document !== 'undefined')
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void useAuth.getState().refreshMe()
+  })
 
 export default useAuth
