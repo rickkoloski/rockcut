@@ -232,8 +232,20 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
 
     assert hd(hd(body(unassigned)["data"]["batches"])["vessels"])["tank_id"] == nil
 
-    shifted = call(b, :post, "/api/production/batches/#{batch["id"]}/shift", %{days: 3}) |> body()
+    # D56 DEV QA: a preview of the bar drag writes nothing and has no Undo.
+    before = Repo.get!(RockcutApi.Production.Step, fdh["id"]).due_on
+    shift = "/api/production/batches/#{batch["id"]}/shift"
+    preview = call(b, :post, shift, %{days: 3, preview: true})
+
+    assert {preview.status, body(preview)} ==
+             {200, %{"data" => %{"preview" => %{"moved" => 4, "kept" => 0}}}}
+
+    assert Repo.get!(RockcutApi.Production.Step, fdh["id"]).due_on == before
+
+    shifted = call(b, :post, shift, %{days: 3}) |> body()
     assert shifted["data"]["moved"] == 4
+    assert shifted["undo_token"]
+    assert Repo.get!(RockcutApi.Production.Step, fdh["id"]).due_on == Date.add(before, 3)
 
     deleted = call(b, :delete, "/api/production/batches/#{batch["id"]}")
     assert body(deleted)["data"]["deleted_id"] == batch["id"]

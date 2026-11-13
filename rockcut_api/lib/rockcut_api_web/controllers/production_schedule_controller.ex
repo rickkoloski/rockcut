@@ -286,15 +286,18 @@ defmodule RockcutApiWeb.ProductionScheduleController do
     |> ProductionErrors.handle(conn)
   end
 
-  @doc "POST /api/production/batches/:id/shift: `{ days }`."
+  @doc "POST /api/production/batches/:id/shift: `{ days, preview? }`."
   def shift_batch(conn, %{"id" => id} = params) do
     with {:ok, conn} <- writer(conn),
          {:ok, batch} <- fetch_batch(id),
-         {:ok, {result, token}} <-
-           Undo.track(actor(conn), %{batches: [batch.id]}, fn ->
-             Batches.shift(batch, params["days"])
+         {:ok, result, token} <-
+           tracked(conn, %{batches: [batch.id]}, truthy?(params["preview"]), fn preview ->
+             Batches.shift(batch, params["days"], preview: preview)
            end) do
-      render_write(conn, [batch.id], result, token)
+      case result do
+        {:preview, _} -> render_result(conn, result, token)
+        _ -> render_write(conn, [batch.id], result, token)
+      end
     end
     |> ProductionErrors.handle(conn)
   end
