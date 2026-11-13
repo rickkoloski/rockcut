@@ -452,7 +452,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       # D56 §3.2: the step's Pass / Fail, for the board's ✓ / ✗.
       result: step_result(t.production_step),
       # D56 decision 14: a failed test's retest day ("✗ Fail · retest Wed").
-      retest_on: retest_on(t.production_step)
+      retest_on: retest_on(t.production_step),
+      # Mark not done is refused while the retest is done (`retest_done`).
+      retest_done: retest_done(t.production_step)
     }
   end
 
@@ -463,6 +465,11 @@ defmodule RockcutApiWeb.JSONHelpers do
     do: d
 
   defp retest_on(_none), do: nil
+
+  defp retest_done(%RockcutApi.Production.Step{retest: %RockcutApi.Production.Step{done_on: d}}),
+    do: d != nil
+
+  defp retest_done(_none), do: false
 
   @doc "A recurring task's rule (D39 `GET /api/boards/brewery/tasks/:id/series`), for the dialog."
   def task_series(s, preview) do

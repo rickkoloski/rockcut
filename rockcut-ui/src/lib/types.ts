@@ -709,6 +709,8 @@ export interface TaskProduction {
   result?: TestResult | null
   /** D56 decision 14: a failed test's retest day, null when it continued as planned. */
   retest_on?: string | null
+  /** Its retest is done: Mark not done is refused until that's undone. */
+  retest_done?: boolean
 }
 
 /** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */

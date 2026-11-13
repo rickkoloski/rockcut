@@ -332,7 +332,7 @@ defmodule RockcutApiWeb.ProductionTestResultsControllerTest do
 
     cards = Enum.flat_map(board["data"]["days"], & &1["cards"])
 
-    assert %{"result" => "fail", "retest_on" => rt_on} =
+    assert %{"result" => "fail", "retest_on" => rt_on, "retest_done" => false} =
              Enum.find(cards, &(&1["id"] == test_task.id))["production"]
 
     assert rt_on == iso(2)

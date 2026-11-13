@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  linkedRetestOn,
   ALL_BOARDS,
   boardMembers,
   FUTURE,
@@ -719,5 +720,18 @@ describe('boardMembers', () => {
   it('members only without owners', () => {
     expect(boardMembers(roster, 'brewery').map((p) => p.id)).toEqual([3])
     expect(boardMembers(roster, 'brewery', []).map((p) => p.id)).toEqual([3])
+  })
+})
+
+describe('linkedRetestOn (D56 decision 8)', () => {
+  const card = (production: Partial<NonNullable<TaskCardData['production']>> | null) =>
+    ({ production: production && { step_id: 1, batch_id: 1, batch_status: 'fermenting', planned: false, step_name: 'Diacetyl test', batch_label: 'Galactic #40', ...production } }) as Pick<TaskCardData, 'production'>
+
+  it('asks first only while a failed test’s retest is open', () => {
+    expect(linkedRetestOn(card({ result: 'fail', retest_on: '2026-11-14', retest_done: false }))).toBe('2026-11-14')
+    expect(linkedRetestOn(card({ result: 'fail', retest_on: '2026-11-14', retest_done: true }))).toBeNull()
+    expect(linkedRetestOn(card({ result: 'fail', retest_on: null }))).toBeNull()
+    expect(linkedRetestOn(card({ result: 'pass' }))).toBeNull()
+    expect(linkedRetestOn(card(null))).toBeNull()
   })
 })

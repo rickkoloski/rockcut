@@ -87,7 +87,8 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
                "step_name" => "FDH",
                "batch_label" => "Galactic P1",
                "result" => nil,
-               "retest_on" => nil
+               "retest_on" => nil,
+               "retest_done" => false
              }
 
       assert Enum.find(cards, &(&1["id"] == own.id))["production"] == nil
