@@ -1,6 +1,6 @@
 # D56: Pre-brew steps, test results and retests, and follow-ups — Spec
 
-**Status:** DRAFT for Matt's review (2026-11-12)
+**Status:** APPROVED by Matt (2026-11-12); plan in `planning/d56_production_timing_plan.md`
 **Backlog:** PortableMind project 254, tasks 5207, 5208 (was D57), 5210, 5211, 4950, 5791
 **Branch:** `d56-production-timing` from `develop` (already holds the 5791 fix, `d627538`)
 **Builds on:** D46 spec (`specs/d46_production_scheduling_spec.md`), D47–D50, D58 §3.1
@@ -45,6 +45,13 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 **Scope**
 6. **Multi-day steps are out** (backlog 5792). **D57 is folded in.**
 
+**Answers to the spec's questions** (2026-11-12)
+7. **No CIP before brew day** on a batch; the standalone CIP covers it (Q1).
+8. **Undo or Mark not done of a Fail removes the retest it added** (if the retest isn't done) and
+   puts the following steps back, as §3.2 "Undo" says (Q2).
+9. **4950: all three of A, B and C** (Q3).
+10. **Limits:** pre-brew up to 30 days before brew day; a retest up to 30 days out (Q4).
+
 ## 3. Requirements
 
 ### 3.1 Pre-brew steps (decisions 1, 2)
@@ -53,7 +60,7 @@ with the question of part-day work), so "Brew over two days" stays as it is.
   template's first Brew day stays at 0, and offsets still count from the first brew day.
 - **Allowed types:** plain step types and custom steps, with no phase. Brew day, Transfer/Filter,
   Split, Package, Set temp, CIP and phase markers can't have a negative day (422 `not_before_brew`:
-  "A <type> can't be before brew day."). See Q1 about CIP.
+  "A <type> can't be before brew day."; decision 7).
 - **Vessel:** always the first vessel (0). The template editor hides the tank picker for them.
 - **Template editor:** the day picker offers "Day −1 (before brew day)" and so on. The template
   preview shows them left of brew day.
@@ -66,7 +73,8 @@ with the question of part-day work), so "Brew over two days" stays as it is.
     first brew day (422 `before_brew_day`: "A pre-brew step stays before brew day."). The drag's
     live hint says so.
   - Undo restores both.
-- **Check-off:** allowed while the batch is planned or pencilled. It doesn't ask for the batch
+- **Check-off:** allowed while the batch is planned. A pencilled batch's steps can't be checked
+  off until it's scheduled, as D49 §3.12b says for every step (`schedule_first`). It doesn't ask for the batch
   number, and checking it off doesn't fill the tank. The "nothing empties a tank before brew day"
   rule is unaffected (pre-brew steps never empty anything).
 - **Shown as:**
@@ -108,8 +116,8 @@ with the question of part-day work), so "Brew over two days" stays as it is.
     - Its task appears on the Brewery board like any added step.
   - **Continue as planned:** the test is done with result Fail; nothing else changes.
 - **Changing a recorded result:** the step dialog of a done test shows the result with **Change**.
-  Changing Pass → Fail asks the Fail question; Fail → Pass removes nothing on its own (see Q2 for
-  Undo and Mark not done).
+  Changing Pass → Fail asks the Fail question. Fail → Pass first removes the retest it added, as
+  Mark not done does (decision 8).
 
 **Repeated fails**
 - When a test fails for the third time in a row (the original and two retests, all Fail), the
@@ -126,7 +134,7 @@ with the question of part-day work), so "Brew over two days" stays as it is.
   Fail · retest Wed" / "· continue as planned".
 - Template editor: "Retest after [2] days" on steps whose type has a result.
 
-**Undo** (proposed, see Q2)
+**Undo** (decision 8)
 - Undo of a Fail check-off (the snackbar, within its 2 minutes) removes the retest it added,
   moves the links back to the test, and puts moved steps back, if the retest isn't done.
 - **Mark not done** on a failed test does the same, with a confirm. A done retest blocks it:
@@ -167,7 +175,7 @@ rows by batch", `lblsel` / `ui.labelBy`) describe:
 - First reproduce on local (`#907 · Set temp - 58°` path in the task) to find which of those is
   missing.
 
-### 3.7 Undo snackbar over dialogs (4950) — proposed, see Q3
+### 3.7 Undo snackbar over dialogs (4950; decision 9)
 
 - **A:** Ctrl/Cmd+Z runs the live Undo while one is live and focus isn't in a text field. It
   works with a dialog open. The snackbar's text mentions it on a device with a keyboard.
@@ -184,20 +192,13 @@ Included in the DEV runs and QA.
 ## 4. Not in D56
 
 - Multi-day steps and part-day (hours) planning: backlog 5792.
-- CIPs before brew day on a batch (Q1), unless Matt says otherwise.
+- CIPs before brew day on a batch (decision 7).
 - Numeric test readings (a gravity number, a VDK reading) beside Pass / Fail.
 - °Plato (4987), events in calendar feeds (4055), company-wide events (4056), 5789, 4084.
 
-## 5. Open questions for Matt
+## 5. Open questions
 
-- **Q1 — CIP before brew day.** Should a batch be able to have a "CIP & Sanitize" on its first
-  tank before brew day, clearing the "filling a dirty tank" flag? Proposed: no; the standalone CIP
-  already does that.
-- **Q2 — a Fail recorded by mistake.** Proposed in §3.2 "Undo": Undo or Mark not done removes the
-  retest it added (if the retest isn't done) and puts the following steps back. Alternative: only
-  the result is cleared, and someone removes the retest by hand.
-- **Q3 — 4950.** Are §3.7's A/B/C the right fix, or a smaller one (just Ctrl/Cmd+Z)?
-- **Q4 — limits.** Pre-brew up to 30 days before brew day; a retest up to 30 days out. OK?
+None. Q1–Q4 were answered 2026-11-12 (decisions 7–10).
 
 ## 6. Persona scenarios
 
@@ -212,7 +213,7 @@ Included in the DEV runs and QA.
 | S7 | `breweryMgr` | Set up → Phases & steps | Turns "Has a result" on for Rouse; checks Diacetyl test is on | Saved after reload; the template editor shows "Retest after" on both |
 | S8 | `brewer1` | Gantt → D-test dot → step dialog | Check off → Fail → "Retest in 2 days" → Move all | Test done with ✗; retest 2 days later; Crash now follows the retest and moved 2 days; kept after reload |
 | S9 | `brewer1` | Tasks → Brewery | Ticks a D-test task → Fail → "Continue as planned" | Done with ✗ Fail; no retest; Crash unchanged |
-| S10 | `brewer1` | Step dialog | Fail → Retest, then Undo from the snackbar | Retest gone, links back on the test, Crash back (Q2) |
+| S10 | `brewer1` | Step dialog | Fail → Retest, then Undo from the snackbar | Retest gone, links back on the test, Crash back (decision 8) |
 | S11 | `brewer1` | Gantt | Fails the test, then retest, then retest 2 | "3 failed Diacetyl tests" flag; sign off; a 4th Fail brings it back |
 | S12 | `breweryDevice` | Production / board, staff code | Checks off a D-test as Fail → Retest | Works; "· on Brewery Test 1" in History |
 | S13 | `brewer1` | API | Check off a has-result step with no result | 422 `result_required` |
