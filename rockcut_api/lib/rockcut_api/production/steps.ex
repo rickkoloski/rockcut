@@ -953,8 +953,8 @@ defmodule RockcutApi.Production.Steps do
   end
 
   # Fail → Pass: the steps a retest moved go to where a Pass would have left
-  # them (`pass_to`), if they're still where it put them and not done. The
-  # step's new `checkoff_move`.
+  # them (`pass_to`), if they're not done, even if they were moved since (D56
+  # decision 20, DEV gap 4). The step's new `checkoff_move`.
   defp pass_back!(_graph, %Step{checkoff_move: nil}), do: []
 
   defp pass_back!(graph, %Step{checkoff_move: json} = step) do
@@ -966,7 +966,7 @@ defmodule RockcutApi.Production.Steps do
           s = graph.steps[String.to_integer(id)]
 
           cond do
-            s && is_nil(s.done_on) && iso(s.due_on) == to ->
+            s && is_nil(s.done_on) ->
               s |> Changeset.change(due_on: Date.from_iso8601!(pass_to)) |> Repo.update!()
               if from == pass_to, do: [], else: [{id, [from, pass_to]}]
 
@@ -1158,16 +1158,19 @@ defmodule RockcutApi.Production.Steps do
   # Mark not done: the steps the check-off moved that are still where it
   # put them, and not done, go back to their dates; the step's own planned
   # day is returned for it. Without a record, it keeps its date (D47).
+  # D56 decision 20 (DEV gap 4): the steps a Fail's retest moved (their
+  # record has the Pass date too) go back to their dates before the Fail
+  # even if they were moved since; done ones stay.
   defp put_back_checkoff_move!(_graph, %Step{checkoff_move: nil} = step), do: step.due_on
 
   defp put_back_checkoff_move!(graph, %Step{checkoff_move: json} = step) do
     moved = Jason.decode!(json)
 
-    for {id, [from, to | _]} <- moved,
+    for {id, [from, to | retest]} <- moved,
         id = String.to_integer(id),
         id != step.id,
         s = graph.steps[id],
-        s && is_nil(s.done_on) && iso(s.due_on) == to do
+        s && is_nil(s.done_on) && (retest != [] or iso(s.due_on) == to) do
       s |> Changeset.change(due_on: Date.from_iso8601!(from)) |> Repo.update!()
     end
 

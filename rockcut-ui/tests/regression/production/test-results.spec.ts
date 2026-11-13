@@ -266,3 +266,29 @@ test('S15: office1 recording a result is 403, as for other schedule writes', asy
   expect(res.status()).toBe(403)
   expect((await rstep(t.id))!.done_on).toBeNull()
 })
+
+test('DEV gap 4 (decision 20): Fail → Retest, the retest moved a day later (Move all), then Mark not done: the following steps go back to their dates before the Fail', async ({ page }) => {
+  const b = await lager('Gap 4')
+  const t = stepOf(b, TEST)
+  const before = Object.fromEntries((await batchOf(b.id)).steps.map((s) => [s.id, s.due_on]))
+  await checkOffResult(t, { result: 'fail', fail_action: 'retest', retest_days: 2 })
+  const retest = retestOf(await batchOf(b.id), t.id)!
+  const moved = await (await apiAs('brewer1')).post(`${P}/steps/move`, { data: { ids: [retest.id], days: 1, answer: 'move_all' } })
+  expect(moved.status(), await moved.text()).toBe(200)
+  expect(stepOf(await batchOf(b.id), NEXT).due_on).toBe(addDays(before[stepOf(b, NEXT).id], 3))
+
+  await openStep(page, t)
+  await page.getByTestId('step-uncheck').click()
+  const confirm = page.getByTestId('flows-confirm')
+  await expect(confirm).toContainText(`Its retest on ${dayLabel(addDays(retest.due_on, 1))}`)
+  await expect(confirm).toContainText('the steps after it go back to their dates')
+  await confirm.getByRole('button', { name: 'Mark not done' }).click()
+  await expect(confirm).toBeHidden()
+
+  await page.reload()
+  await expect(page.getByTestId(`gantt-step-${t.id}`)).toBeVisible()
+  await expect(page.getByTestId(`gantt-result-${t.id}`)).toHaveCount(0)
+  const now = await batchOf(b.id)
+  expect(retestOf(now, t.id)).toBeUndefined()
+  expect(Object.fromEntries(now.steps.map((s) => [s.id, s.due_on]))).toEqual(before)
+})
