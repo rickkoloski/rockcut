@@ -432,6 +432,117 @@ defmodule RockcutApi.Production.TestResultsTest do
       assert due(batch, "Set temp - 34°") == ~D[2026-12-19]
     end
 
+    # D56 decision 20 clarified (DEV gap 8): a planned batch (its done steps
+    # move with a whole-batch drag), the test failed on its day with a
+    # retest, then the batch bar dragged 10 days later.
+    defp fail_then_shift(ctx) do
+      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      before = layout(batch)
+      dt = named(batch, "Diacetyl test")
+      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
+      assert due(batch, "Set temp - 34°") == ~D[2026-12-18]
+      {:ok, _} = Batches.shift(reload(batch), 10)
+      assert %{due_on: ~D[2026-12-24], done_on: @test_day} = step(dt)
+      {batch, shifted(before, 10), dt, rid}
+    end
+
+    defp shifted(layout, days),
+      do: Enum.map(layout, fn {n, d, v} -> {n, Date.add(d, days), v} end)
+
+    test "gap 8: Mark not done after the whole batch moved: the steps back to their distance from the test",
+         ctx do
+      {batch, expected, dt, rid} = fail_then_shift(ctx)
+      assert {:ok, _} = Steps.uncomplete(dt.id)
+      assert Repo.get(Step, rid) == nil
+      assert layout(batch) == expected
+      assert %{due_on: ~D[2026-12-24], done_on: nil, checkoff_move: nil} = step(dt)
+    end
+
+    test "gap 8: Fail → Pass after the whole batch moved: the same, the test where it is", ctx do
+      {batch, expected, dt, rid} = fail_then_shift(ctx)
+      assert {:ok, _} = Steps.change_result(dt.id, %{"result" => "pass"})
+      assert Repo.get(Step, rid) == nil
+      assert layout(batch) == expected
+      assert %{due_on: ~D[2026-12-24], result: "pass", checkoff_move: nil} = step(dt)
+    end
+
+    # Brew day's Move all stops at the done test (the steps after it stay),
+    # so they go back to their dates before the Fail, their distance from it.
+    test "gap 8: brew day moved with Move all in the date box since the Fail", ctx do
+      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      before = layout(batch)
+      dt = named(batch, "Diacetyl test")
+      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
+      {:ok, _} = Steps.move([named(batch, "Brew day").id], 10, answer: "move_all")
+      assert %{due_on: @test_day} = step(dt)
+      assert due(batch, "Set temp - 34°") == ~D[2026-12-18]
+
+      assert {:ok, _} = Steps.uncomplete(dt.id)
+      assert Repo.get(Step, rid) == nil
+
+      assert Enum.sort(layout(batch)) ==
+               Enum.sort(
+                 Enum.map(before, fn
+                   {n, d, v} when n in ["Brew day", "FDH"] -> {n, Date.add(d, 10), v}
+                   other -> other
+                 end)
+               )
+    end
+
+    test "gap 8: a restore that would put a Set temp before brew day is refused, nothing changed",
+         ctx do
+      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      dt = named(batch, "Diacetyl test")
+      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
+      # Brew day alone to Dec 17: Set temp (Dec 18 after the Fail) is still after it.
+      {:ok, _} = Steps.move([named(batch, "Brew day").id], 15, answer: "move_only")
+      held = layout(batch)
+
+      refused = {:not_before_brew, "Set temp"}
+      assert {:error, ^refused} = Steps.uncomplete(dt.id)
+      assert {:error, ^refused} = Steps.change_result(dt.id, %{"result" => "pass"})
+      assert layout(batch) == held
+      assert %{done_on: @test_day, result: "fail"} = step(dt)
+      assert Repo.get(Step, rid)
+
+      assert Steps.refusal(refused) == %{
+               error: "not_before_brew",
+               message: "A Set temp can't be before brew day."
+             }
+    end
+
+    # QA's gap 7, on this template: Fail → retest dragged +1 (Move all), Set
+    # temp checked off on its pre-Fail day (Move only), the test marked not
+    # done (or changed to Pass), then Set temp marked not done.
+    defp done_follower_then(ctx, undo_test) do
+      {batch, before, dt, _rid} = fail_then_drag(ctx)
+      set_temp = named(batch, "Set temp - 34°")
+
+      {:ok, _} =
+        Steps.complete(
+          set_temp.id,
+          %{"done_on" => "2026-12-16", "answer" => "move_only"},
+          ctx.brewer,
+          today: ~D[2026-12-16]
+        )
+
+      assert step(set_temp).checkoff_move
+      assert {:ok, _} = undo_test.(dt.id)
+      assert %{done_on: ~D[2026-12-16], checkoff_move: nil} = step(set_temp)
+      assert {:ok, _} = Steps.uncomplete(set_temp.id)
+      assert due(batch, "Set temp - 34°") == ~D[2026-12-16]
+      assert layout(batch) == before
+    end
+
+    test "gap 7: a step done while the retest had moved it: Mark not done of the test puts its planned day back too",
+         ctx do
+      done_follower_then(ctx, &Steps.uncomplete/1)
+    end
+
+    test "gap 7: the same through Fail → Pass", ctx do
+      done_follower_then(ctx, &Steps.change_result(&1, %{"result" => "pass"}))
+    end
+
     test "a done retest blocks Mark not done and Undo-free Fail → Pass (retest_done)", ctx do
       batch = brewed(ctx)
       dt = named(batch, "Diacetyl test")

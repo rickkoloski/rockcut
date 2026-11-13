@@ -318,7 +318,7 @@ defmodule RockcutApi.Production.Steps do
   # pre-brew step on brew day or later (`{:before_brew_day, :pre_brew}`);
   # a step that isn't plain or custom, changed by it or by its brew day's
   # move, now before brew day (`{:not_before_brew, type name}`). Decision 21
-  # (DEV gap 3): a moved brew day on or before a finished pre-brew step's
+  # (DEV gaps 3, 9): a moved brew day before a finished pre-brew step's
   # done day (`{:before_brew_day, {:pre_brew_done, name, done_on}}`). A split
   # part's steps count against its parent's brew day.
   defp brew_refusal(graph, changes, done) do
@@ -342,7 +342,7 @@ defmodule RockcutApi.Production.Steps do
                 steps,
                 &(&1.batch_id == root and &1.id != brew.id and &1.done_on != nil and
                     Date.compare(&1.due_on, brew.due_on) == :lt and
-                      Date.compare(due.(brew), &1.done_on) != :gt)
+                      Date.compare(due.(brew), &1.done_on) == :lt)
               ) ->
           {:before_brew_day, {:pre_brew_done, name(finished), finished.done_on}}
 
@@ -954,7 +954,9 @@ defmodule RockcutApi.Production.Steps do
   # record (`[from, to, pass_to]`), so Mark not done and Fail → Pass put
   # them back.
   defp merge_checkoff_move(graph, step, changes) do
-    moved = if step.checkoff_move, do: Jason.decode!(step.checkoff_move), else: %{}
+    # Counted from where the step is now (decision 20, DEV gap 8).
+    moved =
+      if step.checkoff_move, do: step.checkoff_move |> Jason.decode!() |> rebase(step), else: %{}
 
     changes
     |> Enum.reduce(moved, fn {id, to}, acc ->
@@ -974,28 +976,31 @@ defmodule RockcutApi.Production.Steps do
 
   # Fail → Pass: the steps a retest moved go to where a Pass would have left
   # them (`pass_to`), if they're not done, even if they were moved since (D56
-  # decision 20, DEV gap 4). The step's new `checkoff_move`.
+  # decision 20, DEV gap 4), counted from where the test is now (gap 8); a
+  # done one gets that as its planned day (gap 7). Refused like a move if
+  # it would leave a step before brew day that can't be there. The step's
+  # new `checkoff_move`.
   defp pass_back!(_graph, %Step{checkoff_move: nil}), do: []
 
   defp pass_back!(graph, %Step{checkoff_move: json} = step) do
+    moved = json |> Jason.decode!() |> since_fail(step)
+
+    back =
+      for {id, [_, _, pass_to]} <- moved,
+          s = graph.steps[String.to_integer(id)],
+          s && is_nil(s.done_on),
+          into: %{},
+          do: {s.id, Date.from_iso8601!(pass_to)}
+
+    if reason = brew_refusal(graph, back, [step.id]), do: Repo.rollback(reason)
+    write_dates!(graph, back)
+    replan_done!(graph, moved, back, 2)
+
     moved =
-      json
-      |> Jason.decode!()
+      moved
       |> Enum.flat_map(fn
-        {id, [from, to, pass_to]} ->
-          s = graph.steps[String.to_integer(id)]
-
-          cond do
-            s && is_nil(s.done_on) ->
-              s |> Changeset.change(due_on: Date.from_iso8601!(pass_to)) |> Repo.update!()
-              if from == pass_to, do: [], else: [{id, [from, pass_to]}]
-
-            true ->
-              [{id, [from, to]}]
-          end
-
-        other ->
-          [other]
+        {id, [from, _, pass_to]} -> if from == pass_to, do: [], else: [{id, [from, pass_to]}]
+        other -> [other]
       end)
       |> Map.new()
 
@@ -1180,23 +1185,88 @@ defmodule RockcutApi.Production.Steps do
   # day is returned for it. Without a record, it keeps its date (D47).
   # D56 decision 20 (DEV gap 4): the steps a Fail's retest moved (their
   # record has the Pass date too) go back to their dates before the Fail
-  # even if they were moved since; done ones stay.
+  # even if they were moved since, counted from where the test is now (gap
+  # 8); done ones stay, with that as their planned day (gap 7). Refused like
+  # a move if it would leave a step before brew day that can't be there.
   defp put_back_checkoff_move!(_graph, %Step{checkoff_move: nil} = step), do: step.due_on
 
   defp put_back_checkoff_move!(graph, %Step{checkoff_move: json} = step) do
-    moved = Jason.decode!(json)
+    moved = json |> Jason.decode!() |> since_fail(step)
 
-    for {id, [from, to | retest]} <- moved,
-        id = String.to_integer(id),
-        id != step.id,
-        s = graph.steps[id],
-        s && is_nil(s.done_on) && (retest != [] or iso(s.due_on) == to) do
-      s |> Changeset.change(due_on: Date.from_iso8601!(from)) |> Repo.update!()
-    end
+    back =
+      for {id, [from, to | retest]} <- moved,
+          id = String.to_integer(id),
+          id != step.id,
+          s = graph.steps[id],
+          s && is_nil(s.done_on) && (retest != [] or iso(s.due_on) == to),
+          into: %{},
+          do: {id, Date.from_iso8601!(from)}
 
+    due_on =
+      case moved[to_string(step.id)] do
+        [from | _] -> Date.from_iso8601!(from)
+        _ -> step.due_on
+      end
+
+    undone = %{graph | steps: Map.update!(graph.steps, step.id, &%{&1 | done_on: nil})}
+
+    if reason = brew_refusal(undone, Map.put(back, step.id, due_on), []),
+      do: Repo.rollback(reason)
+
+    write_dates!(graph, back)
+    replan_done!(graph, moved, back, 0)
+    due_on
+  end
+
+  # D56 decision 20 (clarified, DEV gap 8): a Fail's record (one with a
+  # retest's Pass date) counts from where the test is now: its dates move as
+  # far as the test has since (a whole-batch move; dragging the retest
+  # doesn't move the test).
+  defp since_fail(moved, step) do
+    if Enum.any?(moved, fn {_, dates} -> length(dates) == 3 end),
+      do: rebase(moved, step),
+      else: moved
+  end
+
+  # A record's dates moved as far as `step` has from the day it records for it.
+  defp rebase(moved, step) do
     case moved[to_string(step.id)] do
-      [from | _] -> Date.from_iso8601!(from)
-      _ -> step.due_on
+      [_, to | _] ->
+        days = Date.diff(step.due_on, Date.from_iso8601!(to))
+
+        Map.new(moved, fn {id, dates} ->
+          {id, Enum.map(dates, &(&1 |> Date.from_iso8601!() |> Date.add(days) |> iso()))}
+        end)
+
+      _ ->
+        moved
+    end
+  end
+
+  # D56 decision 20 (clarified, DEV gap 7): a step a Fail moved that's done
+  # since gets its planned day put back too (`at`: 0 its date before the
+  # Fail, 2 where a Pass would have left it), so a later Mark not done of it
+  # lands in order; the steps put back with it leave its record.
+  defp replan_done!(graph, moved, back, at) do
+    for {id, [_, _, _] = dates} <- moved,
+        s = graph.steps[String.to_integer(id)],
+        s && s.done_on do
+      key = to_string(s.id)
+      record = if s.checkoff_move, do: Jason.decode!(s.checkoff_move), else: %{}
+
+      to =
+        case record[key] do
+          [_, to | _] -> to
+          _ -> iso(s.due_on)
+        end
+
+      record =
+        record
+        |> Map.drop(Enum.map(Map.keys(back), &to_string/1))
+        |> Map.put(key, [Enum.at(dates, at), to])
+
+      json = if record == %{key => [to, to]}, do: nil, else: Jason.encode!(record)
+      s |> Changeset.change(checkoff_move: json) |> Repo.update!()
     end
   end
 
