@@ -53,6 +53,12 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 10. **Limits:** pre-brew up to 30 days before brew day; a retest up to 30 days out (Q4).
 11. **A pre-brew step checked off on or after brew day is allowed** (Matt, 2026-11-12, from Stage
     1). It stays on its planned day, records the real done day, and asks no move question.
+12. **Change template keeps a finished pre-brew step** (Matt, 2026-11-12, from Stage 1). It stays
+    done on its day. If the new template has a pre-brew step of the same type, the finished step
+    takes its place (and its links); otherwise it stays as an added step.
+13. **The template rule applies to batches too** (Matt, 2026-11-12, from Stage 1). On a batch, only
+    a plain or custom step can be before brew day, whether it gets there by a drag, the date box,
+    a check-off or Add step. Anything else gets `not_before_brew`.
 
 ## 3. Requirements
 
@@ -84,7 +90,7 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 - **Shown as:**
   - The batch and step dialogs: "day −1".
   - The Brewery board task: worded like other steps ("FV3 · Galactic P2 · Prepare grain"; the
-    tank is the first vessel's, or "Unassigned"), with the Planned batch pill and per-person hiding
+    tank is the first vessel's, or "No tank" as D49 words it), with the Planned batch pill and per-person hiding
     as today.
   - The expanded tank rows include it, left of the batch's brew day.
   - The tank status line ignores it.

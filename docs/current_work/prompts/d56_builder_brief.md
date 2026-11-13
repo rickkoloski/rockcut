@@ -75,3 +75,77 @@ DB. **Only `mix format` the files you change** (a repo-wide format reflows the l
 `MIX_ENV=test mix test` green twice, `mix compile --warnings-as-errors` clean. Commits on the
 branch. Reply with: commits, files, test counts, the answer to the check-off question, and
 `LEAD:` notes.
+
+---
+
+# Stage 1 follow-ups, then Stage 2 (Pre-brew steps, UI)
+
+2026-11-12 · lead → builder. Stage 1 is in (`d3f8bad`, `00ecabc`; lead re-ran `mix test`: 2398
+passed). Your LEAD notes 1, 3, 4 and 5 are accepted as built ("No tank" wording is now in the
+spec). Matt answered note 7 (spec decisions 12 and 13). Do **A** first, then **B**, then stop
+and report.
+
+## A. Stage 1 follow-ups (API)
+
+1. **Decision 12, Change template keeps a finished pre-brew step.** On a planned batch, Change
+   template keeps each **done** pre-brew step: still done, on its day.
+   - If the new template has a pre-brew step of the same type, the kept step takes its place.
+     It gets that template step's `template_step_id` and links, and no duplicate is created.
+     Match each new template step at most once, earliest day first.
+   - Otherwise it stays as an added step (`added: true`, no `template_step_id`, no links).
+   - Unfinished pre-brew steps are rebuilt as today. Undo restores the whole change.
+   - ExUnit: same type in the new template; no match; two done pre-brew steps of one type
+     against one template step.
+2. **Decision 13, the template rule on batches.** On a batch, a step that isn't plain or custom
+   can't end up before the first Brew day. That applies to a move (drag, date box,
+   multi-select), an off-plan check-off and Add step. Phase markers count as "not plain". The
+   refusal is 422 `not_before_brew` with the template's message.
+   - Add step: a plain or custom step before brew day is now **allowed** (it's a pre-brew step).
+     D48's "A step can't come before brew day." stays for the other types, under the new code
+     and message.
+   - A `move_all` that carries non-plain followers before brew day is refused the same way.
+   - ExUnit for each path, and the preview's refusal.
+
+## B. Stage 2 (plan Stage 2; spec §3.1, UI)
+
+1. **`TemplateEditor.tsx`:**
+   - The day picker offers −30…−1, labelled "Day −1 (before brew day)" and so on.
+   - At a negative day, hide the tank and phase pickers.
+   - Types the API refuses before brew day are disabled in the type picker at a negative day,
+     with a tooltip giving the API's message. Server 422s show inline as today.
+2. **`TemplatePreview.tsx`:** pre-brew steps left of brew day.
+3. **Gantt** (`lib/gantt.ts`, `GanttGrid.tsx`):
+   - Pre-brew dots on the part's track, left of the bar, sharing day slots through
+     `rowDotSlots`, so they sit beside another batch's dots and don't add a track.
+     `assignTracks` keeps using `start` / `reach`.
+   - Expanded rows include pre-brew steps.
+   - With no first tank, they show on the Unassigned row.
+4. **Drag hints** (your note 2): `dragHint` gets the before-brew-day rule and decision 13's
+   rule, with the API's messages. When only "Move all" can work (your note 6), the move prompt
+   offers only that answer and says why. Keep the server refusal as the backstop.
+5. **Dialogs and text:** "day −1" in `BatchDialog`, `StepDialog`, `scheduleText.ts`. A late
+   pre-brew check-off (decision 11) shows "Done Tue (planned Mon)" as any off-plan done step does.
+   Add step in the batch dialog offers days before brew day for plain and custom steps.
+6. **Vitest:** `gantt.test.ts` for the dot placement (including the day-before collision with
+   another batch), the day label, and `dragHint`'s new refusals.
+7. **Browser check** (token injection per `rockcut-ui/tests/RUNNING.md`), as `breweryMgr` and
+   `brewer1`:
+   - a template with Prepare grain at −1;
+   - plan a batch on a tank whose previous batch leaves the day before;
+   - drag the bar, then Undo;
+   - drag the pre-brew dot onto brew day (the hint);
+   - check it off late.
+   Ask `LEAD:` for a server restart after the follow-ups if needed. Migrations: none in Stage
+   1–2.
+
+## Don't
+
+- No test results (Stage 3), no small items (Stage 4), no Playwright specs yet (Stage 5).
+- Don't touch `CLAUDE.md`, the spec, the plan or the handoffs.
+
+## Done when
+
+`mix test` green twice, `mix compile --warnings-as-errors`, then
+`npx tsc --noEmit -p tsconfig.app.json`, vitest, `pnpm lint` (no worse than today; give the
+count), and `pnpm exec vite build`. Commits on the branch. Reply with: commits, files, test
+counts, what you checked in the browser, and `LEAD:` notes.
