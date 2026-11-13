@@ -364,3 +364,39 @@ selection" goes on the account too.
 4. Gate: `mix test` twice if the API changed, tsc, Vitest, lint, build, and Playwright for the
    `production` project plus any spec that uses `pickSetting` (not the full run; DEV runs it).
    Report counts and commits, then stop.
+
+---
+
+# DEV fix cycle 1 (QA pass 1)
+
+2026-11-13 · lead → builder. DEV gate at `fb2f5c3`: full Playwright 738 passed + reruns green (two
+flakes; S23h fixed test-only in `b2d13bd`, lead). Independent QA: **fail**, one must-fix. Report:
+`docs/current_work/stepwise_results/d56_dev_qa_report.md` (read the gaps; QA had no source).
+Same rules as before. Each fix gets a test that fails without it (revert-and-rerun; note each).
+
+## Do now (no behavior choice)
+
+1. **Gap 6 (S18):** the template step Save's refused link must name the link, as the spec and your
+   5210 commit intended ("Leads to CIP & Sanitize: …"). QA's race: the "leads to" target moved
+   earlier via the API while the dialog was open; the error came back generic ("A step can't come
+   before the step it follows."). Find which path loses the link name. Also refresh the dialog's
+   step list after a refusal so it doesn't show the stale day.
+2. **Gap 1:** the Undo snackbar covers the last option of an open MUI Menu/Select (batch dialog →
+   Add step → Step menu). Give menus/popovers the same room as dialogs (e.g. limit the popover
+   paper's max height / position above the snackbar) while the snackbar shows.
+3. **Gap 2:** a multi-select drag that would put a pre-brew step on or after brew day (or a
+   non-plain step before it) shows the reason in the drag hint, as a single-dot drag does.
+4. **Gap 5:** a template step at a negative day with a phase or a tank other than the first gets
+   its own message, e.g. "A step before brew day has no phase." / "… is in the first tank." (same
+   422 code is fine, or a new one; tell me which).
+
+## Wait for the lead on
+
+- Gap 4 (must-fix) and gap 3: the lead is asking Matt how they should behave. Investigate gap 4's
+  cause now (Mark not done after the retest was moved leaves the followers +3), and report it, but
+  don't change the behavior until the answer comes.
+
+## Done when
+
+The four fixes committed; ExUnit and Vitest for each; tsc, lint, build; the Playwright specs for the
+touched areas. Report commits, counts, revert-and-rerun, and gap 4's cause. Then stop.
