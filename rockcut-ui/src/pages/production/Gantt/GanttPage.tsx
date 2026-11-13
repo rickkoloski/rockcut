@@ -106,6 +106,7 @@ function GanttScreen() {
   const [compact, setCompactState] = useState(prefs.collapsed)
   const [expanded, setExpandedState] = useState(() => new Set(prefs.expanded))
   const [mix, setMixState] = useState(() => new Set(prefs.mix))
+  const [labelBy, setLabelByState] = useState(prefs.labelBy)
   // Bumped by Today so it scrolls even when the range is unchanged (D48 §3.6, the D47 no-op).
   const [todayTick, setTodayTick] = useState(0)
 
@@ -126,6 +127,12 @@ function GanttScreen() {
   const setExpanded = (keys: Set<string>) => {
     setExpandedState(keys)
     writePref(userId, 'expanded', [...keys])
+  }
+  // D56 §3.3: an expanded tank's "Label by" batch, remembered beside the expanded tanks.
+  const setLabelBy = (key: string, batchId: number) => {
+    const next = { ...labelBy, [key]: batchId }
+    setLabelByState(next)
+    writePref(userId, 'labelBy', next)
   }
   const setMix = (keys: Set<string>) => {
     setMixState(keys)
@@ -436,6 +443,8 @@ function GanttScreen() {
             flags={data.flags}
             compact={compact}
             expanded={expanded}
+            labelBy={labelBy}
+            onLabelBy={setLabelBy}
             stepRowH={stepRowH}
             selected={selected}
             marks={data.condition_marks}

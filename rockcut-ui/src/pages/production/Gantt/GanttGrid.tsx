@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { alpha, Box, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
 import { ChevronRight, CleaningServices, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight, MoreHoriz, WarningAmber } from '@mui/icons-material'
 import { addDaysKey } from '../../../lib/datetime'
@@ -27,6 +27,8 @@ import {
   partFlags,
   partLabel,
   phaseAt,
+  labelBatch,
+  labelChoices,
   rowKey,
   segments,
   showInitials,
@@ -104,6 +106,9 @@ interface Props extends GanttActions {
   flags: Flag[]
   compact: boolean
   expanded: Set<string>
+  /** D56 §3.3: each expanded tank's "Label by" batch (row key → batch id), and picking one. */
+  labelBy?: Record<string, number>
+  onLabelBy?: (key: string, batchId: number) => void
   /** An expanded tank's step rows: 20 px with a mouse, 28 px on touch (D48 §3.6). */
   stepRowH?: number
   onToggleRow: (key: string) => void
@@ -818,6 +823,11 @@ export default function GanttGrid(props: Props) {
   const stepLine = (row: Row, i: number) => {
     const { part, step } = row.stepRows[i]
     const many = new Set(row.parts.map((p) => p.batch.id)).size > 1
+    // D56 §3.3: with two or more batches in range, one is named by its steps alone.
+    const key = rowKey(row.tank)
+    const choices = labelChoices(row, from, to)
+    const named = labelBatch(row, from, to, today, props.labelBy?.[key])
+    const ownName = named === part.batch.id
     const state = dotState(step, today, part)
     const who = step.assignee?.name
     const visible = step.due_on >= from && step.due_on <= to
@@ -854,10 +864,41 @@ export default function GanttGrid(props: Props) {
           <Box component="span" data-testid={`gantt-step-label-${step.id}`} sx={{ fontWeight: step.marker ? 500 : 600, fontStyle: step.marker ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {step.name}
           </Box>
-          {!compact && (many || part.vessel > 0) && (
-            <Box component="span" sx={{ color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {part.batch.label}
-              {part.vessel > 0 ? ' · after transfer' : ''}
+          {!compact && ((many && !ownName) || part.vessel > 0) && (
+            <Box component="span" sx={{ color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis' }} data-testid={`gantt-step-batch-${step.id}`}>
+              {many && !ownName ? part.batch.label : ''}
+              {part.vessel > 0 ? `${many && !ownName ? ' · ' : ''}after transfer` : ''}
+            </Box>
+          )}
+          {!compact && i === 0 && named != null && (
+            <Box
+              component="select"
+              value={named}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => props.onLabelBy?.(key, Number(e.target.value))}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+              aria-label="Label these rows by batch"
+              title="Label these rows by batch"
+              data-testid={`gantt-label-by-${key}`}
+              sx={{
+                ml: 'auto',
+                minWidth: 0,
+                maxWidth: 130,
+                flex: '0 1 auto',
+                fontSize: 11,
+                fontFamily: 'inherit',
+                color: 'text.primary',
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                px: 0.25,
+              }}
+            >
+              {choices.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
             </Box>
           )}
         </Box>

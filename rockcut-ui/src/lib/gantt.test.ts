@@ -15,6 +15,8 @@ import {
   followingIds,
   moveRefusal,
   preBrewKind,
+  labelBatch,
+  labelChoices,
   layoutRows,
   monthLabels,
   partDots,
@@ -34,6 +36,7 @@ import {
   STEP_ROW_H_FINE,
   TRACK_H,
   writePref,
+  type Part,
 } from './gantt'
 import { dayWord, templateDayLabel, type Flag, type SchedBatch, type SchedStep, type Tank } from './production'
 import { dayN, stepStatus } from '../pages/production/Gantt/scheduleText'
@@ -447,15 +450,16 @@ describe('remembered per person', () => {
   afterEach(() => vi.unstubAllGlobals())
 
   it('defaults to 6 weeks, names-only on a phone; keeps each user’s own', () => {
-    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, expanded: [], mix: [] })
+    expect(readPrefs(4, false)).toEqual({ range: null, zoom: 6, collapsed: false, expanded: [], mix: [], labelBy: {} })
     expect(readPrefs(4, true).collapsed).toBe(true)
     writePref(4, 'zoom', 12)
     writePref(4, 'collapsed', false)
     writePref(4, 'range', { from: '2026-10-01', to: '2026-10-02' })
     writePref(4, 'expanded', ['7', 'unassigned'])
     writePref(4, 'mix', ['7'])
+    writePref(4, 'labelBy', { '7': 3007 })
     expect(store.get('rockcut.production.4.zoom')).toBe('12')
-    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, expanded: ['7', 'unassigned'], mix: ['7'] })
+    expect(readPrefs(4, true)).toEqual({ range: { from: '2026-10-01', to: '2026-10-07' }, zoom: 12, collapsed: false, expanded: ['7', 'unassigned'], mix: ['7'], labelBy: { '7': 3007 } })
     expect(readPrefs(5, false).zoom).toBe(6)
     store.set('rockcut.production.4.range', 'not json')
     expect(readPrefs(4, false).range).toBeNull()
@@ -644,5 +648,34 @@ describe('D56 pre-brew steps', () => {
     expect(followingIds(galactic.steps, galactic.links, [50])).toEqual(new Set([52, 53, 54]))
     expect(preBrewKind(step({ step_type_id: null, behavior: null, name: 'Mill' }))).toBe(true)
     expect(preBrewKind(step({ step_type_id: null, behavior: null, marker: true }))).toBe(false)
+  })
+})
+
+describe('Label by (D56 §3.3)', () => {
+  const part = (id: number, first: string, start: string, end: string, reach = end) =>
+    ({ batch: batch({ id, label: `B${id}` }), first, start, end, reach }) as unknown as Part
+  const a = part(1, '2026-11-01', '2026-11-01', '2026-11-10')
+  const b = part(2, '2026-11-12', '2026-11-12', '2026-11-30')
+  const c = part(3, '2026-12-20', '2026-12-20', '2026-12-31')
+  const row = { parts: [b, a, c] }
+
+  it('lists the batches shown in the range, by start', () => {
+    expect(labelChoices(row, '2026-11-01', '2026-11-30').map((x) => x.id)).toEqual([1, 2])
+    expect(labelChoices(row, '2026-11-15', '2026-11-30').map((x) => x.id)).toEqual([2])
+  })
+
+  it('offers no picker with fewer than two', () => {
+    expect(labelBatch(row, '2026-11-15', '2026-11-30', '2026-11-16', undefined)).toBeNull()
+  })
+
+  it('defaults to the batch in the tank today, else the next, else the first', () => {
+    expect(labelBatch(row, '2026-11-01', '2026-12-31', '2026-11-05', undefined)).toBe(1)
+    expect(labelBatch(row, '2026-11-01', '2026-12-31', '2026-11-11', undefined)).toBe(2)
+    expect(labelBatch(row, '2026-11-01', '2026-11-30', '2027-01-05', undefined)).toBe(1)
+  })
+
+  it('keeps the pick while that batch is shown', () => {
+    expect(labelBatch(row, '2026-11-01', '2026-12-31', '2026-11-05', 3)).toBe(3)
+    expect(labelBatch(row, '2026-11-01', '2026-11-30', '2026-11-05', 3)).toBe(1)
   })
 })

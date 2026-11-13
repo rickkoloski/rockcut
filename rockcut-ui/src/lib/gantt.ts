@@ -369,6 +369,35 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
 export const rowKey = (tank: Tank | null) => (tank ? String(tank.id) : 'unassigned')
 
 /**
+ * D56 §3.3 (D46 §3.6, the mockup's "Label these rows by batch"): the batches
+ * an expanded tank shows in `from`…`to`, by when they start; the picker only
+ * shows with two or more.
+ */
+export function labelChoices(row: Pick<Row, 'parts'>, from: string, to: string): SchedBatch[] {
+  const seen = new Map<number, SchedBatch>()
+  for (const p of [...row.parts].sort((a, b) => a.first.localeCompare(b.first)))
+    if (p.first <= to && p.reach >= from && !seen.has(p.batch.id)) seen.set(p.batch.id, p.batch)
+  return [...seen.values()]
+}
+
+/**
+ * The batch whose steps are named alone (the rest keep "step · batch"): the
+ * one picked, while it's still shown; else the one in the tank today, the
+ * next one, or the first (the mockup's order). Null with fewer than two.
+ */
+export function labelBatch(row: Pick<Row, 'parts'>, from: string, to: string, today: string, picked: number | undefined): number | null {
+  const choices = labelChoices(row, from, to)
+  if (choices.length < 2) return null
+  if (picked != null && choices.some((b) => b.id === picked)) return picked
+  const parts = row.parts.filter((p) => choices.includes(p.batch))
+  return (
+    parts.find((p) => p.start <= today && p.end >= today)?.batch.id ??
+    parts.filter((p) => p.end >= today).sort((a, b) => a.start.localeCompare(b.start))[0]?.batch.id ??
+    choices[0].id
+  )
+}
+
+/**
  * Collapse all | ● | Expand all (D48 §3.6, P119): where the switch sits for
  * the open rows. All open → expand, none → collapse, anything else is the
  * person's own mix.
@@ -633,6 +662,8 @@ export interface GanttPrefs {
   expanded: string[]
   /** The last mix of open tanks, for the switch's middle (D48 §3.6). */
   mix: string[]
+  /** D56 §3.3: each expanded tank's "Label by" batch (row key → batch id), beside `expanded`. */
+  labelBy: Record<string, number>
 }
 
 const prefKey = (userId: number | string, name: string) => `rockcut.production.${userId}.${name}`
@@ -680,6 +711,15 @@ export function readPrefs(userId: number | string, phone: boolean): GanttPrefs {
     collapsed: collapsed === null ? phone : collapsed === 'true',
     expanded: keys('expanded'),
     mix: keys('mix'),
+    labelBy: (() => {
+      try {
+        const m = JSON.parse(read(prefKey(userId, 'labelBy')) ?? '{}')
+        if (!m || typeof m !== 'object' || Array.isArray(m)) return {}
+        return Object.fromEntries(Object.entries(m).filter(([, v]) => Number.isInteger(v))) as Record<string, number>
+      } catch {
+        return {}
+      }
+    })(),
   }
 }
 
