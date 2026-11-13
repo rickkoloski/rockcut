@@ -29,6 +29,7 @@ defmodule RockcutApi.Production.Batches do
 
   alias RockcutApi.Production.{
     BatchVessel,
+    Parts,
     Step,
     StepLink,
     Steps,
@@ -496,8 +497,9 @@ defmodule RockcutApi.Production.Batches do
     do: Repo.exists?(from(b in Batch, where: b.split_parent_id == ^id))
 
   @doc """
-  Move a batch in time by `days`: a planned batch's every step, a brewed
-  one's unfinished steps (finished ones keep their dates). No prompt. A
+  Move a batch in time by `days`: a planned batch's every step but a
+  finished pre-brew one (D56 §3.1), a brewed one's unfinished steps
+  (finished ones keep their dates). No prompt. A
   split parent whose Split isn't done takes its parts' steps along (D48 DEV
   QA Y1), refused (`:part_done`) while one of them is done.
   `{:ok, %{moved, kept, renumbered}}`.
@@ -508,8 +510,17 @@ defmodule RockcutApi.Production.Batches do
         Repo.transaction(fn ->
           steps = Repo.all(from(s in Step, where: s.batch_id == ^batch.id, preload: :step_type))
 
+          # D56 §3.1: a finished pre-brew step stays put, even on a planned batch.
+          brew = Parts.first_brew(steps)
+
+          pre_brew_done? =
+            &(&1.done_on != nil and brew != nil and Date.compare(&1.due_on, brew.due_on) == :lt)
+
           {open, done} =
-            Enum.split_with(steps, &(batch.status == "planned" or is_nil(&1.done_on)))
+            Enum.split_with(
+              steps,
+              &((batch.status == "planned" and not pre_brew_done?.(&1)) or is_nil(&1.done_on))
+            )
 
           open = open ++ carried_parts!(batch, steps)
 

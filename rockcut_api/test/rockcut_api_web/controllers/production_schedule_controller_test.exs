@@ -361,4 +361,44 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
                403
     end
   end
+
+  test "D56 pre-brew steps: not_before_brew and before_brew_day as 422s, the preview too", ctx do
+    type_id = fn name -> Enum.find(Production.list_step_types(), &(&1.name == name)).id end
+    {:ok, grain} = Production.create_step_type(%{"name" => "Prepare grain"})
+    path = "/api/production/templates/#{ctx.template.id}/steps"
+
+    refused =
+      call(ctx["owner"], :post, path, %{step_type_id: type_id.("Package"), day_offset: -1})
+
+    assert refused.status == 422
+
+    assert body(refused) == %{
+             "error" => "not_before_brew",
+             "message" => "A Package can't be before brew day."
+           }
+
+    assert call(ctx["owner"], :post, path, %{step_type_id: grain.id, day_offset: -1}).status ==
+             201
+
+    b = ctx["brewer1"]
+    [batch] = body(plan(b, ctx))["data"]["batches"]
+    step = Enum.find(batch["steps"], &(&1["name"] == "Prepare grain"))
+    assert step["due_on"] == "2026-11-01"
+
+    for preview <- [true, false] do
+      res =
+        call(b, :post, "/api/production/steps/move", %{
+          ids: [step["id"]],
+          days: 1,
+          preview: preview
+        })
+
+      assert res.status == 422
+
+      assert body(res) == %{
+               "error" => "before_brew_day",
+               "message" => "A pre-brew step stays before brew day."
+             }
+    end
+  end
 end

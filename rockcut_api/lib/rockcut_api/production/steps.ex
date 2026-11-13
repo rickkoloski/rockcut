@@ -18,6 +18,13 @@ defmodule RockcutApi.Production.Steps do
   writing: the moved and following steps with their new dates, the default
   answer, and per answer the links that would run backwards and the
   P-numbers that would change. Applying uses the same functions.
+
+  **Pre-brew steps** (D56 §3.1, decision 2) are a batch's unfinished steps
+  due before its first Brew day (`pre_brew/1`). Whatever moves that Brew
+  day moves them by the same days, whatever the answer; they aren't
+  following steps, so they don't make a prompt. None may end up on brew day
+  or later (`{:before_brew_day, :pre_brew}`). Decision 11: one checked off
+  on or after brew day stays on its planned day and moves nothing.
   """
   import Ecto.Query, only: [from: 2]
 
@@ -86,6 +93,25 @@ defmodule RockcutApi.Production.Steps do
         |> Enum.filter(&(&1.batch_id == step.batch_id and behavior(&1) == "brew"))
         |> Enum.map(& &1.id)
         |> Enum.min(fn -> nil end)
+  end
+
+  @doc """
+  D56 §3.1: the pre-brew steps among one batch's `steps` (`step_type`
+  preloaded): the unfinished ones due before its first Brew day, by their
+  dates as they are. A batch without a Brew day (a split part) has none.
+  """
+  def pre_brew(steps) do
+    case Parts.first_brew(steps) do
+      nil ->
+        []
+
+      brew ->
+        Enum.filter(
+          steps,
+          &(is_nil(&1.done_on) and &1.batch_id == brew.batch_id and
+              Date.compare(&1.due_on, brew.due_on) == :lt)
+        )
+    end
   end
 
   ## The link graph
@@ -244,14 +270,62 @@ defmodule RockcutApi.Production.Steps do
 
   defp parts_follow!(_graph, _plan, _answer), do: :ok
 
-  # `%{step_id => new date}` for an answer.
-  defp changes(plan, answer) do
+  # `%{step_id => new date}` for an answer, with the pre-brew steps of a
+  # first Brew day it moves (D56 §3.1).
+  defp changes(graph, plan, answer) do
+    base = base_changes(plan, answer)
+    Map.merge(base, pre_brew_changes(graph, base))
+  end
+
+  defp base_changes(plan, answer) do
     steps =
       if answer == "move_all",
         do: plan.moved ++ plan.carried ++ plan.following,
         else: plan.moved ++ plan.carried
 
     Map.new(steps, &{&1.id, Date.add(&1.due_on, plan.days)})
+  end
+
+  # D56 §3.1: each batch whose first Brew day `changes` moves takes its
+  # pre-brew steps (those `changes` doesn't move already) by the same days.
+  defp pre_brew_changes(graph, changes) do
+    for {_batch, steps} <- by_batch(graph),
+        brew = Parts.first_brew(steps),
+        brew && Map.has_key?(changes, brew.id),
+        days = Date.diff(changes[brew.id], brew.due_on),
+        days != 0,
+        s <- pre_brew(steps),
+        not Map.has_key?(changes, s.id),
+        into: %{},
+        do: {s.id, Date.add(s.due_on, days)}
+  end
+
+  # D56 §3.1: after `changes`, an unfinished pre-brew step (`done`: checked
+  # off by the change) on its first Brew day or later.
+  defp pre_brew_late?(graph, changes, done) do
+    Enum.any?(by_batch(graph), fn {_batch, steps} ->
+      brew = Parts.first_brew(steps)
+      due = &Map.get(changes, &1.id, &1.due_on)
+
+      brew != nil and
+        Enum.any?(
+          pre_brew(steps),
+          &(&1.id not in done and Date.compare(due.(&1), due.(brew)) != :lt)
+        )
+    end)
+  end
+
+  # D56 §3.1: refused under every answer, so the preview says so too.
+  defp pre_brew_order!(graph, plan, done \\ []) do
+    if Enum.all?(@answers, &pre_brew_late?(graph, changes(graph, plan, &1), done)),
+      do: Repo.rollback({:before_brew_day, :pre_brew})
+  end
+
+  defp by_batch(graph) do
+    graph.steps
+    |> Map.values()
+    |> Enum.reject(&is_nil(&1.batch_id))
+    |> Enum.group_by(& &1.batch_id)
   end
 
   @doc """
@@ -285,7 +359,7 @@ defmodule RockcutApi.Production.Steps do
     pnums = Batches.p_numbers()
 
     per_answer = fn f ->
-      Map.new(@answers, fn a -> {a, f.(changes(plan, a))} end)
+      Map.new(@answers, fn a -> {a, f.(changes(graph, plan, a))} end)
     end
 
     %{
@@ -303,6 +377,17 @@ defmodule RockcutApi.Production.Steps do
       # D48 DEV QA Y1: a moved Split's parts, which go with it either way.
       carried: Enum.map(plan.carried, &brief(&1, plan.days)),
       following: Enum.map(plan.following, &brief(&1, plan.days)),
+      # D56 §3.1: the pre-brew steps that go with a moved brew day, per answer.
+      pre_brew:
+        Map.new(@answers, fn a ->
+          {a,
+           graph
+           |> pre_brew_changes(base_changes(plan, a))
+           |> Map.keys()
+           |> Enum.map(&graph.steps[&1])
+           |> Enum.sort_by(&{Date.to_gregorian_days(&1.due_on), &1.position, &1.id})
+           |> Enum.map(&brief(&1, plan.days))}
+        end),
       default_answer: plan.default,
       out_of_order: per_answer.(&out_of_order(graph, &1, done)),
       renumbered: per_answer.(&Batches.renumbered(pnums, Batches.p_numbers(&1, leaving)))
@@ -344,7 +429,9 @@ defmodule RockcutApi.Production.Steps do
   Move the steps `ids` by `days` (whole days, not 0, at most a year).
   `answer`: `move_all` / `move_only`; required when steps follow
   (`{:answer_required, preview}`). A finished step can't move
-  (`:step_done`).
+  (`:step_done`). A moved first Brew day takes its pre-brew steps along,
+  and a pre-brew step can't land on brew day or later
+  (`{:before_brew_day, :pre_brew}`, the preview too; D56 §3.1).
 
   `preview: true` returns `{:ok, {:preview, preview}}` and writes nothing.
   Otherwise `{:ok, %{batch_ids, renumbered, out_of_order}}`.
@@ -358,6 +445,7 @@ defmodule RockcutApi.Production.Steps do
       moved = Enum.map(ids, &graph.steps[&1])
       if Enum.any?(moved, & &1.done_on), do: Repo.rollback(:step_done)
       plan = plan(graph, moved, days)
+      pre_brew_order!(graph, plan)
 
       cond do
         opts[:preview] ->
@@ -368,7 +456,11 @@ defmodule RockcutApi.Production.Steps do
 
         true ->
           parts_follow!(graph, plan, answer)
-          changes = changes(plan, answer || "move_only")
+          changes = changes(graph, plan, answer || "move_only")
+
+          if pre_brew_late?(graph, changes, []),
+            do: Repo.rollback({:before_brew_day, :pre_brew})
+
           {_, renumbered} = Batches.with_renumbering(fn -> write_dates!(graph, changes) end)
 
           %{
@@ -390,6 +482,9 @@ defmodule RockcutApi.Production.Steps do
   what happens to the following steps, as in `move/3`. A full Package
   completes the batch; a partial one changes nothing. A Split (D48)
   completes the parent and the parts become `fermenting`.
+
+  D56 decision 11: a pre-brew step done on its first Brew day or later
+  stays on its planned day (`done_on` records the day) and moves nothing.
 
   `preview: true` returns `{:ok, {:preview, %{move, done_on,
   needs_batch_number, next_batch_number}}}` (`move` nil when it's done on
@@ -417,8 +512,12 @@ defmodule RockcutApi.Production.Steps do
       numbering? =
         batch != nil and batch.status == "planned" and first_brew?(step, Map.values(graph.steps))
 
-      days = Date.diff(done_on, step.due_on)
+      # D56 decision 11: a pre-brew step done on brew day or later stays
+      # on its planned day and moves nothing.
+      due_on = if late_pre_brew?(graph, step, done_on), do: step.due_on, else: done_on
+      days = Date.diff(due_on, step.due_on)
       plan = if days != 0, do: plan(graph, [step], days)
+      if plan, do: pre_brew_order!(graph, plan, [step.id])
       leaving = if numbering?, do: [batch.id], else: []
 
       if opts[:preview] do
@@ -442,7 +541,10 @@ defmodule RockcutApi.Production.Steps do
           do: Repo.rollback({:answer_required, preview(graph, plan, [step.id], leaving)})
 
         if plan, do: parts_follow!(graph, plan, answer)
-        changes = if plan, do: changes(plan, answer || "move_only"), else: %{}
+        changes = if plan, do: changes(graph, plan, answer || "move_only"), else: %{}
+
+        if pre_brew_late?(graph, changes, [step.id]),
+          do: Repo.rollback({:before_brew_day, :pre_brew})
 
         {_, renumbered} =
           Batches.with_renumbering(fn ->
@@ -450,12 +552,12 @@ defmodule RockcutApi.Production.Steps do
 
             step
             |> Changeset.change(
-              due_on: done_on,
+              due_on: due_on,
               done_on: done_on,
               done_by_id: actor.id,
               done_on_device_id: actor.on_device_id,
               completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
-              checkoff_move: checkoff_move(graph, step, done_on, changes)
+              checkoff_move: checkoff_move(graph, step, due_on, changes)
             )
             |> Repo.update!()
 
@@ -481,7 +583,7 @@ defmodule RockcutApi.Production.Steps do
         %{
           batch_ids: batch_ids([step.id | Map.keys(changes)], graph),
           renumbered: renumbered,
-          out_of_order: out_of_order(graph, Map.put(changes, step.id, done_on), [step.id])
+          out_of_order: out_of_order(graph, Map.put(changes, step.id, due_on), [step.id])
         }
       end
     end)
@@ -554,6 +656,18 @@ defmodule RockcutApi.Production.Steps do
       %{batch_ids: batch_ids([step.id], graph), renumbered: renumbered, message: message}
     end)
   end
+
+  # D56 decision 11: `step` is a pre-brew step and `done_on` is on its
+  # batch's first Brew day or later.
+  defp late_pre_brew?(graph, %Step{batch_id: id} = step, done_on) when not is_nil(id) do
+    steps = graph.steps |> Map.values() |> Enum.filter(&(&1.batch_id == id))
+    brew = Parts.first_brew(steps)
+
+    brew != nil and Enum.any?(pre_brew(steps), &(&1.id == step.id)) and
+      Date.compare(done_on, brew.due_on) != :lt
+  end
+
+  defp late_pre_brew?(_graph, _step, _done_on), do: false
 
   ## A check-off's move (D49 QA 1)
 
