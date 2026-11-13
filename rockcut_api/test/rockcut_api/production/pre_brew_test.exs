@@ -389,6 +389,86 @@ defmodule RockcutApi.Production.PreBrewTest do
     end
   end
 
+  describe "brew day not on or before a finished pre-brew step (decision 21, DEV gap 3)" do
+    # Order yeast (Nov 28) done on its day; brew day Dec 2.
+    defp yeast_done(ctx) do
+      batch = plan(ctx)
+      yeast = named(batch, "Order yeast")
+      assert {:ok, _} = Steps.complete(yeast.id, %{}, ctx.brewer, today: yeast.due_on)
+      batch
+    end
+
+    @refused {:before_brew_day, {:pre_brew_done, "Order yeast", ~D[2026-11-28]}}
+
+    test "the message" do
+      assert Steps.refusal(@refused) == %{
+               error: "before_brew_day",
+               message: "Order yeast was done Sat Nov 28; brew day can't be before it."
+             }
+    end
+
+    test "the date box or a drag of brew day: on its done day refused, under both answers and in the preview; the day after works",
+         ctx do
+      batch = yeast_done(ctx)
+      brew = named(batch, "Brew day")
+
+      for answer <- ~w(move_all move_only) do
+        assert {:error, @refused} = Steps.move([brew.id], -4, answer: answer)
+      end
+
+      assert {:error, @refused} = Steps.move([brew.id], -4, preview: true)
+      assert {:error, @refused} = Steps.move([brew.id], -6, answer: "move_only")
+      assert due(batch, "Brew day") == @brew
+
+      assert {:ok, _} = Steps.move([brew.id], -3, answer: "move_only")
+      assert due(batch, "Brew day") == ~D[2026-11-29]
+      assert due(batch, "Order yeast") == ~D[2026-11-28]
+    end
+
+    test "a multi-select move with brew day in it", ctx do
+      batch = yeast_done(ctx)
+      ids = [named(batch, "Brew day").id, named(batch, "FDH").id]
+      assert {:error, @refused} = Steps.move(ids, -5, answer: "move_only")
+      assert due(batch, "Brew day") == @brew
+    end
+
+    test "brew day checked off on or before that day (off-plan); the preview too", ctx do
+      batch = yeast_done(ctx)
+      brew = named(batch, "Brew day")
+
+      assert {:error, @refused} =
+               Steps.complete(brew.id, %{"done_on" => "2026-11-28"}, ctx.brewer,
+                 preview: true,
+                 today: ~D[2026-11-28]
+               )
+
+      assert {:error, @refused} =
+               Steps.complete(
+                 brew.id,
+                 %{"done_on" => "2026-11-28", "answer" => "move_only", "batch_number" => "40"},
+                 ctx.brewer,
+                 today: ~D[2026-11-28]
+               )
+
+      assert named(batch, "Brew day").done_on == nil
+    end
+
+    test "the whole-batch drag", ctx do
+      batch = yeast_done(ctx)
+      assert {:error, @refused} = Batches.shift(reload(batch), -4)
+      assert due(batch, "Brew day") == @brew
+      assert {:ok, _} = Batches.shift(reload(batch), -3)
+      assert due(batch, "Brew day") == ~D[2026-11-29]
+    end
+
+    test "later is fine, and an unfinished pre-brew step keeps its own rule", ctx do
+      batch = yeast_done(ctx)
+      brew = named(batch, "Brew day")
+      assert {:ok, _} = Steps.move([brew.id], 2, answer: "move_only")
+      assert due(batch, "Brew day") == ~D[2026-12-04]
+    end
+  end
+
   describe "check-off (decision 11)" do
     test "on a planned batch: no number, no fill, the batch stays planned", ctx do
       batch = plan(ctx)

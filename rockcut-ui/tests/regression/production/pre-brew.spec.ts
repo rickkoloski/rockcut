@@ -37,6 +37,10 @@ async function preBrewBatch(label: string, brewOn: string) {
   return { batch: await batchOf(b.id), prep: t.prep, tank }
 }
 
+/** "Sat Nov 28", as the API and the app write a day. */
+const dayName = (key: string) =>
+  new Date(`${key}T12:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '')
+
 /** Whether `a` is drawn left of `b` (centres; the bar itself starts at the pre-brew day). */
 const leftOf = async (page: Page, a: string, b: string) => {
   const [x, y] = [await page.getByTestId(a).boundingBox(), await page.getByTestId(b).boundingBox()]
@@ -159,6 +163,30 @@ test('S4: the batch dialog moves brew day by the date box, "Move only": the pre-
   expect(stepOf(now, 'Brew day').due_on).toBe(addDays(brew.due_on, 1))
   expect(stepOf(now, prep).due_on).toBe(addDays(pre.due_on, 1))
   expect(stepOf(now, 'PDH').due_on).toBe(pdh.due_on)
+})
+
+test('DEV gap 3 (decision 21): the pre-brew task ticked today, then brew day set to today in the date box: refused with why; nothing moved', async ({ page }) => {
+  const { batch, prep } = await preBrewBatch('Gap 3', addDays(today(), 3))
+  const [brew, pre] = [stepOf(batch, 'Brew day'), stepOf(batch, prep)]
+  // Ticked today, a day early: done (and due) today.
+  const res = await (await apiAs('brewer1')).post(`${P}/steps/${pre.id}/complete`, { data: { done_on: today(), answer: 'move_only' } })
+  expect(res.status(), await res.text()).toBe(200)
+  const msg = `${prep} was done ${dayName(today())}; brew day can't be before it.`
+
+  await openGantt(page)
+  await page.getByTestId(`gantt-bar-${batch.id}-0`).click()
+  await expect(page.getByTestId('batch-dialog')).toBeVisible()
+  const date = page.getByTestId(`batch-step-date-${brew.id}`)
+  await date.fill(today())
+  await date.blur()
+  await expect(page.getByText(msg)).toBeVisible()
+  await expect(page.getByTestId('move-prompt')).toHaveCount(0)
+
+  await page.reload()
+  await expect(page.getByTestId(`gantt-bar-${batch.id}-0`)).toBeVisible()
+  const now = await batchOf(batch.id)
+  expect(stepOf(now, 'Brew day').due_on).toBe(brew.due_on)
+  expect(stepOf(now, prep)).toMatchObject({ due_on: today(), done_on: today() })
 })
 
 test('S5: drag the pre-brew dot onto brew day: refused, and the hint says why', async ({ page }) => {

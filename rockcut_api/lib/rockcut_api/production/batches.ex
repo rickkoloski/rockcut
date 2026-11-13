@@ -523,6 +523,17 @@ defmodule RockcutApi.Production.Batches do
               &((batch.status == "planned" and not pre_brew_done?.(&1)) or is_nil(&1.done_on))
             )
 
+          # D56 decision 21 (DEV gap 3): brew day not on or before a
+          # finished pre-brew step's done day.
+          finished = brew && Enum.find(steps, pre_brew_done?)
+
+          if finished && Enum.any?(open, &(&1.id == brew.id)) &&
+               Date.compare(Date.add(brew.due_on, d), finished.done_on) != :gt,
+             do:
+               Repo.rollback(
+                 {:before_brew_day, {:pre_brew_done, Steps.name(finished), finished.done_on}}
+               )
+
           open = open ++ carried_parts!(batch, steps)
 
           {_, renumbered} =

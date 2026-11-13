@@ -15,6 +15,7 @@ import {
   followingIds,
   moveRefusal,
   preBrewKind,
+  finishedPreBrewRefusal,
   labelBatch,
   labelChoices,
   layoutRows,
@@ -755,6 +756,25 @@ describe('D56 pre-brew steps', () => {
     // Nothing selected but the dot: as before.
     expect(dragHint({ ...base, kind: 'dot', days: 1, part, step: grain, selection: [51] })).toEqual(dragHint({ ...base, kind: 'dot', days: 1, part, step: grain }))
     expect(setTemp.id).toBe(53)
+  })
+
+  it('brew day not on or before a finished pre-brew step (decision 21, DEV gap 3)', () => {
+    // Prepare grain ticked early: done (and due) Mon Nov 30.
+    const done = { ...galactic, steps: galactic.steps.map((x) => (x.id === 51 ? { ...x, due_on: '2026-11-30', done_on: '2026-11-30' } : x)) }
+    const msg = "Prepare grain was done Mon Nov 30; brew day can't be before it."
+    for (const answer of ['move_all', 'move_only'] as const) {
+      expect(moveRefusal([done], [50], -2, answer)).toBe(msg)
+      expect(moveRefusal([done], [50], -1, answer)).toBeNull()
+    }
+    expect(moveRefusal([done], [50, 52], -3, 'move_only')).toBe(msg)
+    expect(finishedPreBrewRefusal(done.steps, done.steps[1], '2026-12-01')).toBeNull()
+    // The hints: brew day's dot, and the whole bar.
+    const [dpart] = buildParts(done)
+    const dparts = [...buildParts(altruism), dpart]
+    const hint = { over: true, tanks: [fv7], parts: dparts }
+    expect(dragHint({ ...hint, kind: 'dot', days: -2, part: dpart, step: done.steps[1] })).toMatchObject({ warn: true, text: expect.stringContaining("Prepare grain was done Mon Nov 30; brew day can't be before it") })
+    expect(dragHint({ ...hint, kind: 'bar', days: -2, part: dpart })).toMatchObject({ warn: true, text: expect.stringContaining("Prepare grain was done Mon Nov 30; brew day can't be before it") })
+    expect(dragHint({ ...hint, kind: 'bar', days: -1, part: dpart })?.text).not.toContain('was done')
   })
 
   it('moveRefusal: brew day moved past a Set temp works only with Move all; it takes the pre-brew step', () => {

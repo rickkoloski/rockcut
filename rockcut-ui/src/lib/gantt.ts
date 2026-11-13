@@ -532,6 +532,16 @@ export function followingIds(steps: SchedStep[], links: SchedLink[], ids: number
  * land before it. The first Brew day takes its pre-brew steps along. The
  * API's message, or null.
  */
+/**
+ * D56 decision 21 (DEV gap 3): brew day (`brew`, of `steps`' batch) moved to
+ * `brewOn` can't be on or before a finished pre-brew step's done day. The
+ * API's message, or null.
+ */
+export function finishedPreBrewRefusal(steps: SchedStep[], brew: SchedStep, brewOn: string): string | null {
+  const finished = steps.find((s) => s.id !== brew.id && s.batch_id === brew.batch_id && s.done_on && s.due_on < brew.due_on && brewOn <= s.done_on)
+  return finished ? `${finished.name} was done ${dayLabel(finished.done_on!)}; brew day can't be before it.` : null
+}
+
 export function moveRefusal(tree: SchedBatch[], ids: number[], days: number, answer: Answer): string | null {
   const root = tree.find((b) => b.split_parent_id == null) ?? tree[0]
   const brew = root && firstBrew(root.steps)
@@ -544,6 +554,8 @@ export function moveRefusal(tree: SchedBatch[], ids: number[], days: number, ans
   if (moving.has(brew.id)) for (const s of preBrew) moving.add(s.id)
   const due = (s: SchedStep) => (moving.has(s.id) ? addDaysKey(s.due_on, days) : s.due_on)
   const brewOn = due(brew)
+  const finished = moving.has(brew.id) ? finishedPreBrewRefusal(root.steps, brew, brewOn) : null
+  if (finished) return finished
   if (preBrew.some((s) => due(s) >= brewOn)) return 'A pre-brew step stays before brew day.'
   const wrong = steps.find(
     (s) =>
@@ -604,6 +616,10 @@ export function dragHint(a: DragHintInput): DragHint | null {
       text = `${dayLabel(from)} · ${signedDays(a.days)}`
       outIn(tankById(part.tankId), from, to)
       overlapIn(tankById(part.tankId), part, from, to)
+      // D56 decision 21: the bar takes an unfinished brew day along.
+      const brew = firstBrew(part.batch.steps)
+      const finished = brew && !brew.done_on && finishedPreBrewRefusal(part.batch.steps, brew, addDaysKey(brew.due_on, a.days))
+      if (finished) reasons.push(finished.replace(/\.$/, ''))
     }
   } else if (a.step) {
     if (!a.days) return null

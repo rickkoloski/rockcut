@@ -317,7 +317,9 @@ defmodule RockcutApi.Production.Steps do
   # `changes` (`done`: checked off by the change), or nil. An unfinished
   # pre-brew step on brew day or later (`{:before_brew_day, :pre_brew}`);
   # a step that isn't plain or custom, changed by it or by its brew day's
-  # move, now before brew day (`{:not_before_brew, type name}`). A split
+  # move, now before brew day (`{:not_before_brew, type name}`). Decision 21
+  # (DEV gap 3): a moved brew day on or before a finished pre-brew step's
+  # done day (`{:before_brew_day, {:pre_brew_done, name, done_on}}`). A split
   # part's steps count against its parent's brew day.
   defp brew_refusal(graph, changes, done) do
     due = &Map.get(changes, &1.id, &1.due_on)
@@ -333,6 +335,16 @@ defmodule RockcutApi.Production.Steps do
       cond do
         brew == nil ->
           nil
+
+        finished =
+            moved_brew? &&
+              Enum.find(
+                steps,
+                &(&1.batch_id == root and &1.id != brew.id and &1.done_on != nil and
+                    Date.compare(&1.due_on, brew.due_on) == :lt and
+                      Date.compare(due.(brew), &1.done_on) != :gt)
+              ) ->
+          {:before_brew_day, {:pre_brew_done, name(finished), finished.done_on}}
 
         Enum.any?(pre_brew(steps), &(&1.id not in done and not before?.(&1))) ->
           {:before_brew_day, :pre_brew}
@@ -377,6 +389,14 @@ defmodule RockcutApi.Production.Steps do
   @doc "D56: a move refusal as the API words it (`ProductionErrors`, the preview's `refused`)."
   def refusal({:before_brew_day, :pre_brew}),
     do: %{error: "before_brew_day", message: "A pre-brew step stays before brew day."}
+
+  # Decision 21 (DEV gap 3).
+  def refusal({:before_brew_day, {:pre_brew_done, name, done_on}}),
+    do: %{
+      error: "before_brew_day",
+      message:
+        "#{name} was done #{Calendar.strftime(done_on, "%a %b %-d")}; brew day can't be before it."
+    }
 
   # D56 DEV gap 5: a template step before brew day with a phase, or in a
   # later tank: the same code, saying what's wrong.
