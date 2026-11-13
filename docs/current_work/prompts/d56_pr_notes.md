@@ -8,7 +8,7 @@ task 5208), and the small items (5207 "Label by" and the settings refresh, 5210,
 `docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5).
 **Branch:** `d56-production-timing`, from `develop`.
 **SHA for DEV:** __SHA__
-**Local gate:** __GATE__ (see "Local gate" below).
+**Local gate:** green on `3e1ddd9` (see "Local gate" below).
 
 ## What changed
 
@@ -27,7 +27,7 @@ Scenario → test is in `rockcut-ui/tests/COVERAGE.md` (D56).
 | Settings refresh (5207) | Back on the screen, `/api/me` is re-read at most once a minute: board settings, theme, Show planned batches, the Gantt view. A setting being saved here keeps this page's value; a failure is silent | S17 |
 | Template Save (5210) | A template step and its new links save in one PATCH, each link in a savepoint; a refused link saves nothing and names itself ("Leads to Carb: …") | S18 |
 | Batch dialog (5211) | A step's name opens its step dialog, so a step taken off the task list is reachable and can be put back | S19 |
-| Undo snackbar (4950) | Ctrl/Cmd+Z runs the live Undo (outside text fields), with a "⌘Z / Ctrl+Z" hint on a mouse; over a dialog it stays until its Undo runs out; always at the bottom | S20 |
+| Undo snackbar (4950) | Ctrl/Cmd+Z runs the live Undo (outside text fields), with a "⌘Z / Ctrl+Z" hint on a mouse; over a dialog it stays until its Undo runs out; always at the bottom, and a dialog under it gets that much bottom room, so its title and buttons stay clear and clickable (lead decision, D49 QA 4) | S20, D49 QA 4 |
 | Boards due date (5791) | Saved on leaving the field, not per keystroke | S21 |
 
 **API, additive:** step types `has_result`; template steps and schedule steps `retest_days`;
@@ -46,23 +46,38 @@ previous image leaves the columns, which it ignores.
 
 ## Local gate
 
-- `MIX_ENV=test mix test`: __EXUNIT__
+- `MIX_ENV=test mix test`: 2443 passed, twice (and three times before the last UI changes)
 - `mix compile --warnings-as-errors`: clean
 - `npx tsc --noEmit -p tsconfig.app.json`, `pnpm exec vite build`: clean
-- Vitest: __VITEST__
+- Vitest: 335 passed (27 files)
 - `pnpm lint`: 27 problems (26 errors, 1 warning), the same as `develop`, none in D56's files
-- full `npx playwright test` after a reseed: __PLAYWRIGHT__
+- full `npx playwright test` after the lead's reseed (tokens minted first): run 1, 508 passed,
+  1 failed (D48 M3, out of date since decision 13; spec updated), 276 not run behind it; run 2,
+  **782 passed, 1 skipped, 1 failed, 2 not run**. The failure is flaky: `beer-board-import` S22
+  timed out loading the beer board (5 s) under the full run's load, then the file passed 11/11
+  twice on its own. The 2 not run are `board-replace` (it waits for `chromium`): 2/2 passed run on
+  their own. The skip is `smoke/roles` "DEV shows the banner" (DEV only).
 
 **Revert-and-rerun** (each fix's test fails without it):
 
 - 5210: ExUnit `production_controller_test` gets 200 instead of 422.
 - 5211: Playwright S19 stops at the step dialog (the name doesn't open it).
 - 4950: Playwright S20 stops at the first check: the snackbar at 24 px, over the dialog's title.
+- The dialog's bottom room: Playwright D49 QA 4 fails on "Schedule this batch" under the snackbar.
 - The refresh (listener off): Playwright S17's second browser keeps the Planned batch card.
 - 5791: done at the time (`boards-scenarios`).
 
-**Existing specs changed:** `regression/settingsMenu.ts` (`pickSetting` waits for the Gantt's
-Tanks save, now a server write). __QA4__
+**Existing specs changed:**
+
+- `regression/settingsMenu.ts`: `pickSetting` waits for the Gantt's Tanks save, now a server
+  write.
+- `production/d49-pencilled.spec.ts` QA 4: was "clear of the batch dialog's buttons" with the
+  snackbar at the top; now the snackbar is at the bottom and checked clear of the title and of
+  Schedule this batch, Delete and Close, all three clickable.
+- `production/d48-fix-cycle-1.spec.ts` M3: a custom step a day before brew day is accepted now
+  (decision 13); a Set temp there is `not_before_brew`.
+
+No other spec expected the snackbar at the top or hiding over a dialog.
 
 ## LIMITATIONS (what local can't tell)
 
@@ -92,4 +107,7 @@ Found in the build:
   they are for other specs and DEV.
 - **The refresh is once a minute:** a change made elsewhere within a minute of the last read
   waits for the next return to the screen.
-- __SNACKBAR__
+- **The snackbar's room is padding on every open dialog** while it shows over one: a tall dialog
+  gets shorter (its content scrolls) for as long as the Undo lasts, up to 2 minutes.
+- **`beer-board-import` S22 can time out loading the board under a full local run** (flaky,
+  above); not D56's area.
