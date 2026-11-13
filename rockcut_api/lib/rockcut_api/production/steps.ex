@@ -625,6 +625,7 @@ defmodule RockcutApi.Production.Steps do
            next_batch_number: if(numbering?, do: Batches.next_batch_number()),
            needs_result: has_result?(step),
            retest_days: if(has_result?(step), do: step.retest_days),
+           retest_allowed: retest_allowed?(step),
            retest_on: retest_on
          }}
       else
@@ -840,14 +841,27 @@ defmodule RockcutApi.Production.Steps do
       cond do
         outcome.result == step.result or is_nil(outcome.result) ->
           if opts[:preview],
-            do: {:preview, %{move: nil, retest_days: step.retest_days, retest_on: nil}},
+            do:
+              {:preview,
+               %{
+                 move: nil,
+                 retest_days: step.retest_days,
+                 retest_allowed: retest_allowed?(step),
+                 retest_on: nil
+               }},
             else: result_reply(graph, step, %{}, nil)
 
         outcome.result == "pass" ->
           retest = retest!(graph, step)
 
           if opts[:preview] do
-            {:preview, %{move: nil, retest_days: step.retest_days, retest_on: nil}}
+            {:preview,
+             %{
+               move: nil,
+               retest_days: step.retest_days,
+               retest_allowed: retest_allowed?(step),
+               retest_on: nil
+             }}
           else
             if retest, do: remove_retest!(step, retest)
             moves = pass_back!(graph, step)
@@ -873,6 +887,7 @@ defmodule RockcutApi.Production.Steps do
          %{
            move: plan && preview(graph, plan, [step.id]),
            retest_days: step.retest_days,
+           retest_allowed: retest_allowed?(step),
            retest_on: retest_on
          }}
 
@@ -968,6 +983,13 @@ defmodule RockcutApi.Production.Steps do
   def has_result?(%Step{step_type: %StepType{has_result: true}}), do: true
   def has_result?(%Step{}), do: false
 
+  @doc """
+  D56 decision 15: whether a Fail on `step` can add a retest (plain steps
+  and Set temp; anything else only continues). Needs `step_type`.
+  """
+  def retest_allowed?(%Step{} = step),
+    do: has_result?(step) and behavior(step) in ["plain", "set_temp"]
+
   # What a check-off records: `result` (nil for a type without one) and, for
   # a Fail with a retest, `retest_days`. Only a preview goes without them.
   defp outcome!(step, attrs, preview?) do
@@ -987,8 +1009,7 @@ defmodule RockcutApi.Production.Steps do
               %{result: "fail", retest_days: nil}
 
             "retest" ->
-              unless behavior(step) in ["plain", "set_temp"],
-                do: Repo.rollback(:retest_not_here)
+              unless retest_allowed?(step), do: Repo.rollback(:retest_not_here)
 
               %{result: "fail", retest_days: retest_days!(attrs["retest_days"], step.retest_days)}
           end

@@ -259,8 +259,15 @@ defmodule RockcutApiWeb.ProductionTestResultsControllerTest do
 
     assert %{"error" => "result_required"} = call(b, :post, url) |> json_response(422)
 
-    assert %{"data" => %{"preview" => %{"needs_result" => true, "retest_days" => 2}}} =
-             call(b, :post, url, %{preview: true}) |> json_response(200)
+    assert %{
+             "data" => %{
+               "preview" => %{
+                 "needs_result" => true,
+                 "retest_days" => 2,
+                 "retest_allowed" => true
+               }
+             }
+           } = call(b, :post, url, %{preview: true}) |> json_response(200)
 
     body = call(b, :post, url, %{result: "fail", fail_action: "continue"}) |> json_response(200)
     assert body["data"]["done"]
@@ -278,6 +285,8 @@ defmodule RockcutApiWeb.ProductionTestResultsControllerTest do
       board["data"]["days"] |> Enum.flat_map(& &1["cards"]) |> Enum.find(&(&1["id"] == task.id))
 
     assert linked["production"]["result"] == "fail"
+    # Continued as planned: no retest day.
+    assert linked["production"]["retest_on"] == nil
   end
 
   test "S12: Fail → Retest on the brewhouse device, as the person", ctx do
@@ -313,6 +322,20 @@ defmodule RockcutApiWeb.ProductionTestResultsControllerTest do
     retest = Repo.get!(Step, body["data"]["retest_id"])
     assert retest.due_on == day(2)
     assert Repo.get_by(Task, production_step_id: retest.id)
+
+    # Decision 14: the test's task carries the retest day for "✗ Fail · retest Wed".
+    test_task = Repo.get_by!(Task, production_step_id: dt.id)
+
+    board =
+      call(ctx.p["brewer1"], :get, "/api/boards/brewery/tasks", %{from: iso(0), to: iso(2)})
+      |> json_response(200)
+
+    cards = Enum.flat_map(board["data"]["days"], & &1["cards"])
+
+    assert %{"result" => "fail", "retest_on" => rt_on} =
+             Enum.find(cards, &(&1["id"] == test_task.id))["production"]
+
+    assert rt_on == iso(2)
 
     # The board's tick on the device goes the same way.
     task = Repo.get_by!(Task, production_step_id: retest.id)

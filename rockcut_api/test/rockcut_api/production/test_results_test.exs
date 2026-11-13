@@ -121,8 +121,15 @@ defmodule RockcutApi.Production.TestResultsTest do
       batch = brewed(ctx)
       dt = named(batch, "Diacetyl test")
 
-      assert {:ok, {:preview, %{needs_result: true, retest_days: 2, retest_on: nil, move: nil}}} =
-               Steps.complete(dt.id, %{}, ctx.brewer, preview: true, today: @test_day)
+      assert {:ok,
+              {:preview,
+               %{
+                 needs_result: true,
+                 retest_days: 2,
+                 retest_allowed: true,
+                 retest_on: nil,
+                 move: nil
+               }}} = Steps.complete(dt.id, %{}, ctx.brewer, preview: true, today: @test_day)
 
       assert {:error, :result_required} = complete(ctx, dt, %{})
       assert {:error, :result_invalid} = complete(ctx, dt, %{"result" => "maybe"})
@@ -140,7 +147,7 @@ defmodule RockcutApi.Production.TestResultsTest do
       # A step without a result: no question, and a result sent is ignored.
       fdh = named(batch, "FDH")
 
-      assert {:ok, {:preview, %{needs_result: false, retest_days: nil}}} =
+      assert {:ok, {:preview, %{needs_result: false, retest_days: nil, retest_allowed: false}}} =
                Steps.complete(fdh.id, %{}, ctx.brewer, preview: true, today: fdh.due_on)
 
       assert {:ok, _} = complete(ctx, fdh, %{"result" => "fail"}, fdh.due_on)
@@ -302,6 +309,10 @@ defmodule RockcutApi.Production.TestResultsTest do
       {:ok, _} = Production.update_step_type(type!("Package"), %{"has_result" => true})
       batch = brewed(ctx)
       pkg = named(batch, "Package")
+
+      # Decision 15: the preview tells the prompt to offer only Continue.
+      assert {:ok, {:preview, %{needs_result: true, retest_allowed: false}}} =
+               Steps.complete(pkg.id, %{}, ctx.brewer, preview: true, today: pkg.due_on)
 
       assert {:error, :retest_not_here} = fail_retest(ctx, pkg, %{}, pkg.due_on)
 
@@ -478,7 +489,11 @@ defmodule RockcutApi.Production.TestResultsTest do
 
       key = "failed_tests:#{dt.id}"
 
-      assert [%{key: ^key, message: "3 failed Diacetyl tests", muted: false} = flag] = flags()
+      assert [
+               %{key: ^key, message: "Galactic #40 · 3 failed Diacetyl tests", muted: false} =
+                 flag
+             ] = flags()
+
       assert flag.batch_ids == [batch.id]
 
       {:ok, _} = Signoffs.sign_off(%{key: key, signature: flag.signature}, ctx.brewer)
@@ -487,7 +502,13 @@ defmodule RockcutApi.Production.TestResultsTest do
       r3 = step(%{id: r3})
       {:ok, _} = complete(ctx, r3, %{"result" => "fail", "fail_action" => "continue"}, r3.due_on)
 
-      assert [%{message: "4 failed Diacetyl tests", signed_off: false, was_signed_off: true}] =
+      assert [
+               %{
+                 message: "Galactic #40 · 4 failed Diacetyl tests",
+                 signed_off: false,
+                 was_signed_off: true
+               }
+             ] =
                flags()
     end
 

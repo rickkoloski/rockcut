@@ -49,6 +49,8 @@ defmodule RockcutApi.Production.Step do
     belongs_to :assignee, RockcutApi.Accounts.User
     belongs_to :template_step, RockcutApi.Production.TemplateStep
     belongs_to :retest_of, __MODULE__
+    # D56 §3.2: the retest a Fail added (at most one per test).
+    has_one :retest, __MODULE__, foreign_key: :retest_of_id
 
     timestamps(type: :utc_datetime)
   end

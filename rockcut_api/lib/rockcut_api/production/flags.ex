@@ -496,7 +496,7 @@ defmodule RockcutApi.Production.Flags do
       type = (first.step_type && first.step_type.name) || Steps.name(first)
 
       flag(:failed_tests, [first.id], [first.id, fails],
-        message: "#{fails} failed #{type}s",
+        message: "#{p.label} · #{fails} failed #{type}s",
         batch_ids: [batch_id],
         tank_id: nil
       )
