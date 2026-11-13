@@ -5,6 +5,7 @@ import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { boardPath, formatTaskDay } from '../../lib/tasks'
 import type { RosterEntry, TaskBoardEntry, TaskCardData } from '../../lib/types'
 import { useFlows } from '../production/Gantt/flowsContext'
+import { taskResultText } from '../../lib/testResults'
 
 const NOTES_MAX = 2000
 
@@ -88,6 +89,11 @@ export default function LinkedTaskDialog({ card, board, members, focusNotes, onC
       <Typography variant="body2" color="text.secondary" sx={{ mt: -1.5 }}>
         {card.due_on ? formatTaskDay(card.due_on) : ''} · Change day… moves the step
       </Typography>
+      {taskResultText(card.production) && (
+        <Typography variant="body2" color={card.production?.result === 'fail' ? 'error.main' : 'success.main'} sx={{ mt: -1.5 }} data-testid="task-dialog-result">
+          {taskResultText(card.production)}
+        </Typography>
+      )}
       <TextField
         label="Notes"
         value={notes}

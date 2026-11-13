@@ -175,9 +175,10 @@ export default function TemplateEditor() {
               </Tooltip>
             )}
           </Typography>
-          {s.full_name && (
-            <Typography variant="caption" color="text.secondary">
-              {s.full_name}
+          {(s.full_name || s.has_result) && (
+            <Typography variant="caption" color="text.secondary" component="div" data-testid={`entry-sub-${s.id}`}>
+              {/* D56 §3.2: a has-result step's retest days. */}
+              {[s.full_name, s.has_result && `Retest after ${s.retest_days} day${s.retest_days === 1 ? '' : 's'}`].filter(Boolean).join(' · ')}
             </Typography>
           )}
         </Box>

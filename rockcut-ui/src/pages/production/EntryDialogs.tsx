@@ -47,6 +47,7 @@ import {
   type Template,
   type TemplateStep,
 } from '../../lib/production'
+import { retestDays } from '../../lib/testResults'
 
 /** Every change answers the whole template; the editor shows it. */
 export type OnTemplate = (t: Template, message?: string) => void
@@ -244,6 +245,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const [phaseId, setPhaseId] = useState<number | ''>(entry ? (entry.phase_id ?? '') : '')
   const [onTaskList, setOnTaskList] = useState(entry?.on_task_list ?? !marker)
   const [notes, setNotes] = useState(entry?.notes ?? '')
+  const [retest, setRetest] = useState(String(entry?.retest_days ?? 2))
   const [after, setAfter] = useState<number | ''>('')
   const [afterAnswer, setAfterAnswer] = useState<Answer>('move_all')
   const [leads, setLeads] = useState<number | ''>('')
@@ -258,6 +260,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const others = template.steps.filter((s) => s.id !== entry?.id)
   const behavior = type?.behavior ?? entry?.behavior ?? null
   const showTemp = behavior === 'set_temp' || behavior === 'brew'
+  // D56 §3.2: "Retest after [2] days" on a step whose type has a result.
+  const hasResult = !marker && !!(type?.has_result ?? entry?.has_result)
   // D46 QA M1: a new Transfer/Filter goes into the next new tank, worked out
   // from its day; one being edited keeps its tank. Any other entry goes in a
   // tank that exists. D47 task 0 (N1): transfers stay in day order, so a day
@@ -309,6 +313,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       if (refused) local.day_offset = refused
     }
     if (behavior === 'set_temp' && temperature === '') local.temperature = 'Enter the temperature.'
+    if (hasResult && retestDays(retest) == null) local.retest_days = 'Enter 1–30 days.'
     if (orderError) local.vessel_index = orderError
     setErrors(local)
     if (Object.keys(local).length) return
@@ -327,6 +332,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     if (behavior === 'split') body.split_method = splitMethod
     if (behavior === 'package') body.package_partial = packagePartial
     if (behavior === 'cip') body.cip_method = cipMethod
+    if (hasResult) body.retest_days = retestDays(retest)
     if (isBrew) {
       delete body.day_offset
       delete body.vessel_index
@@ -459,6 +465,17 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           error={!!errors.detail}
           helperText={errors.detail}
           slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'entry-detail' } }}
+        />
+      )}
+      {hasResult && (
+        <TextField
+          label="Retest after (days)"
+          type="number"
+          value={retest}
+          onChange={(e) => setRetest(e.target.value)}
+          error={!!errors.retest_days}
+          helperText={errors.retest_days ?? 'A Fail can add a retest this many days later (1–30).'}
+          slotProps={{ htmlInput: { min: 1, max: 30, 'data-testid': 'entry-retest-days' } }}
         />
       )}
       {showTemp && (

@@ -3,6 +3,7 @@ import { alpha, Box, IconButton, Tooltip, Typography, useTheme } from '@mui/mate
 import { ChevronRight, CleaningServices, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight, MoreHoriz, WarningAmber } from '@mui/icons-material'
 import { addDaysKey } from '../../../lib/datetime'
 import { initials } from '../../../lib/tasks'
+import { resultMark, resultSuffix } from '../../../lib/testResults'
 import {
   BAR_H,
   BAR_TOP,
@@ -719,7 +720,9 @@ export default function GanttGrid(props: Props) {
           const state = dotState(step, today, part)
           const center = x(step.due_on) + dayPx / 2 + (slot - (of - 1) / 2) * Math.min(DOT + 2, dayPx / of)
           const who = step.assignee?.name
-          const tip = [step.name, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · ')
+          // D56 §3.2: a done test's dot carries ✓ / ✗, and its tip says passed / failed.
+          const mark = step.done_on ? resultMark(step.result) : null
+          const tip = [step.name, dayLabel(step.due_on), STATE_WORDS[state] + resultSuffix(step.result), who, step.notes].filter(Boolean).join(' · ')
           return (
             <Box key={step.id}>
               {showI && who && (
@@ -760,8 +763,15 @@ export default function GanttGrid(props: Props) {
                     ...ring(step.id),
                     ...lifted(`dot:${step.id}`),
                     '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 2 },
+                    ...(mark && { display: 'flex', alignItems: 'center', justifyContent: 'center' }),
                   }}
-                />
+                >
+                  {mark && (
+                    <Box component="span" aria-hidden sx={{ fontSize: 8, fontWeight: 900, lineHeight: 1, color: 'primary.contrastText', pointerEvents: 'none' }} data-testid={`gantt-result-${step.id}`}>
+                      {mark}
+                    </Box>
+                  )}
+                </Box>
               </Tooltip>
             </Box>
           )
@@ -811,7 +821,7 @@ export default function GanttGrid(props: Props) {
     const state = dotState(step, today, part)
     const who = step.assignee?.name
     const visible = step.due_on >= from && step.due_on <= to
-    const text = `${step.name}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
+    const text = `${step.name}${resultSuffix(step.result)}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
     // D52: no line between a tank's steps, only under its last one (the line between tanks).
     // Transparent rather than removed, so every row keeps its height.
     const rule = i === row.stepRows.length - 1 ? 'divider' : 'transparent'

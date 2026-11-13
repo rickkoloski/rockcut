@@ -66,6 +66,10 @@ const step = (s: Partial<SchedStep>): SchedStep => ({
   assignee: null,
   added: false,
   ramp_group: null,
+  has_result: false,
+  result: null,
+  retest_days: 2,
+  retest_of_id: null,
   ...s,
 })
 

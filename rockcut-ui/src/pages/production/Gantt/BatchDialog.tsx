@@ -26,6 +26,7 @@ import ErrorAlert from '../ErrorAlert'
 import { FlagRow } from './FlagsDialog'
 import TankSelect from './TankSelect'
 import { dayN } from './scheduleText'
+import { stepResultText } from '../../../lib/testResults'
 import { useFlows } from './flowsContext'
 import DateField from '../DateField'
 
@@ -128,6 +129,16 @@ function StepLine({
         </Button>
         {step.added && <Chip size="small" label="Added" variant="outlined" data-testid={`batch-step-added-${step.id}`} />}
         {state === 'done' && <Chip size="small" label="✓ done" color="primary" variant="outlined" />}
+        {/* D56 §3.2: a done test's result, worded as in the step dialog. */}
+        {done && stepResultText(step, batch.steps) && (
+          <Chip
+            size="small"
+            label={stepResultText(step, batch.steps)}
+            color={step.result === 'fail' ? 'error' : 'success'}
+            variant="outlined"
+            data-testid={`batch-step-result-${step.id}`}
+          />
+        )}
         {state === 'late' && <Chip size="small" label="late" color="error" variant="outlined" />}
         {state === 'stranded' && <Chip size="small" label="after the tank was emptied" color="error" variant="outlined" data-testid={`batch-step-stranded-${step.id}`} />}
         {removable(step) && (

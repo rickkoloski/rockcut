@@ -5,7 +5,7 @@ import { useApiQuery } from '../../../hooks/useApiQuery'
 import useAuth from '../../../hooks/useAuth'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { addDaysKey } from '../../../lib/datetime'
-import { BOARD_QUERY_KEY, boardPath, formatTaskDay, linkedStep, taskError } from '../../../lib/tasks'
+import { BOARD_QUERY_KEY, boardPath, formatTaskDay, linkedRetestOn, linkedStep, taskError } from '../../../lib/tasks'
 import type { TaskBoardData, TaskCardData } from '../../../lib/types'
 import { useFlows } from './flowsContext'
 import { HEAD_H } from './GanttGrid'
@@ -134,7 +134,7 @@ function TaskRow({ card, today, onOpen }: { card: TaskCardData; today: string; o
         checked={card.done}
         disabled={busy}
         sx={{ p: 0.5, alignSelf: 'flex-start' }}
-        onChange={() => run(() => (card.done ? flows.uncheck(step) : flows.checkOff(step, today, step.batchLabel)))}
+        onChange={() => run(() => (card.done ? flows.uncheck(step, linkedRetestOn(card)) : flows.checkOff(step, today, step.batchLabel)))}
         slotProps={{ input: { 'aria-label': card.done ? `Mark ${card.title} not done` : `Mark ${card.title} completed`, 'data-testid': `task-list-check-${card.id}` } as object }}
       />
       <Box sx={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 0.75 }}>

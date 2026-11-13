@@ -26,7 +26,22 @@ import { actingRun } from '../../../hooks/useActing'
 import { BOARD_QUERY_KEY } from '../../../lib/tasks'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { renumberText, type Renumber } from './scheduleText'
+import {
+  failQuestion,
+  needsMovePrompt,
+  needsRepreview,
+  outcomeBody,
+  outcomeWords,
+  resultQuestion,
+  retestDays,
+  RETEST_MAX,
+  RETEST_MIN,
+  type Outcome,
+  type ResultPreview,
+  type ResultQuestion,
+} from '../../../lib/testResults'
 import { FlowsContext, type StepRef } from './flowsContext'
+import ConfirmDialog from '../../../components/ConfirmDialog'
 
 // D47 §3.7: every schedule write goes through here. It refetches the
 // schedule, says what happened with Undo for 6 seconds (plan decision 5),
@@ -59,7 +74,7 @@ export interface MovePreview {
   renumbered: Record<Answer, Renumber[]>
 }
 
-interface CompletePreview {
+interface CompletePreview extends ResultPreview {
   move: MovePreview | null
   done_on: string
   needs_batch_number: boolean
@@ -105,6 +120,8 @@ type Prompt =
   | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
   | { kind: 'schedule'; label: string; resolve: (ok: boolean) => void }
   | { kind: 'number'; label: string; value: string; error: string | null; suggestion: string; resolve: (n: string | null) => void }
+  | { kind: 'result'; name: string; question: ResultQuestion; failOnly: boolean; resolve: (o: Outcome | null) => void }
+  | { kind: 'confirm'; title: string; message: string; confirmLabel: string; resolve: (ok: boolean) => void }
 
 export function FlowsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
@@ -166,6 +183,12 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const askNumber = (label: string, value: string, suggestion: string, error: string | null = null) =>
     new Promise<string | null>((resolve) => setPrompt({ kind: 'number', label, value, error, suggestion, resolve }))
+
+  const askResult = (name: string, question: ResultQuestion, failOnly = false) =>
+    new Promise<Outcome | null>((resolve) => setPrompt({ kind: 'result', name, question, failOnly, resolve }))
+
+  const askConfirm = (title: string, message: string, confirmLabel: string) =>
+    new Promise<boolean>((resolve) => setPrompt({ kind: 'confirm', title, message, confirmLabel, resolve }))
 
   const moveSteps = useCallback(
     async (ids: number[], days: number): Promise<Result | null> => {
@@ -229,6 +252,27 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           return failure(again)
         }
       }
+      // D56 §3.2: Pass / Fail first, and on a Fail, Retest or Continue.
+      let outcome: Outcome | null = null
+      const question = resultQuestion(pre)
+      if (question) {
+        outcome = await askResult(step.name, question)
+        if (!outcome) return null
+      }
+      let retestOn: string | null = null
+      if (needsRepreview(outcome)) {
+        // The retest moves the steps after the test: one move prompt for it (and any lateness).
+        try {
+          const again = (
+            await coded((a) => a.post<{ data: { preview: CompletePreview } }>(path, { done_on: doneOn, preview: true, ...outcomeBody(outcome) }))
+          ).data.data.preview
+          pre = { ...pre, move: again.move }
+          retestOn = again.retest_on ?? null
+        } catch (err) {
+          const f = failure(err)
+          return f.code === 'cancelled' ? null : f
+        }
+      }
       let number: string | undefined
       if (pre.needs_batch_number) {
         const n = await askNumber(`${step.name} for ${batchLabel ?? 'this batch'}`, pre.next_batch_number ?? '', pre.next_batch_number ?? '')
@@ -237,9 +281,10 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       }
       let answer: Answer | undefined
       let move = pre.move
-      if (pre.move && pre.move.following.length) {
-        const off = pre.move.days
-        const a = await askMove(pre.move, `${step.name} done ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}`)
+      if (needsMovePrompt(pre.move)) {
+        const off = pre.move!.days
+        const title = retestOn ? `${step.name} failed · retest ${dayLabel(retestOn)}` : `${step.name} done ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}`
+        const a = await askMove(pre.move!, title)
         if (!a) return null
         answer = a
       }
@@ -254,11 +299,12 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           const moved = following ? [...parts, following] : parts
           return `${step.name} done, ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}. ${andList(moved)} moved with it`
         }
-        return following ? `${step.name} done · ${following} moved ${daysWord(move!.days)}` : `${step.name} done`
+        const result = outcome ? ` · ${outcomeWords(outcome, retestOn)}` : ''
+        return following ? `${step.name} done${result} · ${following} moved ${daysWord(move!.days)}` : `${step.name} done${result}`
       }
       for (;;) {
         const r = await write<Record<string, unknown>>(
-          (a) => a.post(path, { done_on: doneOn, batch_number: number, answer }),
+          (a) => a.post(path, { done_on: doneOn, batch_number: number, answer, ...outcomeBody(outcome) }),
           () => (number ? `${doneText()}. ${batchLabel?.replace(/ P\d+$/, '') ?? 'The batch'} is #${plainBatchNumber(number)}.` : `${doneText()}.`),
         )
         if (r.ok) return r
@@ -281,9 +327,55 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     [write],
   )
 
+  // D56 decision 8: a failed test's retest goes with it, so that's asked first.
   const uncheck = useCallback(
-    (step: StepRef) =>
-      write<{ message?: string | null }>((a) => a.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`),
+    async (step: StepRef, retestOn: string | null = null): Promise<Result | null> => {
+      if (retestOn && !(await askConfirm(`Mark ${step.name} not done`, `Its retest on ${dayLabel(retestOn)} is removed, and the steps after it go back to their dates.`, 'Mark not done')))
+        return null
+      return write<{ message?: string | null }>((a) => a.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`)
+    },
+    [write],
+  )
+
+  // D56 §3.2 Change: Fail → Pass removes the retest (decision 17); Pass → Fail asks the Fail question.
+  const changeResult = useCallback(
+    async (step: StepRef, to: 'pass' | 'fail'): Promise<Result | null> => {
+      const path = prodPath('steps', step.id, 'result')
+      if (to === 'pass') return write<Record<string, unknown>>((a) => a.patch(path, { result: 'pass' }), `${step.name}: Pass.`)
+      const preview = async (body: Record<string, unknown>) =>
+        (await coded((a) => a.patch<{ data: { preview: CompletePreview } }>(path, { ...body, preview: true }))).data.data.preview
+      let pre: CompletePreview
+      try {
+        pre = await preview({ result: 'fail' })
+      } catch (err) {
+        const f = failure(err)
+        return f.code === 'cancelled' ? null : f
+      }
+      const outcome = await askResult(step.name, failQuestion(pre), true)
+      if (!outcome) return null
+      let retestOn: string | null = null
+      if (needsRepreview(outcome)) {
+        try {
+          pre = await preview(outcomeBody(outcome))
+          retestOn = pre.retest_on ?? null
+        } catch (err) {
+          const f = failure(err)
+          return f.code === 'cancelled' ? null : f
+        }
+      }
+      let answer: Answer | undefined
+      let move = pre.move
+      for (;;) {
+        if (!answer && needsMovePrompt(move)) {
+          const a = await askMove(move!, `${step.name} failed${retestOn ? ` · retest ${dayLabel(retestOn)}` : ''}`)
+          if (!a) return null
+          answer = a
+        }
+        const r = await write<Record<string, unknown>>((a) => a.patch(path, { ...outcomeBody(outcome), answer }), `${step.name}: ${outcomeWords(outcome, retestOn)}.`)
+        if (r.ok || r.code !== 'answer_required' || !r.body?.preview || answer) return r
+        move = r.body.preview as MovePreview
+      }
+    },
     [write],
   )
 
@@ -315,7 +407,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
   const close = (value: null) => {
     if (!prompt) return
     if (prompt.kind === 'move') prompt.resolve(value)
-    else if (prompt.kind === 'schedule') prompt.resolve(false)
+    else if (prompt.kind === 'schedule' || prompt.kind === 'confirm') prompt.resolve(false)
     else prompt.resolve(value)
     setPrompt(null)
   }
@@ -327,6 +419,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         moveSteps,
         checkOff,
         uncheck,
+        changeResult,
         notify,
         saved: async (message, token) => {
           notify(message, token)
@@ -366,6 +459,33 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           onCancel={() => close(null)}
           onSave={(n) => {
             prompt.resolve(n)
+            setPrompt(null)
+          }}
+        />
+      )}
+      {prompt?.kind === 'result' && (
+        <ResultPrompt
+          name={prompt.name}
+          question={prompt.question}
+          failOnly={prompt.failOnly}
+          onCancel={() => close(null)}
+          onApply={(o) => {
+            prompt.resolve(o)
+            setPrompt(null)
+          }}
+        />
+      )}
+      {prompt?.kind === 'confirm' && (
+        <ConfirmDialog
+          open
+          title={prompt.title}
+          message={prompt.message}
+          confirmLabel={prompt.confirmLabel}
+          confirmColor="primary"
+          testId="flows-confirm"
+          onClose={() => close(null)}
+          onConfirm={() => {
+            prompt.resolve(true)
             setPrompt(null)
           }}
         />
@@ -614,6 +734,105 @@ function NumberPrompt({
           </Button>
         </DialogActions>
       </form>
+    </Dialog>
+  )
+}
+
+/**
+ * D56 §3.2: Pass or Fail, and on a Fail, "Retest in [N] days" or "Continue
+ * as planned". Decision 15: where a retest can't go, only Continue, with why.
+ * `failOnly`: Change from Pass to Fail asks just the Fail question.
+ */
+function ResultPrompt({
+  name,
+  question,
+  failOnly,
+  onCancel,
+  onApply,
+}: {
+  name: string
+  question: ResultQuestion
+  failOnly: boolean
+  onCancel: () => void
+  onApply: (o: Outcome) => void
+}) {
+  const [result, setResult] = useState<'pass' | 'fail' | ''>(failOnly ? 'fail' : '')
+  const [action, setAction] = useState<'retest' | 'continue' | ''>(question.retestAllowed ? '' : 'continue')
+  const [days, setDays] = useState(String(question.days))
+  usePhoneBackCloses(true, onCancel)
+  const n = retestDays(days)
+  const outcome: Outcome | null =
+    result === 'pass'
+      ? { result: 'pass' }
+      : result === 'fail' && action === 'continue'
+        ? { result: 'fail', action: 'continue' }
+        : result === 'fail' && action === 'retest' && n != null
+          ? { result: 'fail', action: 'retest', days: n }
+          : null
+
+  return (
+    <Dialog open onClose={onCancel} maxWidth="xs" fullWidth data-testid="result-prompt">
+      <DialogTitle>{failOnly ? `${name} failed` : `${name}: Pass or Fail?`}</DialogTitle>
+      <DialogContent>
+        {!failOnly && (
+          <RadioGroup row value={result} onChange={(e) => setResult(e.target.value as 'pass' | 'fail')}>
+            <FormControlLabel value="pass" control={<Radio slotProps={{ input: { 'data-testid': 'result-pass' } as object }} />} label="Pass" />
+            <FormControlLabel value="fail" control={<Radio slotProps={{ input: { 'data-testid': 'result-fail' } as object }} />} label="Fail" />
+          </RadioGroup>
+        )}
+        {result === 'fail' && (
+          <Box sx={{ mt: failOnly ? 0 : 1 }}>
+            <Typography variant="body2" sx={{ mb: 0.5 }}>
+              What next?
+            </Typography>
+            <RadioGroup value={action} onChange={(e) => setAction(e.target.value as 'retest' | 'continue')}>
+              {question.retestAllowed && (
+                <FormControlLabel
+                  value="retest"
+                  control={<Radio slotProps={{ input: { 'data-testid': 'result-retest' } as object }} />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      Retest in
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={days}
+                        onChange={(e) => {
+                          setDays(e.target.value)
+                          setAction('retest')
+                        }}
+                        error={action === 'retest' && n == null}
+                        sx={{ width: 72 }}
+                        slotProps={{ htmlInput: { min: RETEST_MIN, max: RETEST_MAX, 'aria-label': 'Retest in days', 'data-testid': 'result-retest-days' } }}
+                      />
+                      days
+                    </Box>
+                  }
+                />
+              )}
+              {question.retestAllowed && action === 'retest' && n == null && (
+                <Typography variant="body2" color="error.main" sx={{ pl: 4 }} data-testid="result-retest-days-error">
+                  Retest in {RETEST_MIN} to {RETEST_MAX} days.
+                </Typography>
+              )}
+              <FormControlLabel value="continue" control={<Radio slotProps={{ input: { 'data-testid': 'result-continue' } as object }} />} label="Continue as planned" />
+            </RadioGroup>
+            {!question.retestAllowed && (
+              <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }} data-testid="result-no-retest">
+                A retest can only follow a plain step or a Set temp step.
+              </Typography>
+            )}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onCancel} data-testid="result-cancel">
+          Cancel
+        </Button>
+        <Button variant="contained" disabled={!outcome} onClick={() => outcome && onApply(outcome)} data-testid="result-apply">
+          {failOnly ? 'Save' : 'Check off'}
+        </Button>
+      </DialogActions>
     </Dialog>
   )
 }

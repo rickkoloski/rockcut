@@ -95,6 +95,8 @@ describe('previewBars', () => {
     on_task_list: true,
     position: 1,
     ramp_group: null,
+    has_result: false,
+    retest_days: 2,
     ...s,
   })
 

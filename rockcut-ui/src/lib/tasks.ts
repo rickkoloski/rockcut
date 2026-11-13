@@ -29,6 +29,10 @@ export function linkedStep(card: Pick<TaskCardData, 'production'>) {
   }
 }
 
+/** D56 decision 8: a failed test's retest day, which Mark not done takes away (so it asks first). */
+export const linkedRetestOn = (card: Pick<TaskCardData, 'production'>) =>
+  card.production?.result === 'fail' ? (card.production.retest_on ?? null) : null
+
 /** The query key of a board's Daily items (with the retired ones), with its department. */
 export const DAILY_ITEMS_KEY = 'daily-items'
 
