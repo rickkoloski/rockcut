@@ -207,3 +207,88 @@ and migrations on the dev DB). **API only. Stop after this stage and report** (p
 `MIX_ENV=test mix test` green twice, `mix compile --warnings-as-errors`. Commits on the branch.
 Reply with: commits, files, test counts, the API shapes Stage 4 will use (request fields and
 the preview's new keys), and `LEAD:` notes.
+
+---
+
+# Stage 4 (Test results UI, and the small items)
+
+2026-11-12 · lead → builder. Stage 3 is in (`4bbf9b1`, `972561c`; lead re-ran `mix test`: 2437
+passed; dev DB migrated). Matt approved the lead's calls on your LEAD notes. They're now spec
+decisions 14–17. **Read first:** spec §2 decisions 14–17, §3.2 "Shown as" (updated), §3.3–§3.7,
+and **plan Stage 4**. Same rules as before (branch, commits staged by name, no
+push/merge/rebase, `mix format` only your files, `LEAD:` for server restarts). Do **A**, then
+**B**, then **C**, then stop and report.
+
+## A. API follow-ups from Stop 1
+
+1. **Flag text** (decision 16): "Galactic #40 · 3 failed Diacetyl tests", with the batch label
+   the other flags use. Update its ExUnit.
+2. **History** (decision 14): don't add a change log. If Stage 3 left any half-built logging for
+   it, take it out. The step and task JSON must carry enough for the UI to word "✗ Fail · retest
+   Wed" without another call: the step's `result`, and on a failed test, its retest's id and
+   `due_on` (or a way to find them in the batch's steps). Add a field only if the batch/step JSON
+   doesn't already give it.
+3. **Retest offered?** (decision 15): the check-off preview tells the UI whether Retest is
+   allowed for this step (e.g. `retest_allowed: false`), so the prompt can offer only "Continue
+   as planned". Reuse the rule behind `retest_not_here`; don't copy it into the client.
+
+## B. Test results UI (plan Stage 4 "Results UI")
+
+1. **`ListsPage.tsx`:** the "Has a result" switch per step type (built-in too).
+2. **`TemplateEditor.tsx`:** "Retest after [2] days" (1–30) on has-result types; hidden
+   otherwise.
+3. **Check-off prompts** in the shared flow (`Gantt/flows.tsx`) so every entry point gets them:
+   Gantt, step dialog, batch dialog, `LinkedTaskDialog` on the Brewery board, and the brewhouse
+   device (staff code):
+   - Pass / Fail first (from the preview's `needs_result`).
+   - On Fail: "Retest in [N] days" (N editable, 1–30, from the preview) or "Continue as planned".
+     With `retest_allowed: false`, only Continue, and a line saying why.
+   - Then the existing move prompt when the API answers `answer_required`.
+   - Cancel at any step writes nothing. Map the new 422 codes to plain messages.
+4. **Display:**
+   - Gantt: ✓ / ✗ on a done test's dot; "· passed" / "· failed" in the expanded rows.
+   - Step dialog: "Done Mon · Fail · retest Wed" / "· continued as planned" / "Done Mon · Pass",
+     with **Change** (Pass ↔ Fail through `PATCH …/result`; Pass → Fail asks the Fail question).
+     A retest's dialog: "Retest of Diacetyl test (failed Mon)".
+   - Batch dialog: the same wording on the step line.
+   - Brewery board: the linked task shows "✓ Pass" / "✗ Fail · retest Wed" / "✗ Fail · continued
+     as planned".
+   - Flags: the new flag in `FlagsDialog` / `scheduleText.ts`.
+   - Mark not done on a failed test: the confirm says the retest goes too; `retest_done` shows
+     "Mark the retest not done first."
+5. **Vitest** for the wording helpers and the prompt's decision logic (needs result → fail →
+   retest allowed or not → move prompt).
+
+## C. The small items (plan Stage 4, spec §3.3–§3.7)
+
+Follow the plan's bullets for each. Notes:
+1. **"Label by" (§3.3):** check where the expanded state is stored (D58 board settings or its own
+   field) and store the choice beside it. Match the mockup
+   (`docs/current_work/reference/tank_schedule_mockup.html`, `lblsel` / `ui.labelBy`).
+2. **`/api/me` refresh (§3.4):** Vitest for the 60 s throttle and for not overwriting a PUT in
+   flight.
+3. **5210 (§3.5):** ExUnit for a refused second link (nothing saved, the error names the link).
+4. **5211 (§3.6):** reproduce on the local DB first. Put what you found in the commit message.
+5. **4950 (§3.7):** A, B and C. Vitest where it's logic.
+6. **Revert-and-rerun** (workflow §3) for 5210, 5211, 4950 and the refresh: show the new test
+   fails without the fix and passes with it. Note each in your report.
+
+## Browser check
+
+Token injection per `rockcut-ui/tests/RUNNING.md`. As `brewer1`: S8, S9, S10 and S11 by hand (Fail
+→ Retest → Move all; Continue; Undo; three fails and the flag). As `breweryMgr`: S7 and S18. As
+`brewer1`: S16, S19, and 4950 with a dialog open (Ctrl+Z, the snackbar position). Ask `LEAD:` for a
+server restart after A if you need one.
+
+## Don't
+
+- No Playwright specs yet (Stage 5). Don't touch `CLAUDE.md`, the spec, the plan or the
+  handoffs.
+- Any behavior the spec doesn't cover: `LEAD:`, don't decide.
+
+## Done when
+
+`mix test` green twice, `mix compile --warnings-as-errors`, then
+`npx tsc --noEmit -p tsconfig.app.json`, vitest, `pnpm lint` (no worse than today; give the
+count), and `pnpm exec vite build`. Commits on the branch. Reply with: commits, files, test
+counts, the revert-and-rerun results, what you checked in the browser, and `LEAD:` notes.

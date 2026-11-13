@@ -60,6 +60,18 @@ with the question of part-day work), so "Brew over two days" stays as it is.
     a plain or custom step can be before brew day, whether it gets there by a drag, the date box,
     a check-off or Add step. Anything else gets `not_before_brew`.
 
+**From Stop 1** (lead's calls, Matt's go 2026-11-12)
+14. **No History line for a result.** Check-offs of linked steps aren't written to a change log
+    (D49: the schedule is the record), so no log is added. The result shows where the step is:
+    "✗ Fail · retest Wed" / "✗ Fail · continued as planned" on the step, the batch dialog and the
+    board task.
+15. **Retest only for plain steps and Set temp.** A Brew day, Transfer, Split, Package or CIP with
+    "Has a result" offers only "Continue as planned" on a Fail (`retest_not_here`).
+16. **The repeated-fail flag names the batch,** like the other flags: "Galactic #40 · 3 failed
+    Diacetyl tests".
+17. **Fail changed to Pass** leaves the following steps where a Pass would have, keeping a late
+    check-off's move. Mark not done still puts back the original plan.
+
 ## 3. Requirements
 
 ### 3.1 Pre-brew steps (decisions 1, 2)
@@ -131,7 +143,7 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 
 **Repeated fails**
 - When a test fails for the third time in a row (the original and two retests, all Fail), the
-  batch gets a flag **"3 failed Diacetyl tests"**. It follows the D47 flag rules: shown in the
+  batch gets a flag **"Galactic #40 · 3 failed Diacetyl tests"** (decision 16). It follows the D47 flag rules: shown in the
   flag list and badges, can be signed off, and comes back if another Fail is added.
 - No cap on retests.
 
@@ -140,8 +152,8 @@ with the question of part-day work), so "Brew over two days" stays as it is.
   "· failed" / "· passed".
 - Step and batch dialogs: "Done Mon · Fail" / "Pass". A retest's dialog says "Retest of
   Diacetyl test (failed Mon)".
-- Brewery board: the done task shows "✗ Fail" / "✓ Pass". History: "Diacetyl test checked off ·
-  Fail · retest Wed" / "· continue as planned".
+- Brewery board: the done task shows "✓ Pass", "✗ Fail · retest Wed" or "✗ Fail · continued as
+  planned" (decision 14; no History line).
 - Template editor: "Retest after [2] days" on steps whose type has a result.
 
 **Undo** (decision 8)
@@ -225,7 +237,7 @@ None. Q1–Q4 were answered 2026-11-12 (decisions 7–10).
 | S9 | `brewer1` | Tasks → Brewery | Ticks a D-test task → Fail → "Continue as planned" | Done with ✗ Fail; no retest; Crash unchanged |
 | S10 | `brewer1` | Step dialog | Fail → Retest, then Undo from the snackbar | Retest gone, links back on the test, Crash back (decision 8) |
 | S11 | `brewer1` | Gantt | Fails the test, then retest, then retest 2 | "3 failed Diacetyl tests" flag; sign off; a 4th Fail brings it back |
-| S12 | `breweryDevice` | Production / board, staff code | Checks off a D-test as Fail → Retest | Works; "· on Brewery Test 1" in History |
+| S12 | `breweryDevice` | Production / board, staff code | Checks off a D-test as Fail → Retest | Works; the retest's task is on the board; the test's task shows "✗ Fail · retest …" |
 | S13 | `brewer1` | API | Check off a has-result step with no result | 422 `result_required` |
 | S14 | `brewer2` | API | Pre-brew at −31; retest days 0 | 422 with the messages |
 | S15 | `office1` | API | Record a result | 403, as for other schedule writes |
