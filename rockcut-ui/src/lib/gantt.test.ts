@@ -750,8 +750,8 @@ describe('D56 pre-brew steps', () => {
       warn: true,
     })
     // The pre-brew dot dragged −11 with Set temp selected: Set temp lands before brew day.
-    expect(dragHint({ ...base, kind: 'dot', days: -11, part, step: grain, selection: [51, 53] }).text).toContain("A Set temp can't be before brew day")
-    expect(dragHint({ ...base, kind: 'dot', days: -11, part, step: grain }).warn).toBe(false)
+    expect(dragHint({ ...base, kind: 'dot', days: -11, part, step: grain, selection: [51, 53] })?.text).toContain("A Set temp can't be before brew day")
+    expect(dragHint({ ...base, kind: 'dot', days: -11, part, step: grain })?.warn).toBe(false)
     // Nothing selected but the dot: as before.
     expect(dragHint({ ...base, kind: 'dot', days: 1, part, step: grain, selection: [51] })).toEqual(dragHint({ ...base, kind: 'dot', days: 1, part, step: grain }))
     expect(setTemp.id).toBe(53)
