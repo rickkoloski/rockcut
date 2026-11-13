@@ -409,6 +409,37 @@ defmodule RockcutApiWeb.ProductionControllerTest do
     end
   end
 
+  describe "D56 DEV gap 5: a template step before brew day says what's wrong" do
+    test "a phase or a later tank has its own message; the type's stays for the type" do
+      b = personas(~w(breweryMgr))["breweryMgr"]
+      t = call(b, :post, "/api/production/templates", %{name: "Gap 5"}) |> body()
+      base = "/api/production/templates/#{t["data"]["id"]}"
+      lag = RockcutApi.Repo.get_by!(RockcutApi.Production.Phase, name: "Lag")
+      add = fn attrs -> call(b, :post, base <> "/steps", attrs) end
+      add.(%{step_type_id: type_id("Transfer"), day_offset: 20, vessel_index: 1})
+
+      plain = %{step_type_id: type_id("Addition"), day_offset: -1}
+
+      assert add.(Map.put(plain, :phase_id, lag.id)) |> json_response(422) == %{
+               "error" => "not_before_brew",
+               "message" => "A step before brew day has no phase."
+             }
+
+      assert add.(Map.put(plain, :vessel_index, 1)) |> json_response(422) == %{
+               "error" => "not_before_brew",
+               "message" => "A step before brew day is in the first tank."
+             }
+
+      assert add.(%{step_type_id: type_id("Set temp"), day_offset: -1, temperature: 60})
+             |> json_response(422) == %{
+               "error" => "not_before_brew",
+               "message" => "A Set temp can't be before brew day."
+             }
+
+      assert add.(plain) |> json_response(201)
+    end
+  end
+
   describe "D47 task 0" do
     test "transfer order, ramp cap, remove preview, Split method and partial Package", %{
       brewer: b

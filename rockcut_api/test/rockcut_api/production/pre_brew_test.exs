@@ -117,7 +117,8 @@ defmodule RockcutApi.Production.PreBrewTest do
 
       assert entry(t, "Mill").phase_id == nil
 
-      assert {:error, {:not_before_brew, "Mill"}} =
+      # DEV gap 5: refused for the phase, not the type.
+      assert {:error, {:not_before_brew, :phase}} =
                Production.add_step(ctx.template, %{
                  "step_type_id" => phased.id,
                  "day_offset" => -2,
@@ -160,7 +161,8 @@ defmodule RockcutApi.Production.PreBrewTest do
     test "a plain step in a later tank can't go before brew day", ctx do
       t = lager_template!()
 
-      assert {:error, {:not_before_brew, "Prepare grain"}} =
+      # DEV gap 5: refused for the tank, not the type.
+      assert {:error, {:not_before_brew, :tank}} =
                Production.add_step(t, %{
                  "step_type_id" => ctx.grain.id,
                  "day_offset" => -1,

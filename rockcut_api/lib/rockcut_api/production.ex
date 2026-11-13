@@ -1023,12 +1023,21 @@ defmodule RockcutApi.Production do
   end
 
   # D56 §3.1 (decision 7): only a plain step, with no phase, in the first
-  # tank, goes before brew day.
+  # tank, goes before brew day; each refusal says which (DEV gap 5).
   defp pre_brew!(%TemplateStep{day_offset: day} = entry, type) when day < 0 do
-    if behavior_of(type) != "plain" or entry.phase_id != nil or entry.vessel_index != 0,
-      do: Repo.rollback({:not_before_brew, (type && type.name) || "phase marker"})
+    cond do
+      behavior_of(type) != "plain" ->
+        Repo.rollback({:not_before_brew, (type && type.name) || "phase marker"})
 
-    entry
+      entry.phase_id != nil ->
+        Repo.rollback({:not_before_brew, :phase})
+
+      entry.vessel_index != 0 ->
+        Repo.rollback({:not_before_brew, :tank})
+
+      true ->
+        entry
+    end
   end
 
   defp pre_brew!(entry, _type), do: entry

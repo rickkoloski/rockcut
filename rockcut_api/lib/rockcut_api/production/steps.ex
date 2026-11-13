@@ -378,6 +378,14 @@ defmodule RockcutApi.Production.Steps do
   def refusal({:before_brew_day, :pre_brew}),
     do: %{error: "before_brew_day", message: "A pre-brew step stays before brew day."}
 
+  # D56 DEV gap 5: a template step before brew day with a phase, or in a
+  # later tank: the same code, saying what's wrong.
+  def refusal({:not_before_brew, :phase}),
+    do: %{error: "not_before_brew", message: "A step before brew day has no phase."}
+
+  def refusal({:not_before_brew, :tank}),
+    do: %{error: "not_before_brew", message: "A step before brew day is in the first tank."}
+
   def refusal({:not_before_brew, name}),
     do: %{error: "not_before_brew", message: "A #{name} can't be before brew day."}
 
