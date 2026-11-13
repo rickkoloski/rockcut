@@ -292,3 +292,57 @@ server restart after A if you need one.
 `npx tsc --noEmit -p tsconfig.app.json`, vitest, `pnpm lint` (no worse than today; give the
 count), and `pnpm exec vite build`. Commits on the branch. Reply with: commits, files, test
 counts, the revert-and-rerun results, what you checked in the browser, and `LEAD:` notes.
+
+---
+
+# Stage 5 (Stage 4 follow-ups, then Playwright and the local gate)
+
+2026-11-13 · lead → builder. Stage 4 is in (`91e903a`…`77d446d`; lead re-ran: `mix test` 2438,
+Vitest 324, tsc and build clean, lint 27 as before; pushed). Matt answered LEAD note 1 (spec
+decision 18). The lead's calls on your other notes: 2, 3, 5, 6 and 7 accepted as built; 4 change
+it (A2); 8 leave it. Same rules as before. Do **A**, then **B**, then stop and report (plan
+■ Stop 2).
+
+## A. Stage 4 follow-ups
+
+1. **Expanded tanks and "Label by" on the account** (decision 18):
+   - Store both in D58's board settings (`PUT /api/me/board_settings/:board`), under a Gantt board
+     key. Check what `Accounts.save_board_settings` and `Authz.can?(…, :save, {:board_settings,
+     _})` accept for the key and for each account kind, shared devices included; extend them only
+     as far as needed, with ExUnit.
+   - Reuse `useAuth`'s save path (its failed-save handling, and the Stage 4 refresh skipping keys
+     being written), so a change in one browser reaches another when it returns to the screen.
+   - Carry-over: the first load with the server key missing takes the browser's local value, saves
+     it, then stops using local storage for it. As D58: fill only what the server lacks.
+   - Vitest for the carry-over and the read path.
+2. **Move prompt after a retest:** the answers say what happens to the following steps, not to the
+   test, e.g. "Move them with the retest" / "Keep the following steps' dates", and the "now …" line
+   names the retest's day. Ordinary moves keep today's wording. Vitest on the text.
+
+## B. Plan Stage 5: Playwright and the local gate
+
+1. **Specs** as the plan lists them: `tests/regression/production/pre-brew.spec.ts` (S1–S6),
+   `test-results.spec.ts` (S7–S15), S16–S20 beside their areas (S16 now checks a second browser
+   context). S21 is already in. Persist-verify (reload, then assert) in every new spec. Rows on
+   your own `[TEST-TEMP]` data; anything destructive by exact id.
+2. **Existing specs** that expected the snackbar at the top or hiding while a dialog is open:
+   update them to the 4950 behavior, and list each in the report.
+3. **`tests/COVERAGE.md`:** new rows, and the "Label by" limitation line removed.
+4. **Revert-and-rerun** with the Playwright specs for 5211, 4950 and the refresh (5210 is already
+   proven by ExUnit). Report each.
+5. **Local gate:** before the full run, ask `LEAD:` to reseed the local DB (your Stage 2 and 4
+   leftovers go with it), and mint tokens with `npx playwright test --project=setup`. Then:
+   `MIX_ENV=test mix test`, `npx tsc --noEmit -p tsconfig.app.json && pnpm exec vite build &&
+   pnpm lint`, and the full `npx playwright test`. Any failure: fix it, or show it's flaky with
+   two passing reruns, and say which.
+
+## Don't
+
+- No PR, no push. Don't touch `CLAUDE.md`, the spec, the plan or the handoffs.
+
+## Done when
+
+The local gate is green. Reply with: commits, files, every count (ExUnit, Vitest, lint, the full
+Playwright pass/skip/fail), the revert-and-rerun results, the existing specs you changed, and
+`LEAD:` notes. Also draft the PR's handoff notes and LIMITATIONS (plan's list plus anything you
+found) in `docs/current_work/prompts/d56_pr_notes.md`.

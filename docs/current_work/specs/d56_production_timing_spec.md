@@ -71,6 +71,9 @@ with the question of part-day work), so "Brew over two days" stays as it is.
     Diacetyl tests".
 17. **Fail changed to Pass** leaves the following steps where a Pass would have, keeping a late
     check-off's move. Mark not done still puts back the original plan.
+18. **The Gantt's expanded tanks and "Label by" are saved on the account** (Matt, 2026-11-13, from
+    Stage 4), in D58's board settings, so they follow the person to every device. Until now the
+    expanded tanks were kept only in the browser.
 
 ## 3. Requirements
 
@@ -169,7 +172,7 @@ rows by batch", `lblsel` / `ui.labelBy`) describe:
 - When two or more batches share a tank in the visible range, the expanded tank's first step row
   gets a picker. It chooses which batch's steps are labelled by name alone; the others keep
   "step · batch".
-- Remembered per person, like the expanded state (D58 board settings). Front end only.
+- Remembered per person with the expanded tanks, in D58's board settings (decision 18).
 - Its Playwright test replaces the `tests/COVERAGE.md` limitation line.
 
 ### 3.4 Board settings refresh when the app returns (5207)
