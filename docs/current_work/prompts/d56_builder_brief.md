@@ -488,3 +488,32 @@ gets pre-brew treatment, and decision 21's check treats a finished post-brew tes
 5. Gate: ExUnit twice, Vitest, tsc, lint, build, Playwright production + brewery-board. Update
    `d56_pr_notes.md` (cycle 3, decisions 22–24, the migration). Report, then stop. Ask `LEAD:` for
    the dev-DB migration.
+
+---
+
+# DEV fix cycle 4 (QA recheck 3; Matt approved)
+
+2026-11-14 · lead → builder. DEV at `015c65a`: full Playwright green after reruns (P46 test-only
+fix `8b46290`; S123 and D58 S16 flaky, passed twice). QA recheck 3: gaps 10–12 fixed; **fail** on
+gap 14 (must-fix) and gap 13 (should-fix). Report:
+`docs/current_work/stepwise_results/d56_dev_qa_recheck3_report.md`. Spec decisions 25–27.
+
+1. **Decision 25 (gap 14):** a retest is never `pre_brew`, whatever it retests. Fix creation and
+   the migration's backfill (drop rule 3; it's not yet on prod, so edit the migration in place and
+   make the re-run on DEV/local correct: also clear `pre_brew` on existing retests, tell me how).
+   QA's repro (pre-brew test → Fail → Retest → brew day −8 Move only) leaves the retest on its day.
+2. **Decision 26 (gap 13):** checking off a step that isn't pre-brew and isn't a Brew day, while the
+   batch's **first** Brew day (`Parts.first_brew`, "1 of 2" on a two-day brew) isn't done, is
+   refused: 422 `brew_first` (or reuse; tell me), "Brew day comes first. <step> can't be done
+   before it." Every check-off path: Gantt, dialogs, board tick, device, preview. Pencilled
+   batches keep `schedule_first` (check the order of refusals). Tests, including Matt's case: a
+   two-day brew, "1 of 2" done, a Set temp between the two checked off before "2 of 2" (allowed),
+   then "2 of 2" moved later past it (allowed); and with "1 of 2" not done the Set temp is refused.
+   Check existing specs that check off post-brew steps early (D49 off-plan specs) and update them
+   to check off brew day first where needed; list them.
+3. **Decision 27:** no change; add a comment where the bar shift skips decision 23, and a test
+   naming it.
+4. Revert-and-rerun for 1–2. Gate: ExUnit twice, Vitest, tsc, lint, build, Playwright production +
+   brewery-board (reseed local first: `mix rockcut.synthetic.setup` is fine for you to run).
+   Update `d56_pr_notes.md`. Report, then stop. `LEAD:` if the dev DB needs the edited migration
+   re-run.

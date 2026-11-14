@@ -99,6 +99,16 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 24. **Mark not done on a brew day that a finished pre-brew step holds in place** says what to do:
     "Mark <step> not done first."
 
+**From DEV QA recheck 3** (Matt, 2026-11-14, fix cycle 4)
+25. **A retest is never pre-brew,** even the retest of a pre-brew test. It stays on its day when
+    brew day moves; anything out of order is flagged as usual.
+26. **A step after brew day can't be checked off before the first Brew day is done:** "Brew day
+    comes first. <step> can't be done before it." Pre-brew steps are exempt. On a two-day brew only
+    "1 of 2" counts: once it's done, steps between the two brew days can be checked off before
+    "2 of 2", and "2 of 2" can still be moved past them.
+27. **The whole-batch bar drag moves the whole plan,** done steps' planned days included, so it may
+    move brew day past a finished step (decision 23 applies to the other paths).
+
 ## 3. Requirements
 
 ### 3.1 Pre-brew steps (decisions 1, 2)
