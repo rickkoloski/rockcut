@@ -426,8 +426,24 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
     step = &Enum.find(batch["steps"], fn s -> s["name"] == &1 end)
     complete = &call(b, :post, "/api/production/steps/#{step.(&1)["id"]}/complete", &2)
 
-    # FDH (Mon Nov 9) done on its day: brew day can't move onto it.
+    # Decision 26: FDH before brew day is done is 422 brew_first, the preview too.
+    for preview <- [true, false] do
+      res = complete.("FDH", %{done_on: "2026-11-09", preview: preview})
+
+      assert {res.status, body(res)} ==
+               {422,
+                %{
+                  "error" => "brew_first",
+                  "message" => "Brew day comes first. FDH can't be done before it."
+                }}
+    end
+
+    # FDH (Mon Nov 9) done on its day, after brew day; brew day marked not
+    # done again: it can't move onto FDH's day.
+    brew_id = step.("Brew day")["id"]
+    assert complete.("Brew day", %{done_on: "2026-11-02", batch_number: "40"}).status == 200
     assert complete.("FDH", %{done_on: "2026-11-09"}).status == 200
+    assert call(b, :post, "/api/production/steps/#{brew_id}/uncomplete").status == 200
 
     for preview <- [true, false] do
       res =

@@ -7,8 +7,9 @@ defmodule RockcutApi.Repo.Migrations.AddPreBrewToProductionSteps do
   #   1. copied from a template step at a negative day;
   #   2. added to the batch (not a retest), a plain or custom step, due
   #      before its batch's first Brew day;
-  #   3. a retest of a pre-brew step, due before that Brew day (along the
-  #      chain of retests).
+  #   3. decision 25: a retest is never pre-brew (cleared, so a database
+  #      where an earlier draft of this migration marked some comes out the
+  #      same after a rollback and a re-run).
   def up do
     alter table(:production_steps) do
       add :pre_brew, :boolean, null: false, default: false
@@ -25,7 +26,7 @@ defmodule RockcutApi.Repo.Migrations.AddPreBrewToProductionSteps do
     end
   end
 
-  @doc "The backfill's statements, in order (`PreBrewBackfillTest` runs them too)."
+  @doc "The backfill's statements, in order (`PreBrewTest` runs them too)."
   def backfill do
     [
       """
@@ -39,17 +40,7 @@ defmodule RockcutApi.Repo.Migrations.AddPreBrewToProductionSteps do
              OR step_type_id IN (SELECT id FROM production_step_types WHERE behavior = 'plain'))
         AND due_on < (#{first_brew_on()})
       """,
-      """
-      WITH RECURSIVE chain(id) AS (
-        SELECT r.id FROM production_steps r
-        JOIN production_steps t ON t.id = r.retest_of_id
-        WHERE t.pre_brew = 1 AND t.retest_of_id IS NULL
-        UNION
-        SELECT r.id FROM production_steps r JOIN chain c ON r.retest_of_id = c.id
-      )
-      UPDATE production_steps SET pre_brew = 1
-      WHERE id IN (SELECT id FROM chain) AND due_on < (#{first_brew_on()})
-      """
+      "UPDATE production_steps SET pre_brew = 0 WHERE retest_of_id IS NOT NULL"
     ]
   end
 

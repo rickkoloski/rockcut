@@ -205,16 +205,22 @@ test('DEV gap 11 (decisions 22, 23): Fail → retest on a planned batch, then br
   const planned = await made.plan({ brand_id: brand.id, template: t.name, brew_on: addDays(today(), -5), tank_ids: [tank.id] })
   const batch = await batchOf(planned.id)
   const test_ = stepOf(batch, check.name)
+  const brew = stepOf(batch, 'Brew day')
   expect(test_.due_on).toBe(today())
-  const res = await (await apiAs('brewer1')).post(`${P}/steps/${test_.id}/complete`, {
+  // Decision 26: brewed first (on its day), then the Fail, then brew day marked not done again.
+  const api = await apiAs('brewer1')
+  await made.checkOff(brew, `9${Math.floor(Math.random() * 1e6)}`)
+  const res = await api.post(`${P}/steps/${test_.id}/complete`, {
     data: { done_on: today(), result: 'fail', fail_action: 'retest', retest_days: 2, answer: 'move_all' },
   })
   expect(res.status(), await res.text()).toBe(200)
+  const undone = await api.post(`${P}/steps/${brew.id}/uncomplete`)
+  expect(undone.status(), await undone.text()).toBe(200)
   const before = (await batchOf(batch.id)).steps.map((s) => [s.id, s.due_on])
 
   await openGantt(page)
   await page.getByTestId(`gantt-bar-${batch.id}-0`).click()
-  const date = page.getByTestId(`batch-step-date-${stepOf(batch, 'Brew day').id}`)
+  const date = page.getByTestId(`batch-step-date-${brew.id}`)
   await date.fill(addDays(today(), 5))
   await date.blur()
   await expect(page.getByText(`${check.name} was done ${dayName(today())}; brew day can't be after it.`)).toBeVisible()

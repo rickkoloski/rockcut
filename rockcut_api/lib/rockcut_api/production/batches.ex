@@ -536,6 +536,9 @@ defmodule RockcutApi.Production.Batches do
                  {:before_brew_day, {:pre_brew_done, Steps.name(finished), finished.done_on}}
                )
 
+          # D56 decision 27: the bar drag moves the whole plan, done steps'
+          # planned days included, so it may take brew day past a finished
+          # step; decision 23 (`Steps.brew_refusal`) isn't applied here.
           open = open ++ carried_parts!(batch, steps)
 
           if opts[:preview],

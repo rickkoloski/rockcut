@@ -145,9 +145,16 @@ test('P133: a scheduled planned batch → Pencil in: back to an X-number; refuse
   await made.checkOff(stepOf(brewed, 'Brew day'), `T${Date.now() % 1_000_000}`)
   const res = await (await apiAs('brewer1')).post(`${P}/batches/${brewed.id}/pencil`)
   expect(res.status()).toBe(422)
-  const planned = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 8) })
-  const fdh = stepOf(planned, 'FDH')
-  await (await apiAs('brewer1')).post(`${P}/steps/${fdh.id}/complete`, { data: { done_on: today(), answer: 'move_only' } })
+  // A planned batch with a done step: D56 decision 26 has FDH wait for brew day, so brew day is
+  // checked off, then FDH, then brew day is marked not done again.
+  const planned = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), -8) })
+  const [brew, fdh] = [stepOf(planned, 'Brew day'), stepOf(planned, 'FDH')]
+  const api = await apiAs('brewer1')
+  await made.checkOff(brew, `T${(Date.now() + 1) % 1_000_000}`)
+  const done = await api.post(`${P}/steps/${fdh.id}/complete`, { data: { done_on: today(), answer: 'move_only' } })
+  expect(done.status(), await done.text()).toBe(200)
+  const undone = await api.post(`${P}/steps/${brew.id}/uncomplete`)
+  expect(undone.status(), await undone.text()).toBe(200)
   await page.reload()
   await page.getByTestId(`gantt-bar-${planned.id}-0`).click()
   await expect(page.getByTestId('batch-dialog')).toBeVisible()

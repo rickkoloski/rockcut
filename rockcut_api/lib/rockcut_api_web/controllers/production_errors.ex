@@ -236,6 +236,10 @@ defmodule RockcutApiWeb.ProductionErrors do
   def handle({:error, {:after_done_step, _, _} = reason}, conn),
     do: refused(conn, Steps.refusal(reason))
 
+  # D56 decision 26 (DEV gap 13).
+  def handle({:error, {:brew_first, name}}, conn),
+    do: refused(conn, "brew_first", "Brew day comes first. #{name} can't be done before it.")
+
   # D56 decision 24 (DEV gap 12): Mark not done on a brew day a finished
   # pre-brew step holds in place.
   def handle({:error, {:pre_brew_done, name}}, conn),

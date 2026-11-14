@@ -84,6 +84,18 @@ defmodule RockcutApi.Production.TestResultsTest do
 
   defp retest_of(s), do: Repo.get_by(Step, retest_of_id: s.id)
 
+  # D56 decision 26: a test is done after brew day, so a planned batch with
+  # a done test is one whose brew day was marked not done after the Fail
+  # (on its day, so it stays there). The layout before anything was done.
+  defp failed_then_unbrewed(ctx) do
+    batch = brewed(ctx)
+    before = layout(batch)
+    {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, named(batch, "Diacetyl test"))
+    {:ok, _} = Steps.uncomplete(named(batch, "Brew day").id)
+    assert %{status: "planned"} = reload(batch)
+    {batch, before, rid}
+  end
+
   describe "types and templates (decisions 3, 5)" do
     test "the migration switches on Diacetyl test and Gravity check only" do
       on = Repo.all(from(t in StepType, where: t.has_result, select: t.name))
@@ -436,10 +448,8 @@ defmodule RockcutApi.Production.TestResultsTest do
     # move with a whole-batch drag), the test failed on its day with a
     # retest, then the batch bar dragged 10 days later.
     defp fail_then_shift(ctx) do
-      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
-      before = layout(batch)
+      {batch, before, rid} = failed_then_unbrewed(ctx)
       dt = named(batch, "Diacetyl test")
-      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
       assert due(batch, "Set temp - 34°") == ~D[2026-12-18]
       {:ok, _} = Batches.shift(reload(batch), 10)
       assert %{due_on: ~D[2026-12-24], done_on: @test_day} = step(dt)
@@ -469,10 +479,8 @@ defmodule RockcutApi.Production.TestResultsTest do
     # Brew day's Move all stops at the done test (the steps after it stay),
     # so they go back to their dates before the Fail, their distance from it.
     test "gap 8: brew day moved with Move all in the date box since the Fail", ctx do
-      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
-      before = layout(batch)
+      {batch, before, rid} = failed_then_unbrewed(ctx)
       dt = named(batch, "Diacetyl test")
-      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
       {:ok, _} = Steps.move([named(batch, "Brew day").id], 10, answer: "move_all")
       assert %{due_on: @test_day} = step(dt)
       assert due(batch, "Set temp - 34°") == ~D[2026-12-18]
@@ -491,9 +499,8 @@ defmodule RockcutApi.Production.TestResultsTest do
 
     test "gap 8: a restore that would put a Set temp before brew day is refused, nothing changed",
          ctx do
-      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      {batch, _before, rid} = failed_then_unbrewed(ctx)
       dt = named(batch, "Diacetyl test")
-      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
       brew = named(batch, "Brew day")
 
       # Decision 23 refuses moving brew day past the done test now...
@@ -581,8 +588,7 @@ defmodule RockcutApi.Production.TestResultsTest do
   # its day (Mon Dec 14) with a retest.
   describe "brew day not on or after a finished step after it (decision 23)" do
     defp planned_fail(ctx) do
-      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
-      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, named(batch, "Diacetyl test"))
+      {batch, _before, rid} = failed_then_unbrewed(ctx)
       {batch, named(batch, "Brew day"), rid}
     end
 
@@ -682,8 +688,12 @@ defmodule RockcutApi.Production.TestResultsTest do
       assert named(batch, "Brew day").done_on == @brew
     end
 
-    test "the whole-batch drag moves the done test with it, so it's allowed", ctx do
-      {batch, _brew, _rid} = planned_fail(ctx)
+    # D56 decision 27: the bar drag moves the whole plan, the done test's
+    # planned day included, so brew day may land on the test's done day.
+    test "decision 27: the bar drag takes brew day onto a finished step's done day; the date box can't",
+         ctx do
+      {batch, brew, _rid} = planned_fail(ctx)
+      assert {:error, @after_test} = Steps.move([brew.id], 12, answer: "move_all")
       assert {:ok, {:preview, _}} = Batches.shift(reload(batch), 12, preview: true)
       assert {:ok, _} = Batches.shift(reload(batch), 12)
       assert due(batch, "Brew day") == ~D[2026-12-14]
@@ -825,7 +835,9 @@ defmodule RockcutApi.Production.TestResultsTest do
   end
 
   describe "a pre-brew test (§3.1 with §3.2)" do
-    test "its retest is a pre-brew step too and moves with brew day", ctx do
+    # D56 decision 25 (DEV gap 14), QA's path: a pre-brew test failed early,
+    # its retest, then brew day 8 days earlier with Move only.
+    test "its retest isn't pre-brew: it stays on its day when brew day moves", ctx do
       {:ok, check} =
         Production.create_step_type(%{"name" => "Water check", "has_result" => true})
 
@@ -838,33 +850,29 @@ defmodule RockcutApi.Production.TestResultsTest do
 
       batch = plan!(brand!("Galactic"), t, @brew, %{"tank_ids" => [ctx.fv3.id]})
       water = named(batch, "Water check")
-      assert water.step_type_id == check.id and water.due_on == ~D[2026-11-28]
+      assert %{step_type_id: id, due_on: ~D[2026-11-28], pre_brew: true} = water
+      assert id == check.id
 
-      # A planned batch: the check-off works, no batch number.
-      {:ok, {%{retest_id: id}, _}} =
-        fail_retest(ctx, water, %{"retest_days" => 1}, ~D[2026-11-28])
+      # Done early (Nov 20) on the planned batch, failed, retest in 2 days.
+      {:ok, {%{retest_id: rid}, _}} =
+        fail_retest(ctx, water, %{"done_on" => "2026-11-20", "retest_days" => 2}, ~D[2026-11-20])
 
-      retest = step(%{id: id})
-      assert retest.due_on == ~D[2026-11-29]
+      retest = step(%{id: rid})
+      assert %{due_on: ~D[2026-11-22], pre_brew: false} = retest
       assert reload(batch).status == "planned"
-      assert Enum.map(Steps.pre_brew(steps_of(batch)), & &1.id) == [retest.id]
-
-      # Brew day moves 2 days: the retest goes with it.
-      brew_step = named(batch, "Brew day")
-      {:ok, _} = Steps.move([brew_step.id], 2, answer: "move_all")
-      assert step(retest).due_on == ~D[2026-12-01]
-      assert step(water).due_on == ~D[2026-11-28]
-
-      # It can't be moved onto brew day.
-      assert {:error, {:before_brew_day, :pre_brew}} = Steps.move([retest.id], 3)
-
-      # A retest landing on brew day or after is a plain step after it.
-      {:ok, {%{retest_id: id2}, _}} =
-        fail_retest(ctx, step(retest), %{"retest_days" => 10}, ~D[2026-12-01])
-
-      assert step(%{id: id2}).due_on == ~D[2026-12-11]
       assert Steps.pre_brew(steps_of(batch)) == []
-      assert Batches.get(batch.id)
+
+      # Brew day 8 days earlier (Nov 24), Move only: the retest stays.
+      brew_step = named(batch, "Brew day")
+      assert {:ok, {:preview, pre}} = Steps.move([brew_step.id], -8, preview: true)
+      assert pre.pre_brew["move_only"] == []
+      assert {:ok, _} = Steps.move([brew_step.id], -8, answer: "move_only")
+      assert due(batch, "Brew day") == ~D[2026-11-24]
+      assert step(retest).due_on == ~D[2026-11-22]
+
+      # Decision 26 as written: the retest isn't pre-brew, so it waits for brew day.
+      assert {:error, {:brew_first, _}} =
+               complete(ctx, step(retest), %{"result" => "pass"}, ~D[2026-11-22])
     end
   end
 end

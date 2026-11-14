@@ -73,6 +73,20 @@ defmodule RockcutApiWeb.ProductionDeviceTest do
       assert step(fdh).done_on == nil
     end
 
+    # D56 decision 26 (DEV gap 13): the device's check-off obeys it too.
+    test "brew day comes first on the device: FDH before brew day is 422 brew_first", ctx do
+      fdh = named(plan(ctx, "Galactic", 2), "FDH")
+
+      assert %{"error" => "brew_first"} =
+               call_device(ctx.token, :post, "/api/production/steps/#{fdh.id}/complete", %{
+                 staff_code: "1111",
+                 answer: "move_only"
+               })
+               |> json_response(422)
+
+      assert step(fdh).done_on == nil
+    end
+
     test "brewer1's code moves a step, recorded as brewer1 on the device", ctx do
       fdh = named(plan(ctx, "Galactic", 2), "FDH")
       before = step(fdh).due_on

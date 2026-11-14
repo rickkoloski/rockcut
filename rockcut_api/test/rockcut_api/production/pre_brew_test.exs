@@ -589,12 +589,11 @@ defmodule RockcutApi.Production.PreBrewTest do
         assert "Galactic P1: FDH is before Brew day, the step it follows." in out_of_order(batch)
       end
 
-      # Done there, it isn't "a finished pre-brew step" for decision 21.
+      # Not pre-brew, so it can't be checked off there before brew day (decision 26).
       fdh = named(batch, "FDH")
-      assert {:ok, _} = Steps.complete(fdh.id, %{}, ctx.brewer, today: fdh.due_on)
 
-      assert {:error, {:after_done_step, "FDH", ~D[2026-12-09]}} =
-               Steps.move([named(batch, "Brew day").id], 1, answer: "move_only")
+      assert {:error, {:brew_first, "FDH"}} =
+               Steps.complete(fdh.id, %{}, ctx.brewer, today: fdh.due_on)
     end
 
     test "the migration's backfill", ctx do
@@ -620,22 +619,17 @@ defmodule RockcutApi.Production.PreBrewTest do
       water = add.(%{"step_type_id" => check.id, "due_on" => ~D[2026-11-29]})
       late = add.(%{"name" => "Rack", "due_on" => ~D[2026-12-05]})
 
-      # A retest of the pre-brew check (before brew day), and a retest of it after brew day.
+      # A retest of the pre-brew check, before brew day, that an earlier draft
+      # of this migration marked pre-brew (decision 25: it isn't).
       {:ok, _} =
         Steps.complete(
           water.id,
           %{"result" => "fail", "fail_action" => "retest", "retest_days" => 1},
-          ctx.brewer, today: water.due_on)
+          ctx.brewer,
+          today: water.due_on
+        )
 
       r1 = Repo.get_by!(Step, retest_of_id: water.id)
-
-      {:ok, _} =
-        Steps.complete(
-          r1.id,
-          %{"result" => "fail", "fail_action" => "retest", "retest_days" => 9},
-          ctx.brewer, today: r1.due_on)
-
-      r2 = Repo.get_by!(Step, retest_of_id: r1.id)
 
       # FDH left before brew day (data from before decision 22), a retest of it there too.
       fdh = named(batch, "FDH")
@@ -651,6 +645,7 @@ defmodule RockcutApi.Production.PreBrewTest do
         })
 
       Repo.update_all(from(s in Step, where: s.batch_id == ^batch.id), set: [pre_brew: false])
+      Repo.update_all(from(s in Step, where: s.id == ^r1.id), set: [pre_brew: true])
       for sql <- mod.backfill(), do: Repo.query!(sql)
 
       pre = for s <- steps_of(batch), s.pre_brew, into: MapSet.new(), do: s.id
@@ -660,11 +655,10 @@ defmodule RockcutApi.Production.PreBrewTest do
                  named(batch, "Order yeast").id,
                  named(batch, "Prepare grain").id,
                  mill.id,
-                 water.id,
-                 r1.id
+                 water.id
                ])
 
-      refute Enum.any?([brew, late, r2, fdh, fdh_retest], &(&1.id in pre))
+      refute Enum.any?([brew, late, r1, fdh, fdh_retest], &(&1.id in pre))
     end
 
     test "Change template keeps a kept step's flag", ctx do
@@ -675,6 +669,95 @@ defmodule RockcutApi.Production.PreBrewTest do
       other = add!(other, "Order yeast", -2, [])
       assert {:ok, _} = BatchChanges.change_template(reload(batch), other.id)
       assert %{pre_brew: true, done_on: ~D[2026-11-28]} = named(batch, "Order yeast")
+    end
+  end
+
+  # D56 decision 26 (DEV gap 13): nothing after brew day is done before the
+  # first Brew day. Brew Wed Dec 2: FDH Dec 9, Set temp 58° Dec 12.
+  describe "brew day comes first (decision 26)" do
+    test "QA's gap 13: FDH early on a planned batch is refused, the preview too; nothing changes",
+         ctx do
+      batch = plan(ctx)
+      fdh = named(batch, "FDH")
+
+      for preview <- [true, false] do
+        assert {:error, {:brew_first, "FDH"}} =
+                 Steps.complete(fdh.id, %{"answer" => "move_only"}, ctx.brewer,
+                   preview: preview,
+                   today: ~D[2026-11-28]
+                 )
+      end
+
+      assert %{done_on: nil, due_on: ~D[2026-12-09]} = named(batch, "FDH")
+
+      # Once brewed, it works.
+      brew = named(batch, "Brew day")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+      assert {:ok, _} = Steps.complete(fdh.id, %{}, ctx.brewer, today: fdh.due_on)
+    end
+
+    test "pre-brew steps are exempt; a pencilled batch still says schedule first", ctx do
+      batch = plan(ctx)
+      grain = named(batch, "Prepare grain")
+      assert {:ok, _} = Steps.complete(grain.id, %{}, ctx.brewer, today: grain.due_on)
+
+      pencilled =
+        plan!(brand!("Altruism"), ctx.template, @brew, %{
+          "tank_ids" => [tank!("FV9").id],
+          "pencilled" => true
+        })
+
+      fdh = named(pencilled, "FDH")
+
+      assert {:error, :schedule_first} =
+               Steps.complete(fdh.id, %{}, ctx.brewer, today: fdh.due_on)
+    end
+
+    test "a standalone CIP isn't held by any brew day", ctx do
+      {:ok, cip} =
+        RockcutApi.Production.Cips.create(
+          %{"tank_id" => ctx.fv3.id, "due_on" => "2026-11-20"},
+          ctx.brewer,
+          ~D[2026-11-20]
+        )
+
+      assert {:ok, _} = Steps.complete(cip.id, %{}, ctx.brewer, today: ~D[2026-11-20])
+    end
+
+    test "Undo doesn't bring back a step done before brew day", ctx do
+      batch = plan(ctx)
+      brew = named(batch, "Brew day")
+      fdh = named(batch, "FDH")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+      {:ok, _} = Steps.complete(fdh.id, %{}, ctx.brewer, today: fdh.due_on)
+
+      # FDH marked not done (Undo-able), then brew day marked not done.
+      {:ok, {_, token}} =
+        Undo.track(ctx.brewer, Undo.step_scope([fdh.id]), fn -> Steps.uncomplete(fdh.id) end)
+
+      {:ok, _} = Steps.uncomplete(brew.id)
+      assert {:error, {:brew_first, "FDH"}} = Undo.undo(ctx.brewer, token)
+      assert named(batch, "FDH").done_on == nil
+    end
+
+    # Matt's case: a two-day brew, "1 of 2" done; a Set temp between the
+    # two checked off before "2 of 2", then "2 of 2" moved later past it.
+    test "a two-day brew: only \"1 of 2\" counts", ctx do
+      batch = plan(ctx, %{"brew_two_days" => true})
+      [one, two] = ["Brew day - 1 of 2", "Brew day - 2 of 2"] |> Enum.map(&named(batch, &1))
+      set_temp = named(batch, "Set temp - 58°")
+
+      # "2 of 2" (Dec 3) moved to Dec 14 alone: the Set temp (Dec 12) sits between.
+      assert {:ok, _} = Steps.move([two.id], 11, answer: "move_only")
+
+      assert {:error, {:brew_first, "Set temp - 58°"}} =
+               Steps.complete(set_temp.id, %{}, ctx.brewer, today: ~D[2026-12-12])
+
+      {:ok, _} = Steps.complete(one.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+      assert {:ok, _} = Steps.complete(set_temp.id, %{}, ctx.brewer, today: ~D[2026-12-12])
+      assert {:ok, _} = Steps.move([two.id], 2, answer: "move_only")
+      assert %{due_on: ~D[2026-12-16], done_on: nil} = named(batch, "Brew day - 2 of 2")
+      assert named(batch, "Set temp - 58°").done_on == ~D[2026-12-12]
     end
   end
 
@@ -990,6 +1073,14 @@ defmodule RockcutApi.Production.PreBrewTest do
     test "an off-plan check-off before brew day; the preview too", ctx do
       batch = plan(ctx)
       set_temp = named(batch, "Set temp - 58°")
+      attrs = %{"done_on" => "2026-12-01", "answer" => "move_only"}
+
+      # Decision 26 first: not before brew day is done.
+      assert {:error, {:brew_first, "Set temp - 58°"}} =
+               Steps.complete(set_temp.id, attrs, ctx.brewer, today: ~D[2026-12-10])
+
+      brew = named(batch, "Brew day")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
 
       for preview <- [true, false] do
         assert {:error, {:not_before_brew, "Set temp"}} =

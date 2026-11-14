@@ -1122,9 +1122,8 @@ defmodule RockcutApi.Production.Steps do
         detail: retest_detail(step),
         due_on: on,
         added: true,
-        retest_of_id: step.id,
-        # D56 decision 22: a pre-brew test's retest before brew day is pre-brew too.
-        pre_brew: step.pre_brew and before_brew?(step.batch_id, on)
+        # D56 decision 25 (DEV gap 14): never pre-brew, whatever it retests.
+        retest_of_id: step.id
       })
 
     Repo.update_all(from(l in StepLink, where: l.from_step_id == ^step.id),
@@ -1132,14 +1131,6 @@ defmodule RockcutApi.Production.Steps do
     )
 
     retest
-  end
-
-  defp before_brew?(batch_id, on) do
-    brew =
-      Repo.all(from(s in Step, where: s.batch_id == ^batch_id, preload: :step_type))
-      |> Parts.first_brew()
-
-    brew != nil and Date.compare(on, brew.due_on) == :lt
   end
 
   # "retest" for the first, then "retest 2", "retest 3", … along the chain.
@@ -1345,6 +1336,14 @@ defmodule RockcutApi.Production.Steps do
       %Step{done_on: nil} = split -> Repo.rollback({:before_split, :check_off, name(split)})
       _ -> :ok
     end
+
+    # D56 decision 26 (DEV gap 13): nothing after brew day is done before the
+    # first Brew day ("1 of 2" on a two-day brew); pre-brew steps and brew
+    # days are exempt.
+    if batch && not step.pre_brew && behavior(step) != "brew" && not brewed?(graph, batch),
+      do: Repo.rollback({:brew_first, name(step)})
+
+    :ok
   end
 
   # Y2: brew day stays done while anything after it that empties a tank is

@@ -185,6 +185,23 @@ defmodule RockcutApiWeb.TaskBoardLinkedTest do
   end
 
   describe "complete and uncomplete" do
+    # D56 decision 26 (DEV gap 13): the board tick of a step after brew day
+    # on a planned batch: refused, the preview too.
+    test "brew day comes first: FDH ticked before brew day is 422 brew_first", ctx do
+      batch = plan(ctx, "Galactic", 2)
+      task = task_of(named(batch, "FDH"))
+      b1 = ctx.p["brewer1"]
+
+      for params <- [%{preview: true}, %{answer: "move_only"}] do
+        assert %{
+                 "error" => "brew_first",
+                 "message" => "Brew day comes first. FDH can't be done before it."
+               } = call(b1, :post, task_url(task, "/complete"), params) |> json_response(422)
+      end
+
+      assert step(named(batch, "FDH")).done_on == nil
+    end
+
     test "P95: brew day asks for the batch number, then checks off with it", ctx do
       batch = plan(ctx, "Galactic", 0)
       brew = named(batch, "Brew day")
