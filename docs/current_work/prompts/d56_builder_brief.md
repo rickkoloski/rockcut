@@ -517,3 +517,17 @@ gap 14 (must-fix) and gap 13 (should-fix). Report:
    brewery-board (reseed local first: `mix rockcut.synthetic.setup` is fine for you to run).
    Update `d56_pr_notes.md`. Report, then stop. `LEAD:` if the dev DB needs the edited migration
    re-run.
+
+## Cycle 4, part 2 (lead answers)
+
+- LEAD 1: lead re-ran the migration locally (rollback + migrate). DEV: lead clears `pre_brew` on
+  retests after the deploy. Nothing for you.
+- LEAD 2: yes, a retest whose chain starts at a pre-brew test is exempt from decision 26 (it stays
+  not pre-brew). Test it.
+- LEAD 3: yes, the mirror (spec decision 26, lead note): Mark not done on the first Brew day is
+  refused while a later step that isn't pre-brew is done: 422 (reuse `pre_brew_done`'s shape or a
+  new code; tell me) "Mark <step> not done first." (the earliest such step). Undo of a brew-day
+  check-off stays a plain row restore. Tests that built their state through this path need
+  another setup (e.g. Repo writes in ExUnit, as you did for cycle 2's restore-refused test); keep
+  what they assert. Revert-and-rerun.
+- Same gate; update `d56_pr_notes.md`; report, then stop.

@@ -106,6 +106,10 @@ with the question of part-day work), so "Brew over two days" stays as it is.
     comes first. <step> can't be done before it." Pre-brew steps are exempt. On a two-day brew only
     "1 of 2" counts: once it's done, steps between the two brew days can be checked off before
     "2 of 2", and "2 of 2" can still be moved past them.
+    *Lead:* the retest of a pre-brew test is exempt too (re-checking water or yeast before
+    brewing), though it isn't pre-brew (decision 25).
+    *Lead:* the mirror: Mark not done on the first Brew day is refused while a later step (not
+    pre-brew) is done: "Mark <step> not done first."
 27. **The whole-batch bar drag moves the whole plan,** done steps' planned days included, so it may
     move brew day past a finished step (decision 23 applies to the other paths).
 
