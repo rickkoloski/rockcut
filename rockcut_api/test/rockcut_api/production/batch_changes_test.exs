@@ -458,13 +458,18 @@ defmodule RockcutApi.Production.BatchChangesTest do
                })
     end
 
-    test "added steps and ramps start on brew day or later", ctx do
-      assert {:error, :before_brew_day} =
-               add(ctx.batch, %{"name" => "Early", "due_on" => "2026-11-01"})
+    test "added steps and ramps start on brew day or later (D56: but plain and custom steps)",
+         ctx do
+      assert {:error, {:not_before_brew, "Set temp"}} =
+               add(ctx.batch, %{
+                 "step_type_id" => type!("Set temp").id,
+                 "temperature" => 60,
+                 "due_on" => "2026-11-01"
+               })
 
       assert {:ok, _} = add(ctx.batch, %{"name" => "Brew-day check", "due_on" => "2026-11-02"})
 
-      assert {:error, :before_brew_day} =
+      assert {:error, {:not_before_brew, "Set temp"}} =
                BatchChanges.add_ramp(ctx.batch, %{
                  "start" => 60,
                  "target" => 50,

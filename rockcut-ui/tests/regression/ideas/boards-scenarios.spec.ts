@@ -59,6 +59,7 @@ test.describe('bartender1', () => {
     await save
     save = written(page, 'PATCH', cardPath)
     await dialog.getByTestId('idea-card-due-input').fill('2030-01-15')
+    await dialog.getByTestId('idea-card-due-input').blur()
     await save
     for (const t of ['Measure', 'Quote']) {
       await dialog.getByTestId('idea-checklist-input').fill(t)
@@ -675,5 +676,35 @@ test.describe('fix cycle 1 (DEV QA)', () => {
     expect((await api.delete(`/api/boards/bar/tasks/${tasks[0].id}`)).status()).toBe(204)
     await page.reload()
     await expect(page.getByTestId(`idea-card-sent-${card.id}`)).toHaveText('Removed from the task list')
+  })
+})
+
+test.describe('due date typed by hand', () => {
+  test.use({ storageState: authFile('bartender1'), viewport: desk })
+
+  test('typing the date key by key saves the whole year once, on leaving the field', async ({ page }) => {
+    const list = await tempList('bartender1', 'bar', 'Taproom remodel')
+    const card = await tempCard('bartender1', 'bar', list.id, 'Typed due date')
+    const dialog = await openCard(page, 'bar', card.id)
+    const cardPath = new RegExp(`/cards/${card.id}$`)
+    const patches: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'PATCH' && cardPath.test(r.url())) patches.push(r.postData() ?? '')
+    })
+
+    const input = dialog.getByTestId('idea-card-due-input')
+    await input.click()
+    await page.keyboard.press('Home')
+    await page.keyboard.type('01152026', { delay: 50 })
+    await expect(input).toHaveValue('2026-01-15')
+    expect(patches).toEqual([])
+
+    const save = written(page, 'PATCH', cardPath)
+    await input.blur()
+    await save
+    expect(patches).toHaveLength(1)
+    expect(JSON.parse(patches[0])).toEqual({ due_on: '2026-01-15' })
+    await page.reload()
+    await expect(page.getByTestId('idea-card-due-input')).toHaveValue('2026-01-15')
   })
 })

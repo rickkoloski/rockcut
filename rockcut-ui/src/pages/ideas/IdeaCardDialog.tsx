@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Alert,
   Autocomplete,
@@ -271,14 +271,11 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
               disabled={!canEdit || busy}
               onChange={(ids) => patch({ assignee_ids: ids })}
             />
-            <TextField
-              type="date"
-              label="Due date"
-              size="small"
-              value={card.due_on ?? ''}
+            <DueDateField
+              key={card.due_on ?? ''}
+              value={card.due_on}
               disabled={!canEdit || busy}
-              onChange={(e) => patch({ due_on: e.target.value || null })}
-              slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'idea-card-due-input' } }}
+              onSave={(due_on) => patch({ due_on })}
             />
             <LabelsField
               card={card}
@@ -430,6 +427,55 @@ export default function IdeaCardDialog({ board, cardId, lists, labels, people, o
         }}
       />
     </Dialog>
+  )
+}
+
+/**
+ * The due date saves when the field is left or on Enter, not on each change:
+ * Chrome reports a part-typed year as a full date (typing "2" gives 0002), so
+ * saving every change wrote 0002, disabled the field and lost the rest of the
+ * year. A date still unsaved when the card closes (Android back after the
+ * picker) is saved then.
+ */
+function DueDateField({ value, disabled, onSave }: { value: string | null; disabled: boolean; onSave: (value: string | null) => Promise<boolean> }) {
+  const [draft, setDraft] = useState(value ?? '')
+  const pending = useRef<string | null>(null)
+  const commit = () => {
+    pending.current = null
+    const next = draft || null
+    if (next !== value) void onSave(next)
+  }
+  useEffect(() => {
+    pending.current = draft !== (value ?? '') ? draft : null
+  }, [draft, value])
+  useEffect(
+    () => () => {
+      if (pending.current !== null) void onSave(pending.current || null)
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  )
+  return (
+    <TextField
+      type="date"
+      label="Due date"
+      size="small"
+      value={draft}
+      disabled={disabled}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          ;(e.target as HTMLElement).blur()
+        }
+        if (e.key === 'Escape') {
+          pending.current = null
+          setDraft(value ?? '')
+        }
+      }}
+      slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'idea-card-due-input' } }}
+    />
   )
 }
 

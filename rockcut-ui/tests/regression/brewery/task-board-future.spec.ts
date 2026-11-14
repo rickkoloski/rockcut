@@ -29,7 +29,7 @@ const created: number[] = []
 let restore: { card: ApiCard; dueOn: string | null }[] = []
 test.afterEach(async () => {
   const api = await apiAs('breweryMgr')
-  for (const r of restore) await moveTask(api, r.card.id, r.dueOn)
+  for (const r of restore) await moveTask(api, r.card.id, r.dueOn, null, r.card.production ? 'move_all' : 'move_only')
   restore = []
   await cleanupTasks(created.splice(0))
 })
@@ -162,7 +162,8 @@ test('S23h: with open Future tasks and nothing overdue, there is no Unfinished c
   const board = await getBoard(api, today(), today())
   for (const c of board.unfinished) {
     restore.push({ card: c, dueOn: c.due_on })
-    await moveTask(await apiAs('breweryMgr'), c.id, addDays(today(), 60))
+    // A linked brew day moves its batch with it (D56 decision 13), and comes back the same way.
+    await moveTask(await apiAs('breweryMgr'), c.id, addDays(today(), 60), null, c.production ? 'move_all' : 'move_only')
   }
   for (let i = 0; i < 3; i++) created.push((await createTask(api, { title: tempTag(`S23h future ${i}`), due_on: null })).id)
   const open = (await getBoard(api, today(), today())).future.filter((c) => !c.done).length

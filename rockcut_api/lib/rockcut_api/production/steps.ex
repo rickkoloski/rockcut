@@ -18,6 +18,22 @@ defmodule RockcutApi.Production.Steps do
   writing: the moved and following steps with their new dates, the default
   answer, and per answer the links that would run backwards and the
   P-numbers that would change. Applying uses the same functions.
+
+  **Pre-brew steps** (D56 §3.1, decision 2) are a batch's unfinished steps
+  planned before its first Brew day (`pre_brew/1`; decision 22: the step's
+  `pre_brew`, not its date). Whatever moves that Brew
+  day moves them by the same days, whatever the answer; they aren't
+  following steps, so they don't make a prompt. None may end up on brew day
+  or later (`{:before_brew_day, :pre_brew}`). Decision 11: one checked off
+  on or after brew day stays on its planned day and moves nothing.
+
+  **Test results** (D56 §3.2): a step whose type `has_result` is checked off
+  with `result` `pass` / `fail`; a Fail with `fail_action` `retest` adds a
+  retest (`retest_of_id`) `retest_days` after the done day, the failed
+  step's outgoing links move to it, and the following steps get **one**
+  move prompt for the shift from the step's planned day to the retest's.
+  Mark not done, Undo and a Fail changed to Pass take the retest away again
+  while it isn't done (`:retest_done`).
   """
   import Ecto.Query, only: [from: 2]
 
@@ -86,6 +102,23 @@ defmodule RockcutApi.Production.Steps do
         |> Enum.filter(&(&1.batch_id == step.batch_id and behavior(&1) == "brew"))
         |> Enum.map(& &1.id)
         |> Enum.min(fn -> nil end)
+  end
+
+  @doc """
+  D56 §3.1: the pre-brew steps among one batch's `steps` (`step_type`
+  preloaded): the unfinished ones planned before its first Brew day
+  (decision 22: `pre_brew`, not the date; a step left before brew day some
+  other way is an ordinary step, out of order). A batch without a Brew day
+  (a split part) has none.
+  """
+  def pre_brew(steps) do
+    case Parts.first_brew(steps) do
+      nil ->
+        []
+
+      brew ->
+        Enum.filter(steps, &(&1.pre_brew and is_nil(&1.done_on) and &1.batch_id == brew.batch_id))
+    end
   end
 
   ## The link graph
@@ -178,7 +211,9 @@ defmodule RockcutApi.Production.Steps do
   # D48 DEV QA Y1: a moved Split carries its parts' steps whatever the
   # answer (`carried`); the parts are only reached as following steps
   # through a Split that follows.
-  defp plan(graph, moved, days) do
+  # `pinned`: steps whose new date isn't `days` away (D56: a failed test
+  # stays on its done day while the steps after it move to its retest).
+  defp plan(graph, moved, days, pinned \\ %{}) do
     first = Enum.min_by(moved, &{Date.to_gregorian_days(&1.due_on), &1.id})
     ids = Enum.map(moved, & &1.id)
     carried = Enum.flat_map(moved, &part_steps!(graph, &1)) |> Enum.reject(&(&1.id in ids))
@@ -204,6 +239,7 @@ defmodule RockcutApi.Production.Steps do
 
     %{
       days: days,
+      pinned: pinned,
       first: first,
       moved: moved,
       carried: carried,
@@ -211,6 +247,8 @@ defmodule RockcutApi.Production.Steps do
       default: default
     }
   end
+
+  defp new_due(plan, %Step{} = s), do: Map.get(plan.pinned, s.id) || Date.add(s.due_on, plan.days)
 
   # The steps of `split`'s parts (none for another step), refused while one
   # of them is done (`:part_done`): the parts move with their split as one.
@@ -244,14 +282,168 @@ defmodule RockcutApi.Production.Steps do
 
   defp parts_follow!(_graph, _plan, _answer), do: :ok
 
-  # `%{step_id => new date}` for an answer.
-  defp changes(plan, answer) do
+  # `%{step_id => new date}` for an answer, with the pre-brew steps of a
+  # first Brew day it moves (D56 §3.1).
+  defp changes(graph, plan, answer) do
+    base = base_changes(plan, answer)
+    Map.merge(base, pre_brew_changes(graph, base))
+  end
+
+  defp base_changes(plan, answer) do
     steps =
       if answer == "move_all",
         do: plan.moved ++ plan.carried ++ plan.following,
         else: plan.moved ++ plan.carried
 
-    Map.new(steps, &{&1.id, Date.add(&1.due_on, plan.days)})
+    Map.new(steps, &{&1.id, new_due(plan, &1)})
+  end
+
+  # D56 §3.1: each batch whose first Brew day `changes` moves takes its
+  # pre-brew steps (those `changes` doesn't move already) by the same days.
+  defp pre_brew_changes(graph, changes) do
+    for {_batch, steps} <- by_batch(graph),
+        brew = Parts.first_brew(steps),
+        brew && Map.has_key?(changes, brew.id),
+        days = Date.diff(changes[brew.id], brew.due_on),
+        days != 0,
+        s <- pre_brew(steps),
+        not Map.has_key?(changes, s.id),
+        into: %{},
+        do: {s.id, Date.add(s.due_on, days)}
+  end
+
+  # D56 §3.1 and decision 13: what's wrong before a first Brew day after
+  # `changes` (`done`: checked off by the change), or nil. An unfinished
+  # pre-brew step on brew day or later (`{:before_brew_day, :pre_brew}`);
+  # a step that isn't plain or custom, changed by it or by its brew day's
+  # move, now before brew day (`{:not_before_brew, type name}`). Decision 21
+  # (DEV gaps 3, 9): a moved brew day before a finished pre-brew step's
+  # done day (`{:before_brew_day, {:pre_brew_done, name, done_on}}`).
+  # Decision 23: a moved brew day on or after the done day of a finished
+  # step that isn't pre-brew (`{:after_done_step, name, done_on}`). A split
+  # part's steps count against its parent's brew day.
+  defp brew_refusal(graph, changes, done) do
+    due = &Map.get(changes, &1.id, &1.due_on)
+
+    graph
+    |> by_root()
+    |> Enum.find_value(fn {root, steps} ->
+      brew = steps |> Enum.filter(&(&1.batch_id == root)) |> Parts.first_brew()
+      moved_brew? = brew != nil and Map.has_key?(changes, brew.id)
+
+      before? = &(Date.compare(due.(&1), due.(brew)) == :lt)
+
+      cond do
+        brew == nil ->
+          nil
+
+        finished =
+            moved_brew? &&
+              Enum.find(
+                steps,
+                &(&1.batch_id == root and &1.pre_brew and &1.done_on != nil and
+                      Date.compare(due.(brew), &1.done_on) == :lt)
+              ) ->
+          {:before_brew_day, {:pre_brew_done, name(finished), finished.done_on}}
+
+        finished =
+            moved_brew? &&
+              steps
+              |> Enum.filter(
+                &(not before_brew_kind?(graph, &1) and &1.done_on != nil and
+                    behavior(&1) != "brew" and Date.compare(due.(brew), &1.done_on) != :lt)
+              )
+              |> Enum.min_by(&{Date.to_gregorian_days(&1.done_on), &1.id}, fn -> nil end) ->
+          {:after_done_step, name(finished), finished.done_on}
+
+        Enum.any?(pre_brew(steps), &(&1.id not in done and not before?.(&1))) ->
+          {:before_brew_day, :pre_brew}
+
+        late =
+            Enum.find(
+              steps,
+              &(is_nil(&1.done_on) and not pre_brew_kind?(&1) and behavior(&1) != "brew" and
+                  (moved_brew? or Map.has_key?(changes, &1.id)) and before?.(&1) and
+                    Date.compare(&1.due_on, brew.due_on) != :lt)
+            ) ->
+          {:not_before_brew, kind_name(late)}
+
+        true ->
+          nil
+      end
+    end)
+  end
+
+  # Per answer, the refusal (nil when it works); refused under every answer,
+  # the preview is refused too (the default answer's reason).
+  defp refusals!(graph, plan, done \\ []) do
+    refused = Map.new(@answers, &{&1, brew_refusal(graph, changes(graph, plan, &1), done)})
+
+    if Enum.all?(Map.values(refused)),
+      do: Repo.rollback(refused[plan.default || "move_only"])
+
+    refused
+  end
+
+  @doc """
+  D56 decision 13: whether a step may go before brew day: a plain step or a
+  custom one (phase markers may not).
+  """
+  def pre_brew_kind?(%Step{step_type_id: nil, name: name}), do: is_binary(name)
+  def pre_brew_kind?(%Step{} = s), do: behavior(s) == "plain"
+
+  # "Set temp", "Transfer", "phase marker": the template's wording (D56).
+  defp kind_name(%Step{step_type: %StepType{name: name}}), do: name
+  defp kind_name(_), do: "phase marker"
+
+  @doc "D56: a move refusal as the API words it (`ProductionErrors`, the preview's `refused`)."
+  def refusal({:before_brew_day, :pre_brew}),
+    do: %{error: "before_brew_day", message: "A pre-brew step stays before brew day."}
+
+  # Decision 21 (DEV gap 3).
+  def refusal({:before_brew_day, {:pre_brew_done, name, done_on}}),
+    do: %{
+      error: "before_brew_day",
+      message:
+        "#{name} was done #{Calendar.strftime(done_on, "%a %b %-d")}; brew day can't be before it."
+    }
+
+  # Decision 23.
+  def refusal({:after_done_step, name, done_on}),
+    do: %{
+      error: "after_done_step",
+      message:
+        "#{name} was done #{Calendar.strftime(done_on, "%a %b %-d")}; brew day can't be after it."
+    }
+
+  # D56 DEV gap 5: a template step before brew day with a phase, or in a
+  # later tank: the same code, saying what's wrong.
+  def refusal({:not_before_brew, :phase}),
+    do: %{error: "not_before_brew", message: "A step before brew day has no phase."}
+
+  def refusal({:not_before_brew, :tank}),
+    do: %{error: "not_before_brew", message: "A step before brew day is in the first tank."}
+
+  def refusal({:not_before_brew, name}),
+    do: %{error: "not_before_brew", message: "A #{name} can't be before brew day."}
+
+  def refusal(nil), do: nil
+
+  defp by_batch(graph) do
+    graph.steps
+    |> Map.values()
+    |> Enum.reject(&is_nil(&1.batch_id))
+    |> Enum.group_by(& &1.batch_id)
+  end
+
+  # A split family's steps under its parent's id.
+  defp by_root(graph) do
+    root = for {parent, ids} <- graph.parts, id <- ids, into: %{}, do: {id, parent}
+
+    graph.steps
+    |> Map.values()
+    |> Enum.reject(&is_nil(&1.batch_id))
+    |> Enum.group_by(&Map.get(root, &1.batch_id, &1.batch_id))
   end
 
   @doc """
@@ -285,7 +477,7 @@ defmodule RockcutApi.Production.Steps do
     pnums = Batches.p_numbers()
 
     per_answer = fn f ->
-      Map.new(@answers, fn a -> {a, f.(changes(plan, a))} end)
+      Map.new(@answers, fn a -> {a, f.(changes(graph, plan, a))} end)
     end
 
     %{
@@ -299,23 +491,43 @@ defmodule RockcutApi.Production.Steps do
         |> Enum.reject(&is_nil/1)
         |> Enum.uniq()
         |> Enum.map(&batch_brief(&1, pnums)),
-      moved: Enum.map(plan.moved, &brief(&1, plan.days)),
+      moved: Enum.map(plan.moved, &brief(&1, plan)),
       # D48 DEV QA Y1: a moved Split's parts, which go with it either way.
-      carried: Enum.map(plan.carried, &brief(&1, plan.days)),
-      following: Enum.map(plan.following, &brief(&1, plan.days)),
+      carried: Enum.map(plan.carried, &brief(&1, plan)),
+      following: Enum.map(plan.following, &brief(&1, plan)),
+      # D56 §3.1: the pre-brew steps that go with a moved brew day, per answer.
+      pre_brew:
+        Map.new(@answers, fn a ->
+          {a,
+           graph
+           |> pre_brew_changes(base_changes(plan, a))
+           |> Map.keys()
+           |> Enum.map(&graph.steps[&1])
+           |> Enum.sort_by(&{Date.to_gregorian_days(&1.due_on), &1.position, &1.id})
+           |> Enum.map(&brief(&1, plan))}
+        end),
       default_answer: plan.default,
-      out_of_order: per_answer.(&out_of_order(graph, &1, done)),
+      # D56: why an answer can't be used (nil when it can).
+      refused: per_answer.(&refusal(brew_refusal(graph, &1, done))),
+      out_of_order: per_answer.(&preview_out_of_order(graph, plan, &1, done)),
       renumbered: per_answer.(&Batches.renumbered(pnums, Batches.p_numbers(&1, leaving)))
     }
   end
 
-  defp brief(%Step{} = s, days) do
+  # D56: with a retest the following steps come after it, not after the
+  # failed test (done, on its day): the retest stands in for it.
+  defp preview_out_of_order(graph, %{retest_on: %Date{} = on} = plan, changes, done),
+    do: out_of_order(graph, Map.put(changes, plan.first.id, on), List.delete(done, plan.first.id))
+
+  defp preview_out_of_order(graph, _plan, changes, done), do: out_of_order(graph, changes, done)
+
+  defp brief(%Step{} = s, plan) do
     %{
       id: s.id,
       batch_id: s.batch_id,
       name: name(s),
       due_on: s.due_on,
-      new_due_on: Date.add(s.due_on, days)
+      new_due_on: new_due(plan, s)
     }
   end
 
@@ -344,7 +556,12 @@ defmodule RockcutApi.Production.Steps do
   Move the steps `ids` by `days` (whole days, not 0, at most a year).
   `answer`: `move_all` / `move_only`; required when steps follow
   (`{:answer_required, preview}`). A finished step can't move
-  (`:step_done`).
+  (`:step_done`). A moved first Brew day takes its pre-brew steps along,
+  and a pre-brew step can't land on brew day or later
+  (`{:before_brew_day, :pre_brew}`); nor can a step that isn't plain or
+  custom land before it (`{:not_before_brew, name}`, decision 13). Refused
+  under every answer, the preview is too; else it says per answer
+  (`refused`).
 
   `preview: true` returns `{:ok, {:preview, preview}}` and writes nothing.
   Otherwise `{:ok, %{batch_ids, renumbered, out_of_order}}`.
@@ -358,6 +575,7 @@ defmodule RockcutApi.Production.Steps do
       moved = Enum.map(ids, &graph.steps[&1])
       if Enum.any?(moved, & &1.done_on), do: Repo.rollback(:step_done)
       plan = plan(graph, moved, days)
+      refusals!(graph, plan)
 
       cond do
         opts[:preview] ->
@@ -368,7 +586,10 @@ defmodule RockcutApi.Production.Steps do
 
         true ->
           parts_follow!(graph, plan, answer)
-          changes = changes(plan, answer || "move_only")
+          changes = changes(graph, plan, answer || "move_only")
+
+          if reason = brew_refusal(graph, changes, []), do: Repo.rollback(reason)
+
           {_, renumbered} = Batches.with_renumbering(fn -> write_dates!(graph, changes) end)
 
           %{
@@ -382,6 +603,9 @@ defmodule RockcutApi.Production.Steps do
 
   ## Checking off
 
+  @doc "What a check-off takes, on the schedule and the Brewery board (D56 adds the result)."
+  def complete_fields, do: ~w(done_on batch_number answer result fail_action retest_days)
+
   @doc """
   Check off `step` (§3.7) as `actor`: `done_on` (default today; not in the
   future), and for a planned batch's first Brew day its `batch_number`
@@ -391,9 +615,20 @@ defmodule RockcutApi.Production.Steps do
   completes the batch; a partial one changes nothing. A Split (D48)
   completes the parent and the parts become `fermenting`.
 
+  D56 decision 11: a pre-brew step done on its first Brew day or later
+  stays on its planned day (`done_on` records the day) and moves nothing.
+
+  D56 §3.2: a step whose type has a result needs `result` (`pass` /
+  `fail`; `:result_required`), and a Fail `fail_action` (`retest` /
+  `continue`; `:fail_action_required`). A retest (`retest_days`, default
+  the step's, 1–30) is added on `done_on` + N and the move is worked out
+  for the shift to it from the step's planned day (one prompt).
+
   `preview: true` returns `{:ok, {:preview, %{move, done_on,
-  needs_batch_number, next_batch_number}}}` (`move` nil when it's done on
-  plan). Otherwise `{:ok, %{batch_ids, renumbered, out_of_order}}`.
+  needs_batch_number, next_batch_number, needs_result, retest_days,
+  retest_on}}}` (`move` nil when nothing else moves; `retest_on` set for a
+  Fail with a retest). Otherwise `{:ok, %{batch_ids, renumbered,
+  out_of_order, retest_id}}`.
   """
   def complete(id, attrs, %User{} = actor, opts \\ []) do
     attrs = stringify(attrs)
@@ -411,14 +646,20 @@ defmodule RockcutApi.Production.Steps do
       done_on = done_on!(attrs["done_on"], today)
       answer = answer!(attrs["answer"])
       batch = step.batch_id && Repo.get!(Batch, step.batch_id)
+      outcome = outcome!(step, attrs, opts[:preview])
 
       check_off_order!(graph, step, batch)
 
       numbering? =
         batch != nil and batch.status == "planned" and first_brew?(step, Map.values(graph.steps))
 
-      days = Date.diff(done_on, step.due_on)
-      plan = if days != 0, do: plan(graph, [step], days)
+      # D56 decision 11: a pre-brew step done on brew day or later stays
+      # on its planned day and moves nothing.
+      due_on = if late_pre_brew?(graph, step, done_on), do: step.due_on, else: done_on
+      # D56 §3.2: with a retest, the steps after the test move to follow it.
+      retest_on = outcome.retest_days && Date.add(done_on, outcome.retest_days)
+      plan = retest_plan(graph, step, due_on, retest_on)
+      if plan, do: refusals!(graph, plan, [step.id])
       leaving = if numbering?, do: [batch.id], else: []
 
       if opts[:preview] do
@@ -427,7 +668,11 @@ defmodule RockcutApi.Production.Steps do
            move: plan && preview(graph, plan, [step.id], leaving),
            done_on: done_on,
            needs_batch_number: numbering?,
-           next_batch_number: if(numbering?, do: Batches.next_batch_number())
+           next_batch_number: if(numbering?, do: Batches.next_batch_number()),
+           needs_result: has_result?(step),
+           retest_days: if(has_result?(step), do: step.retest_days),
+           retest_allowed: retest_allowed?(step),
+           retest_on: retest_on
          }}
       else
         number =
@@ -442,7 +687,9 @@ defmodule RockcutApi.Production.Steps do
           do: Repo.rollback({:answer_required, preview(graph, plan, [step.id], leaving)})
 
         if plan, do: parts_follow!(graph, plan, answer)
-        changes = if plan, do: changes(plan, answer || "move_only"), else: %{}
+        changes = if plan, do: changes(graph, plan, answer || "move_only"), else: %{}
+
+        if reason = plan && brew_refusal(graph, changes, [step.id]), do: Repo.rollback(reason)
 
         {_, renumbered} =
           Batches.with_renumbering(fn ->
@@ -450,12 +697,13 @@ defmodule RockcutApi.Production.Steps do
 
             step
             |> Changeset.change(
-              due_on: done_on,
+              due_on: due_on,
               done_on: done_on,
               done_by_id: actor.id,
               done_on_device_id: actor.on_device_id,
               completed_at: DateTime.utc_now() |> DateTime.truncate(:second),
-              checkoff_move: checkoff_move(graph, step, done_on, changes)
+              checkoff_move: checkoff_move(graph, step, due_on, changes, retest_on && plan),
+              result: outcome.result
             )
             |> Repo.update!()
 
@@ -478,13 +726,53 @@ defmodule RockcutApi.Production.Steps do
             end
           end)
 
+        retest = retest_on && add_retest!(step, retest_on)
+
         %{
           batch_ids: batch_ids([step.id | Map.keys(changes)], graph),
           renumbered: renumbered,
-          out_of_order: out_of_order(graph, Map.put(changes, step.id, done_on), [step.id])
+          out_of_order:
+            if(retest,
+              do: out_of_order_now(step, [retest.id | Map.keys(changes)]),
+              else: out_of_order(graph, Map.put(changes, step.id, due_on), [step.id])
+            ),
+          retest_id: retest && retest.id
         }
       end
     end)
+  end
+
+  # The move a check-off (or a result changed to Fail) makes: the step to
+  # `due_on`, and the steps after it by as many days, or with a retest
+  # (`retest_on`) by the days from the step's planned day to the retest's
+  # while the step stays on `due_on`. Nil when nothing moves.
+  defp retest_plan(graph, step, due_on, nil) do
+    days = Date.diff(due_on, step.due_on)
+    if days != 0, do: plan(graph, [step], days)
+  end
+
+  defp retest_plan(graph, step, due_on, retest_on) do
+    days = Date.diff(retest_on, step.due_on)
+
+    cond do
+      days != 0 ->
+        graph |> plan([step], days, %{step.id => due_on}) |> Map.put(:retest_on, retest_on)
+
+      due_on != step.due_on ->
+        graph
+        |> plan([step], 0, %{step.id => due_on})
+        |> Map.merge(%{following: [], default: nil})
+
+      true ->
+        nil
+    end
+  end
+
+  # The links out of order among `ids` as the schedule is now (after a
+  # retest took the failed step's links).
+  defp out_of_order_now(%Step{} = step, ids) do
+    graph = graph!([step.id])
+    out_of_order(graph, Map.new(ids, &{&1, graph.steps[&1].due_on}))
   end
 
   @doc """
@@ -494,6 +782,8 @@ defmodule RockcutApi.Production.Steps do
   option a): a step its own check-off moved goes back to its planned day,
   with the steps that moved with it (`checkoff_move`) that are still where
   it put them and not done; otherwise it keeps its date.
+  D56 decision 8: a failed test's retest goes (its links back on the test),
+  unless it's done (`:retest_done`); the result is cleared.
   `{:ok, %{batch_ids, renumbered, message}}`.
   """
   def uncomplete(id) do
@@ -503,11 +793,14 @@ defmodule RockcutApi.Production.Steps do
       unless step.done_on, do: Repo.rollback(:not_done)
       batch = step.batch_id && Repo.get!(Batch, step.batch_id) |> Repo.preload(:brand)
       first_brew? = batch != nil and first_brew?(step, Map.values(graph.steps))
+      retest = retest!(graph, step)
 
       uncheck_order!(graph, step, batch)
+      after_brew_done!(graph, step)
 
       {message, renumbered} =
         Batches.with_renumbering(fn ->
+          if retest, do: remove_retest!(step, retest)
           # D49 QA 1 (Matt, option a): what its own check-off moved goes back.
           due_on = put_back_checkoff_move!(graph, step)
 
@@ -518,7 +811,8 @@ defmodule RockcutApi.Production.Steps do
             done_on_device_id: nil,
             completed_at: nil,
             checkoff_move: nil,
-            due_on: due_on
+            due_on: due_on,
+            result: nil
           )
           |> Repo.update!()
 
@@ -555,40 +849,455 @@ defmodule RockcutApi.Production.Steps do
     end)
   end
 
+  # D56 decision 11: `step` is a pre-brew step and `done_on` is on its
+  # batch's first Brew day or later.
+  defp late_pre_brew?(graph, %Step{batch_id: id} = step, done_on) when not is_nil(id) do
+    steps = graph.steps |> Map.values() |> Enum.filter(&(&1.batch_id == id))
+    brew = Parts.first_brew(steps)
+
+    brew != nil and Enum.any?(pre_brew(steps), &(&1.id == step.id)) and
+      Date.compare(done_on, brew.due_on) != :lt
+  end
+
+  defp late_pre_brew?(_graph, _step, _done_on), do: false
+
+  ## Test results (D56 §3.2)
+
+  @doc """
+  Change the result of a done step whose type has one (`:not_done`,
+  `:result_not_here`). Fail → Pass takes its retest away, unless that's
+  done (`:retest_done`), and puts the steps after it where a Pass would
+  have left them. Pass → Fail asks the Fail question (`fail_action`,
+  `retest_days`) and a retest moves the steps after it as at check-off
+  (`answer`, `{:answer_required, preview}`). The same result is a no-op.
+  `preview: true` returns `{:ok, {:preview, %{move, retest_days,
+  retest_on}}}`; otherwise `{:ok, %{batch_ids, renumbered, out_of_order,
+  retest_id}}`.
+  """
+  def change_result(id, attrs, opts \\ []) do
+    attrs = stringify(attrs)
+
+    Repo.transaction(fn ->
+      graph = graph!([to_int(id) || Repo.rollback(:not_found)])
+      step = graph.steps[to_int(id)]
+      unless step.done_on, do: Repo.rollback(:not_done)
+      unless has_result?(step), do: Repo.rollback(:result_not_here)
+      outcome = outcome!(step, attrs, opts[:preview])
+      answer = answer!(attrs["answer"])
+
+      cond do
+        outcome.result == step.result or is_nil(outcome.result) ->
+          if opts[:preview],
+            do:
+              {:preview,
+               %{
+                 move: nil,
+                 retest_days: step.retest_days,
+                 retest_allowed: retest_allowed?(step),
+                 retest_on: nil
+               }},
+            else: result_reply(graph, step, %{}, nil)
+
+        outcome.result == "pass" ->
+          retest = retest!(graph, step)
+
+          if opts[:preview] do
+            {:preview,
+             %{
+               move: nil,
+               retest_days: step.retest_days,
+               retest_allowed: retest_allowed?(step),
+               retest_on: nil
+             }}
+          else
+            if retest, do: remove_retest!(step, retest)
+            moves = pass_back!(graph, step)
+            step |> Changeset.change(moves) |> Changeset.change(result: "pass") |> Repo.update!()
+            result_reply(graph, step, %{}, nil)
+          end
+
+        true ->
+          to_fail(graph, step, outcome, answer, opts)
+      end
+    end)
+  end
+
+  # Pass → Fail: as the Fail at check-off, from the day the step is on.
+  defp to_fail(graph, step, outcome, answer, opts) do
+    retest_on = outcome.retest_days && Date.add(step.done_on, outcome.retest_days)
+    plan = retest_plan(graph, step, step.due_on, retest_on)
+    if plan, do: refusals!(graph, plan, [step.id])
+
+    cond do
+      opts[:preview] ->
+        {:preview,
+         %{
+           move: plan && preview(graph, plan, [step.id]),
+           retest_days: step.retest_days,
+           retest_allowed: retest_allowed?(step),
+           retest_on: retest_on
+         }}
+
+      plan && plan.following != [] && is_nil(answer) ->
+        Repo.rollback({:answer_required, preview(graph, plan, [step.id])})
+
+      true ->
+        changes = if plan, do: changes(graph, plan, answer || "move_only"), else: %{}
+        if reason = plan && brew_refusal(graph, changes, [step.id]), do: Repo.rollback(reason)
+        write_dates!(graph, Map.delete(changes, step.id))
+
+        step
+        |> Changeset.change(
+          result: "fail",
+          checkoff_move: merge_checkoff_move(graph, step, Map.delete(changes, step.id))
+        )
+        |> Repo.update!()
+
+        retest = retest_on && add_retest!(step, retest_on)
+        result_reply(graph, step, changes, retest)
+    end
+  end
+
+  defp result_reply(graph, step, changes, retest) do
+    ids = Map.keys(changes) ++ if(retest, do: [retest.id], else: [])
+
+    %{
+      batch_ids: batch_ids([step.id | Map.keys(changes)], graph),
+      renumbered: [],
+      out_of_order: if(ids == [], do: [], else: out_of_order_now(step, ids)),
+      retest_id: retest && retest.id
+    }
+  end
+
+  # The follower moves of a result changed to Fail, added to the check-off's
+  # record (`[from, to, pass_to]`), so Mark not done and Fail → Pass put
+  # them back.
+  defp merge_checkoff_move(graph, step, changes) do
+    # Counted from where the step is now (decision 20, DEV gap 8).
+    moved =
+      if step.checkoff_move, do: step.checkoff_move |> Jason.decode!() |> rebase(step), else: %{}
+
+    changes
+    |> Enum.reduce(moved, fn {id, to}, acc ->
+      key = to_string(id)
+
+      case acc[key] do
+        [from, now | _] ->
+          Map.put(acc, key, [from, iso(to), now])
+
+        _ ->
+          Map.put(acc, key, [iso(graph.steps[id].due_on), iso(to), iso(graph.steps[id].due_on)])
+      end
+    end)
+    |> Map.put_new(to_string(step.id), [iso(step.due_on), iso(step.due_on)])
+    |> then(&if(&1 == %{}, do: nil, else: Jason.encode!(&1)))
+  end
+
+  # Fail → Pass: the steps a retest moved go to where a Pass would have left
+  # them (`pass_to`), if they're not done, even if they were moved since (D56
+  # decision 20, DEV gap 4), counted from where the test is now (gap 8); a
+  # done one gets that as its planned day (gap 7). Refused like a move if
+  # it would leave a step before brew day that can't be there. The step's
+  # new `checkoff_move`.
+  defp pass_back!(_graph, %Step{checkoff_move: nil}), do: []
+
+  defp pass_back!(graph, %Step{checkoff_move: json} = step) do
+    moved = json |> Jason.decode!() |> since_fail(step)
+
+    back =
+      for {id, [_, _, pass_to]} <- moved,
+          s = graph.steps[String.to_integer(id)],
+          s && is_nil(s.done_on),
+          into: %{},
+          do: {s.id, Date.from_iso8601!(pass_to)}
+
+    if reason = brew_refusal(graph, back, [step.id]), do: Repo.rollback(reason)
+    write_dates!(graph, back)
+    replan_done!(graph, moved, back, 2)
+
+    moved =
+      moved
+      |> Enum.flat_map(fn
+        {id, [from, _, pass_to]} -> if from == pass_to, do: [], else: [{id, [from, pass_to]}]
+        other -> [other]
+      end)
+      |> Map.new()
+
+    own = moved[to_string(step.id)]
+
+    cond do
+      map_size(moved) == 1 and match?([same, same], own) -> [checkoff_move: nil]
+      true -> [checkoff_move: Jason.encode!(moved)]
+    end
+  end
+
+  @doc "D56 §3.2: whether `step`'s type records Pass / Fail. Needs `step_type`."
+  def has_result?(%Step{step_type: %StepType{has_result: true}}), do: true
+  def has_result?(%Step{}), do: false
+
+  @doc """
+  D56 decision 15: whether a Fail on `step` can add a retest (plain steps
+  and Set temp; anything else only continues). Needs `step_type`.
+  """
+  def retest_allowed?(%Step{} = step),
+    do: has_result?(step) and behavior(step) in ["plain", "set_temp"]
+
+  # What a check-off records: `result` (nil for a type without one) and, for
+  # a Fail with a retest, `retest_days`. Only a preview goes without them.
+  defp outcome!(step, attrs, preview?) do
+    if has_result?(step) do
+      case result!(attrs["result"]) do
+        nil ->
+          unless preview?, do: Repo.rollback(:result_required)
+          %{result: nil, retest_days: nil}
+
+        "fail" ->
+          case fail_action!(attrs["fail_action"]) do
+            nil ->
+              unless preview?, do: Repo.rollback(:fail_action_required)
+              %{result: "fail", retest_days: nil}
+
+            "continue" ->
+              %{result: "fail", retest_days: nil}
+
+            "retest" ->
+              unless retest_allowed?(step), do: Repo.rollback(:retest_not_here)
+
+              %{result: "fail", retest_days: retest_days!(attrs["retest_days"], step.retest_days)}
+          end
+
+        "pass" ->
+          %{result: "pass", retest_days: nil}
+      end
+    else
+      %{result: nil, retest_days: nil}
+    end
+  end
+
+  defp result!(v) when v in [nil, ""], do: nil
+  defp result!(v) when v in ["pass", "fail"], do: v
+  defp result!(_), do: Repo.rollback(:result_invalid)
+
+  defp fail_action!(v) when v in [nil, ""], do: nil
+  defp fail_action!(v) when v in ["retest", "continue"], do: v
+  defp fail_action!(_), do: Repo.rollback(:fail_action_invalid)
+
+  defp retest_days!(v, default) when v in [nil, ""], do: default
+
+  defp retest_days!(v, _default) do
+    range = RockcutApi.Production.TemplateStep.retest_days()
+
+    case to_int(v) do
+      n when is_integer(n) -> if n in range, do: n, else: Repo.rollback(:retest_days_invalid)
+      _ -> Repo.rollback(:retest_days_invalid)
+    end
+  end
+
+  # The retest a failed test added (nil if none), refused while it's done.
+  defp retest!(graph, %Step{} = step) do
+    case Enum.find(Map.values(graph.steps), &(&1.retest_of_id == step.id)) do
+      %Step{done_on: nil} = retest -> retest
+      %Step{} -> Repo.rollback(:retest_done)
+      nil -> nil
+    end
+  end
+
+  # The retest of failed `step` on `on`: a copy of the step (type, tank,
+  # phase, notes, assignee, task-list setting, `retest_days`), "retest" /
+  # "retest 2" / …, added. The step's outgoing links become the retest's.
+  defp add_retest!(%Step{} = step, on) do
+    retest =
+      Repo.insert!(%Step{
+        batch_id: step.batch_id,
+        tank_id: step.tank_id,
+        step_type_id: step.step_type_id,
+        phase_id: step.phase_id,
+        name: step.name,
+        vessel_index: step.vessel_index,
+        temperature: step.temperature,
+        notes: step.notes,
+        on_task_list: step.on_task_list,
+        assignee_id: step.assignee_id,
+        retest_days: step.retest_days,
+        position: step.position,
+        detail: retest_detail(step),
+        due_on: on,
+        added: true,
+        # D56 decision 25 (DEV gap 14): never pre-brew, whatever it retests.
+        retest_of_id: step.id
+      })
+
+    Repo.update_all(from(l in StepLink, where: l.from_step_id == ^step.id),
+      set: [from_step_id: retest.id, updated_at: now()]
+    )
+
+    retest
+  end
+
+  # "retest" for the first, then "retest 2", "retest 3", … along the chain.
+  defp retest_detail(step) do
+    case chain_length(step) do
+      1 -> "retest"
+      n -> "retest #{n}"
+    end
+  end
+
+  defp chain_length(%Step{retest_of_id: nil}), do: 1
+
+  defp chain_length(%Step{retest_of_id: id}) do
+    case Repo.get(Step, id) do
+      nil -> 1
+      prev -> 1 + chain_length(prev)
+    end
+  end
+
+  # Take `retest` away: its outgoing links go back to `step` (one that would
+  # repeat a link `step` has is dropped), and it's deleted with its task.
+  defp remove_retest!(%Step{} = step, %Step{} = retest) do
+    have =
+      Repo.all(from(l in StepLink, where: l.from_step_id == ^step.id, select: l.to_step_id))
+
+    Repo.delete_all(
+      from(l in StepLink, where: l.from_step_id == ^retest.id and l.to_step_id in ^have)
+    )
+
+    Repo.update_all(from(l in StepLink, where: l.from_step_id == ^retest.id),
+      set: [from_step_id: step.id, updated_at: now()]
+    )
+
+    Repo.delete!(retest)
+  end
+
+  defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
+
   ## A check-off's move (D49 QA 1)
 
   # What checking `step` off on `done_on` moves: itself from its planned
   # day, and `changes` (the following steps under the answer, a Split's
-  # parts), each `[from, to]`. Nil when it was done on its planned day.
-  defp checkoff_move(_graph, %Step{due_on: same}, same, _changes), do: nil
+  # parts), each `[from, to]`. Nil when nothing moved. D56: a step moved for
+  # a retest (`retest_plan`) also keeps where a Pass would have put it,
+  # `[from, to, pass_to]`, for a Fail changed to Pass.
+  defp checkoff_move(graph, step, done_on, changes, retest_plan) do
+    others = Map.delete(changes, step.id)
 
-  defp checkoff_move(graph, step, done_on, changes) do
-    changes
-    |> Map.delete(step.id)
-    |> Map.new(fn {id, to} -> {to_string(id), [iso(graph.steps[id].due_on), iso(to)]} end)
-    |> Map.put(to_string(step.id), [iso(step.due_on), iso(done_on)])
-    |> Jason.encode!()
+    if others == %{} and done_on == step.due_on do
+      nil
+    else
+      pass_days = Date.diff(done_on, step.due_on)
+
+      others
+      |> Map.new(fn {id, to} ->
+        from = graph.steps[id].due_on
+
+        {to_string(id),
+         if(retest_plan,
+           do: [iso(from), iso(to), iso(Date.add(from, pass_days))],
+           else: [iso(from), iso(to)]
+         )}
+      end)
+      |> Map.put(to_string(step.id), [iso(step.due_on), iso(done_on)])
+      |> Jason.encode!()
+    end
   end
 
   # Mark not done: the steps the check-off moved that are still where it
   # put them, and not done, go back to their dates; the step's own planned
   # day is returned for it. Without a record, it keeps its date (D47).
+  # D56 decision 20 (DEV gap 4): the steps a Fail's retest moved (their
+  # record has the Pass date too) go back to their dates before the Fail
+  # even if they were moved since, counted from where the test is now (gap
+  # 8); done ones stay, with that as their planned day (gap 7). Refused like
+  # a move if it would leave a step before brew day that can't be there.
   defp put_back_checkoff_move!(_graph, %Step{checkoff_move: nil} = step), do: step.due_on
 
   defp put_back_checkoff_move!(graph, %Step{checkoff_move: json} = step) do
-    moved = Jason.decode!(json)
+    moved = json |> Jason.decode!() |> since_fail(step)
 
-    for {id, [from, to]} <- moved,
-        id = String.to_integer(id),
-        id != step.id,
-        s = graph.steps[id],
-        s && is_nil(s.done_on) && iso(s.due_on) == to do
-      s |> Changeset.change(due_on: Date.from_iso8601!(from)) |> Repo.update!()
+    back =
+      for {id, [from, to | retest]} <- moved,
+          id = String.to_integer(id),
+          id != step.id,
+          s = graph.steps[id],
+          s && is_nil(s.done_on) && (retest != [] or iso(s.due_on) == to),
+          into: %{},
+          do: {id, Date.from_iso8601!(from)}
+
+    due_on =
+      case moved[to_string(step.id)] do
+        [from | _] -> Date.from_iso8601!(from)
+        _ -> step.due_on
+      end
+
+    undone = %{graph | steps: Map.update!(graph.steps, step.id, &%{&1 | done_on: nil})}
+    own = if due_on == step.due_on, do: %{}, else: %{step.id => due_on}
+    brew? = first_brew?(step, Map.values(graph.steps))
+
+    case brew_refusal(undone, Map.merge(back, own), []) do
+      nil ->
+        :ok
+
+      # D56 decision 24 (DEV gap 12): brew day held by a finished pre-brew step.
+      {:before_brew_day, {:pre_brew_done, name, _}} when brew? ->
+        Repo.rollback({:pre_brew_done, name})
+
+      reason ->
+        Repo.rollback(reason)
     end
 
+    write_dates!(graph, back)
+    replan_done!(graph, moved, back, 0)
+    due_on
+  end
+
+  # D56 decision 20 (clarified, DEV gap 8): a Fail's record (one with a
+  # retest's Pass date) counts from where the test is now: its dates move as
+  # far as the test has since (a whole-batch move; dragging the retest
+  # doesn't move the test).
+  defp since_fail(moved, step) do
+    if Enum.any?(moved, fn {_, dates} -> length(dates) == 3 end),
+      do: rebase(moved, step),
+      else: moved
+  end
+
+  # A record's dates moved as far as `step` has from the day it records for it.
+  defp rebase(moved, step) do
     case moved[to_string(step.id)] do
-      [from, _] -> Date.from_iso8601!(from)
-      _ -> step.due_on
+      [_, to | _] ->
+        days = Date.diff(step.due_on, Date.from_iso8601!(to))
+
+        Map.new(moved, fn {id, dates} ->
+          {id, Enum.map(dates, &(&1 |> Date.from_iso8601!() |> Date.add(days) |> iso()))}
+        end)
+
+      _ ->
+        moved
+    end
+  end
+
+  # D56 decision 20 (clarified, DEV gap 7): a step a Fail moved that's done
+  # since gets its planned day put back too (`at`: 0 its date before the
+  # Fail, 2 where a Pass would have left it), so a later Mark not done of it
+  # lands in order; the steps put back with it leave its record.
+  defp replan_done!(graph, moved, back, at) do
+    for {id, [_, _, _] = dates} <- moved,
+        s = graph.steps[String.to_integer(id)],
+        s && s.done_on do
+      key = to_string(s.id)
+      record = if s.checkoff_move, do: Jason.decode!(s.checkoff_move), else: %{}
+
+      to =
+        case record[key] do
+          [_, to | _] -> to
+          _ -> iso(s.due_on)
+        end
+
+      record =
+        record
+        |> Map.drop(Enum.map(Map.keys(back), &to_string/1))
+        |> Map.put(key, [Enum.at(dates, at), to])
+
+      json = if record == %{key => [to, to]}, do: nil, else: Jason.encode!(record)
+      s |> Changeset.change(checkoff_move: json) |> Repo.update!()
     end
   end
 
@@ -627,6 +1336,47 @@ defmodule RockcutApi.Production.Steps do
     case batch && behavior(step) in @exits && parent_split(graph, batch) do
       %Step{done_on: nil} = split -> Repo.rollback({:before_split, :check_off, name(split)})
       _ -> :ok
+    end
+
+    # D56 decision 26 (DEV gap 13): nothing after brew day is done before the
+    # first Brew day ("1 of 2" on a two-day brew); pre-brew steps, their
+    # retests (lead) and brew days are exempt.
+    if batch && not before_brew_kind?(graph, step) && behavior(step) != "brew" &&
+         not brewed?(graph, batch),
+       do: Repo.rollback({:brew_first, name(step)})
+
+    :ok
+  end
+
+  # D56 decision 26 (lead): the mirror. The first Brew day stays done while
+  # a step after it is done (the earliest named); not checked by Undo, which
+  # puts rows back as they were.
+  defp after_brew_done!(graph, step) do
+    if first_brew?(step, Map.values(graph.steps)) do
+      graph.steps
+      |> Map.values()
+      |> Enum.filter(
+        &(&1.done_on != nil and &1.id != step.id and behavior(&1) != "brew" and
+            not before_brew_kind?(graph, &1))
+      )
+      |> Enum.min_by(&{Date.to_gregorian_days(&1.done_on), &1.id}, fn -> nil end)
+      |> case do
+        nil -> :ok
+        done -> Repo.rollback({:done_after_brew, name(done)})
+      end
+    end
+  end
+
+  # Done before brew day by plan: a pre-brew step (decision 22), or a retest
+  # along a chain that starts at one (decision 26, lead; still not pre-brew,
+  # decision 25). Decisions 23 and 26 and the mirror leave these out.
+  defp before_brew_kind?(_graph, %Step{pre_brew: true}), do: true
+  defp before_brew_kind?(_graph, %Step{retest_of_id: nil}), do: false
+
+  defp before_brew_kind?(graph, %Step{retest_of_id: id}) do
+    case graph.steps[id] || Repo.get(Step, id) do
+      nil -> false
+      test -> before_brew_kind?(graph, test)
     end
   end
 

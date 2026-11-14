@@ -76,8 +76,10 @@ defmodule RockcutApi.Production.BatchChanges do
   defp add_one!(batch, type, name, attrs) do
     due_on = date!(attrs["due_on"])
     steps = steps!(batch)
-    not_before_brew!(batch, steps, due_on)
+    pre_brew? = not_before_brew!(batch, steps, due_on, type)
     vessel = vessel!(batch, attrs["vessel_index"], vessel_on(steps, due_on))
+    # D56 §3.1: a pre-brew step is in the first tank.
+    if pre_brew? and vessel != 0, do: Repo.rollback({:not_before_brew, type_name(type)})
     not_after_exit!(batch, steps, vessel, due_on)
 
     step =
@@ -85,13 +87,14 @@ defmodule RockcutApi.Production.BatchChanges do
         batch_id: batch.id,
         step_type_id: type && type.id,
         name: name,
-        phase_id: type && type.starts_phase_id,
+        phase_id: if(type && not pre_brew?, do: type.starts_phase_id),
         split_method: nil,
         vessel_index: vessel,
         due_on: due_on,
         position: next_position(batch.id, due_on),
         on_task_list: true,
-        added: true
+        added: true,
+        pre_brew: pre_brew?
       })
 
     edit!(step, Map.take(attrs, @edit_fields))
@@ -147,7 +150,7 @@ defmodule RockcutApi.Production.BatchChanges do
         type = behavior_type!("set_temp")
         first_on = date!(attrs["first_on"])
         steps = steps!(batch)
-        not_before_brew!(batch, steps, first_on)
+        not_before_brew!(batch, steps, first_on, type)
         vessel = vessel!(batch, attrs["vessel_index"], vessel_on(steps, first_on))
         # D48 DEV QA N6: refused whole when its last step is after the exit.
         not_after_exit!(batch, steps, vessel, Date.add(first_on, length(temps) - 1))
@@ -517,7 +520,10 @@ defmodule RockcutApi.Production.BatchChanges do
   brew day (two-day brews kept). Added transfers are dropped first; other
   added steps keep their dates, go in the tank the beer is in then, and
   follow the last new step before them. Vessels that still exist keep their
-  tanks; a new one starts Unassigned. `:not_planned` once brewed, `:split`
+  tanks; a new one starts Unassigned. D56 decision 12: a finished pre-brew
+  step is kept, done on its day: it takes the place of the new template's
+  first unmatched pre-brew step of its type (that entry's id and links), or
+  else stays as an added step with no links. `:not_planned` once brewed, `:split`
   for a split batch or a part. `{:ok, %{batch_ids, message, renumbered}}`.
   """
   def change_template(%Batch{} = batch, template_id) do
@@ -538,7 +544,8 @@ defmodule RockcutApi.Production.BatchChanges do
 
           steps = steps!(batch)
           brew_on = Parts.first_brew(steps).due_on
-          {kept, rebuilt} = Enum.split_with(steps, & &1.added)
+          done_pre_brew = Enum.filter(steps, &done_pre_brew?/1)
+          {kept, rebuilt} = Enum.split_with(steps, &(&1.added or &1 in done_pre_brew))
           Repo.delete_all(from(s in Step, where: s.id in ^Enum.map(rebuilt, & &1.id)))
 
           last = template.steps |> Enum.map(& &1.vessel_index) |> Enum.max(fn -> 0 end)
@@ -558,12 +565,13 @@ defmodule RockcutApi.Production.BatchChanges do
 
           Batches.copy_steps!(batch, template, brew_on, batch.brew_two_days)
           batch |> Changeset.change(template_id: template.id) |> Repo.update!()
-          reanchor!(batch, kept)
+          unmatched = place_pre_brew!(batch, done_pre_brew)
+          reanchor!(batch, kept -- done_pre_brew, unmatched)
           no_tank_twice!(batch, :all)
           {kept, dropped}
         end)
 
-      n = Enum.count(kept, &(not Step.marker?(&1)))
+      n = Enum.count(kept, &(&1.added and not Step.marker?(&1)))
       from_name = (batch.template && batch.template.name) || "No template"
 
       %{
@@ -603,10 +611,10 @@ defmodule RockcutApi.Production.BatchChanges do
   # on their day, and each kept chain's first step after the last rebuilt
   # step there (QA minor 7b: kept ramps too; nothing kept is left unlinked).
   # A ramp keeps its own chain.
-  defp reanchor!(batch, kept) do
+  defp reanchor!(batch, kept, unlinked) do
     steps = steps!(batch)
     kept_ids = MapSet.new(kept, & &1.id)
-    rebuilt = Enum.reject(steps, &MapSet.member?(kept_ids, &1.id))
+    rebuilt = Enum.reject(steps, &(MapSet.member?(kept_ids, &1.id) or &1.id in unlinked))
     graph = StepGraph.batch(batch.id)
 
     for s <- Enum.filter(steps, &MapSet.member?(kept_ids, &1.id)) do
@@ -637,6 +645,56 @@ defmodule RockcutApi.Production.BatchChanges do
         true ->
           :ok
       end
+    end
+  end
+
+  # D56 decision 22: pre-brew as planned, not by date.
+  defp done_pre_brew?(%Step{} = s), do: s.done_on != nil and s.pre_brew
+
+  # D56 decision 12: each new pre-brew step (earliest first) is replaced by
+  # the earliest finished one `kept` of its type, which takes its template
+  # entry and links. The rest are added steps with no links; their ids.
+  defp place_pre_brew!(_batch, []), do: []
+
+  defp place_pre_brew!(batch, kept) do
+    kept_ids = Enum.map(kept, & &1.id)
+
+    Repo.delete_all(
+      from(l in StepLink, where: l.from_step_id in ^kept_ids or l.to_step_id in ^kept_ids)
+    )
+
+    new =
+      steps!(batch)
+      |> Enum.filter(&(&1.id not in kept_ids and &1.template_step_id != nil and &1.pre_brew))
+
+    left =
+      Enum.reduce(new, Enum.sort_by(kept, &Parts.order/1), fn n, left ->
+        case Enum.find(left, &(&1.step_type_id != nil and &1.step_type_id == n.step_type_id)) do
+          nil ->
+            left
+
+          k ->
+            Repo.update_all(from(l in StepLink, where: l.from_step_id == ^n.id),
+              set: [from_step_id: k.id]
+            )
+
+            Repo.update_all(from(l in StepLink, where: l.to_step_id == ^n.id),
+              set: [to_step_id: k.id]
+            )
+
+            Repo.delete!(n)
+
+            k
+            |> Changeset.change(template_step_id: n.template_step_id, added: false)
+            |> Repo.update!()
+
+            List.delete(left, k)
+        end
+      end)
+
+    for k <- left do
+      k |> Changeset.change(template_step_id: nil, added: true) |> Repo.update!()
+      k.id
     end
   end
 
@@ -715,19 +773,27 @@ defmodule RockcutApi.Production.BatchChanges do
   end
 
   # Added steps and ramps start on brew day or later (a split part: its
-  # Split, `:before_split`; D48 DEV QA N4).
-  defp not_before_brew!(batch, steps, day) do
+  # Split, `:before_split`; D48 DEV QA N4). D56 decision 13: a plain or
+  # custom step (`type` nil) may go before brew day, a pre-brew step (true);
+  # another type is `{:not_before_brew, name}`.
+  defp not_before_brew!(batch, steps, day, type) do
     case Parts.first_brew(steps) do
       nil ->
         split = parent_split(batch)
         if split && after?(split.due_on, day), do: Repo.rollback(:before_split)
+        false
 
       brew ->
-        if after?(brew.due_on, day), do: Repo.rollback(:before_brew_day)
+        cond do
+          not after?(brew.due_on, day) -> false
+          behavior_of(type) in [nil, "plain"] -> true
+          true -> Repo.rollback({:not_before_brew, type_name(type)})
+        end
     end
-
-    :ok
   end
+
+  defp type_name(nil), do: "custom step"
+  defp type_name(%StepType{name: name}), do: name
 
   # ... and on or before the exit of the tank they're in (D48 DEV QA N6).
   defp not_after_exit!(batch, steps, k, day) do

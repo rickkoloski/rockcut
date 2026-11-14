@@ -64,7 +64,8 @@ defmodule RockcutApiWeb.MeController do
   `phone_view`) for this account, merged into the rest. Answers the board's
   settings with the defaults filled in. `:board` is a department's key or
   `all`; an unknown one is 404, one this account can't save 403 (a device:
-  its home board only, no staff code).
+  its home board only, no staff code). D56 decision 18: `production` is the
+  Gantt's view (`expanded`, `label_by`), for whoever reads the schedule.
   """
   def update_board_settings(conn, %{"board" => key}) do
     user = conn.assigns.current_user
@@ -80,6 +81,7 @@ defmodule RockcutApiWeb.MeController do
   end
 
   defp settings_board("all"), do: {:ok, :all}
+  defp settings_board("production"), do: {:ok, :production}
 
   defp settings_board(key) do
     case Accounts.get_department_by_key(key) do

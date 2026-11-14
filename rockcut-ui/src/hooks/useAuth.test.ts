@@ -73,3 +73,54 @@ describe('useAuth.loadMe after a 401', () => {
     expect(reload).toHaveBeenCalledTimes(1)
   })
 })
+
+// D56 decision 18: the Gantt's expanded tanks and "Label by" come with the
+// task boards' settings in /api/me and save through the same path.
+describe('useAuth: the Gantt view on the account', () => {
+  const store = new Map<string, string>()
+  const calls: { method?: string; url?: string; data?: unknown }[] = []
+
+  beforeEach(() => {
+    vi.resetModules()
+    store.clear()
+    calls.length = 0
+    vi.stubGlobal('localStorage', {
+      getItem: (k: string) => store.get(k) ?? null,
+      setItem: (k: string, v: string) => void store.set(k, v),
+      removeItem: (k: string) => void store.delete(k),
+    })
+    vi.stubGlobal('window', { location: { reload: vi.fn() }, dispatchEvent: vi.fn(), addEventListener: vi.fn() })
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('reads board_settings.production and saves to it', async () => {
+    store.set('rockcut_token', 'ses_person')
+    const api = (await import('../lib/api')).default
+    api.defaults.adapter = async (config: InternalAxiosRequestConfig) => {
+      calls.push({ method: config.method, url: config.url, data: config.data && JSON.parse(config.data) })
+      const data =
+        config.method === 'get'
+          ? {
+              user: { id: 4 },
+              capabilities: {},
+              board_settings: {
+                brewery: { span: 7, expanded: ['1'] },
+                production: { expanded: ['7', 'FV3'], label_by: { '7': 3007 }, mix: ['7'], span: 7 },
+              },
+            }
+          : {}
+      return { data, status: 200, statusText: '', headers: {}, config }
+    }
+    const useAuth = (await import('./useAuth')).default
+    await useAuth.getState().loadMe()
+    expect(useAuth.getState().boardSettings).toEqual({
+      brewery: { span: 7 },
+      production: { expanded: ['7'], label_by: { '7': 3007 }, mix: ['7'] },
+    })
+
+    await useAuth.getState().saveBoardSettings('production', { expanded: ['7', '8'], mix: ['7', '8'] })
+    expect(calls.at(-1)).toEqual({ method: 'put', url: '/api/me/board_settings/production', data: { expanded: ['7', '8'], mix: ['7', '8'] } })
+    expect(useAuth.getState().boardSettings.production).toEqual({ expanded: ['7', '8'], label_by: { '7': 3007 }, mix: ['7', '8'] })
+  })
+})

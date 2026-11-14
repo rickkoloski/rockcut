@@ -18,7 +18,10 @@ export interface Flows {
   moveSteps: (ids: number[], days: number) => Promise<Result | null>
   /** Check a step off on `doneOn` (the number prompt, then the move prompt). */
   checkOff: (step: StepRef, doneOn: string, batchLabel: string | null) => Promise<Result | null>
-  uncheck: (step: StepRef) => Promise<Result>
+  /** Mark not done; `retestOn` (a failed test's retest) asks first, as the retest goes too (D56). Null when cancelled. */
+  uncheck: (step: StepRef, retestOn?: string | null) => Promise<Result | null>
+  /** D56 §3.2 Change: a done test's result to Pass or Fail (Fail asks Retest or Continue). Null when cancelled. */
+  changeResult: (step: StepRef, to: 'pass' | 'fail') => Promise<Result | null>
   /** Show a message with no Undo. */
   notify: (message: string) => void
   /** A write made elsewhere (the out-of-service dialog): refetch and offer its Undo. */

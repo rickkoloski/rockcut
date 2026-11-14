@@ -19,6 +19,12 @@ import { splitTree,
   rangeForZoom,
   readPrefs,
   rowKey,
+  GANTT_BOARD,
+  clearLocalGanttView,
+  ganttCarryOver,
+  ganttView,
+  missingLocalGanttView,
+  type GanttSettings,
   shiftRange,
   STEP_ROW_H,
   STEP_ROW_H_FINE,
@@ -39,6 +45,7 @@ import PlanBatchDialog from './PlanBatchDialog'
 import StepDialog from './StepDialog'
 import TankPanel from './TankPanel'
 import TaskListPanel from './TaskListPanel'
+import BoardViewNotices from '../../tasks/BoardViewNotices'
 import { FlowsProvider } from './flows'
 import { useFlows } from './flowsContext'
 import { useTimelineDrag } from './useTimelineDrag'
@@ -57,8 +64,10 @@ const daysWord = (d: number) => `${plural(Math.abs(d), 'day')} ${d > 0 ? 'later'
 /**
  * D47 §3.6 Brewery → Production (`/brewery/production`): the tank schedule.
  * One request loads the range (refetched on focus and every minute); the
- * view (range, zoom, names-only column, expanded tanks) is remembered per
- * person in this browser (plan decision 6).
+ * view (range, zoom, names-only column) is remembered per person in this
+ * browser (plan decision 6). D56 decisions 18, 19: the expanded tanks,
+ * "Label by" and the Tanks setting's "Your selection" are on the account
+ * (`board_settings.production`), carried over once from this browser.
  */
 export default function GanttPage() {
   return (
@@ -67,6 +76,9 @@ export default function GanttPage() {
     </FlowsProvider>
   )
 }
+
+// D56 decision 18: the carry-over runs once per person per page load (as D58's boards).
+const carried = new Set<string>()
 
 function GanttScreen() {
   const flows = useFlows()
@@ -104,8 +116,28 @@ function GanttScreen() {
   const [range, setRangeState] = useState<Range>(() => prefs.range ?? defaultRange(today, prefs.zoom))
   const [zoom, setZoomState] = useState<Zoom>(prefs.zoom)
   const [compact, setCompactState] = useState(prefs.collapsed)
-  const [expanded, setExpandedState] = useState(() => new Set(prefs.expanded))
-  const [mix, setMixState] = useState(() => new Set(prefs.mix))
+  // D56 decision 18: on the account, over this browser's old values until they're carried over.
+  const signedIn = useAuth((s) => s.user?.id)
+  const stored = useAuth((s) => s.boardSettings[GANTT_BOARD])
+  const saveBoardSettings = useAuth((s) => s.saveBoardSettings)
+  const local = useMemo(() => missingLocalGanttView(userId, stored), [userId, stored])
+  const view = useMemo(() => ganttView(stored, local), [stored, local])
+  const expanded = useMemo(() => new Set(view.expanded), [view])
+  const labelBy = view.labelBy
+  const mix = useMemo(() => new Set(view.mix), [view])
+  const [notSaved, setNotSaved] = useState(false)
+  useEffect(() => {
+    if (signedIn === undefined || carried.has(String(signedIn))) return
+    carried.add(String(signedIn))
+    void ganttCarryOver(signedIn, useAuth.getState().boardSettings[GANTT_BOARD], (s) => useAuth.getState().saveBoardSettings(GANTT_BOARD, s))
+  }, [signedIn])
+  /** Save some of the view; this browser's old values the server lacks go along. A failure keeps it for this page. */
+  const saveView = (changes: Partial<GanttSettings>) => {
+    const carry = missingLocalGanttView(userId, stored)
+    saveBoardSettings(GANTT_BOARD, { ...carry, ...changes })
+      .then(() => carry && clearLocalGanttView(userId))
+      .catch(() => setNotSaved(true))
+  }
   // Bumped by Today so it scrolls even when the range is unchanged (D48 §3.6, the D47 no-op).
   const [todayTick, setTodayTick] = useState(0)
 
@@ -123,14 +155,11 @@ function GanttScreen() {
     setCompactState(c)
     writePref(userId, 'collapsed', c)
   }
-  const setExpanded = (keys: Set<string>) => {
-    setExpandedState(keys)
-    writePref(userId, 'expanded', [...keys])
-  }
-  const setMix = (keys: Set<string>) => {
-    setMixState(keys)
-    writePref(userId, 'mix', [...keys])
-  }
+  const setExpanded = (keys: Set<string>) => saveView({ expanded: [...keys] })
+  // D56 §3.3: an expanded tank's "Label by" batch, remembered beside the expanded tanks.
+  const setLabelBy = (key: string, batchId: number) => saveView({ label_by: { ...labelBy, [key]: batchId } })
+  // D56 decision 19: the Tanks setting's "Your selection", on the account with the expanded tanks.
+  const setMix = (keys: Set<string>) => saveView({ mix: [...keys] })
 
   const { data, isLoading, error, isPlaceholderData } = useApiQuery<Schedule>(
     scheduleKey(range.from, range.to),
@@ -436,6 +465,8 @@ function GanttScreen() {
             flags={data.flags}
             compact={compact}
             expanded={expanded}
+            labelBy={labelBy}
+            onLabelBy={setLabelBy}
             stepRowH={stepRowH}
             selected={selected}
             marks={data.condition_marks}
@@ -551,6 +582,7 @@ function GanttScreen() {
           onClose={() => setStepOpen(null)}
         />
       )}
+      <BoardViewNotices rangeNotice={null} notSaved={notSaved} onNotSavedClose={() => setNotSaved(false)} />
     </Box>
   )
 }

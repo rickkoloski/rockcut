@@ -71,6 +71,11 @@ defmodule RockcutApi.Authz.Device do
   def can?(%User{} = device, :save, {:board_settings, %Department{key: key}}),
     do: key == home_key(device)
 
+  # D56 decision 18: the brewhouse device's own Gantt view (expanded tanks,
+  # "Label by"), as it reads the schedule.
+  def can?(%User{} = device, :save, {:board_settings, :production}),
+    do: can?(device, :read, :production)
+
   # D53 Part 2 §4.2: a tablet reads its home department's Idea Board and the
   # Company board, view only. Every write, Watch, History and every other
   # board fall through to the catch-all.

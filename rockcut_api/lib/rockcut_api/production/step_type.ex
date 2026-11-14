@@ -16,6 +16,8 @@ defmodule RockcutApi.Production.StepType do
     field :full_name, :string
     field :behavior, :string, default: "plain"
     field :on_task_list, :boolean, default: true
+    # D56 §3.2: its steps record Pass / Fail at check-off (any type, built-in too).
+    field :has_result, :boolean, default: false
     field :built_in, :boolean, default: false
     field :position, :integer, default: 0
     field :retired_at, :utc_datetime
@@ -30,7 +32,7 @@ defmodule RockcutApi.Production.StepType do
   @doc "What a brewer edits. `behavior` and `built_in` are never cast."
   def changeset(type, attrs) do
     type
-    |> cast(attrs, [:name, :full_name, :starts_phase_id, :on_task_list])
+    |> cast(attrs, [:name, :full_name, :starts_phase_id, :on_task_list, :has_result])
     |> update_change(:name, &RockcutApi.Production.normalize_name/1)
     |> update_change(:full_name, &blank_to_nil/1)
     |> validate_required([:name], message: "Give the step type a name.")

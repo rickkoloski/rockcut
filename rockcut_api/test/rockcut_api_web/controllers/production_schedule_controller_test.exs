@@ -3,6 +3,7 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
   use RockcutApiWeb.ConnCase
 
   import RockcutApi.PersonaFixtures
+  import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.{Production, Repo}
   alias RockcutApi.Brewing.Brand
@@ -232,8 +233,20 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
 
     assert hd(hd(body(unassigned)["data"]["batches"])["vessels"])["tank_id"] == nil
 
-    shifted = call(b, :post, "/api/production/batches/#{batch["id"]}/shift", %{days: 3}) |> body()
+    # D56 DEV QA: a preview of the bar drag writes nothing and has no Undo.
+    before = Repo.get!(RockcutApi.Production.Step, fdh["id"]).due_on
+    shift = "/api/production/batches/#{batch["id"]}/shift"
+    preview = call(b, :post, shift, %{days: 3, preview: true})
+
+    assert {preview.status, body(preview)} ==
+             {200, %{"data" => %{"preview" => %{"moved" => 4, "kept" => 0}}}}
+
+    assert Repo.get!(RockcutApi.Production.Step, fdh["id"]).due_on == before
+
+    shifted = call(b, :post, shift, %{days: 3}) |> body()
     assert shifted["data"]["moved"] == 4
+    assert shifted["undo_token"]
+    assert Repo.get!(RockcutApi.Production.Step, fdh["id"]).due_on == Date.add(before, 3)
 
     deleted = call(b, :delete, "/api/production/batches/#{batch["id"]}")
     assert body(deleted)["data"]["deleted_id"] == batch["id"]
@@ -360,5 +373,125 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
       assert call(ctx[key], :post, "/api/production/steps/move", %{ids: [1], days: 1}).status ==
                403
     end
+  end
+
+  test "D56 pre-brew steps: not_before_brew and before_brew_day as 422s, the preview too", ctx do
+    type_id = fn name -> Enum.find(Production.list_step_types(), &(&1.name == name)).id end
+    {:ok, grain} = Production.create_step_type(%{"name" => "Prepare grain"})
+    path = "/api/production/templates/#{ctx.template.id}/steps"
+
+    refused =
+      call(ctx["owner"], :post, path, %{step_type_id: type_id.("Package"), day_offset: -1})
+
+    assert refused.status == 422
+
+    assert body(refused) == %{
+             "error" => "not_before_brew",
+             "message" => "A Package can't be before brew day."
+           }
+
+    assert call(ctx["owner"], :post, path, %{step_type_id: grain.id, day_offset: -1}).status ==
+             201
+
+    b = ctx["brewer1"]
+    [batch] = body(plan(b, ctx))["data"]["batches"]
+    step = Enum.find(batch["steps"], &(&1["name"] == "Prepare grain"))
+    assert step["due_on"] == "2026-11-01"
+
+    for preview <- [true, false] do
+      res =
+        call(b, :post, "/api/production/steps/move", %{
+          ids: [step["id"]],
+          days: 1,
+          preview: preview
+        })
+
+      assert res.status == 422
+
+      assert body(res) == %{
+               "error" => "before_brew_day",
+               "message" => "A pre-brew step stays before brew day."
+             }
+    end
+  end
+
+  test "D56 decisions 23, 24: after_done_step and pre_brew_done as 422s", ctx do
+    {:ok, grain} = Production.create_step_type(%{"name" => "Prepare grain"})
+    path = "/api/production/templates/#{ctx.template.id}/steps"
+
+    assert call(ctx["owner"], :post, path, %{step_type_id: grain.id, day_offset: -1}).status ==
+             201
+
+    b = ctx["brewer1"]
+    [batch] = body(plan(b, ctx))["data"]["batches"]
+    step = &Enum.find(batch["steps"], fn s -> s["name"] == &1 end)
+    complete = &call(b, :post, "/api/production/steps/#{step.(&1)["id"]}/complete", &2)
+
+    # Decision 26: FDH before brew day is done is 422 brew_first, the preview too.
+    for preview <- [true, false] do
+      res = complete.("FDH", %{done_on: "2026-11-09", preview: preview})
+
+      assert {res.status, body(res)} ==
+               {422,
+                %{
+                  "error" => "brew_first",
+                  "message" => "Brew day comes first. FDH can't be done before it."
+                }}
+    end
+
+    # FDH (Mon Nov 9) done on its day, after brew day; brew day marked not
+    # done again: it can't move onto FDH's day.
+    brew_id = step.("Brew day")["id"]
+    assert complete.("Brew day", %{done_on: "2026-11-02", batch_number: "40"}).status == 200
+    assert complete.("FDH", %{done_on: "2026-11-09"}).status == 200
+    # The mirror (decision 26, lead): brew day stays done while FDH is.
+    res = call(b, :post, "/api/production/steps/#{brew_id}/uncomplete")
+
+    assert {res.status, body(res)} ==
+             {422, %{"error" => "done_after_brew", "message" => "Mark FDH not done first."}}
+
+    # Brew day not done with FDH done is data from before decision 26 (DEV).
+    Repo.update_all(from(s in RockcutApi.Production.Step, where: s.id == ^brew_id),
+      set: [done_on: nil, done_by_id: nil, completed_at: nil, checkoff_move: nil]
+    )
+
+    batch_id = batch["id"]
+
+    Repo.update_all(from(x in RockcutApi.Brewing.Batch, where: x.id == ^batch_id),
+      set: [status: "planned", batch_number: nil]
+    )
+
+    for preview <- [true, false] do
+      res =
+        call(b, :post, "/api/production/steps/move", %{
+          ids: [step.("Brew day")["id"]],
+          days: 7,
+          answer: "move_only",
+          preview: preview
+        })
+
+      assert {res.status, body(res)} ==
+               {422,
+                %{
+                  "error" => "after_done_step",
+                  "message" => "FDH was done Mon Nov 9; brew day can't be after it."
+                }}
+    end
+
+    # FDH not done again, so only the pre-brew step holds brew day below.
+    fdh_id = step.("FDH")["id"]
+    assert call(b, :post, "/api/production/steps/#{fdh_id}/uncomplete").status == 200
+
+    # Prepare grain ticked late, brew day done the same day: Mark not done says what to do.
+    assert complete.("Prepare grain", %{done_on: "2026-11-05"}).status == 200
+
+    assert complete.("Brew day", %{done_on: "2026-11-05", answer: "move_only", batch_number: "40"}).status ==
+             200
+
+    res = call(b, :post, "/api/production/steps/#{step.("Brew day")["id"]}/uncomplete")
+
+    assert {res.status, body(res)} ==
+             {422,
+              %{"error" => "pre_brew_done", "message" => "Mark Prepare grain not done first."}}
   end
 end

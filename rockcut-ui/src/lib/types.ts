@@ -695,6 +695,8 @@ export interface FromIdea {
 }
 
 /** D49: a linked task's step and batch (`batch_id` null for a standalone CIP). */
+export type TestResult = 'pass' | 'fail'
+
 export interface TaskProduction {
   step_id: number
   batch_id: number | null
@@ -703,6 +705,12 @@ export interface TaskProduction {
   /** What the prompts name: "FDH", "Galactic P1" (null for a standalone CIP). */
   step_name: string
   batch_label: string | null
+  /** D56 §3.2: the step's Pass / Fail (null without one; absent before D56). */
+  result?: TestResult | null
+  /** D56 decision 14: a failed test's retest day, null when it continued as planned. */
+  retest_on?: string | null
+  /** Its retest is done: Mark not done is refused until that's undone. */
+  retest_done?: boolean
 }
 
 /** D39 `GET /api/boards/:dept/tasks/:id/series`: the rule and the open occurrences after this one. */

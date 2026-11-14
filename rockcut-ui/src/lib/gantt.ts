@@ -3,7 +3,7 @@
 // is its index from the view's first day.
 
 import { addDaysKey } from './datetime'
-import { shortPeriod, type Flag, type SchedBatch, type SchedStep, type Tank } from './production'
+import { shortPeriod, type Answer, type Flag, type SchedBatch, type SchedLink, type SchedStep, type Tank } from './production'
 
 // ── Days ──
 
@@ -99,6 +99,8 @@ export interface Part {
   end: string
   /** The last day anything of it is drawn (its stranded steps past `end`). */
   reach: string
+  /** D56 §3.1: the first day anything of it is drawn (its pre-brew steps before `start`). */
+  first: string
   /** Its vessel's steps, plus the step that empties it. */
   steps: SchedStep[]
   /** Unfinished steps dated after its done exit: still dots, drawn red, flagged out of order. */
@@ -158,6 +160,7 @@ export function buildParts(batch: SchedBatch, origin: SchedStep | null = null): 
       start: fill?.due_on ?? days[0],
       end,
       reach: [end, ...stranded.map((s) => s.due_on)].sort().at(-1)!,
+      first: [fill?.due_on ?? days[0], ...days].sort()[0],
       steps,
       stranded: new Set(stranded.map((s) => s.id)),
       planned: batch.status === 'planned',
@@ -366,6 +369,35 @@ export function layoutRows(tanks: Tank[], parts: Part[], cips: SchedStep[], expa
 export const rowKey = (tank: Tank | null) => (tank ? String(tank.id) : 'unassigned')
 
 /**
+ * D56 §3.3 (D46 §3.6, the mockup's "Label these rows by batch"): the batches
+ * an expanded tank shows in `from`…`to`, by when they start; the picker only
+ * shows with two or more.
+ */
+export function labelChoices(row: Pick<Row, 'parts'>, from: string, to: string): SchedBatch[] {
+  const seen = new Map<number, SchedBatch>()
+  for (const p of [...row.parts].sort((a, b) => a.first.localeCompare(b.first)))
+    if (p.first <= to && p.reach >= from && !seen.has(p.batch.id)) seen.set(p.batch.id, p.batch)
+  return [...seen.values()]
+}
+
+/**
+ * The batch whose steps are named alone (the rest keep "step · batch"): the
+ * one picked, while it's still shown; else the one in the tank today, the
+ * next one, or the first (the mockup's order). Null with fewer than two.
+ */
+export function labelBatch(row: Pick<Row, 'parts'>, from: string, to: string, today: string, picked: number | undefined): number | null {
+  const choices = labelChoices(row, from, to)
+  if (choices.length < 2) return null
+  if (picked != null && choices.some((b) => b.id === picked)) return picked
+  const parts = row.parts.filter((p) => choices.includes(p.batch))
+  return (
+    parts.find((p) => p.start <= today && p.end >= today)?.batch.id ??
+    parts.filter((p) => p.end >= today).sort((a, b) => a.start.localeCompare(b.start))[0]?.batch.id ??
+    choices[0].id
+  )
+}
+
+/**
  * Collapse all | ● | Expand all (D48 §3.6, P119): where the switch sits for
  * the open rows. All open → expand, none → collapse, anything else is the
  * person's own mix.
@@ -398,6 +430,8 @@ export interface DragHintInput {
   part?: Part
   /** A dot or a CIP block: the step. */
   step?: SchedStep
+  /** D56 DEV gap 2: a dot dragged with others selected: every selected step's id (the dot's too). */
+  selection?: number[]
   /** A bar dropped on another row: that row's tank (null = Unassigned). Undefined: same row. */
   toRow?: Tank | null
   tanks: Tank[]
@@ -469,6 +503,97 @@ export function treeRefusal(batches: SchedBatch[], batch: SchedBatch, k: number,
   return null
 }
 
+// ── D56: before brew day ──
+
+/** D56 decision 13: a step that may go before brew day: a plain step or a custom one (not a phase marker). */
+export const preBrewKind = (s: SchedStep) => s.behavior === 'plain' || (s.step_type_id == null && !s.marker)
+
+/** The unfinished steps reachable from `ids` along `links`, not through a finished step (the API's following steps). */
+export function followingIds(steps: SchedStep[], links: SchedLink[], ids: number[]): Set<number> {
+  const byId = new Map(steps.map((s) => [s.id, s]))
+  const seen = new Set<number>()
+  const todo = [...ids]
+  while (todo.length) {
+    const id = todo.pop()!
+    for (const l of links)
+      if (l.from_step_id === id && !seen.has(l.to_step_id) && byId.get(l.to_step_id) && !byId.get(l.to_step_id)!.done_on) {
+        seen.add(l.to_step_id)
+        todo.push(l.to_step_id)
+      }
+  }
+  for (const id of ids) seen.delete(id)
+  return seen
+}
+
+/**
+ * D56 decision 21 (DEV gaps 3, 9): brew day (`brew`, of `steps`' batch) moved
+ * to `brewOn` can't be before a finished pre-brew step's done day; the same
+ * day is fine. The API's message, or null.
+ */
+export function finishedPreBrewRefusal(steps: SchedStep[], brew: SchedStep, brewOn: string): string | null {
+  const finished = steps.find((s) => s.pre_brew && s.batch_id === brew.batch_id && s.done_on && brewOn < s.done_on)
+  return finished ? `${finished.name} was done ${dayLabel(finished.done_on!)}; brew day can't be before it.` : null
+}
+
+/**
+ * Done before brew day by plan: a pre-brew step (decision 22), or a retest
+ * along a chain that starts at one (decision 26, lead). Decision 23 leaves
+ * these out, as the API does.
+ */
+export function beforeBrewKind(steps: SchedStep[], s: SchedStep): boolean {
+  for (let cur: SchedStep | undefined = s; cur; cur = cur.retest_of_id == null ? undefined : steps.find((x) => x.id === cur!.retest_of_id)) {
+    if (cur.pre_brew) return true
+  }
+  return false
+}
+
+/**
+ * D56 decision 23: brew day moved to `brewOn` can't be on or after the done
+ * day of a finished step that isn't pre-brew (`steps`: the whole split
+ * tree). The API's message (the earliest such step), or null.
+ */
+export function finishedAfterRefusal(steps: SchedStep[], brewOn: string): string | null {
+  const finished = steps
+    .filter((s) => !beforeBrewKind(steps, s) && s.done_on && s.behavior !== 'brew' && brewOn >= s.done_on)
+    .sort((a, b) => a.done_on!.localeCompare(b.done_on!) || a.id - b.id)[0]
+  return finished ? `${finished.name} was done ${dayLabel(finished.done_on!)}; brew day can't be after it.` : null
+}
+
+/**
+ * D56 §3.1 and decision 13, as the API decides them: moving the steps `ids`
+ * of a split tree (or one batch) by `days` under `answer`. A pre-brew step
+ * can't land on brew day or later; a step that isn't plain or custom can't
+ * land before it. The first Brew day takes its pre-brew steps along
+ * (decision 22: those planned before it, `pre_brew`, not by date). The
+ * API's message, or null.
+ */
+export function moveRefusal(tree: SchedBatch[], ids: number[], days: number, answer: Answer): string | null {
+  const root = tree.find((b) => b.split_parent_id == null) ?? tree[0]
+  const brew = root && firstBrew(root.steps)
+  if (!brew || !days) return null
+  const steps = tree.flatMap((b) => b.steps)
+  const links = tree.flatMap((b) => b.links)
+  const moving = new Set(ids)
+  if (answer === 'move_all') for (const id of followingIds(steps, links, ids)) moving.add(id)
+  const preBrew = root.steps.filter((s) => s.pre_brew && !s.done_on)
+  if (moving.has(brew.id)) for (const s of preBrew) moving.add(s.id)
+  const due = (s: SchedStep) => (moving.has(s.id) ? addDaysKey(s.due_on, days) : s.due_on)
+  const brewOn = due(brew)
+  const finished = moving.has(brew.id) ? (finishedPreBrewRefusal(root.steps, brew, brewOn) ?? finishedAfterRefusal(steps, brewOn)) : null
+  if (finished) return finished
+  if (preBrew.some((s) => due(s) >= brewOn)) return 'A pre-brew step stays before brew day.'
+  const wrong = steps.find(
+    (s) =>
+      !s.done_on &&
+      s.behavior !== 'brew' &&
+      !preBrewKind(s) &&
+      (moving.has(s.id) || moving.has(brew.id)) &&
+      s.due_on >= brew.due_on &&
+      due(s) < brewOn,
+  )
+  return wrong ? `A ${wrong.marker ? 'phase marker' : (wrong.type_name ?? wrong.name)} can't be before brew day.` : null
+}
+
 const signedDays = (n: number) => `${n > 0 ? '+' : '−'}${Math.abs(n)} day${Math.abs(n) === 1 ? '' : 's'}`
 
 /**
@@ -516,6 +641,10 @@ export function dragHint(a: DragHintInput): DragHint | null {
       text = `${dayLabel(from)} · ${signedDays(a.days)}`
       outIn(tankById(part.tankId), from, to)
       overlapIn(tankById(part.tankId), part, from, to)
+      // D56 decision 21: the bar takes an unfinished brew day along.
+      const brew = firstBrew(part.batch.steps)
+      const finished = brew && !brew.done_on && finishedPreBrewRefusal(part.batch.steps, brew, addDaysKey(brew.due_on, a.days))
+      if (finished) reasons.push(finished.replace(/\.$/, ''))
     }
   } else if (a.step) {
     if (!a.days) return null
@@ -547,7 +676,33 @@ export function dragHint(a: DragHintInput): DragHint | null {
       // Past a step that follows it: a problem only if that step stays put.
       if (after && !after.done_on && day > after.due_on) (moveAll ? onlyIf : reasons).push(`after ${after.name}, which follows it`)
     }
-    const note = onlyIf.length ? `If you move only this step: ${onlyIf.join(' · ')}` : undefined
+    // D56: before brew day, as the API refuses it under each answer.
+    let alsoNote: string | undefined
+    if (a.kind === 'dot' && batch) {
+      const all = [...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()]
+      // The dot alone, or (DEV gap 2) every selected step, each checked in its batch's split tree.
+      const ids = a.selection?.length ? a.selection : [step.id]
+      const treeOf = (b: SchedBatch) => (splitTree(all, b.id).length ? splitTree(all, b.id) : [b])
+      const rootOf = (tree: SchedBatch[]) => (tree.find((t) => t.split_parent_id == null) ?? tree[0]).id
+      const trees = new Map<number, SchedBatch[]>()
+      for (const b of [batch, ...all.filter((x) => x.steps.some((s) => ids.includes(s.id)))]) trees.set(rootOf(treeOf(b)), treeOf(b))
+      const refusal = (answer: Answer) => {
+        for (const tree of trees.values()) {
+          const mine = tree.flatMap((b) => b.steps.filter((s) => ids.includes(s.id)).map((s) => s.id))
+          const r = mine.length ? moveRefusal(tree, mine, a.days, answer) : null
+          if (r) return r
+        }
+        return null
+      }
+      const byDefault = refusal(moveAll ? 'move_all' : 'move_only')
+      const other = following ? refusal(moveAll ? 'move_only' : 'move_all') : byDefault
+      const plain = (m: string) => m.replace(/\.$/, '')
+      if (byDefault && other) reasons.push(plain(byDefault))
+      else if (byDefault) reasons.push(`${plain(byDefault)} (${moveAll ? 'Move only' : 'Move all'} works)`)
+      else if (other && moveAll) onlyIf.push(plain(other))
+      else if (other) alsoNote = `If you move the following steps too: ${plain(other)}`
+    }
+    const note = onlyIf.length ? `If you move only this step: ${onlyIf.join(' · ')}` : alsoNote
     return { text: [text, ...reasons].join(' · '), warn: reasons.length > 0, ...(note ? { note } : {}) }
   } else return null
 
@@ -555,14 +710,12 @@ export function dragHint(a: DragHintInput): DragHint | null {
 }
 
 // ── Remembered per person, in this browser (plan decision 6) ──
+// The expanded tanks, "Label by" and Your selection moved to the account (D56 decisions 18, 19, below).
 
 export interface GanttPrefs {
   range: Range | null
   zoom: Zoom
   collapsed: boolean
-  expanded: string[]
-  /** The last mix of open tanks, for the switch's middle (D48 §3.6). */
-  mix: string[]
 }
 
 const prefKey = (userId: number | string, name: string) => `rockcut.production.${userId}.${name}`
@@ -583,6 +736,14 @@ function write(key: string, value: string) {
   }
 }
 
+function remove(key: string) {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    // Nothing to clear.
+  }
+}
+
 const isKey = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
 
 /** The saved view, or the defaults (6 weeks; the left column names-only on a phone). */
@@ -596,23 +757,132 @@ export function readPrefs(userId: number | string, phone: boolean): GanttPrefs {
   }
   const zoom = Number(read(prefKey(userId, 'zoom')))
   const collapsed = read(prefKey(userId, 'collapsed'))
-  const keys = (name: string): string[] => {
-    try {
-      const e = JSON.parse(read(prefKey(userId, name)) ?? '[]')
-      return Array.isArray(e) ? e.filter((x) => typeof x === 'string') : []
-    } catch {
-      return []
-    }
-  }
   return {
     range,
     zoom: (ZOOMS as readonly number[]).includes(zoom) ? (zoom as Zoom) : 6,
     collapsed: collapsed === null ? phone : collapsed === 'true',
-    expanded: keys('expanded'),
-    mix: keys('mix'),
   }
 }
 
 export function writePref<K extends keyof GanttPrefs>(userId: number | string, name: K, value: GanttPrefs[K]) {
   write(prefKey(userId, name), typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean' ? String(value) : JSON.stringify(value))
+}
+
+// ── D56 decisions 18, 19: the expanded tanks, "Label by" and Your selection, on the account ──
+
+/** The board-settings key the Gantt's view is saved under (`PUT /api/me/board_settings/production`). */
+export const GANTT_BOARD = 'production'
+
+/**
+ * The Gantt's view as the API stores it (only what was changed): row keys,
+ * row key → batch id, and the last mix of open tanks (the Tanks setting's
+ * "Your selection", D48 §3.6).
+ */
+export interface GanttSettings {
+  expanded: string[]
+  label_by: Record<string, number>
+  mix: string[]
+}
+
+/** The view to draw: the stored settings over the defaults (nothing expanded, no mix). */
+export interface GanttView {
+  expanded: string[]
+  labelBy: Record<string, number>
+  mix: string[]
+}
+
+// As the API takes them: a tank id or "unassigned", at most 200.
+const ROW_KEY = /^(\d{1,18}|unassigned)$/
+const MAX_ROWS = 200
+
+const isRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** The Gantt settings in `raw` that are valid, as the API takes them; anything else is dropped. */
+export function cleanGanttSettings(raw: unknown): Partial<GanttSettings> {
+  const r = isRecord(raw) ? raw : {}
+  const out: Partial<GanttSettings> = {}
+  const rows = (v: unknown[]) => v.filter((k): k is string => typeof k === 'string' && ROW_KEY.test(k)).slice(0, MAX_ROWS)
+  if (Array.isArray(r.expanded)) out.expanded = rows(r.expanded)
+  if (Array.isArray(r.mix)) out.mix = rows(r.mix)
+  if (isRecord(r.label_by))
+    out.label_by = Object.fromEntries(
+      Object.entries(r.label_by)
+        .filter(([k, v]) => ROW_KEY.test(k) && Number.isInteger(v) && (v as number) > 0)
+        .slice(0, MAX_ROWS),
+    ) as Record<string, number>
+  return out
+}
+
+/** The view: the server's settings over this browser's old ones (`local`, until carried over). */
+export function ganttView(stored: unknown, local: Partial<GanttSettings> | null = null): GanttView {
+  const s = { ...local, ...cleanGanttSettings(stored) }
+  return { expanded: s.expanded ?? [], labelBy: s.label_by ?? {}, mix: s.mix ?? [] }
+}
+
+/**
+ * The carry-over: this browser's expanded tanks, "Label by" and Your
+ * selection from before D56 decisions 18 and 19
+ * (`rockcut.production.<user>.expanded` / `.labelBy` / `.mix`), as the API
+ * takes them, or null when it has none.
+ */
+export function readLocalGanttView(userId: number | string): Partial<GanttSettings> | null {
+  const expanded = read(prefKey(userId, 'expanded'))
+  const labelBy = read(prefKey(userId, 'labelBy'))
+  const mix = read(prefKey(userId, 'mix'))
+  if (expanded === null && labelBy === null && mix === null) return null
+  const parse = (v: string | null) => {
+    try {
+      return v === null ? undefined : JSON.parse(v)
+    } catch {
+      return undefined
+    }
+  }
+  const raw = { expanded: parse(expanded), label_by: parse(labelBy), mix: parse(mix) }
+  const out = cleanGanttSettings(raw)
+  // A stored value that didn't read still counts as there (it carries over as empty).
+  if (expanded !== null && !out.expanded) out.expanded = []
+  if (labelBy !== null && !out.label_by) out.label_by = {}
+  if (mix !== null && !out.mix) out.mix = []
+  return out
+}
+
+/** This browser's old settings that the server's entry (`stored`) lacks; null when it has none at all. */
+export function missingLocalGanttView(userId: number | string, stored: unknown): Partial<GanttSettings> | null {
+  const local = readLocalGanttView(userId)
+  if (!local) return null
+  const have = cleanGanttSettings(stored)
+  return Object.fromEntries(Object.entries(local).filter(([key]) => !(key in have))) as Partial<GanttSettings>
+}
+
+/** Stop using this browser's old values once the server has them. */
+export function clearLocalGanttView(userId: number | string) {
+  remove(prefKey(userId, 'expanded'))
+  remove(prefKey(userId, 'labelBy'))
+  remove(prefKey(userId, 'mix'))
+}
+
+/**
+ * As D58's carry-over (`carryOver` in tasks.ts), once per person: save this
+ * browser's old values the server lacks, never one it has, then clear them;
+ * a failed save keeps them for next time. With nothing missing they're
+ * cleared without a save.
+ */
+export async function ganttCarryOver(
+  userId: number | string,
+  stored: unknown,
+  save: (settings: Partial<GanttSettings>) => Promise<unknown>,
+): Promise<'server' | 'none' | 'saved' | 'failed'> {
+  const missing = missingLocalGanttView(userId, stored)
+  if (!missing) return 'none'
+  if (Object.keys(missing).length === 0) {
+    clearLocalGanttView(userId)
+    return 'server'
+  }
+  try {
+    await save(missing)
+  } catch {
+    return 'failed'
+  }
+  clearLocalGanttView(userId)
+  return 'saved'
 }

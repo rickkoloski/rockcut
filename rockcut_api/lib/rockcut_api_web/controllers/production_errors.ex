@@ -11,6 +11,7 @@ defmodule RockcutApiWeb.ProductionErrors do
   import Phoenix.Controller, only: [json: 2]
 
   alias RockcutApi.Production
+  alias RockcutApi.Production.Steps
   alias RockcutApiWeb.StaffCodeActing
 
   @messages %{
@@ -25,6 +26,7 @@ defmodule RockcutApiWeb.ProductionErrors do
     link_cycle: "That link would go in a circle.",
     link_order: "A step can't come before the step it follows.",
     link_exists: "Those steps are already linked.",
+    link_invalid: "That link can't be added.",
     # D50 §2.7: links on a batch's steps.
     link_pick: "Pick one step to link.",
     link_other_batch: "A step links only to steps of its own batch (or its split).",
@@ -73,7 +75,6 @@ defmodule RockcutApiWeb.ProductionErrors do
     # D48 DEV QA fix cycle 1.
     before_fill: "The beer isn't in that tank on that day.",
     after_exit: "The beer isn't in that tank on that day.",
-    before_brew_day: "A step can't come before brew day.",
     split_before_brew: "The split has to be after brew day.",
     # D48 DEV QA fix cycle 2.
     before_split: "A step can't come before the split.",
@@ -83,7 +84,16 @@ defmodule RockcutApiWeb.ProductionErrors do
     # D49 decision 6.1 (QA 8).
     marker_task_list: "A phase marker can't go on the Brewery task list.",
     # D48 DEV QA Z3: the step PATCH doesn't change dates.
-    date_not_here: "To change a step's date, move it (or check it off on the day it was done)."
+    date_not_here: "To change a step's date, move it (or check it off on the day it was done).",
+    # D56 §3.2: test results and retests.
+    result_required: "Record Pass or Fail.",
+    result_invalid: "Pick Pass or Fail.",
+    result_not_here: "That step doesn't record a result.",
+    fail_action_required: "Choose Retest or Continue as planned.",
+    fail_action_invalid: "Choose Retest or Continue as planned.",
+    retest_days_invalid: "Retest in 1 to 30 days.",
+    retest_not_here: "That step can't be retested. Continue as planned instead.",
+    retest_done: "Mark the retest not done first."
   }
 
   def handle(%Plug.Conn{} = conn, _conn), do: conn
@@ -132,6 +142,17 @@ defmodule RockcutApiWeb.ProductionErrors do
       message:
         "Transfers stay in day order: this one would come #{side} the transfer on day #{day}.",
       day: day
+    })
+  end
+
+  # D56 §3.5 (5210): a link refused in a template step's Save names the link.
+  def handle({:error, {:link_refused, code, label}}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: Atom.to_string(code),
+      message: "#{label}: #{Map.get(@messages, code, "That link can't be added.")}",
+      link: label
     })
   end
 
@@ -202,6 +223,35 @@ defmodule RockcutApiWeb.ProductionErrors do
   def handle({:error, {:before_brew_day, :check_off}}, conn),
     do: refused(conn, "before_brew_day", "Check off brew day first.")
 
+  # D56 §3.1: a pre-brew step stays before its batch's first Brew day.
+  def handle({:error, {:before_brew_day, :pre_brew} = reason}, conn),
+    do: refused(conn, Steps.refusal(reason))
+
+  # D56 decision 21: brew day not before a finished pre-brew step.
+  def handle({:error, {:before_brew_day, {:pre_brew_done, _, _}} = reason}, conn),
+    do: refused(conn, Steps.refusal(reason))
+
+  # D56 §3.1 (decision 7): only a plain step goes before brew day.
+  # D56 decision 23.
+  def handle({:error, {:after_done_step, _, _} = reason}, conn),
+    do: refused(conn, Steps.refusal(reason))
+
+  # D56 decision 26 (DEV gap 13).
+  def handle({:error, {:brew_first, name}}, conn),
+    do: refused(conn, "brew_first", "Brew day comes first. #{name} can't be done before it.")
+
+  # D56 decision 26, the lead's mirror: brew day stays done while a later step is.
+  def handle({:error, {:done_after_brew, name}}, conn),
+    do: refused(conn, "done_after_brew", "Mark #{name} not done first.")
+
+  # D56 decision 24 (DEV gap 12): Mark not done on a brew day a finished
+  # pre-brew step holds in place.
+  def handle({:error, {:pre_brew_done, name}}, conn),
+    do: refused(conn, "pre_brew_done", "Mark #{name} not done first.")
+
+  def handle({:error, {:not_before_brew, _} = reason}, conn),
+    do: refused(conn, Steps.refusal(reason))
+
   def handle({:error, {:exit_done, name}}, conn),
     do: refused(conn, "exit_done", "Mark #{name} not done first.")
 
@@ -244,6 +294,8 @@ defmodule RockcutApiWeb.ProductionErrors do
     |> put_status(:unprocessable_entity)
     |> json(%{error: Atom.to_string(code), message: Map.fetch!(@messages, code)})
   end
+
+  defp refused(conn, %{error: code, message: message}), do: refused(conn, code, message)
 
   defp refused(conn, code, message) do
     conn

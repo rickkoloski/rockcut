@@ -14,10 +14,12 @@ const menu = (page: Page) => page.getByRole('menu')
  * D58: a task board saves its settings on the server. A reload or `goto` right
  * after a pick cancels that save (DEV gate: ~75 ms on DEV, instant locally), so
  * a pick on a task board waits for its PUT. A pick that changes nothing sends
- * none; that wait gives up after 2 s.
+ * none; that wait gives up after 2 s. D56 decision 18: so does the Gantt's
+ * Tanks choice (`gantt-expand`), saved with the expanded tanks.
  */
-export async function boardSettingsSaved(page: Page, act: () => Promise<void>) {
-  if (!new URL(page.url()).pathname.startsWith('/tasks/')) return act()
+export async function boardSettingsSaved(page: Page, act: () => Promise<void>, choice?: string) {
+  const path = new URL(page.url()).pathname
+  if (!path.startsWith('/tasks/') && !(choice === 'gantt-expand' && path.startsWith('/brewery/production'))) return act()
   const saved = page
     .waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/api/me/board_settings/'), { timeout: 2000 })
     .catch(() => null)
@@ -49,7 +51,7 @@ export async function pickSetting(page: Page, gear: string, choice: string, valu
   await openSettings(page, gear)
   const option = page.getByTestId(`${choice}-${value}`)
   if (!(await option.isVisible())) await page.getByTestId(choice).click()
-  await boardSettingsSaved(page, () => option.click())
+  await boardSettingsSaved(page, () => option.click(), choice)
   if (opts.close !== false) await closeSettings(page)
 }
 

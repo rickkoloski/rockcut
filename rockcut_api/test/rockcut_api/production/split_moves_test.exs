@@ -244,11 +244,11 @@ defmodule RockcutApi.Production.SplitMovesTest do
       end
 
       assert reload(lager).status == "planned"
-      # Other steps can still be checked off before brew day (as PDH could).
+      # D56 decision 26: other steps after brew day wait for it too, with their own message.
       other =
         Enum.find(steps_of(lager), &(Steps.behavior(&1) not in ~w(brew transfer package split)))
 
-      assert {:ok, _} =
+      assert {:error, {:brew_first, _}} =
                Steps.complete(other.id, %{"answer" => "move_only"}, ctx.brewer,
                  today: other.due_on
                )

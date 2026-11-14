@@ -3,6 +3,7 @@ import { authFile, type PersonaKey } from '../../config/test-env'
 import { apiAs, tanks } from './helpers'
 import { addDays, addProcess, dayPx, gantt, openGantt, schedule, today } from './schedule'
 import { pickSetting, settingValue } from '../settingsMenu'
+import { resetGanttView } from './d56'
 
 // D47 §3.6/§3.8 the Gantt as a view: P20, P46–P51, P62–P64, and the Gantt
 // side of P1/P2 (row order). Read-only against the [SEED] schedule (the
@@ -11,6 +12,8 @@ import { pickSetting, settingValue } from '../settingsMenu'
 
 test.describe('brewer1', () => {
   test.use({ storageState: authFile('brewer1'), viewport: { width: 1440, height: 1300 } })
+  // D56 decisions 18, 19: the open tanks are on brewer1's account; none left behind.
+  test.afterEach(() => resetGanttView())
 
   test('P20: tank rows in display order then Unassigned; today line; 6 weeks; every status line', async ({ page }) => {
     await openGantt(page)
@@ -53,8 +56,11 @@ test.describe('brewer1', () => {
     const sched = await schedule()
     const fv4 = sched.tanks.find((t) => t.name === 'FV4')!.id
     const crusher = sched.batches.find((b) => b.label === 'Crusher #42')!
+    // D56 decision 18: the expanded tanks are saved on the account; wait for that save before the reload below.
+    const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/api/me/board_settings/production'), { timeout: 15_000 })
     await page.getByTestId(`gantt-caret-${fv4}`).click()
     await expect(page.getByTestId(`gantt-caret-${fv4}`)).toHaveAttribute('aria-expanded', 'true')
+    expect((await saved).ok()).toBe(true)
     const setTemp = crusher.steps.find((s) => s.name === 'Set temp - 58°')!
     await expect(page.getByTestId(`gantt-step-row-${setTemp.id}`)).toBeVisible()
     await expect(page.getByTestId(`gantt-diamond-${setTemp.id}`)).toHaveAttribute('data-state', 'today')

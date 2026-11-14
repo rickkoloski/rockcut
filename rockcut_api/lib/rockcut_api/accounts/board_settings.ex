@@ -15,6 +15,15 @@ defmodule RockcutApi.Accounts.BoardSettings do
       nor for a shared device, which has no tasks of its own);
     * `phone_view` — "vertical" (every day stacked) or "day" (one at a time).
 
+  D56 decision 18: the production Gantt's view is kept here too, under the
+  board key `"production"`, with its own closed set:
+
+    * `expanded` — the expanded tanks' row keys (a tank id, or
+      "unassigned");
+    * `label_by` — each expanded tank's "Label by" batch (row key → batch id);
+    * `mix` — the Tanks setting's "Your selection": the last mix of open tanks'
+      row keys (decision 19).
+
   Who may save a board's settings is `Authz`'s (`{:board_settings, board}`).
   """
   import Ecto.Changeset
@@ -40,11 +49,26 @@ defmodule RockcutApi.Accounts.BoardSettings do
   @fields Map.keys(@types)
   @names Enum.map(@fields, &Atom.to_string/1)
 
+  @gantt "production"
+  @gantt_types %{expanded: {:array, :string}, label_by: :map, mix: {:array, :string}}
+  @gantt_defaults %{"expanded" => [], "label_by" => %{}, "mix" => []}
+  @gantt_fields Map.keys(@gantt_types)
+  @gantt_names Enum.map(@gantt_fields, &Atom.to_string/1)
+  # More tanks than any brewery has; keeps a stored list bounded.
+  @max_rows 200
+  @row_key ~r/\A(\d{1,18}|unassigned)\z/
+
+  @doc "The board key the production Gantt's settings are kept under (D56 decision 18)."
+  def gantt, do: @gantt
+
   @doc "The settings a board has before anyone changes them."
-  def defaults, do: @defaults
+  def defaults(board_key \\ nil)
+  def defaults(@gantt), do: @gantt_defaults
+  def defaults(_board_key), do: @defaults
 
   @doc "A board's stored settings with the defaults filled in."
-  def with_defaults(stored) when is_map(stored), do: Map.merge(@defaults, stored)
+  def with_defaults(board_key, stored) when is_map(stored),
+    do: Map.merge(defaults(board_key), stored)
 
   @doc """
   Validate the settings in `attrs` (string keys, as JSON sends them) for
@@ -52,24 +76,59 @@ defmodule RockcutApi.Accounts.BoardSettings do
   `{:ok, map}` holds only the given settings, string-keyed; otherwise
   `{:error, changeset}` with an error per bad field.
   """
-  def validate(board_key, attrs, kind \\ "person") when is_map(attrs) do
+  def validate(board_key, attrs, kind \\ "person")
+
+  def validate(@gantt, attrs, _kind) when is_map(attrs) do
+    unknown = Map.keys(attrs) -- @gantt_names
+
+    {%{}, @gantt_types}
+    |> cast(attrs, @gantt_fields, empty_values: [])
+    |> validate_given(Map.keys(attrs) -- unknown)
+    |> validate_rows(:expanded)
+    |> validate_rows(:mix)
+    |> validate_change(:label_by, fn :label_by, map -> label_by_errors(map) end)
+    |> unknown_errors(unknown)
+    |> answer()
+  end
+
+  def validate(board_key, attrs, kind) when is_map(attrs) do
     unknown = Map.keys(attrs) -- @names
 
-    changeset =
-      {%{}, @types}
-      |> cast(attrs, @fields, empty_values: [])
-      |> validate_given(Map.keys(attrs) -- unknown)
-      |> validate_inclusion(:span, [7, 14])
-      |> validate_inclusion(:first_day, ~w(today sunday monday))
-      |> validate_inclusion(:view, views(board_key, kind))
-      |> validate_inclusion(:phone_view, ~w(vertical day))
-      |> unknown_errors(unknown)
+    {%{}, @types}
+    |> cast(attrs, @fields, empty_values: [])
+    |> validate_given(Map.keys(attrs) -- unknown)
+    |> validate_inclusion(:span, [7, 14])
+    |> validate_inclusion(:first_day, ~w(today sunday monday))
+    |> validate_inclusion(:view, views(board_key, kind))
+    |> validate_inclusion(:phone_view, ~w(vertical day))
+    |> unknown_errors(unknown)
+    |> answer()
+  end
 
+  defp answer(changeset) do
     if changeset.valid? do
       {:ok, Map.new(changeset.changes, fn {k, v} -> {Atom.to_string(k), v} end)}
     else
       {:error, changeset}
     end
+  end
+
+  # A bounded list of row keys.
+  defp validate_rows(changeset, field) do
+    changeset
+    |> validate_length(field, max: @max_rows)
+    |> validate_change(field, fn ^field, keys ->
+      if Enum.all?(keys, &(&1 =~ @row_key)), do: [], else: [{field, "has an unknown row"}]
+    end)
+  end
+
+  # Row key → batch id, a bounded map.
+  defp label_by_errors(map) do
+    valid =
+      map_size(map) <= @max_rows and
+        Enum.all?(map, fn {k, v} -> k =~ @row_key and is_integer(v) and v > 0 end)
+
+    if valid, do: [], else: [label_by: "must map rows to batch ids"]
   end
 
   # D58 lead decisions 1 (DEV QA gap 3): a device has no tasks of its own.
