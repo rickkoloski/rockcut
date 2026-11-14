@@ -500,12 +500,17 @@ defmodule RockcutApi.Production.Batches do
 
   @doc """
   Move a batch in time by `days`: a planned batch's every step but a
-  finished pre-brew one (D56 §3.1), a brewed one's unfinished steps
-  (finished ones keep their dates). No prompt. A
-  split parent whose Split isn't done takes its parts' steps along (D48 DEV
+  finished pre-brew one (D56 §3.1, decision 27). A brewed one's (decision
+  28): every step but its done Brew days and the steps done before brew day
+  by plan (`Steps.before_brew_kind?/2`: pre-brew steps and a pre-brew test's
+  retests, finished or not, so none lands on or after brew day). A finished
+  step that moves keeps its done day; only its planned day moves. No prompt.
+  A split parent whose Split isn't done takes its parts' steps along (D48 DEV
   QA Y1), refused (`:part_done`) while one of them is done.
-  `{:ok, %{moved, kept, renumbered}}`; `preview: true` (D56 DEV QA) writes
-  nothing, refused the same way, `{:ok, {:preview, %{moved, kept}}}`.
+  `{:ok, %{moved, planned_moved, kept, renumbered}}` (decision 30: `moved`
+  unfinished steps, `planned_moved` finished ones' planned days, `kept`
+  steps left where they are); `preview: true` (D56 DEV QA) writes nothing,
+  refused the same way, `{:ok, {:preview, %{moved, planned_moved, kept}}}`.
   """
   def shift(%Batch{} = batch, days, opts \\ []) do
     case to_int(days) do
@@ -518,12 +523,18 @@ defmodule RockcutApi.Production.Batches do
 
           # Decision 22: pre-brew as planned, not by date.
           pre_brew_done? = &(&1.pre_brew and &1.done_on != nil)
+          by_id = Map.new(steps, &{&1.id, &1})
 
-          {open, done} =
-            Enum.split_with(
-              steps,
-              &((batch.status == "planned" and not pre_brew_done?.(&1)) or is_nil(&1.done_on))
-            )
+          # Decision 28: on a brewed batch, the done Brew days and what's done
+          # before brew day by plan stay; the rest moves.
+          stays? =
+            if batch.status == "planned",
+              do: pre_brew_done?,
+              else:
+                &((&1.done_on != nil and Steps.behavior(&1) == "brew") or
+                    Steps.before_brew_kind?(by_id, &1))
+
+          {open, done} = Enum.split_with(steps, &(not stays?.(&1)))
 
           # D56 decision 21 (DEV gaps 3, 9): brew day not before a
           # finished pre-brew step's done day.
@@ -541,8 +552,13 @@ defmodule RockcutApi.Production.Batches do
           # step; decision 23 (`Steps.brew_refusal`) isn't applied here.
           open = open ++ carried_parts!(batch, steps)
 
-          if opts[:preview],
-            do: Repo.rollback({:preview, %{moved: length(open), kept: length(done)}})
+          counts = %{
+            moved: Enum.count(open, &is_nil(&1.done_on)),
+            planned_moved: Enum.count(open, &(&1.done_on != nil)),
+            kept: length(done)
+          }
+
+          if opts[:preview], do: Repo.rollback({:preview, counts})
 
           {_, renumbered} =
             with_renumbering(fn ->
@@ -550,7 +566,7 @@ defmodule RockcutApi.Production.Batches do
                   do: s |> Changeset.change(due_on: Date.add(s.due_on, d)) |> Repo.update!()
             end)
 
-          %{moved: length(open), kept: length(done), renumbered: renumbered}
+          Map.put(counts, :renumbered, renumbered)
         end)
         |> case do
           {:error, {:preview, preview}} -> {:ok, {:preview, preview}}

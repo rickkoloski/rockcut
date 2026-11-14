@@ -140,20 +140,24 @@ test('P30: drag a planned bar 3 days later: every step moves, no prompt; Undo', 
   for (const s of batch.steps) expect(after.steps.find((x) => x.id === s.id)!.due_on).toBe(s.due_on)
 })
 
-test('P31: drag a brewed bar 2 days: only unfinished steps move', async ({ page }) => {
+test('P31 (D56 decisions 28, 30): drag a brewed bar 2 days: brew day stays; the rest moves, PDH by its planned day; the message counts both', async ({ page }) => {
   const brand = await made.brand('Crusher')
   const tank = await made.tank('FV4')
   const batch = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), -10), tank_ids: [tank.id] })
   const tag = `T${Date.now().toString(36).slice(-5)}`
   await made.checkOff(stepOf(batch, 'Brew day'), tag)
   await made.checkOff(stepOf(batch, 'PDH'))
-  const open = (await batchOf(batch.id)).steps.filter((s) => !s.done_on).length
+  const brewed = await batchOf(batch.id)
+  const open = brewed.steps.filter((s) => !s.done_on).length
   await openGantt(page)
   await dragBy(page, page.getByTestId(`gantt-bar-${batch.id}-0`), 2, 0, { x: 30 })
-  await expect(snack(page)).toHaveText(`${open} unfinished steps 2 days later (finished steps keep their dates).`)
+  await expect(snack(page)).toHaveText(`${brewed.label}: ${open} unfinished steps and 1 finished step's planned day moved 2 days later. 1 step stays where it is.`)
   const after = await batchOf(batch.id)
   expect(stepOf(after, 'Brew day').due_on).toBe(addDays(today(), -10))
   expect(stepOf(after, 'FDH').due_on).toBe(addDays(stepOf(batch, 'FDH').due_on, 2))
+  // PDH: done on its day; its planned day moved, its done day didn't.
+  const pdh = stepOf(after, 'PDH')
+  expect([pdh.due_on, pdh.done_on]).toEqual([addDays(stepOf(batch, 'PDH').due_on, 2), stepOf(batch, 'PDH').due_on])
 })
 
 test('P32 on DEV: a refetch in the middle of a drag (someone adds a tank) neither cancels it nor moves the drop', async ({ page }) => {

@@ -49,6 +49,7 @@ import BoardViewNotices from '../../tasks/BoardViewNotices'
 import { FlowsProvider } from './flows'
 import { useFlows } from './flowsContext'
 import { useTimelineDrag } from './useTimelineDrag'
+import { shiftMessage } from './scheduleText'
 
 type Open =
   | { kind: 'plan'; tankId: number | null; day: string }
@@ -344,12 +345,9 @@ function GanttScreen() {
       report(await flows.write((a) => a.post(prodPath('steps', 'move'), { ids: [c.id], days }), `${c.name} moved ${daysWord(days)}.`)),
     onShiftBar: async (p: Part, days: number) =>
       report(
-        await flows.write<{ moved: number; kept: number }>(
+        await flows.write<{ moved: number; planned_moved: number; kept: number }>(
           (a) => a.post(prodPath('batches', p.batch.id, 'shift'), { days }),
-          (d) =>
-            d.kept
-              ? `${plural(d.moved, 'unfinished step')} ${daysWord(days)} (finished steps keep their dates).`
-              : `${p.batch.label}: every step ${daysWord(days)}.`,
+          (d) => shiftMessage(p.batch.label, days, d),
         ),
       ),
     onMoveBar: async (p: Part, tankId: number | null) =>

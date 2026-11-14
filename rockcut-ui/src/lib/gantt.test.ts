@@ -49,7 +49,7 @@ import {
   type Part,
 } from './gantt'
 import { dayWord, templateDayLabel, type Flag, type SchedBatch, type SchedStep, type Tank } from './production'
-import { dayN, stepStatus } from '../pages/production/Gantt/scheduleText'
+import { dayN, shiftMessage, stepStatus } from '../pages/production/Gantt/scheduleText'
 
 const step = (s: Partial<SchedStep>): SchedStep => ({
   id: 0,
@@ -320,7 +320,8 @@ describe('drag hint (lead decisions 4, addition)', () => {
   })
 
   it('sideways: the new first day and the days; nothing yet at 0', () => {
-    expect(dragHint({ ...base, kind: 'bar', days: 2, part: first })).toEqual({ text: 'Sat Oct 3 · +2 days', warn: false })
+    // Brewed: brew day stays (D56 decision 28), so the hint says so instead of a new first day.
+    expect(dragHint({ ...base, kind: 'bar', days: 2, part: first })).toEqual({ text: '+2 days · brew day stays on Thu Oct 1', warn: false })
     expect(dragHint({ ...base, kind: 'bar', days: 0, part: first })).toBeNull()
     expect(dragHint({ ...base, kind: 'cip', days: -1, step: step({ id: 40, behavior: 'cip', tank_id: 7, due_on: '2026-10-21' }) })).toEqual({ text: 'Tue Oct 20 · −1 day', warn: false })
   })
@@ -832,6 +833,25 @@ describe('D56 pre-brew steps', () => {
     expect(beforeBrewKind(steps, steps.find((s) => s.id === 56)!)).toBe(true)
     expect(beforeBrewKind(steps, steps.find((s) => s.id === 52)!)).toBe(false)
     expect(finishedAfterRefusal(steps, '2026-12-06')).toBeNull()
+  })
+
+  it('decision 30 (DEV gap 17): the bar-drag message counts what really moved', () => {
+    expect(shiftMessage('Galactic P1', 3, { moved: 9, planned_moved: 0, kept: 0 })).toBe('Galactic P1: every step 3 days later.')
+    // QA's planned batch with a finished retest: its planned day moved too.
+    expect(shiftMessage('Galactic P1', 3, { moved: 9, planned_moved: 1, kept: 0 })).toBe("Galactic P1: 9 unfinished steps and 1 finished step's planned day moved 3 days later.")
+    // A brewed batch: brew day and an unticked pre-brew step stay.
+    expect(shiftMessage('Fest #45', 5, { moved: 5, planned_moved: 2, kept: 2 })).toBe(
+      "Fest #45: 5 unfinished steps and 2 finished steps' planned days moved 5 days later. 2 steps stay where they are.",
+    )
+    expect(shiftMessage('Fest #45', -1, { moved: 1, planned_moved: 0, kept: 1 })).toBe('Fest #45: 1 unfinished step moved 1 day earlier. 1 step stays where it is.')
+  })
+
+  it('decision 28: a brewed batch’s bar hint says brew day stays', () => {
+    const brewed = { ...galactic, status: 'fermenting', steps: galactic.steps.map((x) => (x.id === 50 ? { ...x, done_on: '2026-12-02' } : x)) }
+    const [bpart] = buildParts(brewed as SchedBatch)
+    const hint = { over: true, tanks: [fv7], parts: [...buildParts(altruism), bpart] }
+    expect(dragHint({ ...hint, kind: 'bar', days: 5, part: bpart })?.text).toMatch(/^\+5 days · brew day stays on Wed Dec 2/)
+    expect(dragHint({ ...hint, kind: 'bar', days: 5, part })?.text).toMatch(/^Mon Dec 7 · \+5 days/)
   })
 
   it('moveRefusal: brew day moved past a Set temp works only with Move all; it takes the pre-brew step', () => {

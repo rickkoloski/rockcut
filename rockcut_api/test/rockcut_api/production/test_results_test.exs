@@ -715,6 +715,80 @@ defmodule RockcutApi.Production.TestResultsTest do
     end
   end
 
+  # D56 decision 28 (DEV gaps 15, 16, 17): the bar drag on a brewed batch.
+  # The template gets a pre-brew Prep yeast (day −1, Dec 1) left unticked.
+  describe "the bar drag on a brewed batch (decision 28)" do
+    defp brewed_with_prep(ctx) do
+      {:ok, _} = Production.create_step_type(%{"name" => "Prep yeast"})
+      t = add!(ctx.template, "Prep yeast", -1, [])
+      batch = brewed(%{ctx | template: t})
+      assert %{pre_brew: true, due_on: ~D[2026-12-01], done_on: nil} = named(batch, "Prep yeast")
+      batch
+    end
+
+    defp moved_by(layout, days, staying),
+      do:
+        Enum.map(layout, fn {n, d, v} ->
+          {n, if(n in staying, do: d, else: Date.add(d, days)), v}
+        end)
+
+    test "gaps 15, 16: the unticked pre-brew step and the done brew day stay; the done test's planned day moves; Mark not done keeps the drag",
+         ctx do
+      batch = brewed_with_prep(ctx)
+      before = layout(batch)
+      dt = named(batch, "Diacetyl test")
+      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
+
+      # Decision 30's counts: FDH, the retest, Set temp, Package, CIP unfinished;
+      # the test's planned day; Brew day and Prep yeast stay.
+      assert {:ok, {:preview, %{moved: 5, planned_moved: 1, kept: 2}}} =
+               Batches.shift(reload(batch), 5, preview: true)
+
+      assert {:ok, %{moved: 5, planned_moved: 1, kept: 2}} = Batches.shift(reload(batch), 5)
+      assert %{due_on: @brew, done_on: @brew} = named(batch, "Brew day")
+      assert %{due_on: ~D[2026-12-01], done_on: nil} = named(batch, "Prep yeast")
+      assert %{due_on: ~D[2026-12-19], done_on: @test_day} = step(dt)
+      assert step(%{id: rid}).due_on == ~D[2026-12-21]
+
+      # Gap 15: Mark not done works; gap 16: the followers keep the +5.
+      assert {:ok, _} = Steps.uncomplete(dt.id)
+      assert Repo.get(Step, rid) == nil
+      assert layout(batch) == moved_by(before, 5, ["Brew day", "Prep yeast"])
+    end
+
+    test "Undo of the drag puts every planned day back", ctx do
+      batch = brewed_with_prep(ctx)
+      {:ok, {_, _}} = fail_retest(ctx, named(batch, "Diacetyl test"))
+      before = {layout(batch), step(named(batch, "Diacetyl test"))}
+
+      {:ok, {_, token}} =
+        Undo.track(ctx.brewer, %{batches: [batch.id]}, fn -> Batches.shift(reload(batch), 5) end)
+
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert {layout(batch), step(named(batch, "Diacetyl test"))} == before
+    end
+
+    test "a pre-brew test's retest chain stays too, done or not", ctx do
+      {:ok, _} = Production.create_step_type(%{"name" => "Water check", "has_result" => true})
+      t = add!(ctx.template, "Water check", -3, [])
+      batch = plan!(brand!("Galactic"), t, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      water = named(batch, "Water check")
+
+      {:ok, {%{retest_id: r1}, _}} =
+        fail_retest(ctx, water, %{"done_on" => "2026-11-29", "retest_days" => 1}, ~D[2026-11-29])
+
+      {:ok, {%{retest_id: r2}, _}} =
+        fail_retest(ctx, step(%{id: r1}), %{"retest_days" => 1}, ~D[2026-11-30])
+
+      brew = named(batch, "Brew day")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+      before = Enum.map([water.id, r1, r2], &step(%{id: &1}).due_on)
+
+      assert {:ok, %{kept: 4}} = Batches.shift(reload(batch), 5)
+      assert Enum.map([water.id, r1, r2], &step(%{id: &1}).due_on) == before
+    end
+  end
+
   describe "changing a recorded result (§3.2)" do
     test "Fail → Pass removes the retest; the steps go where a Pass leaves them", ctx do
       batch = brewed(ctx)

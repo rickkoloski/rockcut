@@ -239,7 +239,8 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
     preview = call(b, :post, shift, %{days: 3, preview: true})
 
     assert {preview.status, body(preview)} ==
-             {200, %{"data" => %{"preview" => %{"moved" => 4, "kept" => 0}}}}
+             {200,
+              %{"data" => %{"preview" => %{"moved" => 4, "planned_moved" => 0, "kept" => 0}}}}
 
     assert Repo.get!(RockcutApi.Production.Step, fdh["id"]).due_on == before
 

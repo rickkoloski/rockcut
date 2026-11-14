@@ -672,7 +672,9 @@ defmodule RockcutApi.Production.BatchChangesTest do
   end
 
   describe "template and brand" do
-    test "a kept ramp and a kept step stay linked into the rebuilt chain, both ways (QA minor 7b)",
+    # D56 decision 29 (DEV gap 18) replaces QA minor 7b: a kept step keeps
+    # exactly its own links; none are made from the new template's steps.
+    test "a kept ramp keeps its own links; nothing new links into it or a kept step (decision 29)",
          ctx do
       {:ok, %{step_ids: ramp}} =
         BatchChanges.add_ramp(ctx.batch, %{
@@ -704,15 +706,14 @@ defmodule RockcutApi.Production.BatchChangesTest do
             )
           )
 
-        assert [from] = into_head
-        refute from in ramp
+        assert into_head == []
         assert {"Set temp - 60°", "Set temp - 50°", "move_all"} in l
         assert {"Set temp - 50°", "Set temp - 40°", "move_all"} in l
-        assert Enum.any?(l, &match?({_, "Rouse", "move_all"}, &1))
+        refute Enum.any?(l, &match?({_, "Rouse", _}, &1))
       end
     end
 
-    test "a kept step dated before brew day (checked off early) is still linked in (QA minor 7b)",
+    test "a kept step dated before brew day (checked off early) isn't linked in (decision 29)",
          ctx do
       {:ok, %{step_ids: [early | _]}} =
         BatchChanges.add_ramp(ctx.batch, %{
@@ -727,7 +728,7 @@ defmodule RockcutApi.Production.BatchChangesTest do
       |> Repo.update!()
 
       {:ok, _} = BatchChanges.change_template(reload(ctx.batch), lager_template!().id)
-      assert {"Brew day", "Set temp - 60°", "move_all"} in links(ctx.batch)
+      refute Enum.any?(links(ctx.batch), &match?({_, "Set temp - 60°", _}, &1))
     end
 
     test "Standard ale → Lager with transfer keeps the added step (P83)", ctx do
@@ -762,7 +763,8 @@ defmodule RockcutApi.Production.BatchChangesTest do
                {"CIP & Sanitize", ~D[2026-11-22], 1}
              ]
 
-      assert {"Brew day", "Rouse", "move_all"} in links(ctx.batch)
+      # D56 decision 29: no links made to the kept step.
+      refute Enum.any?(links(ctx.batch), &match?({_, "Rouse", _}, &1))
 
       # And back: the later tank goes.
       assert {:ok, %{message: "Lager with transfer → Standard ale. Kept 1 added step."}} =

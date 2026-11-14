@@ -637,8 +637,10 @@ export function dragHint(a: DragHintInput): DragHint | null {
       overlapIn(a.toRow, part, part.start, part.end)
     } else {
       if (!a.days) return null
-      const [from, to] = [addDaysKey(part.start, a.days), addDaysKey(part.end, a.days)]
-      text = `${dayLabel(from)} · ${signedDays(a.days)}`
+      // D56 decision 28: a done brew day stays, so the bar's start does.
+      const brewed = part.fill?.behavior === 'brew' && part.fill.done_on ? part.fill.done_on : null
+      const [from, to] = [brewed ? part.start : addDaysKey(part.start, a.days), addDaysKey(part.end, a.days)]
+      text = brewed ? `${signedDays(a.days)} · brew day stays on ${dayLabel(brewed)}` : `${dayLabel(from)} · ${signedDays(a.days)}`
       outIn(tankById(part.tankId), from, to)
       overlapIn(tankById(part.tankId), part, from, to)
       // D56 decision 21: the bar takes an unfinished brew day along.

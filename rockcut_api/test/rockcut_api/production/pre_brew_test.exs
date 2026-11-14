@@ -661,6 +661,40 @@ defmodule RockcutApi.Production.PreBrewTest do
       refute Enum.any?([brew, late, r1, fdh, fdh_retest], &(&1.id in pre))
     end
 
+    # D56 decision 29 (DEV gap 18), QA's path.
+    test "Change template with an added pre-brew test and its retests: no links made to them, no flags",
+         ctx do
+      batch = plan(ctx)
+      {:ok, check} = Production.create_step_type(%{"name" => "Hop check", "has_result" => true})
+
+      {:ok, %{step_ids: [hop]}} =
+        BatchChanges.add_step(batch, %{"step_type_id" => check.id, "due_on" => ~D[2026-11-29]})
+
+      fail = %{"result" => "fail", "fail_action" => "retest", "retest_days" => 1}
+      {:ok, %{retest_id: r1}} = Steps.complete(hop, fail, ctx.brewer, today: ~D[2026-11-29])
+      {:ok, %{retest_id: r2}} = Steps.complete(r1, fail, ctx.brewer, today: ~D[2026-11-30])
+      kept = [hop, r1, r2]
+
+      own = fn ->
+        Repo.all(
+          from(l in RockcutApi.Production.StepLink,
+            where: l.from_step_id in ^kept or l.to_step_id in ^kept,
+            select: {l.from_step_id, l.to_step_id}
+          )
+        )
+      end
+
+      links_before = own.()
+
+      other = add!(ale_template!("Other ale"), "Prepare grain", -1, [])
+
+      assert {:ok, %{message: "Standard ale → Other ale. Kept 3 added steps."}} =
+               BatchChanges.change_template(reload(batch), other.id)
+
+      assert Enum.sort(own.()) == Enum.sort(links_before)
+      assert out_of_order(batch) == []
+    end
+
     test "Change template keeps a kept step's flag", ctx do
       batch = plan(ctx)
       yeast = named(batch, "Order yeast")

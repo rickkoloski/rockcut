@@ -350,7 +350,7 @@ defmodule RockcutApi.Production.Steps do
             moved_brew? &&
               steps
               |> Enum.filter(
-                &(not before_brew_kind?(graph, &1) and &1.done_on != nil and
+                &(not before_brew_kind?(graph.steps, &1) and &1.done_on != nil and
                     behavior(&1) != "brew" and Date.compare(due.(brew), &1.done_on) != :lt)
               )
               |> Enum.min_by(&{Date.to_gregorian_days(&1.done_on), &1.id}, fn -> nil end) ->
@@ -1341,7 +1341,7 @@ defmodule RockcutApi.Production.Steps do
     # D56 decision 26 (DEV gap 13): nothing after brew day is done before the
     # first Brew day ("1 of 2" on a two-day brew); pre-brew steps, their
     # retests (lead) and brew days are exempt.
-    if batch && not before_brew_kind?(graph, step) && behavior(step) != "brew" &&
+    if batch && not before_brew_kind?(graph.steps, step) && behavior(step) != "brew" &&
          not brewed?(graph, batch),
        do: Repo.rollback({:brew_first, name(step)})
 
@@ -1357,7 +1357,7 @@ defmodule RockcutApi.Production.Steps do
       |> Map.values()
       |> Enum.filter(
         &(&1.done_on != nil and &1.id != step.id and behavior(&1) != "brew" and
-            not before_brew_kind?(graph, &1))
+            not before_brew_kind?(graph.steps, &1))
       )
       |> Enum.min_by(&{Date.to_gregorian_days(&1.done_on), &1.id}, fn -> nil end)
       |> case do
@@ -1367,16 +1367,19 @@ defmodule RockcutApi.Production.Steps do
     end
   end
 
-  # Done before brew day by plan: a pre-brew step (decision 22), or a retest
-  # along a chain that starts at one (decision 26, lead; still not pre-brew,
-  # decision 25). Decisions 23 and 26 and the mirror leave these out.
-  defp before_brew_kind?(_graph, %Step{pre_brew: true}), do: true
-  defp before_brew_kind?(_graph, %Step{retest_of_id: nil}), do: false
+  @doc """
+  Done before brew day by plan: a pre-brew step (decision 22), or a retest
+  along a chain that starts at one (decision 26, lead; still not pre-brew,
+  decision 25). Decisions 23, 26, 28 and the mirror leave these out.
+  `steps`: the steps by id that the chain is looked up in (else the database).
+  """
+  def before_brew_kind?(_steps, %Step{pre_brew: true}), do: true
+  def before_brew_kind?(_steps, %Step{retest_of_id: nil}), do: false
 
-  defp before_brew_kind?(graph, %Step{retest_of_id: id}) do
-    case graph.steps[id] || Repo.get(Step, id) do
+  def before_brew_kind?(steps, %Step{retest_of_id: id}) do
+    case steps[id] || Repo.get(Step, id) do
       nil -> false
-      test -> before_brew_kind?(graph, test)
+      test -> before_brew_kind?(steps, test)
     end
   end
 
