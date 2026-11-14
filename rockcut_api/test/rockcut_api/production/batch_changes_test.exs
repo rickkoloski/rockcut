@@ -672,9 +672,7 @@ defmodule RockcutApi.Production.BatchChangesTest do
   end
 
   describe "template and brand" do
-    # D56 decision 29 (DEV gap 18) replaces QA minor 7b: a kept step keeps
-    # exactly its own links; none are made from the new template's steps.
-    test "a kept ramp keeps its own links; nothing new links into it or a kept step (decision 29)",
+    test "a kept ramp and a kept step stay linked into the rebuilt chain, both ways (QA minor 7b)",
          ctx do
       {:ok, %{step_ids: ramp}} =
         BatchChanges.add_ramp(ctx.batch, %{
@@ -706,14 +704,18 @@ defmodule RockcutApi.Production.BatchChangesTest do
             )
           )
 
-        assert into_head == []
+        assert [from] = into_head
+        refute from in ramp
         assert {"Set temp - 60°", "Set temp - 50°", "move_all"} in l
         assert {"Set temp - 50°", "Set temp - 40°", "move_all"} in l
-        refute Enum.any?(l, &match?({_, "Rouse", _}, &1))
+        assert Enum.any?(l, &match?({_, "Rouse", "move_all"}, &1))
       end
     end
 
-    test "a kept step dated before brew day (checked off early) isn't linked in (decision 29)",
+    # QA minor 7b linked it from the tank's first step, out of order; D56
+    # decision 29 (lead correction) makes no link out of order, so it stays
+    # as it is.
+    test "a kept step dated before everything rebuilt in its tank isn't linked out of order (QA minor 7b, D56 decision 29)",
          ctx do
       {:ok, %{step_ids: [early | _]}} =
         BatchChanges.add_ramp(ctx.batch, %{
@@ -763,8 +765,7 @@ defmodule RockcutApi.Production.BatchChangesTest do
                {"CIP & Sanitize", ~D[2026-11-22], 1}
              ]
 
-      # D56 decision 29: no links made to the kept step.
-      refute Enum.any?(links(ctx.batch), &match?({_, "Rouse", _}, &1))
+      assert {"Brew day", "Rouse", "move_all"} in links(ctx.batch)
 
       # And back: the later tank goes.
       assert {:ok, %{message: "Lager with transfer → Standard ale. Kept 1 added step."}} =

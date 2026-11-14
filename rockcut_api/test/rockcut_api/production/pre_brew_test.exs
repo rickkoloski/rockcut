@@ -686,11 +686,16 @@ defmodule RockcutApi.Production.PreBrewTest do
 
       links_before = own.()
 
-      other = add!(ale_template!("Other ale"), "Prepare grain", -1, [])
+      # The new template's Order yeast (Nov 28) is on or before the test (Nov 29)
+      # and its retests.
+      other = add!(ale_template!("Other ale"), "Order yeast", -4, [])
 
       assert {:ok, %{message: "Standard ale → Other ale. Kept 3 added steps."}} =
                BatchChanges.change_template(reload(batch), other.id)
 
+      # The test is a finished pre-brew step: kept with no links (decision 12).
+      # Its retests are in its chain, so 7b doesn't link them either (decision
+      # 29), though Order yeast is on or before both.
       assert Enum.sort(own.()) == Enum.sort(links_before)
       assert out_of_order(batch) == []
     end

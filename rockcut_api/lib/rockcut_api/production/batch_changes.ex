@@ -519,7 +519,8 @@ defmodule RockcutApi.Production.BatchChanges do
   step that wasn't added is rebuilt from the new template from the same
   brew day (two-day brews kept). Added transfers are dropped first; other
   added steps keep their dates, go in the tank the beer is in then, and
-  keep exactly their own links (D56 decision 29). Vessels that still exist keep their
+  follow the last new step before them (a retest stays with its test's
+  chain, and nothing is linked out of order: D56 decision 29). Vessels that still exist keep their
   tanks; a new one starts Unassigned. D56 decision 12: a finished pre-brew
   step is kept, done on its day: it takes the place of the new template's
   first unmatched pre-brew step of its type (that entry's id and links), or
@@ -608,16 +609,30 @@ defmodule RockcutApi.Production.BatchChanges do
   end
 
   # Added steps kept through a template change: in the tank the beer is in
-  # on their day. D56 decision 29 (DEV gap 18): they keep exactly their own
-  # links; none are made from the new template's steps to them (this
-  # replaces D48 QA minor 7b's re-linking).
+  # on their day, and each kept chain's first step after the last rebuilt
+  # step there on or before its day (QA minor 7b: kept ramps too). A ramp
+  # keeps its own chain. D56 decision 29 (DEV gap 18, lead correction): a
+  # retest belongs to its test's chain, so it never starts one and never
+  # gets a link of its own; and no link is made out of order, so a kept
+  # step dated before everything rebuilt in its tank stays as it is.
   defp reanchor!(batch, kept, unlinked) do
     steps = steps!(batch)
     kept_ids = MapSet.new(kept, & &1.id)
     rebuilt = Enum.reject(steps, &(MapSet.member?(kept_ids, &1.id) or &1.id in unlinked))
+    graph = StepGraph.batch(batch.id)
 
     for s <- Enum.filter(steps, &MapSet.member?(kept_ids, &1.id)) do
-      s |> Changeset.change(vessel_index: vessel_on(rebuilt, s.due_on)) |> Repo.update!()
+      k = vessel_on(rebuilt, s.due_on)
+      s = s |> Changeset.change(vessel_index: k) |> Repo.update!()
+      led = Repo.exists?(from(l in StepLink, where: l.to_step_id == ^s.id))
+
+      prev =
+        rebuilt
+        |> Enum.filter(&(&1.vessel_index == k and not after?(&1.due_on, s.due_on)))
+        |> Enum.max_by(&Parts.order/1, fn -> nil end)
+
+      if prev && not led && is_nil(s.retest_of_id),
+        do: StepGraph.insert_link!(graph, prev, s, "move_all")
     end
   end
 
