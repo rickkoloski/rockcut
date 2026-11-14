@@ -246,29 +246,37 @@ cleanups left were removed by a reseed.
   after brew day, and Mark not done after the drag keeps it. Undo puts every planned day back.
   The bar's hint on a brewed batch says "+N days · brew day stays on <day>" instead of a new
   first day.
-- Gap 18 (decision 29): Change template's kept steps keep exactly their own links; nothing is
-  linked from the new template's steps to kept added steps or retests (this replaces D48 QA minor
-  7b's re-linking).
+- Gap 18 (decision 29, corrected by the lead): Change template keeps D48 QA minor 7b's
+  re-linking (each kept chain's first step follows the latest rebuilt step on or before its day),
+  but a retest belongs to its test's chain and is never linked on its own, and nothing is linked
+  out of order: 7b's fallback (a kept step dated before everything rebuilt in its tank was linked
+  from the tank's first step, out of order and flagged) is gone, so such a step stays as it is.
+  A finished pre-brew step still follows decision 12 (it takes a new entry of its type, or stays
+  with no links).
 - Gap 17 (decision 30): the shift counts `moved`, `planned_moved` and `kept`, and the snackbar
   says it plainly: "<batch>: 5 unfinished steps and 2 finished steps' planned days moved 5 days
   later. 2 steps stay where they are." ("every step …" when nothing stays and nothing finished
   moved).
 
-Commit: `67d8a7e`.
+Commits: `67d8a7e`; `cec7cf6` (the decision 29 correction: 7b restored with the two rules).
 
 Gate (local reseeded): `mix test` 2488 passed, twice; `mix compile --warnings-as-errors`
 clean; tsc, build clean; Vitest 347; lint 27 as before; Playwright `production` +
-`brewery-board` 435 passed.
+`brewery-board` 435 passed. After the correction (reseeded again): `mix test` 2488
+passed, twice; warnings-as-errors, tsc, build clean; Vitest 347; lint 27; Playwright
+`production` + `brewery-board` 435 passed.
 
 **Revert-and-rerun:**
 
 - Gap 15 (unticked pre-brew-kind steps move again): 2 ExUnit fail.
 - Gap 16 (finished steps' planned days stay): 1 ExUnit and Playwright P31 fail.
-- Gap 18 (the old re-linking): 4 ExUnit fail.
+- Gap 18, after the correction: the retest rule off, QA's path test fails (7b links Order yeast
+  to the retests); the in-order rule off (7b's fallback back), the early-step 7b test fails.
 - Gap 17 (the old wording): 1 Vitest and Playwright P31 fail.
 
-**Existing tests changed:** `batch_changes_test`'s two QA minor 7b tests and P83 now check that
-kept steps keep only their own links (decision 29); the shift preview's controller test has
+**Existing tests changed:** `batch_changes_test`'s 7b tests and P83 are back as they were after
+the correction, except "a kept step dated before brew day (checked off early)": it asserted the
+out-of-order link from 7b's fallback, and now asserts the step isn't linked out of order; the shift preview's controller test has
 `planned_moved`; the "sideways" hint Vitest (a brewed batch) reads "brew day stays"; Playwright
 P31 checks the new message and that PDH's planned day moved but not its done day.
 
