@@ -117,8 +117,10 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 28. **On a brewed batch, the bar drag leaves unfinished pre-brew steps where they are** (they never
     move on or after brew day), and moves done post-brew steps' planned days like decision 27 (done
     days and the done Brew day stay). Mark not done after it then keeps the drag.
-29. **Change template keeps a kept step's own links only;** no links are made from the new
-    template's steps to kept added steps or retests.
+29. **Change template doesn't invent links to retests.** D48 7b still re-links each kept chain's
+    first step after the latest rebuilt step on or before its date, so nothing kept is left
+    unlinked. A retest belongs to its test's chain (it is never a chain start and never gets a
+    new link), and no re-link may be out of order when it's made (lead correction, 2026-11-14).
 30. **The bar-drag message counts only what really moved,** in plain words (unfinished steps
     moved; finished steps' planned days moved where they did).
 

@@ -557,3 +557,19 @@ decisions 28–30.
    unless they were).
 5. Revert-and-rerun for each. Gate: ExUnit twice, Vitest, tsc, lint, build, Playwright production
    + brewery-board (reseed local first). Update `d56_pr_notes.md`. Report, then stop.
+
+## Cycle 5 correction (lead): keep D48 7b
+
+My decision 29 wording was wrong: it dropped D48 QA minor 7b (`prompts/d48_lead_decisions_2.md`
+line 30: kept added steps and kept ramps are re-linked after the rebuild; no kept item may end up
+unlinked). Decision 29 is now corrected in the spec. Please:
+
+1. Restore 7b's re-linking and its tests (the two D48 QA minor 7b ExUnit tests and P83 as they
+   were).
+2. Fix gap 18 inside it: a retest is part of its test's chain (chain start = the chain's first
+   non-retest step), never re-linked on its own; and a re-link is only made when it's in order
+   (the new link's source is on or before the kept step). QA's path (added pre-brew test → Fail →
+   retest → retest 2 → Change template) must end with the test re-linked per 7b if that's in order,
+   the retests linked only to their chain, no false flags.
+3. Revert-and-rerun for gap 18 again. Same gate (ExUnit twice, Vitest, tsc, lint, build, Playwright
+   production + brewery-board). Update `d56_pr_notes.md`. Report, then stop.
