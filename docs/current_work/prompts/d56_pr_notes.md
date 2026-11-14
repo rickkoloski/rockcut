@@ -3,9 +3,9 @@
 **Deliverable:** D56, production timing: pre-brew steps, test results and retests (was D57,
 task 5208), and the small items (5207 "Label by" and the settings refresh, 5210, 5211, 4950).
 5791 (Boards due date) ships with it.
-**Spec:** `docs/current_work/specs/d56_production_timing_spec.md`, decisions 1–21, S1–S21.
+**Spec:** `docs/current_work/specs/d56_production_timing_spec.md`, decisions 1–24, S1–S21.
 **Plan:** `docs/current_work/planning/d56_production_timing_plan.md`; brief
-`docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5, DEV fix cycles 1–2).
+`docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5, DEV fix cycles 1–3).
 **Branch:** `d56-production-timing`, from `develop`.
 **SHA for DEV:** __SHA__
 **Local gate:** green on `3e1ddd9` (see "Local gate" below).
@@ -16,11 +16,11 @@ Scenario → test is in `rockcut-ui/tests/COVERAGE.md` (D56).
 
 | Area | Change | Scenarios |
 |---|---|---|
-| Pre-brew steps | A template step may sit at day −1 to −30: plain steps only (a Transfer, Split, Package, CIP, brew day or phase marker is refused with why), in the first tank, no phase. On the Gantt the dot is left of brew day; it moves with brew day (either answer) and never onto or past it; ticking it doesn't brew the batch. Once one is done, brew day can't move before its done day (the same day is fine) by any path: "<step> was done <day>; brew day can't be before it." | S1–S6, decisions 1, 2, 7, 10–13, 21 |
+| Pre-brew steps | A template step may sit at day −1 to −30: plain steps only (a Transfer, Split, Package, CIP, brew day or phase marker is refused with why), in the first tank, no phase. On the Gantt the dot is left of brew day; it moves with brew day (either answer) and never onto or past it; ticking it doesn't brew the batch. Once one is done, brew day can't move before its done day (the same day is fine) by any path: "<step> was done <day>; brew day can't be before it." A step is pre-brew because it was planned so (a template's negative day, Add step before brew day, a pre-brew test's retest before it), not by its date: a step left before brew day some other way is an ordinary step, out of order and flagged. Brew day can't move on or after a finished step that follows it: "<step> was done <day>; brew day can't be after it." | S1–S6, decisions 1, 2, 7, 10–13, 21–23 |
 | Test results | A step type can have a result ("Has a result", any type, built-in too). Check-off asks Pass / Fail; a Fail asks Retest in N days (1–30, from the template step's "Retest after") or Continue as planned. A retest is added after the test and the following steps are offered to move with it. Where a retest can't go (decision 15) only Continue is offered, with why | S7–S10, S12–S15, decisions 3–9, 14, 15 |
 | Showing results | ✓ / ✗ on the dot, "· passed / · failed" in the expanded rows and tooltips, the step and batch dialogs, "Retest of …", "Change to Pass / Fail", the Brewery board's "✓ Pass", "✗ Fail · retest Wed Dec 16", "✗ Fail · continued as planned" | S8, S9, S12, decisions 14, 17 |
 | Repeated fails | Three Fails in a row raise "<batch> · 3 failed Diacetyl tests"; a sign-off holds until another Fail | S11, decision 16 |
-| Mark not done | On a failed test whose retest is open: asks first, and the retest goes. A done retest refuses ("Mark the retest not done first."). It, and Fail → Pass, put the steps the Fail moved back to their dates before the Fail, counted from where the test is now, even if moved since; a done one keeps its day and gets that as its planned day. Refused if that would leave a step before brew day that can't be there | decisions 8, 20 |
+| Mark not done | On a failed test whose retest is open: asks first, and the retest goes. A done retest refuses ("Mark the retest not done first."). It, and Fail → Pass, put the steps the Fail moved back to their dates before the Fail, counted from where the test is now, even if moved since; a done one keeps its day and gets that as its planned day. Refused if that would leave a step before brew day that can't be there. On a brew day that a finished pre-brew step holds in place: "Mark <step> not done first." | decisions 8, 20, 24 |
 | Move prompt after a retest | "<test> failed · retest <day>", "<batch> · retest <day>", "Move them with the retest, N days later" / "Keep the following steps' dates". Ordinary moves read as before | S8 (Stage 5 A2) |
 | Label by (5207) | An expanded tank with two or more batches in range gets a picker on its first step row: that batch's rows by name only, the others "step · batch" | S16 |
 | Gantt view on the account | The expanded tanks, Label by and the Tanks setting's "Your selection" mix are saved in D58's board settings under `production` (`PUT /api/me/board_settings/production`, `expanded`, `label_by`, `mix`), for anyone who reads the schedule and the brewhouse device. A browser's old local values carry over once (only what the server lacks), then local storage isn't used for them. Range, zoom and names-only stay per browser | S16, decisions 18, 19 |
@@ -31,17 +31,22 @@ Scenario → test is in `rockcut-ui/tests/COVERAGE.md` (D56).
 | Boards due date (5791) | Saved on leaving the field, not per keystroke | S21 |
 
 **API, additive:** step types `has_result`; template steps and schedule steps `retest_days`;
-schedule steps `result`, `retest_of_id`; previews `needs_result`, `retest_days`,
+schedule steps `result`, `retest_of_id`, `pre_brew`; previews `needs_result`, `retest_days`,
 `retest_allowed`, `retest_on`; `PATCH /api/production/steps/:id/result`; the board task's
 `production` gains `result`, `retest_on`, `retest_done`; flag kind `failed_tests`;
 `board_settings.production` (`expanded`, `label_by`, `mix`). New errors: `result_required`, `retest_not_here`,
-`not_before_brew`, `before_brew_day`, `link_invalid`, and the template link refusals with
+`not_before_brew`, `before_brew_day`, `after_done_step`, `pre_brew_done`, `link_invalid`, and the template link refusals with
 `link`. `POST /api/production/batches/:id/shift` takes `preview: true` (nothing written,
 `{ data: { preview: { moved, kept } } }`, refused as the move would be).
 
 **Migration:** `20261112120001_add_test_results` (additive). It switches on Diacetyl test and
 Gravity check by name; a type renamed on prod stays off (see LIMITATIONS). Rollback to the
 previous image leaves the columns, which it ignores.
+`20261114120001_add_pre_brew_to_production_steps` (additive, decision 22): `production_steps.pre_brew`,
+backfilled in order: a step copied from a template step at a negative day; an added step (not a
+retest), plain or custom, due before its batch's first Brew day; a retest of a pre-brew step
+(along the chain) due before that Brew day. Steps left before brew day any other way stay
+ordinary. The same rollback note applies.
 
 **No restart notes:** nothing new in the environment or secrets.
 
@@ -134,6 +139,41 @@ Vitest 342; lint 27 as before; Playwright `production` 204 passed, `brewery-boar
   done test, so the test doesn't move and there is nothing to count from.
 - Gap 9 (back to "on or before"): 4 ExUnit, 2 Vitest and the Playwright date-box spec fail.
 
+**Fix cycle 3** (QA recheck 2, `d56_dev_qa_recheck2_report.md`; decisions 22–24):
+
+- Gap 11 (decision 22): pre-brew by origin (`pre_brew`, the migration above). `Steps.pre_brew/1`,
+  the brew-day move, decision 21's check, "A pre-brew step stays before brew day", the bar drag,
+  Change template, the move preview and the drag hints use it, not the date. The Gantt draws
+  every dot on its date as before, so a step left before brew day still shows there, flagged.
+- Gaps 10, 11 (decision 23): a brew-day move (drag, date box, multi-select, an off-plan brew-day
+  check-off, a Mark not done that would put brew day back) on or after a finished step that
+  isn't pre-brew is refused, 422 `after_done_step`, in the preview and the hints. The bar drag
+  can't reach it (a planned batch's done steps move with the bar; a brewed batch's brew day
+  doesn't move). The date box asks the move question whenever unfinished steps follow brew day.
+- Gap 12 (decision 24): Mark not done on a brew day that a finished pre-brew step holds is 422
+  `pre_brew_done`, "Mark <step> not done first."
+
+Commits: `0dc7aba` (decisions 22–24, migration, ExUnit and Vitest), `8de8998` (Playwright).
+
+Gate: `mix test` 2475 passed, twice; `mix compile --warnings-as-errors` clean; tsc, build clean;
+Vitest 344; lint 27 as before. Playwright `production`: 204 passed, 2 failed, both seed-dated
+(P49–P51 and P46 in `gantt.spec.ts` expect the seed's FV4 Set temp 58° due today; the local DB
+was seeded 2026-11-13, so it was due yesterday; they need a reseed, not a code change).
+`brewery-board` (it depends on `production`, so run with `--no-deps`): 229 passed. The local dev
+DB took the migration first (lead).
+
+**Revert-and-rerun:**
+
+- Decision 22 (pre-brew by date again): 2 ExUnit, 1 Vitest and the second gap 11 Playwright
+  (a step moved before brew day stays) fail.
+- Decision 23 (the check off): 7 ExUnit, 1 Vitest and the first gap 11 Playwright (date box onto
+  the done test) fail.
+- Decision 24 (the old message): 2 ExUnit fail.
+
+**Existing tests changed:** cycle 2's "restore refused" ExUnit sets brew day's date directly (as
+data from before decision 23), since decision 23 now refuses the move it used; it also checks
+that refusal. The Vitest fixtures mark the planned pre-brew step `pre_brew`.
+
 ## LIMITATIONS (what local can't tell)
 
 From the plan:
@@ -166,7 +206,10 @@ Found in the build:
   gets shorter (its content scrolls) for as long as the Undo lasts, up to 2 minutes.
 - **Brew day short of a finished pre-brew step's done day is still refused,** even when the move
   is toward it (an overdue brew day with the pre-brew step ticked late: +1 is refused, the same
-  day works). Decision 21 as written; for the lead.
+  day works). Decision 21 as written; decision 23 is the same the other way round.
+- **The backfill can't tell an added step that was moved before brew day from one added
+  there:** an added plain or custom step dated before brew day on DEV or prod counts as
+  pre-brew.
 - **An ordinary off-plan check-off's own date isn't counted from a later whole-batch move**
   (D49 QA 1 unchanged); only a Fail's record is. Its Mark not done is now refused, not silent,
   if it would leave a step before brew day that can't be there.
