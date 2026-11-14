@@ -35,7 +35,7 @@ schedule steps `result`, `retest_of_id`, `pre_brew`; previews `needs_result`, `r
 `retest_allowed`, `retest_on`; `PATCH /api/production/steps/:id/result`; the board task's
 `production` gains `result`, `retest_on`, `retest_done`; flag kind `failed_tests`;
 `board_settings.production` (`expanded`, `label_by`, `mix`). New errors: `result_required`, `retest_not_here`,
-`not_before_brew`, `before_brew_day`, `after_done_step`, `pre_brew_done`, `brew_first`, `link_invalid`, and the template link refusals with
+`not_before_brew`, `before_brew_day`, `after_done_step`, `pre_brew_done`, `brew_first`, `done_after_brew`, `link_invalid`, and the template link refusals with
 `link`. `POST /api/production/batches/:id/shift` takes `preview: true` (nothing written,
 `{ data: { preview: { moved, kept } } }`, refused as the move would be).
 
@@ -187,9 +187,15 @@ that refusal. The Vitest fixtures mark the planned pre-brew step `pre_brew`.
   Undo all obey it. A pencilled batch still says `schedule_first`; a Transfer/Filter, Split or
   Package still says "Check off brew day first." (`before_brew_day`, D48), both checked first.
   Standalone CIPs aren't held.
+- Decision 26, lead notes (cycle 4, part 2): the retests of a pre-brew test (the whole chain) are
+  exempt, though not pre-brew; decision 23 and the mirror leave them out too, so a done one never
+  holds brew day back. The mirror: Mark not done on the first Brew day is refused while a later
+  step that isn't pre-brew is done, 422 `done_after_brew`, "Mark <step> not done first." (the
+  earliest). Undo of a brew-day check-off stays a plain row restore.
 - Decision 27: no change; a comment where the bar drag skips decision 23, and a test naming it.
 
-Commits: `0bd43cb` (decisions 25–27, the migration edit, tests and spec updates).
+Commits: `0bd43cb` (decisions 25–27, the migration edit, tests and spec updates), `7941d03`
+(part 2: the retest exemption and the mirror), `b187d23` and `6ecd5bb` (the specs' cleanup).
 
 Gate (local reseeded first, `mix rockcut.synthetic.setup`): `mix test` 2482 passed, twice;
 `mix compile --warnings-as-errors` clean; tsc, build clean; Vitest 344; lint 27 as before.
@@ -204,6 +210,15 @@ run, then passed twice alone: flaky. Before that, `production` alone had flagged
   path, the backfill).
 - Decision 26 (the check off): 10 ExUnit fail (context, schedule, board tick, device, Undo,
   Matt's two-day case).
+- Part 2, the retest exemption off: 1 ExUnit (QA's gap 14 path, now through to brew day) and 1
+  Vitest fail. The mirror off: 4 ExUnit fail.
+
+Part 2 gate (local reseeded): `mix test` 2484 passed, twice; `mix compile --warnings-as-errors`
+clean; tsc, build clean; Vitest 345; lint 27 as before; Playwright `production` + `brewery-board`
+435 passed. The first runs failed in the specs' shared cleanup (`Made.cleanup` marked brew day
+not done while later steps were done, which the mirror refuses, then read a split parent's
+steps from before undoing its split); fixed in `b187d23` and `6ecd5bb`, and the rows the failed
+cleanups left were removed by a reseed.
 
 **Existing tests changed for decision 26** (they checked off a post-brew step before brew day):
 
@@ -212,8 +227,13 @@ run, then passed twice alone: flaky. Before that, `production` alone had flagged
   the decision 22 FDH step (`brew_first` now); `test_results_test` gap 8 / decision 23 setups
   (brew → Fail → brew day marked not done, `failed_then_unbrewed`); the decisions 23, 24
   controller test (the same way).
-- Playwright: `d49-pencilled` P133 (a planned batch with a done step: brew day, FDH, then brew
-  day marked not done) and the DEV gap 11 date-box test (the same).
+- Playwright: `d49-pencilled` P133 (a planned batch with a done step: now a pre-brew step ticked
+  early) and the DEV gap 11 date-box test (QA's path now stops at the Fail, `brew_first` in the
+  step dialog; decision 23's date box is covered in ExUnit, where the state is written).
+- Part 2, the mirror: `test_results_test`'s `failed_then_unbrewed` writes brew day not done
+  (Repo) instead of marking it; the decision 23 "Mark not done of an early brew day" test now
+  meets the mirror first (`done_after_brew`); the decisions 23, 24 controller test checks the
+  mirror's 422, writes the state for decision 23, and marks FDH not done before decision 24.
 
 ## LIMITATIONS (what local can't tell)
 
@@ -248,10 +268,9 @@ Found in the build:
 - **Brew day short of a finished pre-brew step's done day is still refused,** even when the move
   is toward it (an overdue brew day with the pre-brew step ticked late: +1 is refused, the same
   day works). Decision 21 as written; decision 23 is the same the other way round.
-- **A pre-brew test's retest waits for brew day** (decisions 25 and 26 as written): it isn't
-  pre-brew, so it can't be checked off before brew day. For the lead.
-- **Marking brew day not done isn't refused while a later step is done** (decision 26 covers
-  check-offs only), which is how the specs above reach a planned batch with a done step.
+- **Decision 23 can't be reached from a fresh state any more:** with decision 26 and its mirror,
+  brew day isn't moved while a step after it is done, except on data from before them (DEV) or
+  by the bar drag (decision 27). Its tests write that state.
 - **The backfill can't tell an added step that was moved before brew day from one added
   there:** an added plain or custom step dated before brew day on DEV or prod counts as
   pre-brew.
