@@ -3,9 +3,9 @@
 **Deliverable:** D56, production timing: pre-brew steps, test results and retests (was D57,
 task 5208), and the small items (5207 "Label by" and the settings refresh, 5210, 5211, 4950).
 5791 (Boards due date) ships with it.
-**Spec:** `docs/current_work/specs/d56_production_timing_spec.md`, decisions 1–27, S1–S21.
+**Spec:** `docs/current_work/specs/d56_production_timing_spec.md`, decisions 1–30, S1–S21.
 **Plan:** `docs/current_work/planning/d56_production_timing_plan.md`; brief
-`docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5, DEV fix cycles 1–4).
+`docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5, DEV fix cycles 1–5).
 **Branch:** `d56-production-timing`, from `develop`.
 **SHA for DEV:** __SHA__
 **Local gate:** green on `3e1ddd9` (see "Local gate" below).
@@ -37,7 +37,9 @@ schedule steps `result`, `retest_of_id`, `pre_brew`; previews `needs_result`, `r
 `board_settings.production` (`expanded`, `label_by`, `mix`). New errors: `result_required`, `retest_not_here`,
 `not_before_brew`, `before_brew_day`, `after_done_step`, `pre_brew_done`, `brew_first`, `done_after_brew`, `link_invalid`, and the template link refusals with
 `link`. `POST /api/production/batches/:id/shift` takes `preview: true` (nothing written,
-`{ data: { preview: { moved, kept } } }`, refused as the move would be).
+`{ data: { preview: { moved, planned_moved, kept } } }`, refused as the move would be); its
+answer counts `moved` (unfinished steps), `planned_moved` (finished steps' planned days) and
+`kept` (decision 30).
 
 **Migration:** `20261112120001_add_test_results` (additive). It switches on Diacetyl test and
 Gravity check by name; a type renamed on prod stays off (see LIMITATIONS). Rollback to the
@@ -234,6 +236,41 @@ cleanups left were removed by a reseed.
   (Repo) instead of marking it; the decision 23 "Mark not done of an early brew day" test now
   meets the mirror first (`done_after_brew`); the decisions 23, 24 controller test checks the
   mirror's 422, writes the state for decision 23, and marks FDH not done before decision 24.
+
+**Fix cycle 5** (QA recheck 4, `d56_dev_qa_recheck4_report.md`; decisions 28–30):
+
+- Gaps 15, 16 (decision 28): the bar drag on a brewed batch leaves its done Brew days and what's
+  done before brew day by plan (pre-brew steps and a pre-brew test's retests, finished or not)
+  where they are, and moves every other step's planned day, finished ones included (their done
+  days stay), as decision 27 does on a planned batch. So an unticked pre-brew step never lands
+  after brew day, and Mark not done after the drag keeps it. Undo puts every planned day back.
+  The bar's hint on a brewed batch says "+N days · brew day stays on <day>" instead of a new
+  first day.
+- Gap 18 (decision 29): Change template's kept steps keep exactly their own links; nothing is
+  linked from the new template's steps to kept added steps or retests (this replaces D48 QA minor
+  7b's re-linking).
+- Gap 17 (decision 30): the shift counts `moved`, `planned_moved` and `kept`, and the snackbar
+  says it plainly: "<batch>: 5 unfinished steps and 2 finished steps' planned days moved 5 days
+  later. 2 steps stay where they are." ("every step …" when nothing stays and nothing finished
+  moved).
+
+Commit: `67d8a7e`.
+
+Gate (local reseeded): `mix test` 2488 passed, twice; `mix compile --warnings-as-errors`
+clean; tsc, build clean; Vitest 347; lint 27 as before; Playwright `production` +
+`brewery-board` 435 passed.
+
+**Revert-and-rerun:**
+
+- Gap 15 (unticked pre-brew-kind steps move again): 2 ExUnit fail.
+- Gap 16 (finished steps' planned days stay): 1 ExUnit and Playwright P31 fail.
+- Gap 18 (the old re-linking): 4 ExUnit fail.
+- Gap 17 (the old wording): 1 Vitest and Playwright P31 fail.
+
+**Existing tests changed:** `batch_changes_test`'s two QA minor 7b tests and P83 now check that
+kept steps keep only their own links (decision 29); the shift preview's controller test has
+`planned_moved`; the "sideways" hint Vitest (a brewed batch) reads "brew day stays"; Playwright
+P31 checks the new message and that PDH's planned day moved but not its done day.
 
 ## LIMITATIONS (what local can't tell)
 
