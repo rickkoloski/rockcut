@@ -531,3 +531,29 @@ gap 14 (must-fix) and gap 13 (should-fix). Report:
   another setup (e.g. Repo writes in ExUnit, as you did for cycle 2's restore-refused test); keep
   what they assert. Revert-and-rerun.
 - Same gate; update `d56_pr_notes.md`; report, then stop.
+
+---
+
+# DEV fix cycle 5 (QA recheck 4; Matt: all four gaps)
+
+2026-11-14 · lead → builder. DEV at `f48ce9e`: full Playwright 792 + D58 S16 flaky (passed twice).
+QA recheck 4: gaps 13–14 fixed, 1–12 hold; **fail** on gaps 15 (must-fix), 16, 18 (should-fix),
+17 (minor). Report: `docs/current_work/stepwise_results/d56_dev_qa_recheck4_report.md`. Spec
+decisions 28–30.
+
+1. **Gap 15 (decision 28):** on a brewed batch, `Batches.shift` leaves unfinished pre-brew steps
+   (and their retest chains, which aren't pre-brew but sit before brew day) where they are. QA's
+   repro: brewed #45 with an unticked pre-brew step, bar +5: the pre-brew step stays before brew
+   day; Mark not done on the failed test then works.
+2. **Gap 16 (decision 28):** on a brewed batch, the bar drag also moves done post-brew steps'
+   planned days (`due_on`; `done_on` unchanged), as decision 27 does on planned batches; the done
+   Brew day's dates stay. QA's repro: Fail → Retest → bar +5 → Mark not done keeps the +5 for the
+   followers. Check the drag hint and Undo.
+3. **Gap 18 (decision 29):** Change template doesn't create links from the new template's steps to
+   kept added steps or retests; a kept step keeps exactly its own links. QA's repro: added
+   pre-brew test → Fail → retest → retest 2 → Change template: no new links, no false flags.
+4. **Gap 17 (decision 30):** the bar-drag snackbar counts what really moved and says it plainly
+   (unfinished steps moved; finished steps' planned days moved where they did; none left behind
+   unless they were).
+5. Revert-and-rerun for each. Gate: ExUnit twice, Vitest, tsc, lint, build, Playwright production
+   + brewery-board (reseed local first). Update `d56_pr_notes.md`. Report, then stop.

@@ -113,6 +113,15 @@ with the question of part-day work), so "Brew over two days" stays as it is.
 27. **The whole-batch bar drag moves the whole plan,** done steps' planned days included, so it may
     move brew day past a finished step (decision 23 applies to the other paths).
 
+**From DEV QA recheck 4** (Matt, 2026-11-14, fix cycle 5)
+28. **On a brewed batch, the bar drag leaves unfinished pre-brew steps where they are** (they never
+    move on or after brew day), and moves done post-brew steps' planned days like decision 27 (done
+    days and the done Brew day stay). Mark not done after it then keeps the drag.
+29. **Change template keeps a kept step's own links only;** no links are made from the new
+    template's steps to kept added steps or retests.
+30. **The bar-drag message counts only what really moved,** in plain words (unfinished steps
+    moved; finished steps' planned days moved where they did).
+
 ## 3. Requirements
 
 ### 3.1 Pre-brew steps (decisions 1, 2)
