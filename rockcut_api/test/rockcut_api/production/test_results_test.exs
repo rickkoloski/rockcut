@@ -494,8 +494,15 @@ defmodule RockcutApi.Production.TestResultsTest do
       batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
       dt = named(batch, "Diacetyl test")
       {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, dt)
-      # Brew day alone to Dec 17: Set temp (Dec 18 after the Fail) is still after it.
-      {:ok, _} = Steps.move([named(batch, "Brew day").id], 15, answer: "move_only")
+      brew = named(batch, "Brew day")
+
+      # Decision 23 refuses moving brew day past the done test now...
+      assert {:error, {:after_done_step, "Diacetyl test", @test_day}} =
+               Steps.move([brew.id], 15, answer: "move_only")
+
+      # ... so brew day on Dec 17 is data from before it (DEV): Set temp
+      # (Dec 18 after the Fail) is still after it.
+      Repo.update_all(from(s in Step, where: s.id == ^brew.id), set: [due_on: ~D[2026-12-17]])
       held = layout(batch)
 
       refused = {:not_before_brew, "Set temp"}
@@ -566,6 +573,121 @@ defmodule RockcutApi.Production.TestResultsTest do
       {:ok, _} = complete(ctx, dt, %{"result" => "pass"})
       {:ok, _} = Steps.uncomplete(dt.id)
       assert %{done_on: nil, result: nil} = step(dt)
+    end
+  end
+
+  # D56 decision 23 (DEV gaps 10, 11): brew day can't move on or after a
+  # finished step that comes after it. A planned batch, the test failed on
+  # its day (Mon Dec 14) with a retest.
+  describe "brew day not on or after a finished step after it (decision 23)" do
+    defp planned_fail(ctx) do
+      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, named(batch, "Diacetyl test"))
+      {batch, named(batch, "Brew day"), rid}
+    end
+
+    @after_test {:after_done_step, "Diacetyl test", @test_day}
+
+    test "the message" do
+      assert Steps.refusal(@after_test) == %{
+               error: "after_done_step",
+               message: "Diacetyl test was done Mon Dec 14; brew day can't be after it."
+             }
+    end
+
+    test "gap 11, QA's path: the date box onto or past the done test is refused under both answers and in the preview; nothing moves",
+         ctx do
+      {batch, brew, rid} = planned_fail(ctx)
+      before = layout(batch)
+
+      assert {:error, @after_test} = Steps.move([brew.id], 12, preview: true)
+
+      for answer <- ~w(move_all move_only) do
+        assert {:error, @after_test} = Steps.move([brew.id], 12, answer: answer)
+        assert {:error, @after_test} = Steps.move([brew.id], 14, answer: answer)
+      end
+
+      assert layout(batch) == before
+      assert step(%{id: rid}).due_on == ~D[2026-12-16]
+      # Short of it is fine.
+      assert {:ok, _} = Steps.move([brew.id], 11, answer: "move_all")
+      assert due(batch, "Brew day") == ~D[2026-12-13]
+    end
+
+    test "gap 10: the date box asks the move question when unfinished steps follow brew day",
+         ctx do
+      {_batch, brew, _rid} = planned_fail(ctx)
+      assert {:ok, {:preview, pre}} = Steps.move([brew.id], 3, preview: true)
+      assert Enum.map(pre.following, & &1.name) == ["FDH"]
+      assert pre.default_answer == "move_all"
+      assert {:error, {:answer_required, _}} = Steps.move([brew.id], 3)
+    end
+
+    test "a multi-select with brew day in it", ctx do
+      {batch, brew, _rid} = planned_fail(ctx)
+      ids = [brew.id, named(batch, "FDH").id]
+      assert {:error, @after_test} = Steps.move(ids, 12, answer: "move_only")
+      assert due(batch, "Brew day") == @brew
+    end
+
+    test "brew day checked off on or after it (off-plan) is refused, the preview too; the day before works",
+         ctx do
+      {batch, brew, _rid} = planned_fail(ctx)
+
+      for done_on <- ["2026-12-14", "2026-12-15"] do
+        assert {:error, {:after_done_step, "Diacetyl test", @test_day}} =
+                 Steps.complete(brew.id, %{"done_on" => done_on}, ctx.brewer,
+                   preview: true,
+                   today: ~D[2026-12-15]
+                 )
+
+        assert {:error, @after_test} =
+                 Steps.complete(
+                   brew.id,
+                   %{"done_on" => done_on, "answer" => "move_only", "batch_number" => "40"},
+                   ctx.brewer,
+                   today: ~D[2026-12-15]
+                 )
+      end
+
+      assert {:ok, _} =
+               Steps.complete(
+                 brew.id,
+                 %{"done_on" => "2026-12-13", "answer" => "move_only", "batch_number" => "40"},
+                 ctx.brewer,
+                 today: ~D[2026-12-15]
+               )
+
+      assert named(batch, "Brew day").done_on == ~D[2026-12-13]
+    end
+
+    test "Mark not done of an early brew day whose planned day is now after a done test: refused",
+         ctx do
+      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      brew = named(batch, "Brew day")
+      # Brew day to Tue Dec 15 alone, then brewed early on Dec 2 (Move only).
+      assert {:ok, _} = Steps.move([brew.id], 13, answer: "move_only")
+
+      {:ok, _} =
+        Steps.complete(
+          brew.id,
+          %{"done_on" => "2026-12-02", "answer" => "move_only", "batch_number" => "40"},
+          ctx.brewer,
+          today: @brew
+        )
+
+      {:ok, _} = complete(ctx, named(batch, "Diacetyl test"), %{"result" => "pass"})
+
+      assert {:error, @after_test} = Steps.uncomplete(brew.id)
+      assert named(batch, "Brew day").done_on == @brew
+    end
+
+    test "the whole-batch drag moves the done test with it, so it's allowed", ctx do
+      {batch, _brew, _rid} = planned_fail(ctx)
+      assert {:ok, {:preview, _}} = Batches.shift(reload(batch), 12, preview: true)
+      assert {:ok, _} = Batches.shift(reload(batch), 12)
+      assert due(batch, "Brew day") == ~D[2026-12-14]
+      assert step(named(batch, "Diacetyl test")).due_on == ~D[2026-12-26]
     end
   end
 

@@ -93,7 +93,8 @@ defmodule RockcutApi.Production.BatchChanges do
         due_on: due_on,
         position: next_position(batch.id, due_on),
         on_task_list: true,
-        added: true
+        added: true,
+        pre_brew: pre_brew?
       })
 
     edit!(step, Map.take(attrs, @edit_fields))
@@ -543,7 +544,7 @@ defmodule RockcutApi.Production.BatchChanges do
 
           steps = steps!(batch)
           brew_on = Parts.first_brew(steps).due_on
-          done_pre_brew = Enum.filter(steps, &done_pre_brew?(&1, brew_on))
+          done_pre_brew = Enum.filter(steps, &done_pre_brew?/1)
           {kept, rebuilt} = Enum.split_with(steps, &(&1.added or &1 in done_pre_brew))
           Repo.delete_all(from(s in Step, where: s.id in ^Enum.map(rebuilt, & &1.id)))
 
@@ -564,7 +565,7 @@ defmodule RockcutApi.Production.BatchChanges do
 
           Batches.copy_steps!(batch, template, brew_on, batch.brew_two_days)
           batch |> Changeset.change(template_id: template.id) |> Repo.update!()
-          unmatched = place_pre_brew!(batch, done_pre_brew, brew_on)
+          unmatched = place_pre_brew!(batch, done_pre_brew)
           reanchor!(batch, kept -- done_pre_brew, unmatched)
           no_tank_twice!(batch, :all)
           {kept, dropped}
@@ -647,15 +648,15 @@ defmodule RockcutApi.Production.BatchChanges do
     end
   end
 
-  defp done_pre_brew?(%Step{} = s, brew_on),
-    do: s.done_on != nil and Steps.pre_brew_kind?(s) and Date.compare(s.due_on, brew_on) == :lt
+  # D56 decision 22: pre-brew as planned, not by date.
+  defp done_pre_brew?(%Step{} = s), do: s.done_on != nil and s.pre_brew
 
   # D56 decision 12: each new pre-brew step (earliest first) is replaced by
   # the earliest finished one `kept` of its type, which takes its template
   # entry and links. The rest are added steps with no links; their ids.
-  defp place_pre_brew!(_batch, [], _brew_on), do: []
+  defp place_pre_brew!(_batch, []), do: []
 
-  defp place_pre_brew!(batch, kept, brew_on) do
+  defp place_pre_brew!(batch, kept) do
     kept_ids = Enum.map(kept, & &1.id)
 
     Repo.delete_all(
@@ -664,10 +665,7 @@ defmodule RockcutApi.Production.BatchChanges do
 
     new =
       steps!(batch)
-      |> Enum.filter(
-        &(&1.id not in kept_ids and &1.template_step_id != nil and
-            Date.compare(&1.due_on, brew_on) == :lt)
-      )
+      |> Enum.filter(&(&1.id not in kept_ids and &1.template_step_id != nil and &1.pre_brew))
 
     left =
       Enum.reduce(new, Enum.sort_by(kept, &Parts.order/1), fn n, left ->

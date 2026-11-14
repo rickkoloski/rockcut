@@ -227,11 +227,20 @@ defmodule RockcutApiWeb.ProductionErrors do
   def handle({:error, {:before_brew_day, :pre_brew} = reason}, conn),
     do: refused(conn, Steps.refusal(reason))
 
-  # D56 decision 21: brew day not on or before a finished pre-brew step.
+  # D56 decision 21: brew day not before a finished pre-brew step.
   def handle({:error, {:before_brew_day, {:pre_brew_done, _, _}} = reason}, conn),
     do: refused(conn, Steps.refusal(reason))
 
   # D56 §3.1 (decision 7): only a plain step goes before brew day.
+  # D56 decision 23.
+  def handle({:error, {:after_done_step, _, _} = reason}, conn),
+    do: refused(conn, Steps.refusal(reason))
+
+  # D56 decision 24 (DEV gap 12): Mark not done on a brew day a finished
+  # pre-brew step holds in place.
+  def handle({:error, {:pre_brew_done, name}}, conn),
+    do: refused(conn, "pre_brew_done", "Mark #{name} not done first.")
+
   def handle({:error, {:not_before_brew, _} = reason}, conn),
     do: refused(conn, Steps.refusal(reason))
 

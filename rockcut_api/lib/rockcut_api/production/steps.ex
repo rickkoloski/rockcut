@@ -20,7 +20,8 @@ defmodule RockcutApi.Production.Steps do
   P-numbers that would change. Applying uses the same functions.
 
   **Pre-brew steps** (D56 §3.1, decision 2) are a batch's unfinished steps
-  due before its first Brew day (`pre_brew/1`). Whatever moves that Brew
+  planned before its first Brew day (`pre_brew/1`; decision 22: the step's
+  `pre_brew`, not its date). Whatever moves that Brew
   day moves them by the same days, whatever the answer; they aren't
   following steps, so they don't make a prompt. None may end up on brew day
   or later (`{:before_brew_day, :pre_brew}`). Decision 11: one checked off
@@ -105,8 +106,10 @@ defmodule RockcutApi.Production.Steps do
 
   @doc """
   D56 §3.1: the pre-brew steps among one batch's `steps` (`step_type`
-  preloaded): the unfinished ones due before its first Brew day, by their
-  dates as they are. A batch without a Brew day (a split part) has none.
+  preloaded): the unfinished ones planned before its first Brew day
+  (decision 22: `pre_brew`, not the date; a step left before brew day some
+  other way is an ordinary step, out of order). A batch without a Brew day
+  (a split part) has none.
   """
   def pre_brew(steps) do
     case Parts.first_brew(steps) do
@@ -114,11 +117,7 @@ defmodule RockcutApi.Production.Steps do
         []
 
       brew ->
-        Enum.filter(
-          steps,
-          &(is_nil(&1.done_on) and &1.batch_id == brew.batch_id and
-              Date.compare(&1.due_on, brew.due_on) == :lt)
-        )
+        Enum.filter(steps, &(&1.pre_brew and is_nil(&1.done_on) and &1.batch_id == brew.batch_id))
     end
   end
 
@@ -319,7 +318,9 @@ defmodule RockcutApi.Production.Steps do
   # a step that isn't plain or custom, changed by it or by its brew day's
   # move, now before brew day (`{:not_before_brew, type name}`). Decision 21
   # (DEV gaps 3, 9): a moved brew day before a finished pre-brew step's
-  # done day (`{:before_brew_day, {:pre_brew_done, name, done_on}}`). A split
+  # done day (`{:before_brew_day, {:pre_brew_done, name, done_on}}`).
+  # Decision 23: a moved brew day on or after the done day of a finished
+  # step that isn't pre-brew (`{:after_done_step, name, done_on}`). A split
   # part's steps count against its parent's brew day.
   defp brew_refusal(graph, changes, done) do
     due = &Map.get(changes, &1.id, &1.due_on)
@@ -340,11 +341,20 @@ defmodule RockcutApi.Production.Steps do
             moved_brew? &&
               Enum.find(
                 steps,
-                &(&1.batch_id == root and &1.id != brew.id and &1.done_on != nil and
-                    Date.compare(&1.due_on, brew.due_on) == :lt and
+                &(&1.batch_id == root and &1.pre_brew and &1.done_on != nil and
                       Date.compare(due.(brew), &1.done_on) == :lt)
               ) ->
           {:before_brew_day, {:pre_brew_done, name(finished), finished.done_on}}
+
+        finished =
+            moved_brew? &&
+              steps
+              |> Enum.filter(
+                &(not &1.pre_brew and &1.done_on != nil and behavior(&1) != "brew" and
+                      Date.compare(due.(brew), &1.done_on) != :lt)
+              )
+              |> Enum.min_by(&{Date.to_gregorian_days(&1.done_on), &1.id}, fn -> nil end) ->
+          {:after_done_step, name(finished), finished.done_on}
 
         Enum.any?(pre_brew(steps), &(&1.id not in done and not before?.(&1))) ->
           {:before_brew_day, :pre_brew}
@@ -396,6 +406,14 @@ defmodule RockcutApi.Production.Steps do
       error: "before_brew_day",
       message:
         "#{name} was done #{Calendar.strftime(done_on, "%a %b %-d")}; brew day can't be before it."
+    }
+
+  # Decision 23.
+  def refusal({:after_done_step, name, done_on}),
+    do: %{
+      error: "after_done_step",
+      message:
+        "#{name} was done #{Calendar.strftime(done_on, "%a %b %-d")}; brew day can't be after it."
     }
 
   # D56 DEV gap 5: a template step before brew day with a phase, or in a
@@ -1104,7 +1122,9 @@ defmodule RockcutApi.Production.Steps do
         detail: retest_detail(step),
         due_on: on,
         added: true,
-        retest_of_id: step.id
+        retest_of_id: step.id,
+        # D56 decision 22: a pre-brew test's retest before brew day is pre-brew too.
+        pre_brew: step.pre_brew and before_brew?(step.batch_id, on)
       })
 
     Repo.update_all(from(l in StepLink, where: l.from_step_id == ^step.id),
@@ -1112,6 +1132,14 @@ defmodule RockcutApi.Production.Steps do
     )
 
     retest
+  end
+
+  defp before_brew?(batch_id, on) do
+    brew =
+      Repo.all(from(s in Step, where: s.batch_id == ^batch_id, preload: :step_type))
+      |> Parts.first_brew()
+
+    brew != nil and Date.compare(on, brew.due_on) == :lt
   end
 
   # "retest" for the first, then "retest 2", "retest 3", … along the chain.
@@ -1209,9 +1237,20 @@ defmodule RockcutApi.Production.Steps do
       end
 
     undone = %{graph | steps: Map.update!(graph.steps, step.id, &%{&1 | done_on: nil})}
+    own = if due_on == step.due_on, do: %{}, else: %{step.id => due_on}
+    brew? = first_brew?(step, Map.values(graph.steps))
 
-    if reason = brew_refusal(undone, Map.put(back, step.id, due_on), []),
-      do: Repo.rollback(reason)
+    case brew_refusal(undone, Map.merge(back, own), []) do
+      nil ->
+        :ok
+
+      # D56 decision 24 (DEV gap 12): brew day held by a finished pre-brew step.
+      {:before_brew_day, {:pre_brew_done, name, _}} when brew? ->
+        Repo.rollback({:pre_brew_done, name})
+
+      reason ->
+        Repo.rollback(reason)
+    end
 
     write_dates!(graph, back)
     replan_done!(graph, moved, back, 0)

@@ -413,4 +413,49 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
              }
     end
   end
+
+  test "D56 decisions 23, 24: after_done_step and pre_brew_done as 422s", ctx do
+    {:ok, grain} = Production.create_step_type(%{"name" => "Prepare grain"})
+    path = "/api/production/templates/#{ctx.template.id}/steps"
+
+    assert call(ctx["owner"], :post, path, %{step_type_id: grain.id, day_offset: -1}).status ==
+             201
+
+    b = ctx["brewer1"]
+    [batch] = body(plan(b, ctx))["data"]["batches"]
+    step = &Enum.find(batch["steps"], fn s -> s["name"] == &1 end)
+    complete = &call(b, :post, "/api/production/steps/#{step.(&1)["id"]}/complete", &2)
+
+    # FDH (Mon Nov 9) done on its day: brew day can't move onto it.
+    assert complete.("FDH", %{done_on: "2026-11-09"}).status == 200
+
+    for preview <- [true, false] do
+      res =
+        call(b, :post, "/api/production/steps/move", %{
+          ids: [step.("Brew day")["id"]],
+          days: 7,
+          answer: "move_only",
+          preview: preview
+        })
+
+      assert {res.status, body(res)} ==
+               {422,
+                %{
+                  "error" => "after_done_step",
+                  "message" => "FDH was done Mon Nov 9; brew day can't be after it."
+                }}
+    end
+
+    # Prepare grain ticked late, brew day done the same day: Mark not done says what to do.
+    assert complete.("Prepare grain", %{done_on: "2026-11-05"}).status == 200
+
+    assert complete.("Brew day", %{done_on: "2026-11-05", answer: "move_only", batch_number: "40"}).status ==
+             200
+
+    res = call(b, :post, "/api/production/steps/#{step.("Brew day")["id"]}/uncomplete")
+
+    assert {res.status, body(res)} ==
+             {422,
+              %{"error" => "pre_brew_done", "message" => "Mark Prepare grain not done first."}}
+  end
 end

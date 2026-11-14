@@ -760,7 +760,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       has_result: type != nil and type.has_result,
       result: s.result,
       retest_days: s.retest_days,
-      retest_of_id: s.retest_of_id
+      retest_of_id: s.retest_of_id,
+      # D56 decision 22: planned before brew day, whatever its date is now.
+      pre_brew: s.pre_brew
     }
   end
 

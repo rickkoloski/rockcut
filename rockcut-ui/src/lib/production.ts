@@ -159,6 +159,8 @@ export interface SchedStep {
   behavior: Behavior | null
   /** The batch's first Brew day (its number prompt). */
   first_brew: boolean
+  /** D56 decision 22: planned before brew day (it moves with it), whatever its date is now. */
+  pre_brew: boolean
   phase_id: number | null
   vessel_index: number
   detail: string | null

@@ -526,22 +526,35 @@ export function followingIds(steps: SchedStep[], links: SchedLink[], ids: number
 }
 
 /**
- * D56 §3.1 and decision 13, as the API decides them: moving the steps `ids`
- * of a split tree (or one batch) by `days` under `answer`. A pre-brew step
- * can't land on brew day or later; a step that isn't plain or custom can't
- * land before it. The first Brew day takes its pre-brew steps along. The
- * API's message, or null.
- */
-/**
  * D56 decision 21 (DEV gaps 3, 9): brew day (`brew`, of `steps`' batch) moved
  * to `brewOn` can't be before a finished pre-brew step's done day; the same
  * day is fine. The API's message, or null.
  */
 export function finishedPreBrewRefusal(steps: SchedStep[], brew: SchedStep, brewOn: string): string | null {
-  const finished = steps.find((s) => s.id !== brew.id && s.batch_id === brew.batch_id && s.done_on && s.due_on < brew.due_on && brewOn < s.done_on)
+  const finished = steps.find((s) => s.pre_brew && s.batch_id === brew.batch_id && s.done_on && brewOn < s.done_on)
   return finished ? `${finished.name} was done ${dayLabel(finished.done_on!)}; brew day can't be before it.` : null
 }
 
+/**
+ * D56 decision 23: brew day moved to `brewOn` can't be on or after the done
+ * day of a finished step that isn't pre-brew (`steps`: the whole split
+ * tree). The API's message (the earliest such step), or null.
+ */
+export function finishedAfterRefusal(steps: SchedStep[], brewOn: string): string | null {
+  const finished = steps
+    .filter((s) => !s.pre_brew && s.done_on && s.behavior !== 'brew' && brewOn >= s.done_on)
+    .sort((a, b) => a.done_on!.localeCompare(b.done_on!) || a.id - b.id)[0]
+  return finished ? `${finished.name} was done ${dayLabel(finished.done_on!)}; brew day can't be after it.` : null
+}
+
+/**
+ * D56 §3.1 and decision 13, as the API decides them: moving the steps `ids`
+ * of a split tree (or one batch) by `days` under `answer`. A pre-brew step
+ * can't land on brew day or later; a step that isn't plain or custom can't
+ * land before it. The first Brew day takes its pre-brew steps along
+ * (decision 22: those planned before it, `pre_brew`, not by date). The
+ * API's message, or null.
+ */
 export function moveRefusal(tree: SchedBatch[], ids: number[], days: number, answer: Answer): string | null {
   const root = tree.find((b) => b.split_parent_id == null) ?? tree[0]
   const brew = root && firstBrew(root.steps)
@@ -550,11 +563,11 @@ export function moveRefusal(tree: SchedBatch[], ids: number[], days: number, ans
   const links = tree.flatMap((b) => b.links)
   const moving = new Set(ids)
   if (answer === 'move_all') for (const id of followingIds(steps, links, ids)) moving.add(id)
-  const preBrew = root.steps.filter((s) => !s.done_on && s.due_on < brew.due_on)
+  const preBrew = root.steps.filter((s) => s.pre_brew && !s.done_on)
   if (moving.has(brew.id)) for (const s of preBrew) moving.add(s.id)
   const due = (s: SchedStep) => (moving.has(s.id) ? addDaysKey(s.due_on, days) : s.due_on)
   const brewOn = due(brew)
-  const finished = moving.has(brew.id) ? finishedPreBrewRefusal(root.steps, brew, brewOn) : null
+  const finished = moving.has(brew.id) ? (finishedPreBrewRefusal(root.steps, brew, brewOn) ?? finishedAfterRefusal(steps, brewOn)) : null
   if (finished) return finished
   if (preBrew.some((s) => due(s) >= brewOn)) return 'A pre-brew step stays before brew day.'
   const wrong = steps.find(

@@ -402,7 +402,8 @@ defmodule RockcutApi.Production.Batches do
             due_on: Date.add(brew_on, s.day_offset),
             template_step_id: s.id,
             ramp_group: s.ramp_group,
-            retest_days: s.retest_days
+            retest_days: s.retest_days,
+            pre_brew: s.day_offset < 0
           })
 
         {s.id, step}
@@ -515,8 +516,8 @@ defmodule RockcutApi.Production.Batches do
           # D56 §3.1: a finished pre-brew step stays put, even on a planned batch.
           brew = Parts.first_brew(steps)
 
-          pre_brew_done? =
-            &(&1.done_on != nil and brew != nil and Date.compare(&1.due_on, brew.due_on) == :lt)
+          # Decision 22: pre-brew as planned, not by date.
+          pre_brew_done? = &(&1.pre_brew and &1.done_on != nil)
 
           {open, done} =
             Enum.split_with(

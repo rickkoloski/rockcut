@@ -38,6 +38,9 @@ defmodule RockcutApi.Production.Step do
     # the days to its retest, and the failed step a retest retests.
     field :result, :string
     field :retest_days, :integer, default: 2
+    # D56 decision 22: planned before brew day (a template step at a
+    # negative day, or added before brew day), whatever its date is now.
+    field :pre_brew, :boolean, default: false
 
     belongs_to :batch, RockcutApi.Brewing.Batch
     belongs_to :tank, RockcutApi.Production.Tank
