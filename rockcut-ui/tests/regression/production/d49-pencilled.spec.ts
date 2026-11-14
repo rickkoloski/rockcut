@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
 import { addDays, addProcess, batchOf, dragToLane, Made, openGantt, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
+import { Setup } from './d56'
 
 // D49 §3.12b Pencilled batches: P130–P134 on the Gantt. The rules in full
 // are in ExUnit (pencilled_test); the board (no tasks, P135) is task 3's.
@@ -16,6 +17,8 @@ const P = '/api/production'
 const made = new Made()
 // Each test cleans up after itself, failed or not.
 test.afterEach(() => made.cleanup())
+const setup = new Setup()
+test.afterAll(() => setup.cleanup())
 
 type Batch = SBatch & { pencilled: boolean }
 
@@ -145,16 +148,14 @@ test('P133: a scheduled planned batch → Pencil in: back to an X-number; refuse
   await made.checkOff(stepOf(brewed, 'Brew day'), `T${Date.now() % 1_000_000}`)
   const res = await (await apiAs('brewer1')).post(`${P}/batches/${brewed.id}/pencil`)
   expect(res.status()).toBe(422)
-  // A planned batch with a done step: D56 decision 26 has FDH wait for brew day, so brew day is
-  // checked off, then FDH, then brew day is marked not done again.
-  const planned = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), -8) })
-  const [brew, fdh] = [stepOf(planned, 'Brew day'), stepOf(planned, 'FDH')]
-  const api = await apiAs('brewer1')
-  await made.checkOff(brew, `T${(Date.now() + 1) % 1_000_000}`)
-  const done = await api.post(`${P}/steps/${fdh.id}/complete`, { data: { done_on: today(), answer: 'move_only' } })
+  // A planned batch with a done step: D56 decision 26 keeps steps after brew day for later, so
+  // it's a pre-brew step, ticked early.
+  const prep = await setup.stepType('Prep grain')
+  const t = await setup.copy(ALE, 'P133 pre-brew')
+  await setup.addStep(t.id, { step_type_id: prep.id, day_offset: -1, vessel_index: 0 })
+  const planned = await made.plan({ brand_id: brand.id, template: t.name, brew_on: addDays(today(), 8) })
+  const done = await (await apiAs('brewer1')).post(`${P}/steps/${stepOf(planned, prep.name).id}/complete`, { data: { done_on: today(), answer: 'move_only' } })
   expect(done.status(), await done.text()).toBe(200)
-  const undone = await api.post(`${P}/steps/${brew.id}/uncomplete`)
-  expect(undone.status(), await undone.text()).toBe(200)
   await page.reload()
   await page.getByTestId(`gantt-bar-${planned.id}-0`).click()
   await expect(page.getByTestId('batch-dialog')).toBeVisible()

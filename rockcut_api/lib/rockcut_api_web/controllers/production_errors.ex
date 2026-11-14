@@ -240,6 +240,10 @@ defmodule RockcutApiWeb.ProductionErrors do
   def handle({:error, {:brew_first, name}}, conn),
     do: refused(conn, "brew_first", "Brew day comes first. #{name} can't be done before it.")
 
+  # D56 decision 26, the lead's mirror: brew day stays done while a later step is.
+  def handle({:error, {:done_after_brew, name}}, conn),
+    do: refused(conn, "done_after_brew", "Mark #{name} not done first.")
+
   # D56 decision 24 (DEV gap 12): Mark not done on a brew day a finished
   # pre-brew step holds in place.
   def handle({:error, {:pre_brew_done, name}}, conn),

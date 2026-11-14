@@ -3,6 +3,7 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
   use RockcutApiWeb.ConnCase
 
   import RockcutApi.PersonaFixtures
+  import Ecto.Query, only: [from: 2]
 
   alias RockcutApi.{Production, Repo}
   alias RockcutApi.Brewing.Brand
@@ -443,7 +444,22 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
     brew_id = step.("Brew day")["id"]
     assert complete.("Brew day", %{done_on: "2026-11-02", batch_number: "40"}).status == 200
     assert complete.("FDH", %{done_on: "2026-11-09"}).status == 200
-    assert call(b, :post, "/api/production/steps/#{brew_id}/uncomplete").status == 200
+    # The mirror (decision 26, lead): brew day stays done while FDH is.
+    res = call(b, :post, "/api/production/steps/#{brew_id}/uncomplete")
+
+    assert {res.status, body(res)} ==
+             {422, %{"error" => "done_after_brew", "message" => "Mark FDH not done first."}}
+
+    # Brew day not done with FDH done is data from before decision 26 (DEV).
+    Repo.update_all(from(s in RockcutApi.Production.Step, where: s.id == ^brew_id),
+      set: [done_on: nil, done_by_id: nil, completed_at: nil, checkoff_move: nil]
+    )
+
+    batch_id = batch["id"]
+
+    Repo.update_all(from(x in RockcutApi.Brewing.Batch, where: x.id == ^batch_id),
+      set: [status: "planned", batch_number: nil]
+    )
 
     for preview <- [true, false] do
       res =
@@ -461,6 +477,10 @@ defmodule RockcutApiWeb.ProductionScheduleControllerTest do
                   "message" => "FDH was done Mon Nov 9; brew day can't be after it."
                 }}
     end
+
+    # FDH not done again, so only the pre-brew step holds brew day below.
+    fdh_id = step.("FDH")["id"]
+    assert call(b, :post, "/api/production/steps/#{fdh_id}/uncomplete").status == 200
 
     # Prepare grain ticked late, brew day done the same day: Mark not done says what to do.
     assert complete.("Prepare grain", %{done_on: "2026-11-05"}).status == 200

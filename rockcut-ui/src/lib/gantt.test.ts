@@ -15,6 +15,7 @@ import {
   followingIds,
   moveRefusal,
   preBrewKind,
+  beforeBrewKind,
   finishedAfterRefusal,
   finishedPreBrewRefusal,
   labelBatch,
@@ -819,6 +820,18 @@ describe('D56 pre-brew steps', () => {
     const hint = { over: true, tanks: [fv7], parts: [...buildParts(altruism), dpart] }
     expect(dragHint({ ...hint, kind: 'dot', days: 7, part: dpart, step: done.steps[1] })).toMatchObject({ warn: true, text: expect.stringContaining(msg.slice(0, -1)) })
     expect(dragHint({ ...hint, kind: 'dot', days: 6, part: dpart, step: done.steps[1] })?.text ?? '').not.toContain('was done')
+  })
+
+  it('decision 26 (lead): a pre-brew test’s retest, done, doesn’t hold brew day back (decision 23 leaves it out)', () => {
+    // Prepare grain failed, its retest done Fri Dec 4; FDH done Wed Dec 9.
+    const steps = [
+      ...galactic.steps.map((x) => (x.id === 51 ? { ...x, done_on: '2026-11-30', result: 'fail' as const } : x)),
+      step({ id: 55, batch_id: 5, name: 'Prepare grain - retest', due_on: '2026-12-04', done_on: '2026-12-04', retest_of_id: 51 }),
+      step({ id: 56, batch_id: 5, name: 'Prepare grain - retest 2', due_on: '2026-12-05', done_on: '2026-12-05', retest_of_id: 55 }),
+    ]
+    expect(beforeBrewKind(steps, steps.find((s) => s.id === 56)!)).toBe(true)
+    expect(beforeBrewKind(steps, steps.find((s) => s.id === 52)!)).toBe(false)
+    expect(finishedAfterRefusal(steps, '2026-12-06')).toBeNull()
   })
 
   it('moveRefusal: brew day moved past a Set temp works only with Move all; it takes the pre-brew step', () => {

@@ -740,6 +740,46 @@ defmodule RockcutApi.Production.PreBrewTest do
       assert named(batch, "FDH").done_on == nil
     end
 
+    # The lead's mirror: brew day stays done while a step after it is.
+    test "Mark brew day not done while later steps are done: names the earliest; pre-brew ones don't count",
+         ctx do
+      batch = plan(ctx)
+      brew = named(batch, "Brew day")
+      grain = named(batch, "Prepare grain")
+      {:ok, _} = Steps.complete(grain.id, %{}, ctx.brewer, today: grain.due_on)
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+
+      for name <- ["Set temp - 58°", "FDH"] do
+        s = named(batch, name)
+        {:ok, _} = Steps.complete(s.id, %{"answer" => "move_only"}, ctx.brewer, today: s.due_on)
+      end
+
+      assert {:error, {:done_after_brew, "FDH"}} = Steps.uncomplete(brew.id)
+      {:ok, _} = Steps.uncomplete(named(batch, "FDH").id)
+      assert {:error, {:done_after_brew, "Set temp - 58°"}} = Steps.uncomplete(brew.id)
+      {:ok, _} = Steps.uncomplete(named(batch, "Set temp - 58°").id)
+
+      # Only the pre-brew step is done now: that doesn't hold it.
+      assert {:ok, _} = Steps.uncomplete(brew.id)
+
+      assert named(batch, "Brew day").done_on == nil
+      assert reload(batch).status == "planned"
+    end
+
+    test "Undo of a brew-day check-off is a plain row restore", ctx do
+      batch = plan(ctx)
+      brew = named(batch, "Brew day")
+
+      {:ok, {_, token}} =
+        Undo.track(ctx.brewer, Undo.step_scope([brew.id]), fn ->
+          Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+        end)
+
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert named(batch, "Brew day").done_on == nil
+      assert reload(batch).status == "planned"
+    end
+
     # Matt's case: a two-day brew, "1 of 2" done; a Set temp between the
     # two checked off before "2 of 2", then "2 of 2" moved later past it.
     test "a two-day brew: only \"1 of 2\" counts", ctx do
@@ -758,6 +798,9 @@ defmodule RockcutApi.Production.PreBrewTest do
       assert {:ok, _} = Steps.move([two.id], 2, answer: "move_only")
       assert %{due_on: ~D[2026-12-16], done_on: nil} = named(batch, "Brew day - 2 of 2")
       assert named(batch, "Set temp - 58°").done_on == ~D[2026-12-12]
+
+      # The mirror counts only "1 of 2": it stays done while the Set temp is.
+      assert {:error, {:done_after_brew, "Set temp - 58°"}} = Steps.uncomplete(one.id)
     end
   end
 

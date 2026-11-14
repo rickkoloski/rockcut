@@ -196,39 +196,26 @@ test('DEV gaps 3, 9 (decision 21): the pre-brew task ticked today, then brew day
   expect(stepOf(now, prep)).toMatchObject({ due_on: today(), done_on: today() })
 })
 
-test('DEV gap 11 (decisions 22, 23): Fail → retest on a planned batch, then brew day onto the test in the date box: refused with why; nothing moved', async ({ page }) => {
+test('DEV gaps 11, 13 (decision 26): QA’s gap 11 path now stops at the Fail: the test can’t be checked off before brew day; nothing done', async ({ page }) => {
   const check = await setup.stepType('Hop check', { has_result: true })
   const t = await preBrewTemplate()
   await setup.addStep(t.id, { step_type_id: check.id, day_offset: 5, vessel_index: 0 })
   const tank = await made.tank('FV3')
   const brand = await made.brand('Gap 11')
   const planned = await made.plan({ brand_id: brand.id, template: t.name, brew_on: addDays(today(), -5), tank_ids: [tank.id] })
-  const batch = await batchOf(planned.id)
-  const test_ = stepOf(batch, check.name)
-  const brew = stepOf(batch, 'Brew day')
+  const test_ = stepOf(await batchOf(planned.id), check.name)
   expect(test_.due_on).toBe(today())
-  // Decision 26: brewed first (on its day), then the Fail, then brew day marked not done again.
-  const api = await apiAs('brewer1')
-  await made.checkOff(brew, `9${Math.floor(Math.random() * 1e6)}`)
-  const res = await api.post(`${P}/steps/${test_.id}/complete`, {
-    data: { done_on: today(), result: 'fail', fail_action: 'retest', retest_days: 2, answer: 'move_all' },
-  })
-  expect(res.status(), await res.text()).toBe(200)
-  const undone = await api.post(`${P}/steps/${brew.id}/uncomplete`)
-  expect(undone.status(), await undone.text()).toBe(200)
-  const before = (await batchOf(batch.id)).steps.map((s) => [s.id, s.due_on])
 
-  await openGantt(page)
-  await page.getByTestId(`gantt-bar-${batch.id}-0`).click()
-  const date = page.getByTestId(`batch-step-date-${brew.id}`)
-  await date.fill(addDays(today(), 5))
-  await date.blur()
-  await expect(page.getByText(`${check.name} was done ${dayName(today())}; brew day can't be after it.`)).toBeVisible()
-  await expect(page.getByTestId('move-prompt')).toHaveCount(0)
+  await page.goto(`/brewery/production?step=${test_.id}&day=${test_.due_on}`)
+  await expect(page.getByTestId('step-dialog')).toBeVisible()
+  await page.getByTestId('step-check-off').click()
+  await expect(page.getByText(`Brew day comes first. ${check.name} can't be done before it.`)).toBeVisible()
 
   await page.reload()
-  await expect(page.getByTestId(`gantt-bar-${batch.id}-0`)).toBeVisible()
-  expect((await batchOf(batch.id)).steps.map((s) => [s.id, s.due_on])).toEqual(before)
+  await expect(page.getByTestId(`gantt-bar-${planned.id}-0`)).toBeVisible()
+  const now = await batchOf(planned.id)
+  expect(stepOf(now, check.name).done_on).toBeNull()
+  expect(now.steps.some((s) => (s as { retest_of_id?: number | null }).retest_of_id)).toBe(false)
 })
 
 test('DEV gap 11 (decision 22): a step moved before brew day isn’t pre-brew: it stays when the date box moves brew day, and is flagged', async ({ page }) => {

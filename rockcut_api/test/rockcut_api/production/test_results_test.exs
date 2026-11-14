@@ -84,16 +84,29 @@ defmodule RockcutApi.Production.TestResultsTest do
 
   defp retest_of(s), do: Repo.get_by(Step, retest_of_id: s.id)
 
-  # D56 decision 26: a test is done after brew day, so a planned batch with
-  # a done test is one whose brew day was marked not done after the Fail
-  # (on its day, so it stays there). The layout before anything was done.
+  # D56 decision 26 and its mirror: a test is done after brew day, and brew
+  # day stays done while it is. A planned batch with a done test is data
+  # from before them (DEV), written here: brewed on its day, the Fail, then
+  # brew day not done and the batch planned again. The layout before
+  # anything was done.
   defp failed_then_unbrewed(ctx) do
     batch = brewed(ctx)
     before = layout(batch)
     {:ok, {%{retest_id: rid}, _}} = fail_retest(ctx, named(batch, "Diacetyl test"))
-    {:ok, _} = Steps.uncomplete(named(batch, "Brew day").id)
-    assert %{status: "planned"} = reload(batch)
+    unbrew!(batch)
     {batch, before, rid}
+  end
+
+  defp unbrew!(batch) do
+    brew = named(batch, "Brew day")
+
+    Repo.update_all(from(s in Step, where: s.id == ^brew.id),
+      set: [done_on: nil, done_by_id: nil, completed_at: nil, checkoff_move: nil]
+    )
+
+    Repo.update_all(from(b in RockcutApi.Brewing.Batch, where: b.id == ^batch.id),
+      set: [status: "planned", batch_number: nil]
+    )
   end
 
   describe "types and templates (decisions 3, 5)" do
@@ -684,7 +697,8 @@ defmodule RockcutApi.Production.TestResultsTest do
 
       {:ok, _} = complete(ctx, named(batch, "Diacetyl test"), %{"result" => "pass"})
 
-      assert {:error, @after_test} = Steps.uncomplete(brew.id)
+      # The mirror of decision 26 refuses it first (the done test is after brew day).
+      assert {:error, {:done_after_brew, "Diacetyl test"}} = Steps.uncomplete(brew.id)
       assert named(batch, "Brew day").done_on == @brew
     end
 
@@ -870,9 +884,21 @@ defmodule RockcutApi.Production.TestResultsTest do
       assert due(batch, "Brew day") == ~D[2026-11-24]
       assert step(retest).due_on == ~D[2026-11-22]
 
-      # Decision 26 as written: the retest isn't pre-brew, so it waits for brew day.
-      assert {:error, {:brew_first, _}} =
-               complete(ctx, step(retest), %{"result" => "pass"}, ~D[2026-11-22])
+      # Decision 26 (lead): the retest of a pre-brew test is exempt, though
+      # not pre-brew; done, it doesn't hold brew day back (decision 23).
+      assert {:ok, _} = complete(ctx, step(retest), %{"result" => "pass"}, ~D[2026-11-22])
+      assert %{done_on: ~D[2026-11-22], pre_brew: false} = step(retest)
+
+      assert {:ok, _} =
+               Steps.complete(
+                 brew_step.id,
+                 %{"done_on" => "2026-11-24", "answer" => "move_only", "batch_number" => "40"},
+                 ctx.brewer,
+                 today: ~D[2026-11-24]
+               )
+
+      # The mirror leaves it out too: brew day can be marked not done again.
+      assert {:ok, _} = Steps.uncomplete(brew_step.id)
     end
   end
 end

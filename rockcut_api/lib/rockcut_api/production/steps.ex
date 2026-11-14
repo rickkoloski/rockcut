@@ -350,8 +350,8 @@ defmodule RockcutApi.Production.Steps do
             moved_brew? &&
               steps
               |> Enum.filter(
-                &(not &1.pre_brew and &1.done_on != nil and behavior(&1) != "brew" and
-                      Date.compare(due.(brew), &1.done_on) != :lt)
+                &(not before_brew_kind?(graph, &1) and &1.done_on != nil and
+                    behavior(&1) != "brew" and Date.compare(due.(brew), &1.done_on) != :lt)
               )
               |> Enum.min_by(&{Date.to_gregorian_days(&1.done_on), &1.id}, fn -> nil end) ->
           {:after_done_step, name(finished), finished.done_on}
@@ -796,6 +796,7 @@ defmodule RockcutApi.Production.Steps do
       retest = retest!(graph, step)
 
       uncheck_order!(graph, step, batch)
+      after_brew_done!(graph, step)
 
       {message, renumbered} =
         Batches.with_renumbering(fn ->
@@ -1338,12 +1339,45 @@ defmodule RockcutApi.Production.Steps do
     end
 
     # D56 decision 26 (DEV gap 13): nothing after brew day is done before the
-    # first Brew day ("1 of 2" on a two-day brew); pre-brew steps and brew
-    # days are exempt.
-    if batch && not step.pre_brew && behavior(step) != "brew" && not brewed?(graph, batch),
-      do: Repo.rollback({:brew_first, name(step)})
+    # first Brew day ("1 of 2" on a two-day brew); pre-brew steps, their
+    # retests (lead) and brew days are exempt.
+    if batch && not before_brew_kind?(graph, step) && behavior(step) != "brew" &&
+         not brewed?(graph, batch),
+       do: Repo.rollback({:brew_first, name(step)})
 
     :ok
+  end
+
+  # D56 decision 26 (lead): the mirror. The first Brew day stays done while
+  # a step after it is done (the earliest named); not checked by Undo, which
+  # puts rows back as they were.
+  defp after_brew_done!(graph, step) do
+    if first_brew?(step, Map.values(graph.steps)) do
+      graph.steps
+      |> Map.values()
+      |> Enum.filter(
+        &(&1.done_on != nil and &1.id != step.id and behavior(&1) != "brew" and
+            not before_brew_kind?(graph, &1))
+      )
+      |> Enum.min_by(&{Date.to_gregorian_days(&1.done_on), &1.id}, fn -> nil end)
+      |> case do
+        nil -> :ok
+        done -> Repo.rollback({:done_after_brew, name(done)})
+      end
+    end
+  end
+
+  # Done before brew day by plan: a pre-brew step (decision 22), or a retest
+  # along a chain that starts at one (decision 26, lead; still not pre-brew,
+  # decision 25). Decisions 23 and 26 and the mirror leave these out.
+  defp before_brew_kind?(_graph, %Step{pre_brew: true}), do: true
+  defp before_brew_kind?(_graph, %Step{retest_of_id: nil}), do: false
+
+  defp before_brew_kind?(graph, %Step{retest_of_id: id}) do
+    case graph.steps[id] || Repo.get(Step, id) do
+      nil -> false
+      test -> before_brew_kind?(graph, test)
+    end
   end
 
   # Y2: brew day stays done while anything after it that empties a tank is

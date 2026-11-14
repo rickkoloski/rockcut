@@ -536,13 +536,25 @@ export function finishedPreBrewRefusal(steps: SchedStep[], brew: SchedStep, brew
 }
 
 /**
+ * Done before brew day by plan: a pre-brew step (decision 22), or a retest
+ * along a chain that starts at one (decision 26, lead). Decision 23 leaves
+ * these out, as the API does.
+ */
+export function beforeBrewKind(steps: SchedStep[], s: SchedStep): boolean {
+  for (let cur: SchedStep | undefined = s; cur; cur = cur.retest_of_id == null ? undefined : steps.find((x) => x.id === cur!.retest_of_id)) {
+    if (cur.pre_brew) return true
+  }
+  return false
+}
+
+/**
  * D56 decision 23: brew day moved to `brewOn` can't be on or after the done
  * day of a finished step that isn't pre-brew (`steps`: the whole split
  * tree). The API's message (the earliest such step), or null.
  */
 export function finishedAfterRefusal(steps: SchedStep[], brewOn: string): string | null {
   const finished = steps
-    .filter((s) => !s.pre_brew && s.done_on && s.behavior !== 'brew' && brewOn >= s.done_on)
+    .filter((s) => !beforeBrewKind(steps, s) && s.done_on && s.behavior !== 'brew' && brewOn >= s.done_on)
     .sort((a, b) => a.done_on!.localeCompare(b.done_on!) || a.id - b.id)[0]
   return finished ? `${finished.name} was done ${dayLabel(finished.done_on!)}; brew day can't be after it.` : null
 }
