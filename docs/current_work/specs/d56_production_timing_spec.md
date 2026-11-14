@@ -88,6 +88,17 @@ with the question of part-day work), so "Brew over two days" stays as it is.
     "<step> was done <day>; brew day can't be before it." *Lead, from the QA recheck:* the same
     day is allowed (prep and brew on one day).
 
+**From DEV QA recheck 2** (Matt, 2026-11-14, fix cycle 3)
+22. **A step is pre-brew because it was planned that way, not because of its date:** copied from a
+    template step at a negative day, or added to the batch before brew day. Only those move with
+    brew day (decision 2) and count for decision 21. A step that ends up before brew day some other
+    way is an ordinary step, out of order and flagged as today.
+23. **Brew day can't be moved on or after a finished step that comes after it** (a done test, a
+    done Set temp…): refused with "<step> was done <day>; brew day can't be after it." The mirror
+    of decision 21.
+24. **Mark not done on a brew day that a finished pre-brew step holds in place** says what to do:
+    "Mark <step> not done first."
+
 ## 3. Requirements
 
 ### 3.1 Pre-brew steps (decisions 1, 2)

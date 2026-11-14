@@ -451,3 +451,40 @@ carry the lead's clarifications. This is the last fix cycle in the budget, so te
 5. Revert-and-rerun for 1–3. Gate: ExUnit twice, Vitest, tsc, lint, build, Playwright production +
    brewery-board projects. Update `d56_pr_notes.md` (fix cycles 1–2, decisions 20–21). Report
    commits, counts, revert-and-rerun. Then stop.
+
+---
+
+# DEV fix cycle 3 (QA recheck 2; Matt approved a third cycle)
+
+2026-11-14 · lead → builder. DEV at `e6f17fe`: full Playwright 791/791. QA recheck 2: gaps 7–9 and
+the preview fixed; **fail** on gap 11 (must-fix), gaps 10 and 12 minor. Report:
+`docs/current_work/stepwise_results/d56_dev_qa_recheck2_report.md`. Spec decisions 22–24.
+
+**Cause (lead, confirmed in code):** `Steps.pre_brew/1` picks pre-brew steps **by date** (unfinished,
+due before the first Brew day). Any step left behind before brew day then moves with brew day and
+gets pre-brew treatment, and decision 21's check treats a finished post-brew test as pre-brew.
+
+1. **Decision 22, pre-brew by origin:** store it on the step (e.g. an additive
+   `production_steps.pre_brew` boolean, backfilled from `template_steps.day_offset < 0` for
+   template-linked steps and from "added and due before the first Brew day" for added ones on DEV/
+   prod data; tell me the backfill rule you used). Set it in `copy_steps!` and Add step (before
+   brew day); Change template's kept step keeps it. `Steps.pre_brew/1`, the decision 2 move, the
+   decision 21 check, the "pre-brew stays before brew day" refusal, the drag hints and the Gantt
+   dot placement use the flag, not the date. A non-pre-brew step dated before brew day is an
+   ordinary out-of-order step (flagged). Decision 13 still applies to every step.
+2. **Decision 23:** a brew-day move (every path: drag, bar, date box, multi-select, off-plan
+   brew-day check-off, Mark not done restores) that would put the first Brew day on or after a
+   **finished** step that follows it (not pre-brew) is refused: 422 `after_done_step` (or reuse a
+   code; tell me), "<step> was done <day>; brew day can't be after it." Preview and hints show it.
+   This removes gap 10's silent date-box move; check the date box asks the move question in the
+   remaining cases.
+3. **Decision 24 (gap 12):** Mark not done on a brew day refused because a finished pre-brew step
+   holds it: "Mark <step> not done first."
+4. **Tests:** QA's gap 11 path end to end (ExUnit and Playwright: Fail → retest → date box +10 is
+   now refused; and a Move-only brew-day move later that leaves a plain step behind: that step does
+   NOT move back with brew day and is flagged). Gap 10, gap 12, decision 23 per path, the backfill.
+   Revert-and-rerun for 1–3. Existing pre-brew specs must still pass unchanged where behavior is the
+   same.
+5. Gate: ExUnit twice, Vitest, tsc, lint, build, Playwright production + brewery-board. Update
+   `d56_pr_notes.md` (cycle 3, decisions 22–24, the migration). Report, then stop. Ask `LEAD:` for
+   the dev-DB migration.
