@@ -56,8 +56,11 @@ test.describe('brewer1', () => {
     const sched = await schedule()
     const fv4 = sched.tanks.find((t) => t.name === 'FV4')!.id
     const crusher = sched.batches.find((b) => b.label === 'Crusher #42')!
+    // D56 decision 18: the expanded tanks are saved on the account; wait for that save before the reload below.
+    const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().includes('/api/me/board_settings/production'), { timeout: 15_000 })
     await page.getByTestId(`gantt-caret-${fv4}`).click()
     await expect(page.getByTestId(`gantt-caret-${fv4}`)).toHaveAttribute('aria-expanded', 'true')
+    expect((await saved).ok()).toBe(true)
     const setTemp = crusher.steps.find((s) => s.name === 'Set temp - 58°')!
     await expect(page.getByTestId(`gantt-step-row-${setTemp.id}`)).toBeVisible()
     await expect(page.getByTestId(`gantt-diamond-${setTemp.id}`)).toHaveAttribute('data-state', 'today')
