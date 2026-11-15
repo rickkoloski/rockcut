@@ -286,16 +286,16 @@ P31 checks the new message and that PDH's planned day moved but not its done day
   other move does, the preview too: a part's step can't land before the parent's Split
   (`before_split`, "A step can't come before the split."), and a step that isn't plain or custom
   can't newly land before the first Brew day (`not_before_brew`, "A Set temp can't be before brew
-  day."; a "2 of 2" reads "A Brew day can't be before brew day.", as no other path refuses that
-  one). The bar's drag hint shows the same reason. A planned batch's drag is unchanged (brew day
-  goes with it). Decisions 21–23 don't come up there: a brewed batch's brew day doesn't move.
+  day."; a two-day brew's "2 of 2" before "1 of 2" reads "Brew day 2 of 2 can't be before 1 of
+  2.", Matt's wording, same code). The bar's drag hint shows the same reason. A planned batch's
+  drag is unchanged (brew day goes with it). Decisions 21–23 don't come up there: a brewed batch's brew day doesn't move.
 - Gap 20: a write that checks a first Brew day off (or un-checks it) also watches every step of
   its batch and parts as it left them, so its Undo is stale (409 "Something changed since.
   Nothing was undone.") once any of them changed, as a bar drag's is. Chosen over applying the
   mirror inside Undo because that's the answer the bar drag already gives; the Undo works again
   if the later change is undone.
 
-Commit: `7c74db4`.
+Commits: `7c74db4`; `7fec5f5` (Matt's wording for the two-day case).
 
 Gate (local reseeded): `mix test` 2493 passed, twice; `mix compile --warnings-as-errors`
 clean; tsc, build clean; Vitest 348; lint 27 as before. Playwright `production`: 206 passed, 1
