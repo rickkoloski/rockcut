@@ -5,7 +5,7 @@ task 5208), and the small items (5207 "Label by" and the settings refresh, 5210,
 5791 (Boards due date) ships with it.
 **Spec:** `docs/current_work/specs/d56_production_timing_spec.md`, decisions 1–30, S1–S21.
 **Plan:** `docs/current_work/planning/d56_production_timing_plan.md`; brief
-`docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5, DEV fix cycles 1–5).
+`docs/current_work/prompts/d56_builder_brief.md` (Stages 1–5, DEV fix cycles 1–6).
 **Branch:** `d56-production-timing`, from `develop`.
 **SHA for DEV:** __SHA__
 **Local gate:** green on `3e1ddd9` (see "Local gate" below).
@@ -279,6 +279,35 @@ the correction, except "a kept step dated before brew day (checked off early)": 
 out-of-order link from 7b's fallback, and now asserts the step isn't linked out of order; the shift preview's controller test has
 `planned_moved`; the "sideways" hint Vitest (a brewed batch) reads "brew day stays"; Playwright
 P31 checks the new message and that PDH's planned day moved but not its done day.
+
+**Fix cycle 6** (QA recheck 5, `d56_dev_qa_recheck5_report.md`; no new behavior):
+
+- Gap 19: once a batch (a part: its parent) is brewed, the bar drag checks what it moves as every
+  other move does, the preview too: a part's step can't land before the parent's Split
+  (`before_split`, "A step can't come before the split."), and a step that isn't plain or custom
+  can't newly land before the first Brew day (`not_before_brew`, "A Set temp can't be before brew
+  day."; a "2 of 2" reads "A Brew day can't be before brew day.", as no other path refuses that
+  one). The bar's drag hint shows the same reason. A planned batch's drag is unchanged (brew day
+  goes with it). Decisions 21–23 don't come up there: a brewed batch's brew day doesn't move.
+- Gap 20: a write that checks a first Brew day off (or un-checks it) also watches every step of
+  its batch and parts as it left them, so its Undo is stale (409 "Something changed since.
+  Nothing was undone.") once any of them changed, as a bar drag's is. Chosen over applying the
+  mirror inside Undo because that's the answer the bar drag already gives; the Undo works again
+  if the later change is undone.
+
+Commit: `7c74db4`.
+
+Gate (local reseeded): `mix test` 2493 passed, twice; `mix compile --warnings-as-errors`
+clean; tsc, build clean; Vitest 348; lint 27 as before. Playwright `production`: 206 passed, 1
+failed: P5 (`tanks.spec.ts`, Retire / Restore a tank, not D56's area) timed out once, then passed
+twice alone (flaky); `brewery-board` (it depends on `production`, so run with `--no-deps`): 229
+passed.
+
+**Revert-and-rerun:**
+
+- Gap 19 (the check off): 3 ExUnit (brewed −16, the two-day brew, the split part), 1 Vitest and
+  the gap 19 Playwright fail.
+- Gap 20 (no watched steps): 1 ExUnit (QA's sequence) fails.
 
 ## LIMITATIONS (what local can't tell)
 
