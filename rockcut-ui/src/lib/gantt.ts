@@ -551,7 +551,7 @@ export function beforeBrewKind(steps: SchedStep[], s: SchedStep): boolean {
  * D56 DEV gap 19, as the API decides it: a bar drag of `batch` by `days`
  * once it (a part: its parent) is brewed. A part's step can't land before
  * the parent's Split; a step that isn't plain or custom can't newly land
- * before the first Brew day (a "2 of 2" too). The API's message, or null.
+ * before the first Brew day ("2 of 2": its own message). The API's message, or null.
  */
 export function shiftRefusal(batches: SchedBatch[], batch: SchedBatch, days: number): string | null {
   const root = batch.split_parent_id == null ? batch : batches.find((b) => b.id === batch.split_parent_id)
@@ -565,7 +565,8 @@ export function shiftRefusal(batches: SchedBatch[], batch: SchedBatch, days: num
     if (stays(s) || s.id === brew?.id) continue
     const to = addDaysKey(s.due_on, days)
     if (split && to < split.due_on && s.due_on >= split.due_on) return "A step can't come before the split."
-    if (brew && to < brew.due_on && s.due_on >= brew.due_on && !preBrewKind(s)) return `A ${s.marker ? 'phase marker' : (s.type_name ?? s.name)} can't be before brew day.`
+    if (brew && to < brew.due_on && s.due_on >= brew.due_on && !preBrewKind(s))
+      return s.behavior === 'brew' ? "Brew day 2 of 2 can't be before 1 of 2." : `A ${s.marker ? 'phase marker' : (s.type_name ?? s.name)} can't be before brew day.`
   }
   return null
 }

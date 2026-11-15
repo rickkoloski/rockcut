@@ -789,7 +789,15 @@ defmodule RockcutApi.Production.TestResultsTest do
       two = named(batch, "Brew day - 2 of 2")
       assert %{due_on: ~D[2026-12-03], done_on: nil} = two
 
-      assert {:error, {:not_before_brew, "Brew day"}} = Batches.shift(reload(batch), -2)
+      refused = {:not_before_brew, :second_brew}
+      assert {:error, ^refused} = Batches.shift(reload(batch), -2, preview: true)
+      assert {:error, ^refused} = Batches.shift(reload(batch), -2)
+
+      assert Steps.refusal(refused) == %{
+               error: "not_before_brew",
+               message: "Brew day 2 of 2 can't be before 1 of 2."
+             }
+
       assert due(batch, "Brew day - 2 of 2") == ~D[2026-12-03]
       assert {:ok, _} = Batches.shift(reload(batch), -1)
       assert due(batch, "Brew day - 2 of 2") == @brew

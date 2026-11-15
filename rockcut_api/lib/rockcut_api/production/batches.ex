@@ -586,7 +586,7 @@ defmodule RockcutApi.Production.Batches do
   # part: its parent) is brewed. A part's step can't
   # land before its parent's Split (`:before_split`), and one that isn't
   # plain or custom can't newly land before the first Brew day (decision
-  # 13, `{:not_before_brew, kind}`; a "2 of 2" too).
+  # 13, `{:not_before_brew, kind}`; a "2 of 2": `:second_brew`).
   defp shift_order!(batch, open, d) do
     root = batch.split_parent_id || batch.id
     if Repo.get!(Batch, root).status != "planned", do: shift_order!(root, batch, open, d)
@@ -609,7 +609,10 @@ defmodule RockcutApi.Production.Batches do
 
         brew != nil and before?.(to, brew.due_on) and not before?.(s.due_on, brew.due_on) and
             not Steps.pre_brew_kind?(s) ->
-          Repo.rollback({:not_before_brew, kind_name(s)})
+          Repo.rollback(
+            {:not_before_brew,
+             if(Steps.behavior(s) == "brew", do: :second_brew, else: kind_name(s))}
+          )
 
         true ->
           :ok

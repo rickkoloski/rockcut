@@ -855,6 +855,10 @@ describe('D56 pre-brew steps', () => {
     const [bpart] = buildParts(brewed)
     const hint = { over: true, tanks: [fv7], parts: [...buildParts(altruism), bpart] }
     expect(dragHint({ ...hint, kind: 'bar', days: -11, part: bpart })).toMatchObject({ warn: true, text: expect.stringContaining("A Set temp can't be before brew day") })
+    // A two-day brew: "2 of 2" (Thu Dec 3) not before "1 of 2" (Matt's wording).
+    const twoDay = { ...brewed, steps: [...brewed.steps, step({ id: 58, batch_id: 5, name: 'Brew day - 2 of 2', type_name: 'Brew day', behavior: 'brew', due_on: '2026-12-03' })] } as SchedBatch
+    expect(shiftRefusal([twoDay], twoDay, -2)).toBe("Brew day 2 of 2 can't be before 1 of 2.")
+    expect(shiftRefusal([twoDay], twoDay, -1)).toBeNull()
     // A split part of a brewed batch: not before the Split.
     const parent = { ...brewed, steps: [...brewed.steps, step({ id: 57, batch_id: 5, behavior: 'split', name: 'Split - Transfer', due_on: '2026-12-13' })] } as SchedBatch
     const part = batch({ id: 9, split_parent_id: 5, status: 'fermenting', steps: [step({ id: 91, batch_id: 9, name: 'Carb', behavior: 'plain', due_on: '2026-12-16' })] })

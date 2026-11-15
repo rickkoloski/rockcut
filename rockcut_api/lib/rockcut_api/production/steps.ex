@@ -421,6 +421,10 @@ defmodule RockcutApi.Production.Steps do
   def refusal({:not_before_brew, :phase}),
     do: %{error: "not_before_brew", message: "A step before brew day has no phase."}
 
+  # D56 DEV gap 19 (Matt's wording): a two-day brew's "2 of 2" moved before "1 of 2".
+  def refusal({:not_before_brew, :second_brew}),
+    do: %{error: "not_before_brew", message: "Brew day 2 of 2 can't be before 1 of 2."}
+
   def refusal({:not_before_brew, :tank}),
     do: %{error: "not_before_brew", message: "A step before brew day is in the first tank."}
 
