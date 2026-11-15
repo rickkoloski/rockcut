@@ -573,3 +573,26 @@ unlinked). Decision 29 is now corrected in the spec. Please:
    the retests linked only to their chain, no false flags.
 3. Revert-and-rerun for gap 18 again. Same gate (ExUnit twice, Vitest, tsc, lint, build, Playwright
    production + brewery-board). Update `d56_pr_notes.md`. Report, then stop.
+
+---
+
+# DEV fix cycle 6 (QA recheck 5)
+
+2026-11-14 · lead → builder. DEV at `eabc74a`: full Playwright 792 + D58 S16 flaky (passed twice).
+QA recheck 5: gaps 15–18 fixed, 1–14 hold; **fail** on gap 19 (must-fix) and gap 20 (should-fix).
+Report: `docs/current_work/stepwise_results/d56_dev_qa_recheck5_report.md`. No new behavior: both
+apply existing rules to the paths that skip them.
+
+1. **Gap 19:** the brewed bar drag (cycle 5) has no check when moved **earlier**. Run the same
+   rule checks every other path uses on the shift's result (decision 13 for non-plain steps
+   before the first Brew day; "2 of 2" not before "1 of 2"; a split part's steps not before the
+   Split; decision 21/22/23 as they apply) and refuse with the same 422 and message. The preview
+   (`preview: true`) and the drag hint show it. QA's three variants (−16 brewed, two-day −7, split
+   part −20) as ExUnit; one Playwright for the hint/refusal. Check the planned-batch bar drag
+   keeps its current behavior.
+2. **Gap 20:** Undo of a brew-day check-off must be refused when a later step of the batch was
+   checked off since (409 "Something changed since. Nothing was undone.", as the bar-drag Undo
+   does). Make the brew-day check-off's Undo scope cover the batch's steps so any later
+   check-off/edit invalidates it, or apply decision 26's mirror inside Undo; say which. ExUnit
+   with QA's sequence.
+3. Revert-and-rerun for both. Gate as before. Update `d56_pr_notes.md`. Report, then stop.
