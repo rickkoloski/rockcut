@@ -59,6 +59,25 @@ defmodule RockcutApi.Production.SplitMovesTest do
     s.flags
   end
 
+  # D56 DEV gap 19: once the parent is brewed, a part's bar drag can't put
+  # its steps before the Split (Nov 13), the preview too; a planned
+  # parent's part keeps its old drag.
+  describe "a part's bar drag (D56 DEV gap 19)" do
+    test "earlier than the Split: refused once the parent is brewed", ctx do
+      assert {:ok, _} = Batches.shift(ctx.p2, -20)
+      assert {:ok, _} = Batches.shift(reload(ctx.p2), 20)
+
+      brew = named(ctx.batch, "Brew day")
+      {:ok, _} = Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+
+      assert {:error, :before_split} = Batches.shift(reload(ctx.p2), -20, preview: true)
+      assert {:error, :before_split} = Batches.shift(reload(ctx.p2), -20)
+      assert dates(ctx.p2) == part_dates(0)
+      assert {:ok, _} = Batches.shift(reload(ctx.p2), -3)
+      assert dates(ctx.p2) == part_dates(-3)
+    end
+  end
+
   describe "Y1: Move all on a parent step takes the parts along" do
     test "from Brew day: the prompt lists the parts' steps; they move by the same days", ctx do
       brew = named(ctx.batch, "Brew day")

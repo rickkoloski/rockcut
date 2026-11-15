@@ -552,6 +552,10 @@ defmodule RockcutApi.Production.Batches do
           # step; decision 23 (`Steps.brew_refusal`) isn't applied here.
           open = open ++ carried_parts!(batch, steps)
 
+          # D56 DEV gap 19: a brewed batch's (or its part's) drag obeys the
+          # rules every other move does; a planned one's moves brew day with it.
+          shift_order!(batch, open, d)
+
           counts = %{
             moved: Enum.count(open, &is_nil(&1.done_on)),
             planned_moved: Enum.count(open, &(&1.done_on != nil)),
@@ -577,6 +581,45 @@ defmodule RockcutApi.Production.Batches do
         {:error, :days_invalid}
     end
   end
+
+  # D56 DEV gap 19: the steps `open` moved by `d` days, once the batch (a
+  # part: its parent) is brewed. A part's step can't
+  # land before its parent's Split (`:before_split`), and one that isn't
+  # plain or custom can't newly land before the first Brew day (decision
+  # 13, `{:not_before_brew, kind}`; a "2 of 2" too).
+  defp shift_order!(batch, open, d) do
+    root = batch.split_parent_id || batch.id
+    if Repo.get!(Batch, root).status != "planned", do: shift_order!(root, batch, open, d)
+  end
+
+  defp shift_order!(root, batch, open, d) do
+    tree =
+      Repo.all(from(s in Step, where: s.batch_id == ^root, preload: :step_type))
+
+    brew = Parts.first_brew(tree)
+    split = if batch.split_parent_id, do: Enum.find(tree, &(Steps.behavior(&1) == "split"))
+    before? = &(Date.compare(&1, &2) == :lt)
+
+    for s <- open, s.id != (brew && brew.id) do
+      to = Date.add(s.due_on, d)
+
+      cond do
+        split != nil and before?.(to, split.due_on) and not before?.(s.due_on, split.due_on) ->
+          Repo.rollback(:before_split)
+
+        brew != nil and before?.(to, brew.due_on) and not before?.(s.due_on, brew.due_on) and
+            not Steps.pre_brew_kind?(s) ->
+          Repo.rollback({:not_before_brew, kind_name(s)})
+
+        true ->
+          :ok
+      end
+    end
+  end
+
+  # "Set temp", "Brew day", "phase marker": as `Steps.refusal/1` words them.
+  defp kind_name(%Step{step_type: %StepType{name: name}}), do: name
+  defp kind_name(_), do: "phase marker"
 
   # A split parent's parts' steps, while its Split isn't done (D48 DEV QA Y1).
   defp carried_parts!(batch, steps) do

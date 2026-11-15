@@ -805,6 +805,32 @@ defmodule RockcutApi.Production.PreBrewTest do
       assert reload(batch).status == "planned"
     end
 
+    # DEV gap 20, QA's sequence: brew day checked off (its Undo up), FDH
+    # checked off elsewhere, then that Undo: stale, as a bar drag's is.
+    test "gap 20: Undo of a brew-day check-off after a later step was checked off is stale; nothing changes",
+         ctx do
+      batch = plan(ctx)
+      brew = named(batch, "Brew day")
+
+      {:ok, {_, token}} =
+        Undo.track(ctx.brewer, Undo.step_scope([brew.id]), fn ->
+          Steps.complete(brew.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+        end)
+
+      fdh = named(batch, "FDH")
+      {:ok, _} = Steps.complete(fdh.id, %{}, ctx.brewer, today: fdh.due_on)
+
+      assert {:error, :undo_stale} = Undo.undo(ctx.brewer, token)
+      assert named(batch, "Brew day").done_on == @brew
+      assert named(batch, "FDH").done_on == ~D[2026-12-09]
+      assert reload(batch).status == "fermenting"
+
+      # FDH not done again: the batch is as the check-off left it, so the Undo works.
+      {:ok, _} = Steps.uncomplete(fdh.id)
+      assert {:ok, _} = Undo.undo(ctx.brewer, token)
+      assert reload(batch).status == "planned"
+    end
+
     test "Undo of a brew-day check-off is a plain row restore", ctx do
       batch = plan(ctx)
       brew = named(batch, "Brew day")

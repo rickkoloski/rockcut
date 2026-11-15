@@ -548,6 +548,29 @@ export function beforeBrewKind(steps: SchedStep[], s: SchedStep): boolean {
 }
 
 /**
+ * D56 DEV gap 19, as the API decides it: a bar drag of `batch` by `days`
+ * once it (a part: its parent) is brewed. A part's step can't land before
+ * the parent's Split; a step that isn't plain or custom can't newly land
+ * before the first Brew day (a "2 of 2" too). The API's message, or null.
+ */
+export function shiftRefusal(batches: SchedBatch[], batch: SchedBatch, days: number): string | null {
+  const root = batch.split_parent_id == null ? batch : batches.find((b) => b.id === batch.split_parent_id)
+  if (!root || root.status === 'planned' || !days) return null
+  const brew = firstBrew(root.steps)
+  const split = batch.split_parent_id == null ? undefined : root.steps.find((s) => s.behavior === 'split')
+  // What the drag moves (decisions 27, 28).
+  const stays = (s: SchedStep) =>
+    batch.status === 'planned' ? s.pre_brew && !!s.done_on : (s.behavior === 'brew' && !!s.done_on) || beforeBrewKind(batch.steps, s)
+  for (const s of batch.steps) {
+    if (stays(s) || s.id === brew?.id) continue
+    const to = addDaysKey(s.due_on, days)
+    if (split && to < split.due_on && s.due_on >= split.due_on) return "A step can't come before the split."
+    if (brew && to < brew.due_on && s.due_on >= brew.due_on && !preBrewKind(s)) return `A ${s.marker ? 'phase marker' : (s.type_name ?? s.name)} can't be before brew day.`
+  }
+  return null
+}
+
+/**
  * D56 decision 23: brew day moved to `brewOn` can't be on or after the done
  * day of a finished step that isn't pre-brew (`steps`: the whole split
  * tree). The API's message (the earliest such step), or null.
@@ -647,6 +670,9 @@ export function dragHint(a: DragHintInput): DragHint | null {
       const brew = firstBrew(part.batch.steps)
       const finished = brew && !brew.done_on && finishedPreBrewRefusal(part.batch.steps, brew, addDaysKey(brew.due_on, a.days))
       if (finished) reasons.push(finished.replace(/\.$/, ''))
+      const batches = [...new Map(a.parts.map((p) => [p.batch.id, p.batch])).values()]
+      const order = shiftRefusal(batches, part.batch, a.days)
+      if (order) reasons.push(order.replace(/\.$/, ''))
     }
   } else if (a.step) {
     if (!a.days) return null

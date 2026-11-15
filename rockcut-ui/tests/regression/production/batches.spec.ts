@@ -1,7 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addTemplateStep, apiAs, createTemplate, retireAll, stepTypes, tempTag } from './helpers'
-import { addDays, addProcess, batchOf, dragBy, dragToLane, Made, openGantt, pNumbers, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
+import { addDays, addProcess, batchOf, dayPx, dragBy, dragToLane, Made, openGantt, pNumbers, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
 
 // D47 §3.5–§3.6 planning batches, their numbers, moving and re-tanking bars,
 // and the flags planning raises: P21–P24, P30–P33, P36–P40, P53, P54, P60,
@@ -158,6 +158,31 @@ test('P31 (D56 decisions 28, 30): drag a brewed bar 2 days: brew day stays; the 
   // PDH: done on its day; its planned day moved, its done day didn't.
   const pdh = stepOf(after, 'PDH')
   expect([pdh.due_on, pdh.done_on]).toEqual([addDays(stepOf(batch, 'PDH').due_on, 2), stepOf(batch, 'PDH').due_on])
+})
+
+test('D56 DEV gap 19: a brewed bar dragged 2 days earlier would put a phase marker before brew day: the hint says so, the drop is refused, nothing moves', async ({ page }) => {
+  const brand = await made.brand('Crusher')
+  const tank = await made.tank('FV4')
+  const batch = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), -3), tank_ids: [tank.id] })
+  await made.checkOff(stepOf(batch, 'Brew day'), `T${Date.now().toString(36).slice(-5)}`)
+  const before = (await batchOf(batch.id)).steps.map((s) => [s.id, s.due_on])
+  const msg = "A phase marker can't be before brew day"
+  await openGantt(page)
+  const bar = page.getByTestId(`gantt-bar-${batch.id}-0`)
+  await bar.scrollIntoViewIfNeeded()
+  const box = (await bar.boundingBox())!
+  const px = await dayPx(page)
+  const [x, y] = [box.x + box.width / 2, box.y + box.height / 2]
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x - 6, y, { steps: 3 })
+  await page.mouse.move(x - 2 * px, y, { steps: 12 })
+  await expect(page.getByTestId('gantt-drag-hint')).toContainText(msg)
+  await page.mouse.up()
+  await expect(page.getByText(`${msg}.`)).toBeVisible()
+  await page.reload()
+  await expect(page.getByTestId(`gantt-bar-${batch.id}-0`)).toBeVisible()
+  expect((await batchOf(batch.id)).steps.map((s) => [s.id, s.due_on])).toEqual(before)
 })
 
 test('P32 on DEV: a refetch in the middle of a drag (someone adds a tank) neither cancels it nor moves the drop', async ({ page }) => {

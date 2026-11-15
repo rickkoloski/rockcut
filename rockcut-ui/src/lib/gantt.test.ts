@@ -17,6 +17,7 @@ import {
   preBrewKind,
   beforeBrewKind,
   finishedAfterRefusal,
+  shiftRefusal,
   finishedPreBrewRefusal,
   labelBatch,
   labelChoices,
@@ -844,6 +845,21 @@ describe('D56 pre-brew steps', () => {
       "Fest #45: 5 unfinished steps and 2 finished steps' planned days moved 5 days later. 2 steps stay where they are.",
     )
     expect(shiftMessage('Fest #45', -1, { moved: 1, planned_moved: 0, kept: 1 })).toBe('Fest #45: 1 unfinished step moved 1 day earlier. 1 step stays where it is.')
+  })
+
+  it('DEV gap 19: a brewed bar dragged earlier can’t put a Set temp before brew day; a planned one isn’t checked', () => {
+    const brewed = { ...galactic, status: 'fermenting', steps: galactic.steps.map((x) => (x.id === 50 ? { ...x, done_on: '2026-12-02' } : x)) } as SchedBatch
+    expect(shiftRefusal([brewed], brewed, -10)).toBeNull()
+    expect(shiftRefusal([brewed], brewed, -11)).toBe("A Set temp can't be before brew day.")
+    expect(shiftRefusal([galactic], galactic, -11)).toBeNull()
+    const [bpart] = buildParts(brewed)
+    const hint = { over: true, tanks: [fv7], parts: [...buildParts(altruism), bpart] }
+    expect(dragHint({ ...hint, kind: 'bar', days: -11, part: bpart })).toMatchObject({ warn: true, text: expect.stringContaining("A Set temp can't be before brew day") })
+    // A split part of a brewed batch: not before the Split.
+    const parent = { ...brewed, steps: [...brewed.steps, step({ id: 57, batch_id: 5, behavior: 'split', name: 'Split - Transfer', due_on: '2026-12-13' })] } as SchedBatch
+    const part = batch({ id: 9, split_parent_id: 5, status: 'fermenting', steps: [step({ id: 91, batch_id: 9, name: 'Carb', behavior: 'plain', due_on: '2026-12-16' })] })
+    expect(shiftRefusal([parent, part], part, -4)).toBe("A step can't come before the split.")
+    expect(shiftRefusal([parent, part], part, -3)).toBeNull()
   })
 
   it('decision 28: a brewed batch’s bar hint says brew day stays', () => {

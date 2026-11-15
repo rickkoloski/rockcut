@@ -756,6 +756,52 @@ defmodule RockcutApi.Production.TestResultsTest do
       assert layout(batch) == moved_by(before, 5, ["Brew day", "Prep yeast"])
     end
 
+    # DEV gap 19: earlier, the same rules as every other move.
+    test "gap 19: dragged earlier, a Set temp may not land before the done brew day; the preview too; plain steps may",
+         ctx do
+      batch = brewed_with_prep(ctx)
+      before = layout(batch)
+      refused = {:error, {:not_before_brew, "Set temp"}}
+
+      # Set temp (Dec 16) to Nov 30, before brew day (Dec 2).
+      assert ^refused = Batches.shift(reload(batch), -16, preview: true)
+      assert ^refused = Batches.shift(reload(batch), -16)
+      assert layout(batch) == before
+
+      # Set temp to Dec 2 (brew day): fine; FDH (plain) to Nov 25: fine, flagged as today.
+      assert {:ok, _} = Batches.shift(reload(batch), -14)
+      assert due(batch, "Set temp - 34°") == @brew
+      assert due(batch, "FDH") == ~D[2026-11-25]
+    end
+
+    test "gap 19, a two-day brew: \"2 of 2\" may not land before \"1 of 2\"", ctx do
+      batch =
+        plan!(brand!("Galactic"), ctx.template, @brew, %{
+          "tank_ids" => [ctx.fv3.id],
+          "brew_two_days" => true
+        })
+
+      one = named(batch, "Brew day - 1 of 2")
+
+      {:ok, _} =
+        Steps.complete(one.id, %{"batch_number" => "40"}, ctx.brewer, today: @brew)
+
+      two = named(batch, "Brew day - 2 of 2")
+      assert %{due_on: ~D[2026-12-03], done_on: nil} = two
+
+      assert {:error, {:not_before_brew, "Brew day"}} = Batches.shift(reload(batch), -2)
+      assert due(batch, "Brew day - 2 of 2") == ~D[2026-12-03]
+      assert {:ok, _} = Batches.shift(reload(batch), -1)
+      assert due(batch, "Brew day - 2 of 2") == @brew
+    end
+
+    test "gap 19 doesn't change a planned batch's drag: brew day goes with it", ctx do
+      batch = plan!(brand!("Galactic"), ctx.template, @brew, %{"tank_ids" => [ctx.fv3.id]})
+      before = layout(batch)
+      assert {:ok, _} = Batches.shift(reload(batch), -16)
+      assert layout(batch) == moved_by(before, -16, [])
+    end
+
     test "Undo of the drag puts every planned day back", ctx do
       batch = brewed_with_prep(ctx)
       {:ok, {_, _}} = fail_retest(ctx, named(batch, "Diacetyl test"))
