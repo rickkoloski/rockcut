@@ -30,7 +30,7 @@ one minor gap, which Matt accepted for the backlog.
 
 ## Open items
 
-- **Matt's prod check of D56**, then close tasks 5207, 5208, 5210, 5211, 4950, 5791.
+- **Matt's prod check of D56 passed**; tasks 5207, 5208, 5210, 5211, 4950, 5791 are closed.
 - **Backlog filed today:** 5910 (gap 21: a brewed bar drag refused by a finished step's planned
   day), 5911 (flaky DEV specs: D58 S16, S123).
 - Still open: 5792 (multi-day steps / part-day hours, needs a conversation), 5789.

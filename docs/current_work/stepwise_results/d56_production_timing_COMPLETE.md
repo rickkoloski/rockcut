@@ -5,7 +5,7 @@
 (Stages 1–5, fix cycles 1–6), `prompts/d56_lead_decisions_1.md`, `prompts/d56_pr_notes.md`
 **Tasks:** 5207, 5208 (was D57), 5210, 5211, 4950, 5791
 **Completed:** 2026-11-16 (on prod as `v2026.11.16`, release PR #74, squash `49b22a2`; D56 PR #73,
-merge `722cbdc`). Matt's prod check is next.
+merge `722cbdc`). Matt's prod check passed 2026-11-16, and the six tasks are closed.
 
 ---
 
