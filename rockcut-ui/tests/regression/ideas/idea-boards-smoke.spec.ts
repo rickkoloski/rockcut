@@ -60,6 +60,7 @@ test.describe('bartender1', () => {
     await save
     save = written(page, 'PATCH', cardPath)
     await dialog.getByTestId('idea-card-due-input').fill('2030-01-15')
+    await dialog.getByTestId('idea-card-due-input').blur()
     await save
     await dialog.getByTestId('idea-checklist-input').fill('Measure')
     save = written(page, 'POST', /\/checklist$/)

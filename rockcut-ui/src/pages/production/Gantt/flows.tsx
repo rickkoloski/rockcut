@@ -9,6 +9,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControlLabel,
+  GlobalStyles,
   Portal,
   Radio,
   RadioGroup,
@@ -26,7 +27,24 @@ import { actingRun } from '../../../hooks/useActing'
 import { BOARD_QUERY_KEY } from '../../../lib/tasks'
 import { usePhoneBackCloses } from '../../../hooks/useBackCloses'
 import { renumberText, type Renumber } from './scheduleText'
+import {
+  failQuestion,
+  moveWords,
+  needsMovePrompt,
+  needsRepreview,
+  outcomeBody,
+  outcomeWords,
+  resultQuestion,
+  retestDays,
+  RETEST_MAX,
+  RETEST_MIN,
+  type Outcome,
+  type ResultPreview,
+  type ResultQuestion,
+} from '../../../lib/testResults'
 import { FlowsContext, type StepRef } from './flowsContext'
+import ConfirmDialog from '../../../components/ConfirmDialog'
+import { fitAbove, isUndoShortcut, snackAutoHide, undoHint } from '../../../lib/undoSnack'
 
 // D47 §3.7: every schedule write goes through here. It refetches the
 // schedule, says what happened with Undo for 6 seconds (plan decision 5),
@@ -51,11 +69,15 @@ export interface MovePreview {
   carried?: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   following: { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]
   default_answer: Answer | null
+  /** D56 §3.1: the pre-brew steps that go with a moved brew day, per answer. */
+  pre_brew?: Record<Answer, { id: number; batch_id?: number | null; name: string; due_on: string; new_due_on: string }[]>
+  /** D56: why an answer can't be used (the API's refusal), or null. */
+  refused?: Record<Answer, { error: string; message: string } | null>
   out_of_order: Record<Answer, { from_name: string; to_name: string }[]>
   renumbered: Record<Answer, Renumber[]>
 }
 
-interface CompletePreview {
+interface CompletePreview extends ResultPreview {
   move: MovePreview | null
   done_on: string
   needs_batch_number: boolean
@@ -95,12 +117,22 @@ const UNDO_TTL_MS = 120_000
 const coded = <T,>(call: (a: CodedApi) => Promise<T>) => actingRun((code) => call(codedApi(code)))
 
 /** The snackbar: `refused` is a refused Undo, shown until its token runs out (D49 BB1). */
-type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean; overDialog?: boolean }
+type Snack = { message: string; token: string | null; key: number; expiresAt: number; refused?: boolean }
+
+const dialogOpen = () => typeof document !== 'undefined' && !!document.querySelector('[role="dialog"]')
+
+// D56 §3.7 A: the hint shows on a device with a mouse (and so a keyboard).
+const HINT = undoHint(
+  typeof window !== 'undefined' && !!window.matchMedia?.('(pointer: fine)').matches,
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform ?? ''),
+)
 
 type Prompt =
-  | { kind: 'move'; preview: MovePreview; title: string; resolve: (a: Answer | null) => void }
+  | { kind: 'move'; preview: MovePreview; title: string; retestOn: string | null; resolve: (a: Answer | null) => void }
   | { kind: 'schedule'; label: string; resolve: (ok: boolean) => void }
   | { kind: 'number'; label: string; value: string; error: string | null; suggestion: string; resolve: (n: string | null) => void }
+  | { kind: 'result'; name: string; question: ResultQuestion; failOnly: boolean; resolve: (o: Outcome | null) => void }
+  | { kind: 'confirm'; title: string; message: string; confirmLabel: string; resolve: (ok: boolean) => void }
 
 export function FlowsProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
@@ -117,9 +149,57 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
 
   const show = useCallback((snack: Omit<Snack, 'key'>) => {
     counter.current += 1
-    // D49 QA 4: over an open dialog it shows at the top, clear of the dialog's buttons.
-    setSnack({ ...snack, key: counter.current, overDialog: !!document.querySelector('[role="dialog"]') })
+    setSnack({ ...snack, key: counter.current })
   }, [])
+
+  // D56 §3.7 B: whether a dialog is open while the snackbar shows (it stays
+  // up over one, and hides as before once the dialog closes).
+  const [overDialog, setOverDialog] = useState(false)
+  useEffect(() => {
+    if (!snack) return
+    setOverDialog(dialogOpen())
+    const watch = new MutationObserver(() => setOverDialog(dialogOpen()))
+    watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['role'] })
+    return () => watch.disconnect()
+  }, [snack])
+
+  // D56 lead decisions (QA 4 with 4950 C): over a dialog the snackbar sits at
+  // the bottom, and the dialog gets that much room below it, so its buttons
+  // stay clear and clickable. `room` is the snackbar's top from the bottom.
+  const [snackEl, setSnackEl] = useState<HTMLDivElement | null>(null)
+  const [room, setRoom] = useState(0)
+
+  // DEV gap 1: a menu or popover opened while the snackbar shows (a dialog's
+  // Step picker, the settings gear) ends above it, moved up or scrolling.
+  useEffect(() => {
+    if (!snackEl) return
+    const fit = () => {
+      const limit = snackEl.getBoundingClientRect().top - 8
+      document.querySelectorAll<HTMLElement>('.MuiPopover-paper').forEach((paper) => {
+        const r = paper.getBoundingClientRect()
+        const placed = fitAbove({ top: r.top, height: r.height }, limit)
+        if (!placed) return
+        paper.style.top = `${placed.top}px`
+        paper.style.maxHeight = `${placed.maxHeight}px`
+      })
+    }
+    fit()
+    const watch = new MutationObserver(fit)
+    watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['style'] })
+    return () => watch.disconnect()
+  }, [snackEl])
+  useEffect(() => {
+    if (!snackEl || !overDialog) return setRoom(0)
+    const measure = () => setRoom(Math.ceil(window.innerHeight - snackEl.getBoundingClientRect().top) + 8)
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(snackEl)
+    window.addEventListener('resize', measure)
+    return () => {
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+    }
+  }, [snackEl, overDialog])
 
   // D49 QA 4: it goes when its Undo does (a hovered snackbar's timer stops,
   // so it could outlive the token).
@@ -155,13 +235,19 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     [notify, refresh],
   )
 
-  const askMove = (preview: MovePreview, title: string) =>
-    new Promise<Answer | null>((resolve) => setPrompt({ kind: 'move', preview, title, resolve }))
+  const askMove = (preview: MovePreview, title: string, retestOn: string | null = null) =>
+    new Promise<Answer | null>((resolve) => setPrompt({ kind: 'move', preview, title, retestOn, resolve }))
 
   const askSchedule = (label: string) => new Promise<boolean>((resolve) => setPrompt({ kind: 'schedule', label, resolve }))
 
   const askNumber = (label: string, value: string, suggestion: string, error: string | null = null) =>
     new Promise<string | null>((resolve) => setPrompt({ kind: 'number', label, value, error, suggestion, resolve }))
+
+  const askResult = (name: string, question: ResultQuestion, failOnly = false) =>
+    new Promise<Outcome | null>((resolve) => setPrompt({ kind: 'result', name, question, failOnly, resolve }))
+
+  const askConfirm = (title: string, message: string, confirmLabel: string) =>
+    new Promise<boolean>((resolve) => setPrompt({ kind: 'confirm', title, message, confirmLabel, resolve }))
 
   const moveSteps = useCallback(
     async (ids: number[], days: number): Promise<Result | null> => {
@@ -184,7 +270,12 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       const r = await write<{ out_of_order?: unknown[] }>(
         (a) => a.post(prodPath('steps', 'move'), { ids, days, answer }),
         () => {
-          const withParts = [answer === 'move_all' && plural(pre.following.length, 'following step'), carriedText(pre)].filter(Boolean)
+          const preBrew = (pre.pre_brew?.[answer ?? 'move_only'] ?? []).map((s) => s.name)
+          const withParts = [
+            answer === 'move_all' && plural(pre.following.length, 'following step'),
+            carriedText(pre),
+            preBrew.length > 0 && andList(preBrew),
+          ].filter(Boolean)
           return withParts.length ? `${title}, with ${andList(withParts as string[])}.` : `${title}.`
         },
       )
@@ -220,6 +311,27 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           return failure(again)
         }
       }
+      // D56 §3.2: Pass / Fail first, and on a Fail, Retest or Continue.
+      let outcome: Outcome | null = null
+      const question = resultQuestion(pre)
+      if (question) {
+        outcome = await askResult(step.name, question)
+        if (!outcome) return null
+      }
+      let retestOn: string | null = null
+      if (needsRepreview(outcome)) {
+        // The retest moves the steps after the test: one move prompt for it (and any lateness).
+        try {
+          const again = (
+            await coded((a) => a.post<{ data: { preview: CompletePreview } }>(path, { done_on: doneOn, preview: true, ...outcomeBody(outcome) }))
+          ).data.data.preview
+          pre = { ...pre, move: again.move }
+          retestOn = again.retest_on ?? null
+        } catch (err) {
+          const f = failure(err)
+          return f.code === 'cancelled' ? null : f
+        }
+      }
       let number: string | undefined
       if (pre.needs_batch_number) {
         const n = await askNumber(`${step.name} for ${batchLabel ?? 'this batch'}`, pre.next_batch_number ?? '', pre.next_batch_number ?? '')
@@ -228,9 +340,10 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
       }
       let answer: Answer | undefined
       let move = pre.move
-      if (pre.move && pre.move.following.length) {
-        const off = pre.move.days
-        const a = await askMove(pre.move, `${step.name} done ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}`)
+      if (needsMovePrompt(pre.move)) {
+        const off = pre.move!.days
+        const title = retestOn ? `${step.name} failed · retest ${dayLabel(retestOn)}` : `${step.name} done ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}`
+        const a = await askMove(pre.move!, title, retestOn)
         if (!a) return null
         answer = a
       }
@@ -245,11 +358,12 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           const moved = following ? [...parts, following] : parts
           return `${step.name} done, ${plural(Math.abs(off), 'day')} ${off > 0 ? 'late' : 'early'}. ${andList(moved)} moved with it`
         }
-        return following ? `${step.name} done · ${following} moved ${daysWord(move!.days)}` : `${step.name} done`
+        const result = outcome ? ` · ${outcomeWords(outcome, retestOn)}` : ''
+        return following ? `${step.name} done${result} · ${following} moved ${daysWord(move!.days)}` : `${step.name} done${result}`
       }
       for (;;) {
         const r = await write<Record<string, unknown>>(
-          (a) => a.post(path, { done_on: doneOn, batch_number: number, answer }),
+          (a) => a.post(path, { done_on: doneOn, batch_number: number, answer, ...outcomeBody(outcome) }),
           () => (number ? `${doneText()}. ${batchLabel?.replace(/ P\d+$/, '') ?? 'The batch'} is #${plainBatchNumber(number)}.` : `${doneText()}.`),
         )
         if (r.ok) return r
@@ -272,9 +386,55 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     [write],
   )
 
+  // D56 decision 8: a failed test's retest goes with it, so that's asked first.
   const uncheck = useCallback(
-    (step: StepRef) =>
-      write<{ message?: string | null }>((a) => a.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`),
+    async (step: StepRef, retestOn: string | null = null): Promise<Result | null> => {
+      if (retestOn && !(await askConfirm(`Mark ${step.name} not done`, `Its retest on ${dayLabel(retestOn)} is removed, and the steps after it go back to their dates.`, 'Mark not done')))
+        return null
+      return write<{ message?: string | null }>((a) => a.post(prodPath('steps', step.id, 'uncomplete')), (d) => d.message ?? `${step.name} is not done.`)
+    },
+    [write],
+  )
+
+  // D56 §3.2 Change: Fail → Pass removes the retest (decision 17); Pass → Fail asks the Fail question.
+  const changeResult = useCallback(
+    async (step: StepRef, to: 'pass' | 'fail'): Promise<Result | null> => {
+      const path = prodPath('steps', step.id, 'result')
+      if (to === 'pass') return write<Record<string, unknown>>((a) => a.patch(path, { result: 'pass' }), `${step.name}: Pass.`)
+      const preview = async (body: Record<string, unknown>) =>
+        (await coded((a) => a.patch<{ data: { preview: CompletePreview } }>(path, { ...body, preview: true }))).data.data.preview
+      let pre: CompletePreview
+      try {
+        pre = await preview({ result: 'fail' })
+      } catch (err) {
+        const f = failure(err)
+        return f.code === 'cancelled' ? null : f
+      }
+      const outcome = await askResult(step.name, failQuestion(pre), true)
+      if (!outcome) return null
+      let retestOn: string | null = null
+      if (needsRepreview(outcome)) {
+        try {
+          pre = await preview(outcomeBody(outcome))
+          retestOn = pre.retest_on ?? null
+        } catch (err) {
+          const f = failure(err)
+          return f.code === 'cancelled' ? null : f
+        }
+      }
+      let answer: Answer | undefined
+      let move = pre.move
+      for (;;) {
+        if (!answer && needsMovePrompt(move)) {
+          const a = await askMove(move!, `${step.name} failed${retestOn ? ` · retest ${dayLabel(retestOn)}` : ''}`, retestOn)
+          if (!a) return null
+          answer = a
+        }
+        const r = await write<Record<string, unknown>>((a) => a.patch(path, { ...outcomeBody(outcome), answer }), `${step.name}: ${outcomeWords(outcome, retestOn)}.`)
+        if (r.ok || r.code !== 'answer_required' || !r.body?.preview || answer) return r
+        move = r.body.preview as MovePreview
+      }
+    },
     [write],
   )
 
@@ -303,10 +463,26 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // D56 §3.7 A: Ctrl/Cmd+Z runs the Undo the snackbar offers, dialogs open or not.
+  const undoRef = useRef(undo)
+  undoRef.current = undo
+  useEffect(() => {
+    if (!snack?.token || snack.refused) return
+    const { token, expiresAt } = snack
+    const onKey = (e: KeyboardEvent) => {
+      if (!isUndoShortcut(e) || undoing || expiresAt <= Date.now()) return
+      e.preventDefault()
+      setSnack(null)
+      undoRef.current({ token: token!, expiresAt })
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [snack, undoing])
+
   const close = (value: null) => {
     if (!prompt) return
     if (prompt.kind === 'move') prompt.resolve(value)
-    else if (prompt.kind === 'schedule') prompt.resolve(false)
+    else if (prompt.kind === 'schedule' || prompt.kind === 'confirm') prompt.resolve(false)
     else prompt.resolve(value)
     setPrompt(null)
   }
@@ -318,6 +494,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         moveSteps,
         checkOff,
         uncheck,
+        changeResult,
         notify,
         saved: async (message, token) => {
           notify(message, token)
@@ -330,6 +507,7 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
         <MovePrompt
           preview={prompt.preview}
           title={prompt.title}
+          retestOn={prompt.retestOn}
           onCancel={() => close(null)}
           onApply={(a) => {
             prompt.resolve(a)
@@ -361,15 +539,55 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
           }}
         />
       )}
+      {prompt?.kind === 'result' && (
+        <ResultPrompt
+          name={prompt.name}
+          question={prompt.question}
+          failOnly={prompt.failOnly}
+          onCancel={() => close(null)}
+          onApply={(o) => {
+            prompt.resolve(o)
+            setPrompt(null)
+          }}
+        />
+      )}
+      {prompt?.kind === 'confirm' && (
+        <ConfirmDialog
+          open
+          title={prompt.title}
+          message={prompt.message}
+          confirmLabel={prompt.confirmLabel}
+          confirmColor="primary"
+          testId="flows-confirm"
+          onClose={() => close(null)}
+          onConfirm={() => {
+            prompt.resolve(true)
+            setPrompt(null)
+          }}
+        />
+      )}
       {/* D49 QA 4: in a portal, beside the app root (an open dialog hides that from screen readers). */}
+      {snack && room > 0 && <GlobalStyles styles={{ '.MuiDialog-container': { paddingBottom: room, boxSizing: 'border-box' } }} />}
       <Portal>
         <Snackbar
+          ref={setSnackEl}
           key={snack?.key}
           open={!!snack}
-          autoHideDuration={snack?.refused ? Math.max(snack.expiresAt - Date.now(), 0) : 6000}
-          anchorOrigin={{ vertical: snack?.overDialog ? 'top' : 'bottom', horizontal: 'center' }}
+          autoHideDuration={snack ? snackAutoHide(snack, overDialog, Date.now()) : null}
+          // D56 §3.7 C: at the bottom, clear of a dialog's title (D49 QA 4 had it at
+          // the top); a dialog under it makes room for it (above).
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
           onClose={(_, reason) => reason !== 'clickaway' && setSnack(null)}
-          message={<span data-testid="gantt-snack-text">{snack?.message}</span>}
+          message={
+            <>
+              <span data-testid="gantt-snack-text">{snack?.message}</span>
+              {snack?.token && !snack.refused && HINT && (
+                <Box component="span" sx={{ opacity: 0.7 }} data-testid="gantt-snack-hint">
+                  {` · ${HINT} to undo`}
+                </Box>
+              )}
+            </>
+          }
           data-testid="gantt-snack"
           action={
             snack?.token ? (
@@ -398,12 +616,33 @@ export function FlowsProvider({ children }: { children: ReactNode }) {
  * §3.7 the move prompt: one question. Move all following steps (listed with
  * their new dates) or only the moved ones; the default carries a pill.
  */
-function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePreview; title: string; onCancel: () => void; onApply: (a: Answer) => void }) {
-  const [answer, setAnswer] = useState<Answer>(preview.default_answer ?? 'move_all')
+function MovePrompt({
+  preview,
+  title,
+  retestOn,
+  onCancel,
+  onApply,
+}: {
+  preview: MovePreview
+  title: string
+  /** D56: after a Fail with a retest, the words say what happens to the following steps. */
+  retestOn: string | null
+  onCancel: () => void
+  onApply: (a: Answer) => void
+}) {
+  // D56: an answer the API would refuse can't be picked; the prompt says why.
+  const refused = (a: Answer) => preview.refused?.[a] ?? null
+  const preferred = preview.default_answer ?? 'move_all'
+  const [answer, setAnswer] = useState<Answer>(refused(preferred) ? (preferred === 'move_all' ? 'move_only' : 'move_all') : preferred)
+  const preBrew = preview.pre_brew?.[answer] ?? []
+  const why = (a: Answer) =>
+    refused(a) && (
+      <Typography variant="body2" color="warning.main" sx={{ pl: 4, mb: 1 }} data-testid={`move-refused-${a}`}>
+        Not possible: {refused(a)!.message}
+      </Typography>
+    )
   usePhoneBackCloses(true, onCancel)
-  const days = preview.days
-  const first = preview.moved[0]
-  const onlyName = preview.moved.length === 1 ? first.name : plural(preview.moved.length, 'step')
+  const words = moveWords(preview, retestOn)
   const pill = (a: Answer) =>
     preview.default_answer === a ? <Chip label="Default" size="small" color="primary" variant="outlined" sx={{ ml: 1, height: 20 }} data-testid={`move-default-${a}`} /> : null
   const renum = renumberText(preview.renumbered[answer] ?? [])
@@ -431,7 +670,7 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
         ) : (
           preview.batch_label && (
             <Typography variant="body2" color="text.secondary" data-testid="move-prompt-sub">
-              {preview.batch_label} · now {dayLabel(first.new_due_on)}
+              {preview.batch_label} · {words.now}
             </Typography>
           )
         )}
@@ -442,13 +681,19 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
             {carried} move{carried.includes(' and ') ? '' : 's'} with it either way.
           </Typography>
         )}
+        {preBrew.length > 0 && (
+          <Typography variant="body2" sx={{ mb: 1 }} data-testid="move-pre-brew">
+            {andList(preBrew.map((s) => `${s.name} (→ ${dayLabel(s.new_due_on)})`))} move{preBrew.length === 1 ? 's' : ''} with brew day either way.
+          </Typography>
+        )}
         <RadioGroup value={answer} onChange={(e) => setAnswer(e.target.value as Answer)}>
           <FormControlLabel
             value="move_all"
+            disabled={!!refused('move_all')}
             control={<Radio slotProps={{ input: { 'data-testid': 'move-all' } as object }} />}
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                Move all following steps {daysWord(days)}
+                {words.all}
                 {pill('move_all')}
               </Box>
             }
@@ -469,19 +714,24 @@ function MovePrompt({ preview, title, onCancel, onApply }: { preview: MovePrevie
                   ))
               : preview.following.map(line)}
           </Box>
+          {why('move_all')}
           <FormControlLabel
             value="move_only"
+            disabled={!!refused('move_only')}
             control={<Radio slotProps={{ input: { 'data-testid': 'move-only' } as object }} />}
             label={
               <Box sx={{ display: 'flex', alignItems: 'center' }}>
-                Move only {onlyName}
+                {words.only}
                 {pill('move_only')}
               </Box>
             }
           />
-          <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
-            The {plural(preview.following.length, 'following step')} keep{preview.following.length === 1 ? 's' : ''} {preview.following.length === 1 ? 'its date' : 'their dates'}.
-          </Typography>
+          {words.onlyNote && (
+            <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }}>
+              {words.onlyNote}
+            </Typography>
+          )}
+          {why('move_only')}
           {preview.out_of_order.move_only.length > 0 && (
             <Typography variant="body2" color="warning.main" sx={{ pl: 4, mt: 0.5 }} data-testid="move-only-warning">
               Some of them would then come before the step they follow. They’ll be flagged.
@@ -586,6 +836,105 @@ function NumberPrompt({
           </Button>
         </DialogActions>
       </form>
+    </Dialog>
+  )
+}
+
+/**
+ * D56 §3.2: Pass or Fail, and on a Fail, "Retest in [N] days" or "Continue
+ * as planned". Decision 15: where a retest can't go, only Continue, with why.
+ * `failOnly`: Change from Pass to Fail asks just the Fail question.
+ */
+function ResultPrompt({
+  name,
+  question,
+  failOnly,
+  onCancel,
+  onApply,
+}: {
+  name: string
+  question: ResultQuestion
+  failOnly: boolean
+  onCancel: () => void
+  onApply: (o: Outcome) => void
+}) {
+  const [result, setResult] = useState<'pass' | 'fail' | ''>(failOnly ? 'fail' : '')
+  const [action, setAction] = useState<'retest' | 'continue' | ''>(question.retestAllowed ? '' : 'continue')
+  const [days, setDays] = useState(String(question.days))
+  usePhoneBackCloses(true, onCancel)
+  const n = retestDays(days)
+  const outcome: Outcome | null =
+    result === 'pass'
+      ? { result: 'pass' }
+      : result === 'fail' && action === 'continue'
+        ? { result: 'fail', action: 'continue' }
+        : result === 'fail' && action === 'retest' && n != null
+          ? { result: 'fail', action: 'retest', days: n }
+          : null
+
+  return (
+    <Dialog open onClose={onCancel} maxWidth="xs" fullWidth data-testid="result-prompt">
+      <DialogTitle>{failOnly ? `${name} failed` : `${name}: Pass or Fail?`}</DialogTitle>
+      <DialogContent>
+        {!failOnly && (
+          <RadioGroup row value={result} onChange={(e) => setResult(e.target.value as 'pass' | 'fail')}>
+            <FormControlLabel value="pass" control={<Radio slotProps={{ input: { 'data-testid': 'result-pass' } as object }} />} label="Pass" />
+            <FormControlLabel value="fail" control={<Radio slotProps={{ input: { 'data-testid': 'result-fail' } as object }} />} label="Fail" />
+          </RadioGroup>
+        )}
+        {result === 'fail' && (
+          <Box sx={{ mt: failOnly ? 0 : 1 }}>
+            <Typography variant="body2" sx={{ mb: 0.5 }}>
+              What next?
+            </Typography>
+            <RadioGroup value={action} onChange={(e) => setAction(e.target.value as 'retest' | 'continue')}>
+              {question.retestAllowed && (
+                <FormControlLabel
+                  value="retest"
+                  control={<Radio slotProps={{ input: { 'data-testid': 'result-retest' } as object }} />}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      Retest in
+                      <TextField
+                        size="small"
+                        type="number"
+                        value={days}
+                        onChange={(e) => {
+                          setDays(e.target.value)
+                          setAction('retest')
+                        }}
+                        error={action === 'retest' && n == null}
+                        sx={{ width: 72 }}
+                        slotProps={{ htmlInput: { min: RETEST_MIN, max: RETEST_MAX, 'aria-label': 'Retest in days', 'data-testid': 'result-retest-days' } }}
+                      />
+                      days
+                    </Box>
+                  }
+                />
+              )}
+              {question.retestAllowed && action === 'retest' && n == null && (
+                <Typography variant="body2" color="error.main" sx={{ pl: 4 }} data-testid="result-retest-days-error">
+                  Retest in {RETEST_MIN} to {RETEST_MAX} days.
+                </Typography>
+              )}
+              <FormControlLabel value="continue" control={<Radio slotProps={{ input: { 'data-testid': 'result-continue' } as object }} />} label="Continue as planned" />
+            </RadioGroup>
+            {!question.retestAllowed && (
+              <Typography variant="body2" color="text.secondary" sx={{ pl: 4 }} data-testid="result-no-retest">
+                A retest can only follow a plain step or a Set temp step.
+              </Typography>
+            )}
+          </Box>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onCancel} data-testid="result-cancel">
+          Cancel
+        </Button>
+        <Button variant="contained" disabled={!outcome} onClick={() => outcome && onApply(outcome)} data-testid="result-apply">
+          {failOnly ? 'Save' : 'Check off'}
+        </Button>
+      </DialogActions>
     </Dialog>
   )
 }

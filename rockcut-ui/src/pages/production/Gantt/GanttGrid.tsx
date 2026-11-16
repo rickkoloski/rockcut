@@ -1,8 +1,9 @@
-import { useLayoutEffect, useMemo, useRef, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
+import { useLayoutEffect, useMemo, useRef, type ChangeEvent, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react'
 import { alpha, Box, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
 import { ChevronRight, CleaningServices, KeyboardDoubleArrowLeft, KeyboardDoubleArrowRight, MoreHoriz, WarningAmber } from '@mui/icons-material'
 import { addDaysKey } from '../../../lib/datetime'
 import { initials } from '../../../lib/tasks'
+import { resultMark, resultSuffix } from '../../../lib/testResults'
 import {
   BAR_H,
   BAR_TOP,
@@ -26,6 +27,8 @@ import {
   partFlags,
   partLabel,
   phaseAt,
+  labelBatch,
+  labelChoices,
   rowKey,
   segments,
   showInitials,
@@ -103,6 +106,9 @@ interface Props extends GanttActions {
   flags: Flag[]
   compact: boolean
   expanded: Set<string>
+  /** D56 §3.3: each expanded tank's "Label by" batch (row key → batch id), and picking one. */
+  labelBy?: Record<string, number>
+  onLabelBy?: (key: string, batchId: number) => void
   /** An expanded tank's step rows: 20 px with a mouse, 28 px on touch (D48 §3.6). */
   stepRowH?: number
   onToggleRow: (key: string) => void
@@ -307,7 +313,7 @@ export default function GanttGrid(props: Props) {
     if (kind === 'dot') {
       const part = parts.find((p) => p.steps.some((s) => s.id === Number(id)))
       const step = part?.steps.find((s) => s.id === Number(id))
-      return step ? dragHint({ ...base, kind: 'dot', part, step }) : null
+      return step ? dragHint({ ...base, kind: 'dot', part, step, selection: groupDrag ? [...selected] : undefined }) : null
     }
     const cip = rows.flatMap((r) => r.cips).find((c) => c.id === Number(id))
     return cip ? dragHint({ ...base, kind: 'cip', step: cip }) : null
@@ -607,7 +613,8 @@ export default function GanttGrid(props: Props) {
   }, [rows])
 
   const bar = (row: Row, part: Part) => {
-    if (part.reach < from || part.start > to) return null
+    // D56: a part whose pre-brew dots are in view, its bar not yet.
+    if (part.reach < from || part.first > to) return null
     const segs = segments(part, from, days, phaseFns.get(part.batch.id)!)
     // Only stranded dots in view (the bar ended before it): just the dots.
     const left = segs.length ? segs[0].from * dayPx : 0
@@ -718,7 +725,9 @@ export default function GanttGrid(props: Props) {
           const state = dotState(step, today, part)
           const center = x(step.due_on) + dayPx / 2 + (slot - (of - 1) / 2) * Math.min(DOT + 2, dayPx / of)
           const who = step.assignee?.name
-          const tip = [step.name, dayLabel(step.due_on), STATE_WORDS[state], who, step.notes].filter(Boolean).join(' · ')
+          // D56 §3.2: a done test's dot carries ✓ / ✗, and its tip says passed / failed.
+          const mark = step.done_on ? resultMark(step.result) : null
+          const tip = [step.name, dayLabel(step.due_on), STATE_WORDS[state] + resultSuffix(step.result), who, step.notes].filter(Boolean).join(' · ')
           return (
             <Box key={step.id}>
               {showI && who && (
@@ -759,8 +768,15 @@ export default function GanttGrid(props: Props) {
                     ...ring(step.id),
                     ...lifted(`dot:${step.id}`),
                     '&:focus-visible': { outline: `2px solid ${theme.palette.text.primary}`, outlineOffset: 2 },
+                    ...(mark && { display: 'flex', alignItems: 'center', justifyContent: 'center' }),
                   }}
-                />
+                >
+                  {mark && (
+                    <Box component="span" aria-hidden sx={{ fontSize: 8, fontWeight: 900, lineHeight: 1, color: 'primary.contrastText', pointerEvents: 'none' }} data-testid={`gantt-result-${step.id}`}>
+                      {mark}
+                    </Box>
+                  )}
+                </Box>
               </Tooltip>
             </Box>
           )
@@ -807,10 +823,15 @@ export default function GanttGrid(props: Props) {
   const stepLine = (row: Row, i: number) => {
     const { part, step } = row.stepRows[i]
     const many = new Set(row.parts.map((p) => p.batch.id)).size > 1
+    // D56 §3.3: with two or more batches in range, one is named by its steps alone.
+    const key = rowKey(row.tank)
+    const choices = labelChoices(row, from, to)
+    const named = labelBatch(row, from, to, today, props.labelBy?.[key])
+    const ownName = named === part.batch.id
     const state = dotState(step, today, part)
     const who = step.assignee?.name
     const visible = step.due_on >= from && step.due_on <= to
-    const text = `${step.name}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
+    const text = `${step.name}${resultSuffix(step.result)}${state === 'late' ? ' · late' : state === 'stranded' ? ' · after the tank was emptied' : ''}${who && showInitials(dayPx) ? ` · ${initials(who)}` : ''}`
     // D52: no line between a tank's steps, only under its last one (the line between tanks).
     // Transparent rather than removed, so every row keeps its height.
     const rule = i === row.stepRows.length - 1 ? 'divider' : 'transparent'
@@ -843,10 +864,41 @@ export default function GanttGrid(props: Props) {
           <Box component="span" data-testid={`gantt-step-label-${step.id}`} sx={{ fontWeight: step.marker ? 500 : 600, fontStyle: step.marker ? 'italic' : 'normal', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {step.name}
           </Box>
-          {!compact && (many || part.vessel > 0) && (
-            <Box component="span" sx={{ color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {part.batch.label}
-              {part.vessel > 0 ? ' · after transfer' : ''}
+          {!compact && ((many && !ownName) || part.vessel > 0) && (
+            <Box component="span" sx={{ color: 'text.secondary', overflow: 'hidden', textOverflow: 'ellipsis' }} data-testid={`gantt-step-batch-${step.id}`}>
+              {many && !ownName ? part.batch.label : ''}
+              {part.vessel > 0 ? `${many && !ownName ? ' · ' : ''}after transfer` : ''}
+            </Box>
+          )}
+          {!compact && i === 0 && named != null && (
+            <Box
+              component="select"
+              value={named}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) => props.onLabelBy?.(key, Number(e.target.value))}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+              aria-label="Label these rows by batch"
+              title="Label these rows by batch"
+              data-testid={`gantt-label-by-${key}`}
+              sx={{
+                ml: 'auto',
+                minWidth: 0,
+                maxWidth: 130,
+                flex: '0 1 auto',
+                fontSize: 11,
+                fontFamily: 'inherit',
+                color: 'text.primary',
+                bgcolor: 'background.paper',
+                border: 1,
+                borderColor: 'divider',
+                borderRadius: 1,
+                px: 0.25,
+              }}
+            >
+              {choices.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.label}
+                </option>
+              ))}
             </Box>
           )}
         </Box>

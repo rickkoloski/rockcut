@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   Button,
@@ -34,9 +35,12 @@ import {
   transferOrderError,
   vesselLabel,
   vesselPhrase,
+  templateKey,
   SPLIT_METHODS,
   CIP_METHODS,
   cipLabel,
+  dayWord,
+  templateDayLabel,
   type Answer,
   type CipMethod,
   type Phase,
@@ -45,6 +49,7 @@ import {
   type Template,
   type TemplateStep,
 } from '../../lib/production'
+import { retestDays } from '../../lib/testResults'
 
 /** Every change answers the whole template; the editor shows it. */
 export type OnTemplate = (t: Template, message?: string) => void
@@ -54,7 +59,7 @@ const ANSWERS: { key: Answer; label: string }[] = [
   { key: 'move_only', label: 'Stays by default' },
 ]
 
-const stepLabel = (s: TemplateStep) => `${s.name} · day ${s.day_offset}${s.vessel_index ? ` · ${vesselLabel(s.vessel_index)}` : ''}`
+const stepLabel = (s: TemplateStep) => `${s.name} · ${dayWord(s.day_offset)}${s.vessel_index ? ` · ${vesselLabel(s.vessel_index)}` : ''}`
 
 const selectTestId = (id: string) => ({ select: { SelectDisplayProps: { 'data-testid': id } as object } })
 
@@ -199,6 +204,10 @@ export function DialogShell({
   )
 }
 
+/** D56 decision 7: the API's refusal of an entry before brew day (null when it may go there). */
+const notBeforeBrew = (behavior: string | null, name: string) =>
+  behavior === 'plain' ? null : `A ${behavior == null ? 'phase marker' : name} can't be before brew day.`
+
 const grid2 = { display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 } as const
 
 interface EntryProps {
@@ -223,6 +232,7 @@ interface EntryProps {
 export function EntryDialog({ template, types, phases, kind, entry, onClose, onDone }: EntryProps) {
   const marker = kind === 'marker'
   const isBrew = entry?.behavior === 'brew'
+  const queryClient = useQueryClient()
   // Pickers offer active types (no second Brew day) and active phases, plus the entry's own.
   const typeChoices = types.filter((t) => (!t.retired_at && t.behavior !== 'brew') || t.id === entry?.step_type_id)
   const phaseChoices = phases.filter((p) => !p.retired_at || p.id === entry?.phase_id)
@@ -238,6 +248,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const [phaseId, setPhaseId] = useState<number | ''>(entry ? (entry.phase_id ?? '') : '')
   const [onTaskList, setOnTaskList] = useState(entry?.on_task_list ?? !marker)
   const [notes, setNotes] = useState(entry?.notes ?? '')
+  const [retest, setRetest] = useState(String(entry?.retest_days ?? 2))
   const [after, setAfter] = useState<number | ''>('')
   const [afterAnswer, setAfterAnswer] = useState<Answer>('move_all')
   const [leads, setLeads] = useState<number | ''>('')
@@ -252,12 +263,16 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
   const others = template.steps.filter((s) => s.id !== entry?.id)
   const behavior = type?.behavior ?? entry?.behavior ?? null
   const showTemp = behavior === 'set_temp' || behavior === 'brew'
+  // D56 §3.2: "Retest after [2] days" on a step whose type has a result.
+  const hasResult = !marker && !!(type?.has_result ?? entry?.has_result)
   // D46 QA M1: a new Transfer/Filter goes into the next new tank, worked out
   // from its day; one being edited keeps its tank. Any other entry goes in a
   // tank that exists. D47 task 0 (N1): transfers stay in day order, so a day
   // before an existing transfer offers no tank and says why.
   const transfer = behavior === 'transfer'
   const dayNum = day === '' ? null : Number(day)
+  // D56 §3.1: a pre-brew step is in the first tank with no phase.
+  const preBrew = dayNum != null && dayNum < 0
   const intoTank = entry && transfer ? entry.vessel_index : newTankFor(template, dayNum ?? 0, entry?.id)
   const orderError = transfer ? transferOrderError(template, dayNum, entry) : null
   // D47: "Split - Filter", "Package - Partial": the fixed part of the name;
@@ -294,8 +309,14 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     const local: Record<string, string> = {}
     if (!marker && !entry && typeId === '') local.step_type_id = 'Pick a step type.'
     if (marker && phaseId === '') local.phase_id = 'Pick a phase.'
-    if (day === '' || Number(day) < 0) local.day_offset = 'Pick a day (0 or later).'
+    if (day === '' || !Number.isInteger(Number(day)) || Number(day) < -30 || Number(day) > 365)
+      local.day_offset = 'Pick a day from −30 to 365.'
+    else if (preBrew) {
+      const refused = notBeforeBrew(marker ? null : behavior, typeName)
+      if (refused) local.day_offset = refused
+    }
     if (behavior === 'set_temp' && temperature === '') local.temperature = 'Enter the temperature.'
+    if (hasResult && retestDays(retest) == null) local.retest_days = 'Enter 1–30 days.'
     if (orderError) local.vessel_index = orderError
     setErrors(local)
     if (Object.keys(local).length) return
@@ -303,8 +324,8 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     setError(null)
     const body: Record<string, unknown> = {
       day_offset: Number(day),
-      vessel_index: tankValue,
-      phase_id: phaseId === '' ? null : phaseId,
+      vessel_index: preBrew ? 0 : tankValue,
+      phase_id: phaseId === '' || preBrew ? null : phaseId,
       // D49 decision 6.1: a marker is never on the task list (the API refuses true).
       on_task_list: marker ? false : onTaskList,
       notes: notes.trim() || null,
@@ -314,6 +335,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     if (behavior === 'split') body.split_method = splitMethod
     if (behavior === 'package') body.package_partial = packagePartial
     if (behavior === 'cip') body.cip_method = cipMethod
+    if (hasResult) body.retest_days = retestDays(retest)
     if (isBrew) {
       delete body.day_offset
       delete body.vessel_index
@@ -321,17 +343,11 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
     try {
       let res
       if (entry) {
+        // D56 §3.5 (5210): the entry and what the link pickers hold in one
+        // call; a refused link saves nothing, and the error names it.
+        const links = pickedLinks(entry.id, linkAfter, linkLeads, linkPick!)
+        if (links.length) body.links = links
         res = await api.patch<ApiResponse<Template>>(prodPath('templates', template.id, 'steps', entry.id), body)
-        // D50 §2.6: then what the link pickers hold. A refusal keeps the dialog
-        // open with the entry as saved, and says why.
-        const saved = res
-        try {
-          for (const l of pickedLinks(entry.id, linkAfter, linkLeads, linkPick!))
-            res = await api.post<ApiResponse<Template>>(prodPath('templates', template.id, 'links'), l)
-        } catch (err) {
-          onDone((res ?? saved).data.data)
-          throw err
-        }
       } else {
         if (!marker) body.step_type_id = typeId
         if (afterValue !== '') Object.assign(body, { comes_after_id: afterValue, comes_after_answer: afterAnswer })
@@ -343,6 +359,9 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       const f = fieldErrors(err)
       setErrors(f)
       if (!Object.keys(f).length) setError(prodError(err))
+      // DEV gap 6: a refusal may come from a change made elsewhere (a step
+      // moved since the dialog opened): show the template as it is now.
+      void queryClient.invalidateQueries({ queryKey: templateKey(template.id) })
     } finally {
       setBusy(false)
     }
@@ -369,12 +388,23 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
             helperText={errors.step_type_id ?? type?.full_name}
             slotProps={selectTestId('entry-type')}
           >
-            {typeChoices.map((t) => (
-              <MenuItem key={t.id} value={t.id} data-testid={`entry-type-${t.id}`}>
-                {t.name}
-                {t.full_name ? ` (${t.full_name})` : ''}
-              </MenuItem>
-            ))}
+            {typeChoices.map((t) => {
+              // D56: before brew day only plain steps; the others say why.
+              const refused = preBrew ? notBeforeBrew(t.behavior, t.name) : null
+              return (
+                <MenuItem key={t.id} value={t.id} disabled={!!refused} data-testid={`entry-type-${t.id}`} sx={{ flexDirection: 'column', alignItems: 'flex-start' }}>
+                  <span>
+                    {t.name}
+                    {t.full_name ? ` (${t.full_name})` : ''}
+                  </span>
+                  {refused && (
+                    <Typography variant="caption" color="text.secondary" data-testid={`entry-type-refused-${t.id}`}>
+                      {refused}
+                    </Typography>
+                  )}
+                </MenuItem>
+              )
+            })}
           </TextField>
         ))}
       {behavior === 'split' && (
@@ -437,6 +467,17 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'entry-detail' } }}
         />
       )}
+      {hasResult && (
+        <TextField
+          label="Retest after (days)"
+          type="number"
+          value={retest}
+          onChange={(e) => setRetest(e.target.value)}
+          error={!!errors.retest_days}
+          helperText={errors.retest_days ?? 'A Fail can add a retest this many days later (1–30).'}
+          slotProps={{ htmlInput: { min: 1, max: 30, 'data-testid': 'entry-retest-days' } }}
+        />
+      )}
       {showTemp && (
         <TextField
           label={behavior === 'brew' ? 'Starting temperature (°F, optional)' : 'Temperature (°F)'}
@@ -450,16 +491,23 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
       )}
       <Box sx={grid2}>
         <TextField
-          label="Day (after brew day)"
+          label="Day (0 = brew day)"
           type="number"
           value={day}
           disabled={isBrew}
           onChange={(e) => setDay(e.target.value)}
           error={!!errors.day_offset}
-          helperText={errors.day_offset ?? (isBrew ? 'Brew day stays on day 0 in the first tank.' : undefined)}
-          slotProps={{ htmlInput: { min: 0, max: 365, 'data-testid': 'entry-day' } }}
+          helperText={
+            errors.day_offset ??
+            (isBrew ? 'Brew day stays on day 0 in the first tank.' : dayNum != null && Number.isInteger(dayNum) ? templateDayLabel(dayNum) : 'Before brew day: −1 to −30.')
+          }
+          slotProps={{ htmlInput: { min: -30, max: 365, 'data-testid': 'entry-day' }, formHelperText: { 'data-testid': 'entry-day-label' } as object }}
         />
-        {transfer && orderError ? (
+        {preBrew && !marker ? (
+          <Typography variant="body2" color="text.secondary" sx={{ alignSelf: 'center' }} data-testid="entry-pre-brew-note">
+            Before brew day: in the first tank, with no phase.
+          </Typography>
+        ) : transfer && orderError ? (
           <TextField
             label="Into tank"
             value=""
@@ -481,6 +529,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           <TankPicker choices={tankChoices(template, vessel)} value={vessel} onChange={setVessel} disabled={isBrew} testId="entry-tank" />
         )}
       </Box>
+      {!(preBrew && !marker) && (
       <TextField
         select
         label={marker ? 'Phase' : 'Starts a phase'}
@@ -497,6 +546,7 @@ export function EntryDialog({ template, types, phases, kind, entry, onClose, onD
           </MenuItem>
         ))}
       </TextField>
+      )}
       {!entry && (
         <>
           <Box sx={grid2}>

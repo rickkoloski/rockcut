@@ -200,11 +200,18 @@ export class Made {
         await succeeds(api.delete(`${P}/batches/${id}/split`), `undo the split of batch ${id}`)
       }
       if (b.status !== 'planned') {
-        // Brew day stays done while a Transfer/Filter or Package is (DEV QA Y2): those first, latest first.
-        const exits = b.steps.filter((s) => (s.behavior === 'transfer' || s.behavior === 'package') && s.done_on)
-        exits.sort((x, y) => y.done_on!.localeCompare(x.done_on!))
-        for (const s of exits) await succeeds(api.post(`${P}/steps/${s.id}/uncomplete`), `un-check step ${s.id} of batch ${id}`)
-        const brew = b.steps.find((s) => s.first_brew && s.done_on)
+        // Brew day stays done while a step after it is (DEV QA Y2; D56 decision 26's mirror): those
+        // first, retests before their tests (a done retest holds its test), latest first.
+        // Read again: undoing a split above changed the parent's steps.
+        const steps = (parts.length ? (await batchOf(id)).steps : b.steps) as (SStep & { pre_brew?: boolean; retest_of_id?: number | null })[]
+        const depth = (s: (typeof steps)[number]): number => {
+          const up = s.retest_of_id == null ? undefined : steps.find((x) => x.id === s.retest_of_id)
+          return up ? 1 + depth(up) : 0
+        }
+        const after = steps.filter((s) => s.done_on && s.behavior !== 'brew' && !s.pre_brew)
+        after.sort((x, y) => depth(y) - depth(x) || y.done_on!.localeCompare(x.done_on!) || y.id - x.id)
+        for (const s of after) await succeeds(api.post(`${P}/steps/${s.id}/uncomplete`), `un-check step ${s.id} of batch ${id}`)
+        const brew = steps.find((s) => s.first_brew && s.done_on)
         if (brew) await succeeds(api.post(`${P}/steps/${brew.id}/uncomplete`), `un-check brew day of batch ${id}`)
       }
       await succeeds(api.delete(`${P}/batches/${id}`), `delete batch ${id}`)

@@ -9,7 +9,7 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
   import RockcutApi.PersonaFixtures
   import RockcutApi.ProductionFixtures
 
-  alias RockcutApi.Repo
+  alias RockcutApi.{Production, Repo}
   alias RockcutApi.Production.Step
 
   setup do
@@ -276,8 +276,13 @@ defmodule RockcutApiWeb.ProductionBatchChangesControllerTest do
 
     same = call(b, :post, "#{path}/transfers", %{due_on: "2026-11-14", tank_id: fv2})
     assert body(same) == %{"error" => "same_tank", "message" => "The beer is already in FV2."}
-    step = call(b, :post, "#{path}/steps", %{name: "Early", due_on: "2026-11-01"})
-    assert body(step)["message"] == "A step can't come before brew day."
+    package = Enum.find(Production.list_step_types(), &(&1.name == "Package"))
+    step = call(b, :post, "#{path}/steps", %{step_type_id: package.id, due_on: "2026-11-01"})
+
+    assert body(step) == %{
+             "error" => "not_before_brew",
+             "message" => "A Package can't be before brew day."
+           }
 
     split =
       call(b, :post, "#{path}/split", %{

@@ -29,6 +29,7 @@ defmodule RockcutApi.Production.Batches do
 
   alias RockcutApi.Production.{
     BatchVessel,
+    Parts,
     Step,
     StepLink,
     Steps,
@@ -400,7 +401,9 @@ defmodule RockcutApi.Production.Batches do
             position: s.position,
             due_on: Date.add(brew_on, s.day_offset),
             template_step_id: s.id,
-            ramp_group: s.ramp_group
+            ramp_group: s.ramp_group,
+            retest_days: s.retest_days,
+            pre_brew: s.day_offset < 0
           })
 
         {s.id, step}
@@ -496,22 +499,70 @@ defmodule RockcutApi.Production.Batches do
     do: Repo.exists?(from(b in Batch, where: b.split_parent_id == ^id))
 
   @doc """
-  Move a batch in time by `days`: a planned batch's every step, a brewed
-  one's unfinished steps (finished ones keep their dates). No prompt. A
-  split parent whose Split isn't done takes its parts' steps along (D48 DEV
+  Move a batch in time by `days`: a planned batch's every step but a
+  finished pre-brew one (D56 §3.1, decision 27). A brewed one's (decision
+  28): every step but its done Brew days and the steps done before brew day
+  by plan (`Steps.before_brew_kind?/2`: pre-brew steps and a pre-brew test's
+  retests, finished or not, so none lands on or after brew day). A finished
+  step that moves keeps its done day; only its planned day moves. No prompt.
+  A split parent whose Split isn't done takes its parts' steps along (D48 DEV
   QA Y1), refused (`:part_done`) while one of them is done.
-  `{:ok, %{moved, kept, renumbered}}`.
+  `{:ok, %{moved, planned_moved, kept, renumbered}}` (decision 30: `moved`
+  unfinished steps, `planned_moved` finished ones' planned days, `kept`
+  steps left where they are); `preview: true` (D56 DEV QA) writes nothing,
+  refused the same way, `{:ok, {:preview, %{moved, planned_moved, kept}}}`.
   """
-  def shift(%Batch{} = batch, days) do
+  def shift(%Batch{} = batch, days, opts \\ []) do
     case to_int(days) do
       d when is_integer(d) and d != 0 and abs(d) <= @max_shift ->
         Repo.transaction(fn ->
           steps = Repo.all(from(s in Step, where: s.batch_id == ^batch.id, preload: :step_type))
 
-          {open, done} =
-            Enum.split_with(steps, &(batch.status == "planned" or is_nil(&1.done_on)))
+          # D56 §3.1: a finished pre-brew step stays put, even on a planned batch.
+          brew = Parts.first_brew(steps)
 
+          # Decision 22: pre-brew as planned, not by date.
+          pre_brew_done? = &(&1.pre_brew and &1.done_on != nil)
+          by_id = Map.new(steps, &{&1.id, &1})
+
+          # Decision 28: on a brewed batch, the done Brew days and what's done
+          # before brew day by plan stay; the rest moves.
+          stays? =
+            if batch.status == "planned",
+              do: pre_brew_done?,
+              else:
+                &((&1.done_on != nil and Steps.behavior(&1) == "brew") or
+                    Steps.before_brew_kind?(by_id, &1))
+
+          {open, done} = Enum.split_with(steps, &(not stays?.(&1)))
+
+          # D56 decision 21 (DEV gaps 3, 9): brew day not before a
+          # finished pre-brew step's done day.
+          finished = brew && Enum.find(steps, pre_brew_done?)
+
+          if finished && Enum.any?(open, &(&1.id == brew.id)) &&
+               Date.compare(Date.add(brew.due_on, d), finished.done_on) == :lt,
+             do:
+               Repo.rollback(
+                 {:before_brew_day, {:pre_brew_done, Steps.name(finished), finished.done_on}}
+               )
+
+          # D56 decision 27: the bar drag moves the whole plan, done steps'
+          # planned days included, so it may take brew day past a finished
+          # step; decision 23 (`Steps.brew_refusal`) isn't applied here.
           open = open ++ carried_parts!(batch, steps)
+
+          # D56 DEV gap 19: a brewed batch's (or its part's) drag obeys the
+          # rules every other move does; a planned one's moves brew day with it.
+          shift_order!(batch, open, d)
+
+          counts = %{
+            moved: Enum.count(open, &is_nil(&1.done_on)),
+            planned_moved: Enum.count(open, &(&1.done_on != nil)),
+            kept: length(done)
+          }
+
+          if opts[:preview], do: Repo.rollback({:preview, counts})
 
           {_, renumbered} =
             with_renumbering(fn ->
@@ -519,13 +570,59 @@ defmodule RockcutApi.Production.Batches do
                   do: s |> Changeset.change(due_on: Date.add(s.due_on, d)) |> Repo.update!()
             end)
 
-          %{moved: length(open), kept: length(done), renumbered: renumbered}
+          Map.put(counts, :renumbered, renumbered)
         end)
+        |> case do
+          {:error, {:preview, preview}} -> {:ok, {:preview, preview}}
+          other -> other
+        end
 
       _ ->
         {:error, :days_invalid}
     end
   end
+
+  # D56 DEV gap 19: the steps `open` moved by `d` days, once the batch (a
+  # part: its parent) is brewed. A part's step can't
+  # land before its parent's Split (`:before_split`), and one that isn't
+  # plain or custom can't newly land before the first Brew day (decision
+  # 13, `{:not_before_brew, kind}`; a "2 of 2": `:second_brew`).
+  defp shift_order!(batch, open, d) do
+    root = batch.split_parent_id || batch.id
+    if Repo.get!(Batch, root).status != "planned", do: shift_order!(root, batch, open, d)
+  end
+
+  defp shift_order!(root, batch, open, d) do
+    tree =
+      Repo.all(from(s in Step, where: s.batch_id == ^root, preload: :step_type))
+
+    brew = Parts.first_brew(tree)
+    split = if batch.split_parent_id, do: Enum.find(tree, &(Steps.behavior(&1) == "split"))
+    before? = &(Date.compare(&1, &2) == :lt)
+
+    for s <- open, s.id != (brew && brew.id) do
+      to = Date.add(s.due_on, d)
+
+      cond do
+        split != nil and before?.(to, split.due_on) and not before?.(s.due_on, split.due_on) ->
+          Repo.rollback(:before_split)
+
+        brew != nil and before?.(to, brew.due_on) and not before?.(s.due_on, brew.due_on) and
+            not Steps.pre_brew_kind?(s) ->
+          Repo.rollback(
+            {:not_before_brew,
+             if(Steps.behavior(s) == "brew", do: :second_brew, else: kind_name(s))}
+          )
+
+        true ->
+          :ok
+      end
+    end
+  end
+
+  # "Set temp", "Brew day", "phase marker": as `Steps.refusal/1` words them.
+  defp kind_name(%Step{step_type: %StepType{name: name}}), do: name
+  defp kind_name(_), do: "phase marker"
 
   # A split parent's parts' steps, while its Split isn't done (D48 DEV QA Y1).
   defp carried_parts!(batch, steps) do

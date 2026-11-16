@@ -15,7 +15,7 @@ defmodule RockcutApiWeb.BoardSettingsTest do
   alias RockcutApi.Accounts.{BoardSettings, User}
 
   setup do
-    p = personas(~w(owner breweryMgr brewer1 bartender1 ownersAsst))
+    p = personas(~w(owner breweryMgr brewer1 bartender1 ownersAsst office1))
     %{p: p}
   end
 
@@ -239,6 +239,116 @@ defmodule RockcutApiWeb.BoardSettingsTest do
              |> json_response(200)
 
       assert call_device(token, :put, "/api/me/board_settings/bar", %{span: 7})
+             |> json_response(403)
+    end
+  end
+
+  describe "the production Gantt (D56 decisions 18, 19)" do
+    test "a brewer saves expanded tanks, Label by and Your selection; /api/me has them", %{
+      p: p
+    } do
+      assert put_settings(p["brewer1"], "production", %{expanded: ["12", "unassigned"]})
+             |> json_response(200) == %{
+               "expanded" => ["12", "unassigned"],
+               "label_by" => %{},
+               "mix" => []
+             }
+
+      assert put_settings(p["brewer1"], "production", %{label_by: %{"12" => 40}, mix: ["12"]})
+             |> json_response(200) == %{
+               "expanded" => ["12", "unassigned"],
+               "label_by" => %{"12" => 40},
+               "mix" => ["12"]
+             }
+
+      assert call(p["brewer1"], :get, "/api/me")
+             |> json_response(200)
+             |> Map.get("board_settings") ==
+               %{
+                 "production" => %{
+                   "expanded" => ["12", "unassigned"],
+                   "label_by" => %{"12" => 40},
+                   "mix" => ["12"]
+                 }
+               }
+    end
+
+    test "it sits beside the task boards' settings and doesn't take theirs", %{p: p} do
+      put_settings(p["brewer1"], "brewery", %{span: 7}) |> json_response(200)
+      put_settings(p["brewer1"], "production", %{expanded: []}) |> json_response(200)
+
+      assert stored(p["brewer1"]) == %{
+               "brewery" => %{"span" => 7},
+               "production" => %{"expanded" => []}
+             }
+
+      assert %{"errors" => %{"span" => ["is not a board setting"]}} =
+               put_settings(p["brewer1"], "production", %{span: 7}) |> json_response(422)
+
+      assert %{"errors" => %{"expanded" => ["is not a board setting"]}} =
+               put_settings(p["brewer1"], "brewery", %{expanded: []}) |> json_response(422)
+    end
+
+    test "bad rows and batch ids are 422 and nothing is saved", %{p: p} do
+      for bad <- [
+            %{expanded: "12"},
+            %{expanded: ["FV3"]},
+            %{expanded: [12]},
+            %{expanded: nil},
+            %{expanded: Enum.map(1..201, &to_string/1)},
+            %{label_by: %{"12" => "40"}},
+            %{label_by: %{"12" => 0}},
+            %{label_by: %{"FV3" => 40}},
+            %{label_by: ["12"]},
+            %{label_by: nil},
+            %{mix: ["FV3"]},
+            %{mix: "12"},
+            %{mix: nil},
+            %{mix: Enum.map(1..201, &to_string/1)}
+          ] do
+        assert %{"errors" => errors} =
+                 put_settings(p["brewer1"], "production", bad) |> json_response(422),
+               inspect(bad)
+
+        assert Map.keys(errors) == Enum.map(Map.keys(bad), &Atom.to_string/1), inspect(bad)
+      end
+
+      assert stored(p["brewer1"]) == %{}
+    end
+
+    test "anyone who reads the schedule; not office1 (403)", %{p: p} do
+      for who <- ~w(owner breweryMgr brewer1) do
+        assert put_settings(p[who], "production", %{expanded: ["1"]}) |> json_response(200)
+      end
+
+      assert put_settings(p["office1"], "production", %{expanded: ["1"]}) |> json_response(403)
+      assert put_settings(p["bartender1"], "production", %{expanded: ["1"]}) |> json_response(403)
+      assert stored(p["office1"]) == %{}
+    end
+
+    test "the brewhouse device saves its own; a Taproom tablet can't (403)", %{p: p} do
+      device = AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse"})
+      token = AccountsFixtures.device_token_fixture(device, "Brewhouse Tab")
+
+      assert call_device(token, :put, "/api/me/board_settings/production", %{
+               expanded: ["3"],
+               label_by: %{"3" => 9}
+             })
+             |> json_response(200) == %{
+               "expanded" => ["3"],
+               "label_by" => %{"3" => 9},
+               "mix" => []
+             }
+
+      assert stored(device) == %{
+               "production" => %{"expanded" => ["3"], "label_by" => %{"3" => 9}}
+             }
+
+      assert stored(p["brewer1"]) == %{}
+
+      {_taproom, tap} = taproom_device()
+
+      assert call_device(tap, :put, "/api/me/board_settings/production", %{expanded: ["3"]})
              |> json_response(403)
     end
   end

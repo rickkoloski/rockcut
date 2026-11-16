@@ -246,7 +246,7 @@ defmodule RockcutApi.Accounts do
           |> Repo.update!()
         end
 
-        BoardSettings.with_defaults(board)
+        BoardSettings.with_defaults(board_key, board)
       end)
     end
   end

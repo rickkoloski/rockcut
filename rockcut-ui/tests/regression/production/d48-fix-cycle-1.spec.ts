@@ -58,8 +58,13 @@ test('M1, M3: the dialogs default to a day the beer is there; Into leaves out it
   const api = await apiAs('brewer1')
   const same = await api.post(`${P}/batches/${b.id}/transfers`, { data: { due_on: addDays(brew, 5), tank_id: fv.id } })
   expect(await same.json()).toEqual({ error: 'same_tank', message: `The beer is already in ${fv.name}.` })
+  // D56 decision 13: a custom (or plain) step may go before brew day; another type may not.
   const early = await api.post(`${P}/batches/${b.id}/steps`, { data: { name: 'Early', due_on: addDays(brew, -1) } })
-  expect((await early.json()).message).toBe("A step can't come before brew day.")
+  expect(early.status(), await early.text()).toBeLessThan(300)
+  const setTemp = (await (await api.get(`${P}/step_types`)).json()).data.find((t: { name: string; behavior: string }) => t.behavior === 'set_temp')
+  const typed = await api.post(`${P}/batches/${b.id}/steps`, { data: { step_type_id: setTemp.id, temperature: 50, due_on: addDays(brew, -1) } })
+  expect(typed.status()).toBe(422)
+  expect(await typed.json()).toMatchObject({ error: 'not_before_brew', message: `A ${setTemp.name} can't be before brew day.` })
 })
 
 test('M2, minors 6 and 8: a split parent can’t be deleted or resized; a part shows its number and has no Delete', async ({ page }) => {

@@ -190,7 +190,9 @@ defmodule RockcutApi.Production.TaskLink do
       pnums = Batches.p_numbers()
 
       tasks
-      |> Repo.preload(production_step: [:step_type, :phase, batch: [:brand, :split_parent]])
+      |> Repo.preload(
+        production_step: [:step_type, :phase, :retest, batch: [:brand, :split_parent]]
+      )
       |> Enum.map(fn
         %Task{production_step: %Step{} = step} = t ->
           %{

@@ -287,6 +287,159 @@ defmodule RockcutApiWeb.ProductionControllerTest do
     end
   end
 
+  describe "D56 §3.5 (5210): a template step's Save is all-or-nothing" do
+    test "a refused second link saves nothing and names the link; a retry saves both" do
+      b = personas(~w(breweryMgr))["breweryMgr"]
+      t = call(b, :post, "/api/production/templates", %{name: "Atomic"}) |> body()
+      base = "/api/production/templates/#{t["data"]["id"]}"
+
+      add = fn type, day ->
+        call(b, :post, base <> "/steps", %{step_type_id: type_id(type), day_offset: day})
+      end
+
+      add.("FDH", 5)
+      add.("Diacetyl test", 10)
+      steps = add.("Carb", 15) |> body() |> get_in(["data", "steps"])
+      id = fn name -> Enum.find(steps, &(&1["name"] == name))["id"] end
+      [brew, fdh, dt, carb] = Enum.map(["Brew day", "FDH", "Diacetyl test", "Carb"], id)
+
+      refused =
+        call(b, :patch, base <> "/steps/#{dt}", %{
+          notes: "Changed",
+          links: [
+            %{from_step_id: fdh, to_step_id: dt},
+            %{from_step_id: dt, to_step_id: brew}
+          ]
+        })
+
+      assert refused.status == 422
+
+      assert body(refused) == %{
+               "error" => "link_order",
+               "message" => "Leads to Brew day: A step can't come before the step it follows.",
+               "link" => "Leads to Brew day"
+             }
+
+      after_refusal = call(b, :get, base) |> body()
+      assert Enum.find(after_refusal["data"]["steps"], &(&1["id"] == dt))["notes"] == nil
+      refute Enum.any?(after_refusal["data"]["links"], &(&1["to_step_id"] == dt))
+
+      saved =
+        call(b, :patch, base <> "/steps/#{dt}", %{
+          notes: "Changed",
+          links: [
+            %{from_step_id: fdh, to_step_id: dt},
+            %{from_step_id: dt, to_step_id: carb, default_answer: "move_only"}
+          ]
+        })
+        |> body()
+
+      assert Enum.find(saved["data"]["steps"], &(&1["id"] == dt))["notes"] == "Changed"
+
+      links =
+        Enum.map(
+          saved["data"]["links"],
+          &{&1["from_step_id"], &1["to_step_id"], &1["default_answer"]}
+        )
+
+      assert {fdh, dt, "move_all"} in links
+      assert {dt, carb, "move_only"} in links
+
+      # A link that doesn't touch the step is refused as a whole.
+      other =
+        call(b, :patch, base <> "/steps/#{dt}", %{
+          links: [%{from_step_id: fdh, to_step_id: carb}]
+        })
+
+      assert body(other)["error"] == "link_invalid"
+    end
+
+    test "DEV gap 6: Add step with Comes after and Leads to; the refused one is named, nothing added" do
+      b = personas(~w(breweryMgr))["breweryMgr"]
+      t = call(b, :post, "/api/production/templates", %{name: "Add atomic"}) |> body()
+      base = "/api/production/templates/#{t["data"]["id"]}"
+
+      add = fn attrs -> call(b, :post, base <> "/steps", attrs) end
+      add.(%{step_type_id: type_id("FDH"), day_offset: 5})
+
+      steps =
+        add.(%{step_type_id: type_id("Carb"), day_offset: 8})
+        |> body()
+        |> get_in(["data", "steps"])
+
+      id = fn name -> Enum.find(steps, &(&1["name"] == name))["id"] end
+      [fdh, carb] = Enum.map(["FDH", "Carb"], id)
+
+      # The race: Carb moved before the new step's day while the dialog was open.
+      new = %{
+        step_type_id: type_id("Diacetyl test"),
+        day_offset: 10,
+        comes_after_id: fdh,
+        leads_to_id: carb
+      }
+
+      refused = add.(new)
+      assert refused.status == 422
+
+      assert body(refused) == %{
+               "error" => "link_order",
+               "message" => "Leads to Carb: A step can't come before the step it follows.",
+               "link" => "Leads to Carb"
+             }
+
+      after_refusal = call(b, :get, base) |> body()
+      refute Enum.any?(after_refusal["data"]["steps"], &(&1["name"] == "Diacetyl test"))
+
+      refute Enum.any?(
+               after_refusal["data"]["links"],
+               &(&1["from_step_id"] == fdh and &1["to_step_id"] != carb)
+             )
+
+      # Comes after a later step: named too.
+      late = add.(%{new | comes_after_id: carb, leads_to_id: nil, day_offset: 6})
+      assert body(late)["link"] == "Comes after Carb"
+
+      # An unknown step is still a 404; a fitting day adds the step and both links.
+      assert add.(%{new | comes_after_id: 999_999_999}).status == 404
+      saved = add.(%{new | day_offset: 7}) |> body()
+      dt = Enum.find(saved["data"]["steps"], &(&1["name"] == "Diacetyl test"))["id"]
+      links = Enum.map(saved["data"]["links"], &{&1["from_step_id"], &1["to_step_id"]})
+      assert {fdh, dt} in links
+      assert {dt, carb} in links
+    end
+  end
+
+  describe "D56 DEV gap 5: a template step before brew day says what's wrong" do
+    test "a phase or a later tank has its own message; the type's stays for the type" do
+      b = personas(~w(breweryMgr))["breweryMgr"]
+      t = call(b, :post, "/api/production/templates", %{name: "Gap 5"}) |> body()
+      base = "/api/production/templates/#{t["data"]["id"]}"
+      lag = RockcutApi.Repo.get_by!(RockcutApi.Production.Phase, name: "Lag")
+      add = fn attrs -> call(b, :post, base <> "/steps", attrs) end
+      add.(%{step_type_id: type_id("Transfer"), day_offset: 20, vessel_index: 1})
+
+      plain = %{step_type_id: type_id("Addition"), day_offset: -1}
+
+      assert add.(Map.put(plain, :phase_id, lag.id)) |> json_response(422) == %{
+               "error" => "not_before_brew",
+               "message" => "A step before brew day has no phase."
+             }
+
+      assert add.(Map.put(plain, :vessel_index, 1)) |> json_response(422) == %{
+               "error" => "not_before_brew",
+               "message" => "A step before brew day is in the first tank."
+             }
+
+      assert add.(%{step_type_id: type_id("Set temp"), day_offset: -1, temperature: 60})
+             |> json_response(422) == %{
+               "error" => "not_before_brew",
+               "message" => "A Set temp can't be before brew day."
+             }
+
+      assert add.(plain) |> json_response(201)
+    end
+  end
+
   describe "D47 task 0" do
     test "transfer order, ramp cap, remove preview, Split method and partial Package", %{
       brewer: b

@@ -60,7 +60,10 @@ defmodule RockcutApi.Production.Undo do
           TaskLink.sync!(step_ids(Map.keys(before) ++ Map.keys(after_)))
 
           {result,
-           if(entries == [], do: nil, else: save!(user, entries, vessels(entries, after_)))}
+           if(entries == [],
+             do: nil,
+             else: save!(user, entries, vessels(entries, after_), watched(entries, after_))
+           )}
 
         other ->
           Repo.rollback({__MODULE__, other})
@@ -122,13 +125,17 @@ defmodule RockcutApi.Production.Undo do
   defp restore(record) do
     entries = record.entries["rows"]
     vessels = Map.get(record.entries, "vessels", %{})
+    watched = Map.get(record.entries, "steps", %{})
 
     Repo.transaction(fn ->
       # D49 BB2: the order rules come first, so a refusal says what to clear
       # and the same Undo works once it's cleared; the stale check follows.
       stale? =
         Enum.any?(entries, &(hash(row(&1["table"], &1["id"])) != &1["after"])) or
-          Enum.any?(vessels, fn {id, h} -> vessels_hash(String.to_integer(id)) != h end)
+          Enum.any?(vessels, fn {id, h} -> vessels_hash(String.to_integer(id)) != h end) or
+          Enum.any?(watched, fn {id, h} ->
+            hash(row("production_steps", String.to_integer(id))) != h
+          end)
 
       try do
         put_back!(entries)
@@ -327,6 +334,54 @@ defmodule RockcutApi.Production.Undo do
     |> Map.new(&{to_string(&1), vessels_hash(&1)})
   end
 
+  # D56 DEV gap 20: a write that checks a first Brew day off (or un-checks
+  # it) also watches every step of its batch and parts as it left them, so
+  # its Undo is stale once any of them changed (a later check-off), as a bar
+  # drag's is: no planned batch with a step done after brew day.
+  defp watched(entries, after_) do
+    flipped =
+      for e <- entries,
+          e["table"] == "production_steps",
+          e["before"] != nil,
+          done?(e["before"]) != e["done"],
+          do: e["id"]
+
+    brews =
+      case flipped do
+        [] ->
+          []
+
+        ids ->
+          batches =
+            Repo.all(
+              from(s in RockcutApi.Production.Step, where: s.id in ^ids, select: s.batch_id)
+            )
+            |> Enum.reject(&is_nil/1)
+
+          Repo.all(
+            from(s in RockcutApi.Production.Step,
+              where: s.batch_id in ^batches,
+              preload: :step_type
+            )
+          )
+          |> Enum.group_by(& &1.batch_id)
+          |> Enum.map(fn {_, steps} -> RockcutApi.Production.Parts.first_brew(steps) end)
+          |> Enum.reject(&is_nil/1)
+          |> Enum.filter(&(&1.id in ids))
+          |> Enum.map(& &1.batch_id)
+      end
+
+    # Its parts too (their batch rows are in the scope).
+    tree =
+      brews ++
+        for {{"batches", id}, row} <- after_, row["split_parent_id"] in brews, do: id
+
+    for {{"production_steps", id}, row} <- after_,
+        row["batch_id"] in tree,
+        into: %{},
+        do: {to_string(id), hash(row)}
+  end
+
   # The batches an Undo puts vessels back in, or batch rows (a split's parts).
   defp touched(entries, vessels) do
     from_rows =
@@ -385,7 +440,7 @@ defmodule RockcutApi.Production.Undo do
       |> then(&:crypto.hash(:sha256, &1))
       |> Base.encode16(case: :lower)
 
-  defp save!(user, entries, vessels) do
+  defp save!(user, entries, vessels, watched) do
     token = Base.url_encode64(:crypto.strong_rand_bytes(18), padding: false)
 
     Repo.insert!(%UndoRecord{
@@ -393,7 +448,7 @@ defmodule RockcutApi.Production.Undo do
       user_id: user.id,
       device_id: user.on_device_id,
       expires_at: DateTime.utc_now() |> DateTime.add(@ttl_seconds) |> DateTime.truncate(:second),
-      entries: %{"rows" => entries, "vessels" => vessels}
+      entries: %{"rows" => entries, "vessels" => vessels, "steps" => watched}
     })
 
     token

@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { apiAs } from './helpers'
 import { addDays, addProcess, batchOf, dragToLane, Made, openGantt, schedule, snack, stepOf, today, undo, type SBatch } from './schedule'
+import { Setup } from './d56'
 
 // D49 §3.12b Pencilled batches: P130–P134 on the Gantt. The rules in full
 // are in ExUnit (pencilled_test); the board (no tasks, P135) is task 3's.
@@ -16,6 +17,8 @@ const P = '/api/production'
 const made = new Made()
 // Each test cleans up after itself, failed or not.
 test.afterEach(() => made.cleanup())
+const setup = new Setup()
+test.afterAll(() => setup.cleanup())
 
 type Batch = SBatch & { pencilled: boolean }
 
@@ -145,16 +148,21 @@ test('P133: a scheduled planned batch → Pencil in: back to an X-number; refuse
   await made.checkOff(stepOf(brewed, 'Brew day'), `T${Date.now() % 1_000_000}`)
   const res = await (await apiAs('brewer1')).post(`${P}/batches/${brewed.id}/pencil`)
   expect(res.status()).toBe(422)
-  const planned = await made.plan({ brand_id: brand.id, template: ALE, brew_on: addDays(today(), 8) })
-  const fdh = stepOf(planned, 'FDH')
-  await (await apiAs('brewer1')).post(`${P}/steps/${fdh.id}/complete`, { data: { done_on: today(), answer: 'move_only' } })
+  // A planned batch with a done step: D56 decision 26 keeps steps after brew day for later, so
+  // it's a pre-brew step, ticked early.
+  const prep = await setup.stepType('Prep grain')
+  const t = await setup.copy(ALE, 'P133 pre-brew')
+  await setup.addStep(t.id, { step_type_id: prep.id, day_offset: -1, vessel_index: 0 })
+  const planned = await made.plan({ brand_id: brand.id, template: t.name, brew_on: addDays(today(), 8) })
+  const done = await (await apiAs('brewer1')).post(`${P}/steps/${stepOf(planned, prep.name).id}/complete`, { data: { done_on: today(), answer: 'move_only' } })
+  expect(done.status(), await done.text()).toBe(200)
   await page.reload()
   await page.getByTestId(`gantt-bar-${planned.id}-0`).click()
   await expect(page.getByTestId('batch-dialog')).toBeVisible()
   await expect(page.getByTestId('batch-pencil')).toHaveCount(0)
 })
 
-test('QA 4: the Undo snackbar keeps clear of the open batch dialog\'s buttons, and goes when its Undo runs out', async ({ page }) => {
+test('QA 4: the Undo snackbar keeps clear of the open batch dialog\'s title and buttons, and goes when its Undo runs out', async ({ page }) => {
   await page.clock.install()
   // QA's screen: at this height the dialog's buttons are where a bottom snackbar sits.
   await page.setViewportSize({ width: 1440, height: 900 })
@@ -164,12 +172,16 @@ test('QA 4: the Undo snackbar keeps clear of the open batch dialog\'s buttons, a
   await page.getByTestId(`gantt-bar-${b.id}-0`).click()
   await page.getByTestId('batch-pencil').click()
   await expect(snack(page)).toContainText('is pencilled in.')
-  // The dialog stays open with Schedule this batch: the snackbar isn't on it, and it can be clicked.
-  const button = page.getByTestId('batch-schedule')
-  const [bar, btn] = [(await page.getByTestId('gantt-snack').boundingBox())!, (await button.boundingBox())!]
-  const overlaps = bar.x < btn.x + btn.width && btn.x < bar.x + bar.width && bar.y < btn.y + btn.height && btn.y < bar.y + bar.height
-  expect(overlaps).toBe(false)
-  await button.click({ trial: true })
+  // The dialog stays open with Schedule this batch. D56 (4950 C, lead decisions): the snackbar
+  // is at the bottom, clear of the title, and the dialog makes room above it, so no button is under it.
+  const overlaps = (a: { x: number; y: number; width: number; height: number }, c: typeof a) =>
+    a.x < c.x + c.width && c.x < a.x + a.width && a.y < c.y + c.height && c.y < a.y + a.height
+  await expect(async () => {
+    const bar = (await page.getByTestId('gantt-snack').boundingBox())!
+    expect(overlaps(bar, (await page.getByTestId('batch-dialog-title').boundingBox())!)).toBe(false)
+    for (const id of ['batch-schedule', 'batch-delete', 'batch-dialog-close']) expect(overlaps(bar, (await page.getByTestId(id).boundingBox())!), id).toBe(false)
+  }).toPass()
+  for (const id of ['batch-schedule', 'batch-delete', 'batch-dialog-close']) await page.getByTestId(id).click({ trial: true })
   // Hovered (its own timer stops), it still goes once the 2-minute Undo is over.
   await page.getByTestId('gantt-snack').hover()
   await page.clock.fastForward(125_000)

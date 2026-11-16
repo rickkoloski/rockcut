@@ -195,7 +195,13 @@ defmodule RockcutApi.Tasks do
             ((t.due_on >= ^from and t.due_on <= ^to) or
                (t.completed_on >= ^from and t.completed_on <= ^to) or
                (is_nil(t.completed_at) and (is_nil(t.due_on) or t.due_on < ^today))),
-        preload: [:assignee, :assignees, :completed_by, :created_by, production_step: :batch]
+        preload: [
+          :assignee,
+          :assignees,
+          :completed_by,
+          :created_by,
+          production_step: [:batch, :retest]
+        ]
     )
   end
 
@@ -367,7 +373,7 @@ defmodule RockcutApi.Tasks do
     do:
       task
       |> Repo.preload(
-        [:assignee, :assignees, :completed_by, :created_by, production_step: :batch],
+        [:assignee, :assignees, :completed_by, :created_by, production_step: [:batch, :retest]],
         force: true
       )
       |> RockcutApi.Production.TaskLink.describe()

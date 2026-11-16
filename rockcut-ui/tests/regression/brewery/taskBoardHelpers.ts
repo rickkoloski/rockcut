@@ -333,11 +333,12 @@ export async function touchDrag(page: Page, source: Locator, list: Locator, befo
 
 /**
  * Move a task back to a day through the API (to put shared data back after a
- * spec). D49: a linked task moves its step, "move only" (the board's own
- * tasks ignore the answer).
+ * spec). D49: a linked task moves its step, "move only" by default (the
+ * board's own tasks ignore the answer). D56 decision 13: a brew day moved past
+ * its own non-plain steps needs "move all".
  */
-export async function moveTask(api: APIRequestContext, id: number, dueOn: string | null, beforeId: number | null = null) {
-  const res = await api.post(`/api/boards/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId, answer: 'move_only' } })
+export async function moveTask(api: APIRequestContext, id: number, dueOn: string | null, beforeId: number | null = null, answer: 'move_only' | 'move_all' = 'move_only') {
+  const res = await api.post(`/api/boards/brewery/tasks/${id}/move`, { data: { due_on: dueOn, before_id: beforeId, answer } })
   expect(res.status(), await res.text()).toBe(200)
 }
 
