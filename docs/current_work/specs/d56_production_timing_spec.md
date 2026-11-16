@@ -1,6 +1,6 @@
 # D56: Pre-brew steps, test results and retests, and follow-ups — Spec
 
-**Status:** APPROVED by Matt (2026-11-12); plan in `planning/d56_production_timing_plan.md`
+**Status:** COMPLETE, on prod in `v2026.11.16` (release PR #74; D56 PR #73); approved by Matt 2026-11-12; plan in `planning/d56_production_timing_plan.md`
 **Backlog:** PortableMind project 254, tasks 5207, 5208 (was D57), 5210, 5211, 4950, 5791
 **Branch:** `d56-production-timing` from `develop` (already holds the 5791 fix, `d627538`)
 **Builds on:** D46 spec (`specs/d46_production_scheduling_spec.md`), D47–D50, D58 §3.1
