@@ -458,13 +458,18 @@ defmodule RockcutApi.Production.BatchChangesTest do
                })
     end
 
-    test "added steps and ramps start on brew day or later", ctx do
-      assert {:error, :before_brew_day} =
-               add(ctx.batch, %{"name" => "Early", "due_on" => "2026-11-01"})
+    test "added steps and ramps start on brew day or later (D56: but plain and custom steps)",
+         ctx do
+      assert {:error, {:not_before_brew, "Set temp"}} =
+               add(ctx.batch, %{
+                 "step_type_id" => type!("Set temp").id,
+                 "temperature" => 60,
+                 "due_on" => "2026-11-01"
+               })
 
       assert {:ok, _} = add(ctx.batch, %{"name" => "Brew-day check", "due_on" => "2026-11-02"})
 
-      assert {:error, :before_brew_day} =
+      assert {:error, {:not_before_brew, "Set temp"}} =
                BatchChanges.add_ramp(ctx.batch, %{
                  "start" => 60,
                  "target" => 50,
@@ -707,7 +712,10 @@ defmodule RockcutApi.Production.BatchChangesTest do
       end
     end
 
-    test "a kept step dated before brew day (checked off early) is still linked in (QA minor 7b)",
+    # QA minor 7b linked it from the tank's first step, out of order; D56
+    # decision 29 (lead correction) makes no link out of order, so it stays
+    # as it is.
+    test "a kept step dated before everything rebuilt in its tank isn't linked out of order (QA minor 7b, D56 decision 29)",
          ctx do
       {:ok, %{step_ids: [early | _]}} =
         BatchChanges.add_ramp(ctx.batch, %{
@@ -722,7 +730,7 @@ defmodule RockcutApi.Production.BatchChangesTest do
       |> Repo.update!()
 
       {:ok, _} = BatchChanges.change_template(reload(ctx.batch), lager_template!().id)
-      assert {"Brew day", "Set temp - 60°", "move_all"} in links(ctx.batch)
+      refute Enum.any?(links(ctx.batch), &match?({_, "Set temp - 60°", _}, &1))
     end
 
     test "Standard ale → Lager with transfer keeps the added step (P83)", ctx do

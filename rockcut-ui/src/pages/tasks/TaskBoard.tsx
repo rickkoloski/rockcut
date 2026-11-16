@@ -24,6 +24,7 @@ import {
   coloradoToday,
   formatTaskDay,
   boardMoveRule,
+  linkedRetestOn,
   linkedStep,
   taskError,
   writeBoard,
@@ -350,7 +351,7 @@ function BoardScreen({ board: boardEntry, boards }: Props) {
    */
   const toggleLinked = async (card: TaskCardData) => {
     const step = linkedStep(card)!
-    const r = card.done ? await flows.uncheck(step) : await flows.checkOff(step, today, step.batchLabel)
+    const r = card.done ? await flows.uncheck(step, linkedRetestOn(card)) : await flows.checkOff(step, today, step.batchLabel)
     if (r && !r.ok) flows.notify(r.error)
   }
 

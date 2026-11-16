@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import { addDays, addProcess, gantt, openGantt, schedule, today } from './schedule'
 import { choiceOptions, pickSetting, settingValue } from '../settingsMenu'
+import { resetGanttView } from './d56'
 
 // D48 Task 0 (§3.6 "Toolbar changes in D48"): Today, the zoom menu, the
 // Collapse all | ● | Expand all switch, Add process ▾ and the compact
@@ -9,6 +10,8 @@ import { choiceOptions, pickSetting, settingValue } from '../settingsMenu'
 // view is remembered per browser, so each test starts in a fresh context.
 // D52: the zoom and the tanks switch are choices in the settings gear
 // ("Weeks on screen", "Tanks"); "Your selection" is offered once there's a mix.
+// D56 decisions 18, 19: the expanded tanks and the mix are on the account, so
+// each test starts and ends with brewer1's put back to none.
 
 const GEAR = 'gantt-settings'
 const MODE = { collapse: 'Collapse all', mine: 'Your selection', expand: 'Expand all' } as const
@@ -21,6 +24,9 @@ async function pickZoom(page: Page, weeks: number) {
   await pickSetting(page, GEAR, 'gantt-zoom', weeks)
   expect(await settingValue(page, GEAR, 'gantt-zoom')).toBe(`${weeks} weeks`)
 }
+
+test.beforeEach(() => resetGanttView())
+test.afterEach(() => resetGanttView())
 
 test.describe('brewer1', () => {
   test.use({ storageState: authFile('brewer1'), viewport: { width: 1440, height: 1300 } })

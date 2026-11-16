@@ -394,6 +394,7 @@ defmodule RockcutApiWeb.Router do
     post "/steps/assign", ProductionScheduleController, :assign_steps
     post "/steps/:id/complete", ProductionScheduleController, :complete_step
     post "/steps/:id/uncomplete", ProductionScheduleController, :uncomplete_step
+    patch "/steps/:id/result", ProductionScheduleController, :change_result
     patch "/steps/:id", ProductionScheduleController, :update_step
     delete "/steps/:id", ProductionScheduleController, :remove_step
     post "/steps/:id/ramp", ProductionScheduleController, :change_ramp

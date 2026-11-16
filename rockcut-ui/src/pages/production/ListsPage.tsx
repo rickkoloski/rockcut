@@ -154,6 +154,7 @@ function StepTypeDialog({
   const [fullName, setFullName] = useState(type?.full_name ?? '')
   const [startsPhase, setStartsPhase] = useState<number | ''>(type?.starts_phase_id ?? '')
   const [onTaskList, setOnTaskList] = useState(type?.on_task_list ?? true)
+  const [hasResult, setHasResult] = useState(type?.has_result ?? false)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -164,7 +165,7 @@ function StepTypeDialog({
   const save = async () => {
     if (!name.trim()) return setErrors({ name: 'Give the step type a name.' })
     setBusy(true)
-    const body = { name, full_name: fullName, starts_phase_id: startsPhase === '' ? null : startsPhase, on_task_list: onTaskList }
+    const body = { name, full_name: fullName, starts_phase_id: startsPhase === '' ? null : startsPhase, on_task_list: onTaskList, has_result: hasResult }
     try {
       if (type) await api.patch(prodPath('step_types', type.id), body)
       else await api.post(prodPath('step_types'), body)
@@ -220,6 +221,11 @@ function StepTypeDialog({
       <FormControlLabel
         control={<Switch checked={onTaskList} onChange={(e) => setOnTaskList(e.target.checked)} slotProps={{ input: { 'data-testid': 'step-type-task-list' } as object }} />}
         label="On the Brewery task list by default"
+      />
+      {/* D56 §3.2: built-in types too. */}
+      <FormControlLabel
+        control={<Switch checked={hasResult} onChange={(e) => setHasResult(e.target.checked)} slotProps={{ input: { 'data-testid': 'step-type-has-result' } as object }} />}
+        label="Has a result (Pass / Fail at check-off)"
       />
     </FormDialog>
   )
@@ -389,7 +395,7 @@ export default function ListsPage() {
                       {t.name}
                     </Typography>
                     <Typography variant="body2" color="text.secondary">
-                      {[t.full_name, t.built_in ? `Built in · ${BEHAVIOR_LABELS[t.behavior]}` : null, t.on_task_list ? null : 'Not on the task list']
+                      {[t.full_name, t.built_in ? `Built in · ${BEHAVIOR_LABELS[t.behavior]}` : null, t.on_task_list ? null : 'Not on the task list', t.has_result ? 'Has a result' : null]
                         .filter(Boolean)
                         .join(' · ')}
                     </Typography>

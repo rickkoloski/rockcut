@@ -426,6 +426,11 @@ defmodule RockcutApi.Authz do
 
   # D58 §3.1: a person saves their own settings for any board they can read
   # (All departments: owners, who pass above). A device's are `Authz.Device`'s.
+  # D56 decision 18: the production Gantt's view, for anyone who reads the
+  # schedule.
+  def can?(%User{} = user, :save, {:board_settings, :production}),
+    do: can?(user, :read, :production)
+
   def can?(%User{} = user, :save, {:board_settings, board}),
     do: can?(user, :read, {:tasks, board})
 

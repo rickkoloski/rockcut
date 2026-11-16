@@ -422,7 +422,7 @@ defmodule RockcutApi.Production do
       check_vessel!(template, type, fields, nil)
 
       step = insert_step!(template, type, fields)
-      StepGraph.slot_in!(StepGraph.template(template.id), step, step, attrs)
+      slot_in_named!(template, step, step, attrs)
 
       if behavior_of(type) == "transfer" do
         cip = behavior_type!("cip")
@@ -449,6 +449,11 @@ defmodule RockcutApi.Production do
   keeps its tank (`:transfer_not_new_tank`); a new day that takes it past another transfer is
   `{:transfer_order, :before | :after, day}` (D47 task 0, N1). The CIP &
   Sanitize it set up moves to its new day too, unless it was moved apart.
+
+  D56 §3.5 (5210): `links` (a list of `%{from_step_id, to_step_id,
+  default_answer}`, one end the entry) are added in the same transaction,
+  after the change. A refused link saves nothing and is
+  `{:link_refused, reason, "Comes after Crash"}`.
   """
   def update_step(%Template{} = template, %TemplateStep{} = step, attrs) do
     attrs = stringify(attrs)
@@ -495,9 +500,90 @@ defmodule RockcutApi.Production do
       end
 
       check_link_order!(step.id)
+      add_links!(template, step, attrs["links"])
       load(template)
     end)
   end
+
+  # D56 §3.5 (DEV gap 6): Add step's and Add a ramp's `comes_after_id` /
+  # `leads_to_id`, as `StepGraph.slot_in!/4` (with both, the direct link
+  # between them goes), each link named if it's refused, as Save's are.
+  defp slot_in_named!(template, first, last, attrs) do
+    graph = StepGraph.template(template.id)
+    entry = fn id -> if id in [nil, ""], do: nil, else: StepGraph.entry!(graph, id) end
+    after_step = entry.(attrs["comes_after_id"])
+    lead_step = entry.(attrs["leads_to_id"])
+
+    if after_step && lead_step do
+      case StepGraph.link_between(graph, after_step.id, lead_step.id) do
+        nil -> :ok
+        direct -> Repo.delete!(direct)
+      end
+    end
+
+    if after_step,
+      do:
+        insert_named_link!(
+          graph,
+          after_step,
+          first,
+          attrs["comes_after_answer"] || "move_all",
+          "Comes after " <> link_name(after_step)
+        )
+
+    if lead_step,
+      do:
+        insert_named_link!(
+          graph,
+          last,
+          lead_step,
+          attrs["leads_to_answer"] || "move_all",
+          "Leads to " <> link_name(lead_step)
+        )
+
+    :ok
+  end
+
+  defp link_name(step), do: step_name(Repo.preload(step, [:step_type, :phase]))
+
+  # One link in a savepoint, so a refusal names it before the whole call
+  # rolls back: `{:link_refused, reason, label}`.
+  defp insert_named_link!(graph, from, to, answer, label) do
+    Repo.transaction(fn -> StepGraph.insert_link!(graph, from, to, answer) end)
+    |> case do
+      {:ok, _} -> :ok
+      {:error, %Ecto.Changeset{}} -> Repo.rollback({:link_refused, :link_invalid, label})
+      {:error, reason} -> Repo.rollback({:link_refused, reason, label})
+    end
+  end
+
+  # Each link in a savepoint, so a refusal can name the link before the
+  # whole Save rolls back.
+  defp add_links!(_template, _step, nil), do: :ok
+
+  defp add_links!(template, step, links) when is_list(links) do
+    graph = StepGraph.template(template.id)
+
+    for link <- links do
+      link = if is_map(link), do: stringify(link), else: Repo.rollback(:link_invalid)
+      from_id = to_int(link["from_step_id"])
+      to_id = to_int(link["to_step_id"])
+      unless step.id in [from_id, to_id], do: Repo.rollback(:link_invalid)
+      other_id = if from_id == step.id, do: to_id, else: from_id
+      other = StepGraph.entry!(graph, other_id)
+
+      label = if(from_id == step.id, do: "Leads to ", else: "Comes after ") <> link_name(other)
+
+      {from, to} =
+        if from_id == step.id,
+          do: {Repo.reload!(step), other},
+          else: {other, Repo.reload!(step)}
+
+      insert_named_link!(graph, from, to, link["default_answer"] || "move_all", label)
+    end
+  end
+
+  defp add_links!(_template, _step, _other), do: Repo.rollback(:link_invalid)
 
   @doc """
   Remove an entry; Brew day can't go (`:brew_day_fixed`). Its links pass
@@ -661,7 +747,7 @@ defmodule RockcutApi.Production do
         |> Enum.chunk_every(2, 1, :discard)
         |> Enum.each(fn [a, b] -> StepGraph.insert_link!(graph, a, b, "move_all") end)
 
-        StepGraph.slot_in!(graph, List.first(steps), List.last(steps), attrs)
+        slot_in_named!(template, List.first(steps), List.last(steps), attrs)
         load(template)
       end)
     end
@@ -862,6 +948,12 @@ defmodule RockcutApi.Production do
           "cip_method" => if(behavior_of(type) == "cip", do: "sanitize_full")
         }
 
+    # D56 §3.1: a pre-brew step has no phase; the type's default doesn't apply.
+    defaults =
+      if negative_day?(attrs["day_offset"]) and not Map.has_key?(attrs, "phase_id"),
+        do: Map.put(defaults, "phase_id", nil),
+        else: defaults
+
     changeset =
       base
       |> TemplateStep.changeset(Map.merge(defaults, attrs))
@@ -908,7 +1000,10 @@ defmodule RockcutApi.Production do
 
     case changeset do
       %{valid?: true} ->
-        Map.take(Ecto.Changeset.apply_changes(changeset), [
+        changeset
+        |> Ecto.Changeset.apply_changes()
+        |> pre_brew!(type)
+        |> Map.take([
           :phase_id,
           :day_offset,
           :vessel_index,
@@ -918,11 +1013,40 @@ defmodule RockcutApi.Production do
           :cip_method,
           :package_partial,
           :notes,
-          :on_task_list
+          :on_task_list,
+          :retest_days
         ])
 
       invalid ->
         Repo.rollback(invalid)
+    end
+  end
+
+  # D56 §3.1 (decision 7): only a plain step, with no phase, in the first
+  # tank, goes before brew day; each refusal says which (DEV gap 5).
+  defp pre_brew!(%TemplateStep{day_offset: day} = entry, type) when day < 0 do
+    cond do
+      behavior_of(type) != "plain" ->
+        Repo.rollback({:not_before_brew, (type && type.name) || "phase marker"})
+
+      entry.phase_id != nil ->
+        Repo.rollback({:not_before_brew, :phase})
+
+      entry.vessel_index != 0 ->
+        Repo.rollback({:not_before_brew, :tank})
+
+      true ->
+        entry
+    end
+  end
+
+  defp pre_brew!(entry, _type), do: entry
+
+  defp negative_day?(day) do
+    case day do
+      d when is_integer(d) -> d < 0
+      d when is_binary(d) -> match?({n, ""} when n < 0, Integer.parse(d))
+      _ -> false
     end
   end
 

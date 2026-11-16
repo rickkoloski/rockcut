@@ -3,6 +3,7 @@
 // the phase palette and the template preview's model.
 
 import { contrastText } from './colors'
+import type { TestResult } from './types'
 
 // ── Types (the API's JSON) ──
 
@@ -53,6 +54,8 @@ export interface StepType {
   built_in: boolean
   starts_phase_id: number | null
   on_task_list: boolean
+  /** D56 §3.2: its steps record Pass / Fail at check-off. */
+  has_result: boolean
   position: number
   retired_at: string | null
 }
@@ -96,6 +99,9 @@ export interface TemplateStep {
   on_task_list: boolean
   position: number
   ramp_group: string | null
+  /** D56 §3.2: its type records Pass / Fail; a Fail's retest comes `retest_days` later (1–30). */
+  has_result: boolean
+  retest_days: number
 }
 
 export type SplitMethod = 'transfer' | 'filter'
@@ -153,6 +159,8 @@ export interface SchedStep {
   behavior: Behavior | null
   /** The batch's first Brew day (its number prompt). */
   first_brew: boolean
+  /** D56 decision 22: planned before brew day (it moves with it), whatever its date is now. */
+  pre_brew: boolean
   phase_id: number | null
   vessel_index: number
   detail: string | null
@@ -175,6 +183,12 @@ export interface SchedStep {
   added: boolean
   /** D48: the Set temp steps of one ramp share it. */
   ramp_group: string | null
+  /** D56 §3.2: its type records Pass / Fail at check-off. */
+  has_result: boolean
+  result: TestResult | null
+  retest_days: number
+  /** The failed test this one retests (its retest points back here). */
+  retest_of_id: number | null
 }
 
 export interface SchedLink {
@@ -225,7 +239,7 @@ export interface TankStatusLine {
 
 export interface Flag {
   key: string
-  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'transfer_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer' | 'unsanitized_fill'
+  kind: 'tank_overlap' | 'too_big' | 'dirty_fill' | 'dirty_no_cip' | 'out_of_order' | 'transfer_order' | 'no_tank' | 'out_of_service' | 'cip_with_beer' | 'unsanitized_fill' | 'failed_tests'
   message: string
   signature: string
   batch_ids: number[]
@@ -359,6 +373,16 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 const parts = (key: string) => key.split('-').map(Number) as [number, number, number]
+
+/** "day 12", "day −1" (D56: a pre-brew step); "Day …" with `cap`. */
+export function dayWord(n: number, cap = false): string {
+  return `${cap ? 'Day' : 'day'} ${n < 0 ? `−${-n}` : n}`
+}
+
+/** D56 §3.1: "Day −1 (before brew day)", "Day 0 (brew day)", "Day 7". */
+export function templateDayLabel(n: number): string {
+  return n < 0 ? `${dayWord(n, true)} (before brew day)` : n === 0 ? 'Day 0 (brew day)' : dayWord(n, true)
+}
 
 /** "Oct 27" */
 export function monthDay(key: string): string {

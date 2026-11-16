@@ -3,6 +3,7 @@ import { Avatar, Box, Checkbox, Chip, Paper, Tooltip, Typography } from '@mui/ma
 import { NotesOutlined, Repeat } from '@mui/icons-material'
 import { cardPeople, firstName, formatTaskDay, initials } from '../../lib/tasks'
 import type { TaskCardData } from '../../lib/types'
+import { taskResultText } from '../../lib/testResults'
 
 /** D53: how many people a card shows before "+N". */
 const MAX_INITIALS = 3
@@ -197,6 +198,16 @@ export default function TaskCard({ card, overlay, dragging, showDate, onToggle, 
             {card.done && (
               <Typography variant="caption" color="success.main" data-testid={`task-done-by-${card.key}`}>
                 ✓ {firstName(card.completed_by_name)}
+              </Typography>
+            )}
+            {/* D56 decision 14: a linked test's result ("✗ Fail · retest Wed Dec 16"). */}
+            {card.done && taskResultText(card.production) && (
+              <Typography
+                variant="caption"
+                color={card.production?.result === 'fail' ? 'error.main' : 'success.main'}
+                data-testid={`task-result-${card.key}`}
+              >
+                {taskResultText(card.production)}
               </Typography>
             )}
             {tags.map((t) => (

@@ -192,10 +192,15 @@ export function AddStepDialog({ batch, types, tanks, brewers, today, onClose }: 
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [error, setError] = useRefusal([typeId, name, detail, temperature, partial, day, vessel, links, onList, assignee, notes])
   const [busy, setBusy] = useState(false)
+  // D56 §3.1, decision 13: before brew day only a plain or custom step, in the first tank.
+  const brewOn = batch.steps.find((s) => s.first_brew)?.due_on ?? null
+  const preBrew = !!day && !!brewOn && day < brewOn
+  const notBefore = preBrew && typeId !== '' && typeId !== CUSTOM && type?.behavior !== 'plain' ? `A ${type?.name ?? 'step'} can't be before brew day.` : null
 
   const save = async () => {
     const local: Record<string, string> = {}
     if (typeId === '') local.type = 'Pick a step, or Something else.'
+    if (notBefore) local.due_on = notBefore
     if (typeId === CUSTOM && !name.trim()) local.name = 'Give the step a name.'
     if (!day) local.due_on = 'Pick the day.'
     if (type?.behavior === 'set_temp' && temperature === '') local.temperature = 'Enter the temperature.'
@@ -213,7 +218,7 @@ export function AddStepDialog({ batch, types, tanks, brewers, today, onClose }: 
     }
     if (typeId === CUSTOM) body.name = name.trim()
     else body.step_type_id = typeId
-    if (vessel !== '') body.vessel_index = vessel
+    if (vessel !== '' && !preBrew) body.vessel_index = vessel
     if (type?.behavior === 'set_temp') body.temperature = Number(temperature)
     if (type?.behavior === 'package') body.package_partial = partial
     const r = await flows.write<Written>((a) => a.post(prodPath('batches', batch.id, 'steps'), body), (d) => `${newNames(d)[0] ?? 'Step'} added to ${batch.label}.`)
@@ -295,11 +300,11 @@ export function AddStepDialog({ batch, types, tanks, brewers, today, onClose }: 
           label="Day"
           value={day}
           onChange={(e) => setDay(e.target.value)}
-          error={!!errors.due_on}
-          helperText={errors.due_on}
-          slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'add-step-day' } }}
+          error={!!errors.due_on || !!notBefore}
+          helperText={errors.due_on ?? notBefore ?? (preBrew ? 'Before brew day: in the first tank.' : undefined)}
+          slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'add-step-day' }, formHelperText: { 'data-testid': 'add-step-day-help' } as object }}
         />
-        <VesselPicker batch={batch} tanks={tanks} day={day} value={vessel} onChange={setVessel} testId="add-step-tank" />
+        {!preBrew && <VesselPicker batch={batch} tanks={tanks} day={day} value={vessel} onChange={setVessel} testId="add-step-tank" />}
       </Box>
       <LinkPickers batch={batch} from={day} to={day} prefix="add-step" value={links} onChange={(v) => setLinks((l) => ({ ...l, ...v }))} />
       <TextField select label="Assigned to" value={assignee} onChange={(e) => setAssignee(e.target.value === '' ? '' : Number(e.target.value))} slotProps={selectTestId('add-step-assignee')}>

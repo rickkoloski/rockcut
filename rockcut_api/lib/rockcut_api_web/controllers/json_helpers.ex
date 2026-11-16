@@ -448,9 +448,28 @@ defmodule RockcutApiWeb.JSONHelpers do
       batch_status: batch && batch.status,
       planned: batch != nil and batch.status == "planned",
       step_name: t.step_name,
-      batch_label: t.batch_label
+      batch_label: t.batch_label,
+      # D56 §3.2: the step's Pass / Fail, for the board's ✓ / ✗.
+      result: step_result(t.production_step),
+      # D56 decision 14: a failed test's retest day ("✗ Fail · retest Wed").
+      retest_on: retest_on(t.production_step),
+      # Mark not done is refused while the retest is done (`retest_done`).
+      retest_done: retest_done(t.production_step)
     }
   end
+
+  defp step_result(%RockcutApi.Production.Step{result: result}), do: result
+  defp step_result(_not_loaded), do: nil
+
+  defp retest_on(%RockcutApi.Production.Step{retest: %RockcutApi.Production.Step{due_on: d}}),
+    do: d
+
+  defp retest_on(_none), do: nil
+
+  defp retest_done(%RockcutApi.Production.Step{retest: %RockcutApi.Production.Step{done_on: d}}),
+    do: d != nil
+
+  defp retest_done(_none), do: false
 
   @doc "A recurring task's rule (D39 `GET /api/boards/brewery/tasks/:id/series`), for the dialog."
   def task_series(s, preview) do
@@ -560,6 +579,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       built_in: t.built_in,
       starts_phase_id: t.starts_phase_id,
       on_task_list: t.on_task_list,
+      # D56 §3.2: its steps record Pass / Fail at check-off.
+      has_result: t.has_result,
       position: t.position,
       retired_at: t.retired_at
     }
@@ -608,7 +629,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       notes: s.notes,
       on_task_list: s.on_task_list,
       position: s.position,
-      ramp_group: s.ramp_group
+      ramp_group: s.ramp_group,
+      # D56 §3.2: "Retest after [2] days" when the type has a result.
+      has_result: type != nil and type.has_result,
+      retest_days: s.retest_days
     }
   end
 
@@ -730,7 +754,15 @@ defmodule RockcutApiWeb.JSONHelpers do
       assignee_id: s.assignee_id,
       assignee: s.assignee && %{id: s.assignee.id, name: s.assignee.name},
       added: s.added,
-      ramp_group: s.ramp_group
+      ramp_group: s.ramp_group,
+      # D56 §3.2: Pass / Fail (`pass` / `fail`, nil when not recorded), the
+      # days to a retest, and the failed step a retest retests.
+      has_result: type != nil and type.has_result,
+      result: s.result,
+      retest_days: s.retest_days,
+      retest_of_id: s.retest_of_id,
+      # D56 decision 22: planned before brew day, whatever its date is now.
+      pre_brew: s.pre_brew
     }
   end
 

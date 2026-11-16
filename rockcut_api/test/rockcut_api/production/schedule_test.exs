@@ -455,6 +455,11 @@ defmodule RockcutApi.Production.ScheduleTest do
     } do
       fdh = named(batch, "FDH")
       today = ~D[2026-11-11]
+      # D56 decision 26: brewed first.
+      brew = named(batch, "Brew day")
+
+      {:ok, _} =
+        Steps.complete(brew.id, %{"batch_number" => "40"}, brewer, today: brew.due_on)
 
       assert {:ok,
               {:preview,

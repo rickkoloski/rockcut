@@ -3,7 +3,7 @@ import { Box, IconButton, Tooltip, Typography, useTheme } from '@mui/material'
 import { ChevronRight } from '@mui/icons-material'
 import { addDaysKey } from '../../lib/datetime'
 import { coloradoToday } from '../../lib/tasks'
-import { CIP_COLOR, monthDay, phaseFill, previewBars, vesselLabel, type Mode, type Phase, type Template, type TemplateStep } from '../../lib/production'
+import { CIP_COLOR, dayWord, monthDay, phaseFill, previewBars, vesselLabel, type Mode, type Phase, type Template, type TemplateStep } from '../../lib/production'
 import { STEP_ROW_H } from '../../lib/gantt'
 
 const DAY_PX = 16
@@ -18,12 +18,15 @@ const FADE = { position: 'absolute', top: 0, bottom: 8, width: 32, pointerEvents
  * D52: a caret on each tank opens its steps below the bar, as an expanded
  * tank shows on the Gantt (phases italic, a diamond on each step's day, the
  * links as elbows, dashed when the step stays).
+ * D56 §3.1: pre-brew steps sit left of brew day (`lead` days before it).
  */
 export default function TemplatePreview({ template, phases }: { template: Template; phases: Phase[] }) {
   const mode = useTheme().palette.mode as Mode
   const brewDay = coloradoToday()
   const bars = previewBars(template)
-  const days = Math.max(1, ...bars.map((b) => b.end + 1))
+  const lead = -Math.min(0, ...template.steps.map((st) => st.day_offset))
+  const x = (day: number) => (day + lead) * DAY_PX
+  const days = lead + Math.max(1, ...bars.map((b) => b.end + 1))
   const phaseById = new Map(phases.map((p) => [p.id, p]))
   const usedPhases = [...new Set(bars.flatMap((b) => b.phases))].filter((id): id is number => id != null)
   const cipHatch = mode === 'dark' ? CIP_COLOR.dark : CIP_COLOR.light
@@ -72,7 +75,7 @@ export default function TemplatePreview({ template, phases }: { template: Templa
                 key={d}
                 variant="caption"
                 color="text.secondary"
-                sx={{ position: 'absolute', left: d * DAY_PX, whiteSpace: 'nowrap' }}
+                sx={{ position: 'absolute', left: x(d), whiteSpace: 'nowrap' }}
               >
                 {monthDay(addDaysKey(brewDay, d))} · day {d}
               </Typography>
@@ -118,13 +121,13 @@ export default function TemplatePreview({ template, phases }: { template: Templa
                   const fill = phaseFill(phase?.color, mode)
                   const cip = bar.cipDays.includes(day)
                   return (
-                    <Tooltip key={day} title={`Day ${day} · ${monthDay(addDaysKey(brewDay, day))}${cip ? ' · CIP & Sanitize' : phase ? ` · ${phase.name}` : ''}`}>
+                    <Tooltip key={day} title={`${dayWord(day, true)} · ${monthDay(addDaysKey(brewDay, day))}${cip ? ' · CIP & Sanitize' : phase ? ` · ${phase.name}` : ''}`}>
                       <Box
                         data-testid={`preview-day-${bar.vessel}-${day}`}
                         data-phase={cip ? 'cip' : (phase?.name ?? '')}
                         sx={{
                           position: 'absolute',
-                          left: day * DAY_PX,
+                          left: x(day),
                           width: DAY_PX,
                           top: 4,
                           height: 18,
@@ -143,12 +146,12 @@ export default function TemplatePreview({ template, phases }: { template: Templa
                   const sameDay = bar.dots.filter((d) => d.day === dot.day)
                   const k = sameDay.indexOf(dot)
                   return (
-                    <Tooltip key={`${dot.day}-${i}`} title={`Day ${dot.day} · ${dot.name}`}>
+                    <Tooltip key={`${dot.day}-${i}`} title={`${dayWord(dot.day, true)} · ${dot.name}`}>
                       <Box
                         data-testid={`preview-dot-${bar.vessel}-${dot.day}`}
                         sx={{
                           position: 'absolute',
-                          left: dot.day * DAY_PX + DAY_PX / 2 - 4 + (k - (sameDay.length - 1) / 2) * 6,
+                          left: x(dot.day) + DAY_PX / 2 - 4 + (k - (sameDay.length - 1) / 2) * 6,
                           top: 26,
                           width: 8,
                           height: 8,
@@ -163,7 +166,7 @@ export default function TemplatePreview({ template, phases }: { template: Templa
                 })}
               </Box>
             </Box>
-            {open.has(bar.vessel) && <StepRows steps={stepsOf(bar.vessel)} links={template.links} days={days} />}
+            {open.has(bar.vessel) && <StepRows steps={stepsOf(bar.vessel)} links={template.links} days={days} lead={lead} />}
             </Fragment>
           ))}
         </Box>
@@ -209,10 +212,10 @@ export default function TemplatePreview({ template, phases }: { template: Templa
 }
 
 /** D52: a tank's steps under its bar, as an expanded tank on the Gantt. */
-function StepRows({ steps, links, days }: { steps: TemplateStep[]; links: Template['links']; days: number }) {
+function StepRows({ steps, links, days, lead }: { steps: TemplateStep[]; links: Template['links']; days: number; lead: number }) {
   const theme = useTheme()
   const row = new Map(steps.map((st, i) => [st.id, i]))
-  const cx = (st: TemplateStep) => st.day_offset * DAY_PX + DAY_PX / 2
+  const cx = (st: TemplateStep) => (st.day_offset + lead) * DAY_PX + DAY_PX / 2
   const cy = (i: number) => i * STEP_ROW_H + STEP_ROW_H / 2
   return (
     <Box sx={{ display: 'flex', borderTop: '1px dashed', borderColor: 'divider', mb: 0.5 }} data-testid="preview-steps">

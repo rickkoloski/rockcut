@@ -34,6 +34,7 @@ import StepLinks, { type LinkPicks } from './StepLinks'
 import ErrorAlert from '../ErrorAlert'
 import { useFlows } from './flowsContext'
 import DateField from '../DateField'
+import { retestOf, retestOfText, stepResultText } from '../../../lib/testResults'
 
 interface Props {
   step: SchedStep
@@ -101,6 +102,11 @@ export default function StepDialog({ step, batch, tree, tanks, brewers, today, s
   const [picks, setPicks] = useState<LinkPicks>({ after: '', leads: '' })
   const picked = pickedLinks(step.id, picks.after, picks.leads, choices)
   const done = !!step.done_on
+  // D56 §3.2: a done test's result, the retest a Fail added, and what this retests.
+  const batchSteps = family.flatMap((b) => b.steps)
+  const result = done ? stepResultText(step, batchSteps) : null
+  const retest = step.result === 'fail' ? retestOf(step, batchSteps) : null
+  const retestOfLine = retestOfText(step, batchSteps)
 
   const changes = (): Record<string, unknown> => {
     const c: Record<string, unknown> = {}
@@ -196,7 +202,17 @@ export default function StepDialog({ step, batch, tree, tanks, brewers, today, s
           </Typography>
           <Typography variant="body2" color={!done && step.due_on < today ? 'error.main' : 'text.secondary'} data-testid="step-dialog-status">
             {stepStatus(step, today)}
+            {result && (
+              <Box component="span" sx={{ color: step.result === 'fail' ? 'error.main' : 'success.main' }} data-testid="step-dialog-result">
+                {` · ${result}`}
+              </Box>
+            )}
           </Typography>
+          {retestOfLine && (
+            <Typography variant="body2" color="text.secondary" data-testid="step-dialog-retest-of">
+              {retestOfLine}
+            </Typography>
+          )}
         </Box>
         {batch && (
           <StepLinks step={step} tree={family} links={links} choices={choices} picks={picks} onPicks={setPicks} busy={busy} onError={setError} />
@@ -300,10 +316,21 @@ export default function StepDialog({ step, batch, tree, tanks, brewers, today, s
         )}
         <Divider />
         {done ? (
-          <Box>
-            <Button variant="outlined" disabled={busy} onClick={() => act(() => flows.uncheck(step))} data-testid="step-uncheck">
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+            <Button variant="outlined" disabled={busy} onClick={() => act(() => flows.uncheck(step, retest && !retest.done_on ? retest.due_on : null))} data-testid="step-uncheck">
               Mark not done
             </Button>
+            {/* D56 §3.2 Change: Pass ↔ Fail (Pass → Fail asks the Fail question). */}
+            {step.has_result && step.result && (
+              <Button
+                variant="outlined"
+                disabled={busy}
+                onClick={() => act(() => flows.changeResult(step, step.result === 'pass' ? 'fail' : 'pass'))}
+                data-testid="step-change-result"
+              >
+                Change to {step.result === 'pass' ? 'Fail' : 'Pass'}
+              </Button>
+            )}
           </Box>
         ) : (
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 2 }}>

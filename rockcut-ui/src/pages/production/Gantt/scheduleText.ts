@@ -1,21 +1,40 @@
 // D47: words the Gantt's dialogs share (plain functions, no components).
 
 import { dayLabel, daysBetween, firstBrew } from '../../../lib/gantt'
-import type { SchedBatch, SchedStep, Tank } from '../../../lib/production'
+import { dayWord, type SchedBatch, type SchedStep, type Tank } from '../../../lib/production'
 
 export function stepStatus(step: SchedStep, today: string): string {
   // D50: "Done Tue Nov 10 by Jake Brewer · on Brewhouse".
+  // D56 decision 11: a pre-brew step done late stays on its planned day.
   if (step.done_on)
-    return `Done ${dayLabel(step.done_on)}${step.done_by ? ` by ${step.done_by.name}` : ''}${step.done_on_device ? ` · on ${step.done_on_device.name}` : ''}`
+    return `Done ${dayLabel(step.done_on)}${step.due_on !== step.done_on ? ` (planned ${dayLabel(step.due_on)})` : ''}${step.done_by ? ` by ${step.done_by.name}` : ''}${step.done_on_device ? ` · on ${step.done_on_device.name}` : ''}`
   if (step.due_on === today) return 'Due today'
   if (step.due_on < today) return `Late (planned ${dayLabel(step.due_on)})`
   return 'Planned'
 }
 
-/** "day 12": days after the end of the first brew day. */
+/** "day 12": days after the end of the first brew day; "day −1" before it (D56). */
 export function dayN(step: SchedStep, batch: SchedBatch | null): string | null {
   const brew = batch && firstBrew(batch.steps)
-  return brew ? `day ${daysBetween(brew.done_on ?? brew.due_on, step.due_on)}` : null
+  return brew ? dayWord(daysBetween(brew.done_on ?? brew.due_on, step.due_on)) : null
+}
+
+/**
+ * D56 decision 30 (DEV gap 17): what a bar drag says, from the counts the API
+ * gives: unfinished steps moved, finished steps' planned days moved (their
+ * done days stay), and steps left where they are (a brewed batch's done
+ * brew day and pre-brew steps, a planned batch's finished pre-brew steps).
+ */
+export function shiftMessage(label: string, days: number, d: { moved: number; planned_moved: number; kept: number }): string {
+  const n = (k: number, word: string) => `${k} ${word}${k === 1 ? '' : 's'}`
+  const when = `${n(Math.abs(days), 'day')} ${days > 0 ? 'later' : 'earlier'}`
+  if (!d.kept && !d.planned_moved) return `${label}: every step ${when}.`
+  const moved = [
+    d.moved > 0 && n(d.moved, 'unfinished step'),
+    d.planned_moved > 0 && (d.planned_moved === 1 ? "1 finished step's planned day" : `${d.planned_moved} finished steps' planned days`),
+  ].filter(Boolean)
+  const stay = d.kept ? ` ${d.kept === 1 ? '1 step stays where it is' : `${d.kept} steps stay where they are`}.` : ''
+  return moved.length ? `${label}: ${moved.join(' and ')} moved ${when}.${stay}` : `${label}: nothing moved.${stay}`
 }
 
 /** The out-of-service periods of `tank` that touch `from`…`to` (or are going on, without dates). */
