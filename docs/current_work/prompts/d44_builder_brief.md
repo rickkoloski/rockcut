@@ -138,3 +138,55 @@ needs a restart.
 still green if you touched the API. Commits on the branch. Reply with: commits, files, what you
 checked in the browser per persona, and `LEAD:` notes. Playwright specs are Stage 3, so don't
 write them yet.
+
+---
+
+# Stage 3 (past-request refusal + Playwright + coverage)
+
+2026-11-16 · lead → builder. Stage 2 is in (`d1bbed1`..`5c96715`). Your `LEAD:` notes: all
+accepted (reviews on the Time off page through the dialog with a Review button, the agenda's own
+time off query, the extra agenda filters, `data-day`, the badge only above 0). The last one became a
+spec rule, so do it first:
+
+0. **Refuse past requests for oneself** (spec §2.4, last bullet, Matt 2026-11-16). In
+   `TimeOff.create/2`: when the request is for the requester themselves and its `ends_at` is past
+   (`past?/1`'s rule), return `{:error, :past_request}` → 422 `"This date has passed. Ask your
+   manager to enter it for you."`. Owners and managers included for their own requests. On-behalf
+   creates are unchanged (may be past, created approved, no notification). No notification for a
+   refused create, obviously. ExUnit: own past (422, nothing stored, no notification), own ending
+   today (ok), own started yesterday ending tomorrow (ok), manager on behalf with past dates (ok,
+   approved), owner own past (422). The Time off form shows the API's message (check it does).
+   Stage 1's tests that created past requests through `create/2` for oneself need another way in
+   (insert directly in the test) — keep their assertions.
+
+Then **plan Stage 3**, and stop and report:
+
+1. **Specs** under `rockcut-ui/tests/regression/timeoff/`, from spec §4, one file per persona group
+   (e.g. `employee.spec.ts` for `bartender1`, `manager.spec.ts` for `barMgr`, `negatives.spec.ts`
+   for `breweryMgr` / `taproomDevice`, `owner.spec.ts`). Follow `tests/RUNNING.md` and the existing
+   regression specs:
+   - every spec declares its persona with `test.use({ storageState: authFile('<key>') })`; no UI
+     login;
+   - anything you create is `[TEST-TEMP]` (in the request note) and removed or cancelled by id in
+     the spec's cleanup, even when the test fails. Destructive actions **only by exact id on your
+     own `[TEST-TEMP]` rows**; never touch `[SEED]` rows or other personas' data;
+   - past requests: create them through the API **on behalf** (a manager persona's token, past
+     dates, created approved) or check whether a helper/fixture route exists for a past pending
+     one; if a past **pending** request can't be made through the API any more, cover "Not
+     reviewed" in ExUnit and say so;
+   - notifications: assert through `/api/notifications` (in-app records), not email or push;
+   - badges: assert the count on the Schedule section and the Time off item, and that it drops
+     after a review without a reload;
+   - negatives assert the visible absence (no buttons, no rows, no badge) and the API status where
+     there's no UI path (device `GET /api/time_off` → 403, review of a past request → 422);
+   - persist-verify writes (reload, then assert).
+2. **`tests/COVERAGE.md`:** a D44 section, scenario → layer (ExUnit file / Playwright file /
+   manual-only / GAP).
+3. **Run only the new specs** locally, twice (`npx playwright test tests/regression/timeoff
+   --reporter=line`). Don't run the full suite: the lead runs it in its own tab at the gate.
+
+## Done when
+
+`mix test` green twice (item 0), the new specs pass twice, `tsc -p tsconfig.e2e.json` has no new
+errors, `tsc`/vitest/lint/build still as in Stage 2. Commits on the branch. Reply with: commits,
+files, run results, anything left manual-only or GAP and why, and `LEAD:` notes.

@@ -97,6 +97,12 @@ Pending — other employees, Approved — other employees.
   the Pending list, shows in the Archive as "Not reviewed", and can't be
   approved or denied afterwards (the API refuses a review of a past request).
   Nothing past its last day is left pending anywhere.
+- **Past requests can't be made (Matt, 2026-11-16, from the Stage 2 build):**
+  a request for oneself whose last day has already passed is refused (422,
+  "This date has passed. Ask your manager to enter it for you."), owners and
+  managers included, since it could never be reviewed. Time off a manager or
+  owner enters **on someone's behalf** may still be past: it's created
+  approved. A request that started earlier but ends today or later is fine.
 - The Scheduler and View Schedule are unaffected; they already load time off
   by week.
 - **Loading:** the page doesn't fetch years of history to hide it.
