@@ -209,6 +209,29 @@ defmodule RockcutApi.Seeds.SyntheticTest do
       assert Enum.sort(statuses) == ["approved", "pending"]
     end
 
+    test "seeded time off is at Colorado times: each on its own day (D44 lead decision 4)" do
+      alias RockcutApi.Scheduling.Recurrence
+
+      {:ok, _} = Synthetic.setup(~D[2026-11-16])
+      brewer1 = Accounts.get_user_by_email("brewer1@rockcut-test.com")
+
+      local = fn req ->
+        {Recurrence.to_local(req.starts_at), Recurrence.to_local(req.ends_at), req.all_day}
+      end
+
+      by_note =
+        Repo.all(from(r in Request, where: r.user_id == ^brewer1.id))
+        |> Map.new(&{&1.note, local.(&1)})
+
+      # Next Friday, all day, as the Time off form sends it.
+      assert by_note["[SEED] Long weekend"] ==
+               {{~D[2026-11-27], ~T[00:00:00]}, {~D[2026-11-27], ~T[23:59:00]}, true}
+
+      # This Thursday afternoon.
+      assert by_note["[SEED] Appointment"] ==
+               {{~D[2026-11-19], ~T[13:00:00]}, {~D[2026-11-19], ~T[16:00:00]}, false}
+    end
+
     test "seeds the Colorado week on a Sunday evening (UTC already Monday)" do
       alias RockcutApi.Tasks
       alias RockcutApi.Scheduling.Recurrence
