@@ -715,13 +715,15 @@ defmodule RockcutApi.Seeds.Synthetic do
       })
     end
 
-    # brewer1: one pending all-day request next Friday, one approved partial-day this Thursday
+    # brewer1: one pending all-day request next Friday, one approved partial-day
+    # this Thursday. Colorado times, as the app stores them: all day is 00:00 →
+    # 23:59 on its day (D44 lead decision 4).
     Repo.insert!(%Request{
       user_id: u["brewer1"].id,
       type: "pto",
       all_day: true,
-      starts_at: at(monday, 11, 0),
-      ends_at: at(monday, 12, 0),
+      starts_at: local_at(monday, 11, ~T[00:00:00]),
+      ends_at: local_at(monday, 11, ~T[23:59:00]),
       status: "pending",
       note: "#{@seed_tag} Long weekend",
       inserted_at: now,
@@ -732,12 +734,29 @@ defmodule RockcutApi.Seeds.Synthetic do
       user_id: u["brewer1"].id,
       type: "personal",
       all_day: false,
-      starts_at: at(monday, 3, 20),
-      ends_at: at(monday, 3, 23),
+      starts_at: local_at(monday, 3, ~T[13:00:00]),
+      ends_at: local_at(monday, 3, ~T[16:00:00]),
       status: "approved",
       reviewed_by_id: u["breweryMgr"].id,
       reviewed_at: now,
       note: "#{@seed_tag} Appointment",
+      inserted_at: now,
+      updated_at: now
+    })
+
+    # brewer1: one past approved day off, Friday two and a half weeks back, so the
+    # Archive has seeded data (D44 DEV fix cycle 1, G4). Clear of the days the
+    # time off specs enter for brewer1.
+    Repo.insert!(%Request{
+      user_id: u["brewer1"].id,
+      type: "pto",
+      all_day: true,
+      starts_at: local_at(monday, -17, ~T[00:00:00]),
+      ends_at: local_at(monday, -17, ~T[23:59:00]),
+      status: "approved",
+      reviewed_by_id: u["breweryMgr"].id,
+      reviewed_at: now,
+      note: "#{@seed_tag} Day off",
       inserted_at: now,
       updated_at: now
     })
@@ -1775,6 +1794,10 @@ defmodule RockcutApi.Seeds.Synthetic do
     {:ok, dt} = DateTime.new(date, Time.new!(rem(hour, 24), 0, 0), "Etc/UTC")
     if hour >= 24, do: DateTime.add(dt, 86_400), else: dt
   end
+
+  # Colorado wall-clock time on `monday + day_offset`, as UTC.
+  defp local_at(monday, day_offset, time),
+    do: Recurrence.local_to_utc(Date.add(monday, day_offset), time)
 
   defp now, do: DateTime.utc_now() |> DateTime.truncate(:second)
 end

@@ -7,15 +7,27 @@ defmodule RockcutApiWeb.TimeOffController do
 
   action_fallback RockcutApiWeb.FallbackController
 
+  @past "This time off has already passed"
+  @changed "This request has changed since you opened it."
+  @past_request "This date has passed. Ask your manager to enter it for you."
+
   def index(conn, params) do
-    requests = TimeOff.list_for(conn.assigns.current_user, params)
-    json(conn, %{data: Enum.map(requests, &time_off_request/1)})
+    if params["when"] in [nil, "" | TimeOff.when_values()] do
+      requests = TimeOff.list_for(conn.assigns.current_user, params)
+      json(conn, %{data: Enum.map(requests, &time_off_request/1)})
+    else
+      unprocessable(conn, "when must be current or past")
+    end
   end
 
   def create(conn, params) do
     case TimeOff.create(params, conn.assigns.current_user) do
       {:ok, req} -> conn |> put_status(:created) |> json(%{data: time_off_request(req)})
       {:error, :forbidden} -> forbidden(conn)
+      {:error, :past_request} -> unprocessable(conn, @past_request)
+      {:error, :too_far} -> unprocessable(conn, "Time off can be requested up to a year ahead.")
+      {:error, :overlap} -> unprocessable(conn, "This person already has time off then.")
+      {:error, :overlap_own} -> unprocessable(conn, "You already have time off then.")
       other -> other
     end
   end
@@ -30,11 +42,15 @@ defmodule RockcutApiWeb.TimeOffController do
                req,
                conn.assigns.current_user,
                params["status"],
-               params["reviewer_note"]
+               params["reviewer_note"],
+               params["expected_status"]
              ) do
           {:ok, updated} -> json(conn, %{data: time_off_request(updated)})
           {:error, :forbidden} -> forbidden(conn)
           {:error, :invalid_status} -> unprocessable(conn, "status must be approved or denied")
+          {:error, :past} -> unprocessable(conn, @past)
+          {:error, {:changed, current}} -> conflict(conn, @changed, current)
+          {:error, {:already, current}} -> conflict(conn, already(current), current)
           other -> other
         end
     end
@@ -53,6 +69,9 @@ defmodule RockcutApiWeb.TimeOffController do
           {:error, :forbidden} ->
             forbidden(conn)
 
+          {:error, :past} ->
+            unprocessable(conn, @past)
+
           {:error, :not_cancellable} ->
             unprocessable(conn, "this request can no longer be cancelled")
 
@@ -63,6 +82,12 @@ defmodule RockcutApiWeb.TimeOffController do
   end
 
   defp forbidden(conn), do: conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})
+
+  defp already(%Request{status: status}), do: "This request has already been #{status}."
+
+  # 409 with the request as it is now, so a stale dialog can show it.
+  defp conflict(conn, msg, %Request{} = current),
+    do: conn |> put_status(:conflict) |> json(%{error: msg, data: time_off_request(current)})
 
   defp unprocessable(conn, msg),
     do: conn |> put_status(:unprocessable_entity) |> json(%{error: msg})

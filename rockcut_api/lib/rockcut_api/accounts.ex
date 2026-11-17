@@ -553,7 +553,9 @@ defmodule RockcutApi.Accounts do
         if(Authz.can?(user, :read, :owner_activity),
           do: pending_owner_reviews_count(user),
           else: 0
-        )
+        ),
+      # D44 §2.6: the Schedule / Time off badge.
+      pending_time_off: RockcutApi.TimeOff.pending_count(user)
     }
   end
 

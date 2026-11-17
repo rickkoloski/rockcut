@@ -4,9 +4,10 @@ defmodule RockcutApi.TimeOff do
   approves or denies. Visibility and review authority derive from D10 roles.
   """
   import Ecto.Query
-  alias RockcutApi.Repo
-  alias RockcutApi.Authz
+  require Logger
+  alias RockcutApi.{Authz, Notifications, Repo}
   alias RockcutApi.Accounts.User
+  alias RockcutApi.Scheduling.Recurrence
   alias RockcutApi.TimeOff.Request
 
   @preloads [:user, :reviewed_by]
@@ -20,7 +21,11 @@ defmodule RockcutApi.TimeOff do
     end
   end
 
-  @doc "Requests visible to `user`: own + (managers) their departments' people + (owner) all."
+  @doc """
+  Requests visible to `user`: own + (managers) their departments' people +
+  (owner) all. Filters: `status`, `from`/`to` (UTC days), and `when` —
+  `"current"` or `"past"` (D44 §2.4; `when_values/0`), newest first either way.
+  """
   def list_for(user, filters \\ %{})
 
   def list_for(%User{} = user, filters) do
@@ -40,12 +45,63 @@ defmodule RockcutApi.TimeOff do
     end
   end
 
+  @doc """
+  Pending, not past requests `user` sees in `list_for/2` (D44 §2.6): their own
+  plus those they manage, each once. The `/api/me` time off badge.
+  """
+  def pending_count(%User{} = user) do
+    Request
+    |> visible_to(user)
+    |> where([r], r.status == "pending")
+    |> current()
+    |> Repo.aggregate(:count)
+  end
+
+  ## Past (D44 §2.4)
+
+  @when_values ~w(current past)
+
+  @doc "The accepted `when` filter values."
+  def when_values, do: @when_values
+
+  @doc """
+  A request is past when its last day is before today (Colorado): time off
+  ending today stays current until tomorrow. All-day requests end at 23:59
+  Colorado time on their last day. `ends_at` is exclusive at a day boundary
+  (lead decisions 1, items 2 and 7; the UI's `timeOffLastDayKey`): timed time
+  off ending at 00:00 today ended yesterday, so it is past from today.
+  """
+  def past?(%Request{ends_at: ends_at, all_day: all_day}) do
+    case DateTime.compare(ends_at, today_start()) do
+      :lt -> true
+      :eq -> all_day == false
+      :gt -> false
+    end
+  end
+
+  # Today in Colorado, and its midnight in UTC.
+  defp today, do: elem(Recurrence.to_local(DateTime.utc_now()), 0)
+  defp today_start, do: Recurrence.local_midnight(today())
+
+  # The query form of `past?/1`.
+  defp current(query) do
+    start = today_start()
+    where(query, [r], r.ends_at > ^start or (r.ends_at == ^start and r.all_day == true))
+  end
+
+  defp past(query) do
+    start = today_start()
+    where(query, [r], r.ends_at < ^start or (r.ends_at == ^start and r.all_day == false))
+  end
+
   ## Writes
 
   @doc """
-  Create a request. For oneself it is `pending` (normal request flow). A
-  manager/owner may pass a `user_id` for an employee they manage; that request
-  is created **approved** (they hold review authority), otherwise `:forbidden`.
+  Create a request. For oneself it is `pending` (normal request flow), and
+  can't end in the past (`{:error, :past_request}`, D44 §2.4; owners and
+  managers too). A manager/owner may pass a `user_id` for an employee they
+  manage; that request is created **approved** (they hold review authority),
+  past dates allowed, otherwise `:forbidden`.
   """
   def create(attrs, %User{} = requester) do
     attrs = stringify(attrs)
@@ -57,13 +113,76 @@ defmodule RockcutApi.TimeOff do
       {:ok, target_id} ->
         attrs = Map.put(attrs, "user_id", target_id)
         reviewer = if target_id == requester.id, do: nil, else: requester
-        insert_request(attrs, reviewer)
+
+        with {:ok, req} <- insert_request(attrs, reviewer) do
+          # An on-behalf request is created approved: nothing to review (§2.5).
+          if is_nil(reviewer), do: notify_reviewers(req)
+          {:ok, req}
+        end
     end
   end
 
+  # Field errors first; then an own request that has already ended, one
+  # starting more than a year ahead, and one overlapping the person's own
+  # pending or approved time off (D44 DEV fix cycle 1, G6/G7).
   defp insert_request(attrs, reviewer) do
     changeset = Request.create_changeset(%Request{}, attrs)
 
+    cond do
+      not changeset.valid? -> {:error, changeset}
+      is_nil(reviewer) and own_past?(changeset) -> {:error, :past_request}
+      too_far?(changeset) -> {:error, :too_far}
+      overlaps?(changeset) -> {:error, if(reviewer, do: :overlap, else: :overlap_own)}
+      true -> do_insert(changeset, reviewer)
+    end
+  end
+
+  @max_days_ahead 365
+
+  # Starts (Colorado day) more than a year after today.
+  defp too_far?(changeset) do
+    {first, _} = Recurrence.to_local(Ecto.Changeset.get_field(changeset, :starts_at))
+    Date.diff(first, today()) > @max_days_ahead
+  end
+
+  # Any overlap with the same person's pending or approved requests, ends
+  # exclusive: all day covers its whole Colorado days (to the next midnight),
+  # timed ends at `ends_at`, so requests touching at midnight don't overlap.
+  defp overlaps?(changeset) do
+    get = &Ecto.Changeset.get_field(changeset, &1)
+    {lo, hi} = span(get.(:starts_at), get.(:ends_at), get.(:all_day))
+    # A superset by stored times: an all-day span ends a minute after 23:59.
+    reach = DateTime.add(lo, -1, :day)
+
+    from(r in Request,
+      where: r.user_id == ^get.(:user_id) and r.status in ["pending", "approved"],
+      where: r.starts_at < ^hi and r.ends_at > ^reach
+    )
+    |> Repo.all()
+    |> Enum.any?(fn r ->
+      {s, e} = span(r.starts_at, r.ends_at, r.all_day)
+      DateTime.compare(s, hi) == :lt and DateTime.compare(lo, e) == :lt
+    end)
+  end
+
+  defp span(starts_at, ends_at, true) do
+    {first, _} = Recurrence.to_local(starts_at)
+    {last, _} = Recurrence.to_local(ends_at)
+    {Recurrence.local_midnight(first), Recurrence.local_midnight(Date.add(last, 1))}
+  end
+
+  defp span(starts_at, ends_at, _timed), do: {starts_at, ends_at}
+
+  # An own request whose last day has already passed (D44 §2.4, Matt): a
+  # manager enters it on the person's behalf instead.
+  defp own_past?(changeset),
+    do:
+      past?(%Request{
+        ends_at: Ecto.Changeset.get_field(changeset, :ends_at),
+        all_day: Ecto.Changeset.get_field(changeset, :all_day)
+      })
+
+  defp do_insert(changeset, reviewer) do
     changeset =
       if reviewer do
         Ecto.Changeset.change(changeset,
@@ -107,37 +226,88 @@ defmodule RockcutApi.TimeOff do
     end
   end
 
-  def review(%Request{} = req, %User{} = reviewer, status, note)
+  @doc """
+  Approve or deny (including denying an approved request: Remove). A past
+  request can't be reviewed (D44 §2.4). The requester is told the decision
+  unless they made it (§2.7).
+
+  After the permission and past checks (lead decision 1): `expected_status`
+  (the status the reviewer saw; optional) must still be the stored one, else
+  `{:error, {:changed, current}}`; approve only from `pending` and deny only
+  from `pending` or `approved`, else `{:error, {:already, current}}`. The
+  update is conditional on the status read, so of two reviewers acting at
+  once the second gets `:changed`.
+  """
+  def review(req, reviewer, status, note, expected_status \\ nil)
+
+  def review(%Request{} = req, %User{} = reviewer, status, note, expected_status)
       when status in ~w(approved denied) do
-    if Authz.can?(reviewer, :review, req) do
-      req
-      |> Ecto.Changeset.change(%{
-        status: status,
-        reviewer_note: note,
-        reviewed_by_id: reviewer.id,
-        reviewed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-      })
-      |> Repo.update()
-      |> case do
-        {:ok, updated} -> {:ok, get(updated.id)}
-        other -> other
-      end
-    else
-      {:error, :forbidden}
+    cond do
+      not Authz.can?(reviewer, :review, req) ->
+        {:error, :forbidden}
+
+      past?(req) ->
+        {:error, :past}
+
+      expected_status not in [nil, ""] and expected_status != req.status ->
+        {:error, {:changed, req}}
+
+      req.status not in reviewable_from(status) ->
+        {:error, {:already, req}}
+
+      true ->
+        case Request.reviewer_note_changeset(req, %{reviewer_note: note}) do
+          %{valid?: true} = cs ->
+            decide(req, reviewer, status, Ecto.Changeset.get_field(cs, :reviewer_note))
+
+          cs ->
+            {:error, cs}
+        end
     end
   end
 
-  def review(_req, _reviewer, _status, _note), do: {:error, :invalid_status}
+  def review(_req, _reviewer, _status, _note, _expected_status), do: {:error, :invalid_status}
+
+  defp reviewable_from("approved"), do: ["pending"]
+  defp reviewable_from("denied"), do: ["pending", "approved"]
+
+  defp decide(req, reviewer, status, note) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    {count, _} =
+      from(r in Request, where: r.id == ^req.id and r.status == ^req.status)
+      |> Repo.update_all(
+        set: [
+          status: status,
+          reviewer_note: note,
+          reviewed_by_id: reviewer.id,
+          reviewed_at: now,
+          updated_at: now
+        ]
+      )
+
+    updated = get(req.id)
+
+    if count == 1 do
+      if updated.user_id != reviewer.id, do: notify_requester(updated)
+      {:ok, updated}
+    else
+      {:error, {:changed, updated}}
+    end
+  end
 
   @doc """
   The requester withdraws their own request. Works while it is `pending` or
   already `approved` (so an approved day off can be given back); a
-  denied/cancelled request cannot be re-cancelled.
+  denied/cancelled or past (D44 §2.4) request cannot be cancelled.
   """
   def cancel(%Request{} = req, %User{} = user) do
     cond do
       not Authz.can?(user, :cancel, req) ->
         {:error, :forbidden}
+
+      past?(req) ->
+        {:error, :past}
 
       req.status not in ["pending", "approved"] ->
         {:error, :not_cancellable}
@@ -150,11 +320,95 @@ defmodule RockcutApi.TimeOff do
     end
   end
 
+  ## Notifications (D44 §2.5, §2.7)
+
+  @doc """
+  Everyone who could review `req` except its requester: active people for
+  whom `Authz.can?(_, :review, req)` holds (owners, managers of the
+  requester's departments), each once. `req` needs `user.memberships`.
+  """
+  def reviewers(%Request{user: %User{memberships: memberships}} = req) do
+    memberships
+    |> Enum.map(& &1.department_id)
+    |> Authz.time_off_reviewers_query()
+    |> Repo.all()
+    |> Repo.preload(memberships: :department)
+    |> Enum.filter(&(&1.id != req.user_id and Authz.can?(&1, :review, req)))
+  end
+
+  # Best-effort: a failed notification never fails the request.
+  defp notify_reviewers(%Request{} = req) do
+    name = person_name(req.user)
+
+    payload = %{
+      title: "#{name} requested time off",
+      body: join_lines([details(req), req.note]),
+      data: %{"url" => "/time_off"}
+    }
+
+    req |> reviewers() |> Enum.each(&safe_notify(&1, :time_off_requested, payload))
+  rescue
+    e -> Logger.error("time off notify failed: #{inspect(e)}")
+  end
+
+  defp notify_requester(%Request{} = req) do
+    payload = %{
+      title: "Your time off was #{req.status}",
+      body:
+        join_lines([
+          details(req),
+          "#{String.capitalize(req.status)} by #{person_name(req.reviewed_by)}",
+          req.reviewer_note
+        ]),
+      data: %{"url" => "/time_off"}
+    }
+
+    safe_notify(req.user, :time_off_reviewed, payload)
+  end
+
+  defp safe_notify(%User{} = user, event, payload) do
+    Notifications.notify(user, event, payload)
+  rescue
+    e -> Logger.error("time off notify failed: #{inspect(e)}")
+  end
+
+  defp person_name(%User{name: name, email: email}), do: name || email
+  defp person_name(_), do: "someone"
+
+  # "PTO · Mon Nov 23 – Wed Nov 25, all day" / "Sick · Mon Nov 23, 2:00 PM–5:00 PM",
+  # Colorado time.
+  defp details(%Request{} = req), do: "#{type_label(req.type)} · #{dates_label(req)}"
+
+  defp type_label("pto"), do: "PTO"
+  defp type_label(type), do: String.capitalize(type || "")
+
+  defp dates_label(%Request{starts_at: starts_at, ends_at: ends_at, all_day: all_day}) do
+    {sd, st} = Recurrence.to_local(starts_at)
+    {ed, et} = Recurrence.to_local(ends_at)
+
+    cond do
+      all_day and sd == ed -> "#{day_label(sd)}, all day"
+      all_day -> "#{day_label(sd)} – #{day_label(ed)}, all day"
+      sd == ed -> "#{day_label(sd)}, #{time_label(st)}–#{time_label(et)}"
+      true -> "#{day_label(sd)}, #{time_label(st)} – #{day_label(ed)}, #{time_label(et)}"
+    end
+  end
+
+  defp day_label(%Date{} = d), do: Calendar.strftime(d, "%a %b %-d")
+  defp time_label(%Time{} = t), do: Calendar.strftime(t, "%-I:%M %p")
+
+  defp join_lines(lines),
+    do: lines |> Enum.reject(&(&1 in [nil, ""])) |> Enum.join("\n")
+
   ## Helpers
 
   defp apply_filters(query, filters) do
     query
     |> maybe(filters, "status", fn q, s -> where(q, [r], r.status == ^s) end)
+    |> maybe(filters, "when", fn
+      q, "current" -> current(q)
+      q, "past" -> past(q)
+    end)
     |> maybe(filters, "from", fn q, d -> where(q, [r], r.ends_at >= ^day_start(d)) end)
     |> maybe(filters, "to", fn q, d -> where(q, [r], r.starts_at <= ^day_end(d)) end)
   end

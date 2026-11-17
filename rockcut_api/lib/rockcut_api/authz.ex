@@ -157,6 +157,20 @@ defmodule RockcutApi.Authz do
     )
   end
 
+  @doc """
+  Active people who may review time off for a member of `dept_ids`: owners and
+  managers of any of those departments (D44 §2.5). A cheap candidate set; the
+  caller keeps those for whom `can?(_, :review, req)` holds.
+  """
+  def time_off_reviewers_query(dept_ids) do
+    from(u in User,
+      left_join: m in Membership,
+      on: m.user_id == u.id and m.role == "manager" and m.department_id in ^dept_ids,
+      where: u.active == true and u.kind == "person" and (u.is_owner == true or not is_nil(m.id)),
+      distinct: true
+    )
+  end
+
   @doc "Active owners: D59 notifies them about an owners-only department's channel."
   def owners_audience_query do
     from(u in User, where: u.active == true and u.is_owner == true)

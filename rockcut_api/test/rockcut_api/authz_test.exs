@@ -117,8 +117,9 @@ defmodule RockcutApi.AuthzTest do
           %{
             "type" => "pto",
             "all_day" => true,
-            "starts_at" => "2026-10-01T16:00:00Z",
-            "ends_at" => "2026-10-02T00:00:00Z"
+            # A week from now: an own request can't be past (D44 §2.4).
+            "starts_at" => DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_iso8601(),
+            "ends_at" => DateTime.utc_now() |> DateTime.add(8, :day) |> DateTime.to_iso8601()
           },
           p["floater"]
         )

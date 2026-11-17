@@ -24,6 +24,16 @@ export function formatDayHeading(iso: string): string {
   }).format(new Date(iso))
 }
 
+/** The year to add to a label: "" when `dayKey` is in today's (Colorado) year, else ", 2027". */
+export function yearSuffix(dayKey: string, todayKey = localDayKey(new Date().toISOString())): string {
+  return dayKey.slice(0, 4) === todayKey.slice(0, 4) ? '' : `, ${dayKey.slice(0, 4)}`
+}
+
+/** Heading for a day key: "Wednesday, Sep 24"; another year's day gets it: "Tuesday, Jan 5, 2027". */
+export function formatDayKeyHeading(dayKey: string, todayKey?: string): string {
+  return `${formatDayHeading(`${dayKey}T12:00:00Z`)}${yearSuffix(dayKey, todayKey)}`
+}
+
 /** Time like "4:00 PM". */
 export function formatTime(iso: string): string {
   return new Intl.DateTimeFormat('en-US', {
@@ -130,15 +140,23 @@ export function formatDayColumn(key: string): string {
   }).format(new Date(`${key}T12:00:00Z`))
 }
 
-/** Range label like "Sep 22 – 28" for the week starting at `mondayKey`. */
-export function formatWeekRange(mondayKey: string): string {
+/**
+ * Range label like "Sep 22 – 28" for the week starting at `mondayKey`; with
+ * the year when a day in it isn't this year's (D44 DEV fix cycle 2, N2):
+ * "Jan 4 – 10, 2027", or across New Year "Dec 28, 2026 – Jan 3, 2027".
+ */
+export function formatWeekRange(mondayKey: string, todayKey?: string): string {
+  const endKey = addDaysKey(mondayKey, 6)
   const start = new Date(`${mondayKey}T12:00:00Z`)
-  const end = new Date(`${addDaysKey(mondayKey, 6)}T12:00:00Z`)
+  const end = new Date(`${endKey}T12:00:00Z`)
   const mo = (d: Date) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' }).format(d)
   const day = (d: Date) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', day: 'numeric' }).format(d)
   const startLabel = `${mo(start)} ${day(start)}`
+  if (mondayKey.slice(0, 4) !== endKey.slice(0, 4)) {
+    return `${startLabel}, ${mondayKey.slice(0, 4)} – ${mo(end)} ${day(end)}, ${endKey.slice(0, 4)}`
+  }
   const endLabel = mo(start) === mo(end) ? day(end) : `${mo(end)} ${day(end)}`
-  return `${startLabel} – ${endLabel}`
+  return `${startLabel} – ${endLabel}${yearSuffix(mondayKey, todayKey)}`
 }
 
 // ── Durations ───────────────────────────────────────────────────────

@@ -3,8 +3,9 @@ defmodule RockcutApiWeb.TimeOffControllerTest do
 
   import RockcutApi.AccountsFixtures
 
-  @start "2026-10-01T16:00:00Z"
-  @finish "2026-10-03T00:00:00Z"
+  # A week from now: past requests can't be reviewed or cancelled (D44 §2.4).
+  defp start, do: DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_iso8601()
+  defp finish, do: DateTime.utc_now() |> DateTime.add(9, :day) |> DateTime.to_iso8601()
 
   defp bearer(conn, user) do
     token = session_token_fixture(user)
@@ -16,7 +17,7 @@ defmodule RockcutApiWeb.TimeOffControllerTest do
     |> bearer(user)
     |> post(
       ~p"/api/time_off",
-      Map.merge(%{type: "pto", all_day: true, starts_at: @start, ends_at: @finish}, attrs)
+      Map.merge(%{type: "pto", all_day: true, starts_at: start(), ends_at: finish()}, attrs)
     )
     |> json_response(201)
   end
@@ -176,8 +177,8 @@ defmodule RockcutApiWeb.TimeOffControllerTest do
              %{
                type: "pto",
                all_day: true,
-               starts_at: @start,
-               ends_at: @finish,
+               starts_at: start(),
+               ends_at: finish(),
                user_id: outsider.id
              }
            )
