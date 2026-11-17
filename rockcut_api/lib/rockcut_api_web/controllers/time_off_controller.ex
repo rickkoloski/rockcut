@@ -7,9 +7,15 @@ defmodule RockcutApiWeb.TimeOffController do
 
   action_fallback RockcutApiWeb.FallbackController
 
+  @past "This time off has already passed"
+
   def index(conn, params) do
-    requests = TimeOff.list_for(conn.assigns.current_user, params)
-    json(conn, %{data: Enum.map(requests, &time_off_request/1)})
+    if params["when"] in [nil, "" | TimeOff.when_values()] do
+      requests = TimeOff.list_for(conn.assigns.current_user, params)
+      json(conn, %{data: Enum.map(requests, &time_off_request/1)})
+    else
+      unprocessable(conn, "when must be current or past")
+    end
   end
 
   def create(conn, params) do
@@ -35,6 +41,7 @@ defmodule RockcutApiWeb.TimeOffController do
           {:ok, updated} -> json(conn, %{data: time_off_request(updated)})
           {:error, :forbidden} -> forbidden(conn)
           {:error, :invalid_status} -> unprocessable(conn, "status must be approved or denied")
+          {:error, :past} -> unprocessable(conn, @past)
           other -> other
         end
     end
@@ -52,6 +59,9 @@ defmodule RockcutApiWeb.TimeOffController do
 
           {:error, :forbidden} ->
             forbidden(conn)
+
+          {:error, :past} ->
+            unprocessable(conn, @past)
 
           {:error, :not_cancellable} ->
             unprocessable(conn, "this request can no longer be cancelled")

@@ -24,12 +24,13 @@ defmodule RockcutApi.AuthzParity.TimeOffTest do
     %{p: p, reqs: reqs}
   end
 
+  # A week from now: past requests can't be reviewed or cancelled (D44 §2.4).
   defp base,
     do: %{
       "type" => "pto",
       "all_day" => true,
-      "starts_at" => "2026-10-01T16:00:00Z",
-      "ends_at" => "2026-10-03T00:00:00Z"
+      "starts_at" => DateTime.utc_now() |> DateTime.add(7, :day) |> DateTime.to_iso8601(),
+      "ends_at" => DateTime.utc_now() |> DateTime.add(9, :day) |> DateTime.to_iso8601()
     }
 
   defp requester_keys(conn, p) do

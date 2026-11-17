@@ -31,7 +31,8 @@ defmodule RockcutApi.Notifications do
   # channels a preference names: the delivered ones, and "sms", which the UI
   # still lists (never sent).
   @events ~w(shift_scheduled shift_changed shift_reminder open_shift message_posted
-             calendar_feed_rotated task_shift_end idea_card_changed)
+             calendar_feed_rotated task_shift_end idea_card_changed time_off_requested
+             time_off_reviewed)
   @pref_channels ~w(in_app email push sms)
 
   ## Dispatch
