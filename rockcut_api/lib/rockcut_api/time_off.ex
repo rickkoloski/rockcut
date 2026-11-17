@@ -65,11 +65,19 @@ defmodule RockcutApi.TimeOff do
   def when_values, do: @when_values
 
   @doc """
-  A request is past when the Colorado day of its `ends_at` is before today
-  (Colorado): time off ending today stays current until tomorrow. All-day
-  requests end at 23:59 Colorado time on their last day.
+  A request is past when its last day is before today (Colorado): time off
+  ending today stays current until tomorrow. All-day requests end at 23:59
+  Colorado time on their last day. `ends_at` is exclusive at a day boundary
+  (lead decisions 1, items 2 and 7; the UI's `timeOffLastDayKey`): timed time
+  off ending at 00:00 today ended yesterday, so it is past from today.
   """
-  def past?(%Request{ends_at: ends_at}), do: DateTime.compare(ends_at, today_start()) == :lt
+  def past?(%Request{ends_at: ends_at, all_day: all_day}) do
+    case DateTime.compare(ends_at, today_start()) do
+      :lt -> true
+      :eq -> all_day == false
+      :gt -> false
+    end
+  end
 
   # Colorado midnight at the start of today, in UTC.
   defp today_start do
@@ -77,14 +85,15 @@ defmodule RockcutApi.TimeOff do
     Recurrence.local_midnight(today)
   end
 
+  # The query form of `past?/1`.
   defp current(query) do
     start = today_start()
-    where(query, [r], r.ends_at >= ^start)
+    where(query, [r], r.ends_at > ^start or (r.ends_at == ^start and r.all_day == true))
   end
 
   defp past(query) do
     start = today_start()
-    where(query, [r], r.ends_at < ^start)
+    where(query, [r], r.ends_at < ^start or (r.ends_at == ^start and r.all_day == false))
   end
 
   ## Writes
@@ -126,7 +135,11 @@ defmodule RockcutApi.TimeOff do
   # An own request whose last day has already passed (D44 §2.4, Matt): a
   # manager enters it on the person's behalf instead.
   defp own_past?(%Ecto.Changeset{valid?: true} = changeset),
-    do: past?(%Request{ends_at: Ecto.Changeset.get_field(changeset, :ends_at)})
+    do:
+      past?(%Request{
+        ends_at: Ecto.Changeset.get_field(changeset, :ends_at),
+        all_day: Ecto.Changeset.get_field(changeset, :all_day)
+      })
 
   defp own_past?(_changeset), do: false
 

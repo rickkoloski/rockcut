@@ -90,11 +90,12 @@ export function describeTimeOffRange(r: TimeOffRequest): string {
 }
 
 /**
- * D44 §2.4: past when its last day off (the Colorado day of `ends_at`) is
- * before today. The API's `TimeOff.past?/1` is the same rule.
+ * D44 §2.4: past when its last day off (`timeOffLastDayKey`: timed time off
+ * ending at 12:00 AM ended the day before, lead decisions 1 item 7) is before
+ * today. The API's `TimeOff.past?/1` is the same rule.
  */
 export function isPastTimeOff(r: TimeOffRequest, todayKey = localDayKey(new Date().toISOString())): boolean {
-  return localDayKey(r.ends_at) < todayKey
+  return timeOffLastDayKey(r) < todayKey
 }
 
 /**

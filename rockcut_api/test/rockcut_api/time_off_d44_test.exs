@@ -152,6 +152,71 @@ defmodule RockcutApi.TimeOffD44Test do
     end
   end
 
+  describe "timed time off ending at 00:00 (lead decisions 1, item 7)" do
+    # Yesterday 8:00 PM → 00:00 today: its last day was yesterday.
+    # Today 8:00 PM → 00:00 tomorrow: its last day is today.
+    defp evening(first),
+      do: %{
+        "type" => "personal",
+        "all_day" => false,
+        "starts_at" => at(first, ~T[20:00:00]) |> DateTime.to_iso8601(),
+        "ends_at" => at(Date.add(first, 1), ~T[00:00:00]) |> DateTime.to_iso8601()
+      }
+
+    test "ending 00:00 today is past from today", %{p: p} do
+      me = p["bartender1"]
+      t = today()
+
+      # Own: refused as already ended, nothing stored.
+      conn = call(me, :post, "/api/time_off", evening(Date.add(t, -1)))
+      assert conn.status == 422
+      assert error(conn) == "This date has passed. Ask your manager to enter it for you."
+
+      req = request!(me, evening(Date.add(t, -1)))
+      assert TimeOff.past?(req)
+      assert MapSet.member?(call(me, :get, "/api/time_off", %{"when" => "past"}) |> ids(), req.id)
+
+      refute MapSet.member?(
+               call(me, :get, "/api/time_off", %{"when" => "current"}) |> ids(),
+               req.id
+             )
+
+      assert pending_badge(p["barMgr"]) == 0
+      assert pending_badge(me) == 0
+
+      conn = call(p["barMgr"], :post, "/api/time_off/#{req.id}/review", %{"status" => "approved"})
+      assert conn.status == 422
+      assert error(conn) == "This time off has already passed"
+    end
+
+    test "ending 00:00 tomorrow is current today", %{p: p} do
+      me = p["bartender1"]
+      t = today()
+
+      conn = call(me, :post, "/api/time_off", evening(t))
+      assert conn.status == 201
+      id = Jason.decode!(conn.resp_body)["data"]["id"]
+      req = TimeOff.get(id)
+
+      refute TimeOff.past?(req)
+      assert MapSet.member?(call(me, :get, "/api/time_off", %{"when" => "current"}) |> ids(), id)
+      refute MapSet.member?(call(me, :get, "/api/time_off", %{"when" => "past"}) |> ids(), id)
+      assert pending_badge(p["barMgr"]) == 1
+
+      conn = call(p["barMgr"], :post, "/api/time_off/#{id}/review", %{"status" => "approved"})
+      assert conn.status == 200
+    end
+
+    test "an all-day request is unaffected: ending exactly 00:00 today stays current", %{p: p} do
+      t = today()
+
+      req =
+        request!(p["bartender1"], attrs(Date.add(t, -1), t, ~T[00:00:00]))
+
+      refute TimeOff.past?(req)
+    end
+  end
+
   describe "past requests are read-only" do
     setup %{p: p} do
       t = today()

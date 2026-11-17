@@ -47,6 +47,17 @@ describe('isPastTimeOff', () => {
     expect(isPastTimeOff(late, '2026-10-07')).toBe(false)
     expect(isPastTimeOff(late, '2026-10-08')).toBe(true)
   })
+
+  it('timed time off ending at 12:00 AM is past from that day (lead decisions 1, item 7)', () => {
+    // Wed Nov 18 8:00 PM → Thu Nov 19 12:00 AM Colorado (MST).
+    const evening = req(15, '2026-11-19T03:00:00Z', '2026-11-19T07:00:00Z', { all_day: false })
+    expect(isPastTimeOff(evening, '2026-11-18')).toBe(false) // ends 00:00 tomorrow: current today
+    expect(isPastTimeOff(evening, '2026-11-19')).toBe(true) // ends 00:00 today: past
+    expect(canReviewTimeOff(evening, { isOwner: true, managesDepartments: [] }, '2026-11-19')).toBe(false)
+    // All day ending exactly 00:00 is unaffected, as on the API.
+    const oddAllDay = req(16, '2026-11-18T07:00:00Z', '2026-11-19T07:00:00Z')
+    expect(isPastTimeOff(oddAllDay, '2026-11-19')).toBe(false)
+  })
 })
 
 describe('canReviewTimeOff', () => {
