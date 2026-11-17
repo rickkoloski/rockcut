@@ -28,3 +28,12 @@ gate step 2): 2 must-fix, 2 minor. Plus the gate's order-dependent theme spec.
    employee via the API, cancelled by id afterwards) so it doesn't depend on run order.
 6. Not changing: 422-before-403 for malformed review bodies (QA note b); `newhire` 403 on
    notifications (the required-reset gate, by design).
+
+## Addendum (after fix cycle 1)
+
+7. **One "last day" everywhere.** Item 2 made a request's last day the day before when `ends_at` is
+   exactly 00:00 Colorado; the past rule still used `ends_at`'s own day, so such a request stayed
+   current (badge, reviewable, main view) one day too long. The API's `past?/1` and current/past
+   queries and the UI's `isPastTimeOff` use the same last day as `timeOffLastDayKey`. The "own past
+   request" refusal follows it too. Tests on both sides for a request ending 00:00 today (past from
+   today) and 00:00 tomorrow (current today).
