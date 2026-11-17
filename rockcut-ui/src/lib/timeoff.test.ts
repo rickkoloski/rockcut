@@ -6,7 +6,9 @@ import {
   canReviewTimeOff,
   describeTimeOffRange,
   isPastTimeOff,
+  timeOffLastDayKey,
 } from './timeoff'
+import { buildOffWindows, conflictsFor } from './conflicts'
 import type { TimeOffRequest, TimeOffStatus } from './types'
 
 // Colorado is UTC-6 in October (MDT) and UTC-7 in November (MST).
@@ -137,5 +139,49 @@ describe('agendaTimeOffLabel', () => {
     expect(agendaTimeOffLabel(span, '2026-10-05')).toMatch(/^From 3:30\s?PM$/)
     expect(agendaTimeOffLabel(span, '2026-10-06')).toBe('All day')
     expect(agendaTimeOffLabel(span, '2026-10-07')).toMatch(/^Until 12:00\s?PM$/)
+  })
+})
+
+// Lead decision 2: `ends_at` is exclusive at a day boundary. QA's case: Wed
+// Nov 18 8:00 PM → Thu Nov 19 12:00 AM Colorado (MST, UTC-7).
+describe('time off ending at 12:00 AM', () => {
+  const evening = req(11, '2026-11-19T03:00:00Z', '2026-11-19T07:00:00Z', { all_day: false, status: 'pending', type: 'personal' })
+  // Tue Nov 17 8:00 PM → Thu Nov 19 12:00 AM.
+  const twoNights = req(12, '2026-11-18T03:00:00Z', '2026-11-19T07:00:00Z', { all_day: false })
+  // Ends one minute later: Thursday is covered.
+  const pastMidnight = req(13, '2026-11-19T03:00:00Z', '2026-11-19T07:01:00Z', { all_day: false })
+  // All day Wed Nov 18 (00:00 → 23:59).
+  const wednesday = req(14, '2026-11-18T07:00:00Z', '2026-11-19T06:59:00Z')
+
+  it('the last day is the day before', () => {
+    expect(timeOffLastDayKey(evening)).toBe('2026-11-18')
+    expect(timeOffLastDayKey(twoNights)).toBe('2026-11-18')
+    expect(timeOffLastDayKey(pastMidnight)).toBe('2026-11-19')
+    expect(timeOffLastDayKey(wednesday)).toBe('2026-11-18')
+  })
+
+  it('the Scheduler shows it on Wednesday only', () => {
+    const days = buildOffMarkers([evening], '2026-11-16').get(1)!
+    expect([...days.keys()]).toEqual(['2026-11-18'])
+    expect(days.get('2026-11-18')![0].label).toMatch(/^Off 8:00\s?PM–12:00\s?AM$/)
+    expect([...buildOffMarkers([twoNights], '2026-11-16').get(1)!.keys()]).toEqual(['2026-11-17', '2026-11-18'])
+    expect([...buildOffMarkers([pastMidnight], '2026-11-16').get(1)!.keys()]).toEqual(['2026-11-18', '2026-11-19'])
+  })
+
+  it('the agenda shows it on Wednesday only', () => {
+    const days = agendaTimeOffByDay([evening, twoNights], '2026-11-16', '2026-11-22')
+    expect(days.get('2026-11-19')).toBeUndefined()
+    expect(days.get('2026-11-18')?.map((r) => r.id)).toEqual([12, 11])
+    expect(agendaTimeOffLabel(evening, '2026-11-18')).toMatch(/^8:00\s?PM–12:00\s?AM$/)
+    expect(agendaTimeOffLabel(twoNights, '2026-11-17')).toMatch(/^From 8:00\s?PM$/)
+    expect(agendaTimeOffLabel(twoNights, '2026-11-18')).toMatch(/^Until 12:00\s?AM$/)
+  })
+
+  it('a Thursday shift is no conflict (buildOffWindows uses the exact end)', () => {
+    const off = buildOffWindows([{ ...evening, status: 'approved' }])
+    const thursday = { assigneeId: 1, startsAt: '2026-11-19T07:00:00Z', endsAt: '2026-11-19T15:00:00Z' }
+    expect(conflictsFor(thursday, [], off)).toEqual([])
+    const late = { assigneeId: 1, startsAt: '2026-11-19T05:00:00Z', endsAt: '2026-11-19T08:00:00Z' }
+    expect(conflictsFor(late, [], off)).toHaveLength(1)
   })
 })

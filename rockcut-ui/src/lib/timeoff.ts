@@ -2,7 +2,7 @@
 // times for partial-day (timed) requests, clipped to each Denver day. A
 // multi-day timed range reads "from 3:30 PM" on the first day, "until 12:00 PM"
 // on the last, and all-day in between.
-import { addDaysKey, formatDayHeading, formatTime, localDayKey } from './datetime'
+import { addDaysKey, formatDayHeading, formatTime, localDayKey, utcToLocalInput } from './datetime'
 import type { TimeOffRequest, TimeOffType } from './types'
 
 export interface OffMarker {
@@ -11,6 +11,16 @@ export interface OffMarker {
   type: TimeOffType
   allDay: boolean
   pending: boolean // an unapproved request — shown, but not a hard conflict
+}
+
+/**
+ * The last Colorado day a request covers. `ends_at` is exclusive at a day
+ * boundary: timed time off ending at 12:00 AM ends on the day before (lead
+ * decision 2). All-day requests end at 23:59, so they're unaffected.
+ */
+export function timeOffLastDayKey(r: Pick<TimeOffRequest, 'all_day' | 'starts_at' | 'ends_at'>): string {
+  const endKey = localDayKey(r.ends_at)
+  return r.all_day || !utcToLocalInput(r.ends_at).endsWith('T00:00') ? endKey : addDaysKey(endKey, -1)
 }
 
 /** Label for one request on one day, given its first/last Denver day keys. */
@@ -35,7 +45,7 @@ export function buildOffMarkers(
     if (r.status !== 'approved' && r.status !== 'pending') continue
     const pending = r.status === 'pending'
     const startKey = localDayKey(r.starts_at)
-    const endKey = localDayKey(r.ends_at)
+    const endKey = timeOffLastDayKey(r)
     let d = startKey < mondayKey ? mondayKey : startKey
     const end = endKey > sunday ? sunday : endKey
 
@@ -135,7 +145,7 @@ export function agendaTimeOffByDay(
     if (f.departmentKey && !(f.departmentsOf?.(r.user_id) ?? []).includes(f.departmentKey)) continue
 
     const startKey = localDayKey(r.starts_at)
-    const endKey = localDayKey(r.ends_at)
+    const endKey = timeOffLastDayKey(r)
     let d = from && startKey < from ? from : startKey
     const last = to && endKey > to ? to : endKey
     while (d <= last) {
@@ -155,7 +165,7 @@ export function agendaTimeOffByDay(
 
 /** The agenda row's time: "All day", or the request's hours on that day. */
 export function agendaTimeOffLabel(r: TimeOffRequest, dayKey: string): string {
-  const label = labelForDay(r, dayKey, localDayKey(r.starts_at), localDayKey(r.ends_at))
+  const label = labelForDay(r, dayKey, localDayKey(r.starts_at), timeOffLastDayKey(r))
   if (label === 'Off') return 'All day'
   const hours = label.replace(/^Off /, '')
   return hours.charAt(0).toUpperCase() + hours.slice(1)
