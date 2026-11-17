@@ -76,6 +76,8 @@ export default function TimeOffDialog({ request, onClose, startWith }: Props) {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmRemove, setConfirmRemove] = useState(false)
+  // The request as the API last reported it (a 409's `data`), over the one we were given.
+  const [current, setCurrent] = useState<TimeOffRequest | null>(null)
 
   // A new request starts clean.
   const [shownId, setShownId] = useState<number | null>(null)
@@ -83,12 +85,13 @@ export default function TimeOffDialog({ request, onClose, startWith }: Props) {
     setShownId(request?.id ?? null)
     setNote('')
     setError(null)
+    setCurrent(null)
     setConfirmRemove(startWith === 'remove')
   }
   const direct = startWith === 'remove'
 
   if (!request) return null
-  const r = request
+  const r = current?.id === request.id ? current : request
   const reviewer = canReview(r)
   const name = personName(r.user)
 
@@ -96,13 +99,17 @@ export default function TimeOffDialog({ request, onClose, startWith }: Props) {
     setBusy(true)
     setError(null)
     try {
-      await api.post(`/api/time_off/${r.id}/review`, { status, reviewer_note: note.trim() || null })
+      // expected_status: the status shown here; the API answers 409 if it has changed.
+      await api.post(`/api/time_off/${r.id}/review`, { status, reviewer_note: note.trim() || null, expected_status: r.status })
       refresh()
       setConfirmRemove(false)
       onClose()
     } catch (err) {
       setConfirmRemove(false)
       setError(timeOffError(err))
+      // A 409 carries the request as it is now: show that state and its buttons.
+      const now = (err as { response?: { status?: number; data?: { data?: TimeOffRequest } } })?.response
+      if (now?.status === 409 && now.data?.data) setCurrent(now.data.data)
       // A refusal may mean the request changed (passed, reviewed elsewhere).
       refresh()
     } finally {
