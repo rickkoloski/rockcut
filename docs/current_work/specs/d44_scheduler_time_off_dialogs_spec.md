@@ -1,6 +1,6 @@
 # D44: Time off: Scheduler dialogs, archive, notifications — Spec
 
-**Status:** DRAFT (Matt, 2026-10-14; scope widened and Q1–Q8 answered 2026-11-16)
+**Status:** COMPLETE (on prod as `v2026.11.17`, 2026-11-17; drafted 2026-10-14, scope widened and Q1–Q8 answered 2026-11-16, DEV-QA decisions 2026-11-17)
 **Backlog:** none yet
 **Concept:** 07_scheduling
 **Split from:** D43 (UI tweaks): new behavior, so outside D43's scope rule
