@@ -1,6 +1,8 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
+import { weekMonday } from '../scheduler/helpers'
 import {
+  addDays,
   adopt,
   apiAs,
   apiBadge,
@@ -9,13 +11,16 @@ import {
   expectNavBadge,
   freeDays,
   navBadge,
+  openAgenda,
   requestOwn,
   review,
   tempTag,
+  today,
 } from './helpers'
 
 // D44 DEV fix cycle 1: G1 (badges catch up on navigation), G2 (long notes),
-// G5 (the phone menu's dot), G7 (no overlapping time off).
+// G5 (the phone menu's dot), G7 (no overlapping time off). DEV fix cycle 2:
+// N1 (a note cut at 2,000 says so), N2 (the year on next year's headings).
 
 test.afterEach(cleanupTimeOff)
 
@@ -169,5 +174,64 @@ test.describe('G7: the form shows the overlap refusal', () => {
       await page.getByRole('button', { name: 'Submit request' }).click()
       await expect(page.getByRole('alert').filter({ hasText: 'This person already has time off then.' })).toBeVisible()
     })
+  })
+})
+
+test.describe('bartender1: N1', () => {
+  test.use({ storageState: authFile('bartender1') })
+
+  test('D6: pasting 2,100 characters keeps 2,000 and says the rest was cut; shorter clears it', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    await page.goto('/time_off')
+    const field = page.getByLabel('Note (optional)')
+    const helper = page.locator('.MuiFormHelperText-root')
+
+    await field.fill('a'.repeat(1_799))
+    await expect(helper).toHaveCount(0)
+    await field.press('a')
+    await expect(helper).toHaveText('1,800 / 2,000')
+
+    await field.fill('')
+    await page.evaluate((t) => navigator.clipboard.writeText(t), 'z'.repeat(2_100))
+    await field.focus()
+    await page.keyboard.press('ControlOrMeta+V')
+    await expect(field).toHaveValue('z'.repeat(2_000))
+    await expect(helper).toHaveText('2,000 / 2,000 · the rest was cut')
+
+    await field.press('Backspace')
+    await expect(helper).toHaveText('1,999 / 2,000')
+    // Typing up to the cap isn't a cut; typing past it is.
+    await field.press('z')
+    await expect(helper).toHaveText('2,000 / 2,000')
+    await field.press('z')
+    await expect(helper).toHaveText('2,000 / 2,000 · the rest was cut')
+  })
+})
+
+test.describe('barMgr: N2', () => {
+  test.use({ storageState: authFile('barMgr') })
+
+  test('D7: next year’s dates carry the year: an agenda day heading and the Scheduler’s week label', async ({ page }) => {
+    const year = Number(today().slice(0, 4))
+    const daysTo = (key: string) => Math.round((Date.parse(`${key}T12:00:00Z`) - Date.parse(`${today()}T12:00:00Z`)) / 86_400_000)
+    const days = await freeDays('bartender1', daysTo(`${year + 1}-01-05`))
+    const r = await requestOwn('bartender1', days, tempTag('D7 next year'))
+
+    await openAgenda(page, days.first, days.last)
+    await expect(page.getByTestId(`agenda-time-off-${r.id}`).first()).toBeVisible()
+    await expect(page.getByTestId(`agenda-day-heading-${days.first}`)).toHaveText(new RegExp(`^\\w+day, \\w{3} \\d{1,2}, ${year + 1}$`))
+
+    // The Scheduler: the week across New Year shows both years, the next one its year.
+    const newYear = `${year + 1}-01-01`
+    let weeks = 0
+    while (addDays(weekMonday(weeks), 6) < newYear) weeks++
+    await page.goto('/scheduler')
+    const label = page.getByTestId('scheduler-week-label')
+    await expect(label).not.toContainText(String(year)) // this week
+    for (let i = 0; i < weeks; i++) await page.getByRole('button', { name: 'Next week' }).click()
+    const across = weekMonday(weeks) < newYear
+    await expect(label).toHaveText(across ? new RegExp(`^Dec \\d+, ${year} – Jan \\d+, ${year + 1}$`) : new RegExp(`^Jan 1 – 7, ${year + 1}$`))
+    await page.getByRole('button', { name: 'Next week' }).click()
+    await expect(label).toHaveText(new RegExp(`^Jan \\d+ – \\d+, ${year + 1}$`))
   })
 })
