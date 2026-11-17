@@ -27,7 +27,7 @@ Scheduler already loads the week's requests, every status),
 shows it yet), and `POST /api/time_off/:id/cancel`. Item 3 adds a filter to
 `GET /api/time_off` and refuses reviews of past requests (§2.4). Items 4 and
 6 add notification events (§2.5, §2.7); item 5 adds a count to `/api/me`
-(§2.6). Item 8 reuses the week's `GET /api/time_off` call the Scheduler
+(§2.6). Item 7 reuses the week's `GET /api/time_off` call the Scheduler
 already makes (§2.8). No migration, secrets or dependencies.
 
 ## 2. Behavior (first pass; to settle before planning)
