@@ -16,6 +16,7 @@ import {
 } from '@mui/material'
 import SyncIcon from '@mui/icons-material/Sync'
 import EventNoteIcon from '@mui/icons-material/EventNote'
+import EventBusyIcon from '@mui/icons-material/EventBusy'
 import RepeatIcon from '@mui/icons-material/Repeat'
 import PageHeader from '../../components/PageHeader'
 import { PageToolbar, SettingsChoices, SettingsGear, SettingsToggle } from '../../components/SettingsMenu'
@@ -23,7 +24,9 @@ import { addDaysKey, formatDayHeading, formatTimeRange, localDayKey, mondayKeyOf
 import { departmentColor, shiftColor } from '../../lib/colors'
 import { eventDayKeys, eventDayLabel } from '../../lib/events'
 import { daysBetween } from '../../lib/gantt'
-import type { ScheduleEvent, Shift } from '../../lib/types'
+import { agendaTimeOffByDay, agendaTimeOffLabel, TIME_OFF_TYPE_LABEL } from '../../lib/timeoff'
+import { useApiList } from '../../hooks/useApiQuery'
+import type { ScheduleEvent, Shift, TimeOffRequest } from '../../lib/types'
 import CalendarSyncDialog from './CalendarSyncDialog'
 import { NO_FILTERS, useScheduleData, useScheduleDialogs } from './useScheduleData'
 
@@ -37,8 +40,32 @@ export default function ViewSchedule() {
   // Time off for the shift dialog's conflict check loads for this week.
   const [mondayKey] = useState(mondayKeyOf)
   const data = useScheduleData(filters, filters, mondayKey)
-  const { user, isDevice, shifts, isLoading, events, positions, departments, deptById, canManageShift, canClaim, claim } = data
-  const { openEdit, openEvent, dialogs } = useScheduleDialogs(data)
+  const { user, isDevice, shifts, isLoading, events, positions, departments, roster, deptById, canManageShift, canClaim, claim } = data
+  const { openEdit, openEvent, openTimeOff, dialogs } = useScheduleDialogs(data)
+
+  // D44 §2.8: time off for the agenda's days (a shared tablet loads none). The
+  // API's `to` is a UTC day, so ask one day more and let the days clip it.
+  const agendaTimeOffParams = useMemo(
+    () => ({ from: filters.from, to: filters.to ? addDaysKey(filters.to, 1) : '' }),
+    [filters.from, filters.to],
+  )
+  const { data: agendaTimeOff = [] } = useApiList<TimeOffRequest>(
+    ['time_off', 'agenda', agendaTimeOffParams],
+    '/api/time_off',
+    agendaTimeOffParams,
+    { enabled: !isDevice && !!filters.from && !!filters.to },
+  )
+  const timeOffByDay = useMemo(() => {
+    if (isDevice || !filters.from || !filters.to) return new Map<string, TimeOffRequest[]>()
+    const deptsByUser = new Map(roster.map((r) => [r.id, r.departments]))
+    return agendaTimeOffByDay(agendaTimeOff, filters.from, filters.to, {
+      departmentKey: filters.department_id ? deptById.get(Number(filters.department_id))?.key : null,
+      positionFiltered: !!filters.position_id,
+      openOnly: filters.open,
+      mineUserId: filters.mine ? user?.id : null,
+      departmentsOf: (id) => deptsByUser.get(id) ?? [],
+    })
+  }, [isDevice, agendaTimeOff, filters, roster, deptById, user?.id])
 
   const [calendarSyncOpen, setCalendarSyncOpen] = useState(false)
   // D52: Today keeps the number of days showing and starts them today.
@@ -60,14 +87,15 @@ export default function ViewSchedule() {
     setSearchParams(next, { replace: true })
   }, [syncRequested, searchParams, setSearchParams])
 
-  // Days: shifts, plus events on every day they cover (D32). Days outside
-  // the date filters aren't shown for multi-day events.
+  // Days: shifts, plus events on every day they cover (D32), plus time off
+  // (D44). Days outside the date filters aren't shown for multi-day events.
   const groups = useMemo(() => {
-    const map = new Map<string, { shifts: Shift[]; events: ScheduleEvent[] }>()
+    const map = new Map<string, { shifts: Shift[]; events: ScheduleEvent[]; timeOff: TimeOffRequest[] }>()
     const at = (key: string) => {
-      if (!map.has(key)) map.set(key, { shifts: [], events: [] })
+      if (!map.has(key)) map.set(key, { shifts: [], events: [], timeOff: [] })
       return map.get(key)!
     }
+    for (const [key, list] of timeOffByDay) at(key).timeOff.push(...list)
     for (const s of shifts) at(localDayKey(s.starts_at)).shifts.push(s)
     for (const e of events) {
       for (const key of eventDayKeys(e)) {
@@ -76,7 +104,7 @@ export default function ViewSchedule() {
       }
     }
     return [...map.entries()].sort(([a], [b]) => a.localeCompare(b))
-  }, [shifts, events, filters.from, filters.to])
+  }, [shifts, events, timeOffByDay, filters.from, filters.to])
 
   return (
     <>
@@ -137,9 +165,9 @@ export default function ViewSchedule() {
       {isLoading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}><CircularProgress /></Box>
       ) : groups.length === 0 ? (
-        <Typography color="text.secondary" sx={{ p: 2 }}>No shifts or events match these filters.</Typography>
+        <Typography color="text.secondary" sx={{ p: 2 }}>No shifts, events or time off match these filters.</Typography>
       ) : (
-        groups.map(([day, { shifts: dayShifts, events: dayEvents }]) => (
+        groups.map(([day, { shifts: dayShifts, events: dayEvents, timeOff: dayTimeOff }]) => (
           <Box key={day} sx={{ mb: 3 }}>
             <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>{formatDayHeading(`${day}T12:00:00Z`)}</Typography>
             <Stack spacing={1}>
@@ -159,6 +187,30 @@ export default function ViewSchedule() {
                     <Typography color="text.secondary" sx={{ minWidth: 150, flexGrow: 1 }}>{eventDayLabel(e, day, true)}</Typography>
                     <Typography variant="body2" color="text.secondary">{e.department?.name}</Typography>
                     {e.status === 'draft' && <Chip label="Draft" size="small" color="warning" variant="outlined" />}
+                  </Paper>
+                )
+              })}
+              {/* D44 §2.8: after the day's events, before its shifts. */}
+              {dayTimeOff.map((r) => {
+                const pending = r.status === 'pending'
+                return (
+                  <Paper
+                    key={`t-${r.id}`}
+                    variant="outlined"
+                    data-testid={`agenda-time-off-${r.id}`}
+                    data-day={day}
+                    onClick={() => openTimeOff(r)}
+                    sx={{
+                      p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', cursor: 'pointer',
+                      borderColor: pending ? 'warning.main' : 'divider', borderStyle: pending ? 'dashed' : 'solid',
+                    }}
+                  >
+                    <EventBusyIcon sx={{ color: pending ? 'warning.main' : 'text.secondary' }} />
+                    <Typography sx={{ fontWeight: 600 }}>{r.user?.name || r.user?.email}</Typography>
+                    <Typography color="text.secondary" sx={{ minWidth: 150, flexGrow: 1 }}>
+                      {TIME_OFF_TYPE_LABEL[r.type] ?? r.type} · {agendaTimeOffLabel(r, day)}
+                    </Typography>
+                    {pending && <Chip label="Pending" size="small" color="warning" variant="outlined" />}
                   </Paper>
                 )
               })}

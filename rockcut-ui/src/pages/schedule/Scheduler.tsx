@@ -48,7 +48,7 @@ export default function Scheduler() {
     user, isOwner, managedKeys, canManageSchedule, shifts, isLoading, events, positions, departments, roster,
     shiftTemplates, availability, offMarkers, conflicts, canManageDepartment, canManageShift, canManageEvent, canClaim, claim,
   } = data
-  const { openCreate, openEdit, openCreateEvent, openEvent, dialogs } = useScheduleDialogs(data)
+  const { openCreate, openEdit, openCreateEvent, openEvent, openTimeOff, dialogs } = useScheduleDialogs(data)
   const conflictCount = conflicts.size
 
   const { data: scheduleTemplates = [] } = useApiList<ScheduleTemplate>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
@@ -354,6 +354,7 @@ export default function Scheduler() {
             onPublishEmployee={publishForEmployee}
             onDeleteEmployee={requestDeleteEmployee}
             offMarkers={offMarkers}
+            onOffClick={openTimeOff}
             conflicts={conflicts}
             availability={availability}
             events={events}
