@@ -13,6 +13,7 @@ defmodule RockcutApi.TimeOffD44Test do
   alias RockcutApi.Accounts.User
   alias RockcutApi.Notifications.Notification
   alias RockcutApi.Scheduling.Recurrence
+  alias RockcutApi.TimeOff.Request
 
   setup do
     %{p: personas()}
@@ -34,9 +35,20 @@ defmodule RockcutApi.TimeOffD44Test do
     )
   end
 
+  # An own request. One that has already ended can't be made through
+  # `create/2` any more (§2.4), so it goes in directly, pending, as one left
+  # unreviewed would be.
   defp request!(user, attrs) do
-    {:ok, req} = TimeOff.create(attrs, user)
-    req
+    case TimeOff.create(attrs, user) do
+      {:ok, req} ->
+        req
+
+      {:error, :past_request} ->
+        %Request{}
+        |> Request.create_changeset(Map.put(attrs, "user_id", user.id))
+        |> Repo.insert!()
+        |> then(&TimeOff.get(&1.id))
+    end
   end
 
   defp ids(conn), do: data_ids(conn) |> MapSet.new()
@@ -397,6 +409,83 @@ defmodule RockcutApi.TimeOffD44Test do
       req = request!(reload(p["bartender1"]), attrs(t, t))
       assert review(p["barMgr"], req, "approved").status == 200
       assert events(p["bartender1"], :time_off_reviewed) == []
+    end
+  end
+
+  describe "own requests can't be in the past" do
+    @past_request "This date has passed. Ask your manager to enter it for you."
+
+    defp post_own(user, a), do: call(user, :post, "/api/time_off", a)
+
+    test "an own request that ended yesterday → 422, nothing stored, no one told", %{p: p} do
+      y = Date.add(today(), -1)
+      conn = post_own(p["bartender1"], attrs(Date.add(y, -1), y))
+
+      assert conn.status == 422
+      assert error(conn) == @past_request
+      assert Repo.aggregate(Request, :count) == 0
+      assert recipients(:time_off_requested) == []
+    end
+
+    test "an own request ending today is fine", %{p: p} do
+      t = today()
+      conn = post_own(p["bartender1"], attrs(Date.add(t, -2), t))
+      assert conn.status == 201
+      assert Jason.decode!(conn.resp_body)["data"]["status"] == "pending"
+    end
+
+    test "an own request that started yesterday and ends tomorrow is fine", %{p: p} do
+      t = today()
+      conn = post_own(p["bartender1"], attrs(Date.add(t, -1), Date.add(t, 1)))
+      assert conn.status == 201
+      assert recipients(:time_off_requested) != []
+    end
+
+    test "a request ending 23:30 yesterday Colorado (this morning UTC) is past", %{p: p} do
+      y = Date.add(today(), -1)
+      conn = post_own(p["bartender1"], attrs(y, y, ~T[23:30:00]))
+      assert conn.status == 422
+    end
+
+    test "a manager on behalf with past dates → approved, no one told", %{p: p} do
+      t = today()
+
+      conn =
+        post_own(
+          p["barMgr"],
+          Map.put(attrs(Date.add(t, -5), Date.add(t, -4)), "user_id", p["bartender1"].id)
+        )
+
+      assert conn.status == 201
+      assert Jason.decode!(conn.resp_body)["data"]["status"] == "approved"
+      assert recipients(:time_off_requested) == []
+    end
+
+    test "managers and owners are held to it for their own requests", %{p: p} do
+      t = today()
+
+      for who <- ~w(owner barMgr) do
+        conn = post_own(p[who], attrs(Date.add(t, -3), Date.add(t, -2)))
+        assert conn.status == 422, who
+        assert error(conn) == @past_request
+      end
+
+      assert Repo.aggregate(Request, :count) == 0
+    end
+
+    test "naming oneself as user_id is still an own request", %{p: p} do
+      t = today()
+      me = p["owner"]
+      conn = post_own(me, Map.put(attrs(Date.add(t, -3), Date.add(t, -2)), "user_id", me.id))
+      assert conn.status == 422
+    end
+
+    test "an invalid request still gets its field errors, not the past message", %{p: p} do
+      t = today()
+      a = attrs(Date.add(t, -3), Date.add(t, -2)) |> Map.put("type", "vacation")
+      conn = post_own(p["bartender1"], a)
+      assert conn.status == 422
+      refute conn.resp_body =~ "This date has passed"
     end
   end
 

@@ -8,6 +8,7 @@ defmodule RockcutApiWeb.TimeOffController do
   action_fallback RockcutApiWeb.FallbackController
 
   @past "This time off has already passed"
+  @past_request "This date has passed. Ask your manager to enter it for you."
 
   def index(conn, params) do
     if params["when"] in [nil, "" | TimeOff.when_values()] do
@@ -22,6 +23,7 @@ defmodule RockcutApiWeb.TimeOffController do
     case TimeOff.create(params, conn.assigns.current_user) do
       {:ok, req} -> conn |> put_status(:created) |> json(%{data: time_off_request(req)})
       {:error, :forbidden} -> forbidden(conn)
+      {:error, :past_request} -> unprocessable(conn, @past_request)
       other -> other
     end
   end

@@ -90,9 +90,11 @@ defmodule RockcutApi.TimeOff do
   ## Writes
 
   @doc """
-  Create a request. For oneself it is `pending` (normal request flow). A
-  manager/owner may pass a `user_id` for an employee they manage; that request
-  is created **approved** (they hold review authority), otherwise `:forbidden`.
+  Create a request. For oneself it is `pending` (normal request flow), and
+  can't end in the past (`{:error, :past_request}`, D44 §2.4; owners and
+  managers too). A manager/owner may pass a `user_id` for an employee they
+  manage; that request is created **approved** (they hold review authority),
+  past dates allowed, otherwise `:forbidden`.
   """
   def create(attrs, %User{} = requester) do
     attrs = stringify(attrs)
@@ -116,6 +118,19 @@ defmodule RockcutApi.TimeOff do
   defp insert_request(attrs, reviewer) do
     changeset = Request.create_changeset(%Request{}, attrs)
 
+    if is_nil(reviewer) and own_past?(changeset),
+      do: {:error, :past_request},
+      else: do_insert(changeset, reviewer)
+  end
+
+  # An own request whose last day has already passed (D44 §2.4, Matt): a
+  # manager enters it on the person's behalf instead.
+  defp own_past?(%Ecto.Changeset{valid?: true} = changeset),
+    do: past?(%Request{ends_at: Ecto.Changeset.get_field(changeset, :ends_at)})
+
+  defp own_past?(_changeset), do: false
+
+  defp do_insert(changeset, reviewer) do
     changeset =
       if reviewer do
         Ecto.Changeset.change(changeset,
