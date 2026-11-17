@@ -412,6 +412,124 @@ defmodule RockcutApi.TimeOffD44Test do
     end
   end
 
+  describe "review state rule (lead decision 1)" do
+    setup %{p: p} do
+      t = today()
+      %{req: request!(p["bartender1"], attrs(Date.add(t, 1), Date.add(t, 2)))}
+    end
+
+    defp review_seen(user, req, status, seen, note \\ nil) do
+      call(user, :post, "/api/time_off/#{req.id}/review", %{
+        "status" => status,
+        "reviewer_note" => note,
+        "expected_status" => seen
+      })
+    end
+
+    defp stored(req), do: Repo.get!(Request, req.id)
+    defp body(conn), do: Jason.decode!(conn.resp_body)
+
+    test "approving an approved request: 409, reviewer kept, no second notification",
+         %{p: p, req: req} do
+      assert review(p["barMgr"], req, "approved", "first").status == 200
+      conn = review(p["dualMgr"], req, "approved", "second")
+
+      assert conn.status == 409
+      assert error(conn) == "This request has already been approved."
+      assert body(conn)["data"]["status"] == "approved"
+      assert stored(req).reviewed_by_id == p["barMgr"].id
+      assert stored(req).reviewer_note == "first"
+      assert length(events(p["bartender1"], :time_off_reviewed)) == 1
+    end
+
+    test "a denied request can be neither approved nor denied again", %{p: p, req: req} do
+      assert review(p["barMgr"], req, "denied", "no").status == 200
+
+      for status <- ~w(approved denied) do
+        conn = review(p["owner"], req, status, "again")
+        assert conn.status == 409
+        assert error(conn) == "This request has already been denied."
+      end
+
+      assert stored(req).reviewed_by_id == p["barMgr"].id
+      assert length(events(p["bartender1"], :time_off_reviewed)) == 1
+    end
+
+    test "a cancelled request can't be reviewed; the employee hears nothing", %{p: p, req: req} do
+      {:ok, _} = TimeOff.cancel(req, p["bartender1"])
+
+      for status <- ~w(approved denied) do
+        conn = review(p["barMgr"], req, status)
+        assert conn.status == 409
+        assert error(conn) == "This request has already been cancelled."
+        assert body(conn)["data"]["status"] == "cancelled"
+      end
+
+      assert stored(req).status == "cancelled"
+      assert stored(req).reviewed_by_id == nil
+      assert recipients(:time_off_reviewed) == []
+    end
+
+    test "Remove (deny an approved request) still works, with or without expected_status",
+         %{p: p, req: req} do
+      assert review_seen(p["barMgr"], req, "approved", "pending").status == 200
+      assert review_seen(p["dualMgr"], req, "denied", "approved", "needed").status == 200
+      assert stored(req).status == "denied"
+    end
+
+    test "a stale view: 409 changed, nothing stored, no notification", %{p: p, req: req} do
+      # owner approves; owner2's dialog still shows pending and clicks Deny.
+      assert review_seen(p["owner"], req, "approved", "pending").status == 200
+      conn = review_seen(p["owner2"], req, "denied", "pending", "stale")
+
+      assert conn.status == 409
+      assert error(conn) == "This request has changed since you opened it."
+      assert body(conn)["data"]["status"] == "approved"
+      assert stored(req).status == "approved"
+      assert stored(req).reviewed_by_id == p["owner"].id
+      assert stored(req).reviewer_note == nil
+      assert length(events(p["bartender1"], :time_off_reviewed)) == 1
+    end
+
+    test "cancelled under an open dialog: 409 changed", %{p: p, req: req} do
+      {:ok, _} = TimeOff.cancel(req, p["bartender1"])
+      conn = review_seen(p["barMgr"], req, "approved", "pending")
+      assert conn.status == 409
+      assert error(conn) == "This request has changed since you opened it."
+      assert stored(req).status == "cancelled"
+    end
+
+    test "403 comes before 409, 422 (past) before 409", %{p: p, req: req} do
+      {:ok, _} = TimeOff.cancel(req, p["bartender1"])
+      assert review_seen(p["breweryMgr"], req, "approved", "approved").status == 403
+
+      t = today()
+
+      past =
+        request!(p["bartender1"], attrs(Date.add(t, -3), Date.add(t, -2)))
+        |> Ecto.Changeset.change(status: "approved")
+        |> Repo.update!()
+
+      conn = review_seen(p["barMgr"], past, "approved", "pending")
+      assert conn.status == 422
+      assert error(conn) == "This time off has already passed"
+    end
+
+    test "two reviewers at once: the update only lands on the status that was read",
+         %{p: p, req: req} do
+      # Both read the request while pending (no expected_status).
+      seen_by_owner2 = TimeOff.get(req.id)
+      assert {:ok, _} = TimeOff.review(TimeOff.get(req.id), p["owner"], "approved", nil)
+
+      assert {:error, {:changed, current}} =
+               TimeOff.review(seen_by_owner2, p["owner2"], "denied", "late")
+
+      assert current.status == "approved"
+      assert stored(req).reviewed_by_id == p["owner"].id
+      assert length(events(p["bartender1"], :time_off_reviewed)) == 1
+    end
+  end
+
   describe "own requests can't be in the past" do
     @past_request "This date has passed. Ask your manager to enter it for you."
 

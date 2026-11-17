@@ -8,6 +8,7 @@ defmodule RockcutApiWeb.TimeOffController do
   action_fallback RockcutApiWeb.FallbackController
 
   @past "This time off has already passed"
+  @changed "This request has changed since you opened it."
   @past_request "This date has passed. Ask your manager to enter it for you."
 
   def index(conn, params) do
@@ -38,13 +39,15 @@ defmodule RockcutApiWeb.TimeOffController do
                req,
                conn.assigns.current_user,
                params["status"],
-               params["reviewer_note"]
+               params["reviewer_note"],
+               params["expected_status"]
              ) do
           {:ok, updated} -> json(conn, %{data: time_off_request(updated)})
           {:error, :forbidden} -> forbidden(conn)
           {:error, :invalid_status} -> unprocessable(conn, "status must be approved or denied")
           {:error, :past} -> unprocessable(conn, @past)
-          other -> other
+          {:error, {:changed, current}} -> conflict(conn, @changed, current)
+          {:error, {:already, current}} -> conflict(conn, already(current), current)
         end
     end
   end
@@ -75,6 +78,12 @@ defmodule RockcutApiWeb.TimeOffController do
   end
 
   defp forbidden(conn), do: conn |> put_status(:forbidden) |> json(%{error: "Forbidden"})
+
+  defp already(%Request{status: status}), do: "This request has already been #{status}."
+
+  # 409 with the request as it is now, so a stale dialog can show it.
+  defp conflict(conn, msg, %Request{} = current),
+    do: conn |> put_status(:conflict) |> json(%{error: msg, data: time_off_request(current)})
 
   defp unprocessable(conn, msg),
     do: conn |> put_status(:unprocessable_entity) |> json(%{error: msg})

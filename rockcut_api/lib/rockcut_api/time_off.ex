@@ -178,8 +178,17 @@ defmodule RockcutApi.TimeOff do
   Approve or deny (including denying an approved request: Remove). A past
   request can't be reviewed (D44 §2.4). The requester is told the decision
   unless they made it (§2.7).
+
+  After the permission and past checks (lead decision 1): `expected_status`
+  (the status the reviewer saw; optional) must still be the stored one, else
+  `{:error, {:changed, current}}`; approve only from `pending` and deny only
+  from `pending` or `approved`, else `{:error, {:already, current}}`. The
+  update is conditional on the status read, so of two reviewers acting at
+  once the second gets `:changed`.
   """
-  def review(%Request{} = req, %User{} = reviewer, status, note)
+  def review(req, reviewer, status, note, expected_status \\ nil)
+
+  def review(%Request{} = req, %User{} = reviewer, status, note, expected_status)
       when status in ~w(approved denied) do
     cond do
       not Authz.can?(reviewer, :review, req) ->
@@ -188,28 +197,46 @@ defmodule RockcutApi.TimeOff do
       past?(req) ->
         {:error, :past}
 
-      true ->
-        req
-        |> Ecto.Changeset.change(%{
-          status: status,
-          reviewer_note: note,
-          reviewed_by_id: reviewer.id,
-          reviewed_at: DateTime.utc_now() |> DateTime.truncate(:second)
-        })
-        |> Repo.update()
-        |> case do
-          {:ok, updated} ->
-            updated = get(updated.id)
-            if updated.user_id != reviewer.id, do: notify_requester(updated)
-            {:ok, updated}
+      expected_status not in [nil, ""] and expected_status != req.status ->
+        {:error, {:changed, req}}
 
-          other ->
-            other
-        end
+      req.status not in reviewable_from(status) ->
+        {:error, {:already, req}}
+
+      true ->
+        decide(req, reviewer, status, note)
     end
   end
 
-  def review(_req, _reviewer, _status, _note), do: {:error, :invalid_status}
+  def review(_req, _reviewer, _status, _note, _expected_status), do: {:error, :invalid_status}
+
+  defp reviewable_from("approved"), do: ["pending"]
+  defp reviewable_from("denied"), do: ["pending", "approved"]
+
+  defp decide(req, reviewer, status, note) do
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    {count, _} =
+      from(r in Request, where: r.id == ^req.id and r.status == ^req.status)
+      |> Repo.update_all(
+        set: [
+          status: status,
+          reviewer_note: note,
+          reviewed_by_id: reviewer.id,
+          reviewed_at: now,
+          updated_at: now
+        ]
+      )
+
+    updated = get(req.id)
+
+    if count == 1 do
+      if updated.user_id != reviewer.id, do: notify_requester(updated)
+      {:ok, updated}
+    else
+      {:error, {:changed, updated}}
+    end
+  end
 
   @doc """
   The requester withdraws their own request. Works while it is `pending` or
