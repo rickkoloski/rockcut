@@ -106,7 +106,7 @@ export default function NotificationBell() {
                 }}
               >
                 <Typography variant="body2" sx={{ fontWeight: n.read_at ? 400 : 700 }}>{n.title}</Typography>
-                {n.body && <Typography variant="body2" color="text.secondary">{n.body}</Typography>}
+                {n.body && <Typography variant="body2" color="text.secondary" sx={{ whiteSpace: 'pre-line' }}>{n.body}</Typography>}
                 <Typography variant="caption" color="text.secondary">
                   {new Date(n.inserted_at).toLocaleString()}
                 </Typography>

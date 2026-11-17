@@ -417,6 +417,8 @@ function App() {
   const canManageSchedule = user.is_owner || (capabilities.manages_departments?.length ?? 0) > 0
   const isOwner = user.is_owner
   const pending = capabilities.pending_owner_reviews ?? 0
+  // D44 §2.6: pending time off of one's own or to review; never on a shared device.
+  const pendingTimeOff = isDevice ? 0 : capabilities.pending_time_off ?? 0
 
   // Department headings the user may see: their department keys (owners get all),
   // sorted alphabetically by name. Taproom/Office/Sales appear even with no pages yet.
@@ -449,6 +451,7 @@ function App() {
       key: 'schedule',
       label: 'Schedule',
       icon: <CalendarMonthIcon />,
+      badge: pendingTimeOff,
       children: [
         { label: 'View Schedule', path: '/schedule', icon: <ViewAgendaIcon /> },
         ...(canManageSchedule
@@ -457,7 +460,19 @@ function App() {
         ...(isDevice
           ? []
           : [
-              { label: 'Time off', path: '/time_off', icon: <EventBusyIcon /> },
+              {
+                label: 'Time off',
+                path: '/time_off',
+                // Only above zero: a hidden "0" would still be in the item's name.
+                icon:
+                  pendingTimeOff > 0 ? (
+                    <Badge badgeContent={pendingTimeOff} color="error" data-testid="time-off-badge">
+                      <EventBusyIcon />
+                    </Badge>
+                  ) : (
+                    <EventBusyIcon />
+                  ),
+              },
               { label: 'Availability', path: '/availability', icon: <EventAvailableIcon /> },
             ]),
       ],
