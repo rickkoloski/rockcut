@@ -72,10 +72,24 @@ filters (they still use UTC days; the Scheduler relies on them as they are).
 
 ## Gate
 
-Workflow §3: `mix test` twice, `mix compile --warnings-as-errors`, `tsc`, `vite build`, vitest, lint
-no worse than `develop`, full local Playwright. Then DEV: claim DEV (conv 80), `seed_synthetic()`,
-the §4 scenarios plus a regression sweep of the Scheduler, View Schedule, Time off, Availability and
-Notification preferences, and the independent QA pass.
+**Trial gate order** (Matt, 2026-11-16; proposed to Rick in conv 80 msg 107083, an addition to the
+workflow, nothing removed):
+
+1. **Local gate** (workflow §3): `mix test` twice, `mix compile --warnings-as-errors`, `tsc`,
+   `vite build`, vitest, lint no worse than `develop`, full local Playwright.
+2. **Local independent QA pass (new).** A fresh `qa` agent in `~/src/rockcut-d44-qa/` (outside
+   the repo, no Read of the checkouts, no `git`/`gh`/`fly`), given only the personas, spec §4
+   scenarios, the **local** URLs + `mix rockcut.synthetic.token` recipe, and LIMITATIONS. Same
+   charter as DEV: find a path that breaks it as a real user; report path → expected → observed
+   → repro; fix nothing. The lead mints the tokens and runs `mix rockcut.synthetic.setup` first;
+   the builder pauses while QA holds the local stack. Fix cycles happen here (fix + test, re-run the
+   affected specs, QA recheck). Destructive actions only by exact id on its own `[TEST-TEMP]` rows.
+3. **DEV gate:** claim DEV (conv 80), deploy the SHA, `seed_synthetic()`, the full Playwright suite
+   once, then a **shorter** fresh QA pass: what local can't show (release build, service worker
+   and the reload prompt, Fly, latency, email/push delivery on the real box, the persona matrix on
+   deployed data) plus a spot-check of the main §4 scenarios, not a second open hunt.
+
+Record in the PR how many local and DEV cycles each pass took, so the trial can be judged.
 
 ## Risks
 
