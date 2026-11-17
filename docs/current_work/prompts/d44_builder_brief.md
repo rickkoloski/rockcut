@@ -71,3 +71,70 @@ lead owns the servers; Stage 1 needs only `mix test`.
 - Commits on the branch.
 - Reply with: commits (sha + subject), files touched, test counts, and anything you weren't sure
   about prefixed `LEAD:`.
+
+---
+
+# Stage 2 (UI)
+
+2026-11-16 · lead → builder. Stage 1 is in (`d6d09e2`, `e1b1c29`). Your `LEAD:` notes are all
+accepted: the moved test dates, `pending_time_off` in the two pinned capabilities tests (frozen
+parity suite: a new key is fine, nothing else may change there), the recipient query in `Authz`,
+"already passed" winning over "can no longer be cancelled", the notification text, synchronous
+in-app delivery, and `when=""` as no filter.
+
+Do **plan Stage 2** (spec §2.1, §2.2, §2.4, §2.6, §2.7's preferences, §2.8), then stop and report.
+Same rules as Stage 1. The lead runs the servers from `~/src/rockcut`: API :4002, UI :5174 (both up
+now). The local dev DB has the synthetic personas. Ask the lead (`LEAD:` in your reply) if anything
+needs a restart.
+
+1. **Types** (`lib/types.ts`): `pending_time_off` on the capabilities type; check `TimeOffRequest`
+   has everything the dialog shows (`reviewer_note`, `reviewed_by`, `reviewed_at`, `inserted_at`).
+2. **One time off dialog** (e.g. `components/timeoff/TimeOffDialog.tsx`), used everywhere below:
+   - person, type, dates and times or "All day", their note, when requested;
+   - approved: "Approved by …" + when + reviewer note; **Remove** for reviewers → the existing
+     "Remove approved time off?" confirm → deny call, with the optional note box;
+   - pending: **Approve** / **Deny** for reviewers, each with an optional note to the employee
+     (`reviewer_note`);
+   - past (`ends_at`'s Colorado day before today): read-only; past pending shows **"Not
+     reviewed"**; no buttons for anyone;
+   - who gets buttons: the same rule the Time off page uses today to show its review buttons
+     (find it and share it, don't write a second one). The API decides; a 403/422 shows the API's
+     message in the dialog.
+   - After any action: invalidate every `['time_off', …]` query and `/api/me` (badge), so chips,
+     conflict warnings, lists and badges refresh without a reload.
+3. **Scheduler** (`WeekGrid.tsx` off-marker chips): clicking a chip opens the dialog for its
+   request. Keep drag and the other grid clicks working; the chip click mustn't start a drag or
+   open the shift dialog.
+4. **View Schedule agenda** (`ViewSchedule.tsx`, spec §2.8): each day gets a row per approved or
+   pending request covering it (multi-day on each day; pending styled like the Scheduler's amber
+   pending chip), after the day's events and before its shifts. Data: the week's time off
+   `useScheduleData` already loads (it's skipped for devices; keep that). The department filter
+   keeps a person's time off when they're a member of that department; a position filter hides
+   time off rows. Click → the dialog. Put the per-day row building in a pure helper with vitest.
+5. **Time off page** (`pages/timeoff/TimeOff.tsx`, route `/time_off`):
+   - the main view loads `?when=current`; the three sections are otherwise unchanged;
+   - an **Archive** control (a toggle or tab beside the sections) loads `?when=past` only when
+     opened: a plain list, newest first, read-only, past pending labeled "Not reviewed";
+   - the page's own Approve / Deny gets the same optional note (reuse the dialog's piece);
+   - the employee sees the reviewer note on their own requests (main view and Archive);
+   - its rows can open the dialog too if that's simpler than duplicating detail, your call.
+6. **Badges** (`App.tsx`): `capabilities.pending_time_off` on the Schedule section icon (the
+   section `badge`, which also covers the collapsed rail) and on the Time off item's icon, like
+   User change log. None at 0, none for devices.
+7. **Notification preferences** (`NotificationPreferencesDialog.tsx`): add `time_off_requested`
+   ("Time off requests to review") and `time_off_reviewed` ("Your time off request was decided")
+   to `EVENTS`, normal defaults (no `EVENT_DEFAULTS` entry). Check the bell renders the multi-line
+   body (`\n`) sensibly and that clicking opens `/time_off`.
+8. **Look at it** in a browser, logged in by token injection per `rockcut-ui/tests/RUNNING.md`
+   (never type passwords), as `bartender1` (request PTO, see the badge, see own time off in the
+   agenda, Archive), `barMgr` (notification, badge, approve with a note from the Scheduler and
+   from the agenda, Remove), `breweryMgr` (no notification, no buttons on bar time off),
+   `owner`, and `taproomDevice` (agenda unchanged, no badge). Create only `[TEST-TEMP]` notes on
+   requests you make, and cancel/deny only those, by id.
+
+## Done when
+
+`tsc` (app), `vitest run`, `pnpm lint` (no worse than `develop`), `vite build` all pass; `mix test`
+still green if you touched the API. Commits on the branch. Reply with: commits, files, what you
+checked in the browser per persona, and `LEAD:` notes. Playwright specs are Stage 3, so don't
+write them yet.
