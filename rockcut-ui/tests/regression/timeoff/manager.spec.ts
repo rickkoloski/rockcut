@@ -228,3 +228,47 @@ test('M9: in the agenda, the Brewery filter hides Sam’s time off, Taproom show
   await pickSetting(page, 'schedule-settings', 'schedule-position', positions[0].id)
   await expect(row).toHaveCount(0)
 })
+
+// Lead decisions 1, item 1: a dialog opened before someone else acted.
+test('M10: approved elsewhere while my dialog was open: Deny gets the 409, the dialog shows Approved', async ({ page }) => {
+  const r = await requestOwn('bartender1', { first: dayFrom(4), last: dayFrom(4) }, tempTag('M10 stale'))
+
+  await page.goto('/time_off')
+  await page.getByTestId(`time-off-review-${r.id}`).click()
+  await expect(dialog(page).getByTestId('time-off-status')).toHaveText('Pending')
+  expect((await review('dualMgr', r.id, 'approved')).status()).toBe(200)
+
+  const late = tempTag('M10 too late')
+  await page.getByTestId('time-off-review-note').fill(late)
+  await page.getByTestId('time-off-deny').click()
+  await expect(dialog(page).getByRole('alert')).toHaveText('This request has changed since you opened it.')
+  await expect(dialog(page).getByTestId('time-off-status')).toHaveText('Approved')
+  await expect(dialog(page)).toContainText('Approved by Dana Dual')
+  await expect(page.getByTestId('time-off-deny')).toHaveCount(0)
+  await expect(page.getByTestId('time-off-approve')).toHaveCount(0)
+  await expect(page.getByTestId('time-off-remove')).toBeVisible()
+
+  // The page behind refetched: no Review button for it any more.
+  await dialog(page).getByRole('button', { name: 'Close' }).click()
+  await expect(page.getByTestId(`time-off-review-${r.id}`)).toHaveCount(0)
+
+  const saved = await findAs('barMgr', r.id)
+  expect(saved?.status).toBe('approved')
+  expect(saved?.reviewer_note).toBeNull()
+  expect(await notificationsOf('bartender1', 'time_off_reviewed', late)).toHaveLength(0)
+})
+
+test('M11: cancelled by Sam while my dialog was open: Approve gets the 409, only Close is left', async ({ page }) => {
+  const r = await requestOwn('bartender1', { first: dayFrom(5), last: dayFrom(5) }, tempTag('M11 cancelled'))
+
+  await page.goto('/time_off')
+  await page.getByTestId(`time-off-review-${r.id}`).click()
+  expect((await (await apiAs('bartender1')).post(`/api/time_off/${r.id}/cancel`)).status()).toBe(200)
+
+  await page.getByTestId('time-off-approve').click()
+  await expect(dialog(page).getByRole('alert')).toHaveText('This request has changed since you opened it.')
+  await expect(dialog(page).getByTestId('time-off-status')).toHaveText('Cancelled')
+  await expect(dialog(page).getByRole('button')).toHaveText(['Close'])
+  await expect(page.getByTestId('time-off-review-note')).toHaveCount(0)
+  expect((await findAs('barMgr', r.id))?.status).toBe('cancelled')
+})
