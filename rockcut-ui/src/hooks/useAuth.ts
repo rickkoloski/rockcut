@@ -54,6 +54,11 @@ interface AuthState {
    * here keep this page's value; a failure is silent.
    */
   refreshMe: (now?: number) => Promise<void>
+  /**
+   * D44 §2.6: re-read /api/me now and take only its capabilities (the badge
+   * counts), after a change that moves them. A failure is silent.
+   */
+  refreshCapabilities: () => Promise<void>
   /** D43: save the person's theme. Applied at once; put back (and rethrown) if the server refuses. */
   setColorMode: (mode: ColorMode) => Promise<void>
   /** D49: save "Show planned batches". Applied at once; put back (and rethrown) if the server refuses. */
@@ -230,10 +235,22 @@ const useAuth = create<AuthState>((set, get) => ({
         writes.since(mark),
       )
       if (merged.colorMode) cacheColorMode(merged.colorMode)
-      set(merged)
+      set(data.capabilities ? { ...merged, capabilities: data.capabilities } : merged)
     } catch {
       // Silent: the app is working; a token that really ended is handled by
       // the axios interceptor, and the next return to the screen tries again.
+    }
+  },
+
+  refreshCapabilities: async () => {
+    const { token, user, bootstrapped } = get()
+    if (!token || !user || !bootstrapped) return
+    try {
+      const { data } = await api.get<Me>('/api/me', { timeout: ME_TIMEOUT_MS })
+      if (!data?.capabilities || localStorage.getItem(TOKEN_KEY) !== token || get().token !== token) return
+      set({ capabilities: data.capabilities })
+    } catch {
+      // Silent, like refreshMe: the badge catches up on the next read.
     }
   },
 
