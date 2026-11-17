@@ -207,3 +207,56 @@ then stop and report. Same rules as before; the local stack is free again (the Q
   `theme.spec.ts` alone.
 
 Reply with: commits, files, the revert-and-rerun evidence, run results, and `LEAD:` notes.
+
+---
+
+# DEV fix cycle 1
+
+2026-11-17 · lead → builder. DEV runs `3ca49a1`. The full DEV Playwright run is green apart from
+non-D44 races (S58 fixed by the lead in `ee263c6`, test-only; don't touch it). The short DEV QA pass
+(`~/src/rockcut-d44-devqa/results/d44_devqa_report.md`, gaps G1–G8) found no must-fix. Matt
+decided the behavior items 2, 5 and 6 (2026-11-17). Fix all of these, then stop and report. Same
+rules as before; the local stack is yours (the lead isn't running anything locally).
+
+1. **G1: badge catches up on in-app navigation.** An already-open browser's Schedule / Time off
+   badge stays stale across in-app navigation until a full reload, though `/api/me` already has the
+   new `pending_time_off`. Re-read the capabilities on route change, throttled (at most once every
+   30 s, and never more than once per navigation), and when the Time off page mounts, refetch its
+   list too. No polling.
+2. **G2: long notes.** The requester's note and the reviewer's note: `max: 2_000` each in the API
+   (422 with the usual changeset message; same limit as other notes in the app), and the UI fields
+   stop at 2,000 (`maxLength`). Anywhere a note shows (Time off page rows, the dialog, the agenda
+   row, the notification text), a long unbroken string wraps (`overflowWrap: 'anywhere'`) and
+   never makes the page scroll sideways at 390 px or desktop.
+3. **G3: Cancel is slow to clear the badge** (about 1 s vs 0.1–0.3 s for the other actions). Find
+   why (likely the capabilities refetch waits on the list refetch, or runs after it) and make it
+   match the others. If it's only DEV latency on a second request with nothing to fix, say so.
+4. **G4: a past `[SEED]` time off row.** Add one past approved request to the synthetic seed
+   (relative to this week, e.g. 10 days ago, all day, Colorado times like the others) so the
+   Archive has seeded data on DEV.
+5. **G5 (Matt): a dot on the phone's ☰.** When `pending_time_off > 0`, the top bar's hamburger
+   shows a small red dot (no number) while the drawer is closed. Not on shared tablets.
+6. **G7 (Matt): refuse overlapping time off.** Creating a request that overlaps the same person's
+   own **pending or approved** request (any overlap of the stored ranges, using the same
+   midnight-exclusive end as everywhere) is refused: 422 "This person already has time off then."
+   for on-behalf entries, "You already have time off then." for one's own. Denied and cancelled
+   requests don't count. The form shows the message.
+7. **G6 (Matt) + far future.** Refuse requests that **start** more than 365 days after today
+   (Colorado): 422 "Time off can be requested up to a year ahead." The Time off page rows, the
+   Archive and the dialog show the year when the date isn't in the current year ("Friday, Dec 18,
+   2027").
+8. **G8: the desktop nav's collapse button** gets an accessible name ("Collapse navigation" /
+   "Expand navigation").
+
+Tests at the level the bug lived: ExUnit for 2, 4, 6, 7 (each message and boundary: exactly 365 days
+OK, 366 refused; overlap touching at midnight allowed; denied/cancelled don't block; on-behalf vs
+own message); vitest for any date formatting helper; Playwright in `tests/regression/timeoff/` for 1
+(two pages: create in one, navigate in the other, badge updates), 2 (long note at 390 px, no
+horizontal scroll), 5 and 6 (the form shows the message). **Revert-and-rerun** for 1 and 6. Update
+`tests/COVERAGE.md` and the spec's §2 items briefly (the new rules), and fix any existing test that
+creates overlapping requests for one person.
+
+Run `mix test` twice, `mix compile --force --warnings-as-errors`, vitest, tsc (app and e2e), lint,
+build, and the `timeoff` Playwright project twice. Don't run the full suite.
+
+Reply with: commits, files, the revert-and-rerun evidence, run results, and `LEAD:` notes.
