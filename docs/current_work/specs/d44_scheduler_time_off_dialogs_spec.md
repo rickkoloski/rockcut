@@ -75,6 +75,17 @@ or gone when denied) and conflict warnings refresh.
   ("Remove approved time off?").
 - Notifications: today a review notifies no one; D44 adds §2.5 (reviewers
   told of a new request) and §2.7 (the employee told of the decision).
+- **New request rules (DEV fix cycle 1, Matt 2026-11-17):**
+  - No overlap with the same person's own **pending or approved** time off
+    (denied and cancelled don't count; all day covers its whole days, a
+    timed end at 00:00 is exclusive, so requests touching at midnight are
+    fine): 422 "You already have time off then." (own) or "This person
+    already has time off then." (on behalf). The form shows it.
+  - A request may **start** at most 365 days after today (Colorado): 422
+    "Time off can be requested up to a year ahead." Dates in another year
+    show the year ("Friday, Dec 18, 2027").
+  - The requester's and the reviewer's notes stop at 2,000 characters (422
+    field error; the fields stop there too). Long unbroken notes wrap.
 
 ### 2.4 Time off page: current and future only, plus an Archive (item 3)
 
@@ -151,6 +162,11 @@ A red count badge, like the Messages and User change log badges, on the
   out by the server with the same `Authz` rule, as `pending_owner_reviews`
   already is for the change log. The UI refreshes it after any create,
   review or cancel, and whenever `/api/me` reloads.
+- **Catching up (DEV fix cycle 1, G1):** an open page re-reads the count on
+  in-app navigation, at most once every 30 s; opening the Time off page
+  reads its list again. No polling.
+- **Phone (G5, Matt):** while the drawer is closed, the top bar's ☰ shows a
+  small red dot (no number) when the count is above 0. Not on shared tablets.
 
 ### 2.7 Notify the employee of the decision (item 6)
 
