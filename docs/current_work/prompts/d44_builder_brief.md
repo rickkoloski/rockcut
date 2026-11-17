@@ -260,3 +260,30 @@ Run `mix test` twice, `mix compile --force --warnings-as-errors`, vitest, tsc (a
 build, and the `timeoff` Playwright project twice. Don't run the full suite.
 
 Reply with: commits, files, the revert-and-rerun evidence, run results, and `LEAD:` notes.
+
+---
+
+# DEV fix cycle 2
+
+2026-11-17 · lead → builder. DEV runs `debb528`; the full DEV suite is green and the DEV QA recheck
+(`~/src/rockcut-d44-devqa/results/d44_devqa_recheck1.md`) passed with all of G1–G8 closed. Two new
+minor gaps, both UI only. Fix them, then stop and report.
+
+1. **N1: a note over 2,000 is cut without a word.** The note fields (the request form, the review
+   note, the Remove confirm's note) keep `maxLength` 2,000 and show a counter once the text is at
+   1,800 or more: helper text "1,950 / 2,000", and at the cap "2,000 / 2,000 · the rest was cut",
+   shown when a paste or typing hit the cap (it clears when the text gets shorter). No API change.
+2. **N2: the year on next-year dates, everywhere a date heads something.** View Schedule's agenda
+   day header ("Tuesday, Jan 5, 2027") and the Scheduler's week label ("Jan 4 – 10, 2027"; across
+   a year boundary "Dec 28, 2026 – Jan 3, 2027") show the year when a date in them isn't in the
+   current year (Colorado). Same rule as `describeTimeOffRange`; share the helper rather than
+   copying it. Nothing changes for dates in the current year.
+
+Tests: vitest for the label helpers (current year, next year, across the boundary); Playwright in
+`tests/regression/timeoff/dev-fixes.spec.ts` for N1 (paste 2,100 characters: 2,000 kept, the
+message shows) and N2 (an agenda header and the Scheduler label in next year). Check that no
+existing spec asserts a week label or day header that this changes.
+
+Run vitest, tsc (app and e2e), lint, build, the `timeoff` project twice, and
+`tests/regression/ui/schedule.spec.ts` + `tests/regression/scheduler/` once. Don't run the full
+suite. Reply with: commits, files, run results, `LEAD:` notes.
