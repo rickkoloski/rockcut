@@ -12,64 +12,39 @@ import {
   Stack,
   Switch,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material'
-import { useQueryClient } from '@tanstack/react-query'
 import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
+import TimeOffDialog, { TimeOffStatusChip } from '../../components/timeoff/TimeOffDialog'
+import { reviewedLine, timeOffError as readError, useCanReviewTimeOff, useTimeOffRefresh } from '../../components/timeoff/timeOffHelpers'
 import { useApiList } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
-import parseApiError from '../../lib/parseApiError'
-import { formatDayHeading, formatTime, localDayKey, localInputToUtc, utcToLocalInput } from '../../lib/datetime'
-import type { RosterEntry, TimeOffRequest, TimeOffStatus, TimeOffType } from '../../lib/types'
+import { localInputToUtc, utcToLocalInput } from '../../lib/datetime'
+import { describeTimeOffRange as describeRange, TIME_OFF_TYPE_LABEL as TYPE_LABEL, TIME_OFF_TYPES as TYPES } from '../../lib/timeoff'
+import type { RosterEntry, TimeOffRequest, TimeOffType } from '../../lib/types'
 
-const TYPES: { value: TimeOffType; label: string }[] = [
-  { value: 'pto', label: 'Vacation (PTO)' },
-  { value: 'sick', label: 'Sick' },
-  { value: 'unpaid', label: 'Unpaid' },
-  { value: 'personal', label: 'Personal' },
-]
-const TYPE_LABEL: Record<TimeOffType, string> = Object.fromEntries(TYPES.map((t) => [t.value, t.label])) as Record<TimeOffType, string>
-const STATUS_COLOR: Record<TimeOffStatus, 'default' | 'success' | 'error' | 'warning'> = {
-  pending: 'warning',
-  approved: 'success',
-  denied: 'error',
-  cancelled: 'default',
-}
-
-function readError(err: unknown): string {
-  const e = err as { response?: { data?: { error?: string } } }
-  return e?.response?.data?.error || parseApiError(err)
-}
-
-function dayLabel(iso: string): string {
-  return formatDayHeading(`${localDayKey(iso)}T12:00:00Z`)
-}
-
-function describeRange(r: TimeOffRequest): string {
-  if (r.all_day) {
-    const s = dayLabel(r.starts_at)
-    const e = dayLabel(r.ends_at)
-    return s === e ? `${s} (all day)` : `${s} – ${e}`
-  }
-  // Timed ranges may span days: same day → "Sep 23, 3:30–5:00 PM";
-  // across days → "Sep 23, 3:30 PM – Sep 26, 12:00 PM".
-  if (localDayKey(r.starts_at) === localDayKey(r.ends_at)) {
-    return `${dayLabel(r.starts_at)}, ${formatTime(r.starts_at)}–${formatTime(r.ends_at)}`
-  }
-  return `${dayLabel(r.starts_at)}, ${formatTime(r.starts_at)} – ${dayLabel(r.ends_at)}, ${formatTime(r.ends_at)}`
-}
+const CURRENT = { when: 'current' }
+const PAST = { when: 'past' }
 
 export default function TimeOff() {
-  const qc = useQueryClient()
   const { user, capabilities } = useAuth()
   const meId = user?.id
   const isOwner = !!user?.is_owner
   const managedKeys = capabilities?.manages_departments ?? []
   const canManageOthers = isOwner || managedKeys.length > 0
 
-  const { data: requests = [] } = useApiList<TimeOffRequest>(['time_off'], '/api/time_off')
+  // D44 §2.4: current and later here; the Archive loads the past only when opened.
+  const [view, setView] = useState<'current' | 'archive'>('current')
+  const { data: requests = [] } = useApiList<TimeOffRequest>(['time_off', 'current'], '/api/time_off', CURRENT)
+  const { data: past = [], isLoading: pastLoading } = useApiList<TimeOffRequest>(['time_off', 'past'], '/api/time_off', PAST, {
+    enabled: view === 'archive',
+  })
+  const canReview = useCanReviewTimeOff()
+  const [detail, setDetail] = useState<{ req: TimeOffRequest; startWith?: 'remove' } | null>(null)
   const { data: roster = [] } = useApiList<RosterEntry>(['roster'], '/api/roster', undefined, { enabled: canManageOthers })
 
   // Employees this manager/owner may enter time off for (owner: everyone).
@@ -90,7 +65,7 @@ export default function TimeOff() {
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['time_off'] })
+  const invalidate = useTimeOffRefresh()
 
   // Combine a Denver date + wall-clock time into a UTC instant.
   const toUtc = (date: string, time: string) => localInputToUtc(`${date}T${time}`)
@@ -141,30 +116,40 @@ export default function TimeOff() {
   const teamPending = requests.filter((r) => r.user_id !== meId && r.status === 'pending').sort(byDate)
   const teamApproved = requests.filter((r) => r.user_id !== meId && r.status === 'approved').sort(byDate)
 
-  const statusChip = (r: TimeOffRequest) => <Chip size="small" label={r.status} color={STATUS_COLOR[r.status]} variant="outlined" />
-  const approvedBy = (r: TimeOffRequest) =>
-    r.status === 'approved' && r.reviewed_by ? `Approved by ${r.reviewed_by.name || r.reviewed_by.email}` : null
+  const statusChip = (r: TimeOffRequest) => <TimeOffStatusChip r={r} />
+  const approvedBy = (r: TimeOffRequest) => (r.status === 'approved' ? reviewedLine(r) : null)
+  // D44: the employee sees the reviewer's note on their own requests.
+  const reviewerNote = (r: TimeOffRequest) =>
+    r.reviewer_note && (r.status === 'approved' || r.status === 'denied') ? (
+      <Typography variant="body2" sx={{ flexBasis: '100%' }} data-testid={`time-off-reviewer-note-${r.id}`}>
+        <strong>Note from {r.reviewed_by?.name || r.reviewed_by?.email || 'your manager'}:</strong> {r.reviewer_note}
+      </Typography>
+    ) : null
 
-  const review = (r: TimeOffRequest, status: 'approved' | 'denied', msg: string) =>
-    act(() => api.post(`/api/time_off/${r.id}/review`, { status }), msg)
   const cancelReq = (r: TimeOffRequest) => act(() => api.post(`/api/time_off/${r.id}/cancel`, {}), 'Cancelled')
+  // D44: reviews (with the note to the employee) happen in the time off dialog.
+  const open = (req: TimeOffRequest, startWith?: 'remove') => setDetail({ req, startWith })
+  const stop = (fn: () => void) => (e: React.MouseEvent) => {
+    e.stopPropagation()
+    fn()
+  }
 
-  // Removing/cancelling an already-approved request goes through a confirm step.
-  const [confirmTarget, setConfirmTarget] = useState<{ req: TimeOffRequest; mode: 'remove' | 'cancel' } | null>(null)
+  // Cancelling an already-approved request goes through a confirm step.
+  const [confirmTarget, setConfirmTarget] = useState<TimeOffRequest | null>(null)
   const [confirmBusy, setConfirmBusy] = useState(false)
 
   const performConfirm = async () => {
     if (!confirmTarget) return
     setConfirmBusy(true)
     try {
-      const { req, mode } = confirmTarget
-      if (mode === 'remove') await review(req, 'denied', 'Removed')
-      else await cancelReq(req)
+      await cancelReq(confirmTarget)
     } finally {
       setConfirmBusy(false)
       setConfirmTarget(null)
     }
   }
+
+  const rowSx = { p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', cursor: 'pointer' } as const
 
   return (
     <>
@@ -226,6 +211,44 @@ export default function TimeOff() {
         </Stack>
       </Paper>
 
+      {/* D44 §2.4: current and later, or the Archive of past requests. */}
+      <ToggleButtonGroup
+        size="small"
+        exclusive
+        value={view}
+        onChange={(_, v) => v && setView(v)}
+        sx={{ mb: 2 }}
+        aria-label="Which requests"
+      >
+        <ToggleButton value="current" data-testid="time-off-view-current">Current</ToggleButton>
+        <ToggleButton value="archive" data-testid="time-off-view-archive">Archive</ToggleButton>
+      </ToggleButtonGroup>
+
+      {view === 'archive' ? (
+        <Box data-testid="time-off-archive">
+          <Typography variant="h6" sx={{ mb: 1 }}>Archive</Typography>
+          {pastLoading ? (
+            <Typography color="text.secondary">Loading…</Typography>
+          ) : past.length === 0 ? (
+            <Typography color="text.secondary">No past time off.</Typography>
+          ) : (
+            <Stack spacing={1}>
+              {past.map((r) => (
+                <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)} data-testid={`time-off-archive-${r.id}`}>
+                  <Chip size="small" label={TYPE_LABEL[r.type]} />
+                  {r.user_id !== meId && <Typography sx={{ fontWeight: 600, minWidth: 120 }}>{r.user?.name || r.user?.email}</Typography>}
+                  <Typography color="text.secondary" sx={{ flexGrow: 1 }}>
+                    {describeRange(r)}{r.note ? ` · ${r.note}` : ''}{reviewedLine(r) ? ` · ${reviewedLine(r)}` : ''}
+                  </Typography>
+                  {statusChip(r)}
+                  {r.user_id === meId && reviewerNote(r)}
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </Box>
+      ) : (
+      <>
       {/* 1) My own requests */}
       <Typography variant="h6" sx={{ mb: 1 }}>My requests</Typography>
       {mine.length === 0 ? (
@@ -233,21 +256,22 @@ export default function TimeOff() {
       ) : (
         <Stack spacing={1} sx={{ mb: 3 }}>
           {mine.map((r) => (
-            <Paper key={r.id} variant="outlined" sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+            <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)}>
               <Chip size="small" label={TYPE_LABEL[r.type]} />
               <Typography color="text.secondary" sx={{ flexGrow: 1 }}>
-                {describeRange(r)}{r.note ? ` · ${r.note}` : ''}{approvedBy(r) ? ` · ${approvedBy(r)}` : ''}
+                {describeRange(r)}{r.note ? ` · ${r.note}` : ''}{reviewedLine(r) ? ` · ${reviewedLine(r)}` : ''}
               </Typography>
               {statusChip(r)}
-              {r.status === 'pending' && canManageOthers && (
-                <Button size="small" variant="contained" color="success" onClick={() => review(r, 'approved', 'Approved')}>Approve</Button>
+              {r.status === 'pending' && canReview(r) && (
+                <Button size="small" variant="contained" color="success" onClick={stop(() => open(r))}>Review</Button>
               )}
               {r.status === 'pending' && (
-                <Button size="small" onClick={() => cancelReq(r)}>Cancel</Button>
+                <Button size="small" onClick={stop(() => cancelReq(r))}>Cancel</Button>
               )}
               {r.status === 'approved' && (
-                <Button size="small" color="error" onClick={() => setConfirmTarget({ req: r, mode: 'cancel' })}>Cancel</Button>
+                <Button size="small" color="error" onClick={stop(() => setConfirmTarget(r))}>Cancel</Button>
               )}
+              {reviewerNote(r)}
             </Paper>
           ))}
         </Stack>
@@ -263,12 +287,15 @@ export default function TimeOff() {
           ) : (
             <Stack spacing={1} sx={{ mb: 3 }}>
               {teamPending.map((r) => (
-                <Paper key={r.id} variant="outlined" sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)}>
                   <Chip size="small" label={TYPE_LABEL[r.type]} />
                   <Typography sx={{ fontWeight: 600, minWidth: 120 }}>{r.user?.name || r.user?.email}</Typography>
                   <Typography color="text.secondary" sx={{ flexGrow: 1 }}>{describeRange(r)}{r.note ? ` · ${r.note}` : ''}</Typography>
-                  <Button size="small" variant="contained" color="success" onClick={() => review(r, 'approved', 'Approved')}>Approve</Button>
-                  <Button size="small" variant="outlined" color="error" onClick={() => review(r, 'denied', 'Denied')}>Deny</Button>
+                  {canReview(r) && (
+                    <Button size="small" variant="contained" color="success" onClick={stop(() => open(r))} data-testid={`time-off-review-${r.id}`}>
+                      Review
+                    </Button>
+                  )}
                 </Paper>
               ))}
             </Stack>
@@ -280,18 +307,22 @@ export default function TimeOff() {
           ) : (
             <Stack spacing={1}>
               {teamApproved.map((r) => (
-                <Paper key={r.id} variant="outlined" sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+                <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)}>
                   <Chip size="small" label={TYPE_LABEL[r.type]} />
                   <Typography sx={{ fontWeight: 600, minWidth: 120 }}>{r.user?.name || r.user?.email}</Typography>
                   <Typography color="text.secondary" sx={{ flexGrow: 1 }}>
                     {describeRange(r)}{r.note ? ` · ${r.note}` : ''}{approvedBy(r) ? ` · ${approvedBy(r)}` : ''}
                   </Typography>
-                  <Button size="small" variant="outlined" color="error" onClick={() => setConfirmTarget({ req: r, mode: 'remove' })}>Remove</Button>
+                  {canReview(r) && (
+                    <Button size="small" variant="outlined" color="error" onClick={stop(() => open(r, 'remove'))}>Remove</Button>
+                  )}
                 </Paper>
               ))}
             </Stack>
           )}
         </>
+      )}
+      </>
       )}
 
       <ConfirmDialog
@@ -299,17 +330,13 @@ export default function TimeOff() {
         onClose={() => setConfirmTarget(null)}
         onConfirm={performConfirm}
         loading={confirmBusy}
-        title={confirmTarget?.mode === 'cancel' ? 'Cancel approved time off?' : 'Remove approved time off?'}
-        message={
-          confirmTarget
-            ? confirmTarget.mode === 'cancel'
-              ? `Cancel your approved time off (${describeRange(confirmTarget.req)})? This puts you back on the schedule.`
-              : `Remove ${confirmTarget.req.user?.name || confirmTarget.req.user?.email || 'this employee'}'s approved time off (${describeRange(confirmTarget.req)})? This puts them back on the schedule.`
-            : ''
-        }
-        confirmLabel={confirmTarget?.mode === 'cancel' ? 'Cancel time off' : 'Remove'}
+        title="Cancel approved time off?"
+        message={confirmTarget ? `Cancel your approved time off (${describeRange(confirmTarget)})? This puts you back on the schedule.` : ''}
+        confirmLabel="Cancel time off"
         confirmColor="error"
       />
+
+      <TimeOffDialog request={detail?.req ?? null} startWith={detail?.startWith} onClose={() => setDetail(null)} />
 
       <Snackbar open={!!notice} autoHideDuration={4000} onClose={() => setNotice(null)} message={notice ?? ''} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }} />
     </>
