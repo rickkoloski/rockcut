@@ -35,7 +35,8 @@ export function ReviewNoteField({ value, onChange, disabled }: { value: string; 
       multiline
       minRows={2}
       fullWidth
-      slotProps={{ htmlInput: { 'data-testid': 'time-off-review-note' } }}
+      // Always on the border: at phone width a floating label sat over typed text (QA gap 4).
+      slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'time-off-review-note' } }}
     />
   )
 }
