@@ -10,6 +10,7 @@ import {
   enterFor,
   expectNavBadge,
   findAs,
+  freeDays,
   notificationsOf,
   requestOwn,
   review,
@@ -73,7 +74,7 @@ test('E2: the form refuses a day that has passed, with the API’s words, and st
 
 test('E3: My requests is current and later (ending today still shows); the Archive has last month’s, read-only', async ({ page }) => {
   const endsToday = await requestOwn('bartender1', { first: dayFrom(-1), last: today() }, tempTag('E3 today'))
-  const lastMonth = await enterFor('barMgr', 'bartender1', { first: dayFrom(-35), last: dayFrom(-33) }, tempTag('E3 last month'))
+  const lastMonth = await enterFor('barMgr', 'bartender1', await freeDays('bartender1', -35, 3, -1), tempTag('E3 last month'))
 
   await page.goto('/time_off')
   await expect(page.getByText(endsToday.note!)).toBeVisible()

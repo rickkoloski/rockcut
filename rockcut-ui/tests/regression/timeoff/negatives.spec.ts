@@ -5,7 +5,7 @@ import {
   addDays,
   apiAs,
   cleanupTimeOff,
-  dayFrom,
+  freeDays,
   enterFor,
   navBadge,
   notificationsOf,
@@ -43,8 +43,8 @@ test.describe('taproomDevice (shared tablet)', () => {
   test.use({ storageState: authFile('taproomDevice') })
 
   test('N2: the agenda shows no time off, there’s no Time off page or badge, and the API refuses (403)', async ({ page }) => {
-    const r = await enterFor('barMgr', 'bartender1', { first: dayFrom(1), last: dayFrom(1) }, tempTag('N2 tablet'))
-    await requestOwn('bartender2', { first: dayFrom(1), last: dayFrom(1) }, tempTag('N2 pending'))
+    const r = await enterFor('barMgr', 'bartender1', await freeDays('bartender1', 1), tempTag('N2 tablet'))
+    await requestOwn('bartender2', await freeDays('bartender2', 1), tempTag('N2 pending'))
 
     const timeOffCalls: string[] = []
     page.on('request', (req) => {
@@ -58,6 +58,9 @@ test.describe('taproomDevice (shared tablet)', () => {
     expect(await navBadge(page, 'Schedule')).toBe(0)
     await expect(page.locator('.MuiDrawer-paper').first().getByRole('button', { name: /Time off/ })).toHaveCount(0)
     expect(timeOffCalls).toEqual([])
+    // DEV fix cycle 1, G5: no dot on the ☰ on a shared tablet.
+    const dot = page.getByTestId('nav-menu-dot').locator('.MuiBadge-badge')
+    for (const d of await dot.all()) await expect(d).toHaveClass(/MuiBadge-invisible/)
 
     const api = await apiAs('taproomDevice')
     expect((await api.get('/api/time_off')).status()).toBe(403)

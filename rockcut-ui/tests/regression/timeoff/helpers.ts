@@ -1,11 +1,14 @@
 import { expect, type Page } from '@playwright/test'
 import type { PersonaKey } from '../../config/test-env'
 import { addDays, apiAs, denverToday, denverUtc, tempTag } from '../scheduler/helpers'
+import { localDayKey } from '../../../src/lib/datetime'
 
 // D44: time off specs. Every request made here carries a `[TEST-TEMP]` note
 // (tempTag) and is cancelled by id afterwards (`cleanupTimeOff`). A request
-// that has already passed can't be cancelled any more; `setup` deletes those
-// (notes starting `[TEST-TEMP]`).
+// that has already passed can't be cancelled any more; a reseed deletes those
+// (notes starting `[TEST-TEMP]`). Until then they stay, and a person's
+// requests can't overlap (DEV fix cycle 1, G7), so specs that make one, or
+// that could meet a `[SEED]` row, take their days from `freeDays`.
 
 export { addDays, apiAs, denverToday, denverUtc, tempTag }
 
@@ -147,3 +150,20 @@ export const dialog = (page: Page) => page.getByTestId('time-off-dialog')
 /** Today in Colorado and the days around it. */
 export const today = () => denverToday()
 export const dayFrom = (n: number) => addDays(denverToday(), n)
+
+/**
+ * The first `n` days in a row, starting `start` days from today and moving
+ * `step` days at a time, on which `persona` has no pending or approved time off.
+ */
+export async function freeDays(persona: PersonaKey, start: number, n = 1, step = 1): Promise<{ first: string; last: string }> {
+  const list = (await (await (await apiAs(persona)).get('/api/time_off')).json()).data as (ApiTimeOff & { starts_at: string; ends_at: string })[]
+  const taken = list
+    .filter((r) => r.status === 'pending' || r.status === 'approved')
+    .map((r) => [localDayKey(r.starts_at), localDayKey(r.ends_at)] as const)
+  for (let s = start, i = 0; i < 400; s += step, i++) {
+    const first = dayFrom(s)
+    const last = dayFrom(s + n - 1)
+    if (!taken.some(([a, b]) => a <= last && first <= b)) return { first, last }
+  }
+  throw new Error(`no free days for ${persona}`)
+}

@@ -1025,3 +1025,11 @@ ExUnit files are under `rockcut_api/test/`; Vitest under `rockcut-ui/src/`. Play
 | — | Item 3: the note to the employee keeps its label on the border at 390 px | Manual-only (headless 390×844 check during the fix: label shrunk with its notch even mid-transition) |
 | — | Item 4: seeded time off at Colorado times | ExUnit `seeds/synthetic_test` |
 | — | Item 5: theme G1 makes its own notification | Playwright `ui/theme` (G1: an office1 `[TEST-TEMP]` request, cancelled by id) |
+| — | DEV fix cycle 1, G1: an open page's badges catch up on in-app navigation (at most one `/api/me` per 30 s); opening Time off reads its list again | Playwright `dev-fixes` (D1: two browsers, Sam submits, barMgr navigates; the list on the way back, the badge after 30 s with a fake clock, one `/api/me`) |
+| — | G2: notes stop at 2,000 (API and fields); long unbroken notes wrap (page, dialog, bell) at 390 px | ExUnit `time_off_d44_test` (2,000 ok, 2,001 a field error, for both notes; nothing stored, no one told; 403 first); Playwright `dev-fixes` (D2: no sideways scroll on the page, in the dialog or the bell, `maxlength` 2000) |
+| — | G3: Cancel slower to clear the badge | See the fix cycle report (measured locally) |
+| — | G4: a past approved `[SEED]` request for the Archive | ExUnit `seeds/synthetic_test` |
+| — | G5 (Matt): a dot on the phone's ☰ while time off is pending and the drawer is closed; not on tablets | Playwright `dev-fixes` (D3), `negatives` (N2: no dot on the tablet) |
+| — | G7 (Matt): no overlap with the person's pending or approved time off; own vs on-behalf message | ExUnit `time_off_d44_test` (each overlap, touching at midnight and at a timed edge allowed, denied/cancelled don't block, someone else's doesn't, order of checks); Playwright `dev-fixes` (D4, D5: the form shows each message) |
+| — | G6 (Matt): a request starts at most 365 days ahead; the year shows on dates in another year | ExUnit `time_off_d44_test` (365 ok, 366 refused, own and on behalf; the start counts); Vitest `lib/timeoff.test` (`describeTimeOffRange` with the year) |
+| — | G8: the desktop nav's collapse button has a name | Manual-only (aria-labels "Collapse navigation" / "Expand navigation") |

@@ -13,6 +13,7 @@ import {
   enterFor,
   expectNavBadge,
   findAs,
+  freeDays,
   notificationsOf,
   requestOwn,
   review,
@@ -166,8 +167,8 @@ test('M6: time off entered for Sam with the form is approved and notifies no one
 })
 
 test('M7: the Archive has my department’s past time off, not the Brewery’s; read-only; the API refuses a review (422)', async ({ page }) => {
-  const bar = await enterFor('barMgr', 'bartender1', { first: dayFrom(-10), last: dayFrom(-9) }, tempTag('M7 bar past'))
-  const brew = await enterFor('breweryMgr', 'brewer1', { first: dayFrom(-10), last: dayFrom(-9) }, tempTag('M7 brewery past'))
+  const bar = await enterFor('barMgr', 'bartender1', await freeDays('bartender1', -10, 2, -1), tempTag('M7 bar past'))
+  const brew = await enterFor('breweryMgr', 'brewer1', await freeDays('brewer1', -10, 2, -1), tempTag('M7 brewery past'))
 
   await page.goto('/time_off')
   await expect(page.getByText(bar.note!)).toHaveCount(0)
@@ -190,7 +191,7 @@ test('M8: a past request nobody reviewed reads “Not reviewed”, with no butto
   // are refused, on-behalf ones are created approved), so the Archive's reply
   // shows a real past request as pending. The API side is in ExUnit
   // (time_off_d44_test.exs: review/cancel of a past request → 422).
-  const r = await enterFor('barMgr', 'bartender1', { first: dayFrom(-6), last: dayFrom(-5) }, tempTag('M8 not reviewed'))
+  const r = await enterFor('barMgr', 'bartender1', await freeDays('bartender1', -6, 2, -1), tempTag('M8 not reviewed'))
   await page.route(
     (url) => url.pathname === '/api/time_off' && url.searchParams.get('when') === 'past',
     async (route) => {

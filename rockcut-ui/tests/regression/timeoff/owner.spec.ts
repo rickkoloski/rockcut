@@ -5,7 +5,7 @@ import {
   addDays,
   apiBadge,
   cleanupTimeOff,
-  dayFrom,
+  freeDays,
   dialog,
   enterFor,
   findAs,
@@ -42,8 +42,9 @@ test('O1: denies a pending request from the Scheduler; the chip goes; the badge 
 })
 
 test('O2: sees every department’s time off in the agenda, with Remove on approved', async ({ page }) => {
-  const bar = await enterFor('barMgr', 'bartender1', { first: dayFrom(2), last: dayFrom(2) }, tempTag('O2 bar'))
-  const brew = await enterFor('breweryMgr', 'brewer1', { first: dayFrom(2), last: dayFrom(2) }, tempTag('O2 brewery'))
+  // brewer1 has seeded time off this week and next (`[SEED]`): days clear of it.
+  const bar = await enterFor('barMgr', 'bartender1', await freeDays('bartender1', 2), tempTag('O2 bar'))
+  const brew = await enterFor('breweryMgr', 'brewer1', await freeDays('brewer1', 2), tempTag('O2 brewery'))
 
   await page.goto('/schedule')
   await expect(page.getByTestId(`agenda-time-off-${bar.id}`)).toContainText('Sam Pour')
