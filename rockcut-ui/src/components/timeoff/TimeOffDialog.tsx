@@ -20,7 +20,7 @@ import api from '../../lib/api'
 import useAuth from '../../hooks/useAuth'
 import { describeTimeOffRange, isPastTimeOff, TIME_OFF_TYPE_LABEL } from '../../lib/timeoff'
 import type { TimeOffRequest, TimeOffStatus } from '../../lib/types'
-import { formatWhen, personName, reviewedLine, timeOffError, timeOffStatusLabel, useCanReviewTimeOff, useTimeOffRefresh } from './timeOffHelpers'
+import { formatWhen, NOTE_MAX, personName, WRAP, reviewedLine, timeOffError, timeOffStatusLabel, useCanReviewTimeOff, useTimeOffRefresh } from './timeOffHelpers'
 
 /** The optional note to the employee, sent as `reviewer_note` (D44 Q2). */
 export function ReviewNoteField({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
@@ -36,7 +36,7 @@ export function ReviewNoteField({ value, onChange, disabled }: { value: string; 
       minRows={2}
       fullWidth
       // Always on the border: at phone width a floating label sat over typed text (QA gap 4).
-      slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'time-off-review-note' } }}
+      slotProps={{ inputLabel: { shrink: true }, htmlInput: { 'data-testid': 'time-off-review-note', maxLength: NOTE_MAX } }}
     />
   )
 }
@@ -130,14 +130,14 @@ export default function TimeOffDialog({ request, onClose, startWith }: Props) {
             </Stack>
             <Typography>{describeTimeOffRange(r)}</Typography>
             {r.note && (
-              <Typography variant="body2">
+              <Typography variant="body2" sx={WRAP}>
                 <strong>{r.user_id === meId ? 'Your note' : 'Their note'}:</strong> {r.note}
               </Typography>
             )}
             <Typography variant="body2" color="text.secondary">Requested {formatWhen(r.inserted_at)}</Typography>
             {reviewedLine(r) && <Typography variant="body2" color="text.secondary">{reviewedLine(r)}</Typography>}
             {r.reviewer_note && (r.status === 'approved' || r.status === 'denied') && (
-              <Typography variant="body2" data-testid="time-off-reviewer-note">
+              <Typography variant="body2" sx={WRAP} data-testid="time-off-reviewer-note">
                 <strong>Note to {name}:</strong> {r.reviewer_note}
               </Typography>
             )}

@@ -79,9 +79,9 @@ describe('canReviewTimeOff', () => {
 
 describe('describeTimeOffRange', () => {
   it('reads one all-day, several all-day and timed requests', () => {
-    expect(describeTimeOffRange(req(3, '2026-10-05T06:00:00Z', '2026-10-06T05:59:00Z'))).toMatch(/Oct 5 \(all day\)$/)
-    expect(describeTimeOffRange(allDay)).toMatch(/Oct 5 – .*Oct 7$/)
-    expect(describeTimeOffRange(req(4, '2026-10-05T20:00:00Z', '2026-10-05T23:00:00Z', { all_day: false }))).toMatch(/Oct 5, 2:00\s?PM–5:00\s?PM$/)
+    expect(describeTimeOffRange(req(3, '2026-10-05T06:00:00Z', '2026-10-06T05:59:00Z'), '2026-10-05')).toMatch(/Oct 5 \(all day\)$/)
+    expect(describeTimeOffRange(allDay, '2026-10-05')).toMatch(/Oct 5 – .*Oct 7$/)
+    expect(describeTimeOffRange(req(4, '2026-10-05T20:00:00Z', '2026-10-05T23:00:00Z', { all_day: false }), '2026-10-05')).toMatch(/Oct 5, 2:00\s?PM–5:00\s?PM$/)
   })
 })
 
@@ -194,5 +194,29 @@ describe('time off ending at 12:00 AM', () => {
     expect(conflictsFor(thursday, [], off)).toEqual([])
     const late = { assigneeId: 1, startsAt: '2026-11-19T05:00:00Z', endsAt: '2026-11-19T08:00:00Z' }
     expect(conflictsFor(late, [], off)).toHaveLength(1)
+  })
+})
+
+// DEV fix cycle 1, G6: the year when the date isn't this year's.
+describe('describeTimeOffRange: the year', () => {
+  const today = '2026-11-17'
+  it('no year for this year', () => {
+    // Fri Dec 18 2026, all day (MST).
+    expect(describeTimeOffRange(req(20, '2026-12-18T07:00:00Z', '2026-12-19T06:59:00Z'), today)).toBe('Friday, Dec 18 (all day)')
+  })
+
+  it('the year on a date in another year, all day or timed', () => {
+    expect(describeTimeOffRange(req(21, '2027-12-17T07:00:00Z', '2027-12-18T06:59:00Z'), today)).toBe('Friday, Dec 17, 2027 (all day)')
+    const timed = req(22, '2027-12-17T21:00:00Z', '2027-12-17T23:00:00Z', { all_day: false })
+    expect(describeTimeOffRange(timed, today)).toMatch(/^Friday, Dec 17, 2027, 2:00\s?PM–4:00\s?PM$/)
+    // Last year's, in the Archive.
+    expect(describeTimeOffRange(req(23, '2025-12-19T07:00:00Z', '2025-12-20T06:59:00Z'), today)).toBe('Friday, Dec 19, 2025 (all day)')
+  })
+
+  it('across New Year: only the day in the other year gets it', () => {
+    // Wed Dec 30 2026 → Sat Jan 2 2027, all day.
+    expect(describeTimeOffRange(req(24, '2026-12-30T07:00:00Z', '2027-01-03T06:59:00Z'), today)).toBe(
+      'Wednesday, Dec 30 – Saturday, Jan 2, 2027',
+    )
   })
 })

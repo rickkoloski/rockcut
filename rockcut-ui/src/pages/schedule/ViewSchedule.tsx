@@ -207,7 +207,7 @@ export default function ViewSchedule() {
                   >
                     <EventBusyIcon sx={{ color: pending ? 'warning.main' : 'text.secondary' }} />
                     <Typography sx={{ fontWeight: 600 }}>{r.user?.name || r.user?.email}</Typography>
-                    <Typography color="text.secondary" sx={{ minWidth: 150, flexGrow: 1 }}>
+                    <Typography color="text.secondary" sx={{ minWidth: 150, flexGrow: 1, overflowWrap: 'anywhere' }}>
                       {TIME_OFF_TYPE_LABEL[r.type] ?? r.type} · {agendaTimeOffLabel(r, day)}
                     </Typography>
                     {pending && <Chip label="Pending" size="small" color="warning" variant="outlined" />}

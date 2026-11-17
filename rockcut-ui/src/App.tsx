@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Routes, Route, Navigate, useParams, createRoutesFromChildren, matchRoutes } from 'react-router-dom'
 import {
   Alert,
@@ -331,6 +331,9 @@ function TabletFallback() {
   return matchRoutes(PERSON_PAGES, location) ? <DeviceNotAvailable /> : <NotFound />
 }
 
+/** DEV fix cycle 1, G1: the least time between capability re-reads on navigation. */
+const CAPABILITIES_REREAD_MS = 30_000
+
 function App() {
   // Black logo on light themes, white on dark.
   const logoSrc = useTheme().palette.mode === 'dark' ? '/rockcut-logo-light.png' : '/rockcut-logo.png'
@@ -355,6 +358,7 @@ function App() {
     loadMe,
     logout,
     signOutDevice,
+    refreshCapabilities,
   } = useAuth()
   const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
   // D58 §3.11 (4061): a shared device's header below 412 px.
@@ -401,6 +405,16 @@ function App() {
     enabled: signedInFully,
   })
   const departments = Array.isArray(departmentsData) ? departmentsData : []
+
+  // DEV fix cycle 1, G1: the badges catch up on in-app navigation. A route
+  // change re-reads the capabilities, at most once every 30 s; no polling.
+  const capabilitiesReadAt = useRef(Date.now())
+  const rereadCapabilities = signedInFully && user?.kind !== 'device'
+  useEffect(() => {
+    if (!rereadCapabilities || Date.now() - capabilitiesReadAt.current < CAPABILITIES_REREAD_MS) return
+    capabilitiesReadAt.current = Date.now()
+    void refreshCapabilities()
+  }, [location.pathname, rereadCapabilities, refreshCapabilities])
 
   if (!isAuthenticated) return <Login />
   if (!bootstrapped || !user || !capabilities)
@@ -577,6 +591,7 @@ function App() {
           {!isMobile && !collapsed && (
             <IconButton
               size="small"
+              aria-label="Collapse navigation"
               onClick={() => setCollapsed(true)}
               sx={{ position: 'absolute', top: '10px', right: 8 }}
             >
@@ -797,12 +812,16 @@ function App() {
               onClick={() => setMobileOpen(true)}
               sx={{ display: { md: 'none' }, mr: 1 }}
             >
-              <MenuIcon />
+              {/* DEV fix cycle 1, G5 (Matt): pending time off, while the drawer is closed. */}
+              <Badge variant="dot" color="error" invisible={pendingTimeOff === 0 || mobileOpen} data-testid="nav-menu-dot">
+                <MenuIcon />
+              </Badge>
             </IconButton>
 
             {collapsed && (
               <IconButton
                 edge="start"
+                aria-label="Expand navigation"
                 onClick={() => setCollapsed(false)}
                 sx={{ display: { xs: 'none', md: 'flex' }, mr: 1 }}
               >

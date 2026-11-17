@@ -19,7 +19,7 @@ import {
 import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import TimeOffDialog, { TimeOffStatusChip } from '../../components/timeoff/TimeOffDialog'
-import { reviewedLine, timeOffError as readError, useCanReviewTimeOff, useTimeOffRefresh } from '../../components/timeoff/timeOffHelpers'
+import { NOTE_MAX, reviewedLine, timeOffError as readError, useCanReviewTimeOff, useTimeOffRefresh, WRAP } from '../../components/timeoff/timeOffHelpers'
 import { useApiList } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
@@ -39,7 +39,10 @@ export default function TimeOff() {
 
   // D44 §2.4: current and later here; the Archive loads the past only when opened.
   const [view, setView] = useState<'current' | 'archive'>('current')
-  const { data: requests = [] } = useApiList<TimeOffRequest>(['time_off', 'current'], '/api/time_off', CURRENT)
+  // DEV fix cycle 1, G1: opening the page always reads the list again.
+  const { data: requests = [] } = useApiList<TimeOffRequest>(['time_off', 'current'], '/api/time_off', CURRENT, {
+    refetchOnMount: 'always',
+  })
   const { data: past = [], isLoading: pastLoading } = useApiList<TimeOffRequest>(['time_off', 'past'], '/api/time_off', PAST, {
     enabled: view === 'archive',
   })
@@ -121,7 +124,7 @@ export default function TimeOff() {
   // D44: the employee sees the reviewer's note on their own requests.
   const reviewerNote = (r: TimeOffRequest) =>
     r.reviewer_note && (r.status === 'approved' || r.status === 'denied') ? (
-      <Typography variant="body2" sx={{ flexBasis: '100%' }} data-testid={`time-off-reviewer-note-${r.id}`}>
+      <Typography variant="body2" sx={{ flexBasis: '100%', ...WRAP }} data-testid={`time-off-reviewer-note-${r.id}`}>
         <strong>Note from {r.reviewed_by?.name || r.reviewed_by?.email || 'your manager'}:</strong> {r.reviewer_note}
       </Typography>
     ) : null
@@ -149,7 +152,8 @@ export default function TimeOff() {
     }
   }
 
-  const rowSx = { p: 1.5, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', cursor: 'pointer' } as const
+  // DEV fix cycle 1, G2: a long unbroken note wraps instead of widening the page.
+  const rowSx = { p: 1.5, minWidth: 0, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap', cursor: 'pointer' } as const
 
   return (
     <>
@@ -204,7 +208,7 @@ export default function TimeOff() {
             </Stack>
           )}
 
-          <TextField size="small" label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} />
+          <TextField size="small" label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} slotProps={{ htmlInput: { maxLength: NOTE_MAX } }} />
           <Box>
             <Button variant="contained" onClick={submit} disabled={busy}>Submit request</Button>
           </Box>
@@ -237,7 +241,7 @@ export default function TimeOff() {
                 <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)} data-testid={`time-off-archive-${r.id}`}>
                   <Chip size="small" label={TYPE_LABEL[r.type]} />
                   {r.user_id !== meId && <Typography sx={{ fontWeight: 600, minWidth: 120 }}>{r.user?.name || r.user?.email}</Typography>}
-                  <Typography color="text.secondary" sx={{ flexGrow: 1 }}>
+                  <Typography color="text.secondary" sx={{ flexGrow: 1, ...WRAP }}>
                     {describeRange(r)}{r.note ? ` · ${r.note}` : ''}{reviewedLine(r) ? ` · ${reviewedLine(r)}` : ''}
                   </Typography>
                   {statusChip(r)}
@@ -258,7 +262,7 @@ export default function TimeOff() {
           {mine.map((r) => (
             <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)}>
               <Chip size="small" label={TYPE_LABEL[r.type]} />
-              <Typography color="text.secondary" sx={{ flexGrow: 1 }}>
+              <Typography color="text.secondary" sx={{ flexGrow: 1, ...WRAP }}>
                 {describeRange(r)}{r.note ? ` · ${r.note}` : ''}{reviewedLine(r) ? ` · ${reviewedLine(r)}` : ''}
               </Typography>
               {statusChip(r)}
@@ -290,7 +294,7 @@ export default function TimeOff() {
                 <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)}>
                   <Chip size="small" label={TYPE_LABEL[r.type]} />
                   <Typography sx={{ fontWeight: 600, minWidth: 120 }}>{r.user?.name || r.user?.email}</Typography>
-                  <Typography color="text.secondary" sx={{ flexGrow: 1 }}>{describeRange(r)}{r.note ? ` · ${r.note}` : ''}</Typography>
+                  <Typography color="text.secondary" sx={{ flexGrow: 1, ...WRAP }}>{describeRange(r)}{r.note ? ` · ${r.note}` : ''}</Typography>
                   {canReview(r) && (
                     <Button size="small" variant="contained" color="success" onClick={stop(() => open(r))} data-testid={`time-off-review-${r.id}`}>
                       Review
@@ -310,7 +314,7 @@ export default function TimeOff() {
                 <Paper key={r.id} variant="outlined" sx={rowSx} onClick={() => open(r)}>
                   <Chip size="small" label={TYPE_LABEL[r.type]} />
                   <Typography sx={{ fontWeight: 600, minWidth: 120 }}>{r.user?.name || r.user?.email}</Typography>
-                  <Typography color="text.secondary" sx={{ flexGrow: 1 }}>
+                  <Typography color="text.secondary" sx={{ flexGrow: 1, ...WRAP }}>
                     {describeRange(r)}{r.note ? ` · ${r.note}` : ''}{approvedBy(r) ? ` · ${approvedBy(r)}` : ''}
                   </Typography>
                   {canReview(r) && (

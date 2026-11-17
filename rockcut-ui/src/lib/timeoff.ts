@@ -72,21 +72,25 @@ export const TIME_OFF_TYPES: { value: TimeOffType; label: string }[] = [
 ]
 export const TIME_OFF_TYPE_LABEL = Object.fromEntries(TIME_OFF_TYPES.map((t) => [t.value, t.label])) as Record<TimeOffType, string>
 
-function dayLabel(iso: string): string {
-  return formatDayHeading(`${localDayKey(iso)}T12:00:00Z`)
+/** "Friday, Dec 18"; with the year when it isn't this year's (DEV fix cycle 1, G6): "Friday, Dec 18, 2027". */
+function dayLabel(iso: string, todayKey: string): string {
+  const key = localDayKey(iso)
+  const day = formatDayHeading(`${key}T12:00:00Z`)
+  return key.slice(0, 4) === todayKey.slice(0, 4) ? day : `${day}, ${key.slice(0, 4)}`
 }
 
 /** "Mon, Sep 23 (all day)", "Mon, Sep 23 – Wed, Sep 25", "Mon, Sep 23, 3:30–5:00 PM", or across days. */
-export function describeTimeOffRange(r: TimeOffRequest): string {
+export function describeTimeOffRange(r: TimeOffRequest, todayKey = localDayKey(new Date().toISOString())): string {
+  const day = (iso: string) => dayLabel(iso, todayKey)
   if (r.all_day) {
-    const s = dayLabel(r.starts_at)
-    const e = dayLabel(r.ends_at)
+    const s = day(r.starts_at)
+    const e = day(r.ends_at)
     return s === e ? `${s} (all day)` : `${s} – ${e}`
   }
   if (localDayKey(r.starts_at) === localDayKey(r.ends_at)) {
-    return `${dayLabel(r.starts_at)}, ${formatTime(r.starts_at)}–${formatTime(r.ends_at)}`
+    return `${day(r.starts_at)}, ${formatTime(r.starts_at)}–${formatTime(r.ends_at)}`
   }
-  return `${dayLabel(r.starts_at)}, ${formatTime(r.starts_at)} – ${dayLabel(r.ends_at)}, ${formatTime(r.ends_at)}`
+  return `${day(r.starts_at)}, ${formatTime(r.starts_at)} – ${day(r.ends_at)}, ${formatTime(r.ends_at)}`
 }
 
 /**

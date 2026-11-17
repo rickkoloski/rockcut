@@ -6,6 +6,12 @@ import { formatDayHeading, formatTime } from '../../lib/datetime'
 import { canReviewTimeOff, isPastTimeOff } from '../../lib/timeoff'
 import type { TimeOffRequest } from '../../lib/types'
 
+/** The API's limit on the requester's and the reviewer's notes (DEV fix cycle 1, G2). */
+export const NOTE_MAX = 2_000
+
+/** A long unbroken note (a pasted URL) wraps instead of widening the page (G2). */
+export const WRAP = { overflowWrap: 'anywhere', minWidth: 0 } as const
+
 /** The API's own words for a refusal (403 / 422), else the usual parse. */
 export function timeOffError(err: unknown): string {
   const e = err as { response?: { data?: { error?: string } } }
