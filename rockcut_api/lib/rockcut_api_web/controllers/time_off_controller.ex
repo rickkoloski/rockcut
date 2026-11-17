@@ -25,6 +25,9 @@ defmodule RockcutApiWeb.TimeOffController do
       {:ok, req} -> conn |> put_status(:created) |> json(%{data: time_off_request(req)})
       {:error, :forbidden} -> forbidden(conn)
       {:error, :past_request} -> unprocessable(conn, @past_request)
+      {:error, :too_far} -> unprocessable(conn, "Time off can be requested up to a year ahead.")
+      {:error, :overlap} -> unprocessable(conn, "This person already has time off then.")
+      {:error, :overlap_own} -> unprocessable(conn, "You already have time off then.")
       other -> other
     end
   end
@@ -48,6 +51,7 @@ defmodule RockcutApiWeb.TimeOffController do
           {:error, :past} -> unprocessable(conn, @past)
           {:error, {:changed, current}} -> conflict(conn, @changed, current)
           {:error, {:already, current}} -> conflict(conn, already(current), current)
+          other -> other
         end
     end
   end

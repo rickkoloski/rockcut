@@ -79,11 +79,9 @@ defmodule RockcutApi.TimeOff do
     end
   end
 
-  # Colorado midnight at the start of today, in UTC.
-  defp today_start do
-    {today, _time} = Recurrence.to_local(DateTime.utc_now())
-    Recurrence.local_midnight(today)
-  end
+  # Today in Colorado, and its midnight in UTC.
+  defp today, do: elem(Recurrence.to_local(DateTime.utc_now()), 0)
+  defp today_start, do: Recurrence.local_midnight(today())
 
   # The query form of `past?/1`.
   defp current(query) do
@@ -124,24 +122,65 @@ defmodule RockcutApi.TimeOff do
     end
   end
 
+  # Field errors first; then an own request that has already ended, one
+  # starting more than a year ahead, and one overlapping the person's own
+  # pending or approved time off (D44 DEV fix cycle 1, G6/G7).
   defp insert_request(attrs, reviewer) do
     changeset = Request.create_changeset(%Request{}, attrs)
 
-    if is_nil(reviewer) and own_past?(changeset),
-      do: {:error, :past_request},
-      else: do_insert(changeset, reviewer)
+    cond do
+      not changeset.valid? -> {:error, changeset}
+      is_nil(reviewer) and own_past?(changeset) -> {:error, :past_request}
+      too_far?(changeset) -> {:error, :too_far}
+      overlaps?(changeset) -> {:error, if(reviewer, do: :overlap, else: :overlap_own)}
+      true -> do_insert(changeset, reviewer)
+    end
   end
+
+  @max_days_ahead 365
+
+  # Starts (Colorado day) more than a year after today.
+  defp too_far?(changeset) do
+    {first, _} = Recurrence.to_local(Ecto.Changeset.get_field(changeset, :starts_at))
+    Date.diff(first, today()) > @max_days_ahead
+  end
+
+  # Any overlap with the same person's pending or approved requests, ends
+  # exclusive: all day covers its whole Colorado days (to the next midnight),
+  # timed ends at `ends_at`, so requests touching at midnight don't overlap.
+  defp overlaps?(changeset) do
+    get = &Ecto.Changeset.get_field(changeset, &1)
+    {lo, hi} = span(get.(:starts_at), get.(:ends_at), get.(:all_day))
+    # A superset by stored times: an all-day span ends a minute after 23:59.
+    reach = DateTime.add(lo, -1, :day)
+
+    from(r in Request,
+      where: r.user_id == ^get.(:user_id) and r.status in ["pending", "approved"],
+      where: r.starts_at < ^hi and r.ends_at > ^reach
+    )
+    |> Repo.all()
+    |> Enum.any?(fn r ->
+      {s, e} = span(r.starts_at, r.ends_at, r.all_day)
+      DateTime.compare(s, hi) == :lt and DateTime.compare(lo, e) == :lt
+    end)
+  end
+
+  defp span(starts_at, ends_at, true) do
+    {first, _} = Recurrence.to_local(starts_at)
+    {last, _} = Recurrence.to_local(ends_at)
+    {Recurrence.local_midnight(first), Recurrence.local_midnight(Date.add(last, 1))}
+  end
+
+  defp span(starts_at, ends_at, _timed), do: {starts_at, ends_at}
 
   # An own request whose last day has already passed (D44 §2.4, Matt): a
   # manager enters it on the person's behalf instead.
-  defp own_past?(%Ecto.Changeset{valid?: true} = changeset),
+  defp own_past?(changeset),
     do:
       past?(%Request{
         ends_at: Ecto.Changeset.get_field(changeset, :ends_at),
         all_day: Ecto.Changeset.get_field(changeset, :all_day)
       })
-
-  defp own_past?(_changeset), do: false
 
   defp do_insert(changeset, reviewer) do
     changeset =
@@ -217,7 +256,13 @@ defmodule RockcutApi.TimeOff do
         {:error, {:already, req}}
 
       true ->
-        decide(req, reviewer, status, note)
+        case Request.reviewer_note_changeset(req, %{reviewer_note: note}) do
+          %{valid?: true} = cs ->
+            decide(req, reviewer, status, Ecto.Changeset.get_field(cs, :reviewer_note))
+
+          cs ->
+            {:error, cs}
+        end
     end
   end
 

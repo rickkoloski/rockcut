@@ -470,8 +470,9 @@ defmodule RockcutApi.TimeOffD44Test do
           "time_off_reviewed" => %{"in_app" => false}
         })
 
-      t = today()
-      req = request!(reload(p["bartender1"]), attrs(t, t))
+      # After setup's request (today → +2): requests can't overlap.
+      day = Date.add(today(), 5)
+      req = request!(reload(p["bartender1"]), attrs(day, day))
       assert review(p["barMgr"], req, "approved").status == 200
       assert events(p["bartender1"], :time_off_reviewed) == []
     end
@@ -669,6 +670,243 @@ defmodule RockcutApi.TimeOffD44Test do
       conn = post_own(p["bartender1"], a)
       assert conn.status == 422
       refute conn.resp_body =~ "This date has passed"
+    end
+  end
+
+  describe "notes stop at 2,000 characters (DEV fix cycle 1, G2)" do
+    test "the requester's note: 2,000 ok, 2,001 a field error", %{p: p} do
+      t = today()
+      me = p["bartender1"]
+
+      ok =
+        call(
+          me,
+          :post,
+          "/api/time_off",
+          attrs(t, t, ~T[23:59:00], %{"note" => String.duplicate("a", 2_000)})
+        )
+
+      assert ok.status == 201
+
+      day = Date.add(t, 3)
+
+      conn =
+        call(
+          me,
+          :post,
+          "/api/time_off",
+          attrs(day, day, ~T[23:59:00], %{"note" => String.duplicate("a", 2_001)})
+        )
+
+      assert conn.status == 422
+
+      assert Jason.decode!(conn.resp_body)["errors"]["note"] == [
+               "should be at most 2000 character(s)"
+             ]
+    end
+
+    test "the reviewer's note: 2,001 a field error, nothing stored, no one told", %{p: p} do
+      t = today()
+      req = request!(p["bartender1"], attrs(t, t))
+
+      conn =
+        call(p["barMgr"], :post, "/api/time_off/#{req.id}/review", %{
+          "status" => "denied",
+          "reviewer_note" => String.duplicate("b", 2_001)
+        })
+
+      assert conn.status == 422
+
+      assert Jason.decode!(conn.resp_body)["errors"]["reviewer_note"] ==
+               ["should be at most 2000 character(s)"]
+
+      assert Repo.get!(Request, req.id).status == "pending"
+      assert recipients(:time_off_reviewed) == []
+
+      conn =
+        call(p["barMgr"], :post, "/api/time_off/#{req.id}/review", %{
+          "status" => "denied",
+          "reviewer_note" => String.duplicate("b", 2_000)
+        })
+
+      assert conn.status == 200
+      assert String.length(Repo.get!(Request, req.id).reviewer_note) == 2_000
+    end
+
+    test "the reviewer's note is checked after who may review (403 first)", %{p: p} do
+      req = request!(p["bartender1"], attrs(today(), today()))
+
+      conn =
+        call(p["breweryMgr"], :post, "/api/time_off/#{req.id}/review", %{
+          "status" => "denied",
+          "reviewer_note" => String.duplicate("b", 2_001)
+        })
+
+      assert conn.status == 403
+    end
+  end
+
+  describe "a year ahead at most (DEV fix cycle 1, G6)" do
+    test "starting exactly 365 days ahead is fine; 366 is refused, own or on behalf", %{p: p} do
+      t = today()
+      ok = Date.add(t, 365)
+      far = Date.add(t, 366)
+
+      assert call(p["bartender1"], :post, "/api/time_off", attrs(ok, ok)).status == 201
+
+      for {who, extra} <- [
+            {p["bartender1"], %{}},
+            {p["barMgr"], %{"user_id" => p["bartender2"].id}}
+          ] do
+        conn = call(who, :post, "/api/time_off", Map.merge(attrs(far, far), extra))
+        assert conn.status == 422
+        assert error(conn) == "Time off can be requested up to a year ahead."
+      end
+
+      assert Repo.aggregate(
+               from(r in Request, where: r.starts_at >= ^at(far, ~T[00:00:00])),
+               :count
+             ) == 0
+    end
+
+    test "it's the start that counts: starting in 365 days and ending later is fine", %{p: p} do
+      t = today()
+
+      conn =
+        call(p["bartender1"], :post, "/api/time_off", attrs(Date.add(t, 365), Date.add(t, 370)))
+
+      assert conn.status == 201
+    end
+  end
+
+  describe "no overlapping time off (DEV fix cycle 1, G7)" do
+    setup %{p: p} do
+      t = today()
+      first = Date.add(t, 10)
+      # Day 10 all day, pending; day 12 2:00–5:00 PM, approved (entered by barMgr).
+      %{
+        first: first,
+        pending: request!(p["bartender1"], attrs(first, first)),
+        approved:
+          elem(
+            TimeOff.create(
+              attrs(Date.add(first, 2), Date.add(first, 2), ~T[17:00:00], %{
+                "all_day" => false,
+                "starts_at" => at(Date.add(first, 2), ~T[14:00:00]) |> DateTime.to_iso8601(),
+                "user_id" => p["bartender1"].id
+              }),
+              p["barMgr"]
+            ),
+            1
+          )
+      }
+    end
+
+    defp timed(day, from, to, extra \\ %{}) do
+      Map.merge(
+        %{
+          "type" => "personal",
+          "all_day" => false,
+          "starts_at" => at(day, from) |> DateTime.to_iso8601(),
+          "ends_at" => at(day, to) |> DateTime.to_iso8601()
+        },
+        extra
+      )
+    end
+
+    defp count_for(user),
+      do: Repo.aggregate(from(r in Request, where: r.user_id == ^user.id), :count)
+
+    test "own: overlapping a pending or an approved request is refused", %{p: p, first: d} do
+      me = p["bartender1"]
+      before = count_for(me)
+      told = length(recipients(:time_off_requested))
+
+      for a <- [
+            attrs(d, d),
+            attrs(Date.add(d, -1), Date.add(d, 1)),
+            timed(d, ~T[09:00:00], ~T[10:00:00]),
+            timed(Date.add(d, 2), ~T[16:00:00], ~T[18:00:00]),
+            attrs(Date.add(d, 2), Date.add(d, 2))
+          ] do
+        conn = call(me, :post, "/api/time_off", a)
+        assert conn.status == 422
+        assert error(conn) == "You already have time off then."
+      end
+
+      assert count_for(me) == before
+      assert length(recipients(:time_off_requested)) == told
+    end
+
+    test "on behalf: \"This person already has time off then.\"", %{p: p, first: d} do
+      conn =
+        call(
+          p["barMgr"],
+          :post,
+          "/api/time_off",
+          Map.put(attrs(d, d), "user_id", p["bartender1"].id)
+        )
+
+      assert conn.status == 422
+      assert error(conn) == "This person already has time off then."
+    end
+
+    test "touching is not overlapping: the day before/after, and timed edges", %{p: p, first: d} do
+      me = p["bartender1"]
+      # All day the day after the all-day request (day 11).
+      assert call(me, :post, "/api/time_off", attrs(Date.add(d, 1), Date.add(d, 1))).status == 201
+      # Day 12: ending exactly when the approved one starts, starting exactly as it ends.
+      assert call(me, :post, "/api/time_off", timed(Date.add(d, 2), ~T[12:00:00], ~T[14:00:00])).status ==
+               201
+
+      assert call(me, :post, "/api/time_off", timed(Date.add(d, 2), ~T[17:00:00], ~T[19:00:00])).status ==
+               201
+    end
+
+    test "ending at 00:00 the day an all-day request starts doesn't overlap it", %{p: p, first: d} do
+      evening = %{
+        "type" => "personal",
+        "all_day" => false,
+        "starts_at" => at(Date.add(d, -1), ~T[20:00:00]) |> DateTime.to_iso8601(),
+        "ends_at" => at(d, ~T[00:00:00]) |> DateTime.to_iso8601()
+      }
+
+      assert call(p["bartender1"], :post, "/api/time_off", evening).status == 201
+
+      # One minute later is an overlap.
+      later = %{evening | "ends_at" => at(d, ~T[00:01:00]) |> DateTime.to_iso8601()}
+      later = %{later | "starts_at" => at(Date.add(d, -1), ~T[21:00:00]) |> DateTime.to_iso8601()}
+      assert call(p["bartender1"], :post, "/api/time_off", later).status == 422
+    end
+
+    test "denied and cancelled requests don't block", %{
+      p: p,
+      first: d,
+      pending: pending,
+      approved: approved
+    } do
+      {:ok, _} = TimeOff.cancel(pending, p["bartender1"])
+      {:ok, _} = TimeOff.review(approved, p["barMgr"], "denied", nil)
+
+      assert call(p["bartender1"], :post, "/api/time_off", attrs(d, d)).status == 201
+
+      assert call(p["bartender1"], :post, "/api/time_off", attrs(Date.add(d, 2), Date.add(d, 2))).status ==
+               201
+    end
+
+    test "someone else's time off doesn't block", %{p: p, first: d} do
+      assert call(p["bartender2"], :post, "/api/time_off", attrs(d, d)).status == 201
+    end
+
+    test "field errors come first; the past refusal before the overlap", %{p: p, first: d} do
+      conn = call(p["bartender1"], :post, "/api/time_off", Map.put(attrs(d, d), "type", "nope"))
+      assert conn.status == 422
+      assert Jason.decode!(conn.resp_body)["errors"]["type"]
+
+      y = Date.add(today(), -1)
+      _past = request!(p["bartender1"], attrs(y, y))
+      conn = call(p["bartender1"], :post, "/api/time_off", attrs(y, y))
+      assert error(conn) == "This date has passed. Ask your manager to enter it for you."
     end
   end
 

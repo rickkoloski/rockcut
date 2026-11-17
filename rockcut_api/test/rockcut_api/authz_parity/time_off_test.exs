@@ -33,6 +33,15 @@ defmodule RockcutApi.AuthzParity.TimeOffTest do
       "ends_at" => DateTime.utc_now() |> DateTime.add(9, :day) |> DateTime.to_iso8601()
     }
 
+  # Three weeks out: setup's `base/0` requests are pending, and a new request
+  # may not overlap one (D44 DEV fix cycle 1, G7).
+  defp later,
+    do: %{
+      base()
+      | "starts_at" => DateTime.utc_now() |> DateTime.add(21, :day) |> DateTime.to_iso8601(),
+        "ends_at" => DateTime.utc_now() |> DateTime.add(22, :day) |> DateTime.to_iso8601()
+    }
+
   defp requester_keys(conn, p) do
     by_id = Map.new(p, fn {k, u} -> {u.id, k} end)
 
@@ -66,7 +75,7 @@ defmodule RockcutApi.AuthzParity.TimeOffTest do
   describe "request for self" do
     for who <- ~w(noDept bartender1 barMgr owner) do
       test "#18 #{who} requests time off for themselves → 201 pending", %{p: p} do
-        conn = call(p[unquote(who)], :post, "/api/time_off", base())
+        conn = call(p[unquote(who)], :post, "/api/time_off", later())
         assert conn.status == 201
         data = Jason.decode!(conn.resp_body)["data"]
         assert data["status"] == "pending"
@@ -97,7 +106,7 @@ defmodule RockcutApi.AuthzParity.TimeOffTest do
             p[unquote(who)],
             :post,
             "/api/time_off",
-            Map.put(base(), "user_id", p[unquote(target)].id)
+            Map.put(later(), "user_id", p[unquote(target)].id)
           )
 
         assert conn.status == unquote(code)
