@@ -2,7 +2,7 @@
 // times for partial-day (timed) requests, clipped to each Denver day. A
 // multi-day timed range reads "from 3:30 PM" on the first day, "until 12:00 PM"
 // on the last, and all-day in between.
-import { addDaysKey, formatDayHeading, formatTime, localDayKey, utcToLocalInput } from './datetime'
+import { addDaysKey, formatDayKeyHeading, formatTime, localDayKey, utcToLocalInput } from './datetime'
 import type { TimeOffRequest, TimeOffType } from './types'
 
 export interface OffMarker {
@@ -72,12 +72,8 @@ export const TIME_OFF_TYPES: { value: TimeOffType; label: string }[] = [
 ]
 export const TIME_OFF_TYPE_LABEL = Object.fromEntries(TIME_OFF_TYPES.map((t) => [t.value, t.label])) as Record<TimeOffType, string>
 
-/** "Friday, Dec 18"; with the year when it isn't this year's (DEV fix cycle 1, G6): "Friday, Dec 18, 2027". */
-function dayLabel(iso: string, todayKey: string): string {
-  const key = localDayKey(iso)
-  const day = formatDayHeading(`${key}T12:00:00Z`)
-  return key.slice(0, 4) === todayKey.slice(0, 4) ? day : `${day}, ${key.slice(0, 4)}`
-}
+/** "Friday, Dec 18"; with the year when the date isn't this year's (DEV fix cycle 1, G6): "Friday, Dec 18, 2027". */
+const dayLabel = (iso: string, todayKey: string) => formatDayKeyHeading(localDayKey(iso), todayKey)
 
 /** "Mon, Sep 23 (all day)", "Mon, Sep 23 – Wed, Sep 25", "Mon, Sep 23, 3:30–5:00 PM", or across days. */
 export function describeTimeOffRange(r: TimeOffRequest, todayKey = localDayKey(new Date().toISOString())): string {

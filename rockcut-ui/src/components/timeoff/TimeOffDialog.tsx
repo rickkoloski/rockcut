@@ -20,12 +20,14 @@ import api from '../../lib/api'
 import useAuth from '../../hooks/useAuth'
 import { describeTimeOffRange, isPastTimeOff, TIME_OFF_TYPE_LABEL } from '../../lib/timeoff'
 import type { TimeOffRequest, TimeOffStatus } from '../../lib/types'
-import { formatWhen, NOTE_MAX, personName, WRAP, reviewedLine, timeOffError, timeOffStatusLabel, useCanReviewTimeOff, useTimeOffRefresh } from './timeOffHelpers'
+import { formatWhen, NOTE_MAX, personName, WRAP, reviewedLine, timeOffError, timeOffStatusLabel, useCanReviewTimeOff, useNoteLimit, useTimeOffRefresh } from './timeOffHelpers'
 
 /** The optional note to the employee, sent as `reviewer_note` (D44 Q2). */
 export function ReviewNoteField({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const limit = useNoteLimit(value)
   return (
     <TextField
+      {...limit}
       size="small"
       label="Note to the employee (optional)"
       placeholder="e.g. Sorry, we're short that weekend"

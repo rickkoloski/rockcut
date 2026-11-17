@@ -20,7 +20,7 @@ import EventBusyIcon from '@mui/icons-material/EventBusy'
 import RepeatIcon from '@mui/icons-material/Repeat'
 import PageHeader from '../../components/PageHeader'
 import { PageToolbar, SettingsChoices, SettingsGear, SettingsToggle } from '../../components/SettingsMenu'
-import { addDaysKey, formatDayHeading, formatTimeRange, localDayKey, mondayKeyOf } from '../../lib/datetime'
+import { addDaysKey, formatDayKeyHeading, formatTimeRange, localDayKey, mondayKeyOf } from '../../lib/datetime'
 import { departmentColor, shiftColor } from '../../lib/colors'
 import { eventDayKeys, eventDayLabel } from '../../lib/events'
 import { daysBetween } from '../../lib/gantt'
@@ -169,7 +169,7 @@ export default function ViewSchedule() {
       ) : (
         groups.map(([day, { shifts: dayShifts, events: dayEvents, timeOff: dayTimeOff }]) => (
           <Box key={day} sx={{ mb: 3 }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>{formatDayHeading(`${day}T12:00:00Z`)}</Typography>
+            <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }} data-testid={`agenda-day-heading-${day}`}>{formatDayKeyHeading(day)}</Typography>
             <Stack spacing={1}>
               {dayEvents.map((e) => {
                 const color = departmentColor(deptById.get(e.department_id) ?? e.department ?? undefined)

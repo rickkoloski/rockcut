@@ -1,4 +1,5 @@
 // D44: what the time off dialog, View Schedule's agenda and the Time off page share.
+import { useState, type ClipboardEvent, type KeyboardEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import useAuth from '../../hooks/useAuth'
 import parseApiError from '../../lib/parseApiError'
@@ -8,6 +9,39 @@ import type { TimeOffRequest } from '../../lib/types'
 
 /** The API's limit on the requester's and the reviewer's notes (DEV fix cycle 1, G2). */
 export const NOTE_MAX = 2_000
+
+/** The counter shows from here on (D44 DEV fix cycle 2, N1). */
+const NOTE_COUNT_FROM = 1_800
+
+/**
+ * N1: a note field's counter, "1,950 / 2,000" from 1,800 characters on, and
+ * "2,000 / 2,000 · the rest was cut" when a paste or typing hit the cap
+ * (`maxLength` drops the rest without a word). Spread onto the TextField.
+ */
+export function useNoteLimit(value: string) {
+  const [cut, setCut] = useState(false)
+  // Clears when the text gets shorter. A paste sets it before its text
+  // arrives, so it's the change in length that counts (adjusted while
+  // rendering, not in an effect).
+  const [length, setLength] = useState(value.length)
+  if (value.length !== length) {
+    setLength(value.length)
+    if (value.length < length) setCut(false)
+  }
+  const room = (el: HTMLInputElement | HTMLTextAreaElement) => NOTE_MAX - el.value.length + Math.abs((el.selectionEnd ?? 0) - (el.selectionStart ?? 0))
+  const count = `${value.length.toLocaleString('en-US')} / ${NOTE_MAX.toLocaleString('en-US')}`
+  return {
+    helperText: value.length < NOTE_COUNT_FROM ? undefined : cut && value.length >= NOTE_MAX ? `${count} · the rest was cut` : count,
+    onPaste: (e: ClipboardEvent<HTMLDivElement>) => {
+      const el = e.target as HTMLTextAreaElement
+      if (e.clipboardData.getData('text').length > room(el)) setCut(true)
+    },
+    onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => {
+      const typing = (e.key.length === 1 || e.key === 'Enter') && !e.ctrlKey && !e.metaKey && !e.altKey
+      if (typing && room(e.target as HTMLTextAreaElement) <= 0) setCut(true)
+    },
+  }
+}
 
 /** A long unbroken note (a pasted URL) wraps instead of widening the page (G2). */
 export const WRAP = { overflowWrap: 'anywhere', minWidth: 0 } as const

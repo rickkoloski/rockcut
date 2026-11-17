@@ -19,7 +19,7 @@ import {
 import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import TimeOffDialog, { TimeOffStatusChip } from '../../components/timeoff/TimeOffDialog'
-import { NOTE_MAX, reviewedLine, timeOffError as readError, useCanReviewTimeOff, useTimeOffRefresh, WRAP } from '../../components/timeoff/timeOffHelpers'
+import { NOTE_MAX, reviewedLine, timeOffError as readError, useCanReviewTimeOff, useNoteLimit, useTimeOffRefresh, WRAP } from '../../components/timeoff/timeOffHelpers'
 import { useApiList } from '../../hooks/useApiQuery'
 import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
@@ -64,6 +64,7 @@ export default function TimeOff() {
   const [startTime, setStartTime] = useState('09:00')
   const [endTime, setEndTime] = useState('17:00')
   const [note, setNote] = useState('')
+  const noteLimit = useNoteLimit(note)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
@@ -208,7 +209,7 @@ export default function TimeOff() {
             </Stack>
           )}
 
-          <TextField size="small" label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} slotProps={{ htmlInput: { maxLength: NOTE_MAX } }} />
+          <TextField size="small" label="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} multiline minRows={2} {...noteLimit} slotProps={{ htmlInput: { maxLength: NOTE_MAX } }} />
           <Box>
             <Button variant="contained" onClick={submit} disabled={busy}>Submit request</Button>
           </Box>
