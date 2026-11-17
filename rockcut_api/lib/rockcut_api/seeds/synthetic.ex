@@ -744,6 +744,23 @@ defmodule RockcutApi.Seeds.Synthetic do
       updated_at: now
     })
 
+    # brewer1: one past approved day off, Friday two and a half weeks back, so the
+    # Archive has seeded data (D44 DEV fix cycle 1, G4). Clear of the days the
+    # time off specs enter for brewer1.
+    Repo.insert!(%Request{
+      user_id: u["brewer1"].id,
+      type: "pto",
+      all_day: true,
+      starts_at: local_at(monday, -17, ~T[00:00:00]),
+      ends_at: local_at(monday, -17, ~T[23:59:00]),
+      status: "approved",
+      reviewed_by_id: u["breweryMgr"].id,
+      reviewed_at: now,
+      note: "#{@seed_tag} Day off",
+      inserted_at: now,
+      updated_at: now
+    })
+
     # bartender1: unavailable Sundays, prefers Monday afternoons (Denver wall clock)
     Repo.insert!(%Slot{
       user_id: u["bartender1"].id,
