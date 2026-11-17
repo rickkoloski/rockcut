@@ -190,3 +190,20 @@ Then **plan Stage 3**, and stop and report:
 `mix test` green twice (item 0), the new specs pass twice, `tsc -p tsconfig.e2e.json` has no new
 errors, `tsc`/vitest/lint/build still as in Stage 2. Commits on the branch. Reply with: commits,
 files, run results, anything left manual-only or GAP and why, and `LEAD:` notes.
+
+---
+
+# Local QA fix cycle 1
+
+2026-11-16 · lead → builder. The full local gate passed; the local independent QA pass found 2
+must-fix and 2 minor gaps. Do everything in `docs/current_work/prompts/d44_lead_decisions_1.md`,
+then stop and report. Same rules as before; the local stack is free again (the QA agent is done).
+
+- Every fix gets a test at the level the bug lived (ExUnit for items 1 and 4, vitest for item 2's
+  helpers, Playwright for the UI side of item 1: a stale dialog shows the 409 and refreshes).
+- **Revert-and-rerun** for items 1 and 2: show the new test fails with the fix reverted and passes
+  with it restored (record both runs in your reply).
+- Run `mix test` twice, vitest, tsc, lint, build, the timeoff Playwright project twice, and
+  `theme.spec.ts` alone.
+
+Reply with: commits, files, the revert-and-rerun evidence, run results, and `LEAD:` notes.
