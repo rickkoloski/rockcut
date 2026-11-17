@@ -27,7 +27,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//, /regression\/owners\//, /regression\/d58\//],
+      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//, /regression\/owners\//, /regression\/d58\//, /regression\/timeoff\//],
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
@@ -80,6 +80,16 @@ export default defineConfig({
       name: 'd58',
       testMatch: /regression\/d58\/.*\.spec\.ts/,
       dependencies: ['setup', 'brewery-board'],
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // D44: badge counts are every pending request a person sees, so the time
+    // off specs run one at a time (beside `chromium`, which makes no Taproom
+    // time off; the Brewery board's brewer2 requests don't reach these counts).
+    {
+      name: 'timeoff',
+      testMatch: /regression\/timeoff\/.*\.spec\.ts/,
+      dependencies: ['setup'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },
     },

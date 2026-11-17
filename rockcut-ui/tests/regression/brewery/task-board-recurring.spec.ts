@@ -278,7 +278,13 @@ test('S58: checking this week’s leaves next week’s open', async ({ page }) =
   const t = today()
   const first = await createSeries(api, weekly(tempTag('S58 Keg Wash'), t))
   await openBoard(page)
+  // The box ticks at once; wait for the save before reloading, or a slow
+  // DEV can lose it to the reload.
+  const saved = page.waitForResponse(
+    (r) => r.url().includes(`/tasks/${first.id}/complete`) && r.request().method() === 'POST',
+  )
   await setBoardCheck(page.getByTestId(`task-check-${first.id}:${t}`), true)
+  expect((await saved).ok()).toBe(true)
   await page.reload()
   await expect(page.getByTestId(`task-check-${first.id}:${t}`)).toBeChecked()
   expect((await on(api, first.series_id!, addDays(t, 7)))!.done).toBe(false)

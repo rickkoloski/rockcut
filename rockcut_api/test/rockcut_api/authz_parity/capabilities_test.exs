@@ -47,7 +47,7 @@ defmodule RockcutApi.AuthzParity.CapabilitiesTest do
       assert caps.pending_owner_reviews == 0
 
       assert Map.keys(caps) |> Enum.sort() ==
-               ~w(can_manage_users manages_departments modules pending_owner_reviews)a
+               ~w(can_manage_users manages_departments modules pending_owner_reviews pending_time_off)a
     end
   end
 

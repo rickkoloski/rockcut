@@ -4,6 +4,7 @@ import { activeProfile } from '../../config/targets'
 import { apiAs } from '../scheduler/helpers'
 import { contrastOf, iconButtonContrasts } from './contrast'
 import { apiWith, createTempPerson, retireTempPerson, signIn, type TempPerson } from '../auth/helpers'
+import { cleanupTimeOff, dayFrom, notificationsOf, requestOwn, tempTag } from '../timeoff/helpers'
 
 // D43 §1.2, S143–S149, S169: the color mode (`users.color_mode`). It follows
 // the person; a shared tablet has its own. Every
@@ -163,16 +164,25 @@ test.describe('owner in Dark', () => {
     expect((await (await apiAs('owner')).put('/api/me/color_mode', { data: { color_mode: mode } })).status()).toBe(200)
   test.beforeAll(() => setOwnerMode('dark'))
   test.afterAll(() => setOwnerMode('light'))
+  test.afterEach(cleanupTimeOff) // G1's [TEST-TEMP] request, by id
 
   const lowIcons = async (page: Page) => (await iconButtonContrasts(page.locator('body'))).filter((b) => b.ratio < 3)
 
   test('G1: the bell popover: timestamps and ⚙ readable', async ({ page }) => {
+    // D44 lead decisions 1, item 5: its own notification, not whatever earlier
+    // specs left. office1, not a bartender: the `timeoff` project may run
+    // alongside and counts the Taproom managers' badges exactly.
+    const note = tempTag('G1 bell')
+    await requestOwn('office1', { first: dayFrom(3), last: dayFrom(3) }, note)
+    await expect.poll(async () => (await notificationsOf('owner', 'time_off_requested', note)).length).toBe(1)
+
     await page.goto('/')
     await expect.poll(() => bodyBg(page)).toBe(DARK_BG)
     await page.getByTestId('notification-bell').click()
     const prefs = page.getByTestId('notification-preferences')
     await expect(prefs).toBeVisible()
     expect(await contrastOf(prefs)).toBeGreaterThanOrEqual(3)
+    await expect(page.locator('.MuiPopover-paper')).toContainText('Pat Ledger requested time off')
     const stamps = page.locator('.MuiPopover-paper .MuiTypography-caption')
     expect(await stamps.count(), 'owner has notifications to show').toBeGreaterThan(0)
     expect(await contrastOf(stamps.first())).toBeGreaterThanOrEqual(4.5)

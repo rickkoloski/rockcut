@@ -11,6 +11,7 @@ import { buildOffMarkers } from '../../lib/timeoff'
 import type { AvailabilitySlot, Department, Position, RosterEntry, ScheduleEvent, Shift, ShiftTemplate, TimeOffRequest } from '../../lib/types'
 import ShiftFormDialog from './ShiftFormDialog'
 import EventFormDialog from './EventFormDialog'
+import TimeOffDialog from '../../components/timeoff/TimeOffDialog'
 
 export interface ScheduleFilters {
   department_id: string
@@ -136,7 +137,7 @@ export function useScheduleData(filters: ScheduleFilters, range: { from: string;
 
 export type ScheduleData = ReturnType<typeof useScheduleData>
 
-/** The add/edit shift and event dialogs; `dialogs` renders them. */
+/** The add/edit shift and event dialogs and the time off dialog (D44); `dialogs` renders them. */
 export function useScheduleDialogs(data: ScheduleData) {
   const [shiftDialog, setShiftDialog] = useState(false)
   const [editShift, setEditShift] = useState<Shift | null>(null)
@@ -144,6 +145,7 @@ export function useScheduleDialogs(data: ScheduleData) {
   const [eventDialog, setEventDialog] = useState(false)
   const [editEvent, setEditEvent] = useState<ScheduleEvent | null>(null)
   const [eventPrefill, setEventPrefill] = useState<{ departmentId?: number; dateKey?: string } | undefined>()
+  const [timeOff, setTimeOff] = useState<TimeOffRequest | null>(null)
 
   const openCreate = (fill?: { departmentId?: number; assigneeId?: number | null; dateKey?: string }) => {
     setEditShift(null)
@@ -166,8 +168,11 @@ export function useScheduleDialogs(data: ScheduleData) {
     setEventDialog(true)
   }
 
+  const openTimeOff = (r: TimeOffRequest) => setTimeOff(r)
+
   const dialogs = (
     <>
+      <TimeOffDialog request={timeOff} onClose={() => setTimeOff(null)} />
       <EventFormDialog
         open={eventDialog}
         onClose={() => setEventDialog(false)}
@@ -192,5 +197,5 @@ export function useScheduleDialogs(data: ScheduleData) {
     </>
   )
 
-  return { openCreate, openEdit, openCreateEvent, openEvent, dialogs }
+  return { openCreate, openEdit, openCreateEvent, openEvent, openTimeOff, dialogs }
 }

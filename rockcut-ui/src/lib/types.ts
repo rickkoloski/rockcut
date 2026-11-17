@@ -276,6 +276,8 @@ export interface Capabilities {
   manages_departments: string[]
   can_manage_users: boolean
   pending_owner_reviews: number
+  // D44 §2.6: pending, current time off of one's own or reviewable (0 on a device).
+  pending_time_off?: number
   // D33: present for a shared device only.
   kind?: 'device'
   home_department?: string

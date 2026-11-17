@@ -101,7 +101,8 @@ defmodule RockcutApi.Authz.Device do
       modules: [home, "schedule"],
       manages_departments: [],
       can_manage_users: false,
-      pending_owner_reviews: 0
+      pending_owner_reviews: 0,
+      pending_time_off: 0
     }
   end
 

@@ -201,7 +201,8 @@ defmodule RockcutApi.AuthzDeviceTest do
                modules: ["bar", "schedule"],
                manages_departments: [],
                can_manage_users: false,
-               pending_owner_reviews: 0
+               pending_owner_reviews: 0,
+               pending_time_off: 0
              }
 
       refute Accounts.shared_devices?(d)

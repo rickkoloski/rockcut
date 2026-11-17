@@ -29,10 +29,18 @@ defmodule RockcutApi.TimeOff.Request do
     |> cast(attrs, [:user_id, :type, :starts_at, :ends_at, :all_day, :note])
     |> validate_required([:user_id, :type, :starts_at, :ends_at])
     |> validate_inclusion(:type, @types)
+    |> validate_length(:note, max: 2_000)
     |> validate_end_after_start()
     |> put_change(:status, "pending")
     |> foreign_key_constraint(:user_id)
     |> RockcutApi.Changeset.validate_parents([:user_id])
+  end
+
+  @doc "The reviewer's optional note to the employee (D44 DEV fix cycle 1, G2)."
+  def reviewer_note_changeset(request, attrs) do
+    request
+    |> cast(attrs, [:reviewer_note])
+    |> validate_length(:reviewer_note, max: 2_000)
   end
 
   defp validate_end_after_start(changeset) do

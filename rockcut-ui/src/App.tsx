@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Routes, Route, Navigate, useParams, createRoutesFromChildren, matchRoutes } from 'react-router-dom'
 import {
   Alert,
@@ -331,6 +331,9 @@ function TabletFallback() {
   return matchRoutes(PERSON_PAGES, location) ? <DeviceNotAvailable /> : <NotFound />
 }
 
+/** DEV fix cycle 1, G1: the least time between capability re-reads on navigation. */
+const CAPABILITIES_REREAD_MS = 30_000
+
 function App() {
   // Black logo on light themes, white on dark.
   const logoSrc = useTheme().palette.mode === 'dark' ? '/rockcut-logo-light.png' : '/rockcut-logo.png'
@@ -355,6 +358,7 @@ function App() {
     loadMe,
     logout,
     signOutDevice,
+    refreshCapabilities,
   } = useAuth()
   const [confirmDeviceSignOut, setConfirmDeviceSignOut] = useState(false)
   // D58 §3.11 (4061): a shared device's header below 412 px.
@@ -402,6 +406,16 @@ function App() {
   })
   const departments = Array.isArray(departmentsData) ? departmentsData : []
 
+  // DEV fix cycle 1, G1: the badges catch up on in-app navigation. A route
+  // change re-reads the capabilities, at most once every 30 s; no polling.
+  const capabilitiesReadAt = useRef(Date.now())
+  const rereadCapabilities = signedInFully && user?.kind !== 'device'
+  useEffect(() => {
+    if (!rereadCapabilities || Date.now() - capabilitiesReadAt.current < CAPABILITIES_REREAD_MS) return
+    capabilitiesReadAt.current = Date.now()
+    void refreshCapabilities()
+  }, [location.pathname, rereadCapabilities, refreshCapabilities])
+
   if (!isAuthenticated) return <Login />
   if (!bootstrapped || !user || !capabilities)
     return <LoadingScreen unreachable={unreachable} onRetry={() => void loadMe({ force: true })} />
@@ -417,6 +431,8 @@ function App() {
   const canManageSchedule = user.is_owner || (capabilities.manages_departments?.length ?? 0) > 0
   const isOwner = user.is_owner
   const pending = capabilities.pending_owner_reviews ?? 0
+  // D44 §2.6: pending time off of one's own or to review; never on a shared device.
+  const pendingTimeOff = isDevice ? 0 : capabilities.pending_time_off ?? 0
 
   // Department headings the user may see: their department keys (owners get all),
   // sorted alphabetically by name. Taproom/Office/Sales appear even with no pages yet.
@@ -449,6 +465,7 @@ function App() {
       key: 'schedule',
       label: 'Schedule',
       icon: <CalendarMonthIcon />,
+      badge: pendingTimeOff,
       children: [
         { label: 'View Schedule', path: '/schedule', icon: <ViewAgendaIcon /> },
         ...(canManageSchedule
@@ -457,7 +474,19 @@ function App() {
         ...(isDevice
           ? []
           : [
-              { label: 'Time off', path: '/time_off', icon: <EventBusyIcon /> },
+              {
+                label: 'Time off',
+                path: '/time_off',
+                // Only above zero: a hidden "0" would still be in the item's name.
+                icon:
+                  pendingTimeOff > 0 ? (
+                    <Badge badgeContent={pendingTimeOff} color="error" data-testid="time-off-badge">
+                      <EventBusyIcon />
+                    </Badge>
+                  ) : (
+                    <EventBusyIcon />
+                  ),
+              },
               { label: 'Availability', path: '/availability', icon: <EventAvailableIcon /> },
             ]),
       ],
@@ -562,6 +591,7 @@ function App() {
           {!isMobile && !collapsed && (
             <IconButton
               size="small"
+              aria-label="Collapse navigation"
               onClick={() => setCollapsed(true)}
               sx={{ position: 'absolute', top: '10px', right: 8 }}
             >
@@ -782,12 +812,16 @@ function App() {
               onClick={() => setMobileOpen(true)}
               sx={{ display: { md: 'none' }, mr: 1 }}
             >
-              <MenuIcon />
+              {/* DEV fix cycle 1, G5 (Matt): pending time off, while the drawer is closed. */}
+              <Badge variant="dot" color="error" invisible={pendingTimeOff === 0 || mobileOpen} data-testid="nav-menu-dot">
+                <MenuIcon />
+              </Badge>
             </IconButton>
 
             {collapsed && (
               <IconButton
                 edge="start"
+                aria-label="Expand navigation"
                 onClick={() => setCollapsed(false)}
                 sx={{ display: { xs: 'none', md: 'flex' }, mr: 1 }}
               >

@@ -12,7 +12,7 @@ import { departmentColor, shiftColor } from '../../lib/colors'
 import type { ShiftConflict } from '../../lib/conflicts'
 import type { OffMarker } from '../../lib/timeoff'
 import { eventDayKeys, eventDayLabel } from '../../lib/events'
-import type { AvailabilitySlot, Department, RosterEntry, ScheduleEvent, Shift } from '../../lib/types'
+import type { AvailabilitySlot, Department, RosterEntry, ScheduleEvent, Shift, TimeOffRequest } from '../../lib/types'
 
 // D52: a draft keeps its department/position color, striped. The stripes lean
 // away from the text color (light stripes under dark text, dark under white),
@@ -45,6 +45,7 @@ interface Props {
   onPublishEmployee: (userId: number) => void
   onDeleteEmployee: (userId: number) => void
   offMarkers: Map<number, Map<string, OffMarker[]>> // userId -> day key -> time-off markers (with times)
+  onOffClick: (r: TimeOffRequest) => void // D44: a time off chip opens its dialog
   conflicts: Map<number, ShiftConflict[]> // shiftId -> conflict warnings (D24)
   availability: AvailabilitySlot[] // recurring weekly availability, shown per day (D25)
   events: ScheduleEvent[] // D32 — shown in the Events row; never part of conflict detection
@@ -59,7 +60,7 @@ const DAY_COL = 150
 export default function WeekGrid({
   mondayKey, shifts, roster, departments, currentUserId, canCreate, canManageSchedule,
   canManageShift, canClaim, onCreate, onEditShift, onClaim, onMoveShift,
-  onReorder, onPublishEmployee, onDeleteEmployee, offMarkers, conflicts, availability,
+  onReorder, onPublishEmployee, onDeleteEmployee, offMarkers, onOffClick, conflicts, availability,
   events, canCreateEvent, onEventClick, onCreateEvent,
 }: Props) {
   const days = weekDayKeys(mondayKey)
@@ -467,8 +468,13 @@ export default function WeekGrid({
                   }}
                 >
                   <Stack spacing={0.5}>
-                    {row.id !== null && offMarkers.get(row.id)?.get(dayKey)?.map((mk, i) =>
-                      mk.pending ? (
+                    {row.id !== null && offMarkers.get(row.id)?.get(dayKey)?.map((mk, i) => {
+                      // D44: opens the time off dialog, not the cell's new-shift dialog.
+                      const open = (e: React.MouseEvent) => {
+                        e.stopPropagation()
+                        onOffClick(mk.request)
+                      }
+                      return mk.pending ? (
                         <Chip
                           key={`off-${i}`}
                           label={`${mk.label} (pending)`}
@@ -476,6 +482,8 @@ export default function WeekGrid({
                           variant="outlined"
                           color="warning"
                           title={`Pending approval · ${mk.label} · ${mk.type}`}
+                          onClick={open}
+                          data-testid={`off-chip-${mk.request.id}`}
                           sx={{ fontSize: 11, height: 20, maxWidth: '100%', borderStyle: 'dashed' }}
                         />
                       ) : (
@@ -484,10 +492,12 @@ export default function WeekGrid({
                           label={mk.label}
                           size="small"
                           title={`${mk.label} · ${mk.type}`}
+                          onClick={open}
+                          data-testid={`off-chip-${mk.request.id}`}
                           sx={{ bgcolor: 'action.selected', fontSize: 11, height: 20, maxWidth: '100%' }}
                         />
-                      ),
-                    )}
+                      )
+                    })}
                     {row.id !== null && availChips(row.id, dayKey)}
                     {items.map(chip)}
                     {items.length === 0 && (

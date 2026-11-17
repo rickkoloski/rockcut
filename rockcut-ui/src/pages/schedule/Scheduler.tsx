@@ -48,7 +48,7 @@ export default function Scheduler() {
     user, isOwner, managedKeys, canManageSchedule, shifts, isLoading, events, positions, departments, roster,
     shiftTemplates, availability, offMarkers, conflicts, canManageDepartment, canManageShift, canManageEvent, canClaim, claim,
   } = data
-  const { openCreate, openEdit, openCreateEvent, openEvent, dialogs } = useScheduleDialogs(data)
+  const { openCreate, openEdit, openCreateEvent, openEvent, openTimeOff, dialogs } = useScheduleDialogs(data)
   const conflictCount = conflicts.size
 
   const { data: scheduleTemplates = [] } = useApiList<ScheduleTemplate>(['schedule_templates'], '/api/schedule_templates', undefined, { enabled: canManageSchedule })
@@ -321,7 +321,7 @@ export default function Scheduler() {
         <Button variant="outlined" size="small" onClick={() => setMondayKey(mondayKeyOf())}>This week</Button>
         <Stack direction="row" spacing={1} alignItems="center">
           <IconButton size="small" aria-label="Previous week" onClick={() => setMondayKey((k) => addDaysKey(k, -7))}><ChevronLeftIcon /></IconButton>
-          <Typography sx={{ minWidth: 120, textAlign: 'center', fontWeight: 600 }}>{formatWeekRange(mondayKey)}</Typography>
+          <Typography sx={{ minWidth: 120, textAlign: 'center', fontWeight: 600 }} data-testid="scheduler-week-label">{formatWeekRange(mondayKey)}</Typography>
           <IconButton size="small" aria-label="Next week" onClick={() => setMondayKey((k) => addDaysKey(k, 7))}><ChevronRightIcon /></IconButton>
         </Stack>
       </PageToolbar>
@@ -354,6 +354,7 @@ export default function Scheduler() {
             onPublishEmployee={publishForEmployee}
             onDeleteEmployee={requestDeleteEmployee}
             offMarkers={offMarkers}
+            onOffClick={openTimeOff}
             conflicts={conflicts}
             availability={availability}
             events={events}
