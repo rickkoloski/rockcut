@@ -316,11 +316,16 @@ test('B8: Delete on a lot asks first, naming its stock; Cancel keeps it. The sac
   const d = await recordMovement(page, { sacks: '1' })
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
+  // Lead decisions 4: the lot and its movements come from two queries. Wait for
+  // both to show the movement (the row's on-hand, the history), then open; the
+  // dialog reads the live lot and disables Delete from either one.
+  await expect(page.getByTestId(`lot-on-hand-${keep.id}`)).toHaveText('3 sacks')
+  await expect(page.getByTestId('product-movements')).toContainText('Used in brewing')
   await page.getByTestId(`lot-row-${keep.id}`).click()
+  await expect(lotDialog.getByTestId('lot-delete')).toBeDisabled()
   await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeDisabled()
   await expect(lotDialog.getByText('Fixed: the lot has movements after its first')).toBeVisible()
   // Gap 15: nor can it be deleted; Delete is disabled with the reason.
-  await expect(lotDialog.getByTestId('lot-delete')).toBeDisabled()
   await expect(lotDialog.getByTestId('lot-delete-reason')).toHaveText('This lot has movements after its first; correct it with a movement or a count')
   await lotDialog.getByRole('button', { name: 'Cancel' }).click()
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lotDeleteMessage, movementKindLabel, oldestFirstOnHand } from './inventory'
+import { LATER_MOVEMENTS, lotDeleteBlocked, lotDeleteMessage, movementKindLabel, oldestFirstOnHand } from './inventory'
 
 describe('inventory messages (D60 lead decisions 2)', () => {
   const lot = { id: 136, lot_number: 'H-D', sack_size_lb: '50' }
@@ -24,5 +24,26 @@ describe('inventory messages (D60 lead decisions 2)', () => {
     expect(oldestFirstOnHand({ on_hand_lb: '450', expired_lb: '200' }, 50, 'sacks')).toBe('On hand: 5 sacks · 4 sacks expired (pick that lot to use it)')
     expect(oldestFirstOnHand({ on_hand_lb: '485', expired_lb: '0' }, 55, 'sacks')).toBe('On hand: 8 sacks 45 lb')
     expect(oldestFirstOnHand({ on_hand_lb: '485', expired_lb: '0' }, 55, 'lb')).toBe('On hand: 485 lb')
+  })
+})
+
+describe('the lot dialog\'s Delete (lead decisions 3 gap 15, lead decisions 4)', () => {
+  const first = { id: 1 }
+  const later = { id: 2 }
+  const recipe = "A recipe uses this lot, so it can't be deleted"
+
+  it('is disabled by a later movement in the dialog\'s movements even before the lot refetches', () => {
+    expect(lotDeleteBlocked({ delete_blocked: null }, [first, later])).toBe(LATER_MOVEMENTS)
+    expect(lotDeleteBlocked({}, [first, later])).toBe(LATER_MOVEMENTS)
+  })
+
+  it("is disabled by the lot's own reason even when its movements haven't caught up", () => {
+    expect(lotDeleteBlocked({ delete_blocked: LATER_MOVEMENTS }, [first])).toBe(LATER_MOVEMENTS)
+    expect(lotDeleteBlocked({ delete_blocked: recipe }, [first, later])).toBe(recipe)
+  })
+
+  it('is enabled with only the first movement (or none) and no reason', () => {
+    expect(lotDeleteBlocked({ delete_blocked: null }, [first])).toBeNull()
+    expect(lotDeleteBlocked({ delete_blocked: null }, [])).toBeNull()
   })
 })

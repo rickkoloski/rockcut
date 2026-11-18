@@ -55,7 +55,7 @@ export default function ProductPage() {
   const { mode } = useQuantityDisplay()
   const [open, setOpen] = useState<Open>(null)
   const [offer, setOffer] = useState<SupplierOffer | null>(null)
-  const [lot, setLot] = useState<IngredientLot | null>(null)
+  const [lotId, setLotId] = useState<number | null>(null)
   const [history, setHistory] = useState<Set<number>>(new Set())
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -67,6 +67,9 @@ export default function ProductPage() {
   const { data: movements = [] } = useApiList<InventoryMovement>(['inventory_movements', { product_id: productId }], '/api/inventory_movements', {
     product_id: productId,
   })
+  // Lead decisions 4: the open lot is read from the live list, so the dialog
+  // follows a refetch (on-hand, `delete_blocked`) like its movements do.
+  const lot = lotId == null ? null : (lots.find((l) => l.id === lotId) ?? null)
   const remove = useApiDelete((pid) => `/api/ingredient_products/${pid}`, { invalidateKeys: GRAIN_KEYS })
 
   if (!product && httpStatus(error) === 404) {
@@ -81,7 +84,7 @@ export default function ProductPage() {
   const close = () => {
     setOpen(null)
     setOffer(null)
-    setLot(null)
+    setLotId(null)
   }
   const toggleHistory = (offerId: number) =>
     setHistory((s) => {
@@ -320,7 +323,7 @@ export default function ProductPage() {
                   hover
                   sx={{ cursor: 'pointer' }}
                   onClick={() => {
-                    setLot(l)
+                    setLotId(l.id)
                     setOpen('lot')
                   }}
                   data-testid={`lot-row-${l.id}`}
@@ -406,7 +409,7 @@ export default function ProductPage() {
       />
       <OfferDialog open={open === 'offer'} onClose={close} productId={product.id} offer={offer ?? undefined} />
       <PriceDialog open={open === 'price'} onClose={close} offer={offer} />
-      <AddLotDialog open={open === 'lot' && !lot} onClose={close} product={product} />
+      <AddLotDialog open={open === 'lot' && lotId == null} onClose={close} product={product} />
       <GrainLotDialog open={open === 'lot' && !!lot} onClose={close} product={product} lot={lot} movements={lot ? movements.filter((m) => m.lot_id === lot.id) : []} />
       <MovementDialog open={open === 'movement'} onClose={close} product={product} lots={lots} />
       <CountDialog open={open === 'count'} onClose={close} product={product} lots={lots} />

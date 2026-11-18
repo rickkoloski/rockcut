@@ -66,5 +66,17 @@ export function lotDeleteMessage(lot: Pick<IngredientLot, 'id' | 'lot_number' | 
   return `${name} Its ${KIND_LABELS[first.kind] ?? first.kind} ${quantity} goes too.`
 }
 
+export const LATER_MOVEMENTS = 'This lot has movements after its first; correct it with a movement or a count'
+
+/**
+ * Why the lot dialog's Delete is disabled, or null: the lot's
+ * `delete_blocked`, or a later movement in the dialog's own movements (they
+ * can refetch before the lot does; lead decisions 4). The API's rules and
+ * wording.
+ */
+export function lotDeleteBlocked(lot: Pick<IngredientLot, 'delete_blocked'>, movements: unknown[]): string | null {
+  return lot.delete_blocked ?? (movements.length > 1 ? LATER_MOVEMENTS : null)
+}
+
 /** Query keys every inventory or catalog write refreshes. */
 export const GRAIN_KEYS: unknown[][] = [['ingredient_products'], ['ingredient_product'], ['ingredient_lots'], ['inventory_movements'], ['ingredients'], ['ingredient']]

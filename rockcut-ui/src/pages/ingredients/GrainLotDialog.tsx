@@ -10,7 +10,7 @@ import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { formatQuantity, parseDecimal } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
-import { GRAIN_KEYS, lotDeleteMessage } from '../../lib/inventory'
+import { GRAIN_KEYS, lotDeleteBlocked, lotDeleteMessage } from '../../lib/inventory'
 import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, Party } from '../../lib/types'
 
 interface GrainLotDialogProps {
@@ -27,7 +27,7 @@ interface GrainLotDialogProps {
  * specs, and Expired (a brewer's call; oldest first skips it). Its stock
  * changes only through movements and counts. Delete only while it has just
  * its first movement and no recipe uses it: otherwise it's disabled with the
- * lot's `delete_blocked` reason (gap 15); else a confirm names that stock (gap 9). The sack size is fixed once the lot has
+ * reason (gap 15, `lotDeleteBlocked`); else a confirm names that stock (gap 9). The sack size is fixed once the lot has
  * a movement after its first (gap 14).
  */
 export default function GrainLotDialog(props: GrainLotDialogProps) {
@@ -48,7 +48,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const sackSizeFixed = movements.length > 1
-  const deleteBlocked = lot.delete_blocked ?? null
+  const deleteBlocked = lotDeleteBlocked(lot, movements)
 
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
