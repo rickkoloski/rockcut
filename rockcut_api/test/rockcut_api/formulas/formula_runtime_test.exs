@@ -3,6 +3,7 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
 
   alias RockcutApi.Formulas.FormulaRuntime
   alias RockcutApi.Brewing
+  import RockcutApi.IngredientFixtures
 
   @context %{repo: RockcutApi.Repo}
 
@@ -16,25 +17,28 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
       Brewing.create_ingredient_lot(%{
         ingredient_id: ingredient.id,
         lot_number: "LOT-001",
-        status: "available",
-        alpha_acid: Decimal.new("5.5")
+        status: "available"
       })
+
+    lot_features!(lot1, alpha_acid_pct: "5.5")
 
     {:ok, lot2} =
       Brewing.create_ingredient_lot(%{
         ingredient_id: ingredient.id,
         lot_number: "LOT-002",
-        status: "available",
-        alpha_acid: Decimal.new("6.0")
+        status: "available"
       })
+
+    lot_features!(lot2, alpha_acid_pct: "6.0")
 
     {:ok, depleted_lot} =
       Brewing.create_ingredient_lot(%{
         ingredient_id: ingredient.id,
         lot_number: "LOT-003",
-        status: "depleted",
-        alpha_acid: Decimal.new("5.0")
+        status: "depleted"
       })
+
+    lot_features!(depleted_lot, alpha_acid_pct: "5.0")
 
     %{
       category: category,
@@ -58,17 +62,19 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
       Brewing.create_ingredient_lot(%{
         ingredient_id: cascade.id,
         lot_number: "HOP-001",
-        status: "available",
-        alpha_acid: Decimal.new("5.5")
+        status: "available"
       })
+
+    lot_features!(hop_lot, alpha_acid_pct: "5.5")
 
     {:ok, grain_lot} =
       Brewing.create_ingredient_lot(%{
         ingredient_id: pale_malt.id,
         lot_number: "GRAIN-001",
-        status: "available",
-        extract_potential_fgdb: Decimal.new("80.0")
+        status: "available"
       })
+
+    lot_features!(grain_lot, extract_fgdb: "80.0")
 
     # Create brand and recipe
     {:ok, brand} = Brewing.create_brand(%{name: "Test IPA"})

@@ -24,6 +24,11 @@ defmodule RockcutApi.Accounts.BoardSettings do
     * `mix` — the Tanks setting's "Your selection": the last mix of open tanks'
       row keys (decision 19).
 
+  D60 §3.9: the ingredient screens' quantity display, under the board key
+  `"ingredients"`:
+
+    * `quantity_display` — "sacks" (sacks + loose lb) or "lb" (total lb).
+
   Who may save a board's settings is `Authz`'s (`{:board_settings, board}`).
   """
   import Ecto.Changeset
@@ -58,12 +63,21 @@ defmodule RockcutApi.Accounts.BoardSettings do
   @max_rows 200
   @row_key ~r/\A(\d{1,18}|unassigned)\z/
 
+  @ingredients "ingredients"
+  @ingredients_types %{quantity_display: :string}
+  @ingredients_defaults %{"quantity_display" => "sacks"}
+  @ingredients_names ["quantity_display"]
+
   @doc "The board key the production Gantt's settings are kept under (D56 decision 18)."
   def gantt, do: @gantt
+
+  @doc "The board key the ingredient screens' settings are kept under (D60 §3.9)."
+  def ingredients, do: @ingredients
 
   @doc "The settings a board has before anyone changes them."
   def defaults(board_key \\ nil)
   def defaults(@gantt), do: @gantt_defaults
+  def defaults(@ingredients), do: @ingredients_defaults
   def defaults(_board_key), do: @defaults
 
   @doc "A board's stored settings with the defaults filled in."
@@ -87,6 +101,17 @@ defmodule RockcutApi.Accounts.BoardSettings do
     |> validate_rows(:expanded)
     |> validate_rows(:mix)
     |> validate_change(:label_by, fn :label_by, map -> label_by_errors(map) end)
+    |> unknown_errors(unknown)
+    |> answer()
+  end
+
+  def validate(@ingredients, attrs, _kind) when is_map(attrs) do
+    unknown = Map.keys(attrs) -- @ingredients_names
+
+    {%{}, @ingredients_types}
+    |> cast(attrs, Map.keys(@ingredients_types), empty_values: [])
+    |> validate_given(Map.keys(attrs) -- unknown)
+    |> validate_inclusion(:quantity_display, ~w(sacks lb))
     |> unknown_errors(unknown)
     |> answer()
   end

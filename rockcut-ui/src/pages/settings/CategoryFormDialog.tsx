@@ -1,36 +1,42 @@
-import { useEffect, useState } from 'react';
-import { TextField } from '@mui/material';
+import { useState } from 'react';
+import { FormControl, FormHelperText, InputLabel, MenuItem, Select, TextField } from '@mui/material';
 import type { IngredientCategory } from '../../lib/types';
+import { useApiList } from '../../hooks/useApiQuery';
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation';
 import FormDialog from '../../components/FormDialog';
+import DecimalInput from '../../components/DecimalInput';
 import parseApiError from '../../lib/parseApiError';
 
 interface CategoryFormDialogProps {
   open: boolean;
   onClose: () => void;
   category?: IngredientCategory;
+  /** D60 §3.1: a new subcategory of this parent (Grains → Base, …). */
+  parentId?: number;
 }
 
-export default function CategoryFormDialog({ open, onClose, category }: CategoryFormDialogProps) {
-  const [name, setName] = useState('');
-  const [sortOrder, setSortOrder] = useState('');
+export default function CategoryFormDialog(props: CategoryFormDialogProps) {
+  return props.open ? <CategoryForm {...props} /> : null;
+}
+
+function CategoryForm({ onClose, category, parentId }: CategoryFormDialogProps) {
+  const [name, setName] = useState(category?.name ?? '');
+  const [sortOrder, setSortOrder] = useState(category?.sort_order?.toString() ?? '');
+  const [parent, setParent] = useState<number | ''>(category?.parent_id ?? parentId ?? '');
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setName(category?.name ?? '');
-      setSortOrder(category?.sort_order?.toString() ?? '');
-    }
-  }, [open, category]);
+  const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories');
+  // One level (D60 §3.1): a parent is a top-level category, and a category with children stays top-level.
+  const parents = categories.filter((c) => c.parent_id == null && c.id !== category?.id).sort((a, b) => a.sort_order - b.sort_order);
+  const hasChildren = !!category && categories.some((c) => c.parent_id === category.id);
 
   const createMutation = useApiCreate<IngredientCategory>('/api/ingredient_categories', {
-    invalidateKeys: [['ingredient_categories']],
+    invalidateKeys: [['ingredient_categories'], ['ingredient_category']],
   });
 
   const updateMutation = useApiUpdate<IngredientCategory>(
     (id) => `/api/ingredient_categories/${id}`,
-    { invalidateKeys: [['ingredient_categories'], ['ingredient_category', category?.id]] },
+    { invalidateKeys: [['ingredient_categories'], ['ingredient_category']] },
   );
 
   const loading = createMutation.isPending || updateMutation.isPending;
@@ -39,7 +45,8 @@ export default function CategoryFormDialog({ open, onClose, category }: Category
     try {
       const payload: Record<string, unknown> = {
         name,
-        sort_order: sortOrder ? Number(sortOrder) : null,
+        sort_order: sortOrder.trim() ? Number(sortOrder.replace(',', '.')) : null,
+        parent_id: parent || null,
       };
 
       if (category) {
@@ -55,28 +62,49 @@ export default function CategoryFormDialog({ open, onClose, category }: Category
 
   return (
     <FormDialog
-      open={open}
+      open
+      phone
       onClose={onClose}
-      title={category ? 'Edit Category' : 'New Category'}
+      title={category ? 'Edit Category' : parentId ? 'New Subcategory' : 'New Category'}
       onSubmit={handleSubmit}
       loading={loading}
       error={error}
+      testId="category-dialog"
     >
       <TextField
         fullWidth
-        margin="dense"
         label="Name"
         required
         value={name}
         onChange={(e) => setName(e.target.value)}
+        slotProps={{ htmlInput: { 'data-testid': 'category-name' } }}
       />
-      <TextField
+      <FormControl fullWidth disabled={hasChildren}>
+        <InputLabel id="category-parent-label">Parent</InputLabel>
+        <Select
+          labelId="category-parent-label"
+          id="category-parent"
+          label="Parent"
+          value={categories.length ? parent : ''}
+          onChange={(e) => setParent(e.target.value as number | '')}
+          data-testid="category-parent"
+        >
+          <MenuItem value="">
+            <em>None (top level)</em>
+          </MenuItem>
+          {parents.map((c) => (
+            <MenuItem key={c.id} value={c.id}>
+              {c.name}
+            </MenuItem>
+          ))}
+        </Select>
+        {hasChildren && <FormHelperText>It has subcategories, so it stays top level</FormHelperText>}
+      </FormControl>
+      <DecimalInput
         fullWidth
-        margin="dense"
         label="Sort Order"
-        type="number"
         value={sortOrder}
-        onChange={(e) => setSortOrder(e.target.value)}
+        onChange={setSortOrder}
       />
     </FormDialog>
   );

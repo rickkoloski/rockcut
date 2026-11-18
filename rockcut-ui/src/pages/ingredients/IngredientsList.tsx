@@ -1,28 +1,34 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState } from 'react'
 import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
-  Box, Chip, Collapse, FormControl, IconButton, InputAdornment,
-  Button, InputLabel, ListItemIcon, ListItemText, MenuItem, Paper, Select, Table, TableBody,
+  Box, Chip, Collapse, FormControl, FormControlLabel, IconButton, InputAdornment,
+  Button, InputLabel, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Select, Switch, Table, TableBody,
   TableCell, TableHead, TableRow, TextField, Typography,
 } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
+import BusinessIcon from '@mui/icons-material/Business'
 import CategoryIcon from '@mui/icons-material/Category'
 import { PageToolbar, SettingsGear } from '../../components/SettingsMenu'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import SearchIcon from '@mui/icons-material/Search'
-import type { Ingredient, IngredientCategory, IngredientLotSummary } from '../../lib/types'
-import { useApiQuery } from '../../hooks/useApiQuery'
+import type { FeatureType, Ingredient, IngredientCategory, IngredientLotSummary, IngredientProduct, Party } from '../../lib/types'
+import { useApiList } from '../../hooks/useApiQuery'
+import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
+import { formatFeature } from '../../lib/brewingUnits'
+import QuantityToggle from '../../components/QuantityToggle'
+import { grainCategories } from '../../lib/ingredientFeatures'
 import PageHeader from '../../components/PageHeader'
 import StatusChip from '../../components/StatusChip'
 import IngredientFormDialog from './IngredientFormDialog'
+import ProductDialog from './ProductDialog'
+import GrainsList, { type GrainFilters } from './GrainsList'
 
-function LotValues({ lot }: { lot: IngredientLotSummary }) {
-  const values: string[] = []
-  if (lot.alpha_acid != null)       values.push(`AA ${lot.alpha_acid}%`)
-  if (lot.color_lovibond != null)   values.push(`${lot.color_lovibond}°L`)
-  if (lot.extract_potential_fgdb != null) values.push(`FGDB ${lot.extract_potential_fgdb}%`)
-  if (lot.attenuation != null)      values.push(`Atten ${lot.attenuation}%`)
+/** A non-grain lot's specs (alpha acid, attenuation), from its feature values. */
+function LotValues({ lot, types }: { lot: IngredientLotSummary; types: FeatureType[] }) {
+  const values = types
+    .filter((t) => lot.features?.[t.key])
+    .map((t) => `${t.label} ${formatFeature(lot.features?.[t.key]?.value, t.decimals)}${t.unit_label === '%' ? '%' : ` ${t.unit_label}`}`)
   if (values.length === 0) return null
   return (
     <Typography variant="body2" color="text.secondary" component="span">
@@ -33,9 +39,11 @@ function LotValues({ lot }: { lot: IngredientLotSummary }) {
 
 function IngredientRow({
   ingredient,
+  types,
   onClick,
 }: {
   ingredient: Ingredient
+  types: FeatureType[]
   onClick: () => void
 }) {
   const lots = ingredient.lots ?? []
@@ -81,7 +89,7 @@ function IngredientRow({
         <TableRow>
           <TableCell colSpan={4} sx={{ p: 0, borderBottom: expanded ? undefined : 'none' }}>
             <Collapse in={expanded} unmountOnExit>
-              <Box sx={{ backgroundColor: 'grey.50', borderBottom: '1px solid', borderColor: 'divider' }}>
+              <Box sx={{ backgroundColor: 'action.hover', borderBottom: '1px solid', borderColor: 'divider' }}>
                 {lots.map((lot) => (
                   <Box
                     key={lot.id}
@@ -100,11 +108,8 @@ function IngredientRow({
                     <Typography variant="body2" sx={{ minWidth: 90, color: 'text.secondary' }}>
                       {lot.lot_number ?? '—'}
                     </Typography>
-                    <Typography variant="body2" sx={{ minWidth: 110 }}>
-                      {lot.supplier ?? '—'}
-                    </Typography>
                     <StatusChip status={lot.status} domain="lot" />
-                    <LotValues lot={lot} />
+                    <LotValues lot={lot} types={types} />
                   </Box>
                 ))}
               </Box>
@@ -118,40 +123,55 @@ function IngredientRow({
 
 export default function IngredientsList() {
   const navigate = useNavigate()
-  const [categoryId, setCategoryId] = useState<number | ''>('')
-  const [formOpen, setFormOpen] = useState(false)
+  // null: not picked yet, which means Grains (D60). '' is All categories.
+  const [picked, setPicked] = useState<number | '' | null>(null)
+  const [formOpen, setFormOpen] = useState<'ingredient' | 'grain' | 'product' | null>(null)
+  const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null)
   const [search, setSearch] = useState('')
+  const [maltsterId, setMaltsterId] = useState<number | ''>('')
+  const [supplierId, setSupplierId] = useState<number | ''>('')
+  const [onHandOnly, setOnHandOnly] = useState(false)
+  const { mode } = useQuantityDisplay()
 
-  const { data: categories = [] } = useApiQuery<IngredientCategory[]>(
-    ['ingredient_categories'],
-    '/api/ingredient_categories'
-  )
+  const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
+  const { grains: grainsCategory, children } = grainCategories(categories)
+  const topLevel = categories.filter((c) => c.parent_id == null).sort((a, b) => a.sort_order - b.sort_order)
+  const categoryId = picked ?? grainsCategory?.id ?? ''
+  const selected = categories.find((c) => c.id === categoryId)
+  const grainsView = !!grainsCategory && (categoryId === grainsCategory.id || selected?.parent_id === grainsCategory.id)
 
-  // Default to Grains once categories load
-  useEffect(() => {
-    if (categories.length > 0 && categoryId === '') {
-      const grains = categories.find((c) => c.name === 'Grains')
-      if (grains) setCategoryId(grains.id)
-    }
-  }, [categories])
+  // Every ingredient, so Grains includes its children's (the API filters one category only).
+  const { data: allIngredients = [] } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
+  const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products', undefined, { enabled: grainsView })
+  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties', undefined, { enabled: grainsView })
+  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
 
-  const { data: ingredients = [] } = useApiQuery<Ingredient[]>(
-    ['ingredients', { category_id: categoryId }],
-    '/api/ingredients',
-    categoryId ? { category_id: categoryId } : undefined
-  )
+  // A parent category includes its children's ingredients.
+  const inCategory = (i: Ingredient) => i.category_id === categoryId || categories.some((c) => c.parent_id === categoryId && c.id === i.category_id)
+  const ingredients = categoryId === '' ? allIngredients : allIngredients.filter(inCategory)
+  const term = search.toLowerCase()
+  const filtered = !search
+    ? ingredients
+    : ingredients.filter((i) =>
+        [i.name, i.category?.name, i.notes]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(term)
+      )
 
-  const filtered = useMemo(() => {
-    if (!search) return ingredients
-    const term = search.toLowerCase()
-    return ingredients.filter((i) =>
-      [i.name, i.category?.name, i.notes]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .includes(term)
-    )
-  }, [ingredients, search])
+  const grainIds = new Set(children.map((c) => c.id))
+  const grains = allIngredients.filter((i) => grainIds.has(i.category_id))
+  const filters: GrainFilters = {
+    search,
+    categoryId: grainsView && categoryId !== grainsCategory?.id ? (categoryId as number) : null,
+    maltsterId,
+    supplierId,
+    onHandOnly,
+  }
+  const maltsters = parties.filter((p) => p.roles?.includes('maltster'))
+  const suppliers = parties.filter((p) => p.roles?.includes('supplier'))
+  const lotTypes = selected ? types.filter((t) => (t.categories ?? []).some((c) => c.category_id === selected.id)) : types.filter((t) => !t.categories?.some((c) => c.category_id === grainsCategory?.id))
 
   return (
     <>
@@ -164,16 +184,38 @@ export default function IngredientsList() {
       <PageToolbar
         end={
           <>
-            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setFormOpen(true)} data-testid="ingredients-add-button">
-              Add Ingredient
+            {grainsView && <QuantityToggle />}
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={(e) => (grainsView ? setAddAnchor(e.currentTarget) : setFormOpen('ingredient'))}
+              // Until the categories are in, it can't tell the Grains view (a menu) from the rest.
+              disabled={categories.length === 0}
+              data-testid="ingredients-add-button"
+            >
+              {grainsView ? 'Add' : 'Add Ingredient'}
             </Button>
-            {/* The library's setup: the categories (formerly Brewery → Settings). */}
+            <Menu anchorEl={addAnchor} open={!!addAnchor} onClose={() => setAddAnchor(null)}>
+              <MenuItem onClick={() => { setAddAnchor(null); setFormOpen('product') }} data-testid="add-maltster-product">
+                Maltster product
+              </MenuItem>
+              <MenuItem onClick={() => { setAddAnchor(null); setFormOpen('grain') }} data-testid="add-grain">
+                Grain
+              </MenuItem>
+            </Menu>
+            {/* The library's setup: the categories (formerly Brewery → Settings) and, D60, the companies. */}
             <SettingsGear label="Ingredient settings" testid="ingredients-settings">
               {(close) => (
-                <MenuItem component={RouterLink} to="/ingredients/categories" onClick={close} data-testid="ingredients-settings-categories">
-                  <ListItemIcon><CategoryIcon fontSize="small" /></ListItemIcon>
-                  <ListItemText primary="Ingredient categories" secondary="Categories and their fields" />
-                </MenuItem>
+                <>
+                  <MenuItem component={RouterLink} to="/ingredients/categories" onClick={close} data-testid="ingredients-settings-categories">
+                    <ListItemIcon><CategoryIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText primary="Ingredient categories" secondary="Categories and their fields" />
+                  </MenuItem>
+                  <MenuItem component={RouterLink} to="/ingredients/companies" onClick={close} data-testid="ingredients-settings-companies">
+                    <ListItemIcon><BusinessIcon fontSize="small" /></ListItemIcon>
+                    <ListItemText primary="Companies" secondary="Maltsters, suppliers, partner breweries" />
+                  </MenuItem>
+                </>
               )}
             </SettingsGear>
           </>
@@ -185,55 +227,91 @@ export default function IngredientsList() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             slotProps={{ input: { startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> } }}
-            sx={{ minWidth: 260 }}
+            sx={{ minWidth: { xs: '100%', sm: 220 } }}
           />
-          <FormControl sx={{ minWidth: 220 }} size="small">
-            <InputLabel>Category</InputLabel>
+          <FormControl sx={{ minWidth: { xs: '100%', sm: 200 } }} size="small">
+            <InputLabel id="ingredients-category-label">Category</InputLabel>
             <Select
-              value={categoryId}
+              labelId="ingredients-category-label"
+              id="ingredients-category"
+              value={categories.length ? categoryId : ''}
               label="Category"
-              onChange={(e) => setCategoryId(e.target.value as number | '')}
+              onChange={(e) => setPicked(e.target.value as number | '')}
+              data-testid="ingredients-category"
             >
               <MenuItem value="">All Categories</MenuItem>
-              {categories.map((cat) => (
-                <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
-              ))}
+              {topLevel.flatMap((cat) => [
+                <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>,
+                ...categories
+                  .filter((c) => c.parent_id === cat.id)
+                  .sort((a, b) => a.sort_order - b.sort_order)
+                  .map((c) => <MenuItem key={c.id} value={c.id} sx={{ pl: 4 }}>{c.name}</MenuItem>),
+              ])}
             </Select>
           </FormControl>
+          {grainsView && (
+            <>
+              <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 150 } }} size="small">
+                <InputLabel id="grains-maltster-label">Maltster</InputLabel>
+                <Select labelId="grains-maltster-label" id="grains-maltster" label="Maltster" value={maltsters.length ? maltsterId : ''} onChange={(e) => setMaltsterId(e.target.value as number | '')}>
+                  <MenuItem value="">All</MenuItem>
+                  {maltsters.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 150 } }} size="small">
+                <InputLabel id="grains-supplier-label">Supplier</InputLabel>
+                <Select labelId="grains-supplier-label" id="grains-supplier" label="Supplier" value={suppliers.length ? supplierId : ''} onChange={(e) => setSupplierId(e.target.value as number | '')}>
+                  <MenuItem value="">All</MenuItem>
+                  {suppliers.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                </Select>
+              </FormControl>
+              <FormControlLabel
+                control={<Switch checked={onHandOnly} onChange={(e) => setOnHandOnly(e.target.checked)} data-testid="grains-on-hand-only" />}
+                label="On hand only"
+              />
+            </>
+          )}
       </PageToolbar>
 
-      <Paper variant="outlined">
-        <Table size="small">
-          <TableHead>
-            <TableRow>
-              <TableCell padding="none" sx={{ width: 40 }} />
-              <TableCell>Name</TableCell>
-              <TableCell>Notes</TableCell>
-              <TableCell align="right" sx={{ pr: 2 }}>On Hand</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filtered.length === 0 && (
+      {grainsView ? (
+        <GrainsList children={children} products={products} grains={grains} types={types} filters={filters} mode={mode} />
+      ) : (
+        <Paper variant="outlined">
+          <Table size="small">
+            <TableHead>
               <TableRow>
-                <TableCell colSpan={4}>
-                  <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
-                    No ingredients found
-                  </Typography>
-                </TableCell>
+                <TableCell padding="none" sx={{ width: 40 }} />
+                <TableCell>Name</TableCell>
+                <TableCell>Notes</TableCell>
+                <TableCell align="right" sx={{ pr: 2 }}>On Hand</TableCell>
               </TableRow>
-            )}
-            {filtered.map((ingredient) => (
-              <IngredientRow
-                key={ingredient.id}
-                ingredient={ingredient}
-                onClick={() => navigate(`/ingredients/${ingredient.id}`)}
-              />
-            ))}
-          </TableBody>
-        </Table>
-      </Paper>
+            </TableHead>
+            <TableBody>
+              {filtered.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <Typography variant="body2" color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>
+                      No ingredients found
+                    </Typography>
+                  </TableCell>
+                </TableRow>
+              )}
+              {filtered.map((ingredient) => (
+                <IngredientRow
+                  key={ingredient.id}
+                  ingredient={ingredient}
+                  types={lotTypes}
+                  onClick={() => navigate(`/ingredients/${ingredient.id}`)}
+                />
+              ))}
+            </TableBody>
+          </Table>
+        </Paper>
+      )}
 
-      <IngredientFormDialog open={formOpen} onClose={() => setFormOpen(false)} />
+      <IngredientFormDialog open={formOpen === 'ingredient'} onClose={() => setFormOpen(null)} />
+      <IngredientFormDialog open={formOpen === 'grain'} onClose={() => setFormOpen(null)} parentCategoryId={grainsCategory?.id} />
+      <ProductDialog open={formOpen === 'product'} onClose={() => setFormOpen(null)} />
     </>
   )
 }

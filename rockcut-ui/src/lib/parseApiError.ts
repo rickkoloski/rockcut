@@ -26,9 +26,18 @@ export default function parseApiError(err: unknown): string {
   if (isRecord(data) && status < 500) {
     if (isRecord(data.errors)) {
       const parts = Object.entries(data.errors).flatMap(([field, msgs]) => {
+        // D60: a nested map (`features: { moisture_pct: ["Moisture must be …"] }`): the
+        // API's message names the feature (lead decisions 2, gap 1), so no raw key.
+        if (isRecord(msgs)) {
+          return Object.values(msgs).flatMap((inner) => {
+            const text = messages(inner)
+            return text ? [text] : []
+          })
+        }
         const text = messages(msgs)
         if (!text) return []
-        return field === 'detail' ? [text] : [`${field.replace(/_/g, ' ')}: ${text}`]
+        // `base` (D60) is about the whole record, like Phoenix's `detail`.
+        return field === 'detail' || field === 'base' ? [text] : [`${field.replace(/_/g, ' ')}: ${text}`]
       })
       if (parts.length) return parts.join('; ')
     }

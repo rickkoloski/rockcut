@@ -12,7 +12,11 @@ interface StatusChipProps {
   domain: 'brand' | 'batch' | 'recipe' | 'lot'
 }
 
+// D60: lot statuses read "Available", "Depleted", "Expired" (the API keeps them lowercase).
+const capitalized = new Set<StatusChipProps['domain']>(['lot'])
+
 export default function StatusChip({ status, domain }: StatusChipProps) {
   const color = colorMap[domain]?.[status] ?? 'default'
-  return <Chip label={status} color={color} size="small" />
+  const label = capitalized.has(domain) ? status.charAt(0).toUpperCase() + status.slice(1) : status
+  return <Chip label={label} color={color} size="small" />
 }

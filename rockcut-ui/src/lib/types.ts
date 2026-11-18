@@ -96,6 +96,8 @@ export interface WaterProfile {
 export interface IngredientCategory {
   id: number
   name: string
+  /** D60 §3.1: one level; Grains' children (Base, Crystal/Caramel, …). */
+  parent_id: number | null
   sort_order: number
   field_definitions: CategoryFieldDefinition[] | null
   inserted_at: string
@@ -118,7 +120,7 @@ export interface Ingredient {
   id: number
   name: string
   category_id: number
-  category: { id: number; name: string } | null
+  category: { id: number; name: string; parent_id?: number | null } | null
   notes: string | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
@@ -128,44 +130,140 @@ export interface Ingredient {
 export interface IngredientLotSummary {
   id: number
   lot_number: string | null
-  supplier: string | null
+  product_id: number | null
+  supplier_party_id: number | null
+  sack_size_lb: string | null
   received_date: string | null
   status: string
-  alpha_acid: number | null
-  color_lovibond: number | null
-  attenuation: number | null
-  extract_potential_fgdb: number | null
-  maltster: string | null
-  moisture_perc: number | null
-  protein_perc: number | null
-  diastatic_power_linter: number | null
-  order_name: string | null
-  order_unit_size: string | null
+  /** D60 §3.4: the lot's specs by feature key. */
+  features: FeatureValues | null
   notes: string | null
 }
 
 export interface IngredientLot {
   id: number
   ingredient_id: number
-  ingredient: { id: number; name: string; category: { id: number; name: string } | null } | null
+  ingredient: { id: number; name: string; category: { id: number; name: string; parent_id?: number | null } | null } | null
   lot_number: string | null
-  supplier: string | null
+  /** D60: the maltster product (grain lots). */
+  product_id: number | null
+  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null } | null
+  supplier_party_id: number | null
+  supplier: PartySummary | null
+  sack_size_lb: string | null
   received_date: string | null
   status: string
-  alpha_acid: number | null
-  color_lovibond: number | null
-  attenuation: number | null
-  extract_potential_fgdb: number | null
-  maltster: string | null
-  protein_perc: number | null
-  moisture_perc: number | null
-  diastatic_power_linter: number | null
-  order_name: string | null
-  order_unit_size: string | null
-  properties: Record<string, unknown> | null
+  features: FeatureValues | null
+  /** The sum of its movements, in lb (decimal string). */
+  on_hand_lb: string | null
+  /** Why the lot can't be deleted (later movements, or a recipe uses it), or null (lead decisions 3, gap 15). */
+  delete_blocked?: string | null
   notes: string | null
   inserted_at: string
   updated_at: string
+}
+
+// ── D60 grain catalog and inventory ──
+
+export type PartyRole = 'maltster' | 'supplier' | 'partner_brewery'
+
+export interface PartySummary {
+  id: number
+  name: string
+}
+
+export interface Party extends PartySummary {
+  notes: string | null
+  active: boolean
+  roles: PartyRole[] | null
+  inserted_at: string
+  updated_at: string
+}
+
+/** A feature value as the API sends it (decimals as strings, trailing zeros dropped). */
+export interface FeatureValue {
+  value: string
+  entered_value: string | null
+  entered_unit: string | null
+}
+
+export type FeatureValues = Record<string, FeatureValue>
+
+export interface FeatureType {
+  id: number
+  key: string
+  label: string
+  unit_label: string
+  min: string | null
+  max: string | null
+  decimals: number
+  entered_units: string[]
+  categories: { category_id: number; name: string; sort_order: number; required: boolean }[] | null
+}
+
+export interface OfferPrice {
+  id: number
+  offer_id: number
+  price_per_sack: string
+  price_per_lb: string | null
+  effective_on: string
+  note: string | null
+  entered_by: { id: number; name: string } | null
+  inserted_at: string
+}
+
+export interface SupplierOffer {
+  id: number
+  product_id: number
+  supplier_party_id: number
+  supplier: PartySummary | null
+  order_name: string | null
+  sack_size_lb: string
+  form: 'milled' | 'whole'
+  notes: string | null
+  active: boolean
+  current_price: OfferPrice | null
+  inserted_at: string
+  updated_at: string
+}
+
+/** A maltster product ("Rahr 2-Row"). */
+export interface IngredientProduct {
+  id: number
+  ingredient_id: number
+  ingredient: { id: number; name: string; category: { id: number; name: string; parent_id: number | null } | null } | null
+  category: { id: number; name: string; parent_id: number | null } | null
+  maltster_party_id: number
+  maltster: PartySummary | null
+  name: string | null
+  display_name: string
+  notes: string | null
+  active: boolean
+  features: FeatureValues | null
+  offers: SupplierOffer[] | null
+  on_hand_lb: string
+  /** The part of `on_hand_lb` in expired lots. */
+  expired_lb: string
+  inserted_at: string
+  updated_at: string
+}
+
+export type MovementKind = 'opening' | 'received' | 'used' | 'traded_out' | 'traded_in' | 'loaned_out' | 'loaned_in' | 'count'
+
+export interface InventoryMovement {
+  id: number
+  lot_id: number
+  lot_number: string | null
+  product_id: number | null
+  kind: MovementKind
+  /** Signed lb: out is negative. */
+  quantity_lb: string
+  occurred_on: string
+  partner_party_id: number | null
+  partner: PartySummary | null
+  note: string | null
+  entered_by: { id: number; name: string } | null
+  inserted_at: string
 }
 
 export interface Batch {

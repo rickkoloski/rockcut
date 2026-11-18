@@ -27,7 +27,7 @@ export default defineConfig({
     {
       name: 'chromium',
       testMatch: /.*\.spec\.ts/,
-      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//, /regression\/owners\//, /regression\/d58\//, /regression\/timeoff\//],
+      testIgnore: [/beer-board-replace\.spec\.ts/, /task-board-.*\.spec\.ts/, /pwa-update\//, /regression\/production\//, /regression\/ideas\//, /regression\/owners\//, /regression\/d58\//, /regression\/timeoff\//, /regression\/ingredients\//],
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
@@ -89,6 +89,16 @@ export default defineConfig({
     {
       name: 'timeoff',
       testMatch: /regression\/timeoff\/.*\.spec\.ts/,
+      dependencies: ['setup'],
+      workers: 1,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    // D60: the sacks/lb toggle is per account on the server, and the specs
+    // set the same personas' (brewer1, brewer2, breweryMgr), so they run one
+    // at a time (beside `chromium`; their products and lots are their own).
+    {
+      name: 'ingredients',
+      testMatch: /regression\/ingredients\/.*\.spec\.ts/,
       dependencies: ['setup'],
       workers: 1,
       use: { ...devices['Desktop Chrome'] },

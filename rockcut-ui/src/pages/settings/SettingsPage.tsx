@@ -9,10 +9,23 @@ import { useApiQuery } from '../../hooks/useApiQuery';
 import PageHeader from '../../components/PageHeader';
 import CategoryFormDialog from './CategoryFormDialog';
 
+// D60 §3.1: children listed under their parent, indented; the order is the hierarchy's.
 const columns: GridColDef[] = [
-  { field: 'name', headerName: 'Name', flex: 1 },
-  { field: 'sort_order', headerName: 'Sort Order', width: 120 },
+  {
+    field: 'name',
+    headerName: 'Name',
+    flex: 1,
+    sortable: false,
+    renderCell: (params) => (
+      <Box component="span" sx={{ pl: params.row.parent_id != null ? 3 : 0 }}>
+        {params.row.parent_id != null ? `└ ${params.value}` : params.value}
+      </Box>
+    ),
+  },
+  { field: 'sort_order', headerName: 'Sort Order', width: 120, sortable: false },
 ];
+
+const byOrder = (a: IngredientCategory, b: IngredientCategory) => a.sort_order - b.sort_order || a.name.localeCompare(b.name);
 
 export default function SettingsPage() {
   const navigate = useNavigate();
@@ -25,9 +38,13 @@ export default function SettingsPage() {
   );
 
   const filteredCategories = useMemo(() => {
-    if (!search) return categories;
+    const ordered = categories
+      .filter((c) => c.parent_id == null)
+      .sort(byOrder)
+      .flatMap((p) => [p, ...categories.filter((c) => c.parent_id === p.id).sort(byOrder)]);
+    if (!search) return ordered;
     const term = search.toLowerCase();
-    return categories.filter((c) =>
+    return ordered.filter((c) =>
       [c.name, c.sort_order]
         .filter(Boolean)
         .map(String)

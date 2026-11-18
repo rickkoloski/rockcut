@@ -7,14 +7,18 @@
 import type { ColorMode } from './colorMode'
 import type { BoardSettings } from './tasks'
 import type { GanttSettings } from './gantt'
+import type { IngredientSettings } from './brewingUnits'
 
 export const REFRESH_GAP_MS = 60_000
 
 /** At most one refresh a minute (the first always goes). */
 export const refreshDue = (last: number | null, now: number, gap = REFRESH_GAP_MS) => last == null || now - last >= gap
 
-/** A board's stored settings: a task board's, or the Gantt's (`production`, D56 decision 18). */
-export type StoredSettings = Partial<BoardSettings> & Partial<GanttSettings>
+/**
+ * A board's stored settings: a task board's, the Gantt's (`production`, D56
+ * decision 18), or the ingredients' quantity display (`ingredients`, D60 §3.9).
+ */
+export type StoredSettings = Partial<BoardSettings> & Partial<GanttSettings> & Partial<IngredientSettings>
 
 export interface Refreshed {
   colorMode: ColorMode | null

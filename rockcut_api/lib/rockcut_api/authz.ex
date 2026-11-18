@@ -445,6 +445,10 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, :save, {:board_settings, :production}),
     do: can?(user, :read, :production)
 
+  # D60 §3.9: the ingredient screens' quantity display, for whoever uses them.
+  def can?(%User{} = user, :save, {:board_settings, :ingredients}),
+    do: can?(user, :read, :ingredients)
+
   def can?(%User{} = user, :save, {:board_settings, board}),
     do: can?(user, :read, {:tasks, board})
 
@@ -499,6 +503,14 @@ defmodule RockcutApi.Authz do
   # phases, step types, templates). Owners pass above; the brewhouse device
   # is `Authz.Device`'s (D50: read and write, never setup).
   def can?(%User{} = user, action, :production) when action in [:read, :write, :setup],
+    do: member_of?(user, "brewery")
+
+  # D60 grain catalog and inventory (spec decision 12): parties, maltster
+  # products, feature types, supplier offers and prices, lots, movements and
+  # counts are any Brewery member's, of any role (the `:brewery` module plug
+  # on their routes). Owners pass above; no device does any of it
+  # (`Authz.Device` denies by default).
+  def can?(%User{} = user, action, :ingredients) when action in [:read, :write],
     do: member_of?(user, "brewery")
 
   # Staff codes (D37; every department since D40): owners (above) and, since

@@ -1,33 +1,30 @@
 defmodule RockcutApi.Brewing.IngredientLot do
+  @moduledoc """
+  A lot of an ingredient. D60: a grain lot is of a maltster product
+  (`product`), from a supplier party, in sacks of `sack_size_lb`; its specs
+  are `feature_values` (copied from the product's standard) and its stock is
+  the sum of its `movements`.
+  """
   use Ecto.Schema
   import Ecto.Changeset
   import RockcutApi.Brewing.Ranges
 
   schema "ingredient_lots" do
     field :lot_number, :string
-    field :supplier, :string
     field :received_date, :date
     field :status, :string, default: "available"
-
-    # Shared calc fields
-    field :alpha_acid, :decimal
-    field :color_lovibond, :decimal
-    field :attenuation, :decimal
-
-    # Grain-specific fields
-    field :extract_potential_fgdb, :decimal
-    field :maltster, :string
-    field :protein_perc, :decimal
-    field :moisture_perc, :decimal
-    field :diastatic_power_linter, :decimal
-    field :order_name, :string
-    field :order_unit_size, :string
-
-    # Dynamic fields as JSON (reserved for future use)
-    field :properties, :string
+    field :sack_size_lb, :decimal
     field :notes, :string
+    # D60: the sum of its movements, filled by `Ingredients.Inventory.put_on_hand/1`.
+    field :on_hand_lb, :decimal, virtual: true
+    # Why it can't be deleted, or nil (lead decisions 3, gap 15); filled with `on_hand_lb`.
+    field :delete_blocked, :string, virtual: true
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
+    belongs_to :product, RockcutApi.Ingredients.Product
+    belongs_to :supplier, RockcutApi.Ingredients.Party, foreign_key: :supplier_party_id
+    has_many :feature_values, RockcutApi.Ingredients.LotFeatureValue, foreign_key: :lot_id
+    has_many :movements, RockcutApi.Ingredients.Movement, foreign_key: :lot_id
 
     timestamps(type: :utc_datetime)
   end
@@ -37,21 +34,21 @@ defmodule RockcutApi.Brewing.IngredientLot do
   def changeset(lot, attrs) do
     lot
     |> cast(attrs, [
-      :ingredient_id, :lot_number, :supplier, :received_date, :status,
-      :alpha_acid, :color_lovibond, :attenuation,
-      :extract_potential_fgdb, :maltster, :protein_perc, :moisture_perc,
-      :diastatic_power_linter, :order_name, :order_unit_size,
-      :properties, :notes
+      :ingredient_id,
+      :product_id,
+      :supplier_party_id,
+      :lot_number,
+      :received_date,
+      :status,
+      :sack_size_lb,
+      :notes
     ])
     |> validate_required([:ingredient_id])
     |> validate_inclusion(:status, @valid_statuses)
-    |> validate_range(
-      [:alpha_acid, :attenuation, :extract_potential_fgdb, :protein_perc, :moisture_perc],
-      0,
-      100
-    )
-    |> validate_range([:color_lovibond, :diastatic_power_linter], 0, 1_000)
+    |> validate_positive_up_to(:sack_size_lb, 10_000)
     |> foreign_key_constraint(:ingredient_id)
-    |> RockcutApi.Changeset.validate_parents([:ingredient_id])
+    |> foreign_key_constraint(:product_id)
+    |> foreign_key_constraint(:supplier_party_id)
+    |> RockcutApi.Changeset.validate_parents([:ingredient_id, :product_id, :supplier_party_id])
   end
 end

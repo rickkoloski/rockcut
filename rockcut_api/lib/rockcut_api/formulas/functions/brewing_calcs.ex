@@ -5,7 +5,15 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
 
   import Ecto.Query
 
-  alias RockcutApi.Brewing.{Recipe, RecipeIngredient, IngredientLot, Ingredient, IngredientCategory}
+  alias RockcutApi.Brewing.{
+    Recipe,
+    RecipeIngredient,
+    IngredientLot,
+    Ingredient,
+    IngredientCategory
+  }
+
+  alias RockcutApi.Ingredients.{FeatureType, LotFeatureValue, Units}
 
   @default_efficiency 0.72
   @gallons_per_bbl 31.0
@@ -38,6 +46,10 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
 
   gravity points = sum of (weight_lbs * potential_gravity_points * efficiency) / volume
   OG = 1.000 + (total_points / 1000)
+
+  The recipe's `efficiency_target` is a percentage (D60: 68 means 0.68;
+  before D60 it was used as a fraction, so any target gave a wild OG); with
+  none, 72%.
   """
   def est_og(context, params) do
     recipe_id = params["recipe_id"] || params[:recipe_id]
@@ -45,7 +57,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
 
     recipe = repo.get!(Recipe, recipe_id)
     batch_volume_gallons = batch_volume_gallons(recipe)
-    efficiency = decimal_to_float(recipe.efficiency_target) || @default_efficiency
+    efficiency = efficiency(recipe.efficiency_target)
 
     grain_additions = load_grain_additions(repo, recipe_id)
 
@@ -67,48 +79,56 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   # -- Private helpers --
 
   defp load_hop_additions(repo, recipe_id) do
-    hop_category_id = get_category_id(repo, "Hops")
+    hop_category_ids = get_category_ids(repo, ["Hops"])
 
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
     |> join(:inner, [ri], lot in IngredientLot, on: ri.lot_id == lot.id)
     |> join(:inner, [ri, lot], ing in Ingredient, on: lot.ingredient_id == ing.id)
-    |> where([ri, lot, ing], ing.category_id == ^hop_category_id)
-    |> select([ri, lot, _ing], %{
+    |> where([ri, lot, ing], ing.category_id in ^hop_category_ids)
+    |> join_feature("alpha_acid_pct")
+    |> select([ri, feature: fv], %{
       amount: ri.amount,
       unit: ri.unit,
       time_minutes: ri.time_minutes,
-      alpha_acid: lot.alpha_acid
+      alpha_acid: fv.value
     })
     |> repo.all()
   end
 
   defp load_grain_additions(repo, recipe_id) do
-    grain_category_ids = get_fermentable_category_ids(repo)
+    grain_category_ids = get_category_ids(repo, ["Grains", "Sugars and Extracts"])
 
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
     |> join(:inner, [ri], lot in IngredientLot, on: ri.lot_id == lot.id)
     |> join(:inner, [ri, lot], ing in Ingredient, on: lot.ingredient_id == ing.id)
     |> where([ri, lot, ing], ing.category_id in ^grain_category_ids)
-    |> select([ri, lot, _ing], %{
+    |> join_feature("extract_fgdb")
+    |> select([ri, feature: fv], %{
       amount: ri.amount,
       unit: ri.unit,
-      extract_potential_fgdb: lot.extract_potential_fgdb
+      extract_potential_fgdb: fv.value
     })
     |> repo.all()
   end
 
-  defp get_category_id(repo, name) do
-    IngredientCategory
-    |> where(name: ^name)
-    |> select([c], c.id)
-    |> repo.one!()
+  # D60 §3.4: the lot's value for one feature (nil when the lot has none).
+  defp join_feature(query, key) do
+    query
+    |> join(:left, [], f in FeatureType, on: f.key == ^key)
+    |> join(:left, [_ri, lot, _ing, f], fv in LotFeatureValue,
+      as: :feature,
+      on: fv.lot_id == lot.id and fv.feature_type_id == f.id
+    )
   end
 
-  defp get_fermentable_category_ids(repo) do
+  # The named categories and their children (D60: a grain is on one of
+  # Grains' children).
+  defp get_category_ids(repo, names) do
     IngredientCategory
-    |> where([c], c.name in ["Grains", "Sugars and Extracts"])
+    |> join(:left, [c], p in IngredientCategory, on: c.parent_id == p.id)
+    |> where([c, p], c.name in ^names or p.name in ^names)
     |> select([c], c.id)
     |> repo.all()
   end
@@ -125,7 +145,8 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
       utilization = bigness * boil_factor
 
       # mg/L alpha acid
-      mg_per_l = (alpha_acid / 100.0) * (weight_oz * 28.3495) * 1000.0 / (batch_volume_gallons * 3.78541)
+      mg_per_l =
+        alpha_acid / 100.0 * (weight_oz * 28.3495) * 1000.0 / (batch_volume_gallons * 3.78541)
 
       mg_per_l * utilization
     else
@@ -137,14 +158,15 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     fgdb = decimal_to_float(addition.extract_potential_fgdb) || 0.0
     weight_lbs = to_pounds(addition.amount, addition.unit)
 
-    # PPG (points per pound per gallon) from fine-grind dry-basis extract %.
-    # A pound of 100%-extract sugar in 1 gallon yields ~46 gravity points, so
-    # PPG = fgdb% * 0.46 (e.g. 80.3% -> ~36.9 PPG, typical for base malt).
+    # PPG (points per pound per gallon) from fine-grind dry-basis extract %
+    # (D60 §3.5: FGDB × 46.214 ÷ 100, the UI's constant; 80.3% -> ~37.1 PPG).
     # This returns weight * PPG * efficiency; est_og/2 divides by batch volume
     # and by 1000 to produce the final OG.
-    ppg = fgdb * 0.46
-    ppg * weight_lbs * efficiency
+    Units.ppg(fgdb) * weight_lbs * efficiency
   end
+
+  defp efficiency(nil), do: @default_efficiency
+  defp efficiency(target), do: decimal_to_float(target) / 100.0
 
   defp batch_volume_gallons(recipe) do
     size = decimal_to_float(recipe.batch_size) || 0.0

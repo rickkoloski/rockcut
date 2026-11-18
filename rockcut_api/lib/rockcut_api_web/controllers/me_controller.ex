@@ -66,6 +66,8 @@ defmodule RockcutApiWeb.MeController do
   `all`; an unknown one is 404, one this account can't save 403 (a device:
   its home board only, no staff code). D56 decision 18: `production` is the
   Gantt's view (`expanded`, `label_by`), for whoever reads the schedule.
+  D60 §3.9: `ingredients` is the quantity display (`quantity_display`), for
+  whoever uses the ingredient screens.
   """
   def update_board_settings(conn, %{"board" => key}) do
     user = conn.assigns.current_user
@@ -82,6 +84,7 @@ defmodule RockcutApiWeb.MeController do
 
   defp settings_board("all"), do: {:ok, :all}
   defp settings_board("production"), do: {:ok, :production}
+  defp settings_board("ingredients"), do: {:ok, :ingredients}
 
   defp settings_board(key) do
     case Accounts.get_department_by_key(key) do

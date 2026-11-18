@@ -4,6 +4,9 @@ import FormDialog from '../../components/FormDialog';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation';
 import parseApiError from '../../lib/parseApiError';
+import { useQuantityDisplay } from '../../hooks/useQuantityDisplay';
+import { formatQuantity } from '../../lib/brewingUnits';
+import { categoryOptions } from '../../lib/ingredientFeatures';
 import type { RecipeIngredient, IngredientLot, IngredientCategory, Ingredient } from '../../lib/types';
 
 interface RecipeIngredientDialogProps {
@@ -29,6 +32,7 @@ export default function RecipeIngredientDialog({
   const [sortOrder, setSortOrder] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const { mode } = useQuantityDisplay();
 
   const { data: categories = [] } = useApiQuery<IngredientCategory[]>(
     ['ingredient_categories'],
@@ -79,9 +83,10 @@ export default function RecipeIngredientDialog({
     }
   }, [open, ingredient, lots, categories]);
 
-  const filteredLots = ingredientId
-    ? lots.filter((l) => l.ingredient?.id === ingredientId)
-    : lots;
+  // D60 gap 8: depleted lots are left out, except the one this line already uses.
+  const filteredLots = (ingredientId ? lots.filter((l) => l.ingredient?.id === ingredientId) : lots).filter(
+    (l) => l.status !== 'depleted' || l.id === ingredient?.lot_id,
+  );
 
   const handleSubmit = async () => {
     try {
@@ -109,10 +114,14 @@ export default function RecipeIngredientDialog({
 
   const loading = createMutation.isPending || updateMutation.isPending;
 
+  // D60: a grain lot shows its maltster ("Rahr · L-1"); the supplier is a company now.
+  // Gap 8: with its on-hand (in the person's sacks/lb) and status.
+  const status = (lot: IngredientLot) => lot.status.charAt(0).toUpperCase() + lot.status.slice(1);
   const lotLabel = (lot: IngredientLot) => {
     const lotNum = lot.lot_number ?? '—';
-    const supplier = lot.supplier ?? '';
-    return `Lot# ${lotNum}${supplier ? ` (${supplier})` : ''}`;
+    if (lot.product?.maltster) return `${lot.product.maltster.name} · ${lotNum} · ${formatQuantity(lot.on_hand_lb, lot.sack_size_lb, mode)} · ${status(lot)}`;
+    const supplier = lot.supplier?.name ?? '';
+    return `Lot# ${lotNum}${supplier ? ` (${supplier})` : ''} · ${status(lot)}`;
   };
 
   return (
@@ -137,8 +146,8 @@ export default function RecipeIngredientDialog({
           }}
         >
           <MenuItem value="">All Categories</MenuItem>
-          {categories.map((cat) => (
-            <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
+          {categoryOptions(categories).map(({ category, depth }) => (
+            <MenuItem key={category.id} value={category.id} sx={{ pl: depth ? 4 : 2 }}>{category.name}</MenuItem>
           ))}
         </Select>
       </FormControl>

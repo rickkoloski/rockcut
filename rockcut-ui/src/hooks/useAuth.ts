@@ -5,6 +5,7 @@ import type { Me, User, Capabilities, IdeaBoardEntry, TaskBoardEntry } from '../
 import { cacheColorMode, isColorMode, type ColorMode } from '../lib/colorMode'
 import { cleanSettings } from '../lib/tasks'
 import { GANTT_BOARD, cleanGanttSettings } from '../lib/gantt'
+import { INGREDIENTS_BOARD, cleanIngredientSettings } from '../lib/brewingUnits'
 import { boardKey, mergeRefresh, refreshDue, writeLog, type StoredSettings } from '../lib/meRefresh'
 import {
   SHARED_DEVICE_LOGIN_REFUSED,
@@ -93,7 +94,10 @@ const serverSettings = (data: Me) => ({
   colorMode: isColorMode(data.color_mode) ? data.color_mode : ('light' as ColorMode),
   showPlannedBatches: data.show_planned_batches !== false,
   boardSettings: Object.fromEntries(
-    Object.entries(data.board_settings ?? {}).map(([k, v]) => [k, k === GANTT_BOARD ? cleanGanttSettings(v) : cleanSettings(v)]),
+    Object.entries(data.board_settings ?? {}).map(([k, v]) => [
+      k,
+      k === GANTT_BOARD ? cleanGanttSettings(v) : k === INGREDIENTS_BOARD ? cleanIngredientSettings(v) : cleanSettings(v),
+    ]),
   ) as Record<string, StoredSettings>,
 })
 
