@@ -63,7 +63,16 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Seeds.{Credentials, Guard}
   alias RockcutApi.Devices.DeviceToken
   alias RockcutApi.Scheduling.{Recurrence, ScheduleEvent, ScheduleEventSeries}
-  alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, IngredientLot, Recipe}
+
+  alias RockcutApi.Brewing.{
+    Batch,
+    Brand,
+    BrewTurn,
+    Ingredient,
+    IngredientLot,
+    Recipe,
+    RecipeIngredient
+  }
 
   alias RockcutApi.Ingredients.{
     LotFeatureValue,
@@ -900,10 +909,44 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(l in Label, where: like(l.name, ^pattern)))
     compact_idea_boards()
 
-    # D60: lots tagged on the lot number (their feature values and
-    # movements cascade), then tagged companies nothing else points at
-    # (their roles cascade).
-    Repo.delete_all(from(l in IngredientLot, where: like(l.lot_number, ^pattern)))
+    # D60: tagged grains, maltster products (on the product name, or under a
+    # tagged grain or maltster) and their offers (prices cascade); every lot
+    # of those, or tagged on the lot number, with the recipe lines that use
+    # it (feature values and movements cascade: the API refuses to delete a
+    # lot with movements, this doesn't); then tagged companies nothing else
+    # points at (their roles cascade).
+    grain_ids = from(i in Ingredient, where: like(i.name, ^pattern), select: i.id)
+    party_ids = from(p in Party, where: like(p.name, ^pattern), select: p.id)
+
+    product_ids =
+      Repo.all(
+        from(p in Product,
+          where:
+            like(p.name, ^pattern) or p.ingredient_id in subquery(grain_ids) or
+              p.maltster_party_id in subquery(party_ids),
+          select: p.id
+        )
+      )
+
+    lot_ids =
+      from(l in IngredientLot,
+        where:
+          like(l.lot_number, ^pattern) or l.product_id in ^product_ids or
+            l.ingredient_id in subquery(grain_ids),
+        select: l.id
+      )
+
+    Repo.delete_all(from(r in RecipeIngredient, where: r.lot_id in subquery(lot_ids)))
+    Repo.delete_all(from(l in IngredientLot, where: l.id in subquery(lot_ids)))
+
+    Repo.delete_all(
+      from(o in SupplierOffer,
+        where: o.product_id in ^product_ids or like(o.order_name, ^pattern)
+      )
+    )
+
+    Repo.delete_all(from(p in Product, where: p.id in ^product_ids))
+    Repo.delete_all(from(i in Ingredient, where: i.id in subquery(grain_ids)))
 
     Repo.delete_all(
       from(p in Party,

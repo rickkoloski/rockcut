@@ -14,16 +14,20 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
   import ExUnit.CaptureIO
 
   alias RockcutApi.Brewing.{
+    Brand,
     CategoryFieldDefinition,
     Ingredient,
     IngredientCategory,
-    IngredientLot
+    IngredientLot,
+    Recipe,
+    RecipeIngredient
   }
 
   alias RockcutApi.Ingredients.{
     CategoryFeatureType,
     LotFeatureValue,
     Movement,
+    OfferPrice,
     Party,
     PartyRole,
     Product,
@@ -244,5 +248,124 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
 
     assert {:ok, _} = Synthetic.setup()
     refute Repo.exists?(from l in IngredientLot, where: like(l.lot_number, "[SEED]%"))
+  end
+
+  # Stage 4: the Playwright specs make [TEST-TEMP] products, offers, prices,
+  # lots with movements, companies and grains; setup removes them all (the
+  # API won't delete a lot with movements) and leaves the reference rows and
+  # [SEED] lots alone.
+  test "synthetic setup deletes [TEST-TEMP] ingredient rows, movements and all" do
+    seed!()
+    {:ok, _} = Synthetic.setup()
+    before = counts()
+
+    rahr = Repo.get_by!(Party, name: "Rahr")
+    bsg = Repo.get_by!(Party, name: "BSG")
+    two_row = Repo.get_by!(Ingredient, name: "2-Row")
+    reference = Repo.get_by!(Product, ingredient_id: two_row.id, maltster_party_id: rahr.id)
+
+    maltster = party!("[TEST-TEMP] Maltster", "maltster")
+    partner = party!("[TEST-TEMP] Partner", "partner_brewery")
+    grain = Repo.insert!(%Ingredient{name: "[TEST-TEMP] Grain", category_id: two_row.category_id})
+
+    # One product tagged on its name, one under a tagged grain, one by a tagged maltster.
+    products = [
+      Repo.insert!(%Product{
+        ingredient_id: two_row.id,
+        maltster_party_id: rahr.id,
+        name: "[TEST-TEMP] P"
+      }),
+      Repo.insert!(%Product{ingredient_id: grain.id, maltster_party_id: rahr.id}),
+      Repo.insert!(%Product{ingredient_id: two_row.id, maltster_party_id: maltster.id})
+    ]
+
+    for product <- products do
+      offer =
+        Repo.insert!(%SupplierOffer{
+          product_id: product.id,
+          supplier_party_id: bsg.id,
+          sack_size_lb: Decimal.new(55),
+          form: "whole"
+        })
+
+      Repo.insert!(%OfferPrice{
+        offer_id: offer.id,
+        price_per_sack: Decimal.new("48.5"),
+        effective_on: ~D[2026-11-01]
+      })
+
+      lot =
+        Repo.insert!(%IngredientLot{
+          ingredient_id: product.ingredient_id,
+          product_id: product.id,
+          lot_number: "L1",
+          sack_size_lb: Decimal.new(55)
+        })
+
+      Repo.insert!(%LotFeatureValue{
+        lot_id: lot.id,
+        feature_type_id: hd(Repo.all(CategoryFeatureType)).feature_type_id,
+        value: Decimal.new(2)
+      })
+
+      Repo.insert!(%Movement{
+        lot_id: lot.id,
+        kind: "opening",
+        quantity_lb: Decimal.new(110),
+        occurred_on: ~D[2026-11-01]
+      })
+
+      Repo.insert!(%Movement{
+        lot_id: lot.id,
+        kind: "loaned_out",
+        quantity_lb: Decimal.new(-55),
+        occurred_on: ~D[2026-11-02],
+        partner_party_id: partner.id
+      })
+    end
+
+    # A tagged lot of the reference product, used in a recipe.
+    tagged_lot =
+      Repo.insert!(%IngredientLot{
+        ingredient_id: two_row.id,
+        product_id: reference.id,
+        lot_number: "[TEST-TEMP] L2",
+        sack_size_lb: Decimal.new(55)
+      })
+
+    Repo.insert!(%Movement{
+      lot_id: tagged_lot.id,
+      kind: "opening",
+      quantity_lb: Decimal.new(55),
+      occurred_on: ~D[2026-11-01]
+    })
+
+    brand = Repo.insert!(%Brand{name: "Real brand"})
+    recipe = Repo.insert!(%Recipe{brand_id: brand.id, batch_size: Decimal.new(10)})
+
+    Repo.insert!(%RecipeIngredient{
+      recipe_id: recipe.id,
+      lot_id: tagged_lot.id,
+      amount: Decimal.new(10),
+      unit: "lb"
+    })
+
+    {:ok, _} = Synthetic.setup()
+
+    assert counts() == before
+    for p <- products, do: refute(Repo.get(Product, p.id))
+    refute Repo.get(Ingredient, grain.id)
+    refute Repo.get(Party, maltster.id)
+    refute Repo.get(Party, partner.id)
+    refute Repo.get(IngredientLot, tagged_lot.id)
+    assert Repo.reload(recipe)
+    assert Repo.reload(reference)
+    assert Repo.exists?(from l in IngredientLot, where: like(l.lot_number, "[SEED]%"))
+  end
+
+  defp party!(name, role) do
+    party = Repo.insert!(%Party{name: name})
+    Repo.insert!(%PartyRole{party_id: party.id, role: role})
+    party
   end
 end
