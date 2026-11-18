@@ -1041,6 +1041,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       status: lot.status,
       features: lot_features(lot),
       on_hand_lb: lot.on_hand_lb,
+      delete_blocked: lot.delete_blocked,
       notes: lot.notes,
       inserted_at: lot.inserted_at,
       updated_at: lot.updated_at

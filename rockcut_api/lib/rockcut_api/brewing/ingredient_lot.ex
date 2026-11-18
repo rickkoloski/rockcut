@@ -17,6 +17,8 @@ defmodule RockcutApi.Brewing.IngredientLot do
     field :notes, :string
     # D60: the sum of its movements, filled by `Ingredients.Inventory.put_on_hand/1`.
     field :on_hand_lb, :decimal, virtual: true
+    # Why it can't be deleted, or nil (lead decisions 3, gap 15); filled with `on_hand_lb`.
+    field :delete_blocked, :string, virtual: true
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
     belongs_to :product, RockcutApi.Ingredients.Product

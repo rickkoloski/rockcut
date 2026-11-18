@@ -94,10 +94,19 @@ defmodule RockcutApi.Ingredients.Inventory do
     |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
   end
 
-  @doc "Fill each lot's virtual `on_hand_lb` (one query)."
+  @doc """
+  Fill each lot's virtual `on_hand_lb` and `delete_blocked` (why it can't be
+  deleted, or nil; lead decisions 3, gap 15).
+  """
   def put_on_hand(lots) when is_list(lots) do
-    on_hand = on_hand_by_lot(Enum.map(lots, & &1.id))
-    Enum.map(lots, &%{&1 | on_hand_lb: Map.fetch!(on_hand, &1.id)})
+    ids = Enum.map(lots, & &1.id)
+    on_hand = on_hand_by_lot(ids)
+    blocked = delete_blocked(ids)
+
+    Enum.map(
+      lots,
+      &%{&1 | on_hand_lb: Map.fetch!(on_hand, &1.id), delete_blocked: Map.fetch!(blocked, &1.id)}
+    )
   end
 
   def put_on_hand(%IngredientLot{} = lot), do: hd(put_on_hand([lot]))
@@ -603,28 +612,47 @@ defmodule RockcutApi.Ingredients.Inventory do
   """
   def delete_lot(%IngredientLot{} = lot) do
     write(fn ->
-      movements = Repo.aggregate(from(m in Movement, where: m.lot_id == ^lot.id), :count)
-      used = Repo.exists?(from(ri in RecipeIngredient, where: ri.lot_id == ^lot.id))
-
-      cond do
-        used ->
-          Repo.rollback({:invalid, %{base: ["A recipe uses this lot, so it can't be deleted"]}})
-
-        movements > 1 ->
-          Repo.rollback(
-            {:invalid,
-             %{
-               base: [
-                 "This lot has movements after its first; correct it with a movement or a count"
-               ]
-             }}
-          )
-
-        true ->
-          Repo.delete!(lot)
+      case Map.fetch!(delete_blocked([lot.id]), lot.id) do
+        nil -> Repo.delete!(lot)
+        refusal -> Repo.rollback({:invalid, %{base: [refusal]}})
       end
     end)
   end
+
+  @doc """
+  Why each of `lot_ids` can't be deleted, or nil when it can: a recipe uses
+  it, or it has movements after its first (two queries).
+  """
+  def delete_blocked(lot_ids) do
+    movements =
+      from(m in Movement,
+        where: m.lot_id in ^lot_ids,
+        group_by: m.lot_id,
+        select: {m.lot_id, count(m.id)}
+      )
+      |> Repo.all()
+      |> Map.new()
+
+    used =
+      from(ri in RecipeIngredient,
+        where: ri.lot_id in ^lot_ids,
+        distinct: true,
+        select: ri.lot_id
+      )
+      |> Repo.all()
+      |> MapSet.new()
+
+    Map.new(lot_ids, fn id ->
+      {id, delete_refusal(MapSet.member?(used, id), Map.get(movements, id, 0))}
+    end)
+  end
+
+  defp delete_refusal(true, _), do: "A recipe uses this lot, so it can't be deleted"
+
+  defp delete_refusal(false, movements) when movements > 1,
+    do: "This lot has movements after its first; correct it with a movement or a count"
+
+  defp delete_refusal(false, _), do: nil
 
   defp product_fixed,
     do: {:error, {:invalid, %{product_id: ["can't change once the lot has movements"]}}}

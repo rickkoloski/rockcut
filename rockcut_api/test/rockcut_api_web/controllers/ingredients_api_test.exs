@@ -562,7 +562,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     end
 
     test "delete: only with just its first movement and no recipe", c do
-      {201, %{"data" => %{"id" => id}}} =
+      {201, %{"data" => %{"id" => id, "delete_blocked" => nil}}} =
         req(c.brewer, :post, "/api/ingredient_lots", lot_body(c, %{}))
 
       {201, %{"data" => %{"id" => id2}}} =
@@ -576,7 +576,12 @@ defmodule RockcutApiWeb.IngredientsApiTest do
           lot_id: id
         })
 
-      assert %{"base" => [_]} = errors(req(c.brewer, :delete, "/api/ingredient_lots/#{id}"))
+      later = "This lot has movements after its first; correct it with a movement or a count"
+      assert %{"base" => [^later]} = errors(req(c.brewer, :delete, "/api/ingredient_lots/#{id}"))
+
+      # Gap 15: the lot JSON says why, so the UI can disable Delete.
+      assert {200, %{"data" => %{"delete_blocked" => ^later}}} =
+               req(c.brewer, :get, "/api/ingredient_lots/#{id}")
 
       {:ok, brand} = RockcutApi.Brewing.create_brand(%{name: "Lot user"})
       {:ok, recipe} = RockcutApi.Brewing.create_recipe(%{brand_id: brand.id, batch_size: "15"})
@@ -591,6 +596,17 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
       assert %{"base" => ["A recipe uses this lot, so it can't be deleted"]} =
                errors(req(c.brewer, :delete, "/api/ingredient_lots/#{id2}"))
+
+      blocked =
+        for l <-
+              elem(req(c.brewer, :get, "/api/ingredient_lots?product_id=#{c.product.id}"), 1)[
+                "data"
+              ],
+            into: %{},
+            do: {l["id"], l["delete_blocked"]}
+
+      assert blocked[id] == later
+      assert blocked[id2] == "A recipe uses this lot, so it can't be deleted"
 
       Repo.delete!(ri)
       assert {204, _} = req(c.brewer, :delete, "/api/ingredient_lots/#{id2}")
