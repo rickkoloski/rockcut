@@ -20,6 +20,10 @@ describe('parseApiError', () => {
     )
   })
 
+  it('D60: a base error has no field name', () => {
+    expect(parseApiError(fail(422, { errors: { base: ['This company is in use; deactivate it instead'] } }))).toBe('This company is in use; deactivate it instead')
+  })
+
   it('a plain { error } body, as before', () => {
     expect(parseApiError(fail(403, { error: 'Forbidden' }))).toBe('Forbidden')
   })

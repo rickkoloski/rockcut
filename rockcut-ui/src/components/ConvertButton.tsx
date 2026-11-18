@@ -113,6 +113,8 @@ function ConvertDialog({
       <form
         onSubmit={(e) => {
           e.preventDefault()
+          // The popup sits inside the form it fills: React passes events up through the portal, so this submit mustn't reach that form.
+          e.stopPropagation()
           if (stored != null && typed != null) onUse({ value: stored, entered_value: typed, entered_unit: unit })
         }}
       >

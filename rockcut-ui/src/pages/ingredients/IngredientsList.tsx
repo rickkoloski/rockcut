@@ -189,6 +189,8 @@ export default function IngredientsList() {
               variant="contained"
               startIcon={<AddIcon />}
               onClick={(e) => (grainsView ? setAddAnchor(e.currentTarget) : setFormOpen('ingredient'))}
+              // Until the categories are in, it can't tell the Grains view (a menu) from the rest.
+              disabled={categories.length === 0}
               data-testid="ingredients-add-button"
             >
               {grainsView ? 'Add' : 'Add Ingredient'}

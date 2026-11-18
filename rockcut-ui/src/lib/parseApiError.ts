@@ -35,7 +35,8 @@ export default function parseApiError(err: unknown): string {
         }
         const text = messages(msgs)
         if (!text) return []
-        return field === 'detail' ? [text] : [`${field.replace(/_/g, ' ')}: ${text}`]
+        // `base` (D60) is about the whole record, like Phoenix's `detail`.
+        return field === 'detail' || field === 'base' ? [text] : [`${field.replace(/_/g, ' ')}: ${text}`]
       })
       if (parts.length) return parts.join('; ')
     }
