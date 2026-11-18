@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link as RouterLink } from 'react-router-dom';
 import {
   Paper,
   Typography,
@@ -10,13 +10,16 @@ import {
   CircularProgress,
   Tooltip,
   Alert,
+  List,
+  ListItemButton,
+  ListItemText,
 } from '@mui/material';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/Delete';
 import type { GridColDef } from '@mui/x-data-grid';
 import { DataGridExtended } from 'datagrid-extended';
 import type { IngredientCategory, CategoryFieldDefinition } from '../../lib/types';
-import { useApiQuery } from '../../hooks/useApiQuery';
+import { useApiList, useApiQuery } from '../../hooks/useApiQuery';
 import { useApiDelete } from '../../hooks/useApiMutation';
 import PageHeader from '../../components/PageHeader';
 import ConfirmDialog from '../../components/ConfirmDialog';
@@ -37,6 +40,11 @@ export default function CategoryDetail() {
     { retry: retryUnless404 },
   );
 
+  // D60 §3.1: a top-level category's children (Grains → Base, …), and a child's parent.
+  const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories');
+  const children = categories.filter((c) => c.parent_id === Number(id)).sort((a, b) => a.sort_order - b.sort_order);
+  const [childOpen, setChildOpen] = useState(false);
+
   const deleteCategoryMutation = useApiDelete(
     (catId) => `/api/ingredient_categories/${catId}`,
     { invalidateKeys: [['ingredient_categories']] },
@@ -49,6 +57,7 @@ export default function CategoryDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
   const [selectedField, setSelectedField] = useState<CategoryFieldDefinition | undefined>();
   const [deleteFieldOpen, setDeleteFieldOpen] = useState(false);
@@ -75,9 +84,15 @@ export default function CategoryDetail() {
     return <CircularProgress />;
   }
 
+  // D60 gap 12: a category with grains or sub-categories is refused (422); the
+  // confirm stays open and says why.
   const handleDeleteCategory = async () => {
-    await deleteCategoryMutation.mutateAsync(category.id);
-    navigate('/ingredients/categories');
+    try {
+      await deleteCategoryMutation.mutateAsync(category.id);
+      navigate('/ingredients/categories');
+    } catch (err) {
+      setDeleteError(parseApiError(err));
+    }
   };
 
   const handleDeleteField = async () => {
@@ -147,8 +162,45 @@ export default function CategoryDetail() {
             <Typography variant="caption" color="text.secondary">Sort Order</Typography>
             <Typography variant="body2">{category.sort_order ?? '—'}</Typography>
           </Grid>
+          {category.parent_id != null && (
+            <Grid size={{ xs: 6, sm: 4 }}>
+              <Typography variant="caption" color="text.secondary">Parent</Typography>
+              <Typography variant="body2">
+                <RouterLink to={`/ingredients/categories/${category.parent_id}`}>
+                  {categories.find((c) => c.id === category.parent_id)?.name ?? '—'}
+                </RouterLink>
+              </Typography>
+            </Grid>
+          )}
         </Grid>
       </Paper>
+
+      {/* D60 §3.1: subcategories (one level). */}
+      {category.parent_id == null && (
+        <>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+            <Typography variant="h5">Subcategories</Typography>
+            <Button variant="outlined" size="small" onClick={() => setChildOpen(true)} data-testid="category-add-child">
+              Add Subcategory
+            </Button>
+          </Box>
+          <Paper sx={{ border: '1px solid', borderColor: 'divider', mb: 3 }} data-testid="category-children">
+            {children.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                No subcategories
+              </Typography>
+            ) : (
+              <List disablePadding>
+                {children.map((c) => (
+                  <ListItemButton key={c.id} divider onClick={() => navigate(`/ingredients/categories/${c.id}`)}>
+                    <ListItemText primary={c.name} />
+                  </ListItemButton>
+                ))}
+              </List>
+            )}
+          </Paper>
+        </>
+      )}
 
       {/* Field Definitions */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
@@ -177,15 +229,26 @@ export default function CategoryDetail() {
 
       {/* Dialogs */}
       <CategoryFormDialog open={editOpen} onClose={() => setEditOpen(false)} category={category} />
+      <CategoryFormDialog open={childOpen} onClose={() => setChildOpen(false)} parentId={category.id} />
 
       <ConfirmDialog
         open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
+        onClose={() => {
+          setDeleteOpen(false);
+          setDeleteError(null);
+        }}
         onConfirm={handleDeleteCategory}
         title="Delete Category"
         message={`Are you sure you want to delete "${category.name}"? This will also delete all field definitions. This cannot be undone.`}
         loading={deleteCategoryMutation.isPending}
-      />
+        testId="category-delete-confirm"
+      >
+        {deleteError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {deleteError}
+          </Alert>
+        )}
+      </ConfirmDialog>
 
       <FieldDefinitionDialog
         open={fieldDialogOpen}

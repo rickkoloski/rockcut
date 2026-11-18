@@ -8,6 +8,7 @@ defmodule RockcutApi.Brewing.Ingredient do
 
     belongs_to :category, RockcutApi.Brewing.IngredientCategory
     has_many :lots, RockcutApi.Brewing.IngredientLot
+    has_many :products, RockcutApi.Ingredients.Product
 
     timestamps(type: :utc_datetime)
   end

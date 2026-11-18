@@ -91,6 +91,8 @@ import BrandDetail from './pages/brands/BrandDetail'
 import RecipeDetail from './pages/recipes/RecipeDetail'
 import IngredientsList from './pages/ingredients/IngredientsList'
 import IngredientDetail from './pages/ingredients/IngredientDetail'
+import ProductPage from './pages/ingredients/ProductPage'
+import CompaniesPage from './pages/ingredients/CompaniesPage'
 import BatchesList from './pages/batches/BatchesList'
 import BatchDetail from './pages/batches/BatchDetail'
 import SettingsPage from './pages/settings/SettingsPage'
@@ -276,6 +278,9 @@ function personRoutes({ hasBrewery, hasTaproom, canManageSchedule, canManageUser
           {/* D52: the categories moved from Brewery → Settings into the library's settings menu. */}
           <Route path="/ingredients/categories" element={<SettingsPage />} />
           <Route path="/ingredients/categories/:id" element={<CategoryDetail />} />
+          {/* D60: maltster products and the companies. */}
+          <Route path="/ingredients/products/:id" element={<ProductPage />} />
+          <Route path="/ingredients/companies" element={<CompaniesPage />} />
           <Route path="/ingredients/:id" element={<IngredientDetail />} />
           <Route path="/batches" element={<BatchesList />} />
           <Route path="/batches/:id" element={<BatchDetail />} />

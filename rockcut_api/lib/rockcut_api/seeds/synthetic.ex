@@ -41,6 +41,11 @@ defmodule RockcutApi.Seeds.Synthetic do
   flag), a `[SEED]` CIP - no sani on FV7 tomorrow, a pencilled Oktoberfest
   (X1) in Unassigned, and the Brewery board's linked tasks for every seeded
   step (`TaskLink.sync!/1`), Altruism P1's with the Planned batch pill.
+  D60: a partner brewery `[SEED] Mountain Brewing` and two `[SEED]` lots of
+  Rahr 2-Row from BSG (older: 3 sacks received 30 days ago; newer: 10
+  sacks, 7 days ago), each with its Opening amount, for the oldest-first
+  scenarios. Needs the grain reference data (`seeds/grain_reference.exs`);
+  skipped without it.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -58,7 +63,26 @@ defmodule RockcutApi.Seeds.Synthetic do
   alias RockcutApi.Seeds.{Credentials, Guard}
   alias RockcutApi.Devices.DeviceToken
   alias RockcutApi.Scheduling.{Recurrence, ScheduleEvent, ScheduleEventSeries}
-  alias RockcutApi.Brewing.{Batch, Brand, BrewTurn, Recipe}
+
+  alias RockcutApi.Brewing.{
+    Batch,
+    Brand,
+    BrewTurn,
+    Ingredient,
+    IngredientLot,
+    Recipe,
+    RecipeIngredient
+  }
+
+  alias RockcutApi.Ingredients.{
+    LotFeatureValue,
+    Movement,
+    Party,
+    PartyRole,
+    Product,
+    SupplierOffer
+  }
+
   alias RockcutApi.BeerBoard.Entry
   alias RockcutApi.Tasks
   alias RockcutApi.Tasks.{Assignees, DailyCheck, DailyItem, Task, TaskSeries}
@@ -828,6 +852,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     seed_other_boards(u, today, now)
     seed_idea_boards(u, today)
     seed_production(u, today)
+    seed_inventory(u, today)
 
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
@@ -883,6 +908,66 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(l in IdeaList, where: like(l.name, ^pattern)))
     Repo.delete_all(from(l in Label, where: like(l.name, ^pattern)))
     compact_idea_boards()
+
+    # D60: tagged grains, maltster products (on the product name, or under a
+    # tagged grain or maltster) and their offers (prices cascade); every lot
+    # of those, or tagged on the lot number, with the recipe lines that use
+    # it (feature values and movements cascade: the API refuses to delete a
+    # lot with movements, this doesn't); then tagged companies nothing else
+    # points at (their roles cascade).
+    grain_ids = from(i in Ingredient, where: like(i.name, ^pattern), select: i.id)
+    party_ids = from(p in Party, where: like(p.name, ^pattern), select: p.id)
+
+    product_ids =
+      Repo.all(
+        from(p in Product,
+          where:
+            like(p.name, ^pattern) or p.ingredient_id in subquery(grain_ids) or
+              p.maltster_party_id in subquery(party_ids),
+          select: p.id
+        )
+      )
+
+    lot_ids =
+      from(l in IngredientLot,
+        where:
+          like(l.lot_number, ^pattern) or l.product_id in ^product_ids or
+            l.ingredient_id in subquery(grain_ids),
+        select: l.id
+      )
+
+    Repo.delete_all(from(r in RecipeIngredient, where: r.lot_id in subquery(lot_ids)))
+    Repo.delete_all(from(l in IngredientLot, where: l.id in subquery(lot_ids)))
+
+    Repo.delete_all(
+      from(o in SupplierOffer,
+        where: o.product_id in ^product_ids or like(o.order_name, ^pattern)
+      )
+    )
+
+    Repo.delete_all(from(p in Product, where: p.id in ^product_ids))
+    Repo.delete_all(from(i in Ingredient, where: i.id in subquery(grain_ids)))
+
+    Repo.delete_all(
+      from(p in Party,
+        where:
+          like(p.name, ^pattern) and
+            p.id not in subquery(
+              from(m in Movement,
+                where: not is_nil(m.partner_party_id),
+                select: m.partner_party_id
+              )
+            ) and
+            p.id not in subquery(
+              from(l in IngredientLot,
+                where: not is_nil(l.supplier_party_id),
+                select: l.supplier_party_id
+              )
+            ) and
+            p.id not in subquery(from(r in Product, select: r.maltster_party_id)) and
+            p.id not in subquery(from(o in SupplierOffer, select: o.supplier_party_id))
+      )
+    )
   end
 
   # Every board's lists, and every list's cards, numbered 1, 2, 3, … again.
@@ -995,6 +1080,79 @@ defmodule RockcutApi.Seeds.Synthetic do
     {:ok, _} = Production.reorder_templates(ids ++ others)
     seed_batches(u, today)
     :ok
+  end
+
+  ## Grain inventory (D60)
+
+  # {lot number, received (days ago), sacks}
+  @seed_lots [{"Rahr 2-Row A", 30, 3}, {"Rahr 2-Row B", 7, 10}]
+
+  defp seed_inventory(u, today) do
+    seed_party!("#{@seed_tag} Mountain Brewing", "partner_brewery")
+    bsg = Repo.get_by(Party, name: "BSG")
+
+    product =
+      Repo.one(
+        from(p in Product,
+          join: i in assoc(p, :ingredient),
+          join: m in assoc(p, :maltster),
+          where: i.name == "2-Row" and m.name == "Rahr" and is_nil(p.name),
+          preload: :feature_values
+        )
+      )
+
+    if product && bsg do
+      for {number, days_ago, sacks} <- @seed_lots do
+        received = Date.add(today, -days_ago)
+        sack = Decimal.new(55)
+
+        lot =
+          Repo.insert!(%IngredientLot{
+            ingredient_id: product.ingredient_id,
+            product_id: product.id,
+            supplier_party_id: bsg.id,
+            sack_size_lb: sack,
+            lot_number: "#{@seed_tag} #{number}",
+            received_date: received,
+            status: "available"
+          })
+
+        for v <- product.feature_values do
+          Repo.insert!(%LotFeatureValue{
+            lot_id: lot.id,
+            feature_type_id: v.feature_type_id,
+            value: v.value
+          })
+        end
+
+        Repo.insert!(%Movement{
+          lot_id: lot.id,
+          kind: "opening",
+          quantity_lb: Decimal.mult(sack, sacks),
+          occurred_on: received,
+          note: "#{@seed_tag} Opening amount",
+          entered_by_id: u["brewer1"].id
+        })
+      end
+    else
+      Logger.info("Synthetic setup: no Rahr 2-Row or BSG (grain reference data); no [SEED] lots.")
+    end
+  end
+
+  defp seed_party!(name, role) do
+    party =
+      case Repo.get_by(Party, name: name) do
+        nil -> Repo.insert!(%Party{name: name})
+        %Party{active: true} = party -> party
+        party -> party |> Ecto.Changeset.change(active: true) |> Repo.update!()
+      end
+
+    Repo.insert!(%PartyRole{party_id: party.id, role: role},
+      on_conflict: :nothing,
+      conflict_target: [:party_id, :role]
+    )
+
+    party
   end
 
   ## Production schedule (D47)

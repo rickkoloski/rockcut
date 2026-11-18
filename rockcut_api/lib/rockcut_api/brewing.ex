@@ -18,6 +18,11 @@ defmodule RockcutApi.Brewing do
     BatchLogEntry
   }
 
+  # D60: a lot's specs are feature values, rendered as a map by feature key;
+  # its maltster product names it ("Rahr · lot #" in the recipe lot picker).
+  @lot_features [feature_values: :feature_type, product: [:maltster, :ingredient]]
+  @lot_with_category [{:ingredient, :category} | @lot_features]
+
   # ── Ingredient Categories ──────────────────────────────────────────
 
   def list_ingredient_categories do
@@ -34,22 +39,64 @@ defmodule RockcutApi.Brewing do
 
   # D55 lead decisions 6 (gap 8): a `sort_order` that is null or "" (or
   # missing on create) puts the category at the end, as for fields (§2.10).
+  # D60 lead decisions 2: the end among its siblings (a new Grains child after
+  # Grains' other children; a top-level category after the top level).
   def create_ingredient_category(attrs) do
     %IngredientCategory{sort_order: nil}
     |> IngredientCategory.changeset(attrs)
-    |> put_end_sort_order(IngredientCategory, nil)
+    |> put_end_category_order()
     |> Repo.insert()
   end
 
   def update_ingredient_category(%IngredientCategory{} = category, attrs) do
     category
     |> IngredientCategory.changeset(attrs)
-    |> put_end_sort_order(IngredientCategory, nil)
+    |> put_end_category_order()
     |> Repo.update()
   end
 
+  @doc """
+  Delete a category with no ingredients and no sub-categories; otherwise a
+  422 saying what to move first (D60 lead decisions 2, gap 12: was a 500).
+  """
   def delete_ingredient_category(%IngredientCategory{} = category) do
-    Repo.delete(category)
+    category = Repo.preload(category, :parent)
+    grains? = category.name == "Grains" or (category.parent && category.parent.name == "Grains")
+    what = if grains?, do: "grains", else: "ingredients"
+
+    cond do
+      Repo.exists?(from(c in IngredientCategory, where: c.parent_id == ^category.id)) ->
+        {:error,
+         {:invalid, %{base: ["This category has sub-categories; move or delete them first"]}}}
+
+      Repo.exists?(from(i in Ingredient, where: i.category_id == ^category.id)) ->
+        {:error, {:invalid, %{base: ["This category has #{what}; move them first"]}}}
+
+      true ->
+        Repo.delete(category)
+    end
+  end
+
+  defp put_end_category_order(changeset) do
+    if is_nil(Ecto.Changeset.get_field(changeset, :sort_order)) do
+      parent_id = Ecto.Changeset.get_field(changeset, :parent_id)
+      id = Ecto.Changeset.get_field(changeset, :id)
+
+      last =
+        IngredientCategory
+        |> then(fn q ->
+          if parent_id,
+            do: where(q, [c], c.parent_id == ^parent_id),
+            else: where(q, [c], is_nil(c.parent_id))
+        end)
+        |> then(fn q -> if id, do: where(q, [c], c.id != ^id), else: q end)
+        |> select([c], max(c.sort_order))
+        |> Repo.one()
+
+      Ecto.Changeset.put_change(changeset, :sort_order, if(last, do: last + 1, else: 0))
+    else
+      changeset
+    end
   end
 
   # ── Category Field Definitions ─────────────────────────────────────
@@ -89,9 +136,12 @@ defmodule RockcutApi.Brewing do
 
   def list_ingredients(params \\ %{}) do
     Ingredient
-    |> maybe_filter_by(:category_id, params)
+    |> filter_category(params["category_id"] || params[:category_id])
     |> order_by(:name)
-    |> preload([:category, lots: ^from(l in IngredientLot, order_by: [desc: l.received_date])])
+    |> preload([
+      :category,
+      lots: ^from(l in IngredientLot, order_by: [desc: l.received_date], preload: ^@lot_features)
+    ])
     |> Repo.all()
   end
 
@@ -100,7 +150,7 @@ defmodule RockcutApi.Brewing do
     |> Repo.get!(id)
     |> Repo.preload([
       :category,
-      lots: from(l in IngredientLot, order_by: [desc: l.received_date])
+      lots: from(l in IngredientLot, order_by: [desc: l.received_date], preload: ^@lot_features)
     ])
   end
 
@@ -129,28 +179,28 @@ defmodule RockcutApi.Brewing do
     |> maybe_filter_by(:ingredient_id, params)
     |> maybe_filter_by(:status, params)
     |> order_by([l], desc: l.received_date)
-    |> preload(ingredient: :category)
+    |> preload(^@lot_with_category)
     |> Repo.all()
   end
 
   def get_ingredient_lot!(id) do
     IngredientLot
     |> Repo.get!(id)
-    |> Repo.preload(ingredient: :category)
+    |> Repo.preload(@lot_with_category)
   end
 
   def create_ingredient_lot(attrs) do
     %IngredientLot{}
     |> IngredientLot.changeset(attrs)
     |> Repo.insert()
-    |> preload_on_ok(ingredient: :category)
+    |> preload_on_ok(@lot_with_category)
   end
 
   def update_ingredient_lot(%IngredientLot{} = lot, attrs) do
     lot
     |> IngredientLot.changeset(attrs)
     |> Repo.update()
-    |> preload_on_ok(ingredient: :category)
+    |> preload_on_ok(@lot_with_category)
   end
 
   def delete_ingredient_lot(%IngredientLot{} = lot) do
@@ -207,7 +257,7 @@ defmodule RockcutApi.Brewing do
       :water_profile,
       recipe_ingredients:
         {from(ri in RecipeIngredient, order_by: ri.sort_order),
-         lot: {from(l in IngredientLot), ingredient: :category}},
+         lot: {from(l in IngredientLot), @lot_with_category}},
       mash_steps: from(ms in MashStep, order_by: ms.step_number),
       process_steps: from(ps in RecipeProcessStep, order_by: ps.step_number)
     ])
@@ -237,14 +287,14 @@ defmodule RockcutApi.Brewing do
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
     |> order_by(:sort_order)
-    |> preload(lot: [ingredient: :category])
+    |> preload(^[lot: @lot_with_category])
     |> Repo.all()
   end
 
   def get_recipe_ingredient!(id) do
     RecipeIngredient
     |> Repo.get!(id)
-    |> Repo.preload(lot: [ingredient: :category])
+    |> Repo.preload(lot: @lot_with_category)
   end
 
   # D55 §2.5 (task 4981): a `sort_order` that is null (or missing on create)
@@ -254,7 +304,7 @@ defmodule RockcutApi.Brewing do
     |> RecipeIngredient.changeset(attrs)
     |> put_end_sort_order(RecipeIngredient, :recipe_id)
     |> Repo.insert()
-    |> preload_on_ok(lot: [ingredient: :category])
+    |> preload_on_ok(lot: @lot_with_category)
   end
 
   def update_recipe_ingredient(%RecipeIngredient{} = ri, attrs) do
@@ -262,7 +312,7 @@ defmodule RockcutApi.Brewing do
     |> RecipeIngredient.changeset(attrs)
     |> put_end_sort_order(RecipeIngredient, :recipe_id)
     |> Repo.update()
-    |> preload_on_ok(lot: [ingredient: :category])
+    |> preload_on_ok(lot: @lot_with_category)
   end
 
   # A nil `sort_order` becomes one after the last row with the same `parent`
@@ -470,6 +520,14 @@ defmodule RockcutApi.Brewing do
   def delete_batch_log_entry(%BatchLogEntry{} = entry), do: Repo.delete(entry)
 
   # ── Helpers ────────────────────────────────────────────────────────
+
+  # D60 §3.1: a parent category includes its children's ingredients.
+  defp filter_category(query, value) when value in [nil, ""], do: query
+
+  defp filter_category(query, id) do
+    children = from(c in IngredientCategory, where: c.parent_id == ^id, select: c.id)
+    where(query, [i], i.category_id == ^id or i.category_id in subquery(children))
+  end
 
   defp maybe_filter_by(query, field, params) do
     key = to_string(field)

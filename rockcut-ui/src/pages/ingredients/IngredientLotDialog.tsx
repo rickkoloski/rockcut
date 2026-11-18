@@ -1,86 +1,66 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { TextField, FormControl, InputLabel, Select, MenuItem } from '@mui/material'
-import type { IngredientLot } from '../../lib/types'
+import type { FeatureType, IngredientLot, IngredientLotSummary, Party } from '../../lib/types'
+import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import FormDialog from '../../components/FormDialog'
+import DecimalInput from '../../components/DecimalInput'
 import parseApiError from '../../lib/parseApiError'
+import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 
 interface IngredientLotDialogProps {
   open: boolean
   onClose: () => void
   ingredientId: number
-  categoryName?: string
-  lot?: IngredientLot
+  /** The ingredient's category: which specs the lot has (Hops: alpha acid; Yeast: attenuation). */
+  categoryId?: number | null
+  lot?: IngredientLot | IngredientLotSummary
 }
 
-export default function IngredientLotDialog({ open, onClose, ingredientId, categoryName, lot }: IngredientLotDialogProps) {
-  const isGrains = categoryName === 'Grains'
-  const [lotNumber, setLotNumber] = useState('')
-  const [supplier, setSupplier] = useState('')
-  const [receivedDate, setReceivedDate] = useState('')
-  const [status, setStatus] = useState('available')
-  const [alphaAcid, setAlphaAcid] = useState('')
-  const [colorLovibond, setColorLovibond] = useState('')
-  const [extractPotentialFgdb, setExtractPotentialFgdb] = useState('')
-  const [attenuation, setAttenuation] = useState('')
-  const [maltster, setMaltster] = useState('')
-  const [proteinPerc, setProteinPerc] = useState('')
-  const [moisturePerc, setMoisturePerc] = useState('')
-  const [diastaticPower, setDiastaticPower] = useState('')
-  const [orderName, setOrderName] = useState('')
-  const [orderUnitSize, setOrderUnitSize] = useState('')
-  const [notes, setNotes] = useState('')
+/**
+ * A lot of an ingredient that isn't a grain (grain lots are added on their
+ * maltster product's page, D60). D60: its specs are feature values (alpha
+ * acid, attenuation) and the supplier is a company; until D62 nothing else
+ * changes.
+ */
+export default function IngredientLotDialog(props: IngredientLotDialogProps) {
+  return props.open ? <IngredientLotForm {...props} /> : null
+}
+
+function IngredientLotForm({ onClose, ingredientId, categoryId, lot }: IngredientLotDialogProps) {
+  const [lotNumber, setLotNumber] = useState(lot?.lot_number ?? '')
+  const [supplierId, setSupplierId] = useState<number | ''>(lot?.supplier_party_id ?? '')
+  const [receivedDate, setReceivedDate] = useState(lot?.received_date ?? '')
+  const [status, setStatus] = useState(lot?.status ?? 'available')
+  const [notes, setNotes] = useState(lot?.notes ?? '')
+  const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
+  const featureTypes = typesFor(types, categoryId)
+  const shown = drafts ?? draftsFrom(lot?.features, featureTypes)
+  const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === lot?.supplier_party_id))
+
   const createLot = useApiCreate<IngredientLot>('/api/ingredient_lots', {
-    invalidateKeys: [['ingredient', ingredientId]],
+    invalidateKeys: [['ingredient', ingredientId], ['ingredients']],
   })
 
   const updateLot = useApiUpdate<IngredientLot>(
     (id) => `/api/ingredient_lots/${id}`,
-    { invalidateKeys: [['ingredient', ingredientId]] }
+    { invalidateKeys: [['ingredient', ingredientId], ['ingredients']] }
   )
-
-  useEffect(() => {
-    if (open) {
-      setError(null)
-      setLotNumber(lot?.lot_number ?? '')
-      setSupplier(lot?.supplier ?? '')
-      setReceivedDate(lot?.received_date ?? '')
-      setStatus(lot?.status ?? 'available')
-      setAlphaAcid(lot?.alpha_acid != null ? String(lot.alpha_acid) : '')
-      setColorLovibond(lot?.color_lovibond != null ? String(lot.color_lovibond) : '')
-      setExtractPotentialFgdb(lot?.extract_potential_fgdb != null ? String(lot.extract_potential_fgdb) : '')
-      setAttenuation(lot?.attenuation != null ? String(lot.attenuation) : '')
-      setMaltster(lot?.maltster ?? '')
-      setProteinPerc(lot?.protein_perc != null ? String(lot.protein_perc) : '')
-      setMoisturePerc(lot?.moisture_perc != null ? String(lot.moisture_perc) : '')
-      setDiastaticPower(lot?.diastatic_power_linter != null ? String(lot.diastatic_power_linter) : '')
-      setOrderName(lot?.order_name ?? '')
-      setOrderUnitSize(lot?.order_unit_size ?? '')
-      setNotes(lot?.notes ?? '')
-    }
-  }, [open, lot])
 
   const handleSubmit = async () => {
     try {
       const payload: Record<string, unknown> = {
         ingredient_id: ingredientId,
         lot_number: lotNumber || null,
-        supplier: supplier || null,
+        supplier_party_id: supplierId || null,
         received_date: receivedDate || null,
         status,
-        alpha_acid: alphaAcid ? Number(alphaAcid) : null,
-        color_lovibond: colorLovibond ? Number(colorLovibond) : null,
-        extract_potential_fgdb: extractPotentialFgdb ? Number(extractPotentialFgdb) : null,
-        attenuation: attenuation ? Number(attenuation) : null,
-        maltster: maltster || null,
-        protein_perc: proteinPerc ? Number(proteinPerc) : null,
-        moisture_perc: moisturePerc ? Number(moisturePerc) : null,
-        diastatic_power_linter: diastaticPower ? Number(diastaticPower) : null,
-        order_name: orderName || null,
-        order_unit_size: orderUnitSize || null,
         notes: notes || null,
+        features: featuresPayload(shown, lot?.features),
       }
 
       if (lot) {
@@ -98,39 +78,52 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
 
   return (
     <FormDialog
-      open={open}
+      open
+      phone
       onClose={onClose}
       title={lot ? 'Edit Lot' : 'Add Lot'}
       onSubmit={handleSubmit}
       loading={loading}
       error={error}
+      submitDisabled={!draftsValid(shown, featureTypes)}
+      testId="ingredient-lot-dialog"
     >
       <TextField
         label="Lot Number"
         value={lotNumber}
         onChange={(e) => setLotNumber(e.target.value)}
         fullWidth
-        margin="normal"
       />
-      <TextField
-        label="Supplier"
-        value={supplier}
-        onChange={(e) => setSupplier(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
+      <FormControl fullWidth>
+        <InputLabel id="lot-supplier-label">Supplier</InputLabel>
+        <Select
+          labelId="lot-supplier-label"
+          id="lot-supplier"
+          value={suppliers.length ? supplierId : ''}
+          label="Supplier"
+          onChange={(e) => setSupplierId(e.target.value as number | '')}
+        >
+          <MenuItem value="">
+            <em>None</em>
+          </MenuItem>
+          {suppliers.map((p) => (
+            <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>
+          ))}
+        </Select>
+      </FormControl>
       <TextField
         label="Received Date"
         type="date"
         value={receivedDate}
         onChange={(e) => setReceivedDate(e.target.value)}
         fullWidth
-        margin="normal"
         slotProps={{ inputLabel: { shrink: true } }}
       />
-      <FormControl fullWidth margin="normal">
-        <InputLabel>Status</InputLabel>
+      <FormControl fullWidth>
+        <InputLabel id="lot-status-label">Status</InputLabel>
         <Select
+          labelId="lot-status-label"
+          id="lot-status"
           value={status}
           label="Status"
           onChange={(e) => setStatus(e.target.value)}
@@ -140,94 +133,16 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
           <MenuItem value="expired">Expired</MenuItem>
         </Select>
       </FormControl>
-      <TextField
-        label="Color (Lovibond)"
-        type="number"
-        slotProps={{ htmlInput: { min: 0, max: 1000, step: 'any' } }}
-        value={colorLovibond}
-        onChange={(e) => setColorLovibond(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Extract % FGDB"
-        type="number"
-        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
-        value={extractPotentialFgdb}
-        onChange={(e) => setExtractPotentialFgdb(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Maltster"
-        value={maltster}
-        onChange={(e) => setMaltster(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Protein %"
-        type="number"
-        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
-        value={proteinPerc}
-        onChange={(e) => setProteinPerc(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Moisture %"
-        type="number"
-        slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
-        value={moisturePerc}
-        onChange={(e) => setMoisturePerc(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Diastatic Power (°Lintner)"
-        type="number"
-        slotProps={{ htmlInput: { min: 0, max: 1000, step: 'any' } }}
-        value={diastaticPower}
-        onChange={(e) => setDiastaticPower(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Order Name"
-        value={orderName}
-        onChange={(e) => setOrderName(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      <TextField
-        label="Order Unit Size"
-        value={orderUnitSize}
-        onChange={(e) => setOrderUnitSize(e.target.value)}
-        fullWidth
-        margin="normal"
-      />
-      {!isGrains && (
-        <TextField
-          label="Alpha Acid (%)"
-          type="number"
-          slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
-          value={alphaAcid}
-          onChange={(e) => setAlphaAcid(e.target.value)}
+      {featureTypes.map((t) => (
+        <DecimalInput
+          key={t.key}
+          label={`${t.label} (${t.unit_label})`}
+          value={shown[t.key]?.text ?? ''}
+          onChange={(text) => setDrafts({ ...shown, [t.key]: { text, entered_value: null, entered_unit: null } })}
           fullWidth
-          margin="normal"
+          slotProps={{ htmlInput: { 'data-testid': `feature-${t.key}` } }}
         />
-      )}
-      {!isGrains && (
-        <TextField
-          label="Attenuation (%)"
-          type="number"
-          slotProps={{ htmlInput: { min: 0, max: 100, step: 'any' } }}
-          value={attenuation}
-          onChange={(e) => setAttenuation(e.target.value)}
-          fullWidth
-          margin="normal"
-        />
-      )}
+      ))}
       <TextField
         label="Notes"
         value={notes}
@@ -235,7 +150,6 @@ export default function IngredientLotDialog({ open, onClose, ingredientId, categ
         multiline
         rows={3}
         fullWidth
-        margin="normal"
       />
     </FormDialog>
   )

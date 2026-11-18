@@ -17,6 +17,8 @@ import PageHeader from '../../components/PageHeader';
 import StatusChip from '../../components/StatusChip';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useApiQuery } from '../../hooks/useApiQuery';
+import { useRecipeEstimates } from '../../hooks/useRecipeEstimates';
+import { formatIbu, formatOg } from '../../lib/recipeEstimates';
 import { useApiDelete } from '../../hooks/useApiMutation';
 import RecipeFormDialog from './RecipeFormDialog';
 import GrainBillTab from './tabs/GrainBillTab';
@@ -46,6 +48,9 @@ export default function RecipeDetail() {
     { invalidateKeys: [['recipes', { brand_id: brandId }]] },
   );
 
+  // D60 gap 7: the grain bill's writes invalidate ['recipe', id], which refreshes this.
+  const { data: estimates } = useRecipeEstimates(['recipe', recipeId, 'estimates'], [recipeId]);
+  const estimate = estimates?.[recipeId];
   const [tabIndex, setTabIndex] = useState(0);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -108,6 +113,12 @@ export default function RecipeDetail() {
           </Typography>
           <Typography variant="body2">
             <strong>Efficiency:</strong> {recipe.efficiency_target ?? '—'}%
+          </Typography>
+          <Typography variant="body2" data-testid="recipe-est-og">
+            <strong>Est. OG:</strong> {formatOg(estimate?.og)}
+          </Typography>
+          <Typography variant="body2" data-testid="recipe-est-ibu">
+            <strong>Est. IBU:</strong> {formatIbu(estimate?.ibu)}
           </Typography>
           <StatusChip status={recipe.status} domain="recipe" />
         </Box>

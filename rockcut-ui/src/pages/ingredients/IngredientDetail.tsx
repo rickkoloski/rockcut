@@ -1,12 +1,16 @@
 import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { Paper, Typography, Grid, Box, Button, IconButton, Tooltip, Alert, CircularProgress } from '@mui/material'
+import { Paper, Typography, Grid, Box, Button, IconButton, Tooltip, Alert, CircularProgress, List, ListItemButton, ListItemText } from '@mui/material'
 import EditIcon from '@mui/icons-material/Edit'
 import DeleteIcon from '@mui/icons-material/Delete'
 import type { GridColDef } from '@mui/x-data-grid'
 import { DataGridExtended } from 'datagrid-extended'
-import type { Ingredient, IngredientLotSummary } from '../../lib/types'
-import { useApiQuery } from '../../hooks/useApiQuery'
+import type { FeatureType, Ingredient, IngredientCategory, IngredientLotSummary, IngredientProduct } from '../../lib/types'
+import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
+import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
+import { formatFeature } from '../../lib/brewingUnits'
+import { grainCategories, onHandText, typesFor } from '../../lib/ingredientFeatures'
+import ProductDialog from './ProductDialog'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import PageHeader from '../../components/PageHeader'
 import StatusChip from '../../components/StatusChip'
@@ -24,6 +28,8 @@ export default function IngredientDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [lotDialogOpen, setLotDialogOpen] = useState(false)
   const [editingLot, setEditingLot] = useState<IngredientLotSummary | undefined>()
+  const [productOpen, setProductOpen] = useState(false)
+  const { mode } = useQuantityDisplay()
 
   const ingredientId = Number(id)
 
@@ -34,14 +40,34 @@ export default function IngredientDetail() {
     { retry: retryUnless404 }
   )
 
+  const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
+  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  // D60: a grain (in a child of Grains) has maltster products; its lots belong to them.
+  const { grains: grainsCategory } = grainCategories(categories)
+  const category = categories.find((c) => c.id === ingredient?.category_id)
+  const isGrain = !!grainsCategory && (category?.id === grainsCategory.id || category?.parent_id === grainsCategory.id)
+  const { data: products = [] } = useApiList<IngredientProduct>(
+    ['ingredient_products', { ingredient_id: ingredientId }],
+    '/api/ingredient_products',
+    { ingredient_id: ingredientId },
+    { enabled: isGrain },
+  )
+  const lotTypes = typesFor(types, category?.id, category?.parent_id)
+
   const deleteIngredient = useApiDelete(
     (delId) => `/api/ingredients/${delId}`,
     { invalidateKeys: [['ingredients']] }
   )
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   const handleDelete = async () => {
-    await deleteIngredient.mutateAsync(ingredientId)
-    navigate('/ingredients')
+    try {
+      await deleteIngredient.mutateAsync(ingredientId)
+      navigate('/ingredients')
+    } catch (err) {
+      setDeleteOpen(false)
+      setDeleteError(parseApiError(err))
+    }
   }
 
   const handleEditLot = (lot: IngredientLotSummary) => {
@@ -56,17 +82,20 @@ export default function IngredientDetail() {
 
   const lotColumns: GridColDef[] = [
     { field: 'lot_number', headerName: 'Lot Number', flex: 1 },
-    { field: 'supplier', headerName: 'Supplier', flex: 1 },
+    { field: 'received_date', headerName: 'Received', flex: 1 },
     {
       field: 'status',
       headerName: 'Status',
       flex: 1,
       renderCell: (params) => <StatusChip status={params.value} domain="lot" />,
     },
-    { field: 'alpha_acid', headerName: 'Alpha Acid', flex: 1 },
-    { field: 'color_lovibond', headerName: 'Color (L)', flex: 1 },
-    { field: 'extract_potential_fgdb', headerName: 'Extract % FGDB', flex: 1 },
-    { field: 'attenuation', headerName: 'Attenuation', flex: 1 },
+    // D60: the specs are feature values (alpha acid for hops, attenuation for yeast).
+    ...lotTypes.map((t): GridColDef => ({
+      field: `feature_${t.key}`,
+      headerName: `${t.label} (${t.unit_label})`,
+      flex: 1,
+      valueGetter: (_value, row: IngredientLotSummary) => formatFeature(row.features?.[t.key]?.value, t.decimals),
+    })),
   ]
 
   // D55 lead decisions 6 (gap 10): an ingredient that doesn't exist says so.
@@ -125,6 +154,34 @@ export default function IngredientDetail() {
         </Grid>
       </Paper>
 
+      {deleteError && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDeleteError(null)}>{deleteError}</Alert>}
+
+      {isGrain ? (
+        <>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Typography variant="h6">Maltster products</Typography>
+            <Button variant="outlined" onClick={() => setProductOpen(true)} data-testid="grain-add-product">
+              Add maltster product
+            </Button>
+          </Box>
+          <Paper variant="outlined" sx={{ mb: 3 }}>
+            {products.length === 0 ? (
+              <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+                No maltster products yet. Lots are added on a maltster product.
+              </Typography>
+            ) : (
+              <List disablePadding>
+                {products.map((p) => (
+                  <ListItemButton key={p.id} divider onClick={() => navigate(`/ingredients/products/${p.id}`)}>
+                    <ListItemText primary={p.display_name} secondary={`On hand: ${onHandText(p, mode)}`} />
+                  </ListItemButton>
+                ))}
+              </List>
+            )}
+          </Paper>
+        </>
+      ) : (
+      <>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="h6">Lots</Typography>
         <Button variant="outlined" onClick={handleAddLot}>
@@ -143,12 +200,16 @@ export default function IngredientDetail() {
           sx={{ '& .MuiDataGrid-row': { cursor: 'pointer' } }}
         />
       </Paper>
+      </>
+      )}
 
       <IngredientFormDialog
         open={editOpen}
         onClose={() => setEditOpen(false)}
         ingredient={ingredient}
       />
+
+      <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} />
 
       <ConfirmDialog
         open={deleteOpen}
@@ -166,8 +227,8 @@ export default function IngredientDetail() {
           setEditingLot(undefined)
         }}
         ingredientId={ingredientId}
-        categoryName={ingredient.category?.name}
-        lot={editingLot as any}
+        categoryId={ingredient.category_id}
+        lot={editingLot}
       />
     </>
   )

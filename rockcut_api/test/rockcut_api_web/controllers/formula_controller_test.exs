@@ -2,6 +2,7 @@ defmodule RockcutApiWeb.FormulaControllerTest do
   use RockcutApiWeb.ConnCase
 
   alias RockcutApi.Brewing
+  import RockcutApi.IngredientFixtures
 
   # ── Auth helpers ───────────────────────────────────────────────────
 
@@ -28,17 +29,19 @@ defmodule RockcutApiWeb.FormulaControllerTest do
       Brewing.create_ingredient_lot(%{
         ingredient_id: cascade.id,
         lot_number: "HOP-001",
-        status: "available",
-        alpha_acid: Decimal.new("5.5")
+        status: "available"
       })
+
+    lot_features!(hop_lot, alpha_acid_pct: "5.5")
 
     {:ok, grain_lot} =
       Brewing.create_ingredient_lot(%{
         ingredient_id: pale_malt.id,
         lot_number: "GRAIN-001",
-        status: "available",
-        extract_potential_fgdb: Decimal.new("80.0")
+        status: "available"
       })
+
+    lot_features!(grain_lot, extract_fgdb: "80.0")
 
     # Create brand and recipe
     {:ok, brand} = Brewing.create_brand(%{name: "Test IPA"})

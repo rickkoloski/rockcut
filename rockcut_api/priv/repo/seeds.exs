@@ -1,3 +1,4 @@
+import Ecto.Query, only: [from: 2]
 alias RockcutApi.Repo
 alias RockcutApi.Brewing.IngredientCategory
 alias RockcutApi.Brewing.CategoryFieldDefinition
@@ -30,9 +31,7 @@ category_ids =
 # Seed category field definitions (idempotent)
 field_defs =
   [
-    # Grains
-    {category_ids["Grains"], "Origin", "text", nil, false, 0},
-    {category_ids["Grains"], "Maltster", "text", nil, false, 1},
+    # Grains: none (D60 decision 2 dropped Origin and Maltster).
     # Hops
     {category_ids["Hops"], "Form", "dropdown", "Pellet, Whole Leaf, Cryo, Extract", false, 0},
     {category_ids["Hops"], "Origin", "text", nil, false, 1},
@@ -86,14 +85,67 @@ grain_names = [
   "Wheat, Extra Pale", "Wheat, Torrified", "Wheat, Munich", "Wheat, White"
 ]
 
+# D60 §3.1: Grains' five children, in this order.
+grain_children = ["Base", "Crystal/Caramel", "Kilned", "Specialty", "Roasted"]
+
+grain_children
+|> Enum.with_index()
+|> Enum.each(fn {name, sort_order} ->
+  if is_nil(Repo.get_by(IngredientCategory, name: name)) do
+    Repo.insert!(%IngredientCategory{name: name, sort_order: sort_order, parent_id: category_ids["Grains"]})
+  end
+end)
+
+grain_category_ids =
+  Repo.all(
+    from c in IngredientCategory,
+      where: c.id == ^category_ids["Grains"] or c.parent_id == ^category_ids["Grains"],
+      select: c.id
+  )
+
+# A grain is on Grains or one of its children; only names on neither are new
+# (the unique index is name + category, so a moved grain would come back).
+existing_grains =
+  Repo.all(from i in Ingredient, where: i.category_id in ^grain_category_ids, select: i.name)
+  |> MapSet.new()
+
 grain_ingredients =
   grain_names
+  |> Enum.reject(&MapSet.member?(existing_grains, &1))
   |> Enum.map(fn name ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     %{category_id: category_ids["Grains"], name: name, notes: nil, inserted_at: now, updated_at: now}
   end)
 
 Repo.insert_all(Ingredient, grain_ingredients, on_conflict: :nothing, conflict_target: [:name, :category_id])
+
+# D60 Appendix A: each grain's child category. Only grains still on the
+# Grains parent move, so a later move by hand sticks.
+grain_child_of = %{
+  "Base" => [
+    "2-Row", "English Pale", "Maris Otter", "Pilsner", "Pilsner-Barke", "Vienna Malt",
+    "Munich 4", "Munich 10", "Munich Barke", "Munich Malt 1", "Munich Malt 2",
+    "Wheat, Extra Pale", "Wheat, White", "Wheat, Munich", "Rye Malt", "Oats, Malted"
+  ],
+  "Crystal/Caramel" => [
+    "Caramunich 1", "Caramunich 2", "Caramunich 3", "CaraRed", "CaraRuby",
+    "Crystal Light (36L-43L)", "Crystal Medium (63L-72L)", "Crystal Dark (94L-107L)",
+    "Special B", "Dextrin"
+  ],
+  "Kilned" => ["Biscuit", "Melanoidin Malt", "Honey Malt"],
+  "Specialty" => ["Acidulated", "Beech Smoked Malt", "Oats, Flaked", "Wheat, Torrified"],
+  "Roasted" => [
+    "Barley, Roasted", "Black Malt", "Chocolate Malt", "Carafa 3 - dehusked", "Brown Malt"
+  ]
+}
+
+for {child, names} <- grain_child_of,
+    %IngredientCategory{id: child_id} <- [Repo.get_by(IngredientCategory, name: child)] do
+  Repo.update_all(
+    from(i in Ingredient, where: i.category_id == ^category_ids["Grains"] and i.name in ^names),
+    set: [category_id: child_id]
+  )
+end
 
 other_ingredients =
   [
@@ -122,16 +174,51 @@ other_ingredients =
 
 Repo.insert_all(Ingredient, other_ingredients, on_conflict: :nothing, conflict_target: [:name, :category_id])
 
-IO.puts(
-  "Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, " <>
-    "#{length(grain_ingredients) + length(other_ingredients)} ingredients (no lots)"
+# D60 §3.4: which features each category's lots and products carry (a
+# parent's apply to its children). Grains: five, none required.
+alias RockcutApi.Ingredients.{CategoryFeatureType, FeatureType}
+
+feature_type_ids = Repo.all(FeatureType) |> Map.new(fn f -> {f.key, f.id} end)
+
+applicability =
+  [
+    {"Grains", ~w(extract_fgdb color_lovibond diastatic_power_lintner protein_pct moisture_pct)},
+    {"Hops", ~w(alpha_acid_pct)},
+    {"Yeast Strains", ~w(attenuation_pct)}
+  ]
+  |> Enum.flat_map(fn {category, keys} ->
+    now = DateTime.utc_now() |> DateTime.truncate(:second)
+
+    keys
+    |> Enum.with_index()
+    |> Enum.map(fn {key, sort_order} ->
+      %{
+        category_id: category_ids[category],
+        feature_type_id: Map.fetch!(feature_type_ids, key),
+        sort_order: sort_order,
+        required: false,
+        inserted_at: now,
+        updated_at: now
+      }
+    end)
+  end)
+
+Repo.insert_all(CategoryFeatureType, applicability,
+  on_conflict: :nothing,
+  conflict_target: [:category_id, :feature_type_id]
 )
 
+IO.puts(
+  "Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, " <>
+    "#{length(grain_ingredients) + length(other_ingredients)} new ingredients (no lots)"
+)
+
+# D60 §6: maltsters, suppliers, maltster products and supplier offers.
+Code.eval_file(Path.join(__DIR__, "seeds/grain_reference.exs"))
+
 # Ingredient LOTS are intentionally NOT seeded (D28): prod starts with an empty
-# inventory, and the ingredient catalog above is the only brewing reference data.
-# The malt spec data that used to live on lots (moisture/FGDB/protein/color/
-# diastatic) is deferred — see PortableMind Product Backlog task 3843. The prior
-# lot dataset remains in git history on the `scheduler-pwa` branch if needed.
+# inventory. D60 (task 3843): the malt specs that used to live on lots are the
+# maltster products' standard specs in `seeds/grain_reference.exs`.
 
 # ── Accounts: departments + bootstrap owner (idempotent) ─────────────
 alias RockcutApi.Accounts
@@ -207,7 +294,6 @@ end
 # The migration adds them when the Brewery already exists; a fresh DB gets the
 # department above, so they're added here. Only when the Brewery has none.
 alias RockcutApi.Tasks.DailyItem
-import Ecto.Query, only: [from: 2]
 
 with %Department{} = brewery <- Repo.get_by(Department, key: "brewery"),
      false <- Repo.exists?(from i in DailyItem, where: i.department_id == ^brewery.id) do

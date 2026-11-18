@@ -12,8 +12,12 @@ defmodule RockcutApi.Formulas.FormulaCatalog do
   @operations [
     %{
       name: "inventory_on_hand",
-      description: "Current total quantity for an ingredient across active lots",
-      params: [%{name: "ingredient_id", type: :integer, required: true}],
+      description:
+        "On hand in lb (the sum of the lots' movements) of a maltster product or an ingredient",
+      params: [
+        %{name: "ingredient_id", type: :integer, required: false},
+        %{name: "product_id", type: :integer, required: false}
+      ],
       returns: :number,
       handler: &Functions.Inventory.on_hand/2,
       limits: %{timeout_ms: 5_000},

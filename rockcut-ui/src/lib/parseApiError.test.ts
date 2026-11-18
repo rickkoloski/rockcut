@@ -14,6 +14,16 @@ describe('parseApiError', () => {
     )
   })
 
+  it('D60: a nested map of field errors shows the messages, which name the feature (gap 1)', () => {
+    expect(parseApiError(fail(422, { errors: { features: { extract_fgdb: ['Extract must be between 0 and 100'], moisture_pct: ['Moisture is not a number'] } } }))).toBe(
+      'Extract must be between 0 and 100; Moisture is not a number',
+    )
+  })
+
+  it('D60: a base error has no field name', () => {
+    expect(parseApiError(fail(422, { errors: { base: ['This company is in use; deactivate it instead'] } }))).toBe('This company is in use; deactivate it instead')
+  })
+
   it('a plain { error } body, as before', () => {
     expect(parseApiError(fail(403, { error: 'Forbidden' }))).toBe('Forbidden')
   })
