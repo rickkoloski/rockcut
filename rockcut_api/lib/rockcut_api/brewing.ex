@@ -18,6 +18,10 @@ defmodule RockcutApi.Brewing do
     BatchLogEntry
   }
 
+  # D60: a lot's specs are feature values, rendered as a map by feature key.
+  @lot_features [feature_values: :feature_type]
+  @lot_with_category [{:ingredient, :category} | @lot_features]
+
   # ── Ingredient Categories ──────────────────────────────────────────
 
   def list_ingredient_categories do
@@ -91,7 +95,10 @@ defmodule RockcutApi.Brewing do
     Ingredient
     |> maybe_filter_by(:category_id, params)
     |> order_by(:name)
-    |> preload([:category, lots: ^from(l in IngredientLot, order_by: [desc: l.received_date])])
+    |> preload([
+      :category,
+      lots: ^from(l in IngredientLot, order_by: [desc: l.received_date], preload: ^@lot_features)
+    ])
     |> Repo.all()
   end
 
@@ -100,7 +107,7 @@ defmodule RockcutApi.Brewing do
     |> Repo.get!(id)
     |> Repo.preload([
       :category,
-      lots: from(l in IngredientLot, order_by: [desc: l.received_date])
+      lots: from(l in IngredientLot, order_by: [desc: l.received_date], preload: ^@lot_features)
     ])
   end
 
@@ -129,28 +136,28 @@ defmodule RockcutApi.Brewing do
     |> maybe_filter_by(:ingredient_id, params)
     |> maybe_filter_by(:status, params)
     |> order_by([l], desc: l.received_date)
-    |> preload(ingredient: :category)
+    |> preload(^@lot_with_category)
     |> Repo.all()
   end
 
   def get_ingredient_lot!(id) do
     IngredientLot
     |> Repo.get!(id)
-    |> Repo.preload(ingredient: :category)
+    |> Repo.preload(@lot_with_category)
   end
 
   def create_ingredient_lot(attrs) do
     %IngredientLot{}
     |> IngredientLot.changeset(attrs)
     |> Repo.insert()
-    |> preload_on_ok(ingredient: :category)
+    |> preload_on_ok(@lot_with_category)
   end
 
   def update_ingredient_lot(%IngredientLot{} = lot, attrs) do
     lot
     |> IngredientLot.changeset(attrs)
     |> Repo.update()
-    |> preload_on_ok(ingredient: :category)
+    |> preload_on_ok(@lot_with_category)
   end
 
   def delete_ingredient_lot(%IngredientLot{} = lot) do
@@ -207,7 +214,7 @@ defmodule RockcutApi.Brewing do
       :water_profile,
       recipe_ingredients:
         {from(ri in RecipeIngredient, order_by: ri.sort_order),
-         lot: {from(l in IngredientLot), ingredient: :category}},
+         lot: {from(l in IngredientLot), @lot_with_category}},
       mash_steps: from(ms in MashStep, order_by: ms.step_number),
       process_steps: from(ps in RecipeProcessStep, order_by: ps.step_number)
     ])
@@ -237,14 +244,14 @@ defmodule RockcutApi.Brewing do
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
     |> order_by(:sort_order)
-    |> preload(lot: [ingredient: :category])
+    |> preload(^[lot: @lot_with_category])
     |> Repo.all()
   end
 
   def get_recipe_ingredient!(id) do
     RecipeIngredient
     |> Repo.get!(id)
-    |> Repo.preload(lot: [ingredient: :category])
+    |> Repo.preload(lot: @lot_with_category)
   end
 
   # D55 §2.5 (task 4981): a `sort_order` that is null (or missing on create)
@@ -254,7 +261,7 @@ defmodule RockcutApi.Brewing do
     |> RecipeIngredient.changeset(attrs)
     |> put_end_sort_order(RecipeIngredient, :recipe_id)
     |> Repo.insert()
-    |> preload_on_ok(lot: [ingredient: :category])
+    |> preload_on_ok(lot: @lot_with_category)
   end
 
   def update_recipe_ingredient(%RecipeIngredient{} = ri, attrs) do
@@ -262,7 +269,7 @@ defmodule RockcutApi.Brewing do
     |> RecipeIngredient.changeset(attrs)
     |> put_end_sort_order(RecipeIngredient, :recipe_id)
     |> Repo.update()
-    |> preload_on_ok(lot: [ingredient: :category])
+    |> preload_on_ok(lot: @lot_with_category)
   end
 
   # A nil `sort_order` becomes one after the last row with the same `parent`

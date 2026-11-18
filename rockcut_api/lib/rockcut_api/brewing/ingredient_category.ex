@@ -6,7 +6,14 @@ defmodule RockcutApi.Brewing.IngredientCategory do
     field :name, :string
     field :sort_order, :integer, default: 0
 
-    has_many :field_definitions, RockcutApi.Brewing.CategoryFieldDefinition, foreign_key: :category_id
+    # D60 §3.1: Grains' five children (Base, Crystal/Caramel, ...). A parent
+    # includes its children in the lists and filters.
+    belongs_to :parent, __MODULE__
+    has_many :children, __MODULE__, foreign_key: :parent_id
+
+    has_many :field_definitions, RockcutApi.Brewing.CategoryFieldDefinition,
+      foreign_key: :category_id
+
     has_many :ingredients, RockcutApi.Brewing.Ingredient, foreign_key: :category_id
 
     timestamps(type: :utc_datetime)

@@ -1031,20 +1031,12 @@ defmodule RockcutApiWeb.JSONHelpers do
       ingredient_id: lot.ingredient_id,
       ingredient: maybe_render(lot, :ingredient, &ingredient_summary/1),
       lot_number: lot.lot_number,
-      supplier: lot.supplier,
+      product_id: lot.product_id,
+      supplier_party_id: lot.supplier_party_id,
+      sack_size_lb: lot.sack_size_lb,
       received_date: lot.received_date,
       status: lot.status,
-      alpha_acid: lot.alpha_acid,
-      color_lovibond: lot.color_lovibond,
-      attenuation: lot.attenuation,
-      extract_potential_fgdb: lot.extract_potential_fgdb,
-      maltster: lot.maltster,
-      protein_perc: lot.protein_perc,
-      moisture_perc: lot.moisture_perc,
-      diastatic_power_linter: lot.diastatic_power_linter,
-      order_name: lot.order_name,
-      order_unit_size: lot.order_unit_size,
-      properties: decode_json(lot.properties),
+      features: lot_features(lot),
       notes: lot.notes,
       inserted_at: lot.inserted_at,
       updated_at: lot.updated_at
@@ -1233,22 +1225,20 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{
       id: lot.id,
       lot_number: lot.lot_number,
-      supplier: lot.supplier,
+      product_id: lot.product_id,
+      supplier_party_id: lot.supplier_party_id,
+      sack_size_lb: lot.sack_size_lb,
       received_date: lot.received_date,
       status: lot.status,
-      alpha_acid: lot.alpha_acid,
-      color_lovibond: lot.color_lovibond,
-      attenuation: lot.attenuation,
-      extract_potential_fgdb: lot.extract_potential_fgdb,
-      maltster: lot.maltster,
-      moisture_perc: lot.moisture_perc,
-      protein_perc: lot.protein_perc,
-      diastatic_power_linter: lot.diastatic_power_linter,
-      order_name: lot.order_name,
-      order_unit_size: lot.order_unit_size,
+      features: lot_features(lot),
       notes: lot.notes
     }
   end
+
+  # D60: the lot's specs by feature key (%{"extract_fgdb" => ...}); nil
+  # when the feature values weren't loaded.
+  defp lot_features(lot),
+    do: maybe_render(lot, :feature_values, &RockcutApi.Ingredients.features_map/1)
 
   defp recipe_summary(r) do
     %{
@@ -1266,15 +1256,4 @@ defmodule RockcutApiWeb.JSONHelpers do
       value -> render_fn.(value)
     end
   end
-
-  defp decode_json(nil), do: nil
-
-  defp decode_json(str) when is_binary(str) do
-    case Jason.decode(str) do
-      {:ok, decoded} -> decoded
-      _ -> str
-    end
-  end
-
-  defp decode_json(other), do: other
 end

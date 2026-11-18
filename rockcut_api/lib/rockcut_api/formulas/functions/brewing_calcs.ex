@@ -6,6 +6,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   import Ecto.Query
 
   alias RockcutApi.Brewing.{Recipe, RecipeIngredient, IngredientLot, Ingredient, IngredientCategory}
+  alias RockcutApi.Ingredients.{FeatureType, LotFeatureValue}
 
   @default_efficiency 0.72
   @gallons_per_bbl 31.0
@@ -67,48 +68,56 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   # -- Private helpers --
 
   defp load_hop_additions(repo, recipe_id) do
-    hop_category_id = get_category_id(repo, "Hops")
+    hop_category_ids = get_category_ids(repo, ["Hops"])
 
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
     |> join(:inner, [ri], lot in IngredientLot, on: ri.lot_id == lot.id)
     |> join(:inner, [ri, lot], ing in Ingredient, on: lot.ingredient_id == ing.id)
-    |> where([ri, lot, ing], ing.category_id == ^hop_category_id)
-    |> select([ri, lot, _ing], %{
+    |> where([ri, lot, ing], ing.category_id in ^hop_category_ids)
+    |> join_feature("alpha_acid_pct")
+    |> select([ri, feature: fv], %{
       amount: ri.amount,
       unit: ri.unit,
       time_minutes: ri.time_minutes,
-      alpha_acid: lot.alpha_acid
+      alpha_acid: fv.value
     })
     |> repo.all()
   end
 
   defp load_grain_additions(repo, recipe_id) do
-    grain_category_ids = get_fermentable_category_ids(repo)
+    grain_category_ids = get_category_ids(repo, ["Grains", "Sugars and Extracts"])
 
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
     |> join(:inner, [ri], lot in IngredientLot, on: ri.lot_id == lot.id)
     |> join(:inner, [ri, lot], ing in Ingredient, on: lot.ingredient_id == ing.id)
     |> where([ri, lot, ing], ing.category_id in ^grain_category_ids)
-    |> select([ri, lot, _ing], %{
+    |> join_feature("extract_fgdb")
+    |> select([ri, feature: fv], %{
       amount: ri.amount,
       unit: ri.unit,
-      extract_potential_fgdb: lot.extract_potential_fgdb
+      extract_potential_fgdb: fv.value
     })
     |> repo.all()
   end
 
-  defp get_category_id(repo, name) do
-    IngredientCategory
-    |> where(name: ^name)
-    |> select([c], c.id)
-    |> repo.one!()
+  # D60 §3.4: the lot's value for one feature (nil when the lot has none).
+  defp join_feature(query, key) do
+    query
+    |> join(:left, [], f in FeatureType, on: f.key == ^key)
+    |> join(:left, [_ri, lot, _ing, f], fv in LotFeatureValue,
+      as: :feature,
+      on: fv.lot_id == lot.id and fv.feature_type_id == f.id
+    )
   end
 
-  defp get_fermentable_category_ids(repo) do
+  # The named categories and their children (D60: a grain is on one of
+  # Grains' children).
+  defp get_category_ids(repo, names) do
     IngredientCategory
-    |> where([c], c.name in ["Grains", "Sugars and Extracts"])
+    |> join(:left, [c], p in IngredientCategory, on: c.parent_id == p.id)
+    |> where([c, p], c.name in ^names or p.name in ^names)
     |> select([c], c.id)
     |> repo.all()
   end
