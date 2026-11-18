@@ -109,9 +109,11 @@ export default function RecipeIngredientDialog({
 
   const loading = createMutation.isPending || updateMutation.isPending;
 
+  // D60: a grain lot shows its maltster ("Rahr · L-1"); the supplier is a company now.
   const lotLabel = (lot: IngredientLot) => {
     const lotNum = lot.lot_number ?? '—';
-    const supplier = lot.supplier ?? '';
+    if (lot.product?.maltster) return `${lot.product.maltster.name} · ${lotNum}`;
+    const supplier = lot.supplier?.name ?? '';
     return `Lot# ${lotNum}${supplier ? ` (${supplier})` : ''}`;
   };
 
