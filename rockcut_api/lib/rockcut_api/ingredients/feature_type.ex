@@ -17,6 +17,8 @@ defmodule RockcutApi.Ingredients.FeatureType do
     field :max, :decimal
     field :decimals, :integer, default: 1
 
+    has_many :applicability, RockcutApi.Ingredients.CategoryFeatureType
+
     timestamps(type: :utc_datetime)
   end
 

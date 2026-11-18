@@ -9,16 +9,9 @@ defmodule RockcutApi.Ingredients do
   prices (`SupplierOffer`, `OfferPrice`) and inventory movements
   (`Movement`). Grains (`Brewing.Ingredient`), their categories and lots
   (`Brewing.IngredientLot`) stay in `RockcutApi.Brewing`.
-  """
-  alias RockcutApi.Ingredients.{LotFeatureValue, ProductFeatureValue}
 
-  @doc """
-  Feature values (preloaded with their feature type) as a map keyed by the
-  feature key: `%{"extract_fgdb" => Decimal, ...}`.
+  The API is in the submodules: `Parties`, `Products`, `Features`, `Offers`
+  and `Inventory` (lots, movements, counts). A rule they refuse is
+  `{:error, {:invalid, %{field => [message]}}}`, a 422 like a changeset's.
   """
-  def features_map(values) when is_list(values) do
-    Map.new(values, fn %struct{} = v when struct in [LotFeatureValue, ProductFeatureValue] ->
-      {v.feature_type.key, v.value}
-    end)
-  end
 end

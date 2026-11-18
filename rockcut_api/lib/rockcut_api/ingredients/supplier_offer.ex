@@ -17,6 +17,8 @@ defmodule RockcutApi.Ingredients.SupplierOffer do
     field :form, :string, default: "whole"
     field :notes, :string
     field :active, :boolean, default: true
+    # The latest price effective on or before today (`Offers.put_current_prices/1`).
+    field :current_price, :any, virtual: true
 
     belongs_to :product, RockcutApi.Ingredients.Product
     belongs_to :supplier, RockcutApi.Ingredients.Party, foreign_key: :supplier_party_id

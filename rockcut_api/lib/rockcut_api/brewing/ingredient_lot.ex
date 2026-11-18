@@ -15,6 +15,8 @@ defmodule RockcutApi.Brewing.IngredientLot do
     field :status, :string, default: "available"
     field :sack_size_lb, :decimal
     field :notes, :string
+    # D60: the sum of its movements, filled by `Ingredients.Inventory.put_on_hand/1`.
+    field :on_hand_lb, :decimal, virtual: true
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
     belongs_to :product, RockcutApi.Ingredients.Product
