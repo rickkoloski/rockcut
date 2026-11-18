@@ -986,6 +986,7 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{
       id: cat.id,
       name: cat.name,
+      parent_id: cat.parent_id,
       sort_order: cat.sort_order,
       field_definitions:
         maybe_render(
@@ -1032,16 +1033,127 @@ defmodule RockcutApiWeb.JSONHelpers do
       ingredient: maybe_render(lot, :ingredient, &ingredient_summary/1),
       lot_number: lot.lot_number,
       product_id: lot.product_id,
+      product: maybe_render(lot, :product, &product_summary/1),
       supplier_party_id: lot.supplier_party_id,
+      supplier: maybe_render(lot, :supplier, &party_summary/1),
       sack_size_lb: lot.sack_size_lb,
       received_date: lot.received_date,
       status: lot.status,
       features: lot_features(lot),
+      on_hand_lb: lot.on_hand_lb,
       notes: lot.notes,
       inserted_at: lot.inserted_at,
       updated_at: lot.updated_at
     }
   end
+
+  # ── D60 grain catalog and inventory ────────────────────────────────
+
+  def party(p) do
+    %{
+      id: p.id,
+      name: p.name,
+      notes: p.notes,
+      active: p.active,
+      roles: maybe_render(p, :roles, fn roles -> roles |> Enum.map(& &1.role) |> Enum.sort() end),
+      inserted_at: p.inserted_at,
+      updated_at: p.updated_at
+    }
+  end
+
+  def ingredient_product(p) do
+    %{
+      id: p.id,
+      ingredient_id: p.ingredient_id,
+      ingredient: maybe_render(p, :ingredient, &ingredient_summary/1),
+      category: maybe_render(p.ingredient, :category, &ingredient_category_summary/1),
+      maltster_party_id: p.maltster_party_id,
+      maltster: maybe_render(p, :maltster, &party_summary/1),
+      name: p.name,
+      display_name: RockcutApi.Ingredients.Products.display_name(p),
+      notes: p.notes,
+      active: p.active,
+      features: maybe_render(p, :feature_values, &RockcutApi.Ingredients.Features.values_map/1),
+      offers: maybe_render(p, :offers, &Enum.map(&1, fn o -> supplier_offer(o) end)),
+      on_hand_lb: p.on_hand_lb,
+      inserted_at: p.inserted_at,
+      updated_at: p.updated_at
+    }
+  end
+
+  def feature_type(t) do
+    %{
+      id: t.id,
+      key: t.key,
+      label: t.label,
+      unit_label: t.unit_label,
+      min: t.min,
+      max: t.max,
+      decimals: t.decimals,
+      entered_units: RockcutApi.Ingredients.Units.entered_units(t.key),
+      categories:
+        maybe_render(t, :applicability, fn rows ->
+          Enum.map(rows, fn a ->
+            %{
+              category_id: a.category_id,
+              name: a.category.name,
+              sort_order: a.sort_order,
+              required: a.required
+            }
+          end)
+        end)
+    }
+  end
+
+  def supplier_offer(o) do
+    %{
+      id: o.id,
+      product_id: o.product_id,
+      supplier_party_id: o.supplier_party_id,
+      supplier: maybe_render(o, :supplier, &party_summary/1),
+      order_name: o.order_name,
+      sack_size_lb: o.sack_size_lb,
+      form: o.form,
+      notes: o.notes,
+      active: o.active,
+      current_price: o.current_price && offer_price(o.current_price, o.sack_size_lb),
+      inserted_at: o.inserted_at,
+      updated_at: o.updated_at
+    }
+  end
+
+  @doc "A price per sack, with $/lb worked out from the offer's sack size."
+  def offer_price(p, sack_size_lb) do
+    %{
+      id: p.id,
+      offer_id: p.offer_id,
+      price_per_sack: p.price_per_sack,
+      price_per_lb: sack_size_lb && Decimal.round(Decimal.div(p.price_per_sack, sack_size_lb), 4),
+      effective_on: p.effective_on,
+      note: p.note,
+      entered_by: maybe_render(p, :entered_by, &person_name/1),
+      inserted_at: p.inserted_at
+    }
+  end
+
+  def inventory_movement(m) do
+    %{
+      id: m.id,
+      lot_id: m.lot_id,
+      lot_number: maybe_render(m, :lot, & &1.lot_number),
+      product_id: maybe_render(m, :lot, & &1.product_id),
+      kind: m.kind,
+      quantity_lb: m.quantity_lb,
+      occurred_on: m.occurred_on,
+      partner_party_id: m.partner_party_id,
+      partner: maybe_render(m, :partner, &party_summary/1),
+      note: m.note,
+      entered_by: maybe_render(m, :entered_by, &person_name/1),
+      inserted_at: m.inserted_at
+    }
+  end
+
+  defp person_name(u), do: %{id: u.id, name: u.name}
 
   def brand(b) do
     %{
@@ -1210,7 +1322,7 @@ defmodule RockcutApiWeb.JSONHelpers do
   # Compact renderers for nested associations
 
   defp ingredient_category_summary(cat) do
-    %{id: cat.id, name: cat.name}
+    %{id: cat.id, name: cat.name, parent_id: cat.parent_id}
   end
 
   defp ingredient_summary(ing) do
@@ -1235,10 +1347,21 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
-  # D60: the lot's specs by feature key (%{"extract_fgdb" => ...}); nil
-  # when the feature values weren't loaded.
+  # D60: specs by feature key (%{"extract_fgdb" => %{value, entered_value,
+  # entered_unit}}); nil when the feature values weren't loaded.
   defp lot_features(lot),
-    do: maybe_render(lot, :feature_values, &RockcutApi.Ingredients.features_map/1)
+    do: maybe_render(lot, :feature_values, &RockcutApi.Ingredients.Features.values_map/1)
+
+  defp party_summary(p), do: %{id: p.id, name: p.name}
+
+  defp product_summary(p) do
+    %{
+      id: p.id,
+      name: p.name,
+      display_name: RockcutApi.Ingredients.Products.display_name(p),
+      maltster: maybe_render(p, :maltster, &party_summary/1)
+    }
+  end
 
   defp recipe_summary(r) do
     %{

@@ -218,6 +218,16 @@ defmodule RockcutApiWeb.Router do
     resources "/ingredients", IngredientController, except: [:new, :edit]
     resources "/ingredient_lots", IngredientLotController, except: [:new, :edit]
 
+    # D60 grain catalog and inventory
+    resources "/parties", PartyController, except: [:new, :edit]
+    resources "/ingredient_products", IngredientProductController, except: [:new, :edit]
+    post "/ingredient_products/:id/count", IngredientProductController, :count
+    get "/feature_types", FeatureTypeController, :index
+    resources "/supplier_offers", SupplierOfferController, except: [:new, :edit]
+    get "/supplier_offers/:id/prices", SupplierOfferController, :prices
+    post "/supplier_offers/:id/prices", SupplierOfferController, :create_price
+    resources "/inventory_movements", InventoryMovementController, only: [:index, :create]
+
     # Recipe management (D50: the brands list is in the scope below)
     resources "/brands", BrandController, except: [:new, :edit, :index]
     resources "/recipes", RecipeController, except: [:new, :edit]

@@ -18,8 +18,9 @@ defmodule RockcutApi.Brewing do
     BatchLogEntry
   }
 
-  # D60: a lot's specs are feature values, rendered as a map by feature key.
-  @lot_features [feature_values: :feature_type]
+  # D60: a lot's specs are feature values, rendered as a map by feature key;
+  # its maltster product names it ("Rahr · lot #" in the recipe lot picker).
+  @lot_features [feature_values: :feature_type, product: [:maltster, :ingredient]]
   @lot_with_category [{:ingredient, :category} | @lot_features]
 
   # ── Ingredient Categories ──────────────────────────────────────────
