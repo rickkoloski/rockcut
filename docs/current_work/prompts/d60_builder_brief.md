@@ -103,3 +103,89 @@ restarted).
 - Reply with: commits (sha + subject), files touched, test counts, the seeded counts
   (categories, grains per child, products, parties, offers), and anything you weren't sure about
   prefixed `LEAD:`.
+
+---
+
+# Stage 2 (API)
+
+2026-11-17 · lead → builder. Stage 1 is in (`eb58f36`, `7544609`, `9f87a13`); the lead migrated
+and seeded the local dev DB the prod way (migrate + `seeds.exs` + synthetic setup) and it matches
+your counts. Your `LEAD:` notes are accepted: the display decimals, ranges moving to feature
+types (below), children counted in `est_og`/`est_ibu`, the seed's any-child name check, `''` for
+an empty product name in the unique index, the `[SEED]` company cleanup, "Rahr to Thee" kept
+(Matt checks the reference data later). Lot specs not saving through the old dialog is fine until
+Stage 3.
+
+**Read first:** spec §3.2–3.9 and plan Stage 2. Same rules as Stage 1 (branch, commits, no push,
+the lead owns the servers; the dev server is running on the migrated DB).
+
+## Do
+
+1. **Routes** in the `:brewery` scope of `router.ex`, controllers + JSON views in the existing
+   style, all logic in `RockcutApi.Ingredients` submodules (`Parties`, `Products`, `Features`,
+   `Offers`, `Inventory`):
+   - `parties` (CRUD; roles as a list in the body; `?role=` filter; delete of a party in use →
+     422 "This company is in use; deactivate it instead");
+   - `ingredient_products` (CRUD; `?ingredient_id=`, `?category_id=` including children,
+     `?maltster_id=`, `?supplier_id=`, `?on_hand=true`); the JSON includes the grain, category,
+     maltster, standard features as a map by feature key (value, `entered_value`, `entered_unit`),
+     offers with their current price, and `on_hand_lb`. The list loads features, offers, prices
+     and on-hand in a fixed number of queries (no N+1); say how many;
+   - `feature_types` (index only; with the categories each applies to);
+   - `supplier_offers` (CRUD), `supplier_offers/:id/prices` (index newest first, create);
+   - `ingredient_lots`: add product, supplier, `sack_size_lb`, features, `on_hand_lb`; **create**
+     takes the first movement (`initial_kind` = `opening|received`, `initial_quantity_lb` > 0)
+     and, for a lot with a product, copies the product's standard features unless the body gives
+     its own; a lot's features can be updated; old spec fields stay ignored;
+   - `inventory_movements` (index by `product_id` or `lot_id`, newest first; create). Create takes
+     `kind`, `quantity_lb` (> 0; the sign comes from the kind), `occurred_on`, `note`, `party_id`,
+     and either `lot_id` or `product_id` with `allocation: "oldest_first"`. No update or delete
+     routes;
+   - `ingredient_products/:id/count`: `mode: "total"` with `counted_lb`, or `mode: "by_lot"` with
+     `lots: [%{lot_id, counted_lb}]`; `counted_on`; returns the adjustments written.
+2. **Rules** (spec §3; each with a refusal and an allowed test):
+   - roles closed set; a product's maltster must hold `maltster`, an offer's supplier `supplier`,
+     a trade/loan's party `partner_brewery` (and is required for those four kinds, refused for the
+     others);
+   - feature values: the type must apply to the product's/lot's category (or a parent), value
+     within the type's min/max (this replaces the old column ranges), `entered_unit` from a closed
+     list per feature (`extract_fgdb`: `fgdb`, `as_is`, `ppg`; `color_lovibond`: `lovibond`, `srm`,
+     `ebc`; `diastatic_power_lintner`: `lintner`, `wk`) and only together with `entered_value`.
+     The API stores what it's sent; the conversion math is the UI's (Stage 3);
+   - current price = latest `effective_on` ≤ today **Colorado** (reuse the Colorado-today helper the
+     task boards use); a future-dated price doesn't show as current yet;
+   - `Inventory.allocate/3` per the plan's Shape: received date then lot id; inside a
+     `BEGIN IMMEDIATE` transaction that recomputes on-hand; short → `{:error, :short, on_hand_lb}`
+     → 422 with the on-hand in the message. Outgoing movements and total counts both use it;
+     a total-count overage goes onto the newest lot; by-lot writes one adjustment per changed lot;
+   - a movement can't take a lot below 0; lot status follows on-hand (`depleted` at 0,
+     `available` above) unless it's `expired`;
+   - lot delete only with exactly one movement and no `recipe_ingredients` → otherwise 422;
+   - categories: the category changeset accepts `parent_id` (one level: a child can't have
+     children; a category can't be its own parent).
+3. **Formulas:** `est_og` uses `Ingredients.Units.ppg/1` (FGDB % × 46.214 ÷ 100) and treats
+   `efficiency_target` as a **percentage** (68 → 0.68). **Matt approved this fix (2026-11-17):**
+   the OG estimate changes, so update the parity test deliberately, with the new expected numbers
+   worked out by hand in a comment. `Inventory.on_hand` formula → the product's or ingredient's
+   on-hand lb from movements.
+4. **`BoardSettings`:** board key `"ingredients"`, setting `quantity_display` ∈ `sacks`, `lb`
+   (default `sacks`), saved through the existing board settings endpoint. Who may save it:
+   anyone who can see the brewery module (check how `Authz` gates `{:board_settings, board}`).
+5. **Authz:** add the new resources to the brewing area in `Authz` so the D31 boundary test stays
+   green. Tests across the new routes: `brewer1`, `floater`, `splitRole`, `owner` allowed;
+   `bartender1`, `office1` 403; a device token (`breweryDevice`) 403 on every new route.
+6. **Concurrency test:** two parallel outgoing movements against the same product, each for more
+   than half the on-hand: one succeeds, one gets 422, and on-hand never goes below 0.
+
+## Don't
+
+- No UI (Stage 3). No new migrations unless a rule needs an index or constraint (say so).
+- Don't touch `CLAUDE.md`, the spec, the plan or `SESSION_HANDOFF_*`. Format only files you change.
+
+## Done when
+
+- `mix test` green twice, `mix compile --warnings-as-errors` clean.
+- Commits on the branch.
+- Reply with: commits, files touched, test counts, the query count for the product list, the new
+  `est_og` numbers, and anything you weren't sure about prefixed `LEAD:`. If you need the dev DB
+  migrated again, ask the lead.
