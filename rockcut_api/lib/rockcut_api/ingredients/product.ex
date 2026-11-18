@@ -14,6 +14,8 @@ defmodule RockcutApi.Ingredients.Product do
     field :active, :boolean, default: true
     # The sum of its lots' movements (`Ingredients.Products`).
     field :on_hand_lb, :decimal, virtual: true
+    # The part of it in expired lots.
+    field :expired_lb, :decimal, virtual: true
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
     belongs_to :maltster, RockcutApi.Ingredients.Party, foreign_key: :maltster_party_id

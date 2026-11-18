@@ -1076,6 +1076,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       features: maybe_render(p, :feature_values, &RockcutApi.Ingredients.Features.values_map/1),
       offers: maybe_render(p, :offers, &Enum.map(&1, fn o -> supplier_offer(o) end)),
       on_hand_lb: p.on_hand_lb,
+      expired_lb: p.expired_lb,
       inserted_at: p.inserted_at,
       updated_at: p.updated_at
     }

@@ -52,6 +52,9 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     )
   end
 
+  defp expire!(lot),
+    do: lot |> Ecto.Changeset.change(status: "expired") |> Repo.update!()
+
   defp decimal(s), do: Decimal.new(s)
   defp eq(a, b), do: Decimal.eq?(decimal(to_string(a)), decimal(to_string(b)))
 
@@ -679,6 +682,58 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert eq(on_hand(c.product.id), 715)
     end
 
+    test "oldest first skips an expired lot; a chosen expired lot still gives", c do
+      expire!(c.older)
+
+      assert {201, %{"data" => [m]}} =
+               move(c, %{
+                 "kind" => "used",
+                 "quantity_lb" => "100",
+                 "product_id" => c.product.id,
+                 "allocation" => "oldest_first"
+               })
+
+      assert m["lot_id"] == c.newer.id and eq(m["quantity_lb"], -100)
+
+      assert {201, %{"data" => [m]}} =
+               move(c, %{"kind" => "used", "quantity_lb" => "55", "lot_id" => c.older.id})
+
+      assert m["lot_id"] == c.older.id
+      assert Repo.get!(IngredientLot, c.older.id).status == "expired"
+    end
+
+    test "oldest first past the non-expired stock is refused and says so", c do
+      expire!(c.older)
+
+      assert %{"quantity_lb" => [message]} =
+               errors(
+                 move(c, %{
+                   "kind" => "used",
+                   "quantity_lb" => "551",
+                   "product_id" => c.product.id,
+                   "allocation" => "oldest_first"
+                 })
+               )
+
+      assert message ==
+               "is more than the 550 lb on hand in lots that aren't expired " <>
+                 "(165 lb is in expired lots; pick one by hand to use it)"
+
+      assert eq(on_hand(c.product.id), 715)
+    end
+
+    test "the product shows its expired stock apart; on_hand_lb stays the total", c do
+      expire!(c.older)
+
+      {200, %{"data" => p}} = req(c.brewer, :get, "/api/ingredient_products/#{c.product.id}")
+      assert eq(p["on_hand_lb"], 715) and eq(p["expired_lb"], 165)
+
+      {200, %{"data" => list}} = req(c.brewer, :get, "/api/ingredient_products")
+      listed = Enum.find(list, &(&1["id"] == c.product.id))
+      assert eq(listed["expired_lb"], 165)
+      assert Enum.all?(list, &(&1["expired_lb"] != nil))
+    end
+
     test "trades and loans need a partner brewery; other kinds take none", c do
       body = %{"kind" => "loaned_out", "quantity_lb" => "165", "lot_id" => c.newer.id}
 
@@ -833,6 +888,61 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                })
 
       assert eq(m["quantity_lb"], -110)
+    end
+
+    test "a total shortfall skips expired lots; past the non-expired stock is a 422", c do
+      expire!(c.older)
+
+      assert {201, %{"data" => [m]}} =
+               req(c.brewer, :post, c.path, %{
+                 mode: "total",
+                 counted_lb: "665",
+                 counted_on: iso(0)
+               })
+
+      assert m["lot_id"] == c.newer.id and eq(m["quantity_lb"], -50)
+
+      assert %{"counted_lb" => [message]} =
+               errors(
+                 req(c.brewer, :post, c.path, %{
+                   mode: "total",
+                   counted_lb: "100",
+                   counted_on: iso(0)
+                 })
+               )
+
+      assert message ==
+               "is 565 lb under on-hand, more than the 500 lb in lots that aren't expired; " <>
+                 "count by lot instead"
+
+      assert eq(on_hand(c.product.id), 665)
+    end
+
+    test "a total overage goes onto the newest lot that isn't expired", c do
+      expire!(c.newer)
+
+      assert {201, %{"data" => [m]}} =
+               req(c.brewer, :post, c.path, %{
+                 mode: "total",
+                 counted_lb: "720",
+                 counted_on: iso(0)
+               })
+
+      assert m["lot_id"] == c.older.id and eq(m["quantity_lb"], 5)
+    end
+
+    test "a by-lot count includes an expired lot", c do
+      expire!(c.older)
+
+      assert {201, %{"data" => [m]}} =
+               req(c.brewer, :post, c.path, %{
+                 mode: "by_lot",
+                 counted_on: iso(0),
+                 lots: [%{lot_id: c.older.id, counted_lb: "110"}]
+               })
+
+      assert m["lot_id"] == c.older.id and eq(m["quantity_lb"], -55)
+      assert Repo.get!(IngredientLot, c.older.id).status == "expired"
     end
 
     test "refusals: mode, date, negative, another product's lot, a lot twice", c do

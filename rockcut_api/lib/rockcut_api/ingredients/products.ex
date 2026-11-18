@@ -5,7 +5,7 @@ defmodule RockcutApi.Ingredients.Products do
   to its grain's category. The list loads everything the grains list shows
   in a fixed number of queries, however many products: products with grain,
   category and maltster (1), standard features (2), offers with suppliers
-  (3), their current prices (4) and on-hand (5).
+  (3), their current prices (4) and on-hand with its expired part (5).
   """
   import Ecto.Query
 
@@ -152,14 +152,15 @@ defmodule RockcutApi.Ingredients.Products do
       |> Offers.put_current_prices()
       |> Enum.group_by(& &1.product_id)
 
-    on_hand = Inventory.on_hand_by_product(ids)
+    stock = Inventory.stock_by_product(ids)
 
     Enum.map(products, fn p ->
       %{
         p
         | feature_values: Map.get(features, p.id, []),
           offers: Map.get(offers, p.id, []),
-          on_hand_lb: Map.fetch!(on_hand, p.id)
+          on_hand_lb: elem(Map.fetch!(stock, p.id), 0),
+          expired_lb: elem(Map.fetch!(stock, p.id), 1)
       }
     end)
   end

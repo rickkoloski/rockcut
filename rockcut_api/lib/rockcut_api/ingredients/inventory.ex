@@ -6,8 +6,10 @@ defmodule RockcutApi.Ingredients.Inventory do
   Every write that reads stock first runs in one `BEGIN IMMEDIATE`
   transaction (as D32's series writes) and recomputes on-hand inside it, so
   two brewers can't take the same sacks. Outgoing movements and total counts
-  share `allocate/3`: oldest lots first by received date, then lot id. A
-  movement never takes a lot below 0. A lot's status follows its on-hand
+  share `allocate/3`: oldest lots first by received date, then lot id,
+  skipping `expired` lots (Matt, 2026-11-17: a brewer can still pick an
+  expired lot by hand, and a by-lot count includes it). A movement never
+  takes a lot below 0. A lot's status follows its on-hand
   (`depleted` at 0, `available` above) unless it's `expired`; a lot with no
   movements at all (a non-grain lot, D62's) keeps the status it was given.
   """
@@ -45,17 +47,34 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   @doc "On hand in lb for each of `product_ids`: the sum over their lots."
   def on_hand_by_product(product_ids) do
-    sums =
+    Map.new(stock_by_product(product_ids), fn {id, {on_hand, _expired}} -> {id, on_hand} end)
+  end
+
+  @doc """
+  `{on_hand, expired}` in lb for each of `product_ids` (one query): the sum
+  over all their lots, and the part of it in `expired` lots.
+  """
+  def stock_by_product(product_ids) do
+    rows =
       from(m in Movement,
         join: l in IngredientLot,
         on: l.id == m.lot_id,
         where: l.product_id in ^product_ids,
-        select: {l.product_id, m.quantity_lb}
+        select: {l.product_id, l.status, m.quantity_lb}
       )
       |> Repo.all()
+
+    on_hand = rows |> Enum.map(fn {id, _, q} -> {id, q} end) |> sum_by()
+
+    expired =
+      for({id, "expired", q} <- rows, do: {id, q})
       |> sum_by()
 
-    Map.new(product_ids, &{&1, Map.get(sums, &1, Decimal.new(0))})
+    zero = Decimal.new(0)
+
+    Map.new(product_ids, fn id ->
+      {id, {Map.get(on_hand, id, zero), Map.get(expired, id, zero)}}
+    end)
   end
 
   @doc "On hand in lb of an ingredient (a grain): the sum over all its lots."
@@ -89,13 +108,14 @@ defmodule RockcutApi.Ingredients.Inventory do
   @doc """
   Which lots of `product_id` give `quantity` lb (a positive Decimal):
   `:oldest_first` takes from the oldest lot with stock (received date, then
-  lot id), then the next; a lot id takes it all from that lot, which must be
-  the product's. `{:ok, [{lot, lb}]}`, or `{:error, :short, on_hand}` with
-  the product's (or that lot's) on-hand. Reads stock as it is now: call it
-  inside the write transaction.
+  lot id), then the next, skipping expired lots; a lot id takes it all from
+  that lot (expired or not), which must be the product's. `{:ok, [{lot,
+  lb}]}`, or `{:error, :short, on_hand}` with the product's non-expired (or
+  that lot's) on-hand. Reads stock as it is now: call it inside the write
+  transaction.
   """
   def allocate(product_id, %Decimal{} = quantity, :oldest_first) do
-    lots = product_lots(product_id)
+    lots = product_id |> product_lots() |> Enum.reject(&(&1.status == "expired"))
     on_hand = on_hand_by_lot(Enum.map(lots, & &1.id))
     total = Enum.reduce(Map.values(on_hand), Decimal.new(0), &Decimal.add/2)
 
@@ -211,7 +231,10 @@ defmodule RockcutApi.Ingredients.Inventory do
   @doc """
   A count of a maltster product (spec §3.8) on `counted_on`. `mode:
   "total"` with `counted_lb`: a shortfall comes off the oldest lots first, an
-  overage goes onto the newest lot. `mode: "by_lot"` with `lots: [%{lot_id,
+  overage goes onto the newest lot. Expired lots count towards the total
+  but a shortfall can't come off them (a 422 when the non-expired stock is
+  too small), and an overage goes onto the newest non-expired lot when there
+  is one. `mode: "by_lot"` with `lots: [%{lot_id,
   counted_lb}]`: one adjustment per lot whose number differs. `{:ok,
   adjustments}` (possibly none).
   """
@@ -275,14 +298,28 @@ defmodule RockcutApi.Ingredients.Inventory do
         []
 
       Decimal.negative?(diff) ->
-        {:ok, parts} = allocate(product_id, Decimal.negate(diff), :oldest_first)
-        [{parts, true}]
+        case allocate(product_id, Decimal.negate(diff), :oldest_first) do
+          {:ok, parts} ->
+            [{parts, true}]
+
+          {:error, :short, usable} ->
+            Repo.rollback(
+              {:invalid,
+               %{
+                 counted_lb: [
+                   "is #{lb(Decimal.negate(diff))} lb under on-hand, more than the " <>
+                     "#{lb(usable)} lb in lots that aren't expired; count by lot instead"
+                 ]
+               }}
+            )
+        end
 
       lots == [] ->
         Repo.rollback({:invalid, %{counted_lb: ["This product has no lots; add a lot first"]}})
 
       true ->
-        [{[{List.last(lots), diff}], false}]
+        newest = Enum.reject(lots, &(&1.status == "expired")) |> List.last() || List.last(lots)
+        [{[{newest, diff}], false}]
     end
   end
 
@@ -403,8 +440,18 @@ defmodule RockcutApi.Ingredients.Inventory do
          quantity_lb: ["is more than lot #{lot.lot_number || lot.id}'s #{lb(on_hand)} lb on hand"]
        }}
 
-  defp short(on_hand, {:product, _}),
-    do: {:invalid, %{quantity_lb: ["is more than the #{lb(on_hand)} lb on hand"]}}
+  defp short(on_hand, {:product, product_id}) do
+    {_total, expired} = Map.fetch!(stock_by_product([product_id]), product_id)
+
+    message =
+      if Decimal.gt?(expired, 0),
+        do:
+          "is more than the #{lb(on_hand)} lb on hand in lots that aren't expired " <>
+            "(#{lb(expired)} lb is in expired lots; pick one by hand to use it)",
+        else: "is more than the #{lb(on_hand)} lb on hand"
+
+    {:invalid, %{quantity_lb: [message]}}
+  end
 
   defp lb(d), do: d |> Decimal.normalize() |> Decimal.to_string(:normal)
 
