@@ -18,6 +18,10 @@ import SwapHorizIcon from '@mui/icons-material/SwapHoriz'
 import DecimalInput from './DecimalInput'
 import { useBackCloses } from '../hooks/useBackCloses'
 import { FEATURE_UNITS, UNIT_LABELS, parseDecimal, roundString, toStored, type EnteredUnit } from '../lib/brewingUnits'
+import { rangeError } from '../lib/ingredientFeatures'
+import type { FeatureType } from '../lib/types'
+
+type Range = Pick<FeatureType, 'label' | 'min' | 'max'>
 
 /** What **Use** hands back: the stored value, and what was typed in which unit. */
 export interface ConvertedEntry {
@@ -32,6 +36,8 @@ interface ConvertButtonProps {
   label: string
   unitLabel: string
   decimals: number
+  /** The feature's range: a result outside it can't be used (gap 10). */
+  range?: Range
   /** The moisture box on the same form (as typed); as-is extract needs it. */
   moisture?: string
   onUse: (entry: ConvertedEntry) => void
@@ -44,7 +50,7 @@ interface ConvertButtonProps {
  * The popup takes a value in another unit and shows the stored value it
  * becomes; **Use** fills the field and remembers what was typed.
  */
-export default function ConvertButton({ featureKey, label, unitLabel, decimals, moisture, onUse, disabled, testId }: ConvertButtonProps) {
+export default function ConvertButton({ featureKey, label, unitLabel, decimals, range, moisture, onUse, disabled, testId }: ConvertButtonProps) {
   const units = FEATURE_UNITS[featureKey]
   const [open, setOpen] = useState(false)
   if (!units) return null
@@ -64,6 +70,7 @@ export default function ConvertButton({ featureKey, label, unitLabel, decimals, 
           label={label}
           unitLabel={unitLabel}
           decimals={decimals}
+          range={range}
           moisture={moisture}
           onClose={() => setOpen(false)}
           onUse={(entry) => {
@@ -82,6 +89,7 @@ function ConvertDialog({
   label,
   unitLabel,
   decimals,
+  range,
   moisture,
   onClose,
   onUse,
@@ -91,6 +99,7 @@ function ConvertDialog({
   label: string
   unitLabel: string
   decimals: number
+  range?: Range
   moisture?: string
   onClose: () => void
   onUse: (entry: ConvertedEntry) => void
@@ -105,7 +114,10 @@ function ConvertDialog({
   const moistureParsed = parseDecimal(moisture ?? '')
   const moistureValue = moistureParsed.ok && moistureParsed.value != null ? Number(moistureParsed.value) : null
   const result = typed == null ? null : toStored(unit, Number(typed), moistureValue)
-  const stored = result?.ok ? roundString(result.value, decimals) : null
+  const rounded = result?.ok ? roundString(result.value, decimals) : null
+  // A result outside the feature's range (108.2 % FGDB from 50 PPG) is shown but can't be used.
+  const outOfRange = rounded != null && range ? rangeError(range, Number(rounded)) : null
+  const stored = outOfRange ? null : rounded
   const id = `convert-${featureKey}-unit`
 
   return (
@@ -138,6 +150,11 @@ function ConvertDialog({
           )}
           {result && !result.ok && unit !== 'as_is' && <Alert severity="error">{result.error}</Alert>}
           {result && !result.ok && unit === 'as_is' && moistureValue != null && <Alert severity="error">{result.error}</Alert>}
+          {outOfRange && (
+            <Alert severity="error" data-testid="convert-out-of-range">
+              {rounded} {unitLabel} is out of range: {outOfRange}
+            </Alert>
+          )}
           <Typography variant="body2" data-testid="convert-stored">
             Stored as: <strong>{stored != null ? `${stored} ${unitLabel}` : '—'}</strong>
           </Typography>

@@ -7,7 +7,7 @@ import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { formatQuantity, productSackSize } from '../../lib/brewingUnits'
-import { GRAIN_KEYS, INCOMING, KIND_LABELS, OUTGOING, WITH_PARTNER, oldestFirst } from '../../lib/inventory'
+import { FUTURE_DATE, GRAIN_KEYS, INCOMING, KIND_LABELS, OUTGOING, WITH_PARTNER, oldestFirst, oldestFirstOnHand } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement, MovementKind, Party } from '../../lib/types'
 
@@ -72,6 +72,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
     }
     if (!quantity.valid || !quantity.lb || Number(quantity.lb) <= 0) return setError('Enter the quantity')
     if (!lotChoice) return setError('Pick the lot')
+    if (date > coloradoToday()) return setError(FUTURE_DATE)
     const target = lotChoice === OLDEST ? { product_id: product.id, allocation: 'oldest_first' } : { lot_id: Number(lotChoice) }
     try {
       await create.mutateAsync({
@@ -166,9 +167,17 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
         label="Quantity"
         onChange={setQuantity}
         testId="movement-quantity"
-        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand_lb, lot.sack_size_lb, mode)}` : `On hand: ${formatQuantity(product.on_hand_lb, sackSize, mode)}`}
+        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand_lb, lot.sack_size_lb, mode)}` : oldestFirstOnHand(product, sackSize, mode)}
       />
-      <TextField label="Date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+      <TextField
+        label="Date"
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        required
+        fullWidth
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: coloradoToday(), 'data-testid': 'movement-date' } }}
+      />
       <TextField label="Note" helperText={kind === 'used' ? 'e.g. the batch' : undefined} value={note} onChange={(e) => setNote(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'movement-note' } }} />
     </FormDialog>
   )

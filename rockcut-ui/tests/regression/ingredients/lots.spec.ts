@@ -25,7 +25,7 @@ test('L1: a lot with an opening amount of 12 sacks; extract shows the standard; 
   await expect(d.getByTestId('feature-extract_fgdb')).toHaveValue('81.5')
   await expect(d.getByTestId('feature-moisture_pct')).toHaveValue('4.5')
   await d.getByTestId('feature-moisture_pct').fill('5.1')
-  await expect(d.getByText('changed from standard (4.5)')).toBeVisible()
+  await expect(d.getByText('changed from standard (4.50)')).toBeVisible()
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
 
@@ -64,12 +64,23 @@ test('L2: extract entered as 37.0 PPG stores 80.1 % FGDB; as-is with no moisture
   await expect(convert.getByTestId('convert-use')).toBeDisabled()
 
   await pick(page, convert, 'Unit', /^PPG$/)
+  // Gap 10: a result outside 0–100 % FGDB is shown but can't be used; a negative value is refused.
+  await convert.getByTestId('convert-value').fill('50')
+  await expect(convert.getByTestId('convert-out-of-range')).toHaveText('108.2 % FGDB is out of range: Extract must be between 0 and 100')
+  await expect(convert.getByTestId('convert-use')).toBeDisabled()
+  await convert.getByTestId('convert-value').fill('-1')
+  await expect(convert.getByText('Enter 0 or more')).toBeVisible()
+  await expect(convert.getByTestId('convert-use')).toBeDisabled()
   await convert.getByTestId('convert-value').fill('37.0')
   await expect(convert.getByTestId('convert-stored')).toHaveText('Stored as: 80.1 % FGDB')
   await convert.getByTestId('convert-use').click()
   await expect(convert).toHaveCount(0)
   await expect(d.getByTestId('feature-extract_fgdb')).toHaveValue('80.1')
   await expect(d.getByText('entered as 37.0 PPG')).toBeVisible()
+  // Gap 11: moisture over 100 is refused on the form, not only by the server.
+  await d.getByTestId('feature-moisture_pct').fill('150')
+  await expect(d.getByText('Moisture must be between 0 and 100')).toBeVisible()
+  await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
   await d.getByTestId('feature-moisture_pct').fill('4.5')
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)

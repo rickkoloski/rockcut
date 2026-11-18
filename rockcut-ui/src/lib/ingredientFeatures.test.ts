@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { differs, draftsFrom, draftsValid, featuresPayload, grainCategories, onHandText, productMatches, typesFor } from './ingredientFeatures'
+import { categoryOptions, differs, draftRangeError, draftsFrom, draftsValid, featuresPayload, grainCategories, onHandText, productMatches, rangeError, typesFor } from './ingredientFeatures'
 import type { FeatureType, IngredientCategory, IngredientProduct } from './types'
 
 const type = (id: number, key: string, cats: [number, number][]): FeatureType => ({
@@ -43,7 +43,7 @@ describe('feature drafts and the payload', () => {
       extract_fgdb: { text: '81.5', entered_value: '37.7', entered_unit: 'ppg' },
       color_lovibond: { text: '', entered_value: null, entered_unit: null },
       moisture_pct: { text: '', entered_value: null, entered_unit: null },
-      protein_pct: { text: '11,2', entered_value: null, entered_unit: null },
+      protein_pct: { text: '11.2', entered_value: null, entered_unit: null },
     }
     expect(featuresPayload(drafts, stored)).toEqual({
       extract_fgdb: { value: '81.5', entered_value: '37.7', entered_unit: 'ppg' },
@@ -53,7 +53,8 @@ describe('feature drafts and the payload', () => {
   })
 
   it('a refused box makes the drafts invalid', () => {
-    expect(draftsValid({ a: { text: '5,2', entered_value: null, entered_unit: null } })).toBe(true)
+    expect(draftsValid({ a: { text: '5.2', entered_value: null, entered_unit: null } })).toBe(true)
+    expect(draftsValid({ a: { text: '5,2', entered_value: null, entered_unit: null } })).toBe(false)
     expect(draftsValid({ a: { text: '5x', entered_value: null, entered_unit: null } })).toBe(false)
   })
 })
@@ -105,5 +106,36 @@ describe('onHandText (§3.7)', () => {
     expect(onHandText({ on_hand_lb: '682.5', expired_lb: '55', offers }, 'lb')).toBe('682.5 lb · 55 lb expired')
     expect(onHandText({ on_hand_lb: '682.5', expired_lb: '55', offers }, 'sacks')).toBe('12 sacks 22.5 lb · 1 sack expired')
     expect(onHandText({ on_hand_lb: '540', expired_lb: '0', offers }, 'sacks')).toBe('9 sacks 45 lb')
+  })
+})
+
+describe('lead decisions 2', () => {
+  const v = (value: string) => ({ value })
+
+  it('gap 4: changed from standard compares the values as shown', () => {
+    expect(differs(v('2.789'), v('2.79'), 2)).toBe(false)
+    expect(differs(v('80.1'), v('80.16'), 1)).toBe(true)
+    expect(differs(v('11.50'), v('11.456'), 2)).toBe(true)
+    expect(differs(v('80.14'), v('80.1'), 1)).toBe(false)
+  })
+
+  it('gaps 10, 11: a value outside the range is refused on the form, naming the feature', () => {
+    const moisture = { ...type(5, 'moisture_pct', [[1, 0]]), label: 'Moisture' }
+    const color = { ...type(2, 'color_lovibond', [[1, 0]]), label: 'Color', max: '1000' }
+    expect(rangeError(moisture, 150)).toBe('Moisture must be between 0 and 100')
+    expect(rangeError(color, 1001)).toBe('Color must be between 0 and 1,000')
+    expect(rangeError(moisture, 100)).toBeNull()
+    expect(rangeError(moisture, null)).toBeNull()
+    const drafts = { moisture_pct: { text: '150', entered_value: null, entered_unit: null } }
+    expect(draftRangeError(moisture, drafts.moisture_pct)).toBe('Moisture must be between 0 and 100')
+    expect(draftsValid(drafts)).toBe(true)
+    expect(draftsValid(drafts, [moisture])).toBe(false)
+    expect(draftsValid({ moisture_pct: { text: '99.5', entered_value: null, entered_unit: null } }, [moisture])).toBe(true)
+  })
+
+  it('gap 8: pickers list each parent then its children', () => {
+    const c = (id: number, name: string, sort_order: number, parent_id: number | null = null) => ({ id, name, sort_order, parent_id }) as IngredientCategory
+    const options = categoryOptions([c(1, 'Grains', 0), c(2, 'Hops', 1), c(10, 'Crystal/Caramel', 1, 1), c(11, 'Base', 0, 1), c(3, 'Yeast Strains', 2)])
+    expect(options.map((o) => `${'  '.repeat(o.depth)}${o.category.name}`)).toEqual(['Grains', '  Base', '  Crystal/Caramel', 'Hops', 'Yeast Strains'])
   })
 })

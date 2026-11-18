@@ -5,6 +5,7 @@ import {
   adoptProduct,
   apiAs,
   cleanupIngredients,
+  denverToday,
   expectLotOnHand,
   expectOnHand,
   getProduct,
@@ -161,8 +162,10 @@ test('B4: "Loaned out" needs a partner brewery; a use larger than on hand is ref
   await expect(page.getByTestId('product-movements')).toContainText('[SEED] Mountain Brewing')
 
   d = await recordMovement(page, { sacks: '20' })
+  await expect(d.getByText('On hand: 9 sacks')).toBeVisible()
   await d.getByRole('button', { name: 'Save' }).click()
-  await expect(d.getByRole('alert')).toContainText('495 lb on hand')
+  // Gap 1: plain words in the person's sacks/lb, no field name.
+  await expect(d.getByRole('alert')).toHaveText("That's more than the 9 sacks on hand")
   await d.getByRole('button', { name: 'Cancel' }).click()
   await expectOnHand(product.id, 9 * SACK)
 })
@@ -214,6 +217,8 @@ test('B6: oldest first skips an expired lot; the expired lot picked by hand work
   await expect(page.getByTestId('product-on-hand')).toHaveText('13 sacks · 3 sacks expired')
 
   let d = await recordMovement(page, { sacks: '2' })
+  // Gap 1: Oldest first can take only what isn't expired; the expired stock is noted.
+  await expect(d.getByText('On hand: 10 sacks · 3 sacks expired (pick that lot to use it)')).toBeVisible()
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
   await expectLotOnHand(older.id, product.id, 3 * SACK)
@@ -228,7 +233,7 @@ test('B6: oldest first skips an expired lot; the expired lot picked by hand work
   expect((await getProduct(product.id)).expired_lb).toBe(String(2 * SACK))
 })
 
-test('B7: Recipe Grain Bill: a grain lot is labelled "Rahr · lot #" and can be added', async ({ page }) => {
+test('B7: Recipe Grain Bill: a grain lot is labelled "Rahr · lot # · on hand · status" and can be added; depleted lots are left out; Est. OG shows', async ({ page }) => {
   const owner = await apiAs('owner')
   const tag = tempTag('B7 recipe')
   const post = async (path: string, data: Record<string, unknown>) => {
@@ -237,9 +242,13 @@ test('B7: Recipe Grain Bill: a grain lot is labelled "Rahr · lot #" and can be 
     return (await res.json()).data as { id: number }
   }
   const brand = await post('/api/brands', { name: tag })
-  const recipe = await post('/api/recipes', { brand_id: brand.id, batch_size: 15 })
+  // Gap 7: 10 bbl at 75 %, 500 lb at 81.5 % FGDB → 1.0456.
+  const recipe = await post('/api/recipes', { brand_id: brand.id, batch_size: 10, batch_size_unit: 'bbls', efficiency_target: 75 })
   const product = await makeProduct('B7 lot')
   const lot = await makeLot(product, 2, 3)
+  const empty = await makeLot(product, 1, 10)
+  const use = await (await apiAs('brewer1')).post('/api/inventory_movements', { data: { kind: 'used', quantity_lb: String(SACK), occurred_on: denverToday(), lot_id: empty.id } })
+  expect(use.status(), await use.text()).toBe(201)
   try {
     await page.goto(`/brands/${brand.id}/recipes/${recipe.id}`)
     await page.getByRole('tab', { name: 'Grain Bill' }).click()
@@ -259,21 +268,81 @@ test('B7: Recipe Grain Bill: a grain lot is labelled "Rahr · lot #" and can be 
     await pick(page, d, 'Category', /^Grains$/)
     await pick(page, d, 'Ingredient', /^2-Row$/)
     await d.getByLabel('Lot').click()
-    const option = page.getByRole('option', { name: `Rahr · ${lot.lot_number}`, exact: true })
+    const option = page.getByRole('option', { name: `Rahr · ${lot.lot_number} · 2 sacks · Available`, exact: true })
     await expect(option).toBeVisible()
+    // Gap 8: the depleted lot isn't offered.
+    await expect(page.getByRole('option', { name: new RegExp(escape(empty.lot_number!)) })).toHaveCount(0)
     await option.click()
-    await d.getByLabel('Amount').fill('10')
+    await d.getByLabel('Amount').fill('500')
     await d.getByLabel('Unit').fill('lb')
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/recipe_ingredients'))
     await d.getByRole('button', { name: 'Save' }).click()
     expect((await created).status()).toBe(201)
     await expect(d).toHaveCount(0)
+    await expect(page.getByTestId('recipe-est-og')).toHaveText('Est. OG: 1.046')
+    await page.goto(`/brands/${brand.id}`)
+    await expect(page.getByRole('row').filter({ hasText: '1.046' })).toHaveCount(1)
   } finally {
     // The recipe (its lines go with it) and the brand; the lot goes with the product.
     await owner.delete(`/api/recipes/${recipe.id}`)
     await owner.delete(`/api/brands/${brand.id}`)
   }
-  expect((await lotsOf(product.id)).map((l) => l.id)).toEqual([lot.id])
+  expect((await lotsOf(product.id)).map((l) => l.id).sort()).toEqual([lot.id, empty.id].sort())
+})
+
+test('B8: Delete on a lot asks first, naming its stock; Cancel keeps it. The sack size is fixed after its first movement', async ({ page }) => {
+  const product = await makeProduct('B8 delete')
+  const keep = await makeLot(product, 4, 5)
+  const gone = await makeLot(product, 2, 3)
+  await page.goto(`/ingredients/products/${product.id}`)
+
+  await page.getByTestId(`lot-row-${gone.id}`).click()
+  const lotDialog = dialog(page, 'grain-lot-dialog')
+  await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeEnabled()
+  await lotDialog.getByTestId('lot-delete').click()
+  const confirm = page.getByTestId('lot-delete-confirm')
+  await expect(confirm).toContainText(`Delete lot ${gone.lot_number}? Its Opening amount 2 sacks (110 lb) goes too.`)
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirm).toHaveCount(0)
+  await expect(lotDialog).toBeVisible()
+  expect((await lotsOf(product.id)).map((l) => l.id)).toContain(gone.id)
+  await lotDialog.getByTestId('lot-delete').click()
+  await confirm.getByRole('button', { name: 'Delete' }).click()
+  await expect(lotDialog).toHaveCount(0)
+  expect((await lotsOf(product.id)).map((l) => l.id)).toEqual([keep.id])
+  await expectOnHand(product.id, 4 * SACK)
+
+  // Gap 14: after a movement past its first, the sack size can't change.
+  const d = await recordMovement(page, { sacks: '1' })
+  await d.getByRole('button', { name: 'Save' }).click()
+  await expect(d).toHaveCount(0)
+  await page.getByTestId(`lot-row-${keep.id}`).click()
+  await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeDisabled()
+  await expect(lotDialog.getByText('Fixed: the lot has movements after its first')).toBeVisible()
+  await lotDialog.getByRole('button', { name: 'Cancel' }).click()
+})
+
+test('B9: a count that matches on-hand is recorded as "Counted, no change"; dates stop at today', async ({ page }) => {
+  const product = await makeProduct('B9 count')
+  await makeLot(product, 3, 4)
+  await page.goto(`/ingredients/products/${product.id}`)
+  const today = denverToday()
+
+  await page.getByTestId('product-count').click()
+  const d = dialog(page, 'count-dialog')
+  await expect(d.getByTestId('count-date')).toHaveAttribute('max', today)
+  await d.getByTestId('count-total-sacks').fill('3')
+  await d.getByRole('button', { name: 'Save count' }).click()
+  await expect(d).toHaveCount(0)
+  const [count] = (await movementsOf(product.id)).filter((m) => m.kind === 'count')
+  expect(Number(count.quantity_lb)).toBe(0)
+  await expect(page.getByTestId(`movement-kind-${count.id}`)).toHaveText('Counted, no change')
+  await expect(page.getByTestId(`movement-row-${count.id}`)).toContainText('Jake Brewer')
+  await expectOnHand(product.id, 3 * SACK)
+
+  const m = await recordMovement(page, { sacks: '1' })
+  await expect(m.getByTestId('movement-date')).toHaveAttribute('max', today)
+  await m.getByRole('button', { name: 'Cancel' }).click()
 })
 
 function escape(s: string) {

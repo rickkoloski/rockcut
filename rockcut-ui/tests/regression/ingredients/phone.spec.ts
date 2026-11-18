@@ -4,7 +4,7 @@ import { apiAs, cleanupIngredients, expectNoSidewaysScroll, lotsOf, makeProduct,
 
 // D60 spec §9, as `brewer1` at 360 px: the Grains list is cards, the
 // product page and Companies don't scroll sideways, Add lot is full screen,
-// and `5,2` typed in moisture saves 5.2.
+// `5,2` typed in moisture is refused and `1,234` lb saves 1234 (gap 3).
 
 test.use({ storageState: authFile('brewer1'), viewport: { width: 360, height: 780 } })
 test.beforeEach(async () => setQuantityDisplay('brewer1', 'sacks'))
@@ -30,6 +30,8 @@ test('P1: the Grains list shows cards (product, on hand, color, extract) with no
 
 test('P2: the product page (with lots and movements) and Companies don’t scroll sideways', async ({ page }) => {
   await page.goto(`/ingredients/products/${await rahr2Row()}`)
+  // Gap 5: the top bar cuts a long name; the whole name is on the page.
+  await expect(page.getByTestId('product-name')).toHaveText('Rahr 2-Row')
   await expect(page.getByTestId('product-lots')).toContainText('[SEED] Rahr 2-Row A')
   await expect(page.getByTestId('product-movements')).toContainText('Opening amount')
   await expectNoSidewaysScroll(page)
@@ -40,7 +42,7 @@ test('P2: the product page (with lots and movements) and Companies don’t scrol
   await expectNoSidewaysScroll(page)
 })
 
-test('P3: Add lot is full screen; 5,2 in moisture saves 5.2', async ({ page }) => {
+test('P3: Add lot is full screen; 5,2 in moisture is refused, 1,234 lb saves 1234 (gap 3)', async ({ page }) => {
   const product = await makeProduct('P3 phone')
   await page.goto(`/ingredients/products/${product.id}`)
   await page.getByTestId('product-add-lot').click()
@@ -50,14 +52,18 @@ test('P3: Add lot is full screen; 5,2 in moisture saves 5.2', async ({ page }) =
   const box = await paper.boundingBox()
   expect(box?.width).toBe(360)
   await d.getByTestId('lot-number').fill(tempTag('P3'))
-  await d.getByTestId('lot-quantity-sacks').fill('2')
+  await d.getByTestId('lot-quantity-lb').fill('1,234')
   await d.getByTestId('feature-moisture_pct').fill('5,2')
-  await expect(d.getByTestId('feature-moisture_pct')).toHaveValue('5,2')
+  await expect(d.getByText('Use . for the decimal point')).toBeVisible()
+  await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await d.getByTestId('feature-moisture_pct').fill('5.2')
+  await expect(d.getByText('Use . for the decimal point')).toHaveCount(0)
   await expectNoSidewaysScroll(page)
   const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/ingredient_lots'))
   await d.getByRole('button', { name: 'Save' }).click()
   const body = (await created).request().postDataJSON()
   expect(body.features.moisture_pct.value).toBe('5.2')
+  expect(Number(body.initial_quantity_lb)).toBe(1234)
   await expect(d).toHaveCount(0)
   const [lot] = await lotsOf(product.id)
   expect(lot.features.moisture_pct.value).toBe('5.2')

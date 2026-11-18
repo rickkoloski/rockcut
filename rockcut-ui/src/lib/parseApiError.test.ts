@@ -14,9 +14,9 @@ describe('parseApiError', () => {
     )
   })
 
-  it('D60: a nested map of field errors names the inner keys', () => {
-    expect(parseApiError(fail(422, { errors: { features: { extract_fgdb: ['must be between 0 and 100'], color_lovibond: ['is not a number'] } } }))).toBe(
-      'extract fgdb: must be between 0 and 100; color lovibond: is not a number',
+  it('D60: a nested map of field errors shows the messages, which name the feature (gap 1)', () => {
+    expect(parseApiError(fail(422, { errors: { features: { extract_fgdb: ['Extract must be between 0 and 100'], moisture_pct: ['Moisture is not a number'] } } }))).toBe(
+      'Extract must be between 0 and 100; Moisture is not a number',
     )
   })
 

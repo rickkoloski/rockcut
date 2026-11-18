@@ -6,7 +6,7 @@ import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { formatQuantity, productSackSize } from '../../lib/brewingUnits'
-import { GRAIN_KEYS, oldestFirst } from '../../lib/inventory'
+import { FUTURE_DATE, GRAIN_KEYS, oldestFirst } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement } from '../../lib/types'
 
@@ -21,7 +21,8 @@ interface CountDialogProps {
  * D60 §3.8: a count. One total by default: a shortfall comes off the oldest
  * lots that aren't expired, an overage goes onto the newest lot. **Count by
  * lot**: one box per lot with stock (expired lots included); a box left empty
- * isn't changed.
+ * isn't changed. A count that matches on-hand is still saved: the history
+ * shows "Counted, no change" (gap 11).
  */
 export default function CountDialog(props: CountDialogProps) {
   return props.open ? <CountForm {...props} /> : null
@@ -34,7 +35,6 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
   const [total, setTotal] = useState<QuantityValue>({ lb: null, valid: true })
   const [perLot, setPerLot] = useState<Record<number, QuantityValue>>({})
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<InventoryMovement[] | null>(null)
 
   const sackSize = productSackSize(product.offers, lots)
   const counted = [...lots].filter((l) => Number(l.on_hand_lb ?? 0) > 0 || l.status === 'expired').sort(oldestFirst)
@@ -42,6 +42,7 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
   const valid = byLot ? Object.values(perLot).every((v) => v.valid) : total.valid
 
   const submit = async () => {
+    if (date > coloradoToday()) return setError(FUTURE_DATE)
     let body: Record<string, unknown>
     if (byLot) {
       const entries = Object.entries(perLot).filter(([, v]) => v.lb != null)
@@ -52,9 +53,8 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
       body = { mode: 'total', counted_on: date, counted_lb: total.lb }
     }
     try {
-      const written = await create.mutateAsync(body)
-      if (written.length === 0) setResult([])
-      else onClose()
+      await create.mutateAsync(body)
+      onClose()
     } catch (err) {
       setError(parseApiError(err))
     }
@@ -120,12 +120,15 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
           No lots with stock.
         </Typography>
       )}
-      <TextField label="Count date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
-      {result && result.length === 0 && (
-        <Typography variant="body2" color="success.main" data-testid="count-no-change">
-          The count matches on-hand: nothing to adjust.
-        </Typography>
-      )}
+      <TextField
+        label="Count date"
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        required
+        fullWidth
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: coloradoToday(), 'data-testid': 'count-date' } }}
+      />
     </FormDialog>
   )
 }

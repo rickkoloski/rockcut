@@ -9,8 +9,8 @@ type DecimalInputProps = Omit<TextFieldProps, 'value' | 'onChange' | 'type'> & {
 
 /**
  * D60 (4982): every number box on the ingredient screens. A text box with the
- * decimal keypad that takes `,` or `.` as the decimal point; anything else
- * shows a message under the box. The form sends `parseDecimal(value)`'s
+ * decimal keypad; `.` is the decimal point and commas only separate thousands
+ * (gap 3, `parseDecimal`); anything else shows a message under the box. The form sends `parseDecimal(value)`'s
  * string, never the box's text, and doesn't send while it's refused.
  */
 export default function DecimalInput({ value, onChange, helperText, error, slotProps, ...props }: DecimalInputProps) {

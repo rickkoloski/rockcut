@@ -10,7 +10,7 @@ import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { parseDecimal, productSackSize } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
-import { GRAIN_KEYS } from '../../lib/inventory'
+import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { FeatureType, IngredientLot, IngredientProduct, Party } from '../../lib/types'
 
@@ -60,6 +60,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   const submit = async () => {
     if (!quantity.valid || !quantity.lb || Number(quantity.lb) <= 0) return setError('Enter the quantity')
     if (!received) return setError('Pick the received date')
+    if (received > coloradoToday()) return setError(FUTURE_DATE)
     try {
       await create.mutateAsync({
         product_id: product.id,
@@ -86,7 +87,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
       onSubmit={submit}
       loading={create.isPending}
       error={error}
-      submitDisabled={!draftsValid(shown) || !size.ok || !quantity.valid}
+      submitDisabled={!draftsValid(shown, featureTypes) || !size.ok || !quantity.valid}
       testId="add-lot-dialog"
     >
       {offers.length > 0 && (
@@ -119,7 +120,15 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
       </FormControl>
       <DecimalInput label="Sack size (lb)" value={sackSize} onChange={setSackSize} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-sack-size' } }} />
       <TextField label="Lot #" value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-number' } }} />
-      <TextField label="Received" type="date" value={received} onChange={(e) => setReceived(e.target.value)} required fullWidth slotProps={{ inputLabel: { shrink: true } }} />
+      <TextField
+        label="Received"
+        type="date"
+        value={received}
+        onChange={(e) => setReceived(e.target.value)}
+        required
+        fullWidth
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: coloradoToday() } }}
+      />
       <FormControl>
         <FormLabel id="lot-kind-label">This lot is</FormLabel>
         <RadioGroup row aria-labelledby="lot-kind-label" value={kind} onChange={(e) => setKind(e.target.value as 'opening' | 'received')}>

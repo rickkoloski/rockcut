@@ -20,7 +20,8 @@ import StatusChip from '../../components/StatusChip';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import { useApiDelete } from '../../hooks/useApiMutation';
-import { useFormulaFunctions } from '../../hooks/useFormulaFunctions';
+import { useRecipeEstimates } from '../../hooks/useRecipeEstimates';
+import { formatIbu, formatOg, type RecipeEstimate } from '../../lib/recipeEstimates';
 import BrandFormDialog from './BrandFormDialog';
 import RecipeFormDialog from '../recipes/RecipeFormDialog';
 import type { Brand, Recipe } from '../../lib/types';
@@ -28,13 +29,16 @@ import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
 import parseApiError from '../../lib/parseApiError';
 
+type RecipeRow = Recipe & { estimate?: RecipeEstimate };
+
+// D60 gap 7: Est. IBU / Est. OG come from `useRecipeEstimates` (the grid stub ignores formulas).
 const recipeColumns: ExtendedGridColDef[] = [
   { field: 'version', headerName: 'Version', width: 100, valueGetter: (_value: unknown, row: Recipe) => `${row.version_major}.${row.version_minor}` },
   { field: 'batch_size', headerName: 'Batch Size', flex: 1 },
   { field: 'boil_time', headerName: 'Boil Time', flex: 1 },
   { field: 'efficiency_target', headerName: 'Efficiency', flex: 1 },
-  { field: 'est_ibu', headerName: 'Est. IBU', width: 110, formula: '=EST_IBU(id)' },
-  { field: 'est_og', headerName: 'Est. OG', width: 110, formula: '=EST_OG(id)' },
+  { field: 'est_ibu', headerName: 'Est. IBU', width: 110, valueGetter: (_value: unknown, row: RecipeRow) => formatIbu(row.estimate?.ibu) },
+  { field: 'est_og', headerName: 'Est. OG', width: 110, valueGetter: (_value: unknown, row: RecipeRow) => formatOg(row.estimate?.og) },
   {
     field: 'status',
     headerName: 'Status',
@@ -66,7 +70,8 @@ export default function BrandDetail() {
     { invalidateKeys: [['brands']] },
   );
 
-  const { remoteFunctions } = useFormulaFunctions();
+  const { data: estimates } = useRecipeEstimates(['recipes', 'estimates'], recipes.map((r) => r.id));
+  const rows: RecipeRow[] = recipes.map((r) => ({ ...r, estimate: estimates?.[r.id] }));
 
   const [editOpen, setEditOpen] = useState(false);
   const [recipeDialogOpen, setRecipeDialogOpen] = useState(false);
@@ -144,10 +149,9 @@ export default function BrandDetail() {
 
       <Paper sx={{ border: '1px solid', borderColor: 'divider' }}>
         <DataGridExtended
-          rows={recipes}
+          rows={rows}
           columns={recipeColumns}
           columnVisibilityToggle={{ storageKey: 'rockcut:brand:recipes' }}
-          remoteFunctions={remoteFunctions}
           loading={recipesLoading}
           autoHeight
           disableRowSelectionOnClick

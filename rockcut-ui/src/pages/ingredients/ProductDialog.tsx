@@ -85,7 +85,7 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown)}
+      submitDisabled={!draftsValid(shown, featureTypes)}
       testId="product-dialog"
     >
       <FormControl fullWidth required>

@@ -76,16 +76,28 @@ export function roundString(n: number, decimals: number): string {
 
 export type ParsedDecimal = { ok: true; value: string | null } | { ok: false; error: string }
 
+/** The message for a comma that isn't a thousands separator ("5,2"). */
+export const COMMA_DECIMAL = 'Use . for the decimal point'
+/** The message for a number below 0 ("-1"). */
+export const NEGATIVE = 'Enter 0 or more'
+
 /**
- * What a number box holds: digits with at most one `,` or `.` as the decimal
- * point. Empty is `null`. Anything else (a minus sign, letters, thousands
- * separators) is refused with a message. The value is a string with a `.`.
+ * What a number box holds: digits with at most one `.` as the decimal point
+ * (Matt, 2026-11-18, local QA gap 3: `.` is the only decimal point). Commas
+ * are taken only as thousands separators in groups of three (`1,234` is 1234,
+ * `12,345.5` is 12345.5); any other comma (`5,2`, `1,23`, `1,2345`) is refused
+ * with "Use . for the decimal point". A minus sign is refused with "Enter 0 or
+ * more", anything else (letters, `1e3`) with its own message. Empty is
+ * `null`. The value is a plain string ("1234.5").
  */
 export function parseDecimal(text: string): ParsedDecimal {
   const t = text.trim()
   if (t === '') return { ok: true, value: null }
-  if (!/^(\d+([.,]\d*)?|[.,]\d+)$/.test(t)) return { ok: false, error: 'Use digits and one , or . for the decimal point' }
-  const value = t.replace(',', '.')
+  if (/^-\s*[\d.,]*\d[\d.,]*$/.test(t)) return { ok: false, error: NEGATIVE }
+  const grouped = /^\d{1,3}(,\d{3})+(\.\d*)?$/.test(t)
+  if (!grouped && t.includes(',') && /^[\d.,]+$/.test(t)) return { ok: false, error: COMMA_DECIMAL }
+  const value = grouped ? t.replace(/,/g, '') : t
+  if (!/^(\d+(\.\d*)?|\.\d+)$/.test(value)) return { ok: false, error: 'Use digits and one . for the decimal point' }
   return { ok: true, value: value.startsWith('.') ? `0${value}` : value.endsWith('.') ? value.slice(0, -1) : value }
 }
 

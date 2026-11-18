@@ -1,8 +1,8 @@
 import { Box, Typography } from '@mui/material'
 import DecimalInput from '../../components/DecimalInput'
 import ConvertButton from '../../components/ConvertButton'
-import { enteredAs } from '../../lib/brewingUnits'
-import { differs, type FeatureDrafts } from '../../lib/ingredientFeatures'
+import { enteredAs, formatFeature, parseDecimal } from '../../lib/brewingUnits'
+import { differs, draftRangeError, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import type { FeatureType, FeatureValues } from '../../lib/types'
 
 interface FeatureFieldsProps {
@@ -28,17 +28,20 @@ export default function FeatureFields({ types, drafts, onChange, standard, disab
         const d = drafts[t.key] ?? { text: '', entered_value: null, entered_unit: null }
         const entered = enteredAs(d)
         const std = standard?.[t.key]
-        const changed =
-          standard !== undefined &&
-          differs(d.text.trim() === '' ? undefined : { value: d.text.replace(',', '.'), entered_value: null, entered_unit: null }, std)
-        const helper = [entered, changed ? `changed from standard (${std ? std.value : 'none'})` : null].filter(Boolean).join(' · ')
+        const parsed = parseDecimal(d.text)
+        const typed = parsed.ok && parsed.value != null ? { value: parsed.value } : undefined
+        // A box that isn't a number yet isn't compared (DecimalInput shows why).
+        const changed = standard !== undefined && parsed.ok && differs(typed, std, t.decimals)
+        const outOfRange = draftRangeError(t, d)
+        const helper = [entered, changed ? `changed from standard (${std ? formatFeature(std.value, t.decimals) : 'none'})` : null].filter(Boolean).join(' · ')
         return (
           <Box key={t.key} sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
             <DecimalInput
               label={`${t.label} (${t.unit_label})`}
               value={d.text}
               onChange={(text) => set(t.key, { text, entered_value: null, entered_unit: null })}
-              helperText={helper || undefined}
+              helperText={outOfRange ?? (helper || undefined)}
+              error={!!outOfRange}
               disabled={disabled}
               fullWidth
               slotProps={{ htmlInput: { 'data-testid': `feature-${t.key}` } }}
@@ -50,6 +53,7 @@ export default function FeatureFields({ types, drafts, onChange, standard, disab
                   label={t.label}
                   unitLabel={t.unit_label}
                   decimals={t.decimals}
+                  range={t}
                   moisture={moisture}
                   disabled={disabled}
                   onUse={(e) => set(t.key, { text: e.value, entered_value: e.entered_value, entered_unit: e.entered_unit })}

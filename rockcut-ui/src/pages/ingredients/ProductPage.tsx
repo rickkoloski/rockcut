@@ -31,7 +31,7 @@ import { useApiDelete } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { enteredAs, formatFeature, formatQuantity, productSackSize } from '../../lib/brewingUnits'
 import { differs, onHandText, typesFor } from '../../lib/ingredientFeatures'
-import { GRAIN_KEYS, KIND_LABELS } from '../../lib/inventory'
+import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, OfferPrice, SupplierOffer } from '../../lib/types'
@@ -135,6 +135,11 @@ export default function ProductPage() {
           </Box>
         }
       />
+
+      {/* Gap 5: the top bar cuts a long name at phone width; the whole name goes here. */}
+      <Typography variant="h6" component="p" sx={{ display: { xs: 'block', sm: 'none' }, mb: 1, overflowWrap: 'anywhere' }} data-testid="product-name">
+        {product.display_name}
+      </Typography>
 
       {deleteError && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setDeleteError(null)}>
@@ -308,7 +313,7 @@ export default function ProductPage() {
               </TableRow>
             )}
             {lots.map((l) => {
-              const changed = featureTypes.filter((t) => differs(l.features?.[t.key], product.features?.[t.key]))
+              const changed = featureTypes.filter((t) => differs(l.features?.[t.key], product.features?.[t.key], t.decimals))
               return (
                 <TableRow
                   key={l.id}
@@ -376,10 +381,10 @@ export default function ProductPage() {
             {movements.map((m) => (
               <TableRow key={m.id} data-testid={`movement-row-${m.id}`}>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>{m.occurred_on}</TableCell>
-                <TableCell>{KIND_LABELS[m.kind] ?? m.kind}</TableCell>
+                <TableCell data-testid={`movement-kind-${m.id}`}>{movementKindLabel(m)}</TableCell>
                 <TableCell>{m.lot_number ?? `#${m.lot_id}`}</TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  {formatQuantity(m.quantity_lb, lotsById.get(m.lot_id)?.sack_size_lb, mode)}
+                  {Number(m.quantity_lb) === 0 ? '—' : formatQuantity(m.quantity_lb, lotsById.get(m.lot_id)?.sack_size_lb, mode)}
                 </TableCell>
                 <TableCell>{m.partner?.name ?? ''}</TableCell>
                 <TableCell>{m.note ?? ''}</TableCell>
@@ -402,7 +407,7 @@ export default function ProductPage() {
       <OfferDialog open={open === 'offer'} onClose={close} productId={product.id} offer={offer ?? undefined} />
       <PriceDialog open={open === 'price'} onClose={close} offer={offer} />
       <AddLotDialog open={open === 'lot' && !lot} onClose={close} product={product} />
-      <GrainLotDialog open={open === 'lot' && !!lot} onClose={close} product={product} lot={lot} />
+      <GrainLotDialog open={open === 'lot' && !!lot} onClose={close} product={product} lot={lot} movements={lot ? movements.filter((m) => m.lot_id === lot.id) : []} />
       <MovementDialog open={open === 'movement'} onClose={close} product={product} lots={lots} />
       <CountDialog open={open === 'count'} onClose={close} product={product} lots={lots} />
     </>

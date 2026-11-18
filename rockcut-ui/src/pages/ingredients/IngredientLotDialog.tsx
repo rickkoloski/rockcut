@@ -85,7 +85,7 @@ function IngredientLotForm({ onClose, ingredientId, categoryId, lot }: Ingredien
       onSubmit={handleSubmit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown)}
+      submitDisabled={!draftsValid(shown, featureTypes)}
       testId="ingredient-lot-dialog"
     >
       <TextField

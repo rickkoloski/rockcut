@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Switch, TextField, Typography } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
+import ConfirmDialog from '../../components/ConfirmDialog'
 import DecimalInput from '../../components/DecimalInput'
 import FeatureFields from './FeatureFields'
 import { useApiList } from '../../hooks/useApiQuery'
@@ -9,27 +10,31 @@ import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { formatQuantity, parseDecimal } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
-import { GRAIN_KEYS } from '../../lib/inventory'
-import type { FeatureType, IngredientLot, IngredientProduct, Party } from '../../lib/types'
+import { GRAIN_KEYS, lotDeleteMessage } from '../../lib/inventory'
+import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, Party } from '../../lib/types'
 
 interface GrainLotDialogProps {
   open: boolean
   onClose: () => void
   product: IngredientProduct
   lot: IngredientLot | null
+  /** The lot's movements (any order): Delete names the stock going with it; the sack size is fixed after the first. */
+  movements: InventoryMovement[]
 }
 
 /**
  * D60 §3.7: change a grain lot: number, dates, supplier, sack size, its own
  * specs, and Expired (a brewer's call; oldest first skips it). Its stock
  * changes only through movements and counts. Delete only while it has just
- * its first movement and no recipe uses it (the API says so otherwise).
+ * its first movement and no recipe uses it (the API says so otherwise), after
+ * a confirm naming that stock (gap 9). The sack size is fixed once the lot has
+ * a movement after its first (gap 14).
  */
 export default function GrainLotDialog(props: GrainLotDialogProps) {
   return props.open && props.lot ? <GrainLotForm {...props} lot={props.lot} /> : null
 }
 
-function GrainLotForm({ onClose, product, lot }: GrainLotDialogProps & { lot: IngredientLot }) {
+function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps & { lot: IngredientLot }) {
   const { mode } = useQuantityDisplay()
   const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
   const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
@@ -41,6 +46,8 @@ function GrainLotForm({ onClose, product, lot }: GrainLotDialogProps & { lot: In
   const [notes, setNotes] = useState(lot.notes ?? '')
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const sackSizeFixed = movements.length > 1
 
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
@@ -58,7 +65,7 @@ function GrainLotForm({ onClose, product, lot }: GrainLotDialogProps & { lot: In
         lot_number: lotNumber.trim() || null,
         received_date: received || null,
         supplier_party_id: supplierId || null,
-        sack_size_lb: size.ok ? size.value : null,
+        ...(sackSizeFixed ? {} : { sack_size_lb: size.ok ? size.value : null }),
         notes: notes.trim() || null,
         // Back from Expired, the API sets it from on-hand (available or depleted).
         ...(expired !== (lot.status === 'expired') ? { status: expired ? 'expired' : 'available' } : {}),
@@ -66,6 +73,16 @@ function GrainLotForm({ onClose, product, lot }: GrainLotDialogProps & { lot: In
       })
       onClose()
     } catch (err) {
+      setError(parseApiError(err))
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      await remove.mutateAsync(lot.id)
+      onClose()
+    } catch (err) {
+      setConfirmDelete(false)
       setError(parseApiError(err))
     }
   }
@@ -79,20 +96,10 @@ function GrainLotForm({ onClose, product, lot }: GrainLotDialogProps & { lot: In
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown) || !size.ok}
+      submitDisabled={!draftsValid(shown, featureTypes) || !size.ok}
       testId="grain-lot-dialog"
       secondaryAction={
-        <Button
-          color="error"
-          disabled={loading}
-          data-testid="lot-delete"
-          onClick={() =>
-            remove
-              .mutateAsync(lot.id)
-              .then(onClose)
-              .catch((err) => setError(parseApiError(err)))
-          }
-        >
+        <Button color="error" disabled={loading} data-testid="lot-delete" onClick={() => setConfirmDelete(true)}>
           Delete
         </Button>
       }
@@ -115,13 +122,30 @@ function GrainLotForm({ onClose, product, lot }: GrainLotDialogProps & { lot: In
           ))}
         </Select>
       </FormControl>
-      <DecimalInput label="Sack size (lb)" value={sackSize} onChange={setSackSize} fullWidth />
+      <DecimalInput
+        label="Sack size (lb)"
+        value={sackSize}
+        onChange={setSackSize}
+        disabled={sackSizeFixed}
+        helperText={sackSizeFixed ? 'Fixed: the lot has movements after its first' : undefined}
+        fullWidth
+        slotProps={{ htmlInput: { 'data-testid': 'grain-lot-sack-size' } }}
+      />
       <FormControlLabel
         control={<Switch checked={expired} onChange={(e) => setExpired(e.target.checked)} data-testid="lot-expired" />}
         label="Expired (stale or damaged: oldest first skips it)"
       />
       <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={loading} />
       <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} multiline rows={2} fullWidth />
+      <ConfirmDialog
+        open={confirmDelete}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={handleDelete}
+        title="Delete lot"
+        message={lotDeleteMessage(lot, movements, mode)}
+        loading={remove.isPending}
+        testId="lot-delete-confirm"
+      />
     </FormDialog>
   )
 }

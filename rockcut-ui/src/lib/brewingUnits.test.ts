@@ -64,13 +64,30 @@ describe('conversions (D60 §3.5)', () => {
   })
 })
 
-describe('parseDecimal (4982)', () => {
-  it('takes , or . as the decimal point', () => {
-    expect(parseDecimal('5,2')).toEqual({ ok: true, value: '5.2' })
+describe('parseDecimal (4982, gap 3)', () => {
+  it('takes . as the decimal point', () => {
     expect(parseDecimal('5.2')).toEqual({ ok: true, value: '5.2' })
     expect(parseDecimal(' 12 ')).toEqual({ ok: true, value: '12' })
-    expect(parseDecimal(',5')).toEqual({ ok: true, value: '0.5' })
+    expect(parseDecimal('.5')).toEqual({ ok: true, value: '0.5' })
     expect(parseDecimal('5.')).toEqual({ ok: true, value: '5' })
+  })
+
+  it('takes commas only as thousands separators in groups of three', () => {
+    expect(parseDecimal('1,234')).toEqual({ ok: true, value: '1234' })
+    expect(parseDecimal('12,345.5')).toEqual({ ok: true, value: '12345.5' })
+    expect(parseDecimal('1,234,567.25')).toEqual({ ok: true, value: '1234567.25' })
+    expect(parseDecimal('1,234.5')).toEqual({ ok: true, value: '1234.5' })
+  })
+
+  it('refuses a comma decimal with "Use . for the decimal point"', () => {
+    for (const bad of ['5,2', '1,23', '1,2345', ',5', '1.234,5', '12,34,567', ',']) {
+      expect(parseDecimal(bad), bad).toEqual({ ok: false, error: 'Use . for the decimal point' })
+    }
+  })
+
+  it('refuses a negative number with "Enter 0 or more"', () => {
+    expect(parseDecimal('-1')).toEqual({ ok: false, error: 'Enter 0 or more' })
+    expect(parseDecimal('-16.5')).toEqual({ ok: false, error: 'Enter 0 or more' })
   })
 
   it('empty is null', () => {
@@ -79,7 +96,7 @@ describe('parseDecimal (4982)', () => {
   })
 
   it('refuses anything else', () => {
-    for (const bad of ['abc', '1,234.5', '1.2.3', '-5', '5e3', '1 000', '.', ',', '12lb']) {
+    for (const bad of ['abc', '1.2.3', '5e3', '1 000', '.', '12lb', '-', '5-']) {
       expect(parseDecimal(bad).ok, bad).toBe(false)
     }
   })

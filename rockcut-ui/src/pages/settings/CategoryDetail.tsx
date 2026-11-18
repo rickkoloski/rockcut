@@ -57,6 +57,7 @@ export default function CategoryDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [fieldDialogOpen, setFieldDialogOpen] = useState(false);
   const [selectedField, setSelectedField] = useState<CategoryFieldDefinition | undefined>();
   const [deleteFieldOpen, setDeleteFieldOpen] = useState(false);
@@ -83,9 +84,15 @@ export default function CategoryDetail() {
     return <CircularProgress />;
   }
 
+  // D60 gap 12: a category with grains or sub-categories is refused (422); the
+  // confirm stays open and says why.
   const handleDeleteCategory = async () => {
-    await deleteCategoryMutation.mutateAsync(category.id);
-    navigate('/ingredients/categories');
+    try {
+      await deleteCategoryMutation.mutateAsync(category.id);
+      navigate('/ingredients/categories');
+    } catch (err) {
+      setDeleteError(parseApiError(err));
+    }
   };
 
   const handleDeleteField = async () => {
@@ -226,12 +233,22 @@ export default function CategoryDetail() {
 
       <ConfirmDialog
         open={deleteOpen}
-        onClose={() => setDeleteOpen(false)}
+        onClose={() => {
+          setDeleteOpen(false);
+          setDeleteError(null);
+        }}
         onConfirm={handleDeleteCategory}
         title="Delete Category"
         message={`Are you sure you want to delete "${category.name}"? This will also delete all field definitions. This cannot be undone.`}
         loading={deleteCategoryMutation.isPending}
-      />
+        testId="category-delete-confirm"
+      >
+        {deleteError && (
+          <Alert severity="error" sx={{ mt: 2 }}>
+            {deleteError}
+          </Alert>
+        )}
+      </ConfirmDialog>
 
       <FieldDefinitionDialog
         open={fieldDialogOpen}

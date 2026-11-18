@@ -30,12 +30,19 @@ test('O1: add a maltster + supplier company; Rahr (in use) can’t be deleted; a
   const { rahr } = await reference()
   await page.getByTestId(`company-${rahr}`).first().click()
   await page.getByTestId('party-delete').click()
+  // Gap 2: Delete asks first; Cancel there leaves the company alone.
+  const confirm = page.getByTestId('party-delete-confirm')
+  await confirm.getByRole('button', { name: 'Cancel' }).click()
+  await expect(confirm).toHaveCount(0)
+  await page.getByTestId('party-delete').click()
+  await confirm.getByRole('button', { name: 'Delete' }).click()
   await expect(d.getByRole('alert')).toContainText('This company is in use; deactivate it instead')
   await d.getByRole('button', { name: 'Cancel' }).click()
   expect((await (await apiAs('owner')).get(`/api/parties/${rahr}`)).status()).toBe(200)
 
   await page.getByTestId(`company-${id}`).first().click()
   await page.getByTestId('party-delete').click()
+  await confirm.getByRole('button', { name: 'Delete' }).click()
   await expect(d).toHaveCount(0)
   await expect(page.getByTestId(`company-${id}`)).toHaveCount(0)
   expect((await (await apiAs('owner')).get(`/api/parties/${id}`)).status()).toBe(404)
@@ -54,4 +61,32 @@ test('O2: Settings → Categories: Grains shows its five children; no Origin or 
   await expect(grid).toBeVisible()
   await expect(grid.getByText('Origin', { exact: true })).toHaveCount(0)
   await expect(grid.getByText('Maltster', { exact: true })).toHaveCount(0)
+})
+
+test('O3: deleting a category that has a grain is refused with a message in the dialog (gap 12)', async ({ page }) => {
+  const api = await apiAs('owner')
+  const categories = (await (await api.get('/api/ingredient_categories')).json()).data as { id: number; name: string }[]
+  const grains = categories.find((c) => c.name === 'Grains')!
+  const made = await api.post('/api/ingredient_categories', { data: { name: tempTag('O3 smoked'), parent_id: grains.id } })
+  expect(made.status(), await made.text()).toBe(201)
+  const category = (await made.json()).data as { id: number; sort_order: number }
+  const grain = await api.post('/api/ingredients', { data: { name: tempTag('O3 grain'), category_id: category.id } })
+  expect(grain.status(), await grain.text()).toBe(201)
+  const grainId = (await grain.json()).data.id as number
+  try {
+    // A new child goes after Grains' five (sort order 5, not after every category).
+    expect(category.sort_order).toBe(5)
+    await page.goto(`/ingredients/categories/${category.id}`)
+    await page.getByRole('button', { name: 'Delete Category' }).click()
+    const confirm = page.getByTestId('category-delete-confirm')
+    await confirm.getByRole('button', { name: 'Delete' }).click()
+    await expect(confirm.getByRole('alert')).toHaveText('This category has grains; move them first')
+    expect((await api.get(`/api/ingredient_categories/${category.id}`)).status()).toBe(200)
+    await confirm.getByRole('button', { name: 'Cancel' }).click()
+    await expect(confirm).toHaveCount(0)
+  } finally {
+    await api.delete(`/api/ingredients/${grainId}`)
+    await api.delete(`/api/ingredient_categories/${category.id}`)
+  }
+  expect((await api.get(`/api/ingredient_categories/${category.id}`)).status()).toBe(404)
 })
