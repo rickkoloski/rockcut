@@ -139,7 +139,8 @@ factor (today `fgdb × 0.46`) uses the same 46.214 constant on the API side.
   supplier's catalog name, e.g. "Rahr - Standard 2-row"), **sack size in lb** (decimal), **form we
   order: milled or whole**, notes, active. A product can have several offers (BSG and Root Shoot).
 - `supplier_offer_prices`: offer, **price per sack ($)**, effective date, note, who entered it.
-  The current price is the latest effective on or before today. Changing the price adds a row;
+  The current price is the latest effective on or before today. A $0.00 price is allowed (Matt,
+  2026-11-18, local QA). Changing the price adds a row;
   history is shown newest first with $/lb worked out. (D61's contracts add rows here.)
 
 ### 3.7 Lots and inventory (Inventory Item + Lot)
@@ -170,7 +171,11 @@ factor (today `fgdb × 0.46`) uses the same 46.214 constant on the API side.
   ("682.5 lb · 55 lb expired").
 - Quantities are **entered as sacks + lb or total lb** (same toggle as the display) and stored as
   lb. Sacks use the lot's sack size.
-- A lot can be deleted only while it has just its first movement and no recipe uses it.
+- A lot can be deleted only while it has just its first movement and no recipe uses it, after a
+  confirm that names the stock going with it ("Delete lot X? Its Received 4 sacks (200 lb) goes
+  too."; Matt, 2026-11-18, local QA gap 9). Its sack size can change only while it has just its
+  first movement.
+- A movement's date can't be after today (Colorado) (Matt, 2026-11-18, gap 13).
   Movements can't be edited; a wrong one is undone with an opposite movement or a count.
 
 ### 3.8 Counts
@@ -186,6 +191,9 @@ factor (today `fgdb × 0.46`) uses the same 46.214 constant on the API side.
   newest lot (an overage). **Count by lot** switches the screen to one box per lot (with its
   on-hand), for when the brewer can see which lot the difference came from; saving writes an
   adjustment for every lot whose number differs. Either way, all adjustments share the count date.
+- A count that matches on-hand is recorded as **"Counted, no change"** in the history, so every
+  check leaves a trace. A total count that finds extra stock when every lot is expired is refused
+  ("count by lot instead") (Matt, 2026-11-18, gap 11).
 
 ### 3.9 Display toggle
 
@@ -221,8 +229,10 @@ its lot labels show the maltster and lot #.
 ## 5. Brewing backlog in D60
 
 - **4982** — every number box on the ingredient screens uses one shared decimal input
-  (`type="text" inputMode="decimal"`), accepting `,` or `.` as the decimal point and refusing
-  anything else with a message. D63 reuses it for recipes and batches.
+  (`type="text" inputMode="decimal"`). **`.` is the only decimal point** (Matt, 2026-11-18, local
+  QA gap 3: a comma decimal made `1,234` read as 1.234). Commas are accepted only as thousands
+  separators in correct groups (`1,234` = 1234, `1,234.5`); anything else (`5,2`, `1,23`, letters)
+  is refused with a message and not sent. D63 reuses it for recipes and batches.
 - **5203** — `IngredientLotDialog` Status, `IngredientsList` Category filter,
   `IngredientFormDialog` Category get `id`/`labelId` (or are replaced by the new screens with
   labelled controls). The batch dialogs stay for D63.
@@ -278,7 +288,8 @@ Q2 → §6 and Appendix B (seed it; Matt verifies before use), Q3 → Appendix A
 - As `owner`, add "Weyermann" with roles maltster and supplier on the Companies page; try to delete
   Rahr (in use) and get "deactivate instead".
 - As `brewer1` at 360 px, the Grains list shows cards with no sideways scroll; Add lot is full
-  screen; typing `5,2` in moisture saves 5.2.
+  screen; typing `5,2` in moisture is refused ("Use . for the decimal point"), `1,234` lb saves
+  1234.
 - Settings → Categories: Grains shows five children; Grains' field definitions list no Origin or
   Maltster.
 - Recipe Grain Bill (unchanged flow): add a grain lot to a recipe; the lot label shows "Rahr ·
