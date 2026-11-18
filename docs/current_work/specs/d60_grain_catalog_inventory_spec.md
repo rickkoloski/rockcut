@@ -1,6 +1,6 @@
 # D60: Grain catalog and inventory — Spec
 
-**Status:** APPROVED by Matt 2026-11-17 (scoped, Q1–Q3 answered and categories revised the same day)
+**Status:** COMPLETE (on prod as `v2026.11.18`, 2026-11-18; approved 2026-11-17, QA amendments 2026-11-18)
 **Backlog:** PortableMind project 254 — 3843 (reference specs off lots), 4982 (comma decimals),
 5203 (dropdown labels, ingredient screens), 4084 (lint, ingredient screens)
 **Concept:** 12_ingredients (new)
