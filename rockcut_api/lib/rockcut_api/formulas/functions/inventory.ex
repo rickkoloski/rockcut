@@ -3,24 +3,29 @@ defmodule RockcutApi.Formulas.Functions.Inventory do
   Inventory-related formula functions.
   """
 
-  import Ecto.Query
-
-  alias RockcutApi.Brewing.IngredientLot
+  alias RockcutApi.Ingredients.Inventory
 
   @doc """
-  Sum quantity of active lots for a given ingredient.
-  Returns the count of active (available) lots since lots don't have a quantity field.
+  On hand in lb (D60 §3.7: the sum of the lots' movements) of a maltster
+  product (`product_id`) or of an ingredient over all its lots
+  (`ingredient_id`). A number; 0 when nothing is on hand.
   """
-  def on_hand(context, params) do
+  def on_hand(_context, params) do
+    product_id = params["product_id"] || params[:product_id]
     ingredient_id = params["ingredient_id"] || params[:ingredient_id]
-    repo = context.repo
 
-    count =
-      IngredientLot
-      |> where(ingredient_id: ^ingredient_id)
-      |> where(status: "available")
-      |> repo.aggregate(:count)
+    cond do
+      product_id ->
+        {:ok,
+         %{value: to_number(Map.fetch!(Inventory.on_hand_by_product([product_id]), product_id))}}
 
-    {:ok, %{value: count}}
+      ingredient_id ->
+        {:ok, %{value: to_number(Inventory.on_hand_for_ingredient(ingredient_id))}}
+
+      true ->
+        {:error, :validation_error, "product_id or ingredient_id is required"}
+    end
   end
+
+  defp to_number(%Decimal{} = d), do: Decimal.to_float(d)
 end

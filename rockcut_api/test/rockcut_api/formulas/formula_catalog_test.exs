@@ -69,9 +69,13 @@ defmodule RockcutApi.Formulas.FormulaCatalogTest do
   end
 
   describe "param schemas" do
-    test "inventory_on_hand requires ingredient_id as integer" do
+    test "inventory_on_hand takes an ingredient_id or a product_id (D60)" do
       op = FormulaCatalog.get("inventory_on_hand")
-      assert [%{name: "ingredient_id", type: :integer, required: true}] = op.params
+
+      assert [
+               %{name: "ingredient_id", type: :integer, required: false},
+               %{name: "product_id", type: :integer, required: false}
+             ] = op.params
     end
 
     test "est_ibu requires recipe_id as integer" do

@@ -5,8 +5,15 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
 
   import Ecto.Query
 
-  alias RockcutApi.Brewing.{Recipe, RecipeIngredient, IngredientLot, Ingredient, IngredientCategory}
-  alias RockcutApi.Ingredients.{FeatureType, LotFeatureValue}
+  alias RockcutApi.Brewing.{
+    Recipe,
+    RecipeIngredient,
+    IngredientLot,
+    Ingredient,
+    IngredientCategory
+  }
+
+  alias RockcutApi.Ingredients.{FeatureType, LotFeatureValue, Units}
 
   @default_efficiency 0.72
   @gallons_per_bbl 31.0
@@ -39,6 +46,10 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
 
   gravity points = sum of (weight_lbs * potential_gravity_points * efficiency) / volume
   OG = 1.000 + (total_points / 1000)
+
+  The recipe's `efficiency_target` is a percentage (D60: 68 means 0.68;
+  before D60 it was used as a fraction, so any target gave a wild OG); with
+  none, 72%.
   """
   def est_og(context, params) do
     recipe_id = params["recipe_id"] || params[:recipe_id]
@@ -46,7 +57,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
 
     recipe = repo.get!(Recipe, recipe_id)
     batch_volume_gallons = batch_volume_gallons(recipe)
-    efficiency = decimal_to_float(recipe.efficiency_target) || @default_efficiency
+    efficiency = efficiency(recipe.efficiency_target)
 
     grain_additions = load_grain_additions(repo, recipe_id)
 
@@ -134,7 +145,8 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
       utilization = bigness * boil_factor
 
       # mg/L alpha acid
-      mg_per_l = (alpha_acid / 100.0) * (weight_oz * 28.3495) * 1000.0 / (batch_volume_gallons * 3.78541)
+      mg_per_l =
+        alpha_acid / 100.0 * (weight_oz * 28.3495) * 1000.0 / (batch_volume_gallons * 3.78541)
 
       mg_per_l * utilization
     else
@@ -146,14 +158,15 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     fgdb = decimal_to_float(addition.extract_potential_fgdb) || 0.0
     weight_lbs = to_pounds(addition.amount, addition.unit)
 
-    # PPG (points per pound per gallon) from fine-grind dry-basis extract %.
-    # A pound of 100%-extract sugar in 1 gallon yields ~46 gravity points, so
-    # PPG = fgdb% * 0.46 (e.g. 80.3% -> ~36.9 PPG, typical for base malt).
+    # PPG (points per pound per gallon) from fine-grind dry-basis extract %
+    # (D60 §3.5: FGDB × 46.214 ÷ 100, the UI's constant; 80.3% -> ~37.1 PPG).
     # This returns weight * PPG * efficiency; est_og/2 divides by batch volume
     # and by 1000 to produce the final OG.
-    ppg = fgdb * 0.46
-    ppg * weight_lbs * efficiency
+    Units.ppg(fgdb) * weight_lbs * efficiency
   end
+
+  defp efficiency(nil), do: @default_efficiency
+  defp efficiency(target), do: decimal_to_float(target) / 100.0
 
   defp batch_volume_gallons(recipe) do
     size = decimal_to_float(recipe.batch_size) || 0.0
