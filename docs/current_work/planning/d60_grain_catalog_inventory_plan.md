@@ -2,7 +2,7 @@
 
 2026-11-17 · lead. **Spec:** `specs/d60_grain_catalog_inventory_spec.md` (approved 2026-11-17).
 **Tasks:** 3843, 4982, 5203 (ingredient screens), 4084 (ingredient screens). **Branch:**
-`d60-ingredients-recipes` in `~/src/rockcut`, from `develop` @ `672a0d0`.
+`d60-grain-catalog` in `~/src/rockcut`, from `develop` @ `672a0d0`.
 
 ## Where things are today
 
