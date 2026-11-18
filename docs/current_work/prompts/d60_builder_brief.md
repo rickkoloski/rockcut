@@ -189,3 +189,89 @@ the lead owns the servers; the dev server is running on the migrated DB).
 - Reply with: commits, files touched, test counts, the query count for the product list, the new
   `est_og` numbers, and anything you weren't sure about prefixed `LEAD:`. If you need the dev DB
   migrated again, ask the lead.
+
+---
+
+# Stage 3 (UI)
+
+2026-11-17 · lead → builder. Stage 2 is in (`b006ae7` … `f5ef099`). Your `LEAD:` notes are
+accepted, including the extra safeguards, delete with zero or one movement, hop lots unchanged
+until D62, per-key overrides on lot features, and the shared-connection concurrency test (dev and
+prod run `pool_size: 1`, so writes are serialized anyway).
+
+**One API change first (Matt, 2026-11-17; spec §3.7 updated):** `expired` stays a manual status,
+but **Oldest first skips expired lots**: outgoing movements with `allocation: "oldest_first"` and
+total-count shortfalls draw only from non-expired lots (a shortfall larger than the non-expired
+on-hand is a 422 that says so). An explicit `lot_id` may still be an expired lot; a by-lot count
+includes expired lots. Product JSON adds `expired_lb` (on-hand in expired lots; `on_hand_lb` stays
+the total). Tests for each.
+
+**Read first:** spec §4, §5, §9 and plan Stage 3. Same rules as before. The dev server is running
+the branch's API; ask the lead if it needs a restart for the API change. The UI dev server
+(`pnpm dev`, :5174) is the lead's too.
+
+## Do
+
+1. **Shared pieces** (with vitest):
+   - `src/lib/brewingUnits.ts`: the five conversions in spec §3.5 (as-is needs moisture; returns
+     an error if it's missing or ≥ 100), sacks ↔ lb with a sack size, `formatQuantity(lb, sackSize,
+     mode)` ("12 sacks 22.5 lb" / "682.5 lb"; whole sacks only "12 sacks"; under one sack "22.5 lb"),
+     and formatting a feature value by its type's decimals (the API drops trailing zeros).
+   - `components/DecimalInput.tsx` (4982): `type="text" inputMode="decimal"`; accepts `,` or `.`
+     as the decimal point; anything else shows a field message and isn't sent; sends a string.
+   - `components/QuantityInput.tsx`: sacks + lb boxes or one lb box, following the account's
+     `quantity_display`; returns lb.
+   - `components/ConvertButton.tsx` + popup per feature (Extract: FGDB / As-is / PPG; Color: °L /
+     SRM / EBC; Diastatic power: °Lintner / °WK): pick unit, type value, see the stored value,
+     **Use** fills the field and remembers `entered_value`/`entered_unit`.
+   - A hook for the `ingredients` board setting (`quantity_display`), read from `/api/me` and saved
+     through the board settings endpoint like the Gantt's.
+2. **Grains list** at `/ingredients` when the Grains category is selected (other categories keep
+   today's view until D62): grouped by the five child categories (collapsible), one row per
+   maltster product, grains without products on their own row. Columns per spec §4.1, on-hand
+   formatted by the toggle with expired shown as "· 55 lb expired". Search; filters category,
+   maltster, supplier, on hand only. The sacks/lb toggle in the page's top row. Phone width:
+   cards (product, on hand, color, extract), no sideways scroll at 360 px.
+3. **Maltster product page** `/ingredients/products/:id` (spec §4.2): standard specs with edit and
+   the convert buttons, showing "entered as …" when a conversion was used; offers (order name,
+   sack size, milled/whole, current price, $/lb, price history, add price with an effective
+   date); lots (lot #, received, supplier, on hand, status, specs that differ from standard
+   marked); movement history (date, kind, lot, quantity, partner, note, who); actions **Add lot**,
+   **Record movement**, **Count**.
+4. **Dialogs** (all `FormDialog` + `parseApiError`, labelled selects with `id`/`labelId`, numbers
+   through `DecimalInput`/`QuantityInput`, full screen at phone width, Android back closes them via
+   `useBackCloses`): grain (name, child category, notes); maltster product (grain, maltster,
+   product name, standard specs); offer; price; Add lot (offer → supplier and sack size, lot #,
+   received date, Opening amount / Received, quantity, specs prefilled from the standard,
+   editable); Record movement (kind, lot defaulting to **Oldest first** for outgoing kinds, partner
+   brewery shown and required for trades and loans, quantity, date, note; an expired lot is
+   labelled "Expired" in the lot list); Count (one total by default, **Count by lot** switch with
+   one `QuantityInput` per lot showing its on-hand; date). Disable the submit button while a save is
+   in flight (no double movements on a slow network).
+5. **Companies page** `/ingredients/companies`: list with role chips, add/edit (name, roles,
+   notes, active), deactivate; the API's "in use" refusals shown as messages. Reachable from the
+   Ingredient Library's top row.
+6. **Categories page** (`/ingredients/categories`): Grains shows its children; add/rename a child
+   (parent picker limited to top-level categories).
+7. **Existing screens:** `IngredientLotDialog` for non-grain categories edits alpha acid /
+   attenuation through the lot's `features` (behavior unchanged otherwise); the recipe lot picker
+   label is "maltster · lot #" when the lot has a product. 5203: `id`/`labelId` on
+   `IngredientLotDialog` Status, `IngredientsList` Category filter, `IngredientFormDialog`
+   Category. 4084: `pnpm lint` shows no errors under `pages/ingredients/`, `pages/settings/` files
+   you touch and the new components (run `pnpm lint` and report the before/after totals).
+8. **Look at it** in the browser with token injection (`rockcut-ui/tests/RUNNING.md`) as `brewer1`,
+   `breweryMgr`, `owner`, `bartender1` (refused) and `breweryDevice` (refused), at desktop and
+   360 px, against the `[SEED]` Rahr 2-Row lots. Screenshots to `/tmp/claude-501/d60-shots/`.
+
+## Don't
+
+- No Playwright specs yet (Stage 4). Don't touch recipe, batch or Gantt screens beyond item 7.
+- Don't touch `CLAUDE.md`, the spec, the plan or `SESSION_HANDOFF_*`.
+
+## Done when
+
+- `pnpm tsc`/`vite build` clean, vitest green, lint totals reported, `mix test` green twice for the
+  API change.
+- Commits on the branch.
+- Reply with: commits, files touched, test counts, lint before/after, what you saw per persona,
+  and anything you weren't sure about prefixed `LEAD:`.

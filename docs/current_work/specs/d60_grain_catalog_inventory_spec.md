@@ -163,7 +163,11 @@ factor (today `fgdb × 0.46`) uses the same 46.214 constant on the API side.
 - **On hand** = the sum of a lot's movements; a product's on hand = the sum of its lots. A
   movement that would take a lot below 0 is refused (422) with the lot's on-hand in the message.
 - Lot status: `available` / `depleted` follow on-hand (0 → depleted, above 0 → available);
-  `expired` stays a manual choice.
+  `expired` stays a manual choice (Matt, 2026-11-17, at Stage 2: no best-by date; a brewer marks
+  a lot Expired when it's stale or damaged, and can set it back). **Oldest first skips expired
+  lots** (outgoing movements and total-count shortfalls); a brewer can still pick an expired lot
+  by hand, and a by-lot count includes it. On-hand shows expired stock separately
+  ("682.5 lb · 55 lb expired").
 - Quantities are **entered as sacks + lb or total lb** (same toggle as the display) and stored as
   lb. Sacks use the lot's sack size.
 - A lot can be deleted only while it has just its first movement and no recipe uses it.
