@@ -42,7 +42,7 @@ test.describe('breweryMgr (Brewery manager)', () => {
     await d.getByRole('button', { name: 'Save count' }).click()
     await expect(d).toHaveCount(0)
 
-    await expect(page.getByTestId(`lot-status-${older.id}`)).toHaveText(/^depleted$/i)
+    await expect(page.getByTestId(`lot-status-${older.id}`)).toHaveText('Depleted')
     await expect(page.getByTestId(`lot-on-hand-${newer.id}`)).toHaveText('8 sacks')
     await expectLotOnHand(older.id, product.id, 0)
     await expectLotOnHand(newer.id, product.id, 8 * SACK)

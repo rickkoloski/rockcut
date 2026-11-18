@@ -29,6 +29,11 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
   defp errors({422, %{"errors" => errors}}), do: errors
 
+  defp list(user, category_id) do
+    {200, %{"data" => data}} = req(user, :get, "/api/ingredients", %{category_id: category_id})
+    data
+  end
+
   defp on_hand(product_id) do
     {200, %{"data" => p}} = req(user_cache(), :get, "/api/ingredient_products/#{product_id}")
     p["on_hand_lb"]
@@ -1000,6 +1005,22 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
       assert parent == c.grains.id
       assert Repo.get_by!(IngredientCategory, name: "Kilned").parent_id == c.grains.id
+    end
+
+    test "the ingredient list's category filter: a parent includes its children, a child only itself",
+         c do
+      crystal =
+        Repo.insert!(%IngredientCategory{name: "Crystal", sort_order: 1, parent_id: c.grains.id})
+
+      Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "C60", category_id: crystal.id})
+      Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "Cascade", category_id: c.hops.id})
+      names = fn id -> for(i <- list(c.brewer, id), do: i["name"]) end
+
+      assert names.(c.grains.id) == ["2-Row", "C60"]
+      assert names.(c.base.id) == ["2-Row"]
+      assert names.(crystal.id) == ["C60"]
+      assert names.(c.hops.id) == ["Cascade"]
+      assert length(names.("")) == 3
     end
   end
 

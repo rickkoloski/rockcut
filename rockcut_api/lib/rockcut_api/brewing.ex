@@ -94,7 +94,7 @@ defmodule RockcutApi.Brewing do
 
   def list_ingredients(params \\ %{}) do
     Ingredient
-    |> maybe_filter_by(:category_id, params)
+    |> filter_category(params["category_id"] || params[:category_id])
     |> order_by(:name)
     |> preload([
       :category,
@@ -478,6 +478,14 @@ defmodule RockcutApi.Brewing do
   def delete_batch_log_entry(%BatchLogEntry{} = entry), do: Repo.delete(entry)
 
   # ── Helpers ────────────────────────────────────────────────────────
+
+  # D60 §3.1: a parent category includes its children's ingredients.
+  defp filter_category(query, value) when value in [nil, ""], do: query
+
+  defp filter_category(query, id) do
+    children = from(c in IngredientCategory, where: c.parent_id == ^id, select: c.id)
+    where(query, [i], i.category_id == ^id or i.category_id in subquery(children))
+  end
 
   defp maybe_filter_by(query, field, params) do
     key = to_string(field)

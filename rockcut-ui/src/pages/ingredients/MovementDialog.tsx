@@ -133,8 +133,11 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
         {outgoing && lotChoice === OLDEST && <FormHelperText>From the oldest lots first, skipping expired lots</FormHelperText>}
       </FormControl>
       {needsPartner && (
-        <FormControl fullWidth required error={partnerMissing}>
-          <InputLabel id="movement-partner-label">Partner brewery</InputLabel>
+        // Not `required` on the control: the browser would stop the form before the app's message (lead decisions 1, item 2).
+        <FormControl fullWidth error={partnerMissing}>
+          <InputLabel id="movement-partner-label" required>
+            Partner brewery
+          </InputLabel>
           <Select
             labelId="movement-partner-label"
             id="movement-partner"
