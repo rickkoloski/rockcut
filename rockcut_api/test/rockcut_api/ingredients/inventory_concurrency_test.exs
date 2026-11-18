@@ -42,7 +42,7 @@ defmodule RockcutApi.Ingredients.InventoryConcurrencyTest do
 
     assert [{:ok, [_, _]}] = Enum.filter(results, &match?({:ok, _}, &1))
 
-    assert [{:error, {:invalid, %{quantity_lb: ["is more than the 185 lb on hand"]}}}] =
+    assert [{:error, {:invalid, %{base: ["That's more than the 3 sacks 20 lb on hand"]}}}] =
              Enum.reject(results, &match?({:ok, _}, &1))
 
     on_hand = Inventory.on_hand_by_product([c.product.id])[c.product.id]

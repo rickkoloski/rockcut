@@ -12,12 +12,17 @@ defmodule RockcutApi.Ingredients.Inventory do
   takes a lot below 0. A lot's status follows its on-hand
   (`depleted` at 0, `available` above) unless it's `expired`; a lot with no
   movements at all (a non-grain lot, D62's) keeps the status it was given.
+
+  D60 lead decisions 2: the refusals a person can meet are whole sentences
+  under `base`, with quantities in the person's sacks/lb setting
+  (`Units.quantity_display/1`); lb are kept to 2 decimals and a quantity
+  under 0.01 lb is refused; no movement is dated after today (Colorado).
   """
   import Ecto.Query
 
   alias RockcutApi.{Repo, Tasks}
   alias RockcutApi.Brewing.{Ingredient, IngredientCategory, IngredientLot, RecipeIngredient}
-  alias RockcutApi.Ingredients.{Features, Movement, Parties, Product}
+  alias RockcutApi.Ingredients.{Features, Movement, Parties, Product, Units}
 
   @incoming ~w(opening received traded_in loaned_in)
   @outgoing ~w(used traded_out loaned_out)
@@ -195,8 +200,8 @@ defmodule RockcutApi.Ingredients.Inventory do
     kind = attrs["kind"]
 
     with :ok <- movement_kind(kind),
-         {:ok, quantity} <- positive(attrs["quantity_lb"], :quantity_lb),
-         {:ok, date} <- date(attrs["occurred_on"], :occurred_on),
+         {:ok, quantity} <- positive(attrs["quantity_lb"]),
+         {:ok, date} <- movement_date(attrs["occurred_on"]),
          :ok <- partner(kind, attrs["party_id"]),
          {:ok, target} <- movement_target(kind, attrs) do
       sign = if kind in @outgoing, do: Decimal.negate(quantity), else: quantity
@@ -222,7 +227,7 @@ defmodule RockcutApi.Ingredients.Inventory do
             insert_movements!(parts, base, Decimal.negative?(sign))
 
           {:error, :short, on_hand} ->
-            Repo.rollback(short(on_hand, target))
+            Repo.rollback(short(on_hand, target, Units.quantity_display(user)))
         end
       end)
     end
@@ -233,26 +238,28 @@ defmodule RockcutApi.Ingredients.Inventory do
   "total"` with `counted_lb`: a shortfall comes off the oldest lots first, an
   overage goes onto the newest lot. Expired lots count towards the total
   but a shortfall can't come off them (a 422 when the non-expired stock is
-  too small), and an overage goes onto the newest non-expired lot when there
-  is one. `mode: "by_lot"` with `lots: [%{lot_id,
-  counted_lb}]`: one adjustment per lot whose number differs. `{:ok,
-  adjustments}` (possibly none).
+  too small), and an overage goes onto the newest non-expired lot (a 422
+  when every lot is expired: count by lot instead). `mode: "by_lot"` with
+  `lots: [%{lot_id, counted_lb}]`: one adjustment per lot whose number
+  differs. A count that matches on-hand writes a 0 lb count movement
+  ("Counted, no change", Matt 2026-11-18): on the newest lot that isn't
+  expired for a total, on each lot counted by lot. `{:ok, adjustments}`.
   """
   def count(%Product{} = product, attrs, user) do
-    with {:ok, date} <- date(attrs["counted_on"], :counted_on),
+    with {:ok, date} <- movement_date(attrs["counted_on"]),
          {:ok, plan} <- count_plan(attrs) do
       base = %{kind: "count", occurred_on: date, note: attrs["note"], entered_by_id: user.id}
 
       write(fn ->
         product.id
-        |> count_parts(plan)
+        |> count_parts(plan, Units.quantity_display(user))
         |> Enum.flat_map(fn {parts, negative?} -> insert_movements!(parts, base, negative?) end)
       end)
     end
   end
 
   defp count_plan(%{"mode" => "total"} = attrs) do
-    with {:ok, counted} <- non_negative(attrs["counted_lb"], :counted_lb),
+    with {:ok, counted} <- non_negative(attrs["counted_lb"]),
          do: {:ok, {:total, counted}}
   end
 
@@ -260,7 +267,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     parsed =
       Enum.map(lots, fn
         %{"lot_id" => id} = entry when is_integer(id) or is_binary(id) ->
-          with {:ok, counted} <- non_negative(entry["counted_lb"], :counted_lb),
+          with {:ok, counted} <- non_negative(entry["counted_lb"]),
                do: {:ok, {RockcutApi.Ids.parse(id), counted}}
 
         _ ->
@@ -287,15 +294,19 @@ defmodule RockcutApi.Ingredients.Inventory do
   defp count_plan(_), do: {:error, {:invalid, %{mode: ["must be total or by_lot"]}}}
 
   # [{[{lot, lb}], negative?}] inside the write transaction.
-  defp count_parts(product_id, {:total, counted}) do
+  defp count_parts(product_id, {:total, counted}, mode) do
     lots = product_lots(product_id)
     on_hand = on_hand_by_lot(Enum.map(lots, & &1.id))
     total = Enum.reduce(Map.values(on_hand), Decimal.new(0), &Decimal.add/2)
     diff = Decimal.sub(counted, total)
+    newest = lots |> Enum.reject(&(&1.status == "expired")) |> List.last()
 
     cond do
+      lots == [] ->
+        Repo.rollback(refusal("This product has no lots; add a lot first"))
+
       Decimal.eq?(diff, 0) ->
-        []
+        [{[{newest || List.last(lots), Decimal.new(0)}], false}]
 
       Decimal.negative?(diff) ->
         case allocate(product_id, Decimal.negate(diff), :oldest_first) do
@@ -303,27 +314,25 @@ defmodule RockcutApi.Ingredients.Inventory do
             [{parts, true}]
 
           {:error, :short, usable} ->
+            size = shared_sack_size(lots, on_hand)
+
             Repo.rollback(
-              {:invalid,
-               %{
-                 counted_lb: [
-                   "is #{lb(Decimal.negate(diff))} lb under on-hand, more than the " <>
-                     "#{lb(usable)} lb in lots that aren't expired; count by lot instead"
-                 ]
-               }}
+              refusal(
+                "The count is #{qty(Decimal.negate(diff), size, mode)} under on-hand, more than " <>
+                  "the #{qty(usable, size, mode)} in lots that aren't expired; count by lot instead"
+              )
             )
         end
 
-      lots == [] ->
-        Repo.rollback({:invalid, %{counted_lb: ["This product has no lots; add a lot first"]}})
+      is_nil(newest) ->
+        Repo.rollback(refusal("Every lot is expired; count by lot instead"))
 
       true ->
-        newest = Enum.reject(lots, &(&1.status == "expired")) |> List.last() || List.last(lots)
         [{[{newest, diff}], false}]
     end
   end
 
-  defp count_parts(product_id, {:by_lot, entries}) do
+  defp count_parts(product_id, {:by_lot, entries}, _mode) do
     lots = Map.new(product_lots(product_id), &{&1.id, &1})
 
     unless Enum.all?(entries, fn {id, _} -> Map.has_key?(lots, id) end) do
@@ -332,11 +341,17 @@ defmodule RockcutApi.Ingredients.Inventory do
 
     on_hand = on_hand_by_lot(Map.keys(lots))
 
-    for {id, counted} <- entries,
-        diff = Decimal.sub(counted, Map.fetch!(on_hand, id)),
-        not Decimal.eq?(diff, 0) do
-      {[{Map.fetch!(lots, id), Decimal.abs(diff)}], Decimal.negative?(diff)}
-    end
+    changed =
+      for {id, counted} <- entries,
+          diff = Decimal.sub(counted, Map.fetch!(on_hand, id)),
+          not Decimal.eq?(diff, 0) do
+        {[{Map.fetch!(lots, id), Decimal.abs(diff)}], Decimal.negative?(diff)}
+      end
+
+    # Nothing differs: the check still leaves a trace on each lot counted.
+    if changed == [],
+      do: [{Enum.map(entries, fn {id, _} -> {Map.fetch!(lots, id), Decimal.new(0)} end), false}],
+      else: changed
   end
 
   defp insert_movements!(parts, base, negative?) do
@@ -381,18 +396,18 @@ defmodule RockcutApi.Ingredients.Inventory do
   defp partner(kind, party_id) when kind in @with_partner do
     case blank(party_id) do
       nil ->
-        {:error, {:invalid, %{party_id: ["Pick the partner brewery"]}}}
+        refuse("Pick the partner brewery for a trade or loan")
 
       id ->
         if Parties.has_role?(id, "partner_brewery"),
           do: :ok,
-          else: {:error, {:invalid, %{party_id: ["must be a partner brewery"]}}}
+          else: refuse("The partner must be a partner brewery")
     end
   end
 
   defp partner(_kind, party_id) do
     if blank(party_id),
-      do: {:error, {:invalid, %{party_id: ["is only for trades and loans"]}}},
+      do: refuse("Only a trade or a loan names a partner brewery"),
       else: :ok
   end
 
@@ -400,7 +415,7 @@ defmodule RockcutApi.Ingredients.Inventory do
   defp movement_target(kind, attrs) do
     case {blank(attrs["lot_id"]), blank(attrs["product_id"])} do
       {nil, nil} ->
-        {:error, {:invalid, %{lot_id: ["Pick a lot, or the product with oldest first"]}}}
+        refuse("Pick a lot, or Oldest first")
 
       {nil, product_id} when kind in @outgoing ->
         cond do
@@ -415,45 +430,63 @@ defmodule RockcutApi.Ingredients.Inventory do
         end
 
       {nil, _product_id} ->
-        {:error, {:invalid, %{lot_id: ["Pick the lot this goes into"]}}}
+        refuse("Pick the lot this goes into")
 
       {lot_id, product_id} ->
         case Repo.get(IngredientLot, lot_id) do
           nil ->
-            {:error, {:invalid, %{lot_id: ["does not exist"]}}}
+            refuse("That lot doesn't exist")
 
           %IngredientLot{product_id: nil} ->
-            {:error, {:invalid, %{lot_id: ["isn't a lot of a maltster product"]}}}
+            refuse("That lot isn't a lot of a maltster product")
 
           lot ->
             if product_id && RockcutApi.Ids.parse(product_id) != lot.product_id,
-              do: {:error, {:invalid, %{lot_id: ["isn't this product's"]}}},
+              do: refuse("That lot isn't this product's"),
               else: {:ok, {:lot, lot}}
         end
     end
   end
 
-  defp short(on_hand, {:lot, lot}),
+  defp short(on_hand, {:lot, lot}, mode),
     do:
-      {:invalid,
-       %{
-         quantity_lb: ["is more than lot #{lot.lot_number || lot.id}'s #{lb(on_hand)} lb on hand"]
-       }}
+      refusal(
+        "That's more than lot #{lot.lot_number || "##{lot.id}"} has on hand " <>
+          "(#{qty(on_hand, lot.sack_size_lb, mode)})"
+      )
 
-  defp short(on_hand, {:product, product_id}) do
-    {_total, expired} = Map.fetch!(stock_by_product([product_id]), product_id)
+  defp short(on_hand, {:product, product_id}, mode) do
+    lots = product_lots(product_id)
+    by_lot = on_hand_by_lot(Enum.map(lots, & &1.id))
+    size = shared_sack_size(lots, by_lot)
 
-    message =
+    expired =
+      for(%{status: "expired", id: id} <- lots, do: Map.fetch!(by_lot, id))
+      |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+
+    refusal(
       if Decimal.gt?(expired, 0),
         do:
-          "is more than the #{lb(on_hand)} lb on hand in lots that aren't expired " <>
-            "(#{lb(expired)} lb is in expired lots; pick one by hand to use it)",
-        else: "is more than the #{lb(on_hand)} lb on hand"
-
-    {:invalid, %{quantity_lb: [message]}}
+          "That's more than the #{qty(on_hand, size, mode)} on hand in lots that aren't " <>
+            "expired (plus #{qty(expired, size, mode)} in expired lots; pick that lot " <>
+            "to use it)",
+        else: "That's more than the #{qty(on_hand, size, mode)} on hand"
+    )
   end
 
-  defp lb(d), do: d |> Decimal.normalize() |> Decimal.to_string(:normal)
+  # The one sack size a product's stocked lots share (as the UI's
+  # `productSackSize`), so a message reads like the dialog; nil when mixed.
+  defp shared_sack_size(lots, on_hand) do
+    sizes =
+      for l <- lots, Decimal.gt?(Map.fetch!(on_hand, l.id), 0), uniq: true, do: l.sack_size_lb
+
+    case sizes do
+      [%Decimal{} = size] -> size
+      _ -> nil
+    end
+  end
+
+  defp qty(lb, sack_size, mode), do: Units.format_quantity(lb, sack_size, mode)
 
   ## Lots
 
@@ -525,16 +558,20 @@ defmodule RockcutApi.Ingredients.Inventory do
   @doc """
   Change a lot. `features` change key by key (nil drops one). The status
   may be set to `expired` (or back); otherwise it follows on-hand once the
-  lot has movements. The product can't change once the lot has movements.
+  lot has movements. The product can't change once the lot has movements,
+  nor the sack size once it has movements after its first (lead decisions
+  2, gap 14: past movements would read differently).
   """
   def update_lot(%IngredientLot{} = lot, attrs) do
-    moved? = Repo.exists?(from(m in Movement, where: m.lot_id == ^lot.id))
+    movements = Repo.aggregate(from(m in Movement, where: m.lot_id == ^lot.id), :count)
+    moved? = movements > 0
 
     new_product =
       Map.has_key?(attrs, "product_id") and
         RockcutApi.Ids.parse(attrs["product_id"]) != lot.product_id
 
     with :ok <- if(moved? and new_product, do: product_fixed(), else: :ok),
+         :ok <- if(movements > 1, do: sack_size_fixed(lot, attrs), else: :ok),
          {:ok, merged} <-
            attrs
            |> Map.put_new("product_id", lot.product_id)
@@ -591,6 +628,31 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   defp product_fixed,
     do: {:error, {:invalid, %{product_id: ["can't change once the lot has movements"]}}}
+
+  defp sack_size_fixed(lot, attrs) do
+    same? =
+      case Map.fetch(attrs, "sack_size_lb") do
+        :error -> true
+        {:ok, given} -> same_decimal?(given, lot.sack_size_lb)
+      end
+
+    if same?,
+      do: :ok,
+      else:
+        refuse(
+          "This lot has movements after its first, so its sack size can't change " <>
+            "(its history would read differently)"
+        )
+  end
+
+  defp same_decimal?(given, current) when given in [nil, ""], do: is_nil(current)
+
+  defp same_decimal?(given, current) do
+    case cast_decimal(given) do
+      {:ok, d} -> not is_nil(current) and Decimal.eq?(d, current)
+      :error -> false
+    end
+  end
 
   # The product decides the ingredient (a lot of "Rahr 2-Row" is 2-Row); an
   # ingredient given with it must be that one.
@@ -673,7 +735,8 @@ defmodule RockcutApi.Ingredients.Inventory do
         {:error, {:invalid, %{received_date: ["can't be blank"]}}}
 
       true ->
-        with {:ok, quantity} <- positive(attrs["initial_quantity_lb"], :initial_quantity_lb),
+        with {:ok, quantity} <- positive(attrs["initial_quantity_lb"]),
+             :ok <- not_future(attrs["received_date"]),
              do: {:ok, {kind, quantity}}
     end
   end
@@ -697,37 +760,56 @@ defmodule RockcutApi.Ingredients.Inventory do
   defp blank(v) when v in [nil, ""], do: nil
   defp blank(v), do: v
 
-  defp positive(v, field) do
+  defp refusal(message), do: {:invalid, %{base: [message]}}
+  defp refuse(message), do: {:error, refusal(message)}
+
+  # A quantity in lb: at least 0.01 and under 1,000,000, kept to 2 decimals.
+  defp positive(v) do
     case cast_decimal(v) do
       {:ok, d} ->
-        if Decimal.gt?(d, 0) and Decimal.lt?(d, 1_000_000),
-          do: {:ok, d},
-          else: {:error, {:invalid, %{field => ["must be more than 0 and under 1,000,000"]}}}
+        if Decimal.compare(d, Decimal.new("0.01")) != :lt and Decimal.lt?(d, 1_000_000),
+          do: {:ok, Units.round(d, 2)},
+          else: refuse("Enter a quantity of at least 0.01 lb and under 1,000,000 lb")
 
       :error ->
-        {:error, {:invalid, %{field => ["must be a number"]}}}
+        refuse("The quantity must be a number")
     end
   end
 
-  defp non_negative(v, field) do
+  defp non_negative(v) do
     case cast_decimal(v) do
       {:ok, d} ->
         if not Decimal.negative?(d) and Decimal.lt?(d, 1_000_000),
-          do: {:ok, d},
-          else: {:error, {:invalid, %{field => ["must be 0 or more and under 1,000,000"]}}}
+          do: {:ok, Units.round(d, 2)},
+          else: refuse("The count must be 0 or more and under 1,000,000 lb")
 
       :error ->
-        {:error, {:invalid, %{field => ["must be a number"]}}}
+        refuse("The count must be a number")
     end
   end
 
   defp cast_decimal(v) when is_binary(v) or is_number(v), do: Ecto.Type.cast(:decimal, v)
   defp cast_decimal(_), do: :error
 
-  defp date(v, field) do
+  # A movement's or count's date: a date, not after today in Colorado
+  # (Matt, 2026-11-18, gap 13).
+  defp movement_date(v) do
     case Ecto.Type.cast(:date, v) do
-      {:ok, %Date{} = d} -> {:ok, d}
-      _ -> {:error, {:invalid, %{field => ["must be a date"]}}}
+      {:ok, %Date{} = d} ->
+        if Date.after?(d, Tasks.today()), do: future(), else: {:ok, d}
+
+      _ ->
+        refuse("Pick the date")
     end
   end
+
+  # A lot's received date is its first movement's date.
+  defp not_future(v) do
+    case Ecto.Type.cast(:date, v) do
+      {:ok, %Date{} = d} -> if Date.after?(d, Tasks.today()), do: future(), else: :ok
+      _ -> :ok
+    end
+  end
+
+  defp future, do: refuse("The date can't be in the future")
 end

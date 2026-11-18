@@ -39,22 +39,64 @@ defmodule RockcutApi.Brewing do
 
   # D55 lead decisions 6 (gap 8): a `sort_order` that is null or "" (or
   # missing on create) puts the category at the end, as for fields (§2.10).
+  # D60 lead decisions 2: the end among its siblings (a new Grains child after
+  # Grains' other children; a top-level category after the top level).
   def create_ingredient_category(attrs) do
     %IngredientCategory{sort_order: nil}
     |> IngredientCategory.changeset(attrs)
-    |> put_end_sort_order(IngredientCategory, nil)
+    |> put_end_category_order()
     |> Repo.insert()
   end
 
   def update_ingredient_category(%IngredientCategory{} = category, attrs) do
     category
     |> IngredientCategory.changeset(attrs)
-    |> put_end_sort_order(IngredientCategory, nil)
+    |> put_end_category_order()
     |> Repo.update()
   end
 
+  @doc """
+  Delete a category with no ingredients and no sub-categories; otherwise a
+  422 saying what to move first (D60 lead decisions 2, gap 12: was a 500).
+  """
   def delete_ingredient_category(%IngredientCategory{} = category) do
-    Repo.delete(category)
+    category = Repo.preload(category, :parent)
+    grains? = category.name == "Grains" or (category.parent && category.parent.name == "Grains")
+    what = if grains?, do: "grains", else: "ingredients"
+
+    cond do
+      Repo.exists?(from(c in IngredientCategory, where: c.parent_id == ^category.id)) ->
+        {:error,
+         {:invalid, %{base: ["This category has sub-categories; move or delete them first"]}}}
+
+      Repo.exists?(from(i in Ingredient, where: i.category_id == ^category.id)) ->
+        {:error, {:invalid, %{base: ["This category has #{what}; move them first"]}}}
+
+      true ->
+        Repo.delete(category)
+    end
+  end
+
+  defp put_end_category_order(changeset) do
+    if is_nil(Ecto.Changeset.get_field(changeset, :sort_order)) do
+      parent_id = Ecto.Changeset.get_field(changeset, :parent_id)
+      id = Ecto.Changeset.get_field(changeset, :id)
+
+      last =
+        IngredientCategory
+        |> then(fn q ->
+          if parent_id,
+            do: where(q, [c], c.parent_id == ^parent_id),
+            else: where(q, [c], is_nil(c.parent_id))
+        end)
+        |> then(fn q -> if id, do: where(q, [c], c.id != ^id), else: q end)
+        |> select([c], max(c.sort_order))
+        |> Repo.one()
+
+      Ecto.Changeset.put_change(changeset, :sort_order, if(last, do: last + 1, else: 0))
+    else
+      changeset
+    end
   end
 
   # ── Category Field Definitions ─────────────────────────────────────

@@ -9,7 +9,10 @@ defmodule RockcutApi.Ingredients.Features do
   product's or lot's category or its parent, the value lies in the type's
   `min`..`max`, and `entered_unit` is one of the feature's units
   (`Units.entered_units/1`), given only together with `entered_value`. The
-  API stores what it's sent; the conversions are the UI's.
+  value is rounded to the type's `decimals` before it's checked and stored
+  (D60 lead decisions 2, gap 4: what's stored is what's shown). Otherwise the
+  API stores what it's sent; the conversions are the UI's. A refusal names
+  the feature ("Moisture must be between 0 and 100").
   """
   import Ecto.Query
 
@@ -66,9 +69,14 @@ defmodule RockcutApi.Ingredients.Features do
       Enum.reduce(features, {[], %{}}, fn {key, entry}, {ok, errors} ->
         key = to_string(key)
 
-        case check(Map.get(types, key), applies, key, entry) do
-          {:ok, type, attrs} -> {[{type, attrs} | ok], errors}
-          {:error, message} -> {ok, Map.put(errors, key, [message])}
+        type = Map.get(types, key)
+
+        case check(type, applies, key, entry) do
+          {:ok, type, attrs} ->
+            {[{type, attrs} | ok], errors}
+
+          {:error, message} ->
+            {ok, Map.put(errors, key, ["#{(type && type.label) || key} #{message}"])}
         end
       end)
 
@@ -141,6 +149,7 @@ defmodule RockcutApi.Ingredients.Features do
 
       true ->
         with {:ok, attrs} <- entry_attrs(entry),
+             attrs = %{attrs | value: Units.round(attrs.value, type.decimals)},
              :ok <- check_value(type, attrs.value),
              :ok <- check_entered(key, attrs) do
           {:ok, type, attrs}
@@ -188,10 +197,10 @@ defmodule RockcutApi.Ingredients.Features do
   defp check_entered(_key, %{entered_value: nil, entered_unit: nil}), do: :ok
 
   defp check_entered(_key, %{entered_value: nil}),
-    do: {:error, "an entered unit needs the entered value"}
+    do: {:error, "has an entered unit but no entered value"}
 
   defp check_entered(_key, %{entered_unit: nil}),
-    do: {:error, "an entered value needs its unit"}
+    do: {:error, "has an entered value but no unit"}
 
   defp check_entered(key, %{entered_unit: unit}) do
     case Units.entered_units(key) do
