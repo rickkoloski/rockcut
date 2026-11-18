@@ -14,6 +14,12 @@ describe('parseApiError', () => {
     )
   })
 
+  it('D60: a nested map of field errors names the inner keys', () => {
+    expect(parseApiError(fail(422, { errors: { features: { extract_fgdb: ['must be between 0 and 100'], color_lovibond: ['is not a number'] } } }))).toBe(
+      'extract fgdb: must be between 0 and 100; color lovibond: is not a number',
+    )
+  })
+
   it('a plain { error } body, as before', () => {
     expect(parseApiError(fail(403, { error: 'Forbidden' }))).toBe('Forbidden')
   })

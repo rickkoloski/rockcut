@@ -26,6 +26,13 @@ export default function parseApiError(err: unknown): string {
   if (isRecord(data) && status < 500) {
     if (isRecord(data.errors)) {
       const parts = Object.entries(data.errors).flatMap(([field, msgs]) => {
+        // D60: a nested map (`features: { extract_fgdb: ["…"] }`) names the inner key.
+        if (isRecord(msgs)) {
+          return Object.entries(msgs).flatMap(([key, inner]) => {
+            const text = messages(inner)
+            return text ? [`${key.replace(/_/g, ' ')}: ${text}`] : []
+          })
+        }
         const text = messages(msgs)
         if (!text) return []
         return field === 'detail' ? [text] : [`${field.replace(/_/g, ' ')}: ${text}`]
