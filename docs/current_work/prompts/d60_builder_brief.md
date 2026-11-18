@@ -275,3 +275,55 @@ the branch's API; ask the lead if it needs a restart for the API change. The UI 
 - Commits on the branch.
 - Reply with: commits, files touched, test counts, lint before/after, what you saw per persona,
   and anything you weren't sure about prefixed `LEAD:`.
+
+---
+
+# Stage 4 (Playwright + coverage)
+
+2026-11-18 · lead → builder. Stage 3 is in (`04257c2` … `c724a47`). Your `LEAD:` notes are
+accepted. **Color keeps 2 decimals** (Matt, 2026-11-18): spec §9 now says 2.78 °L. The overage
+onto the newest non-expired lot, by-lot counts listing stocked + expired lots, the shared sack
+size rule, tables scrolling in their box on the product page, and the non-grain lot dialog's
+company picker all stand.
+
+**Read first:** spec §9 (the scenarios), plan Stage 4, `rockcut-ui/tests/RUNNING.md`, and an
+existing regression folder for the house style (`tests/regression/timeoff/` from D44).
+
+## Do
+
+1. **Synthetic cleanup:** `mix rockcut.synthetic.setup` must delete `[TEST-TEMP]` ingredient rows
+   (products, their offers and prices, lots and their movements, companies), the way it deletes
+   other `[TEST-TEMP]` rows, even though the API refuses to delete lots with movements. ExUnit test
+   for it. Then the leftover product 46 and its lots go away on the next setup.
+2. **Specs** in `rockcut-ui/tests/regression/ingredients/`, one file per persona group, from
+   spec §9: conversions (SRM → 2.78 °L; PPG → FGDB; as-is needs moisture), offers and prices
+   (future price not current), lots (opening amount, changed-from-standard mark), movements
+   (sacks + lb display and the lb toggle per person; loan needs a partner; over on-hand refused),
+   oldest first (older lot emptied first; expired skipped; an expired lot picked by hand works),
+   counts (total and by lot), companies (in-use delete refused), the 360 px checks (grains cards,
+   product page, Companies: no sideways scroll; Add lot full screen), `5,2` saving 5.2,
+   categories (Grains' five children, no Origin/Maltster), the recipe lot picker label, and the
+   refusals (`bartender1` nav + page + API 403; `breweryDevice` API 403 on the new routes).
+   - Every spec declares its persona (`authFile('<key>')`); no UI logins.
+   - Create only `[TEST-TEMP]` rows and clean them up by **exact id** in `afterAll`; never write
+     to `[SEED]` lots or the reference products (make your own `[TEST-TEMP]` products and lots for
+     anything that moves stock).
+   - Assert inventory both on screen and through the API's `on_hand_lb`.
+3. **`tests/COVERAGE.md`:** a D60 section mapping each spec §9 scenario to ExUnit / Playwright /
+   manual-only / GAP.
+4. Run `npx playwright test tests/regression/ingredients --reporter=line` until green; run it a
+   second time to catch flakes. Report the counts and anything flaky.
+
+## Don't
+
+- Don't run the full Playwright suite: the lead runs the full local gate in its own tab after you
+  stop.
+- Don't touch `CLAUDE.md`, the spec, the plan or `SESSION_HANDOFF_*`.
+- Keep any token files out of the repo and delete them before you report.
+
+## Done when
+
+- The ingredients folder green twice; `mix test` green; vitest, `tsc`, `vite build` clean.
+- Commits on the branch.
+- Reply with: commits, spec files and test counts, COVERAGE gaps, and anything you weren't sure
+  about prefixed `LEAD:`.

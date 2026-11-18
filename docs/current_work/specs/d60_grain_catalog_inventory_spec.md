@@ -252,7 +252,7 @@ Q2 → §6 and Appendix B (seed it; Matt verifies before use), Q3 → Appendix A
 ## 9. Persona scenarios
 
 - As `brewer1` from Brewery → Ingredients, add maltster product "Rahr 2-Row" under 2-Row with
-  standard specs, entering color as 3.0 SRM; the page shows 2.8 °L "entered as 3.0 SRM".
+  standard specs, entering color as 3.0 SRM; the page shows 2.78 °L "entered as 3.0 SRM" (color has 2 decimals, Matt 2026-11-18).
 - As `brewer1`, add a BSG offer for Rahr 2-Row (55 lb, milled, $48.50/sack); change the price to
   $51.00 from next month; today's price stays $48.50 and the history shows both.
 - As `brewer2`, add a lot of Rahr 2-Row with an opening amount of 12 sacks; extract shows the
