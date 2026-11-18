@@ -156,6 +156,8 @@ export interface IngredientLot {
   features: FeatureValues | null
   /** The sum of its movements, in lb (decimal string). */
   on_hand_lb: string | null
+  /** Why the lot can't be deleted (later movements, or a recipe uses it), or null (lead decisions 3, gap 15). */
+  delete_blocked?: string | null
   notes: string | null
   inserted_at: string
   updated_at: string

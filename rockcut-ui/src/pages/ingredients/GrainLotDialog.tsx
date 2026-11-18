@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Switch, TextField, Typography } from '@mui/material'
+import { Box, Button, FormControl, FormControlLabel, InputLabel, MenuItem, Select, Switch, TextField, Typography } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DecimalInput from '../../components/DecimalInput'
@@ -26,8 +26,8 @@ interface GrainLotDialogProps {
  * D60 §3.7: change a grain lot: number, dates, supplier, sack size, its own
  * specs, and Expired (a brewer's call; oldest first skips it). Its stock
  * changes only through movements and counts. Delete only while it has just
- * its first movement and no recipe uses it (the API says so otherwise), after
- * a confirm naming that stock (gap 9). The sack size is fixed once the lot has
+ * its first movement and no recipe uses it: otherwise it's disabled with the
+ * lot's `delete_blocked` reason (gap 15); else a confirm names that stock (gap 9). The sack size is fixed once the lot has
  * a movement after its first (gap 14).
  */
 export default function GrainLotDialog(props: GrainLotDialogProps) {
@@ -48,6 +48,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const sackSizeFixed = movements.length > 1
+  const deleteBlocked = lot.delete_blocked ?? null
 
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
@@ -99,9 +100,16 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       submitDisabled={!draftsValid(shown, featureTypes) || !size.ok}
       testId="grain-lot-dialog"
       secondaryAction={
-        <Button color="error" disabled={loading} data-testid="lot-delete" onClick={() => setConfirmDelete(true)}>
-          Delete
-        </Button>
+        <Box sx={{ maxWidth: { xs: 160, sm: 260 } }}>
+          <Button color="error" disabled={loading || !!deleteBlocked} data-testid="lot-delete" onClick={() => setConfirmDelete(true)}>
+            Delete
+          </Button>
+          {deleteBlocked && (
+            <Typography variant="caption" color="text.secondary" component="p" data-testid="lot-delete-reason">
+              {deleteBlocked}
+            </Typography>
+          )}
+        </Box>
       }
     >
       <Typography variant="body2" color="text.secondary">
@@ -138,7 +146,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={loading} />
       <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} multiline rows={2} fullWidth />
       <ConfirmDialog
-        open={confirmDelete}
+        open={confirmDelete && !deleteBlocked}
         onClose={() => setConfirmDelete(false)}
         onConfirm={handleDelete}
         title="Delete lot"

@@ -11,6 +11,7 @@ import {
   ppgToFgdb,
   productSackSize,
   quantityDisplay,
+  readQuantity,
   roundString,
   sacksToLb,
   srmToLovibond,
@@ -143,6 +144,28 @@ describe('quantities (§3.7, §3.9)', () => {
         ],
       ),
     ).toBe(50)
+  })
+})
+
+describe('reading a quantity box (lead decisions 3, gap 16)', () => {
+  it('refuses over 0 but under 0.01 lb, in lb and in sacks + lb', () => {
+    expect(readQuantity('', '0.001', null)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
+    expect(readQuantity('', '0.009', 50)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
+    expect(readQuantity('0.0001', '', 50)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
+  })
+
+  it('keeps 0.01 lb, 0 (a count of nothing) and empty boxes', () => {
+    expect(readQuantity('', '0.01', null)).toEqual({ lb: '0.01', valid: true })
+    expect(readQuantity('', '0', null)).toEqual({ lb: '0', valid: true })
+    expect(readQuantity('0', '0', 50)).toEqual({ lb: '0', valid: true })
+    expect(readQuantity('', '', 50)).toEqual({ lb: null, valid: true })
+  })
+
+  it('adds sacks and loose lb; a box that is refused is invalid with no quantity', () => {
+    expect(readQuantity('2', '5.5', 50)).toEqual({ lb: '105.5', valid: true })
+    expect(readQuantity('1,234', '', null)).toEqual({ lb: null, valid: true })
+    expect(readQuantity('', '1,234', null)).toEqual({ lb: '1234', valid: true })
+    expect(readQuantity('', '5,2', null)).toEqual({ lb: null, valid: false })
   })
 })
 

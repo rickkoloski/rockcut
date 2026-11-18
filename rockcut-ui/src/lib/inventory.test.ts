@@ -12,7 +12,6 @@ describe('inventory messages (D60 lead decisions 2)', () => {
       'Delete lot #136? Its Opening amount 30 lb goes too.',
     )
     expect(lotDeleteMessage(lot, [], 'sacks')).toBe('Delete lot H-D?')
-    expect(lotDeleteMessage(lot, [received, { id: 2, kind: 'used', quantity_lb: '-10' }], 'sacks')).toMatch(/can't be deleted/)
   })
 
   it('gap 11: a 0 lb count reads "Counted, no change"', () => {

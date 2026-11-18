@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, Typography } from '@mui/material'
 import DecimalInput from './DecimalInput'
-import { lbToSacks, parseDecimal, sacksToLb, type QuantityDisplay } from '../lib/brewingUnits'
+import { lbToSacks, readQuantity, type QuantityDisplay } from '../lib/brewingUnits'
 
 /** The quantity typed so far: lb as a decimal string, or null when empty or refused. */
 export interface QuantityValue {
@@ -28,7 +28,8 @@ const text = (n: number | null | undefined) => (n == null ? '' : String(n))
 
 /**
  * D60 §3.7, §3.9: a quantity as sacks + lb or total lb (the account's
- * display), always handed back as lb.
+ * display), always handed back as lb. Under 0.01 lb is refused under the box
+ * (gap 16).
  */
 export default function QuantityInput({ mode, sackSize, label, onChange, initialLb, helperText, required, disabled, testId }: QuantityInputProps) {
   const sacks = mode === 'sacks' && sackSize != null && sackSize > 0
@@ -36,14 +37,12 @@ export default function QuantityInput({ mode, sackSize, label, onChange, initial
   const [sackText, setSackText] = useState(start ? text(start.sacks || null) : '')
   const [lbText, setLbText] = useState(start ? text(start.lb || null) : text(initialLb))
 
+  const read = (s: string, l: string) => readQuantity(s, l, sacks ? sackSize : null)
   const report = (s: string, l: string) => {
-    const ps = parseDecimal(sacks ? s : '')
-    const pl = parseDecimal(l)
-    if (!ps.ok || !pl.ok) return onChange({ lb: null, valid: false })
-    if (ps.value == null && pl.value == null) return onChange({ lb: null, valid: true })
-    const lb = sacks ? sacksToLb(Number(ps.value ?? 0), Number(pl.value ?? 0), sackSize) : Number(pl.value)
-    onChange({ lb: String(lb), valid: true })
+    const { lb, valid } = read(s, l)
+    onChange({ lb, valid })
   }
+  const tooSmall = read(sackText, lbText).error
 
   if (!sacks) {
     return (
@@ -56,7 +55,8 @@ export default function QuantityInput({ mode, sackSize, label, onChange, initial
         }}
         required={required}
         disabled={disabled}
-        helperText={helperText}
+        error={!!tooSmall}
+        helperText={tooSmall ?? helperText}
         fullWidth
         slotProps={{ htmlInput: { 'data-testid': testId && `${testId}-lb` } }}
       />
@@ -88,13 +88,14 @@ export default function QuantityInput({ mode, sackSize, label, onChange, initial
             report(sackText, t)
           }}
           disabled={disabled}
+          error={!!tooSmall}
           sx={{ flex: 1 }}
           slotProps={{ htmlInput: { 'data-testid': testId && `${testId}-lb` } }}
         />
       </Box>
-      {helperText && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, mx: 1.75 }}>
-          {helperText}
+      {(tooSmall ?? helperText) && (
+        <Typography variant="caption" color={tooSmall ? 'error' : 'text.secondary'} sx={{ display: 'block', mt: 0.5, mx: 1.75 }}>
+          {tooSmall ?? helperText}
         </Typography>
       )}
     </Box>

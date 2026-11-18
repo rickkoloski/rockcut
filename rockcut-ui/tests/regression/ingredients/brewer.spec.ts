@@ -319,7 +319,37 @@ test('B8: Delete on a lot asks first, naming its stock; Cancel keeps it. The sac
   await page.getByTestId(`lot-row-${keep.id}`).click()
   await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeDisabled()
   await expect(lotDialog.getByText('Fixed: the lot has movements after its first')).toBeVisible()
+  // Gap 15: nor can it be deleted; Delete is disabled with the reason.
+  await expect(lotDialog.getByTestId('lot-delete')).toBeDisabled()
+  await expect(lotDialog.getByTestId('lot-delete-reason')).toHaveText('This lot has movements after its first; correct it with a movement or a count')
   await lotDialog.getByRole('button', { name: 'Cancel' }).click()
+})
+
+test('B10: a lot a recipe uses shows Delete disabled with the reason (gap 15)', async ({ page }) => {
+  const owner = await apiAs('owner')
+  const post = async (path: string, data: object) => {
+    const res = await owner.post(path, { data })
+    expect(res.status(), await res.text()).toBe(201)
+    return (await res.json()).data as { id: number }
+  }
+  const brand = await post('/api/brands', { name: tempTag('B10 brand') })
+  const recipe = await post('/api/recipes', { brand_id: brand.id, batch_size: 10, batch_size_unit: 'bbls' })
+  const product = await makeProduct('B10 used')
+  const lot = await makeLot(product, 2, 3)
+  await post('/api/recipe_ingredients', { recipe_id: recipe.id, lot_id: lot.id, amount: 100, unit: 'lb' })
+  try {
+    await page.goto(`/ingredients/products/${product.id}`)
+    await page.getByTestId(`lot-row-${lot.id}`).click()
+    const lotDialog = dialog(page, 'grain-lot-dialog')
+    await expect(lotDialog.getByTestId('lot-delete')).toBeDisabled()
+    await expect(lotDialog.getByTestId('lot-delete-reason')).toHaveText("A recipe uses this lot, so it can't be deleted")
+    // Only its first movement: the sack size can still change.
+    await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeEnabled()
+    await lotDialog.getByRole('button', { name: 'Cancel' }).click()
+  } finally {
+    await owner.delete(`/api/recipes/${recipe.id}`)
+    await owner.delete(`/api/brands/${brand.id}`)
+  }
 })
 
 test('B9: a count that matches on-hand is recorded as "Counted, no change"; dates stop at today', async ({ page }) => {
@@ -348,3 +378,31 @@ test('B9: a count that matches on-hand is recorded as "Counted, no change"; date
 function escape(s: string) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
+
+test('B11: under 0.01 lb is refused under the box, in Record movement and Count; nothing is sent (gap 16)', async ({ page }) => {
+  const product = await makeProduct('B11 tiny')
+  await makeLot(product, 2, 3)
+  await page.goto(`/ingredients/products/${product.id}`)
+  let writes = 0
+  page.on('request', (r) => {
+    if (r.method() === 'POST' && /\/api\/(inventory_movements|ingredient_products\/\d+\/count)$/.test(r.url())) writes++
+  })
+
+  const d = await recordMovement(page, { lb: '0.001' })
+  await expect(d.getByText('Enter at least 0.01 lb')).toBeVisible()
+  await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await d.getByTestId('movement-quantity-lb').fill('0.01')
+  await expect(d.getByText('Enter at least 0.01 lb')).toHaveCount(0)
+  await expect(d.getByRole('button', { name: 'Save' })).toBeEnabled()
+  await d.getByRole('button', { name: 'Cancel' }).click()
+
+  await page.getByTestId('product-count').click()
+  const c = dialog(page, 'count-dialog')
+  await c.getByTestId('count-total-lb').fill('0.004')
+  await expect(c.getByText('Enter at least 0.01 lb')).toBeVisible()
+  await expect(c.getByRole('button', { name: 'Save count' })).toBeDisabled()
+  await c.getByRole('button', { name: 'Cancel' }).click()
+
+  expect(writes).toBe(0)
+  await expectOnHand(product.id, 2 * SACK)
+})

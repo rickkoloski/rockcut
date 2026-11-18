@@ -107,6 +107,26 @@ export type QuantityDisplay = 'sacks' | 'lb'
 
 const toNumber = (v: string | number | null | undefined) => (v == null || v === '' ? null : Number(v))
 
+export const MIN_QUANTITY = 'Enter at least 0.01 lb'
+
+/**
+ * A quantity's boxes (sacks and lb, or lb alone when `sackSize` is null) as
+ * lb: null when empty or refused, `valid` false while refused. Over 0 but
+ * under 0.01 lb (the API's smallest) is refused with `error`, before rounding
+ * makes it 0 (lead decisions 3, gap 16).
+ */
+export function readQuantity(sackText: string, lbText: string, sackSize: number | null): { lb: string | null; valid: boolean; error?: string } {
+  const ps = parseDecimal(sackSize != null ? sackText : '')
+  const pl = parseDecimal(lbText)
+  if (!ps.ok || !pl.ok) return { lb: null, valid: false }
+  if (ps.value == null && pl.value == null) return { lb: null, valid: true }
+  const sacks = Number(ps.value ?? 0)
+  const loose = Number(pl.value ?? 0)
+  const raw = sackSize != null ? sacks * sackSize + loose : loose
+  if (raw > 0 && raw < 0.01) return { lb: null, valid: false, error: MIN_QUANTITY }
+  return { lb: String(sackSize != null ? sacksToLb(sacks, loose, sackSize) : loose), valid: true }
+}
+
 /** Sacks and loose lb as lb, rounded to 0.01 lb. */
 export function sacksToLb(sacks: number, lb: number, sackSize: number): number {
   return Math.round((sacks * sackSize + lb) * 100) / 100

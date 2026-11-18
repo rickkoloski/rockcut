@@ -54,12 +54,11 @@ export const oldestFirst = (a: Pick<IngredientLot, 'received_date' | 'id'>, b: P
  * The lot delete confirm (Matt, 2026-11-18, gap 9): "Delete lot H-D? Its
  * Received 4 sacks (200 lb) goes too." The stock is the lot's first movement,
  * in the person's display (with the lb when that's sacks). A lot with no
- * movements just asks; one with more than its first says the API will refuse.
+ * movements just asks. Only a lot that can be deleted gets here (gap 15).
  */
 export function lotDeleteMessage(lot: Pick<IngredientLot, 'id' | 'lot_number' | 'sack_size_lb'>, movements: Pick<InventoryMovement, 'id' | 'kind' | 'quantity_lb'>[], mode: QuantityDisplay): string {
   const name = `Delete lot ${lot.lot_number ?? `#${lot.id}`}?`
   if (movements.length === 0) return name
-  if (movements.length > 1) return `${name} It has movements after its first, so it can't be deleted; correct it with a movement or a count.`
   const [first] = movements
   const shown = formatQuantity(first.quantity_lb, lot.sack_size_lb, mode)
   const lb = formatQuantity(first.quantity_lb, null, 'lb')
