@@ -10,9 +10,16 @@ defmodule RockcutApi.Ingredients.Parties do
 
   alias RockcutApi.Repo
   alias RockcutApi.Brewing.IngredientLot
-  alias RockcutApi.Ingredients.{Movement, Party, PartyRole, Product, SupplierOffer}
 
-  @in_use "This company is in use; deactivate it instead"
+  alias RockcutApi.Ingredients.{
+    Contract,
+    Movement,
+    Party,
+    PartyRole,
+    Product,
+    PurchaseOrder,
+    SupplierOffer
+  }
 
   @doc """
   Parties by name, roles preloaded and `delete_blocked` filled; `role`
@@ -75,11 +82,15 @@ defmodule RockcutApi.Ingredients.Parties do
     end
   end
 
-  @doc "Deletes a party no product, offer, lot or movement refers to."
+  @doc """
+  Deletes a party nothing refers to; otherwise a 422 with the same sentence
+  as its `delete_blocked` (D61 lead, Stop 1 note 1).
+  """
   def delete(%Party{} = party) do
-    if Map.fetch!(delete_blocked([party.id]), party.id),
-      do: {:error, {:invalid, %{base: [@in_use]}}},
-      else: Repo.delete(party)
+    case Map.fetch!(delete_blocked([party.id]), party.id) do
+      nil -> Repo.delete(party)
+      reason -> {:error, {:invalid, %{base: [reason]}}}
+    end
   end
 
   @doc """
@@ -95,9 +106,9 @@ defmodule RockcutApi.Ingredients.Parties do
 
   @doc """
   Why each of `party_ids` can't be deleted, or nil when it can: what refers
-  to it (products it makes, offers or lots it supplies, movements it's the
-  partner on), one query each. The same rule as `delete/1` and
-  `role_in_use?/2`.
+  to it (products it makes; offers, lots, contracts or orders it supplies;
+  movements it's the partner on), one query each. `delete/1` refuses with
+  the same sentence.
   """
   def delete_blocked(party_ids) do
     uses = [
@@ -112,6 +123,16 @@ defmodule RockcutApi.Ingredients.Parties do
        from(l in IngredientLot,
          where: l.supplier_party_id in ^party_ids,
          select: l.supplier_party_id
+       )},
+      {"contracts",
+       from(c in Contract,
+         where: c.supplier_party_id in ^party_ids,
+         select: c.supplier_party_id
+       )},
+      {"orders",
+       from(o in PurchaseOrder,
+         where: o.supplier_party_id in ^party_ids,
+         select: o.supplier_party_id
        )},
       {"trades or loans",
        from(m in Movement, where: m.partner_party_id in ^party_ids, select: m.partner_party_id)}
@@ -176,7 +197,9 @@ defmodule RockcutApi.Ingredients.Parties do
 
   defp role_in_use?(id, "supplier") do
     Repo.exists?(from(o in SupplierOffer, where: o.supplier_party_id == ^id)) or
-      Repo.exists?(from(l in IngredientLot, where: l.supplier_party_id == ^id))
+      Repo.exists?(from(l in IngredientLot, where: l.supplier_party_id == ^id)) or
+      Repo.exists?(from(c in Contract, where: c.supplier_party_id == ^id)) or
+      Repo.exists?(from(o in PurchaseOrder, where: o.supplier_party_id == ^id))
   end
 
   defp role_in_use?(id, "partner_brewery"),

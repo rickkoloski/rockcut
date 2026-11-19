@@ -168,7 +168,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     end
 
     test "a party in use can't be deleted, only deactivated; an unused one can", c do
-      assert %{"base" => ["This company is in use; deactivate it instead"]} =
+      assert %{"base" => ["This company has maltster products; deactivate it instead"]} =
                errors(req(c.p["owner"], :delete, "/api/parties/#{c.rahr.id}"))
 
       assert {200, %{"data" => %{"active" => false}}} =

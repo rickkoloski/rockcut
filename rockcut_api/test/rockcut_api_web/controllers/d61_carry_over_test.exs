@@ -77,10 +77,13 @@ defmodule RockcutApiWeb.D61CarryOverTest do
 
       assert blocked == "This company has supplier offers and lots; deactivate it instead"
 
-      # The API refusal is unchanged; the unused one deletes.
+      # D61 lead (Stop 1 note 1): the API refuses with the same sentence; the unused one deletes.
+      {200, %{"data" => list}} = req(c.brewer, :get, "/api/parties")
+      blocked = Map.new(list, &{&1["id"], &1["delete_blocked"]})
+
       for party <- [c.rahr, c.bsg, c.root_shoot, c.mountain] do
-        assert %{"base" => ["This company is in use; deactivate it instead"]} =
-                 errors(req(c.brewer, :delete, "/api/parties/#{party.id}"))
+        assert %{"base" => [reason]} = errors(req(c.brewer, :delete, "/api/parties/#{party.id}"))
+        assert reason == blocked[party.id]
       end
 
       assert {204, _} = req(c.brewer, :delete, "/api/parties/#{unused.id}")
