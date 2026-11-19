@@ -97,6 +97,12 @@
      `CopyTableButton`.
    - Product page: minimum on hand (edit), below-minimum mark, open orders, lot value; Grains list
      below-minimum mark; Companies: supplier order target.
+   - **Lint (task 4084, Matt 2026-11-18):** clear 13 of the 21 old errors: the 10
+     `no-explicit-any` in `src/datagrid-extended.d.ts`, `ComponentShowcase` (only-export-components),
+     and set-state-in-effect in `settings/FieldDefinitionDialog` and `brands/BrandFormDialog` (remount
+     with a `key` and initialize from props, the D37 pattern; no behavior change; drive each dialog
+     once in a browser: open, edit, save, reopen). Lint goes 21 → 8; the 8 recipe and batch dialogs
+     are D63's (rebuilt there), after which lint is 0 and the gate can require it green.
    - Phone: cards, full-screen dialogs, tables scroll inside their card. Look at it in a browser as
      `brewer1`, `breweryMgr`, `owner`, `bartender1`, `breweryDevice`, desktop and 360 px.
 4. **Playwright + coverage.**
