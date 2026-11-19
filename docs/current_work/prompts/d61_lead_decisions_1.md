@@ -86,3 +86,25 @@ All 17 gaps closed (`~/src/rockcut-d61-qa/results/d61_qa_recheck1.md`). One mino
     button opening the choices), so the row fits the card with no inner sideways scroll and the
     sack size is always readable. Extend P5 to assert no inner overflow and the visible sack size.
     vitest/tsc/build clean, the ingredients folder green twice. Commit and reply.
+
+## DEV Playwright (b64784a): PO7
+
+817 passed, 3 failed. T9 (recipe sort order) and S123 (temporary password) pass alone on DEV (DEV
+timing, existing tests). **PO7 fails every time on DEV**, and the lead reproduced it by hand on DEV:
+
+- Edit maltster product → minimum → Save clicked **within ~300 ms of the dialog opening** (the test
+  does click edit, fill 1.5, fill 3, Save in ~80 ms): the click is dropped, with no PUT, no error,
+  and the dialog stays open. A second click saves. From 316 ms on, the first click always saves.
+  Same with or without the `1.5` step. Release build only (local dev server passes).
+- A person can't reach that window, so this is test timing, not a product fix (unless you find the
+  cause is something real, e.g. a submit swallowed by the dialog's enter transition or
+  `useBackCloses`' history push; then say so in a `LEAD:` note before changing product code).
+
+22. **PO7 on the release build:** after opening the product dialog, wait until it has settled before
+    filling (e.g. the dialog's enter transition finished, or a helper that waits for it, reusable by
+    other dialog tests), then keep waiting for the PUT. Check the other D61 specs that open a dialog
+    and click Save straight away (orders, contracts, receive, phone) for the same pattern and use the
+    same helper. Verify against the release build locally: `vite build` + `vite preview` (see
+    `tests/RUNNING.md` / the pwa-update project for how the suite points at :4173), PO7 green 3× there,
+    then the ingredients folder green once on the dev server. Commit and reply with the commit and
+    `LEAD:` notes. Don't push.
