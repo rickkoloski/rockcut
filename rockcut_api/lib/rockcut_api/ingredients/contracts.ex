@@ -12,10 +12,15 @@ defmodule RockcutApi.Ingredients.Contracts do
   (decision 40: the price stays until someone changes it).
 
   What's on order, received and remaining is computed on read (A5): order
-  lines of this supplier and product that aren't off-contract, open ones by
-  order date in the year, received ones by received date in the year,
-  dollars at the line prices. Going over is shown, not refused (decision
-  41). Who may write is `Authz` `:contracts` (the controller).
+  lines of this supplier and product (any of its offers) that aren't
+  off-contract, open ones by the year they're expected (expected date, else
+  order date; amendment 2a), received ones by received date in the year.
+  Sacks are converted by weight to the line's offer sack size (amendment
+  17a: 525 lb on a 50 lb line is 10.5), to 2 decimals; dollars are the
+  order line prices. Going over is shown, not refused (decision 41), and a
+  contract's `over_sacks` is kept apart from what's still owed (gap 3). A
+  contract with anything received is `delete_blocked` (gap 18). Who may
+  write is `Authz` `:contracts` (the controller).
   """
   import Ecto.Query
 
@@ -34,10 +39,16 @@ defmodule RockcutApi.Ingredients.Contracts do
     SupplierOffer
   }
 
+  @delete_blocked "Grain has been received against this contract, so it can't be deleted"
+
+  @doc "Why a contract can't be deleted (gap 18), nil when it can."
+  def delete_blocked(%Contract{delete_blocked: true}), do: @delete_blocked
+  def delete_blocked(_), do: nil
+
   @preloads [
     :supplier,
     :created_by,
-    lines: {from(l in ContractLine, order_by: l.id), product: [:maltster, :ingredient]}
+    lines: {from(l in ContractLine, order_by: l.id), [:offer, product: [:maltster, :ingredient]]}
   ]
 
   @doc "The contracts for `year` (default this year), by supplier name, figures filled."
@@ -86,11 +97,10 @@ defmodule RockcutApi.Ingredients.Contracts do
 
   @doc "Deletes a contract nothing has been received against in its year (422 otherwise)."
   def delete(%Contract{} = contract) do
-    contract = Repo.preload(contract, :lines, force: true)
-    figures = figures(contract)
+    [contract] = contract |> Repo.preload(@preloads, force: true) |> put_figures()
 
-    if Enum.any?(contract.lines, &(figures[&1.product_id].received_sacks > 0)),
-      do: refuse("Grain has been received against this contract, so it can't be deleted"),
+    if contract.delete_blocked,
+      do: refuse(@delete_blocked),
       else: Repo.delete(contract)
   end
 
@@ -113,8 +123,8 @@ defmodule RockcutApi.Ingredients.Contracts do
         product_id: product.id,
         display_name: Products.display_name(product),
         contracted_sacks: contracted,
-        received_sacks: received,
-        short_sacks: contracted - received
+        received_sacks: sacks(received),
+        short_sacks: sacks(contracted - received)
       }
     end)
     |> Enum.filter(&(&1.short_sacks > 0))
@@ -131,8 +141,9 @@ defmodule RockcutApi.Ingredients.Contracts do
 
   ## Figures
 
-  # Fill each line's virtual `figures` (decision 38, A5): one query for the
-  # order lines of all the contracts' suppliers and products.
+  # Fill each line's virtual `figures` (decision 38, A5) and the contract's
+  # totals: one query for the order lines of all the contracts' suppliers
+  # and products.
   defp put_figures([]), do: []
 
   defp put_figures(%Contract{} = contract), do: put_figures([contract])
@@ -141,54 +152,82 @@ defmodule RockcutApi.Ingredients.Contracts do
     rows = order_rows(contracts)
 
     Enum.map(contracts, fn c ->
-      figures = figures(c, rows)
-      %{c | lines: Enum.map(c.lines, &%{&1 | figures: Map.fetch!(figures, &1.product_id)})}
+      lines = Enum.map(c.lines, &%{&1 | figures: line_figures(c, &1, rows)})
+      figures = Enum.map(lines, & &1.figures)
+
+      %{
+        c
+        | lines: lines,
+          # Gap 3: what's still owed (= the Shortfall) and what's over, never netted.
+          remaining_sacks:
+            figures |> Enum.map(&max(&1.remaining_sacks, 0)) |> Enum.sum() |> sacks(),
+          over_sacks: figures |> Enum.map(&(&1.over_by || 0)) |> Enum.sum() |> sacks(),
+          delete_blocked: Enum.any?(figures, &(&1.received_sacks > 0))
+      }
     end)
   end
 
-  defp figures(%Contract{} = contract), do: figures(contract, order_rows([contract]))
+  defp line_figures(%Contract{} = c, line, rows) do
+    size = line.offer.sack_size_lb
 
-  defp figures(%Contract{} = c, rows) do
-    Map.new(c.lines, fn line ->
-      mine =
-        Enum.filter(rows, fn r ->
-          r.supplier_id == c.supplier_party_id and r.product_id == line.product_id
-        end)
+    mine =
+      Enum.filter(rows, fn r ->
+        r.supplier_id == c.supplier_party_id and r.product_id == line.product_id
+      end)
 
-      on_order =
-        for r <- mine,
-            r.status == "open" and r.ordered_on.year == c.year,
-            do: r.sacks_ordered
+    open =
+      for r <- mine,
+          r.status == "open" and (r.expected_on || r.ordered_on).year == c.year,
+          do: r
 
-      received =
-        for r <- mine,
-            (r.status == "received" and r.received_on) && r.received_on.year == c.year,
-            do: r
+    received =
+      for r <- mine,
+          (r.status == "received" and r.received_on) && r.received_on.year == c.year,
+          do: r
 
-      received_sacks = received |> Enum.map(&(&1.sacks_received || 0)) |> Enum.sum()
+    on_order = in_sacks(open, & &1.sacks_ordered, size)
+    received_sacks = in_sacks(received, &(&1.sacks_received || 0), size)
 
-      received_dollars =
-        received
-        |> Enum.map(&Decimal.mult(&1.price_per_sack, &1.sacks_received || 0))
-        |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+    received_dollars =
+      received
+      |> Enum.map(&Decimal.mult(&1.price_per_sack, &1.sacks_received || 0))
+      |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
 
-      remaining = line.sacks - received_sacks
+    remaining = sacks(line.sacks - received_sacks)
 
-      {line.product_id,
-       %{
-         contracted_sacks: line.sacks,
-         contracted_dollars: money(Decimal.mult(line.price_per_sack, line.sacks)),
-         on_order_sacks: Enum.sum(on_order),
-         received_sacks: received_sacks,
-         received_dollars: money(received_dollars),
-         remaining_sacks: remaining,
-         over_by: if(remaining < 0, do: -remaining)
-       }}
-    end)
+    %{
+      contracted_sacks: line.sacks,
+      contracted_dollars: money(Decimal.mult(line.price_per_sack, line.sacks)),
+      sack_size_lb: size,
+      on_order_sacks: on_order,
+      received_sacks: received_sacks,
+      received_dollars: money(received_dollars),
+      remaining_sacks: remaining,
+      over_by: if(remaining < 0, do: sacks(-remaining))
+    }
+  end
+
+  # Amendment 17a: the rows' lb ÷ the line's sack size, to 2 decimals.
+  defp in_sacks(rows, count, size) do
+    rows
+    |> Enum.map(&Decimal.mult(&1.sack_size_lb, count.(&1)))
+    |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+    |> Decimal.div(size)
+    |> Decimal.to_float()
+    |> sacks()
+  end
+
+  # A sack count as JSON shows it: whole as an integer, else to 2 decimals.
+  defp sacks(n) when is_integer(n), do: n
+
+  defp sacks(n) when is_float(n) do
+    r = Float.round(n, 2)
+    if r == Float.round(r), do: trunc(r), else: r
   end
 
   # On-contract order lines of the contracts' suppliers and products, in
-  # their years (open by order date, received by received date).
+  # their years (open by expected date, else order date; received by
+  # received date), with the line's offer sack size.
   defp order_rows(contracts) do
     suppliers = contracts |> Enum.map(& &1.supplier_party_id) |> Enum.uniq()
     products = contracts |> Enum.flat_map(& &1.lines) |> Enum.map(& &1.product_id) |> Enum.uniq()
@@ -204,13 +243,16 @@ defmodule RockcutApi.Ingredients.Contracts do
       where:
         o.supplier_party_id in ^suppliers and f.product_id in ^products and
           not o.off_contract and
-          ((o.status == "open" and o.ordered_on >= ^first and o.ordered_on <= ^last) or
+          ((o.status == "open" and coalesce(o.expected_on, o.ordered_on) >= ^first and
+              coalesce(o.expected_on, o.ordered_on) <= ^last) or
              (o.status == "received" and o.received_on >= ^first and o.received_on <= ^last)),
       select: %{
         supplier_id: o.supplier_party_id,
         product_id: f.product_id,
+        sack_size_lb: f.sack_size_lb,
         status: o.status,
         ordered_on: o.ordered_on,
+        expected_on: o.expected_on,
         received_on: o.received_on,
         sacks_ordered: l.sacks_ordered,
         sacks_received: l.sacks_received,

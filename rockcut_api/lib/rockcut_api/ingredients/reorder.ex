@@ -3,8 +3,10 @@ defmodule RockcutApi.Ingredients.Reorder do
   D61 §3.5 (decisions 30, 31): a maltster product's minimum on hand, in
   whole sacks, and what to order to get back to it.
 
-  The sacks are the product's **reorder offer**'s: the offer on its most
-  recent order line while it's active, else its first active offer (by id). On hand is the
+  The sacks are the product's **reorder offer**'s: the one picked on To
+  order (`reorder_offer_id`, lead decisions 1 gap 4) while it's active, else
+  the offer on its most recent order line while it's active, else its first
+  active offer (by id). On hand is the
   stock in lots that aren't expired ÷ that offer's sack size; on order is
   the sacks on open order lines for the product (any supplier). To order =
   ⌈minimum − on hand − on order⌉ when above 0. Below minimum = on hand <
@@ -68,7 +70,7 @@ defmodule RockcutApi.Ingredients.Reorder do
     if ids == [] do
       Map.new(products, &{&1.id, blank})
     else
-      offers = reorder_offers(ids)
+      offers = reorder_offers(with_min)
       usable = usable_lb(ids)
       on_order = on_order(ids)
 
@@ -110,9 +112,12 @@ defmodule RockcutApi.Ingredients.Reorder do
     end
   end
 
-  # The offer on each product's most recent order line (order date, then
-  # id), else its first active offer by id; current prices filled.
-  defp reorder_offers(product_ids) do
+  # The product's picked offer, else the offer on its most recent order line
+  # (order date, then id), else its first active offer by id; each only
+  # while active; current prices filled.
+  defp reorder_offers(products) do
+    product_ids = Enum.map(products, & &1.id)
+
     recent =
       from(l in PurchaseOrderLine,
         join: o in PurchaseOrder,
@@ -143,9 +148,16 @@ defmodule RockcutApi.Ingredients.Reorder do
       |> Enum.reduce(%{}, fn o, acc -> Map.put_new(acc, o.product_id, o) end)
 
     # Lead, Stop 2 note 7: the latest order's offer only while it's active.
-    Map.new(product_ids, fn id ->
+    Map.new(products, fn %{id: id} = p ->
+      picked = p.reorder_offer_id && by_id[p.reorder_offer_id]
       latest = recent[id] && by_id[recent[id]]
-      {id, if(latest && latest.active, do: latest, else: first_active[id])}
+
+      {id,
+       cond do
+         picked && picked.active -> picked
+         latest && latest.active -> latest
+         true -> first_active[id]
+       end}
     end)
     |> Map.reject(fn {_, o} -> is_nil(o) end)
   end

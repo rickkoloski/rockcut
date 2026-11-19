@@ -337,6 +337,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                    "lines" => [
                      %{
                        "id" => hd(o["lines"])["id"],
+                       "sacks_received" => hd(o["lines"])["sacks_ordered"],
                        "allocations" => [
                          %{
                            "lot_number" => "R-#{o["id"]}",
@@ -526,7 +527,12 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       received = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
       path = "/api/purchase_orders/#{received["id"]}"
       stocked_lot!(c.product, Date.add(today(), -3), "55", "OLD")
-      assert {200, _} = req(c.brewer, :post, path <> "/receive", %{})
+      line = hd(received["lines"])
+
+      assert {200, _} =
+               req(c.brewer, :post, path <> "/receive", %{
+                 "lines" => [%{"id" => line["id"], "sacks_received" => 1}]
+               })
 
       for {verb, p} <- [{:put, path}, {:post, path <> "/cancel"}, {:post, path <> "/receive"}] do
         assert conflict(req(c.brewer, verb, p, %{})) == "This order has already been received"
@@ -622,14 +628,14 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                req(c.brewer, :post, "/api/ingredient_lots", body.("  W123 "))
 
       for n <- ["w123", " W123", "W123"] do
-        assert %{"lot_number" => ["This product already has lot W123"]} =
+        assert %{"base" => ["This product already has lot W123"]} =
                  errors(req(c.brewer, :post, "/api/ingredient_lots", body.(n)))
       end
 
       assert {201, %{"data" => %{"id" => other}}} =
                req(c.brewer, :post, "/api/ingredient_lots", body.("W124"))
 
-      assert %{"lot_number" => ["This product already has lot W123"]} =
+      assert %{"base" => ["This product already has lot W123"]} =
                errors(
                  req(c.brewer, :patch, "/api/ingredient_lots/#{other}", %{lot_number: "w123"})
                )

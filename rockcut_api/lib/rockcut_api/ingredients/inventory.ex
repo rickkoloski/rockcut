@@ -36,7 +36,12 @@ defmodule RockcutApi.Ingredients.Inventory do
     feature_values: :feature_type
   ]
 
-  @movement_preloads [:partner, :entered_by, lot: [product: [:maltster, :ingredient]]]
+  @movement_preloads [
+    :partner,
+    :entered_by,
+    purchase_order_line: :order,
+    lot: [product: [:maltster, :ingredient]]
+  ]
 
   ## On hand
 
@@ -549,13 +554,14 @@ defmodule RockcutApi.Ingredients.Inventory do
   def find_lot(_product_id, _number), do: nil
 
   # A product's lot numbers are unique in any case: "This product already
-  # has lot W123" before the index would refuse it.
+  # has lot W123" before the index would refuse it; a `base` message so no
+  # dialog shows a "lot number:" prefix (lead decisions 1, gap 1).
   defp lot_number_free(attrs, except_id) do
     product_id = RockcutApi.Ids.parse(attrs["product_id"])
 
     case product_id && find_lot(product_id, attrs["lot_number"]) do
       %IngredientLot{id: id} = lot when id != except_id ->
-        {:error, {:invalid, %{lot_number: ["This product already has lot #{lot.lot_number}"]}}}
+        {:error, {:invalid, %{base: ["This product already has lot #{lot.lot_number}"]}}}
 
       _ ->
         :ok

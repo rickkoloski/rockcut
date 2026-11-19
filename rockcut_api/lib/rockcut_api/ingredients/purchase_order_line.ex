@@ -27,6 +27,7 @@ defmodule RockcutApi.Ingredients.PurchaseOrderLine do
     |> validate_range(:sacks_ordered, 1, 100_000)
     |> validate_range(:sacks_received, 0, 100_000)
     |> validate_range(:price_per_sack, 0, 100_000)
+    |> validate_places(:price_per_sack, 2)
     |> foreign_key_constraint(:order_id)
     |> foreign_key_constraint(:offer_id)
     |> RockcutApi.Changeset.validate_parents([:order_id, :offer_id])

@@ -55,8 +55,8 @@ defmodule RockcutApi.Ingredients.Orders do
     PurchaseOrder
     |> filter(:supplier_party_id, params["supplier_id"])
     |> filter(:status, params["status"])
-    |> date_from(params["from"])
-    |> date_to(params["to"])
+    |> date_from(cast_date(params["from"]))
+    |> date_to(cast_date(params["to"]))
     |> order_by([o],
       asc: fragment("CASE WHEN ? = 'open' THEN 0 ELSE 1 END", o.status),
       desc: o.ordered_on,
@@ -118,20 +118,22 @@ defmodule RockcutApi.Ingredients.Orders do
 
   @doc """
   Receive an open order (spec §3.3). `received_on` (default today, not
-  after it) and `lines`: `[%{id, sacks_received, allocations}]`, a line left
-  out received in full into its previous lot. An allocation is
-  `%{lot_id, sacks}` or `%{lot_number, sacks, features, notes}`.
+  after it nor before the order date) and `lines`:
+  `[%{id, sacks_received, allocations}]`, every line of the order with its
+  sacks received (lead decisions 1, gap 15); a line with no allocations goes
+  to its previous lot. An allocation is `%{lot_id, sacks}` or
+  `%{lot_number, sacks, features, notes}`.
   """
   def receive(%PurchaseOrder{} = order, attrs, user) do
     write(fn ->
       order = open!(order.id)
-      received_on = received_on!(attrs["received_on"])
+      received_on = received_on!(attrs["received_on"], order)
       given = given_lines!(order, attrs["lines"])
 
       lot_ids =
         Enum.flat_map(order.lines, fn line ->
           entry = Map.get(given, line.id, %{})
-          sacks = sacks!(Map.get(entry, "sacks_received", line.sacks_ordered), line, 0)
+          sacks = sacks!(entry["sacks_received"], line, 0)
 
           ids =
             for {lot, n} <- allocations!(line, sacks, entry["allocations"], received_on) do
@@ -215,6 +217,28 @@ defmodule RockcutApi.Ingredients.Orders do
   and the grand total.
   """
   def order_totals(params) do
+    with {:ok, from} <- range_date(params, "from"),
+         {:ok, to} <- range_date(params, "to") do
+      {:ok, order_totals(params, from, to)}
+    end
+  end
+
+  # A `from`/`to` param: absent is open-ended; anything but a date is a 422
+  # (lead decisions 1, gap 9).
+  defp range_date(params, key) do
+    case params[key] do
+      v when v in [nil, ""] ->
+        {:ok, nil}
+
+      v ->
+        case Ecto.Type.cast(:date, v) do
+          {:ok, %Date{} = d} -> {:ok, d}
+          _ -> {:error, {:invalid, %{key => ["is invalid"]}}}
+        end
+    end
+  end
+
+  defp order_totals(params, from, to) do
     statuses =
       if params["status"] in PurchaseOrder.statuses(),
         do: [params["status"]],
@@ -224,8 +248,8 @@ defmodule RockcutApi.Ingredients.Orders do
       PurchaseOrder
       |> filter(:supplier_party_id, params["supplier_id"])
       |> where([o], o.status in ^statuses)
-      |> date_from(params["from"])
-      |> date_to(params["to"])
+      |> date_from(from)
+      |> date_to(to)
       |> order_by([o], asc: o.ordered_on, asc: o.id)
       |> Repo.all()
       |> Repo.preload(@preloads)
@@ -262,9 +286,12 @@ defmodule RockcutApi.Ingredients.Orders do
     %{rows: rows, by_supplier: by_supplier, total: sums(rows)}
   end
 
+  # Sacks ordered and received too (lead decisions 1, gap 8).
   defp sums(rows) do
     %{
       sacks: rows |> Enum.map(& &1.sacks) |> Enum.sum(),
+      sacks_ordered: rows |> Enum.map(& &1.sacks_ordered) |> Enum.sum(),
+      sacks_received: rows |> Enum.map(&(&1.sacks_received || 0)) |> Enum.sum(),
       lb: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, &1.lb)),
       dollars: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, &1.dollars))
     }
@@ -394,39 +421,54 @@ defmodule RockcutApi.Ingredients.Orders do
 
   ## Receiving
 
-  defp received_on!(value) when value in [nil, ""], do: Tasks.today()
+  defp received_on!(value, order) when value in [nil, ""],
+    do: received_on!(Tasks.today(), order)
 
-  defp received_on!(value) do
+  # Not after today, nor before the order date (lead decisions 1, gap 12).
+  defp received_on!(value, order) do
     case Ecto.Type.cast(:date, value) do
       {:ok, date} ->
-        if Date.after?(date, Tasks.today()),
-          do: rollback(%{base: ["The received date can't be after today"]}),
-          else: date
+        cond do
+          Date.after?(date, Tasks.today()) ->
+            rollback(%{base: ["The received date can't be after today"]})
+
+          Date.before?(date, order.ordered_on) ->
+            rollback(%{base: ["The received date can't be before the order date"]})
+
+          true ->
+            date
+        end
 
       _ ->
         rollback(%{received_on: ["is invalid"]})
     end
   end
 
-  # `lines` from the body by line id; every id must be this order's.
-  defp given_lines!(_order, nil), do: %{}
-
+  # `lines` from the body by line id: every id this order's, and every line
+  # of the order there with its sacks received (lead decisions 1, gap 15).
   defp given_lines!(order, lines) when is_list(lines) do
     ids = MapSet.new(order.lines, & &1.id)
 
-    Map.new(lines, fn
-      entry when is_map(entry) ->
-        entry = Map.new(entry, fn {k, v} -> {to_string(k), v} end)
-        id = Ids.parse(entry["id"])
+    given =
+      Map.new(lines, fn
+        entry when is_map(entry) ->
+          entry = Map.new(entry, fn {k, v} -> {to_string(k), v} end)
+          id = Ids.parse(entry["id"])
 
-        unless MapSet.member?(ids, id), do: rollback(%{base: ["A line isn't on this order"]})
-        {id, entry}
+          unless MapSet.member?(ids, id), do: rollback(%{base: ["A line isn't on this order"]})
+          {id, entry}
 
-      _ ->
-        rollback(%{lines: ["is invalid"]})
-    end)
+        _ ->
+          rollback(%{lines: ["is invalid"]})
+      end)
+
+    if Enum.any?(order.lines, &(given[&1.id]["sacks_received"] in [nil, ""])),
+      do: rollback(%{base: ["Every line needs a received quantity"]})
+
+    given
   end
 
+  defp given_lines!(_order, nil), do: rollback(%{base: ["Every line needs a received quantity"]})
   defp given_lines!(_order, _), do: rollback(%{lines: ["is invalid"]})
 
   # Whole sacks, at least `min` (decision 24: sacks, not lb).
@@ -613,17 +655,16 @@ defmodule RockcutApi.Ingredients.Orders do
   defp filter(query, _field, value) when value in [nil, ""], do: query
   defp filter(query, field, value), do: where(query, [o], field(o, ^field) == ^value)
 
-  defp date_from(query, value) do
+  defp cast_date(value) do
     case Ecto.Type.cast(:date, value) do
-      {:ok, %Date{} = d} -> where(query, [o], o.ordered_on >= ^d)
-      _ -> query
+      {:ok, %Date{} = d} -> d
+      _ -> nil
     end
   end
 
-  defp date_to(query, value) do
-    case Ecto.Type.cast(:date, value) do
-      {:ok, %Date{} = d} -> where(query, [o], o.ordered_on <= ^d)
-      _ -> query
-    end
-  end
+  defp date_from(query, nil), do: query
+  defp date_from(query, d), do: where(query, [o], o.ordered_on >= ^d)
+
+  defp date_to(query, nil), do: query
+  defp date_to(query, d), do: where(query, [o], o.ordered_on <= ^d)
 end

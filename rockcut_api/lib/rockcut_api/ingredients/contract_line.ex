@@ -27,6 +27,7 @@ defmodule RockcutApi.Ingredients.ContractLine do
     |> validate_required([:contract_id, :product_id, :sacks, :price_per_sack])
     |> validate_range(:sacks, 1, 100_000)
     |> validate_range(:price_per_sack, 0, 100_000)
+    |> validate_places(:price_per_sack, 2)
     |> unique_constraint([:contract_id, :product_id],
       name: :supplier_contract_lines_contract_id_product_id_index,
       message: "This contract already has a line for that product"

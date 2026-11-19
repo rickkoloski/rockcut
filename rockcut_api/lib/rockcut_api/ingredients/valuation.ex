@@ -134,8 +134,9 @@ defmodule RockcutApi.Ingredients.Valuation do
   product with stock on `as_of`, from its lots (narrowed by `supplier_id`,
   the lots' supplier; `maltster_id`; `category_id` with its children): lb,
   the part in expired lots, sacks when all its stocked lots share a sack
-  size, $ value, $/lb over the valued lb, whether any lot is estimated, and
-  the lb with no value. Then the grand total of lb and $.
+  size, $ value (nil when no lot has one, lead decisions 1 gap 5), $/lb over
+  the valued lb, whether any lot is estimated, and the lb with no value.
+  Then the grand total of lb, expired lb (gap 6) and $.
   """
   def inventory_totals(params) do
     with {:ok, as_of} <- as_of(params["as_of"]) do
@@ -175,6 +176,7 @@ defmodule RockcutApi.Ingredients.Valuation do
          rows: rows,
          total: %{
            lb: sum(rows, :lb),
+           expired_lb: sum(rows, :expired_lb),
            value: Decimal.round(sum(rows, :value), 2)
          }
        }}
@@ -208,7 +210,7 @@ defmodule RockcutApi.Ingredients.Valuation do
           [s] when not is_nil(s) -> Decimal.round(Decimal.div(lb, s), 2)
           _ -> nil
         end,
-      value: Decimal.round(value, 2),
+      value: if(valued != [], do: Decimal.round(value, 2)),
       per_lb: if(Decimal.gt?(valued_lb, 0), do: Decimal.round(Decimal.div(value, valued_lb), 4)),
       estimated: Enum.any?(v, fn {_, x} -> x.estimated end),
       unvalued_lb:
@@ -237,7 +239,7 @@ defmodule RockcutApi.Ingredients.Valuation do
   end
 
   defp sum(rows, key),
-    do: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, Map.fetch!(&1, key)))
+    do: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, Map.fetch!(&1, key) || 0))
 
   defp filter_lots(query, _field, value) when value in [nil, ""], do: query
   defp filter_lots(query, field, value), do: where(query, [l], field(l, ^field) == ^value)

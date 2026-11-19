@@ -1084,6 +1084,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       features: maybe_render(p, :feature_values, &RockcutApi.Ingredients.Features.values_map/1),
       offers: maybe_render(p, :offers, &Enum.map(&1, fn o -> supplier_offer(o) end)),
       min_on_hand_sacks: p.min_on_hand_sacks,
+      reorder_offer_id: p.reorder_offer_id,
       below_minimum: p.below_minimum,
       on_hand_lb: p.on_hand_lb,
       expired_lb: p.expired_lb,
@@ -1147,6 +1148,15 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  # D61 lead decisions 1 (item 18): a receipt from an order names the order
+  # in History, its reference else "Order #12".
+  defp movement_order_note(%{
+         purchase_order_line: %{order: %RockcutApi.Ingredients.PurchaseOrder{} = o}
+       }),
+       do: if(o.reference in [nil, ""], do: "Order ##{o.id}", else: o.reference)
+
+  defp movement_order_note(_), do: nil
+
   def inventory_movement(m) do
     %{
       id: m.id,
@@ -1158,7 +1168,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       occurred_on: m.occurred_on,
       partner_party_id: m.partner_party_id,
       partner: maybe_render(m, :partner, &party_summary/1),
-      note: m.note,
+      note: m.note || movement_order_note(m),
+      purchase_order_id: maybe_render(m, :purchase_order_line, & &1.order_id),
       entered_by: maybe_render(m, :entered_by, &person_name/1),
       inserted_at: m.inserted_at
     }
@@ -1177,6 +1188,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       notes: c.notes,
       created_by: maybe_render(c, :created_by, &person_name/1),
       lines: maybe_render(c, :lines, &Enum.map(&1, fn l -> contract_line(l) end)),
+      remaining_sacks: c.remaining_sacks,
+      over_sacks: c.over_sacks,
+      delete_blocked: RockcutApi.Ingredients.Contracts.delete_blocked(c),
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
     }
@@ -1250,6 +1264,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       product_id: r.product.id,
       product: product_summary(r.product),
       min_on_hand_sacks: r.product.min_on_hand_sacks,
+      reorder_offer_id: r.product.reorder_offer_id,
       offer:
         r.offer &&
           Map.put(

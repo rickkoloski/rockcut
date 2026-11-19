@@ -48,7 +48,24 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
     data
   end
 
-  defp receive_order(c, order, body),
+  # Every line listed (gap 15): one the body leaves out, or lists without
+  # sacks received, is received as ordered. `receive_raw` sends the body as is.
+  defp receive_order(c, order, body) do
+    given = Map.new(body["lines"] || [], &{&1["id"], &1})
+
+    lines =
+      Enum.map(order["lines"], fn l ->
+        Map.merge(
+          %{"id" => l["id"], "sacks_received" => l["sacks_ordered"]},
+          Map.get(given, l["id"], %{})
+        )
+      end)
+
+    extra = for {id, l} <- given, not Enum.any?(order["lines"], &(&1["id"] == id)), do: l
+    receive_raw(c, order, Map.put(body, "lines", lines ++ extra))
+  end
+
+  defp receive_raw(c, order, body),
     do: req(c.brewer, :post, "/api/purchase_orders/#{order["id"]}/receive", body)
 
   defp line_id(order, n \\ 0), do: Enum.at(order["lines"], n)["id"]
@@ -278,7 +295,12 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
         |> Enum.map(fn who ->
           Task.async(fn ->
             Ecto.Adapters.SQL.Sandbox.allow(Repo, parent, self())
-            RockcutApi.Ingredients.Orders.receive(order, %{}, who)
+
+            RockcutApi.Ingredients.Orders.receive(
+              order,
+              %{"lines" => [%{"id" => line_id(o), "sacks_received" => 2}]},
+              who
+            )
           end)
         end)
         |> Task.await_many()
@@ -380,10 +402,13 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
       assert rs["product_id"] == c.other.id and eq(rs["lb"], 120) and eq(rs["expired_lb"], 20)
 
-      assert rs["sacks"] == nil and eq(rs["value"], 0) and eq(rs["unvalued_lb"], 120) and
+      # Gap 5: nothing valued is no value, not $0.00.
+      assert rs["sacks"] == nil and rs["value"] == nil and eq(rs["unvalued_lb"], 120) and
                rs["per_lb"] == nil
 
       assert eq(data["total"]["lb"], 340) and eq(data["total"]["value"], "220.00")
+      # Gap 6: the expired lb are totalled too.
+      assert eq(data["total"]["expired_lb"], 20)
     end
 
     test "as of a date before the last receipt drops it; filters; not after today", c do

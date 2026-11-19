@@ -165,7 +165,7 @@ defmodule RockcutApiWeb.D61CarryOverTest do
 
       assert {201, _} = req(c.brewer, :post, "/api/ingredient_lots", body.(c.product.id, "W123"))
 
-      assert %{"lot_number" => ["This product already has lot W123"]} =
+      assert %{"base" => ["This product already has lot W123"]} =
                errors(req(c.brewer, :post, "/api/ingredient_lots", body.(c.product.id, "W123")))
 
       other = product!(c.two_row, c.root_shoot)
@@ -176,7 +176,7 @@ defmodule RockcutApiWeb.D61CarryOverTest do
       assert {201, %{"data" => %{"id" => second}}} =
                req(c.brewer, :post, "/api/ingredient_lots", body.(c.product.id, "W124"))
 
-      assert %{"lot_number" => ["This product already has lot W123"]} =
+      assert %{"base" => ["This product already has lot W123"]} =
                errors(
                  req(c.brewer, :patch, "/api/ingredient_lots/#{second}", %{lot_number: "W123"})
                )

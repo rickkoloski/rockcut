@@ -16,6 +16,8 @@ defmodule RockcutApiWeb.IngredientTotalsController do
   end
 
   def orders(conn, params) do
-    json(conn, %{data: Orders.order_totals(params)})
+    with {:ok, totals} <- Orders.order_totals(params) do
+      json(conn, %{data: totals})
+    end
   end
 end

@@ -11,6 +11,10 @@ defmodule RockcutApi.Ingredients.Contract do
   schema "supplier_contracts" do
     field :year, :integer
     field :notes, :string
+    # Computed on read (`Contracts`, lead decisions 1 gaps 3 and 18).
+    field :remaining_sacks, :any, virtual: true
+    field :over_sacks, :any, virtual: true
+    field :delete_blocked, :boolean, virtual: true, default: false
 
     belongs_to :supplier, RockcutApi.Ingredients.Party, foreign_key: :supplier_party_id
     belongs_to :created_by, RockcutApi.Accounts.User

@@ -76,7 +76,8 @@ defmodule RockcutApi.Brewing.IngredientLot do
   defp unique_lot_number(changeset) do
     unique_constraint(changeset, :lot_number,
       name: :ingredient_lots_product_id_lot_number_index,
-      message: "This product already has lot #{get_field(changeset, :lot_number)}"
+      message: "This product already has lot #{get_field(changeset, :lot_number)}",
+      error_key: :base
     )
   end
 end

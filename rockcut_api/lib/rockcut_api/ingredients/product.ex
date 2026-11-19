@@ -24,6 +24,8 @@ defmodule RockcutApi.Ingredients.Product do
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
     belongs_to :maltster, RockcutApi.Ingredients.Party, foreign_key: :maltster_party_id
+    # D61 lead decisions 1 (gap 4): the offer To order uses (nil = default).
+    belongs_to :reorder_offer, RockcutApi.Ingredients.SupplierOffer
     has_many :feature_values, RockcutApi.Ingredients.ProductFeatureValue
     has_many :offers, RockcutApi.Ingredients.SupplierOffer
     has_many :lots, RockcutApi.Brewing.IngredientLot
@@ -39,7 +41,8 @@ defmodule RockcutApi.Ingredients.Product do
       :name,
       :notes,
       :active,
-      :min_on_hand_sacks
+      :min_on_hand_sacks,
+      :reorder_offer_id
     ])
     |> update_change(:name, &blank_to_nil/1)
     |> validate_required([:ingredient_id, :maltster_party_id])
@@ -51,7 +54,25 @@ defmodule RockcutApi.Ingredients.Product do
     )
     |> foreign_key_constraint(:ingredient_id)
     |> foreign_key_constraint(:maltster_party_id)
-    |> RockcutApi.Changeset.validate_parents([:ingredient_id, :maltster_party_id])
+    |> foreign_key_constraint(:reorder_offer_id)
+    |> validate_reorder_offer()
+    |> RockcutApi.Changeset.validate_parents([
+      :ingredient_id,
+      :maltster_party_id,
+      :reorder_offer_id
+    ])
+  end
+
+  # Gap 4: one of this product's active offers (one that doesn't exist is
+  # `validate_parents`' "does not exist").
+  defp validate_reorder_offer(changeset) do
+    validate_change(changeset, :reorder_offer_id, fn _, id ->
+      case RockcutApi.Repo.get(RockcutApi.Ingredients.SupplierOffer, id) do
+        nil -> []
+        %{product_id: pid, active: true} when pid == changeset.data.id -> []
+        _ -> [reorder_offer_id: "must be one of this product's active offers"]
+      end
+    end)
   end
 
   defp blank_to_nil(nil), do: nil
