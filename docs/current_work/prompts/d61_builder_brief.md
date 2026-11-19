@@ -113,8 +113,8 @@ Every rule gets a refusal test and an allowed test. Flat params, as the rest of 
 2. **Orders** — `/api/purchase_orders` (index with `supplier_id`, `status`, `from`, `to`; show;
    create; update; `POST /:id/cancel`; `POST /:id/receive`).
    - Lines' offers belong to the order's supplier (422); sacks whole ≥ 1; price defaults to the
-     offer's current price when omitted; `ordered_on` ≤ today is not required (an order can be
-     dated ahead? **No**: not after today, like movements); `expected_on` ≥ `ordered_on` when set.
+     offer's current price when omitted; `ordered_on` not after today (Colorado), like movements;
+     `expected_on` ≥ `ordered_on` when set.
    - Update replaces header and lines while `open`; cancel sets `cancelled` + who/when. Any write on
      a received or cancelled order → 409 "This order has already been received" / "…cancelled".
    - JSON: lines with offer (order name, sack size, product label), `line_dollars`; totals
