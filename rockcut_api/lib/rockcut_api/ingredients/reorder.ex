@@ -4,7 +4,7 @@ defmodule RockcutApi.Ingredients.Reorder do
   whole sacks, and what to order to get back to it.
 
   The sacks are the product's **reorder offer**'s: the offer on its most
-  recent order line, else its first active offer (by id). On hand is the
+  recent order line while it's active, else its first active offer (by id). On hand is the
   stock in lots that aren't expired ÷ that offer's sack size; on order is
   the sacks on open order lines for the product (any supplier). To order =
   ⌈minimum − on hand − on order⌉ when above 0. Below minimum = on hand <
@@ -139,8 +139,10 @@ defmodule RockcutApi.Ingredients.Reorder do
       |> Enum.filter(& &1.active)
       |> Enum.reduce(%{}, fn o, acc -> Map.put_new(acc, o.product_id, o) end)
 
+    # Lead, Stop 2 note 7: the latest order's offer only while it's active.
     Map.new(product_ids, fn id ->
-      {id, (recent[id] && by_id[recent[id]]) || first_active[id]}
+      latest = recent[id] && by_id[recent[id]]
+      {id, if(latest && latest.active, do: latest, else: first_active[id])}
     end)
     |> Map.reject(fn {_, o} -> is_nil(o) end)
   end

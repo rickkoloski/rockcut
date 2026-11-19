@@ -1188,6 +1188,7 @@ defmodule RockcutApiWeb.JSONHelpers do
         id: l.id,
         product_id: l.product_id,
         product: maybe_render(l, :product, &product_summary/1),
+        offer_id: l.offer_id,
         sacks: l.sacks,
         price_per_sack: l.price_per_sack
       },

@@ -15,13 +15,15 @@ defmodule RockcutApi.Ingredients.ContractLine do
 
     belongs_to :contract, RockcutApi.Ingredients.Contract
     belongs_to :product, RockcutApi.Ingredients.Product
+    # The supplier offer its price goes on (lead, Stop 2 note 3).
+    belongs_to :offer, RockcutApi.Ingredients.SupplierOffer
 
     timestamps(type: :utc_datetime)
   end
 
   def changeset(line, attrs) do
     line
-    |> cast(attrs, [:contract_id, :product_id, :sacks, :price_per_sack])
+    |> cast(attrs, [:contract_id, :product_id, :sacks, :price_per_sack, :offer_id])
     |> validate_required([:contract_id, :product_id, :sacks, :price_per_sack])
     |> validate_range(:sacks, 1, 100_000)
     |> validate_range(:price_per_sack, 0, 100_000)
@@ -31,6 +33,7 @@ defmodule RockcutApi.Ingredients.ContractLine do
     )
     |> foreign_key_constraint(:contract_id)
     |> foreign_key_constraint(:product_id)
-    |> RockcutApi.Changeset.validate_parents([:contract_id, :product_id])
+    |> foreign_key_constraint(:offer_id)
+    |> RockcutApi.Changeset.validate_parents([:contract_id, :product_id, :offer_id])
   end
 end

@@ -163,6 +163,29 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
              ) == 2
     end
 
+    test "an expired lot takes no more, by number or by id (note 6)", c do
+      expired = stocked_lot!(c.product, day(-9), "55", "X9")
+      Repo.update!(Ecto.Changeset.change(expired, status: "expired"))
+      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+
+      for a <- [%{"lot_number" => "x9", "sacks" => 1}, %{"lot_id" => expired.id, "sacks" => 1}] do
+        assert base(
+                 receive_order(c, o, %{"lines" => [%{"id" => line_id(o), "allocations" => [a]}]})
+               ) ==
+                 "Lot X9 is expired; use a new lot number"
+      end
+
+      assert {200, _} =
+               receive_order(c, o, %{
+                 "lines" => [
+                   %{
+                     "id" => line_id(o),
+                     "allocations" => [%{"lot_number" => "X10", "sacks" => 1}]
+                   }
+                 ]
+               })
+    end
+
     test "split across lots: the rows must add up to the sacks received", c do
       a = stocked_lot!(c.product, day(-9), "55", "A")
       o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 10}])
@@ -488,29 +511,38 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       assert row["on_order_sacks"] == 4 and row["to_order"] == 0 and row["below_minimum"]
     end
 
-    test "expired stock doesn't count; the reorder offer is the last order's, else the first active",
+    test "expired stock doesn't count; the reorder offer is the last order's while active, else the first active (note 7)",
          c do
       Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_sacks: 2))
       lot = stocked_lot!(c.product, day(-30), "165", "A")
       Repo.update!(Ecto.Changeset.change(lot, status: "expired"))
-      Repo.update!(Ecto.Changeset.change(c.offer, active: false))
       fifty = offer!(c.product, c.root_shoot, "50", "30")
 
-      {200, %{"data" => [row]}} = req(c.brewer, :get, "/api/ingredient_reorder")
+      row = fn ->
+        {200, %{"data" => [row]}} = req(c.brewer, :get, "/api/ingredient_reorder")
+        row
+      end
 
-      assert row["offer"]["id"] == fifty.id and eq(row["on_hand_sacks"], 0) and
-               row["to_order"] == 2
+      first = row.()
+      assert first["offer"]["id"] == c.offer.id and eq(first["on_hand_sacks"], 0)
+      assert first["to_order"] == 2
 
       {201, %{"data" => o}} =
         req(c.brewer, :post, "/api/purchase_orders", %{
-          "supplier_party_id" => c.bsg.id,
+          "supplier_party_id" => c.root_shoot.id,
           "ordered_on" => iso(-1),
-          "lines" => [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}]
+          "lines" => [%{"offer_id" => fifty.id, "sacks_ordered" => 1}]
         })
 
       {200, _} = req(c.brewer, :post, "/api/purchase_orders/#{o["id"]}/cancel")
-      {200, %{"data" => [row]}} = req(c.brewer, :get, "/api/ingredient_reorder")
-      assert row["offer"]["id"] == c.offer.id and row["to_order"] == 2
+      assert row.()["offer"]["id"] == fifty.id
+
+      # The latest order's offer made inactive: the first active again.
+      Repo.update!(Ecto.Changeset.change(fifty, active: false))
+      assert row.()["offer"]["id"] == c.offer.id
+
+      Repo.update!(Ecto.Changeset.change(c.offer, active: false))
+      assert %{"offer" => nil, "to_order" => nil, "below_minimum" => false} = row.()
     end
 
     test "a product with no minimum isn't listed; the products list stays a fixed number of queries",

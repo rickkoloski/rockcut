@@ -247,20 +247,23 @@ defmodule RockcutApi.Ingredients.Contracts do
     |> Repo.delete_all()
 
     for attrs <- parsed do
-      offer = line_offer!(supplier, attrs)
       before = Map.get(old, attrs["product_id"])
+      offer = line_offer!(supplier, attrs, before)
 
       line =
         (before || %ContractLine{})
-        |> ContractLine.changeset(Map.put(attrs, "contract_id", contract.id))
+        |> ContractLine.changeset(
+          Map.merge(attrs, %{"contract_id" => contract.id, "offer_id" => offer.id})
+        )
         |> Repo.insert_or_update()
         |> case do
           {:ok, line} -> line
           {:error, cs} -> Repo.rollback(cs)
         end
 
-      if is_nil(before) or not Decimal.eq?(before.price_per_sack, line.price_per_sack),
-        do: put_price!(offer, line, contract.year, user)
+      if is_nil(before) or before.offer_id != offer.id or
+           not Decimal.eq?(before.price_per_sack, line.price_per_sack),
+         do: put_price!(offer, line, contract.year, user)
     end
   end
 
@@ -273,9 +276,10 @@ defmodule RockcutApi.Ingredients.Contracts do
 
   defp line_attrs(_), do: rollback(%{lines: ["each line needs a product, sacks and a price"]})
 
-  # The supplier's active offer for the line's product (decision 23): one,
-  # or the one named by `offer_id` when there are several.
-  defp line_offer!(supplier, %{"product_id" => product_id} = attrs) do
+  # The supplier's active offer for the line's product (decision 23): the one
+  # named by `offer_id`; else the one the line already has (lead, Stop 2
+  # note 3); else the only one. Several and none named: "pick one".
+  defp line_offer!(supplier, %{"product_id" => product_id} = attrs, before) do
     offers =
       if product_id,
         do:
@@ -289,6 +293,7 @@ defmodule RockcutApi.Ingredients.Contracts do
         else: []
 
     named = RockcutApi.Ids.parse(attrs["offer_id"])
+    stored = before && Enum.find(offers, &(&1.id == before.offer_id))
 
     cond do
       is_nil(product_id) ->
@@ -304,6 +309,9 @@ defmodule RockcutApi.Ingredients.Contracts do
               "That offer isn't one of #{supplier.name}'s for #{product_name(product_id)}"
             ]
           })
+
+      stored ->
+        stored
 
       length(offers) > 1 ->
         rollback(%{

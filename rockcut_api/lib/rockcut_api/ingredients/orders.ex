@@ -330,6 +330,13 @@ defmodule RockcutApi.Ingredients.Orders do
 
     for attrs <- parsed do
       offer = line_offer!(supplier, attrs["offer_id"])
+      before = Map.get(existing, attrs["id"])
+
+      # Lead, Stop 2 note 7: an inactive offer isn't put on a line; a line
+      # already on it keeps it.
+      if not offer.active and (is_nil(before) or before.offer_id != offer.id),
+        do: rollback(%{base: ["That offer is inactive"]})
+
       price = Map.get(attrs, "price_per_sack")
 
       price =
@@ -337,7 +344,7 @@ defmodule RockcutApi.Ingredients.Orders do
           do: current_price!(offer),
           else: price
 
-      (Map.get(existing, attrs["id"]) || %PurchaseOrderLine{})
+      (before || %PurchaseOrderLine{})
       |> PurchaseOrderLine.changeset(%{
         "order_id" => order.id,
         "offer_id" => offer.id,
@@ -485,7 +492,7 @@ defmodule RockcutApi.Ingredients.Orders do
   defp allocation_lot!(line, %{"lot_id" => id}, _received_on) when id not in [nil, ""] do
     case Ids.parse(id) && Repo.get(IngredientLot, Ids.parse(id)) do
       %IngredientLot{product_id: pid} = lot when pid == line.offer.product_id ->
-        same_sack_size!(lot, line.offer)
+        usable_lot!(lot, line.offer)
 
       _ ->
         rollback(%{base: ["That lot isn't one of #{product_name(line)}'s"]})
@@ -501,7 +508,7 @@ defmodule RockcutApi.Ingredients.Orders do
       number ->
         case Inventory.find_lot(line.offer.product_id, number) do
           nil -> new_lot!(line, number, a, received_on)
-          lot -> same_sack_size!(lot, line.offer)
+          lot -> usable_lot!(lot, line.offer)
         end
     end
   end
@@ -509,8 +516,15 @@ defmodule RockcutApi.Ingredients.Orders do
   defp allocation_lot!(line, _a, _received_on),
     do: rollback(%{base: ["Enter a lot number for #{product_name(line)}"]})
 
-  # A lot holds one sack size (A3): a different one needs a new lot number.
-  defp same_sack_size!(lot, offer) do
+  # An expired lot takes no more (lead, Stop 2 note 6), and a lot holds one
+  # sack size (A3): either needs a new lot number.
+  defp usable_lot!(%IngredientLot{status: "expired"} = lot, _offer),
+    do:
+      rollback(%{
+        base: ["Lot #{lot.lot_number || "##{lot.id}"} is expired; use a new lot number"]
+      })
+
+  defp usable_lot!(lot, offer) do
     if lot.sack_size_lb && Decimal.eq?(lot.sack_size_lb, offer.sack_size_lb),
       do: lot,
       else:

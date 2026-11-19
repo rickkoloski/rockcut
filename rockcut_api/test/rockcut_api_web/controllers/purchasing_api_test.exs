@@ -212,6 +212,32 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       assert only["product_id"] == c.pils.id
     end
 
+    test "a line remembers its offer (note 3): named when several, inferred when one; later prices go on it",
+         c do
+      data = contract!(c, c.next, [line(c.product, 10, "42.00")])
+      assert hd(data["lines"])["offer_id"] == c.offer.id
+
+      second = offer!(c.product, c.bsg, "50", "40.00")
+      path = "/api/contracts/#{data["id"]}"
+      n = length(prices(c.offer))
+
+      # Several offers now, but the line has one: a price change goes on it.
+      assert {200, %{"data" => %{"lines" => [l]}}} =
+               req(c.mgr, :put, path, %{"lines" => [line(c.product, 10, "43.00")]})
+
+      assert l["offer_id"] == c.offer.id and length(prices(c.offer)) == n + 1
+      assert prices(second) |> length() == 1
+
+      # Naming the other offer moves the line and writes the price there.
+      assert {200, %{"data" => %{"lines" => [l]}}} =
+               req(c.mgr, :put, path, %{
+                 "lines" => [Map.put(line(c.product, 10, "43.00"), "offer_id", second.id)]
+               })
+
+      assert l["offer_id"] == second.id
+      assert eq(List.last(prices(second)).price_per_sack, "43.00")
+    end
+
     test "refusals: no offer, several offers, a product twice, not a supplier, one per supplier and year",
          c do
       other = product!(c.two_row, c.root_shoot)
@@ -433,6 +459,37 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                post.(order_body(c, [ok], %{"expected_on" => iso(0), "reference" => " PO-7 "}))
 
       assert expected == iso(0)
+    end
+
+    test "an inactive offer is refused on a new or changed line; a line already on it keeps it (note 7)",
+         c do
+      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 2}])
+      Repo.update!(Ecto.Changeset.change(c.offer, active: false))
+      path = "/api/purchase_orders/#{o["id"]}"
+      kept = %{"id" => hd(o["lines"])["id"], "offer_id" => c.offer.id, "sacks_ordered" => 3}
+
+      assert {200, %{"data" => %{"lines" => [%{"sacks_ordered" => 3}]}}} =
+               req(c.brewer, :put, path, %{"lines" => [kept]})
+
+      for lines <- [
+            [kept, %{"offer_id" => c.offer.id, "sacks_ordered" => 1}],
+            [
+              %{kept | "offer_id" => c.pils_offer.id},
+              %{"offer_id" => c.offer.id, "sacks_ordered" => 1}
+            ]
+          ] do
+        assert base(req(c.brewer, :put, path, %{"lines" => lines})) == "That offer is inactive"
+      end
+
+      assert base(
+               req(
+                 c.brewer,
+                 :post,
+                 "/api/purchase_orders",
+                 order_body(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+               )
+             ) ==
+               "That offer is inactive"
     end
 
     test "a line from another order is refused on update", c do
