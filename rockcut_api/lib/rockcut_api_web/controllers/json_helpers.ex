@@ -1191,6 +1191,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       remaining_sacks: c.remaining_sacks,
       over_sacks: c.over_sacks,
       delete_blocked: RockcutApi.Ingredients.Contracts.delete_blocked(c),
+      lock_version: c.lock_version,
       inserted_at: c.inserted_at,
       updated_at: c.updated_at
     }
@@ -1230,6 +1231,7 @@ defmodule RockcutApiWeb.JSONHelpers do
         cancelled_by: maybe_render(o, :cancelled_by, &person_name/1),
         received_at: o.received_at,
         cancelled_at: o.cancelled_at,
+        lock_version: o.lock_version,
         lines:
           Enum.map(o.lines, fn l ->
             n = Orders.counted_sacks(o, l)

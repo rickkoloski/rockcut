@@ -35,7 +35,8 @@ defmodule RockcutApi.Ingredients.Orders do
     Products,
     PurchaseOrder,
     PurchaseOrderLine,
-    SupplierOffer
+    SupplierOffer,
+    Versions
   }
 
   @preloads [
@@ -85,14 +86,19 @@ defmodule RockcutApi.Ingredients.Orders do
     end)
   end
 
-  @doc "Replace an open order's header and lines (409 once received or cancelled)."
+  @doc """
+  Replace an open order's header and lines (409 once received or
+  cancelled, or when it changed since the version given, lead decisions 2).
+  """
   def update(%PurchaseOrder{} = order, attrs) do
     write(fn ->
-      order = open!(order.id)
+      version = Versions.given!(attrs)
+      order = open!(order.id) |> Versions.check!(version, "order")
 
       order =
         order
         |> PurchaseOrder.changeset(header(attrs))
+        |> Versions.bump()
         |> check_header()
         |> save!()
 
@@ -110,6 +116,7 @@ defmodule RockcutApi.Ingredients.Orders do
         cancelled_by_id: user.id,
         cancelled_at: DateTime.truncate(DateTime.utc_now(), :second)
       )
+      |> Versions.bump()
       |> Repo.update!()
 
       order.id
@@ -165,6 +172,7 @@ defmodule RockcutApi.Ingredients.Orders do
         received_by_id: user.id,
         received_at: DateTime.truncate(DateTime.utc_now(), :second)
       )
+      |> Versions.bump()
       |> Repo.update!()
 
       order.id

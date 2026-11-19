@@ -42,9 +42,32 @@ defmodule RockcutApiWeb.PurchasingApiTest do
   defp iso(offset), do: Date.to_iso8601(Date.add(today(), offset))
 
   defp req(user, verb, path, params \\ %{}) do
-    conn = call(user, verb, path, params)
+    conn = call(user, verb, path, with_version(verb, path, params))
     {conn.status, if(conn.resp_body == "", do: nil, else: Jason.decode!(conn.resp_body))}
   end
+
+  # Lead decisions 2: an Edit sends back the version it opened. These tests
+  # are about other rules, so a PUT without one sends the current one (the
+  # version tests are in `d61_lead_decisions_2_test.exs`).
+  defp with_version(:put, path, params)
+       when not is_map_key(params, :lock_version) and not is_map_key(params, "lock_version") do
+    schema =
+      case path do
+        "/api/purchase_orders/" <> _ -> RockcutApi.Ingredients.PurchaseOrder
+        "/api/contracts/" <> _ -> RockcutApi.Ingredients.Contract
+        _ -> nil
+      end
+
+    with true <- schema != nil,
+         {id, ""} <- path |> String.split("/") |> List.last() |> Integer.parse(),
+         %{lock_version: v} <- RockcutApi.Repo.get(schema, id) do
+      Map.put(params, "lock_version", v)
+    else
+      _ -> params
+    end
+  end
+
+  defp with_version(_verb, _path, params), do: params
 
   defp errors({422, %{"errors" => errors}}), do: errors
   defp base({422, %{"errors" => %{"base" => [message]}}}), do: message

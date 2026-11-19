@@ -36,7 +36,8 @@ defmodule RockcutApi.Ingredients.Contracts do
     Products,
     PurchaseOrder,
     PurchaseOrderLine,
-    SupplierOffer
+    SupplierOffer,
+    Versions
   }
 
   @delete_blocked "Grain has been received against this contract, so it can't be deleted"
@@ -65,6 +66,11 @@ defmodule RockcutApi.Ingredients.Contracts do
     |> put_figures()
   end
 
+  @doc "Every year that has a contract, ascending (lead decisions 2, gap 3: the Year picker)."
+  def years do
+    from(c in Contract, distinct: true, order_by: c.year, select: c.year) |> Repo.all()
+  end
+
   def get!(id), do: Contract |> Repo.get!(id) |> Repo.preload(@preloads) |> put_figures() |> hd()
 
   def create(attrs, user) do
@@ -80,13 +86,17 @@ defmodule RockcutApi.Ingredients.Contracts do
     end)
   end
 
+  @doc "Replace a contract's header and lines; 409 when it changed since the version given (lead decisions 2)."
   def update(%Contract{} = contract, attrs, user) do
     write(fn ->
+      version = Versions.given!(attrs)
+      contract = Contract |> Repo.get!(contract.id) |> Versions.check!(version, "contract")
       old = Map.new(Repo.preload(contract, :lines, force: true).lines, &{&1.product_id, &1})
 
       contract =
         contract
         |> Contract.changeset(Map.drop(attrs, ["created_by_id"]))
+        |> Versions.bump()
         |> unique_year()
         |> update_or_rollback()
 

@@ -11,6 +11,8 @@ defmodule RockcutApi.Ingredients.Contract do
   schema "supplier_contracts" do
     field :year, :integer
     field :notes, :string
+    # Lead decisions 2 (gap 2): bumped by every write; Edit sends it back.
+    field :lock_version, :integer, default: 1
     # Computed on read (`Contracts`, lead decisions 1 gaps 3 and 18).
     field :remaining_sacks, :any, virtual: true
     field :over_sacks, :any, virtual: true

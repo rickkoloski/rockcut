@@ -20,6 +20,8 @@ defmodule RockcutApi.Ingredients.PurchaseOrder do
     field :received_on, :date
     field :received_at, :utc_datetime
     field :cancelled_at, :utc_datetime
+    # Lead decisions 2 (gap 1): bumped by every write; Edit sends it back.
+    field :lock_version, :integer, default: 1
 
     belongs_to :supplier, RockcutApi.Ingredients.Party, foreign_key: :supplier_party_id
     belongs_to :created_by, RockcutApi.Accounts.User

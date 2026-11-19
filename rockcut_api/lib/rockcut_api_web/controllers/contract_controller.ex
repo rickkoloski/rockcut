@@ -14,11 +14,13 @@ defmodule RockcutApiWeb.ContractController do
   action_fallback RockcutApiWeb.FallbackController
 
   def index(conn, params) do
-    # `can_write`: whether this person sees New / Edit / Delete (D61 §4.2).
+    # `can_write`: whether this person sees New / Edit / Delete (D61 §4.2);
+    # `years`: every year with a contract, for the Year picker (lead decisions 2, gap 3).
     with :ok <- allow(conn, :read) do
       json(conn, %{
         data: Enum.map(Contracts.list(params), &contract/1),
         year: Contracts.year(params["year"]),
+        years: Contracts.years(),
         can_write: Authz.can?(conn.assigns.current_user, :write, :contracts)
       })
     end
