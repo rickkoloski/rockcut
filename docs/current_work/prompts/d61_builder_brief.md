@@ -231,3 +231,59 @@ deliverable).
 vitest, `tsc`, `vite build` clean; lint no worse (21, or fewer if you touch a 4084 file in passing);
 `mix test` green; the ingredients Playwright folder green twice. Reply with commits, counts, `LEAD:`
 notes, and whether 3b still fits in D61.
+
+---
+
+# Stage 3b + 4 (UI: contracts, To order, Totals, lint; coverage)
+
+2026-11-18 · lead. Stop 3a accepted (`68b69fa`, `85a4c4e`, `5a3dcc5`). LEAD notes 1–6 accepted as
+built (Purchasing button beside Add; minimum in the product dialog; error placement; leftovers until
+the next setup; COVERAGE now; 3b fits).
+
+## Do (plan Stage 3 rest + Stage 4; spec §4 items 2, 3, 4)
+
+1. **Purchasing area navigation:** the Purchasing button opens a small area with tabs **Orders ·
+   Contracts · To order · Totals** (`/ingredients/orders`, `/ingredients/contracts`,
+   `/ingredients/to-order`, `/ingredients/totals`); tabs scroll on phones.
+2. **Contracts** (`/ingredients/contracts?year=`): year picker (default this year), one card per
+   supplier contract: lines with product, offer, contracted sacks and $, on order, received sacks
+   and $, remaining ("over by N" in the warning color when negative); card totals. **New contract**
+   / **Edit** / **Delete** only for owners and Brewery managers (`capabilities` or a `can_write`
+   on the index; others see read-only, no buttons). Dialog: supplier, year, notes, lines (product
+   picker of the supplier's offered products, offer picker when there are several, sacks, price);
+   saving says which offer prices change ("BSG Rahr 2-Row price becomes $42.00 from 2027-01-01").
+   **Shortfall** toggle/tab for the year: product, contracted, received, short, sorted.
+3. **To order** (`/ingredients/to-order`): products with a minimum: grain, maltster, on hand
+   (sacks), minimum, on order, to order, reorder offer (changeable per row among the product's
+   active offers; recomputes to order with that sack size), "No offer" rows without a number. Row
+   checkboxes (only rows with to order > 0) → **Start an order**: groups the chosen rows by the
+   chosen offer's supplier and opens the New order dialog prefilled (one at a time if several
+   suppliers: "1 of 2"). Saving places it as usual.
+4. **Totals** (`/ingredients/totals`): two tabs.
+   - **Inventory:** As of date (default today, max today), filters supplier, maltster, category;
+     plain `<table>`: grain, maltster, category, lb, expired lb, sacks, $/lb, value (est. marked),
+     total row; unvalued lb noted under the table.
+   - **Orders:** date range (default this year), supplier, status (open + received by default);
+     rows per line; subtotal rows per supplier; grand total.
+   - **Copy** (`CopyTableButton`, shared): copies headers, rows and total rows as tab-separated
+     text, plain numbers (no $, no units, no thousands separators, `.` decimal), dates
+     `YYYY-MM-DD`; a short "Copied" confirmation; falls back to selecting the table if the
+     clipboard API is refused. vitest for the TSV builder.
+   - Tables scroll inside their card at 360 px.
+5. **Lint (task 4084):** the 13 errors from the plan (datagrid-extended.d.ts ×10,
+   ComponentShowcase, FieldDefinitionDialog, BrandFormDialog), no behavior change; drive
+   FieldDefinitionDialog and BrandFormDialog once in a browser (open, edit, save, reopen). Lint
+   must read **8**.
+6. **Playwright:** contracts (manager creates; brewer read-only and API 403 on write; price row
+   written; on order / received / remaining after an order and a receipt; over shown; shortfall;
+   off-contract excluded), To order (minimum, on order subtracts, Start an order prefilled), Totals
+   (as-of before/after a receipt changes lb and value; estimated marked; filters; Copy output read
+   from the clipboard), phone 360 px for the three pages, refusals for bartender/device on the new
+   pages. Contracts only for `[TEST-TEMP]` suppliers (any year) so no real offer gets a price row.
+7. **`tests/COVERAGE.md` D61 section** mapping spec §8 scenarios to tests (as D60's).
+
+## Done when (Stop 3)
+
+vitest, `tsc`, `vite build` clean; **lint 8**; `mix test` green twice; `--warnings-as-errors`
+clean; the ingredients Playwright folder green twice. Don't run the full suite (the lead runs the
+gate). Reply with commits, counts and `LEAD:` notes.
