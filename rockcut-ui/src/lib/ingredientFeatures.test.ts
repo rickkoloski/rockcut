@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoryOptions, differs, draftRangeError, draftsFrom, draftsValid, featuresPayload, grainCategories, onHandText, productMatches, rangeError, typesFor } from './ingredientFeatures'
+import { categoryOptions, differs, draftRangeError, draftsFrom, draftsValid, featuresPayload, grainCategories, isGrainCategory, onHandText, productMatches, rangeError, typesFor } from './ingredientFeatures'
 import type { FeatureType, IngredientCategory, IngredientProduct } from './types'
 
 const type = (id: number, key: string, cats: [number, number][]): FeatureType => ({
@@ -57,6 +57,16 @@ describe('feature drafts and the payload', () => {
     expect(draftsValid({ a: { text: '5,2', entered_value: null, entered_unit: null } })).toBe(false)
     expect(draftsValid({ a: { text: '5x', entered_value: null, entered_unit: null } })).toBe(false)
   })
+
+  it("D61 carry-over 4: more decimals than the feature type keeps make the drafts invalid", () => {
+    const extract = type(1, 'extract_fgdb', [[1, 0]])
+    const color = { ...type(2, 'color_lovibond', [[1, 1]]), decimals: 2 }
+    const d = (text: string) => ({ text, entered_value: null, entered_unit: null })
+    expect(draftsValid({ extract_fgdb: d('81.5'), color_lovibond: d('2.78') }, [extract, color])).toBe(true)
+    expect(draftsValid({ extract_fgdb: d('81.55') }, [extract, color])).toBe(false)
+    expect(draftsValid({ color_lovibond: d('2.789') }, [extract, color])).toBe(false)
+    expect(draftsValid({ extract_fgdb: d('81.50') }, [extract])).toBe(true)
+  })
 })
 
 describe('differs from the standard', () => {
@@ -102,10 +112,17 @@ describe('grain categories and search', () => {
 
 describe('onHandText (§3.7)', () => {
   const offers = [{ sack_size_lb: '55', active: true }] as IngredientProduct['offers']
-  it('shows expired stock apart, in the same display', () => {
-    expect(onHandText({ on_hand_lb: '682.5', expired_lb: '55', offers }, 'lb')).toBe('682.5 lb · 55 lb expired')
-    expect(onHandText({ on_hand_lb: '682.5', expired_lb: '55', offers }, 'sacks')).toBe('12 sacks 22.5 lb · 1 sack expired')
+  it('D61 carry-over 3: usable and expired apart, in the same display; no expired, just the amount', () => {
+    expect(onHandText({ on_hand_lb: '693', expired_lb: '43', offers: [{ sack_size_lb: '50', active: true }] as IngredientProduct['offers'] }, 'sacks')).toBe(
+      '13 sacks usable · 43 lb expired',
+    )
+    expect(onHandText({ on_hand_lb: '693', expired_lb: '43', offers }, 'sacks')).toBe('11 sacks 45 lb usable · 43 lb expired')
+    expect(onHandText({ on_hand_lb: '693', expired_lb: '43', offers }, 'lb')).toBe('650 lb usable · 43 lb expired')
+    expect(onHandText({ on_hand_lb: '682.5', expired_lb: '55', offers }, 'sacks')).toBe('11 sacks 22.5 lb usable · 1 sack expired')
     expect(onHandText({ on_hand_lb: '540', expired_lb: '0', offers }, 'sacks')).toBe('9 sacks 45 lb')
+    expect(onHandText({ on_hand_lb: '540', expired_lb: null, offers }, 'lb')).toBe('540 lb')
+    // Floating point doesn't leak into the text.
+    expect(onHandText({ on_hand_lb: '0.3', expired_lb: '0.1', offers }, 'lb')).toBe('0.2 lb usable · 0.1 lb expired')
   })
 })
 
@@ -137,5 +154,14 @@ describe('lead decisions 2', () => {
     const c = (id: number, name: string, sort_order: number, parent_id: number | null = null) => ({ id, name, sort_order, parent_id }) as IngredientCategory
     const options = categoryOptions([c(1, 'Grains', 0), c(2, 'Hops', 1), c(10, 'Crystal/Caramel', 1, 1), c(11, 'Base', 0, 1), c(3, 'Yeast Strains', 2)])
     expect(options.map((o) => `${'  '.repeat(o.depth)}${o.category.name}`)).toEqual(['Grains', '  Base', '  Crystal/Caramel', 'Hops', 'Yeast Strains'])
+  })
+})
+
+describe('isGrainCategory (D61 carry-over 5)', () => {
+  const cat = (id: number, name: string, parent_id: number | null) => ({ id, name, parent_id, sort_order: 0 }) as IngredientCategory
+  const categories = [cat(1, 'Grains', null), cat(2, 'Base', 1), cat(3, 'Hops', null), cat(4, 'Pellets', 3)]
+  it('is Grains and its children only', () => {
+    expect([1, 2, 3, 4, 99].map((id) => isGrainCategory(categories, id))).toEqual([true, true, false, false, false])
+    expect(isGrainCategory([], 1)).toBe(false)
   })
 })

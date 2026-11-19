@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { LATER_MOVEMENTS, lotDeleteBlocked, lotDeleteMessage, movementKindLabel, oldestFirstOnHand } from './inventory'
+import { LATER_MOVEMENTS, lotDeleteBlocked, lotDeleteMessage, movementKindLabel, oldestFirstOnHand, recipeLotChoices } from './inventory'
 
 describe('inventory messages (D60 lead decisions 2)', () => {
   const lot = { id: 136, lot_number: 'H-D', sack_size_lb: '50' }
@@ -21,7 +21,8 @@ describe('inventory messages (D60 lead decisions 2)', () => {
   })
 
   it("gap 1: Oldest first's on-hand is the stock that isn't expired, the expired noted", () => {
-    expect(oldestFirstOnHand({ on_hand_lb: '450', expired_lb: '200' }, 50, 'sacks')).toBe('On hand: 5 sacks · 4 sacks expired (pick that lot to use it)')
+    expect(oldestFirstOnHand({ on_hand_lb: '450', expired_lb: '200' }, 50, 'sacks')).toBe('On hand: 5 sacks usable · 4 sacks expired (pick that lot to use it)')
+    expect(oldestFirstOnHand({ on_hand_lb: '693', expired_lb: '43' }, 55, 'lb')).toBe('On hand: 650 lb usable · 43 lb expired (pick that lot to use it)')
     expect(oldestFirstOnHand({ on_hand_lb: '485', expired_lb: '0' }, 55, 'sacks')).toBe('On hand: 8 sacks 45 lb')
     expect(oldestFirstOnHand({ on_hand_lb: '485', expired_lb: '0' }, 55, 'lb')).toBe('On hand: 485 lb')
   })
@@ -45,5 +46,21 @@ describe('the lot dialog\'s Delete (lead decisions 3 gap 15, lead decisions 4)',
   it('is enabled with only the first movement (or none) and no reason', () => {
     expect(lotDeleteBlocked({ delete_blocked: null }, [first])).toBeNull()
     expect(lotDeleteBlocked({ delete_blocked: null }, [])).toBeNull()
+  })
+})
+
+describe('recipeLotChoices (D60 gap 8, D61 carry-over 5)', () => {
+  const lots = [
+    { id: 1, status: 'available' },
+    { id: 2, status: 'depleted' },
+    { id: 3, status: 'expired' },
+  ] as const
+  it('leaves out depleted and expired lots', () => {
+    expect(recipeLotChoices([...lots]).map((l) => l.id)).toEqual([1])
+    expect(recipeLotChoices([...lots], null).map((l) => l.id)).toEqual([1])
+  })
+  it("keeps the lot the line already uses, expired or depleted", () => {
+    expect(recipeLotChoices([...lots], 3).map((l) => l.id)).toEqual([1, 3])
+    expect(recipeLotChoices([...lots], 2).map((l) => l.id)).toEqual([1, 2])
   })
 })

@@ -124,7 +124,8 @@ export default function CompaniesPage() {
       )}
 
       <PartyDialog open={adding} onClose={() => setAdding(false)} />
-      <PartyDialog open={!!editing} onClose={() => setEditing(null)} party={editing ?? undefined} />
+      {/* The live row, so Delete follows delete_blocked after a refetch (as lots do, lead decisions 4). */}
+      <PartyDialog open={!!editing} onClose={() => setEditing(null)} party={editing ? (parties.find((p) => p.id === editing.id) ?? editing) : undefined} />
     </>
   )
 }

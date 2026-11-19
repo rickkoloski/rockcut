@@ -7,6 +7,7 @@ import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { formatQuantity, productSackSize } from '../../lib/brewingUnits'
 import { FUTURE_DATE, GRAIN_KEYS, oldestFirst } from '../../lib/inventory'
+import { onHandText } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement } from '../../lib/types'
 
@@ -74,8 +75,7 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
       submitLabel="Save count"
     >
       <Typography variant="body2">
-        On hand: <strong>{formatQuantity(product.on_hand_lb, sackSize, mode)}</strong>
-        {Number(product.expired_lb) > 0 && ` · ${formatQuantity(product.expired_lb, sackSize, mode)} expired`}
+        On hand: <strong data-testid="count-on-hand">{onHandText(product, mode, sackSize)}</strong>
       </Typography>
       <FormControlLabel
         control={

@@ -82,6 +82,15 @@ test('L2: extract entered as 37.0 PPG stores 80.1 % FGDB; as-is with no moisture
   await expect(d.getByText('Moisture must be between 0 and 100')).toBeVisible()
   await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
   await d.getByTestId('feature-moisture_pct').fill('4.5')
+  // D61 carry-over 4: more decimals than the feature keeps are refused, not rounded (moisture 2, DP 1).
+  await d.getByTestId('feature-moisture_pct').fill('4.555')
+  await expect(d.getByText('Use at most 2 decimals')).toBeVisible()
+  await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await d.getByTestId('feature-moisture_pct').fill('4.5')
+  await d.getByTestId('feature-diastatic_power_lintner').fill('120.55')
+  await expect(d.getByText('Use at most 1 decimal')).toBeVisible()
+  await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await d.getByTestId('feature-diastatic_power_lintner').fill('')
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
 

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Box, Typography } from '@mui/material'
 import DecimalInput from './DecimalInput'
-import { lbToSacks, readQuantity, type QuantityDisplay } from '../lib/brewingUnits'
+import { LB_DECIMALS, lbToSacks, readQuantity, type QuantityDisplay } from '../lib/brewingUnits'
 
 /** The quantity typed so far: lb as a decimal string, or null when empty or refused. */
 export interface QuantityValue {
@@ -47,6 +47,7 @@ export default function QuantityInput({ mode, sackSize, label, onChange, initial
   if (!sacks) {
     return (
       <DecimalInput
+        decimals={LB_DECIMALS}
         label={`${label} (lb)`}
         value={lbText}
         onChange={(t) => {
@@ -70,6 +71,7 @@ export default function QuantityInput({ mode, sackSize, label, onChange, initial
       </Typography>
       <Box sx={{ display: 'flex', gap: 1.5 }}>
         <DecimalInput
+          decimals={LB_DECIMALS}
           label="Sacks"
           value={sackText}
           onChange={(t) => {
@@ -81,6 +83,7 @@ export default function QuantityInput({ mode, sackSize, label, onChange, initial
           slotProps={{ htmlInput: { 'data-testid': testId && `${testId}-sacks` } }}
         />
         <DecimalInput
+          decimals={LB_DECIMALS}
           label="lb"
           value={lbText}
           onChange={(t) => {

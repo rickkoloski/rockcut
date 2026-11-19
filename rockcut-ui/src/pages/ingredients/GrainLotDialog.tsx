@@ -8,7 +8,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { formatQuantity, parseDecimal } from '../../lib/brewingUnits'
+import { LB_DECIMALS, formatQuantity, parseDecimal } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, lotDeleteBlocked, lotDeleteMessage } from '../../lib/inventory'
 import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, Party } from '../../lib/types'
@@ -53,7 +53,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === lot.supplier_party_id))
-  const size = parseDecimal(sackSize)
+  const size = parseDecimal(sackSize, LB_DECIMALS)
 
   const update = useApiUpdate<IngredientLot>((id) => `/api/ingredient_lots/${id}`, { invalidateKeys: GRAIN_KEYS })
   const remove = useApiDelete((id) => `/api/ingredient_lots/${id}`, { invalidateKeys: GRAIN_KEYS })
@@ -131,6 +131,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
         </Select>
       </FormControl>
       <DecimalInput
+        decimals={LB_DECIMALS}
         label="Sack size (lb)"
         value={sackSize}
         onChange={setSackSize}

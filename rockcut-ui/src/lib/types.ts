@@ -100,6 +100,8 @@ export interface IngredientCategory {
   parent_id: number | null
   sort_order: number
   field_definitions: CategoryFieldDefinition[] | null
+  /** D61 carry-over 2: why Delete is refused (sub-categories, grains or ingredients), or null. */
+  delete_blocked?: string | null
   inserted_at: string
   updated_at: string
 }
@@ -175,6 +177,10 @@ export interface PartySummary {
 export interface Party extends PartySummary {
   notes: string | null
   active: boolean
+  /** D61 decision 48: a supplier's order size in sacks (BSG: 40). */
+  order_target_sacks?: number | null
+  /** D61 carry-over 2: why Delete is refused (what uses the company), or null. */
+  delete_blocked?: string | null
   roles: PartyRole[] | null
   inserted_at: string
   updated_at: string

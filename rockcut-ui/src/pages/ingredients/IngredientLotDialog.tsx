@@ -136,6 +136,7 @@ function IngredientLotForm({ onClose, ingredientId, categoryId, lot }: Ingredien
       {featureTypes.map((t) => (
         <DecimalInput
           key={t.key}
+          decimals={t.decimals}
           label={`${t.label} (${t.unit_label})`}
           value={shown[t.key]?.text ?? ''}
           onChange={(text) => setDrafts({ ...shown, [t.key]: { text, entered_value: null, entered_unit: null } })}

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Button, Checkbox, FormControl, FormControlLabel, FormGroup, FormLabel, Switch, TextField } from '@mui/material'
+import { Box, Button, Checkbox, FormControl, FormControlLabel, FormGroup, FormLabel, Switch, TextField, Typography } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
@@ -24,6 +24,8 @@ function PartyForm({ onClose, party }: { onClose: () => void; party?: Party }) {
   const update = useApiUpdate<Party>((id) => `/api/parties/${id}`, { invalidateKeys: keys })
   const remove = useApiDelete((id) => `/api/parties/${id}`, { invalidateKeys: keys })
   const loading = create.isPending || update.isPending || remove.isPending
+  // D61 carry-over 2: a company in use can't be deleted; Delete is disabled with the API's reason.
+  const deleteBlocked = party?.delete_blocked ?? null
 
   const submit = async () => {
     if (roles.length === 0) return setError('Pick at least one role')
@@ -63,9 +65,16 @@ function PartyForm({ onClose, party }: { onClose: () => void; party?: Party }) {
       testId="party-dialog"
       secondaryAction={
         party && (
-          <Button color="error" disabled={loading} data-testid="party-delete" onClick={() => setConfirmDelete(true)}>
-            Delete
-          </Button>
+          <Box sx={{ maxWidth: { xs: 160, sm: 260 } }}>
+            <Button color="error" disabled={loading || !!deleteBlocked} data-testid="party-delete" onClick={() => setConfirmDelete(true)}>
+              Delete
+            </Button>
+            {deleteBlocked && (
+              <Typography variant="caption" color="text.secondary" component="p" data-testid="party-delete-reason">
+                {deleteBlocked}
+              </Typography>
+            )}
+          </Box>
         )
       }
     >
@@ -86,11 +95,11 @@ function PartyForm({ onClose, party }: { onClose: () => void; party?: Party }) {
       {party && <FormControlLabel control={<Switch checked={active} onChange={(e) => setActive(e.target.checked)} data-testid="party-active" />} label="Active" />}
       {party && (
         <ConfirmDialog
-          open={confirmDelete}
+          open={confirmDelete && !deleteBlocked}
           onClose={() => setConfirmDelete(false)}
           onConfirm={handleDelete}
           title="Delete company"
-          message={`Delete ${party.name}? A company in use can't be deleted; make it inactive instead.`}
+          message={`Delete ${party.name}?`}
           loading={remove.isPending}
           testId="party-delete-confirm"
         />

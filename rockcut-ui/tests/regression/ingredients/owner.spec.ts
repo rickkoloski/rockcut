@@ -4,12 +4,14 @@ import { adoptParty, apiAs, cleanupIngredients, reference, tempTag } from './hel
 
 // D60 spec §9, as `owner`: a company with two roles on the Companies page; a
 // company in use can't be deleted ("deactivate instead"); Settings →
-// Categories: Grains' five children and no Origin/Maltster fields.
+// Categories: Grains' five children and no Origin/Maltster fields. D61
+// carry-over 2 and 5: Delete disabled with the reason for a company or
+// category in use; no Add field on Grains and its children.
 
 test.use({ storageState: authFile('owner') })
 test.afterAll(cleanupIngredients)
 
-test('O1: add a maltster + supplier company; Rahr (in use) can’t be deleted; an unused company can', async ({ page }) => {
+test('O1: add a maltster + supplier company; Rahr (in use) has Delete disabled with the reason; an unused company can be deleted', async ({ page }) => {
   const name = tempTag('Weyermann')
   await page.goto('/ingredients/companies')
   await page.getByTestId('companies-add').click()
@@ -28,7 +30,18 @@ test('O1: add a maltster + supplier company; Rahr (in use) can’t be deleted; a
   expect([...party.roles].sort()).toEqual(['maltster', 'supplier'])
 
   const { rahr } = await reference()
+  const blocked = (await (await (await apiAs('owner')).get(`/api/parties/${rahr}`)).json()).data.delete_blocked as string
+  expect(blocked).toMatch(/^This company has maltster products.*; deactivate it instead$/)
   await page.getByTestId(`company-${rahr}`).first().click()
+  await expect(d.getByTestId('party-delete')).toBeDisabled()
+  await expect(d.getByTestId('party-delete-reason')).toHaveText(blocked)
+  await d.getByRole('button', { name: 'Cancel' }).click()
+  await expect(d).toHaveCount(0)
+  // The API still refuses.
+  expect((await (await apiAs('owner')).delete(`/api/parties/${rahr}`)).status()).toBe(422)
+
+  await page.getByTestId(`company-${id}`).first().click()
+  await expect(d.getByTestId('party-delete-reason')).toHaveCount(0)
   await page.getByTestId('party-delete').click()
   // Gap 2: Delete asks first; Cancel there leaves the company alone.
   const confirm = page.getByTestId('party-delete-confirm')
@@ -36,19 +49,12 @@ test('O1: add a maltster + supplier company; Rahr (in use) can’t be deleted; a
   await expect(confirm).toHaveCount(0)
   await page.getByTestId('party-delete').click()
   await confirm.getByRole('button', { name: 'Delete' }).click()
-  await expect(d.getByRole('alert')).toContainText('This company is in use; deactivate it instead')
-  await d.getByRole('button', { name: 'Cancel' }).click()
-  expect((await (await apiAs('owner')).get(`/api/parties/${rahr}`)).status()).toBe(200)
-
-  await page.getByTestId(`company-${id}`).first().click()
-  await page.getByTestId('party-delete').click()
-  await confirm.getByRole('button', { name: 'Delete' }).click()
   await expect(d).toHaveCount(0)
   await expect(page.getByTestId(`company-${id}`)).toHaveCount(0)
   expect((await (await apiAs('owner')).get(`/api/parties/${id}`)).status()).toBe(404)
 })
 
-test('O2: Settings → Categories: Grains shows its five children; no Origin or Maltster field', async ({ page }) => {
+test('O2: Settings → Categories: Grains shows its five children; no Origin or Maltster field; no Add field on Grains or a child', async ({ page }) => {
   const categories = (await (await (await apiAs('owner')).get('/api/ingredient_categories')).json()).data as { id: number; name: string }[]
   const grains = categories.find((c) => c.name === 'Grains')!
   await page.goto('/ingredients/categories')
@@ -61,9 +67,28 @@ test('O2: Settings → Categories: Grains shows its five children; no Origin or 
   await expect(grid).toBeVisible()
   await expect(grid.getByText('Origin', { exact: true })).toHaveCount(0)
   await expect(grid.getByText('Maltster', { exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('category-add-field')).toHaveCount(0)
+  await expect(page.getByTestId('category-grain-fields-note')).toBeVisible()
+  // Grains has children: Delete is disabled with the reason.
+  await expect(page.getByTestId('category-delete')).toBeDisabled()
+  await expect(page.getByTestId('category-delete-reason')).toHaveText('This category has sub-categories; move or delete them first')
+
+  const base = categories.find((c) => c.name === 'Base')!
+  await page.goto(`/ingredients/categories/${base.id}`)
+  await expect(page.getByRole('heading', { name: 'Field Definitions' })).toBeVisible()
+  await expect(page.getByTestId('category-add-field')).toHaveCount(0)
+  // The API refuses one too.
+  const res = await (await apiAs('owner')).post('/api/category_field_definitions', { data: { category_id: base.id, field_name: tempTag('O2'), field_type: 'text' } })
+  expect(res.status()).toBe(422)
+
+  const hops = categories.find((c) => c.name === 'Hops')
+  if (hops) {
+    await page.goto(`/ingredients/categories/${hops.id}`)
+    await expect(page.getByTestId('category-add-field')).toBeVisible()
+  }
 })
 
-test('O3: deleting a category that has a grain is refused with a message in the dialog (gap 12)', async ({ page }) => {
+test('O3: a category that has a grain has Delete disabled with the reason (gap 12, D61 carry-over 2); empty, it deletes', async ({ page }) => {
   const api = await apiAs('owner')
   const categories = (await (await api.get('/api/ingredient_categories')).json()).data as { id: number; name: string }[]
   const grains = categories.find((c) => c.name === 'Grains')!
@@ -77,13 +102,16 @@ test('O3: deleting a category that has a grain is refused with a message in the 
     // A new child goes after Grains' five (sort order 5, not after every category).
     expect(category.sort_order).toBe(5)
     await page.goto(`/ingredients/categories/${category.id}`)
-    await page.getByRole('button', { name: 'Delete Category' }).click()
-    const confirm = page.getByTestId('category-delete-confirm')
-    await confirm.getByRole('button', { name: 'Delete' }).click()
-    await expect(confirm.getByRole('alert')).toHaveText('This category has grains; move them first')
-    expect((await api.get(`/api/ingredient_categories/${category.id}`)).status()).toBe(200)
-    await confirm.getByRole('button', { name: 'Cancel' }).click()
-    await expect(confirm).toHaveCount(0)
+    await expect(page.getByTestId('category-delete')).toBeDisabled()
+    await expect(page.getByTestId('category-delete-reason')).toHaveText('This category has grains; move them first')
+    expect((await api.delete(`/api/ingredient_categories/${category.id}`)).status()).toBe(422)
+
+    expect((await api.delete(`/api/ingredients/${grainId}`)).status()).toBe(204)
+    await page.reload()
+    await expect(page.getByTestId('category-delete-reason')).toHaveCount(0)
+    await page.getByTestId('category-delete').click()
+    await page.getByTestId('category-delete-confirm').getByRole('button', { name: 'Delete' }).click()
+    await expect(page).toHaveURL(/\/ingredients\/categories$/)
   } finally {
     await api.delete(`/api/ingredients/${grainId}`)
     await api.delete(`/api/ingredient_categories/${category.id}`)

@@ -89,8 +89,12 @@ export const NEGATIVE = 'Enter 0 or more'
  * with "Use . for the decimal point". A minus sign is refused with "Enter 0 or
  * more", anything else (letters, `1e3`) with its own message. Empty is
  * `null`. The value is a plain string ("1234.5").
+ *
+ * With `decimals` (D61 carry-over 4), more decimal places than that are
+ * refused with "Use at most N decimals" instead of being rounded on save;
+ * trailing zeros don't count (`1.550` is 1.55).
  */
-export function parseDecimal(text: string): ParsedDecimal {
+export function parseDecimal(text: string, decimals?: number): ParsedDecimal {
   const t = text.trim()
   if (t === '') return { ok: true, value: null }
   if (/^-\s*[\d.,]*\d[\d.,]*$/.test(t)) return { ok: false, error: NEGATIVE }
@@ -98,8 +102,18 @@ export function parseDecimal(text: string): ParsedDecimal {
   if (!grouped && t.includes(',') && /^[\d.,]+$/.test(t)) return { ok: false, error: COMMA_DECIMAL }
   const value = grouped ? t.replace(/,/g, '') : t
   if (!/^(\d+(\.\d*)?|\.\d+)$/.test(value)) return { ok: false, error: 'Use digits and one . for the decimal point' }
+  const places = (value.split('.')[1] ?? '').replace(/0+$/, '').length
+  if (decimals != null && places > decimals) return { ok: false, error: tooManyDecimals(decimals) }
   return { ok: true, value: value.startsWith('.') ? `0${value}` : value.endsWith('.') ? value.slice(0, -1) : value }
 }
+
+/** The message for more decimal places than a box takes. */
+export const tooManyDecimals = (decimals: number) =>
+  decimals === 0 ? 'Use a whole number' : `Use at most ${decimals} ${decimals === 1 ? 'decimal' : 'decimals'}`
+
+/** Decimal places the API keeps for lb (quantities, sack sizes) and for $ (prices). */
+export const LB_DECIMALS = 2
+export const PRICE_DECIMALS = 2
 
 // ── Quantities (§3.7, §3.9) ──
 
@@ -116,8 +130,8 @@ export const MIN_QUANTITY = 'Enter at least 0.01 lb'
  * makes it 0 (lead decisions 3, gap 16).
  */
 export function readQuantity(sackText: string, lbText: string, sackSize: number | null): { lb: string | null; valid: boolean; error?: string } {
-  const ps = parseDecimal(sackSize != null ? sackText : '')
-  const pl = parseDecimal(lbText)
+  const ps = parseDecimal(sackSize != null ? sackText : '', LB_DECIMALS)
+  const pl = parseDecimal(lbText, LB_DECIMALS)
   if (!ps.ok || !pl.ok) return { lb: null, valid: false }
   if (ps.value == null && pl.value == null) return { lb: null, valid: true }
   const sacks = Number(ps.value ?? 0)
