@@ -278,3 +278,18 @@ Under **Brewery → Ingredients** (Brewery members and owners), new tabs/pages:
   decimals"; on hand reads "usable · expired" the same in the header, Count and Record movement; a
   second lot with an existing lot # is refused; an expired lot isn't offered in the recipe lot
   picker.
+
+## Amendments (Matt, 2026-11-18, local QA)
+
+- **Open orders by expected year (gap 2, 2a):** an open on-contract order counts as **on order** on
+  the contract of the year it's expected (its expected date, else its order date); once received it
+  counts by received date (A5 otherwise unchanged).
+- **Sack sizes on one line (gap 17, 17a):** a contract line counts every on-contract order and
+  receipt of its product from its supplier, **converted by weight to the line's sack size**
+  (525 lb against a 50 lb line = 10.5 sacks); figures may show half sacks; $ stay at line prices.
+- **Totals remaining (gap 3):** a contract's total remaining is the sum of what's still owed per line
+  (matches Shortfall); over-deliveries are shown separately, never netted.
+- **Reorder offer (gap 4):** the offer chosen on To order is saved on the product.
+- **Received date (gap 12):** can't be before the order date.
+- **Contract delete (gap 18):** disabled with the reason once anything was received against it.
+
