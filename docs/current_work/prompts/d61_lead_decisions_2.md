@@ -74,3 +74,18 @@ FormDialog's `noValidate` turned off the browser's range check that D51 relies o
    Keep everything else from item 4. Check nothing else from the fix cycle depended on it (the D4
    test in `dev-qa-fixes.spec.ts`, any new test). Then: D51 G5 green, the ingredients folder once,
    vitest/tsc/build clean. Commit, don't push, reply.
+
+## DEV QA recheck 1 (2237ed1): pass with gaps
+
+Gaps 1–5 closed (`~/src/rockcut-d61-devqa/results/d61_dev_qa_recheck1.md`). New: gap 6 (below);
+gaps 7 and 8 (Scheduler event/shift Delete has no confirm) are pre-D61 behaviour (D11/D32 dialogs,
+untouched here), so they go to Matt as a backlog item, not this cycle.
+
+7. **Gap 6 (should-fix): Edit contract's Save before its lists load.** Same as item 4: Save stays
+   disabled until the Edit contract dialog's lists (`/api/parties`, the supplier's offers,
+   `/api/ingredient_products`) have loaded. Then sweep **every D61 dialog** (orders, receive,
+   contracts new/edit, To order's Start an order, product minimum, company order target) for the
+   same pattern so this is the last one: any dialog whose Save can be pressed before the lists it
+   needs have arrived. Playwright with delayed lists for Edit contract (extend D4 in
+   `dev-qa-fixes.spec.ts`). vitest/tsc/build clean, lint 8, the ingredients folder green twice.
+   Commit, don't push, reply with the commit and which dialogs you changed.
