@@ -19,9 +19,14 @@ export function money(v: string | number | null | undefined, digits = 2): string
 const lbText = (lb: number) => `${lb.toLocaleString('en-US', { maximumFractionDigits: 2 })} lb`
 const sacksText = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'sack' : 'sacks'}`
 
-/** Whole sacks typed in a box: the number, or null when empty or not a whole number ≥ `min`. */
+/**
+ * Whole sacks typed in a box: the number, or null when empty or not a whole
+ * number ≥ `min`. Thousands separators in groups of three are taken, as in
+ * the other number boxes (`1,234` is 1234; D61 lead decisions 1, gap 10).
+ */
 export function parseSacks(text: string, min = 1): number | null {
-  const t = text.trim()
+  const typed = text.trim()
+  const t = /^\d{1,3}(,\d{3})+$/.test(typed) ? typed.replace(/,/g, '') : typed
   if (!/^\d+$/.test(t)) return null
   const n = Number(t)
   return n >= min ? n : null
@@ -138,4 +143,13 @@ export function contractPriceChanges(lines: { product: string; price: string; ch
 export function toOrder(minimum: number, usableLb: number, sackSize: number, onOrder: number): { onHandSacks: number; toOrder: number } {
   const onHandSacks = Math.round((usableLb / sackSize) * 100) / 100
   return { onHandSacks, toOrder: Math.max(0, Math.ceil(minimum - onHandSacks - onOrder - 1e-9)) }
+}
+
+/**
+ * A contract figure in sacks (amendment 17a: converted by weight, so it may
+ * be a part sack): to 2 decimals, whole numbers without them ("10.5", "6",
+ * "1,234.25").
+ */
+export function sacksFigure(n: number): string {
+  return (Math.round(n * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })
 }

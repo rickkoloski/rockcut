@@ -214,8 +214,11 @@ test('PO7: product page: minimum on hand, Below minimum (page and Grains list), 
   await d.getByTestId('product-minimum').fill('1.5')
   await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
   await d.getByTestId('product-minimum').fill('3')
+  // Lead decisions 1, item 19: wait for the save itself, not a fixed time.
+  const saved = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`/api/ingredient_products/${product.id}`))
   await d.getByRole('button', { name: 'Save' }).click()
-  await expect(d).toHaveCount(0)
+  expect((await saved).status()).toBe(200)
+  await expect(d).toHaveCount(0, { timeout: 15_000 })
   await expect(page.getByTestId('product-minimum-text')).toHaveText('Minimum: 3 sacks')
   await expect(page.getByTestId('product-below-minimum')).toHaveText('Below minimum')
   await expect(page.getByTestId('product-open-orders')).toContainText('None on order')

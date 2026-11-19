@@ -3,7 +3,6 @@ import {
   Box,
   FormControl,
   InputLabel,
-  ListSubheader,
   MenuItem,
   Paper,
   Select,
@@ -37,7 +36,9 @@ const lb = (v: string | number | null | undefined) => (v == null ? '—' : Numbe
  * hand and its value as of a date (decision 37), per product with a grand
  * total. **Orders**: one row per order line in a date range, a subtotal per
  * supplier and a grand total (decision 35). Tables scroll inside their box at
- * phone width.
+ * phone width. Lead decisions 1: a product with no value shows "—" (Copy
+ * leaves it empty), the totals carry expired lb and sacks, and a past As of
+ * says Expired is today's status (there's no status history).
  */
 export default function TotalsPage() {
   const [tab, setTab] = useState<'inventory' | 'orders'>('inventory')
@@ -82,15 +83,16 @@ function InventoryTotalsView() {
   const { data } = useApiQuery<InventoryTotals>(['ingredient_totals', 'inventory', params], '/api/ingredient_totals/inventory', params)
   const rows = data?.rows ?? []
   const unvalued = rows.reduce((n, r) => n + Number(r.unvalued_lb), 0)
+  // Every row is a grain, so "All grains" is the parent: its sub-categories only (item 18).
   const { grains, children } = grainCategories(categories)
-  const grainOptions = grains ? categoryOptions([grains, ...children]) : []
+  const grainOptions = grains ? categoryOptions([grains, ...children]).filter((o) => o.depth > 0) : []
 
   const tsv = () =>
     toTsv(
       ['Grain', 'Maltster', 'Product', 'Category', 'lb', 'Expired lb', 'Sacks', '$/lb', 'Value', 'Estimated'],
       [
         ...rows.map((r): Cell[] => [r.grain, r.maltster, r.display_name, r.category, r.lb, r.expired_lb, r.sacks, r.per_lb, r.value, r.estimated]),
-        ['Total', '', '', '', data?.total.lb, '', '', '', data?.total.value, ''],
+        ['Total', '', '', '', data?.total.lb, data?.total.expired_lb, '', '', data?.total.value, ''],
       ],
     )
 
@@ -128,20 +130,11 @@ function InventoryTotalsView() {
         </Filter>
         <Filter label="Category" value={categoryId} onChange={setCategoryId} testId="totals-inventory-category">
           <MenuItem value="">All grains</MenuItem>
-          {grainOptions.map(({ category: c, depth }) =>
-            depth === 0 ? (
-              [
-                <ListSubheader key={`h${c.id}`}>{c.name}</ListSubheader>,
-                <MenuItem key={c.id} value={String(c.id)}>
-                  All {c.name}
-                </MenuItem>,
-              ]
-            ) : (
-              <MenuItem key={c.id} value={String(c.id)} sx={{ pl: 4 }}>
-                {c.name}
-              </MenuItem>
-            ),
-          )}
+          {grainOptions.map(({ category: c }) => (
+            <MenuItem key={c.id} value={String(c.id)}>
+              {c.name}
+            </MenuItem>
+          ))}
         </Filter>
       </PageToolbar>
 
@@ -188,8 +181,8 @@ function InventoryTotalsView() {
                 <TableCell align="right">{r.sacks == null ? '—' : lb(r.sacks)}</TableCell>
                 <TableCell align="right">{money(r.per_lb, 4)}</TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-value`}>
-                  {money(r.value)}
-                  {r.estimated && ' est.'}
+                  {r.value == null ? '—' : money(r.value)}
+                  {r.value != null && r.estimated && ' est.'}
                 </TableCell>
               </TableRow>
             ))}
@@ -197,7 +190,10 @@ function InventoryTotalsView() {
               <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid="totals-inventory-total">
                 <TableCell colSpan={3}>Total</TableCell>
                 <TableCell align="right">{lb(data.total.lb)}</TableCell>
-                <TableCell colSpan={3} />
+                <TableCell align="right" data-testid="totals-inventory-total-expired">
+                  {Number(data.total.expired_lb) > 0 ? lb(data.total.expired_lb) : ''}
+                </TableCell>
+                <TableCell colSpan={2} />
                 <TableCell align="right">{money(data.total.value)}</TableCell>
               </TableRow>
             )}
@@ -208,6 +204,11 @@ function InventoryTotalsView() {
         Value at the price paid; est. = valued at the supplier&apos;s offer price (no recorded cost).
         {unvalued > 0 && <span data-testid="totals-inventory-unvalued">{` ${lb(unvalued)} lb has no price and isn't valued.`}</span>}
       </Typography>
+      {params.as_of !== today && (
+        <Typography variant="body2" color="text.secondary" data-testid="totals-inventory-expired-note">
+          Expired shows each lot&apos;s status today.
+        </Typography>
+      )}
     </>
   )
 }
@@ -235,9 +236,9 @@ function OrderTotalsView() {
       [
         ...groups.flatMap((g): Cell[][] => [
           ...g.rows.map((r): Cell[] => [r.ordered_on, r.supplier, r.reference, r.product, r.status, r.sacks_ordered, r.sacks_received, r.lb, r.dollars]),
-          [`Total ${g.sum.supplier}`, '', '', '', '', '', '', g.sum.lb, g.sum.dollars],
+          [`Total ${g.sum.supplier}`, '', '', '', '', g.sum.sacks_ordered, g.sum.sacks_received, g.sum.lb, g.sum.dollars],
         ]),
-        ['Total', '', '', '', '', '', '', data?.total.lb, data?.total.dollars],
+        ['Total', '', '', '', '', data?.total.sacks_ordered, data?.total.sacks_received, data?.total.lb, data?.total.dollars],
       ],
     )
 
@@ -307,7 +308,9 @@ function OrderTotalsView() {
                   </TableRow>
                 ))}
                 <TableRow sx={{ '& td': { fontWeight: 600 }, backgroundColor: 'action.hover' }} data-testid={`totals-orders-supplier-${g.sum.supplier_id}`}>
-                  <TableCell colSpan={7}>Total {g.sum.supplier}</TableCell>
+                  <TableCell colSpan={5}>Total {g.sum.supplier}</TableCell>
+                  <TableCell align="right">{g.sum.sacks_ordered}</TableCell>
+                  <TableCell align="right">{g.sum.sacks_received}</TableCell>
                   <TableCell align="right">{lb(g.sum.lb)}</TableCell>
                   <TableCell align="right">{money(g.sum.dollars)}</TableCell>
                 </TableRow>
@@ -315,7 +318,9 @@ function OrderTotalsView() {
             ))}
             {data && rows.length > 0 && (
               <TableRow sx={{ '& td': { fontWeight: 700 } }} data-testid="totals-orders-total">
-                <TableCell colSpan={7}>Total</TableCell>
+                <TableCell colSpan={5}>Total</TableCell>
+                <TableCell align="right">{data.total.sacks_ordered}</TableCell>
+                <TableCell align="right">{data.total.sacks_received}</TableCell>
                 <TableCell align="right">{lb(data.total.lb)}</TableCell>
                 <TableCell align="right">{money(data.total.dollars)}</TableCell>
               </TableRow>

@@ -1064,7 +1064,7 @@ ExUnit files are under `rockcut_api/test/` (mostly `rockcut_api_web/controllers/
 | — | Category delete with grains or sub-categories → 422 with a message, shown in the dialog (gap 12); a new child sorts after its siblings | Playwright `owner` (O3: a `[TEST-TEMP]` child with a grain, "This category has grains; move them first" in the confirm, sort order 5); IAT "delete: refused with a message…", "a new child goes after its siblings" |
 | — | Refusals in plain words and the person's sacks/lb (gap 1); Oldest first's on-hand without expired stock | Playwright `brewer` (B4 "That's more than the 9 sacks on hand", B6 the Oldest first helper); IAT movement and count refusals under `base`; Vitest `lib/inventory.test` (`oldestFirstOnHand`), `lib/parseApiError.test` (feature messages without the key) |
 | — | Delete company asks first (gap 2) | Playwright `owner` (O1: Cancel in the confirm, then Delete) |
-| — | Feature values kept to the type's decimals; "changed from standard" compares shown values (gap 4) | IAT "feature values are kept to the type's decimals"; Vitest `lib/ingredientFeatures.test` (`differs` with decimals); Playwright `lots` (L1) |
+| — | Feature values kept to the type's decimals (since D61 fix cycle 1, gap 13: more places are refused, not rounded); "changed from standard" compares shown values (gap 4) | IAT "feature values with more places than the type keeps are refused, not rounded"; Vitest `lib/ingredientFeatures.test` (`differs` with decimals); Playwright `lots` (L1) |
 | — | Convert popup refuses results outside the range and negative values; moisture over 100 refused on the form (gaps 10, 11) | Playwright `lots` (L2: 50 PPG → "108.2 % FGDB is out of range", Use disabled; −1 "Enter 0 or more"; moisture 150 refused, Save disabled); Vitest `lib/ingredientFeatures.test` (`rangeError`) |
 | — | A count equal to on-hand is "Counted, no change"; a total overage with every lot expired is refused (gap 11) | Playwright `brewer` (B9); IAT "equal writes Counted, no change", "a by-lot count with no difference", "a total overage with every lot expired is refused" |
 | — | No movement dated after today (Colorado) (gap 13); quantities under 0.01 lb refused, lb kept to 2 decimals | IAT "a movement can't be dated after today", "lb are kept to 2 decimals"; Playwright `brewer` (B9: the date pickers' max is today) |
@@ -1104,4 +1104,28 @@ ExUnit under `rockcut_api/test/`: `rockcut_api_web/controllers/purchasing_api_te
 | — | Receiving into an expired lot is refused; an inactive offer isn't put on a line | Playwright `orders` (PO6, the message on the line); RTT "an expired lot takes no more…"; PAT "an inactive offer is refused…" |
 | — | Contract delete once received refused; offer delete when on an order or under a contract refused | PAT "figures…" (delete), "delete rules joined" |
 | — | Android back closes the new dialogs (`useBackCloses`) | Manual-only (phone check) |
-| — | Contract Edit/Delete from the page | GAP in Playwright (API covered: PAT "an unchanged price writes nothing on update…", "a line remembers its offer") |
+| — | Contract Delete from the page; Edit from the page | Playwright `qa-fixes` (F1: Delete disabled with the reason once received, a contract with nothing received deletes through the confirm); Edit: GAP in Playwright (API covered: PAT "an unchanged price writes nothing on update…", "a line remembers its offer") |
+
+**Local QA fix cycle 1** (`prompts/d61_lead_decisions_1.md`, spec Amendments; gap numbers are the QA report's). ExUnit `rockcut_api_web/controllers/d61_fix_cycle_1_test.exs` ("FC1"); Playwright `qa-fixes.spec.ts` (breweryMgr F1, brewer1 F2–F5).
+
+| Item | Rule | Coverage |
+|---|---|---|
+| 1 (gap 18) | Delete contract disabled with the reason when grain was received; `delete_blocked` on the JSON; the API refusal unchanged | FC1 "a line counts every offer…"; Playwright F1 (disabled, the tooltip, a deletable one deletes) |
+| 2 (gap 2, 2a) | An open on-contract order counts as on order in the year of its expected date, else its order date | FC1 (ordered last Dec 31, expected this year: on order this year; expected next year: on order there) |
+| 3 (gap 17, 17a) | A line counts every offer of its product from its supplier by weight in its sack size, to 2 decimals; $ at line prices; Shortfall the same | FC1 (5 × 50 lb + 5 × 55 lb = 10.5 on a 50 lb line, over by 0.5, $420.00); Playwright F1 ("10.5", "over by 0.5"); Vitest `purchasing.test` (`sacksFigure`) |
+| 4 (gap 3) | The card's total remaining is what's still owed (= Shortfall); over in its own total | FC1 (`remaining_sacks` 20, `over_sacks` 0.5); Playwright F1 (total 5, "Over: 0.5 sacks") |
+| 5 (gap 5) | No value at all is `null` / "—" / an empty Copy cell; a partly valued product keeps its value | RTT "rows per product…" (`value` null, unvalued lb); Playwright F4 |
+| 6 (gap 10) | Sacks boxes take thousands separators (`1,234`), still whole only | Vitest `purchasing.test` (`parseSacks`); Playwright F2 (New order running total, Receive "Received in full") |
+| 7 (gap 11) | Prices with a third decimal refused (order lines, contract lines, offer prices), nothing written | FC1 "prices to 2 decimals" |
+| 8 (gap 12) | Received before the order date refused; the picker's min is the order date | FC1 (the day before 422, the order date 200); Playwright F2 (`min`, the message, Receive disabled) |
+| 9 (gap 13) | Feature values with too many places refused, not rounded: receive's new lot, lot and product create/update | FC1 (receive, nothing written); IAT "feature values with more places than the type keeps are refused" (products PATCH, lots POST/PATCH) |
+| 10 (gap 4) | The reorder offer picked on To order is saved (`reorder_offer_id`); inactive or another product's refused; a deactivated one falls back | FC1 "reorder offer"; Playwright F3 (PUT on pick, kept after reload), T1 |
+| 11 (gap 1) | The duplicate lot # message has no "lot number:" prefix | PAT "lot numbers", `d61_carry_over_test` (`base`); Playwright F5 (Add lot) |
+| 12 (gap 6) | Inventory totals' total has `expired_lb`, on the Total row and in Copy | RTT "rows per product…"; Playwright F4 |
+| 13 (gap 7) | A past As of says Expired is today's status | Playwright F4 (no note today, the note yesterday) |
+| 14 (gap 8) | Order totals subtotal and total rows show sacks ordered / received | FC1 "order totals"; Playwright T3 (screen and Copy) |
+| 15 (gap 9) | An invalid `from`/`to` on order totals → 422 | FC1 "order totals" |
+| 16 (gap 15) | A receive lists every line with its quantity; a listed line with no allocations goes to its previous lot | FC1 "every line needs a received quantity…" |
+| 17 (gap 16) | 360 px: To order's number in view (Minimum and On order under the product, the offer short and wrapping) | Playwright P5 (the To order cell within 360 px) |
+| 18 | One "All grains" in the Category filter; a receipt names its order in History | Playwright F4 (options unique), F5 (reference, "Order #<id>"); FC1 "History (item 18)" |
+| 19 | PO7 and P4 wait for the save / the dialog's history entry, not a fixed time | Playwright PO7, P4 (`expectPhoneDialogClosed`) |

@@ -204,10 +204,10 @@ export async function makeSupplier(label: string, target: number | null = 40): P
 }
 
 /** An offer of `product` by `supplierId` in 55 lb sacks at `price` a sack from long ago. */
-export async function makeOffer(product: ApiProduct, supplierId: number, price = '42.00', orderName: string | null = null): Promise<{ id: number }> {
+export async function makeOffer(product: ApiProduct, supplierId: number, price = '42.00', orderName: string | null = null, size = '55'): Promise<{ id: number }> {
   const api = await apiAs('brewer1')
   const offer = await ok<{ id: number }>(
-    await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: supplierId, sack_size_lb: '55', form: 'whole', order_name: orderName } }),
+    await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: supplierId, sack_size_lb: size, form: 'whole', order_name: orderName } }),
     201,
   )
   await ok(await api.post(`/api/supplier_offers/${offer.id}/prices`, { data: { price_per_sack: price, effective_on: '2020-01-01' } }), 201)
@@ -261,6 +261,16 @@ export async function getOrder(id: number): Promise<ApiOrder> {
 }
 
 /** No sideways scroll on the page. */
+/**
+ * A phone dialog closed and its back-button history entry released: closing
+ * takes the entry off with `history.back()` a tick later (`useBackCloses`),
+ * which aborts a `page.goto` sent in between (lead decisions 1, item 19).
+ */
+export async function expectPhoneDialogClosed(page: Page, dialog: Locator) {
+  await expect(dialog).toHaveCount(0)
+  await page.waitForFunction(() => window.history.state?.rockcutBackCloses == null)
+}
+
 export async function expectNoSidewaysScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
   expect(scroll, 'page scrollWidth vs clientWidth').toBeLessThanOrEqual(client)

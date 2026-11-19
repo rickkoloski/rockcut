@@ -31,7 +31,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import { money } from '../../lib/purchasing'
+import { money, sacksFigure } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, ShortfallRow, SupplierOffer } from '../../lib/types'
 import ContractDialog from './ContractDialog'
@@ -47,8 +47,12 @@ interface ContractsReply {
 /**
  * D61 §4.2: the malt contracts for a year, one card per supplier: each
  * product's contracted, on order, received and remaining (over in the
- * warning color, decision 41), and the year's Shortfall. New, Edit and
- * Delete only for owners and Brewery managers; everyone else reads.
+ * warning color, decision 41), and the year's Shortfall. On order and
+ * received are in the line's sack size by weight, so they may be part
+ * sacks (amendment 17a). The total remaining is what's still owed; over is
+ * its own total, never netted (gap 3). New, Edit and Delete only for owners
+ * and Brewery managers; everyone else reads. Delete is disabled with the
+ * reason once grain was received against the contract (gap 18).
  */
 export default function ContractsPage() {
   const [params, setParams] = useSearchParams()
@@ -143,8 +147,8 @@ export default function ContractsPage() {
                 <TableRow key={r.product_id} data-testid={`shortfall-${r.product_id}`}>
                   <TableCell>{r.display_name}</TableCell>
                   <TableCell align="right">{r.contracted_sacks}</TableCell>
-                  <TableCell align="right">{r.received_sacks}</TableCell>
-                  <TableCell align="right">{r.short_sacks}</TableCell>
+                  <TableCell align="right">{sacksFigure(r.received_sacks)}</TableCell>
+                  <TableCell align="right">{sacksFigure(r.short_sacks)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -179,7 +183,6 @@ export default function ContractsPage() {
 
 function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { contract: Contract; offerName: Map<number, string>; canWrite: boolean; onEdit: () => void; onDelete: () => void }) {
   const sum = (f: (l: Contract['lines'][number]) => number) => c.lines.reduce((n, l) => n + f(l), 0)
-  const remaining = sum((l) => l.remaining_sacks)
   return (
     <Card variant="outlined" data-testid={`contract-${c.id}`}>
       <CardContent>
@@ -194,10 +197,13 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
                   <EditIcon />
                 </IconButton>
               </Tooltip>
-              <Tooltip title="Delete contract">
-                <IconButton aria-label="Delete contract" color="error" onClick={onDelete} data-testid={`contract-${c.id}-delete`}>
-                  <DeleteIcon />
-                </IconButton>
+              <Tooltip title={c.delete_blocked ?? 'Delete contract'}>
+                {/* A span so the reason shows on a disabled button. */}
+                <span>
+                  <IconButton aria-label="Delete contract" color="error" disabled={!!c.delete_blocked} onClick={onDelete} data-testid={`contract-${c.id}-delete`}>
+                    <DeleteIcon />
+                  </IconButton>
+                </span>
               </Tooltip>
             </Box>
           )}
@@ -236,14 +242,14 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
                   <TableCell align="right">{l.contracted_sacks}</TableCell>
                   <TableCell align="right">{money(l.contracted_dollars)}</TableCell>
                   <TableCell align="right" data-testid={`contract-line-${l.product_id}-on-order`}>
-                    {l.on_order_sacks}
+                    {sacksFigure(l.on_order_sacks)}
                   </TableCell>
                   <TableCell align="right" data-testid={`contract-line-${l.product_id}-received`}>
-                    {l.received_sacks}
+                    {sacksFigure(l.received_sacks)}
                   </TableCell>
                   <TableCell align="right">{money(l.received_dollars)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: l.over_by ? 'warning.main' : undefined, fontWeight: l.over_by ? 600 : undefined }} data-testid={`contract-line-${l.product_id}-remaining`}>
-                    {l.over_by ? `over by ${l.over_by}` : l.remaining_sacks}
+                    {l.over_by ? `over by ${sacksFigure(l.over_by)}` : sacksFigure(l.remaining_sacks)}
                   </TableCell>
                 </TableRow>
               ))}
@@ -252,14 +258,21 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
                 <TableCell />
                 <TableCell align="right">{sum((l) => l.contracted_sacks)}</TableCell>
                 <TableCell align="right">{money(sum((l) => Number(l.contracted_dollars)))}</TableCell>
-                <TableCell align="right">{sum((l) => l.on_order_sacks)}</TableCell>
-                <TableCell align="right">{sum((l) => l.received_sacks)}</TableCell>
+                <TableCell align="right">{sacksFigure(sum((l) => l.on_order_sacks))}</TableCell>
+                <TableCell align="right">{sacksFigure(sum((l) => l.received_sacks))}</TableCell>
                 <TableCell align="right">{money(sum((l) => Number(l.received_dollars)))}</TableCell>
-                <TableCell align="right">{remaining < 0 ? `over by ${-remaining}` : remaining}</TableCell>
+                <TableCell align="right" data-testid={`contract-${c.id}-remaining`}>
+                  {sacksFigure(c.remaining_sacks)}
+                </TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </Box>
+        {c.over_sacks > 0 && (
+          <Typography variant="body2" sx={{ mt: 1, color: 'warning.main', fontWeight: 600 }} data-testid={`contract-${c.id}-over`}>
+            Over: {sacksFigure(c.over_sacks)} {c.over_sacks === 1 ? 'sack' : 'sacks'}
+          </Typography>
+        )}
       </CardContent>
     </Card>
   )

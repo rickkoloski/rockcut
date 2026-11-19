@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contractPriceChanges, lineForError, lotChoiceLabel, money, parseSacks, previousLot, receivableLots, runningTotal, splitSummary, targetProgress, toOrder } from './purchasing'
+import { contractPriceChanges, lineForError, lotChoiceLabel, money, parseSacks, previousLot, receivableLots, runningTotal, sacksFigure, splitSummary, targetProgress, toOrder } from './purchasing'
 
 describe('money', () => {
   it('dollars with separators; nothing is a dash', () => {
@@ -16,7 +16,13 @@ describe('parseSacks (decision 24: whole sacks)', () => {
     expect(parseSacks(' 4 ')).toBe(4)
     expect(parseSacks('0')).toBeNull()
     expect(parseSacks('0', 0)).toBe(0)
-    for (const bad of ['1.5', '-1', '', 'x', '1e2']) expect(parseSacks(bad), bad).toBeNull()
+    for (const bad of ['1.5', '-1', '', 'x', '1e2', '1,23', '12,34', '1,234.5', ',123']) expect(parseSacks(bad), bad).toBeNull()
+  })
+
+  it('takes thousands separators like the other number boxes (gap 10)', () => {
+    expect(parseSacks('1,234')).toBe(1234)
+    expect(parseSacks(' 12,345,678 ')).toBe(12345678)
+    expect(parseSacks('1,000', 0)).toBe(1000)
   })
 })
 
@@ -110,5 +116,15 @@ describe('to order with a chosen offer (§3.5)', () => {
     expect(toOrder(3, 110, 55, 4)).toEqual({ onHandSacks: 2, toOrder: 0 })
     expect(toOrder(5, 0, 55, 0).toOrder).toBe(5)
     expect(toOrder(3, 165, 55, 0).toOrder).toBe(0)
+  })
+})
+
+describe('sacksFigure (amendment 17a: part sacks by weight)', () => {
+  it('shows 2 decimals at most and whole numbers without them', () => {
+    expect(sacksFigure(10.5)).toBe('10.5')
+    expect(sacksFigure(6)).toBe('6')
+    expect(sacksFigure(4.4 + 0.2)).toBe('4.6')
+    expect(sacksFigure(1234.256)).toBe('1,234.26')
+    expect(sacksFigure(0)).toBe('0')
   })
 })

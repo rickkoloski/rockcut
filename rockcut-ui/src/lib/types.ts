@@ -257,6 +257,8 @@ export interface IngredientProduct {
   expired_lb: string
   /** D61 §3.5: the reorder point in whole sacks (null: none), and on hand (not expired) under it. */
   min_on_hand_sacks?: number | null
+  /** The offer picked on To order (lead decisions 1, gap 4); null: the default. */
+  reorder_offer_id?: number | null
   below_minimum?: boolean
   inserted_at: string
   updated_at: string
@@ -275,7 +277,9 @@ export interface InventoryMovement {
   occurred_on: string
   partner_party_id: number | null
   partner: PartySummary | null
+  /** A receipt from an order with no note of its own names the order ("PO-7", "Order #12"). */
   note: string | null
+  purchase_order_id?: number | null
   entered_by: { id: number; name: string } | null
   inserted_at: string
 }
@@ -340,6 +344,8 @@ export interface ContractLine {
   price_per_sack: string
   contracted_sacks: number
   contracted_dollars: string
+  /** The line offer's sack size: on order and received are converted to it by weight (amendment 17a; may be 10.5). */
+  sack_size_lb: string
   on_order_sacks: number
   received_sacks: number
   received_dollars: string
@@ -356,6 +362,11 @@ export interface Contract {
   notes: string | null
   created_by: { id: number; name: string } | null
   lines: ContractLine[]
+  /** What's still owed over the lines (= the Shortfall), and what's over, never netted (gap 3). */
+  remaining_sacks: number
+  over_sacks: number
+  /** Why it can't be deleted (gap 18); null when it can. */
+  delete_blocked: string | null
   inserted_at: string
   updated_at: string
 }
@@ -392,7 +403,8 @@ export interface InventoryTotalsRow {
   expired_lb: string
   /** lb ÷ the sack size when all its stocked lots share one, else null. */
   sacks: string | null
-  value: string
+  /** null when no lot has a value (gap 5). */
+  value: string | null
   per_lb: string | null
   estimated: boolean
   unvalued_lb: string
@@ -401,7 +413,7 @@ export interface InventoryTotalsRow {
 export interface InventoryTotals {
   as_of: string
   rows: InventoryTotalsRow[]
-  total: { lb: string; value: string }
+  total: { lb: string; expired_lb: string; value: string }
 }
 
 export interface OrderTotalsRow {
@@ -422,6 +434,8 @@ export interface OrderTotalsRow {
 
 export interface OrderTotalsSum {
   sacks: number
+  sacks_ordered: number
+  sacks_received: number
   lb: string
   dollars: string
 }

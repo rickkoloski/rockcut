@@ -17,6 +17,8 @@ import { lineForError, lotChoiceLabel, parseSacks, previousLot, receivableLots, 
 import { coloradoToday } from '../../lib/tasks'
 import type { ApiResponse, FeatureType, IngredientLot, IngredientProduct, PurchaseOrder, PurchaseOrderLine } from '../../lib/types'
 
+const BEFORE_ORDER = "The received date can't be before the order date"
+
 /**
  * D61 §3.3, §4.1: receive an open order, every line at once. The received
  * date (today by default, never after it); per line the sacks received (as
@@ -83,10 +85,13 @@ function ReceiveForm({ onClose, order }: { onClose: () => void; order: PurchaseO
       return [l.id, lineView(l, state[l.id], Array.isArray(lots) ? lots : null, productQueries[i]?.data ?? null, types)]
     }),
   )
-  const valid = !!receivedOn && order.lines.every((l) => views.get(l.id)!.body != null)
+  // Not before the order date (lead decisions 1, gap 12).
+  const beforeOrder = !!receivedOn && receivedOn < order.ordered_on
+  const valid = !!receivedOn && !beforeOrder && order.lines.every((l) => views.get(l.id)!.body != null)
 
   const submit = async () => {
     if (receivedOn > coloradoToday()) return setError(FUTURE_DATE)
+    if (receivedOn < order.ordered_on) return setError(BEFORE_ORDER)
     if (!valid) return setError('Each line needs whole sacks and a lot')
     setLineErrors({})
     try {
@@ -133,7 +138,9 @@ function ReceiveForm({ onClose, order }: { onClose: () => void; order: PurchaseO
         onChange={(e) => setReceivedOn(e.target.value)}
         required
         fullWidth
-        slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: coloradoToday(), 'data-testid': 'receive-date' } }}
+        error={beforeOrder}
+        helperText={beforeOrder ? BEFORE_ORDER : undefined}
+        slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: order.ordered_on, max: coloradoToday(), 'data-testid': 'receive-date' } }}
       />
       {order.lines.map((l, i) => (
         <ReceiveLine

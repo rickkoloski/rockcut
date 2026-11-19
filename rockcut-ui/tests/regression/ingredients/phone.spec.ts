@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs, cleanupIngredients, expectNoSidewaysScroll, lotsOf, makeLot, makeOrder, makeProduct, makePurchasing, setQuantityDisplay, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, expectNoSidewaysScroll, expectPhoneDialogClosed, lotsOf, makeLot, makeOrder, makeProduct, makePurchasing, setQuantityDisplay, tempTag } from './helpers'
 
 // D60 spec §9, as `brewer1` at 360 px: the Grains list is cards, the
 // product page and Companies don't scroll sideways, Add lot is full screen,
@@ -88,8 +88,11 @@ test('P4: Purchasing at 360 px: cards, the order page, New order and Receive ful
   await expect(n.locator('.MuiDialog-paper')).toHaveClass(/MuiDialog-paperFullScreen/)
   await expectNoSidewaysScroll(page)
   await n.getByRole('button', { name: 'Cancel' }).click()
+  // Lead decisions 1, item 19: the dialog gone and its history entry
+  // released before navigating (closing steps back a tick later).
+  await expectPhoneDialogClosed(page, n)
 
-  await page.goto(`/ingredients/orders/${order.id}`)
+  await page.goto(`/ingredients/orders/${order.id}`, { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId('order-lines')).toBeVisible()
   await expectNoSidewaysScroll(page)
   await page.getByTestId('order-receive').click()
@@ -99,8 +102,9 @@ test('P4: Purchasing at 360 px: cards, the order page, New order and Receive ful
   await expect(r.getByTestId('receive-line-0-row-1-number')).toBeVisible()
   await expectNoSidewaysScroll(page)
   await r.getByRole('button', { name: 'Cancel' }).click()
+  await expectPhoneDialogClosed(page, r)
 
-  await page.goto(`/ingredients/products/${product.id}`)
+  await page.goto(`/ingredients/products/${product.id}`, { waitUntil: 'domcontentloaded' })
   await expect(page.getByTestId(`product-open-order-${order.id}`)).toBeVisible()
   await expectNoSidewaysScroll(page)
 })
@@ -126,6 +130,9 @@ test('P5: Contracts, To order and Totals at 360 px: no sideways scroll', async (
   await page.goto('/ingredients/to-order')
   await expect(page.getByTestId(`to-order-${product.id}`)).toBeVisible()
   await expectNoSidewaysScroll(page)
+  // Lead decisions 1, gap 16: the To order number is within the 360 px width without scrolling the table.
+  const cell = await page.getByTestId(`to-order-${product.id}-to-order`).boundingBox()
+  expect(cell!.x + cell!.width).toBeLessThanOrEqual(360)
 
   await page.goto('/ingredients/totals')
   await expect(page.getByTestId('totals-inventory-table')).toBeVisible()

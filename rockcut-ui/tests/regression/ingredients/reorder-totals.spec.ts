@@ -135,6 +135,8 @@ test.describe('brewer1', () => {
     // 3 × 55 + 8 × 55 = 605 lb; 11 × $42 = $462.00.
     await expect(sub).toContainText('605')
     await expect(sub).toContainText('$462.00')
+    await expect(sub.locator('td').nth(1)).toHaveText('13')
+    await expect(sub.locator('td').nth(2)).toHaveText('8')
     await expect(page.getByTestId('totals-orders-total')).toContainText('$462.00')
 
     await page.getByTestId('totals-orders-copy').click()
@@ -149,7 +151,8 @@ test.describe('brewer1', () => {
         ['received', '10', '8', 8 * SACK, 336],
       ].sort(),
     )
-    expect(rows[3][0]).toBe(`Total ${supplier.name}`)
-    expect([rows[4][0], Number(rows[4][8])]).toEqual(['Total', 462])
+    // Lead decisions 1, gap 8: the subtotal and total rows carry sacks ordered and received.
+    expect([rows[3][0], rows[3][5], rows[3][6]]).toEqual([`Total ${supplier.name}`, '13', '8'])
+    expect([rows[4][0], rows[4][5], rows[4][6], Number(rows[4][8])]).toEqual(['Total', '13', '8', 462])
   })
 })
