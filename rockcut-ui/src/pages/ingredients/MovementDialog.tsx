@@ -32,7 +32,7 @@ export default function MovementDialog(props: MovementDialogProps) {
 
 function MovementForm({ onClose, product, lots }: MovementDialogProps) {
   const { mode } = useQuantityDisplay()
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
   const [kind, setKind] = useState<MovementKind>('used')
   const [lotChoice, setLotChoice] = useState<string>(OLDEST)
   const [partnerId, setPartnerId] = useState<number | ''>('')
@@ -101,7 +101,8 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
       onSubmit={submit}
       loading={create.isPending}
       error={error}
-      submitDisabled={!quantity.valid}
+      // Lead decisions 2 (item 7): a trade or loan waits for the partner list.
+      submitDisabled={(needsPartner && partiesLoading) || !quantity.valid}
       testId="movement-dialog"
     >
       <FormControl fullWidth>

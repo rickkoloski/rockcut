@@ -76,7 +76,10 @@ function ReceiveForm({ onClose, order }: { onClose: () => void; order: PurchaseO
       queryFn: async () => (await api.get<ApiResponse<IngredientProduct>>(`/api/ingredient_products/${id}`)).data.data,
     })),
   })
-  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  // Lead decisions 2 (item 7): Save waits for every line's lots and product and the feature types,
+  // so a new lot never goes out without its standard features.
+  const listsLoading = typesLoading || [...lotQueries, ...productQueries].some((q) => q.isLoading)
 
   const views = new Map(
     order.lines.map((l) => {
@@ -127,7 +130,7 @@ function ReceiveForm({ onClose, order }: { onClose: () => void; order: PurchaseO
       onSubmit={submit}
       loading={receive.isPending}
       error={error}
-      submitDisabled={!valid}
+      submitDisabled={listsLoading || !valid}
       submitLabel="Receive"
       testId="receive-dialog"
     >

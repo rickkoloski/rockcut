@@ -8,7 +8,7 @@ import { apiAs, cleanupIngredients, getOrder, makeOrder, makeProduct, makePurcha
 // confirm sends one cancel and shows no error (gap 5); the Year picker lists
 // every year with a contract and the Year box checks itself (gap 3), and a
 // past year says it changes no offer prices (item 5); Save waits for a
-// dialog's lists (item 4). Every row is `[TEST-TEMP]`.
+// dialog's lists (items 4, 7). Every row is `[TEST-TEMP]`.
 
 test.afterAll(cleanupIngredients)
 
@@ -198,5 +198,38 @@ test.describe('breweryMgr', () => {
     await confirm.getByRole('button', { name: 'Delete' }).dblclick()
     await expect(page.getByTestId(`contract-${id}`)).toHaveCount(0, { timeout: 15_000 })
     expect(deletes).toHaveLength(1)
+  })
+
+  test('D4 (item 7): Save in Edit contract waits for the lists, then saves once', async ({ page }) => {
+    const { product, supplier } = await makePurchasing('D4c')
+    const made = await (await apiAs('breweryMgr')).post('/api/contracts', {
+      data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: product.id, sacks: 5, price_per_sack: '41.00' }] },
+    })
+    expect(made.status()).toBe(201)
+    const id = (await made.json()).data.id as number
+    // The dialog's lists answer only when released (not the page's own all-offers list).
+    let release!: () => void
+    const held = new Promise<void>((done) => (release = done))
+    await page.route(/\/api\/(parties|ingredient_products)(\?|$)|\/api\/supplier_offers\?supplier_id=/, async (route) => {
+      await held
+      await route.continue()
+    })
+    const puts: number[] = []
+    page.on('response', (r) => {
+      if (r.request().method() === 'PUT' && r.url().endsWith(`/api/contracts/${id}`)) puts.push(r.status())
+    })
+    await page.goto(`/ingredients/contracts?year=${year + 1}`)
+    await page.getByTestId(`contract-${id}-edit`).click()
+    const d = page.getByTestId('contract-dialog')
+    await d.getByRole('textbox', { name: 'Notes' }).fill('lists held')
+    const save = d.getByRole('button', { name: 'Save' })
+    await expect(save).toBeDisabled()
+    release()
+    await expect(save).toBeEnabled()
+    await save.click()
+    await expect(d).toHaveCount(0)
+    expect(puts).toEqual([200])
+    const now = (await (await (await apiAs('breweryMgr')).get(`/api/contracts/${id}`)).json()).data
+    expect([now.notes, now.lines[0].sacks]).toEqual(['lists held', 5])
   })
 })

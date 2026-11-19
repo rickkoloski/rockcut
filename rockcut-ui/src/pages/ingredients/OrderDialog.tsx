@@ -73,11 +73,13 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   const [version] = useState(order?.lock_version)
   const qc = useQueryClient()
 
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
-  const { data: offers = [] } = useApiList<SupplierOffer>(['supplier_offers', { supplier_id: supplierId }], '/api/supplier_offers', supplierId === '' ? undefined : { supplier_id: supplierId }, {
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: offers = [], isLoading: offersLoading } = useApiList<SupplierOffer>(['supplier_offers', { supplier_id: supplierId }], '/api/supplier_offers', supplierId === '' ? undefined : { supplier_id: supplierId }, {
     enabled: supplierId !== '',
   })
-  const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
+  const { data: products = [], isLoading: productsLoading } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
+  // Lead decisions 2 (item 7): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading || offersLoading || productsLoading
   const create = useApiCreate<PurchaseOrder>('/api/purchase_orders', { invalidateKeys: ORDER_KEYS })
   const update = useApiUpdate<PurchaseOrder>((id) => `/api/purchase_orders/${id}`, { invalidateKeys: ORDER_KEYS })
 
@@ -152,7 +154,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       onSubmit={submit}
       loading={create.isPending || update.isPending}
       error={error}
-      submitDisabled={!valid}
+      submitDisabled={listsLoading || !valid}
       testId="order-dialog"
     >
       <FormControl fullWidth required>

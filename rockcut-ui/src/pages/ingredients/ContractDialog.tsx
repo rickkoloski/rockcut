@@ -61,11 +61,13 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const [version] = useState(contract?.lock_version)
   const qc = useQueryClient()
 
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
-  const { data: offers = [] } = useApiList<SupplierOffer>(['supplier_offers', { supplier_id: supplierId }], '/api/supplier_offers', supplierId === '' ? undefined : { supplier_id: supplierId }, {
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: offers = [], isLoading: offersLoading } = useApiList<SupplierOffer>(['supplier_offers', { supplier_id: supplierId }], '/api/supplier_offers', supplierId === '' ? undefined : { supplier_id: supplierId }, {
     enabled: supplierId !== '',
   })
-  const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
+  const { data: products = [], isLoading: productsLoading } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
+  // Lead decisions 2 (item 7): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading || offersLoading || productsLoading
   const keys = [['contracts'], ['contract_shortfall'], ['supplier_offers'], ['offer_prices'], ...GRAIN_KEYS]
   const create = useApiCreate<Contract>('/api/contracts', { invalidateKeys: keys })
   const update = useApiUpdate<Contract>((id) => `/api/contracts/${id}`, { invalidateKeys: keys })
@@ -146,7 +148,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
       onSubmit={submit}
       loading={create.isPending || update.isPending}
       error={error}
-      submitDisabled={!valid}
+      submitDisabled={listsLoading || !valid}
       testId="contract-dialog"
     >
       <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
