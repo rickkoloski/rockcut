@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs, cleanupIngredients, expectNoSidewaysScroll, lotsOf, makeProduct, setQuantityDisplay, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, expectNoSidewaysScroll, expectPhoneDialogClosed, lotsOf, makeLot, makeOrder, makeProduct, makePurchasing, openDialog, setQuantityDisplay, tempTag } from './helpers'
 
 // D60 spec §9, as `brewer1` at 360 px: the Grains list is cards, the
 // product page and Companies don't scroll sideways, Add lot is full screen,
@@ -45,8 +45,7 @@ test('P2: the product page (with lots and movements) and Companies don’t scrol
 test('P3: Add lot is full screen; 5,2 in moisture is refused, 1,234 lb saves 1234 (gap 3)', async ({ page }) => {
   const product = await makeProduct('P3 phone')
   await page.goto(`/ingredients/products/${product.id}`)
-  await page.getByTestId('product-add-lot').click()
-  const d = page.getByTestId('add-lot-dialog')
+  const d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
   const paper = d.locator('.MuiDialog-paper')
   await expect(paper).toHaveClass(/MuiDialog-paperFullScreen/)
   const box = await paper.boundingBox()
@@ -68,3 +67,84 @@ test('P3: Add lot is full screen; 5,2 in moisture is refused, 1,234 lb saves 123
   const [lot] = await lotsOf(product.id)
   expect(lot.features.moisture_pct.value).toBe('5.2')
 })
+
+// D61 §4.7: Purchasing at 360 px: the orders list is cards, the order page,
+// a product page with open orders and lot values, and the New order and
+// Receive dialogs (full screen) don't scroll sideways.
+test('P4: Purchasing at 360 px: cards, the order page, New order and Receive full screen, no sideways scroll', async ({ page }) => {
+  const { product, supplier, offer } = await makePurchasing('P4 phone')
+  await makeLot(product, 2, 10)
+  const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 36 }], { reference: tempTag('P4 a long reference number') })
+
+  await page.goto('/ingredients/orders')
+  await expect(page.getByTestId('orders-cards')).toBeVisible()
+  await expect(page.getByTestId('orders-table')).toHaveCount(0)
+  await expect(page.getByTestId(`order-${order.id}`)).toContainText('36 sacks')
+  await expectNoSidewaysScroll(page)
+
+  const n = await openDialog(page, page.getByTestId('orders-new'), 'order-dialog')
+  await expect(n.locator('.MuiDialog-paper')).toHaveClass(/MuiDialog-paperFullScreen/)
+  await expectNoSidewaysScroll(page)
+  await n.getByRole('button', { name: 'Cancel' }).click()
+  // Lead decisions 1, item 19: the dialog gone and its history entry
+  // released before navigating (closing steps back a tick later).
+  await expectPhoneDialogClosed(page, n)
+
+  await page.goto(`/ingredients/orders/${order.id}`, { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId('order-lines')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  const r = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
+  await expect(r.locator('.MuiDialog-paper')).toHaveClass(/MuiDialog-paperFullScreen/)
+  await r.getByTestId('receive-line-0-add-lot').click()
+  await expect(r.getByTestId('receive-line-0-row-1-number')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  await r.getByRole('button', { name: 'Cancel' }).click()
+  await expectPhoneDialogClosed(page, r)
+
+  await page.goto(`/ingredients/products/${product.id}`, { waitUntil: 'domcontentloaded' })
+  await expect(page.getByTestId(`product-open-order-${order.id}`)).toBeVisible()
+  await expectNoSidewaysScroll(page)
+})
+
+// D61 §4.7: Contracts, To order and Totals at 360 px: the Purchasing tabs
+// scroll, the tables scroll inside their box, never the page.
+test('P5: Contracts, To order and Totals at 360 px: no sideways scroll', async ({ page }) => {
+  const { product, supplier, offer: supplierOffer } = await makePurchasing('P5 phone')
+  await makeLot(product, 1, 10)
+  const mgr = await apiAs('breweryMgr')
+  const year = Number(new Date().getFullYear()) + 1
+  expect((await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year, lines: [{ product_id: product.id, sacks: 40, price_per_sack: '41.00' }] } })).status()).toBe(201)
+  expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_sacks: 3, reorder_offer_id: supplierOffer.id } })).status()).toBe(200)
+
+  await page.goto(`/ingredients/contracts?year=${year}`)
+  await expect(page.getByTestId('purchasing-tabs')).toBeVisible()
+  await expect(page.getByTestId(/^contract-\d+$/).filter({ hasText: supplier.name })).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  await page.getByTestId('contracts-view-shortfall').click()
+  await expect(page.getByTestId('contracts-shortfall')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+
+  await page.goto('/ingredients/to-order')
+  await expect(page.getByTestId(`to-order-${product.id}`)).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  // Lead decisions 1, gap 16: the To order number is within the 360 px width without scrolling the table.
+  const cell = await page.getByTestId(`to-order-${product.id}-to-order`).boundingBox()
+  expect(cell!.x + cell!.width).toBeLessThanOrEqual(360)
+  // Gap 19: the offer has its own row; nothing in the card scrolls sideways
+  // and the offer's text (the long `[TEST-TEMP]` supplier · sack size) isn't cut.
+  const inner = await page.getByTestId('to-order-table').evaluate((t) => ({ scroll: t.parentElement!.scrollWidth, client: t.parentElement!.clientWidth }))
+  expect(inner.scroll, 'To order card scrollWidth vs clientWidth').toBeLessThanOrEqual(inner.client)
+  const offer = page.getByTestId(`to-order-${product.id}-offer-row`).getByTestId(`to-order-${product.id}-offer`)
+  await expect(offer).toContainText(`${supplier.name} · 55 lb`)
+  const text = await offer.locator('.MuiSelect-select').evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right }))
+  expect(text.scroll).toBeLessThanOrEqual(text.client)
+  expect(text.right).toBeLessThanOrEqual(360)
+
+  await page.goto('/ingredients/totals')
+  await expect(page.getByTestId('totals-inventory-table')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  await page.getByTestId('totals-tab-orders').click()
+  await expect(page.getByTestId('totals-orders-table')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+})
+

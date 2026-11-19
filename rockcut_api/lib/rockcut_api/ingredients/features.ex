@@ -8,16 +8,17 @@ defmodule RockcutApi.Ingredients.Features do
   or nil (remove that value). The rules: the feature must apply to the
   product's or lot's category or its parent, the value lies in the type's
   `min`..`max`, and `entered_unit` is one of the feature's units
-  (`Units.entered_units/1`), given only together with `entered_value`. The
-  value is rounded to the type's `decimals` before it's checked and stored
-  (D60 lead decisions 2, gap 4: what's stored is what's shown). Otherwise the
-  API stores what it's sent; the conversions are the UI's. A refusal names
-  the feature ("Moisture must be between 0 and 100").
+  (`Units.entered_units/1`), given only together with `entered_value`. A
+  value with more places than the type's `decimals` is refused, as the UI
+  refuses it ("Extract % FGDB: Use at most 1 decimal"; D61 lead decisions 1,
+  gap 13, in place of D60's rounding). Otherwise the API stores what it's
+  sent; the conversions are the UI's. A refusal names the feature
+  ("Moisture must be between 0 and 100").
   """
   import Ecto.Query
 
   alias RockcutApi.Repo
-  alias RockcutApi.Brewing.{Ingredient, IngredientCategory}
+  alias RockcutApi.Brewing.{Ingredient, IngredientCategory, Ranges}
 
   alias RockcutApi.Ingredients.{
     CategoryFeatureType,
@@ -74,6 +75,9 @@ defmodule RockcutApi.Ingredients.Features do
         case check(type, applies, key, entry) do
           {:ok, type, attrs} ->
             {[{type, attrs} | ok], errors}
+
+          {:error, {:places, places}} ->
+            {ok, Map.put(errors, key, ["#{type.label}: #{Ranges.places_message(places)}"])}
 
           {:error, message} ->
             {ok, Map.put(errors, key, ["#{(type && type.label) || key} #{message}"])}
@@ -149,7 +153,7 @@ defmodule RockcutApi.Ingredients.Features do
 
       true ->
         with {:ok, attrs} <- entry_attrs(entry),
-             attrs = %{attrs | value: Units.round(attrs.value, type.decimals)},
+             :ok <- check_places(type, attrs.value),
              :ok <- check_value(type, attrs.value),
              :ok <- check_entered(key, attrs) do
           {:ok, type, attrs}
@@ -187,6 +191,12 @@ defmodule RockcutApi.Ingredients.Features do
   defp unit(u) when u in [nil, ""], do: {:ok, nil}
   defp unit(u) when is_binary(u), do: {:ok, u}
   defp unit(_), do: {:error, "has an unknown unit"}
+
+  defp check_places(%FeatureType{decimals: places}, value) do
+    if Decimal.eq?(Decimal.round(value, places), value),
+      do: :ok,
+      else: {:error, {:places, places}}
+  end
 
   defp check_value(%FeatureType{min: min, max: max}, value) do
     if (min && Decimal.lt?(value, min)) || (max && Decimal.gt?(value, max)),

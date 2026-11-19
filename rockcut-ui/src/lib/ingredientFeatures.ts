@@ -53,9 +53,14 @@ export function draftRangeError(type: FeatureType, draft: FeatureDraft | undefin
   return parsed.ok && parsed.value != null ? rangeError(type, Number(parsed.value)) : null
 }
 
-/** True when every box holds a number or nothing, and (given the types) each number is in its range. */
-export const draftsValid = (drafts: FeatureDrafts, types: FeatureType[] = []) =>
-  Object.values(drafts).every((d) => parseDecimal(d.text).ok) && types.every((t) => !draftRangeError(t, drafts[t.key]))
+/**
+ * True when every box holds a number or nothing, and (given the types) each
+ * number has at most its type's decimals (D61 carry-over 4) and is in its range.
+ */
+export function draftsValid(drafts: FeatureDrafts, types: FeatureType[] = []): boolean {
+  const decimals = new Map(types.map((t) => [t.key, t.decimals]))
+  return Object.entries(drafts).every(([key, d]) => parseDecimal(d.text, decimals.get(key)).ok) && types.every((t) => !draftRangeError(t, drafts[t.key]))
+}
 
 /**
  * The `features` the API takes: each filled box as `{value, entered_value,
@@ -99,6 +104,12 @@ export function grainCategories(categories: IngredientCategory[]): { grains: Ing
   return { grains, children }
 }
 
+/** True for Grains and its children (D61 carry-over 5: they take no custom fields). */
+export function isGrainCategory(categories: IngredientCategory[], id: number): boolean {
+  const { grains, children } = grainCategories(categories)
+  return !!grains && (grains.id === id || children.some((c) => c.id === id))
+}
+
 /**
  * Categories for a picker, each parent followed by its children (indented,
  * `depth` 1), both in sort order (gap 8: Grains' five children were
@@ -129,8 +140,20 @@ export function productMatches(p: IngredientProduct, term: string): boolean {
     .includes(t)
 }
 
-/** A product's on-hand as the account shows it, expired stock apart: "12 sacks 22.5 lb · 1 sack expired" (§3.7). */
-export function onHandText(p: Pick<IngredientProduct, 'on_hand_lb' | 'expired_lb' | 'offers'>, mode: QuantityDisplay, sackSize = productSackSize(p.offers)): string {
-  const main = formatQuantity(p.on_hand_lb, sackSize, mode)
-  return Number(p.expired_lb) > 0 ? `${main} · ${formatQuantity(p.expired_lb, sackSize, mode)} expired` : main
+/**
+ * A product's on-hand as the account shows it (§3.7, D61 carry-over 3): with
+ * expired stock, the usable part and the expired part ("11 sacks 50 lb usable
+ * · 43 lb expired", "650 lb usable · 43 lb expired"); without, just the
+ * amount. The product header, Grains list, Count and Record movement all use
+ * it, so they read the same.
+ */
+export function onHandText(
+  p: { on_hand_lb: string | number | null; expired_lb?: string | number | null; offers?: IngredientProduct['offers'] },
+  mode: QuantityDisplay,
+  sackSize = productSackSize(p.offers),
+): string {
+  const expired = Number(p.expired_lb ?? 0)
+  if (!(expired > 0)) return formatQuantity(p.on_hand_lb, sackSize, mode)
+  const usable = Math.round((Number(p.on_hand_lb ?? 0) - expired) * 100) / 100
+  return `${formatQuantity(usable, sackSize, mode)} usable · ${formatQuantity(expired, sackSize, mode)} expired`
 }

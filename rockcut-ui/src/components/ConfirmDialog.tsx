@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react'
 import {
   Button,
   CircularProgress,
@@ -7,11 +8,13 @@ import {
   DialogContentText,
   DialogTitle,
 } from '@mui/material'
+import { SubmitGate } from '../lib/submitGate'
 
 interface ConfirmDialogProps {
   open: boolean
   onClose: () => void
-  onConfirm: () => void
+  /** May return a promise: until it settles, the confirm button stays busy and another press is dropped. */
+  onConfirm: () => unknown
   title: string
   message: string
   loading?: boolean
@@ -31,6 +34,20 @@ export default function ConfirmDialog({
   open, onClose, onConfirm, title, message, loading,
   confirmLabel = 'Delete', confirmColor = 'error', cancelLabel = 'Cancel', children, pending, testId,
 }: ConfirmDialogProps) {
+  // D61 lead decisions 2 (gap 5): the same gate as FormDialog's Save. A
+  // double tap on a slow network sent two cancels; the second came back 409.
+  const gate = useRef(new SubmitGate())
+  const [busy, setBusy] = useState(false)
+  const confirm = () =>
+    gate.current.run(async () => {
+      setBusy(true)
+      try {
+        await onConfirm()
+      } finally {
+        setBusy(false)
+      }
+    })
+  const working = loading || busy
   return (
     <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth data-testid={testId}>
       <DialogTitle>{title}</DialogTitle>
@@ -39,17 +56,17 @@ export default function ConfirmDialog({
         {children}
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={loading}>{cancelLabel}</Button>
+        <Button onClick={onClose} disabled={working}>{cancelLabel}</Button>
         {/* A spinner in place of the label: the button keeps its name and says it's busy. */}
         <Button
-          onClick={onConfirm}
+          onClick={() => void confirm()}
           color={confirmColor}
           variant="contained"
-          disabled={loading || pending}
+          disabled={working || pending}
           aria-label={confirmLabel}
-          aria-busy={loading || pending ? true : undefined}
+          aria-busy={working || pending ? true : undefined}
         >
-          {loading || pending ? <CircularProgress size={20} /> : confirmLabel}
+          {working || pending ? <CircularProgress size={20} /> : confirmLabel}
         </Button>
       </DialogActions>
     </Dialog>

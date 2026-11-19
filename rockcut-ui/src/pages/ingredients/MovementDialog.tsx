@@ -32,7 +32,7 @@ export default function MovementDialog(props: MovementDialogProps) {
 
 function MovementForm({ onClose, product, lots }: MovementDialogProps) {
   const { mode } = useQuantityDisplay()
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: parties = [], isLoading: partiesLoading, isError: partiesFailed } = useApiList<Party>(['parties'], '/api/parties')
   const [kind, setKind] = useState<MovementKind>('used')
   const [lotChoice, setLotChoice] = useState<string>(OLDEST)
   const [partnerId, setPartnerId] = useState<number | ''>('')
@@ -101,7 +101,8 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
       onSubmit={submit}
       loading={create.isPending}
       error={error}
-      submitDisabled={!quantity.valid}
+      // Lead decisions 2 (item 7): a trade or loan waits for the partner list.
+      submitDisabled={(needsPartner && partiesLoading) || !quantity.valid}
       testId="movement-dialog"
     >
       <FormControl fullWidth>
@@ -144,6 +145,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
             id="movement-partner"
             label="Partner brewery"
             value={partners.length ? partnerId : ''}
+            disabled={partiesLoading}
             onChange={(e) => {
               setPartnerId(e.target.value as number)
               setPartnerMissing(false)
@@ -157,7 +159,14 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
             ))}
           </Select>
           {partnerMissing && <FormHelperText>Required for trades and loans</FormHelperText>}
-          {partners.length === 0 && <FormHelperText>No partner breweries yet: add one on the Companies page</FormHelperText>}
+          {/* Lead decisions 2 (item 8): "none" only once the list has answered with none. */}
+          {partiesLoading ? (
+            <FormHelperText data-testid="movement-partner-loading">Loading partner breweries…</FormHelperText>
+          ) : partiesFailed ? (
+            <FormHelperText data-testid="movement-partner-failed">Couldn't load the partner breweries: close and try again</FormHelperText>
+          ) : (
+            partners.length === 0 && <FormHelperText data-testid="movement-partner-none">No partner breweries yet: add one on the Companies page</FormHelperText>
+          )}
         </FormControl>
       )}
       <QuantityInput

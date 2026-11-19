@@ -29,12 +29,14 @@ defmodule RockcutApi.Brewing do
     IngredientCategory
     |> order_by(:sort_order)
     |> Repo.all()
+    |> put_category_delete_blocked()
   end
 
   def get_ingredient_category!(id) do
     IngredientCategory
     |> Repo.get!(id)
     |> Repo.preload(field_definitions: from(d in CategoryFieldDefinition, order_by: d.sort_order))
+    |> put_category_delete_blocked()
   end
 
   # D55 lead decisions 6 (gap 8): a `sort_order` that is null or "" (or
@@ -53,6 +55,10 @@ defmodule RockcutApi.Brewing do
     |> IngredientCategory.changeset(attrs)
     |> put_end_category_order()
     |> Repo.update()
+    |> case do
+      {:ok, category} -> {:ok, put_category_delete_blocked(category)}
+      error -> error
+    end
   end
 
   @doc """
@@ -60,21 +66,57 @@ defmodule RockcutApi.Brewing do
   422 saying what to move first (D60 lead decisions 2, gap 12: was a 500).
   """
   def delete_ingredient_category(%IngredientCategory{} = category) do
+    case put_category_delete_blocked(category).delete_blocked do
+      nil -> Repo.delete(category)
+      refusal -> {:error, {:invalid, %{base: [refusal]}}}
+    end
+  end
+
+  @doc """
+  Fill each category's virtual `delete_blocked` (D61 carry-over 2): the
+  refusal `delete_ingredient_category/1` would give, or nil. Two queries.
+  """
+  def put_category_delete_blocked(categories) when is_list(categories) do
+    ids = Enum.map(categories, & &1.id)
+
+    parents =
+      from(c in IngredientCategory,
+        where: c.parent_id in ^ids,
+        distinct: true,
+        select: c.parent_id
+      )
+      |> Repo.all()
+      |> MapSet.new()
+
+    with_ingredients =
+      from(i in Ingredient, where: i.category_id in ^ids, distinct: true, select: i.category_id)
+      |> Repo.all()
+      |> MapSet.new()
+
+    Enum.map(categories, fn category ->
+      blocked =
+        cond do
+          MapSet.member?(parents, category.id) ->
+            "This category has sub-categories; move or delete them first"
+
+          MapSet.member?(with_ingredients, category.id) ->
+            "This category has #{category_contents(category)}; move them first"
+
+          true ->
+            nil
+        end
+
+      %{category | delete_blocked: blocked}
+    end)
+  end
+
+  def put_category_delete_blocked(%IngredientCategory{} = category),
+    do: hd(put_category_delete_blocked([category]))
+
+  defp category_contents(category) do
     category = Repo.preload(category, :parent)
     grains? = category.name == "Grains" or (category.parent && category.parent.name == "Grains")
-    what = if grains?, do: "grains", else: "ingredients"
-
-    cond do
-      Repo.exists?(from(c in IngredientCategory, where: c.parent_id == ^category.id)) ->
-        {:error,
-         {:invalid, %{base: ["This category has sub-categories; move or delete them first"]}}}
-
-      Repo.exists?(from(i in Ingredient, where: i.category_id == ^category.id)) ->
-        {:error, {:invalid, %{base: ["This category has #{what}; move them first"]}}}
-
-      true ->
-        Repo.delete(category)
-    end
+    if grains?, do: "grains", else: "ingredients"
   end
 
   defp put_end_category_order(changeset) do

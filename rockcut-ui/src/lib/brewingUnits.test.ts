@@ -65,6 +65,24 @@ describe('conversions (D60 §3.5)', () => {
   })
 })
 
+describe('parseDecimal with decimals (D61 carry-over 4)', () => {
+  it('refuses more places than the field keeps, with "Use at most N decimals"', () => {
+    expect(parseDecimal('1.555', 2)).toEqual({ ok: false, error: 'Use at most 2 decimals' })
+    expect(parseDecimal('81.55', 1)).toEqual({ ok: false, error: 'Use at most 1 decimal' })
+    expect(parseDecimal('78.5', 0)).toEqual({ ok: false, error: 'Use a whole number' })
+    expect(parseDecimal('1,234.567', 2)).toEqual({ ok: false, error: 'Use at most 2 decimals' })
+  })
+
+  it('takes up to that many, trailing zeros not counted; no limit without decimals', () => {
+    expect(parseDecimal('1.55', 2)).toEqual({ ok: true, value: '1.55' })
+    expect(parseDecimal('1.5500', 2)).toEqual({ ok: true, value: '1.5500' })
+    expect(parseDecimal('78.0', 0)).toEqual({ ok: true, value: '78.0' })
+    expect(parseDecimal('78', 0)).toEqual({ ok: true, value: '78' })
+    expect(parseDecimal('', 2)).toEqual({ ok: true, value: null })
+    expect(parseDecimal('1.55555')).toEqual({ ok: true, value: '1.55555' })
+  })
+})
+
 describe('parseDecimal (4982, gap 3)', () => {
   it('takes . as the decimal point', () => {
     expect(parseDecimal('5.2')).toEqual({ ok: true, value: '5.2' })
@@ -148,10 +166,17 @@ describe('quantities (§3.7, §3.9)', () => {
 })
 
 describe('reading a quantity box (lead decisions 3, gap 16)', () => {
-  it('refuses over 0 but under 0.01 lb, in lb and in sacks + lb', () => {
-    expect(readQuantity('', '0.001', null)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
-    expect(readQuantity('', '0.009', 50)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
-    expect(readQuantity('0.0001', '', 50)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
+  it('refuses over 0 but under 0.01 lb (a fraction of a tiny sack)', () => {
+    expect(readQuantity('0.01', '', 0.5)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
+  })
+
+  it('D61 carry-over 4: refuses more than 2 decimals in either box (was rounded, or under 0.01 lb)', () => {
+    expect(readQuantity('', '1.555', null)).toEqual({ lb: null, valid: false })
+    expect(readQuantity('', '0.001', null)).toEqual({ lb: null, valid: false })
+    expect(readQuantity('', '0.009', 50)).toEqual({ lb: null, valid: false })
+    expect(readQuantity('0.0001', '', 50)).toEqual({ lb: null, valid: false })
+    expect(readQuantity('', '1.55', null)).toEqual({ lb: '1.55', valid: true })
+    expect(readQuantity('', '1.550', null)).toEqual({ lb: '1.55', valid: true })
   })
 
   it('keeps 0.01 lb, 0 (a count of nothing) and empty boxes', () => {

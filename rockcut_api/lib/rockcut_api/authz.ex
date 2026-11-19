@@ -513,6 +513,12 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, :ingredients) when action in [:read, :write],
     do: member_of?(user, "brewery")
 
+  # D61 malt contracts (spec decision 25): any Brewery member reads them;
+  # owners (above) and Brewery managers create, change and delete them. No
+  # device (`Authz.Device` denies by default).
+  def can?(%User{} = user, :read, :contracts), do: member_of?(user, "brewery")
+  def can?(%User{} = user, :write, :contracts), do: role_in(user, "brewery") == :manager
+
   # Staff codes (D37; every department since D40): owners (above) and, since
   # D58 lead decisions 1, a manager of every department the person is in set,
   # remove and see a person's code (`@account_actions`, above). Whether the

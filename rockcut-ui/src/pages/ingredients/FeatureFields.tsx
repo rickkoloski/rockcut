@@ -28,7 +28,7 @@ export default function FeatureFields({ types, drafts, onChange, standard, disab
         const d = drafts[t.key] ?? { text: '', entered_value: null, entered_unit: null }
         const entered = enteredAs(d)
         const std = standard?.[t.key]
-        const parsed = parseDecimal(d.text)
+        const parsed = parseDecimal(d.text, t.decimals)
         const typed = parsed.ok && parsed.value != null ? { value: parsed.value } : undefined
         // A box that isn't a number yet isn't compared (DecimalInput shows why).
         const changed = standard !== undefined && parsed.ok && differs(typed, std, t.decimals)
@@ -37,6 +37,7 @@ export default function FeatureFields({ types, drafts, onChange, standard, disab
         return (
           <Box key={t.key} sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
             <DecimalInput
+              decimals={t.decimals}
               label={`${t.label} (${t.unit_label})`}
               value={d.text}
               onChange={(text) => set(t.key, { text, entered_value: null, entered_unit: null })}

@@ -4,7 +4,7 @@ import FormDialog from '../../components/FormDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
-import { parseDecimal } from '../../lib/brewingUnits'
+import { PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { OfferPrice, SupplierOffer } from '../../lib/types'
@@ -20,7 +20,7 @@ function PriceForm({ onClose, offer }: { onClose: () => void; offer: SupplierOff
   const [note, setNote] = useState('')
   const [error, setError] = useState<string | null>(null)
   const create = useApiCreate<OfferPrice>(`/api/supplier_offers/${offer.id}/prices`, { invalidateKeys: [...GRAIN_KEYS, ['offer_prices', offer.id]] })
-  const parsed = parseDecimal(price)
+  const parsed = parseDecimal(price, PRICE_DECIMALS)
   const perLb = parsed.ok && parsed.value && Number(offer.sack_size_lb) > 0 ? Number(parsed.value) / Number(offer.sack_size_lb) : null
 
   const submit = async () => {
@@ -37,6 +37,7 @@ function PriceForm({ onClose, offer }: { onClose: () => void; offer: SupplierOff
   return (
     <FormDialog open phone onClose={onClose} title={`Add price · ${offer.supplier?.name ?? 'Supplier'}`} onSubmit={submit} loading={create.isPending} error={error} submitDisabled={!parsed.ok} testId="price-dialog">
       <DecimalInput
+        decimals={PRICE_DECIMALS}
         label="Price per sack ($)"
         value={price}
         onChange={setPrice}

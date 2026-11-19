@@ -8,9 +8,9 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { formatQuantity, parseDecimal } from '../../lib/brewingUnits'
+import { LB_DECIMALS, formatQuantity, parseDecimal } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
-import { GRAIN_KEYS, lotDeleteMessage } from '../../lib/inventory'
+import { GRAIN_KEYS, lotDeleteBlocked, lotDeleteMessage } from '../../lib/inventory'
 import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, Party } from '../../lib/types'
 
 interface GrainLotDialogProps {
@@ -27,7 +27,7 @@ interface GrainLotDialogProps {
  * specs, and Expired (a brewer's call; oldest first skips it). Its stock
  * changes only through movements and counts. Delete only while it has just
  * its first movement and no recipe uses it: otherwise it's disabled with the
- * lot's `delete_blocked` reason (gap 15); else a confirm names that stock (gap 9). The sack size is fixed once the lot has
+ * reason (gap 15, `lotDeleteBlocked`); else a confirm names that stock (gap 9). The sack size is fixed once the lot has
  * a movement after its first (gap 14).
  */
 export default function GrainLotDialog(props: GrainLotDialogProps) {
@@ -36,8 +36,10 @@ export default function GrainLotDialog(props: GrainLotDialogProps) {
 
 function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps & { lot: IngredientLot }) {
   const { mode } = useQuantityDisplay()
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
-  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading || typesLoading
   const [lotNumber, setLotNumber] = useState(lot.lot_number ?? '')
   const [received, setReceived] = useState(lot.received_date ?? '')
   const [supplierId, setSupplierId] = useState<number | ''>(lot.supplier_party_id ?? '')
@@ -48,12 +50,12 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const sackSizeFixed = movements.length > 1
-  const deleteBlocked = lot.delete_blocked ?? null
+  const deleteBlocked = lotDeleteBlocked(lot, movements)
 
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === lot.supplier_party_id))
-  const size = parseDecimal(sackSize)
+  const size = parseDecimal(sackSize, LB_DECIMALS)
 
   const update = useApiUpdate<IngredientLot>((id) => `/api/ingredient_lots/${id}`, { invalidateKeys: GRAIN_KEYS })
   const remove = useApiDelete((id) => `/api/ingredient_lots/${id}`, { invalidateKeys: GRAIN_KEYS })
@@ -97,7 +99,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown, featureTypes) || !size.ok}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !size.ok}
       testId="grain-lot-dialog"
       secondaryAction={
         <Box sx={{ maxWidth: { xs: 160, sm: 260 } }}>
@@ -131,6 +133,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
         </Select>
       </FormControl>
       <DecimalInput
+        decimals={LB_DECIMALS}
         label="Sack size (lb)"
         value={sackSize}
         onChange={setSackSize}

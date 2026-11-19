@@ -1,24 +1,25 @@
 declare module 'datagrid-extended' {
-  import type { DataGridProps, GridColDef } from '@mui/x-data-grid'
+  import type { DataGridProps, GridColDef, GridValidRowModel } from '@mui/x-data-grid'
   import type { CSSProperties } from 'react'
 
   export type ExtendedGridColDef = GridColDef & {
-    remoteValueGetter?: (row: any) => Promise<any>
+    remoteValueGetter?: (row: GridValidRowModel) => Promise<unknown>
     formula?: string
     computed?: boolean
   }
 
-  export type RemoteFunctions = Record<string, (...args: any[]) => Promise<any>>
+  // `never[]`: any function's parameters fit (task 4084: no `any`).
+  export type RemoteFunctions = Record<string, (...args: never[]) => Promise<unknown>>
 
   export interface CacheStrategy {
-    get(key: string): any | undefined
-    set(key: string, value: any): void
+    get(key: string): unknown
+    set(key: string, value: unknown): void
     invalidateAll(): void
   }
 
   export type CellState =
     | { status: 'pending' }
-    | { status: 'resolved'; value: any }
+    | { status: 'resolved'; value: unknown }
     | { status: 'error'; message: string }
 
   export type Expression =
@@ -87,10 +88,10 @@ declare module 'datagrid-extended' {
   }
   export function evaluate(
     expr: Expression,
-    row: any,
-    allRows: any[],
+    row: GridValidRowModel,
+    allRows: GridValidRowModel[],
     remoteFunctions?: RemoteFunctions,
-  ): Promise<any>
+  ): Promise<unknown>
 
   // --- D8: Formula editing exports ---
 

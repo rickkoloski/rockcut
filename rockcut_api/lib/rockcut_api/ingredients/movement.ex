@@ -16,10 +16,13 @@ defmodule RockcutApi.Ingredients.Movement do
     field :quantity_lb, :decimal
     field :occurred_on, :date
     field :note, :string
+    # D61 §3.4: a Received movement from an order carries its cost per lb.
+    field :unit_cost_per_lb, :decimal
 
     belongs_to :lot, RockcutApi.Brewing.IngredientLot
     belongs_to :partner, RockcutApi.Ingredients.Party, foreign_key: :partner_party_id
     belongs_to :entered_by, RockcutApi.Accounts.User
+    belongs_to :purchase_order_line, RockcutApi.Ingredients.PurchaseOrderLine
 
     timestamps(type: :utc_datetime)
   end
@@ -35,13 +38,22 @@ defmodule RockcutApi.Ingredients.Movement do
       :occurred_on,
       :partner_party_id,
       :note,
-      :entered_by_id
+      :entered_by_id,
+      :purchase_order_line_id,
+      :unit_cost_per_lb
     ])
     |> validate_required([:lot_id, :kind, :quantity_lb, :occurred_on])
     |> validate_inclusion(:kind, @kinds)
     |> validate_range(:quantity_lb, -1_000_000, 1_000_000)
+    |> validate_range(:unit_cost_per_lb, 0, 100_000)
     |> foreign_key_constraint(:lot_id)
     |> foreign_key_constraint(:partner_party_id)
-    |> RockcutApi.Changeset.validate_parents([:lot_id, :partner_party_id, :entered_by_id])
+    |> foreign_key_constraint(:purchase_order_line_id)
+    |> RockcutApi.Changeset.validate_parents([
+      :lot_id,
+      :partner_party_id,
+      :entered_by_id,
+      :purchase_order_line_id
+    ])
   end
 end

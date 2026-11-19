@@ -25,6 +25,8 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
 
   alias RockcutApi.Ingredients.{
     CategoryFeatureType,
+    Contract,
+    ContractLine,
     LotFeatureValue,
     Movement,
     OfferPrice,
@@ -32,6 +34,8 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     PartyRole,
     Product,
     ProductFeatureValue,
+    PurchaseOrder,
+    PurchaseOrderLine,
     SupplierOffer
   }
 
@@ -81,7 +85,11 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
           CategoryFieldDefinition,
           IngredientLot,
           LotFeatureValue,
-          Movement
+          Movement,
+          PurchaseOrder,
+          PurchaseOrderLine,
+          Contract,
+          ContractLine
         ],
         into: %{},
         do: {schema, Repo.aggregate(schema, :count)}
@@ -361,6 +369,107 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     assert Repo.reload(recipe)
     assert Repo.reload(reference)
     assert Repo.exists?(from l in IngredientLot, where: like(l.lot_number, "[SEED]%"))
+  end
+
+  # D61: orders and contracts the purchasing specs make: a [TEST-TEMP]
+  # supplier's (received into a lot of the reference product) and a real
+  # supplier's with a line of a [TEST-TEMP] product. Setup removes them, the
+  # receipt with them, then the supplier.
+  test "synthetic setup deletes [TEST-TEMP] orders and contracts" do
+    seed!()
+    {:ok, _} = Synthetic.setup()
+    before = counts()
+
+    rahr = Repo.get_by!(Party, name: "Rahr")
+    bsg = Repo.get_by!(Party, name: "BSG")
+    two_row = Repo.get_by!(Ingredient, name: "2-Row")
+    reference = Repo.get_by!(Product, ingredient_id: two_row.id, maltster_party_id: rahr.id)
+    supplier = party!("[TEST-TEMP] Supplier", "supplier")
+
+    temp =
+      Repo.insert!(%Product{
+        ingredient_id: two_row.id,
+        maltster_party_id: rahr.id,
+        name: "[TEST-TEMP] P"
+      })
+
+    offer = fn product, party ->
+      Repo.insert!(%SupplierOffer{
+        product_id: product.id,
+        supplier_party_id: party.id,
+        sack_size_lb: Decimal.new(55),
+        form: "whole"
+      })
+    end
+
+    temp_offer = offer.(reference, supplier)
+    bsg_temp_offer = offer.(temp, bsg)
+
+    order = fn party, offer ->
+      o =
+        Repo.insert!(%PurchaseOrder{
+          supplier_party_id: party.id,
+          ordered_on: ~D[2026-11-01],
+          status: "received",
+          received_on: ~D[2026-11-02]
+        })
+
+      line =
+        Repo.insert!(%PurchaseOrderLine{
+          order_id: o.id,
+          offer_id: offer.id,
+          sacks_ordered: 2,
+          sacks_received: 2,
+          price_per_sack: Decimal.new(40)
+        })
+
+      {o, line}
+    end
+
+    {temp_order, temp_line} = order.(supplier, temp_offer)
+    {bsg_order, _} = order.(bsg, bsg_temp_offer)
+
+    lot =
+      Repo.insert!(%IngredientLot{
+        ingredient_id: two_row.id,
+        product_id: reference.id,
+        lot_number: "[TEST-TEMP] R1",
+        sack_size_lb: Decimal.new(55)
+      })
+
+    Repo.insert!(%Movement{
+      lot_id: lot.id,
+      kind: "received",
+      quantity_lb: Decimal.new(110),
+      occurred_on: ~D[2026-11-02],
+      purchase_order_line_id: temp_line.id
+    })
+
+    c1 = Repo.insert!(%Contract{supplier_party_id: supplier.id, year: 2030})
+
+    Repo.insert!(%ContractLine{
+      contract_id: c1.id,
+      product_id: reference.id,
+      offer_id: temp_offer.id,
+      sacks: 1,
+      price_per_sack: Decimal.new(1)
+    })
+
+    c2 = Repo.insert!(%Contract{supplier_party_id: bsg.id, year: 2030})
+
+    Repo.insert!(%ContractLine{
+      contract_id: c2.id,
+      product_id: temp.id,
+      offer_id: bsg_temp_offer.id,
+      sacks: 1,
+      price_per_sack: Decimal.new(1)
+    })
+
+    {:ok, _} = Synthetic.setup()
+
+    assert counts() == before
+    for r <- [temp_order, bsg_order, c1, c2, supplier, temp], do: refute(Repo.reload(r))
+    assert Repo.reload(reference) && Repo.reload(bsg)
   end
 
   defp party!(name, role) do

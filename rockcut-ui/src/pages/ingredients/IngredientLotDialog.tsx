@@ -36,8 +36,10 @@ function IngredientLotForm({ onClose, ingredientId, categoryId, lot }: Ingredien
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = typesLoading || partiesLoading
   const featureTypes = typesFor(types, categoryId)
   const shown = drafts ?? draftsFrom(lot?.features, featureTypes)
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === lot?.supplier_party_id))
@@ -85,7 +87,7 @@ function IngredientLotForm({ onClose, ingredientId, categoryId, lot }: Ingredien
       onSubmit={handleSubmit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown, featureTypes)}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes)}
       testId="ingredient-lot-dialog"
     >
       <TextField
@@ -136,6 +138,7 @@ function IngredientLotForm({ onClose, ingredientId, categoryId, lot }: Ingredien
       {featureTypes.map((t) => (
         <DecimalInput
           key={t.key}
+          decimals={t.decimals}
           label={`${t.label} (${t.unit_label})`}
           value={shown[t.key]?.text ?? ''}
           onChange={(text) => setDrafts({ ...shown, [t.key]: { text, entered_value: null, entered_unit: null } })}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { TextField, MenuItem } from '@mui/material';
 import FormDialog from '../../components/FormDialog';
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation';
@@ -13,14 +13,20 @@ interface BrandFormDialogProps {
 
 const STATUSES = ['active', 'seasonal', 'retired'];
 
-export default function BrandFormDialog({ open, onClose, brand }: BrandFormDialogProps) {
-  const [name, setName] = useState('');
-  const [style, setStyle] = useState('');
-  const [description, setDescription] = useState('');
-  const [targetAbv, setTargetAbv] = useState<string>('');
-  const [targetIbu, setTargetIbu] = useState<string>('');
-  const [targetSrm, setTargetSrm] = useState<string>('');
-  const [status, setStatus] = useState('active');
+// Task 4084: the form mounts when the dialog opens and starts from the
+// brand, instead of an effect resetting it on open (as D60's dialogs).
+export default function BrandFormDialog({ open, ...props }: BrandFormDialogProps) {
+  return open ? <BrandForm {...props} /> : null;
+}
+
+function BrandForm({ onClose, brand }: Omit<BrandFormDialogProps, 'open'>) {
+  const [name, setName] = useState(brand?.name ?? '');
+  const [style, setStyle] = useState(brand?.style ?? '');
+  const [description, setDescription] = useState(brand?.description ?? '');
+  const [targetAbv, setTargetAbv] = useState<string>(brand?.target_abv != null ? String(brand.target_abv) : '');
+  const [targetIbu, setTargetIbu] = useState<string>(brand?.target_ibu != null ? String(brand.target_ibu) : '');
+  const [targetSrm, setTargetSrm] = useState<string>(brand?.target_srm != null ? String(brand.target_srm) : '');
+  const [status, setStatus] = useState(brand?.status ?? 'active');
   const [error, setError] = useState<string | null>(null);
 
   const createMutation = useApiCreate<Brand>('/api/brands', {
@@ -31,19 +37,6 @@ export default function BrandFormDialog({ open, onClose, brand }: BrandFormDialo
     (id) => `/api/brands/${id}`,
     { invalidateKeys: [['brands'], ['brand', brand?.id]] },
   );
-
-  useEffect(() => {
-    if (open) {
-      setName(brand?.name ?? '');
-      setStyle(brand?.style ?? '');
-      setDescription(brand?.description ?? '');
-      setTargetAbv(brand?.target_abv != null ? String(brand.target_abv) : '');
-      setTargetIbu(brand?.target_ibu != null ? String(brand.target_ibu) : '');
-      setTargetSrm(brand?.target_srm != null ? String(brand.target_srm) : '');
-      setStatus(brand?.status ?? 'active');
-      setError(null);
-    }
-  }, [open, brand]);
 
   const handleSubmit = async () => {
     try {
@@ -72,7 +65,7 @@ export default function BrandFormDialog({ open, onClose, brand }: BrandFormDialo
 
   return (
     <FormDialog
-      open={open}
+      open
       onClose={onClose}
       title={brand ? 'Edit Brand' : 'Add Brand'}
       testId="brand-form-dialog"

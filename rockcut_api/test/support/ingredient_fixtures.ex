@@ -11,6 +11,7 @@ defmodule RockcutApi.IngredientFixtures do
     FeatureType,
     LotFeatureValue,
     Movement,
+    OfferPrice,
     Party,
     PartyRole,
     Product,
@@ -135,5 +136,28 @@ defmodule RockcutApi.IngredientFixtures do
     })
 
     lot
+  end
+
+  @doc "D61: an offer of `product` by `supplier` in `size` lb sacks, with a price from `on` when given."
+  def offer!(product, supplier, size \\ "55", price \\ nil, on \\ ~D[2000-01-01]) do
+    offer =
+      Repo.insert!(%SupplierOffer{
+        product_id: product.id,
+        supplier_party_id: supplier.id,
+        sack_size_lb: Decimal.new(size),
+        form: "whole"
+      })
+
+    if price, do: price!(offer, price, on)
+    offer
+  end
+
+  @doc "D61: a price row on `offer`, effective `on`."
+  def price!(offer, price, on \\ ~D[2000-01-01]) do
+    Repo.insert!(%OfferPrice{
+      offer_id: offer.id,
+      price_per_sack: Decimal.new(price),
+      effective_on: on
+    })
   end
 end

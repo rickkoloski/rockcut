@@ -8,6 +8,7 @@ import {
 import AddIcon from '@mui/icons-material/Add'
 import BusinessIcon from '@mui/icons-material/Business'
 import CategoryIcon from '@mui/icons-material/Category'
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCartOutlined'
 import { PageToolbar, SettingsGear } from '../../components/SettingsMenu'
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
@@ -185,6 +186,10 @@ export default function IngredientsList() {
         end={
           <>
             {grainsView && <QuantityToggle />}
+            {/* D61 §4: Purchasing (orders and receiving). */}
+            <Button variant="outlined" startIcon={<ShoppingCartIcon />} component={RouterLink} to="/ingredients/orders" data-testid="ingredients-purchasing">
+              Purchasing
+            </Button>
             <Button
               variant="contained"
               startIcon={<AddIcon />}

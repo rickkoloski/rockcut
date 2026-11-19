@@ -8,7 +8,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { parseDecimal, productSackSize } from '../../lib/brewingUnits'
+import { LB_DECIMALS, parseDecimal, productSackSize } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
@@ -25,8 +25,10 @@ export default function AddLotDialog({ open, onClose, product }: { open: boolean
 
 function AddLotForm({ onClose, product }: { onClose: () => void; product: IngredientProduct }) {
   const { mode } = useQuantityDisplay()
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
-  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading || typesLoading
   const offers = (product.offers ?? []).filter((o) => o.active)
   const first = offers.length === 1 ? offers[0] : null
 
@@ -43,7 +45,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(product.features, featureTypes)
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && p.active)
-  const size = parseDecimal(sackSize)
+  const size = parseDecimal(sackSize, LB_DECIMALS)
   const sackLb = size.ok && size.value ? Number(size.value) : null
 
   const create = useApiCreate<IngredientLot>('/api/ingredient_lots', { invalidateKeys: GRAIN_KEYS })
@@ -87,7 +89,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
       onSubmit={submit}
       loading={create.isPending}
       error={error}
-      submitDisabled={!draftsValid(shown, featureTypes) || !size.ok || !quantity.valid}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !size.ok || !quantity.valid}
       testId="add-lot-dialog"
     >
       {offers.length > 0 && (
@@ -118,7 +120,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
           ))}
         </Select>
       </FormControl>
-      <DecimalInput label="Sack size (lb)" value={sackSize} onChange={setSackSize} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-sack-size' } }} />
+      <DecimalInput decimals={LB_DECIMALS} label="Sack size (lb)" value={sackSize} onChange={setSackSize} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-sack-size' } }} />
       <TextField label="Lot #" value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-number' } }} />
       <TextField
         label="Received"

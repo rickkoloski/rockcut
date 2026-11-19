@@ -1,5 +1,5 @@
 import { Fragment, useState, type ReactNode } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { Link as RouterLink, useNavigate, useParams } from 'react-router-dom'
 import {
   Alert,
   Box,
@@ -8,6 +8,7 @@ import {
   CircularProgress,
   Grid,
   IconButton,
+  Link,
   Paper,
   Table,
   TableBody,
@@ -34,7 +35,8 @@ import { differs, onHandText, typesFor } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, OfferPrice, SupplierOffer } from '../../lib/types'
+import { money as dollars } from '../../lib/purchasing'
+import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, OfferPrice, PurchaseOrder, SupplierOffer } from '../../lib/types'
 import ProductDialog from './ProductDialog'
 import OfferDialog from './OfferDialog'
 import PriceDialog from './PriceDialog'
@@ -55,7 +57,7 @@ export default function ProductPage() {
   const { mode } = useQuantityDisplay()
   const [open, setOpen] = useState<Open>(null)
   const [offer, setOffer] = useState<SupplierOffer | null>(null)
-  const [lot, setLot] = useState<IngredientLot | null>(null)
+  const [lotId, setLotId] = useState<number | null>(null)
   const [history, setHistory] = useState<Set<number>>(new Set())
   const [deleteError, setDeleteError] = useState<string | null>(null)
 
@@ -67,6 +69,14 @@ export default function ProductPage() {
   const { data: movements = [] } = useApiList<InventoryMovement>(['inventory_movements', { product_id: productId }], '/api/inventory_movements', {
     product_id: productId,
   })
+  // Lead decisions 4: the open lot is read from the live list, so the dialog
+  // follows a refetch (on-hand, `delete_blocked`) like its movements do.
+  const lot = lotId == null ? null : (lots.find((l) => l.id === lotId) ?? null)
+  // D61 §4.5: the open orders with a line of this product.
+  const { data: openOrders = [] } = useApiList<PurchaseOrder>(['purchase_orders', { status: 'open' }], '/api/purchase_orders', { status: 'open' })
+  const onOrder = openOrders
+    .map((o) => ({ order: o, sacks: o.lines.filter((l) => l.offer.product_id === productId).reduce((n, l) => n + l.sacks_ordered, 0) }))
+    .filter((x) => x.sacks > 0)
   const remove = useApiDelete((pid) => `/api/ingredient_products/${pid}`, { invalidateKeys: GRAIN_KEYS })
 
   if (!product && httpStatus(error) === 404) {
@@ -81,7 +91,7 @@ export default function ProductPage() {
   const close = () => {
     setOpen(null)
     setOffer(null)
-    setLot(null)
+    setLotId(null)
   }
   const toggleHistory = (offerId: number) =>
     setHistory((s) => {
@@ -156,6 +166,16 @@ export default function ProductPage() {
             <Typography variant="h6" data-testid="product-on-hand">
               {onHandText(product, mode, sackSize)}
             </Typography>
+            {/* D61 §3.5: the minimum and the mark when on hand (not expired) is under it. */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              {product.below_minimum && <Chip size="small" color="warning" label="Below minimum" data-testid="product-below-minimum" />}
+              <Typography variant="body2" color="text.secondary" data-testid="product-minimum-text">
+                Minimum: {product.min_on_hand_sacks != null ? `${product.min_on_hand_sacks} ${product.min_on_hand_sacks === 1 ? 'sack' : 'sacks'}` : 'none'}
+              </Typography>
+              <Button size="small" onClick={() => setOpen('edit')} data-testid="product-minimum-edit">
+                {product.min_on_hand_sacks != null ? 'Change' : 'Set'}
+              </Button>
+            </Box>
           </Grid>
           <Grid size={{ xs: 6, sm: 4 }}>
             <Typography variant="subtitle2" color="text.secondary">
@@ -298,6 +318,8 @@ export default function ProductPage() {
               <TableCell>Received</TableCell>
               <TableCell>Supplier</TableCell>
               <TableCell align="right">On hand</TableCell>
+              <TableCell align="right">$/lb</TableCell>
+              <TableCell align="right">Value</TableCell>
               <TableCell>Status</TableCell>
               <TableCell>Specs changed from standard</TableCell>
             </TableRow>
@@ -305,7 +327,7 @@ export default function ProductPage() {
           <TableBody>
             {lots.length === 0 && (
               <TableRow>
-                <TableCell colSpan={6}>
+                <TableCell colSpan={8}>
                   <Typography variant="body2" color="text.secondary">
                     No lots yet: Add lot enters stock that's here or just arrived.
                   </Typography>
@@ -320,7 +342,7 @@ export default function ProductPage() {
                   hover
                   sx={{ cursor: 'pointer' }}
                   onClick={() => {
-                    setLot(l)
+                    setLotId(l.id)
                     setOpen('lot')
                   }}
                   data-testid={`lot-row-${l.id}`}
@@ -330,6 +352,13 @@ export default function ProductPage() {
                   <TableCell>{l.supplier?.name ?? '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-on-hand-${l.id}`}>
                     {formatQuantity(l.on_hand_lb, l.sack_size_lb, mode)}
+                  </TableCell>
+                  {/* D61 §3.4: at the latest price paid; "est." at the offer price; "—" with no price. */}
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-cost-${l.id}`}>
+                    {l.unvalued ? '—' : dollars(l.cost_per_lb, 4)}
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-value-${l.id}`}>
+                    {l.unvalued ? '—' : `${dollars(l.value)}${l.estimated ? ' est.' : ''}`}
                   </TableCell>
                   <TableCell data-testid={`lot-status-${l.id}`}>
                     <StatusChip status={l.status} domain="lot" />
@@ -351,6 +380,42 @@ export default function ProductPage() {
                 </TableRow>
               )
             })}
+          </TableBody>
+        </Table>
+      </Section>
+
+      <Section title="Open orders">
+        <Table size="small" data-testid="product-open-orders">
+          <TableHead>
+            <TableRow>
+              <TableCell>Ordered</TableCell>
+              <TableCell>Supplier</TableCell>
+              <TableCell align="right">Sacks</TableCell>
+              <TableCell>Expected</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {onOrder.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={4}>
+                  <Typography variant="body2" color="text.secondary">
+                    None on order
+                  </Typography>
+                </TableCell>
+              </TableRow>
+            )}
+            {onOrder.map(({ order: o, sacks }) => (
+              <TableRow key={o.id} data-testid={`product-open-order-${o.id}`}>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>
+                  <Link component={RouterLink} to={`/ingredients/orders/${o.id}`}>
+                    {o.ordered_on}
+                  </Link>
+                </TableCell>
+                <TableCell>{o.supplier?.name}</TableCell>
+                <TableCell align="right">{sacks}</TableCell>
+                <TableCell sx={{ whiteSpace: 'nowrap' }}>{o.expected_on ?? ''}</TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </Section>
@@ -406,7 +471,7 @@ export default function ProductPage() {
       />
       <OfferDialog open={open === 'offer'} onClose={close} productId={product.id} offer={offer ?? undefined} />
       <PriceDialog open={open === 'price'} onClose={close} offer={offer} />
-      <AddLotDialog open={open === 'lot' && !lot} onClose={close} product={product} />
+      <AddLotDialog open={open === 'lot' && lotId == null} onClose={close} product={product} />
       <GrainLotDialog open={open === 'lot' && !!lot} onClose={close} product={product} lot={lot} movements={lot ? movements.filter((m) => m.lot_id === lot.id) : []} />
       <MovementDialog open={open === 'movement'} onClose={close} product={product} lots={lots} />
       <CountDialog open={open === 'count'} onClose={close} product={product} lots={lots} />

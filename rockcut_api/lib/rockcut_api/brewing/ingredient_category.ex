@@ -6,6 +6,8 @@ defmodule RockcutApi.Brewing.IngredientCategory do
   schema "ingredient_categories" do
     field :name, :string
     field :sort_order, :integer, default: 0
+    # Why it can't be deleted, or nil (D61 carry-over 2; `Brewing.put_category_delete_blocked/1`).
+    field :delete_blocked, :string, virtual: true
 
     # D60 §3.1: Grains' five children (Base, Crystal/Caramel, ...). A parent
     # includes its children in the lists and filters.
