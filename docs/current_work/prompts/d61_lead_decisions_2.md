@@ -58,7 +58,7 @@ rechecks).
 
 ## Matt's answer (2026-11-19)
 
-5. **Gap 4 → 4a: keep the build.** A past-year contract writes no price row (spec amended). Add one
-   line to the contract dialog when the year is before the current year: "Past-year contracts don't
-   change the current price." Make sure an ExUnit test pins "past year → no price row" (add one if
+5. **Gap 4 → 4a: keep the build.** A past-year contract writes no price row (spec amended). Keep the
+   dialog's existing "<year> is over: saving changes no offer prices." (the spec now quotes it; don't
+   reword it). Make sure an ExUnit test pins "past year → no price row" (add one if
    there isn't), and a Playwright check for the dialog line.
