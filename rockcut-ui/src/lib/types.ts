@@ -324,6 +324,8 @@ export interface PurchaseOrder {
   cancelled_by: { id: number; name: string } | null
   received_at: string | null
   cancelled_at: string | null
+  /** Lead decisions 2 (gap 1): sent back on Edit; a save from an older one is 409. */
+  lock_version: number
   lines: PurchaseOrderLine[]
   total_sacks: number
   total_lb: string
@@ -367,6 +369,8 @@ export interface Contract {
   over_sacks: number
   /** Why it can't be deleted (gap 18); null when it can. */
   delete_blocked: string | null
+  /** Lead decisions 2 (gap 2): sent back on Edit; a save from an older one is 409. */
+  lock_version: number
   inserted_at: string
   updated_at: string
 }

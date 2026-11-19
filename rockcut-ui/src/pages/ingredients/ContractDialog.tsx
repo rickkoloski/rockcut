@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Alert, Box, Button, FormControl, IconButton, InputLabel, MenuItem, Paper, Select, TextField, Tooltip, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -6,10 +7,11 @@ import FormDialog from '../../components/FormDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
+import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
-import { contractPriceChanges, parseSacks } from '../../lib/purchasing'
+import { contractPriceChanges, contractYear, parseSacks } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, IngredientProduct, Party, SupplierOffer } from '../../lib/types'
 
@@ -54,6 +56,10 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
       : [newLine()],
   )
   const [error, setError] = useState<string | null>(null)
+  // Lead decisions 2 (gap 2): the version this dialog opened, kept if the page
+  // refetches under it, so a save over someone else's change stays refused.
+  const [version] = useState(contract?.lock_version)
+  const qc = useQueryClient()
 
   const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
   const { data: offers = [] } = useApiList<SupplierOffer>(['supplier_offers', { supplier_id: supplierId }], '/api/supplier_offers', supplierId === '' ? undefined : { supplier_id: supplierId }, {
@@ -71,7 +77,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const offered = [...new Set(active.map((o) => o.product_id))].map((id) => ({ id, name: productName.get(id) ?? `#${id}` })).sort((a, b) => a.name.localeCompare(b.name))
   const offersOf = (productId: number | '') => active.filter((o) => o.product_id === productId)
 
-  const yearNumber = /^\d{4}$/.test(year.trim()) ? Number(year) : null
+  const yearNumber = contractYear(year)
   const read = lines.map((l) => {
     const price = parseDecimal(l.price, PRICE_DECIMALS)
     const several = offersOf(l.productId).length > 1
@@ -80,8 +86,6 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const valid =
     supplierId !== '' &&
     yearNumber != null &&
-    yearNumber >= 2000 &&
-    yearNumber <= 2100 &&
     read.every((r) => r.line.productId !== '' && r.sacks != null && r.price != null && (!r.several || r.line.offerId !== ''))
 
   // The offer prices this save writes (decision 23, A2, decision 40).
@@ -120,13 +124,16 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
       year: yearNumber,
       notes: notes.trim() || null,
       lines: read.map((r) => ({ product_id: r.line.productId, sacks: r.sacks, price_per_sack: r.price, ...(r.line.offerId !== '' ? { offer_id: r.line.offerId } : {}) })),
+      ...(contract ? { lock_version: version } : {}),
     }
     try {
       if (contract) await update.mutateAsync({ id: contract.id, ...body })
       else await create.mutateAsync(body)
       onClose()
     } catch (err) {
+      // The person's input stays; the page behind refetches, so reopening shows the change.
       setError(parseApiError(err))
+      if (httpStatus(err) === 409) keys.forEach((key) => qc.invalidateQueries({ queryKey: key }))
     }
   }
 
@@ -168,7 +175,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
           onChange={(e) => setYear(e.target.value)}
           required
           error={yearNumber == null}
-          helperText="Runs Jan–Dec"
+          helperText={yearNumber == null ? 'A whole year, 2000–2100' : 'Runs Jan–Dec'}
           sx={{ flex: '1 1 100px' }}
           slotProps={{ htmlInput: { inputMode: 'numeric', 'data-testid': 'contract-year' } }}
         />

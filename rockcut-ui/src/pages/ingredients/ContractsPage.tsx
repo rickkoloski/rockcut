@@ -31,7 +31,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import { money, sacksFigure } from '../../lib/purchasing'
+import { contractYears, money, sacksFigure } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, ShortfallRow, SupplierOffer } from '../../lib/types'
 import ContractDialog from './ContractDialog'
@@ -40,6 +40,8 @@ import PurchasingTabs from './PurchasingTabs'
 interface ContractsReply {
   data: Contract[]
   year: number
+  /** Every year that has a contract (lead decisions 2, gap 3). */
+  years: number[]
   /** Owners and Brewery managers (decision 25). */
   can_write: boolean
 }
@@ -75,7 +77,7 @@ export default function ContractsPage() {
   const contracts = reply?.data ?? []
   const canWrite = !!reply?.can_write
   const offerName = new Map(offers.map((o) => [o.id, o.order_name ? `${o.order_name} · ${Number(o.sack_size_lb)} lb` : `${Number(o.sack_size_lb)} lb ${o.form}`]))
-  const years = [...new Set([thisYear - 2, thisYear - 1, thisYear, thisYear + 1, thisYear + 2, year])].sort()
+  const years = contractYears(thisYear, reply?.years ?? [], year)
 
   const doDelete = async () => {
     if (!deleting) return

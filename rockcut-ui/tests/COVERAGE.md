@@ -1132,3 +1132,12 @@ ExUnit under `rockcut_api/test/`: `rockcut_api_web/controllers/purchasing_api_te
 | 20 | To order's on order converted by weight to the reorder offer's sack size (50 + 55 lb on order) | FC1 "reorder on order by weight (item 20)"; Vitest `purchasing.test` (`toOrder`) |
 | 21 | Gap 19: at 360 px To order's offer has a full-width row of its own; no sideways scroll inside the card; supplier · sack size not cut | Playwright P5 |
 | 22 | PO7 on the release build: dialogs opened with `openDialog` (enter transition done, its API reads answered) before filling and Save; also orders, contracts, receive, phone, slow, To order, QA fixes | Playwright PO1–PO8, C1, F2, F5, T1, P3, P4, S1–S4 |
+
+**DEV QA fix cycle** (`prompts/d61_lead_decisions_2.md`; gap numbers are the DEV QA report's). ExUnit `rockcut_api_web/controllers/d61_lead_decisions_2_test.exs` (LD2); Playwright `regression/ingredients/dev-qa-fixes.spec.ts`. Item 5 (gap 4) waits.
+
+| Item | Rule | Coverage |
+|---|---|---|
+| 1 (gaps 1, 2) | Orders and contracts carry `lock_version`; Edit sends back the one it opened; another version → 409 "Someone else changed this order/contract since you opened it…", nothing written (lines, price rows); none → 422; cancel and receive bump it; the dialog keeps its input and the page refetches | LD2 "an order saved from an older version", "a contract saved from an older version"; Playwright D1, D2 (two browsers) |
+| 2 (gap 5) | ConfirmDialog's confirm has FormDialog's gate: a double tap sends one cancel / one delete; "already cancelled" for one's own cancel is done, not an error | Playwright D3 (slow, one POST, no message), D5 (slow, one DELETE) |
+| 3 (gap 3) | The Year picker lists every year with a contract, plus this year ±2; the Year box says "A whole year, 2000–2100" and Save waits | LD2 "the contract years"; Playwright D5; Vitest `purchasing.test` (`contractYears`, `contractYear`) |
+| 4 (LEAD 1, item 22) | Save waits for a dialog's lists (Edit maltster product, Add lot, Grain lot, Ingredient, Ingredient lot, Offer); FormDialog's form is `noValidate` | Playwright D4 (lists held: disabled, enabled, one PUT) |

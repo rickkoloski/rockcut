@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Box, Button, FormControl, FormControlLabel, IconButton, InputLabel, MenuItem, Paper, Select, Switch, TextField, Tooltip, Typography } from '@mui/material'
 import AddIcon from '@mui/icons-material/Add'
 import DeleteIcon from '@mui/icons-material/Delete'
@@ -6,6 +7,7 @@ import FormDialog from '../../components/FormDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
+import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
@@ -66,6 +68,10 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
         : [newLine()],
   )
   const [error, setError] = useState<string | null>(null)
+  // Lead decisions 2 (gap 1): the version this dialog opened, kept if the page
+  // refetches under it, so a save over someone else's change stays refused.
+  const [version] = useState(order?.lock_version)
+  const qc = useQueryClient()
 
   const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
   const { data: offers = [] } = useApiList<SupplierOffer>(['supplier_offers', { supplier_id: supplierId }], '/api/supplier_offers', supplierId === '' ? undefined : { supplier_id: supplierId }, {
@@ -124,13 +130,16 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       off_contract: offContract,
       notes: notes.trim() || null,
       lines: read.map((r) => ({ ...(r.line.id ? { id: r.line.id } : {}), offer_id: r.offer!.id, sacks_ordered: r.sacks, price_per_sack: r.priceText })),
+      ...(order ? { lock_version: version } : {}),
     }
     try {
       const saved = order ? await update.mutateAsync({ id: order.id, ...body }) : await create.mutateAsync(body)
       onClose()
       onSaved?.(saved)
     } catch (err) {
+      // The person's input stays; the page behind refetches, so reopening shows the change.
       setError(parseApiError(err))
+      if (httpStatus(err) === 409) ORDER_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key }))
     }
   }
 

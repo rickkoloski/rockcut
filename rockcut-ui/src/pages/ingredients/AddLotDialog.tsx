@@ -25,8 +25,10 @@ export default function AddLotDialog({ open, onClose, product }: { open: boolean
 
 function AddLotForm({ onClose, product }: { onClose: () => void; product: IngredientProduct }) {
   const { mode } = useQuantityDisplay()
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
-  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading || typesLoading
   const offers = (product.offers ?? []).filter((o) => o.active)
   const first = offers.length === 1 ? offers[0] : null
 
@@ -87,7 +89,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
       onSubmit={submit}
       loading={create.isPending}
       error={error}
-      submitDisabled={!draftsValid(shown, featureTypes) || !size.ok || !quantity.valid}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !size.ok || !quantity.valid}
       testId="add-lot-dialog"
     >
       {offers.length > 0 && (

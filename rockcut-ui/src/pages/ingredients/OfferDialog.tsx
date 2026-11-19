@@ -22,7 +22,9 @@ export default function OfferDialog(props: OfferDialogProps) {
 }
 
 function OfferForm({ onClose, productId, offer }: OfferDialogProps) {
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading
   const [supplierId, setSupplierId] = useState<number | ''>(offer?.supplier_party_id ?? '')
   const [orderName, setOrderName] = useState(offer?.order_name ?? '')
   const [sackSize, setSackSize] = useState(offer?.sack_size_lb ?? '55')
@@ -60,7 +62,7 @@ function OfferForm({ onClose, productId, offer }: OfferDialogProps) {
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!size.ok}
+      submitDisabled={listsLoading || !size.ok}
       testId="offer-dialog"
       secondaryAction={
         offer && (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contractPriceChanges, lineForError, lotChoiceLabel, money, parseSacks, previousLot, receivableLots, runningTotal, sacksFigure, splitSummary, targetProgress, toOrder } from './purchasing'
+import { contractPriceChanges, contractYear, contractYears, lineForError, lotChoiceLabel, money, parseSacks, previousLot, receivableLots, runningTotal, sacksFigure, splitSummary, targetProgress, toOrder } from './purchasing'
 
 describe('money', () => {
   it('dollars with separators; nothing is a dash', () => {
@@ -128,5 +128,20 @@ describe('sacksFigure (amendment 17a: part sacks by weight)', () => {
     expect(sacksFigure(4.4 + 0.2)).toBe('4.6')
     expect(sacksFigure(1234.256)).toBe('1,234.26')
     expect(sacksFigure(0)).toBe('0')
+  })
+})
+
+describe('contract years (lead decisions 2, gap 3)', () => {
+  it('lists every year with a contract, this year ±2 and the year shown, ascending', () => {
+    expect(contractYears(2026, [], 2026)).toEqual([2024, 2025, 2026, 2027, 2028])
+    expect(contractYears(2026, [2029, 2001, 2026], 2026)).toEqual([2001, 2024, 2025, 2026, 2027, 2028, 2029])
+    expect(contractYears(2026, [], 2040)).toEqual([2024, 2025, 2026, 2027, 2028, 2040])
+  })
+
+  it("the Year box takes a whole year 2000–2100 and nothing else", () => {
+    expect(contractYear(' 2029 ')).toBe(2029)
+    expect(contractYear('2000')).toBe(2000)
+    expect(contractYear('2100')).toBe(2100)
+    for (const bad of ['1999', '2101', '20271', '2027.5', '27', '', 'abcd']) expect(contractYear(bad)).toBeNull()
   })
 })

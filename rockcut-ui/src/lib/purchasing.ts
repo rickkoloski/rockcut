@@ -156,3 +156,18 @@ export function toOrder(minimum: number, usableLb: number, sackSize: number, onO
 export function sacksFigure(n: number): string {
   return (Math.round(n * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
+
+/**
+ * Lead decisions 2 (gap 3): the Contracts Year picker's years: every year
+ * that has a contract, this year ±2 and the year shown, ascending.
+ */
+export const contractYears = (thisYear: number, withContracts: number[], shown: number): number[] =>
+  [...new Set([thisYear - 2, thisYear - 1, thisYear, thisYear + 1, thisYear + 2, ...withContracts, shown])].sort((a, b) => a - b)
+
+/** Lead decisions 2 (gap 3): the contract dialog's Year box: a whole year 2000–2100 (the API's range), else null. */
+export const contractYear = (text: string): number | null => {
+  const t = text.trim()
+  if (!/^\d{4}$/.test(t)) return null
+  const n = Number(t)
+  return n >= 2000 && n <= 2100 ? n : null
+}

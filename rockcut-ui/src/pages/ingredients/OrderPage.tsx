@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link as RouterLink, useParams } from 'react-router-dom'
 import {
   Alert,
@@ -23,10 +24,12 @@ import StatusChip from '../../components/StatusChip'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { ORDER_KEYS } from '../../lib/inventory'
+import useAuth from '../../hooks/useAuth'
+import api from '../../lib/api'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { money, targetProgress } from '../../lib/purchasing'
-import type { PurchaseOrder } from '../../lib/types'
+import type { ApiResponse, PurchaseOrder } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import ReceiveDialog from './ReceiveDialog'
 
@@ -44,6 +47,8 @@ export default function OrderPage() {
   const [actionError, setActionError] = useState<string | null>(null)
   const { data: order, error } = useApiQuery<PurchaseOrder>(['purchase_order', orderId], `/api/purchase_orders/${orderId}`, undefined, { retry: retryUnless404 })
   const cancel = useApiCreate<PurchaseOrder>(`/api/purchase_orders/${orderId}/cancel`, { invalidateKeys: ORDER_KEYS })
+  const { user } = useAuth()
+  const qc = useQueryClient()
 
   if (!order && httpStatus(error) === 404) {
     return <ItemNotFound what="Order" backTo="/ingredients/orders" backLabel="Back to Purchasing" testId="order-not-found" />
@@ -61,6 +66,13 @@ export default function OrderPage() {
       setOpen(null)
     } catch (err) {
       setOpen(null)
+      ORDER_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key }))
+      // Lead decisions 2 (gap 5): "already cancelled" for a cancel this person
+      // just made (a second press, a retry) is done, not an error.
+      if (httpStatus(err) === 409) {
+        const { data } = await api.get<ApiResponse<PurchaseOrder>>(`/api/purchase_orders/${orderId}`).catch(() => ({ data: null }))
+        if (data?.data.status === 'cancelled' && data.data.cancelled_by?.id === user?.id) return
+      }
       setActionError(parseApiError(err))
     }
   }

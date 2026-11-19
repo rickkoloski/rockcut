@@ -59,7 +59,8 @@ export default function FormDialog({ open, onClose, title, onSubmit, loading, er
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth fullScreen={!!phone && narrow} data-testid={testId}>
       {/* While a save is in flight a second submit (a double-click, Enter again) does nothing: no double movements. */}
-      <form onSubmit={(e: FormEvent) => { e.preventDefault(); void submit() }}>
+      {/* noValidate (D61 lead decisions 2, item 4): the browser's required check dropped a Save without a word; the app's own checks give the messages. */}
+      <form noValidate onSubmit={(e: FormEvent) => { e.preventDefault(); void submit() }}>
         <DialogTitle>{title}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
           {error && <Alert severity="error">{error}</Alert>}

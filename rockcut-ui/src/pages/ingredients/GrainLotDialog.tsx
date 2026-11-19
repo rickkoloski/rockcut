@@ -36,8 +36,10 @@ export default function GrainLotDialog(props: GrainLotDialogProps) {
 
 function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps & { lot: IngredientLot }) {
   const { mode } = useQuantityDisplay()
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
-  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading || typesLoading
   const [lotNumber, setLotNumber] = useState(lot.lot_number ?? '')
   const [received, setReceived] = useState(lot.received_date ?? '')
   const [supplierId, setSupplierId] = useState<number | ''>(lot.supplier_party_id ?? '')
@@ -97,7 +99,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown, featureTypes) || !size.ok}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !size.ok}
       testId="grain-lot-dialog"
       secondaryAction={
         <Box sx={{ maxWidth: { xs: 160, sm: 260 } }}>

@@ -27,10 +27,12 @@ export default function ProductDialog(props: ProductDialogProps) {
 
 function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
   const navigate = useNavigate()
-  const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
-  const { data: ingredients = [] } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
-  const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: categories = [], isLoading: categoriesLoading } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
+  const { data: ingredients = [], isLoading: ingredientsLoading } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = categoriesLoading || ingredientsLoading || partiesLoading || typesLoading
 
   const [grainId, setGrainId] = useState<number | ''>(product?.ingredient_id ?? ingredientId ?? '')
   const [maltsterId, setMaltsterId] = useState<number | ''>(product?.maltster_party_id ?? '')
@@ -91,7 +93,7 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown, featureTypes) || !minimumOk}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !minimumOk}
       testId="product-dialog"
     >
       <FormControl fullWidth required>
