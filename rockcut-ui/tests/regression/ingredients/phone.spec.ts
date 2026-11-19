@@ -112,12 +112,12 @@ test('P4: Purchasing at 360 px: cards, the order page, New order and Receive ful
 // D61 §4.7: Contracts, To order and Totals at 360 px: the Purchasing tabs
 // scroll, the tables scroll inside their box, never the page.
 test('P5: Contracts, To order and Totals at 360 px: no sideways scroll', async ({ page }) => {
-  const { product, supplier } = await makePurchasing('P5 phone')
+  const { product, supplier, offer: supplierOffer } = await makePurchasing('P5 phone')
   await makeLot(product, 1, 10)
   const mgr = await apiAs('breweryMgr')
   const year = Number(new Date().getFullYear()) + 1
   expect((await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year, lines: [{ product_id: product.id, sacks: 40, price_per_sack: '41.00' }] } })).status()).toBe(201)
-  expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_sacks: 3 } })).status()).toBe(200)
+  expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_sacks: 3, reorder_offer_id: supplierOffer.id } })).status()).toBe(200)
 
   await page.goto(`/ingredients/contracts?year=${year}`)
   await expect(page.getByTestId('purchasing-tabs')).toBeVisible()
@@ -133,6 +133,15 @@ test('P5: Contracts, To order and Totals at 360 px: no sideways scroll', async (
   // Lead decisions 1, gap 16: the To order number is within the 360 px width without scrolling the table.
   const cell = await page.getByTestId(`to-order-${product.id}-to-order`).boundingBox()
   expect(cell!.x + cell!.width).toBeLessThanOrEqual(360)
+  // Gap 19: the offer has its own row; nothing in the card scrolls sideways
+  // and the offer's text (the long `[TEST-TEMP]` supplier · sack size) isn't cut.
+  const inner = await page.getByTestId('to-order-table').evaluate((t) => ({ scroll: t.parentElement!.scrollWidth, client: t.parentElement!.clientWidth }))
+  expect(inner.scroll, 'To order card scrollWidth vs clientWidth').toBeLessThanOrEqual(inner.client)
+  const offer = page.getByTestId(`to-order-${product.id}-offer-row`).getByTestId(`to-order-${product.id}-offer`)
+  await expect(offer).toContainText(`${supplier.name} · 55 lb`)
+  const text = await offer.locator('.MuiSelect-select').evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth, right: el.getBoundingClientRect().right }))
+  expect(text.scroll).toBeLessThanOrEqual(text.client)
+  expect(text.right).toBeLessThanOrEqual(360)
 
   await page.goto('/ingredients/totals')
   await expect(page.getByTestId('totals-inventory-table')).toBeVisible()

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { Link as RouterLink } from 'react-router-dom'
 import {
   Alert,
@@ -17,6 +17,8 @@ import {
   TableHead,
   TableRow,
   Typography,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material'
 import PageHeader from '../../components/PageHeader'
 import { PageToolbar } from '../../components/SettingsMenu'
@@ -46,8 +48,9 @@ interface Start {
  * on the product (lead decisions 1, gap 4). Rows with something to order can
  * be picked: **Start an order** opens a prefilled New order per supplier,
  * one at a time. At phone width Minimum and On order go under the product
- * and the offer shows as supplier and sack size, wrapping, so To order stays
- * in view (gap 16).
+ * and the offer gets a row of its own under the product, the whole width
+ * of the table, its supplier and sack size wrapping, so the row fits with no
+ * sideways scroll and the sack size is readable (gaps 16, 19).
  */
 export default function ToOrderPage() {
   const { data: rows = [], isLoading } = useApiList<ReorderRow>(['ingredient_reorder'], '/api/ingredient_reorder')
@@ -57,6 +60,7 @@ export default function ToOrderPage() {
   const [queue, setQueue] = useState<Start[]>([])
   const [started, setStarted] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  const narrow = useMediaQuery(useTheme().breakpoints.down('sm'))
   const saveOffer = useApiUpdate<IngredientProduct>((id) => `/api/ingredient_products/${id}`, { invalidateKeys: GRAIN_KEYS })
 
   const pickOffer = (productId: number, offerId: number, was: number) => {
@@ -79,6 +83,34 @@ export default function ToOrderPage() {
     const figures = offer && r.on_hand_lb != null ? toOrder(r.min_on_hand_sacks, Number(r.on_hand_lb), Number(offer.sack_size_lb), Number(r.on_order_lb ?? 0)) : null
     return { row: r, offers, offer, figures }
   })
+  const offerPicker = (productId: number, offers: SupplierOffer[], offer: SupplierOffer | null) =>
+    offer ? (
+      <FormControl size="small" fullWidth>
+        <Select
+          value={offer.id}
+          onChange={(e) => pickOffer(productId, Number(e.target.value), offer.id)}
+          inputProps={{ 'aria-label': 'Reorder offer' }}
+          renderValue={(id) => {
+            const o = offers.find((x) => x.id === id) ?? offer
+            return [o.supplier?.name, `${Number(o.sack_size_lb)} lb`].filter(Boolean).join(' · ')
+          }}
+          // Doubled class to outrank MUI's nowrap: the offer wraps, never cut (gap 19).
+          sx={{ '& .MuiSelect-select.MuiSelect-select': { whiteSpace: 'normal', overflowWrap: 'anywhere' } }}
+          data-testid={`to-order-${productId}-offer`}
+        >
+          {(offers.some((o) => o.id === offer.id) ? offers : [offer, ...offers]).map((o) => (
+            <MenuItem key={o.id} value={o.id}>
+              {[o.supplier?.name, o.order_name, `${Number(o.sack_size_lb)} lb`].filter(Boolean).join(' · ')}
+            </MenuItem>
+          ))}
+        </Select>
+      </FormControl>
+    ) : (
+      <Typography variant="body2" color="text.secondary" data-testid={`to-order-${productId}-no-offer`}>
+        No offer
+      </Typography>
+    )
+
   const orderable = view.filter((v) => v.figures && v.figures.toOrder > 0)
   const chosen = orderable.filter((v) => picked.has(v.row.product_id))
 
@@ -135,7 +167,7 @@ export default function ToOrderPage() {
                 On order
               </TableCell>
               <TableCell align="right">To order</TableCell>
-              <TableCell>Offer</TableCell>
+              {!narrow && <TableCell>Offer</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -149,72 +181,55 @@ export default function ToOrderPage() {
               </TableRow>
             )}
             {view.map(({ row: r, offers, offer, figures }) => (
-              <TableRow key={r.product_id} data-testid={`to-order-${r.product_id}`}>
-                <TableCell padding="checkbox">
-                  {figures && figures.toOrder > 0 && (
-                    <Checkbox
-                      checked={picked.has(r.product_id)}
-                      onChange={(e) =>
-                        setPicked((s) => {
-                          const n = new Set(s)
-                          if (e.target.checked) n.add(r.product_id)
-                          else n.delete(r.product_id)
-                          return n
-                        })
-                      }
-                      slotProps={{ input: { 'aria-label': `Pick ${r.product.display_name}`, 'data-testid': `to-order-${r.product_id}-pick` } as object }}
-                    />
-                  )}
-                </TableCell>
-                <TableCell>
-                  <Link component={RouterLink} to={`/ingredients/products/${r.product_id}`}>
-                    {r.product.display_name}
-                  </Link>
-                  {r.below_minimum && <Chip size="small" color="warning" label="Below minimum" sx={{ ml: 1 }} />}
-                  <Typography variant="caption" color="text.secondary" component="div" sx={{ display: { xs: 'block', sm: 'none' } }}>
-                    Minimum {r.min_on_hand_sacks} · on order {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
-                  </Typography>
-                </TableCell>
-                <TableCell align="right" sx={{ whiteSpace: { sm: 'nowrap' } }} data-testid={`to-order-${r.product_id}-on-hand`}>
-                  {figures ? `${figures.onHandSacks} sacks` : `${Number(r.on_hand_lb ?? 0)} lb`}
-                </TableCell>
-                <TableCell align="right" sx={WIDE}>
-                  {r.min_on_hand_sacks}
-                </TableCell>
-                <TableCell align="right" sx={WIDE} data-testid={`to-order-${r.product_id}-on-order`}>
-                  {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
-                </TableCell>
-                <TableCell align="right" sx={{ fontWeight: figures && figures.toOrder > 0 ? 600 : undefined }} data-testid={`to-order-${r.product_id}-to-order`}>
-                  {figures ? figures.toOrder : ''}
-                </TableCell>
-                <TableCell sx={{ minWidth: { xs: 140, sm: 200 }, maxWidth: { xs: 160, sm: 'none' } }}>
-                  {offer ? (
-                    <FormControl size="small" fullWidth>
-                      <Select
-                        value={offer.id}
-                        onChange={(e) => pickOffer(r.product_id, Number(e.target.value), offer.id)}
-                        inputProps={{ 'aria-label': 'Reorder offer' }}
-                        renderValue={(id) => {
-                          const o = offers.find((x) => x.id === id) ?? offer
-                          return [o.supplier?.name, `${Number(o.sack_size_lb)} lb`].filter(Boolean).join(' · ')
-                        }}
-                        sx={{ '& .MuiSelect-select': { whiteSpace: 'normal' } }}
-                        data-testid={`to-order-${r.product_id}-offer`}
-                      >
-                        {(offers.some((o) => o.id === offer.id) ? offers : [offer, ...offers]).map((o) => (
-                          <MenuItem key={o.id} value={o.id}>
-                            {[o.supplier?.name, o.order_name, `${Number(o.sack_size_lb)} lb`].filter(Boolean).join(' · ')}
-                          </MenuItem>
-                        ))}
-                      </Select>
-                    </FormControl>
-                  ) : (
-                    <Typography variant="body2" color="text.secondary" data-testid={`to-order-${r.product_id}-no-offer`}>
-                      No offer
+              <Fragment key={r.product_id}>
+                <TableRow data-testid={`to-order-${r.product_id}`} sx={narrow ? { '& td': { borderBottom: 0 } } : undefined}>
+                  <TableCell padding="checkbox">
+                    {figures && figures.toOrder > 0 && (
+                      <Checkbox
+                        checked={picked.has(r.product_id)}
+                        onChange={(e) =>
+                          setPicked((s) => {
+                            const n = new Set(s)
+                            if (e.target.checked) n.add(r.product_id)
+                            else n.delete(r.product_id)
+                            return n
+                          })
+                        }
+                        slotProps={{ input: { 'aria-label': `Pick ${r.product.display_name}`, 'data-testid': `to-order-${r.product_id}-pick` } as object }}
+                      />
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Link component={RouterLink} to={`/ingredients/products/${r.product_id}`}>
+                      {r.product.display_name}
+                    </Link>
+                    {r.below_minimum && <Chip size="small" color="warning" label="Below minimum" sx={{ ml: 1 }} />}
+                    <Typography variant="caption" color="text.secondary" component="div" sx={{ display: { xs: 'block', sm: 'none' } }}>
+                      Minimum {r.min_on_hand_sacks} · on order {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
                     </Typography>
-                  )}
-                </TableCell>
-              </TableRow>
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: { sm: 'nowrap' } }} data-testid={`to-order-${r.product_id}-on-hand`}>
+                    {figures ? `${figures.onHandSacks} sacks` : `${Number(r.on_hand_lb ?? 0)} lb`}
+                  </TableCell>
+                  <TableCell align="right" sx={WIDE}>
+                    {r.min_on_hand_sacks}
+                  </TableCell>
+                  <TableCell align="right" sx={WIDE} data-testid={`to-order-${r.product_id}-on-order`}>
+                    {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
+                  </TableCell>
+                  <TableCell align="right" sx={{ fontWeight: figures && figures.toOrder > 0 ? 600 : undefined }} data-testid={`to-order-${r.product_id}-to-order`}>
+                    {figures ? figures.toOrder : ''}
+                  </TableCell>
+                  {!narrow && <TableCell sx={{ minWidth: 200 }}>{offerPicker(r.product_id, offers, offer)}</TableCell>}
+                </TableRow>
+                {narrow && (
+                  <TableRow data-testid={`to-order-${r.product_id}-offer-row`}>
+                    <TableCell colSpan={4} sx={{ pt: 0 }}>
+                      {offerPicker(r.product_id, offers, offer)}
+                    </TableCell>
+                  </TableRow>
+                )}
+            </Fragment>
             ))}
           </TableBody>
         </Table>
