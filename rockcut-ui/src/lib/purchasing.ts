@@ -117,3 +117,25 @@ export function lineForError<T extends { id: number; offer: { label: string; pro
   if (byLot) return byLot.id
   return lines.length === 1 ? lines[0].id : null
 }
+
+/**
+ * The offer prices saving a contract writes (decision 23, A2, decision 40):
+ * for each new or changed line, "BSG Rahr 2-Row price becomes $42.00 from
+ * 2027-01-01", effective Jan 1 of the year or today if later; none for a
+ * year already over.
+ */
+export function contractPriceChanges(lines: { product: string; price: string; changed: boolean }[], supplier: string, year: number, today: string): string[] {
+  if (year < Number(today.slice(0, 4))) return []
+  const jan1 = `${year}-01-01`
+  const from = jan1 > today ? jan1 : today
+  return lines.filter((l) => l.changed).map((l) => `${supplier} ${l.product} price becomes ${money(l.price)} from ${from}`)
+}
+
+/**
+ * To order with a chosen offer (§3.5): on hand (usable lb) ÷ its sack size,
+ * and ⌈minimum − on hand − on order⌉ when above 0.
+ */
+export function toOrder(minimum: number, usableLb: number, sackSize: number, onOrder: number): { onHandSacks: number; toOrder: number } {
+  const onHandSacks = Math.round((usableLb / sackSize) * 100) / 100
+  return { onHandSacks, toOrder: Math.max(0, Math.ceil(minimum - onHandSacks - onOrder - 1e-9)) }
+}

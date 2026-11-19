@@ -27,6 +27,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { money } from '../../lib/purchasing'
 import type { OrderStatus, Party, PurchaseOrder } from '../../lib/types'
 import OrderDialog from './OrderDialog'
+import PurchasingTabs from './PurchasingTabs'
 
 /**
  * D61 §4.1: Ingredient Library → Purchasing: the orders, open first, then
@@ -54,6 +55,7 @@ export default function OrdersPage() {
         title="Purchasing"
         action={{ label: 'New order', onClick: () => setAdding(true), testId: 'orders-new' }}
       />
+      <PurchasingTabs />
       <PageToolbar>
         <FormControl size="small" sx={{ minWidth: { xs: '100%', sm: 200 } }}>
           <InputLabel id="orders-supplier-label">Supplier</InputLabel>

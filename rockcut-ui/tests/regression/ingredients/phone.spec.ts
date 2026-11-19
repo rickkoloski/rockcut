@@ -105,3 +105,33 @@ test('P4: Purchasing at 360 px: cards, the order page, New order and Receive ful
   await expectNoSidewaysScroll(page)
 })
 
+// D61 §4.7: Contracts, To order and Totals at 360 px: the Purchasing tabs
+// scroll, the tables scroll inside their box, never the page.
+test('P5: Contracts, To order and Totals at 360 px: no sideways scroll', async ({ page }) => {
+  const { product, supplier } = await makePurchasing('P5 phone')
+  await makeLot(product, 1, 10)
+  const mgr = await apiAs('breweryMgr')
+  const year = Number(new Date().getFullYear()) + 1
+  expect((await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year, lines: [{ product_id: product.id, sacks: 40, price_per_sack: '41.00' }] } })).status()).toBe(201)
+  expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_sacks: 3 } })).status()).toBe(200)
+
+  await page.goto(`/ingredients/contracts?year=${year}`)
+  await expect(page.getByTestId('purchasing-tabs')).toBeVisible()
+  await expect(page.getByTestId(/^contract-\d+$/).filter({ hasText: supplier.name })).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  await page.getByTestId('contracts-view-shortfall').click()
+  await expect(page.getByTestId('contracts-shortfall')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+
+  await page.goto('/ingredients/to-order')
+  await expect(page.getByTestId(`to-order-${product.id}`)).toBeVisible()
+  await expectNoSidewaysScroll(page)
+
+  await page.goto('/ingredients/totals')
+  await expect(page.getByTestId('totals-inventory-table')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  await page.getByTestId('totals-tab-orders').click()
+  await expect(page.getByTestId('totals-orders-table')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+})
+

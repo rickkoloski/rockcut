@@ -95,6 +95,9 @@ import ProductPage from './pages/ingredients/ProductPage'
 import CompaniesPage from './pages/ingredients/CompaniesPage'
 import OrdersPage from './pages/ingredients/OrdersPage'
 import OrderPage from './pages/ingredients/OrderPage'
+import ContractsPage from './pages/ingredients/ContractsPage'
+import ToOrderPage from './pages/ingredients/ToOrderPage'
+import TotalsPage from './pages/ingredients/TotalsPage'
 import BatchesList from './pages/batches/BatchesList'
 import BatchDetail from './pages/batches/BatchDetail'
 import SettingsPage from './pages/settings/SettingsPage'
@@ -286,6 +289,9 @@ function personRoutes({ hasBrewery, hasTaproom, canManageSchedule, canManageUser
           {/* D61: purchasing (orders and receiving). */}
           <Route path="/ingredients/orders" element={<OrdersPage />} />
           <Route path="/ingredients/orders/:id" element={<OrderPage />} />
+          <Route path="/ingredients/contracts" element={<ContractsPage />} />
+          <Route path="/ingredients/to-order" element={<ToOrderPage />} />
+          <Route path="/ingredients/totals" element={<TotalsPage />} />
           <Route path="/ingredients/:id" element={<IngredientDetail />} />
           <Route path="/batches" element={<BatchesList />} />
           <Route path="/batches/:id" element={<BatchDetail />} />

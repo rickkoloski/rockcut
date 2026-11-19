@@ -330,6 +330,108 @@ export interface PurchaseOrder {
   updated_at: string
 }
 
+export interface ContractLine {
+  id: number
+  product_id: number
+  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+  /** The supplier offer its price goes on (lead, Stop 2 note 3). */
+  offer_id: number | null
+  sacks: number
+  price_per_sack: string
+  contracted_sacks: number
+  contracted_dollars: string
+  on_order_sacks: number
+  received_sacks: number
+  received_dollars: string
+  /** Contracted − received; negative when over. */
+  remaining_sacks: number
+  over_by: number | null
+}
+
+export interface Contract {
+  id: number
+  supplier_party_id: number
+  supplier: PartySummary | null
+  year: number
+  notes: string | null
+  created_by: { id: number; name: string } | null
+  lines: ContractLine[]
+  inserted_at: string
+  updated_at: string
+}
+
+export interface ShortfallRow {
+  product_id: number
+  display_name: string
+  contracted_sacks: number
+  received_sacks: number
+  short_sacks: number
+}
+
+export interface ReorderRow {
+  product_id: number
+  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+  min_on_hand_sacks: number
+  /** The reorder offer (the latest order's while active, else the first active); null: no offer. */
+  offer: (SupplierOffer & { label: string }) | null
+  /** Usable (not expired) on hand in lb. */
+  on_hand_lb: string | null
+  on_hand_sacks: string | null
+  on_order_sacks: number | null
+  to_order: number | null
+  below_minimum: boolean
+}
+
+export interface InventoryTotalsRow {
+  product_id: number
+  display_name: string
+  grain: string
+  maltster: string
+  category: string
+  lb: string
+  expired_lb: string
+  /** lb ÷ the sack size when all its stocked lots share one, else null. */
+  sacks: string | null
+  value: string
+  per_lb: string | null
+  estimated: boolean
+  unvalued_lb: string
+}
+
+export interface InventoryTotals {
+  as_of: string
+  rows: InventoryTotalsRow[]
+  total: { lb: string; value: string }
+}
+
+export interface OrderTotalsRow {
+  order_id: number
+  line_id: number
+  ordered_on: string
+  supplier_id: number
+  supplier: string
+  reference: string | null
+  product: string
+  status: OrderStatus
+  sacks_ordered: number
+  sacks_received: number | null
+  lb: string
+  dollars: string
+  sacks: number
+}
+
+export interface OrderTotalsSum {
+  sacks: number
+  lb: string
+  dollars: string
+}
+
+export interface OrderTotals {
+  rows: OrderTotalsRow[]
+  by_supplier: (OrderTotalsSum & { supplier_id: number; supplier: string })[]
+  total: OrderTotalsSum
+}
+
 export interface Batch {
   id: number
   brand_id: number

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { lineForError, lotChoiceLabel, money, parseSacks, previousLot, receivableLots, runningTotal, splitSummary, targetProgress } from './purchasing'
+import { contractPriceChanges, lineForError, lotChoiceLabel, money, parseSacks, previousLot, receivableLots, runningTotal, splitSummary, targetProgress, toOrder } from './purchasing'
 
 describe('money', () => {
   it('dollars with separators; nothing is a dash', () => {
@@ -88,5 +88,27 @@ describe('lineForError', () => {
     expect(lineForError(lines, 'Lot W123 is expired; use a new lot number', { 1: [''], 2: ['w123'] })).toBe(2)
     expect(lineForError(lines, 'Lot W123 is expired; use a new lot number', { 1: ['W12'] })).toBeNull()
     expect(lineForError([lines[0]], 'Lot W123 is expired; use a new lot number')).toBe(1)
+  })
+})
+
+describe('contract price changes (decision 23, A2, decision 40)', () => {
+  const lines = [
+    { product: 'Rahr 2-Row', price: '42', changed: true },
+    { product: 'Weyermann Pilsner', price: '55.00', changed: false },
+  ]
+  it('from Jan 1 of a future year, today in this year, nothing in a year over; unchanged lines left out', () => {
+    expect(contractPriceChanges(lines, 'BSG', 2027, '2026-11-18')).toEqual(['BSG Rahr 2-Row price becomes $42.00 from 2027-01-01'])
+    expect(contractPriceChanges(lines, 'BSG', 2026, '2026-11-18')).toEqual(['BSG Rahr 2-Row price becomes $42.00 from 2026-11-18'])
+    expect(contractPriceChanges(lines, 'BSG', 2025, '2026-11-18')).toEqual([])
+  })
+})
+
+describe('to order with a chosen offer (§3.5)', () => {
+  it('⌈minimum − on hand − on order⌉, never below 0', () => {
+    expect(toOrder(3, 110, 55, 0)).toEqual({ onHandSacks: 2, toOrder: 1 })
+    expect(toOrder(3, 110, 50, 0)).toEqual({ onHandSacks: 2.2, toOrder: 1 })
+    expect(toOrder(3, 110, 55, 4)).toEqual({ onHandSacks: 2, toOrder: 0 })
+    expect(toOrder(5, 0, 55, 0).toOrder).toBe(5)
+    expect(toOrder(3, 165, 55, 0).toOrder).toBe(0)
   })
 })

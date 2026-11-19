@@ -232,6 +232,30 @@ export async function makeOrder(supplierId: number, lines: { offerId: number; sa
   )
 }
 
+/** Receive an order in full (into the previous lot, else a new `[TEST-TEMP]` lot) on `on`. */
+export async function receiveOrder(order: ApiOrder, on = denverToday(), lotNumber: string | null = null): Promise<ApiOrder> {
+  const lines = order.lines.map((l) => ({ id: l.id, sacks_received: l.sacks_ordered, ...(lotNumber ? { allocations: [{ lot_number: lotNumber, sacks: l.sacks_ordered }] } : {}) }))
+  return ok<ApiOrder>(await (await apiAs('brewer1')).post(`/api/purchase_orders/${order.id}/receive`, { data: { received_on: on, lines } }))
+}
+
+/** A lot of `product` from `supplierId` (55 lb sacks) with an opening amount, received `daysAgo`. */
+export async function makeSupplierLot(product: ApiProduct, supplierId: number, sacks: number, daysAgo: number): Promise<ApiLot> {
+  return ok<ApiLot>(
+    await (await apiAs('brewer1')).post('/api/ingredient_lots', {
+      data: {
+        product_id: product.id,
+        supplier_party_id: supplierId,
+        sack_size_lb: '55',
+        lot_number: tempTag('lot'),
+        received_date: addDays(denverToday(), -daysAgo),
+        initial_kind: 'opening',
+        initial_quantity_lb: String(sacks * SACK),
+      },
+    }),
+    201,
+  )
+}
+
 export async function getOrder(id: number): Promise<ApiOrder> {
   return ok<ApiOrder>(await (await apiAs('brewer1')).get(`/api/purchase_orders/${id}`))
 }

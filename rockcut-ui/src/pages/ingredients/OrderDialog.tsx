@@ -19,6 +19,10 @@ interface OrderDialogProps {
   /** The open order to change; none for a new order. */
   order?: PurchaseOrder
   onSaved?: (order: PurchaseOrder) => void
+  /** A new order started from To order (§4.3): its supplier and lines. */
+  initial?: { supplierId: number; lines: { offerId: number; sacks: number; price: string | null }[] }
+  /** Added to the title ("1 of 2" when To order starts several). */
+  titleNote?: string
 }
 
 /**
@@ -47,8 +51,8 @@ const WHOLE_SACKS = 'Whole sacks, 1 or more'
 let lineKeys = 0
 const newLine = (): Line => ({ key: lineKeys++, offerId: '', sacks: '', price: '' })
 
-function OrderForm({ onClose, order, onSaved }: Omit<OrderDialogProps, 'open'>) {
-  const [supplierId, setSupplierId] = useState<number | ''>(order?.supplier_party_id ?? '')
+function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDialogProps, 'open'>) {
+  const [supplierId, setSupplierId] = useState<number | ''>(order?.supplier_party_id ?? initial?.supplierId ?? '')
   const [orderedOn, setOrderedOn] = useState(order?.ordered_on ?? coloradoToday())
   const [expectedOn, setExpectedOn] = useState(order?.expected_on ?? '')
   const [reference, setReference] = useState(order?.reference ?? '')
@@ -57,7 +61,9 @@ function OrderForm({ onClose, order, onSaved }: Omit<OrderDialogProps, 'open'>) 
   const [lines, setLines] = useState<Line[]>(() =>
     order
       ? order.lines.map((l) => ({ key: lineKeys++, id: l.id, offerId: l.offer_id, sacks: String(l.sacks_ordered), price: String(Number(l.price_per_sack)) }))
-      : [newLine()],
+      : initial
+        ? initial.lines.map((l) => ({ key: lineKeys++, offerId: l.offerId, sacks: String(l.sacks), price: l.price != null ? String(Number(l.price)) : '' }))
+        : [newLine()],
   )
   const [error, setError] = useState<string | null>(null)
 
@@ -133,7 +139,7 @@ function OrderForm({ onClose, order, onSaved }: Omit<OrderDialogProps, 'open'>) 
       open
       phone
       onClose={onClose}
-      title={order ? 'Edit order' : 'New order'}
+      title={`${order ? 'Edit order' : 'New order'}${titleNote ? ` · ${titleNote}` : ''}`}
       onSubmit={submit}
       loading={create.isPending || update.isPending}
       error={error}

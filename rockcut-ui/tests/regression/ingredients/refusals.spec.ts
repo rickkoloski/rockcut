@@ -17,7 +17,7 @@ test.describe('bartender1 (Taproom employee)', () => {
     await expect(nav.getByRole('button', { name: 'Home' })).toBeVisible()
     await expect(nav.getByText('Ingredient Library')).toHaveCount(0)
 
-    for (const path of ['/ingredients', '/ingredients/companies', '/ingredients/products/1', '/ingredients/orders', '/ingredients/orders/1']) {
+    for (const path of ['/ingredients', '/ingredients/companies', '/ingredients/products/1', '/ingredients/orders', '/ingredients/orders/1', '/ingredients/contracts', '/ingredients/to-order', '/ingredients/totals']) {
       await page.goto(path)
       await expect(page).toHaveURL(/\/$/)
       await expect(page.getByTestId('ingredients-add-button')).toHaveCount(0)

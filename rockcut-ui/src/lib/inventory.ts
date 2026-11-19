@@ -87,7 +87,7 @@ export const recipeLotChoices = <T extends Pick<IngredientLot, 'id' | 'status'>>
   lots.filter((l) => (l.status !== 'depleted' && l.status !== 'expired') || l.id === currentLotId)
 
 /** D61: the order queries an order write refreshes (with GRAIN_KEYS when stock moves). */
-export const ORDER_KEYS: unknown[][] = [['purchase_orders'], ['purchase_order'], ['parties']]
+export const ORDER_KEYS: unknown[][] = [['purchase_orders'], ['purchase_order'], ['parties'], ['ingredient_reorder'], ['contracts'], ['contract_shortfall'], ['ingredient_totals']]
 
 /** Query keys every inventory or catalog write refreshes. */
-export const GRAIN_KEYS: unknown[][] = [['ingredient_products'], ['ingredient_product'], ['ingredient_lots'], ['inventory_movements'], ['ingredients'], ['ingredient']]
+export const GRAIN_KEYS: unknown[][] = [['ingredient_products'], ['ingredient_product'], ['ingredient_lots'], ['inventory_movements'], ['ingredients'], ['ingredient'], ['ingredient_reorder'], ['ingredient_totals']]
