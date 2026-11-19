@@ -1131,3 +1131,4 @@ ExUnit under `rockcut_api/test/`: `rockcut_api_web/controllers/purchasing_api_te
 | 19 | PO7 and P4 wait for the save / the dialog's history entry, not a fixed time | Playwright PO7, P4 (`expectPhoneDialogClosed`) |
 | 20 | To order's on order converted by weight to the reorder offer's sack size (50 + 55 lb on order) | FC1 "reorder on order by weight (item 20)"; Vitest `purchasing.test` (`toOrder`) |
 | 21 | Gap 19: at 360 px To order's offer has a full-width row of its own; no sideways scroll inside the card; supplier · sack size not cut | Playwright P5 |
+| 22 | PO7 on the release build: dialogs opened with `openDialog` (enter transition done, its API reads answered) before filling and Save; also orders, contracts, receive, phone, slow, To order, QA fixes | Playwright PO1–PO8, C1, F2, F5, T1, P3, P4, S1–S4 |

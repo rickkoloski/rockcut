@@ -1,4 +1,4 @@
-import { expect, type APIResponse, type Locator, type Page } from '@playwright/test'
+import { expect, type APIResponse, type Locator, type Page, type Request } from '@playwright/test'
 import type { PersonaKey } from '../../config/test-env'
 import { addDays, apiAs, denverToday, tempTag } from '../scheduler/helpers'
 
@@ -260,7 +260,6 @@ export async function getOrder(id: number): Promise<ApiOrder> {
   return ok<ApiOrder>(await (await apiAs('brewer1')).get(`/api/purchase_orders/${id}`))
 }
 
-/** No sideways scroll on the page. */
 /**
  * A phone dialog closed and its back-button history entry released: closing
  * takes the entry off with `history.back()` a tick later (`useBackCloses`),
@@ -271,6 +270,47 @@ export async function expectPhoneDialogClosed(page: Page, dialog: Locator) {
   await page.waitForFunction(() => window.history.state?.rockcutBackCloses == null)
 }
 
+/**
+ * Click `trigger` and return the dialog `testId` once it has settled: its
+ * enter transition finished and the API reads it started answered (lead
+ * decisions 1, item 22). Until a dialog's lists are in, its required selects
+ * are empty, and the browser's form check drops a Save clicked then without
+ * a word (PO7 on the release build at DEV's latency).
+ */
+export async function openDialog(page: Page, trigger: Locator, testId: string): Promise<Locator> {
+  const reads = new Set<Request>()
+  const started = (r: Request) => {
+    if (r.method() === 'GET' && new URL(r.url()).pathname.startsWith('/api/')) reads.add(r)
+  }
+  const ended = (r: Request) => reads.delete(r)
+  page.on('request', started)
+  page.on('requestfinished', ended)
+  page.on('requestfailed', ended)
+  const d = page.getByTestId(testId)
+  try {
+    await trigger.click()
+    await expect(d).toBeVisible()
+    await expect.poll(() => reads.size, { message: `${testId}: its API reads answered` }).toBe(0)
+    // The enter transition (spinners never finish, so they're left out).
+    await d.evaluate((el) =>
+      Promise.allSettled(
+        el
+          .getAnimations({ subtree: true })
+          .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+          .map((a) => a.finished),
+      ),
+    )
+  } finally {
+    page.off('request', started)
+    page.off('requestfinished', ended)
+    page.off('requestfailed', ended)
+  }
+  // The render with the answers, painted.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))))
+  return d
+}
+
+/** No sideways scroll on the page. */
 export async function expectNoSidewaysScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))
   expect(scroll, 'page scrollWidth vs clientWidth').toBeLessThanOrEqual(client)

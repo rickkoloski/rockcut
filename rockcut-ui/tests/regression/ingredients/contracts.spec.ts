@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs, cleanupIngredients, denverToday, makeOffer, makeOrder, makeProduct, makePurchasing, pick, receiveOrder, setQuantityDisplay, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, denverToday, makeOffer, makeOrder, makeProduct, makePurchasing, openDialog, pick, receiveOrder, setQuantityDisplay, tempTag } from './helpers'
 
 // D61 spec §8 (contracts), as `breweryMgr` and `brewer1`: a manager makes a
 // contract for this year on a `[TEST-TEMP]` supplier (so no real offer gets a
@@ -34,8 +34,7 @@ test.describe('breweryMgr', () => {
     await page.goto('/ingredients/orders')
     await page.getByTestId('purchasing-tab-contracts').click()
     await expect(page).toHaveURL(/\/ingredients\/contracts$/)
-    await page.getByTestId('contracts-new').click()
-    const d = page.getByTestId('contract-dialog')
+    const d = await openDialog(page, page.getByTestId('contracts-new'), 'contract-dialog')
     await pick(page, d, 'Supplier', supplier.name)
     await expect(d.getByTestId('contract-year')).toHaveValue(String(year))
     await pick(page, d.getByTestId('contract-line-0'), 'Product', new RegExp(`${product.display_name.replace(/[[\]()]/g, '.')}$`))

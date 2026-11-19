@@ -13,6 +13,7 @@ import {
   makeProduct,
   makePurchasing,
   makeSupplierLot,
+  openDialog,
   pick,
   receiveOrder,
   setQuantityDisplay,
@@ -92,8 +93,7 @@ test.describe('brewer1', () => {
   test('F2: sacks boxes take 1,234; Receive refuses a date before the order date', async ({ page }) => {
     const { supplier } = await makePurchasing('F2')
     await page.goto('/ingredients/orders')
-    await page.getByTestId('orders-new').click()
-    const d = page.getByTestId('order-dialog')
+    const d = await openDialog(page, page.getByTestId('orders-new'), 'order-dialog')
     await pick(page, d, 'Supplier', supplier.name)
     await pick(page, d, 'Offer', /F2/)
     await d.getByTestId('order-line-0-sacks').fill('1,234')
@@ -107,8 +107,7 @@ test.describe('brewer1', () => {
     expect(order.lines[0].sacks_ordered).toBe(1234)
 
     await page.goto(`/ingredients/orders/${order.id}`)
-    await page.getByTestId('order-receive').click()
-    const r = page.getByTestId('receive-dialog')
+    const r = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
     await expect(r.getByTestId('receive-date')).toHaveAttribute('min', addDays(denverToday(), -3))
     await r.getByTestId('receive-line-0-sacks').fill('1,234')
     await expect(r.getByText('Received in full')).toBeVisible()
@@ -185,8 +184,7 @@ test.describe('brewer1', () => {
     await expect(history).toContainText(reference)
     await expect(history).toContainText(`Order #${plain.id}`)
 
-    await page.getByTestId('product-add-lot').click()
-    const d = page.getByTestId('add-lot-dialog')
+    const d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
     await pick(page, d, 'Supplier offer', /F5 supplier/)
     await d.getByTestId('lot-number').fill(` ${lotNumber.toLowerCase()} `)
     await d.getByTestId('lot-quantity-sacks').fill('1')

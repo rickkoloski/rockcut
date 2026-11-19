@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
 import {
   SACK,
@@ -13,6 +13,7 @@ import {
   makeOrder,
   makePurchasing,
   makeSupplier,
+  openDialog,
   pick,
   setQuantityDisplay,
   tempTag,
@@ -30,15 +31,12 @@ test.use({ storageState: authFile('brewer1') })
 test.beforeEach(async () => setQuantityDisplay('brewer1', 'sacks'))
 test.afterAll(cleanupIngredients)
 
-const dialog = (page: Page, id: string) => page.getByTestId(id)
-
 test('PO1: New order: running total and "36 of 40 sacks", 40 of 40, 44 of 80; Save places it and opens it', async ({ page }) => {
   const { supplier } = await makePurchasing('PO1')
   await page.goto('/ingredients')
   await page.getByTestId('ingredients-purchasing').click()
   await expect(page).toHaveURL(/\/ingredients\/orders$/)
-  await page.getByTestId('orders-new').click()
-  const d = dialog(page, 'order-dialog')
+  const d = await openDialog(page, page.getByTestId('orders-new'), 'order-dialog')
   await expect(d.getByTestId('order-date')).toHaveValue(denverToday())
   await expect(d.getByTestId('order-date')).toHaveAttribute('max', denverToday())
   await pick(page, d, 'Supplier', supplier.name)
@@ -76,8 +74,7 @@ test('PO2: Edit an open order (6 → 8 sacks), then Cancel asks first; a cancell
   const { supplier, offer } = await makePurchasing('PO2')
   const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 6 }])
   await page.goto(`/ingredients/orders/${order.id}`)
-  await page.getByTestId('order-edit').click()
-  const d = dialog(page, 'order-dialog')
+  const d = await openDialog(page, page.getByTestId('order-edit'), 'order-dialog')
   await d.getByTestId('order-line-0-sacks').fill('8')
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
@@ -103,8 +100,7 @@ test('PO3: Receive in full: the previous lot is preselected and topped up (recei
   const prev = await makeLot(product, 8, 10)
   const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 4 }])
   await page.goto(`/ingredients/orders/${order.id}`)
-  await page.getByTestId('order-receive').click()
-  const d = dialog(page, 'receive-dialog')
+  const d = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
   await expect(d.getByTestId('receive-date')).toHaveValue(denverToday())
   await expect(d.getByTestId('receive-line-0-sacks')).toHaveValue('4')
   await expect(d.getByText('Received in full')).toBeVisible()
@@ -137,8 +133,7 @@ test('PO4: Receive short and split: 8 of 10, 5 into the previous lot and 3 into 
   const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 10 }])
   const number = tempTag('PO4 new')
   await page.goto(`/ingredients/orders/${order.id}`)
-  await page.getByTestId('order-receive').click()
-  const d = dialog(page, 'receive-dialog')
+  const d = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
   await d.getByTestId('receive-line-0-sacks').fill('8')
   await d.getByTestId('receive-line-0-add-lot').click()
   await expect(d.getByTestId('receive-line-0-split')).toHaveText('8 + 0 = 8 of 8')
@@ -165,8 +160,7 @@ test('PO5: first delivery: the line starts on New lot # with the standard specs 
   const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 2 }])
   const number = tempTag('PO5')
   await page.goto(`/ingredients/orders/${order.id}`)
-  await page.getByTestId('order-receive').click()
-  const d = dialog(page, 'receive-dialog')
+  const d = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
   await expect(d.getByTestId('receive-line-0-row-0').getByRole('combobox')).toHaveText('New lot #')
   await expect(d.getByRole('button', { name: 'Receive' })).toBeDisabled()
   await d.getByTestId('receive-line-0-row-0-number').fill(number)
@@ -189,8 +183,7 @@ test('PO6: an expired lot number is refused on the line; a new number receives',
   expect((await (await apiAs('brewer1')).put(`/api/ingredient_lots/${expired.id}`, { data: { status: 'expired' } })).status()).toBe(200)
   const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 1 }])
   await page.goto(`/ingredients/orders/${order.id}`)
-  await page.getByTestId('order-receive').click()
-  const d = dialog(page, 'receive-dialog')
+  const d = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
   // An expired lot isn't offered; a number it has, in another case, is refused by the API.
   await expect(d.getByTestId('receive-line-0-row-0').getByRole('combobox')).toHaveText('New lot #')
   await d.getByTestId('receive-line-0-row-0-number').fill(expired.lot_number!.toLowerCase())
@@ -209,8 +202,7 @@ test('PO7: product page: minimum on hand, Below minimum (page and Grains list), 
   await page.goto(`/ingredients/products/${product.id}`)
   await expect(page.getByTestId('product-minimum-text')).toHaveText('Minimum: none')
   await expect(page.getByTestId('product-below-minimum')).toHaveCount(0)
-  await page.getByTestId('product-minimum-edit').click()
-  const d = dialog(page, 'product-dialog')
+  const d = await openDialog(page, page.getByTestId('product-minimum-edit'), 'product-dialog')
   await d.getByTestId('product-minimum').fill('1.5')
   await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
   await d.getByTestId('product-minimum').fill('3')
@@ -237,8 +229,7 @@ test('PO7: product page: minimum on hand, Below minimum (page and Grains list), 
 test('PO8: Companies: a supplier gets an order target; the column shows it', async ({ page }) => {
   const supplier = await makeSupplier('PO8', null)
   await page.goto('/ingredients/companies')
-  await page.getByTestId(`company-${supplier.id}`).first().click()
-  const d = dialog(page, 'party-dialog')
+  const d = await openDialog(page, page.getByTestId(`company-${supplier.id}`).first(), 'party-dialog')
   await d.getByTestId('party-order-target').fill('0')
   await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
   await d.getByTestId('party-order-target').fill('40')

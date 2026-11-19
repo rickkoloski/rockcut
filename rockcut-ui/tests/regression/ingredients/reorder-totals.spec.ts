@@ -10,6 +10,7 @@ import {
   makeOrder,
   makePurchasing,
   makeSupplierLot,
+  openDialog,
   receiveOrder,
   setQuantityDisplay,
 } from './helpers'
@@ -66,8 +67,7 @@ test.describe('brewer1', () => {
       await page.getByRole('option', { name: new RegExp(x.supplier.name.replace(/[[\]]/g, '.')) }).click()
       await page.getByTestId(`to-order-${x.product.id}-pick`).check()
     }
-    await page.getByTestId('to-order-start').click()
-    const d = page.getByTestId('order-dialog')
+    const d = await openDialog(page, page.getByTestId('to-order-start'), 'order-dialog')
     await expect(d).toContainText('New order · 1 of 2')
     const supplierBox = d.getByRole('combobox', { name: 'Supplier' })
     await expect(supplierBox).toHaveText(/T1 (a|b) supplier/)
