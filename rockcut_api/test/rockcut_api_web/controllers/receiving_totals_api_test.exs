@@ -488,6 +488,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       row = list.()
       assert row["product_id"] == c.product.id and row["offer"]["id"] == c.offer.id
       assert eq(row["on_hand_sacks"], 6) and row["on_order_sacks"] == 0 and row["to_order"] == 0
+      assert eq(row["on_hand_lb"], 330)
       refute row["below_minimum"]
 
       Repo.insert!(%Movement{
@@ -542,7 +543,8 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       assert row.()["offer"]["id"] == c.offer.id
 
       Repo.update!(Ecto.Changeset.change(c.offer, active: false))
-      assert %{"offer" => nil, "to_order" => nil, "below_minimum" => false} = row.()
+      assert %{"offer" => nil, "to_order" => nil, "below_minimum" => false} = none = row.()
+      assert eq(none["on_hand_lb"], 0) and none["on_order_sacks"] == 0
     end
 
     test "a product with no minimum isn't listed; the products list stays a fixed number of queries",

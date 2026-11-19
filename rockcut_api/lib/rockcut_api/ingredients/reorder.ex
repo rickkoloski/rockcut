@@ -58,6 +58,7 @@ defmodule RockcutApi.Ingredients.Reorder do
 
     blank = %{
       offer: nil,
+      on_hand_lb: nil,
       on_hand_sacks: nil,
       on_order_sacks: nil,
       to_order: nil,
@@ -73,17 +74,18 @@ defmodule RockcutApi.Ingredients.Reorder do
 
       Map.new(products, fn p ->
         offer = Map.get(offers, p.id)
+        lb = Map.get(usable, p.id, Decimal.new(0))
 
         cond do
-          is_nil(p.min_on_hand_sacks) or is_nil(offer) ->
+          is_nil(p.min_on_hand_sacks) ->
             {p.id, %{blank | offer: offer}}
 
+          # No offer, no sack size: on hand in lb only (To order says "No offer").
+          is_nil(offer) ->
+            {p.id, %{blank | on_hand_lb: lb, on_order_sacks: Map.get(on_order, p.id, 0)}}
+
           true ->
-            on_hand =
-              Decimal.round(
-                Decimal.div(Map.get(usable, p.id, Decimal.new(0)), offer.sack_size_lb),
-                2
-              )
+            on_hand = Decimal.round(Decimal.div(lb, offer.sack_size_lb), 2)
 
             ordered = Map.get(on_order, p.id, 0)
 
@@ -97,6 +99,7 @@ defmodule RockcutApi.Ingredients.Reorder do
             {p.id,
              %{
                offer: offer,
+               on_hand_lb: lb,
                on_hand_sacks: on_hand,
                on_order_sacks: ordered,
                to_order: max(need, 0),

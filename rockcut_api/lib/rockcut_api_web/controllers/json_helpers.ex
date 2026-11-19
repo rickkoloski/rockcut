@@ -1257,6 +1257,7 @@ defmodule RockcutApiWeb.JSONHelpers do
             :label,
             RockcutApi.Ingredients.Orders.offer_label(Map.put(r.offer, :product, r.product))
           ),
+      on_hand_lb: r.on_hand_lb,
       on_hand_sacks: r.on_hand_sacks,
       on_order_sacks: r.on_order_sacks,
       to_order: r.to_order,

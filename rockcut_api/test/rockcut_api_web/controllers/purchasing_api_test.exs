@@ -94,11 +94,14 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       body = contract_body(c, c.next, [line(c.product, 200, "42.00")])
 
       for who <- ~w(brewer1 floater) do
-        assert {200, _} = req(c.p[who], :get, "/api/contracts")
+        assert {200, %{"can_write" => false}} = req(c.p[who], :get, "/api/contracts")
         assert {200, _} = req(c.p[who], :get, "/api/contracts/shortfall")
         assert {403, _} = req(c.p[who], :post, "/api/contracts", body)
       end
 
+      assert {200, %{"can_write" => true, "year" => year}} = req(c.mgr, :get, "/api/contracts")
+      assert year == c.this
+      assert {200, %{"can_write" => true}} = req(c.p["owner"], :get, "/api/contracts")
       assert {201, %{"data" => %{"id" => id}}} = req(c.mgr, :post, "/api/contracts", body)
       assert {403, _} = req(c.brewer, :put, "/api/contracts/#{id}", %{notes: "x"})
       assert {403, _} = req(c.brewer, :delete, "/api/contracts/#{id}")
