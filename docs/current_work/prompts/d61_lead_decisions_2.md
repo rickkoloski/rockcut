@@ -55,3 +55,10 @@ changes, Playwright for UI changes, `[TEST-TEMP]` data only.
 the ingredients Playwright folder green twice. Commit (API and UI separately is fine), don't push,
 reply with commits, counts and `LEAD:` notes. Don't run the full suite (the lead does, then DEV QA
 rechecks).
+
+## Matt's answer (2026-11-19)
+
+5. **Gap 4 → 4a: keep the build.** A past-year contract writes no price row (spec amended). Add one
+   line to the contract dialog when the year is before the current year: "Past-year contracts don't
+   change the current price." Make sure an ExUnit test pins "past year → no price row" (add one if
+   there isn't), and a Playwright check for the dialog line.

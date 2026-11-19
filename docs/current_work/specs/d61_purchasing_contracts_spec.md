@@ -92,7 +92,8 @@ Working names for planning.
 - `supplier_contract_lines`: contract, **maltster product**, **sacks**, **price per sack ($)**.
   One line per product per contract.
 - Saving a line (or changing its price) adds a row to the price history of **that supplier's offer
-  for that product**, effective **Jan 1 of the contract year, or today if later** (A2), note
+  for that product**, effective **Jan 1 of the contract year, or today if later** (A2; a **past-year** contract
+  writes no price row, see Amendments), note
   "Contract <year>". The line needs that offer to exist (422 "Add a <supplier> offer for <product>
   first"). After Dec 31 nothing changes the price (decision 40).
 - Per line, computed: **contracted** sacks and $ (sacks × price); **on order** = sacks on open,
@@ -232,7 +233,8 @@ Under **Brewery → Ingredients** (Brewery members and owners), new tabs/pages:
 
 - **A1** One contract per supplier per year.
 - **A2** A contract price is effective Jan 1 of its year, or the day it's entered if that's later
-  (never backdated into price history).
+  (never backdated into price history). A contract for a past year writes no price row
+  (Amendments, 2026-11-19).
 - **A3** "Previous lot" = the product's most recently received non-expired lot with the offer's
   sack size; if the sack size differs, a new lot # is needed.
 - **A4** ~~weighted average~~ → **decided (Matt, 2026-11-18):** a topped-up lot is valued at its most
@@ -293,3 +295,13 @@ Under **Brewery → Ingredients** (Brewery members and owners), new tabs/pages:
 - **Received date (gap 12):** can't be before the order date.
 - **Contract delete (gap 18):** disabled with the reason once anything was received against it.
 
+## Amendments (Matt, 2026-11-19, DEV QA)
+
+- **Past-year contracts (DEV gap 4, 4a):** a contract for a year before the current year tracks
+  contracted, on order, received and remaining as usual but **writes no price row** into the offer's
+  price history, so last year's price never becomes today's price (decision 40). The contract dialog
+  says so for a past year: "Past-year contracts don't change the current price."
+- **Stale saves (DEV gaps 1, 2):** saving an order or contract that someone else changed since the
+  dialog opened is refused (409, nothing written) with "Someone else changed this order/contract
+  since you opened it. Close and reopen it to see their change."
+- **Contracts Year picker (DEV gap 3):** lists every year with a contract plus this year ±2.
