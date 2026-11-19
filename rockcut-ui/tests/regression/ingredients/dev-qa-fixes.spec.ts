@@ -6,8 +6,9 @@ import { apiAs, cleanupIngredients, getOrder, makeOrder, makeProduct, makePurcha
 // someone else's save is refused with the message and keeps its input, and
 // reopening shows their change (gaps 1, 2); a double tap on Cancel order's
 // confirm sends one cancel and shows no error (gap 5); the Year picker lists
-// every year with a contract and the Year box checks itself (gap 3); Save
-// waits for a dialog's lists (item 4). Every row is `[TEST-TEMP]`.
+// every year with a contract and the Year box checks itself (gap 3), and a
+// past year says it changes no offer prices (item 5); Save waits for a
+// dialog's lists (item 4). Every row is `[TEST-TEMP]`.
 
 test.afterAll(cleanupIngredients)
 
@@ -154,7 +155,7 @@ test.describe('brewer1', () => {
 test.describe('breweryMgr', () => {
   test.use({ storageState: authFile('breweryMgr') })
 
-  test('D5: the Year picker lists every year with a contract; the Year box checks itself; a double tap on Delete sends one', async ({ page }) => {
+  test('D5: the Year picker lists every year with a contract; the Year box checks itself; the past-year line; a double tap on Delete sends one', async ({ page }) => {
     const { product, supplier } = await makePurchasing('D5')
     const far = year + 7
     const made = await (await apiAs('breweryMgr')).post('/api/contracts', {
@@ -180,6 +181,12 @@ test.describe('breweryMgr', () => {
     await box.fill(String(far + 1))
     await expect(d).not.toContainText('A whole year, 2000–2100')
     await expect(d).toContainText('Runs Jan–Dec')
+    // Item 5 (Matt 4a): a past year says it changes no offer prices; this year doesn't.
+    await expect(d.getByTestId('contract-past-year')).toHaveCount(0)
+    await box.fill(String(year - 1))
+    await expect(d.getByTestId('contract-past-year')).toHaveText(`${year - 1} is over: saving changes no offer prices.`)
+    await box.fill(String(year))
+    await expect(d.getByTestId('contract-past-year')).toHaveCount(0)
     await d.getByRole('button', { name: 'Cancel' }).click()
 
     const deletes: string[] = []

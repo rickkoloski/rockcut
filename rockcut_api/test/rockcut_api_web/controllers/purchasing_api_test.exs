@@ -211,7 +211,15 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       assert List.last(prices(c.offer)).effective_on == today()
 
       before = length(prices(c.pils_offer))
-      contract!(c, c.this - 1, [line(c.pils, 10, "30.00")])
+      past = contract!(c, c.this - 1, [line(c.pils, 10, "30.00")])
+      assert length(prices(c.pils_offer)) == before
+
+      # Lead decisions 2, item 5 (Matt 4a): nor does a changed price on it.
+      assert {200, _} =
+               req(c.mgr, :put, "/api/contracts/#{past["id"]}", %{
+                 "lines" => [line(c.pils, 10, "31.00")]
+               })
+
       assert length(prices(c.pils_offer)) == before
     end
 
