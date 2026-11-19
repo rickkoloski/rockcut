@@ -62,3 +62,15 @@ rechecks).
    dialog's existing "<year> is over: saving changes no offer prices." (the spec now quotes it; don't
    reword it). Make sure an ExUnit test pins "past year → no price row" (add one if
    there isn't), and a Playwright check for the dialog line.
+
+## Local gate after the fix cycle
+
+mix 2,686 ×2, vitest 443, build clean, lint 8; Playwright 870 passed, **1 failed: D51 G5
+(`brewery/brand-ranges.spec.ts:20`)**: Target ABV 1000 now reaches the API (a PUT goes out) because
+FormDialog's `noValidate` turned off the browser's range check that D51 relies on first.
+
+6. **Drop `noValidate` from FormDialog** (lead's call; it was my addition in item 4 and it's not
+   needed: the six dialogs keep Save disabled until their lists load, which is the actual fix).
+   Keep everything else from item 4. Check nothing else from the fix cycle depended on it (the D4
+   test in `dev-qa-fixes.spec.ts`, any new test). Then: D51 G5 green, the ingredients folder once,
+   vitest/tsc/build clean. Commit, don't push, reply.
