@@ -168,7 +168,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     end
 
     test "a party in use can't be deleted, only deactivated; an unused one can", c do
-      assert %{"base" => ["This company is in use; deactivate it instead"]} =
+      assert %{"base" => ["This company has maltster products; deactivate it instead"]} =
                errors(req(c.p["owner"], :delete, "/api/parties/#{c.rahr.id}"))
 
       assert {200, %{"data" => %{"active" => false}}} =
@@ -641,31 +641,46 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                req(c.brewer, :patch, path, %{sack_size_lb: "55.0", lot_number: "L-9"})
     end
 
-    test "feature values are kept to the type's decimals (gap 4)", c do
+    test "feature values with more places than the type keeps are refused, not rounded (D61 lead decisions 1, gap 13)",
+         c do
+      assert {422, %{"errors" => %{"features" => errors}}} =
+               req(c.brewer, :patch, "/api/ingredient_products/#{c.product.id}", %{
+                 features: %{color_lovibond: "2.789", extract_fgdb: "80.16", protein_pct: "11.46"}
+               })
+
+      assert errors == %{
+               "color_lovibond" => ["Color: Use at most 2 decimals"],
+               "extract_fgdb" => ["Extract: Use at most 1 decimal"]
+             }
+
       {200, %{"data" => p}} =
         req(c.brewer, :patch, "/api/ingredient_products/#{c.product.id}", %{
-          features: %{color_lovibond: "2.789", extract_fgdb: "80.16", protein_pct: "11.456"}
+          features: %{color_lovibond: "2.79", extract_fgdb: "80.20", protein_pct: "11.46"}
         })
 
-      assert p["features"]["color_lovibond"]["value"] == "2.79"
       assert p["features"]["extract_fgdb"]["value"] == "80.2"
-      assert p["features"]["protein_pct"]["value"] == "11.46"
+
+      assert {422, %{"errors" => %{"features" => %{"moisture_pct" => [_]}}}} =
+               req(
+                 c.brewer,
+                 :post,
+                 "/api/ingredient_lots",
+                 lot_body(c, %{"features" => %{"moisture_pct" => "4.004"}})
+               )
 
       {201, %{"data" => lot}} =
         req(
           c.brewer,
           :post,
           "/api/ingredient_lots",
-          lot_body(c, %{"features" => %{"moisture_pct" => "4.004", "color_lovibond" => "100"}})
+          lot_body(c, %{"features" => %{"moisture_pct" => "4", "color_lovibond" => "100"}})
         )
 
-      assert lot["features"]["moisture_pct"]["value"] == "4"
       assert lot["features"]["color_lovibond"]["value"] == "100"
       # Copied from the standard as stored.
       assert lot["features"]["extract_fgdb"]["value"] == "80.2"
 
-      # Rounding happens before the range check: 100.04 is 100.0.
-      assert {200, _} =
+      assert {422, %{"errors" => %{"features" => %{"moisture_pct" => [_]}}}} =
                req(c.brewer, :patch, "/api/ingredient_lots/#{lot["id"]}", %{
                  features: %{moisture_pct: "100.004"}
                })

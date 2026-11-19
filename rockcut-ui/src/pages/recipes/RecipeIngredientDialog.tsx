@@ -7,6 +7,7 @@ import parseApiError from '../../lib/parseApiError';
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay';
 import { formatQuantity } from '../../lib/brewingUnits';
 import { categoryOptions } from '../../lib/ingredientFeatures';
+import { recipeLotChoices } from '../../lib/inventory';
 import type { RecipeIngredient, IngredientLot, IngredientCategory, Ingredient } from '../../lib/types';
 
 interface RecipeIngredientDialogProps {
@@ -83,10 +84,8 @@ export default function RecipeIngredientDialog({
     }
   }, [open, ingredient, lots, categories]);
 
-  // D60 gap 8: depleted lots are left out, except the one this line already uses.
-  const filteredLots = (ingredientId ? lots.filter((l) => l.ingredient?.id === ingredientId) : lots).filter(
-    (l) => l.status !== 'depleted' || l.id === ingredient?.lot_id,
-  );
+  // D60 gap 8, D61 carry-over 5: depleted and expired lots are left out, except the one this line already uses.
+  const filteredLots = recipeLotChoices(ingredientId ? lots.filter((l) => l.ingredient?.id === ingredientId) : lots, ingredient?.lot_id);
 
   const handleSubmit = async () => {
     try {

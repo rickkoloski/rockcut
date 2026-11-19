@@ -1,4 +1,4 @@
-import { expect, type APIResponse, type Locator, type Page } from '@playwright/test'
+import { expect, type APIResponse, type Locator, type Page, type Request } from '@playwright/test'
 import type { PersonaKey } from '../../config/test-env'
 import { addDays, apiAs, denverToday, tempTag } from '../scheduler/helpers'
 
@@ -175,6 +175,139 @@ export async function cleanupIngredients() {
     await api.delete(`/api/parties/${id}`)
   }
   made.parties.clear()
+}
+
+// ── D61 purchasing ──
+//
+// Orders can't be deleted (only cancelled), so a [TEST-TEMP] supplier with
+// orders, and the offers and products on them, stay until the next
+// `mix rockcut.synthetic.setup`, which removes them with their orders and
+// contracts. Specs only order from their own [TEST-TEMP] supplier.
+
+export interface ApiOrder {
+  id: number
+  status: 'open' | 'received' | 'cancelled'
+  received_on: string | null
+  lines: { id: number; offer_id: number; sacks_ordered: number; sacks_received: number | null; price_per_sack: string }[]
+  total_sacks: number
+  total_dollars: string
+}
+
+/** A `[TEST-TEMP]` supplier, with an order target when given. */
+export async function makeSupplier(label: string, target: number | null = 40): Promise<{ id: number; name: string }> {
+  const party = await ok<{ id: number; name: string }>(
+    await (await apiAs('owner')).post('/api/parties', { data: { name: tempTag(label), roles: ['supplier'], order_target_sacks: target } }),
+    201,
+  )
+  made.parties.add(party.id)
+  return party
+}
+
+/** An offer of `product` by `supplierId` in 55 lb sacks at `price` a sack from long ago. */
+export async function makeOffer(product: ApiProduct, supplierId: number, price = '42.00', orderName: string | null = null, size = '55'): Promise<{ id: number }> {
+  const api = await apiAs('brewer1')
+  const offer = await ok<{ id: number }>(
+    await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: supplierId, sack_size_lb: size, form: 'whole', order_name: orderName } }),
+    201,
+  )
+  await ok(await api.post(`/api/supplier_offers/${offer.id}/prices`, { data: { price_per_sack: price, effective_on: '2020-01-01' } }), 201)
+  return offer
+}
+
+/** A temp product with a temp supplier (target 40) and its $42.00 offer: what an order needs. */
+export async function makePurchasing(label: string) {
+  const product = await makeProduct(label)
+  const supplier = await makeSupplier(`${label} supplier`)
+  const offer = await makeOffer(product, supplier.id)
+  return { product, supplier, offer }
+}
+
+/** An open order (placed by `brewer1`) of `sacks` of each offer. */
+export async function makeOrder(supplierId: number, lines: { offerId: number; sacks: number }[], extra: Record<string, unknown> = {}): Promise<ApiOrder> {
+  return ok<ApiOrder>(
+    await (await apiAs('brewer1')).post('/api/purchase_orders', {
+      data: { supplier_party_id: supplierId, ordered_on: denverToday(), lines: lines.map((l) => ({ offer_id: l.offerId, sacks_ordered: l.sacks })), ...extra },
+    }),
+    201,
+  )
+}
+
+/** Receive an order in full (into the previous lot, else a new `[TEST-TEMP]` lot) on `on`. */
+export async function receiveOrder(order: ApiOrder, on = denverToday(), lotNumber: string | null = null): Promise<ApiOrder> {
+  const lines = order.lines.map((l) => ({ id: l.id, sacks_received: l.sacks_ordered, ...(lotNumber ? { allocations: [{ lot_number: lotNumber, sacks: l.sacks_ordered }] } : {}) }))
+  return ok<ApiOrder>(await (await apiAs('brewer1')).post(`/api/purchase_orders/${order.id}/receive`, { data: { received_on: on, lines } }))
+}
+
+/** A lot of `product` from `supplierId` (55 lb sacks) with an opening amount, received `daysAgo`. */
+export async function makeSupplierLot(product: ApiProduct, supplierId: number, sacks: number, daysAgo: number): Promise<ApiLot> {
+  return ok<ApiLot>(
+    await (await apiAs('brewer1')).post('/api/ingredient_lots', {
+      data: {
+        product_id: product.id,
+        supplier_party_id: supplierId,
+        sack_size_lb: '55',
+        lot_number: tempTag('lot'),
+        received_date: addDays(denverToday(), -daysAgo),
+        initial_kind: 'opening',
+        initial_quantity_lb: String(sacks * SACK),
+      },
+    }),
+    201,
+  )
+}
+
+export async function getOrder(id: number): Promise<ApiOrder> {
+  return ok<ApiOrder>(await (await apiAs('brewer1')).get(`/api/purchase_orders/${id}`))
+}
+
+/**
+ * A phone dialog closed and its back-button history entry released: closing
+ * takes the entry off with `history.back()` a tick later (`useBackCloses`),
+ * which aborts a `page.goto` sent in between (lead decisions 1, item 19).
+ */
+export async function expectPhoneDialogClosed(page: Page, dialog: Locator) {
+  await expect(dialog).toHaveCount(0)
+  await page.waitForFunction(() => window.history.state?.rockcutBackCloses == null)
+}
+
+/**
+ * Click `trigger` and return the dialog `testId` once it has settled: its
+ * enter transition finished and the API reads it started answered (lead
+ * decisions 1, item 22). Until a dialog's lists are in, its required selects
+ * are empty, and the browser's form check drops a Save clicked then without
+ * a word (PO7 on the release build at DEV's latency).
+ */
+export async function openDialog(page: Page, trigger: Locator, testId: string): Promise<Locator> {
+  const reads = new Set<Request>()
+  const started = (r: Request) => {
+    if (r.method() === 'GET' && new URL(r.url()).pathname.startsWith('/api/')) reads.add(r)
+  }
+  const ended = (r: Request) => reads.delete(r)
+  page.on('request', started)
+  page.on('requestfinished', ended)
+  page.on('requestfailed', ended)
+  const d = page.getByTestId(testId)
+  try {
+    await trigger.click()
+    await expect(d).toBeVisible()
+    await expect.poll(() => reads.size, { message: `${testId}: its API reads answered` }).toBe(0)
+    // The enter transition (spinners never finish, so they're left out).
+    await d.evaluate((el) =>
+      Promise.allSettled(
+        el
+          .getAnimations({ subtree: true })
+          .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+          .map((a) => a.finished),
+      ),
+    )
+  } finally {
+    page.off('request', started)
+    page.off('requestfinished', ended)
+    page.off('requestfailed', ended)
+  }
+  // The render with the answers, painted.
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(() => done(null)))))
+  return d
 }
 
 /** No sideways scroll on the page. */

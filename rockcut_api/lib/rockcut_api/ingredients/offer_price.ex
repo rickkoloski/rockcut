@@ -24,6 +24,7 @@ defmodule RockcutApi.Ingredients.OfferPrice do
     |> cast(attrs, [:offer_id, :price_per_sack, :effective_on, :note, :entered_by_id])
     |> validate_required([:offer_id, :price_per_sack, :effective_on])
     |> validate_range(:price_per_sack, 0, 100_000)
+    |> validate_places(:price_per_sack, 2)
     |> foreign_key_constraint(:offer_id)
     |> RockcutApi.Changeset.validate_parents([:offer_id, :entered_by_id])
   end

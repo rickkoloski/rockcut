@@ -28,6 +28,7 @@ import FieldDefinitionDialog from './FieldDefinitionDialog';
 import parseApiError from '../../lib/parseApiError';
 import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
+import { isGrainCategory } from '../../lib/ingredientFeatures';
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -43,6 +44,7 @@ export default function CategoryDetail() {
   // D60 §3.1: a top-level category's children (Grains → Base, …), and a child's parent.
   const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories');
   const children = categories.filter((c) => c.parent_id === Number(id)).sort((a, b) => a.sort_order - b.sort_order);
+  const grains = isGrainCategory(categories, Number(id));
   const [childOpen, setChildOpen] = useState(false);
 
   const deleteCategoryMutation = useApiDelete(
@@ -147,7 +149,19 @@ export default function CategoryDetail() {
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Category"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
-            <Tooltip title="Delete Category"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+            {/* D61 carry-over 2: disabled with the API's reason while it has grains, ingredients or sub-categories. */}
+            <Tooltip title="Delete Category">
+              <span>
+                <IconButton onClick={() => setDeleteOpen(true)} color="error" disabled={!!category.delete_blocked} data-testid="category-delete">
+                  <DeleteIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+            {category.delete_blocked && (
+              <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="category-delete-reason">
+                {category.delete_blocked}
+              </Typography>
+            )}
           </Box>
         }
       />
@@ -202,16 +216,23 @@ export default function CategoryDetail() {
         </>
       )}
 
-      {/* Field Definitions */}
+      {/* Field Definitions. D61 carry-over 5: none on Grains and its children (grains have features; the API refuses). */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Typography variant="h5">Field Definitions</Typography>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={() => { setSelectedField(undefined); setFieldDialogOpen(true); }}
-        >
-          Add Field
-        </Button>
+        {grains ? (
+          <Typography variant="body2" color="text.secondary" data-testid="category-grain-fields-note">
+            Grains use specs (features), not custom fields
+          </Typography>
+        ) : (
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() => { setSelectedField(undefined); setFieldDialogOpen(true); }}
+            data-testid="category-add-field"
+          >
+            Add Field
+          </Button>
+        )}
       </Box>
       <Paper sx={{ border: '1px solid', borderColor: 'divider', mb: 3 }}>
         <DataGridExtended
@@ -232,7 +253,7 @@ export default function CategoryDetail() {
       <CategoryFormDialog open={childOpen} onClose={() => setChildOpen(false)} parentId={category.id} />
 
       <ConfirmDialog
-        open={deleteOpen}
+        open={deleteOpen && !category.delete_blocked}
         onClose={() => {
           setDeleteOpen(false);
           setDeleteError(null);

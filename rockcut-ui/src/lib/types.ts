@@ -100,6 +100,8 @@ export interface IngredientCategory {
   parent_id: number | null
   sort_order: number
   field_definitions: CategoryFieldDefinition[] | null
+  /** D61 carry-over 2: why Delete is refused (sub-categories, grains or ingredients), or null. */
+  delete_blocked?: string | null
   inserted_at: string
   updated_at: string
 }
@@ -158,6 +160,11 @@ export interface IngredientLot {
   on_hand_lb: string | null
   /** Why the lot can't be deleted (later movements, or a recipe uses it), or null (lead decisions 3, gap 15). */
   delete_blocked?: string | null
+  /** D61 §3.4: $/lb (its latest costed receipt, else the offer price: `estimated`), value of the on-hand; `unvalued` with no price. */
+  cost_per_lb?: string | null
+  value?: string | null
+  estimated?: boolean
+  unvalued?: boolean
   notes: string | null
   inserted_at: string
   updated_at: string
@@ -175,6 +182,10 @@ export interface PartySummary {
 export interface Party extends PartySummary {
   notes: string | null
   active: boolean
+  /** D61 decision 48: a supplier's order size in sacks (BSG: 40). */
+  order_target_sacks?: number | null
+  /** D61 carry-over 2: why Delete is refused (what uses the company), or null. */
+  delete_blocked?: string | null
   roles: PartyRole[] | null
   inserted_at: string
   updated_at: string
@@ -244,6 +255,11 @@ export interface IngredientProduct {
   on_hand_lb: string
   /** The part of `on_hand_lb` in expired lots. */
   expired_lb: string
+  /** D61 §3.5: the reorder point in whole sacks (null: none), and on hand (not expired) under it. */
+  min_on_hand_sacks?: number | null
+  /** The offer picked on To order (lead decisions 1, gap 4); null: the default. */
+  reorder_offer_id?: number | null
+  below_minimum?: boolean
   inserted_at: string
   updated_at: string
 }
@@ -261,9 +277,179 @@ export interface InventoryMovement {
   occurred_on: string
   partner_party_id: number | null
   partner: PartySummary | null
+  /** A receipt from an order with no note of its own names the order ("PO-7", "Order #12"). */
   note: string | null
+  purchase_order_id?: number | null
   entered_by: { id: number; name: string } | null
   inserted_at: string
+}
+
+// ── D61 purchasing ──
+
+export type OrderStatus = 'open' | 'received' | 'cancelled'
+
+export interface PurchaseOrderLine {
+  id: number
+  offer_id: number
+  offer: {
+    id: number
+    order_name: string | null
+    /** The order name, else the product. */
+    label: string
+    sack_size_lb: string
+    product_id: number
+    product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+  }
+  sacks_ordered: number
+  sacks_received: number | null
+  price_per_sack: string
+  /** lb and $ at the sacks the line counts: received once the order is received, else ordered (decision 35). */
+  line_lb: string
+  line_dollars: string
+}
+
+export interface PurchaseOrder {
+  id: number
+  supplier_party_id: number
+  supplier: PartySummary | null
+  ordered_on: string
+  expected_on: string | null
+  reference: string | null
+  off_contract: boolean
+  notes: string | null
+  status: OrderStatus
+  received_on: string | null
+  created_by: { id: number; name: string } | null
+  received_by: { id: number; name: string } | null
+  cancelled_by: { id: number; name: string } | null
+  received_at: string | null
+  cancelled_at: string | null
+  /** Lead decisions 2 (gap 1): sent back on Edit; a save from an older one is 409. */
+  lock_version: number
+  lines: PurchaseOrderLine[]
+  total_sacks: number
+  total_lb: string
+  total_dollars: string
+  /** The supplier's order target (decision 48) and the next multiple of it at or above the sacks. */
+  target: { sacks: number; next_multiple: number } | null
+  inserted_at: string
+  updated_at: string
+}
+
+export interface ContractLine {
+  id: number
+  product_id: number
+  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+  /** The supplier offer its price goes on (lead, Stop 2 note 3). */
+  offer_id: number | null
+  sacks: number
+  price_per_sack: string
+  contracted_sacks: number
+  contracted_dollars: string
+  /** The line offer's sack size: on order and received are converted to it by weight (amendment 17a; may be 10.5). */
+  sack_size_lb: string
+  on_order_sacks: number
+  received_sacks: number
+  received_dollars: string
+  /** Contracted − received; negative when over. */
+  remaining_sacks: number
+  over_by: number | null
+}
+
+export interface Contract {
+  id: number
+  supplier_party_id: number
+  supplier: PartySummary | null
+  year: number
+  notes: string | null
+  created_by: { id: number; name: string } | null
+  lines: ContractLine[]
+  /** What's still owed over the lines (= the Shortfall), and what's over, never netted (gap 3). */
+  remaining_sacks: number
+  over_sacks: number
+  /** Why it can't be deleted (gap 18); null when it can. */
+  delete_blocked: string | null
+  /** Lead decisions 2 (gap 2): sent back on Edit; a save from an older one is 409. */
+  lock_version: number
+  inserted_at: string
+  updated_at: string
+}
+
+export interface ShortfallRow {
+  product_id: number
+  display_name: string
+  contracted_sacks: number
+  received_sacks: number
+  short_sacks: number
+}
+
+export interface ReorderRow {
+  product_id: number
+  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+  min_on_hand_sacks: number
+  /** The reorder offer (the latest order's while active, else the first active); null: no offer. */
+  offer: (SupplierOffer & { label: string }) | null
+  /** Usable (not expired) on hand in lb. */
+  on_hand_lb: string | null
+  on_hand_sacks: string | null
+  /** lb on open order lines (any offer); `on_order_sacks` is it in the reorder offer's sacks (item 20). */
+  on_order_lb: string | null
+  on_order_sacks: number | null
+  to_order: number | null
+  below_minimum: boolean
+}
+
+export interface InventoryTotalsRow {
+  product_id: number
+  display_name: string
+  grain: string
+  maltster: string
+  category: string
+  lb: string
+  expired_lb: string
+  /** lb ÷ the sack size when all its stocked lots share one, else null. */
+  sacks: string | null
+  /** null when no lot has a value (gap 5). */
+  value: string | null
+  per_lb: string | null
+  estimated: boolean
+  unvalued_lb: string
+}
+
+export interface InventoryTotals {
+  as_of: string
+  rows: InventoryTotalsRow[]
+  total: { lb: string; expired_lb: string; value: string }
+}
+
+export interface OrderTotalsRow {
+  order_id: number
+  line_id: number
+  ordered_on: string
+  supplier_id: number
+  supplier: string
+  reference: string | null
+  product: string
+  status: OrderStatus
+  sacks_ordered: number
+  sacks_received: number | null
+  lb: string
+  dollars: string
+  sacks: number
+}
+
+export interface OrderTotalsSum {
+  sacks: number
+  sacks_ordered: number
+  sacks_received: number
+  lb: string
+  dollars: string
+}
+
+export interface OrderTotals {
+  rows: OrderTotalsRow[]
+  by_supplier: (OrderTotalsSum & { supplier_id: number; supplier: string })[]
+  total: OrderTotalsSum
 }
 
 export interface Batch {

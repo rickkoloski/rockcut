@@ -5,13 +5,23 @@ defmodule RockcutApi.Ingredients.Products do
   to its grain's category. The list loads everything the grains list shows
   in a fixed number of queries, however many products: products with grain,
   category and maltster (1), standard features (2), offers with suppliers
-  (3), their current prices (4) and on-hand with its expired part (5).
+  (3), their current prices (4) and on-hand with its expired part (5); with
+  any minimum on hand set, five more for `below_minimum` (D61 §3.5).
   """
   import Ecto.Query
 
   alias RockcutApi.Repo
   alias RockcutApi.Brewing.{IngredientCategory, IngredientLot}
-  alias RockcutApi.Ingredients.{Features, Inventory, Offers, Parties, Product, SupplierOffer}
+
+  alias RockcutApi.Ingredients.{
+    Features,
+    Inventory,
+    Offers,
+    Parties,
+    Product,
+    Reorder,
+    SupplierOffer
+  }
 
   @in_use "This product has offers or lots; deactivate it instead"
 
@@ -153,6 +163,7 @@ defmodule RockcutApi.Ingredients.Products do
       |> Enum.group_by(& &1.product_id)
 
     stock = Inventory.stock_by_product(ids)
+    reorder = Reorder.status(products)
 
     Enum.map(products, fn p ->
       %{
@@ -160,7 +171,8 @@ defmodule RockcutApi.Ingredients.Products do
         | feature_values: Map.get(features, p.id, []),
           offers: Map.get(offers, p.id, []),
           on_hand_lb: elem(Map.fetch!(stock, p.id), 0),
-          expired_lb: elem(Map.fetch!(stock, p.id), 1)
+          expired_lb: elem(Map.fetch!(stock, p.id), 1),
+          below_minimum: Map.fetch!(reorder, p.id).below_minimum
       }
     end)
   end

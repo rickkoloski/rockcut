@@ -10,20 +10,31 @@ defmodule RockcutApi.Ingredients.Parties do
 
   alias RockcutApi.Repo
   alias RockcutApi.Brewing.IngredientLot
-  alias RockcutApi.Ingredients.{Movement, Party, PartyRole, Product, SupplierOffer}
 
-  @in_use "This company is in use; deactivate it instead"
+  alias RockcutApi.Ingredients.{
+    Contract,
+    Movement,
+    Party,
+    PartyRole,
+    Product,
+    PurchaseOrder,
+    SupplierOffer
+  }
 
-  @doc "Parties by name, roles preloaded; `role` narrows to those holding it."
+  @doc """
+  Parties by name, roles preloaded and `delete_blocked` filled; `role`
+  narrows to those holding it.
+  """
   def list(params \\ %{}) do
     Party
     |> filter_role(params["role"])
     |> order_by([p], p.name)
     |> preload(:roles)
     |> Repo.all()
+    |> put_delete_blocked()
   end
 
-  def get!(id), do: Party |> Repo.get!(id) |> Repo.preload(:roles)
+  def get!(id), do: Party |> Repo.get!(id) |> Repo.preload(:roles) |> put_delete_blocked()
 
   @doc "True if the party (an id) holds `role`."
   def has_role?(nil, _role), do: false
@@ -71,12 +82,77 @@ defmodule RockcutApi.Ingredients.Parties do
     end
   end
 
-  @doc "Deletes a party no product, offer, lot or movement refers to."
+  @doc """
+  Deletes a party nothing refers to; otherwise a 422 with the same sentence
+  as its `delete_blocked` (D61 lead, Stop 1 note 1).
+  """
   def delete(%Party{} = party) do
-    if in_use?(party.id),
-      do: {:error, {:invalid, %{base: [@in_use]}}},
-      else: Repo.delete(party)
+    case Map.fetch!(delete_blocked([party.id]), party.id) do
+      nil -> Repo.delete(party)
+      reason -> {:error, {:invalid, %{base: [reason]}}}
+    end
   end
+
+  @doc """
+  Fill each party's virtual `delete_blocked` (D61 carry-over 2): why
+  `delete/1` would refuse it, or nil.
+  """
+  def put_delete_blocked(parties) when is_list(parties) do
+    blocked = delete_blocked(Enum.map(parties, & &1.id))
+    Enum.map(parties, &%{&1 | delete_blocked: Map.fetch!(blocked, &1.id)})
+  end
+
+  def put_delete_blocked(%Party{} = party), do: hd(put_delete_blocked([party]))
+
+  @doc """
+  Why each of `party_ids` can't be deleted, or nil when it can: what refers
+  to it (products it makes; offers, lots, contracts or orders it supplies;
+  movements it's the partner on), one query each. `delete/1` refuses with
+  the same sentence.
+  """
+  def delete_blocked(party_ids) do
+    uses = [
+      {"maltster products",
+       from(p in Product, where: p.maltster_party_id in ^party_ids, select: p.maltster_party_id)},
+      {"supplier offers",
+       from(o in SupplierOffer,
+         where: o.supplier_party_id in ^party_ids,
+         select: o.supplier_party_id
+       )},
+      {"lots",
+       from(l in IngredientLot,
+         where: l.supplier_party_id in ^party_ids,
+         select: l.supplier_party_id
+       )},
+      {"contracts",
+       from(c in Contract,
+         where: c.supplier_party_id in ^party_ids,
+         select: c.supplier_party_id
+       )},
+      {"orders",
+       from(o in PurchaseOrder,
+         where: o.supplier_party_id in ^party_ids,
+         select: o.supplier_party_id
+       )},
+      {"trades or loans",
+       from(m in Movement, where: m.partner_party_id in ^party_ids, select: m.partner_party_id)}
+    ]
+
+    found =
+      Enum.map(uses, fn {what, query} ->
+        {what, query |> distinct(true) |> Repo.all() |> MapSet.new()}
+      end)
+
+    Map.new(party_ids, fn id ->
+      case for({what, ids} <- found, MapSet.member?(ids, id), do: what) do
+        [] -> {id, nil}
+        whats -> {id, "This company has #{join(whats)}; deactivate it instead"}
+      end
+    end)
+  end
+
+  defp join([one]), do: one
+  defp join(list), do: Enum.join(Enum.drop(list, -1), ", ") <> " and " <> List.last(list)
 
   defp filter_role(query, role) when role in [nil, ""], do: query
 
@@ -121,13 +197,13 @@ defmodule RockcutApi.Ingredients.Parties do
 
   defp role_in_use?(id, "supplier") do
     Repo.exists?(from(o in SupplierOffer, where: o.supplier_party_id == ^id)) or
-      Repo.exists?(from(l in IngredientLot, where: l.supplier_party_id == ^id))
+      Repo.exists?(from(l in IngredientLot, where: l.supplier_party_id == ^id)) or
+      Repo.exists?(from(c in Contract, where: c.supplier_party_id == ^id)) or
+      Repo.exists?(from(o in PurchaseOrder, where: o.supplier_party_id == ^id))
   end
 
   defp role_in_use?(id, "partner_brewery"),
     do: Repo.exists?(from(m in Movement, where: m.partner_party_id == ^id))
-
-  defp in_use?(id), do: Enum.any?(PartyRole.roles(), &role_in_use?(id, &1))
 
   defp rollback_on_error({:ok, record}), do: record
   defp rollback_on_error({:error, changeset}), do: Repo.rollback(changeset)

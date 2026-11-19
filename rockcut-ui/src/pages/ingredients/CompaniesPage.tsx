@@ -84,6 +84,11 @@ export default function CompaniesPage() {
                     {p.name}
                   </Typography>
                   <Roles party={p} />
+                  {p.order_target_sacks != null && (
+                    <Typography variant="caption" color="text.secondary">
+                      Order target: {p.order_target_sacks} sacks
+                    </Typography>
+                  )}
                 </CardContent>
               </CardActionArea>
             </Card>
@@ -96,6 +101,7 @@ export default function CompaniesPage() {
               <TableRow>
                 <TableCell>Name</TableCell>
                 <TableCell>Roles</TableCell>
+                <TableCell align="right">Order target</TableCell>
                 <TableCell>Notes</TableCell>
               </TableRow>
             </TableHead>
@@ -105,6 +111,9 @@ export default function CompaniesPage() {
                   <TableCell>{p.name}</TableCell>
                   <TableCell>
                     <Roles party={p} />
+                  </TableCell>
+                  <TableCell align="right" data-testid={`company-target-${p.id}`}>
+                    {p.order_target_sacks != null ? `${p.order_target_sacks} sacks` : ''}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">
@@ -124,7 +133,8 @@ export default function CompaniesPage() {
       )}
 
       <PartyDialog open={adding} onClose={() => setAdding(false)} />
-      <PartyDialog open={!!editing} onClose={() => setEditing(null)} party={editing ?? undefined} />
+      {/* The live row, so Delete follows delete_blocked after a refetch (as lots do, lead decisions 4). */}
+      <PartyDialog open={!!editing} onClose={() => setEditing(null)} party={editing ? (parties.find((p) => p.id === editing.id) ?? editing) : undefined} />
     </>
   )
 }

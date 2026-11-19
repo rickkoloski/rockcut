@@ -34,6 +34,25 @@ defmodule RockcutApi.Brewing.Ranges do
     )
   end
 
+  @doc """
+  At most `places` decimals for each of `fields`, refused rather than
+  rounded (D61 lead decisions 1, gap 11: the API takes what the UI takes).
+  """
+  def validate_places(changeset, fields, places) do
+    Enum.reduce(List.wrap(fields), changeset, fn field, cs ->
+      validate_change(cs, field, fn _, value ->
+        if Decimal.eq?(Decimal.round(value, places), value),
+          do: [],
+          else: [{field, places_message(places)}]
+      end)
+    end)
+  end
+
+  @doc "\"Use at most 2 decimals\", as the UI says it."
+  def places_message(0), do: "Use a whole number"
+  def places_message(1), do: "Use at most 1 decimal"
+  def places_message(n), do: "Use at most #{n} decimals"
+
   @doc "A specific gravity, 0.950–1.200, for each of `fields`."
   def validate_gravity(changeset, fields) do
     Enum.reduce(List.wrap(fields), changeset, fn field, cs ->

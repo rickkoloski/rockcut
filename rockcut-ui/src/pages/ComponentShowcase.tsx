@@ -421,19 +421,6 @@ function ActionsSection() {
   )
 }
 
-// Section anchors for nav sub-items
-export const componentSections = [
-  { id: 'data-grid', label: 'Data Grid' },
-  { id: 'forms', label: 'Forms & Inputs' },
-  { id: 'stepper', label: 'Process Stepper' },
-  { id: 'table', label: 'Standard Table' },
-  { id: 'cards', label: 'Cards & Chips' },
-  { id: 'tabs', label: 'Tabs' },
-  { id: 'accordion', label: 'Accordion' },
-  { id: 'feedback', label: 'Feedback & Nav' },
-  { id: 'actions', label: 'Buttons & Actions' },
-]
-
 // --- Main Showcase ---
 export default function ComponentShowcase() {
   return (

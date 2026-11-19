@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import {
   TextField,
   Select,
@@ -20,24 +20,19 @@ interface FieldDefinitionDialogProps {
   definition?: CategoryFieldDefinition;
 }
 
-export default function FieldDefinitionDialog({ open, onClose, categoryId, definition }: FieldDefinitionDialogProps) {
-  const [fieldName, setFieldName] = useState('');
-  const [fieldType, setFieldType] = useState('text');
-  const [options, setOptions] = useState('');
-  const [required, setRequired] = useState(false);
-  const [sortOrder, setSortOrder] = useState('');
-  const [error, setError] = useState<string | null>(null);
+// Task 4084: the form mounts when the dialog opens and starts from the
+// definition, instead of an effect resetting it on open (as D60's dialogs).
+export default function FieldDefinitionDialog({ open, ...props }: FieldDefinitionDialogProps) {
+  return open ? <FieldDefinitionForm {...props} /> : null;
+}
 
-  useEffect(() => {
-    if (open) {
-      setError(null);
-      setFieldName(definition?.field_name ?? '');
-      setFieldType(definition?.field_type ?? 'text');
-      setOptions(definition?.options ?? '');
-      setRequired(definition?.required ?? false);
-      setSortOrder(definition?.sort_order?.toString() ?? '');
-    }
-  }, [open, definition]);
+function FieldDefinitionForm({ onClose, categoryId, definition }: Omit<FieldDefinitionDialogProps, 'open'>) {
+  const [fieldName, setFieldName] = useState(definition?.field_name ?? '');
+  const [fieldType, setFieldType] = useState(definition?.field_type ?? 'text');
+  const [options, setOptions] = useState(definition?.options ?? '');
+  const [required, setRequired] = useState(definition?.required ?? false);
+  const [sortOrder, setSortOrder] = useState(definition?.sort_order?.toString() ?? '');
+  const [error, setError] = useState<string | null>(null);
 
   const createMutation = useApiCreate<CategoryFieldDefinition>('/api/category_field_definitions', {
     invalidateKeys: [['ingredient_category', categoryId]],
@@ -74,7 +69,7 @@ export default function FieldDefinitionDialog({ open, onClose, categoryId, defin
 
   return (
     <FormDialog
-      open={open}
+      open
       onClose={onClose}
       title={definition ? 'Edit Field Definition' : 'New Field Definition'}
       onSubmit={handleSubmit}

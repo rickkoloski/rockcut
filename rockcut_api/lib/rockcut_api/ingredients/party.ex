@@ -6,11 +6,16 @@ defmodule RockcutApi.Ingredients.Party do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "parties" do
     field :name, :string
     field :notes, :string
     field :active, :boolean, default: true
+    # D61 decision 48: a supplier's order size in sacks (BSG: 40); shown, never refused.
+    field :order_target_sacks, :integer
+    # Why it can't be deleted, or nil (D61 carry-over 2; `Parties.put_delete_blocked/1`).
+    field :delete_blocked, :string, virtual: true
 
     has_many :roles, RockcutApi.Ingredients.PartyRole
 
@@ -19,10 +24,11 @@ defmodule RockcutApi.Ingredients.Party do
 
   def changeset(party, attrs) do
     party
-    |> cast(attrs, [:name, :notes, :active])
+    |> cast(attrs, [:name, :notes, :active, :order_target_sacks])
     |> update_change(:name, &trim/1)
     |> validate_required([:name])
     |> validate_length(:name, max: 100)
+    |> validate_range(:order_target_sacks, 1, 10_000)
     |> unique_constraint(:name)
   end
 

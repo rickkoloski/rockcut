@@ -1,6 +1,7 @@
 defmodule RockcutApi.Brewing.CategoryFieldDefinition do
   use Ecto.Schema
   import Ecto.Changeset
+  import Ecto.Query, only: [from: 2]
 
   schema "category_field_definitions" do
     field :field_name, :string
@@ -31,5 +32,30 @@ defmodule RockcutApi.Brewing.CategoryFieldDefinition do
     |> unique_constraint([:category_id, :field_name])
     |> foreign_key_constraint(:category_id)
     |> RockcutApi.Changeset.validate_parents([:category_id])
+    |> validate_not_grains()
+  end
+
+  # D61 carry-over 5: grains have features (D60 §3.4), not custom fields, so
+  # Grains and its children take none.
+  defp validate_not_grains(changeset) do
+    with {:ok, id} when not is_nil(id) <- fetch_change(changeset, :category_id),
+         false <- Keyword.has_key?(changeset.errors, :category_id),
+         true <- grains?(id) do
+      add_error(changeset, :category_id, "Grains use features, not custom fields")
+    else
+      _ -> changeset
+    end
+  end
+
+  defp grains?(id) do
+    alias RockcutApi.Brewing.IngredientCategory
+
+    RockcutApi.Repo.exists?(
+      from(c in IngredientCategory,
+        left_join: p in IngredientCategory,
+        on: p.id == c.parent_id,
+        where: c.id == ^id and (c.name == "Grains" or p.name == "Grains")
+      )
+    )
   end
 end

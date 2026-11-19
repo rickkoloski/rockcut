@@ -17,7 +17,7 @@ test.describe('bartender1 (Taproom employee)', () => {
     await expect(nav.getByRole('button', { name: 'Home' })).toBeVisible()
     await expect(nav.getByText('Ingredient Library')).toHaveCount(0)
 
-    for (const path of ['/ingredients', '/ingredients/companies', '/ingredients/products/1']) {
+    for (const path of ['/ingredients', '/ingredients/companies', '/ingredients/products/1', '/ingredients/orders', '/ingredients/orders/1', '/ingredients/contracts', '/ingredients/to-order', '/ingredients/totals']) {
       await page.goto(path)
       await expect(page).toHaveURL(/\/$/)
       await expect(page.getByTestId('ingredients-add-button')).toHaveCount(0)
@@ -26,13 +26,14 @@ test.describe('bartender1 (Taproom employee)', () => {
     }
 
     const api = await apiAs('bartender1')
-    for (const path of ['/api/ingredient_products', '/api/parties', '/api/inventory_movements', '/api/supplier_offers']) {
+    // D61: purchasing, contracts, totals and To order too.
+    for (const path of ['/api/ingredient_products', '/api/parties', '/api/inventory_movements', '/api/supplier_offers', '/api/purchase_orders', '/api/contracts', '/api/ingredient_totals/inventory', '/api/ingredient_reorder']) {
       expect((await api.get(path)).status(), path).toBe(403)
     }
   })
 })
 
-test('R2: breweryDevice gets 403 on every D60 route', async () => {
+test('R2: breweryDevice gets 403 on every D60 and D61 route', async () => {
   const brewer = await apiAs('brewer1')
   const products = (await (await brewer.get('/api/ingredient_products')).json()).data as { id: number; display_name: string; offers: { id: number }[] }[]
   const rahr = products.find((p) => p.display_name === 'Rahr 2-Row')!
@@ -69,6 +70,19 @@ test('R2: breweryDevice gets 403 on every D60 route', async () => {
     ['POST', '/api/ingredient_lots'],
     ['PUT', `/api/ingredient_lots/${NONE}`],
     ['DELETE', `/api/ingredient_lots/${NONE}`],
+    // D61 (decision 26): nothing in purchasing, contracts, totals or To order.
+    ['GET', '/api/purchase_orders'],
+    ['GET', `/api/purchase_orders/${NONE}`],
+    ['POST', '/api/purchase_orders'],
+    ['PUT', `/api/purchase_orders/${NONE}`],
+    ['POST', `/api/purchase_orders/${NONE}/cancel`],
+    ['POST', `/api/purchase_orders/${NONE}/receive`],
+    ['GET', '/api/contracts'],
+    ['GET', '/api/contracts/shortfall'],
+    ['POST', '/api/contracts'],
+    ['GET', '/api/ingredient_totals/inventory'],
+    ['GET', '/api/ingredient_totals/orders'],
+    ['GET', '/api/ingredient_reorder'],
   ]
   for (const [method, path] of calls) {
     const res = await device.fetch(path, { method, data: method === 'GET' || method === 'DELETE' ? undefined : {} })

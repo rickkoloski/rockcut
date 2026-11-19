@@ -27,10 +27,12 @@ function IngredientForm({ onClose, ingredient, parentCategoryId }: IngredientFor
   const [notes, setNotes] = useState(ingredient?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
 
-  const { data: categories = [] } = useApiList<IngredientCategory>(
+  const { data: categories = [], isLoading: categoriesLoading } = useApiList<IngredientCategory>(
     ['ingredient_categories'],
     '/api/ingredient_categories'
   )
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = categoriesLoading
 
   // A grain picks a child of Grains; an ingredient any category, children under their parent.
   const parentId = parentCategoryId ?? categories.find((c) => c.id === ingredient?.category_id)?.parent_id ?? undefined
@@ -84,6 +86,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId }: IngredientFor
       onSubmit={handleSubmit}
       loading={loading}
       error={error}
+      submitDisabled={listsLoading}
       testId="ingredient-dialog"
     >
       <TextField

@@ -228,6 +228,16 @@ defmodule RockcutApiWeb.Router do
     post "/supplier_offers/:id/prices", SupplierOfferController, :create_price
     resources "/inventory_movements", InventoryMovementController, only: [:index, :create]
 
+    # D61 purchasing, malt contracts, reorder and totals
+    get "/contracts/shortfall", ContractController, :shortfall
+    resources "/contracts", ContractController, except: [:new, :edit]
+    resources "/purchase_orders", PurchaseOrderController, except: [:new, :edit, :delete]
+    post "/purchase_orders/:id/cancel", PurchaseOrderController, :cancel
+    post "/purchase_orders/:id/receive", PurchaseOrderController, :receive
+    get "/ingredient_totals/inventory", IngredientTotalsController, :inventory
+    get "/ingredient_totals/orders", IngredientTotalsController, :orders
+    get "/ingredient_reorder", IngredientReorderController, :index
+
     # Recipe management (D50: the brands list is in the scope below)
     resources "/brands", BrandController, except: [:new, :edit, :index]
     resources "/recipes", RecipeController, except: [:new, :edit]

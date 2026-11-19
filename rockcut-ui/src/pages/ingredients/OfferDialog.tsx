@@ -5,7 +5,7 @@ import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
-import { parseDecimal } from '../../lib/brewingUnits'
+import { LB_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import type { Party, SupplierOffer } from '../../lib/types'
 
@@ -22,7 +22,9 @@ export default function OfferDialog(props: OfferDialogProps) {
 }
 
 function OfferForm({ onClose, productId, offer }: OfferDialogProps) {
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
+  const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
+  // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
+  const listsLoading = partiesLoading
   const [supplierId, setSupplierId] = useState<number | ''>(offer?.supplier_party_id ?? '')
   const [orderName, setOrderName] = useState(offer?.order_name ?? '')
   const [sackSize, setSackSize] = useState(offer?.sack_size_lb ?? '55')
@@ -36,7 +38,7 @@ function OfferForm({ onClose, productId, offer }: OfferDialogProps) {
   const update = useApiUpdate<SupplierOffer>((id) => `/api/supplier_offers/${id}`, { invalidateKeys: GRAIN_KEYS })
   const remove = useApiDelete((id) => `/api/supplier_offers/${id}`, { invalidateKeys: GRAIN_KEYS })
   const loading = create.isPending || update.isPending || remove.isPending
-  const size = parseDecimal(sackSize)
+  const size = parseDecimal(sackSize, LB_DECIMALS)
 
   const submit = async () => {
     if (!supplierId) return setError('Pick the supplier')
@@ -60,7 +62,7 @@ function OfferForm({ onClose, productId, offer }: OfferDialogProps) {
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!size.ok}
+      submitDisabled={listsLoading || !size.ok}
       testId="offer-dialog"
       secondaryAction={
         offer && (
@@ -90,7 +92,7 @@ function OfferForm({ onClose, productId, offer }: OfferDialogProps) {
         </Select>
       </FormControl>
       <TextField label="Order name" helperText="The supplier's catalog name" value={orderName} onChange={(e) => setOrderName(e.target.value)} fullWidth />
-      <DecimalInput label="Sack size (lb)" value={sackSize} onChange={setSackSize} required fullWidth slotProps={{ htmlInput: { 'data-testid': 'offer-sack-size' } }} />
+      <DecimalInput decimals={LB_DECIMALS} label="Sack size (lb)" value={sackSize} onChange={setSackSize} required fullWidth slotProps={{ htmlInput: { 'data-testid': 'offer-sack-size' } }} />
       <FormControl fullWidth>
         <InputLabel id="offer-form-label">We order it</InputLabel>
         <Select labelId="offer-form-label" id="offer-form" label="We order it" value={form} onChange={(e) => setForm(e.target.value as 'milled' | 'whole')}>

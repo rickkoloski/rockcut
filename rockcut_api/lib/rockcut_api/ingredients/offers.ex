@@ -8,7 +8,14 @@ defmodule RockcutApi.Ingredients.Offers do
   import Ecto.Query
 
   alias RockcutApi.{Repo, Tasks}
-  alias RockcutApi.Ingredients.{OfferPrice, Parties, SupplierOffer}
+
+  alias RockcutApi.Ingredients.{
+    ContractLine,
+    OfferPrice,
+    Parties,
+    PurchaseOrderLine,
+    SupplierOffer
+  }
 
   @doc "Offers (supplier preloaded, `current_price` filled) by product, then supplier name."
   def list(params \\ %{}) do
@@ -43,8 +50,38 @@ defmodule RockcutApi.Ingredients.Offers do
     end
   end
 
-  @doc "Deletes an offer and its price history (a lot keeps its supplier and sack size)."
-  def delete(%SupplierOffer{} = offer), do: Repo.delete(offer)
+  @doc """
+  Deletes an offer and its price history (a lot keeps its supplier and sack
+  size). D61: refused (422) while an order line uses it or a contract of its
+  supplier covers its product; it can be made inactive instead.
+  """
+  def delete(%SupplierOffer{} = offer) do
+    on_order = Repo.exists?(from(l in PurchaseOrderLine, where: l.offer_id == ^offer.id))
+
+    contract_year =
+      from(l in ContractLine,
+        join: c in assoc(l, :contract),
+        where:
+          l.product_id == ^offer.product_id and c.supplier_party_id == ^offer.supplier_party_id,
+        order_by: [desc: c.year],
+        limit: 1,
+        select: c.year
+      )
+      |> Repo.one()
+
+    cond do
+      on_order ->
+        {:error, {:invalid, %{base: ["This offer is on an order; deactivate it instead"]}}}
+
+      contract_year ->
+        {:error,
+         {:invalid,
+          %{base: ["A #{contract_year} contract covers this offer; deactivate it instead"]}}}
+
+      true ->
+        Repo.delete(offer)
+    end
+  end
 
   @doc "An offer's prices, newest effective first (then newest entered)."
   def list_prices(%SupplierOffer{id: id}) do
