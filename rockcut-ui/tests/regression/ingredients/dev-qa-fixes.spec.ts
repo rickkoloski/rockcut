@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
-import { apiAs, cleanupIngredients, getOrder, makeOrder, makeProduct, makePurchasing, openDialog } from './helpers'
+import { apiAs, cleanupIngredients, getOrder, makeLot, makeOrder, makeProduct, makePurchasing, movementsOf, openDialog, pick } from './helpers'
 
 // D61 DEV QA fix cycle (`d61_lead_decisions_2.md`): an Edit opened before
 // someone else's save is refused with the message and keeps its input, and
@@ -8,7 +8,8 @@ import { apiAs, cleanupIngredients, getOrder, makeOrder, makeProduct, makePurcha
 // confirm sends one cancel and shows no error (gap 5); the Year picker lists
 // every year with a contract and the Year box checks itself (gap 3), and a
 // past year says it changes no offer prices (item 5); Save waits for a
-// dialog's lists (items 4, 7). Every row is `[TEST-TEMP]`.
+// dialog's lists (items 4, 7), and Record movement's partner field says it's
+// loading, not "none", until its list is in (item 8). Every row is `[TEST-TEMP]`.
 
 test.afterAll(cleanupIngredients)
 
@@ -149,6 +150,44 @@ test.describe('brewer1', () => {
     await expect(d).toHaveCount(0)
     await expect(page.getByTestId('product-minimum-text')).toHaveText('Minimum: 3 sacks')
     expect(puts).toHaveLength(1)
+  })
+
+  test('D6 (item 8): Record movement says the partner breweries are loading, not "none", and a loan waits for them', async ({ page }) => {
+    const product = await makeProduct('D6')
+    await makeLot(product, 4, 10)
+    await page.goto(`/ingredients/products/${product.id}`)
+    await expect(page.getByTestId('product-on-hand')).toHaveText('4 sacks')
+    let release!: () => void
+    const held = new Promise<void>((done) => (release = done))
+    await page.route(/\/api\/parties(\?|$)/, async (route) => {
+      await held
+      await route.continue()
+    })
+    const posts: string[] = []
+    page.on('request', (r) => {
+      if (r.method() === 'POST' && r.url().endsWith('/api/inventory_movements')) posts.push(r.url())
+    })
+    // Cached parties would answer at once: start from a fresh page.
+    await page.reload()
+    await page.getByTestId('product-record-movement').click()
+    const d = page.getByTestId('movement-dialog')
+    await pick(page, d, 'Kind', 'Loaned out')
+    await d.getByTestId('movement-quantity-sacks').fill('1')
+    await expect(d.getByTestId('movement-partner-loading')).toHaveText('Loading partner breweries…')
+    await expect(d.getByTestId('movement-partner-none')).toHaveCount(0)
+    await expect(d.getByRole('combobox', { name: 'Partner brewery' })).toHaveAttribute('aria-disabled', 'true')
+    const save = d.getByRole('button', { name: 'Save' })
+    await expect(save).toBeDisabled()
+
+    release()
+    await expect(d.getByTestId('movement-partner-loading')).toHaveCount(0)
+    await expect(d.getByTestId('movement-partner-none')).toHaveCount(0)
+    await expect(save).toBeEnabled()
+    await pick(page, d, 'Partner brewery', '[SEED] Mountain Brewing')
+    await save.click()
+    await expect(d).toHaveCount(0)
+    expect(posts).toHaveLength(1)
+    expect((await movementsOf(product.id)).filter((m) => m.kind === 'loaned_out')).toHaveLength(1)
   })
 })
 
