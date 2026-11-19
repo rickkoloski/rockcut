@@ -8,6 +8,7 @@ import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
 import { draftsFrom, draftsValid, featuresPayload, grainCategories, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS } from '../../lib/inventory'
+import { parseSacks } from '../../lib/purchasing'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct, Party } from '../../lib/types'
 
 interface ProductDialogProps {
@@ -36,6 +37,10 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
   const [name, setName] = useState(product?.name ?? '')
   const [notes, setNotes] = useState(product?.notes ?? '')
   const [active, setActive] = useState(product?.active ?? true)
+  // D61 §3.5: the reorder point in whole sacks; empty is none.
+  const [minimum, setMinimum] = useState(product?.min_on_hand_sacks != null ? String(product.min_on_hand_sacks) : '')
+  const minimumSacks = parseSacks(minimum, 0)
+  const minimumOk = minimum.trim() === '' || minimumSacks != null
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -60,6 +65,7 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
       name: name.trim() || null,
       notes: notes.trim() || null,
       active,
+      min_on_hand_sacks: minimum.trim() === '' ? null : minimumSacks,
       features: featuresPayload(shown, product?.features),
     }
     try {
@@ -85,7 +91,7 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={!draftsValid(shown, featureTypes)}
+      submitDisabled={!draftsValid(shown, featureTypes) || !minimumOk}
       testId="product-dialog"
     >
       <FormControl fullWidth required>
@@ -135,6 +141,15 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
         slotProps={{ htmlInput: { 'data-testid': 'product-name' } }}
       />
       <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} disabled={loading} />
+      <TextField
+        label="Minimum on hand (sacks)"
+        value={minimum}
+        onChange={(e) => setMinimum(e.target.value)}
+        error={!minimumOk}
+        helperText={minimumOk ? 'Below it, the product is marked and shows on To order; empty for none' : 'Whole sacks, 0 or more'}
+        fullWidth
+        slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': 'product-minimum' } }}
+      />
       <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} multiline rows={2} fullWidth />
       {product && <FormControlLabel control={<Switch checked={active} onChange={(e) => setActive(e.target.checked)} />} label="Active" />}
     </FormDialog>

@@ -93,6 +93,8 @@ import IngredientsList from './pages/ingredients/IngredientsList'
 import IngredientDetail from './pages/ingredients/IngredientDetail'
 import ProductPage from './pages/ingredients/ProductPage'
 import CompaniesPage from './pages/ingredients/CompaniesPage'
+import OrdersPage from './pages/ingredients/OrdersPage'
+import OrderPage from './pages/ingredients/OrderPage'
 import BatchesList from './pages/batches/BatchesList'
 import BatchDetail from './pages/batches/BatchDetail'
 import SettingsPage from './pages/settings/SettingsPage'
@@ -281,6 +283,9 @@ function personRoutes({ hasBrewery, hasTaproom, canManageSchedule, canManageUser
           {/* D60: maltster products and the companies. */}
           <Route path="/ingredients/products/:id" element={<ProductPage />} />
           <Route path="/ingredients/companies" element={<CompaniesPage />} />
+          {/* D61: purchasing (orders and receiving). */}
+          <Route path="/ingredients/orders" element={<OrdersPage />} />
+          <Route path="/ingredients/orders/:id" element={<OrderPage />} />
           <Route path="/ingredients/:id" element={<IngredientDetail />} />
           <Route path="/batches" element={<BatchesList />} />
           <Route path="/batches/:id" element={<BatchDetail />} />

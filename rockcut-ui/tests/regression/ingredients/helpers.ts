@@ -177,6 +177,65 @@ export async function cleanupIngredients() {
   made.parties.clear()
 }
 
+// ── D61 purchasing ──
+//
+// Orders can't be deleted (only cancelled), so a [TEST-TEMP] supplier with
+// orders, and the offers and products on them, stay until the next
+// `mix rockcut.synthetic.setup`, which removes them with their orders and
+// contracts. Specs only order from their own [TEST-TEMP] supplier.
+
+export interface ApiOrder {
+  id: number
+  status: 'open' | 'received' | 'cancelled'
+  received_on: string | null
+  lines: { id: number; offer_id: number; sacks_ordered: number; sacks_received: number | null; price_per_sack: string }[]
+  total_sacks: number
+  total_dollars: string
+}
+
+/** A `[TEST-TEMP]` supplier, with an order target when given. */
+export async function makeSupplier(label: string, target: number | null = 40): Promise<{ id: number; name: string }> {
+  const party = await ok<{ id: number; name: string }>(
+    await (await apiAs('owner')).post('/api/parties', { data: { name: tempTag(label), roles: ['supplier'], order_target_sacks: target } }),
+    201,
+  )
+  made.parties.add(party.id)
+  return party
+}
+
+/** An offer of `product` by `supplierId` in 55 lb sacks at `price` a sack from long ago. */
+export async function makeOffer(product: ApiProduct, supplierId: number, price = '42.00', orderName: string | null = null): Promise<{ id: number }> {
+  const api = await apiAs('brewer1')
+  const offer = await ok<{ id: number }>(
+    await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: supplierId, sack_size_lb: '55', form: 'whole', order_name: orderName } }),
+    201,
+  )
+  await ok(await api.post(`/api/supplier_offers/${offer.id}/prices`, { data: { price_per_sack: price, effective_on: '2020-01-01' } }), 201)
+  return offer
+}
+
+/** A temp product with a temp supplier (target 40) and its $42.00 offer: what an order needs. */
+export async function makePurchasing(label: string) {
+  const product = await makeProduct(label)
+  const supplier = await makeSupplier(`${label} supplier`)
+  const offer = await makeOffer(product, supplier.id)
+  return { product, supplier, offer }
+}
+
+/** An open order (placed by `brewer1`) of `sacks` of each offer. */
+export async function makeOrder(supplierId: number, lines: { offerId: number; sacks: number }[], extra: Record<string, unknown> = {}): Promise<ApiOrder> {
+  return ok<ApiOrder>(
+    await (await apiAs('brewer1')).post('/api/purchase_orders', {
+      data: { supplier_party_id: supplierId, ordered_on: denverToday(), lines: lines.map((l) => ({ offer_id: l.offerId, sacks_ordered: l.sacks })), ...extra },
+    }),
+    201,
+  )
+}
+
+export async function getOrder(id: number): Promise<ApiOrder> {
+  return ok<ApiOrder>(await (await apiAs('brewer1')).get(`/api/purchase_orders/${id}`))
+}
+
 /** No sideways scroll on the page. */
 export async function expectNoSidewaysScroll(page: Page) {
   const { scroll, client } = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }))

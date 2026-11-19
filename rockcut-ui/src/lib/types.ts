@@ -160,6 +160,11 @@ export interface IngredientLot {
   on_hand_lb: string | null
   /** Why the lot can't be deleted (later movements, or a recipe uses it), or null (lead decisions 3, gap 15). */
   delete_blocked?: string | null
+  /** D61 §3.4: $/lb (its latest costed receipt, else the offer price: `estimated`), value of the on-hand; `unvalued` with no price. */
+  cost_per_lb?: string | null
+  value?: string | null
+  estimated?: boolean
+  unvalued?: boolean
   notes: string | null
   inserted_at: string
   updated_at: string
@@ -250,6 +255,9 @@ export interface IngredientProduct {
   on_hand_lb: string
   /** The part of `on_hand_lb` in expired lots. */
   expired_lb: string
+  /** D61 §3.5: the reorder point in whole sacks (null: none), and on hand (not expired) under it. */
+  min_on_hand_sacks?: number | null
+  below_minimum?: boolean
   inserted_at: string
   updated_at: string
 }
@@ -270,6 +278,56 @@ export interface InventoryMovement {
   note: string | null
   entered_by: { id: number; name: string } | null
   inserted_at: string
+}
+
+// ── D61 purchasing ──
+
+export type OrderStatus = 'open' | 'received' | 'cancelled'
+
+export interface PurchaseOrderLine {
+  id: number
+  offer_id: number
+  offer: {
+    id: number
+    order_name: string | null
+    /** The order name, else the product. */
+    label: string
+    sack_size_lb: string
+    product_id: number
+    product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+  }
+  sacks_ordered: number
+  sacks_received: number | null
+  price_per_sack: string
+  /** lb and $ at the sacks the line counts: received once the order is received, else ordered (decision 35). */
+  line_lb: string
+  line_dollars: string
+}
+
+export interface PurchaseOrder {
+  id: number
+  supplier_party_id: number
+  supplier: PartySummary | null
+  ordered_on: string
+  expected_on: string | null
+  reference: string | null
+  off_contract: boolean
+  notes: string | null
+  status: OrderStatus
+  received_on: string | null
+  created_by: { id: number; name: string } | null
+  received_by: { id: number; name: string } | null
+  cancelled_by: { id: number; name: string } | null
+  received_at: string | null
+  cancelled_at: string | null
+  lines: PurchaseOrderLine[]
+  total_sacks: number
+  total_lb: string
+  total_dollars: string
+  /** The supplier's order target (decision 48) and the next multiple of it at or above the sacks. */
+  target: { sacks: number; next_multiple: number } | null
+  inserted_at: string
+  updated_at: string
 }
 
 export interface Batch {

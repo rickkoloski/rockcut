@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   Box,
   Card,
+  Chip,
   CardActionArea,
   CardContent,
   IconButton,
@@ -148,7 +149,10 @@ export default function GrainsList({ children, products, grains, types, filters,
                           <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
                             {r.product.display_name}
                           </Typography>
-                          <Typography variant="body2">{onHandText(r.product, mode)}</Typography>
+                          <Typography variant="body2">
+                            {onHandText(r.product, mode)}
+                            <BelowMinimum product={r.product} />
+                          </Typography>
                           <Typography variant="caption" color="text.secondary">
                             {spec(r.product, 'color_lovibond')} °L · {spec(r.product, 'extract_fgdb')} % FGDB
                           </Typography>
@@ -220,8 +224,9 @@ export default function GrainsList({ children, products, grains, types, filters,
                           {spec(r.product, k)}
                         </TableCell>
                       ))}
-                      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`grain-on-hand-${r.product.id}`}>
-                        {onHandText(r.product, mode)}
+                      <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                        <span data-testid={`grain-on-hand-${r.product.id}`}>{onHandText(r.product, mode)}</span>
+                        <BelowMinimum product={r.product} />
                       </TableCell>
                       <TableCell>{suppliers(r.product)}</TableCell>
                     </TableRow>
@@ -242,4 +247,9 @@ export default function GrainsList({ children, products, grains, types, filters,
       </Table>
     </Paper>
   )
+}
+
+/** D61 §3.5: on hand (not expired) is under the product's minimum. */
+function BelowMinimum({ product }: { product: IngredientProduct }) {
+  return product.below_minimum ? <Chip size="small" color="warning" label="Below minimum" sx={{ ml: 1 }} data-testid={`grain-below-minimum-${product.id}`} /> : null
 }

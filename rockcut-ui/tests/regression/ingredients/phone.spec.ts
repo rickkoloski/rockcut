@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs, cleanupIngredients, expectNoSidewaysScroll, lotsOf, makeProduct, setQuantityDisplay, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, expectNoSidewaysScroll, lotsOf, makeLot, makeOrder, makeProduct, makePurchasing, setQuantityDisplay, tempTag } from './helpers'
 
 // D60 spec §9, as `brewer1` at 360 px: the Grains list is cards, the
 // product page and Companies don't scroll sideways, Add lot is full screen,
@@ -68,3 +68,40 @@ test('P3: Add lot is full screen; 5,2 in moisture is refused, 1,234 lb saves 123
   const [lot] = await lotsOf(product.id)
   expect(lot.features.moisture_pct.value).toBe('5.2')
 })
+
+// D61 §4.7: Purchasing at 360 px: the orders list is cards, the order page,
+// a product page with open orders and lot values, and the New order and
+// Receive dialogs (full screen) don't scroll sideways.
+test('P4: Purchasing at 360 px: cards, the order page, New order and Receive full screen, no sideways scroll', async ({ page }) => {
+  const { product, supplier, offer } = await makePurchasing('P4 phone')
+  await makeLot(product, 2, 10)
+  const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 36 }], { reference: tempTag('P4 a long reference number') })
+
+  await page.goto('/ingredients/orders')
+  await expect(page.getByTestId('orders-cards')).toBeVisible()
+  await expect(page.getByTestId('orders-table')).toHaveCount(0)
+  await expect(page.getByTestId(`order-${order.id}`)).toContainText('36 sacks')
+  await expectNoSidewaysScroll(page)
+
+  await page.getByTestId('orders-new').click()
+  const n = page.getByTestId('order-dialog')
+  await expect(n.locator('.MuiDialog-paper')).toHaveClass(/MuiDialog-paperFullScreen/)
+  await expectNoSidewaysScroll(page)
+  await n.getByRole('button', { name: 'Cancel' }).click()
+
+  await page.goto(`/ingredients/orders/${order.id}`)
+  await expect(page.getByTestId('order-lines')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  await page.getByTestId('order-receive').click()
+  const r = page.getByTestId('receive-dialog')
+  await expect(r.locator('.MuiDialog-paper')).toHaveClass(/MuiDialog-paperFullScreen/)
+  await r.getByTestId('receive-line-0-add-lot').click()
+  await expect(r.getByTestId('receive-line-0-row-1-number')).toBeVisible()
+  await expectNoSidewaysScroll(page)
+  await r.getByRole('button', { name: 'Cancel' }).click()
+
+  await page.goto(`/ingredients/products/${product.id}`)
+  await expect(page.getByTestId(`product-open-order-${order.id}`)).toBeVisible()
+  await expectNoSidewaysScroll(page)
+})
+

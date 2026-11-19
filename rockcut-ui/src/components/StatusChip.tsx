@@ -5,15 +5,16 @@ const colorMap: Record<string, Record<string, 'default' | 'primary' | 'secondary
   batch: { planned: 'default', brewing: 'info', fermenting: 'warning', conditioning: 'info', completed: 'success', dumped: 'error' },
   recipe: { draft: 'default', active: 'success', archived: 'default' },
   lot: { available: 'success', depleted: 'warning', expired: 'error' },
+  order: { open: 'info', received: 'success', cancelled: 'default' },
 }
 
 interface StatusChipProps {
   status: string
-  domain: 'brand' | 'batch' | 'recipe' | 'lot'
+  domain: 'brand' | 'batch' | 'recipe' | 'lot' | 'order'
 }
 
-// D60: lot statuses read "Available", "Depleted", "Expired" (the API keeps them lowercase).
-const capitalized = new Set<StatusChipProps['domain']>(['lot'])
+// D60: lot statuses read "Available", "Depleted", "Expired" (the API keeps them lowercase); D61 orders too.
+const capitalized = new Set<StatusChipProps['domain']>(['lot', 'order'])
 
 export default function StatusChip({ status, domain }: StatusChipProps) {
   const color = colorMap[domain]?.[status] ?? 'default'
