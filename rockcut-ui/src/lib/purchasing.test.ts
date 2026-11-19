@@ -111,9 +111,11 @@ describe('contract price changes (decision 23, A2, decision 40)', () => {
 
 describe('to order with a chosen offer (§3.5)', () => {
   it('⌈minimum − on hand − on order⌉, never below 0', () => {
-    expect(toOrder(3, 110, 55, 0)).toEqual({ onHandSacks: 2, toOrder: 1 })
-    expect(toOrder(3, 110, 50, 0)).toEqual({ onHandSacks: 2.2, toOrder: 1 })
-    expect(toOrder(3, 110, 55, 4)).toEqual({ onHandSacks: 2, toOrder: 0 })
+    expect(toOrder(3, 110, 55, 0)).toEqual({ onHandSacks: 2, onOrderSacks: 0, toOrder: 1 })
+    expect(toOrder(3, 110, 50, 0)).toEqual({ onHandSacks: 2.2, onOrderSacks: 0, toOrder: 1 })
+    expect(toOrder(3, 110, 55, 4 * 55)).toEqual({ onHandSacks: 2, onOrderSacks: 4, toOrder: 0 })
+    // Item 20: 2 × 50 lb + 2 × 55 lb on order = 210 lb = 4.2 of a 50 lb offer's sacks.
+    expect(toOrder(10, 0, 50, 210)).toEqual({ onHandSacks: 0, onOrderSacks: 4.2, toOrder: 6 })
     expect(toOrder(5, 0, 55, 0).toOrder).toBe(5)
     expect(toOrder(3, 165, 55, 0).toOrder).toBe(0)
   })

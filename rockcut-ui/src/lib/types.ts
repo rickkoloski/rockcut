@@ -388,6 +388,8 @@ export interface ReorderRow {
   /** Usable (not expired) on hand in lb. */
   on_hand_lb: string | null
   on_hand_sacks: string | null
+  /** lb on open order lines (any offer); `on_order_sacks` is it in the reorder offer's sacks (item 20). */
+  on_order_lb: string | null
   on_order_sacks: number | null
   to_order: number | null
   below_minimum: boolean

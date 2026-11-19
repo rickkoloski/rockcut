@@ -353,6 +353,41 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
     end
   end
 
+  describe "reorder on order by weight (item 20)" do
+    test "50 + 55 lb sacks on order are converted to the reorder offer's sack size; to order rounds up",
+         c do
+      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_sacks: 10))
+      # 2 × 50 lb + 2 × 55 lb = 210 lb.
+      order!(c, [line(c.offer50, 2), line(c.offer, 2)])
+
+      row = fn ->
+        {200, %{"data" => rows}} = req(c.brewer, :get, "/api/ingredient_reorder")
+        Enum.find(rows, &(&1["product_id"] == c.product.id))
+      end
+
+      # The default reorder offer is the latest order line's: the 55 lb one.
+      # 210 / 55 = 3.82 on order; ⌈10 − 3.82⌉ = 7.
+      r = row.()
+      assert r["offer"]["id"] == c.offer.id
+      assert r["on_order_lb"] == "210" and r["on_order_sacks"] == 3.82 and r["to_order"] == 7
+
+      # On the 50 lb offer: 210 / 50 = 4.2 on order; ⌈10 − 4.2⌉ = 6.
+      {200, _} =
+        req(c.brewer, :put, "/api/ingredient_products/#{c.product.id}", %{
+          "reorder_offer_id" => c.offer50.id
+        })
+
+      r = row.()
+      assert r["on_order_sacks"] == 4.2 and r["to_order"] == 6
+
+      # 4 × 50 lb more: 410 lb = 8.2; then 1 × 50 + 2 × 55: 570 lb = 11.4, nothing to order.
+      order!(c, [line(c.offer50, 4)])
+      assert %{"on_order_sacks" => 8.2, "to_order" => 2} = row.()
+      order!(c, [line(c.offer50, 1), line(c.offer, 2)])
+      assert %{"on_order_sacks" => 11.4, "to_order" => 0} = row.()
+    end
+  end
+
   describe "History (item 18)" do
     test "a receipt from an order names the order in its note: the reference, else Order #id; others keep theirs",
          c do

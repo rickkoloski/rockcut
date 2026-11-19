@@ -1129,3 +1129,4 @@ ExUnit under `rockcut_api/test/`: `rockcut_api_web/controllers/purchasing_api_te
 | 17 (gap 16) | 360 px: To order's number in view (Minimum and On order under the product, the offer short and wrapping) | Playwright P5 (the To order cell within 360 px) |
 | 18 | One "All grains" in the Category filter; a receipt names its order in History | Playwright F4 (options unique), F5 (reference, "Order #<id>"); FC1 "History (item 18)" |
 | 19 | PO7 and P4 wait for the save / the dialog's history entry, not a fixed time | Playwright PO7, P4 (`expectPhoneDialogClosed`) |
+| 20 | To order's on order converted by weight to the reorder offer's sack size (50 + 55 lb on order) | FC1 "reorder on order by weight (item 20)"; Vitest `purchasing.test` (`toOrder`) |

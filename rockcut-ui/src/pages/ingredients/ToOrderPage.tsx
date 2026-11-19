@@ -24,7 +24,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiUpdate } from '../../hooks/useApiMutation'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import parseApiError from '../../lib/parseApiError'
-import { toOrder } from '../../lib/purchasing'
+import { sacksFigure, toOrder } from '../../lib/purchasing'
 import type { IngredientProduct, ReorderRow, SupplierOffer } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import PurchasingTabs from './PurchasingTabs'
@@ -76,7 +76,7 @@ export default function ToOrderPage() {
   const view = rows.map((r) => {
     const offers = activeOffers.get(r.product_id) ?? (r.offer ? [r.offer] : [])
     const offer: SupplierOffer | null = offers.find((o) => o.id === offerFor[r.product_id]) ?? r.offer ?? null
-    const figures = offer && r.on_hand_lb != null ? toOrder(r.min_on_hand_sacks, Number(r.on_hand_lb), Number(offer.sack_size_lb), r.on_order_sacks ?? 0) : null
+    const figures = offer && r.on_hand_lb != null ? toOrder(r.min_on_hand_sacks, Number(r.on_hand_lb), Number(offer.sack_size_lb), Number(r.on_order_lb ?? 0)) : null
     return { row: r, offers, offer, figures }
   })
   const orderable = view.filter((v) => v.figures && v.figures.toOrder > 0)
@@ -172,7 +172,7 @@ export default function ToOrderPage() {
                   </Link>
                   {r.below_minimum && <Chip size="small" color="warning" label="Below minimum" sx={{ ml: 1 }} />}
                   <Typography variant="caption" color="text.secondary" component="div" sx={{ display: { xs: 'block', sm: 'none' } }}>
-                    Minimum {r.min_on_hand_sacks} · on order {r.on_order_sacks ?? 0}
+                    Minimum {r.min_on_hand_sacks} · on order {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
                   </Typography>
                 </TableCell>
                 <TableCell align="right" sx={{ whiteSpace: { sm: 'nowrap' } }} data-testid={`to-order-${r.product_id}-on-hand`}>
@@ -182,7 +182,7 @@ export default function ToOrderPage() {
                   {r.min_on_hand_sacks}
                 </TableCell>
                 <TableCell align="right" sx={WIDE} data-testid={`to-order-${r.product_id}-on-order`}>
-                  {r.on_order_sacks ?? 0}
+                  {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
                 </TableCell>
                 <TableCell align="right" sx={{ fontWeight: figures && figures.toOrder > 0 ? 600 : undefined }} data-testid={`to-order-${r.product_id}-to-order`}>
                   {figures ? figures.toOrder : ''}

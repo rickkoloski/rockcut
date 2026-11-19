@@ -137,12 +137,15 @@ export function contractPriceChanges(lines: { product: string; price: string; ch
 }
 
 /**
- * To order with a chosen offer (§3.5): on hand (usable lb) ÷ its sack size,
- * and ⌈minimum − on hand − on order⌉ when above 0.
+ * To order with a chosen offer (§3.5): on hand (usable lb) and on order (lb
+ * on open lines of any offer) ÷ its sack size, to 2 decimals (lead decisions
+ * 1, item 20, as 17a), and ⌈minimum − on hand − on order⌉ when above 0.
  */
-export function toOrder(minimum: number, usableLb: number, sackSize: number, onOrder: number): { onHandSacks: number; toOrder: number } {
-  const onHandSacks = Math.round((usableLb / sackSize) * 100) / 100
-  return { onHandSacks, toOrder: Math.max(0, Math.ceil(minimum - onHandSacks - onOrder - 1e-9)) }
+export function toOrder(minimum: number, usableLb: number, sackSize: number, onOrderLb: number): { onHandSacks: number; onOrderSacks: number; toOrder: number } {
+  const inSacks = (lb: number) => Math.round((lb / sackSize) * 100) / 100
+  const onHandSacks = inSacks(usableLb)
+  const onOrderSacks = inSacks(onOrderLb)
+  return { onHandSacks, onOrderSacks, toOrder: Math.max(0, Math.ceil(minimum - onHandSacks - onOrderSacks - 1e-9)) }
 }
 
 /**

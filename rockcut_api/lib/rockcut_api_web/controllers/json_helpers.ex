@@ -1274,6 +1274,7 @@ defmodule RockcutApiWeb.JSONHelpers do
           ),
       on_hand_lb: r.on_hand_lb,
       on_hand_sacks: r.on_hand_sacks,
+      on_order_lb: r.on_order_lb,
       on_order_sacks: r.on_order_sacks,
       to_order: r.to_order,
       below_minimum: r.below_minimum
