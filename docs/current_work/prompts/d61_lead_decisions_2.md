@@ -89,3 +89,18 @@ untouched here), so they go to Matt as a backlog item, not this cycle.
    needs have arrived. Playwright with delayed lists for Edit contract (extend D4 in
    `dev-qa-fixes.spec.ts`). vitest/tsc/build clean, lint 8, the ingredients folder green twice.
    Commit, don't push, reply with the commit and which dialogs you changed.
+
+## DEV QA recheck 2 (UI e310007): pass with gaps
+
+Gap 6 closed; New/Edit order and Receive gated; D2-style pass and 360 px clean
+(`~/src/rockcut-d61-devqa/results/d61_dev_qa_recheck2.md`).
+
+8. **Gap 9 (minor): Record movement while `/api/parties` loads.** Save is enabled at once (fine for
+   Used in brewing, which needs no partner, and Traded/Loaned already wait for a chosen partner), but
+   the partner field says "No partner breweries yet: add one on the Companies page" while the list
+   is still loading. Show a loading state in the partner field until `/api/parties` has answered
+   (e.g. "Loading partner breweries…", picker disabled), and only show "No partner breweries yet"
+   once it has answered with none. Keep Save disabled until the list has loaded for the kinds that
+   need a partner (they already need a choice; make sure the loading state can't look like "none").
+   Playwright with `/api/parties` delayed. vitest/tsc/build clean, lint 8, the ingredients folder
+   once. Commit, don't push, reply.
