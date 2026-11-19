@@ -7,11 +7,14 @@ defmodule RockcutApi.Ingredients.Product do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  import RockcutApi.Brewing.Ranges
 
   schema "ingredient_products" do
     field :name, :string
     field :notes, :string
     field :active, :boolean, default: true
+    # D61 §3.5: the reorder point in whole sacks (nil = no minimum).
+    field :min_on_hand_sacks, :integer
     # The sum of its lots' movements (`Ingredients.Products`).
     field :on_hand_lb, :decimal, virtual: true
     # The part of it in expired lots.
@@ -28,10 +31,18 @@ defmodule RockcutApi.Ingredients.Product do
 
   def changeset(product, attrs) do
     product
-    |> cast(attrs, [:ingredient_id, :maltster_party_id, :name, :notes, :active])
+    |> cast(attrs, [
+      :ingredient_id,
+      :maltster_party_id,
+      :name,
+      :notes,
+      :active,
+      :min_on_hand_sacks
+    ])
     |> update_change(:name, &blank_to_nil/1)
     |> validate_required([:ingredient_id, :maltster_party_id])
     |> validate_length(:name, max: 100)
+    |> validate_range(:min_on_hand_sacks, 0, 100_000)
     |> unique_constraint([:ingredient_id, :maltster_party_id, :name],
       name: :ingredient_products_ingredient_maltster_name_index,
       message: "This maltster already has that product for this grain."

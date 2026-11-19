@@ -46,9 +46,19 @@ defmodule RockcutApi.Brewing.IngredientLot do
     |> validate_required([:ingredient_id])
     |> validate_inclusion(:status, @valid_statuses)
     |> validate_positive_up_to(:sack_size_lb, 10_000)
+    |> unique_lot_number()
     |> foreign_key_constraint(:ingredient_id)
     |> foreign_key_constraint(:product_id)
     |> foreign_key_constraint(:supplier_party_id)
     |> RockcutApi.Changeset.validate_parents([:ingredient_id, :product_id, :supplier_party_id])
+  end
+
+  # D61 §3.3: a product's lot numbers are unique (the index from
+  # `20261118120002`); the same number is always the same lot.
+  defp unique_lot_number(changeset) do
+    unique_constraint(changeset, :lot_number,
+      name: :ingredient_lots_product_id_lot_number_index,
+      message: "This product already has lot #{get_field(changeset, :lot_number)}"
+    )
   end
 end
