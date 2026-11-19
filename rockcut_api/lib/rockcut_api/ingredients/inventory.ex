@@ -22,7 +22,7 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   alias RockcutApi.{Repo, Tasks}
   alias RockcutApi.Brewing.{Ingredient, IngredientCategory, IngredientLot, RecipeIngredient}
-  alias RockcutApi.Ingredients.{Features, Movement, Parties, Product, Units}
+  alias RockcutApi.Ingredients.{Features, Movement, Parties, Product, Units, Valuation}
 
   @incoming ~w(opening received traded_in loaned_in)
   @outgoing ~w(used traded_out loaned_out)
@@ -499,7 +499,10 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   ## Lots
 
-  @doc "Lots, newest first, with what the lot JSON shows (`on_hand_lb` filled)."
+  @doc """
+  Lots, newest first, with what the lot JSON shows (`on_hand_lb` and, D61
+  §3.4, today's cost and value filled).
+  """
   def list_lots(params) do
     IngredientLot
     |> filter(:ingredient_id, params)
@@ -509,10 +512,55 @@ defmodule RockcutApi.Ingredients.Inventory do
     |> preload(^@lot_preloads)
     |> Repo.all()
     |> put_on_hand()
+    |> Valuation.put_values()
   end
 
-  def get_lot!(id),
-    do: IngredientLot |> Repo.get!(id) |> Repo.preload(@lot_preloads) |> put_on_hand()
+  def get_lot!(id) do
+    IngredientLot
+    |> Repo.get!(id)
+    |> Repo.preload(@lot_preloads)
+    |> List.wrap()
+    |> put_on_hand()
+    |> Valuation.put_values()
+    |> hd()
+  end
+
+  @doc """
+  D61 (lead, Stop 1 note 4): the product's lot with this number, trimmed and
+  in any case (`w123` is lot `W123`), or nil.
+  """
+  def find_lot(product_id, number) when is_binary(number) do
+    case String.trim(number) do
+      "" ->
+        nil
+
+      number ->
+        from(l in IngredientLot,
+          where:
+            l.product_id == ^product_id and
+              fragment("? = ? COLLATE NOCASE", l.lot_number, ^number),
+          order_by: l.id,
+          limit: 1
+        )
+        |> Repo.one()
+    end
+  end
+
+  def find_lot(_product_id, _number), do: nil
+
+  # A product's lot numbers are unique in any case: "This product already
+  # has lot W123" before the index would refuse it.
+  defp lot_number_free(attrs, except_id) do
+    product_id = RockcutApi.Ids.parse(attrs["product_id"])
+
+    case product_id && find_lot(product_id, attrs["lot_number"]) do
+      %IngredientLot{id: id} = lot when id != except_id ->
+        {:error, {:invalid, %{lot_number: ["This product already has lot #{lot.lot_number}"]}}}
+
+      _ ->
+        :ok
+    end
+  end
 
   @doc """
   Add a lot (spec §4.4). A grain lot (its ingredient on Grains or a child)
@@ -529,6 +577,7 @@ defmodule RockcutApi.Ingredients.Inventory do
          :ok <- product_rules(attrs, grain?),
          :ok <- supplier(attrs["supplier_party_id"]),
          {:ok, initial} <- initial(attrs, grain?),
+         :ok <- lot_number_free(attrs, nil),
          {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"]) do
       write(fn ->
         lot =
@@ -591,6 +640,11 @@ defmodule RockcutApi.Ingredients.Inventory do
          {:ok, grain?} <- grain_lot?(merged),
          :ok <- product_rules(merged, grain?),
          :ok <- supplier(attrs["supplier_party_id"]),
+         :ok <-
+           lot_number_free(
+             %{"product_id" => merged["product_id"], "lot_number" => attrs["lot_number"]},
+             lot.id
+           ),
          {:ok, features} <- Features.validate(attrs["features"], ingredient_id) do
       write(fn ->
         lot =

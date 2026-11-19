@@ -1042,6 +1042,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       status: lot.status,
       features: lot_features(lot),
       on_hand_lb: lot.on_hand_lb,
+      cost_per_lb: lot.cost_per_lb,
+      value: lot.value,
+      estimated: lot.estimated,
+      unvalued: lot.unvalued,
       delete_blocked: lot.delete_blocked,
       notes: lot.notes,
       inserted_at: lot.inserted_at,
@@ -1080,6 +1084,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       features: maybe_render(p, :feature_values, &RockcutApi.Ingredients.Features.values_map/1),
       offers: maybe_render(p, :offers, &Enum.map(&1, fn o -> supplier_offer(o) end)),
       min_on_hand_sacks: p.min_on_hand_sacks,
+      below_minimum: p.below_minimum,
       on_hand_lb: p.on_hand_lb,
       expired_lb: p.expired_lb,
       inserted_at: p.inserted_at,
@@ -1160,6 +1165,103 @@ defmodule RockcutApiWeb.JSONHelpers do
   end
 
   defp person_name(u), do: %{id: u.id, name: u.name}
+
+  # ── D61 purchasing, contracts, reorder ─────────────────────────────
+
+  def contract(c) do
+    %{
+      id: c.id,
+      supplier_party_id: c.supplier_party_id,
+      supplier: maybe_render(c, :supplier, &party_summary/1),
+      year: c.year,
+      notes: c.notes,
+      created_by: maybe_render(c, :created_by, &person_name/1),
+      lines: maybe_render(c, :lines, &Enum.map(&1, fn l -> contract_line(l) end)),
+      inserted_at: c.inserted_at,
+      updated_at: c.updated_at
+    }
+  end
+
+  def contract_line(l) do
+    Map.merge(
+      %{
+        id: l.id,
+        product_id: l.product_id,
+        product: maybe_render(l, :product, &product_summary/1),
+        sacks: l.sacks,
+        price_per_sack: l.price_per_sack
+      },
+      l.figures || %{}
+    )
+  end
+
+  def purchase_order(o) do
+    alias RockcutApi.Ingredients.Orders
+
+    Map.merge(
+      %{
+        id: o.id,
+        supplier_party_id: o.supplier_party_id,
+        supplier: maybe_render(o, :supplier, &party_summary/1),
+        ordered_on: o.ordered_on,
+        expected_on: o.expected_on,
+        reference: o.reference,
+        off_contract: o.off_contract,
+        notes: o.notes,
+        status: o.status,
+        received_on: o.received_on,
+        created_by: maybe_render(o, :created_by, &person_name/1),
+        received_by: maybe_render(o, :received_by, &person_name/1),
+        cancelled_by: maybe_render(o, :cancelled_by, &person_name/1),
+        received_at: o.received_at,
+        cancelled_at: o.cancelled_at,
+        lines:
+          Enum.map(o.lines, fn l ->
+            n = Orders.counted_sacks(o, l)
+
+            %{
+              id: l.id,
+              offer_id: l.offer_id,
+              offer: %{
+                id: l.offer.id,
+                order_name: l.offer.order_name,
+                label: Orders.offer_label(l.offer),
+                sack_size_lb: l.offer.sack_size_lb,
+                product_id: l.offer.product_id,
+                product: product_summary(l.offer.product)
+              },
+              sacks_ordered: l.sacks_ordered,
+              sacks_received: l.sacks_received,
+              price_per_sack: l.price_per_sack,
+              line_lb: Decimal.round(Decimal.mult(l.offer.sack_size_lb, n), 2),
+              line_dollars: Decimal.round(Decimal.mult(l.price_per_sack, n), 2)
+            }
+          end),
+        inserted_at: o.inserted_at,
+        updated_at: o.updated_at
+      },
+      Orders.totals(o)
+    )
+  end
+
+  def reorder_row(r) do
+    %{
+      product_id: r.product.id,
+      product: product_summary(r.product),
+      min_on_hand_sacks: r.product.min_on_hand_sacks,
+      offer:
+        r.offer &&
+          Map.put(
+            supplier_offer(r.offer),
+            :label,
+            RockcutApi.Ingredients.Orders.offer_label(Map.put(r.offer, :product, r.product))
+          ),
+      on_hand_sacks: r.on_hand_sacks,
+      on_order_sacks: r.on_order_sacks,
+      to_order: r.to_order,
+      below_minimum: r.below_minimum
+    }
+  end
 
   def brand(b) do
     %{

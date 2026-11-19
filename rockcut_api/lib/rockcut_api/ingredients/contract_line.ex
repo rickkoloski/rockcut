@@ -10,6 +10,8 @@ defmodule RockcutApi.Ingredients.ContractLine do
   schema "supplier_contract_lines" do
     field :sacks, :integer
     field :price_per_sack, :decimal
+    # Contracted, on order, received and remaining (`Contracts`, A5).
+    field :figures, :any, virtual: true
 
     belongs_to :contract, RockcutApi.Ingredients.Contract
     belongs_to :product, RockcutApi.Ingredients.Product
