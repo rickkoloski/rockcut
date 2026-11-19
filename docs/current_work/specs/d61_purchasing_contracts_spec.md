@@ -300,7 +300,7 @@ Under **Brewery → Ingredients** (Brewery members and owners), new tabs/pages:
 - **Past-year contracts (DEV gap 4, 4a):** a contract for a year before the current year tracks
   contracted, on order, received and remaining as usual but **writes no price row** into the offer's
   price history, so last year's price never becomes today's price (decision 40). The contract dialog
-  says so for a past year: "Past-year contracts don't change the current price."
+  says so for a past year: "<year> is over: saving changes no offer prices."
 - **Stale saves (DEV gaps 1, 2):** saving an order or contract that someone else changed since the
   dialog opened is refused (409, nothing written) with "Someone else changed this order/contract
   since you opened it. Close and reopen it to see their change."
