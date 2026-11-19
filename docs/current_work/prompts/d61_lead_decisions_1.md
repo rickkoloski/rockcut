@@ -75,3 +75,14 @@ Don't run the full suite (the lead does, then QA rechecks).
     different sizes are converted by weight to the reorder offer's sack size before subtracting
     (to order still rounds up to whole sacks). ExUnit for 50 + 55 lb on order. Then the ingredients
     folder once.
+
+## Recheck 1 (local QA): gap 19
+
+All 17 gaps closed (`~/src/rockcut-d61-qa/results/d61_qa_recheck1.md`). One minor left:
+
+21. **Gap 19 (360 px):** To order's Offer select still truncates ("[TEST-TE…") and the card scrolls
+    sideways; the sack size isn't visible. At phone width show the chosen offer as wrapping text
+    ("supplier · 50 lb") with the select below it full width of the card (or a tap-to-change
+    button opening the choices), so the row fits the card with no inner sideways scroll and the
+    sack size is always readable. Extend P5 to assert no inner overflow and the visible sack size.
+    vitest/tsc/build clean, the ingredients folder green twice. Commit and reply.
