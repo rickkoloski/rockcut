@@ -75,11 +75,15 @@ defmodule RockcutApi.Seeds.Synthetic do
   }
 
   alias RockcutApi.Ingredients.{
+    Contract,
+    ContractLine,
     LotFeatureValue,
     Movement,
     Party,
     PartyRole,
     Product,
+    PurchaseOrder,
+    PurchaseOrderLine,
     SupplierOffer
   }
 
@@ -939,11 +943,54 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(r in RecipeIngredient, where: r.lot_id in subquery(lot_ids)))
     Repo.delete_all(from(l in IngredientLot, where: l.id in subquery(lot_ids)))
 
+    # D61: orders and contracts of a tagged supplier or with a line of a
+    # tagged product or offer go too (their lines cascade); a receipt they
+    # put on another lot goes with them (it's test stock).
+    offer_ids =
+      Repo.all(
+        from(o in SupplierOffer,
+          where:
+            o.product_id in ^product_ids or like(o.order_name, ^pattern) or
+              o.supplier_party_id in subquery(party_ids),
+          select: o.id
+        )
+      )
+
+    order_ids =
+      from(o in PurchaseOrder,
+        where:
+          o.supplier_party_id in subquery(party_ids) or
+            o.id in subquery(
+              from(l in PurchaseOrderLine, where: l.offer_id in ^offer_ids, select: l.order_id)
+            ),
+        select: o.id
+      )
+
     Repo.delete_all(
-      from(o in SupplierOffer,
-        where: o.product_id in ^product_ids or like(o.order_name, ^pattern)
+      from(m in Movement,
+        where:
+          m.purchase_order_line_id in subquery(
+            from(l in PurchaseOrderLine, where: l.order_id in subquery(order_ids), select: l.id)
+          )
       )
     )
+
+    Repo.delete_all(from(o in PurchaseOrder, where: o.id in subquery(order_ids)))
+
+    Repo.delete_all(
+      from(c in Contract,
+        where:
+          c.supplier_party_id in subquery(party_ids) or
+            c.id in subquery(
+              from(l in ContractLine,
+                where: l.product_id in ^product_ids or l.offer_id in ^offer_ids,
+                select: l.contract_id
+              )
+            )
+      )
+    )
+
+    Repo.delete_all(from(o in SupplierOffer, where: o.id in ^offer_ids))
 
     Repo.delete_all(from(p in Product, where: p.id in ^product_ids))
     Repo.delete_all(from(i in Ingredient, where: i.id in subquery(grain_ids)))
