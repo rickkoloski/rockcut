@@ -68,3 +68,10 @@ yourself, as before.
 `mix test` green twice; `--warnings-as-errors` clean; vitest, `tsc`, `vite build` clean; lint 8;
 the ingredients Playwright folder green twice. Commit, reply with commits, counts and `LEAD:` notes.
 Don't run the full suite (the lead does, then QA rechecks).
+
+## Follow-up (after cycle 1, LEAD note 11)
+
+20. **To order's on order by weight**, the same rule as Matt's 17a: on-order sacks across offers of
+    different sizes are converted by weight to the reorder offer's sack size before subtracting
+    (to order still rounds up to whole sacks). ExUnit for 50 + 55 lb on order. Then the ingredients
+    folder once.
