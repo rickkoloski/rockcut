@@ -988,6 +988,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: cat.name,
       parent_id: cat.parent_id,
       sort_order: cat.sort_order,
+      delete_blocked: cat.delete_blocked,
       field_definitions:
         maybe_render(
           cat,
@@ -1056,6 +1057,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: p.name,
       notes: p.notes,
       active: p.active,
+      order_target_sacks: p.order_target_sacks,
+      delete_blocked: p.delete_blocked,
       roles: maybe_render(p, :roles, fn roles -> roles |> Enum.map(& &1.role) |> Enum.sort() end),
       inserted_at: p.inserted_at,
       updated_at: p.updated_at
@@ -1076,6 +1079,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       active: p.active,
       features: maybe_render(p, :feature_values, &RockcutApi.Ingredients.Features.values_map/1),
       offers: maybe_render(p, :offers, &Enum.map(&1, fn o -> supplier_offer(o) end)),
+      min_on_hand_sacks: p.min_on_hand_sacks,
       on_hand_lb: p.on_hand_lb,
       expired_lb: p.expired_lb,
       inserted_at: p.inserted_at,

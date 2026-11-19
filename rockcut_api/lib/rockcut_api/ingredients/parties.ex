@@ -14,16 +14,20 @@ defmodule RockcutApi.Ingredients.Parties do
 
   @in_use "This company is in use; deactivate it instead"
 
-  @doc "Parties by name, roles preloaded; `role` narrows to those holding it."
+  @doc """
+  Parties by name, roles preloaded and `delete_blocked` filled; `role`
+  narrows to those holding it.
+  """
   def list(params \\ %{}) do
     Party
     |> filter_role(params["role"])
     |> order_by([p], p.name)
     |> preload(:roles)
     |> Repo.all()
+    |> put_delete_blocked()
   end
 
-  def get!(id), do: Party |> Repo.get!(id) |> Repo.preload(:roles)
+  def get!(id), do: Party |> Repo.get!(id) |> Repo.preload(:roles) |> put_delete_blocked()
 
   @doc "True if the party (an id) holds `role`."
   def has_role?(nil, _role), do: false
@@ -73,10 +77,61 @@ defmodule RockcutApi.Ingredients.Parties do
 
   @doc "Deletes a party no product, offer, lot or movement refers to."
   def delete(%Party{} = party) do
-    if in_use?(party.id),
+    if Map.fetch!(delete_blocked([party.id]), party.id),
       do: {:error, {:invalid, %{base: [@in_use]}}},
       else: Repo.delete(party)
   end
+
+  @doc """
+  Fill each party's virtual `delete_blocked` (D61 carry-over 2): why
+  `delete/1` would refuse it, or nil.
+  """
+  def put_delete_blocked(parties) when is_list(parties) do
+    blocked = delete_blocked(Enum.map(parties, & &1.id))
+    Enum.map(parties, &%{&1 | delete_blocked: Map.fetch!(blocked, &1.id)})
+  end
+
+  def put_delete_blocked(%Party{} = party), do: hd(put_delete_blocked([party]))
+
+  @doc """
+  Why each of `party_ids` can't be deleted, or nil when it can: what refers
+  to it (products it makes, offers or lots it supplies, movements it's the
+  partner on), one query each. The same rule as `delete/1` and
+  `role_in_use?/2`.
+  """
+  def delete_blocked(party_ids) do
+    uses = [
+      {"maltster products",
+       from(p in Product, where: p.maltster_party_id in ^party_ids, select: p.maltster_party_id)},
+      {"supplier offers",
+       from(o in SupplierOffer,
+         where: o.supplier_party_id in ^party_ids,
+         select: o.supplier_party_id
+       )},
+      {"lots",
+       from(l in IngredientLot,
+         where: l.supplier_party_id in ^party_ids,
+         select: l.supplier_party_id
+       )},
+      {"trades or loans",
+       from(m in Movement, where: m.partner_party_id in ^party_ids, select: m.partner_party_id)}
+    ]
+
+    found =
+      Enum.map(uses, fn {what, query} ->
+        {what, query |> distinct(true) |> Repo.all() |> MapSet.new()}
+      end)
+
+    Map.new(party_ids, fn id ->
+      case for({what, ids} <- found, MapSet.member?(ids, id), do: what) do
+        [] -> {id, nil}
+        whats -> {id, "This company has #{join(whats)}; deactivate it instead"}
+      end
+    end)
+  end
+
+  defp join([one]), do: one
+  defp join(list), do: Enum.join(Enum.drop(list, -1), ", ") <> " and " <> List.last(list)
 
   defp filter_role(query, role) when role in [nil, ""], do: query
 
@@ -126,8 +181,6 @@ defmodule RockcutApi.Ingredients.Parties do
 
   defp role_in_use?(id, "partner_brewery"),
     do: Repo.exists?(from(m in Movement, where: m.partner_party_id == ^id))
-
-  defp in_use?(id), do: Enum.any?(PartyRole.roles(), &role_in_use?(id, &1))
 
   defp rollback_on_error({:ok, record}), do: record
   defp rollback_on_error({:error, changeset}), do: Repo.rollback(changeset)
