@@ -66,3 +66,107 @@ repo-wide `mix format`**: format only the files you touch.
   `MIX_ENV=test mix compile --warnings-as-errors --force` clean; vitest, `tsc`, `vite build` clean;
   the ingredients Playwright folder green.
 - Reply with commits, test counts, and `LEAD:` notes for anything the spec or plan left open.
+
+---
+
+# Stage 2 (API)
+
+2026-11-18 · lead. Stop 1 accepted (`edd42df`, `78fdcf1`, `56bd6c2`, `e4714bc`). Your LEAD notes:
+
+1. **Company Delete wording:** use the specific reason in both places: the API refusal says the
+   same sentence as the reason under the button ("This company has maltster products and supplier
+   offers; deactivate it instead"). One function builds it.
+2. Decimals: accepted as you did them (singular/plural, whole number, trailing zeros, 2-decimal
+   sacks, popup unrestricted).
+3. Accepted; keep the vitest for the fractional-sack case.
+4. **Lot numbers:** trim on save, and treat them **case-insensitively** within a product (`w123`
+   is lot `W123`; receiving into it adds to that lot). Make the unique index case-insensitive
+   (`COLLATE NOCASE` or a lower() expression) with a migration that renames clashing duplicates the
+   same way; the lot keeps the spelling it was first entered with.
+5. Yes: offer delete → 422 when an order line uses it (and when a contract line covers its
+   supplier + product); contracts and orders join the company Delete rule. No 500 anywhere.
+6–7. Accepted. 8. Good; and ask before adding a migration while the server is up, as you said.
+
+## Do (plan Stage 2; spec §3)
+
+Every rule gets a refusal test and an allowed test. Flat params, as the rest of the API.
+
+1. **Contracts** — `/api/contracts` (index `?year=`, show, create, update, delete; lines in the
+   body as a full list) and `GET /api/contracts/shortfall?year=`.
+   - `Authz`: `can?(user, :read, :contracts)` = Brewery member; `can?(user, :write, :contracts)` =
+     owner or `manages_department?(user, brewery)`. Devices denied. Boundary and device-matrix
+     tests updated.
+   - Supplier must hold `supplier`; product unique per contract; one contract per supplier + year
+     (422 "BSG already has a 2027 contract").
+   - Saving a line with a new or changed price writes an offer price row on **that supplier's
+     active offer for the product** (422 "Add a <supplier> offer for <product> first" if none;
+     several offers → the line names the offer, `offer_id` in the body, required then),
+     `effective_on = max(Jan 1 of year, today Colorado)`, note "Contract <year>". Unchanged prices
+     write nothing.
+   - Read JSON per line: `contracted_sacks`, `contracted_dollars`, `on_order_sacks` (open,
+     on-contract order lines, this supplier + product, `ordered_on` in the year),
+     `received_sacks`/`received_dollars` (received, on-contract lines, `received_on` in the year,
+     dollars at the line prices), `remaining_sacks` (may be negative) and `over_by` when negative.
+   - Delete: 422 once anything was received against it in its year.
+   - Shortfall: per product with a contract line in the year: contracted, received, short
+     (contracted − received when > 0), sorted by short descending.
+2. **Orders** — `/api/purchase_orders` (index with `supplier_id`, `status`, `from`, `to`; show;
+   create; update; `POST /:id/cancel`; `POST /:id/receive`).
+   - Lines' offers belong to the order's supplier (422); sacks whole ≥ 1; price defaults to the
+     offer's current price when omitted; `ordered_on` ≤ today is not required (an order can be
+     dated ahead? **No**: not after today, like movements); `expected_on` ≥ `ordered_on` when set.
+   - Update replaces header and lines while `open`; cancel sets `cancelled` + who/when. Any write on
+     a received or cancelled order → 409 "This order has already been received" / "…cancelled".
+   - JSON: lines with offer (order name, sack size, product label), `line_dollars`; totals
+     `total_sacks`, `total_lb`, `total_dollars`; `target` = supplier's `order_target_sacks` and
+     `next_multiple` (smallest multiple ≥ total sacks, at least one target) when the supplier has a
+     target.
+3. **Receive** (spec §3.3, A3) — body: `received_on` (≤ today) and per line `sacks_received` (≥ 0)
+   with `allocations: [{lot_id} | {lot_number, features?, notes?}, sacks]`.
+   - Defaults when a line has no allocations: the product's **previous lot** (most recent
+     `received_date` among its non-expired lots with `sack_size_lb` = the offer's sack size), all
+     sacks to it; none → 422 "Enter a lot number for <product>".
+   - A `lot_number` matching an existing lot of the product (case-insensitive, trimmed) adds to it;
+     its sack size must equal the offer's (422 "Lot X holds 50 lb sacks; use a new lot number");
+     otherwise a new lot (supplier and sack size from the offer, `received_date` = `received_on`,
+     specs from the standard plus any `features` given, as Add lot).
+   - Allocations' sacks must add up to `sacks_received` (422). `sacks_received` 0 → no movement.
+   - Each allocation writes a **Received** movement: `quantity_lb` = sacks × sack size,
+     `occurred_on` = `received_on`, `purchase_order_line_id`, `unit_cost_per_lb` = line price ÷
+     sack size. Existing lots keep their `received_date`. Lot status follows on-hand as in D60.
+   - Order → `received`, `received_on`, who/when, line `sacks_received` stored. One transaction
+     with `BEGIN IMMEDIATE`; status re-checked inside it (a second receive → 409). Test two
+     parallel receives (one wins).
+4. **Valuation** (`Ingredients.Valuation`, spec §3.4, A4 = **most recent costed receipt**).
+   - `on_hand_as_of(lot or product, date)` = movements with `occurred_on` ≤ date; `cost_per_lb(lot,
+     date)` = `unit_cost_per_lb` of the latest costed Received movement on or before date (ties:
+     highest id); none → estimate = the lot's supplier offer for its product, price in effect on
+     date ÷ sack size, `estimated: true`; no price → `unvalued: true`, value null.
+   - Lot JSON gains `cost_per_lb`, `value`, `estimated`, `unvalued` (today).
+   - `GET /api/ingredient_totals/inventory?as_of=&supplier_id=&maltster_id=&category_id=`: rows per
+     maltster product with stock on that date (grain, maltster, category, `lb`, `expired_lb`,
+     `sacks` when all its lots share a sack size else null, `value`, `per_lb`, `estimated` if any
+     lot estimated, `unvalued_lb`), and `total` {lb, value}. `as_of` ≤ today (422).
+   - `GET /api/ingredient_totals/orders?from=&to=&supplier_id=&status=`: one row per order line
+     (ordered_on, supplier, reference, product, status, sacks_ordered, sacks_received, lb, dollars
+     per decision 35), `by_supplier` subtotals and `total`. Cancelled excluded unless
+     `status=cancelled`.
+5. **Reorder** (`Ingredients.Reorder`, spec §3.5).
+   - `min_on_hand_sacks` writable on product update (any Brewery member).
+   - `GET /api/ingredient_reorder`: products with a minimum: reorder offer (offer of the most
+     recent order line for the product, else the first active offer by id; `?offer_id[<product>]`
+     not needed: the UI passes the chosen offer when starting an order), `on_hand_sacks`
+     (non-expired lb ÷ that offer's sack size, 2 dp), `on_order_sacks` (open lines, any supplier),
+     `to_order` = ceil(min − on hand − on order) when > 0 else 0, `below_minimum`.
+   - `below_minimum` on the product JSON and on Grains list rows.
+6. **Delete rules joined:** company delete reason/refusal includes contracts and orders; offer
+   delete 422 when an order line or contract covers it (item 5 above).
+7. **Lot numbers** (LEAD 4): trim + case-insensitive uniqueness per product, migration as above
+   (ask before adding it while the server is up).
+
+## Done when (Stop 2)
+
+`mix test` green twice; `MIX_ENV=test mix compile --warnings-as-errors --force` clean; the
+ingredients Playwright folder still green (no UI yet beyond Stage 1). Reply with commits, counts and
+`LEAD:` notes, including whether Stage 3 looks too big (the plan's fallback: Totals as its own
+deliverable).
