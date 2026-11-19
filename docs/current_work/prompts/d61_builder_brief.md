@@ -170,3 +170,64 @@ Every rule gets a refusal test and an allowed test. Flat params, as the rest of 
 ingredients Playwright folder still green (no UI yet beyond Stage 1). Reply with commits, counts and
 `LEAD:` notes, including whether Stage 3 looks too big (the plan's fallback: Totals as its own
 deliverable).
+
+---
+
+# Stage 3a (UI: orders and receiving)
+
+2026-11-18 · lead. Stop 2 accepted (`c7dfffa`, `df33a0e`, `b92a505`). Your LEAD notes:
+
+1, 2, 4, 5, 9, 10, 11: accepted as built.
+3. **Yes, `offer_id` on contract lines** (migration; add it and migrate the dev DB yourself, as
+   last time). Set when the line is saved (required when the supplier has several offers for the
+   product, inferred when one); later price changes use it. Existing rows: none outside tests.
+6. **Receiving into an expired lot is refused:** 422 "Lot X is expired; use a new lot number" (by
+   id or by number). Other defaults accepted (left-out line = in full into the previous lot;
+   missing `received_on` = today).
+7. **Inactive offers:** refused on new or changed order lines (422 "That offer is inactive");
+   lines already on an open order keep theirs. The reorder offer skips inactive offers (the latest
+   order's offer if active, else the first active).
+8. Accepted; the To order page lists such a product with "No offer" and no number.
+12. **Split accepted:** Stage 3a (this) and 3b (contracts, To order, Totals, lint), with a stop
+   between. If 3a runs long, say so at Stop 3a.
+
+## Do (plan Stage 3; spec §4 items 1, 5, 6, 7)
+
+1. The API changes from notes 3, 6, 7 above, with tests.
+2. **Orders list** `/ingredients/orders` (nav: a Purchasing entry in the Ingredient Library's top
+   row, next to Companies/Categories): open orders first, then received and cancelled newest first;
+   filters supplier and status; columns order date, supplier, reference, sacks, $, status, expected.
+   Phone: cards.
+3. **New / Edit order dialog:** supplier (suppliers only), order date (default today, max today),
+   expected date, reference, off-contract switch, notes; lines: offer picker limited to the
+   supplier's active offers (order name · product · sack size · milled/whole), sacks (whole
+   numbers), price (prefilled with the current price, `DecimalInput`, 2 decimals), remove line, Add
+   line. A running total under the lines: "36 sacks · 1,980 lb · $1,512.00", and when the supplier
+   has a target "36 of 40 sacks" (reaching a multiple reads "40 of 40 sacks"; above it "44 of 80").
+   Save locks as every dialog. Phone: full screen.
+4. **Order page** `/ingredients/orders/:id`: header, lines (ordered / received once received,
+   price, $), totals; **Edit** and **Cancel** (confirm "Cancel this order? Nothing has been
+   received.") while open; **Receive**; read-only once received or cancelled with who/when.
+5. **Receive dialog:** received date (default today, max today); per line: sacks received (default
+   ordered; "Received in full" is just leaving it), and where it goes: the previous lot preselected
+   ("Lot W123 · received 2026-10-02 · 8 sacks on hand"), or **New lot #** (lot # box, specs from the
+   standard collapsed under "Specs", editable as in Add lot), **Add lot #** to split (rows must add
+   up; show "6 + 4 = 10 of 10"). A line with no previous lot starts on New lot #. Received 0 hides
+   the lot rows. Errors from the API shown on the line they belong to where possible.
+6. **Product page:** Minimum on hand (sacks, edit inline or in the product dialog), a **Below
+   minimum** chip next to on hand; an **Open orders** section (order date, supplier, sacks, link);
+   lots table gains **$/lb** and **Value** (estimated marked "est.", unvalued "—").
+7. **Grains list:** Below minimum chip on the row (and card).
+8. **Companies:** suppliers get **Order target (sacks)** in the dialog and a column.
+9. 360 px: no sideways scroll on every page above; dialogs full screen. Look at it in a browser as
+   `brewer1` and `owner` (desktop and 360 px), and `bartender1`/`breweryDevice` refused.
+10. Playwright (`tests/regression/ingredients/`): orders (create with target progress, edit,
+    cancel, received read-only), receive (in full into the previous lot, short, split, new lot,
+    expired lot refused), product page minimum/below-minimum/open orders/value, phone, slow
+    double-click on New order Save and Receive Save. `[TEST-TEMP]` suppliers and products only.
+
+## Done when (Stop 3a)
+
+vitest, `tsc`, `vite build` clean; lint no worse (21, or fewer if you touch a 4084 file in passing);
+`mix test` green; the ingredients Playwright folder green twice. Reply with commits, counts, `LEAD:`
+notes, and whether 3b still fits in D61.
