@@ -413,11 +413,11 @@ and salts move to a later ID. Raise it with Matt before splitting.
 
 - **Hop forms:** "T90 Pellet" (not "Pellet"), Cryo, Whole leaf, Extract.
 - **Alpha and beta keep 2 decimals** (supplier sheets give 12.67 %).
-- **Hop lots on prod:** Matt's cooler list (`reference/d62_hops_matt_2026-11-19.csv`, local only)
-  is seeded **on prod only** as lots with an **Opening amount** (28 lots, EKG excluded until its
-  lot # and alpha are known). DEV and local keep synthetic hop lots. The products, manufacturers
-  and offers are seeded everywhere, as §7.
+- **Hop lots:** Matt's cooler list (`reference/d62_hops_matt_2026-11-19.csv`, local only) is
+  seeded as 28 lots with an **Opening amount dated 2026-11-19** (EKG excluded until its lot # and
+  alpha are known), on **every environment**: Matt expects to reseed later, and it's realistic
+  test data (no personal data). Synthetic `[SEED]` scenario data is unchanged.
 - **Manufacturer for this seed = the supplier** (John Fearless, Lupulin Exchange, Billy Goat,
   Michigan Hop Alliance, Yakima Chief Hops, BSG); Matt corrects growers later on the screens.
-- **Typical ranges and origin** are filled from published variety specs for Matt to check before
-  the seed is final.
+- **Typical ranges and origin:** filled from published variety specs and **checked by Matt**
+  (`reference/d62_hop_products.csv`, 27 products; Pink Boots Blend has no range).
