@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { FormControl, FormControlLabel, InputLabel, ListSubheader, MenuItem, Select, Switch, TextField } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
@@ -7,6 +8,7 @@ import RangeFields from './RangeFields'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
+import { httpStatus } from '../../lib/notFound'
 import {
   HOP_FORMS,
   draftsFrom,
@@ -80,6 +82,10 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
   const [form, setForm] = useState(product?.form ?? HOP_FORMS[0])
   const [origin, setOrigin] = useState(product?.origin ?? '')
   const [error, setError] = useState<string | null>(null)
+  // Gap 9 (D61's pattern): the version this dialog opened, kept if the page
+  // refetches under it, so a save over someone else's change stays refused.
+  const [version] = useState(product?.lock_version)
+  const qc = useQueryClient()
 
   const { grains, children } = grainCategories(categories)
   const { category: hopsCategory } = keyedCategories(categories, 'hops')
@@ -123,7 +129,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
     try {
       if (product) {
         // Gap 9: the version the dialog opened; a save after someone else's is refused (409).
-        await update.mutateAsync({ id: product.id, lock_version: product.lock_version, ...payload })
+        await update.mutateAsync({ id: product.id, lock_version: version, ...payload })
         onClose()
       } else {
         const created = await create.mutateAsync(payload)
@@ -131,7 +137,9 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
         navigate(`/ingredients/products/${created.id}`)
       }
     } catch (err) {
+      // The person's input stays; the page behind refetches, so reopening shows the change.
       setError(parseApiError(err))
+      if (httpStatus(err) === 409) GRAIN_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key }))
     }
   }
 

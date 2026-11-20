@@ -311,7 +311,7 @@ export function pickerName(p: Pick<IngredientProduct, 'display_name' | 'form' | 
 }
 
 /** A select (and its menu items) whose long names wrap instead of being cut off at phone width (gap 8). */
-export const WRAP_SELECT = { '& .MuiSelect-select': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } as const
+export const WRAP_SELECT = { '& .MuiSelect-select.MuiInputBase-input': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } as const
 export const WRAP_ITEM = { whiteSpace: 'normal', overflowWrap: 'anywhere' } as const
 
 /** What the grains list's search matches: ingredient, manufacturer, product name, suppliers and their order names. */
