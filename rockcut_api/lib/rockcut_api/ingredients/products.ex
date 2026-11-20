@@ -39,7 +39,7 @@ defmodule RockcutApi.Ingredients.Products do
       |> filter_category(params["category_id"])
       |> filter(:manufacturer_party_id, params["manufacturer_id"])
       |> filter_supplier(params["supplier_id"])
-      |> order_by([p, i, _c, m], [i.name, m.name, p.name, p.id])
+      |> order_by([p, i, _c, _cp, m], [i.name, m.name, p.name, p.id])
       |> Repo.all()
       |> fill()
 
@@ -150,13 +150,15 @@ defmodule RockcutApi.Ingredients.Products do
     end
   end
 
-  # Products with ingredient, its category and the manufacturer, joined (one query).
+  # Products with ingredient, its category (and parent, for the key) and the
+  # manufacturer, joined (one query).
   defp base_query do
     from(p in Product,
       join: i in assoc(p, :ingredient),
       join: c in assoc(i, :category),
+      left_join: cp in assoc(c, :parent),
       join: m in assoc(p, :manufacturer),
-      preload: [ingredient: {i, category: c}, manufacturer: m]
+      preload: [ingredient: {i, category: {c, parent: cp}}, manufacturer: m]
     )
   end
 

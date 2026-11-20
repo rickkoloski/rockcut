@@ -1078,6 +1078,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       ingredient_id: p.ingredient_id,
       ingredient: maybe_render(p, :ingredient, &ingredient_summary/1),
       category: maybe_render(p.ingredient, :category, &ingredient_category_summary/1),
+      # D62: the top-level category's key (`grains` for a grain on Base).
+      category_key: maybe_render(p.ingredient, :category, &RockcutApi.Ingredients.Catalog.key/1),
       manufacturer_party_id: p.manufacturer_party_id,
       manufacturer: maybe_render(p, :manufacturer, &party_summary/1),
       name: p.name,

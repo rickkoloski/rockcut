@@ -308,6 +308,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert eq(p["on_hand"], 110)
       # D62 §3.3, §3.5: a grain product is in lb, its offer a sack.
       assert p["unit"] == "lb" and p["form"] == nil and p["origin"] == nil
+      assert p["category_key"] == "grains"
       assert offer["pack_name"] == "sack" and eq(offer["pack_size"], 55)
     end
 
