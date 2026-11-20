@@ -15,6 +15,7 @@ defmodule RockcutApi.Ingredients.Products do
   alias RockcutApi.Brewing.{IngredientCategory, IngredientLot}
 
   alias RockcutApi.Ingredients.{
+    Catalog,
     Features,
     Inventory,
     Offers,
@@ -65,12 +66,15 @@ defmodule RockcutApi.Ingredients.Products do
   end
 
   def create(attrs) do
+    key = Catalog.ingredient_key(blank(attrs["ingredient_id"]))
+
     with :ok <- manufacturer(attrs),
-         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"]) do
+         {:ok, attrs} <- category_rules(attrs, key),
+         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"], :product) do
       Repo.transaction(fn ->
         product =
           %Product{}
-          |> Product.changeset(attrs)
+          |> Product.changeset(attrs, key)
           |> Repo.insert()
           |> rollback_on_error()
 
@@ -86,13 +90,15 @@ defmodule RockcutApi.Ingredients.Products do
   """
   def update(%Product{} = product, attrs) do
     ingredient_id = attrs["ingredient_id"] || product.ingredient_id
+    key = Catalog.ingredient_key(blank(ingredient_id))
 
     with :ok <- manufacturer(attrs),
-         {:ok, features} <- Features.validate(attrs["features"], ingredient_id) do
+         {:ok, attrs} <- category_rules(Map.put_new(attrs, "form", product.form), key),
+         {:ok, features} <- Features.validate(attrs["features"], ingredient_id, :product) do
       Repo.transaction(fn ->
         updated =
           product
-          |> Product.changeset(attrs)
+          |> Product.changeset(attrs, key)
           |> Repo.update()
           |> rollback_on_error()
 
@@ -125,19 +131,16 @@ defmodule RockcutApi.Ingredients.Products do
   (Lupomax)". Grain products have no form, so their names don't change.
   '''
   def display_name(%Product{manufacturer: %{name: maker}, ingredient: %{name: ingredient}} = p) do
-    item = Enum.join(Enum.reject([ingredient, blank_to_nil(p.form)], &is_nil/1), " ")
+    item = Enum.join(Enum.reject([ingredient, blank(p.form)], &is_nil/1), " ")
 
     cond do
       is_nil(p.name) -> "#{maker} #{item}"
-      is_nil(blank_to_nil(p.form)) -> "#{maker} #{p.name} (#{item})"
+      is_nil(blank(p.form)) -> "#{maker} #{p.name} (#{item})"
       true -> "#{maker} #{item} (#{p.name})"
     end
   end
 
   def display_name(_), do: nil
-
-  defp blank_to_nil(v) when v in [nil, ""], do: nil
-  defp blank_to_nil(v), do: v
 
   @doc "A product's unit (D62 §3.3), lb when there's no product."
   def unit(nil), do: "lb"
@@ -203,6 +206,39 @@ defmodule RockcutApi.Ingredients.Products do
       }
     end)
   end
+
+  # D62 §3.3, §3.6: a category with forms needs one of them (hops: T90
+  # Pellet, Cryo, Whole leaf, Extract); one without (grain) takes none. The
+  # unit is the category's when it has only one (lb for grain and hops).
+  defp category_rules(attrs, key) do
+    form = blank(attrs["form"])
+
+    case Catalog.forms(key) do
+      [] when form != nil ->
+        {:error, {:invalid, %{form: ["isn't set on this category's products"]}}}
+
+      [] ->
+        {:ok, put_unit(attrs, key)}
+
+      _forms when form == nil ->
+        {:error, {:invalid, %{form: ["can't be blank"]}}}
+
+      forms ->
+        if form in forms,
+          do: {:ok, put_unit(attrs, key)},
+          else: {:error, {:invalid, %{form: ["must be one of #{Enum.join(forms, ", ")}"]}}}
+    end
+  end
+
+  defp put_unit(attrs, key) do
+    case Catalog.units(key) do
+      [unit] -> Map.put(attrs, "unit", unit)
+      _ -> Map.delete(attrs, "unit")
+    end
+  end
+
+  defp blank(v) when v in [nil, ""], do: nil
+  defp blank(v), do: v
 
   defp manufacturer(attrs) do
     case Map.fetch(attrs, "manufacturer_party_id") do

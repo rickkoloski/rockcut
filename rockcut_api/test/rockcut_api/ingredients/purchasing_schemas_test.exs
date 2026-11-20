@@ -77,11 +77,30 @@ defmodule RockcutApi.Ingredients.PurchasingSchemasTest do
                  )
                )
 
-      assert %{quantity: ["is invalid"]} =
+      # D62: the quantity is a decimal now (hop lines are in lb); a grain line stays whole sacks.
+      assert %{quantity: ["Use a whole number"]} =
                errors(
                  ContractLine.changeset(
                    %ContractLine{},
                    Map.merge(base, %{quantity: "1.5", price: "42"})
+                 )
+               )
+
+      assert %{quantity: ["Use at most 2 decimals"]} =
+               errors(
+                 ContractLine.changeset(
+                   %ContractLine{},
+                   Map.merge(base, %{quantity: "440.125", price: "14.5"}),
+                   :lb
+                 )
+               )
+
+      assert %{} ==
+               errors(
+                 ContractLine.changeset(
+                   %ContractLine{},
+                   Map.merge(base, %{quantity: "440.5", price: "14.5"}),
+                   :lb
                  )
                )
 

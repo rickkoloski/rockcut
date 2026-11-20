@@ -147,8 +147,8 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
                where: d.category_id == ^grains().id and d.field_name in ["Origin", "Maltster"]
            )
 
-    # Grains: five features; Hops alpha acid; Yeast Strains attenuation.
-    assert first[CategoryFeatureType] == 7
+    # Grains: five features; Hops alpha, beta and oil (D62); Yeast Strains attenuation.
+    assert first[CategoryFeatureType] == 9
   end
 
   test "offers: sack size, milled from the order name, Root Shoot with no order name" do

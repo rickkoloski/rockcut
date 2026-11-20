@@ -17,6 +17,11 @@ defmodule RockcutApi.Brewing.IngredientLot do
     field :pack_name, :string, default: "sack"
     field :pack_size, :decimal
     field :notes, :string
+    # D62 §3.4: a hop lot's crop year (required there, `Inventory`).
+    field :crop_year, :integer
+    # D62 §3.4: the feature keys whose value is outside the product's range
+    # (`Features.put_outside_range/1`).
+    field :outside_range, {:array, :string}, virtual: true, default: []
     # D60: the sum of its movements (in the product's unit), filled by
     # `Ingredients.Inventory.put_on_hand/1`.
     field :on_hand, :decimal, virtual: true
@@ -52,18 +57,31 @@ defmodule RockcutApi.Brewing.IngredientLot do
       :status,
       :pack_name,
       :pack_size,
-      :notes
+      :notes,
+      :crop_year
     ])
     |> update_change(:lot_number, &trim_number/1)
     |> validate_required([:ingredient_id])
     |> validate_inclusion(:status, @valid_statuses)
     |> validate_inclusion(:pack_name, RockcutApi.Ingredients.Catalog.pack_names())
     |> validate_positive_up_to(:pack_size, 10_000)
+    |> validate_crop_year()
     |> unique_lot_number()
     |> foreign_key_constraint(:ingredient_id)
     |> foreign_key_constraint(:product_id)
     |> foreign_key_constraint(:supplier_party_id)
     |> RockcutApi.Changeset.validate_parents([:ingredient_id, :product_id, :supplier_party_id])
+  end
+
+  # D62 §3.4: a four-digit year from 2000 through next year (Colorado).
+  defp validate_crop_year(changeset) do
+    last = RockcutApi.Tasks.today().year + 1
+
+    validate_number(changeset, :crop_year,
+      greater_than_or_equal_to: 2000,
+      less_than_or_equal_to: last,
+      message: "must be a year from 2000 to #{last}"
+    )
   end
 
   # D61 lead (Stop 1 note 4): lot numbers are trimmed; blank is none.

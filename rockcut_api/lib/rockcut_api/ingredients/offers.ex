@@ -1,7 +1,9 @@
 defmodule RockcutApi.Ingredients.Offers do
   @moduledoc """
   D60 §3.6: supplier offers and their price history. An offer's supplier
-  must hold the supplier role. The current price is the latest effective on
+  must hold the supplier role. D62 §3.5: a grain offer is in sacks; a hop
+  offer is always a box of 11 lb (set when omitted, anything else refused).
+  The current price is the latest effective on
   or before today in Colorado (`Tasks.today/0`); a future-dated price isn't
   current until its day.
   """
@@ -10,6 +12,7 @@ defmodule RockcutApi.Ingredients.Offers do
   alias RockcutApi.{Repo, Tasks}
 
   alias RockcutApi.Ingredients.{
+    Catalog,
     ContractLine,
     OfferPrice,
     Parties,
@@ -33,7 +36,8 @@ defmodule RockcutApi.Ingredients.Offers do
     do: SupplierOffer |> Repo.get!(id) |> Repo.preload(:supplier) |> put_current_price()
 
   def create(attrs) do
-    with :ok <- supplier(attrs) do
+    with :ok <- supplier(attrs),
+         {:ok, attrs} <- pack_rules(attrs, attrs["product_id"]) do
       %SupplierOffer{}
       |> SupplierOffer.changeset(attrs)
       |> Repo.insert()
@@ -42,7 +46,8 @@ defmodule RockcutApi.Ingredients.Offers do
   end
 
   def update(%SupplierOffer{} = offer, attrs) do
-    with :ok <- supplier(attrs) do
+    with :ok <- supplier(attrs),
+         {:ok, attrs} <- pack_rules(attrs, attrs["product_id"] || offer.product_id) do
       offer
       |> SupplierOffer.changeset(attrs)
       |> Repo.update()
@@ -133,6 +138,37 @@ defmodule RockcutApi.Ingredients.Offers do
 
       _ ->
         :ok
+    end
+  end
+
+  # The pack the product's category allows (`Catalog.fixed_pack/1`,
+  # `Catalog.pack_names/1`).
+  defp pack_rules(attrs, product_id) do
+    key = product_id |> RockcutApi.Ids.parse() |> Catalog.product_key()
+
+    case Catalog.fixed_pack(key) do
+      {name, size} ->
+        given_name = attrs["pack_name"]
+        given_size = attrs["pack_size"]
+
+        if given_name in [nil, "", name] and
+             (given_size in [nil, ""] or same_size?(given_size, size)),
+           do: {:ok, Map.merge(attrs, %{"pack_name" => name, "pack_size" => size})},
+           else: {:error, {:invalid, %{base: ["Hop offers are #{size} lb boxes"]}}}
+
+      nil ->
+        names = Catalog.pack_names(key)
+
+        if attrs["pack_name"] in [nil, "" | names],
+          do: {:ok, attrs},
+          else: {:error, {:invalid, %{pack_name: ["must be #{Enum.join(names, " or ")}"]}}}
+    end
+  end
+
+  defp same_size?(given, size) do
+    case Ecto.Type.cast(:decimal, given) do
+      {:ok, d} -> Decimal.eq?(d, size)
+      _ -> false
     end
   end
 

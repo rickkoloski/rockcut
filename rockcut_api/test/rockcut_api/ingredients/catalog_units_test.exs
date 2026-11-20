@@ -27,15 +27,23 @@ defmodule RockcutApi.Ingredients.CatalogUnitsTest do
       assert Enum.sort(Catalog.category_ids(["grains"])) == Enum.sort([c.grains.id, c.base.id])
     end
 
-    test "Stage 1 manages grain only; contracts count packs for grain" do
+    test "Stage 2 manages grain and hops; contracts count sacks for grain and lb for hops" do
       assert Catalog.managed?("grains")
-      refute Catalog.managed?("hops")
+      assert Catalog.managed?("hops")
       refute Catalog.managed?("yeast")
+      refute Catalog.managed?("fruits")
       refute Catalog.managed?(nil)
       assert Catalog.contract_unit("grains") == :packs
-      assert Catalog.contract_unit("hops") == nil
+      assert Catalog.contract_unit("hops") == :lb
+      assert Catalog.contract_unit("fruits") == nil
       assert Catalog.units("grains") == ["lb"] and Catalog.forms("grains") == []
-      assert Catalog.pack_names() == ["sack"]
+      assert Catalog.units("hops") == ["lb"]
+      assert Catalog.forms("hops") == ["T90 Pellet", "Cryo", "Whole leaf", "Extract"]
+      assert Catalog.pack_names() == ["sack", "box"]
+      assert Catalog.pack_names("grains") == ["sack"] and Catalog.pack_names("hops") == ["box"]
+      assert {"box", size} = Catalog.fixed_pack("hops")
+      assert Decimal.eq?(size, 11)
+      assert Catalog.fixed_pack("grains") == nil
     end
 
     test "renaming Grains changes nothing: a grain lot still needs its product and first movement",

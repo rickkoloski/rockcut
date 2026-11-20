@@ -38,7 +38,12 @@ defmodule RockcutApi.Ingredients.Product do
     timestamps(type: :utc_datetime)
   end
 
-  def changeset(product, attrs) do
+  @doc """
+  The product's fields. `Products` decides `form` and `unit` by the
+  category (`Ingredients.Catalog`); `key` is that category's key, for the
+  duplicate's wording.
+  """
+  def changeset(product, attrs, key \\ "grains") do
     product
     |> cast(attrs, [
       :ingredient_id,
@@ -46,6 +51,8 @@ defmodule RockcutApi.Ingredients.Product do
       :name,
       :notes,
       :active,
+      :form,
+      :unit,
       :origin,
       :min_on_hand_packs,
       :reorder_offer_id
@@ -58,7 +65,7 @@ defmodule RockcutApi.Ingredients.Product do
     |> validate_range(:min_on_hand_packs, 0, 100_000)
     |> unique_constraint([:ingredient_id, :manufacturer_party_id, :name],
       name: :ingredient_products_ingredient_manufacturer_form_name_index,
-      message: "This maltster already has that product for this grain."
+      message: duplicate(key)
     )
     |> foreign_key_constraint(:ingredient_id)
     |> foreign_key_constraint(:manufacturer_party_id)
@@ -82,6 +89,10 @@ defmodule RockcutApi.Ingredients.Product do
       end
     end)
   end
+
+  defp duplicate("grains"), do: "This maltster already has that product for this grain."
+  defp duplicate("hops"), do: "This manufacturer already has that hop in that form."
+  defp duplicate(_key), do: "This manufacturer already has that product."
 
   defp blank_to_nil(nil), do: nil
 

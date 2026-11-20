@@ -543,27 +543,36 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       refute Map.has_key?(p["features"], "moisture_pct")
     end
 
-    test "a hop lot (not a grain) needs no product or movement and keeps its status", c do
-      cascade =
-        Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "Cascade", category_id: c.hops.id})
+    test "a yeast lot (a category the catalog doesn't manage) needs no product or movement and keeps its status",
+         c do
+      # D62 Stage 2: hops are managed now (`HopsApiTest`); yeast waits for D64.
+      yeast = keyed_category!("Yeast Strains", "yeast")
 
-      # The product decides the grain; another grain with it is refused.
+      Repo.insert!(%RockcutApi.Ingredients.CategoryFeatureType{
+        category_id: yeast.id,
+        feature_type_id: feature_type!("attenuation_pct").id
+      })
+
+      wlp =
+        Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "WLP001", category_id: yeast.id})
+
+      # The product decides the ingredient; another ingredient with it is refused.
       assert %{"ingredient_id" => ["isn't this product's ingredient"]} =
                errors(
                  req(c.brewer, :post, "/api/ingredient_lots", %{
-                   ingredient_id: cascade.id,
+                   ingredient_id: wlp.id,
                    product_id: c.product.id
                  })
                )
 
       {201, %{"data" => lot}} =
         req(c.brewer, :post, "/api/ingredient_lots", %{
-          ingredient_id: cascade.id,
-          lot_number: "H-1",
-          features: %{alpha_acid_pct: "5.5"}
+          ingredient_id: wlp.id,
+          lot_number: "Y-1",
+          features: %{attenuation_pct: "76"}
         })
 
-      assert lot["features"]["alpha_acid_pct"]["value"] == "5.5"
+      assert lot["features"]["attenuation_pct"]["value"] == "76"
       assert lot["status"] == "available"
 
       {200, %{"data" => lot}} =

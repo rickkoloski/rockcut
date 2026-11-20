@@ -26,6 +26,7 @@ defmodule RockcutApi.Ingredients.Orders do
   alias RockcutApi.Brewing.IngredientLot
 
   alias RockcutApi.Ingredients.{
+    Catalog,
     Features,
     Inventory,
     Movement,
@@ -617,19 +618,37 @@ defmodule RockcutApi.Ingredients.Orders do
 
   # Add lot's lot (§3.3): supplier and pack from the offer, received on
   # the receipt's date, the product's standard specs with `features` over
-  # them.
+  # them. D62 §3.4: a hop lot also takes its `crop_year` and must have its
+  # alpha acid; the refusals name the product and lot, so the dialog shows
+  # them on the line.
   defp new_lot!(line, number, a, received_on) do
     product = line.offer.product
+    hops? = Catalog.ingredient_key(product.ingredient_id) == "hops"
+    crop_year = if hops?, do: a["crop_year"]
+    which = "#{product_name(line)} lot #{number}"
+
+    if hops? and a["crop_year"] in [nil, ""],
+      do: rollback(%{base: ["#{which}: enter its crop year"]})
+
+    if not hops? and a["crop_year"] not in [nil, ""],
+      do: rollback(%{base: ["#{which}: only hop lots have a crop year"]})
 
     features =
-      case Features.validate(a["features"], product.ingredient_id) do
+      case Features.validate(a["features"], product.ingredient_id, :lot) do
         {:ok, features} -> features
         {:error, reason} -> Repo.rollback(reason)
       end
 
-    lot =
-      %IngredientLot{}
-      |> IngredientLot.changeset(%{
+    case Features.check_required(product.ingredient_id, features) do
+      :ok ->
+        :ok
+
+      {:error, {:invalid, %{features: errors}}} ->
+        rollback(%{base: ["#{which}: #{errors |> Map.values() |> List.flatten() |> hd()}"]})
+    end
+
+    changeset =
+      IngredientLot.changeset(%IngredientLot{}, %{
         ingredient_id: product.ingredient_id,
         product_id: product.id,
         supplier_party_id: line.offer.supplier_party_id,
@@ -637,9 +656,16 @@ defmodule RockcutApi.Ingredients.Orders do
         received_date: received_on,
         pack_name: line.offer.pack_name,
         pack_size: line.offer.pack_size,
+        crop_year: crop_year,
         notes: a["notes"]
       })
-      |> save!()
+
+    case changeset.errors[:crop_year] do
+      {message, _} -> rollback(%{base: ["#{which}: the crop year #{message}"]})
+      nil -> :ok
+    end
+
+    lot = save!(changeset)
 
     Features.copy_standard!(product.id, lot.id, Enum.map(features, fn {t, _} -> t.id end))
     Features.write!({:lot, lot.id}, features)

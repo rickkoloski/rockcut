@@ -38,8 +38,9 @@ defmodule RockcutApi.IngredientFixtures do
 
   @doc """
   D60 Stage 2: a small grain catalog as the seeds make it. Grains with a
-  Base child (the five grain features apply to Grains), Hops (alpha acid),
-  each top-level one with its D62 key; Rahr (manufacturer, the maltster),
+  Base child (the five grain features apply to Grains), Hops (D62 §3.4:
+  alpha, beta and oil as ranges on the product, entered on each lot, alpha
+  required), each top-level one with its D62 key; Rahr (manufacturer, the maltster),
   BSG (supplier), Root Shoot (both), Mountain Brewing
   (partner brewery); grain 2-Row with product Rahr 2-Row (standard extract
   81.5, color 2.0) and a BSG offer of 55 lb sacks.
@@ -57,10 +58,16 @@ defmodule RockcutApi.IngredientFixtures do
       })
     end
 
-    Repo.insert!(%CategoryFeatureType{
-      category_id: hops.id,
-      feature_type_id: feature_type!("alpha_acid_pct").id
-    })
+    for {key, i} <- Enum.with_index(~w(alpha_acid_pct beta_acid_pct total_oil_ml_100g)) do
+      Repo.insert!(%CategoryFeatureType{
+        category_id: hops.id,
+        feature_type_id: feature_type!(key).id,
+        sort_order: i,
+        product_mode: "range",
+        lot_mode: "enter",
+        lot_required: key == "alpha_acid_pct"
+      })
+    end
 
     rahr = party!("Rahr", ~w(manufacturer))
     bsg = party!("BSG", ~w(supplier))
@@ -92,6 +99,73 @@ defmodule RockcutApi.IngredientFixtures do
       product: product,
       offer: offer
     }
+  end
+
+  @doc """
+  D62 Stage 2: on `grain_catalog!/0`'s Hops, Yakima Chief Hops (manufacturer
+  and supplier), hop Citra and its product YCH Citra T90 Pellet (alpha
+  11–13, beta 3.5–4.5, oil 2.5–3), and a YCH offer of 11 lb boxes.
+  """
+  def hop_catalog!(c) do
+    ych = party!("Yakima Chief Hops", ~w(manufacturer supplier))
+    citra = Repo.insert!(%Ingredient{name: "Citra", category_id: c.hops.id})
+
+    product =
+      Repo.insert!(%Product{
+        ingredient_id: citra.id,
+        manufacturer_party_id: ych.id,
+        form: "T90 Pellet",
+        origin: "USA"
+      })
+
+    for {key, low, high} <- [
+          {"alpha_acid_pct", "11", "13"},
+          {"beta_acid_pct", "3.5", "4.5"},
+          {"total_oil_ml_100g", "2.5", "3"}
+        ] do
+      Repo.insert!(%ProductFeatureValue{
+        product_id: product.id,
+        feature_type_id: feature_type!(key).id,
+        value: Decimal.new(low),
+        value_high: Decimal.new(high)
+      })
+    end
+
+    offer =
+      Repo.insert!(%SupplierOffer{
+        product_id: product.id,
+        supplier_party_id: ych.id,
+        pack_name: "box",
+        pack_size: Decimal.new(11),
+        form: "whole"
+      })
+
+    %{ych: ych, citra: citra, hop_product: product, hop_offer: offer}
+  end
+
+  @doc "D62: a hop lot of `product` (11 lb boxes) with `alpha`, crop year and an opening amount."
+  def hop_lot!(product, received, quantity, alpha, lot_number \\ nil, crop_year \\ 2025) do
+    lot =
+      Repo.insert!(%IngredientLot{
+        ingredient_id: product.ingredient_id,
+        product_id: product.id,
+        lot_number: lot_number,
+        received_date: received,
+        crop_year: crop_year,
+        pack_name: "box",
+        pack_size: Decimal.new(11)
+      })
+
+    lot_features!(lot, alpha_acid_pct: alpha)
+
+    Repo.insert!(%Movement{
+      lot_id: lot.id,
+      kind: "opening",
+      quantity: Decimal.new(quantity),
+      occurred_on: received
+    })
+
+    lot
   end
 
   @doc """

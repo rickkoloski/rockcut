@@ -1042,8 +1042,12 @@ defmodule RockcutApiWeb.JSONHelpers do
       pack_size: lot.pack_size,
       unit: maybe_render(lot, :product, &RockcutApi.Ingredients.Products.unit/1),
       received_date: lot.received_date,
+      crop_year: lot.crop_year,
       status: lot.status,
       features: lot_features(lot),
+      outside_range: lot.outside_range,
+      # D62 §4.8: the recipe's lot picker label for a hop lot, else nil.
+      label: RockcutApi.Ingredients.Inventory.lot_label(lot),
       on_hand: lot.on_hand,
       unit_cost: lot.unit_cost,
       value: lot.value,
@@ -1101,6 +1105,12 @@ defmodule RockcutApiWeb.JSONHelpers do
     }
   end
 
+  defp number(%Decimal{} = d) do
+    if Decimal.eq?(Decimal.round(d, 0), d),
+      do: Decimal.to_integer(Decimal.round(d, 0)),
+      else: Decimal.to_float(d)
+  end
+
   def feature_type(t) do
     %{
       id: t.id,
@@ -1118,7 +1128,11 @@ defmodule RockcutApiWeb.JSONHelpers do
               category_id: a.category_id,
               name: a.category.name,
               sort_order: a.sort_order,
-              required: a.required
+              required: a.required,
+              product_mode: a.product_mode,
+              lot_mode: a.lot_mode,
+              lot_required: a.lot_required,
+              only_unit: a.only_unit
             }
           end)
         end)
@@ -1199,6 +1213,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       lines: maybe_render(c, :lines, &Enum.map(&1, fn l -> contract_line(l) end)),
       remaining: c.remaining,
       over: c.over,
+      remaining_lb: c.remaining_lb,
+      over_lb: c.over_lb,
       delete_blocked: RockcutApi.Ingredients.Contracts.delete_blocked(c),
       lock_version: c.lock_version,
       inserted_at: c.inserted_at,
@@ -1213,7 +1229,8 @@ defmodule RockcutApiWeb.JSONHelpers do
         product_id: l.product_id,
         product: maybe_render(l, :product, &product_summary/1),
         offer_id: l.offer_id,
-        quantity: l.quantity,
+        # Whole sacks as an integer (as D61), lb as a number with its decimals.
+        quantity: l.quantity && number(l.quantity),
         price: l.price
       },
       l.figures || %{}
@@ -1480,6 +1497,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       pack_name: lot.pack_name,
       pack_size: lot.pack_size,
       received_date: lot.received_date,
+      crop_year: lot.crop_year,
       status: lot.status,
       features: lot_features(lot),
       notes: lot.notes
@@ -1499,6 +1517,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: p.name,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
       unit: p.unit,
+      form: p.form,
       manufacturer: maybe_render(p, :manufacturer, &party_summary/1)
     }
   end

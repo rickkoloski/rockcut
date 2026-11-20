@@ -119,7 +119,7 @@ defmodule RockcutApi.Migrations.CopyLotSpecsToFeaturesTest do
     up(@drop_version, @drop)
   end
 
-  test "the seven feature types and their ranges" do
+  test "the seven feature types (and D62's two) and their ranges" do
     rows =
       Repo.query!("SELECT key, unit_label, min, max FROM feature_types ORDER BY id").rows
 
@@ -130,7 +130,10 @@ defmodule RockcutApi.Migrations.CopyLotSpecsToFeaturesTest do
              ["protein_pct", "%", 0, 100],
              ["moisture_pct", "%", 0, 100],
              ["alpha_acid_pct", "%", 0, 100],
-             ["attenuation_pct", "%", 0, 100]
+             ["attenuation_pct", "%", 0, 100],
+             # D62 Stage 2 (`hop_features_and_crop_year`).
+             ["beta_acid_pct", "%", 0, 100],
+             ["total_oil_ml_100g", "mL/100 g", 0, 10]
            ]
   end
 end

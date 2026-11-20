@@ -17,6 +17,9 @@ defmodule RockcutApi.Ingredients.Contract do
     # Computed on read (`Contracts`, lead decisions 1 gaps 3 and 18).
     field :remaining, :any, virtual: true
     field :over, :any, virtual: true
+    # D62 §3.7: the hop lines' remaining and over, in lb.
+    field :remaining_lb, :any, virtual: true
+    field :over_lb, :any, virtual: true
     field :delete_blocked, :boolean, virtual: true, default: false
 
     belongs_to :supplier, RockcutApi.Ingredients.Party, foreign_key: :supplier_party_id

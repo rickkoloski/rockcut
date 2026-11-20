@@ -568,6 +568,32 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   ## Lots
 
+  @doc ~S"""
+  D62 §4.8: a hop lot's label in the recipe's lot picker, "Yakima Chief
+  Hops Citra T90 Pellet · L-1 · 2025 · 12.4% AA" (the product's display
+  name, lot #, crop year and alpha acid); nil for a lot without a crop year
+  (every other lot) or with its product or features not loaded.
+  """
+  def lot_label(%IngredientLot{crop_year: year, product: %Product{} = product} = lot)
+      when is_integer(year) do
+    alpha =
+      case lot.feature_values do
+        values when is_list(values) ->
+          Enum.find_value(values, fn v ->
+            v.feature_type.key == "alpha_acid_pct" && "#{Units.round(v.value, 2)}% AA"
+          end)
+
+        _ ->
+          nil
+      end
+
+    [Products.display_name(product), lot.lot_number || "##{lot.id}", year, alpha]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
+  end
+
+  def lot_label(_lot), do: nil
+
   @doc """
   Lots, newest first, with what the lot JSON shows (`on_hand` and, D61
   §3.4, today's cost and value filled).
@@ -582,6 +608,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     |> Repo.all()
     |> put_on_hand()
     |> Valuation.put_values()
+    |> Features.put_outside_range()
   end
 
   def get_lot!(id) do
@@ -591,6 +618,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     |> List.wrap()
     |> put_on_hand()
     |> Valuation.put_values()
+    |> Features.put_outside_range()
     |> hd()
   end
 
@@ -633,22 +661,26 @@ defmodule RockcutApi.Ingredients.Inventory do
   end
 
   @doc """
-  Add a lot (spec §4.4). A lot of a category `Catalog` manages (Stage 1:
-  Grains and its children) needs its product, a received date and its
+  Add a lot (spec §4.4). A lot of a category `Catalog` manages (grain and
+  hops) needs its product, a received date and its
   first movement (`initial_kind` opening or received, `initial_quantity` >
   0, in the product's unit); other lots may give one. The ingredient comes from the product. The supplier
-  must hold the supplier role. The product's standard features are copied
-  onto the lot; `features` in the body replace them key by key (nil drops
-  one).
+  must hold the supplier role. The product's standard features its
+  category copies are copied onto the lot; `features` in the body replace
+  them key by key (nil drops one). D62 §3.4: a hop lot needs its crop year
+  and its alpha acid (`lot_required`), and is in 11 lb boxes; no other lot
+  has a crop year.
   """
   def create_lot(attrs, user) do
     with {:ok, attrs} <- product_ingredient(attrs),
          {:ok, managed?} <- managed_lot?(attrs),
          :ok <- product_rules(attrs, managed?),
+         {:ok, attrs} <- category_lot_rules(attrs, nil),
          :ok <- supplier(attrs["supplier_party_id"]),
          {:ok, initial} <- initial(attrs, managed?),
          :ok <- lot_number_free(attrs, nil),
-         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"]) do
+         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"], :lot),
+         :ok <- required_features(managed?, attrs["ingredient_id"], features, []) do
       write(fn ->
         lot =
           %IngredientLot{}
@@ -709,13 +741,15 @@ defmodule RockcutApi.Ingredients.Inventory do
          attrs = Map.put(attrs, "ingredient_id", ingredient_id),
          {:ok, managed?} <- managed_lot?(merged),
          :ok <- product_rules(merged, managed?),
+         {:ok, attrs} <- category_lot_rules(attrs, lot),
          :ok <- supplier(attrs["supplier_party_id"]),
          :ok <-
            lot_number_free(
              %{"product_id" => merged["product_id"], "lot_number" => attrs["lot_number"]},
              lot.id
            ),
-         {:ok, features} <- Features.validate(attrs["features"], ingredient_id) do
+         {:ok, features} <- Features.validate(attrs["features"], ingredient_id, :lot),
+         :ok <- required_features(managed?, ingredient_id, features, lot_feature_keys(lot)) do
       write(fn ->
         lot =
           lot
@@ -843,12 +877,72 @@ defmodule RockcutApi.Ingredients.Inventory do
   # A managed lot needs its product (spec §3.7); `product_ingredient/1`
   # checked that it exists.
   defp product_rules(attrs, true = _managed?) do
-    if blank(attrs["product_id"]),
-      do: :ok,
-      else: {:error, {:invalid, %{product_id: ["A grain lot needs its maltster product"]}}}
+    cond do
+      blank(attrs["product_id"]) ->
+        :ok
+
+      Catalog.ingredient_key(attrs["ingredient_id"]) == "grains" ->
+        {:error, {:invalid, %{product_id: ["A grain lot needs its maltster product"]}}}
+
+      true ->
+        {:error, {:invalid, %{product_id: ["A lot needs its product"]}}}
+    end
   end
 
   defp product_rules(_attrs, false), do: :ok
+
+  # D62 §3.4–3.5, decision 6: a hop lot (`lot` nil: a new one) needs its crop
+  # year, and is in the category's one pack (set when not given); no other
+  # lot has a crop year. `attrs` has the lot's ingredient.
+  defp category_lot_rules(attrs, lot) do
+    key = Catalog.ingredient_key(attrs["ingredient_id"])
+    crop_year = blank(attrs["crop_year"])
+    given? = Map.has_key?(attrs, "crop_year")
+
+    cond do
+      key != "hops" and crop_year != nil ->
+        {:error, {:invalid, %{crop_year: ["Only hop lots have a crop year"]}}}
+
+      key == "hops" and is_nil(crop_year) and (is_nil(lot) or given?) ->
+        {:error, {:invalid, %{crop_year: ["can't be blank"]}}}
+
+      true ->
+        fixed_pack(attrs, Catalog.fixed_pack(key), lot)
+    end
+  end
+
+  defp fixed_pack(attrs, nil, _lot), do: {:ok, attrs}
+
+  defp fixed_pack(attrs, {name, size}, lot) do
+    given_name = blank(attrs["pack_name"])
+    given_size = blank(attrs["pack_size"])
+
+    cond do
+      given_name not in [nil, name] or (given_size && not same_decimal?(given_size, size)) ->
+        refuse("Hop lots are #{size} lb boxes")
+
+      is_nil(lot) ->
+        {:ok, Map.merge(attrs, %{"pack_name" => name, "pack_size" => size})}
+
+      true ->
+        {:ok, attrs}
+    end
+  end
+
+  # A2: the features a managed lot can't be without (`Features.check_required/3`).
+  defp required_features(false, _ingredient_id, _features, _existing), do: :ok
+
+  defp required_features(true, ingredient_id, features, existing),
+    do: Features.check_required(ingredient_id, features, existing)
+
+  defp lot_feature_keys(lot) do
+    from(v in RockcutApi.Ingredients.LotFeatureValue,
+      join: t in assoc(v, :feature_type),
+      where: v.lot_id == ^lot.id,
+      select: t.key
+    )
+    |> Repo.all()
+  end
 
   defp supplier(party_id) do
     case blank(party_id) do

@@ -22,12 +22,20 @@ defmodule RockcutApi.Ingredients.Contracts do
   contract's `over` is kept apart from what's still owed (gap 3). A
   contract with anything received is `delete_blocked` (gap 18). Who may
   write is `Authz` `:contracts` (the controller).
+
+  D62 §3.7: a hop line is in lb at a price per lb (A1). Its price row on
+  the offer is per box (the price × the offer's 11 lb), its on order and
+  received are by weight (boxes × 11 lb), in lb. Only grain and hop products
+  go on a contract. A contract's `remaining` and `over` are sacks (grain
+  lines); `remaining_lb` and `over_lb` are the hop lines'; dollars add up
+  across both.
   """
   import Ecto.Query
 
   alias RockcutApi.{Repo, Tasks}
 
   alias RockcutApi.Ingredients.{
+    Catalog,
     Contract,
     ContractLine,
     OfferPrice,
@@ -51,7 +59,8 @@ defmodule RockcutApi.Ingredients.Contracts do
     :supplier,
     :created_by,
     lines:
-      {from(l in ContractLine, order_by: l.id), [:offer, product: [:manufacturer, :ingredient]]}
+      {from(l in ContractLine, order_by: l.id),
+       [:offer, product: [:manufacturer, ingredient: [category: :parent]]]}
   ]
 
   @doc "The contracts for `year` (default this year), by supplier name, figures filled."
@@ -136,7 +145,9 @@ defmodule RockcutApi.Ingredients.Contracts do
         product_id: product.id,
         display_name: Products.display_name(product),
         pack_name: figures.pack_name,
-        contracted: contracted,
+        contract_unit: figures.contract_unit,
+        unit: figures.unit,
+        contracted: amount(contracted),
         received: amount(received),
         short: amount(contracted - received)
       }
@@ -168,20 +179,30 @@ defmodule RockcutApi.Ingredients.Contracts do
     Enum.map(contracts, fn c ->
       lines = Enum.map(c.lines, &%{&1 | figures: line_figures(c, &1, rows)})
       figures = Enum.map(lines, & &1.figures)
+      {lb, packs} = Enum.split_with(figures, &(&1.contract_unit == "lb"))
 
       %{
         c
         | lines: lines,
           # Gap 3: what's still owed (= the Shortfall) and what's over, never netted.
-          remaining: figures |> Enum.map(&max(&1.remaining, 0)) |> Enum.sum() |> amount(),
-          over: figures |> Enum.map(&(&1.over_by || 0)) |> Enum.sum() |> amount(),
+          remaining: remaining(packs),
+          over: over(packs),
+          remaining_lb: remaining(lb),
+          over_lb: over(lb),
           delete_blocked: Enum.any?(figures, &(&1.received > 0))
       }
     end)
   end
 
+  defp remaining(figures),
+    do: figures |> Enum.map(&max(&1.remaining, 0)) |> Enum.sum() |> amount()
+
+  defp over(figures), do: figures |> Enum.map(&(&1.over_by || 0)) |> Enum.sum() |> amount()
+
   defp line_figures(%Contract{} = c, line, rows) do
-    size = line.offer.pack_size
+    lb? = Catalog.contract_unit(Catalog.key(line.product.ingredient.category)) == :lb
+    # A hop line counts by weight in lb (1 lb "packs"); grain in the offer's sacks.
+    size = if lb?, do: Decimal.new(1), else: line.offer.pack_size
 
     mine =
       Enum.filter(rows, fn r ->
@@ -206,13 +227,16 @@ defmodule RockcutApi.Ingredients.Contracts do
       |> Enum.map(&Decimal.mult(&1.price_per_pack, &1.packs_received || 0))
       |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
 
-    remaining = amount(line.quantity - received_packs)
+    contracted = amount(Decimal.to_float(line.quantity))
+    remaining = amount(contracted - received_packs)
 
     %{
-      contracted: line.quantity,
+      contracted: contracted,
       contracted_dollars: money(Decimal.mult(line.price, line.quantity)),
+      contract_unit: if(lb?, do: "lb", else: "packs"),
+      unit: line.product.unit,
       pack_name: line.offer.pack_name,
-      pack_size: size,
+      pack_size: line.offer.pack_size,
       on_order: on_order,
       received: received_packs,
       received_dollars: money(received_dollars),
@@ -303,13 +327,15 @@ defmodule RockcutApi.Ingredients.Contracts do
     |> Repo.delete_all()
 
     for attrs <- parsed do
+      unit = contract_unit!(attrs["product_id"])
       before = Map.get(old, attrs["product_id"])
       offer = line_offer!(supplier, attrs, before)
 
       line =
         (before || %ContractLine{})
         |> ContractLine.changeset(
-          Map.merge(attrs, %{"contract_id" => contract.id, "offer_id" => offer.id})
+          Map.merge(attrs, %{"contract_id" => contract.id, "offer_id" => offer.id}),
+          unit
         )
         |> Repo.insert_or_update()
         |> case do
@@ -319,7 +345,17 @@ defmodule RockcutApi.Ingredients.Contracts do
 
       if is_nil(before) or before.offer_id != offer.id or
            not Decimal.eq?(before.price, line.price),
-         do: put_price!(offer, line, contract.year, user)
+         do: put_price!(offer, line, unit, contract.year, user)
+    end
+  end
+
+  # D62 §3.7: grain and hop products only; the unit their lines count in.
+  defp contract_unit!(nil), do: :packs
+
+  defp contract_unit!(product_id) do
+    case product_id |> Catalog.product_key() |> Catalog.contract_unit() do
+      nil -> rollback(%{base: ["Contracts are for grain and hops"]})
+      unit -> unit
     end
   end
 
@@ -381,17 +417,19 @@ defmodule RockcutApi.Ingredients.Contracts do
   end
 
   # A2: effective Jan 1 of the year, or today if later; nothing for a year
-  # already over (decision 40).
-  defp put_price!(offer, line, year, user) do
+  # already over (decision 40). A hop line's price is per lb: the offer's
+  # price per box is that × the box (11 lb; D62 A1).
+  defp put_price!(offer, line, unit, year, user) do
     today = Tasks.today()
 
     if year >= today.year do
       effective = Enum.max([Date.new!(year, 1, 1), today], Date)
+      price = if unit == :lb, do: Decimal.mult(line.price, offer.pack_size), else: line.price
 
       %OfferPrice{}
       |> OfferPrice.changeset(%{
         offer_id: offer.id,
-        price_per_pack: line.price,
+        price_per_pack: Decimal.round(price, 2),
         effective_on: effective,
         note: "Contract #{year}",
         entered_by_id: user.id
