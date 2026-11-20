@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { FormControl, FormControlLabel, InputLabel, ListSubheader, MenuItem, Select, Switch, TextField } from '@mui/material'
@@ -108,6 +108,9 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
   const usualManufacturers = manufacturersFor(allManufacturers, products, [key], product?.manufacturer_party_id)
   const [everyManufacturer, setEveryManufacturer] = useState(false)
   const [manufacturerOpen, setManufacturerOpen] = useState(false)
+  // Decisions 2, gap 13: MUI closes the menu right after the pick, so a pick
+  // of "Other …" marks the close to skip and the full list stays open.
+  const keepOpen = useRef(false)
   const showAll = everyManufacturer || (manufacturerId !== '' && !usualManufacturers.some((p) => p.id === manufacturerId))
   const manufacturers = showAll ? allManufacturers : usualManufacturers
 
@@ -185,10 +188,14 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
           value={manufacturers.length ? manufacturerId : ''}
           open={manufacturerOpen}
           onOpen={() => setManufacturerOpen(true)}
-          onClose={() => setManufacturerOpen(false)}
+          onClose={() => {
+            if (keepOpen.current) keepOpen.current = false
+            else setManufacturerOpen(false)
+          }}
           onChange={(e) => {
             if (e.target.value === OTHER) {
-              // Keep the menu open on the full list.
+              // Open on the full list at once, the value kept until a pick.
+              keepOpen.current = true
               setEveryManufacturer(true)
               setManufacturerOpen(true)
             } else setManufacturerId(e.target.value as number)
@@ -202,7 +209,8 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
           ))}
           {!showAll && (
             <MenuItem value={OTHER} data-testid="product-maltster-other">
-              <em>Other manufacturer…</em>
+              {/* Gap 14: grain screens say maltster. */}
+              <em>{key === 'grains' ? 'Other maltster…' : 'Other manufacturer…'}</em>
             </MenuItem>
           )}
         </Select>
