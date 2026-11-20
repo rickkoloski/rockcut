@@ -54,3 +54,10 @@
   dialog** almost at once (no progress lines yet): read it with
   `herdr agent read qa62 --source visible` and answer (Matt's call if it's his).
 - Builder (w1:p4) idle, standing by. Next: QA report → fix cycle → recheck → DEV gate.
+
+## Update (afternoon 2026-11-20)
+
+- **Gap 7 closed** (Matt: "Stick with new price"; D61 A4 stays). Fix cycle 1 (`ffd78b8`…`7d57c01`) and cycle 2 (`e59482e`…`583af00`) accepted; decisions in `prompts/d62_lead_decisions_1.md` / `_2.md`.
+- Full local Playwright after cycle 2: **905 passed, 1 skipped** (after cycle 1: 897 + one d52 gear flake that passed 6/6 on rerun).
+- QA recheck 1: 11 of 12 gaps fixed; new gaps 13–18 fixed in cycle 2. **QA recheck 2** (`~/src/rockcut-d62-qa/results/d62_qa_recheck2.md`): gaps 13–18 fixed; new **minor** gaps 19 (To order 409 message stays after the re-pick saves) and 20 (contract price-change line shows before the hop line's Offer is picked and doesn't name the offer). R4 PARTIAL (usage limit): Receive at 360 px, slow-network To order, and the bartender1/taproomDevice 403 spot checks not run. Seeded diff 0.
+- **Next:** fix 19 + 20 in-cycle (builder); QA finishes the R4 checks; then the DEV gate (needs Matt's OK). Builder still owes a COVERAGE.md update for cycles 1–2. Builder printed two local synthetic tokens in its tool output (reported to Matt; told not to repeat).
