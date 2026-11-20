@@ -23,6 +23,7 @@ export interface FeatureValue {
 
 export interface ApiProduct {
   id: number
+  ingredient_id: number
   display_name: string
   on_hand: string
   expired: string
@@ -192,6 +193,7 @@ export interface ApiOrder {
   id: number
   status: 'open' | 'received' | 'cancelled'
   received_on: string | null
+  reference: string | null
   lines: { id: number; offer_id: number; packs_ordered: number; packs_received: number | null; price_per_pack: string }[]
   total_packs: number
   total_dollars: string
