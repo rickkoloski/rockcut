@@ -24,14 +24,14 @@ import {
 
 test.afterAll(cleanupIngredients)
 
-async function setMinimum(productId: number, sacks: number) {
-  const res = await (await apiAs('brewer1')).put(`/api/ingredient_products/${productId}`, { data: { min_on_hand_sacks: sacks } })
+async function setMinimum(productId: number, packs: number) {
+  const res = await (await apiAs('brewer1')).put(`/api/ingredient_products/${productId}`, { data: { min_on_hand_packs: packs } })
   expect(res.status(), await res.text()).toBe(200)
 }
 
 test.describe('brewer1', () => {
   test.use({ storageState: authFile('brewer1') })
-  test.beforeEach(async () => setQuantityDisplay('brewer1', 'sacks'))
+  test.beforeEach(async () => setQuantityDisplay('brewer1', 'packs'))
 
   test('T1: To order: minimum − on hand − on order; the offer can change; Start an order opens New order prefilled, one supplier at a time', async ({ page }) => {
     const a = await makePurchasing('T1 a')
@@ -53,7 +53,7 @@ test.describe('brewer1', () => {
     }
 
     // An open order for 4 sacks leaves nothing to order for A.
-    const open = await makeOrder(a.supplier.id, [{ offerId: a.offer.id, sacks: 4 }])
+    const open = await makeOrder(a.supplier.id, [{ offerId: a.offer.id, packs: 4 }])
     await page.reload()
     await expect(rowA.getByTestId(`to-order-${a.product.id}-on-order`)).toHaveText('4')
     await expect(rowA.getByTestId(`to-order-${a.product.id}-to-order`)).toHaveText('0')
@@ -73,7 +73,7 @@ test.describe('brewer1', () => {
     await expect(supplierBox).toHaveText(/T1 (a|b) supplier/)
     const firstSupplier = (await supplierBox.textContent()) ?? ''
     const first = firstSupplier.includes(a.supplier.name) ? a : b
-    await expect(d.getByTestId('order-line-0-sacks')).toHaveValue(first === a ? '1' : '5')
+    await expect(d.getByTestId('order-line-0-packs')).toHaveValue(first === a ? '1' : '5')
     await expect(d.getByTestId('order-line-0-price')).toHaveValue('42')
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/purchase_orders'))
     await d.getByRole('button', { name: 'Save' }).click()
@@ -82,15 +82,15 @@ test.describe('brewer1', () => {
     await page.getByTestId('order-dialog').getByRole('button', { name: 'Cancel' }).click()
     await expect(page.getByTestId('order-dialog')).toHaveCount(0)
 
-    const orders = (await (await (await apiAs('brewer1')).get(`/api/purchase_orders?supplier_id=${first.supplier.id}&status=open`)).json()).data as { lines: { sacks_ordered: number }[] }[]
-    expect(orders.map((o) => o.lines[0].sacks_ordered)).toEqual([first === a ? 1 : 5])
+    const orders = (await (await (await apiAs('brewer1')).get(`/api/purchase_orders?supplier_id=${first.supplier.id}&status=open`)).json()).data as { lines: { packs_ordered: number }[] }[]
+    expect(orders.map((o) => o.lines[0].packs_ordered)).toEqual([first === a ? 1 : 5])
   })
 
   test('T2: Totals → Inventory: as of before and after a receipt; estimated marked; supplier filter; Copy as plain TSV', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     const { product, supplier, offer } = await makePurchasing('T2')
     await makeSupplierLot(product, supplier.id, 2, 10)
-    const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 4 }], { ordered_on: addDays(denverToday(), -3) })
+    const order = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 4 }], { ordered_on: addDays(denverToday(), -3) })
     await receiveOrder(order, addDays(denverToday(), -2), `[TEST-TEMP] T2 ${order.id}`)
 
     await page.goto('/ingredients/totals')
@@ -122,9 +122,9 @@ test.describe('brewer1', () => {
   test('T3: Totals → Orders: open counts ordered, received counts received; per supplier and total; Copy', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     const { supplier, offer } = await makePurchasing('T3')
-    await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 3 }], { reference: 'PO-T3' })
-    const got = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 10 }])
-    const lines = got.lines.map((l) => ({ id: l.id, sacks_received: 8, allocations: [{ lot_number: `[TEST-TEMP] T3 ${got.id}`, sacks: 8 }] }))
+    await makeOrder(supplier.id, [{ offerId: offer.id, packs: 3 }], { reference: 'PO-T3' })
+    const got = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 10 }])
+    const lines = got.lines.map((l) => ({ id: l.id, packs_received: 8, allocations: [{ lot_number: `[TEST-TEMP] T3 ${got.id}`, packs: 8 }] }))
     expect((await (await apiAs('brewer1')).post(`/api/purchase_orders/${got.id}/receive`, { data: { lines } })).status()).toBe(200)
 
     await page.goto('/ingredients/totals')

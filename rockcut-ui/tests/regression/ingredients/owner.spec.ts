@@ -17,21 +17,21 @@ test('O1: add a maltster + supplier company; Rahr (in use) has Delete disabled w
   await page.getByTestId('companies-add').click()
   const d = page.getByTestId('party-dialog')
   await d.getByTestId('party-name').fill(name)
-  await d.getByTestId('party-role-maltster').check()
+  await d.getByTestId('party-role-manufacturer').check()
   await d.getByTestId('party-role-supplier').check()
   const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/parties'))
   await d.getByRole('button', { name: 'Save' }).click()
   const id = (await (await created).json()).data.id as number
   adoptParty(id)
   await expect(d).toHaveCount(0)
-  await expect(page.getByTestId(`party-${id}-role-maltster`)).toHaveText('Maltster')
+  await expect(page.getByTestId(`party-${id}-role-manufacturer`)).toHaveText('Manufacturer')
   await expect(page.getByTestId(`party-${id}-role-supplier`)).toHaveText('Supplier')
   const party = (await (await (await apiAs('owner')).get(`/api/parties/${id}`)).json()).data
-  expect([...party.roles].sort()).toEqual(['maltster', 'supplier'])
+  expect([...party.roles].sort()).toEqual(['manufacturer', 'supplier'])
 
   const { rahr } = await reference()
   const blocked = (await (await (await apiAs('owner')).get(`/api/parties/${rahr}`)).json()).data.delete_blocked as string
-  expect(blocked).toMatch(/^This company has maltster products.*; deactivate it instead$/)
+  expect(blocked).toMatch(/^This company has products.*; deactivate it instead$/)
   await page.getByTestId(`company-${rahr}`).first().click()
   await expect(d.getByTestId('party-delete')).toBeDisabled()
   await expect(d.getByTestId('party-delete-reason')).toHaveText(blocked)

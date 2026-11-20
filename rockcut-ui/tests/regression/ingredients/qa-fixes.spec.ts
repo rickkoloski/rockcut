@@ -48,16 +48,16 @@ test.describe('breweryMgr', () => {
         supplier_party_id: supplier.id,
         year,
         lines: [
-          { product_id: product.id, offer_id: offer50.id, sacks: 10, price_per_sack: '40.00' },
-          { product_id: second.id, sacks: 5, price_per_sack: '50.00' },
+          { product_id: product.id, offer_id: offer50.id, quantity: 10, price: '40.00' },
+          { product_id: second.id, quantity: 5, price: '50.00' },
         ],
       },
     })
     expect(made.status(), await made.text()).toBe(201)
     const id = (await made.json()).data.id as number
     // 5 × 50 lb + 5 × 55 lb = 525 lb = 10.5 of the line's 50 lb sacks.
-    await receiveOrder(await makeOrder(supplier.id, [{ offerId: offer50.id, sacks: 5 }]), denverToday(), tempTag('F1 50'))
-    await receiveOrder(await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 5 }]), denverToday(), tempTag('F1 55'))
+    await receiveOrder(await makeOrder(supplier.id, [{ offerId: offer50.id, packs: 5 }]), denverToday(), tempTag('F1 50'))
+    await receiveOrder(await makeOrder(supplier.id, [{ offerId: offer.id, packs: 5 }]), denverToday(), tempTag('F1 55'))
 
     await page.goto(`/ingredients/contracts?year=${year}`)
     const card = page.getByTestId(`contract-${id}`)
@@ -73,7 +73,7 @@ test.describe('breweryMgr', () => {
     await expect(page.getByRole('tooltip')).toHaveText("Grain has been received against this contract, so it can't be deleted")
 
     // Next year's has nothing received: Delete asks, then it's gone.
-    const next = await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: second.id, sacks: 3, price_per_sack: '50.00' }] } })
+    const next = await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: second.id, quantity: 3, price: '50.00' }] } })
     expect(next.status()).toBe(201)
     const nextId = (await next.json()).data.id as number
     await page.goto(`/ingredients/contracts?year=${year + 1}`)
@@ -88,7 +88,7 @@ test.describe('breweryMgr', () => {
 
 test.describe('brewer1', () => {
   test.use({ storageState: authFile('brewer1') })
-  test.beforeEach(async () => setQuantityDisplay('brewer1', 'sacks'))
+  test.beforeEach(async () => setQuantityDisplay('brewer1', 'packs'))
 
   test('F2: sacks boxes take 1,234; Receive refuses a date before the order date', async ({ page }) => {
     const { supplier } = await makePurchasing('F2')
@@ -96,20 +96,20 @@ test.describe('brewer1', () => {
     const d = await openDialog(page, page.getByTestId('orders-new'), 'order-dialog')
     await pick(page, d, 'Supplier', supplier.name)
     await pick(page, d, 'Offer', /F2/)
-    await d.getByTestId('order-line-0-sacks').fill('1,234')
+    await d.getByTestId('order-line-0-packs').fill('1,234')
     await expect(d.getByTestId('order-running-total')).toHaveText('1,234 sacks · 67,870 lb · $51,828.00')
     await d.getByTestId('order-date').fill(addDays(denverToday(), -3))
     const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/purchase_orders'))
     await d.getByRole('button', { name: 'Save' }).click()
     const res = await created
     expect(res.status()).toBe(201)
-    const order = (await res.json()).data as { id: number; lines: { sacks_ordered: number }[] }
-    expect(order.lines[0].sacks_ordered).toBe(1234)
+    const order = (await res.json()).data as { id: number; lines: { packs_ordered: number }[] }
+    expect(order.lines[0].packs_ordered).toBe(1234)
 
     await page.goto(`/ingredients/orders/${order.id}`)
     const r = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
     await expect(r.getByTestId('receive-date')).toHaveAttribute('min', addDays(denverToday(), -3))
-    await r.getByTestId('receive-line-0-sacks').fill('1,234')
+    await r.getByTestId('receive-line-0-packs').fill('1,234')
     await expect(r.getByText('Received in full')).toBeVisible()
     await r.getByTestId('receive-line-0-row-0-number').fill(tempTag('F2 lot'))
     await r.getByTestId('receive-date').fill(addDays(denverToday(), -4))
@@ -121,7 +121,7 @@ test.describe('brewer1', () => {
 
   test('F3: the reorder offer picked on To order is saved on the product', async ({ page }) => {
     const { product, supplier, offer } = await makePurchasing('F3')
-    expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_sacks: 3 } })).status()).toBe(200)
+    expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_packs: 3 } })).status()).toBe(200)
     await page.goto('/ingredients/to-order')
     const select = page.getByTestId(`to-order-${product.id}-offer`)
     // The default is the first active offer: the reference BSG one.
@@ -174,9 +174,9 @@ test.describe('brewer1', () => {
     const { product, supplier, offer } = await makePurchasing('F5')
     const reference = tempTag('PO-F5')
     const lotNumber = tempTag('F5 lot')
-    const withRef = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 1 }], { reference })
+    const withRef = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 1 }], { reference })
     await receiveOrder(withRef, denverToday(), lotNumber)
-    const plain = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 1 }])
+    const plain = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 1 }])
     await receiveOrder(plain)
 
     await page.goto(`/ingredients/products/${product.id}`)
@@ -187,7 +187,7 @@ test.describe('brewer1', () => {
     const d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
     await pick(page, d, 'Supplier offer', /F5 supplier/)
     await d.getByTestId('lot-number').fill(` ${lotNumber.toLowerCase()} `)
-    await d.getByTestId('lot-quantity-sacks').fill('1')
+    await d.getByTestId('lot-quantity-packs').fill('1')
     await d.getByRole('button', { name: 'Save' }).click()
     await expect(d).toContainText(`This product already has lot ${lotNumber}`)
     await expect(d).not.toContainText('lot number:')

@@ -7,7 +7,7 @@ import { apiAs, cleanupIngredients, expectNoSidewaysScroll, expectPhoneDialogClo
 // `5,2` typed in moisture is refused and `1,234` lb saves 1234 (gap 3).
 
 test.use({ storageState: authFile('brewer1'), viewport: { width: 360, height: 780 } })
-test.beforeEach(async () => setQuantityDisplay('brewer1', 'sacks'))
+test.beforeEach(async () => setQuantityDisplay('brewer1', 'packs'))
 test.afterAll(cleanupIngredients)
 
 async function rahr2Row(): Promise<number> {
@@ -62,7 +62,7 @@ test('P3: Add lot is full screen; 5,2 in moisture is refused, 1,234 lb saves 123
   await d.getByRole('button', { name: 'Save' }).click()
   const body = (await created).request().postDataJSON()
   expect(body.features.moisture_pct.value).toBe('5.2')
-  expect(Number(body.initial_quantity_lb)).toBe(1234)
+  expect(Number(body.initial_quantity)).toBe(1234)
   await expect(d).toHaveCount(0)
   const [lot] = await lotsOf(product.id)
   expect(lot.features.moisture_pct.value).toBe('5.2')
@@ -74,7 +74,7 @@ test('P3: Add lot is full screen; 5,2 in moisture is refused, 1,234 lb saves 123
 test('P4: Purchasing at 360 px: cards, the order page, New order and Receive full screen, no sideways scroll', async ({ page }) => {
   const { product, supplier, offer } = await makePurchasing('P4 phone')
   await makeLot(product, 2, 10)
-  const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 36 }], { reference: tempTag('P4 a long reference number') })
+  const order = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 36 }], { reference: tempTag('P4 a long reference number') })
 
   await page.goto('/ingredients/orders')
   await expect(page.getByTestId('orders-cards')).toBeVisible()
@@ -113,8 +113,8 @@ test('P5: Contracts, To order and Totals at 360 px: no sideways scroll', async (
   await makeLot(product, 1, 10)
   const mgr = await apiAs('breweryMgr')
   const year = Number(new Date().getFullYear()) + 1
-  expect((await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year, lines: [{ product_id: product.id, sacks: 40, price_per_sack: '41.00' }] } })).status()).toBe(201)
-  expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_sacks: 3, reorder_offer_id: supplierOffer.id } })).status()).toBe(200)
+  expect((await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year, lines: [{ product_id: product.id, quantity: 40, price: '41.00' }] } })).status()).toBe(201)
+  expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_packs: 3, reorder_offer_id: supplierOffer.id } })).status()).toBe(200)
 
   await page.goto(`/ingredients/contracts?year=${year}`)
   await expect(page.getByTestId('purchasing-tabs')).toBeVisible()

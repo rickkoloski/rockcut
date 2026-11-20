@@ -15,7 +15,7 @@ test.afterAll(cleanupIngredients)
 const year = Number(denverToday().slice(0, 4))
 
 async function prices(offerId: number) {
-  return (await (await (await apiAs('brewer1')).get(`/api/supplier_offers/${offerId}/prices`)).json()).data as { price_per_sack: string; effective_on: string; note: string | null }[]
+  return (await (await (await apiAs('brewer1')).get(`/api/supplier_offers/${offerId}/prices`)).json()).data as { price_per_pack: string; effective_on: string; note: string | null }[]
 }
 
 async function setup() {
@@ -27,7 +27,7 @@ async function setup() {
 
 test.describe('breweryMgr', () => {
   test.use({ storageState: authFile('breweryMgr') })
-  test.beforeEach(async () => setQuantityDisplay('breweryMgr', 'sacks'))
+  test.beforeEach(async () => setQuantityDisplay('breweryMgr', 'packs'))
 
   test('C1: a contract for this year: prices into history, on order / received / over, off-contract excluded, Shortfall', async ({ page }) => {
     const { product, supplier, offer, second } = await setup()
@@ -39,24 +39,24 @@ test.describe('breweryMgr', () => {
     await expect(d.getByTestId('contract-year')).toHaveValue(String(year))
     await pick(page, d.getByTestId('contract-line-0'), 'Product', new RegExp(`${product.display_name.replace(/[[\]()]/g, '.')}$`))
     await expect(d.getByTestId('contract-line-0-price')).toHaveValue('42')
-    await d.getByTestId('contract-line-0-sacks').fill('10')
+    await d.getByTestId('contract-line-0-quantity').fill('10')
     await d.getByTestId('contract-line-0-price').fill('40')
     await d.getByTestId('contract-add-line').click()
     await pick(page, d.getByTestId('contract-line-1'), 'Product', /C1 second/)
-    await d.getByTestId('contract-line-1-sacks').fill('5')
+    await d.getByTestId('contract-line-1-quantity').fill('5')
     await expect(d.getByTestId('contract-price-changes')).toContainText(`${supplier.name} ${product.display_name} price becomes $40.00 from ${denverToday()}`)
     await expect(d.getByTestId('contract-price-changes')).toContainText(`${second.display_name} price becomes $50.00`)
     await d.getByRole('button', { name: 'Save' }).click()
     await expect(d).toHaveCount(0)
 
     const [row] = await prices(offer.id)
-    expect([Number(row.price_per_sack), row.effective_on, row.note]).toEqual([40, denverToday(), `Contract ${year}`])
+    expect([Number(row.price_per_pack), row.effective_on, row.note]).toEqual([40, denverToday(), `Contract ${year}`])
 
     // An open order counts as on order; a receipt as received; an off-contract one not at all.
-    const open = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 6 }])
-    const got = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 12 }])
+    const open = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 6 }])
+    const got = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 12 }])
     await receiveOrder(got, denverToday(), tempTag('C1 lot'))
-    const off = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 3 }], { off_contract: true })
+    const off = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 3 }], { off_contract: true })
     await receiveOrder(off)
     expect(open.status).toBe('open')
 
@@ -79,7 +79,7 @@ test.describe('brewer1', () => {
   test('C2: a brewer reads contracts with no New, Edit or Delete; the API refuses their writes', async ({ page }) => {
     const { product, supplier } = await makePurchasing('C2')
     const mgr = await apiAs('breweryMgr')
-    const made = await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: product.id, sacks: 4, price_per_sack: '41.00' }] } })
+    const made = await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: product.id, quantity: 4, price: '41.00' }] } })
     expect(made.status(), await made.text()).toBe(201)
     const id = (await made.json()).data.id as number
 

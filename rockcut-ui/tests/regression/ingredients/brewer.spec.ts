@@ -24,21 +24,21 @@ import {
 // over on-hand, oldest first (and expired lots), and the recipe lot picker.
 
 test.use({ storageState: authFile('brewer1') })
-test.beforeEach(async () => setQuantityDisplay('brewer1', 'sacks'))
+test.beforeEach(async () => setQuantityDisplay('brewer1', 'packs'))
 test.afterAll(async () => {
-  await setQuantityDisplay('brewer1', 'sacks')
+  await setQuantityDisplay('brewer1', 'packs')
   await cleanupIngredients()
 })
 
 const dialog = (page: Page, id: string) => page.getByTestId(id)
 
-async function recordMovement(page: Page, opts: { kind?: string; lot?: RegExp; sacks?: string; lb?: string; partner?: string }) {
+async function recordMovement(page: Page, opts: { kind?: string; lot?: RegExp; packs?: string; lb?: string; partner?: string }) {
   await page.getByTestId('product-record-movement').click()
   const d = dialog(page, 'movement-dialog')
   if (opts.kind) await pick(page, d, 'Kind', opts.kind)
   if (opts.lot) await pick(page, d, 'Lot', opts.lot)
   if (opts.partner) await pick(page, d, 'Partner brewery', opts.partner)
-  if (opts.sacks) await d.getByTestId('movement-quantity-sacks').fill(opts.sacks)
+  if (opts.packs) await d.getByTestId('movement-quantity-packs').fill(opts.packs)
   if (opts.lb) await d.getByTestId('movement-quantity-lb').fill(opts.lb)
   return d
 }
@@ -84,7 +84,7 @@ test('B2: a BSG offer at $48.50/sack; $51.00 from next month leaves today at $48
   const d = dialog(page, 'offer-dialog')
   await pick(page, d, 'Supplier', /^BSG$/)
   await d.getByLabel('Order name').fill('[TEST-TEMP] Rahr - Standard 2-row (milled)')
-  await d.getByTestId('offer-sack-size').fill('55')
+  await d.getByTestId('offer-pack-size').fill('55')
   await pick(page, d, 'We order it', /^Milled$/)
   const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/supplier_offers'))
   await d.getByRole('button', { name: 'Save' }).click()
@@ -94,7 +94,7 @@ test('B2: a BSG offer at $48.50/sack; $51.00 from next month leaves today at $48
   const addPrice = async (price: string, on: string) => {
     await page.getByTestId(`offer-add-price-${offerId}`).click()
     const p = dialog(page, 'price-dialog')
-    await p.getByTestId('price-per-sack').fill(price)
+    await p.getByTestId('price-per-pack').fill(price)
     await p.getByTestId('price-effective-on').fill(on)
     await p.getByRole('button', { name: 'Save' }).click()
     await expect(p).toHaveCount(0)
@@ -113,17 +113,17 @@ test('B2: a BSG offer at $48.50/sack; $51.00 from next month leaves today at $48
   await expect(rows.nth(1)).toContainText('2026-01-01: $48.50/sack')
   await expect(rows.nth(1)).toContainText('(current)')
   const offer = (await getProduct(product.id)).offers.find((o) => o.id === offerId)!
-  expect(Number(offer.current_price?.price_per_sack)).toBe(48.5)
+  expect(Number(offer.current_price?.price_per_pack)).toBe(48.5)
 })
 
 test('B3: "Used in brewing" 2 sacks 10 lb leaves 9 sacks 45 lb; total lb shows 540 lb; brewer2’s toggle is unchanged', async ({ page }) => {
-  await setQuantityDisplay('brewer2', 'sacks')
+  await setQuantityDisplay('brewer2', 'packs')
   const product = await makeProduct('B3 toggle')
   await makeLot(product, 12, 10)
   await page.goto(`/ingredients/products/${product.id}`)
   await expect(page.getByTestId('product-on-hand')).toHaveText('12 sacks')
 
-  const d = await recordMovement(page, { sacks: '2', lb: '10' })
+  const d = await recordMovement(page, { packs: '2', lb: '10' })
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
   await expect(page.getByTestId('product-on-hand')).toHaveText('9 sacks 45 lb')
@@ -132,7 +132,7 @@ test('B3: "Used in brewing" 2 sacks 10 lb leaves 9 sacks 45 lb; total lb shows 5
   await page.getByTestId('quantity-toggle-lb').click()
   await expect(page.getByTestId('product-on-hand')).toHaveText('540 lb')
   await expect.poll(() => quantityDisplayOf('brewer1')).toBe('lb')
-  expect(await quantityDisplayOf('brewer2')).toBe('sacks')
+  expect(await quantityDisplayOf('brewer2')).toBe('packs')
   // Saved on the account: a reload keeps it.
   await page.reload()
   await expect(page.getByTestId('product-on-hand')).toHaveText('540 lb')
@@ -147,7 +147,7 @@ test('B4: "Loaned out" needs a partner brewery; a use larger than on hand is ref
   page.on('request', (r) => {
     if (r.method() === 'POST' && r.url().endsWith('/api/inventory_movements')) posts.push(r.url())
   })
-  let d = await recordMovement(page, { kind: 'Loaned out', sacks: '3' })
+  let d = await recordMovement(page, { kind: 'Loaned out', packs: '3' })
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d.getByRole('alert')).toHaveText('Pick the partner brewery for a trade or loan')
   await expect(d.getByText('Required for trades and loans')).toBeVisible()
@@ -158,10 +158,10 @@ test('B4: "Loaned out" needs a partner brewery; a use larger than on hand is ref
   await expect(page.getByTestId('product-on-hand')).toHaveText('9 sacks')
   await expectOnHand(product.id, 9 * SACK)
   const loan = (await movementsOf(product.id)).find((m) => m.kind === 'loaned_out')
-  expect(Number(loan?.quantity_lb)).toBe(-3 * SACK)
+  expect(Number(loan?.quantity)).toBe(-3 * SACK)
   await expect(page.getByTestId('product-movements')).toContainText('[SEED] Mountain Brewing')
 
-  d = await recordMovement(page, { sacks: '20' })
+  d = await recordMovement(page, { packs: '20' })
   await expect(d.getByText('On hand: 9 sacks')).toBeVisible()
   await d.getByRole('button', { name: 'Save' }).click()
   // Gap 1: plain words in the person's sacks/lb, no field name.
@@ -176,7 +176,7 @@ test('B5: oldest first empties the older lot (Depleted) and takes the rest from 
   const newer = await makeLot(product, 10, 7)
   await page.goto(`/ingredients/products/${product.id}`)
 
-  let d = await recordMovement(page, { sacks: '5' })
+  let d = await recordMovement(page, { packs: '5' })
   await expect(d.getByLabel('Lot')).toHaveText('Oldest first')
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
@@ -186,14 +186,14 @@ test('B5: oldest first empties the older lot (Depleted) and takes the rest from 
   await expectLotOnHand(older.id, product.id, 0)
   await expectLotOnHand(newer.id, product.id, 8 * SACK)
   const used = (await movementsOf(product.id)).filter((m) => m.kind === 'used')
-  expect(used.map((m) => [m.lot_id, Number(m.quantity_lb)]).sort()).toEqual(
+  expect(used.map((m) => [m.lot_id, Number(m.quantity)]).sort()).toEqual(
     [
       [older.id, -3 * SACK],
       [newer.id, -2 * SACK],
     ].sort(),
   )
 
-  d = await recordMovement(page, { lot: new RegExp(escape(newer.lot_number!)), sacks: '1' })
+  d = await recordMovement(page, { lot: new RegExp(escape(newer.lot_number!)), packs: '1' })
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
   await expect(page.getByTestId(`lot-on-hand-${newer.id}`)).toHaveText('7 sacks')
@@ -223,7 +223,7 @@ test('B6: oldest first skips an expired lot; the expired lot picked by hand work
   await count.getByRole('button', { name: 'Cancel' }).click()
   await expect(count).toHaveCount(0)
 
-  let d = await recordMovement(page, { sacks: '2' })
+  let d = await recordMovement(page, { packs: '2' })
   // Gap 1: Oldest first can take only what isn't expired; the expired stock is noted.
   await expect(d.getByText(`On hand: ${onHand} (pick that lot to use it)`)).toBeVisible()
   await d.getByRole('button', { name: 'Save' }).click()
@@ -232,12 +232,12 @@ test('B6: oldest first skips an expired lot; the expired lot picked by hand work
   await expectLotOnHand(newer.id, product.id, 8 * SACK)
   await expect(page.getByTestId(`lot-on-hand-${newer.id}`)).toHaveText('8 sacks')
 
-  d = await recordMovement(page, { lot: new RegExp(`${escape(older.lot_number!)}.*Expired`), sacks: '1' })
+  d = await recordMovement(page, { lot: new RegExp(`${escape(older.lot_number!)}.*Expired`), packs: '1' })
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
   await expect(page.getByTestId(`lot-on-hand-${older.id}`)).toHaveText('2 sacks')
   await expectLotOnHand(older.id, product.id, 2 * SACK)
-  expect((await getProduct(product.id)).expired_lb).toBe(String(2 * SACK))
+  expect((await getProduct(product.id)).expired).toBe(String(2 * SACK))
 
   await page.goto('/ingredients')
   await expect(page.getByTestId(`grain-on-hand-${product.id}`)).toHaveText('8 sacks usable · 2 sacks expired')
@@ -257,7 +257,7 @@ test('B7: Recipe Grain Bill: a grain lot is labelled "Rahr · lot # · on hand �
   const product = await makeProduct('B7 lot')
   const lot = await makeLot(product, 2, 3)
   const empty = await makeLot(product, 1, 10)
-  const use = await (await apiAs('brewer1')).post('/api/inventory_movements', { data: { kind: 'used', quantity_lb: String(SACK), occurred_on: denverToday(), lot_id: empty.id } })
+  const use = await (await apiAs('brewer1')).post('/api/inventory_movements', { data: { kind: 'used', quantity: String(SACK), occurred_on: denverToday(), lot_id: empty.id } })
   expect(use.status(), await use.text()).toBe(201)
   const expired = await makeLot(product, 1, 20)
   const expire = await (await apiAs('brewer1')).put(`/api/ingredient_lots/${expired.id}`, { data: { status: 'expired' } })
@@ -312,7 +312,7 @@ test('B8: Delete on a lot asks first, naming its stock; Cancel keeps it. The sac
 
   await page.getByTestId(`lot-row-${gone.id}`).click()
   const lotDialog = dialog(page, 'grain-lot-dialog')
-  await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeEnabled()
+  await expect(lotDialog.getByTestId('grain-lot-pack-size')).toBeEnabled()
   await lotDialog.getByTestId('lot-delete').click()
   const confirm = page.getByTestId('lot-delete-confirm')
   await expect(confirm).toContainText(`Delete lot ${gone.lot_number}? Its Opening amount 2 sacks (110 lb) goes too.`)
@@ -327,7 +327,7 @@ test('B8: Delete on a lot asks first, naming its stock; Cancel keeps it. The sac
   await expectOnHand(product.id, 4 * SACK)
 
   // Gap 14: after a movement past its first, the sack size can't change.
-  const d = await recordMovement(page, { sacks: '1' })
+  const d = await recordMovement(page, { packs: '1' })
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
   // Lead decisions 4: the lot and its movements come from two queries. Wait for
@@ -337,7 +337,7 @@ test('B8: Delete on a lot asks first, naming its stock; Cancel keeps it. The sac
   await expect(page.getByTestId('product-movements')).toContainText('Used in brewing')
   await page.getByTestId(`lot-row-${keep.id}`).click()
   await expect(lotDialog.getByTestId('lot-delete')).toBeDisabled()
-  await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeDisabled()
+  await expect(lotDialog.getByTestId('grain-lot-pack-size')).toBeDisabled()
   await expect(lotDialog.getByText('Fixed: the lot has movements after its first')).toBeVisible()
   // Gap 15: nor can it be deleted; Delete is disabled with the reason.
   await expect(lotDialog.getByTestId('lot-delete-reason')).toHaveText('This lot has movements after its first; correct it with a movement or a count')
@@ -363,7 +363,7 @@ test('B10: a lot a recipe uses shows Delete disabled with the reason (gap 15)', 
     await expect(lotDialog.getByTestId('lot-delete')).toBeDisabled()
     await expect(lotDialog.getByTestId('lot-delete-reason')).toHaveText("A recipe uses this lot, so it can't be deleted")
     // Only its first movement: the sack size can still change.
-    await expect(lotDialog.getByTestId('grain-lot-sack-size')).toBeEnabled()
+    await expect(lotDialog.getByTestId('grain-lot-pack-size')).toBeEnabled()
     await lotDialog.getByRole('button', { name: 'Cancel' }).click()
   } finally {
     await owner.delete(`/api/recipes/${recipe.id}`)
@@ -380,16 +380,16 @@ test('B9: a count that matches on-hand is recorded as "Counted, no change"; date
   await page.getByTestId('product-count').click()
   const d = dialog(page, 'count-dialog')
   await expect(d.getByTestId('count-date')).toHaveAttribute('max', today)
-  await d.getByTestId('count-total-sacks').fill('3')
+  await d.getByTestId('count-total-packs').fill('3')
   await d.getByRole('button', { name: 'Save count' }).click()
   await expect(d).toHaveCount(0)
   const [count] = (await movementsOf(product.id)).filter((m) => m.kind === 'count')
-  expect(Number(count.quantity_lb)).toBe(0)
+  expect(Number(count.quantity)).toBe(0)
   await expect(page.getByTestId(`movement-kind-${count.id}`)).toHaveText('Counted, no change')
   await expect(page.getByTestId(`movement-row-${count.id}`)).toContainText('Jake Brewer')
   await expectOnHand(product.id, 3 * SACK)
 
-  const m = await recordMovement(page, { sacks: '1' })
+  const m = await recordMovement(page, { packs: '1' })
   await expect(m.getByTestId('movement-date')).toHaveAttribute('max', today)
   await m.getByRole('button', { name: 'Cancel' }).click()
 })
