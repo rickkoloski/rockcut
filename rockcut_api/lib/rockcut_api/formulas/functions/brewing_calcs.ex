@@ -79,7 +79,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   # -- Private helpers --
 
   defp load_hop_additions(repo, recipe_id) do
-    hop_category_ids = get_category_ids(repo, ["Hops"])
+    hop_category_ids = get_category_ids(repo, ["hops"])
 
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
@@ -97,7 +97,7 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
   end
 
   defp load_grain_additions(repo, recipe_id) do
-    grain_category_ids = get_category_ids(repo, ["Grains", "Sugars and Extracts"])
+    grain_category_ids = get_category_ids(repo, ["grains", "sugars"])
 
     RecipeIngredient
     |> where(recipe_id: ^recipe_id)
@@ -123,12 +123,12 @@ defmodule RockcutApi.Formulas.Functions.BrewingCalcs do
     )
   end
 
-  # The named categories and their children (D60: a grain is on one of
-  # Grains' children).
-  defp get_category_ids(repo, names) do
+  # The categories with these keys (`Ingredients.Catalog`, D62) and their
+  # children (D60: a grain is on one of Grains' children).
+  defp get_category_ids(repo, keys) do
     IngredientCategory
     |> join(:left, [c], p in IngredientCategory, on: c.parent_id == p.id)
-    |> where([c, p], c.name in ^names or p.name in ^names)
+    |> where([c, p], c.key in ^keys or p.key in ^keys)
     |> select([c], c.id)
     |> repo.all()
   end

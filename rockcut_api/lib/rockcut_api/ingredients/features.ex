@@ -1,7 +1,7 @@
 defmodule RockcutApi.Ingredients.Features do
   @moduledoc """
   D60 §3.4: feature types, which categories they apply to, and the values a
-  maltster product (its standard) or a lot carries.
+  product (its standard) or a lot carries.
 
   Values are written as a map keyed by feature key. Each entry is a number
   (or a decimal string), a map `%{"value", "entered_value", "entered_unit"}`,

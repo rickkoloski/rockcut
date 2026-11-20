@@ -38,15 +38,16 @@ defmodule RockcutApi.IngredientFixtures do
 
   @doc """
   D60 Stage 2: a small grain catalog as the seeds make it. Grains with a
-  Base child (the five grain features apply to Grains), Hops (alpha acid);
-  Rahr (maltster), BSG (supplier), Root Shoot (both), Mountain Brewing
+  Base child (the five grain features apply to Grains), Hops (alpha acid),
+  each top-level one with its D62 key; Rahr (manufacturer, the maltster),
+  BSG (supplier), Root Shoot (both), Mountain Brewing
   (partner brewery); grain 2-Row with product Rahr 2-Row (standard extract
   81.5, color 2.0) and a BSG offer of 55 lb sacks.
   """
   def grain_catalog! do
-    grains = Repo.insert!(%IngredientCategory{name: "Grains", sort_order: 0})
+    grains = Repo.insert!(%IngredientCategory{name: "Grains", key: "grains", sort_order: 0})
     base = Repo.insert!(%IngredientCategory{name: "Base", sort_order: 0, parent_id: grains.id})
-    hops = Repo.insert!(%IngredientCategory{name: "Hops", sort_order: 1})
+    hops = Repo.insert!(%IngredientCategory{name: "Hops", key: "hops", sort_order: 1})
 
     for {key, i} <- Enum.with_index(@grain_features) do
       Repo.insert!(%CategoryFeatureType{
@@ -61,9 +62,9 @@ defmodule RockcutApi.IngredientFixtures do
       feature_type_id: feature_type!("alpha_acid_pct").id
     })
 
-    rahr = party!("Rahr", ~w(maltster))
+    rahr = party!("Rahr", ~w(manufacturer))
     bsg = party!("BSG", ~w(supplier))
-    root_shoot = party!("Root Shoot", ~w(maltster supplier))
+    root_shoot = party!("Root Shoot", ~w(manufacturer supplier))
     mountain = party!("Mountain Brewing", ~w(partner_brewery))
 
     two_row = Repo.insert!(%Ingredient{name: "2-Row", category_id: base.id})
@@ -74,7 +75,8 @@ defmodule RockcutApi.IngredientFixtures do
         product_id: product.id,
         supplier_party_id: bsg.id,
         order_name: "Rahr - Standard 2-row (milled)",
-        sack_size_lb: Decimal.new(55),
+        pack_name: "sack",
+        pack_size: Decimal.new(55),
         form: "milled"
       })
 
@@ -92,17 +94,24 @@ defmodule RockcutApi.IngredientFixtures do
     }
   end
 
+  @doc """
+  D62: a top-level category with its key (`Ingredients.Catalog` reads the
+  key, never the name; the API doesn't set keys).
+  """
+  def keyed_category!(name, key),
+    do: Repo.insert!(%IngredientCategory{name: name, key: key})
+
   def party!(name, roles) do
     party = Repo.insert!(%Party{name: name})
     for role <- roles, do: Repo.insert!(%PartyRole{party_id: party.id, role: role})
     party
   end
 
-  def product!(ingredient, maltster, features \\ [], name \\ nil) do
+  def product!(ingredient, manufacturer, features \\ [], name \\ nil) do
     product =
       Repo.insert!(%Product{
         ingredient_id: ingredient.id,
-        maltster_party_id: maltster.id,
+        manufacturer_party_id: manufacturer.id,
         name: name
       })
 
@@ -117,21 +126,22 @@ defmodule RockcutApi.IngredientFixtures do
     product
   end
 
-  @doc "A lot of `product` received `received` with an opening amount of `lb`."
-  def stocked_lot!(product, received, lb, lot_number \\ nil) do
+  @doc "A lot of `product` (55 lb sacks) received `received` with an opening amount of `quantity`."
+  def stocked_lot!(product, received, quantity, lot_number \\ nil) do
     lot =
       Repo.insert!(%IngredientLot{
         ingredient_id: product.ingredient_id,
         product_id: product.id,
         lot_number: lot_number,
         received_date: received,
-        sack_size_lb: Decimal.new(55)
+        pack_name: "sack",
+        pack_size: Decimal.new(55)
       })
 
     Repo.insert!(%Movement{
       lot_id: lot.id,
       kind: "opening",
-      quantity_lb: Decimal.new(lb),
+      quantity: Decimal.new(quantity),
       occurred_on: received
     })
 
@@ -144,7 +154,8 @@ defmodule RockcutApi.IngredientFixtures do
       Repo.insert!(%SupplierOffer{
         product_id: product.id,
         supplier_party_id: supplier.id,
-        sack_size_lb: Decimal.new(size),
+        pack_name: "sack",
+        pack_size: Decimal.new(size),
         form: "whole"
       })
 
@@ -156,7 +167,7 @@ defmodule RockcutApi.IngredientFixtures do
   def price!(offer, price, on \\ ~D[2000-01-01]) do
     Repo.insert!(%OfferPrice{
       offer_id: offer.id,
-      price_per_sack: Decimal.new(price),
+      price_per_pack: Decimal.new(price),
       effective_on: on
     })
   end

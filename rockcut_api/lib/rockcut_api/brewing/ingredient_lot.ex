@@ -1,7 +1,8 @@
 defmodule RockcutApi.Brewing.IngredientLot do
   @moduledoc """
   A lot of an ingredient. D60: a grain lot is of a maltster product
-  (`product`), from a supplier party, in sacks of `sack_size_lb`; its specs
+  (`product`), from a supplier party, in packs (D62 §3.5: `pack_name` and
+  `pack_size` in the product's unit, copied from the offer); its specs
   are `feature_values` (copied from the product's standard) and its stock is
   the sum of its `movements`.
   """
@@ -13,15 +14,18 @@ defmodule RockcutApi.Brewing.IngredientLot do
     field :lot_number, :string
     field :received_date, :date
     field :status, :string, default: "available"
-    field :sack_size_lb, :decimal
+    field :pack_name, :string, default: "sack"
+    field :pack_size, :decimal
     field :notes, :string
-    # D60: the sum of its movements, filled by `Ingredients.Inventory.put_on_hand/1`.
-    field :on_hand_lb, :decimal, virtual: true
-    # Why it can't be deleted, or nil (lead decisions 3, gap 15); filled with `on_hand_lb`.
+    # D60: the sum of its movements (in the product's unit), filled by
+    # `Ingredients.Inventory.put_on_hand/1`.
+    field :on_hand, :decimal, virtual: true
+    # Why it can't be deleted, or nil (lead decisions 3, gap 15); filled with `on_hand`.
     field :delete_blocked, :string, virtual: true
-    # D61 §3.4: cost per lb (the latest costed receipt, else the offer price,
-    # `estimated`), value of the on-hand, or `unvalued` (`Ingredients.Valuation`).
-    field :cost_per_lb, :decimal, virtual: true
+    # D61 §3.4: cost per product unit (the latest costed receipt, else the
+    # offer price, `estimated`), value of the on-hand, or `unvalued`
+    # (`Ingredients.Valuation`).
+    field :unit_cost, :decimal, virtual: true
     field :value, :decimal, virtual: true
     field :estimated, :boolean, virtual: true, default: false
     field :unvalued, :boolean, virtual: true, default: false
@@ -46,13 +50,15 @@ defmodule RockcutApi.Brewing.IngredientLot do
       :lot_number,
       :received_date,
       :status,
-      :sack_size_lb,
+      :pack_name,
+      :pack_size,
       :notes
     ])
     |> update_change(:lot_number, &trim_number/1)
     |> validate_required([:ingredient_id])
     |> validate_inclusion(:status, @valid_statuses)
-    |> validate_positive_up_to(:sack_size_lb, 10_000)
+    |> validate_inclusion(:pack_name, RockcutApi.Ingredients.Catalog.pack_names())
+    |> validate_positive_up_to(:pack_size, 10_000)
     |> unique_lot_number()
     |> foreign_key_constraint(:ingredient_id)
     |> foreign_key_constraint(:product_id)

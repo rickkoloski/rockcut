@@ -1,9 +1,11 @@
 defmodule RockcutApi.Ingredients.Product do
   @moduledoc """
-  D60 §3.3: a maltster product ("Rahr 2-Row", "Weyermann Rauch Malt"): a
-  grain (`ingredient`) from one maltster, with an optional product name of
-  the maltster's own. Its feature values are the standard specs a new lot
-  copies (decision 7).
+  D60 §3.3: a product ("Rahr 2-Row", "Weyermann Rauch Malt"): an
+  ingredient from one manufacturer (D62 §3.2; the maltster, for grain),
+  with an optional product name of the manufacturer's own. D62 §3.3: it's
+  kept in one `unit` (lb for grain), and may have a `form` and an `origin`
+  (not used for grain). Its feature values are the standard specs a new
+  lot copies (decision 7).
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -13,17 +15,20 @@ defmodule RockcutApi.Ingredients.Product do
     field :name, :string
     field :notes, :string
     field :active, :boolean, default: true
-    # D61 §3.5: the reorder point in whole sacks (nil = no minimum).
-    field :min_on_hand_sacks, :integer
-    # The sum of its lots' movements (`Ingredients.Products`).
-    field :on_hand_lb, :decimal, virtual: true
+    field :unit, :string, default: "lb"
+    field :form, :string
+    field :origin, :string
+    # D61 §3.5: the reorder point in whole packs (nil = no minimum).
+    field :min_on_hand_packs, :integer
+    # The sum of its lots' movements, in `unit` (`Ingredients.Products`).
+    field :on_hand, :decimal, virtual: true
     # The part of it in expired lots.
-    field :expired_lb, :decimal, virtual: true
+    field :expired, :decimal, virtual: true
     # D61 §3.5: on hand (not expired) under the minimum (`Ingredients.Reorder`).
     field :below_minimum, :boolean, virtual: true, default: false
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
-    belongs_to :maltster, RockcutApi.Ingredients.Party, foreign_key: :maltster_party_id
+    belongs_to :manufacturer, RockcutApi.Ingredients.Party, foreign_key: :manufacturer_party_id
     # D61 lead decisions 1 (gap 4): the offer To order uses (nil = default).
     belongs_to :reorder_offer, RockcutApi.Ingredients.SupplierOffer
     has_many :feature_values, RockcutApi.Ingredients.ProductFeatureValue
@@ -37,28 +42,31 @@ defmodule RockcutApi.Ingredients.Product do
     product
     |> cast(attrs, [
       :ingredient_id,
-      :maltster_party_id,
+      :manufacturer_party_id,
       :name,
       :notes,
       :active,
-      :min_on_hand_sacks,
+      :origin,
+      :min_on_hand_packs,
       :reorder_offer_id
     ])
     |> update_change(:name, &blank_to_nil/1)
-    |> validate_required([:ingredient_id, :maltster_party_id])
+    |> update_change(:origin, &blank_to_nil/1)
+    |> validate_required([:ingredient_id, :manufacturer_party_id, :unit])
     |> validate_length(:name, max: 100)
-    |> validate_range(:min_on_hand_sacks, 0, 100_000)
-    |> unique_constraint([:ingredient_id, :maltster_party_id, :name],
-      name: :ingredient_products_ingredient_maltster_name_index,
+    |> validate_length(:origin, max: 100)
+    |> validate_range(:min_on_hand_packs, 0, 100_000)
+    |> unique_constraint([:ingredient_id, :manufacturer_party_id, :name],
+      name: :ingredient_products_ingredient_manufacturer_form_name_index,
       message: "This maltster already has that product for this grain."
     )
     |> foreign_key_constraint(:ingredient_id)
-    |> foreign_key_constraint(:maltster_party_id)
+    |> foreign_key_constraint(:manufacturer_party_id)
     |> foreign_key_constraint(:reorder_offer_id)
     |> validate_reorder_offer()
     |> RockcutApi.Changeset.validate_parents([
       :ingredient_id,
-      :maltster_party_id,
+      :manufacturer_party_id,
       :reorder_offer_id
     ])
   end

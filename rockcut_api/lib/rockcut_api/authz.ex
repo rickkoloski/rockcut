@@ -505,7 +505,7 @@ defmodule RockcutApi.Authz do
   def can?(%User{} = user, action, :production) when action in [:read, :write, :setup],
     do: member_of?(user, "brewery")
 
-  # D60 grain catalog and inventory (spec decision 12): parties, maltster
+  # D60 grain catalog and inventory (spec decision 12): parties, manufacturer
   # products, feature types, supplier offers and prices, lots, movements and
   # counts are any Brewery member's, of any role (the `:brewery` module plug
   # on their routes). Owners pass above; no device does any of it

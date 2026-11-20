@@ -1,7 +1,6 @@
 defmodule RockcutApi.Brewing.CategoryFieldDefinition do
   use Ecto.Schema
   import Ecto.Changeset
-  import Ecto.Query, only: [from: 2]
 
   schema "category_field_definitions" do
     field :field_name, :string
@@ -47,15 +46,5 @@ defmodule RockcutApi.Brewing.CategoryFieldDefinition do
     end
   end
 
-  defp grains?(id) do
-    alias RockcutApi.Brewing.IngredientCategory
-
-    RockcutApi.Repo.exists?(
-      from(c in IngredientCategory,
-        left_join: p in IngredientCategory,
-        on: p.id == c.parent_id,
-        where: c.id == ^id and (c.name == "Grains" or p.name == "Grains")
-      )
-    )
-  end
+  defp grains?(id), do: RockcutApi.Ingredients.Catalog.key(id) == "grains"
 end

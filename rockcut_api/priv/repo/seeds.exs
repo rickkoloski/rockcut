@@ -23,31 +23,50 @@ categories =
 
 Repo.insert_all(IngredientCategory, categories, on_conflict: :nothing, conflict_target: :name)
 
-# Fetch category IDs for field definition seeding
+# D62: the top-level categories' keys (`Ingredients.Catalog`), set by name
+# only where a key isn't taken yet, so a renamed category keeps its key.
+for {name, key} <- [
+      {"Grains", "grains"},
+      {"Hops", "hops"},
+      {"Fruits", "fruits"},
+      {"Spices & Flavorings", "spices"},
+      {"Sugars and Extracts", "sugars"},
+      {"Other Consumables", "consumables"},
+      {"Yeast Strains", "yeast"},
+      {"Future Ingredients", "future"}
+    ],
+    not Repo.exists?(from c in IngredientCategory, where: c.key == ^key) do
+  Repo.update_all(
+    from(c in IngredientCategory, where: c.name == ^name and is_nil(c.parent_id) and is_nil(c.key)),
+    set: [key: key]
+  )
+end
+
+# Top-level category IDs by key (D62), for the seeding below
 category_ids =
-  Repo.all(IngredientCategory)
-  |> Map.new(fn c -> {c.name, c.id} end)
+  Repo.all(from c in IngredientCategory, where: not is_nil(c.key))
+  |> Map.new(fn c -> {c.key, c.id} end)
 
 # Seed category field definitions (idempotent)
 field_defs =
   [
     # Grains: none (D60 decision 2 dropped Origin and Maltster).
     # Hops
-    {category_ids["Hops"], "Form", "dropdown", "Pellet, Whole Leaf, Cryo, Extract", false, 0},
-    {category_ids["Hops"], "Origin", "text", nil, false, 1},
-    {category_ids["Hops"], "Crop Year", "text", nil, false, 2},
+    {category_ids["hops"], "Form", "dropdown", "Pellet, Whole Leaf, Cryo, Extract", false, 0},
+    {category_ids["hops"], "Origin", "text", nil, false, 1},
+    {category_ids["hops"], "Crop Year", "text", nil, false, 2},
     # Yeast Strains
-    {category_ids["Yeast Strains"], "Lab", "text", nil, false, 0},
-    {category_ids["Yeast Strains"], "Product Code", "text", nil, false, 1},
-    {category_ids["Yeast Strains"], "Temp Range Low (F)", "number", nil, false, 2},
-    {category_ids["Yeast Strains"], "Temp Range High (F)", "number", nil, false, 3},
-    {category_ids["Yeast Strains"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
+    {category_ids["yeast"], "Lab", "text", nil, false, 0},
+    {category_ids["yeast"], "Product Code", "text", nil, false, 1},
+    {category_ids["yeast"], "Temp Range Low (F)", "number", nil, false, 2},
+    {category_ids["yeast"], "Temp Range High (F)", "number", nil, false, 3},
+    {category_ids["yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
     # Fruits
-    {category_ids["Fruits"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
+    {category_ids["fruits"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
     # Spices & Flavorings
-    {category_ids["Spices & Flavorings"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
+    {category_ids["spices"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
     # Sugars and Extracts
-    {category_ids["Sugars and Extracts"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
+    {category_ids["sugars"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
   ]
   |> Enum.map(fn {cat_id, field_name, field_type, options, required, sort_order} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -92,14 +111,14 @@ grain_children
 |> Enum.with_index()
 |> Enum.each(fn {name, sort_order} ->
   if is_nil(Repo.get_by(IngredientCategory, name: name)) do
-    Repo.insert!(%IngredientCategory{name: name, sort_order: sort_order, parent_id: category_ids["Grains"]})
+    Repo.insert!(%IngredientCategory{name: name, sort_order: sort_order, parent_id: category_ids["grains"]})
   end
 end)
 
 grain_category_ids =
   Repo.all(
     from c in IngredientCategory,
-      where: c.id == ^category_ids["Grains"] or c.parent_id == ^category_ids["Grains"],
+      where: c.id == ^category_ids["grains"] or c.parent_id == ^category_ids["grains"],
       select: c.id
   )
 
@@ -114,7 +133,7 @@ grain_ingredients =
   |> Enum.reject(&MapSet.member?(existing_grains, &1))
   |> Enum.map(fn name ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    %{category_id: category_ids["Grains"], name: name, notes: nil, inserted_at: now, updated_at: now}
+    %{category_id: category_ids["grains"], name: name, notes: nil, inserted_at: now, updated_at: now}
   end)
 
 Repo.insert_all(Ingredient, grain_ingredients, on_conflict: :nothing, conflict_target: [:name, :category_id])
@@ -142,7 +161,7 @@ grain_child_of = %{
 for {child, names} <- grain_child_of,
     %IngredientCategory{id: child_id} <- [Repo.get_by(IngredientCategory, name: child)] do
   Repo.update_all(
-    from(i in Ingredient, where: i.category_id == ^category_ids["Grains"] and i.name in ^names),
+    from(i in Ingredient, where: i.category_id == ^category_ids["grains"] and i.name in ^names),
     set: [category_id: child_id]
   )
 end
@@ -150,22 +169,22 @@ end
 other_ingredients =
   [
     # Hops
-    {category_ids["Hops"], "Centennial", "Citrus and floral, dual-purpose"},
-    {category_ids["Hops"], "Cascade", "Classic American, grapefruit and floral"},
-    {category_ids["Hops"], "Citra", "Tropical, passion fruit, grapefruit"},
-    {category_ids["Hops"], "Mosaic", "Complex fruit: mango, blueberry, earthy"},
-    {category_ids["Hops"], "Simcoe", "Pine, earthy, passion fruit"},
-    {category_ids["Hops"], "Amarillo", "Orange citrus, floral"},
+    {category_ids["hops"], "Centennial", "Citrus and floral, dual-purpose"},
+    {category_ids["hops"], "Cascade", "Classic American, grapefruit and floral"},
+    {category_ids["hops"], "Citra", "Tropical, passion fruit, grapefruit"},
+    {category_ids["hops"], "Mosaic", "Complex fruit: mango, blueberry, earthy"},
+    {category_ids["hops"], "Simcoe", "Pine, earthy, passion fruit"},
+    {category_ids["hops"], "Amarillo", "Orange citrus, floral"},
     # Yeast Strains
-    {category_ids["Yeast Strains"], "US-05", "Clean American ale yeast (Fermentis)"},
-    {category_ids["Yeast Strains"], "WLP001", "California Ale (White Labs)"},
-    {category_ids["Yeast Strains"], "Wyeast 1056", "American Ale (Wyeast)"},
-    {category_ids["Yeast Strains"], "WLP002", "English Ale (White Labs)"},
+    {category_ids["yeast"], "US-05", "Clean American ale yeast (Fermentis)"},
+    {category_ids["yeast"], "WLP001", "California Ale (White Labs)"},
+    {category_ids["yeast"], "Wyeast 1056", "American Ale (Wyeast)"},
+    {category_ids["yeast"], "WLP002", "English Ale (White Labs)"},
     # Sugars and Extracts
-    {category_ids["Sugars and Extracts"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
+    {category_ids["sugars"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
     # Other Consumables
-    {category_ids["Other Consumables"], "Irish Moss", "Kettle fining agent"},
-    {category_ids["Other Consumables"], "Whirlfloc", "Tablet fining, aids clarity"},
+    {category_ids["consumables"], "Irish Moss", "Kettle fining agent"},
+    {category_ids["consumables"], "Whirlfloc", "Tablet fining, aids clarity"},
   ]
   |> Enum.map(fn {cat_id, name, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -182,9 +201,9 @@ feature_type_ids = Repo.all(FeatureType) |> Map.new(fn f -> {f.key, f.id} end)
 
 applicability =
   [
-    {"Grains", ~w(extract_fgdb color_lovibond diastatic_power_lintner protein_pct moisture_pct)},
-    {"Hops", ~w(alpha_acid_pct)},
-    {"Yeast Strains", ~w(attenuation_pct)}
+    {"grains", ~w(extract_fgdb color_lovibond diastatic_power_lintner protein_pct moisture_pct)},
+    {"hops", ~w(alpha_acid_pct)},
+    {"yeast", ~w(attenuation_pct)}
   ]
   |> Enum.flat_map(fn {category, keys} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)

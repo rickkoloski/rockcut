@@ -2,7 +2,7 @@ defmodule RockcutApi.Ingredients do
   @moduledoc """
   D60: the grain catalog and inventory, on Len Silverston's Universal Data
   Model patterns applied selectively (spec decision 3): parties and their
-  roles (`Party`, `PartyRole`), maltster products (`Product`), features with
+  roles (`Party`, `PartyRole`), products (`Product`), features with
   their units and the categories they apply to (`FeatureType`,
   `CategoryFeatureType`), standard and per-lot values
   (`ProductFeatureValue`, `LotFeatureValue`), supplier offers and their

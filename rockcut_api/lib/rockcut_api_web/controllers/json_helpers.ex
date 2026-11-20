@@ -986,6 +986,7 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{
       id: cat.id,
       name: cat.name,
+      key: cat.key,
       parent_id: cat.parent_id,
       sort_order: cat.sort_order,
       delete_blocked: cat.delete_blocked,
@@ -1037,12 +1038,14 @@ defmodule RockcutApiWeb.JSONHelpers do
       product: maybe_render(lot, :product, &product_summary/1),
       supplier_party_id: lot.supplier_party_id,
       supplier: maybe_render(lot, :supplier, &party_summary/1),
-      sack_size_lb: lot.sack_size_lb,
+      pack_name: lot.pack_name,
+      pack_size: lot.pack_size,
+      unit: maybe_render(lot, :product, &RockcutApi.Ingredients.Products.unit/1),
       received_date: lot.received_date,
       status: lot.status,
       features: lot_features(lot),
-      on_hand_lb: lot.on_hand_lb,
-      cost_per_lb: lot.cost_per_lb,
+      on_hand: lot.on_hand,
+      unit_cost: lot.unit_cost,
       value: lot.value,
       estimated: lot.estimated,
       unvalued: lot.unvalued,
@@ -1061,7 +1064,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: p.name,
       notes: p.notes,
       active: p.active,
-      order_target_sacks: p.order_target_sacks,
+      order_target_packs: p.order_target_packs,
       delete_blocked: p.delete_blocked,
       roles: maybe_render(p, :roles, fn roles -> roles |> Enum.map(& &1.role) |> Enum.sort() end),
       inserted_at: p.inserted_at,
@@ -1075,19 +1078,22 @@ defmodule RockcutApiWeb.JSONHelpers do
       ingredient_id: p.ingredient_id,
       ingredient: maybe_render(p, :ingredient, &ingredient_summary/1),
       category: maybe_render(p.ingredient, :category, &ingredient_category_summary/1),
-      maltster_party_id: p.maltster_party_id,
-      maltster: maybe_render(p, :maltster, &party_summary/1),
+      manufacturer_party_id: p.manufacturer_party_id,
+      manufacturer: maybe_render(p, :manufacturer, &party_summary/1),
       name: p.name,
+      unit: p.unit,
+      form: p.form,
+      origin: p.origin,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
       notes: p.notes,
       active: p.active,
       features: maybe_render(p, :feature_values, &RockcutApi.Ingredients.Features.values_map/1),
       offers: maybe_render(p, :offers, &Enum.map(&1, fn o -> supplier_offer(o) end)),
-      min_on_hand_sacks: p.min_on_hand_sacks,
+      min_on_hand_packs: p.min_on_hand_packs,
       reorder_offer_id: p.reorder_offer_id,
       below_minimum: p.below_minimum,
-      on_hand_lb: p.on_hand_lb,
-      expired_lb: p.expired_lb,
+      on_hand: p.on_hand,
+      expired: p.expired,
       inserted_at: p.inserted_at,
       updated_at: p.updated_at
     }
@@ -1124,23 +1130,24 @@ defmodule RockcutApiWeb.JSONHelpers do
       supplier_party_id: o.supplier_party_id,
       supplier: maybe_render(o, :supplier, &party_summary/1),
       order_name: o.order_name,
-      sack_size_lb: o.sack_size_lb,
+      pack_name: o.pack_name,
+      pack_size: o.pack_size,
       form: o.form,
       notes: o.notes,
       active: o.active,
-      current_price: o.current_price && offer_price(o.current_price, o.sack_size_lb),
+      current_price: o.current_price && offer_price(o.current_price, o.pack_size),
       inserted_at: o.inserted_at,
       updated_at: o.updated_at
     }
   end
 
-  @doc "A price per sack, with $/lb worked out from the offer's sack size."
-  def offer_price(p, sack_size_lb) do
+  @doc "A price per pack, with $ per unit worked out from the offer's pack size."
+  def offer_price(p, pack_size) do
     %{
       id: p.id,
       offer_id: p.offer_id,
-      price_per_sack: p.price_per_sack,
-      price_per_lb: sack_size_lb && Decimal.round(Decimal.div(p.price_per_sack, sack_size_lb), 4),
+      price_per_pack: p.price_per_pack,
+      price_per_unit: pack_size && Decimal.round(Decimal.div(p.price_per_pack, pack_size), 4),
       effective_on: p.effective_on,
       note: p.note,
       entered_by: maybe_render(p, :entered_by, &person_name/1),
@@ -1164,7 +1171,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       lot_number: maybe_render(m, :lot, & &1.lot_number),
       product_id: maybe_render(m, :lot, & &1.product_id),
       kind: m.kind,
-      quantity_lb: m.quantity_lb,
+      quantity: m.quantity,
       occurred_on: m.occurred_on,
       partner_party_id: m.partner_party_id,
       partner: maybe_render(m, :partner, &party_summary/1),
@@ -1188,8 +1195,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       notes: c.notes,
       created_by: maybe_render(c, :created_by, &person_name/1),
       lines: maybe_render(c, :lines, &Enum.map(&1, fn l -> contract_line(l) end)),
-      remaining_sacks: c.remaining_sacks,
-      over_sacks: c.over_sacks,
+      remaining: c.remaining,
+      over: c.over,
       delete_blocked: RockcutApi.Ingredients.Contracts.delete_blocked(c),
       lock_version: c.lock_version,
       inserted_at: c.inserted_at,
@@ -1204,8 +1211,8 @@ defmodule RockcutApiWeb.JSONHelpers do
         product_id: l.product_id,
         product: maybe_render(l, :product, &product_summary/1),
         offer_id: l.offer_id,
-        sacks: l.sacks,
-        price_per_sack: l.price_per_sack
+        quantity: l.quantity,
+        price: l.price
       },
       l.figures || %{}
     )
@@ -1234,7 +1241,7 @@ defmodule RockcutApiWeb.JSONHelpers do
         lock_version: o.lock_version,
         lines:
           Enum.map(o.lines, fn l ->
-            n = Orders.counted_sacks(o, l)
+            n = Orders.counted_packs(o, l)
 
             %{
               id: l.id,
@@ -1243,15 +1250,16 @@ defmodule RockcutApiWeb.JSONHelpers do
                 id: l.offer.id,
                 order_name: l.offer.order_name,
                 label: Orders.offer_label(l.offer),
-                sack_size_lb: l.offer.sack_size_lb,
+                pack_name: l.offer.pack_name,
+                pack_size: l.offer.pack_size,
                 product_id: l.offer.product_id,
                 product: product_summary(l.offer.product)
               },
-              sacks_ordered: l.sacks_ordered,
-              sacks_received: l.sacks_received,
-              price_per_sack: l.price_per_sack,
-              line_lb: Decimal.round(Decimal.mult(l.offer.sack_size_lb, n), 2),
-              line_dollars: Decimal.round(Decimal.mult(l.price_per_sack, n), 2)
+              packs_ordered: l.packs_ordered,
+              packs_received: l.packs_received,
+              price_per_pack: l.price_per_pack,
+              line_quantity: Orders.line_quantity(o, l),
+              line_dollars: Decimal.round(Decimal.mult(l.price_per_pack, n), 2)
             }
           end),
         inserted_at: o.inserted_at,
@@ -1265,7 +1273,7 @@ defmodule RockcutApiWeb.JSONHelpers do
     %{
       product_id: r.product.id,
       product: product_summary(r.product),
-      min_on_hand_sacks: r.product.min_on_hand_sacks,
+      min_on_hand_packs: r.product.min_on_hand_packs,
       reorder_offer_id: r.product.reorder_offer_id,
       offer:
         r.offer &&
@@ -1274,10 +1282,10 @@ defmodule RockcutApiWeb.JSONHelpers do
             :label,
             RockcutApi.Ingredients.Orders.offer_label(Map.put(r.offer, :product, r.product))
           ),
-      on_hand_lb: r.on_hand_lb,
-      on_hand_sacks: r.on_hand_sacks,
-      on_order_lb: r.on_order_lb,
-      on_order_sacks: r.on_order_sacks,
+      on_hand: r.on_hand,
+      on_hand_packs: r.on_hand_packs,
+      on_order: r.on_order,
+      on_order_packs: r.on_order_packs,
       to_order: r.to_order,
       below_minimum: r.below_minimum
     }
@@ -1450,7 +1458,7 @@ defmodule RockcutApiWeb.JSONHelpers do
   # Compact renderers for nested associations
 
   defp ingredient_category_summary(cat) do
-    %{id: cat.id, name: cat.name, parent_id: cat.parent_id}
+    %{id: cat.id, name: cat.name, key: cat.key, parent_id: cat.parent_id}
   end
 
   defp ingredient_summary(ing) do
@@ -1467,7 +1475,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       lot_number: lot.lot_number,
       product_id: lot.product_id,
       supplier_party_id: lot.supplier_party_id,
-      sack_size_lb: lot.sack_size_lb,
+      pack_name: lot.pack_name,
+      pack_size: lot.pack_size,
       received_date: lot.received_date,
       status: lot.status,
       features: lot_features(lot),
@@ -1487,7 +1496,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       id: p.id,
       name: p.name,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
-      maltster: maybe_render(p, :maltster, &party_summary/1)
+      unit: p.unit,
+      manufacturer: maybe_render(p, :manufacturer, &party_summary/1)
     }
   end
 

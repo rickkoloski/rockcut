@@ -1,10 +1,11 @@
 defmodule RockcutApi.Ingredients.Products do
   @moduledoc """
-  D60 §3.3: maltster products. A product's maltster must hold the maltster
-  role; its standard features (`features`, as `Features.validate/2`) apply
-  to its grain's category. The list loads everything the grains list shows
-  in a fixed number of queries, however many products: products with grain,
-  category and maltster (1), standard features (2), offers with suppliers
+  D60 §3.3: products. A product's manufacturer must hold the manufacturer
+  role (D62 §3.2; the maltster on grain screens); its standard features
+  (`features`, as `Features.validate/2`) apply to its ingredient's category.
+  The list loads everything the grains list shows in a fixed number of
+  queries, however many products: products with ingredient, category and
+  manufacturer (1), standard features (2), offers with suppliers
   (3), their current prices (4) and on-hand with its expired part (5); with
   any minimum on hand set, five more for `below_minimum` (D61 §3.5).
   """
@@ -26,23 +27,24 @@ defmodule RockcutApi.Ingredients.Products do
   @in_use "This product has offers or lots; deactivate it instead"
 
   @doc """
-  Products by grain name, maltster name and product name. Filters:
-  `ingredient_id`, `category_id` (with its children), `maltster_id`,
-  `supplier_id` (has an offer from), `on_hand=true` (more than 0 lb).
+  Products by ingredient name, manufacturer name and product name.
+  Filters: `ingredient_id`, `category_id` (with its children),
+  `manufacturer_id`, `supplier_id` (has an offer from), `on_hand=true`
+  (more than 0 in its unit).
   """
   def list(params \\ %{}) do
     products =
       base_query()
       |> filter(:ingredient_id, params["ingredient_id"])
       |> filter_category(params["category_id"])
-      |> filter(:maltster_party_id, params["maltster_id"])
+      |> filter(:manufacturer_party_id, params["manufacturer_id"])
       |> filter_supplier(params["supplier_id"])
       |> order_by([p, i, _c, m], [i.name, m.name, p.name, p.id])
       |> Repo.all()
       |> fill()
 
     if params["on_hand"] in ["true", true],
-      do: Enum.filter(products, &Decimal.gt?(&1.on_hand_lb, 0)),
+      do: Enum.filter(products, &Decimal.gt?(&1.on_hand, 0)),
       else: products
   end
 
@@ -63,7 +65,7 @@ defmodule RockcutApi.Ingredients.Products do
   end
 
   def create(attrs) do
-    with :ok <- maltster(attrs),
+    with :ok <- manufacturer(attrs),
          {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"]) do
       Repo.transaction(fn ->
         product =
@@ -85,7 +87,7 @@ defmodule RockcutApi.Ingredients.Products do
   def update(%Product{} = product, attrs) do
     ingredient_id = attrs["ingredient_id"] || product.ingredient_id
 
-    with :ok <- maltster(attrs),
+    with :ok <- manufacturer(attrs),
          {:ok, features} <- Features.validate(attrs["features"], ingredient_id) do
       Repo.transaction(fn ->
         updated =
@@ -116,22 +118,45 @@ defmodule RockcutApi.Ingredients.Products do
       else: Repo.delete(product)
   end
 
-  @doc ~S|"Rahr 2-Row", or "Weyermann Rauch Malt (Beech Smoked Malt)" with a product name.|
-  def display_name(%Product{maltster: %{name: maltster}, ingredient: %{name: grain}, name: nil}),
-    do: "#{maltster} #{grain}"
+  @doc ~S'''
+  "Rahr 2-Row", or "Weyermann Rauch Malt (Beech Smoked Malt)" with a
+  product name (D60). D62 §3.3: a product with a form adds it after the
+  ingredient: "Yakima Chief Citra T90 Pellet", "Hopsteiner Citra T90 Pellet
+  (Lupomax)". Grain products have no form, so their names don't change.
+  '''
+  def display_name(%Product{manufacturer: %{name: maker}, ingredient: %{name: ingredient}} = p) do
+    item = Enum.join(Enum.reject([ingredient, blank_to_nil(p.form)], &is_nil/1), " ")
 
-  def display_name(%Product{maltster: %{name: maltster}, ingredient: %{name: grain}, name: name}),
-    do: "#{maltster} #{name} (#{grain})"
+    cond do
+      is_nil(p.name) -> "#{maker} #{item}"
+      is_nil(blank_to_nil(p.form)) -> "#{maker} #{p.name} (#{item})"
+      true -> "#{maker} #{item} (#{p.name})"
+    end
+  end
 
   def display_name(_), do: nil
 
-  # Products with grain, its category and the maltster, joined (one query).
+  defp blank_to_nil(v) when v in [nil, ""], do: nil
+  defp blank_to_nil(v), do: v
+
+  @doc "A product's unit (D62 §3.3), lb when there's no product."
+  def unit(nil), do: "lb"
+  def unit(%Product{unit: unit}), do: unit || "lb"
+
+  def unit(id) do
+    case Repo.one(from(p in Product, where: p.id == ^id, select: p.unit)) do
+      nil -> "lb"
+      unit -> unit
+    end
+  end
+
+  # Products with ingredient, its category and the manufacturer, joined (one query).
   defp base_query do
     from(p in Product,
       join: i in assoc(p, :ingredient),
       join: c in assoc(i, :category),
-      join: m in assoc(p, :maltster),
-      preload: [ingredient: {i, category: c}, maltster: m]
+      join: m in assoc(p, :manufacturer),
+      preload: [ingredient: {i, category: c}, manufacturer: m]
     )
   end
 
@@ -170,19 +195,19 @@ defmodule RockcutApi.Ingredients.Products do
         p
         | feature_values: Map.get(features, p.id, []),
           offers: Map.get(offers, p.id, []),
-          on_hand_lb: elem(Map.fetch!(stock, p.id), 0),
-          expired_lb: elem(Map.fetch!(stock, p.id), 1),
+          on_hand: elem(Map.fetch!(stock, p.id), 0),
+          expired: elem(Map.fetch!(stock, p.id), 1),
           below_minimum: Map.fetch!(reorder, p.id).below_minimum
       }
     end)
   end
 
-  defp maltster(attrs) do
-    case Map.fetch(attrs, "maltster_party_id") do
+  defp manufacturer(attrs) do
+    case Map.fetch(attrs, "manufacturer_party_id") do
       {:ok, id} when id not in [nil, ""] ->
-        if Parties.has_role?(id, "maltster"),
+        if Parties.has_role?(id, "manufacturer"),
           do: :ok,
-          else: {:error, {:invalid, %{maltster_party_id: ["must be a maltster"]}}}
+          else: {:error, {:invalid, %{manufacturer_party_id: ["must be a manufacturer"]}}}
 
       _ ->
         :ok

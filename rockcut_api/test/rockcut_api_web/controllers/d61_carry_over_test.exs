@@ -36,19 +36,19 @@ defmodule RockcutApiWeb.D61CarryOverTest do
       Repo.insert!(%Movement{
         lot_id: lot.id,
         kind: "traded_out",
-        quantity_lb: Decimal.new(-5),
+        quantity: Decimal.new(-5),
         occurred_on: Tasks.today(),
         partner_party_id: c.mountain.id
       })
 
       Repo.update!(Ecto.Changeset.change(lot, supplier_party_id: c.root_shoot.id))
-      unused = party!("Crisp", ~w(maltster))
+      unused = party!("Crisp", ~w(manufacturer))
 
       {200, %{"data" => list}} = req(c.brewer, :get, "/api/parties")
       parties = by_id(list)
 
       assert parties[c.rahr.id]["delete_blocked"] ==
-               "This company has maltster products; deactivate it instead"
+               "This company has products; deactivate it instead"
 
       assert parties[c.bsg.id]["delete_blocked"] ==
                "This company has supplier offers; deactivate it instead"
@@ -61,14 +61,14 @@ defmodule RockcutApiWeb.D61CarryOverTest do
 
       assert parties[unused.id]["delete_blocked"] == nil
 
-      assert {200, %{"data" => %{"delete_blocked" => "This company has maltster products" <> _}}} =
+      assert {200, %{"data" => %{"delete_blocked" => "This company has products" <> _}}} =
                req(c.brewer, :get, "/api/parties/#{c.rahr.id}")
 
       # Several uses are listed together.
       Repo.insert!(%RockcutApi.Ingredients.SupplierOffer{
         product_id: c.product.id,
         supplier_party_id: c.root_shoot.id,
-        sack_size_lb: Decimal.new(50),
+        pack_size: Decimal.new(50),
         form: "whole"
       })
 
@@ -157,9 +157,9 @@ defmodule RockcutApiWeb.D61CarryOverTest do
           "supplier_party_id" => c.bsg.id,
           "lot_number" => number,
           "received_date" => Date.to_iso8601(Tasks.today()),
-          "sack_size_lb" => "55",
+          "pack_size" => "55",
           "initial_kind" => "opening",
-          "initial_quantity_lb" => "110"
+          "initial_quantity" => "110"
         }
       end
 
@@ -209,13 +209,13 @@ defmodule RockcutApiWeb.D61CarryOverTest do
             ] do
           Repo.insert!(%OfferPrice{
             offer_id: c.offer.id,
-            price_per_sack: Decimal.new(price),
+            price_per_pack: Decimal.new(price),
             effective_on: on
           })
         end
 
         current = Offers.current_prices([c.offer.id], Tasks.today_at(now))[c.offer.id]
-        assert Decimal.eq?(current.price_per_sack, "45.00")
+        assert Decimal.eq?(current.price_per_pack, "45.00")
         assert current.effective_on == today
       end
     end

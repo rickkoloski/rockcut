@@ -27,7 +27,9 @@ defmodule RockcutApi.Accounts.BoardSettings do
   D60 §3.9: the ingredient screens' quantity display, under the board key
   `"ingredients"`:
 
-    * `quantity_display` — "sacks" (sacks + loose lb) or "lb" (total lb).
+    * `quantity_display` — "packs" (packs + loose quantity, e.g. "12 sacks
+      22.5 lb"; D62 §3.5, was "sacks") or "lb" (the total in the product's
+      unit; the toggle says Total).
 
   Who may save a board's settings is `Authz`'s (`{:board_settings, board}`).
   """
@@ -65,7 +67,7 @@ defmodule RockcutApi.Accounts.BoardSettings do
 
   @ingredients "ingredients"
   @ingredients_types %{quantity_display: :string}
-  @ingredients_defaults %{"quantity_display" => "sacks"}
+  @ingredients_defaults %{"quantity_display" => "packs"}
   @ingredients_names ["quantity_display"]
 
   @doc "The board key the production Gantt's settings are kept under (D56 decision 18)."
@@ -111,7 +113,7 @@ defmodule RockcutApi.Accounts.BoardSettings do
     {%{}, @ingredients_types}
     |> cast(attrs, Map.keys(@ingredients_types), empty_values: [])
     |> validate_given(Map.keys(attrs) -- unknown)
-    |> validate_inclusion(:quantity_display, ~w(sacks lb))
+    |> validate_inclusion(:quantity_display, ~w(packs lb))
     |> unknown_errors(unknown)
     |> answer()
   end

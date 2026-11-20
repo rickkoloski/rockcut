@@ -13,7 +13,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
   alias RockcutApi.{Repo, Tasks}
   alias RockcutApi.Brewing.{IngredientCategory, IngredientLot}
-  alias RockcutApi.Ingredients.{LotFeatureValue, Movement, OfferPrice, Products}
+  alias RockcutApi.Ingredients.{LotFeatureValue, Movement, OfferPrice, Product, Products}
 
   setup do
     p = personas(~w(owner brewer1 breweryMgr floater splitRole bartender1 office1))
@@ -37,7 +37,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
   defp on_hand(product_id) do
     {200, %{"data" => p}} = req(user_cache(), :get, "/api/ingredient_products/#{product_id}")
-    p["on_hand_lb"]
+    p["on_hand"]
   end
 
   # Any Brewery member reads; the on-hand helper doesn't need a particular one.
@@ -50,9 +50,9 @@ defmodule RockcutApiWeb.IngredientsApiTest do
         "supplier_party_id" => c.bsg.id,
         "lot_number" => "L-1",
         "received_date" => iso(-1),
-        "sack_size_lb" => "55",
+        "pack_size" => "55",
         "initial_kind" => "opening",
-        "initial_quantity_lb" => "660"
+        "initial_quantity" => "660"
       },
       extra
     )
@@ -77,7 +77,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
         assert {201, _} =
                  req(user, :post, "/api/inventory_movements", %{
                    "kind" => "used",
-                   "quantity_lb" => "10",
+                   "quantity" => "10",
                    "occurred_on" => iso(0),
                    "lot_id" => lot.id
                  })
@@ -155,10 +155,10 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
       assert %{"roles" => _} = errors(req(c.brewer, :post, "/api/parties", %{name: "X"}))
 
-      assert {201, %{"data" => %{"roles" => ["maltster", "supplier"]}}} =
+      assert {201, %{"data" => %{"roles" => ["manufacturer", "supplier"]}}} =
                req(c.p["owner"], :post, "/api/parties", %{
                  name: "Weyermann",
-                 roles: ["supplier", "maltster"]
+                 roles: ["supplier", "manufacturer"]
                })
     end
 
@@ -168,18 +168,18 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     end
 
     test "a party in use can't be deleted, only deactivated; an unused one can", c do
-      assert %{"base" => ["This company has maltster products; deactivate it instead"]} =
+      assert %{"base" => ["This company has products; deactivate it instead"]} =
                errors(req(c.p["owner"], :delete, "/api/parties/#{c.rahr.id}"))
 
       assert {200, %{"data" => %{"active" => false}}} =
                req(c.brewer, :patch, "/api/parties/#{c.rahr.id}", %{active: false})
 
-      unused = party!("Crisp", ~w(maltster))
+      unused = party!("Crisp", ~w(manufacturer))
       assert {204, _} = req(c.brewer, :delete, "/api/parties/#{unused.id}")
     end
 
     test "a role in use can't be taken away; an unused one can", c do
-      assert %{"roles" => ["maltster is in use and can't be removed"]} =
+      assert %{"roles" => ["manufacturer is in use and can't be removed"]} =
                errors(req(c.brewer, :patch, "/api/parties/#{c.rahr.id}", %{roles: ["supplier"]}))
 
       assert {200, %{"data" => %{"roles" => ["supplier"]}}} =
@@ -191,13 +191,13 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     test "the maltster must hold the maltster role", c do
       body = %{ingredient_id: c.two_row.id, name: "Other"}
 
-      assert %{"maltster_party_id" => ["must be a maltster"]} =
+      assert %{"manufacturer_party_id" => ["must be a manufacturer"]} =
                errors(
                  req(
                    c.brewer,
                    :post,
                    "/api/ingredient_products",
-                   Map.put(body, :maltster_party_id, c.bsg.id)
+                   Map.put(body, :manufacturer_party_id, c.bsg.id)
                  )
                )
 
@@ -206,7 +206,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                  c.brewer,
                  :post,
                  "/api/ingredient_products",
-                 Map.put(body, :maltster_party_id, c.root_shoot.id)
+                 Map.put(body, :manufacturer_party_id, c.root_shoot.id)
                )
     end
 
@@ -214,7 +214,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       post = fn features ->
         req(c.brewer, :post, "/api/ingredient_products", %{
           ingredient_id: c.two_row.id,
-          maltster_party_id: c.root_shoot.id,
+          manufacturer_party_id: c.root_shoot.id,
           features: features
         })
       end
@@ -282,7 +282,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     test "the JSON: grain, category, maltster, features, offers with current price, on hand", c do
       Repo.insert!(%OfferPrice{
         offer_id: c.offer.id,
-        price_per_sack: decimal("48.50"),
+        price_per_pack: decimal("48.50"),
         effective_on: day(-10)
       })
 
@@ -292,13 +292,23 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
       assert p["display_name"] == "Rahr 2-Row"
       assert p["ingredient"]["name"] == "2-Row"
-      assert p["category"] == %{"id" => c.base.id, "name" => "Base", "parent_id" => c.grains.id}
-      assert p["maltster"] == %{"id" => c.rahr.id, "name" => "Rahr"}
+
+      assert p["category"] == %{
+               "id" => c.base.id,
+               "name" => "Base",
+               "key" => nil,
+               "parent_id" => c.grains.id
+             }
+
+      assert p["manufacturer"] == %{"id" => c.rahr.id, "name" => "Rahr"}
       assert p["features"]["extract_fgdb"]["value"] == "81.5"
-      assert [%{"supplier" => %{"name" => "BSG"}, "current_price" => price}] = p["offers"]
-      assert eq(price["price_per_sack"], "48.50")
-      assert price["price_per_lb"] == "0.8818"
-      assert eq(p["on_hand_lb"], 110)
+      assert [%{"supplier" => %{"name" => "BSG"}, "current_price" => price} = offer] = p["offers"]
+      assert eq(price["price_per_pack"], "48.50")
+      assert price["price_per_unit"] == "0.8818"
+      assert eq(p["on_hand"], 110)
+      # D62 §3.3, §3.5: a grain product is in lb, its offer a sack.
+      assert p["unit"] == "lb" and p["form"] == nil and p["origin"] == nil
+      assert offer["pack_name"] == "sack" and eq(offer["pack_size"], 55)
     end
 
     test "list filters: category with children, maltster, supplier, on hand", c do
@@ -318,7 +328,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert ids.("?category_id=#{c.base.id}") == both
       assert ids.("?category_id=#{c.hops.id}") == []
       assert ids.("?ingredient_id=#{other_grain.id}") == [rs.id]
-      assert ids.("?maltster_id=#{c.rahr.id}") == [c.product.id]
+      assert ids.("?manufacturer_id=#{c.rahr.id}") == [c.product.id]
       assert ids.("?supplier_id=#{c.bsg.id}") == [c.product.id]
       assert ids.("?on_hand=true") == [c.product.id]
     end
@@ -382,7 +392,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
   describe "supplier offers and prices (§3.6)" do
     test "the supplier must hold the supplier role", c do
-      body = %{product_id: c.product.id, sack_size_lb: "50", form: "whole"}
+      body = %{product_id: c.product.id, pack_size: "50", form: "whole"}
 
       assert %{"supplier_party_id" => ["must be a supplier"]} =
                errors(
@@ -412,25 +422,25 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       path = "/api/supplier_offers/#{c.offer.id}/prices"
 
       assert {201, _} =
-               req(c.brewer, :post, path, %{price_per_sack: "48.50", effective_on: iso(0)})
+               req(c.brewer, :post, path, %{price_per_pack: "48.50", effective_on: iso(0)})
 
       assert {201, %{"data" => %{"entered_by" => %{"name" => _}}}} =
-               req(c.brewer, :post, path, %{price_per_sack: "51.00", effective_on: iso(1)})
+               req(c.brewer, :post, path, %{price_per_pack: "51.00", effective_on: iso(1)})
 
-      assert %{"price_per_sack" => _} =
-               errors(req(c.brewer, :post, path, %{price_per_sack: "-1", effective_on: iso(0)}))
+      assert %{"price_per_pack" => _} =
+               errors(req(c.brewer, :post, path, %{price_per_pack: "-1", effective_on: iso(0)}))
 
       {200, %{"data" => offer}} = req(c.brewer, :get, "/api/supplier_offers/#{c.offer.id}")
-      assert eq(offer["current_price"]["price_per_sack"], "48.50")
+      assert eq(offer["current_price"]["price_per_pack"], "48.50")
       assert offer["current_price"]["effective_on"] == iso(0)
 
       {200, %{"data" => history}} = req(c.brewer, :get, path)
       assert [new, old] = history
-      assert eq(new["price_per_sack"], 51) and eq(old["price_per_sack"], "48.5")
+      assert eq(new["price_per_pack"], 51) and eq(old["price_per_pack"], "48.5")
 
       # Tomorrow in Colorado, the newer price is current.
       tomorrow = RockcutApi.Ingredients.Offers.current_prices([c.offer.id], day(1))
-      assert eq(tomorrow[c.offer.id].price_per_sack, "51.00")
+      assert eq(tomorrow[c.offer.id].price_per_pack, "51.00")
     end
   end
 
@@ -441,7 +451,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                  req(c.brewer, :post, "/api/ingredient_lots", %{
                    ingredient_id: c.two_row.id,
                    initial_kind: "opening",
-                   initial_quantity_lb: "55"
+                   initial_quantity: "55"
                  })
                )
 
@@ -461,7 +471,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                    c.brewer,
                    :post,
                    "/api/ingredient_lots",
-                   lot_body(c, %{"initial_quantity_lb" => "0"})
+                   lot_body(c, %{"initial_quantity" => "0"})
                  )
                )
 
@@ -481,11 +491,11 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert lot["ingredient_id"] == c.two_row.id
       assert lot["product"]["display_name"] == "Rahr 2-Row"
       assert lot["supplier"]["name"] == "BSG"
-      assert eq(lot["on_hand_lb"], 660)
+      assert eq(lot["on_hand"], 660)
       assert lot["status"] == "available"
 
       assert [%Movement{kind: "opening"} = m] = Repo.all(Movement)
-      assert eq(m.quantity_lb, 660)
+      assert eq(m.quantity, 660)
       assert m.occurred_on == day(-1)
     end
 
@@ -537,7 +547,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
         Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "Cascade", category_id: c.hops.id})
 
       # The product decides the grain; another grain with it is refused.
-      assert %{"ingredient_id" => ["isn't this product's grain"]} =
+      assert %{"ingredient_id" => ["isn't this product's ingredient"]} =
                errors(
                  req(c.brewer, :post, "/api/ingredient_lots", %{
                    ingredient_id: cascade.id,
@@ -571,7 +581,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       {201, _} =
         req(c.brewer, :post, "/api/inventory_movements", %{
           kind: "used",
-          quantity_lb: "5",
+          quantity: "5",
           occurred_on: iso(0),
           lot_id: id
         })
@@ -616,29 +626,29 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
     test "the sack size changes only while the lot has just its first movement (gap 14)", c do
       {201, %{"data" => %{"id" => id}}} =
-        req(c.brewer, :post, "/api/ingredient_lots", lot_body(c, %{"sack_size_lb" => "50"}))
+        req(c.brewer, :post, "/api/ingredient_lots", lot_body(c, %{"pack_size" => "50"}))
 
       path = "/api/ingredient_lots/#{id}"
 
-      assert {200, %{"data" => %{"sack_size_lb" => "55"}}} =
-               req(c.brewer, :patch, path, %{sack_size_lb: "55"})
+      assert {200, %{"data" => %{"pack_size" => "55"}}} =
+               req(c.brewer, :patch, path, %{pack_size: "55"})
 
       {201, _} =
         req(c.brewer, :post, "/api/inventory_movements", %{
           kind: "used",
-          quantity_lb: "5",
+          quantity: "5",
           occurred_on: iso(0),
           lot_id: id
         })
 
       assert %{"base" => ["This lot has movements after its first" <> _]} =
-               errors(req(c.brewer, :patch, path, %{sack_size_lb: "50"}))
+               errors(req(c.brewer, :patch, path, %{pack_size: "50"}))
 
-      assert eq(Repo.get!(IngredientLot, id).sack_size_lb, 55)
+      assert eq(Repo.get!(IngredientLot, id).pack_size, 55)
 
       # The same size (as the edit dialog sends it) and other fields still save.
       assert {200, %{"data" => %{"lot_number" => "L-9"}}} =
-               req(c.brewer, :patch, path, %{sack_size_lb: "55.0", lot_number: "L-9"})
+               req(c.brewer, :patch, path, %{pack_size: "55.0", lot_number: "L-9"})
     end
 
     test "feature values with more places than the type keeps are refused, not rounded (D61 lead decisions 1, gap 13)",
@@ -692,7 +702,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       {201, _} =
         req(c.brewer, :post, "/api/inventory_movements", %{
           kind: "used",
-          quantity_lb: "55",
+          quantity: "55",
           occurred_on: iso(0),
           lot_id: lot.id
         })
@@ -702,7 +712,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       {201, _} =
         req(c.brewer, :post, "/api/inventory_movements", %{
           kind: "received",
-          quantity_lb: "10",
+          quantity: "10",
           occurred_on: iso(0),
           lot_id: lot.id
         })
@@ -715,7 +725,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       {201, _} =
         req(c.brewer, :post, "/api/inventory_movements", %{
           kind: "used",
-          quantity_lb: "10",
+          quantity: "10",
           occurred_on: iso(0),
           lot_id: lot.id
         })
@@ -743,21 +753,21 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {201, %{"data" => [a, b]}} =
                move(c, %{
                  "kind" => "used",
-                 "quantity_lb" => "275",
+                 "quantity" => "275",
                  "product_id" => c.product.id,
                  "allocation" => "oldest_first",
                  "note" => "P3"
                })
 
       assert {a["lot_id"], b["lot_id"]} == {c.older.id, c.newer.id}
-      assert eq(a["quantity_lb"], -165) and eq(b["quantity_lb"], -110)
+      assert eq(a["quantity"], -165) and eq(b["quantity"], -110)
       assert Repo.get!(IngredientLot, c.older.id).status == "depleted"
       assert eq(on_hand(c.product.id), 440)
     end
 
     test "a chosen lot gives it all", c do
       assert {201, %{"data" => [m]}} =
-               move(c, %{"kind" => "used", "quantity_lb" => "55", "lot_id" => c.newer.id})
+               move(c, %{"kind" => "used", "quantity" => "55", "lot_id" => c.newer.id})
 
       assert m["lot_id"] == c.newer.id
       assert Repo.get!(IngredientLot, c.older.id).status == "available"
@@ -768,16 +778,14 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                errors(
                  move(c, %{
                    "kind" => "used",
-                   "quantity_lb" => "716",
+                   "quantity" => "716",
                    "product_id" => c.product.id,
                    "allocation" => "oldest_first"
                  })
                )
 
       assert %{"base" => ["That's more than lot OLD has on hand (3 sacks)"]} =
-               errors(
-                 move(c, %{"kind" => "used", "quantity_lb" => "166", "lot_id" => c.older.id})
-               )
+               errors(move(c, %{"kind" => "used", "quantity" => "166", "lot_id" => c.older.id}))
 
       {200, _} =
         req(c.brewer, :put, "/api/me/board_settings/ingredients", %{quantity_display: "lb"})
@@ -786,7 +794,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                errors(
                  move(c, %{
                    "kind" => "used",
-                   "quantity_lb" => "716",
+                   "quantity" => "716",
                    "product_id" => c.product.id,
                    "allocation" => "oldest_first"
                  })
@@ -801,15 +809,15 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {201, %{"data" => [m]}} =
                move(c, %{
                  "kind" => "used",
-                 "quantity_lb" => "100",
+                 "quantity" => "100",
                  "product_id" => c.product.id,
                  "allocation" => "oldest_first"
                })
 
-      assert m["lot_id"] == c.newer.id and eq(m["quantity_lb"], -100)
+      assert m["lot_id"] == c.newer.id and eq(m["quantity"], -100)
 
       assert {201, %{"data" => [m]}} =
-               move(c, %{"kind" => "used", "quantity_lb" => "55", "lot_id" => c.older.id})
+               move(c, %{"kind" => "used", "quantity" => "55", "lot_id" => c.older.id})
 
       assert m["lot_id"] == c.older.id
       assert Repo.get!(IngredientLot, c.older.id).status == "expired"
@@ -822,7 +830,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                errors(
                  move(c, %{
                    "kind" => "used",
-                   "quantity_lb" => "551",
+                   "quantity" => "551",
                    "product_id" => c.product.id,
                    "allocation" => "oldest_first"
                  })
@@ -835,20 +843,20 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert eq(on_hand(c.product.id), 715)
     end
 
-    test "the product shows its expired stock apart; on_hand_lb stays the total", c do
+    test "the product shows its expired stock apart; on_hand stays the total", c do
       expire!(c.older)
 
       {200, %{"data" => p}} = req(c.brewer, :get, "/api/ingredient_products/#{c.product.id}")
-      assert eq(p["on_hand_lb"], 715) and eq(p["expired_lb"], 165)
+      assert eq(p["on_hand"], 715) and eq(p["expired"], 165)
 
       {200, %{"data" => list}} = req(c.brewer, :get, "/api/ingredient_products")
       listed = Enum.find(list, &(&1["id"] == c.product.id))
-      assert eq(listed["expired_lb"], 165)
-      assert Enum.all?(list, &(&1["expired_lb"] != nil))
+      assert eq(listed["expired"], 165)
+      assert Enum.all?(list, &(&1["expired"] != nil))
     end
 
     test "trades and loans need a partner brewery; other kinds take none", c do
-      body = %{"kind" => "loaned_out", "quantity_lb" => "165", "lot_id" => c.newer.id}
+      body = %{"kind" => "loaned_out", "quantity" => "165", "lot_id" => c.newer.id}
 
       assert %{"base" => ["Pick the partner brewery for a trade or loan"]} = errors(move(c, body))
 
@@ -858,23 +866,23 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {201, %{"data" => [%{"partner" => %{"name" => "Mountain Brewing"}} = m]}} =
                move(c, Map.put(body, "party_id", c.mountain.id))
 
-      assert eq(m["quantity_lb"], -165)
+      assert eq(m["quantity"], -165)
 
       assert {201, %{"data" => [m]}} =
                move(c, %{
                  "kind" => "traded_in",
-                 "quantity_lb" => "55",
+                 "quantity" => "55",
                  "lot_id" => c.newer.id,
                  "party_id" => c.mountain.id
                })
 
-      assert eq(m["quantity_lb"], 55)
+      assert eq(m["quantity"], 55)
 
       assert %{"base" => ["Only a trade or a loan names a partner brewery"]} =
                errors(
                  move(c, %{
                    "kind" => "used",
-                   "quantity_lb" => "1",
+                   "quantity" => "1",
                    "lot_id" => c.newer.id,
                    "party_id" => c.mountain.id
                  })
@@ -882,31 +890,31 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     end
 
     test "kind, quantity, target and date are checked", c do
-      base = %{"kind" => "used", "quantity_lb" => "1", "lot_id" => c.newer.id}
+      base = %{"kind" => "used", "quantity" => "1", "lot_id" => c.newer.id}
 
       assert %{"kind" => ["Counts are recorded with Count"]} =
                errors(move(c, %{base | "kind" => "count"}))
 
       assert %{"kind" => _} = errors(move(c, %{base | "kind" => "spilled"}))
       too_small = %{"base" => ["Enter a quantity of at least 0.01 lb and under 1,000,000 lb"]}
-      assert errors(move(c, %{base | "quantity_lb" => "0"})) == too_small
-      assert errors(move(c, %{base | "quantity_lb" => "-5"})) == too_small
-      assert errors(move(c, %{base | "quantity_lb" => "0.0001"})) == too_small
-      assert errors(move(c, %{base | "quantity_lb" => "0.009"})) == too_small
+      assert errors(move(c, %{base | "quantity" => "0"})) == too_small
+      assert errors(move(c, %{base | "quantity" => "-5"})) == too_small
+      assert errors(move(c, %{base | "quantity" => "0.0001"})) == too_small
+      assert errors(move(c, %{base | "quantity" => "0.009"})) == too_small
 
       assert %{"base" => ["Pick the date"]} =
                errors(move(c, Map.put(base, "occurred_on", "soon")))
 
       assert %{"allocation" => _} =
                errors(
-                 move(c, %{"kind" => "used", "quantity_lb" => "1", "product_id" => c.product.id})
+                 move(c, %{"kind" => "used", "quantity" => "1", "product_id" => c.product.id})
                )
 
       assert %{"base" => ["Pick the lot this goes into"]} =
                errors(
                  move(c, %{
                    "kind" => "received",
-                   "quantity_lb" => "1",
+                   "quantity" => "1",
                    "product_id" => c.product.id,
                    "allocation" => "oldest_first"
                  })
@@ -922,19 +930,19 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
     test "lb are kept to 2 decimals; 0.01 lb is enough", c do
       assert {201, %{"data" => [m]}} =
-               move(c, %{"kind" => "used", "quantity_lb" => "1.006", "lot_id" => c.newer.id})
+               move(c, %{"kind" => "used", "quantity" => "1.006", "lot_id" => c.newer.id})
 
-      assert eq(m["quantity_lb"], "-1.01")
-      assert eq(Repo.get!(Movement, m["id"]).quantity_lb, "-1.01")
+      assert eq(m["quantity"], "-1.01")
+      assert eq(Repo.get!(Movement, m["id"]).quantity, "-1.01")
 
       assert {201, %{"data" => [m]}} =
-               move(c, %{"kind" => "used", "quantity_lb" => "0.01", "lot_id" => c.newer.id})
+               move(c, %{"kind" => "used", "quantity" => "0.01", "lot_id" => c.newer.id})
 
-      assert eq(m["quantity_lb"], "-0.01")
+      assert eq(m["quantity"], "-0.01")
     end
 
     test "a movement can't be dated after today in Colorado (gap 13)", c do
-      body = %{"kind" => "used", "quantity_lb" => "1", "lot_id" => c.newer.id}
+      body = %{"kind" => "used", "quantity" => "1", "lot_id" => c.newer.id}
 
       assert %{"base" => ["The date can't be in the future"]} =
                errors(move(c, Map.put(body, "occurred_on", iso(1))))
@@ -956,14 +964,14 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                errors(
                  req(c.brewer, :post, "/api/ingredient_products/#{c.product.id}/count", %{
                    mode: "total",
-                   counted_lb: "700",
+                   counted: "700",
                    counted_on: iso(1)
                  })
                )
     end
 
     test "listed by product or lot, newest first; no update or delete routes", c do
-      {201, _} = move(c, %{"kind" => "used", "quantity_lb" => "5", "lot_id" => c.older.id})
+      {201, _} = move(c, %{"kind" => "used", "quantity" => "5", "lot_id" => c.older.id})
 
       {200, %{"data" => by_product}} =
         req(c.brewer, :get, "/api/inventory_movements?product_id=#{c.product.id}")
@@ -997,12 +1005,12 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {201, %{"data" => [a, b]}} =
                req(c.p["breweryMgr"], :post, c.path, %{
                  mode: "total",
-                 counted_lb: "500",
+                 counted: "500",
                  counted_on: iso(0)
                })
 
       assert {a["lot_id"], a["kind"]} == {c.older.id, "count"}
-      assert eq(a["quantity_lb"], -165) and eq(b["quantity_lb"], -50)
+      assert eq(a["quantity"], -165) and eq(b["quantity"], -50)
       assert a["occurred_on"] == iso(0) and b["occurred_on"] == iso(0)
       assert Repo.get!(IngredientLot, c.older.id).status == "depleted"
       assert eq(on_hand(c.product.id), 500)
@@ -1012,21 +1020,21 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {201, %{"data" => [m]}} =
                req(c.brewer, :post, c.path, %{
                  mode: "total",
-                 counted_lb: "720",
+                 counted: "720",
                  counted_on: iso(0)
                })
 
-      assert m["lot_id"] == c.newer.id and eq(m["quantity_lb"], 5)
+      assert m["lot_id"] == c.newer.id and eq(m["quantity"], 5)
 
       assert {201, %{"data" => [m]}} =
                req(c.brewer, :post, c.path, %{
                  mode: "total",
-                 counted_lb: "720",
+                 counted: "720",
                  counted_on: iso(0)
                })
 
       assert %{"kind" => "count", "lot_id" => lot_id, "entered_by" => %{"name" => _}} = m
-      assert lot_id == c.newer.id and eq(m["quantity_lb"], 0)
+      assert lot_id == c.newer.id and eq(m["quantity"], 0)
       assert eq(on_hand(c.product.id), 720)
     end
 
@@ -1036,13 +1044,13 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                  mode: "by_lot",
                  counted_on: iso(0),
                  lots: [
-                   %{lot_id: c.older.id, counted_lb: "165"},
-                   %{lot_id: c.newer.id, counted_lb: "550"}
+                   %{lot_id: c.older.id, counted: "165"},
+                   %{lot_id: c.newer.id, counted: "550"}
                  ]
                })
 
       assert Enum.sort([a["lot_id"], b["lot_id"]]) == Enum.sort([c.older.id, c.newer.id])
-      assert eq(a["quantity_lb"], 0) and eq(b["quantity_lb"], 0)
+      assert eq(a["quantity"], 0) and eq(b["quantity"], 0)
       assert Repo.get!(IngredientLot, c.older.id).status == "available"
     end
 
@@ -1054,7 +1062,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                errors(
                  req(c.brewer, :post, c.path, %{
                    mode: "total",
-                   counted_lb: "730",
+                   counted: "730",
                    counted_on: iso(0)
                  })
                )
@@ -1068,22 +1076,22 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                  mode: "by_lot",
                  counted_on: iso(0),
                  lots: [
-                   %{lot_id: c.older.id, counted_lb: "0"},
-                   %{lot_id: c.newer.id, counted_lb: "550"}
+                   %{lot_id: c.older.id, counted: "0"},
+                   %{lot_id: c.newer.id, counted: "550"}
                  ]
                })
 
-      assert m["lot_id"] == c.older.id and eq(m["quantity_lb"], -165)
+      assert m["lot_id"] == c.older.id and eq(m["quantity"], -165)
       assert Repo.get!(IngredientLot, c.older.id).status == "depleted"
 
       assert {201, %{"data" => [m]}} =
                req(c.brewer, :post, c.path, %{
                  mode: "by_lot",
                  counted_on: iso(0),
-                 lots: [%{lot_id: c.newer.id, counted_lb: "440"}]
+                 lots: [%{lot_id: c.newer.id, counted: "440"}]
                })
 
-      assert eq(m["quantity_lb"], -110)
+      assert eq(m["quantity"], -110)
     end
 
     test "a total shortfall skips expired lots; past the non-expired stock is a 422", c do
@@ -1092,17 +1100,17 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {201, %{"data" => [m]}} =
                req(c.brewer, :post, c.path, %{
                  mode: "total",
-                 counted_lb: "665",
+                 counted: "665",
                  counted_on: iso(0)
                })
 
-      assert m["lot_id"] == c.newer.id and eq(m["quantity_lb"], -50)
+      assert m["lot_id"] == c.newer.id and eq(m["quantity"], -50)
 
       assert %{"base" => [message]} =
                errors(
                  req(c.brewer, :post, c.path, %{
                    mode: "total",
-                   counted_lb: "100",
+                   counted: "100",
                    counted_on: iso(0)
                  })
                )
@@ -1120,11 +1128,11 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {201, %{"data" => [m]}} =
                req(c.brewer, :post, c.path, %{
                  mode: "total",
-                 counted_lb: "720",
+                 counted: "720",
                  counted_on: iso(0)
                })
 
-      assert m["lot_id"] == c.older.id and eq(m["quantity_lb"], 5)
+      assert m["lot_id"] == c.older.id and eq(m["quantity"], 5)
     end
 
     test "a by-lot count includes an expired lot", c do
@@ -1134,10 +1142,10 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                req(c.brewer, :post, c.path, %{
                  mode: "by_lot",
                  counted_on: iso(0),
-                 lots: [%{lot_id: c.older.id, counted_lb: "110"}]
+                 lots: [%{lot_id: c.older.id, counted: "110"}]
                })
 
-      assert m["lot_id"] == c.older.id and eq(m["quantity_lb"], -55)
+      assert m["lot_id"] == c.older.id and eq(m["quantity"], -55)
       assert Repo.get!(IngredientLot, c.older.id).status == "expired"
     end
 
@@ -1145,18 +1153,18 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       post = &req(c.brewer, :post, c.path, &1)
       other = stocked_lot!(product!(c.two_row, c.root_shoot), day(-1), "50")
 
-      assert %{"mode" => _} = errors(post.(%{counted_on: iso(0), counted_lb: "1"}))
-      assert %{"base" => ["Pick the date"]} = errors(post.(%{mode: "total", counted_lb: "1"}))
+      assert %{"mode" => _} = errors(post.(%{counted_on: iso(0), counted: "1"}))
+      assert %{"base" => ["Pick the date"]} = errors(post.(%{mode: "total", counted: "1"}))
 
       assert %{"base" => ["The count must be 0 or more and under 1,000,000 lb"]} =
-               errors(post.(%{mode: "total", counted_lb: "-1", counted_on: iso(0)}))
+               errors(post.(%{mode: "total", counted: "-1", counted_on: iso(0)}))
 
       assert %{"lots" => ["a lot isn't this product's"]} =
                errors(
                  post.(%{
                    mode: "by_lot",
                    counted_on: iso(0),
-                   lots: [%{lot_id: other.id, counted_lb: "0"}]
+                   lots: [%{lot_id: other.id, counted: "0"}]
                  })
                )
 
@@ -1166,8 +1174,8 @@ defmodule RockcutApiWeb.IngredientsApiTest do
                    mode: "by_lot",
                    counted_on: iso(0),
                    lots: [
-                     %{lot_id: c.older.id, counted_lb: "0"},
-                     %{lot_id: c.older.id, counted_lb: "1"}
+                     %{lot_id: c.older.id, counted: "0"},
+                     %{lot_id: c.older.id, counted: "1"}
                    ]
                  })
                )
@@ -1272,7 +1280,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
       assert %{"span" => _} = errors(req(c.brewer, :put, path, %{span: 7}))
 
-      assert {200, %{"quantity_display" => "sacks"}} =
+      assert {200, %{"quantity_display" => "packs"}} =
                req(c.p["floater"], :put, path, %{})
 
       {200, me} = req(c.brewer, :get, "/api/me")
@@ -1282,13 +1290,33 @@ defmodule RockcutApiWeb.IngredientsApiTest do
     end
   end
 
-  test "inventory_on_hand: a product's or an ingredient's lb", c do
+  test "inventory_on_hand: a product's or an ingredient's on hand, with the unit (D62 §3.9)", c do
     stocked_lot!(c.product, day(-2), "110.5")
     ctx = %{repo: Repo}
     run = &RockcutApi.Formulas.FormulaRuntime.execute("inventory_on_hand", &1, ctx)
 
-    assert {:ok, %{value: 110.5}} = run.(%{"product_id" => c.product.id})
-    assert {:ok, %{value: 110.5}} = run.(%{"ingredient_id" => c.two_row.id})
+    assert {:ok, %{value: 110.5, unit: "lb"}} = run.(%{"product_id" => c.product.id})
+    assert {:ok, %{value: 110.5, unit: "lb"}} = run.(%{"ingredient_id" => c.two_row.id})
     assert {:error, :validation_error, _} = run.(%{})
+
+    # An ingredient whose products are in two units isn't summed.
+    strawberry =
+      Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "Strawberry", category_id: c.base.id})
+
+    for {unit, form} <- [{"gal", "Purée"}, {"lb", "Whole"}],
+        do:
+          Repo.insert!(%Product{
+            ingredient_id: strawberry.id,
+            manufacturer_party_id: c.rahr.id,
+            unit: unit,
+            form: form
+          })
+
+    assert {:error, :validation_error,
+            "Strawberry's products are in different units; ask for one product."} =
+             run.(%{"ingredient_id" => strawberry.id})
+
+    puree = Repo.get_by!(Product, ingredient_id: strawberry.id, unit: "gal")
+    assert {:ok, %{value: +0.0, unit: "gal"}} = run.(%{"product_id" => puree.id})
   end
 end

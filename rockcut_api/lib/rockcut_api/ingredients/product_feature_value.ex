@@ -1,6 +1,6 @@
 defmodule RockcutApi.Ingredients.ProductFeatureValue do
   @moduledoc """
-  D60 §3.4: a maltster product's standard value for one feature, in the
+  D60 §3.4: a product's standard value for one feature, in the
   feature's unit. `entered_value`/`entered_unit` keep what was typed when a
   conversion was used ("entered as 37.5 PPG").
   """

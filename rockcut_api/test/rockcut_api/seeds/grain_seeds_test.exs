@@ -130,14 +130,14 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
 
     assert roles() == [
              {"BSG", "supplier"},
-             {"Crisp", "maltster"},
-             {"Dingemans", "maltster"},
-             {"Grain Millers", "maltster"},
-             {"Rahr", "maltster"},
-             {"Root Shoot", "maltster"},
+             {"Crisp", "manufacturer"},
+             {"Dingemans", "manufacturer"},
+             {"Grain Millers", "manufacturer"},
+             {"Rahr", "manufacturer"},
+             {"Root Shoot", "manufacturer"},
              {"Root Shoot", "supplier"},
-             {"Simpsons", "maltster"},
-             {"Weyermann", "maltster"}
+             {"Simpsons", "manufacturer"},
+             {"Weyermann", "manufacturer"}
            ]
 
     assert Repo.aggregate(from(p in Party, where: not like(p.name, "[SEED]%")), :count) == 8
@@ -159,9 +159,9 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
         from o in SupplierOffer,
           join: p in assoc(o, :product),
           join: i in assoc(p, :ingredient),
-          join: m in assoc(p, :maltster),
+          join: m in assoc(p, :manufacturer),
           join: s in assoc(o, :supplier),
-          select: {i.name, m.name, s.name, o.order_name, o.sack_size_lb, o.form}
+          select: {i.name, m.name, s.name, o.order_name, o.pack_size, o.form}
       )
 
     assert {"2-Row", "Rahr", "BSG", "Rahr - Standard 2-row (milled)", sack, "milled"} =
@@ -226,7 +226,7 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
         from l in IngredientLot,
           where: like(l.lot_number, "[SEED]%"),
           order_by: l.received_date,
-          preload: [:movements, :feature_values, product: [:ingredient, :maltster]]
+          preload: [:movements, :feature_values, product: [:ingredient, :manufacturer]]
       )
 
     assert [older, newer] = lots
@@ -236,9 +236,9 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
 
     for {lot, lb} <- [{older, 165}, {newer, 550}] do
       assert lot.product.ingredient.name == "2-Row"
-      assert lot.product.maltster.name == "Rahr"
-      assert Decimal.equal?(lot.sack_size_lb, 55)
-      assert [%Movement{kind: "opening", quantity_lb: q}] = lot.movements
+      assert lot.product.manufacturer.name == "Rahr"
+      assert Decimal.equal?(lot.pack_size, 55)
+      assert [%Movement{kind: "opening", quantity: q}] = lot.movements
       assert Decimal.equal?(q, lb)
       assert length(lot.feature_values) == 5
     end
@@ -270,9 +270,9 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     rahr = Repo.get_by!(Party, name: "Rahr")
     bsg = Repo.get_by!(Party, name: "BSG")
     two_row = Repo.get_by!(Ingredient, name: "2-Row")
-    reference = Repo.get_by!(Product, ingredient_id: two_row.id, maltster_party_id: rahr.id)
+    reference = Repo.get_by!(Product, ingredient_id: two_row.id, manufacturer_party_id: rahr.id)
 
-    maltster = party!("[TEST-TEMP] Maltster", "maltster")
+    maltster = party!("[TEST-TEMP] Maltster", "manufacturer")
     partner = party!("[TEST-TEMP] Partner", "partner_brewery")
     grain = Repo.insert!(%Ingredient{name: "[TEST-TEMP] Grain", category_id: two_row.category_id})
 
@@ -280,11 +280,11 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     products = [
       Repo.insert!(%Product{
         ingredient_id: two_row.id,
-        maltster_party_id: rahr.id,
+        manufacturer_party_id: rahr.id,
         name: "[TEST-TEMP] P"
       }),
-      Repo.insert!(%Product{ingredient_id: grain.id, maltster_party_id: rahr.id}),
-      Repo.insert!(%Product{ingredient_id: two_row.id, maltster_party_id: maltster.id})
+      Repo.insert!(%Product{ingredient_id: grain.id, manufacturer_party_id: rahr.id}),
+      Repo.insert!(%Product{ingredient_id: two_row.id, manufacturer_party_id: maltster.id})
     ]
 
     for product <- products do
@@ -292,13 +292,13 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
         Repo.insert!(%SupplierOffer{
           product_id: product.id,
           supplier_party_id: bsg.id,
-          sack_size_lb: Decimal.new(55),
+          pack_size: Decimal.new(55),
           form: "whole"
         })
 
       Repo.insert!(%OfferPrice{
         offer_id: offer.id,
-        price_per_sack: Decimal.new("48.5"),
+        price_per_pack: Decimal.new("48.5"),
         effective_on: ~D[2026-11-01]
       })
 
@@ -307,7 +307,7 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
           ingredient_id: product.ingredient_id,
           product_id: product.id,
           lot_number: "L1",
-          sack_size_lb: Decimal.new(55)
+          pack_size: Decimal.new(55)
         })
 
       Repo.insert!(%LotFeatureValue{
@@ -319,14 +319,14 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
       Repo.insert!(%Movement{
         lot_id: lot.id,
         kind: "opening",
-        quantity_lb: Decimal.new(110),
+        quantity: Decimal.new(110),
         occurred_on: ~D[2026-11-01]
       })
 
       Repo.insert!(%Movement{
         lot_id: lot.id,
         kind: "loaned_out",
-        quantity_lb: Decimal.new(-55),
+        quantity: Decimal.new(-55),
         occurred_on: ~D[2026-11-02],
         partner_party_id: partner.id
       })
@@ -338,13 +338,13 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
         ingredient_id: two_row.id,
         product_id: reference.id,
         lot_number: "[TEST-TEMP] L2",
-        sack_size_lb: Decimal.new(55)
+        pack_size: Decimal.new(55)
       })
 
     Repo.insert!(%Movement{
       lot_id: tagged_lot.id,
       kind: "opening",
-      quantity_lb: Decimal.new(55),
+      quantity: Decimal.new(55),
       occurred_on: ~D[2026-11-01]
     })
 
@@ -383,13 +383,13 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     rahr = Repo.get_by!(Party, name: "Rahr")
     bsg = Repo.get_by!(Party, name: "BSG")
     two_row = Repo.get_by!(Ingredient, name: "2-Row")
-    reference = Repo.get_by!(Product, ingredient_id: two_row.id, maltster_party_id: rahr.id)
+    reference = Repo.get_by!(Product, ingredient_id: two_row.id, manufacturer_party_id: rahr.id)
     supplier = party!("[TEST-TEMP] Supplier", "supplier")
 
     temp =
       Repo.insert!(%Product{
         ingredient_id: two_row.id,
-        maltster_party_id: rahr.id,
+        manufacturer_party_id: rahr.id,
         name: "[TEST-TEMP] P"
       })
 
@@ -397,7 +397,7 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
       Repo.insert!(%SupplierOffer{
         product_id: product.id,
         supplier_party_id: party.id,
-        sack_size_lb: Decimal.new(55),
+        pack_size: Decimal.new(55),
         form: "whole"
       })
     end
@@ -418,9 +418,9 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
         Repo.insert!(%PurchaseOrderLine{
           order_id: o.id,
           offer_id: offer.id,
-          sacks_ordered: 2,
-          sacks_received: 2,
-          price_per_sack: Decimal.new(40)
+          packs_ordered: 2,
+          packs_received: 2,
+          price_per_pack: Decimal.new(40)
         })
 
       {o, line}
@@ -434,13 +434,13 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
         ingredient_id: two_row.id,
         product_id: reference.id,
         lot_number: "[TEST-TEMP] R1",
-        sack_size_lb: Decimal.new(55)
+        pack_size: Decimal.new(55)
       })
 
     Repo.insert!(%Movement{
       lot_id: lot.id,
       kind: "received",
-      quantity_lb: Decimal.new(110),
+      quantity: Decimal.new(110),
       occurred_on: ~D[2026-11-02],
       purchase_order_line_id: temp_line.id
     })
@@ -451,8 +451,8 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
       contract_id: c1.id,
       product_id: reference.id,
       offer_id: temp_offer.id,
-      sacks: 1,
-      price_per_sack: Decimal.new(1)
+      quantity: 1,
+      price: Decimal.new(1)
     })
 
     c2 = Repo.insert!(%Contract{supplier_party_id: bsg.id, year: 2030})
@@ -461,8 +461,8 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
       contract_id: c2.id,
       product_id: temp.id,
       offer_id: bsg_temp_offer.id,
-      sacks: 1,
-      price_per_sack: Decimal.new(1)
+      quantity: 1,
+      price: Decimal.new(1)
     })
 
     {:ok, _} = Synthetic.setup()

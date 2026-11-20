@@ -51,8 +51,8 @@ defmodule RockcutApi.Ingredients.Offers do
   end
 
   @doc """
-  Deletes an offer and its price history (a lot keeps its supplier and sack
-  size). D61: refused (422) while an order line uses it or a contract of its
+  Deletes an offer and its price history (a lot keeps its supplier and
+  pack). D61: refused (422) while an order line uses it or a contract of its
   supplier covers its product; it can be made inactive instead.
   """
   def delete(%SupplierOffer{} = offer) do

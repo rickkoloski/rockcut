@@ -2,7 +2,7 @@ defmodule RockcutApi.Ingredients.Parties do
   @moduledoc """
   D60 §3.2: the companies (parties) and their roles. Roles are sent as a
   list (`roles`) and replace the party's roles; a role the party is using
-  (a maltster with products, a supplier with offers or lots, a partner
+  (a manufacturer with products, a supplier with offers or lots, a partner
   brewery on a movement) can't be taken away. A party in use is deactivated,
   not deleted.
   """
@@ -112,8 +112,11 @@ defmodule RockcutApi.Ingredients.Parties do
   """
   def delete_blocked(party_ids) do
     uses = [
-      {"maltster products",
-       from(p in Product, where: p.maltster_party_id in ^party_ids, select: p.maltster_party_id)},
+      {"products",
+       from(p in Product,
+         where: p.manufacturer_party_id in ^party_ids,
+         select: p.manufacturer_party_id
+       )},
       {"supplier offers",
        from(o in SupplierOffer,
          where: o.supplier_party_id in ^party_ids,
@@ -175,7 +178,8 @@ defmodule RockcutApi.Ingredients.Parties do
 
         if bad == [],
           do: {:ok, Enum.uniq(list)},
-          else: {:error, {:invalid, %{roles: ["must be maltster, supplier or partner_brewery"]}}}
+          else:
+            {:error, {:invalid, %{roles: ["must be manufacturer, supplier or partner_brewery"]}}}
 
       _ ->
         {:error, {:invalid, %{roles: ["pick at least one role"]}}}
@@ -192,8 +196,8 @@ defmodule RockcutApi.Ingredients.Parties do
     end
   end
 
-  defp role_in_use?(id, "maltster"),
-    do: Repo.exists?(from(p in Product, where: p.maltster_party_id == ^id))
+  defp role_in_use?(id, "manufacturer"),
+    do: Repo.exists?(from(p in Product, where: p.manufacturer_party_id == ^id))
 
   defp role_in_use?(id, "supplier") do
     Repo.exists?(from(o in SupplierOffer, where: o.supplier_party_id == ^id)) or

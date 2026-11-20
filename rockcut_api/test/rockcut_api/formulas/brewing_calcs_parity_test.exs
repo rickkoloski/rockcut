@@ -26,8 +26,8 @@ defmodule RockcutApi.Formulas.BrewingCalcsParityTest do
   @context %{repo: RockcutApi.Repo}
 
   setup do
-    {:ok, hops} = Brewing.create_ingredient_category(%{name: "Hops"})
-    {:ok, grains} = Brewing.create_ingredient_category(%{name: "Grains"})
+    hops = RockcutApi.IngredientFixtures.keyed_category!("Hops", "hops")
+    grains = RockcutApi.IngredientFixtures.keyed_category!("Grains", "grains")
     crystal = Repo.insert!(%IngredientCategory{name: "Crystal/Caramel", parent_id: grains.id})
 
     lot = fn category, name, features ->
