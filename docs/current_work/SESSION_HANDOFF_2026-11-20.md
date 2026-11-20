@@ -15,9 +15,11 @@
   - **Stage 2 (hops) running** in the builder pane (w1:p4) at handoff: the hop migration
     (`20261120120001_hop_features_and_crop_year`) was approved to run on the local dev DB with the
     API up. **The API needs a restart afterwards.** The builder stops at Stop 2 and reports.
-- **Matt asked to pause** (2026-11-20, losing connection). Asked: let the builder finish Stage 2
-  locally (recommended) or stop it now. **Until he answers "continue": no new stage, no push, no
-  DEV.**
+- **Paused (Matt, 2026-11-20, option 2):** the builder was told to stop at a safe point (~26 min
+  into Stage 2; hop API committed `a82f2fd`, UI in progress), commit compiling work as
+  `wip: D62 Stage 2 UI (paused)` or leave it uncommitted, and wait. **Until Matt says "continue":
+  no resuming the builder, no new stage, no push, no DEV.** On resume: read the builder's status,
+  restart the API (the hop migration ran on the local dev DB), then let it finish Stage 2.
 
 ## Next
 
