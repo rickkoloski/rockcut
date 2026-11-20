@@ -8,7 +8,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { LB_DECIMALS, parseDecimal, productSackSize } from '../../lib/brewingUnits'
+import { LB_DECIMALS, parseDecimal, packSizeLabel, productPack } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
@@ -34,19 +34,22 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
 
   const [offerId, setOfferId] = useState<number | ''>(first?.id ?? '')
   const [supplierId, setSupplierId] = useState<number | ''>(first?.supplier_party_id ?? '')
-  const [sackSize, setSackSize] = useState(first?.sack_size_lb ?? String(productSackSize(product.offers) ?? ''))
+  const startPack = productPack(product.offers)
+  const [packSize, setPackSize] = useState(first?.pack_size ?? String(startPack?.size ?? ''))
+  // D62 §3.5: the pack is the offer's (a sack, for grain).
+  const [packName, setPackName] = useState(first?.pack_name ?? startPack?.name ?? 'sack')
   const [lotNumber, setLotNumber] = useState('')
   const [received, setReceived] = useState(coloradoToday())
   const [kind, setKind] = useState<'opening' | 'received'>('opening')
-  const [quantity, setQuantity] = useState<QuantityValue>({ lb: null, valid: true })
+  const [quantity, setQuantity] = useState<QuantityValue>({ quantity: null, valid: true })
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(product.features, featureTypes)
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && p.active)
-  const size = parseDecimal(sackSize, LB_DECIMALS)
-  const sackLb = size.ok && size.value ? Number(size.value) : null
+  const size = parseDecimal(packSize, LB_DECIMALS)
+  const packQty = size.ok && size.value ? Number(size.value) : null
 
   const create = useApiCreate<IngredientLot>('/api/ingredient_lots', { invalidateKeys: GRAIN_KEYS })
 
@@ -55,23 +58,25 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
     const o = offers.find((x) => x.id === id)
     if (o) {
       setSupplierId(o.supplier_party_id)
-      setSackSize(o.sack_size_lb)
+      setPackSize(o.pack_size)
+      setPackName(o.pack_name)
     }
   }
 
   const submit = async () => {
-    if (!quantity.valid || !quantity.lb || Number(quantity.lb) <= 0) return setError('Enter the quantity')
+    if (!quantity.valid || !quantity.quantity || Number(quantity.quantity) <= 0) return setError('Enter the quantity')
     if (!received) return setError('Pick the received date')
     if (received > coloradoToday()) return setError(FUTURE_DATE)
     try {
       await create.mutateAsync({
         product_id: product.id,
         supplier_party_id: supplierId || null,
-        sack_size_lb: size.ok ? size.value : null,
+        pack_name: packName,
+        pack_size: size.ok ? size.value : null,
         lot_number: lotNumber.trim() || null,
         received_date: received,
         initial_kind: kind,
-        initial_quantity_lb: quantity.lb,
+        initial_quantity: quantity.quantity,
         features: featuresPayload(shown, product.features),
       })
       onClose()
@@ -101,7 +106,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
             </MenuItem>
             {offers.map((o) => (
               <MenuItem key={o.id} value={o.id}>
-                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {Number(o.sack_size_lb)} lb {o.form}
+                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {Number(o.pack_size)} {product.unit} {o.form}
               </MenuItem>
             ))}
           </Select>
@@ -120,7 +125,14 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
           ))}
         </Select>
       </FormControl>
-      <DecimalInput decimals={LB_DECIMALS} label="Sack size (lb)" value={sackSize} onChange={setSackSize} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-sack-size' } }} />
+      <DecimalInput
+        decimals={LB_DECIMALS}
+        label={packSizeLabel(packName, product.unit)}
+        value={packSize}
+        onChange={setPackSize}
+        fullWidth
+        slotProps={{ htmlInput: { 'data-testid': 'lot-pack-size' } }}
+      />
       <TextField label="Lot #" value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-number' } }} />
       <TextField
         label="Received"
@@ -138,8 +150,17 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
           <FormControlLabel value="received" control={<Radio />} label="Received" />
         </RadioGroup>
       </FormControl>
-      {/* A new sack size starts the boxes again, so sacks are always counted in it. */}
-      <QuantityInput key={`${mode}-${sackLb}`} mode={mode} sackSize={sackLb} label="Quantity" onChange={setQuantity} testId="lot-quantity" />
+      {/* A new pack size starts the boxes again, so packs are always counted in it. */}
+      <QuantityInput
+        key={`${mode}-${packQty}`}
+        mode={mode}
+        packSize={packQty}
+        packName={packName}
+        unit={product.unit}
+        label="Quantity"
+        onChange={setQuantity}
+        testId="lot-quantity"
+      />
       <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={create.isPending} />
     </FormDialog>
   )

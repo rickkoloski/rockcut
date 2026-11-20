@@ -31,7 +31,8 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import { contractYears, money, sacksFigure } from '../../lib/purchasing'
+import { contractYears, money, packsFigure, sharedPackName } from '../../lib/purchasing'
+import { packWord } from '../../lib/brewingUnits'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, ShortfallRow, SupplierOffer } from '../../lib/types'
 import ContractDialog from './ContractDialog'
@@ -50,8 +51,8 @@ interface ContractsReply {
  * D61 §4.2: the malt contracts for a year, one card per supplier: each
  * product's contracted, on order, received and remaining (over in the
  * warning color, decision 41), and the year's Shortfall. On order and
- * received are in the line's sack size by weight, so they may be part
- * sacks (amendment 17a). The total remaining is what's still owed; over is
+ * received are in the line's pack size by weight, so they may be part
+ * packs (amendment 17a). The total remaining is what's still owed; over is
  * its own total, never netted (gap 3). New, Edit and Delete only for owners
  * and Brewery managers; everyone else reads. Delete is disabled with the
  * reason once grain was received against the contract (gap 18).
@@ -76,7 +77,7 @@ export default function ContractsPage() {
   const remove = useApiDelete((id) => `/api/contracts/${id}`, { invalidateKeys: [['contracts'], ['contract_shortfall']] })
   const contracts = reply?.data ?? []
   const canWrite = !!reply?.can_write
-  const offerName = new Map(offers.map((o) => [o.id, o.order_name ? `${o.order_name} · ${Number(o.sack_size_lb)} lb` : `${Number(o.sack_size_lb)} lb ${o.form}`]))
+  const offerName = new Map(offers.map((o) => [o.id, o.order_name ? `${o.order_name} · ${Number(o.pack_size)} lb` : `${Number(o.pack_size)} lb ${o.form}`]))
   const years = contractYears(thisYear, reply?.years ?? [], year)
 
   const doDelete = async () => {
@@ -148,9 +149,9 @@ export default function ContractsPage() {
               {shortfall.map((r) => (
                 <TableRow key={r.product_id} data-testid={`shortfall-${r.product_id}`}>
                   <TableCell>{r.display_name}</TableCell>
-                  <TableCell align="right">{r.contracted_sacks}</TableCell>
-                  <TableCell align="right">{sacksFigure(r.received_sacks)}</TableCell>
-                  <TableCell align="right">{sacksFigure(r.short_sacks)}</TableCell>
+                  <TableCell align="right">{r.contracted}</TableCell>
+                  <TableCell align="right">{packsFigure(r.received)}</TableCell>
+                  <TableCell align="right">{packsFigure(r.short)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -185,6 +186,8 @@ export default function ContractsPage() {
 
 function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { contract: Contract; offerName: Map<number, string>; canWrite: boolean; onEdit: () => void; onDelete: () => void }) {
   const sum = (f: (l: Contract['lines'][number]) => number) => c.lines.reduce((n, l) => n + f(l), 0)
+  // D62 §3.7: grain lines are in sacks; the words follow the lines' pack.
+  const contractPack = c.lines.length ? sharedPackName(c.lines.map((l) => l.pack_name)) : 'sack'
   return (
     <Card variant="outlined" data-testid={`contract-${c.id}`}>
       <CardContent>
@@ -220,7 +223,7 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
             <TableHead>
               <TableRow>
                 <TableCell>Product</TableCell>
-                <TableCell align="right">$ / sack</TableCell>
+                <TableCell align="right">$ / {contractPack ?? 'pack'}</TableCell>
                 <TableCell align="right">Contracted</TableCell>
                 <TableCell align="right">$</TableCell>
                 <TableCell align="right">On order</TableCell>
@@ -240,39 +243,39 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
                       </Typography>
                     )}
                   </TableCell>
-                  <TableCell align="right">{money(l.price_per_sack)}</TableCell>
-                  <TableCell align="right">{l.contracted_sacks}</TableCell>
+                  <TableCell align="right">{money(l.price)}</TableCell>
+                  <TableCell align="right">{l.contracted}</TableCell>
                   <TableCell align="right">{money(l.contracted_dollars)}</TableCell>
                   <TableCell align="right" data-testid={`contract-line-${l.product_id}-on-order`}>
-                    {sacksFigure(l.on_order_sacks)}
+                    {packsFigure(l.on_order)}
                   </TableCell>
                   <TableCell align="right" data-testid={`contract-line-${l.product_id}-received`}>
-                    {sacksFigure(l.received_sacks)}
+                    {packsFigure(l.received)}
                   </TableCell>
                   <TableCell align="right">{money(l.received_dollars)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: l.over_by ? 'warning.main' : undefined, fontWeight: l.over_by ? 600 : undefined }} data-testid={`contract-line-${l.product_id}-remaining`}>
-                    {l.over_by ? `over by ${sacksFigure(l.over_by)}` : sacksFigure(l.remaining_sacks)}
+                    {l.over_by ? `over by ${packsFigure(l.over_by)}` : packsFigure(l.remaining)}
                   </TableCell>
                 </TableRow>
               ))}
               <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid={`contract-${c.id}-total`}>
                 <TableCell>Total</TableCell>
                 <TableCell />
-                <TableCell align="right">{sum((l) => l.contracted_sacks)}</TableCell>
+                <TableCell align="right">{sum((l) => l.contracted)}</TableCell>
                 <TableCell align="right">{money(sum((l) => Number(l.contracted_dollars)))}</TableCell>
-                <TableCell align="right">{sacksFigure(sum((l) => l.on_order_sacks))}</TableCell>
-                <TableCell align="right">{sacksFigure(sum((l) => l.received_sacks))}</TableCell>
+                <TableCell align="right">{packsFigure(sum((l) => l.on_order))}</TableCell>
+                <TableCell align="right">{packsFigure(sum((l) => l.received))}</TableCell>
                 <TableCell align="right">{money(sum((l) => Number(l.received_dollars)))}</TableCell>
                 <TableCell align="right" data-testid={`contract-${c.id}-remaining`}>
-                  {sacksFigure(c.remaining_sacks)}
+                  {packsFigure(c.remaining)}
                 </TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </Box>
-        {c.over_sacks > 0 && (
+        {c.over > 0 && (
           <Typography variant="body2" sx={{ mt: 1, color: 'warning.main', fontWeight: 600 }} data-testid={`contract-${c.id}-over`}>
-            Over: {sacksFigure(c.over_sacks)} {c.over_sacks === 1 ? 'sack' : 'sacks'}
+            Over: {packsFigure(c.over)} {packWord(contractPack, c.over)}
           </Typography>
         )}
       </CardContent>

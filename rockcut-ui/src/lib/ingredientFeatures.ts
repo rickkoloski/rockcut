@@ -1,8 +1,8 @@
-// D60 §3.4: feature values (a maltster product's standard specs, a lot's
+// D60 §3.4: feature values (a product's standard specs, a lot's
 // specs) on the screens: which feature types apply to a category, the boxes'
 // drafts, the payload the API takes, and a lot value that differs from the
 // standard.
-import { formatQuantity, parseDecimal, productSackSize, type QuantityDisplay } from './brewingUnits'
+import { formatQuantity, parseDecimal, productPack, type Pack, type QuantityDisplay } from './brewingUnits'
 import type { FeatureType, FeatureValue, FeatureValues, IngredientCategory, IngredientProduct } from './types'
 
 /** One feature's box: the text typed, and what was typed in another unit when the convert popup filled it. */
@@ -97,12 +97,33 @@ export function differs(lot: Pick<FeatureValue, 'value'> | undefined, standard: 
   return Number(lot.value).toFixed(decimals) !== Number(standard.value).toFixed(decimals)
 }
 
-/** Grains and its children, for the grains screens: the parent, and the children in order. */
+/**
+ * Grains and its children, for the grains screens: the parent, and the
+ * children in order. D62: found by the category's key, so renaming Grains
+ * in Settings changes nothing.
+ */
 export function grainCategories(categories: IngredientCategory[]): { grains: IngredientCategory | null; children: IngredientCategory[] } {
-  const grains = categories.find((c) => c.name === 'Grains' && c.parent_id == null) ?? null
+  const grains = categories.find((c) => c.key === 'grains' && c.parent_id == null) ?? null
   const children = grains ? categories.filter((c) => c.parent_id === grains.id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)) : []
   return { grains, children }
 }
+
+/**
+ * D62: a category's key, or its parent's for a child (`grains`, `hops`, …);
+ * null when neither has one.
+ */
+export function categoryKey(
+  categories: Pick<IngredientCategory, 'id' | 'key' | 'parent_id'>[],
+  category: Pick<IngredientCategory, 'id' | 'parent_id'> & { key?: string | null } | null | undefined,
+): string | null {
+  if (!category) return null
+  if (category.key) return category.key
+  const parent = category.parent_id != null ? categories.find((c) => c.id === category.parent_id) : null
+  return parent?.key ?? null
+}
+
+/** D62 §3.2: what the manufacturer is called on a category's screens ("Maltster" for grain). */
+export const manufacturerLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster' : 'Manufacturer')
 
 /** True for Grains and its children (D61 carry-over 5: they take no custom fields). */
 export function isGrainCategory(categories: IngredientCategory[], id: number): boolean {
@@ -129,11 +150,11 @@ export function categoryOptions(categories: IngredientCategory[]): { category: I
   ])
 }
 
-/** What the grains list's search matches: grain, maltster, product name, suppliers and their order names. */
+/** What the grains list's search matches: ingredient, manufacturer, product name, suppliers and their order names. */
 export function productMatches(p: IngredientProduct, term: string): boolean {
   const t = term.trim().toLowerCase()
   if (!t) return true
-  return [p.display_name, p.ingredient?.name, p.maltster?.name, p.name, ...(p.offers ?? []).flatMap((o) => [o.supplier?.name, o.order_name])]
+  return [p.display_name, p.ingredient?.name, p.manufacturer?.name, p.name, ...(p.offers ?? []).flatMap((o) => [o.supplier?.name, o.order_name])]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
@@ -144,16 +165,17 @@ export function productMatches(p: IngredientProduct, term: string): boolean {
  * A product's on-hand as the account shows it (§3.7, D61 carry-over 3): with
  * expired stock, the usable part and the expired part ("11 sacks 50 lb usable
  * · 43 lb expired", "650 lb usable · 43 lb expired"); without, just the
- * amount. The product header, Grains list, Count and Record movement all use
- * it, so they read the same.
+ * amount, in its pack and unit (D62 §3.5). The product header, Grains list,
+ * Count and Record movement all use it, so they read the same.
  */
 export function onHandText(
-  p: { on_hand_lb: string | number | null; expired_lb?: string | number | null; offers?: IngredientProduct['offers'] },
+  p: { on_hand: string | number | null; expired?: string | number | null; unit?: string | null; offers?: IngredientProduct['offers'] },
   mode: QuantityDisplay,
-  sackSize = productSackSize(p.offers),
+  pack: Pack | null = productPack(p.offers),
 ): string {
-  const expired = Number(p.expired_lb ?? 0)
-  if (!(expired > 0)) return formatQuantity(p.on_hand_lb, sackSize, mode)
-  const usable = Math.round((Number(p.on_hand_lb ?? 0) - expired) * 100) / 100
-  return `${formatQuantity(usable, sackSize, mode)} usable · ${formatQuantity(expired, sackSize, mode)} expired`
+  const show = (q: string | number | null) => formatQuantity(q, pack?.name, pack?.size, p.unit, mode)
+  const expired = Number(p.expired ?? 0)
+  if (!(expired > 0)) return show(p.on_hand)
+  const usable = Math.round((Number(p.on_hand ?? 0) - expired) * 100) / 100
+  return `${show(usable)} usable · ${show(expired)} expired`
 }

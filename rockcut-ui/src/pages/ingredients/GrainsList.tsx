@@ -27,7 +27,7 @@ export interface GrainFilters {
   search: string
   /** One child category (Base, …), or all of Grains. */
   categoryId: number | null
-  maltsterId: number | ''
+  manufacturerId: number | ''
   supplierId: number | ''
   onHandOnly: boolean
 }
@@ -64,19 +64,19 @@ export default function GrainsList({ children, products, grains, types, filters,
   const decimals = useMemo(() => Object.fromEntries(types.map((t) => [t.key, t.decimals])), [types])
 
   const groups = useMemo(() => {
-    const filtering = !!filters.search.trim() || filters.maltsterId !== '' || filters.supplierId !== '' || filters.onHandOnly
+    const filtering = !!filters.search.trim() || filters.manufacturerId !== '' || filters.supplierId !== '' || filters.onHandOnly
     const shownProducts = products.filter(
       (p) =>
         productMatches(p, filters.search) &&
-        (filters.maltsterId === '' || p.maltster_party_id === filters.maltsterId) &&
+        (filters.manufacturerId === '' || p.manufacturer_party_id === filters.manufacturerId) &&
         (filters.supplierId === '' || (p.offers ?? []).some((o) => o.supplier_party_id === filters.supplierId)) &&
-        (!filters.onHandOnly || Number(p.on_hand_lb) > 0),
+        (!filters.onHandOnly || Number(p.on_hand) > 0),
     )
     const withProducts = new Set(products.map((p) => p.ingredient_id))
     // A grain with no products shows only while nothing narrows the list but the search.
     const term = filters.search.trim().toLowerCase()
     const bare = grains.filter(
-      (g) => !withProducts.has(g.id) && (!filtering || (term && filters.maltsterId === '' && filters.supplierId === '' && !filters.onHandOnly && g.name.toLowerCase().includes(term))),
+      (g) => !withProducts.has(g.id) && (!filtering || (term && filters.manufacturerId === '' && filters.supplierId === '' && !filters.onHandOnly && g.name.toLowerCase().includes(term))),
     )
     return children
       .filter((c) => filters.categoryId == null || c.id === filters.categoryId)
@@ -85,7 +85,7 @@ export default function GrainsList({ children, products, grains, types, filters,
           ...shownProducts.filter((p) => p.ingredient?.category?.id === c.id).map((product) => ({ kind: 'product' as const, product })),
           ...bare.filter((g) => g.category_id === c.id).map((grain) => ({ kind: 'grain' as const, grain })),
         ]
-        const name = (r: (typeof rows)[number]) => (r.kind === 'product' ? `${r.product.ingredient?.name} ${r.product.maltster?.name}` : r.grain.name)
+        const name = (r: (typeof rows)[number]) => (r.kind === 'product' ? `${r.product.ingredient?.name} ${r.product.manufacturer?.name}` : r.grain.name)
         rows.sort((a, b) => name(a).localeCompare(name(b)))
         return { category: c, rows }
       })
@@ -104,7 +104,7 @@ export default function GrainsList({ children, products, grains, types, filters,
   const suppliers = (p: IngredientProduct) =>
     (p.offers ?? [])
       .filter((o) => o.active)
-      .map((o) => `${o.supplier?.name ?? '?'} ${o.current_price ? money(o.current_price.price_per_sack) : '—'}`)
+      .map((o) => `${o.supplier?.name ?? '?'} ${o.current_price ? money(o.current_price.price_per_pack) : '—'}`)
       .join(' · ') || '—'
 
   if (groups.length === 0) {
@@ -212,7 +212,7 @@ export default function GrainsList({ children, products, grains, types, filters,
                     <TableRow key={`p${r.product.id}`} hover sx={{ cursor: 'pointer', opacity: r.product.active ? 1 : 0.6 }} onClick={() => navigate(`/ingredients/products/${r.product.id}`)} data-testid={`grain-row-${r.product.id}`}>
                       <TableCell>{r.product.ingredient?.name}</TableCell>
                       <TableCell>
-                        {r.product.maltster?.name}
+                        {r.product.manufacturer?.name}
                         {r.product.name && (
                           <Typography variant="caption" color="text.secondary" component="div">
                             {r.product.name}

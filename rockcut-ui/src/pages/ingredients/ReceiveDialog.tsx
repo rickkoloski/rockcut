@@ -13,7 +13,8 @@ import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS, ORDER_KEYS } from '../../lib/inventory'
-import { lineForError, lotChoiceLabel, parseSacks, previousLot, receivableLots, splitSummary } from '../../lib/purchasing'
+import { lineForError, lotChoiceLabel, parsePacks, previousLot, receivableLots, sharedPackName, splitSummary } from '../../lib/purchasing'
+import { packLabel, packPlural } from '../../lib/brewingUnits'
 import { coloradoToday } from '../../lib/tasks'
 import type { ApiResponse, FeatureType, IngredientLot, IngredientProduct, PurchaseOrder, PurchaseOrderLine } from '../../lib/types'
 
@@ -21,11 +22,12 @@ const BEFORE_ORDER = "The received date can't be before the order date"
 
 /**
  * D61 §3.3, §4.1: receive an open order, every line at once. The received
- * date (today by default, never after it); per line the sacks received (as
- * ordered unless changed; 0 = nothing came) and where they go: the product's
- * previous lot preselected (A3), another lot of the same sack size, or a new
- * lot number with the standard specs under "Specs"; **Add lot #** splits a
- * line across lots, the rows adding up to the sacks received. Saving marks
+ * date (today by default, never after it); per line the packs received
+ * (sacks for grain; as ordered unless changed; 0 = nothing came) and where
+ * they go: the product's previous lot preselected (A3), another lot of the
+ * same pack size, or a new lot number with the standard specs under "Specs";
+ * **Add lot #** splits a line across lots, the rows adding up to the packs
+ * received. Saving marks
  * the order received (decision 44: no back-order).
  */
 export default function ReceiveDialog({ open, ...props }: { open: boolean; onClose: () => void; order: PurchaseOrder }) {
@@ -39,14 +41,14 @@ interface Row {
   /** A lot id, `new` for a new lot number, or null: the default (previous lot, else new). */
   target: number | typeof NEW | null
   number: string
-  sacks: string
+  packs: string
   drafts: FeatureDrafts | null
   specsOpen: boolean
 }
 
 // React keys for lot rows: unique for the page's life.
 let rowKeys = 0
-const row = (target: Row['target'] = null): Row => ({ key: rowKeys++, target, number: '', sacks: '', drafts: null, specsOpen: false })
+const row = (target: Row['target'] = null): Row => ({ key: rowKeys++, target, number: '', packs: '', drafts: null, specsOpen: false })
 
 interface LineState {
   received: string
@@ -56,7 +58,7 @@ interface LineState {
 function ReceiveForm({ onClose, order }: { onClose: () => void; order: PurchaseOrder }) {
   const [receivedOn, setReceivedOn] = useState(coloradoToday())
   const [state, setState] = useState<Record<number, LineState>>(() =>
-    Object.fromEntries(order.lines.map((l) => [l.id, { received: String(l.sacks_ordered), rows: [row()] }])),
+    Object.fromEntries(order.lines.map((l) => [l.id, { received: String(l.packs_ordered), rows: [row()] }])),
   )
   const [error, setError] = useState<string | null>(null)
   const [lineErrors, setLineErrors] = useState<Record<number, string>>({})
@@ -95,7 +97,7 @@ function ReceiveForm({ onClose, order }: { onClose: () => void; order: PurchaseO
   const submit = async () => {
     if (receivedOn > coloradoToday()) return setError(FUTURE_DATE)
     if (receivedOn < order.ordered_on) return setError(BEFORE_ORDER)
-    if (!valid) return setError('Each line needs whole sacks and a lot')
+    if (!valid) return setError(`Each line needs whole ${packPlural(sharedPackName(order.lines.map((l) => l.offer.pack_name)))} and a lot`)
     setLineErrors({})
     try {
       await receive.mutateAsync({ received_on: receivedOn, lines: order.lines.map((l) => views.get(l.id)!.body) })
@@ -166,7 +168,7 @@ interface LineView {
   /** Still loading the product's lots. */
   loading: boolean
   product: IngredientProduct | null
-  /** Lots this line can go into (not expired, the offer's sack size), newest first. */
+  /** Lots this line can go into (not expired, the offer's pack size), newest first. */
   choices: IngredientLot[]
   received: number | null
   split: boolean
@@ -179,35 +181,35 @@ interface LineView {
 
 /**
  * A line's rows read against its product's lots: each row's lot (the
- * default is the previous lot, A3, else a new lot number), its sacks (the
- * sacks received when it's the only row), and the body Receive sends.
+ * default is the previous lot, A3, else a new lot number), its packs (the
+ * packs received when it's the only row), and the body Receive sends.
  */
 function lineView(line: PurchaseOrderLine, state: LineState, lots: IngredientLot[] | null, product: IngredientProduct | null, types: FeatureType[]): LineView {
   const featureTypes = typesFor(types, product?.category?.id, product?.category?.parent_id)
-  const choices = receivableLots(lots ?? [], line.offer.sack_size_lb)
-  const previous = previousLot(lots ?? [], line.offer.sack_size_lb)
-  const received = parseSacks(state.received, 0)
+  const choices = receivableLots(lots ?? [], line.offer.pack_size)
+  const previous = previousLot(lots ?? [], line.offer.pack_size)
+  const received = parsePacks(state.received, 0)
   const split = state.rows.length > 1
   const targetOf = (r: Row) => r.target ?? previous?.id ?? NEW
   const draftsOf = (r: Row) => r.drafts ?? draftsFrom(product?.features, featureTypes)
-  const rowSacks = state.rows.map((r) => (split ? parseSacks(r.sacks) : received))
-  const summary = splitSummary(rowSacks, received ?? 0)
+  const rowPacks = state.rows.map((r) => (split ? parsePacks(r.packs) : received))
+  const summary = splitSummary(rowPacks, received ?? 0)
   const rowsOk = state.rows.every((r, i) => {
     const t = targetOf(r)
-    return (t !== NEW || (r.number.trim() !== '' && draftsValid(draftsOf(r), featureTypes))) && rowSacks[i] != null
+    return (t !== NEW || (r.number.trim() !== '' && draftsValid(draftsOf(r), featureTypes))) && rowPacks[i] != null
   })
 
   let body: Record<string, unknown> | null = null
-  if (received === 0) body = { id: line.id, sacks_received: 0, allocations: [] }
+  if (received === 0) body = { id: line.id, packs_received: 0, allocations: [] }
   else if (lots && received != null && rowsOk && (!split || summary.ok))
     body = {
       id: line.id,
-      sacks_received: received,
+      packs_received: received,
       allocations: state.rows.map((r, i) => {
         const t = targetOf(r)
         return t === NEW
-          ? { lot_number: r.number.trim(), sacks: rowSacks[i], features: featuresPayload(draftsOf(r), product?.features) }
-          : { lot_id: t, sacks: rowSacks[i] }
+          ? { lot_number: r.number.trim(), packs: rowPacks[i], features: featuresPayload(draftsOf(r), product?.features) }
+          : { lot_id: t, packs: rowPacks[i] }
       }),
     }
 
@@ -225,7 +227,7 @@ interface ReceiveLineProps {
   newRow: (target?: Row['target']) => Row
 }
 
-/** One line: sacks received and the lot rows. */
+/** One line: packs received and the lot rows. */
 function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, newRow }: ReceiveLineProps) {
   const { mode } = useQuantityDisplay()
   const { choices, received, split, targetOf, draftsOf, summary, product } = view
@@ -240,25 +242,25 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
         </Typography>
         <Typography variant="body2" color="text.secondary">
           {line.offer.label !== line.offer.product.display_name && `${line.offer.label} · `}
-          ordered {line.sacks_ordered} × {Number(line.offer.sack_size_lb)} lb
+          ordered {line.packs_ordered} × {Number(line.offer.pack_size)} {line.offer.product.unit ?? 'lb'}
         </Typography>
       </Box>
       {error && <Alert severity="error" data-testid={`receive-line-${index}-error`}>{error}</Alert>}
       <TextField
-        label="Sacks received"
+        label={`${packLabel(line.offer.pack_name)} received`}
         size="small"
         value={state.received}
         onChange={(e) => onChange({ ...state, received: e.target.value })}
         error={received == null}
-        helperText={received == null ? 'Whole sacks, 0 or more' : received === line.sacks_ordered ? 'Received in full' : received === 0 ? 'Nothing came' : `Short or over: ordered ${line.sacks_ordered}`}
-        slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `receive-line-${index}-sacks` } }}
+        helperText={received == null ? `Whole ${packPlural(line.offer.pack_name)}, 0 or more` : received === line.packs_ordered ? 'Received in full' : received === 0 ? 'Nothing came' : `Short or over: ordered ${line.packs_ordered}`}
+        slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `receive-line-${index}-packs` } }}
       />
       {received !== 0 &&
         state.rows.map((r, ri) => {
           const t = targetOf(r)
           return (
             <Box key={r.key} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }} data-testid={`receive-line-${index}-row-${ri}`}>
-              {/* At phone width the lot select keeps the whole row; Sacks and remove wrap under it. */}
+              {/* At phone width the lot select keeps the whole row; the packs box and remove wrap under it. */}
               <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <FormControl size="small" sx={{ flex: '1 1 240px', minWidth: 0 }}>
                   <InputLabel id={`receive-${index}-${ri}-lot-label`}>Goes to</InputLabel>
@@ -279,12 +281,12 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
                 </FormControl>
                 {split && (
                   <TextField
-                    label="Sacks"
+                    label={packLabel(line.offer.pack_name)}
                     size="small"
-                    value={r.sacks}
-                    onChange={(e) => setRow(r.key, { sacks: e.target.value })}
+                    value={r.packs}
+                    onChange={(e) => setRow(r.key, { packs: e.target.value })}
                     sx={{ width: 90, flexShrink: 0 }}
-                    slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `receive-line-${index}-row-${ri}-sacks` } }}
+                    slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `receive-line-${index}-row-${ri}-packs` } }}
                   />
                 )}
                 {split && (
@@ -334,8 +336,8 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
             onClick={() =>
               onChange({
                 ...state,
-                // Splitting: the first row keeps the sacks received until changed.
-                rows: [...state.rows.map((r, i) => (i === 0 && !split ? { ...r, sacks: state.received } : r)), newRow(NEW)],
+                // Splitting: the first row keeps the packs received until changed.
+                rows: [...state.rows.map((r, i) => (i === 0 && !split ? { ...r, packs: state.received } : r)), newRow(NEW)],
               })
             }
             data-testid={`receive-line-${index}-add-lot`}

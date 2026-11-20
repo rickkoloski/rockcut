@@ -5,10 +5,10 @@ import ConfirmDialog from '../../components/ConfirmDialog'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
 import { GRAIN_KEYS, ROLES, ROLE_LABELS } from '../../lib/inventory'
-import { parseSacks } from '../../lib/purchasing'
+import { parsePacks } from '../../lib/purchasing'
 import type { Party, PartyRole } from '../../lib/types'
 
-/** D60 §3.2: a company: name, roles (maltster, supplier, partner brewery), notes, active. */
+/** D60 §3.2: a company: name, roles (manufacturer, supplier, partner brewery), notes, active. */
 export default function PartyDialog({ open, onClose, party }: { open: boolean; onClose: () => void; party?: Party }) {
   return open ? <PartyForm onClose={onClose} party={party} /> : null
 }
@@ -18,10 +18,10 @@ function PartyForm({ onClose, party }: { onClose: () => void; party?: Party }) {
   const [roles, setRoles] = useState<PartyRole[]>(party?.roles ?? [])
   const [notes, setNotes] = useState(party?.notes ?? '')
   const [active, setActive] = useState(party?.active ?? true)
-  // D61 decision 48: a supplier's order size in sacks (BSG: 40); empty is none.
-  const [target, setTarget] = useState(party?.order_target_sacks != null ? String(party.order_target_sacks) : '')
-  const targetSacks = parseSacks(target, 1)
-  const targetOk = target.trim() === '' || targetSacks != null
+  // D61 decision 48: a supplier's order size in packs (sacks for grain; BSG: 40); empty is none.
+  const [target, setTarget] = useState(party?.order_target_packs != null ? String(party.order_target_packs) : '')
+  const targetPacks = parsePacks(target, 1)
+  const targetOk = target.trim() === '' || targetPacks != null
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const keys = [...GRAIN_KEYS, ['parties']]
@@ -39,7 +39,7 @@ function PartyForm({ onClose, party }: { onClose: () => void; party?: Party }) {
       roles,
       notes: notes.trim() || null,
       active,
-      order_target_sacks: roles.includes('supplier') && target.trim() !== '' ? targetSacks : null,
+      order_target_packs: roles.includes('supplier') && target.trim() !== '' ? targetPacks : null,
     }
     try {
       if (party) await update.mutateAsync({ id: party.id, ...payload })

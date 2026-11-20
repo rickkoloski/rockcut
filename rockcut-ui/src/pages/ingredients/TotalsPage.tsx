@@ -25,10 +25,16 @@ import { categoryOptions, grainCategories } from '../../lib/ingredientFeatures'
 import { money } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import { toTsv, type Cell } from '../../lib/tsv'
-import type { IngredientCategory, InventoryTotals, OrderStatus, OrderTotals, Party } from '../../lib/types'
+import type { IngredientCategory, InventoryTotals, OrderStatus, OrderTotals, Party, UnitQuantity } from '../../lib/types'
 import PurchasingTabs from './PurchasingTabs'
 
 const lb = (v: string | number | null | undefined) => (v == null ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }))
+
+/**
+ * D62 §3.8: the totals carry a quantity per unit. Every product here is
+ * grain (lb) until Stage 3 adds the unit column, so the lb part is the total.
+ */
+const inLb = <T extends UnitQuantity>(byUnit: T[] | undefined): T | undefined => byUnit?.find((u) => u.unit === 'lb')
 
 /**
  * D61 §3.6, §4.4: the totals, each a plain table with a Copy button that
@@ -71,18 +77,19 @@ function InventoryTotalsView() {
   const today = coloradoToday()
   const [asOf, setAsOf] = useState(today)
   const [supplierId, setSupplierId] = useState('')
-  const [maltsterId, setMaltsterId] = useState('')
+  const [manufacturerId, setManufacturerId] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const table = useRef<HTMLTableElement>(null)
   const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
   const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
   const params: Record<string, string> = { as_of: asOf && asOf <= today ? asOf : today }
   if (supplierId) params.supplier_id = supplierId
-  if (maltsterId) params.maltster_id = maltsterId
+  if (manufacturerId) params.manufacturer_id = manufacturerId
   if (categoryId) params.category_id = categoryId
   const { data } = useApiQuery<InventoryTotals>(['ingredient_totals', 'inventory', params], '/api/ingredient_totals/inventory', params)
   const rows = data?.rows ?? []
-  const unvalued = rows.reduce((n, r) => n + Number(r.unvalued_lb), 0)
+  const unvalued = rows.reduce((n, r) => n + Number(r.unvalued_quantity), 0)
+  const totalLb = inLb(data?.total.by_unit)
   // Every row is a grain, so "All grains" is the parent: its sub-categories only (item 18).
   const { grains, children } = grainCategories(categories)
   const grainOptions = grains ? categoryOptions([grains, ...children]).filter((o) => o.depth > 0) : []
@@ -91,8 +98,8 @@ function InventoryTotalsView() {
     toTsv(
       ['Grain', 'Maltster', 'Product', 'Category', 'lb', 'Expired lb', 'Sacks', '$/lb', 'Value', 'Estimated'],
       [
-        ...rows.map((r): Cell[] => [r.grain, r.maltster, r.display_name, r.category, r.lb, r.expired_lb, r.sacks, r.per_lb, r.value, r.estimated]),
-        ['Total', '', '', '', data?.total.lb, data?.total.expired_lb, '', '', data?.total.value, ''],
+        ...rows.map((r): Cell[] => [r.ingredient, r.manufacturer, r.display_name, r.category, r.quantity, r.expired, r.packs, r.per_unit, r.value, r.estimated]),
+        ['Total', '', '', '', totalLb?.quantity ?? '0', totalLb?.expired ?? '0', '', '', data?.total.value, ''],
       ],
     )
 
@@ -118,10 +125,10 @@ function InventoryTotalsView() {
               </MenuItem>
             ))}
         </Filter>
-        <Filter label="Maltster" value={maltsterId} onChange={setMaltsterId} testId="totals-inventory-maltster">
+        <Filter label="Maltster" value={manufacturerId} onChange={setManufacturerId} testId="totals-inventory-maltster">
           <MenuItem value="">All maltsters</MenuItem>
           {parties
-            .filter((p) => p.roles?.includes('maltster'))
+            .filter((p) => p.roles?.includes('manufacturer'))
             .map((p) => (
               <MenuItem key={p.id} value={String(p.id)}>
                 {p.name}
@@ -164,10 +171,10 @@ function InventoryTotalsView() {
             )}
             {rows.map((r) => (
               <TableRow key={r.product_id} data-testid={`totals-inventory-${r.product_id}`}>
-                <TableCell>{r.grain}</TableCell>
+                <TableCell>{r.ingredient}</TableCell>
                 <TableCell>
-                  {r.maltster}
-                  {r.display_name !== `${r.maltster} ${r.grain}` && (
+                  {r.manufacturer}
+                  {r.display_name !== `${r.manufacturer} ${r.ingredient}` && (
                     <Typography variant="caption" color="text.secondary" component="div">
                       {r.display_name}
                     </Typography>
@@ -175,11 +182,11 @@ function InventoryTotalsView() {
                 </TableCell>
                 <TableCell>{r.category}</TableCell>
                 <TableCell align="right" data-testid={`totals-inventory-${r.product_id}-lb`}>
-                  {lb(r.lb)}
+                  {lb(r.quantity)}
                 </TableCell>
-                <TableCell align="right">{Number(r.expired_lb) > 0 ? lb(r.expired_lb) : ''}</TableCell>
-                <TableCell align="right">{r.sacks == null ? '—' : lb(r.sacks)}</TableCell>
-                <TableCell align="right">{money(r.per_lb, 4)}</TableCell>
+                <TableCell align="right">{Number(r.expired) > 0 ? lb(r.expired) : ''}</TableCell>
+                <TableCell align="right">{r.packs == null ? '—' : lb(r.packs)}</TableCell>
+                <TableCell align="right">{money(r.per_unit, 4)}</TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-value`}>
                   {r.value == null ? '—' : money(r.value)}
                   {r.value != null && r.estimated && ' est.'}
@@ -189,9 +196,9 @@ function InventoryTotalsView() {
             {data && rows.length > 0 && (
               <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid="totals-inventory-total">
                 <TableCell colSpan={3}>Total</TableCell>
-                <TableCell align="right">{lb(data.total.lb)}</TableCell>
+                <TableCell align="right">{lb(totalLb?.quantity ?? 0)}</TableCell>
                 <TableCell align="right" data-testid="totals-inventory-total-expired">
-                  {Number(data.total.expired_lb) > 0 ? lb(data.total.expired_lb) : ''}
+                  {Number(totalLb?.expired ?? 0) > 0 ? lb(totalLb?.expired) : ''}
                 </TableCell>
                 <TableCell colSpan={2} />
                 <TableCell align="right">{money(data.total.value)}</TableCell>
@@ -235,10 +242,10 @@ function OrderTotalsView() {
       ['Order date', 'Supplier', 'Reference', 'Product', 'Status', 'Sacks ordered', 'Sacks received', 'lb', '$'],
       [
         ...groups.flatMap((g): Cell[][] => [
-          ...g.rows.map((r): Cell[] => [r.ordered_on, r.supplier, r.reference, r.product, r.status, r.sacks_ordered, r.sacks_received, r.lb, r.dollars]),
-          [`Total ${g.sum.supplier}`, '', '', '', '', g.sum.sacks_ordered, g.sum.sacks_received, g.sum.lb, g.sum.dollars],
+          ...g.rows.map((r): Cell[] => [r.ordered_on, r.supplier, r.reference, r.product, r.status, r.packs_ordered, r.packs_received, r.quantity, r.dollars]),
+          [`Total ${g.sum.supplier}`, '', '', '', '', g.sum.packs_ordered, g.sum.packs_received, inLb(g.sum.by_unit)?.quantity ?? '0', g.sum.dollars],
         ]),
-        ['Total', '', '', '', '', data?.total.sacks_ordered, data?.total.sacks_received, data?.total.lb, data?.total.dollars],
+        ['Total', '', '', '', '', data?.total.packs_ordered, data?.total.packs_received, inLb(data?.total.by_unit)?.quantity ?? '0', data?.total.dollars],
       ],
     )
 
@@ -301,17 +308,17 @@ function OrderTotalsView() {
                     <TableCell>
                       <StatusChip status={r.status} domain="order" />
                     </TableCell>
-                    <TableCell align="right">{r.sacks_ordered}</TableCell>
-                    <TableCell align="right">{r.sacks_received ?? ''}</TableCell>
-                    <TableCell align="right">{lb(r.lb)}</TableCell>
+                    <TableCell align="right">{r.packs_ordered}</TableCell>
+                    <TableCell align="right">{r.packs_received ?? ''}</TableCell>
+                    <TableCell align="right">{lb(r.quantity)}</TableCell>
                     <TableCell align="right">{money(r.dollars)}</TableCell>
                   </TableRow>
                 ))}
                 <TableRow sx={{ '& td': { fontWeight: 600 }, backgroundColor: 'action.hover' }} data-testid={`totals-orders-supplier-${g.sum.supplier_id}`}>
                   <TableCell colSpan={5}>Total {g.sum.supplier}</TableCell>
-                  <TableCell align="right">{g.sum.sacks_ordered}</TableCell>
-                  <TableCell align="right">{g.sum.sacks_received}</TableCell>
-                  <TableCell align="right">{lb(g.sum.lb)}</TableCell>
+                  <TableCell align="right">{g.sum.packs_ordered}</TableCell>
+                  <TableCell align="right">{g.sum.packs_received}</TableCell>
+                  <TableCell align="right">{lb(inLb(g.sum.by_unit)?.quantity ?? 0)}</TableCell>
                   <TableCell align="right">{money(g.sum.dollars)}</TableCell>
                 </TableRow>
               </Fragment>
@@ -319,9 +326,9 @@ function OrderTotalsView() {
             {data && rows.length > 0 && (
               <TableRow sx={{ '& td': { fontWeight: 700 } }} data-testid="totals-orders-total">
                 <TableCell colSpan={5}>Total</TableCell>
-                <TableCell align="right">{data.total.sacks_ordered}</TableCell>
-                <TableCell align="right">{data.total.sacks_received}</TableCell>
-                <TableCell align="right">{lb(data.total.lb)}</TableCell>
+                <TableCell align="right">{data.total.packs_ordered}</TableCell>
+                <TableCell align="right">{data.total.packs_received}</TableCell>
+                <TableCell align="right">{lb(inLb(data.total.by_unit)?.quantity ?? 0)}</TableCell>
                 <TableCell align="right">{money(data.total.dollars)}</TableCell>
               </TableRow>
             )}

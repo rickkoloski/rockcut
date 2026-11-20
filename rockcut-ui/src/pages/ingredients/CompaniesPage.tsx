@@ -39,7 +39,7 @@ function Roles({ party }: { party: Party }) {
 }
 
 /**
- * D60 §3.2: Brewery → Ingredients → Companies: maltsters, suppliers and
+ * D60 §3.2: Brewery → Ingredients → Companies: manufacturers (maltsters), suppliers and
  * partner breweries. A company in use can't be deleted, only deactivated.
  */
 export default function CompaniesPage() {
@@ -84,9 +84,9 @@ export default function CompaniesPage() {
                     {p.name}
                   </Typography>
                   <Roles party={p} />
-                  {p.order_target_sacks != null && (
+                  {p.order_target_packs != null && (
                     <Typography variant="caption" color="text.secondary">
-                      Order target: {p.order_target_sacks} sacks
+                      Order target: {p.order_target_packs} sacks
                     </Typography>
                   )}
                 </CardContent>
@@ -113,7 +113,7 @@ export default function CompaniesPage() {
                     <Roles party={p} />
                   </TableCell>
                   <TableCell align="right" data-testid={`company-target-${p.id}`}>
-                    {p.order_target_sacks != null ? `${p.order_target_sacks} sacks` : ''}
+                    {p.order_target_packs != null ? `${p.order_target_packs} sacks` : ''}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">

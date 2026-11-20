@@ -113,12 +113,12 @@ export default function RecipeIngredientDialog({
 
   const loading = createMutation.isPending || updateMutation.isPending;
 
-  // D60: a grain lot shows its maltster ("Rahr · L-1"); the supplier is a company now.
-  // Gap 8: with its on-hand (in the person's sacks/lb) and status.
+  // D60: a grain lot shows its maker ("Rahr · L-1"); the supplier is a company now.
+  // Gap 8: with its on-hand (in the person's packs/total) and status.
   const status = (lot: IngredientLot) => lot.status.charAt(0).toUpperCase() + lot.status.slice(1);
   const lotLabel = (lot: IngredientLot) => {
     const lotNum = lot.lot_number ?? '—';
-    if (lot.product?.maltster) return `${lot.product.maltster.name} · ${lotNum} · ${formatQuantity(lot.on_hand_lb, lot.sack_size_lb, mode)} · ${status(lot)}`;
+    if (lot.product?.manufacturer) return `${lot.product.manufacturer.name} · ${lotNum} · ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, lot.unit, mode)} · ${status(lot)}`;
     const supplier = lot.supplier?.name ?? '';
     return `Lot# ${lotNum}${supplier ? ` (${supplier})` : ''} · ${status(lot)}`;
   };

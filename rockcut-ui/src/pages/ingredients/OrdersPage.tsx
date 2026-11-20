@@ -92,7 +92,7 @@ export default function OrdersPage() {
                     <StatusChip status={o.status} domain="order" />
                   </Box>
                   <Typography variant="body2">
-                    {o.total_sacks} sacks · {money(o.total_dollars)}
+                    {o.total_packs} sacks · {money(o.total_dollars)}
                     {o.reference && ` · ${o.reference}`}
                   </Typography>
                   {o.expected_on && o.status === 'open' && (
@@ -128,7 +128,7 @@ export default function OrdersPage() {
                     {o.off_contract && <Chip size="small" variant="outlined" label="Off-contract" sx={{ ml: 1 }} />}
                   </TableCell>
                   <TableCell>{o.reference ?? ''}</TableCell>
-                  <TableCell align="right">{o.total_sacks}</TableCell>
+                  <TableCell align="right">{o.total_packs}</TableCell>
                   <TableCell align="right">{money(o.total_dollars)}</TableCell>
                   <TableCell>
                     <StatusChip status={o.status} domain="order" />

@@ -1,8 +1,8 @@
 // D61 §3.2–3.4: orders and receiving on the screens: money, the running
-// total and target progress, whole sacks, the previous lot (A3) and how a
-// line's lot rows add up.
-import { formatQuantity, type QuantityDisplay } from './brewingUnits'
-import type { IngredientLot, OrderStatus } from './types'
+// total and target progress, whole packs (D62 §3.5; sacks for grain), the
+// previous lot (A3) and how a line's lot rows add up.
+import { formatQuantity, packPlural, packWord, unitDecimals, type QuantityDisplay } from './brewingUnits'
+import type { IngredientLot, OrderStatus, UnitQuantity } from './types'
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   open: 'Open',
@@ -16,15 +16,28 @@ export function money(v: string | number | null | undefined, digits = 2): string
   return Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
-const lbText = (lb: number) => `${lb.toLocaleString('en-US', { maximumFractionDigits: 2 })} lb`
-const sacksText = (n: number) => `${n.toLocaleString('en-US')} ${n === 1 ? 'sack' : 'sacks'}`
+/** "1,980 lb": a quantity in its unit (whole numbers for `each`). */
+export const amountText = (quantity: string | number, unit: string) =>
+  `${Number(quantity).toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unit}`
+
+/** "1,980 lb · 11.5 gal": quantities per unit, never added together (D62 §3.8). */
+export const byUnitText = (byUnit: UnitQuantity[]) => byUnit.map((u) => amountText(u.quantity, u.unit)).join(' · ')
 
 /**
- * Whole sacks typed in a box: the number, or null when empty or not a whole
+ * The one pack name a set of lines shares ("sack" on a grain-only order),
+ * else null: the words then say "packs" (D62 §3.5, A5).
+ */
+export function sharedPackName(names: (string | null | undefined)[]): string | null {
+  const unique = new Set(names.filter((n): n is string => !!n))
+  return unique.size === 1 ? [...unique][0] : null
+}
+
+/**
+ * Whole packs typed in a box: the number, or null when empty or not a whole
  * number ≥ `min`. Thousands separators in groups of three are taken, as in
  * the other number boxes (`1,234` is 1234; D61 lead decisions 1, gap 10).
  */
-export function parseSacks(text: string, min = 1): number | null {
+export function parsePacks(text: string, min = 1): number | null {
   const typed = text.trim()
   const t = /^\d{1,3}(,\d{3})+$/.test(typed) ? typed.replace(/,/g, '') : typed
   if (!/^\d+$/.test(t)) return null
@@ -33,70 +46,85 @@ export function parseSacks(text: string, min = 1): number | null {
 }
 
 export interface DraftLine {
-  sacks: number | null
-  sackSize: number | null
+  packs: number | null
+  packSize: number | null
+  /** The offer's pack ("sack") and the product's unit (lb). */
+  packName?: string | null
+  unit?: string
   price: number | null
 }
 
 /**
  * The order's running total (§3.2): "36 sacks · 1,980 lb · $1,512.00" over
- * the lines with an offer and whole sacks (a line without a price adds its
- * sacks and lb, not $).
+ * the lines with an offer and whole packs (a line without a price adds its
+ * packs and quantity, not $). D62 §3.5, §3.8: "packs" when the lines' packs
+ * differ, and the quantity per unit.
  */
-export function runningTotal(lines: DraftLine[]): { sacks: number; lb: number; dollars: number; text: string } {
-  let sacks = 0
-  let lb = 0
+export function runningTotal(lines: DraftLine[]): { packs: number; byUnit: UnitQuantity[]; dollars: number; text: string } {
+  let packs = 0
   let cents = 0
+  const units = new Map<string, number>()
+  const names: (string | null | undefined)[] = []
   for (const l of lines) {
-    if (l.sacks == null || l.sackSize == null) continue
-    sacks += l.sacks
-    lb += l.sacks * l.sackSize
-    if (l.price != null) cents += Math.round(l.sacks * l.price * 100)
+    if (l.packs == null || l.packSize == null) continue
+    const unit = l.unit ?? 'lb'
+    packs += l.packs
+    names.push(l.packName ?? 'sack')
+    units.set(unit, (units.get(unit) ?? 0) + l.packs * l.packSize)
+    if (l.price != null) cents += Math.round(l.packs * l.price * 100)
   }
-  lb = Math.round(lb * 100) / 100
+  if (units.size === 0) units.set('lb', 0)
+  const byUnit = [...units.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
   const dollars = cents / 100
-  return { sacks, lb, dollars, text: `${sacksText(sacks)} · ${lbText(lb)} · ${money(dollars)}` }
+  const packText = `${packs.toLocaleString('en-US')} ${packWord(names.length ? sharedPackName(names) : 'sack', packs)}`
+  return { packs, byUnit, dollars, text: `${packText} · ${byUnitText(byUnit)} · ${money(dollars)}` }
 }
 
 /**
- * Progress to the supplier's order target (decision 48): the next multiple
- * at or above the sacks, at least one target ("36 of 40 sacks", "40 of 40
- * sacks", "44 of 80 sacks"); null without a target.
+ * Progress to the supplier's order target (decision 48; D62 A5: every pack
+ * counts): the next multiple at or above the packs, at least one target
+ * ("36 of 40 sacks", "40 of 40 sacks", "44 of 80 sacks"; "36 of 40 packs"
+ * when the order's packs differ); null without a target.
  */
-export function targetProgress(sacks: number, target: number | null | undefined): string | null {
+export function targetProgress(packs: number, target: number | null | undefined, packName: string | null = 'sack'): string | null {
   if (!target || target <= 0) return null
-  const next = Math.max(target, Math.ceil(sacks / target) * target)
-  return `${sacks} of ${next} sacks`
+  const next = Math.max(target, Math.ceil(packs / target) * target)
+  return `${packs} of ${next} ${packPlural(packName)}`
 }
 
 /**
- * A3: the product's previous lot for an offer's sack size: its most recently
- * received lot that isn't expired and holds that sack size (then the highest
+ * A3: the product's previous lot for an offer's pack size: its most recently
+ * received lot that isn't expired and holds that pack size (then the highest
  * id). The API picks the same one when a line has no lot.
  */
-export function previousLot<T extends Pick<IngredientLot, 'id' | 'status' | 'received_date' | 'sack_size_lb'>>(lots: T[], sackSize: string | number): T | null {
-  const size = Number(sackSize)
-  const fits = lots.filter((l) => l.status !== 'expired' && l.sack_size_lb != null && Number(l.sack_size_lb) === size)
+export function previousLot<T extends Pick<IngredientLot, 'id' | 'status' | 'received_date' | 'pack_size'>>(lots: T[], packSize: string | number): T | null {
+  const size = Number(packSize)
+  const fits = lots.filter((l) => l.status !== 'expired' && l.pack_size != null && Number(l.pack_size) === size)
   fits.sort((a, b) => (b.received_date ?? '').localeCompare(a.received_date ?? '') || b.id - a.id)
   return fits[0] ?? null
 }
 
-/** The lots a receipt can go into: not expired, the offer's sack size (A3, note 6), newest first. */
-export function receivableLots<T extends Pick<IngredientLot, 'id' | 'status' | 'received_date' | 'sack_size_lb'>>(lots: T[], sackSize: string | number): T[] {
-  const size = Number(sackSize)
+/** The lots a receipt can go into: not expired, the offer's pack size (A3, note 6), newest first. */
+export function receivableLots<T extends Pick<IngredientLot, 'id' | 'status' | 'received_date' | 'pack_size'>>(lots: T[], packSize: string | number): T[] {
+  const size = Number(packSize)
   return lots
-    .filter((l) => l.status !== 'expired' && l.sack_size_lb != null && Number(l.sack_size_lb) === size)
+    .filter((l) => l.status !== 'expired' && l.pack_size != null && Number(l.pack_size) === size)
     .sort((a, b) => (b.received_date ?? '').localeCompare(a.received_date ?? '') || b.id - a.id)
 }
 
-/** "Lot W123 · received 2026-10-02 · 8 sacks on hand" in the person's sacks/lb setting. */
-export function lotChoiceLabel(lot: Pick<IngredientLot, 'id' | 'lot_number' | 'received_date' | 'on_hand_lb' | 'sack_size_lb'>, mode: QuantityDisplay): string {
-  return `Lot ${lot.lot_number ?? `#${lot.id}`} · received ${lot.received_date ?? '—'} · ${formatQuantity(lot.on_hand_lb, lot.sack_size_lb, mode)} on hand`
+/** "Lot W123 · received 2026-10-02 · 8 sacks on hand" in the person's packs/total setting. */
+export function lotChoiceLabel(
+  lot: Pick<IngredientLot, 'id' | 'lot_number' | 'received_date' | 'on_hand' | 'pack_name' | 'pack_size'> & { unit?: string | null },
+  mode: QuantityDisplay,
+): string {
+  return `Lot ${lot.lot_number ?? `#${lot.id}`} · received ${lot.received_date ?? '—'} · ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, lot.unit, mode)} on hand`
 }
 
 /**
  * How a split line's lot rows add up (§3.3): "6 + 4 = 10 of 10"; `ok` when
- * every row is whole sacks ≥ 1 and they make the sacks received.
+ * every row is whole packs ≥ 1 and they make the packs received.
  */
 export function splitSummary(rows: (number | null)[], received: number): { text: string; ok: boolean } {
   const n = rows.map((r) => r ?? 0)
@@ -137,23 +165,24 @@ export function contractPriceChanges(lines: { product: string; price: string; ch
 }
 
 /**
- * To order with a chosen offer (§3.5): on hand (usable lb) and on order (lb
- * on open lines of any offer) ÷ its sack size, to 2 decimals (lead decisions
- * 1, item 20, as 17a), and ⌈minimum − on hand − on order⌉ when above 0.
+ * To order with a chosen offer (§3.5): on hand (usable, in the product's
+ * unit) and on order (on open lines of any offer) ÷ its pack size, to 2
+ * decimals (lead decisions 1, item 20, as 17a), and ⌈minimum − on hand − on
+ * order⌉ when above 0.
  */
-export function toOrder(minimum: number, usableLb: number, sackSize: number, onOrderLb: number): { onHandSacks: number; onOrderSacks: number; toOrder: number } {
-  const inSacks = (lb: number) => Math.round((lb / sackSize) * 100) / 100
-  const onHandSacks = inSacks(usableLb)
-  const onOrderSacks = inSacks(onOrderLb)
-  return { onHandSacks, onOrderSacks, toOrder: Math.max(0, Math.ceil(minimum - onHandSacks - onOrderSacks - 1e-9)) }
+export function toOrder(minimum: number, usable: number, packSize: number, onOrder: number): { onHandPacks: number; onOrderPacks: number; toOrder: number } {
+  const inPacks = (q: number) => Math.round((q / packSize) * 100) / 100
+  const onHandPacks = inPacks(usable)
+  const onOrderPacks = inPacks(onOrder)
+  return { onHandPacks, onOrderPacks, toOrder: Math.max(0, Math.ceil(minimum - onHandPacks - onOrderPacks - 1e-9)) }
 }
 
 /**
- * A contract figure in sacks (amendment 17a: converted by weight, so it may
- * be a part sack): to 2 decimals, whole numbers without them ("10.5", "6",
+ * A contract figure in packs (amendment 17a: converted by weight, so it may
+ * be a part pack): to 2 decimals, whole numbers without them ("10.5", "6",
  * "1,234.25").
  */
-export function sacksFigure(n: number): string {
+export function packsFigure(n: number): string {
   return (Math.round(n * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 })
 }
 

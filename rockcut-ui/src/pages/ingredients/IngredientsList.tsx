@@ -129,7 +129,7 @@ export default function IngredientsList() {
   const [formOpen, setFormOpen] = useState<'ingredient' | 'grain' | 'product' | null>(null)
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null)
   const [search, setSearch] = useState('')
-  const [maltsterId, setMaltsterId] = useState<number | ''>('')
+  const [manufacturerId, setManufacturerId] = useState<number | ''>('')
   const [supplierId, setSupplierId] = useState<number | ''>('')
   const [onHandOnly, setOnHandOnly] = useState(false)
   const { mode } = useQuantityDisplay()
@@ -166,11 +166,11 @@ export default function IngredientsList() {
   const filters: GrainFilters = {
     search,
     categoryId: grainsView && categoryId !== grainsCategory?.id ? (categoryId as number) : null,
-    maltsterId,
+    manufacturerId,
     supplierId,
     onHandOnly,
   }
-  const maltsters = parties.filter((p) => p.roles?.includes('maltster'))
+  const manufacturers = parties.filter((p) => p.roles?.includes('manufacturer'))
   const suppliers = parties.filter((p) => p.roles?.includes('supplier'))
   const lotTypes = selected ? types.filter((t) => (t.categories ?? []).some((c) => c.category_id === selected.id)) : types.filter((t) => !t.categories?.some((c) => c.category_id === grainsCategory?.id))
 
@@ -185,7 +185,7 @@ export default function IngredientsList() {
       <PageToolbar
         end={
           <>
-            {grainsView && <QuantityToggle />}
+            {grainsView && <QuantityToggle packsLabel="Sacks + lb" />}
             {/* D61 §4: Purchasing (orders and receiving). */}
             <Button variant="outlined" startIcon={<ShoppingCartIcon />} component={RouterLink} to="/ingredients/orders" data-testid="ingredients-purchasing">
               Purchasing
@@ -258,9 +258,9 @@ export default function IngredientsList() {
             <>
               <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 150 } }} size="small">
                 <InputLabel id="grains-maltster-label">Maltster</InputLabel>
-                <Select labelId="grains-maltster-label" id="grains-maltster" label="Maltster" value={maltsters.length ? maltsterId : ''} onChange={(e) => setMaltsterId(e.target.value as number | '')}>
+                <Select labelId="grains-maltster-label" id="grains-maltster" label="Maltster" value={manufacturers.length ? manufacturerId : ''} onChange={(e) => setManufacturerId(e.target.value as number | '')}>
                   <MenuItem value="">All</MenuItem>
-                  {maltsters.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                  {manufacturers.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                 </Select>
               </FormControl>
               <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 150 } }} size="small">

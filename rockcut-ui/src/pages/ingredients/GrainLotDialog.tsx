@@ -8,7 +8,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { LB_DECIMALS, formatQuantity, parseDecimal } from '../../lib/brewingUnits'
+import { LB_DECIMALS, formatQuantity, packSizeLabel, parseDecimal } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, lotDeleteBlocked, lotDeleteMessage } from '../../lib/inventory'
 import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, Party } from '../../lib/types'
@@ -18,16 +18,16 @@ interface GrainLotDialogProps {
   onClose: () => void
   product: IngredientProduct
   lot: IngredientLot | null
-  /** The lot's movements (any order): Delete names the stock going with it; the sack size is fixed after the first. */
+  /** The lot's movements (any order): Delete names the stock going with it; the pack size is fixed after the first. */
   movements: InventoryMovement[]
 }
 
 /**
- * D60 §3.7: change a grain lot: number, dates, supplier, sack size, its own
+ * D60 §3.7: change a grain lot: number, dates, supplier, pack size, its own
  * specs, and Expired (a brewer's call; oldest first skips it). Its stock
  * changes only through movements and counts. Delete only while it has just
  * its first movement and no recipe uses it: otherwise it's disabled with the
- * reason (gap 15, `lotDeleteBlocked`); else a confirm names that stock (gap 9). The sack size is fixed once the lot has
+ * reason (gap 15, `lotDeleteBlocked`); else a confirm names that stock (gap 9). The pack size is fixed once the lot has
  * a movement after its first (gap 14).
  */
 export default function GrainLotDialog(props: GrainLotDialogProps) {
@@ -43,19 +43,19 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
   const [lotNumber, setLotNumber] = useState(lot.lot_number ?? '')
   const [received, setReceived] = useState(lot.received_date ?? '')
   const [supplierId, setSupplierId] = useState<number | ''>(lot.supplier_party_id ?? '')
-  const [sackSize, setSackSize] = useState(lot.sack_size_lb ?? '')
+  const [packSize, setPackSize] = useState(lot.pack_size ?? '')
   const [expired, setExpired] = useState(lot.status === 'expired')
   const [notes, setNotes] = useState(lot.notes ?? '')
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
-  const sackSizeFixed = movements.length > 1
+  const packSizeFixed = movements.length > 1
   const deleteBlocked = lotDeleteBlocked(lot, movements)
 
   const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === lot.supplier_party_id))
-  const size = parseDecimal(sackSize, LB_DECIMALS)
+  const size = parseDecimal(packSize, LB_DECIMALS)
 
   const update = useApiUpdate<IngredientLot>((id) => `/api/ingredient_lots/${id}`, { invalidateKeys: GRAIN_KEYS })
   const remove = useApiDelete((id) => `/api/ingredient_lots/${id}`, { invalidateKeys: GRAIN_KEYS })
@@ -68,7 +68,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
         lot_number: lotNumber.trim() || null,
         received_date: received || null,
         supplier_party_id: supplierId || null,
-        ...(sackSizeFixed ? {} : { sack_size_lb: size.ok ? size.value : null }),
+        ...(packSizeFixed ? {} : { pack_size: size.ok ? size.value : null }),
         notes: notes.trim() || null,
         // Back from Expired, the API sets it from on-hand (available or depleted).
         ...(expired !== (lot.status === 'expired') ? { status: expired ? 'expired' : 'available' } : {}),
@@ -115,7 +115,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       }
     >
       <Typography variant="body2" color="text.secondary">
-        On hand: {formatQuantity(lot.on_hand_lb, lot.sack_size_lb, mode)}. Stock changes through Record movement and Count.
+        On hand: {formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, product.unit, mode)}. Stock changes through Record movement and Count.
       </Typography>
       <TextField label="Lot #" value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} fullWidth />
       <TextField label="Received" type="date" value={received} onChange={(e) => setReceived(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
@@ -134,13 +134,13 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       </FormControl>
       <DecimalInput
         decimals={LB_DECIMALS}
-        label="Sack size (lb)"
-        value={sackSize}
-        onChange={setSackSize}
-        disabled={sackSizeFixed}
-        helperText={sackSizeFixed ? 'Fixed: the lot has movements after its first' : undefined}
+        label={packSizeLabel(lot.pack_name, product.unit)}
+        value={packSize}
+        onChange={setPackSize}
+        disabled={packSizeFixed}
+        helperText={packSizeFixed ? 'Fixed: the lot has movements after its first' : undefined}
         fullWidth
-        slotProps={{ htmlInput: { 'data-testid': 'grain-lot-sack-size' } }}
+        slotProps={{ htmlInput: { 'data-testid': 'grain-lot-pack-size' } }}
       />
       <FormControlLabel
         control={<Switch checked={expired} onChange={(e) => setExpired(e.target.checked)} data-testid="lot-expired" />}

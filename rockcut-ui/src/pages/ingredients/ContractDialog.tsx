@@ -11,7 +11,7 @@ import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
-import { contractPriceChanges, contractYear, parseSacks } from '../../lib/purchasing'
+import { contractPriceChanges, contractYear, parsePacks } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, IngredientProduct, Party, SupplierOffer } from '../../lib/types'
 
@@ -25,7 +25,8 @@ interface ContractDialogProps {
 
 /**
  * D61 §3.1, §4.2: a malt contract with one supplier for a year: lines of
- * the products that supplier offers, in sacks at a price per sack; with
+ * the products that supplier offers, in sacks at a price per sack (grain;
+ * D62 §3.7's contract unit); with
  * several offers of a product, the line names one. Before saving it lists
  * the offer prices the save writes ("BSG Rahr 2-Row price becomes $42.00
  * from 2027-01-01"). Owners and Brewery managers only (the page shows it to
@@ -39,12 +40,12 @@ interface Line {
   key: number
   productId: number | ''
   offerId: number | ''
-  sacks: string
+  quantity: string
   price: string
 }
 
 let lineKeys = 0
-const newLine = (): Line => ({ key: lineKeys++, productId: '', offerId: '', sacks: '', price: '' })
+const newLine = (): Line => ({ key: lineKeys++, productId: '', offerId: '', quantity: '', price: '' })
 
 function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialogProps, 'open'>) {
   const [supplierId, setSupplierId] = useState<number | ''>(contract?.supplier_party_id ?? '')
@@ -52,7 +53,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const [notes, setNotes] = useState(contract?.notes ?? '')
   const [lines, setLines] = useState<Line[]>(() =>
     contract
-      ? contract.lines.map((l) => ({ key: lineKeys++, productId: l.product_id, offerId: l.offer_id ?? '', sacks: String(l.sacks), price: String(Number(l.price_per_sack)) }))
+      ? contract.lines.map((l) => ({ key: lineKeys++, productId: l.product_id, offerId: l.offer_id ?? '', quantity: String(l.quantity), price: String(Number(l.price)) }))
       : [newLine()],
   )
   const [error, setError] = useState<string | null>(null)
@@ -83,12 +84,12 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const read = lines.map((l) => {
     const price = parseDecimal(l.price, PRICE_DECIMALS)
     const several = offersOf(l.productId).length > 1
-    return { line: l, sacks: parseSacks(l.sacks), price: price.ok ? price.value : null, several }
+    return { line: l, quantity: parsePacks(l.quantity), price: price.ok ? price.value : null, several }
   })
   const valid =
     supplierId !== '' &&
     yearNumber != null &&
-    read.every((r) => r.line.productId !== '' && r.sacks != null && r.price != null && (!r.several || r.line.offerId !== ''))
+    read.every((r) => r.line.productId !== '' && r.quantity != null && r.price != null && (!r.several || r.line.offerId !== ''))
 
   // The offer prices this save writes (decision 23, A2, decision 40).
   const before = new Map(contract?.lines.map((l) => [l.product_id, l]) ?? [])
@@ -104,7 +105,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
               return {
                 product: productName.get(r.line.productId as number) ?? '',
                 price: r.price!,
-                changed: !was || Number(was.price_per_sack) !== Number(r.price) || (offerId != null && was.offer_id !== offerId),
+                changed: !was || Number(was.price) !== Number(r.price) || (offerId != null && was.offer_id !== offerId),
               }
             }),
           supplier.name,
@@ -116,7 +117,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const pickProduct = (key: number, productId: number | '') => {
     const os = offersOf(productId)
     const only = os.length === 1 ? os[0] : null
-    setLine(key, { productId, offerId: only?.id ?? '', price: only?.current_price ? String(Number(only.current_price.price_per_sack)) : '' })
+    setLine(key, { productId, offerId: only?.id ?? '', price: only?.current_price ? String(Number(only.current_price.price_per_pack)) : '' })
   }
 
   const submit = async () => {
@@ -125,7 +126,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
       supplier_party_id: supplierId,
       year: yearNumber,
       notes: notes.trim() || null,
-      lines: read.map((r) => ({ product_id: r.line.productId, sacks: r.sacks, price_per_sack: r.price, ...(r.line.offerId !== '' ? { offer_id: r.line.offerId } : {}) })),
+      lines: read.map((r) => ({ product_id: r.line.productId, quantity: r.quantity, price: r.price, ...(r.line.offerId !== '' ? { offer_id: r.line.offerId } : {}) })),
       ...(contract ? { lock_version: version } : {}),
     }
     try {
@@ -187,7 +188,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
       {supplierId !== '' && offered.length === 0 && (
         <Alert severity="info">{supplier?.name} has no active offers yet: add one on a product page first.</Alert>
       )}
-      {read.map(({ line: l, sacks, several }, i) => (
+      {read.map(({ line: l, quantity, several }, i) => (
         <Paper key={l.key} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }} data-testid={`contract-line-${i}`}>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
             <FormControl fullWidth size="small" disabled={supplierId === ''}>
@@ -226,7 +227,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
               >
                 {offersOf(l.productId).map((o) => (
                   <MenuItem key={o.id} value={o.id}>
-                    {[o.order_name, `${Number(o.sack_size_lb)} lb`, o.form].filter(Boolean).join(' · ')}
+                    {[o.order_name, `${Number(o.pack_size)} lb`, o.form].filter(Boolean).join(' · ')}
                   </MenuItem>
                 ))}
               </Select>
@@ -236,12 +237,12 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
             <TextField
               label="Sacks"
               size="small"
-              value={l.sacks}
-              onChange={(e) => setLine(l.key, { sacks: e.target.value })}
-              error={l.sacks.trim() !== '' && sacks == null}
-              helperText={l.sacks.trim() !== '' && sacks == null ? 'Whole sacks, 1 or more' : undefined}
+              value={l.quantity}
+              onChange={(e) => setLine(l.key, { quantity: e.target.value })}
+              error={l.quantity.trim() !== '' && quantity == null}
+              helperText={l.quantity.trim() !== '' && quantity == null ? 'Whole sacks, 1 or more' : undefined}
               sx={{ flex: 1 }}
-              slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `contract-line-${i}-sacks` } }}
+              slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `contract-line-${i}-quantity` } }}
             />
             <DecimalInput
               decimals={PRICE_DECIMALS}

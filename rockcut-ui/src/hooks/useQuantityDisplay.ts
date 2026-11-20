@@ -3,7 +3,7 @@ import useAuth from './useAuth'
 import { INGREDIENTS_BOARD, quantityDisplay, type QuantityDisplay } from '../lib/brewingUnits'
 
 /**
- * D60 §3.9: sacks + lb or total lb, per person on the account
+ * D60 §3.9, D62 §3.5: packs + unit or the total, per person on the account
  * (`board_settings.ingredients.quantity_display`, as the Gantt's Label by).
  * A failed save keeps the choice for this page and says so.
  */

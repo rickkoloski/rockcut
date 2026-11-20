@@ -8,7 +8,7 @@ import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
 import { draftsFrom, draftsValid, featuresPayload, grainCategories, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS } from '../../lib/inventory'
-import { parseSacks } from '../../lib/purchasing'
+import { parsePacks } from '../../lib/purchasing'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct, Party } from '../../lib/types'
 
 interface ProductDialogProps {
@@ -35,14 +35,14 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
   const listsLoading = categoriesLoading || ingredientsLoading || partiesLoading || typesLoading
 
   const [grainId, setGrainId] = useState<number | ''>(product?.ingredient_id ?? ingredientId ?? '')
-  const [maltsterId, setMaltsterId] = useState<number | ''>(product?.maltster_party_id ?? '')
+  const [manufacturerId, setManufacturerId] = useState<number | ''>(product?.manufacturer_party_id ?? '')
   const [name, setName] = useState(product?.name ?? '')
   const [notes, setNotes] = useState(product?.notes ?? '')
   const [active, setActive] = useState(product?.active ?? true)
-  // D61 §3.5: the reorder point in whole sacks; empty is none.
-  const [minimum, setMinimum] = useState(product?.min_on_hand_sacks != null ? String(product.min_on_hand_sacks) : '')
-  const minimumSacks = parseSacks(minimum, 0)
-  const minimumOk = minimum.trim() === '' || minimumSacks != null
+  // D61 §3.5: the reorder point in whole packs (sacks for grain); empty is none.
+  const [minimum, setMinimum] = useState(product?.min_on_hand_packs != null ? String(product.min_on_hand_packs) : '')
+  const minimumPacks = parsePacks(minimum, 0)
+  const minimumOk = minimum.trim() === '' || minimumPacks != null
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -53,21 +53,21 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
   const featureTypes = grains ? typesFor(types, grains.id) : []
   // The boxes start from the product's standard once the feature types are in.
   const shown = drafts ?? draftsFrom(product?.features, featureTypes)
-  const maltsters = parties.filter((p) => p.roles?.includes('maltster') && (p.active || p.id === product?.maltster_party_id))
+  const manufacturers = parties.filter((p) => p.roles?.includes('manufacturer') && (p.active || p.id === product?.manufacturer_party_id))
 
   const create = useApiCreate<IngredientProduct>('/api/ingredient_products', { invalidateKeys: GRAIN_KEYS })
   const update = useApiUpdate<IngredientProduct>((id) => `/api/ingredient_products/${id}`, { invalidateKeys: GRAIN_KEYS })
   const loading = create.isPending || update.isPending
 
   const submit = async () => {
-    if (!grainId || !maltsterId) return setError('Pick the grain and the maltster')
+    if (!grainId || !manufacturerId) return setError('Pick the grain and the maltster')
     const payload = {
       ingredient_id: grainId,
-      maltster_party_id: maltsterId,
+      manufacturer_party_id: manufacturerId,
       name: name.trim() || null,
       notes: notes.trim() || null,
       active,
-      min_on_hand_sacks: minimum.trim() === '' ? null : minimumSacks,
+      min_on_hand_packs: minimum.trim() === '' ? null : minimumPacks,
       features: featuresPayload(shown, product?.features),
     }
     try {
@@ -123,11 +123,11 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
           labelId="product-maltster-label"
           id="product-maltster"
           label="Maltster"
-          value={maltsters.length ? maltsterId : ''}
-          onChange={(e) => setMaltsterId(e.target.value as number)}
+          value={manufacturers.length ? manufacturerId : ''}
+          onChange={(e) => setManufacturerId(e.target.value as number)}
           data-testid="product-maltster"
         >
-          {maltsters.map((p) => (
+          {manufacturers.map((p) => (
             <MenuItem key={p.id} value={p.id}>
               {p.name}
             </MenuItem>

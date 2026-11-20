@@ -6,14 +6,17 @@ import {
   enteredAs,
   formatFeature,
   formatQuantity,
-  lbToSacks,
+  lotPack,
+  packPlural,
+  packSizeLabel,
+  packsToQuantity,
   parseDecimal,
   ppgToFgdb,
-  productSackSize,
+  productPack,
   quantityDisplay,
+  quantityToPacks,
   readQuantity,
   roundString,
-  sacksToLb,
   srmToLovibond,
   toStored,
   wkToLintner,
@@ -121,76 +124,108 @@ describe('parseDecimal (4982, gap 3)', () => {
   })
 })
 
-describe('quantities (§3.7, §3.9)', () => {
-  it('sacks ↔ lb with a sack size', () => {
-    expect(sacksToLb(12, 22.5, 55)).toBe(682.5)
-    expect(sacksToLb(2, 10, 55)).toBe(120)
-    expect(sacksToLb(0.5, 0, 50)).toBe(25)
-    expect(lbToSacks(682.5, 55)).toEqual({ sacks: 12, lb: 22.5 })
-    expect(lbToSacks(540, 55)).toEqual({ sacks: 9, lb: 45 })
-    expect(lbToSacks(0.1 + 0.2, 55)).toEqual({ sacks: 0, lb: 0.3 })
+describe('quantities (§3.7, §3.9; D62 §3.5 packs and units)', () => {
+  it('packs ↔ the unit with a pack size (sacks ↔ lb for grain)', () => {
+    expect(packsToQuantity(12, 22.5, 55)).toBe(682.5)
+    expect(packsToQuantity(2, 10, 55)).toBe(120)
+    expect(packsToQuantity(0.5, 0, 50)).toBe(25)
+    expect(quantityToPacks(682.5, 55)).toEqual({ packs: 12, loose: 22.5 })
+    expect(quantityToPacks(540, 55)).toEqual({ packs: 9, loose: 45 })
+    expect(quantityToPacks(0.1 + 0.2, 55)).toEqual({ packs: 0, loose: 0.3 })
   })
 
   it('formatQuantity: sacks + lb, whole sacks, under a sack, lb', () => {
-    expect(formatQuantity('682.5', '55', 'sacks')).toBe('12 sacks 22.5 lb')
-    expect(formatQuantity(660, 55, 'sacks')).toBe('12 sacks')
-    expect(formatQuantity(55, 55, 'sacks')).toBe('1 sack')
-    expect(formatQuantity(22.5, 55, 'sacks')).toBe('22.5 lb')
-    expect(formatQuantity(0, 55, 'sacks')).toBe('0 lb')
-    expect(formatQuantity('682.5', 55, 'lb')).toBe('682.5 lb')
-    expect(formatQuantity(1650, 55, 'lb')).toBe('1,650 lb')
+    expect(formatQuantity('682.5', 'sack', '55', 'lb', 'packs')).toBe('12 sacks 22.5 lb')
+    expect(formatQuantity(660, 'sack', 55, 'lb', 'packs')).toBe('12 sacks')
+    expect(formatQuantity(55, 'sack', 55, 'lb', 'packs')).toBe('1 sack')
+    expect(formatQuantity(22.5, 'sack', 55, 'lb', 'packs')).toBe('22.5 lb')
+    expect(formatQuantity(0, 'sack', 55, 'lb', 'packs')).toBe('0 lb')
+    expect(formatQuantity('682.5', 'sack', 55, 'lb', 'lb')).toBe('682.5 lb')
+    expect(formatQuantity(1650, 'sack', 55, 'lb', 'lb')).toBe('1,650 lb')
   })
 
-  it('formatQuantity: no sack size is lb; a negative gets a minus; blank is a dash', () => {
-    expect(formatQuantity(120, null, 'sacks')).toBe('120 lb')
-    expect(formatQuantity(-120, 55, 'sacks')).toBe('−2 sacks 10 lb')
-    expect(formatQuantity(-120, 55, 'lb')).toBe('−120 lb')
-    expect(formatQuantity(null, 55, 'sacks')).toBe('—')
+  it('formatQuantity: no pack size is the total; a negative gets a minus; blank is a dash', () => {
+    expect(formatQuantity(120, 'sack', null, 'lb', 'packs')).toBe('120 lb')
+    expect(formatQuantity(-120, 'sack', 55, 'lb', 'packs')).toBe('−2 sacks 10 lb')
+    expect(formatQuantity(-120, 'sack', 55, 'lb', 'lb')).toBe('−120 lb')
+    expect(formatQuantity(null, 'sack', 55, 'lb', 'packs')).toBe('—')
   })
 
-  it("productSackSize: the stocked lots' one size, else the active offers'", () => {
-    expect(productSackSize([{ sack_size_lb: '55' }])).toBe(55)
-    expect(productSackSize([{ sack_size_lb: '55' }, { sack_size_lb: '50' }])).toBeNull()
-    expect(productSackSize([{ sack_size_lb: '55' }, { sack_size_lb: '50', active: false }])).toBe(55)
-    expect(productSackSize([], [])).toBeNull()
-    expect(
-      productSackSize(
-        [{ sack_size_lb: '55' }, { sack_size_lb: '50' }],
-        [
-          { sack_size_lb: '50', on_hand_lb: '100' },
-          { sack_size_lb: '55', on_hand_lb: '0' },
-        ],
-      ),
-    ).toBe(50)
+  it('formatQuantity: other packs and units (D62 §3.5)', () => {
+    expect(formatQuantity(48.5, 'box', 11, 'lb', 'packs')).toBe('4 boxes 4.5 lb')
+    expect(formatQuantity(11, 'box', 11, 'lb', 'packs')).toBe('1 box')
+    expect(formatQuantity(11.5, 'pail', 5, 'gal', 'packs')).toBe('2 pails 1.5 gal')
+    expect(formatQuantity(11.5, 'pail', 5, 'gal', 'lb')).toBe('11.5 gal')
+    expect(formatQuantity(300, 'jug', 128, 'fl oz', 'packs')).toBe('2 jugs 44 fl oz')
+    expect(formatQuantity(37.5, 'box', 11, 'lb', 'lb')).toBe('37.5 lb')
+  })
+
+  it('formatQuantity: each is whole numbers', () => {
+    expect(formatQuantity(2600, 'tub', 1000, 'each', 'packs')).toBe('2 tubs 600 each')
+    expect(formatQuantity(600.4, 'tub', 1000, 'each', 'packs')).toBe('600 each')
+    expect(formatQuantity(600.6, 'tub', 1000, 'each', 'lb')).toBe('601 each')
+    expect(quantityToPacks(2600.4, 1000, 'each')).toEqual({ packs: 2, loose: 600 })
+    expect(packsToQuantity(1, 0.6, 1000, 'each')).toBe(1001)
+  })
+
+  it('pack plurals and labels', () => {
+    expect(['sack', 'box', 'bag', 'pail', 'jug', 'bottle', 'tub', 'case', 'each'].map(packPlural)).toEqual([
+      'sacks',
+      'boxes',
+      'bags',
+      'pails',
+      'jugs',
+      'bottles',
+      'tubs',
+      'cases',
+      'each',
+    ])
+    expect(packPlural(null)).toBe('packs')
+    expect(packSizeLabel('sack', 'lb')).toBe('Sack size (lb)')
+    expect(packSizeLabel('pail', 'gal')).toBe('Pail size (gal)')
+  })
+
+  it("productPack: the stocked lots' one pack, else the active offers'", () => {
+    const sack = (size: string, more = {}) => ({ pack_name: 'sack', pack_size: size, ...more })
+    expect(productPack([sack('55')])).toEqual({ name: 'sack', size: 55 })
+    expect(productPack([sack('55'), sack('50')])).toBeNull()
+    expect(productPack([sack('55'), sack('50', { active: false })])).toEqual({ name: 'sack', size: 55 })
+    expect(productPack([], [])).toBeNull()
+    expect(productPack([sack('55'), sack('50')], [sack('50', { on_hand: '100' }), sack('55', { on_hand: '0' })])).toEqual({ name: 'sack', size: 50 })
+    // A box and a sack of the same size are two packs.
+    expect(productPack([sack('11'), { pack_name: 'box', pack_size: '11' }])).toBeNull()
+    expect(lotPack({ pack_name: 'sack', pack_size: null })).toBeNull()
   })
 })
 
 describe('reading a quantity box (lead decisions 3, gap 16)', () => {
   it('refuses over 0 but under 0.01 lb (a fraction of a tiny sack)', () => {
-    expect(readQuantity('0.01', '', 0.5)).toEqual({ lb: null, valid: false, error: 'Enter at least 0.01 lb' })
+    expect(readQuantity('0.01', '', 0.5)).toEqual({ quantity: null, valid: false, error: 'Enter at least 0.01 lb' })
+    expect(readQuantity('', '0.001', null, 'gal')).toEqual({ quantity: null, valid: false })
+    expect(readQuantity('0.01', '', 0.5, 'gal')).toEqual({ quantity: null, valid: false, error: 'Enter at least 0.01 gal' })
   })
 
   it('D61 carry-over 4: refuses more than 2 decimals in either box (was rounded, or under 0.01 lb)', () => {
-    expect(readQuantity('', '1.555', null)).toEqual({ lb: null, valid: false })
-    expect(readQuantity('', '0.001', null)).toEqual({ lb: null, valid: false })
-    expect(readQuantity('', '0.009', 50)).toEqual({ lb: null, valid: false })
-    expect(readQuantity('0.0001', '', 50)).toEqual({ lb: null, valid: false })
-    expect(readQuantity('', '1.55', null)).toEqual({ lb: '1.55', valid: true })
-    expect(readQuantity('', '1.550', null)).toEqual({ lb: '1.55', valid: true })
+    expect(readQuantity('', '1.555', null)).toEqual({ quantity: null, valid: false })
+    expect(readQuantity('', '0.001', null)).toEqual({ quantity: null, valid: false })
+    expect(readQuantity('', '0.009', 50)).toEqual({ quantity: null, valid: false })
+    expect(readQuantity('0.0001', '', 50)).toEqual({ quantity: null, valid: false })
+    expect(readQuantity('', '1.55', null)).toEqual({ quantity: '1.55', valid: true })
+    expect(readQuantity('', '1.550', null)).toEqual({ quantity: '1.55', valid: true })
   })
 
   it('keeps 0.01 lb, 0 (a count of nothing) and empty boxes', () => {
-    expect(readQuantity('', '0.01', null)).toEqual({ lb: '0.01', valid: true })
-    expect(readQuantity('', '0', null)).toEqual({ lb: '0', valid: true })
-    expect(readQuantity('0', '0', 50)).toEqual({ lb: '0', valid: true })
-    expect(readQuantity('', '', 50)).toEqual({ lb: null, valid: true })
+    expect(readQuantity('', '0.01', null)).toEqual({ quantity: '0.01', valid: true })
+    expect(readQuantity('', '0', null)).toEqual({ quantity: '0', valid: true })
+    expect(readQuantity('0', '0', 50)).toEqual({ quantity: '0', valid: true })
+    expect(readQuantity('', '', 50)).toEqual({ quantity: null, valid: true })
   })
 
-  it('adds sacks and loose lb; a box that is refused is invalid with no quantity', () => {
-    expect(readQuantity('2', '5.5', 50)).toEqual({ lb: '105.5', valid: true })
-    expect(readQuantity('1,234', '', null)).toEqual({ lb: null, valid: true })
-    expect(readQuantity('', '1,234', null)).toEqual({ lb: '1234', valid: true })
-    expect(readQuantity('', '5,2', null)).toEqual({ lb: null, valid: false })
+  it('adds packs and the loose part; a box that is refused is invalid with no quantity', () => {
+    expect(readQuantity('2', '5.5', 50)).toEqual({ quantity: '105.5', valid: true })
+    expect(readQuantity('1,234', '', null)).toEqual({ quantity: null, valid: true })
+    expect(readQuantity('', '1,234', null)).toEqual({ quantity: '1234', valid: true })
+    expect(readQuantity('', '5,2', null)).toEqual({ quantity: null, valid: false })
   })
 })
 
@@ -211,11 +246,13 @@ describe('feature values', () => {
 })
 
 describe('the quantity display setting (§3.9)', () => {
-  it('keeps sacks or lb, drops anything else, and defaults to sacks', () => {
+  it('keeps packs or lb (the total), drops anything else (the old sacks too), and defaults to packs', () => {
     expect(cleanIngredientSettings({ quantity_display: 'lb', other: 1 })).toEqual({ quantity_display: 'lb' })
     expect(cleanIngredientSettings({ quantity_display: 'kg' })).toEqual({})
     expect(cleanIngredientSettings(null)).toEqual({})
-    expect(quantityDisplay(undefined)).toBe('sacks')
+    expect(cleanIngredientSettings({ quantity_display: 'packs' })).toEqual({ quantity_display: 'packs' })
+    expect(cleanIngredientSettings({ quantity_display: 'sacks' })).toEqual({})
+    expect(quantityDisplay(undefined)).toBe('packs')
     expect(quantityDisplay({ quantity_display: 'lb' })).toBe('lb')
   })
 })

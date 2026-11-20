@@ -26,7 +26,8 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiUpdate } from '../../hooks/useApiMutation'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import parseApiError from '../../lib/parseApiError'
-import { sacksFigure, toOrder } from '../../lib/purchasing'
+import { packsFigure, sharedPackName, toOrder } from '../../lib/purchasing'
+import { packPlural } from '../../lib/brewingUnits'
 import type { IngredientProduct, ReorderRow, SupplierOffer } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import PurchasingTabs from './PurchasingTabs'
@@ -37,20 +38,21 @@ const WIDE = { display: { xs: 'none', sm: 'table-cell' } }
 /** One New order to start: a supplier and its lines (§4.3). */
 interface Start {
   supplierId: number
-  lines: { offerId: number; sacks: number; price: string | null }[]
+  lines: { offerId: number; packs: number; price: string | null }[]
 }
 
 /**
  * D61 §3.5, §4.3: the products with a minimum on hand: on hand (not
- * expired) in the reorder offer's sacks, the minimum, what's on order and
- * what to order. The offer can be changed per row (among the product's
- * active offers; To order follows its sack size) and the choice is saved
+ * expired) in the reorder offer's packs (D62 §3.5: sacks for grain), the
+ * minimum, what's on order and what to order. The offer can be changed per
+ * row (among the product's active offers; To order follows its pack size)
+ * and the choice is saved
  * on the product (lead decisions 1, gap 4). Rows with something to order can
  * be picked: **Start an order** opens a prefilled New order per supplier,
  * one at a time. At phone width Minimum and On order go under the product
  * and the offer gets a row of its own under the product, the whole width
- * of the table, its supplier and sack size wrapping, so the row fits with no
- * sideways scroll and the sack size is readable (gaps 16, 19).
+ * of the table, its supplier and pack size wrapping, so the row fits with no
+ * sideways scroll and the pack size is readable (gaps 16, 19).
  */
 export default function ToOrderPage() {
   const { data: rows = [], isLoading } = useApiList<ReorderRow>(['ingredient_reorder'], '/api/ingredient_reorder')
@@ -77,10 +79,12 @@ export default function ToOrderPage() {
   }
 
   const activeOffers = new Map(products.map((p) => [p.id, (p.offers ?? []).filter((o) => o.active)]))
+  const units = new Map(products.map((p) => [p.id, p.unit]))
+  const unitOf = (productId: number) => units.get(productId) ?? 'lb'
   const view = rows.map((r) => {
     const offers = activeOffers.get(r.product_id) ?? (r.offer ? [r.offer] : [])
     const offer: SupplierOffer | null = offers.find((o) => o.id === offerFor[r.product_id]) ?? r.offer ?? null
-    const figures = offer && r.on_hand_lb != null ? toOrder(r.min_on_hand_sacks, Number(r.on_hand_lb), Number(offer.sack_size_lb), Number(r.on_order_lb ?? 0)) : null
+    const figures = offer && r.on_hand != null ? toOrder(r.min_on_hand_packs, Number(r.on_hand), Number(offer.pack_size), Number(r.on_order ?? 0)) : null
     return { row: r, offers, offer, figures }
   })
   const offerPicker = (productId: number, offers: SupplierOffer[], offer: SupplierOffer | null) =>
@@ -92,7 +96,7 @@ export default function ToOrderPage() {
           inputProps={{ 'aria-label': 'Reorder offer' }}
           renderValue={(id) => {
             const o = offers.find((x) => x.id === id) ?? offer
-            return [o.supplier?.name, `${Number(o.sack_size_lb)} lb`].filter(Boolean).join(' · ')
+            return [o.supplier?.name, `${Number(o.pack_size)} ${unitOf(productId)}`].filter(Boolean).join(' · ')
           }}
           // Doubled class to outrank MUI's nowrap: the offer wraps, never cut (gap 19).
           sx={{ '& .MuiSelect-select.MuiSelect-select': { whiteSpace: 'normal', overflowWrap: 'anywhere' } }}
@@ -100,7 +104,7 @@ export default function ToOrderPage() {
         >
           {(offers.some((o) => o.id === offer.id) ? offers : [offer, ...offers]).map((o) => (
             <MenuItem key={o.id} value={o.id}>
-              {[o.supplier?.name, o.order_name, `${Number(o.sack_size_lb)} lb`].filter(Boolean).join(' · ')}
+              {[o.supplier?.name, o.order_name, `${Number(o.pack_size)} ${unitOf(productId)}`].filter(Boolean).join(' · ')}
             </MenuItem>
           ))}
         </Select>
@@ -111,6 +115,9 @@ export default function ToOrderPage() {
       </Typography>
     )
 
+  // "sacks" while every offer is a sack (grain); "packs" once they differ.
+  const offerPacks = view.flatMap((v) => (v.offer ? [v.offer.pack_name] : []))
+  const listPack = offerPacks.length ? sharedPackName(offerPacks) : 'sack'
   const orderable = view.filter((v) => v.figures && v.figures.toOrder > 0)
   const chosen = orderable.filter((v) => picked.has(v.row.product_id))
 
@@ -118,7 +125,7 @@ export default function ToOrderPage() {
     const bySupplier = new Map<number, Start>()
     for (const v of chosen) {
       const s = bySupplier.get(v.offer!.supplier_party_id) ?? { supplierId: v.offer!.supplier_party_id, lines: [] }
-      s.lines.push({ offerId: v.offer!.id, sacks: v.figures!.toOrder, price: v.offer!.current_price?.price_per_sack ?? null })
+      s.lines.push({ offerId: v.offer!.id, packs: v.figures!.toOrder, price: v.offer!.current_price?.price_per_pack ?? null })
       bySupplier.set(s.supplierId, s)
     }
     const all = [...bySupplier.values()]
@@ -144,7 +151,8 @@ export default function ToOrderPage() {
         }
       >
         <Typography variant="body2" color="text.secondary">
-          To order = minimum − on hand − on order, in whole sacks. Set a product&apos;s minimum on its page.
+          To order = minimum − on hand − on order, in whole {packPlural(listPack)}. Set a product&apos;s minimum
+          on its page.
         </Typography>
       </PageToolbar>
 
@@ -205,17 +213,17 @@ export default function ToOrderPage() {
                     </Link>
                     {r.below_minimum && <Chip size="small" color="warning" label="Below minimum" sx={{ ml: 1 }} />}
                     <Typography variant="caption" color="text.secondary" component="div" sx={{ display: { xs: 'block', sm: 'none' } }}>
-                      Minimum {r.min_on_hand_sacks} · on order {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
+                      Minimum {r.min_on_hand_packs} · on order {figures ? packsFigure(figures.onOrderPacks) : (r.on_order_packs ?? 0)}
                     </Typography>
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: { sm: 'nowrap' } }} data-testid={`to-order-${r.product_id}-on-hand`}>
-                    {figures ? `${figures.onHandSacks} sacks` : `${Number(r.on_hand_lb ?? 0)} lb`}
+                    {figures ? `${figures.onHandPacks} ${packPlural(offer?.pack_name)}` : `${Number(r.on_hand ?? 0)} ${unitOf(r.product_id)}`}
                   </TableCell>
                   <TableCell align="right" sx={WIDE}>
-                    {r.min_on_hand_sacks}
+                    {r.min_on_hand_packs}
                   </TableCell>
                   <TableCell align="right" sx={WIDE} data-testid={`to-order-${r.product_id}-on-order`}>
-                    {figures ? sacksFigure(figures.onOrderSacks) : (r.on_order_sacks ?? 0)}
+                    {figures ? packsFigure(figures.onOrderPacks) : (r.on_order_packs ?? 0)}
                   </TableCell>
                   <TableCell align="right" sx={{ fontWeight: figures && figures.toOrder > 0 ? 600 : undefined }} data-testid={`to-order-${r.product_id}-to-order`}>
                     {figures ? figures.toOrder : ''}

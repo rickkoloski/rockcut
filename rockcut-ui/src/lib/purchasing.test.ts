@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { contractPriceChanges, contractYear, contractYears, lineForError, lotChoiceLabel, money, parseSacks, previousLot, receivableLots, runningTotal, sacksFigure, splitSummary, targetProgress, toOrder } from './purchasing'
+import { contractPriceChanges, contractYear, contractYears, lineForError, lotChoiceLabel, money, parsePacks, previousLot, receivableLots, runningTotal, packsFigure, splitSummary, targetProgress, toOrder } from './purchasing'
 
 describe('money', () => {
   it('dollars with separators; nothing is a dash', () => {
@@ -10,33 +10,47 @@ describe('money', () => {
   })
 })
 
-describe('parseSacks (decision 24: whole sacks)', () => {
+describe('parsePacks (decision 24: whole sacks)', () => {
   it('takes whole numbers at or above the minimum', () => {
-    expect(parseSacks('30')).toBe(30)
-    expect(parseSacks(' 4 ')).toBe(4)
-    expect(parseSacks('0')).toBeNull()
-    expect(parseSacks('0', 0)).toBe(0)
-    for (const bad of ['1.5', '-1', '', 'x', '1e2', '1,23', '12,34', '1,234.5', ',123']) expect(parseSacks(bad), bad).toBeNull()
+    expect(parsePacks('30')).toBe(30)
+    expect(parsePacks(' 4 ')).toBe(4)
+    expect(parsePacks('0')).toBeNull()
+    expect(parsePacks('0', 0)).toBe(0)
+    for (const bad of ['1.5', '-1', '', 'x', '1e2', '1,23', '12,34', '1,234.5', ',123']) expect(parsePacks(bad), bad).toBeNull()
   })
 
   it('takes thousands separators like the other number boxes (gap 10)', () => {
-    expect(parseSacks('1,234')).toBe(1234)
-    expect(parseSacks(' 12,345,678 ')).toBe(12345678)
-    expect(parseSacks('1,000', 0)).toBe(1000)
+    expect(parsePacks('1,234')).toBe(1234)
+    expect(parsePacks(' 12,345,678 ')).toBe(12345678)
+    expect(parsePacks('1,000', 0)).toBe(1000)
   })
 })
 
 describe('running total and target (§3.2, decision 48)', () => {
-  it('"36 sacks · 1,980 lb · $1,512.00"; a line without sacks or offer adds nothing', () => {
+  it('"36 sacks · 1,980 lb · $1,512.00"; a line without packs or offer adds nothing', () => {
     const t = runningTotal([
-      { sacks: 30, sackSize: 55, price: 42 },
-      { sacks: 6, sackSize: 55, price: 42 },
-      { sacks: null, sackSize: 55, price: 42 },
-      { sacks: 3, sackSize: null, price: 1 },
+      { packs: 30, packSize: 55, packName: 'sack', price: 42 },
+      { packs: 6, packSize: 55, packName: 'sack', price: 42 },
+      { packs: null, packSize: 55, packName: 'sack', price: 42 },
+      { packs: 3, packSize: null, packName: 'sack', price: 1 },
     ])
     expect(t.text).toBe('36 sacks · 1,980 lb · $1,512.00')
-    expect(runningTotal([{ sacks: 1, sackSize: 50, price: null }]).text).toBe('1 sack · 50 lb · $0.00')
-    expect(runningTotal([{ sacks: 3, sackSize: 55, price: 48.15 }]).dollars).toBe(144.45)
+    expect(runningTotal([{ packs: 1, packSize: 50, packName: 'sack', price: null }]).text).toBe('1 sack · 50 lb · $0.00')
+    expect(runningTotal([{ packs: 3, packSize: 55, packName: 'sack', price: 48.15 }]).dollars).toBe(144.45)
+    expect(runningTotal([]).text).toBe('0 sacks · 0 lb · $0.00')
+  })
+
+  it('D62: mixed packs say packs; quantities per unit, never added', () => {
+    const t = runningTotal([
+      { packs: 30, packSize: 55, packName: 'sack', unit: 'lb', price: 40 },
+      { packs: 6, packSize: 11, packName: 'box', unit: 'lb', price: 165 },
+      { packs: 2, packSize: 5, packName: 'pail', unit: 'gal', price: 100 },
+    ])
+    expect(t.text).toBe('38 packs · 10 gal · 1,716 lb · $2,390.00')
+    expect(t.byUnit).toEqual([
+      { unit: 'gal', quantity: '10' },
+      { unit: 'lb', quantity: '1716' },
+    ])
   })
 
   it('progress to the next multiple of the target', () => {
@@ -45,18 +59,21 @@ describe('running total and target (§3.2, decision 48)', () => {
     expect(targetProgress(44, 40)).toBe('44 of 80 sacks')
     expect(targetProgress(0, 40)).toBe('0 of 40 sacks')
     expect(targetProgress(36, null)).toBeNull()
+    // D62 A5: every pack counts; mixed packs say packs.
+    expect(targetProgress(36, 40, null)).toBe('36 of 40 packs')
+    expect(targetProgress(36, 40, 'box')).toBe('36 of 40 boxes')
   })
 })
 
 describe('previous lot (A3) and the lots a receipt can go into', () => {
   const lots = [
-    { id: 1, status: 'available', received_date: '2026-10-01', sack_size_lb: '55' },
-    { id: 2, status: 'depleted', received_date: '2026-10-05', sack_size_lb: '55' },
-    { id: 3, status: 'expired', received_date: '2026-11-01', sack_size_lb: '55' },
-    { id: 4, status: 'available', received_date: '2026-11-02', sack_size_lb: '50' },
-    { id: 5, status: 'available', received_date: '2026-10-05', sack_size_lb: '55.00' },
+    { id: 1, status: 'available', received_date: '2026-10-01', pack_size: '55' },
+    { id: 2, status: 'depleted', received_date: '2026-10-05', pack_size: '55' },
+    { id: 3, status: 'expired', received_date: '2026-11-01', pack_size: '55' },
+    { id: 4, status: 'available', received_date: '2026-11-02', pack_size: '50' },
+    { id: 5, status: 'available', received_date: '2026-10-05', pack_size: '55.00' },
   ]
-  it('most recently received, not expired, same sack size, then highest id', () => {
+  it('most recently received, not expired, same pack size, then highest id', () => {
     expect(previousLot(lots, '55')?.id).toBe(5)
     expect(previousLot(lots, 50)?.id).toBe(4)
     expect(previousLot(lots, '25')).toBeNull()
@@ -64,8 +81,8 @@ describe('previous lot (A3) and the lots a receipt can go into', () => {
   })
 
   it('labels a lot with its received date and on hand', () => {
-    const lot = { id: 9, lot_number: 'W123', received_date: '2026-10-02', on_hand_lb: '440', sack_size_lb: '55' }
-    expect(lotChoiceLabel(lot, 'sacks')).toBe('Lot W123 · received 2026-10-02 · 8 sacks on hand')
+    const lot = { id: 9, lot_number: 'W123', received_date: '2026-10-02', on_hand: '440', pack_name: 'sack', pack_size: '55', unit: 'lb' }
+    expect(lotChoiceLabel(lot, 'packs')).toBe('Lot W123 · received 2026-10-02 · 8 sacks on hand')
     expect(lotChoiceLabel({ ...lot, lot_number: null }, 'lb')).toBe('Lot #9 · received 2026-10-02 · 440 lb on hand')
   })
 })
@@ -111,23 +128,23 @@ describe('contract price changes (decision 23, A2, decision 40)', () => {
 
 describe('to order with a chosen offer (§3.5)', () => {
   it('⌈minimum − on hand − on order⌉, never below 0', () => {
-    expect(toOrder(3, 110, 55, 0)).toEqual({ onHandSacks: 2, onOrderSacks: 0, toOrder: 1 })
-    expect(toOrder(3, 110, 50, 0)).toEqual({ onHandSacks: 2.2, onOrderSacks: 0, toOrder: 1 })
-    expect(toOrder(3, 110, 55, 4 * 55)).toEqual({ onHandSacks: 2, onOrderSacks: 4, toOrder: 0 })
+    expect(toOrder(3, 110, 55, 0)).toEqual({ onHandPacks: 2, onOrderPacks: 0, toOrder: 1 })
+    expect(toOrder(3, 110, 50, 0)).toEqual({ onHandPacks: 2.2, onOrderPacks: 0, toOrder: 1 })
+    expect(toOrder(3, 110, 55, 4 * 55)).toEqual({ onHandPacks: 2, onOrderPacks: 4, toOrder: 0 })
     // Item 20: 2 × 50 lb + 2 × 55 lb on order = 210 lb = 4.2 of a 50 lb offer's sacks.
-    expect(toOrder(10, 0, 50, 210)).toEqual({ onHandSacks: 0, onOrderSacks: 4.2, toOrder: 6 })
+    expect(toOrder(10, 0, 50, 210)).toEqual({ onHandPacks: 0, onOrderPacks: 4.2, toOrder: 6 })
     expect(toOrder(5, 0, 55, 0).toOrder).toBe(5)
     expect(toOrder(3, 165, 55, 0).toOrder).toBe(0)
   })
 })
 
-describe('sacksFigure (amendment 17a: part sacks by weight)', () => {
+describe('packsFigure (amendment 17a: part sacks by weight)', () => {
   it('shows 2 decimals at most and whole numbers without them', () => {
-    expect(sacksFigure(10.5)).toBe('10.5')
-    expect(sacksFigure(6)).toBe('6')
-    expect(sacksFigure(4.4 + 0.2)).toBe('4.6')
-    expect(sacksFigure(1234.256)).toBe('1,234.26')
-    expect(sacksFigure(0)).toBe('0')
+    expect(packsFigure(10.5)).toBe('10.5')
+    expect(packsFigure(6)).toBe('6')
+    expect(packsFigure(4.4 + 0.2)).toBe('4.6')
+    expect(packsFigure(1234.256)).toBe('1,234.26')
+    expect(packsFigure(0)).toBe('0')
   })
 })
 

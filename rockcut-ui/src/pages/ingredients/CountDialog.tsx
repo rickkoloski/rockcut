@@ -5,7 +5,7 @@ import QuantityInput, { type QuantityValue } from '../../components/QuantityInpu
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { formatQuantity, productSackSize } from '../../lib/brewingUnits'
+import { formatQuantity, productPack } from '../../lib/brewingUnits'
 import { FUTURE_DATE, GRAIN_KEYS, oldestFirst } from '../../lib/inventory'
 import { onHandText } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
@@ -33,12 +33,12 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
   const { mode } = useQuantityDisplay()
   const [byLot, setByLot] = useState(false)
   const [date, setDate] = useState(coloradoToday())
-  const [total, setTotal] = useState<QuantityValue>({ lb: null, valid: true })
+  const [total, setTotal] = useState<QuantityValue>({ quantity: null, valid: true })
   const [perLot, setPerLot] = useState<Record<number, QuantityValue>>({})
   const [error, setError] = useState<string | null>(null)
 
-  const sackSize = productSackSize(product.offers, lots)
-  const counted = [...lots].filter((l) => Number(l.on_hand_lb ?? 0) > 0 || l.status === 'expired').sort(oldestFirst)
+  const pack = productPack(product.offers, lots)
+  const counted = [...lots].filter((l) => Number(l.on_hand ?? 0) > 0 || l.status === 'expired').sort(oldestFirst)
   const create = useApiCreate<InventoryMovement[]>(`/api/ingredient_products/${product.id}/count`, { invalidateKeys: GRAIN_KEYS })
   const valid = byLot ? Object.values(perLot).every((v) => v.valid) : total.valid
 
@@ -46,12 +46,12 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
     if (date > coloradoToday()) return setError(FUTURE_DATE)
     let body: Record<string, unknown>
     if (byLot) {
-      const entries = Object.entries(perLot).filter(([, v]) => v.lb != null)
+      const entries = Object.entries(perLot).filter(([, v]) => v.quantity != null)
       if (entries.length === 0) return setError('Enter the count for at least one lot')
-      body = { mode: 'by_lot', counted_on: date, lots: entries.map(([id, v]) => ({ lot_id: Number(id), counted_lb: v.lb })) }
+      body = { mode: 'by_lot', counted_on: date, lots: entries.map(([id, v]) => ({ lot_id: Number(id), counted: v.quantity })) }
     } else {
-      if (total.lb == null) return setError('Enter the total counted')
-      body = { mode: 'total', counted_on: date, counted_lb: total.lb }
+      if (total.quantity == null) return setError('Enter the total counted')
+      body = { mode: 'total', counted_on: date, counted: total.quantity }
     }
     try {
       await create.mutateAsync(body)
@@ -75,7 +75,7 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
       submitLabel="Save count"
     >
       <Typography variant="body2">
-        On hand: <strong data-testid="count-on-hand">{onHandText(product, mode, sackSize)}</strong>
+        On hand: <strong data-testid="count-on-hand">{onHandText(product, mode, pack)}</strong>
       </Typography>
       <FormControlLabel
         control={
@@ -94,7 +94,9 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
         <QuantityInput
           key={`total-${mode}`}
           mode={mode}
-          sackSize={sackSize}
+          packSize={pack?.size ?? null}
+          packName={pack?.name}
+          unit={product.unit}
           label="Counted"
           onChange={setTotal}
           testId="count-total"
@@ -107,10 +109,12 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
             <QuantityInput
               key={`${l.id}-${mode}`}
               mode={mode}
-              sackSize={l.sack_size_lb ? Number(l.sack_size_lb) : null}
+              packSize={l.pack_size ? Number(l.pack_size) : null}
+              packName={l.pack_name}
+              unit={product.unit}
               label={`Lot ${l.lot_number ?? `#${l.id}`}${l.status === 'expired' ? ' (Expired)' : ''}`}
               onChange={(v) => setPerLot((p) => ({ ...p, [l.id]: v }))}
-              helperText={`On hand: ${formatQuantity(l.on_hand_lb, l.sack_size_lb, mode)}; leave empty if unchanged`}
+              helperText={`On hand: ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, product.unit, mode)}; leave empty if unchanged`}
               testId={`count-lot-${l.id}`}
             />
           </Box>

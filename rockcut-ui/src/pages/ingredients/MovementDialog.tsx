@@ -6,7 +6,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { formatQuantity, productSackSize } from '../../lib/brewingUnits'
+import { formatQuantity, lotPack, productPack } from '../../lib/brewingUnits'
 import { FUTURE_DATE, GRAIN_KEYS, INCOMING, KIND_LABELS, OUTGOING, WITH_PARTNER, oldestFirst, oldestFirstOnHand } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement, MovementKind, Party } from '../../lib/types'
@@ -36,7 +36,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
   const [kind, setKind] = useState<MovementKind>('used')
   const [lotChoice, setLotChoice] = useState<string>(OLDEST)
   const [partnerId, setPartnerId] = useState<number | ''>('')
-  const [quantity, setQuantity] = useState<QuantityValue>({ lb: null, valid: true })
+  const [quantity, setQuantity] = useState<QuantityValue>({ quantity: null, valid: true })
   const [date, setDate] = useState(coloradoToday())
   const [note, setNote] = useState('')
   const [partnerMissing, setPartnerMissing] = useState(false)
@@ -45,9 +45,9 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
   const outgoing = OUTGOING.includes(kind)
   const sorted = [...lots].sort(oldestFirst)
   // Out: the lots with stock. In: any lot, newest first.
-  const choices = outgoing ? sorted.filter((l) => Number(l.on_hand_lb ?? 0) > 0) : [...sorted].reverse()
+  const choices = outgoing ? sorted.filter((l) => Number(l.on_hand ?? 0) > 0) : [...sorted].reverse()
   const lot = lots.find((l) => String(l.id) === lotChoice) ?? null
-  const sackSize = lot ? (lot.sack_size_lb ? Number(lot.sack_size_lb) : null) : productSackSize(product.offers, lots)
+  const pack = lot ? lotPack(lot) : productPack(product.offers, lots)
   const partners = parties.filter((p) => p.roles?.includes('partner_brewery') && p.active)
   const needsPartner = WITH_PARTNER.includes(kind)
 
@@ -57,7 +57,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
     setKind(k)
     setPartnerMissing(false)
     if (OUTGOING.includes(k)) {
-      if (!lot || Number(lot.on_hand_lb ?? 0) <= 0) setLotChoice(OLDEST)
+      if (!lot || Number(lot.on_hand ?? 0) <= 0) setLotChoice(OLDEST)
     } else if (lotChoice === OLDEST) {
       // In: the newest lot that isn't expired, else the newest.
       const newest = [...sorted].reverse()
@@ -70,14 +70,14 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
       setPartnerMissing(true)
       return setError('Pick the partner brewery for a trade or loan')
     }
-    if (!quantity.valid || !quantity.lb || Number(quantity.lb) <= 0) return setError('Enter the quantity')
+    if (!quantity.valid || !quantity.quantity || Number(quantity.quantity) <= 0) return setError('Enter the quantity')
     if (!lotChoice) return setError('Pick the lot')
     if (date > coloradoToday()) return setError(FUTURE_DATE)
     const target = lotChoice === OLDEST ? { product_id: product.id, allocation: 'oldest_first' } : { lot_id: Number(lotChoice) }
     try {
       await create.mutateAsync({
         kind,
-        quantity_lb: quantity.lb,
+        quantity: quantity.quantity,
         occurred_on: date,
         note: note.trim() || null,
         party_id: needsPartner ? partnerId : null,
@@ -90,7 +90,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
   }
 
   const lotLabel = (l: IngredientLot) =>
-    `${l.lot_number ?? `#${l.id}`} · received ${l.received_date ?? '—'} · ${formatQuantity(l.on_hand_lb, l.sack_size_lb, mode)}${l.status === 'expired' ? ' · Expired' : ''}`
+    `${l.lot_number ?? `#${l.id}`} · received ${l.received_date ?? '—'} · ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, product.unit, mode)}${l.status === 'expired' ? ' · Expired' : ''}`
 
   return (
     <FormDialog
@@ -170,13 +170,15 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
         </FormControl>
       )}
       <QuantityInput
-        key={`${mode}-${sackSize}`}
+        key={`${mode}-${pack?.size}`}
         mode={mode}
-        sackSize={sackSize}
+        packSize={pack?.size ?? null}
+        packName={pack?.name}
+        unit={product.unit}
         label="Quantity"
         onChange={setQuantity}
         testId="movement-quantity"
-        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand_lb, lot.sack_size_lb, mode)}` : oldestFirstOnHand(product, sackSize, mode)}
+        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, product.unit, mode)}` : oldestFirstOnHand(product, pack, mode)}
       />
       <TextField
         label="Date"
