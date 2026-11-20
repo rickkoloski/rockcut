@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs, cleanupIngredients, expectNoSidewaysScroll, expectPhoneDialogClosed, lotsOf, makeLot, makeOrder, makeProduct, makePurchasing, openDialog, setQuantityDisplay, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, expectNoSidewaysScroll, expectPhoneDialogClosed, lotsOf, makeLot, makeOrder, makeProduct, makePurchasing, openDialog, saveProduct, setQuantityDisplay, tempTag } from './helpers'
 
 // D60 spec §9, as `brewer1` at 360 px: the Grains list is cards, the
 // product page and Companies don't scroll sideways, Add lot is full screen,
@@ -114,7 +114,7 @@ test('P5: Contracts, To order and Totals at 360 px: no sideways scroll', async (
   const mgr = await apiAs('breweryMgr')
   const year = Number(new Date().getFullYear()) + 1
   expect((await mgr.post('/api/contracts', { data: { supplier_party_id: supplier.id, year, lines: [{ product_id: product.id, quantity: 40, price: '41.00' }] } })).status()).toBe(201)
-  expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_packs: 3, reorder_offer_id: supplierOffer.id } })).status()).toBe(200)
+  expect((await saveProduct(product.id, { min_on_hand_packs: 3, reorder_offer_id: supplierOffer.id })).status()).toBe(200)
 
   await page.goto(`/ingredients/contracts?year=${year}`)
   await expect(page.getByTestId('purchasing-tabs')).toBeVisible()

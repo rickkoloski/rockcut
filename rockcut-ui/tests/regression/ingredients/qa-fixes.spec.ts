@@ -14,8 +14,10 @@ import {
   makePurchasing,
   makeSupplierLot,
   openDialog,
+  pickGrainTotals,
   pick,
   receiveOrder,
+  saveProduct,
   setQuantityDisplay,
   tempTag,
 } from './helpers'
@@ -121,7 +123,7 @@ test.describe('brewer1', () => {
 
   test('F3: the reorder offer picked on To order is saved on the product', async ({ page }) => {
     const { product, supplier, offer } = await makePurchasing('F3')
-    expect((await (await apiAs('brewer1')).put(`/api/ingredient_products/${product.id}`, { data: { min_on_hand_packs: 3 } })).status()).toBe(200)
+    expect((await saveProduct(product.id, { min_on_hand_packs: 3 })).status()).toBe(200)
     await page.goto('/ingredients/to-order')
     const select = page.getByTestId(`to-order-${product.id}-offer`)
     // The default is the first active offer: the reference BSG one.
@@ -135,7 +137,7 @@ test.describe('brewer1', () => {
     await expect(page.getByTestId(`to-order-${product.id}-offer`)).toContainText(`${supplier.name} · 55 lb`)
   })
 
-  test('F4: inventory totals: no value is "—" and empty in Copy; expired lb totalled; the As of note; one "All grains"', async ({ page, context }) => {
+  test('F4: inventory totals: no value is "—" and empty in Copy; expired lb totalled; the As of note; one "All categories"', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     const { product, supplier } = await makePurchasing('F4')
     await makeSupplierLot(product, supplier.id, 2, 10)
@@ -146,6 +148,13 @@ test.describe('brewer1', () => {
     await makeLot(unpriced, 1, 5)
 
     await page.goto('/ingredients/totals')
+    // D62 gap 4: one "All categories" (the default) and no option twice.
+    await page.getByTestId('totals-inventory-category').click()
+    const options = await page.getByRole('option').allTextContents()
+    expect(options.filter((o) => /^all (categories|grains)$/i.test(o))).toEqual(['All categories'])
+    expect(new Set(options).size).toBe(options.length)
+    await page.keyboard.press('Escape')
+    await pickGrainTotals(page)
     await expect(page.getByTestId(`totals-inventory-${unpriced.id}-value`)).toHaveText('—')
     await expect(page.getByTestId('totals-inventory-expired-note')).toHaveCount(0)
     await page.getByTestId('totals-inventory-copy').click()
@@ -154,11 +163,6 @@ test.describe('brewer1', () => {
     const row = lines.find((l) => l[2] === unpriced.display_name)!
     expect([Number(row[4]), row[8], row[9]]).toEqual([SACK, '', ''])
 
-    await page.getByTestId('totals-inventory-category').click()
-    const options = await page.getByRole('option').allTextContents()
-    expect(options.filter((o) => /^all grains$/i.test(o))).toEqual(['All grains'])
-    expect(new Set(options).size).toBe(options.length)
-    await page.keyboard.press('Escape')
 
     await page.getByTestId('totals-inventory-supplier').click()
     await page.getByRole('option', { name: supplier.name }).click()

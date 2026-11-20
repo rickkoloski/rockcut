@@ -58,7 +58,12 @@ test.describe('brewer1', () => {
     const d = page.getByTestId('product-dialog')
     await expect(d.getByRole('heading', { name: 'Add hop product' })).toBeVisible()
     await pick(page, d, 'Hop', re(hop.name))
-    await pick(page, d, 'Manufacturer', re(company.name))
+    // D62 gap 5: a company with no hop products yet is under "Other manufacturer…".
+    await d.getByRole('combobox', { name: 'Manufacturer' }).click()
+    await expect(page.getByRole('option', { name: re(company.name) })).toHaveCount(0)
+    await page.getByTestId('product-maltster-other').click()
+    await page.getByRole('option', { name: re(company.name) }).click()
+    await expect(d.getByRole('combobox', { name: 'Manufacturer' })).toHaveText(company.name)
     await expect(d.getByRole('combobox', { name: 'Form' })).toHaveText('T90 Pellet')
     await d.getByTestId('product-origin').fill('USA')
     await d.getByTestId('range-alpha_acid_pct-low').fill('13')
@@ -97,7 +102,8 @@ test.describe('brewer1', () => {
     await pick(page, d, 'Hop', re(hop.name))
     await pick(page, d, 'Manufacturer', re(company.name))
     await d.getByRole('button', { name: 'Save' }).click()
-    await expect(d.getByRole('alert')).toContainText(`${company.name} already has T90 Pellet ${hop.name}.`)
+    // D62 gap 1: the API's sentence alone, no "ingredient id:".
+    await expect(d.getByRole('alert')).toHaveText(`${company.name} already has T90 Pellet ${hop.name}.`)
     await d.getByRole('button', { name: 'Cancel' }).click()
   })
 

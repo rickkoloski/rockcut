@@ -11,7 +11,9 @@ import {
   makePurchasing,
   makeSupplierLot,
   openDialog,
+  pickGrainTotals,
   receiveOrder,
+  saveProduct,
   setQuantityDisplay,
 } from './helpers'
 
@@ -25,7 +27,7 @@ import {
 test.afterAll(cleanupIngredients)
 
 async function setMinimum(productId: number, packs: number) {
-  const res = await (await apiAs('brewer1')).put(`/api/ingredient_products/${productId}`, { data: { min_on_hand_packs: packs } })
+  const res = await saveProduct(productId, { min_on_hand_packs: packs })
   expect(res.status(), await res.text()).toBe(200)
 }
 
@@ -94,6 +96,7 @@ test.describe('brewer1', () => {
     await receiveOrder(order, addDays(denverToday(), -2), `[TEST-TEMP] T2 ${order.id}`)
 
     await page.goto('/ingredients/totals')
+    await pickGrainTotals(page)
     await page.getByTestId('totals-inventory-supplier').click()
     await page.getByRole('option', { name: supplier.name }).click()
     const row = page.getByTestId(`totals-inventory-${product.id}`)
@@ -135,8 +138,9 @@ test.describe('brewer1', () => {
     // 3 × 55 + 8 × 55 = 605 lb; 11 × $42 = $462.00.
     await expect(sub).toContainText('605')
     await expect(sub).toContainText('$462.00')
-    await expect(sub.locator('td').nth(1)).toHaveText('13')
-    await expect(sub.locator('td').nth(2)).toHaveText('8')
+    // D62 gap 11: per pack name, never one number across sacks and boxes.
+    await expect(sub.locator('td').nth(1)).toHaveText('13 sacks')
+    await expect(sub.locator('td').nth(2)).toHaveText('8 sacks')
     await expect(page.getByTestId('totals-orders-total')).toContainText('$462.00')
 
     await page.getByTestId('totals-orders-copy').click()

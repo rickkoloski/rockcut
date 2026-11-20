@@ -25,10 +25,11 @@ export interface ApiProduct {
   id: number
   ingredient_id: number
   display_name: string
+  ingredient: { id: number; name: string } | null
   on_hand: string
   expired: string
   features: Record<string, FeatureValue>
-  offers: { id: number; supplier_party_id: number; current_price: { price_per_pack: string } | null }[]
+  offers: { id: number; supplier_party_id: number; form: string | null; current_price: { price_per_pack: string } | null }[]
 }
 
 export interface ApiLot {
@@ -112,6 +113,16 @@ export async function makeLot(product: ApiProduct, packs: number, daysAgo: numbe
   return ok<ApiLot>(res, 201)
 }
 
+/**
+ * D62 lead decisions 1, gap 9: a product save sends back the version it
+ * read; this reads it and saves `data` as `as`.
+ */
+export async function saveProduct(id: number, data: Record<string, unknown>, as: PersonaKey = 'brewer1'): Promise<APIResponse> {
+  const api = await apiAs(as)
+  const current = await ok<{ lock_version: number }>(await api.get(`/api/ingredient_products/${id}`))
+  return api.put(`/api/ingredient_products/${id}`, { data: { lock_version: current.lock_version, ...data } })
+}
+
 export async function getProduct(id: number): Promise<ApiProduct> {
   return ok<ApiProduct>(await (await apiAs('brewer1')).get(`/api/ingredient_products/${id}`))
 }
@@ -166,7 +177,7 @@ export async function cleanupIngredients() {
       for (const o of product.offers) await api.delete(`/api/supplier_offers/${o.id}`)
     }
     const del = await api.delete(`/api/ingredient_products/${id}`)
-    if (del.status() !== 204) await api.put(`/api/ingredient_products/${id}`, { data: { active: false } })
+    if (del.status() !== 204) await saveProduct(id, { active: false }, 'owner')
   }
   made.products.clear()
   // D62: `[TEST-TEMP]` hop varieties, once their products are gone (else `setup` takes them).
@@ -323,6 +334,13 @@ export async function expectNoSidewaysScroll(page: Page) {
 }
 
 /** Pick `option` from the MUI select labelled `label` inside `scope`. */
+/** D62 lead decisions 1, gap 4: Totals → Inventory narrowed to Grains, which reads as D61 did. */
+export async function pickGrainTotals(page: Page) {
+  await page.getByTestId('totals-inventory-category').click()
+  await page.getByRole('option', { name: 'Grains', exact: true }).click()
+  await expect(page.getByTestId('totals-inventory-table').locator('thead')).toContainText('Maltster')
+}
+
 export async function pick(page: Page, scope: Locator, label: string | RegExp, option: string | RegExp) {
   await scope.getByRole('combobox', { name: label }).click()
   await page.getByRole('option', { name: option }).click()
