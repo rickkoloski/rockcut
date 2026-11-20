@@ -123,24 +123,38 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     refute Repo.exists?(from i in Ingredient, where: i.category_id == ^grains().id)
     assert first[IngredientCategory] == 13
 
-    assert first[Product] == 44
-    assert first[SupplierOffer] == 44
+    # D62: plus the hop reference's 27 products and offers, and 26 × 3
+    # ranges (Pink Boots Blend has none; `HopSeedsTest`).
+    assert first[Product] == 44 + 27
+    assert first[SupplierOffer] == 44 + 27
     # Blanks stay blank (23 of them, mostly protein), so fewer than 44 × 5.
-    assert first[ProductFeatureValue] == 44 * 5 - 23
+    assert first[ProductFeatureValue] == 44 * 5 - 23 + 26 * 3
 
+    # D62: BSG is a hop manufacturer too, and the hop companies both.
     assert roles() == [
+             {"BSG", "manufacturer"},
              {"BSG", "supplier"},
+             {"Billy Goat", "manufacturer"},
+             {"Billy Goat", "supplier"},
              {"Crisp", "manufacturer"},
              {"Dingemans", "manufacturer"},
              {"Grain Millers", "manufacturer"},
+             {"John Fearless", "manufacturer"},
+             {"John Fearless", "supplier"},
+             {"Lupulin Exchange", "manufacturer"},
+             {"Lupulin Exchange", "supplier"},
+             {"Michigan Hop Alliance", "manufacturer"},
+             {"Michigan Hop Alliance", "supplier"},
              {"Rahr", "manufacturer"},
              {"Root Shoot", "manufacturer"},
              {"Root Shoot", "supplier"},
              {"Simpsons", "manufacturer"},
-             {"Weyermann", "manufacturer"}
+             {"Weyermann", "manufacturer"},
+             {"Yakima Chief Hops", "manufacturer"},
+             {"Yakima Chief Hops", "supplier"}
            ]
 
-    assert Repo.aggregate(from(p in Party, where: not like(p.name, "[SEED]%")), :count) == 8
+    assert Repo.aggregate(from(p in Party, where: not like(p.name, "[SEED]%")), :count) == 8 + 5
 
     refute Repo.exists?(
              from d in CategoryFieldDefinition,

@@ -323,9 +323,14 @@ IO.puts(
 # D60 §6: maltsters, suppliers, maltster products and supplier offers.
 Code.eval_file(Path.join(__DIR__, "seeds/grain_reference.exs"))
 
-# Ingredient LOTS are intentionally NOT seeded (D28): prod starts with an empty
+# D62 §7: hop companies, products with typical ranges, offers, and Matt's
+# cooler list as lots (2026-11-19). After the grain reference (BSG).
+Code.eval_file(Path.join(__DIR__, "seeds/hop_reference.exs"))
+
+# Grain LOTS are intentionally NOT seeded (D28): prod starts with no grain
 # inventory. D60 (task 3843): the malt specs that used to live on lots are the
-# maltster products' standard specs in `seeds/grain_reference.exs`.
+# maltster products' standard specs in `seeds/grain_reference.exs`. D62: the
+# hop lots above are Matt's real cooler count, seeded on every environment.
 
 # ── Accounts: departments + bootstrap owner (idempotent) ─────────────
 alias RockcutApi.Accounts
