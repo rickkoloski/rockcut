@@ -143,3 +143,135 @@ with no assertion weakened. Grain screens still say "sacks" and "Maltster".
   - the grep list from item 8;
   - `LEAD:` notes for anything the spec or plan left open;
   - the diff size (`git diff --stat develop`).
+
+---
+
+# Stage 2 (hops)
+
+2026-11-20 · lead. Stop 1 accepted (`50cf495`, `59a7dd0`, `2888fe7`, `de5b576`, `aa92982`;
+ExUnit 2,700 ×2, vitest 449, ingredients Playwright 56/56). Before this brief went out, the lead
+ran the full local Playwright suite on Stage 1. Your LEAD notes:
+
+1. **Toggle label:** the second button shows **the page's unit** wherever the page has one unit
+   ("lb" on grain and hop pages, "gal" on a purée product page). It shows **"Total"** only where
+   units mix (Totals, To order once Stage 3 lands). The first button stays "Sacks + lb" on grain
+   pages; on other pages it reads by the pack and unit ("Boxes + lb" on hops). So grain reads
+   exactly as before.
+2. `by_unit` totals: accepted.
+3. Unique index with form: accepted.
+4. INTEGER `quantity` and the old FK name: accepted. Stage 2 changes the Ecto type; add a test that
+   440.5 lb round-trips.
+5. **"Order target (packs)":** do it in this stage, since hop boxes now count toward a target
+   (A5). The order's running total says "packs" whenever the order mixes pack names, and keeps
+   "sacks" for an all-grain order.
+6. Accepted, all of it.
+7. Accepted.
+8. Accepted; Stage 2 opens `form`, `unit`, `origin` and `pack_name` for hops.
+9. Pre-existing e2e tsc errors: leave them; note them in the Stop 2 report only if they change.
+10. Check that `mix rockcut.synthetic.setup` removes the tagged supplier and its contract and
+    order. If it doesn't, extend the cleanup the way D61 did for tagged products. Then rerun
+    setup so your browser-check rows are gone.
+
+## Do (plan Stage 2; spec §3.1 Hops, §3.4, §3.6 Hops, §3.7, §4; Amendments)
+
+Every rule gets a refusal test and an allowed test.
+
+1. **Migrations** (ask before running them while the API is up):
+   - `category_feature_types` gains:
+     - `product_mode` ∈ `none value range` (default `value`, which is grain today);
+     - `lot_mode` ∈ `none copy enter` (default `copy`);
+     - `lot_required` (bool, default false);
+     - `only_unit` (string, null).
+   - `product_feature_values.value_high` (decimal, null), plus the matching `entered_*` handling
+     if you need it (ranges are typed directly; no convert popup for hop features).
+   - New feature types:
+     - `beta_acid_pct` "Beta acid" %, 0–100, **2 decimals**;
+     - `total_oil_ml_100g` "Total oil" mL/100 g, 0–10, 2 decimals.
+   - `alpha_acid_pct` decimals → **2**.
+   - Hops applicability: alpha, beta and oil are `product_mode range`, `lot_mode enter`; **alpha
+     is `lot_required`**.
+   - `ingredient_lots.crop_year` (integer, null).
+   - Delete the Hops `category_field_definitions` (Form, Origin, Crop Year) and stop seeding them.
+   - **Any existing Hops lot without a product:** the migration raises with a clear message that
+     lists the lots (prod expects none). Update the synthetic/test fixtures that make old-style
+     hop lots so they go through a product.
+2. **`Catalog`:**
+   - `hops` becomes managed.
+   - `forms("hops")` = T90 Pellet, Cryo, Whole leaf, Extract.
+   - `units("hops")` = `lb`.
+   - `contract_unit("hops")` = `:lb`.
+   - Pack names: hops offers are fixed at `box` · 11 lb.
+3. **API rules:**
+   - **Hop product:** `form` required (from the list), `unit` = lb (set by the API), `origin`
+     optional text (≤ 100). Manufacturer required, as for every product. Unique index with form.
+     Display name "Yakima Chief Hops Citra T90 Pellet"; with a product name, "… Citra T90 Pellet
+     (Lupomax)".
+   - **Ranges:** product features in range mode take `{low, high}` (either may be blank, but if
+     both are given, low ≤ high or 422 "Alpha acid: low is above high").
+   - **Hop offer:** `pack_name` `box`, `pack_size` 11. Anything else gets 422 "Hop offers are
+     11 lb boxes". Omitted, the API sets them.
+   - **Hop lot** (Add lot, Receive with a new lot #, lot edit):
+     - **`crop_year` required**, between 2000 and next year (Colorado);
+     - **alpha required**;
+     - beta and oil optional;
+     - **ranges are not copied** to the lot (`lot_mode enter`).
+     
+     A lot value outside the product's range is allowed. The JSON marks it (`outside_range: [keys]`)
+     for the UI.
+   - **Contracts:**
+     - Lines take grain (whole sacks, $/sack, as today) or hop products (**lb with 2 decimals,
+       $/lb**, A1). Any other category gets 422 "Contracts are for grain and hops".
+     - A hop line's price row on the offer = $/lb × 11, effective as D61 A2. A past year writes
+       none.
+     - On order, received and remaining for a hop line are by weight (boxes × 11 lb), shown in
+       lb. Shortfall lines carry their unit.
+     - Contract totals: grain sacks and hop lb separately, $ combined.
+   - **Order target and running total:** packs across the order (A5), `by_unit` as now.
+   - **Recipe lot label** (`/api/recipes/.../ingredients` or wherever the picker reads it): a hop
+     lot is labelled "<product display name> · <lot #> · <crop year> · <alpha>% AA".
+   - **`est_ibu`:**
+     - ExUnit: a hop lot made through the new path (product + lot with alpha 12.40) gives the
+       same IBU as a lot built the pre-D62 way with the same alpha, amount and time.
+     - A recipe line on an old-style lot still works.
+4. **UI:**
+   - **Hops in the Ingredient Library:** the `GrainsList` layout, generalized, with per-category
+     columns:
+     - Hops: variety, manufacturer, form, origin, alpha / beta / oil ranges ("11–13"), on hand,
+       suppliers with $/box.
+     - Search; filters manufacturer, supplier, on hand only.
+     - Phone: cards.
+   - **Hop product page and dialog:**
+     - Form picker, origin, and range inputs (low–high pairs).
+     - Offers show "box · 11 lb" (read-only) and $/box with $/lb.
+     - The lots table shows crop year, alpha / beta / oil, outside-range marks and value.
+   - **Add lot / Receive (new lot #) for hops:**
+     - Crop year (default the current year) and alpha (required), beta and oil.
+     - Each with "typical 11–13" beside it; a value outside it is marked but saves.
+   - **Contract dialog:** product picker offers grain and hops. A hop line shows "lb" and
+     "$ / lb", with box equivalents beside them ("440 lb = 40 boxes").
+   - Companies / party dialog: "Order target (packs)". Running total wording per note 5.
+   - Toggle labels per note 1.
+   - **Yeast and the other categories** keep the old lot screens until D64 / Stage 3.
+5. **Playwright** (in `tests/regression/ingredients/`; a new `hops.spec.ts` is fine):
+   - hop product with ranges, with the duplicate refused;
+   - box-only offer;
+   - Add lot with crop year and alpha (refused without them; outside-range mark);
+   - Oldest-first use;
+   - a mixed BSG order (sacks + boxes) with "packs" and the target;
+   - receiving hops into a new lot;
+   - a `[TEST-TEMP]` supplier's future-year contract with a hop line in lb (price row × 11);
+   - the 360 px hop pages.
+   
+   `[TEST-TEMP]` rows only, cleaned up by id.
+
+## Done when (Stop 2)
+
+- `mix test` green twice; `--warnings-as-errors --force` clean.
+- vitest, tsc, vite build clean; lint the same 8.
+- The `ingredients` Playwright project green.
+- **Browser check** as `brewer1` and `breweryMgr`, desktop and 360 px: every hop flow above; grain
+  still reads as before.
+- **Reply with:**
+  - commits, counts and `LEAD:` notes;
+  - the diff size so far;
+  - **whether Stage 3 still fits D62.** Plan §Stages says Stop 2 is the split point.
