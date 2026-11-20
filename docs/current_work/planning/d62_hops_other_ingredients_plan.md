@@ -216,3 +216,9 @@ A1–A7 and the hop reference-data amendments).
   ExUnit.
 - **Size:** larger than D61 because of Stage 1. If Stage 3 is still ahead when Stop 2 lands
   late, split after hops (spec §6) and say so at Stop 2.
+
+## Split (Matt, 2026-11-20, at Stop 2)
+
+Stage 3 moves to **D65** (fruits, spices, sugars, other consumables); D62 goes straight from
+Stop 2 to Stage 4 (hop reference seed, Playwright, O9, COVERAGE) and the gate. Stage 4 drops the
+fruit/sugar/salt seed. Order: D62 → D65 → D64 → D63.

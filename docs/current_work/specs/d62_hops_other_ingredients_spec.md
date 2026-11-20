@@ -1,13 +1,16 @@
 # D62: Hops, fruit, spices, sugars and other consumables — Spec
 
-**Status:** APPROVED (Matt, 2026-11-19; assumptions A1–A7 confirmed)
+**Status:** APPROVED (Matt, 2026-11-19; assumptions A1–A7 confirmed); split 2026-11-20 (D65)
 **Backlog:** 5911 (O9 flake in `ingredients/owner.spec.ts`), deferred register DR-1 (close) and
 DR-4 (units), the `inventory_on_hand` formula's unit
 **Concept:** 12_ingredients
 **Series:** D60 grains + inventory (`v2026.11.18`) → D61 purchasing and malt contracts
-(`v2026.11.19`) → **D62 hops and the other ingredients** → D64 yeast (harvests, generations,
-counts) → D63 recipes on products, brew-day drawdown, planned inventory, °Plato (4987), batch-log
-time (4986), the rest of 4989/5203, the last 8 lint errors (4084)
+(`v2026.11.19`) → **D62 packs + hops** → D65 fruits, spices, sugars, other consumables (split
+from D62, 2026-11-20) → D64 yeast (harvests, generations, counts) → D63 recipes on products,
+brew-day drawdown, planned inventory, °Plato (4987), batch-log time (4986), the rest of
+4989/5203, the last 8 lint errors (4084)
+**Split (2026-11-20):** see the last Amendment; the sections for fruit, spices, sugars and other
+consumables now belong to D65.
 
 ---
 
@@ -421,3 +424,18 @@ and salts move to a later ID. Raise it with Matt before splitting.
   Michigan Hop Alliance, Yakima Chief Hops, BSG); Matt corrects growers later on the screens.
 - **Typical ranges and origin:** filled from published variety specs and **checked by Matt**
   (`reference/d62_hop_products.csv`, 27 products; Pink Boots Blend has no range).
+
+## Amendment (Matt, 2026-11-20, Stop 2): split
+
+- **D62 = packs, units and manufacturer + hops** (plan Stages 1, 2 and 4): spec §3.1 Hops, §3.2,
+  §3.3, §3.4 hop features, §3.5, §3.6 Hops row, §3.7, §3.8 for grain and hops, §3.9, §4 for hops,
+  §5, the hop reference data, and the §9 scenarios under *Stage 1*, *Hops* and *People, devices,
+  edges*.
+- **D65 = fruits, spices & flavorings, sugars & extracts, other consumables** (plan Stage 3):
+  §3.1 for those categories (Other Consumables children, Future Ingredients, their custom fields),
+  §3.4 Brix and dry-sugar extract, §3.6 rows other than Hops, `each` in practice, per-unit totals
+  with mixed units, and the §9 *Fruit, spices, sugars, consumables* scenarios. Decisions 1, 10,
+  11, 12, 18, 19, 22 and A3, A4, A7 carry over unchanged. Its fruit/sugar/salt reference data is
+  still to come from Matt.
+- **Series order:** D62 → **D65** → D64 (yeast) → D63. Next new ID: **D66**.
+- The D62 API refuses Add field on Hops (the UI already hides it).

@@ -275,3 +275,75 @@ Every rule gets a refusal test and an allowed test.
   - commits, counts and `LEAD:` notes;
   - the diff size so far;
   - **whether Stage 3 still fits D62.** Plan §Stages says Stop 2 is the split point.
+
+---
+
+# Stage 4 (hop reference data, Playwright, O9, coverage) — the last stage of D62
+
+2026-11-20 · lead. **Stop 2 accepted** (`a82f2fd`, `dc17393`, `b32dd9a`, `0639511`, `bcb49cb`;
+ExUnit 2,720 ×2, vitest 462, ingredients Playwright 63/63). **Matt split D62 at Stop 2:** Stage 3
+(fruits, spices, sugars, other consumables) is now **D65**; see the spec's last Amendment and the
+plan's Split section. Don't build any of it here. Your LEAD notes:
+
+1. Accepted. **Add the API refusal for Hops now** (422 on creating a custom field definition on
+   Hops), with a test; the other categories' clean-up is D65.
+2. Accepted (`remaining_lb` / `over_lb`).
+3–7. Accepted.
+- The H2 cleanup failure with no captured error: if it shows again, capture the error text before
+  making anything best-effort.
+
+## Do (plan Stage 4; spec §7 and the hop Amendments)
+
+1. **Hop reference seed** `priv/repo/seeds/hop_reference.exs`, evaluated by `seeds.exs` after the
+   grain reference, idempotent, on every environment. **Embed the data in the file**: the CSVs
+   are in the git-excluded `docs/current_work/reference/` (read them, don't reference them at
+   run time):
+   - `d62_hop_products.csv`: 27 products (variety, manufacturer = supplier, form, origin,
+     alpha/beta/oil ranges; Pink Boots Blend has none).
+   - `d62_hops_matt_2026-11-19.csv`: 28 lots (skip EKG, which has no lot # or alpha): lot #, crop
+     year, alpha (2 decimals as given: 12.67, 15.40, 7.90), supplier, on-hand lb.
+   - **Parties** (manufacturer + supplier roles): John Fearless (`JFear`), Lupulin Exchange
+     (`LupEx`), Billy Goat (`BillyGoat`), Michigan Hop Alliance (`MHA`), Yakima Chief Hops
+     (`YCH`), and BSG (exists: add manufacturer).
+   - **Ingredients** in Hops: the variety names with the "(23)" / "(25-2)" / "(24-cryo)" labels
+     removed. "Hallertau Mittelfrueh" becomes "Hallertau Mittelfrüh". "Pink Boots" becomes
+     "Pink Boots Blend".
+   - **Products:** each manufacturer + variety + form. Citra (24-cryo) is the **Cryo** product;
+     everything else is **T90 Pellet**. Chinook has two products (Lupulin Exchange, Billy
+     Goat).
+   - **Offers:** one per product from its supplier, box · 11 lb, order name = the variety, **no
+     price**.
+   - **Lots:** product, supplier, lot #, crop year, alpha, `received_date` 2026-11-19, and an
+     **Opening amount** movement of the listed lb dated **2026-11-19**, no `entered_by`.
+   - **Idempotence:** a lot already present (same product + lot #, case-insensitive) is skipped
+     and never topped up. Existing products, offers and parties are matched by name, never
+     duplicated.
+   - Lots under 1 box show correctly (Magnum 0.6 lb).
+   - ExUnit: seed twice, and the counts are unchanged (27 products, 28 lots, 420.0 − 10.4 =
+     409.6 lb in total). Spot-check Galaxy 71.0 lb / 17.6 % / 2025 and Citra Cryo 26.9 %.
+2. **Tests that must not trip over the seeded hops:** any Playwright or ExUnit test that counts
+   hop products, lots or inventory totals filters to its own `[TEST-TEMP]` rows. Tests and QA
+   never edit or delete seeded hop rows.
+3. **Playwright from spec §9:**
+   - the *Stage 1*, *Hops* and *People, devices, edges* scenarios not already covered by
+     `hops.spec.ts` and the D60/D61 specs;
+   - including **two people, one record** (an open order with hop lines; a contract with a hop
+     line) and **slow network** double-submit on hop Add lot and Receive;
+   - `bartender1` and `breweryDevice` refused on every hop route.
+4. **5911 O9:** find the race in `tests/regression/ingredients/owner.spec.ts` O9 (a reload or
+   `goto` right after a write, or a phone dialog's `history.back()`, as PO7/P4 in D61). Fix it,
+   then run O9 10× under the full ingredients project's load. Note what it was.
+5. **`tests/COVERAGE.md`:** a D62 section, scenario → layer, with gaps marked.
+6. **Stage 1 leftovers to tidy (no behavior change):** `Product`'s unique message ("This
+   maltster already has that product for this grain.") becomes general ("<manufacturer> already
+   has <form> <ingredient>"; grain keeps the old sentence). Do the same for
+   `Inventory`'s "A grain lot needs its maltster product" (grain wording on grain only).
+
+## Done when (Stop 4 = the local gate's build part)
+
+- `mix ecto.reset` + seeds + synthetic setup clean (the seed shows 28 hop lots, 409.6 lb).
+- `mix test` green twice; `--warnings-as-errors --force` clean; vitest, tsc, build clean; lint
+  the same 8.
+- The ingredients Playwright project green. **Ask me to run the full suite** in its own tab.
+- Reply with commits, counts, the O9 cause, the COVERAGE gaps and `LEAD:` notes. After that, the
+  lead writes the local QA brief.
