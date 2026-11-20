@@ -162,7 +162,7 @@ defmodule RockcutApi.Ingredients.Valuation do
       products =
         from(p in Product,
           where: p.id in ^Enum.uniq(Enum.map(stocked, & &1.product_id)),
-          preload: [:manufacturer, ingredient: :category]
+          preload: [:manufacturer, ingredient: [category: :parent]]
         )
         |> Repo.all()
         |> Map.new(&{&1.id, &1})
@@ -208,6 +208,9 @@ defmodule RockcutApi.Ingredients.Valuation do
       ingredient: product.ingredient.name,
       manufacturer: product.manufacturer.name,
       category: product.ingredient.category.name,
+      category_id: product.ingredient.category_id,
+      category_key: RockcutApi.Ingredients.Catalog.key(product.ingredient.category),
+      form: product.form,
       unit: product.unit,
       quantity: Decimal.round(quantity, 2),
       expired: Decimal.round(expired, 2),

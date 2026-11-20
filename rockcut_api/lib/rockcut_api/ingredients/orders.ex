@@ -318,12 +318,27 @@ defmodule RockcutApi.Ingredients.Orders do
     %{rows: rows, by_supplier: by_supplier, total: sums(rows)}
   end
 
-  # Packs ordered and received too (lead decisions 1, gap 8).
+  # Packs ordered and received too (lead decisions 1, gap 8). D62 lead
+  # decisions 1, gap 11: sacks and boxes never add into one number, so
+  # `by_pack` has them per pack name (by name); the plain `packs*` sums only
+  # mean something when every row has the same pack.
   defp sums(rows) do
     %{
       packs: rows |> Enum.map(& &1.packs) |> Enum.sum(),
       packs_ordered: rows |> Enum.map(& &1.packs_ordered) |> Enum.sum(),
       packs_received: rows |> Enum.map(&(&1.packs_received || 0)) |> Enum.sum(),
+      by_pack:
+        rows
+        |> Enum.group_by(& &1.pack_name)
+        |> Enum.sort_by(fn {name, _} -> name end)
+        |> Enum.map(fn {name, rs} ->
+          %{
+            pack_name: name,
+            packs: rs |> Enum.map(& &1.packs) |> Enum.sum(),
+            packs_ordered: rs |> Enum.map(& &1.packs_ordered) |> Enum.sum(),
+            packs_received: rs |> Enum.map(&(&1.packs_received || 0)) |> Enum.sum()
+          }
+        end),
       by_unit: sum_by_unit(rows),
       dollars: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, &1.dollars))
     }
@@ -587,7 +602,7 @@ defmodule RockcutApi.Ingredients.Orders do
       number ->
         case Inventory.find_lot(line.offer.product_id, number) do
           nil -> new_lot!(line, number, a, received_on)
-          lot -> usable_lot!(lot, line.offer)
+          lot -> lot |> usable_lot!(line.offer) |> same_values!(line, a)
         end
     end
   end
@@ -615,6 +630,56 @@ defmodule RockcutApi.Ingredients.Orders do
           ]
         })
   end
+
+  # D62 lead decisions 1, gap 10: a lot number the product already has adds
+  # to that lot, so the crop year and features sent must be the lot's own
+  # (or left out); a different one is refused, never dropped.
+  defp same_values!(lot, line, a) do
+    features =
+      case Features.validate(a["features"], line.offer.product.ingredient_id, :lot) do
+        {:ok, features} -> for {type, %{value: value}} <- features, do: {type, value}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+
+    crop_year = a["crop_year"]
+    has = Map.new(lot_values(lot.id), &{&1.feature_type_id, &1.value})
+
+    differs? =
+      (crop_year not in [nil, ""] and to_string(crop_year) != to_string(lot.crop_year)) or
+        Enum.any?(features, fn {type, value} ->
+          not (has[type.id] && Decimal.eq?(has[type.id], value))
+        end)
+
+    if differs? do
+      values =
+        cond do
+          lot.crop_year -> ["crop year #{lot.crop_year}"]
+          crop_year not in [nil, ""] -> ["no crop year"]
+          true -> []
+        end ++
+          for {type, _} <- Enum.sort_by(features, &elem(&1, 0).id) do
+            case has[type.id] do
+              nil -> "no #{String.downcase(type.label)}"
+              v -> "#{String.downcase(type.label)} #{places(v, type.decimals)}"
+            end
+          end
+
+      rollback(%{
+        base: [
+          "Lot #{lot.lot_number} already exists with #{Enum.join(values, ", ")}; " <>
+            "use a new lot number or leave its values"
+        ]
+      })
+    end
+
+    lot
+  end
+
+  defp lot_values(lot_id),
+    do: Repo.all(from(v in RockcutApi.Ingredients.LotFeatureValue, where: v.lot_id == ^lot_id))
+
+  defp places(d, decimals),
+    do: d |> Decimal.round(decimals || 0) |> Decimal.to_string(:normal)
 
   # Add lot's lot (§3.3): supplier and pack from the offer, received on
   # the receipt's date, the product's standard specs with `features` over
