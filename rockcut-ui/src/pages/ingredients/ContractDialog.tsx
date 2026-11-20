@@ -79,6 +79,8 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const supplier = parties.find((p) => p.id === supplierId)
   const active = offers.filter((o) => o.supplier_party_id === supplierId && o.active)
   const productName = new Map(products.map((p) => [p.id, pickerName(p)]))
+  // A name that ends with its manufacturer (a hop's) needs no supplier in front (gap 18).
+  const named = new Set(products.filter((p) => pickerName(p) !== p.display_name).map((p) => p.id))
   // D62 §3.7: contracts are for grain and hops only.
   const contractKey = new Map(products.filter((p) => p.category_key === 'grains' || p.category_key === 'hops').map((p) => [p.id, p.category_key]))
   const offered = [...new Set(active.map((o) => o.product_id))]
@@ -122,6 +124,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
               const size = Number(lineOffer(r.line)?.pack_size ?? 1)
               return {
                 product: productName.get(r.line.productId as number) ?? '',
+                named: named.has(r.line.productId as number),
                 price: r.lb ? String(Math.round(Number(r.price) * size * 100) / 100) : r.price!,
                 changed: !was || Number(was.price) !== Number(r.price) || (offerId != null && was.offer_id !== offerId),
               }

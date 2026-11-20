@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { Link as RouterLink } from 'react-router-dom'
 import {
   Alert,
@@ -26,7 +27,8 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiUpdate } from '../../hooks/useApiMutation'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import parseApiError from '../../lib/parseApiError'
-import { amountText, packsFigure, sharedPackName, toOrder } from '../../lib/purchasing'
+import { httpStatus } from '../../lib/notFound'
+import { amountText, packsFigure, reorderListPack, reorderOfferPack, toOrder } from '../../lib/purchasing'
 import { packPlural } from '../../lib/brewingUnits'
 import type { IngredientProduct, ReorderRow, SupplierOffer } from '../../lib/types'
 import OrderDialog from './OrderDialog'
@@ -64,6 +66,7 @@ export default function ToOrderPage() {
   const [started, setStarted] = useState(0)
   const [error, setError] = useState<string | null>(null)
   const narrow = useMediaQuery(useTheme().breakpoints.down('sm'))
+  const qc = useQueryClient()
   const saveOffer = useApiUpdate<IngredientProduct>((id) => `/api/ingredient_products/${id}`, { invalidateKeys: GRAIN_KEYS })
 
   const pickOffer = (productId: number, offerId: number, was: number) => {
@@ -75,6 +78,19 @@ export default function ToOrderPage() {
       {
         onSuccess: (p) => setSaved((m) => ({ ...m, [p.id]: p.lock_version })),
         onError: (err) => {
+          // Decisions 2, gap 17: there's no dialog to reopen here, so a 409
+          // refetches the rows (the version becomes current) and the picker
+          // goes back to the saved offer; the next pick saves.
+          if (httpStatus(err) === 409) {
+            GRAIN_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key }))
+            setOfferFor((m) => {
+              const rest = { ...m }
+              delete rest[productId]
+              return rest
+            })
+            setError('Someone else changed this product. The list is up to date now; pick the offer again.')
+            return
+          }
           setOfferFor((m) => ({ ...m, [productId]: was }))
           setError(parseApiError(err))
         },
@@ -100,7 +116,7 @@ export default function ToOrderPage() {
           inputProps={{ 'aria-label': 'Reorder offer' }}
           renderValue={(id) => {
             const o = offers.find((x) => x.id === id) ?? offer
-            return [o.supplier?.name, `${Number(o.pack_size)} ${unitOf(productId)}`].filter(Boolean).join(' · ')
+            return [o.supplier?.name, reorderOfferPack(o, unitOf(productId))].filter(Boolean).join(' · ')
           }}
           // Doubled class to outrank MUI's nowrap: the offer wraps, never cut (gap 19).
           sx={{ '& .MuiSelect-select.MuiSelect-select': { whiteSpace: 'normal', overflowWrap: 'anywhere' } }}
@@ -108,7 +124,7 @@ export default function ToOrderPage() {
         >
           {(offers.some((o) => o.id === offer.id) ? offers : [offer, ...offers]).map((o) => (
             <MenuItem key={o.id} value={o.id}>
-              {[o.supplier?.name, o.order_name, `${Number(o.pack_size)} ${unitOf(productId)}`].filter(Boolean).join(' · ')}
+              {[o.supplier?.name, o.order_name, reorderOfferPack(o, unitOf(productId))].filter(Boolean).join(' · ')}
             </MenuItem>
           ))}
         </Select>
@@ -119,9 +135,14 @@ export default function ToOrderPage() {
       </Typography>
     )
 
-  // "sacks" while every offer is a sack (grain); "packs" once they differ.
-  const offerPacks = view.flatMap((v) => (v.offer ? [v.offer.pack_name] : []))
-  const listPack = offerPacks.length ? sharedPackName(offerPacks) : 'sack'
+  // "sacks" while every row is grain, "boxes" while every row is hops; "packs" once they differ (gap 15).
+  const keys = new Map(products.map((p) => [p.id, p.category_key]))
+  const rowPack = (v: (typeof view)[number]) => {
+    if (v.offer) return v.offer.pack_name
+    const key = keys.get(v.row.product_id)
+    return key === 'hops' ? 'box' : key === 'grains' ? 'sack' : null
+  }
+  const listPack = reorderListPack(view.map(rowPack))
   const orderable = view.filter((v) => v.figures && v.figures.toOrder > 0)
   const chosen = orderable.filter((v) => picked.has(v.row.product_id))
 

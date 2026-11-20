@@ -27,6 +27,23 @@ export function offerPackText(o: { pack_name: string; pack_size: string | number
   return o.form ? `${size} ${o.form}` : size
 }
 
+/**
+ * To order's offer (D62 decisions 2, gap 15): a hop box reads "box · 11 lb"
+ * as on the order and Add lot pickers; a sack reads "50 lb" as in D61.
+ */
+export const reorderOfferPack = (o: { pack_name: string; pack_size: string | number }, unit = 'lb') =>
+  o.pack_name === 'box' ? offerPackText({ ...o, form: null }, unit) : `${Number(o.pack_size)} ${unit}`
+
+/**
+ * The pack To order's caption counts in: each row's own (its offer's, else
+ * its product's: boxes for hops, sacks for grain), "sack" for an empty list
+ * as in D61, null ("packs") when they differ or one isn't known (gap 15).
+ */
+export function reorderListPack(rowPacks: (string | null)[]): string | null {
+  if (rowPacks.length === 0) return 'sack'
+  return rowPacks.every((p) => p != null) ? sharedPackName(rowPacks) : null
+}
+
 /** "1,980 lb": a quantity in its unit (whole numbers for `each`). */
 export const amountText = (quantity: string | number, unit: string) =>
   `${Number(quantity).toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unit}`
@@ -166,13 +183,15 @@ export function lineForError<T extends { id: number; offer: { label: string; pro
  * The offer prices saving a contract writes (decision 23, A2, decision 40):
  * for each new or changed line, "BSG Rahr 2-Row price becomes $42.00 from
  * 2027-01-01", effective Jan 1 of the year or today if later; none for a
- * year already over.
+ * year already over. A line whose name already ends with its manufacturer
+ * (`named`, a hop's "Citra T90 Pellet · YCH") leaves the supplier off, as
+ * every line is the contract's supplier's (D62 decisions 2, gap 18).
  */
-export function contractPriceChanges(lines: { product: string; price: string; changed: boolean }[], supplier: string, year: number, today: string): string[] {
+export function contractPriceChanges(lines: { product: string; price: string; changed: boolean; named?: boolean }[], supplier: string, year: number, today: string): string[] {
   if (year < Number(today.slice(0, 4))) return []
   const jan1 = `${year}-01-01`
   const from = jan1 > today ? jan1 : today
-  return lines.filter((l) => l.changed).map((l) => `${supplier} ${l.product} price becomes ${money(l.price)} from ${from}`)
+  return lines.filter((l) => l.changed).map((l) => `${l.named ? '' : `${supplier} `}${l.product} price becomes ${money(l.price)} from ${from}`)
 }
 
 /**
