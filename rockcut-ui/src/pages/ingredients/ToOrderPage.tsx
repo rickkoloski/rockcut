@@ -26,7 +26,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiUpdate } from '../../hooks/useApiMutation'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import parseApiError from '../../lib/parseApiError'
-import { packsFigure, sharedPackName, toOrder } from '../../lib/purchasing'
+import { amountText, packsFigure, sharedPackName, toOrder } from '../../lib/purchasing'
 import { packPlural } from '../../lib/brewingUnits'
 import type { IngredientProduct, ReorderRow, SupplierOffer } from '../../lib/types'
 import OrderDialog from './OrderDialog'
@@ -58,6 +58,7 @@ export default function ToOrderPage() {
   const { data: rows = [], isLoading } = useApiList<ReorderRow>(['ingredient_reorder'], '/api/ingredient_reorder')
   const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
   const [offerFor, setOfferFor] = useState<Record<number, number>>({})
+  const [saved, setSaved] = useState<Record<number, number>>({})
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [queue, setQueue] = useState<Start[]>([])
   const [started, setStarted] = useState(0)
@@ -68,8 +69,11 @@ export default function ToOrderPage() {
   const pickOffer = (productId: number, offerId: number, was: number) => {
     setOfferFor((m) => ({ ...m, [productId]: offerId }))
     saveOffer.mutate(
-      { id: productId, reorder_offer_id: offerId },
+      // D62 lead decisions 1, gap 9: every product save carries the version it
+      // read, or the one this page's last save returned when the list is behind.
+      { id: productId, reorder_offer_id: offerId, lock_version: Math.max(saved[productId] ?? 0, products.find((p) => p.id === productId)?.lock_version ?? 0) },
       {
+        onSuccess: (p) => setSaved((m) => ({ ...m, [p.id]: p.lock_version })),
         onError: (err) => {
           setOfferFor((m) => ({ ...m, [productId]: was }))
           setError(parseApiError(err))
@@ -217,7 +221,8 @@ export default function ToOrderPage() {
                     </Typography>
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: { sm: 'nowrap' } }} data-testid={`to-order-${r.product_id}-on-hand`}>
-                    {figures ? `${figures.onHandPacks} ${packPlural(offer?.pack_name)}` : `${Number(r.on_hand ?? 0)} ${unitOf(r.product_id)}`}
+                    {/* D62 lead decisions 1, gap 12: nothing on hand reads as the product page does ("0 lb"), not "0 boxes". */}
+                    {figures && figures.onHandPacks > 0 ? `${figures.onHandPacks} ${packPlural(offer?.pack_name)}` : amountText(r.on_hand ?? 0, unitOf(r.product_id))}
                   </TableCell>
                   <TableCell align="right" sx={WIDE}>
                     {r.min_on_hand_packs}

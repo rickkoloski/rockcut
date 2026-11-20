@@ -161,13 +161,20 @@ export function requiredLotKeys(types: FeatureType[], categoryId: number | null 
 export const isRangeType = (type: FeatureType, categoryId: number | null | undefined, parentId?: number | null) =>
   applicability(type, categoryId, parentId)?.product_mode === 'range'
 
-/** A range as the screens show it: "11–13", "–4.5" (no low end), "2.5–" (no high end); null with neither. */
+/**
+ * A range as the screens show it (D62 lead decisions 1, gap 2): "11–13",
+ * "12.5" when both ends are the same, "≥ 12" with no high end, "≤ 9" with no
+ * low end; null with neither. The caller adds the unit.
+ */
 export function formatRange(v: Pick<FeatureValue, 'value' | 'value_high'> | null | undefined, decimals: number): string | null {
   // Ranges read as typed on the supplier's sheet, without padding ("11–13", not "11.00–13.00").
   const end = (x: string | null | undefined) => (x != null && x !== '' ? Number(x).toLocaleString('en-US', { maximumFractionDigits: decimals }) : '')
   const low = end(v?.value)
   const high = end(v?.value_high)
-  return low || high ? `${low}–${high}` : null
+  if (low && high) return low === high ? low : `${low}–${high}`
+  if (low) return `≥ ${low}`
+  if (high) return `≤ ${high}`
+  return null
 }
 
 /** True when `value` lies outside the range (an open end doesn't limit); false with no value or range. */
@@ -242,6 +249,22 @@ export function categoryKey(
   return parent?.key ?? null
 }
 
+/**
+ * D62 lead decisions 1, gap 5: the manufacturers with products in the
+ * categories with these keys (grain screens list maltsters, not hop growers),
+ * in the order given. `keep` (a product's current manufacturer) stays in
+ * whatever it makes.
+ */
+export function manufacturersFor<T extends { id: number }>(
+  parties: T[],
+  products: Pick<IngredientProduct, 'manufacturer_party_id' | 'category_key'>[],
+  keys: readonly string[],
+  keep?: number | null,
+): T[] {
+  const ids = new Set(products.filter((p) => p.category_key != null && keys.includes(p.category_key)).map((p) => p.manufacturer_party_id))
+  return parties.filter((p) => ids.has(p.id) || p.id === keep)
+}
+
 /** D62 §3.2: what the manufacturer is called on a category's screens ("Maltster" for grain). */
 export const manufacturerLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster' : 'Manufacturer')
 
@@ -275,6 +298,21 @@ export function categoryOptions(categories: IngredientCategory[]): { category: I
       .map((child) => ({ category: child, depth: 1 as const })),
   ])
 }
+
+/**
+ * D62 lead decisions 1, gap 8: a product in a line picker. A product with a
+ * form leads with its variety and form, "Citra T90 Pellet · Yakima Chief
+ * Hops", so a phone that cuts the end off still tells one company's lines
+ * apart; grain keeps its name ("Rahr 2-Row").
+ */
+export function pickerName(p: Pick<IngredientProduct, 'display_name' | 'form' | 'name'> & { ingredient?: { name: string } | null; manufacturer?: { name: string } | null }): string {
+  if (!p.form || !p.ingredient || !p.manufacturer) return p.display_name
+  return `${p.ingredient.name} ${p.form}${p.name ? ` (${p.name})` : ''} · ${p.manufacturer.name}`
+}
+
+/** A select (and its menu items) whose long names wrap instead of being cut off at phone width (gap 8). */
+export const WRAP_SELECT = { '& .MuiSelect-select': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } as const
+export const WRAP_ITEM = { whiteSpace: 'normal', overflowWrap: 'anywhere' } as const
 
 /** What the grains list's search matches: ingredient, manufacturer, product name, suppliers and their order names. */
 export function productMatches(p: IngredientProduct, term: string): boolean {

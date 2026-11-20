@@ -16,6 +16,7 @@ import {
   itemLabel,
   keyedCategories,
   manufacturerLabel,
+  manufacturersFor,
   productLabel,
   productTypesFor,
   rangeDraftError,
@@ -28,6 +29,9 @@ import {
 import { GRAIN_KEYS } from '../../lib/inventory'
 import { parsePacks } from '../../lib/purchasing'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct, Party } from '../../lib/types'
+
+/** The manufacturer picker's "Other manufacturer…" entry. */
+const OTHER = -1
 
 interface ProductDialogProps {
   open: boolean
@@ -58,8 +62,9 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
   const { data: ingredients = [], isLoading: ingredientsLoading } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
   const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
   const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
+  const { data: products = [], isLoading: productsLoading } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
   // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
-  const listsLoading = categoriesLoading || ingredientsLoading || partiesLoading || typesLoading
+  const listsLoading = categoriesLoading || ingredientsLoading || partiesLoading || typesLoading || productsLoading
 
   const [grainId, setGrainId] = useState<number | ''>(product?.ingredient_id ?? ingredientId ?? '')
   const [manufacturerId, setManufacturerId] = useState<number | ''>(product?.manufacturer_party_id ?? '')
@@ -89,7 +94,16 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
   const shown = drafts ?? draftsFrom(product?.features, featureTypes)
   const shownRanges = ranges ?? rangeDraftsFrom(product?.features, rangeTypes)
   const rangesOk = rangeTypes.every((t) => !rangeDraftError(t, shownRanges[t.key]))
-  const manufacturers = parties.filter((p) => p.roles?.includes('manufacturer') && (p.active || p.id === product?.manufacturer_party_id))
+  // D62 lead decisions 1, gap 5: the manufacturers that already make this
+  // category's products (maltsters on grain, hop growers on hops) and the
+  // product's own; "Other manufacturer…" opens every one, so a new maltster
+  // can still be picked.
+  const allManufacturers = parties.filter((p) => p.roles?.includes('manufacturer') && (p.active || p.id === product?.manufacturer_party_id))
+  const usualManufacturers = manufacturersFor(allManufacturers, products, [key], product?.manufacturer_party_id)
+  const [everyManufacturer, setEveryManufacturer] = useState(false)
+  const [manufacturerOpen, setManufacturerOpen] = useState(false)
+  const showAll = everyManufacturer || (manufacturerId !== '' && !usualManufacturers.some((p) => p.id === manufacturerId))
+  const manufacturers = showAll ? allManufacturers : usualManufacturers
 
   const create = useApiCreate<IngredientProduct>('/api/ingredient_products', { invalidateKeys: GRAIN_KEYS })
   const update = useApiUpdate<IngredientProduct>((id) => `/api/ingredient_products/${id}`, { invalidateKeys: GRAIN_KEYS })
@@ -108,7 +122,8 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
     }
     try {
       if (product) {
-        await update.mutateAsync({ id: product.id, ...payload })
+        // Gap 9: the version the dialog opened; a save after someone else's is refused (409).
+        await update.mutateAsync({ id: product.id, lock_version: product.lock_version, ...payload })
         onClose()
       } else {
         const created = await create.mutateAsync(payload)
@@ -160,7 +175,16 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
           id="product-maltster"
           label={manufacturerLabel(key)}
           value={manufacturers.length ? manufacturerId : ''}
-          onChange={(e) => setManufacturerId(e.target.value as number)}
+          open={manufacturerOpen}
+          onOpen={() => setManufacturerOpen(true)}
+          onClose={() => setManufacturerOpen(false)}
+          onChange={(e) => {
+            if (e.target.value === OTHER) {
+              // Keep the menu open on the full list.
+              setEveryManufacturer(true)
+              setManufacturerOpen(true)
+            } else setManufacturerId(e.target.value as number)
+          }}
           data-testid="product-maltster"
         >
           {manufacturers.map((p) => (
@@ -168,6 +192,11 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
               {p.name}
             </MenuItem>
           ))}
+          {!showAll && (
+            <MenuItem value={OTHER} data-testid="product-maltster-other">
+              <em>Other manufacturer…</em>
+            </MenuItem>
+          )}
         </Select>
       </FormControl>
       {hops && (

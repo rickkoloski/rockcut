@@ -286,7 +286,8 @@ export interface SupplierOffer {
   /** D62 §3.5: the pack, e.g. "sack" · 55 (in the product's unit). */
   pack_name: string
   pack_size: string
-  form: 'milled' | 'whole'
+  /** Grain's alone; null on a hop offer (D62 lead decisions 1, gap 3). */
+  form: 'milled' | 'whole' | null
   notes: string | null
   active: boolean
   current_price: OfferPrice | null
@@ -323,6 +324,8 @@ export interface IngredientProduct {
   /** The offer picked on To order (lead decisions 1, gap 4); null: the default. */
   reorder_offer_id?: number | null
   below_minimum?: boolean
+  /** D62 lead decisions 1, gap 9: sent back on a save; a save from an older version is refused (409). */
+  lock_version: number
   inserted_at: string
   updated_at: string
 }
@@ -490,6 +493,10 @@ export interface InventoryTotalsRow {
   ingredient: string
   manufacturer: string
   category: string
+  /** D62 lead decisions 1, gap 4: the category filter and the Form column. */
+  category_id: number
+  category_key: string | null
+  form: string | null
   unit: string
   quantity: string
   expired: string
@@ -529,9 +536,12 @@ export interface OrderTotalsRow {
 }
 
 export interface OrderTotalsSum {
+  /** Only meaningful when every line has the same pack; `by_pack` otherwise (D62 gap 11). */
   packs: number
   packs_ordered: number
   packs_received: number
+  /** Packs per pack name, never added across names ("73 sacks · 47 boxes"). */
+  by_pack: { pack_name: string; packs: number; packs_ordered: number; packs_received: number }[]
   by_unit: UnitQuantity[]
   dollars: string
 }

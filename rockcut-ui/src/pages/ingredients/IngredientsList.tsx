@@ -18,7 +18,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
 import QuantityToggle from '../../components/QuantityToggle'
-import { grainCategories, keyedCategories, manufacturerLabel, toggleLabels } from '../../lib/ingredientFeatures'
+import { grainCategories, keyedCategories, manufacturerLabel, manufacturersFor, toggleLabels } from '../../lib/ingredientFeatures'
 import PageHeader from '../../components/PageHeader'
 import StatusChip from '../../components/StatusChip'
 import IngredientFormDialog from './IngredientFormDialog'
@@ -176,7 +176,12 @@ export default function IngredientsList() {
     supplierId,
     onHandOnly,
   }
-  const manufacturers = parties.filter((p) => p.roles?.includes('manufacturer'))
+  // D62 lead decisions 1, gap 5: only the manufacturers with products here (maltsters on Grains, hop growers on Hops).
+  const manufacturers = manufacturersFor(
+    parties.filter((p) => p.roles?.includes('manufacturer')),
+    products,
+    [hopsView ? 'hops' : 'grains'],
+  )
   const suppliers = parties.filter((p) => p.roles?.includes('supplier'))
   const lotTypes = selected ? types.filter((t) => (t.categories ?? []).some((c) => c.category_id === selected.id)) : types.filter((t) => !t.categories?.some((c) => c.category_id === grainsCategory?.id))
 
@@ -236,7 +241,7 @@ export default function IngredientsList() {
                   </MenuItem>
                   <MenuItem component={RouterLink} to="/ingredients/companies" onClick={close} data-testid="ingredients-settings-companies">
                     <ListItemIcon><BusinessIcon fontSize="small" /></ListItemIcon>
-                    <ListItemText primary="Companies" secondary="Maltsters, suppliers, partner breweries" />
+                    <ListItemText primary="Companies" secondary="Manufacturers, suppliers, partner breweries" />
                   </MenuItem>
                 </>
               )}
