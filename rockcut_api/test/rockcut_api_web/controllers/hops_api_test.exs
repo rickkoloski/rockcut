@@ -33,7 +33,7 @@ defmodule RockcutApiWeb.HopsApiTest do
         supplier_party_id: c.bsg.id,
         pack_name: "box",
         pack_size: Decimal.new(11),
-        form: "whole"
+        form: nil
       })
 
     price!(bsg_hop, "165.00")
@@ -157,13 +157,13 @@ defmodule RockcutApiWeb.HopsApiTest do
          c do
       dup = product_body(c, %{"form" => "T90 Pellet"})
 
-      assert %{"ingredient_id" => ["Yakima Chief Hops already has T90 Pellet Citra."]} =
+      assert %{"base" => ["Yakima Chief Hops already has T90 Pellet Citra."]} =
                errors(req(c.brewer, :post, "/api/ingredient_products", dup))
 
       named = product_body(c, %{"form" => "T90 Pellet", "name" => "Lupomax"})
       assert {201, _} = req(c.brewer, :post, "/api/ingredient_products", named)
 
-      assert %{"ingredient_id" => ["Yakima Chief Hops already has T90 Pellet Citra (Lupomax)."]} =
+      assert %{"base" => ["Yakima Chief Hops already has T90 Pellet Citra (Lupomax)."]} =
                errors(req(c.brewer, :post, "/api/ingredient_products", named))
 
       hopsteiner = party!("Hopsteiner", ~w(manufacturer))
@@ -218,6 +218,7 @@ defmodule RockcutApiWeb.HopsApiTest do
       # Both ends blank: no range.
       {200, %{"data" => p}} =
         req(c.brewer, :patch, "/api/ingredient_products/#{p["id"]}", %{
+          "lock_version" => product_version(p["id"]),
           "features" => %{"beta_acid_pct" => range("", "")}
         })
 

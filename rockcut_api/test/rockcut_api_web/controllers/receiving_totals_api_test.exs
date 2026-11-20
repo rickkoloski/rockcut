@@ -508,11 +508,13 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
       assert {200, %{"data" => %{"min_on_hand_packs" => 3, "below_minimum" => false}}} =
                req(c.p["brewer2"], :put, "/api/ingredient_products/#{c.product.id}", %{
+                 "lock_version" => product_version(c.product.id),
                  min_on_hand_packs: 3
                })
 
       assert {422, %{"errors" => %{"min_on_hand_packs" => [_]}}} =
                req(c.brewer, :put, "/api/ingredient_products/#{c.product.id}", %{
+                 "lock_version" => product_version(c.product.id),
                  min_on_hand_packs: -1
                })
 

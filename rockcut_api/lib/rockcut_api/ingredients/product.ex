@@ -20,6 +20,8 @@ defmodule RockcutApi.Ingredients.Product do
     field :origin, :string
     # D61 §3.5: the reorder point in whole packs (nil = no minimum).
     field :min_on_hand_packs, :integer
+    # D62 lead decisions 1, gap 9: bumped on every save (`Versions`).
+    field :lock_version, :integer, default: 1
     # The sum of its lots' movements, in `unit` (`Ingredients.Products`).
     field :on_hand, :decimal, virtual: true
     # The part of it in expired lots.
@@ -89,9 +91,12 @@ defmodule RockcutApi.Ingredients.Product do
 
   # Stage 4 (lead): grain keeps D60's sentence; every other category names
   # them, "Yakima Chief Hops already has T90 Pellet Citra."
+  # D62 lead decisions 1, gap 1: under `base`, so the dialog shows the
+  # sentence alone, not "ingredient id: …".
   defp unique_product(changeset, key) do
     unique_constraint(changeset, [:ingredient_id, :manufacturer_party_id, :name],
       name: :ingredient_products_ingredient_manufacturer_form_name_index,
+      error_key: :base,
       message: duplicate(changeset, key)
     )
   end

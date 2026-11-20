@@ -329,7 +329,10 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       assert reorder_offer.() == c.offer.id
 
       assert {200, %{"data" => %{"reorder_offer_id" => id}}} =
-               req(c.brewer, :put, path, %{"reorder_offer_id" => c.offer50.id})
+               req(c.brewer, :put, path, %{
+                 "lock_version" => product_version(c.product.id),
+                 "reorder_offer_id" => c.offer50.id
+               })
 
       assert id == c.offer50.id and reorder_offer.() == c.offer50.id
 
@@ -338,7 +341,12 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
 
       for bad <- [inactive.id, c.pils_offer.id] do
         assert %{"reorder_offer_id" => ["must be one of this product's active offers"]} =
-                 errors(req(c.brewer, :put, path, %{"reorder_offer_id" => bad}))
+                 errors(
+                   req(c.brewer, :put, path, %{
+                     "lock_version" => product_version(c.product.id),
+                     "reorder_offer_id" => bad
+                   })
+                 )
       end
 
       # Deactivated later: back to the default.
@@ -347,7 +355,10 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       Repo.update!(Ecto.Changeset.change(c.offer50, active: true))
 
       assert {200, %{"data" => %{"reorder_offer_id" => nil}}} =
-               req(c.brewer, :put, path, %{"reorder_offer_id" => nil})
+               req(c.brewer, :put, path, %{
+                 "lock_version" => product_version(c.product.id),
+                 "reorder_offer_id" => nil
+               })
 
       assert reorder_offer.() == c.offer.id
     end
@@ -374,6 +385,7 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       # On the 50 lb offer: 210 / 50 = 4.2 on order; ⌈10 − 4.2⌉ = 6.
       {200, _} =
         req(c.brewer, :put, "/api/ingredient_products/#{c.product.id}", %{
+          "lock_version" => product_version(c.product.id),
           "reorder_offer_id" => c.offer50.id
         })
 

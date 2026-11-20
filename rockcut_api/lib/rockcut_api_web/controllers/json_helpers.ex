@@ -1098,6 +1098,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       min_on_hand_packs: p.min_on_hand_packs,
       reorder_offer_id: p.reorder_offer_id,
       below_minimum: p.below_minimum,
+      lock_version: p.lock_version,
       on_hand: p.on_hand,
       expired: p.expired,
       inserted_at: p.inserted_at,

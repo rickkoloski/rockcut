@@ -141,8 +141,19 @@ defmodule RockcutApi.Seeds.HopSeedsTest do
     assert Decimal.equal?(low, 11) and Decimal.equal?(high, 13)
     assert map_size(ranges) == 3
 
-    assert [%SupplierOffer{order_name: "Citra", pack_name: "box", pack_size: size}] = citra.offers
+    assert [%SupplierOffer{order_name: "Citra", pack_name: "box", pack_size: size, form: nil}] =
+             citra.offers
+
     assert Decimal.equal?(size, 11)
+
+    # D62 lead decisions 1, gap 3: milled/whole is grain's; no hop offer has a form.
+    assert [] =
+             Repo.all(
+               from o in SupplierOffer,
+                 where: not is_nil(o.form),
+                 join: p in subquery(hop_products()),
+                 on: p.id == o.product_id
+             )
 
     pink =
       Repo.one!(

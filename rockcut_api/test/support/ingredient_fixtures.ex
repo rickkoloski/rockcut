@@ -23,6 +23,9 @@ defmodule RockcutApi.IngredientFixtures do
 
   def feature_type!(key), do: Repo.get_by!(FeatureType, key: key)
 
+  @doc "D62 lead decisions 1, gap 9: a product's version, as an Edit dialog sends it back."
+  def product_version(id), do: Repo.get!(Product, id).lock_version
+
   @doc "Sets `lot`'s value for each `{feature key, value}`; returns the lot."
   def lot_features!(lot, values) do
     for {key, value} <- values do
@@ -137,7 +140,7 @@ defmodule RockcutApi.IngredientFixtures do
         supplier_party_id: ych.id,
         pack_name: "box",
         pack_size: Decimal.new(11),
-        form: "whole"
+        form: nil
       })
 
     %{ych: ych, citra: citra, hop_product: product, hop_offer: offer}

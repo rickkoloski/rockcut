@@ -219,7 +219,9 @@ hop_ids =
           supplier_party_id: company_id,
           order_name: variety,
           pack_name: pack_name,
-          pack_size: pack_size
+          pack_size: pack_size,
+          # Milled/whole is grain's; a hop offer has no form (lead decisions 1, gap 3).
+          form: nil
         })
       end
 

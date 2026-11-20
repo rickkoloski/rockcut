@@ -272,6 +272,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       # nil drops one; others stay
       {200, %{"data" => p}} =
         req(c.brewer, :patch, "/api/ingredient_products/#{p["id"]}", %{
+          "lock_version" => product_version(p["id"]),
           features: %{extract_fgdb: nil, moisture_pct: "4.1"}
         })
 
@@ -665,6 +666,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
          c do
       assert {422, %{"errors" => %{"features" => errors}}} =
                req(c.brewer, :patch, "/api/ingredient_products/#{c.product.id}", %{
+                 "lock_version" => product_version(c.product.id),
                  features: %{color_lovibond: "2.789", extract_fgdb: "80.16", protein_pct: "11.46"}
                })
 
@@ -675,6 +677,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
 
       {200, %{"data" => p}} =
         req(c.brewer, :patch, "/api/ingredient_products/#{c.product.id}", %{
+          "lock_version" => product_version(c.product.id),
           features: %{color_lovibond: "2.79", extract_fgdb: "80.20", protein_pct: "11.46"}
         })
 

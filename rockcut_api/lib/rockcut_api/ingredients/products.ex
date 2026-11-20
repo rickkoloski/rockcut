@@ -22,7 +22,8 @@ defmodule RockcutApi.Ingredients.Products do
     Parties,
     Product,
     Reorder,
-    SupplierOffer
+    SupplierOffer,
+    Versions
   }
 
   @in_use "This product has offers or lots; deactivate it instead"
@@ -87,6 +88,12 @@ defmodule RockcutApi.Ingredients.Products do
   @doc """
   Change a product. A new grain moves its lots along (a lot of "Rahr
   2-Row" is 2-Row). `features` change key by key (nil drops one).
+
+  D62 lead decisions 1, gap 9 (D61's pattern for orders and contracts): the
+  Edit dialog sends back the `lock_version` it opened; a save from another
+  version is refused (409) inside the write's transaction, so a dialog
+  opened before someone else's save never puts their old values back. Every
+  save bumps it.
   """
   def update(%Product{} = product, attrs) do
     ingredient_id = attrs["ingredient_id"] || product.ingredient_id
@@ -95,21 +102,28 @@ defmodule RockcutApi.Ingredients.Products do
     with :ok <- manufacturer(attrs),
          {:ok, attrs} <- category_rules(Map.put_new(attrs, "form", product.form), key),
          {:ok, features} <- Features.validate(attrs["features"], ingredient_id, :product) do
-      Repo.transaction(fn ->
-        updated =
-          product
-          |> Product.changeset(attrs, key)
-          |> Repo.update()
-          |> rollback_on_error()
+      Repo.transaction(
+        fn ->
+          version = Versions.given!(attrs)
+          product = Product |> Repo.get!(product.id) |> Versions.check!(version, "product")
 
-        if updated.ingredient_id != product.ingredient_id do
-          from(l in IngredientLot, where: l.product_id == ^product.id)
-          |> Repo.update_all(set: [ingredient_id: updated.ingredient_id])
-        end
+          updated =
+            product
+            |> Product.changeset(attrs, key)
+            |> Versions.bump()
+            |> Repo.update()
+            |> rollback_on_error()
 
-        Features.write!({:product, product.id}, features)
-        get!(product.id)
-      end)
+          if updated.ingredient_id != product.ingredient_id do
+            from(l in IngredientLot, where: l.product_id == ^product.id)
+            |> Repo.update_all(set: [ingredient_id: updated.ingredient_id])
+          end
+
+          Features.write!({:product, product.id}, features)
+          get!(product.id)
+        end,
+        mode: :immediate
+      )
     end
   end
 
