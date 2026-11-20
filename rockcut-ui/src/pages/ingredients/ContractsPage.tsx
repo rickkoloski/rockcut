@@ -77,7 +77,11 @@ export default function ContractsPage() {
   const remove = useApiDelete((id) => `/api/contracts/${id}`, { invalidateKeys: [['contracts'], ['contract_shortfall']] })
   const contracts = reply?.data ?? []
   const canWrite = !!reply?.can_write
-  const offerName = new Map(offers.map((o) => [o.id, o.order_name ? `${o.order_name} · ${Number(o.pack_size)} lb` : `${Number(o.pack_size)} lb ${o.form}`]))
+  // A grain offer "55 lb whole"; a hop offer (D62) "box · 11 lb" (milled or whole is grain's).
+  const packText = (o: (typeof offers)[number]) => (o.pack_name === 'box' ? `box · ${Number(o.pack_size)} lb` : `${Number(o.pack_size)} lb`)
+  const offerName = new Map(
+    offers.map((o) => [o.id, o.order_name ? `${o.order_name} · ${packText(o)}` : o.pack_name === 'box' ? packText(o) : `${Number(o.pack_size)} lb ${o.form}`]),
+  )
   const years = contractYears(thisYear, reply?.years ?? [], year)
 
   const doDelete = async () => {
@@ -197,11 +201,12 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
   const contractPack = grainLines.length ? sharedPackName(grainLines.map((l) => l.pack_name)) : 'sack'
   const mixed = grainLines.length > 0 && hopLines.length > 0
   const priceUnit = (l: Contract['lines'][number]) => (l.contract_unit === 'lb' ? 'lb' : (l.pack_name ?? 'pack'))
-  // A total: sacks alone (as D61), lb alone, or "40 · 440 lb" (the sacks, then the hop lb) when mixed.
+  // A total: sacks alone (as D61), lb alone, or "40 sacks · 440 lb" when mixed.
   const total = (f: (l: Contract['lines'][number]) => number, grainText?: string) => {
-    const grain = grainText ?? packsFigure(grainLines.reduce((n, l) => n + f(l), 0))
+    const sacks = grainLines.reduce((n, l) => n + f(l), 0)
+    const grain = grainText ?? packsFigure(sacks)
     const lb = `${packsFigure(hopLines.reduce((n, l) => n + f(l), 0))} lb`
-    return hopLines.length === 0 ? grain : grainLines.length === 0 ? lb : `${grain} · ${lb}`
+    return hopLines.length === 0 ? grain : grainLines.length === 0 ? lb : `${grain} ${packWord(contractPack, sacks)} · ${lb}`
   }
   return (
     <Card variant="outlined" data-testid={`contract-${c.id}`}>
@@ -297,7 +302,7 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
                     ? packsFigure(c.remaining)
                     : grainLines.length === 0
                       ? `${packsFigure(c.remaining_lb ?? 0)} lb`
-                      : `${packsFigure(c.remaining)} · ${packsFigure(c.remaining_lb ?? 0)} lb`}
+                      : `${packsFigure(c.remaining)} ${packWord(contractPack, c.remaining)} · ${packsFigure(c.remaining_lb ?? 0)} lb`}
                 </TableCell>
               </TableRow>
             </TableBody>
