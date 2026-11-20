@@ -20,7 +20,7 @@ import {
 import ChevronRightIcon from '@mui/icons-material/ChevronRight'
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore'
 import { formatFeature, type QuantityDisplay } from '../../lib/brewingUnits'
-import { onHandText, productMatches } from '../../lib/ingredientFeatures'
+import { formatRange, onHandText, productMatches } from '../../lib/ingredientFeatures'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct } from '../../lib/types'
 
 export interface GrainFilters {
@@ -33,21 +33,31 @@ export interface GrainFilters {
 }
 
 interface GrainsListProps {
+  /** D62: the category the list is of (`grains` or `hops`). */
+  categoryKey?: 'grains' | 'hops'
+  /** The groups: Grains' children; for hops, Hops itself (one group, no heading). */
   children: IngredientCategory[]
   products: IngredientProduct[]
+  /** The category's ingredients (grains, hop varieties). */
   grains: Ingredient[]
   types: FeatureType[]
   filters: GrainFilters
   mode: QuantityDisplay
 }
 
-const SPEC_COLUMNS = ['color_lovibond', 'extract_fgdb', 'diastatic_power_lintner', 'protein_pct', 'moisture_pct'] as const
+const SPEC_COLUMNS: Record<'grains' | 'hops', readonly string[]> = {
+  grains: ['color_lovibond', 'extract_fgdb', 'diastatic_power_lintner', 'protein_pct', 'moisture_pct'],
+  hops: ['alpha_acid_pct', 'beta_acid_pct', 'total_oil_ml_100g'],
+}
 const SHORT_LABELS: Record<string, string> = {
   color_lovibond: 'Color °L',
   extract_fgdb: 'Extract % FGDB',
   diastatic_power_lintner: 'DP °Lintner',
   protein_pct: 'Protein %',
   moisture_pct: 'Moisture %',
+  alpha_acid_pct: 'Alpha %',
+  beta_acid_pct: 'Beta %',
+  total_oil_ml_100g: 'Oil mL/100 g',
 }
 
 const money = (v: string) => `$${Number(v).toFixed(2)}`
@@ -55,10 +65,18 @@ const money = (v: string) => `$${Number(v).toFixed(2)}`
 /**
  * D60 §4.1: the Grains view of the Ingredient Library. Grouped by child
  * category (collapsible), one row per maltster product, a grain with no
- * products on a row of its own. At phone width, cards.
+ * products on a row of its own. At phone width, cards. D62 §4.1: the Hops
+ * view too, one group with no heading: variety, manufacturer, form, origin,
+ * the typical alpha / beta / oil ranges ("11–13"), on hand and suppliers
+ * with $/box.
  */
-export default function GrainsList({ children, products, grains, types, filters, mode }: GrainsListProps) {
+export default function GrainsList({ categoryKey = 'grains', children, products, grains, types, filters, mode }: GrainsListProps) {
   const navigate = useNavigate()
+  const hops = categoryKey === 'hops'
+  const specColumns = SPEC_COLUMNS[categoryKey]
+  // Test ids and words by the category: grain-row-12, hop-row-12.
+  const item = hops ? 'hop' : 'grain'
+  const extraColumns = hops ? 2 : 0
   const phone = useMediaQuery(useTheme().breakpoints.down('sm'))
   const [collapsed, setCollapsed] = useState<Set<number>>(new Set())
   const decimals = useMemo(() => Object.fromEntries(types.map((t) => [t.key, t.decimals])), [types])
@@ -100,7 +118,8 @@ export default function GrainsList({ children, products, grains, types, filters,
       return next
     })
 
-  const spec = (p: IngredientProduct, key: string) => formatFeature(p.features?.[key]?.value, decimals[key] ?? 1)
+  const spec = (p: IngredientProduct, key: string) =>
+    hops ? (formatRange(p.features?.[key], decimals[key] ?? 2) ?? '—') : formatFeature(p.features?.[key]?.value, decimals[key] ?? 1)
   const suppliers = (p: IngredientProduct) =>
     (p.offers ?? [])
       .filter((o) => o.active)
@@ -111,12 +130,14 @@ export default function GrainsList({ children, products, grains, types, filters,
     return (
       <Paper variant="outlined" sx={{ p: 3, textAlign: 'center' }}>
         <Typography variant="body2" color="text.secondary">
-          No grains found
+          {hops ? 'No hops found' : 'No grains found'}
         </Typography>
       </Paper>
     )
   }
 
+  // Hops has no children: one group, no heading to collapse.
+  const headed = !hops
   const header = (g: (typeof groups)[number]) => (
     <Box
       onClick={() => toggle(g.category.id)}
@@ -138,12 +159,12 @@ export default function GrainsList({ children, products, grains, types, filters,
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }} data-testid="grains-cards">
         {groups.map((g) => (
           <Box key={g.category.id}>
-            {header(g)}
+            {headed && header(g)}
             {!collapsed.has(g.category.id) && (
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
                 {g.rows.map((r) =>
                   r.kind === 'product' ? (
-                    <Card key={`p${r.product.id}`} variant="outlined" data-testid={`grain-card-${r.product.id}`}>
+                    <Card key={`p${r.product.id}`} variant="outlined" data-testid={`${item}-card-${r.product.id}`}>
                       <CardActionArea onClick={() => navigate(`/ingredients/products/${r.product.id}`)}>
                         <CardContent sx={{ py: 1.25, '&:last-child': { pb: 1.25 } }}>
                           <Typography variant="body2" fontWeight={600} sx={{ overflowWrap: 'anywhere' }}>
@@ -154,7 +175,9 @@ export default function GrainsList({ children, products, grains, types, filters,
                             <BelowMinimum product={r.product} />
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            {spec(r.product, 'color_lovibond')} °L · {spec(r.product, 'extract_fgdb')} % FGDB
+                            {hops
+                              ? `${[r.product.origin, `α ${spec(r.product, 'alpha_acid_pct')} %`, `β ${spec(r.product, 'beta_acid_pct')} %`, `oil ${spec(r.product, 'total_oil_ml_100g')}`].filter(Boolean).join(' · ')}`
+                              : `${spec(r.product, 'color_lovibond')} °L · ${spec(r.product, 'extract_fgdb')} % FGDB`}
                           </Typography>
                         </CardContent>
                       </CardActionArea>
@@ -167,7 +190,7 @@ export default function GrainsList({ children, products, grains, types, filters,
                             {r.grain.name}
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
-                            No maltster products
+                            {hops ? 'No hop products' : 'No maltster products'}
                           </Typography>
                         </CardContent>
                       </CardActionArea>
@@ -184,32 +207,36 @@ export default function GrainsList({ children, products, grains, types, filters,
 
   return (
     <Paper variant="outlined" sx={{ overflowX: 'auto' }}>
-      <Table size="small" data-testid="grains-table">
+      <Table size="small" data-testid={hops ? 'hops-table' : 'grains-table'}>
         <TableHead>
           <TableRow>
-            <TableCell>Grain</TableCell>
-            <TableCell>Maltster</TableCell>
-            {SPEC_COLUMNS.map((k) => (
+            <TableCell>{hops ? 'Variety' : 'Grain'}</TableCell>
+            <TableCell>{hops ? 'Manufacturer' : 'Maltster'}</TableCell>
+            {hops && <TableCell>Form</TableCell>}
+            {hops && <TableCell>Origin</TableCell>}
+            {specColumns.map((k) => (
               <TableCell key={k} align="right">
                 {SHORT_LABELS[k]}
               </TableCell>
             ))}
             <TableCell align="right">On hand</TableCell>
-            <TableCell>Suppliers ($/sack)</TableCell>
+            <TableCell>Suppliers ($/{hops ? 'box' : 'sack'})</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {groups.map((g) => (
             <Fragment key={g.category.id}>
-              <TableRow sx={{ backgroundColor: 'action.hover' }}>
-                <TableCell colSpan={4 + SPEC_COLUMNS.length} sx={{ py: 0.25 }}>
-                  {header(g)}
-                </TableCell>
-              </TableRow>
+              {headed && (
+                <TableRow sx={{ backgroundColor: 'action.hover' }}>
+                  <TableCell colSpan={4 + extraColumns + specColumns.length} sx={{ py: 0.25 }}>
+                    {header(g)}
+                  </TableCell>
+                </TableRow>
+              )}
               {!collapsed.has(g.category.id) &&
                 g.rows.map((r) =>
                   r.kind === 'product' ? (
-                    <TableRow key={`p${r.product.id}`} hover sx={{ cursor: 'pointer', opacity: r.product.active ? 1 : 0.6 }} onClick={() => navigate(`/ingredients/products/${r.product.id}`)} data-testid={`grain-row-${r.product.id}`}>
+                    <TableRow key={`p${r.product.id}`} hover sx={{ cursor: 'pointer', opacity: r.product.active ? 1 : 0.6 }} onClick={() => navigate(`/ingredients/products/${r.product.id}`)} data-testid={`${item}-row-${r.product.id}`}>
                       <TableCell>{r.product.ingredient?.name}</TableCell>
                       <TableCell>
                         {r.product.manufacturer?.name}
@@ -219,13 +246,15 @@ export default function GrainsList({ children, products, grains, types, filters,
                           </Typography>
                         )}
                       </TableCell>
-                      {SPEC_COLUMNS.map((k) => (
-                        <TableCell key={k} align="right">
+                      {hops && <TableCell>{r.product.form}</TableCell>}
+                      {hops && <TableCell>{r.product.origin ?? '—'}</TableCell>}
+                      {specColumns.map((k) => (
+                        <TableCell key={k} align="right" sx={{ whiteSpace: 'nowrap' }}>
                           {spec(r.product, k)}
                         </TableCell>
                       ))}
                       <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                        <span data-testid={`grain-on-hand-${r.product.id}`}>{onHandText(r.product, mode)}</span>
+                        <span data-testid={`${item}-on-hand-${r.product.id}`}>{onHandText(r.product, mode)}</span>
                         <BelowMinimum product={r.product} />
                       </TableCell>
                       <TableCell>{suppliers(r.product)}</TableCell>
@@ -233,9 +262,9 @@ export default function GrainsList({ children, products, grains, types, filters,
                   ) : (
                     <TableRow key={`g${r.grain.id}`} hover sx={{ cursor: 'pointer' }} onClick={() => navigate(`/ingredients/${r.grain.id}`)}>
                       <TableCell>{r.grain.name}</TableCell>
-                      <TableCell colSpan={3 + SPEC_COLUMNS.length}>
+                      <TableCell colSpan={3 + extraColumns + specColumns.length}>
                         <Typography variant="body2" color="text.secondary">
-                          No maltster products
+                          {hops ? 'No hop products' : 'No maltster products'}
                         </Typography>
                       </TableCell>
                     </TableRow>

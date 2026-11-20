@@ -145,6 +145,7 @@ export interface ProductSummary {
   name: string | null
   display_name: string
   unit?: string
+  form?: string | null
   manufacturer: PartySummary | null
 }
 
@@ -178,8 +179,14 @@ export interface IngredientLot {
   /** The product's unit (null with no product). */
   unit?: string | null
   received_date: string | null
+  /** D62 §3.4: a hop lot's crop year (required there; null elsewhere). */
+  crop_year?: number | null
   status: string
   features: FeatureValues | null
+  /** D62 §3.4: the feature keys whose value is outside the product's typical range. */
+  outside_range?: string[]
+  /** D62 §4.8: a hop lot's label for the recipe's lot picker ("YCH Citra T90 Pellet · L-1 · 2025 · 12.4% AA"); null otherwise. */
+  label?: string | null
   /** The sum of its movements, in the product's unit (decimal string). */
   on_hand: string | null
   /** Why the lot can't be deleted (later movements, or a recipe uses it), or null (lead decisions 3, gap 15). */
@@ -216,9 +223,14 @@ export interface Party extends PartySummary {
   updated_at: string
 }
 
-/** A feature value as the API sends it (decimals as strings, trailing zeros dropped). */
+/**
+ * A feature value as the API sends it (decimals as strings, trailing zeros
+ * dropped). D62 §3.4: a product's range (hops' typical alpha) is `value`
+ * (low) to `value_high`, either of them null.
+ */
 export interface FeatureValue {
-  value: string
+  value: string | null
+  value_high?: string | null
   entered_value: string | null
   entered_unit: string | null
 }
@@ -234,7 +246,23 @@ export interface FeatureType {
   max: string | null
   decimals: number
   entered_units: string[]
-  categories: { category_id: number; name: string; sort_order: number; required: boolean }[] | null
+  categories: FeatureApplicability[] | null
+}
+
+/**
+ * D62 §3.4: where a feature lives in a category: on the product (`value`, a
+ * standard; `range`, typical low–high; `none`) and on the lot (`copy` from
+ * the standard; `enter` each time; `none`), and whether a lot must have it.
+ */
+export interface FeatureApplicability {
+  category_id: number
+  name: string
+  sort_order: number
+  required: boolean
+  product_mode?: 'none' | 'value' | 'range'
+  lot_mode?: 'none' | 'copy' | 'enter'
+  lot_required?: boolean
+  only_unit?: string | null
 }
 
 export interface OfferPrice {
@@ -388,6 +416,10 @@ export interface ContractLine {
   offer_id: number | null
   quantity: number
   price: string
+  /** D62 §3.7: `packs` (grain: whole sacks, $/sack) or `lb` (hops: lb, $/lb, figures by weight). */
+  contract_unit?: 'packs' | 'lb'
+  /** The product's unit (lb). */
+  unit?: string
   contracted: number
   contracted_dollars: string
   /** The line offer's pack: on order and received are converted to it by weight (amendment 17a; may be 10.5). */
@@ -412,6 +444,9 @@ export interface Contract {
   /** What's still owed over the lines (= the Shortfall), and what's over, never netted (gap 3). */
   remaining: number
   over: number
+  /** D62 §3.7: the hop lines' remaining and over, in lb (`remaining`/`over` are the grain lines' sacks). */
+  remaining_lb?: number
+  over_lb?: number
   /** Why it can't be deleted (gap 18); null when it can. */
   delete_blocked: string | null
   /** Lead decisions 2 (gap 2): sent back on Edit; a save from an older one is 409. */
@@ -425,6 +460,9 @@ export interface ShortfallRow {
   display_name: string
   /** The line's pack ("sack"): the figures are in it. */
   pack_name: string
+  /** D62 §3.7: a hop line's figures are in lb. */
+  contract_unit?: 'packs' | 'lb'
+  unit?: string
   contracted: number
   received: number
   short: number

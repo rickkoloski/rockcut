@@ -28,7 +28,7 @@ import FieldDefinitionDialog from './FieldDefinitionDialog';
 import parseApiError from '../../lib/parseApiError';
 import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
-import { isGrainCategory } from '../../lib/ingredientFeatures';
+import { isGrainCategory, isManagedCategory } from '../../lib/ingredientFeatures';
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -45,6 +45,8 @@ export default function CategoryDetail() {
   const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories');
   const children = categories.filter((c) => c.parent_id === Number(id)).sort((a, b) => a.sort_order - b.sort_order);
   const grains = isGrainCategory(categories, Number(id));
+  // D62 §3.1: Hops (like Grains) has features on its products and lots, no custom fields.
+  const managed = isManagedCategory(categories, Number(id));
   const [childOpen, setChildOpen] = useState(false);
 
   const deleteCategoryMutation = useApiDelete(
@@ -219,9 +221,9 @@ export default function CategoryDetail() {
       {/* Field Definitions. D61 carry-over 5: none on Grains and its children (grains have features; the API refuses). */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
         <Typography variant="h5">Field Definitions</Typography>
-        {grains ? (
+        {managed ? (
           <Typography variant="body2" color="text.secondary" data-testid="category-grain-fields-note">
-            Grains use specs (features), not custom fields
+            {grains ? 'Grains' : category.name} use specs (features), not custom fields
           </Typography>
         ) : (
           <Button

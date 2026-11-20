@@ -3,10 +3,28 @@ import { useNavigate } from 'react-router-dom'
 import { FormControl, FormControlLabel, InputLabel, ListSubheader, MenuItem, Select, Switch, TextField } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
 import FeatureFields from './FeatureFields'
+import RangeFields from './RangeFields'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
-import { draftsFrom, draftsValid, featuresPayload, grainCategories, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
+import {
+  HOP_FORMS,
+  draftsFrom,
+  draftsValid,
+  featuresPayload,
+  grainCategories,
+  itemLabel,
+  keyedCategories,
+  manufacturerLabel,
+  productLabel,
+  productTypesFor,
+  rangeDraftError,
+  rangeDraftsFrom,
+  rangesPayload,
+  typesFor,
+  type FeatureDrafts,
+  type RangeDrafts,
+} from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import { parsePacks } from '../../lib/purchasing'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct, Party } from '../../lib/types'
@@ -18,14 +36,23 @@ interface ProductDialogProps {
   product?: IngredientProduct
   /** A new product's grain, when known (from a grain's page). */
   ingredientId?: number
+  /** D62: a new product's category (`grains` unless said); an edit uses the product's. */
+  categoryKey?: 'grains' | 'hops'
 }
 
-/** D60 §4.3: a maltster product: grain, maltster, product name, standard specs. */
+/**
+ * D60 §4.3: a maltster product: grain, maltster, product name, standard
+ * specs. D62 §4.3: a hop product: variety, manufacturer, form (from the
+ * list), product name, origin, and typical alpha / beta / oil ranges; the
+ * unit is lb (the API sets it).
+ */
 export default function ProductDialog(props: ProductDialogProps) {
   return props.open ? <ProductForm {...props} /> : null
 }
 
-function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
+function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDialogProps) {
+  const hops = (product?.category_key ?? categoryKey) === 'hops'
+  const key = hops ? 'hops' : 'grains'
   const navigate = useNavigate()
   const { data: categories = [], isLoading: categoriesLoading } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
   const { data: ingredients = [], isLoading: ingredientsLoading } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
@@ -44,15 +71,24 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
   const minimumPacks = parsePacks(minimum, 0)
   const minimumOk = minimum.trim() === '' || minimumPacks != null
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
+  const [ranges, setRanges] = useState<RangeDrafts | null>(null)
+  const [form, setForm] = useState(product?.form ?? HOP_FORMS[0])
+  const [origin, setOrigin] = useState(product?.origin ?? '')
   const [error, setError] = useState<string | null>(null)
 
   const { grains, children } = grainCategories(categories)
-  const grainOptions = children
-    .map((c) => ({ category: c, grains: ingredients.filter((i) => i.category_id === c.id) }))
-    .filter((g) => g.grains.length > 0)
-  const featureTypes = grains ? typesFor(types, grains.id) : []
+  const { category: hopsCategory } = keyedCategories(categories, 'hops')
+  const grainOptions = hops
+    ? hopsCategory
+      ? [{ category: hopsCategory, grains: ingredients.filter((i) => i.category_id === hopsCategory.id) }]
+      : []
+    : children.map((c) => ({ category: c, grains: ingredients.filter((i) => i.category_id === c.id) })).filter((g) => g.grains.length > 0)
+  const featureTypes = hops ? [] : grains ? typesFor(types, grains.id) : []
+  const rangeTypes = hops && hopsCategory ? productTypesFor(types, hopsCategory.id) : []
   // The boxes start from the product's standard once the feature types are in.
   const shown = drafts ?? draftsFrom(product?.features, featureTypes)
+  const shownRanges = ranges ?? rangeDraftsFrom(product?.features, rangeTypes)
+  const rangesOk = rangeTypes.every((t) => !rangeDraftError(t, shownRanges[t.key]))
   const manufacturers = parties.filter((p) => p.roles?.includes('manufacturer') && (p.active || p.id === product?.manufacturer_party_id))
 
   const create = useApiCreate<IngredientProduct>('/api/ingredient_products', { invalidateKeys: GRAIN_KEYS })
@@ -60,7 +96,7 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
   const loading = create.isPending || update.isPending
 
   const submit = async () => {
-    if (!grainId || !manufacturerId) return setError('Pick the grain and the maltster')
+    if (!grainId || !manufacturerId) return setError(`Pick the ${itemLabel(key).toLowerCase()} and the ${manufacturerLabel(key).toLowerCase()}`)
     const payload = {
       ingredient_id: grainId,
       manufacturer_party_id: manufacturerId,
@@ -68,7 +104,7 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
       notes: notes.trim() || null,
       active,
       min_on_hand_packs: minimum.trim() === '' ? null : minimumPacks,
-      features: featuresPayload(shown, product?.features),
+      ...(hops ? { form, origin: origin.trim() || null, features: rangesPayload(shownRanges, product?.features) } : { features: featuresPayload(shown, product?.features) }),
     }
     try {
       if (product) {
@@ -89,26 +125,26 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
       open
       phone
       onClose={onClose}
-      title={product ? 'Edit maltster product' : 'Add maltster product'}
+      title={`${product ? 'Edit' : 'Add'} ${productLabel(key).toLowerCase()}`}
       onSubmit={submit}
       loading={loading}
       error={error}
-      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !minimumOk}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !rangesOk || !minimumOk}
       testId="product-dialog"
     >
       <FormControl fullWidth required>
-        <InputLabel id="product-grain-label">Grain</InputLabel>
+        <InputLabel id="product-grain-label">{itemLabel(key)}</InputLabel>
         <Select
           labelId="product-grain-label"
           id="product-grain"
-          label="Grain"
+          label={itemLabel(key)}
           value={grainOptions.length ? grainId : ''}
           onChange={(e) => setGrainId(e.target.value as number)}
           disabled={!!product}
           data-testid="product-grain"
         >
           {grainOptions.flatMap((g) => [
-            <ListSubheader key={`h${g.category.id}`}>{g.category.name}</ListSubheader>,
+            ...(hops ? [] : [<ListSubheader key={`h${g.category.id}`}>{g.category.name}</ListSubheader>]),
             ...g.grains.map((i) => (
               <MenuItem key={i.id} value={i.id}>
                 {i.name}
@@ -118,11 +154,11 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
         </Select>
       </FormControl>
       <FormControl fullWidth required>
-        <InputLabel id="product-maltster-label">Maltster</InputLabel>
+        <InputLabel id="product-maltster-label">{manufacturerLabel(key)}</InputLabel>
         <Select
           labelId="product-maltster-label"
           id="product-maltster"
-          label="Maltster"
+          label={manufacturerLabel(key)}
           value={manufacturers.length ? manufacturerId : ''}
           onChange={(e) => setManufacturerId(e.target.value as number)}
           data-testid="product-maltster"
@@ -134,21 +170,47 @@ function ProductForm({ onClose, product, ingredientId }: ProductDialogProps) {
           ))}
         </Select>
       </FormControl>
+      {hops && (
+        <FormControl fullWidth required>
+          <InputLabel id="product-form-label">Form</InputLabel>
+          <Select labelId="product-form-label" id="product-form" label="Form" value={form} onChange={(e) => setForm(e.target.value)} data-testid="product-form">
+            {HOP_FORMS.map((f) => (
+              <MenuItem key={f} value={f}>
+                {f}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
       <TextField
         label="Product name"
-        helperText="The maltster's own name, if it has one (e.g. Rauch Malt)"
+        helperText={hops ? "The manufacturer's own name, if it has one (e.g. Lupomax)" : "The maltster's own name, if it has one (e.g. Rauch Malt)"}
         value={name}
         onChange={(e) => setName(e.target.value)}
         fullWidth
         slotProps={{ htmlInput: { 'data-testid': 'product-name' } }}
       />
-      <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} disabled={loading} />
+      {hops && (
+        <TextField
+          label="Origin"
+          helperText="Where it's grown (USA, New Zealand)"
+          value={origin}
+          onChange={(e) => setOrigin(e.target.value)}
+          fullWidth
+          slotProps={{ htmlInput: { maxLength: 100, 'data-testid': 'product-origin' } }}
+        />
+      )}
+      {hops ? (
+        <RangeFields types={rangeTypes} drafts={shownRanges} onChange={setRanges} disabled={loading} />
+      ) : (
+        <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} disabled={loading} />
+      )}
       <TextField
-        label="Minimum on hand (sacks)"
+        label={`Minimum on hand (${hops ? 'boxes' : 'sacks'})`}
         value={minimum}
         onChange={(e) => setMinimum(e.target.value)}
         error={!minimumOk}
-        helperText={minimumOk ? 'Below it, the product is marked and shows on To order; empty for none' : 'Whole sacks, 0 or more'}
+        helperText={minimumOk ? 'Below it, the product is marked and shows on To order; empty for none' : `Whole ${hops ? 'boxes' : 'sacks'}, 0 or more`}
         fullWidth
         slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': 'product-minimum' } }}
       />

@@ -1,7 +1,7 @@
 // D61 §3.2–3.4: orders and receiving on the screens: money, the running
 // total and target progress, whole packs (D62 §3.5; sacks for grain), the
 // previous lot (A3) and how a line's lot rows add up.
-import { formatQuantity, packPlural, packWord, unitDecimals, type QuantityDisplay } from './brewingUnits'
+import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, packPlural, packWord, parseDecimal, unitDecimals, type QuantityDisplay } from './brewingUnits'
 import type { IngredientLot, OrderStatus, UnitQuantity } from './types'
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -199,4 +199,23 @@ export const contractYear = (text: string): number | null => {
   if (!/^\d{4}$/.test(t)) return null
   const n = Number(t)
   return n >= 2000 && n <= 2100 ? n : null
+}
+
+/**
+ * D62 §3.7: a hop contract line's box equivalent beside its lb, "440 lb =
+ * 40 boxes" ("445 lb = 40.45 boxes"); null until it's a number.
+ */
+export function hopBoxes(lb: string, boxSize: string | number | null | undefined = 11): string | null {
+  const parsed = parseDecimal(lb, LB_DECIMALS)
+  if (!parsed.ok || parsed.value == null || !boxSize) return null
+  const n = Number(parsed.value)
+  const boxes = Math.round((n / Number(boxSize)) * 100) / 100
+  return `${n.toLocaleString('en-US')} lb = ${boxes.toLocaleString('en-US')} ${packWord('box', boxes)}`
+}
+
+/** D62 A1: a hop line's $/lb as the offer's box price, "$159.50 / box"; null until it's a number. */
+export function hopBoxPrice(perLb: string, boxSize: string | number | null | undefined = 11): string | null {
+  const parsed = parseDecimal(perLb, PRICE_DECIMALS)
+  if (!parsed.ok || parsed.value == null || !boxSize) return null
+  return `${money(Number(parsed.value) * Number(boxSize))} / box`
 }

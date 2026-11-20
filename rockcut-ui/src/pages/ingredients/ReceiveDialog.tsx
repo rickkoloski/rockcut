@@ -11,7 +11,7 @@ import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
+import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS, ORDER_KEYS } from '../../lib/inventory'
 import { lineForError, lotChoiceLabel, parsePacks, previousLot, receivableLots, sharedPackName, splitSummary } from '../../lib/purchasing'
 import { packLabel, packPlural } from '../../lib/brewingUnits'
@@ -28,7 +28,9 @@ const BEFORE_ORDER = "The received date can't be before the order date"
  * same pack size, or a new lot number with the standard specs under "Specs";
  * **Add lot #** splits a line across lots, the rows adding up to the packs
  * received. Saving marks
- * the order received (decision 44: no back-order).
+ * the order received (decision 44: no back-order). D62 §4.4: a new hop lot
+ * asks for its crop year (this year to start) and alpha acid right on the
+ * line, beta and oil beside them, with the product's typical ranges.
  */
 export default function ReceiveDialog({ open, ...props }: { open: boolean; onClose: () => void; order: PurchaseOrder }) {
   return open ? <ReceiveForm {...props} /> : null
@@ -44,11 +46,13 @@ interface Row {
   packs: string
   drafts: FeatureDrafts | null
   specsOpen: boolean
+  /** D62: a new hop lot's crop year, as typed. */
+  cropYear: string
 }
 
 // React keys for lot rows: unique for the page's life.
 let rowKeys = 0
-const row = (target: Row['target'] = null): Row => ({ key: rowKeys++, target, number: '', packs: '', drafts: null, specsOpen: false })
+const row = (target: Row['target'] = null): Row => ({ key: rowKeys++, target, number: '', packs: '', drafts: null, specsOpen: false, cropYear: coloradoToday().slice(0, 4) })
 
 interface LineState {
   received: string
@@ -154,7 +158,7 @@ function ReceiveForm({ onClose, order }: { onClose: () => void; order: PurchaseO
           line={l}
           state={state[l.id]}
           view={views.get(l.id)!}
-          featureTypes={typesFor(types, views.get(l.id)!.product?.category?.id, views.get(l.id)!.product?.category?.parent_id)}
+          featureTypes={views.get(l.id)!.featureTypes}
           error={lineErrors[l.id]}
           onChange={(s) => setState((all) => ({ ...all, [l.id]: s }))}
           newRow={row}
@@ -168,6 +172,11 @@ interface LineView {
   /** Still loading the product's lots. */
   loading: boolean
   product: IngredientProduct | null
+  /** D62: a hop line (new lots need a crop year and alpha). */
+  hops: boolean
+  /** The specs a new lot of this line takes, and the ones it must have. */
+  featureTypes: FeatureType[]
+  required: string[]
   /** Lots this line can go into (not expired, the offer's pack size), newest first. */
   choices: IngredientLot[]
   received: number | null
@@ -185,18 +194,24 @@ interface LineView {
  * packs received when it's the only row), and the body Receive sends.
  */
 function lineView(line: PurchaseOrderLine, state: LineState, lots: IngredientLot[] | null, product: IngredientProduct | null, types: FeatureType[]): LineView {
-  const featureTypes = typesFor(types, product?.category?.id, product?.category?.parent_id)
+  const hops = product?.category_key === 'hops'
+  const featureTypes = hops ? lotTypesFor(types, product?.category?.id, product?.category?.parent_id) : typesFor(types, product?.category?.id, product?.category?.parent_id)
+  const required = requiredLotKeys(types, product?.category?.id, product?.category?.parent_id)
   const choices = receivableLots(lots ?? [], line.offer.pack_size)
   const previous = previousLot(lots ?? [], line.offer.pack_size)
   const received = parsePacks(state.received, 0)
   const split = state.rows.length > 1
   const targetOf = (r: Row) => r.target ?? previous?.id ?? NEW
-  const draftsOf = (r: Row) => r.drafts ?? draftsFrom(product?.features, featureTypes)
+  // A hop lot starts empty (the range stays on the product).
+  const draftsOf = (r: Row) => r.drafts ?? draftsFrom(hops ? null : product?.features, featureTypes)
+  const today = coloradoToday()
+  const newLotOk = (r: Row) =>
+    r.number.trim() !== '' && draftsValid(draftsOf(r), featureTypes) && missingRequired(draftsOf(r), featureTypes, required).length === 0 && (!hops || !parseCropYear(r.cropYear, today).error)
   const rowPacks = state.rows.map((r) => (split ? parsePacks(r.packs) : received))
   const summary = splitSummary(rowPacks, received ?? 0)
   const rowsOk = state.rows.every((r, i) => {
     const t = targetOf(r)
-    return (t !== NEW || (r.number.trim() !== '' && draftsValid(draftsOf(r), featureTypes))) && rowPacks[i] != null
+    return (t !== NEW || newLotOk(r)) && rowPacks[i] != null
   })
 
   let body: Record<string, unknown> | null = null
@@ -208,12 +223,17 @@ function lineView(line: PurchaseOrderLine, state: LineState, lots: IngredientLot
       allocations: state.rows.map((r, i) => {
         const t = targetOf(r)
         return t === NEW
-          ? { lot_number: r.number.trim(), packs: rowPacks[i], features: featuresPayload(draftsOf(r), product?.features) }
+          ? {
+              lot_number: r.number.trim(),
+              packs: rowPacks[i],
+              features: featuresPayload(draftsOf(r), hops ? null : product?.features),
+              ...(hops ? { crop_year: parseCropYear(r.cropYear, today).year } : {}),
+            }
           : { lot_id: t, packs: rowPacks[i] }
       }),
     }
 
-  return { loading: !lots, product, choices, received, split, targetOf, draftsOf, summary, body }
+  return { loading: !lots, product, hops, featureTypes, required, choices, received, split, targetOf, draftsOf, summary, body }
 }
 
 interface ReceiveLineProps {
@@ -308,6 +328,21 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
                     helperText="A number the product already has adds to that lot"
                     slotProps={{ htmlInput: { 'data-testid': `receive-line-${index}-row-${ri}-number` } }}
                   />
+                  {view.hops ? (
+                    <>
+                      <TextField
+                        label="Crop year"
+                        size="small"
+                        value={r.cropYear}
+                        onChange={(e) => setRow(r.key, { cropYear: e.target.value })}
+                        required
+                        error={!!parseCropYear(r.cropYear, coloradoToday()).error}
+                        helperText={parseCropYear(r.cropYear, coloradoToday()).error ?? undefined}
+                        slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `receive-line-${index}-row-${ri}-crop-year` } }}
+                      />
+                      <FeatureFields types={featureTypes} drafts={draftsOf(r)} onChange={(d) => setRow(r.key, { drafts: d })} typical={product?.features ?? {}} required={view.required} />
+                    </>
+                  ) : (
                   <Box>
                     <Button
                       size="small"
@@ -323,6 +358,7 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
                       </Box>
                     </Collapse>
                   </Box>
+                  )}
                 </>
               )}
             </Box>

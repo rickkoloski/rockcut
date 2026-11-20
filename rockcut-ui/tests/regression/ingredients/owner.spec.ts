@@ -81,9 +81,16 @@ test('O2: Settings → Categories: Grains shows its five children; no Origin or 
   const res = await (await apiAs('owner')).post('/api/category_field_definitions', { data: { category_id: base.id, field_name: tempTag('O2'), field_type: 'text' } })
   expect(res.status()).toBe(422)
 
+  // D62 §3.1: Hops has features now, no custom fields; a category still on the old screens has Add field.
   const hops = categories.find((c) => c.name === 'Hops')
   if (hops) {
     await page.goto(`/ingredients/categories/${hops.id}`)
+    await expect(page.getByRole('heading', { name: 'Field Definitions' })).toBeVisible()
+    await expect(page.getByTestId('category-add-field')).toHaveCount(0)
+  }
+  const fruits = categories.find((c) => c.name === 'Fruits')
+  if (fruits) {
+    await page.goto(`/ingredients/categories/${fruits.id}`)
     await expect(page.getByTestId('category-add-field')).toBeVisible()
   }
 })

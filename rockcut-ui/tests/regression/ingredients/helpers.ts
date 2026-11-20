@@ -45,7 +45,7 @@ export interface ApiMovement {
   quantity: string
 }
 
-const made = { products: new Set<number>(), parties: new Set<number>() }
+const made = { products: new Set<number>(), parties: new Set<number>(), ingredients: new Set<number>() }
 
 async function ok<T>(res: APIResponse, status = 200): Promise<T> {
   expect(res.status(), await res.text()).toBe(status)
@@ -168,6 +168,9 @@ export async function cleanupIngredients() {
     if (del.status() !== 204) await api.put(`/api/ingredient_products/${id}`, { data: { active: false } })
   }
   made.products.clear()
+  // D62: `[TEST-TEMP]` hop varieties, once their products are gone (else `setup` takes them).
+  for (const id of made.ingredients) await api.delete(`/api/ingredients/${id}`)
+  made.ingredients.clear()
   for (const id of made.parties) {
     const res = await api.get(`/api/parties/${id}`)
     if (res.status() === 404) continue
@@ -320,4 +323,69 @@ export async function expectNoSidewaysScroll(page: Page) {
 export async function pick(page: Page, scope: Locator, label: string | RegExp, option: string | RegExp) {
   await scope.getByRole('combobox', { name: label }).click()
   await page.getByRole('option', { name: option }).click()
+}
+
+// ── D62 hops ──
+//
+// A spec's hops are a `[TEST-TEMP]` variety from a `[TEST-TEMP]` company
+// (manufacturer and supplier), never the seeded reference hops.
+
+export const BOX = 11
+
+/** A `[TEST-TEMP]` hop variety (in Hops) and a company that makes and sells it. */
+export async function makeHopVariety(label: string): Promise<{ hop: { id: number; name: string }; company: { id: number; name: string } }> {
+  const api = await apiAs('owner')
+  const categories = await ok<{ id: number; key: string | null }[]>(await api.get('/api/ingredient_categories'))
+  const hops = categories.find((c) => c.key === 'hops')
+  expect(hops, 'the Hops category').toBeTruthy()
+  const hop = await ok<{ id: number; name: string }>(await api.post('/api/ingredients', { data: { name: tempTag(`${label} hop`), category_id: hops!.id } }), 201)
+  made.ingredients.add(hop.id)
+  const company = await ok<{ id: number; name: string }>(
+    await api.post('/api/parties', { data: { name: tempTag(`${label} hop co`), roles: ['manufacturer', 'supplier'] } }),
+    201,
+  )
+  made.parties.add(company.id)
+  return { hop, company }
+}
+
+/**
+ * A `[TEST-TEMP]` hop product (T90 Pellet, alpha 11–13, beta 3.5–4.5, oil
+ * 2.5–3) with an offer of 11 lb boxes from its company.
+ */
+export async function makeHopProduct(label: string): Promise<ApiProduct & { company: { id: number; name: string } }> {
+  const { hop, company } = await makeHopVariety(label)
+  const api = await apiAs('brewer1')
+  const product = await ok<ApiProduct>(
+    await api.post('/api/ingredient_products', {
+      data: {
+        ingredient_id: hop.id,
+        manufacturer_party_id: company.id,
+        form: 'T90 Pellet',
+        origin: 'USA',
+        features: { alpha_acid_pct: { low: '11', high: '13' }, beta_acid_pct: { low: '3.5', high: '4.5' }, total_oil_ml_100g: { low: '2.5', high: '3' } },
+      },
+    }),
+    201,
+  )
+  made.products.add(product.id)
+  await ok(await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: company.id } }), 201)
+  return { ...(await getProduct(product.id)), company }
+}
+
+/** A hop lot of `product` with an opening amount of `lb`, alpha `alpha`, crop year 2025, received `daysAgo`. */
+export async function makeHopLot(product: ApiProduct, lb: string, daysAgo: number, alpha = '12'): Promise<ApiLot> {
+  return ok<ApiLot>(
+    await (await apiAs('brewer1')).post('/api/ingredient_lots', {
+      data: {
+        product_id: product.id,
+        lot_number: tempTag('hop lot'),
+        crop_year: 2025,
+        received_date: addDays(denverToday(), -daysAgo),
+        initial_kind: 'opening',
+        initial_quantity: lb,
+        features: { alpha_acid_pct: alpha },
+      },
+    }),
+    201,
+  )
 }

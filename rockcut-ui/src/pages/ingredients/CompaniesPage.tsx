@@ -86,7 +86,7 @@ export default function CompaniesPage() {
                   <Roles party={p} />
                   {p.order_target_packs != null && (
                     <Typography variant="caption" color="text.secondary">
-                      Order target: {p.order_target_packs} sacks
+                      Order target: {p.order_target_packs} packs
                     </Typography>
                   )}
                 </CardContent>

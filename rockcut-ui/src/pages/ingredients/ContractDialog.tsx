@@ -9,9 +9,9 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
+import { LB_DECIMALS, PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
-import { contractPriceChanges, contractYear, parsePacks } from '../../lib/purchasing'
+import { contractPriceChanges, contractYear, hopBoxes, hopBoxPrice, parsePacks } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, IngredientProduct, Party, SupplierOffer } from '../../lib/types'
 
@@ -26,7 +26,8 @@ interface ContractDialogProps {
 /**
  * D61 §3.1, §4.2: a malt contract with one supplier for a year: lines of
  * the products that supplier offers, in sacks at a price per sack (grain;
- * D62 §3.7's contract unit); with
+ * D62 §3.7's contract unit: a hop line is in lb at a price per lb, with its
+ * box equivalent beside it, and its offer price is that × 11 per box); with
  * several offers of a product, the line names one. Before saving it lists
  * the offer prices the save writes ("BSG Rahr 2-Row price becomes $42.00
  * from 2027-01-01"). Owners and Brewery managers only (the page shows it to
@@ -77,22 +78,37 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const supplier = parties.find((p) => p.id === supplierId)
   const active = offers.filter((o) => o.supplier_party_id === supplierId && o.active)
   const productName = new Map(products.map((p) => [p.id, p.display_name]))
-  const offered = [...new Set(active.map((o) => o.product_id))].map((id) => ({ id, name: productName.get(id) ?? `#${id}` })).sort((a, b) => a.name.localeCompare(b.name))
+  // D62 §3.7: contracts are for grain and hops only.
+  const contractKey = new Map(products.filter((p) => p.category_key === 'grains' || p.category_key === 'hops').map((p) => [p.id, p.category_key]))
+  const offered = [...new Set(active.map((o) => o.product_id))]
+    .filter((id) => contractKey.has(id))
+    .map((id) => ({ id, name: productName.get(id) ?? `#${id}` }))
+    .sort((a, b) => a.name.localeCompare(b.name))
   const offersOf = (productId: number | '') => active.filter((o) => o.product_id === productId)
+  const inLb = (productId: number | '') => productId !== '' && contractKey.get(productId) === 'hops'
+  // The offer a line's price goes on: the one picked, else the one it had, else the only one.
+  const lineOffer = (l: Line) => {
+    const os = offersOf(l.productId)
+    const was = before.get(l.productId as number)
+    return os.find((o) => o.id === l.offerId) ?? os.find((o) => o.id === was?.offer_id) ?? os[0] ?? null
+  }
 
   const yearNumber = contractYear(year)
+  const before = new Map(contract?.lines.map((l) => [l.product_id, l]) ?? [])
   const read = lines.map((l) => {
     const price = parseDecimal(l.price, PRICE_DECIMALS)
     const several = offersOf(l.productId).length > 1
-    return { line: l, quantity: parsePacks(l.quantity), price: price.ok ? price.value : null, several }
+    const lb = inLb(l.productId)
+    const weight = parseDecimal(l.quantity, LB_DECIMALS)
+    const quantity = lb ? (weight.ok && weight.value != null && Number(weight.value) > 0 ? weight.value : null) : parsePacks(l.quantity)
+    return { line: l, lb, quantity, price: price.ok ? price.value : null, several }
   })
   const valid =
     supplierId !== '' &&
     yearNumber != null &&
     read.every((r) => r.line.productId !== '' && r.quantity != null && r.price != null && (!r.several || r.line.offerId !== ''))
 
-  // The offer prices this save writes (decision 23, A2, decision 40).
-  const before = new Map(contract?.lines.map((l) => [l.product_id, l]) ?? [])
+  // The offer prices this save writes (decision 23, A2, decision 40); a hop line's per box (× 11, A1).
   const changes =
     yearNumber == null || !supplier
       ? []
@@ -102,9 +118,10 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
             .map((r) => {
               const was = before.get(r.line.productId as number)
               const offerId = r.line.offerId !== '' ? r.line.offerId : (was?.offer_id ?? offersOf(r.line.productId)[0]?.id ?? null)
+              const size = Number(lineOffer(r.line)?.pack_size ?? 1)
               return {
                 product: productName.get(r.line.productId as number) ?? '',
-                price: r.price!,
+                price: r.lb ? String(Math.round(Number(r.price) * size * 100) / 100) : r.price!,
                 changed: !was || Number(was.price) !== Number(r.price) || (offerId != null && was.offer_id !== offerId),
               }
             }),
@@ -117,11 +134,13 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const pickProduct = (key: number, productId: number | '') => {
     const os = offersOf(productId)
     const only = os.length === 1 ? os[0] : null
-    setLine(key, { productId, offerId: only?.id ?? '', price: only?.current_price ? String(Number(only.current_price.price_per_pack)) : '' })
+    // A hop line's price is per lb: the box price ÷ 11.
+    const price = only?.current_price ? (inLb(productId) ? Number(only.current_price.price_per_pack) / Number(only.pack_size) : Number(only.current_price.price_per_pack)) : null
+    setLine(key, { productId, offerId: only?.id ?? '', price: price != null ? String(Math.round(price * 100) / 100) : '' })
   }
 
   const submit = async () => {
-    if (!valid) return setError('Each line needs a product, whole sacks and a price')
+    if (!valid) return setError('Each line needs a product, a quantity (whole sacks, or lb for hops) and a price')
     const body = {
       supplier_party_id: supplierId,
       year: yearNumber,
@@ -188,7 +207,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
       {supplierId !== '' && offered.length === 0 && (
         <Alert severity="info">{supplier?.name} has no active offers yet: add one on a product page first.</Alert>
       )}
-      {read.map(({ line: l, quantity, several }, i) => (
+      {read.map(({ line: l, quantity, several, lb }, i) => (
         <Paper key={l.key} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }} data-testid={`contract-line-${i}`}>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
             <FormControl fullWidth size="small" disabled={supplierId === ''}>
@@ -234,22 +253,37 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
             </FormControl>
           )}
           <Box sx={{ display: 'flex', gap: 1.5 }}>
-            <TextField
-              label="Sacks"
-              size="small"
-              value={l.quantity}
-              onChange={(e) => setLine(l.key, { quantity: e.target.value })}
-              error={l.quantity.trim() !== '' && quantity == null}
-              helperText={l.quantity.trim() !== '' && quantity == null ? 'Whole sacks, 1 or more' : undefined}
-              sx={{ flex: 1 }}
-              slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `contract-line-${i}-quantity` } }}
-            />
+            {lb ? (
+              <DecimalInput
+                decimals={LB_DECIMALS}
+                label="lb"
+                size="small"
+                value={l.quantity}
+                onChange={(t) => setLine(l.key, { quantity: t })}
+                error={l.quantity.trim() !== '' && quantity == null}
+                helperText={hopBoxes(l.quantity, lineOffer(l)?.pack_size)}
+                sx={{ flex: 1 }}
+                slotProps={{ htmlInput: { 'data-testid': `contract-line-${i}-quantity` } }}
+              />
+            ) : (
+              <TextField
+                label="Sacks"
+                size="small"
+                value={l.quantity}
+                onChange={(e) => setLine(l.key, { quantity: e.target.value })}
+                error={l.quantity.trim() !== '' && quantity == null}
+                helperText={l.quantity.trim() !== '' && quantity == null ? 'Whole sacks, 1 or more' : undefined}
+                sx={{ flex: 1 }}
+                slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `contract-line-${i}-quantity` } }}
+              />
+            )}
             <DecimalInput
               decimals={PRICE_DECIMALS}
-              label="$ / sack"
+              label={lb ? '$ / lb' : '$ / sack'}
               size="small"
               value={l.price}
               onChange={(t) => setLine(l.key, { price: t })}
+              helperText={lb ? hopBoxPrice(l.price, lineOffer(l)?.pack_size) : undefined}
               sx={{ flex: 1 }}
               slotProps={{ htmlInput: { 'data-testid': `contract-line-${i}-price` } }}
             />

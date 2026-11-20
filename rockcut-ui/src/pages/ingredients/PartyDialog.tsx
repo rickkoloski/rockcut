@@ -105,11 +105,11 @@ function PartyForm({ onClose, party }: { onClose: () => void; party?: Party }) {
       </FormControl>
       {roles.includes('supplier') && (
         <TextField
-          label="Order target (sacks)"
+          label="Order target (packs)"
           value={target}
           onChange={(e) => setTarget(e.target.value)}
           error={!targetOk}
-          helperText={targetOk ? 'Orders show progress to the next multiple (e.g. 40: "36 of 40 sacks"); empty for none' : 'Whole sacks, 1 or more'}
+          helperText={targetOk ? 'Every pack on an order counts, sacks and boxes alike (e.g. 40: "36 of 40 packs"); empty for none' : 'Whole packs, 1 or more'}
           fullWidth
           slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': 'party-order-target' } }}
         />

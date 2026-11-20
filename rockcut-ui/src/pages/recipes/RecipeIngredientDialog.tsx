@@ -117,6 +117,8 @@ export default function RecipeIngredientDialog({
   // Gap 8: with its on-hand (in the person's packs/total) and status.
   const status = (lot: IngredientLot) => lot.status.charAt(0).toUpperCase() + lot.status.slice(1);
   const lotLabel = (lot: IngredientLot) => {
+    // D62 §4.8: a hop lot's label comes from the API ("YCH Citra T90 Pellet · L-1 · 2025 · 12.4% AA").
+    if (lot.label) return `${lot.label} · ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, lot.unit, mode)} · ${status(lot)}`;
     const lotNum = lot.lot_number ?? '—';
     if (lot.product?.manufacturer) return `${lot.product.manufacturer.name} · ${lotNum} · ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, lot.unit, mode)} · ${status(lot)}`;
     const supplier = lot.supplier?.name ?? '';

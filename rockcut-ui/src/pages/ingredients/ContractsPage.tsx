@@ -149,9 +149,11 @@ export default function ContractsPage() {
               {shortfall.map((r) => (
                 <TableRow key={r.product_id} data-testid={`shortfall-${r.product_id}`}>
                   <TableCell>{r.display_name}</TableCell>
-                  <TableCell align="right">{r.contracted}</TableCell>
-                  <TableCell align="right">{packsFigure(r.received)}</TableCell>
-                  <TableCell align="right">{packsFigure(r.short)}</TableCell>
+                  <TableCell align="right">{withUnit(r.contracted, r.contract_unit)}</TableCell>
+                  <TableCell align="right">{withUnit(r.received, r.contract_unit)}</TableCell>
+                  <TableCell align="right" data-testid={`shortfall-${r.product_id}-short`}>
+                    {withUnit(r.short, r.contract_unit)}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -184,10 +186,23 @@ export default function ContractsPage() {
   )
 }
 
+/** D62 §3.7: a hop line's figure says "lb" ("330 lb"); a grain line's stays a number of sacks. */
+const withUnit = (n: number, unit: 'packs' | 'lb' | undefined) => (unit === 'lb' ? `${packsFigure(n)} lb` : packsFigure(n))
+
 function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { contract: Contract; offerName: Map<number, string>; canWrite: boolean; onEdit: () => void; onDelete: () => void }) {
   const sum = (f: (l: Contract['lines'][number]) => number) => c.lines.reduce((n, l) => n + f(l), 0)
-  // D62 §3.7: grain lines are in sacks; the words follow the lines' pack.
-  const contractPack = c.lines.length ? sharedPackName(c.lines.map((l) => l.pack_name)) : 'sack'
+  // D62 §3.7: grain lines are in sacks, hop lines in lb; the words follow the lines.
+  const grainLines = c.lines.filter((l) => l.contract_unit !== 'lb')
+  const hopLines = c.lines.filter((l) => l.contract_unit === 'lb')
+  const contractPack = grainLines.length ? sharedPackName(grainLines.map((l) => l.pack_name)) : 'sack'
+  const mixed = grainLines.length > 0 && hopLines.length > 0
+  const priceUnit = (l: Contract['lines'][number]) => (l.contract_unit === 'lb' ? 'lb' : (l.pack_name ?? 'pack'))
+  // A total: sacks alone (as D61), lb alone, or "40 · 440 lb" (the sacks, then the hop lb) when mixed.
+  const total = (f: (l: Contract['lines'][number]) => number, grainText?: string) => {
+    const grain = grainText ?? packsFigure(grainLines.reduce((n, l) => n + f(l), 0))
+    const lb = `${packsFigure(hopLines.reduce((n, l) => n + f(l), 0))} lb`
+    return hopLines.length === 0 ? grain : grainLines.length === 0 ? lb : `${grain} · ${lb}`
+  }
   return (
     <Card variant="outlined" data-testid={`contract-${c.id}`}>
       <CardContent>
@@ -223,7 +238,7 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
             <TableHead>
               <TableRow>
                 <TableCell>Product</TableCell>
-                <TableCell align="right">$ / {contractPack ?? 'pack'}</TableCell>
+                <TableCell align="right">$ / {mixed ? 'unit' : hopLines.length ? 'lb' : (contractPack ?? 'pack')}</TableCell>
                 <TableCell align="right">Contracted</TableCell>
                 <TableCell align="right">$</TableCell>
                 <TableCell align="right">On order</TableCell>
@@ -243,39 +258,54 @@ function ContractCard({ contract: c, offerName, canWrite, onEdit, onDelete }: { 
                       </Typography>
                     )}
                   </TableCell>
-                  <TableCell align="right">{money(l.price)}</TableCell>
-                  <TableCell align="right">{l.contracted}</TableCell>
-                  <TableCell align="right">{money(l.contracted_dollars)}</TableCell>
-                  <TableCell align="right" data-testid={`contract-line-${l.product_id}-on-order`}>
-                    {packsFigure(l.on_order)}
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    {money(l.price)}
+                    {mixed && `/${priceUnit(l)}`}
                   </TableCell>
-                  <TableCell align="right" data-testid={`contract-line-${l.product_id}-received`}>
-                    {packsFigure(l.received)}
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    {withUnit(l.contracted, l.contract_unit)}
+                  </TableCell>
+                  <TableCell align="right">{money(l.contracted_dollars)}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`contract-line-${l.product_id}-on-order`}>
+                    {withUnit(l.on_order, l.contract_unit)}
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`contract-line-${l.product_id}-received`}>
+                    {withUnit(l.received, l.contract_unit)}
                   </TableCell>
                   <TableCell align="right">{money(l.received_dollars)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap', color: l.over_by ? 'warning.main' : undefined, fontWeight: l.over_by ? 600 : undefined }} data-testid={`contract-line-${l.product_id}-remaining`}>
-                    {l.over_by ? `over by ${packsFigure(l.over_by)}` : packsFigure(l.remaining)}
+                    {l.over_by ? `over by ${withUnit(l.over_by, l.contract_unit)}` : withUnit(l.remaining, l.contract_unit)}
                   </TableCell>
                 </TableRow>
               ))}
               <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid={`contract-${c.id}-total`}>
                 <TableCell>Total</TableCell>
                 <TableCell />
-                <TableCell align="right">{sum((l) => l.contracted)}</TableCell>
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                  {total((l) => l.contracted, String(grainLines.reduce((n, l) => n + l.contracted, 0)))}
+                </TableCell>
                 <TableCell align="right">{money(sum((l) => Number(l.contracted_dollars)))}</TableCell>
-                <TableCell align="right">{packsFigure(sum((l) => l.on_order))}</TableCell>
-                <TableCell align="right">{packsFigure(sum((l) => l.received))}</TableCell>
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                  {total((l) => l.on_order)}
+                </TableCell>
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                  {total((l) => l.received)}
+                </TableCell>
                 <TableCell align="right">{money(sum((l) => Number(l.received_dollars)))}</TableCell>
-                <TableCell align="right" data-testid={`contract-${c.id}-remaining`}>
-                  {packsFigure(c.remaining)}
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`contract-${c.id}-remaining`}>
+                  {hopLines.length === 0
+                    ? packsFigure(c.remaining)
+                    : grainLines.length === 0
+                      ? `${packsFigure(c.remaining_lb ?? 0)} lb`
+                      : `${packsFigure(c.remaining)} · ${packsFigure(c.remaining_lb ?? 0)} lb`}
                 </TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </Box>
-        {c.over > 0 && (
+        {(c.over > 0 || (c.over_lb ?? 0) > 0) && (
           <Typography variant="body2" sx={{ mt: 1, color: 'warning.main', fontWeight: 600 }} data-testid={`contract-${c.id}-over`}>
-            Over: {packsFigure(c.over)} {packWord(contractPack, c.over)}
+            Over: {[c.over > 0 ? `${packsFigure(c.over)} ${packWord(contractPack, c.over)}` : null, (c.over_lb ?? 0) > 0 ? `${packsFigure(c.over_lb ?? 0)} lb` : null].filter(Boolean).join(' · ')}
           </Typography>
         )}
       </CardContent>
