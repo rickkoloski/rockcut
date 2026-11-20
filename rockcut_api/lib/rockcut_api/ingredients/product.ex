@@ -63,10 +63,7 @@ defmodule RockcutApi.Ingredients.Product do
     |> validate_length(:name, max: 100)
     |> validate_length(:origin, max: 100)
     |> validate_range(:min_on_hand_packs, 0, 100_000)
-    |> unique_constraint([:ingredient_id, :manufacturer_party_id, :name],
-      name: :ingredient_products_ingredient_manufacturer_form_name_index,
-      message: duplicate(key)
-    )
+    |> unique_product(key)
     |> foreign_key_constraint(:ingredient_id)
     |> foreign_key_constraint(:manufacturer_party_id)
     |> foreign_key_constraint(:reorder_offer_id)
@@ -90,9 +87,46 @@ defmodule RockcutApi.Ingredients.Product do
     end)
   end
 
-  defp duplicate("grains"), do: "This maltster already has that product for this grain."
-  defp duplicate("hops"), do: "This manufacturer already has that hop in that form."
-  defp duplicate(_key), do: "This manufacturer already has that product."
+  # Stage 4 (lead): grain keeps D60's sentence; every other category names
+  # them, "Yakima Chief Hops already has T90 Pellet Citra."
+  defp unique_product(changeset, key) do
+    unique_constraint(changeset, [:ingredient_id, :manufacturer_party_id, :name],
+      name: :ingredient_products_ingredient_manufacturer_form_name_index,
+      message: duplicate(changeset, key)
+    )
+  end
+
+  defp duplicate(_changeset, "grains"),
+    do: "This maltster already has that product for this grain."
+
+  defp duplicate(changeset, _key) do
+    manufacturer = name_of(RockcutApi.Ingredients.Party, changeset, :manufacturer_party_id)
+    ingredient = name_of(RockcutApi.Brewing.Ingredient, changeset, :ingredient_id)
+
+    if manufacturer && ingredient do
+      what = Enum.join(Enum.reject([get_field(changeset, :form), ingredient], &is_nil/1), " ")
+
+      what =
+        case get_field(changeset, :name) do
+          nil -> what
+          name -> "#{what} (#{name})"
+        end
+
+      "#{manufacturer} already has #{what}."
+    else
+      "This manufacturer already has that product."
+    end
+  end
+
+  # nil for a blank or missing id (`validate_parents` says which).
+  defp name_of(schema, changeset, field) do
+    with id when is_integer(id) <- get_field(changeset, field),
+         %{name: name} <- RockcutApi.Repo.get(schema, id) do
+      name
+    else
+      _ -> nil
+    end
+  end
 
   defp blank_to_nil(nil), do: nil
 

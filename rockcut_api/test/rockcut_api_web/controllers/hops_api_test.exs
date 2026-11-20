@@ -157,8 +157,14 @@ defmodule RockcutApiWeb.HopsApiTest do
          c do
       dup = product_body(c, %{"form" => "T90 Pellet"})
 
-      assert %{"ingredient_id" => ["This manufacturer already has that hop in that form."]} =
+      assert %{"ingredient_id" => ["Yakima Chief Hops already has T90 Pellet Citra."]} =
                errors(req(c.brewer, :post, "/api/ingredient_products", dup))
+
+      named = product_body(c, %{"form" => "T90 Pellet", "name" => "Lupomax"})
+      assert {201, _} = req(c.brewer, :post, "/api/ingredient_products", named)
+
+      assert %{"ingredient_id" => ["Yakima Chief Hops already has T90 Pellet Citra (Lupomax)."]} =
+               errors(req(c.brewer, :post, "/api/ingredient_products", named))
 
       hopsteiner = party!("Hopsteiner", ~w(manufacturer))
 

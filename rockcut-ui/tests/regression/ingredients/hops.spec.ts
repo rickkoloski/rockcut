@@ -97,7 +97,7 @@ test.describe('brewer1', () => {
     await pick(page, d, 'Hop', re(hop.name))
     await pick(page, d, 'Manufacturer', re(company.name))
     await d.getByRole('button', { name: 'Save' }).click()
-    await expect(d.getByRole('alert')).toContainText('This manufacturer already has that hop in that form.')
+    await expect(d.getByRole('alert')).toContainText(`${company.name} already has T90 Pellet ${hop.name}.`)
     await d.getByRole('button', { name: 'Cancel' }).click()
   })
 
