@@ -633,11 +633,13 @@ defmodule RockcutApi.Ingredients.Orders do
 
   # D62 lead decisions 1, gap 10: a lot number the product already has adds
   # to that lot, so the crop year and features sent must be the lot's own
-  # (or left out); a different one is refused, never dropped.
+  # (or left out); a different one is refused, never dropped. Decisions 2,
+  # gap 16: a blank is a value, so a feature sent blank (nil) that the lot
+  # has, or sent with a value the lot has blank, differs too.
   defp same_values!(lot, line, a) do
     features =
       case Features.validate(a["features"], line.offer.product.ingredient_id, :lot) do
-        {:ok, features} -> for {type, %{value: value}} <- features, do: {type, value}
+        {:ok, features} -> for {type, attrs} <- features, do: {type, attrs && attrs.value}
         {:error, reason} -> Repo.rollback(reason)
       end
 
@@ -646,9 +648,7 @@ defmodule RockcutApi.Ingredients.Orders do
 
     differs? =
       (crop_year not in [nil, ""] and to_string(crop_year) != to_string(lot.crop_year)) or
-        Enum.any?(features, fn {type, value} ->
-          not (has[type.id] && Decimal.eq?(has[type.id], value))
-        end)
+        Enum.any?(features, fn {type, value} -> not same_value?(has[type.id], value) end)
 
     if differs? do
       values =
@@ -674,6 +674,11 @@ defmodule RockcutApi.Ingredients.Orders do
 
     lot
   end
+
+  defp same_value?(nil, nil), do: true
+  defp same_value?(nil, _value), do: false
+  defp same_value?(_has, nil), do: false
+  defp same_value?(has, value), do: Decimal.eq?(has, value)
 
   defp lot_values(lot_id),
     do: Repo.all(from(v in RockcutApi.Ingredients.LotFeatureValue, where: v.lot_id == ^lot_id))

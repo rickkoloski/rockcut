@@ -241,6 +241,39 @@ defmodule RockcutApiWeb.D62FixCycle1Test do
       assert length(lots) == 1
     end
 
+    # D62 lead decisions 2, gap 16: a blank on the lot is a value (was a 500).
+    test "a spec the lot has blank, or a blank for one it has, is refused; nothing is written",
+         c do
+      for {feature, value, label} <- [
+            {"beta_acid_pct", "4", "no beta acid"},
+            {"total_oil_ml_100g", "2", "no total oil"}
+          ] do
+        assert base(
+                 receive(c, %{}, %{
+                   "crop_year" => 2025,
+                   "features" => %{"alpha_acid_pct" => "14.1", feature => value}
+                 })
+               ) =~
+                 ~r/^Lot H1 already exists with crop year 2025, alpha acid 14.10, #{label}; use a new lot number or leave its values$/
+      end
+
+      assert base(receive(c, %{"features" => %{"diastatic_power_lintner" => "140"}}, %{})) ==
+               "Lot G1 already exists with no diastatic power; use a new lot number or leave its values"
+
+      assert base(receive(c, %{}, %{"features" => %{"alpha_acid_pct" => nil}})) ==
+               "Lot H1 already exists with crop year 2025, alpha acid 14.10; use a new lot number or leave its values"
+
+      assert base(receive(c, %{"features" => %{"color_lovibond" => nil}}, %{})) ==
+               "Lot G1 already exists with color 2.00; use a new lot number or leave its values"
+
+      assert {200, _} =
+               receive(c, %{"features" => %{"diastatic_power_lintner" => nil}}, %{
+                 "features" => %{"beta_acid_pct" => nil}
+               })
+
+      assert eq(on_hand(c.lot.id), 66) and eq(on_hand(c.grain_lot.id), 110)
+    end
+
     test "nothing sent adds to it as before", c do
       assert {200, _} = receive(c, %{}, %{})
       assert eq(on_hand(c.lot.id), 66)
