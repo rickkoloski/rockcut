@@ -95,3 +95,5 @@ have the API refuse it with a 422.
 - **Browser check:** each fixed gap's repro, desktop and 360 px.
 - **Reply with:** commits, counts, each gap → fix → test, and `LEAD:` notes. The lead then runs
   the full suite and the QA recheck.
+
+**Matt, 2026-11-20:** "Stick with new price." Gap 7 is closed: D61 A4 stays.
