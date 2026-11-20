@@ -14,7 +14,7 @@ import parseApiError from '../../lib/parseApiError'
 import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS, ORDER_KEYS } from '../../lib/inventory'
 import { lineForError, lotChoiceLabel, parsePacks, previousLot, receivableLots, sharedPackName, splitSummary } from '../../lib/purchasing'
-import { packLabel, packPlural } from '../../lib/brewingUnits'
+import { formatFeature, packLabel, packPlural } from '../../lib/brewingUnits'
 import { coloradoToday } from '../../lib/tasks'
 import type { ApiResponse, FeatureType, IngredientLot, IngredientProduct, PurchaseOrder, PurchaseOrderLine } from '../../lib/types'
 
@@ -182,6 +182,8 @@ interface LineView {
   received: number | null
   split: boolean
   targetOf: (r: Row) => number | typeof NEW
+  /** D62 lead decisions 1, gap 10: the product's lot a typed lot # already names (any case, trimmed). */
+  existingOf: (r: Row) => IngredientLot | null
   draftsOf: (r: Row) => FeatureDrafts
   summary: { text: string; ok: boolean }
   /** What the line sends, or null while something is missing. */
@@ -202,11 +204,17 @@ function lineView(line: PurchaseOrderLine, state: LineState, lots: IngredientLot
   const received = parsePacks(state.received, 0)
   const split = state.rows.length > 1
   const targetOf = (r: Row) => r.target ?? previous?.id ?? NEW
+  const existingOf = (r: Row) => {
+    const typed = r.number.trim().toLowerCase()
+    return (typed && (lots ?? []).find((l) => (l.lot_number ?? '').trim().toLowerCase() === typed)) || null
+  }
   // A hop lot starts empty (the range stays on the product).
   const draftsOf = (r: Row) => r.drafts ?? draftsFrom(hops ? null : product?.features, featureTypes)
   const today = coloradoToday()
+  // A number the product already has adds to that lot with its own values: nothing more to fill in.
   const newLotOk = (r: Row) =>
-    r.number.trim() !== '' && draftsValid(draftsOf(r), featureTypes) && missingRequired(draftsOf(r), featureTypes, required).length === 0 && (!hops || !parseCropYear(r.cropYear, today).error)
+    !!existingOf(r) ||
+    (r.number.trim() !== '' && draftsValid(draftsOf(r), featureTypes) && missingRequired(draftsOf(r), featureTypes, required).length === 0 && (!hops || !parseCropYear(r.cropYear, today).error))
   const rowPacks = state.rows.map((r) => (split ? parsePacks(r.packs) : received))
   const summary = splitSummary(rowPacks, received ?? 0)
   const rowsOk = state.rows.every((r, i) => {
@@ -222,6 +230,8 @@ function lineView(line: PurchaseOrderLine, state: LineState, lots: IngredientLot
       packs_received: received,
       allocations: state.rows.map((r, i) => {
         const t = targetOf(r)
+        // An existing lot # sends no values: the API refuses ones that differ from the lot's.
+        if (t === NEW && existingOf(r)) return { lot_number: r.number.trim(), packs: rowPacks[i] }
         return t === NEW
           ? {
               lot_number: r.number.trim(),
@@ -233,7 +243,27 @@ function lineView(line: PurchaseOrderLine, state: LineState, lots: IngredientLot
       }),
     }
 
-  return { loading: !lots, product, hops, featureTypes, required, choices, received, split, targetOf, draftsOf, summary, body }
+  return { loading: !lots, product, hops, featureTypes, required, choices, received, split, targetOf, existingOf, draftsOf, summary, body }
+}
+
+/**
+ * D62 lead decisions 1, gap 10: a typed lot # the product already has adds
+ * to that lot, so its crop year and specs show read only, not as boxes whose
+ * values would be dropped.
+ */
+function ExistingLotValues({ lot, types, hops, testId }: { lot: IngredientLot; types: FeatureType[]; hops: boolean; testId: string }) {
+  const values = [
+    ...(hops ? [`Crop year ${lot.crop_year ?? '—'}`] : []),
+    ...types.flatMap((t) => {
+      const v = lot.features?.[t.key]?.value
+      return v == null || v === '' ? [] : [`${t.label} ${formatFeature(v, t.decimals)}${t.unit_label ? ` ${t.unit_label}` : ''}`]
+    }),
+  ]
+  return (
+    <Typography variant="body2" color="text.secondary" data-testid={testId}>
+      {values.length ? values.join(' · ') : 'No specs recorded'}
+    </Typography>
+  )
 }
 
 interface ReceiveLineProps {
@@ -250,7 +280,7 @@ interface ReceiveLineProps {
 /** One line: packs received and the lot rows. */
 function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, newRow }: ReceiveLineProps) {
   const { mode } = useQuantityDisplay()
-  const { choices, received, split, targetOf, draftsOf, summary, product } = view
+  const { choices, received, split, targetOf, existingOf, draftsOf, summary, product } = view
 
   const setRow = (key: number, patch: Partial<Row>) => onChange({ ...state, rows: state.rows.map((r) => (r.key === key ? { ...r, ...patch } : r)) })
 
@@ -278,6 +308,7 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
       {received !== 0 &&
         state.rows.map((r, ri) => {
           const t = targetOf(r)
+          const existing = t === NEW ? existingOf(r) : null
           return (
             <Box key={r.key} sx={{ display: 'flex', flexDirection: 'column', gap: 1 }} data-testid={`receive-line-${index}-row-${ri}`}>
               {/* At phone width the lot select keeps the whole row; the packs box and remove wrap under it. */}
@@ -325,10 +356,12 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
                     value={r.number}
                     onChange={(e) => setRow(r.key, { number: e.target.value })}
                     required
-                    helperText="A number the product already has adds to that lot"
+                    helperText={existing ? `Adds to existing lot ${existing.lot_number}` : 'A number the product already has adds to that lot'}
                     slotProps={{ htmlInput: { 'data-testid': `receive-line-${index}-row-${ri}-number` } }}
                   />
-                  {view.hops ? (
+                  {existing ? (
+                    <ExistingLotValues lot={existing} types={featureTypes} hops={view.hops} testId={`receive-line-${index}-row-${ri}-existing`} />
+                  ) : view.hops ? (
                     <>
                       <TextField
                         label="Crop year"
