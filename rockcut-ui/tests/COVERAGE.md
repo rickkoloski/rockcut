@@ -1204,4 +1204,11 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 15 | To order: a hop offer reads "… · box · 11 lb", a grain offer as D61 ("BSG · 55 lb"); the caption's pack follows each row's product (hop-only "boxes"; empty list "sacks") | Vitest `reorderOfferPack`, `reorderListPack`; Playwright G15 |
 | 18 | A contract's hop line drops the leading supplier ("Citra T90 Pellet · YCH price becomes …"); grain keeps D61's "BSG Rahr 2-Row price becomes …" | Vitest `contractPriceChanges`; Playwright G18 |
 
+**QA recheck 2 fix cycle** (`prompts/d62_lead_decisions_3.md`). Vitest `src/lib/d62FixCycle3.test.ts`; Playwright `regression/ingredients/d62-fix-cycle-2.spec.ts`.
+
+| Gap | Rule | Coverage |
+|---|---|---|
+| 19 | To order's message (the 409's too) clears on the next offer pick, before its save returns, and stays gone after it saves | Playwright G17 (the re-pick's PUT held 1.5 s: no alert during or after) |
+| 20 | A contract line with several offers from the supplier lists its price change only once its offer is picked, naming it by its current price ("… (now $150.00/box) price becomes …"; grain "(now $44.00/sack)" in D61's wording; "(no current price)" without one); one offer reads as before | Vitest `offerNow`, `contractPriceChanges`; Playwright G20 (two hop and two grain offers), G18 (one offer) |
+
 **5911 (part): O9.** The O9 that failed under full local load is `regression/owners/owner.spec.ts` O9 (UI) (D59; `ingredients/owner.spec.ts` has only O1–O3). Cause: `settingsMenu.ts` `choiceOptions` read the department options once, straight after opening the choice; right after `goto('/schedule')` (and on the Scheduler) `/api/departments` may not have answered yet, so only "All departments" was there. Reproduced by holding `/api/departments` 1.5 s (`["schedule-department-all"]`). Fix: `choiceOptions(…, ready)` waits for a named option first; O9 passes Taproom's. O9 (UI and API) ran 10× each beside the full `ingredients` project: 20/20.
