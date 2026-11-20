@@ -143,8 +143,8 @@ New feature types:
 
 | Key | Label | Unit | Range | Decimals | Applies to |
 |---|---|---|---|---|---|
-| `alpha_acid_pct` (exists) | Alpha acid | % | 0–100 | 1 | Hops |
-| `beta_acid_pct` | Beta acid | % | 0–100 | 1 | Hops |
+| `alpha_acid_pct` (exists) | Alpha acid | % | 0–100 | **2** | Hops |
+| `beta_acid_pct` | Beta acid | % | 0–100 | **2** | Hops |
 | `total_oil_ml_100g` | Total oil | mL/100 g | 0–10 | 2 | Hops |
 | `brix` | Brix | °Bx | 0–100 | 1 | Fruits; liquid sugars |
 | `extract_fgdb` (exists) | Extract | % FGDB | 0–100 | 1 | Grains; dry sugars |
@@ -200,7 +200,7 @@ D61's sacks generalize to packs. The grain behavior is unchanged: a grain offer'
 
 | Category | Forms | Units allowed |
 |---|---|---|
-| Hops | Pellet, Cryo, Whole leaf, Extract | lb |
+| Hops | **T90 Pellet**, Cryo, Whole leaf, Extract | lb |
 | Fruits | Purée, Whole, Juice / concentrate | gal, lb |
 | Spices & Flavorings | Whole, Ground, Extract | oz, fl oz |
 | Sugars and Extracts | Dry, Liquid | lb (dry), gal (liquid) |
@@ -408,3 +408,16 @@ and salts move to a later ID. Raise it with Matt before splitting.
   once.
 - Settings → Categories: Other Consumables shows three children. Hops shows no custom fields.
   Future Ingredients is gone, or listed in the release notes if it held items.
+
+## Amendments (Matt, 2026-11-19, hop reference data)
+
+- **Hop forms:** "T90 Pellet" (not "Pellet"), Cryo, Whole leaf, Extract.
+- **Alpha and beta keep 2 decimals** (supplier sheets give 12.67 %).
+- **Hop lots on prod:** Matt's cooler list (`reference/d62_hops_matt_2026-11-19.csv`, local only)
+  is seeded **on prod only** as lots with an **Opening amount** (28 lots, EKG excluded until its
+  lot # and alpha are known). DEV and local keep synthetic hop lots. The products, manufacturers
+  and offers are seeded everywhere, as §7.
+- **Manufacturer for this seed = the supplier** (John Fearless, Lupulin Exchange, Billy Goat,
+  Michigan Hop Alliance, Yakima Chief Hops, BSG); Matt corrects growers later on the screens.
+- **Typical ranges and origin** are filled from published variety specs for Matt to check before
+  the seed is final.
