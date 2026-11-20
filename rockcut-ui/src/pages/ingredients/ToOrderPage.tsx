@@ -70,6 +70,8 @@ export default function ToOrderPage() {
   const saveOffer = useApiUpdate<IngredientProduct>((id) => `/api/ingredient_products/${id}`, { invalidateKeys: GRAIN_KEYS })
 
   const pickOffer = (productId: number, offerId: number, was: number) => {
+    // Decisions 3, gap 19: a new pick clears the last message (the 409's too).
+    setError(null)
     setOfferFor((m) => ({ ...m, [productId]: offerId }))
     saveOffer.mutate(
       // D62 lead decisions 1, gap 9: every product save carries the version it
