@@ -11,15 +11,6 @@
 
 ## Open Items
 
-### DR-1: inventory_on_hand needs real quantity field
-- **Source:** D6 (Formula Execution Service)
-- **What was spec'd:** `inventory_on_hand(ingredient_id)` sums quantity across active lots
-- **What shipped:** Counts lots with `status: "available"` (no quantity to sum)
-- **Reason:** Inventory tracking explicitly deferred to v2 in data model spec (D1)
-- **Unblocked by:** v2 inventory tracking — add `quantity` decimal field to `ingredient_lots`
-- **Priority:** Must-fix when inventory tracking is needed
-- **Domain review needed:** Yes — confirm with Matt what "inventory on hand" means operationally (weight remaining? lot count? something else?)
-
 ### DR-2: Tinseth IBU uses hardcoded wort gravity
 - **Source:** D6 (Formula Execution Service)
 - **What was spec'd:** IBU via Tinseth with utilization from boil time and wort gravity
@@ -39,6 +30,7 @@
 - **Domain review needed:** Yes — Matt could provide a real recipe for seed data
 
 ### DR-4: Unit handling edge cases (pkg/each)
+- **Status:** **Claimed** by D62 (inventory units: products keep one unit, `inventory_on_hand` returns `{value, unit}` and refuses an ingredient whose products are in different units) and D63 (recipe units: oz ↔ lb, salts in oz, recipe lines on products)
 - **Source:** D6 (Formula Execution Service)
 - **What was spec'd:** Not explicitly specified
 - **What shipped:** Unknown units passthrough as raw values; mitigated by category filtering
@@ -50,7 +42,16 @@
 
 ## Resolved Items
 
-_(None yet — items move here when a deliverable confirms the fix.)_
+### DR-1: inventory_on_hand needs real quantity field
+- **Source:** D6 (Formula Execution Service)
+- **Resolved by:** D60 made on hand the sum of a lot's movements (`inventory_movements`); `inventory_on_hand` reads it for a product or an ingredient. D62 adds the unit (`{value, unit}`, mixed units refused).
+- **Domain answer:** on hand is the quantity remaining in the product's unit (lb for grain), counted and moved by lot.
+- **What was spec'd:** `inventory_on_hand(ingredient_id)` sums quantity across active lots
+- **What shipped:** Counts lots with `status: "available"` (no quantity to sum)
+- **Reason:** Inventory tracking explicitly deferred to v2 in data model spec (D1)
+- **Unblocked by:** v2 inventory tracking — add `quantity` decimal field to `ingredient_lots`
+- **Priority:** Must-fix when inventory tracking is needed
+- **Domain review needed:** Yes — confirm with Matt what "inventory on hand" means operationally (weight remaining? lot count? something else?)
 
 ---
 
@@ -62,7 +63,7 @@ wading through technical plumbing.
 
 | Item | Domain Question | Status |
 |------|----------------|--------|
-| DR-1 | What does "inventory on hand" mean at Rockcut? Weight remaining per lot? Lot count? Something else? | Open |
+| DR-1 | What does "inventory on hand" mean at Rockcut? Weight remaining per lot? Lot count? Something else? | **Resolved** (D60/D62: quantity remaining in the product's unit) |
 | DR-2 | For your batch sizes, does a simplified 1.050 gravity assumption give close-enough IBU estimates? | Open |
 | DR-3 | Can you provide a real recipe (grain bill + hop schedule) for seed data? | Open |
 | DR-5 | Matt wants to experiment with writing formulas himself — confirm: what kinds of calculations does he want to try? What would feel natural as an editing surface? | **Answered in part** — Matt is excited to write formulas; full UX preferences TBD |
