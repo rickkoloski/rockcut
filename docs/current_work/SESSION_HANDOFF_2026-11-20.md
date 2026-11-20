@@ -41,3 +41,16 @@
   resolved / DR-4 claimed (done). D63 = 4084 lint (8), 5203, 4986, 4987, 4989, DR-2, DR-3, T9.
   Nothing else gets pulled in.
 - Next new ID after D64 is **D65**. Order: D62 → D64 (yeast) → D63.
+
+## Update (later 2026-11-20)
+
+- **D62 split** (Matt): D62 = packs + hops; **D65** = fruit/spices/sugars/consumables. Order D62 →
+  D65 → D64 → D63; next ID **D66**. Spec last Amendment, plan Split section (`e772382`).
+- **Stages 2 and 4 accepted.** Stop 4: ExUnit 2,725 ×2, ingredients Playwright 72/72, O9 fixed
+  (`ce0550a`; the flaky test was the D59 owners O9). Hop seed `43573a9`: 27 products, 28 lots,
+  409.6 lb. Full local Playwright on Stop 4: **891 passed, 1 skipped**.
+- **Local QA started** in tab "D62 local QA": agent `qa62` in `~/src/rockcut-d62-qa/` (brief
+  `BRIEF.md`, report `results/d62_qa_report.md`, qawatch split). At handoff it was **blocked on a
+  dialog** almost at once (no progress lines yet): read it with
+  `herdr agent read qa62 --source visible` and answer (Matt's call if it's his).
+- Builder (w1:p4) idle, standing by. Next: QA report → fix cycle → recheck → DEV gate.
