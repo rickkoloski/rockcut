@@ -11,7 +11,7 @@ import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
-import { contractPriceChanges, contractYear, hopBoxes, hopBoxPrice, offerPackText, parsePacks } from '../../lib/purchasing'
+import { contractPriceChanges, contractYear, hopBoxes, hopBoxPrice, offerNow, offerPackText, parsePacks } from '../../lib/purchasing'
 import { WRAP_ITEM, WRAP_SELECT, pickerName } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, IngredientProduct, Party, SupplierOffer } from '../../lib/types'
@@ -117,7 +117,8 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
       ? []
       : contractPriceChanges(
           read
-            .filter((r) => r.line.productId !== '' && r.price != null)
+            // Gap 20: with several offers, a line changes nothing until its offer is picked.
+            .filter((r) => r.line.productId !== '' && r.price != null && (!r.several || r.line.offerId !== ''))
             .map((r) => {
               const was = before.get(r.line.productId as number)
               const offerId = r.line.offerId !== '' ? r.line.offerId : (was?.offer_id ?? offersOf(r.line.productId)[0]?.id ?? null)
@@ -125,6 +126,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
               return {
                 product: productName.get(r.line.productId as number) ?? '',
                 named: named.has(r.line.productId as number),
+                offer: r.several && lineOffer(r.line) ? offerNow(lineOffer(r.line)!) : null,
                 price: r.lb ? String(Math.round(Number(r.price) * size * 100) / 100) : r.price!,
                 changed: !was || Number(was.price) !== Number(r.price) || (offerId != null && was.offer_id !== offerId),
               }

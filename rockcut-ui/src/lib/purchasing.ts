@@ -185,13 +185,22 @@ export function lineForError<T extends { id: number; offer: { label: string; pro
  * 2027-01-01", effective Jan 1 of the year or today if later; none for a
  * year already over. A line whose name already ends with its manufacturer
  * (`named`, a hop's "Citra T90 Pellet · YCH") leaves the supplier off, as
- * every line is the contract's supplier's (D62 decisions 2, gap 18).
+ * every line is the contract's supplier's (D62 decisions 2, gap 18). When
+ * the product has several offers from the supplier, `offer` names the one
+ * picked by its current price ("now $150.00/box", decisions 3, gap 20).
  */
-export function contractPriceChanges(lines: { product: string; price: string; changed: boolean; named?: boolean }[], supplier: string, year: number, today: string): string[] {
+export function contractPriceChanges(lines: { product: string; price: string; changed: boolean; named?: boolean; offer?: string | null }[], supplier: string, year: number, today: string): string[] {
   if (year < Number(today.slice(0, 4))) return []
   const jan1 = `${year}-01-01`
   const from = jan1 > today ? jan1 : today
-  return lines.filter((l) => l.changed).map((l) => `${l.named ? '' : `${supplier} `}${l.product} price becomes ${money(l.price)} from ${from}`)
+  return lines
+    .filter((l) => l.changed)
+    .map((l) => `${l.named ? '' : `${supplier} `}${l.product}${l.offer ? ` (${l.offer})` : ''} price becomes ${money(l.price)} from ${from}`)
+}
+
+/** Gap 20: which of several offers a contract line changes: "now $150.00/box", or "no current price". */
+export function offerNow(o: { pack_name: string; current_price?: { price_per_pack: string } | null }): string {
+  return o.current_price ? `now ${money(o.current_price.price_per_pack)}/${o.pack_name}` : 'no current price'
 }
 
 /**
