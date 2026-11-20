@@ -43,20 +43,28 @@ defmodule RockcutApi.Migrations.ProductLockVersionAndGrainOnlyOfferFormTest do
     %{pid: pid}
   end
 
-  # The migration files are compiled again from disk; the warnings that
-  # prints (modules already loaded by `ecto.migrate`) aren't this test's.
-  defp migrate(direction, opts) do
-    {result, _warnings} =
-      ExUnit.CaptureIO.with_io(:stderr, fn ->
-        Ecto.Migrator.run(
-          Repo,
-          Application.app_dir(:rockcut_api, "priv/repo/migrations"),
-          direction,
-          Keyword.merge([log: false, log_migrations_sql: false, log_migrator_sql: false], opts)
-        )
-      end)
+  # Every migration as `{version, module}`, using the modules `ecto.migrate`
+  # already loaded (compiling the files again would only warn that each is
+  # redefined); a file not loaded yet is required once.
+  defp migrations do
+    for file <-
+          Path.wildcard(Application.app_dir(:rockcut_api, "priv/repo/migrations/*.exs"))
+          |> Enum.sort() do
+      [version | _] = file |> Path.basename() |> String.split("_", parts: 2)
+      [_, name] = Regex.run(~r/defmodule\s+([\w.]+)/, File.read!(file))
+      module = Module.concat([name])
+      unless Code.ensure_loaded?(module), do: Code.require_file(file)
+      {String.to_integer(version), module}
+    end
+  end
 
-    result
+  defp migrate(direction, opts) do
+    Ecto.Migrator.run(
+      Repo,
+      migrations(),
+      direction,
+      Keyword.merge([log: false, log_migrations_sql: false, log_migrator_sql: false], opts)
+    )
   end
 
   defp insert!(table, row) do
