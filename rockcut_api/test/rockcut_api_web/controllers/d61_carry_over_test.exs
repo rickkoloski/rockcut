@@ -134,8 +134,10 @@ defmodule RockcutApiWeb.D61CarryOverTest do
                  errors(req(c.brewer, :post, "/api/category_field_definitions", body.(cat.id)))
       end
 
+      yeast = Repo.insert!(%IngredientCategory{name: "Yeast Strains", key: "yeast"})
+
       assert {201, %{"data" => %{"id" => id}}} =
-               req(c.brewer, :post, "/api/category_field_definitions", body.(c.hops.id))
+               req(c.brewer, :post, "/api/category_field_definitions", body.(yeast.id))
 
       assert %{"category_id" => [_]} =
                errors(
@@ -146,6 +148,27 @@ defmodule RockcutApiWeb.D61CarryOverTest do
 
       assert {200, _} =
                req(c.brewer, :patch, "/api/category_field_definitions/#{id}", %{required: true})
+    end
+  end
+
+  describe "no custom fields on Hops (D62 split Amendment)" do
+    test "refused on Hops, and moving one there; allowed on Yeast Strains", c do
+      body = &%{category_id: &1, field_name: "Grower", field_type: "text"}
+
+      assert %{"category_id" => ["Hops use features, not custom fields"]} =
+               errors(req(c.brewer, :post, "/api/category_field_definitions", body.(c.hops.id)))
+
+      yeast = Repo.insert!(%IngredientCategory{name: "Yeast Strains", key: "yeast"})
+
+      assert {201, %{"data" => %{"id" => id}}} =
+               req(c.brewer, :post, "/api/category_field_definitions", body.(yeast.id))
+
+      assert %{"category_id" => ["Hops use features, not custom fields"]} =
+               errors(
+                 req(c.brewer, :patch, "/api/category_field_definitions/#{id}", %{
+                   category_id: c.hops.id
+                 })
+               )
     end
   end
 
