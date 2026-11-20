@@ -84,8 +84,11 @@ describe('ranges', () => {
   it('reads "11–13", an open end, or nothing', () => {
     expect(formatRange({ value: '11', value_high: '13' }, 2)).toBe('11–13')
     expect(formatRange({ value: '11.5', value_high: '12.67' }, 2)).toBe('11.5–12.67')
-    expect(formatRange({ value: null, value_high: '4.5' }, 2)).toBe('–4.5')
-    expect(formatRange({ value: '2.5', value_high: null }, 2)).toBe('2.5–')
+    // D62 lead decisions 1, gap 2: one end, or the same both ends.
+    expect(formatRange({ value: null, value_high: '4.5' }, 2)).toBe('≤ 4.5')
+    expect(formatRange({ value: '2.5', value_high: null }, 2)).toBe('≥ 2.5')
+    expect(formatRange({ value: '12.5', value_high: '12.50' }, 2)).toBe('12.5')
+    expect(formatRange({ value: '', value_high: '' }, 2)).toBeNull()
     expect(formatRange(undefined, 2)).toBeNull()
   })
 

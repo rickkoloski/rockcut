@@ -176,7 +176,7 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
                           </Typography>
                           <Typography variant="caption" color="text.secondary">
                             {hops
-                              ? `${[r.product.origin, `α ${spec(r.product, 'alpha_acid_pct')} %`, `β ${spec(r.product, 'beta_acid_pct')} %`, `oil ${spec(r.product, 'total_oil_ml_100g')}`].filter(Boolean).join(' · ')}`
+                              ? hopCaption(r.product, decimals)
                               : `${spec(r.product, 'color_lovibond')} °L · ${spec(r.product, 'extract_fgdb')} % FGDB`}
                           </Typography>
                         </CardContent>
@@ -279,6 +279,19 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
 }
 
 /** D61 §3.5: on hand (not expired) is under the product's minimum. */
+/**
+ * A hop card's caption: origin and each typical range that's set ("USA ·
+ * α 11–13 % · β ≥ 4 % · oil 1.5–2.5"); a blank one is left out, not "β — %"
+ * (D62 lead decisions 1, gap 2).
+ */
+function hopCaption(p: IngredientProduct, decimals: Record<string, number>): string {
+  const range = (key: string) => formatRange(p.features?.[key], decimals[key] ?? 2)
+  const alpha = range('alpha_acid_pct')
+  const beta = range('beta_acid_pct')
+  const oil = range('total_oil_ml_100g')
+  return [p.origin, alpha && `α ${alpha} %`, beta && `β ${beta} %`, oil && `oil ${oil}`].filter(Boolean).join(' · ')
+}
+
 function BelowMinimum({ product }: { product: IngredientProduct }) {
   return product.below_minimum ? <Chip size="small" color="warning" label="Below minimum" sx={{ ml: 1 }} data-testid={`grain-below-minimum-${product.id}`} /> : null
 }

@@ -11,7 +11,8 @@ import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { PRICE_DECIMALS, packLabel, packPlural, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
-import { parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { WRAP_ITEM, WRAP_SELECT, pickerName } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientProduct, Party, PurchaseOrder, SupplierOffer } from '../../lib/types'
 
@@ -87,15 +88,19 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === order?.supplier_party_id))
   const supplier = parties.find((p) => p.id === supplierId)
   const productName = new Map(products.map((p) => [p.id, p.display_name]))
+  const pickerNames = new Map(products.map((p) => [p.id, pickerName(p)]))
   const productUnit = new Map(products.map((p) => [p.id, p.unit]))
   // A line already on an inactive offer keeps it (lead, Stop 2 note 7); new picks are active offers only.
   const kept = new Set(order?.lines.map((l) => l.offer_id) ?? [])
   const choices = offers.filter((o) => o.supplier_party_id === supplierId && (o.active || kept.has(o.id)))
   const offerById = new Map(offers.map((o) => [o.id, o]))
-  const label = (o: SupplierOffer) =>
-    [o.order_name, productName.get(o.product_id), `${Number(o.pack_size)} ${productUnit.get(o.product_id) ?? 'lb'}`, o.form === 'milled' ? 'milled' : 'whole']
-      .filter(Boolean)
-      .join(' · ')
+  // Gap 8: a hop offer leads with its variety and form ("Citra T90 Pellet · Yakima Chief Hops · box · 11 lb");
+  // a grain offer reads as D61 ("Rahr - Standard 2-row · Rahr 2-Row · 55 lb · whole").
+  const label = (o: SupplierOffer) => {
+    const unit = productUnit.get(o.product_id) ?? 'lb'
+    const parts = o.pack_name === 'box' ? [pickerNames.get(o.product_id), o.order_name, offerPackText(o, unit)] : [o.order_name, productName.get(o.product_id), `${Number(o.pack_size)} ${unit}`, o.form]
+    return parts.filter(Boolean).join(' · ')
+  }
 
   const read = lines.map((l) => {
     const offer = l.offerId === '' ? undefined : offerById.get(l.offerId)
@@ -209,9 +214,9 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
             <FormControl fullWidth size="small" disabled={supplierId === ''}>
               <InputLabel id={`order-line-${i}-offer-label`}>Offer</InputLabel>
-              <Select labelId={`order-line-${i}-offer-label`} label="Offer" value={choices.some((o) => o.id === l.offerId) ? l.offerId : ''} onChange={(e) => pickOffer(l.key, e.target.value as number | '')} data-testid={`order-line-${i}-offer`}>
+              <Select labelId={`order-line-${i}-offer-label`} label="Offer" value={choices.some((o) => o.id === l.offerId) ? l.offerId : ''} onChange={(e) => pickOffer(l.key, e.target.value as number | '')} data-testid={`order-line-${i}-offer`} sx={WRAP_SELECT}>
                 {choices.map((o) => (
-                  <MenuItem key={o.id} value={o.id}>
+                  <MenuItem key={o.id} value={o.id} sx={WRAP_ITEM}>
                     {label(o)}
                     {!o.active && ' (inactive)'}
                   </MenuItem>

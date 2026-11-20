@@ -11,7 +11,8 @@ import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
-import { contractPriceChanges, contractYear, hopBoxes, hopBoxPrice, parsePacks } from '../../lib/purchasing'
+import { contractPriceChanges, contractYear, hopBoxes, hopBoxPrice, offerPackText, parsePacks } from '../../lib/purchasing'
+import { WRAP_ITEM, WRAP_SELECT, pickerName } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, IngredientProduct, Party, SupplierOffer } from '../../lib/types'
 
@@ -77,7 +78,7 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === contract?.supplier_party_id))
   const supplier = parties.find((p) => p.id === supplierId)
   const active = offers.filter((o) => o.supplier_party_id === supplierId && o.active)
-  const productName = new Map(products.map((p) => [p.id, p.display_name]))
+  const productName = new Map(products.map((p) => [p.id, pickerName(p)]))
   // D62 §3.7: contracts are for grain and hops only.
   const contractKey = new Map(products.filter((p) => p.category_key === 'grains' || p.category_key === 'hops').map((p) => [p.id, p.category_key]))
   const offered = [...new Set(active.map((o) => o.product_id))]
@@ -218,9 +219,10 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
                 value={offered.some((p) => p.id === l.productId) ? l.productId : ''}
                 onChange={(e) => pickProduct(l.key, e.target.value as number | '')}
                 data-testid={`contract-line-${i}-product`}
+                sx={WRAP_SELECT}
               >
                 {offered.map((p) => (
-                  <MenuItem key={p.id} value={p.id}>
+                  <MenuItem key={p.id} value={p.id} sx={WRAP_ITEM}>
                     {p.name}
                   </MenuItem>
                 ))}
@@ -243,10 +245,11 @@ function ContractForm({ onClose, contract, year: pageYear }: Omit<ContractDialog
                 value={offersOf(l.productId).some((o) => o.id === l.offerId) ? l.offerId : ''}
                 onChange={(e) => setLine(l.key, { offerId: e.target.value as number | '' })}
                 data-testid={`contract-line-${i}-offer`}
+                sx={WRAP_SELECT}
               >
                 {offersOf(l.productId).map((o) => (
-                  <MenuItem key={o.id} value={o.id}>
-                    {[o.order_name, `${Number(o.pack_size)} lb`, o.form].filter(Boolean).join(' · ')}
+                  <MenuItem key={o.id} value={o.id} sx={WRAP_ITEM}>
+                    {[o.order_name, offerPackText(o)].filter(Boolean).join(' · ')}
                   </MenuItem>
                 ))}
               </Select>

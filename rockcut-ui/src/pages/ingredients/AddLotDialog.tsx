@@ -11,6 +11,7 @@ import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, parseDecimal, packSizeLabel, productPack } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
+import { offerPackText } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { FeatureType, IngredientLot, IngredientProduct, Party } from '../../lib/types'
 
@@ -117,7 +118,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
             </MenuItem>
             {offers.map((o) => (
               <MenuItem key={o.id} value={o.id}>
-                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {Number(o.pack_size)} {product.unit} {o.form}
+                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {offerPackText(o, product.unit)}
               </MenuItem>
             ))}
           </Select>

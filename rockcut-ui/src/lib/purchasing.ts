@@ -16,6 +16,17 @@ export function money(v: string | number | null | undefined, digits = 2): string
   return Number(v).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
+/**
+ * An offer's pack as the pickers show it (D62 lead decisions 1, gap 3): a
+ * box "box · 11 lb"; a sack its size with the grain form, "55 lb whole"
+ * (milled or whole is grain's; a hop offer has none).
+ */
+export function offerPackText(o: { pack_name: string; pack_size: string | number; form?: string | null }, unit = 'lb'): string {
+  const size = `${Number(o.pack_size)} ${unit}`
+  if (o.pack_name === 'box') return `box · ${size}`
+  return o.form ? `${size} ${o.form}` : size
+}
+
 /** "1,980 lb": a quantity in its unit (whole numbers for `each`). */
 export const amountText = (quantity: string | number, unit: string) =>
   `${Number(quantity).toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unit}`

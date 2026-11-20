@@ -59,8 +59,8 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, offer }: Offe
       supplier_party_id: supplierId,
       order_name: orderName.trim() || null,
       // A hop offer's pack is the API's to set.
-      ...(hops ? {} : { pack_name: packName, pack_size: size.value }),
-      form,
+      // Milled or whole is grain's; the API refuses a form on a hop offer (lead decisions 1, gap 3).
+      ...(hops ? {} : { pack_name: packName, pack_size: size.value, form }),
       notes: notes.trim() || null,
       active,
     }

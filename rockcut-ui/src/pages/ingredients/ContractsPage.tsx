@@ -31,7 +31,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
-import { contractYears, money, packsFigure, sharedPackName } from '../../lib/purchasing'
+import { contractYears, offerPackText, money, packsFigure, sharedPackName } from '../../lib/purchasing'
 import { packWord } from '../../lib/brewingUnits'
 import { coloradoToday } from '../../lib/tasks'
 import type { Contract, ShortfallRow, SupplierOffer } from '../../lib/types'
@@ -77,11 +77,9 @@ export default function ContractsPage() {
   const remove = useApiDelete((id) => `/api/contracts/${id}`, { invalidateKeys: [['contracts'], ['contract_shortfall']] })
   const contracts = reply?.data ?? []
   const canWrite = !!reply?.can_write
-  // A grain offer "55 lb whole"; a hop offer (D62) "box · 11 lb" (milled or whole is grain's).
-  const packText = (o: (typeof offers)[number]) => (o.pack_name === 'box' ? `box · ${Number(o.pack_size)} lb` : `${Number(o.pack_size)} lb`)
-  const offerName = new Map(
-    offers.map((o) => [o.id, o.order_name ? `${o.order_name} · ${packText(o)}` : o.pack_name === 'box' ? packText(o) : `${Number(o.pack_size)} lb ${o.form}`]),
-  )
+  // A grain offer "55 lb whole" (with an order name, "… · 55 lb"); a hop offer (D62) "box · 11 lb".
+  const packText = (o: (typeof offers)[number]) => (o.pack_name === 'box' ? offerPackText(o) : `${Number(o.pack_size)} lb`)
+  const offerName = new Map(offers.map((o) => [o.id, o.order_name ? `${o.order_name} · ${packText(o)}` : offerPackText(o)]))
   const years = contractYears(thisYear, reply?.years ?? [], year)
 
   const doDelete = async () => {

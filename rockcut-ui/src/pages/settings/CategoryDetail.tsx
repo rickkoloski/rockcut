@@ -191,8 +191,8 @@ export default function CategoryDetail() {
         </Grid>
       </Paper>
 
-      {/* D60 §3.1: subcategories (one level). */}
-      {category.parent_id == null && (
+      {/* D60 §3.1: subcategories (one level). D62 lead decisions 1: none on Hops. */}
+      {category.parent_id == null && category.key !== 'hops' && (
         <>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h5">Subcategories</Typography>
