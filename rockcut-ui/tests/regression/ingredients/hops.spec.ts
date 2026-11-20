@@ -159,7 +159,10 @@ test.describe('brewer1', () => {
 
     await page.goto('/ingredients/orders')
     const d = await openDialog(page, page.getByTestId('orders-new'), 'order-dialog')
+    // The supplier's offers load after it's picked; the Offer menu re-renders when they land.
+    const offersIn = page.waitForResponse((r) => r.url().includes('/api/supplier_offers') && r.url().includes(`supplier_id=${supplier.id}`))
     await pick(page, d, 'Supplier', re(supplier.name))
+    await offersIn
     await pick(page, d.getByTestId('order-line-0'), 'Offer', /H5 grain/)
     await d.getByTestId('order-line-0-packs').fill('30')
     await expect(d.getByTestId('order-target-progress')).toHaveText('30 of 40 sacks')

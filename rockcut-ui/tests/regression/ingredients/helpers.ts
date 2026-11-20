@@ -169,7 +169,8 @@ export async function cleanupIngredients() {
   }
   made.products.clear()
   // D62: `[TEST-TEMP]` hop varieties, once their products are gone (else `setup` takes them).
-  for (const id of made.ingredients) await api.delete(`/api/ingredients/${id}`)
+  // Best effort, as the rest of this clean-up: anything left goes with the next `setup`.
+  for (const id of made.ingredients) await api.delete(`/api/ingredients/${id}`).catch(() => null)
   made.ingredients.clear()
   for (const id of made.parties) {
     const res = await api.get(`/api/parties/${id}`)
