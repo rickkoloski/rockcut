@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 import { authFile, type PersonaKey } from '../../config/test-env'
-import { apiAs, cleanupIngredients, denverToday, getProduct, makeHopProduct, makePurchasing, makeSupplier, openDialog, pick, saveProduct, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, denverToday, getProduct, makeHopProduct, makeOffer, makePurchasing, makeSupplier, openDialog, pick, saveProduct, tempTag } from './helpers'
 
 // D62 local QA recheck fix cycle (`d62_lead_decisions_2.md`) in the browser:
 // "Other maltster/manufacturer…" opens the full list at once, with a mouse
@@ -99,11 +99,19 @@ test('G17: To order after someone else saves the product: the 409 refreshes the 
   await expect(a.getByRole('alert')).toHaveText('Someone else changed this product. The list is up to date now; pick the offer again.')
   await expect(picker).toHaveText(`${hop.company.name} · box · 11 lb`)
 
+  // Decisions 3, gap 19: the message clears on the next pick, before its
+  // save returns (held 1.5 s here), and stays gone once it has saved.
+  await a.route(`**/api/ingredient_products/${hop.id}`, async (route) => {
+    if (route.request().method() === 'PUT') await new Promise((r) => setTimeout(r, 1500))
+    await route.continue()
+  })
   saved = put()
   await picker.click()
   await a.getByRole('option', { name: re(other.name) }).click()
+  await expect(a.getByRole('alert')).toHaveCount(0, { timeout: 1000 })
   expect((await saved).status()).toBe(200)
   await expect(picker).toHaveText(`${other.name} · box · 11 lb`)
+  await expect(a.getByRole('alert')).toHaveCount(0)
   expect((await getProduct(hop.id)) as unknown as { reorder_offer_id: number }).toMatchObject({ reorder_offer_id: otherOffer.id })
 })
 
@@ -132,6 +140,43 @@ test.describe('breweryMgr', () => {
     await expect(changes).toContainText(`${hop.ingredient!.name} T90 Pellet · ${hop.company.name} price becomes $159.50 from ${today}`)
     await expect(changes).not.toContainText(`${grain.supplier.name} ${hop.ingredient!.name}`)
     await expect(changes).toContainText(`${grain.supplier.name} ${grain.product.display_name} price becomes $40.00 from ${today}`)
+  })
+
+  test('G20: with two offers from the supplier a line changes nothing until its offer is picked, then names it by its current price', async ({ page }) => {
+    const hop = await makeHopProduct('G20')
+    const grain = await makePurchasing('G20 grain')
+    const api = await apiAs('brewer1')
+    const hopOffers: { id: number }[] = []
+    for (const [name, price] of [['G20 A', '150.00'], ['G20 B', '165.00']]) {
+      const o = (await (await api.post('/api/supplier_offers', { data: { product_id: hop.id, supplier_party_id: grain.supplier.id, order_name: name } })).json()).data as { id: number }
+      await api.post(`/api/supplier_offers/${o.id}/prices`, { data: { price_per_pack: price, effective_on: '2020-01-01' } })
+      hopOffers.push(o)
+    }
+    await makeOffer(grain.product, grain.supplier.id, '44.00', 'G20 sack', '50')
+
+    await page.goto('/ingredients/contracts')
+    const d = await openDialog(page, page.getByTestId('contracts-new'), 'contract-dialog')
+    await pick(page, d, 'Supplier', re(grain.supplier.name))
+    await pick(page, d.getByTestId('contract-line-0'), 'Product', /G20 hop/)
+    await d.getByTestId('contract-line-0-quantity').fill('440')
+    await d.getByTestId('contract-line-0-price').fill('14.50')
+    await d.getByTestId('contract-add-line').click()
+    await pick(page, d.getByTestId('contract-line-1'), 'Product', re(grain.product.display_name))
+    await d.getByTestId('contract-line-1-quantity').fill('10')
+    await d.getByTestId('contract-line-1-price').fill('40')
+    // No offer picked yet: no line, so nothing is listed.
+    await expect(d.getByTestId('contract-price-changes')).toHaveCount(0)
+    await expect(d.getByRole('button', { name: 'Save' })).toBeDisabled()
+
+    await pick(page, d.getByTestId('contract-line-0'), 'Offer', /G20 A/)
+    const today = denverToday()
+    const changes = d.getByTestId('contract-price-changes')
+    await expect(changes).toContainText(`${hop.ingredient!.name} T90 Pellet · ${hop.company.name} (now $150.00/box) price becomes $159.50 from ${today}`)
+    await expect(changes).not.toContainText(grain.product.display_name)
+
+    await pick(page, d.getByTestId('contract-line-1'), 'Offer', /G20 sack/)
+    await expect(changes).toContainText(`${grain.supplier.name} ${grain.product.display_name} (now $44.00/sack) price becomes $40.00 from ${today}`)
+    await d.getByRole('button', { name: 'Cancel' }).click()
   })
 })
 
