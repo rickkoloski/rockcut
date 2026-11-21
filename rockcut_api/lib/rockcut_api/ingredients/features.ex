@@ -5,7 +5,8 @@ defmodule RockcutApi.Ingredients.Features do
 
   Values are written as a map keyed by feature key. Each entry is a number
   (or a decimal string), a map `%{"value", "entered_value", "entered_unit"}`,
-  or nil (remove that value). The rules: the feature must apply to the
+  or nil (remove that value); a map with any other key, or none, is refused
+  (D65 lead decisions 4, gap 8). The rules: the feature must apply to the
   product's or lot's category or its parent, the value lies in the type's
   `min`..`max`, and `entered_unit` is one of the feature's units
   (`Units.entered_units/1`), given only together with `entered_value`. A
@@ -322,10 +323,13 @@ defmodule RockcutApi.Ingredients.Features do
   end
 
   # D62 §3.4: `%{"low", "high"}`, either blank (both blank: no range).
+  # D65 lead decisions 4 (gap 8): only those keys, at least one of them;
+  # `%{"value"}`, `%{"lo"}` or `%{}` is refused, not read as "no range".
   defp check_range(type, entry) when is_map(entry) do
     entry = Map.new(entry, fn {k, v} -> {to_string(k), v} end)
 
-    with {:ok, low} <- decimal(Map.get(entry, "low"), :optional),
+    with :ok <- check_keys(entry, ~w(low high), "takes low and/or high"),
+         {:ok, low} <- decimal(Map.get(entry, "low"), :optional),
          {:ok, high} <- decimal(Map.get(entry, "high"), :optional),
          :ok <- check_end(type, low),
          :ok <- check_end(type, high) do
@@ -350,10 +354,13 @@ defmodule RockcutApi.Ingredients.Features do
     with :ok <- check_places(type, value), do: check_value(type, value)
   end
 
+  # Gap 8: a single value's map has `value` and the entered pair only (a
+  # range's `%{"low", "high"}` here is refused, not dropped).
   defp entry_attrs(entry) when is_map(entry) do
     entry = Map.new(entry, fn {k, v} -> {to_string(k), v} end)
 
-    with {:ok, value} <- decimal(Map.get(entry, "value"), :required),
+    with :ok <- check_keys(entry, ~w(value entered_value entered_unit), "takes one value"),
+         {:ok, value} <- decimal(Map.get(entry, "value"), :required),
          {:ok, entered_value} <- decimal(Map.get(entry, "entered_value"), :optional),
          {:ok, entered_unit} <- unit(Map.get(entry, "entered_unit")) do
       {:ok, %{value: value, entered_value: entered_value, entered_unit: entered_unit}}
@@ -363,6 +370,12 @@ defmodule RockcutApi.Ingredients.Features do
   defp entry_attrs(value) do
     with {:ok, value} <- decimal(value, :required),
          do: {:ok, %{value: value, entered_value: nil, entered_unit: nil}}
+  end
+
+  defp check_keys(entry, allowed, message) do
+    if map_size(entry) > 0 and Enum.all?(Map.keys(entry), &(&1 in allowed)),
+      do: :ok,
+      else: {:error, message}
   end
 
   defp decimal(v, :required) when v in [nil, ""], do: {:error, "can't be blank"}
