@@ -408,3 +408,42 @@ Maple syrup is left out: Matt will check its specs and add it by hand.
 
 **Extract precision:** extract keeps grain's 1 decimal for typed values. The seed stores 81.95 and
 80.33 exactly as given, so `extract_fgdb` moves to **2 decimals**. Grain values are unaffected.
+
+## Amendment (Matt, 2026-11-20): fruit reference data, batch 3
+
+**Data:** `reference/d65_fruit_matt_2026-11-20.csv`, local only; the seed embeds it. Matt's paste
+had two cost/Brix column pairs. Only the **second** is used ("ignore the first").
+
+**Decisions:**
+1. **Aseptic Fruit is both manufacturer and supplier** of every fruit. The spelling is the lead's
+   correction of "Asceptic", for Matt to confirm.
+2. **Brix is a typical range on the fruit product** (low–high), as hops carry alpha. This changes
+   §4.4 for Fruits from "lot only" to **range on the product + optional actual on the lot**. The
+   lot doesn't copy the range; it shows it beside the box, and an actual outside the range is
+   marked, never refused. Watermelon's "12" is stored as 12–12 and shown as "12 °Bx".
+
+**Lead's reading, for Matt to confirm (A14):**
+- Every fruit is a **Purée**, in **lb** (the containers are 11 and 44 lb). This replaces decision
+  6's "purée in gallons" for these products; gal stays allowed for fruit.
+- Costs are **per container**.
+- Packs are **pail · 11 lb** and **pail · 44 lb**.
+- Strawberry is **one product with two offers** (11 lb and 44 lb).
+- "Tangereen" reads Tangerine.
+
+**Seeded on every environment** (Aseptic Fruit; prices effective 2026-11-20; no lots):
+
+| Ingredient | Product | Pack | Price | $/lb | Brix |
+|---|---|---|---|---|---|
+| Passion Fruit | Purée | pail · 11 lb | $51.00 | $4.64 | 12–14 |
+| Strawberry | Purée | pail · 11 lb | $45.00 | $4.09 | 6.5–9 |
+| Strawberry | (same product) | pail · 44 lb | $116.50 | $2.65 | 6.5–9 |
+| Raspberry | Purée | pail · 11 lb | $69.00 | $6.27 | 11–13 |
+| Pink Guava | Purée | pail · 11 lb | $29.00 | $2.64 | 8–11 |
+| Grapefruit | Purée | pail · 44 lb | $82.00 | $1.86 | 10–13 |
+| Lemon | Purée | pail · 44 lb | $99.50 | $2.26 | 6–9 |
+| Lime | Purée | pail · 44 lb | $97.92 | $2.23 | 6–9.4 |
+| Plum | Purée | pail · 44 lb | $113.50 | $2.58 | 17–20 |
+| Blueberry | Purée | pail · 44 lb | $115.00 | $2.61 | 10–14 |
+| Blood Orange | Purée | pail · 44 lb | $98.50 | $2.24 | 6–9.4 |
+| Tangerine | Purée | pail · 44 lb | $103.50 | $2.35 | 15–17 |
+| Watermelon | Purée | pail · 44 lb | $114.00 | $2.59 | 12 |
