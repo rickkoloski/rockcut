@@ -1224,3 +1224,32 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 3 | Receive split of 0: the footer says "Each lot needs at least 1 box. Remove the empty one." ("sack" for grain), the 0 is marked with its row's remove button; Receive stays disabled until the 0 is removed or changed; removing it receives | Vitest `emptySplitText` (revert); Playwright "gap 3" (revert) |
 | 4 | Ingredient Library: the Category (and a grain child) is in the URL (`?category=<id>`, `all`); Back and the "Ingredients" / "Ingredient Library" links return to it; no parameter is the Grains default | Vitest `categoryFromParam`, `categoryParam`, `libraryHref` (storage off → default); Playwright "gap 4" Hops and Base, desktop and 360 px (revert) |
 | — | Add lot supplier: with offers, Supplier defaults to the reorder offer's supplier, else the newest offer's, and has no "None"; the API refuses a lot of a product with an active offer without a supplier (missing, null, blank) → 422 "Pick the supplier; this product's lots come from its offers' suppliers", nothing written; no offer (or only inactive ones) saves without one as before | S0 "Add lot supplier" (refused, allowed, no offer; revert); Vitest `defaultLotSupplier` (revert); Playwright "Add lot supplier" (revert: the two-offer default) |
+
+**Stop 1: categories, catalog, products** (plan Stop 1; spec §2 decision 8, §4.1–§4.3, §5 items 1–3, A9, A10). ExUnit `rockcut_api/migrations/d65_products_and_categories_test.exs` ("MIG"), `rockcut_api_web/controllers/d65_stop1_test.exs` ("S1"); Vitest `src/lib/d65Stop1.test.ts`; Playwright `regression/ingredients/d65.spec.ts` (brewer1; brewer2 for the salt). Its rows are `[TEST-TEMP]` ingredients in the D65 categories (`helpers.ts` `makeD65Ingredient`, `makeD65Product`, `makeD65Lot`), never the seeded Whirlfloc or Dextrose; clean-up also takes a None product by its tagged ingredient, and a tagged subcategory is deleted by id.
+
+| Scenario | Coverage |
+|---|---|
+| Migrations on a D62-prod-shaped database: products, features, offers, prices, lots, movements, order and contract lines, recipe lines, minimum and reorder offer survive the products rebuild; `foreign_key_check` empty; foreign keys still point at the new table; a None product once, a second refused by the unique index | MIG "everything D62 holds survives…" |
+| Categories end as §4.1: Water Salts and Finings under Other Consumables (no Acids), Whirlfloc in Finings, "Dextrose (Corn Sugar)", no Irish Moss, no Future Ingredients, the three Form fields gone (Yeast's stays); a second run changes nothing | MIG (same test); Playwright "categories" (API and Categories page) |
+| Kept and logged: Irish Moss with a recipe line, a non-empty Future Ingredients, a stray at the top of Other Consumables | MIG "Irish Moss with a recipe line…" |
+| A D65 lot with no product stops the migration, naming it | MIG "a D65 lot with no product stops the migration" |
+| `down` refused while a product has no manufacturer; otherwise D62's shape | MIG "down: …" |
+| `mix ecto.reset`, seeds and `mix rockcut.synthetic.setup` on a fresh database end in the migrated shape; the hop reference unchanged (28 lots, 409.6 lb); setup removes tagged D65 rows (a None product with its lot, a tagged subcategory, a tagged company) | Run by hand on a throwaway database (Stop 1 report) |
+| Catalog lists per category and per Other Consumables child; another child gets the union (A10); sugars by form; default pack per unit; manufacturer required on grain and hops only; no contract unit for D65 | S1 "Catalog (§4.2)"; the category JSON's `catalog` |
+| The manufacturer is optional on D65 products ("None"), required on grain and hops | S1 "the manufacturer…"; Playwright "a None salt product…" |
+| Form required, from the category's (or child's) list | S1 "a form from the category's (or child's) list…" |
+| Unit from the list; sugars by form; Dry in gal → 422 "Dry sugars are in lb"; grain and hops keep D62 (the API sets lb) | S1 "the unit comes from the list…"; HAT (D62); Playwright "sugars…" (the dialog locks Dry to lb, the API refuses gal) |
+| The unit is fixed once the product has a lot | S1 "the unit is fixed once the product has a lot" |
+| A second None product → "There's already a Calcium Sulfate (Gypsum) Powder with manufacturer None." (and "Whirlfloc T") | S1 "a missing manufacturer is one value…"; Playwright "a None salt product…" |
+| `display_name` "… · None" with and without a product name; lists, JSON and Totals never print nil or an empty maker; Totals' manufacturer "None" | S1 "None, with and without a product name…"; Vitest `makerName`, `pickerName` |
+| `each` whole: a lot's first movement and pack size, movements, Oldest first (2 + 1, never a fraction), counts total and by lot, offer pack sizes, receipts; "Whirlfloc T is counted in whole tablets" / "… in whole numbers" | S1 "each in whole numbers (§4.3)" (4 tests); Vitest `readQuantity`, `formatQuantity` in tablets; Playwright "Whirlfloc T reads tablets…" (dialog and API) |
+| `unit_label` "tablets" for a Tablet `each`, in the API and the UI | S1; Vitest `unitLabel`; Playwright "Whirlfloc T…", 360 px |
+| No Add field / Add subcategory on Fruits, Spices & Flavorings, Sugars and Extracts (UI hidden, API 422 on POST and on PUT moving a field there); Other Consumables takes a child, which gets the union lists | S1 "categories (A9, §4.1)"; Vitest `allowsChildren`, `isManagedCategory`; Playwright "categories" |
+| The ingredient formula: optional, ≤ 40 characters | S1 "the ingredient formula" |
+| A D65 product can't go on a contract line ("Contracts are for grain and hops") | S1 "contracts (decision 3)" |
+| Strawberry: Purée (gal) and Whole (lb) with their own on hand; the duplicate refused | Playwright "Strawberry…" |
+| Cinnamon (Ground, oz), Vanilla Extract (Extract, fl oz), no feature fields | Playwright "spices…" |
+| 360 px: the fruit and Whirlfloc library cards and product pages, no sideways scroll | Playwright "at 360 px" |
+| Stop 0 LEAD note 4: the library shows a loading state while the categories load | Playwright "Stop 0 LEAD note 4…" |
+| D65 packs read by name in the pickers ("pail · 5 gal", "tub · 872 tablets") | Vitest `offerPackText`, `reorderOfferPack` |
+
