@@ -140,6 +140,13 @@ The data is embedded from the git-excluded CSVs in `docs/current_work/reference/
 
 ## Stages and stops
 
+0. **Stop 0: carry the D62 DEV QA fixes** (spec, last-but-one amendment).
+   - Branch `d65-carry-devqa`, at `cb9ed73` on top of D62's `a9998ea`, holds:
+     - gap 1 (`c939d17`) and gap 2 (`fcaefe4`), committed with tests;
+     - gaps 3, 4 and the Add lot supplier as an unfinished `wip` commit;
+     - D62 decisions 5 (`1a3b3f5`).
+   - After D62 merges and D65 is rebased, cherry-pick these onto D65. Finish the wip, give each
+     fix a test that fails without it, and keep the decisions doc.
 1. **Stop 1: categories, catalog, products.**
    - Migrations 3, 5 and 6 (the product rebuild runs with the API down; ask first);
    - Catalog, `Product.changeset`, `display_name` with None;

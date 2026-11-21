@@ -515,3 +515,20 @@ grass").
   - The seed stops adding it.
   - The migration deletes it where it has no products, lots or recipe lines.
   - If it's in use anywhere, it stays, and the release notes list it so Matt can decide.
+
+## Amendment (Matt, 2026-11-20): D62 DEV QA gaps carried into D65
+
+D62 passed DEV QA with 4 minor gaps. Matt chose to ship D62 as tested (`a9998ea`) and fix them
+here, since D65 changes the same screens. The decisions are in D62's
+`prompts/d62_lead_decisions_5.md`, which is kept on the carry branch.
+1. **Companies list:** the Order target reads "40 packs".
+2. **Receiving into an existing lot #:** a crop year sent explicitly blank, when the lot has one,
+   gets a 422.
+3. **Receive split of 0:** the footer says "Each lot needs at least 1 box. Remove the empty one."
+   and the empty split gets a remove button.
+4. **Ingredient Library:** the Category is kept in the URL, so Back returns to the same view.
+5. **Add lot supplier:**
+   - it defaults from the product's offers;
+   - it's required when the product has offers (API 422).
+
+These also get a §10 scenario each.
