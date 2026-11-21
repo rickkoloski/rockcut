@@ -475,3 +475,15 @@ Brix. **Matt: store them as Brix.** Each is a typical single value on the produc
 **Acids are left blank for now** ("maybe not needed at all"). The Acids child of Other Consumables
 is still created, so it can be used if needed, but no acid data is seeded. If Matt decides it isn't
 needed, it can be removed in Ingredient Library → Categories.
+
+## Amendment (Matt, 2026-11-20): finings, batch 4
+
+| Ingredient | Product | Manufacturer | Form | Unit | Supplier · pack | Price | $/lb |
+|---|---|---|---|---|---|---|---|
+| Whirlfloc | Whirlfloc T | None | Tablet | lb | BSG · tub · 5 lb | $92.00 | $18.40 |
+
+- Matt gave it as **5 lb for $92**, so the product is in **lb** (tub · 5 lb), not "each". The `each`
+  unit stays available for any tablet counted by the piece (A16, to confirm).
+- The product name is "T", so it shows as "Whirlfloc T". The seeded ingredient Whirlfloc already
+  sits under Finings (A8).
+- Irish Moss stays an ingredient with no product.
