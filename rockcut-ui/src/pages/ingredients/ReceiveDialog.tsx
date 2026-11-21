@@ -294,7 +294,7 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
         </Typography>
         <Typography variant="body2" color="text.secondary">
           {line.offer.label !== line.offer.product.display_name && `${line.offer.label} · `}
-          ordered {line.packs_ordered} × {Number(line.offer.pack_size)} {line.offer.product.unit ?? 'lb'}
+          ordered {line.packs_ordered} × {Number(line.offer.pack_size)} {line.offer.product.unit_label ?? line.offer.product.unit ?? 'lb'}
         </Typography>
       </Box>
       {error && <Alert severity="error" data-testid={`receive-line-${index}-error`}>{error}</Alert>}

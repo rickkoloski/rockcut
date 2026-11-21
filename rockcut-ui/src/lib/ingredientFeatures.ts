@@ -121,12 +121,35 @@ export function keyedCategories(categories: IngredientCategory[], key: string): 
 /** D62 §3.6 (amendments): a hop product's forms, as the API lists them. */
 export const HOP_FORMS = ['T90 Pellet', 'Cryo', 'Whole leaf', 'Extract'] as const
 
-/** D62: the categories with products, packs and movements (Stage 2: grain and hops). */
-export const MANAGED_KEYS = ['grains', 'hops'] as const
+/**
+ * D62: the categories with products, packs and movements. D65 §4.2: every
+ * key but Yeast Strains (D64) and Future Ingredients.
+ */
+export const MANAGED_KEYS = ['grains', 'hops', 'fruits', 'spices', 'sugars', 'consumables'] as const
 export const isManagedKey = (key: string | null | undefined) => !!key && (MANAGED_KEYS as readonly string[]).includes(key)
+
+/** D65: the categories whose products take a form and unit from the catalog's lists and may have no manufacturer. */
+export const D65_KEYS = ['fruits', 'spices', 'sugars', 'consumables'] as const
+export const isD65Key = (key: string | null | undefined) => !!key && (D65_KEYS as readonly string[]).includes(key)
 
 /** What one of a category's items is called on its screens ("Grain", "Hop"). */
 export const itemLabel = (key: string | null | undefined) => (key === 'hops' ? 'Hop' : key === 'grains' ? 'Grain' : 'Ingredient')
+
+/** D65 decision 8: a product's manufacturer as screens say it; "None" when there isn't one. */
+export const makerName = (p: { manufacturer?: { name: string } | null } | null | undefined) => p?.manufacturer?.name ?? 'None'
+
+/** D65 §4.3: a product's unit as screens say it ("tablets" for `each` on a Tablet product). */
+export const unitLabel = (p: { unit?: string | null; unit_label?: string | null; form?: string | null } | null | undefined): string =>
+  p?.unit_label ?? (p?.unit === 'each' && p?.form === 'Tablet' ? 'tablets' : (p?.unit ?? 'lb'))
+
+/**
+ * D65 §4.2: the units a product of `form` may be in, from its category's
+ * catalog: Sugars by form (Dry lb; Liquid lb or gal), the rest the list.
+ */
+export function unitsFor(catalog: { units: string[]; form_units?: Record<string, string[]> } | null | undefined, form: string | null | undefined): string[] {
+  if (!catalog) return []
+  return (form && catalog.form_units?.[form]) || catalog.units
+}
 
 /** What one of a category's products is called ("Maltster product", "Hop product"). */
 export const productLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster product' : key === 'hops' ? 'Hop product' : 'Product')
@@ -274,10 +297,22 @@ export function isGrainCategory(categories: IngredientCategory[], id: number): b
   return !!grains && (grains.id === id || children.some((c) => c.id === id))
 }
 
-/** D62 §3.1: a category the catalog manages, or a child of one (Grains, Hops): no custom fields. */
+/**
+ * D62 §3.1: a category that takes no custom fields: Grains, Hops and their
+ * children. D65 §4.1: and Fruits, Spices & Flavorings and Sugars and
+ * Extracts (the API's `catalog.allows_fields`; Other Consumables takes them).
+ */
 export function isManagedCategory(categories: IngredientCategory[], id: number): boolean {
   const category = categories.find((c) => c.id === id)
-  return isManagedKey(categoryKey(categories, category))
+  if (category?.catalog) return !category.catalog.allows_fields
+  return ['grains', 'hops', 'fruits', 'spices', 'sugars'].includes(categoryKey(categories, category) ?? '')
+}
+
+/** D65 A9: whether a top-level category takes subcategories (Grains, Other Consumables do; Hops, Fruits, Spices, Sugars don't). */
+export function allowsChildren(category: Pick<IngredientCategory, 'key' | 'parent_id' | 'catalog'> | null | undefined): boolean {
+  if (!category || category.parent_id != null) return false
+  if (category.catalog) return category.catalog.allows_children
+  return !['hops', 'fruits', 'spices', 'sugars'].includes(category.key ?? '')
 }
 
 /**
@@ -306,6 +341,7 @@ export function categoryOptions(categories: IngredientCategory[]): { category: I
  * apart; grain keeps its name ("Rahr 2-Row").
  */
 export function pickerName(p: Pick<IngredientProduct, 'display_name' | 'form' | 'name'> & { ingredient?: { name: string } | null; manufacturer?: { name: string } | null }): string {
+  // D65: a product with no manufacturer already reads "Whirlfloc T · None".
   if (!p.form || !p.ingredient || !p.manufacturer) return p.display_name
   return `${p.ingredient.name} ${p.form}${p.name ? ` (${p.name})` : ''} · ${p.manufacturer.name}`
 }
@@ -333,11 +369,11 @@ export function productMatches(p: IngredientProduct, term: string): boolean {
  * Count and Record movement all use it, so they read the same.
  */
 export function onHandText(
-  p: { on_hand: string | number | null; expired?: string | number | null; unit?: string | null; offers?: IngredientProduct['offers'] },
+  p: { on_hand: string | number | null; expired?: string | number | null; unit?: string | null; unit_label?: string | null; form?: string | null; offers?: IngredientProduct['offers'] },
   mode: QuantityDisplay,
   pack: Pack | null = productPack(p.offers),
 ): string {
-  const show = (q: string | number | null) => formatQuantity(q, pack?.name, pack?.size, p.unit, mode)
+  const show = (q: string | number | null) => formatQuantity(q, pack?.name, pack?.size, unitLabel(p), mode)
   const expired = Number(p.expired ?? 0)
   if (!(expired > 0)) return show(p.on_hand)
   const usable = Math.round((Number(p.on_hand ?? 0) - expired) * 100) / 100

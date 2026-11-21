@@ -28,7 +28,7 @@ import FieldDefinitionDialog from './FieldDefinitionDialog';
 import parseApiError from '../../lib/parseApiError';
 import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
-import { isGrainCategory, isManagedCategory } from '../../lib/ingredientFeatures';
+import { allowsChildren, isD65Key, isGrainCategory, isManagedCategory } from '../../lib/ingredientFeatures';
 import { libraryHref } from '../../lib/libraryView'
 
 export default function CategoryDetail() {
@@ -192,8 +192,8 @@ export default function CategoryDetail() {
         </Grid>
       </Paper>
 
-      {/* D60 §3.1: subcategories (one level). D62 lead decisions 1: none on Hops. */}
-      {category.parent_id == null && category.key !== 'hops' && (
+      {/* D60 §3.1: subcategories (one level). D62 lead decisions 1: none on Hops; D65 A9: nor on Fruits, Spices & Flavorings, Sugars and Extracts. */}
+      {allowsChildren(categories.find((c) => c.id === category.id) ?? category) && (
         <>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h5">Subcategories</Typography>
@@ -224,7 +224,8 @@ export default function CategoryDetail() {
         <Typography variant="h5">Field Definitions</Typography>
         {managed ? (
           <Typography variant="body2" color="text.secondary" data-testid="category-grain-fields-note">
-            {grains ? 'Grains' : category.name} use specs (features), not custom fields
+            {grains ? 'Grains' : category.name}{' '}
+            {isD65Key(category.key) ? 'use products (form and unit), not custom fields' : 'use specs (features), not custom fields'}
           </Typography>
         ) : (
           <Button

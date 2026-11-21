@@ -19,11 +19,12 @@ export function money(v: string | number | null | undefined, digits = 2): string
 /**
  * An offer's pack as the pickers show it (D62 lead decisions 1, gap 3): a
  * box "box · 11 lb"; a sack its size with the grain form, "55 lb whole"
- * (milled or whole is grain's; a hop offer has none).
+ * (milled or whole is grain's; a hop offer has none). D65: any other pack
+ * reads as the box does, "pail · 5 gal", "tub · 872 tablets".
  */
 export function offerPackText(o: { pack_name: string; pack_size: string | number; form?: string | null }, unit = 'lb'): string {
   const size = `${Number(o.pack_size)} ${unit}`
-  if (o.pack_name === 'box') return `box · ${size}`
+  if (o.pack_name !== 'sack') return `${o.pack_name} · ${size}`
   return o.form ? `${size} ${o.form}` : size
 }
 
@@ -32,7 +33,7 @@ export function offerPackText(o: { pack_name: string; pack_size: string | number
  * as on the order and Add lot pickers; a sack reads "50 lb" as in D61.
  */
 export const reorderOfferPack = (o: { pack_name: string; pack_size: string | number }, unit = 'lb') =>
-  o.pack_name === 'box' ? offerPackText({ ...o, form: null }, unit) : `${Number(o.pack_size)} ${unit}`
+  o.pack_name !== 'sack' ? offerPackText({ ...o, form: null }, unit) : `${Number(o.pack_size)} ${unit}`
 
 /**
  * The pack To order's caption counts in: each row's own (its offer's, else

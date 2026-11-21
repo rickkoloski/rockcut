@@ -8,8 +8,8 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { LB_DECIMALS, parseDecimal, packSizeLabel, productPack } from '../../lib/brewingUnits'
-import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
+import { parseDecimal, packSizeLabel, productPack, unitDecimals } from '../../lib/brewingUnits'
+import { draftsFrom, draftsValid, featuresPayload, isD65Key, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, unitLabel, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
 import { defaultLotSupplier, offerPackText } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
@@ -43,7 +43,8 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   const startPack = productPack(product.offers)
   const [packSize, setPackSize] = useState(first?.pack_size ?? (hops ? '11' : String(startPack?.size ?? '')))
   // D62 §3.5: the pack is the offer's (a sack, for grain; always a box of 11 lb, for hops).
-  const [packName, setPackName] = useState(first?.pack_name ?? startPack?.name ?? (hops ? 'box' : 'sack'))
+  // D65: with no offer or lots, no pack name; the API starts it as the unit's usual pack (lb → bag, …).
+  const [packName, setPackName] = useState<string | null>(first?.pack_name ?? startPack?.name ?? (hops ? 'box' : isD65Key(product.category_key) ? null : 'sack'))
   const [cropYear, setCropYear] = useState(coloradoToday().slice(0, 4))
   const [lotNumber, setLotNumber] = useState('')
   const [received, setReceived] = useState(coloradoToday())
@@ -58,7 +59,8 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   const shown = drafts ?? draftsFrom(hops ? null : product.features, featureTypes)
   const crop = parseCropYear(cropYear, coloradoToday())
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && p.active)
-  const size = parseDecimal(packSize, LB_DECIMALS)
+  // An `each` pack size is whole (D65 §4.3).
+  const size = parseDecimal(packSize, unitDecimals(product.unit))
   const packQty = size.ok && size.value ? Number(size.value) : null
 
   const create = useApiCreate<IngredientLot>('/api/ingredient_lots', { invalidateKeys: GRAIN_KEYS })
@@ -120,7 +122,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
             </MenuItem>
             {offers.map((o) => (
               <MenuItem key={o.id} value={o.id}>
-                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {offerPackText(o, product.unit)}
+                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {offerPackText(o, unitLabel(product))}
               </MenuItem>
             ))}
           </Select>
@@ -142,11 +144,11 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
         </Select>
       </FormControl>
       {hops ? (
-        <TextField label="Pack" value={`box · 11 ${product.unit}`} disabled fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-pack-fixed' } }} />
+        <TextField label="Pack" value={`box · 11 ${unitLabel(product)}`} disabled fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-pack-fixed' } }} />
       ) : (
         <DecimalInput
-          decimals={LB_DECIMALS}
-          label={packSizeLabel(packName, product.unit)}
+          decimals={unitDecimals(product.unit)}
+          label={packSizeLabel(packName, unitLabel(product))}
           value={packSize}
           onChange={setPackSize}
           fullWidth
@@ -188,7 +190,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
         mode={mode}
         packSize={packQty}
         packName={packName}
-        unit={product.unit}
+        unit={unitLabel(product)}
         label="Quantity"
         onChange={setQuantity}
         testId="lot-quantity"

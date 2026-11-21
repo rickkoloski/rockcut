@@ -31,7 +31,7 @@ import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack } from '../../lib/brewingUnits'
-import { differs, formatRange, itemLabel, lotTypesFor, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor } from '../../lib/ingredientFeatures'
+import { differs, formatRange, isD65Key, itemLabel, lotTypesFor, makerName, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor, unitLabel } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
@@ -55,7 +55,10 @@ type Open = 'edit' | 'delete' | 'offer' | 'price' | 'lot' | 'movement' | 'count'
  * offers and prices, lots, and stock movements. D62 §4.2: a hop product
  * shows its form, origin and typical ranges; its offers are box · 11 lb with
  * $/box and $/lb; its lots show crop year and the alpha / beta / oil actuals,
- * a value outside the typical range marked.
+ * a value outside the typical range marked. D65 §5.2: a fruit, spice,
+ * sugar or other consumable product as hops (offers with packs, lots,
+ * movements, open orders, the minimum); its header shows form, unit
+ * ("tablets" on a Tablet) and the manufacturer, or None.
  */
 export default function ProductPage() {
   const { id } = useParams()
@@ -94,12 +97,17 @@ export default function ProductPage() {
 
   const hops = product.category_key === 'hops'
   const key = product.category_key
+  const d65 = isD65Key(key)
+  // Hops and D65 products show their offers' packs by name ("pail · 5 gal").
+  const named = hops || d65
+  // D65: "tablets" for `each` on a Tablet product.
+  const unit = unitLabel(product)
   const featureTypes = hops ? productTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
   const lotTypes = hops ? lotTypesFor(types, product.category?.id, product.category?.parent_id) : []
   const pack = productPack(product.offers, lots)
   // The pack the minimum counts in: the product's (a sack, for grain; a box, for hops).
-  const minimumPack = pack?.name ?? product.offers?.[0]?.pack_name ?? (hops ? 'box' : 'sack')
-  const offerPack = product.offers?.[0]?.pack_name ?? minimumPack
+  const minimumPack = pack?.name ?? product.offers?.[0]?.pack_name ?? (hops ? 'box' : d65 ? null : 'sack')
+  const offerPack = product.offers?.[0]?.pack_name ?? minimumPack ?? 'pack'
   const lotsById = new Map(lots.map((l) => [l.id, l]))
   const close = () => {
     setOpen(null)
@@ -135,7 +143,7 @@ export default function ProductPage() {
         title={product.display_name}
         toolbar={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-            <QuantityToggle {...toggleLabels(minimumPack, product.unit)} />
+            <QuantityToggle {...toggleLabels(minimumPack, unit)} />
             <Button variant="contained" onClick={() => setOpen('movement')} disabled={lots.length === 0} data-testid="product-record-movement">
               Record movement
             </Button>
@@ -195,15 +203,19 @@ export default function ProductPage() {
               {itemLabel(key)}
             </Typography>
             <Typography data-testid="product-item">
-              {hops ? [product.ingredient?.name, product.form, product.origin].filter(Boolean).join(' · ') : `${product.ingredient?.name} · ${product.category?.name}`}
+              {hops
+                ? [product.ingredient?.name, product.form, product.origin].filter(Boolean).join(' · ')
+                : d65
+                  ? [product.ingredient?.name, product.form, unit, product.category?.name].filter(Boolean).join(' · ')
+                  : `${product.ingredient?.name} · ${product.category?.name}`}
             </Typography>
           </Grid>
           <Grid size={{ xs: 6, sm: 4 }}>
             <Typography variant="subtitle2" color="text.secondary">
               {manufacturerLabel(product.category_key)}
             </Typography>
-            <Typography>
-              {product.manufacturer?.name}
+            <Typography data-testid="product-manufacturer">
+              {makerName(product)}
               {!product.active && <Chip label="Inactive" size="small" sx={{ ml: 1 }} />}
             </Typography>
           </Grid>
@@ -217,6 +229,8 @@ export default function ProductPage() {
         </Grid>
       </Paper>
 
+      {/* D65: no features until Stop 2, so no empty section. */}
+      {(!d65 || featureTypes.length > 0) && (
       <Section title={hops ? 'Typical ranges' : 'Standard specs'} action={<Button onClick={() => setOpen('edit')}>Edit</Button>}>
         <Grid container spacing={2} sx={{ p: 2 }} data-testid="product-specs">
           {featureTypes.map((t) => {
@@ -239,6 +253,7 @@ export default function ProductPage() {
           })}
         </Grid>
       </Section>
+      )}
 
       <Section
         title="Supplier offers"
@@ -253,10 +268,10 @@ export default function ProductPage() {
             <TableRow>
               <TableCell>Supplier</TableCell>
               <TableCell>Order name</TableCell>
-              <TableCell align="right">{hops ? 'Pack' : `${offerPack.charAt(0).toUpperCase()}${offerPack.slice(1)}`}</TableCell>
-              {!hops && <TableCell>Form</TableCell>}
+              <TableCell align="right">{named ? 'Pack' : `${offerPack.charAt(0).toUpperCase()}${offerPack.slice(1)}`}</TableCell>
+              {!named && <TableCell>Form</TableCell>}
               <TableCell align="right">$/{offerPack}</TableCell>
-              <TableCell align="right">$/{product.unit}</TableCell>
+              <TableCell align="right">$/{unit}</TableCell>
               <TableCell />
             </TableRow>
           </TableHead>
@@ -276,9 +291,9 @@ export default function ProductPage() {
                   <TableCell>{o.supplier?.name}</TableCell>
                   <TableCell>{o.order_name ?? '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`offer-pack-${o.id}`}>
-                    {hops ? `${o.pack_name} · ${Number(o.pack_size)} ${product.unit}` : `${Number(o.pack_size)} ${product.unit}`}
+                    {named ? `${o.pack_name} · ${Number(o.pack_size)} ${unit}` : `${Number(o.pack_size)} ${unit}`}
                   </TableCell>
-                  {!hops && <TableCell>{o.form === 'milled' ? 'Milled' : 'Whole'}</TableCell>}
+                  {!named && <TableCell>{o.form === 'milled' ? 'Milled' : 'Whole'}</TableCell>}
                   <TableCell align="right" data-testid={`offer-price-${o.id}`}>
                     {money(o.current_price?.price_per_pack)}
                   </TableCell>
@@ -316,7 +331,7 @@ export default function ProductPage() {
                 {history.has(o.id) && (
                   <TableRow>
                     <TableCell colSpan={7} sx={{ backgroundColor: 'action.hover' }}>
-                      <PriceHistory offer={o} unit={product.unit} />
+                      <PriceHistory offer={o} unit={unit} />
                     </TableCell>
                   </TableRow>
                 )}
@@ -340,16 +355,16 @@ export default function ProductPage() {
                 </TableCell>
               ))}
               <TableCell align="right">On hand</TableCell>
-              <TableCell align="right">$/{product.unit}</TableCell>
+              <TableCell align="right">$/{unit}</TableCell>
               <TableCell align="right">Value</TableCell>
               <TableCell>Status</TableCell>
-              {!hops && <TableCell>Specs changed from standard</TableCell>}
+              {!named && <TableCell>Specs changed from standard</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {lots.length === 0 && (
               <TableRow>
-                <TableCell colSpan={hops ? 8 + lotTypes.length : 8}>
+                <TableCell colSpan={named ? 7 + (hops ? 1 : 0) + lotTypes.length : 8}>
                   <Typography variant="body2" color="text.secondary">
                     No lots yet: Add lot enters stock that's here or just arrived.
                   </Typography>
@@ -395,7 +410,7 @@ export default function ProductPage() {
                     )
                   })}
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-on-hand-${l.id}`}>
-                    {formatQuantity(l.on_hand, l.pack_name, l.pack_size, product.unit, mode)}
+                    {formatQuantity(l.on_hand, l.pack_name, l.pack_size, unit, mode)}
                   </TableCell>
                   {/* D61 §3.4: at the latest price paid; "est." at the offer price; "—" with no price. */}
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-cost-${l.id}`}>
@@ -407,7 +422,7 @@ export default function ProductPage() {
                   <TableCell data-testid={`lot-status-${l.id}`}>
                     <StatusChip status={l.status} domain="lot" />
                   </TableCell>
-                  {!hops && (
+                  {!named && (
                   <TableCell>
                     {changed.map((t) => (
                       <Chip
@@ -497,7 +512,7 @@ export default function ProductPage() {
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                   {Number(m.quantity) === 0
                     ? '—'
-                    : formatQuantity(m.quantity, lotsById.get(m.lot_id)?.pack_name, lotsById.get(m.lot_id)?.pack_size, product.unit, mode)}
+                    : formatQuantity(m.quantity, lotsById.get(m.lot_id)?.pack_name, lotsById.get(m.lot_id)?.pack_size, unit, mode)}
                 </TableCell>
                 <TableCell>{m.partner?.name ?? ''}</TableCell>
                 <TableCell>{m.note ?? ''}</TableCell>
@@ -508,7 +523,7 @@ export default function ProductPage() {
         </Table>
       </Section>
 
-      <ProductDialog open={open === 'edit'} onClose={close} product={product} />
+      <ProductDialog open={open === 'edit'} onClose={close} product={product} hasLots={lots.length > 0} />
       <ConfirmDialog
         open={open === 'delete'}
         onClose={close}
@@ -517,8 +532,17 @@ export default function ProductPage() {
         message={`Delete "${product.display_name}"? A product with offers or lots can't be deleted; make it inactive instead.`}
         loading={remove.isPending}
       />
-      <OfferDialog open={open === 'offer'} onClose={close} productId={product.id} unit={product.unit} categoryKey={key} offer={offer ?? undefined} />
-      <PriceDialog open={open === 'price'} onClose={close} offer={offer} unit={product.unit} />
+      <OfferDialog
+        open={open === 'offer'}
+        onClose={close}
+        productId={product.id}
+        unit={unit}
+        categoryKey={key}
+        categoryId={product.category?.id}
+        storedUnit={product.unit}
+        offer={offer ?? undefined}
+      />
+      <PriceDialog open={open === 'price'} onClose={close} offer={offer} unit={unit} />
       <AddLotDialog open={open === 'lot' && lotId == null} onClose={close} product={product} />
       <GrainLotDialog open={open === 'lot' && !!lot} onClose={close} product={product} lot={lot} movements={lot ? movements.filter((m) => m.lot_id === lot.id) : []} />
       <MovementDialog open={open === 'movement'} onClose={close} product={product} lots={lots} />

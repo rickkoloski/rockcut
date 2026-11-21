@@ -10,6 +10,7 @@ import { formatQuantity, lotPack, productPack } from '../../lib/brewingUnits'
 import { FUTURE_DATE, GRAIN_KEYS, INCOMING, KIND_LABELS, OUTGOING, WITH_PARTNER, oldestFirst, oldestFirstOnHand } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement, MovementKind, Party } from '../../lib/types'
+import { unitLabel } from '../../lib/ingredientFeatures'
 
 const OLDEST = 'oldest'
 
@@ -90,7 +91,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
   }
 
   const lotLabel = (l: IngredientLot) =>
-    `${l.lot_number ?? `#${l.id}`} · received ${l.received_date ?? '—'} · ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, product.unit, mode)}${l.status === 'expired' ? ' · Expired' : ''}`
+    `${l.lot_number ?? `#${l.id}`} · received ${l.received_date ?? '—'} · ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, unitLabel(product), mode)}${l.status === 'expired' ? ' · Expired' : ''}`
 
   return (
     <FormDialog
@@ -174,11 +175,11 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
         mode={mode}
         packSize={pack?.size ?? null}
         packName={pack?.name}
-        unit={product.unit}
+        unit={unitLabel(product)}
         label="Quantity"
         onChange={setQuantity}
         testId="movement-quantity"
-        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, product.unit, mode)}` : oldestFirstOnHand(product, pack, mode)}
+        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, unitLabel(product), mode)}` : oldestFirstOnHand(product, pack, mode)}
       />
       <TextField
         label="Date"

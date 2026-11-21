@@ -12,7 +12,7 @@ import parseApiError from '../../lib/parseApiError'
 import { PRICE_DECIMALS, packLabel, packPlural, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
 import { offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
-import { WRAP_ITEM, WRAP_SELECT, pickerName } from '../../lib/ingredientFeatures'
+import { WRAP_ITEM, WRAP_SELECT, pickerName, unitLabel } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientProduct, Party, PurchaseOrder, SupplierOffer } from '../../lib/types'
 
@@ -89,7 +89,8 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   const supplier = parties.find((p) => p.id === supplierId)
   const productName = new Map(products.map((p) => [p.id, p.display_name]))
   const pickerNames = new Map(products.map((p) => [p.id, pickerName(p)]))
-  const productUnit = new Map(products.map((p) => [p.id, p.unit]))
+  // D65: "tablets" for `each` on a Tablet product.
+  const productUnit = new Map(products.map((p) => [p.id, unitLabel(p)]))
   // A line already on an inactive offer keeps it (lead, Stop 2 note 7); new picks are active offers only.
   const kept = new Set(order?.lines.map((l) => l.offer_id) ?? [])
   const choices = offers.filter((o) => o.supplier_party_id === supplierId && (o.active || kept.has(o.id)))
@@ -98,7 +99,8 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   // a grain offer reads as D61 ("Rahr - Standard 2-row · Rahr 2-Row · 55 lb · whole").
   const label = (o: SupplierOffer) => {
     const unit = productUnit.get(o.product_id) ?? 'lb'
-    const parts = o.pack_name === 'box' ? [pickerNames.get(o.product_id), o.order_name, offerPackText(o, unit)] : [o.order_name, productName.get(o.product_id), `${Number(o.pack_size)} ${unit}`, o.form]
+    // D65: any pack but grain's sack reads as hops do ("Whirlfloc T · None · tub · 872 tablets").
+    const parts = o.pack_name !== 'sack' ? [pickerNames.get(o.product_id), o.order_name, offerPackText(o, unit)] : [o.order_name, productName.get(o.product_id), `${Number(o.pack_size)} ${unit}`, o.form]
     return parts.filter(Boolean).join(' · ')
   }
 

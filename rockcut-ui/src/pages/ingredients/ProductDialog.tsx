@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { FormControl, FormControlLabel, InputLabel, ListSubheader, MenuItem, Select, Switch, TextField } from '@mui/material'
+import { FormControl, FormControlLabel, FormHelperText, InputLabel, ListSubheader, MenuItem, Select, Switch, TextField } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
 import FeatureFields from './FeatureFields'
 import RangeFields from './RangeFields'
@@ -15,6 +15,7 @@ import {
   draftsValid,
   featuresPayload,
   grainCategories,
+  isD65Key,
   itemLabel,
   keyedCategories,
   manufacturerLabel,
@@ -25,11 +26,14 @@ import {
   rangeDraftsFrom,
   rangesPayload,
   typesFor,
+  unitLabel,
+  unitsFor,
   type FeatureDrafts,
   type RangeDrafts,
 } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, refreshAfterConflict } from '../../lib/inventory'
 import { parsePacks } from '../../lib/purchasing'
+import { packPlural } from '../../lib/brewingUnits'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct, Party } from '../../lib/types'
 
 /** The manufacturer picker's "Other manufacturer…" entry. */
@@ -42,23 +46,30 @@ interface ProductDialogProps {
   product?: IngredientProduct
   /** A new product's grain, when known (from a grain's page). */
   ingredientId?: number
-  /** D62: a new product's category (`grains` unless said); an edit uses the product's. */
-  categoryKey?: 'grains' | 'hops'
+  /** D62: a new product's category (`grains` unless said); an edit uses the product's. D65: any managed key. */
+  categoryKey?: string
+  /** D62/D65: the product has lots, so its unit is fixed. */
+  hasLots?: boolean
 }
 
 /**
  * D60 §4.3: a maltster product: grain, maltster, product name, standard
  * specs. D62 §4.3: a hop product: variety, manufacturer, form (from the
  * list), product name, origin, and typical alpha / beta / oil ranges; the
- * unit is lb (the API sets it).
+ * unit is lb (the API sets it). D65 §5.3: a fruit, spice, sugar or other
+ * consumable product: ingredient, manufacturer (optional, "None"), form and
+ * unit from the category's (or child's) lists, the unit set by the form for
+ * sugars (Dry is lb) and fixed once the product has a lot; no features yet.
  */
 export default function ProductDialog(props: ProductDialogProps) {
   return props.open ? <ProductForm {...props} /> : null
 }
 
-function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDialogProps) {
-  const hops = (product?.category_key ?? categoryKey) === 'hops'
-  const key = hops ? 'hops' : 'grains'
+function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = false }: ProductDialogProps) {
+  const given = product?.category_key ?? categoryKey ?? 'grains'
+  const hops = given === 'hops'
+  const d65 = isD65Key(given)
+  const key = hops || d65 ? given : 'grains'
   const navigate = useNavigate()
   const { data: categories = [], isLoading: categoriesLoading } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
   const { data: ingredients = [], isLoading: ingredientsLoading } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
@@ -79,7 +90,9 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
   const minimumOk = minimum.trim() === '' || minimumPacks != null
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [ranges, setRanges] = useState<RangeDrafts | null>(null)
-  const [form, setForm] = useState(product?.form ?? HOP_FORMS[0])
+  const [form, setForm] = useState(product?.form ?? (d65 ? '' : HOP_FORMS[0]))
+  // D65: the unit, from the category's (or child's) list; '' until picked.
+  const [unit, setUnit] = useState(d65 ? (product?.unit ?? '') : 'lb')
   const [origin, setOrigin] = useState(product?.origin ?? '')
   const [error, setError] = useState<string | null>(null)
   // Gap 9 (D61's pattern): the version this dialog opened, kept if the page
@@ -89,11 +102,24 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
 
   const { grains, children } = grainCategories(categories)
   const { category: hopsCategory } = keyedCategories(categories, 'hops')
+  // D65: the category and its children (Other Consumables → Water Salts, Finings), each with its ingredients.
+  const { category: d65Category, children: d65Children } = keyedCategories(categories, key)
   const grainOptions = hops
     ? hopsCategory
       ? [{ category: hopsCategory, grains: ingredients.filter((i) => i.category_id === hopsCategory.id) }]
       : []
-    : children.map((c) => ({ category: c, grains: ingredients.filter((i) => i.category_id === c.id) })).filter((g) => g.grains.length > 0)
+    : d65
+      ? (d65Category ? [d65Category, ...d65Children] : [])
+          .map((c) => ({ category: c, grains: ingredients.filter((i) => i.category_id === c.id) }))
+          .filter((g) => g.grains.length > 0)
+      : children.map((c) => ({ category: c, grains: ingredients.filter((i) => i.category_id === c.id) })).filter((g) => g.grains.length > 0)
+  // Headings only where there's more than one group (Grains' children, Other Consumables').
+  const headed = !hops && (!d65 || grainOptions.length > 1)
+  const catalog = categories.find((c) => c.id === ingredients.find((i) => i.id === grainId)?.category_id)?.catalog
+  const forms = d65 ? (catalog?.forms ?? []) : []
+  const units = d65 ? unitsFor(catalog, form || null) : []
+  // One unit for the form (Dry sugar, Water Salts): it's that one.
+  const shownUnit = units.length === 1 ? units[0] : unit
   const featureTypes = hops ? [] : grains ? typesFor(types, grains.id) : []
   const rangeTypes = hops && hopsCategory ? productTypesFor(types, hopsCategory.id) : []
   // The boxes start from the product's standard once the feature types are in.
@@ -114,20 +140,32 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
   const showAll = everyManufacturer || (manufacturerId !== '' && !usualManufacturers.some((p) => p.id === manufacturerId))
   const manufacturers = showAll ? allManufacturers : usualManufacturers
 
+  // The minimum counts packs: sacks for grain, boxes for hops, the offers' pack for D65 (packs until it has one).
+  const minimumPacksWord = hops ? 'boxes' : d65 ? packPlural(product?.offers?.[0]?.pack_name) : 'sacks'
+
   const create = useApiCreate<IngredientProduct>('/api/ingredient_products', { invalidateKeys: GRAIN_KEYS })
   const update = useApiUpdate<IngredientProduct>((id) => `/api/ingredient_products/${id}`, { invalidateKeys: GRAIN_KEYS })
   const loading = create.isPending || update.isPending
 
   const submit = async () => {
-    if (!grainId || !manufacturerId) return setError(`Pick the ${itemLabel(key).toLowerCase()} and the ${manufacturerLabel(key).toLowerCase()}`)
+    if (d65) {
+      if (!grainId) return setError('Pick the ingredient')
+      if (!form) return setError('Pick the form')
+      if (!shownUnit || !units.includes(shownUnit)) return setError('Pick the unit')
+    } else if (!grainId || !manufacturerId) return setError(`Pick the ${itemLabel(key).toLowerCase()} and the ${manufacturerLabel(key).toLowerCase()}`)
     const payload = {
       ingredient_id: grainId,
-      manufacturer_party_id: manufacturerId,
+      // D65 decision 8: None is no manufacturer.
+      manufacturer_party_id: manufacturerId || null,
       name: name.trim() || null,
       notes: notes.trim() || null,
       active,
       min_on_hand_packs: minimum.trim() === '' ? null : minimumPacks,
-      ...(hops ? { form, origin: origin.trim() || null, features: rangesPayload(shownRanges, product?.features) } : { features: featuresPayload(shown, product?.features) }),
+      ...(hops
+        ? { form, origin: origin.trim() || null, features: rangesPayload(shownRanges, product?.features) }
+        : d65
+          ? { form, unit: shownUnit }
+          : { features: featuresPayload(shown, product?.features) }),
     }
     try {
       if (product) {
@@ -167,12 +205,19 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
           id="product-grain"
           label={itemLabel(key)}
           value={grainOptions.length ? grainId : ''}
-          onChange={(e) => setGrainId(e.target.value as number)}
+          onChange={(e) => {
+            setGrainId(e.target.value as number)
+            // D65: another category's lists; the form and unit are picked again.
+            if (d65) {
+              setForm('')
+              setUnit('')
+            }
+          }}
           disabled={!!product}
           data-testid="product-grain"
         >
           {grainOptions.flatMap((g) => [
-            ...(hops ? [] : [<ListSubheader key={`h${g.category.id}`}>{g.category.name}</ListSubheader>]),
+            ...(headed ? [<ListSubheader key={`h${g.category.id}`}>{g.category.name}</ListSubheader>] : []),
             ...g.grains.map((i) => (
               <MenuItem key={i.id} value={i.id}>
                 {i.name}
@@ -181,13 +226,18 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
           ])}
         </Select>
       </FormControl>
-      <FormControl fullWidth required>
-        <InputLabel id="product-maltster-label">{manufacturerLabel(key)}</InputLabel>
+      <FormControl fullWidth required={!d65}>
+        {/* D65: None shows as a value, so the label sits above it. */}
+        <InputLabel id="product-maltster-label" shrink={d65 || undefined}>
+          {manufacturerLabel(key)}
+        </InputLabel>
         <Select
           labelId="product-maltster-label"
           id="product-maltster"
           label={manufacturerLabel(key)}
-          value={manufacturers.length ? manufacturerId : ''}
+          value={manufacturers.length || d65 ? manufacturerId : ''}
+          displayEmpty={d65}
+          notched={d65 || undefined}
           open={manufacturerOpen}
           onOpen={() => setManufacturerOpen(true)}
           onClose={() => {
@@ -195,15 +245,23 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
             else setManufacturerOpen(false)
           }}
           onChange={(e) => {
-            if (e.target.value === OTHER) {
+            const picked = e.target.value as number | ''
+            if (picked === '') setManufacturerId('')
+            else if (picked === OTHER) {
               // Open on the full list at once, the value kept until a pick.
               keepOpen.current = true
               setEveryManufacturer(true)
               setManufacturerOpen(true)
-            } else setManufacturerId(e.target.value as number)
+            } else setManufacturerId(picked)
           }}
           data-testid="product-maltster"
         >
+          {/* D65 decision 8: no manufacturer, shown as None. */}
+          {d65 && (
+            <MenuItem value="" data-testid="product-maltster-none">
+              None
+            </MenuItem>
+          )}
           {manufacturers.map((p) => (
             <MenuItem key={p.id} value={p.id}>
               {p.name}
@@ -229,9 +287,54 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
           </Select>
         </FormControl>
       )}
+      {d65 && (
+        <FormControl fullWidth required disabled={!catalog}>
+          <InputLabel id="product-form-label">Form</InputLabel>
+          <Select
+            labelId="product-form-label"
+            id="product-form"
+            label="Form"
+            value={forms.includes(form) ? form : ''}
+            onChange={(e) => {
+              const next = e.target.value
+              setForm(next)
+              // Sugars: the form sets the unit (Dry is lb); an old pick outside the list goes.
+              const allowed = unitsFor(catalog, next)
+              if (!hasLots && !allowed.includes(unit)) setUnit(allowed.length === 1 ? allowed[0] : '')
+            }}
+            data-testid="product-form"
+          >
+            {forms.map((f) => (
+              <MenuItem key={f} value={f}>
+                {f}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
+      {d65 && (
+        <FormControl fullWidth required disabled={!form || hasLots || units.length === 1}>
+          <InputLabel id="product-unit-label">Unit</InputLabel>
+          <Select
+            labelId="product-unit-label"
+            id="product-unit"
+            label="Unit"
+            value={units.includes(shownUnit) ? shownUnit : ''}
+            onChange={(e) => setUnit(e.target.value)}
+            data-testid="product-unit"
+          >
+            {units.map((u) => (
+              <MenuItem key={u} value={u}>
+                {unitLabel({ unit: u, form })}
+              </MenuItem>
+            ))}
+          </Select>
+          {hasLots && <FormHelperText>This product has lots, so its unit stays {unitLabel(product)}</FormHelperText>}
+        </FormControl>
+      )}
       <TextField
         label="Product name"
-        helperText={hops ? "The manufacturer's own name, if it has one (e.g. Lupomax)" : "The maltster's own name, if it has one (e.g. Rauch Malt)"}
+        helperText={hops || d65 ? "The manufacturer's own name, if it has one (e.g. Lupomax, Whirlfloc T)" : "The maltster's own name, if it has one (e.g. Rauch Malt)"}
         value={name}
         onChange={(e) => setName(e.target.value)}
         fullWidth
@@ -249,15 +352,15 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
       )}
       {hops ? (
         <RangeFields types={rangeTypes} drafts={shownRanges} onChange={setRanges} disabled={loading} />
-      ) : (
+      ) : d65 ? null : (
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} disabled={loading} />
       )}
       <TextField
-        label={`Minimum on hand (${hops ? 'boxes' : 'sacks'})`}
+        label={`Minimum on hand (${minimumPacksWord})`}
         value={minimum}
         onChange={(e) => setMinimum(e.target.value)}
         error={!minimumOk}
-        helperText={minimumOk ? 'Below it, the product is marked and shows on To order; empty for none' : `Whole ${hops ? 'boxes' : 'sacks'}, 0 or more`}
+        helperText={minimumOk ? 'Below it, the product is marked and shows on To order; empty for none' : `Whole ${minimumPacksWord}, 0 or more`}
         fullWidth
         slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': 'product-minimum' } }}
       />

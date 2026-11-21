@@ -104,8 +104,26 @@ export interface IngredientCategory {
   field_definitions: CategoryFieldDefinition[] | null
   /** D61 carry-over 2: why Delete is refused (sub-categories, grains or ingredients), or null. */
   delete_blocked?: string | null
+  /** D65 §4.2: what its products take (`Catalog.describe/1`); absent on old responses. */
+  catalog?: CategoryCatalog
   inserted_at: string
   updated_at: string
+}
+
+/** D65 §4.2: a category's forms, units (per form, for sugars) and packs, and what it allows. */
+export interface CategoryCatalog {
+  /** The top-level key (a child's is its parent's). */
+  key: string | null
+  managed: boolean
+  forms: string[]
+  units: string[]
+  form_units: Record<string, string[]>
+  pack_names: string[]
+  /** lb → bag, gal → pail, fl oz → jug, oz → bag, each → tub. */
+  default_packs: Record<string, string>
+  manufacturer_required: boolean
+  allows_children: boolean
+  allows_fields: boolean
 }
 
 export interface CategoryFieldDefinition {
@@ -126,6 +144,8 @@ export interface Ingredient {
   category_id: number
   category: CategorySummary | null
   notes: string | null
+  /** D65: the chemical formula ("CaSO₄·2H₂O"), any category; null when not set. */
+  formula?: string | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
   updated_at: string
@@ -145,6 +165,8 @@ export interface ProductSummary {
   name: string | null
   display_name: string
   unit?: string
+  /** D65: "tablets" for `each` on a Tablet product. */
+  unit_label?: string
   form?: string | null
   manufacturer: PartySummary | null
 }
@@ -303,12 +325,15 @@ export interface IngredientProduct {
   category: CategorySummary | null
   /** D62: the top-level category's key (`grains` for a grain on Base). */
   category_key: string | null
-  manufacturer_party_id: number
+  /** D65 decision 8: null on a D65 product with no manufacturer ("None"). */
+  manufacturer_party_id: number | null
   manufacturer: PartySummary | null
   name: string | null
   display_name: string
   /** D62 §3.3: the unit it's kept in (lb for grain), its form and origin (not used for grain). */
   unit: string
+  /** D65: the unit as screens say it ("tablets" for `each` on a Tablet product). */
+  unit_label?: string
   form: string | null
   origin: string | null
   notes: string | null

@@ -9,7 +9,7 @@ import type { FeatureType, Ingredient, IngredientCategory, IngredientLotSummary,
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
-import { categoryKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
+import { categoryKey, isManagedKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
 import ProductDialog from './ProductDialog'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import PageHeader from '../../components/PageHeader'
@@ -47,7 +47,8 @@ export default function IngredientDetail() {
   // D62: so does a hop (hop products); found by the category's key.
   const category = categories.find((c) => c.id === ingredient?.category_id)
   const key = categoryKey(categories, category)
-  const isGrain = key === 'grains' || key === 'hops'
+  // D65: and every managed category (fruits, spices, sugars, other consumables).
+  const isGrain = isManagedKey(key)
   const productsLabel = `${productLabel(key)}s`
   const { data: products = [] } = useApiList<IngredientProduct>(
     ['ingredient_products', { ingredient_id: ingredientId }],
@@ -148,6 +149,15 @@ export default function IngredientDetail() {
             </Typography>
             <Typography>{ingredient.category?.name ?? 'None'}</Typography>
           </Grid>
+          {/* D65: the formula, only when set. */}
+          {ingredient.formula && (
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Formula
+              </Typography>
+              <Typography data-testid="ingredient-formula-shown">{ingredient.formula}</Typography>
+            </Grid>
+          )}
           <Grid size={{ xs: 12 }}>
             <Typography variant="subtitle2" color="text.secondary">
               Notes
@@ -212,7 +222,7 @@ export default function IngredientDetail() {
         ingredient={ingredient}
       />
 
-      <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} categoryKey={key === 'hops' ? 'hops' : 'grains'} />
+      <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} categoryKey={key ?? 'grains'} />
 
       <ConfirmDialog
         open={deleteOpen}

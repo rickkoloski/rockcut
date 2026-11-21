@@ -19,16 +19,20 @@ interface IngredientFormDialogProps {
   fixedCategoryId?: number
   /** What it's called when the category is fixed ("Hop"). */
   noun?: string
+  /** D65: a new ingredient's category to start with (Other Consumables), still pickable. */
+  defaultCategoryId?: number
 }
 
 export default function IngredientFormDialog(props: IngredientFormDialogProps) {
   return props.open ? <IngredientForm {...props} /> : null
 }
 
-function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId, noun: fixedNoun }: IngredientFormDialogProps) {
+function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId, noun: fixedNoun, defaultCategoryId }: IngredientFormDialogProps) {
   const [name, setName] = useState(ingredient?.name ?? '')
-  const [categoryId, setCategoryId] = useState<number | ''>(ingredient?.category_id ?? fixedCategoryId ?? '')
+  const [categoryId, setCategoryId] = useState<number | ''>(ingredient?.category_id ?? fixedCategoryId ?? defaultCategoryId ?? '')
   const [notes, setNotes] = useState(ingredient?.notes ?? '')
+  // D65 (salts amendment): an optional chemical formula, any category.
+  const [formula, setFormula] = useState(ingredient?.formula ?? '')
   const [error, setError] = useState<string | null>(null)
 
   const { data: categories = [], isLoading: categoriesLoading } = useApiList<IngredientCategory>(
@@ -65,6 +69,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
         name,
         category_id: categoryId || null,
         notes: notes || null,
+        formula: formula.trim() || null,
       }
 
       if (ingredient) {
@@ -125,6 +130,14 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
           </Select>
         </FormControl>
       )}
+      <TextField
+        label="Formula"
+        value={formula}
+        onChange={(e) => setFormula(e.target.value)}
+        helperText="Optional, e.g. CaSO₄·2H₂O"
+        fullWidth
+        slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'ingredient-formula' } }}
+      />
       <TextField
         label="Notes"
         value={notes}

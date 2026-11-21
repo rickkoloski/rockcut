@@ -121,6 +121,8 @@ export default function RecipeIngredientDialog({
     if (lot.label) return `${lot.label} · ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, lot.unit, mode)} · ${status(lot)}`;
     const lotNum = lot.lot_number ?? '—';
     if (lot.product?.manufacturer) return `${lot.product.manufacturer.name} · ${lotNum} · ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, lot.unit, mode)} · ${status(lot)}`;
+    // D65: a product with no manufacturer reads its name ("Whirlfloc T · None"), never an empty maker.
+    if (lot.product) return `${lot.product.display_name} · ${lotNum} · ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, lot.product.unit_label ?? lot.unit, mode)} · ${status(lot)}`;
     const supplier = lot.supplier?.name ?? '';
     return `Lot# ${lotNum}${supplier ? ` (${supplier})` : ''} · ${status(lot)}`;
   };

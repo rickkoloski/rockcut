@@ -129,8 +129,11 @@ export interface Pack {
 
 const toNumber = (v: string | number | null | undefined) => (v == null || v === '' ? null : Number(v))
 
-/** Decimal places a quantity in `unit` takes: `each` is whole numbers (D62 §3.5). */
-export const unitDecimals = (unit: string | null | undefined) => (unit === 'each' ? 0 : LB_DECIMALS)
+/** Whole-number units: `each` (D62 §3.5) and its "tablets" label on a Tablet product (D65 §4.3). */
+export const isCountUnit = (unit: string | null | undefined) => unit === 'each' || unit === 'tablets'
+
+/** Decimal places a quantity in `unit` takes: `each` (or "tablets") is whole numbers (D62 §3.5). */
+export const unitDecimals = (unit: string | null | undefined) => (isCountUnit(unit) ? 0 : LB_DECIMALS)
 
 /** A pack name's plural: sack/sacks, box/boxes, bag/bags, …, each/each. */
 export function packPlural(name: string | null | undefined): string {
@@ -156,7 +159,7 @@ export const packSizeLabel = (name: string | null | undefined, unit: string = 'l
 }
 
 /** The smallest quantity the API takes, said in the unit. */
-export const minQuantity = (unit: string = 'lb') => `Enter at least ${unit === 'each' ? '1' : '0.01'} ${unit}`
+export const minQuantity = (unit: string = 'lb') => `Enter at least ${isCountUnit(unit) ? '1' : '0.01'} ${unit}`
 
 /**
  * A quantity's boxes (packs and the loose part, or the total alone when
