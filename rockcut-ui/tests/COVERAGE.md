@@ -1356,3 +1356,16 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 14: a disabled Delete Ingredient (and Delete Category) keeps its name; its reason is the tooltip and its `aria-describedby` | Playwright "gap 14" **(revert)** |
 | 15: the duplicate refusal names the existing product in its stored spelling (create and rename; None and a manufacturer) | F2 **(revert)**; F1 (wording updated) |
 | 16: −1 or 0 tablets says "Enter at least 1 tablet" as it's typed in Add lot and Record movement; Count (0 allowed) and decimal units keep "Enter 0 or more" | Playwright "gap 16" at desktop and 360 px **(revert)**; V2 |
+
+### D65 lead decisions 3 — DEV QA fix cycle (`prompts/d65_lead_decisions_3.md`)
+
+`F3` = ExUnit `d65_fix3_test.exs`; `V3` = vitest `d65Fix3.test.ts`; Playwright is `d65-fix-3`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 2: "Other manufacturer…" / "Other maltster…" keeps the product dialog and its input, opens every manufacturer company with a search box (keyboard: ArrowDown into the list, Enter picks); on a phone Back closes the list only; the pick saves (fruit and grain, Add and Edit) | Playwright "gap 2" × 4, desktop and 360 px **(revert)** |
+| 3: Totals Copy: per-unit Total rows carry no $; the $ total is its own "Total value" / "Total <supplier> value" row (Inventory and Orders; grain-only and all-lb layouts unchanged) | Playwright "gaps 3, 4" **(revert)**; D61 Copy tests unchanged |
+| 4: Copy's Unit is the label ("tablets") and counts are whole ("750") | Playwright "gaps 3, 4" **(revert)**; V3; `d65-stop2` (now "tablets") |
+| 1: the Formula box only on Water Salts; the API refuses a new formula elsewhere (422), keeps a stored one, allows clearing | F3 **(revert)**; Playwright "gap 1" **(revert)** |
+| 5: All Categories fits 360 px (Notes under the name, lot rows wrap) | Playwright "gap 5" **(revert)** |
+| 6: before a quantity, the order summary counts the line's own pack ("0 pails · 0 gal · $0.00"), New order and Edit order | Playwright "gap 6" **(revert)**; V3 |
