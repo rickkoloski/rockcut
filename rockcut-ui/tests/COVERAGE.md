@@ -1369,3 +1369,13 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 1: the Formula box only on Water Salts; the API refuses a new formula elsewhere (422), keeps a stored one, allows clearing | F3 **(revert)**; Playwright "gap 1" **(revert)** |
 | 5: All Categories fits 360 px (Notes under the name, lot rows wrap) | Playwright "gap 5" **(revert)** |
 | 6: before a quantity, the order summary counts the line's own pack ("0 pails · 0 gal · $0.00"), New order and Edit order | Playwright "gap 6" **(revert)**; V3 |
+
+### D65 lead decisions 4 — DEV QA recheck 1 fix cycle (`prompts/d65_lead_decisions_4.md`)
+
+`F4` = ExUnit `d65_fix4_test.exs`; `V4` = vitest `d65Fix4.test.ts`; Playwright is `d65-fix-4`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 8: a feature value must have its feature's shape, or 422 with nothing stored or cleared: a product's Brix takes `low` and/or `high` only (`{value}`, `{lo}`, `{}`, an extra key refused; a number is "a range"); a single value (lot Brix, extract) takes `value` with the entered pair only (`{low}` refused); an ion given as a map is "not a number". Leaving Brix out keeps it; `null` or both ends blank clears it | F4 product Brix, lot Brix and extract tests **(revert)**; F4 keep/clear and ion tests (pass either way: already the behaviour) |
+| 7: before any line has an offer the summary counts "packs" ("0 packs · 0 lb · $0.00", "0 of 40 packs") with no supplier, a mixed supplier and in Edit order; a supplier whose offers are all sacks keeps "0 of 40 sacks" (D61) | Playwright "gap 7" **(revert)**; V4 **(revert)**; `purchasing.test` (D61 empty "sacks") unchanged |
+| Timing: `test.slow()` on the three long D65 tests (`d65-stop2` mixed order and brewer2 spices/fl oz; `d65` Strawberry) | — |
