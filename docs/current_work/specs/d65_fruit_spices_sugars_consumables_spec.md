@@ -13,7 +13,7 @@ D62 generalized grain's sacks into **packs and units** and put hops on the model
 ingredient → product (manufacturer + form + unit) → supplier offers with packs and prices → lots
 and movements, plus D61 purchasing. D65 puts the rest of the brewery's non-yeast ingredients on
 that same model: **fruits, spices and flavorings, sugars and extracts, and other consumables**
-(water salts, acids, finings).
+(water salts and finings; acids removed, see amendment).
 
 The decisions were made with D62 on 2026-11-19 and approved then (D62 spec §2, A3, A4, A7). D62
 was split on 2026-11-20 and these categories moved here unchanged. This spec restates what
@@ -24,7 +24,7 @@ pack), Inventory Item (lot) and Product Feature.
 ## 2. Decisions carried over (Matt, 2026-11-19)
 
 1. **Categories:** Fruits, Spices & Flavorings, Sugars and Extracts, Other Consumables (fining
-   agents, water salts, acids). Cleaning chemicals, CO2 and packaging are out. **Future
+   agents, water salts; acids later removed). Cleaning chemicals, CO2 and packaging are out. **Future
    Ingredients** is removed.
 2. **D61 purchasing covers all of them:** orders, receiving, minimum on hand, To order, Totals.
 3. **Contracts are grain and hops only.** D65 products can't go on a contract. The API already
@@ -38,7 +38,7 @@ pack), Inventory Item (lot) and Product Feature.
    - **Sugars:** extract % FGDB on every sugar, dry or liquid. Liquid sugars are in lb or gal,
      with optional Brix (sugars amendment).
    - **Water salts:** ordered and stored in **lb**. Recipes use oz, converted in D63.
-   - **Acids and liquid finings:** fl oz, ordered by the jug or bottle.
+   - **Liquid finings:** fl oz, ordered by the jug or bottle.
    - **Tablets:** a count ("each"), ordered by the tub. Matt may refine these later.
 7. **Expired by hand** for every category. No best-by dates.
 8. **Manufacturer and supplier are separate fields** (D62 decision 17). The supplier is always
@@ -76,7 +76,7 @@ These need no new design. D65 turns them on for its categories and tests them th
 - **Fruits**, **Spices & Flavorings** and **Sugars and Extracts** stay top-level with **no
   children**. As on Hops, **Add subcategory** is hidden there and the API refuses a child (422)
   (A9).
-- **Other Consumables** gets three children: **Water Salts**, **Acids**, **Finings** (A3). They can
+- **Other Consumables** gets two children: **Water Salts** and **Finings** (A3; Acids removed). They can
   be renamed and added to in Ingredient Library → Categories, as Grains' children can. A child
   takes its parent's key (`consumables`), as D62's `Catalog.key/1` already does.
 - **Existing ingredients:** the seeded **Whirlfloc** moves into **Finings**, by name, if it's
@@ -101,7 +101,6 @@ lists (A4):
 | Spices & Flavorings (`spices`) | Whole, Ground, Extract | oz, fl oz | bag, jar, bottle, case |
 | Sugars and Extracts (`sugars`) | Dry, Liquid | Dry → lb; Liquid → lb or gal | bag, sack, pail, drum, jug |
 | Water Salts (`consumables`) | Powder, Flake | lb | bag, pail, tub |
-| Acids (`consumables`) | Liquid | fl oz | jug, bottle |
 | Finings (`consumables`) | Liquid, Powder, Tablet | fl oz, lb, each | jug, bottle, bag, tub |
 
 - **Other Consumables' children** share the key `consumables`. The form and unit lists are per
@@ -229,7 +228,7 @@ Do you have it?
   and a later seed can add the rest.
 
 **Carried, confirmed with D62:**
-- **A3:** Other Consumables gets children Water Salts, Acids and Finings.
+- **A3:** Other Consumables gets children Water Salts and Finings (Acids removed by Matt).
 - **A4:** the forms and units in §4.2.
 - **A7:** Future Ingredients is deleted only when it's empty.
 
@@ -279,11 +278,11 @@ Do you have it?
   Neither asks for features.
 
 **Other consumables**
-- As `brewer2`, add Calcium Chloride (Water Salts, Flake, lb, bag · 50 lb), Lactic Acid 88 %
-  (Acids, fl oz, jug · 128 fl oz) and Whirlfloc (Finings, Tablet, each, tub · 1,000).
+- As `brewer2`, add Calcium Chloride (Water Salts, Flake, lb, bag · 50 lb) and a liquid fining
+  (Finings, Liquid, fl oz, jug · 128 fl oz). Whirlfloc T (Finings, Tablet, tablets, tub · 872).
 - Recording 2.5 Whirlfloc is refused: whole numbers only.
 - Whirlfloc sits under Finings and Irish Moss is gone. Settings → Categories shows Other Consumables with
-  three children, and Future Ingredients is gone.
+  two children (Water Salts, Finings), and Future Ingredients is gone.
 
 **Purchasing and totals**
 - As `brewer1`, a BSG order mixes Rahr 2-Row 30 sacks, Citra 6 boxes, Dextrose 2 bags and
@@ -472,11 +471,12 @@ Brix. **Matt: store them as Brix.** Each is a typical single value on the produc
 - **Pack names (Matt):** every SoNature pack is a **pail**: pail · 40 lb, and pail · 56 lb for
   Cherry.
 
-## Amendment (Matt, 2026-11-20): acids
+## Amendment (Matt, 2026-11-20): acids removed
 
-**Acids are left blank for now** ("maybe not needed at all"). The Acids child of Other Consumables
-is still created, so it can be used if needed, but no acid data is seeded. If Matt decides it isn't
-needed, it can be removed in Ingredient Library → Categories.
+**Acids are removed** (Matt: "remove acids as other consumables"). Other Consumables gets only Water
+Salts and Finings. There's no Acids child, no forms or units list for it, and no data. Matt can add
+a child later in Ingredient Library → Categories if it's ever needed; it gets the union of Water
+Salts' and Finings' lists (A10).
 
 ## Amendment (Matt, 2026-11-20): finings, batch 4
 

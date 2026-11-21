@@ -44,8 +44,8 @@ D62's DEV build `a9998ea`.
 - `@managed` grows to `~w(grains hops fruits spices sugars consumables)`.
 - `forms/1`, `units/1` and `pack_names/1` per §4.2.
 - For `consumables`, the lists depend on the **child**, so add `forms/2` and `units/2` that take
-  the category, plus a child-name map: Water Salts, Acids and Finings. Any other child gets the
-  union of the three (A10).
+  the category, plus a child-name map: Water Salts and Finings. Any other child gets the
+  union of the two (A10).
 - `Sugars`: Dry → `["lb"]`; Liquid → `["lb", "gal"]`.
 - `manufacturer_required?/1` is true for grains and hops only (decision 8).
 
@@ -72,7 +72,7 @@ D62's DEV build `a9998ea`.
    SQLite needs a table rebuild to drop NOT NULL. Use D62's `20261120140001` rebuild of
    `supplier_offers` as the pattern, with foreign keys off/on and a check afterwards.
 6. **Categories:**
-   - add Water Salts, Acids and Finings under Other Consumables;
+   - add Water Salts and Finings under Other Consumables (no Acids);
    - move Whirlfloc into Finings by name;
    - rename "Corn Sugar (Dextrose)" to "Dextrose (Corn Sugar)";
    - delete Irish Moss when it has no products, lots or recipe lines;
