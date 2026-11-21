@@ -78,8 +78,8 @@ These need no new design. D65 turns them on for its categories and tests them th
 - **Other Consumables** gets three children: **Water Salts**, **Acids**, **Finings** (A3). They can
   be renamed and added to in Ingredient Library → Categories, as Grains' children can. A child
   takes its parent's key (`consumables`), as D62's `Catalog.key/1` already does.
-- **Existing ingredients:** the seeded **Whirlfloc** moves into **Finings**, by
-  name, if they're still at the top of Other Consumables (A8). Anything else left at the top of
+- **Existing ingredients:** the seeded **Whirlfloc** moves into **Finings**, by name, if it's
+  still at the top of Other Consumables (A8). **Irish Moss** is removed (amendment below). Anything else left at the top of
   Other Consumables stays there, and the release notes list it.
 - **Future Ingredients** is deleted by the migration if it holds no ingredients. If it holds some,
   it stays, and the release notes list them (A7).
