@@ -78,7 +78,7 @@ These need no new design. D65 turns them on for its categories and tests them th
 - **Other Consumables** gets three children: **Water Salts**, **Acids**, **Finings** (A3). They can
   be renamed and added to in Ingredient Library → Categories, as Grains' children can. A child
   takes its parent's key (`consumables`), as D62's `Catalog.key/1` already does.
-- **Existing ingredients:** the seeded **Irish Moss** and **Whirlfloc** move into **Finings**, by
+- **Existing ingredients:** the seeded **Whirlfloc** moves into **Finings**, by
   name, if they're still at the top of Other Consumables (A8). Anything else left at the top of
   Other Consumables stays there, and the release notes list it.
 - **Future Ingredients** is deleted by the migration if it holds no ingredients. If it holds some,
@@ -203,7 +203,7 @@ rest stays on the backlog.
 - **Migrations are additive or tidy-ups**, so rollback to D62's image works without the snapshot.
   A pre-release snapshot is still taken, as always. The migrations:
   - add the `brix` feature type and the category feature rows;
-  - add the Other Consumables children and move Irish Moss and Whirlfloc into Finings;
+  - add the Other Consumables children and move Whirlfloc into Finings and remove Irish Moss;
   - delete the empty Future Ingredients category and the three old Form fields.
 - **No existing stock to migrate.** Prod has no lots in these categories (D61 pre-check: no lots
   at all before D62). The migration stops with a message if it finds a lot in a D65 category with
@@ -232,7 +232,7 @@ Do you have it?
 - **A7:** Future Ingredients is deleted only when it's empty.
 
 **New, to confirm:**
-- **A8:** Irish Moss and Whirlfloc move into **Finings**.
+- **A8:** Whirlfloc moves into **Finings**. Irish Moss is removed (Matt).
 - **A9:** Fruits, Spices & Flavorings and Sugars and Extracts have **no subcategories**: Add
   subcategory is hidden and the API refuses one, as on Hops.
 - **A10:** **Pack names per category** as in §4.2 (D62 had only sack and box). A child Matt adds
@@ -280,7 +280,7 @@ Do you have it?
 - As `brewer2`, add Calcium Chloride (Water Salts, Flake, lb, bag · 50 lb), Lactic Acid 88 %
   (Acids, fl oz, jug · 128 fl oz) and Whirlfloc (Finings, Tablet, each, tub · 1,000).
 - Recording 2.5 Whirlfloc is refused: whole numbers only.
-- Irish Moss and Whirlfloc sit under Finings. Settings → Categories shows Other Consumables with
+- Whirlfloc sits under Finings and Irish Moss is gone. Settings → Categories shows Other Consumables with
   three children, and Future Ingredients is gone.
 
 **Purchasing and totals**
@@ -493,7 +493,7 @@ needed, it can be removed in Ingredient Library → Categories.
   (5 lb)". This is new: a free-text `pack_note` on the offer, shown wherever the pack is (A16, confirmed by Matt).
 - The product name is "T", so it shows as "Whirlfloc T". The seeded ingredient Whirlfloc already
   sits under Finings (A8).
-- Irish Moss stays an ingredient with no product.
+- Irish Moss is removed (see the Irish Moss amendment).
 
 ## Amendment (Matt, 2026-11-20): spices, batch 5
 
@@ -506,3 +506,10 @@ Coffee, Peppermint Leaf.
 
 "Coriander" and "Lemongrass" are standard spellings of what Matt typed ("corriander", "lemon
 grass").
+
+## Amendment (Matt, 2026-11-20): Irish Moss removed
+
+- **Irish Moss is removed** (Matt: "remove irish moss").
+  - The seed stops adding it.
+  - The migration deletes it where it has no products, lots or recipe lines.
+  - If it's in use anywhere, it stays, and the release notes list it so Matt can decide.
