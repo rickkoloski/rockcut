@@ -90,7 +90,7 @@ export interface DraftLine {
  * packs and quantity, not $). D62 §3.5, §3.8: "packs" when the lines' packs
  * differ, and the quantity per unit.
  */
-export function runningTotal(lines: DraftLine[]): { packs: number; byUnit: UnitQuantity[]; dollars: number; text: string } {
+export function runningTotal(lines: DraftLine[], emptyPack: string | null = 'sack'): { packs: number; byUnit: UnitQuantity[]; dollars: number; text: string } {
   let packs = 0
   let cents = 0
   const units = new Map<string, number>()
@@ -111,9 +111,16 @@ export function runningTotal(lines: DraftLine[]): { packs: number; byUnit: UnitQ
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
   const dollars = cents / 100
-  const packText = `${packs.toLocaleString('en-US')} ${packWord(names.length ? sharedPackName(names) : 'sack', packs)}`
+  const packText = `${packs.toLocaleString('en-US')} ${packWord(names.length ? sharedPackName(names) : emptyPack, packs)}`
   return { packs, byUnit, dollars, text: `${packText} · ${byUnitText(byUnit)} · ${money(dollars)}` }
 }
+
+/**
+ * D65 lead decisions 4 (gap 7): the pack an order counts in before any line
+ * has an offer: "sack" for a supplier whose offers are all sacks (D61's
+ * grain wording), else null ("packs"), with no supplier too.
+ */
+export const emptyOrderPack = (supplierOfferPacks: string[]): string | null => (sharedPackName(supplierOfferPacks) === 'sack' ? 'sack' : null)
 
 /**
  * Progress to the supplier's order target (decision 48; D62 A5: every pack

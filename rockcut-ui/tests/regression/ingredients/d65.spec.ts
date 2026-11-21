@@ -68,6 +68,8 @@ async function save(page: Page, d: Locator): Promise<{ status: number; id?: numb
 
 test.describe('products', () => {
   test('Strawberry: a Purée in gal and a Whole in lb, each with its own on hand; a second Purée from the maker is refused', async ({ page }) => {
+    // Lead decisions 4: 14 s locally, about 1.5 times that on DEV.
+    test.slow()
     const strawberry = await makeD65Ingredient('Strawberry', 'fruits')
     const oregon = await manufacturer('Oregon Fruit')
 

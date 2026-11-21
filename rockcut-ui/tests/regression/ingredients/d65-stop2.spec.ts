@@ -178,6 +178,8 @@ test('Water Salts: ions and a formula on the ingredient; read-only on its produc
 
 test.describe('purchasing', () => {
   test('a mixed order: 39 of 40 packs; Receive prefills extract and makes a whole Whirlfloc lot; To order; Totals per unit and per pack name', async ({ page, browser }) => {
+    // Lead decisions 4: one long walk (21 s of 30 on DEV); slow, not split.
+    test.slow()
     const supplier = await makeSupplier('D65 mixed', 40)
     const grain = await makeProduct('D65 mixed grain')
     const grainOffer = await makeOffer(grain, supplier.id, '48.00')
@@ -294,6 +296,8 @@ test.describe('purchasing', () => {
 
 test.describe('§10 gaps closed in Stop 3', () => {
   test('brewer2: Calcium Chloride (Flake, lb) and a liquid fining in a jug · 128 fl oz; spice offers bag · 16 oz and bottle · 32 fl oz; fl oz in Totals', async ({ browser }) => {
+    // Lead decisions 4: the longest D65 test (17 s locally).
+    test.slow()
     const page = await as(browser, 'brewer2')
     const cacl = await makeD65Ingredient('Calcium Chloride', 'Water Salts')
     const fining = await makeD65Ingredient('Biofine', 'Finings')

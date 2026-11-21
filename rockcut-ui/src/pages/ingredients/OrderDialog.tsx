@@ -11,7 +11,7 @@ import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { PRICE_DECIMALS, packLabel, packPlural, packSizeText, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
-import { offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { emptyOrderPack, offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
 import { WRAP_ITEM, WRAP_SELECT, pickerName, unitLabel } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientProduct, Party, PurchaseOrder, SupplierOffer } from '../../lib/types'
@@ -117,6 +117,8 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       priceOk: price.ok && price.value != null,
     }
   })
+  // Gap 7 (lead decisions 4): before any line has an offer, the supplier's words ("packs" unless all its offers are sacks).
+  const emptyPack = emptyOrderPack(choices.map((o) => o.pack_name))
   const total = runningTotal(
     read.map((r) => ({
       packs: r.packs,
@@ -125,10 +127,11 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       unit: r.offer ? productUnit.get(r.offer.product_id) : undefined,
       price: r.price,
     })),
+    emptyPack,
   )
   // "36 of 40 sacks" on a grain-only order; "packs" when they differ (D62 A5).
   const linePacks = read.filter((r) => r.offer).map((r) => r.offer!.pack_name)
-  const progress = targetProgress(total.packs, supplier?.order_target_packs, linePacks.length ? sharedPackName(linePacks) : 'sack')
+  const progress = targetProgress(total.packs, supplier?.order_target_packs, linePacks.length ? sharedPackName(linePacks) : emptyPack)
   const valid = supplierId !== '' && !!orderedOn && lines.length > 0 && read.every((r) => r.offer && r.packs != null && r.priceOk)
 
   const setLine = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
@@ -143,7 +146,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   }
 
   const submit = async () => {
-    if (!valid) return setError(`Each line needs an offer, whole ${packPlural(linePacks.length ? sharedPackName(linePacks) : 'sack')} and a price`)
+    if (!valid) return setError(`Each line needs an offer, whole ${packPlural(linePacks.length ? sharedPackName(linePacks) : emptyPack)} and a price`)
     if (orderedOn > coloradoToday()) return setError(FUTURE_DATE)
     const body = {
       supplier_party_id: supplierId,
