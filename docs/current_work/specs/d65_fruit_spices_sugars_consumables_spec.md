@@ -454,18 +454,18 @@ had two cost/Brix column pairs. Only the **second** is used ("ignore the first")
 manufacturer is **None** (decision 8). No prices were given, so the offers are seeded without a
 price.
 
-| Ingredient | Form | Unit | Pack | Extract |
+Matt gave these as extract %. For a fruit as delivered, extract % (dissolved solids by weight) ≈
+Brix. **Matt: store them as Brix.** Each is a typical single value on the product (low = high).
+**Fruit gets no extract field**; extract stays on sugars only.
+
+| Ingredient | Form | Unit | Pack | Brix |
 |---|---|---|---|---|
-| Apricot | Juice / concentrate | lb | 40 lb | 50 % |
-| Cherry | Juice / concentrate | lb | 56 lb | 11.44 % |
-| Lemon | Purée | lb | 40 lb | 11 % |
+| Apricot | Juice / concentrate | lb | 40 lb | 50 °Bx |
+| Cherry | Juice / concentrate | lb | 56 lb | 11.4 °Bx (lead's conversion; Matt to check; concentrate is usually ~68) |
+| Lemon | Purée | lb | 40 lb | 11 °Bx |
 | Lime | Purée | lb | 40 lb | — |
 
-- **Extract % FGDB is added to Fruits** as an optional standard on the product, copied to the
-  lot, as on sugars. Brix stays a range on the product with an optional actual on the lot. A
-  fruit can have either, both or neither.
 - **Lemon and Lime now have two products each:** Aseptic Fruit Purée and None Purée (SoNature).
-  They're different products because their manufacturers differ (D62 decision 17). Duplicates
-  aren't an issue, because a null manufacturer is treated as its own value.
+  They're different products because their manufacturers differ (D62 decision 17).
 - **Pack names:** not given. The lead assumes **pail** for the 40 lb packs and **drum** for the
   56 lb pack (**A15**, to confirm).
