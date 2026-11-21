@@ -29,6 +29,7 @@ import parseApiError from '../../lib/parseApiError';
 import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
 import { isGrainCategory, isManagedCategory } from '../../lib/ingredientFeatures';
+import { libraryHref } from '../../lib/libraryView'
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -143,7 +144,7 @@ export default function CategoryDetail() {
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
-          { label: 'Ingredient Library', to: '/ingredients' },
+          { label: 'Ingredient Library', to: libraryHref() },
           { label: 'Categories', to: '/ingredients/categories' },
           { label: category.name },
         ]}

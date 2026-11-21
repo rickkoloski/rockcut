@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Link as RouterLink, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link as RouterLink, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Box, Chip, Collapse, FormControl, FormControlLabel, IconButton, InputAdornment,
   Button, InputLabel, ListItemIcon, ListItemText, Menu, MenuItem, Paper, Select, Switch, Table, TableBody,
@@ -18,6 +18,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
 import QuantityToggle from '../../components/QuantityToggle'
+import { categoryFromParam, categoryParam, rememberLibrarySearch } from '../../lib/libraryView'
 import { grainCategories, keyedCategories, manufacturerLabel, manufacturersFor, toggleLabels } from '../../lib/ingredientFeatures'
 import PageHeader from '../../components/PageHeader'
 import StatusChip from '../../components/StatusChip'
@@ -124,8 +125,6 @@ function IngredientRow({
 
 export default function IngredientsList() {
   const navigate = useNavigate()
-  // null: not picked yet, which means Grains (D60). '' is All categories.
-  const [picked, setPicked] = useState<number | '' | null>(null)
   const [formOpen, setFormOpen] = useState<'ingredient' | 'grain' | 'product' | 'hop' | 'hop-product' | null>(null)
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null)
   const [search, setSearch] = useState('')
@@ -134,7 +133,22 @@ export default function IngredientsList() {
   const [onHandOnly, setOnHandOnly] = useState(false)
   const { mode } = useQuantityDisplay()
 
-  const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
+  const { data: categories = [], isSuccess: categoriesLoaded } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
+  // null: not picked yet, which means Grains (D60). '' is All categories.
+  // Decisions 5, gap 4: the pick is in the URL (replaced, so Back leaves the
+  // library rather than stepping through picks) and remembered for the links back.
+  const [params, setParams] = useSearchParams()
+  const picked = categoryFromParam(params.get('category'), categoriesLoaded ? categories.map((c) => c.id) : null)
+  const setPicked = (value: number | '') =>
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.set('category', categoryParam(value))
+        return next
+      },
+      { replace: true },
+    )
+  useEffect(() => rememberLibrarySearch(picked == null ? '' : `?category=${categoryParam(picked)}`), [picked])
   const { grains: grainsCategory, children } = grainCategories(categories)
   const topLevel = categories.filter((c) => c.parent_id == null).sort((a, b) => a.sort_order - b.sort_order)
   const categoryId = picked ?? grainsCategory?.id ?? ''

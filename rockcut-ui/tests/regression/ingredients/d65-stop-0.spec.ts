@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs, cleanupIngredients, getProduct, makeHopProduct, makeOrder, openDialog, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, getProduct, makeHopProduct, makeOrder, makeProduct, openDialog, pick, tempTag } from './helpers'
 
 // D65 Stop 0: the D62 DEV QA gaps carried into D65 (`prompts/d62_lead_decisions_5.md`),
 // as brewer1. Gap 3 (a Receive split of 0), gap 4 (the Library's Category in the
@@ -47,3 +47,52 @@ test('gap 3: a split of 0 says why Receive waits, its row is marked with a remov
   await expect(r).toHaveCount(0)
   expect(Number((await getProduct(hop.id)).on_hand)).toBe(22)
 })
+
+async function categoryId(name: string): Promise<number> {
+  const all = (await (await (await apiAs('brewer1')).get('/api/ingredient_categories')).json()).data as { id: number; name: string }[]
+  return all.find((c) => c.name === name)!.id
+}
+
+/** Pick `name` in the Library's Category, open `rowTestId`, and come back by Back, then by the "Ingredients" link. */
+async function roundTrip(page: Page, name: string, rowTestId: string) {
+  const id = await categoryId(name)
+  const category = page.getByRole('combobox', { name: 'Category' })
+  await page.goto('/ingredients')
+  await expect(category).toHaveText('Grains')
+  await expect(page).toHaveURL(/\/ingredients$/)
+  await pick(page, page.locator('body'), 'Category', new RegExp(`^${name}$`))
+  await expect(page).toHaveURL(new RegExp(`/ingredients\\?category=${id}$`))
+
+  await page.getByTestId(rowTestId).click()
+  await expect(page).toHaveURL(/\/ingredients\/products\/\d+$/)
+  await page.goBack()
+  await expect(page).toHaveURL(new RegExp(`/ingredients\\?category=${id}$`))
+  await expect(category).toHaveText(name)
+  await expect(page.getByTestId(rowTestId)).toBeVisible()
+
+  await page.getByTestId(rowTestId).click()
+  await page.getByRole('link', { name: 'Ingredients', exact: true }).click()
+  await expect(page).toHaveURL(new RegExp(`/ingredients\\?category=${id}$`))
+  await expect(category).toHaveText(name)
+
+  // A fresh visit with no parameter is the default view.
+  await page.goto('/ingredients')
+  await expect(category).toHaveText('Grains')
+}
+
+for (const phone of [false, true]) {
+  test.describe(phone ? 'at 360 px' : 'desktop', () => {
+    if (phone) test.use({ viewport: { width: 360, height: 780 } })
+    const row = (kind: 'hop' | 'grain', id: number) => `${kind}-${phone ? 'card' : 'row'}-${id}`
+
+    test('gap 4: Back and the "Ingredients" link return to the chosen Category (Hops)', async ({ page }) => {
+      const hop = await makeHopProduct(`S0 gap 4 ${phone ? 'phone' : 'desk'}`)
+      await roundTrip(page, 'Hops', row('hop', hop.id))
+    })
+
+    test('gap 4: a grain child (Base) is kept too', async ({ page }) => {
+      const grain = await makeProduct(`S0 gap 4 base ${phone ? 'phone' : 'desk'}`)
+      await roundTrip(page, 'Base', row('grain', grain.id))
+    })
+  })
+}

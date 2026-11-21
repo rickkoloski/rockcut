@@ -33,6 +33,7 @@ import { packPlural } from '../../lib/brewingUnits'
 import type { IngredientProduct, ReorderRow, SupplierOffer } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import PurchasingTabs from './PurchasingTabs'
+import { libraryHref } from '../../lib/libraryView'
 
 /** Shown from `sm` up; at phone width the figure goes under the product. */
 const WIDE = { display: { xs: 'none', sm: 'table-cell' } }
@@ -180,7 +181,7 @@ export default function ToOrderPage() {
 
   return (
     <>
-      <PageHeader breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'To order' }]} title="Purchasing" />
+      <PageHeader breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'To order' }]} title="Purchasing" />
       <PurchasingTabs />
       <PageToolbar
         end={

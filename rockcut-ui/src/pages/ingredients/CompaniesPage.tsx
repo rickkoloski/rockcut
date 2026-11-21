@@ -27,6 +27,7 @@ import { ROLE_LABELS } from '../../lib/inventory'
 import { orderTargetText } from '../../lib/purchasing'
 import type { Party } from '../../lib/types'
 import PartyDialog from './PartyDialog'
+import { libraryHref } from '../../lib/libraryView'
 
 function Roles({ party }: { party: Party }) {
   return (
@@ -59,7 +60,7 @@ export default function CompaniesPage() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'Companies' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'Companies' }]}
         title="Companies"
         action={{ label: 'Add company', onClick: () => setAdding(true), testId: 'companies-add' }}
       />

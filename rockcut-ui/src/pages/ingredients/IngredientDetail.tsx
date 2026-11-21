@@ -20,6 +20,7 @@ import IngredientLotDialog from './IngredientLotDialog'
 import ItemNotFound from '../../components/ItemNotFound'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
+import { libraryHref } from '../../lib/libraryView'
 
 export default function IngredientDetail() {
   const { id } = useParams()
@@ -65,7 +66,7 @@ export default function IngredientDetail() {
   const handleDelete = async () => {
     try {
       await deleteIngredient.mutateAsync(ingredientId)
-      navigate('/ingredients')
+      navigate(libraryHref())
     } catch (err) {
       setDeleteOpen(false)
       setDeleteError(parseApiError(err))
@@ -105,7 +106,7 @@ export default function IngredientDetail() {
     return (
       <ItemNotFound
         what="Ingredient"
-        backTo="/ingredients"
+        backTo={libraryHref()}
         backLabel="Back to Ingredients"
         testId="ingredient-not-found"
       />
@@ -121,7 +122,7 @@ export default function IngredientDetail() {
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
-          { label: 'Ingredients', to: '/ingredients' },
+          { label: 'Ingredients', to: libraryHref() },
           { label: ingredient.name },
         ]}
         title={ingredient.name}

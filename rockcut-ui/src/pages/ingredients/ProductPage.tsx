@@ -44,6 +44,7 @@ import AddLotDialog from './AddLotDialog'
 import GrainLotDialog from './GrainLotDialog'
 import MovementDialog from './MovementDialog'
 import CountDialog from './CountDialog'
+import { libraryHref } from '../../lib/libraryView'
 
 const money = (v: string | number | null | undefined, digits = 2) => (v == null ? '—' : `$${Number(v).toFixed(digits)}`)
 
@@ -86,7 +87,7 @@ export default function ProductPage() {
   const remove = useApiDelete((pid) => `/api/ingredient_products/${pid}`, { invalidateKeys: GRAIN_KEYS })
 
   if (!product && httpStatus(error) === 404) {
-    return <ItemNotFound what="Maltster product" backTo="/ingredients" backLabel="Back to Ingredients" testId="product-not-found" />
+    return <ItemNotFound what="Maltster product" backTo={libraryHref()} backLabel="Back to Ingredients" testId="product-not-found" />
   }
   if (!product && error) return <Alert severity="error">{parseApiError(error)}</Alert>
   if (!product) return <CircularProgress />
@@ -116,7 +117,7 @@ export default function ProductPage() {
   const handleDelete = async () => {
     try {
       await remove.mutateAsync(product.id)
-      navigate('/ingredients')
+      navigate(libraryHref())
     } catch (err) {
       setOpen(null)
       setDeleteError(parseApiError(err))
@@ -128,7 +129,7 @@ export default function ProductPage() {
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
-          { label: 'Ingredients', to: '/ingredients' },
+          { label: 'Ingredients', to: libraryHref() },
           { label: product.display_name },
         ]}
         title={product.display_name}

@@ -28,6 +28,7 @@ import { coloradoToday } from '../../lib/tasks'
 import { toTsv, type Cell } from '../../lib/tsv'
 import type { IngredientCategory, IngredientProduct, InventoryTotals, InventoryTotalsRow, OrderStatus, OrderTotals, OrderTotalsSum, Party, UnitQuantity } from '../../lib/types'
 import PurchasingTabs from './PurchasingTabs'
+import { libraryHref } from '../../lib/libraryView'
 
 /** "30 sacks", "1 box". */
 const packCount = (n: number, name: string | null | undefined) => `${n.toLocaleString('en-US')} ${packWord(name, n)}`
@@ -55,7 +56,7 @@ export default function TotalsPage() {
   const [tab, setTab] = useState<'inventory' | 'orders'>('inventory')
   return (
     <>
-      <PageHeader breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'Totals' }]} title="Purchasing" />
+      <PageHeader breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'Totals' }]} title="Purchasing" />
       <PurchasingTabs />
       <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ mb: 2 }}>
         <Tab value="inventory" label="Inventory" data-testid="totals-tab-inventory" />
