@@ -61,3 +61,9 @@
 - Full local Playwright after cycle 2: **905 passed, 1 skipped** (after cycle 1: 897 + one d52 gear flake that passed 6/6 on rerun).
 - QA recheck 1: 11 of 12 gaps fixed; new gaps 13–18 fixed in cycle 2. **QA recheck 2** (`~/src/rockcut-d62-qa/results/d62_qa_recheck2.md`): gaps 13–18 fixed; new **minor** gaps 19 (To order 409 message stays after the re-pick saves) and 20 (contract price-change line shows before the hop line's Offer is picked and doesn't name the offer). R4 PARTIAL (usage limit): Receive at 360 px, slow-network To order, and the bartender1/taproomDevice 403 spot checks not run. Seeded diff 0.
 - **Next:** fix 19 + 20 in-cycle (builder); QA finishes the R4 checks; then the DEV gate (needs Matt's OK). Builder still owes a COVERAGE.md update for cycles 1–2. Builder printed two local synthetic tokens in its tool output (reported to Matt; told not to repeat).
+
+## Update (evening 2026-11-20): local QA passed
+
+- Cycle 3 (gaps 19, 20): `328da86` `2c810f0` `e0f61fb` (+ builder COVERAGE commits). Full local Playwright: 858 passed, 1 failed (D39 S73 touch-drag flake; the brewery-board project rerun passed 436/436).
+- **QA recheck 3: DONE pass** (`~/src/rockcut-d62-qa/results/d62_qa_recheck3.md`): 19 and 20 fixed, the R4 leftovers (Receive 360 px, slow To order, 403s) pass, seeded diff 0. Unrated notes: re-picking the offer already shown after a 409 sends nothing (message stays); grain price line repeats a supplier that is also the maltster (D61 wording).
+- **Next: DEV gate, waiting on Matt's OK** (claim DEV in conv 80, deploy branch to DEV, DEV Playwright + short DEV QA). Release needs the pre-release snapshot (D62 migrations rename columns).
