@@ -11,7 +11,7 @@ import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, parseDecimal, packSizeLabel, productPack } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
-import { offerPackText } from '../../lib/purchasing'
+import { defaultLotSupplier, offerPackText } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { FeatureType, IngredientLot, IngredientProduct, Party } from '../../lib/types'
 
@@ -38,7 +38,8 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   const first = offers.length === 1 ? offers[0] : null
 
   const [offerId, setOfferId] = useState<number | ''>(first?.id ?? '')
-  const [supplierId, setSupplierId] = useState<number | ''>(first?.supplier_party_id ?? '')
+  // D65 (decisions 5): with offers, Supplier starts as the reorder offer's, else the newest offer's, and is required.
+  const [supplierId, setSupplierId] = useState<number | ''>(() => defaultLotSupplier(offers, product.reorder_offer_id) ?? '')
   const startPack = productPack(product.offers)
   const [packSize, setPackSize] = useState(first?.pack_size ?? (hops ? '11' : String(startPack?.size ?? '')))
   // D62 §3.5: the pack is the offer's (a sack, for grain; always a box of 11 lb, for hops).
@@ -77,6 +78,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
     if (!received) return setError('Pick the received date')
     if (received > coloradoToday()) return setError(FUTURE_DATE)
     if (hops && crop.error) return setError(crop.error)
+    if (offers.length > 0 && !supplierId) return setError('Pick the supplier')
     const missing = missingRequired(shown, featureTypes, required)
     if (missing.length) return setError(`Enter the ${missing.join(' and ').toLowerCase()}`)
     try {
@@ -124,12 +126,14 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
           </Select>
         </FormControl>
       )}
-      <FormControl fullWidth>
+      <FormControl fullWidth required={offers.length > 0}>
         <InputLabel id="lot-supplier-label">Supplier</InputLabel>
-        <Select labelId="lot-supplier-label" id="lot-supplier" label="Supplier" value={suppliers.length ? supplierId : ''} onChange={(e) => setSupplierId(e.target.value as number | '')}>
-          <MenuItem value="">
-            <em>None</em>
-          </MenuItem>
+        <Select labelId="lot-supplier-label" id="lot-supplier" label="Supplier" value={suppliers.length ? supplierId : ''} onChange={(e) => setSupplierId(e.target.value as number | '')} data-testid="lot-supplier">
+          {offers.length === 0 && (
+            <MenuItem value="">
+              <em>None</em>
+            </MenuItem>
+          )}
           {suppliers.map((p) => (
             <MenuItem key={p.id} value={p.id}>
               {p.name}

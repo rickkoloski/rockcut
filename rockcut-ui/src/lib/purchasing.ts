@@ -177,6 +177,21 @@ export function emptySplitText(rows: string[], packName: string | null | undefin
 }
 
 /**
+ * D65 (D62 lead decisions 5, Add lot supplier): the supplier a new lot starts
+ * with: the reorder offer's, else the most recent offer's; null with no offers.
+ * `offers` are the product's active offers.
+ */
+export function defaultLotSupplier(
+  offers: { id: number; supplier_party_id: number; inserted_at: string }[],
+  reorderOfferId: number | null | undefined,
+): number | null {
+  const reorder = offers.find((o) => o.id === reorderOfferId)
+  if (reorder) return reorder.supplier_party_id
+  const latest = [...offers].sort((a, b) => b.inserted_at.localeCompare(a.inserted_at) || b.id - a.id)[0]
+  return latest?.supplier_party_id ?? null
+}
+
+/**
  * Which line an API refusal from Receive belongs to: the first whose product
  * or offer it names, else the first with a lot it names (`lots`: the lot
  * numbers each line's rows name, any case: "Lot W123 is expired"), else the

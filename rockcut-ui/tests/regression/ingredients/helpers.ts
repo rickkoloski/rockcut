@@ -393,12 +393,17 @@ export async function makeHopProduct(label: string): Promise<ApiProduct & { comp
   return { ...(await getProduct(product.id)), company }
 }
 
-/** A hop lot of `product` with an opening amount of `lb`, alpha `alpha`, crop year 2025, received `daysAgo`. */
+/**
+ * A hop lot of `product` with an opening amount of `lb`, alpha `alpha`, crop
+ * year 2025, received `daysAgo`, from its first offer's supplier (D65: a
+ * product with offers needs one).
+ */
 export async function makeHopLot(product: ApiProduct, lb: string, daysAgo: number, alpha = '12'): Promise<ApiLot> {
   return ok<ApiLot>(
     await (await apiAs('brewer1')).post('/api/ingredient_lots', {
       data: {
         product_id: product.id,
+        supplier_party_id: product.offers?.[0]?.supplier_party_id ?? null,
         lot_number: tempTag('hop lot'),
         crop_year: 2025,
         received_date: addDays(denverToday(), -daysAgo),

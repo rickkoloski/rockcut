@@ -63,6 +63,8 @@ defmodule RockcutApi.Ingredients.CatalogUnitsTest do
                Inventory.create_lot(
                  %{
                    "product_id" => c.product.id,
+                   # D65: a product with offers needs its lot's supplier.
+                   "supplier_party_id" => c.offer.supplier_party_id,
                    "received_date" => Date.to_iso8601(Date.add(RockcutApi.Tasks.today(), -1)),
                    "initial_kind" => "opening",
                    "initial_quantity" => "110"

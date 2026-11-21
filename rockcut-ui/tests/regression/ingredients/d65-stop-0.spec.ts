@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { apiAs, cleanupIngredients, getProduct, makeHopProduct, makeOrder, makeProduct, openDialog, pick, tempTag } from './helpers'
+import { apiAs, cleanupIngredients, denverToday, getProduct, makeHopProduct, makeOrder, makeProduct, makeSupplier, openDialog, pick, saveProduct, tempTag } from './helpers'
 
 // D65 Stop 0: the D62 DEV QA gaps carried into D65 (`prompts/d62_lead_decisions_5.md`),
 // as brewer1. Gap 3 (a Receive split of 0), gap 4 (the Library's Category in the
@@ -9,6 +9,8 @@ import { apiAs, cleanupIngredients, getProduct, makeHopProduct, makeOrder, makeP
 
 test.use({ storageState: authFile('brewer1') })
 test.afterAll(cleanupIngredients)
+
+const re = (s: string) => new RegExp(s.replace(/[[\]().*+?^$|{}\\]/g, '\\$&'))
 
 test('gap 3: a split of 0 says why Receive waits, its row is marked with a remove button; removing it receives', async ({ page }) => {
   const hop = await makeHopProduct('S0 gap 3')
@@ -96,3 +98,46 @@ for (const phone of [false, true]) {
     })
   })
 }
+
+test('Add lot supplier: defaults to the reorder offer\'s, else the newest offer\'s; required, and the API refuses a lot without one', async ({ page }) => {
+  const hop = await makeHopProduct('S0 supplier')
+  const second = await makeSupplier('S0 supplier two', null)
+  const api = await apiAs('brewer1')
+  const offer2 = (await (await api.post('/api/supplier_offers', { data: { product_id: hop.id, supplier_party_id: second.id } })).json()).data as { id: number }
+  const supplierSelect = (d: ReturnType<Page['getByTestId']>) => d.getByTestId('lot-supplier').locator('.MuiSelect-select')
+
+  // Two offers, no reorder offer: the newest offer's supplier (QA saw it empty).
+  await page.goto(`/ingredients/products/${hop.id}`)
+  let d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
+  await expect(supplierSelect(d)).toHaveText(second.name)
+  // No "None" while the product has offers.
+  await supplierSelect(d).click()
+  await expect(page.getByRole('option', { name: 'None' })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await d.getByRole('button', { name: 'Cancel' }).click()
+  await expect(d).toHaveCount(0)
+
+  // The reorder offer wins.
+  expect((await saveProduct(hop.id, { reorder_offer_id: hop.offers[0].id })).status()).toBe(200)
+  await page.reload()
+  d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
+  await expect(supplierSelect(d)).toHaveText(hop.company.name)
+  await d.getByTestId('lot-number').fill(tempTag('S0 supplier lot'))
+  await d.getByTestId('lot-quantity-packs').fill('1')
+  await d.getByTestId('feature-alpha_acid_pct').fill('12')
+  const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/ingredient_lots'))
+  await d.getByRole('button', { name: 'Save' }).click()
+  const lot = (await (await created).json()).data as { supplier_party_id: number }
+  expect(lot.supplier_party_id).toBe(hop.company.id)
+  await expect(d).toHaveCount(0)
+  expect(offer2.id).toBeGreaterThan(hop.offers[0].id)
+
+  // The API refuses a lot without its supplier, and writes nothing.
+  const before = Number((await getProduct(hop.id)).on_hand)
+  const refused = await api.post('/api/ingredient_lots', {
+    data: { product_id: hop.id, crop_year: 2025, received_date: denverToday(), initial_kind: 'opening', initial_quantity: '11', features: { alpha_acid_pct: '12' } },
+  })
+  expect(refused.status()).toBe(422)
+  expect(JSON.stringify(await refused.json())).toMatch(re("Pick the supplier; this product's lots come from its offers' suppliers"))
+  expect(Number((await getProduct(hop.id)).on_hand)).toBe(before)
+})

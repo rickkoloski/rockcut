@@ -32,6 +32,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     Parties,
     Product,
     Products,
+    SupplierOffer,
     Units,
     Valuation
   }
@@ -669,7 +670,8 @@ defmodule RockcutApi.Ingredients.Inventory do
   category copies are copied onto the lot; `features` in the body replace
   them key by key (nil drops one). D62 §3.4: a hop lot needs its crop year
   and its alpha acid (`lot_required`), and is in 11 lb boxes; no other lot
-  has a crop year.
+  has a crop year. D62 lead decisions 5: a lot of a product with an active
+  offer needs its supplier (decision 17).
   """
   def create_lot(attrs, user) do
     with {:ok, attrs} <- product_ingredient(attrs),
@@ -677,6 +679,7 @@ defmodule RockcutApi.Ingredients.Inventory do
          :ok <- product_rules(attrs, managed?),
          {:ok, attrs} <- category_lot_rules(attrs, nil),
          :ok <- supplier(attrs["supplier_party_id"]),
+         :ok <- supplier_given(attrs),
          {:ok, initial} <- initial(attrs, managed?),
          :ok <- lot_number_free(attrs, nil),
          {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"], :lot),
@@ -942,6 +945,18 @@ defmodule RockcutApi.Ingredients.Inventory do
       select: t.key
     )
     |> Repo.all()
+  end
+
+  defp supplier_given(attrs) do
+    product_id = blank(attrs["product_id"])
+
+    offered? =
+      product_id != nil and
+        Repo.exists?(from(o in SupplierOffer, where: o.product_id == ^product_id and o.active))
+
+    if offered? and blank(attrs["supplier_party_id"]) == nil,
+      do: refuse("Pick the supplier; this product's lots come from its offers' suppliers"),
+      else: :ok
   end
 
   defp supplier(party_id) do
