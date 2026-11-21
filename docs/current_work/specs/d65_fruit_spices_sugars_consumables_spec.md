@@ -490,7 +490,7 @@ needed, it can be removed in Ingredient Library → Categories.
 - **Unit label:** a Tablet product's `each` reads **"tablets"** on screen. The stored unit stays
   `each`.
 - **Pack label:** the offer can carry an optional weight note, so it reads "tub · 872 tablets
-  (5 lb)". This is new: a free-text `pack_note` on the offer, shown wherever the pack is (A16).
+  (5 lb)". This is new: a free-text `pack_note` on the offer, shown wherever the pack is (A16, confirmed by Matt).
 - The product name is "T", so it shows as "Whirlfloc T". The seeded ingredient Whirlfloc already
   sits under Finings (A8).
 - Irish Moss stays an ingredient with no product.
