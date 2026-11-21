@@ -1253,3 +1253,29 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | Stop 0 LEAD note 4: the library shows a loading state while the categories load | Playwright "Stop 0 LEAD note 4…" |
 | D65 packs read by name in the pickers ("pail · 5 gal", "tub · 872 tablets") | Vitest `offerPackText`, `reorderOfferPack` |
 
+**Stop 2: features, offers, totals** (plan Stop 2; spec §4.4, §4.5, §5 items 2, 4–6; the salts, sugars, fruit and finings amendments). ExUnit `rockcut_api/migrations/d65_features_and_pack_note_test.exs` ("MIG2"), `rockcut_api_web/controllers/d65_stop2_test.exs` ("S2"); Vitest `src/lib/d65Stop2.test.ts`; Playwright `regression/ingredients/d65-stop2.spec.ts` (brewer1; owner for Totals; breweryMgr for the contract dialog; floater, splitRole, bartender1, breweryDevice, brewer2 for the edges). Totals tests filter to the spec's own `[TEST-TEMP]` supplier. "Revert" marks a test seen failing with its fix taken out.
+
+| Scenario | Coverage |
+|---|---|
+| Stop 2 item 0: O2 checks Add field on Yeast Strains; Fruits shows the note; a category page never flashes Add field while the category list loads | Playwright `owner` O2; `d65` "Stop 2 item 0…" (revert: the page read the list, not its own catalog) |
+| Migration: Brix and the seven ions, extract at 2 decimals, `only_form`, Fruits' and Sugars' rows, `pack_note`; a second run changes nothing; down undoes it | MIG2 |
+| Fruit Brix: a range on the product (either end blank, low above high refused, 2 decimals or over 100 refused); on the lot optional, never copied, 8.55 refused, outside marked (`outside_range`) | S2 "fruit Brix" (2 tests); Playwright "fruit" (typical 6.5–9 beside the box, 8.55 can't be saved, API 422) |
+| Sugars: extract copied to the lot and editable, 2 decimals, 3 refused; Brix only on Liquid: a Dry lot sent a Brix → 422 on create, edit and Receive | S2 "sugars" (revert: `only_form`); Vitest `lotTypesFor`, `lotFeatureBasis`; Playwright "sugars" |
+| Receiving into an existing lot # with Brix 8.5: 9.0 refused; 8.5 or nothing adds to it | S2 "receiving into an existing lot #" |
+| Ions on a Water Salts ingredient: GET/PUT, cleared by nil; 422 for another ingredient, a non-ion, 2 decimals, over 1,000; read-only in the product and ingredient JSON | S2 "ions…" (revert: Water Salts only; revert: the value rules); Vitest `ionsText`; Playwright "Water Salts…" (dialog grid and formula, ingredient page, product page read-only) |
+| The pack note: ≤ 40 characters, in offer and order JSON; read "tub · 872 tablets (5 lb)" on offers, order lines, Receive and To order | S2 "a note of at most 40 characters…" (revert); Vitest `offerPackText`, `reorderOfferPack`; Playwright "a mixed order…" (order page, To order) |
+| Pack names per Other Consumables child (Water Salts bag/pail/tub; Finings jug/bottle/bag/tub; another child the union); the offer dialog lists them with the unit's default pack (gal → pail) | S2 "Water Salts takes…" (revert); Playwright "fruit" (offer dialog starts at pail) |
+| Recipe lot label (A11): "Oregon Fruit Strawberry Purée · S-1 · 8.5 °Bx"; no Brix when the lot has none; grain unchanged | S2 "the recipe lot label" (revert) |
+| `each` below 1: "at least 1 tablet" / "at least 1", never 0.01 (lots and movements) | S2 "each below 1" (revert); Vitest `minQuantity` |
+| `inventory_on_hand` over the API returns its unit: `{11.5, "gal"}`; an ingredient with products in two units is refused | S2 "inventory_on_hand over the API" (revert: the controller dropped the unit); Playwright "fruit" |
+| Totals → Inventory: a subtotal per unit, one line each, never added; one $ total; Copy keeps Unit; Grains view as D61 | S2 "Totals (§4.5)"; Playwright "a mixed order…" (owner, filtered to its supplier) |
+| Totals → Orders: "2 bags · 6 boxes · 30 sacks · 1 tub"; the quantity column per unit (an all-lb range reads as D61) | S2 "Totals"; Playwright "a mixed order…" |
+| A mixed order reads "39 of 40 packs"; Receive prefills extract (91) and makes a whole Whirlfloc lot (872) | Playwright "a mixed order…" |
+| To order: Whirlfloc with 600 on hand and a minimum of 1 tub shows (0.69 tubs); a product with no stock reads "0 tablets" | Playwright "a mixed order…" |
+| The contract dialog never offers a D65 product; the API refuses one | Playwright "the contract dialog…"; S1 "contracts" |
+| Extract (now 2 decimals) still reads "81.5", "91.0" on grain screens | Vitest `formatFeature` |
+| floater and splitRole use the new pages; bartender1 and breweryDevice get 403 on every D65 route (incl. ions) | Playwright "edges"; ExUnit `device_route_matrix_test` (ions routes classified) |
+| Two people, one record: the second save of a fruit product gets the 409 and writes nothing | Playwright "two people, one record" |
+| Slow network: a double-click on Save in Add lot, and on Receive, writes once | Playwright "slow network" (2 tests) |
+| 360 px: the fruit product page, Add lot with Brix, the Whirlfloc count and Totals with mixed units have no sideways scroll | Playwright "at 360 px" |
+
