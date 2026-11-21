@@ -27,7 +27,8 @@ defmodule RockcutApi.Ingredients.Features do
   D65 §4.4: a feature whose row has `only_form` applies only to products in
   that form (Brix on Liquid sugars); `validate/4` takes the product's form,
   and a value sent for another form is refused ("Brix is only for Liquid
-  products").
+  sugars"); on a sugar product it's "Brix is entered on Liquid sugar lots,
+  not on the product" (lead decisions 1, gap 2).
   """
   import Ecto.Query
 
@@ -282,9 +283,15 @@ defmodule RockcutApi.Ingredients.Features do
       nil ->
         {:error, "doesn't apply to this category"}
 
+      # D65 lead decisions 1 (gap 2): Brix on a sugar product, whatever its form, belongs on
+      # its lots. `only_form` is only on the Sugars row (Brix on Liquid sugars).
+      %{only_form: only, product_mode: "none"}
+      when is_binary(only) and target == :product and not is_nil(entry) ->
+        {:error, "is entered on #{only} sugar lots, not on the product"}
+
       # D65: Brix on Liquid sugars only (a value sent for another form; clearing one is fine).
       %{only_form: only} when is_binary(only) and only != form and not is_nil(entry) ->
-        {:error, "is only for #{only} products"}
+        {:error, "is only for #{only} sugars"}
 
       %{product_mode: "none"} when target == :product ->
         {:error, "isn't set on a product"}

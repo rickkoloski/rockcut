@@ -10,6 +10,9 @@ defmodule RockcutApi.Brewing.Ingredient do
     # D65: its ion values (`Ingredients.Ions`), filled by the controller; nil when not.
     field :ions, :map, virtual: true
 
+    # Why it can't be deleted, or nil (D65 lead decisions 1, gap 13; `Brewing.put_ingredient_delete_blocked/1`).
+    field :delete_blocked, :string, virtual: true
+
     belongs_to :category, RockcutApi.Brewing.IngredientCategory
     has_many :lots, RockcutApi.Brewing.IngredientLot
     has_many :products, RockcutApi.Ingredients.Product

@@ -164,12 +164,12 @@ defmodule RockcutApiWeb.D65Stop2Test do
       liquid =
         product!(c, %{"ingredient_id" => c.molasses.id, "form" => "Liquid", "unit" => "gal"})
 
-      assert %{"features" => %{"brix" => ["Brix is only for Liquid products"]}} =
+      assert %{"features" => %{"brix" => ["Brix is only for Liquid sugars"]}} =
                errors(lot(c, dry["id"], %{"features" => %{"brix" => "40"}}))
 
       dry_lot = lot!(c, dry["id"])
 
-      assert %{"features" => %{"brix" => ["Brix is only for Liquid products"]}} =
+      assert %{"features" => %{"brix" => ["Brix is only for Liquid sugars"]}} =
                errors(
                  req(c.brewer, :put, "/api/ingredient_lots/#{dry_lot["id"]}", %{
                    "features" => %{"brix" => "40"}

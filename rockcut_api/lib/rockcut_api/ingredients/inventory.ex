@@ -23,7 +23,7 @@ defmodule RockcutApi.Ingredients.Inventory do
   import Ecto.Query
 
   alias RockcutApi.{Repo, Tasks}
-  alias RockcutApi.Brewing.{IngredientLot, RecipeIngredient}
+  alias RockcutApi.Brewing.{Ingredient, IngredientLot, RecipeIngredient}
 
   alias RockcutApi.Ingredients.{
     Catalog,
@@ -629,7 +629,9 @@ defmodule RockcutApi.Ingredients.Inventory do
         case lot.feature_values do
           values when is_list(values) ->
             Enum.find_value(values, fn v ->
-              v.feature_type.key == "brix" && "#{Units.round(v.value, 1)} °Bx"
+              # Lead decisions 1 (gap 4): always one place, "14.0 °Bx".
+              v.feature_type.key == "brix" &&
+                "#{v.value |> Decimal.round(1) |> Decimal.to_string(:normal)} °Bx"
             end)
 
           _ ->
@@ -973,17 +975,21 @@ defmodule RockcutApi.Ingredients.Inventory do
         {:error, {:invalid, %{crop_year: ["can't be blank"]}}}
 
       true ->
-        fixed_pack(attrs, Catalog.fixed_pack(key), lot)
+        with {:ok, attrs} <- fixed_pack(attrs, Catalog.fixed_pack(key), lot),
+             do: pack_in_category(attrs, key)
     end
   end
 
   # D65 §4.2: a new lot of another category with no pack named starts with
-  # its unit's usual one (lb → bag, gal → pail, …), not the schema's sack.
+  # its unit's usual one (lb → bag, gal → pail, …), not the schema's sack;
+  # lead decisions 1 (gap 3): the category's first pack when the unit's
+  # usual one isn't in its list.
   defp fixed_pack(attrs, nil, nil) do
     with nil <- blank(attrs["pack_name"]),
          key when key not in ["grains", nil] <- Catalog.ingredient_key(attrs["ingredient_id"]),
+         names = Catalog.pack_names(key, ingredient_category(attrs["ingredient_id"])),
          name when is_binary(name) <-
-           Catalog.default_pack(Products.unit(product_id(attrs))) do
+           Catalog.default_pack_in(Products.unit(product_id(attrs)), names) do
       {:ok, Map.put(attrs, "pack_name", name)}
     else
       _ -> {:ok, attrs}
@@ -1006,6 +1012,38 @@ defmodule RockcutApi.Ingredients.Inventory do
       true ->
         {:ok, attrs}
     end
+  end
+
+  # D65 lead decisions 1 (gap 11): a pack name given for a lot is one its
+  # category's offers may use (`Catalog.pack_names/2`: a child of Other
+  # Consumables its own list), refused in the offers' words. A lot that
+  # doesn't name one keeps its own (grain sack, hop box).
+  defp pack_in_category(attrs, nil), do: {:ok, attrs}
+
+  defp pack_in_category(attrs, key) do
+    case blank(attrs["pack_name"]) do
+      nil ->
+        {:ok, attrs}
+
+      name ->
+        names = Catalog.pack_names(key, ingredient_category(attrs["ingredient_id"]))
+
+        if name in names,
+          do: {:ok, attrs},
+          else: {:error, {:invalid, %{pack_name: ["must be #{Enum.join(names, " or ")}"]}}}
+    end
+  end
+
+  defp ingredient_category(nil), do: nil
+
+  defp ingredient_category(ingredient_id) do
+    Repo.one(
+      from(i in Ingredient,
+        join: c in assoc(i, :category),
+        where: i.id == ^ingredient_id,
+        select: c
+      )
+    )
   end
 
   # A2: the features a managed lot can't be without (`Features.check_required/3`).

@@ -217,7 +217,13 @@ defmodule RockcutApi.Ingredients.Orders do
 
     by_unit =
       order.lines
-      |> Enum.map(&%{unit: Products.unit(&1.offer.product), quantity: line_quantity(order, &1)})
+      |> Enum.map(
+        &%{
+          unit: Products.unit(&1.offer.product),
+          unit_label: Products.unit_label(&1.offer.product),
+          quantity: line_quantity(order, &1)
+        }
+      )
       |> sum_by_unit()
 
     target = order.supplier && order.supplier.order_target_packs
@@ -236,13 +242,19 @@ defmodule RockcutApi.Ingredients.Orders do
   def line_quantity(order, line),
     do: Decimal.round(Decimal.mult(line.offer.pack_size, counted_packs(order, line)), 2)
 
-  # `[%{unit, quantity}]` summed per unit, by unit name.
+  # `[%{unit, unit_label, quantity}]` summed per unit, by unit name. Lead
+  # decisions 1 (gap 8): the label is "tablets" when every row in it is a
+  # Tablet product, else the unit ("each" for a mix).
   defp sum_by_unit(rows) do
     rows
     |> Enum.group_by(& &1.unit)
     |> Enum.sort_by(fn {unit, _} -> unit end)
     |> Enum.map(fn {unit, rs} ->
-      %{unit: unit, quantity: Enum.reduce(rs, Decimal.new(0), &Decimal.add(&2, &1.quantity))}
+      %{
+        unit: unit,
+        unit_label: Units.shared_label(unit, Enum.map(rs, & &1.unit_label)),
+        quantity: Enum.reduce(rs, Decimal.new(0), &Decimal.add(&2, &1.quantity))
+      }
     end)
   end
 

@@ -129,11 +129,14 @@ defmodule RockcutApi.Ingredients.Products do
     end
   end
 
-  @doc "Deletes a product with no offers or lots (its standard features go with it)."
+  @doc "Deletes a product with no offers, lots or contract lines (its standard features go with it)."
   def delete(%Product{} = product) do
     in_use =
       Repo.exists?(from(o in SupplierOffer, where: o.product_id == ^product.id)) or
-        Repo.exists?(from(l in IngredientLot, where: l.product_id == ^product.id))
+        Repo.exists?(from(l in IngredientLot, where: l.product_id == ^product.id)) or
+        Repo.exists?(
+          from(l in RockcutApi.Ingredients.ContractLine, where: l.product_id == ^product.id)
+        )
 
     if in_use,
       do: {:error, {:invalid, %{base: [@in_use]}}},
@@ -312,11 +315,24 @@ defmodule RockcutApi.Ingredients.Products do
         {:error, {:invalid, %{form: ["can't be blank"]}}}
 
       forms ->
-        if form in forms,
-          do: unit_rules(attrs, key, category, form, product),
-          else: {:error, {:invalid, %{form: ["must be one of #{Enum.join(forms, ", ")}"]}}}
+        cond do
+          form not in forms ->
+            {:error, {:invalid, %{form: ["must be one of #{Enum.join(forms, ", ")}"]}}}
+
+          # D65 lead decisions 1: the form is fixed once the product has a lot, as
+          # the unit is (it decides Brix on Liquid sugars and the "tablets" wording).
+          product && product.form && form != product.form && has_lots?(product) ->
+            {:error,
+             {:invalid, %{form: ["This product has lots, so its form stays #{product.form}"]}}}
+
+          true ->
+            unit_rules(attrs, key, category, form, product)
+        end
     end
   end
+
+  defp has_lots?(product),
+    do: Repo.exists?(from(l in IngredientLot, where: l.product_id == ^product.id))
 
   defp unit_rules(attrs, key, category, form, product) do
     units = Catalog.form_units(key, category, form)
@@ -344,8 +360,7 @@ defmodule RockcutApi.Ingredients.Products do
       unit not in units ->
         {:error, {:invalid, %{unit: ["must be one of #{Enum.join(units, ", ")}"]}}}
 
-      product && unit != product.unit &&
-          Repo.exists?(from(l in IngredientLot, where: l.product_id == ^product.id)) ->
+      product && unit != product.unit && has_lots?(product) ->
         {:error,
          {:invalid, %{unit: ["This product has lots, so its unit stays #{product.unit}"]}}}
 

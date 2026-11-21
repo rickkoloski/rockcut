@@ -80,6 +80,9 @@ defmodule RockcutApi.Ingredients.Offers do
   def delete(%SupplierOffer{} = offer) do
     on_order = Repo.exists?(from(l in PurchaseOrderLine, where: l.offer_id == ^offer.id))
 
+    # D65 lead decisions 1 (gap 13): a contract line naming the offer (any supplier) is a restrict key too.
+    on_contract = Repo.exists?(from(l in ContractLine, where: l.offer_id == ^offer.id))
+
     contract_year =
       from(l in ContractLine,
         join: c in assoc(l, :contract),
@@ -99,6 +102,9 @@ defmodule RockcutApi.Ingredients.Offers do
         {:error,
          {:invalid,
           %{base: ["A #{contract_year} contract covers this offer; deactivate it instead"]}}}
+
+      on_contract ->
+        {:error, {:invalid, %{base: ["A contract covers this offer; deactivate it instead"]}}}
 
       true ->
         Repo.delete(offer)
@@ -212,12 +218,16 @@ defmodule RockcutApi.Ingredients.Offers do
 
   # D65 §4.2: a new offer of a D65 product with no pack named starts with
   # its unit's usual pack (lb → bag, gal → pail, fl oz → jug, oz → bag,
-  # each → tub), when the category takes it.
+  # each → tub), when the category takes it, else the category's first
+  # (lead decisions 1, gap 3: a fl oz spice → bottle).
   defp default_pack(attrs, key, category, product_id) do
     with true <- attrs["pack_name"] in [nil, ""],
          true <- key not in ["grains", "hops"],
-         name when is_binary(name) <- Catalog.default_pack(Products.unit(blank(product_id))),
-         true <- name in Catalog.pack_names(key, category) do
+         name when is_binary(name) <-
+           Catalog.default_pack_in(
+             Products.unit(blank(product_id)),
+             Catalog.pack_names(key, category)
+           ) do
       {:ok, Map.put(attrs, "pack_name", name)}
     else
       _ -> {:ok, attrs}

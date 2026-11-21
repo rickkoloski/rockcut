@@ -1028,6 +1028,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       formula: ing.formula,
       # D65: ion values (ppm @ 1 g/gal) on a Water Salts ingredient, by key.
       ions: ing.ions,
+      delete_blocked: ing.delete_blocked,
       lots: maybe_render(ing, :lots, &Enum.map(&1, fn l -> ingredient_lot_summary(l) end)),
       inserted_at: ing.inserted_at,
       updated_at: ing.updated_at

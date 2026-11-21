@@ -49,7 +49,7 @@ defmodule RockcutApiWeb.IngredientController do
     ing = Brewing.get_ingredient!(id)
 
     with {:ok, ing} <- Ions.save_ingredient(ing, params) do
-      json(conn, %{data: ingredient(ing)})
+      json(conn, %{data: ingredient(Brewing.put_ingredient_delete_blocked(ing))})
     end
   end
 

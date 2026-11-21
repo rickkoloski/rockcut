@@ -65,6 +65,7 @@ defmodule RockcutApi.Ingredients.Product do
     |> update_change(:origin, &blank_to_nil/1)
     |> validate_required(required(key))
     |> validate_length(:name, max: 100)
+    |> validate_not_none()
     |> validate_length(:origin, max: 100)
     |> validate_range(:min_on_hand_packs, 0, 100_000)
     |> unique_product(key)
@@ -85,6 +86,22 @@ defmodule RockcutApi.Ingredients.Product do
     if RockcutApi.Ingredients.Catalog.manufacturer_required?(key),
       do: [:ingredient_id, :manufacturer_party_id, :unit],
       else: [:ingredient_id, :unit]
+  end
+
+  # D65 lead decisions 1 (gap 12): "None" is how a product with no
+  # manufacturer reads, so it isn't a product name (any case). Under
+  # `base`, as the duplicate is, so the dialog shows the sentence alone.
+  defp validate_not_none(changeset) do
+    case get_change(changeset, :name) do
+      name when is_binary(name) ->
+        if String.downcase(name) == "none",
+          do:
+            add_error(changeset, :base, "'None' means no manufacturer; pick another product name"),
+          else: changeset
+
+      _ ->
+        changeset
+    end
   end
 
   # Gap 4: one of this product's active offers (one that doesn't exist is

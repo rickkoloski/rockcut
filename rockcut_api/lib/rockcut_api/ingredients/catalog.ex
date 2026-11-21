@@ -36,13 +36,15 @@ defmodule RockcutApi.Ingredients.Catalog do
   # Sugars: Dry is always lb; Liquid is lb or gal.
   @sugar_units %{"Dry" => ["lb"], "Liquid" => ["lb", "gal"]}
 
-  # D65 §4.2: an offer's pack starts as the unit's usual one.
+  # D65 §4.2: an offer's pack starts as the unit's usual one. Lead decisions
+  # 1 (gap 3): a fl oz product whose category has no jug (Spices) takes a
+  # bottle; failing all of them, the category's first pack.
   @default_packs %{
-    "lb" => "bag",
-    "gal" => "pail",
-    "fl oz" => "jug",
-    "oz" => "bag",
-    "each" => "tub"
+    "lb" => ["bag"],
+    "gal" => ["pail"],
+    "fl oz" => ["jug", "bottle"],
+    "oz" => ["bag"],
+    "each" => ["tub"]
   }
 
   @pack_names ~w(sack box bag pail drum case jar bottle jug tub)
@@ -184,10 +186,20 @@ defmodule RockcutApi.Ingredients.Catalog do
   def pack_names(key, category), do: child_list(key, category, 2) || pack_names(key)
 
   @doc "D65 §4.2: the pack an offer in `unit` starts with (lb → bag, gal → pail, …); nil for another."
-  def default_pack(unit), do: Map.get(@default_packs, unit)
+  def default_pack(unit), do: @default_packs |> Map.get(unit, []) |> List.first()
+
+  @doc """
+  D65 lead decisions 1 (gap 3): the pack a new offer or lot in `unit` starts
+  with among `names` (a category's): the unit's usual one when it's there
+  ("bottle" for a fl oz spice, which has no jug), else the first name; nil
+  with no names.
+  """
+  def default_pack_in(unit, names) do
+    Enum.find(Map.get(@default_packs, unit, []), &(&1 in names)) || List.first(names)
+  end
 
   @doc "The default pack per unit, for the screens."
-  def default_packs, do: @default_packs
+  def default_packs, do: Map.new(@default_packs, fn {unit, [usual | _]} -> {unit, usual} end)
 
   @doc """
   D65 §4.1, A9: whether a category takes subcategories. Grains and Other
@@ -240,7 +252,11 @@ defmodule RockcutApi.Ingredients.Catalog do
       units: if(key in @managed, do: units(key, child), else: []),
       form_units: Map.new(forms, &{&1, form_units(key, child, &1)}),
       pack_names: if(key in @managed, do: pack_names(key, child), else: []),
-      default_packs: @default_packs,
+      # Per unit, the pack this category's offers start with (gap 3: one it takes).
+      default_packs:
+        Map.new(@default_packs, fn {unit, _} ->
+          {unit, default_pack_in(unit, if(key in @managed, do: pack_names(key, child), else: []))}
+        end),
       manufacturer_required: manufacturer_required?(key),
       allows_children: is_nil(category.parent_id) and allows_children?(key),
       allows_fields: allows_fields?(key),
