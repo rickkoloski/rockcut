@@ -352,11 +352,11 @@ value against the salt's formula.
    | Chalk (calcium carbonate) | Powder | lb | bag · 50 lb | $66.00/bag ($1.32/lb) |
    | Epsom Salt (Hydrous) | Powder | lb | bag · 50 lb | $97.00/bag ($1.94/lb) |
    | Table Salt (sodium chloride) | Powder | lb | bag · 50 lb | $34.00/bag ($0.68/lb) |
+   | Baking Soda (sodium bicarbonate) | Powder | lb | bag · 50 lb | $47.00/bag ($0.94/lb) |
 
    - Prices are effective 2026-11-20.
    - No lots or on-hand amounts were given, so none are seeded.
-   - Baking Soda and Calcium Chloride (Anhydrous) are seeded as ingredients with their ions,
-     with no products.
-   - Forms (Flake for the calcium chloride, Powder for the rest, including sodium chloride) are the lead's guess (**A13**,
+   - Calcium Chloride (Anhydrous) is seeded as an ingredient with its ions, with no product.
+   - Forms (Flake for the calcium chloride, Powder for the rest, including the sodium salts) are the lead's guess (**A13**,
      to confirm).
    - The seed is idempotent by name, as D62's hops.
