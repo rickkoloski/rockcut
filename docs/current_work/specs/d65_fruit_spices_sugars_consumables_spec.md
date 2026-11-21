@@ -201,8 +201,9 @@ rest stays on the backlog.
 
 ## 7. Data and release
 
-- **Migrations are additive or tidy-ups**, so rollback to D62's image works without the snapshot.
-  A pre-release snapshot is still taken, as always. The migrations:
+- **Migrations are additive or tidy-ups**, but **rollback needs the pre-release snapshot**:
+  products with no manufacturer (salts, sugars, SoNature fruit, Whirlfloc T) can't be read by
+  D62's image, which requires a manufacturer. The migrations:
   - add the `brix` feature type and the category feature rows;
   - add the Other Consumables children and move Whirlfloc into Finings and remove Irish Moss;
   - delete the empty Future Ingredients category and the three old Form fields.
