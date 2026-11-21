@@ -113,7 +113,7 @@ export default function CompaniesPage() {
                     <Roles party={p} />
                   </TableCell>
                   <TableCell align="right" data-testid={`company-target-${p.id}`}>
-                    {p.order_target_packs != null ? `${p.order_target_packs} sacks` : ''}
+                    {p.order_target_packs != null ? `${p.order_target_packs} packs` : ''}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">
