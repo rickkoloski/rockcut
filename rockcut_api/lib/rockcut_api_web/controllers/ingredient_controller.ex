@@ -17,7 +17,8 @@ defmodule RockcutApiWeb.IngredientController do
   end
 
   def create(conn, params) do
-    with {:ok, ing} <- Brewing.create_ingredient(params) do
+    # D65: the ingredient and its ions (`"ions"`) in one transaction.
+    with {:ok, ing} <- Ions.save_ingredient(nil, params) do
       conn
       |> put_status(:created)
       |> json(%{data: ingredient(ing)})
@@ -47,7 +48,7 @@ defmodule RockcutApiWeb.IngredientController do
   def update(conn, %{"id" => id} = params) do
     ing = Brewing.get_ingredient!(id)
 
-    with {:ok, ing} <- Brewing.update_ingredient(ing, params) do
+    with {:ok, ing} <- Ions.save_ingredient(ing, params) do
       json(conn, %{data: ingredient(ing)})
     end
   end

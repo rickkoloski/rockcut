@@ -6,6 +6,7 @@ import {
   cleanupIngredients,
   denverToday,
   expectNoSidewaysScroll,
+  expectPhoneDialogClosed,
   makeD65Ingredient,
   makeD65Lot,
   makeD65Product,
@@ -104,6 +105,10 @@ test.describe('fruit', () => {
     await expect(c).toHaveCount(0)
     await expect(page.getByTestId('product-on-hand')).toHaveText('2 pails 1.5 gal')
 
+    // §5.1: the Fruits list shows the Brix range.
+    await page.goto(`/ingredients?category=${await categoryId('fruits')}`)
+    await expect(page.getByTestId(`product-brix-${puree.id}`)).toHaveText('6.5–9')
+
     expect(await onHand({ product_id: puree.id })).toMatchObject({ status: 'ok', value: 11.5, unit: 'gal' })
     expect(await onHand({ ingredient_id: strawberry.id })).toMatchObject({ status: 'error', message: `${strawberry.name}'s products are in different units; ask for one product.` })
   })
@@ -134,6 +139,11 @@ test.describe('sugars', () => {
     await expect(d.getByTestId('feature-brix')).toBeVisible()
     await d.getByRole('button', { name: 'Cancel' }).click()
 
+    // §5.1: the Sugars list shows extract.
+    await page.goto(`/ingredients?category=${await categoryId('sugars')}`)
+    await expect(page.getByTestId(`product-extract_fgdb-${dry.id}`)).toHaveText('91.0')
+    await expect(page.getByTestId(`product-extract_fgdb-${liquid.id}`)).toHaveText('81.95')
+
     const res = await (await apiAs('brewer1')).post('/api/ingredient_lots', {
       data: { product_id: dry.id, received_date: denverToday(), initial_kind: 'opening', initial_quantity: '50', features: { brix: '40' } },
     })
@@ -152,7 +162,8 @@ test('Water Salts: ions and a formula on the ingredient; read-only on its produc
   await d.getByTestId('ingredient-formula').fill('CaSO₄·2H₂O')
   await d.getByTestId('ion-ca_ppm_per_g_gal').fill('61.5')
   await d.getByTestId('ion-so4_ppm_per_g_gal').fill('147.4')
-  const put = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`/api/ingredients/${gypsum.id}/ions`))
+  // D65 Stop 3: the ions save with the ingredient, one request.
+  const put = page.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`/api/ingredients/${gypsum.id}`))
   await d.getByRole('button', { name: 'Save' }).click()
   expect((await put).status()).toBe(200)
   await expect(d).toHaveCount(0)
@@ -279,6 +290,95 @@ test.describe('purchasing', () => {
   })
 })
 
+test.describe('§10 gaps closed in Stop 3', () => {
+  test('brewer2: Calcium Chloride (Flake, lb) and a liquid fining in a jug · 128 fl oz; spice offers bag · 16 oz and bottle · 32 fl oz; fl oz in Totals', async ({ browser }) => {
+    const page = await as(browser, 'brewer2')
+    const cacl = await makeD65Ingredient('Calcium Chloride', 'Water Salts')
+    const fining = await makeD65Ingredient('Biofine', 'Finings')
+    const supplier = await makeSupplier('D65 consumables', null)
+
+    // Calcium Chloride: Flake, lb is the only unit.
+    await page.goto(`/ingredients?category=${await categoryId('Water Salts')}`)
+    await page.getByTestId('ingredients-add-button').click()
+    await page.getByTestId('add-d65-product').click()
+    let d = page.getByTestId('product-dialog')
+    await pick(page, d, 'Ingredient', re(cacl.name))
+    await pick(page, d, 'Form', 'Flake')
+    await expect(d.getByRole('combobox', { name: /Unit/ })).toHaveText('lb')
+    let created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/ingredient_products'))
+    await d.getByRole('button', { name: 'Save' }).click()
+    expect((await created).status()).toBe(201)
+    await expect(page.getByTestId('product-item')).toContainText('Flake · lb · Water Salts')
+
+    // A liquid fining in fl oz; its offer starts as a jug.
+    await page.goto(`/ingredients?category=${await categoryId('Finings')}`)
+    await page.getByTestId('ingredients-add-button').click()
+    await page.getByTestId('add-d65-product').click()
+    d = page.getByTestId('product-dialog')
+    await pick(page, d, 'Ingredient', re(fining.name))
+    await pick(page, d, 'Form', 'Liquid')
+    await pick(page, d, 'Unit', 'fl oz')
+    created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/ingredient_products'))
+    await d.getByRole('button', { name: 'Save' }).click()
+    const liquid = (await (await created).json()).data as { id: number }
+    const o = await openDialog(page, page.getByTestId('product-add-offer'), 'offer-dialog')
+    await pick(page, o, 'Supplier', re(supplier.name))
+    await expect(o.getByRole('combobox', { name: /Pack/ })).toHaveText('jug')
+    await o.getByTestId('offer-pack-size').fill('128')
+    await o.getByRole('button', { name: 'Save' }).click()
+    await expect(o).toHaveCount(0)
+    await expect(page.getByTestId('product-offers')).toContainText('jug · 128 fl oz')
+
+    // Spices: bag · 16 oz and bottle · 32 fl oz.
+    const cinnamon = await makeD65Product((await makeD65Ingredient('Cinnamon', 'spices')).id, 'Ground', 'oz')
+    const vanilla = await makeD65Product((await makeD65Ingredient('Vanilla Extract', 'spices')).id, 'Extract', 'fl oz')
+    await d65Offer(cinnamon.id, supplier.id, 'bag', '16', '12.00')
+    await d65Offer(vanilla.id, supplier.id, 'bottle', '32', '38.00')
+    await page.goto(`/ingredients/products/${vanilla.id}`)
+    await expect(page.getByTestId('product-offers')).toContainText('bottle · 32 fl oz')
+    await page.goto(`/ingredients/products/${cinnamon.id}`)
+    await expect(page.getByTestId('product-offers')).toContainText('bag · 16 oz')
+
+    // fl oz in Totals: its own subtotal line.
+    const api = await apiAs('brewer2')
+    for (const [id, qty] of [[liquid.id, '256'], [vanilla.id, '64']] as const) {
+      const res = await api.post('/api/ingredient_lots', { data: { product_id: id, supplier_party_id: supplier.id, received_date: denverToday(), initial_kind: 'opening', initial_quantity: qty } })
+      expect(res.status(), await res.text()).toBe(201)
+    }
+    const owner = await as(browser, 'owner')
+    await owner.goto('/ingredients/totals')
+    await owner.getByTestId('totals-inventory-supplier').click()
+    await owner.getByRole('option', { name: supplier.name }).click()
+    await expect(owner.getByTestId('totals-inventory-total-fl-oz')).toHaveText('320 fl oz')
+    for (const p of [page, owner]) await p.context().close()
+  })
+
+  test('Receive into an existing lot #: a purée lot with Brix 8.5 shows read-only; 9.0 sent is refused', async ({ page }) => {
+    const plum = await makeD65Ingredient('Plum existing', 'fruits')
+    const product = await makeD65Product(plum.id, 'Purée', 'lb')
+    const supplier = await makeSupplier('Plum existing supplier', null)
+    const offer = await d65Offer(product.id, supplier.id, 'pail', '44', '113.50')
+    const api = await apiAs('brewer1')
+    const number = tempTag('P-1')
+    expect(
+      (await api.post('/api/ingredient_lots', { data: { product_id: product.id, supplier_party_id: supplier.id, lot_number: number, pack_name: 'pail', pack_size: '44', received_date: denverToday(), initial_kind: 'opening', initial_quantity: '44', features: { brix: '8.5' } } })).status(),
+    ).toBe(201)
+    const order = (await (await api.post('/api/purchase_orders', { data: { supplier_party_id: supplier.id, ordered_on: denverToday(), lines: [{ offer_id: offer.id, packs_ordered: 1 }] } })).json()).data as { id: number; lines: { id: number }[] }
+    await page.goto(`/ingredients/orders/${order.id}`)
+    const r = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')
+    await pick(page, r.getByTestId('receive-line-0'), 'Goes to', 'New lot #')
+    await r.getByTestId('receive-line-0-row-0-number').fill(number)
+    await expect(r.getByTestId('receive-line-0-row-0-existing')).toContainText('8.5')
+    await expect(r.getByTestId('feature-brix')).toHaveCount(0)
+    await r.getByRole('button', { name: 'Cancel' }).click()
+
+    const refused = await api.post(`/api/purchase_orders/${order.id}/receive`, {
+      data: { received_on: denverToday(), lines: [{ id: order.lines[0].id, packs_received: 1, allocations: [{ lot_number: number, packs: 1, features: { brix: '9.0' } }] }] },
+    })
+    expect(refused.status()).toBe(422)
+  })
+})
+
 test.describe('edges', () => {
   test('floater and splitRole use the new pages; bartender1 and breweryDevice get 403 on every D65 route', async ({ browser }) => {
     const plum = await makeD65Ingredient('Plum', 'fruits')
@@ -392,7 +492,8 @@ test.describe('edges', () => {
       await expect(d.getByTestId('feature-brix')).toBeVisible()
       await expectNoSidewaysScroll(page)
       await d.getByRole('button', { name: 'Cancel' }).click()
-      await expect(d).toHaveCount(0)
+      // The dialog's history entry goes a tick after it closes; a goto before that is aborted.
+      await expectPhoneDialogClosed(page, d)
 
       await page.goto(`/ingredients/products/${wf.id}`)
       const c = await openDialog(page, page.getByTestId('product-count'), 'count-dialog')

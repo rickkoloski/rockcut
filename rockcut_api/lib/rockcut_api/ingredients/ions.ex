@@ -81,6 +81,38 @@ defmodule RockcutApi.Ingredients.Ions do
 
   def put(_ingredient, _ions), do: {:error, {:invalid, %{ions: ["must be a map by ion key"]}}}
 
+  @doc """
+  D65 Stop 3 (Stop 2 LEAD note 5): create (`ingredient` nil) or change an
+  ingredient and set its `"ions"` in one transaction: both are written or
+  neither (a bad ion value leaves the name as it was). Without `"ions"` it's
+  the plain ingredient save. `{:ok, ingredient}` with `ions` filled.
+  """
+  def save_ingredient(ingredient, attrs) do
+    Repo.transaction(fn ->
+      saved =
+        (ingredient || %Ingredient{})
+        |> Ingredient.changeset(attrs)
+        |> Repo.insert_or_update()
+        |> case do
+          {:ok, saved} -> saved
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+
+      case Map.fetch(attrs, "ions") do
+        {:ok, ions} ->
+          case put(saved, ions) do
+            {:ok, _} -> :ok
+            {:error, reason} -> Repo.rollback(reason)
+          end
+
+        :error ->
+          :ok
+      end
+
+      saved |> Repo.preload(:category, force: true) |> Map.put(:ions, get(saved.id))
+    end)
+  end
+
   defp write!(ingredient_id, type, nil) do
     Repo.delete_all(
       from(v in IngredientFeatureValue,

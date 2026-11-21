@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { Box, TextField, FormControl, InputLabel, Select, MenuItem, Typography } from '@mui/material'
 import { useQueryClient } from '@tanstack/react-query'
 import DecimalInput from '../../components/DecimalInput'
-import api from '../../lib/api'
 import { parseDecimal } from '../../lib/brewingUnits'
 import { IONS } from '../../lib/ingredientFeatures'
 import type { Ingredient, IngredientCategory } from '../../lib/types'
@@ -89,18 +88,16 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
         formula: formula.trim() || null,
       }
 
+      // D65 Stop 3: the ions go with the ingredient, one request and one transaction.
+      if (salts)
+        payload.ions = Object.fromEntries(
+          IONS.map((i) => {
+            const p = parseDecimal(ions[i.key], 1)
+            return [i.key, p.ok ? p.value : null]
+          }),
+        )
       const saved = ingredient ? await updateIngredient.mutateAsync({ id: ingredient.id, ...payload }) : await createIngredient.mutateAsync(payload)
-      if (salts) {
-        await api.put(`/api/ingredients/${saved.id}/ions`, {
-          ions: Object.fromEntries(
-            IONS.map((i) => {
-              const p = parseDecimal(ions[i.key], 1)
-              return [i.key, p.ok ? p.value : null]
-            }),
-          ),
-        })
-        for (const key of [['ingredients'], ['ingredient', saved.id], ['ingredient_products'], ['ingredient_product']]) await qc.invalidateQueries({ queryKey: key })
-      }
+      if (salts) for (const key of [['ingredient', saved.id], ['ingredient_products'], ['ingredient_product']]) await qc.invalidateQueries({ queryKey: key })
       onClose()
     } catch (err) {
       setError(parseApiError(err))
