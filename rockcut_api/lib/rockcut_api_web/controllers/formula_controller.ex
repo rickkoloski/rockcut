@@ -10,9 +10,10 @@ defmodule RockcutApiWeb.FormulaController do
         %{
           name: op.name,
           description: op.description,
-          params: Enum.map(op.params, fn p ->
-            %{name: p.name, type: to_string(p.type), required: p.required}
-          end),
+          params:
+            Enum.map(op.params, fn p ->
+              %{name: p.name, type: to_string(p.type), required: p.required}
+            end),
           returns: to_string(op.returns)
         }
       end)
@@ -29,8 +30,12 @@ defmodule RockcutApiWeb.FormulaController do
         args = call["args"] || %{}
 
         case FormulaRuntime.execute(function, args, context) do
-          {:ok, %{value: value, duration_ms: duration_ms}} ->
+          # D62 §3.9: `inventory_on_hand` also says its unit; D65: pass it on.
+          {:ok, %{value: value, duration_ms: duration_ms} = result} ->
             %{status: "ok", value: value, duration_ms: duration_ms}
+            |> then(
+              &if(Map.has_key?(result, :unit), do: Map.put(&1, :unit, result.unit), else: &1)
+            )
 
           {:error, error_type, message} ->
             %{status: "error", error: to_string(error_type), message: message}

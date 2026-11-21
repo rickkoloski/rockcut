@@ -28,6 +28,8 @@ defmodule RockcutApi.Ingredients.Product do
     field :expired, :decimal, virtual: true
     # D61 §3.5: on hand (not expired) under the minimum (`Ingredients.Reorder`).
     field :below_minimum, :boolean, virtual: true, default: false
+    # D65: its ingredient's ion values (`Ingredients.Ions`), read-only here.
+    field :ions, :map, virtual: true, default: %{}
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
     belongs_to :manufacturer, RockcutApi.Ingredients.Party, foreign_key: :manufacturer_party_id

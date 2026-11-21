@@ -205,6 +205,16 @@ defmodule RockcutApi.Ingredients.Catalog do
   def allows_fields?(_key), do: true
 
   @doc """
+  D65 (salts amendment): whether a category is Other Consumables' Water
+  Salts child, the one whose ingredients carry ion values.
+  """
+  def water_salts?(%IngredientCategory{parent_id: parent, name: name} = category)
+      when not is_nil(parent),
+      do: key(category) == "consumables" and String.downcase(String.trim(name)) == "water salts"
+
+  def water_salts?(_category), do: false
+
+  @doc """
   The display label of a product's unit: "tablets" for `each` on a Tablet
   product (D65 finings amendment; the stored unit stays `each`), else the
   unit itself.
@@ -233,7 +243,9 @@ defmodule RockcutApi.Ingredients.Catalog do
       default_packs: @default_packs,
       manufacturer_required: manufacturer_required?(key),
       allows_children: is_nil(category.parent_id) and allows_children?(key),
-      allows_fields: allows_fields?(key)
+      allows_fields: allows_fields?(key),
+      # D65 (salts amendment): its ingredients carry ion values.
+      ions: water_salts?(category)
     }
   end
 

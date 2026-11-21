@@ -278,7 +278,8 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
           ]
         }
 
-      assert %{"features" => %{"extract_fgdb" => ["Extract: Use at most 1 decimal"]}} =
+      # D65: extract keeps 2 decimals now.
+      assert %{"features" => %{"extract_fgdb" => ["Extract: Use at most 2 decimals"]}} =
                errors(req(c.brewer, :post, path, alloc.("80.155")))
 
       assert Repo.get_by(IngredientLot, lot_number: "FEAT") == nil

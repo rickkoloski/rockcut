@@ -359,7 +359,8 @@ defmodule RockcutApiWeb.D65Stop1Test do
                move.(%{
                  "product_id" => c.wf["id"],
                  "allocation" => "oldest_first",
-                 "quantity" => "0.5"
+                 # Above 1 but not whole (below 1 is "at least 1 tablet", Stop 2).
+                 "quantity" => "1.5"
                })
              ) ==
                "Whirlfloc T is counted in whole tablets"

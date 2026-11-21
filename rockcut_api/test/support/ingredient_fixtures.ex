@@ -264,6 +264,24 @@ defmodule RockcutApi.IngredientFixtures do
     finings = Repo.insert!(%IngredientCategory{name: "Finings", parent_id: consumables.id})
     ingredient = &Repo.insert!(%Ingredient{name: &1, category_id: &2.id})
 
+    # D65 Stop 2 (migration `d65_features_and_pack_note`'s rows): Fruits'
+    # Brix a range, entered on lots; Sugars' extract a standard copied to
+    # lots, Brix on Liquid lots only.
+    for {category, key, sort, product_mode, lot_mode, only_form} <- [
+          {fruits, "brix", 0, "range", "enter", nil},
+          {sugars, "extract_fgdb", 0, "value", "copy", nil},
+          {sugars, "brix", 1, "none", "enter", "Liquid"}
+        ] do
+      Repo.insert!(%CategoryFeatureType{
+        category_id: category.id,
+        feature_type_id: feature_type!(key).id,
+        sort_order: sort,
+        product_mode: product_mode,
+        lot_mode: lot_mode,
+        only_form: only_form
+      })
+    end
+
     %{
       fruits: fruits,
       spices: spices,

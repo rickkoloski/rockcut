@@ -310,6 +310,7 @@ defmodule RockcutApi.Ingredients.Orders do
           packs_ordered: line.packs_ordered,
           packs_received: line.packs_received,
           unit: Products.unit(line.offer.product),
+          unit_label: Products.unit_label(line.offer.product),
           quantity: line_quantity(order, line),
           dollars: Decimal.round(Decimal.mult(line.price_per_pack, n), 2),
           packs: n
@@ -649,7 +650,12 @@ defmodule RockcutApi.Ingredients.Orders do
   # "leave its values".
   defp same_values!(lot, line, a) do
     features =
-      case Features.validate(a["features"], line.offer.product.ingredient_id, :lot) do
+      case Features.validate(
+             a["features"],
+             line.offer.product.ingredient_id,
+             :lot,
+             line.offer.product.form
+           ) do
         {:ok, features} -> for {type, attrs} <- features, do: {type, attrs && attrs.value}
         {:error, reason} -> Repo.rollback(reason)
       end
@@ -716,7 +722,7 @@ defmodule RockcutApi.Ingredients.Orders do
       do: rollback(%{base: ["#{which}: only hop lots have a crop year"]})
 
     features =
-      case Features.validate(a["features"], product.ingredient_id, :lot) do
+      case Features.validate(a["features"], product.ingredient_id, :lot, product.form) do
         {:ok, features} -> features
         {:error, reason} -> Repo.rollback(reason)
       end

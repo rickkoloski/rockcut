@@ -616,6 +616,32 @@ defmodule RockcutApi.Ingredients.Inventory do
     |> Enum.join(" · ")
   end
 
+  # D65 A11: a fruit, spice, sugar or other consumable lot, "Aseptic Fruit
+  # Strawberry Purée · L-7 · 8.5 °Bx" (Brix only when the lot has it).
+  def lot_label(
+        %IngredientLot{
+          product: %Product{} = product,
+          ingredient: %{category: %RockcutApi.Brewing.IngredientCategory{} = category}
+        } = lot
+      ) do
+    if Catalog.key(category) in ~w(fruits spices sugars consumables) do
+      brix =
+        case lot.feature_values do
+          values when is_list(values) ->
+            Enum.find_value(values, fn v ->
+              v.feature_type.key == "brix" && "#{Units.round(v.value, 1)} °Bx"
+            end)
+
+          _ ->
+            nil
+        end
+
+      [Products.display_name(product), lot.lot_number || "##{lot.id}", brix]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" · ")
+    end
+  end
+
   def lot_label(_lot), do: nil
 
   @doc """
@@ -706,7 +732,13 @@ defmodule RockcutApi.Ingredients.Inventory do
          {:ok, initial} <- initial(attrs, managed?),
          :ok <- whole_lot(attrs, initial),
          :ok <- lot_number_free(attrs, nil),
-         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"], :lot),
+         {:ok, features} <-
+           Features.validate(
+             attrs["features"],
+             attrs["ingredient_id"],
+             :lot,
+             product_form(product_id(attrs))
+           ),
          :ok <- required_features(managed?, attrs["ingredient_id"], features, []) do
       write(fn ->
         lot =
@@ -776,7 +808,13 @@ defmodule RockcutApi.Ingredients.Inventory do
              %{"product_id" => merged["product_id"], "lot_number" => attrs["lot_number"]},
              lot.id
            ),
-         {:ok, features} <- Features.validate(attrs["features"], ingredient_id, :lot),
+         {:ok, features} <-
+           Features.validate(
+             attrs["features"],
+             ingredient_id,
+             :lot,
+             product_form(blank(merged["product_id"]))
+           ),
          :ok <- required_features(managed?, ingredient_id, features, lot_feature_keys(lot)) do
       write(fn ->
         lot =
@@ -1037,7 +1075,7 @@ defmodule RockcutApi.Ingredients.Inventory do
 
       true ->
         with {:ok, quantity} <-
-               positive(attrs["initial_quantity"], Products.unit(product_id(attrs))),
+               positive(attrs["initial_quantity"], Products.unit_label(product_id(attrs))),
              :ok <- not_future(attrs["received_date"]),
              do: {:ok, {kind, quantity}}
     end
@@ -1067,19 +1105,35 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   defp product_id(attrs), do: blank(attrs["product_id"])
 
+  # D65: the product's form, for features only one form takes (Brix on Liquid sugars).
+  defp product_form(nil), do: nil
+  defp product_form(id), do: Repo.one(from(p in Product, where: p.id == ^id, select: p.form))
+
   # A quantity in the product's unit: at least 0.01 and under 1,000,000,
-  # kept to 2 decimals.
+  # kept to 2 decimals. D65 (Stop 1 LEAD note 10): a count (`each`, its
+  # "tablets" label) starts at 1: "at least 1 tablet", "at least 1".
   defp positive(v, unit) do
+    count? = unit in ["each", "tablets"]
+    least = if count?, do: Decimal.new(1), else: Decimal.new("0.01")
+
     case cast_decimal(v) do
       {:ok, d} ->
-        if Decimal.compare(d, Decimal.new("0.01")) != :lt and Decimal.lt?(d, 1_000_000),
+        if Decimal.compare(d, least) != :lt and Decimal.lt?(d, 1_000_000),
           do: {:ok, Units.round(d, 2)},
-          else: refuse("Enter a quantity of at least 0.01 #{unit} and under 1,000,000 #{unit}")
+          else: refuse(least_message(unit))
 
       :error ->
         refuse("The quantity must be a number")
     end
   end
+
+  defp least_message("tablets"),
+    do: "Enter a quantity of at least 1 tablet and under 1,000,000 tablets"
+
+  defp least_message("each"), do: "Enter a quantity of at least 1 and under 1,000,000"
+
+  defp least_message(unit),
+    do: "Enter a quantity of at least 0.01 #{unit} and under 1,000,000 #{unit}"
 
   defp non_negative(v, unit) do
     case cast_decimal(v) do

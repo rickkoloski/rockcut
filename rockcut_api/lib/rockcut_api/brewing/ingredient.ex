@@ -7,6 +7,8 @@ defmodule RockcutApi.Brewing.Ingredient do
     field :notes, :string
     # D65 (salts amendment): the chemical formula, "CaSO₄·2H₂O"; optional, any category.
     field :formula, :string
+    # D65: its ion values (`Ingredients.Ions`), filled by the controller; nil when not.
+    field :ions, :map, virtual: true
 
     belongs_to :category, RockcutApi.Brewing.IngredientCategory
     has_many :lots, RockcutApi.Brewing.IngredientLot

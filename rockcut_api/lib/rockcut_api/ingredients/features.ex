@@ -23,6 +23,11 @@ defmodule RockcutApi.Ingredients.Features do
   from the product's standard (`copy_standard!/3`), `enter` ones don't, and
   `lot_required` ones must be there (`check_required/3`). A lot value
   outside the product's range is allowed and marked (`put_outside_range/1`).
+
+  D65 §4.4: a feature whose row has `only_form` applies only to products in
+  that form (Brix on Liquid sugars); `validate/4` takes the product's form,
+  and a value sent for another form is refused ("Brix is only for Liquid
+  products").
   """
   import Ecto.Query
 
@@ -78,9 +83,11 @@ defmodule RockcutApi.Ingredients.Features do
   `{:error, {:invalid, %{features: %{key => [message]}}}}`. Anything but a map
   is refused.
   """
-  def validate(nil, _ingredient_id, _target), do: {:ok, []}
+  def validate(features, ingredient_id, target, form \\ nil)
 
-  def validate(features, ingredient_id, target) when is_map(features) do
+  def validate(nil, _ingredient_id, _target, _form), do: {:ok, []}
+
+  def validate(features, ingredient_id, target, form) when is_map(features) do
     types = Map.new(Repo.all(FeatureType), &{&1.key, &1})
     applies = applicability(ingredient_id)
 
@@ -90,7 +97,7 @@ defmodule RockcutApi.Ingredients.Features do
 
         type = Map.get(types, key)
 
-        case check(type, applies, target, entry) do
+        case check(type, applies, target, entry, form) do
           {:ok, type, attrs} ->
             {[{type, attrs} | ok], errors}
 
@@ -110,7 +117,7 @@ defmodule RockcutApi.Ingredients.Features do
       else: {:error, {:invalid, %{features: errors}}}
   end
 
-  def validate(_features, _ingredient_id, _target),
+  def validate(_features, _ingredient_id, _target, _form),
     do: {:error, {:invalid, %{features: ["must be a map by feature key"]}}}
 
   @doc """
@@ -250,16 +257,49 @@ defmodule RockcutApi.Ingredients.Features do
     |> Enum.reduce(%{}, fn a, acc -> Map.put_new(acc, a.feature_type_id, a) end)
   end
 
-  defp check(nil, _applies, _target, _entry), do: {:error, "is not a feature"}
+  @doc """
+  D65: one plain value of `type` as typed: `{:ok, decimal}`, `{:ok, nil}`
+  for a blank, or `{:error, message}` naming it ("Calcium: Use at most 1
+  decimal", "Calcium must be between 0 and 1,000"). Ingredient ions use it.
+  """
+  def check_scalar(_type, raw) when raw in [nil, ""], do: {:ok, nil}
 
-  defp check(type, applies, target, entry) do
+  def check_scalar(type, raw) do
+    with {:ok, value} <- decimal(raw, :required),
+         :ok <- check_places(type, value),
+         :ok <- check_value(type, value) do
+      {:ok, value}
+    else
+      {:error, {:places, places}} -> {:error, "#{type.label}: #{Ranges.places_message(places)}"}
+      {:error, message} -> {:error, "#{type.label} #{message}"}
+    end
+  end
+
+  defp check(nil, _applies, _target, _entry, _form), do: {:error, "is not a feature"}
+
+  defp check(type, applies, target, entry, form) do
     case Map.get(applies, type.id) do
-      nil -> {:error, "doesn't apply to this category"}
-      %{product_mode: "none"} when target == :product -> {:error, "isn't set on a product"}
-      %{lot_mode: "none"} when target == :lot -> {:error, "isn't set on a lot"}
-      _ when is_nil(entry) -> {:ok, type, nil}
-      %{product_mode: "range"} when target == :product -> check_range(type, entry)
-      _ -> check_single(type, entry, target)
+      nil ->
+        {:error, "doesn't apply to this category"}
+
+      # D65: Brix on Liquid sugars only (a value sent for another form; clearing one is fine).
+      %{only_form: only} when is_binary(only) and only != form and not is_nil(entry) ->
+        {:error, "is only for #{only} products"}
+
+      %{product_mode: "none"} when target == :product ->
+        {:error, "isn't set on a product"}
+
+      %{lot_mode: "none"} when target == :lot ->
+        {:error, "isn't set on a lot"}
+
+      _ when is_nil(entry) ->
+        {:ok, type, nil}
+
+      %{product_mode: "range"} when target == :product ->
+        check_range(type, entry)
+
+      _ ->
+        check_single(type, entry, target)
     end
   end
 
