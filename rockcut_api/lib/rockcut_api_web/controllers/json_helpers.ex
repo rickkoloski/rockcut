@@ -990,6 +990,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       parent_id: cat.parent_id,
       sort_order: cat.sort_order,
       delete_blocked: cat.delete_blocked,
+      # D65 §4.2: the forms, units and packs its products take, and whether
+      # it takes a manufacturer, children and custom fields (`Catalog.describe/1`).
+      catalog: RockcutApi.Ingredients.Catalog.describe(cat),
       field_definitions:
         maybe_render(
           cat,
@@ -1022,6 +1025,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       category_id: ing.category_id,
       category: maybe_render(ing, :category, &ingredient_category_summary/1),
       notes: ing.notes,
+      formula: ing.formula,
       lots: maybe_render(ing, :lots, &Enum.map(&1, fn l -> ingredient_lot_summary(l) end)),
       inserted_at: ing.inserted_at,
       updated_at: ing.updated_at
@@ -1088,6 +1092,8 @@ defmodule RockcutApiWeb.JSONHelpers do
       manufacturer: maybe_render(p, :manufacturer, &party_summary/1),
       name: p.name,
       unit: p.unit,
+      # D65: "tablets" for `each` on a Tablet product; else the unit.
+      unit_label: RockcutApi.Ingredients.Catalog.unit_label(p.unit, p.form),
       form: p.form,
       origin: p.origin,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
@@ -1518,6 +1524,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: p.name,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
       unit: p.unit,
+      unit_label: RockcutApi.Ingredients.Catalog.unit_label(p.unit, p.form),
       form: p.form,
       manufacturer: maybe_render(p, :manufacturer, &party_summary/1)
     }

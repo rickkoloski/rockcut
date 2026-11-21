@@ -206,7 +206,9 @@ defmodule RockcutApi.Ingredients.Valuation do
       product_id: product.id,
       display_name: Products.display_name(product),
       ingredient: product.ingredient.name,
-      manufacturer: product.manufacturer.name,
+      # D65 decision 8: a product with no manufacturer reads "None".
+      manufacturer: if(product.manufacturer, do: product.manufacturer.name, else: "None"),
+      unit_label: Products.unit_label(product),
       category: product.ingredient.category.name,
       category_id: product.ingredient.category_id,
       category_key: RockcutApi.Ingredients.Catalog.key(product.ingredient.category),

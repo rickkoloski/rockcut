@@ -147,6 +147,15 @@ defmodule RockcutApi.Ingredients.Orders do
 
           ids =
             for {lot, n} <- allocations!(line, packs, entry["allocations"], received_on) do
+              # D65 §4.3: an `each` receipt is whole (packs × a whole pack size).
+              case Products.check_whole(
+                     line.offer.product_id,
+                     Decimal.mult(line.offer.pack_size, n)
+                   ) do
+                :ok -> :ok
+                {:error, reason} -> Repo.rollback(reason)
+              end
+
               %Movement{}
               |> Movement.changeset(%{
                 lot_id: lot.id,

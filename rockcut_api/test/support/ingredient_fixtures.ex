@@ -248,4 +248,41 @@ defmodule RockcutApi.IngredientFixtures do
       effective_on: on
     })
   end
+
+  @doc """
+  D65: on `grain_catalog!/0`'s data, the four D65 categories (Other
+  Consumables with Water Salts and Finings), the ingredients Strawberry,
+  Cinnamon, Vanilla Extract, Dextrose (Corn Sugar), Black Strap Molasses,
+  Calcium Sulfate (Gypsum) and Whirlfloc, and Oregon Fruit (manufacturer).
+  """
+  def d65_catalog! do
+    fruits = keyed_category!("Fruits", "fruits")
+    spices = keyed_category!("Spices & Flavorings", "spices")
+    sugars = keyed_category!("Sugars and Extracts", "sugars")
+    consumables = keyed_category!("Other Consumables", "consumables")
+    salts = Repo.insert!(%IngredientCategory{name: "Water Salts", parent_id: consumables.id})
+    finings = Repo.insert!(%IngredientCategory{name: "Finings", parent_id: consumables.id})
+    ingredient = &Repo.insert!(%Ingredient{name: &1, category_id: &2.id})
+
+    %{
+      fruits: fruits,
+      spices: spices,
+      sugars: sugars,
+      consumables: consumables,
+      salts: salts,
+      finings: finings,
+      strawberry: ingredient.("Strawberry", fruits),
+      cinnamon: ingredient.("Cinnamon", spices),
+      vanilla: ingredient.("Vanilla Extract", spices),
+      dextrose: ingredient.("Dextrose (Corn Sugar)", sugars),
+      molasses: ingredient.("Black Strap Molasses", sugars),
+      gypsum: ingredient.("Calcium Sulfate (Gypsum)", salts),
+      whirlfloc: ingredient.("Whirlfloc", finings),
+      oregon: party!("Oregon Fruit", ~w(manufacturer))
+    }
+  end
+
+  @doc "D65: a product with no manufacturer (stored directly, as the API makes one)."
+  def none_product!(ingredient, form, unit, name \\ nil),
+    do: Repo.insert!(%Product{ingredient_id: ingredient.id, form: form, unit: unit, name: name})
 end

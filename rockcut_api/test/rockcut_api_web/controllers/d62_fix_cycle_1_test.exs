@@ -380,7 +380,8 @@ defmodule RockcutApiWeb.D62FixCycle1Test do
                  })
                )
 
-      other = keyed_category!("Fruits", "fruits")
+      # D65 A9: Fruits takes none either; Other Consumables does.
+      other = keyed_category!("Other Consumables", "consumables")
 
       {201, %{"data" => top}} =
         req(c.p["owner"], :post, "/api/ingredient_categories", %{"name" => "Aroma"})
@@ -400,7 +401,7 @@ defmodule RockcutApiWeb.D62FixCycle1Test do
 
       assert {201, _} =
                req(c.p["owner"], :post, "/api/ingredient_categories", %{
-                 "name" => "Stone fruit",
+                 "name" => "Cleaning",
                  "parent_id" => other.id
                })
     end

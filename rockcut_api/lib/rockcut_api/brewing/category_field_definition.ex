@@ -37,17 +37,33 @@ defmodule RockcutApi.Brewing.CategoryFieldDefinition do
   # D61 carry-over 5: grains have features (D60 §3.4), not custom fields, so
   # Grains and its children take none. D62 (split Amendment): nor does Hops
   # (form and origin are on the product, crop year and alpha on the lot).
+  # D65 §4.1: nor do Fruits, Spices & Flavorings and Sugars and Extracts
+  # (their form is on the product).
   defp validate_no_custom_fields(changeset) do
     with {:ok, id} when not is_nil(id) <- fetch_change(changeset, :category_id),
          false <- Keyword.has_key?(changeset.errors, :category_id),
-         message when is_binary(message) <- refusal(RockcutApi.Ingredients.Catalog.key(id)) do
-      add_error(changeset, :category_id, message)
+         key = RockcutApi.Ingredients.Catalog.key(id),
+         false <- RockcutApi.Ingredients.Catalog.allows_fields?(key) do
+      add_error(changeset, :category_id, refusal(key, id))
     else
       _ -> changeset
     end
   end
 
-  defp refusal("grains"), do: "Grains use features, not custom fields"
-  defp refusal("hops"), do: "Hops use features, not custom fields"
-  defp refusal(_key), do: nil
+  defp refusal("grains", _id), do: "Grains use features, not custom fields"
+  defp refusal("hops", _id), do: "Hops use features, not custom fields"
+
+  # The category's own name ("Fruits use products, not custom fields").
+  defp refusal(_key, id) do
+    top =
+      case RockcutApi.Repo.get(RockcutApi.Brewing.IngredientCategory, id) do
+        %{parent_id: nil, name: name} ->
+          name
+
+        %{parent_id: parent} ->
+          RockcutApi.Repo.get!(RockcutApi.Brewing.IngredientCategory, parent).name
+      end
+
+    "#{top} use products, not custom fields"
+  end
 end

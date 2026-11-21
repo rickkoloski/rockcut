@@ -94,8 +94,9 @@ defmodule RockcutApi.Ingredients.Units do
   def plural("box"), do: "boxes"
   def plural(name), do: name <> "s"
 
-  # `each` is a count: whole numbers. Every other unit to 2 decimals.
-  defp places("each"), do: 0
+  # `each` is a count: whole numbers ("tablets" is its label on a Tablet
+  # product, D65). Every other unit to 2 decimals.
+  defp places(unit) when unit in ["each", "tablets"], do: 0
   defp places(_unit), do: 2
 
   defp amount(qty, unit, places), do: "#{format_number(qty, places)} #{unit || "lb"}"

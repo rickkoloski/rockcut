@@ -17,6 +17,7 @@ defmodule RockcutApi.Ingredients.Offers do
     ContractLine,
     OfferPrice,
     Parties,
+    Products,
     PurchaseOrderLine,
     SupplierOffer
   }
@@ -41,6 +42,8 @@ defmodule RockcutApi.Ingredients.Offers do
 
     with :ok <- supplier(attrs),
          {:ok, attrs} <- pack_rules(attrs, key),
+         {:ok, attrs} <- default_pack(attrs, key, attrs["product_id"]),
+         :ok <- Products.check_whole(blank(attrs["product_id"]), blank(attrs["pack_size"])),
          {:ok, attrs} <- form_rules(attrs, key) do
       %SupplierOffer{}
       |> SupplierOffer.changeset(attrs, key == "grains")
@@ -54,6 +57,11 @@ defmodule RockcutApi.Ingredients.Offers do
 
     with :ok <- supplier(attrs),
          {:ok, attrs} <- pack_rules(attrs, key),
+         :ok <-
+           Products.check_whole(
+             attrs["product_id"] || offer.product_id,
+             blank(attrs["pack_size"])
+           ),
          {:ok, attrs} <- form_rules(attrs, key) do
       offer
       |> SupplierOffer.changeset(attrs, key == "grains")
@@ -181,6 +189,23 @@ defmodule RockcutApi.Ingredients.Offers do
           else: {:error, {:invalid, %{pack_name: ["must be #{Enum.join(names, " or ")}"]}}}
     end
   end
+
+  # D65 §4.2: a new offer of a D65 product with no pack named starts with
+  # its unit's usual pack (lb → bag, gal → pail, fl oz → jug, oz → bag,
+  # each → tub), when the category takes it.
+  defp default_pack(attrs, key, product_id) do
+    with true <- attrs["pack_name"] in [nil, ""],
+         true <- key not in ["grains", "hops"],
+         name when is_binary(name) <- Catalog.default_pack(Products.unit(blank(product_id))),
+         true <- name in Catalog.pack_names(key) do
+      {:ok, Map.put(attrs, "pack_name", name)}
+    else
+      _ -> {:ok, attrs}
+    end
+  end
+
+  defp blank(v) when v in [nil, ""], do: nil
+  defp blank(v), do: v
 
   defp same_size?(given, size) do
     case Ecto.Type.cast(:decimal, given) do

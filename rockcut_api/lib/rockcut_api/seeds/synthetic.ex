@@ -69,6 +69,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     Brand,
     BrewTurn,
     Ingredient,
+    IngredientCategory,
     IngredientLot,
     Recipe,
     RecipeIngredient
@@ -995,8 +996,24 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(p in Product, where: p.id in ^product_ids))
     Repo.delete_all(from(i in Ingredient, where: i.id in subquery(grain_ids)))
 
+    # D65: tagged subcategories (Other Consumables takes new ones) that hold
+    # no ingredients any more, children before parents.
+    tagged_categories =
+      from(c in IngredientCategory,
+        where:
+          like(c.name, ^pattern) and
+            c.id not in subquery(from(i in Ingredient, select: i.category_id)),
+        order_by: [desc: c.parent_id]
+      )
+
+    for category <- Repo.all(tagged_categories),
+        not Repo.exists?(from(c in IngredientCategory, where: c.parent_id == ^category.id)) do
+      Repo.delete!(category)
+    end
+
     Repo.delete_all(
       from(p in Party,
+        # D65: a product may have no manufacturer; a NULL in NOT IN would keep every party.
         where:
           like(p.name, ^pattern) and
             p.id not in subquery(
@@ -1011,7 +1028,12 @@ defmodule RockcutApi.Seeds.Synthetic do
                 select: l.supplier_party_id
               )
             ) and
-            p.id not in subquery(from(r in Product, select: r.manufacturer_party_id)) and
+            p.id not in subquery(
+              from(r in Product,
+                where: not is_nil(r.manufacturer_party_id),
+                select: r.manufacturer_party_id
+              )
+            ) and
             p.id not in subquery(from(o in SupplierOffer, select: o.supplier_party_id))
       )
     )
