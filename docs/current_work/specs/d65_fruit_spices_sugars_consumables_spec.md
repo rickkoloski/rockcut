@@ -469,3 +469,9 @@ Brix. **Matt: store them as Brix.** Each is a typical single value on the produc
   They're different products because their manufacturers differ (D62 decision 17).
 - **Pack names (Matt):** every SoNature pack is a **pail**: pail · 40 lb, and pail · 56 lb for
   Cherry.
+
+## Amendment (Matt, 2026-11-20): acids
+
+**Acids are left blank for now** ("maybe not needed at all"). The Acids child of Other Consumables
+is still created, so it can be used if needed, but no acid data is seeded. If Matt decides it isn't
+needed, it can be removed in Ingredient Library → Categories.
