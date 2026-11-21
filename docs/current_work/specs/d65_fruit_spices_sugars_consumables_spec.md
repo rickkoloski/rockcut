@@ -1,6 +1,7 @@
 # D65: Fruit, spices, sugars and other consumables — Spec
 
-**Status:** DRAFT for Matt's review (lead, 2026-11-20). Q1 is open; A8–A12 need confirming.
+**Status:** APPROVED (Matt, 2026-11-20). The defaults A8–A16 are confirmed, and Q1 is answered by
+the reference-data amendments (salts, sugars, fruit, finings, spices).
 **Series:** D60 grain → D61 purchasing → D62 packs + hops → **D65** → D64 yeast → D63 recipes on
 products. Next new ID: D66.
 **Branch:** `d65-fruit-spices-sugars-consumables`. It's cut from D62's tip for now and gets rebased
