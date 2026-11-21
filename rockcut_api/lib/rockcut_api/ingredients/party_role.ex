@@ -3,7 +3,7 @@ defmodule RockcutApi.Ingredients.PartyRole do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @roles ~w(maltster supplier partner_brewery)
+  @roles ~w(manufacturer supplier partner_brewery)
 
   schema "party_roles" do
     field :role, :string

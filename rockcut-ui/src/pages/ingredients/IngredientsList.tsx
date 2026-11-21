@@ -18,7 +18,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
 import QuantityToggle from '../../components/QuantityToggle'
-import { grainCategories } from '../../lib/ingredientFeatures'
+import { grainCategories, keyedCategories, manufacturerLabel, manufacturersFor, toggleLabels } from '../../lib/ingredientFeatures'
 import PageHeader from '../../components/PageHeader'
 import StatusChip from '../../components/StatusChip'
 import IngredientFormDialog from './IngredientFormDialog'
@@ -126,10 +126,10 @@ export default function IngredientsList() {
   const navigate = useNavigate()
   // null: not picked yet, which means Grains (D60). '' is All categories.
   const [picked, setPicked] = useState<number | '' | null>(null)
-  const [formOpen, setFormOpen] = useState<'ingredient' | 'grain' | 'product' | null>(null)
+  const [formOpen, setFormOpen] = useState<'ingredient' | 'grain' | 'product' | 'hop' | 'hop-product' | null>(null)
   const [addAnchor, setAddAnchor] = useState<HTMLElement | null>(null)
   const [search, setSearch] = useState('')
-  const [maltsterId, setMaltsterId] = useState<number | ''>('')
+  const [manufacturerId, setManufacturerId] = useState<number | ''>('')
   const [supplierId, setSupplierId] = useState<number | ''>('')
   const [onHandOnly, setOnHandOnly] = useState(false)
   const { mode } = useQuantityDisplay()
@@ -140,11 +140,15 @@ export default function IngredientsList() {
   const categoryId = picked ?? grainsCategory?.id ?? ''
   const selected = categories.find((c) => c.id === categoryId)
   const grainsView = !!grainsCategory && (categoryId === grainsCategory.id || selected?.parent_id === grainsCategory.id)
+  // D62 §4.1: Hops gets the same list, with its own columns.
+  const { category: hopsCategory } = keyedCategories(categories, 'hops')
+  const hopsView = !!hopsCategory && categoryId === hopsCategory.id
+  const productsView = grainsView || hopsView
 
   // Every ingredient, so Grains includes its children's (the API filters one category only).
   const { data: allIngredients = [] } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
-  const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products', undefined, { enabled: grainsView })
-  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties', undefined, { enabled: grainsView })
+  const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products', undefined, { enabled: productsView })
+  const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties', undefined, { enabled: productsView })
   const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
 
   // A parent category includes its children's ingredients.
@@ -163,14 +167,21 @@ export default function IngredientsList() {
 
   const grainIds = new Set(children.map((c) => c.id))
   const grains = allIngredients.filter((i) => grainIds.has(i.category_id))
+  const hops = hopsCategory ? allIngredients.filter((i) => i.category_id === hopsCategory.id) : []
+  const hopProducts = products.filter((p) => p.category_key === 'hops')
   const filters: GrainFilters = {
     search,
     categoryId: grainsView && categoryId !== grainsCategory?.id ? (categoryId as number) : null,
-    maltsterId,
+    manufacturerId,
     supplierId,
     onHandOnly,
   }
-  const maltsters = parties.filter((p) => p.roles?.includes('maltster'))
+  // D62 lead decisions 1, gap 5: only the manufacturers with products here (maltsters on Grains, hop growers on Hops).
+  const manufacturers = manufacturersFor(
+    parties.filter((p) => p.roles?.includes('manufacturer')),
+    products,
+    [hopsView ? 'hops' : 'grains'],
+  )
   const suppliers = parties.filter((p) => p.roles?.includes('supplier'))
   const lotTypes = selected ? types.filter((t) => (t.categories ?? []).some((c) => c.category_id === selected.id)) : types.filter((t) => !t.categories?.some((c) => c.category_id === grainsCategory?.id))
 
@@ -185,7 +196,8 @@ export default function IngredientsList() {
       <PageToolbar
         end={
           <>
-            {grainsView && <QuantityToggle />}
+            {grainsView && <QuantityToggle {...toggleLabels('sack', 'lb')} />}
+            {hopsView && <QuantityToggle {...toggleLabels('box', 'lb')} />}
             {/* D61 §4: Purchasing (orders and receiving). */}
             <Button variant="outlined" startIcon={<ShoppingCartIcon />} component={RouterLink} to="/ingredients/orders" data-testid="ingredients-purchasing">
               Purchasing
@@ -193,20 +205,31 @@ export default function IngredientsList() {
             <Button
               variant="contained"
               startIcon={<AddIcon />}
-              onClick={(e) => (grainsView ? setAddAnchor(e.currentTarget) : setFormOpen('ingredient'))}
+              onClick={(e) => (productsView ? setAddAnchor(e.currentTarget) : setFormOpen('ingredient'))}
               // Until the categories are in, it can't tell the Grains view (a menu) from the rest.
               disabled={categories.length === 0}
               data-testid="ingredients-add-button"
             >
-              {grainsView ? 'Add' : 'Add Ingredient'}
+              {productsView ? 'Add' : 'Add Ingredient'}
             </Button>
             <Menu anchorEl={addAnchor} open={!!addAnchor} onClose={() => setAddAnchor(null)}>
-              <MenuItem onClick={() => { setAddAnchor(null); setFormOpen('product') }} data-testid="add-maltster-product">
-                Maltster product
-              </MenuItem>
-              <MenuItem onClick={() => { setAddAnchor(null); setFormOpen('grain') }} data-testid="add-grain">
-                Grain
-              </MenuItem>
+              {hopsView
+                ? [
+                    <MenuItem key="p" onClick={() => { setAddAnchor(null); setFormOpen('hop-product') }} data-testid="add-hop-product">
+                      Hop product
+                    </MenuItem>,
+                    <MenuItem key="i" onClick={() => { setAddAnchor(null); setFormOpen('hop') }} data-testid="add-hop">
+                      Hop
+                    </MenuItem>,
+                  ]
+                : [
+                    <MenuItem key="p" onClick={() => { setAddAnchor(null); setFormOpen('product') }} data-testid="add-maltster-product">
+                      Maltster product
+                    </MenuItem>,
+                    <MenuItem key="i" onClick={() => { setAddAnchor(null); setFormOpen('grain') }} data-testid="add-grain">
+                      Grain
+                    </MenuItem>,
+                  ]}
             </Menu>
             {/* The library's setup: the categories (formerly Brewery → Settings) and, D60, the companies. */}
             <SettingsGear label="Ingredient settings" testid="ingredients-settings">
@@ -218,7 +241,7 @@ export default function IngredientsList() {
                   </MenuItem>
                   <MenuItem component={RouterLink} to="/ingredients/companies" onClick={close} data-testid="ingredients-settings-companies">
                     <ListItemIcon><BusinessIcon fontSize="small" /></ListItemIcon>
-                    <ListItemText primary="Companies" secondary="Maltsters, suppliers, partner breweries" />
+                    <ListItemText primary="Companies" secondary="Manufacturers, suppliers, partner breweries" />
                   </MenuItem>
                 </>
               )}
@@ -254,13 +277,13 @@ export default function IngredientsList() {
               ])}
             </Select>
           </FormControl>
-          {grainsView && (
+          {productsView && (
             <>
               <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 150 } }} size="small">
-                <InputLabel id="grains-maltster-label">Maltster</InputLabel>
-                <Select labelId="grains-maltster-label" id="grains-maltster" label="Maltster" value={maltsters.length ? maltsterId : ''} onChange={(e) => setMaltsterId(e.target.value as number | '')}>
+                <InputLabel id="grains-maltster-label">{manufacturerLabel(hopsView ? 'hops' : 'grains')}</InputLabel>
+                <Select labelId="grains-maltster-label" id="grains-maltster" label={manufacturerLabel(hopsView ? 'hops' : 'grains')} value={manufacturers.length ? manufacturerId : ''} onChange={(e) => setManufacturerId(e.target.value as number | '')}>
                   <MenuItem value="">All</MenuItem>
-                  {maltsters.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
+                  {manufacturers.map((p) => <MenuItem key={p.id} value={p.id}>{p.name}</MenuItem>)}
                 </Select>
               </FormControl>
               <FormControl sx={{ minWidth: { xs: 'calc(50% - 6px)', sm: 150 } }} size="small">
@@ -280,6 +303,8 @@ export default function IngredientsList() {
 
       {grainsView ? (
         <GrainsList children={children} products={products} grains={grains} types={types} filters={filters} mode={mode} />
+      ) : hopsView && hopsCategory ? (
+        <GrainsList categoryKey="hops" children={[hopsCategory]} products={hopProducts} grains={hops} types={types} filters={{ ...filters, categoryId: null }} mode={mode} />
       ) : (
         <Paper variant="outlined">
           <Table size="small">
@@ -317,6 +342,8 @@ export default function IngredientsList() {
       <IngredientFormDialog open={formOpen === 'ingredient'} onClose={() => setFormOpen(null)} />
       <IngredientFormDialog open={formOpen === 'grain'} onClose={() => setFormOpen(null)} parentCategoryId={grainsCategory?.id} />
       <ProductDialog open={formOpen === 'product'} onClose={() => setFormOpen(null)} />
+      <IngredientFormDialog open={formOpen === 'hop'} onClose={() => setFormOpen(null)} fixedCategoryId={hopsCategory?.id} noun="Hop" />
+      <ProductDialog open={formOpen === 'hop-product'} onClose={() => setFormOpen(null)} categoryKey="hops" />
     </>
   )
 }

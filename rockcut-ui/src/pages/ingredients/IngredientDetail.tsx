@@ -9,7 +9,7 @@ import type { FeatureType, Ingredient, IngredientCategory, IngredientLotSummary,
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
-import { grainCategories, onHandText, typesFor } from '../../lib/ingredientFeatures'
+import { categoryKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
 import ProductDialog from './ProductDialog'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import PageHeader from '../../components/PageHeader'
@@ -43,9 +43,11 @@ export default function IngredientDetail() {
   const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
   const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
   // D60: a grain (in a child of Grains) has maltster products; its lots belong to them.
-  const { grains: grainsCategory } = grainCategories(categories)
+  // D62: so does a hop (hop products); found by the category's key.
   const category = categories.find((c) => c.id === ingredient?.category_id)
-  const isGrain = !!grainsCategory && (category?.id === grainsCategory.id || category?.parent_id === grainsCategory.id)
+  const key = categoryKey(categories, category)
+  const isGrain = key === 'grains' || key === 'hops'
+  const productsLabel = `${productLabel(key)}s`
   const { data: products = [] } = useApiList<IngredientProduct>(
     ['ingredient_products', { ingredient_id: ingredientId }],
     '/api/ingredient_products',
@@ -159,15 +161,15 @@ export default function IngredientDetail() {
       {isGrain ? (
         <>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
-            <Typography variant="h6">Maltster products</Typography>
+            <Typography variant="h6">{productsLabel}</Typography>
             <Button variant="outlined" onClick={() => setProductOpen(true)} data-testid="grain-add-product">
-              Add maltster product
+              Add {productLabel(key).toLowerCase()}
             </Button>
           </Box>
           <Paper variant="outlined" sx={{ mb: 3 }}>
             {products.length === 0 ? (
               <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
-                No maltster products yet. Lots are added on a maltster product.
+                No {productsLabel.toLowerCase()} yet. Lots are added on a {productLabel(key).toLowerCase()}.
               </Typography>
             ) : (
               <List disablePadding>
@@ -209,7 +211,7 @@ export default function IngredientDetail() {
         ingredient={ingredient}
       />
 
-      <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} />
+      <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} categoryKey={key === 'hops' ? 'hops' : 'grains'} />
 
       <ConfirmDialog
         open={deleteOpen}

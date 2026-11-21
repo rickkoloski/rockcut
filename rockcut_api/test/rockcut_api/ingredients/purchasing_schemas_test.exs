@@ -66,41 +66,60 @@ defmodule RockcutApi.Ingredients.PurchasingSchemasTest do
       contract = contract!(c)
       base = %{contract_id: contract.id, product_id: c.product.id}
 
-      assert %{sacks: [_], price_per_sack: [_]} =
+      assert %{quantity: [_], price: [_]} =
                errors(ContractLine.changeset(%ContractLine{}, base))
 
-      assert %{sacks: [_]} =
+      assert %{quantity: [_]} =
                errors(
                  ContractLine.changeset(
                    %ContractLine{},
-                   Map.merge(base, %{sacks: 0, price_per_sack: "42"})
+                   Map.merge(base, %{quantity: 0, price: "42"})
                  )
                )
 
-      assert %{sacks: ["is invalid"]} =
+      # D62: the quantity is a decimal now (hop lines are in lb); a grain line stays whole sacks.
+      assert %{quantity: ["Use a whole number"]} =
                errors(
                  ContractLine.changeset(
                    %ContractLine{},
-                   Map.merge(base, %{sacks: "1.5", price_per_sack: "42"})
+                   Map.merge(base, %{quantity: "1.5", price: "42"})
                  )
                )
 
-      assert %{price_per_sack: [_]} =
+      assert %{quantity: ["Use at most 2 decimals"]} =
                errors(
                  ContractLine.changeset(
                    %ContractLine{},
-                   Map.merge(base, %{sacks: 1, price_per_sack: "-1"})
+                   Map.merge(base, %{quantity: "440.125", price: "14.5"}),
+                   :lb
+                 )
+               )
+
+      assert %{} ==
+               errors(
+                 ContractLine.changeset(
+                   %ContractLine{},
+                   Map.merge(base, %{quantity: "440.5", price: "14.5"}),
+                   :lb
+                 )
+               )
+
+      assert %{price: [_]} =
+               errors(
+                 ContractLine.changeset(
+                   %ContractLine{},
+                   Map.merge(base, %{quantity: 1, price: "-1"})
                  )
                )
 
       line =
         %ContractLine{}
-        |> ContractLine.changeset(Map.merge(base, %{sacks: 200, price_per_sack: "0"}))
+        |> ContractLine.changeset(Map.merge(base, %{quantity: 200, price: "0"}))
         |> Repo.insert!()
 
       assert {:error, cs} =
                %ContractLine{}
-               |> ContractLine.changeset(Map.merge(base, %{sacks: 1, price_per_sack: "42"}))
+               |> ContractLine.changeset(Map.merge(base, %{quantity: 1, price: "42"}))
                |> Repo.insert()
 
       assert %{contract_id: ["This contract already has a line for that product"]} = errors(cs)
@@ -130,27 +149,27 @@ defmodule RockcutApi.Ingredients.PurchasingSchemasTest do
   describe "PurchaseOrderLine" do
     test "whole sacks ordered ≥ 1, received ≥ 0, price ≥ 0; deleted with its order", c do
       order = order!(c)
-      base = %{order_id: order.id, offer_id: c.offer.id, price_per_sack: "48.50"}
+      base = %{order_id: order.id, offer_id: c.offer.id, price_per_pack: "48.50"}
 
-      assert %{sacks_ordered: [_]} =
+      assert %{packs_ordered: [_]} =
                errors(
                  PurchaseOrderLine.changeset(
                    %PurchaseOrderLine{},
-                   Map.put(base, :sacks_ordered, 0)
+                   Map.put(base, :packs_ordered, 0)
                  )
                )
 
-      assert %{sacks_received: [_]} =
+      assert %{packs_received: [_]} =
                errors(
                  PurchaseOrderLine.changeset(
                    %PurchaseOrderLine{},
-                   Map.merge(base, %{sacks_ordered: 1, sacks_received: -1})
+                   Map.merge(base, %{packs_ordered: 1, packs_received: -1})
                  )
                )
 
       line =
         %PurchaseOrderLine{}
-        |> PurchaseOrderLine.changeset(Map.merge(base, %{sacks_ordered: 10, sacks_received: 0}))
+        |> PurchaseOrderLine.changeset(Map.merge(base, %{packs_ordered: 10, packs_received: 0}))
         |> Repo.insert!()
 
       Repo.delete!(order)
@@ -160,13 +179,13 @@ defmodule RockcutApi.Ingredients.PurchasingSchemasTest do
 
   describe "new fields" do
     test "order target, minimum on hand, movement order line and cost", c do
-      assert Party.changeset(c.bsg, %{order_target_sacks: 40}).valid?
-      assert %{order_target_sacks: [_]} = errors(Party.changeset(c.bsg, %{order_target_sacks: 0}))
+      assert Party.changeset(c.bsg, %{order_target_packs: 40}).valid?
+      assert %{order_target_packs: [_]} = errors(Party.changeset(c.bsg, %{order_target_packs: 0}))
 
-      assert Product.changeset(c.product, %{min_on_hand_sacks: 3}).valid?
+      assert Product.changeset(c.product, %{min_on_hand_packs: 3}).valid?
 
-      assert %{min_on_hand_sacks: [_]} =
-               errors(Product.changeset(c.product, %{min_on_hand_sacks: -1}))
+      assert %{min_on_hand_packs: [_]} =
+               errors(Product.changeset(c.product, %{min_on_hand_packs: -1}))
 
       lot = stocked_lot!(c.product, ~D[2026-11-01], "55", "L1")
       order = order!(c)
@@ -176,8 +195,8 @@ defmodule RockcutApi.Ingredients.PurchasingSchemasTest do
         |> PurchaseOrderLine.changeset(%{
           order_id: order.id,
           offer_id: c.offer.id,
-          sacks_ordered: 1,
-          price_per_sack: "48.50"
+          packs_ordered: 1,
+          price_per_pack: "48.50"
         })
         |> Repo.insert!()
 
@@ -186,15 +205,15 @@ defmodule RockcutApi.Ingredients.PurchasingSchemasTest do
         |> Movement.changeset(%{
           lot_id: lot.id,
           kind: "received",
-          quantity_lb: "55",
+          quantity: "55",
           occurred_on: ~D[2026-11-18],
           purchase_order_line_id: line.id,
-          unit_cost_per_lb: "0.8818"
+          unit_cost: "0.8818"
         })
         |> Repo.insert!()
 
       assert movement.purchase_order_line_id == line.id
-      assert Decimal.eq?(movement.unit_cost_per_lb, "0.8818")
+      assert Decimal.eq?(movement.unit_cost, "0.8818")
 
       assert %{purchase_order_line_id: ["does not exist"]} =
                errors(Movement.changeset(%Movement{}, %{purchase_order_line_id: -1}))

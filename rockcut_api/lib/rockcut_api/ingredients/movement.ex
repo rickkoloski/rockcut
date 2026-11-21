@@ -1,6 +1,7 @@
 defmodule RockcutApi.Ingredients.Movement do
   @moduledoc """
-  D60 §3.7: stock into or out of a lot, in signed lb. A lot's on hand is the
+  D60 §3.7: stock into or out of a lot, signed, in the product's unit (D62
+  §3.5; lb for grain). A lot's on hand is the
   sum of its movements. Movements aren't edited: a wrong one is undone by an
   opposite movement or a count. Signs, partner breweries for trades and
   loans, and the below-zero refusal are the context's rules.
@@ -13,11 +14,11 @@ defmodule RockcutApi.Ingredients.Movement do
 
   schema "inventory_movements" do
     field :kind, :string
-    field :quantity_lb, :decimal
+    field :quantity, :decimal
     field :occurred_on, :date
     field :note, :string
-    # D61 §3.4: a Received movement from an order carries its cost per lb.
-    field :unit_cost_per_lb, :decimal
+    # D61 §3.4: a Received movement from an order carries its cost per unit.
+    field :unit_cost, :decimal
 
     belongs_to :lot, RockcutApi.Brewing.IngredientLot
     belongs_to :partner, RockcutApi.Ingredients.Party, foreign_key: :partner_party_id
@@ -34,18 +35,18 @@ defmodule RockcutApi.Ingredients.Movement do
     |> cast(attrs, [
       :lot_id,
       :kind,
-      :quantity_lb,
+      :quantity,
       :occurred_on,
       :partner_party_id,
       :note,
       :entered_by_id,
       :purchase_order_line_id,
-      :unit_cost_per_lb
+      :unit_cost
     ])
-    |> validate_required([:lot_id, :kind, :quantity_lb, :occurred_on])
+    |> validate_required([:lot_id, :kind, :quantity, :occurred_on])
     |> validate_inclusion(:kind, @kinds)
-    |> validate_range(:quantity_lb, -1_000_000, 1_000_000)
-    |> validate_range(:unit_cost_per_lb, 0, 100_000)
+    |> validate_range(:quantity, -1_000_000, 1_000_000)
+    |> validate_range(:unit_cost, 0, 100_000)
     |> foreign_key_constraint(:lot_id)
     |> foreign_key_constraint(:partner_party_id)
     |> foreign_key_constraint(:purchase_order_line_id)

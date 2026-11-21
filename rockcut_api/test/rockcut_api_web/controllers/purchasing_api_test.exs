@@ -17,13 +17,13 @@ defmodule RockcutApiWeb.PurchasingApiTest do
   setup do
     p = personas(~w(owner brewer1 brewer2 breweryMgr floater bartender1 office1))
     c = grain_catalog!()
-    Repo.update!(Ecto.Changeset.change(c.bsg, order_target_sacks: 40))
+    Repo.update!(Ecto.Changeset.change(c.bsg, order_target_packs: 40))
     price!(c.offer, "48.50")
 
     pils_grain =
       Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "Pilsner", category_id: c.base.id})
 
-    weyermann = party!("Weyermann", ~w(maltster))
+    weyermann = party!("Weyermann", ~w(manufacturer))
     pils = product!(pils_grain, weyermann, extract_fgdb: "81.0")
     pils_offer = offer!(pils, c.bsg, "55", "55.00")
 
@@ -79,7 +79,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
     do: %{"supplier_party_id" => c.bsg.id, "year" => year, "lines" => lines}
 
   defp line(product, sacks, price),
-    do: %{"product_id" => product.id, "sacks" => sacks, "price_per_sack" => price}
+    do: %{"product_id" => product.id, "quantity" => sacks, "price" => price}
 
   defp contract!(c, year, lines) do
     {201, %{"data" => data}} = req(c.mgr, :post, "/api/contracts", contract_body(c, year, lines))
@@ -135,7 +135,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
 
     test "any Brewery member places, changes, cancels and receives orders", c do
       for who <- ~w(brewer1 floater breweryMgr owner) do
-        o = order!(%{c | brewer: c.p[who]}, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+        o = order!(%{c | brewer: c.p[who]}, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
         assert {200, _} = req(c.p[who], :put, "/api/purchase_orders/#{o["id"]}", %{notes: "n"})
 
         assert {200, %{"data" => %{"status" => "cancelled"}}} =
@@ -162,7 +162,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
 
   defp d61_routes(c) do
     contract = contract!(c, c.next, [line(c.product, 10, "42.00")])
-    order = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+    order = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
     cp = "/api/contracts/#{contract["id"]}"
     op = "/api/purchase_orders/#{order["id"]}"
 
@@ -198,7 +198,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
 
       for {offer, price} <- [{c.offer, "42.00"}, {c.pils_offer, "55.00"}] do
         row = List.last(prices(offer))
-        assert eq(row.price_per_sack, price)
+        assert eq(row.price_per_pack, price)
         assert row.effective_on == Date.new!(c.next, 1, 1)
         assert row.note == "Contract #{c.next}"
         assert row.entered_by_id == c.mgr.id
@@ -236,7 +236,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       assert {200, %{"data" => %{"lines" => [l]}}} =
                req(c.mgr, :put, path, %{"lines" => [line(c.product, 210, "43.00")]})
 
-      assert l["sacks"] == 210 and eq(l["price_per_sack"], "43.00")
+      assert l["quantity"] == 210 and eq(l["price"], "43.00")
       assert length(prices(c.offer)) == n + 1
 
       # The full list replaces the lines: Pilsner added, Rahr dropped.
@@ -269,7 +269,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                })
 
       assert l["offer_id"] == second.id
-      assert eq(List.last(prices(second)).price_per_sack, "43.00")
+      assert eq(List.last(prices(second)).price_per_pack, "43.00")
     end
 
     test "refusals: no offer, several offers, a product twice, not a supplier, one per supplier and year",
@@ -316,7 +316,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                  | "lines" => [Map.put(line(c.product, 1, "42"), "offer_id", second.id)]
                })
 
-      assert eq(List.last(prices(second)).price_per_sack, "42")
+      assert eq(List.last(prices(second)).price_per_pack, "42")
 
       assert base(req(c.mgr, :post, "/api/contracts", contract_body(c, c.next, []))) ==
                "BSG already has a #{c.next} contract"
@@ -324,7 +324,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       assert %{"year" => [_]} =
                errors(req(c.mgr, :post, "/api/contracts", contract_body(c, 1999, [])))
 
-      assert %{"sacks" => [_]} =
+      assert %{"quantity" => [_]} =
                errors(
                  req(
                    c.mgr,
@@ -344,21 +344,21 @@ defmodule RockcutApiWeb.PurchasingApiTest do
          c do
       contract = contract!(c, c.this, [line(c.product, 20, "42.00"), line(c.pils, 40, "55.00")])
 
-      open = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 6}])
+      open = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 6}])
 
       received =
         order!(c, [
-          %{"offer_id" => c.offer.id, "sacks_ordered" => 25, "price_per_sack" => "40.00"}
+          %{"offer_id" => c.offer.id, "packs_ordered" => 25, "price_per_pack" => "40.00"}
         ])
 
       off =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 3}], %{"off_contract" => true})
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 3}], %{"off_contract" => true})
 
-      cancelled = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 7}])
+      cancelled = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 7}])
       req(c.brewer, :post, "/api/purchase_orders/#{cancelled["id"]}/cancel")
 
       last_year =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 9}], %{
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 9}], %{
           "ordered_on" => "#{c.this - 1}-12-30"
         })
 
@@ -368,11 +368,11 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                    "lines" => [
                      %{
                        "id" => hd(o["lines"])["id"],
-                       "sacks_received" => hd(o["lines"])["sacks_ordered"],
+                       "packs_received" => hd(o["lines"])["packs_ordered"],
                        "allocations" => [
                          %{
                            "lot_number" => "R-#{o["id"]}",
-                           "sacks" => hd(o["lines"])["sacks_ordered"]
+                           "packs" => hd(o["lines"])["packs_ordered"]
                          }
                        ]
                      }
@@ -384,14 +384,14 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       {200, %{"data" => data}} = req(c.brewer, :get, "/api/contracts/#{contract["id"]}")
       rahr = by_product(data, c.product)
 
-      assert rahr["contracted_sacks"] == 20 and eq(rahr["contracted_dollars"], "840.00")
-      assert rahr["on_order_sacks"] == 6
-      assert rahr["received_sacks"] == 25 and eq(rahr["received_dollars"], "1000.00")
-      assert rahr["remaining_sacks"] == -5 and rahr["over_by"] == 5
+      assert rahr["contracted"] == 20 and eq(rahr["contracted_dollars"], "840.00")
+      assert rahr["on_order"] == 6
+      assert rahr["received"] == 25 and eq(rahr["received_dollars"], "1000.00")
+      assert rahr["remaining"] == -5 and rahr["over_by"] == 5
 
       pils = by_product(data, c.pils)
 
-      assert pils["received_sacks"] == 0 and pils["remaining_sacks"] == 40 and
+      assert pils["received"] == 0 and pils["remaining"] == 40 and
                pils["over_by"] == nil
 
       {200, %{"data" => [listed]}} = req(c.brewer, :get, "/api/contracts?year=#{c.this}")
@@ -403,7 +403,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                req(c.brewer, :get, "/api/contracts/shortfall?year=#{c.this}")
 
       assert year == c.this
-      assert short["product_id"] == c.pils.id and short["short_sacks"] == 40
+      assert short["product_id"] == c.pils.id and short["short"] == 40
 
       # Delete is refused once grain was received against it.
       assert base(req(c.mgr, :delete, "/api/contracts/#{contract["id"]}")) ==
@@ -416,8 +416,8 @@ defmodule RockcutApiWeb.PurchasingApiTest do
       assert {200, %{"data" => [first, second]}} =
                req(c.brewer, :get, "/api/contracts/shortfall?year=#{c.next}")
 
-      assert {first["product_id"], first["short_sacks"]} == {c.pils.id, 40}
-      assert {second["product_id"], second["short_sacks"]} == {c.product.id, 5}
+      assert {first["product_id"], first["short"]} == {c.pils.id, 40}
+      assert {second["product_id"], second["short"]} == {c.product.id, 5}
     end
   end
 
@@ -425,52 +425,53 @@ defmodule RockcutApiWeb.PurchasingApiTest do
     test "the price defaults to the offer's current price; totals and the target progress", c do
       o =
         order!(c, [
-          %{"offer_id" => c.offer.id, "sacks_ordered" => 30},
-          %{"offer_id" => c.pils_offer.id, "sacks_ordered" => 6, "price_per_sack" => "0"}
+          %{"offer_id" => c.offer.id, "packs_ordered" => 30},
+          %{"offer_id" => c.pils_offer.id, "packs_ordered" => 6, "price_per_pack" => "0"}
         ])
 
       [rahr, pils] = o["lines"]
-      assert eq(rahr["price_per_sack"], "48.50") and eq(pils["price_per_sack"], "0")
+      assert eq(rahr["price_per_pack"], "48.50") and eq(pils["price_per_pack"], "0")
       assert rahr["offer"]["label"] == "Rahr - Standard 2-row (milled)"
-      assert eq(rahr["line_dollars"], "1455.00") and eq(rahr["line_lb"], "1650")
+      assert eq(rahr["line_dollars"], "1455.00") and eq(rahr["line_quantity"], "1650")
       assert o["status"] == "open" and o["created_by"]["name"] == c.brewer.name
 
-      assert o["total_sacks"] == 36 and eq(o["total_lb"], "1980") and
-               eq(o["total_dollars"], "1455.00")
+      assert o["total_packs"] == 36 and eq(o["total_dollars"], "1455.00")
+      assert [%{"unit" => "lb", "quantity" => total_lb}] = o["by_unit"]
+      assert eq(total_lb, "1980")
 
-      assert o["target"] == %{"sacks" => 40, "next_multiple" => 40}
+      assert o["target"] == %{"packs" => 40, "next_multiple" => 40}
 
       {200, %{"data" => o}} =
         req(c.brewer, :put, "/api/purchase_orders/#{o["id"]}", %{
           "lines" => [
-            %{"id" => rahr["id"], "offer_id" => c.offer.id, "sacks_ordered" => 35},
-            %{"offer_id" => c.pils_offer.id, "sacks_ordered" => 6}
+            %{"id" => rahr["id"], "offer_id" => c.offer.id, "packs_ordered" => 35},
+            %{"offer_id" => c.pils_offer.id, "packs_ordered" => 6}
           ]
         })
 
-      assert o["total_sacks"] == 41 and o["target"]["next_multiple"] == 80
+      assert o["total_packs"] == 41 and o["target"]["next_multiple"] == 80
       assert hd(o["lines"])["id"] == rahr["id"]
-      assert Enum.map(o["lines"], & &1["sacks_ordered"]) == [35, 6]
+      assert Enum.map(o["lines"], & &1["packs_ordered"]) == [35, 6]
     end
 
     test "no target: target is null", c do
-      Repo.update!(Ecto.Changeset.change(Repo.reload!(c.bsg), order_target_sacks: nil))
-      assert order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])["target"] == nil
+      Repo.update!(Ecto.Changeset.change(Repo.reload!(c.bsg), order_target_packs: nil))
+      assert order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])["target"] == nil
     end
 
     test "refusals: another supplier's offer, sacks, dates, no lines, no price", c do
       rs = offer!(c.product, c.root_shoot, "50", "30")
-      ok = %{"offer_id" => c.offer.id, "sacks_ordered" => 1}
+      ok = %{"offer_id" => c.offer.id, "packs_ordered" => 1}
       post = &req(c.brewer, :post, "/api/purchase_orders", &1)
 
-      assert base(post.(order_body(c, [%{"offer_id" => rs.id, "sacks_ordered" => 1}]))) ==
+      assert base(post.(order_body(c, [%{"offer_id" => rs.id, "packs_ordered" => 1}]))) ==
                "Rahr 2-Row isn't a BSG offer"
 
-      assert %{"sacks_ordered" => [_]} =
-               errors(post.(order_body(c, [%{ok | "sacks_ordered" => 0}])))
+      assert %{"packs_ordered" => [_]} =
+               errors(post.(order_body(c, [%{ok | "packs_ordered" => 0}])))
 
-      assert %{"sacks_ordered" => ["is invalid"]} =
-               errors(post.(order_body(c, [%{ok | "sacks_ordered" => "1.5"}])))
+      assert %{"packs_ordered" => ["is invalid"]} =
+               errors(post.(order_body(c, [%{ok | "packs_ordered" => "1.5"}])))
 
       assert %{"ordered_on" => ["can't be after today"]} =
                errors(post.(order_body(c, [ok], %{"ordered_on" => iso(1)})))
@@ -485,7 +486,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
 
       no_price = offer!(c.pils, c.bsg, "50")
 
-      assert base(post.(order_body(c, [%{"offer_id" => no_price.id, "sacks_ordered" => 1}]))) ==
+      assert base(post.(order_body(c, [%{"offer_id" => no_price.id, "packs_ordered" => 1}]))) ==
                "Enter a price for Weyermann Pilsner; it has no current price"
 
       assert Repo.aggregate(PurchaseOrder, :count) == 0
@@ -498,19 +499,19 @@ defmodule RockcutApiWeb.PurchasingApiTest do
 
     test "an inactive offer is refused on a new or changed line; a line already on it keeps it (note 7)",
          c do
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 2}])
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 2}])
       Repo.update!(Ecto.Changeset.change(c.offer, active: false))
       path = "/api/purchase_orders/#{o["id"]}"
-      kept = %{"id" => hd(o["lines"])["id"], "offer_id" => c.offer.id, "sacks_ordered" => 3}
+      kept = %{"id" => hd(o["lines"])["id"], "offer_id" => c.offer.id, "packs_ordered" => 3}
 
-      assert {200, %{"data" => %{"lines" => [%{"sacks_ordered" => 3}]}}} =
+      assert {200, %{"data" => %{"lines" => [%{"packs_ordered" => 3}]}}} =
                req(c.brewer, :put, path, %{"lines" => [kept]})
 
       for lines <- [
-            [kept, %{"offer_id" => c.offer.id, "sacks_ordered" => 1}],
+            [kept, %{"offer_id" => c.offer.id, "packs_ordered" => 1}],
             [
               %{kept | "offer_id" => c.pils_offer.id},
-              %{"offer_id" => c.offer.id, "sacks_ordered" => 1}
+              %{"offer_id" => c.offer.id, "packs_ordered" => 1}
             ]
           ] do
         assert base(req(c.brewer, :put, path, %{"lines" => lines})) == "That offer is inactive"
@@ -521,27 +522,27 @@ defmodule RockcutApiWeb.PurchasingApiTest do
                  c.brewer,
                  :post,
                  "/api/purchase_orders",
-                 order_body(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+                 order_body(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
                )
              ) ==
                "That offer is inactive"
     end
 
     test "a line from another order is refused on update", c do
-      a = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
-      b = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 2}])
+      a = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
+      b = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 2}])
 
       assert base(
                req(c.brewer, :put, "/api/purchase_orders/#{a["id"]}", %{
                  "lines" => [
-                   %{"id" => hd(b["lines"])["id"], "offer_id" => c.offer.id, "sacks_ordered" => 3}
+                   %{"id" => hd(b["lines"])["id"], "offer_id" => c.offer.id, "packs_ordered" => 3}
                  ]
                })
              ) == "A line isn't on this order"
     end
 
     test "cancelled and received orders are read-only (409)", c do
-      cancelled = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+      cancelled = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
       path = "/api/purchase_orders/#{cancelled["id"]}"
 
       assert {200, %{"data" => %{"status" => "cancelled", "cancelled_by" => %{"name" => _}}}} =
@@ -555,14 +556,14 @@ defmodule RockcutApiWeb.PurchasingApiTest do
         assert conflict(req(c.brewer, verb, p, body)) == "This order has already been cancelled"
       end
 
-      received = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+      received = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
       path = "/api/purchase_orders/#{received["id"]}"
       stocked_lot!(c.product, Date.add(today(), -3), "55", "OLD")
       line = hd(received["lines"])
 
       assert {200, _} =
                req(c.brewer, :post, path <> "/receive", %{
-                 "lines" => [%{"id" => line["id"], "sacks_received" => 1}]
+                 "lines" => [%{"id" => line["id"], "packs_received" => 1}]
                })
 
       for {verb, p} <- [{:put, path}, {:post, path <> "/cancel"}, {:post, path <> "/receive"}] do
@@ -572,13 +573,13 @@ defmodule RockcutApiWeb.PurchasingApiTest do
 
     test "list: open first, then newest; filters by supplier, status and order date", c do
       a =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}], %{"ordered_on" => iso(-10)})
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}], %{"ordered_on" => iso(-10)})
 
       b =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}], %{"ordered_on" => iso(-2)})
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}], %{"ordered_on" => iso(-2)})
 
       d =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}], %{"ordered_on" => iso(-1)})
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}], %{"ordered_on" => iso(-1)})
 
       req(c.brewer, :post, "/api/purchase_orders/#{d["id"]}/cancel")
       rs_offer = offer!(c.product, c.root_shoot, "50", "30")
@@ -587,7 +588,7 @@ defmodule RockcutApiWeb.PurchasingApiTest do
         req(c.brewer, :post, "/api/purchase_orders", %{
           "supplier_party_id" => c.root_shoot.id,
           "ordered_on" => iso(-5),
-          "lines" => [%{"offer_id" => rs_offer.id, "sacks_ordered" => 1}]
+          "lines" => [%{"offer_id" => rs_offer.id, "packs_ordered" => 1}]
         })
 
       ids = fn q ->
@@ -620,13 +621,13 @@ defmodule RockcutApiWeb.PurchasingApiTest do
 
       assert %{"roles" => ["supplier is in use and can't be removed"]} =
                errors(
-                 req(c.brewer, :patch, "/api/parties/#{supplier.id}", %{roles: ["maltster"]})
+                 req(c.brewer, :patch, "/api/parties/#{supplier.id}", %{roles: ["manufacturer"]})
                )
     end
 
     test "an offer on an order or covered by a contract can't be deleted (no 500); a free one can",
          c do
-      order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+      order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
 
       assert base(req(c.brewer, :delete, "/api/supplier_offers/#{c.offer.id}")) ==
                "This offer is on an order; deactivate it instead"
@@ -649,9 +650,9 @@ defmodule RockcutApiWeb.PurchasingApiTest do
           "supplier_party_id" => c.bsg.id,
           "lot_number" => number,
           "received_date" => iso(0),
-          "sack_size_lb" => "55",
+          "pack_size" => "55",
           "initial_kind" => "opening",
-          "initial_quantity_lb" => "55"
+          "initial_quantity" => "55"
         }
       end
 

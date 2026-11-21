@@ -19,8 +19,8 @@ defmodule RockcutApi.Brewing do
   }
 
   # D60: a lot's specs are feature values, rendered as a map by feature key;
-  # its maltster product names it ("Rahr · lot #" in the recipe lot picker).
-  @lot_features [feature_values: :feature_type, product: [:maltster, :ingredient]]
+  # its product names it ("Rahr · lot #" in the recipe lot picker).
+  @lot_features [feature_values: :feature_type, product: [:manufacturer, :ingredient]]
   @lot_with_category [{:ingredient, :category} | @lot_features]
 
   # ── Ingredient Categories ──────────────────────────────────────────
@@ -115,8 +115,10 @@ defmodule RockcutApi.Brewing do
 
   defp category_contents(category) do
     category = Repo.preload(category, :parent)
-    grains? = category.name == "Grains" or (category.parent && category.parent.name == "Grains")
-    if grains?, do: "grains", else: "ingredients"
+
+    if RockcutApi.Ingredients.Catalog.key(category) == "grains",
+      do: "grains",
+      else: "ingredients"
   end
 
   defp put_end_category_order(changeset) do

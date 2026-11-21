@@ -183,7 +183,7 @@ test.describe('O9: Owners is not on the schedule', () => {
     const barId = await deptId(await apiAs('owner'), 'bar')
 
     await openScheduler(page)
-    const filter = await choiceOptions(page, 'scheduler-settings', 'scheduler-department')
+    const filter = await choiceOptions(page, 'scheduler-settings', 'scheduler-department', `scheduler-department-${barId}`)
     expect(filter).toContain(`scheduler-department-${barId}`)
     expect(filter).not.toContain(`scheduler-department-${ownersId}`)
     await expect(page.getByRole('main').getByText(owners)).toHaveCount(0)
@@ -217,7 +217,7 @@ test.describe('O9: Owners is not on the schedule', () => {
     await page.keyboard.press('Escape')
 
     await page.goto('/schedule')
-    const viewFilter = await choiceOptions(page, 'schedule-settings', 'schedule-department')
+    const viewFilter = await choiceOptions(page, 'schedule-settings', 'schedule-department', `schedule-department-${barId}`)
     expect(viewFilter).toContain(`schedule-department-${barId}`)
     expect(viewFilter).not.toContain(`schedule-department-${ownersId}`)
     await settingsItem(page, 'schedule-settings', 'schedule-calendar-sync')

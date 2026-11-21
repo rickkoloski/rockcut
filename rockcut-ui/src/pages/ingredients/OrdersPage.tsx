@@ -24,10 +24,18 @@ import PageHeader from '../../components/PageHeader'
 import { PageToolbar } from '../../components/SettingsMenu'
 import StatusChip from '../../components/StatusChip'
 import { useApiList } from '../../hooks/useApiQuery'
-import { money } from '../../lib/purchasing'
+import { packWord } from '../../lib/brewingUnits'
+import { money, sharedPackName } from '../../lib/purchasing'
 import type { OrderStatus, Party, PurchaseOrder } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import PurchasingTabs from './PurchasingTabs'
+
+/**
+ * D62 lead decisions 1, gap 6: an order's packs in its pack's words ("30
+ * sacks" all grain, "6 boxes" all hops), "36 packs" when it mixes them, as
+ * the order page counts them.
+ */
+const orderPacks = (o: PurchaseOrder) => `${o.total_packs.toLocaleString('en-US')} ${packWord(sharedPackName(o.lines.map((l) => l.offer.pack_name)), o.total_packs)}`
 
 /**
  * D61 §4.1: Ingredient Library → Purchasing: the orders, open first, then
@@ -92,7 +100,7 @@ export default function OrdersPage() {
                     <StatusChip status={o.status} domain="order" />
                   </Box>
                   <Typography variant="body2">
-                    {o.total_sacks} sacks · {money(o.total_dollars)}
+                    {orderPacks(o)} · {money(o.total_dollars)}
                     {o.reference && ` · ${o.reference}`}
                   </Typography>
                   {o.expected_on && o.status === 'open' && (
@@ -113,7 +121,7 @@ export default function OrdersPage() {
                 <TableCell>Order date</TableCell>
                 <TableCell>Supplier</TableCell>
                 <TableCell>Reference</TableCell>
-                <TableCell align="right">Sacks</TableCell>
+                <TableCell align="right">Packs</TableCell>
                 <TableCell align="right">$</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell>Expected</TableCell>
@@ -128,7 +136,9 @@ export default function OrdersPage() {
                     {o.off_contract && <Chip size="small" variant="outlined" label="Off-contract" sx={{ ml: 1 }} />}
                   </TableCell>
                   <TableCell>{o.reference ?? ''}</TableCell>
-                  <TableCell align="right">{o.total_sacks}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`order-${o.id}-packs`}>
+                    {orderPacks(o)}
+                  </TableCell>
                   <TableCell align="right">{money(o.total_dollars)}</TableCell>
                   <TableCell>
                     <StatusChip status={o.status} domain="order" />

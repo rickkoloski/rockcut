@@ -17,8 +17,8 @@ defmodule RockcutApiWeb.FormulaControllerTest do
 
   defp create_test_data(_context) do
     # Create ingredient categories
-    {:ok, hop_cat} = Brewing.create_ingredient_category(%{name: "Hops"})
-    {:ok, grain_cat} = Brewing.create_ingredient_category(%{name: "Grains"})
+    hop_cat = RockcutApi.IngredientFixtures.keyed_category!("Hops", "hops")
+    grain_cat = RockcutApi.IngredientFixtures.keyed_category!("Grains", "grains")
 
     # Create ingredients
     {:ok, cascade} = Brewing.create_ingredient(%{name: "Cascade", category_id: hop_cat.id})

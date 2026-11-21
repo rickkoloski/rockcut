@@ -13,25 +13,31 @@ test.afterAll(cleanupIngredients)
 
 test('O1: add a maltster + supplier company; Rahr (in use) has Delete disabled with the reason; an unused company can be deleted', async ({ page }) => {
   const name = tempTag('Weyermann')
+  const { rahr } = await reference()
   await page.goto('/ingredients/companies')
+  // The first list has loaded, so the next GET is the refetch after the save.
+  await expect(page.getByTestId(`company-${rahr}`).first()).toBeVisible()
   await page.getByTestId('companies-add').click()
   const d = page.getByTestId('party-dialog')
   await d.getByTestId('party-name').fill(name)
-  await d.getByTestId('party-role-maltster').check()
+  await d.getByTestId('party-role-manufacturer').check()
   await d.getByTestId('party-role-supplier').check()
   const created = page.waitForResponse((r) => r.request().method() === 'POST' && r.url().endsWith('/api/parties'))
+  // DEV decisions 4 (O1): the new row shows once the list refetch lands, which
+  // can take over 5 s on DEV under the full run; wait on that response, not a timer.
+  const listed = page.waitForResponse((r) => r.request().method() === 'GET' && r.url().endsWith('/api/parties'), { timeout: 30_000 })
   await d.getByRole('button', { name: 'Save' }).click()
   const id = (await (await created).json()).data.id as number
   adoptParty(id)
   await expect(d).toHaveCount(0)
-  await expect(page.getByTestId(`party-${id}-role-maltster`)).toHaveText('Maltster')
+  await listed
+  await expect(page.getByTestId(`party-${id}-role-manufacturer`)).toHaveText('Manufacturer')
   await expect(page.getByTestId(`party-${id}-role-supplier`)).toHaveText('Supplier')
   const party = (await (await (await apiAs('owner')).get(`/api/parties/${id}`)).json()).data
-  expect([...party.roles].sort()).toEqual(['maltster', 'supplier'])
+  expect([...party.roles].sort()).toEqual(['manufacturer', 'supplier'])
 
-  const { rahr } = await reference()
   const blocked = (await (await (await apiAs('owner')).get(`/api/parties/${rahr}`)).json()).data.delete_blocked as string
-  expect(blocked).toMatch(/^This company has maltster products.*; deactivate it instead$/)
+  expect(blocked).toMatch(/^This company has products.*; deactivate it instead$/)
   await page.getByTestId(`company-${rahr}`).first().click()
   await expect(d.getByTestId('party-delete')).toBeDisabled()
   await expect(d.getByTestId('party-delete-reason')).toHaveText(blocked)
@@ -81,9 +87,16 @@ test('O2: Settings → Categories: Grains shows its five children; no Origin or 
   const res = await (await apiAs('owner')).post('/api/category_field_definitions', { data: { category_id: base.id, field_name: tempTag('O2'), field_type: 'text' } })
   expect(res.status()).toBe(422)
 
+  // D62 §3.1: Hops has features now, no custom fields; a category still on the old screens has Add field.
   const hops = categories.find((c) => c.name === 'Hops')
   if (hops) {
     await page.goto(`/ingredients/categories/${hops.id}`)
+    await expect(page.getByRole('heading', { name: 'Field Definitions' })).toBeVisible()
+    await expect(page.getByTestId('category-add-field')).toHaveCount(0)
+  }
+  const fruits = categories.find((c) => c.name === 'Fruits')
+  if (fruits) {
+    await page.goto(`/ingredients/categories/${fruits.id}`)
     await expect(page.getByTestId('category-add-field')).toBeVisible()
   }
 })

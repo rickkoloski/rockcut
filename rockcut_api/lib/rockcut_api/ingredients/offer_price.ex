@@ -1,6 +1,6 @@
 defmodule RockcutApi.Ingredients.OfferPrice do
   @moduledoc """
-  D60 §3.6: a supplier offer's price per sack from `effective_on`. A price
+  D60 §3.6: a supplier offer's price per pack from `effective_on`. A price
   change adds a row; the current price is the latest effective on or before
   today.
   """
@@ -9,7 +9,7 @@ defmodule RockcutApi.Ingredients.OfferPrice do
   import RockcutApi.Brewing.Ranges
 
   schema "supplier_offer_prices" do
-    field :price_per_sack, :decimal
+    field :price_per_pack, :decimal
     field :effective_on, :date
     field :note, :string
 
@@ -21,10 +21,10 @@ defmodule RockcutApi.Ingredients.OfferPrice do
 
   def changeset(price, attrs) do
     price
-    |> cast(attrs, [:offer_id, :price_per_sack, :effective_on, :note, :entered_by_id])
-    |> validate_required([:offer_id, :price_per_sack, :effective_on])
-    |> validate_range(:price_per_sack, 0, 100_000)
-    |> validate_places(:price_per_sack, 2)
+    |> cast(attrs, [:offer_id, :price_per_pack, :effective_on, :note, :entered_by_id])
+    |> validate_required([:offer_id, :price_per_pack, :effective_on])
+    |> validate_range(:price_per_pack, 0, 100_000)
+    |> validate_places(:price_per_pack, 2)
     |> foreign_key_constraint(:offer_id)
     |> RockcutApi.Changeset.validate_parents([:offer_id, :entered_by_id])
   end

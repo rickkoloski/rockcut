@@ -1,28 +1,40 @@
 defmodule RockcutApi.Ingredients.Inventory do
   @moduledoc """
-  D60 §3.7–3.8: lots, their stock (the sum of their movements, in lb) and
-  the movements and counts that change it.
+  D60 §3.7–3.8: lots, their stock (the sum of their movements, in the
+  product's unit; D62 §3.5) and the movements and counts that change it.
 
   Every write that reads stock first runs in one `BEGIN IMMEDIATE`
   transaction (as D32's series writes) and recomputes on-hand inside it, so
-  two brewers can't take the same sacks. Outgoing movements and total counts
+  two brewers can't take the same packs. Outgoing movements and total counts
   share `allocate/3`: oldest lots first by received date, then lot id,
   skipping `expired` lots (Matt, 2026-11-17: a brewer can still pick an
   expired lot by hand, and a by-lot count includes it). A movement never
   takes a lot below 0. A lot's status follows its on-hand
   (`depleted` at 0, `available` above) unless it's `expired`; a lot with no
-  movements at all (a non-grain lot, D62's) keeps the status it was given.
+  movements at all (a lot of a category `Catalog` doesn't manage yet) keeps
+  the status it was given.
 
   D60 lead decisions 2: the refusals a person can meet are whole sentences
-  under `base`, with quantities in the person's sacks/lb setting
-  (`Units.quantity_display/1`); lb are kept to 2 decimals and a quantity
-  under 0.01 lb is refused; no movement is dated after today (Colorado).
+  under `base`, with quantities in the person's packs/total setting
+  (`Units.quantity_display/1`) and the product's unit; quantities are kept
+  to 2 decimals and one under 0.01 is refused; no movement is dated after
+  today (Colorado).
   """
   import Ecto.Query
 
   alias RockcutApi.{Repo, Tasks}
-  alias RockcutApi.Brewing.{Ingredient, IngredientCategory, IngredientLot, RecipeIngredient}
-  alias RockcutApi.Ingredients.{Features, Movement, Parties, Product, Units, Valuation}
+  alias RockcutApi.Brewing.{IngredientLot, RecipeIngredient}
+
+  alias RockcutApi.Ingredients.{
+    Catalog,
+    Features,
+    Movement,
+    Parties,
+    Product,
+    Products,
+    Units,
+    Valuation
+  }
 
   @incoming ~w(opening received traded_in loaned_in)
   @outgoing ~w(used traded_out loaned_out)
@@ -32,7 +44,7 @@ defmodule RockcutApi.Ingredients.Inventory do
   @lot_preloads [
     :supplier,
     ingredient: :category,
-    product: [:maltster, :ingredient],
+    product: [:manufacturer, :ingredient],
     feature_values: :feature_type
   ]
 
@@ -40,28 +52,28 @@ defmodule RockcutApi.Ingredients.Inventory do
     :partner,
     :entered_by,
     purchase_order_line: :order,
-    lot: [product: [:maltster, :ingredient]]
+    lot: [product: [:manufacturer, :ingredient]]
   ]
 
   ## On hand
 
-  @doc "On hand in lb for each of `lot_ids` (0 for a lot with no movements)."
+  @doc "On hand for each of `lot_ids` (0 for a lot with no movements)."
   def on_hand_by_lot(lot_ids) do
     sums =
-      from(m in Movement, where: m.lot_id in ^lot_ids, select: {m.lot_id, m.quantity_lb})
+      from(m in Movement, where: m.lot_id in ^lot_ids, select: {m.lot_id, m.quantity})
       |> Repo.all()
       |> sum_by()
 
     Map.new(lot_ids, &{&1, Map.get(sums, &1, Decimal.new(0))})
   end
 
-  @doc "On hand in lb for each of `product_ids`: the sum over their lots."
+  @doc "On hand for each of `product_ids` in its unit: the sum over their lots."
   def on_hand_by_product(product_ids) do
     Map.new(stock_by_product(product_ids), fn {id, {on_hand, _expired}} -> {id, on_hand} end)
   end
 
   @doc """
-  `{on_hand, expired}` in lb for each of `product_ids` (one query): the sum
+  `{on_hand, expired}` for each of `product_ids` (one query): the sum
   over all their lots, and the part of it in `expired` lots.
   """
   def stock_by_product(product_ids) do
@@ -70,7 +82,7 @@ defmodule RockcutApi.Ingredients.Inventory do
         join: l in IngredientLot,
         on: l.id == m.lot_id,
         where: l.product_id in ^product_ids,
-        select: {l.product_id, l.status, m.quantity_lb}
+        select: {l.product_id, l.status, m.quantity}
       )
       |> Repo.all()
 
@@ -87,20 +99,38 @@ defmodule RockcutApi.Ingredients.Inventory do
     end)
   end
 
-  @doc "On hand in lb of an ingredient (a grain): the sum over all its lots."
+  @doc """
+  On hand of an ingredient: the sum over all its lots, with the unit its
+  products share (D62 §3.9). `{:ok, sum, unit}` (lb when it has no
+  products), or `{:error, :mixed_units}` when its products are in more than
+  one unit.
+  """
   def on_hand_for_ingredient(ingredient_id) do
-    from(m in Movement,
-      join: l in IngredientLot,
-      on: l.id == m.lot_id,
-      where: l.ingredient_id == ^ingredient_id,
-      select: m.quantity_lb
-    )
-    |> Repo.all()
-    |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+    units =
+      from(p in Product, where: p.ingredient_id == ^ingredient_id, distinct: true, select: p.unit)
+      |> Repo.all()
+
+    case units do
+      [_, _ | _] ->
+        {:error, :mixed_units}
+
+      units ->
+        sum =
+          from(m in Movement,
+            join: l in IngredientLot,
+            on: l.id == m.lot_id,
+            where: l.ingredient_id == ^ingredient_id,
+            select: m.quantity
+          )
+          |> Repo.all()
+          |> Enum.reduce(Decimal.new(0), &Decimal.add/2)
+
+        {:ok, sum, List.first(units, "lb")}
+    end
   end
 
   @doc """
-  Fill each lot's virtual `on_hand_lb` and `delete_blocked` (why it can't be
+  Fill each lot's virtual `on_hand` and `delete_blocked` (why it can't be
   deleted, or nil; lead decisions 3, gap 15).
   """
   def put_on_hand(lots) when is_list(lots) do
@@ -110,7 +140,7 @@ defmodule RockcutApi.Ingredients.Inventory do
 
     Enum.map(
       lots,
-      &%{&1 | on_hand_lb: Map.fetch!(on_hand, &1.id), delete_blocked: Map.fetch!(blocked, &1.id)}
+      &%{&1 | on_hand: Map.fetch!(on_hand, &1.id), delete_blocked: Map.fetch!(blocked, &1.id)}
     )
   end
 
@@ -125,11 +155,11 @@ defmodule RockcutApi.Ingredients.Inventory do
   ## Allocation
 
   @doc """
-  Which lots of `product_id` give `quantity` lb (a positive Decimal):
+  Which lots of `product_id` give `quantity` (a positive Decimal in its unit):
   `:oldest_first` takes from the oldest lot with stock (received date, then
   lot id), then the next, skipping expired lots; a lot id takes it all from
   that lot (expired or not), which must be the product's. `{:ok, [{lot,
-  lb}]}`, or `{:error, :short, on_hand}` with the product's non-expired (or
+  quantity}]}`, or `{:error, :short, on_hand}` with the product's non-expired (or
   that lot's) on-hand. Reads stock as it is now: call it inside the write
   transaction.
   """
@@ -204,7 +234,8 @@ defmodule RockcutApi.Ingredients.Inventory do
   end
 
   @doc """
-  Record a movement (spec §3.7): `kind`, `quantity_lb` (> 0; the sign comes
+  Record a movement (spec §3.7): `kind`, `quantity` (> 0, in the product's
+  unit; the sign comes
   from the kind), `occurred_on`, `note`, `party_id` (a partner brewery, for
   trades and loans only), and `lot_id`, or `product_id` with
   `allocation: "oldest_first"` (outgoing kinds). Counts go through
@@ -214,7 +245,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     kind = attrs["kind"]
 
     with :ok <- movement_kind(kind),
-         {:ok, quantity} <- positive(attrs["quantity_lb"]),
+         {:ok, quantity} <- positive(attrs["quantity"], attrs_unit(attrs)),
          {:ok, date} <- movement_date(attrs["occurred_on"]),
          :ok <- partner(kind, attrs["party_id"]),
          {:ok, target} <- movement_target(kind, attrs) do
@@ -241,51 +272,56 @@ defmodule RockcutApi.Ingredients.Inventory do
             insert_movements!(parts, base, Decimal.negative?(sign))
 
           {:error, :short, on_hand} ->
-            Repo.rollback(short(on_hand, target, Units.quantity_display(user)))
+            Repo.rollback(
+              short(on_hand, target, {Units.quantity_display(user), target_unit(target)})
+            )
         end
       end)
     end
   end
 
   @doc """
-  A count of a maltster product (spec §3.8) on `counted_on`. `mode:
-  "total"` with `counted_lb`: a shortfall comes off the oldest lots first, an
+  A count of a product (spec §3.8) on `counted_on`, in its unit. `mode:
+  "total"` with `counted`: a shortfall comes off the oldest lots first, an
   overage goes onto the newest lot. Expired lots count towards the total
   but a shortfall can't come off them (a 422 when the non-expired stock is
   too small), and an overage goes onto the newest non-expired lot (a 422
   when every lot is expired: count by lot instead). `mode: "by_lot"` with
-  `lots: [%{lot_id, counted_lb}]`: one adjustment per lot whose number
-  differs. A count that matches on-hand writes a 0 lb count movement
+  `lots: [%{lot_id, counted}]`: one adjustment per lot whose number
+  differs. A count that matches on-hand writes a 0 count movement
   ("Counted, no change", Matt 2026-11-18): on the newest lot that isn't
   expired for a total, on each lot counted by lot. `{:ok, adjustments}`.
   """
   def count(%Product{} = product, attrs, user) do
+    unit = Products.unit(product)
+
     with {:ok, date} <- movement_date(attrs["counted_on"]),
-         {:ok, plan} <- count_plan(attrs) do
+         {:ok, plan} <- count_plan(attrs, unit) do
       base = %{kind: "count", occurred_on: date, note: attrs["note"], entered_by_id: user.id}
 
       write(fn ->
         product.id
-        |> count_parts(plan, Units.quantity_display(user))
+        |> count_parts(plan, {Units.quantity_display(user), unit})
         |> Enum.flat_map(fn {parts, negative?} -> insert_movements!(parts, base, negative?) end)
       end)
     end
   end
 
-  defp count_plan(%{"mode" => "total"} = attrs) do
-    with {:ok, counted} <- non_negative(attrs["counted_lb"]),
+  defp count_plan(%{"mode" => "total"} = attrs, unit) do
+    with {:ok, counted} <- non_negative(attrs["counted"], unit),
          do: {:ok, {:total, counted}}
   end
 
-  defp count_plan(%{"mode" => "by_lot", "lots" => lots}) when is_list(lots) and lots != [] do
+  defp count_plan(%{"mode" => "by_lot", "lots" => lots}, unit)
+       when is_list(lots) and lots != [] do
     parsed =
       Enum.map(lots, fn
         %{"lot_id" => id} = entry when is_integer(id) or is_binary(id) ->
-          with {:ok, counted} <- non_negative(entry["counted_lb"]),
+          with {:ok, counted} <- non_negative(entry["counted"], unit),
                do: {:ok, {RockcutApi.Ids.parse(id), counted}}
 
         _ ->
-          {:error, {:invalid, %{lots: ["each needs a lot_id and counted_lb"]}}}
+          {:error, {:invalid, %{lots: ["each needs a lot_id and counted"]}}}
       end)
 
     case Enum.find(parsed, &match?({:error, _}, &1)) do
@@ -302,12 +338,13 @@ defmodule RockcutApi.Ingredients.Inventory do
     end
   end
 
-  defp count_plan(%{"mode" => "by_lot"}),
-    do: {:error, {:invalid, %{lots: ["list each lot with its counted_lb"]}}}
+  defp count_plan(%{"mode" => "by_lot"}, _unit),
+    do: {:error, {:invalid, %{lots: ["list each lot with its counted"]}}}
 
-  defp count_plan(_), do: {:error, {:invalid, %{mode: ["must be total or by_lot"]}}}
+  defp count_plan(_, _unit), do: {:error, {:invalid, %{mode: ["must be total or by_lot"]}}}
 
-  # [{[{lot, lb}], negative?}] inside the write transaction.
+  # [{[{lot, quantity}], negative?}] inside the write transaction. `mode` is
+  # {quantity display, unit}.
   defp count_parts(product_id, {:total, counted}, mode) do
     lots = product_lots(product_id)
     on_hand = on_hand_by_lot(Enum.map(lots, & &1.id))
@@ -328,12 +365,12 @@ defmodule RockcutApi.Ingredients.Inventory do
             [{parts, true}]
 
           {:error, :short, usable} ->
-            size = shared_sack_size(lots, on_hand)
+            pack = shared_pack(lots, on_hand)
 
             Repo.rollback(
               refusal(
-                "The count is #{qty(Decimal.negate(diff), size, mode)} under on-hand, more than " <>
-                  "the #{qty(usable, size, mode)} in lots that aren't expired; count by lot instead"
+                "The count is #{qty(Decimal.negate(diff), pack, mode)} under on-hand, more than " <>
+                  "the #{qty(usable, pack, mode)} in lots that aren't expired; count by lot instead"
               )
             )
         end
@@ -370,11 +407,11 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   defp insert_movements!(parts, base, negative?) do
     movements =
-      for {lot, lb} <- parts do
-        quantity = if negative?, do: Decimal.negate(lb), else: lb
+      for {lot, amount} <- parts do
+        quantity = if negative?, do: Decimal.negate(amount), else: amount
 
         %Movement{}
-        |> Movement.changeset(Map.merge(base, %{lot_id: lot.id, quantity_lb: quantity}))
+        |> Movement.changeset(Map.merge(base, %{lot_id: lot.id, quantity: quantity}))
         |> Repo.insert!()
       end
 
@@ -452,7 +489,7 @@ defmodule RockcutApi.Ingredients.Inventory do
             refuse("That lot doesn't exist")
 
           %IngredientLot{product_id: nil} ->
-            refuse("That lot isn't a lot of a maltster product")
+            refuse("That lot isn't a lot of a product")
 
           lot ->
             if product_id && RockcutApi.Ids.parse(product_id) != lot.product_id,
@@ -466,13 +503,13 @@ defmodule RockcutApi.Ingredients.Inventory do
     do:
       refusal(
         "That's more than lot #{lot.lot_number || "##{lot.id}"} has on hand " <>
-          "(#{qty(on_hand, lot.sack_size_lb, mode)})"
+          "(#{qty(on_hand, {lot.pack_name, lot.pack_size}, mode)})"
       )
 
   defp short(on_hand, {:product, product_id}, mode) do
     lots = product_lots(product_id)
     by_lot = on_hand_by_lot(Enum.map(lots, & &1.id))
-    size = shared_sack_size(lots, by_lot)
+    pack = shared_pack(lots, by_lot)
 
     expired =
       for(%{status: "expired", id: id} <- lots, do: Map.fetch!(by_lot, id))
@@ -481,31 +518,84 @@ defmodule RockcutApi.Ingredients.Inventory do
     refusal(
       if Decimal.gt?(expired, 0),
         do:
-          "That's more than the #{qty(on_hand, size, mode)} on hand in lots that aren't " <>
-            "expired (plus #{qty(expired, size, mode)} in expired lots; pick that lot " <>
+          "That's more than the #{qty(on_hand, pack, mode)} on hand in lots that aren't " <>
+            "expired (plus #{qty(expired, pack, mode)} in expired lots; pick that lot " <>
             "to use it)",
-        else: "That's more than the #{qty(on_hand, size, mode)} on hand"
+        else: "That's more than the #{qty(on_hand, pack, mode)} on hand"
     )
   end
 
-  # The one sack size a product's stocked lots share (as the UI's
-  # `productSackSize`), so a message reads like the dialog; nil when mixed.
-  defp shared_sack_size(lots, on_hand) do
-    sizes =
-      for l <- lots, Decimal.gt?(Map.fetch!(on_hand, l.id), 0), uniq: true, do: l.sack_size_lb
+  # The one pack (name and size) a product's stocked lots share (as the
+  # UI's `productPack`), so a message reads like the dialog; {nil, nil}
+  # when mixed.
+  defp shared_pack(lots, on_hand) do
+    packs =
+      for l <- lots,
+          Decimal.gt?(Map.fetch!(on_hand, l.id), 0),
+          uniq: true,
+          do: {l.pack_name, l.pack_size && Decimal.normalize(l.pack_size)}
 
-    case sizes do
-      [%Decimal{} = size] -> size
-      _ -> nil
+    case packs do
+      [{_name, %Decimal{}} = pack] -> pack
+      _ -> {nil, nil}
     end
   end
 
-  defp qty(lb, sack_size, mode), do: Units.format_quantity(lb, sack_size, mode)
+  defp qty(quantity, {pack_name, pack_size}, {mode, unit}),
+    do: Units.format_quantity(quantity, pack_name, pack_size, unit, mode)
+
+  # The unit of the lot or product a movement names (lb when neither).
+  defp attrs_unit(attrs) do
+    case {blank(attrs["lot_id"]), blank(attrs["product_id"])} do
+      {nil, nil} -> "lb"
+      {nil, product_id} -> Products.unit(product_id)
+      {lot_id, _} -> lot_unit(lot_id)
+    end
+  end
+
+  defp lot_unit(lot_id) do
+    from(l in IngredientLot,
+      join: p in Product,
+      on: p.id == l.product_id,
+      where: l.id == ^lot_id,
+      select: p.unit
+    )
+    |> Repo.one() || "lb"
+  end
+
+  defp target_unit({:lot, lot}), do: Products.unit(lot.product_id)
+  defp target_unit({:product, product_id}), do: Products.unit(product_id)
 
   ## Lots
 
+  @doc ~S"""
+  D62 §4.8: a hop lot's label in the recipe's lot picker, "Yakima Chief
+  Hops Citra T90 Pellet · L-1 · 2025 · 12.4% AA" (the product's display
+  name, lot #, crop year and alpha acid); nil for a lot without a crop year
+  (every other lot) or with its product or features not loaded.
+  """
+  def lot_label(%IngredientLot{crop_year: year, product: %Product{} = product} = lot)
+      when is_integer(year) do
+    alpha =
+      case lot.feature_values do
+        values when is_list(values) ->
+          Enum.find_value(values, fn v ->
+            v.feature_type.key == "alpha_acid_pct" && "#{Units.round(v.value, 2)}% AA"
+          end)
+
+        _ ->
+          nil
+      end
+
+    [Products.display_name(product), lot.lot_number || "##{lot.id}", year, alpha]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.join(" · ")
+  end
+
+  def lot_label(_lot), do: nil
+
   @doc """
-  Lots, newest first, with what the lot JSON shows (`on_hand_lb` and, D61
+  Lots, newest first, with what the lot JSON shows (`on_hand` and, D61
   §3.4, today's cost and value filled).
   """
   def list_lots(params) do
@@ -518,6 +608,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     |> Repo.all()
     |> put_on_hand()
     |> Valuation.put_values()
+    |> Features.put_outside_range()
   end
 
   def get_lot!(id) do
@@ -527,6 +618,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     |> List.wrap()
     |> put_on_hand()
     |> Valuation.put_values()
+    |> Features.put_outside_range()
     |> hd()
   end
 
@@ -569,22 +661,26 @@ defmodule RockcutApi.Ingredients.Inventory do
   end
 
   @doc """
-  Add a lot (spec §4.4). A grain lot (its ingredient on Grains or a child)
-  needs a maltster product, a received date and its first movement
-  (`initial_kind` opening or received, `initial_quantity_lb` > 0); other
-  lots may give one. The ingredient comes from the product. The supplier
-  must hold the supplier role. The product's standard features are copied
-  onto the lot; `features` in the body replace them key by key (nil drops
-  one).
+  Add a lot (spec §4.4). A lot of a category `Catalog` manages (grain and
+  hops) needs its product, a received date and its
+  first movement (`initial_kind` opening or received, `initial_quantity` >
+  0, in the product's unit); other lots may give one. The ingredient comes from the product. The supplier
+  must hold the supplier role. The product's standard features its
+  category copies are copied onto the lot; `features` in the body replace
+  them key by key (nil drops one). D62 §3.4: a hop lot needs its crop year
+  and its alpha acid (`lot_required`), and is in 11 lb boxes; no other lot
+  has a crop year.
   """
   def create_lot(attrs, user) do
     with {:ok, attrs} <- product_ingredient(attrs),
-         {:ok, grain?} <- grain_lot?(attrs),
-         :ok <- product_rules(attrs, grain?),
+         {:ok, managed?} <- managed_lot?(attrs),
+         :ok <- product_rules(attrs, managed?),
+         {:ok, attrs} <- category_lot_rules(attrs, nil),
          :ok <- supplier(attrs["supplier_party_id"]),
-         {:ok, initial} <- initial(attrs, grain?),
+         {:ok, initial} <- initial(attrs, managed?),
          :ok <- lot_number_free(attrs, nil),
-         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"]) do
+         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"], :lot),
+         :ok <- required_features(managed?, attrs["ingredient_id"], features, []) do
       write(fn ->
         lot =
           %IngredientLot{}
@@ -623,7 +719,7 @@ defmodule RockcutApi.Ingredients.Inventory do
   Change a lot. `features` change key by key (nil drops one). The status
   may be set to `expired` (or back); otherwise it follows on-hand once the
   lot has movements. The product can't change once the lot has movements,
-  nor the sack size once it has movements after its first (lead decisions
+  nor the pack size once it has movements after its first (lead decisions
   2, gap 14: past movements would read differently).
   """
   def update_lot(%IngredientLot{} = lot, attrs) do
@@ -635,7 +731,7 @@ defmodule RockcutApi.Ingredients.Inventory do
         RockcutApi.Ids.parse(attrs["product_id"]) != lot.product_id
 
     with :ok <- if(moved? and new_product, do: product_fixed(), else: :ok),
-         :ok <- if(movements > 1, do: sack_size_fixed(lot, attrs), else: :ok),
+         :ok <- if(movements > 1, do: pack_size_fixed(lot, attrs), else: :ok),
          {:ok, merged} <-
            attrs
            |> Map.put_new("product_id", lot.product_id)
@@ -643,15 +739,17 @@ defmodule RockcutApi.Ingredients.Inventory do
            |> product_ingredient(),
          ingredient_id = merged["ingredient_id"],
          attrs = Map.put(attrs, "ingredient_id", ingredient_id),
-         {:ok, grain?} <- grain_lot?(merged),
-         :ok <- product_rules(merged, grain?),
+         {:ok, managed?} <- managed_lot?(merged),
+         :ok <- product_rules(merged, managed?),
+         {:ok, attrs} <- category_lot_rules(attrs, lot),
          :ok <- supplier(attrs["supplier_party_id"]),
          :ok <-
            lot_number_free(
              %{"product_id" => merged["product_id"], "lot_number" => attrs["lot_number"]},
              lot.id
            ),
-         {:ok, features} <- Features.validate(attrs["features"], ingredient_id) do
+         {:ok, features} <- Features.validate(attrs["features"], ingredient_id, :lot),
+         :ok <- required_features(managed?, ingredient_id, features, lot_feature_keys(lot)) do
       write(fn ->
         lot =
           lot
@@ -717,18 +815,19 @@ defmodule RockcutApi.Ingredients.Inventory do
   defp product_fixed,
     do: {:error, {:invalid, %{product_id: ["can't change once the lot has movements"]}}}
 
-  defp sack_size_fixed(lot, attrs) do
+  defp pack_size_fixed(lot, attrs) do
     same? =
-      case Map.fetch(attrs, "sack_size_lb") do
+      case Map.fetch(attrs, "pack_size") do
         :error -> true
-        {:ok, given} -> same_decimal?(given, lot.sack_size_lb)
+        {:ok, given} -> same_decimal?(given, lot.pack_size)
       end
 
     if same?,
       do: :ok,
       else:
         refuse(
-          "This lot has movements after its first, so its sack size can't change " <>
+          "This lot has movements after its first, so its #{lot.pack_name || "pack"} size " <>
+            "can't change " <>
             "(its history would read differently)"
         )
   end
@@ -760,41 +859,90 @@ defmodule RockcutApi.Ingredients.Inventory do
           {product, given} ->
             if RockcutApi.Ids.parse(given) == product.ingredient_id,
               do: {:ok, Map.put(attrs, "ingredient_id", product.ingredient_id)},
-              else: {:error, {:invalid, %{ingredient_id: ["isn't this product's grain"]}}}
+              else: {:error, {:invalid, %{ingredient_id: ["isn't this product's ingredient"]}}}
         end
     end
   end
 
-  # Whether the ingredient is a grain (on Grains or one of its children).
-  # An unknown ingredient is left to the changeset.
-  defp grain_lot?(attrs) do
+  # Whether the ingredient's category is one `Catalog` manages (products,
+  # packs, movements; grain in Stage 1). An unknown ingredient is left to
+  # the changeset.
+  defp managed_lot?(attrs) do
     case blank(attrs["ingredient_id"]) do
-      nil ->
-        {:ok, false}
-
-      id ->
-        {:ok,
-         Repo.exists?(
-           from(i in Ingredient,
-             join: c in IngredientCategory,
-             on: c.id == i.category_id,
-             left_join: p in IngredientCategory,
-             on: p.id == c.parent_id,
-             where: i.id == ^id and (c.name == "Grains" or p.name == "Grains")
-           )
-         )}
+      nil -> {:ok, false}
+      id -> {:ok, id |> Catalog.ingredient_key() |> Catalog.managed?()}
     end
   end
 
-  # A grain lot needs its maltster product (spec §3.7); `product_ingredient/1`
+  # A managed lot needs its product (spec §3.7); `product_ingredient/1`
   # checked that it exists.
-  defp product_rules(attrs, true = _grain?) do
-    if blank(attrs["product_id"]),
-      do: :ok,
-      else: {:error, {:invalid, %{product_id: ["A grain lot needs its maltster product"]}}}
+  defp product_rules(attrs, true = _managed?) do
+    cond do
+      blank(attrs["product_id"]) ->
+        :ok
+
+      Catalog.ingredient_key(attrs["ingredient_id"]) == "grains" ->
+        {:error, {:invalid, %{product_id: ["A grain lot needs its maltster product"]}}}
+
+      true ->
+        {:error, {:invalid, %{product_id: ["A lot needs its product"]}}}
+    end
   end
 
   defp product_rules(_attrs, false), do: :ok
+
+  # D62 §3.4–3.5, decision 6: a hop lot (`lot` nil: a new one) needs its crop
+  # year, and is in the category's one pack (set when not given); no other
+  # lot has a crop year. `attrs` has the lot's ingredient.
+  defp category_lot_rules(attrs, lot) do
+    key = Catalog.ingredient_key(attrs["ingredient_id"])
+    crop_year = blank(attrs["crop_year"])
+    given? = Map.has_key?(attrs, "crop_year")
+
+    cond do
+      key != "hops" and crop_year != nil ->
+        {:error, {:invalid, %{crop_year: ["Only hop lots have a crop year"]}}}
+
+      key == "hops" and is_nil(crop_year) and (is_nil(lot) or given?) ->
+        {:error, {:invalid, %{crop_year: ["can't be blank"]}}}
+
+      true ->
+        fixed_pack(attrs, Catalog.fixed_pack(key), lot)
+    end
+  end
+
+  defp fixed_pack(attrs, nil, _lot), do: {:ok, attrs}
+
+  defp fixed_pack(attrs, {name, size}, lot) do
+    given_name = blank(attrs["pack_name"])
+    given_size = blank(attrs["pack_size"])
+
+    cond do
+      given_name not in [nil, name] or (given_size && not same_decimal?(given_size, size)) ->
+        refuse("Hop lots are #{size} lb boxes")
+
+      is_nil(lot) ->
+        {:ok, Map.merge(attrs, %{"pack_name" => name, "pack_size" => size})}
+
+      true ->
+        {:ok, attrs}
+    end
+  end
+
+  # A2: the features a managed lot can't be without (`Features.check_required/3`).
+  defp required_features(false, _ingredient_id, _features, _existing), do: :ok
+
+  defp required_features(true, ingredient_id, features, existing),
+    do: Features.check_required(ingredient_id, features, existing)
+
+  defp lot_feature_keys(lot) do
+    from(v in RockcutApi.Ingredients.LotFeatureValue,
+      join: t in assoc(v, :feature_type),
+      where: v.lot_id == ^lot.id,
+      select: t.key
+    )
+    |> Repo.all()
+  end
 
   defp supplier(party_id) do
     case blank(party_id) do
@@ -808,22 +956,23 @@ defmodule RockcutApi.Ingredients.Inventory do
     end
   end
 
-  # The first movement: required for a grain lot, with its received date.
-  defp initial(attrs, grain?) do
+  # The first movement: required for a managed lot, with its received date.
+  defp initial(attrs, managed?) do
     kind = blank(attrs["initial_kind"])
 
     cond do
-      is_nil(kind) and is_nil(blank(attrs["initial_quantity_lb"])) and not grain? ->
+      is_nil(kind) and is_nil(blank(attrs["initial_quantity"])) and not managed? ->
         {:ok, nil}
 
       kind not in @initial ->
         {:error, {:invalid, %{initial_kind: ["must be opening or received"]}}}
 
-      grain? and is_nil(blank(attrs["received_date"])) ->
+      managed? and is_nil(blank(attrs["received_date"])) ->
         {:error, {:invalid, %{received_date: ["can't be blank"]}}}
 
       true ->
-        with {:ok, quantity} <- positive(attrs["initial_quantity_lb"]),
+        with {:ok, quantity} <-
+               positive(attrs["initial_quantity"], Products.unit(product_id(attrs))),
              :ok <- not_future(attrs["received_date"]),
              do: {:ok, {kind, quantity}}
     end
@@ -851,25 +1000,28 @@ defmodule RockcutApi.Ingredients.Inventory do
   defp refusal(message), do: {:invalid, %{base: [message]}}
   defp refuse(message), do: {:error, refusal(message)}
 
-  # A quantity in lb: at least 0.01 and under 1,000,000, kept to 2 decimals.
-  defp positive(v) do
+  defp product_id(attrs), do: blank(attrs["product_id"])
+
+  # A quantity in the product's unit: at least 0.01 and under 1,000,000,
+  # kept to 2 decimals.
+  defp positive(v, unit) do
     case cast_decimal(v) do
       {:ok, d} ->
         if Decimal.compare(d, Decimal.new("0.01")) != :lt and Decimal.lt?(d, 1_000_000),
           do: {:ok, Units.round(d, 2)},
-          else: refuse("Enter a quantity of at least 0.01 lb and under 1,000,000 lb")
+          else: refuse("Enter a quantity of at least 0.01 #{unit} and under 1,000,000 #{unit}")
 
       :error ->
         refuse("The quantity must be a number")
     end
   end
 
-  defp non_negative(v) do
+  defp non_negative(v, unit) do
     case cast_decimal(v) do
       {:ok, d} ->
         if not Decimal.negative?(d) and Decimal.lt?(d, 1_000_000),
           do: {:ok, Units.round(d, 2)},
-          else: refuse("The count must be 0 or more and under 1,000,000 lb")
+          else: refuse("The count must be 0 or more and under 1,000,000 #{unit}")
 
       :error ->
         refuse("The count must be a number")

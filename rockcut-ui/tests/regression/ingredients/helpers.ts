@@ -23,18 +23,20 @@ export interface FeatureValue {
 
 export interface ApiProduct {
   id: number
+  ingredient_id: number
   display_name: string
-  on_hand_lb: string
-  expired_lb: string
+  ingredient: { id: number; name: string } | null
+  on_hand: string
+  expired: string
   features: Record<string, FeatureValue>
-  offers: { id: number; supplier_party_id: number; current_price: { price_per_sack: string } | null }[]
+  offers: { id: number; supplier_party_id: number; form: string | null; current_price: { price_per_pack: string } | null }[]
 }
 
 export interface ApiLot {
   id: number
   lot_number: string | null
   status: 'available' | 'depleted' | 'expired'
-  on_hand_lb: string
+  on_hand: string
   features: Record<string, FeatureValue>
 }
 
@@ -42,10 +44,10 @@ export interface ApiMovement {
   id: number
   lot_id: number
   kind: string
-  quantity_lb: string
+  quantity: string
 }
 
-const made = { products: new Set<number>(), parties: new Set<number>() }
+const made = { products: new Set<number>(), parties: new Set<number>(), ingredients: new Set<number>() }
 
 async function ok<T>(res: APIResponse, status = 200): Promise<T> {
   expect(res.status(), await res.text()).toBe(status)
@@ -82,7 +84,7 @@ export async function makeProduct(label: string, as: PersonaKey = 'brewer1'): Pr
     await api.post('/api/ingredient_products', {
       data: {
         ingredient_id: ref.twoRow,
-        maltster_party_id: ref.rahr,
+        manufacturer_party_id: ref.rahr,
         name: tempTag(label),
         features: { color_lovibond: { value: '2' }, extract_fgdb: { value: '81.5' }, moisture_pct: { value: '4.5' } },
       },
@@ -90,25 +92,35 @@ export async function makeProduct(label: string, as: PersonaKey = 'brewer1'): Pr
     201,
   )
   made.products.add(product.id)
-  await ok(await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: ref.bsg, sack_size_lb: '55', form: 'milled' } }), 201)
+  await ok(await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: ref.bsg, pack_size: '55', form: 'milled' } }), 201)
   return getProduct(product.id)
 }
 
-/** A lot of `product` with an opening amount of `sacks` 55 lb sacks, received `daysAgo` days ago. */
-export async function makeLot(product: ApiProduct, sacks: number, daysAgo: number, number = tempTag('lot')): Promise<ApiLot> {
+/** A lot of `product` with an opening amount of `packs` 55 lb sacks, received `daysAgo` days ago. */
+export async function makeLot(product: ApiProduct, packs: number, daysAgo: number, number = tempTag('lot')): Promise<ApiLot> {
   const ref = await reference()
   const res = await (await apiAs('brewer1')).post('/api/ingredient_lots', {
     data: {
       product_id: product.id,
       supplier_party_id: ref.bsg,
-      sack_size_lb: '55',
+      pack_size: '55',
       lot_number: number,
       received_date: addDays(denverToday(), -daysAgo),
       initial_kind: 'opening',
-      initial_quantity_lb: String(sacks * SACK),
+      initial_quantity: String(packs * SACK),
     },
   })
   return ok<ApiLot>(res, 201)
+}
+
+/**
+ * D62 lead decisions 1, gap 9: a product save sends back the version it
+ * read; this reads it and saves `data` as `as`.
+ */
+export async function saveProduct(id: number, data: Record<string, unknown>, as: PersonaKey = 'brewer1'): Promise<APIResponse> {
+  const api = await apiAs(as)
+  const current = await ok<{ lock_version: number }>(await api.get(`/api/ingredient_products/${id}`))
+  return api.put(`/api/ingredient_products/${id}`, { data: { lock_version: current.lock_version, ...data } })
 }
 
 export async function getProduct(id: number): Promise<ApiProduct> {
@@ -127,17 +139,17 @@ export async function movementsOf(productId: number): Promise<ApiMovement[]> {
 
 /** Polls the API's on-hand for a product (lb, as a number). */
 export async function expectOnHand(productId: number, lb: number) {
-  await expect.poll(async () => Number((await getProduct(productId)).on_hand_lb), { message: `product ${productId} on_hand_lb` }).toBe(lb)
+  await expect.poll(async () => Number((await getProduct(productId)).on_hand), { message: `product ${productId} on_hand` }).toBe(lb)
 }
 
 export async function expectLotOnHand(lotId: number, productId: number, lb: number) {
   await expect
-    .poll(async () => Number((await lotsOf(productId)).find((l) => l.id === lotId)?.on_hand_lb), { message: `lot ${lotId} on_hand_lb` })
+    .poll(async () => Number((await lotsOf(productId)).find((l) => l.id === lotId)?.on_hand), { message: `lot ${lotId} on_hand` })
     .toBe(lb)
 }
 
-/** A persona's sacks/lb toggle (`board_settings.ingredients`). */
-export async function setQuantityDisplay(persona: PersonaKey, mode: 'sacks' | 'lb') {
+/** A persona's packs/total toggle (`board_settings.ingredients`). */
+export async function setQuantityDisplay(persona: PersonaKey, mode: 'packs' | 'lb') {
   const res = await (await apiAs(persona)).put('/api/me/board_settings/ingredients', { data: { quantity_display: mode } })
   expect(res.status(), await res.text()).toBe(200)
 }
@@ -165,9 +177,13 @@ export async function cleanupIngredients() {
       for (const o of product.offers) await api.delete(`/api/supplier_offers/${o.id}`)
     }
     const del = await api.delete(`/api/ingredient_products/${id}`)
-    if (del.status() !== 204) await api.put(`/api/ingredient_products/${id}`, { data: { active: false } })
+    if (del.status() !== 204) await saveProduct(id, { active: false }, 'owner')
   }
   made.products.clear()
+  // D62: `[TEST-TEMP]` hop varieties, once their products are gone (else `setup` takes them).
+  // Best effort, as the rest of this clean-up: anything left goes with the next `setup`.
+  for (const id of made.ingredients) await api.delete(`/api/ingredients/${id}`).catch(() => null)
+  made.ingredients.clear()
   for (const id of made.parties) {
     const res = await api.get(`/api/parties/${id}`)
     if (res.status() === 404) continue
@@ -188,15 +204,16 @@ export interface ApiOrder {
   id: number
   status: 'open' | 'received' | 'cancelled'
   received_on: string | null
-  lines: { id: number; offer_id: number; sacks_ordered: number; sacks_received: number | null; price_per_sack: string }[]
-  total_sacks: number
+  reference: string | null
+  lines: { id: number; offer_id: number; packs_ordered: number; packs_received: number | null; price_per_pack: string }[]
+  total_packs: number
   total_dollars: string
 }
 
 /** A `[TEST-TEMP]` supplier, with an order target when given. */
 export async function makeSupplier(label: string, target: number | null = 40): Promise<{ id: number; name: string }> {
   const party = await ok<{ id: number; name: string }>(
-    await (await apiAs('owner')).post('/api/parties', { data: { name: tempTag(label), roles: ['supplier'], order_target_sacks: target } }),
+    await (await apiAs('owner')).post('/api/parties', { data: { name: tempTag(label), roles: ['supplier'], order_target_packs: target } }),
     201,
   )
   made.parties.add(party.id)
@@ -207,10 +224,10 @@ export async function makeSupplier(label: string, target: number | null = 40): P
 export async function makeOffer(product: ApiProduct, supplierId: number, price = '42.00', orderName: string | null = null, size = '55'): Promise<{ id: number }> {
   const api = await apiAs('brewer1')
   const offer = await ok<{ id: number }>(
-    await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: supplierId, sack_size_lb: size, form: 'whole', order_name: orderName } }),
+    await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: supplierId, pack_size: size, form: 'whole', order_name: orderName } }),
     201,
   )
-  await ok(await api.post(`/api/supplier_offers/${offer.id}/prices`, { data: { price_per_sack: price, effective_on: '2020-01-01' } }), 201)
+  await ok(await api.post(`/api/supplier_offers/${offer.id}/prices`, { data: { price_per_pack: price, effective_on: '2020-01-01' } }), 201)
   return offer
 }
 
@@ -222,11 +239,11 @@ export async function makePurchasing(label: string) {
   return { product, supplier, offer }
 }
 
-/** An open order (placed by `brewer1`) of `sacks` of each offer. */
-export async function makeOrder(supplierId: number, lines: { offerId: number; sacks: number }[], extra: Record<string, unknown> = {}): Promise<ApiOrder> {
+/** An open order (placed by `brewer1`) of `packs` of each offer. */
+export async function makeOrder(supplierId: number, lines: { offerId: number; packs: number }[], extra: Record<string, unknown> = {}): Promise<ApiOrder> {
   return ok<ApiOrder>(
     await (await apiAs('brewer1')).post('/api/purchase_orders', {
-      data: { supplier_party_id: supplierId, ordered_on: denverToday(), lines: lines.map((l) => ({ offer_id: l.offerId, sacks_ordered: l.sacks })), ...extra },
+      data: { supplier_party_id: supplierId, ordered_on: denverToday(), lines: lines.map((l) => ({ offer_id: l.offerId, packs_ordered: l.packs })), ...extra },
     }),
     201,
   )
@@ -234,22 +251,22 @@ export async function makeOrder(supplierId: number, lines: { offerId: number; sa
 
 /** Receive an order in full (into the previous lot, else a new `[TEST-TEMP]` lot) on `on`. */
 export async function receiveOrder(order: ApiOrder, on = denverToday(), lotNumber: string | null = null): Promise<ApiOrder> {
-  const lines = order.lines.map((l) => ({ id: l.id, sacks_received: l.sacks_ordered, ...(lotNumber ? { allocations: [{ lot_number: lotNumber, sacks: l.sacks_ordered }] } : {}) }))
+  const lines = order.lines.map((l) => ({ id: l.id, packs_received: l.packs_ordered, ...(lotNumber ? { allocations: [{ lot_number: lotNumber, packs: l.packs_ordered }] } : {}) }))
   return ok<ApiOrder>(await (await apiAs('brewer1')).post(`/api/purchase_orders/${order.id}/receive`, { data: { received_on: on, lines } }))
 }
 
 /** A lot of `product` from `supplierId` (55 lb sacks) with an opening amount, received `daysAgo`. */
-export async function makeSupplierLot(product: ApiProduct, supplierId: number, sacks: number, daysAgo: number): Promise<ApiLot> {
+export async function makeSupplierLot(product: ApiProduct, supplierId: number, packs: number, daysAgo: number): Promise<ApiLot> {
   return ok<ApiLot>(
     await (await apiAs('brewer1')).post('/api/ingredient_lots', {
       data: {
         product_id: product.id,
         supplier_party_id: supplierId,
-        sack_size_lb: '55',
+        pack_size: '55',
         lot_number: tempTag('lot'),
         received_date: addDays(denverToday(), -daysAgo),
         initial_kind: 'opening',
-        initial_quantity_lb: String(sacks * SACK),
+        initial_quantity: String(packs * SACK),
       },
     }),
     201,
@@ -317,7 +334,79 @@ export async function expectNoSidewaysScroll(page: Page) {
 }
 
 /** Pick `option` from the MUI select labelled `label` inside `scope`. */
+/** D62 lead decisions 1, gap 4: Totals → Inventory narrowed to Grains, which reads as D61 did. */
+export async function pickGrainTotals(page: Page) {
+  await page.getByTestId('totals-inventory-category').click()
+  await page.getByRole('option', { name: 'Grains', exact: true }).click()
+  await expect(page.getByTestId('totals-inventory-table').locator('thead')).toContainText('Maltster')
+}
+
 export async function pick(page: Page, scope: Locator, label: string | RegExp, option: string | RegExp) {
   await scope.getByRole('combobox', { name: label }).click()
   await page.getByRole('option', { name: option }).click()
+}
+
+// ── D62 hops ──
+//
+// A spec's hops are a `[TEST-TEMP]` variety from a `[TEST-TEMP]` company
+// (manufacturer and supplier), never the seeded reference hops.
+
+export const BOX = 11
+
+/** A `[TEST-TEMP]` hop variety (in Hops) and a company that makes and sells it. */
+export async function makeHopVariety(label: string): Promise<{ hop: { id: number; name: string }; company: { id: number; name: string } }> {
+  const api = await apiAs('owner')
+  const categories = await ok<{ id: number; key: string | null }[]>(await api.get('/api/ingredient_categories'))
+  const hops = categories.find((c) => c.key === 'hops')
+  expect(hops, 'the Hops category').toBeTruthy()
+  const hop = await ok<{ id: number; name: string }>(await api.post('/api/ingredients', { data: { name: tempTag(`${label} hop`), category_id: hops!.id } }), 201)
+  made.ingredients.add(hop.id)
+  const company = await ok<{ id: number; name: string }>(
+    await api.post('/api/parties', { data: { name: tempTag(`${label} hop co`), roles: ['manufacturer', 'supplier'] } }),
+    201,
+  )
+  made.parties.add(company.id)
+  return { hop, company }
+}
+
+/**
+ * A `[TEST-TEMP]` hop product (T90 Pellet, alpha 11–13, beta 3.5–4.5, oil
+ * 2.5–3) with an offer of 11 lb boxes from its company.
+ */
+export async function makeHopProduct(label: string): Promise<ApiProduct & { company: { id: number; name: string } }> {
+  const { hop, company } = await makeHopVariety(label)
+  const api = await apiAs('brewer1')
+  const product = await ok<ApiProduct>(
+    await api.post('/api/ingredient_products', {
+      data: {
+        ingredient_id: hop.id,
+        manufacturer_party_id: company.id,
+        form: 'T90 Pellet',
+        origin: 'USA',
+        features: { alpha_acid_pct: { low: '11', high: '13' }, beta_acid_pct: { low: '3.5', high: '4.5' }, total_oil_ml_100g: { low: '2.5', high: '3' } },
+      },
+    }),
+    201,
+  )
+  made.products.add(product.id)
+  await ok(await api.post('/api/supplier_offers', { data: { product_id: product.id, supplier_party_id: company.id } }), 201)
+  return { ...(await getProduct(product.id)), company }
+}
+
+/** A hop lot of `product` with an opening amount of `lb`, alpha `alpha`, crop year 2025, received `daysAgo`. */
+export async function makeHopLot(product: ApiProduct, lb: string, daysAgo: number, alpha = '12'): Promise<ApiLot> {
+  return ok<ApiLot>(
+    await (await apiAs('brewer1')).post('/api/ingredient_lots', {
+      data: {
+        product_id: product.id,
+        lot_number: tempTag('hop lot'),
+        crop_year: 2025,
+        received_date: addDays(denverToday(), -daysAgo),
+        initial_kind: 'opening',
+        initial_quantity: lb,
+        features: { alpha_acid_pct: alpha },
+      },
+    }),
+    201,
+  )
 }

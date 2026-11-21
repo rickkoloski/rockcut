@@ -1,6 +1,7 @@
 # D60 §6 and Appendix B: grain reference data on every environment — the
-# maltsters and suppliers, one maltster product per row with its standard
-# specs, and the supplier offer it came from. No prices, lots or movements.
+# maltsters (D62: the manufacturer role) and suppliers, one product per row
+# with its standard specs, and the supplier offer it came from (a sack of
+# its size in lb). No prices, lots or movements.
 #
 # Idempotent by name: a party, a product (grain + maltster, no product name)
 # or an offer (product + supplier) that exists is left as it is, so edits
@@ -29,13 +30,13 @@ alias RockcutApi.Ingredients.{
 }
 
 parties = [
-  {"Rahr", ~w(maltster)},
-  {"Root Shoot", ~w(maltster supplier)},
-  {"Weyermann", ~w(maltster)},
-  {"Simpsons", ~w(maltster)},
-  {"Crisp", ~w(maltster)},
-  {"Dingemans", ~w(maltster)},
-  {"Grain Millers", ~w(maltster)},
+  {"Rahr", ~w(manufacturer)},
+  {"Root Shoot", ~w(manufacturer supplier)},
+  {"Weyermann", ~w(manufacturer)},
+  {"Simpsons", ~w(manufacturer)},
+  {"Crisp", ~w(manufacturer)},
+  {"Dingemans", ~w(manufacturer)},
+  {"Grain Millers", ~w(manufacturer)},
   {"BSG", ~w(supplier)}
 ]
 
@@ -102,15 +103,13 @@ rows = [
   {"Wheat, White", "Rahr", "BSG", "4.50", "85.00", "12.00", "3.25", "190", "Rahr - White Wheat (milled)", "55"}
 ]
 
-# Grains are on Grains or one of its children (Appendix A).
-grains_id = Repo.one!(from c in IngredientCategory, where: c.name == "Grains", select: c.id)
+# Grains are on Grains or one of its children (Appendix A), by key (D62).
+grain_category_ids = RockcutApi.Ingredients.Catalog.category_ids(["grains"])
 
 grain_ids =
   Repo.all(
     from i in Ingredient,
-      join: c in IngredientCategory,
-      on: c.id == i.category_id,
-      where: c.id == ^grains_id or c.parent_id == ^grains_id,
+      where: i.category_id in ^grain_category_ids,
       select: {i.name, i.id}
   )
   |> Map.new()
@@ -127,13 +126,13 @@ new_products =
           made
 
         grain_id ->
-          maltster_id = party_ids[maltster]
+          manufacturer_id = party_ids[maltster]
 
           existing =
             Repo.one(
               from p in Product,
                 where:
-                  p.ingredient_id == ^grain_id and p.maltster_party_id == ^maltster_id and
+                  p.ingredient_id == ^grain_id and p.manufacturer_party_id == ^manufacturer_id and
                     is_nil(p.name)
             )
 
@@ -143,7 +142,7 @@ new_products =
                 {product, made}
 
               nil ->
-                product = Repo.insert!(%Product{ingredient_id: grain_id, maltster_party_id: maltster_id})
+                product = Repo.insert!(%Product{ingredient_id: grain_id, manufacturer_party_id: manufacturer_id, unit: "lb"})
 
                 # Blanks stay blank; a 0 diastatic power is a real 0.
                 for {key, value} <- [
@@ -174,7 +173,8 @@ new_products =
               product_id: product.id,
               supplier_party_id: supplier_id,
               order_name: order_name,
-              sack_size_lb: Decimal.new(sack),
+              pack_name: "sack",
+              pack_size: Decimal.new(sack),
               form: if(order_name && order_name =~ "(milled)", do: "milled", else: "whole")
             })
           end
@@ -183,4 +183,4 @@ new_products =
       end
   end
 
-IO.puts("Grain reference: #{map_size(party_ids)} companies, #{new_products} new maltster products")
+IO.puts("Grain reference: #{map_size(party_ids)} companies, #{new_products} new grain products")

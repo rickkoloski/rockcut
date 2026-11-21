@@ -1,6 +1,6 @@
 # D61: Purchasing, malt contracts, reorder and totals — Spec
 
-**Status:** APPROVED by Matt 2026-11-18 (scoped 2026-11-17 and 2026-11-18; A1–A5 confirmed)
+**Status:** COMPLETE (on prod as `v2026.11.19`, 2026-11-19; approved 2026-11-18 with A1–A5, amendments from local QA 2026-11-18 and DEV QA 2026-11-19)
 **Backlog:** the D60 carry-over list (`stepwise_results/d60_grain_catalog_COMPLETE.md`), B8 fix
 `0299732` on local branch `d61-carry`
 **Concept:** 12_ingredients

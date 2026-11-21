@@ -9,9 +9,10 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { PRICE_DECIMALS, parseDecimal } from '../../lib/brewingUnits'
+import { PRICE_DECIMALS, packLabel, packPlural, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
-import { parseSacks, runningTotal, targetProgress } from '../../lib/purchasing'
+import { offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { WRAP_ITEM, WRAP_SELECT, pickerName } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientProduct, Party, PurchaseOrder, SupplierOffer } from '../../lib/types'
 
@@ -22,7 +23,7 @@ interface OrderDialogProps {
   order?: PurchaseOrder
   onSaved?: (order: PurchaseOrder) => void
   /** A new order started from To order (§4.3): its supplier and lines. */
-  initial?: { supplierId: number; lines: { offerId: number; sacks: number; price: string | null }[] }
+  initial?: { supplierId: number; lines: { offerId: number; packs: number; price: string | null }[] }
   /** Added to the title ("1 of 2" when To order starts several). */
   titleNote?: string
 }
@@ -31,7 +32,8 @@ interface OrderDialogProps {
  * D61 §3.2, §4.1: a new order or a change to an open one. A supplier, the
  * order date (today by default, never after it), expected date, reference,
  * off-contract and notes; lines of that supplier's active offers in whole
- * sacks at a price per sack (the current price filled in), and a running
+ * packs at a price per pack (D62 §3.5: sacks for grain; the current price
+ * filled in), and a running
  * total with the progress to the supplier's order target. Placed when saved
  * (decision 42). Full screen at phone width.
  */
@@ -43,15 +45,15 @@ interface Line {
   key: number
   id?: number
   offerId: number | ''
-  sacks: string
+  packs: string
   price: string
 }
 
-const WHOLE_SACKS = 'Whole sacks, 1 or more'
+const wholePacks = (packName: string | null | undefined) => `Whole ${packPlural(packName)}, 1 or more`
 
 // React keys for lines: unique for the page's life.
 let lineKeys = 0
-const newLine = (): Line => ({ key: lineKeys++, offerId: '', sacks: '', price: '' })
+const newLine = (): Line => ({ key: lineKeys++, offerId: '', packs: '', price: '' })
 
 function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDialogProps, 'open'>) {
   const [supplierId, setSupplierId] = useState<number | ''>(order?.supplier_party_id ?? initial?.supplierId ?? '')
@@ -62,9 +64,9 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   const [notes, setNotes] = useState(order?.notes ?? '')
   const [lines, setLines] = useState<Line[]>(() =>
     order
-      ? order.lines.map((l) => ({ key: lineKeys++, id: l.id, offerId: l.offer_id, sacks: String(l.sacks_ordered), price: String(Number(l.price_per_sack)) }))
+      ? order.lines.map((l) => ({ key: lineKeys++, id: l.id, offerId: l.offer_id, packs: String(l.packs_ordered), price: String(Number(l.price_per_pack)) }))
       : initial
-        ? initial.lines.map((l) => ({ key: lineKeys++, offerId: l.offerId, sacks: String(l.sacks), price: l.price != null ? String(Number(l.price)) : '' }))
+        ? initial.lines.map((l) => ({ key: lineKeys++, offerId: l.offerId, packs: String(l.packs), price: l.price != null ? String(Number(l.price)) : '' }))
         : [newLine()],
   )
   const [error, setError] = useState<string | null>(null)
@@ -86,12 +88,19 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && (p.active || p.id === order?.supplier_party_id))
   const supplier = parties.find((p) => p.id === supplierId)
   const productName = new Map(products.map((p) => [p.id, p.display_name]))
+  const pickerNames = new Map(products.map((p) => [p.id, pickerName(p)]))
+  const productUnit = new Map(products.map((p) => [p.id, p.unit]))
   // A line already on an inactive offer keeps it (lead, Stop 2 note 7); new picks are active offers only.
   const kept = new Set(order?.lines.map((l) => l.offer_id) ?? [])
   const choices = offers.filter((o) => o.supplier_party_id === supplierId && (o.active || kept.has(o.id)))
   const offerById = new Map(offers.map((o) => [o.id, o]))
-  const label = (o: SupplierOffer) =>
-    [o.order_name, productName.get(o.product_id), `${Number(o.sack_size_lb)} lb`, o.form === 'milled' ? 'milled' : 'whole'].filter(Boolean).join(' · ')
+  // Gap 8: a hop offer leads with its variety and form ("Citra T90 Pellet · Yakima Chief Hops · box · 11 lb");
+  // a grain offer reads as D61 ("Rahr - Standard 2-row · Rahr 2-Row · 55 lb · whole").
+  const label = (o: SupplierOffer) => {
+    const unit = productUnit.get(o.product_id) ?? 'lb'
+    const parts = o.pack_name === 'box' ? [pickerNames.get(o.product_id), o.order_name, offerPackText(o, unit)] : [o.order_name, productName.get(o.product_id), `${Number(o.pack_size)} ${unit}`, o.form]
+    return parts.filter(Boolean).join(' · ')
+  }
 
   const read = lines.map((l) => {
     const offer = l.offerId === '' ? undefined : offerById.get(l.offerId)
@@ -99,21 +108,31 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
     return {
       line: l,
       offer,
-      sacks: parseSacks(l.sacks),
+      packs: parsePacks(l.packs),
       price: price.ok && price.value != null ? Number(price.value) : null,
       // Sent as the typed decimal string, not a float.
       priceText: price.ok ? price.value : null,
       priceOk: price.ok && price.value != null,
     }
   })
-  const total = runningTotal(read.map((r) => ({ sacks: r.sacks, sackSize: r.offer ? Number(r.offer.sack_size_lb) : null, price: r.price })))
-  const progress = targetProgress(total.sacks, supplier?.order_target_sacks)
-  const valid = supplierId !== '' && !!orderedOn && lines.length > 0 && read.every((r) => r.offer && r.sacks != null && r.priceOk)
+  const total = runningTotal(
+    read.map((r) => ({
+      packs: r.packs,
+      packSize: r.offer ? Number(r.offer.pack_size) : null,
+      packName: r.offer?.pack_name,
+      unit: r.offer ? productUnit.get(r.offer.product_id) : undefined,
+      price: r.price,
+    })),
+  )
+  // "36 of 40 sacks" on a grain-only order; "packs" when they differ (D62 A5).
+  const linePacks = read.filter((r) => r.offer).map((r) => r.offer!.pack_name)
+  const progress = targetProgress(total.packs, supplier?.order_target_packs, linePacks.length ? sharedPackName(linePacks) : 'sack')
+  const valid = supplierId !== '' && !!orderedOn && lines.length > 0 && read.every((r) => r.offer && r.packs != null && r.priceOk)
 
   const setLine = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
   const pickOffer = (key: number, id: number | '') => {
     const o = id === '' ? undefined : offerById.get(id)
-    setLine(key, { offerId: id, price: o?.current_price ? String(Number(o.current_price.price_per_sack)) : '' })
+    setLine(key, { offerId: id, price: o?.current_price ? String(Number(o.current_price.price_per_pack)) : '' })
   }
   const pickSupplier = (id: number | '') => {
     setSupplierId(id)
@@ -122,7 +141,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   }
 
   const submit = async () => {
-    if (!valid) return setError('Each line needs an offer, whole sacks and a price')
+    if (!valid) return setError(`Each line needs an offer, whole ${packPlural(linePacks.length ? sharedPackName(linePacks) : 'sack')} and a price`)
     if (orderedOn > coloradoToday()) return setError(FUTURE_DATE)
     const body = {
       supplier_party_id: supplierId,
@@ -131,7 +150,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       reference: reference.trim() || null,
       off_contract: offContract,
       notes: notes.trim() || null,
-      lines: read.map((r) => ({ ...(r.line.id ? { id: r.line.id } : {}), offer_id: r.offer!.id, sacks_ordered: r.sacks, price_per_sack: r.priceText })),
+      lines: read.map((r) => ({ ...(r.line.id ? { id: r.line.id } : {}), offer_id: r.offer!.id, packs_ordered: r.packs, price_per_pack: r.priceText })),
       ...(order ? { lock_version: version } : {}),
     }
     try {
@@ -190,14 +209,14 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       <FormControlLabel control={<Switch checked={offContract} onChange={(e) => setOffContract(e.target.checked)} data-testid="order-off-contract" />} label="Off-contract (doesn't count against a contract)" />
 
       <Typography variant="subtitle2">Lines</Typography>
-      {read.map(({ line: l, offer, sacks }, i) => (
+      {read.map(({ line: l, offer, packs }, i) => (
         <Paper key={l.key} variant="outlined" sx={{ p: 1.5, display: 'flex', flexDirection: 'column', gap: 1.5 }} data-testid={`order-line-${i}`}>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'flex-start' }}>
             <FormControl fullWidth size="small" disabled={supplierId === ''}>
               <InputLabel id={`order-line-${i}-offer-label`}>Offer</InputLabel>
-              <Select labelId={`order-line-${i}-offer-label`} label="Offer" value={choices.some((o) => o.id === l.offerId) ? l.offerId : ''} onChange={(e) => pickOffer(l.key, e.target.value as number | '')} data-testid={`order-line-${i}-offer`}>
+              <Select labelId={`order-line-${i}-offer-label`} label="Offer" value={choices.some((o) => o.id === l.offerId) ? l.offerId : ''} onChange={(e) => pickOffer(l.key, e.target.value as number | '')} data-testid={`order-line-${i}-offer`} sx={WRAP_SELECT}>
                 {choices.map((o) => (
-                  <MenuItem key={o.id} value={o.id}>
+                  <MenuItem key={o.id} value={o.id} sx={WRAP_ITEM}>
                     {label(o)}
                     {!o.active && ' (inactive)'}
                   </MenuItem>
@@ -214,18 +233,24 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
           </Box>
           <Box sx={{ display: 'flex', gap: 1.5 }}>
             <TextField
-              label="Sacks"
+              label={packLabel(offer?.pack_name ?? 'sack')}
               size="small"
-              value={l.sacks}
-              onChange={(e) => setLine(l.key, { sacks: e.target.value })}
-              error={l.sacks.trim() !== '' && sacks == null}
-              helperText={l.sacks.trim() !== '' && sacks == null ? WHOLE_SACKS : offer ? `${Number(offer.sack_size_lb)} lb sacks` : undefined}
+              value={l.packs}
+              onChange={(e) => setLine(l.key, { packs: e.target.value })}
+              error={l.packs.trim() !== '' && packs == null}
+              helperText={
+                l.packs.trim() !== '' && packs == null
+                  ? wholePacks(offer?.pack_name ?? 'sack')
+                  : offer
+                    ? `${Number(offer.pack_size)} ${productUnit.get(offer.product_id) ?? 'lb'} ${packPlural(offer.pack_name)}`
+                    : undefined
+              }
               sx={{ flex: 1 }}
-              slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `order-line-${i}-sacks` } }}
+              slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `order-line-${i}-packs` } }}
             />
             <DecimalInput
               decimals={PRICE_DECIMALS}
-              label="$ / sack"
+              label={`$ / ${offer?.pack_name ?? 'sack'}`}
               size="small"
               value={l.price}
               onChange={(t) => setLine(l.key, { price: t })}

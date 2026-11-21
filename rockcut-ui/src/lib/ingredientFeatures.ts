@@ -1,9 +1,9 @@
-// D60 §3.4: feature values (a maltster product's standard specs, a lot's
+// D60 §3.4: feature values (a product's standard specs, a lot's
 // specs) on the screens: which feature types apply to a category, the boxes'
 // drafts, the payload the API takes, and a lot value that differs from the
 // standard.
-import { formatQuantity, parseDecimal, productSackSize, type QuantityDisplay } from './brewingUnits'
-import type { FeatureType, FeatureValue, FeatureValues, IngredientCategory, IngredientProduct } from './types'
+import { formatQuantity, packPlural, parseDecimal, productPack, type Pack, type QuantityDisplay } from './brewingUnits'
+import type { FeatureApplicability, FeatureType, FeatureValue, FeatureValues, IngredientCategory, IngredientProduct } from './types'
 
 /** One feature's box: the text typed, and what was typed in another unit when the convert popup filled it. */
 export interface FeatureDraft {
@@ -97,17 +97,187 @@ export function differs(lot: Pick<FeatureValue, 'value'> | undefined, standard: 
   return Number(lot.value).toFixed(decimals) !== Number(standard.value).toFixed(decimals)
 }
 
-/** Grains and its children, for the grains screens: the parent, and the children in order. */
+/**
+ * Grains and its children, for the grains screens: the parent, and the
+ * children in order. D62: found by the category's key, so renaming Grains
+ * in Settings changes nothing.
+ */
 export function grainCategories(categories: IngredientCategory[]): { grains: IngredientCategory | null; children: IngredientCategory[] } {
-  const grains = categories.find((c) => c.name === 'Grains' && c.parent_id == null) ?? null
+  const grains = categories.find((c) => c.key === 'grains' && c.parent_id == null) ?? null
   const children = grains ? categories.filter((c) => c.parent_id === grains.id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)) : []
   return { grains, children }
 }
+
+/**
+ * D62: the top-level category with `key` and its children, in order (Grains
+ * and Base, Crystal/Caramel, …; Hops and none).
+ */
+export function keyedCategories(categories: IngredientCategory[], key: string): { category: IngredientCategory | null; children: IngredientCategory[] } {
+  const category = categories.find((c) => c.key === key && c.parent_id == null) ?? null
+  const children = category ? categories.filter((c) => c.parent_id === category.id).sort((a, b) => a.sort_order - b.sort_order || a.name.localeCompare(b.name)) : []
+  return { category, children }
+}
+
+/** D62 §3.6 (amendments): a hop product's forms, as the API lists them. */
+export const HOP_FORMS = ['T90 Pellet', 'Cryo', 'Whole leaf', 'Extract'] as const
+
+/** D62: the categories with products, packs and movements (Stage 2: grain and hops). */
+export const MANAGED_KEYS = ['grains', 'hops'] as const
+export const isManagedKey = (key: string | null | undefined) => !!key && (MANAGED_KEYS as readonly string[]).includes(key)
+
+/** What one of a category's items is called on its screens ("Grain", "Hop"). */
+export const itemLabel = (key: string | null | undefined) => (key === 'hops' ? 'Hop' : key === 'grains' ? 'Grain' : 'Ingredient')
+
+/** What one of a category's products is called ("Maltster product", "Hop product"). */
+export const productLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster product' : key === 'hops' ? 'Hop product' : 'Product')
+
+/**
+ * D62 §3.4: how a feature lives in a category (or its parent): its
+ * applicability row, the category's own first; null when it doesn't apply.
+ */
+export function applicability(type: Pick<FeatureType, 'categories'>, categoryId: number | null | undefined, parentId?: number | null): FeatureApplicability | null {
+  const rows = type.categories ?? []
+  return rows.find((c) => c.category_id === categoryId) ?? rows.find((c) => parentId != null && c.category_id === parentId) ?? null
+}
+
+/** The feature types a category's products carry (a standard or a range), in order. */
+export function productTypesFor(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null): FeatureType[] {
+  return typesFor(types, categoryId, parentId).filter((t) => (applicability(t, categoryId, parentId)?.product_mode ?? 'value') !== 'none')
+}
+
+/** The feature types a category's lots carry (copied or entered), in order. */
+export function lotTypesFor(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null): FeatureType[] {
+  return typesFor(types, categoryId, parentId).filter((t) => (applicability(t, categoryId, parentId)?.lot_mode ?? 'copy') !== 'none')
+}
+
+/** The keys of the features a category's lots must have (hops: alpha acid). */
+export function requiredLotKeys(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null): string[] {
+  return typesFor(types, categoryId, parentId)
+    .filter((t) => applicability(t, categoryId, parentId)?.lot_required)
+    .map((t) => t.key)
+}
+
+/** True when the category keeps this feature as a typical range on the product. */
+export const isRangeType = (type: FeatureType, categoryId: number | null | undefined, parentId?: number | null) =>
+  applicability(type, categoryId, parentId)?.product_mode === 'range'
+
+/**
+ * A range as the screens show it (D62 lead decisions 1, gap 2): "11–13",
+ * "12.5" when both ends are the same, "≥ 12" with no high end, "≤ 9" with no
+ * low end; null with neither. The caller adds the unit.
+ */
+export function formatRange(v: Pick<FeatureValue, 'value' | 'value_high'> | null | undefined, decimals: number): string | null {
+  // Ranges read as typed on the supplier's sheet, without padding ("11–13", not "11.00–13.00").
+  const end = (x: string | null | undefined) => (x != null && x !== '' ? Number(x).toLocaleString('en-US', { maximumFractionDigits: decimals }) : '')
+  const low = end(v?.value)
+  const high = end(v?.value_high)
+  if (low && high) return low === high ? low : `${low}–${high}`
+  if (low) return `≥ ${low}`
+  if (high) return `≤ ${high}`
+  return null
+}
+
+/** True when `value` lies outside the range (an open end doesn't limit); false with no value or range. */
+export function outsideRange(value: string | number | null | undefined, range: Pick<FeatureValue, 'value' | 'value_high'> | null | undefined): boolean {
+  if (value == null || value === '' || !range) return false
+  const n = Number(value)
+  if (Number.isNaN(n)) return false
+  const low = range.value != null && range.value !== '' ? Number(range.value) : null
+  const high = range.value_high != null && range.value_high !== '' ? Number(range.value_high) : null
+  return (low != null && n < low) || (high != null && n > high)
+}
+
+/** A range's two boxes (D62 §3.4). */
+export interface RangeDraft {
+  low: string
+  high: string
+}
+
+export type RangeDrafts = Record<string, RangeDraft>
+
+/** Range boxes filled from stored values. */
+export function rangeDraftsFrom(values: FeatureValues | null | undefined, types: FeatureType[]): RangeDrafts {
+  return Object.fromEntries(types.map((t) => [t.key, { low: values?.[t.key]?.value ?? '', high: values?.[t.key]?.value_high ?? '' }]))
+}
+
+/**
+ * What's wrong with a range's boxes, as the API says it: an end that isn't
+ * a number, has too many decimals or is out of bounds, or "Alpha acid: low
+ * is above high"; null when it's fine (either end may be blank).
+ */
+export function rangeDraftError(type: FeatureType, d: RangeDraft | undefined): string | null {
+  const low = parseDecimal(d?.low ?? '', type.decimals)
+  const high = parseDecimal(d?.high ?? '', type.decimals)
+  if (!low.ok) return `${type.label}: ${low.error}`
+  if (!high.ok) return `${type.label}: ${high.error}`
+  const bounds = rangeError(type, low.value == null ? null : Number(low.value)) ?? rangeError(type, high.value == null ? null : Number(high.value))
+  if (bounds) return bounds
+  if (low.value != null && high.value != null && Number(low.value) > Number(high.value)) return `${type.label}: low is above high`
+  return null
+}
+
+/**
+ * The `features` the API takes for ranges: `{low, high}` per range with
+ * either end filled, `null` for one emptied that had a stored value.
+ */
+export function rangesPayload(drafts: RangeDrafts, stored?: FeatureValues | null): Record<string, { low: string | null; high: string | null } | null> {
+  const out: Record<string, { low: string | null; high: string | null } | null> = {}
+  for (const [key, d] of Object.entries(drafts)) {
+    const low = parseDecimal(d.low)
+    const high = parseDecimal(d.high)
+    if (!low.ok || !high.ok) continue
+    if (low.value == null && high.value == null) {
+      if (stored?.[key]) out[key] = null
+      continue
+    }
+    out[key] = { low: low.value, high: high.value }
+  }
+  return out
+}
+
+/**
+ * D62: a category's key, or its parent's for a child (`grains`, `hops`, …);
+ * null when neither has one.
+ */
+export function categoryKey(
+  categories: Pick<IngredientCategory, 'id' | 'key' | 'parent_id'>[],
+  category: Pick<IngredientCategory, 'id' | 'parent_id'> & { key?: string | null } | null | undefined,
+): string | null {
+  if (!category) return null
+  if (category.key) return category.key
+  const parent = category.parent_id != null ? categories.find((c) => c.id === category.parent_id) : null
+  return parent?.key ?? null
+}
+
+/**
+ * D62 lead decisions 1, gap 5: the manufacturers with products in the
+ * categories with these keys (grain screens list maltsters, not hop growers),
+ * in the order given. `keep` (a product's current manufacturer) stays in
+ * whatever it makes.
+ */
+export function manufacturersFor<T extends { id: number }>(
+  parties: T[],
+  products: Pick<IngredientProduct, 'manufacturer_party_id' | 'category_key'>[],
+  keys: readonly string[],
+  keep?: number | null,
+): T[] {
+  const ids = new Set(products.filter((p) => p.category_key != null && keys.includes(p.category_key)).map((p) => p.manufacturer_party_id))
+  return parties.filter((p) => ids.has(p.id) || p.id === keep)
+}
+
+/** D62 §3.2: what the manufacturer is called on a category's screens ("Maltster" for grain). */
+export const manufacturerLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster' : 'Manufacturer')
 
 /** True for Grains and its children (D61 carry-over 5: they take no custom fields). */
 export function isGrainCategory(categories: IngredientCategory[], id: number): boolean {
   const { grains, children } = grainCategories(categories)
   return !!grains && (grains.id === id || children.some((c) => c.id === id))
+}
+
+/** D62 §3.1: a category the catalog manages, or a child of one (Grains, Hops): no custom fields. */
+export function isManagedCategory(categories: IngredientCategory[], id: number): boolean {
+  const category = categories.find((c) => c.id === id)
+  return isManagedKey(categoryKey(categories, category))
 }
 
 /**
@@ -129,11 +299,26 @@ export function categoryOptions(categories: IngredientCategory[]): { category: I
   ])
 }
 
-/** What the grains list's search matches: grain, maltster, product name, suppliers and their order names. */
+/**
+ * D62 lead decisions 1, gap 8: a product in a line picker. A product with a
+ * form leads with its variety and form, "Citra T90 Pellet · Yakima Chief
+ * Hops", so a phone that cuts the end off still tells one company's lines
+ * apart; grain keeps its name ("Rahr 2-Row").
+ */
+export function pickerName(p: Pick<IngredientProduct, 'display_name' | 'form' | 'name'> & { ingredient?: { name: string } | null; manufacturer?: { name: string } | null }): string {
+  if (!p.form || !p.ingredient || !p.manufacturer) return p.display_name
+  return `${p.ingredient.name} ${p.form}${p.name ? ` (${p.name})` : ''} · ${p.manufacturer.name}`
+}
+
+/** A select (and its menu items) whose long names wrap instead of being cut off at phone width (gap 8). */
+export const WRAP_SELECT = { '& .MuiSelect-select.MuiInputBase-input': { whiteSpace: 'normal', overflowWrap: 'anywhere' } } as const
+export const WRAP_ITEM = { whiteSpace: 'normal', overflowWrap: 'anywhere' } as const
+
+/** What the grains list's search matches: ingredient, manufacturer, product name, suppliers and their order names. */
 export function productMatches(p: IngredientProduct, term: string): boolean {
   const t = term.trim().toLowerCase()
   if (!t) return true
-  return [p.display_name, p.ingredient?.name, p.maltster?.name, p.name, ...(p.offers ?? []).flatMap((o) => [o.supplier?.name, o.order_name])]
+  return [p.display_name, p.ingredient?.name, p.manufacturer?.name, p.name, ...(p.offers ?? []).flatMap((o) => [o.supplier?.name, o.order_name])]
     .filter(Boolean)
     .join(' ')
     .toLowerCase()
@@ -144,16 +329,46 @@ export function productMatches(p: IngredientProduct, term: string): boolean {
  * A product's on-hand as the account shows it (§3.7, D61 carry-over 3): with
  * expired stock, the usable part and the expired part ("11 sacks 50 lb usable
  * · 43 lb expired", "650 lb usable · 43 lb expired"); without, just the
- * amount. The product header, Grains list, Count and Record movement all use
- * it, so they read the same.
+ * amount, in its pack and unit (D62 §3.5). The product header, Grains list,
+ * Count and Record movement all use it, so they read the same.
  */
 export function onHandText(
-  p: { on_hand_lb: string | number | null; expired_lb?: string | number | null; offers?: IngredientProduct['offers'] },
+  p: { on_hand: string | number | null; expired?: string | number | null; unit?: string | null; offers?: IngredientProduct['offers'] },
   mode: QuantityDisplay,
-  sackSize = productSackSize(p.offers),
+  pack: Pack | null = productPack(p.offers),
 ): string {
-  const expired = Number(p.expired_lb ?? 0)
-  if (!(expired > 0)) return formatQuantity(p.on_hand_lb, sackSize, mode)
-  const usable = Math.round((Number(p.on_hand_lb ?? 0) - expired) * 100) / 100
-  return `${formatQuantity(usable, sackSize, mode)} usable · ${formatQuantity(expired, sackSize, mode)} expired`
+  const show = (q: string | number | null) => formatQuantity(q, pack?.name, pack?.size, p.unit, mode)
+  const expired = Number(p.expired ?? 0)
+  if (!(expired > 0)) return show(p.on_hand)
+  const usable = Math.round((Number(p.on_hand ?? 0) - expired) * 100) / 100
+  return `${show(usable)} usable · ${show(expired)} expired`
+}
+
+/**
+ * The quantity toggle's labels on a page with one pack and one unit (lead,
+ * Stop 1 note 1): "Sacks + lb" / "lb" on grain, "Boxes + lb" / "lb" on
+ * hops, "Pails + gal" / "gal" on a purée.
+ */
+export function toggleLabels(packName: string | null | undefined, unit: string | null | undefined): { packsLabel: string; totalLabel: string } {
+  const plural = packPlural(packName)
+  const u = unit ?? 'lb'
+  return { packsLabel: `${plural.charAt(0).toUpperCase()}${plural.slice(1)} + ${u}`, totalLabel: u }
+}
+
+/**
+ * D62 §3.4: a hop lot's crop year as typed: a four-digit year from 2000
+ * through next year (Colorado). `{year}` or `{error}` (blank: "Enter the
+ * crop year").
+ */
+export function parseCropYear(text: string, today: string): { year: number; error: null } | { year: null; error: string } {
+  const t = text.trim()
+  const last = Number(today.slice(0, 4)) + 1
+  if (t === '') return { year: null, error: 'Enter the crop year' }
+  if (!/^\d{4}$/.test(t) || Number(t) < 2000 || Number(t) > last) return { year: null, error: `A year from 2000 to ${last}` }
+  return { year: Number(t), error: null }
+}
+
+/** The required lot features (`requiredLotKeys`) a lot's boxes leave empty, by label ("Alpha acid"). */
+export function missingRequired(drafts: FeatureDrafts, types: FeatureType[], required: string[]): string[] {
+  return types.filter((t) => required.includes(t.key) && (drafts[t.key]?.text ?? '').trim() === '').map((t) => t.label)
 }

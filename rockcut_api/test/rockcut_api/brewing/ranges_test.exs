@@ -35,7 +35,7 @@ defmodule RockcutApi.Brewing.RangesTest do
     {BatchLogEntry, :gravity, "0.950", "1.200", "0.5", "12.5", @sg},
     {BatchLogEntry, :temperature, "20", "220", "19", "221", "must be between 20 and 220"},
     {BatchLogEntry, :ph, "0", "14", "-0.1", "14.1", "must be between 0 and 14"},
-    {IngredientLot, :sack_size_lb, "0.01", "10000", "0", "10000.5",
+    {IngredientLot, :pack_size, "0.01", "10000", "0", "10000.5",
      "must be more than 0 and at most 10,000"},
     {MashStep, :temperature, "32", "212", "31", "213", "must be between 32 and 212"},
     {RecipeProcessStep, :temperature, "20", "212", "19", "213", "must be between 20 and 212"},

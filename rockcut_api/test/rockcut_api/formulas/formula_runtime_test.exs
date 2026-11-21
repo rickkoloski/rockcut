@@ -10,7 +10,7 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
   # ── Test data helpers ──────────────────────────────────────────────
 
   defp create_ingredient_with_lots(_context) do
-    {:ok, category} = Brewing.create_ingredient_category(%{name: "Hops"})
+    category = RockcutApi.IngredientFixtures.keyed_category!("Hops", "hops")
     {:ok, ingredient} = Brewing.create_ingredient(%{name: "Cascade", category_id: category.id})
 
     {:ok, lot1} =
@@ -50,8 +50,8 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
 
   defp create_recipe_with_ingredients(_context) do
     # Create categories
-    {:ok, hop_cat} = Brewing.create_ingredient_category(%{name: "Hops"})
-    {:ok, grain_cat} = Brewing.create_ingredient_category(%{name: "Grains"})
+    hop_cat = RockcutApi.IngredientFixtures.keyed_category!("Hops", "hops")
+    grain_cat = RockcutApi.IngredientFixtures.keyed_category!("Grains", "grains")
 
     # Create ingredients
     {:ok, cascade} = Brewing.create_ingredient(%{name: "Cascade", category_id: hop_cat.id})
@@ -136,7 +136,8 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
     setup :create_ingredient_with_lots
 
     test "returns {:ok, ...} with value and duration_ms", %{ingredient: ingredient} do
-      result = FormulaRuntime.execute("inventory_on_hand", %{"ingredient_id" => ingredient.id}, @context)
+      result =
+        FormulaRuntime.execute("inventory_on_hand", %{"ingredient_id" => ingredient.id}, @context)
 
       assert {:ok, %{value: value, duration_ms: duration}} = result
       assert is_number(value) or is_struct(value, Decimal)
@@ -168,7 +169,8 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
       # IBU should be a positive number for a recipe with hops
       ibu_float = if is_struct(ibu, Decimal), do: Decimal.to_float(ibu), else: ibu
       assert ibu_float > 0
-      assert ibu_float < 200  # sanity check — no beer has 200+ IBU
+      # sanity check — no beer has 200+ IBU
+      assert ibu_float < 200
       assert is_integer(duration)
     end
   end
@@ -185,7 +187,8 @@ defmodule RockcutApi.Formulas.FormulaRuntimeTest do
       # OG should be in the 1.0XX range for a typical beer
       og_float = if is_struct(og, Decimal), do: Decimal.to_float(og), else: og
       assert og_float >= 1.0
-      assert og_float < 1.200  # sanity check
+      # sanity check
+      assert og_float < 1.200
       assert is_integer(duration)
     end
   end

@@ -9,7 +9,7 @@ import { SACK, apiAs, cleanupIngredients, expectOnHand, getOrder, lotsOf, makeLo
 // one movement.
 
 test.use({ storageState: authFile('brewer1') })
-test.beforeEach(async () => setQuantityDisplay('brewer1', 'sacks'))
+test.beforeEach(async () => setQuantityDisplay('brewer1', 'packs'))
 test.afterAll(cleanupIngredients)
 
 /** Chrome's network throttling (CDP): every request waits about 1.5 s. */
@@ -34,7 +34,7 @@ test('S1: a double-click on Save in Add lot writes one lot', async ({ page }) =>
   const posts = countPosts(page, '/api/ingredient_lots')
   const d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
   await d.getByTestId('lot-number').fill(tempTag('S1'))
-  await d.getByTestId('lot-quantity-sacks').fill('2')
+  await d.getByTestId('lot-quantity-packs').fill('2')
   const fast = await slow(page)
   const save = d.getByRole('button', { name: 'Save' })
   await save.dblclick()
@@ -54,7 +54,7 @@ test('S2: a double-click on Save in Record movement writes one movement set', as
   const posts = countPosts(page, '/api/inventory_movements')
   const d = await openDialog(page, page.getByTestId('product-record-movement'), 'movement-dialog')
   // Oldest first, 4 sacks: one POST that touches both lots.
-  await d.getByTestId('movement-quantity-sacks').fill('4')
+  await d.getByTestId('movement-quantity-packs').fill('4')
   const fast = await slow(page)
   const save = d.getByRole('button', { name: 'Save' })
   await save.dblclick()
@@ -63,7 +63,7 @@ test('S2: a double-click on Save in Record movement writes one movement set', as
   await fast()
   expect(posts).toHaveLength(1)
   const used = (await movementsOf(product.id)).filter((m) => m.kind === 'used')
-  expect(used.map((m) => Number(m.quantity_lb)).sort((a, b) => a - b)).toEqual([-3 * SACK, -1 * SACK])
+  expect(used.map((m) => Number(m.quantity)).sort((a, b) => a - b)).toEqual([-3 * SACK, -1 * SACK])
   await expectOnHand(product.id, 2 * SACK)
 })
 
@@ -74,7 +74,7 @@ test('S3: a double-click on Save in New order places one order (D61)', async ({ 
   const d = await openDialog(page, page.getByTestId('orders-new'), 'order-dialog')
   await pick(page, d, 'Supplier', supplier.name)
   await pick(page, d, 'Offer', /S3 slow order/)
-  await d.getByTestId('order-line-0-sacks').fill('2')
+  await d.getByTestId('order-line-0-packs').fill('2')
   const fast = await slow(page)
   const save = d.getByRole('button', { name: 'Save' })
   await save.dblclick()
@@ -89,7 +89,7 @@ test('S3: a double-click on Save in New order places one order (D61)', async ({ 
 test('S4: a double-click on Receive receives once (D61)', async ({ page }) => {
   const { product, supplier, offer } = await makePurchasing('S4 slow receive')
   await makeLot(product, 1, 10)
-  const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 3 }])
+  const order = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 3 }])
   await page.goto(`/ingredients/orders/${order.id}`)
   const posts = countPosts(page, `/api/purchase_orders/${order.id}/receive`)
   const d = await openDialog(page, page.getByTestId('order-receive'), 'receive-dialog')

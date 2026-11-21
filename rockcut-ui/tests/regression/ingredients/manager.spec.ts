@@ -10,7 +10,7 @@ test.afterAll(cleanupIngredients)
 
 test.describe('breweryMgr (Brewery manager)', () => {
   test.use({ storageState: authFile('breweryMgr') })
-  test.beforeEach(async () => setQuantityDisplay('breweryMgr', 'sacks'))
+  test.beforeEach(async () => setQuantityDisplay('breweryMgr', 'packs'))
 
   test('M1: a total 2 sacks under on-hand comes off the oldest lot; Count by lot (8 and 0) adjusts both, the empty lot is Depleted', async ({ page }) => {
     const product = await makeProduct('M1 count')
@@ -21,7 +21,7 @@ test.describe('breweryMgr (Brewery manager)', () => {
 
     await page.getByTestId('product-count').click()
     let d = page.getByTestId('count-dialog')
-    await d.getByTestId('count-total-sacks').fill('11')
+    await d.getByTestId('count-total-packs').fill('11')
     await d.getByRole('button', { name: 'Save count' }).click()
     await expect(d).toHaveCount(0)
     await expect(page.getByTestId('product-on-hand')).toHaveText('11 sacks')
@@ -30,15 +30,15 @@ test.describe('breweryMgr (Brewery manager)', () => {
     await expectLotOnHand(older.id, product.id, SACK)
     await expectLotOnHand(newer.id, product.id, 10 * SACK)
     let counts = (await movementsOf(product.id)).filter((m) => m.kind === 'count')
-    expect(counts.map((m) => [m.lot_id, Number(m.quantity_lb)])).toEqual([[older.id, -2 * SACK]])
+    expect(counts.map((m) => [m.lot_id, Number(m.quantity)])).toEqual([[older.id, -2 * SACK]])
 
     await page.getByTestId('product-count').click()
     d = page.getByTestId('count-dialog')
     await d.getByTestId('count-by-lot').check()
     await expect(d.getByTestId(`count-lot-${older.id}`).first()).toContainText('On hand: 1 sack')
     await expect(d.getByTestId(`count-lot-${newer.id}`).first()).toContainText('On hand: 10 sacks')
-    await d.getByTestId(`count-lot-${newer.id}-sacks`).fill('8')
-    await d.getByTestId(`count-lot-${older.id}-sacks`).fill('0')
+    await d.getByTestId(`count-lot-${newer.id}-packs`).fill('8')
+    await d.getByTestId(`count-lot-${older.id}-packs`).fill('0')
     await d.getByRole('button', { name: 'Save count' }).click()
     await expect(d).toHaveCount(0)
 

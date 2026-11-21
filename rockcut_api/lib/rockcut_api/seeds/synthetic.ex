@@ -913,8 +913,8 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(l in Label, where: like(l.name, ^pattern)))
     compact_idea_boards()
 
-    # D60: tagged grains, maltster products (on the product name, or under a
-    # tagged grain or maltster) and their offers (prices cascade); every lot
+    # D60: tagged grains, products (on the product name, or under a tagged
+    # grain or manufacturer) and their offers (prices cascade); every lot
     # of those, or tagged on the lot number, with the recipe lines that use
     # it (feature values and movements cascade: the API refuses to delete a
     # lot with movements, this doesn't); then tagged companies nothing else
@@ -927,7 +927,7 @@ defmodule RockcutApi.Seeds.Synthetic do
         from(p in Product,
           where:
             like(p.name, ^pattern) or p.ingredient_id in subquery(grain_ids) or
-              p.maltster_party_id in subquery(party_ids),
+              p.manufacturer_party_id in subquery(party_ids),
           select: p.id
         )
       )
@@ -1011,7 +1011,7 @@ defmodule RockcutApi.Seeds.Synthetic do
                 select: l.supplier_party_id
               )
             ) and
-            p.id not in subquery(from(r in Product, select: r.maltster_party_id)) and
+            p.id not in subquery(from(r in Product, select: r.manufacturer_party_id)) and
             p.id not in subquery(from(o in SupplierOffer, select: o.supplier_party_id))
       )
     )
@@ -1142,7 +1142,7 @@ defmodule RockcutApi.Seeds.Synthetic do
       Repo.one(
         from(p in Product,
           join: i in assoc(p, :ingredient),
-          join: m in assoc(p, :maltster),
+          join: m in assoc(p, :manufacturer),
           where: i.name == "2-Row" and m.name == "Rahr" and is_nil(p.name),
           preload: :feature_values
         )
@@ -1151,14 +1151,15 @@ defmodule RockcutApi.Seeds.Synthetic do
     if product && bsg do
       for {number, days_ago, sacks} <- @seed_lots do
         received = Date.add(today, -days_ago)
-        sack = Decimal.new(55)
+        size = Decimal.new(55)
 
         lot =
           Repo.insert!(%IngredientLot{
             ingredient_id: product.ingredient_id,
             product_id: product.id,
             supplier_party_id: bsg.id,
-            sack_size_lb: sack,
+            pack_name: "sack",
+            pack_size: size,
             lot_number: "#{@seed_tag} #{number}",
             received_date: received,
             status: "available"
@@ -1175,7 +1176,7 @@ defmodule RockcutApi.Seeds.Synthetic do
         Repo.insert!(%Movement{
           lot_id: lot.id,
           kind: "opening",
-          quantity_lb: Decimal.mult(sack, sacks),
+          quantity: Decimal.mult(size, sacks),
           occurred_on: received,
           note: "#{@seed_tag} Opening amount",
           entered_by_id: u["brewer1"].id

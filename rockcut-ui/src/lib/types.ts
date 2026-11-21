@@ -96,6 +96,8 @@ export interface WaterProfile {
 export interface IngredientCategory {
   id: number
   name: string
+  /** D62: a top-level category's stable key (`grains`, `hops`, …; never its name); null on children. */
+  key?: string | null
   /** D60 §3.1: one level; Grains' children (Base, Crystal/Caramel, …). */
   parent_id: number | null
   sort_order: number
@@ -122,11 +124,29 @@ export interface Ingredient {
   id: number
   name: string
   category_id: number
-  category: { id: number; name: string; parent_id?: number | null } | null
+  category: CategorySummary | null
   notes: string | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
   updated_at: string
+}
+
+/** A category as other records embed it; `key` is D62's (null on a child). */
+export interface CategorySummary {
+  id: number
+  name: string
+  key?: string | null
+  parent_id?: number | null
+}
+
+/** A product as other records embed it; `unit` is D62's (lb for grain). */
+export interface ProductSummary {
+  id: number
+  name: string | null
+  display_name: string
+  unit?: string
+  form?: string | null
+  manufacturer: PartySummary | null
 }
 
 export interface IngredientLotSummary {
@@ -134,7 +154,8 @@ export interface IngredientLotSummary {
   lot_number: string | null
   product_id: number | null
   supplier_party_id: number | null
-  sack_size_lb: string | null
+  pack_name: string | null
+  pack_size: string | null
   received_date: string | null
   status: string
   /** D60 §3.4: the lot's specs by feature key. */
@@ -145,23 +166,33 @@ export interface IngredientLotSummary {
 export interface IngredientLot {
   id: number
   ingredient_id: number
-  ingredient: { id: number; name: string; category: { id: number; name: string; parent_id?: number | null } | null } | null
+  ingredient: { id: number; name: string; category: CategorySummary | null } | null
   lot_number: string | null
-  /** D60: the maltster product (grain lots). */
+  /** D60: the product (grain lots). */
   product_id: number | null
-  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null } | null
+  product: ProductSummary | null
   supplier_party_id: number | null
   supplier: PartySummary | null
-  sack_size_lb: string | null
+  /** D62 §3.5: the pack ("sack", 55) in the product's unit. */
+  pack_name: string | null
+  pack_size: string | null
+  /** The product's unit (null with no product). */
+  unit?: string | null
   received_date: string | null
+  /** D62 §3.4: a hop lot's crop year (required there; null elsewhere). */
+  crop_year?: number | null
   status: string
   features: FeatureValues | null
-  /** The sum of its movements, in lb (decimal string). */
-  on_hand_lb: string | null
+  /** D62 §3.4: the feature keys whose value is outside the product's typical range. */
+  outside_range?: string[]
+  /** D62 §4.8: a hop lot's label for the recipe's lot picker ("YCH Citra T90 Pellet · L-1 · 2025 · 12.4% AA"); null otherwise. */
+  label?: string | null
+  /** The sum of its movements, in the product's unit (decimal string). */
+  on_hand: string | null
   /** Why the lot can't be deleted (later movements, or a recipe uses it), or null (lead decisions 3, gap 15). */
   delete_blocked?: string | null
-  /** D61 §3.4: $/lb (its latest costed receipt, else the offer price: `estimated`), value of the on-hand; `unvalued` with no price. */
-  cost_per_lb?: string | null
+  /** D61 §3.4: $ per unit (its latest costed receipt, else the offer price: `estimated`), value of the on-hand; `unvalued` with no price. */
+  unit_cost?: string | null
   value?: string | null
   estimated?: boolean
   unvalued?: boolean
@@ -172,7 +203,8 @@ export interface IngredientLot {
 
 // ── D60 grain catalog and inventory ──
 
-export type PartyRole = 'maltster' | 'supplier' | 'partner_brewery'
+/** D62 §3.2: a maltster is a `manufacturer` (grain screens still say "Maltster"). */
+export type PartyRole = 'manufacturer' | 'supplier' | 'partner_brewery'
 
 export interface PartySummary {
   id: number
@@ -182,8 +214,8 @@ export interface PartySummary {
 export interface Party extends PartySummary {
   notes: string | null
   active: boolean
-  /** D61 decision 48: a supplier's order size in sacks (BSG: 40). */
-  order_target_sacks?: number | null
+  /** D61 decision 48: a supplier's order size in packs (BSG: 40). */
+  order_target_packs?: number | null
   /** D61 carry-over 2: why Delete is refused (what uses the company), or null. */
   delete_blocked?: string | null
   roles: PartyRole[] | null
@@ -191,9 +223,14 @@ export interface Party extends PartySummary {
   updated_at: string
 }
 
-/** A feature value as the API sends it (decimals as strings, trailing zeros dropped). */
+/**
+ * A feature value as the API sends it (decimals as strings, trailing zeros
+ * dropped). D62 §3.4: a product's range (hops' typical alpha) is `value`
+ * (low) to `value_high`, either of them null.
+ */
 export interface FeatureValue {
-  value: string
+  value: string | null
+  value_high?: string | null
   entered_value: string | null
   entered_unit: string | null
 }
@@ -209,14 +246,31 @@ export interface FeatureType {
   max: string | null
   decimals: number
   entered_units: string[]
-  categories: { category_id: number; name: string; sort_order: number; required: boolean }[] | null
+  categories: FeatureApplicability[] | null
+}
+
+/**
+ * D62 §3.4: where a feature lives in a category: on the product (`value`, a
+ * standard; `range`, typical low–high; `none`) and on the lot (`copy` from
+ * the standard; `enter` each time; `none`), and whether a lot must have it.
+ */
+export interface FeatureApplicability {
+  category_id: number
+  name: string
+  sort_order: number
+  required: boolean
+  product_mode?: 'none' | 'value' | 'range'
+  lot_mode?: 'none' | 'copy' | 'enter'
+  lot_required?: boolean
+  only_unit?: string | null
 }
 
 export interface OfferPrice {
   id: number
   offer_id: number
-  price_per_sack: string
-  price_per_lb: string | null
+  price_per_pack: string
+  /** $ per unit of the product (the price ÷ the pack size). */
+  price_per_unit: string | null
   effective_on: string
   note: string | null
   entered_by: { id: number; name: string } | null
@@ -229,8 +283,11 @@ export interface SupplierOffer {
   supplier_party_id: number
   supplier: PartySummary | null
   order_name: string | null
-  sack_size_lb: string
-  form: 'milled' | 'whole'
+  /** D62 §3.5: the pack, e.g. "sack" · 55 (in the product's unit). */
+  pack_name: string
+  pack_size: string
+  /** Grain's alone; null on a hop offer (D62 lead decisions 1, gap 3). */
+  form: 'milled' | 'whole' | null
   notes: string | null
   active: boolean
   current_price: OfferPrice | null
@@ -238,28 +295,37 @@ export interface SupplierOffer {
   updated_at: string
 }
 
-/** A maltster product ("Rahr 2-Row"). */
+/** A product ("Rahr 2-Row"): an ingredient from one manufacturer (the maltster, for grain). */
 export interface IngredientProduct {
   id: number
   ingredient_id: number
-  ingredient: { id: number; name: string; category: { id: number; name: string; parent_id: number | null } | null } | null
-  category: { id: number; name: string; parent_id: number | null } | null
-  maltster_party_id: number
-  maltster: PartySummary | null
+  ingredient: { id: number; name: string; category: CategorySummary | null } | null
+  category: CategorySummary | null
+  /** D62: the top-level category's key (`grains` for a grain on Base). */
+  category_key: string | null
+  manufacturer_party_id: number
+  manufacturer: PartySummary | null
   name: string | null
   display_name: string
+  /** D62 §3.3: the unit it's kept in (lb for grain), its form and origin (not used for grain). */
+  unit: string
+  form: string | null
+  origin: string | null
   notes: string | null
   active: boolean
   features: FeatureValues | null
   offers: SupplierOffer[] | null
-  on_hand_lb: string
-  /** The part of `on_hand_lb` in expired lots. */
-  expired_lb: string
-  /** D61 §3.5: the reorder point in whole sacks (null: none), and on hand (not expired) under it. */
-  min_on_hand_sacks?: number | null
+  /** In `unit`. */
+  on_hand: string
+  /** The part of `on_hand` in expired lots. */
+  expired: string
+  /** D61 §3.5: the reorder point in whole packs (null: none), and on hand (not expired) under it. */
+  min_on_hand_packs?: number | null
   /** The offer picked on To order (lead decisions 1, gap 4); null: the default. */
   reorder_offer_id?: number | null
   below_minimum?: boolean
+  /** D62 lead decisions 1, gap 9: sent back on a save; a save from an older version is refused (409). */
+  lock_version: number
   inserted_at: string
   updated_at: string
 }
@@ -272,8 +338,8 @@ export interface InventoryMovement {
   lot_number: string | null
   product_id: number | null
   kind: MovementKind
-  /** Signed lb: out is negative. */
-  quantity_lb: string
+  /** Signed, in the product's unit: out is negative. */
+  quantity: string
   occurred_on: string
   partner_party_id: number | null
   partner: PartySummary | null
@@ -296,15 +362,16 @@ export interface PurchaseOrderLine {
     order_name: string | null
     /** The order name, else the product. */
     label: string
-    sack_size_lb: string
+    pack_name: string
+    pack_size: string
     product_id: number
-    product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+    product: ProductSummary
   }
-  sacks_ordered: number
-  sacks_received: number | null
-  price_per_sack: string
-  /** lb and $ at the sacks the line counts: received once the order is received, else ordered (decision 35). */
-  line_lb: string
+  packs_ordered: number
+  packs_received: number | null
+  price_per_pack: string
+  /** The quantity (product's unit) and $ at the packs the line counts: received once the order is received, else ordered (decision 35). */
+  line_quantity: string
   line_dollars: string
 }
 
@@ -327,32 +394,45 @@ export interface PurchaseOrder {
   /** Lead decisions 2 (gap 1): sent back on Edit; a save from an older one is 409. */
   lock_version: number
   lines: PurchaseOrderLine[]
-  total_sacks: number
-  total_lb: string
+  total_packs: number
+  /** D62 §3.8: the quantity per unit (lb and gal are never added). */
+  by_unit: UnitQuantity[]
   total_dollars: string
-  /** The supplier's order target (decision 48) and the next multiple of it at or above the sacks. */
-  target: { sacks: number; next_multiple: number } | null
+  /** The supplier's order target (decision 48) and the next multiple of it at or above the packs. */
+  target: { packs: number; next_multiple: number } | null
   inserted_at: string
   updated_at: string
 }
 
+/** A quantity in one unit (D62 §3.8). */
+export interface UnitQuantity {
+  unit: string
+  quantity: string
+}
+
+/** D62 §3.7: a line's quantity and price are in the contract unit (whole sacks, $/sack for grain). */
 export interface ContractLine {
   id: number
   product_id: number
-  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
+  product: ProductSummary
   /** The supplier offer its price goes on (lead, Stop 2 note 3). */
   offer_id: number | null
-  sacks: number
-  price_per_sack: string
-  contracted_sacks: number
+  quantity: number
+  price: string
+  /** D62 §3.7: `packs` (grain: whole sacks, $/sack) or `lb` (hops: lb, $/lb, figures by weight). */
+  contract_unit?: 'packs' | 'lb'
+  /** The product's unit (lb). */
+  unit?: string
+  contracted: number
   contracted_dollars: string
-  /** The line offer's sack size: on order and received are converted to it by weight (amendment 17a; may be 10.5). */
-  sack_size_lb: string
-  on_order_sacks: number
-  received_sacks: number
+  /** The line offer's pack: on order and received are converted to it by weight (amendment 17a; may be 10.5). */
+  pack_name: string
+  pack_size: string
+  on_order: number
+  received: number
   received_dollars: string
   /** Contracted − received; negative when over. */
-  remaining_sacks: number
+  remaining: number
   over_by: number | null
 }
 
@@ -365,8 +445,11 @@ export interface Contract {
   created_by: { id: number; name: string } | null
   lines: ContractLine[]
   /** What's still owed over the lines (= the Shortfall), and what's over, never netted (gap 3). */
-  remaining_sacks: number
-  over_sacks: number
+  remaining: number
+  over: number
+  /** D62 §3.7: the hop lines' remaining and over, in lb (`remaining`/`over` are the grain lines' sacks). */
+  remaining_lb?: number
+  over_lb?: number
   /** Why it can't be deleted (gap 18); null when it can. */
   delete_blocked: string | null
   /** Lead decisions 2 (gap 2): sent back on Edit; a save from an older one is 409. */
@@ -378,23 +461,28 @@ export interface Contract {
 export interface ShortfallRow {
   product_id: number
   display_name: string
-  contracted_sacks: number
-  received_sacks: number
-  short_sacks: number
+  /** The line's pack ("sack"): the figures are in it. */
+  pack_name: string
+  /** D62 §3.7: a hop line's figures are in lb. */
+  contract_unit?: 'packs' | 'lb'
+  unit?: string
+  contracted: number
+  received: number
+  short: number
 }
 
 export interface ReorderRow {
   product_id: number
-  product: { id: number; name: string | null; display_name: string; maltster: PartySummary | null }
-  min_on_hand_sacks: number
+  product: ProductSummary
+  min_on_hand_packs: number
   /** The reorder offer (the latest order's while active, else the first active); null: no offer. */
   offer: (SupplierOffer & { label: string }) | null
-  /** Usable (not expired) on hand in lb. */
-  on_hand_lb: string | null
-  on_hand_sacks: string | null
-  /** lb on open order lines (any offer); `on_order_sacks` is it in the reorder offer's sacks (item 20). */
-  on_order_lb: string | null
-  on_order_sacks: number | null
+  /** Usable (not expired) on hand in the product's unit. */
+  on_hand: string | null
+  on_hand_packs: string | null
+  /** On open order lines (any offer); `on_order_packs` is it in the reorder offer's packs (item 20). */
+  on_order: string | null
+  on_order_packs: number | null
   to_order: number | null
   below_minimum: boolean
 }
@@ -402,24 +490,31 @@ export interface ReorderRow {
 export interface InventoryTotalsRow {
   product_id: number
   display_name: string
-  grain: string
-  maltster: string
+  ingredient: string
+  manufacturer: string
   category: string
-  lb: string
-  expired_lb: string
-  /** lb ÷ the sack size when all its stocked lots share one, else null. */
-  sacks: string | null
+  /** D62 lead decisions 1, gap 4: the category filter and the Form column. */
+  category_id: number
+  category_key: string | null
+  form: string | null
+  unit: string
+  quantity: string
+  expired: string
+  /** The quantity ÷ the pack size when all its stocked lots share one pack, else null. */
+  pack_name: string | null
+  packs: string | null
   /** null when no lot has a value (gap 5). */
   value: string | null
-  per_lb: string | null
+  per_unit: string | null
   estimated: boolean
-  unvalued_lb: string
+  unvalued_quantity: string
 }
 
 export interface InventoryTotals {
   as_of: string
   rows: InventoryTotalsRow[]
-  total: { lb: string; expired_lb: string; value: string }
+  /** D62 §3.8: $ over everything, quantities per unit. */
+  total: { by_unit: (UnitQuantity & { expired: string })[]; value: string }
 }
 
 export interface OrderTotalsRow {
@@ -431,18 +526,23 @@ export interface OrderTotalsRow {
   reference: string | null
   product: string
   status: OrderStatus
-  sacks_ordered: number
-  sacks_received: number | null
-  lb: string
+  pack_name: string
+  packs_ordered: number
+  packs_received: number | null
+  unit: string
+  quantity: string
   dollars: string
-  sacks: number
+  packs: number
 }
 
 export interface OrderTotalsSum {
-  sacks: number
-  sacks_ordered: number
-  sacks_received: number
-  lb: string
+  /** Only meaningful when every line has the same pack; `by_pack` otherwise (D62 gap 11). */
+  packs: number
+  packs_ordered: number
+  packs_received: number
+  /** Packs per pack name, never added across names ("73 sacks · 47 boxes"). */
+  by_pack: { pack_name: string; packs: number; packs_ordered: number; packs_received: number }[]
+  by_unit: UnitQuantity[]
   dollars: string
 }
 

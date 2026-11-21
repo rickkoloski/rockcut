@@ -21,14 +21,25 @@ import { PageToolbar } from '../../components/SettingsMenu'
 import CopyTableButton from '../../components/CopyTableButton'
 import StatusChip from '../../components/StatusChip'
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
-import { categoryOptions, grainCategories } from '../../lib/ingredientFeatures'
-import { money } from '../../lib/purchasing'
+import { packLabel, packPlural, packWord } from '../../lib/brewingUnits'
+import { MANAGED_KEYS, categoryKey, categoryOptions, keyedCategories, manufacturerLabel, manufacturersFor } from '../../lib/ingredientFeatures'
+import { amountText, byUnitText, money, packsFigure, sharedPackName } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import { toTsv, type Cell } from '../../lib/tsv'
-import type { IngredientCategory, InventoryTotals, OrderStatus, OrderTotals, Party } from '../../lib/types'
+import type { IngredientCategory, IngredientProduct, InventoryTotals, InventoryTotalsRow, OrderStatus, OrderTotals, OrderTotalsSum, Party, UnitQuantity } from '../../lib/types'
 import PurchasingTabs from './PurchasingTabs'
 
+/** "30 sacks", "1 box". */
+const packCount = (n: number, name: string | null | undefined) => `${n.toLocaleString('en-US')} ${packWord(name, n)}`
+
+/** A sum's packs per pack name: "73 sacks · 47 boxes" (never one number across names). */
+const byPackText = (s: OrderTotalsSum, field: 'packs_ordered' | 'packs_received') =>
+  s.by_pack.map((p) => packCount(p[field], p.pack_name)).join(' · ') || '0'
+
 const lb = (v: string | number | null | undefined) => (v == null ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 }))
+
+/** D62 §3.8: the lb part of a quantity per unit (the grain-only view and the order totals' lb column). */
+const inLb = <T extends UnitQuantity>(byUnit: T[] | undefined): T | undefined => byUnit?.find((u) => u.unit === 'lb')
 
 /**
  * D61 §3.6, §4.4: the totals, each a plain table with a Copy button that
@@ -71,34 +82,44 @@ function InventoryTotalsView() {
   const today = coloradoToday()
   const [asOf, setAsOf] = useState(today)
   const [supplierId, setSupplierId] = useState('')
-  const [maltsterId, setMaltsterId] = useState('')
+  const [manufacturerId, setManufacturerId] = useState('')
   const [categoryId, setCategoryId] = useState('')
   const table = useRef<HTMLTableElement>(null)
   const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties')
   const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
+  const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
   const params: Record<string, string> = { as_of: asOf && asOf <= today ? asOf : today }
   if (supplierId) params.supplier_id = supplierId
-  if (maltsterId) params.maltster_id = maltsterId
+  if (manufacturerId) params.manufacturer_id = manufacturerId
   if (categoryId) params.category_id = categoryId
   const { data } = useApiQuery<InventoryTotals>(['ingredient_totals', 'inventory', params], '/api/ingredient_totals/inventory', params)
   const rows = data?.rows ?? []
-  const unvalued = rows.reduce((n, r) => n + Number(r.unvalued_lb), 0)
-  // Every row is a grain, so "All grains" is the parent: its sub-categories only (item 18).
-  const { grains, children } = grainCategories(categories)
-  const grainOptions = grains ? categoryOptions([grains, ...children]).filter((o) => o.depth > 0) : []
-
-  const tsv = () =>
-    toTsv(
-      ['Grain', 'Maltster', 'Product', 'Category', 'lb', 'Expired lb', 'Sacks', '$/lb', 'Value', 'Estimated'],
-      [
-        ...rows.map((r): Cell[] => [r.grain, r.maltster, r.display_name, r.category, r.lb, r.expired_lb, r.sacks, r.per_lb, r.value, r.estimated]),
-        ['Total', '', '', '', data?.total.lb, data?.total.expired_lb, '', '', data?.total.value, ''],
-      ],
+  // D62 lead decisions 1, gap 4: every category with stock (Grains and its
+  // children, Hops), All categories by default. Grains or one of its children
+  // reads as D61 did (Grain, Maltster, Sacks).
+  const options = MANAGED_KEYS.flatMap((key) => {
+    const { category, children } = keyedCategories(categories, key)
+    return category ? categoryOptions([category, ...children]) : []
+  })
+  const shownKey = categoryId ? categoryKey(categories, categories.find((c) => String(c.id) === categoryId)) : null
+  const grain = shownKey === 'grains'
+  // Gap 5: only the manufacturers with products in what's shown.
+  const makersFor = (key: string | null) =>
+    manufacturersFor(
+      parties.filter((p) => p.roles?.includes('manufacturer')),
+      products,
+      key ? [key] : MANAGED_KEYS,
     )
+  const makers = makersFor(shownKey)
+  const pickCategory = (v: string) => {
+    setCategoryId(v)
+    const key = v ? categoryKey(categories, categories.find((c) => String(c.id) === v)) : null
+    if (manufacturerId && !makersFor(key).some((p) => String(p.id) === manufacturerId)) setManufacturerId('')
+  }
 
   return (
     <>
-      <PageToolbar end={<CopyTableButton text={tsv} table={table} testId="totals-inventory-copy" />}>
+      <PageToolbar end={<CopyTableButton text={() => (grain ? grainTsv(data) : inventoryTsv(data))} table={table} testId="totals-inventory-copy" />}>
         <TextField
           label="As of"
           type="date"
@@ -118,20 +139,18 @@ function InventoryTotalsView() {
               </MenuItem>
             ))}
         </Filter>
-        <Filter label="Maltster" value={maltsterId} onChange={setMaltsterId} testId="totals-inventory-maltster">
-          <MenuItem value="">All maltsters</MenuItem>
-          {parties
-            .filter((p) => p.roles?.includes('maltster'))
-            .map((p) => (
-              <MenuItem key={p.id} value={String(p.id)}>
-                {p.name}
-              </MenuItem>
-            ))}
+        <Filter label={manufacturerLabel(shownKey)} value={manufacturerId} onChange={setManufacturerId} testId="totals-inventory-maltster">
+          <MenuItem value="">{grain ? 'All maltsters' : 'All manufacturers'}</MenuItem>
+          {makers.map((p) => (
+            <MenuItem key={p.id} value={String(p.id)}>
+              {p.name}
+            </MenuItem>
+          ))}
         </Filter>
-        <Filter label="Category" value={categoryId} onChange={setCategoryId} testId="totals-inventory-category">
-          <MenuItem value="">All grains</MenuItem>
-          {grainOptions.map(({ category: c }) => (
-            <MenuItem key={c.id} value={String(c.id)}>
+        <Filter label="Category" value={categoryId} onChange={pickCategory} testId="totals-inventory-category">
+          <MenuItem value="">All categories</MenuItem>
+          {options.map(({ category: c, depth }) => (
+            <MenuItem key={c.id} value={String(c.id)} sx={{ pl: depth ? 4 : 2 }}>
               {c.name}
             </MenuItem>
           ))}
@@ -140,69 +159,14 @@ function InventoryTotalsView() {
 
       <Paper variant="outlined" sx={{ overflowX: 'auto' }}>
         <Table size="small" ref={table} data-testid="totals-inventory-table">
-          <TableHead>
-            <TableRow>
-              <TableCell>Grain</TableCell>
-              <TableCell>Maltster</TableCell>
-              <TableCell>Category</TableCell>
-              <TableCell align="right">lb</TableCell>
-              <TableCell align="right">Expired lb</TableCell>
-              <TableCell align="right">Sacks</TableCell>
-              <TableCell align="right">$/lb</TableCell>
-              <TableCell align="right">Value</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {rows.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={8}>
-                  <Typography variant="body2" color="text.secondary">
-                    No grain on hand {asOf === today ? 'today' : `on ${asOf}`}
-                  </Typography>
-                </TableCell>
-              </TableRow>
-            )}
-            {rows.map((r) => (
-              <TableRow key={r.product_id} data-testid={`totals-inventory-${r.product_id}`}>
-                <TableCell>{r.grain}</TableCell>
-                <TableCell>
-                  {r.maltster}
-                  {r.display_name !== `${r.maltster} ${r.grain}` && (
-                    <Typography variant="caption" color="text.secondary" component="div">
-                      {r.display_name}
-                    </Typography>
-                  )}
-                </TableCell>
-                <TableCell>{r.category}</TableCell>
-                <TableCell align="right" data-testid={`totals-inventory-${r.product_id}-lb`}>
-                  {lb(r.lb)}
-                </TableCell>
-                <TableCell align="right">{Number(r.expired_lb) > 0 ? lb(r.expired_lb) : ''}</TableCell>
-                <TableCell align="right">{r.sacks == null ? '—' : lb(r.sacks)}</TableCell>
-                <TableCell align="right">{money(r.per_lb, 4)}</TableCell>
-                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-value`}>
-                  {r.value == null ? '—' : money(r.value)}
-                  {r.value != null && r.estimated && ' est.'}
-                </TableCell>
-              </TableRow>
-            ))}
-            {data && rows.length > 0 && (
-              <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid="totals-inventory-total">
-                <TableCell colSpan={3}>Total</TableCell>
-                <TableCell align="right">{lb(data.total.lb)}</TableCell>
-                <TableCell align="right" data-testid="totals-inventory-total-expired">
-                  {Number(data.total.expired_lb) > 0 ? lb(data.total.expired_lb) : ''}
-                </TableCell>
-                <TableCell colSpan={2} />
-                <TableCell align="right">{money(data.total.value)}</TableCell>
-              </TableRow>
-            )}
-          </TableBody>
+          {grain ? <GrainTotals data={data} asOf={asOf} today={today} /> : <InventoryTotalsRows data={data} asOf={asOf} today={today} />}
         </Table>
       </Paper>
       <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
         Value at the price paid; est. = valued at the supplier&apos;s offer price (no recorded cost).
-        {unvalued > 0 && <span data-testid="totals-inventory-unvalued">{` ${lb(unvalued)} lb has no price and isn't valued.`}</span>}
+        {rows.some((r) => Number(r.unvalued_quantity) > 0) && (
+          <span data-testid="totals-inventory-unvalued">{` ${byUnitText(unvaluedByUnit(rows))} has no price and isn't valued.`}</span>
+        )}
       </Typography>
       {params.as_of !== today && (
         <Typography variant="body2" color="text.secondary" data-testid="totals-inventory-expired-note">
@@ -210,6 +174,188 @@ function InventoryTotalsView() {
         </Typography>
       )}
     </>
+  )
+}
+
+/** The quantity with no value, per unit. */
+function unvaluedByUnit(rows: InventoryTotalsRow[]): UnitQuantity[] {
+  const sums = new Map<string, number>()
+  for (const r of rows) if (Number(r.unvalued_quantity) > 0) sums.set(r.unit, (sums.get(r.unit) ?? 0) + Number(r.unvalued_quantity))
+  return [...sums].sort(([a], [b]) => a.localeCompare(b)).map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
+}
+
+/** "0.32 boxes", "12 sacks"; "—" when the product's lots differ in pack. */
+const packsText = (r: Pick<InventoryTotalsRow, 'packs' | 'pack_name'>) =>
+  r.packs == null ? '—' : `${packsFigure(Number(r.packs))} ${packWord(r.pack_name, Number(r.packs))}`
+
+/** The product's name beside its manufacturer when it says more than maker, ingredient and form. */
+const productCaption = (r: InventoryTotalsRow) =>
+  r.display_name !== [r.manufacturer, r.ingredient, r.form].filter(Boolean).join(' ') ? r.display_name : null
+
+function NothingOnHand({ what, asOf, today, cols }: { what: string; asOf: string; today: string; cols: number }) {
+  return (
+    <TableRow>
+      <TableCell colSpan={cols}>
+        <Typography variant="body2" color="text.secondary">
+          No {what} on hand {asOf === today ? 'today' : `on ${asOf}`}
+        </Typography>
+      </TableCell>
+    </TableRow>
+  )
+}
+
+/** D62 lead decisions 1, gap 4: every category, general headings, each product's own unit and pack. */
+function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | undefined; asOf: string; today: string }) {
+  const rows = data?.rows ?? []
+  return (
+    <>
+      <TableHead>
+        <TableRow>
+          <TableCell>Ingredient</TableCell>
+          <TableCell>Manufacturer</TableCell>
+          <TableCell>Form</TableCell>
+          <TableCell align="right">On hand</TableCell>
+          <TableCell align="right">Packs</TableCell>
+          <TableCell align="right">Value</TableCell>
+          <TableCell align="right">$/unit</TableCell>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {rows.length === 0 && <NothingOnHand what="stock" asOf={asOf} today={today} cols={7} />}
+        {rows.map((r) => (
+          <TableRow key={r.product_id} data-testid={`totals-inventory-${r.product_id}`}>
+            <TableCell>{r.ingredient}</TableCell>
+            <TableCell>
+              {r.manufacturer}
+              {productCaption(r) && (
+                <Typography variant="caption" color="text.secondary" component="div">
+                  {productCaption(r)}
+                </Typography>
+              )}
+            </TableCell>
+            <TableCell>{r.form ?? ''}</TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-lb`}>
+              {amountText(r.quantity, r.unit)}
+              {Number(r.expired) > 0 && (
+                <Typography variant="caption" color="text.secondary" component="div">
+                  {amountText(r.expired, r.unit)} expired
+                </Typography>
+              )}
+            </TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-packs`}>
+              {packsText(r)}
+            </TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-value`}>
+              {r.value == null ? '—' : money(r.value)}
+              {r.value != null && r.estimated && ' est.'}
+            </TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+              {r.per_unit == null ? '—' : `${money(r.per_unit, 4)}/${r.unit}`}
+            </TableCell>
+          </TableRow>
+        ))}
+        {data && rows.length > 0 && (
+          <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid="totals-inventory-total">
+            <TableCell colSpan={3}>Total</TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+              {byUnitText(data.total.by_unit)}
+              {data.total.by_unit.some((u) => Number(u.expired) > 0) && (
+                <Typography variant="caption" component="div" data-testid="totals-inventory-total-expired">
+                  {byUnitText(data.total.by_unit.filter((u) => Number(u.expired) > 0).map((u) => ({ unit: u.unit, quantity: u.expired })))} expired
+                </Typography>
+              )}
+            </TableCell>
+            <TableCell />
+            <TableCell align="right">{money(data.total.value)}</TableCell>
+            <TableCell />
+          </TableRow>
+        )}
+      </TableBody>
+    </>
+  )
+}
+
+/** Copy for the general view: its headings, plus Unit and Pack so the numbers paste as numbers. */
+function inventoryTsv(data: InventoryTotals | undefined): string {
+  const rows = data?.rows ?? []
+  return toTsv(
+    ['Ingredient', 'Manufacturer', 'Product', 'Form', 'On hand', 'Unit', 'Expired', 'Packs', 'Pack', 'Value', '$/unit', 'Estimated'],
+    [
+      ...rows.map((r): Cell[] => [r.ingredient, r.manufacturer, r.display_name, r.form, r.quantity, r.unit, r.expired, r.packs, r.packs == null ? null : r.pack_name, r.value, r.per_unit, r.estimated]),
+      ...(data?.total.by_unit ?? []).map((u, i): Cell[] => ['Total', '', '', '', u.quantity, u.unit, u.expired, '', '', i === 0 ? data?.total.value : '', '', '']),
+    ],
+  )
+}
+
+/** The grain-only view, as D61 had it (Grains or one of its children picked). */
+function GrainTotals({ data, asOf, today }: { data: InventoryTotals | undefined; asOf: string; today: string }) {
+  const rows = data?.rows ?? []
+  const totalLb = inLb(data?.total.by_unit)
+  return (
+    <>
+      <TableHead>
+        <TableRow>
+          <TableCell>Grain</TableCell>
+          <TableCell>Maltster</TableCell>
+          <TableCell>Category</TableCell>
+          <TableCell align="right">lb</TableCell>
+          <TableCell align="right">Expired lb</TableCell>
+          <TableCell align="right">Sacks</TableCell>
+          <TableCell align="right">$/lb</TableCell>
+          <TableCell align="right">Value</TableCell>
+        </TableRow>
+      </TableHead>
+      <TableBody>
+        {rows.length === 0 && <NothingOnHand what="grain" asOf={asOf} today={today} cols={8} />}
+        {rows.map((r) => (
+          <TableRow key={r.product_id} data-testid={`totals-inventory-${r.product_id}`}>
+            <TableCell>{r.ingredient}</TableCell>
+            <TableCell>
+              {r.manufacturer}
+              {r.display_name !== `${r.manufacturer} ${r.ingredient}` && (
+                <Typography variant="caption" color="text.secondary" component="div">
+                  {r.display_name}
+                </Typography>
+              )}
+            </TableCell>
+            <TableCell>{r.category}</TableCell>
+            <TableCell align="right" data-testid={`totals-inventory-${r.product_id}-lb`}>
+              {lb(r.quantity)}
+            </TableCell>
+            <TableCell align="right">{Number(r.expired) > 0 ? lb(r.expired) : ''}</TableCell>
+            <TableCell align="right">{r.packs == null ? '—' : lb(r.packs)}</TableCell>
+            <TableCell align="right">{money(r.per_unit, 4)}</TableCell>
+            <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-value`}>
+              {r.value == null ? '—' : money(r.value)}
+              {r.value != null && r.estimated && ' est.'}
+            </TableCell>
+          </TableRow>
+        ))}
+        {data && rows.length > 0 && (
+          <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid="totals-inventory-total">
+            <TableCell colSpan={3}>Total</TableCell>
+            <TableCell align="right">{lb(totalLb?.quantity ?? 0)}</TableCell>
+            <TableCell align="right" data-testid="totals-inventory-total-expired">
+              {Number(totalLb?.expired ?? 0) > 0 ? lb(totalLb?.expired) : ''}
+            </TableCell>
+            <TableCell colSpan={2} />
+            <TableCell align="right">{money(data.total.value)}</TableCell>
+          </TableRow>
+        )}
+      </TableBody>
+    </>
+  )
+}
+
+function grainTsv(data: InventoryTotals | undefined): string {
+  const rows = data?.rows ?? []
+  const totalLb = inLb(data?.total.by_unit)
+  return toTsv(
+    ['Grain', 'Maltster', 'Product', 'Category', 'lb', 'Expired lb', 'Sacks', '$/lb', 'Value', 'Estimated'],
+    [
+      ...rows.map((r): Cell[] => [r.ingredient, r.manufacturer, r.display_name, r.category, r.quantity, r.expired, r.packs, r.per_unit, r.value, r.estimated]),
+      ['Total', '', '', '', totalLb?.quantity ?? '0', totalLb?.expired ?? '0', '', '', data?.total.value, ''],
+    ],
   )
 }
 
@@ -230,17 +376,36 @@ function OrderTotalsView() {
   const rows = data?.rows ?? []
   const groups = (data?.by_supplier ?? []).map((s) => ({ sum: s, rows: rows.filter((r) => r.supplier_id === s.supplier_id) }))
 
+  // D62 lead decisions 1, gap 11: sacks and boxes are never added. Copy has
+  // an ordered and a received column per pack name ("Sacks ordered", "Boxes
+  // ordered", …), so an all-grain range copies as D61 did.
+  const packNames = [...new Set(rows.map((r) => r.pack_name))].sort()
+  const packCells = (s: OrderTotalsSum): Cell[] =>
+    packNames.flatMap((name) => {
+      const p = s.by_pack.find((b) => b.pack_name === name)
+      return [p?.packs_ordered ?? 0, p?.packs_received ?? 0]
+    })
   const tsv = () =>
     toTsv(
-      ['Order date', 'Supplier', 'Reference', 'Product', 'Status', 'Sacks ordered', 'Sacks received', 'lb', '$'],
+      ['Order date', 'Supplier', 'Reference', 'Product', 'Status', ...packNames.flatMap((n) => [`${packLabel(n)} ordered`, `${packLabel(n)} received`]), 'lb', '$'],
       [
         ...groups.flatMap((g): Cell[][] => [
-          ...g.rows.map((r): Cell[] => [r.ordered_on, r.supplier, r.reference, r.product, r.status, r.sacks_ordered, r.sacks_received, r.lb, r.dollars]),
-          [`Total ${g.sum.supplier}`, '', '', '', '', g.sum.sacks_ordered, g.sum.sacks_received, g.sum.lb, g.sum.dollars],
+          ...g.rows.map((r): Cell[] => [
+            r.ordered_on,
+            r.supplier,
+            r.reference,
+            r.product,
+            r.status,
+            ...packNames.flatMap((n): Cell[] => (n === r.pack_name ? [r.packs_ordered, r.packs_received] : ['', ''])),
+            r.quantity,
+            r.dollars,
+          ]),
+          [`Total ${g.sum.supplier}`, '', '', '', '', ...packCells(g.sum), inLb(g.sum.by_unit)?.quantity ?? '0', g.sum.dollars],
         ]),
-        ['Total', '', '', '', '', data?.total.sacks_ordered, data?.total.sacks_received, data?.total.lb, data?.total.dollars],
+        ...(data ? [['Total', '', '', '', '', ...packCells(data.total), inLb(data.total.by_unit)?.quantity ?? '0', data.total.dollars] as Cell[]] : []),
       ],
     )
+  const shared = sharedPackName(packNames)
 
   return (
     <>
@@ -301,17 +466,25 @@ function OrderTotalsView() {
                     <TableCell>
                       <StatusChip status={r.status} domain="order" />
                     </TableCell>
-                    <TableCell align="right">{r.sacks_ordered}</TableCell>
-                    <TableCell align="right">{r.sacks_received ?? ''}</TableCell>
-                    <TableCell align="right">{lb(r.lb)}</TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      {packCount(r.packs_ordered, r.pack_name)}
+                    </TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                      {r.packs_received == null ? '' : packCount(r.packs_received, r.pack_name)}
+                    </TableCell>
+                    <TableCell align="right">{lb(r.quantity)}</TableCell>
                     <TableCell align="right">{money(r.dollars)}</TableCell>
                   </TableRow>
                 ))}
                 <TableRow sx={{ '& td': { fontWeight: 600 }, backgroundColor: 'action.hover' }} data-testid={`totals-orders-supplier-${g.sum.supplier_id}`}>
                   <TableCell colSpan={5}>Total {g.sum.supplier}</TableCell>
-                  <TableCell align="right">{g.sum.sacks_ordered}</TableCell>
-                  <TableCell align="right">{g.sum.sacks_received}</TableCell>
-                  <TableCell align="right">{lb(g.sum.lb)}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    {byPackText(g.sum, 'packs_ordered')}
+                  </TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
+                    {byPackText(g.sum, 'packs_received')}
+                  </TableCell>
+                  <TableCell align="right">{lb(inLb(g.sum.by_unit)?.quantity ?? 0)}</TableCell>
                   <TableCell align="right">{money(g.sum.dollars)}</TableCell>
                 </TableRow>
               </Fragment>
@@ -319,9 +492,13 @@ function OrderTotalsView() {
             {data && rows.length > 0 && (
               <TableRow sx={{ '& td': { fontWeight: 700 } }} data-testid="totals-orders-total">
                 <TableCell colSpan={5}>Total</TableCell>
-                <TableCell align="right">{data.total.sacks_ordered}</TableCell>
-                <TableCell align="right">{data.total.sacks_received}</TableCell>
-                <TableCell align="right">{lb(data.total.lb)}</TableCell>
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid="totals-orders-total-ordered">
+                  {byPackText(data.total, 'packs_ordered')}
+                </TableCell>
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid="totals-orders-total-received">
+                  {byPackText(data.total, 'packs_received')}
+                </TableCell>
+                <TableCell align="right">{lb(inLb(data.total.by_unit)?.quantity ?? 0)}</TableCell>
                 <TableCell align="right">{money(data.total.dollars)}</TableCell>
               </TableRow>
             )}
@@ -329,8 +506,8 @@ function OrderTotalsView() {
         </Table>
       </Paper>
       <Box sx={{ mt: 1 }}>
-        <Typography variant="body2" color="text.secondary">
-          Open orders count the sacks ordered; received ones the sacks received.
+        <Typography variant="body2" color="text.secondary" data-testid="totals-orders-note">
+          {`Open orders count the ${packPlural(shared)} ordered; received ones the ${packPlural(shared)} received.`}
         </Typography>
       </Box>
     </>

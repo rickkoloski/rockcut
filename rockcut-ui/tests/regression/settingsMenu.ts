@@ -94,10 +94,15 @@ export async function settingsItems(page: Page, gear: string): Promise<string[]>
   return ids
 }
 
-/** The options under a choice heading (`board-filter` → ['board-filter-all', …]); the menu is left closed. */
-export async function choiceOptions(page: Page, gear: string, choice: string): Promise<string[]> {
+/**
+ * The options under a choice heading (`board-filter` → ['board-filter-all', …]); the menu is left closed.
+ * The ids are read once, so options that come from a list the page loads (departments) need `ready`:
+ * one of them to wait for first (5911 O9: right after a `goto`, only "All departments" was there yet).
+ */
+export async function choiceOptions(page: Page, gear: string, choice: string, ready?: string): Promise<string[]> {
   await openSettings(page, gear)
   await page.getByTestId(choice).click()
+  if (ready) await expect(menu(page).getByTestId(ready)).toBeVisible()
   const ids = await menu(page)
     .locator(`[data-testid^="${choice}-"]`)
     .evaluateAll((els) => els.map((e) => e.getAttribute('data-testid')!))

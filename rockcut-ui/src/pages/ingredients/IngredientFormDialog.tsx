@@ -15,15 +15,19 @@ interface IngredientFormDialogProps {
    * (Grains → Base, Crystal/Caramel, …).
    */
   parentCategoryId?: number
+  /** D62: a hop: always in this category (Hops has no children), so no picker. */
+  fixedCategoryId?: number
+  /** What it's called when the category is fixed ("Hop"). */
+  noun?: string
 }
 
 export default function IngredientFormDialog(props: IngredientFormDialogProps) {
   return props.open ? <IngredientForm {...props} /> : null
 }
 
-function IngredientForm({ onClose, ingredient, parentCategoryId }: IngredientFormDialogProps) {
+function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId, noun: fixedNoun }: IngredientFormDialogProps) {
   const [name, setName] = useState(ingredient?.name ?? '')
-  const [categoryId, setCategoryId] = useState<number | ''>(ingredient?.category_id ?? '')
+  const [categoryId, setCategoryId] = useState<number | ''>(ingredient?.category_id ?? fixedCategoryId ?? '')
   const [notes, setNotes] = useState(ingredient?.notes ?? '')
   const [error, setError] = useState<string | null>(null)
 
@@ -75,7 +79,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId }: IngredientFor
   }
 
   const loading = createIngredient.isPending || updateIngredient.isPending
-  const noun = grain ? 'Grain' : 'Ingredient'
+  const noun = fixedNoun ?? (grain ? 'Grain' : 'Ingredient')
 
   return (
     <FormDialog
@@ -97,28 +101,30 @@ function IngredientForm({ onClose, ingredient, parentCategoryId }: IngredientFor
         fullWidth
         slotProps={{ htmlInput: { 'data-testid': 'ingredient-name' } }}
       />
-      <FormControl fullWidth required={grain}>
-        <InputLabel id="ingredient-category-label">{grain ? 'Grain category' : 'Category'}</InputLabel>
-        <Select
-          labelId="ingredient-category-label"
-          id="ingredient-category"
-          value={categories.length ? categoryId : ''}
-          label={grain ? 'Grain category' : 'Category'}
-          onChange={(e) => setCategoryId(e.target.value as number | '')}
-          data-testid="ingredient-category"
-        >
-          {!grain && (
-            <MenuItem value="">
-              <em>None</em>
-            </MenuItem>
-          )}
-          {options.map(({ category, child }) => (
-            <MenuItem key={category.id} value={category.id} sx={child ? { pl: 4 } : undefined}>
-              {category.name}
-            </MenuItem>
-          ))}
-        </Select>
-      </FormControl>
+      {fixedCategoryId == null && (
+        <FormControl fullWidth required={grain}>
+          <InputLabel id="ingredient-category-label">{grain ? 'Grain category' : 'Category'}</InputLabel>
+          <Select
+            labelId="ingredient-category-label"
+            id="ingredient-category"
+            value={categories.length ? categoryId : ''}
+            label={grain ? 'Grain category' : 'Category'}
+            onChange={(e) => setCategoryId(e.target.value as number | '')}
+            data-testid="ingredient-category"
+          >
+            {!grain && (
+              <MenuItem value="">
+                <em>None</em>
+              </MenuItem>
+            )}
+            {options.map(({ category, child }) => (
+              <MenuItem key={category.id} value={category.id} sx={child ? { pl: 4 } : undefined}>
+                {category.name}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
       <TextField
         label="Notes"
         value={notes}

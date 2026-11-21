@@ -56,7 +56,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
     lines =
       Enum.map(order["lines"], fn l ->
         Map.merge(
-          %{"id" => l["id"], "sacks_received" => l["sacks_ordered"]},
+          %{"id" => l["id"], "packs_received" => l["packs_ordered"]},
           Map.get(given, l["id"], %{})
         )
       end)
@@ -86,12 +86,12 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       prev = stocked_lot!(c.product, day(-10), "55", "PREV")
 
       o =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 4, "price_per_sack" => "44.00"}])
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 4, "price_per_pack" => "44.00"}])
 
       assert {200, %{"data" => r}} = receive_order(c, o, %{"received_on" => iso(0)})
       assert r["status"] == "received" and r["received_on"] == iso(0)
       assert r["received_by"]["name"] == c.brewer.name
-      assert hd(r["lines"])["sacks_received"] == 4
+      assert hd(r["lines"])["packs_received"] == 4
       assert eq(r["total_dollars"], "176.00")
 
       assert eq(lot_on_hand(prev.id), 275) and eq(lot_on_hand(old.id), 110)
@@ -99,10 +99,10 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       [m] = receipts(prev.id)
       assert m.purchase_order_line_id == line_id(o)
 
-      assert eq(m.quantity_lb, 220) and m.occurred_on == today() and
+      assert eq(m.quantity, 220) and m.occurred_on == today() and
                m.entered_by_id == c.brewer.id
 
-      assert eq(m.unit_cost_per_lb, "0.8")
+      assert eq(m.unit_cost, "0.8")
     end
 
     test "the previous lot skips expired lots and other sack sizes (A3)", c do
@@ -110,8 +110,8 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       expired = stocked_lot!(c.product, day(-5), "55", "EXP")
       Repo.update!(Ecto.Changeset.change(expired, status: "expired"))
       big = stocked_lot!(c.product, day(-3), "50", "BIG")
-      Repo.update!(Ecto.Changeset.change(big, sack_size_lb: Decimal.new(50)))
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+      Repo.update!(Ecto.Changeset.change(big, pack_size: Decimal.new(50)))
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
 
       assert {200, _} = receive_order(c, o, %{})
       assert [_] = receipts(kept.id)
@@ -120,18 +120,18 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
     test "a new lot number makes a lot (supplier, sack size, received date, standard specs plus given ones)",
          c do
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 3}])
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 3}])
 
       body = %{
         "received_on" => iso(-1),
         "lines" => [
           %{
             "id" => line_id(o),
-            "sacks_received" => 3,
+            "packs_received" => 3,
             "allocations" => [
               %{
                 "lot_number" => " W123 ",
-                "sacks" => 3,
+                "packs" => 3,
                 "features" => %{"moisture_pct" => %{"value" => "4.2"}},
                 "notes" => "dock 2"
               }
@@ -147,7 +147,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
         |> Repo.preload(feature_values: :feature_type)
 
       assert lot.product_id == c.product.id and lot.supplier_party_id == c.bsg.id
-      assert eq(lot.sack_size_lb, 55) and lot.received_date == day(-1) and lot.notes == "dock 2"
+      assert eq(lot.pack_size, 55) and lot.received_date == day(-1) and lot.notes == "dock 2"
       assert lot.status == "available" and eq(lot_on_hand(lot.id), 165)
       features = Map.new(lot.feature_values, &{&1.feature_type.key, &1.value})
       assert eq(features["extract_fgdb"], "81.5") and eq(features["moisture_pct"], "4.2")
@@ -156,17 +156,17 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
     test "a lot number the product has, in any case, adds to that lot; a different sack size needs a new number",
          c do
       w = stocked_lot!(c.product, day(-9), "55", "W123")
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 2}])
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 2}])
 
       alloc =
         &%{
           "lines" => [
-            %{"id" => line_id(o), "allocations" => [%{"lot_number" => &1, "sacks" => 2}]}
+            %{"id" => line_id(o), "allocations" => [%{"lot_number" => &1, "packs" => 2}]}
           ]
         }
 
       fifty = stocked_lot!(c.product, day(-9), "50", "F50")
-      Repo.update!(Ecto.Changeset.change(fifty, sack_size_lb: Decimal.new(50)))
+      Repo.update!(Ecto.Changeset.change(fifty, pack_size: Decimal.new(50)))
 
       assert base(receive_order(c, o, alloc.("f50"))) ==
                "Lot F50 holds 50 lb sacks; use a new lot number"
@@ -183,9 +183,9 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
     test "an expired lot takes no more, by number or by id (note 6)", c do
       expired = stocked_lot!(c.product, day(-9), "55", "X9")
       Repo.update!(Ecto.Changeset.change(expired, status: "expired"))
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
 
-      for a <- [%{"lot_number" => "x9", "sacks" => 1}, %{"lot_id" => expired.id, "sacks" => 1}] do
+      for a <- [%{"lot_number" => "x9", "packs" => 1}, %{"lot_id" => expired.id, "packs" => 1}] do
         assert base(
                  receive_order(c, o, %{"lines" => [%{"id" => line_id(o), "allocations" => [a]}]})
                ) ==
@@ -197,7 +197,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
                  "lines" => [
                    %{
                      "id" => line_id(o),
-                     "allocations" => [%{"lot_number" => "X10", "sacks" => 1}]
+                     "allocations" => [%{"lot_number" => "X10", "packs" => 1}]
                    }
                  ]
                })
@@ -205,17 +205,17 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
     test "split across lots: the rows must add up to the sacks received", c do
       a = stocked_lot!(c.product, day(-9), "55", "A")
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 10}])
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 10}])
 
       split = fn x, y ->
         %{
           "lines" => [
             %{
               "id" => line_id(o),
-              "sacks_received" => 10,
+              "packs_received" => 10,
               "allocations" => [
-                %{"lot_id" => a.id, "sacks" => x},
-                %{"lot_number" => "B", "sacks" => y}
+                %{"lot_id" => a.id, "packs" => x},
+                %{"lot_number" => "B", "packs" => y}
               ]
             }
           ]
@@ -240,32 +240,32 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
       o =
         order!(c, [
-          %{"offer_id" => c.offer.id, "sacks_ordered" => 10},
-          %{"offer_id" => offer2.id, "sacks_ordered" => 5}
+          %{"offer_id" => c.offer.id, "packs_ordered" => 10},
+          %{"offer_id" => offer2.id, "packs_ordered" => 5}
         ])
 
       assert {200, %{"data" => r}} =
                receive_order(c, o, %{
                  "lines" => [
-                   %{"id" => line_id(o), "sacks_received" => 8},
-                   %{"id" => line_id(o, 1), "sacks_received" => 0}
+                   %{"id" => line_id(o), "packs_received" => 8},
+                   %{"id" => line_id(o, 1), "packs_received" => 0}
                  ]
                })
 
       assert r["status"] == "received"
 
-      assert Enum.map(r["lines"], &{&1["sacks_ordered"], &1["sacks_received"]}) == [
+      assert Enum.map(r["lines"], &{&1["packs_ordered"], &1["packs_received"]}) == [
                {10, 8},
                {5, 0}
              ]
 
-      assert r["total_sacks"] == 8 and eq(r["total_dollars"], "352.00")
+      assert r["total_packs"] == 8 and eq(r["total_dollars"], "352.00")
       assert Repo.aggregate(from(m in Movement, where: m.kind == "received"), :count) == 1
     end
 
     test "refusals: no previous lot, received date after today, a line not on the order, nothing half-written",
          c do
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}])
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}])
       assert base(receive_order(c, o, %{})) == "Enter a lot number for Rahr 2-Row"
 
       assert base(receive_order(c, o, %{"received_on" => iso(1)})) ==
@@ -275,7 +275,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
                "A line isn't on this order"
 
       assert base(
-               receive_order(c, o, %{"lines" => [%{"id" => line_id(o), "sacks_received" => -1}]})
+               receive_order(c, o, %{"lines" => [%{"id" => line_id(o), "packs_received" => -1}]})
              ) =~ "Enter whole sacks"
 
       assert {200, %{"data" => %{"status" => "open"}}} =
@@ -286,7 +286,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
     test "two receives at once: one wins, the other is 409; stock counted once", c do
       lot = stocked_lot!(c.product, day(-9), "55", "A")
-      o = order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 2}])
+      o = order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 2}])
       order = RockcutApi.Ingredients.Orders.get!(o["id"])
       parent = self()
 
@@ -298,7 +298,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
             RockcutApi.Ingredients.Orders.receive(
               order,
-              %{"lines" => [%{"id" => line_id(o), "sacks_received" => 2}]},
+              %{"lines" => [%{"id" => line_id(o), "packs_received" => 2}]},
               who
             )
           end)
@@ -323,7 +323,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
         o =
           order!(
             c,
-            [%{"offer_id" => c.offer.id, "sacks_ordered" => sacks, "price_per_sack" => price}],
+            [%{"offer_id" => c.offer.id, "packs_ordered" => sacks, "price_per_pack" => price}],
             %{"ordered_on" => iso(on)}
           )
 
@@ -331,20 +331,20 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       end
 
       {200, %{"data" => t}} = req(c.brewer, :get, "/api/ingredient_lots/#{topped.id}")
-      assert eq(t["on_hand_lb"], 220) and eq(t["cost_per_lb"], "0.9")
+      assert eq(t["on_hand"], 220) and eq(t["unit_cost"], "0.9")
       assert eq(t["value"], "198.00") and t["estimated"] == false and t["unvalued"] == false
 
       plain = stocked_lot!(c.product, day(-3), "110", "P")
       Repo.update!(Ecto.Changeset.change(plain, supplier_party_id: c.bsg.id))
       {200, %{"data" => p}} = req(c.brewer, :get, "/api/ingredient_lots/#{plain.id}")
-      assert eq(p["cost_per_lb"], "0.8") and eq(p["value"], "88.00") and p["estimated"] == true
+      assert eq(p["unit_cost"], "0.8") and eq(p["value"], "88.00") and p["estimated"] == true
 
       other = product!(c.two_row, c.root_shoot)
       bare = stocked_lot!(other, day(-3), "50", "N")
       {200, %{"data" => [n]}} = req(c.brewer, :get, "/api/ingredient_lots?product_id=#{other.id}")
 
       assert n["id"] == bare.id and n["unvalued"] == true and n["value"] == nil and
-               n["cost_per_lb"] == nil
+               n["unit_cost"] == nil
     end
   end
 
@@ -356,7 +356,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       o =
         order!(
           c,
-          [%{"offer_id" => c.offer.id, "sacks_ordered" => 2, "price_per_sack" => "55.00"}],
+          [%{"offer_id" => c.offer.id, "packs_ordered" => 2, "price_per_pack" => "55.00"}],
           %{"ordered_on" => iso(-3)}
         )
 
@@ -371,7 +371,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
         Ecto.Changeset.change(expired,
           status: "expired",
           supplier_party_id: c.root_shoot.id,
-          sack_size_lb: Decimal.new(50)
+          pack_size: Decimal.new(50)
         )
       )
 
@@ -383,43 +383,49 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       data
     end
 
-    test "rows per product with lb, sacks, $ and marks; the grand total", c do
+    test "rows per product with quantity, unit, packs, $ and marks; the grand total", c do
       data = inventory(c, "")
       assert data["as_of"] == iso(0)
       [rahr, rs] = data["rows"]
 
       assert rahr["product_id"] == c.product.id and rahr["display_name"] == "Rahr 2-Row"
 
-      assert rahr["grain"] == "2-Row" and rahr["maltster"] == "Rahr" and
+      assert rahr["ingredient"] == "2-Row" and rahr["manufacturer"] == "Rahr" and
                rahr["category"] == "Base"
 
-      assert eq(rahr["lb"], 220) and eq(rahr["sacks"], 4) and eq(rahr["expired_lb"], 0)
+      assert eq(rahr["quantity"], 220) and rahr["unit"] == "lb" and eq(rahr["packs"], 4) and
+               rahr["pack_name"] == "sack" and eq(rahr["expired"], 0)
+
       # The receipt topped up lot A, so all 220 lb are at its latest price, 55/55 (A4).
-      assert eq(rahr["value"], "220.00") and eq(rahr["per_lb"], "1") and
+      assert eq(rahr["value"], "220.00") and eq(rahr["per_unit"], "1") and
                rahr["estimated"] == false
 
-      assert eq(rahr["unvalued_lb"], 0)
+      assert eq(rahr["unvalued_quantity"], 0)
 
-      assert rs["product_id"] == c.other.id and eq(rs["lb"], 120) and eq(rs["expired_lb"], 20)
+      assert rs["product_id"] == c.other.id and eq(rs["quantity"], 120) and eq(rs["expired"], 20)
 
       # Gap 5: nothing valued is no value, not $0.00.
-      assert rs["sacks"] == nil and rs["value"] == nil and eq(rs["unvalued_lb"], 120) and
-               rs["per_lb"] == nil
+      assert rs["packs"] == nil and rs["value"] == nil and eq(rs["unvalued_quantity"], 120) and
+               rs["per_unit"] == nil
 
-      assert eq(data["total"]["lb"], 340) and eq(data["total"]["value"], "220.00")
-      # Gap 6: the expired lb are totalled too.
-      assert eq(data["total"]["expired_lb"], 20)
+      assert eq(data["total"]["value"], "220.00")
+      # Gap 6: the expired lb are totalled too; D62 §3.8: per unit.
+      assert [%{"unit" => "lb", "quantity" => total, "expired" => expired}] =
+               data["total"]["by_unit"]
+
+      assert eq(total, 340) and eq(expired, 20)
     end
 
     test "as of a date before the last receipt drops it; filters; not after today", c do
       before = inventory(c, "?as_of=#{iso(-4)}")
       [rahr | _] = before["rows"]
       # Before the receipt, lot A had no costed receipt: 110 lb at the offer price, 44/55.
-      assert eq(rahr["lb"], 110) and eq(rahr["value"], "88.00") and rahr["estimated"] == true
+      assert eq(rahr["quantity"], 110) and eq(rahr["value"], "88.00") and
+               rahr["estimated"] == true
 
       assert [%{"product_id" => id}] = inventory(c, "?supplier_id=#{c.root_shoot.id}")["rows"]
       assert id == c.other.id
-      assert [%{"product_id" => id}] = inventory(c, "?maltster_id=#{c.rahr.id}")["rows"]
+      assert [%{"product_id" => id}] = inventory(c, "?manufacturer_id=#{c.rahr.id}")["rows"]
       assert id == c.product.id
       assert length(inventory(c, "?category_id=#{c.grains.id}")["rows"]) == 2
       assert inventory(c, "?category_id=#{c.hops.id}")["rows"] == []
@@ -430,49 +436,54 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
   end
 
   describe "order totals (§3.6, decision 35)" do
-    test "open counts sacks ordered, received counts sacks received; cancelled only when asked; by supplier",
+    test "open counts packs ordered, received counts packs received; cancelled only when asked; by supplier",
          c do
       stocked_lot!(c.product, day(-30), "55", "A")
 
       open =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 3}], %{
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 3}], %{
           "ordered_on" => iso(-1),
           "reference" => "PO-1"
         })
 
       got =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 10}], %{"ordered_on" => iso(-5)})
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 10}], %{"ordered_on" => iso(-5)})
 
       {200, _} =
-        receive_order(c, got, %{"lines" => [%{"id" => line_id(got), "sacks_received" => 8}]})
+        receive_order(c, got, %{"lines" => [%{"id" => line_id(got), "packs_received" => 8}]})
 
       gone =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 7}], %{"ordered_on" => iso(-2)})
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 7}], %{"ordered_on" => iso(-2)})
 
       {200, _} = req(c.brewer, :post, "/api/purchase_orders/#{gone["id"]}/cancel")
 
       old =
-        order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 1}], %{"ordered_on" => iso(-40)})
+        order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 1}], %{"ordered_on" => iso(-40)})
 
       {200, %{"data" => data}} =
         req(c.brewer, :get, "/api/ingredient_totals/orders?from=#{iso(-10)}&to=#{iso(0)}")
 
       assert Enum.map(data["rows"], & &1["order_id"]) == [got["id"], open["id"]]
       [r_got, r_open] = data["rows"]
-      assert {r_got["sacks_ordered"], r_got["sacks_received"]} == {10, 8}
+      assert {r_got["packs_ordered"], r_got["packs_received"]} == {10, 8}
 
-      assert eq(r_got["lb"], 440) and eq(r_got["dollars"], "352.00") and
+      assert eq(r_got["quantity"], 440) and r_got["unit"] == "lb" and
+               eq(r_got["dollars"], "352.00") and
                r_got["status"] == "received"
 
-      assert eq(r_open["lb"], 165) and eq(r_open["dollars"], "132.00") and
+      assert eq(r_open["quantity"], 165) and eq(r_open["dollars"], "132.00") and
                r_open["reference"] == "PO-1"
 
       assert r_open["supplier"] == "BSG" and r_open["product"] == "Rahr 2-Row" and
                r_open["ordered_on"] == iso(-1)
 
-      assert [%{"supplier" => "BSG", "sacks" => 11} = s] = data["by_supplier"]
+      assert [%{"supplier" => "BSG", "packs" => 11} = s] = data["by_supplier"]
       assert eq(s["dollars"], "484.00")
-      assert data["total"]["sacks"] == 11 and eq(data["total"]["lb"], 605)
+      assert [%{"unit" => "lb", "quantity" => supplier_lb}] = s["by_unit"]
+      assert eq(supplier_lb, 605)
+      assert data["total"]["packs"] == 11
+      assert [%{"unit" => "lb", "quantity" => total_lb}] = data["total"]["by_unit"]
+      assert eq(total_lb, 605)
 
       {200, %{"data" => cancelled}} =
         req(c.brewer, :get, "/api/ingredient_totals/orders?status=cancelled")
@@ -487,7 +498,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       {200, %{"data" => none}} =
         req(c.brewer, :get, "/api/ingredient_totals/orders?supplier_id=#{c.root_shoot.id}")
 
-      assert none["rows"] == [] and none["total"]["sacks"] == 0
+      assert none["rows"] == [] and none["total"]["packs"] == 0
     end
   end
 
@@ -495,14 +506,16 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
     test "minimum set by a brewer; below minimum, to order and on order (spec §8 scenario)", c do
       lot = stocked_lot!(c.product, day(-30), "330", "A")
 
-      assert {200, %{"data" => %{"min_on_hand_sacks" => 3, "below_minimum" => false}}} =
+      assert {200, %{"data" => %{"min_on_hand_packs" => 3, "below_minimum" => false}}} =
                req(c.p["brewer2"], :put, "/api/ingredient_products/#{c.product.id}", %{
-                 min_on_hand_sacks: 3
+                 "lock_version" => product_version(c.product.id),
+                 min_on_hand_packs: 3
                })
 
-      assert {422, %{"errors" => %{"min_on_hand_sacks" => [_]}}} =
+      assert {422, %{"errors" => %{"min_on_hand_packs" => [_]}}} =
                req(c.brewer, :put, "/api/ingredient_products/#{c.product.id}", %{
-                 min_on_hand_sacks: -1
+                 "lock_version" => product_version(c.product.id),
+                 min_on_hand_packs: -1
                })
 
       list = fn ->
@@ -512,19 +525,19 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
       row = list.()
       assert row["product_id"] == c.product.id and row["offer"]["id"] == c.offer.id
-      assert eq(row["on_hand_sacks"], 6) and row["on_order_sacks"] == 0 and row["to_order"] == 0
-      assert eq(row["on_hand_lb"], 330)
+      assert eq(row["on_hand_packs"], 6) and row["on_order_packs"] == 0 and row["to_order"] == 0
+      assert eq(row["on_hand"], 330)
       refute row["below_minimum"]
 
       Repo.insert!(%Movement{
         lot_id: lot.id,
         kind: "used",
-        quantity_lb: Decimal.new(-220),
+        quantity: Decimal.new(-220),
         occurred_on: today()
       })
 
       row = list.()
-      assert eq(row["on_hand_sacks"], 2) and row["to_order"] == 1 and row["below_minimum"]
+      assert eq(row["on_hand_packs"], 2) and row["to_order"] == 1 and row["below_minimum"]
 
       assert {200, %{"data" => %{"below_minimum" => true}}} =
                req(c.brewer, :get, "/api/ingredient_products/#{c.product.id}")
@@ -532,14 +545,14 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       {200, %{"data" => products}} = req(c.brewer, :get, "/api/ingredient_products")
       assert Enum.find(products, &(&1["id"] == c.product.id))["below_minimum"] == true
 
-      order!(c, [%{"offer_id" => c.offer.id, "sacks_ordered" => 4}])
+      order!(c, [%{"offer_id" => c.offer.id, "packs_ordered" => 4}])
       row = list.()
-      assert row["on_order_sacks"] == 4 and row["to_order"] == 0 and row["below_minimum"]
+      assert row["on_order_packs"] == 4 and row["to_order"] == 0 and row["below_minimum"]
     end
 
     test "expired stock doesn't count; the reorder offer is the last order's while active, else the first active (note 7)",
          c do
-      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_sacks: 2))
+      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_packs: 2))
       lot = stocked_lot!(c.product, day(-30), "165", "A")
       Repo.update!(Ecto.Changeset.change(lot, status: "expired"))
       fifty = offer!(c.product, c.root_shoot, "50", "30")
@@ -550,14 +563,14 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
       end
 
       first = row.()
-      assert first["offer"]["id"] == c.offer.id and eq(first["on_hand_sacks"], 0)
+      assert first["offer"]["id"] == c.offer.id and eq(first["on_hand_packs"], 0)
       assert first["to_order"] == 2
 
       {201, %{"data" => o}} =
         req(c.brewer, :post, "/api/purchase_orders", %{
           "supplier_party_id" => c.root_shoot.id,
           "ordered_on" => iso(-1),
-          "lines" => [%{"offer_id" => fifty.id, "sacks_ordered" => 1}]
+          "lines" => [%{"offer_id" => fifty.id, "packs_ordered" => 1}]
         })
 
       {200, _} = req(c.brewer, :post, "/api/purchase_orders/#{o["id"]}/cancel")
@@ -569,7 +582,7 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
 
       Repo.update!(Ecto.Changeset.change(c.offer, active: false))
       assert %{"offer" => nil, "to_order" => nil, "below_minimum" => false} = none = row.()
-      assert eq(none["on_hand_lb"], 0) and none["on_order_sacks"] == 0
+      assert eq(none["on_hand"], 0) and none["on_order_packs"] == 0
     end
 
     test "a product with no minimum isn't listed; the products list stays a fixed number of queries",
@@ -592,12 +605,12 @@ defmodule RockcutApiWeb.ReceivingTotalsApiTest do
         drain(ref, 0)
       end
 
-      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_sacks: 2))
+      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_packs: 2))
       first = count.()
 
       for n <- 1..4 do
         p = product!(c.two_row, c.root_shoot, [], "R#{n}")
-        Repo.update!(Ecto.Changeset.change(p, min_on_hand_sacks: n))
+        Repo.update!(Ecto.Changeset.change(p, min_on_hand_packs: n))
         offer!(p, c.bsg, "50", "30")
       end
 
