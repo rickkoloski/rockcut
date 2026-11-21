@@ -170,10 +170,11 @@ grain_ingredients =
     }
   end)
 
-Repo.insert_all(Ingredient, grain_ingredients,
-  on_conflict: :nothing,
-  conflict_target: [:name, :category_id]
-)
+{new_grains, _} =
+  Repo.insert_all(Ingredient, grain_ingredients,
+    on_conflict: :nothing,
+    conflict_target: [:name, :category_id]
+  )
 
 # D60 Appendix A: each grain's child category. Only grains still on the
 # Grains parent move, so a later move by hand sticks.
@@ -281,10 +282,12 @@ other_ingredients =
     %{category_id: cat_id, name: name, notes: notes, inserted_at: now, updated_at: now}
   end)
 
-Repo.insert_all(Ingredient, other_ingredients,
-  on_conflict: :nothing,
-  conflict_target: [:name, :category_id]
-)
+# D65 Stop 3: the rows actually inserted (the list is offered every run).
+{new_others, _} =
+  Repo.insert_all(Ingredient, other_ingredients,
+    on_conflict: :nothing,
+    conflict_target: [:name, :category_id]
+  )
 
 # D60 §3.4: which features each category's lots and products carry (a
 # parent's apply to its children). Grains: five, none required, a standard
@@ -353,7 +356,7 @@ Repo.insert_all(CategoryFeatureType, applicability,
 
 IO.puts(
   "Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, " <>
-    "#{length(grain_ingredients) + length(other_ingredients)} new ingredients (no lots)"
+    "#{new_grains + new_others} new ingredients (no lots)"
 )
 
 # D60 §6: maltsters, suppliers, maltster products and supplier offers.
@@ -362,6 +365,10 @@ Code.eval_file(Path.join(__DIR__, "seeds/grain_reference.exs"))
 # D62 §7: hop companies, products with typical ranges, offers, and Matt's
 # cooler list as lots (2026-11-19). After the grain reference (BSG).
 Code.eval_file(Path.join(__DIR__, "seeds/hop_reference.exs"))
+
+# D65 §7: salts with their ions, sugars, fruit, Whirlfloc T and the spices,
+# with offers and prices (no lots). After the hop reference (BSG).
+Code.eval_file(Path.join(__DIR__, "seeds/d65_reference.exs"))
 
 # Grain LOTS are intentionally NOT seeded (D28): prod starts with no grain
 # inventory. D60 (task 3843): the malt specs that used to live on lots are the

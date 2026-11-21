@@ -45,7 +45,11 @@ defmodule RockcutApi.Seeds.Synthetic do
   Rahr 2-Row from BSG (older: 3 sacks received 30 days ago; newer: 10
   sacks, 7 days ago), each with its Opening amount, for the oldest-first
   scenarios. Needs the grain reference data (`seeds/grain_reference.exs`);
-  skipped without it.
+  skipped without it. D65: a `[SEED] Peach` Purée (gal), a `[SEED] Rice
+  Syrup Solids` Dry sugar (lb) and `[SEED] Fining Tablets` (Tablet, each),
+  each with a BSG offer and price, a minimum of 2 packs and one lot, so To
+  order and Totals have mixed units (their own ingredients: no clash with
+  the D65 reference data).
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -80,6 +84,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     ContractLine,
     LotFeatureValue,
     Movement,
+    OfferPrice,
     Party,
     PartyRole,
     Product,
@@ -858,6 +863,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     seed_idea_boards(u, today)
     seed_production(u, today)
     seed_inventory(u, today)
+    seed_d65_inventory(u, today)
 
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
@@ -1206,6 +1212,90 @@ defmodule RockcutApi.Seeds.Synthetic do
       end
     else
       Logger.info("Synthetic setup: no Rahr 2-Row or BSG (grain reference data); no [SEED] lots.")
+    end
+  end
+
+  # D65 §7: {ingredient, category key or Other Consumables child, form, unit,
+  # pack, pack size, price, on hand (in the unit)}. Manufacturer None.
+  @d65_seed [
+    {"Peach", "fruits", "Purée", "gal", "pail", "5", "45.00", "12.5"},
+    {"Rice Syrup Solids", "sugars", "Dry", "lb", "bag", "50", "62.50", "75"},
+    {"Fining Tablets", "Finings", "Tablet", "each", "tub", "872", "92.00", "600"}
+  ]
+
+  defp seed_d65_inventory(u, today) do
+    bsg = Repo.get_by(Party, name: "BSG")
+    consumables = Repo.one(from(c in IngredientCategory, where: c.key == "consumables"))
+
+    if bsg && consumables do
+      for {name, where, form, unit, pack, size, price, on_hand} <- @d65_seed do
+        category_id =
+          case where do
+            "Finings" ->
+              Repo.one(
+                from(c in IngredientCategory,
+                  where: c.parent_id == ^consumables.id and c.name == "Finings",
+                  select: c.id
+                )
+              )
+
+            key ->
+              Repo.one(from(c in IngredientCategory, where: c.key == ^key, select: c.id))
+          end
+
+        if category_id do
+          ingredient =
+            Repo.insert!(%Ingredient{name: "#{@seed_tag} #{name}", category_id: category_id})
+
+          product =
+            Repo.insert!(%Product{
+              ingredient_id: ingredient.id,
+              form: form,
+              unit: unit,
+              min_on_hand_packs: 2
+            })
+
+          offer =
+            Repo.insert!(%SupplierOffer{
+              product_id: product.id,
+              supplier_party_id: bsg.id,
+              pack_name: pack,
+              pack_size: Decimal.new(size),
+              form: nil
+            })
+
+          Repo.insert!(%OfferPrice{
+            offer_id: offer.id,
+            price_per_pack: Decimal.new(price),
+            effective_on: Date.add(today, -30)
+          })
+
+          received = Date.add(today, -10)
+
+          lot =
+            Repo.insert!(%IngredientLot{
+              ingredient_id: ingredient.id,
+              product_id: product.id,
+              supplier_party_id: bsg.id,
+              pack_name: pack,
+              pack_size: Decimal.new(size),
+              lot_number: "#{@seed_tag} #{name}",
+              received_date: received,
+              status: "available"
+            })
+
+          Repo.insert!(%Movement{
+            lot_id: lot.id,
+            kind: "opening",
+            quantity: Decimal.new(on_hand),
+            occurred_on: received,
+            note: "#{@seed_tag} Opening amount",
+            entered_by_id: u["brewer1"].id
+          })
+        end
+      end
+    else
+      Logger.info("Synthetic setup: no BSG or Other Consumables; no D65 [SEED] products.")
     end
   end
 
