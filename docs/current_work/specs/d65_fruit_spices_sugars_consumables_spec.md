@@ -34,14 +34,15 @@ pack), Inventory Item (lot) and Product Feature.
 6. **Units:**
    - **Fruit:** gallons (purée) or lb (whole).
    - **Spices:** dry oz, or fl oz for liquid extracts (A4).
-   - **Sugars:** dry in lb with extract % FGDB, or liquid in gal with Brix.
+   - **Sugars:** extract % FGDB on every sugar, dry or liquid. Liquid sugars are in lb or gal,
+     with optional Brix (sugars amendment).
    - **Water salts:** ordered and stored in **lb**. Recipes use oz, converted in D63.
    - **Acids and liquid finings:** fl oz, ordered by the jug or bottle.
    - **Tablets:** a count ("each"), ordered by the tub. Matt may refine these later.
 7. **Expired by hand** for every category. No best-by dates.
-8. **Manufacturer and supplier are separate and always stored** (D62 decision 17). The
-   manufacturer is required. When the maker is unknown, the store or supplier is entered as the
-   manufacturer (A6).
+8. **Manufacturer and supplier are separate fields** (D62 decision 17). The supplier is always
+   stored. **The manufacturer is optional on every D65 product** (Matt, 2026-11-20; amends A6 for
+   D65). A blank one is shown as "None". Grain and hops still require one.
 9. **Permissions** are the same as grain: Brewery members and owners. Devices are refused.
 10. **Lot value** is the most recent price paid (D61 A4, re-confirmed 2026-11-20).
 
@@ -97,7 +98,7 @@ lists (A4):
 |---|---|---|---|
 | Fruits (`fruits`) | Purée, Whole, Juice / concentrate | gal, lb | pail, drum, case, bag, box |
 | Spices & Flavorings (`spices`) | Whole, Ground, Extract | oz, fl oz | bag, jar, bottle, case |
-| Sugars and Extracts (`sugars`) | Dry, Liquid | Dry → lb, Liquid → gal | bag, sack, pail, drum, jug |
+| Sugars and Extracts (`sugars`) | Dry, Liquid | Dry → lb; Liquid → lb or gal | bag, sack, pail, drum, jug |
 | Water Salts (`consumables`) | Powder, Flake | lb | bag, pail, tub |
 | Acids (`consumables`) | Liquid | fl oz | jug, bottle |
 | Finings (`consumables`) | Liquid, Powder, Tablet | fl oz, lb, each | jug, bottle, bag, tub |
@@ -105,7 +106,7 @@ lists (A4):
 - **Other Consumables' children** share the key `consumables`. The form and unit lists are per
   **child**, and Catalog reads the child's name to pick the list. A child Matt adds later, or one
   renamed beyond recognition, gets the union of the three lists (A10).
-- **Sugars:** the form decides the unit (Dry → lb, Liquid → gal). The dialog sets it, and the API
+- **Sugars:** Dry is always lb; Liquid is lb or gal. The dialog sets lb for Dry, and the API
   refuses a mismatch.
 - **Units** are labeled lb, gal, oz (dry weight), fl oz and each. They aren't converted into each
   other; recipe conversions come in D63.
@@ -136,8 +137,8 @@ Per category (`category_feature_types`):
 | Category | Feature | Product | Lot | Notes |
 |---|---|---|---|---|
 | Fruits | Brix | none | enter, optional | Every fruit lot, any unit (decision 5). |
-| Sugars and Extracts | Brix | none | enter, optional | `only_unit: gal` (liquid sugars). |
-| Sugars and Extracts | Extract % FGDB | value | copy, editable | `only_unit: lb` (dry sugars). Works as grain: copied from the standard, editable. |
+| Sugars and Extracts | Brix | none | enter, optional | Liquid form only, in lb or gal. |
+| Sugars and Extracts | Extract % FGDB | value | copy, editable | Every sugar, dry or liquid. Works as grain: copied from the standard, editable. |
 | Spices, Other Consumables | none | — | — | |
 
 - A lot with Brix outside 0–100, or with more than 1 decimal, is refused.
@@ -265,9 +266,11 @@ Do you have it?
   refused (mixed units).
 
 **Sugars**
-- Add Dextrose (Dry, lb, extract 92 % FGDB). Its lot gets 92 copied and editable.
-- Add Candi Syrup (Liquid, gal). Its lot offers Brix, not extract.
-- Picking Liquid sets gal. The API refuses Liquid in lb.
+- Add Dextrose (Corn Sugar) (Dry, lb, extract 91 % FGDB). Its lot gets 91 copied and editable,
+  and offers no Brix.
+- Add Black Strap Molasses (Liquid, lb, extract 81.95 %). Its lot gets the extract copied and
+  offers optional Brix.
+- A Liquid sugar can be in gal. The API refuses Dry in gal.
 
 **Spices**
 - Add Cinnamon (Ground, oz, bag · 16 oz) and Vanilla Extract (Extract, fl oz, bottle · 32 fl oz).
@@ -338,8 +341,8 @@ value against the salt's formula.
 2. Each salt row is **its own ingredient**. "Calcium Chloride (Hydrous)" and "(Anhydrous)" are
    separate ingredients, because their ion numbers differ.
 3. **The manufacturer is optional on Water Salts products** (Matt: "list the Manufacturer as
-   None"). This amends A6 for Water Salts only; grain, hops and D65's other categories keep it
-   required.
+   None"). The sugars batch widened this to **every D65 category** (decision 8); grain and hops
+   keep it required.
    - It's stored as null and shown as **"None"** in lists, pickers and Totals.
    - The duplicate rule treats null as one value, so a second None Calcium Sulfate (Gypsum) Powder is refused.
    - Product names read "Calcium Sulfate (Gypsum) Powder · None".
@@ -364,3 +367,44 @@ value against the salt's formula.
    salt are hydrous by definition, so their names drop "(Hydrous)". Calcium chloride has no common
    name, so its parentheses hold the hydration: "Calcium Chloride (Hydrous)" and "(Anhydrous)".
    The seed renames the existing seeded ingredients by name (idempotent).
+
+## Amendment (Matt, 2026-11-20): sugars reference data, batch 2
+
+**Data:** `reference/d65_sugars_matt_2026-11-20.csv`. It's local only and the seed file embeds it.
+Maple syrup is left out: Matt will check its specs and add it by hand.
+
+**Decisions:**
+1. **Liquid sugars keep the Liquid form and optional Brix** (Matt: "I'll likely use that later"):
+   - Liquid sugars may be in **lb or gal**, while Dry stays lb.
+   - **Extract % FGDB is a standard on every sugar**, dry or liquid. It's copied to the lot and can
+     be edited there.
+   - Brix is optional on Liquid lots.
+   - §4.2 and §4.4 are updated to match.
+2. **Prices are per lb.** An offer's pack price is the pack weight × $/lb, with the price
+   effective 2026-11-20.
+3. **Missing extracts** are filled with typical values and **checked by Matt** before release:
+   Dextrose 91 % (PPG 42) and Belgian Candy Syrup 70 % (PPG ~32, a typical dark candi syrup).
+4. **The manufacturer is optional across all of D65**, shown as "None" (decision 8).
+5. **Names:**
+   - The seeded "Corn Sugar (Dextrose)" is renamed **"Dextrose (Corn Sugar)"**.
+   - "Honey - Redstone" becomes the ingredient **"Honey"**, with a Colorado Honey Co. product
+     supplied by Redstone.
+
+**Seeded on every environment** (no lots; Matt gave no on-hand amounts):
+
+| Ingredient | Manufacturer | Form | Unit | Supplier · pack | $/lb | Pack price | Extract |
+|---|---|---|---|---|---|---|---|
+| Lactose | None | Dry | lb | BSG · bag · 50 lb | $1.00 | $50.00 | 100 % |
+| Dextrose (Corn Sugar) | None | Dry | lb | BSG · bag · 50 lb | $0.91 | $45.50 | 91 % (typical, to check) |
+| Belgian Candy Syrup | Candico | Liquid | lb | BSG · pail · 55 lb | $0.78 | $42.90 | 70 % (typical, to check) |
+| Black Strap Molasses | Sweetner Sup Co. | Liquid | lb | BSG · pail · 60 lb | $0.82 | $49.20 | 81.95 % |
+| Honey | Colorado Honey Co. | Liquid | lb | Redstone · pail · 60 lb | $2.00 | $120.00 | 80.33 % |
+| DME | Muntons | Dry | lb | BSG · bag · 55 lb | $1.00 | $55.00 | 100 % |
+
+**New companies:**
+- Candico, Sweetner Sup Co. and Colorado Honey Co. are manufacturers.
+- Redstone is a supplier.
+- Names are as Matt gave them; "Sweetner" may be "Sweetener", for Matt to confirm.
+
+**Extract precision:** extract keeps grain's 1 decimal for typed values. The seed stores 81.95 and
+80.33 exactly as given, so `extract_fgdb` moves to **2 decimals**. Grain values are unaffected.
