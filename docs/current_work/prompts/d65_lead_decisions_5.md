@@ -2,6 +2,9 @@
 
 2026-11-21 · lead → builder.
 
+> **DEFERRED to D64 (Matt, 2026-11-21).** Not built in D65. The builder discarded its
+> uncommitted work. D65 ships with gap 9 as a known minor. Use this brief as the D64 carry-in.
+
 **Source:** `~/src/rockcut-d65-devqa/results/d65_dev_qa_recheck2.md`. You may read it.
 
 **DEV runs `cec1228`.**
