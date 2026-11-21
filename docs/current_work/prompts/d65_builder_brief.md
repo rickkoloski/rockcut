@@ -244,3 +244,138 @@ Every rule gets a refusal test and an allowed test.
   - what migration 6 kept, if anything, on the local database;
   - `LEAD:` notes;
   - the diff size (`git diff --stat develop`).
+
+---
+
+# Stop 2 (features, offers, totals)
+
+2026-11-20 · lead. **Stop 1 accepted** (`611fb32` … `23abd0a`; ExUnit 2,763 ×2, vitest 491,
+ingredients Playwright 103; local dev DB migrated, nothing kept). The lead ran the full local
+Playwright suite on Stop 1. Your LEAD notes:
+
+- **`display_name`:** keep what you built. A None product with a product name drops the form
+  ("Whirlfloc T · None"), as the finings amendment wants. Products with a manufacturer read as in
+  D62. I'll flag the difference to Matt; don't change it unless I come back.
+1. Nothing to remove; fine.
+2. Accepted: the unit is fixed once a lot exists, with a 422.
+3. Accepted: grain and hop units are set by the API, and D65 refuses a mismatch.
+4. Accepted: the minimal Pack select. Stop 2 finishes it, see item 4 below.
+5. Accepted: good catch on the `NOT IN` with NULLs.
+6. Accepted: the category's `catalog` object is the UI's single source.
+7. Accepted. The per-unit subtotals land in this stop.
+8. Watch d62-fix-cycle-1 G3/G6/G11. If it fails again in this stop, find the race, as with O9 in
+   D62.
+9. **From this stop on, prove fixes by revert where it's practical.** That means each refusal
+   rule and each bug fix; screens don't need it. Say which ones you proved.
+10. **Fix it here:** an `each` quantity below 1 reads "at least 1 tablet" ("at least 1" for a
+    non-Tablet `each`), never 0.01. Add a test.
+
+## Do (plan Stop 2; spec §4.4, §4.5, §5 items 2, 4–6; the salts, sugars, fruit and finings amendments)
+
+Every rule gets a refusal test and an allowed test.
+
+1. **Migrations** (plan 1, 2 and 4). They're additive, so they can run with the API up; still,
+   **tell me before you run them** so I can restart it afterwards.
+   - **`feature_types`:**
+     - add `brix` (°Bx, 0–100, 1 dp);
+     - add the seven ion types `ca_ppm_per_g_gal`, `mg_…`, `co3_…`, `hco3_…`, `so4_…`, `na_…`,
+       `cl_…` (ppm @ 1 g/gal, 0–1000, 1 dp);
+     - set `extract_fgdb` to **2 dp**. Grain values are unaffected; a typed grain extract still
+       takes up to 2 dp now, which is fine.
+   - **`category_feature_types`:**
+     - add a nullable **`only_form`**;
+     - Fruits: `brix` with product range, lot enter, optional;
+     - Sugars: `extract_fgdb` with product value, lot copy (editable), and `brix` with product
+       none, lot enter, optional, `only_form: "Liquid"`.
+   - **`supplier_offers.pack_note`:** text, optional, ≤ 40 characters.
+   - ExUnit: up on a Stop 1–shaped database, then a second run that changes nothing.
+2. **Features in the API:**
+   - `only_form` is handled everywhere `only_unit` is: lot create and edit, Receive into a new or
+     existing lot #, and the product feature check. A Dry sugar lot sent a Brix gets a 422.
+   - Fruit **Brix range** on the product works as hop alpha does: either end may be blank, and
+     low > high gets a 422. On the lot it's optional and never copied; a value outside the range
+     is marked (`outside_range`), never refused.
+   - Sugar **extract** is copied to the lot and can be edited there, as grain. The 2 dp check
+     applies.
+   - Brix with 2 decimals (8.55) or outside 0–100 gets a 422.
+   - **An existing lot #:** a purée lot with Brix 8.5 shows read-only, and sending 9.0 gets the
+     D62 mismatch 422.
+3. **Ions on the ingredient** (salts amendment, decision 1):
+   - `GET`/`PUT` of ion values on the ingredient, stored in `ingredient_feature_values`. This works
+     for Water Salts ingredients only; any other gets a 422. Values have 1 dp and a range of
+     0–1000;
+   - the product JSON carries its ingredient's ion values, read-only;
+   - **UI:** the ingredient dialog shows an ion grid (Ca, Mg, CO₃, HCO₃, SO₄, Na, Cl, ppm @ 1
+     g/gal) for Water Salts ingredients, next to the Formula field from Stop 1. The ingredient
+     page shows them, and each product page shows them read-only.
+4. **Offers and packs:**
+   - the offer dialog lists pack names per category, or per child for Other Consumables, with the
+     unit's default pack (Stop 1's select, finished);
+   - the API checks Other Consumables pack names against the **child's** list, with the union for
+     other children (A10). If Stop 1 used the union for every child, fix it;
+   - **`pack_note`**: optional, ≤ 40 characters. It's shown wherever the pack is, reading "tub ·
+     872 tablets (5 lb)": offers, order lines, Receive, To order and lots;
+   - `each` pack sizes are whole numbers.
+5. **Totals and To order** (spec §4.5):
+   - **Totals → Inventory**, general view: quantity subtotals per unit (lb, gal, oz, fl oz,
+     each/tablets) that are never added together, plus one $ grand total. Copy (TSV) keeps the
+     Unit column. The Grains-only view reads exactly as D61;
+   - **Totals → Orders:** the per-pack-name line, "2 bags · 6 boxes · 30 sacks · 1 tub", and the
+     quantity column subtotals per unit;
+   - **To order:** a product with no stock reads "0 gal" or "0 tablets" in its own unit, and
+     shortfalls are in packs.
+6. **Screens:**
+   - Product dialog: extract for every sugar, and a Brix range (low–high) for fruit;
+   - product page header: form, unit, the standard extract for sugars and the Brix range for
+     fruit. The lots table shows Brix where the category has it, and extract for sugars;
+   - Add lot and Receive: Brix is optional on fruit lots and Liquid sugar lots, with "typical
+     6.5–9" beside it for fruit and outside values marked. Extract is prefilled on sugar lots.
+     `each` lots take whole numbers;
+   - **Recipe lot label** (A11): "Aseptic Fruit Strawberry Purée · lot # · 8.5 °Bx". Brix appears
+     only when the lot has it, and nothing extra otherwise. This label is used in the recipe
+     ingredient picker.
+7. **Playwright for the §10 scenarios not covered in Stop 1** (`d65.spec.ts`), using
+   `[TEST-TEMP]` rows only, cleaned up by id:
+   - Fruit:
+     - a pail · 5 gal offer;
+     - lots with Brix 8.5 and with no Brix; 8.55 refused;
+     - a count of "2 pails 1.5 gal";
+     - `inventory_on_hand` returns `{11.5, "gal"}` for the product and is refused for the
+       ingredient.
+   - Sugars: extract copied and editable; Brix only on Liquid; a Dry lot's Brix refused.
+   - A Water Salts ingredient with ions and a formula; ions read-only on its product page.
+   - **Purchasing:**
+     - a `[TEST-TEMP]` supplier's order mixing grain, hop, sugar and Whirlfloc lines, showing its
+       packs against the target;
+     - Receive with extract prefilled and a whole Whirlfloc lot;
+     - Whirlfloc's minimum of 1 tub with 600 on hand shows on To order;
+     - Dextrose isn't offered in the contract dialog, and the API refuses it.
+   - **Totals as `owner`:**
+     - per-unit subtotals and one $ grand total;
+     - the Copy Unit column;
+     - the Grains view unchanged;
+     - Orders per pack name.
+
+     Totals tests filter to their own rows, since the seeded hops (and Stop 3's reference data)
+     are on every environment.
+   - **Edges:**
+     - `floater` and `splitRole` can use the new pages;
+     - `bartender1` and `breweryDevice` get a 403 on every D65 route;
+     - **two people, one record:** `brewer1` and `brewer2` save the same fruit product, and the
+       second gets the 409 with nothing written;
+     - **slow network:** a double-click on Save in Add lot and Receive writes once;
+     - at 360 px, the fruit product page, Add lot with Brix, the Whirlfloc count and Totals with
+       mixed units have no sideways scroll.
+
+## Done when (Stop 2)
+
+- `mix test` passes twice, and `--warnings-as-errors --force` is clean.
+- vitest, tsc and the build are clean. Lint still shows the same 8 errors.
+- The `ingredients` Playwright project passes. I'll run the full suite.
+- **Browser check** as `brewer1` and `owner`, at desktop and 360 px: every flow above, and grain
+  and hop screens still read as before.
+- **Reply with:**
+  - your commits and test counts;
+  - which fixes you proved by revert;
+  - `LEAD:` notes;
+  - the diff size so far.
