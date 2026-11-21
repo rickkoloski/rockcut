@@ -1325,3 +1325,23 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 - **The mixed order isn't with BSG:** it uses a `[TEST-TEMP]` supplier so tests never write to the seeded BSG offers.
 - **The spice offers are made through the API:** only the jug offer goes through the offer dialog.
 
+
+### D65 lead decisions 1 — local QA fix cycle (`prompts/d65_lead_decisions_1.md`)
+
+`F1` = ExUnit `d65_fix1_test.exs`; `V1` = vitest `d65Fix1.test.ts`; Playwright is `d65-fix-1`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 5, 7: a fractional `each` count (0.5 tub of 333) is refused, never rounded: "<product> is counted in whole tablets", Save disabled, nothing sent (Add lot, Count, Record movement); 0 says "Enter at least 1 tablet"; 0.5 pail of 5 gal still saves 2.5 | Playwright "gaps 5, 7" at desktop and 360 px **(revert)**, "Count and Record movement…"; V1. Receive takes whole packs only, so it can't make a fraction |
+| 13: Delete Ingredient with a product: disabled with the reason; the API 422s; one without products deletes. A product on a contract line and an offer a contract line names: 422, not 500 | Playwright "gap 13"; F1 **(revert, the ingredient)** |
+| 1, 10: a refusal in a tall dialog is scrolled into view and focused (FormDialog, every dialog) | Playwright "gaps 1, 10" at 1366×768 **(revert)** |
+| 11: a lot's pack name is its category's (create, edit); grain keeps sack, hops box | F1 **(revert)** |
+| 2: "Brix is entered on Liquid sugar lots, not on the product"; "Brix is only for Liquid sugars" | F1; `d65_stop2_test`, `d65-stop2` (wording) |
+| 3: the default pack is in the category's list (a fl oz spice → bottle) | Playwright "gap 3"; F1 (offer and lot); V1 |
+| 4: ions and Brix with one place on screens, labels and reopened dialogs ("Ca 72.0", "14.0 °Bx", "6.5–9.0") | Playwright "gap 4"; F1 (lot label); V1 |
+| 6: "1 tablet", "−1 tablet", "1 tub 1 tablet" | Playwright "gaps 6, 8"; F1; V1 |
+| 8: "tablets" on the order total, the Receive picker, a Totals line of only Tablet products ("each" for a mix); "Quantity · tubs of 333 tablets" | Playwright "gaps 6, 8", "gaps 5, 7"; F1 (order and inventory sums, the mix); `d65-stop2` |
+| 9: Totals' Manufacturer filter has None | Playwright "gap 9"; F1 |
+| 12: product names unique in any case (migration `20261121140001`); "None" refused | F1 |
+| Decided: the form is fixed once a product has a lot (UI disabled, API 422) | Playwright "the form is fixed…"; F1 |
+| Decided, Q13: the recipe lot picker on a D65 lot shows "· 8.5 °Bx" | Playwright "Q13" |

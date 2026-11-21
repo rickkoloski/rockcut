@@ -192,8 +192,16 @@ image can't read them. `20261121120002`'s `down` refuses while any such product 
 | `20261121120002` products_optional_manufacturer | rebuilds `ingredient_products` with foreign keys off, then `foreign_key_check` | **down** |
 | `20261121120003` d65_categories | Water Salts and Finings, Whirlfloc into Finings, Dextrose rename, removes Irish Moss and Future Ingredients, drops three Form fields | down (same deploy) |
 | `20261121130001` d65_features_and_pack_note | Brix and seven ion types, extract 2 dp, `only_form`, Fruits/Sugars rows, `pack_note` (additive) | may stay up |
+| `20261121140001` product_name_any_case | lead decisions 1, gap 12: the product unique index on `lower(name)` (index only; `down` restores the case-sensitive one) | may stay up |
 
-The deploy runs all four together, so the API is down for the deploy as usual.
+The deploy runs all five together, so the API is down for the deploy as usual.
+
+**`20261121140001` stops** (raises, nothing changed) when products of one ingredient, manufacturer
+and form have names that differ only in case, naming each pair (id and name). Prod expects none;
+check before the deploy:
+`SELECT group_concat(id || ' ' || quote(name), ', ') FROM ingredient_products GROUP BY
+ingredient_id, coalesce(manufacturer_party_id, 0), coalesce(form, ''), lower(coalesce(name, ''))
+HAVING count(*) > 1;` must return no rows. (Locally it found QA's `[TEST-TEMP]` KT-872 / kt-872.)
 
 **What migration 6 may keep, and log** (`Logger.warning`, "D65: kept …"), for the release notes:
 - Irish Moss when it has products, lots or recipe lines (count of each logged);
