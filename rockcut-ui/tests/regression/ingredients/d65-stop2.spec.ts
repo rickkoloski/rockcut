@@ -258,7 +258,9 @@ test.describe('purchasing', () => {
     const rows = (await owner.evaluate(() => navigator.clipboard.readText())).split('\n').map((l) => l.split('\t'))
     expect(rows[0]).toContain('Unit')
     const wfRow = rows.find((x) => x[2] === wf.display_name)!
-    expect(wfRow[rows[0].indexOf('Unit')]).toBe('each')
+    // D65 lead decisions 3 (gap 4): a Tablet product's Unit is its label, the count whole.
+    expect(wfRow[rows[0].indexOf('Unit')]).toBe('tablets')
+    expect(wfRow[rows[0].indexOf('On hand')]).toBe('600')
     // The Grains view reads as D61.
     await owner.getByTestId('totals-inventory-category').click()
     await owner.getByRole('option', { name: 'Grains', exact: true }).click()

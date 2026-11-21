@@ -23,7 +23,7 @@ import StatusChip from '../../components/StatusChip'
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { packLabel, packPlural, packWord, perUnitLabel } from '../../lib/brewingUnits'
 import { MANAGED_KEYS, categoryKey, categoryOptions, keyedCategories, manufacturerLabel, manufacturersFor } from '../../lib/ingredientFeatures'
-import { amountText, byUnitText, money, packsFigure, sharedPackName } from '../../lib/purchasing'
+import { amountText, byUnitText, copyQuantity, money, packsFigure, sharedPackName } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import { toTsv, type Cell } from '../../lib/tsv'
 import type { IngredientCategory, IngredientProduct, InventoryTotals, InventoryTotalsRow, OrderStatus, OrderTotals, OrderTotalsSum, Party, UnitQuantity } from '../../lib/types'
@@ -299,14 +299,26 @@ function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | un
   )
 }
 
-/** Copy for the general view: its headings, plus Unit and Pack so the numbers paste as numbers. */
+/**
+ * Copy for the general view: its headings, plus Unit and Pack so the numbers
+ * paste as numbers. D65 lead decisions 3: the Unit is the label ("tablets",
+ * gap 4); the per-unit Total rows have no $, and the $ total has its own
+ * "Total value" row (gap 3).
+ */
 function inventoryTsv(data: InventoryTotals | undefined): string {
   const rows = data?.rows ?? []
   return toTsv(
     ['Ingredient', 'Manufacturer', 'Product', 'Form', 'On hand', 'Unit', 'Expired', 'Packs', 'Pack', 'Value', '$/unit', 'Estimated'],
     [
-      ...rows.map((r): Cell[] => [r.ingredient, r.manufacturer, r.display_name, r.form, r.quantity, r.unit, r.expired, r.packs, r.packs == null ? null : r.pack_name, r.value, r.per_unit, r.estimated]),
-      ...(data?.total.by_unit ?? []).map((u, i): Cell[] => ['Total', '', '', '', u.quantity, u.unit, u.expired, '', '', i === 0 ? data?.total.value : '', '', '']),
+      ...rows.map((r): Cell[] => {
+        const unit = r.unit_label ?? r.unit
+        return [r.ingredient, r.manufacturer, r.display_name, r.form, copyQuantity(r.quantity, unit), unit, copyQuantity(r.expired, unit), r.packs, r.packs == null ? null : r.pack_name, r.value, r.per_unit, r.estimated]
+      }),
+      ...(data?.total.by_unit ?? []).map((u): Cell[] => {
+        const unit = u.unit_label ?? u.unit
+        return ['Total', '', '', '', copyQuantity(u.quantity, unit), unit, copyQuantity(u.expired, unit), '', '', '', '', '']
+      }),
+      ...(data ? [['Total value', '', '', '', '', '', '', '', '', data.total.value, '', ''] as Cell[]] : []),
     ],
   )
 }
@@ -409,6 +421,16 @@ function OrderTotalsView() {
       const p = s.by_pack.find((b) => b.pack_name === name)
       return [p?.packs_ordered ?? 0, p?.packs_received ?? 0]
     })
+  // D65 lead decisions 3: per-unit Total rows have no $; the $ has its own
+  // "Total … value" row (gap 3). The Unit is the label, a count whole (gap 4).
+  const blankPacks = () => packNames.flatMap((): Cell[] => ['', ''])
+  const sumRows = (label: string, s: OrderTotalsSum): Cell[][] => [
+    ...s.by_unit.map((u, i): Cell[] => {
+      const unit = u.unit_label ?? u.unit
+      return [label, '', '', '', '', ...(i === 0 ? packCells(s) : blankPacks()), copyQuantity(u.quantity, unit), unit, '']
+    }),
+    [`${label} value`, '', '', '', '', ...blankPacks(), '', '', s.dollars],
+  ]
   const mixedTsv = () =>
     toTsv(
       ['Order date', 'Supplier', 'Reference', 'Product', 'Status', ...packNames.flatMap((n) => [`${packLabel(n)} ordered`, `${packLabel(n)} received`]), 'Quantity', 'Unit', '$'],
@@ -421,15 +443,13 @@ function OrderTotalsView() {
             r.product,
             r.status,
             ...packNames.flatMap((n): Cell[] => (n === r.pack_name ? [r.packs_ordered, r.packs_received] : ['', ''])),
-            r.quantity,
-            r.unit,
+            copyQuantity(r.quantity, r.unit_label ?? r.unit),
+            r.unit_label ?? r.unit,
             r.dollars,
           ]),
-          ...g.sum.by_unit.map((u, i): Cell[] => [`Total ${g.sum.supplier}`, '', '', '', '', ...(i === 0 ? packCells(g.sum) : packNames.flatMap(() => ['', ''])), u.quantity, u.unit, i === 0 ? g.sum.dollars : '']),
+          ...sumRows(`Total ${g.sum.supplier}`, g.sum),
         ]),
-        ...(data
-          ? data.total.by_unit.map((u, i): Cell[] => ['Total', '', '', '', '', ...(i === 0 ? packCells(data.total) : packNames.flatMap(() => ['', ''])), u.quantity, u.unit, i === 0 ? data.total.dollars : ''])
-          : []),
+        ...(data ? sumRows('Total', data.total) : []),
       ],
     )
   const lbTsv = () =>

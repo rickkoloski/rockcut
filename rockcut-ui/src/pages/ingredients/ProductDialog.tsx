@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, type Ref } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { FormControl, FormControlLabel, FormHelperText, InputLabel, ListSubheader, MenuItem, Select, Switch, TextField } from '@mui/material'
 import FormDialog from '../../components/FormDialog'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import FeatureFields from './FeatureFields'
 import RangeFields from './RangeFields'
 import { useApiList } from '../../hooks/useApiQuery'
@@ -36,6 +37,39 @@ import { GRAIN_KEYS, refreshAfterConflict } from '../../lib/inventory'
 import { parsePacks } from '../../lib/purchasing'
 import { packPlural } from '../../lib/brewingUnits'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct, Party } from '../../lib/types'
+
+/**
+ * D65 lead decisions 3 (gap 2): the search box at the top of the full
+ * manufacturer list. Select gives every child `role="option"` and a click
+ * handler; this header takes neither (it isn't a choice), and the menu's
+ * keyboard skips it as it skips a ListSubheader.
+ */
+function SearchHeader({ inputRef, value, onChange }: { inputRef: Ref<HTMLInputElement>; value: string; onChange: (text: string) => void }) {
+  return (
+    <ListSubheader role="presentation" sx={{ pt: 1, pb: 1, bgcolor: 'background.paper' }}>
+      <TextField
+        inputRef={inputRef}
+        size="small"
+        fullWidth
+        placeholder="Search companies"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        // Typing here isn't the menu's jump-to-letter; Escape and Tab close it, and
+        // ArrowDown goes to the first choice (the menu's own arrows only step between its items).
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' || e.key === 'Tab') return
+          e.stopPropagation()
+          if (e.key === 'ArrowDown') {
+            e.preventDefault()
+            e.currentTarget.closest('[role="listbox"]')?.querySelector<HTMLElement>('[role="option"]:not(.Mui-disabled)')?.focus()
+          }
+        }}
+        slotProps={{ htmlInput: { 'aria-label': 'Search companies', 'data-testid': 'product-maltster-search' } }}
+      />
+    </ListSubheader>
+  )
+}
+SearchHeader.muiSkipListHighlight = true
 
 /** The manufacturer picker's "Other manufacturer…" entry. */
 const OTHER = -1
@@ -143,7 +177,14 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
   // of "Other …" marks the close to skip and the full list stays open.
   const keepOpen = useRef(false)
   const showAll = everyManufacturer || (manufacturerId !== '' && !usualManufacturers.some((p) => p.id === manufacturerId))
-  const manufacturers = showAll ? allManufacturers : usualManufacturers
+  // D65 lead decisions 3 (gap 2): the full list has a search box (it's every
+  // manufacturer company); the chosen one always stays in it.
+  const [manufacturerSearch, setManufacturerSearch] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
+  const searchText = manufacturerSearch.trim().toLowerCase()
+  const manufacturers = showAll ? allManufacturers.filter((p) => !searchText || p.id === manufacturerId || p.name.toLowerCase().includes(searchText)) : usualManufacturers
+  // On a phone, back closes the open list only, not the product dialog under it.
+  usePhoneBackCloses(manufacturerOpen, () => setManufacturerOpen(false))
 
   // The minimum counts packs: sacks for grain, boxes for hops, the offers' pack for D65 (packs until it has one).
   const minimumPacksWord = hops ? 'boxes' : d65 ? packPlural(product?.offers?.[0]?.pack_name) : 'sacks'
@@ -247,8 +288,13 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
           onOpen={() => setManufacturerOpen(true)}
           onClose={() => {
             if (keepOpen.current) keepOpen.current = false
-            else setManufacturerOpen(false)
+            else {
+              setManufacturerOpen(false)
+              setManufacturerSearch('')
+            }
           }}
+          // The menu focuses its selected item as it opens; the search box takes it after.
+          MenuProps={{ TransitionProps: { onEntered: () => searchRef.current?.focus() }, slotProps: { paper: { sx: { maxHeight: 420 } } } }}
           onChange={(e) => {
             const picked = e.target.value as number | ''
             if (picked === '') setManufacturerId('')
@@ -257,10 +303,12 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
               keepOpen.current = true
               setEveryManufacturer(true)
               setManufacturerOpen(true)
+              setTimeout(() => searchRef.current?.focus())
             } else setManufacturerId(picked)
           }}
           data-testid="product-maltster"
         >
+          {showAll && <SearchHeader inputRef={searchRef} value={manufacturerSearch} onChange={setManufacturerSearch} />}
           {/* D65 decision 8: no manufacturer, shown as None. */}
           {d65 && (
             <MenuItem value="" data-testid="product-maltster-none">
@@ -272,6 +320,11 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
               {p.name}
             </MenuItem>
           ))}
+          {showAll && manufacturers.length === 0 && (
+            <MenuItem disabled value={-2}>
+              No company matches; add it on the Companies page with the Manufacturer role
+            </MenuItem>
+          )}
           {!showAll && (
             <MenuItem value={OTHER} data-testid="product-maltster-other">
               {/* Gap 14: grain screens say maltster. */}

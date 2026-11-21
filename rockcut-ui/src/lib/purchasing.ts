@@ -1,7 +1,7 @@
 // D61 §3.2–3.4: orders and receiving on the screens: money, the running
 // total and target progress, whole packs (D62 §3.5; sacks for grain), the
 // previous lot (A3) and how a line's lot rows add up.
-import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, packPlural, packWord, parseDecimal, unitDecimals, unitWord, type QuantityDisplay } from './brewingUnits'
+import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, isCountUnit, packPlural, packWord, parseDecimal, unitDecimals, unitWord, type QuantityDisplay } from './brewingUnits'
 import type { IngredientLot, OrderStatus, UnitQuantity } from './types'
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -96,12 +96,15 @@ export function runningTotal(lines: DraftLine[]): { packs: number; byUnit: UnitQ
   const units = new Map<string, number>()
   const names: (string | null | undefined)[] = []
   for (const l of lines) {
-    if (l.packs == null || l.packSize == null) continue
+    // D65 lead decisions 3 (gap 6): a line with its offer but no packs yet
+    // counts as 0 of its pack and unit ("0 pails · 0 gal"), never "0 sacks".
+    if (l.packSize == null) continue
     const unit = l.unit ?? 'lb'
-    packs += l.packs
+    const n = l.packs ?? 0
+    packs += n
     names.push(l.packName ?? 'sack')
-    units.set(unit, (units.get(unit) ?? 0) + l.packs * l.packSize)
-    if (l.price != null) cents += Math.round(l.packs * l.price * 100)
+    units.set(unit, (units.get(unit) ?? 0) + n * l.packSize)
+    if (l.price != null) cents += Math.round(n * l.price * 100)
   }
   if (units.size === 0) units.set('lb', 0)
   const byUnit = [...units.entries()]
@@ -301,3 +304,10 @@ export function defaultPackName(defaults: Record<string, string> | undefined, un
   const usual = defaults?.[unit ?? '']
   return usual && names.includes(usual) ? usual : (names[0] ?? null)
 }
+
+/**
+ * D65 lead decisions 3 (gap 4): a quantity as Copy gives it: a count
+ * (`each`, "tablets") is whole ("750", not "750.00"); other units as the API
+ * sends them.
+ */
+export const copyQuantity = (quantity: string, unit: string) => (isCountUnit(unit) ? String(Number(quantity)) : quantity)

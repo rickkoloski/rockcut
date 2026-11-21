@@ -35,7 +35,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
   const [name, setName] = useState(ingredient?.name ?? '')
   const [categoryId, setCategoryId] = useState<number | ''>(ingredient?.category_id ?? fixedCategoryId ?? defaultCategoryId ?? '')
   const [notes, setNotes] = useState(ingredient?.notes ?? '')
-  // D65 (salts amendment): an optional chemical formula, any category.
+  // D65 (salts amendment): an optional chemical formula, Water Salts only (lead decisions 3, gap 1).
   const [formula, setFormula] = useState(ingredient?.formula ?? '')
   // D65 (salts amendment): a Water Salts ingredient's ions, ppm @ 1 g/gal, 1 decimal, 0–1000.
   const [ions, setIons] = useState<Record<string, string>>(() =>
@@ -85,8 +85,9 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
         name,
         category_id: categoryId || null,
         notes: notes || null,
-        formula: formula.trim() || null,
       }
+      // Gap 1: the formula goes only with a Water Salts ingredient; elsewhere a stored one is kept as it is.
+      if (salts) payload.formula = formula.trim() || null
 
       // D65 Stop 3: the ions go with the ingredient, one request and one transaction.
       if (salts)
@@ -151,14 +152,27 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
           </Select>
         </FormControl>
       )}
-      <TextField
-        label="Formula"
-        value={formula}
-        onChange={(e) => setFormula(e.target.value)}
-        helperText="Optional, e.g. CaSO₄·2H₂O"
-        fullWidth
-        slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'ingredient-formula' } }}
-      />
+      {salts ? (
+        <TextField
+          label="Formula"
+          value={formula}
+          onChange={(e) => setFormula(e.target.value)}
+          helperText="Optional, e.g. CaSO₄·2H₂O"
+          fullWidth
+          slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'ingredient-formula' } }}
+        />
+      ) : (
+        // A formula saved before it was Water Salts only: shown, kept, not edited here.
+        ingredient?.formula && (
+          <TextField
+            label="Formula"
+            value={ingredient.formula}
+            helperText="Only Water Salts take a formula; this one is kept as it is"
+            fullWidth
+            slotProps={{ htmlInput: { readOnly: true, 'data-testid': 'ingredient-formula-kept' } }}
+          />
+        )
+      )}
       {salts && (
         <Box data-testid="ingredient-ions">
           <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>

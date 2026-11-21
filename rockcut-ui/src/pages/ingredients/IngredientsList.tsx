@@ -26,6 +26,9 @@ import IngredientFormDialog from './IngredientFormDialog'
 import ProductDialog from './ProductDialog'
 import GrainsList, { NONE, type GrainFilters } from './GrainsList'
 
+/** D65 lead decisions 3 (gap 5): the Notes column is dropped on a phone (the notes go under the name). */
+const WIDE_ONLY = { display: { xs: 'none', sm: 'table-cell' } }
+
 /** A non-grain lot's specs (alpha acid, attenuation), from its feature values. */
 function LotValues({ lot, types }: { lot: IngredientLotSummary; types: FeatureType[] }) {
   const values = types
@@ -70,15 +73,21 @@ function IngredientRow({
             }
           </IconButton>
         </TableCell>
-        <TableCell>
+        <TableCell sx={{ overflowWrap: 'anywhere' }}>
           <Typography variant="body2" fontWeight={500}>{ingredient.name}</Typography>
+          {ingredient.notes && (
+            <Typography variant="caption" color="text.secondary" component="div" sx={{ display: { sm: 'none' } }}>
+              {ingredient.notes}
+            </Typography>
+          )}
         </TableCell>
-        <TableCell>
+        <TableCell sx={WIDE_ONLY}>
           <Typography variant="body2" color="text.secondary">{ingredient.notes ?? ''}</Typography>
         </TableCell>
         <TableCell align="right">
           {lots.filter((l) => l.status === 'available').length > 0 && (
             <Chip
+              sx={{ whiteSpace: 'nowrap' }}
               label={`${lots.filter((l) => l.status === 'available').length} on hand`}
               size="small"
               variant="outlined"
@@ -97,9 +106,10 @@ function IngredientRow({
                     key={lot.id}
                     sx={{
                       display: 'flex',
+                      flexWrap: 'wrap',
                       alignItems: 'center',
-                      gap: 2,
-                      pl: 7,
+                      gap: { xs: 1, sm: 2 },
+                      pl: { xs: 2, sm: 7 },
                       pr: 2,
                       py: 0.75,
                       borderBottom: '1px solid',
@@ -107,7 +117,7 @@ function IngredientRow({
                       '&:last-child': { borderBottom: 'none' },
                     }}
                   >
-                    <Typography variant="body2" sx={{ minWidth: 90, color: 'text.secondary' }}>
+                    <Typography variant="body2" sx={{ minWidth: 90, color: 'text.secondary', overflowWrap: 'anywhere' }}>
                       {lot.lot_number ?? '—'}
                     </Typography>
                     <StatusChip status={lot.status} domain="lot" />
@@ -359,7 +369,7 @@ export default function IngredientsList() {
               <TableRow>
                 <TableCell padding="none" sx={{ width: 40 }} />
                 <TableCell>Name</TableCell>
-                <TableCell>Notes</TableCell>
+                <TableCell sx={WIDE_ONLY}>Notes</TableCell>
                 <TableCell align="right" sx={{ pr: 2 }}>On Hand</TableCell>
               </TableRow>
             </TableHead>
