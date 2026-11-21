@@ -274,6 +274,14 @@ Playwright suite on Stop 1. Your LEAD notes:
 
 Every rule gets a refusal test and an allowed test.
 
+0. **First: fix `owner.spec.ts` O2**, which the lead's full run on Stop 1 caught.
+   - Lines 97–101 still expect Add field on **Fruits**, which Stop 1 rightly hides (A9). Point
+     that check at **Yeast Strains**, which still has custom fields until D64.
+   - Then grep the other D60–D62 specs for anything else that assumes the old Fruits, Spices,
+     Sugars, Irish Moss, Future Ingredients or "Corn Sugar (Dextrose)" setup.
+   - Your Stop 1 report says the ingredients project passed. Find out why O2 didn't fail in your
+     run (was it skipped, filtered or run against an older build?), and say what you found.
+
 1. **Migrations** (plan 1, 2 and 4). They're additive, so they can run with the API up; still,
    **tell me before you run them** so I can restart it afterwards.
    - **`feature_types`:**
