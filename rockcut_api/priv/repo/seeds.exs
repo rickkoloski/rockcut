@@ -7,7 +7,6 @@ alias RockcutApi.Brewing.CategoryFieldDefinition
 categories =
   [
     {"Grains", 0},
-    {"Future Ingredients", 1},
     {"Hops", 2},
     {"Yeast Strains", 3},
     {"Fruits", 4},
@@ -32,8 +31,7 @@ for {name, key} <- [
       {"Spices & Flavorings", "spices"},
       {"Sugars and Extracts", "sugars"},
       {"Other Consumables", "consumables"},
-      {"Yeast Strains", "yeast"},
-      {"Future Ingredients", "future"}
+      {"Yeast Strains", "yeast"}
     ],
     not Repo.exists?(from c in IngredientCategory, where: c.key == ^key) do
   Repo.update_all(
@@ -59,13 +57,9 @@ field_defs =
     {category_ids["yeast"], "Product Code", "text", nil, false, 1},
     {category_ids["yeast"], "Temp Range Low (F)", "number", nil, false, 2},
     {category_ids["yeast"], "Temp Range High (F)", "number", nil, false, 3},
-    {category_ids["yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
-    # Fruits
-    {category_ids["fruits"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
-    # Spices & Flavorings
-    {category_ids["spices"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
-    # Sugars and Extracts
-    {category_ids["sugars"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
+    {category_ids["yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4}
+    # Fruits, Spices & Flavorings, Sugars and Extracts: none (D65 §4.1: their
+    # form is on the product).
   ]
   |> Enum.map(fn {cat_id, field_name, field_type, options, required, sort_order} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -233,6 +227,36 @@ for {child, names} <- grain_child_of,
   )
 end
 
+# D65 §4.1: Other Consumables' two children (no Acids). Like Grains'
+# children, a child renamed or added in Categories is left alone.
+for {name, sort_order} <- [{"Water Salts", 0}, {"Finings", 1}],
+    is_nil(Repo.get_by(IngredientCategory, name: name)) do
+  Repo.insert!(%IngredientCategory{
+    name: name,
+    sort_order: sort_order,
+    parent_id: category_ids["consumables"]
+  })
+end
+
+consumable_child_ids =
+  Repo.all(from c in IngredientCategory, where: c.parent_id == ^category_ids["consumables"])
+  |> Map.new(fn c -> {c.name, c.id} end)
+
+# D65 A8 (migration 6's rule): a Whirlfloc still at the top of Other
+# Consumables moves into Finings, so the insert below doesn't add a second.
+if finings = consumable_child_ids["Finings"] do
+  unless Repo.exists?(
+           from i in Ingredient, where: i.name == "Whirlfloc" and i.category_id == ^finings
+         ) do
+    Repo.update_all(
+      from(i in Ingredient,
+        where: i.name == "Whirlfloc" and i.category_id == ^category_ids["consumables"]
+      ),
+      set: [category_id: finings]
+    )
+  end
+end
+
 other_ingredients =
   [
     # Hops
@@ -247,11 +271,10 @@ other_ingredients =
     {category_ids["yeast"], "WLP001", "California Ale (White Labs)"},
     {category_ids["yeast"], "Wyeast 1056", "American Ale (Wyeast)"},
     {category_ids["yeast"], "WLP002", "English Ale (White Labs)"},
-    # Sugars and Extracts
-    {category_ids["sugars"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
-    # Other Consumables
-    {category_ids["consumables"], "Irish Moss", "Kettle fining agent"},
-    {category_ids["consumables"], "Whirlfloc", "Tablet fining, aids clarity"}
+    # Sugars and Extracts (D65: renamed from "Corn Sugar (Dextrose)")
+    {category_ids["sugars"], "Dextrose (Corn Sugar)", "Priming sugar, lightens body"},
+    # Other Consumables → Finings (D65 A8; Irish Moss removed)
+    {consumable_child_ids["Finings"], "Whirlfloc", "Tablet fining, aids clarity"}
   ]
   |> Enum.map(fn {cat_id, name, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)

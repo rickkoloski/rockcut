@@ -121,7 +121,8 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
              }
 
     refute Repo.exists?(from i in Ingredient, where: i.category_id == ^grains().id)
-    assert first[IngredientCategory] == 13
+    # D65 §4.1: Future Ingredients gone, Water Salts and Finings added.
+    assert first[IngredientCategory] == 14
 
     # D62: plus the hop reference's 27 products and offers, and 26 × 3
     # ranges (Pink Boots Blend has none; `HopSeedsTest`).
