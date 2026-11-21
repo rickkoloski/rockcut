@@ -447,3 +447,25 @@ had two cost/Brix column pairs. Only the **second** is used ("ignore the first")
 | Blood Orange | Purée | pail · 44 lb | $98.50 | $2.24 | 6–9.4 |
 | Tangerine | Purée | pail · 44 lb | $103.50 | $2.35 | 15–17 |
 | Watermelon | Purée | pail · 44 lb | $114.00 | $2.59 | 12 |
+
+### Fruit batch 3b (Matt, 2026-11-20): SoNature
+
+**Data:** `reference/d65_fruit2_matt_2026-11-20.csv`. The supplier is **SoNature**, and the
+manufacturer is **None** (decision 8). No prices were given, so the offers are seeded without a
+price.
+
+| Ingredient | Form | Unit | Pack | Extract |
+|---|---|---|---|---|
+| Apricot | Juice / concentrate | lb | 40 lb | 50 % |
+| Cherry | Juice / concentrate | lb | 56 lb | 11.44 % |
+| Lemon | Purée | lb | 40 lb | 11 % |
+| Lime | Purée | lb | 40 lb | — |
+
+- **Extract % FGDB is added to Fruits** as an optional standard on the product, copied to the
+  lot, as on sugars. Brix stays a range on the product with an optional actual on the lot. A
+  fruit can have either, both or neither.
+- **Lemon and Lime now have two products each:** Aseptic Fruit Purée and None Purée (SoNature).
+  They're different products because their manufacturers differ (D62 decision 17). Duplicates
+  aren't an issue, because a null manufacturer is treated as its own value.
+- **Pack names:** not given. The lead assumes **pail** for the 40 lb packs and **drum** for the
+  56 lb pack (**A15**, to confirm).
