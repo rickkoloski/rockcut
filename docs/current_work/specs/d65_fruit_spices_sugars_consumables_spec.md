@@ -478,12 +478,19 @@ needed, it can be removed in Ingredient Library → Categories.
 
 ## Amendment (Matt, 2026-11-20): finings, batch 4
 
-| Ingredient | Product | Manufacturer | Form | Unit | Supplier · pack | Price | $/lb |
+| Ingredient | Product | Manufacturer | Form | Unit | Supplier · pack | Price | Per tablet |
 |---|---|---|---|---|---|---|---|
-| Whirlfloc | Whirlfloc T | None | Tablet | lb | BSG · tub · 5 lb | $92.00 | $18.40 |
+| Whirlfloc | Whirlfloc T | None | Tablet | each (tablets) | BSG · tub · 872 (5 lb) | $92.00 | $0.1055 |
 
-- Matt gave it as **5 lb for $92**, so the product is in **lb** (tub · 5 lb), not "each". The `each`
-  unit stays available for any tablet counted by the piece (A16, to confirm).
+- **Ordered in 5 lb tubs, counted in tablets** (Matt). The conversion is 2.6 g per tablet:
+  5 lb = 2,267.96 g ÷ 2.6 = 872.3. So the pack is **tub · 872**, rounded down because inventory
+  is whole tablets (§4.3).
+- Inventory, movements, counts and recipe use are in whole tablets. "1 tub 400" in the packs
+  view, "1,272 tablets" in the total view.
+- **Unit label:** a Tablet product's `each` reads **"tablets"** on screen. The stored unit stays
+  `each`.
+- **Pack label:** the offer can carry an optional weight note, so it reads "tub · 872 tablets
+  (5 lb)". This is new: a free-text `pack_note` on the offer, shown wherever the pack is (A16).
 - The product name is "T", so it shows as "Whirlfloc T". The seeded ingredient Whirlfloc already
   sits under Finings (A8).
 - Irish Moss stays an ingredient with no product.
