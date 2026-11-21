@@ -1,8 +1,10 @@
 defmodule RockcutApi.Ingredients.SupplierOffer do
   @moduledoc """
-  D60 §3.6: how a supplier sells a maltster product (Silverston's Supplier
-  Product): their catalog name, the sack size in lb, and whether we order it
-  milled or whole (one product and one stock either way, decision 9).
+  D60 §3.6: how a supplier sells a product (Silverston's Supplier Product):
+  their catalog name, the pack (D62 §3.5: a name and a size in the
+  product's unit, "sack · 55 lb" for grain), and for grain whether we order
+  it milled or whole (one product and one stock either way, decision 9; nil
+  on a hop offer).
   Prices are `OfferPrice` rows, newest effective first.
   """
   use Ecto.Schema
@@ -13,7 +15,8 @@ defmodule RockcutApi.Ingredients.SupplierOffer do
 
   schema "supplier_offers" do
     field :order_name, :string
-    field :sack_size_lb, :decimal
+    field :pack_name, :string, default: "sack"
+    field :pack_size, :decimal
     field :form, :string, default: "whole"
     field :notes, :string
     field :active, :boolean, default: true
@@ -29,20 +32,28 @@ defmodule RockcutApi.Ingredients.SupplierOffer do
 
   def forms, do: @forms
 
-  def changeset(offer, attrs) do
+  @doc """
+  The offer's fields. D62 lead decisions 1, gap 3: `form` (milled/whole)
+  is grain's alone, required there; `Offers` refuses it on any other
+  category's offer and stores nil (`grain?` false).
+  """
+  def changeset(offer, attrs, grain? \\ true) do
     offer
     |> cast(attrs, [
       :product_id,
       :supplier_party_id,
       :order_name,
-      :sack_size_lb,
+      :pack_name,
+      :pack_size,
       :form,
       :notes,
       :active
     ])
-    |> validate_required([:product_id, :supplier_party_id, :sack_size_lb, :form])
+    |> validate_required([:product_id, :supplier_party_id, :pack_name, :pack_size])
+    |> then(&if(grain?, do: validate_required(&1, :form), else: &1))
     |> validate_inclusion(:form, @forms)
-    |> validate_positive_up_to(:sack_size_lb, 10_000)
+    |> validate_inclusion(:pack_name, RockcutApi.Ingredients.Catalog.pack_names())
+    |> validate_positive_up_to(:pack_size, 10_000)
     |> foreign_key_constraint(:product_id)
     |> foreign_key_constraint(:supplier_party_id)
     |> RockcutApi.Changeset.validate_parents([:product_id, :supplier_party_id])

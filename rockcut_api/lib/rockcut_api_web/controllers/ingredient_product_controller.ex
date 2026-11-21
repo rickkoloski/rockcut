@@ -1,6 +1,6 @@
 defmodule RockcutApiWeb.IngredientProductController do
   @moduledoc """
-  D60 §3.3: maltster products, and a count of one (§3.8,
+  D60 §3.3: products, and a count of one (§3.8,
   `POST /api/ingredient_products/:id/count`).
   """
   use RockcutApiWeb, :controller

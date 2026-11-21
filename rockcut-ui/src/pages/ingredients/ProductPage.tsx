@@ -30,8 +30,8 @@ import StatusChip from '../../components/StatusChip'
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
-import { enteredAs, formatFeature, formatQuantity, productSackSize } from '../../lib/brewingUnits'
-import { differs, onHandText, typesFor } from '../../lib/ingredientFeatures'
+import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack } from '../../lib/brewingUnits'
+import { differs, formatRange, itemLabel, lotTypesFor, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
@@ -49,7 +49,13 @@ const money = (v: string | number | null | undefined, digits = 2) => (v == null 
 
 type Open = 'edit' | 'delete' | 'offer' | 'price' | 'lot' | 'movement' | 'count' | null
 
-/** D60 §4.2: a maltster product: its standard specs, supplier offers and prices, lots, and stock movements. */
+/**
+ * D60 §4.2: a product (a maltster's, for grain): its standard specs, supplier
+ * offers and prices, lots, and stock movements. D62 §4.2: a hop product
+ * shows its form, origin and typical ranges; its offers are box · 11 lb with
+ * $/box and $/lb; its lots show crop year and the alpha / beta / oil actuals,
+ * a value outside the typical range marked.
+ */
 export default function ProductPage() {
   const { id } = useParams()
   const productId = Number(id)
@@ -75,8 +81,8 @@ export default function ProductPage() {
   // D61 §4.5: the open orders with a line of this product.
   const { data: openOrders = [] } = useApiList<PurchaseOrder>(['purchase_orders', { status: 'open' }], '/api/purchase_orders', { status: 'open' })
   const onOrder = openOrders
-    .map((o) => ({ order: o, sacks: o.lines.filter((l) => l.offer.product_id === productId).reduce((n, l) => n + l.sacks_ordered, 0) }))
-    .filter((x) => x.sacks > 0)
+    .map((o) => ({ order: o, packs: o.lines.filter((l) => l.offer.product_id === productId).reduce((n, l) => n + l.packs_ordered, 0) }))
+    .filter((x) => x.packs > 0)
   const remove = useApiDelete((pid) => `/api/ingredient_products/${pid}`, { invalidateKeys: GRAIN_KEYS })
 
   if (!product && httpStatus(error) === 404) {
@@ -85,8 +91,14 @@ export default function ProductPage() {
   if (!product && error) return <Alert severity="error">{parseApiError(error)}</Alert>
   if (!product) return <CircularProgress />
 
-  const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
-  const sackSize = productSackSize(product.offers, lots)
+  const hops = product.category_key === 'hops'
+  const key = product.category_key
+  const featureTypes = hops ? productTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
+  const lotTypes = hops ? lotTypesFor(types, product.category?.id, product.category?.parent_id) : []
+  const pack = productPack(product.offers, lots)
+  // The pack the minimum counts in: the product's (a sack, for grain; a box, for hops).
+  const minimumPack = pack?.name ?? product.offers?.[0]?.pack_name ?? (hops ? 'box' : 'sack')
+  const offerPack = product.offers?.[0]?.pack_name ?? minimumPack
   const lotsById = new Map(lots.map((l) => [l.id, l]))
   const close = () => {
     setOpen(null)
@@ -122,7 +134,7 @@ export default function ProductPage() {
         title={product.display_name}
         toolbar={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-            <QuantityToggle />
+            <QuantityToggle {...toggleLabels(minimumPack, product.unit)} />
             <Button variant="contained" onClick={() => setOpen('movement')} disabled={lots.length === 0} data-testid="product-record-movement">
               Record movement
             </Button>
@@ -132,13 +144,13 @@ export default function ProductPage() {
             <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setOpen('lot')} data-testid="product-add-lot">
               Add lot
             </Button>
-            <Tooltip title="Edit maltster product">
-              <IconButton onClick={() => setOpen('edit')} aria-label="Edit maltster product" data-testid="product-edit">
+            <Tooltip title={`Edit ${productLabel(key).toLowerCase()}`}>
+              <IconButton onClick={() => setOpen('edit')} aria-label={`Edit ${productLabel(key).toLowerCase()}`} data-testid="product-edit">
                 <EditIcon />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Delete maltster product">
-              <IconButton onClick={() => setOpen('delete')} color="error" aria-label="Delete maltster product">
+            <Tooltip title={`Delete ${productLabel(key).toLowerCase()}`}>
+              <IconButton onClick={() => setOpen('delete')} color="error" aria-label={`Delete ${productLabel(key).toLowerCase()}`}>
                 <DeleteIcon />
               </IconButton>
             </Tooltip>
@@ -164,33 +176,33 @@ export default function ProductPage() {
               On hand
             </Typography>
             <Typography variant="h6" data-testid="product-on-hand">
-              {onHandText(product, mode, sackSize)}
+              {onHandText(product, mode, pack)}
             </Typography>
             {/* D61 §3.5: the minimum and the mark when on hand (not expired) is under it. */}
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
               {product.below_minimum && <Chip size="small" color="warning" label="Below minimum" data-testid="product-below-minimum" />}
               <Typography variant="body2" color="text.secondary" data-testid="product-minimum-text">
-                Minimum: {product.min_on_hand_sacks != null ? `${product.min_on_hand_sacks} ${product.min_on_hand_sacks === 1 ? 'sack' : 'sacks'}` : 'none'}
+                Minimum: {product.min_on_hand_packs != null ? `${product.min_on_hand_packs} ${packWord(minimumPack, product.min_on_hand_packs)}` : 'none'}
               </Typography>
               <Button size="small" onClick={() => setOpen('edit')} data-testid="product-minimum-edit">
-                {product.min_on_hand_sacks != null ? 'Change' : 'Set'}
+                {product.min_on_hand_packs != null ? 'Change' : 'Set'}
               </Button>
             </Box>
           </Grid>
           <Grid size={{ xs: 6, sm: 4 }}>
             <Typography variant="subtitle2" color="text.secondary">
-              Grain
+              {itemLabel(key)}
             </Typography>
-            <Typography>
-              {product.ingredient?.name} · {product.category?.name}
+            <Typography data-testid="product-item">
+              {hops ? [product.ingredient?.name, product.form, product.origin].filter(Boolean).join(' · ') : `${product.ingredient?.name} · ${product.category?.name}`}
             </Typography>
           </Grid>
           <Grid size={{ xs: 6, sm: 4 }}>
             <Typography variant="subtitle2" color="text.secondary">
-              Maltster
+              {manufacturerLabel(product.category_key)}
             </Typography>
             <Typography>
-              {product.maltster?.name}
+              {product.manufacturer?.name}
               {!product.active && <Chip label="Inactive" size="small" sx={{ ml: 1 }} />}
             </Typography>
           </Grid>
@@ -204,17 +216,18 @@ export default function ProductPage() {
         </Grid>
       </Paper>
 
-      <Section title="Standard specs" action={<Button onClick={() => setOpen('edit')}>Edit</Button>}>
+      <Section title={hops ? 'Typical ranges' : 'Standard specs'} action={<Button onClick={() => setOpen('edit')}>Edit</Button>}>
         <Grid container spacing={2} sx={{ p: 2 }} data-testid="product-specs">
           {featureTypes.map((t) => {
             const v = product.features?.[t.key]
             const entered = enteredAs(v)
+            const shown = hops ? formatRange(v, t.decimals) : v ? formatFeature(v.value, t.decimals) : null
             return (
               <Grid key={t.key} size={{ xs: 6, sm: 4, md: 2.4 }}>
                 <Typography variant="subtitle2" color="text.secondary">
                   {t.label}
                 </Typography>
-                <Typography data-testid={`product-spec-${t.key}`}>{v ? `${formatFeature(v.value, t.decimals)} ${t.unit_label}` : '—'}</Typography>
+                <Typography data-testid={`product-spec-${t.key}`}>{shown ? `${shown} ${t.unit_label}` : '—'}</Typography>
                 {entered && (
                   <Typography variant="caption" color="text.secondary" data-testid={`product-spec-${t.key}-entered`}>
                     {entered}
@@ -239,10 +252,10 @@ export default function ProductPage() {
             <TableRow>
               <TableCell>Supplier</TableCell>
               <TableCell>Order name</TableCell>
-              <TableCell align="right">Sack</TableCell>
-              <TableCell>Form</TableCell>
-              <TableCell align="right">$/sack</TableCell>
-              <TableCell align="right">$/lb</TableCell>
+              <TableCell align="right">{hops ? 'Pack' : `${offerPack.charAt(0).toUpperCase()}${offerPack.slice(1)}`}</TableCell>
+              {!hops && <TableCell>Form</TableCell>}
+              <TableCell align="right">$/{offerPack}</TableCell>
+              <TableCell align="right">$/{product.unit}</TableCell>
               <TableCell />
             </TableRow>
           </TableHead>
@@ -261,12 +274,14 @@ export default function ProductPage() {
                 <TableRow sx={{ opacity: o.active ? 1 : 0.6 }} data-testid={`offer-row-${o.id}`}>
                   <TableCell>{o.supplier?.name}</TableCell>
                   <TableCell>{o.order_name ?? '—'}</TableCell>
-                  <TableCell align="right">{Number(o.sack_size_lb)} lb</TableCell>
-                  <TableCell>{o.form === 'milled' ? 'Milled' : 'Whole'}</TableCell>
-                  <TableCell align="right" data-testid={`offer-price-${o.id}`}>
-                    {money(o.current_price?.price_per_sack)}
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`offer-pack-${o.id}`}>
+                    {hops ? `${o.pack_name} · ${Number(o.pack_size)} ${product.unit}` : `${Number(o.pack_size)} ${product.unit}`}
                   </TableCell>
-                  <TableCell align="right">{money(o.current_price?.price_per_lb, 4)}</TableCell>
+                  {!hops && <TableCell>{o.form === 'milled' ? 'Milled' : 'Whole'}</TableCell>}
+                  <TableCell align="right" data-testid={`offer-price-${o.id}`}>
+                    {money(o.current_price?.price_per_pack)}
+                  </TableCell>
+                  <TableCell align="right">{money(o.current_price?.price_per_unit, 4)}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     <Button
                       size="small"
@@ -300,7 +315,7 @@ export default function ProductPage() {
                 {history.has(o.id) && (
                   <TableRow>
                     <TableCell colSpan={7} sx={{ backgroundColor: 'action.hover' }}>
-                      <PriceHistory offer={o} />
+                      <PriceHistory offer={o} unit={product.unit} />
                     </TableCell>
                   </TableRow>
                 )}
@@ -317,17 +332,23 @@ export default function ProductPage() {
               <TableCell>Lot #</TableCell>
               <TableCell>Received</TableCell>
               <TableCell>Supplier</TableCell>
+              {hops && <TableCell align="right">Crop year</TableCell>}
+              {lotTypes.map((t) => (
+                <TableCell key={t.key} align="right" sx={{ whiteSpace: 'nowrap' }}>
+                  {t.label} {t.unit_label}
+                </TableCell>
+              ))}
               <TableCell align="right">On hand</TableCell>
-              <TableCell align="right">$/lb</TableCell>
+              <TableCell align="right">$/{product.unit}</TableCell>
               <TableCell align="right">Value</TableCell>
               <TableCell>Status</TableCell>
-              <TableCell>Specs changed from standard</TableCell>
+              {!hops && <TableCell>Specs changed from standard</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {lots.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8}>
+                <TableCell colSpan={hops ? 8 + lotTypes.length : 8}>
                   <Typography variant="body2" color="text.secondary">
                     No lots yet: Add lot enters stock that's here or just arrived.
                   </Typography>
@@ -350,12 +371,34 @@ export default function ProductPage() {
                   <TableCell>{l.lot_number ?? '—'}</TableCell>
                   <TableCell sx={{ whiteSpace: 'nowrap' }}>{l.received_date ?? '—'}</TableCell>
                   <TableCell>{l.supplier?.name ?? '—'}</TableCell>
+                  {hops && (
+                    <TableCell align="right" data-testid={`lot-crop-year-${l.id}`}>
+                      {l.crop_year ?? '—'}
+                    </TableCell>
+                  )}
+                  {lotTypes.map((t) => {
+                    // D62 §3.4: outside the product's typical range is marked, never refused.
+                    const outside = (l.outside_range ?? []).includes(t.key)
+                    const v = l.features?.[t.key]?.value
+                    return (
+                      <TableCell
+                        key={t.key}
+                        align="right"
+                        sx={outside ? { color: 'warning.main', fontWeight: 600 } : undefined}
+                        title={outside ? `Outside typical ${formatRange(product.features?.[t.key], t.decimals)}` : undefined}
+                        data-testid={`lot-${l.id}-${t.key}${outside ? '-outside' : ''}`}
+                      >
+                        {v != null ? formatFeature(v, t.decimals) : '—'}
+                        {outside && ' ⚠'}
+                      </TableCell>
+                    )
+                  })}
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-on-hand-${l.id}`}>
-                    {formatQuantity(l.on_hand_lb, l.sack_size_lb, mode)}
+                    {formatQuantity(l.on_hand, l.pack_name, l.pack_size, product.unit, mode)}
                   </TableCell>
                   {/* D61 §3.4: at the latest price paid; "est." at the offer price; "—" with no price. */}
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-cost-${l.id}`}>
-                    {l.unvalued ? '—' : dollars(l.cost_per_lb, 4)}
+                    {l.unvalued ? '—' : dollars(l.unit_cost, 4)}
                   </TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`lot-value-${l.id}`}>
                     {l.unvalued ? '—' : `${dollars(l.value)}${l.estimated ? ' est.' : ''}`}
@@ -363,6 +406,7 @@ export default function ProductPage() {
                   <TableCell data-testid={`lot-status-${l.id}`}>
                     <StatusChip status={l.status} domain="lot" />
                   </TableCell>
+                  {!hops && (
                   <TableCell>
                     {changed.map((t) => (
                       <Chip
@@ -377,6 +421,7 @@ export default function ProductPage() {
                       />
                     ))}
                   </TableCell>
+                  )}
                 </TableRow>
               )
             })}
@@ -390,7 +435,7 @@ export default function ProductPage() {
             <TableRow>
               <TableCell>Ordered</TableCell>
               <TableCell>Supplier</TableCell>
-              <TableCell align="right">Sacks</TableCell>
+              <TableCell align="right">{packLabel(offerPack)}</TableCell>
               <TableCell>Expected</TableCell>
             </TableRow>
           </TableHead>
@@ -404,7 +449,7 @@ export default function ProductPage() {
                 </TableCell>
               </TableRow>
             )}
-            {onOrder.map(({ order: o, sacks }) => (
+            {onOrder.map(({ order: o, packs }) => (
               <TableRow key={o.id} data-testid={`product-open-order-${o.id}`}>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
                   <Link component={RouterLink} to={`/ingredients/orders/${o.id}`}>
@@ -412,7 +457,7 @@ export default function ProductPage() {
                   </Link>
                 </TableCell>
                 <TableCell>{o.supplier?.name}</TableCell>
-                <TableCell align="right">{sacks}</TableCell>
+                <TableCell align="right">{packs}</TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>{o.expected_on ?? ''}</TableCell>
               </TableRow>
             ))}
@@ -449,7 +494,9 @@ export default function ProductPage() {
                 <TableCell data-testid={`movement-kind-${m.id}`}>{movementKindLabel(m)}</TableCell>
                 <TableCell>{m.lot_number ?? `#${m.lot_id}`}</TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  {Number(m.quantity_lb) === 0 ? '—' : formatQuantity(m.quantity_lb, lotsById.get(m.lot_id)?.sack_size_lb, mode)}
+                  {Number(m.quantity) === 0
+                    ? '—'
+                    : formatQuantity(m.quantity, lotsById.get(m.lot_id)?.pack_name, lotsById.get(m.lot_id)?.pack_size, product.unit, mode)}
                 </TableCell>
                 <TableCell>{m.partner?.name ?? ''}</TableCell>
                 <TableCell>{m.note ?? ''}</TableCell>
@@ -465,12 +512,12 @@ export default function ProductPage() {
         open={open === 'delete'}
         onClose={close}
         onConfirm={handleDelete}
-        title="Delete maltster product"
+        title={`Delete ${productLabel(key).toLowerCase()}`}
         message={`Delete "${product.display_name}"? A product with offers or lots can't be deleted; make it inactive instead.`}
         loading={remove.isPending}
       />
-      <OfferDialog open={open === 'offer'} onClose={close} productId={product.id} offer={offer ?? undefined} />
-      <PriceDialog open={open === 'price'} onClose={close} offer={offer} />
+      <OfferDialog open={open === 'offer'} onClose={close} productId={product.id} unit={product.unit} categoryKey={key} offer={offer ?? undefined} />
+      <PriceDialog open={open === 'price'} onClose={close} offer={offer} unit={product.unit} />
       <AddLotDialog open={open === 'lot' && lotId == null} onClose={close} product={product} />
       <GrainLotDialog open={open === 'lot' && !!lot} onClose={close} product={product} lot={lot} movements={lot ? movements.filter((m) => m.lot_id === lot.id) : []} />
       <MovementDialog open={open === 'movement'} onClose={close} product={product} lots={lots} />
@@ -495,7 +542,7 @@ function Section({ title, action, children }: { title: string; action?: ReactNod
 }
 
 /** An offer's prices, newest first, with $/lb. */
-function PriceHistory({ offer }: { offer: SupplierOffer }) {
+function PriceHistory({ offer, unit }: { offer: SupplierOffer; unit: string }) {
   const { data: prices = [], isLoading } = useApiList<OfferPrice>(['offer_prices', offer.id], `/api/supplier_offers/${offer.id}/prices`)
   if (isLoading) return <CircularProgress size={20} />
   if (prices.length === 0)
@@ -508,7 +555,7 @@ function PriceHistory({ offer }: { offer: SupplierOffer }) {
     <Box data-testid={`price-history-${offer.id}`}>
       {prices.map((p) => (
         <Typography key={p.id} variant="body2" data-testid="price-history-row">
-          {p.effective_on}: {money(p.price_per_sack)}/sack · {money(p.price_per_lb, 4)}/lb
+          {p.effective_on}: {money(p.price_per_pack)}/{offer.pack_name} · {money(p.price_per_unit, 4)}/{unit}
           {p.id === offer.current_price?.id && ' (current)'}
           {p.note && ` · ${p.note}`}
           {p.entered_by && ` · ${p.entered_by.name}`}

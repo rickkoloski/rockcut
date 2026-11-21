@@ -46,7 +46,7 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
       req(c.brewer, :post, "/api/purchase_orders", %{
         "supplier_party_id" => c.bsg.id,
         "ordered_on" => Date.to_iso8601(Tasks.today()),
-        "lines" => [%{"offer_id" => c.offer.id, "sacks_ordered" => 5}]
+        "lines" => [%{"offer_id" => c.offer.id, "packs_ordered" => 5}]
       })
 
     data
@@ -67,7 +67,7 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
             do: %{
               "id" => l["id"],
               "offer_id" => l["offer_id"],
-              "sacks_ordered" => l["sacks_ordered"]
+              "packs_ordered" => l["packs_ordered"]
             }
           )
       },
@@ -75,7 +75,7 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
     )
   end
 
-  defp sacks(order), do: hd(order["lines"])["sacks_ordered"]
+  defp sacks(order), do: hd(order["lines"])["packs_ordered"]
 
   defp fetch!(c, path) do
     {200, %{"data" => data}} = req(c.brewer, :get, path)
@@ -92,7 +92,7 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
 
       nine =
         put_in(order_body(opened, %{})["lines"], [
-          %{"id" => line["id"], "offer_id" => c.offer.id, "sacks_ordered" => 9}
+          %{"id" => line["id"], "offer_id" => c.offer.id, "packs_ordered" => 9}
         ])
 
       assert {200, %{"data" => saved}} = req(c.brewer, :put, path, nine)
@@ -145,8 +145,8 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
                  "lines" => [
                    %{
                      "id" => line["id"],
-                     "sacks_received" => 5,
-                     "allocations" => [%{"lot_number" => "LD2-#{line["id"]}", "sacks" => 5}]
+                     "packs_received" => 5,
+                     "allocations" => [%{"lot_number" => "LD2-#{line["id"]}", "packs" => 5}]
                    }
                  ]
                })
@@ -173,8 +173,8 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
               l <- contract["lines"],
               do: %{
                 "product_id" => l["product_id"],
-                "sacks" => l["sacks"],
-                "price_per_sack" => l["price_per_sack"]
+                "quantity" => l["quantity"],
+                "price" => l["price"]
               }
             )
         },
@@ -191,7 +191,7 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
         req(c.mgr, :post, "/api/contracts", %{
           "supplier_party_id" => c.bsg.id,
           "year" => c.this + 1,
-          "lines" => [%{"product_id" => c.product.id, "sacks" => 5, "price_per_sack" => "41.00"}]
+          "lines" => [%{"product_id" => c.product.id, "quantity" => 5, "price" => "41.00"}]
         })
 
       assert opened["lock_version"] == 1
@@ -202,25 +202,25 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
 
       eight =
         contract_body(opened, %{
-          "lines" => [%{"product_id" => c.product.id, "sacks" => 8, "price_per_sack" => "41.00"}]
+          "lines" => [%{"product_id" => c.product.id, "quantity" => 8, "price" => "41.00"}]
         })
 
       assert {200, %{"data" => saved}} = req(c.owner, :put, path, eight)
-      assert saved["lock_version"] == 2 and hd(saved["lines"])["sacks"] == 8
+      assert saved["lock_version"] == 2 and hd(saved["lines"])["quantity"] == 8
       rows = prices(c.offer)
 
       # The stale dialog also changed the price: no price row is written.
       stale =
         contract_body(opened, %{
           "notes" => "stale",
-          "lines" => [%{"product_id" => c.product.id, "sacks" => 5, "price_per_sack" => "39.00"}]
+          "lines" => [%{"product_id" => c.product.id, "quantity" => 5, "price" => "39.00"}]
         })
 
       assert conflict(req(c.mgr, :put, path, stale)) == @contract_changed
 
       {200, %{"data" => now}} = req(c.mgr, :get, path)
       assert now["notes"] == nil and now["lock_version"] == 2
-      assert [%{"sacks" => 8, "price_per_sack" => "41"}] = now["lines"]
+      assert [%{"quantity" => 8, "price" => "41"}] = now["lines"]
       assert prices(c.offer) == rows
 
       assert Repo.all(
@@ -239,7 +239,7 @@ defmodule RockcutApiWeb.D61LeadDecisions2Test do
         req(c.mgr, :post, "/api/contracts", %{
           "supplier_party_id" => c.bsg.id,
           "year" => c.this + 1,
-          "lines" => [%{"product_id" => c.product.id, "sacks" => 5, "price_per_sack" => "41.00"}]
+          "lines" => [%{"product_id" => c.product.id, "quantity" => 5, "price" => "41.00"}]
         })
 
       path = "/api/contracts/#{opened["id"]}"

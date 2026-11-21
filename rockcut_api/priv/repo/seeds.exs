@@ -23,31 +23,49 @@ categories =
 
 Repo.insert_all(IngredientCategory, categories, on_conflict: :nothing, conflict_target: :name)
 
-# Fetch category IDs for field definition seeding
+# D62: the top-level categories' keys (`Ingredients.Catalog`), set by name
+# only where a key isn't taken yet, so a renamed category keeps its key.
+for {name, key} <- [
+      {"Grains", "grains"},
+      {"Hops", "hops"},
+      {"Fruits", "fruits"},
+      {"Spices & Flavorings", "spices"},
+      {"Sugars and Extracts", "sugars"},
+      {"Other Consumables", "consumables"},
+      {"Yeast Strains", "yeast"},
+      {"Future Ingredients", "future"}
+    ],
+    not Repo.exists?(from c in IngredientCategory, where: c.key == ^key) do
+  Repo.update_all(
+    from(c in IngredientCategory,
+      where: c.name == ^name and is_nil(c.parent_id) and is_nil(c.key)
+    ),
+    set: [key: key]
+  )
+end
+
+# Top-level category IDs by key (D62), for the seeding below
 category_ids =
-  Repo.all(IngredientCategory)
-  |> Map.new(fn c -> {c.name, c.id} end)
+  Repo.all(from c in IngredientCategory, where: not is_nil(c.key))
+  |> Map.new(fn c -> {c.key, c.id} end)
 
 # Seed category field definitions (idempotent)
 field_defs =
   [
     # Grains: none (D60 decision 2 dropped Origin and Maltster).
-    # Hops
-    {category_ids["Hops"], "Form", "dropdown", "Pellet, Whole Leaf, Cryo, Extract", false, 0},
-    {category_ids["Hops"], "Origin", "text", nil, false, 1},
-    {category_ids["Hops"], "Crop Year", "text", nil, false, 2},
+    # Hops: none (D62 §3.1: form and origin are on the product, crop year on the lot).
     # Yeast Strains
-    {category_ids["Yeast Strains"], "Lab", "text", nil, false, 0},
-    {category_ids["Yeast Strains"], "Product Code", "text", nil, false, 1},
-    {category_ids["Yeast Strains"], "Temp Range Low (F)", "number", nil, false, 2},
-    {category_ids["Yeast Strains"], "Temp Range High (F)", "number", nil, false, 3},
-    {category_ids["Yeast Strains"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
+    {category_ids["yeast"], "Lab", "text", nil, false, 0},
+    {category_ids["yeast"], "Product Code", "text", nil, false, 1},
+    {category_ids["yeast"], "Temp Range Low (F)", "number", nil, false, 2},
+    {category_ids["yeast"], "Temp Range High (F)", "number", nil, false, 3},
+    {category_ids["yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
     # Fruits
-    {category_ids["Fruits"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
+    {category_ids["fruits"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
     # Spices & Flavorings
-    {category_ids["Spices & Flavorings"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
+    {category_ids["spices"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
     # Sugars and Extracts
-    {category_ids["Sugars and Extracts"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
+    {category_ids["sugars"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
   ]
   |> Enum.map(fn {cat_id, field_name, field_type, options, required, sort_order} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -75,14 +93,44 @@ Repo.insert_all(CategoryFieldDefinition, field_defs,
 alias RockcutApi.Brewing.Ingredient
 
 grain_names = [
-  "2-Row", "Acidulated", "Barley, Roasted", "Beech Smoked Malt", "Biscuit",
-  "Black Malt", "Brown Malt", "Carafa 3 - dehusked", "Caramunich 1", "Caramunich 2",
-  "Caramunich 3", "CaraRed", "CaraRuby", "Chocolate Malt", "Crystal Dark (94L-107L)",
-  "Crystal Light (36L-43L)", "Crystal Medium (63L-72L)", "Dextrin", "English Pale",
-  "Honey Malt", "Maris Otter", "Melanoidin Malt", "Munich 4", "Munich 10",
-  "Munich Barke", "Munich Malt 1", "Munich Malt 2", "Oats, Flaked", "Oats, Malted",
-  "Pilsner", "Pilsner-Barke", "Rye Malt", "Special B", "Vienna Malt",
-  "Wheat, Extra Pale", "Wheat, Torrified", "Wheat, Munich", "Wheat, White"
+  "2-Row",
+  "Acidulated",
+  "Barley, Roasted",
+  "Beech Smoked Malt",
+  "Biscuit",
+  "Black Malt",
+  "Brown Malt",
+  "Carafa 3 - dehusked",
+  "Caramunich 1",
+  "Caramunich 2",
+  "Caramunich 3",
+  "CaraRed",
+  "CaraRuby",
+  "Chocolate Malt",
+  "Crystal Dark (94L-107L)",
+  "Crystal Light (36L-43L)",
+  "Crystal Medium (63L-72L)",
+  "Dextrin",
+  "English Pale",
+  "Honey Malt",
+  "Maris Otter",
+  "Melanoidin Malt",
+  "Munich 4",
+  "Munich 10",
+  "Munich Barke",
+  "Munich Malt 1",
+  "Munich Malt 2",
+  "Oats, Flaked",
+  "Oats, Malted",
+  "Pilsner",
+  "Pilsner-Barke",
+  "Rye Malt",
+  "Special B",
+  "Vienna Malt",
+  "Wheat, Extra Pale",
+  "Wheat, Torrified",
+  "Wheat, Munich",
+  "Wheat, White"
 ]
 
 # D60 §3.1: Grains' five children, in this order.
@@ -92,14 +140,18 @@ grain_children
 |> Enum.with_index()
 |> Enum.each(fn {name, sort_order} ->
   if is_nil(Repo.get_by(IngredientCategory, name: name)) do
-    Repo.insert!(%IngredientCategory{name: name, sort_order: sort_order, parent_id: category_ids["Grains"]})
+    Repo.insert!(%IngredientCategory{
+      name: name,
+      sort_order: sort_order,
+      parent_id: category_ids["grains"]
+    })
   end
 end)
 
 grain_category_ids =
   Repo.all(
     from c in IngredientCategory,
-      where: c.id == ^category_ids["Grains"] or c.parent_id == ^category_ids["Grains"],
+      where: c.id == ^category_ids["grains"] or c.parent_id == ^category_ids["grains"],
       select: c.id
   )
 
@@ -114,35 +166,69 @@ grain_ingredients =
   |> Enum.reject(&MapSet.member?(existing_grains, &1))
   |> Enum.map(fn name ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
-    %{category_id: category_ids["Grains"], name: name, notes: nil, inserted_at: now, updated_at: now}
+
+    %{
+      category_id: category_ids["grains"],
+      name: name,
+      notes: nil,
+      inserted_at: now,
+      updated_at: now
+    }
   end)
 
-Repo.insert_all(Ingredient, grain_ingredients, on_conflict: :nothing, conflict_target: [:name, :category_id])
+Repo.insert_all(Ingredient, grain_ingredients,
+  on_conflict: :nothing,
+  conflict_target: [:name, :category_id]
+)
 
 # D60 Appendix A: each grain's child category. Only grains still on the
 # Grains parent move, so a later move by hand sticks.
 grain_child_of = %{
   "Base" => [
-    "2-Row", "English Pale", "Maris Otter", "Pilsner", "Pilsner-Barke", "Vienna Malt",
-    "Munich 4", "Munich 10", "Munich Barke", "Munich Malt 1", "Munich Malt 2",
-    "Wheat, Extra Pale", "Wheat, White", "Wheat, Munich", "Rye Malt", "Oats, Malted"
+    "2-Row",
+    "English Pale",
+    "Maris Otter",
+    "Pilsner",
+    "Pilsner-Barke",
+    "Vienna Malt",
+    "Munich 4",
+    "Munich 10",
+    "Munich Barke",
+    "Munich Malt 1",
+    "Munich Malt 2",
+    "Wheat, Extra Pale",
+    "Wheat, White",
+    "Wheat, Munich",
+    "Rye Malt",
+    "Oats, Malted"
   ],
   "Crystal/Caramel" => [
-    "Caramunich 1", "Caramunich 2", "Caramunich 3", "CaraRed", "CaraRuby",
-    "Crystal Light (36L-43L)", "Crystal Medium (63L-72L)", "Crystal Dark (94L-107L)",
-    "Special B", "Dextrin"
+    "Caramunich 1",
+    "Caramunich 2",
+    "Caramunich 3",
+    "CaraRed",
+    "CaraRuby",
+    "Crystal Light (36L-43L)",
+    "Crystal Medium (63L-72L)",
+    "Crystal Dark (94L-107L)",
+    "Special B",
+    "Dextrin"
   ],
   "Kilned" => ["Biscuit", "Melanoidin Malt", "Honey Malt"],
   "Specialty" => ["Acidulated", "Beech Smoked Malt", "Oats, Flaked", "Wheat, Torrified"],
   "Roasted" => [
-    "Barley, Roasted", "Black Malt", "Chocolate Malt", "Carafa 3 - dehusked", "Brown Malt"
+    "Barley, Roasted",
+    "Black Malt",
+    "Chocolate Malt",
+    "Carafa 3 - dehusked",
+    "Brown Malt"
   ]
 }
 
 for {child, names} <- grain_child_of,
     %IngredientCategory{id: child_id} <- [Repo.get_by(IngredientCategory, name: child)] do
   Repo.update_all(
-    from(i in Ingredient, where: i.category_id == ^category_ids["Grains"] and i.name in ^names),
+    from(i in Ingredient, where: i.category_id == ^category_ids["grains"] and i.name in ^names),
     set: [category_id: child_id]
   )
 end
@@ -150,53 +236,74 @@ end
 other_ingredients =
   [
     # Hops
-    {category_ids["Hops"], "Centennial", "Citrus and floral, dual-purpose"},
-    {category_ids["Hops"], "Cascade", "Classic American, grapefruit and floral"},
-    {category_ids["Hops"], "Citra", "Tropical, passion fruit, grapefruit"},
-    {category_ids["Hops"], "Mosaic", "Complex fruit: mango, blueberry, earthy"},
-    {category_ids["Hops"], "Simcoe", "Pine, earthy, passion fruit"},
-    {category_ids["Hops"], "Amarillo", "Orange citrus, floral"},
+    {category_ids["hops"], "Centennial", "Citrus and floral, dual-purpose"},
+    {category_ids["hops"], "Cascade", "Classic American, grapefruit and floral"},
+    {category_ids["hops"], "Citra", "Tropical, passion fruit, grapefruit"},
+    {category_ids["hops"], "Mosaic", "Complex fruit: mango, blueberry, earthy"},
+    {category_ids["hops"], "Simcoe", "Pine, earthy, passion fruit"},
+    {category_ids["hops"], "Amarillo", "Orange citrus, floral"},
     # Yeast Strains
-    {category_ids["Yeast Strains"], "US-05", "Clean American ale yeast (Fermentis)"},
-    {category_ids["Yeast Strains"], "WLP001", "California Ale (White Labs)"},
-    {category_ids["Yeast Strains"], "Wyeast 1056", "American Ale (Wyeast)"},
-    {category_ids["Yeast Strains"], "WLP002", "English Ale (White Labs)"},
+    {category_ids["yeast"], "US-05", "Clean American ale yeast (Fermentis)"},
+    {category_ids["yeast"], "WLP001", "California Ale (White Labs)"},
+    {category_ids["yeast"], "Wyeast 1056", "American Ale (Wyeast)"},
+    {category_ids["yeast"], "WLP002", "English Ale (White Labs)"},
     # Sugars and Extracts
-    {category_ids["Sugars and Extracts"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
+    {category_ids["sugars"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
     # Other Consumables
-    {category_ids["Other Consumables"], "Irish Moss", "Kettle fining agent"},
-    {category_ids["Other Consumables"], "Whirlfloc", "Tablet fining, aids clarity"},
+    {category_ids["consumables"], "Irish Moss", "Kettle fining agent"},
+    {category_ids["consumables"], "Whirlfloc", "Tablet fining, aids clarity"}
   ]
   |> Enum.map(fn {cat_id, name, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     %{category_id: cat_id, name: name, notes: notes, inserted_at: now, updated_at: now}
   end)
 
-Repo.insert_all(Ingredient, other_ingredients, on_conflict: :nothing, conflict_target: [:name, :category_id])
+Repo.insert_all(Ingredient, other_ingredients,
+  on_conflict: :nothing,
+  conflict_target: [:name, :category_id]
+)
 
 # D60 §3.4: which features each category's lots and products carry (a
-# parent's apply to its children). Grains: five, none required.
+# parent's apply to its children). Grains: five, none required, a standard
+# on the product copied to each lot. D62 §3.4: Hops' alpha, beta and oil
+# are a typical range on the product and entered on each lot, alpha
+# required. Rerunning puts the modes back; sort order and `required` stay.
 alias RockcutApi.Ingredients.{CategoryFeatureType, FeatureType}
 
 feature_type_ids = Repo.all(FeatureType) |> Map.new(fn f -> {f.key, f.id} end)
 
+# {key, product mode, lot mode, lot required}
+grain = &{&1, "value", "copy", false}
+
 applicability =
   [
-    {"Grains", ~w(extract_fgdb color_lovibond diastatic_power_lintner protein_pct moisture_pct)},
-    {"Hops", ~w(alpha_acid_pct)},
-    {"Yeast Strains", ~w(attenuation_pct)}
+    {"grains",
+     Enum.map(
+       ~w(extract_fgdb color_lovibond diastatic_power_lintner protein_pct moisture_pct),
+       grain
+     )},
+    {"hops",
+     [
+       {"alpha_acid_pct", "range", "enter", true},
+       {"beta_acid_pct", "range", "enter", false},
+       {"total_oil_ml_100g", "range", "enter", false}
+     ]},
+    {"yeast", [grain.("attenuation_pct")]}
   ]
-  |> Enum.flat_map(fn {category, keys} ->
+  |> Enum.flat_map(fn {category, features} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
-    keys
+    features
     |> Enum.with_index()
-    |> Enum.map(fn {key, sort_order} ->
+    |> Enum.map(fn {{key, product_mode, lot_mode, lot_required}, sort_order} ->
       %{
         category_id: category_ids[category],
         feature_type_id: Map.fetch!(feature_type_ids, key),
         sort_order: sort_order,
         required: false,
+        product_mode: product_mode,
+        lot_mode: lot_mode,
+        lot_required: lot_required,
         inserted_at: now,
         updated_at: now
       }
@@ -204,7 +311,7 @@ applicability =
   end)
 
 Repo.insert_all(CategoryFeatureType, applicability,
-  on_conflict: :nothing,
+  on_conflict: {:replace, [:product_mode, :lot_mode, :lot_required]},
   conflict_target: [:category_id, :feature_type_id]
 )
 
@@ -216,9 +323,14 @@ IO.puts(
 # D60 §6: maltsters, suppliers, maltster products and supplier offers.
 Code.eval_file(Path.join(__DIR__, "seeds/grain_reference.exs"))
 
-# Ingredient LOTS are intentionally NOT seeded (D28): prod starts with an empty
+# D62 §7: hop companies, products with typical ranges, offers, and Matt's
+# cooler list as lots (2026-11-19). After the grain reference (BSG).
+Code.eval_file(Path.join(__DIR__, "seeds/hop_reference.exs"))
+
+# Grain LOTS are intentionally NOT seeded (D28): prod starts with no grain
 # inventory. D60 (task 3843): the malt specs that used to live on lots are the
-# maltster products' standard specs in `seeds/grain_reference.exs`.
+# maltster products' standard specs in `seeds/grain_reference.exs`. D62: the
+# hop lots above are Matt's real cooler count, seeded on every environment.
 
 # ── Accounts: departments + bootstrap owner (idempotent) ─────────────
 alias RockcutApi.Accounts
@@ -242,15 +354,30 @@ acct_now = DateTime.utc_now() |> DateTime.truncate(:second)
 |> Enum.each(fn {name, key, color, assignable, scheduling, owners_only} ->
   case Repo.get_by(Department, key: key) do
     nil ->
-      Repo.insert!(%Department{name: name, key: key, color: color, assignable: assignable, scheduling: scheduling, owners_only: owners_only, inserted_at: acct_now, updated_at: acct_now})
+      Repo.insert!(%Department{
+        name: name,
+        key: key,
+        color: color,
+        assignable: assignable,
+        scheduling: scheduling,
+        owners_only: owners_only,
+        inserted_at: acct_now,
+        updated_at: acct_now
+      })
 
     %Department{} = dept ->
       changes =
         []
         |> then(fn c -> if is_nil(dept.color), do: [{:color, color} | c], else: c end)
-        |> then(fn c -> if dept.assignable != assignable, do: [{:assignable, assignable} | c], else: c end)
-        |> then(fn c -> if dept.scheduling != scheduling, do: [{:scheduling, scheduling} | c], else: c end)
-        |> then(fn c -> if dept.owners_only != owners_only, do: [{:owners_only, owners_only} | c], else: c end)
+        |> then(fn c ->
+          if dept.assignable != assignable, do: [{:assignable, assignable} | c], else: c
+        end)
+        |> then(fn c ->
+          if dept.scheduling != scheduling, do: [{:scheduling, scheduling} | c], else: c
+        end)
+        |> then(fn c ->
+          if dept.owners_only != owners_only, do: [{:owners_only, owners_only} | c], else: c
+        end)
 
       if changes != [], do: dept |> Ecto.Changeset.change(changes) |> Repo.update!()
   end
@@ -300,7 +427,13 @@ with %Department{} = brewery <- Repo.get_by(Department, key: "brewery"),
   DailyItem.defaults()
   |> Enum.with_index(1)
   |> Enum.each(fn {name, position} ->
-    Repo.insert!(%DailyItem{department_id: brewery.id, name: name, position: position, inserted_at: acct_now, updated_at: acct_now})
+    Repo.insert!(%DailyItem{
+      department_id: brewery.id,
+      name: name,
+      position: position,
+      inserted_at: acct_now,
+      updated_at: acct_now
+    })
   end)
 end
 
@@ -308,7 +441,14 @@ end
 alias RockcutApi.Scheduling.Position
 
 dept_by_key = Repo.all(Department) |> Map.new(fn d -> {d.key, d} end)
-group_to_key = %{"Brewery" => "brewery", "Taproom" => "bar", "Office" => "office", "Sales" => "sales", "Other" => "other"}
+
+group_to_key = %{
+  "Brewery" => "brewery",
+  "Taproom" => "bar",
+  "Office" => "office",
+  "Sales" => "sales",
+  "Other" => "other"
+}
 
 [
   {"Brewer", "Brewery"},
@@ -327,7 +467,14 @@ group_to_key = %{"Brewery" => "brewery", "Taproom" => "bar", "Office" => "office
 
   case Repo.get_by(Position, name: name) do
     nil ->
-      Repo.insert!(%Position{name: name, group: group, active: true, department_id: dept && dept.id, inserted_at: acct_now, updated_at: acct_now})
+      Repo.insert!(%Position{
+        name: name,
+        group: group,
+        active: true,
+        department_id: dept && dept.id,
+        inserted_at: acct_now,
+        updated_at: acct_now
+      })
 
     %Position{department_id: nil} = pos ->
       pos |> Ecto.Changeset.change(department_id: dept && dept.id) |> Repo.update!()
@@ -349,7 +496,8 @@ position_by_name = Repo.all(Position) |> Map.new(fn p -> {p.name, p} end)
 |> Enum.each(fn {pos_name, tname, s, e} ->
   pos = position_by_name[pos_name]
 
-  if pos && is_nil(Repo.get_by(RockcutApi.Scheduling.ShiftTemplate, position_id: pos.id, name: tname)) do
+  if pos &&
+       is_nil(Repo.get_by(RockcutApi.Scheduling.ShiftTemplate, position_id: pos.id, name: tname)) do
     Repo.insert!(%RockcutApi.Scheduling.ShiftTemplate{
       position_id: pos.id,
       name: tname,
@@ -370,7 +518,9 @@ cond do
     :ok
 
   Credentials.fetch() == :error ->
-    IO.puts("Synthetic personas skipped: set SEED_PASSWORD (or rockcut_api/.env.synthetic), then run `mix rockcut.synthetic.setup`.")
+    IO.puts(
+      "Synthetic personas skipped: set SEED_PASSWORD (or rockcut_api/.env.synthetic), then run `mix rockcut.synthetic.setup`."
+    )
 
   true ->
     {:ok, count} = Synthetic.setup()

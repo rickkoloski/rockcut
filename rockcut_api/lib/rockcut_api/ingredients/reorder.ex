@@ -1,18 +1,20 @@
 defmodule RockcutApi.Ingredients.Reorder do
   @moduledoc """
-  D61 §3.5 (decisions 30, 31): a maltster product's minimum on hand, in
-  whole sacks, and what to order to get back to it.
+  D61 §3.5 (decisions 30, 31): a product's minimum on hand, in whole packs
+  (D62 §3.5; sacks for grain), and what to order to get back to it.
 
-  The sacks are the product's **reorder offer**'s: the one picked on To
+  The packs are the product's **reorder offer**'s: the one picked on To
   order (`reorder_offer_id`, lead decisions 1 gap 4) while it's active, else
   the offer on its most recent order line while it's active, else its first
   active offer (by id). On hand is the
-  stock in lots that aren't expired ÷ that offer's sack size; on order is
-  the lb on open order lines for the product (any supplier, any offer) ÷
-  that sack size too, to 2 decimals (lead decisions 1, item 20, as 17a). To order =
+  stock in lots that aren't expired ÷ that offer's pack size; on order is
+  the quantity on open order lines for the product (any supplier, any
+  offer) ÷ that pack size too, to 2 decimals (lead decisions 1, item 20, as
+  17a). To order =
   ⌈minimum − on hand − on order⌉ when above 0. Below minimum = on hand <
   minimum. D63 adds the future brews' need. A product with no offer has no
-  sack size, so nothing is computed for it (`offer` nil).
+  pack size, so nothing is computed for it (`offer` nil). Quantities are in
+  the product's unit.
   """
   import Ecto.Query
 
@@ -31,14 +33,14 @@ defmodule RockcutApi.Ingredients.Reorder do
 
   @doc """
   The To order list: every product with a minimum, by name, each with its
-  reorder offer (supplier and current price), `on_hand_sacks`,
-  `on_order_sacks`, `to_order` and `below_minimum`.
+  reorder offer (supplier and current price), `on_hand_packs`,
+  `on_order_packs`, `to_order` and `below_minimum`.
   """
   def list do
     products =
       from(p in Product,
-        where: not is_nil(p.min_on_hand_sacks),
-        preload: [:maltster, :ingredient]
+        where: not is_nil(p.min_on_hand_packs),
+        preload: [:manufacturer, :ingredient]
       )
       |> Repo.all()
 
@@ -50,21 +52,21 @@ defmodule RockcutApi.Ingredients.Reorder do
   end
 
   @doc """
-  `%{product_id => %{offer, on_hand_sacks, on_order_sacks, to_order,
-  below_minimum}}` for `products` (four queries however many; none when
+  `%{product_id => %{offer, on_hand, on_hand_packs, on_order,
+  on_order_packs, to_order, below_minimum}}` for `products` (four queries however many; none when
   no product has a minimum). Products without a minimum get nil figures and
   `below_minimum` false.
   """
   def status(products) do
-    with_min = Enum.filter(products, &(&1.min_on_hand_sacks != nil))
+    with_min = Enum.filter(products, &(&1.min_on_hand_packs != nil))
     ids = Enum.map(with_min, & &1.id)
 
     blank = %{
       offer: nil,
-      on_hand_lb: nil,
-      on_hand_sacks: nil,
-      on_order_lb: nil,
-      on_order_sacks: nil,
+      on_hand: nil,
+      on_hand_packs: nil,
+      on_order: nil,
+      on_order_packs: nil,
       to_order: nil,
       below_minimum: false
     }
@@ -73,33 +75,32 @@ defmodule RockcutApi.Ingredients.Reorder do
       Map.new(products, &{&1.id, blank})
     else
       offers = reorder_offers(with_min)
-      usable = usable_lb(ids)
+      usable = usable(ids)
       on_order = on_order(ids)
 
       Map.new(products, fn p ->
         offer = Map.get(offers, p.id)
-        lb = Map.get(usable, p.id, Decimal.new(0))
+        quantity = Map.get(usable, p.id, Decimal.new(0))
 
         cond do
-          is_nil(p.min_on_hand_sacks) ->
+          is_nil(p.min_on_hand_packs) ->
             {p.id, %{blank | offer: offer}}
 
-          # No offer, no sack size: on hand in lb only (To order says "No offer").
-          # No sack size to convert to: on order in sacks as ordered.
+          # No offer, no pack size: on hand in the unit only (To order says
+          # "No offer"). No pack size to convert to: on order in packs as ordered.
           is_nil(offer) ->
-            {ordered_lb, ordered_sacks} = Map.get(on_order, p.id, {Decimal.new(0), 0})
+            {ordered, ordered_packs} = Map.get(on_order, p.id, {Decimal.new(0), 0})
 
-            {p.id,
-             %{blank | on_hand_lb: lb, on_order_lb: ordered_lb, on_order_sacks: ordered_sacks}}
+            {p.id, %{blank | on_hand: quantity, on_order: ordered, on_order_packs: ordered_packs}}
 
           true ->
-            on_hand = Decimal.round(Decimal.div(lb, offer.sack_size_lb), 2)
-            {ordered_lb, _} = Map.get(on_order, p.id, {Decimal.new(0), 0})
-            ordered_in_size = Decimal.round(Decimal.div(ordered_lb, offer.sack_size_lb), 2)
-            ordered = sacks(ordered_in_size)
+            on_hand = Decimal.round(Decimal.div(quantity, offer.pack_size), 2)
+            {ordered_quantity, _} = Map.get(on_order, p.id, {Decimal.new(0), 0})
+            ordered_in_size = Decimal.round(Decimal.div(ordered_quantity, offer.pack_size), 2)
+            ordered = packs(ordered_in_size)
 
             need =
-              Decimal.new(p.min_on_hand_sacks)
+              Decimal.new(p.min_on_hand_packs)
               |> Decimal.sub(on_hand)
               |> Decimal.sub(ordered_in_size)
               |> Decimal.round(0, :ceiling)
@@ -108,12 +109,12 @@ defmodule RockcutApi.Ingredients.Reorder do
             {p.id,
              %{
                offer: offer,
-               on_hand_lb: lb,
-               on_hand_sacks: on_hand,
-               on_order_lb: ordered_lb,
-               on_order_sacks: ordered,
+               on_hand: quantity,
+               on_hand_packs: on_hand,
+               on_order: ordered_quantity,
+               on_order_packs: ordered,
                to_order: max(need, 0),
-               below_minimum: Decimal.lt?(on_hand, p.min_on_hand_sacks)
+               below_minimum: Decimal.lt?(on_hand, p.min_on_hand_packs)
              }}
         end
       end)
@@ -170,20 +171,20 @@ defmodule RockcutApi.Ingredients.Reorder do
     |> Map.reject(fn {_, o} -> is_nil(o) end)
   end
 
-  # lb in lots that aren't expired, per product.
-  defp usable_lb(product_ids) do
+  # The quantity in lots that aren't expired, per product.
+  defp usable(product_ids) do
     from(m in Movement,
       join: l in IngredientLot,
       on: l.id == m.lot_id,
       where: l.product_id in ^product_ids and l.status != "expired",
-      select: {l.product_id, m.quantity_lb}
+      select: {l.product_id, m.quantity}
     )
     |> Repo.all()
     |> Enum.reduce(%{}, fn {id, q}, acc -> Map.update(acc, id, q, &Decimal.add(&1, q)) end)
   end
 
-  # Whole sacks as JSON shows them, else to 2 decimals.
-  defp sacks(d) do
+  # Whole packs as JSON shows them, else to 2 decimals.
+  defp packs(d) do
     d = Decimal.round(d, 2)
 
     if Decimal.eq?(d, Decimal.round(d, 0)),
@@ -191,7 +192,7 @@ defmodule RockcutApi.Ingredients.Reorder do
       else: Decimal.to_float(d)
   end
 
-  # `{lb, sacks}` on open order lines, per product (any supplier, any offer).
+  # `{quantity, packs}` on open order lines, per product (any supplier, any offer).
   defp on_order(product_ids) do
     from(l in PurchaseOrderLine,
       join: o in PurchaseOrder,
@@ -199,12 +200,12 @@ defmodule RockcutApi.Ingredients.Reorder do
       join: f in SupplierOffer,
       on: f.id == l.offer_id,
       where: f.product_id in ^product_ids and o.status == "open",
-      select: {f.product_id, l.sacks_ordered, f.sack_size_lb}
+      select: {f.product_id, l.packs_ordered, f.pack_size}
     )
     |> Repo.all()
     |> Enum.reduce(%{}, fn {id, n, size}, acc ->
-      Map.update(acc, id, {Decimal.mult(size, n), n}, fn {lb, s} ->
-        {Decimal.add(lb, Decimal.mult(size, n)), s + n}
+      Map.update(acc, id, {Decimal.mult(size, n), n}, fn {q, s} ->
+        {Decimal.add(q, Decimal.mult(size, n)), s + n}
       end)
     end)
   end

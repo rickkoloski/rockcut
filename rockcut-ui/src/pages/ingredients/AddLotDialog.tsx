@@ -8,9 +8,10 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { LB_DECIMALS, parseDecimal, productSackSize } from '../../lib/brewingUnits'
-import { draftsFrom, draftsValid, featuresPayload, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
+import { LB_DECIMALS, parseDecimal, packSizeLabel, productPack } from '../../lib/brewingUnits'
+import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
+import { offerPackText } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
 import type { FeatureType, IngredientLot, IngredientProduct, Party } from '../../lib/types'
 
@@ -18,12 +19,16 @@ import type { FeatureType, IngredientLot, IngredientProduct, Party } from '../..
  * D60 §4.4: a lot of a maltster product. The offer sets the supplier and the
  * sack size; the first movement is its opening amount or what was received;
  * the specs start as the product's standard and can be changed for this lot.
+ * D62 §4.4: a hop lot is box · 11 lb and asks for its crop year (this year
+ * to start) and alpha acid (required), beta and oil, each with the
+ * product's typical range beside it; a value outside it is marked but saves.
  */
 export default function AddLotDialog({ open, onClose, product }: { open: boolean; onClose: () => void; product: IngredientProduct }) {
   return open ? <AddLotForm onClose={onClose} product={product} /> : null
 }
 
 function AddLotForm({ onClose, product }: { onClose: () => void; product: IngredientProduct }) {
+  const hops = product.category_key === 'hops'
   const { mode } = useQuantityDisplay()
   const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
   const { data: types = [], isLoading: typesLoading } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
@@ -34,19 +39,26 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
 
   const [offerId, setOfferId] = useState<number | ''>(first?.id ?? '')
   const [supplierId, setSupplierId] = useState<number | ''>(first?.supplier_party_id ?? '')
-  const [sackSize, setSackSize] = useState(first?.sack_size_lb ?? String(productSackSize(product.offers) ?? ''))
+  const startPack = productPack(product.offers)
+  const [packSize, setPackSize] = useState(first?.pack_size ?? (hops ? '11' : String(startPack?.size ?? '')))
+  // D62 §3.5: the pack is the offer's (a sack, for grain; always a box of 11 lb, for hops).
+  const [packName, setPackName] = useState(first?.pack_name ?? startPack?.name ?? (hops ? 'box' : 'sack'))
+  const [cropYear, setCropYear] = useState(coloradoToday().slice(0, 4))
   const [lotNumber, setLotNumber] = useState('')
   const [received, setReceived] = useState(coloradoToday())
   const [kind, setKind] = useState<'opening' | 'received'>('opening')
-  const [quantity, setQuantity] = useState<QuantityValue>({ lb: null, valid: true })
+  const [quantity, setQuantity] = useState<QuantityValue>({ quantity: null, valid: true })
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const featureTypes = typesFor(types, product.category?.id, product.category?.parent_id)
-  const shown = drafts ?? draftsFrom(product.features, featureTypes)
+  const featureTypes = hops ? lotTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
+  const required = requiredLotKeys(types, product.category?.id, product.category?.parent_id)
+  // A hop lot starts empty: the range is the product's, the actuals come from the supplier's sheet.
+  const shown = drafts ?? draftsFrom(hops ? null : product.features, featureTypes)
+  const crop = parseCropYear(cropYear, coloradoToday())
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && p.active)
-  const size = parseDecimal(sackSize, LB_DECIMALS)
-  const sackLb = size.ok && size.value ? Number(size.value) : null
+  const size = parseDecimal(packSize, LB_DECIMALS)
+  const packQty = size.ok && size.value ? Number(size.value) : null
 
   const create = useApiCreate<IngredientLot>('/api/ingredient_lots', { invalidateKeys: GRAIN_KEYS })
 
@@ -55,24 +67,29 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
     const o = offers.find((x) => x.id === id)
     if (o) {
       setSupplierId(o.supplier_party_id)
-      setSackSize(o.sack_size_lb)
+      setPackSize(o.pack_size)
+      setPackName(o.pack_name)
     }
   }
 
   const submit = async () => {
-    if (!quantity.valid || !quantity.lb || Number(quantity.lb) <= 0) return setError('Enter the quantity')
+    if (!quantity.valid || !quantity.quantity || Number(quantity.quantity) <= 0) return setError('Enter the quantity')
     if (!received) return setError('Pick the received date')
     if (received > coloradoToday()) return setError(FUTURE_DATE)
+    if (hops && crop.error) return setError(crop.error)
+    const missing = missingRequired(shown, featureTypes, required)
+    if (missing.length) return setError(`Enter the ${missing.join(' and ').toLowerCase()}`)
     try {
       await create.mutateAsync({
         product_id: product.id,
         supplier_party_id: supplierId || null,
-        sack_size_lb: size.ok ? size.value : null,
+        // A hop lot's pack is the API's to set (box · 11 lb).
+        ...(hops ? { crop_year: crop.year } : { pack_name: packName, pack_size: size.ok ? size.value : null }),
         lot_number: lotNumber.trim() || null,
         received_date: received,
         initial_kind: kind,
-        initial_quantity_lb: quantity.lb,
-        features: featuresPayload(shown, product.features),
+        initial_quantity: quantity.quantity,
+        features: featuresPayload(shown, hops ? null : product.features),
       })
       onClose()
     } catch (err) {
@@ -89,7 +106,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
       onSubmit={submit}
       loading={create.isPending}
       error={error}
-      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !size.ok || !quantity.valid}
+      submitDisabled={listsLoading || !draftsValid(shown, featureTypes) || !size.ok || !quantity.valid || (hops && !!crop.error)}
       testId="add-lot-dialog"
     >
       {offers.length > 0 && (
@@ -101,7 +118,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
             </MenuItem>
             {offers.map((o) => (
               <MenuItem key={o.id} value={o.id}>
-                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {Number(o.sack_size_lb)} lb {o.form}
+                {o.supplier?.name} · {o.order_name ?? 'no order name'} · {offerPackText(o, product.unit)}
               </MenuItem>
             ))}
           </Select>
@@ -120,8 +137,31 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
           ))}
         </Select>
       </FormControl>
-      <DecimalInput decimals={LB_DECIMALS} label="Sack size (lb)" value={sackSize} onChange={setSackSize} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-sack-size' } }} />
+      {hops ? (
+        <TextField label="Pack" value={`box · 11 ${product.unit}`} disabled fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-pack-fixed' } }} />
+      ) : (
+        <DecimalInput
+          decimals={LB_DECIMALS}
+          label={packSizeLabel(packName, product.unit)}
+          value={packSize}
+          onChange={setPackSize}
+          fullWidth
+          slotProps={{ htmlInput: { 'data-testid': 'lot-pack-size' } }}
+        />
+      )}
       <TextField label="Lot #" value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'lot-number' } }} />
+      {hops && (
+        <TextField
+          label="Crop year"
+          value={cropYear}
+          onChange={(e) => setCropYear(e.target.value)}
+          required
+          error={!!crop.error}
+          helperText={crop.error ?? undefined}
+          fullWidth
+          slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': 'lot-crop-year' } }}
+        />
+      )}
       <TextField
         label="Received"
         type="date"
@@ -138,9 +178,22 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
           <FormControlLabel value="received" control={<Radio />} label="Received" />
         </RadioGroup>
       </FormControl>
-      {/* A new sack size starts the boxes again, so sacks are always counted in it. */}
-      <QuantityInput key={`${mode}-${sackLb}`} mode={mode} sackSize={sackLb} label="Quantity" onChange={setQuantity} testId="lot-quantity" />
-      <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={create.isPending} />
+      {/* A new pack size starts the boxes again, so packs are always counted in it. */}
+      <QuantityInput
+        key={`${mode}-${packQty}`}
+        mode={mode}
+        packSize={packQty}
+        packName={packName}
+        unit={product.unit}
+        label="Quantity"
+        onChange={setQuantity}
+        testId="lot-quantity"
+      />
+      {hops ? (
+        <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} typical={product.features ?? {}} required={required} disabled={create.isPending} />
+      ) : (
+        <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={create.isPending} />
+      )}
     </FormDialog>
   )
 }

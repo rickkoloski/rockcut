@@ -29,7 +29,7 @@ defmodule RockcutApi.Ingredients.InventoryConcurrencyTest do
           Inventory.create_movement(
             %{
               "kind" => "used",
-              "quantity_lb" => "200",
+              "quantity" => "200",
               "occurred_on" => Date.to_iso8601(Tasks.today()),
               "product_id" => c.product.id,
               "allocation" => "oldest_first"

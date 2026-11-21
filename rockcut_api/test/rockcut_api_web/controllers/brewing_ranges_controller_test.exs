@@ -18,8 +18,9 @@ defmodule RockcutApiWeb.BrewingRangesControllerTest do
     # Recipes are unique per brand and version: the recipe case uses its own brand.
     {:ok, recipe_brand} = Brewing.create_brand(%{name: "[TEST] Ranges Amber"})
     {:ok, batch} = Brewing.create_batch(%{brand_id: brand.id})
-    {:ok, cat} = Brewing.create_ingredient_category(%{name: "Hops"})
-    {:ok, hop} = Brewing.create_ingredient(%{name: "Cascade", category_id: cat.id})
+    # D62: a category the catalog doesn't manage, so a lot needs no product.
+    cat = RockcutApi.IngredientFixtures.keyed_category!("Yeast Strains", "yeast")
+    {:ok, hop} = Brewing.create_ingredient(%{name: "WLP001", category_id: cat.id})
     {:ok, lot} = Brewing.create_ingredient_lot(%{ingredient_id: hop.id, lot_number: "R-1"})
 
     %{
@@ -49,7 +50,7 @@ defmodule RockcutApiWeb.BrewingRangesControllerTest do
        ~s("batch_id": #{c.batch.id}, "timestamp": "2026-10-28T12:00:00Z", "event_type": "ph_reading"),
        "ph", "5.2", "must be between 0 and 14"},
       {"/api/ingredient_lots", Brewing.IngredientLot,
-       ~s("ingredient_id": #{c.hop.id}, "lot_number": "R-2"), "sack_size_lb", "55",
+       ~s("ingredient_id": #{c.hop.id}, "lot_number": "R-2"), "pack_size", "55",
        "must be more than 0 and at most 10,000"},
       {"/api/recipes", Brewing.Recipe, ~s("brand_id": #{c.recipe_brand.id}), "batch_size", "15",
        "must be more than 0 and at most 10,000"},

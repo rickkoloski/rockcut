@@ -39,7 +39,7 @@ defmodule RockcutApiWeb.SupplierOfferController do
   def prices(conn, %{"id" => id}) do
     offer = Offers.get!(id)
     prices = Offers.list_prices(offer)
-    json(conn, %{data: Enum.map(prices, &offer_price(&1, offer.sack_size_lb))})
+    json(conn, %{data: Enum.map(prices, &offer_price(&1, offer.pack_size))})
   end
 
   def create_price(conn, %{"id" => id} = params) do
@@ -47,7 +47,7 @@ defmodule RockcutApiWeb.SupplierOfferController do
 
     with {:ok, price} <-
            Offers.create_price(offer, Map.delete(params, "id"), conn.assigns.current_user) do
-      conn |> put_status(:created) |> json(%{data: offer_price(price, offer.sack_size_lb)})
+      conn |> put_status(:created) |> json(%{data: offer_price(price, offer.pack_size)})
     end
   end
 end

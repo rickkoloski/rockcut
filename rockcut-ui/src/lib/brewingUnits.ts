@@ -2,7 +2,8 @@
 // stored in one unit each (extract % FGDB, color °L, diastatic power
 // °Lintner); the convert popup works out the stored value from another unit
 // and the API keeps what was typed as `entered_value`/`entered_unit`.
-// Quantities are stored in lb; sacks are worked out with a lot's sack size.
+// Quantities are stored in the product's unit (lb for grain); packs (a
+// grain sack) are worked out with a lot's or offer's pack size (D62 §3.5).
 // The API's side of this is `RockcutApi.Ingredients.Units` (the same 46.214).
 
 /** Gravity points of one pound of pure sucrose in one gallon. */
@@ -111,86 +112,141 @@ export function parseDecimal(text: string, decimals?: number): ParsedDecimal {
 export const tooManyDecimals = (decimals: number) =>
   decimals === 0 ? 'Use a whole number' : `Use at most ${decimals} ${decimals === 1 ? 'decimal' : 'decimals'}`
 
-/** Decimal places the API keeps for lb (quantities, sack sizes) and for $ (prices). */
+/** Decimal places the API keeps for quantities and pack sizes, and for $ (prices). */
 export const LB_DECIMALS = 2
 export const PRICE_DECIMALS = 2
 
-// ── Quantities (§3.7, §3.9) ──
+// ── Quantities (D60 §3.7, §3.9; D62 §3.5: packs and the product's unit) ──
 
-export type QuantityDisplay = 'sacks' | 'lb'
+/** `packs`: packs + the loose part in the unit ("12 sacks 22.5 lb"); `lb`: the total in the unit (stored as "lb"). */
+export type QuantityDisplay = 'packs' | 'lb'
+
+/** An offer's or lot's pack: its name ("sack") and size in the product's unit (55). */
+export interface Pack {
+  name: string | null
+  size: number
+}
 
 const toNumber = (v: string | number | null | undefined) => (v == null || v === '' ? null : Number(v))
 
-export const MIN_QUANTITY = 'Enter at least 0.01 lb'
+/** Decimal places a quantity in `unit` takes: `each` is whole numbers (D62 §3.5). */
+export const unitDecimals = (unit: string | null | undefined) => (unit === 'each' ? 0 : LB_DECIMALS)
+
+/** A pack name's plural: sack/sacks, box/boxes, bag/bags, …, each/each. */
+export function packPlural(name: string | null | undefined): string {
+  if (!name) return 'packs'
+  if (name === 'each') return 'each'
+  if (name === 'box') return 'boxes'
+  return `${name}s`
+}
+
+/** "sack" for 1, else the plural. */
+export const packWord = (name: string | null | undefined, n: number) => (n === 1 ? (name ?? 'pack') : packPlural(name))
+
+/** "Sacks" (a label). */
+export const packLabel = (name: string | null | undefined) => {
+  const plural = packPlural(name)
+  return plural.charAt(0).toUpperCase() + plural.slice(1)
+}
+
+/** "Sack size (lb)": a pack size box's label. */
+export const packSizeLabel = (name: string | null | undefined, unit: string = 'lb') => {
+  const n = name ?? 'pack'
+  return `${n.charAt(0).toUpperCase()}${n.slice(1)} size (${unit})`
+}
+
+/** The smallest quantity the API takes, said in the unit. */
+export const minQuantity = (unit: string = 'lb') => `Enter at least ${unit === 'each' ? '1' : '0.01'} ${unit}`
 
 /**
- * A quantity's boxes (sacks and lb, or lb alone when `sackSize` is null) as
- * lb: null when empty or refused, `valid` false while refused. Over 0 but
- * under 0.01 lb (the API's smallest) is refused with `error`, before rounding
- * makes it 0 (lead decisions 3, gap 16).
+ * A quantity's boxes (packs and the loose part, or the total alone when
+ * `packSize` is null) as a quantity in the unit: null when empty or refused,
+ * `valid` false while refused. Over 0 but under 0.01 (the API's smallest) is
+ * refused with `error`, before rounding makes it 0 (lead decisions 3, gap 16).
  */
-export function readQuantity(sackText: string, lbText: string, sackSize: number | null): { lb: string | null; valid: boolean; error?: string } {
-  const ps = parseDecimal(sackSize != null ? sackText : '', LB_DECIMALS)
-  const pl = parseDecimal(lbText, LB_DECIMALS)
-  if (!ps.ok || !pl.ok) return { lb: null, valid: false }
-  if (ps.value == null && pl.value == null) return { lb: null, valid: true }
-  const sacks = Number(ps.value ?? 0)
+export function readQuantity(
+  packText: string,
+  looseText: string,
+  packSize: number | null,
+  unit: string = 'lb',
+): { quantity: string | null; valid: boolean; error?: string } {
+  const decimals = unitDecimals(unit)
+  const pp = parseDecimal(packSize != null ? packText : '', LB_DECIMALS)
+  const pl = parseDecimal(looseText, decimals)
+  if (!pp.ok || !pl.ok) return { quantity: null, valid: false }
+  if (pp.value == null && pl.value == null) return { quantity: null, valid: true }
+  const packs = Number(pp.value ?? 0)
   const loose = Number(pl.value ?? 0)
-  const raw = sackSize != null ? sacks * sackSize + loose : loose
-  if (raw > 0 && raw < 0.01) return { lb: null, valid: false, error: MIN_QUANTITY }
-  return { lb: String(sackSize != null ? sacksToLb(sacks, loose, sackSize) : loose), valid: true }
+  const raw = packSize != null ? packs * packSize + loose : loose
+  if (raw > 0 && raw < 0.01) return { quantity: null, valid: false, error: minQuantity(unit) }
+  return { quantity: String(packSize != null ? packsToQuantity(packs, loose, packSize, unit) : loose), valid: true }
 }
 
-/** Sacks and loose lb as lb, rounded to 0.01 lb. */
-export function sacksToLb(sacks: number, lb: number, sackSize: number): number {
-  return Math.round((sacks * sackSize + lb) * 100) / 100
+/** Packs and the loose part as a quantity, rounded to 0.01 (to 1 for `each`). */
+export function packsToQuantity(packs: number, loose: number, packSize: number, unit: string = 'lb'): number {
+  const scale = 10 ** unitDecimals(unit)
+  return Math.round((packs * packSize + loose) * scale) / scale
 }
 
-/** lb as whole sacks and the loose lb left over (0.01 lb precision). */
-export function lbToSacks(lb: number, sackSize: number): { sacks: number; lb: number } {
-  const cents = Math.round(lb * 100)
-  const sackCents = Math.round(sackSize * 100)
-  const sacks = Math.floor(cents / sackCents)
-  return { sacks, lb: (cents - sacks * sackCents) / 100 }
+/** A quantity as whole packs and the loose part left over (0.01 precision; 1 for `each`). */
+export function quantityToPacks(quantity: number, packSize: number, unit: string = 'lb'): { packs: number; loose: number } {
+  const scale = 10 ** unitDecimals(unit)
+  const units = Math.round(quantity * scale)
+  const packUnits = Math.round(packSize * scale)
+  const packs = Math.floor(units / packUnits)
+  return { packs, loose: (units - packs * packUnits) / scale }
 }
 
-const fmtLb = (n: number) => n.toLocaleString('en-US', { maximumFractionDigits: 2 })
+const fmtAmount = (n: number, unit: string) => `${n.toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unit}`
 
 /**
- * A quantity as the account shows it (§3.9): "12 sacks 22.5 lb", "12 sacks"
- * (whole sacks), "22.5 lb" (under one sack), or "682.5 lb". Without a sack
- * size it's always lb. A negative quantity (a movement out) gets a "−".
+ * A quantity as the account shows it (D60 §3.9, D62 §3.5; the API's
+ * `Units.format_quantity/5`): "12 sacks 22.5 lb", "12 sacks" (whole packs),
+ * "22.5 lb" (under one pack), or the total, "682.5 lb". Without a pack size
+ * it's always the total. `each` is whole numbers. A negative quantity (a
+ * movement out) gets a "−".
  */
-export function formatQuantity(lb: string | number | null | undefined, sackSize: string | number | null | undefined, mode: QuantityDisplay): string {
-  const n = toNumber(lb)
+export function formatQuantity(
+  quantity: string | number | null | undefined,
+  packName: string | null | undefined,
+  packSize: string | number | null | undefined,
+  unit: string | null | undefined,
+  mode: QuantityDisplay,
+): string {
+  const n = toNumber(quantity)
   if (n == null || Number.isNaN(n)) return '—'
+  const u = unit || 'lb'
   const sign = n < 0 ? '−' : ''
   const abs = Math.abs(n)
-  const size = toNumber(sackSize)
-  if (mode === 'lb' || !size || size <= 0) return `${sign}${fmtLb(abs)} lb`
-  const { sacks, lb: loose } = lbToSacks(abs, size)
-  if (sacks === 0) return `${sign}${fmtLb(loose)} lb`
-  const sackPart = `${sacks.toLocaleString('en-US')} ${sacks === 1 ? 'sack' : 'sacks'}`
-  return loose === 0 ? `${sign}${sackPart}` : `${sign}${sackPart} ${fmtLb(loose)} lb`
+  const size = toNumber(packSize)
+  if (mode === 'lb' || !size || size <= 0) return `${sign}${fmtAmount(abs, u)}`
+  const { packs, loose } = quantityToPacks(abs, size, u)
+  if (packs === 0) return `${sign}${fmtAmount(loose, u)}`
+  const packPart = `${packs.toLocaleString('en-US')} ${packWord(packName, packs)}`
+  return loose === 0 ? `${sign}${packPart}` : `${sign}${packPart} ${fmtAmount(loose, u)}`
+}
+
+/** A lot's pack (null without a size). */
+export function lotPack(lot: { pack_name: string | null; pack_size: string | number | null } | null | undefined): Pack | null {
+  const size = toNumber(lot?.pack_size)
+  return lot && size && size > 0 ? { name: lot.pack_name, size } : null
 }
 
 /**
- * The sack size to show a product's total in: the one size its stocked lots
- * share (or, with no stocked lots, its active offers share). Lots or offers
- * of different sizes: none, and the total shows in lb.
+ * The pack to show a product's total in: the one its stocked lots share (or,
+ * with no stocked lots, its active offers share). Lots or offers of
+ * different packs: none, and the total shows in the unit.
  */
-export function productSackSize(
-  offers: { sack_size_lb: string | number | null; active?: boolean }[] | null | undefined,
-  lots?: { sack_size_lb: string | number | null; on_hand_lb?: string | number | null }[] | null,
-): number | null {
-  const stocked = (lots ?? []).filter((l) => (toNumber(l.on_hand_lb) ?? 0) > 0)
-  const sizes = stocked.length
-    ? stocked.map((l) => toNumber(l.sack_size_lb))
-    : (offers ?? []).filter((o) => o.active !== false).map((o) => toNumber(o.sack_size_lb))
-  const unique = new Set(sizes)
+export function productPack(
+  offers: { pack_name: string | null; pack_size: string | number | null; active?: boolean }[] | null | undefined,
+  lots?: { pack_name: string | null; pack_size: string | number | null; on_hand?: string | number | null }[] | null,
+): Pack | null {
+  const stocked = (lots ?? []).filter((l) => (toNumber(l.on_hand) ?? 0) > 0)
+  const packs = stocked.length ? stocked : (offers ?? []).filter((o) => o.active !== false)
+  const unique = new Map(packs.map((p) => [`${p.pack_name}|${toNumber(p.pack_size)}`, p]))
   if (unique.size !== 1) return null
-  const [size] = unique
-  return size && size > 0 ? size : null
+  const [only] = unique.values()
+  return lotPack(only)
 }
 
 // ── Feature values ──
@@ -223,8 +279,8 @@ export interface IngredientSettings {
 /** The ingredients settings in `raw` that are valid; anything else is dropped. */
 export function cleanIngredientSettings(raw: unknown): Partial<IngredientSettings> {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-  return r.quantity_display === 'sacks' || r.quantity_display === 'lb' ? { quantity_display: r.quantity_display } : {}
+  return r.quantity_display === 'packs' || r.quantity_display === 'lb' ? { quantity_display: r.quantity_display } : {}
 }
 
-/** The display to use: the stored one, or sacks + lb. */
-export const quantityDisplay = (stored: unknown): QuantityDisplay => cleanIngredientSettings(stored).quantity_display ?? 'sacks'
+/** The display to use: the stored one, or packs + unit. */
+export const quantityDisplay = (stored: unknown): QuantityDisplay => cleanIngredientSettings(stored).quantity_display ?? 'packs'

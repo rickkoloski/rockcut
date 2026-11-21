@@ -29,14 +29,14 @@ async function slow(page: Page) {
 
 test('D1: two people edit one order: the second save is refused with the message, keeps its input, and reopening shows the first change', async ({ browser }) => {
   const { supplier, offer } = await makePurchasing('D1')
-  const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 5 }])
+  const order = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 5 }])
   const a = await as(browser, 'brewer1')
   const b = await as(browser, 'brewer2')
   for (const p of [a, b]) await p.goto(`/ingredients/orders/${order.id}`)
   const da = await openDialog(a, a.getByTestId('order-edit'), 'order-dialog')
   const db = await openDialog(b, b.getByTestId('order-edit'), 'order-dialog')
 
-  await da.getByTestId('order-line-0-sacks').fill('9')
+  await da.getByTestId('order-line-0-packs').fill('9')
   await da.getByRole('button', { name: 'Save' }).click()
   await expect(da).toHaveCount(0)
 
@@ -51,25 +51,25 @@ test('D1: two people edit one order: the second save is refused with the message
   await expect(db).toContainText('Someone else changed this order')
 
   const now = await getOrder(order.id)
-  expect([now.lines[0].sacks_ordered, now.reference]).toEqual([9, null])
+  expect([now.lines[0].packs_ordered, now.reference]).toEqual([9, null])
 
   await db.getByRole('button', { name: 'Cancel' }).click()
   await expect(db).toHaveCount(0)
   const again = await openDialog(b, b.getByTestId('order-edit'), 'order-dialog')
-  await expect(again.getByTestId('order-line-0-sacks')).toHaveValue('9')
+  await expect(again.getByTestId('order-line-0-packs')).toHaveValue('9')
   await again.getByTestId('order-reference').fill('PO-FRESH')
   const saved = b.waitForResponse((r) => r.request().method() === 'PUT' && r.url().endsWith(`/api/purchase_orders/${order.id}`))
   await again.getByRole('button', { name: 'Save' }).click()
   expect((await saved).status()).toBe(200)
   await expect(again).toHaveCount(0)
   const after = await getOrder(order.id)
-  expect([after.lines[0].sacks_ordered, after.reference]).toEqual([9, 'PO-FRESH'])
+  expect([after.lines[0].packs_ordered, after.reference]).toEqual([9, 'PO-FRESH'])
 })
 
 test('D2: two people edit one contract: the second save is refused, keeps its input, and reopening shows the first change', async ({ browser }) => {
   const { product, supplier } = await makePurchasing('D2')
   const made = await (await apiAs('breweryMgr')).post('/api/contracts', {
-    data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: product.id, sacks: 5, price_per_sack: '41.00' }] },
+    data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: product.id, quantity: 5, price: '41.00' }] },
   })
   expect(made.status()).toBe(201)
   const id = (await made.json()).data.id as number
@@ -79,7 +79,7 @@ test('D2: two people edit one contract: the second save is refused, keeps its in
   const da = await openDialog(a, a.getByTestId(`contract-${id}-edit`), 'contract-dialog')
   const db = await openDialog(b, b.getByTestId(`contract-${id}-edit`), 'contract-dialog')
 
-  await da.getByTestId('contract-line-0-sacks').fill('8')
+  await da.getByTestId('contract-line-0-quantity').fill('8')
   await da.getByRole('button', { name: 'Save' }).click()
   await expect(da).toHaveCount(0)
 
@@ -92,13 +92,13 @@ test('D2: two people edit one contract: the second save is refused, keeps its in
 
   const read = async () => (await (await (await apiAs('breweryMgr')).get(`/api/contracts/${id}`)).json()).data
   const now = await read()
-  expect([now.lines[0].sacks, now.notes]).toEqual([8, null])
+  expect([now.lines[0].quantity, now.notes]).toEqual([8, null])
 
   await db.getByRole('button', { name: 'Cancel' }).click()
   await expect(db).toHaveCount(0)
   await expect(b.getByTestId(`contract-line-${product.id}`)).toContainText('8')
   const again = await openDialog(b, b.getByTestId(`contract-${id}-edit`), 'contract-dialog')
-  await expect(again.getByTestId('contract-line-0-sacks')).toHaveValue('8')
+  await expect(again.getByTestId('contract-line-0-quantity')).toHaveValue('8')
 })
 
 test.describe('brewer1', () => {
@@ -106,7 +106,7 @@ test.describe('brewer1', () => {
 
   test('D3: a slow double tap on Cancel order sends one cancel and shows no error', async ({ page }) => {
     const { supplier, offer } = await makePurchasing('D3')
-    const order = await makeOrder(supplier.id, [{ offerId: offer.id, sacks: 1 }])
+    const order = await makeOrder(supplier.id, [{ offerId: offer.id, packs: 1 }])
     await page.goto(`/ingredients/orders/${order.id}`)
     const posts: string[] = []
     page.on('request', (r) => {
@@ -172,7 +172,7 @@ test.describe('brewer1', () => {
     await page.getByTestId('product-record-movement').click()
     const d = page.getByTestId('movement-dialog')
     await pick(page, d, 'Kind', 'Loaned out')
-    await d.getByTestId('movement-quantity-sacks').fill('1')
+    await d.getByTestId('movement-quantity-packs').fill('1')
     await expect(d.getByTestId('movement-partner-loading')).toHaveText('Loading partner breweries…')
     await expect(d.getByTestId('movement-partner-none')).toHaveCount(0)
     await expect(d.getByRole('combobox', { name: 'Partner brewery' })).toHaveAttribute('aria-disabled', 'true')
@@ -198,7 +198,7 @@ test.describe('breweryMgr', () => {
     const { product, supplier } = await makePurchasing('D5')
     const far = year + 7
     const made = await (await apiAs('breweryMgr')).post('/api/contracts', {
-      data: { supplier_party_id: supplier.id, year: far, lines: [{ product_id: product.id, sacks: 2, price_per_sack: '41.00' }] },
+      data: { supplier_party_id: supplier.id, year: far, lines: [{ product_id: product.id, quantity: 2, price: '41.00' }] },
     })
     expect(made.status()).toBe(201)
     const id = (await made.json()).data.id as number
@@ -242,7 +242,7 @@ test.describe('breweryMgr', () => {
   test('D4 (item 7): Save in Edit contract waits for the lists, then saves once', async ({ page }) => {
     const { product, supplier } = await makePurchasing('D4c')
     const made = await (await apiAs('breweryMgr')).post('/api/contracts', {
-      data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: product.id, sacks: 5, price_per_sack: '41.00' }] },
+      data: { supplier_party_id: supplier.id, year: year + 1, lines: [{ product_id: product.id, quantity: 5, price: '41.00' }] },
     })
     expect(made.status()).toBe(201)
     const id = (await made.json()).data.id as number
@@ -269,6 +269,6 @@ test.describe('breweryMgr', () => {
     await expect(d).toHaveCount(0)
     expect(puts).toEqual([200])
     const now = (await (await (await apiAs('breweryMgr')).get(`/api/contracts/${id}`)).json()).data
-    expect([now.notes, now.lines[0].sacks]).toEqual(['lists held', 5])
+    expect([now.notes, now.lines[0].quantity]).toEqual(['lists held', 5])
   })
 })

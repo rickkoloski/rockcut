@@ -23,6 +23,9 @@ defmodule RockcutApi.IngredientFixtures do
 
   def feature_type!(key), do: Repo.get_by!(FeatureType, key: key)
 
+  @doc "D62 lead decisions 1, gap 9: a product's version, as an Edit dialog sends it back."
+  def product_version(id), do: Repo.get!(Product, id).lock_version
+
   @doc "Sets `lot`'s value for each `{feature key, value}`; returns the lot."
   def lot_features!(lot, values) do
     for {key, value} <- values do
@@ -38,15 +41,17 @@ defmodule RockcutApi.IngredientFixtures do
 
   @doc """
   D60 Stage 2: a small grain catalog as the seeds make it. Grains with a
-  Base child (the five grain features apply to Grains), Hops (alpha acid);
-  Rahr (maltster), BSG (supplier), Root Shoot (both), Mountain Brewing
+  Base child (the five grain features apply to Grains), Hops (D62 §3.4:
+  alpha, beta and oil as ranges on the product, entered on each lot, alpha
+  required), each top-level one with its D62 key; Rahr (manufacturer, the maltster),
+  BSG (supplier), Root Shoot (both), Mountain Brewing
   (partner brewery); grain 2-Row with product Rahr 2-Row (standard extract
   81.5, color 2.0) and a BSG offer of 55 lb sacks.
   """
   def grain_catalog! do
-    grains = Repo.insert!(%IngredientCategory{name: "Grains", sort_order: 0})
+    grains = Repo.insert!(%IngredientCategory{name: "Grains", key: "grains", sort_order: 0})
     base = Repo.insert!(%IngredientCategory{name: "Base", sort_order: 0, parent_id: grains.id})
-    hops = Repo.insert!(%IngredientCategory{name: "Hops", sort_order: 1})
+    hops = Repo.insert!(%IngredientCategory{name: "Hops", key: "hops", sort_order: 1})
 
     for {key, i} <- Enum.with_index(@grain_features) do
       Repo.insert!(%CategoryFeatureType{
@@ -56,14 +61,20 @@ defmodule RockcutApi.IngredientFixtures do
       })
     end
 
-    Repo.insert!(%CategoryFeatureType{
-      category_id: hops.id,
-      feature_type_id: feature_type!("alpha_acid_pct").id
-    })
+    for {key, i} <- Enum.with_index(~w(alpha_acid_pct beta_acid_pct total_oil_ml_100g)) do
+      Repo.insert!(%CategoryFeatureType{
+        category_id: hops.id,
+        feature_type_id: feature_type!(key).id,
+        sort_order: i,
+        product_mode: "range",
+        lot_mode: "enter",
+        lot_required: key == "alpha_acid_pct"
+      })
+    end
 
-    rahr = party!("Rahr", ~w(maltster))
+    rahr = party!("Rahr", ~w(manufacturer))
     bsg = party!("BSG", ~w(supplier))
-    root_shoot = party!("Root Shoot", ~w(maltster supplier))
+    root_shoot = party!("Root Shoot", ~w(manufacturer supplier))
     mountain = party!("Mountain Brewing", ~w(partner_brewery))
 
     two_row = Repo.insert!(%Ingredient{name: "2-Row", category_id: base.id})
@@ -74,7 +85,8 @@ defmodule RockcutApi.IngredientFixtures do
         product_id: product.id,
         supplier_party_id: bsg.id,
         order_name: "Rahr - Standard 2-row (milled)",
-        sack_size_lb: Decimal.new(55),
+        pack_name: "sack",
+        pack_size: Decimal.new(55),
         form: "milled"
       })
 
@@ -92,17 +104,91 @@ defmodule RockcutApi.IngredientFixtures do
     }
   end
 
+  @doc """
+  D62 Stage 2: on `grain_catalog!/0`'s Hops, Yakima Chief Hops (manufacturer
+  and supplier), hop Citra and its product YCH Citra T90 Pellet (alpha
+  11–13, beta 3.5–4.5, oil 2.5–3), and a YCH offer of 11 lb boxes.
+  """
+  def hop_catalog!(c) do
+    ych = party!("Yakima Chief Hops", ~w(manufacturer supplier))
+    citra = Repo.insert!(%Ingredient{name: "Citra", category_id: c.hops.id})
+
+    product =
+      Repo.insert!(%Product{
+        ingredient_id: citra.id,
+        manufacturer_party_id: ych.id,
+        form: "T90 Pellet",
+        origin: "USA"
+      })
+
+    for {key, low, high} <- [
+          {"alpha_acid_pct", "11", "13"},
+          {"beta_acid_pct", "3.5", "4.5"},
+          {"total_oil_ml_100g", "2.5", "3"}
+        ] do
+      Repo.insert!(%ProductFeatureValue{
+        product_id: product.id,
+        feature_type_id: feature_type!(key).id,
+        value: Decimal.new(low),
+        value_high: Decimal.new(high)
+      })
+    end
+
+    offer =
+      Repo.insert!(%SupplierOffer{
+        product_id: product.id,
+        supplier_party_id: ych.id,
+        pack_name: "box",
+        pack_size: Decimal.new(11),
+        form: nil
+      })
+
+    %{ych: ych, citra: citra, hop_product: product, hop_offer: offer}
+  end
+
+  @doc "D62: a hop lot of `product` (11 lb boxes) with `alpha`, crop year and an opening amount."
+  def hop_lot!(product, received, quantity, alpha, lot_number \\ nil, crop_year \\ 2025) do
+    lot =
+      Repo.insert!(%IngredientLot{
+        ingredient_id: product.ingredient_id,
+        product_id: product.id,
+        lot_number: lot_number,
+        received_date: received,
+        crop_year: crop_year,
+        pack_name: "box",
+        pack_size: Decimal.new(11)
+      })
+
+    lot_features!(lot, alpha_acid_pct: alpha)
+
+    Repo.insert!(%Movement{
+      lot_id: lot.id,
+      kind: "opening",
+      quantity: Decimal.new(quantity),
+      occurred_on: received
+    })
+
+    lot
+  end
+
+  @doc """
+  D62: a top-level category with its key (`Ingredients.Catalog` reads the
+  key, never the name; the API doesn't set keys).
+  """
+  def keyed_category!(name, key),
+    do: Repo.insert!(%IngredientCategory{name: name, key: key})
+
   def party!(name, roles) do
     party = Repo.insert!(%Party{name: name})
     for role <- roles, do: Repo.insert!(%PartyRole{party_id: party.id, role: role})
     party
   end
 
-  def product!(ingredient, maltster, features \\ [], name \\ nil) do
+  def product!(ingredient, manufacturer, features \\ [], name \\ nil) do
     product =
       Repo.insert!(%Product{
         ingredient_id: ingredient.id,
-        maltster_party_id: maltster.id,
+        manufacturer_party_id: manufacturer.id,
         name: name
       })
 
@@ -117,21 +203,22 @@ defmodule RockcutApi.IngredientFixtures do
     product
   end
 
-  @doc "A lot of `product` received `received` with an opening amount of `lb`."
-  def stocked_lot!(product, received, lb, lot_number \\ nil) do
+  @doc "A lot of `product` (55 lb sacks) received `received` with an opening amount of `quantity`."
+  def stocked_lot!(product, received, quantity, lot_number \\ nil) do
     lot =
       Repo.insert!(%IngredientLot{
         ingredient_id: product.ingredient_id,
         product_id: product.id,
         lot_number: lot_number,
         received_date: received,
-        sack_size_lb: Decimal.new(55)
+        pack_name: "sack",
+        pack_size: Decimal.new(55)
       })
 
     Repo.insert!(%Movement{
       lot_id: lot.id,
       kind: "opening",
-      quantity_lb: Decimal.new(lb),
+      quantity: Decimal.new(quantity),
       occurred_on: received
     })
 
@@ -144,7 +231,8 @@ defmodule RockcutApi.IngredientFixtures do
       Repo.insert!(%SupplierOffer{
         product_id: product.id,
         supplier_party_id: supplier.id,
-        sack_size_lb: Decimal.new(size),
+        pack_name: "sack",
+        pack_size: Decimal.new(size),
         form: "whole"
       })
 
@@ -156,7 +244,7 @@ defmodule RockcutApi.IngredientFixtures do
   def price!(offer, price, on \\ ~D[2000-01-01]) do
     Repo.insert!(%OfferPrice{
       offer_id: offer.id,
-      price_per_sack: Decimal.new(price),
+      price_per_pack: Decimal.new(price),
       effective_on: on
     })
   end

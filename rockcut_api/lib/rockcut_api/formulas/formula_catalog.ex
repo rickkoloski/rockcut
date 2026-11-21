@@ -13,7 +13,8 @@ defmodule RockcutApi.Formulas.FormulaCatalog do
     %{
       name: "inventory_on_hand",
       description:
-        "On hand in lb (the sum of the lots' movements) of a maltster product or an ingredient",
+        "On hand (the sum of the lots' movements) of a product in its unit, or of an " <>
+          "ingredient whose products share a unit; the result carries the unit",
       params: [
         %{name: "ingredient_id", type: :integer, required: false},
         %{name: "product_id", type: :integer, required: false}

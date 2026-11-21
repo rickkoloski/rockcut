@@ -1144,3 +1144,71 @@ ExUnit under `rockcut_api/test/`: `rockcut_api_web/controllers/purchasing_api_te
 | 7 (gap 6) | Save waits for the lists in the remaining D61 dialogs too: Edit/New contract (parties, the supplier's offers, products), Edit/New order and To order's Start an order (the same), Receive (each line's lots and product, feature types), and Record movement for a trade or loan (parties). Count, Add price, Company (order target) and the confirms load no lists | Playwright D4 (item 7: Edit contract, lists held: disabled, enabled, one PUT) |
 | 8 (gap 9) | Record movement's partner field says "Loading partner breweries…" (picker disabled) until `/api/parties` answers, "No partner breweries yet" only when it answered with none, and a message if it failed; a trade or loan's Save waits for the list | Playwright D6 (item 8: parties held: loading line, no "none", Save disabled; released: one POST) |
 | 5 (gap 4, Matt 4a) | A past-year contract writes no price row, on create or a changed price; the dialog says "<year> is over: saving changes no offer prices." (existing wording) | PAT "this year's contract price is effective today (A2); a past year writes none"; Playwright D5 |
+
+## D62 — Packs, units and manufacturer + hops (`specs/d62_hops_other_ingredients_spec.md` §9 *Stage 1*, *Hops*, *People, devices, edges* and the Amendments; `planning/d62_hops_other_ingredients_plan.md`)
+
+Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment); their §9 scenarios aren't here. ExUnit under `rockcut_api/test/`: `rockcut_api_web/controllers/hops_api_test.exs` ("HAT"), `rockcut_api/ingredients/catalog_units_test.exs` ("CUT"), `migrations/packs_units_and_manufacturer_test.exs`, `migrations/hop_features_and_crop_year_test.exs`, `seeds/hop_seeds_test.exs`, `seeds/grain_seeds_test.exs`, `d61_carry_over_test.exs`, `ingredients_api_test.exs` ("IAT"), and every D60/D61 file renamed to packs/quantity/manufacturer in Stage 1. Vitest under `rockcut-ui/src/lib/` (`hops.test`, `brewingUnits.test`, `ingredientFeatures.test`, `purchasing.test`, `inventory.test`). Playwright in `regression/ingredients/` (project `ingredients`): `hops.spec.ts` (H1–H7), `hops-edges.spec.ts` (E1–E8), and every D60/D61 spec (grain unchanged). Every hop a spec makes is a `[TEST-TEMP]` variety from a `[TEST-TEMP]` company (`helpers.ts` `makeHopProduct`); the 27 seeded hop products and 28 seeded lots (Matt's cooler, 2026-11-19) are only read (E1, E7, E8 reads), never written.
+
+| # | Scenario | Coverage |
+|---|---|---|
+| S1 | brewer1: every D60/D61 grain flow reads as before ("12 sacks 22.5 lb", "36 of 40 sacks", receiving into the previous lot, a count by lot) | Playwright `brewer` B1–B11, `orders` PO1–PO8, `manager` M1, `lots`, `phone`, `slow`, `reorder-totals`, `qa-fixes`, `dev-qa-fixes` (renamed JSON, no assertion weakened); ExUnit `packs_units_and_manufacturer_test` (a D61 database keeps every value under its new name; down restores), CUT "packs + the loose part in the unit, as grain has always read", "grain names are unchanged" |
+| S2 | owner on Companies: Rahr shows the Manufacturer chip; the Grains list still says "Maltster" | Playwright E1 (Rahr's chip; Grains header "Maltster", Hops header "Manufacturer"); `owner` O1 (a new company's roles) |
+| H-a | brewer1 adds YCH Citra Pellet with origin and alpha/beta/oil ranges; another manufacturer's Citra Pellet is another product; a duplicate refused ("<manufacturer> already has T90 Pellet Citra.") | Playwright H1 (UI, low > high refused, the list's columns, the duplicate's sentence); HAT "hop products (§3.3, §3.6)" (form required, unit set, origin optional, the unique rule with Hopsteiner, named "(Lupomax)" duplicate, ranges ≤, 2 decimals); Vitest `hops.test` |
+| H-b | A BSG offer for the hop product is box · 11 lb, not editable; $165.00/box shows $15.00/lb | Playwright H2; HAT "hop offers" (set when omitted, anything else 422 "Hop offers are 11 lb boxes") |
+| H-c | brewer2: Add lot with crop year 2025, alpha 14.1 (outside 11–13: marked), 4 boxes = 44 lb; without alpha or crop year, refused | Playwright H3 (nothing sent, the mark, "4 boxes"); HAT "hop lots" (2000..next year, alpha required, beta/oil optional, range not copied, `outside_range`, edits can't remove them) |
+| H-d | brewer1: "Used in brewing" 6.5 lb Oldest first across two lots; Total "37.5 lb" | Playwright H4; HAT "Used in brewing, Oldest first, across two lots in lb" |
+| H-e | breweryMgr: the 2027 contract's hop line 440 lb at $14.50/lb; price history $159.50/box from 2027-01-01; 10 boxes received → received 110 lb, remaining 330 lb; brewer1 can't edit the line | Playwright H6 (future year: the dialog's "440 lb = 40 boxes", "$159.50 / box", the price row, on order 110 lb), E3 (a `[TEST-TEMP]` supplier's **current-year** contract, since receipts can't be future-dated: 10 boxes received → 110 lb received, 220 lb remaining after the 330 lb edit; brewer1 has no Edit and PUT 403); HAT "hop contract lines" (only grain and hops; × 11 from Jan 1; a past year writes none; received/remaining/shortfall in lb) |
+| H-f | brewer1: a BSG order of 30 sacks + 6 boxes reads "36 of 40 packs"; receiving the hops into a new lot asks for crop year and alpha | Playwright H5; HAT "a mixed BSG order (A5) and receiving hops"; Vitest `purchasing.test` (`targetProgress` packs) |
+| H-g | A recipe on a D62 Citra lot gives the same `est_ibu` as a pre-D62 lot with the same alpha; the recipe lot label "… · lot # · 2025 · 12.4% AA" | HAT "est_ibu (§5)", "the range isn't copied…" (label); ExUnit `formula_runtime_test` (est_ibu) |
+| H-h | `inventory_on_hand` returns `{value, unit}` | IAT "inventory_on_hand: a product's or an ingredient's on hand, with the unit (D62 §3.9)" |
+| H-i | Hop reference seed: 27 products with ranges and origin, one box · 11 lb offer each with no price, 28 lots with crop year, alpha and an Opening amount dated 2026-11-19 (409.6 lb); twice changes nothing; a lot edited on the screens isn't topped up | ExUnit `hop_seeds_test` (counts twice, Galaxy 71.0 lb / 17.6 % / 2025, Citra Cryo 26.9 %, Magnum 0.6 lb, Chinook from Billy Goat, Pink Boots Blend with no range, EKG left out, a used and re-cased lot not topped up, a changed origin kept), `grain_seeds_test` (party roles, product counts with the hops); Playwright E1 (Galaxy on the Hops list in lb) |
+| P-a | floater and splitRole: the new pages work | Playwright E6 (Hops list, a hop product page with its lots), `manager` M2 (grain) |
+| P-b | bartender1: not in the nav, 403; breweryDevice: every D62 route 403 | Playwright E7 (a hop product page goes Home, hop reads 403), E8 (15 hop calls each for breweryDevice and bartender1: reads on a seeded hop, writes on a `[TEST-TEMP]` one, nothing changed), `refusals` R1–R2; ExUnit `device_route_matrix_test` (the routes are D60/D61's) |
+| P-c | Two people, one record: an open order with hop lines; a contract with a hop line → 409 for the second save | Playwright E2 (order, "6 of 40 boxes" on reopen), E3 (contract); LD2 (the 409 rule) |
+| P-d | 360 px: the hop product page and Add lot with crop year and ranges have no sideways scroll | Playwright H7 (Hops cards, product page, Add lot) |
+| P-e | Slow network: a double-click on Save in hop Add lot and on Receive with a new hop lot writes once | Playwright E4, E5 |
+| P-f | Settings → Categories: Hops shows no custom fields; the API refuses one (split Amendment) | Playwright `owner` O2 (no Add field), E1 (no Add field, POST 422 "Hops use features, not custom fields"); ExUnit `d61_carry_over_test` "no custom fields on Hops" (create, and moving one to Hops) |
+| — | Migrations: a loose Hops lot (no product) stops the migration with the lots listed | ExUnit `hop_features_and_crop_year_test` |
+| — | A hop contract line of 440.5 lb round-trips (`quantity` decimal, Stop 1 note 4) | ExUnit `purchasing_schemas_test`, HAT "a hop line in lb at $/lb…" |
+| — | Two people edit one hop **product** in two tabs | Covered since local QA fix cycle 1 (gap 9 below): products carry `lock_version`, the second save → 409 |
+| — | 360 px Totals with units | **D65** (mixed units); grain + hops Totals at 360 px: Playwright `phone` P5 (lb only) |
+| — | Seeded hop rows on screen match Matt's cooler list | Manual (Matt checks the Hops list against the cooler after the prod seed) |
+| — | Android back closes the hop dialogs (`useBackCloses`) | Manual-only (phone check), as D61 |
+
+**Local QA fix cycle 1** (`prompts/d62_lead_decisions_1.md`; gap numbers are the local QA report's). ExUnit `rockcut_api_web/controllers/d62_fix_cycle_1_test.exs` ("FC1"), `migrations/product_lock_version_and_grain_only_offer_form_test.exs`; Vitest `src/lib/d62FixCycle1.test.ts`; Playwright `regression/ingredients/d62-fix-cycle-1.spec.ts` (G-tests).
+
+| Gap | Rule | Coverage |
+|---|---|---|
+| 1 | The duplicate hop product message is the API's sentence only (`base`) | FC1 "gap 1"; Playwright `hops` H1 (exact alert text) |
+| 2 | Ranges read "11–13", "12.5" (equal ends), "≥ 12", "≤ 9"; a blank range is left off the phone card | Vitest `d62FixCycle1` (`formatRange`), `hops.test`; Playwright G2 |
+| 3 | Non-grain offers have no form (migration, seed, API); a form on one → 422 "Only grain offers are milled or whole"; pickers read "box · 11 lb" | FC1 "gap 3"; the migration test (forms, prices, order lines, FKs, down); `hop_seeds_test` (form nil); Vitest `offerPackText`; Playwright G3 |
+| 4 | Totals → Inventory: All categories (default), Grains + children, Hops; general headings Ingredient, Manufacturer, Form, On hand, Packs, Value, $/unit with each product's own pack; Grains reads as D61; Copy follows the view | FC1 "gap 4" (rows carry form and category key); Playwright G4; `reorder-totals` T2 and `qa-fixes` F4 pick Grains first |
+| 5 | Manufacturer pickers and filters list the category's manufacturers; dialogs add the product's own and "Other manufacturer…" | Vitest `manufacturersFor`; Playwright G5, `hops` H1 |
+| 6 | The Orders list column is Packs ("4 sacks", "5 packs") | Playwright G6 |
+| 7 | A topped-up lot is valued at the most recent price paid (by design, D61 A4; Matt 2026-11-20) | `receiving_totals_api_test` "lot cost and value (§3.4, A4)" |
+| 8 | 360 px: line pickers lead with variety and form and wrap | Vitest `pickerName`; Playwright G8 (360 px) |
+| 9 | Products carry `lock_version`: a stale save → 409 "Someone else changed this product since you opened it…", none → 422; the dialog keeps the version it opened and refetches on a 409 | FC1 "gap 9" (hop and grain); Playwright G9 (two browsers) |
+| 10 | Receiving into a lot # the product has: its values shown read only ("Adds to existing lot H1"); a different crop year or spec → 422 naming the lot's values, nothing written | FC1 "gap 10" (hops and grain); Playwright G10 |
+| 11 | Totals → Orders per pack name ("3 boxes · 6 sacks"); Copy has an ordered/received pair per pack name | FC1 "gap 11"; Playwright G11, `reorder-totals` T3 |
+| 12 | To order: nothing on hand reads "0 lb" | Playwright G12 |
+| — | Hops has no subcategories (UI hides Add subcategory; API 422 "Hops has no subcategories") | FC1; Playwright "Hops has no Add subcategory" |
+
+**Local QA recheck fix cycle** (`prompts/d62_lead_decisions_2.md`; the recheck's gap numbers). ExUnit FC1 (gap 16 is in its gap 10 block); Vitest `src/lib/d62FixCycle2.test.ts`; Playwright `regression/ingredients/d62-fix-cycle-2.spec.ts`.
+
+| Gap | Rule | Coverage |
+|---|---|---|
+| 16 | A receipt into an existing lot that sends a spec the lot has blank, or a blank for one it has, → the same 422 ("…, no beta acid; …"), nothing written (was a 500); a spec not sent is fine. Receipts into the previous lot (`lot_id`) still ignore specs (D61, lead) | FC1 "a spec the lot has blank, or a blank for one it has…" (beta, oil, diastatic power, both directions) |
+| 17 | To order after someone else's product save: the 409 refetches the rows, says "Someone else changed this product. The list is up to date now; pick the offer again.", the picker returns to the saved offer and the next pick saves | Playwright G17 (two people) |
+| 13 | "Other maltster/manufacturer…" opens the full list at once, keeping the value until a pick, by mouse and touch | Playwright G13 (desktop mouse, 360 px touch; the menu really open, not fading out) |
+| 14 | Grain says "Other maltster…"; hops "Other manufacturer…" | Playwright G13/G14 |
+| 15 | To order: a hop offer reads "… · box · 11 lb", a grain offer as D61 ("BSG · 55 lb"); the caption's pack follows each row's product (hop-only "boxes"; empty list "sacks") | Vitest `reorderOfferPack`, `reorderListPack`; Playwright G15 |
+| 18 | A contract's hop line drops the leading supplier ("Citra T90 Pellet · YCH price becomes …"); grain keeps D61's "BSG Rahr 2-Row price becomes …" | Vitest `contractPriceChanges`; Playwright G18 |
+
+**QA recheck 2 fix cycle** (`prompts/d62_lead_decisions_3.md`). Vitest `src/lib/d62FixCycle3.test.ts`; Playwright `regression/ingredients/d62-fix-cycle-2.spec.ts`.
+
+| Gap | Rule | Coverage |
+|---|---|---|
+| 19 | To order's message (the 409's too) clears on the next offer pick, before its save returns, and stays gone after it saves | Playwright G17 (the re-pick's PUT held 1.5 s: no alert during or after) |
+| 20 | A contract line with several offers from the supplier lists its price change only once its offer is picked, naming it by its current price ("… (now $150.00/box) price becomes …"; grain "(now $44.00/sack)" in D61's wording; "(no current price)" without one); one offer reads as before | Vitest `offerNow`, `contractPriceChanges`; Playwright G20 (two hop and two grain offers), G18 (one offer) |
+
+**5911 (part): O9.** The O9 that failed under full local load is `regression/owners/owner.spec.ts` O9 (UI) (D59; `ingredients/owner.spec.ts` has only O1–O3). Cause: `settingsMenu.ts` `choiceOptions` read the department options once, straight after opening the choice; right after `goto('/schedule')` (and on the Scheduler) `/api/departments` may not have answered yet, so only "All departments" was there. Reproduced by holding `/api/departments` 1.5 s (`["schedule-department-all"]`). Fix: `choiceOptions(…, ready)` waits for a named option first; O9 passes Taproom's. O9 (UI and API) ran 10× each beside the full `ingredients` project: 20/20.

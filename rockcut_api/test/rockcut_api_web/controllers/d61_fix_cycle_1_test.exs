@@ -25,7 +25,7 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
     pils_grain =
       Repo.insert!(%RockcutApi.Brewing.Ingredient{name: "Pilsner", category_id: c.base.id})
 
-    pils = product!(pils_grain, party!("Weyermann", ~w(maltster)), extract_fgdb: "81.0")
+    pils = product!(pils_grain, party!("Weyermann", ~w(manufacturer)), extract_fgdb: "81.0")
     pils_offer = offer!(pils, c.bsg, "55", "55.00")
 
     Map.merge(c, %{
@@ -66,7 +66,7 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
   end
 
   defp line(offer, sacks, extra \\ %{}),
-    do: Map.merge(%{"offer_id" => offer.id, "sacks_ordered" => sacks}, extra)
+    do: Map.merge(%{"offer_id" => offer.id, "packs_ordered" => sacks}, extra)
 
   # Every line in full into a new lot named after the line.
   defp receive_all!(c, order, on \\ iso(0)) do
@@ -74,8 +74,8 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       for l <- order["lines"] do
         %{
           "id" => l["id"],
-          "sacks_received" => l["sacks_ordered"],
-          "allocations" => [%{"lot_number" => "L-#{l["id"]}", "sacks" => l["sacks_ordered"]}]
+          "packs_received" => l["packs_ordered"],
+          "allocations" => [%{"lot_number" => "L-#{l["id"]}", "packs" => l["packs_ordered"]}]
         }
       end
 
@@ -102,15 +102,15 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
             %{
               "product_id" => c.product.id,
               "offer_id" => c.offer50.id,
-              "sacks" => 10,
-              "price_per_sack" => "40.00"
+              "quantity" => 10,
+              "price" => "40.00"
             },
-            %{"product_id" => c.pils.id, "sacks" => 20, "price_per_sack" => "55.00"}
+            %{"product_id" => c.pils.id, "quantity" => 20, "price" => "55.00"}
           ]
         })
 
       assert contract["delete_blocked"] == nil
-      assert contract["remaining_sacks"] == 30 and contract["over_sacks"] == 0
+      assert contract["remaining"] == 30 and contract["over"] == 0
 
       # 5 × 50 lb + 5 × 55 lb = 525 lb = 10.5 of the line's 50 lb sacks.
       receive_all!(c, order!(c, [line(c.offer50, 5)]))
@@ -128,19 +128,19 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       {200, %{"data" => got}} = req(c.brewer, :get, "/api/contracts/#{contract["id"]}")
       rahr = by_product(got, c.product)
 
-      assert rahr["received_sacks"] == 10.5 and rahr["on_order_sacks"] == 4.4
-      assert rahr["remaining_sacks"] == -0.5 and rahr["over_by"] == 0.5
+      assert rahr["received"] == 10.5 and rahr["on_order"] == 4.4
+      assert rahr["remaining"] == -0.5 and rahr["over_by"] == 0.5
       # Dollars at the order line prices: 5 × $40 + 5 × $44.
       assert rahr["received_dollars"] == "420.00"
-      assert by_product(got, c.pils)["remaining_sacks"] == 20
+      assert by_product(got, c.pils)["remaining"] == 20
 
       # Gap 3: what's still owed is 20 (as Shortfall), the 0.5 over is apart.
-      assert got["remaining_sacks"] == 20 and got["over_sacks"] == 0.5
+      assert got["remaining"] == 20 and got["over"] == 0.5
 
       assert {200, %{"data" => [short]}} =
                req(c.brewer, :get, "/api/contracts/shortfall?year=#{c.this}")
 
-      assert short["product_id"] == c.pils.id and short["short_sacks"] == 20
+      assert short["product_id"] == c.pils.id and short["short"] == 20
 
       # Gap 18: the reason on the JSON, and the same refusal.
       reason = "Grain has been received against this contract, so it can't be deleted"
@@ -156,13 +156,13 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
             %{
               "product_id" => c.product.id,
               "offer_id" => c.offer50.id,
-              "sacks" => 10,
-              "price_per_sack" => "40.00"
+              "quantity" => 10,
+              "price" => "40.00"
             }
           ]
         })
 
-      assert by_product(next, c.product)["on_order_sacks"] == 7
+      assert by_product(next, c.product)["on_order"] == 7
       assert next["delete_blocked"] == nil
       assert {204, _} = req(c.mgr, :delete, "/api/contracts/#{next["id"]}")
     end
@@ -170,40 +170,40 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
 
   describe "prices to 2 decimals (gap 11)" do
     test "order lines, contract lines and offer prices refuse a third decimal; 2 are fine", c do
-      for {path, body, who} <- [
+      for {path, body, who, key} <- [
             {"/api/purchase_orders",
              %{
                "supplier_party_id" => c.bsg.id,
                "ordered_on" => iso(0),
-               "lines" => [line(c.offer, 1, %{"price_per_sack" => "42.555"})]
-             }, c.brewer},
+               "lines" => [line(c.offer, 1, %{"price_per_pack" => "42.555"})]
+             }, c.brewer, "price_per_pack"},
             {"/api/contracts",
              %{
                "supplier_party_id" => c.bsg.id,
                "year" => c.this + 2,
                "lines" => [
-                 %{"product_id" => c.pils.id, "sacks" => 1, "price_per_sack" => "35.555"}
+                 %{"product_id" => c.pils.id, "quantity" => 1, "price" => "35.555"}
                ]
-             }, c.mgr},
+             }, c.mgr, "price"},
             {"/api/supplier_offers/#{c.pils_offer.id}/prices",
-             %{"price_per_sack" => "35.555", "effective_on" => iso(0)}, c.brewer}
+             %{"price_per_pack" => "35.555", "effective_on" => iso(0)}, c.brewer,
+             "price_per_pack"}
           ] do
-        assert %{"price_per_sack" => ["Use at most 2 decimals"]} =
-                 errors(req(who, :post, path, body))
+        assert %{^key => ["Use at most 2 decimals"]} = errors(req(who, :post, path, body))
       end
 
       # Nothing written: no contract price row of 35.555.
       refute Enum.any?(
                Repo.all(RockcutApi.Ingredients.OfferPrice),
-               &Decimal.eq?(&1.price_per_sack, Decimal.new("35.555"))
+               &Decimal.eq?(&1.price_per_pack, Decimal.new("35.555"))
              )
 
-      assert %{"lines" => [%{"price_per_sack" => "42.55"}]} =
-               order!(c, [line(c.offer, 1, %{"price_per_sack" => "42.55"})])
+      assert %{"lines" => [%{"price_per_pack" => "42.55"}]} =
+               order!(c, [line(c.offer, 1, %{"price_per_pack" => "42.55"})])
 
       assert {201, _} =
                req(c.brewer, :post, "/api/supplier_offers/#{c.pils_offer.id}/prices", %{
-                 "price_per_sack" => 35.5,
+                 "price_per_pack" => 35.5,
                  "effective_on" => iso(0)
                })
     end
@@ -218,7 +218,7 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
     test "the received date can't be before the order date; the order date itself is fine", c do
       o = order!(c, [line(c.offer, 2)], %{"ordered_on" => iso(-3)})
       l = hd(o["lines"])
-      body = &%{"received_on" => &1, "lines" => [%{"id" => l["id"], "sacks_received" => 2}]}
+      body = &%{"received_on" => &1, "lines" => [%{"id" => l["id"], "packs_received" => 2}]}
       path = "/api/purchase_orders/#{o["id"]}/receive"
 
       assert base(req(c.brewer, :post, path, body.(iso(-4)))) ==
@@ -239,8 +239,8 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       for body <- [
             %{},
             %{"lines" => []},
-            %{"lines" => [%{"id" => a["id"], "sacks_received" => 2}]},
-            %{"lines" => [%{"id" => a["id"], "sacks_received" => 2}, %{"id" => b["id"]}]}
+            %{"lines" => [%{"id" => a["id"], "packs_received" => 2}]},
+            %{"lines" => [%{"id" => a["id"], "packs_received" => 2}, %{"id" => b["id"]}]}
           ] do
         assert base(req(c.brewer, :post, path, body)) == "Every line needs a received quantity"
       end
@@ -250,8 +250,8 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       assert {200, _} =
                req(c.brewer, :post, path, %{
                  "lines" => [
-                   %{"id" => a["id"], "sacks_received" => 2},
-                   %{"id" => b["id"], "sacks_received" => 0}
+                   %{"id" => a["id"], "packs_received" => 2},
+                   %{"id" => b["id"], "packs_received" => 0}
                  ]
                })
 
@@ -270,9 +270,9 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
           "lines" => [
             %{
               "id" => l["id"],
-              "sacks_received" => 1,
+              "packs_received" => 1,
               "allocations" => [
-                %{"lot_number" => "FEAT", "sacks" => 1, "features" => %{"extract_fgdb" => &1}}
+                %{"lot_number" => "FEAT", "packs" => 1, "features" => %{"extract_fgdb" => &1}}
               ]
             }
           ]
@@ -301,8 +301,8 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
           "lines" => [
             %{
               "id" => hd(got["lines"])["id"],
-              "sacks_received" => 8,
-              "allocations" => [%{"lot_number" => "T", "sacks" => 8}]
+              "packs_received" => 8,
+              "allocations" => [%{"lot_number" => "T", "packs" => 8}]
             }
           ]
         })
@@ -310,15 +310,15 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       {200, %{"data" => data}} =
         req(c.brewer, :get, "/api/ingredient_totals/orders?from=#{iso(-1)}&to=#{iso(0)}")
 
-      assert [%{"sacks_ordered" => 13, "sacks_received" => 8}] = data["by_supplier"]
-      assert %{"sacks_ordered" => 13, "sacks_received" => 8, "sacks" => 11} = data["total"]
+      assert [%{"packs_ordered" => 13, "packs_received" => 8}] = data["by_supplier"]
+      assert %{"packs_ordered" => 13, "packs_received" => 8, "packs" => 11} = data["total"]
     end
   end
 
   describe "reorder offer (gap 4)" do
     test "the offer picked is saved on the product and To order uses it; inactive or another product's is refused; null is the default",
          c do
-      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_sacks: 10))
+      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_packs: 10))
       path = "/api/ingredient_products/#{c.product.id}"
 
       reorder_offer = fn ->
@@ -329,7 +329,10 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       assert reorder_offer.() == c.offer.id
 
       assert {200, %{"data" => %{"reorder_offer_id" => id}}} =
-               req(c.brewer, :put, path, %{"reorder_offer_id" => c.offer50.id})
+               req(c.brewer, :put, path, %{
+                 "lock_version" => product_version(c.product.id),
+                 "reorder_offer_id" => c.offer50.id
+               })
 
       assert id == c.offer50.id and reorder_offer.() == c.offer50.id
 
@@ -338,7 +341,12 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
 
       for bad <- [inactive.id, c.pils_offer.id] do
         assert %{"reorder_offer_id" => ["must be one of this product's active offers"]} =
-                 errors(req(c.brewer, :put, path, %{"reorder_offer_id" => bad}))
+                 errors(
+                   req(c.brewer, :put, path, %{
+                     "lock_version" => product_version(c.product.id),
+                     "reorder_offer_id" => bad
+                   })
+                 )
       end
 
       # Deactivated later: back to the default.
@@ -347,7 +355,10 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       Repo.update!(Ecto.Changeset.change(c.offer50, active: true))
 
       assert {200, %{"data" => %{"reorder_offer_id" => nil}}} =
-               req(c.brewer, :put, path, %{"reorder_offer_id" => nil})
+               req(c.brewer, :put, path, %{
+                 "lock_version" => product_version(c.product.id),
+                 "reorder_offer_id" => nil
+               })
 
       assert reorder_offer.() == c.offer.id
     end
@@ -356,7 +367,7 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
   describe "reorder on order by weight (item 20)" do
     test "50 + 55 lb sacks on order are converted to the reorder offer's sack size; to order rounds up",
          c do
-      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_sacks: 10))
+      Repo.update!(Ecto.Changeset.change(c.product, min_on_hand_packs: 10))
       # 2 × 50 lb + 2 × 55 lb = 210 lb.
       order!(c, [line(c.offer50, 2), line(c.offer, 2)])
 
@@ -369,22 +380,23 @@ defmodule RockcutApiWeb.D61FixCycle1Test do
       # 210 / 55 = 3.82 on order; ⌈10 − 3.82⌉ = 7.
       r = row.()
       assert r["offer"]["id"] == c.offer.id
-      assert r["on_order_lb"] == "210" and r["on_order_sacks"] == 3.82 and r["to_order"] == 7
+      assert r["on_order"] == "210" and r["on_order_packs"] == 3.82 and r["to_order"] == 7
 
       # On the 50 lb offer: 210 / 50 = 4.2 on order; ⌈10 − 4.2⌉ = 6.
       {200, _} =
         req(c.brewer, :put, "/api/ingredient_products/#{c.product.id}", %{
+          "lock_version" => product_version(c.product.id),
           "reorder_offer_id" => c.offer50.id
         })
 
       r = row.()
-      assert r["on_order_sacks"] == 4.2 and r["to_order"] == 6
+      assert r["on_order_packs"] == 4.2 and r["to_order"] == 6
 
       # 4 × 50 lb more: 410 lb = 8.2; then 1 × 50 + 2 × 55: 570 lb = 11.4, nothing to order.
       order!(c, [line(c.offer50, 4)])
-      assert %{"on_order_sacks" => 8.2, "to_order" => 2} = row.()
+      assert %{"on_order_packs" => 8.2, "to_order" => 2} = row.()
       order!(c, [line(c.offer50, 1), line(c.offer, 2)])
-      assert %{"on_order_sacks" => 11.4, "to_order" => 0} = row.()
+      assert %{"on_order_packs" => 11.4, "to_order" => 0} = row.()
     end
   end
 

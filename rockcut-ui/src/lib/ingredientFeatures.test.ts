@@ -1,5 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import { categoryOptions, differs, draftRangeError, draftsFrom, draftsValid, featuresPayload, grainCategories, isGrainCategory, onHandText, productMatches, rangeError, typesFor } from './ingredientFeatures'
+import {
+  categoryKey,
+  categoryOptions,
+  differs,
+  draftRangeError,
+  draftsFrom,
+  draftsValid,
+  featuresPayload,
+  grainCategories,
+  isGrainCategory,
+  manufacturerLabel,
+  onHandText,
+  productMatches,
+  rangeError,
+  typesFor,
+} from './ingredientFeatures'
 import type { FeatureType, IngredientCategory, IngredientProduct } from './types'
 
 const type = (id: number, key: string, cats: [number, number][]): FeatureType => ({
@@ -81,9 +96,11 @@ describe('differs from the standard', () => {
 })
 
 describe('grain categories and search', () => {
+  const KEYS: Record<string, string> = { Grains: 'grains', Hops: 'hops' }
   const cat = (id: number, name: string, parent_id: number | null, sort_order: number): IngredientCategory => ({
     id,
     name,
+    key: parent_id == null ? (KEYS[name] ?? null) : null,
     parent_id,
     sort_order,
     field_definitions: null,
@@ -97,11 +114,29 @@ describe('grain categories and search', () => {
     expect(children.map((c) => c.name)).toEqual(['Base', 'Crystal/Caramel'])
   })
 
-  it('search matches grain, maltster, product name and suppliers', () => {
+  it('D62: finds Grains by its key, whatever it is called', () => {
+    const renamed = { ...cat(1, 'Malt', null, 0), key: 'grains' }
+    const { grains, children } = grainCategories([renamed, cat(80, 'Base', 1, 0), cat(5, 'Grains', null, 3)])
+    expect(grains?.id).toBe(1)
+    expect(children.map((c) => c.id)).toEqual([80])
+    expect(grainCategories([cat(5, 'Grains (old)', null, 3)]).grains).toBeNull()
+  })
+
+  it("D62: a category's key, or its parent's; Maltster on grain screens, Manufacturer elsewhere", () => {
+    const all = [cat(1, 'Grains', null, 0), cat(80, 'Base', 1, 0), cat(3, 'Hops', null, 1)]
+    expect(categoryKey(all, all[1])).toBe('grains')
+    expect(categoryKey(all, all[2])).toBe('hops')
+    expect(categoryKey(all, null)).toBeNull()
+    expect(manufacturerLabel('grains')).toBe('Maltster')
+    expect(manufacturerLabel('hops')).toBe('Manufacturer')
+    expect(manufacturerLabel(null)).toBe('Manufacturer')
+  })
+
+  it('search matches grain, manufacturer (maltster), product name and suppliers', () => {
     const p = {
       display_name: 'Weyermann Rauch Malt (Beech Smoked Malt)',
       ingredient: { id: 1, name: 'Beech Smoked Malt', category: null },
-      maltster: { id: 1, name: 'Weyermann' },
+      manufacturer: { id: 1, name: 'Weyermann' },
       name: 'Rauch Malt',
       offers: [{ supplier: { id: 8, name: 'BSG' }, order_name: 'Weyermann - Rauch' }],
     } as unknown as IngredientProduct
@@ -111,18 +146,18 @@ describe('grain categories and search', () => {
 })
 
 describe('onHandText (§3.7)', () => {
-  const offers = [{ sack_size_lb: '55', active: true }] as IngredientProduct['offers']
+  const offers = [{ pack_name: 'sack', pack_size: '55', active: true }] as IngredientProduct['offers']
   it('D61 carry-over 3: usable and expired apart, in the same display; no expired, just the amount', () => {
-    expect(onHandText({ on_hand_lb: '693', expired_lb: '43', offers: [{ sack_size_lb: '50', active: true }] as IngredientProduct['offers'] }, 'sacks')).toBe(
+    expect(onHandText({ on_hand: '693', expired: '43', offers: [{ pack_name: 'sack', pack_size: '50', active: true }] as IngredientProduct['offers'] }, 'packs')).toBe(
       '13 sacks usable · 43 lb expired',
     )
-    expect(onHandText({ on_hand_lb: '693', expired_lb: '43', offers }, 'sacks')).toBe('11 sacks 45 lb usable · 43 lb expired')
-    expect(onHandText({ on_hand_lb: '693', expired_lb: '43', offers }, 'lb')).toBe('650 lb usable · 43 lb expired')
-    expect(onHandText({ on_hand_lb: '682.5', expired_lb: '55', offers }, 'sacks')).toBe('11 sacks 22.5 lb usable · 1 sack expired')
-    expect(onHandText({ on_hand_lb: '540', expired_lb: '0', offers }, 'sacks')).toBe('9 sacks 45 lb')
-    expect(onHandText({ on_hand_lb: '540', expired_lb: null, offers }, 'lb')).toBe('540 lb')
+    expect(onHandText({ on_hand: '693', expired: '43', offers }, 'packs')).toBe('11 sacks 45 lb usable · 43 lb expired')
+    expect(onHandText({ on_hand: '693', expired: '43', offers }, 'lb')).toBe('650 lb usable · 43 lb expired')
+    expect(onHandText({ on_hand: '682.5', expired: '55', offers }, 'packs')).toBe('11 sacks 22.5 lb usable · 1 sack expired')
+    expect(onHandText({ on_hand: '540', expired: '0', offers }, 'packs')).toBe('9 sacks 45 lb')
+    expect(onHandText({ on_hand: '540', expired: null, offers }, 'lb')).toBe('540 lb')
     // Floating point doesn't leak into the text.
-    expect(onHandText({ on_hand_lb: '0.3', expired_lb: '0.1', offers }, 'lb')).toBe('0.2 lb usable · 0.1 lb expired')
+    expect(onHandText({ on_hand: '0.3', expired: '0.1', offers }, 'lb')).toBe('0.2 lb usable · 0.1 lb expired')
   })
 })
 
@@ -158,8 +193,8 @@ describe('lead decisions 2', () => {
 })
 
 describe('isGrainCategory (D61 carry-over 5)', () => {
-  const cat = (id: number, name: string, parent_id: number | null) => ({ id, name, parent_id, sort_order: 0 }) as IngredientCategory
-  const categories = [cat(1, 'Grains', null), cat(2, 'Base', 1), cat(3, 'Hops', null), cat(4, 'Pellets', 3)]
+  const cat = (id: number, name: string, parent_id: number | null, key: string | null = null) => ({ id, name, key, parent_id, sort_order: 0 }) as IngredientCategory
+  const categories = [cat(1, 'Grains', null, 'grains'), cat(2, 'Base', 1), cat(3, 'Hops', null, 'hops'), cat(4, 'Pellets', 3)]
   it('is Grains and its children only', () => {
     expect([1, 2, 3, 4, 99].map((id) => isGrainCategory(categories, id))).toEqual([true, true, false, false, false])
     expect(isGrainCategory([], 1)).toBe(false)

@@ -1,6 +1,6 @@
 defmodule RockcutApiWeb.IngredientLotController do
   @moduledoc """
-  Ingredient lots. D60 §3.7: a grain lot is of a maltster product, from a
+  Ingredient lots. D60 §3.7: a grain lot is of a product, from a
   supplier, with its features and on-hand; creating one records its first
   movement (`Ingredients.Inventory.create_lot/2`).
   """

@@ -3,7 +3,9 @@ defmodule RockcutApi.Ingredients.Units do
   D60 §3.5: units on the API side. Values are stored in one unit per feature;
   the conversions from other units are the UI's (`src/lib/brewingUnits.ts`),
   which sends the stored value plus `entered_value`/`entered_unit`. Here: the
-  units a feature may be entered in, and the PPG constant `est_og` uses.
+  units a feature may be entered in, the PPG constant `est_og` uses, and
+  (D62 §3.5) quantities in packs and a product's unit as the screens show
+  them.
   """
 
   # Gravity points of one pound of pure sucrose in one gallon (the same
@@ -39,48 +41,70 @@ defmodule RockcutApi.Ingredients.Units do
   end
 
   @doc """
-  The quantity display (`"sacks"` or `"lb"`) `user` has chosen for the
-  ingredient screens (§3.9; sacks + lb by default), so a refusal reads in
-  the units the dialog shows.
+  The quantity display (`"packs"` or `"lb"`) `user` has chosen for the
+  ingredient screens (D60 §3.9, D62 §3.5; packs + unit by default), so a
+  refusal reads in the units the dialog shows. The stored `"lb"` means
+  "total in the product's unit" (the toggle says Total).
   """
   def quantity_display(%{board_settings: %{"ingredients" => %{"quantity_display" => "lb"}}}),
     do: "lb"
 
-  def quantity_display(_user), do: "sacks"
+  def quantity_display(_user), do: "packs"
 
   @doc """
-  `lb` as the screens show it (the UI's `formatQuantity`): "12 sacks 22.5
-  lb", "12 sacks", "22.5 lb" (under a sack) in `"sacks"` mode with a sack
-  size; "682.5 lb" otherwise. Always positive: the words around it say which
-  way it went.
+  `qty` (in `unit`) as the screens show it (the UI's `formatQuantity`), D62
+  §3.5: "12 sacks 22.5 lb", "12 sacks", "22.5 lb" (under a pack) in
+  `"packs"` mode with a pack size; "682.5 lb" (the total in the unit)
+  otherwise. `each` is whole numbers. Always positive: the words around it
+  say which way it went.
   """
-  def format_quantity(%Decimal{} = lb, sack_size, mode) do
-    lb = Decimal.abs(lb)
+  def format_quantity(%Decimal{} = qty, pack_name, pack_size, unit, mode) do
+    qty = Decimal.abs(qty)
+    places = places(unit)
 
-    if mode == "lb" or is_nil(sack_size) or not Decimal.gt?(sack_size, 0) do
-      "#{format_lb(lb)} lb"
+    if mode == "lb" or is_nil(pack_size) or not Decimal.gt?(pack_size, 0) do
+      amount(qty, unit, places)
     else
-      cents = lb |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
-      sack_cents = sack_size |> Decimal.mult(100) |> Decimal.round(0) |> Decimal.to_integer()
-      sacks = div(cents, sack_cents)
-      loose = Decimal.div(cents - sacks * sack_cents, 100)
-
-      sack_part =
-        "#{thousands(Integer.to_string(sacks))} #{if sacks == 1, do: "sack", else: "sacks"}"
+      scale = Integer.pow(10, places)
+      units = qty |> Decimal.mult(scale) |> Decimal.round(0) |> Decimal.to_integer()
+      pack_units = pack_size |> Decimal.mult(scale) |> Decimal.round(0) |> Decimal.to_integer()
+      packs = div(units, pack_units)
+      loose = Decimal.div(units - packs * pack_units, scale)
+      pack_part = "#{thousands(Integer.to_string(packs))} #{pack_word(pack_name, packs)}"
 
       cond do
-        sacks == 0 -> "#{format_lb(loose)} lb"
-        Decimal.eq?(loose, 0) -> sack_part
-        true -> "#{sack_part} #{format_lb(loose)} lb"
+        packs == 0 -> amount(loose, unit, places)
+        Decimal.eq?(loose, 0) -> pack_part
+        true -> "#{pack_part} #{amount(loose, unit, places)}"
       end
     end
   end
 
-  # 1234.5 → "1,234.5"; at most 2 decimals, no trailing zeros.
-  defp format_lb(%Decimal{} = d) do
+  @doc """
+  A pack name for `n` packs: "sack" for 1, else its plural (sack/sacks,
+  box/boxes, bag/bags, pail/pails, jug/jugs, bottle/bottles, tub/tubs,
+  case/cases, each).
+  """
+  def pack_word(pack_name, 1), do: pack_name || "pack"
+  def pack_word(pack_name, _n), do: plural(pack_name)
+
+  @doc "A pack name's plural (\"box\" → \"boxes\")."
+  def plural(nil), do: "packs"
+  def plural("each"), do: "each"
+  def plural("box"), do: "boxes"
+  def plural(name), do: name <> "s"
+
+  # `each` is a count: whole numbers. Every other unit to 2 decimals.
+  defp places("each"), do: 0
+  defp places(_unit), do: 2
+
+  defp amount(qty, unit, places), do: "#{format_number(qty, places)} #{unit || "lb"}"
+
+  # 1234.5 → "1,234.5"; at most `places` decimals, no trailing zeros.
+  defp format_number(%Decimal{} = d, places) do
     [whole | frac] =
       d
-      |> Decimal.round(2)
+      |> Decimal.round(places)
       |> Decimal.normalize()
       |> Decimal.to_string(:normal)
       |> String.split(".")

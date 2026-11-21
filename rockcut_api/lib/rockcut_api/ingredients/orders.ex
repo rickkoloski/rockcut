@@ -6,16 +6,16 @@ defmodule RockcutApi.Ingredients.Orders do
   An order is placed when it's saved (decision 42): a supplier, an order
   date (not after today, Colorado), an optional expected date (not before
   the order date) and reference, and lines of that supplier's offers in
-  whole sacks at a price per sack (the offer's current price when none is
-  given; $0.00 allowed). While `open` any Brewery member may change it
+  whole packs at a price per pack (D62 §3.5: sacks for grain; the offer's
+  current price when none is given; $0.00 allowed). While `open` any Brewery member may change it
   (header and lines, sent as a full list) or cancel it (decision 46); a
   received or cancelled order is read-only (409).
 
   Receiving (decisions 24, 29, 43, 44, 49; A3) records every line at once in
   one `BEGIN IMMEDIATE` transaction, the status re-checked inside it: each
-  line's sacks received (default: as ordered; 0 allowed), split across lots
+  line's packs received (default: as ordered; 0 allowed), split across lots
   by `allocations`, each a Received movement carrying the order line and its
-  cost per lb. With no allocations a line goes to the product's previous
+  cost per unit of the product. With no allocations a line goes to the product's previous
   lot; a lot number the product already has (any case, trimmed) adds to that
   lot, and a new one makes a lot as Add lot does. A short delivery closes the
   order; there's no back-order.
@@ -26,6 +26,7 @@ defmodule RockcutApi.Ingredients.Orders do
   alias RockcutApi.Brewing.IngredientLot
 
   alias RockcutApi.Ingredients.{
+    Catalog,
     Features,
     Inventory,
     Movement,
@@ -36,6 +37,7 @@ defmodule RockcutApi.Ingredients.Orders do
     PurchaseOrder,
     PurchaseOrderLine,
     SupplierOffer,
+    Units,
     Versions
   }
 
@@ -45,7 +47,8 @@ defmodule RockcutApi.Ingredients.Orders do
     :received_by,
     :cancelled_by,
     lines:
-      {from(l in PurchaseOrderLine, order_by: l.id), offer: [product: [:maltster, :ingredient]]}
+      {from(l in PurchaseOrderLine, order_by: l.id),
+       offer: [product: [:manufacturer, :ingredient]]}
   ]
 
   @doc """
@@ -126,10 +129,10 @@ defmodule RockcutApi.Ingredients.Orders do
   @doc """
   Receive an open order (spec §3.3). `received_on` (default today, not
   after it nor before the order date) and `lines`:
-  `[%{id, sacks_received, allocations}]`, every line of the order with its
-  sacks received (lead decisions 1, gap 15); a line with no allocations goes
-  to its previous lot. An allocation is `%{lot_id, sacks}` or
-  `%{lot_number, sacks, features, notes}`.
+  `[%{id, packs_received, allocations}]`, every line of the order with its
+  packs received (lead decisions 1, gap 15); a line with no allocations goes
+  to its previous lot. An allocation is `%{lot_id, packs}` or
+  `%{lot_number, packs, features, notes}`.
   """
   def receive(%PurchaseOrder{} = order, attrs, user) do
     write(fn ->
@@ -140,18 +143,18 @@ defmodule RockcutApi.Ingredients.Orders do
       lot_ids =
         Enum.flat_map(order.lines, fn line ->
           entry = Map.get(given, line.id, %{})
-          sacks = sacks!(entry["sacks_received"], line, 0)
+          packs = packs!(entry["packs_received"], line, 0)
 
           ids =
-            for {lot, n} <- allocations!(line, sacks, entry["allocations"], received_on) do
+            for {lot, n} <- allocations!(line, packs, entry["allocations"], received_on) do
               %Movement{}
               |> Movement.changeset(%{
                 lot_id: lot.id,
                 kind: "received",
-                quantity_lb: Decimal.mult(line.offer.sack_size_lb, n),
+                quantity: Decimal.mult(line.offer.pack_size, n),
                 occurred_on: received_on,
                 purchase_order_line_id: line.id,
-                unit_cost_per_lb: cost_per_lb(line),
+                unit_cost: unit_cost(line),
                 entered_by_id: user.id
               })
               |> Repo.insert!()
@@ -159,7 +162,7 @@ defmodule RockcutApi.Ingredients.Orders do
               lot.id
             end
 
-          line |> Ecto.Changeset.change(sacks_received: sacks) |> Repo.update!()
+          line |> Ecto.Changeset.change(packs_received: packs) |> Repo.update!()
           ids
         end)
 
@@ -179,50 +182,69 @@ defmodule RockcutApi.Ingredients.Orders do
     end)
   end
 
-  @doc "A line's cost per lb: its price per sack ÷ the offer's sack size."
-  def cost_per_lb(%PurchaseOrderLine{price_per_sack: price, offer: %{sack_size_lb: size}}),
+  @doc "A line's cost per unit of the product: its price per pack ÷ the offer's pack size."
+  def unit_cost(%PurchaseOrderLine{price_per_pack: price, offer: %{pack_size: size}}),
     do: Decimal.round(Decimal.div(price, size), 6)
 
   @doc """
-  The sacks a line counts (decision 35): received once the order is
+  The packs a line counts (decision 35): received once the order is
   received, else ordered.
   """
-  def counted_sacks(%PurchaseOrder{status: "received"}, line), do: line.sacks_received || 0
-  def counted_sacks(_order, line), do: line.sacks_ordered
+  def counted_packs(%PurchaseOrder{status: "received"}, line), do: line.packs_received || 0
+  def counted_packs(_order, line), do: line.packs_ordered
 
   @doc """
-  The order's running total (§3.2): sacks, lb and $ over its lines
-  (`counted_sacks/2`), and with a supplier order target (decision 48) the
-  next multiple of it at or above the sacks ("36 of 40").
+  The order's running total (§3.2): packs, the quantity per unit
+  (`by_unit`, D62 §3.8) and $ over its lines (`counted_packs/2`), and with
+  a supplier order target (decision 48; D62 A5: every pack counts) the
+  next multiple of it at or above the packs ("36 of 40").
   """
   def totals(%PurchaseOrder{} = order) do
-    {sacks, lb, dollars} =
-      Enum.reduce(order.lines, {0, Decimal.new(0), Decimal.new(0)}, fn line, {s, l, d} ->
-        n = counted_sacks(order, line)
-
-        {s + n, Decimal.add(l, Decimal.mult(line.offer.sack_size_lb, n)),
-         Decimal.add(d, Decimal.mult(line.price_per_sack, n))}
+    {packs, dollars} =
+      Enum.reduce(order.lines, {0, Decimal.new(0)}, fn line, {s, d} ->
+        n = counted_packs(order, line)
+        {s + n, Decimal.add(d, Decimal.mult(line.price_per_pack, n))}
       end)
 
-    target = order.supplier && order.supplier.order_target_sacks
+    by_unit =
+      order.lines
+      |> Enum.map(&%{unit: Products.unit(&1.offer.product), quantity: line_quantity(order, &1)})
+      |> sum_by_unit()
+
+    target = order.supplier && order.supplier.order_target_packs
 
     %{
-      total_sacks: sacks,
-      total_lb: Decimal.round(lb, 2),
+      total_packs: packs,
+      by_unit: by_unit,
       total_dollars: Decimal.round(dollars, 2),
       target:
         target &&
-          %{sacks: target, next_multiple: max(target, div(sacks + target - 1, target) * target)}
+          %{packs: target, next_multiple: max(target, div(packs + target - 1, target) * target)}
     }
+  end
+
+  @doc "A line's quantity in the product's unit at the packs it counts."
+  def line_quantity(order, line),
+    do: Decimal.round(Decimal.mult(line.offer.pack_size, counted_packs(order, line)), 2)
+
+  # `[%{unit, quantity}]` summed per unit, by unit name.
+  defp sum_by_unit(rows) do
+    rows
+    |> Enum.group_by(& &1.unit)
+    |> Enum.sort_by(fn {unit, _} -> unit end)
+    |> Enum.map(fn {unit, rs} ->
+      %{unit: unit, quantity: Enum.reduce(rs, Decimal.new(0), &Decimal.add(&2, &1.quantity))}
+    end)
   end
 
   @doc """
   Order totals (§3.6, decisions 32, 35): one row per order line with an
   order date in `from`–`to` (inclusive, either open-ended), narrowed by
   `supplier_id` and `status` (open and received by default; `cancelled`
-  only when asked for): sacks ordered and received, and lb and $ at the
-  sacks the line counts (`counted_sacks/2`). Then a subtotal per supplier
-  and the grand total.
+  only when asked for): packs ordered and received, and the quantity (in
+  the product's unit) and $ at the packs the line counts
+  (`counted_packs/2`). Then a subtotal per supplier and the grand total,
+  their quantities per unit (D62 §3.8).
   """
   def order_totals(params) do
     with {:ok, from} <- range_date(params, "from"),
@@ -264,7 +286,7 @@ defmodule RockcutApi.Ingredients.Orders do
 
     rows =
       for order <- orders, line <- order.lines do
-        n = counted_sacks(order, line)
+        n = counted_packs(order, line)
 
         %{
           order_id: order.id,
@@ -275,11 +297,13 @@ defmodule RockcutApi.Ingredients.Orders do
           reference: order.reference,
           product: Products.display_name(line.offer.product),
           status: order.status,
-          sacks_ordered: line.sacks_ordered,
-          sacks_received: line.sacks_received,
-          lb: Decimal.round(Decimal.mult(line.offer.sack_size_lb, n), 2),
-          dollars: Decimal.round(Decimal.mult(line.price_per_sack, n), 2),
-          sacks: n
+          pack_name: line.offer.pack_name,
+          packs_ordered: line.packs_ordered,
+          packs_received: line.packs_received,
+          unit: Products.unit(line.offer.product),
+          quantity: line_quantity(order, line),
+          dollars: Decimal.round(Decimal.mult(line.price_per_pack, n), 2),
+          packs: n
         }
       end
 
@@ -294,13 +318,28 @@ defmodule RockcutApi.Ingredients.Orders do
     %{rows: rows, by_supplier: by_supplier, total: sums(rows)}
   end
 
-  # Sacks ordered and received too (lead decisions 1, gap 8).
+  # Packs ordered and received too (lead decisions 1, gap 8). D62 lead
+  # decisions 1, gap 11: sacks and boxes never add into one number, so
+  # `by_pack` has them per pack name (by name); the plain `packs*` sums only
+  # mean something when every row has the same pack.
   defp sums(rows) do
     %{
-      sacks: rows |> Enum.map(& &1.sacks) |> Enum.sum(),
-      sacks_ordered: rows |> Enum.map(& &1.sacks_ordered) |> Enum.sum(),
-      sacks_received: rows |> Enum.map(&(&1.sacks_received || 0)) |> Enum.sum(),
-      lb: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, &1.lb)),
+      packs: rows |> Enum.map(& &1.packs) |> Enum.sum(),
+      packs_ordered: rows |> Enum.map(& &1.packs_ordered) |> Enum.sum(),
+      packs_received: rows |> Enum.map(&(&1.packs_received || 0)) |> Enum.sum(),
+      by_pack:
+        rows
+        |> Enum.group_by(& &1.pack_name)
+        |> Enum.sort_by(fn {name, _} -> name end)
+        |> Enum.map(fn {name, rs} ->
+          %{
+            pack_name: name,
+            packs: rs |> Enum.map(& &1.packs) |> Enum.sum(),
+            packs_ordered: rs |> Enum.map(& &1.packs_ordered) |> Enum.sum(),
+            packs_received: rs |> Enum.map(&(&1.packs_received || 0)) |> Enum.sum()
+          }
+        end),
+      by_unit: sum_by_unit(rows),
       dollars: Enum.reduce(rows, Decimal.new(0), &Decimal.add(&2, &1.dollars))
     }
   end
@@ -372,7 +411,7 @@ defmodule RockcutApi.Ingredients.Orders do
       if not offer.active and (is_nil(before) or before.offer_id != offer.id),
         do: rollback(%{base: ["That offer is inactive"]})
 
-      price = Map.get(attrs, "price_per_sack")
+      price = Map.get(attrs, "price_per_pack")
 
       price =
         if price in [nil, ""],
@@ -383,8 +422,8 @@ defmodule RockcutApi.Ingredients.Orders do
       |> PurchaseOrderLine.changeset(%{
         "order_id" => order.id,
         "offer_id" => offer.id,
-        "sacks_ordered" => attrs["sacks_ordered"],
-        "price_per_sack" => price
+        "packs_ordered" => attrs["packs_ordered"],
+        "price_per_pack" => price
       })
       |> save!()
     end
@@ -396,16 +435,16 @@ defmodule RockcutApi.Ingredients.Orders do
     |> Map.update("id", nil, &Ids.parse/1)
   end
 
-  defp line_attrs(_), do: rollback(%{base: ["Each line needs an offer and sacks"]})
+  defp line_attrs(_), do: rollback(%{base: ["Each line needs an offer and packs"]})
 
   # The line's offer is one of the order's supplier's (§3.2).
   defp line_offer!(supplier, offer_id) do
     case Ids.parse(offer_id) && Repo.get(SupplierOffer, Ids.parse(offer_id)) do
       %SupplierOffer{supplier_party_id: id} = offer when id == supplier.id ->
-        Repo.preload(offer, product: [:maltster, :ingredient])
+        Repo.preload(offer, product: [:manufacturer, :ingredient])
 
       %SupplierOffer{} = offer ->
-        offer = Repo.preload(offer, product: [:maltster, :ingredient])
+        offer = Repo.preload(offer, product: [:manufacturer, :ingredient])
         rollback(%{base: ["#{offer_label(offer)} isn't a #{supplier.name} offer"]})
 
       _ ->
@@ -419,7 +458,7 @@ defmodule RockcutApi.Ingredients.Orders do
         rollback(%{base: ["Enter a price for #{offer_label(offer)}; it has no current price"]})
 
       price ->
-        price.price_per_sack
+        price.price_per_pack
     end
   end
 
@@ -453,7 +492,7 @@ defmodule RockcutApi.Ingredients.Orders do
   end
 
   # `lines` from the body by line id: every id this order's, and every line
-  # of the order there with its sacks received (lead decisions 1, gap 15).
+  # of the order there with its packs received (lead decisions 1, gap 15).
   defp given_lines!(order, lines) when is_list(lines) do
     ids = MapSet.new(order.lines, & &1.id)
 
@@ -470,7 +509,7 @@ defmodule RockcutApi.Ingredients.Orders do
           rollback(%{lines: ["is invalid"]})
       end)
 
-    if Enum.any?(order.lines, &(given[&1.id]["sacks_received"] in [nil, ""])),
+    if Enum.any?(order.lines, &(given[&1.id]["packs_received"] in [nil, ""])),
       do: rollback(%{base: ["Every line needs a received quantity"]})
 
     given
@@ -479,8 +518,8 @@ defmodule RockcutApi.Ingredients.Orders do
   defp given_lines!(_order, nil), do: rollback(%{base: ["Every line needs a received quantity"]})
   defp given_lines!(_order, _), do: rollback(%{lines: ["is invalid"]})
 
-  # Whole sacks, at least `min` (decision 24: sacks, not lb).
-  defp sacks!(value, line, min) do
+  # Whole packs, at least `min` (decision 24: packs, not the unit).
+  defp packs!(value, line, min) do
     n =
       case value do
         v when is_integer(v) ->
@@ -497,38 +536,43 @@ defmodule RockcutApi.Ingredients.Orders do
       do: n,
       else:
         rollback(%{
-          base: ["Enter whole sacks (#{min} or more) for #{offer_label(line.offer)}"]
+          base: [
+            "Enter whole #{packs_word(line)} (#{min} or more) for #{offer_label(line.offer)}"
+          ]
         })
   end
 
-  # [{lot, sacks}] for a line: the allocations given, adding up to the sacks
+  # [{lot, packs}] for a line: the allocations given, adding up to the packs
   # received; with none, all of them into the previous lot (A3).
   defp allocations!(_line, 0, _given, _received_on), do: []
 
-  defp allocations!(line, sacks, given, _received_on) when given in [nil, []] do
+  defp allocations!(line, packs, given, _received_on) when given in [nil, []] do
     case previous_lot(line.offer) do
       nil -> rollback(%{base: ["Enter a lot number for #{product_name(line)}"]})
-      lot -> [{lot, sacks}]
+      lot -> [{lot, packs}]
     end
   end
 
-  defp allocations!(line, sacks, given, received_on) when is_list(given) do
+  defp allocations!(line, packs, given, received_on) when is_list(given) do
     parts =
       Enum.map(given, fn
         a when is_map(a) ->
           a = Map.new(a, fn {k, v} -> {to_string(k), v} end)
-          {a, sacks!(a["sacks"], line, 1)}
+          {a, packs!(a["packs"], line, 1)}
 
         _ ->
-          rollback(%{base: ["Each lot for #{product_name(line)} needs a lot and sacks"]})
+          rollback(%{
+            base: ["Each lot for #{product_name(line)} needs a lot and #{packs_word(line)}"]
+          })
       end)
 
     total = parts |> Enum.map(&elem(&1, 1)) |> Enum.sum()
 
-    if total != sacks do
+    if total != packs do
       rollback(%{
         base: [
-          "The lots for #{product_name(line)} add up to #{total} sacks, not the #{sacks} received"
+          "The lots for #{product_name(line)} add up to #{total} #{packs_word(line)}, " <>
+            "not the #{packs} received"
         ]
       })
     end
@@ -536,7 +580,7 @@ defmodule RockcutApi.Ingredients.Orders do
     for {a, n} <- parts, do: {allocation_lot!(line, a, received_on), n}
   end
 
-  defp allocations!(line, _sacks, _given, _received_on),
+  defp allocations!(line, _packs, _given, _received_on),
     do: rollback(%{base: ["The lots for #{product_name(line)} are invalid"]})
 
   defp allocation_lot!(line, %{"lot_id" => id}, _received_on) when id not in [nil, ""] do
@@ -558,7 +602,7 @@ defmodule RockcutApi.Ingredients.Orders do
       number ->
         case Inventory.find_lot(line.offer.product_id, number) do
           nil -> new_lot!(line, number, a, received_on)
-          lot -> usable_lot!(lot, line.offer)
+          lot -> lot |> usable_lot!(line.offer) |> same_values!(line, a)
         end
     end
   end
@@ -567,7 +611,7 @@ defmodule RockcutApi.Ingredients.Orders do
     do: rollback(%{base: ["Enter a lot number for #{product_name(line)}"]})
 
   # An expired lot takes no more (lead, Stop 2 note 6), and a lot holds one
-  # sack size (A3): either needs a new lot number.
+  # pack size (A3): either needs a new lot number.
   defp usable_lot!(%IngredientLot{status: "expired"} = lot, _offer),
     do:
       rollback(%{
@@ -575,40 +619,123 @@ defmodule RockcutApi.Ingredients.Orders do
       })
 
   defp usable_lot!(lot, offer) do
-    if lot.sack_size_lb && Decimal.eq?(lot.sack_size_lb, offer.sack_size_lb),
+    if lot.pack_size && Decimal.eq?(lot.pack_size, offer.pack_size),
       do: lot,
       else:
         rollback(%{
           base: [
-            "Lot #{lot.lot_number || "##{lot.id}"} holds #{lb(lot.sack_size_lb)} sacks; use a new lot number"
+            "Lot #{lot.lot_number || "##{lot.id}"} holds " <>
+              "#{size(lot.pack_size, Products.unit(offer.product))} " <>
+              "#{Units.plural(lot.pack_name)}; use a new lot number"
           ]
         })
   end
 
-  # Add lot's lot (§3.3): supplier and sack size from the offer, received on
+  # D62 lead decisions 1, gap 10: a lot number the product already has adds
+  # to that lot, so the crop year and features sent must be the lot's own
+  # (or left out); a different one is refused, never dropped. Decisions 2,
+  # gap 16: a blank is a value, so a feature sent blank (nil) that the lot
+  # has, or sent with a value the lot has blank, differs too.
+  defp same_values!(lot, line, a) do
+    features =
+      case Features.validate(a["features"], line.offer.product.ingredient_id, :lot) do
+        {:ok, features} -> for {type, attrs} <- features, do: {type, attrs && attrs.value}
+        {:error, reason} -> Repo.rollback(reason)
+      end
+
+    crop_year = a["crop_year"]
+    has = Map.new(lot_values(lot.id), &{&1.feature_type_id, &1.value})
+
+    differs? =
+      (crop_year not in [nil, ""] and to_string(crop_year) != to_string(lot.crop_year)) or
+        Enum.any?(features, fn {type, value} -> not same_value?(has[type.id], value) end)
+
+    if differs? do
+      values =
+        cond do
+          lot.crop_year -> ["crop year #{lot.crop_year}"]
+          crop_year not in [nil, ""] -> ["no crop year"]
+          true -> []
+        end ++
+          for {type, _} <- Enum.sort_by(features, &elem(&1, 0).id) do
+            case has[type.id] do
+              nil -> "no #{String.downcase(type.label)}"
+              v -> "#{String.downcase(type.label)} #{places(v, type.decimals)}"
+            end
+          end
+
+      rollback(%{
+        base: [
+          "Lot #{lot.lot_number} already exists with #{Enum.join(values, ", ")}; " <>
+            "use a new lot number or leave its values"
+        ]
+      })
+    end
+
+    lot
+  end
+
+  defp same_value?(nil, nil), do: true
+  defp same_value?(nil, _value), do: false
+  defp same_value?(_has, nil), do: false
+  defp same_value?(has, value), do: Decimal.eq?(has, value)
+
+  defp lot_values(lot_id),
+    do: Repo.all(from(v in RockcutApi.Ingredients.LotFeatureValue, where: v.lot_id == ^lot_id))
+
+  defp places(d, decimals),
+    do: d |> Decimal.round(decimals || 0) |> Decimal.to_string(:normal)
+
+  # Add lot's lot (§3.3): supplier and pack from the offer, received on
   # the receipt's date, the product's standard specs with `features` over
-  # them.
+  # them. D62 §3.4: a hop lot also takes its `crop_year` and must have its
+  # alpha acid; the refusals name the product and lot, so the dialog shows
+  # them on the line.
   defp new_lot!(line, number, a, received_on) do
     product = line.offer.product
+    hops? = Catalog.ingredient_key(product.ingredient_id) == "hops"
+    crop_year = if hops?, do: a["crop_year"]
+    which = "#{product_name(line)} lot #{number}"
+
+    if hops? and a["crop_year"] in [nil, ""],
+      do: rollback(%{base: ["#{which}: enter its crop year"]})
+
+    if not hops? and a["crop_year"] not in [nil, ""],
+      do: rollback(%{base: ["#{which}: only hop lots have a crop year"]})
 
     features =
-      case Features.validate(a["features"], product.ingredient_id) do
+      case Features.validate(a["features"], product.ingredient_id, :lot) do
         {:ok, features} -> features
         {:error, reason} -> Repo.rollback(reason)
       end
 
-    lot =
-      %IngredientLot{}
-      |> IngredientLot.changeset(%{
+    case Features.check_required(product.ingredient_id, features) do
+      :ok ->
+        :ok
+
+      {:error, {:invalid, %{features: errors}}} ->
+        rollback(%{base: ["#{which}: #{errors |> Map.values() |> List.flatten() |> hd()}"]})
+    end
+
+    changeset =
+      IngredientLot.changeset(%IngredientLot{}, %{
         ingredient_id: product.ingredient_id,
         product_id: product.id,
         supplier_party_id: line.offer.supplier_party_id,
         lot_number: number,
         received_date: received_on,
-        sack_size_lb: line.offer.sack_size_lb,
+        pack_name: line.offer.pack_name,
+        pack_size: line.offer.pack_size,
+        crop_year: crop_year,
         notes: a["notes"]
       })
-      |> save!()
+
+    case changeset.errors[:crop_year] do
+      {message, _} -> rollback(%{base: ["#{which}: the crop year #{message}"]})
+      nil -> :ok
+    end
+
+    lot = save!(changeset)
 
     Features.copy_standard!(product.id, lot.id, Enum.map(features, fn {t, _} -> t.id end))
     Features.write!({:lot, lot.id}, features)
@@ -617,15 +744,15 @@ defmodule RockcutApi.Ingredients.Orders do
 
   @doc """
   A3: the product's previous lot for an offer: its most recently received
-  lot that isn't expired and holds the offer's sack size (then highest id).
+  lot that isn't expired and holds the offer's pack size (then highest id).
   """
-  def previous_lot(%SupplierOffer{product_id: product_id, sack_size_lb: size}) do
+  def previous_lot(%SupplierOffer{product_id: product_id, pack_size: size}) do
     from(l in IngredientLot,
       where: l.product_id == ^product_id and l.status != "expired",
       order_by: [desc: l.received_date, desc: l.id]
     )
     |> Repo.all()
-    |> Enum.find(&(&1.sack_size_lb && Decimal.eq?(&1.sack_size_lb, size)))
+    |> Enum.find(&(&1.pack_size && Decimal.eq?(&1.pack_size, size)))
   end
 
   ## Helpers
@@ -658,7 +785,10 @@ defmodule RockcutApi.Ingredients.Orders do
 
   defp product_name(line), do: Products.display_name(line.offer.product)
 
-  defp lb(d), do: "#{d |> Decimal.normalize() |> Decimal.to_string(:normal)} lb"
+  # The offer's pack name, plural ("sacks" for grain).
+  defp packs_word(line), do: Units.plural(line.offer.pack_name)
+
+  defp size(d, unit), do: "#{d |> Decimal.normalize() |> Decimal.to_string(:normal)} #{unit}"
 
   defp filter(query, _field, value) when value in [nil, ""], do: query
   defp filter(query, field, value), do: where(query, [o], field(o, ^field) == ^value)

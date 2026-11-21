@@ -28,7 +28,8 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { money, targetProgress } from '../../lib/purchasing'
+import { byUnitText, money, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { packWord } from '../../lib/brewingUnits'
 import type { ApiResponse, PurchaseOrder } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import ReceiveDialog from './ReceiveDialog'
@@ -58,7 +59,10 @@ export default function OrderPage() {
 
   const isOpen = order.status === 'open'
   const received = order.status === 'received'
-  const progress = order.target ? targetProgress(order.total_sacks, order.target.sacks) : null
+  // D62 §3.5: a grain-only order says sacks; mixed packs say packs.
+  const orderPack = sharedPackName(order.lines.map((l) => l.offer.pack_name))
+  const packHeader = orderPack ? `${orderPack.charAt(0).toUpperCase()}${orderPack.slice(1)}` : 'Pack'
+  const progress = order.target ? targetProgress(order.total_packs, order.target.packs, orderPack) : null
 
   const doCancel = async () => {
     try {
@@ -172,10 +176,10 @@ export default function OrderPage() {
           <TableHead>
             <TableRow>
               <TableCell>Product</TableCell>
-              <TableCell align="right">Sack</TableCell>
+              <TableCell align="right">{packHeader}</TableCell>
               <TableCell align="right">Ordered</TableCell>
               {received && <TableCell align="right">Received</TableCell>}
-              <TableCell align="right">$ / sack</TableCell>
+              <TableCell align="right">$ / {orderPack ?? 'pack'}</TableCell>
               <TableCell align="right">$</TableCell>
             </TableRow>
           </TableHead>
@@ -193,15 +197,15 @@ export default function OrderPage() {
                   )}
                 </TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  {Number(l.offer.sack_size_lb)} lb
+                  {Number(l.offer.pack_size)} {l.offer.product.unit ?? 'lb'}
                 </TableCell>
-                <TableCell align="right">{l.sacks_ordered}</TableCell>
+                <TableCell align="right">{l.packs_ordered}</TableCell>
                 {received && (
                   <TableCell align="right" data-testid={`order-line-received-${l.id}`}>
-                    {l.sacks_received ?? 0}
+                    {l.packs_received ?? 0}
                   </TableCell>
                 )}
-                <TableCell align="right">{money(l.price_per_sack)}</TableCell>
+                <TableCell align="right">{money(l.price_per_pack)}</TableCell>
                 <TableCell align="right">{money(l.line_dollars)}</TableCell>
               </TableRow>
             ))}
@@ -210,7 +214,7 @@ export default function OrderPage() {
       </Paper>
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, justifyContent: 'space-between' }}>
         <Typography fontWeight={600} data-testid="order-totals">
-          {order.total_sacks} {order.total_sacks === 1 ? 'sack' : 'sacks'} · {Number(order.total_lb).toLocaleString('en-US')} lb · {money(order.total_dollars)}
+          {order.total_packs} {packWord(orderPack, order.total_packs)} · {byUnitText(order.by_unit)} · {money(order.total_dollars)}
           {received && ' received'}
         </Typography>
         {progress && isOpen && (

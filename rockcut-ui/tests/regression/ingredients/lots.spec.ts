@@ -8,7 +8,7 @@ import { SACK, cleanupIngredients, expectOnHand, getProduct, lotsOf, makeProduct
 // moisture first.
 
 test.use({ storageState: authFile('brewer2') })
-test.beforeEach(async () => setQuantityDisplay('brewer2', 'sacks'))
+test.beforeEach(async () => setQuantityDisplay('brewer2', 'packs'))
 test.afterAll(cleanupIngredients)
 
 test('L1: a lot with an opening amount of 12 sacks; extract shows the standard; a changed moisture is marked on the lot only', async ({ page }) => {
@@ -18,10 +18,10 @@ test('L1: a lot with an opening amount of 12 sacks; extract shows the standard; 
   await page.getByTestId('product-add-lot').click()
   const d = page.getByTestId('add-lot-dialog')
   // The one offer is picked: BSG, 55 lb sacks.
-  await expect(d.getByTestId('lot-sack-size')).toHaveValue('55')
+  await expect(d.getByTestId('lot-pack-size')).toHaveValue('55')
   await d.getByTestId('lot-number').fill(number)
   await expect(d.getByLabel('Opening amount (already here)')).toBeChecked()
-  await d.getByTestId('lot-quantity-sacks').fill('12')
+  await d.getByTestId('lot-quantity-packs').fill('12')
   await expect(d.getByTestId('feature-extract_fgdb')).toHaveValue('81.5')
   await expect(d.getByTestId('feature-moisture_pct')).toHaveValue('4.5')
   await d.getByTestId('feature-moisture_pct').fill('5.1')
@@ -31,7 +31,7 @@ test('L1: a lot with an opening amount of 12 sacks; extract shows the standard; 
 
   const [lot] = await lotsOf(product.id)
   expect(lot.lot_number).toBe(number)
-  expect(Number(lot.on_hand_lb)).toBe(12 * SACK)
+  expect(Number(lot.on_hand)).toBe(12 * SACK)
   expect(Number(lot.features.moisture_pct.value)).toBe(5.1)
   expect(Number(lot.features.extract_fgdb.value)).toBe(81.5)
   await expectOnHand(product.id, 12 * SACK)
@@ -52,7 +52,7 @@ test('L2: extract entered as 37.0 PPG stores 80.1 % FGDB; as-is with no moisture
   await page.getByTestId('product-add-lot').click()
   const d = page.getByTestId('add-lot-dialog')
   await d.getByTestId('lot-number').fill(tempTag('L2'))
-  await d.getByTestId('lot-quantity-sacks').fill('1')
+  await d.getByTestId('lot-quantity-packs').fill('1')
 
   // As-is with the moisture box empty: the popup asks for it and won't Use.
   await d.getByTestId('feature-moisture_pct').fill('')

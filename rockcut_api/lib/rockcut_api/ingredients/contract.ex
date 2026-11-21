@@ -1,8 +1,9 @@
 defmodule RockcutApi.Ingredients.Contract do
   @moduledoc """
   D61 §3.1: a malt contract (Silverston's Agreement) with one supplier for
-  one calendar year (A1: one per supplier per year). Its lines are sacks of
-  a maltster product at a price per sack. What's on order, received and
+  one calendar year (A1: one per supplier per year). Its lines are a
+  quantity of a product at a price (sacks at a price per sack for grain).
+  What's on order, received and
   remaining is computed on read (`Contracts`).
   """
   use Ecto.Schema
@@ -14,8 +15,11 @@ defmodule RockcutApi.Ingredients.Contract do
     # Lead decisions 2 (gap 2): bumped by every write; Edit sends it back.
     field :lock_version, :integer, default: 1
     # Computed on read (`Contracts`, lead decisions 1 gaps 3 and 18).
-    field :remaining_sacks, :any, virtual: true
-    field :over_sacks, :any, virtual: true
+    field :remaining, :any, virtual: true
+    field :over, :any, virtual: true
+    # D62 §3.7: the hop lines' remaining and over, in lb.
+    field :remaining_lb, :any, virtual: true
+    field :over_lb, :any, virtual: true
     field :delete_blocked, :boolean, virtual: true, default: false
 
     belongs_to :supplier, RockcutApi.Ingredients.Party, foreign_key: :supplier_party_id
