@@ -311,14 +311,26 @@ applicability =
        {"beta_acid_pct", "range", "enter", false},
        {"total_oil_ml_100g", "range", "enter", false}
      ]},
-    {"yeast", [grain.("attenuation_pct")]}
+    {"yeast", [grain.("attenuation_pct")]},
+    # D65 §4.4: Fruits' Brix a typical range, entered (optional) on each lot;
+    # Sugars' extract a standard copied to each lot, Brix on Liquid lots only.
+    {"fruits", [{"brix", "range", "enter", false}]},
+    {"sugars",
+     [{"extract_fgdb", "value", "copy", false}, {"brix", "none", "enter", false, "Liquid"}]}
   ]
   |> Enum.flat_map(fn {category, features} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     features
     |> Enum.with_index()
-    |> Enum.map(fn {{key, product_mode, lot_mode, lot_required}, sort_order} ->
+    |> Enum.map(fn {feature, sort_order} ->
+      # A fifth element is the form the feature is only for (D65 `only_form`).
+      {key, product_mode, lot_mode, lot_required, only_form} =
+        case feature do
+          {k, p, l, r} -> {k, p, l, r, nil}
+          {k, p, l, r, f} -> {k, p, l, r, f}
+        end
+
       %{
         category_id: category_ids[category],
         feature_type_id: Map.fetch!(feature_type_ids, key),
@@ -327,6 +339,7 @@ applicability =
         product_mode: product_mode,
         lot_mode: lot_mode,
         lot_required: lot_required,
+        only_form: only_form,
         inserted_at: now,
         updated_at: now
       }
@@ -334,7 +347,7 @@ applicability =
   end)
 
 Repo.insert_all(CategoryFeatureType, applicability,
-  on_conflict: {:replace, [:product_mode, :lot_mode, :lot_required]},
+  on_conflict: {:replace, [:product_mode, :lot_mode, :lot_required, :only_form]},
   conflict_target: [:category_id, :feature_type_id]
 )
 
