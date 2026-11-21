@@ -1345,3 +1345,14 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 12: product names unique in any case (migration `20261121140001`); "None" refused | F1 |
 | Decided: the form is fixed once a product has a lot (UI disabled, API 422) | Playwright "the form is fixed…"; F1 |
 | Decided, Q13: the recipe lot picker on a D65 lot shows "· 8.5 °Bx" | Playwright "Q13" |
+
+### D65 lead decisions 2 — QA recheck 1 leftovers (`prompts/d65_lead_decisions_2.md`)
+
+`F2` = ExUnit `d65_fix2_test.exs`; `V2` = vitest `d65Fix2.test.ts`; Playwright is `d65-fix-2`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 8 (leftover): a count's pack reads "tubs of 872 tablets (5 lb)" on the order line in New order and the order edit dialog (also Add price and the quantity header, through `packSizeText`) | Playwright "gap 8" **(revert)**; V2 |
+| 14: a disabled Delete Ingredient (and Delete Category) keeps its name; its reason is the tooltip and its `aria-describedby` | Playwright "gap 14" **(revert)** |
+| 15: the duplicate refusal names the existing product in its stored spelling (create and rename; None and a manufacturer) | F2 **(revert)**; F1 (wording updated) |
+| 16: −1 or 0 tablets says "Enter at least 1 tablet" as it's typed in Add lot and Record movement; Count (0 allowed) and decimal units keep "Enter 0 or more" | Playwright "gap 16" at desktop and 360 px **(revert)**; V2 |
