@@ -306,3 +306,56 @@ Do you have it?
 - **Slow network:** a double-click on Save in Add lot and Receive writes once.
 - **Add field** and **Add subcategory** are hidden on Fruits, Spices & Flavorings and Sugars and
   Extracts, and the API refuses both (422). Other Consumables allows Add subcategory.
+
+## Amendment (Matt, 2026-11-20): water salts reference data, batch 1
+
+**Data:** `reference/d65_salts_matt_2026-11-20.csv`. It's local only and the seed file embeds it.
+It lists seven salts with the ppm each ion reaches from 1 g per gallon. The lead checked each
+value against the salt's formula.
+
+| Salt | Formula | Ca | Mg | CO₃ | HCO₃ | SO₄ | Na | Cl |
+|---|---|---|---|---|---|---|---|---|
+| Chalk | CaCO₃ | 105.8 | | 158.4 | | | | |
+| Baking Soda | NaHCO₃ | | | | 191.9 | | 72.3 | |
+| Gypsum (Hydrous) | CaSO₄·2H₂O | 61.5 | | | | 147.4 | | |
+| Epsom Salt (Hydrous) | MgSO₄·7H₂O | | 26.1 | | | 103.0 | | |
+| Table Salt | NaCl | | | | | | 103.9 | 160.3 |
+| Calcium Chloride (Hydrous) | CaCl₂·2H₂O | 72.0 | | | | | | 127.4 |
+| Calcium Chloride (Anhydrous) | CaCl₂ | 95.4 | | | | | | 168.8 |
+
+**Decisions:**
+1. **Ion contributions are stored once per ingredient**, not per product. They're chemistry, the
+   same for every brand. In Silverston's model they're features of the generic product, inherited
+   by every variant.
+   - New feature types, each in ppm @ 1 g/gal with 1 decimal and a range of 0–1000:
+     `ca_ppm_per_g_gal`, `mg_…`, `co3_…`, `hco3_…`, `so4_…`, `na_…`, `cl_…`.
+   - The values sit on the **ingredient**. That's a new `ingredient_feature_values` table, or the
+     product feature table generalized to point at an ingredient; the plan decides which.
+   - The ingredient has an optional **formula** text field.
+   - They're shown on the ingredient and read-only on each product page. They're edited in the
+     ingredient dialog, only for Water Salts.
+   - Lots carry none. D63's water chemistry reads them.
+2. Each salt row is **its own ingredient**. "Calcium Chloride (Hydrous)" and "(Anhydrous)" are
+   separate ingredients, because their ion numbers differ.
+3. **The manufacturer is optional on Water Salts products** (Matt: "list the Manufacturer as
+   None"). This amends A6 for Water Salts only; grain, hops and D65's other categories keep it
+   required.
+   - It's stored as null and shown as **"None"** in lists, pickers and Totals.
+   - The duplicate rule treats null as one value, so a second None Gypsum Powder is refused.
+   - Product names read "Gypsum (Hydrous) Powder · None".
+4. **Supplier BSG.** These products, one offer each, are seeded on every environment:
+
+   | Ingredient | Form | Unit | BSG offer | Price |
+   |---|---|---|---|---|
+   | Calcium Chloride (Hydrous) | Flake | lb | bag · 50 lb | $77.00/bag ($1.54/lb) |
+   | Gypsum (Hydrous) | Powder | lb | bag · 50 lb | $32.00/bag ($0.64/lb) |
+   | Chalk (calcium carbonate) | Powder | lb | bag · 50 lb | $66.00/bag ($1.32/lb) |
+   | Epsom Salt (Hydrous) | Powder | lb | bag · 50 lb | $97.00/bag ($1.94/lb) |
+
+   - Prices are effective 2026-11-20.
+   - No lots or on-hand amounts were given, so none are seeded.
+   - Baking Soda, Table Salt and Calcium Chloride (Anhydrous) are seeded as ingredients with
+     their ions, with no products.
+   - Forms (Flake for the calcium chloride, Powder for the rest) are the lead's guess (**A13**,
+     to confirm).
+   - The seed is idempotent by name, as D62's hops.
