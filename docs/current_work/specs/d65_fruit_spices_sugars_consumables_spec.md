@@ -397,14 +397,14 @@ Maple syrup is left out: Matt will check its specs and add it by hand.
 | Lactose | None | Dry | lb | BSG · bag · 50 lb | $1.00 | $50.00 | 100 % |
 | Dextrose (Corn Sugar) | None | Dry | lb | BSG · bag · 50 lb | $0.91 | $45.50 | 91 % (typical, to check) |
 | Belgian Candy Syrup | Candico | Liquid | lb | BSG · pail · 55 lb | $0.78 | $42.90 | 70 % (typical, to check) |
-| Black Strap Molasses | Sweetner Sup Co. | Liquid | lb | BSG · pail · 60 lb | $0.82 | $49.20 | 81.95 % |
+| Black Strap Molasses | Sweetener Sup Co. | Liquid | lb | BSG · pail · 60 lb | $0.82 | $49.20 | 81.95 % |
 | Honey | Colorado Honey Co. | Liquid | lb | Redstone · pail · 60 lb | $2.00 | $120.00 | 80.33 % |
 | DME | Muntons | Dry | lb | BSG · bag · 55 lb | $1.00 | $55.00 | 100 % |
 
 **New companies:**
-- Candico, Sweetner Sup Co. and Colorado Honey Co. are manufacturers.
+- Candico, Sweetener Sup Co. and Colorado Honey Co. are manufacturers.
 - Redstone is a supplier.
-- Names are as Matt gave them; "Sweetner" may be "Sweetener", for Matt to confirm.
+- Names are as Matt gave them; "Sweetener Sup Co." was confirmed by Matt.
 
 **Extract precision:** extract keeps grain's 1 decimal for typed values. The seed stores 81.95 and
 80.33 exactly as given, so `extract_fgdb` moves to **2 decimals**. Grain values are unaffected.
