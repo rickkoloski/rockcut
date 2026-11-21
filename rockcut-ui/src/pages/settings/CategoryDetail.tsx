@@ -154,15 +154,23 @@ export default function CategoryDetail() {
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Category"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
             {/* D61 carry-over 2: disabled with the API's reason while it has grains, ingredients or sub-categories. */}
-            <Tooltip title="Delete Category">
+            {/* D65 lead decisions 2 (gap 14): disabled, it keeps its name, and the reason is its tooltip and description. */}
+            <Tooltip title={category.delete_blocked ?? 'Delete Category'}>
               <span>
-                <IconButton onClick={() => setDeleteOpen(true)} color="error" disabled={!!category.delete_blocked} data-testid="category-delete">
+                <IconButton
+                  aria-label="Delete Category"
+                  aria-describedby={category.delete_blocked ? 'category-delete-reason' : undefined}
+                  onClick={() => setDeleteOpen(true)}
+                  color="error"
+                  disabled={!!category.delete_blocked}
+                  data-testid="category-delete"
+                >
                   <DeleteIcon />
                 </IconButton>
               </span>
             </Tooltip>
             {category.delete_blocked && (
-              <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="category-delete-reason">
+              <Typography id="category-delete-reason" variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="category-delete-reason">
                 {category.delete_blocked}
               </Typography>
             )}

@@ -87,11 +87,10 @@ for (const size of [
     await expect(d.getByText(`${ingredient.name} Tablet is counted in whole tablets`)).toBeVisible()
     await expect(d.getByText('Use a whole number')).toHaveCount(0)
     await expect(save).toBeDisabled()
-    // 0: the API's smallest, in tablets.
+    // 0: the API's smallest, in tablets, as it's typed (lead decisions 2, gap 16).
     await d.getByTestId('lot-quantity-lb').fill('0')
-    await save.click()
-    await expect(d.getByRole('alert')).toHaveText('Enter at least 1 tablet')
-    await expect(d.getByRole('alert')).toBeInViewport()
+    await expect(d.getByText('Enter at least 1 tablet')).toBeVisible()
+    await expect(save).toBeDisabled()
     expect(posts).toEqual([])
     if (size.width === 360) await expectNoSidewaysScroll(page)
     // A whole number of tablets saves as typed: 1 tub (333).

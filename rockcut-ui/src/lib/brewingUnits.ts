@@ -146,6 +146,13 @@ export function packPlural(name: string | null | undefined): string {
   return `${name}s`
 }
 
+/**
+ * D65 lead decisions 2 (gap 8): a pack and its size in the unit, as a label
+ * says it: "55 lb sacks", and a count "tubs of 872 tablets" (never "872 tablets tubs").
+ */
+export const packSizeText = (name: string | null | undefined, size: number | string, unit: string = 'lb') =>
+  isCountUnit(unit) ? `${packPlural(name)} of ${Number(size)} ${unit}` : `${Number(size)} ${unit} ${packPlural(name)}`
+
 /** "sack" for 1, else the plural. */
 export const packWord = (name: string | null | undefined, n: number) => (n === 1 ? (name ?? 'pack') : packPlural(name))
 
@@ -191,6 +198,12 @@ export const minQuantity = (unit: string = 'lb') =>
  * rounded. When the packs and the loose part don't come to a whole number
  * (0.5 tub of 333 is 166.5) it's refused with `error` ("<product> is counted
  * in whole tablets"), and nothing is sent.
+ *
+ * D65 lead decisions 2 (gap 16): with `positive` (a dialog where 0 isn't
+ * allowed), a count of 0 is refused as it's typed with the smallest the API
+ * takes ("Enter at least 1 tablet"); a minus says the same under its box
+ * (`QuantityInput`'s `negativeText`). Decimal units, and counts where 0 is
+ * allowed (Count), keep "Enter 0 or more" for a minus.
  */
 export function readQuantity(
   packText: string,
@@ -198,6 +211,7 @@ export function readQuantity(
   packSize: number | null,
   unit: string = 'lb',
   productName?: string | null,
+  positive = false,
 ): { quantity: string | null; valid: boolean; error?: string } {
   const count = isCountUnit(unit)
   const pp = parseDecimal(packSize != null ? packText : '', LB_DECIMALS)
@@ -208,6 +222,7 @@ export function readQuantity(
   const packs = Number(pp.value ?? 0)
   const loose = Number(pl.value ?? 0)
   const raw = packSize != null ? packs * packSize + loose : loose
+  if (positive && count && raw === 0) return { quantity: null, valid: false, error: minQuantity(unit) }
   if (raw > 0 && raw < 0.01) return { quantity: null, valid: false, error: minQuantity(unit) }
   // Whole to within float noise (0.1 × 30 is 3.0000000000000004), never by rounding a real fraction.
   if (count && Math.abs(raw - Math.round(raw)) > 1e-9) return { quantity: null, valid: false, error: wholeCountMessage(productName, unit) }

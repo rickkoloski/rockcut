@@ -197,6 +197,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
         packName={packName}
         unit={unitLabel(product)}
         productName={productShortName(product)}
+        positive
         label="Quantity"
         onChange={setQuantity}
         testId="lot-quantity"

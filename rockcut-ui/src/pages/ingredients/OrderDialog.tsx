@@ -9,7 +9,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { PRICE_DECIMALS, packLabel, packPlural, parseDecimal } from '../../lib/brewingUnits'
+import { PRICE_DECIMALS, packLabel, packPlural, packSizeText, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
 import { offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
 import { WRAP_ITEM, WRAP_SELECT, pickerName, unitLabel } from '../../lib/ingredientFeatures'
@@ -244,7 +244,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
                 l.packs.trim() !== '' && packs == null
                   ? wholePacks(offer?.pack_name ?? 'sack')
                   : offer
-                    ? `${Number(offer.pack_size)} ${productUnit.get(offer.product_id) ?? 'lb'} ${packPlural(offer.pack_name)}${offer.pack_note ? ` (${offer.pack_note})` : ''}`
+                    ? `${packSizeText(offer.pack_name, offer.pack_size, productUnit.get(offer.product_id))}${offer.pack_note ? ` (${offer.pack_note})` : ''}`
                     : undefined
               }
               sx={{ flex: 1 }}

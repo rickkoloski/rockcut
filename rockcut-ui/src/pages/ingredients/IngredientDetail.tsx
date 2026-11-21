@@ -130,16 +130,24 @@ export default function IngredientDetail() {
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Ingredient"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
-            {/* D65 lead decisions 1 (gap 13): disabled with the API's reason while it has products, as Categories does. */}
-            <Tooltip title="Delete Ingredient">
+            {/* D65 lead decisions 1 (gap 13): disabled with the API's reason while it has products, as Categories does.
+                Lead decisions 2 (gap 14): it keeps its name, and the reason is its tooltip and description. */}
+            <Tooltip title={ingredient.delete_blocked ?? 'Delete Ingredient'}>
               <span>
-                <IconButton onClick={() => setDeleteOpen(true)} color="error" disabled={!!ingredient.delete_blocked} data-testid="ingredient-delete">
+                <IconButton
+                  aria-label="Delete Ingredient"
+                  aria-describedby={ingredient.delete_blocked ? 'ingredient-delete-reason' : undefined}
+                  onClick={() => setDeleteOpen(true)}
+                  color="error"
+                  disabled={!!ingredient.delete_blocked}
+                  data-testid="ingredient-delete"
+                >
                   <DeleteIcon />
                 </IconButton>
               </span>
             </Tooltip>
             {ingredient.delete_blocked && (
-              <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="ingredient-delete-reason">
+              <Typography id="ingredient-delete-reason" variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="ingredient-delete-reason">
                 {ingredient.delete_blocked}
               </Typography>
             )}

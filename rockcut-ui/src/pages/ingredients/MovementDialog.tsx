@@ -179,6 +179,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
         packName={pack?.name}
         unit={unitLabel(product)}
         productName={productShortName(product)}
+        positive
         label="Quantity"
         onChange={setQuantity}
         testId="movement-quantity"
