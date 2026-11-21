@@ -47,7 +47,8 @@ export default function CategoryDetail() {
   const children = categories.filter((c) => c.parent_id === Number(id)).sort((a, b) => a.sort_order - b.sort_order);
   const grains = isGrainCategory(categories, Number(id));
   // D62 §3.1: Hops (like Grains) has features on its products and lots, no custom fields.
-  const managed = isManagedCategory(categories, Number(id));
+  // D65 Stop 2 item 0: from the category itself (its `catalog`), so Add field doesn't flash while the list loads.
+  const managed = category?.catalog ? !category.catalog.allows_fields : isManagedCategory(categories, Number(id));
   const [childOpen, setChildOpen] = useState(false);
 
   const deleteCategoryMutation = useApiDelete(

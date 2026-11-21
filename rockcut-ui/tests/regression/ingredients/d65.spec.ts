@@ -207,6 +207,22 @@ test('Stop 0 LEAD note 4: while the categories load, the library shows a loading
   await expect(page.getByRole('combobox', { name: 'Category' })).toHaveText('Grains')
 })
 
+test('Stop 2 item 0: a Fruits category page never shows Add field, even while the category list loads', async ({ page }) => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  await page.route((u) => u.pathname === '/api/ingredient_categories', async (route) => {
+    await held
+    await route.continue()
+  })
+  await page.goto(`/ingredients/categories/${await categoryId('fruits')}`)
+  await expect(page.getByRole('heading', { name: 'Field Definitions' })).toBeVisible()
+  await expect(page.getByTestId('category-grain-fields-note')).toBeVisible()
+  await expect(page.getByTestId('category-add-field')).toHaveCount(0)
+  release()
+  await page.waitForResponse((r) => new URL(r.url()).pathname === '/api/ingredient_categories')
+  await expect(page.getByTestId('category-add-field')).toHaveCount(0)
+})
+
 test.describe('categories', () => {
   test('Water Salts and Finings under Other Consumables; no Future Ingredients or Irish Moss; no Add field or subcategory on the three', async ({ page }) => {
     const all = await categoriesList()
