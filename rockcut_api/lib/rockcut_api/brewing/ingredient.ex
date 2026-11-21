@@ -5,7 +5,8 @@ defmodule RockcutApi.Brewing.Ingredient do
   schema "ingredients" do
     field :name, :string
     field :notes, :string
-    # D65 (salts amendment): the chemical formula, "CaSO₄·2H₂O"; optional, any category.
+    # D65 (salts amendment): the chemical formula, "CaSO₄·2H₂O"; optional, on
+    # Water Salts ingredients only (lead decisions 3, gap 1).
     field :formula, :string
     # D65: its ion values (`Ingredients.Ions`), filled by the controller; nil when not.
     field :ions, :map, virtual: true
@@ -26,9 +27,25 @@ defmodule RockcutApi.Brewing.Ingredient do
     |> update_change(:formula, &blank_to_nil/1)
     |> validate_required([:name, :category_id])
     |> validate_length(:formula, max: 40)
+    |> validate_formula_category()
     |> unique_constraint([:name, :category_id])
     |> foreign_key_constraint(:category_id)
     |> RockcutApi.Changeset.validate_parents([:category_id])
+  end
+
+  # D65 lead decisions 3 (gap 1): a formula is set only on a Water Salts
+  # ingredient. One stored before (any category) is kept while it isn't
+  # changed, and clearing it is allowed.
+  defp validate_formula_category(changeset) do
+    with formula when is_binary(formula) <- get_change(changeset, :formula),
+         category_id when is_integer(category_id) <- get_field(changeset, :category_id),
+         %RockcutApi.Brewing.IngredientCategory{} = category <-
+           RockcutApi.Repo.get(RockcutApi.Brewing.IngredientCategory, category_id),
+         false <- RockcutApi.Ingredients.Catalog.water_salts?(category) do
+      add_error(changeset, :formula, "is only for Water Salts ingredients")
+    else
+      _ -> changeset
+    end
   end
 
   defp blank_to_nil(nil), do: nil
