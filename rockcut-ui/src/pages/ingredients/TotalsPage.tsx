@@ -21,7 +21,7 @@ import { PageToolbar } from '../../components/SettingsMenu'
 import CopyTableButton from '../../components/CopyTableButton'
 import StatusChip from '../../components/StatusChip'
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
-import { packLabel, packPlural, packWord } from '../../lib/brewingUnits'
+import { packLabel, packPlural, packWord, perUnitLabel } from '../../lib/brewingUnits'
 import { MANAGED_KEYS, categoryKey, categoryOptions, keyedCategories, manufacturerLabel, manufacturersFor } from '../../lib/ingredientFeatures'
 import { amountText, byUnitText, money, packsFigure, sharedPackName } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
@@ -251,7 +251,7 @@ function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | un
               {r.value != null && r.estimated && ' est.'}
             </TableCell>
             <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-              {r.per_unit == null ? '—' : `${money(r.per_unit, 4)}/${r.unit_label ?? r.unit}`}
+              {r.per_unit == null ? '—' : `${money(r.per_unit, 4)}/${perUnitLabel(r.unit_label ?? r.unit)}`}
             </TableCell>
           </TableRow>
         ))}

@@ -1,6 +1,6 @@
 // D65 Stop 2: features on fruit and sugar lots (only_form, standards vs typical ranges), ions, the pack note.
 import { describe, expect, it } from 'vitest'
-import { convertDecimals, formatFeature } from './brewingUnits'
+import { convertDecimals, formatFeature, perUnitLabel } from './brewingUnits'
 import { ionsText, lotFeatureBasis, lotTypesFor } from './ingredientFeatures'
 import { offerPackText, reorderOfferPack } from './purchasing'
 import type { FeatureType } from './types'
@@ -77,6 +77,15 @@ describe('conversions round extract as D60 did', () => {
   it('extract converts to 1 place (37.0 PPG → 80.1); other features to their decimals', () => {
     expect(convertDecimals({ key: 'extract_fgdb', decimals: 2 })).toBe(1)
     expect(convertDecimals({ key: 'color_lovibond', decimals: 2 })).toBe(2)
+  })
+})
+
+describe('price per unit (Stop 2 LEAD note 7)', () => {
+  it('is singular after $/', () => {
+    expect(perUnitLabel('tablets')).toBe('tablet')
+    expect(perUnitLabel('lb')).toBe('lb')
+    expect(perUnitLabel('fl oz')).toBe('fl oz')
+    expect(perUnitLabel(null)).toBe('lb')
   })
 })
 

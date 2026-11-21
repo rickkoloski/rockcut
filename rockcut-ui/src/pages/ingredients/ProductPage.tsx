@@ -30,7 +30,7 @@ import StatusChip from '../../components/StatusChip'
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
-import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack } from '../../lib/brewingUnits'
+import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack, perUnitLabel } from '../../lib/brewingUnits'
 import { differs, formatRange, ionsText, isD65Key, isRangeType, itemLabel, lotTypesFor, makerName, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor, unitLabel } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
@@ -292,7 +292,7 @@ export default function ProductPage() {
               <TableCell align="right">{named ? 'Pack' : `${offerPack.charAt(0).toUpperCase()}${offerPack.slice(1)}`}</TableCell>
               {!named && <TableCell>Form</TableCell>}
               <TableCell align="right">$/{offerPack}</TableCell>
-              <TableCell align="right">$/{unit}</TableCell>
+              <TableCell align="right">$/{perUnitLabel(unit)}</TableCell>
               <TableCell />
             </TableRow>
           </TableHead>
@@ -376,7 +376,7 @@ export default function ProductPage() {
                 </TableCell>
               ))}
               <TableCell align="right">On hand</TableCell>
-              <TableCell align="right">$/{unit}</TableCell>
+              <TableCell align="right">$/{perUnitLabel(unit)}</TableCell>
               <TableCell align="right">Value</TableCell>
               <TableCell>Status</TableCell>
               {!named && <TableCell>Specs changed from standard</TableCell>}
@@ -601,7 +601,7 @@ function PriceHistory({ offer, unit }: { offer: SupplierOffer; unit: string }) {
     <Box data-testid={`price-history-${offer.id}`}>
       {prices.map((p) => (
         <Typography key={p.id} variant="body2" data-testid="price-history-row">
-          {p.effective_on}: {money(p.price_per_pack)}/{offer.pack_name} · {money(p.price_per_unit, 4)}/{unit}
+          {p.effective_on}: {money(p.price_per_pack)}/{offer.pack_name} · {money(p.price_per_unit, 4)}/{perUnitLabel(unit)}
           {p.id === offer.current_price?.id && ' (current)'}
           {p.note && ` · ${p.note}`}
           {p.entered_by && ` · ${p.entered_by.name}`}

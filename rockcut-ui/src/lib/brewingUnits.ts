@@ -129,6 +129,9 @@ export interface Pack {
 
 const toNumber = (v: string | number | null | undefined) => (v == null || v === '' ? null : Number(v))
 
+/** D65 Stop 3 (Stop 2 LEAD note 7): a unit after "$/" is singular: "$0.1055/tablet", "$1.54/lb". */
+export const perUnitLabel = (unit: string | null | undefined) => (unit === 'tablets' ? 'tablet' : (unit ?? 'lb'))
+
 /** Whole-number units: `each` (D62 §3.5) and its "tablets" label on a Tablet product (D65 §4.3). */
 export const isCountUnit = (unit: string | null | undefined) => unit === 'each' || unit === 'tablets'
 
