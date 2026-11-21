@@ -123,6 +123,14 @@ export function targetProgress(packs: number, target: number | null | undefined,
 }
 
 /**
+ * D65 (D62 lead decisions 5, gap 1): a supplier's order target on the
+ * Companies list, in packs ("40 packs"): every pack counts, sacks and boxes
+ * alike. '' with no target.
+ */
+export const orderTargetText = (packs: number | null | undefined): string =>
+  packs == null ? '' : `${packs} ${packs === 1 ? 'pack' : 'packs'}`
+
+/**
  * A3: the product's previous lot for an offer's pack size: its most recently
  * received lot that isn't expired and holds that pack size (then the highest
  * id). The API picks the same one when a line has no lot.

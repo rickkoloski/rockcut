@@ -24,6 +24,7 @@ import PageHeader from '../../components/PageHeader'
 import { PageToolbar } from '../../components/SettingsMenu'
 import { useApiList } from '../../hooks/useApiQuery'
 import { ROLE_LABELS } from '../../lib/inventory'
+import { orderTargetText } from '../../lib/purchasing'
 import type { Party } from '../../lib/types'
 import PartyDialog from './PartyDialog'
 
@@ -86,7 +87,7 @@ export default function CompaniesPage() {
                   <Roles party={p} />
                   {p.order_target_packs != null && (
                     <Typography variant="caption" color="text.secondary">
-                      Order target: {p.order_target_packs} packs
+                      Order target: {orderTargetText(p.order_target_packs)}
                     </Typography>
                   )}
                 </CardContent>
@@ -113,7 +114,7 @@ export default function CompaniesPage() {
                     <Roles party={p} />
                   </TableCell>
                   <TableCell align="right" data-testid={`company-target-${p.id}`}>
-                    {p.order_target_packs != null ? `${p.order_target_packs} packs` : ''}
+                    {orderTargetText(p.order_target_packs)}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">
