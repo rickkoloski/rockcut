@@ -159,7 +159,9 @@ export const packSizeLabel = (name: string | null | undefined, unit: string = 'l
 }
 
 /** The smallest quantity the API takes, said in the unit. */
-export const minQuantity = (unit: string = 'lb') => `Enter at least ${isCountUnit(unit) ? '1' : '0.01'} ${unit}`
+export const minQuantity = (unit: string = 'lb') =>
+  // D65 (Stop 1 LEAD note 10): a count starts at 1, "1 tablet", plain "1" for each.
+  unit === 'tablets' ? 'Enter at least 1 tablet' : unit === 'each' ? 'Enter at least 1' : `Enter at least 0.01 ${unit}`
 
 /**
  * A quantity's boxes (packs and the loose part, or the total alone when
@@ -255,10 +257,28 @@ export function productPack(
 // ── Feature values ──
 
 /** A feature value with its type's decimals ("2.80", "81.0"); blank as "—". */
-export function formatFeature(value: string | number | null | undefined, decimals: number): string {
+/**
+ * D65: features that show fewer places than they keep: extract keeps 2
+ * (81.95) but reads as it did with 1 ("81.5", "91.0").
+ */
+const MIN_SHOWN: Record<string, number> = { extract_fgdb: 1 }
+
+/**
+ * D65: the places a conversion rounds to: what the feature shows (extract
+ * 1, as D60 stored "37.0 PPG" as 80.1), else its decimals. A typed value
+ * still keeps the type's decimals (81.95).
+ */
+export const convertDecimals = (type: { key: string; decimals: number }) => MIN_SHOWN[type.key] ?? type.decimals
+
+/** A feature value to the type's decimals ("2.00"); given the type, extract trims to 1–2 ("81.5", "81.95"). */
+export function formatFeature(value: string | number | null | undefined, type: number | { key: string; decimals: number }): string {
   const n = toNumber(value)
   if (n == null || Number.isNaN(n)) return '—'
-  return n.toFixed(decimals)
+  const decimals = typeof type === 'number' ? type : type.decimals
+  const min = typeof type === 'number' ? decimals : (MIN_SHOWN[type.key] ?? decimals)
+  let text = n.toFixed(decimals)
+  while (min < decimals && text.includes('.') && text.endsWith('0') && text.split('.')[1].length > min) text = text.slice(0, -1)
+  return text
 }
 
 /** "entered as 3.0 SRM": what was typed, when a conversion was used. */

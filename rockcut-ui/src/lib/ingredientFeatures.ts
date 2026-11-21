@@ -168,9 +168,16 @@ export function productTypesFor(types: FeatureType[], categoryId: number | null 
   return typesFor(types, categoryId, parentId).filter((t) => (applicability(t, categoryId, parentId)?.product_mode ?? 'value') !== 'none')
 }
 
-/** The feature types a category's lots carry (copied or entered), in order. */
-export function lotTypesFor(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null): FeatureType[] {
-  return typesFor(types, categoryId, parentId).filter((t) => (applicability(t, categoryId, parentId)?.lot_mode ?? 'copy') !== 'none')
+/**
+ * The feature types a category's lots carry (copied or entered), in order.
+ * D65: with the product's `form`, a feature for another form only (Brix on
+ * Liquid sugars) is left out.
+ */
+export function lotTypesFor(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null, form?: string | null): FeatureType[] {
+  return typesFor(types, categoryId, parentId).filter((t) => {
+    const a = applicability(t, categoryId, parentId)
+    return (a?.lot_mode ?? 'copy') !== 'none' && (!a?.only_form || form === undefined || a.only_form === form)
+  })
 }
 
 /** The keys of the features a category's lots must have (hops: alpha acid). */
@@ -408,3 +415,44 @@ export function parseCropYear(text: string, today: string): { year: number; erro
 export function missingRequired(drafts: FeatureDrafts, types: FeatureType[], required: string[]): string[] {
   return types.filter((t) => required.includes(t.key) && (drafts[t.key]?.text ?? '').trim() === '').map((t) => t.label)
 }
+
+/**
+ * D65 §4.4: a product's feature values as a lot's form uses them: the
+ * standards a lot starts from and marks changes against (sugars' extract,
+ * grain's specs) and the typical ranges shown beside a box and never copied
+ * (fruit's Brix, hop alpha). Keyed by feature key.
+ */
+export function lotFeatureBasis(
+  values: FeatureValues | null | undefined,
+  types: FeatureType[],
+  categoryId: number | null | undefined,
+  parentId?: number | null,
+): { standard: FeatureValues; typical: FeatureValues } {
+  const standard: FeatureValues = {}
+  const typical: FeatureValues = {}
+  for (const t of types) {
+    const v = values?.[t.key]
+    if (!v) continue
+    if (isRangeType(t, categoryId, parentId)) typical[t.key] = v
+    else standard[t.key] = v
+  }
+  return { standard, typical }
+}
+
+/** D65 (salts amendment): the seven ions, in order, with the short label screens use. */
+export const IONS = [
+  { key: 'ca_ppm_per_g_gal', label: 'Ca' },
+  { key: 'mg_ppm_per_g_gal', label: 'Mg' },
+  { key: 'co3_ppm_per_g_gal', label: 'CO₃' },
+  { key: 'hco3_ppm_per_g_gal', label: 'HCO₃' },
+  { key: 'so4_ppm_per_g_gal', label: 'SO₄' },
+  { key: 'na_ppm_per_g_gal', label: 'Na' },
+  { key: 'cl_ppm_per_g_gal', label: 'Cl' },
+] as const
+
+/** "Ca 61.5 · SO₄ 147.4" (the set ones, in order); null with none. */
+export function ionsText(ions: Record<string, string | number> | null | undefined): string | null {
+  const parts = IONS.filter((i) => ions?.[i.key] != null).map((i) => `${i.label} ${Number(ions![i.key]).toLocaleString('en-US', { maximumFractionDigits: 1 })}`)
+  return parts.length ? parts.join(' · ') : null
+}
+

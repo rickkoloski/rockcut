@@ -31,11 +31,11 @@ import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack } from '../../lib/brewingUnits'
-import { differs, formatRange, isD65Key, itemLabel, lotTypesFor, makerName, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor, unitLabel } from '../../lib/ingredientFeatures'
+import { differs, formatRange, ionsText, isD65Key, isRangeType, itemLabel, lotTypesFor, makerName, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor, unitLabel } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { money as dollars } from '../../lib/purchasing'
+import { money as dollars, offerPackText } from '../../lib/purchasing'
 import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, OfferPrice, PurchaseOrder, SupplierOffer } from '../../lib/types'
 import ProductDialog from './ProductDialog'
 import OfferDialog from './OfferDialog'
@@ -102,8 +102,20 @@ export default function ProductPage() {
   const named = hops || d65
   // D65: "tablets" for `each` on a Tablet product.
   const unit = unitLabel(product)
-  const featureTypes = hops ? productTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
-  const lotTypes = hops ? lotTypesFor(types, product.category?.id, product.category?.parent_id) : []
+  const featureTypes = named ? productTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
+  // D65: a lot's Brix (fruit, Liquid sugars) and extract (sugars) as columns; Brix only for its form.
+  const lotTypes = named ? lotTypesFor(types, product.category?.id, product.category?.parent_id, product.form) : []
+  const ranged = (t: FeatureType) => isRangeType(t, product.category?.id, product.category?.parent_id)
+  // D65 §5.2: the standard extract (sugars) or the Brix range (fruit), shown in the header.
+  const headerSpecs = d65
+    ? featureTypes
+        .map((t) => {
+          const v = product.features?.[t.key]
+          const shown = ranged(t) ? formatRange(v, t.decimals) : v ? formatFeature(v.value, t) : null
+          return shown ? `${shown} ${t.unit_label}` : null
+        })
+        .filter(Boolean)
+    : []
   const pack = productPack(product.offers, lots)
   // The pack the minimum counts in: the product's (a sack, for grain; a box, for hops).
   const minimumPack = pack?.name ?? product.offers?.[0]?.pack_name ?? (hops ? 'box' : d65 ? null : 'sack')
@@ -206,7 +218,7 @@ export default function ProductPage() {
               {hops
                 ? [product.ingredient?.name, product.form, product.origin].filter(Boolean).join(' · ')
                 : d65
-                  ? [product.ingredient?.name, product.form, unit, product.category?.name].filter(Boolean).join(' · ')
+                  ? [product.ingredient?.name, product.form, unit, product.category?.name, ...headerSpecs].filter(Boolean).join(' · ')
                   : `${product.ingredient?.name} · ${product.category?.name}`}
             </Typography>
           </Grid>
@@ -219,6 +231,15 @@ export default function ProductPage() {
               {!product.active && <Chip label="Inactive" size="small" sx={{ ml: 1 }} />}
             </Typography>
           </Grid>
+          {/* D65 (salts amendment): its ingredient's ions, read-only here (edited on the ingredient). */}
+          {ionsText(product.ions) && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Ions (ppm @ 1 g/gal), from the ingredient
+              </Typography>
+              <Typography data-testid="product-ions">{ionsText(product.ions)}</Typography>
+            </Grid>
+          )}
           {product.notes && (
             <Grid size={{ xs: 12 }}>
               <Typography variant="body2" color="text.secondary">
@@ -231,12 +252,12 @@ export default function ProductPage() {
 
       {/* D65: no features until Stop 2, so no empty section. */}
       {(!d65 || featureTypes.length > 0) && (
-      <Section title={hops ? 'Typical ranges' : 'Standard specs'} action={<Button onClick={() => setOpen('edit')}>Edit</Button>}>
+      <Section title={hops || (d65 && featureTypes.every(ranged)) ? 'Typical ranges' : 'Standard specs'} action={<Button onClick={() => setOpen('edit')}>Edit</Button>}>
         <Grid container spacing={2} sx={{ p: 2 }} data-testid="product-specs">
           {featureTypes.map((t) => {
             const v = product.features?.[t.key]
             const entered = enteredAs(v)
-            const shown = hops ? formatRange(v, t.decimals) : v ? formatFeature(v.value, t.decimals) : null
+            const shown = hops || ranged(t) ? formatRange(v, t.decimals) : v ? formatFeature(v.value, t) : null
             return (
               <Grid key={t.key} size={{ xs: 6, sm: 4, md: 2.4 }}>
                 <Typography variant="subtitle2" color="text.secondary">
@@ -291,7 +312,7 @@ export default function ProductPage() {
                   <TableCell>{o.supplier?.name}</TableCell>
                   <TableCell>{o.order_name ?? '—'}</TableCell>
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`offer-pack-${o.id}`}>
-                    {named ? `${o.pack_name} · ${Number(o.pack_size)} ${unit}` : `${Number(o.pack_size)} ${unit}`}
+                    {named ? offerPackText(o, unit) : `${Number(o.pack_size)} ${unit}`}
                   </TableCell>
                   {!named && <TableCell>{o.form === 'milled' ? 'Milled' : 'Whole'}</TableCell>}
                   <TableCell align="right" data-testid={`offer-price-${o.id}`}>
@@ -404,7 +425,7 @@ export default function ProductPage() {
                         title={outside ? `Outside typical ${formatRange(product.features?.[t.key], t.decimals)}` : undefined}
                         data-testid={`lot-${l.id}-${t.key}${outside ? '-outside' : ''}`}
                       >
-                        {v != null ? formatFeature(v, t.decimals) : '—'}
+                        {v != null ? formatFeature(v, t) : '—'}
                         {outside && ' ⚠'}
                       </TableCell>
                     )
@@ -431,8 +452,8 @@ export default function ProductPage() {
                         color="warning"
                         variant="outlined"
                         sx={{ mr: 0.5, mb: 0.25 }}
-                        label={`${t.label} ${formatFeature(l.features?.[t.key]?.value, t.decimals)}`}
-                        title={`Standard: ${formatFeature(product.features?.[t.key]?.value, t.decimals)} ${t.unit_label}`}
+                        label={`${t.label} ${formatFeature(l.features?.[t.key]?.value, t)}`}
+                        title={`Standard: ${formatFeature(product.features?.[t.key]?.value, t)} ${t.unit_label}`}
                         data-testid={`lot-${l.id}-changed-${t.key}`}
                       />
                     ))}

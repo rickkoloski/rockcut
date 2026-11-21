@@ -244,7 +244,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
                 l.packs.trim() !== '' && packs == null
                   ? wholePacks(offer?.pack_name ?? 'sack')
                   : offer
-                    ? `${Number(offer.pack_size)} ${productUnit.get(offer.product_id) ?? 'lb'} ${packPlural(offer.pack_name)}`
+                    ? `${Number(offer.pack_size)} ${productUnit.get(offer.product_id) ?? 'lb'} ${packPlural(offer.pack_name)}${offer.pack_note ? ` (${offer.pack_note})` : ''}`
                     : undefined
               }
               sx={{ flex: 1 }}

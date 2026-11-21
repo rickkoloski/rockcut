@@ -129,7 +129,7 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
     })
 
   const spec = (p: IngredientProduct, key: string) =>
-    hops ? (formatRange(p.features?.[key], decimals[key] ?? 2) ?? '—') : formatFeature(p.features?.[key]?.value, decimals[key] ?? 1)
+    hops ? (formatRange(p.features?.[key], decimals[key] ?? 2) ?? '—') : formatFeature(p.features?.[key]?.value, { key, decimals: decimals[key] ?? 1 })
   const suppliers = (p: IngredientProduct) =>
     (p.offers ?? [])
       .filter((o) => o.active)

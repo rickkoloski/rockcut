@@ -9,7 +9,7 @@ import type { FeatureType, Ingredient, IngredientCategory, IngredientLotSummary,
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
-import { categoryKey, isManagedKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
+import { categoryKey, ionsText, isManagedKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
 import ProductDialog from './ProductDialog'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import PageHeader from '../../components/PageHeader'
@@ -98,7 +98,7 @@ export default function IngredientDetail() {
       field: `feature_${t.key}`,
       headerName: `${t.label} (${t.unit_label})`,
       flex: 1,
-      valueGetter: (_value, row: IngredientLotSummary) => formatFeature(row.features?.[t.key]?.value, t.decimals),
+      valueGetter: (_value, row: IngredientLotSummary) => formatFeature(row.features?.[t.key]?.value, t),
     })),
   ]
 
@@ -149,6 +149,15 @@ export default function IngredientDetail() {
             </Typography>
             <Typography>{ingredient.category?.name ?? 'None'}</Typography>
           </Grid>
+          {/* D65 (salts amendment): a Water Salts ingredient's ions, when set. */}
+          {ionsText(ingredient.ions) && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Ions (ppm @ 1 g/gal)
+              </Typography>
+              <Typography data-testid="ingredient-ions-shown">{ionsText(ingredient.ions)}</Typography>
+            </Grid>
+          )}
           {/* D65: the formula, only when set. */}
           {ingredient.formula && (
             <Grid size={{ xs: 12, sm: 6 }}>

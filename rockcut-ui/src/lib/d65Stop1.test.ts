@@ -34,7 +34,9 @@ describe('unitLabel and each in whole numbers (§4.3)', () => {
   it('tablets are whole: decimals, the smallest quantity, packs view and total', () => {
     expect(unitDecimals('tablets')).toBe(0)
     expect(unitDecimals('fl oz')).toBe(2)
-    expect(minQuantity('tablets')).toBe('Enter at least 1 tablets')
+    expect(minQuantity('tablets')).toBe('Enter at least 1 tablet')
+    expect(minQuantity('each')).toBe('Enter at least 1')
+    expect(minQuantity('gal')).toBe('Enter at least 0.01 gal')
     expect(readQuantity('', '2.5', null, 'tablets')).toEqual({ quantity: null, valid: false })
     expect(readQuantity('1', '400', 872, 'tablets')).toEqual({ quantity: '1272', valid: true })
     expect(formatQuantity(1272, 'tub', 872, 'tablets', 'packs')).toBe('1 tub 400 tablets')

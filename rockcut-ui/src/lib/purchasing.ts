@@ -22,9 +22,10 @@ export function money(v: string | number | null | undefined, digits = 2): string
  * (milled or whole is grain's; a hop offer has none). D65: any other pack
  * reads as the box does, "pail · 5 gal", "tub · 872 tablets".
  */
-export function offerPackText(o: { pack_name: string; pack_size: string | number; form?: string | null }, unit = 'lb'): string {
+export function offerPackText(o: { pack_name: string; pack_size: string | number; form?: string | null; pack_note?: string | null }, unit = 'lb'): string {
   const size = `${Number(o.pack_size)} ${unit}`
-  if (o.pack_name !== 'sack') return `${o.pack_name} · ${size}`
+  // D65 (A16): the pack note follows the pack, "tub · 872 tablets (5 lb)".
+  if (o.pack_name !== 'sack') return `${o.pack_name} · ${size}${o.pack_note ? ` (${o.pack_note})` : ''}`
   return o.form ? `${size} ${o.form}` : size
 }
 
@@ -32,7 +33,7 @@ export function offerPackText(o: { pack_name: string; pack_size: string | number
  * To order's offer (D62 decisions 2, gap 15): a hop box reads "box · 11 lb"
  * as on the order and Add lot pickers; a sack reads "50 lb" as in D61.
  */
-export const reorderOfferPack = (o: { pack_name: string; pack_size: string | number }, unit = 'lb') =>
+export const reorderOfferPack = (o: { pack_name: string; pack_size: string | number; pack_note?: string | null }, unit = 'lb') =>
   o.pack_name !== 'sack' ? offerPackText({ ...o, form: null }, unit) : `${Number(o.pack_size)} ${unit}`
 
 /**

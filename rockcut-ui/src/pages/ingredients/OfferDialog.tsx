@@ -53,6 +53,8 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
   const packName = pickedPack ?? (hops ? 'box' : d65 ? (catalog?.default_packs[storedUnit ?? ''] ?? packNames[0] ?? 'pack') : 'sack')
   const [form, setForm] = useState<'milled' | 'whole'>(offer?.form ?? 'whole')
   const [notes, setNotes] = useState(offer?.notes ?? '')
+  // D65 (A16): a note on the pack, "5 lb" for a tub of 872 tablets.
+  const [packNote, setPackNote] = useState(offer?.pack_note ?? '')
   const [active, setActive] = useState(offer?.active ?? true)
   const [error, setError] = useState<string | null>(null)
 
@@ -73,7 +75,7 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
       order_name: orderName.trim() || null,
       // A hop offer's pack is the API's to set.
       // Milled or whole is grain's; the API refuses a form on a hop offer (lead decisions 1, gap 3).
-      ...(hops ? {} : d65 ? { pack_name: packName, pack_size: size.value } : { pack_name: packName, pack_size: size.value, form }),
+      ...(hops ? {} : d65 ? { pack_name: packName, pack_size: size.value, pack_note: packNote.trim() || null } : { pack_name: packName, pack_size: size.value, form }),
       notes: notes.trim() || null,
       active,
     }
@@ -148,6 +150,16 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
           required
           fullWidth
           slotProps={{ htmlInput: { 'data-testid': 'offer-pack-size' } }}
+        />
+      )}
+      {d65 && (
+        <TextField
+          label="Pack note"
+          helperText={`Optional, shown with the pack: "${packName} · ${(size.ok && size.value) || '…'} ${unit}${packNote.trim() ? ` (${packNote.trim()})` : ' (5 lb)'}"`}
+          value={packNote}
+          onChange={(e) => setPackNote(e.target.value)}
+          fullWidth
+          slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'offer-pack-note' } }}
         />
       )}
       {!hops && !d65 && (

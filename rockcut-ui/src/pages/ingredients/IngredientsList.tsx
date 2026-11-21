@@ -30,7 +30,7 @@ import GrainsList, { NONE, type GrainFilters } from './GrainsList'
 function LotValues({ lot, types }: { lot: IngredientLotSummary; types: FeatureType[] }) {
   const values = types
     .filter((t) => lot.features?.[t.key])
-    .map((t) => `${t.label} ${formatFeature(lot.features?.[t.key]?.value, t.decimals)}${t.unit_label === '%' ? '%' : ` ${t.unit_label}`}`)
+    .map((t) => `${t.label} ${formatFeature(lot.features?.[t.key]?.value, t)}${t.unit_label === '%' ? '%' : ` ${t.unit_label}`}`)
   if (values.length === 0) return null
   return (
     <Typography variant="body2" color="text.secondary" component="span">

@@ -124,6 +124,8 @@ export interface CategoryCatalog {
   manufacturer_required: boolean
   allows_children: boolean
   allows_fields: boolean
+  /** D65 (salts amendment): Water Salts' ingredients carry ion values. */
+  ions?: boolean
 }
 
 export interface CategoryFieldDefinition {
@@ -146,6 +148,8 @@ export interface Ingredient {
   notes: string | null
   /** D65: the chemical formula ("CaSO₄·2H₂O"), any category; null when not set. */
   formula?: string | null
+  /** D65: ion values (ppm @ 1 g/gal) by key, on a Water Salts ingredient. */
+  ions?: Record<string, string> | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
   updated_at: string
@@ -285,6 +289,8 @@ export interface FeatureApplicability {
   lot_mode?: 'none' | 'copy' | 'enter'
   lot_required?: boolean
   only_unit?: string | null
+  /** D65: the feature applies only to products in this form (Brix on Liquid sugars). */
+  only_form?: string | null
 }
 
 export interface OfferPrice {
@@ -308,6 +314,8 @@ export interface SupplierOffer {
   /** D62 §3.5: the pack, e.g. "sack" · 55 (in the product's unit). */
   pack_name: string
   pack_size: string
+  /** D65 (A16): a note on the pack, "5 lb" for a tub of 872 tablets; null when none. */
+  pack_note?: string | null
   /** Grain's alone; null on a hop offer (D62 lead decisions 1, gap 3). */
   form: 'milled' | 'whole' | null
   notes: string | null
@@ -334,6 +342,8 @@ export interface IngredientProduct {
   unit: string
   /** D65: the unit as screens say it ("tablets" for `each` on a Tablet product). */
   unit_label?: string
+  /** D65: its ingredient's ion values (Water Salts), read-only. */
+  ions?: Record<string, string>
   form: string | null
   origin: string | null
   notes: string | null
@@ -389,6 +399,8 @@ export interface PurchaseOrderLine {
     label: string
     pack_name: string
     pack_size: string
+    /** D65 (A16): the pack note, "5 lb". */
+    pack_note?: string | null
     product_id: number
     product: ProductSummary
   }
@@ -523,6 +535,8 @@ export interface InventoryTotalsRow {
   category_key: string | null
   form: string | null
   unit: string
+  /** D65: "tablets" for `each` on a Tablet product. */
+  unit_label?: string
   quantity: string
   expired: string
   /** The quantity ÷ the pack size when all its stocked lots share one pack, else null. */
@@ -555,6 +569,8 @@ export interface OrderTotalsRow {
   packs_ordered: number
   packs_received: number | null
   unit: string
+  /** D65: "tablets" for `each` on a Tablet product. */
+  unit_label?: string
   quantity: string
   dollars: string
   packs: number

@@ -236,10 +236,10 @@ function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | un
             </TableCell>
             <TableCell>{r.form ?? ''}</TableCell>
             <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`totals-inventory-${r.product_id}-lb`}>
-              {amountText(r.quantity, r.unit)}
+              {amountText(r.quantity, r.unit_label ?? r.unit)}
               {Number(r.expired) > 0 && (
                 <Typography variant="caption" color="text.secondary" component="div">
-                  {amountText(r.expired, r.unit)} expired
+                  {amountText(r.expired, r.unit_label ?? r.unit)} expired
                 </Typography>
               )}
             </TableCell>
@@ -251,7 +251,7 @@ function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | un
               {r.value != null && r.estimated && ' est.'}
             </TableCell>
             <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-              {r.per_unit == null ? '—' : `${money(r.per_unit, 4)}/${r.unit}`}
+              {r.per_unit == null ? '—' : `${money(r.per_unit, 4)}/${r.unit_label ?? r.unit}`}
             </TableCell>
           </TableRow>
         ))}
@@ -259,7 +259,12 @@ function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | un
           <TableRow sx={{ '& td': { fontWeight: 600 } }} data-testid="totals-inventory-total">
             <TableCell colSpan={3}>Total</TableCell>
             <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-              {byUnitText(data.total.by_unit)}
+              {/* D65 §4.5: a subtotal per unit, one line each, never added together; one $ total. */}
+              {data.total.by_unit.map((u) => (
+                <div key={u.unit} data-testid={`totals-inventory-total-${u.unit.replace(' ', '-')}`}>
+                  {amountText(u.quantity, u.unit)}
+                </div>
+              ))}
               {data.total.by_unit.some((u) => Number(u.expired) > 0) && (
                 <Typography variant="caption" component="div" data-testid="totals-inventory-total-expired">
                   {byUnitText(data.total.by_unit.filter((u) => Number(u.expired) > 0).map((u) => ({ unit: u.unit, quantity: u.expired })))} expired
@@ -386,7 +391,30 @@ function OrderTotalsView() {
       const p = s.by_pack.find((b) => b.pack_name === name)
       return [p?.packs_ordered ?? 0, p?.packs_received ?? 0]
     })
-  const tsv = () =>
+  const mixedTsv = () =>
+    toTsv(
+      ['Order date', 'Supplier', 'Reference', 'Product', 'Status', ...packNames.flatMap((n) => [`${packLabel(n)} ordered`, `${packLabel(n)} received`]), 'Quantity', 'Unit', '$'],
+      [
+        ...groups.flatMap((g): Cell[][] => [
+          ...g.rows.map((r): Cell[] => [
+            r.ordered_on,
+            r.supplier,
+            r.reference,
+            r.product,
+            r.status,
+            ...packNames.flatMap((n): Cell[] => (n === r.pack_name ? [r.packs_ordered, r.packs_received] : ['', ''])),
+            r.quantity,
+            r.unit,
+            r.dollars,
+          ]),
+          ...g.sum.by_unit.map((u, i): Cell[] => [`Total ${g.sum.supplier}`, '', '', '', '', ...(i === 0 ? packCells(g.sum) : packNames.flatMap(() => ['', ''])), u.quantity, u.unit, i === 0 ? g.sum.dollars : '']),
+        ]),
+        ...(data
+          ? data.total.by_unit.map((u, i): Cell[] => ['Total', '', '', '', '', ...(i === 0 ? packCells(data.total) : packNames.flatMap(() => ['', ''])), u.quantity, u.unit, i === 0 ? data.total.dollars : ''])
+          : []),
+      ],
+    )
+  const lbTsv = () =>
     toTsv(
       ['Order date', 'Supplier', 'Reference', 'Product', 'Status', ...packNames.flatMap((n) => [`${packLabel(n)} ordered`, `${packLabel(n)} received`]), 'lb', '$'],
       [
@@ -407,6 +435,12 @@ function OrderTotalsView() {
       ],
     )
   const shared = sharedPackName(packNames)
+  // D65 §4.5: lines in other units (gal, oz, fl oz, each) show their unit; an all-lb range reads as D61.
+  const allLb = rows.every((r) => r.unit === 'lb')
+  const qty = (r: { quantity: string; unit: string; unit_label?: string }) => (allLb ? lb(r.quantity) : amountText(r.quantity, r.unit_label ?? r.unit))
+  const sumQty = (byUnit: UnitQuantity[]) =>
+    allLb ? lb(inLb(byUnit)?.quantity ?? 0) : byUnit.map((u) => <div key={u.unit}>{amountText(u.quantity, u.unit)}</div>)
+  const tsv = () => (allLb ? lbTsv() : mixedTsv())
 
   return (
     <>
@@ -442,7 +476,7 @@ function OrderTotalsView() {
               <TableCell>Status</TableCell>
               <TableCell align="right">Ordered</TableCell>
               <TableCell align="right">Received</TableCell>
-              <TableCell align="right">lb</TableCell>
+              <TableCell align="right">{allLb ? 'lb' : 'Quantity'}</TableCell>
               <TableCell align="right">$</TableCell>
             </TableRow>
           </TableHead>
@@ -473,7 +507,7 @@ function OrderTotalsView() {
                     <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                       {r.packs_received == null ? '' : packCount(r.packs_received, r.pack_name)}
                     </TableCell>
-                    <TableCell align="right">{lb(r.quantity)}</TableCell>
+                    <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{qty(r)}</TableCell>
                     <TableCell align="right">{money(r.dollars)}</TableCell>
                   </TableRow>
                 ))}
@@ -485,7 +519,7 @@ function OrderTotalsView() {
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     {byPackText(g.sum, 'packs_received')}
                   </TableCell>
-                  <TableCell align="right">{lb(inLb(g.sum.by_unit)?.quantity ?? 0)}</TableCell>
+                  <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>{sumQty(g.sum.by_unit)}</TableCell>
                   <TableCell align="right">{money(g.sum.dollars)}</TableCell>
                 </TableRow>
               </Fragment>
@@ -499,7 +533,9 @@ function OrderTotalsView() {
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid="totals-orders-total-received">
                   {byPackText(data.total, 'packs_received')}
                 </TableCell>
-                <TableCell align="right">{lb(inLb(data.total.by_unit)?.quantity ?? 0)}</TableCell>
+                <TableCell align="right" sx={{ whiteSpace: 'nowrap' }} data-testid="totals-orders-total-quantity">
+                  {sumQty(data.total.by_unit)}
+                </TableCell>
                 <TableCell align="right">{money(data.total.dollars)}</TableCell>
               </TableRow>
             )}

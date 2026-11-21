@@ -9,7 +9,7 @@ import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { parseDecimal, packSizeLabel, productPack, unitDecimals } from '../../lib/brewingUnits'
-import { draftsFrom, draftsValid, featuresPayload, isD65Key, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, unitLabel, type FeatureDrafts } from '../../lib/ingredientFeatures'
+import { draftsFrom, draftsValid, featuresPayload, isD65Key, lotFeatureBasis, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, unitLabel, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
 import { defaultLotSupplier, offerPackText } from '../../lib/purchasing'
 import { coloradoToday } from '../../lib/tasks'
@@ -53,10 +53,13 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   const [drafts, setDrafts] = useState<FeatureDrafts | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  const featureTypes = hops ? lotTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
+  const d65 = isD65Key(product.category_key)
+  // D65 §5.4: Brix on fruit and Liquid sugar lots (optional, typical range beside it), extract on sugar lots (prefilled).
+  const featureTypes = hops || d65 ? lotTypesFor(types, product.category?.id, product.category?.parent_id, product.form) : typesFor(types, product.category?.id, product.category?.parent_id)
+  const basis = lotFeatureBasis(product.features, featureTypes, product.category?.id, product.category?.parent_id)
   const required = requiredLotKeys(types, product.category?.id, product.category?.parent_id)
   // A hop lot starts empty: the range is the product's, the actuals come from the supplier's sheet.
-  const shown = drafts ?? draftsFrom(hops ? null : product.features, featureTypes)
+  const shown = drafts ?? draftsFrom(hops ? null : d65 ? basis.standard : product.features, featureTypes)
   const crop = parseCropYear(cropYear, coloradoToday())
   const suppliers = parties.filter((p) => p.roles?.includes('supplier') && p.active)
   // An `each` pack size is whole (D65 §4.3).
@@ -93,7 +96,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
         received_date: received,
         initial_kind: kind,
         initial_quantity: quantity.quantity,
-        features: featuresPayload(shown, hops ? null : product.features),
+        features: featuresPayload(shown, hops ? null : d65 ? basis.standard : product.features),
       })
       onClose()
     } catch (err) {
@@ -198,7 +201,11 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
       {hops ? (
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} typical={product.features ?? {}} required={required} disabled={create.isPending} />
       ) : (
-        <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={create.isPending} />
+        d65 ? (
+          featureTypes.length > 0 && <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={basis.standard} typical={basis.typical} disabled={create.isPending} />
+        ) : (
+          <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={create.isPending} />
+        )
       )}
     </FormDialog>
   )

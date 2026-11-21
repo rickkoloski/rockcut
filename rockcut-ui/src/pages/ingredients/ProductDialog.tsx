@@ -16,6 +16,7 @@ import {
   featuresPayload,
   grainCategories,
   isD65Key,
+  isRangeType,
   itemLabel,
   keyedCategories,
   manufacturerLabel,
@@ -120,8 +121,12 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
   const units = d65 ? unitsFor(catalog, form || null) : []
   // One unit for the form (Dry sugar, Water Salts): it's that one.
   const shownUnit = units.length === 1 ? units[0] : unit
-  const featureTypes = hops ? [] : grains ? typesFor(types, grains.id) : []
-  const rangeTypes = hops && hopsCategory ? productTypesFor(types, hopsCategory.id) : []
+  // D65 §4.4: the ingredient's category's product features: a standard (sugars' extract) or a range (fruit's Brix).
+  const ingredientCategory = categories.find((c) => c.id === ingredients.find((i) => i.id === grainId)?.category_id)
+  const d65Types = d65 && ingredientCategory ? productTypesFor(types, ingredientCategory.id, ingredientCategory.parent_id) : []
+  const d65Range = (t: FeatureType) => isRangeType(t, ingredientCategory?.id, ingredientCategory?.parent_id)
+  const featureTypes = hops ? [] : d65 ? d65Types.filter((t) => !d65Range(t)) : grains ? typesFor(types, grains.id) : []
+  const rangeTypes = hops && hopsCategory ? productTypesFor(types, hopsCategory.id) : d65 ? d65Types.filter(d65Range) : []
   // The boxes start from the product's standard once the feature types are in.
   const shown = drafts ?? draftsFrom(product?.features, featureTypes)
   const shownRanges = ranges ?? rangeDraftsFrom(product?.features, rangeTypes)
@@ -164,7 +169,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
       ...(hops
         ? { form, origin: origin.trim() || null, features: rangesPayload(shownRanges, product?.features) }
         : d65
-          ? { form, unit: shownUnit }
+          ? { form, unit: shownUnit, features: { ...featuresPayload(shown, product?.features), ...rangesPayload(shownRanges, product?.features) } }
           : { features: featuresPayload(shown, product?.features) }),
     }
     try {
@@ -352,7 +357,13 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
       )}
       {hops ? (
         <RangeFields types={rangeTypes} drafts={shownRanges} onChange={setRanges} disabled={loading} />
-      ) : d65 ? null : (
+      ) : d65 ? (
+        <>
+          {/* Only the categories that have features (sugars' extract, fruit's Brix range). */}
+          {featureTypes.length > 0 && <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} disabled={loading} />}
+          {rangeTypes.length > 0 && <RangeFields types={rangeTypes} drafts={shownRanges} onChange={setRanges} disabled={loading} />}
+        </>
+      ) : (
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} disabled={loading} />
       )}
       <TextField
