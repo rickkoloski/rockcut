@@ -177,3 +177,45 @@ The data is embedded from the git-excluded CSVs in `docs/current_work/reference/
   pre-release snapshot:** once the seed writes products with no manufacturer, D62's image can't
   read them (it requires a manufacturer). Take the snapshot before the API deploy, as D55/D60/D62
   did.
+
+## Release (builder, Stop 3, 2026-11-21)
+
+**Take the pre-release snapshot first.** Rollback needs it: once the seed writes products with no
+manufacturer (the salts, Lactose, Dextrose (Corn Sugar), SoNature's four fruit, Whirlfloc T), D62's
+image can't read them. `20261121120002`'s `down` refuses while any such product exists.
+
+**Migrations, in order:**
+
+| Version | What | API |
+|---|---|---|
+| `20261121120001` ingredient_feature_values_and_formula | new table + `ingredients.formula` (additive) | may stay up |
+| `20261121120002` products_optional_manufacturer | rebuilds `ingredient_products` with foreign keys off, then `foreign_key_check` | **down** |
+| `20261121120003` d65_categories | Water Salts and Finings, Whirlfloc into Finings, Dextrose rename, removes Irish Moss and Future Ingredients, drops three Form fields | down (same deploy) |
+| `20261121130001` d65_features_and_pack_note | Brix and seven ion types, extract 2 dp, `only_form`, Fruits/Sugars rows, `pack_note` (additive) | may stay up |
+
+The deploy runs all four together, so the API is down for the deploy as usual.
+
+**What migration 6 may keep, and log** (`Logger.warning`, "D65: kept …"), for the release notes:
+- Irish Moss when it has products, lots or recipe lines (count of each logged);
+- Future Ingredients when it holds ingredients or subcategories (their names logged);
+- anything left at the top of Other Consumables (each name logged);
+- a "Water Salts"/"Finings" name already used by another category (not added).
+
+It **stops** (raises, nothing changed) when a lot in a D65 category has no product, naming each one.
+Prod had no such lots at the D61 pre-check. Locally it kept nothing.
+
+**Reference seed** (`Release.seed()` → `seeds.exs` → `seeds/d65_reference.exs`, idempotent by name):
+- prints `D65 reference: 8 companies, 36 new ingredients, 29 new products, 30 new offers, 26 new prices`
+  the first time, and 0 new after that;
+- **36** new ingredients: 7 salts + 5 sugars + 14 fruit + 10 spices. Dextrose (Corn Sugar) and
+  Whirlfloc already exist and are reused (the brief's 37 counted Dextrose);
+- **29** products (6 salts, 6 sugars, 16 fruit, 1 fining), **30** offers, **26** priced (SoNature's
+  4 have no price), prices effective 2026-11-20, **no lots**;
+- grain and hop reference counts unchanged (44 grain products; 27 hop products, 28 hop lots,
+  409.6 lb);
+- typical values for Matt to check before release: Dextrose 91 %, Belgian Candy Syrup 70 %,
+  Cherry 11.4 °Bx, and the salt forms (A13).
+
+`[SEED]` data (DEV and local only, `mix rockcut.synthetic.setup`): `[SEED] Peach` (Purée, gal),
+`[SEED] Rice Syrup Solids` (Dry, lb), `[SEED] Fining Tablets` (Tablet, each), each with a BSG offer,
+a minimum of 2 packs and one lot.

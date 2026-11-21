@@ -1279,3 +1279,49 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | Slow network: a double-click on Save in Add lot, and on Receive, writes once | Playwright "slow network" (2 tests) |
 | 360 px: the fruit product page, Add lot with Brix, the Whirlfloc count and Totals with mixed units have no sideways scroll | Playwright "at 360 px" |
 
+**Stop 3: reference seed, `[SEED]` data, and §10 in full.** ExUnit `rockcut_api/seeds/d65_seeds_test.exs` ("SEED"), `rockcut_api_web/controllers/d65_stop3_test.exs` ("S3"); Vitest `d65Stop2.test.ts` (`perUnitLabel`); Playwright `d65-stop2.spec.ts` "§10 gaps closed in Stop 3". Every test that counts D65 rows filters to its own `[TEST-TEMP]` rows (or, in ExUnit, to the reference rows by excluding `[SEED]`/`[TEST-TEMP]`); no test edits or deletes a seeded reference row.
+
+| Scenario | Coverage |
+|---|---|
+| The reference seed twice: 36 new ingredients (+ Dextrose (Corn Sugar) and Whirlfloc reused), 29 products, 30 offers, 26 priced, no lots; grain (44) and hop (27, 28 lots) counts unchanged | SEED "twice…"; `grain_seeds_test`, `hop_seeds_test` |
+| Spot checks: Gypsum (CaSO₄·2H₂O, Ca 61.5, SO₄ 147.4, $32.00/bag, None), Anhydrous has no product, Strawberry (two offers, 6.5–9), Watermelon 12–12, Black Strap Molasses 81.95, Honey from Redstone, one Dextrose, Whirlfloc T "tub · 872 (5 lb)" $92.00, SoNature Lime (no Brix, no price), two Lemons, the ten spices | SEED "spot checks" |
+| An edit on the screens sticks (formula, price) | SEED "an edit made on the screens sticks" |
+| `[SEED]` Peach (gal), Rice Syrup Solids (lb), Fining Tablets (each): offer, price, minimum, one lot; setup twice recreates them | SEED "synthetic setup twice…"; run by hand on a throwaway database and the dev DB |
+| Ions save with the ingredient in one transaction; a bad ion leaves the name unchanged; ions outside Water Salts make no ingredient | S3 (revert) |
+| $ per unit is singular: "$0.1055/tablet" | Vitest `perUnitLabel` |
+| §5.1: the Fruits list shows the Brix range, the Sugars list extract | Playwright `d65-stop2` "fruit", "sugars" |
+| A products view (Grains, Hops, D65) shows a loading state until the products are in, not "No products" on every ingredient | Playwright `d65` "Stop 3: while the products load…" (revert) |
+| G3/G6/G11's race (Stop 2 LEAD note 8): a goto right after a dialog's Cancel was aborted by the dialog's delayed `history.back()` (1 in 9 runs); it waits for the history entry now | Playwright `d62-fix-cycle-1` G3/G6/G11, 15/15 with `--repeat-each` |
+
+**D65 §10 scenarios → layer** (spec §10; "gap" marks what isn't covered).
+
+| §10 scenario | Coverage |
+|---|---|
+| Fruit: Strawberry with a maker, Purée (gal) and Whole (lb), each its own on hand; the duplicate refused | Playwright `d65` "Strawberry…"; S1 |
+| Fruit: a pail · 5 gal offer; lots with Brix 8.5 and without; 8.55 refused | Playwright `d65-stop2` "fruit"; S2 |
+| Fruit: a count of "2 pails 1.5 gal" | Playwright `d65-stop2` "fruit" |
+| Fruit: `inventory_on_hand` `{11.5, "gal"}`; refused for the ingredient (mixed units) | S2; Playwright `d65-stop2` "fruit" |
+| Sugars: Dextrose (Dry, lb, 91): extract copied and editable, no Brix | Playwright `d65-stop2` "sugars"; S2 |
+| Sugars: Black Strap Molasses (Liquid, 81.95): extract copied, optional Brix | Playwright `d65-stop2` "sugars"; S2 |
+| Sugars: Liquid in gal; the API refuses Dry in gal | Playwright `d65` "sugars…"; S1 |
+| Spices: Cinnamon (Ground, oz, bag · 16 oz) and Vanilla Extract (Extract, fl oz, bottle · 32 fl oz), no features | Playwright `d65` "spices…"; `d65-stop2` "§10 gaps…" (the offers) |
+| Other consumables, as brewer2: Calcium Chloride (Water Salts, Flake, lb), a liquid fining (fl oz, jug · 128); Whirlfloc T (tablets, tub · 872) | Playwright `d65-stop2` "§10 gaps…" (brewer2); `d65` "Whirlfloc T…"; S2 (per-child packs) |
+| 2.5 Whirlfloc refused | Playwright `d65`; S1 |
+| Whirlfloc under Finings, Irish Moss gone; Water Salts and Finings under Other Consumables; Future Ingredients gone | Playwright `d65` "categories"; MIG |
+| Purchasing: a mixed order (grain, hop, sugar, Whirlfloc) "39 of 40 packs" | Playwright `d65-stop2` "a mixed order…" (a `[TEST-TEMP]` supplier, not BSG, so the seeded offers stay untouched) |
+| Receive: extract prefilled, a whole Whirlfloc lot | Playwright `d65-stop2` "a mixed order…" |
+| Whirlfloc minimum 1 tub with 600 on hand shows on To order | Playwright `d65-stop2` "a mixed order…" |
+| The contract dialog doesn't offer Dextrose; the API refuses it | Playwright `d65-stop2` "the contract dialog…"; S1 |
+| Totals as owner: per-unit subtotals (lb, gal, oz, fl oz, each) and one $ total; Copy's Unit column; the Grains view as D61; Orders "2 bags · 6 boxes · 30 sacks · 1 tub" | Playwright `d65-stop2` "a mixed order…" (lb, each) and "§10 gaps…" (fl oz); S2 (gal, oz, each, lb) |
+| floater and splitRole: the new pages work | Playwright `d65-stop2` "edges" |
+| bartender1: not in the nav, API 403; breweryDevice: every D65 route 403 | Playwright `d65-stop2` "edges" (API); `refusals` R1 (nav, D60); `device_route_matrix_test` |
+| Two people, one record: the second save gets the 409, nothing written | Playwright `d65-stop2` "two people, one record" |
+| Receive into an existing lot #: Brix 8.5 shows read-only; 9.0 → 422 | Playwright `d65-stop2` "§10 gaps…"; S2 |
+| 360 px: the fruit product page, Add lot with Brix, the Whirlfloc count, Totals with mixed units | Playwright `d65-stop2` "at 360 px"; `d65` "at 360 px" |
+| Slow network: a double-click on Save in Add lot and Receive writes once | Playwright `d65-stop2` "slow network" (2) |
+| Add field and Add subcategory hidden on Fruits, Spices & Flavorings, Sugars and Extracts; the API refuses both; Other Consumables allows Add subcategory | Playwright `d65` "categories"; S1 |
+
+**Gaps:** none of the §10 scenarios is uncovered. Two are covered at a narrower scope than written:
+- **The mixed order isn't with BSG:** it uses a `[TEST-TEMP]` supplier so tests never write to the seeded BSG offers.
+- **The spice offers are made through the API:** only the jug offer goes through the offer dialog.
+
