@@ -52,7 +52,12 @@ interface GrainsListProps {
 const SPEC_COLUMNS: Record<string, readonly string[]> = {
   grains: ['color_lovibond', 'extract_fgdb', 'diastatic_power_lintner', 'protein_pct', 'moisture_pct'],
   hops: ['alpha_acid_pct', 'beta_acid_pct', 'total_oil_ml_100g'],
+  // D65 §5.1: fruit's typical Brix range; sugars' extract.
+  fruits: ['brix'],
+  sugars: ['extract_fgdb'],
 }
+/** Columns that are a typical range on the product (low–high). */
+const RANGE_COLUMNS = new Set(['alpha_acid_pct', 'beta_acid_pct', 'total_oil_ml_100g', 'brix'])
 const SHORT_LABELS: Record<string, string> = {
   color_lovibond: 'Color °L',
   extract_fgdb: 'Extract % FGDB',
@@ -62,6 +67,7 @@ const SHORT_LABELS: Record<string, string> = {
   alpha_acid_pct: 'Alpha %',
   beta_acid_pct: 'Beta %',
   total_oil_ml_100g: 'Oil mL/100 g',
+  brix: 'Brix °Bx',
 }
 
 const money = (v: string) => `$${Number(v).toFixed(2)}`
@@ -129,7 +135,7 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
     })
 
   const spec = (p: IngredientProduct, key: string) =>
-    hops ? (formatRange(p.features?.[key], decimals[key] ?? 2) ?? '—') : formatFeature(p.features?.[key]?.value, { key, decimals: decimals[key] ?? 1 })
+    RANGE_COLUMNS.has(key) ? (formatRange(p.features?.[key], decimals[key] ?? 2) ?? '—') : formatFeature(p.features?.[key]?.value, { key, decimals: decimals[key] ?? 1 })
   const suppliers = (p: IngredientProduct) =>
     (p.offers ?? [])
       .filter((o) => o.active)
@@ -189,7 +195,14 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
                             {hops
                               ? hopCaption(r.product, decimals)
                               : d65
-                                ? [r.product.form, unitLabel(r.product), makerName(r.product)].filter(Boolean).join(' · ')
+                                ? [
+                                    r.product.form,
+                                    unitLabel(r.product),
+                                    makerName(r.product),
+                                    ...specColumns.filter((k) => spec(r.product, k) !== '—').map((k) => `${spec(r.product, k)} ${k === 'brix' ? '°Bx' : '% FGDB'}`),
+                                  ]
+                                    .filter(Boolean)
+                                    .join(' · ')
                                 : `${spec(r.product, 'color_lovibond')} °L · ${spec(r.product, 'extract_fgdb')} % FGDB`}
                           </Typography>
                         </CardContent>
@@ -264,7 +277,7 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
                       {hops && <TableCell>{r.product.origin ?? '—'}</TableCell>}
                       {d65 && <TableCell data-testid={`${item}-unit-${r.product.id}`}>{unitLabel(r.product)}</TableCell>}
                       {specColumns.map((k) => (
-                        <TableCell key={k} align="right" sx={{ whiteSpace: 'nowrap' }}>
+                        <TableCell key={k} align="right" sx={{ whiteSpace: 'nowrap' }} data-testid={`${item}-${k}-${r.product.id}`}>
                           {spec(r.product, k)}
                         </TableCell>
                       ))}

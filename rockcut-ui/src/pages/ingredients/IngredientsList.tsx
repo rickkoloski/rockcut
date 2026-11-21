@@ -167,7 +167,7 @@ export default function IngredientsList() {
 
   // Every ingredient, so Grains includes its children's (the API filters one category only).
   const { data: allIngredients = [] } = useApiList<Ingredient>(['ingredients', 'all'], '/api/ingredients')
-  const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products', undefined, { enabled: productsView })
+  const { data: products = [], isSuccess: productsLoaded } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products', undefined, { enabled: productsView })
   const { data: parties = [] } = useApiList<Party>(['parties'], '/api/parties', undefined, { enabled: productsView })
   const { data: types = [] } = useApiList<FeatureType>(['feature_types'], '/api/feature_types')
 
@@ -341,7 +341,8 @@ export default function IngredientsList() {
       </PageToolbar>
 
       {/* D65 (Stop 0 LEAD note 4): while the categories load, a loading state, not "No ingredients found". */}
-      {!categoriesLoaded ? (
+      {/* D65 Stop 3: and, on a products view, until the products are in (not "No products" on every row). */}
+      {!categoriesLoaded || (productsView && !productsLoaded) ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }} data-testid="ingredients-loading">
           <CircularProgress size={28} />
         </Box>

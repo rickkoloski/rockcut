@@ -207,6 +207,24 @@ test('Stop 0 LEAD note 4: while the categories load, the library shows a loading
   await expect(page.getByRole('combobox', { name: 'Category' })).toHaveText('Grains')
 })
 
+test('Stop 3: while the products load, a products view shows a loading state, not "No products" on every ingredient', async ({ page }) => {
+  let release: () => void = () => {}
+  const held = new Promise<void>((r) => (release = r))
+  await page.route((u) => u.pathname === '/api/ingredient_products', async (route) => {
+    await held
+    await route.continue()
+  })
+  await page.goto(`/ingredients?category=${await categoryId('fruits')}`)
+  // The categories are in (and the ingredients): only the products are held.
+  await expect(page.getByRole('combobox', { name: 'Category' })).toHaveText('Fruits')
+  await page.waitForTimeout(500)
+  await expect(page.getByTestId('ingredients-loading')).toBeVisible()
+  await expect(page.getByText('No products', { exact: true })).toHaveCount(0)
+  release()
+  await expect(page.getByTestId('ingredients-loading')).toHaveCount(0)
+  await expect(page.getByTestId('products-table')).toBeVisible()
+})
+
 test('Stop 2 item 0: a Fruits category page never shows Add field, even while the category list loads', async ({ page }) => {
   let release: () => void = () => {}
   const held = new Promise<void>((r) => (release = r))
