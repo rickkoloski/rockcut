@@ -28,7 +28,7 @@ import {
   type FeatureDrafts,
   type RangeDrafts,
 } from '../../lib/ingredientFeatures'
-import { GRAIN_KEYS } from '../../lib/inventory'
+import { GRAIN_KEYS, refreshAfterConflict } from '../../lib/inventory'
 import { parsePacks } from '../../lib/purchasing'
 import type { FeatureType, Ingredient, IngredientCategory, IngredientProduct, Party } from '../../lib/types'
 
@@ -141,8 +141,10 @@ function ProductForm({ onClose, product, ingredientId, categoryKey }: ProductDia
       }
     } catch (err) {
       // The person's input stays; the page behind refetches, so reopening shows the change.
+      // Decisions 4: Save and Cancel stay busy until the refetch lands, so a
+      // quick close and reopen can't pick up the old version (a second 409).
+      if (httpStatus(err) === 409) await refreshAfterConflict(qc)
       setError(parseApiError(err))
-      if (httpStatus(err) === 409) GRAIN_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key }))
     }
   }
 

@@ -1,6 +1,7 @@
 // D60 §3.2, §3.7: movement kinds and party roles as the screens name them.
 import { formatQuantity, type Pack, type QuantityDisplay } from './brewingUnits'
 import { onHandText } from './ingredientFeatures'
+import type { QueryClient } from '@tanstack/react-query'
 import type { IngredientLot, InventoryMovement, MovementKind, PartyRole } from './types'
 
 export const KIND_LABELS: Record<MovementKind, string> = {
@@ -100,3 +101,9 @@ export const ORDER_KEYS: unknown[][] = [['purchase_orders'], ['purchase_order'],
 
 /** Query keys every inventory or catalog write refreshes. */
 export const GRAIN_KEYS: unknown[][] = [['ingredient_products'], ['ingredient_product'], ['ingredient_lots'], ['inventory_movements'], ['ingredients'], ['ingredient'], ['ingredient_reorder'], ['ingredient_totals']]
+
+/**
+ * D62 lead decisions 4: refetch GRAIN_KEYS after a 409 and resolve once the
+ * screen's queries have landed, so a retry sends the current `lock_version`.
+ */
+export const refreshAfterConflict = (qc: QueryClient) => Promise.all(GRAIN_KEYS.map((key) => qc.invalidateQueries({ queryKey: key })))

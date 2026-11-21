@@ -25,7 +25,7 @@ import PageHeader from '../../components/PageHeader'
 import { PageToolbar } from '../../components/SettingsMenu'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiUpdate } from '../../hooks/useApiMutation'
-import { GRAIN_KEYS } from '../../lib/inventory'
+import { GRAIN_KEYS, refreshAfterConflict } from '../../lib/inventory'
 import parseApiError from '../../lib/parseApiError'
 import { httpStatus } from '../../lib/notFound'
 import { amountText, packsFigure, reorderListPack, reorderOfferPack, toOrder } from '../../lib/purchasing'
@@ -65,6 +65,8 @@ export default function ToOrderPage() {
   const [queue, setQueue] = useState<Start[]>([])
   const [started, setStarted] = useState(0)
   const [error, setError] = useState<string | null>(null)
+  // Decisions 4: rows refetching after a 409; their picker waits for the current version.
+  const [refreshing, setRefreshing] = useState<Set<number>>(new Set())
   const narrow = useMediaQuery(useTheme().breakpoints.down('sm'))
   const qc = useQueryClient()
   const saveOffer = useApiUpdate<IngredientProduct>((id) => `/api/ingredient_products/${id}`, { invalidateKeys: GRAIN_KEYS })
@@ -82,15 +84,24 @@ export default function ToOrderPage() {
         onError: (err) => {
           // Decisions 2, gap 17: there's no dialog to reopen here, so a 409
           // refetches the rows (the version becomes current) and the picker
-          // goes back to the saved offer; the next pick saves.
+          // goes back to the saved offer; the next pick saves. Decisions 4:
+          // the picker is disabled until the refetch lands, and only then
+          // does the message say the list is up to date.
           if (httpStatus(err) === 409) {
-            GRAIN_KEYS.forEach((key) => qc.invalidateQueries({ queryKey: key }))
-            setOfferFor((m) => {
-              const rest = { ...m }
-              delete rest[productId]
-              return rest
+            setRefreshing((s) => new Set(s).add(productId))
+            void refreshAfterConflict(qc).then(() => {
+              setOfferFor((m) => {
+                const rest = { ...m }
+                delete rest[productId]
+                return rest
+              })
+              setRefreshing((s) => {
+                const rest = new Set(s)
+                rest.delete(productId)
+                return rest
+              })
+              setError('Someone else changed this product. The list is up to date now; pick the offer again.')
             })
-            setError('Someone else changed this product. The list is up to date now; pick the offer again.')
             return
           }
           setOfferFor((m) => ({ ...m, [productId]: was }))
@@ -115,6 +126,7 @@ export default function ToOrderPage() {
         <Select
           value={offer.id}
           onChange={(e) => pickOffer(productId, Number(e.target.value), offer.id)}
+          disabled={refreshing.has(productId)}
           inputProps={{ 'aria-label': 'Reorder offer' }}
           renderValue={(id) => {
             const o = offers.find((x) => x.id === id) ?? offer
