@@ -387,3 +387,114 @@ Every rule gets a refusal test and an allowed test.
   - which fixes you proved by revert;
   - `LEAD:` notes;
   - the diff size so far.
+
+---
+
+# Stop 3 (reference seed, `[SEED]` data, gate prep) — the last build stop of D65
+
+2026-11-21 · lead. **Stop 2 accepted** (`9549e00` … `d17ddf8`; ingredients Playwright 114/114, nine
+fixes proved by revert). The lead runs the full local suite on Stop 2. Your LEAD notes:
+
+1. Accepted: extract shows 1–2 decimals and the converter rounds as D60.
+2. Good catch: `inventory_on_hand` now carries its unit over HTTP.
+3. Accepted: D62's packs rule on To order.
+4. Accepted.
+5. **Fix it here:** ions save in **one request and one transaction** with the ingredient. The
+   ingredient `POST`/`PUT` takes `ions` and writes both or neither. Keep `PUT …/ions` if tests use it,
+   or remove it; your call. Add a test where a bad ion value leaves the ingredient's name unchanged.
+6. Accepted: no pack note on lots.
+7. **Fix:** the price per unit is singular: "$0.1055/tablet", "$1.54/lb". Totals' "each" line is
+   fine.
+
+## Do (plan Stop 3; spec §7 and every reference-data amendment)
+
+1. **`priv/repo/seeds/d65_reference.exs`** runs on every environment:
+   - `seeds.exs` evaluates it after the hop reference, and `Release.seed()` runs it;
+   - it's idempotent and matches everything by name (case-insensitive), so nothing is duplicated
+     and no existing row is overwritten unless stated.
+
+   **Embed the data in the file.** Read the git-excluded CSVs in
+   `docs/current_work/reference/d65_*.csv`, but don't read them at run time. **The spec's
+   amendment tables are the source of truth for names**; the CSVs' names are Matt's raw input.
+   Prices are effective **2026-11-20**. **No lots are seeded.**
+   - **Companies (parties with roles):**
+     - manufacturers: Candico, Sweetener Sup Co., Colorado Honey Co., Muntons;
+     - suppliers: Redstone, SoNature;
+     - Aseptic Fruit is both;
+     - BSG exists already; it only needs the supplier role.
+   - **Water salts** (salts amendment): seven ingredients in Water Salts, each with its formula and
+     ion values. Use the amendment's names: "Calcium Carbonate (Chalk)", "Sodium Bicarbonate
+     (Baking Soda)", "Calcium Sulfate (Gypsum)", "Magnesium Sulfate (Epsom Salt)", "Sodium
+     Chloride (Table Salt)", "Calcium Chloride (Hydrous)", "Calcium Chloride (Anhydrous)".
+     - Six products with manufacturer None and unit lb: the calcium chlorides are Flake, the rest
+       are Powder, and Anhydrous has no product.
+     - Each has a BSG offer, bag · 50 lb, at the amendment's price.
+   - **Sugars** (sugars amendment): six products with extract as the standard.
+     - Lactose and Dextrose (Corn Sugar), None, Dry: Dextrose (Corn Sugar) is the ingredient that
+       already exists; use it, don't create a new one.
+     - Belgian Candy Syrup (Candico, Liquid, 70).
+     - Black Strap Molasses (Sweetener Sup Co., Liquid, 81.95).
+     - Honey (Colorado Honey Co., Liquid, 80.33, supplied by Redstone).
+     - DME (Muntons, Dry, 100).
+
+     All are in lb. The offers have their packs, with pack price = $/lb × weight: BSG bag · 50,
+     pail · 55 and pail · 60; bag · 55 for DME; Redstone pail · 60 for Honey.
+   - **Fruit, Aseptic Fruit** (batch 3): 12 ingredients with 12 Purée products in lb, each with a
+     Brix range; Watermelon is 12–12.
+     - 13 offers in pail · 11 or pail · 44 with prices. Strawberry has two.
+     - "Tangerine" is spelled that way.
+   - **Fruit, SoNature** (batch 3b): new ingredients Apricot and Cherry (Juice / concentrate);
+     Lemon and Lime reuse the Aseptic ingredients.
+     - Four products, manufacturer None, lb, with Brix low = high: Apricot 50, Cherry 11.4, Lemon 11.
+       Lime has no Brix.
+     - SoNature offers have no price: pail · 40, and pail · 56 for Cherry.
+   - **Finings:** Whirlfloc T, a product of the existing Whirlfloc. Manufacturer None, Tablet, each,
+     product name "T". BSG offer tub · 872 with pack note "5 lb" at $92.00.
+   - **Spices:** ten ingredients in Spices & Flavorings with no products: Cinnamon, Clove,
+     Coriander, Juniper Berries, Timut Pepper, Lemongrass, Cacao Nibs, Vanilla Beans, Coffee,
+     Peppermint Leaf.
+   - **Expected totals:**
+     - 7 + 6 + 14 + 10 = **37 new ingredients**. Dextrose (Corn Sugar) and Whirlfloc already
+       exist.
+     - **29 products:** 6 salts, 6 sugars, 16 fruit and 1 fining.
+     - **30 offers**, of which **26 have prices**.
+   - **ExUnit:**
+     - seed twice and the counts are unchanged;
+     - spot-check Calcium Sulfate (Gypsum) (CaSO₄·2H₂O, Ca 61.5, SO₄ 147.4, $32.00/bag), Strawberry
+       (two offers, 6.5–9), Black Strap Molasses 81.95, Whirlfloc T "tub · 872 tablets (5 lb)" and
+       SoNature Lime (no Brix, no price);
+     - the seed leaves the D60 grain and D62 hop counts unchanged (28 hop lots, 409.6 lb).
+2. **Synthetic `[SEED]` data** (DEV and local only, through `mix rockcut.synthetic.setup`): one fruit
+   purée product with a lot, one Dry sugar with a lot, and one `each` fining with a lot, each with
+   an offer and a minimum, so To order and Totals have mixed units.
+   - Use `[SEED]` product names that don't clash with the reference data.
+   - Setup removes and recreates them, as the D60–D62 `[SEED]` rows are.
+3. **Tests that must not trip over the reference data:** any Playwright or ExUnit test that counts
+   D65 products, offers, ingredients or totals filters to its own `[TEST-TEMP]` rows. Tests and QA
+   never edit or delete seeded reference rows.
+4. **`tests/COVERAGE.md`:** a complete D65 section with every §10 scenario → layer, and gaps
+   marked.
+5. **Release notes input:** append to `docs/current_work/planning/d65_fruit_spices_sugars_consumables_plan.md`
+   a short "Release" section covering:
+   - migration order, and which migration needs the API down;
+   - what migration 6 may keep and log;
+   - that rollback needs the pre-release snapshot;
+   - the reference counts above.
+
+## Done when (Stop 3 = the local gate's build part)
+
+- On a throwaway copy, `mix ecto.reset`, seeds and `mix rockcut.synthetic.setup` run clean. The
+  seed prints the D65 counts, and a second seed adds nothing.
+- **Tell me before seeding the local dev DB.** I'll stop the API, run the seed and setup, and
+  restart it.
+- `mix test` passes twice, and `--warnings-as-errors --force` is clean. vitest, tsc and the build
+  are clean, and lint still shows the same 8 errors.
+- The ingredients Playwright project passes on the seeded dev DB. I'll run the full suite.
+- **Browser check** as `brewer1`, at desktop and 360 px:
+  - the Water Salts list and the Gypsum product page with its ions;
+  - the Fruits list with Brix ranges;
+  - the Sugars list with extract;
+  - Whirlfloc T reading "tub · 872 tablets (5 lb)";
+  - Totals → Inventory with the `[SEED]` mixed units.
+- **Reply with:** commits, counts, the seed's printed totals, the COVERAGE gaps and `LEAD:` notes.
+  After that, the lead writes the local QA brief.
