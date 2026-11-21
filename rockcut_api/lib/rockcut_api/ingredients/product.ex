@@ -9,6 +9,7 @@ defmodule RockcutApi.Ingredients.Product do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  import Ecto.Query, only: [from: 2, where: 3]
   import RockcutApi.Brewing.Ranges
 
   schema "ingredient_products" do
@@ -135,6 +136,7 @@ defmodule RockcutApi.Ingredients.Product do
     manufacturer = name_of(RockcutApi.Ingredients.Party, changeset, :manufacturer_party_id)
     ingredient = name_of(RockcutApi.Brewing.Ingredient, changeset, :ingredient_id)
     none? = is_nil(get_field(changeset, :manufacturer_party_id))
+    changeset = put_existing_name(changeset)
 
     cond do
       ingredient && none? && not RockcutApi.Ingredients.Catalog.manufacturer_required?(key) ->
@@ -168,6 +170,39 @@ defmodule RockcutApi.Ingredients.Product do
       nil -> what
       name -> "#{what} (#{name})"
     end
+  end
+
+  # D65 lead decisions 2 (gap 15): names are unique in any case, so the
+  # sentence names the product that's there in its stored spelling
+  # ("KT-872" when "kt-872" was typed). Only for the message: the changeset
+  # it returns isn't saved.
+  defp put_existing_name(changeset) do
+    with name when is_binary(name) <- get_field(changeset, :name),
+         ingredient_id when is_integer(ingredient_id) <- get_field(changeset, :ingredient_id),
+         stored when is_binary(stored) <- existing_name(changeset, ingredient_id, name) do
+      put_change(changeset, :name, stored)
+    else
+      _ -> changeset
+    end
+  end
+
+  defp existing_name(changeset, ingredient_id, name) do
+    manufacturer = get_field(changeset, :manufacturer_party_id) || 0
+    form = get_field(changeset, :form) || ""
+
+    query =
+      from p in __MODULE__,
+        where:
+          p.ingredient_id == ^ingredient_id and
+            coalesce(p.manufacturer_party_id, 0) == ^manufacturer and
+            coalesce(p.form, "") == ^form and
+            fragment("lower(coalesce(?, ''))", p.name) == fragment("lower(?)", ^name),
+        select: p.name,
+        limit: 1
+
+    query
+    |> then(fn q -> if id = changeset.data.id, do: where(q, [p], p.id != ^id), else: q end)
+    |> RockcutApi.Repo.one()
   end
 
   # nil for a blank or missing id (`validate_parents` says which).

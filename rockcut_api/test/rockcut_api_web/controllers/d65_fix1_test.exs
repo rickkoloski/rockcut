@@ -327,7 +327,7 @@ defmodule RockcutApiWeb.D65Fix1Test do
       assert base(
                req(c.brewer, :post, "/api/ingredient_products", Map.put(body, "name", "kt-872"))
              ) ==
-               "There's already a Whirlfloc kt-872 with manufacturer None."
+               "There's already a Whirlfloc KT-872 with manufacturer None."
 
       for name <- ["None", "none", " NONE "] do
         assert base(req(c.brewer, :post, "/api/ingredient_products", Map.put(body, "name", name))) ==
