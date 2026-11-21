@@ -635,7 +635,9 @@ defmodule RockcutApi.Ingredients.Orders do
   # to that lot, so the crop year and features sent must be the lot's own
   # (or left out); a different one is refused, never dropped. Decisions 2,
   # gap 16: a blank is a value, so a feature sent blank (nil) that the lot
-  # has, or sent with a value the lot has blank, differs too.
+  # has, or sent with a value the lot has blank, differs too. Decisions 5,
+  # gap 2: the crop year follows the same rule; only a key left out means
+  # "leave its values".
   defp same_values!(lot, line, a) do
     features =
       case Features.validate(a["features"], line.offer.product.ingredient_id, :lot) do
@@ -647,7 +649,8 @@ defmodule RockcutApi.Ingredients.Orders do
     has = Map.new(lot_values(lot.id), &{&1.feature_type_id, &1.value})
 
     differs? =
-      (crop_year not in [nil, ""] and to_string(crop_year) != to_string(lot.crop_year)) or
+      (Map.has_key?(a, "crop_year") and
+         String.trim(to_string(crop_year)) != to_string(lot.crop_year)) or
         Enum.any?(features, fn {type, value} -> not same_value?(has[type.id], value) end)
 
     if differs? do
