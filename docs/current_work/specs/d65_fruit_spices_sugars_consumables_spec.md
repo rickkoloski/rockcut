@@ -494,3 +494,15 @@ needed, it can be removed in Ingredient Library → Categories.
 - The product name is "T", so it shows as "Whirlfloc T". The seeded ingredient Whirlfloc already
   sits under Finings (A8).
 - Irish Moss stays an ingredient with no product.
+
+## Amendment (Matt, 2026-11-20): spices, batch 5
+
+Matt has no detailed list with values yet. Ten **ingredients** are seeded under Spices &
+Flavorings, on every environment, with **no products, offers or lots**. Products (manufacturer,
+form, oz or fl oz, packs, prices) are added on the screens when bought.
+
+Cinnamon, Clove, Coriander, Juniper Berries, Timut Pepper, Lemongrass, Cacao Nibs, Vanilla Beans,
+Coffee, Peppermint Leaf.
+
+"Coriander" and "Lemongrass" are standard spellings of what Matt typed ("corriander", "lemon
+grass").
