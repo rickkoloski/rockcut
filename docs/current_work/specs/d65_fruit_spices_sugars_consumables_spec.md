@@ -460,12 +460,12 @@ Brix. **Matt: store them as Brix.** Each is a typical single value on the produc
 
 | Ingredient | Form | Unit | Pack | Brix |
 |---|---|---|---|---|
-| Apricot | Juice / concentrate | lb | 40 lb | 50 °Bx |
-| Cherry | Juice / concentrate | lb | 56 lb | 11.4 °Bx (lead's conversion; Matt to check; concentrate is usually ~68) |
-| Lemon | Purée | lb | 40 lb | 11 °Bx |
-| Lime | Purée | lb | 40 lb | — |
+| Apricot | Juice / concentrate | lb | pail · 40 lb | 50 °Bx |
+| Cherry | Juice / concentrate | lb | pail · 56 lb | 11.4 °Bx (lead's conversion; Matt to check; concentrate is usually ~68) |
+| Lemon | Purée | lb | pail · 40 lb | 11 °Bx |
+| Lime | Purée | lb | pail · 40 lb | — |
 
 - **Lemon and Lime now have two products each:** Aseptic Fruit Purée and None Purée (SoNature).
   They're different products because their manufacturers differ (D62 decision 17).
-- **Pack names:** not given. The lead assumes **pail** for the 40 lb packs and **drum** for the
-  56 lb pack (**A15**, to confirm).
+- **Pack names (Matt):** every SoNature pack is a **pail**: pail · 40 lb, and pail · 56 lb for
+  Cherry.
