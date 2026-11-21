@@ -89,3 +89,15 @@
     fixes).
   - The reference CSVs are git-excluded, in `~/src/rockcut-d65/docs/current_work/reference/`. The
     seed must embed them.
+
+## Start here (next session)
+
+1. **Restart the builder** before the D65 brief. In its pane (build tab, w1:p4), run `/clear`, then
+   `herdr agent rename <pane> builder`; a long D62 context would otherwise carry over.
+2. **Rebase D65** (worktree `~/src/rockcut-d65`, branch `d65-fruit-spices-sugars-consumables`)
+   onto `origin/develop`. It's docs only, cut from `a9998ea`, so the rebase should be clean. Then
+   work in `~/src/rockcut` as usual.
+3. **Write the D65 builder brief** from the plan, starting with **Stop 0**: cherry-pick
+   `d65-carry-devqa` (`1a3b3f5`, `c939d17`, `fcaefe4`, and the wip `cb9ed73`), then finish the wip.
+4. **The finished tabs are closed:** D62 QA, DEV and PROD. The worktrees `rockcut-dev-d62` and
+   `rockcut-release-20261120` are removed. DEV is free and runs `develop` `723c785`.
