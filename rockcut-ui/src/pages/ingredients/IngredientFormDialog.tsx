@@ -39,7 +39,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
   const [formula, setFormula] = useState(ingredient?.formula ?? '')
   // D65 (salts amendment): a Water Salts ingredient's ions, ppm @ 1 g/gal, 1 decimal, 0–1000.
   const [ions, setIons] = useState<Record<string, string>>(() =>
-    Object.fromEntries(IONS.map((i) => [i.key, ingredient?.ions?.[i.key] != null ? String(Number(ingredient.ions[i.key])) : ''])),
+    Object.fromEntries(IONS.map((i) => [i.key, ingredient?.ions?.[i.key] != null ? Number(ingredient.ions[i.key]).toFixed(1) : ''])),
   )
   const qc = useQueryClient()
   const [error, setError] = useState<string | null>(null)

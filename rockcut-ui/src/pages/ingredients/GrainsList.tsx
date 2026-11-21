@@ -135,7 +135,7 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
     })
 
   const spec = (p: IngredientProduct, key: string) =>
-    RANGE_COLUMNS.has(key) ? (formatRange(p.features?.[key], decimals[key] ?? 2) ?? '—') : formatFeature(p.features?.[key]?.value, { key, decimals: decimals[key] ?? 1 })
+    RANGE_COLUMNS.has(key) ? (formatRange(p.features?.[key], { key, decimals: decimals[key] ?? 2 }) ?? '—') : formatFeature(p.features?.[key]?.value, { key, decimals: decimals[key] ?? 1 })
   const suppliers = (p: IngredientProduct) =>
     (p.offers ?? [])
       .filter((o) => o.active)
@@ -313,7 +313,7 @@ export default function GrainsList({ categoryKey = 'grains', children, products,
  * (D62 lead decisions 1, gap 2).
  */
 function hopCaption(p: IngredientProduct, decimals: Record<string, number>): string {
-  const range = (key: string) => formatRange(p.features?.[key], decimals[key] ?? 2)
+  const range = (key: string) => formatRange(p.features?.[key], { key, decimals: decimals[key] ?? 2 })
   const alpha = range('alpha_acid_pct')
   const beta = range('beta_acid_pct')
   const oil = range('total_oil_ml_100g')

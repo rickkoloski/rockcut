@@ -111,7 +111,7 @@ export default function ProductPage() {
     ? featureTypes
         .map((t) => {
           const v = product.features?.[t.key]
-          const shown = ranged(t) ? formatRange(v, t.decimals) : v ? formatFeature(v.value, t) : null
+          const shown = ranged(t) ? formatRange(v, t) : v ? formatFeature(v.value, t) : null
           return shown ? `${shown} ${t.unit_label}` : null
         })
         .filter(Boolean)
@@ -257,7 +257,7 @@ export default function ProductPage() {
           {featureTypes.map((t) => {
             const v = product.features?.[t.key]
             const entered = enteredAs(v)
-            const shown = hops || ranged(t) ? formatRange(v, t.decimals) : v ? formatFeature(v.value, t) : null
+            const shown = hops || ranged(t) ? formatRange(v, t) : v ? formatFeature(v.value, t) : null
             return (
               <Grid key={t.key} size={{ xs: 6, sm: 4, md: 2.4 }}>
                 <Typography variant="subtitle2" color="text.secondary">
@@ -422,7 +422,7 @@ export default function ProductPage() {
                         key={t.key}
                         align="right"
                         sx={outside ? { color: 'warning.main', fontWeight: 600 } : undefined}
-                        title={outside ? `Outside typical ${formatRange(product.features?.[t.key], t.decimals)}` : undefined}
+                        title={outside ? `Outside typical ${formatRange(product.features?.[t.key], t)}` : undefined}
                         data-testid={`lot-${l.id}-${t.key}${outside ? '-outside' : ''}`}
                       >
                         {v != null ? formatFeature(v, t) : '—'}

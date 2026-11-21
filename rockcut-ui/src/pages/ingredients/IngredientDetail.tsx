@@ -130,7 +130,19 @@ export default function IngredientDetail() {
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Ingredient"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
-            <Tooltip title="Delete Ingredient"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+            {/* D65 lead decisions 1 (gap 13): disabled with the API's reason while it has products, as Categories does. */}
+            <Tooltip title="Delete Ingredient">
+              <span>
+                <IconButton onClick={() => setDeleteOpen(true)} color="error" disabled={!!ingredient.delete_blocked} data-testid="ingredient-delete">
+                  <DeleteIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+            {ingredient.delete_blocked && (
+              <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="ingredient-delete-reason">
+                {ingredient.delete_blocked}
+              </Typography>
+            )}
           </Box>
         }
       />
@@ -234,7 +246,7 @@ export default function IngredientDetail() {
       <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} categoryKey={key ?? 'grains'} />
 
       <ConfirmDialog
-        open={deleteOpen}
+        open={deleteOpen && !ingredient.delete_blocked}
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         title="Delete Ingredient"

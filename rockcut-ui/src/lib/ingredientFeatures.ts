@@ -2,7 +2,7 @@
 // specs) on the screens: which feature types apply to a category, the boxes'
 // drafts, the payload the API takes, and a lot value that differs from the
 // standard.
-import { formatQuantity, packPlural, parseDecimal, productPack, type Pack, type QuantityDisplay } from './brewingUnits'
+import { boxText, formatQuantity, packPlural, paddedRange, parseDecimal, productPack, type Pack, type QuantityDisplay } from './brewingUnits'
 import type { FeatureApplicability, FeatureType, FeatureValue, FeatureValues, IngredientCategory, IngredientProduct } from './types'
 
 /** One feature's box: the text typed, and what was typed in another unit when the convert popup filled it. */
@@ -28,7 +28,7 @@ export function draftsFrom(values: FeatureValues | null | undefined, types: Feat
   return Object.fromEntries(
     types.map((t) => {
       const v = values?.[t.key]
-      return [t.key, { text: v?.value ?? '', entered_value: v?.entered_value ?? null, entered_unit: v?.entered_unit ?? null }]
+      return [t.key, { text: boxText(v?.value, t), entered_value: v?.entered_value ?? null, entered_unit: v?.entered_unit ?? null }]
     }),
   )
 }
@@ -196,9 +196,12 @@ export const isRangeType = (type: FeatureType, categoryId: number | null | undef
  * "12.5" when both ends are the same, "≥ 12" with no high end, "≤ 9" with no
  * low end; null with neither. The caller adds the unit.
  */
-export function formatRange(v: Pick<FeatureValue, 'value' | 'value_high'> | null | undefined, decimals: number): string | null {
-  // Ranges read as typed on the supplier's sheet, without padding ("11–13", not "11.00–13.00").
-  const end = (x: string | null | undefined) => (x != null && x !== '' ? Number(x).toLocaleString('en-US', { maximumFractionDigits: decimals }) : '')
+export function formatRange(v: Pick<FeatureValue, 'value' | 'value_high'> | null | undefined, type: number | { key: string; decimals: number }): string | null {
+  // Ranges read as typed on the supplier's sheet, without padding ("11–13", not "11.00–13.00");
+  // D65 lead decisions 1 (gap 4): Brix always shows its one place ("6.5–9.0").
+  const decimals = typeof type === 'number' ? type : type.decimals
+  const min = paddedRange(type) ? decimals : 0
+  const end = (x: string | null | undefined) => (x != null && x !== '' ? Number(x).toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: decimals }) : '')
   const low = end(v?.value)
   const high = end(v?.value_high)
   if (low && high) return low === high ? low : `${low}–${high}`
@@ -227,7 +230,7 @@ export type RangeDrafts = Record<string, RangeDraft>
 
 /** Range boxes filled from stored values. */
 export function rangeDraftsFrom(values: FeatureValues | null | undefined, types: FeatureType[]): RangeDrafts {
-  return Object.fromEntries(types.map((t) => [t.key, { low: values?.[t.key]?.value ?? '', high: values?.[t.key]?.value_high ?? '' }]))
+  return Object.fromEntries(types.map((t) => [t.key, { low: boxText(values?.[t.key]?.value, t), high: boxText(values?.[t.key]?.value_high, t) }]))
 }
 
 /**
@@ -452,7 +455,8 @@ export const IONS = [
 
 /** "Ca 61.5 · SO₄ 147.4" (the set ones, in order); null with none. */
 export function ionsText(ions: Record<string, string | number> | null | undefined): string | null {
-  const parts = IONS.filter((i) => ions?.[i.key] != null).map((i) => `${i.label} ${Number(ions![i.key]).toLocaleString('en-US', { maximumFractionDigits: 1 })}`)
+  // D65 lead decisions 1 (gap 4): always one place ("Ca 72.0", "SO₄ 103.0").
+  const parts = IONS.filter((i) => ions?.[i.key] != null).map((i) => `${i.label} ${Number(ions![i.key]).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`)
   return parts.length ? parts.join(' · ') : null
 }
 

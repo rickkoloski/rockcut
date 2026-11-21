@@ -165,7 +165,8 @@ describe('quantities (§3.7, §3.9; D62 §3.5 packs and units)', () => {
     expect(formatQuantity(600.4, 'tub', 1000, 'each', 'packs')).toBe('600 each')
     expect(formatQuantity(600.6, 'tub', 1000, 'each', 'lb')).toBe('601 each')
     expect(quantityToPacks(2600.4, 1000, 'each')).toEqual({ packs: 2, loose: 600 })
-    expect(packsToQuantity(1, 0.6, 1000, 'each')).toBe(1001)
+    // D65 lead decisions 1 (gap 5): a count is never rounded; readQuantity refuses a fraction instead.
+    expect(packsToQuantity(1, 0.6, 1000, 'each')).toBe(1000.6)
   })
 
   it('pack plurals and labels', () => {

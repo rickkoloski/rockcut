@@ -91,7 +91,9 @@ function InventoryTotalsView() {
   const { data: products = [] } = useApiList<IngredientProduct>(['ingredient_products'], '/api/ingredient_products')
   const params: Record<string, string> = { as_of: asOf && asOf <= today ? asOf : today }
   if (supplierId) params.supplier_id = supplierId
-  if (manufacturerId) params.manufacturer_id = manufacturerId
+  // Gap 9: "None" is the products with no manufacturer (`manufacturer=none`).
+  if (manufacturerId === NO_MAKER) params.manufacturer = NO_MAKER
+  else if (manufacturerId) params.manufacturer_id = manufacturerId
   if (categoryId) params.category_id = categoryId
   const { data } = useApiQuery<InventoryTotals>(['ingredient_totals', 'inventory', params], '/api/ingredient_totals/inventory', params)
   const rows = data?.rows ?? []
@@ -112,10 +114,13 @@ function InventoryTotalsView() {
       key ? [key] : MANAGED_KEYS,
     )
   const makers = makersFor(shownKey)
+  // Lead decisions 1 (gap 9): None when a product shown has no manufacturer (D65 decision 8).
+  const noneFor = (key: string | null) =>
+    products.some((p) => p.manufacturer_party_id == null && (key ? p.category_key === key : (MANAGED_KEYS as readonly string[]).includes(p.category_key ?? '')))
   const pickCategory = (v: string) => {
     setCategoryId(v)
     const key = v ? categoryKey(categories, categories.find((c) => String(c.id) === v)) : null
-    if (manufacturerId && !makersFor(key).some((p) => String(p.id) === manufacturerId)) setManufacturerId('')
+    if (manufacturerId && !(manufacturerId === NO_MAKER ? noneFor(key) : makersFor(key).some((p) => String(p.id) === manufacturerId))) setManufacturerId('')
   }
 
   return (
@@ -147,6 +152,7 @@ function InventoryTotalsView() {
               {p.name}
             </MenuItem>
           ))}
+          {noneFor(shownKey) && <MenuItem value={NO_MAKER}>None</MenuItem>}
         </Filter>
         <Filter label="Category" value={categoryId} onChange={pickCategory} testId="totals-inventory-category">
           <MenuItem value="">All categories</MenuItem>
@@ -178,11 +184,23 @@ function InventoryTotalsView() {
   )
 }
 
+/** The Manufacturer filter's "None" (gap 9). */
+const NO_MAKER = 'none'
+
 /** The quantity with no value, per unit. */
 function unvaluedByUnit(rows: InventoryTotalsRow[]): UnitQuantity[] {
   const sums = new Map<string, number>()
-  for (const r of rows) if (Number(r.unvalued_quantity) > 0) sums.set(r.unit, (sums.get(r.unit) ?? 0) + Number(r.unvalued_quantity))
-  return [...sums].sort(([a], [b]) => a.localeCompare(b)).map(([unit, q]) => ({ unit, quantity: String(Math.round(q * 100) / 100) }))
+  // Gap 8: each unit's labels; one shared label ("tablets") names the sum, else the unit.
+  const labels = new Map<string, Set<string>>()
+  for (const r of rows)
+    if (Number(r.unvalued_quantity) > 0) {
+      sums.set(r.unit, (sums.get(r.unit) ?? 0) + Number(r.unvalued_quantity))
+      labels.set(r.unit, (labels.get(r.unit) ?? new Set()).add(r.unit_label ?? r.unit))
+    }
+  return [...sums].sort(([a], [b]) => a.localeCompare(b)).map(([unit, q]) => {
+    const l = [...labels.get(unit)!]
+    return { unit, unit_label: l.length === 1 ? l[0] : unit, quantity: String(Math.round(q * 100) / 100) }
+  })
 }
 
 /** "0.32 boxes", "12 sacks"; "—" when the product's lots differ in pack. */
@@ -262,12 +280,12 @@ function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | un
               {/* D65 §4.5: a subtotal per unit, one line each, never added together; one $ total. */}
               {data.total.by_unit.map((u) => (
                 <div key={u.unit} data-testid={`totals-inventory-total-${u.unit.replace(' ', '-')}`}>
-                  {amountText(u.quantity, u.unit)}
+                  {amountText(u.quantity, u.unit_label ?? u.unit)}
                 </div>
               ))}
               {data.total.by_unit.some((u) => Number(u.expired) > 0) && (
                 <Typography variant="caption" component="div" data-testid="totals-inventory-total-expired">
-                  {byUnitText(data.total.by_unit.filter((u) => Number(u.expired) > 0).map((u) => ({ unit: u.unit, quantity: u.expired })))} expired
+                  {byUnitText(data.total.by_unit.filter((u) => Number(u.expired) > 0).map((u) => ({ unit: u.unit, unit_label: u.unit_label, quantity: u.expired })))} expired
                 </Typography>
               )}
             </TableCell>
@@ -439,7 +457,7 @@ function OrderTotalsView() {
   const allLb = rows.every((r) => r.unit === 'lb')
   const qty = (r: { quantity: string; unit: string; unit_label?: string }) => (allLb ? lb(r.quantity) : amountText(r.quantity, r.unit_label ?? r.unit))
   const sumQty = (byUnit: UnitQuantity[]) =>
-    allLb ? lb(inLb(byUnit)?.quantity ?? 0) : byUnit.map((u) => <div key={u.unit}>{amountText(u.quantity, u.unit)}</div>)
+    allLb ? lb(inLb(byUnit)?.quantity ?? 0) : byUnit.map((u) => <div key={u.unit}>{amountText(u.quantity, u.unit_label ?? u.unit)}</div>)
   const tsv = () => (allLb ? lbTsv() : mixedTsv())
 
   return (

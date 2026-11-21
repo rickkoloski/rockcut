@@ -150,6 +150,8 @@ export interface Ingredient {
   formula?: string | null
   /** D65: ion values (ppm @ 1 g/gal) by key, on a Water Salts ingredient. */
   ions?: Record<string, string> | null
+  /** D65 lead decisions 1 (gap 13): why Delete is refused (it has products or lots), or null. */
+  delete_blocked?: string | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
   updated_at: string
@@ -444,6 +446,8 @@ export interface PurchaseOrder {
 /** A quantity in one unit (D62 §3.8). */
 export interface UnitQuantity {
   unit: string
+  /** D65 lead decisions 1 (gap 8): "tablets" when every product in it is a Tablet; else the unit. */
+  unit_label?: string
   quantity: string
 }
 

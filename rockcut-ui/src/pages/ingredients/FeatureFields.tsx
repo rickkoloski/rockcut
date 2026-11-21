@@ -38,7 +38,7 @@ export default function FeatureFields({ types, drafts, onChange, standard, typic
         // D65: with typical ranges too (fruit, sugars), only a feature that has a standard is compared.
         const changed = standard !== undefined && (!typical || std !== undefined) && parsed.ok && differs(typed, std, t.decimals)
         const outOfRange = draftRangeError(t, d)
-        const range = typical ? formatRange(typical[t.key], t.decimals) : null
+        const range = typical ? formatRange(typical[t.key], t) : null
         const outside = !!range && typed != null && outsideRange(typed.value, typical?.[t.key])
         const typicalText = range ? `${outside ? 'outside ' : ''}typical ${range}` : null
         const helper = [entered, changed ? `changed from standard (${std ? formatFeature(std.value, t) : 'none'})` : null, typicalText].filter(Boolean).join(' · ')

@@ -332,7 +332,8 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
                   >
                     {choices.map((lot) => (
                       <MenuItem key={lot.id} value={String(lot.id)} sx={{ whiteSpace: 'normal' }}>
-                        {lotChoiceLabel(lot, mode)}
+                        {/* Gap 8: in the product's words ("350 tablets on hand"). */}
+                        {lotChoiceLabel({ ...lot, unit: product?.unit_label ?? lot.unit }, mode)}
                       </MenuItem>
                     ))}
                     <MenuItem value={NEW}>New lot #</MenuItem>

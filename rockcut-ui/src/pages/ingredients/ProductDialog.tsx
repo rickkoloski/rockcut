@@ -281,7 +281,7 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
         </Select>
       </FormControl>
       {hops && (
-        <FormControl fullWidth required>
+        <FormControl fullWidth required disabled={hasLots}>
           <InputLabel id="product-form-label">Form</InputLabel>
           <Select labelId="product-form-label" id="product-form" label="Form" value={form} onChange={(e) => setForm(e.target.value)} data-testid="product-form">
             {HOP_FORMS.map((f) => (
@@ -290,10 +290,11 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
               </MenuItem>
             ))}
           </Select>
+          {hasLots && <FormHelperText>This product has lots, so its form stays {product?.form}</FormHelperText>}
         </FormControl>
       )}
       {d65 && (
-        <FormControl fullWidth required disabled={!catalog}>
+        <FormControl fullWidth required disabled={!catalog || hasLots}>
           <InputLabel id="product-form-label">Form</InputLabel>
           <Select
             labelId="product-form-label"
@@ -315,6 +316,8 @@ function ProductForm({ onClose, product, ingredientId, categoryKey, hasLots = fa
               </MenuItem>
             ))}
           </Select>
+          {/* D65 lead decisions 1: fixed once it has lots, as the unit is. */}
+          {hasLots && <FormHelperText>This product has lots, so its form stays {product?.form}</FormHelperText>}
         </FormControl>
       )}
       {d65 && (

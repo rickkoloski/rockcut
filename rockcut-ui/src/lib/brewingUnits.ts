@@ -161,6 +161,21 @@ export const packSizeLabel = (name: string | null | undefined, unit: string = 'l
   return `${n.charAt(0).toUpperCase()}${n.slice(1)} size (${unit})`
 }
 
+/**
+ * D65 lead decisions 1 (gaps 5, 7): the API's words for a count that isn't
+ * whole: "Whirlfloc T is counted in whole tablets", "… whole numbers" for
+ * another `each`.
+ */
+export const wholeCountMessage = (productName: string | null | undefined, unit: string | null | undefined) =>
+  `${productName || 'This product'} is counted in whole ${unit === 'tablets' ? 'tablets' : 'numbers'}`
+
+/**
+ * The product as the API names it in a refusal (`Products.short_name/1`):
+ * the ingredient and the product name, else the ingredient and the form.
+ */
+export const productShortName = (p: { name?: string | null; form?: string | null; ingredient?: { name: string } | null } | null | undefined) =>
+  [p?.ingredient?.name, p?.name || p?.form].filter(Boolean).join(' ') || null
+
 /** The smallest quantity the API takes, said in the unit. */
 export const minQuantity = (unit: string = 'lb') =>
   // D65 (Stop 1 LEAD note 10): a count starts at 1, "1 tablet", plain "1" for each.
@@ -171,28 +186,37 @@ export const minQuantity = (unit: string = 'lb') =>
  * `packSize` is null) as a quantity in the unit: null when empty or refused,
  * `valid` false while refused. Over 0 but under 0.01 (the API's smallest) is
  * refused with `error`, before rounding makes it 0 (lead decisions 3, gap 16).
+ *
+ * D65 lead decisions 1 (gaps 5, 7): a count (`each`, "tablets") is never
+ * rounded. When the packs and the loose part don't come to a whole number
+ * (0.5 tub of 333 is 166.5) it's refused with `error` ("<product> is counted
+ * in whole tablets"), and nothing is sent.
  */
 export function readQuantity(
   packText: string,
   looseText: string,
   packSize: number | null,
   unit: string = 'lb',
+  productName?: string | null,
 ): { quantity: string | null; valid: boolean; error?: string } {
-  const decimals = unitDecimals(unit)
+  const count = isCountUnit(unit)
   const pp = parseDecimal(packSize != null ? packText : '', LB_DECIMALS)
-  const pl = parseDecimal(looseText, decimals)
+  // A count's loose box takes decimals here so the refusal is the whole-count one, not "Use a whole number".
+  const pl = parseDecimal(looseText, count ? LB_DECIMALS : unitDecimals(unit))
   if (!pp.ok || !pl.ok) return { quantity: null, valid: false }
   if (pp.value == null && pl.value == null) return { quantity: null, valid: true }
   const packs = Number(pp.value ?? 0)
   const loose = Number(pl.value ?? 0)
   const raw = packSize != null ? packs * packSize + loose : loose
   if (raw > 0 && raw < 0.01) return { quantity: null, valid: false, error: minQuantity(unit) }
+  // Whole to within float noise (0.1 × 30 is 3.0000000000000004), never by rounding a real fraction.
+  if (count && Math.abs(raw - Math.round(raw)) > 1e-9) return { quantity: null, valid: false, error: wholeCountMessage(productName, unit) }
   return { quantity: String(packSize != null ? packsToQuantity(packs, loose, packSize, unit) : loose), valid: true }
 }
 
-/** Packs and the loose part as a quantity, rounded to 0.01 (to 1 for `each`). */
+/** Packs and the loose part as a quantity, to 0.01 (`each`: only called with whole results, never rounded to 1). */
 export function packsToQuantity(packs: number, loose: number, packSize: number, unit: string = 'lb'): number {
-  const scale = 10 ** unitDecimals(unit)
+  const scale = 10 ** (isCountUnit(unit) ? LB_DECIMALS : unitDecimals(unit))
   return Math.round((packs * packSize + loose) * scale) / scale
 }
 
@@ -205,7 +229,10 @@ export function quantityToPacks(quantity: number, packSize: number, unit: string
   return { packs, loose: (units - packs * packUnits) / scale }
 }
 
-const fmtAmount = (n: number, unit: string) => `${n.toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unit}`
+/** D65 lead decisions 1 (gap 6): a unit word for `n`: "1 tablet", else as given ("2 tablets", "1 lb"). */
+export const unitWord = (unit: string, n: number) => (unit === 'tablets' && n === 1 ? 'tablet' : unit)
+
+const fmtAmount = (n: number, unit: string) => `${n.toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unitWord(unit, n)}`
 
 /**
  * A quantity as the account shows it (D60 §3.9, D62 §3.5; the API's
@@ -272,6 +299,23 @@ const MIN_SHOWN: Record<string, number> = { extract_fgdb: 1 }
  * still keeps the type's decimals (81.95).
  */
 export const convertDecimals = (type: { key: string; decimals: number }) => MIN_SHOWN[type.key] ?? type.decimals
+
+/**
+ * D65 lead decisions 1 (gap 4): features that always show all their places,
+ * ranges and reopened boxes included ("14.0 °Bx", "6.5–9.0"). Others' ranges
+ * read as typed on the supplier's sheet ("11–13").
+ */
+const PADDED_KEYS = new Set(['brix'])
+
+/** A stored value as a box shows it when a dialog reopens: Brix padded to its places ("14.0"), others as stored. */
+export function boxText(value: string | number | null | undefined, type: { key: string; decimals: number }): string {
+  if (value == null || value === '') return ''
+  const n = Number(value)
+  return PADDED_KEYS.has(type.key) && !Number.isNaN(n) ? n.toFixed(type.decimals) : String(value)
+}
+
+/** True when a range of `type` shows all its places (Brix). */
+export const paddedRange = (type: number | { key: string; decimals: number }) => typeof type !== 'number' && PADDED_KEYS.has(type.key)
 
 /** A feature value to the type's decimals ("2.00"); given the type, extract trims to 1–2 ("81.5", "81.95"). */
 export function formatFeature(value: string | number | null | undefined, type: number | { key: string; decimals: number }): string {

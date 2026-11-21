@@ -37,7 +37,7 @@ describe('unitLabel and each in whole numbers (§4.3)', () => {
     expect(minQuantity('tablets')).toBe('Enter at least 1 tablet')
     expect(minQuantity('each')).toBe('Enter at least 1')
     expect(minQuantity('gal')).toBe('Enter at least 0.01 gal')
-    expect(readQuantity('', '2.5', null, 'tablets')).toEqual({ quantity: null, valid: false })
+    expect(readQuantity('', '2.5', null, 'tablets')).toEqual({ quantity: null, valid: false, error: 'This product is counted in whole tablets' })
     expect(readQuantity('1', '400', 872, 'tablets')).toEqual({ quantity: '1272', valid: true })
     expect(formatQuantity(1272, 'tub', 872, 'tablets', 'packs')).toBe('1 tub 400 tablets')
     expect(formatQuantity(1272, 'tub', 872, 'tablets', 'lb')).toBe('1,272 tablets')

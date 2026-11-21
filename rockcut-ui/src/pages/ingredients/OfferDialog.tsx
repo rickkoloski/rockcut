@@ -8,6 +8,7 @@ import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, packSizeLabel, parseDecimal, unitDecimals } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import { isD65Key } from '../../lib/ingredientFeatures'
+import { defaultPackName } from '../../lib/purchasing'
 import type { IngredientCategory, Party, SupplierOffer } from '../../lib/types'
 
 interface OfferDialogProps {
@@ -50,7 +51,7 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
   const [packSize, setPackSize] = useState(offer?.pack_size ?? (hops ? '11' : d65 ? '' : '55'))
   // D62 §3.5: grain offers are sacks, hop offers 11 lb boxes; D65: picked (null: the unit's usual pack).
   const [pickedPack, setPickedPack] = useState<string | null>(offer?.pack_name ?? null)
-  const packName = pickedPack ?? (hops ? 'box' : d65 ? (catalog?.default_packs[storedUnit ?? ''] ?? packNames[0] ?? 'pack') : 'sack')
+  const packName = pickedPack ?? (hops ? 'box' : d65 ? (defaultPackName(catalog?.default_packs, storedUnit, packNames) ?? 'pack') : 'sack')
   const [form, setForm] = useState<'milled' | 'whole'>(offer?.form ?? 'whole')
   const [notes, setNotes] = useState(offer?.notes ?? '')
   // D65 (A16): a note on the pack, "5 lb" for a tub of 872 tablets.

@@ -1,7 +1,7 @@
 // D61 §3.2–3.4: orders and receiving on the screens: money, the running
 // total and target progress, whole packs (D62 §3.5; sacks for grain), the
 // previous lot (A3) and how a line's lot rows add up.
-import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, packPlural, packWord, parseDecimal, unitDecimals, type QuantityDisplay } from './brewingUnits'
+import { LB_DECIMALS, PRICE_DECIMALS, formatQuantity, packPlural, packWord, parseDecimal, unitDecimals, unitWord, type QuantityDisplay } from './brewingUnits'
 import type { IngredientLot, OrderStatus, UnitQuantity } from './types'
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
@@ -48,10 +48,10 @@ export function reorderListPack(rowPacks: (string | null)[]): string | null {
 
 /** "1,980 lb": a quantity in its unit (whole numbers for `each`). */
 export const amountText = (quantity: string | number, unit: string) =>
-  `${Number(quantity).toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unit}`
+  `${Number(quantity).toLocaleString('en-US', { maximumFractionDigits: unitDecimals(unit) })} ${unitWord(unit, Number(quantity))}`
 
 /** "1,980 lb · 11.5 gal": quantities per unit, never added together (D62 §3.8). */
-export const byUnitText = (byUnit: UnitQuantity[]) => byUnit.map((u) => amountText(u.quantity, u.unit)).join(' · ')
+export const byUnitText = (byUnit: UnitQuantity[]) => byUnit.map((u) => amountText(u.quantity, u.unit_label ?? u.unit)).join(' · ')
 
 /**
  * The one pack name a set of lines shares ("sack" on a grain-only order),
@@ -290,4 +290,14 @@ export function hopBoxPrice(perLb: string, boxSize: string | number | null | und
   const parsed = parseDecimal(perLb, PRICE_DECIMALS)
   if (!parsed.ok || parsed.value == null || !boxSize) return null
   return `${money(Number(parsed.value) * Number(boxSize))} / box`
+}
+
+/**
+ * D65 lead decisions 1 (gap 3, the API's `Catalog.default_pack_in/2`): the
+ * pack a new offer in `unit` starts with: the unit's usual one when the
+ * category takes it, else the category's first ("bottle" for a fl oz spice).
+ */
+export function defaultPackName(defaults: Record<string, string> | undefined, unit: string | null | undefined, names: string[]): string | null {
+  const usual = defaults?.[unit ?? '']
+  return usual && names.includes(usual) ? usual : (names[0] ?? null)
 }

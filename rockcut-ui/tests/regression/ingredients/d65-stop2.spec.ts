@@ -61,7 +61,7 @@ test.describe('fruit', () => {
     await makeD65Product(strawberry.id, 'Whole', 'lb')
     const supplier = await makeSupplier('Fruit supplier', null)
     await page.goto(`/ingredients/products/${puree.id}`)
-    await expect(page.getByTestId('product-item')).toContainText('6.5–9 °Bx')
+    await expect(page.getByTestId('product-item')).toContainText('6.5–9.0 °Bx')
 
     // The offer dialog starts gal at a pail; a note follows the pack.
     const o = await openDialog(page, page.getByTestId('product-add-offer'), 'offer-dialog')
@@ -75,7 +75,7 @@ test.describe('fruit', () => {
     // Add lot: Brix optional, the typical range beside it; 8.55 can't be typed; 8.5 saves.
     const d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
     await pick(page, d, /Supplier offer/, /pail · 5 gal/)
-    await expect(d.getByText('typical 6.5–9')).toBeVisible()
+    await expect(d.getByText('typical 6.5–9.0')).toBeVisible()
     await d.getByTestId('lot-number').fill(tempTag('S lot'))
     await d.getByTestId('lot-quantity-packs').fill('1')
     await d.getByTestId('feature-brix').fill('8.55')
@@ -107,7 +107,7 @@ test.describe('fruit', () => {
 
     // §5.1: the Fruits list shows the Brix range.
     await page.goto(`/ingredients?category=${await categoryId('fruits')}`)
-    await expect(page.getByTestId(`product-brix-${puree.id}`)).toHaveText('6.5–9')
+    await expect(page.getByTestId(`product-brix-${puree.id}`)).toHaveText('6.5–9.0')
 
     expect(await onHand({ product_id: puree.id })).toMatchObject({ status: 'ok', value: 11.5, unit: 'gal' })
     expect(await onHand({ ingredient_id: strawberry.id })).toMatchObject({ status: 'error', message: `${strawberry.name}'s products are in different units; ask for one product.` })
@@ -148,7 +148,7 @@ test.describe('sugars', () => {
       data: { product_id: dry.id, received_date: denverToday(), initial_kind: 'opening', initial_quantity: '50', features: { brix: '40' } },
     })
     expect(res.status()).toBe(422)
-    expect((await res.json()).errors.features.brix).toEqual(['Brix is only for Liquid products'])
+    expect((await res.json()).errors.features.brix).toEqual(['Brix is only for Liquid sugars'])
   })
 })
 
@@ -250,7 +250,7 @@ test.describe('purchasing', () => {
     await owner.getByTestId('totals-inventory-supplier').click()
     await owner.getByRole('option', { name: supplier.name }).click()
     await expect(owner.getByTestId(`totals-inventory-${wf.id}-lb`)).toHaveText('600 tablets')
-    await expect(owner.getByTestId('totals-inventory-total-each')).toHaveText('600 each')
+    await expect(owner.getByTestId('totals-inventory-total-each')).toHaveText('600 tablets')
     await expect(owner.getByTestId('totals-inventory-total-lb')).toHaveText(`${(30 * 55 + 6 * 11 + 2 * 50).toLocaleString('en-US')} lb`)
     await expect(owner.getByTestId('totals-inventory-total')).toContainText('$')
     await owner.context().grantPermissions(['clipboard-read', 'clipboard-write'])
@@ -268,7 +268,7 @@ test.describe('purchasing', () => {
     await owner.getByTestId('totals-orders-supplier').click()
     await owner.getByRole('option', { name: supplier.name }).click()
     await expect(owner.getByTestId('totals-orders-total-received')).toHaveText('2 bags · 6 boxes · 30 sacks · 1 tub')
-    await expect(owner.getByTestId('totals-orders-total-quantity')).toContainText('872 each')
+    await expect(owner.getByTestId('totals-orders-total-quantity')).toContainText('872 tablets')
     await owner.context().close()
   })
 
@@ -486,7 +486,7 @@ test.describe('edges', () => {
       await makeD65Lot(wf, '1272')
 
       await page.goto(`/ingredients/products/${fruit.id}`)
-      await expect(page.getByTestId('product-item')).toContainText('17–20 °Bx')
+      await expect(page.getByTestId('product-item')).toContainText('17.0–20.0 °Bx')
       await expectNoSidewaysScroll(page)
       const d = await openDialog(page, page.getByTestId('product-add-lot'), 'add-lot-dialog')
       await expect(d.getByTestId('feature-brix')).toBeVisible()

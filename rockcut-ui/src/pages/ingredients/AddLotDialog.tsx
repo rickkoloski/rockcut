@@ -8,7 +8,7 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { parseDecimal, packSizeLabel, productPack, unitDecimals } from '../../lib/brewingUnits'
+import { minQuantity, parseDecimal, packSizeLabel, productPack, productShortName, unitDecimals } from '../../lib/brewingUnits'
 import { draftsFrom, draftsValid, featuresPayload, isD65Key, lotFeatureBasis, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, unitLabel, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS } from '../../lib/inventory'
 import { defaultLotSupplier, offerPackText } from '../../lib/purchasing'
@@ -79,7 +79,9 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
   }
 
   const submit = async () => {
-    if (!quantity.valid || !quantity.quantity || Number(quantity.quantity) <= 0) return setError('Enter the quantity')
+    if (!quantity.valid || !quantity.quantity) return setError('Enter the quantity')
+    // D65 lead decisions 1 (gap 7): 0 says the smallest the API takes ("Enter at least 1 tablet").
+    if (Number(quantity.quantity) <= 0) return setError(minQuantity(unitLabel(product)))
     if (!received) return setError('Pick the received date')
     if (received > coloradoToday()) return setError(FUTURE_DATE)
     if (hops && crop.error) return setError(crop.error)
@@ -194,6 +196,7 @@ function AddLotForm({ onClose, product }: { onClose: () => void; product: Ingred
         packSize={packQty}
         packName={packName}
         unit={unitLabel(product)}
+        productName={productShortName(product)}
         label="Quantity"
         onChange={setQuantity}
         testId="lot-quantity"
