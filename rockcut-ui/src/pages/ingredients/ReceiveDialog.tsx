@@ -13,7 +13,7 @@ import api from '../../lib/api'
 import parseApiError from '../../lib/parseApiError'
 import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { FUTURE_DATE, GRAIN_KEYS, ORDER_KEYS } from '../../lib/inventory'
-import { lineForError, lotChoiceLabel, parsePacks, previousLot, receivableLots, sharedPackName, splitSummary } from '../../lib/purchasing'
+import { emptySplitText, lineForError, lotChoiceLabel, parsePacks, previousLot, receivableLots, sharedPackName, splitSummary } from '../../lib/purchasing'
 import { formatFeature, packLabel, packPlural } from '../../lib/brewingUnits'
 import { coloradoToday } from '../../lib/tasks'
 import type { ApiResponse, FeatureType, IngredientLot, IngredientProduct, PurchaseOrder, PurchaseOrderLine } from '../../lib/types'
@@ -281,6 +281,8 @@ interface ReceiveLineProps {
 function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, newRow }: ReceiveLineProps) {
   const { mode } = useQuantityDisplay()
   const { choices, received, split, targetOf, existingOf, draftsOf, summary, product } = view
+  // Decisions 5, gap 3: a split of 0 says why Receive waits.
+  const emptySplit = split ? emptySplitText(state.rows.map((r) => r.packs), line.offer.pack_name) : null
 
   const setRow = (key: number, patch: Partial<Row>) => onChange({ ...state, rows: state.rows.map((r) => (r.key === key ? { ...r, ...patch } : r)) })
 
@@ -336,6 +338,7 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
                     size="small"
                     value={r.packs}
                     onChange={(e) => setRow(r.key, { packs: e.target.value })}
+                    error={parsePacks(r.packs, 0) === 0}
                     sx={{ width: 90, flexShrink: 0 }}
                     slotProps={{ htmlInput: { inputMode: 'numeric', autoComplete: 'off', 'data-testid': `receive-line-${index}-row-${ri}-packs` } }}
                   />
@@ -416,6 +419,11 @@ function ReceiveLine({ index, line, state, view, featureTypes, error, onChange, 
           {split && (
             <Typography variant="body2" color={summary.ok ? 'text.secondary' : 'error'} data-testid={`receive-line-${index}-split`}>
               {summary.text}
+            </Typography>
+          )}
+          {emptySplit && (
+            <Typography variant="body2" color="error" sx={{ flexBasis: '100%' }} data-testid={`receive-line-${index}-split-empty`}>
+              {emptySplit}
             </Typography>
           )}
         </Box>

@@ -169,6 +169,14 @@ export function splitSummary(rows: (number | null)[], received: number): { text:
 }
 
 /**
+ * D62 lead decisions 5, gap 3: a split row of 0 says why Receive waits
+ * ("Each lot needs at least 1 box. Remove the empty one."); null otherwise.
+ */
+export function emptySplitText(rows: string[], packName: string | null | undefined): string | null {
+  return rows.some((r) => parsePacks(r, 0) === 0) ? `Each lot needs at least 1 ${packName ?? 'pack'}. Remove the empty one.` : null
+}
+
+/**
  * Which line an API refusal from Receive belongs to: the first whose product
  * or offer it names, else the first with a lot it names (`lots`: the lot
  * numbers each line's rows name, any case: "Lot W123 is expired"), else the
