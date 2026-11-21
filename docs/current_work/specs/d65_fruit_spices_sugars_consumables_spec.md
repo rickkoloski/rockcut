@@ -415,8 +415,8 @@ Maple syrup is left out: Matt will check its specs and add it by hand.
 had two cost/Brix column pairs. Only the **second** is used ("ignore the first").
 
 **Decisions:**
-1. **Aseptic Fruit is both manufacturer and supplier** of every fruit. The spelling is the lead's
-   correction of "Asceptic", for Matt to confirm.
+1. **Aseptic Fruit is both manufacturer and supplier** of every fruit. The spelling was confirmed by
+   Matt.
 2. **Brix is a typical range on the fruit product** (low–high), as hops carry alpha. This changes
    §4.4 for Fruits from "lot only" to **range on the product + optional actual on the lot**. The
    lot doesn't copy the range; it shows it beside the box, and an actual outside the range is
