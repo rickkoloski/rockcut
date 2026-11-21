@@ -315,11 +315,11 @@ value against the salt's formula.
 
 | Salt | Formula | Ca | Mg | CO₃ | HCO₃ | SO₄ | Na | Cl |
 |---|---|---|---|---|---|---|---|---|
-| Chalk | CaCO₃ | 105.8 | | 158.4 | | | | |
-| Baking Soda | NaHCO₃ | | | | 191.9 | | 72.3 | |
-| Gypsum (Hydrous) | CaSO₄·2H₂O | 61.5 | | | | 147.4 | | |
-| Epsom Salt (Hydrous) | MgSO₄·7H₂O | | 26.1 | | | 103.0 | | |
-| Table Salt | NaCl | | | | | | 103.9 | 160.3 |
+| Calcium Carbonate (Chalk) | CaCO₃ | 105.8 | | 158.4 | | | | |
+| Sodium Bicarbonate (Baking Soda) | NaHCO₃ | | | | 191.9 | | 72.3 | |
+| Calcium Sulfate (Gypsum) | CaSO₄·2H₂O | 61.5 | | | | 147.4 | | |
+| Magnesium Sulfate (Epsom Salt) | MgSO₄·7H₂O | | 26.1 | | | 103.0 | | |
+| Sodium Chloride (Table Salt) | NaCl | | | | | | 103.9 | 160.3 |
 | Calcium Chloride (Hydrous) | CaCl₂·2H₂O | 72.0 | | | | | | 127.4 |
 | Calcium Chloride (Anhydrous) | CaCl₂ | 95.4 | | | | | | 168.8 |
 
@@ -341,18 +341,18 @@ value against the salt's formula.
    None"). This amends A6 for Water Salts only; grain, hops and D65's other categories keep it
    required.
    - It's stored as null and shown as **"None"** in lists, pickers and Totals.
-   - The duplicate rule treats null as one value, so a second None Gypsum Powder is refused.
-   - Product names read "Gypsum (Hydrous) Powder · None".
+   - The duplicate rule treats null as one value, so a second None Calcium Sulfate (Gypsum) Powder is refused.
+   - Product names read "Calcium Sulfate (Gypsum) Powder · None".
 4. **Supplier BSG.** These products, one offer each, are seeded on every environment:
 
    | Ingredient | Form | Unit | BSG offer | Price |
    |---|---|---|---|---|
    | Calcium Chloride (Hydrous) | Flake | lb | bag · 50 lb | $77.00/bag ($1.54/lb) |
-   | Gypsum (Hydrous) | Powder | lb | bag · 50 lb | $32.00/bag ($0.64/lb) |
-   | Chalk (calcium carbonate) | Powder | lb | bag · 50 lb | $66.00/bag ($1.32/lb) |
-   | Epsom Salt (Hydrous) | Powder | lb | bag · 50 lb | $97.00/bag ($1.94/lb) |
-   | Table Salt (sodium chloride) | Powder | lb | bag · 50 lb | $34.00/bag ($0.68/lb) |
-   | Baking Soda (sodium bicarbonate) | Powder | lb | bag · 50 lb | $47.00/bag ($0.94/lb) |
+   | Calcium Sulfate (Gypsum) | Powder | lb | bag · 50 lb | $32.00/bag ($0.64/lb) |
+   | Calcium Carbonate (Chalk) | Powder | lb | bag · 50 lb | $66.00/bag ($1.32/lb) |
+   | Magnesium Sulfate (Epsom Salt) | Powder | lb | bag · 50 lb | $97.00/bag ($1.94/lb) |
+   | Sodium Chloride (Table Salt) | Powder | lb | bag · 50 lb | $34.00/bag ($0.68/lb) |
+   | Sodium Bicarbonate (Baking Soda) | Powder | lb | bag · 50 lb | $47.00/bag ($0.94/lb) |
 
    - Prices are effective 2026-11-20.
    - No lots or on-hand amounts were given, so none are seeded.
@@ -360,3 +360,7 @@ value against the salt's formula.
    - Forms (Flake for the calcium chloride, Powder for the rest, including the sodium salts) are the lead's guess (**A13**,
      to confirm).
    - The seed is idempotent by name, as D62's hops.
+5. **Names (Matt):** the chemical name, with the common name in parentheses. Gypsum and Epsom
+   salt are hydrous by definition, so their names drop "(Hydrous)". Calcium chloride has no common
+   name, so its parentheses hold the hydration: "Calcium Chloride (Hydrous)" and "(Anhydrous)".
+   The seed renames the existing seeded ingredients by name (idempotent).
