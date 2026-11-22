@@ -97,6 +97,16 @@ export class Yeast {
     return batchOf(b.id)
   }
 
+  /**
+   * D64 Stop 4: a batch purchased yeast was pitched into can't be deleted
+   * (the movement holds it, and no API removes a movement). It and its brand
+   * are left for `mix rockcut.synthetic.setup`, which drops the link first.
+   */
+  keep(batch: { id: number; brand_id: number }) {
+    this.made.batches = this.made.batches.filter((id) => id !== batch.id)
+    this.made.brands = this.made.brands.filter((id) => id !== batch.brand_id)
+  }
+
   async cleanup() {
     const brewer = await apiAs('brewer1')
     const mgr = await apiAs('breweryMgr')

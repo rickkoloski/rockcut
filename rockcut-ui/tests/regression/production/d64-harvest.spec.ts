@@ -228,3 +228,25 @@ test('one press at a time: a double press on Save writes once', async ({ page })
   expect(posts).toBe(1)
   expect((await history(tb.id))[0].entries).toHaveLength(1)
 })
+
+test('Stop 4: Delete planned batch is refused once yeast went into it, with the sentence; nothing deleted', async ({ page }) => {
+  const us05 = await yeastProduct('US-05')
+  const tb = await yeast.brink('YB-del')
+  const a = await yeast.brewed('Galactic')
+  const brand = await yeast.made.brand('Oktoberfest')
+  const tank = await yeast.made.tank('FV')
+  const planned = await yeast.made.plan({ brand_id: brand.id, template: '[SEED] Standard ale', brew_on: today(), tank_ids: [tank.id] })
+  const api = await apiAs('brewer1')
+  const h = stepOf(a, 'Yeast harvest')
+  expect(
+    (await api.post(`/api/production/steps/${h.id}/complete`, { data: { done_on: h.due_on, yeast_outcome: 'harvested', yeast_brink_id: tb.id, yeast_lb: '20', yeast_product_ids: [us05.id], yeast_generation: 1 } })).status(),
+  ).toBe(200)
+  await pitchFrom(tb.id, planned.id, '5')
+
+  await openGantt(page)
+  await page.getByTestId(`gantt-bar-${planned.id}-0`).click()
+  await page.getByTestId('batch-delete').click()
+  await page.getByRole('dialog', { name: 'Delete planned batch' }).getByRole('button', { name: 'Delete' }).click()
+  await expect(page.getByTestId('batch-dialog-error')).toHaveText(`${planned.label} has yeast pitched into it or harvested from it. Remove those first.`)
+  expect(await batchOf(planned.id)).toBeTruthy()
+})
