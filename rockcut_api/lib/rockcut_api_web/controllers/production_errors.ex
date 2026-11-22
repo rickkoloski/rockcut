@@ -132,6 +132,16 @@ defmodule RockcutApiWeb.ProductionErrors do
     })
   end
 
+  # D64 Stop 4: a batch that yeast was pitched into or harvested from isn't deleted.
+  def handle({:error, {:batch_has_yeast, _} = reason}, conn) do
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{
+      error: "batch_has_yeast",
+      message: RockcutApi.Production.Batches.yeast_message(reason)
+    })
+  end
+
   # D64 §5.4 (decision 12): un-check and Undo of a harvest something followed.
   def handle({:error, {:yeast_locked, brink}}, conn) do
     conn

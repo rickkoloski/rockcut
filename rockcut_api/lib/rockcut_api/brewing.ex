@@ -552,7 +552,19 @@ defmodule RockcutApi.Brewing do
     |> preload_on_ok(@batch_preloads)
   end
 
-  def delete_batch(%Batch{} = batch), do: Repo.delete(batch)
+  @doc """
+  The batches page's delete. D64 Stop 4: refused (422) while the batch has
+  yeast pitched into it or harvested from it.
+  """
+  def delete_batch(%Batch{} = batch) do
+    case RockcutApi.Production.Batches.yeast_blocked([batch.id]) do
+      nil ->
+        Repo.delete(batch)
+
+      reason ->
+        {:error, {:invalid, %{base: [RockcutApi.Production.Batches.yeast_message(reason)]}}}
+    end
+  end
 
   # ── Brew Turns ─────────────────────────────────────────────────────
 

@@ -43,7 +43,7 @@ defmodule RockcutApi.Production.Undo do
   alias RockcutApi.Repo
   alias RockcutApi.Accounts.User
   alias RockcutApi.Brewing.Batch
-  alias RockcutApi.Production.{BatchChanges, Steps, TaskLink, UndoRecord}
+  alias RockcutApi.Production.{BatchChanges, Batches, Steps, TaskLink, UndoRecord}
 
   @ttl_seconds 120
 
@@ -199,6 +199,10 @@ defmodule RockcutApi.Production.Undo do
   # Put every row back, then check the order rules on the result.
   defp put_back!(entries, user) do
     {gone, back} = Enum.split_with(entries, &is_nil(&1["before"]))
+
+    # D64 Stop 4: a batch the write made (Plan, Split) that yeast went into
+    # or came out of since isn't deleted by its Undo.
+    Batches.yeast_blocked!(for e <- gone, e["table"] == "batches", do: e["id"])
 
     # Children before parents, and within a table the later rows first (a
     # split's parts before their parent); put back the other way (D48 QA M2).

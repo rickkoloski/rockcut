@@ -23,6 +23,34 @@ defmodule RockcutApi.Yeast.Generations do
   alias RockcutApi.Production.Step
   alias RockcutApi.Yeast.{Entry, Harvest, Rules}
 
+  @doc """
+  D64 Stop 4: which of `batch_ids` have yeast pitched into them (a lot's
+  `used` movement naming the batch, or a brink's `pitched` entry) or
+  harvested from them (a `harvested` entry). Those rows hold the batch, so
+  it can't be deleted until they're removed (`Batches.yeast_blocked/1`).
+  """
+  def batches_with_yeast([]), do: MapSet.new()
+
+  def batches_with_yeast(batch_ids) do
+    movements =
+      Repo.all(
+        from m in Movement,
+          where: m.batch_id in ^batch_ids,
+          distinct: true,
+          select: m.batch_id
+      )
+
+    entries =
+      Repo.all(
+        from e in Entry,
+          where: e.batch_id in ^batch_ids and e.kind in ["pitched", "harvested"],
+          distinct: true,
+          select: e.batch_id
+      )
+
+    MapSet.new(movements ++ entries)
+  end
+
   @doc "The defaults `Rules.from_sources/1` gives a harvest of `batch_id`; nil with no pitches."
   def for_batch(nil), do: nil
 

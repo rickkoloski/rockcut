@@ -276,6 +276,8 @@ defmodule RockcutApi.Production.Splits do
               do: put_link!(a, b, answer)
       end
 
+      # D64 Stop 4: a part with yeast pitched into it or harvested from it stays.
+      Batches.yeast_blocked!(part_ids)
       Repo.delete_all(from(b in Batch, where: b.id in ^part_ids))
       parent |> Ecto.Changeset.change(split_links: nil) |> Repo.update!()
       BatchChanges.no_tank_twice!(parent, [k + 1])
