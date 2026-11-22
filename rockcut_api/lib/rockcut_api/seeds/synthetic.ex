@@ -50,6 +50,15 @@ defmodule RockcutApi.Seeds.Synthetic do
   each with a BSG offer and price, a minimum of 2 packs and one lot, so To
   order and Totals have mixed units (their own ingredients: no clash with
   the D65 reference data).
+  D64: `[SEED] Dry Ale` (Dry, Fermentis, bricks from BSG) and `[SEED] Liquid
+  Ale` (Liquid, White Labs, a 7 bbl pitchable), each with an offer and
+  price, a minimum and one lot; Galactic #40 gets a Yeast harvest due today
+  (not done), and Enos #41 one done 3 days ago that pulled 42 lb of `[SEED]
+  Dry Ale` gen 2 into YB2, counted the same day; YB3 is empty and dirty with
+  its open "Clean YB3" task. Their records and tasks are tagged on `notes`
+  and go first on the next setup; yeast rows of anything else that point at
+  a `[SEED]` batch lose the link before the batch is rebuilt. Needs the D64
+  reference data (Fermentis, White Labs, BSG) and YB2/YB3; skipped without.
     * `mint_token/1`   — short-lived session token for a persona (the default
                           way agents log in; see the credentials policy).
 
@@ -864,6 +873,7 @@ defmodule RockcutApi.Seeds.Synthetic do
     seed_production(u, today)
     seed_inventory(u, today)
     seed_d65_inventory(u, today)
+    seed_d64_yeast(u, today)
 
     # One notification per persona so the bell has something in it (no push/email).
     for {_key, user} <- u do
@@ -926,6 +936,12 @@ defmodule RockcutApi.Seeds.Synthetic do
     # API (only retired), so the specs' brinks end up here.
     brink_ids = from(b in RockcutApi.Yeast.Brink, where: like(b.name, ^pattern), select: b.id)
     Repo.delete_all(from(t in Task, where: t.yeast_brink_id in subquery(brink_ids)))
+    # D64 Stop 4: tagged records (notes) in any brink, and tagged brink tasks.
+    Repo.delete_all(from(h in RockcutApi.Yeast.Harvest, where: like(h.notes, ^pattern)))
+
+    Repo.delete_all(
+      from(t in Task, where: not is_nil(t.yeast_brink_id) and like(t.notes, ^pattern))
+    )
 
     Repo.delete_all(from(h in RockcutApi.Yeast.Harvest, where: h.brink_id in subquery(brink_ids)))
 
@@ -1310,6 +1326,199 @@ defmodule RockcutApi.Seeds.Synthetic do
     end
   end
 
+  ## Yeast (D64 Stop 4)
+
+  # {ingredient, lab, supplier, code, form, pack, price, lot quantity}
+  @d64_seed [
+    {"Dry Ale", "Fermentis", "BSG", "SD-1", "Dry", "brick", "76.99", "6"},
+    {"Liquid Ale", "White Labs", "White Labs", "SL-1", "Liquid", "pitchable", "165.00", "2"}
+  ]
+
+  defp seed_d64_yeast(u, today) do
+    yeast = Repo.one(from(c in IngredientCategory, where: c.key == "yeast", select: c.id))
+
+    parties =
+      Map.new(
+        Repo.all(from(p in Party, where: p.name in ["Fermentis", "White Labs", "BSG"])),
+        &{&1.name, &1}
+      )
+
+    brinks =
+      Map.new(
+        Repo.all(from(b in RockcutApi.Yeast.Brink, where: b.name in ["YB2", "YB3"])),
+        &{&1.name, &1}
+      )
+
+    pitch_bbl = Repo.get_by(RockcutApi.Ingredients.FeatureType, key: "pitch_bbl")
+
+    if yeast && map_size(parties) == 3 && map_size(brinks) == 2 && pitch_bbl do
+      products =
+        for {name, lab, supplier, code, form, pack, price, quantity} <- @d64_seed, into: %{} do
+          ingredient =
+            Repo.insert!(%Ingredient{name: "#{@seed_tag} #{name}", category_id: yeast})
+
+          product =
+            Repo.insert!(%Product{
+              ingredient_id: ingredient.id,
+              manufacturer_party_id: parties[lab].id,
+              name: code,
+              form: form,
+              unit: "each",
+              min_on_hand_packs: 2
+            })
+
+          if form == "Liquid" do
+            Repo.insert!(%RockcutApi.Ingredients.ProductFeatureValue{
+              product_id: product.id,
+              feature_type_id: pitch_bbl.id,
+              value: Decimal.new(7)
+            })
+          end
+
+          offer =
+            Repo.insert!(%SupplierOffer{
+              product_id: product.id,
+              supplier_party_id: parties[supplier].id,
+              pack_name: pack,
+              pack_size: Decimal.new(1),
+              pack_note: if(form == "Dry", do: "500 g")
+            })
+
+          Repo.insert!(%OfferPrice{
+            offer_id: offer.id,
+            price_per_pack: Decimal.new(price),
+            effective_on: Date.add(today, -30)
+          })
+
+          received = Date.add(today, -10)
+
+          lot =
+            Repo.insert!(%IngredientLot{
+              ingredient_id: ingredient.id,
+              product_id: product.id,
+              supplier_party_id: parties[supplier].id,
+              pack_name: pack,
+              pack_size: Decimal.new(1),
+              lot_number: "#{@seed_tag} #{code}",
+              received_date: received,
+              status: "available"
+            })
+
+          if form == "Liquid" do
+            Repo.insert!(%LotFeatureValue{
+              lot_id: lot.id,
+              feature_type_id: pitch_bbl.id,
+              value: Decimal.new(7)
+            })
+          end
+
+          Repo.insert!(%Movement{
+            lot_id: lot.id,
+            kind: "opening",
+            quantity: Decimal.new(quantity),
+            occurred_on: received,
+            note: "#{@seed_tag} Opening amount",
+            entered_by_id: u["brewer1"].id
+          })
+
+          {form, product}
+        end
+
+      seed_d64_harvests(u, today, products["Dry"], brinks)
+    else
+      Logger.info("Synthetic setup: no D64 reference data or YB2/YB3; no D64 [SEED] yeast.")
+    end
+  end
+
+  # Galactic #40: a Yeast harvest due today. Enos #41: one done 3 days ago,
+  # 42 lb of [SEED] Dry Ale gen 2 into YB2, counted that day. YB3: dirty,
+  # with its Clean task. Records and tasks tagged on notes.
+  defp seed_d64_harvests(u, today, dry, brinks) do
+    type = Repo.get_by!(StepType, behavior: "yeast_harvest")
+
+    batch = fn number ->
+      Repo.one(
+        from(b in Batch, where: like(b.notes, ^"#{@seed_tag}%") and b.batch_number == ^number)
+      )
+    end
+
+    brewer = %{u["brewer1"] | on_device_id: nil}
+    first_task = Repo.one(from(t in Task, select: max(t.id))) || 0
+
+    with %Batch{} = galactic <- batch.("40"), %Batch{} = enos <- batch.("41") do
+      {:ok, _} = BatchChanges.add_step(galactic, %{"step_type_id" => type.id, "due_on" => today})
+      on = Date.add(today, -3)
+
+      {:ok, %{step_ids: [step_id]}} =
+        BatchChanges.add_step(enos, %{"step_type_id" => type.id, "due_on" => on})
+
+      yb2 = brinks["YB2"]
+
+      if RockcutApi.Yeast.Harvests.open_record(yb2.id) do
+        Logger.info("Synthetic setup: YB2 holds yeast already; no [SEED] harvest into it.")
+      else
+        yb2 |> Ecto.Changeset.change(dirty: false, dirty_since: nil) |> Repo.update!()
+
+        Repo.update_all(from(s in Step, where: s.id == ^step_id),
+          set: [
+            done_on: on,
+            done_by_id: brewer.id,
+            completed_at: now(),
+            yeast_outcome: "harvested",
+            yeast_note: "#{@seed_tag} good slurry"
+          ]
+        )
+
+        {:ok, record} =
+          RockcutApi.Yeast.Harvests.harvest(
+            %{
+              "brink_id" => yb2.id,
+              "lb" => "42",
+              "occurred_on" => Date.to_iso8601(on),
+              "batch_id" => enos.id,
+              "product_ids" => [dry.id],
+              "generation" => 2,
+              "note" => "good slurry",
+              "production_step_id" => step_id
+            },
+            brewer
+          )
+
+        record |> Ecto.Changeset.change(notes: "#{@seed_tag} YB2") |> Repo.update!()
+
+        {:ok, _} =
+          RockcutApi.Yeast.Counts.create(
+            %{
+              "brink_id" => yb2.id,
+              "counted_on" => Date.to_iso8601(on),
+              "viable_millions_per_ml" => "1200",
+              "viability_pct" => "92"
+            },
+            brewer
+          )
+      end
+
+      TaskLink.sync!(
+        Repo.all(from(s in Step, where: s.batch_id in ^[galactic.id, enos.id], select: s.id))
+      )
+    end
+
+    yb3 = brinks["YB3"]
+    dirty_on = Date.add(today, -1)
+    yb3 |> Ecto.Changeset.change(dirty: true, dirty_since: dirty_on) |> Repo.update!()
+
+    unless RockcutApi.Yeast.BoardTasks.open_task(yb3.id, "clean"),
+      do: RockcutApi.Yeast.BoardTasks.open!(yb3, "clean", dirty_on, brewer)
+
+    # The brink tasks this setup made are [SEED]'s, for the next setup to take.
+    Repo.update_all(
+      from(t in Task, where: t.id > ^first_task and not is_nil(t.yeast_brink_id)),
+      set: [notes: "#{@seed_tag} yeast"]
+    )
+
+    Tasks.compact_lists(Repo.get_by!(Department, key: "brewery"))
+  end
+
   defp seed_party!(name, role) do
     party =
       case Repo.get_by(Party, name: name) do
@@ -1376,6 +1585,25 @@ defmodule RockcutApi.Seeds.Synthetic do
   # the clean-up. Then the [SEED] batches (tagged on notes), rebuilt around
   # today, and one signed-off flag (Enos is bigger than FV1).
   defp seed_batches(u, today) do
+    # D64 Stop 4: yeast rows of anything else (a QA pitch, a harvest) that
+    # name a batch about to go lose the link, so the batch can go.
+    seeded_or_stray =
+      from(b in Batch,
+        where:
+          like(b.notes, ^"#{@seed_tag}%") or
+            b.id not in subquery(from(v in BatchVessel, select: v.batch_id)),
+        select: b.id
+      )
+
+    Repo.update_all(from(m in Movement, where: m.batch_id in subquery(seeded_or_stray)),
+      set: [batch_id: nil]
+    )
+
+    Repo.update_all(
+      from(e in RockcutApi.Yeast.Entry, where: e.batch_id in subquery(seeded_or_stray)),
+      set: [batch_id: nil]
+    )
+
     Repo.delete_all(
       from(b in Batch, where: b.id not in subquery(from(v in BatchVessel, select: v.batch_id)))
     )

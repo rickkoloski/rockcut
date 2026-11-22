@@ -151,4 +151,118 @@ defmodule RockcutApi.Seeds.D64SeedsTest do
     seed!()
     assert Repo.get!(SupplierOffer, offer.id).pack_note == "11.5 g × 40"
   end
+
+  describe "D64 Stop 4: synthetic [SEED] yeast" do
+    alias RockcutApi.Brewing.Batch
+    alias RockcutApi.Production.Step
+    alias RockcutApi.Tasks.Task
+    alias RockcutApi.Yeast.{Brink, Count, Entry, Harvest, Harvests}
+
+    defp yeast_state do
+      today = RockcutApi.Tasks.today()
+
+      seed_products =
+        Repo.all(
+          from p in Product,
+            join: i in assoc(p, :ingredient),
+            where: like(i.name, "[SEED]%") and i.category_id in ^Catalog.category_ids(["yeast"]),
+            order_by: i.name,
+            preload: [:lots, :feature_values, offers: :prices],
+            select: {i.name, p}
+        )
+        |> Enum.map(fn {name, p} ->
+          {name, p.name, p.form, p.min_on_hand_packs, length(p.lots), length(p.offers),
+           Enum.map(p.feature_values, &Decimal.to_string(Decimal.normalize(&1.value)))}
+        end)
+
+      yb2 = Repo.get_by!(Brink, name: "YB2")
+      yb3 = Repo.get_by!(Brink, name: "YB3")
+      record = Harvests.open_record(yb2.id)
+
+      harvest_steps =
+        Repo.all(
+          from s in Step,
+            join: t in assoc(s, :step_type),
+            join: b in Batch,
+            on: b.id == s.batch_id,
+            where: t.behavior == "yeast_harvest" and like(b.notes, "[SEED]%"),
+            order_by: b.batch_number,
+            select: {b.batch_number, s.due_on, s.done_on, s.yeast_outcome}
+        )
+
+      %{
+        products: seed_products,
+        yb2:
+          record &&
+            {Decimal.to_string(Decimal.normalize(Harvests.on_hand(record))), record.generation,
+             Repo.all(from c in Count, where: c.harvest_id == ^record.id, select: c.counted_on)},
+        yb2_entry_step:
+          record &&
+            Repo.one(
+              from e in Entry,
+                where: e.harvest_id == ^record.id,
+                select: not is_nil(e.production_step_id)
+            ),
+        yb3: {yb3.dirty, Harvests.open_record(yb3.id)},
+        open_yeast_tasks:
+          Repo.all(
+            from t in Task,
+              where: not is_nil(t.yeast_brink_id) and is_nil(t.completed_at),
+              order_by: t.title,
+              select: t.title
+          ),
+        steps: harvest_steps,
+        records: Repo.aggregate(Harvest, :count),
+        today: today
+      }
+    end
+
+    test "setup twice: the products, Galactic #40's harvest due today, #41's 42 lb gen 2 in YB2 counted 3 days ago, YB3 dirty with Clean YB3" do
+      seed!()
+      {:ok, _} = RockcutApi.Seeds.Synthetic.setup()
+      first = yeast_state()
+      {:ok, _} = RockcutApi.Seeds.Synthetic.setup()
+      assert yeast_state() == first
+
+      today = first.today
+      on = Date.add(today, -3)
+
+      assert first.products == [
+               {"[SEED] Dry Ale", "SD-1", "Dry", 2, 1, 1, []},
+               {"[SEED] Liquid Ale", "SL-1", "Liquid", 2, 1, 1, ["7"]}
+             ]
+
+      assert first.steps == [{"40", today, nil, nil}, {"41", on, on, "harvested"}]
+      assert first.yb2 == {"42", 2, [on]}
+      assert first.yb2_entry_step
+      assert first.yb3 == {true, nil}
+      assert first.open_yeast_tasks == ["Clean YB3"]
+      assert first.records == 1
+    end
+
+    test "a QA pitch into a [SEED] batch doesn't stop the next setup (the link goes); [TEST-TEMP] brinks go" do
+      seed!()
+      {:ok, _} = RockcutApi.Seeds.Synthetic.setup()
+
+      galactic =
+        Repo.one!(from b in Batch, where: like(b.notes, "[SEED]%") and b.batch_number == "40")
+
+      [lot] = Repo.all(from l in IngredientLot, where: like(l.lot_number, "[SEED] SD-1"))
+
+      Repo.insert!(%RockcutApi.Ingredients.Movement{
+        lot_id: lot.id,
+        kind: "used",
+        quantity: Decimal.new(-1),
+        occurred_on: RockcutApi.Tasks.today(),
+        batch_id: galactic.id
+      })
+
+      temp = Repo.insert!(%Brink{name: "[TEST-TEMP] YB-x", active: false})
+      Repo.insert!(%Harvest{brink_id: temp.id, status: "voided"})
+
+      assert {:ok, _} = RockcutApi.Seeds.Synthetic.setup()
+      refute Repo.get(Brink, temp.id)
+      assert yeast_state().yb2 |> elem(0) == "42"
+    end
+  end
 end

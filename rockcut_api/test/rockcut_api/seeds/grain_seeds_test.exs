@@ -130,10 +130,12 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     # sugar extracts and 15 fruit Brix ranges (SoNature Lime has none).
     # D65 §7: and the synthetic setup's three [SEED] products, one offer each.
     # D64 Amendment: and the yeast reference's 11 products and offers.
-    assert first[Product] == 44 + 27 + 29 + 3 + 11
-    assert first[SupplierOffer] == 44 + 27 + 30 + 3 + 11
+    # D64 Stop 4: and the synthetic setup's two [SEED] yeast products, one
+    # offer each, the Liquid one with its 7 bbl pitch size.
+    assert first[Product] == 44 + 27 + 29 + 3 + 11 + 2
+    assert first[SupplierOffer] == 44 + 27 + 30 + 3 + 11 + 2
     # Blanks stay blank (23 of them, mostly protein), so fewer than 44 × 5.
-    assert first[ProductFeatureValue] == 44 * 5 - 23 + 26 * 3 + 6 + 15
+    assert first[ProductFeatureValue] == 44 * 5 - 23 + 26 * 3 + 6 + 15 + 1
 
     # D62: BSG is a hop manufacturer too, and the hop companies both.
     # D65: the sugar and fruit companies.
