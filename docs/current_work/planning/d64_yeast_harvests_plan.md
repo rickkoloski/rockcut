@@ -102,7 +102,7 @@ reference seeds are `priv/repo/seeds/{grain,hop,d65}_reference.exs`, idempotent,
      (logged "D64: kept …" otherwise);
    - **stop** if a yeast lot has no product.
    - The US-05 → Chico Ale rename is done by the **seed**, not here, as D65 did with Dextrose.
-4. **`ingredient_movements.batch_id`:** nullable, references `batches`, `on_delete: :restrict`.
+4. **`inventory_movements.batch_id`:** nullable, references `batches`, `on_delete: :restrict`.
    It's written only for yeast pitches in D64.
 5. **`yeast_brinks`:**
    - `name` (unique on `lower(name)`), `empty_weight_lb` (decimal, nullable), `position`,

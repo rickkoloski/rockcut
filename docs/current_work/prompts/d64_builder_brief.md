@@ -108,3 +108,95 @@ Every rule gets a refusal test and an allowed test.
   - rule → test, one line each, noting which tests you proved by revert;
   - the seed's log line on the first and second run;
   - `LEAD:` notes for anything left open or any place the plan didn't fit the code.
+
+---
+
+# Stop 2 (brinks, records, counts, board tasks)
+
+2026-11-22 · lead. **Stop 1 accepted** (`e01e518` … `115e49f`; ExUnit 2,853 ×2, vitest 525,
+ingredients Playwright 148/148). Your LEAD notes:
+
+1. Accepted. The plan now says `inventory_movements`.
+2. **`GET /api/yeast/batches` is accepted** as the yeast pages' batch source. Keep it, and reuse
+   it for Stop 2's Pitch-from-a-brink picker and Stop 3's batch labels.
+3. Accepted, all three.
+4. Accepted, both.
+5. Accepted. Keep the Playwright check that nothing is sent.
+6. Accepted. Synthetic setup will clear the `[TEST-TEMP]` rows.
+7. Accepted.
+8. Accepted. Stop 2 adds Brinks to the same gear. The Lab filter behaves like grain's maltster
+   filter.
+
+## Do (plan Stop 2; spec §2 decisions 7–9 and 16–21, §4.4, §4.5, §4.7, §5.3, §6.3–§6.5, §7, §8)
+
+Every rule gets a refusal test and an allowed test.
+
+1. **Migrations 5–10** (plan). **Ask me before running them on the dev database**, as in Stop 1:
+   - `yeast_brinks`, with YB1–YB4 seeded;
+   - `yeast_harvests`, with the partial unique index (one `in_brink` record per brink);
+   - `yeast_harvest_products`;
+   - `yeast_harvest_entries`, including the `generation` / `product_ids` snapshots and a unique
+     `production_step_id` where not null. The column exists now; Stop 3 writes it;
+   - `yeast_counts`;
+   - `tasks.yeast_brink_id` + `yeast_kind`, with the partial unique index.
+2. **`RockcutApi.Yeast.Rules`** (pure): `from_sources/1` and `combine/2` per spec §5.3, plus the
+   fold over `harvested` entries. Write **table-driven ExUnit** with one row per line of both §5.3
+   tables, plus a refold after removing an entry.
+3. **`Brinks`, `Harvests`, `Counts`, `Pitches` (from a brink) and `BoardTasks`**, per the plan:
+   - **`Harvests.harvest!/3` is built and tested through the context now**, including:
+     - the dirty question (`dirty_ok`);
+     - the has-yeast question (`brink_answer` `on_top` / `empty`; `empty` closes the old record
+       with an `adjusted` entry to 0 and the note, no dirty mark, no clean task);
+     - the fold.
+
+     It isn't on any route or screen yet: Stop 3 calls it from the step check-off.
+   - **Every write** runs in `BEGIN IMMEDIATE`. On hand never goes below 0 ("YB2 has 18 lb", 422),
+     and `lock_version` gives the stale-save 409.
+   - **Closing at 0** (pitch, dump, adjust): `emptied`, `emptied_on`, the brink dirty, and the
+     "Clean YB2" task.
+   - **Recount task:**
+     - opened by every harvest, due the harvest date;
+     - ticked by Add count;
+     - at most one open task per brink and kind.
+   - **The task-completion hook:** ticking a `clean` task clears the brink's dirty mark, and Mark
+     clean ticks the open clean task. Find the one place board tasks are completed (person and
+     device paths) and hook it there.
+   - **Counts:**
+     - `in_effect/2`;
+     - no future dates;
+     - edit or delete by the maker or a Brewery manager until a pitch dated on or after the count.
+4. **Authz:**
+   - brink settings use `:yeast_settings` (managers and owners);
+   - stock actions are for Brewery members and owners;
+   - entry and count edits are for the maker or a Brewery manager, through `Authz`;
+   - devices get 403 on every new route;
+   - extend the parity/boundary tests and the device route matrix.
+5. **Routes** (plan's table): brinks (list with state, settings CRUD, history), `pitch` / `dump` /
+   `adjust` / `clean`, and counts. Use flat params.
+6. **UI:**
+   - **The Brinks tab** (spec §6.3): cards at 360 px, rows on desktop.
+     - Each brink shows its state, strains or "Co-ferment: …", generation, on hand, the count in
+       effect with "before the 11/20 harvest" and "Recount due", sources, and the harvest date.
+     - Actions: Pitch, Add count, Adjust weight, Dump brink (confirm), Mark clean, History.
+     - Every lb field shows "YB2 empty: 148 lb" when the brink has an empty weight.
+   - **Yeast settings → Brinks:** name, empty weight, order, active; add, rename, retire (refused
+     with yeast in it) and delete when unused. Read-only for non-managers.
+7. **`tests/COVERAGE.md`:** add the Stop 2 rows.
+
+## Done when (Stop 2)
+
+- `mix test` passes twice, and `--warnings-as-errors` is clean.
+- vitest, tsc and the build are clean. Lint still shows the same 8 errors.
+- The `ingredients` and `tasks` Playwright projects pass. **Don't run Playwright while you're
+  changing the UI or running a browser check**; Stop 1's overlap cost a rerun.
+- **Browser check** at desktop and 360 px:
+  - **Setup:** create the yeast in YB2 through the context in a test helper or `mix run` script
+    (harvests have no screen until Stop 3). Use `[TEST-TEMP]` data only, cleaned up by id.
+  - **As `brewer1`:** pitch part of YB2, add a count (the Count task ticks), adjust to 0 (dirty,
+    and Clean YB2 on the board), then tick Clean YB2 on the board (YB2 is clean).
+  - **As `breweryMgr`:** add YB5 with an empty weight, then retire it.
+- **Reply with:**
+  - your commits;
+  - test counts before and after;
+  - rule → test, noting the revert proofs;
+  - `LEAD:` notes.
