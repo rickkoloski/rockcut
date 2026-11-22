@@ -56,8 +56,8 @@ describe('categories by key (D62)', () => {
     expect(keyedCategories(categories, 'yeast').category).toBeNull()
   })
 
-  it('Grains, its children and Hops are managed (no custom fields); Fruits waits for Stage 3', () => {
-    expect([GRAINS, BASE, HOPS, 4].map((id) => isManagedCategory(categories, id))).toEqual([true, true, true, false])
+  it('Grains, its children and Hops take no custom fields; D65 §4.1: nor does Fruits', () => {
+    expect([GRAINS, BASE, HOPS, 4].map((id) => isManagedCategory(categories, id))).toEqual([true, true, true, true])
   })
 
   it('hop forms are the API list', () => {

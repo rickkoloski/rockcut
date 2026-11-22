@@ -121,21 +121,30 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
              }
 
     refute Repo.exists?(from i in Ingredient, where: i.category_id == ^grains().id)
-    assert first[IngredientCategory] == 13
+    # D65 §4.1: Future Ingredients gone, Water Salts and Finings added.
+    assert first[IngredientCategory] == 14
 
     # D62: plus the hop reference's 27 products and offers, and 26 × 3
     # ranges (Pink Boots Blend has none; `HopSeedsTest`).
-    assert first[Product] == 44 + 27
-    assert first[SupplierOffer] == 44 + 27
+    # D65: plus the D65 reference's 29 products and 30 offers, and 6
+    # sugar extracts and 15 fruit Brix ranges (SoNature Lime has none).
+    # D65 §7: and the synthetic setup's three [SEED] products, one offer each.
+    assert first[Product] == 44 + 27 + 29 + 3
+    assert first[SupplierOffer] == 44 + 27 + 30 + 3
     # Blanks stay blank (23 of them, mostly protein), so fewer than 44 × 5.
-    assert first[ProductFeatureValue] == 44 * 5 - 23 + 26 * 3
+    assert first[ProductFeatureValue] == 44 * 5 - 23 + 26 * 3 + 6 + 15
 
     # D62: BSG is a hop manufacturer too, and the hop companies both.
+    # D65: the sugar and fruit companies.
     assert roles() == [
+             {"Aseptic Fruit", "manufacturer"},
+             {"Aseptic Fruit", "supplier"},
              {"BSG", "manufacturer"},
              {"BSG", "supplier"},
              {"Billy Goat", "manufacturer"},
              {"Billy Goat", "supplier"},
+             {"Candico", "manufacturer"},
+             {"Colorado Honey Co.", "manufacturer"},
              {"Crisp", "manufacturer"},
              {"Dingemans", "manufacturer"},
              {"Grain Millers", "manufacturer"},
@@ -145,24 +154,30 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
              {"Lupulin Exchange", "supplier"},
              {"Michigan Hop Alliance", "manufacturer"},
              {"Michigan Hop Alliance", "supplier"},
+             {"Muntons", "manufacturer"},
              {"Rahr", "manufacturer"},
+             {"Redstone", "supplier"},
              {"Root Shoot", "manufacturer"},
              {"Root Shoot", "supplier"},
              {"Simpsons", "manufacturer"},
+             {"SoNature", "supplier"},
+             {"Sweetener Sup Co.", "manufacturer"},
              {"Weyermann", "manufacturer"},
              {"Yakima Chief Hops", "manufacturer"},
              {"Yakima Chief Hops", "supplier"}
            ]
 
-    assert Repo.aggregate(from(p in Party, where: not like(p.name, "[SEED]%")), :count) == 8 + 5
+    assert Repo.aggregate(from(p in Party, where: not like(p.name, "[SEED]%")), :count) ==
+             8 + 5 + 7
 
     refute Repo.exists?(
              from d in CategoryFieldDefinition,
                where: d.category_id == ^grains().id and d.field_name in ["Origin", "Maltster"]
            )
 
-    # Grains: five features; Hops alpha, beta and oil (D62); Yeast Strains attenuation.
-    assert first[CategoryFeatureType] == 9
+    # Grains: five features; Hops alpha, beta and oil (D62); Yeast Strains
+    # attenuation; D65: Fruits' Brix, Sugars' extract and Brix.
+    assert first[CategoryFeatureType] == 12
   end
 
   test "offers: sack size, milled from the order name, Root Shoot with no order name" do
@@ -237,8 +252,10 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
 
     lots =
       Repo.all(
+        # The grain ones (D65's [SEED] products have their own, `D65SeedsTest`).
         from l in IngredientLot,
-          where: like(l.lot_number, "[SEED]%"),
+          join: i in assoc(l, :ingredient),
+          where: like(l.lot_number, "[SEED]%") and i.name == "2-Row",
           order_by: l.received_date,
           preload: [:movements, :feature_values, product: [:ingredient, :manufacturer]]
       )
@@ -269,7 +286,12 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     |> Repo.update!()
 
     assert {:ok, _} = Synthetic.setup()
-    refute Repo.exists?(from l in IngredientLot, where: like(l.lot_number, "[SEED]%"))
+
+    refute Repo.exists?(
+             from l in IngredientLot,
+               join: i in assoc(l, :ingredient),
+               where: like(l.lot_number, "[SEED]%") and i.name == "2-Row"
+           )
   end
 
   # Stage 4: the Playwright specs make [TEST-TEMP] products, offers, prices,

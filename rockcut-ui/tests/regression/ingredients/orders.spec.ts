@@ -235,7 +235,7 @@ test('PO8: Companies: a supplier gets an order target; the column shows it', asy
   await d.getByTestId('party-order-target').fill('40')
   await d.getByRole('button', { name: 'Save' }).click()
   await expect(d).toHaveCount(0)
-  await expect(page.getByTestId(`company-target-${supplier.id}`)).toHaveText('40 sacks')
+  await expect(page.getByTestId(`company-target-${supplier.id}`)).toHaveText('40 packs')
   const party = (await (await (await apiAs('brewer1')).get(`/api/parties/${supplier.id}`)).json()).data
   expect(party.order_target_packs).toBe(40)
 })

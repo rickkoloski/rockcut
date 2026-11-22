@@ -1212,3 +1212,170 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 20 | A contract line with several offers from the supplier lists its price change only once its offer is picked, naming it by its current price ("… (now $150.00/box) price becomes …"; grain "(now $44.00/sack)" in D61's wording; "(no current price)" without one); one offer reads as before | Vitest `offerNow`, `contractPriceChanges`; Playwright G20 (two hop and two grain offers), G18 (one offer) |
 
 **5911 (part): O9.** The O9 that failed under full local load is `regression/owners/owner.spec.ts` O9 (UI) (D59; `ingredients/owner.spec.ts` has only O1–O3). Cause: `settingsMenu.ts` `choiceOptions` read the department options once, straight after opening the choice; right after `goto('/schedule')` (and on the Scheduler) `/api/departments` may not have answered yet, so only "All departments" was there. Reproduced by holding `/api/departments` 1.5 s (`["schedule-department-all"]`). Fix: `choiceOptions(…, ready)` waits for a named option first; O9 passes Taproom's. O9 (UI and API) ran 10× each beside the full `ingredients` project: 20/20.
+
+## D65 — Fruit, spices, sugars and consumables (`specs/d65_fruit_spices_sugars_consumables_spec.md` §10 and the Amendments; `planning/d65_fruit_spices_sugars_consumables_plan.md`)
+
+**Stop 0: the D62 DEV QA gaps carried into D65** (spec Amendment "D62 DEV QA gaps carried into D65"; decisions in D62's `prompts/d62_lead_decisions_5.md`; gap numbers are the D62 DEV QA report's). ExUnit `rockcut_api_web/controllers/d65_stop0_test.exs` ("S0") and `d62_fix_cycle_1_test.exs` ("FC1"); Vitest `src/lib/d65Stop0Companies.test.ts`, `d65Stop0Receive.test.ts`, `d65Stop0Library.test.ts`, `d65Stop0AddLot.test.ts`; Playwright `regression/ingredients/d65-stop-0.spec.ts` (brewer1, project `ingredients`). "Revert" marks a test seen failing with its fix taken out.
+
+| Gap | Scenario | Coverage |
+|---|---|---|
+| 1 | Companies list: a supplier's Order target reads "40 packs" (the dialog's "Order target (packs)"), never "sacks" | Vitest `orderTargetText` (revert); Playwright `orders` PO1 ("40 packs") |
+| 2 | Receiving into an existing lot # that has a crop year, with `crop_year` sent null, "" or spaces → 422, nothing written; `crop_year` not sent still adds to the lot | FC1 gap 10 "a crop year sent blank (nil, \"\" or spaces) for a lot that has one is refused; nothing is written" (revert), "nothing sent adds to it as before" |
+| 3 | Receive split of 0: the footer says "Each lot needs at least 1 box. Remove the empty one." ("sack" for grain), the 0 is marked with its row's remove button; Receive stays disabled until the 0 is removed or changed; removing it receives | Vitest `emptySplitText` (revert); Playwright "gap 3" (revert) |
+| 4 | Ingredient Library: the Category (and a grain child) is in the URL (`?category=<id>`, `all`); Back and the "Ingredients" / "Ingredient Library" links return to it; no parameter is the Grains default | Vitest `categoryFromParam`, `categoryParam`, `libraryHref` (storage off → default); Playwright "gap 4" Hops and Base, desktop and 360 px (revert) |
+| — | Add lot supplier: with offers, Supplier defaults to the reorder offer's supplier, else the newest offer's, and has no "None"; the API refuses a lot of a product with an active offer without a supplier (missing, null, blank) → 422 "Pick the supplier; this product's lots come from its offers' suppliers", nothing written; no offer (or only inactive ones) saves without one as before | S0 "Add lot supplier" (refused, allowed, no offer; revert); Vitest `defaultLotSupplier` (revert); Playwright "Add lot supplier" (revert: the two-offer default) |
+
+**Stop 1: categories, catalog, products** (plan Stop 1; spec §2 decision 8, §4.1–§4.3, §5 items 1–3, A9, A10). ExUnit `rockcut_api/migrations/d65_products_and_categories_test.exs` ("MIG"), `rockcut_api_web/controllers/d65_stop1_test.exs` ("S1"); Vitest `src/lib/d65Stop1.test.ts`; Playwright `regression/ingredients/d65.spec.ts` (brewer1; brewer2 for the salt). Its rows are `[TEST-TEMP]` ingredients in the D65 categories (`helpers.ts` `makeD65Ingredient`, `makeD65Product`, `makeD65Lot`), never the seeded Whirlfloc or Dextrose; clean-up also takes a None product by its tagged ingredient, and a tagged subcategory is deleted by id.
+
+| Scenario | Coverage |
+|---|---|
+| Migrations on a D62-prod-shaped database: products, features, offers, prices, lots, movements, order and contract lines, recipe lines, minimum and reorder offer survive the products rebuild; `foreign_key_check` empty; foreign keys still point at the new table; a None product once, a second refused by the unique index | MIG "everything D62 holds survives…" |
+| Categories end as §4.1: Water Salts and Finings under Other Consumables (no Acids), Whirlfloc in Finings, "Dextrose (Corn Sugar)", no Irish Moss, no Future Ingredients, the three Form fields gone (Yeast's stays); a second run changes nothing | MIG (same test); Playwright "categories" (API and Categories page) |
+| Kept and logged: Irish Moss with a recipe line, a non-empty Future Ingredients, a stray at the top of Other Consumables | MIG "Irish Moss with a recipe line…" |
+| A D65 lot with no product stops the migration, naming it | MIG "a D65 lot with no product stops the migration" |
+| `down` refused while a product has no manufacturer; otherwise D62's shape | MIG "down: …" |
+| `mix ecto.reset`, seeds and `mix rockcut.synthetic.setup` on a fresh database end in the migrated shape; the hop reference unchanged (28 lots, 409.6 lb); setup removes tagged D65 rows (a None product with its lot, a tagged subcategory, a tagged company) | Run by hand on a throwaway database (Stop 1 report) |
+| Catalog lists per category and per Other Consumables child; another child gets the union (A10); sugars by form; default pack per unit; manufacturer required on grain and hops only; no contract unit for D65 | S1 "Catalog (§4.2)"; the category JSON's `catalog` |
+| The manufacturer is optional on D65 products ("None"), required on grain and hops | S1 "the manufacturer…"; Playwright "a None salt product…" |
+| Form required, from the category's (or child's) list | S1 "a form from the category's (or child's) list…" |
+| Unit from the list; sugars by form; Dry in gal → 422 "Dry sugars are in lb"; grain and hops keep D62 (the API sets lb) | S1 "the unit comes from the list…"; HAT (D62); Playwright "sugars…" (the dialog locks Dry to lb, the API refuses gal) |
+| The unit is fixed once the product has a lot | S1 "the unit is fixed once the product has a lot" |
+| A second None product → "There's already a Calcium Sulfate (Gypsum) Powder with manufacturer None." (and "Whirlfloc T") | S1 "a missing manufacturer is one value…"; Playwright "a None salt product…" |
+| `display_name` "… · None" with and without a product name; lists, JSON and Totals never print nil or an empty maker; Totals' manufacturer "None" | S1 "None, with and without a product name…"; Vitest `makerName`, `pickerName` |
+| `each` whole: a lot's first movement and pack size, movements, Oldest first (2 + 1, never a fraction), counts total and by lot, offer pack sizes, receipts; "Whirlfloc T is counted in whole tablets" / "… in whole numbers" | S1 "each in whole numbers (§4.3)" (4 tests); Vitest `readQuantity`, `formatQuantity` in tablets; Playwright "Whirlfloc T reads tablets…" (dialog and API) |
+| `unit_label` "tablets" for a Tablet `each`, in the API and the UI | S1; Vitest `unitLabel`; Playwright "Whirlfloc T…", 360 px |
+| No Add field / Add subcategory on Fruits, Spices & Flavorings, Sugars and Extracts (UI hidden, API 422 on POST and on PUT moving a field there); Other Consumables takes a child, which gets the union lists | S1 "categories (A9, §4.1)"; Vitest `allowsChildren`, `isManagedCategory`; Playwright "categories" |
+| The ingredient formula: optional, ≤ 40 characters | S1 "the ingredient formula" |
+| A D65 product can't go on a contract line ("Contracts are for grain and hops") | S1 "contracts (decision 3)" |
+| Strawberry: Purée (gal) and Whole (lb) with their own on hand; the duplicate refused | Playwright "Strawberry…" |
+| Cinnamon (Ground, oz), Vanilla Extract (Extract, fl oz), no feature fields | Playwright "spices…" |
+| 360 px: the fruit and Whirlfloc library cards and product pages, no sideways scroll | Playwright "at 360 px" |
+| Stop 0 LEAD note 4: the library shows a loading state while the categories load | Playwright "Stop 0 LEAD note 4…" |
+| D65 packs read by name in the pickers ("pail · 5 gal", "tub · 872 tablets") | Vitest `offerPackText`, `reorderOfferPack` |
+
+**Stop 2: features, offers, totals** (plan Stop 2; spec §4.4, §4.5, §5 items 2, 4–6; the salts, sugars, fruit and finings amendments). ExUnit `rockcut_api/migrations/d65_features_and_pack_note_test.exs` ("MIG2"), `rockcut_api_web/controllers/d65_stop2_test.exs` ("S2"); Vitest `src/lib/d65Stop2.test.ts`; Playwright `regression/ingredients/d65-stop2.spec.ts` (brewer1; owner for Totals; breweryMgr for the contract dialog; floater, splitRole, bartender1, breweryDevice, brewer2 for the edges). Totals tests filter to the spec's own `[TEST-TEMP]` supplier. "Revert" marks a test seen failing with its fix taken out.
+
+| Scenario | Coverage |
+|---|---|
+| Stop 2 item 0: O2 checks Add field on Yeast Strains; Fruits shows the note; a category page never flashes Add field while the category list loads | Playwright `owner` O2; `d65` "Stop 2 item 0…" (revert: the page read the list, not its own catalog) |
+| Migration: Brix and the seven ions, extract at 2 decimals, `only_form`, Fruits' and Sugars' rows, `pack_note`; a second run changes nothing; down undoes it | MIG2 |
+| Fruit Brix: a range on the product (either end blank, low above high refused, 2 decimals or over 100 refused); on the lot optional, never copied, 8.55 refused, outside marked (`outside_range`) | S2 "fruit Brix" (2 tests); Playwright "fruit" (typical 6.5–9 beside the box, 8.55 can't be saved, API 422) |
+| Sugars: extract copied to the lot and editable, 2 decimals, 3 refused; Brix only on Liquid: a Dry lot sent a Brix → 422 on create, edit and Receive | S2 "sugars" (revert: `only_form`); Vitest `lotTypesFor`, `lotFeatureBasis`; Playwright "sugars" |
+| Receiving into an existing lot # with Brix 8.5: 9.0 refused; 8.5 or nothing adds to it | S2 "receiving into an existing lot #" |
+| Ions on a Water Salts ingredient: GET/PUT, cleared by nil; 422 for another ingredient, a non-ion, 2 decimals, over 1,000; read-only in the product and ingredient JSON | S2 "ions…" (revert: Water Salts only; revert: the value rules); Vitest `ionsText`; Playwright "Water Salts…" (dialog grid and formula, ingredient page, product page read-only) |
+| The pack note: ≤ 40 characters, in offer and order JSON; read "tub · 872 tablets (5 lb)" on offers, order lines, Receive and To order | S2 "a note of at most 40 characters…" (revert); Vitest `offerPackText`, `reorderOfferPack`; Playwright "a mixed order…" (order page, To order) |
+| Pack names per Other Consumables child (Water Salts bag/pail/tub; Finings jug/bottle/bag/tub; another child the union); the offer dialog lists them with the unit's default pack (gal → pail) | S2 "Water Salts takes…" (revert); Playwright "fruit" (offer dialog starts at pail) |
+| Recipe lot label (A11): "Oregon Fruit Strawberry Purée · S-1 · 8.5 °Bx"; no Brix when the lot has none; grain unchanged | S2 "the recipe lot label" (revert) |
+| `each` below 1: "at least 1 tablet" / "at least 1", never 0.01 (lots and movements) | S2 "each below 1" (revert); Vitest `minQuantity` |
+| `inventory_on_hand` over the API returns its unit: `{11.5, "gal"}`; an ingredient with products in two units is refused | S2 "inventory_on_hand over the API" (revert: the controller dropped the unit); Playwright "fruit" |
+| Totals → Inventory: a subtotal per unit, one line each, never added; one $ total; Copy keeps Unit; Grains view as D61 | S2 "Totals (§4.5)"; Playwright "a mixed order…" (owner, filtered to its supplier) |
+| Totals → Orders: "2 bags · 6 boxes · 30 sacks · 1 tub"; the quantity column per unit (an all-lb range reads as D61) | S2 "Totals"; Playwright "a mixed order…" |
+| A mixed order reads "39 of 40 packs"; Receive prefills extract (91) and makes a whole Whirlfloc lot (872) | Playwright "a mixed order…" |
+| To order: Whirlfloc with 600 on hand and a minimum of 1 tub shows (0.69 tubs); a product with no stock reads "0 tablets" | Playwright "a mixed order…" |
+| The contract dialog never offers a D65 product; the API refuses one | Playwright "the contract dialog…"; S1 "contracts" |
+| Extract (now 2 decimals) still reads "81.5", "91.0" on grain screens | Vitest `formatFeature` |
+| floater and splitRole use the new pages; bartender1 and breweryDevice get 403 on every D65 route (incl. ions) | Playwright "edges"; ExUnit `device_route_matrix_test` (ions routes classified) |
+| Two people, one record: the second save of a fruit product gets the 409 and writes nothing | Playwright "two people, one record" |
+| Slow network: a double-click on Save in Add lot, and on Receive, writes once | Playwright "slow network" (2 tests) |
+| 360 px: the fruit product page, Add lot with Brix, the Whirlfloc count and Totals with mixed units have no sideways scroll | Playwright "at 360 px" |
+
+**Stop 3: reference seed, `[SEED]` data, and §10 in full.** ExUnit `rockcut_api/seeds/d65_seeds_test.exs` ("SEED"), `rockcut_api_web/controllers/d65_stop3_test.exs` ("S3"); Vitest `d65Stop2.test.ts` (`perUnitLabel`); Playwright `d65-stop2.spec.ts` "§10 gaps closed in Stop 3". Every test that counts D65 rows filters to its own `[TEST-TEMP]` rows (or, in ExUnit, to the reference rows by excluding `[SEED]`/`[TEST-TEMP]`); no test edits or deletes a seeded reference row.
+
+| Scenario | Coverage |
+|---|---|
+| The reference seed twice: 36 new ingredients (+ Dextrose (Corn Sugar) and Whirlfloc reused), 29 products, 30 offers, 26 priced, no lots; grain (44) and hop (27, 28 lots) counts unchanged | SEED "twice…"; `grain_seeds_test`, `hop_seeds_test` |
+| Spot checks: Gypsum (CaSO₄·2H₂O, Ca 61.5, SO₄ 147.4, $32.00/bag, None), Anhydrous has no product, Strawberry (two offers, 6.5–9), Watermelon 12–12, Black Strap Molasses 81.95, Honey from Redstone, one Dextrose, Whirlfloc T "tub · 872 (5 lb)" $92.00, SoNature Lime (no Brix, no price), two Lemons, the ten spices | SEED "spot checks" |
+| An edit on the screens sticks (formula, price) | SEED "an edit made on the screens sticks" |
+| `[SEED]` Peach (gal), Rice Syrup Solids (lb), Fining Tablets (each): offer, price, minimum, one lot; setup twice recreates them | SEED "synthetic setup twice…"; run by hand on a throwaway database and the dev DB |
+| Ions save with the ingredient in one transaction; a bad ion leaves the name unchanged; ions outside Water Salts make no ingredient | S3 (revert) |
+| $ per unit is singular: "$0.1055/tablet" | Vitest `perUnitLabel` |
+| §5.1: the Fruits list shows the Brix range, the Sugars list extract | Playwright `d65-stop2` "fruit", "sugars" |
+| A products view (Grains, Hops, D65) shows a loading state until the products are in, not "No products" on every ingredient | Playwright `d65` "Stop 3: while the products load…" (revert) |
+| G3/G6/G11's race (Stop 2 LEAD note 8): a goto right after a dialog's Cancel was aborted by the dialog's delayed `history.back()` (1 in 9 runs); it waits for the history entry now | Playwright `d62-fix-cycle-1` G3/G6/G11, 15/15 with `--repeat-each` |
+
+**D65 §10 scenarios → layer** (spec §10; "gap" marks what isn't covered).
+
+| §10 scenario | Coverage |
+|---|---|
+| Fruit: Strawberry with a maker, Purée (gal) and Whole (lb), each its own on hand; the duplicate refused | Playwright `d65` "Strawberry…"; S1 |
+| Fruit: a pail · 5 gal offer; lots with Brix 8.5 and without; 8.55 refused | Playwright `d65-stop2` "fruit"; S2 |
+| Fruit: a count of "2 pails 1.5 gal" | Playwright `d65-stop2` "fruit" |
+| Fruit: `inventory_on_hand` `{11.5, "gal"}`; refused for the ingredient (mixed units) | S2; Playwright `d65-stop2` "fruit" |
+| Sugars: Dextrose (Dry, lb, 91): extract copied and editable, no Brix | Playwright `d65-stop2` "sugars"; S2 |
+| Sugars: Black Strap Molasses (Liquid, 81.95): extract copied, optional Brix | Playwright `d65-stop2` "sugars"; S2 |
+| Sugars: Liquid in gal; the API refuses Dry in gal | Playwright `d65` "sugars…"; S1 |
+| Spices: Cinnamon (Ground, oz, bag · 16 oz) and Vanilla Extract (Extract, fl oz, bottle · 32 fl oz), no features | Playwright `d65` "spices…"; `d65-stop2` "§10 gaps…" (the offers) |
+| Other consumables, as brewer2: Calcium Chloride (Water Salts, Flake, lb), a liquid fining (fl oz, jug · 128); Whirlfloc T (tablets, tub · 872) | Playwright `d65-stop2` "§10 gaps…" (brewer2); `d65` "Whirlfloc T…"; S2 (per-child packs) |
+| 2.5 Whirlfloc refused | Playwright `d65`; S1 |
+| Whirlfloc under Finings, Irish Moss gone; Water Salts and Finings under Other Consumables; Future Ingredients gone | Playwright `d65` "categories"; MIG |
+| Purchasing: a mixed order (grain, hop, sugar, Whirlfloc) "39 of 40 packs" | Playwright `d65-stop2` "a mixed order…" (a `[TEST-TEMP]` supplier, not BSG, so the seeded offers stay untouched) |
+| Receive: extract prefilled, a whole Whirlfloc lot | Playwright `d65-stop2` "a mixed order…" |
+| Whirlfloc minimum 1 tub with 600 on hand shows on To order | Playwright `d65-stop2` "a mixed order…" |
+| The contract dialog doesn't offer Dextrose; the API refuses it | Playwright `d65-stop2` "the contract dialog…"; S1 |
+| Totals as owner: per-unit subtotals (lb, gal, oz, fl oz, each) and one $ total; Copy's Unit column; the Grains view as D61; Orders "2 bags · 6 boxes · 30 sacks · 1 tub" | Playwright `d65-stop2` "a mixed order…" (lb, each) and "§10 gaps…" (fl oz); S2 (gal, oz, each, lb) |
+| floater and splitRole: the new pages work | Playwright `d65-stop2` "edges" |
+| bartender1: not in the nav, API 403; breweryDevice: every D65 route 403 | Playwright `d65-stop2` "edges" (API); `refusals` R1 (nav, D60); `device_route_matrix_test` |
+| Two people, one record: the second save gets the 409, nothing written | Playwright `d65-stop2` "two people, one record" |
+| Receive into an existing lot #: Brix 8.5 shows read-only; 9.0 → 422 | Playwright `d65-stop2` "§10 gaps…"; S2 |
+| 360 px: the fruit product page, Add lot with Brix, the Whirlfloc count, Totals with mixed units | Playwright `d65-stop2` "at 360 px"; `d65` "at 360 px" |
+| Slow network: a double-click on Save in Add lot and Receive writes once | Playwright `d65-stop2` "slow network" (2) |
+| Add field and Add subcategory hidden on Fruits, Spices & Flavorings, Sugars and Extracts; the API refuses both; Other Consumables allows Add subcategory | Playwright `d65` "categories"; S1 |
+
+**Gaps:** none of the §10 scenarios is uncovered. Two are covered at a narrower scope than written:
+- **The mixed order isn't with BSG:** it uses a `[TEST-TEMP]` supplier so tests never write to the seeded BSG offers.
+- **The spice offers are made through the API:** only the jug offer goes through the offer dialog.
+
+
+### D65 lead decisions 1 — local QA fix cycle (`prompts/d65_lead_decisions_1.md`)
+
+`F1` = ExUnit `d65_fix1_test.exs`; `V1` = vitest `d65Fix1.test.ts`; Playwright is `d65-fix-1`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 5, 7: a fractional `each` count (0.5 tub of 333) is refused, never rounded: "<product> is counted in whole tablets", Save disabled, nothing sent (Add lot, Count, Record movement); 0 says "Enter at least 1 tablet"; 0.5 pail of 5 gal still saves 2.5 | Playwright "gaps 5, 7" at desktop and 360 px **(revert)**, "Count and Record movement…"; V1. Receive takes whole packs only, so it can't make a fraction |
+| 13: Delete Ingredient with a product: disabled with the reason; the API 422s; one without products deletes. A product on a contract line and an offer a contract line names: 422, not 500 | Playwright "gap 13"; F1 **(revert, the ingredient)** |
+| 1, 10: a refusal in a tall dialog is scrolled into view and focused (FormDialog, every dialog) | Playwright "gaps 1, 10" at 1366×768 **(revert)** |
+| 11: a lot's pack name is its category's (create, edit); grain keeps sack, hops box | F1 **(revert)** |
+| 2: "Brix is entered on Liquid sugar lots, not on the product"; "Brix is only for Liquid sugars" | F1; `d65_stop2_test`, `d65-stop2` (wording) |
+| 3: the default pack is in the category's list (a fl oz spice → bottle) | Playwright "gap 3"; F1 (offer and lot); V1 |
+| 4: ions and Brix with one place on screens, labels and reopened dialogs ("Ca 72.0", "14.0 °Bx", "6.5–9.0") | Playwright "gap 4"; F1 (lot label); V1 |
+| 6: "1 tablet", "−1 tablet", "1 tub 1 tablet" | Playwright "gaps 6, 8"; F1; V1 |
+| 8: "tablets" on the order total, the Receive picker, a Totals line of only Tablet products ("each" for a mix); "Quantity · tubs of 333 tablets" | Playwright "gaps 6, 8", "gaps 5, 7"; F1 (order and inventory sums, the mix); `d65-stop2` |
+| 9: Totals' Manufacturer filter has None | Playwright "gap 9"; F1 |
+| 12: product names unique in any case (migration `20261121140001`); "None" refused | F1 |
+| Decided: the form is fixed once a product has a lot (UI disabled, API 422) | Playwright "the form is fixed…"; F1 |
+| Decided, Q13: the recipe lot picker on a D65 lot shows "· 8.5 °Bx" | Playwright "Q13" |
+
+### D65 lead decisions 2 — QA recheck 1 leftovers (`prompts/d65_lead_decisions_2.md`)
+
+`F2` = ExUnit `d65_fix2_test.exs`; `V2` = vitest `d65Fix2.test.ts`; Playwright is `d65-fix-2`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 8 (leftover): a count's pack reads "tubs of 872 tablets (5 lb)" on the order line in New order and the order edit dialog (also Add price and the quantity header, through `packSizeText`) | Playwright "gap 8" **(revert)**; V2 |
+| 14: a disabled Delete Ingredient (and Delete Category) keeps its name; its reason is the tooltip and its `aria-describedby` | Playwright "gap 14" **(revert)** |
+| 15: the duplicate refusal names the existing product in its stored spelling (create and rename; None and a manufacturer) | F2 **(revert)**; F1 (wording updated) |
+| 16: −1 or 0 tablets says "Enter at least 1 tablet" as it's typed in Add lot and Record movement; Count (0 allowed) and decimal units keep "Enter 0 or more" | Playwright "gap 16" at desktop and 360 px **(revert)**; V2 |
+
+### D65 lead decisions 3 — DEV QA fix cycle (`prompts/d65_lead_decisions_3.md`)
+
+`F3` = ExUnit `d65_fix3_test.exs`; `V3` = vitest `d65Fix3.test.ts`; Playwright is `d65-fix-3`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 2: "Other manufacturer…" / "Other maltster…" keeps the product dialog and its input, opens every manufacturer company with a search box (keyboard: ArrowDown into the list, Enter picks); on a phone Back closes the list only; the pick saves (fruit and grain, Add and Edit) | Playwright "gap 2" × 4, desktop and 360 px **(revert)** |
+| 3: Totals Copy: per-unit Total rows carry no $; the $ total is its own "Total value" / "Total <supplier> value" row (Inventory and Orders; grain-only and all-lb layouts unchanged) | Playwright "gaps 3, 4" **(revert)**; D61 Copy tests unchanged |
+| 4: Copy's Unit is the label ("tablets") and counts are whole ("750") | Playwright "gaps 3, 4" **(revert)**; V3; `d65-stop2` (now "tablets") |
+| 1: the Formula box only on Water Salts; the API refuses a new formula elsewhere (422), keeps a stored one, allows clearing | F3 **(revert)**; Playwright "gap 1" **(revert)** |
+| 5: All Categories fits 360 px (Notes under the name, lot rows wrap) | Playwright "gap 5" **(revert)** |
+| 6: before a quantity, the order summary counts the line's own pack ("0 pails · 0 gal · $0.00"), New order and Edit order | Playwright "gap 6" **(revert)**; V3 |
+
+### D65 lead decisions 4 — DEV QA recheck 1 fix cycle (`prompts/d65_lead_decisions_4.md`)
+
+`F4` = ExUnit `d65_fix4_test.exs`; `V4` = vitest `d65Fix4.test.ts`; Playwright is `d65-fix-4`. **(revert)** = shown failing with the fix taken out.
+
+| Gap | Coverage |
+|---|---|
+| 8: a feature value must have its feature's shape, or 422 with nothing stored or cleared: a product's Brix takes `low` and/or `high` only (`{value}`, `{lo}`, `{}`, an extra key refused; a number is "a range"); a single value (lot Brix, extract) takes `value` with the entered pair only (`{low}` refused); an ion given as a map is "not a number". Leaving Brix out keeps it; `null` or both ends blank clears it | F4 product Brix, lot Brix and extract tests **(revert)**; F4 keep/clear and ion tests (pass either way: already the behaviour) |
+| 7: before any line has an offer the summary counts "packs" ("0 packs · 0 lb · $0.00", "0 of 40 packs") with no supplier, a mixed supplier and in Edit order; a supplier whose offers are all sacks keeps "0 of 40 sacks" (D61) | Playwright "gap 7" **(revert)**; V4 **(revert)**; `purchasing.test` (D61 empty "sacks") unchanged |
+| Timing: `test.slow()` on the three long D65 tests (`d65-stop2` mixed order and brewer2 spices/fl oz; `d65` Strawberry) | — |

@@ -9,10 +9,10 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
 import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { PRICE_DECIMALS, packLabel, packPlural, parseDecimal } from '../../lib/brewingUnits'
+import { PRICE_DECIMALS, packLabel, packPlural, packSizeText, parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE, ORDER_KEYS } from '../../lib/inventory'
-import { offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
-import { WRAP_ITEM, WRAP_SELECT, pickerName } from '../../lib/ingredientFeatures'
+import { emptyOrderPack, offerPackText, parsePacks, runningTotal, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { WRAP_ITEM, WRAP_SELECT, pickerName, unitLabel } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientProduct, Party, PurchaseOrder, SupplierOffer } from '../../lib/types'
 
@@ -89,7 +89,8 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   const supplier = parties.find((p) => p.id === supplierId)
   const productName = new Map(products.map((p) => [p.id, p.display_name]))
   const pickerNames = new Map(products.map((p) => [p.id, pickerName(p)]))
-  const productUnit = new Map(products.map((p) => [p.id, p.unit]))
+  // D65: "tablets" for `each` on a Tablet product.
+  const productUnit = new Map(products.map((p) => [p.id, unitLabel(p)]))
   // A line already on an inactive offer keeps it (lead, Stop 2 note 7); new picks are active offers only.
   const kept = new Set(order?.lines.map((l) => l.offer_id) ?? [])
   const choices = offers.filter((o) => o.supplier_party_id === supplierId && (o.active || kept.has(o.id)))
@@ -98,7 +99,8 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   // a grain offer reads as D61 ("Rahr - Standard 2-row · Rahr 2-Row · 55 lb · whole").
   const label = (o: SupplierOffer) => {
     const unit = productUnit.get(o.product_id) ?? 'lb'
-    const parts = o.pack_name === 'box' ? [pickerNames.get(o.product_id), o.order_name, offerPackText(o, unit)] : [o.order_name, productName.get(o.product_id), `${Number(o.pack_size)} ${unit}`, o.form]
+    // D65: any pack but grain's sack reads as hops do ("Whirlfloc T · None · tub · 872 tablets").
+    const parts = o.pack_name !== 'sack' ? [pickerNames.get(o.product_id), o.order_name, offerPackText(o, unit)] : [o.order_name, productName.get(o.product_id), `${Number(o.pack_size)} ${unit}`, o.form]
     return parts.filter(Boolean).join(' · ')
   }
 
@@ -115,6 +117,8 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       priceOk: price.ok && price.value != null,
     }
   })
+  // Gap 7 (lead decisions 4): before any line has an offer, the supplier's words ("packs" unless all its offers are sacks).
+  const emptyPack = emptyOrderPack(choices.map((o) => o.pack_name))
   const total = runningTotal(
     read.map((r) => ({
       packs: r.packs,
@@ -123,10 +127,11 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
       unit: r.offer ? productUnit.get(r.offer.product_id) : undefined,
       price: r.price,
     })),
+    emptyPack,
   )
   // "36 of 40 sacks" on a grain-only order; "packs" when they differ (D62 A5).
   const linePacks = read.filter((r) => r.offer).map((r) => r.offer!.pack_name)
-  const progress = targetProgress(total.packs, supplier?.order_target_packs, linePacks.length ? sharedPackName(linePacks) : 'sack')
+  const progress = targetProgress(total.packs, supplier?.order_target_packs, linePacks.length ? sharedPackName(linePacks) : emptyPack)
   const valid = supplierId !== '' && !!orderedOn && lines.length > 0 && read.every((r) => r.offer && r.packs != null && r.priceOk)
 
   const setLine = (key: number, patch: Partial<Line>) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)))
@@ -141,7 +146,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
   }
 
   const submit = async () => {
-    if (!valid) return setError(`Each line needs an offer, whole ${packPlural(linePacks.length ? sharedPackName(linePacks) : 'sack')} and a price`)
+    if (!valid) return setError(`Each line needs an offer, whole ${packPlural(linePacks.length ? sharedPackName(linePacks) : emptyPack)} and a price`)
     if (orderedOn > coloradoToday()) return setError(FUTURE_DATE)
     const body = {
       supplier_party_id: supplierId,
@@ -242,7 +247,7 @@ function OrderForm({ onClose, order, onSaved, initial, titleNote }: Omit<OrderDi
                 l.packs.trim() !== '' && packs == null
                   ? wholePacks(offer?.pack_name ?? 'sack')
                   : offer
-                    ? `${Number(offer.pack_size)} ${productUnit.get(offer.product_id) ?? 'lb'} ${packPlural(offer.pack_name)}`
+                    ? `${packSizeText(offer.pack_name, offer.pack_size, productUnit.get(offer.product_id))}${offer.pack_note ? ` (${offer.pack_note})` : ''}`
                     : undefined
               }
               sx={{ flex: 1 }}

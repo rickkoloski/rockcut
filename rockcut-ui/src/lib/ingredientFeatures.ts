@@ -2,7 +2,7 @@
 // specs) on the screens: which feature types apply to a category, the boxes'
 // drafts, the payload the API takes, and a lot value that differs from the
 // standard.
-import { formatQuantity, packPlural, parseDecimal, productPack, type Pack, type QuantityDisplay } from './brewingUnits'
+import { boxText, formatQuantity, packPlural, paddedRange, parseDecimal, productPack, type Pack, type QuantityDisplay } from './brewingUnits'
 import type { FeatureApplicability, FeatureType, FeatureValue, FeatureValues, IngredientCategory, IngredientProduct } from './types'
 
 /** One feature's box: the text typed, and what was typed in another unit when the convert popup filled it. */
@@ -28,7 +28,7 @@ export function draftsFrom(values: FeatureValues | null | undefined, types: Feat
   return Object.fromEntries(
     types.map((t) => {
       const v = values?.[t.key]
-      return [t.key, { text: v?.value ?? '', entered_value: v?.entered_value ?? null, entered_unit: v?.entered_unit ?? null }]
+      return [t.key, { text: boxText(v?.value, t), entered_value: v?.entered_value ?? null, entered_unit: v?.entered_unit ?? null }]
     }),
   )
 }
@@ -121,12 +121,35 @@ export function keyedCategories(categories: IngredientCategory[], key: string): 
 /** D62 §3.6 (amendments): a hop product's forms, as the API lists them. */
 export const HOP_FORMS = ['T90 Pellet', 'Cryo', 'Whole leaf', 'Extract'] as const
 
-/** D62: the categories with products, packs and movements (Stage 2: grain and hops). */
-export const MANAGED_KEYS = ['grains', 'hops'] as const
+/**
+ * D62: the categories with products, packs and movements. D65 §4.2: every
+ * key but Yeast Strains (D64) and Future Ingredients.
+ */
+export const MANAGED_KEYS = ['grains', 'hops', 'fruits', 'spices', 'sugars', 'consumables'] as const
 export const isManagedKey = (key: string | null | undefined) => !!key && (MANAGED_KEYS as readonly string[]).includes(key)
+
+/** D65: the categories whose products take a form and unit from the catalog's lists and may have no manufacturer. */
+export const D65_KEYS = ['fruits', 'spices', 'sugars', 'consumables'] as const
+export const isD65Key = (key: string | null | undefined) => !!key && (D65_KEYS as readonly string[]).includes(key)
 
 /** What one of a category's items is called on its screens ("Grain", "Hop"). */
 export const itemLabel = (key: string | null | undefined) => (key === 'hops' ? 'Hop' : key === 'grains' ? 'Grain' : 'Ingredient')
+
+/** D65 decision 8: a product's manufacturer as screens say it; "None" when there isn't one. */
+export const makerName = (p: { manufacturer?: { name: string } | null } | null | undefined) => p?.manufacturer?.name ?? 'None'
+
+/** D65 §4.3: a product's unit as screens say it ("tablets" for `each` on a Tablet product). */
+export const unitLabel = (p: { unit?: string | null; unit_label?: string | null; form?: string | null } | null | undefined): string =>
+  p?.unit_label ?? (p?.unit === 'each' && p?.form === 'Tablet' ? 'tablets' : (p?.unit ?? 'lb'))
+
+/**
+ * D65 §4.2: the units a product of `form` may be in, from its category's
+ * catalog: Sugars by form (Dry lb; Liquid lb or gal), the rest the list.
+ */
+export function unitsFor(catalog: { units: string[]; form_units?: Record<string, string[]> } | null | undefined, form: string | null | undefined): string[] {
+  if (!catalog) return []
+  return (form && catalog.form_units?.[form]) || catalog.units
+}
 
 /** What one of a category's products is called ("Maltster product", "Hop product"). */
 export const productLabel = (key: string | null | undefined) => (key === 'grains' ? 'Maltster product' : key === 'hops' ? 'Hop product' : 'Product')
@@ -145,9 +168,16 @@ export function productTypesFor(types: FeatureType[], categoryId: number | null 
   return typesFor(types, categoryId, parentId).filter((t) => (applicability(t, categoryId, parentId)?.product_mode ?? 'value') !== 'none')
 }
 
-/** The feature types a category's lots carry (copied or entered), in order. */
-export function lotTypesFor(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null): FeatureType[] {
-  return typesFor(types, categoryId, parentId).filter((t) => (applicability(t, categoryId, parentId)?.lot_mode ?? 'copy') !== 'none')
+/**
+ * The feature types a category's lots carry (copied or entered), in order.
+ * D65: with the product's `form`, a feature for another form only (Brix on
+ * Liquid sugars) is left out.
+ */
+export function lotTypesFor(types: FeatureType[], categoryId: number | null | undefined, parentId?: number | null, form?: string | null): FeatureType[] {
+  return typesFor(types, categoryId, parentId).filter((t) => {
+    const a = applicability(t, categoryId, parentId)
+    return (a?.lot_mode ?? 'copy') !== 'none' && (!a?.only_form || form === undefined || a.only_form === form)
+  })
 }
 
 /** The keys of the features a category's lots must have (hops: alpha acid). */
@@ -166,9 +196,12 @@ export const isRangeType = (type: FeatureType, categoryId: number | null | undef
  * "12.5" when both ends are the same, "≥ 12" with no high end, "≤ 9" with no
  * low end; null with neither. The caller adds the unit.
  */
-export function formatRange(v: Pick<FeatureValue, 'value' | 'value_high'> | null | undefined, decimals: number): string | null {
-  // Ranges read as typed on the supplier's sheet, without padding ("11–13", not "11.00–13.00").
-  const end = (x: string | null | undefined) => (x != null && x !== '' ? Number(x).toLocaleString('en-US', { maximumFractionDigits: decimals }) : '')
+export function formatRange(v: Pick<FeatureValue, 'value' | 'value_high'> | null | undefined, type: number | { key: string; decimals: number }): string | null {
+  // Ranges read as typed on the supplier's sheet, without padding ("11–13", not "11.00–13.00");
+  // D65 lead decisions 1 (gap 4): Brix always shows its one place ("6.5–9.0").
+  const decimals = typeof type === 'number' ? type : type.decimals
+  const min = paddedRange(type) ? decimals : 0
+  const end = (x: string | null | undefined) => (x != null && x !== '' ? Number(x).toLocaleString('en-US', { minimumFractionDigits: min, maximumFractionDigits: decimals }) : '')
   const low = end(v?.value)
   const high = end(v?.value_high)
   if (low && high) return low === high ? low : `${low}–${high}`
@@ -197,7 +230,7 @@ export type RangeDrafts = Record<string, RangeDraft>
 
 /** Range boxes filled from stored values. */
 export function rangeDraftsFrom(values: FeatureValues | null | undefined, types: FeatureType[]): RangeDrafts {
-  return Object.fromEntries(types.map((t) => [t.key, { low: values?.[t.key]?.value ?? '', high: values?.[t.key]?.value_high ?? '' }]))
+  return Object.fromEntries(types.map((t) => [t.key, { low: boxText(values?.[t.key]?.value, t), high: boxText(values?.[t.key]?.value_high, t) }]))
 }
 
 /**
@@ -274,10 +307,22 @@ export function isGrainCategory(categories: IngredientCategory[], id: number): b
   return !!grains && (grains.id === id || children.some((c) => c.id === id))
 }
 
-/** D62 §3.1: a category the catalog manages, or a child of one (Grains, Hops): no custom fields. */
+/**
+ * D62 §3.1: a category that takes no custom fields: Grains, Hops and their
+ * children. D65 §4.1: and Fruits, Spices & Flavorings and Sugars and
+ * Extracts (the API's `catalog.allows_fields`; Other Consumables takes them).
+ */
 export function isManagedCategory(categories: IngredientCategory[], id: number): boolean {
   const category = categories.find((c) => c.id === id)
-  return isManagedKey(categoryKey(categories, category))
+  if (category?.catalog) return !category.catalog.allows_fields
+  return ['grains', 'hops', 'fruits', 'spices', 'sugars'].includes(categoryKey(categories, category) ?? '')
+}
+
+/** D65 A9: whether a top-level category takes subcategories (Grains, Other Consumables do; Hops, Fruits, Spices, Sugars don't). */
+export function allowsChildren(category: Pick<IngredientCategory, 'key' | 'parent_id' | 'catalog'> | null | undefined): boolean {
+  if (!category || category.parent_id != null) return false
+  if (category.catalog) return category.catalog.allows_children
+  return !['hops', 'fruits', 'spices', 'sugars'].includes(category.key ?? '')
 }
 
 /**
@@ -306,6 +351,7 @@ export function categoryOptions(categories: IngredientCategory[]): { category: I
  * apart; grain keeps its name ("Rahr 2-Row").
  */
 export function pickerName(p: Pick<IngredientProduct, 'display_name' | 'form' | 'name'> & { ingredient?: { name: string } | null; manufacturer?: { name: string } | null }): string {
+  // D65: a product with no manufacturer already reads "Whirlfloc T · None".
   if (!p.form || !p.ingredient || !p.manufacturer) return p.display_name
   return `${p.ingredient.name} ${p.form}${p.name ? ` (${p.name})` : ''} · ${p.manufacturer.name}`
 }
@@ -333,11 +379,11 @@ export function productMatches(p: IngredientProduct, term: string): boolean {
  * Count and Record movement all use it, so they read the same.
  */
 export function onHandText(
-  p: { on_hand: string | number | null; expired?: string | number | null; unit?: string | null; offers?: IngredientProduct['offers'] },
+  p: { on_hand: string | number | null; expired?: string | number | null; unit?: string | null; unit_label?: string | null; form?: string | null; offers?: IngredientProduct['offers'] },
   mode: QuantityDisplay,
   pack: Pack | null = productPack(p.offers),
 ): string {
-  const show = (q: string | number | null) => formatQuantity(q, pack?.name, pack?.size, p.unit, mode)
+  const show = (q: string | number | null) => formatQuantity(q, pack?.name, pack?.size, unitLabel(p), mode)
   const expired = Number(p.expired ?? 0)
   if (!(expired > 0)) return show(p.on_hand)
   const usable = Math.round((Number(p.on_hand ?? 0) - expired) * 100) / 100
@@ -372,3 +418,45 @@ export function parseCropYear(text: string, today: string): { year: number; erro
 export function missingRequired(drafts: FeatureDrafts, types: FeatureType[], required: string[]): string[] {
   return types.filter((t) => required.includes(t.key) && (drafts[t.key]?.text ?? '').trim() === '').map((t) => t.label)
 }
+
+/**
+ * D65 §4.4: a product's feature values as a lot's form uses them: the
+ * standards a lot starts from and marks changes against (sugars' extract,
+ * grain's specs) and the typical ranges shown beside a box and never copied
+ * (fruit's Brix, hop alpha). Keyed by feature key.
+ */
+export function lotFeatureBasis(
+  values: FeatureValues | null | undefined,
+  types: FeatureType[],
+  categoryId: number | null | undefined,
+  parentId?: number | null,
+): { standard: FeatureValues; typical: FeatureValues } {
+  const standard: FeatureValues = {}
+  const typical: FeatureValues = {}
+  for (const t of types) {
+    const v = values?.[t.key]
+    if (!v) continue
+    if (isRangeType(t, categoryId, parentId)) typical[t.key] = v
+    else standard[t.key] = v
+  }
+  return { standard, typical }
+}
+
+/** D65 (salts amendment): the seven ions, in order, with the short label screens use. */
+export const IONS = [
+  { key: 'ca_ppm_per_g_gal', label: 'Ca' },
+  { key: 'mg_ppm_per_g_gal', label: 'Mg' },
+  { key: 'co3_ppm_per_g_gal', label: 'CO₃' },
+  { key: 'hco3_ppm_per_g_gal', label: 'HCO₃' },
+  { key: 'so4_ppm_per_g_gal', label: 'SO₄' },
+  { key: 'na_ppm_per_g_gal', label: 'Na' },
+  { key: 'cl_ppm_per_g_gal', label: 'Cl' },
+] as const
+
+/** "Ca 61.5 · SO₄ 147.4" (the set ones, in order); null with none. */
+export function ionsText(ions: Record<string, string | number> | null | undefined): string | null {
+  // D65 lead decisions 1 (gap 4): always one place ("Ca 72.0", "SO₄ 103.0").
+  const parts = IONS.filter((i) => ions?.[i.key] != null).map((i) => `${i.label} ${Number(ions![i.key]).toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`)
+  return parts.length ? parts.join(' · ') : null
+}
+

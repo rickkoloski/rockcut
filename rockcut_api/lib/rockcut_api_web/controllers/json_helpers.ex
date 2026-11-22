@@ -990,6 +990,9 @@ defmodule RockcutApiWeb.JSONHelpers do
       parent_id: cat.parent_id,
       sort_order: cat.sort_order,
       delete_blocked: cat.delete_blocked,
+      # D65 §4.2: the forms, units and packs its products take, and whether
+      # it takes a manufacturer, children and custom fields (`Catalog.describe/1`).
+      catalog: RockcutApi.Ingredients.Catalog.describe(cat),
       field_definitions:
         maybe_render(
           cat,
@@ -1022,6 +1025,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       category_id: ing.category_id,
       category: maybe_render(ing, :category, &ingredient_category_summary/1),
       notes: ing.notes,
+      formula: ing.formula,
+      # D65: ion values (ppm @ 1 g/gal) on a Water Salts ingredient, by key.
+      ions: ing.ions,
+      delete_blocked: ing.delete_blocked,
       lots: maybe_render(ing, :lots, &Enum.map(&1, fn l -> ingredient_lot_summary(l) end)),
       inserted_at: ing.inserted_at,
       updated_at: ing.updated_at
@@ -1088,8 +1095,12 @@ defmodule RockcutApiWeb.JSONHelpers do
       manufacturer: maybe_render(p, :manufacturer, &party_summary/1),
       name: p.name,
       unit: p.unit,
+      # D65: "tablets" for `each` on a Tablet product; else the unit.
+      unit_label: RockcutApi.Ingredients.Catalog.unit_label(p.unit, p.form),
       form: p.form,
       origin: p.origin,
+      # D65: its ingredient's ion values, read-only.
+      ions: p.ions,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
       notes: p.notes,
       active: p.active,
@@ -1133,7 +1144,8 @@ defmodule RockcutApiWeb.JSONHelpers do
               product_mode: a.product_mode,
               lot_mode: a.lot_mode,
               lot_required: a.lot_required,
-              only_unit: a.only_unit
+              only_unit: a.only_unit,
+              only_form: a.only_form
             }
           end)
         end)
@@ -1149,6 +1161,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       order_name: o.order_name,
       pack_name: o.pack_name,
       pack_size: o.pack_size,
+      pack_note: o.pack_note,
       form: o.form,
       notes: o.notes,
       active: o.active,
@@ -1272,6 +1285,7 @@ defmodule RockcutApiWeb.JSONHelpers do
                 label: Orders.offer_label(l.offer),
                 pack_name: l.offer.pack_name,
                 pack_size: l.offer.pack_size,
+                pack_note: l.offer.pack_note,
                 product_id: l.offer.product_id,
                 product: product_summary(l.offer.product)
               },
@@ -1518,6 +1532,7 @@ defmodule RockcutApiWeb.JSONHelpers do
       name: p.name,
       display_name: RockcutApi.Ingredients.Products.display_name(p),
       unit: p.unit,
+      unit_label: RockcutApi.Ingredients.Catalog.unit_label(p.unit, p.form),
       form: p.form,
       manufacturer: maybe_render(p, :manufacturer, &party_summary/1)
     }

@@ -24,8 +24,10 @@ import PageHeader from '../../components/PageHeader'
 import { PageToolbar } from '../../components/SettingsMenu'
 import { useApiList } from '../../hooks/useApiQuery'
 import { ROLE_LABELS } from '../../lib/inventory'
+import { orderTargetText } from '../../lib/purchasing'
 import type { Party } from '../../lib/types'
 import PartyDialog from './PartyDialog'
+import { libraryHref } from '../../lib/libraryView'
 
 function Roles({ party }: { party: Party }) {
   return (
@@ -58,7 +60,7 @@ export default function CompaniesPage() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'Companies' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'Companies' }]}
         title="Companies"
         action={{ label: 'Add company', onClick: () => setAdding(true), testId: 'companies-add' }}
       />
@@ -86,7 +88,7 @@ export default function CompaniesPage() {
                   <Roles party={p} />
                   {p.order_target_packs != null && (
                     <Typography variant="caption" color="text.secondary">
-                      Order target: {p.order_target_packs} packs
+                      Order target: {orderTargetText(p.order_target_packs)}
                     </Typography>
                   )}
                 </CardContent>
@@ -113,7 +115,7 @@ export default function CompaniesPage() {
                     <Roles party={p} />
                   </TableCell>
                   <TableCell align="right" data-testid={`company-target-${p.id}`}>
-                    {p.order_target_packs != null ? `${p.order_target_packs} sacks` : ''}
+                    {orderTargetText(p.order_target_packs)}
                   </TableCell>
                   <TableCell>
                     <Typography variant="body2" color="text.secondary">

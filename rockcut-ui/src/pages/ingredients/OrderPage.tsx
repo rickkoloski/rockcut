@@ -28,7 +28,7 @@ import useAuth from '../../hooks/useAuth'
 import api from '../../lib/api'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
-import { byUnitText, money, sharedPackName, targetProgress } from '../../lib/purchasing'
+import { byUnitText, money, offerPackText, sharedPackName, targetProgress } from '../../lib/purchasing'
 import { packWord } from '../../lib/brewingUnits'
 import type { ApiResponse, PurchaseOrder } from '../../lib/types'
 import OrderDialog from './OrderDialog'
@@ -197,7 +197,7 @@ export default function OrderPage() {
                   )}
                 </TableCell>
                 <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
-                  {Number(l.offer.pack_size)} {l.offer.product.unit ?? 'lb'}
+                  {l.offer.pack_name === 'sack' ? `${Number(l.offer.pack_size)} ${l.offer.product.unit ?? 'lb'}` : offerPackText(l.offer, l.offer.product.unit_label ?? l.offer.product.unit ?? 'lb')}
                 </TableCell>
                 <TableCell align="right">{l.packs_ordered}</TableCell>
                 {received && (

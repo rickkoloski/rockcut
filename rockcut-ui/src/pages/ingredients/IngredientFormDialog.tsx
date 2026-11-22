@@ -1,5 +1,9 @@
 import { useState } from 'react'
-import { TextField, FormControl, InputLabel, Select, MenuItem } from '@mui/material'
+import { Box, TextField, FormControl, InputLabel, Select, MenuItem, Typography } from '@mui/material'
+import { useQueryClient } from '@tanstack/react-query'
+import DecimalInput from '../../components/DecimalInput'
+import { parseDecimal } from '../../lib/brewingUnits'
+import { IONS } from '../../lib/ingredientFeatures'
 import type { Ingredient, IngredientCategory } from '../../lib/types'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation'
@@ -19,16 +23,25 @@ interface IngredientFormDialogProps {
   fixedCategoryId?: number
   /** What it's called when the category is fixed ("Hop"). */
   noun?: string
+  /** D65: a new ingredient's category to start with (Other Consumables), still pickable. */
+  defaultCategoryId?: number
 }
 
 export default function IngredientFormDialog(props: IngredientFormDialogProps) {
   return props.open ? <IngredientForm {...props} /> : null
 }
 
-function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId, noun: fixedNoun }: IngredientFormDialogProps) {
+function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId, noun: fixedNoun, defaultCategoryId }: IngredientFormDialogProps) {
   const [name, setName] = useState(ingredient?.name ?? '')
-  const [categoryId, setCategoryId] = useState<number | ''>(ingredient?.category_id ?? fixedCategoryId ?? '')
+  const [categoryId, setCategoryId] = useState<number | ''>(ingredient?.category_id ?? fixedCategoryId ?? defaultCategoryId ?? '')
   const [notes, setNotes] = useState(ingredient?.notes ?? '')
+  // D65 (salts amendment): an optional chemical formula, Water Salts only (lead decisions 3, gap 1).
+  const [formula, setFormula] = useState(ingredient?.formula ?? '')
+  // D65 (salts amendment): a Water Salts ingredient's ions, ppm @ 1 g/gal, 1 decimal, 0–1000.
+  const [ions, setIons] = useState<Record<string, string>>(() =>
+    Object.fromEntries(IONS.map((i) => [i.key, ingredient?.ions?.[i.key] != null ? Number(ingredient.ions[i.key]).toFixed(1) : ''])),
+  )
+  const qc = useQueryClient()
   const [error, setError] = useState<string | null>(null)
 
   const { data: categories = [], isLoading: categoriesLoading } = useApiList<IngredientCategory>(
@@ -48,6 +61,13 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
         .sort(byOrder)
         .flatMap((p) => [{ category: p, child: false }, ...categories.filter((c) => c.parent_id === p.id).sort(byOrder).map((c) => ({ category: c, child: true }))])
   const grain = parentId != null
+  const salts = !!categories.find((c) => c.id === categoryId)?.catalog?.ions
+  const ionError = (text: string) => {
+    const p = parseDecimal(text, 1)
+    if (!p.ok) return p.error
+    return p.value != null && Number(p.value) > 1000 ? 'At most 1,000' : null
+  }
+  const ionsOk = !salts || IONS.every((i) => !ionError(ions[i.key]))
 
   const createIngredient = useApiCreate<Ingredient>('/api/ingredients', {
     invalidateKeys: [['ingredients']],
@@ -66,12 +86,19 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
         category_id: categoryId || null,
         notes: notes || null,
       }
+      // Gap 1: the formula goes only with a Water Salts ingredient; elsewhere a stored one is kept as it is.
+      if (salts) payload.formula = formula.trim() || null
 
-      if (ingredient) {
-        await updateIngredient.mutateAsync({ id: ingredient.id, ...payload })
-      } else {
-        await createIngredient.mutateAsync(payload)
-      }
+      // D65 Stop 3: the ions go with the ingredient, one request and one transaction.
+      if (salts)
+        payload.ions = Object.fromEntries(
+          IONS.map((i) => {
+            const p = parseDecimal(ions[i.key], 1)
+            return [i.key, p.ok ? p.value : null]
+          }),
+        )
+      const saved = ingredient ? await updateIngredient.mutateAsync({ id: ingredient.id, ...payload }) : await createIngredient.mutateAsync(payload)
+      if (salts) for (const key of [['ingredient', saved.id], ['ingredient_products'], ['ingredient_product']]) await qc.invalidateQueries({ queryKey: key })
       onClose()
     } catch (err) {
       setError(parseApiError(err))
@@ -90,7 +117,7 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
       onSubmit={handleSubmit}
       loading={loading}
       error={error}
-      submitDisabled={listsLoading}
+      submitDisabled={listsLoading || !ionsOk}
       testId="ingredient-dialog"
     >
       <TextField
@@ -124,6 +151,49 @@ function IngredientForm({ onClose, ingredient, parentCategoryId, fixedCategoryId
             ))}
           </Select>
         </FormControl>
+      )}
+      {salts ? (
+        <TextField
+          label="Formula"
+          value={formula}
+          onChange={(e) => setFormula(e.target.value)}
+          helperText="Optional, e.g. CaSO₄·2H₂O"
+          fullWidth
+          slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'ingredient-formula' } }}
+        />
+      ) : (
+        // A formula saved before it was Water Salts only: shown, kept, not edited here.
+        ingredient?.formula && (
+          <TextField
+            label="Formula"
+            value={ingredient.formula}
+            helperText="Only Water Salts take a formula; this one is kept as it is"
+            fullWidth
+            slotProps={{ htmlInput: { readOnly: true, 'data-testid': 'ingredient-formula-kept' } }}
+          />
+        )
+      )}
+      {salts && (
+        <Box data-testid="ingredient-ions">
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            Ions (ppm @ 1 g/gal)
+          </Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, gap: 1.5 }}>
+            {IONS.map((i) => (
+              <DecimalInput
+                key={i.key}
+                decimals={1}
+                label={i.label}
+                value={ions[i.key]}
+                onChange={(text) => setIons((m) => ({ ...m, [i.key]: text }))}
+                helperText={ionError(ions[i.key]) ?? undefined}
+                error={!!ionError(ions[i.key])}
+                size="small"
+                slotProps={{ htmlInput: { 'data-testid': `ion-${i.key}` } }}
+              />
+            ))}
+          </Box>
+        </Box>
       )}
       <TextField
         label="Notes"

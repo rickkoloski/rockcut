@@ -5,7 +5,8 @@ defmodule RockcutApi.Ingredients.CategoryFeatureType do
   `product_mode` (`none`; `value`, a standard; `range`, a typical low–high),
   `lot_mode` (`none`; `copy`, a new lot copies the standard; `enter`, typed
   for each lot), whether a lot must have it (`lot_required`), and
-  `only_unit` (it applies only to products in that unit).
+  `only_unit` (it applies only to products in that unit). D65: `only_form`
+  (only to products in that form: Brix on Liquid sugars).
   """
   use Ecto.Schema
   import Ecto.Changeset
@@ -17,6 +18,7 @@ defmodule RockcutApi.Ingredients.CategoryFeatureType do
     field :lot_mode, :string, default: "copy"
     field :lot_required, :boolean, default: false
     field :only_unit, :string
+    field :only_form, :string
 
     belongs_to :category, RockcutApi.Brewing.IngredientCategory
     belongs_to :feature_type, RockcutApi.Ingredients.FeatureType
@@ -34,7 +36,8 @@ defmodule RockcutApi.Ingredients.CategoryFeatureType do
       :product_mode,
       :lot_mode,
       :lot_required,
-      :only_unit
+      :only_unit,
+      :only_form
     ])
     |> validate_required([:category_id, :feature_type_id])
     |> validate_inclusion(:product_mode, ~w(none value range))

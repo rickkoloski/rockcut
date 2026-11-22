@@ -274,6 +274,30 @@ defmodule RockcutApiWeb.D62FixCycle1Test do
       assert eq(on_hand(c.lot.id), 66) and eq(on_hand(c.grain_lot.id), 110)
     end
 
+    # D62 lead decisions 5, gap 2: a crop year sent blank is a value too.
+    test "a crop year sent blank (nil, \"\" or spaces) for a lot that has one is refused; nothing is written",
+         c do
+      for blank <- [nil, "", "  "] do
+        assert base(
+                 receive(c, %{}, %{
+                   "crop_year" => blank,
+                   "features" => %{"alpha_acid_pct" => "14.1"}
+                 })
+               ) ==
+                 "Lot H1 already exists with crop year 2025, alpha acid 14.10; use a new lot number or leave its values"
+      end
+
+      assert eq(on_hand(c.lot.id), 44) and eq(on_hand(c.grain_lot.id), 55)
+      assert Repo.get!(PurchaseOrder, c.order["id"]).status == "open"
+
+      # A blank for a lot with none (grain) matches; a key left out leaves the values.
+      assert {200, _} =
+               receive(c, %{"crop_year" => nil}, %{"features" => %{"alpha_acid_pct" => "14.1"}})
+
+      assert eq(on_hand(c.lot.id), 66) and eq(on_hand(c.grain_lot.id), 110)
+      assert Repo.get!(IngredientLot, c.lot.id).crop_year == 2025
+    end
+
     test "nothing sent adds to it as before", c do
       assert {200, _} = receive(c, %{}, %{})
       assert eq(on_hand(c.lot.id), 66)
@@ -356,7 +380,8 @@ defmodule RockcutApiWeb.D62FixCycle1Test do
                  })
                )
 
-      other = keyed_category!("Fruits", "fruits")
+      # D65 A9: Fruits takes none either; Other Consumables does.
+      other = keyed_category!("Other Consumables", "consumables")
 
       {201, %{"data" => top}} =
         req(c.p["owner"], :post, "/api/ingredient_categories", %{"name" => "Aroma"})
@@ -376,7 +401,7 @@ defmodule RockcutApiWeb.D62FixCycle1Test do
 
       assert {201, _} =
                req(c.p["owner"], :post, "/api/ingredient_categories", %{
-                 "name" => "Stone fruit",
+                 "name" => "Cleaning",
                  "parent_id" => other.id
                })
     end

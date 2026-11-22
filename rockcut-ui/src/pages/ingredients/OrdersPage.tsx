@@ -29,6 +29,7 @@ import { money, sharedPackName } from '../../lib/purchasing'
 import type { OrderStatus, Party, PurchaseOrder } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import PurchasingTabs from './PurchasingTabs'
+import { libraryHref } from '../../lib/libraryView'
 
 /**
  * D62 lead decisions 1, gap 6: an order's packs in its pack's words ("30
@@ -59,7 +60,7 @@ export default function OrdersPage() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'Purchasing' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'Purchasing' }]}
         title="Purchasing"
         action={{ label: 'New order', onClick: () => setAdding(true), testId: 'orders-new' }}
       />

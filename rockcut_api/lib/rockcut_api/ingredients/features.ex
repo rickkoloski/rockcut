@@ -5,7 +5,8 @@ defmodule RockcutApi.Ingredients.Features do
 
   Values are written as a map keyed by feature key. Each entry is a number
   (or a decimal string), a map `%{"value", "entered_value", "entered_unit"}`,
-  or nil (remove that value). The rules: the feature must apply to the
+  or nil (remove that value); a map with any other key, or none, is refused
+  (D65 lead decisions 4, gap 8). The rules: the feature must apply to the
   product's or lot's category or its parent, the value lies in the type's
   `min`..`max`, and `entered_unit` is one of the feature's units
   (`Units.entered_units/1`), given only together with `entered_value`. A
@@ -23,6 +24,12 @@ defmodule RockcutApi.Ingredients.Features do
   from the product's standard (`copy_standard!/3`), `enter` ones don't, and
   `lot_required` ones must be there (`check_required/3`). A lot value
   outside the product's range is allowed and marked (`put_outside_range/1`).
+
+  D65 §4.4: a feature whose row has `only_form` applies only to products in
+  that form (Brix on Liquid sugars); `validate/4` takes the product's form,
+  and a value sent for another form is refused ("Brix is only for Liquid
+  sugars"); on a sugar product it's "Brix is entered on Liquid sugar lots,
+  not on the product" (lead decisions 1, gap 2).
   """
   import Ecto.Query
 
@@ -78,9 +85,11 @@ defmodule RockcutApi.Ingredients.Features do
   `{:error, {:invalid, %{features: %{key => [message]}}}}`. Anything but a map
   is refused.
   """
-  def validate(nil, _ingredient_id, _target), do: {:ok, []}
+  def validate(features, ingredient_id, target, form \\ nil)
 
-  def validate(features, ingredient_id, target) when is_map(features) do
+  def validate(nil, _ingredient_id, _target, _form), do: {:ok, []}
+
+  def validate(features, ingredient_id, target, form) when is_map(features) do
     types = Map.new(Repo.all(FeatureType), &{&1.key, &1})
     applies = applicability(ingredient_id)
 
@@ -90,7 +99,7 @@ defmodule RockcutApi.Ingredients.Features do
 
         type = Map.get(types, key)
 
-        case check(type, applies, target, entry) do
+        case check(type, applies, target, entry, form) do
           {:ok, type, attrs} ->
             {[{type, attrs} | ok], errors}
 
@@ -110,7 +119,7 @@ defmodule RockcutApi.Ingredients.Features do
       else: {:error, {:invalid, %{features: errors}}}
   end
 
-  def validate(_features, _ingredient_id, _target),
+  def validate(_features, _ingredient_id, _target, _form),
     do: {:error, {:invalid, %{features: ["must be a map by feature key"]}}}
 
   @doc """
@@ -250,16 +259,55 @@ defmodule RockcutApi.Ingredients.Features do
     |> Enum.reduce(%{}, fn a, acc -> Map.put_new(acc, a.feature_type_id, a) end)
   end
 
-  defp check(nil, _applies, _target, _entry), do: {:error, "is not a feature"}
+  @doc """
+  D65: one plain value of `type` as typed: `{:ok, decimal}`, `{:ok, nil}`
+  for a blank, or `{:error, message}` naming it ("Calcium: Use at most 1
+  decimal", "Calcium must be between 0 and 1,000"). Ingredient ions use it.
+  """
+  def check_scalar(_type, raw) when raw in [nil, ""], do: {:ok, nil}
 
-  defp check(type, applies, target, entry) do
+  def check_scalar(type, raw) do
+    with {:ok, value} <- decimal(raw, :required),
+         :ok <- check_places(type, value),
+         :ok <- check_value(type, value) do
+      {:ok, value}
+    else
+      {:error, {:places, places}} -> {:error, "#{type.label}: #{Ranges.places_message(places)}"}
+      {:error, message} -> {:error, "#{type.label} #{message}"}
+    end
+  end
+
+  defp check(nil, _applies, _target, _entry, _form), do: {:error, "is not a feature"}
+
+  defp check(type, applies, target, entry, form) do
     case Map.get(applies, type.id) do
-      nil -> {:error, "doesn't apply to this category"}
-      %{product_mode: "none"} when target == :product -> {:error, "isn't set on a product"}
-      %{lot_mode: "none"} when target == :lot -> {:error, "isn't set on a lot"}
-      _ when is_nil(entry) -> {:ok, type, nil}
-      %{product_mode: "range"} when target == :product -> check_range(type, entry)
-      _ -> check_single(type, entry, target)
+      nil ->
+        {:error, "doesn't apply to this category"}
+
+      # D65 lead decisions 1 (gap 2): Brix on a sugar product, whatever its form, belongs on
+      # its lots. `only_form` is only on the Sugars row (Brix on Liquid sugars).
+      %{only_form: only, product_mode: "none"}
+      when is_binary(only) and target == :product and not is_nil(entry) ->
+        {:error, "is entered on #{only} sugar lots, not on the product"}
+
+      # D65: Brix on Liquid sugars only (a value sent for another form; clearing one is fine).
+      %{only_form: only} when is_binary(only) and only != form and not is_nil(entry) ->
+        {:error, "is only for #{only} sugars"}
+
+      %{product_mode: "none"} when target == :product ->
+        {:error, "isn't set on a product"}
+
+      %{lot_mode: "none"} when target == :lot ->
+        {:error, "isn't set on a lot"}
+
+      _ when is_nil(entry) ->
+        {:ok, type, nil}
+
+      %{product_mode: "range"} when target == :product ->
+        check_range(type, entry)
+
+      _ ->
+        check_single(type, entry, target)
     end
   end
 
@@ -275,10 +323,13 @@ defmodule RockcutApi.Ingredients.Features do
   end
 
   # D62 §3.4: `%{"low", "high"}`, either blank (both blank: no range).
+  # D65 lead decisions 4 (gap 8): only those keys, at least one of them;
+  # `%{"value"}`, `%{"lo"}` or `%{}` is refused, not read as "no range".
   defp check_range(type, entry) when is_map(entry) do
     entry = Map.new(entry, fn {k, v} -> {to_string(k), v} end)
 
-    with {:ok, low} <- decimal(Map.get(entry, "low"), :optional),
+    with :ok <- check_keys(entry, ~w(low high), "takes low and/or high"),
+         {:ok, low} <- decimal(Map.get(entry, "low"), :optional),
          {:ok, high} <- decimal(Map.get(entry, "high"), :optional),
          :ok <- check_end(type, low),
          :ok <- check_end(type, high) do
@@ -303,10 +354,13 @@ defmodule RockcutApi.Ingredients.Features do
     with :ok <- check_places(type, value), do: check_value(type, value)
   end
 
+  # Gap 8: a single value's map has `value` and the entered pair only (a
+  # range's `%{"low", "high"}` here is refused, not dropped).
   defp entry_attrs(entry) when is_map(entry) do
     entry = Map.new(entry, fn {k, v} -> {to_string(k), v} end)
 
-    with {:ok, value} <- decimal(Map.get(entry, "value"), :required),
+    with :ok <- check_keys(entry, ~w(value entered_value entered_unit), "takes one value"),
+         {:ok, value} <- decimal(Map.get(entry, "value"), :required),
          {:ok, entered_value} <- decimal(Map.get(entry, "entered_value"), :optional),
          {:ok, entered_unit} <- unit(Map.get(entry, "entered_unit")) do
       {:ok, %{value: value, entered_value: entered_value, entered_unit: entered_unit}}
@@ -316,6 +370,12 @@ defmodule RockcutApi.Ingredients.Features do
   defp entry_attrs(value) do
     with {:ok, value} <- decimal(value, :required),
          do: {:ok, %{value: value, entered_value: nil, entered_unit: nil}}
+  end
+
+  defp check_keys(entry, allowed, message) do
+    if map_size(entry) > 0 and Enum.all?(Map.keys(entry), &(&1 in allowed)),
+      do: :ok,
+      else: {:error, message}
   end
 
   defp decimal(v, :required) when v in [nil, ""], do: {:error, "can't be blank"}

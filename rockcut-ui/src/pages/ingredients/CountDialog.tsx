@@ -5,9 +5,9 @@ import QuantityInput, { type QuantityValue } from '../../components/QuantityInpu
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { formatQuantity, productPack } from '../../lib/brewingUnits'
+import { formatQuantity, productPack, productShortName } from '../../lib/brewingUnits'
 import { FUTURE_DATE, GRAIN_KEYS, oldestFirst } from '../../lib/inventory'
-import { onHandText } from '../../lib/ingredientFeatures'
+import { onHandText, unitLabel } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement } from '../../lib/types'
 
@@ -96,7 +96,8 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
           mode={mode}
           packSize={pack?.size ?? null}
           packName={pack?.name}
-          unit={product.unit}
+          unit={unitLabel(product)}
+          productName={productShortName(product)}
           label="Counted"
           onChange={setTotal}
           testId="count-total"
@@ -111,10 +112,11 @@ function CountForm({ onClose, product, lots }: CountDialogProps) {
               mode={mode}
               packSize={l.pack_size ? Number(l.pack_size) : null}
               packName={l.pack_name}
-              unit={product.unit}
+              unit={unitLabel(product)}
+              productName={productShortName(product)}
               label={`Lot ${l.lot_number ?? `#${l.id}`}${l.status === 'expired' ? ' (Expired)' : ''}`}
               onChange={(v) => setPerLot((p) => ({ ...p, [l.id]: v }))}
-              helperText={`On hand: ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, product.unit, mode)}; leave empty if unchanged`}
+              helperText={`On hand: ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, unitLabel(product), mode)}; leave empty if unchanged`}
               testId={`count-lot-${l.id}`}
             />
           </Box>

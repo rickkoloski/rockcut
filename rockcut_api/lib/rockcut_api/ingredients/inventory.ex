@@ -23,7 +23,7 @@ defmodule RockcutApi.Ingredients.Inventory do
   import Ecto.Query
 
   alias RockcutApi.{Repo, Tasks}
-  alias RockcutApi.Brewing.{IngredientLot, RecipeIngredient}
+  alias RockcutApi.Brewing.{Ingredient, IngredientLot, RecipeIngredient}
 
   alias RockcutApi.Ingredients.{
     Catalog,
@@ -32,6 +32,7 @@ defmodule RockcutApi.Ingredients.Inventory do
     Parties,
     Product,
     Products,
+    SupplierOffer,
     Units,
     Valuation
   }
@@ -248,7 +249,8 @@ defmodule RockcutApi.Ingredients.Inventory do
          {:ok, quantity} <- positive(attrs["quantity"], attrs_unit(attrs)),
          {:ok, date} <- movement_date(attrs["occurred_on"]),
          :ok <- partner(kind, attrs["party_id"]),
-         {:ok, target} <- movement_target(kind, attrs) do
+         {:ok, target} <- movement_target(kind, attrs),
+         :ok <- Products.check_whole(target_product(target), quantity) do
       sign = if kind in @outgoing, do: Decimal.negate(quantity), else: quantity
 
       write(fn ->
@@ -293,10 +295,12 @@ defmodule RockcutApi.Ingredients.Inventory do
   expired for a total, on each lot counted by lot. `{:ok, adjustments}`.
   """
   def count(%Product{} = product, attrs, user) do
-    unit = Products.unit(product)
+    # The unit as the refusals name it ("tablets" on a Tablet `each`, D65).
+    unit = Products.unit_label(product)
 
     with {:ok, date} <- movement_date(attrs["counted_on"]),
-         {:ok, plan} <- count_plan(attrs, unit) do
+         {:ok, plan} <- count_plan(attrs, unit),
+         :ok <- whole_plan(product, plan) do
       base = %{kind: "count", occurred_on: date, note: attrs["note"], entered_by_id: user.id}
 
       write(fn ->
@@ -305,6 +309,18 @@ defmodule RockcutApi.Ingredients.Inventory do
         |> Enum.flat_map(fn {parts, negative?} -> insert_movements!(parts, base, negative?) end)
       end)
     end
+  end
+
+  # D65 §4.3: an `each` count is whole, in total and on every lot.
+  defp whole_plan(product, {:total, counted}), do: Products.check_whole(product, counted)
+
+  defp whole_plan(product, {:by_lot, entries}) do
+    Enum.find_value(entries, :ok, fn {_id, counted} ->
+      case Products.check_whole(product, counted) do
+        :ok -> nil
+        error -> error
+      end
+    end)
   end
 
   defp count_plan(%{"mode" => "total"} = attrs, unit) do
@@ -548,7 +564,7 @@ defmodule RockcutApi.Ingredients.Inventory do
   defp attrs_unit(attrs) do
     case {blank(attrs["lot_id"]), blank(attrs["product_id"])} do
       {nil, nil} -> "lb"
-      {nil, product_id} -> Products.unit(product_id)
+      {nil, product_id} -> Products.unit_label(product_id)
       {lot_id, _} -> lot_unit(lot_id)
     end
   end
@@ -558,13 +574,21 @@ defmodule RockcutApi.Ingredients.Inventory do
       join: p in Product,
       on: p.id == l.product_id,
       where: l.id == ^lot_id,
-      select: p.unit
+      select: {p.unit, p.form}
     )
-    |> Repo.one() || "lb"
+    |> Repo.one()
+    |> case do
+      nil -> "lb"
+      {unit, form} -> Catalog.unit_label(unit, form)
+    end
   end
 
-  defp target_unit({:lot, lot}), do: Products.unit(lot.product_id)
-  defp target_unit({:product, product_id}), do: Products.unit(product_id)
+  defp target_product({:lot, lot}), do: lot.product_id
+  defp target_product({:product, product_id}), do: product_id
+
+  # As the refusals name it ("tablets" on a Tablet `each`, D65).
+  defp target_unit({:lot, lot}), do: Products.unit_label(lot.product_id)
+  defp target_unit({:product, product_id}), do: Products.unit_label(product_id)
 
   ## Lots
 
@@ -590,6 +614,34 @@ defmodule RockcutApi.Ingredients.Inventory do
     [Products.display_name(product), lot.lot_number || "##{lot.id}", year, alpha]
     |> Enum.reject(&is_nil/1)
     |> Enum.join(" · ")
+  end
+
+  # D65 A11: a fruit, spice, sugar or other consumable lot, "Aseptic Fruit
+  # Strawberry Purée · L-7 · 8.5 °Bx" (Brix only when the lot has it).
+  def lot_label(
+        %IngredientLot{
+          product: %Product{} = product,
+          ingredient: %{category: %RockcutApi.Brewing.IngredientCategory{} = category}
+        } = lot
+      ) do
+    if Catalog.key(category) in ~w(fruits spices sugars consumables) do
+      brix =
+        case lot.feature_values do
+          values when is_list(values) ->
+            Enum.find_value(values, fn v ->
+              # Lead decisions 1 (gap 4): always one place, "14.0 °Bx".
+              v.feature_type.key == "brix" &&
+                "#{v.value |> Decimal.round(1) |> Decimal.to_string(:normal)} °Bx"
+            end)
+
+          _ ->
+            nil
+        end
+
+      [Products.display_name(product), lot.lot_number || "##{lot.id}", brix]
+      |> Enum.reject(&is_nil/1)
+      |> Enum.join(" · ")
+    end
   end
 
   def lot_label(_lot), do: nil
@@ -669,7 +721,8 @@ defmodule RockcutApi.Ingredients.Inventory do
   category copies are copied onto the lot; `features` in the body replace
   them key by key (nil drops one). D62 §3.4: a hop lot needs its crop year
   and its alpha acid (`lot_required`), and is in 11 lb boxes; no other lot
-  has a crop year.
+  has a crop year. D62 lead decisions 5: a lot of a product with an active
+  offer needs its supplier (decision 17).
   """
   def create_lot(attrs, user) do
     with {:ok, attrs} <- product_ingredient(attrs),
@@ -677,9 +730,17 @@ defmodule RockcutApi.Ingredients.Inventory do
          :ok <- product_rules(attrs, managed?),
          {:ok, attrs} <- category_lot_rules(attrs, nil),
          :ok <- supplier(attrs["supplier_party_id"]),
+         :ok <- supplier_given(attrs),
          {:ok, initial} <- initial(attrs, managed?),
+         :ok <- whole_lot(attrs, initial),
          :ok <- lot_number_free(attrs, nil),
-         {:ok, features} <- Features.validate(attrs["features"], attrs["ingredient_id"], :lot),
+         {:ok, features} <-
+           Features.validate(
+             attrs["features"],
+             attrs["ingredient_id"],
+             :lot,
+             product_form(product_id(attrs))
+           ),
          :ok <- required_features(managed?, attrs["ingredient_id"], features, []) do
       write(fn ->
         lot =
@@ -742,13 +803,20 @@ defmodule RockcutApi.Ingredients.Inventory do
          {:ok, managed?} <- managed_lot?(merged),
          :ok <- product_rules(merged, managed?),
          {:ok, attrs} <- category_lot_rules(attrs, lot),
+         :ok <- Products.check_whole(blank(merged["product_id"]), blank(attrs["pack_size"])),
          :ok <- supplier(attrs["supplier_party_id"]),
          :ok <-
            lot_number_free(
              %{"product_id" => merged["product_id"], "lot_number" => attrs["lot_number"]},
              lot.id
            ),
-         {:ok, features} <- Features.validate(attrs["features"], ingredient_id, :lot),
+         {:ok, features} <-
+           Features.validate(
+             attrs["features"],
+             ingredient_id,
+             :lot,
+             product_form(blank(merged["product_id"]))
+           ),
          :ok <- required_features(managed?, ingredient_id, features, lot_feature_keys(lot)) do
       write(fn ->
         lot =
@@ -907,7 +975,24 @@ defmodule RockcutApi.Ingredients.Inventory do
         {:error, {:invalid, %{crop_year: ["can't be blank"]}}}
 
       true ->
-        fixed_pack(attrs, Catalog.fixed_pack(key), lot)
+        with {:ok, attrs} <- fixed_pack(attrs, Catalog.fixed_pack(key), lot),
+             do: pack_in_category(attrs, key)
+    end
+  end
+
+  # D65 §4.2: a new lot of another category with no pack named starts with
+  # its unit's usual one (lb → bag, gal → pail, …), not the schema's sack;
+  # lead decisions 1 (gap 3): the category's first pack when the unit's
+  # usual one isn't in its list.
+  defp fixed_pack(attrs, nil, nil) do
+    with nil <- blank(attrs["pack_name"]),
+         key when key not in ["grains", nil] <- Catalog.ingredient_key(attrs["ingredient_id"]),
+         names = Catalog.pack_names(key, ingredient_category(attrs["ingredient_id"])),
+         name when is_binary(name) <-
+           Catalog.default_pack_in(Products.unit(product_id(attrs)), names) do
+      {:ok, Map.put(attrs, "pack_name", name)}
+    else
+      _ -> {:ok, attrs}
     end
   end
 
@@ -929,6 +1014,38 @@ defmodule RockcutApi.Ingredients.Inventory do
     end
   end
 
+  # D65 lead decisions 1 (gap 11): a pack name given for a lot is one its
+  # category's offers may use (`Catalog.pack_names/2`: a child of Other
+  # Consumables its own list), refused in the offers' words. A lot that
+  # doesn't name one keeps its own (grain sack, hop box).
+  defp pack_in_category(attrs, nil), do: {:ok, attrs}
+
+  defp pack_in_category(attrs, key) do
+    case blank(attrs["pack_name"]) do
+      nil ->
+        {:ok, attrs}
+
+      name ->
+        names = Catalog.pack_names(key, ingredient_category(attrs["ingredient_id"]))
+
+        if name in names,
+          do: {:ok, attrs},
+          else: {:error, {:invalid, %{pack_name: ["must be #{Enum.join(names, " or ")}"]}}}
+    end
+  end
+
+  defp ingredient_category(nil), do: nil
+
+  defp ingredient_category(ingredient_id) do
+    Repo.one(
+      from(i in Ingredient,
+        join: c in assoc(i, :category),
+        where: i.id == ^ingredient_id,
+        select: c
+      )
+    )
+  end
+
   # A2: the features a managed lot can't be without (`Features.check_required/3`).
   defp required_features(false, _ingredient_id, _features, _existing), do: :ok
 
@@ -942,6 +1059,30 @@ defmodule RockcutApi.Ingredients.Inventory do
       select: t.key
     )
     |> Repo.all()
+  end
+
+  # D65 §4.3: an `each` lot's pack size and first movement are whole.
+  defp whole_lot(attrs, initial) do
+    product_id = product_id(attrs)
+
+    with :ok <- Products.check_whole(product_id, blank(attrs["pack_size"])) do
+      case initial do
+        {_kind, quantity} -> Products.check_whole(product_id, quantity)
+        nil -> :ok
+      end
+    end
+  end
+
+  defp supplier_given(attrs) do
+    product_id = blank(attrs["product_id"])
+
+    offered? =
+      product_id != nil and
+        Repo.exists?(from(o in SupplierOffer, where: o.product_id == ^product_id and o.active))
+
+    if offered? and blank(attrs["supplier_party_id"]) == nil,
+      do: refuse("Pick the supplier; this product's lots come from its offers' suppliers"),
+      else: :ok
   end
 
   defp supplier(party_id) do
@@ -972,7 +1113,7 @@ defmodule RockcutApi.Ingredients.Inventory do
 
       true ->
         with {:ok, quantity} <-
-               positive(attrs["initial_quantity"], Products.unit(product_id(attrs))),
+               positive(attrs["initial_quantity"], Products.unit_label(product_id(attrs))),
              :ok <- not_future(attrs["received_date"]),
              do: {:ok, {kind, quantity}}
     end
@@ -1002,19 +1143,35 @@ defmodule RockcutApi.Ingredients.Inventory do
 
   defp product_id(attrs), do: blank(attrs["product_id"])
 
+  # D65: the product's form, for features only one form takes (Brix on Liquid sugars).
+  defp product_form(nil), do: nil
+  defp product_form(id), do: Repo.one(from(p in Product, where: p.id == ^id, select: p.form))
+
   # A quantity in the product's unit: at least 0.01 and under 1,000,000,
-  # kept to 2 decimals.
+  # kept to 2 decimals. D65 (Stop 1 LEAD note 10): a count (`each`, its
+  # "tablets" label) starts at 1: "at least 1 tablet", "at least 1".
   defp positive(v, unit) do
+    count? = unit in ["each", "tablets"]
+    least = if count?, do: Decimal.new(1), else: Decimal.new("0.01")
+
     case cast_decimal(v) do
       {:ok, d} ->
-        if Decimal.compare(d, Decimal.new("0.01")) != :lt and Decimal.lt?(d, 1_000_000),
+        if Decimal.compare(d, least) != :lt and Decimal.lt?(d, 1_000_000),
           do: {:ok, Units.round(d, 2)},
-          else: refuse("Enter a quantity of at least 0.01 #{unit} and under 1,000,000 #{unit}")
+          else: refuse(least_message(unit))
 
       :error ->
         refuse("The quantity must be a number")
     end
   end
+
+  defp least_message("tablets"),
+    do: "Enter a quantity of at least 1 tablet and under 1,000,000 tablets"
+
+  defp least_message("each"), do: "Enter a quantity of at least 1 and under 1,000,000"
+
+  defp least_message(unit),
+    do: "Enter a quantity of at least 0.01 #{unit} and under 1,000,000 #{unit}"
 
   defp non_negative(v, unit) do
     case cast_decimal(v) do

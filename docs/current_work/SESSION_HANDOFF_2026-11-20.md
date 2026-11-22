@@ -67,3 +67,37 @@
 - Cycle 3 (gaps 19, 20): `328da86` `2c810f0` `e0f61fb` (+ builder COVERAGE commits). Full local Playwright: 858 passed, 1 failed (D39 S73 touch-drag flake; the brewery-board project rerun passed 436/436).
 - **QA recheck 3: DONE pass** (`~/src/rockcut-d62-qa/results/d62_qa_recheck3.md`): 19 and 20 fixed, the R4 leftovers (Receive 360 px, slow To order, 403s) pass, seeded diff 0. Unrated notes: re-picking the offer already shown after a 409 sends nothing (message stays); grain price line repeats a supplier that is also the maltster (D61 wording).
 - **Next: DEV gate, waiting on Matt's OK** (claim DEV in conv 80, deploy branch to DEV, DEV Playwright + short DEV QA). Release needs the pre-release snapshot (D62 migrations rename columns).
+
+## Update (night 2026-11-20): D62 on prod
+
+- **D62 released** as `v2026.11.20`:
+  - PR #86 merged to `develop` as `723c785`; release PR #87 squashed as `edd4ed7`;
+  - API v43 / UI v39; snapshot `vs_R742wNODv6egTLNNwgKeaRDX`;
+  - rollback = restore that snapshot, then API v42 / UI v38;
+  - the hop seed is on prod (28 lots, 409.6 lb);
+  - Matt's prod check passed.
+- **DEV gate:**
+  - full Playwright 909/909 at `a9998ea`, after decisions 4 fixed a To order refetch race seen
+    only on DEV;
+  - DEV QA passed with 4 minor gaps plus the Add lot supplier. Matt moved these to D65 (branch
+    `d65-carry-devqa`, local).
+  - DEV is free and runs `develop`.
+- **D65:** the spec and plan are approved, with reference data from Matt (salts with ions, sugars,
+  Aseptic and SoNature fruit, Whirlfloc T in tablets, 10 spices; acids and Irish Moss removed). They
+  live on local branch `d65-fruit-spices-sugars-consumables`, in worktree `~/src/rockcut-d65`.
+  - **Next:** rebase it onto `develop`, then brief the builder starting at Stop 0 (the carried
+    fixes).
+  - The reference CSVs are git-excluded, in `~/src/rockcut-d65/docs/current_work/reference/`. The
+    seed must embed them.
+
+## Start here (next session)
+
+1. **Restart the builder** before the D65 brief. In its pane (build tab, w1:p4), run `/clear`, then
+   `herdr agent rename <pane> builder`; a long D62 context would otherwise carry over.
+2. **Rebase D65** (worktree `~/src/rockcut-d65`, branch `d65-fruit-spices-sugars-consumables`)
+   onto `origin/develop`. It's docs only, cut from `a9998ea`, so the rebase should be clean. Then
+   work in `~/src/rockcut` as usual.
+3. **Write the D65 builder brief** from the plan, starting with **Stop 0**: cherry-pick
+   `d65-carry-devqa` (`1a3b3f5`, `c939d17`, `fcaefe4`, and the wip `cb9ed73`), then finish the wip.
+4. **The finished tabs are closed:** D62 QA, DEV and PROD. The worktrees `rockcut-dev-d62` and
+   `rockcut-release-20261120` are removed. DEV is free and runs `develop` `723c785`.

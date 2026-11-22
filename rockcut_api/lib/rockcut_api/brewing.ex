@@ -187,6 +187,7 @@ defmodule RockcutApi.Brewing do
       lots: ^from(l in IngredientLot, order_by: [desc: l.received_date], preload: ^@lot_features)
     ])
     |> Repo.all()
+    |> put_ingredient_delete_blocked()
   end
 
   def get_ingredient!(id) do
@@ -196,6 +197,7 @@ defmodule RockcutApi.Brewing do
       :category,
       lots: from(l in IngredientLot, order_by: [desc: l.received_date], preload: ^@lot_features)
     ])
+    |> put_ingredient_delete_blocked()
   end
 
   def create_ingredient(attrs) do
@@ -212,9 +214,55 @@ defmodule RockcutApi.Brewing do
     |> preload_on_ok(:category)
   end
 
+  @doc """
+  D65 lead decisions 1 (gap 13): an ingredient with products (or lots) is
+  refused with a sentence, never the foreign key's 500.
+  """
   def delete_ingredient(%Ingredient{} = ingredient) do
-    Repo.delete(ingredient)
+    case put_ingredient_delete_blocked(ingredient).delete_blocked do
+      nil -> Repo.delete(ingredient)
+      refusal -> {:error, {:invalid, %{base: [refusal]}}}
+    end
   end
+
+  @doc """
+  Fill each ingredient's virtual `delete_blocked`: the refusal
+  `delete_ingredient/1` would give, or nil. Two queries.
+  """
+  def put_ingredient_delete_blocked(ingredients) when is_list(ingredients) do
+    ids = Enum.map(ingredients, & &1.id)
+    used = fn query -> query |> distinct(true) |> Repo.all() |> MapSet.new() end
+
+    with_products =
+      used.(
+        from(p in RockcutApi.Ingredients.Product,
+          where: p.ingredient_id in ^ids,
+          select: p.ingredient_id
+        )
+      )
+
+    with_lots =
+      used.(from(l in IngredientLot, where: l.ingredient_id in ^ids, select: l.ingredient_id))
+
+    Enum.map(ingredients, fn ing ->
+      blocked =
+        cond do
+          MapSet.member?(with_products, ing.id) ->
+            "#{ing.name} has products; deactivate them instead"
+
+          MapSet.member?(with_lots, ing.id) ->
+            "#{ing.name} has lots; it can't be deleted"
+
+          true ->
+            nil
+        end
+
+      %{ing | delete_blocked: blocked}
+    end)
+  end
+
+  def put_ingredient_delete_blocked(%Ingredient{} = ingredient),
+    do: hd(put_ingredient_delete_blocked([ingredient]))
 
   # ── Ingredient Lots ────────────────────────────────────────────────
 
