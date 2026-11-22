@@ -111,7 +111,7 @@ function PitchForm({ onClose, product, lots }: PitchDialogProps) {
         productName={productShortName(product)}
         positive
         required
-        label={unit.charAt(0).toUpperCase() + unit.slice(1)}
+        label="Count"
         onChange={setQuantity}
         testId="pitch-quantity"
         helperText={lot ? `This lot has ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, unit, 'lb')}` : `${formatQuantity(onHand, null, null, unit, 'lb')} on hand in lots that aren't expired`}
