@@ -125,4 +125,28 @@ test.describe('at 360 px', () => {
     await expect(snack(page)).toContainText('Yeast harvest - #2 done · 6 lb')
     expect((await brink(tb.id))!.yeast?.on_hand_lb).toBe('36')
   })
+
+  test('the dirty question fits too', async ({ page }) => {
+    const us05 = await yeastProduct('US-05')
+    const tb = await yeast.brink('YB-phone-dirty')
+    const b = await yeast.brewed('Galactic')
+    const first = stepOf(b, 'Yeast harvest')
+    const api = await apiAs('brewer1')
+    const res = await api.post(`/api/production/steps/${first.id}/complete`, {
+      data: { done_on: first.due_on, yeast_outcome: 'harvested', yeast_brink_id: tb.id, yeast_lb: '5', yeast_product_ids: [us05.id], yeast_generation: 1 },
+    })
+    expect(res.status(), await res.text()).toBe(200)
+    expect((await api.post(`/api/yeast/brinks/${tb.id}/dump`, { data: { occurred_on: today() } })).status()).toBe(200)
+    const card = await cardOf(stepOf(b, 'Yeast harvest - #2').id)
+
+    await openBoard(page, { from: today(), to: today() })
+    await check(page, card)
+    const d = await fillHarvest(page, { brinkId: tb.id, lb: '6' })
+    await d.getByRole('button', { name: 'Save' }).click()
+    const q = page.getByTestId('harvest-question-dirty')
+    await expect(q).toBeVisible()
+    await expectNoSidewaysScroll(page)
+    await q.getByRole('button', { name: 'Record anyway' }).click()
+    await expect(snack(page)).toContainText('Yeast harvest - #2 done · 6 lb')
+  })
 })

@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 import { authFile } from '../../config/test-env'
-import { adoptParty, adoptProduct, apiAs, categoryId, denverToday, makeD65Ingredient, openDialog, pick, saveProduct, tempTag } from './helpers'
+import { adoptParty, adoptProduct, apiAs, categoryId, denverToday, expectNoSidewaysScroll, expectPhoneDialogClosed, makeD65Ingredient, openDialog, pick, saveProduct, tempTag } from './helpers'
 import { batchOf, snack, stepOf, today, type SBatch } from '../production/schedule'
 import { brink, fillHarvest, history, Yeast, yeastProduct } from '../production/yeast'
 
@@ -341,4 +341,24 @@ test('bartender1: no Ingredient Library or Brinks in the nav, and 403 from the y
   for (const path of ['/api/yeast/brinks', '/api/yeast/strain_types', `/api/ingredient_products?category_id=${await categoryId('yeast')}`])
     expect((await api.get(path)).status(), path).toBe(403)
   await page.context().close()
+})
+
+test.describe('at 360 px', () => {
+  test.use({ viewport: { width: 360, height: 780 } })
+
+  test('Pitch and Add count on the Brinks tab have no sideways scroll', async ({ page }) => {
+    const us05 = await yeastProduct('US-05')
+    const tb = await yeast.brink('YB-phone-act', '148')
+    const a = await yeast.brewed('Galactic')
+    await harvestApi(a, 'Yeast harvest', tb.id, '20', [us05.id], 1)
+    for (const [action, dialog] of [
+      ['pitch', 'brink-pitch-dialog'],
+      ['count', 'brink-count-dialog'],
+    ]) {
+      const d = await brinkAction(page, tb.id, action, dialog)
+      await expectNoSidewaysScroll(page)
+      await d.getByRole('button', { name: 'Cancel' }).click()
+      await expectPhoneDialogClosed(page, d)
+    }
+  })
 })
