@@ -201,6 +201,14 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:post, "/api/supplier_offers/:id/prices"},
     {:get, "/api/inventory_movements"},
     {:post, "/api/inventory_movements"},
+    # D64: yeast (spec §8: every yeast route refuses a device).
+    {:get, "/api/yeast/strain_types"},
+    {:post, "/api/yeast/strain_types"},
+    {:patch, "/api/yeast/strain_types/:id"},
+    {:put, "/api/yeast/strain_types/:id"},
+    {:delete, "/api/yeast/strain_types/:id"},
+    {:get, "/api/yeast/batches"},
+    {:post, "/api/ingredient_products/:id/pitch"},
     # D61 purchasing, contracts, reorder and totals: no device (decision 26).
     {:get, "/api/contracts/shortfall"},
     {:get, "/api/contracts"},

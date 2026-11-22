@@ -242,7 +242,10 @@ defmodule RockcutApi.Ingredients.Inventory do
   `allocation: "oldest_first"` (outgoing kinds). Counts go through
   `count/3`. `{:ok, movements}`, one per lot touched.
   """
-  def create_movement(attrs, user) do
+  def create_movement(attrs, user), do: create_movement(attrs, user, %{})
+
+  # `extra` goes on every movement written (D64: a pitch's `batch_id`).
+  defp create_movement(attrs, user, extra) do
     kind = attrs["kind"]
 
     with :ok <- movement_kind(kind),
@@ -271,7 +274,7 @@ defmodule RockcutApi.Ingredients.Inventory do
               entered_by_id: user.id
             }
 
-            insert_movements!(parts, base, Decimal.negative?(sign))
+            insert_movements!(parts, Map.merge(base, extra), Decimal.negative?(sign))
 
           {:error, :short, on_hand} ->
             Repo.rollback(
@@ -279,6 +282,54 @@ defmodule RockcutApi.Ingredients.Inventory do
             )
         end
       end)
+    end
+  end
+
+  @doc """
+  D64 §4.6, §6.4: pitch purchased yeast into a batch. `occurred_on` (not
+  after today), `batch_id` (an existing batch), `quantity` (whole bricks or
+  pitchables, at least 1), `lot_id` (optional: Oldest first without one)
+  and `note`. Writes `used` movements that name the batch, in one `BEGIN
+  IMMEDIATE` transaction as every movement (`create_movement/2`). Only a
+  yeast product is pitched (422 otherwise). `{:ok, movements}`.
+  """
+  def pitch(%Product{} = product, attrs, user) do
+    with :ok <- yeast_product(product),
+         {:ok, batch_id} <- pitch_batch(attrs["batch_id"]) do
+      attrs
+      |> Map.take(["quantity", "occurred_on", "note"])
+      |> Map.merge(%{"kind" => "used", "product_id" => product.id})
+      |> then(fn a ->
+        case blank(attrs["lot_id"]) do
+          nil -> Map.put(a, "allocation", "oldest_first")
+          lot_id -> Map.put(a, "lot_id", lot_id)
+        end
+      end)
+      |> create_movement(user, %{batch_id: batch_id})
+    end
+  end
+
+  defp yeast_product(%Product{ingredient_id: ingredient_id}) do
+    if Catalog.ingredient_key(ingredient_id) == "yeast",
+      do: :ok,
+      else: refuse("Only yeast is pitched into a batch; record a movement instead")
+  end
+
+  defp pitch_batch(id) do
+    case blank(id) do
+      nil ->
+        {:error, {:invalid, %{batch_id: ["Pick the batch"]}}}
+
+      id ->
+        case RockcutApi.Ids.parse(id) do
+          id when is_integer(id) ->
+            if Repo.exists?(from(b in RockcutApi.Brewing.Batch, where: b.id == ^id)),
+              do: {:ok, id},
+              else: {:error, {:invalid, %{batch_id: ["does not exist"]}}}
+
+          _ ->
+            {:error, {:invalid, %{batch_id: ["does not exist"]}}}
+        end
     end
   end
 
@@ -578,10 +629,21 @@ defmodule RockcutApi.Ingredients.Inventory do
     )
     |> Repo.one()
     |> case do
-      nil -> "lb"
-      {unit, form} -> Catalog.unit_label(unit, form)
+      nil ->
+        "lb"
+
+      {unit, form} ->
+        Products.unit_label(%Product{
+          unit: unit,
+          form: form,
+          id: nil,
+          ingredient_id: lot_ingredient(lot_id)
+        })
     end
   end
+
+  defp lot_ingredient(lot_id),
+    do: Repo.one(from(l in IngredientLot, where: l.id == ^lot_id, select: l.ingredient_id))
 
   defp target_product({:lot, lot}), do: lot.product_id
   defp target_product({:product, product_id}), do: product_id
@@ -741,7 +803,14 @@ defmodule RockcutApi.Ingredients.Inventory do
              :lot,
              product_form(product_id(attrs))
            ),
-         :ok <- required_features(managed?, attrs["ingredient_id"], features, []) do
+         :ok <-
+           required_features(
+             managed?,
+             attrs["ingredient_id"],
+             features,
+             Features.copied_keys(product_id(attrs)),
+             product_form(product_id(attrs))
+           ) do
       write(fn ->
         lot =
           %IngredientLot{}
@@ -817,7 +886,14 @@ defmodule RockcutApi.Ingredients.Inventory do
              :lot,
              product_form(blank(merged["product_id"]))
            ),
-         :ok <- required_features(managed?, ingredient_id, features, lot_feature_keys(lot)) do
+         :ok <-
+           required_features(
+             managed?,
+             ingredient_id,
+             features,
+             lot_feature_keys(lot),
+             product_form(blank(merged["product_id"]))
+           ) do
       write(fn ->
         lot =
           lot
@@ -986,12 +1062,18 @@ defmodule RockcutApi.Ingredients.Inventory do
   # usual one isn't in its list.
   defp fixed_pack(attrs, nil, nil) do
     with nil <- blank(attrs["pack_name"]),
+         # D64 §4.1: a yeast lot starts with its form's pack (Dry brick, Liquid pitchable).
+         {:yeast, nil} <-
+           {:yeast,
+            (Catalog.ingredient_key(attrs["ingredient_id"]) == "yeast" &&
+               Catalog.yeast_pack(product_form(product_id(attrs)))) || nil},
          key when key not in ["grains", nil] <- Catalog.ingredient_key(attrs["ingredient_id"]),
          names = Catalog.pack_names(key, ingredient_category(attrs["ingredient_id"])),
          name when is_binary(name) <-
            Catalog.default_pack_in(Products.unit(product_id(attrs)), names) do
       {:ok, Map.put(attrs, "pack_name", name)}
     else
+      {:yeast, name} when is_binary(name) -> {:ok, Map.put(attrs, "pack_name", name)}
       _ -> {:ok, attrs}
     end
   end
@@ -1026,7 +1108,12 @@ defmodule RockcutApi.Ingredients.Inventory do
         {:ok, attrs}
 
       name ->
-        names = Catalog.pack_names(key, ingredient_category(attrs["ingredient_id"]))
+        names =
+          Catalog.pack_names_for(
+            key,
+            ingredient_category(attrs["ingredient_id"]),
+            product_form(product_id(attrs))
+          )
 
         if name in names,
           do: {:ok, attrs},
@@ -1047,10 +1134,10 @@ defmodule RockcutApi.Ingredients.Inventory do
   end
 
   # A2: the features a managed lot can't be without (`Features.check_required/3`).
-  defp required_features(false, _ingredient_id, _features, _existing), do: :ok
+  defp required_features(false, _ingredient_id, _features, _existing, _form), do: :ok
 
-  defp required_features(true, ingredient_id, features, existing),
-    do: Features.check_required(ingredient_id, features, existing)
+  defp required_features(true, ingredient_id, features, existing, form),
+    do: Features.check_required(ingredient_id, features, existing, form)
 
   defp lot_feature_keys(lot) do
     from(v in RockcutApi.Ingredients.LotFeatureValue,
@@ -1151,7 +1238,7 @@ defmodule RockcutApi.Ingredients.Inventory do
   # kept to 2 decimals. D65 (Stop 1 LEAD note 10): a count (`each`, its
   # "tablets" label) starts at 1: "at least 1 tablet", "at least 1".
   defp positive(v, unit) do
-    count? = unit in ["each", "tablets"]
+    count? = unit == "each" or Map.has_key?(Catalog.count_words(), unit)
     least = if count?, do: Decimal.new(1), else: Decimal.new("0.01")
 
     case cast_decimal(v) do
@@ -1165,8 +1252,10 @@ defmodule RockcutApi.Ingredients.Inventory do
     end
   end
 
-  defp least_message("tablets"),
-    do: "Enter a quantity of at least 1 tablet and under 1,000,000 tablets"
+  # D64: "bricks", "pitchables" read as tablets do.
+  defp least_message(unit) when unit in ["tablets", "bricks", "pitchables"],
+    do:
+      "Enter a quantity of at least 1 #{Map.fetch!(Catalog.count_words(), unit)} and under 1,000,000 #{unit}"
 
   defp least_message("each"), do: "Enter a quantity of at least 1 and under 1,000,000"
 

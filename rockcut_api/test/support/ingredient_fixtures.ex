@@ -300,6 +300,64 @@ defmodule RockcutApi.IngredientFixtures do
     }
   end
 
+  @doc """
+  D64: Yeast Strains (key `yeast`) with the D64 rows (migration
+  `d64_yeast_features`: temp and attenuation typical ranges, none on lots;
+  pitch size on Liquid products only, copied to lots and required there),
+  the strains Chico Ale (Ale) and California Ale, the labs Fermentis
+  (manufacturer) and White Labs (manufacturer and supplier). The seeded
+  strain types (Ale, Lager, Brett, Lacto) come from the migration; tests
+  never edit them.
+  """
+  def yeast_catalog! do
+    yeast = keyed_category!("Yeast Strains", "yeast")
+
+    for {key, sort, product_mode, lot_mode, required, only_form} <- [
+          {"ferm_temp_f", 0, "range", "none", false, nil},
+          {"attenuation_pct", 1, "range", "none", false, nil},
+          {"pitch_bbl", 2, "value", "copy", true, "Liquid"}
+        ] do
+      Repo.insert!(%CategoryFeatureType{
+        category_id: yeast.id,
+        feature_type_id: feature_type!(key).id,
+        sort_order: sort,
+        product_mode: product_mode,
+        lot_mode: lot_mode,
+        lot_required: required,
+        only_form: only_form
+      })
+    end
+
+    ale = Repo.get_by!(RockcutApi.Yeast.StrainType, name: "Ale")
+
+    %{
+      yeast: yeast,
+      ale: ale,
+      chico:
+        Repo.insert!(%Ingredient{
+          name: "Chico Ale",
+          category_id: yeast.id,
+          yeast_strain_type_id: ale.id
+        }),
+      california: Repo.insert!(%Ingredient{name: "California Ale", category_id: yeast.id}),
+      fermentis: party!("Fermentis", ~w(manufacturer)),
+      white_labs: party!("White Labs", ~w(manufacturer supplier))
+    }
+  end
+
+  @doc "D64: a Galactic batch (#`number`, `status`) for a pitch to name."
+  def batch!(number, status \\ "fermenting") do
+    brand =
+      Repo.get_by(RockcutApi.Brewing.Brand, name: "Galactic") ||
+        Repo.insert!(%RockcutApi.Brewing.Brand{name: "Galactic"})
+
+    Repo.insert!(%RockcutApi.Brewing.Batch{
+      batch_number: number,
+      status: status,
+      brand_id: brand.id
+    })
+  end
+
   @doc "D65: a product with no manufacturer (stored directly, as the API makes one)."
   def none_product!(ingredient, form, unit, name \\ nil),
     do: Repo.insert!(%Product{ingredient_id: ingredient.id, form: form, unit: unit, name: name})

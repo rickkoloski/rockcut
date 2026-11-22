@@ -208,7 +208,7 @@ defmodule RockcutApi.Ingredients.Offers do
            else: {:error, {:invalid, %{base: ["Hop offers are #{size} lb boxes"]}}}
 
       nil ->
-        names = Catalog.pack_names(key, category)
+        names = Catalog.pack_names_for(key, category, product_form(attrs["product_id"]))
 
         if attrs["pack_name"] in [nil, "" | names],
           do: {:ok, attrs},
@@ -220,6 +220,14 @@ defmodule RockcutApi.Ingredients.Offers do
   # its unit's usual pack (lb → bag, gal → pail, fl oz → jug, oz → bag,
   # each → tub), when the category takes it, else the category's first
   # (lead decisions 1, gap 3: a fl oz spice → bottle).
+  # D64 §4.1: a yeast offer starts with its form's pack (Dry brick, Liquid pitchable).
+  defp default_pack(attrs, "yeast", _category, product_id) do
+    case {attrs["pack_name"] in [nil, ""], Catalog.yeast_pack(product_form(product_id))} do
+      {true, name} when is_binary(name) -> {:ok, Map.put(attrs, "pack_name", name)}
+      _ -> {:ok, attrs}
+    end
+  end
+
   defp default_pack(attrs, key, category, product_id) do
     with true <- attrs["pack_name"] in [nil, ""],
          true <- key not in ["grains", "hops"],
@@ -236,6 +244,11 @@ defmodule RockcutApi.Ingredients.Offers do
 
   defp blank(v) when v in [nil, ""], do: nil
   defp blank(v), do: v
+
+  defp product_form(id) when id in [nil, ""], do: nil
+
+  defp product_form(id),
+    do: Repo.one(from(p in RockcutApi.Ingredients.Product, where: p.id == ^id, select: p.form))
 
   defp same_size?(given, size) do
     case Ecto.Type.cast(:decimal, given) do

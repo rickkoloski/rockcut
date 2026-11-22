@@ -231,6 +231,13 @@ defmodule RockcutApiWeb.Router do
     post "/supplier_offers/:id/prices", SupplierOfferController, :create_price
     resources "/inventory_movements", InventoryMovementController, only: [:index, :create]
 
+    # D64 yeast: the Strain Type list (yeast settings) and a pitch of purchased yeast
+    resources "/yeast/strain_types", YeastStrainTypeController,
+      only: [:index, :create, :update, :delete]
+
+    get "/yeast/batches", YeastController, :batches
+    post "/ingredient_products/:id/pitch", IngredientProductController, :pitch
+
     # D61 purchasing, malt contracts, reorder and totals
     get "/contracts/shortfall", ContractController, :shortfall
     resources "/contracts", ContractController, except: [:new, :edit]

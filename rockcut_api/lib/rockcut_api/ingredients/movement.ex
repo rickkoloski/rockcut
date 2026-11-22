@@ -24,6 +24,8 @@ defmodule RockcutApi.Ingredients.Movement do
     belongs_to :partner, RockcutApi.Ingredients.Party, foreign_key: :partner_party_id
     belongs_to :entered_by, RockcutApi.Accounts.User
     belongs_to :purchase_order_line, RockcutApi.Ingredients.PurchaseOrderLine
+    # D64 §4.6: the batch a pitch of purchased yeast went into (D63: every brew-day draw).
+    belongs_to :batch, RockcutApi.Brewing.Batch
 
     timestamps(type: :utc_datetime)
   end
@@ -41,7 +43,8 @@ defmodule RockcutApi.Ingredients.Movement do
       :note,
       :entered_by_id,
       :purchase_order_line_id,
-      :unit_cost
+      :unit_cost,
+      :batch_id
     ])
     |> validate_required([:lot_id, :kind, :quantity, :occurred_on])
     |> validate_inclusion(:kind, @kinds)
@@ -50,11 +53,13 @@ defmodule RockcutApi.Ingredients.Movement do
     |> foreign_key_constraint(:lot_id)
     |> foreign_key_constraint(:partner_party_id)
     |> foreign_key_constraint(:purchase_order_line_id)
+    |> foreign_key_constraint(:batch_id)
     |> RockcutApi.Changeset.validate_parents([
       :lot_id,
       :partner_party_id,
       :entered_by_id,
-      :purchase_order_line_id
+      :purchase_order_line_id,
+      :batch_id
     ])
   end
 end
