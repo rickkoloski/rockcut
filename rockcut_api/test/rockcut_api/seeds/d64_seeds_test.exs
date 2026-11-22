@@ -213,6 +213,8 @@ defmodule RockcutApi.Seeds.D64SeedsTest do
           ),
         steps: harvest_steps,
         records: Repo.aggregate(Harvest, :count),
+        # Done ones too: a setup doesn't pile up last setup's Count task.
+        yeast_tasks: Repo.aggregate(from(t in Task, where: not is_nil(t.yeast_brink_id)), :count),
         today: today
       }
     end
@@ -238,6 +240,7 @@ defmodule RockcutApi.Seeds.D64SeedsTest do
       assert first.yb3 == {true, nil}
       assert first.open_yeast_tasks == ["Clean YB3"]
       assert first.records == 1
+      assert first.yeast_tasks == 2
     end
 
     test "a QA pitch into a [SEED] batch doesn't stop the next setup (the link goes); [TEST-TEMP] brinks go" do
@@ -247,7 +250,18 @@ defmodule RockcutApi.Seeds.D64SeedsTest do
       galactic =
         Repo.one!(from b in Batch, where: like(b.notes, "[SEED]%") and b.batch_number == "40")
 
-      [lot] = Repo.all(from l in IngredientLot, where: like(l.lot_number, "[SEED] SD-1"))
+      # A lot of a reference product (not [SEED]'s, which goes with its product).
+      us05 = Repo.get_by!(Product, name: "US-05")
+
+      lot =
+        Repo.insert!(%IngredientLot{
+          ingredient_id: us05.ingredient_id,
+          product_id: us05.id,
+          pack_name: "brick",
+          pack_size: Decimal.new(1),
+          lot_number: "QA-1",
+          received_date: RockcutApi.Tasks.today()
+        })
 
       Repo.insert!(%RockcutApi.Ingredients.Movement{
         lot_id: lot.id,
