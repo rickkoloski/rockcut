@@ -1461,3 +1461,69 @@ export interface IdeaSendOptions {
   checklist: { total: number; open: number }
   already_sent: boolean
 }
+
+/** D64 §6.3: a cell count as the Brinks tab shows it. */
+export interface YeastCountSummary {
+  id: number
+  counted_on: string
+  viable_millions_per_ml: string
+  viability_pct: string
+  /** Decision 18: the latest harvest's day when this count is from before it; null otherwise. */
+  before_harvest_on: string | null
+}
+
+/** D64 §4.5: the yeast in a brink now. */
+export interface YeastContents {
+  harvest_id: number
+  lock_version: number
+  on_hand_lb: string
+  generation: number
+  coferment: boolean
+  product_ids: number[]
+  /** The strains' codes ("US-05"), in order. */
+  strains: string[]
+  harvested_on: string | null
+  first_harvested_on: string | null
+  sources: { batch_id: number | null; batch: string | null; generation: number | null; strains: string[]; lb: string; occurred_on: string }[]
+  count: YeastCountSummary | null
+}
+
+/** D64 §4.4, §6.3: a brink with its state (`GET /api/yeast/brinks`). */
+export interface YeastBrink {
+  id: number
+  name: string
+  empty_weight_lb: string | null
+  position: number
+  active: boolean
+  dirty: boolean
+  dirty_since: string | null
+  /** It has records, so it can be retired but not deleted. */
+  has_history: boolean
+  /** An open "Count YB2" task. */
+  recount_due: boolean
+  /** An open "Clean YB2" task. */
+  clean_due: boolean
+  yeast: YeastContents | null
+}
+
+/** D64 §6.3: one record in a brink's History. */
+export interface YeastHistoryRecord {
+  id: number
+  status: 'in_brink' | 'emptied' | 'voided'
+  generation: number
+  coferment: boolean
+  emptied_on: string | null
+  entries: {
+    id: number
+    kind: 'harvested' | 'pitched' | 'dumped' | 'adjusted'
+    quantity_lb: string
+    occurred_on: string
+    batch: string | null
+    generation: number | null
+    strains: string[]
+    note: string | null
+    entered_by: { id: number; name: string } | null
+    device: string | null
+  }[]
+  counts: { id: number; counted_on: string; viable_millions_per_ml: string; viability_pct: string; note: string | null; entered_by: { id: number; name: string } | null }[]
+}

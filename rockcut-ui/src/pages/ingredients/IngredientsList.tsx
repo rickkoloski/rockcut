@@ -26,6 +26,7 @@ import IngredientFormDialog from './IngredientFormDialog'
 import ProductDialog from './ProductDialog'
 import GrainsList, { NONE, type GrainFilters } from './GrainsList'
 import YeastSettingsDialog from './YeastSettingsDialog'
+import { YeastTabs } from './BrinksPage'
 import { useStrainTypes } from '../../hooks/useStrainTypes'
 import ScienceIcon from '@mui/icons-material/ScienceOutlined'
 
@@ -242,6 +243,9 @@ export default function IngredientsList() {
         title="Ingredient Library"
       />
 
+      {/* D64 §6.3: Yeast Strains sits beside its Brinks. */}
+      {yeastView && <YeastTabs value="strains" strainsHref={`/ingredients?category=${categoryId}`} />}
+
       {/* D52: search and category on the left; Add and the settings gear on the right. */}
       <PageToolbar
         end={
@@ -308,7 +312,7 @@ export default function IngredientsList() {
                   {yeastView && (
                     <MenuItem onClick={() => { close(); setYeastSettings(true) }} data-testid="ingredients-settings-yeast">
                       <ListItemIcon><ScienceIcon fontSize="small" /></ListItemIcon>
-                      <ListItemText primary="Yeast settings" secondary="Strain types" />
+                      <ListItemText primary="Yeast settings" secondary="Brinks and strain types" />
                     </MenuItem>
                   )}
                 </>

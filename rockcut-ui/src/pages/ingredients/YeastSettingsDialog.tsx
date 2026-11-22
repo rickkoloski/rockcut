@@ -30,12 +30,13 @@ import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { STRAIN_TYPES_KEY, useStrainTypes } from '../../hooks/useStrainTypes'
 import parseApiError from '../../lib/parseApiError'
 import type { YeastStrainType } from '../../lib/types'
+import BrinkSettings from './BrinkSettings'
 
 const KEYS = [STRAIN_TYPES_KEY, ['ingredients'], ['ingredient_products']]
 
 /**
  * D64 §6.5 (A7, A13): the yeast settings from the gear on Yeast Strains.
- * Stop 1 has the Strain types section (Stop 2 adds Brinks): name and order;
+ * Brinks (`BrinkSettings`) and Strain types: name and order;
  * add, rename, retire (and restore), and delete when no strain has it.
  * Brewery managers and owners change it; everyone else sees it read-only.
  */
@@ -76,6 +77,7 @@ export default function YeastSettingsDialog({ open, onClose }: { open: boolean; 
     <Dialog open={open} onClose={onClose} fullScreen={phone} fullWidth maxWidth="sm" data-testid="yeast-settings">
       <DialogTitle>Yeast settings</DialogTitle>
       <DialogContent>
+        <BrinkSettings />
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
           <Typography variant="subtitle1" fontWeight={600}>
             Strain types

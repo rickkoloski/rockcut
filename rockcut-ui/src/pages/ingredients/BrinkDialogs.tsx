@@ -1,0 +1,296 @@
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  FormControl,
+  FormHelperText,
+  InputLabel,
+  MenuItem,
+  Paper,
+  Select,
+  TextField,
+  Typography,
+  useMediaQuery,
+  useTheme,
+} from '@mui/material'
+import FormDialog from '../../components/FormDialog'
+import ConfirmDialog from '../../components/ConfirmDialog'
+import DecimalInput from '../../components/DecimalInput'
+import { useApiList } from '../../hooks/useApiQuery'
+import { useApiCreate } from '../../hooks/useApiMutation'
+import { usePhoneBackCloses } from '../../hooks/useBackCloses'
+import { httpStatus } from '../../lib/notFound'
+import parseApiError from '../../lib/parseApiError'
+import { parseDecimal } from '../../lib/brewingUnits'
+import { FUTURE_DATE } from '../../lib/inventory'
+import { WRAP_ITEM, WRAP_SELECT } from '../../lib/ingredientFeatures'
+import { coloradoToday } from '../../lib/tasks'
+import { BRINK_KEYS, emptyWeightText, lbText, readLb, shortDate, yeastText } from '../../lib/yeast'
+import type { YeastBatch, YeastBrink, YeastHistoryRecord } from '../../lib/types'
+
+
+/** The empty weight beside an lb box, with what's on hand (decision 8: shown, never subtracted). */
+const lbHelper = (brink: YeastBrink, extra?: string | null) => [extra, emptyWeightText(brink)].filter(Boolean).join(' · ') || undefined
+
+function DateField({ value, onChange, testId }: { value: string; onChange: (v: string) => void; testId: string }) {
+  return (
+    <TextField
+      label="Date"
+      type="date"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      required
+      fullWidth
+      slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: coloradoToday(), 'data-testid': testId } }}
+    />
+  )
+}
+
+/** A stale save (409): the brinks are refetched so a retry sees the change. */
+function useBrinkWrite(path: string) {
+  const qc = useQueryClient()
+  const write = useApiCreate<YeastBrink>(path, { invalidateKeys: BRINK_KEYS })
+  const send = async (body: Record<string, unknown>, setError: (e: string) => void, onDone: () => void) => {
+    try {
+      await write.mutateAsync(body)
+      onDone()
+    } catch (err) {
+      if (httpStatus(err) === 409) await Promise.all(BRINK_KEYS.map((k) => qc.invalidateQueries({ queryKey: k })))
+      setError(parseApiError(err))
+    }
+  }
+  return { send, pending: write.isPending }
+}
+
+/** D64 §6.4: pitch lb from a brink into an open batch. */
+export function PitchBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
+  const { data: batches = [], isLoading } = useApiList<YeastBatch>(['yeast_batches'], '/api/yeast/batches')
+  const [date, setDate] = useState(coloradoToday())
+  const [batchId, setBatchId] = useState<number | ''>('')
+  const [text, setText] = useState('')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [version] = useState(brink.yeast?.lock_version)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/pitch`)
+  const onHand = Number(brink.yeast?.on_hand_lb ?? 0)
+  const lb = readLb(text, { max: onHand, brink: brink.name })
+  const open = batches.filter((b) => b.open)
+
+  const submit = async () => {
+    if (!batchId) return setError('Pick the batch')
+    if (!lb.lb) return setError(lb.error ?? 'Enter the weight in lb')
+    if (date > coloradoToday()) return setError(FUTURE_DATE)
+    await send({ occurred_on: date, batch_id: batchId, lb: lb.lb, note: note.trim() || null, lock_version: version }, setError, onClose)
+  }
+
+  return (
+    <FormDialog open phone onClose={onClose} title={`Pitch from ${brink.name}`} onSubmit={submit} loading={pending} error={error} submitLabel="Pitch" submitDisabled={isLoading || !!lb.error} testId="brink-pitch-dialog">
+      {brink.yeast && <Typography variant="body2">{`${lbText(brink.yeast.on_hand_lb)} ${yeastText(brink.yeast)}`}</Typography>}
+      <DateField value={date} onChange={setDate} testId="brink-pitch-date" />
+      <FormControl fullWidth required>
+        <InputLabel id="brink-pitch-batch-label">Batch</InputLabel>
+        <Select labelId="brink-pitch-batch-label" label="Batch" value={open.length ? batchId : ''} onChange={(e) => setBatchId(e.target.value as number)} sx={WRAP_SELECT} data-testid="brink-pitch-batch">
+          {open.map((b) => (
+            <MenuItem key={b.id} value={b.id} sx={WRAP_ITEM}>
+              {b.label}
+            </MenuItem>
+          ))}
+        </Select>
+        {!isLoading && open.length === 0 && <FormHelperText>No open batches</FormHelperText>}
+      </FormControl>
+      <DecimalInput
+        decimals={2}
+        label="Yeast weight (lb)"
+        value={text}
+        onChange={setText}
+        required
+        fullWidth
+        error={!!lb.error}
+        helperText={lb.error ?? lbHelper(brink, `On hand ${lbText(onHand)}`)}
+        slotProps={{ htmlInput: { 'data-testid': 'brink-pitch-lb' } }}
+      />
+      <TextField label="Note" value={note} onChange={(e) => setNote(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-pitch-note' } }} />
+    </FormDialog>
+  )
+}
+
+/** D64 §4.7: a cell count (ticks the brink's Count task). */
+export function CountBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
+  const [date, setDate] = useState(coloradoToday())
+  const [cells, setCells] = useState('')
+  const [pct, setPct] = useState('')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const create = useApiCreate('/api/yeast/counts', { invalidateKeys: BRINK_KEYS })
+  const c = parseDecimal(cells, 1)
+  const v = parseDecimal(pct, 1)
+  const pctError = v.ok && v.value != null && Number(v.value) > 100 ? 'At most 100%' : null
+
+  const submit = async () => {
+    if (!c.ok || !c.value || Number(c.value) <= 0) return setError('Enter the viable cells (more than 0)')
+    if (!v.ok || v.value == null) return setError('Enter the viability')
+    if (pctError) return setError(pctError)
+    if (date > coloradoToday()) return setError(FUTURE_DATE)
+    try {
+      await create.mutateAsync({ brink_id: brink.id, counted_on: date, viable_millions_per_ml: c.value, viability_pct: v.value, note: note.trim() || null })
+      onClose()
+    } catch (err) {
+      setError(parseApiError(err))
+    }
+  }
+
+  return (
+    <FormDialog open phone onClose={onClose} title={`Add count · ${brink.name}`} onSubmit={submit} loading={create.isPending} error={error} submitDisabled={!c.ok || !v.ok || !!pctError} testId="brink-count-dialog">
+      <DateField value={date} onChange={setDate} testId="brink-count-date" />
+      <DecimalInput decimals={1} label="Viable cells (millions per mL)" value={cells} onChange={setCells} required fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-count-cells' } }} />
+      <DecimalInput decimals={1} label="Viability (%)" value={pct} onChange={setPct} required fullWidth error={!!pctError} helperText={pctError ?? undefined} slotProps={{ htmlInput: { 'data-testid': 'brink-count-pct' } }} />
+      <TextField label="Note" value={note} onChange={(e) => setNote(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-count-note' } }} />
+    </FormDialog>
+  )
+}
+
+/** D64 §6.3: Adjust weight: the yeast weight now (0 empties it, as a dump does). */
+export function AdjustBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
+  const [date, setDate] = useState(coloradoToday())
+  const [text, setText] = useState('')
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [version] = useState(brink.yeast?.lock_version)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/adjust`)
+  const lb = readLb(text, { zeroOk: true })
+
+  const submit = async () => {
+    if (lb.lb == null) return setError(lb.error ?? 'Enter the yeast weight now in lb')
+    if (date > coloradoToday()) return setError(FUTURE_DATE)
+    await send({ occurred_on: date, weight_lb: lb.lb, note: note.trim() || null, lock_version: version }, setError, onClose)
+  }
+
+  return (
+    <FormDialog open phone onClose={onClose} title={`Adjust weight · ${brink.name}`} onSubmit={submit} loading={pending} error={error} submitDisabled={!!lb.error} testId="brink-adjust-dialog">
+      <DateField value={date} onChange={setDate} testId="brink-adjust-date" />
+      <DecimalInput
+        decimals={2}
+        label="Yeast weight now (lb)"
+        value={text}
+        onChange={setText}
+        required
+        fullWidth
+        error={!!lb.error}
+        helperText={lb.error ?? lbHelper(brink, `Now ${lbText(brink.yeast?.on_hand_lb)}; 0 empties it`)}
+        slotProps={{ htmlInput: { 'data-testid': 'brink-adjust-lb' } }}
+      />
+      <TextField label="Note" value={note} onChange={(e) => setNote(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-adjust-note' } }} />
+    </FormDialog>
+  )
+}
+
+/** D64 §6.3: Dump brink (confirm, with a note): it empties, is marked dirty, and "Clean YB2" is added. */
+export function DumpBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
+  const [note, setNote] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [version] = useState(brink.yeast?.lock_version)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/dump`)
+  return (
+    <ConfirmDialog
+      open
+      onClose={onClose}
+      onConfirm={() => send({ occurred_on: coloradoToday(), note: note.trim() || null, lock_version: version }, setError, onClose)}
+      title={`Dump ${brink.name}`}
+      message={`Dump the ${lbText(brink.yeast?.on_hand_lb)} in ${brink.name}? It's marked dirty and "Clean ${brink.name}" goes on the Brewery board.`}
+      confirmLabel="Dump"
+      loading={pending}
+      testId="brink-dump-dialog"
+    >
+      <TextField label="Note" value={note} onChange={(e) => setNote(e.target.value)} fullWidth sx={{ mt: 2 }} slotProps={{ htmlInput: { 'data-testid': 'brink-dump-note' } }} />
+      {error && (
+        <Typography color="error" variant="body2" sx={{ mt: 1 }} role="alert">
+          {error}
+        </Typography>
+      )}
+    </ConfirmDialog>
+  )
+}
+
+/** D64 §6.3: Mark clean (a dirty brink): clears the mark and ticks "Clean YB2". */
+export function CleanBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
+  const [error, setError] = useState<string | null>(null)
+  const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/clean`)
+  return (
+    <ConfirmDialog
+      open
+      onClose={onClose}
+      onConfirm={() => send({}, setError, onClose)}
+      title={`Mark ${brink.name} clean`}
+      message={`${brink.name} is clean? ${brink.clean_due ? `"Clean ${brink.name}" on the Brewery board is ticked too.` : ''}`}
+      confirmLabel="Mark clean"
+      confirmColor="primary"
+      loading={pending}
+      testId="brink-clean-dialog"
+    >
+      {error && (
+        <Typography color="error" variant="body2" sx={{ mt: 1 }} role="alert">
+          {error}
+        </Typography>
+      )}
+    </ConfirmDialog>
+  )
+}
+
+const KIND_LABELS: Record<string, string> = { harvested: 'Harvested', pitched: 'Pitched', dumped: 'Dumped', adjusted: 'Adjusted' }
+
+/** D64 §6.3: a brink's records, newest first, each with its entries and counts. */
+export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
+  const phone = useMediaQuery(useTheme().breakpoints.down('sm'))
+  const { data: records = [], isLoading } = useApiList<YeastHistoryRecord>(['yeast_brink_history', brink.id], `/api/yeast/brinks/${brink.id}/history`)
+  usePhoneBackCloses(true, onClose)
+  return (
+    <Dialog open onClose={onClose} fullScreen={phone} fullWidth maxWidth="sm" data-testid="brink-history-dialog">
+      <DialogTitle>History · {brink.name}</DialogTitle>
+      <DialogContent>
+        {isLoading && <CircularProgress size={24} />}
+        {!isLoading && records.length === 0 && (
+          <Typography variant="body2" color="text.secondary">
+            Nothing yet
+          </Typography>
+        )}
+        {records.map((r) => (
+          <Paper key={r.id} variant="outlined" sx={{ p: 1.5, mb: 1.5 }} data-testid={`brink-history-record-${r.id}`}>
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
+              <Chip size="small" label={r.status === 'in_brink' ? 'In the brink' : r.status === 'emptied' ? `Emptied ${shortDate(r.emptied_on)}` : 'Voided'} />
+              <Typography variant="body2">gen {r.generation}{r.coferment ? ' · co-ferment' : ''}</Typography>
+            </Box>
+            {r.entries.map((e) => (
+              <Typography key={e.id} variant="body2" sx={{ overflowWrap: 'anywhere' }}>
+                {[
+                  shortDate(e.occurred_on),
+                  `${KIND_LABELS[e.kind]} ${lbText(Math.abs(Number(e.quantity_lb)))}`,
+                  e.batch ? (e.kind === 'harvested' ? `from ${e.batch}` : `into ${e.batch}`) : null,
+                  e.kind === 'harvested' && e.strains.length ? `${e.strains.join(' + ')} gen ${e.generation}` : null,
+                  e.note,
+                  e.entered_by ? `${e.entered_by.name}${e.device ? ` · on ${e.device}` : ''}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </Typography>
+            ))}
+            {r.counts.map((c) => (
+              <Typography key={`c${c.id}`} variant="body2" color="text.secondary">
+                {`${shortDate(c.counted_on)} · Count ${Number(c.viable_millions_per_ml).toLocaleString('en-US')} M/mL · ${Number(c.viability_pct)}%${c.note ? ` · ${c.note}` : ''}${c.entered_by ? ` · ${c.entered_by.name}` : ''}`}
+              </Typography>
+            ))}
+          </Paper>
+        ))}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  )
+}
