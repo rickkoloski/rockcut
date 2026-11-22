@@ -189,18 +189,18 @@ const NO_MAKER = 'none'
 
 /** The quantity with no value, per unit. */
 function unvaluedByUnit(rows: InventoryTotalsRow[]): UnitQuantity[] {
-  const sums = new Map<string, number>()
-  // Gap 8: each unit's labels; one shared label ("tablets") names the sum, else the unit.
-  const labels = new Map<string, Set<string>>()
+  // Per unit and label, as the API's subtotals (D64 §13: bricks and pitchables apart, like tablets).
+  const sums = new Map<string, { unit: string; unit_label: string; q: number }>()
   for (const r of rows)
     if (Number(r.unvalued_quantity) > 0) {
-      sums.set(r.unit, (sums.get(r.unit) ?? 0) + Number(r.unvalued_quantity))
-      labels.set(r.unit, (labels.get(r.unit) ?? new Set()).add(r.unit_label ?? r.unit))
+      const label = r.unit_label ?? r.unit
+      const key = `${r.unit}:${label}`
+      const s = sums.get(key) ?? { unit: r.unit, unit_label: label, q: 0 }
+      sums.set(key, { ...s, q: s.q + Number(r.unvalued_quantity) })
     }
-  return [...sums].sort(([a], [b]) => a.localeCompare(b)).map(([unit, q]) => {
-    const l = [...labels.get(unit)!]
-    return { unit, unit_label: l.length === 1 ? l[0] : unit, quantity: String(Math.round(q * 100) / 100) }
-  })
+  return [...sums]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([, s]) => ({ unit: s.unit, unit_label: s.unit_label, quantity: String(Math.round(s.q * 100) / 100) }))
 }
 
 /** "0.32 boxes", "12 sacks"; "—" when the product's lots differ in pack. */
@@ -279,7 +279,8 @@ function InventoryTotalsRows({ data, asOf, today }: { data: InventoryTotals | un
             <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
               {/* D65 §4.5: a subtotal per unit, one line each, never added together; one $ total. */}
               {data.total.by_unit.map((u) => (
-                <div key={u.unit} data-testid={`totals-inventory-total-${u.unit.replace(' ', '-')}`}>
+                // D64 §13: one line per unit and label (bricks, pitchables, tablets are `each`).
+                <div key={`${u.unit}:${u.unit_label ?? u.unit}`} data-testid={`totals-inventory-total-${(u.unit_label ?? u.unit).replace(' ', '-')}`}>
                   {amountText(u.quantity, u.unit_label ?? u.unit)}
                 </div>
               ))}

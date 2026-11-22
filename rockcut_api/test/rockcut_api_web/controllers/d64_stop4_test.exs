@@ -21,13 +21,14 @@ defmodule RockcutApiWeb.D64Stop4Test do
   alias RockcutApi.Yeast.{Entry, Harvest}
 
   setup do
-    p = personas(~w(brewer1 breweryMgr))
+    p = personas(~w(owner brewer1 breweryMgr))
     c = yeast_catalog!()
     us05 = yeast_product!(c.chico, c.fermentis, "US-05")
     stocked_lot!(us05, ~D[2026-11-01], "10", "F1")
 
     Map.merge(c, %{
       brewer: p["brewer1"],
+      owner: p["owner"],
       us05: us05,
       template: ale_template!(),
       fv4: tank!("FV4"),
@@ -189,6 +190,35 @@ defmodule RockcutApiWeb.D64Stop4Test do
       {free, token} = plan(c, "Crusher", 4)
       assert {200, _} = req(c.brewer, :post, "/api/production/undo/#{token}")
       refute exists?(free)
+    end
+  end
+
+  describe "Totals (spec §13): bricks and pitchables in their own subtotals" do
+    test "inventory by_unit: 10 bricks and 3 pitchables, apart", c do
+      liquid = yeast_product!(c.california, c.white_labs, "WLP001", "Liquid")
+
+      lot =
+        Repo.insert!(%RockcutApi.Brewing.IngredientLot{
+          ingredient_id: liquid.ingredient_id,
+          product_id: liquid.id,
+          pack_name: "pitchable",
+          pack_size: Decimal.new(1),
+          lot_number: "L1",
+          received_date: day(-1)
+        })
+
+      Repo.insert!(%RockcutApi.Ingredients.Movement{
+        lot_id: lot.id,
+        kind: "opening",
+        quantity: Decimal.new(3),
+        occurred_on: day(-1)
+      })
+
+      {200, %{"data" => %{"total" => %{"by_unit" => by_unit}}}} =
+        req(c.owner, :get, "/api/ingredient_totals/inventory")
+
+      each = for u <- by_unit, u["unit"] == "each", do: {u["unit_label"], u["quantity"]}
+      assert each == [{"bricks", "10.00"}, {"pitchables", "3.00"}]
     end
   end
 end
