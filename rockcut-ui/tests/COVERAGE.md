@@ -1463,3 +1463,56 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | New routes refuse a device | `device_route_matrix_test` |
 | `[TEST-TEMP]` brinks go with their records and tasks in the synthetic clean-up; others stay | SYN (revert) |
 | 360 px: the Harvest dialog with the has-yeast question, the batch page's Yeast section | BOARD "at 360 px"; ING "at 360 px" |
+
+**Stop 4: `[SEED]` data, the batch-delete fix, the §13 sweep** (Stop 4 brief items 1–4). ExUnit `rockcut_api_web/controllers/d64_stop4_test.exs` ("S4"), `rockcut_api/seeds/d64_seeds_test.exs` ("SEED", the synthetic `[SEED]` yeast); Playwright `regression/ingredients/d64-scenarios.spec.ts` ("SCEN", project `ingredients`, lean: no tank or template of its own; the one batch purchased yeast was pitched into is left for `setup`, which releases the link), plus the Stop 3 files. **(revert)** = shown failing with the rule taken out.
+
+| Rule | Coverage |
+|---|---|
+| A batch with yeast pitched into it (a lot movement, a brink `pitched` entry) or harvested from it is refused with "<label> has yeast pitched into it or harvested from it. Remove those first." (422), nothing changed, on every delete path: the production schedule's delete, the batches page, Undo split (its parts), the Undo of a Plan | S4 (one per path, each **(revert)**; the brink entries **(revert)**); PROD "Stop 4: Delete planned batch is refused…" (the sentence in the batch dialog) |
+| Totals → Inventory keeps bricks and pitchables in their own subtotals (both `each`), as tablets are | S4 "Totals…" **(revert)**; SCEN "purchasing…"; `d65-stop2`, `d65-fix-1` (`totals-inventory-total-tablets`) |
+| Synthetic `[SEED]` yeast: `[SEED] Dry Ale` SD-1 and `[SEED] Liquid Ale` SL-1 (7 bbl), each with an offer, a minimum and a lot; Galactic #40's Yeast harvest due today, not done; Enos #41's done 3 days ago, 42 lb of `[SEED] Dry Ale` gen 2 in YB2, counted that day; YB3 dirty with open "Clean YB3"; setup twice gives the same, with no piled-up brink tasks | SEED "setup twice…" (**(revert)**: the seeding, the tagged records, the tagged tasks); `mix rockcut.synthetic.setup` ×2 on the dev DB |
+| A QA pitch from a reference lot into a `[SEED]` or `[TEST-TEMP]` batch doesn't stop setup (the link goes, the stock stays); `[TEST-TEMP]` brinks go | SEED "a QA pitch…" **(revert)**, "cleanup_temp: a [TEST-TEMP] batch…" **(revert)**; SYN |
+| The e2e tsc config is clean | `tsc -p tsconfig.e2e.json` |
+
+**Spec §13 → tests** (every persona scenario; "S1/S2/S3/S4" ExUnit, "PROD/BOARD/ING/SCEN" Playwright as above, "d64" `regression/ingredients/d64.spec.ts`, "d64-stop2" its Stop 2 file).
+
+| §13 scenario | Coverage |
+|---|---|
+| brewer1 adds Fermentis (the lab) and orders through BSG as the supplier | S1 "the lab is required…"; d64 "a yeast product needs its lab and code…"; SCEN "purchasing…" (a lab that's also the supplier) |
+| The strain with product US-05, Dry, temp 59–75 °F, attenuation 78–82 % | S1 "features (§4.3…)"; d64 library and product page |
+| A brick offer at $X | SCEN "purchasing…" ($76.99 a brick); SEED (offers and prices) |
+| Order 4 bricks and receive them: on hand "4 bricks" | SCEN "purchasing…" (Receive on the order page) |
+| Recording 1.5 bricks is refused | S1 "whole bricks and pitchables"; d64 (1.5 refused in Add lot) |
+| brewer2 adds WLP001 Liquid with pitch size 7 bbl; a lot at 10 bbl: the lot keeps 10, the product says 7 | S1 "a Liquid lot needs its pitch size…"; d64 "a yeast product needs…"; SCEN "purchasing…" (lot at 10) |
+| To order shows US-05 under its minimum | SCEN "purchasing…" (4 bricks under 5) |
+| Totals lists bricks and pitchables in their own subtotal | S4 "Totals…"; SCEN "purchasing…" |
+| Gap 9: "Packs" / "$ / pack"; a sacks-only supplier "Sacks" | V1; d64 "gap 9…" |
+| Mother → gen 1: Pitch 2 bricks into #41 from the product page; check off #41's Yeast harvest on the Gantt into YB1, 30 lb, "good slurry": the dialog fills gen 1 | SCEN "Mother → gen 1 → gen 2…"; S3 `for_batch` (Mother gen 0) |
+| YB1 shows 30 lb gen 1; "Count YB1" due on the board | SCEN; PROD "nothing pitched…" (Count due); S2/S3 |
+| Add count 1,200 M/mL, 92 %: the Count task ticks | SCEN; S2 "Add count ticks…" |
+| Pitch 30 lb from YB1 into #44: empty and dirty, "Clean YB1" due; #44's harvest defaults to gen 2 | SCEN; S2 "the rest…"; S3 |
+| Second pull: defaults to the first brink; "YB2 shows yeast…" → Harvest on top adds 12 lb; the batch page shows both pulls; YB2 one record | PROD "from a brink pitch…"; ING "the batch page…"; S3 |
+| Same strain, other generation: #47 (US-05 gen 4) onto YB2 (gen 2) → gen 4, from #44 and #47 | SCEN "the same strain at another generation…"; RULES; S2 |
+| Different strains in a brink: WLP002 gen 1 onto US-05 gen 4 → "Co-ferment: US-05 + WLP002 · gen 1" | S2 "on top with a different strain…"; RULES; S3 (un-check of it) |
+| Different strains pitched into a batch → co-ferment gen 1; repitched and harvested again → the same co-ferment, gen 2 | SCEN "co-ferment…"; S3 `for_batch`; RULES |
+| The brink was really empty: "This brink is empty" closes the old record at 0 with the note; no Clean task | S2 "'This brink is empty'…"; S3 "This brink is empty…" |
+| A dirty brink: "YB1 is marked as dirty, record harvest anyway?" → Record anyway: saved, not dirty, "Clean YB1" still there | PROD "a dirty brink asks first…"; BOARD 360 px; S2; S3 |
+| Dump brink "infected": empty, dirty, "Clean YB2" added | SCEN "the Brinks tab…"; S2 "dump…" |
+| Adjust weight 40 → 33 with a note; adjusting to 0 empties it | SCEN "the Brinks tab…" (33); S2 "adjust 40 → 33…" (0) |
+| Ticking "Clean YB2" on the board clears dirty; Mark clean does too and ticks the task | S2 "ticking Clean TB2 on the Brewery board…" **(revert)**, "Mark clean…"; SCEN "the Brinks tab…" (Mark clean) |
+| Counts 11/18 and 11/21: a pitch dated 11/20 uses 11/18, one dated 11/22 uses 11/21 | S2 "the count in effect…" |
+| After a harvest on top, the earlier count still shows "· before the … harvest · Recount due" | SCEN "a count before the latest harvest…"; S2; V2 `countText` |
+| A count dated tomorrow is refused | S2 "refusals: tomorrow…" |
+| Yeast dumped "too much trub": no brink change; the batch shows "Yeast dumped · too much trub" | PROD "Yeast dumped…"; ING "the batch page…"; S3 |
+| Un-checking a harvest with nothing after it: the entry goes, the brink is empty, the Count task is gone | PROD "Mark not done…"; S3 |
+| Un-checking refused after a count or a pitch (409, the sentence); Undo refused the same way | PROD "Mark not done…", "Undo of the check-off…"; BOARD; S3 |
+| breweryDevice with brewer2's code: the harvest "· on Brewhouse tablet" | BOARD "the brewhouse device…" (a `[TEST-TEMP]` brewer's code, as D50); S3 |
+| breweryDevice: every yeast route 403 | `device_route_matrix_test`; S1/S2/S3 |
+| A bartender's valid code: "can't do this here", nothing written | BOARD; S3 |
+| bartender1: no Yeast in the nav; the API 403 | SCEN "bartender1…"; S1/S2 |
+| brewer1: brink settings read-only | d64-stop2 "a brewer sees the brink settings read-only" |
+| breweryMgr / owner: add YB5 with 150 lb, rename, retire while empty | d64-stop2 "Yeast settings → Brinks…"; S2 "brink settings" |
+| Retiring YB2 with yeast in it is refused | S2 "brink settings" **(revert)** |
+| Two people pitch the last 20 lb: the second refused, nothing written | SCEN "two people…"; S2 "two people pitch the last 20 lb…" |
+| 360 px: the Harvest dialog (both questions), the Brinks tab, Pitch, Add count, the batch page: no sideways scroll | BOARD "at 360 px" (has-yeast, dirty); d64-stop2 "at 360 px"; SCEN "at 360 px"; ING "at 360 px" |
+| Slow network: a double press on Save in the Harvest dialog, Pitch and Add count writes once | PROD "one press at a time…"; SCEN "a double press on Pitch and on Add count…" |
