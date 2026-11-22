@@ -920,6 +920,17 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(l in Label, where: like(l.name, ^pattern)))
     compact_idea_boards()
 
+    # D64 Stop 3: tagged brinks go with their records (entries, counts and
+    # strains cascade) and their Count / Clean tasks, before the products
+    # their records name. A brink with history can't be deleted through the
+    # API (only retired), so the specs' brinks end up here.
+    brink_ids = from(b in RockcutApi.Yeast.Brink, where: like(b.name, ^pattern), select: b.id)
+    Repo.delete_all(from(t in Task, where: t.yeast_brink_id in subquery(brink_ids)))
+
+    Repo.delete_all(from(h in RockcutApi.Yeast.Harvest, where: h.brink_id in subquery(brink_ids)))
+
+    Repo.delete_all(from(b in RockcutApi.Yeast.Brink, where: like(b.name, ^pattern)))
+
     # D60: tagged grains, products (on the product name, or under a tagged
     # grain or manufacturer) and their offers (prices cascade); every lot
     # of those, or tagged on the lot number, with the recipe lines that use
