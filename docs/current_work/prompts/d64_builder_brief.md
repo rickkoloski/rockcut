@@ -328,3 +328,77 @@ Every rule gets a refusal test and an allowed test.
   - **The batch page** shows the pitches and both pulls.
 - **Reply with:** commits, counts before and after, rule → test with revert proofs, and `LEAD:`
   notes.
+
+---
+
+# Stop 4 (`[SEED]` data, the batch-delete fix, scenario sweep, gate prep)
+
+2026-11-22 · lead. **Stop 3 accepted** (`c0eacc3` … `5a80df2`; ExUnit 2,955 ×2, vitest 543;
+Playwright production 215, brewery-board `--no-deps` 232, ingredients 156). Your LEAD notes:
+
+1. **Accepted.** The un-check lock covers any later pitch, dump or adjustment. Same sentence.
+2. Accepted (the safe side).
+3. Accepted.
+4. **Accepted.** A second pull prefills from the first when nothing was pitched.
+5. **Keep it as built.** "This brink is empty" is a fact the brewer stated about the brink, not
+   part of the harvest. Un-checking the harvest doesn't bring the old yeast back.
+6. Accepted. The UI reads both shapes.
+7. Accepted.
+8. Accepted.
+9. Accepted.
+10. Accepted, both shared-component changes. Keep the scroll-into-view; it's a real fix.
+11. Accepted. The plan now says `GET /api/yeast/batches/:id`.
+12. Accepted.
+13. **Fix it in this stop** (item 1).
+14. **Fix them in this stop** (item 3). They're small, and the gate should start clean.
+
+## Do
+
+1. **Batch delete with yeast** (your note 13):
+   - when a batch has yeast pitched into it (a lot movement with its `batch_id`, or a brink
+     `pitched` entry) or harvested from it (a `harvested` entry), deleting it is refused with a
+     **422** and nothing is changed:
+     "Oktoberfest X1 has yeast pitched into it or harvested from it. Remove those first."
+     Use the batch's label;
+   - check every batch-delete path: the production schedule's delete, the batches page, and a
+     split part's removal if that deletes rows. Use the D65 foreign-key-delete pattern (a check
+     before the delete, not a rescued constraint error);
+   - ExUnit for each path (revert-proved), plus the Gantt's delete showing the sentence.
+2. **Synthetic `[SEED]` data** (plan, Seeds; spec §10), from `mix rockcut.synthetic.setup`,
+   idempotent, DEV and local only:
+   - `[SEED] Dry Ale` (Dry) and `[SEED] Liquid Ale` (Liquid, 7 bbl), each with a lot, an offer and
+     a minimum;
+   - a batch with a **Yeast harvest** step due today (not done), and a batch whose Yeast harvest is
+     done with a pull into YB2;
+   - YB2 holding 42 lb `[SEED] Dry Ale` gen 2, with a count dated 3 days back;
+   - YB3 empty and dirty, with its open "Clean YB3" task.
+
+   Setup run twice leaves the same data. The existing synthetic tests stay green, and the Stop 3
+   `[TEST-TEMP]` brink clean-up still works.
+3. **The e2e tsc errors** (your note 14): fix the 3 in `task-board-phone`, `d65-fix-3` and
+   `beer-board-import`, so the e2e tsc config is clean.
+4. **Scenario sweep:** go through spec §13 line by line against `tests/COVERAGE.md`.
+   - Every scenario must map to at least one test.
+   - Add Playwright for any that's missing. Likely candidates:
+     - the full Mother → gen 1 → gen 2 chain through the screens;
+     - same strain, different gen on top;
+     - a co-ferment from two strains pitched into a batch, and its repitch at gen 2;
+     - two people pitching the last lb of one brink;
+     - a double-click on Save in the Harvest dialog, Pitch and Add count writing once.
+   - Put the full §13 → test table in COVERAGE's D64 section.
+5. **Run the three Playwright projects once more, each alone:** `production`, `brewery-board`
+   `--no-deps`, `ingredients`. Run them **after** `mix rockcut.synthetic.setup`, so the `[SEED]`
+   data is present. Nothing else touches the UI while they run.
+
+## Done when (Stop 4)
+
+- `mix test` passes twice, and `--warnings-as-errors` is clean. Vitest, tsc (app **and** e2e
+  configs), the build and lint (8) are clean.
+- The three Playwright projects pass.
+- `mix rockcut.synthetic.setup` run twice gives the same `[SEED]` data, with no leftover
+  `[TEST-TEMP]` brinks.
+- **Reply with:** commits, counts before and after, the §13 → test table (or a pointer to it in
+  COVERAGE), the batch-delete paths you found, and `LEAD:` notes.
+
+**After this,** the lead runs the full local suite in its own tab, then local QA (360 px, slow
+network, two people on one brink) → DEV.

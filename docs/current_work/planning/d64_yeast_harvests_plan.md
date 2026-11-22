@@ -253,7 +253,7 @@ reference seeds are `priv/repo/seeds/{grain,hop,d65}_reference.exs`, idempotent,
 | `POST /api/yeast/brinks/:id/pitch` · `/dump` · `/adjust` · `/clean` | stock actions |
 | `POST/PUT/DELETE /api/yeast/counts` | counts |
 | `POST /api/ingredient_products/:id/pitch` | from purchased yeast (lot optional) |
-| `GET /api/batches/:id/yeast` | the batch page's Yeast section: pitched (lots + brinks), harvested (entries + dumped steps) |
+| `GET /api/yeast/batches/:id` | the batch page's Yeast section: pitched (lots + brinks), harvested (entries + dumped steps) |
 
 ### UI
 
