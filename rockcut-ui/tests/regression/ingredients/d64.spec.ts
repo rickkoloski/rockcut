@@ -9,6 +9,7 @@ import {
   cleanupIngredients,
   denverToday,
   expectNoSidewaysScroll,
+  expectPhoneDialogClosed,
   makeD65Ingredient,
   makeD65Product,
   makeOffer,
@@ -299,6 +300,8 @@ test.describe('at 360 px', () => {
     await expect(d.getByTestId('pitch-batch')).toBeVisible()
     await expectNoSidewaysScroll(page)
     await d.getByRole('button', { name: 'Cancel' }).click()
+    // The phone dialog's history.back() lands after the click; a goto before it is aborted.
+    await expectPhoneDialogClosed(page, d)
 
     await page.goto('/ingredients/orders')
     const o = await openDialog(page, page.getByTestId('orders-new'), 'order-dialog')
