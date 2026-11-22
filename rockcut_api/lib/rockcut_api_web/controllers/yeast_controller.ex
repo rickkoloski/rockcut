@@ -4,6 +4,8 @@ defmodule RockcutApiWeb.YeastController do
   dialog's picker and the movement list's "→ Galactic #41". Every batch,
   newest first, each with its label ("Galactic #41", "Altruism P1") and
   whether it's open (not completed or dumped; the picker offers only those).
+  Stop 3: `GET /api/yeast/batches/:id`, the batch page's Yeast section
+  (spec §6.6, `Yeast.Generations.batch_page/1`).
   Brewery members and owners (the `:brewery` plug and `Authz`
   `:ingredients`); no device.
   """
@@ -14,6 +16,7 @@ defmodule RockcutApiWeb.YeastController do
   alias RockcutApi.{Authz, Repo}
   alias RockcutApi.Brewing.Batch
   alias RockcutApi.Production.Batches
+  alias RockcutApi.Yeast.Generations
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -41,5 +44,19 @@ defmodule RockcutApiWeb.YeastController do
     else
       {:error, :forbidden}
     end
+  end
+
+  def batch(conn, %{"id" => id}) do
+    with :ok <- allow(conn),
+         id when is_integer(id) <- RockcutApi.Ids.parse(id) || {:error, :not_found},
+         %Batch{} <- Repo.get(Batch, id) || {:error, :not_found} do
+      json(conn, %{data: Generations.batch_page(id)})
+    end
+  end
+
+  defp allow(conn) do
+    if Authz.can?(conn.assigns.current_user, :read, :ingredients),
+      do: :ok,
+      else: {:error, :forbidden}
   end
 end

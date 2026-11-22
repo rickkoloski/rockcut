@@ -9,6 +9,10 @@ defmodule RockcutApiWeb.YeastBrinkController do
     (`:yeast_settings`).
   * `pitch` / `dump` / `adjust` / `clean`: stock actions, Brewery members and
     owners (`:ingredients` write).
+  * `remove_entry` (Stop 3, `DELETE /api/yeast/entries/:id`): Remove a
+    mistaken pitch, dump or adjustment (`Harvests.remove_entry/2`: its maker
+    or a Brewery manager). History marks each entry `can_remove` for the
+    viewer.
 
   No device does any of it (the `:brewery` plug and `Authz.Device`).
   """
@@ -31,7 +35,29 @@ defmodule RockcutApiWeb.YeastBrinkController do
   def history(conn, %{"id" => id}) do
     with :ok <- allow(conn, :read, :ingredients),
          %{} = brink <- Brinks.get(id) || {:error, :not_found} do
-      json(conn, %{data: Brinks.history(brink)})
+      user = conn.assigns.current_user
+
+      data =
+        Enum.map(Brinks.history(brink), fn record ->
+          %{
+            record
+            | entries:
+                Enum.map(record.entries, fn e ->
+                  Map.put(
+                    e,
+                    :can_remove,
+                    e.removable and
+                      Authz.can?(
+                        user,
+                        :change,
+                        {:yeast_record, %{entered_by_id: e.entered_by && e.entered_by.id}}
+                      )
+                  )
+                end)
+          }
+        end)
+
+      json(conn, %{data: data})
     end
   end
 
@@ -68,6 +94,13 @@ defmodule RockcutApiWeb.YeastBrinkController do
     with :ok <- allow(conn, :write, :ingredients),
          {:ok, _} <- fun.(id, conn.assigns.current_user) do
       json(conn, %{data: one(String.to_integer(id))})
+    end
+  end
+
+  def remove_entry(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :write, :ingredients),
+         {:ok, record} <- Harvests.remove_entry(id, conn.assigns.current_user) do
+      json(conn, %{data: one(record.brink_id)})
     end
   end
 

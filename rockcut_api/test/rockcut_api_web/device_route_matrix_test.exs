@@ -224,6 +224,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:patch, "/api/yeast/counts/:id"},
     {:put, "/api/yeast/counts/:id"},
     {:delete, "/api/yeast/counts/:id"},
+    # D64 Stop 3: the batch page's Yeast section and History's Remove.
+    {:get, "/api/yeast/batches/:id"},
+    {:delete, "/api/yeast/entries/:id"},
     # D61 purchasing, contracts, reorder and totals: no device (decision 26).
     {:get, "/api/contracts/shortfall"},
     {:get, "/api/contracts"},

@@ -396,7 +396,7 @@ defmodule RockcutApiWeb.TaskBoardController do
   defp linked_uncomplete(person, task, step) do
     if step.done_on == nil,
       do: {:ok, {%{task: task}, nil}},
-      else: tracked(person, step, fn -> Steps.uncomplete(step.id) end)
+      else: tracked(person, step, fn -> Steps.uncomplete(step.id, person) end)
   end
 
   # Off the task list; the step stays on the schedule.

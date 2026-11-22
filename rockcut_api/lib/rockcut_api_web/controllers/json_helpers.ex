@@ -454,12 +454,17 @@ defmodule RockcutApiWeb.JSONHelpers do
       # D56 decision 14: a failed test's retest day ("✗ Fail · retest Wed").
       retest_on: retest_on(t.production_step),
       # Mark not done is refused while the retest is done (`retest_done`).
-      retest_done: retest_done(t.production_step)
+      retest_done: retest_done(t.production_step),
+      # D64 §4.8: a Yeast harvest step's check-off (`harvested` / `dumped`).
+      yeast_outcome: step_yeast_outcome(t.production_step)
     }
   end
 
   defp step_result(%RockcutApi.Production.Step{result: result}), do: result
   defp step_result(_not_loaded), do: nil
+
+  defp step_yeast_outcome(%RockcutApi.Production.Step{yeast_outcome: o}), do: o
+  defp step_yeast_outcome(_not_loaded), do: nil
 
   defp retest_on(%RockcutApi.Production.Step{retest: %RockcutApi.Production.Step{due_on: d}}),
     do: d
@@ -762,7 +767,10 @@ defmodule RockcutApiWeb.JSONHelpers do
       retest_days: s.retest_days,
       retest_of_id: s.retest_of_id,
       # D56 decision 22: planned before brew day, whatever its date is now.
-      pre_brew: s.pre_brew
+      pre_brew: s.pre_brew,
+      # D64 §4.8: a Yeast harvest step's check-off (`harvested` / `dumped`) and note.
+      yeast_outcome: s.yeast_outcome,
+      yeast_note: s.yeast_note
     }
   end
 

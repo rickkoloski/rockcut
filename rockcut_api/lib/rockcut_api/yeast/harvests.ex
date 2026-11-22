@@ -21,13 +21,25 @@ defmodule RockcutApi.Yeast.Harvests do
     dirty and opens its Clean task, due that day.
   * `clean/2`: Mark clean (a dirty brink only): clears the mark and ticks
     the open Clean task.
+  * `unrecord_step/2` (Stop 3, §5.4): un-checking a Yeast harvest step (or
+    Undo of its check-off) takes its entry out, refolds the record or voids
+    it, and deletes the open Count task unless another harvest still needs
+    it. Refused once anything was pitched, dumped, adjusted or counted on
+    that record after the entry (`{:yeast_locked, brink}`, 409).
+  * `remove_entry/2` (Stop 3, spec §8, A8, lead item 7): Remove on a brink's
+    History takes out a mistaken `pitched`, `dumped` or `adjusted` entry
+    (its maker or a Brewery manager), only the record's latest entry with
+    no count after it; one that closed the record reopens it (unless the
+    brink has a newer record), clears the dirty mark and deletes the open
+    Clean task. A harvest goes only by un-checking its step, and the
+    "Emptied when the … harvest went in" adjustment never goes.
   """
   import Ecto.Query
 
-  alias RockcutApi.{Repo, Tasks}
+  alias RockcutApi.{Authz, Repo, Tasks}
   alias RockcutApi.Brewing.Batch
   alias RockcutApi.Ingredients.{Catalog, Product}
-  alias RockcutApi.Yeast.{BoardTasks, Brink, Entry, Harvest, HarvestProduct, Rules}
+  alias RockcutApi.Yeast.{BoardTasks, Brink, Count, Entry, Harvest, HarvestProduct, Rules}
 
   @max_lb Decimal.new(10_000)
 
@@ -357,6 +369,234 @@ defmodule RockcutApi.Yeast.Harvests do
         })
       )
     )
+  end
+
+  ## Un-check (Stop 3, §5.4)
+
+  @doc """
+  Take out the harvest a Yeast harvest step's check-off recorded, inside the
+  caller's transaction: `:ok` (nothing recorded is `:ok` too), or
+  `{:error, {:yeast_locked, brink}}` once something was pitched, dumped,
+  adjusted or counted on the record after the entry. The record refolds
+  (a harvest on top goes back to what the brink held), or is voided when it
+  has no harvest left. The brink's open Count task is deleted (as `actor`,
+  logged on the board) unless a harvest left on the record has had no count
+  since.
+  """
+  def unrecord_step(step_id, actor) do
+    case Repo.one(from e in Entry, where: e.production_step_id == ^step_id) do
+      nil ->
+        :ok
+
+      entry ->
+        write(fn ->
+          record = Repo.get!(Harvest, entry.harvest_id) |> Repo.preload(:brink)
+
+          if locked?(record, entry), do: Repo.rollback({:yeast_locked, record.brink})
+
+          Repo.delete!(entry)
+
+          record =
+            if Repo.exists?(
+                 from e in Entry, where: e.harvest_id == ^record.id and e.kind in ["harvested"]
+               ) do
+              refold!(record)
+            else
+              # No harvest left: whatever else is on it came before (nothing
+              # can come after, `locked?/2`), so the record goes as a whole.
+              record
+              |> Ecto.Changeset.change(status: "voided", lock_version: record.lock_version + 1)
+              |> Repo.update!()
+            end
+
+          unless recount_needed?(record), do: delete_open_task!(record.brink, "recount", actor)
+          :ok
+        end)
+        |> case do
+          {:ok, :ok} -> :ok
+          error -> error
+        end
+    end
+  end
+
+  # Anything but a harvest on the record after `entry`, or a count entered
+  # since (a count in the same second counts as since).
+  defp locked?(record, entry) do
+    Repo.exists?(
+      from e in Entry,
+        where: e.harvest_id == ^record.id and e.id > ^entry.id and e.kind not in ["harvested"]
+    ) or
+      Repo.exists?(
+        from c in Count,
+          where: c.harvest_id == ^record.id and c.inserted_at >= ^entry.inserted_at
+      )
+  end
+
+  # The open record still has a harvest with no count entered since.
+  defp recount_needed?(%Harvest{status: "in_brink", id: id}) do
+    last_count =
+      Repo.one(from c in Count, where: c.harvest_id == ^id, select: max(c.inserted_at))
+
+    harvests = from e in Entry, where: e.harvest_id == ^id and e.kind in ["harvested"]
+
+    case last_count do
+      nil -> Repo.exists?(harvests)
+      at -> Repo.exists?(from e in harvests, where: e.inserted_at > ^at)
+    end
+  end
+
+  defp recount_needed?(_record), do: false
+
+  defp delete_open_task!(brink, kind, actor) do
+    case BoardTasks.open_task(brink.id, kind) do
+      nil ->
+        :ok
+
+      # Not through a person (a direct `Steps.uncomplete/1`): no board event.
+      task when is_nil(actor) ->
+        Repo.delete!(task)
+        :ok
+
+      task ->
+        case Tasks.delete_one(task, actor) do
+          {:ok, _} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+    end
+  end
+
+  ## Remove a mistaken entry (Stop 3, spec §8, A8)
+
+  @doc """
+  Remove a `pitched`, `dumped` or `adjusted` entry from a brink's History, as
+  `actor` (its maker or a Brewery manager, `Authz` `{:yeast_record, _}`).
+  Only the latest entry of its record, with no count entered after it. One
+  that emptied the record reopens it, which needs the brink to have no newer
+  record; the dirty mark it set is cleared and the open Clean task deleted.
+  Refusals are `{:conflict, sentence}` (409); `{:ok, record}`.
+  """
+  def remove_entry(entry_id, actor) do
+    write(fn ->
+      entry =
+        case RockcutApi.Ids.parse(to_string(entry_id)) do
+          nil -> Repo.rollback(:not_found)
+          id -> Repo.get(Entry, id) || Repo.rollback(:not_found)
+        end
+
+      record = Repo.get!(Harvest, entry.harvest_id) |> Repo.preload(:brink)
+      brink = record.brink
+
+      unless Authz.can?(actor, :change, {:yeast_record, entry}), do: Repo.rollback(:forbidden)
+
+      cond do
+        entry.kind in ["harvested"] ->
+          refuse("A harvest is removed by un-checking its Yeast harvest step.")
+
+        entry.kind in ["adjusted"] and harvest_emptying?(entry) ->
+          refuse("That adjustment came with a harvest, so it can't be removed.")
+
+        Repo.exists?(from e in Entry, where: e.harvest_id == ^record.id and e.id > ^entry.id) ->
+          refuse("Only the latest entry on #{brink.name} can be removed.")
+
+        Repo.exists?(
+          from c in Count,
+            where: c.harvest_id == ^record.id and c.inserted_at >= ^entry.inserted_at
+        ) ->
+          refuse("#{brink.name} has been counted since, so this can't be removed.")
+
+        record.status == "emptied" and
+            Repo.exists?(
+              from h in Harvest,
+                where: h.brink_id == ^brink.id and h.id > ^record.id and h.status != "voided"
+            ) ->
+          refuse("#{brink.name} has been filled again since, so this can't be removed.")
+
+        record.status == "voided" ->
+          refuse("That harvest was un-checked, so its record can't change.")
+
+        true ->
+          :ok
+      end
+
+      Repo.delete!(entry)
+
+      if record.status == "emptied" do
+        record =
+          record
+          |> Ecto.Changeset.change(
+            status: "in_brink",
+            emptied_on: nil,
+            lock_version: record.lock_version + 1
+          )
+          |> Repo.update!()
+
+        brink |> Ecto.Changeset.change(dirty: false, dirty_since: nil) |> Repo.update!()
+        delete_open_task!(brink, "clean", actor)
+        record
+      else
+        record |> Ecto.Changeset.change(lock_version: record.lock_version + 1) |> Repo.update!()
+      end
+    end)
+  end
+
+  @doc false
+  def get_entry(id) do
+    case RockcutApi.Ids.parse(to_string(id)) do
+      nil -> nil
+      id -> Repo.get(Entry, id)
+    end
+  end
+
+  # "Emptied when the 11/22 harvest went in" (A6): written with a harvest,
+  # never by a person.
+  defp harvest_emptying?(%Entry{note: note}) when is_binary(note),
+    do: Regex.match?(~r|^Emptied when the \d{1,2}/\d{1,2} harvest went in$|, note)
+
+  defp harvest_emptying?(_), do: false
+
+  defp refuse(sentence), do: Repo.rollback({:conflict, sentence})
+
+  ## For the Yeast harvest step's dialog (Stop 3, §5.2)
+
+  @doc """
+  The brink a batch's earlier harvest went into, while that brink still
+  holds the record (and is active); nil otherwise. The dialog's default for
+  a second pull (decision 16).
+  """
+  def default_brink_id(nil), do: nil
+
+  def default_brink_id(batch_id) do
+    Repo.one(
+      from e in Entry,
+        join: h in assoc(e, :harvest),
+        join: b in assoc(h, :brink),
+        where:
+          e.batch_id == ^batch_id and e.kind in ["harvested"] and h.status == "in_brink" and
+            b.active,
+        order_by: [desc: e.id],
+        limit: 1,
+        select: b.id
+    )
+  end
+
+  @doc "Yeast products for the dialog's strain picker: `%{id, code, label}`, by label."
+  def yeast_products do
+    yeast = Catalog.category_ids(["yeast"])
+
+    Repo.all(
+      from p in Product,
+        join: i in assoc(p, :ingredient),
+        where: i.category_id in ^yeast and p.active,
+        preload: [:manufacturer, ingredient: :category]
+    )
+    |> Enum.map(fn p ->
+      %{
+        id: p.id,
+        code: p.name || RockcutApi.Ingredients.Products.short_name(p),
+        label: RockcutApi.Ingredients.Products.display_name(p)
+      }
+    end)
+    |> Enum.sort_by(&String.downcase(&1.label || ""))
   end
 
   ## Input

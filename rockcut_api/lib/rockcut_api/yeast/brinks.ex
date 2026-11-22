@@ -224,7 +224,11 @@ defmodule RockcutApi.Yeast.Brinks do
               strains: Enum.map(e.product_ids || [], &names[&1]),
               note: e.note,
               entered_by: e.entered_by && %{id: e.entered_by.id, name: e.entered_by.name},
-              device: e.device && e.device.name
+              device: e.device && e.device.name,
+              step_id: e.production_step_id,
+              # Stop 3 (spec §8): what Remove may take out, before who's asking
+              # (`Harvests.remove_entry/2` decides; the controller adds `can_remove`).
+              removable: removable?(h, e)
             }
           end),
         counts:
@@ -240,6 +244,17 @@ defmodule RockcutApi.Yeast.Brinks do
           end)
       }
     end)
+  end
+
+  # The record's latest entry, a pitch, dump or adjustment a person made, on
+  # a record that isn't voided, with no count since; a newer record is the
+  # write's check.
+  defp removable?(%Harvest{status: status, entries: entries, counts: counts}, %Entry{} = e) do
+    status != "voided" and e.kind in ~w(pitched dumped adjusted) and
+      e.id == entries |> Enum.map(& &1.id) |> Enum.max() and
+      not Enum.any?(counts, &(DateTime.compare(&1.inserted_at, e.inserted_at) != :lt)) and
+      not (e.kind in ["adjusted"] and is_binary(e.note) and
+             String.starts_with?(e.note, "Emptied when the "))
   end
 
   # Strain names by product id: the lab's code ("US-05", spec §5.3), else the short name.
