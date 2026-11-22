@@ -200,3 +200,131 @@ Every rule gets a refusal test and an allowed test.
   - test counts before and after;
   - rule → test, noting the revert proofs;
   - `LEAD:` notes.
+
+---
+
+# Stop 3 (the Yeast harvest step, the batch page, un-check and Undo)
+
+2026-11-22 · lead. **Stop 2 accepted** (`7346625` … `918b019`; ExUnit 2,903 ×2, vitest 532,
+ingredients Playwright 152, brewery-board 436). Your LEAD notes:
+
+1. Accepted. "tasks" meant `brewery-board`. At this stop, also run **`production`** on its own.
+2. Accepted. There's no `Pitches` module.
+3. Accepted: `Tasks.do_complete` hook and `Tasks.complete_as/3`.
+4. Accepted.
+5. Accepted (40 characters).
+6. Accepted. `lock_version` is checked only when it's sent.
+7. **Decided here (item 3 below).**
+8. **Decided here (item 7 below).**
+
+**You're starting fresh** (the lead cleared your context). Read the spec, the plan, and the Stop 1
+and Stop 2 sections above, then `git log --oneline cc58b81..HEAD` for what's built. The yeast code
+is in `rockcut_api/lib/rockcut_api/yeast/`.
+
+## Do (plan Stop 3; spec §2 decisions 10–17 and 19, §4.8, §5, §6.6, §8)
+
+Every rule gets a refusal test and an allowed test.
+
+1. **Migrations 11–12** (plan). **Ask me before running them on the dev database.**
+   - `production_steps.yeast_outcome` + `yeast_note`;
+   - the `yeast_harvest` behavior.
+     - The migration sets `behavior` and `built_in` on the non-retired type whose
+       `lower(name) = 'yeast harvest'`. It **stops**, with nothing changed, naming what it found,
+       if there's none.
+     - It logs pre-brew steps of that type.
+     - Add `yeast_harvest` to `StepType`'s `@behaviors`.
+2. **`Yeast.Generations.for_batch/1`** (plan): it turns lot pitches (`used` movements with
+   `batch_id`, Mother = gen 0) and brink pitches (their snapshots) into `Rules.from_sources/1`'s
+   defaults. No sources → `nil`.
+3. **The check-off** (plan, "The step check-off"):
+   - **The new fields:** `complete_fields/0` gains the flat `yeast_*` params. A `yeast_harvest`
+     step needs `yeast_outcome` (`:yeast_required`).
+   - **Harvested:** `harvested` calls `Harvests.harvest/2` inside `complete/4`'s transaction, with
+     `production_step_id`, `batch_id` and `done_on` as the date.
+   - **Dumped:** `dumped` writes only the step's `yeast_outcome` / `yeast_note`.
+   - **Preview:** for a `yeast_harvest` step it returns `needs_yeast` and `yeast: %{brinks (with
+     state and empty weight), default_brink_id, defaults, products}`. The default brink is the one
+     this batch's earlier harvest went into, if it's still open.
+   - **The two questions:** map `{:yeast_question, :dirty | :has_yeast, brink}` in the fallback to a
+     **409** whose body carries `code: "yeast_question"`, `question: "dirty" | "has_yeast"`, and
+     the sentence:
+     - "YB2 is marked as dirty, record harvest anyway?"
+     - "YB2 shows yeast in brink. Do you want to harvest on top or is this brink empty?"
+
+     The dialog asks, then resends with `yeast_dirty_ok` / `yeast_brink_answer`. One question at a
+     time: dirty first.
+   - **Who:**
+     - on a device, the acting staff-code person must pass `Authz` for ingredients **edit**.
+       Otherwise it's D50's "can't do this here", and the code isn't counted;
+     - entries get `device_id`;
+     - check both the schedule controller and the task-board controller paths.
+4. **Un-check and Undo** (spec §5.4, plan):
+   - **Un-check:** `uncomplete/1` calls `Harvests.unrecord_step/1` first.
+     - It's refused with a **409** "YB2 has been pitched from or counted since this harvest. The
+       harvest can't be un-checked." when a pitch or count on that record was entered after the
+       step's entry.
+     - Otherwise it removes the entry, then refolds or voids the record, and deletes the open Count
+       task if nothing else needs it.
+     - A `dumped` outcome just clears the columns.
+   - **Undo:**
+     - an Undo that flips a `yeast_harvest` step done → not done runs the same un-check in its
+       transaction, with the same refusal;
+     - an Undo that would flip one back to done is **refused**: "Check it off again to record the
+       harvest.";
+     - test both through the controller, with the token, expiry and `undo_not_yours` unchanged.
+5. **`HarvestDialog`:** one shared component in the check-off flows on the **Gantt**
+   (`StepDialog` / `flows`) and on the **board** (`LinkedTaskDialog` / `TaskCard`), which is the
+   device path too.
+   - Harvest yeast / Yeast dumped, each with a note.
+   - Harvest yeast shows:
+     - the brink picker with states ("YB1 · empty", "YB2 · 42 lb US-05 gen 2", "YB3 · dirty");
+     - "Yeast weight (lb)" with "YB2 empty: 148 lb" beside it;
+     - strains and generation, prefilled from `defaults` and editable. When `defaults` is null,
+       they're asked: strain picker (one or more) and generation, starting at 1 (A5);
+     - the questions as `ConfirmDialog`s ("Record anyway" / "Cancel"; "Harvest on top" / "This
+       brink is empty").
+   - One press at a time, and it works at 360 px.
+6. **The batch page** (spec §6.6): `BatchDetail.tsx` gets a **Yeast** section, from
+   `GET /api/yeast/batches/:id`.
+   - **Pitched:** lots ("2 bricks Chico Ale US-05, lot F123 · Mother") and brinks ("38 lb from YB2 ·
+     US-05 gen 2").
+   - **Harvested:** one line per pull ("11/20 · 30 lb → YB2", "11/22 · 12 lb → YB2 (on top)"), and
+     "Yeast dumped · <note>".
+7. **Removing a mistaken pitch, dump or adjustment** (spec §8, A8). This is new detail, the lead's
+   call:
+   - **Remove** on a brink's History removes a `pitched`, `dumped` or `adjusted` entry, under these
+     conditions:
+     - only by its maker or a Brewery manager (`{:yeast_record, _}`);
+     - only when it's the **latest entry** of its record and no count was entered after it;
+     - **closing entries:** if it closed the record (emptied), it reopens the record. That's only
+       when the brink has no newer record. It also deletes the open "Clean" task and clears the
+       dirty mark that closing set;
+     - harvested entries are removed only by un-checking their step;
+     - "Emptied when the … harvest went in" adjustments aren't removable.
+   - Refusals are 409s with a sentence.
+   - Add a History "Remove" button with a confirm.
+8. **Tests:**
+   - ExUnit for all of the above;
+   - Playwright in `production` and `brewery-board` for the check-off flows (Gantt, board, and the
+     device with a staff code), the questions, un-check refused / allowed, and Undo refused;
+   - Playwright in `ingredients` for the batch page and Remove;
+   - COVERAGE.
+
+## Done when (Stop 3)
+
+- `mix test` passes twice, and `--warnings-as-errors` is clean. Vitest, tsc, the build and lint (8)
+  read as before.
+- `ingredients`, `brewery-board` and `production` Playwright pass, with nothing else touching the
+  UI while they run.
+- **Browser check** at desktop and 360 px, with `[TEST-TEMP]` data cleaned up by id:
+  - **As `brewer1` on the Gantt:**
+    - pitch 2 bricks into a batch, then check off its Yeast harvest into YB1. The dialog prefills
+      gen 1, and the Count task appears;
+    - a second harvest on that batch defaults to YB1 → "Harvest on top";
+    - un-check it (allowed), then add a count and try to un-check the first (refused).
+  - **As `breweryDevice` with `brewer2`'s staff code:** check off a Yeast harvest on the board. It
+    shows "· on Brewhouse tablet". A bartender's code gets "can't do this here".
+  - **A harvest into a dirty brink** asks the dirty question.
+  - **The batch page** shows the pitches and both pulls.
+- **Reply with:** commits, counts before and after, rule → test with revert proofs, and `LEAD:`
+  notes.
