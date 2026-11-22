@@ -25,6 +25,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import BatchFormDialog from './BatchFormDialog';
 import BrewTurnDialog from './BrewTurnDialog';
 import BatchLogEntryDialog from './BatchLogEntryDialog';
+import BatchYeastSection from './BatchYeastSection';
 import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
 import parseApiError from '../../lib/parseApiError';
@@ -166,6 +167,9 @@ export default function BatchDetail() {
         </Grid>
 
       </Paper>
+
+      {/* D64 §6.6: what was pitched into the batch and harvested from it. */}
+      <BatchYeastSection batchId={batch.id} />
 
       {/* Brew Turns */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>

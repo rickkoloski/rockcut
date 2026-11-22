@@ -24,7 +24,7 @@ import FormDialog from '../../components/FormDialog'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
-import { useApiCreate } from '../../hooks/useApiMutation'
+import { useApiCreate, useApiDelete } from '../../hooks/useApiMutation'
 import { usePhoneBackCloses } from '../../hooks/useBackCloses'
 import { httpStatus } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
@@ -245,10 +245,29 @@ export function CleanBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
 
 const KIND_LABELS: Record<string, string> = { harvested: 'Harvested', pitched: 'Pitched', dumped: 'Dumped', adjusted: 'Adjusted' }
 
-/** D64 §6.3: a brink's records, newest first, each with its entries and counts. */
+type HistoryEntry = YeastHistoryRecord['entries'][number]
+
+/** "Remove the pitch of 10 lb into Galactic #44 on 11/22? The 10 lb go back in YB2." */
+function removeQuestion(e: HistoryEntry, brink: string): string {
+  const lb = lbText(Math.abs(Number(e.quantity_lb)))
+  const what = `${e.kind === 'pitched' ? 'pitch' : e.kind === 'dumped' ? 'dump' : 'adjustment'} of ${lb}${e.batch ? ` into ${e.batch}` : ''} on ${shortDate(e.occurred_on)}`
+  const after =
+    e.kind === 'pitched' ? `The ${lb} go back in ${brink}.` : e.kind === 'dumped' ? `The yeast goes back in ${brink}, and it's no longer marked dirty.` : `${brink}'s weight goes back to what it was.`
+  return `Remove the ${what}? ${after}`
+}
+
+/**
+ * D64 §6.3: a brink's records, newest first, each with its entries and
+ * counts. Stop 3 (spec §8, A8): Remove on a mistaken pitch, dump or
+ * adjustment (the record's latest, by its maker or a Brewery manager; the
+ * API decides and says why not).
+ */
 export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onClose: () => void }) {
   const phone = useMediaQuery(useTheme().breakpoints.down('sm'))
   const { data: records = [], isLoading } = useApiList<YeastHistoryRecord>(['yeast_brink_history', brink.id], `/api/yeast/brinks/${brink.id}/history`)
+  const [removing, setRemoving] = useState<HistoryEntry | null>(null)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+  const remove = useApiDelete((id) => `/api/yeast/entries/${id}`, { invalidateKeys: BRINK_KEYS })
   usePhoneBackCloses(true, onClose)
   return (
     <Dialog open onClose={onClose} fullScreen={phone} fullWidth maxWidth="sm" data-testid="brink-history-dialog">
@@ -267,18 +286,34 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
               <Typography variant="body2">gen {r.generation}{r.coferment ? ' · co-ferment' : ''}</Typography>
             </Box>
             {r.entries.map((e) => (
-              <Typography key={e.id} variant="body2" sx={{ overflowWrap: 'anywhere' }}>
-                {[
-                  shortDate(e.occurred_on),
-                  `${KIND_LABELS[e.kind]} ${lbText(Math.abs(Number(e.quantity_lb)))}`,
-                  e.batch ? (e.kind === 'harvested' ? `from ${e.batch}` : `into ${e.batch}`) : null,
-                  e.kind === 'harvested' && e.strains.length ? `${e.strains.join(' + ')} gen ${e.generation}` : null,
-                  e.note,
-                  e.entered_by ? `${e.entered_by.name}${e.device ? ` · on ${e.device}` : ''}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(' · ')}
-              </Typography>
+              <Box key={e.id} sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }} data-testid={`brink-history-entry-${e.id}`}>
+                <Typography variant="body2" sx={{ overflowWrap: 'anywhere', flex: 1 }}>
+                  {[
+                    shortDate(e.occurred_on),
+                    `${KIND_LABELS[e.kind]} ${lbText(Math.abs(Number(e.quantity_lb)))}`,
+                    e.batch ? (e.kind === 'harvested' ? `from ${e.batch}` : `into ${e.batch}`) : null,
+                    e.kind === 'harvested' && e.strains.length ? `${e.strains.join(' + ')} gen ${e.generation}` : null,
+                    e.note,
+                    e.entered_by ? `${e.entered_by.name}${e.device ? ` · on ${e.device}` : ''}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Typography>
+                {e.can_remove && (
+                  <Button
+                    size="small"
+                    color="error"
+                    sx={{ flexShrink: 0, minWidth: 0, py: 0 }}
+                    onClick={() => {
+                      setRemoveError(null)
+                      setRemoving(e)
+                    }}
+                    data-testid={`brink-history-remove-${e.id}`}
+                  >
+                    Remove
+                  </Button>
+                )}
+              </Box>
             ))}
             {r.counts.map((c) => (
               <Typography key={`c${c.id}`} variant="body2" color="text.secondary">
@@ -291,6 +326,30 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
       <DialogActions>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
+      {removing && (
+        <ConfirmDialog
+          open
+          title="Remove entry"
+          message={removeQuestion(removing, brink.name)}
+          confirmLabel="Remove"
+          testId="brink-history-remove-confirm"
+          onClose={() => setRemoving(null)}
+          onConfirm={async () => {
+            try {
+              await remove.mutateAsync(removing.id)
+              setRemoving(null)
+            } catch (err) {
+              setRemoveError(parseApiError(err))
+            }
+          }}
+        >
+          {removeError && (
+            <Typography color="error" variant="body2" sx={{ mt: 1 }} role="alert" data-testid="brink-history-remove-error">
+              {removeError}
+            </Typography>
+          )}
+        </ConfirmDialog>
+      )}
     </Dialog>
   )
 }

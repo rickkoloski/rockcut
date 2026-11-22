@@ -44,7 +44,7 @@ export interface Phase {
   retired_at: string | null
 }
 
-export type Behavior = 'plain' | 'brew' | 'set_temp' | 'transfer' | 'split' | 'cip' | 'package'
+export type Behavior = 'plain' | 'brew' | 'set_temp' | 'transfer' | 'split' | 'cip' | 'package' | 'yeast_harvest'
 
 export interface StepType {
   id: number
@@ -189,6 +189,9 @@ export interface SchedStep {
   retest_days: number
   /** The failed test this one retests (its retest points back here). */
   retest_of_id: number | null
+  /** D64 §4.8: a Yeast harvest step's check-off and its note. */
+  yeast_outcome?: 'harvested' | 'dumped' | null
+  yeast_note?: string | null
 }
 
 export interface SchedLink {
@@ -357,6 +360,7 @@ export const BEHAVIOR_LABELS: Record<Behavior, string> = {
   split: 'Splits the batch',
   cip: 'Cleans the tank',
   package: 'Packages the beer',
+  yeast_harvest: 'Records a yeast harvest',
 }
 
 /** A batch number as saved: leading `#`s and spaces dropped ("#40" is 40), as the API does (D47 QA M2). */

@@ -4,8 +4,8 @@ import { parseDecimal } from './brewingUnits'
 import { BOARD_QUERY_KEY } from './tasks'
 import type { YeastBrink, YeastContents } from './types'
 
-/** What a brink write refreshes: the brinks, a brink's History, and the board (its Count / Clean tasks). */
-export const BRINK_KEYS: unknown[][] = [['yeast_brinks'], ['yeast_brink_history'], [BOARD_QUERY_KEY]]
+/** What a brink write refreshes: the brinks, a brink's History, the board (its Count / Clean tasks) and a batch page's Yeast section. */
+export const BRINK_KEYS: unknown[][] = [['yeast_brinks'], ['yeast_brink_history'], [BOARD_QUERY_KEY], ['yeast_batch']]
 
 /** "11/20" from "2026-11-20". */
 export const shortDate = (iso: string | null | undefined) => {
