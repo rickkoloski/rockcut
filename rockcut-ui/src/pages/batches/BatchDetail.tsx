@@ -91,6 +91,8 @@ export default function BatchDetail() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  // D64 Stop 4: a refused delete (yeast pitched into the batch or harvested from it) says why.
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [turnDialogOpen, setTurnDialogOpen] = useState(false);
   const [selectedTurn, setSelectedTurn] = useState<BrewTurn | undefined>();
   const [logDialogOpen, setLogDialogOpen] = useState(false);
@@ -110,8 +112,12 @@ export default function BatchDetail() {
   }
 
   const handleDelete = async () => {
-    await deleteMutation.mutateAsync(batch.id);
-    navigate('/batches');
+    try {
+      await deleteMutation.mutateAsync(batch.id);
+      navigate('/batches');
+    } catch (err) {
+      setDeleteError(parseApiError(err));
+    }
   };
 
   return (
@@ -126,7 +132,7 @@ export default function BatchDetail() {
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Batch"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
-            <Tooltip title="Delete Batch"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+            <Tooltip title="Delete Batch"><IconButton onClick={() => { setDeleteError(null); setDeleteOpen(true); }} color="error" data-testid="batch-page-delete"><DeleteIcon /></IconButton></Tooltip>
           </Box>
         }
       />
@@ -233,7 +239,14 @@ export default function BatchDetail() {
         title="Delete Batch"
         message={`Are you sure you want to delete batch "${batch.batch_number}"? This cannot be undone.`}
         loading={deleteMutation.isPending}
-      />
+        testId="batch-page-delete-confirm"
+      >
+        {deleteError && (
+          <Alert severity="error" sx={{ mt: 1 }} data-testid="batch-page-delete-error">
+            {deleteError}
+          </Alert>
+        )}
+      </ConfirmDialog>
 
       <BrewTurnDialog
         open={turnDialogOpen}
