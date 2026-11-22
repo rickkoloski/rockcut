@@ -695,6 +695,21 @@ defmodule RockcutApiWeb.D64Stop1Test do
     end
   end
 
+  test "a yeast lot's picker label names the product and lot, a Liquid one its pitch size; grain has none",
+       c do
+    dry = lot!(c, us05!(c)["id"], "1", %{"lot_number" => "F1"})
+    assert dry["label"] == "Chico Ale US-05 · Fermentis · F1"
+
+    w = wlp001!(c)
+    liquid = lot!(c, w["id"], "1", %{"lot_number" => "W1", "features" => %{"pitch_bbl" => "10"}})
+    assert liquid["label"] == "California Ale WLP001 · White Labs · W1 · 10.0 bbl"
+
+    assert stocked_lot!(c.product, Tasks.today(), "55")
+           |> then(&req(c.brewer, :get, "/api/ingredient_lots/#{&1.id}"))
+           |> elem(1)
+           |> get_in(["data", "label"]) == nil
+  end
+
   test "Products.unit_label by id reads the yeast label", c do
     p = us05!(c)
     assert Products.unit_label(p["id"]) == "bricks"

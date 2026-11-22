@@ -686,14 +686,17 @@ defmodule RockcutApi.Ingredients.Inventory do
           ingredient: %{category: %RockcutApi.Brewing.IngredientCategory{} = category}
         } = lot
       ) do
-    if Catalog.key(category) in ~w(fruits spices sugars consumables) do
+    # D64: a yeast lot too, "Chico Ale US-05 · Fermentis · F1", a Liquid one with its pitch size ("10.0 bbl").
+    if Catalog.key(category) in ~w(fruits spices sugars consumables yeast) do
       brix =
         case lot.feature_values do
           values when is_list(values) ->
             Enum.find_value(values, fn v ->
               # Lead decisions 1 (gap 4): always one place, "14.0 °Bx".
-              v.feature_type.key == "brix" &&
-                "#{v.value |> Decimal.round(1) |> Decimal.to_string(:normal)} °Bx"
+              (v.feature_type.key == "brix" &&
+                 "#{v.value |> Decimal.round(1) |> Decimal.to_string(:normal)} °Bx") ||
+                (v.feature_type.key == "pitch_bbl" &&
+                   "#{v.value |> Decimal.round(1) |> Decimal.to_string(:normal)} bbl")
             end)
 
           _ ->
