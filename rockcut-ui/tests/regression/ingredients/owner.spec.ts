@@ -94,9 +94,13 @@ test('O2: Settings → Categories: Grains shows its five children; no Origin or 
     await expect(page.getByRole('heading', { name: 'Field Definitions' })).toBeVisible()
     await expect(page.getByTestId('category-add-field')).toHaveCount(0)
   }
-  // D65 A9: Fruits takes none either now; Yeast Strains keeps its custom fields until D64.
+  // D65 A9: Fruits takes none either now; D64 §4.1: nor does Yeast Strains. Other Consumables still does.
   const yeast = categories.find((c) => c.name === 'Yeast Strains')!
   await page.goto(`/ingredients/categories/${yeast.id}`)
+  await expect(page.getByTestId('category-grain-fields-note')).toBeVisible()
+  await expect(page.getByTestId('category-add-field')).toHaveCount(0)
+  const consumables = categories.find((c) => c.name === 'Other Consumables')!
+  await page.goto(`/ingredients/categories/${consumables.id}`)
   await expect(page.getByTestId('category-add-field')).toBeVisible()
   const fruits = categories.find((c) => c.name === 'Fruits')!
   await page.goto(`/ingredients/categories/${fruits.id}`)
