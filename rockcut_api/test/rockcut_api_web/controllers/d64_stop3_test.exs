@@ -129,6 +129,7 @@ defmodule RockcutApiWeb.D64Stop3Test do
 
   defp pitch_lot!(c, batch, product \\ nil, quantity \\ "2") do
     product = product || c.us05
+
     Repo.get_by(RockcutApi.Brewing.IngredientLot, product_id: product.id, lot_number: "F123") ||
       stocked_lot!(product, ~D[2026-11-01], "10", "F123")
 
@@ -281,6 +282,53 @@ defmodule RockcutApiWeb.D64Stop3Test do
         complete(c, second, %{preview: true})
 
       assert yeast["default_brink_id"] == nil
+    end
+  end
+
+  describe "Generations.defaults/1" do
+    test "nothing pitched and no earlier pull: nil", c do
+      {batch, _} = brewed(c, "41")
+      assert Generations.defaults(batch.id) == nil
+    end
+
+    test "nothing pitched: a second pull takes the first pull's strains and generation", c do
+      {batch, harvest} = brewed(c, "41")
+
+      {200, _} =
+        complete(
+          c,
+          harvest,
+          harvest_params(c, %{yeast_product_ids: [c.wlp002.id], yeast_generation: 3})
+        )
+
+      assert Generations.defaults(batch.id) == %{
+               product_ids: [c.wlp002.id],
+               generation: 3,
+               coferment: false
+             }
+
+      {200, %{"data" => %{"preview" => %{"yeast" => yeast}}}} =
+        complete(c, second_step!(harvest), %{preview: true})
+
+      assert yeast["defaults"]["generation"] == 3
+    end
+
+    test "with pitches, they win over an earlier pull", c do
+      {batch, harvest} = brewed(c, "41")
+      pitch_lot!(c, batch)
+
+      {200, _} =
+        complete(
+          c,
+          harvest,
+          harvest_params(c, %{yeast_product_ids: [c.wlp002.id], yeast_generation: 3})
+        )
+
+      assert Generations.defaults(batch.id) == %{
+               product_ids: [c.us05.id],
+               generation: 1,
+               coferment: false
+             }
     end
   end
 

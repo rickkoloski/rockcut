@@ -933,14 +933,14 @@ defmodule RockcutApi.Production.Steps do
 
   # The Harvest dialog's data: the active brinks with their state, the
   # default brink (where this batch's earlier pull went, while it's still
-  # there), the strains and generation from the batch's pitches (nil: the
-  # dialog asks, A5) and the yeast products for the strain picker. The
+  # there), the strains and generation from the batch's pitches, else its
+  # earlier pull (nil: the dialog asks, A5) and the yeast products for the strain picker. The
   # device gets them here, not from the yeast routes (spec §8).
   defp yeast_preview(%Step{batch_id: batch_id}) do
     %{
       brinks: RockcutApi.Yeast.Brinks.list(),
       default_brink_id: RockcutApi.Yeast.Harvests.default_brink_id(batch_id),
-      defaults: RockcutApi.Yeast.Generations.for_batch(batch_id),
+      defaults: RockcutApi.Yeast.Generations.defaults(batch_id),
       products: RockcutApi.Yeast.Harvests.yeast_products()
     }
   end
@@ -948,7 +948,7 @@ defmodule RockcutApi.Production.Steps do
   defp record_yeast!(_step, %{outcome: "dumped"}, _attrs, _done_on, _actor), do: :ok
 
   defp record_yeast!(%Step{} = step, %{outcome: "harvested", note: note}, attrs, done_on, actor) do
-    defaults = RockcutApi.Yeast.Generations.for_batch(step.batch_id)
+    defaults = RockcutApi.Yeast.Generations.defaults(step.batch_id)
 
     %{
       "brink_id" => attrs["yeast_brink_id"],

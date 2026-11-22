@@ -9,6 +9,8 @@ defmodule RockcutApi.Yeast.Generations do
     strains and generation its record had then (its snapshot). The sources
     go through `Rules.from_sources/1`; none (an older batch, or one pitched
     before D64) is nil, and the dialog asks (A5).
+  * `defaults/1`: `for_batch/1`, else the batch's earlier pull (a second
+    pull from a batch with no recorded pitch isn't asked again).
   * `batch_page/1`: the batch page's Yeast section (spec §6.6): the pitches
     (lots and brinks) and the harvests (one line per pull, "(on top)" when
     the pull went onto yeast already in the brink), plus a Yeast dumped
@@ -35,6 +37,30 @@ defmodule RockcutApi.Yeast.Generations do
           do: %{product_ids: e.product_ids || [], generation: e.generation || 0}
 
     Rules.from_sources(lots ++ brinks)
+  end
+
+  @doc """
+  The Harvest dialog's defaults for a pull from `batch_id`: `for_batch/1`,
+  else (nothing recorded as pitched) what the batch's earlier pull was
+  recorded as, so a second pull isn't asked again; nil when neither.
+  """
+  def defaults(nil), do: nil
+
+  def defaults(batch_id) do
+    for_batch(batch_id) ||
+      case Repo.one(
+             from e in Entry,
+               where: e.batch_id == ^batch_id and e.kind in ["harvested"],
+               order_by: [desc: e.id],
+               limit: 1
+           ) do
+        nil ->
+          nil
+
+        e ->
+          ids = Enum.sort(e.product_ids || [])
+          %{product_ids: ids, generation: e.generation, coferment: length(ids) > 1}
+      end
   end
 
   # `[{product_id, movement}]`: a yeast lot's `used` movements naming the batch.
