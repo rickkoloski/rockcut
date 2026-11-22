@@ -123,6 +123,7 @@ defmodule RockcutApi.Migrations.CopyLotSpecsToFeaturesTest do
     rows =
       Repo.query!("SELECT key, unit_label, min, max FROM feature_types ORDER BY id").rows
 
+    # D64 (`d64_yeast_features`): fermentation temp and pitch size.
     assert rows ==
              [
                ["extract_fgdb", "% FGDB", 0, 100],
@@ -141,6 +142,7 @@ defmodule RockcutApi.Migrations.CopyLotSpecsToFeaturesTest do
                for(
                  ion <- ~w(ca mg co3 hco3 so4 na cl),
                  do: ["#{ion}_ppm_per_g_gal", "ppm @ 1 g/gal", 0, 1000]
-               )
+               ) ++
+               [["ferm_temp_f", "°F", 32, 100], ["pitch_bbl", "bbl", 0.5, 60]]
   end
 end
