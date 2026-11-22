@@ -557,6 +557,11 @@ defmodule RockcutApiWeb.D64Stop2Test do
                  })
                )
 
+      assert %{"name" => [_]} =
+               errors(
+                 req(c.mgr, :post, "/api/yeast/brinks", %{"name" => String.duplicate("x", 41)})
+               )
+
       assert %{"name" => ["can't be blank"]} =
                errors(req(c.mgr, :post, "/api/yeast/brinks", %{"name" => " "}))
     end

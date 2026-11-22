@@ -32,7 +32,7 @@ defmodule RockcutApi.Yeast.Brink do
     ])
     |> update_change(:name, &String.trim/1)
     |> validate_required([:name])
-    |> validate_length(:name, max: 20)
+    |> validate_length(:name, max: 40)
     |> validate_number(:empty_weight_lb, greater_than: 0, less_than_or_equal_to: 10_000)
     |> validate_places(:empty_weight_lb, 2)
     |> validate_number(:position, greater_than_or_equal_to: 0, less_than: 10_000)
