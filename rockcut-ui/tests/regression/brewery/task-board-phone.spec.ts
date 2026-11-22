@@ -443,7 +443,7 @@ test('D52: on a phone, Days shown and the filters are in the settings gear; a cu
 test('as breweryMgr, the settings menu, Daily items and History fit the phone screen', async ({ browser }) => {
   const ctx = await browser.newContext({ storageState: authFile('breweryMgr'), viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true })
   const page = await ctx.newPage()
-  const widest = () => page.evaluate(() => Math.max(...[...document.querySelectorAll('.MuiDialog-paper, .MuiDialog-paper *')].map((e) => e.getBoundingClientRect().right)))
+  const widest = () => page.evaluate(() => Math.max(...Array.from(document.querySelectorAll('.MuiDialog-paper, .MuiDialog-paper *')).map((e) => e.getBoundingClientRect().right)))
   try {
     await openBoard(page)
     await settingsItem(page, 'board-settings', 'board-menu-daily-items')
