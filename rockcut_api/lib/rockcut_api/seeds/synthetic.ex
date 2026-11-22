@@ -310,6 +310,17 @@ defmodule RockcutApi.Seeds.Synthetic do
     brand_ids = Repo.all(from(b in Brand, where: like(b.name, ^"#{@temp_tag}%"), select: b.id))
     recipe_ids = Repo.all(from(r in Recipe, where: r.brand_id in ^brand_ids, select: r.id))
     Repo.delete_all(from(t in BrewTurn, where: t.recipe_id in ^recipe_ids))
+
+    # D64 Stop 4: yeast rows outside the tagged ones (a pitch from a reference
+    # lot, a harvest into a seeded brink) that name a tagged batch lose the
+    # link, so the batch can go (`Batches.yeast_blocked/1` keeps the API from it).
+    release_yeast_links(
+      from(b in Batch,
+        where: b.brand_id in ^brand_ids or like(b.notes, ^tag),
+        select: b.id
+      )
+    )
+
     # D48: split parts first (the parent restricts, row by row in SQLite).
     Repo.delete_all(
       from(b in Batch,
@@ -1328,6 +1339,19 @@ defmodule RockcutApi.Seeds.Synthetic do
 
   ## Yeast (D64 Stop 4)
 
+  # Movements and brink entries naming one of `batches` (a query of ids) drop
+  # the batch; the stock they record stays as it is.
+  defp release_yeast_links(batches) do
+    Repo.update_all(from(m in Movement, where: m.batch_id in subquery(batches)),
+      set: [batch_id: nil]
+    )
+
+    Repo.update_all(
+      from(e in RockcutApi.Yeast.Entry, where: e.batch_id in subquery(batches)),
+      set: [batch_id: nil]
+    )
+  end
+
   # {ingredient, lab, supplier, code, form, pack, price, lot quantity}
   @d64_seed [
     {"Dry Ale", "Fermentis", "BSG", "SD-1", "Dry", "brick", "76.99", "6"},
@@ -1587,21 +1611,13 @@ defmodule RockcutApi.Seeds.Synthetic do
   defp seed_batches(u, today) do
     # D64 Stop 4: yeast rows of anything else (a QA pitch, a harvest) that
     # name a batch about to go lose the link, so the batch can go.
-    seeded_or_stray =
+    release_yeast_links(
       from(b in Batch,
         where:
           like(b.notes, ^"#{@seed_tag}%") or
             b.id not in subquery(from(v in BatchVessel, select: v.batch_id)),
         select: b.id
       )
-
-    Repo.update_all(from(m in Movement, where: m.batch_id in subquery(seeded_or_stray)),
-      set: [batch_id: nil]
-    )
-
-    Repo.update_all(
-      from(e in RockcutApi.Yeast.Entry, where: e.batch_id in subquery(seeded_or_stray)),
-      set: [batch_id: nil]
     )
 
     Repo.delete_all(

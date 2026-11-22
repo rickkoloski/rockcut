@@ -278,5 +278,39 @@ defmodule RockcutApi.Seeds.D64SeedsTest do
       refute Repo.get(Brink, temp.id)
       assert yeast_state().yb2 |> elem(0) == "42"
     end
+
+    test "cleanup_temp: a [TEST-TEMP] batch a reference lot was pitched into goes, the pitch stays without it" do
+      seed!()
+      {:ok, _} = RockcutApi.Seeds.Synthetic.setup()
+
+      brand =
+        Repo.insert!(%RockcutApi.Brewing.Brand{name: "[TEST-TEMP] Galactic x", status: "active"})
+
+      batch = Repo.insert!(%Batch{brand_id: brand.id, status: "planned"})
+      us05 = Repo.get_by!(Product, name: "US-05")
+
+      lot =
+        Repo.insert!(%IngredientLot{
+          ingredient_id: us05.ingredient_id,
+          product_id: us05.id,
+          pack_name: "brick",
+          pack_size: Decimal.new(1),
+          lot_number: "QA-2",
+          received_date: RockcutApi.Tasks.today()
+        })
+
+      pitch =
+        Repo.insert!(%RockcutApi.Ingredients.Movement{
+          lot_id: lot.id,
+          kind: "used",
+          quantity: Decimal.new(-1),
+          occurred_on: RockcutApi.Tasks.today(),
+          batch_id: batch.id
+        })
+
+      assert :ok = RockcutApi.Seeds.Synthetic.cleanup_temp()
+      refute Repo.get(Batch, batch.id)
+      assert Repo.get!(RockcutApi.Ingredients.Movement, pitch.id).batch_id == nil
+    end
   end
 end
