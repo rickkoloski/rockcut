@@ -41,6 +41,14 @@ export class Yeast {
   templates: number[] = []
   private templateName: string | null = null
 
+  /**
+   * `lean` (specs outside the one-worker `production` project): no tank or
+   * template of its own, since those lists are shared and a production spec
+   * reorders every active row. The batch is the seeded ale, unassigned, and
+   * its two Yeast harvest steps are added to it.
+   */
+  constructor(private opts: { lean?: boolean } = {}) {}
+
   /** A [TEST-TEMP] template: Brew day, Yeast harvest on day 7, a second (#2) on day 8, Package on day 20. */
   async template(): Promise<string> {
     if (this.templateName) return this.templateName
@@ -69,6 +77,20 @@ export class Yeast {
   /** A batch on the template brewed 8 days ago with a number: "Yeast harvest" was due yesterday, "Yeast harvest - #2" today. */
   async brewed(label: string): Promise<SBatch> {
     const brand = await this.made.brand(label)
+    if (this.opts.lean) {
+      const b = await this.made.plan({ brand_id: brand.id, template: '[SEED] Standard ale', brew_on: addDays(today(), -8), tank_ids: [null] })
+      await this.made.checkOff(stepOf(b, 'Brew day'), `8${Math.floor(Math.random() * 1e6)}`)
+      const type = (await stepTypes()).find((t) => t.name === 'Yeast harvest')!.id
+      const api = await apiAs('brewer1')
+      for (const [due_on, detail] of [
+        [addDays(today(), -1), null],
+        [today(), '#2'],
+      ]) {
+        const res = await api.post(`${P}/batches/${b.id}/steps`, { data: { step_type_id: type, due_on, detail } })
+        expect(res.status(), await res.text()).toBe(201)
+      }
+      return batchOf(b.id)
+    }
     const tank = await this.made.tank('FV')
     const b = await this.made.plan({ brand_id: brand.id, template: await this.template(), brew_on: addDays(today(), -8), tank_ids: [tank.id] })
     await this.made.checkOff(stepOf(b, 'Brew day'), `8${Math.floor(Math.random() * 1e6)}`)

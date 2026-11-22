@@ -12,7 +12,8 @@ import { brink, history, pitchFrom, Yeast, yeastProduct } from '../production/ye
 
 test.use({ storageState: authFile('brewer1') })
 
-const yeast = new Yeast()
+// Lean: no tank or template of its own (`ingredients` runs beside `production`).
+const yeast = new Yeast({ lean: true })
 test.afterEach(async () => {
   await yeast.cleanup()
 })
