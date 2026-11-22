@@ -358,6 +358,31 @@ defmodule RockcutApi.IngredientFixtures do
     })
   end
 
+  @doc """
+  D64 Stop 2: a test's own brink (the seeded YB1–YB4 are never written by a
+  test). `opts`: `empty_weight_lb`, `dirty`, `position`.
+  """
+  def brink!(name, opts \\ []) do
+    Repo.insert!(%RockcutApi.Yeast.Brink{
+      name: name,
+      empty_weight_lb: opts[:empty_weight_lb] && Decimal.new(opts[:empty_weight_lb]),
+      position: opts[:position] || 100,
+      dirty: opts[:dirty] || false,
+      dirty_since: if(opts[:dirty], do: ~D[2026-11-01])
+    })
+  end
+
+  @doc "D64 Stop 2: a yeast product of `ingredient` from `lab` (stored directly)."
+  def yeast_product!(ingredient, lab, code, form \\ "Dry"),
+    do:
+      Repo.insert!(%Product{
+        ingredient_id: ingredient.id,
+        manufacturer_party_id: lab.id,
+        name: code,
+        form: form,
+        unit: "each"
+      })
+
   @doc "D65: a product with no manufacturer (stored directly, as the API makes one)."
   def none_product!(ingredient, form, unit, name \\ nil),
     do: Repo.insert!(%Product{ingredient_id: ingredient.id, form: form, unit: unit, name: name})

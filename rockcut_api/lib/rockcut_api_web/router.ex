@@ -236,6 +236,15 @@ defmodule RockcutApiWeb.Router do
       only: [:index, :create, :update, :delete]
 
     get "/yeast/batches", YeastController, :batches
+
+    # D64 Stop 2: brinks (settings, stock actions, history) and cell counts
+    resources "/yeast/brinks", YeastBrinkController, only: [:index, :create, :update, :delete]
+    get "/yeast/brinks/:id/history", YeastBrinkController, :history
+    post "/yeast/brinks/:id/pitch", YeastBrinkController, :pitch
+    post "/yeast/brinks/:id/dump", YeastBrinkController, :dump
+    post "/yeast/brinks/:id/adjust", YeastBrinkController, :adjust
+    post "/yeast/brinks/:id/clean", YeastBrinkController, :clean
+    resources "/yeast/counts", YeastCountController, only: [:create, :update, :delete]
     post "/ingredient_products/:id/pitch", IngredientProductController, :pitch
 
     # D61 purchasing, malt contracts, reorder and totals

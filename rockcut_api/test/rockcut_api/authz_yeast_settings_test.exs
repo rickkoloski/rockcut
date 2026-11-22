@@ -33,10 +33,33 @@ defmodule RockcutApi.AuthzYeastSettingsTest do
     end
   end
 
+  test "a count (or entry) is changed by its maker if a Brewery member, a Brewery manager, or an owner" do
+    p = personas(~w(owner breweryMgr brewer1 brewer2 splitRole bartender1))
+    by_brewer1 = {:yeast_record, %{entered_by_id: p["brewer1"].id}}
+    by_bartender = {:yeast_record, %{entered_by_id: p["bartender1"].id}}
+
+    expected = %{
+      "owner" => true,
+      "breweryMgr" => true,
+      "brewer1" => true,
+      "brewer2" => false,
+      "splitRole" => false,
+      "bartender1" => false
+    }
+
+    for {who, allowed} <- expected do
+      assert Authz.can?(p[who], :change, by_brewer1) == allowed, who
+    end
+
+    # Their own, but not a Brewery member: no.
+    refute Authz.can?(p["bartender1"], :change, by_bartender)
+  end
+
   test "no device reads or manages the yeast settings" do
     device = RockcutApi.AccountsFixtures.device_fixture(%{home: "brewery", name: "Brewhouse"})
     device = RockcutApi.Accounts.get_user!(device.id)
     refute Authz.can?(device, :read, :yeast_settings)
     refute Authz.can?(device, :manage, :yeast_settings)
+    refute Authz.can?(device, :change, {:yeast_record, %{entered_by_id: device.id}})
   end
 end
