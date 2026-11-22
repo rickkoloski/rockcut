@@ -123,17 +123,24 @@ defmodule RockcutApi.Migrations.CopyLotSpecsToFeaturesTest do
     rows =
       Repo.query!("SELECT key, unit_label, min, max FROM feature_types ORDER BY id").rows
 
-    assert rows == [
-             ["extract_fgdb", "% FGDB", 0, 100],
-             ["color_lovibond", "°L", 0, 1000],
-             ["diastatic_power_lintner", "°Lintner", 0, 1000],
-             ["protein_pct", "%", 0, 100],
-             ["moisture_pct", "%", 0, 100],
-             ["alpha_acid_pct", "%", 0, 100],
-             ["attenuation_pct", "%", 0, 100],
-             # D62 Stage 2 (`hop_features_and_crop_year`).
-             ["beta_acid_pct", "%", 0, 100],
-             ["total_oil_ml_100g", "mL/100 g", 0, 10]
-           ]
+    assert rows ==
+             [
+               ["extract_fgdb", "% FGDB", 0, 100],
+               ["color_lovibond", "°L", 0, 1000],
+               ["diastatic_power_lintner", "°Lintner", 0, 1000],
+               ["protein_pct", "%", 0, 100],
+               ["moisture_pct", "%", 0, 100],
+               ["alpha_acid_pct", "%", 0, 100],
+               ["attenuation_pct", "%", 0, 100],
+               # D62 Stage 2 (`hop_features_and_crop_year`).
+               ["beta_acid_pct", "%", 0, 100],
+               ["total_oil_ml_100g", "mL/100 g", 0, 10],
+               # D65 Stop 2 (`d65_features_and_pack_note`): Brix and the seven ions.
+               ["brix", "°Bx", 0, 100]
+             ] ++
+               for(
+                 ion <- ~w(ca mg co3 hco3 so4 na cl),
+                 do: ["#{ion}_ppm_per_g_gal", "ppm @ 1 g/gal", 0, 1000]
+               )
   end
 end

@@ -7,7 +7,6 @@ alias RockcutApi.Brewing.CategoryFieldDefinition
 categories =
   [
     {"Grains", 0},
-    {"Future Ingredients", 1},
     {"Hops", 2},
     {"Yeast Strains", 3},
     {"Fruits", 4},
@@ -32,8 +31,7 @@ for {name, key} <- [
       {"Spices & Flavorings", "spices"},
       {"Sugars and Extracts", "sugars"},
       {"Other Consumables", "consumables"},
-      {"Yeast Strains", "yeast"},
-      {"Future Ingredients", "future"}
+      {"Yeast Strains", "yeast"}
     ],
     not Repo.exists?(from c in IngredientCategory, where: c.key == ^key) do
   Repo.update_all(
@@ -59,13 +57,9 @@ field_defs =
     {category_ids["yeast"], "Product Code", "text", nil, false, 1},
     {category_ids["yeast"], "Temp Range Low (F)", "number", nil, false, 2},
     {category_ids["yeast"], "Temp Range High (F)", "number", nil, false, 3},
-    {category_ids["yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4},
-    # Fruits
-    {category_ids["fruits"], "Form", "dropdown", "Fresh, Puree, Frozen, Extract", false, 0},
-    # Spices & Flavorings
-    {category_ids["spices"], "Form", "dropdown", "Whole, Ground, Extract", false, 0},
-    # Sugars and Extracts
-    {category_ids["sugars"], "Form", "dropdown", "Granulated, Liquid, Syrup", false, 0}
+    {category_ids["yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4}
+    # Fruits, Spices & Flavorings, Sugars and Extracts: none (D65 §4.1: their
+    # form is on the product).
   ]
   |> Enum.map(fn {cat_id, field_name, field_type, options, required, sort_order} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
@@ -176,10 +170,11 @@ grain_ingredients =
     }
   end)
 
-Repo.insert_all(Ingredient, grain_ingredients,
-  on_conflict: :nothing,
-  conflict_target: [:name, :category_id]
-)
+{new_grains, _} =
+  Repo.insert_all(Ingredient, grain_ingredients,
+    on_conflict: :nothing,
+    conflict_target: [:name, :category_id]
+  )
 
 # D60 Appendix A: each grain's child category. Only grains still on the
 # Grains parent move, so a later move by hand sticks.
@@ -233,6 +228,36 @@ for {child, names} <- grain_child_of,
   )
 end
 
+# D65 §4.1: Other Consumables' two children (no Acids). Like Grains'
+# children, a child renamed or added in Categories is left alone.
+for {name, sort_order} <- [{"Water Salts", 0}, {"Finings", 1}],
+    is_nil(Repo.get_by(IngredientCategory, name: name)) do
+  Repo.insert!(%IngredientCategory{
+    name: name,
+    sort_order: sort_order,
+    parent_id: category_ids["consumables"]
+  })
+end
+
+consumable_child_ids =
+  Repo.all(from c in IngredientCategory, where: c.parent_id == ^category_ids["consumables"])
+  |> Map.new(fn c -> {c.name, c.id} end)
+
+# D65 A8 (migration 6's rule): a Whirlfloc still at the top of Other
+# Consumables moves into Finings, so the insert below doesn't add a second.
+if finings = consumable_child_ids["Finings"] do
+  unless Repo.exists?(
+           from i in Ingredient, where: i.name == "Whirlfloc" and i.category_id == ^finings
+         ) do
+    Repo.update_all(
+      from(i in Ingredient,
+        where: i.name == "Whirlfloc" and i.category_id == ^category_ids["consumables"]
+      ),
+      set: [category_id: finings]
+    )
+  end
+end
+
 other_ingredients =
   [
     # Hops
@@ -247,21 +272,22 @@ other_ingredients =
     {category_ids["yeast"], "WLP001", "California Ale (White Labs)"},
     {category_ids["yeast"], "Wyeast 1056", "American Ale (Wyeast)"},
     {category_ids["yeast"], "WLP002", "English Ale (White Labs)"},
-    # Sugars and Extracts
-    {category_ids["sugars"], "Corn Sugar (Dextrose)", "Priming sugar, lightens body"},
-    # Other Consumables
-    {category_ids["consumables"], "Irish Moss", "Kettle fining agent"},
-    {category_ids["consumables"], "Whirlfloc", "Tablet fining, aids clarity"}
+    # Sugars and Extracts (D65: renamed from "Corn Sugar (Dextrose)")
+    {category_ids["sugars"], "Dextrose (Corn Sugar)", "Priming sugar, lightens body"},
+    # Other Consumables → Finings (D65 A8; Irish Moss removed)
+    {consumable_child_ids["Finings"], "Whirlfloc", "Tablet fining, aids clarity"}
   ]
   |> Enum.map(fn {cat_id, name, notes} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     %{category_id: cat_id, name: name, notes: notes, inserted_at: now, updated_at: now}
   end)
 
-Repo.insert_all(Ingredient, other_ingredients,
-  on_conflict: :nothing,
-  conflict_target: [:name, :category_id]
-)
+# D65 Stop 3: the rows actually inserted (the list is offered every run).
+{new_others, _} =
+  Repo.insert_all(Ingredient, other_ingredients,
+    on_conflict: :nothing,
+    conflict_target: [:name, :category_id]
+  )
 
 # D60 §3.4: which features each category's lots and products carry (a
 # parent's apply to its children). Grains: five, none required, a standard
@@ -288,14 +314,26 @@ applicability =
        {"beta_acid_pct", "range", "enter", false},
        {"total_oil_ml_100g", "range", "enter", false}
      ]},
-    {"yeast", [grain.("attenuation_pct")]}
+    {"yeast", [grain.("attenuation_pct")]},
+    # D65 §4.4: Fruits' Brix a typical range, entered (optional) on each lot;
+    # Sugars' extract a standard copied to each lot, Brix on Liquid lots only.
+    {"fruits", [{"brix", "range", "enter", false}]},
+    {"sugars",
+     [{"extract_fgdb", "value", "copy", false}, {"brix", "none", "enter", false, "Liquid"}]}
   ]
   |> Enum.flat_map(fn {category, features} ->
     now = DateTime.utc_now() |> DateTime.truncate(:second)
 
     features
     |> Enum.with_index()
-    |> Enum.map(fn {{key, product_mode, lot_mode, lot_required}, sort_order} ->
+    |> Enum.map(fn {feature, sort_order} ->
+      # A fifth element is the form the feature is only for (D65 `only_form`).
+      {key, product_mode, lot_mode, lot_required, only_form} =
+        case feature do
+          {k, p, l, r} -> {k, p, l, r, nil}
+          {k, p, l, r, f} -> {k, p, l, r, f}
+        end
+
       %{
         category_id: category_ids[category],
         feature_type_id: Map.fetch!(feature_type_ids, key),
@@ -304,6 +342,7 @@ applicability =
         product_mode: product_mode,
         lot_mode: lot_mode,
         lot_required: lot_required,
+        only_form: only_form,
         inserted_at: now,
         updated_at: now
       }
@@ -311,13 +350,13 @@ applicability =
   end)
 
 Repo.insert_all(CategoryFeatureType, applicability,
-  on_conflict: {:replace, [:product_mode, :lot_mode, :lot_required]},
+  on_conflict: {:replace, [:product_mode, :lot_mode, :lot_required, :only_form]},
   conflict_target: [:category_id, :feature_type_id]
 )
 
 IO.puts(
   "Seeds complete: #{length(categories)} categories, #{length(field_defs)} field defs, " <>
-    "#{length(grain_ingredients) + length(other_ingredients)} new ingredients (no lots)"
+    "#{new_grains + new_others} new ingredients (no lots)"
 )
 
 # D60 §6: maltsters, suppliers, maltster products and supplier offers.
@@ -326,6 +365,10 @@ Code.eval_file(Path.join(__DIR__, "seeds/grain_reference.exs"))
 # D62 §7: hop companies, products with typical ranges, offers, and Matt's
 # cooler list as lots (2026-11-19). After the grain reference (BSG).
 Code.eval_file(Path.join(__DIR__, "seeds/hop_reference.exs"))
+
+# D65 §7: salts with their ions, sugars, fruit, Whirlfloc T and the spices,
+# with offers and prices (no lots). After the hop reference (BSG).
+Code.eval_file(Path.join(__DIR__, "seeds/d65_reference.exs"))
 
 # Grain LOTS are intentionally NOT seeded (D28): prod starts with no grain
 # inventory. D60 (task 3843): the malt specs that used to live on lots are the

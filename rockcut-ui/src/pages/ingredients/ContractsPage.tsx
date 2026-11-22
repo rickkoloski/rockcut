@@ -37,6 +37,7 @@ import { coloradoToday } from '../../lib/tasks'
 import type { Contract, ShortfallRow, SupplierOffer } from '../../lib/types'
 import ContractDialog from './ContractDialog'
 import PurchasingTabs from './PurchasingTabs'
+import { libraryHref } from '../../lib/libraryView'
 
 interface ContractsReply {
   data: Contract[]
@@ -95,7 +96,7 @@ export default function ContractsPage() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'Contracts' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'Contracts' }]}
         title="Purchasing"
         action={canWrite ? { label: 'New contract', onClick: () => setEditing('new'), testId: 'contracts-new' } : undefined}
       />

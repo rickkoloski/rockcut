@@ -167,6 +167,9 @@ defmodule RockcutApiWeb.DeviceRouteMatrixTest do
     {:patch, "/api/ingredients/:id"},
     {:put, "/api/ingredients/:id"},
     {:delete, "/api/ingredients/:id"},
+    # D65: a Water Salts ingredient's ions.
+    {:get, "/api/ingredients/:id/ions"},
+    {:put, "/api/ingredients/:id/ions"},
     {:get, "/api/ingredient_lots"},
     {:get, "/api/ingredient_lots/:id"},
     {:post, "/api/ingredient_lots"},

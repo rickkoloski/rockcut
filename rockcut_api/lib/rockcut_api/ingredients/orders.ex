@@ -147,6 +147,15 @@ defmodule RockcutApi.Ingredients.Orders do
 
           ids =
             for {lot, n} <- allocations!(line, packs, entry["allocations"], received_on) do
+              # D65 §4.3: an `each` receipt is whole (packs × a whole pack size).
+              case Products.check_whole(
+                     line.offer.product_id,
+                     Decimal.mult(line.offer.pack_size, n)
+                   ) do
+                :ok -> :ok
+                {:error, reason} -> Repo.rollback(reason)
+              end
+
               %Movement{}
               |> Movement.changeset(%{
                 lot_id: lot.id,
@@ -208,7 +217,13 @@ defmodule RockcutApi.Ingredients.Orders do
 
     by_unit =
       order.lines
-      |> Enum.map(&%{unit: Products.unit(&1.offer.product), quantity: line_quantity(order, &1)})
+      |> Enum.map(
+        &%{
+          unit: Products.unit(&1.offer.product),
+          unit_label: Products.unit_label(&1.offer.product),
+          quantity: line_quantity(order, &1)
+        }
+      )
       |> sum_by_unit()
 
     target = order.supplier && order.supplier.order_target_packs
@@ -227,13 +242,19 @@ defmodule RockcutApi.Ingredients.Orders do
   def line_quantity(order, line),
     do: Decimal.round(Decimal.mult(line.offer.pack_size, counted_packs(order, line)), 2)
 
-  # `[%{unit, quantity}]` summed per unit, by unit name.
+  # `[%{unit, unit_label, quantity}]` summed per unit, by unit name. Lead
+  # decisions 1 (gap 8): the label is "tablets" when every row in it is a
+  # Tablet product, else the unit ("each" for a mix).
   defp sum_by_unit(rows) do
     rows
     |> Enum.group_by(& &1.unit)
     |> Enum.sort_by(fn {unit, _} -> unit end)
     |> Enum.map(fn {unit, rs} ->
-      %{unit: unit, quantity: Enum.reduce(rs, Decimal.new(0), &Decimal.add(&2, &1.quantity))}
+      %{
+        unit: unit,
+        unit_label: Units.shared_label(unit, Enum.map(rs, & &1.unit_label)),
+        quantity: Enum.reduce(rs, Decimal.new(0), &Decimal.add(&2, &1.quantity))
+      }
     end)
   end
 
@@ -301,6 +322,7 @@ defmodule RockcutApi.Ingredients.Orders do
           packs_ordered: line.packs_ordered,
           packs_received: line.packs_received,
           unit: Products.unit(line.offer.product),
+          unit_label: Products.unit_label(line.offer.product),
           quantity: line_quantity(order, line),
           dollars: Decimal.round(Decimal.mult(line.price_per_pack, n), 2),
           packs: n
@@ -635,10 +657,17 @@ defmodule RockcutApi.Ingredients.Orders do
   # to that lot, so the crop year and features sent must be the lot's own
   # (or left out); a different one is refused, never dropped. Decisions 2,
   # gap 16: a blank is a value, so a feature sent blank (nil) that the lot
-  # has, or sent with a value the lot has blank, differs too.
+  # has, or sent with a value the lot has blank, differs too. Decisions 5,
+  # gap 2: the crop year follows the same rule; only a key left out means
+  # "leave its values".
   defp same_values!(lot, line, a) do
     features =
-      case Features.validate(a["features"], line.offer.product.ingredient_id, :lot) do
+      case Features.validate(
+             a["features"],
+             line.offer.product.ingredient_id,
+             :lot,
+             line.offer.product.form
+           ) do
         {:ok, features} -> for {type, attrs} <- features, do: {type, attrs && attrs.value}
         {:error, reason} -> Repo.rollback(reason)
       end
@@ -647,7 +676,8 @@ defmodule RockcutApi.Ingredients.Orders do
     has = Map.new(lot_values(lot.id), &{&1.feature_type_id, &1.value})
 
     differs? =
-      (crop_year not in [nil, ""] and to_string(crop_year) != to_string(lot.crop_year)) or
+      (Map.has_key?(a, "crop_year") and
+         String.trim(to_string(crop_year)) != to_string(lot.crop_year)) or
         Enum.any?(features, fn {type, value} -> not same_value?(has[type.id], value) end)
 
     if differs? do
@@ -704,7 +734,7 @@ defmodule RockcutApi.Ingredients.Orders do
       do: rollback(%{base: ["#{which}: only hop lots have a crop year"]})
 
     features =
-      case Features.validate(a["features"], product.ingredient_id, :lot) do
+      case Features.validate(a["features"], product.ingredient_id, :lot, product.form) do
         {:ok, features} -> features
         {:error, reason} -> Repo.rollback(reason)
       end

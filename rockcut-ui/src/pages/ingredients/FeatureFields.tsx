@@ -1,7 +1,7 @@
 import { Box, Typography } from '@mui/material'
 import DecimalInput from '../../components/DecimalInput'
 import ConvertButton from '../../components/ConvertButton'
-import { enteredAs, formatFeature, parseDecimal } from '../../lib/brewingUnits'
+import { convertDecimals, enteredAs, formatFeature, parseDecimal } from '../../lib/brewingUnits'
 import { differs, draftRangeError, formatRange, outsideRange, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import type { FeatureType, FeatureValues } from '../../lib/types'
 
@@ -35,12 +35,13 @@ export default function FeatureFields({ types, drafts, onChange, standard, typic
         const parsed = parseDecimal(d.text, t.decimals)
         const typed = parsed.ok && parsed.value != null ? { value: parsed.value } : undefined
         // A box that isn't a number yet isn't compared (DecimalInput shows why).
-        const changed = standard !== undefined && parsed.ok && differs(typed, std, t.decimals)
+        // D65: with typical ranges too (fruit, sugars), only a feature that has a standard is compared.
+        const changed = standard !== undefined && (!typical || std !== undefined) && parsed.ok && differs(typed, std, t.decimals)
         const outOfRange = draftRangeError(t, d)
-        const range = typical ? formatRange(typical[t.key], t.decimals) : null
+        const range = typical ? formatRange(typical[t.key], t) : null
         const outside = !!range && typed != null && outsideRange(typed.value, typical?.[t.key])
         const typicalText = range ? `${outside ? 'outside ' : ''}typical ${range}` : null
-        const helper = [entered, changed ? `changed from standard (${std ? formatFeature(std.value, t.decimals) : 'none'})` : null, typicalText].filter(Boolean).join(' · ')
+        const helper = [entered, changed ? `changed from standard (${std ? formatFeature(std.value, t) : 'none'})` : null, typicalText].filter(Boolean).join(' · ')
         return (
           <Box key={t.key} sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.5 }}>
             <DecimalInput
@@ -67,7 +68,7 @@ export default function FeatureFields({ types, drafts, onChange, standard, typic
                   featureKey={t.key}
                   label={t.label}
                   unitLabel={t.unit_label}
-                  decimals={t.decimals}
+                  decimals={convertDecimals(t)}
                   range={t}
                   moisture={moisture}
                   disabled={disabled}

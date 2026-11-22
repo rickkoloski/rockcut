@@ -17,6 +17,7 @@ defmodule RockcutApi.Ingredients.Offers do
     ContractLine,
     OfferPrice,
     Parties,
+    Products,
     PurchaseOrderLine,
     SupplierOffer
   }
@@ -38,9 +39,12 @@ defmodule RockcutApi.Ingredients.Offers do
 
   def create(attrs) do
     key = key(attrs["product_id"])
+    category = product_category(attrs["product_id"])
 
     with :ok <- supplier(attrs),
-         {:ok, attrs} <- pack_rules(attrs, key),
+         {:ok, attrs} <- pack_rules(attrs, key, category),
+         {:ok, attrs} <- default_pack(attrs, key, category, attrs["product_id"]),
+         :ok <- Products.check_whole(blank(attrs["product_id"]), blank(attrs["pack_size"])),
          {:ok, attrs} <- form_rules(attrs, key) do
       %SupplierOffer{}
       |> SupplierOffer.changeset(attrs, key == "grains")
@@ -51,9 +55,15 @@ defmodule RockcutApi.Ingredients.Offers do
 
   def update(%SupplierOffer{} = offer, attrs) do
     key = key(attrs["product_id"] || offer.product_id)
+    category = product_category(attrs["product_id"] || offer.product_id)
 
     with :ok <- supplier(attrs),
-         {:ok, attrs} <- pack_rules(attrs, key),
+         {:ok, attrs} <- pack_rules(attrs, key, category),
+         :ok <-
+           Products.check_whole(
+             attrs["product_id"] || offer.product_id,
+             blank(attrs["pack_size"])
+           ),
          {:ok, attrs} <- form_rules(attrs, key) do
       offer
       |> SupplierOffer.changeset(attrs, key == "grains")
@@ -69,6 +79,9 @@ defmodule RockcutApi.Ingredients.Offers do
   """
   def delete(%SupplierOffer{} = offer) do
     on_order = Repo.exists?(from(l in PurchaseOrderLine, where: l.offer_id == ^offer.id))
+
+    # D65 lead decisions 1 (gap 13): a contract line naming the offer (any supplier) is a restrict key too.
+    on_contract = Repo.exists?(from(l in ContractLine, where: l.offer_id == ^offer.id))
 
     contract_year =
       from(l in ContractLine,
@@ -89,6 +102,9 @@ defmodule RockcutApi.Ingredients.Offers do
         {:error,
          {:invalid,
           %{base: ["A #{contract_year} contract covers this offer; deactivate it instead"]}}}
+
+      on_contract ->
+        {:error, {:invalid, %{base: ["A contract covers this offer; deactivate it instead"]}}}
 
       true ->
         Repo.delete(offer)
@@ -150,6 +166,24 @@ defmodule RockcutApi.Ingredients.Offers do
 
   defp key(product_id), do: product_id |> RockcutApi.Ids.parse() |> Catalog.product_key()
 
+  # D65 Stop 2: the product's ingredient's category (a child of Other
+  # Consumables has its own pack names, `Catalog.pack_names/2`); nil when unknown.
+  defp product_category(product_id) do
+    case RockcutApi.Ids.parse(product_id) do
+      id when is_integer(id) ->
+        from(p in RockcutApi.Ingredients.Product,
+          join: i in assoc(p, :ingredient),
+          join: c in assoc(i, :category),
+          where: p.id == ^id,
+          select: c
+        )
+        |> Repo.one()
+
+      _ ->
+        nil
+    end
+  end
+
   # D62 lead decisions 1, gap 3: milled/whole is grain's; any other
   # category's offer has no form (nil), and one sent is refused.
   defp form_rules(attrs, "grains"), do: {:ok, attrs}
@@ -162,7 +196,7 @@ defmodule RockcutApi.Ingredients.Offers do
 
   # The pack the product's category allows (`Catalog.fixed_pack/1`,
   # `Catalog.pack_names/1`).
-  defp pack_rules(attrs, key) do
+  defp pack_rules(attrs, key, category) do
     case Catalog.fixed_pack(key) do
       {name, size} ->
         given_name = attrs["pack_name"]
@@ -174,13 +208,34 @@ defmodule RockcutApi.Ingredients.Offers do
            else: {:error, {:invalid, %{base: ["Hop offers are #{size} lb boxes"]}}}
 
       nil ->
-        names = Catalog.pack_names(key)
+        names = Catalog.pack_names(key, category)
 
         if attrs["pack_name"] in [nil, "" | names],
           do: {:ok, attrs},
           else: {:error, {:invalid, %{pack_name: ["must be #{Enum.join(names, " or ")}"]}}}
     end
   end
+
+  # D65 §4.2: a new offer of a D65 product with no pack named starts with
+  # its unit's usual pack (lb → bag, gal → pail, fl oz → jug, oz → bag,
+  # each → tub), when the category takes it, else the category's first
+  # (lead decisions 1, gap 3: a fl oz spice → bottle).
+  defp default_pack(attrs, key, category, product_id) do
+    with true <- attrs["pack_name"] in [nil, ""],
+         true <- key not in ["grains", "hops"],
+         name when is_binary(name) <-
+           Catalog.default_pack_in(
+             Products.unit(blank(product_id)),
+             Catalog.pack_names(key, category)
+           ) do
+      {:ok, Map.put(attrs, "pack_name", name)}
+    else
+      _ -> {:ok, attrs}
+    end
+  end
+
+  defp blank(v) when v in [nil, ""], do: nil
+  defp blank(v), do: v
 
   defp same_size?(given, size) do
     case Ecto.Type.cast(:decimal, given) do

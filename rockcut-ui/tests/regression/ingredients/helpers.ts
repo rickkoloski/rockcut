@@ -72,6 +72,7 @@ export async function reference() {
 /** Remember a product the UI made, for cleanup. */
 export const adoptProduct = (id: number) => made.products.add(id)
 export const adoptParty = (id: number) => made.parties.add(id)
+export const adoptIngredient = (id: number) => made.ingredients.add(id)
 
 /**
  * A `[TEST-TEMP]` Rahr product under 2-Row (standard color 2 °L, extract
@@ -171,7 +172,8 @@ export async function cleanupIngredients() {
     const res = await api.get(`/api/ingredient_products/${id}`)
     if (res.status() === 404) continue
     const product = (await res.json()).data as ApiProduct & { name: string | null }
-    if (!product.name?.startsWith('[TEST-TEMP]')) continue
+    // D65: a None product often has no name of its own; its ingredient is the spec's.
+    if (!product.name?.startsWith('[TEST-TEMP]') && !product.ingredient?.name.startsWith('[TEST-TEMP]')) continue
     for (const lot of await lotsOf(id)) await api.delete(`/api/ingredient_lots/${lot.id}`)
     if ((await lotsOf(id)).length === 0) {
       for (const o of product.offers) await api.delete(`/api/supplier_offers/${o.id}`)
@@ -393,12 +395,17 @@ export async function makeHopProduct(label: string): Promise<ApiProduct & { comp
   return { ...(await getProduct(product.id)), company }
 }
 
-/** A hop lot of `product` with an opening amount of `lb`, alpha `alpha`, crop year 2025, received `daysAgo`. */
+/**
+ * A hop lot of `product` with an opening amount of `lb`, alpha `alpha`, crop
+ * year 2025, received `daysAgo`, from its first offer's supplier (D65: a
+ * product with offers needs one).
+ */
 export async function makeHopLot(product: ApiProduct, lb: string, daysAgo: number, alpha = '12'): Promise<ApiLot> {
   return ok<ApiLot>(
     await (await apiAs('brewer1')).post('/api/ingredient_lots', {
       data: {
         product_id: product.id,
+        supplier_party_id: product.offers?.[0]?.supplier_party_id ?? null,
         lot_number: tempTag('hop lot'),
         crop_year: 2025,
         received_date: addDays(denverToday(), -daysAgo),
@@ -406,6 +413,54 @@ export async function makeHopLot(product: ApiProduct, lb: string, daysAgo: numbe
         initial_quantity: lb,
         features: { alpha_acid_pct: alpha },
       },
+    }),
+    201,
+  )
+}
+
+// ── D65 fruit, spices, sugars, other consumables ──
+//
+// A spec's D65 rows are `[TEST-TEMP]` ingredients in the category (or child)
+// it names, never the seeded ones (Whirlfloc, Dextrose (Corn Sugar), …).
+
+/** The ingredient categories, read once per call. */
+export async function categoriesList(): Promise<{ id: number; name: string; key: string | null; parent_id: number | null }[]> {
+  return ok(await (await apiAs('brewer1')).get('/api/ingredient_categories'))
+}
+
+/** A category by key (`fruits`, …) or, for a child of Other Consumables, by name ("Water Salts"). */
+export async function categoryId(keyOrChild: string): Promise<number> {
+  const all = await categoriesList()
+  const c = all.find((x) => x.key === keyOrChild) ?? all.find((x) => x.name === keyOrChild && x.parent_id != null)
+  expect(c, `category ${keyOrChild}`).toBeTruthy()
+  return c!.id
+}
+
+/** A `[TEST-TEMP]` ingredient in a D65 category or child. */
+export async function makeD65Ingredient(label: string, keyOrChild: string): Promise<{ id: number; name: string }> {
+  const ingredient = await ok<{ id: number; name: string }>(
+    await (await apiAs('brewer1')).post('/api/ingredients', { data: { name: tempTag(label), category_id: await categoryId(keyOrChild) } }),
+    201,
+  )
+  made.ingredients.add(ingredient.id)
+  return ingredient
+}
+
+/** A D65 product through the API (manufacturer None unless given). */
+export async function makeD65Product(ingredientId: number, form: string, unit: string | null, extra: Record<string, unknown> = {}): Promise<ApiProduct & { unit: string; unit_label: string }> {
+  const product = await ok<ApiProduct & { unit: string; unit_label: string }>(
+    await (await apiAs('brewer1')).post('/api/ingredient_products', { data: { ingredient_id: ingredientId, form, ...(unit ? { unit } : {}), ...extra } }),
+    201,
+  )
+  made.products.add(product.id)
+  return product
+}
+
+/** A lot of a D65 product with an opening amount of `quantity` (in its unit), received today. */
+export async function makeD65Lot(product: { id: number }, quantity: string): Promise<ApiLot> {
+  return ok<ApiLot>(
+    await (await apiAs('brewer1')).post('/api/ingredient_lots', {
+      data: { product_id: product.id, lot_number: tempTag('d65 lot'), received_date: denverToday(), initial_kind: 'opening', initial_quantity: quantity },
     }),
     201,
   )

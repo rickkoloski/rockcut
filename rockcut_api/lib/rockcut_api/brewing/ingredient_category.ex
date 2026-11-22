@@ -55,9 +55,10 @@ defmodule RockcutApi.Brewing.IngredientCategory do
           add_error(changeset, :parent_id, "is a subcategory; pick a top-level category")
 
         # D62 lead decisions 1: Hops has no subcategories (a hop product is a
-        # variety in a form).
-        parent && parent.key == "hops" ->
-          add_error(changeset, :parent_id, "Hops has no subcategories")
+        # variety in a form). D65 A9: nor have Fruits, Spices & Flavorings and
+        # Sugars and Extracts; Other Consumables does.
+        parent && not RockcutApi.Ingredients.Catalog.allows_children?(parent.key) ->
+          add_error(changeset, :parent_id, "#{parent.name} has no subcategories")
 
         id && RockcutApi.Repo.exists?(from(c in __MODULE__, where: c.parent_id == ^id)) ->
           add_error(

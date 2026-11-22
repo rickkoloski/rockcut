@@ -335,7 +335,8 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert ids.("?on_hand=true") == [c.product.id]
     end
 
-    test "the list is five queries however many products", c do
+    # D65: a sixth, the ingredients' ions (`Ions.by_ingredient/1`).
+    test "the list is six queries however many products", c do
       count = fn ->
         ref = make_ref()
         parent = self()
@@ -352,7 +353,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
         count_messages(ref, 0)
       end
 
-      assert count.() == 5
+      assert count.() == 6
 
       for n <- 1..6 do
         grain =
@@ -362,7 +363,7 @@ defmodule RockcutApiWeb.IngredientsApiTest do
         stocked_lot!(product, day(-n), "55")
       end
 
-      assert count.() == 5
+      assert count.() == 6
     end
 
     test "a product with offers or lots can't be deleted; one without can", c do
@@ -667,12 +668,13 @@ defmodule RockcutApiWeb.IngredientsApiTest do
       assert {422, %{"errors" => %{"features" => errors}}} =
                req(c.brewer, :patch, "/api/ingredient_products/#{c.product.id}", %{
                  "lock_version" => product_version(c.product.id),
-                 features: %{color_lovibond: "2.789", extract_fgdb: "80.16", protein_pct: "11.46"}
+                 # D65: extract keeps 2 decimals now (81.95), so 3 is refused.
+                 features: %{color_lovibond: "2.789", extract_fgdb: "80.165", protein_pct: "11.46"}
                })
 
       assert errors == %{
                "color_lovibond" => ["Color: Use at most 2 decimals"],
-               "extract_fgdb" => ["Extract: Use at most 1 decimal"]
+               "extract_fgdb" => ["Extract: Use at most 2 decimals"]
              }
 
       {200, %{"data" => p}} =

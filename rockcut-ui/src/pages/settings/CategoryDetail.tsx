@@ -28,7 +28,8 @@ import FieldDefinitionDialog from './FieldDefinitionDialog';
 import parseApiError from '../../lib/parseApiError';
 import ItemNotFound from '../../components/ItemNotFound';
 import { httpStatus, retryUnless404 } from '../../lib/notFound';
-import { isGrainCategory, isManagedCategory } from '../../lib/ingredientFeatures';
+import { allowsChildren, isD65Key, isGrainCategory, isManagedCategory } from '../../lib/ingredientFeatures';
+import { libraryHref } from '../../lib/libraryView'
 
 export default function CategoryDetail() {
   const { id } = useParams<{ id: string }>();
@@ -46,7 +47,8 @@ export default function CategoryDetail() {
   const children = categories.filter((c) => c.parent_id === Number(id)).sort((a, b) => a.sort_order - b.sort_order);
   const grains = isGrainCategory(categories, Number(id));
   // D62 §3.1: Hops (like Grains) has features on its products and lots, no custom fields.
-  const managed = isManagedCategory(categories, Number(id));
+  // D65 Stop 2 item 0: from the category itself (its `catalog`), so Add field doesn't flash while the list loads.
+  const managed = category?.catalog ? !category.catalog.allows_fields : isManagedCategory(categories, Number(id));
   const [childOpen, setChildOpen] = useState(false);
 
   const deleteCategoryMutation = useApiDelete(
@@ -143,7 +145,7 @@ export default function CategoryDetail() {
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
-          { label: 'Ingredient Library', to: '/ingredients' },
+          { label: 'Ingredient Library', to: libraryHref() },
           { label: 'Categories', to: '/ingredients/categories' },
           { label: category.name },
         ]}
@@ -152,15 +154,23 @@ export default function CategoryDetail() {
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Category"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
             {/* D61 carry-over 2: disabled with the API's reason while it has grains, ingredients or sub-categories. */}
-            <Tooltip title="Delete Category">
+            {/* D65 lead decisions 2 (gap 14): disabled, it keeps its name, and the reason is its tooltip and description. */}
+            <Tooltip title={category.delete_blocked ?? 'Delete Category'}>
               <span>
-                <IconButton onClick={() => setDeleteOpen(true)} color="error" disabled={!!category.delete_blocked} data-testid="category-delete">
+                <IconButton
+                  aria-label="Delete Category"
+                  aria-describedby={category.delete_blocked ? 'category-delete-reason' : undefined}
+                  onClick={() => setDeleteOpen(true)}
+                  color="error"
+                  disabled={!!category.delete_blocked}
+                  data-testid="category-delete"
+                >
                   <DeleteIcon />
                 </IconButton>
               </span>
             </Tooltip>
             {category.delete_blocked && (
-              <Typography variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="category-delete-reason">
+              <Typography id="category-delete-reason" variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="category-delete-reason">
                 {category.delete_blocked}
               </Typography>
             )}
@@ -191,8 +201,8 @@ export default function CategoryDetail() {
         </Grid>
       </Paper>
 
-      {/* D60 §3.1: subcategories (one level). D62 lead decisions 1: none on Hops. */}
-      {category.parent_id == null && category.key !== 'hops' && (
+      {/* D60 §3.1: subcategories (one level). D62 lead decisions 1: none on Hops; D65 A9: nor on Fruits, Spices & Flavorings, Sugars and Extracts. */}
+      {allowsChildren(categories.find((c) => c.id === category.id) ?? category) && (
         <>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
             <Typography variant="h5">Subcategories</Typography>
@@ -223,7 +233,8 @@ export default function CategoryDetail() {
         <Typography variant="h5">Field Definitions</Typography>
         {managed ? (
           <Typography variant="body2" color="text.secondary" data-testid="category-grain-fields-note">
-            {grains ? 'Grains' : category.name} use specs (features), not custom fields
+            {grains ? 'Grains' : category.name}{' '}
+            {isD65Key(category.key) ? 'use products (form and unit), not custom fields' : 'use specs (features), not custom fields'}
           </Typography>
         ) : (
           <Button

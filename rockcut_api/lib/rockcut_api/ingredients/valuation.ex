@@ -19,7 +19,7 @@ defmodule RockcutApi.Ingredients.Valuation do
 
   alias RockcutApi.{Repo, Tasks}
   alias RockcutApi.Brewing.{IngredientCategory, IngredientLot}
-  alias RockcutApi.Ingredients.{Movement, Offers, Product, Products, SupplierOffer}
+  alias RockcutApi.Ingredients.{Movement, Offers, Product, Products, SupplierOffer, Units}
 
   # Only a Received movement from an order carries a cost (§3.3).
   @costed_kinds ~w(received)
@@ -152,6 +152,7 @@ defmodule RockcutApi.Ingredients.Valuation do
         )
         |> filter_lots(:supplier_party_id, params["supplier_id"])
         |> filter_manufacturer(params["manufacturer_id"])
+        |> filter_no_manufacturer(params["manufacturer"])
         |> filter_category(params["category_id"])
         |> Repo.all()
 
@@ -206,7 +207,9 @@ defmodule RockcutApi.Ingredients.Valuation do
       product_id: product.id,
       display_name: Products.display_name(product),
       ingredient: product.ingredient.name,
-      manufacturer: product.manufacturer.name,
+      # D65 decision 8: a product with no manufacturer reads "None".
+      manufacturer: if(product.manufacturer, do: product.manufacturer.name, else: "None"),
+      unit_label: Products.unit_label(product),
       category: product.ingredient.category.name,
       category_id: product.ingredient.category_id,
       category_key: RockcutApi.Ingredients.Catalog.key(product.ingredient.category),
@@ -246,7 +249,13 @@ defmodule RockcutApi.Ingredients.Valuation do
     |> Enum.group_by(& &1.unit)
     |> Enum.sort_by(fn {unit, _} -> unit end)
     |> Enum.map(fn {unit, rs} ->
-      %{unit: unit, quantity: sum(rs, :quantity), expired: sum(rs, :expired)}
+      %{
+        unit: unit,
+        # Lead decisions 1 (gap 8): "tablets" when every row is a Tablet product.
+        unit_label: Units.shared_label(unit, Enum.map(rs, & &1.unit_label)),
+        quantity: sum(rs, :quantity),
+        expired: sum(rs, :expired)
+      }
     end)
   end
 
@@ -273,6 +282,13 @@ defmodule RockcutApi.Ingredients.Valuation do
 
   defp filter_manufacturer(query, value) when value in [nil, ""], do: query
   defp filter_manufacturer(query, id), do: where(query, [_l, p], p.manufacturer_party_id == ^id)
+
+  # Lead decisions 1 (gap 9): `manufacturer=none`, the products with no
+  # manufacturer (D65 decision 8). Not a `*_id`: ids there are numbers.
+  defp filter_no_manufacturer(query, "none"),
+    do: where(query, [_l, p], is_nil(p.manufacturer_party_id))
+
+  defp filter_no_manufacturer(query, _), do: query
 
   defp filter_category(query, value) when value in [nil, ""], do: query
 

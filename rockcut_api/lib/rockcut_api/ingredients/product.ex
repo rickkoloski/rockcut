@@ -9,6 +9,7 @@ defmodule RockcutApi.Ingredients.Product do
   """
   use Ecto.Schema
   import Ecto.Changeset
+  import Ecto.Query, only: [from: 2, where: 3]
   import RockcutApi.Brewing.Ranges
 
   schema "ingredient_products" do
@@ -28,6 +29,8 @@ defmodule RockcutApi.Ingredients.Product do
     field :expired, :decimal, virtual: true
     # D61 §3.5: on hand (not expired) under the minimum (`Ingredients.Reorder`).
     field :below_minimum, :boolean, virtual: true, default: false
+    # D65: its ingredient's ion values (`Ingredients.Ions`), read-only here.
+    field :ions, :map, virtual: true, default: %{}
 
     belongs_to :ingredient, RockcutApi.Brewing.Ingredient
     belongs_to :manufacturer, RockcutApi.Ingredients.Party, foreign_key: :manufacturer_party_id
@@ -61,8 +64,9 @@ defmodule RockcutApi.Ingredients.Product do
     ])
     |> update_change(:name, &blank_to_nil/1)
     |> update_change(:origin, &blank_to_nil/1)
-    |> validate_required([:ingredient_id, :manufacturer_party_id, :unit])
+    |> validate_required(required(key))
     |> validate_length(:name, max: 100)
+    |> validate_not_none()
     |> validate_length(:origin, max: 100)
     |> validate_range(:min_on_hand_packs, 0, 100_000)
     |> unique_product(key)
@@ -75,6 +79,30 @@ defmodule RockcutApi.Ingredients.Product do
       :manufacturer_party_id,
       :reorder_offer_id
     ])
+  end
+
+  # D65 decision 8: the manufacturer is optional on every D65 product (shown
+  # as "None"); grain and hops still need one.
+  defp required(key) do
+    if RockcutApi.Ingredients.Catalog.manufacturer_required?(key),
+      do: [:ingredient_id, :manufacturer_party_id, :unit],
+      else: [:ingredient_id, :unit]
+  end
+
+  # D65 lead decisions 1 (gap 12): "None" is how a product with no
+  # manufacturer reads, so it isn't a product name (any case). Under
+  # `base`, as the duplicate is, so the dialog shows the sentence alone.
+  defp validate_not_none(changeset) do
+    case get_change(changeset, :name) do
+      name when is_binary(name) ->
+        if String.downcase(name) == "none",
+          do:
+            add_error(changeset, :base, "'None' means no manufacturer; pick another product name"),
+          else: changeset
+
+      _ ->
+        changeset
+    end
   end
 
   # Gap 4: one of this product's active offers (one that doesn't exist is
@@ -104,23 +132,77 @@ defmodule RockcutApi.Ingredients.Product do
   defp duplicate(_changeset, "grains"),
     do: "This maltster already has that product for this grain."
 
-  defp duplicate(changeset, _key) do
+  defp duplicate(changeset, key) do
     manufacturer = name_of(RockcutApi.Ingredients.Party, changeset, :manufacturer_party_id)
     ingredient = name_of(RockcutApi.Brewing.Ingredient, changeset, :ingredient_id)
+    none? = is_nil(get_field(changeset, :manufacturer_party_id))
+    changeset = put_existing_name(changeset)
 
-    if manufacturer && ingredient do
-      what = Enum.join(Enum.reject([get_field(changeset, :form), ingredient], &is_nil/1), " ")
+    cond do
+      ingredient && none? && not RockcutApi.Ingredients.Catalog.manufacturer_required?(key) ->
+        # D65: a missing manufacturer is one value, "None"; the product reads
+        # as its name does ("Calcium Sulfate (Gypsum) Powder", "Whirlfloc T").
+        short =
+          Enum.join(
+            Enum.reject(
+              [ingredient, get_field(changeset, :name) || get_field(changeset, :form)],
+              &is_nil/1
+            ),
+            " "
+          )
 
-      what =
-        case get_field(changeset, :name) do
-          nil -> what
-          name -> "#{what} (#{name})"
-        end
+        "There's already a #{short} with manufacturer None."
 
-      "#{manufacturer} already has #{what}."
-    else
-      "This manufacturer already has that product."
+      manufacturer && ingredient ->
+        "#{manufacturer} already has #{what(changeset, ingredient)}."
+
+      true ->
+        "This manufacturer already has that product."
     end
+  end
+
+  # "T90 Pellet Citra", "Powder Calcium Sulfate (Gypsum)" reads form first
+  # as D62 did; a product name follows in parentheses.
+  defp what(changeset, ingredient) do
+    what = Enum.join(Enum.reject([get_field(changeset, :form), ingredient], &is_nil/1), " ")
+
+    case get_field(changeset, :name) do
+      nil -> what
+      name -> "#{what} (#{name})"
+    end
+  end
+
+  # D65 lead decisions 2 (gap 15): names are unique in any case, so the
+  # sentence names the product that's there in its stored spelling
+  # ("KT-872" when "kt-872" was typed). Only for the message: the changeset
+  # it returns isn't saved.
+  defp put_existing_name(changeset) do
+    with name when is_binary(name) <- get_field(changeset, :name),
+         ingredient_id when is_integer(ingredient_id) <- get_field(changeset, :ingredient_id),
+         stored when is_binary(stored) <- existing_name(changeset, ingredient_id, name) do
+      put_change(changeset, :name, stored)
+    else
+      _ -> changeset
+    end
+  end
+
+  defp existing_name(changeset, ingredient_id, name) do
+    manufacturer = get_field(changeset, :manufacturer_party_id) || 0
+    form = get_field(changeset, :form) || ""
+
+    query =
+      from p in __MODULE__,
+        where:
+          p.ingredient_id == ^ingredient_id and
+            coalesce(p.manufacturer_party_id, 0) == ^manufacturer and
+            coalesce(p.form, "") == ^form and
+            fragment("lower(coalesce(?, ''))", p.name) == fragment("lower(?)", ^name),
+        select: p.name,
+        limit: 1
+
+    query
+    |> then(fn q -> if id = changeset.data.id, do: where(q, [p], p.id != ^id), else: q end)
+    |> RockcutApi.Repo.one()
   end
 
   # nil for a blank or missing id (`validate_parents` says which).

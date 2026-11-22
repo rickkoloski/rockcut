@@ -216,6 +216,9 @@ defmodule RockcutApiWeb.Router do
       except: [:new, :edit]
 
     resources "/ingredients", IngredientController, except: [:new, :edit]
+    # D65 (salts amendment): a Water Salts ingredient's ion values.
+    get "/ingredients/:id/ions", IngredientController, :ions
+    put "/ingredients/:id/ions", IngredientController, :put_ions
     resources "/ingredient_lots", IngredientLotController, except: [:new, :edit]
 
     # D60 grain catalog and inventory

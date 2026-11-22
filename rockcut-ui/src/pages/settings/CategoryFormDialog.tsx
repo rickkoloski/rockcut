@@ -6,6 +6,7 @@ import { useApiCreate, useApiUpdate } from '../../hooks/useApiMutation';
 import FormDialog from '../../components/FormDialog';
 import DecimalInput from '../../components/DecimalInput';
 import parseApiError from '../../lib/parseApiError';
+import { allowsChildren } from '../../lib/ingredientFeatures';
 
 interface CategoryFormDialogProps {
   open: boolean;
@@ -27,8 +28,9 @@ function CategoryForm({ onClose, category, parentId }: CategoryFormDialogProps) 
 
   const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories');
   // One level (D60 §3.1): a parent is a top-level category, and a category with children stays top-level.
-  // D62 lead decisions 1: Hops takes no subcategories, so it's never a parent.
-  const parents = categories.filter((c) => c.parent_id == null && c.id !== category?.id && c.key !== 'hops').sort((a, b) => a.sort_order - b.sort_order);
+  // D62 lead decisions 1: Hops takes no subcategories, so it's never a parent;
+  // D65 A9: nor are Fruits, Spices & Flavorings and Sugars and Extracts.
+  const parents = categories.filter((c) => c.id !== category?.id && allowsChildren(c)).sort((a, b) => a.sort_order - b.sort_order);
   const hasChildren = !!category && categories.some((c) => c.parent_id === category.id);
 
   const createMutation = useApiCreate<IngredientCategory>('/api/ingredient_categories', {

@@ -33,6 +33,8 @@ import { packPlural } from '../../lib/brewingUnits'
 import type { IngredientProduct, ReorderRow, SupplierOffer } from '../../lib/types'
 import OrderDialog from './OrderDialog'
 import PurchasingTabs from './PurchasingTabs'
+import { libraryHref } from '../../lib/libraryView'
+import { unitLabel } from '../../lib/ingredientFeatures'
 
 /** Shown from `sm` up; at phone width the figure goes under the product. */
 const WIDE = { display: { xs: 'none', sm: 'table-cell' } }
@@ -112,7 +114,8 @@ export default function ToOrderPage() {
   }
 
   const activeOffers = new Map(products.map((p) => [p.id, (p.offers ?? []).filter((o) => o.active)]))
-  const units = new Map(products.map((p) => [p.id, p.unit]))
+  // D65 §4.5: in the product's own unit, "0 gal", "0 tablets".
+  const units = new Map(products.map((p) => [p.id, unitLabel(p)]))
   const unitOf = (productId: number) => units.get(productId) ?? 'lb'
   const view = rows.map((r) => {
     const offers = activeOffers.get(r.product_id) ?? (r.offer ? [r.offer] : [])
@@ -180,7 +183,7 @@ export default function ToOrderPage() {
 
   return (
     <>
-      <PageHeader breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'To order' }]} title="Purchasing" />
+      <PageHeader breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'To order' }]} title="Purchasing" />
       <PurchasingTabs />
       <PageToolbar
         end={

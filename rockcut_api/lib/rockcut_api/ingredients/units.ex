@@ -81,6 +81,18 @@ defmodule RockcutApi.Ingredients.Units do
   end
 
   @doc """
+  D65 lead decisions 1 (gap 8): the word for a sum of rows in `unit`: their
+  shared label when they all have it ("tablets"), else the unit ("each" for
+  Tablet and other `each` products together).
+  """
+  def shared_label(unit, labels) do
+    case Enum.uniq(labels) do
+      [label] when is_binary(label) -> label
+      _ -> unit
+    end
+  end
+
+  @doc """
   A pack name for `n` packs: "sack" for 1, else its plural (sack/sacks,
   box/boxes, bag/bags, pail/pails, jug/jugs, bottle/bottles, tub/tubs,
   case/cases, each).
@@ -94,11 +106,16 @@ defmodule RockcutApi.Ingredients.Units do
   def plural("box"), do: "boxes"
   def plural(name), do: name <> "s"
 
-  # `each` is a count: whole numbers. Every other unit to 2 decimals.
-  defp places("each"), do: 0
+  # `each` is a count: whole numbers ("tablets" is its label on a Tablet
+  # product, D65). Every other unit to 2 decimals.
+  defp places(unit) when unit in ["each", "tablets"], do: 0
   defp places(_unit), do: 2
 
-  defp amount(qty, unit, places), do: "#{format_number(qty, places)} #{unit || "lb"}"
+  # Lead decisions 1 (gap 6): exactly 1 is singular, "1 tablet".
+  defp amount(qty, unit, places) do
+    unit = if unit == "tablets" and Decimal.eq?(qty, 1), do: "tablet", else: unit || "lb"
+    "#{format_number(qty, places)} #{unit}"
+  end
 
   # 1234.5 → "1,234.5"; at most `places` decimals, no trailing zeros.
   defp format_number(%Decimal{} = d, places) do

@@ -1,4 +1,4 @@
-import { useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import {
   Alert,
   Box,
@@ -52,17 +52,33 @@ export default function FormDialog({ open, onClose, title, onSubmit, loading, er
         await onSubmit()
       } finally {
         setBusy(false)
+        setSettled((n) => n + 1)
       }
     })
   }
   const pending = loading || busy
+  // D65 lead decisions 1 (gaps 1, 10): a refusal sits at the top of the dialog, which a tall
+  // dialog has scrolled past by the time Save is pressed. It's scrolled into view and focused
+  // when it appears, and again after each save that settles with it (the same words twice).
+  const errorRef = useRef<HTMLDivElement>(null)
+  const [settled, setSettled] = useState(0)
+  useEffect(() => {
+    const alert = errorRef.current
+    if (!error || !alert) return
+    alert.scrollIntoView?.({ block: 'nearest' })
+    alert.focus({ preventScroll: true })
+  }, [error, settled])
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth fullScreen={!!phone && narrow} data-testid={testId}>
       {/* While a save is in flight a second submit (a double-click, Enter again) does nothing: no double movements. */}
       <form onSubmit={(e: FormEvent) => { e.preventDefault(); void submit() }}>
         <DialogTitle>{title}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: '8px !important' }}>
-          {error && <Alert severity="error">{error}</Alert>}
+          {error && (
+            <Alert severity="error" ref={errorRef} tabIndex={-1} sx={{ scrollMarginTop: 8, '&:focus': { outline: 'none' } }} data-testid={testId && `${testId}-error`}>
+              {error}
+            </Alert>
+          )}
           {children}
         </DialogContent>
         <DialogActions>

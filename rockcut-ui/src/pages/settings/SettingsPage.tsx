@@ -8,6 +8,7 @@ import type { IngredientCategory } from '../../lib/types';
 import { useApiQuery } from '../../hooks/useApiQuery';
 import PageHeader from '../../components/PageHeader';
 import CategoryFormDialog from './CategoryFormDialog';
+import { libraryHref } from '../../lib/libraryView'
 
 // D60 §3.1: children listed under their parent, indented; the order is the hierarchy's.
 const columns: GridColDef[] = [
@@ -57,7 +58,7 @@ export default function SettingsPage() {
   return (
     <>
       <PageHeader
-        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: '/ingredients' }, { label: 'Categories' }]}
+        breadcrumbs={[{ label: 'Home', to: '/' }, { label: 'Ingredient Library', to: libraryHref() }, { label: 'Categories' }]}
         title="Ingredient categories"
         action={{ label: 'Add Category', onClick: () => setFormOpen(true), testId: 'settings-add-button' }}
       />

@@ -4,7 +4,7 @@ import FormDialog from '../../components/FormDialog'
 import DecimalInput from '../../components/DecimalInput'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
-import { PRICE_DECIMALS, packPlural, parseDecimal } from '../../lib/brewingUnits'
+import { PRICE_DECIMALS, packSizeText, parseDecimal, perUnitLabel } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { OfferPrice, SupplierOffer } from '../../lib/types'
@@ -44,7 +44,7 @@ function PriceForm({ onClose, offer, unit }: { onClose: () => void; offer: Suppl
         required
         fullWidth
         autoFocus
-        helperText={perUnit != null ? `$${perUnit.toFixed(4)}/${unit} for ${Number(offer.pack_size)} ${unit} ${packPlural(offer.pack_name)}` : undefined}
+        helperText={perUnit != null ? `$${perUnit.toFixed(4)}/${perUnitLabel(unit)} for ${packSizeText(offer.pack_name, offer.pack_size, unit)}` : undefined}
         slotProps={{ htmlInput: { 'data-testid': 'price-per-pack' } }}
       />
       <TextField

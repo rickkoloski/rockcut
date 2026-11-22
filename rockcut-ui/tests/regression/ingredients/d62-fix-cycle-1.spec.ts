@@ -6,6 +6,7 @@ import {
   apiAs,
   cleanupIngredients,
   expectNoSidewaysScroll,
+  expectPhoneDialogClosed,
   getProduct,
   lotsOf,
   makeHopLot,
@@ -142,6 +143,9 @@ test.describe('brewer1', () => {
     await expect(option).toHaveText(`${hop.ingredient!.name} T90 Pellet · ${company.name} · box · 11 lb`)
     await page.keyboard.press('Escape')
     await d.getByRole('button', { name: 'Cancel' }).click()
+    // D65 Stop 3: closing takes its history entry off a tick later (`useBackCloses`), which
+    // aborted the next goto now and then (1 in 9: net::ERR_ABORTED); wait for it first.
+    await expectPhoneDialogClosed(page, d)
 
     await page.goto('/ingredients/totals')
     await page.getByTestId('totals-tab-orders').click()

@@ -104,8 +104,28 @@ export interface IngredientCategory {
   field_definitions: CategoryFieldDefinition[] | null
   /** D61 carry-over 2: why Delete is refused (sub-categories, grains or ingredients), or null. */
   delete_blocked?: string | null
+  /** D65 §4.2: what its products take (`Catalog.describe/1`); absent on old responses. */
+  catalog?: CategoryCatalog
   inserted_at: string
   updated_at: string
+}
+
+/** D65 §4.2: a category's forms, units (per form, for sugars) and packs, and what it allows. */
+export interface CategoryCatalog {
+  /** The top-level key (a child's is its parent's). */
+  key: string | null
+  managed: boolean
+  forms: string[]
+  units: string[]
+  form_units: Record<string, string[]>
+  pack_names: string[]
+  /** lb → bag, gal → pail, fl oz → jug, oz → bag, each → tub. */
+  default_packs: Record<string, string>
+  manufacturer_required: boolean
+  allows_children: boolean
+  allows_fields: boolean
+  /** D65 (salts amendment): Water Salts' ingredients carry ion values. */
+  ions?: boolean
 }
 
 export interface CategoryFieldDefinition {
@@ -126,6 +146,12 @@ export interface Ingredient {
   category_id: number
   category: CategorySummary | null
   notes: string | null
+  /** D65: the chemical formula ("CaSO₄·2H₂O"), any category; null when not set. */
+  formula?: string | null
+  /** D65: ion values (ppm @ 1 g/gal) by key, on a Water Salts ingredient. */
+  ions?: Record<string, string> | null
+  /** D65 lead decisions 1 (gap 13): why Delete is refused (it has products or lots), or null. */
+  delete_blocked?: string | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
   updated_at: string
@@ -145,6 +171,8 @@ export interface ProductSummary {
   name: string | null
   display_name: string
   unit?: string
+  /** D65: "tablets" for `each` on a Tablet product. */
+  unit_label?: string
   form?: string | null
   manufacturer: PartySummary | null
 }
@@ -263,6 +291,8 @@ export interface FeatureApplicability {
   lot_mode?: 'none' | 'copy' | 'enter'
   lot_required?: boolean
   only_unit?: string | null
+  /** D65: the feature applies only to products in this form (Brix on Liquid sugars). */
+  only_form?: string | null
 }
 
 export interface OfferPrice {
@@ -286,6 +316,8 @@ export interface SupplierOffer {
   /** D62 §3.5: the pack, e.g. "sack" · 55 (in the product's unit). */
   pack_name: string
   pack_size: string
+  /** D65 (A16): a note on the pack, "5 lb" for a tub of 872 tablets; null when none. */
+  pack_note?: string | null
   /** Grain's alone; null on a hop offer (D62 lead decisions 1, gap 3). */
   form: 'milled' | 'whole' | null
   notes: string | null
@@ -303,12 +335,17 @@ export interface IngredientProduct {
   category: CategorySummary | null
   /** D62: the top-level category's key (`grains` for a grain on Base). */
   category_key: string | null
-  manufacturer_party_id: number
+  /** D65 decision 8: null on a D65 product with no manufacturer ("None"). */
+  manufacturer_party_id: number | null
   manufacturer: PartySummary | null
   name: string | null
   display_name: string
   /** D62 §3.3: the unit it's kept in (lb for grain), its form and origin (not used for grain). */
   unit: string
+  /** D65: the unit as screens say it ("tablets" for `each` on a Tablet product). */
+  unit_label?: string
+  /** D65: its ingredient's ion values (Water Salts), read-only. */
+  ions?: Record<string, string>
   form: string | null
   origin: string | null
   notes: string | null
@@ -364,6 +401,8 @@ export interface PurchaseOrderLine {
     label: string
     pack_name: string
     pack_size: string
+    /** D65 (A16): the pack note, "5 lb". */
+    pack_note?: string | null
     product_id: number
     product: ProductSummary
   }
@@ -407,6 +446,8 @@ export interface PurchaseOrder {
 /** A quantity in one unit (D62 §3.8). */
 export interface UnitQuantity {
   unit: string
+  /** D65 lead decisions 1 (gap 8): "tablets" when every product in it is a Tablet; else the unit. */
+  unit_label?: string
   quantity: string
 }
 
@@ -498,6 +539,8 @@ export interface InventoryTotalsRow {
   category_key: string | null
   form: string | null
   unit: string
+  /** D65: "tablets" for `each` on a Tablet product. */
+  unit_label?: string
   quantity: string
   expired: string
   /** The quantity ÷ the pack size when all its stocked lots share one pack, else null. */
@@ -530,6 +573,8 @@ export interface OrderTotalsRow {
   packs_ordered: number
   packs_received: number | null
   unit: string
+  /** D65: "tablets" for `each` on a Tablet product. */
+  unit_label?: string
   quantity: string
   dollars: string
   packs: number

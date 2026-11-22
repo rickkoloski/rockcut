@@ -6,10 +6,11 @@ import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
-import { formatQuantity, lotPack, productPack } from '../../lib/brewingUnits'
+import { formatQuantity, lotPack, minQuantity, productPack, productShortName } from '../../lib/brewingUnits'
 import { FUTURE_DATE, GRAIN_KEYS, INCOMING, KIND_LABELS, OUTGOING, WITH_PARTNER, oldestFirst, oldestFirstOnHand } from '../../lib/inventory'
 import { coloradoToday } from '../../lib/tasks'
 import type { IngredientLot, IngredientProduct, InventoryMovement, MovementKind, Party } from '../../lib/types'
+import { unitLabel } from '../../lib/ingredientFeatures'
 
 const OLDEST = 'oldest'
 
@@ -70,7 +71,9 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
       setPartnerMissing(true)
       return setError('Pick the partner brewery for a trade or loan')
     }
-    if (!quantity.valid || !quantity.quantity || Number(quantity.quantity) <= 0) return setError('Enter the quantity')
+    if (!quantity.valid || !quantity.quantity) return setError('Enter the quantity')
+    // D65 lead decisions 1 (gap 7): 0 says the smallest the API takes ("Enter at least 1 tablet").
+    if (Number(quantity.quantity) <= 0) return setError(minQuantity(unitLabel(product)))
     if (!lotChoice) return setError('Pick the lot')
     if (date > coloradoToday()) return setError(FUTURE_DATE)
     const target = lotChoice === OLDEST ? { product_id: product.id, allocation: 'oldest_first' } : { lot_id: Number(lotChoice) }
@@ -90,7 +93,7 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
   }
 
   const lotLabel = (l: IngredientLot) =>
-    `${l.lot_number ?? `#${l.id}`} · received ${l.received_date ?? '—'} · ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, product.unit, mode)}${l.status === 'expired' ? ' · Expired' : ''}`
+    `${l.lot_number ?? `#${l.id}`} · received ${l.received_date ?? '—'} · ${formatQuantity(l.on_hand, l.pack_name, l.pack_size, unitLabel(product), mode)}${l.status === 'expired' ? ' · Expired' : ''}`
 
   return (
     <FormDialog
@@ -174,11 +177,13 @@ function MovementForm({ onClose, product, lots }: MovementDialogProps) {
         mode={mode}
         packSize={pack?.size ?? null}
         packName={pack?.name}
-        unit={product.unit}
+        unit={unitLabel(product)}
+        productName={productShortName(product)}
+        positive
         label="Quantity"
         onChange={setQuantity}
         testId="movement-quantity"
-        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, product.unit, mode)}` : oldestFirstOnHand(product, pack, mode)}
+        helperText={lot ? `This lot has ${formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, unitLabel(product), mode)}` : oldestFirstOnHand(product, pack, mode)}
       />
       <TextField
         label="Date"

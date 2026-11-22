@@ -9,7 +9,7 @@ import type { FeatureType, Ingredient, IngredientCategory, IngredientLotSummary,
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { formatFeature } from '../../lib/brewingUnits'
-import { categoryKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
+import { categoryKey, ionsText, isManagedKey, onHandText, productLabel, typesFor } from '../../lib/ingredientFeatures'
 import ProductDialog from './ProductDialog'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import PageHeader from '../../components/PageHeader'
@@ -20,6 +20,7 @@ import IngredientLotDialog from './IngredientLotDialog'
 import ItemNotFound from '../../components/ItemNotFound'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
+import { libraryHref } from '../../lib/libraryView'
 
 export default function IngredientDetail() {
   const { id } = useParams()
@@ -46,7 +47,8 @@ export default function IngredientDetail() {
   // D62: so does a hop (hop products); found by the category's key.
   const category = categories.find((c) => c.id === ingredient?.category_id)
   const key = categoryKey(categories, category)
-  const isGrain = key === 'grains' || key === 'hops'
+  // D65: and every managed category (fruits, spices, sugars, other consumables).
+  const isGrain = isManagedKey(key)
   const productsLabel = `${productLabel(key)}s`
   const { data: products = [] } = useApiList<IngredientProduct>(
     ['ingredient_products', { ingredient_id: ingredientId }],
@@ -65,7 +67,7 @@ export default function IngredientDetail() {
   const handleDelete = async () => {
     try {
       await deleteIngredient.mutateAsync(ingredientId)
-      navigate('/ingredients')
+      navigate(libraryHref())
     } catch (err) {
       setDeleteOpen(false)
       setDeleteError(parseApiError(err))
@@ -96,7 +98,7 @@ export default function IngredientDetail() {
       field: `feature_${t.key}`,
       headerName: `${t.label} (${t.unit_label})`,
       flex: 1,
-      valueGetter: (_value, row: IngredientLotSummary) => formatFeature(row.features?.[t.key]?.value, t.decimals),
+      valueGetter: (_value, row: IngredientLotSummary) => formatFeature(row.features?.[t.key]?.value, t),
     })),
   ]
 
@@ -105,7 +107,7 @@ export default function IngredientDetail() {
     return (
       <ItemNotFound
         what="Ingredient"
-        backTo="/ingredients"
+        backTo={libraryHref()}
         backLabel="Back to Ingredients"
         testId="ingredient-not-found"
       />
@@ -121,14 +123,34 @@ export default function IngredientDetail() {
       <PageHeader
         breadcrumbs={[
           { label: 'Home', to: '/' },
-          { label: 'Ingredients', to: '/ingredients' },
+          { label: 'Ingredients', to: libraryHref() },
           { label: ingredient.name },
         ]}
         title={ingredient.name}
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Ingredient"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
-            <Tooltip title="Delete Ingredient"><IconButton onClick={() => setDeleteOpen(true)} color="error"><DeleteIcon /></IconButton></Tooltip>
+            {/* D65 lead decisions 1 (gap 13): disabled with the API's reason while it has products, as Categories does.
+                Lead decisions 2 (gap 14): it keeps its name, and the reason is its tooltip and description. */}
+            <Tooltip title={ingredient.delete_blocked ?? 'Delete Ingredient'}>
+              <span>
+                <IconButton
+                  aria-label="Delete Ingredient"
+                  aria-describedby={ingredient.delete_blocked ? 'ingredient-delete-reason' : undefined}
+                  onClick={() => setDeleteOpen(true)}
+                  color="error"
+                  disabled={!!ingredient.delete_blocked}
+                  data-testid="ingredient-delete"
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+            {ingredient.delete_blocked && (
+              <Typography id="ingredient-delete-reason" variant="caption" color="text.secondary" sx={{ alignSelf: 'center', maxWidth: 260 }} data-testid="ingredient-delete-reason">
+                {ingredient.delete_blocked}
+              </Typography>
+            )}
           </Box>
         }
       />
@@ -147,6 +169,24 @@ export default function IngredientDetail() {
             </Typography>
             <Typography>{ingredient.category?.name ?? 'None'}</Typography>
           </Grid>
+          {/* D65 (salts amendment): a Water Salts ingredient's ions, when set. */}
+          {ionsText(ingredient.ions) && (
+            <Grid size={{ xs: 12 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Ions (ppm @ 1 g/gal)
+              </Typography>
+              <Typography data-testid="ingredient-ions-shown">{ionsText(ingredient.ions)}</Typography>
+            </Grid>
+          )}
+          {/* D65: the formula, only when set. */}
+          {ingredient.formula && (
+            <Grid size={{ xs: 12, sm: 6 }}>
+              <Typography variant="subtitle2" color="text.secondary">
+                Formula
+              </Typography>
+              <Typography data-testid="ingredient-formula-shown">{ingredient.formula}</Typography>
+            </Grid>
+          )}
           <Grid size={{ xs: 12 }}>
             <Typography variant="subtitle2" color="text.secondary">
               Notes
@@ -211,10 +251,10 @@ export default function IngredientDetail() {
         ingredient={ingredient}
       />
 
-      <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} categoryKey={key === 'hops' ? 'hops' : 'grains'} />
+      <ProductDialog open={productOpen} onClose={() => setProductOpen(false)} ingredientId={ingredientId} categoryKey={key ?? 'grains'} />
 
       <ConfirmDialog
-        open={deleteOpen}
+        open={deleteOpen && !ingredient.delete_blocked}
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         title="Delete Ingredient"

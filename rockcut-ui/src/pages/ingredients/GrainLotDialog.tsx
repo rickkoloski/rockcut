@@ -9,7 +9,7 @@ import { useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import parseApiError from '../../lib/parseApiError'
 import { LB_DECIMALS, formatQuantity, packSizeLabel, parseDecimal } from '../../lib/brewingUnits'
-import { draftsFrom, draftsValid, featuresPayload, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, type FeatureDrafts } from '../../lib/ingredientFeatures'
+import { draftsFrom, draftsValid, featuresPayload, isD65Key, lotFeatureBasis, lotTypesFor, missingRequired, parseCropYear, requiredLotKeys, typesFor, unitLabel, type FeatureDrafts } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
 import { GRAIN_KEYS, lotDeleteBlocked, lotDeleteMessage } from '../../lib/inventory'
 import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, Party } from '../../lib/types'
@@ -57,7 +57,10 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
   const packSizeFixed = movements.length > 1
   const deleteBlocked = lotDeleteBlocked(lot, movements)
 
-  const featureTypes = hops ? lotTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
+  // D65: Brix (fruit, Liquid sugars) and extract (sugars), as Add lot.
+  const d65 = isD65Key(product.category_key)
+  const featureTypes = hops || d65 ? lotTypesFor(types, product.category?.id, product.category?.parent_id, product.form) : typesFor(types, product.category?.id, product.category?.parent_id)
+  const basis = lotFeatureBasis(product.features, featureTypes, product.category?.id, product.category?.parent_id)
   const required = requiredLotKeys(types, product.category?.id, product.category?.parent_id)
   const shown = drafts ?? draftsFrom(lot.features, featureTypes)
   const crop = parseCropYear(cropYear, coloradoToday())
@@ -125,7 +128,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       }
     >
       <Typography variant="body2" color="text.secondary">
-        On hand: {formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, product.unit, mode)}. Stock changes through Record movement and Count.
+        On hand: {formatQuantity(lot.on_hand, lot.pack_name, lot.pack_size, unitLabel(product), mode)}. Stock changes through Record movement and Count.
       </Typography>
       <TextField label="Lot #" value={lotNumber} onChange={(e) => setLotNumber(e.target.value)} fullWidth />
       <TextField label="Received" type="date" value={received} onChange={(e) => setReceived(e.target.value)} fullWidth slotProps={{ inputLabel: { shrink: true } }} />
@@ -156,7 +159,7 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       ) : (
         <DecimalInput
           decimals={LB_DECIMALS}
-          label={packSizeLabel(lot.pack_name, product.unit)}
+          label={packSizeLabel(lot.pack_name, unitLabel(product))}
           value={packSize}
           onChange={setPackSize}
           disabled={packSizeFixed}
@@ -172,7 +175,11 @@ function GrainLotForm({ onClose, product, lot, movements }: GrainLotDialogProps 
       {hops ? (
         <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} typical={product.features ?? {}} required={required} disabled={loading} />
       ) : (
-        <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={loading} />
+        d65 ? (
+          featureTypes.length > 0 && <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={basis.standard} typical={basis.typical} disabled={loading} />
+        ) : (
+          <FeatureFields types={featureTypes} drafts={shown} onChange={setDrafts} standard={product.features ?? {}} disabled={loading} />
+        )
       )}
       <TextField label="Notes" value={notes} onChange={(e) => setNotes(e.target.value)} multiline rows={2} fullWidth />
       <ConfirmDialog

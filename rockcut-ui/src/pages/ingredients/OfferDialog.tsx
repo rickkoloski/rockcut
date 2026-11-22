@@ -5,9 +5,11 @@ import DecimalInput from '../../components/DecimalInput'
 import { useApiList } from '../../hooks/useApiQuery'
 import { useApiCreate, useApiDelete, useApiUpdate } from '../../hooks/useApiMutation'
 import parseApiError from '../../lib/parseApiError'
-import { LB_DECIMALS, packSizeLabel, parseDecimal } from '../../lib/brewingUnits'
+import { LB_DECIMALS, packSizeLabel, parseDecimal, unitDecimals } from '../../lib/brewingUnits'
 import { GRAIN_KEYS } from '../../lib/inventory'
-import type { Party, SupplierOffer } from '../../lib/types'
+import { isD65Key } from '../../lib/ingredientFeatures'
+import { defaultPackName } from '../../lib/purchasing'
+import type { IngredientCategory, Party, SupplierOffer } from '../../lib/types'
 
 interface OfferDialogProps {
   open: boolean
@@ -17,6 +19,9 @@ interface OfferDialogProps {
   unit?: string
   /** D62: the product's category key; hops are always box · 11 lb. */
   categoryKey?: string | null
+  /** D65: the product's category (its pack names) and stored unit (its default pack). */
+  categoryId?: number | null
+  storedUnit?: string
   offer?: SupplierOffer
 }
 
@@ -24,23 +29,33 @@ interface OfferDialogProps {
  * D60 §3.6: how a supplier sells a product: order name, pack (D62 §3.5: a
  * sack and its size, for grain), milled or whole. D62 decision 6: a hop
  * offer is always a box of 11 lb, shown and not editable (the API sets it).
+ * D65 §4.2: a fruit, spice, sugar or other consumable offer picks its pack
+ * from the category's names, starting with the unit's usual one (lb → bag,
+ * gal → pail, …); an `each` pack size is whole.
  */
 export default function OfferDialog(props: OfferDialogProps) {
   return props.open ? <OfferForm {...props} /> : null
 }
 
-function OfferForm({ onClose, productId, unit = 'lb', categoryKey, offer }: OfferDialogProps) {
+function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, storedUnit, offer }: OfferDialogProps) {
   const hops = categoryKey === 'hops'
+  const d65 = isD65Key(categoryKey)
+  const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
+  const catalog = categories.find((c) => c.id === categoryId)?.catalog
+  const packNames = catalog?.pack_names ?? []
   const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
   // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
   const listsLoading = partiesLoading
   const [supplierId, setSupplierId] = useState<number | ''>(offer?.supplier_party_id ?? '')
   const [orderName, setOrderName] = useState(offer?.order_name ?? '')
-  const [packSize, setPackSize] = useState(offer?.pack_size ?? (hops ? '11' : '55'))
-  // D62 §3.5: grain offers are sacks, hop offers 11 lb boxes; other packs come with their categories (Stage 3).
-  const packName = offer?.pack_name ?? (hops ? 'box' : 'sack')
+  const [packSize, setPackSize] = useState(offer?.pack_size ?? (hops ? '11' : d65 ? '' : '55'))
+  // D62 §3.5: grain offers are sacks, hop offers 11 lb boxes; D65: picked (null: the unit's usual pack).
+  const [pickedPack, setPickedPack] = useState<string | null>(offer?.pack_name ?? null)
+  const packName = pickedPack ?? (hops ? 'box' : d65 ? (defaultPackName(catalog?.default_packs, storedUnit, packNames) ?? 'pack') : 'sack')
   const [form, setForm] = useState<'milled' | 'whole'>(offer?.form ?? 'whole')
   const [notes, setNotes] = useState(offer?.notes ?? '')
+  // D65 (A16): a note on the pack, "5 lb" for a tub of 872 tablets.
+  const [packNote, setPackNote] = useState(offer?.pack_note ?? '')
   const [active, setActive] = useState(offer?.active ?? true)
   const [error, setError] = useState<string | null>(null)
 
@@ -49,7 +64,8 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, offer }: Offe
   const update = useApiUpdate<SupplierOffer>((id) => `/api/supplier_offers/${id}`, { invalidateKeys: GRAIN_KEYS })
   const remove = useApiDelete((id) => `/api/supplier_offers/${id}`, { invalidateKeys: GRAIN_KEYS })
   const loading = create.isPending || update.isPending || remove.isPending
-  const size = parseDecimal(packSize, LB_DECIMALS)
+  // An `each` pack size is whole (D65 §4.3).
+  const size = parseDecimal(packSize, d65 ? unitDecimals(storedUnit) : LB_DECIMALS)
 
   const submit = async () => {
     if (!supplierId) return setError('Pick the supplier')
@@ -60,7 +76,7 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, offer }: Offe
       order_name: orderName.trim() || null,
       // A hop offer's pack is the API's to set.
       // Milled or whole is grain's; the API refuses a form on a hop offer (lead decisions 1, gap 3).
-      ...(hops ? {} : { pack_name: packName, pack_size: size.value, form }),
+      ...(hops ? {} : d65 ? { pack_name: packName, pack_size: size.value, pack_note: packNote.trim() || null } : { pack_name: packName, pack_size: size.value, form }),
       notes: notes.trim() || null,
       active,
     }
@@ -112,11 +128,23 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, offer }: Offe
         </Select>
       </FormControl>
       <TextField label="Order name" helperText="The supplier's catalog name" value={orderName} onChange={(e) => setOrderName(e.target.value)} fullWidth />
+      {d65 && (
+        <FormControl fullWidth required>
+          <InputLabel id="offer-pack-label">Pack</InputLabel>
+          <Select labelId="offer-pack-label" id="offer-pack" label="Pack" value={packNames.includes(packName) ? packName : ''} onChange={(e) => setPickedPack(e.target.value)} data-testid="offer-pack-name">
+            {packNames.map((n) => (
+              <MenuItem key={n} value={n}>
+                {n}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+      )}
       {hops ? (
         <TextField label="Pack" value={`box · 11 ${unit}`} fullWidth disabled helperText="Hops always come in 11 lb boxes" slotProps={{ htmlInput: { 'data-testid': 'offer-pack-fixed' } }} />
       ) : (
         <DecimalInput
-          decimals={LB_DECIMALS}
+          decimals={d65 ? unitDecimals(storedUnit) : LB_DECIMALS}
           label={packSizeLabel(packName, unit)}
           value={packSize}
           onChange={setPackSize}
@@ -125,7 +153,17 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, offer }: Offe
           slotProps={{ htmlInput: { 'data-testid': 'offer-pack-size' } }}
         />
       )}
-      {!hops && (
+      {d65 && (
+        <TextField
+          label="Pack note"
+          helperText={`Optional, shown with the pack: "${packName} · ${(size.ok && size.value) || '…'} ${unit}${packNote.trim() ? ` (${packNote.trim()})` : ' (5 lb)'}"`}
+          value={packNote}
+          onChange={(e) => setPackNote(e.target.value)}
+          fullWidth
+          slotProps={{ htmlInput: { maxLength: 40, 'data-testid': 'offer-pack-note' } }}
+        />
+      )}
+      {!hops && !d65 && (
         <FormControl fullWidth>
           <InputLabel id="offer-form-label">We order it</InputLabel>
           <Select labelId="offer-form-label" id="offer-form" label="We order it" value={form} onChange={(e) => setForm(e.target.value as 'milled' | 'whole')}>

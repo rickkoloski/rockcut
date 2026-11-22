@@ -94,11 +94,14 @@ test('O2: Settings → Categories: Grains shows its five children; no Origin or 
     await expect(page.getByRole('heading', { name: 'Field Definitions' })).toBeVisible()
     await expect(page.getByTestId('category-add-field')).toHaveCount(0)
   }
-  const fruits = categories.find((c) => c.name === 'Fruits')
-  if (fruits) {
-    await page.goto(`/ingredients/categories/${fruits.id}`)
-    await expect(page.getByTestId('category-add-field')).toBeVisible()
-  }
+  // D65 A9: Fruits takes none either now; Yeast Strains keeps its custom fields until D64.
+  const yeast = categories.find((c) => c.name === 'Yeast Strains')!
+  await page.goto(`/ingredients/categories/${yeast.id}`)
+  await expect(page.getByTestId('category-add-field')).toBeVisible()
+  const fruits = categories.find((c) => c.name === 'Fruits')!
+  await page.goto(`/ingredients/categories/${fruits.id}`)
+  await expect(page.getByTestId('category-grain-fields-note')).toBeVisible()
+  await expect(page.getByTestId('category-add-field')).toHaveCount(0)
 })
 
 test('O3: a category that has a grain has Delete disabled with the reason (gap 12, D61 carry-over 2); empty, it deletes', async ({ page }) => {

@@ -17,6 +17,8 @@ defmodule RockcutApi.Ingredients.SupplierOffer do
     field :order_name, :string
     field :pack_name, :string, default: "sack"
     field :pack_size, :decimal
+    # D65 (finings amendment, A16): a note on the pack, "tub · 872 tablets (5 lb)".
+    field :pack_note, :string
     field :form, :string, default: "whole"
     field :notes, :string
     field :active, :boolean, default: true
@@ -45,17 +47,29 @@ defmodule RockcutApi.Ingredients.SupplierOffer do
       :order_name,
       :pack_name,
       :pack_size,
+      :pack_note,
       :form,
       :notes,
       :active
     ])
+    |> update_change(:pack_note, &blank_to_nil/1)
     |> validate_required([:product_id, :supplier_party_id, :pack_name, :pack_size])
     |> then(&if(grain?, do: validate_required(&1, :form), else: &1))
     |> validate_inclusion(:form, @forms)
     |> validate_inclusion(:pack_name, RockcutApi.Ingredients.Catalog.pack_names())
     |> validate_positive_up_to(:pack_size, 10_000)
+    |> validate_length(:pack_note, max: 40)
     |> foreign_key_constraint(:product_id)
     |> foreign_key_constraint(:supplier_party_id)
     |> RockcutApi.Changeset.validate_parents([:product_id, :supplier_party_id])
+  end
+
+  defp blank_to_nil(nil), do: nil
+
+  defp blank_to_nil(text) do
+    case String.trim(text) do
+      "" -> nil
+      trimmed -> trimmed
+    end
   end
 end
