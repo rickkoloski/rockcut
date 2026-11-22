@@ -117,8 +117,9 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
         </RadioGroup>
         {harvesting && (
           <>
-            <FormControl fullWidth required>
-              <InputLabel id="harvest-brink-label">Brink</InputLabel>
+            {/* The asterisk only: the dialog says what's missing ("Pick the brink"), not the browser. */}
+            <FormControl fullWidth>
+              <InputLabel id="harvest-brink-label" required>Brink</InputLabel>
               <Select
                 labelId="harvest-brink-label"
                 label="Brink"
@@ -151,8 +152,9 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
                 Nothing was recorded as pitched into this batch. Pick the strain and the generation (lab yeast is the Mother, so its first harvest is gen 1).
               </Typography>
             )}
-            <FormControl fullWidth required>
-              <InputLabel id="harvest-strains-label">Strain</InputLabel>
+            {/* The asterisk only: the dialog says what's missing ("Pick the brink"), not the browser. */}
+            <FormControl fullWidth>
+              <InputLabel id="harvest-strains-label" required>Strain</InputLabel>
               <Select
                 labelId="harvest-strains-label"
                 label="Strain"
