@@ -129,8 +129,9 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
     # D65: plus the D65 reference's 29 products and 30 offers, and 6
     # sugar extracts and 15 fruit Brix ranges (SoNature Lime has none).
     # D65 §7: and the synthetic setup's three [SEED] products, one offer each.
-    assert first[Product] == 44 + 27 + 29 + 3
-    assert first[SupplierOffer] == 44 + 27 + 30 + 3
+    # D64 Amendment: and the yeast reference's 11 products and offers.
+    assert first[Product] == 44 + 27 + 29 + 3 + 11
+    assert first[SupplierOffer] == 44 + 27 + 30 + 3 + 11
     # Blanks stay blank (23 of them, mostly protein), so fewer than 44 × 5.
     assert first[ProductFeatureValue] == 44 * 5 - 23 + 26 * 3 + 6 + 15
 
@@ -147,7 +148,10 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
              {"Colorado Honey Co.", "manufacturer"},
              {"Crisp", "manufacturer"},
              {"Dingemans", "manufacturer"},
+             {"Fermentis", "manufacturer"},
              {"Grain Millers", "manufacturer"},
+             {"Inland Island", "manufacturer"},
+             {"Inland Island", "supplier"},
              {"John Fearless", "manufacturer"},
              {"John Fearless", "supplier"},
              {"Lupulin Exchange", "manufacturer"},
@@ -163,21 +167,24 @@ defmodule RockcutApi.Seeds.GrainSeedsTest do
              {"SoNature", "supplier"},
              {"Sweetener Sup Co.", "manufacturer"},
              {"Weyermann", "manufacturer"},
+             {"White Labs", "manufacturer"},
+             {"White Labs", "supplier"},
              {"Yakima Chief Hops", "manufacturer"},
              {"Yakima Chief Hops", "supplier"}
            ]
 
     assert Repo.aggregate(from(p in Party, where: not like(p.name, "[SEED]%")), :count) ==
-             8 + 5 + 7
+             8 + 5 + 7 + 3
 
     refute Repo.exists?(
              from d in CategoryFieldDefinition,
                where: d.category_id == ^grains().id and d.field_name in ["Origin", "Maltster"]
            )
 
-    # Grains: five features; Hops alpha, beta and oil (D62); Yeast Strains
-    # attenuation; D65: Fruits' Brix, Sugars' extract and Brix.
-    assert first[CategoryFeatureType] == 12
+    # Grains: five features; Hops alpha, beta and oil (D62); D65: Fruits'
+    # Brix, Sugars' extract and Brix; D64: Yeast Strains' temp, attenuation
+    # and pitch size.
+    assert first[CategoryFeatureType] == 14
   end
 
   test "offers: sack size, milled from the order name, Root Shoot with no order name" do

@@ -52,12 +52,8 @@ field_defs =
   [
     # Grains: none (D60 decision 2 dropped Origin and Maltster).
     # Hops: none (D62 §3.1: form and origin are on the product, crop year on the lot).
-    # Yeast Strains
-    {category_ids["yeast"], "Lab", "text", nil, false, 0},
-    {category_ids["yeast"], "Product Code", "text", nil, false, 1},
-    {category_ids["yeast"], "Temp Range Low (F)", "number", nil, false, 2},
-    {category_ids["yeast"], "Temp Range High (F)", "number", nil, false, 3},
-    {category_ids["yeast"], "Form", "dropdown", "Dry, Liquid, Slurry", false, 4}
+    # Yeast Strains: none (D64 §4.1: lab, code and form are on the product,
+    # temp and attenuation are features).
     # Fruits, Spices & Flavorings, Sugars and Extracts: none (D65 §4.1: their
     # form is on the product).
   ]
@@ -267,11 +263,9 @@ other_ingredients =
     {category_ids["hops"], "Mosaic", "Complex fruit: mango, blueberry, earthy"},
     {category_ids["hops"], "Simcoe", "Pine, earthy, passion fruit"},
     {category_ids["hops"], "Amarillo", "Orange citrus, floral"},
-    # Yeast Strains
-    {category_ids["yeast"], "US-05", "Clean American ale yeast (Fermentis)"},
-    {category_ids["yeast"], "WLP001", "California Ale (White Labs)"},
-    {category_ids["yeast"], "Wyeast 1056", "American Ale (Wyeast)"},
-    {category_ids["yeast"], "WLP002", "English Ale (White Labs)"},
+    # Yeast Strains (D64 Amendment 8: US-05 is the Chico Ale strain's product
+    # now; WLP001, Wyeast 1056 and WLP002 aren't seeded)
+    {category_ids["yeast"], "Chico Ale", "Clean American ale yeast (Fermentis)"},
     # Sugars and Extracts (D65: renamed from "Corn Sugar (Dextrose)")
     {category_ids["sugars"], "Dextrose (Corn Sugar)", "Priming sugar, lightens body"},
     # Other Consumables → Finings (D65 A8; Irish Moss removed)
@@ -281,6 +275,23 @@ other_ingredients =
     now = DateTime.utc_now() |> DateTime.truncate(:second)
     %{category_id: cat_id, name: name, notes: notes, inserted_at: now, updated_at: now}
   end)
+
+# D64 Amendment 8: the old seeded US-05 becomes Chico Ale before the list
+# above goes in, so a database seeded before D64 doesn't get both.
+if category_ids["yeast"] do
+  yeast_named = fn name ->
+    Repo.one(
+      from i in Ingredient,
+        where: i.category_id == ^category_ids["yeast"] and i.name == ^name,
+        limit: 1
+    )
+  end
+
+  case {yeast_named.("US-05"), yeast_named.("Chico Ale")} do
+    {%Ingredient{} = old, nil} -> Repo.update!(Ecto.Changeset.change(old, name: "Chico Ale"))
+    _ -> :ok
+  end
+end
 
 # D65 Stop 3: the rows actually inserted (the list is offered every run).
 {new_others, _} =
@@ -314,7 +325,15 @@ applicability =
        {"beta_acid_pct", "range", "enter", false},
        {"total_oil_ml_100g", "range", "enter", false}
      ]},
-    {"yeast", [grain.("attenuation_pct")]},
+    # D64 §4.3: temp and attenuation typical ranges on the product, none on
+    # lots; pitch size on Liquid products (optional), copied to each Liquid
+    # lot and required there.
+    {"yeast",
+     [
+       {"ferm_temp_f", "range", "none", false},
+       {"attenuation_pct", "range", "none", false},
+       {"pitch_bbl", "value", "copy", true, "Liquid"}
+     ]},
     # D65 §4.4: Fruits' Brix a typical range, entered (optional) on each lot;
     # Sugars' extract a standard copied to each lot, Brix on Liquid lots only.
     {"fruits", [{"brix", "range", "enter", false}]},
@@ -369,6 +388,10 @@ Code.eval_file(Path.join(__DIR__, "seeds/hop_reference.exs"))
 # D65 §7: salts with their ions, sugars, fruit, Whirlfloc T and the spices,
 # with offers and prices (no lots). After the hop reference (BSG).
 Code.eval_file(Path.join(__DIR__, "seeds/d65_reference.exs"))
+
+# D64 Amendment: the labs, the 11 yeast strains and products, offers and the
+# two Fermentis prices (no lots). After the grain reference (BSG).
+Code.eval_file(Path.join(__DIR__, "seeds/d64_reference.exs"))
 
 # Grain LOTS are intentionally NOT seeded (D28): prod starts with no grain
 # inventory. D60 (task 3843): the malt specs that used to live on lots are the
