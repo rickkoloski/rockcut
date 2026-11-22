@@ -126,6 +126,10 @@ export interface CategoryCatalog {
   allows_fields: boolean
   /** D65 (salts amendment): Water Salts' ingredients carry ion values. */
   ions?: boolean
+  /** D64 §4.1: per form, the pack a yeast offer or lot starts with (Dry brick, Liquid pitchable); {} elsewhere. */
+  form_packs?: Record<string, string>
+  /** D64 §4.1: per form, how `each` reads (Dry bricks, Liquid pitchables); {} elsewhere. */
+  form_unit_labels?: Record<string, string>
 }
 
 export interface CategoryFieldDefinition {
@@ -152,6 +156,8 @@ export interface Ingredient {
   ions?: Record<string, string> | null
   /** D65 lead decisions 1 (gap 13): why Delete is refused (it has products or lots), or null. */
   delete_blocked?: string | null
+  /** D64 (A13): a yeast strain's type (Ale, Lager, Brett, Lacto); null elsewhere. */
+  yeast_strain_type_id?: number | null
   lots: IngredientLotSummary[] | null
   inserted_at: string
   updated_at: string
@@ -194,7 +200,7 @@ export interface IngredientLotSummary {
 export interface IngredientLot {
   id: number
   ingredient_id: number
-  ingredient: { id: number; name: string; category: CategorySummary | null } | null
+  ingredient: { id: number; name: string; category: CategorySummary | null; yeast_strain_type_id?: number | null } | null
   lot_number: string | null
   /** D60: the product (grain lots). */
   product_id: number | null
@@ -331,7 +337,7 @@ export interface SupplierOffer {
 export interface IngredientProduct {
   id: number
   ingredient_id: number
-  ingredient: { id: number; name: string; category: CategorySummary | null } | null
+  ingredient: { id: number; name: string; category: CategorySummary | null; yeast_strain_type_id?: number | null } | null
   category: CategorySummary | null
   /** D62: the top-level category's key (`grains` for a grain on Base). */
   category_key: string | null
@@ -383,8 +389,32 @@ export interface InventoryMovement {
   /** A receipt from an order with no note of its own names the order ("PO-7", "Order #12"). */
   note: string | null
   purchase_order_id?: number | null
+  /** D64 §4.6: the batch a pitch of purchased yeast went into. */
+  batch_id?: number | null
   entered_by: { id: number; name: string } | null
   inserted_at: string
+}
+
+/** D64 (A13): a yeast Strain Type in the yeast settings. */
+export interface YeastStrainType {
+  id: number
+  name: string
+  position: number
+  active: boolean
+  retired_at: string | null
+  /** How many strains have it; one in use can be renamed or retired, not deleted. */
+  in_use: number
+}
+
+/** D64 §6.4: a batch a pitch can name (`GET /api/yeast/batches`). */
+export interface YeastBatch {
+  id: number
+  /** "Galactic #41", "Altruism P1". */
+  label: string
+  number: string
+  status: string
+  /** Not completed or dumped: the picker offers these. */
+  open: boolean
 }
 
 // ── D61 purchasing ──

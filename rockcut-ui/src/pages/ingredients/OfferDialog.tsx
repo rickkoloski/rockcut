@@ -22,6 +22,8 @@ interface OfferDialogProps {
   /** D65: the product's category (its pack names) and stored unit (its default pack). */
   categoryId?: number | null
   storedUnit?: string
+  /** D64 §4.1: the product's form (a yeast offer's packs follow it). */
+  productForm?: string | null
   offer?: SupplierOffer
 }
 
@@ -37,22 +39,24 @@ export default function OfferDialog(props: OfferDialogProps) {
   return props.open ? <OfferForm {...props} /> : null
 }
 
-function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, storedUnit, offer }: OfferDialogProps) {
+function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, storedUnit, productForm: form, offer }: OfferDialogProps) {
   const hops = categoryKey === 'hops'
   const d65 = isD65Key(categoryKey)
   const { data: categories = [] } = useApiList<IngredientCategory>(['ingredient_categories'], '/api/ingredient_categories')
   const catalog = categories.find((c) => c.id === categoryId)?.catalog
-  const packNames = catalog?.pack_names ?? []
+  // D64 §4.1: a yeast offer's packs follow the product's form (Dry brick or case, Liquid pitchable or case).
+  const formPack = form ? catalog?.form_packs?.[form] : undefined
+  const packNames = formPack ? [formPack, 'case'] : (catalog?.pack_names ?? [])
   const { data: parties = [], isLoading: partiesLoading } = useApiList<Party>(['parties'], '/api/parties')
   // Lead decisions 2 (item 4): Save waits for the lists; until they're in, the selects are empty.
   const listsLoading = partiesLoading
   const [supplierId, setSupplierId] = useState<number | ''>(offer?.supplier_party_id ?? '')
   const [orderName, setOrderName] = useState(offer?.order_name ?? '')
-  const [packSize, setPackSize] = useState(offer?.pack_size ?? (hops ? '11' : d65 ? '' : '55'))
+  const [packSize, setPackSize] = useState(offer?.pack_size ?? (hops ? '11' : categoryKey === 'yeast' ? '1' : d65 ? '' : '55'))
   // D62 §3.5: grain offers are sacks, hop offers 11 lb boxes; D65: picked (null: the unit's usual pack).
   const [pickedPack, setPickedPack] = useState<string | null>(offer?.pack_name ?? null)
-  const packName = pickedPack ?? (hops ? 'box' : d65 ? (defaultPackName(catalog?.default_packs, storedUnit, packNames) ?? 'pack') : 'sack')
-  const [form, setForm] = useState<'milled' | 'whole'>(offer?.form ?? 'whole')
+  const packName = pickedPack ?? (hops ? 'box' : (formPack ?? (d65 ? (defaultPackName(catalog?.default_packs, storedUnit, packNames) ?? 'pack') : 'sack')))
+  const [grainForm, setGrainForm] = useState<'milled' | 'whole'>(offer?.form ?? 'whole')
   const [notes, setNotes] = useState(offer?.notes ?? '')
   // D65 (A16): a note on the pack, "5 lb" for a tub of 872 tablets.
   const [packNote, setPackNote] = useState(offer?.pack_note ?? '')
@@ -76,7 +80,7 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
       order_name: orderName.trim() || null,
       // A hop offer's pack is the API's to set.
       // Milled or whole is grain's; the API refuses a form on a hop offer (lead decisions 1, gap 3).
-      ...(hops ? {} : d65 ? { pack_name: packName, pack_size: size.value, pack_note: packNote.trim() || null } : { pack_name: packName, pack_size: size.value, form }),
+      ...(hops ? {} : d65 ? { pack_name: packName, pack_size: size.value, pack_note: packNote.trim() || null } : { pack_name: packName, pack_size: size.value, form: grainForm }),
       notes: notes.trim() || null,
       active,
     }
@@ -166,7 +170,7 @@ function OfferForm({ onClose, productId, unit = 'lb', categoryKey, categoryId, s
       {!hops && !d65 && (
         <FormControl fullWidth>
           <InputLabel id="offer-form-label">We order it</InputLabel>
-          <Select labelId="offer-form-label" id="offer-form" label="We order it" value={form} onChange={(e) => setForm(e.target.value as 'milled' | 'whole')}>
+          <Select labelId="offer-form-label" id="offer-form" label="We order it" value={grainForm} onChange={(e) => setGrainForm(e.target.value as 'milled' | 'whole')}>
             <MenuItem value="whole">Whole</MenuItem>
             <MenuItem value="milled">Milled</MenuItem>
           </Select>

@@ -31,12 +31,12 @@ import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
 import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack, perUnitLabel } from '../../lib/brewingUnits'
-import { differs, formatRange, ionsText, isD65Key, isRangeType, itemLabel, lotTypesFor, makerName, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor, unitLabel } from '../../lib/ingredientFeatures'
+import { applicability, differs, formatRange, ionsText, isD65Key, isRangeType, itemLabel, lotTypesFor, makerName, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor, unitLabel } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
 import parseApiError from '../../lib/parseApiError'
 import { money as dollars, offerPackText } from '../../lib/purchasing'
-import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, OfferPrice, PurchaseOrder, SupplierOffer } from '../../lib/types'
+import type { FeatureType, IngredientLot, IngredientProduct, InventoryMovement, OfferPrice, PurchaseOrder, SupplierOffer, YeastBatch } from '../../lib/types'
 import ProductDialog from './ProductDialog'
 import OfferDialog from './OfferDialog'
 import PriceDialog from './PriceDialog'
@@ -44,11 +44,12 @@ import AddLotDialog from './AddLotDialog'
 import GrainLotDialog from './GrainLotDialog'
 import MovementDialog from './MovementDialog'
 import CountDialog from './CountDialog'
+import PitchDialog from './PitchDialog'
 import { libraryHref } from '../../lib/libraryView'
 
 const money = (v: string | number | null | undefined, digits = 2) => (v == null ? '—' : `$${Number(v).toFixed(digits)}`)
 
-type Open = 'edit' | 'delete' | 'offer' | 'price' | 'lot' | 'movement' | 'count' | null
+type Open = 'edit' | 'delete' | 'offer' | 'price' | 'lot' | 'movement' | 'count' | 'pitch' | null
 
 /**
  * D60 §4.2: a product (a maltster's, for grain): its standard specs, supplier
@@ -88,6 +89,10 @@ export default function ProductPage() {
     .map((o) => ({ order: o, packs: o.lines.filter((l) => l.offer.product_id === productId).reduce((n, l) => n + l.packs_ordered, 0) }))
     .filter((x) => x.packs > 0)
   const remove = useApiDelete((pid) => `/api/ingredient_products/${pid}`, { invalidateKeys: GRAIN_KEYS })
+  // D64 §4.6: a yeast pitch names its batch; the movements say which.
+  const yeastProduct = product?.category_key === 'yeast'
+  const { data: batches = [] } = useApiList<YeastBatch>(['yeast_batches'], '/api/yeast/batches', undefined, { enabled: yeastProduct })
+  const batchLabel = new Map(batches.map((b) => [b.id, b.label]))
 
   if (!product && httpStatus(error) === 404) {
     return <ItemNotFound what="Maltster product" backTo={libraryHref()} backLabel="Back to Ingredients" testId="product-not-found" />
@@ -102,7 +107,11 @@ export default function ProductPage() {
   const named = hops || d65
   // D65: "tablets" for `each` on a Tablet product.
   const unit = unitLabel(product)
-  const featureTypes = named ? productTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)
+  // D64 §4.3: a feature for one form only (pitch size, Liquid yeast) shows on that form's products.
+  const featureTypes = (named ? productTypesFor(types, product.category?.id, product.category?.parent_id) : typesFor(types, product.category?.id, product.category?.parent_id)).filter((t) => {
+    const only = applicability(t, product.category?.id, product.category?.parent_id)?.only_form
+    return !only || only === product.form
+  })
   // D65: a lot's Brix (fruit, Liquid sugars) and extract (sugars) as columns; Brix only for its form.
   const lotTypes = named ? lotTypesFor(types, product.category?.id, product.category?.parent_id, product.form) : []
   const ranged = (t: FeatureType) => isRangeType(t, product.category?.id, product.category?.parent_id)
@@ -162,6 +171,12 @@ export default function ProductPage() {
             <Button variant="outlined" onClick={() => setOpen('count')} disabled={lots.length === 0} data-testid="product-count">
               Count
             </Button>
+            {/* D64 §6.4: pitch bricks or pitchables into a batch. */}
+            {yeastProduct && (
+              <Button variant="outlined" onClick={() => setOpen('pitch')} disabled={!(Number(product.on_hand) > 0)} data-testid="product-pitch">
+                Pitch
+              </Button>
+            )}
             <Button variant="outlined" startIcon={<AddIcon />} onClick={() => setOpen('lot')} data-testid="product-add-lot">
               Add lot
             </Button>
@@ -536,7 +551,10 @@ export default function ProductPage() {
                     : formatQuantity(m.quantity, lotsById.get(m.lot_id)?.pack_name, lotsById.get(m.lot_id)?.pack_size, unit, mode)}
                 </TableCell>
                 <TableCell>{m.partner?.name ?? ''}</TableCell>
-                <TableCell>{m.note ?? ''}</TableCell>
+                <TableCell data-testid={`movement-note-${m.id}`}>
+                  {/* D64: a pitch names its batch, "→ Galactic #41". */}
+                  {[m.batch_id != null ? `→ ${batchLabel.get(m.batch_id) ?? `batch #${m.batch_id}`}` : null, m.note].filter(Boolean).join(' · ')}
+                </TableCell>
                 <TableCell>{m.entered_by?.name ?? ''}</TableCell>
               </TableRow>
             ))}
@@ -561,6 +579,7 @@ export default function ProductPage() {
         categoryKey={key}
         categoryId={product.category?.id}
         storedUnit={product.unit}
+        productForm={product.form}
         offer={offer ?? undefined}
       />
       <PriceDialog open={open === 'price'} onClose={close} offer={offer} unit={unit} />
@@ -568,6 +587,7 @@ export default function ProductPage() {
       <GrainLotDialog open={open === 'lot' && !!lot} onClose={close} product={product} lot={lot} movements={lot ? movements.filter((m) => m.lot_id === lot.id) : []} />
       <MovementDialog open={open === 'movement'} onClose={close} product={product} lots={lots} />
       <CountDialog open={open === 'count'} onClose={close} product={product} lots={lots} />
+      <PitchDialog open={open === 'pitch'} onClose={close} product={product} lots={lots} />
     </>
   )
 }
