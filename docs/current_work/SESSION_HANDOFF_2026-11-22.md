@@ -15,8 +15,9 @@
     30 offers, 26 prices, no lots). A second run added nothing. Prod now has 100 products,
     101 offers and 28 hop lots (409.6 lb), and `foreign_key_check` is clean.
 - **DEV is free** (conv 80 msg 109265). It runs `cec1228`, which has `develop`'s app code.
-- **Close-out PR:** a `-s ours` sync of `main` into `develop`, plus `CLAUDE.md` and this handoff.
-  After it merges, the next release PR is conflict-free.
+- **Closed out:** PR #92 merged (`45369b8`): a `-s ours` sync of `main` into `develop`, plus
+  `CLAUDE.md` and this handoff. `main` is an ancestor of `develop`, so the next release PR is
+  conflict-free. The release worktree is removed. No local branches have unpushed work.
 
 ## The D65 gate, in short
 
@@ -37,19 +38,28 @@ the QA reports beside it.
 
 ## Next
 
-1. Merge the close-out PR.
-2. **D64 (yeast):** scope it with Matt from the saved scoping decisions (the yeast lab role,
-   bricks and pitchables, harvests with generation, vessel and lb, recounts). Carry in gap 9.
-   Write the spec only when Matt says scoping is done.
-3. Then D63 (recipes on products, brew-day drawdown, °Plato, batch-log time, lint 4084).
+1. **D64 (yeast): start with scoping, in chat.** Nothing is written yet: no spec, plan or branch.
+   - Matt's decisions so far (2026-11-19) are in the lead's memory note `rockcut-d64-yeast-scoping`:
+     - product = lab + strain + form, with a new yeast-lab company role and a product code;
+     - dry 500 g bricks and liquid "X bbl pitchables", counted in whole units;
+     - temperature range and attenuation, with no expiry;
+     - harvests: date, generation, source batch, vessel YB1–YB4, weight in lb;
+     - cell counts (viable cells per mL in millions, viability %): a harvest can be recounted, and
+       the count used is the latest on or before the day it's used;
+     - grain permissions, and D61 purchasing.
+   - **Ask Matt only what's still open:** for example, the vessel list as a setting, and whether
+     pitching from a harvest waits for D63.
+   - Write the spec only when Matt says scoping is done, then branch from `develop` @ `45369b8`.
+   - **Carry in gap 9** (`prompts/d65_lead_decisions_5.md`).
+2. Then D63 (recipes on products, brew-day drawdown, °Plato, batch-log time, lint 4084).
 
 ## Notes
 
 - **QA folders:** the D62 and D65 folders are archived (briefs and reports only) in
   `~/src/rockcut-qa-briefs/`, and the working folders are deleted.
-- The release worktree `~/src/rockcut-release-20261122` can be removed after the close-out.
 - **herdr summary panes:** `qawatch.sh` and `pwwatch.sh` are portable `#!/bin/sh`. Launch them by
   path, never with `bash x.sh`, and read the pane once to confirm the summary line.
 - **The `rpc` gotcha:** a `fn … end` closure inside `rpc` fails. Use one
   `IO.inspect(Repo.query!(~s|…|).rows)` per query.
-- The builder (w1:p4) is idle, with nothing pending.
+- **Builder (w1:p4):** idle, with nothing pending. Clear it before D64 so it starts fresh.
+- **Lead panes:** the API server runs in w1:p2 (`rockcut_api`, `mix phx.server`), and the UI dev server runs on :5174.
