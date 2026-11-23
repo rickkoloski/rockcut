@@ -312,5 +312,41 @@ defmodule RockcutApi.Seeds.D64SeedsTest do
       refute Repo.get(Batch, batch.id)
       assert Repo.get!(RockcutApi.Ingredients.Movement, pitch.id).batch_id == nil
     end
+
+    test "lead decisions 1, item 5: a QA harvest of [SEED] Dry Ale into YB1 doesn't stop setup; YB1 reads empty, the entries stay" do
+      seed!()
+      {:ok, _} = RockcutApi.Seeds.Synthetic.setup()
+      yb1 = Repo.get_by!(Brink, name: "YB1")
+      dry = Repo.get_by!(Product, name: "SD-1")
+      brewer = Repo.get_by!(RockcutApi.Accounts.User, email: "brewer1@rockcut-test.com")
+
+      enos =
+        Repo.one!(from b in Batch, where: like(b.notes, "[SEED]%") and b.batch_number == "41")
+
+      {:ok, record} =
+        Harvests.harvest(
+          %{
+            "brink_id" => yb1.id,
+            "lb" => "12",
+            "occurred_on" => Date.to_iso8601(RockcutApi.Tasks.today()),
+            "batch_id" => enos.id,
+            "product_ids" => [dry.id],
+            "generation" => 1
+          },
+          %{brewer | on_device_id: nil}
+        )
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          assert {:ok, _} = RockcutApi.Seeds.Synthetic.setup()
+        end)
+
+      assert log =~ "YB1 held tagged yeast"
+      assert Harvests.open_record(yb1.id) == nil
+      assert Repo.get!(Harvest, record.id).status == "voided"
+      assert Repo.exists?(from e in Entry, where: e.harvest_id == ^record.id)
+      # The [SEED] data is back as it was.
+      assert yeast_state().yb2 |> elem(0) == "42"
+    end
   end
 end

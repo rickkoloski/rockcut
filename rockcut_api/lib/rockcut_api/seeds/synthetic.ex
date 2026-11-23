@@ -1037,6 +1037,7 @@ defmodule RockcutApi.Seeds.Synthetic do
 
     Repo.delete_all(from(o in SupplierOffer, where: o.id in ^offer_ids))
 
+    release_yeast_strains(product_ids)
     Repo.delete_all(from(p in Product, where: p.id in ^product_ids))
     Repo.delete_all(from(i in Ingredient, where: i.id in subquery(grain_ids)))
 
@@ -1338,6 +1339,46 @@ defmodule RockcutApi.Seeds.Synthetic do
   end
 
   ## Yeast (D64 Stop 4)
+
+  # D64 lead decisions 1, item 5: a tagged yeast product in an untagged
+  # brink's record (DEV QA harvests `[SEED] Dry Ale` into YB1–YB4) would hold
+  # the product's delete (`yeast_harvest_products` restricts it). Its strain
+  # rows go; a record left with no strain is voided, its entries kept (the
+  # brink reads empty). One log line per brink touched.
+  defp release_yeast_strains([]), do: :ok
+
+  defp release_yeast_strains(product_ids) do
+    alias RockcutApi.Yeast.{Harvest, HarvestProduct}
+
+    harvest_ids =
+      Repo.all(
+        from(l in HarvestProduct,
+          where: l.product_id in ^product_ids,
+          distinct: true,
+          select: l.harvest_id
+        )
+      )
+
+    Repo.delete_all(from(l in HarvestProduct, where: l.product_id in ^product_ids))
+
+    records =
+      Repo.all(from(h in Harvest, where: h.id in ^harvest_ids, preload: :brink))
+
+    for {brink, rs} <- Enum.group_by(records, & &1.brink) do
+      emptied =
+        for h <- rs,
+            not Repo.exists?(from(l in HarvestProduct, where: l.harvest_id == ^h.id)) do
+          h |> Ecto.Changeset.change(status: "voided") |> Repo.update!()
+        end
+
+      Logger.warning(
+        "Synthetic setup: #{brink.name} held tagged yeast; its strains were removed from " <>
+          "#{length(rs)} record(s), #{length(emptied)} voided (entries kept)."
+      )
+    end
+
+    :ok
+  end
 
   # Movements and brink entries naming one of `batches` (a query of ids) drop
   # the batch; the stock they record stays as it is.
