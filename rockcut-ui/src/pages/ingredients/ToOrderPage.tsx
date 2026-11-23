@@ -253,8 +253,7 @@ export default function ToOrderPage() {
                       />
                     )}
                   </TableCell>
-                  {/* D64 Stop 4: a long name never pushes the card sideways at 360 px. */}
-                  <TableCell sx={{ overflowWrap: 'anywhere' }}>
+                  <TableCell>
                     <Link component={RouterLink} to={`/ingredients/products/${r.product_id}`}>
                       {r.product.display_name}
                     </Link>
