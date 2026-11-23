@@ -72,7 +72,7 @@ test('gaps 2 and 9: an adjustment reads its direction; no Remove on a dump once 
   await expect(h.locator('[data-testid^="brink-history-remove-"]')).toHaveCount(0)
 })
 
-test('gap 3: Pitch and Add count say the first harvest day and wait; the day itself is fine', async ({ page }) => {
+test('gap 3: Pitch, Add count and Adjust weight say the first harvest day and wait; the day itself is fine', async ({ page }) => {
   const tb = await yeast.brink('YB-date')
   const a = await yeast.brewed('Galactic')
   const first = (await harvest(a, 'Yeast harvest', tb.id, '20')).due_on
@@ -80,6 +80,7 @@ test('gap 3: Pitch and Add count say the first harvest day and wait; the day its
   for (const [which, dialog, button] of [
     ['pitch', 'brink-pitch-dialog', 'Pitch'],
     ['count', 'brink-count-dialog', 'Save'],
+    ['adjust', 'brink-adjust-dialog', 'Save'],
   ]) {
     const d = await action(page, tb.id, which, dialog)
     const date = d.getByTestId(`brink-${which}-date`)
@@ -106,7 +107,7 @@ test('gap 5: a lot pitch is taken back from the product page and from the batch 
   await expect(page.getByTestId('quantity-toggle')).toHaveCount(0)
   await expect(page.getByRole('columnheader', { name: '$/brick' })).toHaveCount(2) // the offers' one and the lots' one
   await page.getByTestId(`offer-row-${offer.id}`).getByRole('button', { name: 'Edit offer' }).click()
-  await expect(page.getByRole('dialog')).toContainText('"brick · 1 brick (5 lb)"')
+  await expect(page.getByRole('dialog')).toContainText('"brick · 1 (5 lb)"')
   await page.getByRole('dialog').getByRole('button', { name: 'Cancel' }).click()
 
   await page.getByTestId(`movement-remove-${first}`).click()

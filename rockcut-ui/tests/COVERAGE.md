@@ -1534,4 +1534,7 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 11 deleting the count that ticked Count opens it again | LQA "gap 11" |
 | 12 renaming a brink renames its open tasks | LQA "gap 12" |
 | 13 a brand with batches or recipes isn't deleted, and says why | LQA "gap 13"; LQ "gap 13" |
+| Decisions 6: a retired brink's closing entry isn't removed ("YB2 is retired. Restore it first.", `can_remove` too); an un-check or Undo that would reopen a record there is refused | LQA "a retired brink" (4) |
+| Decisions 6: Adjust and Dump dated before the first harvest | LQA "Adjust and Dump…"; LQ "gap 3" (Adjust's dialog) |
+| Decisions 6: the offer hint reads as a saved offer, "brick · 1 (5 lb)" | LQ "gap 5: … gap 1" |
 | Obs.: an empty strain list, generation over 999, `[TEST-TEMP]` strain types | LQA "observations"; VL; SEED |

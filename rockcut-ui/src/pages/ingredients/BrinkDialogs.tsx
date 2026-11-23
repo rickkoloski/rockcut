@@ -169,6 +169,7 @@ export function AdjustBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClo
   const [version] = useState(brink.yeast?.lock_version)
   const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/adjust`)
   const lb = readLb(text, { zeroOk: true })
+  const early = beforeHarvestText(brink, date)
 
   const submit = async () => {
     if (lb.lb == null) return setError(lb.error ?? 'Enter the yeast weight now in lb')
@@ -177,8 +178,8 @@ export function AdjustBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClo
   }
 
   return (
-    <FormDialog open phone onClose={onClose} title={`Adjust weight · ${brink.name}`} onSubmit={submit} loading={pending} error={error} submitDisabled={!!lb.error} testId="brink-adjust-dialog">
-      <DateField value={date} onChange={setDate} testId="brink-adjust-date" />
+    <FormDialog open phone onClose={onClose} title={`Adjust weight · ${brink.name}`} onSubmit={submit} loading={pending} error={error} submitDisabled={!!lb.error || !!early} testId="brink-adjust-dialog">
+      <DateField value={date} onChange={setDate} testId="brink-adjust-date" min={brink.yeast?.first_harvested_on} error={early} />
       <DecimalInput
         decimals={2}
         label="Yeast weight now (lb)"

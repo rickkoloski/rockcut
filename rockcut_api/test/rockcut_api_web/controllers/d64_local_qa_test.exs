@@ -867,4 +867,73 @@ defmodule RockcutApiWeb.D64LocalQaTest do
              )
     end
   end
+
+  describe "lead decisions 6: a retired brink" do
+    defp retire!(b), do: Repo.update!(Ecto.Changeset.change(brink(b), active: false))
+    defp restore!(b), do: Repo.update!(Ecto.Changeset.change(brink(b), active: true))
+
+    for {how, action, params} <- [
+          {"dump", "dump", %{}},
+          {"adjustment to 0", "adjust", %{weight_lb: "0"}},
+          {"pitch of the rest", "pitch", %{lb: "30"}}
+        ] do
+      test "Remove of the closing #{how}: 409 and can_remove false while it's retired; allowed once restored",
+           c do
+        {batch, harvest} = brewed(c, "41")
+        fill!(c, harvest)
+
+        {200, _} =
+          act(c, unquote(action), Map.put(unquote(Macro.escape(params)), :batch_id, batch.id))
+
+        closing = latest(c.tb)
+        retire!(c.tb)
+
+        assert {409, %{"errors" => %{"base" => ["TB1 is retired. Restore it first."]}}} =
+                 req(c.brewer, :delete, "/api/yeast/entries/#{closing.id}")
+
+        agree!(c, %{{"harvested", false} => 1, {closing.kind, false} => 1})
+        assert Repo.get(Entry, closing.id) && record(c.tb) == nil
+
+        restore!(c.tb)
+        assert {200, _} = req(c.brewer, :delete, "/api/yeast/entries/#{closing.id}")
+      end
+    end
+
+    test "un-check and Undo that would reopen a record in it: 409, nothing changes; allowed once restored",
+         c do
+      {_, first} = brewed(c, "64")
+      fill!(c, first, %{yeast_lb: "40"})
+      second = second_step!(first)
+      %{"undo_token" => token} = fill!(c, second, %{yeast_lb: "9", yeast_brink_answer: "empty"})
+      new = record(c.tb)
+      # The settings refuse to retire a brink with yeast in it, so straight to the row.
+      retire!(c.tb)
+
+      for answer <- [uncomplete(c, second), undo(c, token)] do
+        assert {409, %{"errors" => %{"base" => ["TB1 is retired. Restore it first."]}}} = answer
+      end
+
+      assert record(c.tb).id == new.id and step(second).done_on
+      assert Enum.map(entries(), & &1.kind) == ["harvested", "adjusted", "harvested"]
+
+      restore!(c.tb)
+      assert {200, _} = uncomplete(c, second)
+      assert Decimal.eq?(Harvests.on_hand(record(c.tb)), 40)
+    end
+  end
+
+  describe "lead decisions 6: Adjust and Dump before the first harvest" do
+    test "the day before is refused with nothing written, the same day allowed", c do
+      {_, harvest} = brewed(c, "41")
+      fill!(c, harvest, %{done_on: iso(-2), answer: "move_only"})
+      says = "TB1's yeast was harvested #{Harvests.short(day(-2))}. Pick that day or later."
+
+      assert base(act(c, "adjust", %{weight_lb: "20", occurred_on: iso(-3)})) == says
+      assert base(act(c, "dump", %{occurred_on: iso(-3)})) == says
+      assert length(entries()) == 1 and record(c.tb)
+
+      assert {200, _} = act(c, "adjust", %{weight_lb: "20", occurred_on: iso(-2)})
+      assert {200, _} = act(c, "dump", %{occurred_on: iso(-2)})
+    end
+  end
 end

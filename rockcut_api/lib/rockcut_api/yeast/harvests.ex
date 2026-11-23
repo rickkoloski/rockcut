@@ -69,7 +69,8 @@ defmodule RockcutApi.Yeast.Harvests do
 
   @doc """
   Lead decisions 5 (gap 3, Matt): the refusal of a pitch or count dated `on`
-  before the record's first harvest, or nil. The Pitch and count actions ask;
+  before the record's first harvest, or nil. The Pitch, count, Adjust and Dump
+  actions ask (the last two: lead decisions 6);
   it isn't a rule of the entries themselves (D63's brew day must never be
   left unrecorded because of a yeast record).
   """
@@ -266,6 +267,8 @@ defmodule RockcutApi.Yeast.Harvests do
     with {:ok, on} <- date(attrs["occurred_on"]) do
       write(fn ->
         {brink, record} = held!(brink_id, attrs)
+        # Lead decisions 6: Dump, dated as Pitch is.
+        if error = before_harvest(brink, record, on), do: Repo.rollback(error)
         left = on_hand(record)
 
         entry =
@@ -295,6 +298,8 @@ defmodule RockcutApi.Yeast.Harvests do
          {:ok, on} <- date(attrs["occurred_on"]) do
       write(fn ->
         {brink, record} = held!(brink_id, attrs)
+        # Lead decisions 6: Adjust weight, dated as Pitch is.
+        if error = before_harvest(brink, record, on), do: Repo.rollback(error)
         left = on_hand(record)
         diff = Decimal.sub(weight, left)
 
@@ -487,6 +492,7 @@ defmodule RockcutApi.Yeast.Harvests do
         )
 
     if last && last.kind in ["adjusted"] && harvest_emptying?(last) do
+      unless voided.brink.active, do: refuse(retired(voided.brink))
       Repo.delete!(last)
 
       old
@@ -640,7 +646,7 @@ defmodule RockcutApi.Yeast.Harvests do
   @doc """
   Gap 9: why `entry` can't be removed, or nil: the one rule behind Remove and
   History's `can_remove` (who's asking is `Authz`'s). `facts`: the `record`,
-  its `brink` (name), `entries` and `counts`, and `newer` (the brink has a
+  its `brink`, `entries` and `counts`, and `newer` (the brink has a
   later record that isn't voided).
   """
   def remove_refusal(%Entry{} = entry, %{record: record, brink: brink} = facts) do
@@ -663,10 +669,16 @@ defmodule RockcutApi.Yeast.Harvests do
       record.status == "emptied" and facts.newer ->
         "#{brink.name} has been filled again since, so this can't be removed."
 
+      # Lead decisions 6: a retired brink holds no yeast, so nothing reopens in it.
+      record.status == "emptied" and not brink.active ->
+        retired(brink)
+
       true ->
         nil
     end
   end
+
+  defp retired(brink), do: "#{brink.name} is retired. Restore it first."
 
   defp removal_facts(record) do
     %{
