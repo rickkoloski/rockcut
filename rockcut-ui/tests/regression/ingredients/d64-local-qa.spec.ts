@@ -217,14 +217,105 @@ test('gaps 17, 20 and 21: a part shows what went into its parent; neither delete
 
   await page.goto(`/batches/${part.id}`)
   await expect(page.getByTestId('batch-yeast-pitched')).toContainText(`10 lb from ${src.name} · US-05 gen 1 · into #${b.batch_number}`)
-  for (const [id, says] of [
-    [part.id, "That's a part of a split. Undo the split to change it that way."],
-    [b.id, 'Undo the split first.'],
+  // Gap 22: the page and its question name the part.
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText(`#${b.batch_number}.${part.part_number}`)
+  for (const [id, label, says] of [
+    [part.id, `#${b.batch_number}.${part.part_number}`, "That's a part of a split. Undo the split to change it that way."],
+    [b.id, `#${b.batch_number}`, 'Undo the split first.'],
   ] as const) {
     await page.goto(`/batches/${id}`)
     await page.getByRole('button', { name: 'Delete Batch' }).click()
     const q = page.getByTestId('batch-page-delete-confirm')
+    await expect(q).toContainText(`delete batch "${label}"?`)
     await q.getByRole('button', { name: 'Delete' }).click()
     await expect(q.getByTestId('batch-page-delete-error')).toHaveText(says)
   }
+})
+
+test('gap 23: two people edit one count: the second save and a stale delete are refused, the input stays, reopening shows the change', async ({ page, browser }) => {
+  const tb = await yeast.brink('YB-two')
+  const a = await yeast.brewed('Galactic')
+  await harvest(a, 'Yeast harvest', tb.id, '20')
+  await addCount(tb.id)
+  const now = async () => (await history(tb.id))[0].counts[0]
+  const id = (await now()).id
+  const stale = 'Someone else changed this count since you opened it. Close and reopen it to see their change.'
+  const dialog = async (p: Page) => {
+    await p.getByTestId(`brink-history-count-edit-${id}`).click()
+    return p.getByTestId('brink-count-dialog')
+  }
+
+  const h = await action(page, tb.id, 'history', 'brink-history-dialog')
+  const ctx = await browser.newContext({ storageState: authFile('breweryMgr') })
+  const mgr = await ctx.newPage()
+  await action(mgr, tb.id, 'history', 'brink-history-dialog')
+  const mine = await dialog(page)
+  const theirs = await dialog(mgr)
+  await theirs.getByTestId('brink-count-cells').fill('700')
+  await theirs.getByTestId('brink-count-note').fill('recounted')
+  await theirs.getByRole('button', { name: 'Save' }).click()
+  await expect(theirs).toHaveCount(0)
+
+  await mine.getByTestId('brink-count-pct').fill('61')
+  await mine.getByRole('button', { name: 'Save' }).click()
+  await expect(mine).toContainText(stale)
+  await expect(mine.getByTestId('brink-count-pct')).toHaveValue('61')
+  // History behind it has the change; saving again is still refused.
+  await expect(h.getByTestId(`brink-history-count-${id}`)).toContainText('Count 700 M/mL · 92% · recounted')
+  const refused = page.waitForResponse((r) => r.url().includes(`/api/yeast/counts/${id}`) && r.request().method() === 'PUT')
+  await mine.getByRole('button', { name: 'Save' }).click()
+  expect((await refused).status()).toBe(409)
+  expect(await now()).toMatchObject({ viable_millions_per_ml: '700', viability_pct: '92', note: 'recounted' })
+  await mine.getByRole('button', { name: 'Cancel' }).click()
+
+  // Reopened: their values, and it saves.
+  const again = await dialog(page)
+  await expect(again.getByTestId('brink-count-cells')).toHaveValue('700')
+  await expect(again.getByTestId('brink-count-note')).toHaveValue('recounted')
+
+  // The manager's Delete, open meanwhile on the version before: refused too.
+  await mgr.getByTestId(`brink-history-count-delete-${id}`).click()
+  await again.getByTestId('brink-count-pct').fill('61')
+  await again.getByRole('button', { name: 'Save' }).click()
+  await expect(again).toHaveCount(0)
+  const q = mgr.getByTestId('brink-history-count-confirm')
+  await q.getByRole('button', { name: 'Delete' }).click()
+  await expect(q.getByTestId('brink-history-count-error')).toHaveText(stale)
+  expect((await now()).viability_pct).toBe('61')
+  await q.getByRole('button', { name: 'Cancel' }).click()
+  await mgr.getByTestId(`brink-history-count-delete-${id}`).click()
+  await expect(q).toContainText('(700 M/mL · 61%)')
+  await q.getByRole('button', { name: 'Delete' }).click()
+  await expect(q).toHaveCount(0)
+  expect((await history(tb.id))[0].counts).toHaveLength(0)
+  await ctx.close()
+})
+
+test('gap 24: a count moved across a harvest on top settles Recount due and the Count task, both ways', async ({ page }) => {
+  const tb = await yeast.brink('YB-move')
+  const a = await yeast.brewed('Galactic')
+  const first = (await harvest(a, 'Yeast harvest', tb.id, '20')).due_on
+  const api = await apiAs('brewer1')
+  const add = await api.post('/api/yeast/counts', { data: { brink_id: tb.id, counted_on: first, viable_millions_per_ml: '1200', viability_pct: '92' } })
+  expect(add.status()).toBe(201)
+  const id = (await history(tb.id))[0].counts[0].id
+  const top = (await harvest(a, 'Yeast harvest - #2', tb.id, '9', await brinkAnswer(tb.id, 'on_top'))).due_on
+  const move = async (to: string) => {
+    const h = await action(page, tb.id, 'history', 'brink-history-dialog')
+    await h.getByTestId(`brink-history-count-edit-${id}`).click()
+    const d = page.getByTestId('brink-count-dialog')
+    await d.getByTestId('brink-count-date').fill(to)
+    await d.getByRole('button', { name: 'Save' }).click()
+    await expect(d).toHaveCount(0)
+    await h.getByRole('button', { name: 'Close' }).click()
+  }
+  const row = page.getByTestId(`brink-row-${tb.id}`)
+  await page.goto('/ingredients/brinks')
+  await expect(row).toContainText('Recount due')
+  await move(top)
+  await expect(row).not.toContainText('Recount due')
+  expect((await brink(tb.id))!.recount_due).toBe(false)
+  await move(first)
+  await expect(row).toContainText('Recount due')
+  expect((await brink(tb.id))!.recount_due).toBe(true)
 })

@@ -633,7 +633,10 @@ export interface Batch {
   id: number
   brand_id: number
   brand: Brand | null
-  batch_number: string
+  /** Null for a planned batch and a split's part. */
+  batch_number: string | null
+  /** The batch page's own read: "#44", "#44.1", "P3"; "" when it's none of them. */
+  label?: string
   status: string
   actual_og: number | null
   actual_fg: number | null
@@ -1531,5 +1534,5 @@ export interface YeastHistoryRecord {
     /** Stop 3 (spec §8, A8): Remove is offered to this viewer (a pitch, dump or adjustment, the record's latest, theirs or a manager's). */
     can_remove?: boolean
   }[]
-  counts: { id: number; counted_on: string; viable_millions_per_ml: string; viability_pct: string; note: string | null; entered_by: { id: number; name: string } | null; can_change?: boolean }[]
+  counts: { id: number; counted_on: string; viable_millions_per_ml: string; viability_pct: string; note: string | null; lock_version: number; entered_by: { id: number; name: string } | null; can_change?: boolean }[]
 }

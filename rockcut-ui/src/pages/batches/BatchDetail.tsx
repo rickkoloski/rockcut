@@ -111,6 +111,9 @@ export default function BatchDetail() {
     return <CircularProgress />;
   }
 
+  // Gap 22: a part or a planned batch has no number of its own.
+  const name = batch.batch_number || batch.label || batch.brand?.name || 'Batch';
+
   const handleDelete = async () => {
     try {
       await deleteMutation.mutateAsync(batch.id);
@@ -126,9 +129,9 @@ export default function BatchDetail() {
         breadcrumbs={[
           { label: 'Home', to: '/' },
           { label: 'Batches', to: '/batches' },
-          { label: batch.batch_number },
+          { label: name },
         ]}
-        title={batch.batch_number}
+        title={name}
         toolbar={
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title="Edit Batch"><IconButton onClick={() => setEditOpen(true)}><EditIcon /></IconButton></Tooltip>
@@ -237,7 +240,7 @@ export default function BatchDetail() {
         onClose={() => setDeleteOpen(false)}
         onConfirm={handleDelete}
         title="Delete Batch"
-        message={`Are you sure you want to delete batch "${batch.batch_number}"? This cannot be undone.`}
+        message={`Are you sure you want to delete batch "${batch.label || name}"? This cannot be undone.`}
         loading={deleteMutation.isPending}
         testId="batch-page-delete-confirm"
       >

@@ -1373,6 +1373,9 @@ defmodule RockcutApiWeb.D64LocalQaTest do
       id
     end
 
+    # Remove and the tasks compare when things were entered, to the second.
+    defp aged!, do: for(x <- [Task, Entry, Count], do: backdate!(x, 10))
+
     defp due?(c) do
       due = brink_json(c, c.tb)["recount_due"]
       assert due == (open_tasks(c.tb) == [{"recount", "Count TB1"}])
@@ -1459,13 +1462,115 @@ defmodule RockcutApiWeb.D64LocalQaTest do
       refute due?(c)
     end
 
+    test "un-ticked by hand sticks through a note or value edit, until a count is added, deleted or re-dated",
+         c do
+      for change <- [
+            fn _ -> counted!(c, -1) end,
+            fn id -> {200, _} = put_count(c, id, %{counted_on: iso(-2)}) end
+          ] do
+        id = counted!(c, -1)
+        refute due?(c)
+        {200, _} = tick(c, last_task(c.tb, "recount"), "uncomplete")
+        {200, _} = put_count(c, id, %{note: "typo", viability_pct: "61", counted_on: iso(-1)})
+        assert due?(c)
+        change.(id)
+        refute due?(c)
+      end
+
+      {200, _} = tick(c, last_task(c.tb, "recount"), "uncomplete")
+      {204, _} = del_count(c, hd(count_ids()))
+      refute due?(c)
+    end
+
+    test "a count deleted or moved to before the harvest on an emptied record: due when Remove reopens it",
+         c do
+      counted!(c, -3)
+      on_top!(c, -2)
+      id = counted!(c, -1)
+      refute due?(c)
+      on = last_task(c.tb, "recount").due_on
+
+      aged!()
+      {200, _} = act(c, "dump", %{})
+      {200, _} = put_count(c, id, %{counted_on: iso(-3)})
+      refute due?(c)
+      {200, _} = req(c.brewer, :delete, "/api/yeast/entries/#{latest(c.tb).id}")
+      assert due?(c)
+      assert last_task(c.tb, "recount").due_on == on
+
+      {200, _} = put_count(c, id, %{counted_on: iso(-1)})
+      refute due?(c)
+      aged!()
+      {200, _} = act(c, "dump", %{})
+      {204, _} = del_count(c, id)
+      {200, _} = req(c.brewer, :delete, "/api/yeast/entries/#{latest(c.tb).id}")
+      assert due?(c)
+    end
+
+    test "moved to after the harvest on an emptied record: not due when Remove reopens it", c do
+      id = counted!(c, -3)
+      on_top!(c, -2)
+      aged!()
+      {200, _} = act(c, "dump", %{})
+      {200, _} = put_count(c, id, %{counted_on: iso(-1)})
+      {200, _} = req(c.brewer, :delete, "/api/yeast/entries/#{latest(c.tb).id}")
+      refute due?(c)
+    end
+
+    test "the same when un-checking a harvest after This brink is empty reopens it", c do
+      id = counted!(c, -3)
+      second = second_step!(c.first)
+      aged!()
+      fill!(c, second, %{done_on: iso(-1), yeast_brink_answer: "empty", answer: "move_only"})
+      {204, _} = del_count(c, id)
+      {200, _} = uncomplete(c, second)
+      assert due?(c)
+    end
+
+    test "ticked by hand stays ticked through an empty brink and a Remove", c do
+      {200, _} = tick(c, last_task(c.tb, "recount"), "complete")
+      id = counted!(c, -1)
+      aged!()
+      {200, _} = act(c, "dump", %{})
+      {204, _} = del_count(c, id)
+      {200, _} = req(c.brewer, :delete, "/api/yeast/entries/#{latest(c.tb).id}")
+      refute due?(c)
+    end
+
     test "an empty brink has no task, whatever happens to its old counts", c do
       id = counted!(c, -1)
+      aged!()
       {200, _} = act(c, "dump", %{})
       {200, _} = put_count(c, id, %{counted_on: iso(-4)})
       {204, _} = del_count(c, id)
       assert open_tasks(c.tb) == [{"clean", "Clean TB1"}]
       refute brink_json(c, c.tb)["recount_due"]
+    end
+  end
+
+  describe "lead decisions 8, gap 22" do
+    test "the batch page's label: a part's, a numbered batch's, a planned one's", c do
+      {batch, _} = brewed(c, "41")
+
+      label = fn b ->
+        req(c.brewer, :get, "/api/batches/#{b.id}") |> elem(1) |> get_in(["data", "label"])
+      end
+
+      assert label.(batch) == "#41"
+      [p1, p2] = split!(c, batch)
+      assert [label.(p1), label.(p2)] == ["#41.1", "#41.2"]
+
+      {201, %{"data" => %{"batches" => [%{"id" => id}]}}} =
+        req(c.brewer, :post, "/api/production/batches", %{
+          brand_id: batch.brand_id,
+          template_id: c.template.id,
+          brew_on: iso(60),
+          volume_bbl: "20",
+          tank_ids: [nil]
+        })
+
+      assert label.(%{id: id}) == "P1"
+      assert label.(Repo.insert!(%Batch{brand_id: batch.brand_id, status: "planned"})) == ""
     end
   end
 

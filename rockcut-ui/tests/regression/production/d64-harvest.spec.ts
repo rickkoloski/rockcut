@@ -199,7 +199,7 @@ test('Mark not done: refused once counted (with the sentence); allowed before, a
   // The count goes (its maker), and then it un-checks: the brink is empty again.
   const counts = (await history(tb.id))[0].counts
   const api = await apiAs('brewer1')
-  for (const c of counts) expect((await api.delete(`/api/yeast/counts/${c.id}`)).status()).toBe(204)
+  for (const c of counts) expect((await api.delete(`/api/yeast/counts/${c.id}?lock_version=${c.lock_version}`)).status()).toBe(204)
   await page.reload()
   await dot(page, s.id).click()
   await page.getByTestId('step-uncheck').click()

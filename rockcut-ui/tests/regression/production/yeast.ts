@@ -121,7 +121,7 @@ export class Yeast {
         const records = (await (await brewer.get(`/api/yeast/brinks/${id}/history`)).json()).data as {
           status: string
           entries: HistoryEntry[]
-          counts: { id: number }[]
+          counts: { id: number; lock_version: number }[]
         }[]
         const live = records.filter((r) => r.status !== 'voided')
         const last = live.flatMap((r) => r.entries).sort((a, b) => b.id - a.id)[0]
@@ -135,7 +135,7 @@ export class Yeast {
         }
         const count = live.flatMap((r) => r.counts)[0]
         if (count) {
-          const res = await mgr.delete(`/api/yeast/counts/${count.id}`)
+          const res = await mgr.delete(`/api/yeast/counts/${count.id}?lock_version=${count.lock_version}`)
           if (res.ok()) continue
         }
         break
@@ -189,7 +189,7 @@ export async function brinkAnswer(id: number, answer: 'on_top' | 'empty') {
   return { yeast_brink_answer: answer, yeast_record_id: y.harvest_id, yeast_lock_version: y.lock_version }
 }
 
-export async function history(id: number): Promise<{ status: string; entries: HistoryEntry[]; counts: { id: number; can_change?: boolean }[] }[]> {
+export async function history(id: number): Promise<{ status: string; entries: HistoryEntry[]; counts: { id: number; lock_version: number; viable_millions_per_ml: string; viability_pct: string; note: string | null; can_change?: boolean }[] }[]> {
   return (await (await (await apiAs('brewer1')).get(`/api/yeast/brinks/${id}/history`)).json()).data
 }
 

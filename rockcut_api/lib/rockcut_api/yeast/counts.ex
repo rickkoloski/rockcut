@@ -61,8 +61,10 @@ defmodule RockcutApi.Yeast.Counts do
           |> Repo.update()
           |> ok_or_rollback()
 
-        dated_now = if updated.counted_on != count.counted_on, do: updated.id
-        settle!(record, updated, dated_now, actor)
+        # A note or value edit leaves the task (an un-tick by hand sticks).
+        if updated.counted_on != count.counted_on,
+          do: settle!(record, updated, updated.id, actor)
+
         updated
       end,
       mode: :immediate
@@ -95,23 +97,26 @@ defmodule RockcutApi.Yeast.Counts do
     end
   end
 
-  # Lead decisions 8 (gap 24): the brink's Count task after any write to a
-  # count (`touched`, as it was before a delete). Recount isn't needed: an
-  # open Count task is ticked, for a count that covers the harvests; a count
-  # that no longer does (or has gone) hands the task it ticked to one that
-  # does. Needed, and none open: the task `touched` ticked opens again. One
-  # ticked by hand, or before a later Count task, stays. An empty brink: nothing.
-  defp settle!(%Harvest{status: "in_brink"} = record, %Count{} = touched, dated_now, actor) do
+  # Lead decisions 8 (gap 24): the brink's Count task after a count (`touched`,
+  # as it was before a delete) is added, deleted or given another day.
+  # Covered: an open Count task is ticked, for a count that covers the
+  # harvests; a count that no longer does (or has gone) hands the task it
+  # ticked to one that does. Not covered, and none open: the task `touched`
+  # ticked opens again. One ticked by hand, or before a later Count task,
+  # stays. A record emptied since has no task: the same answer goes on its
+  # closing entry, whose `closed_recount_due_on` opens one if it reopens.
+  defp settle!(%Harvest{status: status} = record, %Count{} = touched, dated_now, actor)
+       when status in ["in_brink", "emptied"] do
     covering = Harvests.covering(record, dated_now)
-    open = BoardTasks.open_task(record.brink_id, "recount")
+    due = due(record)
 
     cond do
-      Harvests.recount_needed?(record, dated_now) ->
-        if is_nil(open), do: reopen!(record, touched, actor)
+      covering == [] ->
+        task = is_nil(due) && ticked_task(record, touched)
+        if task, do: due_again!(record, task, actor)
 
-      open ->
-        task = BoardTasks.tick!(record.brink, "recount", actor)
-        ticked!(covering, touched, task.id)
+      due ->
+        counted!(record, covering, touched, actor)
 
       touched.ticked_task_id ->
         ticked!(covering, touched, touched.ticked_task_id)
@@ -124,6 +129,43 @@ defmodule RockcutApi.Yeast.Counts do
   end
 
   defp settle!(_record, _touched, _dated_now, _actor), do: :ok
+
+  # What says a count is due: the open task, or the closing entry that keeps its day.
+  defp due(%Harvest{status: "in_brink"} = r), do: BoardTasks.open_task(r.brink_id, "recount")
+  defp due(record), do: closing(record).closed_recount_due_on
+
+  defp closing(record),
+    do:
+      Repo.one!(
+        from e in Entry, where: e.harvest_id == ^record.id, order_by: [desc: e.id], limit: 1
+      )
+
+  defp due_again!(%Harvest{status: "in_brink"}, task, actor) do
+    dept = Repo.get!(RockcutApi.Accounts.Department, task.department_id)
+
+    case Tasks.uncomplete(dept, task, actor) do
+      {:ok, _} -> :ok
+      {:error, reason} -> Repo.rollback(reason)
+    end
+  end
+
+  defp due_again!(record, task, _actor) do
+    closed_due!(record, task.due_on || task.completed_on)
+
+    Repo.update_all(from(c in Count, where: c.ticked_task_id == ^task.id),
+      set: [ticked_task_id: nil]
+    )
+  end
+
+  defp counted!(%Harvest{status: "in_brink"} = record, covering, touched, actor) do
+    task = BoardTasks.tick!(record.brink, "recount", actor)
+    ticked!(covering, touched, task.id)
+  end
+
+  defp counted!(record, _covering, _touched, _actor), do: closed_due!(record, nil)
+
+  defp closed_due!(record, on),
+    do: record |> closing() |> Ecto.Changeset.change(closed_recount_due_on: on) |> Repo.update!()
 
   # The task's tick is the touched count's if it covers, else the last entered that does.
   defp ticked!(covering, touched, task_id) do
@@ -142,26 +184,13 @@ defmodule RockcutApi.Yeast.Counts do
     end
   end
 
-  defp reopen!(_record, %Count{ticked_task_id: nil}, _actor), do: :ok
+  # The done Count task `touched` ticked, unless the brink has had a later one.
+  defp ticked_task(_record, %Count{ticked_task_id: nil}), do: nil
 
-  defp reopen!(record, %Count{ticked_task_id: task_id}, actor) do
+  defp ticked_task(record, %Count{ticked_task_id: task_id}) do
     task = Repo.get(Task, task_id)
-
-    later? =
-      Repo.exists?(
-        from t in Task,
-          where:
-            t.yeast_brink_id == ^record.brink_id and t.yeast_kind == "recount" and t.id > ^task_id
-      )
-
-    if task && Task.done?(task) && not later? do
-      dept = Repo.get!(RockcutApi.Accounts.Department, task.department_id)
-
-      case Tasks.uncomplete(dept, task, actor) do
-        {:ok, _} -> :ok
-        {:error, reason} -> Repo.rollback(reason)
-      end
-    end
+    latest = Harvests.latest_count_task_id(record)
+    if task && Task.done?(task) && task_id == latest, do: task
   end
 
   # Lead decisions 8 (gap 23): the count now, when it's the version the

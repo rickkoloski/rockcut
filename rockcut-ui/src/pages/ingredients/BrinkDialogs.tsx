@@ -136,6 +136,8 @@ export function CountBrinkDialog({ brink, count, first, onClose }: { brink: Yeas
   const [cells, setCells] = useState(count ? String(Number(count.viable_millions_per_ml)) : '')
   const [pct, setPct] = useState(count ? String(Number(count.viability_pct)) : '')
   const [note, setNote] = useState(count?.note ?? '')
+  // Lead decisions 8 (gap 23): the version this dialog opened, kept if History refetches under it.
+  const [version] = useState(count?.lock_version)
   const [error, setError] = useState<string | null>(null)
   const create = useApiCreate('/api/yeast/counts', { invalidateKeys: BRINK_KEYS })
   const update = useApiUpdate((id) => `/api/yeast/counts/${id}`, { invalidateKeys: BRINK_KEYS })
@@ -153,11 +155,12 @@ export function CountBrinkDialog({ brink, count, first, onClose }: { brink: Yeas
     if (date > coloradoToday()) return setError(FUTURE_DATE)
     const body = { counted_on: date, viable_millions_per_ml: c.value, viability_pct: v.value, note: note.trim() || null }
     try {
-      if (count) await update.mutateAsync({ id: count.id, ...body })
+      if (count) await update.mutateAsync({ id: count.id, lock_version: version, ...body })
       else await create.mutateAsync({ brink_id: brink.id, ...body })
       onClose()
     } catch (err) {
-      // Pitched or deleted since: History shows it as it is now.
+      // Changed, pitched or deleted since: the input stays, History behind it
+      // shows the count now (Save stays busy until it has), so reopening does too.
       if (count) await qc.invalidateQueries({ queryKey: ['yeast_brink_history'] })
       setError(parseApiError(err))
     }
@@ -287,7 +290,7 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
   const [editing, setEditing] = useState<{ count: HistoryCount; first?: string } | null>(null)
   const [deleting, setDeleting] = useState<HistoryCount | null>(null)
   const qc = useQueryClient()
-  const removeCount = useApiDelete((id) => `/api/yeast/counts/${id}`, { invalidateKeys: BRINK_KEYS })
+  const removeCount = useApiDelete((id) => `/api/yeast/counts/${id}?lock_version=${deleting?.lock_version}`, { invalidateKeys: BRINK_KEYS })
   const [removeError, setRemoveError] = useState<string | null>(null)
   const remove = useApiDelete((id) => `/api/yeast/entries/${id}`, { invalidateKeys: BRINK_KEYS })
   usePhoneBackCloses(true, onClose)

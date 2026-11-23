@@ -598,31 +598,19 @@ defmodule RockcutApi.Yeast.Harvests do
   Whether the open record has a harvest no count covers (`covering/2`): the
   one rule for the Count task and Recount due (lead decisions 8, gap 24).
   """
-  def recount_needed?(record, dated_now \\ nil)
+  def recount_needed?(%Harvest{status: "in_brink"} = record),
+    do: harvests(record.id) != [] and covering(record) == []
 
-  def recount_needed?(%Harvest{status: "in_brink"} = record, dated_now),
-    do: harvests(record.id) != [] and covering(record, dated_now) == []
-
-  def recount_needed?(_record, _dated_now), do: false
+  def recount_needed?(_record), do: false
 
   @doc """
   The record's counts that cover all its harvests, the last entered first: a
   count dated after each, or the same day and since it. Since it on the same
-  day means entered since, given that day in this write (`dated_now`, a
-  count's id), or holding the tick of the brink's latest Count task (a count
-  given that day by an earlier edit; a harvest since has a newer task).
+  day means entered since, or given that day in this write (`dated_now`, a
+  count's id).
   """
   def covering(%Harvest{} = record, dated_now \\ nil) do
     harvests = harvests(record.id)
-
-    latest_task =
-      Repo.one(
-        from t in Tasks.Task,
-          where: t.yeast_brink_id == ^record.brink_id and t.yeast_kind == "recount",
-          order_by: [desc: t.id],
-          limit: 1,
-          select: t.id
-      )
 
     Repo.all(
       from c in Count,
@@ -630,16 +618,33 @@ defmodule RockcutApi.Yeast.Harvests do
         order_by: [desc: c.inserted_at, desc: c.id]
     )
     |> Enum.filter(fn c ->
-      since? = c.id == dated_now or (c.ticked_task_id && c.ticked_task_id == latest_task)
-
       Enum.all?(harvests, fn e ->
         case Date.compare(c.counted_on, e.occurred_on) do
           :gt -> true
-          :eq -> since? || DateTime.compare(c.inserted_at, e.inserted_at) != :lt
+          :eq -> c.id == dated_now or DateTime.compare(c.inserted_at, e.inserted_at) != :lt
           :lt -> false
         end
       end)
     end)
+  end
+
+  @doc """
+  The brink's latest Count task, nil with none; for an emptied record the
+  latest from before it emptied (a later one is the next record's).
+  """
+  def latest_count_task_id(%Harvest{} = record) do
+    tasks =
+      from t in Tasks.Task,
+        where: t.yeast_brink_id == ^record.brink_id and t.yeast_kind == "recount",
+        order_by: [desc: t.id],
+        limit: 1,
+        select: t.id
+
+    closed_at =
+      record.status == "emptied" &&
+        Repo.one(from e in Entry, where: e.harvest_id == ^record.id, select: max(e.inserted_at))
+
+    Repo.one(if closed_at, do: where(tasks, [t], t.inserted_at < ^closed_at), else: tasks)
   end
 
   defp harvests(record_id),

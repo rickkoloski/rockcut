@@ -1543,4 +1543,8 @@ Fruit, spices, sugars and consumables moved to **D65** (spec's split Amendment);
 | 18 a Clean or Count task that opens again takes the brink's name now, unless retitled | LQA "gap 18" |
 | 19 a has-yeast answer about yeast that changed is asked again with the brink now; nothing written; old clients asked again | LQA "gap 19"; vitest `brinkAnswer`; d64-harvest "gap 19" |
 | 20, 21 the batch page's delete of a part or of a batch with parts is refused in Production's words; no other key holds a batch | LQA "gaps 20 and 21"; LQ "gaps 17, 20 and 21" |
+| 22 (decisions 8) the batch page's title and delete question name a part "#44.1" or a planned batch, never null | LQA "gap 22"; LQ "gaps 17, 20 and 21" |
+| 23 counts carry `lock_version`: a stale, missing or malformed one on Edit or Delete → 409, nothing written; the dialog keeps its input, History refetches, reopening has the change | LQA "gap 23"; LQ "gap 23" (two sessions) |
+| 24 adding, deleting or re-dating a count settles the Count task one way; a note edit leaves it (an un-tick by hand sticks); an emptied record's count decides what Remove or an un-check brings back | LQA "gap 24"; LQ "gap 24" |
+| 16 (decisions 8) the closing adjustment isn't before the old record's latest count | LQA "gap 16: … dates past a count" |
 | Obs.: an empty strain list, generation over 999, `[TEST-TEMP]` strain types | LQA "observations"; VL; SEED |
