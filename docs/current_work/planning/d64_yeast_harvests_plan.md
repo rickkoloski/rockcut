@@ -201,7 +201,7 @@ reference seeds are `priv/repo/seeds/{grain,hop,d65}_reference.exs`, idempotent,
     title "Count YB2" / "Clean YB2", unassigned, `position: Tasks.next_position/2`;
   - `tick!(brink, kind, actor)`;
   - **hook into the task-completion path** (`Tasks`): ticking a `clean` task clears the brink's
-    `dirty`; ticking a `recount` task does nothing else. Un-ticking a clean task doesn't re-dirty.
+    `dirty`; ticking a `recount` task does nothing else. Un-ticking the latest Clean task dirties an empty brink (decisions 3; first planned as no change).
 
 ### The step check-off
 

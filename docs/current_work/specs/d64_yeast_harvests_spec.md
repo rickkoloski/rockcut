@@ -668,3 +668,31 @@ on-hand amounts were given).
 - **A14:** the lab is spelled **White Labs**.
 - **A15:** "Germon" is a typo for **German Monk Lager**. "Vermont Ale Modi" stays as given.
 - **A2:** each product is its own strain (see above).
+
+## Amendment (2026-11-23): decisions made during the build and local QA
+
+Where this differs from a section above, this wins. Sources: `prompts/d64_lead_decisions_1.md` to
+`_6.md`, `stepwise_results/d64_local_qa_report.md`. **(Matt)** marks Matt's answers; the rest are
+lead calls.
+
+1. **Un-check lock (§5.4):** a harvest can't be un-checked after a pitch, count, dump or adjustment
+   entered since it.
+2. **Un-check after "This brink is empty" (Matt, gap 7):** the closed record reopens as it was, and
+   its Count task comes back if one was due. With harvests on top of the new record, this happens
+   when the last of them is un-checked.
+3. **Dates (Matt, gap 3):** a pitch or count dated before the open record's first harvest is
+   refused. Adjust and Dump follow the same rule (lead, decisions 6).
+4. **D63 (Matt):** a brew is always saved. A pitch with no matching yeast record is marked "Yeast
+   source needed". The refusal in 3 lives in the Pitch and count actions, not where brew day writes.
+5. **Dirty marks:** un-checking a "record anyway" harvest makes the brink dirty again unless it was
+   cleaned since. Un-ticking the brink's latest Clean task dirties an empty brink.
+6. **Remove:** History offers Remove only where the API allows it. A purchased-yeast pitch can be
+   removed by its maker or a manager, unless the product was counted after it. A closing entry on a
+   retired brink can't be removed.
+7. **Count tasks:** emptying a brink deletes its open Count task (Remove brings it back). Deleting
+   the count that ticked a task reopens it. An empty brink is never due.
+8. **Renaming a brink** renames its open tasks, except one someone retitled.
+9. **Deletes:** a batch with yeast records, and a brand with batches or recipes, are refused with a
+   sentence.
+10. **Totals** are shown per unit, with a label. `GET /api/yeast/batches` and `/:id` serve the batch
+    page. Migration 13 stores what a harvest cleared or closed, for 2, 5 and 7.
