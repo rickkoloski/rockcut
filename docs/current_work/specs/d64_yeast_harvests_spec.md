@@ -696,3 +696,13 @@ lead calls.
    sentence.
 10. **Totals** are shown per unit, with a label. `GET /api/yeast/batches` and `/:id` serve the batch
     page. Migration 13 stores what a harvest cleared or closed, for 2, 5 and 7.
+11. **Splits (recheck gap 17):** a part counts its parent's pitches plus its own. **Batch deletes (20,
+    21):** a part of a split, or a batch with parts, is refused in Production's sentences.
+12. **"This brink is empty" with an earlier date (16):** the closing adjustment takes the later of the
+    check-off date and the old record's latest entry; the harvest keeps its own date.
+13. **Stale answers (19):** an answer about yeast that has changed since is not used; the dialog asks
+    again.
+14. **Counts (15):** History has Edit and Delete, shown where the API allows them. Ticking a Count task
+    by hand clears Recount due; a count isn't required before use.
+15. A brink is never dirty while it holds yeast; un-checking one of two harvests moves the dirty mark
+    to the one left in the brink (14).
