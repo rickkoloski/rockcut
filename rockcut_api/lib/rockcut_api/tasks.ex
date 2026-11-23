@@ -644,6 +644,8 @@ defmodule RockcutApi.Tasks do
       task = fetch!(dept, id)
 
       if Task.done?(task) do
+        RockcutApi.Yeast.BoardTasks.reopening!(task)
+
         reopened =
           task
           |> Task.completion_changeset(%{
@@ -655,6 +657,8 @@ defmodule RockcutApi.Tasks do
           |> Ecto.Changeset.put_change(:position, reopen_position(task))
           |> Repo.update()
           |> ok_or_rollback()
+
+        RockcutApi.Yeast.BoardTasks.uncompleted!(reopened)
 
         log!(reopened, "uncompleted", actor, %{
           "completed_on" => iso(task.completed_on),

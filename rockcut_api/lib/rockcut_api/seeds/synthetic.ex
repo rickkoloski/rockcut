@@ -1041,6 +1041,20 @@ defmodule RockcutApi.Seeds.Synthetic do
     Repo.delete_all(from(p in Product, where: p.id in ^product_ids))
     Repo.delete_all(from(i in Ingredient, where: i.id in subquery(grain_ids)))
 
+    # D64 lead decisions 3: tagged strain types nothing else uses any more.
+    Repo.delete_all(
+      from(t in RockcutApi.Yeast.StrainType,
+        where:
+          like(t.name, ^pattern) and
+            t.id not in subquery(
+              from(i in Ingredient,
+                where: not is_nil(i.yeast_strain_type_id),
+                select: i.yeast_strain_type_id
+              )
+            )
+      )
+    )
+
     # D65: tagged subcategories (Other Consumables takes new ones) that hold
     # no ingredients any more, children before parents.
     tagged_categories =

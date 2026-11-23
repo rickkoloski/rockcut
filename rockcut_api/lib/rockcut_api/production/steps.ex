@@ -955,7 +955,12 @@ defmodule RockcutApi.Production.Steps do
       "lb" => attrs["yeast_lb"],
       "occurred_on" => Date.to_iso8601(done_on),
       "batch_id" => step.batch_id,
-      "product_ids" => blank(attrs["yeast_product_ids"]) || (defaults && defaults.product_ids),
+      # An empty list is an answer (422 "Pick the strain"); only a missing one takes the default.
+      "product_ids" =>
+        if(attrs["yeast_product_ids"] == nil,
+          do: defaults && defaults.product_ids,
+          else: attrs["yeast_product_ids"]
+        ),
       "generation" => blank(attrs["yeast_generation"]) || (defaults && defaults.generation),
       "note" => note,
       "production_step_id" => step.id,

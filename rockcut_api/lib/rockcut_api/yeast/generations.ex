@@ -21,7 +21,7 @@ defmodule RockcutApi.Yeast.Generations do
   alias RockcutApi.Repo
   alias RockcutApi.Ingredients.{Catalog, Movement, Product, Products}
   alias RockcutApi.Production.Step
-  alias RockcutApi.Yeast.{Entry, Harvest, Rules}
+  alias RockcutApi.Yeast.{Entry, Harvest, LotPitches, Rules}
 
   @doc """
   D64 Stop 4: which of `batch_ids` have yeast pitched into them (a lot's
@@ -122,8 +122,9 @@ defmodule RockcutApi.Yeast.Generations do
   occurred_on}`. Harvested: `%{lb, brink, occurred_on, on_top, strains,
   generation, note}`, one per pull in order. Dumped: `%{done_on, note}`.
   """
-  def batch_page(batch_id) do
+  def batch_page(batch_id, user) do
     lot_rows = lot_pitches(batch_id)
+    removable = LotPitches.removable_ids(Enum.map(lot_rows, &elem(&1, 1)), user)
     brink_rows = brink_pitches(batch_id)
 
     harvests =
@@ -149,6 +150,9 @@ defmodule RockcutApi.Yeast.Generations do
 
         %{
           source: "lot",
+          movement_id: m.id,
+          # Gap 5: `user` may take this pitch back.
+          can_remove: MapSet.member?(removable, m.id),
           occurred_on: m.occurred_on,
           quantity: Decimal.abs(m.quantity),
           unit: p && Products.unit_label(p),

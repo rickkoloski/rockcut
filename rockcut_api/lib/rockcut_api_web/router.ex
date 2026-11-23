@@ -249,6 +249,7 @@ defmodule RockcutApiWeb.Router do
     resources "/yeast/counts", YeastCountController, only: [:create, :update, :delete]
     # D64 Stop 3: Remove a mistaken pitch, dump or adjustment (spec §8, A8)
     delete "/yeast/entries/:id", YeastBrinkController, :remove_entry
+    delete "/yeast/pitches/:id", YeastController, :remove_pitch
     post "/ingredient_products/:id/pitch", IngredientProductController, :pitch
 
     # D61 purchasing, malt contracts, reorder and totals

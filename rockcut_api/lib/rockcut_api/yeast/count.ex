@@ -15,6 +15,8 @@ defmodule RockcutApi.Yeast.Count do
     field :note, :string
 
     belongs_to :harvest, RockcutApi.Yeast.Harvest
+    # Lead decisions 3, gap 11: the Count task this count ticked.
+    belongs_to :ticked_task, RockcutApi.Tasks.Task
     belongs_to :entered_by, RockcutApi.Accounts.User
 
     timestamps(type: :utc_datetime)

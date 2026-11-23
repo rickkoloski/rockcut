@@ -10,13 +10,14 @@ defmodule RockcutApi.Yeast.BoardTasks do
 
   Ticking a `clean` task, by any path (`Tasks.complete/5`, a person or the
   brewhouse device), clears the brink's dirty mark (`completed!/1`). Un-ticking
-  it doesn't dirty it again.
+  the brink's latest one dirties it again while it's still empty
+  (`uncompleted!/1`, lead decisions 3, gap 10).
   """
   import Ecto.Query
 
   alias RockcutApi.{Accounts, Repo, Tasks}
   alias RockcutApi.Tasks.{Event, Task}
-  alias RockcutApi.Yeast.Brink
+  alias RockcutApi.Yeast.{Brink, Count, Entry, Harvest}
 
   @kinds ~w(recount clean)
 
@@ -100,8 +101,98 @@ defmodule RockcutApi.Yeast.BoardTasks do
     from(b in Brink, where: b.id == ^id)
     |> Repo.update_all(set: [dirty: false, dirty_since: nil])
 
+    # Cleaned since: un-checking a harvest that cleared the mark leaves it clean (gap 8).
+    Repo.update_all(
+      from(e in Entry,
+        join: h in assoc(e, :harvest),
+        where: h.brink_id == ^id and e.cleared_dirty
+      ),
+      set: [cleared_dirty: false]
+    )
+
     :ok
   end
 
   def completed!(_task), do: :ok
+
+  @doc """
+  The hook before a brink's task is un-ticked: `:yeast_task_open` (rolled
+  back) while the brink has another open task of its kind.
+  """
+  def reopening!(%Task{yeast_kind: kind, yeast_brink_id: id})
+      when kind in @kinds and not is_nil(id) do
+    if open_task(id, kind), do: Repo.rollback(:yeast_task_open)
+    :ok
+  end
+
+  def reopening!(_task), do: :ok
+
+  @doc """
+  The hook after a task is un-ticked. A brink's latest Clean task: the brink
+  is dirty again if it's empty, since the day it emptied (gap 10); with yeast
+  in it, un-checking the harvest that cleared the mark puts it back (gap 8).
+  A Count task: no count ticked it any more (gap 11).
+  """
+  def uncompleted!(%Task{yeast_kind: "clean", yeast_brink_id: id} = task) when not is_nil(id) do
+    later? =
+      Repo.exists?(
+        from t in Task,
+          where: t.yeast_brink_id == ^id and t.yeast_kind == "clean" and t.id > ^task.id
+      )
+
+    record =
+      Repo.one(
+        from h in Harvest,
+          where: h.brink_id == ^id and h.status != "voided",
+          order_by: [desc: h.id],
+          limit: 1
+      )
+
+    unless later? do
+      if record do
+        Repo.update_all(
+          from(e in Entry,
+            where: e.harvest_id == ^record.id and not is_nil(e.cleared_dirty_since)
+          ),
+          set: [cleared_dirty: true]
+        )
+      end
+
+      unless record && record.status == "in_brink" do
+        since = (record && record.emptied_on) || task.due_on || Tasks.today()
+
+        Repo.update_all(from(b in Brink, where: b.id == ^id and not b.dirty),
+          set: [dirty: true, dirty_since: since]
+        )
+      end
+    end
+
+    :ok
+  end
+
+  def uncompleted!(%Task{yeast_kind: "recount", id: id}) do
+    Repo.update_all(from(c in Count, where: c.ticked_task_id == ^id), set: [ticked_task_id: nil])
+    :ok
+  end
+
+  def uncompleted!(_task), do: :ok
+
+  @doc """
+  Gap 12: the brink's open tasks take its new name, as `actor`. One whose
+  title a person changed keeps it.
+  """
+  def renamed!(%Brink{name: same}, %Brink{name: same}, _actor), do: :ok
+
+  def renamed!(%Brink{} = old, %Brink{} = new, actor) do
+    for kind <- @kinds,
+        task = open_task(old.id, kind),
+        task.title == title(old, kind) do
+      case Tasks.update_one(task, %{"title" => title(new, kind)}, actor) do
+        {:ok, _} -> :ok
+        {:error, reason} -> Repo.rollback(reason)
+      end
+    end
+
+    :ok
+  end
 end

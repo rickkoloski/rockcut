@@ -16,7 +16,7 @@ defmodule RockcutApiWeb.YeastController do
   alias RockcutApi.{Authz, Repo}
   alias RockcutApi.Brewing.Batch
   alias RockcutApi.Production.Batches
-  alias RockcutApi.Yeast.Generations
+  alias RockcutApi.Yeast.{Generations, LotPitches}
 
   action_fallback RockcutApiWeb.FallbackController
 
@@ -50,12 +50,20 @@ defmodule RockcutApiWeb.YeastController do
     with :ok <- allow(conn),
          id when is_integer(id) <- RockcutApi.Ids.parse(id) || {:error, :not_found},
          %Batch{} <- Repo.get(Batch, id) || {:error, :not_found} do
-      json(conn, %{data: Generations.batch_page(id)})
+      json(conn, %{data: Generations.batch_page(id, conn.assigns.current_user)})
     end
   end
 
-  defp allow(conn) do
-    if Authz.can?(conn.assigns.current_user, :read, :ingredients),
+  @doc "DELETE /api/yeast/pitches/:id: take back a mistaken lot pitch (`LotPitches`)."
+  def remove_pitch(conn, %{"id" => id}) do
+    with :ok <- allow(conn, :write),
+         {:ok, _} <- LotPitches.remove(id, conn.assigns.current_user) do
+      send_resp(conn, :no_content, "")
+    end
+  end
+
+  defp allow(conn, action \\ :read) do
+    if Authz.can?(conn.assigns.current_user, action, :ingredients),
       do: :ok,
       else: {:error, :forbidden}
   end

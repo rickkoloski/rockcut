@@ -58,6 +58,30 @@ defmodule RockcutApi.Yeast.Harvests do
       Decimal.new(0)
   end
 
+  @doc "The day the record's yeast was first harvested (the earliest `harvested` date), or nil."
+  def first_harvested_on(record_id) do
+    Repo.one(
+      from e in Entry,
+        where: e.harvest_id == ^record_id and e.kind in ["harvested"],
+        select: min(e.occurred_on)
+    )
+  end
+
+  @doc """
+  Lead decisions 5 (gap 3, Matt): the refusal of a pitch or count dated `on`
+  before the record's first harvest, or nil. The Pitch and count actions ask;
+  it isn't a rule of the entries themselves (D63's brew day must never be
+  left unrecorded because of a yeast record).
+  """
+  def before_harvest(brink, record, on) do
+    first = first_harvested_on(record.id)
+
+    if first && Date.before?(on, first) do
+      {:invalid,
+       %{base: ["#{brink.name}'s yeast was harvested #{short(first)}. Pick that day or later."]}}
+    end
+  end
+
   @doc "A record's strains (product ids, in order)."
   def product_ids(harvest_id) do
     Repo.all(
@@ -105,7 +129,7 @@ defmodule RockcutApi.Yeast.Harvests do
 
         open =
           if open && attrs["brink_answer"] == "empty" do
-            empty_for_harvest!(open, on, actor)
+            empty_for_harvest!(brink, open, on, actor)
             nil
           else
             open
@@ -123,7 +147,9 @@ defmodule RockcutApi.Yeast.Harvests do
             production_step_id: attrs["production_step_id"],
             product_ids: ids,
             generation: generation,
-            note: note(attrs["note"])
+            note: note(attrs["note"]),
+            cleared_dirty: brink.dirty,
+            cleared_dirty_since: if(brink.dirty, do: brink.dirty_since || on)
           },
           actor
         )
@@ -137,8 +163,11 @@ defmodule RockcutApi.Yeast.Harvests do
 
   # "This brink is empty" (A6): the old record closes at 0 with the note; no
   # dirty mark and no Clean task, since the brink is being filled now.
-  defp empty_for_harvest!(record, on, actor) do
+  # Its Count task goes too (the harvest opens its own), its due day kept on
+  # the adjustment (gap 4).
+  defp empty_for_harvest!(brink, record, on, actor) do
     left = on_hand(record)
+    task = BoardTasks.open_task(brink.id, "recount")
 
     if Decimal.gt?(left, 0) do
       insert_entry!(
@@ -147,11 +176,14 @@ defmodule RockcutApi.Yeast.Harvests do
           kind: "adjusted",
           quantity_lb: Decimal.negate(left),
           occurred_on: on,
-          note: "Emptied when the #{short(on)} harvest went in"
+          note: "Emptied when the #{short(on)} harvest went in",
+          closed_recount_due_on: task && (task.due_on || on)
         },
         actor
       )
     end
+
+    delete_open_task!(brink, "recount", actor)
 
     record
     |> Ecto.Changeset.change(
@@ -204,25 +236,27 @@ defmodule RockcutApi.Yeast.Harvests do
          {:ok, batch_id} <- batch(attrs["batch_id"]) do
       write(fn ->
         {brink, record} = held!(brink_id, attrs)
+        if error = before_harvest(brink, record, on), do: Repo.rollback(error)
         left = on_hand(record)
 
         if Decimal.gt?(lb, left), do: Repo.rollback(has(brink, left))
 
-        insert_entry!(
-          record,
-          %{
-            kind: "pitched",
-            quantity_lb: Decimal.negate(lb),
-            occurred_on: on,
-            batch_id: batch_id,
-            product_ids: product_ids(record.id),
-            generation: record.generation,
-            note: note(attrs["note"])
-          },
-          actor
-        )
+        entry =
+          insert_entry!(
+            record,
+            %{
+              kind: "pitched",
+              quantity_lb: Decimal.negate(lb),
+              occurred_on: on,
+              batch_id: batch_id,
+              product_ids: product_ids(record.id),
+              generation: record.generation,
+              note: note(attrs["note"])
+            },
+            actor
+          )
 
-        after_draw!(brink, record, Decimal.sub(left, lb), on, actor)
+        after_draw!(brink, record, entry, Decimal.sub(left, lb), on, actor)
       end)
     end
   end
@@ -234,18 +268,19 @@ defmodule RockcutApi.Yeast.Harvests do
         {brink, record} = held!(brink_id, attrs)
         left = on_hand(record)
 
-        insert_entry!(
-          record,
-          %{
-            kind: "dumped",
-            quantity_lb: Decimal.negate(left),
-            occurred_on: on,
-            note: note(attrs["note"])
-          },
-          actor
-        )
+        entry =
+          insert_entry!(
+            record,
+            %{
+              kind: "dumped",
+              quantity_lb: Decimal.negate(left),
+              occurred_on: on,
+              note: note(attrs["note"])
+            },
+            actor
+          )
 
-        after_draw!(brink, record, Decimal.new(0), on, actor)
+        after_draw!(brink, record, entry, Decimal.new(0), on, actor)
       end)
     end
   end
@@ -266,18 +301,19 @@ defmodule RockcutApi.Yeast.Harvests do
         if Decimal.eq?(diff, 0),
           do: Repo.rollback(invalid(:weight_lb, "#{brink.name} has #{lb_text(left)} already"))
 
-        insert_entry!(
-          record,
-          %{
-            kind: "adjusted",
-            quantity_lb: diff,
-            occurred_on: on,
-            note: note(attrs["note"])
-          },
-          actor
-        )
+        entry =
+          insert_entry!(
+            record,
+            %{
+              kind: "adjusted",
+              quantity_lb: diff,
+              occurred_on: on,
+              note: note(attrs["note"])
+            },
+            actor
+          )
 
-        after_draw!(brink, record, weight, on, actor)
+        after_draw!(brink, record, entry, weight, on, actor)
       end)
     end
   end
@@ -297,9 +333,16 @@ defmodule RockcutApi.Yeast.Harvests do
   end
 
   # After a draw: bump the version; at 0 the record closes, the brink is
-  # dirty and its Clean task opens, due that day.
-  defp after_draw!(brink, record, left, on, actor) do
+  # dirty and its Clean task opens, due that day. Its open Count task goes
+  # (an empty brink can't be counted); the closing entry keeps its due day, so
+  # removing the entry brings it back (gap 4).
+  defp after_draw!(brink, record, entry, left, on, actor) do
     if Decimal.eq?(left, 0) do
+      if task = BoardTasks.open_task(brink.id, "recount") do
+        entry |> Ecto.Changeset.change(closed_recount_due_on: task.due_on || on) |> Repo.update!()
+        delete_open_task!(brink, "recount", actor)
+      end
+
       record =
         record
         |> Ecto.Changeset.change(
@@ -409,7 +452,10 @@ defmodule RockcutApi.Yeast.Harvests do
               |> Repo.update!()
             end
 
+          put_back_dirty!(record, entry)
+
           unless recount_needed?(record), do: delete_open_task!(record.brink, "recount", actor)
+          if record.status == "voided", do: restore_emptied!(record, actor)
           :ok
         end)
         |> case do
@@ -417,6 +463,76 @@ defmodule RockcutApi.Yeast.Harvests do
           error -> error
         end
     end
+  end
+
+  # Lead decisions 4 (gap 7, Matt): the record "This brink is empty" closed
+  # when `voided` began is open again as it was: its adjustment goes, and its
+  # Count task comes back if one was due. Closing it and starting the next
+  # were one write, and voiding the next reopens it at once, so it's the
+  # brink's last record that isn't voided; one that ends any other way than
+  # with that adjustment was pitched out, dumped or adjusted to 0.
+  defp restore_emptied!(voided, actor) do
+    old =
+      Repo.one(
+        from h in Harvest,
+          where: h.brink_id == ^voided.brink_id and h.id < ^voided.id and h.status != "voided",
+          order_by: [desc: h.id],
+          limit: 1
+      )
+
+    last =
+      old && old.status == "emptied" &&
+        Repo.one(
+          from e in Entry, where: e.harvest_id == ^old.id, order_by: [desc: e.id], limit: 1
+        )
+
+    if last && last.kind in ["adjusted"] && harvest_emptying?(last) do
+      Repo.delete!(last)
+
+      old
+      |> Ecto.Changeset.change(
+        status: "in_brink",
+        emptied_on: nil,
+        lock_version: old.lock_version + 1
+      )
+      |> Repo.update!()
+
+      if due = last.closed_recount_due_on,
+        do: BoardTasks.open!(voided.brink, "recount", due, actor)
+    end
+
+    :ok
+  end
+
+  # Gap 8: what the harvest cleared. With its record voided the brink is as
+  # dirty as it was; with other harvests still in it, the first of them
+  # carries the mark (the brink was never cleaned under it either).
+  defp put_back_dirty!(_record, %Entry{cleared_dirty_since: nil}), do: :ok
+
+  defp put_back_dirty!(%Harvest{status: "voided"} = record, entry) do
+    if entry.cleared_dirty do
+      record.brink
+      |> Ecto.Changeset.change(dirty: true, dirty_since: entry.cleared_dirty_since)
+      |> Repo.update!()
+    end
+
+    :ok
+  end
+
+  defp put_back_dirty!(record, entry) do
+    Repo.one!(
+      from e in Entry,
+        where: e.harvest_id == ^record.id and e.kind in ["harvested"],
+        order_by: e.id,
+        limit: 1
+    )
+    |> Ecto.Changeset.change(
+      cleared_dirty: entry.cleared_dirty,
+      cleared_dirty_since: entry.cleared_dirty_since
+    )
+    |> Repo.update!()
+
+    :ok
   end
 
   # Anything but a harvest on the record after `entry`, or a count entered
@@ -432,8 +548,8 @@ defmodule RockcutApi.Yeast.Harvests do
       )
   end
 
-  # The open record still has a harvest with no count entered since.
-  defp recount_needed?(%Harvest{status: "in_brink", id: id}) do
+  @doc "Whether the open record has a harvest with no count entered since."
+  def recount_needed?(%Harvest{status: "in_brink", id: id}) do
     last_count =
       Repo.one(from c in Count, where: c.harvest_id == ^id, select: max(c.inserted_at))
 
@@ -445,7 +561,7 @@ defmodule RockcutApi.Yeast.Harvests do
     end
   end
 
-  defp recount_needed?(_record), do: false
+  def recount_needed?(_record), do: false
 
   defp delete_open_task!(brink, kind, actor) do
     case BoardTasks.open_task(brink.id, kind) do
@@ -488,35 +604,7 @@ defmodule RockcutApi.Yeast.Harvests do
 
       unless Authz.can?(actor, :change, {:yeast_record, entry}), do: Repo.rollback(:forbidden)
 
-      cond do
-        entry.kind in ["harvested"] ->
-          refuse("A harvest is removed by un-checking its Yeast harvest step.")
-
-        entry.kind in ["adjusted"] and harvest_emptying?(entry) ->
-          refuse("That adjustment came with a harvest, so it can't be removed.")
-
-        Repo.exists?(from e in Entry, where: e.harvest_id == ^record.id and e.id > ^entry.id) ->
-          refuse("Only the latest entry on #{brink.name} can be removed.")
-
-        Repo.exists?(
-          from c in Count,
-            where: c.harvest_id == ^record.id and c.inserted_at >= ^entry.inserted_at
-        ) ->
-          refuse("#{brink.name} has been counted since, so this can't be removed.")
-
-        record.status == "emptied" and
-            Repo.exists?(
-              from h in Harvest,
-                where: h.brink_id == ^brink.id and h.id > ^record.id and h.status != "voided"
-            ) ->
-          refuse("#{brink.name} has been filled again since, so this can't be removed.")
-
-        record.status == "voided" ->
-          refuse("That harvest was un-checked, so its record can't change.")
-
-        true ->
-          :ok
-      end
+      if sentence = remove_refusal(entry, removal_facts(record)), do: refuse(sentence)
 
       Repo.delete!(entry)
 
@@ -531,7 +619,17 @@ defmodule RockcutApi.Yeast.Harvests do
           |> Repo.update!()
 
         brink |> Ecto.Changeset.change(dirty: false, dirty_since: nil) |> Repo.update!()
-        delete_open_task!(brink, "clean", actor)
+
+        # A Clean task from before this yeast went in (a harvest recorded
+        # anyway) is still to do.
+        unless Repo.exists?(
+                 from e in Entry, where: e.harvest_id == ^record.id and e.cleared_dirty
+               ),
+               do: delete_open_task!(brink, "clean", actor)
+
+        if due = entry.closed_recount_due_on,
+          do: BoardTasks.open!(brink, "recount", due, actor)
+
         record
       else
         record |> Ecto.Changeset.change(lock_version: record.lock_version + 1) |> Repo.update!()
@@ -539,12 +637,49 @@ defmodule RockcutApi.Yeast.Harvests do
     end)
   end
 
-  @doc false
-  def get_entry(id) do
-    case RockcutApi.Ids.parse(to_string(id)) do
-      nil -> nil
-      id -> Repo.get(Entry, id)
+  @doc """
+  Gap 9: why `entry` can't be removed, or nil: the one rule behind Remove and
+  History's `can_remove` (who's asking is `Authz`'s). `facts`: the `record`,
+  its `brink` (name), `entries` and `counts`, and `newer` (the brink has a
+  later record that isn't voided).
+  """
+  def remove_refusal(%Entry{} = entry, %{record: record, brink: brink} = facts) do
+    cond do
+      entry.kind in ["harvested"] ->
+        "A harvest is removed by un-checking its Yeast harvest step."
+
+      entry.kind in ["adjusted"] and harvest_emptying?(entry) ->
+        "That adjustment came with a harvest, so it can't be removed."
+
+      record.status == "voided" ->
+        "That harvest was un-checked, so its record can't change."
+
+      Enum.any?(facts.entries, &(&1.id > entry.id)) ->
+        "Only the latest entry on #{brink.name} can be removed."
+
+      Enum.any?(facts.counts, &(DateTime.compare(&1.inserted_at, entry.inserted_at) != :lt)) ->
+        "#{brink.name} has been counted since, so this can't be removed."
+
+      record.status == "emptied" and facts.newer ->
+        "#{brink.name} has been filled again since, so this can't be removed."
+
+      true ->
+        nil
     end
+  end
+
+  defp removal_facts(record) do
+    %{
+      record: record,
+      brink: record.brink,
+      entries: Repo.all(from e in Entry, where: e.harvest_id == ^record.id),
+      counts: Repo.all(from c in Count, where: c.harvest_id == ^record.id),
+      newer:
+        Repo.exists?(
+          from h in Harvest,
+            where: h.brink_id == ^record.brink_id and h.id > ^record.id and h.status != "voided"
+        )
+    }
   end
 
   # "Emptied when the 11/22 harvest went in" (A6): written with a harvest,
@@ -715,6 +850,7 @@ defmodule RockcutApi.Yeast.Harvests do
   defp generation(v) do
     case Integer.parse(to_string(v || "")) do
       {n, ""} when n >= 1 and n <= 999 -> {:ok, n}
+      {n, ""} when n > 999 -> {:error, invalid(:generation, "must be 999 or less")}
       _ -> {:error, invalid(:generation, "must be 1 or more")}
     end
   end

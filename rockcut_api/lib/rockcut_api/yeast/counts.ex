@@ -13,8 +13,9 @@ defmodule RockcutApi.Yeast.Counts do
   """
   import Ecto.Query
 
-  alias RockcutApi.{Authz, Repo}
-  alias RockcutApi.Yeast.{BoardTasks, Brink, Count, Entry, Harvests}
+  alias RockcutApi.{Authz, Repo, Tasks}
+  alias RockcutApi.Tasks.Task
+  alias RockcutApi.Yeast.{BoardTasks, Brink, Count, Entry, Harvest, Harvests}
 
   @doc "Add a count to the brink's yeast (`brink_id`, `counted_on`, the two values, `note`)."
   def create(attrs, actor) do
@@ -29,11 +30,14 @@ defmodule RockcutApi.Yeast.Counts do
         count =
           %Count{harvest_id: record.id, entered_by_id: actor.id}
           |> Count.changeset(attrs)
+          |> not_before_harvest!(brink, record)
           |> Repo.insert()
           |> ok_or_rollback()
 
-        BoardTasks.tick!(brink, "recount", actor)
-        count
+        case BoardTasks.tick!(brink, "recount", actor) do
+          nil -> count
+          task -> count |> Ecto.Changeset.change(ticked_task_id: task.id) |> Repo.update!()
+        end
       end,
       mode: :immediate
     )
@@ -44,21 +48,78 @@ defmodule RockcutApi.Yeast.Counts do
     Repo.transaction(
       fn ->
         changeable!(count, actor)
-        count |> Count.changeset(attrs) |> Repo.update() |> ok_or_rollback()
+        record = Repo.get!(Harvest, count.harvest_id) |> Repo.preload(:brink)
+
+        count
+        |> Count.changeset(attrs)
+        |> not_before_harvest!(record.brink, record)
+        |> Repo.update()
+        |> ok_or_rollback()
       end,
       mode: :immediate
     )
   end
 
-  @doc "Delete a count, on the same terms as a change."
+  @doc """
+  Delete a count, on the same terms as a change. The Count task it ticked
+  opens again unless another count follows the latest harvest (gap 11).
+  """
   def delete(%Count{} = count, actor) do
     Repo.transaction(
       fn ->
         changeable!(count, actor)
         Repo.delete!(count)
+        reopen_task!(count, actor)
+        count
       end,
       mode: :immediate
     )
+  end
+
+  # Lead decisions 5 (gap 3): the day, when it's given or changed.
+  defp not_before_harvest!(changeset, brink, record) do
+    with {:ok, %Date{} = on} <- Ecto.Changeset.fetch_change(changeset, :counted_on),
+         {:invalid, _} = error <- Harvests.before_harvest(brink, record, on) do
+      Repo.rollback(error)
+    else
+      _ -> changeset
+    end
+  end
+
+  # Another count still covers the harvest: it answers for the task now.
+  defp reopen_task!(%Count{ticked_task_id: nil}, _actor), do: :ok
+
+  defp reopen_task!(%Count{ticked_task_id: task_id, harvest_id: harvest_id}, actor) do
+    record = Repo.get!(Harvest, harvest_id)
+    task = Repo.get(Task, task_id)
+
+    cond do
+      is_nil(task) or not Task.done?(task) or record.status != "in_brink" ->
+        :ok
+
+      not Harvests.recount_needed?(record) ->
+        Repo.one!(
+          from c in Count,
+            where: c.harvest_id == ^harvest_id,
+            order_by: [desc: c.inserted_at, desc: c.id],
+            limit: 1
+        )
+        |> Ecto.Changeset.change(ticked_task_id: task_id)
+        |> Repo.update!()
+
+        :ok
+
+      BoardTasks.open_task(record.brink_id, "recount") ->
+        :ok
+
+      true ->
+        dept = Repo.get!(RockcutApi.Accounts.Department, task.department_id)
+
+        case Tasks.uncomplete(dept, task, actor) do
+          {:ok, _} -> :ok
+          {:error, reason} -> Repo.rollback(reason)
+        end
+    end
   end
 
   def get(id), do: Repo.get(Count, id)

@@ -16,6 +16,12 @@ defmodule RockcutApi.Yeast.Entry do
     field :generation, :integer
     field :product_ids, {:array, :integer}
     field :note, :string
+    # Lead decisions 3, gap 8: a harvest into a dirty brink cleared its mark
+    # (false again once the brink was cleaned), and since when it was dirty.
+    field :cleared_dirty, :boolean, default: false
+    field :cleared_dirty_since, :date
+    # Gap 4: the entry that emptied the brink deleted its open Count task, due then.
+    field :closed_recount_due_on, :date
 
     belongs_to :harvest, RockcutApi.Yeast.Harvest
     belongs_to :batch, RockcutApi.Brewing.Batch

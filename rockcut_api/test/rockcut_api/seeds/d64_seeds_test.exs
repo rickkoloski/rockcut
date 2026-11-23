@@ -348,5 +348,18 @@ defmodule RockcutApi.Seeds.D64SeedsTest do
       # The [SEED] data is back as it was.
       assert yeast_state().yb2 |> elem(0) == "42"
     end
+
+    test "lead decisions 3: cleanup_temp takes [TEST-TEMP] strain types nothing else uses; others stay" do
+      seed!()
+      temp = Repo.insert!(%StrainType{name: "[TEST-TEMP] Check type", position: 90})
+      used = Repo.insert!(%StrainType{name: "[TEST-TEMP] Used type", position: 91})
+      ale = Repo.get_by!(Ingredient, name: "Chico Ale")
+      Repo.update!(Ecto.Changeset.change(ale, yeast_strain_type_id: used.id))
+
+      assert :ok = RockcutApi.Seeds.Synthetic.cleanup_temp()
+      refute Repo.get(StrainType, temp.id)
+      assert Repo.get(StrainType, used.id)
+      assert Repo.get_by(StrainType, name: "Ale")
+    end
   end
 end

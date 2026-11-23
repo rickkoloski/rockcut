@@ -32,7 +32,8 @@ defmodule RockcutApi.Yeast.Brinks do
     %Brink{} |> Brink.changeset(attrs) |> Repo.insert()
   end
 
-  def update(%Brink{} = brink, attrs) do
+  @doc "Change the settings; a new name goes on its open Count and Clean tasks too (gap 12)."
+  def update(%Brink{} = brink, attrs, actor) do
     Repo.transaction(
       fn ->
         changeset = Brink.changeset(brink, attrs)
@@ -43,7 +44,7 @@ defmodule RockcutApi.Yeast.Brinks do
         end
 
         case Repo.update(changeset) do
-          {:ok, b} -> b
+          {:ok, b} -> tap(b, &BoardTasks.renamed!(brink, &1, actor))
           {:error, cs} -> Repo.rollback(cs)
         end
       end,
@@ -129,7 +130,8 @@ defmodule RockcutApi.Yeast.Brinks do
         dirty: b.dirty,
         dirty_since: b.dirty_since,
         has_history: MapSet.member?(with_history, b.id),
-        recount_due: MapSet.member?(kinds, "recount"),
+        # Gap 4: an empty brink is never due a count.
+        recount_due: record != nil and MapSet.member?(kinds, "recount"),
         clean_due: MapSet.member?(kinds, "clean"),
         yeast:
           record &&
@@ -228,7 +230,7 @@ defmodule RockcutApi.Yeast.Brinks do
               step_id: e.production_step_id,
               # Stop 3 (spec §8): what Remove may take out, before who's asking
               # (`Harvests.remove_entry/2` decides; the controller adds `can_remove`).
-              removable: removable?(h, e)
+              removable: removable?(brink, h, e, records)
             }
           end),
         counts:
@@ -246,15 +248,17 @@ defmodule RockcutApi.Yeast.Brinks do
     end)
   end
 
-  # The record's latest entry, a pitch, dump or adjustment a person made, on
-  # a record that isn't voided, with no count since; a newer record is the
-  # write's check.
-  defp removable?(%Harvest{status: status, entries: entries, counts: counts}, %Entry{} = e) do
-    status != "voided" and e.kind in ~w(pitched dumped adjusted) and
-      e.id == entries |> Enum.map(& &1.id) |> Enum.max() and
-      not Enum.any?(counts, &(DateTime.compare(&1.inserted_at, e.inserted_at) != :lt)) and
-      not (e.kind in ["adjusted"] and is_binary(e.note) and
-             String.starts_with?(e.note, "Emptied when the "))
+  # `Harvests.remove_refusal/2`, the rule Remove itself uses (gap 9).
+  defp removable?(brink, %Harvest{} = record, %Entry{} = entry, records) do
+    facts = %{
+      record: record,
+      brink: brink,
+      entries: record.entries,
+      counts: record.counts,
+      newer: Enum.any?(records, &(&1.id > record.id and &1.status != "voided"))
+    }
+
+    is_nil(Harvests.remove_refusal(entry, facts))
   end
 
   # Strain names by product id: the lab's code ("US-05", spec §5.3), else the short name.

@@ -326,9 +326,31 @@ defmodule RockcutApi.Brewing do
     end)
   end
 
+  @doc """
+  Delete a brand. One with batches or recipes is refused (422): they
+  restrict the delete (since Feb; a 500 until D64 lead decisions 3, gap 13).
+  """
   def delete_brand(%Brand{} = brand) do
-    Repo.delete(brand)
+    uses =
+      for {schema, word} <- [{Batch, "batch"}, {Recipe, "recipe"}],
+          n = Repo.aggregate(from(x in schema, where: x.brand_id == ^brand.id), :count),
+          n > 0,
+          do: "#{n} #{plural(word, n)}"
+
+    case uses do
+      [] ->
+        Repo.delete(brand)
+
+      uses ->
+        {:error,
+         {:invalid,
+          %{base: ["#{brand.name} has #{Enum.join(uses, " and ")}, so it can't be deleted."]}}}
+    end
   end
+
+  defp plural(word, 1), do: word
+  defp plural("batch", _), do: "batches"
+  defp plural(word, _), do: word <> "s"
 
   # ── Recipes ────────────────────────────────────────────────────────
 

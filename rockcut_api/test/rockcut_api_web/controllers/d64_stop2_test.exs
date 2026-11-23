@@ -378,7 +378,7 @@ defmodule RockcutApiWeb.D64Stop2Test do
       assert task.completed_by_id == c.brewer.id
     end
 
-    test "ticking Clean TB2 on the Brewery board clears the dirty mark; un-ticking doesn't dirty it again",
+    test "ticking Clean TB2 on the Brewery board clears the dirty mark; un-ticking dirties it again while it's empty (lead decisions 3)",
          c do
       {200, _} = post(c, c.tb, "dump", %{"occurred_on" => iso(today())})
 
@@ -392,11 +392,12 @@ defmodule RockcutApiWeb.D64Stop2Test do
       refute Repo.get!(Brink, c.tb.id).dirty
 
       {200, _} = req(c.brewer2, :post, "/api/boards/brewery/tasks/#{task.id}/uncomplete", %{})
-      refute Repo.get!(Brink, c.tb.id).dirty
+      assert %{dirty: true, dirty_since: since} = Repo.get!(Brink, c.tb.id)
+      assert since == today()
     end
 
     test "ticking another task leaves the brink dirty", c do
-      {200, _} = post(c, c.tb, "dump", %{"occurred_on" => iso(today())})
+      Repo.update!(Ecto.Changeset.change(c.tb, dirty: true, dirty_since: today()))
 
       count =
         Repo.one!(

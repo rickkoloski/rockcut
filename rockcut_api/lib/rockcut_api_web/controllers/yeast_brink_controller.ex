@@ -71,7 +71,7 @@ defmodule RockcutApiWeb.YeastBrinkController do
   def update(conn, %{"id" => id} = params) do
     with :ok <- allow(conn, :manage, :yeast_settings),
          %{} = brink <- Brinks.get(id) || {:error, :not_found},
-         {:ok, brink} <- Brinks.update(brink, Map.delete(params, "id")) do
+         {:ok, brink} <- Brinks.update(brink, Map.delete(params, "id"), conn.assigns.current_user) do
       json(conn, %{data: one(brink.id)})
     end
   end
