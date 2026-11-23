@@ -139,6 +139,10 @@ export const COUNT_WORDS: Record<string, string> = { tablets: 'tablet', bricks: 
 /** D65 Stop 3 (Stop 2 LEAD note 7): a unit after "$/" is singular: "$0.1055/tablet", "$76.99/brick", "$1.54/lb". */
 export const perUnitLabel = (unit: string | null | undefined) => (unit && COUNT_WORDS[unit]) || (unit ?? 'lb')
 
+/** D64: a pack of one that is the unit itself (a brick of 1 brick), so packs and units are the same count. */
+export const packIsUnit = (name: string | null | undefined, size: string | number | null | undefined, unit: string | null | undefined) =>
+  isCountUnit(unit) && Number(size) === 1 && packPlural(name) === unit
+
 /** Whole-number units: `each` (D62 §3.5) and its labels, "tablets" (D65 §4.3), "bricks" and "pitchables" (D64). */
 export const isCountUnit = (unit: string | null | undefined) => unit === 'each' || (!!unit && unit in COUNT_WORDS)
 

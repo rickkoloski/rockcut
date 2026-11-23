@@ -391,6 +391,8 @@ export interface InventoryMovement {
   purchase_order_id?: number | null
   /** D64 §4.6: the batch a pitch of purchased yeast went into. */
   batch_id?: number | null
+  /** Lead decisions 3, gap 5: a yeast pitch this viewer may take back. */
+  can_remove?: boolean
   entered_by: { id: number; name: string } | null
   inserted_at: string
 }

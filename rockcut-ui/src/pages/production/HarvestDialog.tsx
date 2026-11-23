@@ -61,7 +61,7 @@ export default function HarvestDialog({ stepName, batchLabel, yeast, onSend, onC
   const harvesting = form.outcome === 'harvested'
   const brink = yeast.brinks.find((b) => b.id === form.brinkId) ?? null
   const lb = readLb(form.lb)
-  const generationError = form.generation.trim() !== '' && readGeneration(form.generation) == null ? 'A whole number, 1 or more' : null
+  const generationError = form.generation.trim() !== '' && readGeneration(form.generation) == null ? (Number(form.generation) > 999 ? '999 or less' : 'A whole number, 1 or more') : null
   const asked = yeast.defaults == null
 
   // A changed brink is a new question: earlier answers were about the old one.

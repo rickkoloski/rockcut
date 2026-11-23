@@ -44,6 +44,24 @@ export function brinkStateText(b: Pick<YeastBrink, 'name' | 'dirty' | 'dirty_sin
   return `${b.name} · ${lbText(b.yeast.on_hand_lb)} ${yeastText(b.yeast)}`
 }
 
+/**
+ * A History entry's amount (gap 2): "Pitched 10 lb"; an adjustment says which
+ * way and from what, "Adjusted −7 lb (40 → 33)". `entries` are the record's, oldest first.
+ */
+export function entryAmountText(entry: { id: number; kind: string; quantity_lb: string }, entries: { id: number; quantity_lb: string }[], label: string): string {
+  const q = Number(entry.quantity_lb)
+  if (entry.kind !== 'adjusted') return `${label} ${lbText(Math.abs(q))}`
+  const n = (v: number) => lbText(Math.round(v * 100) / 100).replace(/ lb$/, '')
+  const before = entries.filter((e) => e.id < entry.id).reduce((sum, e) => sum + Number(e.quantity_lb), 0)
+  return `${label} ${q < 0 ? '−' : '+'}${lbText(Math.abs(q))} (${n(before)} → ${n(before + q)})`
+}
+
+/** Gap 3 (Matt): a pitch or count dated before the yeast was first harvested, as the API says it; else null. */
+export function beforeHarvestText(b: Pick<YeastBrink, 'name' | 'yeast'>, date: string): string | null {
+  const first = b.yeast?.first_harvested_on
+  return first && date && date < first ? `${b.name}'s yeast was harvested ${shortDate(first)}. Pick that day or later.` : null
+}
+
 /** "From #41 (gen 2) and #44 (gen 3)" (spec §4.5). */
 export function sourcesText(y: Pick<YeastContents, 'sources' | 'coferment'>): string {
   const parts = y.sources.map((s) => `${s.batch ?? 'a batch'} (${y.coferment ? `${s.strains.join(' + ')} ` : ''}gen ${s.generation ?? '?'})`)

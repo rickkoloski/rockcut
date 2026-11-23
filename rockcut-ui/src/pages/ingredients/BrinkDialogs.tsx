@@ -32,14 +32,14 @@ import { parseDecimal } from '../../lib/brewingUnits'
 import { FUTURE_DATE } from '../../lib/inventory'
 import { WRAP_ITEM, WRAP_SELECT } from '../../lib/ingredientFeatures'
 import { coloradoToday } from '../../lib/tasks'
-import { BRINK_KEYS, emptyWeightText, lbText, readLb, shortDate, yeastText } from '../../lib/yeast'
+import { BRINK_KEYS, beforeHarvestText, emptyWeightText, entryAmountText, lbText, readLb, shortDate, yeastText } from '../../lib/yeast'
 import type { YeastBatch, YeastBrink, YeastHistoryRecord } from '../../lib/types'
 
 
 /** The empty weight beside an lb box, with what's on hand (decision 8: shown, never subtracted). */
 const lbHelper = (brink: YeastBrink, extra?: string | null) => [extra, emptyWeightText(brink)].filter(Boolean).join(' · ') || undefined
 
-function DateField({ value, onChange, testId }: { value: string; onChange: (v: string) => void; testId: string }) {
+function DateField({ value, onChange, testId, min, error }: { value: string; onChange: (v: string) => void; testId: string; min?: string | null; error?: string | null }) {
   return (
     <TextField
       label="Date"
@@ -48,7 +48,9 @@ function DateField({ value, onChange, testId }: { value: string; onChange: (v: s
       onChange={(e) => onChange(e.target.value)}
       required
       fullWidth
-      slotProps={{ inputLabel: { shrink: true }, htmlInput: { max: coloradoToday(), 'data-testid': testId } }}
+      error={!!error}
+      helperText={error ?? undefined}
+      slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: min ?? undefined, max: coloradoToday(), 'data-testid': testId } }}
     />
   )
 }
@@ -81,6 +83,7 @@ export function PitchBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
   const { send, pending } = useBrinkWrite(`/api/yeast/brinks/${brink.id}/pitch`)
   const onHand = Number(brink.yeast?.on_hand_lb ?? 0)
   const lb = readLb(text, { max: onHand, brink: brink.name })
+  const early = beforeHarvestText(brink, date)
   const open = batches.filter((b) => b.open)
 
   const submit = async () => {
@@ -91,9 +94,9 @@ export function PitchBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
   }
 
   return (
-    <FormDialog open phone onClose={onClose} title={`Pitch from ${brink.name}`} onSubmit={submit} loading={pending} error={error} submitLabel="Pitch" submitDisabled={isLoading || !!lb.error} testId="brink-pitch-dialog">
+    <FormDialog open phone onClose={onClose} title={`Pitch from ${brink.name}`} onSubmit={submit} loading={pending} error={error} submitLabel="Pitch" submitDisabled={isLoading || !!lb.error || !!early} testId="brink-pitch-dialog">
       {brink.yeast && <Typography variant="body2">{`${lbText(brink.yeast.on_hand_lb)} ${yeastText(brink.yeast)}`}</Typography>}
-      <DateField value={date} onChange={setDate} testId="brink-pitch-date" />
+      <DateField value={date} onChange={setDate} testId="brink-pitch-date" min={brink.yeast?.first_harvested_on} error={early} />
       <FormControl fullWidth required>
         <InputLabel id="brink-pitch-batch-label">Batch</InputLabel>
         <Select labelId="brink-pitch-batch-label" label="Batch" value={open.length ? batchId : ''} onChange={(e) => setBatchId(e.target.value as number)} sx={WRAP_SELECT} data-testid="brink-pitch-batch">
@@ -131,6 +134,7 @@ export function CountBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
   const create = useApiCreate('/api/yeast/counts', { invalidateKeys: BRINK_KEYS })
   const c = parseDecimal(cells, 1)
   const v = parseDecimal(pct, 1)
+  const early = beforeHarvestText(brink, date)
   const pctError = v.ok && v.value != null && Number(v.value) > 100 ? 'At most 100%' : null
 
   const submit = async () => {
@@ -147,8 +151,8 @@ export function CountBrinkDialog({ brink, onClose }: { brink: YeastBrink; onClos
   }
 
   return (
-    <FormDialog open phone onClose={onClose} title={`Add count · ${brink.name}`} onSubmit={submit} loading={create.isPending} error={error} submitDisabled={!c.ok || !v.ok || !!pctError} testId="brink-count-dialog">
-      <DateField value={date} onChange={setDate} testId="brink-count-date" />
+    <FormDialog open phone onClose={onClose} title={`Add count · ${brink.name}`} onSubmit={submit} loading={create.isPending} error={error} submitDisabled={!c.ok || !v.ok || !!pctError || !!early} testId="brink-count-dialog">
+      <DateField value={date} onChange={setDate} testId="brink-count-date" min={brink.yeast?.first_harvested_on} error={early} />
       <DecimalInput decimals={1} label="Viable cells (millions per mL)" value={cells} onChange={setCells} required fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-count-cells' } }} />
       <DecimalInput decimals={1} label="Viability (%)" value={pct} onChange={setPct} required fullWidth error={!!pctError} helperText={pctError ?? undefined} slotProps={{ htmlInput: { 'data-testid': 'brink-count-pct' } }} />
       <TextField label="Note" value={note} onChange={(e) => setNote(e.target.value)} fullWidth slotProps={{ htmlInput: { 'data-testid': 'brink-count-note' } }} />
@@ -290,7 +294,7 @@ export function BrinkHistoryDialog({ brink, onClose }: { brink: YeastBrink; onCl
                 <Typography variant="body2" sx={{ overflowWrap: 'anywhere', flex: 1 }}>
                   {[
                     shortDate(e.occurred_on),
-                    `${KIND_LABELS[e.kind]} ${lbText(Math.abs(Number(e.quantity_lb)))}`,
+                    entryAmountText(e, r.entries, KIND_LABELS[e.kind]),
                     e.batch ? (e.kind === 'harvested' ? `from ${e.batch}` : `into ${e.batch}`) : null,
                     e.kind === 'harvested' && e.strains.length ? `${e.strains.join(' + ')} gen ${e.generation}` : null,
                     e.note,

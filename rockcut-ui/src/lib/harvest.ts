@@ -57,6 +57,7 @@ export function harvestError(f: HarvestForm): string | null {
   const lb = readLb(f.lb)
   if (!lb.lb) return lb.error ?? 'Enter the yeast weight in lb'
   if (f.productIds.length === 0) return 'Pick the strain'
+  if (/^\d+$/.test(f.generation.trim()) && Number(f.generation) > 999) return 'The generation is 999 or less'
   if (readGeneration(f.generation) == null) return 'The generation is a whole number, 1 or more'
   return null
 }
@@ -100,7 +101,7 @@ export const pullText = (p: { occurred_on: string; lb: string; brink: string; on
 /** `GET /api/yeast/batches/:id` (spec §6.6): what went into a batch and what came out. */
 export interface YeastBatchPage {
   pitched: (
-    | { source: 'lot'; occurred_on: string; quantity: string; unit: string | null; product: string | null; lot_number: string | null; note: string | null }
+    | { source: 'lot'; movement_id?: number; can_remove?: boolean; occurred_on: string; quantity: string; unit: string | null; product: string | null; lot_number: string | null; note: string | null }
     | { source: 'brink'; occurred_on: string; lb: string; brink: string | null; strains: string[]; generation: number | null; coferment: boolean; note: string | null }
   )[]
   harvested: { entry_id: number; occurred_on: string; lb: string; brink: string; on_top: boolean; strains: string[]; generation: number | null; note: string | null }[]

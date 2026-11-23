@@ -1,4 +1,6 @@
-import { Box, Paper, Typography } from '@mui/material'
+import { useState } from 'react'
+import { Box, Button, Paper, Typography } from '@mui/material'
+import RemovePitchDialog from '../../components/RemovePitchDialog'
 import { useApiQuery } from '../../hooks/useApiQuery'
 import { httpStatus } from '../../lib/notFound'
 import { pitchedText, pullText, type YeastBatchPage } from '../../lib/harvest'
@@ -18,6 +20,7 @@ export default function BatchYeastSection({ batchId }: { batchId: number }) {
   const { data, error } = useApiQuery<YeastBatchPage>(['yeast_batch', batchId], `/api/yeast/batches/${batchId}`, undefined, {
     retry: (n: number, err: unknown) => httpStatus(err) !== 403 && n < 2,
   })
+  const [removing, setRemoving] = useState<{ id: number; what: string } | null>(null)
   if (error || !data) return null
   const nothing = data.pitched.length === 0 && data.harvested.length === 0 && data.dumped.length === 0
 
@@ -38,6 +41,18 @@ export default function BatchYeastSection({ batchId }: { batchId: number }) {
             {data.pitched.map((p, i) => (
               <Typography key={i} variant="body2" sx={LINE} data-testid="batch-yeast-pitched">
                 {`${shortDate(p.occurred_on)} · ${pitchedText(p)}${p.note ? ` · ${p.note}` : ''}`}
+                {/* Lead decisions 3, gap 5: a pitch on the wrong batch is taken back here too. */}
+                {p.source === 'lot' && p.can_remove && p.movement_id != null && (
+                  <Button
+                    size="small"
+                    color="error"
+                    sx={{ ml: 1, minWidth: 0, py: 0 }}
+                    onClick={() => setRemoving({ id: p.movement_id!, what: pitchedText(p).replace(/ · Mother$/, '') })}
+                    data-testid={`batch-yeast-remove-${p.movement_id}`}
+                  >
+                    Remove
+                  </Button>
+                )}
               </Typography>
             ))}
           </Box>
@@ -58,6 +73,7 @@ export default function BatchYeastSection({ batchId }: { batchId: number }) {
           </Box>
         )}
       </Paper>
+      {removing && <RemovePitchDialog {...removing} onClose={() => setRemoving(null)} />}
     </Box>
   )
 }

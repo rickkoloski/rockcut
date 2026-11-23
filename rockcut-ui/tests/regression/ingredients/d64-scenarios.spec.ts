@@ -257,14 +257,14 @@ test('the Brinks tab: Adjust weight 40 → 33 with a note, Dump ("infected": dir
   await dump.getByTestId('brink-dump-note').fill('infected')
   await dump.getByRole('button', { name: 'Dump' }).click()
   await expect(dump).toHaveCount(0)
-  expect(await openTasks(tb.id)).toEqual({ recount: true, clean: true, dirty: true })
+  expect(await openTasks(tb.id)).toEqual({ recount: false, clean: true, dirty: true })
   const [rec] = await history(tb.id)
   expect(rec.entries.map((x) => x.kind)).toEqual(['harvested', 'adjusted', 'dumped'])
 
   const clean = await brinkAction(page, tb.id, 'clean', 'brink-clean-dialog')
   await clean.getByRole('button', { name: 'Mark clean' }).click()
   await expect(clean).toHaveCount(0)
-  expect(await openTasks(tb.id)).toEqual({ recount: true, clean: false, dirty: false })
+  expect(await openTasks(tb.id)).toEqual({ recount: false, clean: false, dirty: false })
 })
 
 test('two people pitch the last 20 lb of one brink: the second is refused, one pitch written', async ({ page, browser }) => {

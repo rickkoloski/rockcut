@@ -26,11 +26,12 @@ import PageHeader from '../../components/PageHeader'
 import ConfirmDialog from '../../components/ConfirmDialog'
 import ItemNotFound from '../../components/ItemNotFound'
 import QuantityToggle from '../../components/QuantityToggle'
+import RemovePitchDialog from '../../components/RemovePitchDialog'
 import StatusChip from '../../components/StatusChip'
 import { useApiList, useApiQuery } from '../../hooks/useApiQuery'
 import { useApiDelete } from '../../hooks/useApiMutation'
 import { useQuantityDisplay } from '../../hooks/useQuantityDisplay'
-import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack, perUnitLabel } from '../../lib/brewingUnits'
+import { enteredAs, formatFeature, formatQuantity, packLabel, packWord, productPack, packIsUnit, perUnitLabel } from '../../lib/brewingUnits'
 import { applicability, differs, formatRange, ionsText, isD65Key, isRangeType, itemLabel, lotTypesFor, makerName, manufacturerLabel, onHandText, productLabel, productTypesFor, toggleLabels, typesFor, unitLabel } from '../../lib/ingredientFeatures'
 import { GRAIN_KEYS, movementKindLabel } from '../../lib/inventory'
 import { httpStatus, retryUnless404 } from '../../lib/notFound'
@@ -71,6 +72,7 @@ export default function ProductPage() {
   const [lotId, setLotId] = useState<number | null>(null)
   const [history, setHistory] = useState<Set<number>>(new Set())
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [removingPitch, setRemovingPitch] = useState<InventoryMovement | null>(null)
 
   const { data: product, error } = useApiQuery<IngredientProduct>(['ingredient_product', productId], `/api/ingredient_products/${productId}`, undefined, {
     retry: retryUnless404,
@@ -129,6 +131,10 @@ export default function ProductPage() {
   // The pack the minimum counts in: the product's (a sack, for grain; a box, for hops).
   const minimumPack = pack?.name ?? product.offers?.[0]?.pack_name ?? (hops ? 'box' : d65 ? null : 'sack')
   const offerPack = product.offers?.[0]?.pack_name ?? minimumPack ?? 'pack'
+  // D64 (gap 1): every offer and lot is one unit to the pack, so the pack and the unit say the same.
+  const unitOffers = (product.offers ?? []).length > 0 && (product.offers ?? []).every((o) => packIsUnit(o.pack_name, o.pack_size, unit))
+  const unitLots = lots.length > 0 && lots.every((l) => packIsUnit(l.pack_name, l.pack_size, unit))
+  const unitPacks = (unitOffers || unitLots) && (unitOffers || !product.offers?.length) && (unitLots || !lots.length)
   const lotsById = new Map(lots.map((l) => [l.id, l]))
   const close = () => {
     setOpen(null)
@@ -164,7 +170,8 @@ export default function ProductPage() {
         title={product.display_name}
         toolbar={
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center' }}>
-            <QuantityToggle {...toggleLabels(minimumPack, unit)} />
+            {/* Gap 1: no toggle when every pack is the unit ("Bricks + bricks"). */}
+            {!unitPacks && <QuantityToggle {...toggleLabels(minimumPack, unit)} />}
             <Button variant="contained" onClick={() => setOpen('movement')} disabled={lots.length === 0} data-testid="product-record-movement">
               Record movement
             </Button>
@@ -307,7 +314,7 @@ export default function ProductPage() {
               <TableCell align="right">{named ? 'Pack' : `${offerPack.charAt(0).toUpperCase()}${offerPack.slice(1)}`}</TableCell>
               {!named && <TableCell>Form</TableCell>}
               <TableCell align="right">$/{offerPack}</TableCell>
-              <TableCell align="right">$/{perUnitLabel(unit)}</TableCell>
+              {!unitOffers && <TableCell align="right">$/{perUnitLabel(unit)}</TableCell>}
               <TableCell />
             </TableRow>
           </TableHead>
@@ -333,7 +340,7 @@ export default function ProductPage() {
                   <TableCell align="right" data-testid={`offer-price-${o.id}`}>
                     {money(o.current_price?.price_per_pack)}
                   </TableCell>
-                  <TableCell align="right">{money(o.current_price?.price_per_unit, 4)}</TableCell>
+                  {!unitOffers && <TableCell align="right">{money(o.current_price?.price_per_unit, 4)}</TableCell>}
                   <TableCell align="right" sx={{ whiteSpace: 'nowrap' }}>
                     <Button
                       size="small"
@@ -555,13 +562,27 @@ export default function ProductPage() {
                   {/* D64: a pitch names its batch, "→ Galactic #41". */}
                   {[m.batch_id != null ? `→ ${batchLabel.get(m.batch_id) ?? `batch #${m.batch_id}`}` : null, m.note].filter(Boolean).join(' · ')}
                 </TableCell>
-                <TableCell>{m.entered_by?.name ?? ''}</TableCell>
+                <TableCell>
+                  {m.entered_by?.name ?? ''}
+                  {m.can_remove && (
+                    <Button size="small" color="error" sx={{ ml: 1, minWidth: 0, py: 0 }} onClick={() => setRemovingPitch(m)} data-testid={`movement-remove-${m.id}`}>
+                      Remove
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </Section>
 
+      {removingPitch && (
+        <RemovePitchDialog
+          id={removingPitch.id}
+          what={`${formatQuantity(Math.abs(Number(removingPitch.quantity)), null, null, unit, 'lb')}${removingPitch.batch_id != null ? ` into ${batchLabel.get(removingPitch.batch_id) ?? 'its batch'}` : ''}`}
+          onClose={() => setRemovingPitch(null)}
+        />
+      )}
       <ProductDialog open={open === 'edit'} onClose={close} product={product} hasLots={lots.length > 0} />
       <ConfirmDialog
         open={open === 'delete'}
